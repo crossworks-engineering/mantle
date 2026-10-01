@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { index, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { boolean, index, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { agents } from './agents';
 import { nodes } from './nodes';
 import type { ConversationAttachment } from './assistant-messages';
@@ -28,9 +28,10 @@ export const teamMessages = pgTable(
       .primaryKey()
       .default(sql`gen_random_uuid()`),
     ownerId: uuid('owner_id').notNull(),
-    contactId: uuid('contact_id')
-      .notNull()
-      .references(() => nodes.id, { onDelete: 'cascade' }),
+    /** The team portal contact; null on a member LOGIN's rows (0167: users
+     *  are the team, a member needs no contact). Each row names a contact
+     *  or a login (CHECK team_messages_who_ck). */
+    contactId: uuid('contact_id').references(() => nodes.id, { onDelete: 'cascade' }),
     direction: text('direction').notNull(), // 'inbound' | 'outbound' (CHECK enforced in SQL)
     text: text('text').notNull(),
     agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'set null' }),
@@ -47,6 +48,14 @@ export const teamMessages = pgTable(
     traceId: uuid('trace_id'),
     status: text('status').$type<'pending' | 'complete' | 'failed'>().default('complete').notNull(),
     error: text('error'),
+    /** A MEMBER login's thread (0163): set on a member's rows, null on team
+     *  portal rows. A member's thread is read by (owner, login). FK to
+     *  auth.users declared in the SQL (cross-schema). */
+    loginId: uuid('login_id'),
+    /** An outbound reply that may quote the member's PRIVATE items (0170,
+     *  audit S3): its turn read them with a my-space tool, or followed such a
+     *  reply. Admin readers show a placeholder instead of the text. */
+    usedPrivate: boolean('used_private').default(false).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [

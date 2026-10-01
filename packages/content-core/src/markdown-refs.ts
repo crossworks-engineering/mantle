@@ -4,7 +4,9 @@
  *
  *   ![alt](media:<file-id>)      an uploaded image, by node id
  *   [label](media:<file-id>)     a file embed
- *   [Title](page:<page-id>)      a child page
+ *   [Title](page:<page-id>)      a page link card
+ *   [Folder index](folder:<id>)  a live list of a folder's pages (`folder:here`
+ *                                for the page's own folder)
  *   ![alt](draw:<draw-id>)       an embedded drawing
  *   [Label](mention:<ref>:<id>)  a mention chip
  *
@@ -28,8 +30,14 @@
 export const MENTION_HREF = /^mention:(?:(node|entity):)?([^\s]+)$/;
 /** `media:<file-id>`, an uploaded file by node id. */
 export const MEDIA_HREF = /^media:([^\s]+)$/;
-/** `page:<page-id>`, a child page by node id. */
+/** `page:<page-id>`, a page link card by node id (pages do not nest; the
+ *  card is a link, folder phase 7). */
 export const PAGE_HREF = /^page:([^\s]+)$/;
+/** `folder:<folder-id>` or `folder:here`, the Folder index block: a live,
+ *  title-only list of a pages folder's pages, as the reader sees it. `here`
+ *  is the folder the page itself sits in. */
+export const FOLDER_HREF = /^folder:([^\s]+)$/;
+export const FOLDER_HERE = 'here';
 /** `draw:<draw-id>`, a drawing embedded as a picture. Deliberately a LIVE
  *  reference, not a copy: the page renders the drawing's current committed
  *  snapshot, so editing the drawing updates every page that embeds it. */
@@ -87,9 +95,9 @@ export function inlineMediaImageIds(source: string | undefined | null): Set<stri
  *  the id it points at, and the node type that scheme requires (unset ⇒ any
  *  node). `nodeType` is what makes a wrong-type reference reportable. */
 export type MarkdownRef = {
-  scheme: 'media' | 'page' | 'mention' | 'draw';
+  scheme: 'media' | 'page' | 'mention' | 'draw' | 'folder';
   id: string;
-  nodeType?: 'file' | 'page' | 'draw';
+  nodeType?: 'file' | 'page' | 'draw' | 'branch';
 };
 
 /** Any markdown link or image, capturing the href. */
@@ -119,6 +127,11 @@ export function markdownRefs(source: string | undefined | null): MarkdownRef[] {
     if (page?.[1]) ref = { scheme: 'page', id: page[1], nodeType: 'page' };
     const draw = DRAW_HREF.exec(href);
     if (draw?.[1]) ref = { scheme: 'draw', id: draw[1], nodeType: 'draw' };
+    // A Folder index names a folder row; `folder:here` names none.
+    const folder = FOLDER_HREF.exec(href);
+    if (folder?.[1] && folder[1] !== FOLDER_HERE) {
+      ref = { scheme: 'folder', id: folder[1], nodeType: 'branch' };
+    }
     const mention = MENTION_HREF.exec(href);
     // Bare `mention:<id>` defaults to an entity — skip; only `mention:node:` is
     // a node reference.

@@ -31,6 +31,7 @@ import {
   type ConversationChannel,
 } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
+import { delegationHintTraceData } from '@mantle/decisions';
 import {
   buildChatMessages,
   buildAttachmentContextText,
@@ -56,6 +57,8 @@ import {
   emitTurnLifecycle,
   registerTurnAbort,
   unregisterTurnAbort,
+  createTracePrelude,
+  withTracePrelude,
 } from '@mantle/tracing';
 import { pickWebDefaultAgent } from './select';
 import { artifactsNotPlacedInline, durableAttachmentsFor } from './inline-images';
@@ -253,7 +256,12 @@ export async function runAssistantTurn(
   //    sent to the LLM as `newUserText` in buildChatMessages, and
   //    duplicating it makes the model think the user said the same
   //    thing twice ("you sent that twice — testing the double-tap?").
-  const ctx = await loadConversationContext({ ownerId, agent, inboundText: trimmed });
+  // Steps before the trace opens (the decider's pruning + hint calls, the
+  // query embed) are held here and written into the trace below.
+  const prelude = createTracePrelude();
+  const ctx = await withTracePrelude(prelude, () =>
+    loadConversationContext({ ownerId, agent, inboundText: trimmed }),
+  );
   const filteredHistory = ctx.history;
 
   // 2. Persist inbound BEFORE the LLM call so the row survives a
@@ -377,15 +385,27 @@ export async function runAssistantTurn(
   // overrides. `relatedHeartbeatSlugs` is threaded into the startTrace data
   // jsonb below, so /traces shows "this responder turn was influenced by
   // heartbeat X" without needing a separate join. (Audit P-trace-5.)
-  const assembled = await assembleResponderTurn({
-    ownerId,
-    agent,
-    prefs,
-    logPrefix: '[assistant]',
-    volatileExtras: [locationContextLine, timezoneSwitchNote],
-    heartbeatSurface: { kind: 'web' },
-  });
-  const { effectiveSystemPrompt, volatileContext, relatedHeartbeatSlugs, allowedTools } = assembled;
+  const assembled = await withTracePrelude(prelude, () =>
+    assembleResponderTurn({
+      ownerId,
+      agent,
+      prefs,
+      logPrefix: '[assistant]',
+      volatileExtras: [locationContextLine, timezoneSwitchNote],
+      heartbeatSurface: { kind: 'web' },
+      // For the decider's delegation hint: this message + the previous user
+      // turn (history is newest-last; the inbound itself is not in it yet).
+      inboundText: trimmed,
+      previousUserText: [...filteredHistory].reverse().find((h) => h.role === 'user')?.text ?? null,
+    }),
+  );
+  const {
+    effectiveSystemPrompt,
+    journalBlock,
+    volatileContext,
+    relatedHeartbeatSlugs,
+    allowedTools,
+  } = assembled;
 
   // Image routing — transcript-default vision gating via the shared
   // `decideImageRouting` (catalog warm + vision + per-provider size check).
@@ -440,6 +460,7 @@ export async function runAssistantTurn(
     startTrace(
       {
         kind: 'responder_turn',
+        prelude,
         ownerId,
         // When the client minted a stream id, key this turn's live status/token
         // events on it (no-op when absent — the trace just isn't streamed).
@@ -456,6 +477,9 @@ export async function runAssistantTurn(
           // way so a query for "traces influenced by heartbeats"
           // works against the same shape on every row.
           related_heartbeat_slugs: relatedHeartbeatSlugs,
+          // The decider's delegation hint (shadow or live). Null when the
+          // use is off. Read against this trace's invoke_agent steps.
+          delegation_hint: delegationHintTraceData(assembled.delegationHint),
           ...dataExtra,
         },
       },
@@ -479,6 +503,8 @@ export async function runAssistantTurn(
               systemPrompt: effectiveSystemPrompt,
               volatileContext,
               personaNotes: c.personaNotes,
+              journalBlock,
+              journalRelevant: c.journalRelevant,
               facts: c.facts,
               digests: c.digests,
               corpusMap: c.corpusMap,

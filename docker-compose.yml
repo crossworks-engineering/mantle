@@ -1,6 +1,6 @@
 name: mantle
 
-# Mantle full stack: postgres + minio + web + agent + workers.
+# Mantle full stack: postgres + object store + web + agent + workers.
 # For local dev, prefer `pnpm up` (uses docker-compose.dev.yml — infra only,
 # app in native Node for hot-reload). This file is for prod-shaped deploys
 # where everything runs in containers.
@@ -13,9 +13,9 @@ name: mantle
 #                            to the sole auth.users row after you sign up)
 #   S3_ACCESS_KEY / S3_SECRET_KEY (REQUIRED — compose refuses to start without them)
 #   MANTLE_PUBLIC_URL       (recommended — public origin for share/email links,
-#                            e.g. https://mantle.crossworks.network)
+#                            e.g. https://brain.example.com)
 #   MANTLE_SITE_ADDRESS     (the address Caddy serves — a hostname gets automatic
-#                            HTTPS, e.g. mantle.crossworks.network; defaults to
+#                            HTTPS, e.g. brain.example.com; defaults to
 #                            :80 plain HTTP for local testing. Open 80+443 + DNS.)
 #   MANTLE_LOCAL_EMBEDDING_URL (default: http://ollama:11434/v1 — the bundled
 #                            embedder; no need to set unless pointing elsewhere)
@@ -23,8 +23,9 @@ name: mantle
 #                            pulls on first boot)
 #   OLLAMA_KEEP_ALIVE       (default: 5m — set to -1 to keep the embedder always
 #                            resident instead of unloading when idle)
-#   MINIO_IMAGE_TAG / MC_IMAGE_TAG / OLLAMA_IMAGE_TAG (optional — pin the minio,
-#                            minio/mc (both from quay.io), and ollama images. Defaults are the newest
+#   RUSTFS_IMAGE_TAG / OLLAMA_IMAGE_TAG (optional: pin the object store
+#                            (<namespace>/mantle-rustfs, our digest mirror of
+#                            rustfs/rustfs) and the ollama image. Defaults are the newest
 #                            stable tags at time of writing; pinned (like
 #                            tailscale) so the in-app update path can't pull a
 #                            breaking upstream `:latest` mid-update.)
@@ -43,7 +44,7 @@ name: mantle
 #
 # Persistent data — bind-mounted on the host so you can see/back up/move it:
 #   MANTLE_DATA_DIR         (default: ./data) — EVERYTHING lives under here:
-#                            postgres, minio, files, backups, app-dbs, caddy
+#                            postgres, rustfs, files, backups, app-dbs, caddy
 #                            (certs), ollama, tailscale, update-signal. Back this
 #                            up (restic/Syncthing) and it IS your brain. The DB,
 #                            though, should be MOVED
@@ -79,7 +80,7 @@ name: mantle
 
 volumes:
   # POLICY: ALL persistent data is bind-mounted to the local drive under
-  # MANTLE_DATA_DIR — postgres, minio, files, backups, app-dbs, caddy (ACME
+  # MANTLE_DATA_DIR — postgres, rustfs, files, backups, app-dbs, caddy (ACME
   # certs), ollama (model cache), tailscale (node state), and update-signal.
   # So every byte lives on the mounted data disk, is captured by that disk's
   # backup/snapshot, and can NEVER be wiped by `docker compose down -v` or a
@@ -94,7 +95,7 @@ volumes:
 networks:
   # Isolated bridge for CLI sandbox containers (compose profile `sandboxes`).
   # Sandboxes attach ONLY here: egress to the internet via NAT, no route to the
-  # default network's postgres/minio/web. Only sandboxd straddles both. The
+  # default network's postgres/objectstore/web. Only sandboxd straddles both. The
   # fixed `name:` matches SANDBOX_NETWORK in server/sandboxd. Created only when
   # the profile is active (it's referenced solely by sandboxd).
   sandbox:
@@ -115,8 +116,8 @@ networks:
 x-logging: &default-logging
   driver: json-file
   options:
-    max-size: "10m"
-    max-file: "3"
+    max-size: '10m'
+    max-file: '3'
 
 # Liveness probe for the port-less long-runners (api + the 8 workers). Those
 # services already restart-on-exit if the process DIES (restart: unless-stopped)
@@ -153,12 +154,14 @@ x-app-env: &app-env
   # (Was `:?required`, which contradicted .env.prod.example and broke fresh
   # installs before any user exists.)
   ALLOWED_USER_ID: ${ALLOWED_USER_ID:-}
-  S3_ENDPOINT: http://minio:9000
-  S3_REGION: us-east-1
-  S3_BUCKET: mantle
+  # Any S3-compatible store works: the app speaks plain S3 only. The defaults
+  # point at the bundled `objectstore` service; override in .env for an external one.
+  S3_ENDPOINT: ${S3_ENDPOINT:-http://objectstore:9000}
+  S3_REGION: ${S3_REGION:-us-east-1}
+  S3_BUCKET: ${S3_BUCKET:-mantle}
   S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set it in .env — scripts/install.sh writes one}
   S3_SECRET_KEY: ${S3_SECRET_KEY:?set it in .env — scripts/install.sh writes one}
-  S3_FORCE_PATH_STYLE: 'true'
+  S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
   NODE_ENV: production
   MANTLE_EMBEDDING_MODEL: ${MANTLE_EMBEDDING_MODEL:-}
   # Self-hosted embedder. Points at the bundled `ollama` service serving
@@ -179,7 +182,7 @@ x-app-env: &app-env
   # of them behaves exactly as before.
   #
   # MANTLE_MCP_TERMINAL=1 puts `run_terminal` — a shell in THIS container, with
-  # postgres, minio, the file store and the master key — on the network-reachable
+  # postgres, the object store, the file store and the master key — on the network-reachable
   # connector. That makes a stolen OAuth bearer a root shell on the box, so it is
   # off unless an operator opts in per box. Over stdio the tool ships regardless
   # (spawning that process already grants full owner access). =0 turns it off
@@ -244,11 +247,15 @@ x-app-env: &app-env
   MS_CLIENT_SECRET: ${MS_CLIENT_SECRET:-}
   MS_TENANT: ${MS_TENANT:-}
   MS_REDIRECT_URI: ${MS_REDIRECT_URI:-}
-  # Team Hub chat posting. OFF unless exactly "1" (`=== '1'` in code), so this
-  # is the only way to turn member chat on — it was unreachable on every box.
-  # The two limits are per-owner daily gates (forum-gate.ts).
-  TEAM_CHAT_POST_ENABLED: ${TEAM_CHAT_POST_ENABLED:-}
+  # Team forum limits: per-member daily gates (forum-gate.ts).
   TEAM_CHAT_DAILY_TURNS: ${TEAM_CHAT_DAILY_TURNS:-}
+  # Member chat: model tokens (in + out) per member login per UTC day, checked
+  # before a turn is queued (server/web/lib/member-daily-cap.ts). Default
+  # 2000000; 0 turns the token budget off (the turn cap still holds).
+  MANTLE_MEMBER_DAILY_TOKENS: ${MANTLE_MEMBER_DAILY_TOKENS:-}
+  # Cap on the member chat's own DBOS queue in server/api (MEMBER_TURN_QUEUE),
+  # off the owner's queue so members never queue ahead of the owner. Default 2.
+  MANTLE_MEMBER_TURN_CONCURRENCY: ${MANTLE_MEMBER_TURN_CONCURRENCY:-}
   TEAM_UPLOAD_DAILY_BYTES: ${TEAM_UPLOAD_DAILY_BYTES:-}
   # How many proxy hops sit in front of the app, for client-IP extraction in
   # the rate limiter (X-Forwarded-For, counted from the right). Default 1 =
@@ -256,6 +263,11 @@ x-app-env: &app-env
   # would key on a spoofable hop.
   MANTLE_TRUSTED_PROXIES: ${MANTLE_TRUSTED_PROXIES:-}
   MANTLE_FILES_ROOT: /data/files
+  # MANTLE_SPACES_ROOT (member personal-space file bytes) is NOT here: it is
+  # set only on the services that mount /data/spaces (web, api, worker_events,
+  # worker_maintenance).
+  # A process without it refuses to write personal files instead of writing
+  # them into its own container layer.
   # Cap for the streamed /files uploader (POST /api/files/files), in MB. Bytes
   # spool to disk as they arrive, so this is a disk/UX number, not a memory
   # one. Keep it under the proxy's MANTLE_MAX_BODY_SIZE (default 1GB).
@@ -266,6 +278,9 @@ x-app-env: &app-env
   # container's ephemeral cwd and every app loses its data on each redeploy. The
   # web AND api services mount ${MANTLE_DATA_DIR}/app-dbs here.
   APP_DB_DIR: /data/app-dbs
+  # The largest one app's database file may grow, in MB (default 256, set in
+  # code when empty). A write past it fails and rolls back.
+  APP_SQL_MAX_DB_MB: ${APP_SQL_MAX_DB_MB:-}
   # Per-table SQLite files for sqlite-native Tables (Tables v2). One workbook
   # file per table node (<root>/<owner>/<node>.sqlite + .draft.sqlite, see
   # packages/tabledb). Tool handlers run in BOTH web and api, so BOTH services
@@ -285,7 +300,7 @@ x-app-env: &app-env
   MANTLE_DOCS_ROOT: /app/docs
   # Public origin for absolute links built outside an HTTP request — e.g. the
   # agent's page_share / email_page tools. Falls back to localhost in code if
-  # unset, so set it to the real host (https://mantle.crossworks.network).
+  # unset, so set it to the real host (https://brain.example.com).
   MANTLE_PUBLIC_URL: ${MANTLE_PUBLIC_URL:-}
   # CORS allowlist for detached frontends (comma-separated origins, or '*' for
   # the non-auth data API). OFF by default — same-origin clients need no CORS.
@@ -319,7 +334,7 @@ services:
     # idle and climbs under load. A crash-looping service can briefly double its
     # connection churn and exhaust 100, wedging the DB (even psql locked out).
     # 200 is cheap on an 11 GB box (~10 MB/conn worst case) and absorbs spikes.
-    command: ["postgres", "-c", "max_connections=200"]
+    command: ['postgres', '-c', 'max_connections=200']
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set it in .env — scripts/install.sh writes one}
@@ -337,66 +352,104 @@ services:
       - ${MANTLE_DATA_DIR:-./data}/postgres:/var/lib/postgresql/data
       - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d postgres']
       interval: 5s
       timeout: 3s
       retries: 20
 
-  minio:
-    # Pinned (was :latest) — the in-app update path re-pulls images, so a
-    # breaking upstream release would land mid-update. Override via env.
-    # From quay.io, not Docker Hub: on 2026-09-14 MinIO pulled minio/minio and
-    # minio/mc from Docker Hub, so every fresh install failed at the pull. The
-    # quay.io mirror carries the same pinned tags.
-    image: quay.io/minio/minio:${MINIO_IMAGE_TAG:-RELEASE.2025-09-07T16-13-09Z}
-    container_name: mantle_minio
+  # ── Object store: RustFS (S3-compatible, Apache-2.0) ─────────────────────
+  # The app speaks plain S3 only (packages/storage), so the store behind it is
+  # swappable. It was MinIO until MinIO left open source (2026); RustFS reads a
+  # copy of MinIO's single-drive data in place, which is how existing boxes
+  # move over (objectstore_init below). Data dir: ${MANTLE_DATA_DIR}/rustfs.
+  #
+  # One-shot, as root, before the store starts. Three cases:
+  #   rustfs/ already holds data  -> nothing to do (every boot after the first)
+  #   minio/ holds MinIO data     -> copy it to rustfs/ ONCE (disk space checked
+  #                                  first; via rustfs.partial so an interrupted
+  #                                  copy restarts clean). minio/ is never
+  #                                  touched: rolling back to a MinIO release
+  #                                  finds it exactly as it was. Writes after the
+  #                                  switch live only in rustfs/.
+  #   neither                     -> a new, empty store
+  # Then rustfs/ is handed to UID 10001, the user RustFS runs as. Must copy, not
+  # move or hardlink: RustFS rewrites its data dir on first start
+  # (.minio.sys -> .rustfs.sys), which would break the rollback.
+  objectstore_init:
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-rustfs:${RUSTFS_IMAGE_TAG:-1.0.0}
+    container_name: mantle_objectstore_init
+    restart: 'no'
+    user: '0:0'
+    entrypoint: ['sh', '-ec']
+    command:
+      - |
+        D=/mantle-data; SRC=$$D/minio; DST=$$D/rustfs; TMP=$$D/rustfs.partial
+        if [ -d "$$DST" ] && [ -n "$$(ls -A "$$DST")" ]; then
+          echo "[objectstore_init] $$DST already holds the store; nothing to copy"
+        elif [ -d "$$SRC/.minio.sys" ]; then
+          need=$$(du -sk "$$SRC" | cut -f1)
+          free=$$(df -Pk "$$D" | awk 'NR==2 {print $$4}')
+          if [ "$$free" -lt $$((need + need / 5 + 102400)) ]; then
+            echo "[objectstore_init] not enough disk to copy $$SRC ($$need KiB, $$free KiB free): free space, then run the update again" >&2
+            exit 1
+          fi
+          echo "[objectstore_init] copying $$SRC ($$need KiB) to $$DST; $$SRC stays as it is, for rollback"
+          rm -rf "$$TMP"
+          cp -a "$$SRC" "$$TMP"
+          chown -R 10001:10001 "$$TMP"
+          rmdir "$$DST" 2>/dev/null || true
+          mv "$$TMP" "$$DST"
+          objects=$$(find "$$DST" -name xl.meta ! -path '*/.minio.sys/*' | wc -l)
+          printf 'copied_at=%s\nfrom=%s\nkib=%s\nobjects=%s\n' "$$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$$SRC" "$$need" "$$objects" > "$$D/rustfs.copied-from-minio"
+          echo "[objectstore_init] copied $$objects objects"
+        else
+          mkdir -p "$$DST"
+          echo "[objectstore_init] new, empty store at $$DST"
+        fi
+        chown 10001:10001 "$$DST"
+    volumes:
+      - ${MANTLE_DATA_DIR:-./data}:/mantle-data
+
+  objectstore:
+    # Pinned: the in-app update path re-pulls, so a breaking upstream release
+    # would land mid-update. Our mirror of rustfs/rustfs, by digest
+    # (infra/rustfs/IMAGE, .github/workflows/rustfs-image.yml), so an upstream
+    # repo vanishing (the MinIO lesson) cannot break a pull. Override via env.
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-rustfs:${RUSTFS_IMAGE_TAG:-1.0.0}
+    container_name: mantle_objectstore
     restart: unless-stopped
     logging: *default-logging
     # ── Memory caps (mem_limit) — a GUARDRAIL, not a reservation ──────────────
     # These cap a runaway leak so one service can't take the whole box down;
     # they do NOT reserve memory, so the sum of all caps may exceed box RAM (the
     # 4 GB minimum box idles ~2.5 GB). Sized ~2-4× each service's steady state.
-    mem_limit: 512m
-    command: server /data --console-address ":9001"
+    # RustFS: reading every object of a 667 MB store peaked at 293 MiB and was
+    # OOM-killed under a 256m cap (2026-09-25), hence more than MinIO's 512m.
+    mem_limit: 1g
+    # RustFS disables its file-descriptor cache below this limit (it warns).
+    ulimits:
+      nofile: { soft: 65536, hard: 65536 }
+    depends_on:
+      objectstore_init: { condition: service_completed_successfully }
     environment:
-      MINIO_ROOT_USER: ${S3_ACCESS_KEY:?set it in .env — scripts/install.sh writes one}
-      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?set it in .env — scripts/install.sh writes one}
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY:?set it in .env — scripts/install.sh writes one}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY:?set it in .env — scripts/install.sh writes one}
+      RUSTFS_VOLUMES: /data
+      RUSTFS_CONSOLE_ENABLE: 'false'
+      RUSTFS_REGION: ${S3_REGION:-us-east-1}
+      # Empty = log to stdout, so docker's log rotation applies (the image
+      # default writes files under /logs inside the container).
+      RUSTFS_OBS_LOG_DIRECTORY: ''
     volumes:
-      - ${MANTLE_DATA_DIR:-./data}/minio:/data
+      - ${MANTLE_DATA_DIR:-./data}/rustfs:/data
     healthcheck:
-      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      test: ['CMD', 'curl', '-fsS', 'http://127.0.0.1:9000/health/ready']
       interval: 10s
       timeout: 5s
       retries: 12
-
-  # One-shot: create the object-store bucket the app writes to. MinIO ships
-  # empty — `mc ready` (the health gate above) only means the SERVER is up, not
-  # that the bucket exists. Without this, the first upload / app build / file
-  # ingest on a fresh box fails "The specified bucket does not exist" (the app
-  # only HEADs the bucket, never creates it — see packages/storage/src/index.ts).
-  # The dev path (scripts/up.sh) does the same `mc mb`; this is its prod twin.
-  # Idempotent (`--ignore-existing`), so it's a no-op on every later boot. Every
-  # service that writes object bytes depends_on this completing.
-  createbuckets:
-    # Pinned (was :latest) — same reason as minio above: the update path re-pulls.
-    # quay.io for the same reason as minio above too.
-    image: quay.io/minio/mc:${MC_IMAGE_TAG:-RELEASE.2025-08-13T08-35-41Z}
-    container_name: mantle_createbuckets
-    restart: "no"
-    depends_on:
-      minio: { condition: service_healthy }
-    environment:
-      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set it in .env — scripts/install.sh writes one}
-      S3_SECRET_KEY: ${S3_SECRET_KEY:?set it in .env — scripts/install.sh writes one}
-      S3_BUCKET: ${S3_BUCKET:-mantle}
-    entrypoint: ["sh", "-c"]
-    command:
-      - |
-        set -e
-        mc alias set local http://minio:9000 "$$S3_ACCESS_KEY" "$$S3_SECRET_KEY"
-        mc mb --ignore-existing "local/$$S3_BUCKET"
-        mc anonymous set none "local/$$S3_BUCKET"
-        echo "[createbuckets] bucket '$$S3_BUCKET' ready"
+      # The very first probe lands before RustFS is ready and is logged as an
+      # ERROR (503). Harmless; the grace period keeps it from counting.
+      start_period: 10s
 
   # Apache Tika — document-parser fallback for formats our in-process parsers
   # don't cover (.odt / .ods / .odp / .pptx / .ppt / .doc / .rtf / .epub / …).
@@ -419,7 +472,7 @@ services:
       # ceiling). On an 8 GB+ box with heavy deck/Office workloads, -Xmx2g is
       # safe. JAVA_TOOL_OPTIONS not JAVA_OPTS — Tika's launcher doesn't
       # propagate JAVA_OPTS to the forked TikaServerProcess (verified live).
-      JAVA_TOOL_OPTIONS: "-Xmx1g -Xms128m"
+      JAVA_TOOL_OPTIONS: '-Xmx1g -Xms128m'
     healthcheck:
       # apache/tika image has only bash (no curl/wget/nc), so probe via
       # bash's built-in /dev/tcp + a minimal HTTP/1.0 GET against /version.
@@ -453,11 +506,12 @@ services:
       # Two concurrent renders + a small queue covers a team clicking Download;
       # 60s per-session cap kills stuck renders. Raise CONCURRENT on big boxes
       # if PDF exports start queueing (503s with 'queue is full').
-      CONCURRENT: "2"
-      QUEUED: "10"
-      TIMEOUT: "60000"
+      CONCURRENT: '2'
+      QUEUED: '10'
+      TIMEOUT: '60000'
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:3000/meta?token=$${TOKEN} >/dev/null || exit 1"]
+      test:
+        ['CMD-SHELL', 'curl -sf http://localhost:3000/meta?token=$${TOKEN} >/dev/null || exit 1']
       interval: 10s
       timeout: 5s
       retries: 12
@@ -481,7 +535,7 @@ services:
     # (SIGCHLD auto-reap would destroy subprocess return codes).
     init: true
     logging: *default-logging
-    profiles: ["media"]
+    profiles: ['media']
     # Transcodes stream through temp files, never RAM; 1g covers ffmpeg
     # peaks. DWF renders (v0.232.92+) run in a group-killed child whose
     # per-sheet canvas is pixel-capped, and the JSON reply is assembled in
@@ -506,9 +560,9 @@ services:
       # python-slim has no curl/wget; probe with the interpreter itself.
       test:
         [
-          "CMD",
-          "python",
-          "-c",
+          'CMD',
+          'python',
+          '-c',
           "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8095/healthz', timeout=3).status==200 else 1)",
         ]
       interval: 30s
@@ -534,13 +588,13 @@ services:
     # Online embedding (set up in onboarding) is the default; by default this
     # service does NOT run and NO app service waits on it — so a fresh box boots
     # even on a locked-down network that can't pull the ~300MB model.
-    profiles: ["local-embedder"]
+    profiles: ['local-embedder']
     environment:
       OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-5m}
     volumes:
       - ${MANTLE_DATA_DIR:-./data}/ollama:/root/.ollama
     healthcheck:
-      test: ["CMD", "ollama", "list"]
+      test: ['CMD', 'ollama', 'list']
       interval: 10s
       timeout: 5s
       retries: 12
@@ -551,13 +605,13 @@ services:
   ollama_pull:
     image: ollama/ollama:${OLLAMA_IMAGE_TAG:-0.32.2}
     container_name: mantle_ollama_pull
-    restart: "no"
-    profiles: ["local-embedder"]
+    restart: 'no'
+    profiles: ['local-embedder']
     depends_on:
       ollama: { condition: service_healthy }
     environment:
       OLLAMA_HOST: http://ollama:11434
-    entrypoint: ["ollama", "pull", "${MANTLE_EMBEDDING_PULL_MODEL:-embeddinggemma}"]
+    entrypoint: ['ollama', 'pull', '${MANTLE_EMBEDDING_PULL_MODEL:-embeddinggemma}']
 
   # ── Tailscale (always-on sidecar, idle until activated) ───────────────────
   # Reaches capable chat/vision models running on a box you own (home GPU, LAN
@@ -595,7 +649,7 @@ services:
     # "tailscaled is up + the socket is listening" — true whether or not we've
     # joined a tailnet. Nothing depends_on this service.
     healthcheck:
-      test: ["CMD-SHELL", "test -S /var/run/tailscale/tailscaled.sock"]
+      test: ['CMD-SHELL', 'test -S /var/run/tailscale/tailscaled.sock']
       interval: 15s
       timeout: 5s
       retries: 8
@@ -609,11 +663,21 @@ services:
     # same one-shot gate — every worker depends_on this completing, so by the time
     # they call pg-boss start() the schema exists and they can't race to create it
     # (which on a fresh DB leaves it uncreated). Idempotent on an existing brain.
-    command: ["sh", "-c", "pnpm -C packages/db migrate && pnpm -C server/web pgboss:init && pnpm -C server/api provision"]
+    # Last step: create the object-store bucket if it is missing (plain S3
+    # CreateBucket, any backend). It replaced the `createbuckets` one-shot,
+    # which needed MinIO's `mc`: without a bucket, the first upload, app build
+    # or file ingest fails "The specified bucket does not exist".
+    command:
+      [
+        'sh',
+        '-c',
+        'pnpm -C packages/db migrate && pnpm -C server/web pgboss:init && pnpm -C server/api provision && pnpm -C packages/storage objectstore:ensure',
+      ]
     container_name: mantle_migrate
-    restart: "no"
+    restart: 'no'
     depends_on:
       postgres: { condition: service_healthy }
+      objectstore: { condition: service_healthy }
     environment:
       <<: *app-env
 
@@ -631,14 +695,22 @@ services:
     container_name: mantle_web
     restart: unless-stopped
     logging: *default-logging
-    mem_limit: 1.5g
+    # The web tier also hosts every `pnpm maintain` run (docker exec into
+    # mantle_web), and each tsx process loads the whole workspace (~300-400
+    # MB). At the old fixed 1.5g, four maintenance runs at once OOM-restarted
+    # a pilot's web tier (2026-09-24). A cap, not a reservation: set
+    # WEB_MEM_LIMIT higher on a box with RAM to spare (16 GB box: 6g).
+    mem_limit: ${WEB_MEM_LIMIT:-3g}
     depends_on:
-      postgres:      { condition: service_healthy }
-      minio:         { condition: service_healthy }
-      createbuckets: { condition: service_completed_successfully }
-      migrate:       { condition: service_completed_successfully }
+      postgres: { condition: service_healthy }
+      objectstore: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
     environment:
       <<: *app-env
+      # Personal-space file bytes (member logins): <root>/<spaceId>/files/<nodeId>.
+      # Its own bind mount (below), deliberately OUTSIDE /data/files so the
+      # files watcher never sees a member's private file.
+      MANTLE_SPACES_ROOT: /data/spaces
     volumes:
       - ${MANTLE_DATA_DIR:-./data}/files:/data/files
       - ${MANTLE_DATA_DIR:-./data}/backups:/data/backups
@@ -648,6 +720,8 @@ services:
       # Per-table SQLite (TABLE_DB_DIR=/data/table-dbs) — sqlite-native Tables.
       # Mounted into web AND api (handlers run in both processes).
       - ${MANTLE_DATA_DIR:-./data}/table-dbs:/data/table-dbs
+      # Personal-space file bytes (MANTLE_SPACES_ROOT=/data/spaces).
+      - ${MANTLE_DATA_DIR:-./data}/spaces:/data/spaces
       # READ-WRITE view of the tailscaled LocalAPI socket. Read drives the
       # /settings/network status tile + peer dropdown; write lets the app log
       # tailscaled in/out from the UI (Activate/Deactivate). RW is the one
@@ -672,7 +746,7 @@ services:
     # port here automatically; sanity.sh fails loudly if a publish was requested
     # but never bound.
     ports:
-      - "127.0.0.1:${MANTLE_WEB_DEBUG_PORT:-3000}:3000"
+      - '127.0.0.1:${MANTLE_WEB_DEBUG_PORT:-3000}:3000'
     # Liveness, in two parts — and the first part exists because the second
     # one lied.
     #
@@ -736,9 +810,9 @@ services:
     # port means no certificate — install.sh only moves these for installs that
     # aren't issuing one.
     ports:
-      - "${MANTLE_BIND_ADDR:-0.0.0.0}:${MANTLE_HTTP_PORT:-80}:80"
-      - "${MANTLE_BIND_ADDR:-0.0.0.0}:${MANTLE_HTTPS_PORT:-443}:443"
-      - "${MANTLE_BIND_ADDR:-0.0.0.0}:${MANTLE_HTTPS_PORT:-443}:443/udp" # HTTP/3 (QUIC)
+      - '${MANTLE_BIND_ADDR:-0.0.0.0}:${MANTLE_HTTP_PORT:-80}:80'
+      - '${MANTLE_BIND_ADDR:-0.0.0.0}:${MANTLE_HTTPS_PORT:-443}:443'
+      - '${MANTLE_BIND_ADDR:-0.0.0.0}:${MANTLE_HTTPS_PORT:-443}:443/udp' # HTTP/3 (QUIC)
     environment:
       # Drives the Caddyfile site block. Hostname → auto-TLS; ":80" → HTTP only.
       MANTLE_SITE_ADDRESS: ${MANTLE_SITE_ADDRESS:-:80}
@@ -785,7 +859,7 @@ services:
     restart: unless-stopped
     logging: *default-logging
     mem_limit: 128m
-    entrypoint: ["sh", "/updater.sh"]
+    entrypoint: ['sh', '/updater.sh']
     environment:
       MANTLE_STACK_DIR: ${MANTLE_STACK_DIR:-}
     volumes:
@@ -802,7 +876,7 @@ services:
   # and the container spec templated server-side. See server/sandboxd/src/main.ts.
   #
   # Sandbox containers live on the isolated `mantle_sandbox` network — egress
-  # only, NO route to postgres/minio/web. Each sandbox's /files is a host dir
+  # only, NO route to postgres/objectstore/web. Each sandbox's /files is a host dir
   # under MANTLE_SANDBOXES_HOST_DIR, mounted here at the SAME path (the updater's
   # trick) so the paths sandboxd mkdirs and the bind sources it hands the host
   # daemon are identical. Fresh installs enable this by default (install.sh
@@ -811,12 +885,12 @@ services:
   # by hand. Boxes without the profile don't run any of it.
   sandboxd:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ["pnpm", "-C", "server/sandboxd", "start"]
+    command: ['pnpm', '-C', 'server/sandboxd', 'start']
     container_name: mantle_sandboxd
     restart: unless-stopped
     logging: *default-logging
     mem_limit: 512m
-    profiles: ["sandboxes"]
+    profiles: ['sandboxes']
     environment:
       SANDBOXD_TOKEN: ${SANDBOXD_TOKEN:-}
       SANDBOXES_DIR: ${MANTLE_SANDBOXES_HOST_DIR:-/opt/mantle-data/sandboxes}
@@ -842,9 +916,9 @@ services:
     healthcheck:
       test:
         [
-          "CMD",
-          "node",
-          "-e",
+          'CMD',
+          'node',
+          '-e',
           "fetch('http://127.0.0.1:8090/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
         ]
       interval: 30s
@@ -861,7 +935,7 @@ services:
   # turning the probe into an actual self-heal. Scope is deliberately narrow —
   # AUTOHEAL_CONTAINER_LABEL=autoheal means it ONLY touches services that opt in
   # with `labels: [autoheal=true]` (the api + the 8 heartbeat workers), never
-  # postgres/minio/caddy/web (whose healthchecks predate this and must NOT bounce
+  # postgres/objectstore/caddy/web (whose healthchecks predate this and must NOT bounce
   # on a blip — restarting postgres on a transient probe miss is worse than the
   # blip).
   #
@@ -893,7 +967,17 @@ services:
     # the dashboard stack card) so the operator is the actuator of last resort.
     healthcheck:
       test:
-        ['CMD', 'curl', '--fail', '--silent', '--max-time', '4', '--unix-socket', '/var/run/docker.sock', 'http://localhost/_ping']
+        [
+          'CMD',
+          'curl',
+          '--fail',
+          '--silent',
+          '--max-time',
+          '4',
+          '--unix-socket',
+          '/var/run/docker.sock',
+          'http://localhost/_ping',
+        ]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -906,16 +990,16 @@ services:
   # the separate `agent` service). Same image, different command.
   api:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ["pnpm", "-C", "server/api", "start"]
+    command: ['pnpm', '-C', 'server/api', 'start']
     container_name: mantle_api
     restart: unless-stopped
     logging: *default-logging
-    # 1.5g fits an ordinary box. One carrying large Tables workbooks next to
-    # heavy extraction can spike past it: a cgroup OOM measured 2026-09-09 at
-    # ~1.46 GB anon-rss killed the runtime mid-extract and left extract jobs
-    # stranded 'active'. Such boxes set API_MEM_LIMIT=3g; the default is
-    # deliberately unchanged so no other box moves.
-    mem_limit: ${API_MEM_LIMIT:-1.5g}
+    # A box carrying large Tables workbooks next to heavy extraction spiked
+    # past the old 1.5g default: a cgroup OOM measured 2026-09-09 at ~1.46 GB
+    # anon-rss killed the runtime mid-extract and left extract jobs stranded
+    # 'active'. The default is 3g since 2026-09-24 (every box has >= 8 GB);
+    # a cap, not a reservation. API_MEM_LIMIT raises it per box.
+    mem_limit: ${API_MEM_LIMIT:-3g}
     # Heartbeat-based liveness (no HTTP port; DBOS admin server off by default).
     healthcheck: *worker-healthcheck
     # Flag this container for the autoheal sidecar: when the heartbeat probe
@@ -924,12 +1008,12 @@ services:
     labels:
       - autoheal=true
     depends_on:
-      postgres:      { condition: service_healthy }
-      minio:         { condition: service_healthy }
-      createbuckets: { condition: service_completed_successfully }
-      migrate:       { condition: service_completed_successfully }
+      postgres: { condition: service_healthy }
+      objectstore: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
     environment:
       <<: *app-env
+      MANTLE_SPACES_ROOT: /data/spaces
     volumes:
       - ${MANTLE_DATA_DIR:-./data}/files:/data/files
       # Per-app SQLite (APP_DB_DIR=/data/app-dbs) — the api also serves /apps
@@ -938,10 +1022,12 @@ services:
       # Per-table SQLite (TABLE_DB_DIR=/data/table-dbs) — same dual-mount
       # contract as app-dbs: agent table tools execute here too.
       - ${MANTLE_DATA_DIR:-./data}/table-dbs:/data/table-dbs
+      # Personal-space file bytes: the my-space agent tools read them here.
+      - ${MANTLE_DATA_DIR:-./data}/spaces:/data/spaces
 
   worker_email:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/email-sync.ts"]
+    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/email-sync.ts']
     container_name: mantle_worker_email
     restart: unless-stopped
     logging: *default-logging
@@ -953,16 +1039,15 @@ services:
     labels:
       - autoheal=true
     depends_on:
-      postgres:      { condition: service_healthy }
-      minio:         { condition: service_healthy }
-      createbuckets: { condition: service_completed_successfully }
-      migrate:       { condition: service_completed_successfully }
+      postgres: { condition: service_healthy }
+      objectstore: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
     environment:
       <<: *app-env
 
   worker_telegram:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/telegram-poll.ts"]
+    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/telegram-poll.ts']
     container_name: mantle_worker_telegram
     restart: unless-stopped
     logging: *default-logging
@@ -975,16 +1060,16 @@ services:
       - autoheal=true
     depends_on:
       postgres: { condition: service_healthy }
-      migrate:  { condition: service_completed_successfully }
+      migrate: { condition: service_completed_successfully }
     environment:
       <<: *app-env
 
   # Microsoft drive sync: delta-syncs enabled OneDrive / SharePoint document
-  # libraries into the brain as file nodes. Needs MinIO (file bytes → storage)
+  # libraries into the brain as file nodes. Needs the object store (file bytes → storage)
   # like the email worker.
   worker_microsoft:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/microsoft-sync.ts"]
+    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/microsoft-sync.ts']
     container_name: mantle_worker_microsoft
     restart: unless-stopped
     logging: *default-logging
@@ -996,10 +1081,9 @@ services:
     labels:
       - autoheal=true
     depends_on:
-      postgres:      { condition: service_healthy }
-      minio:         { condition: service_healthy }
-      createbuckets: { condition: service_completed_successfully }
-      migrate:       { condition: service_completed_successfully }
+      postgres: { condition: service_healthy }
+      objectstore: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
     environment:
       <<: *app-env
 
@@ -1007,7 +1091,7 @@ services:
   # changes (Syncthing / vim / cp) into the brain. Needs the files volume.
   worker_files:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/files-watch.ts"]
+    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/files-watch.ts']
     container_name: mantle_worker_files
     restart: unless-stopped
     logging: *default-logging
@@ -1019,10 +1103,9 @@ services:
     labels:
       - autoheal=true
     depends_on:
-      postgres:      { condition: service_healthy }
-      minio:         { condition: service_healthy }
-      createbuckets: { condition: service_completed_successfully }
-      migrate:       { condition: service_completed_successfully }
+      postgres: { condition: service_healthy }
+      objectstore: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
     environment:
       <<: *app-env
     volumes:
@@ -1035,7 +1118,7 @@ services:
   # operator opts in at /settings/documentation.
   worker_docs:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/docs-sync.ts"]
+    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/docs-sync.ts']
     container_name: mantle_worker_docs
     restart: unless-stopped
     logging: *default-logging
@@ -1048,7 +1131,7 @@ services:
       - autoheal=true
     depends_on:
       postgres: { condition: service_healthy }
-      migrate:  { condition: service_completed_successfully }
+      migrate: { condition: service_completed_successfully }
     environment:
       <<: *app-env
 
@@ -1056,7 +1139,7 @@ services:
   # reminders silently never fire in prod (they work in `pnpm dev`).
   worker_events:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/events-reminders.ts"]
+    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/events-reminders.ts']
     container_name: mantle_worker_events
     restart: unless-stopped
     logging: *default-logging
@@ -1069,9 +1152,10 @@ services:
       - autoheal=true
     depends_on:
       postgres: { condition: service_healthy }
-      migrate:  { condition: service_completed_successfully }
+      migrate: { condition: service_completed_successfully }
     environment:
       <<: *app-env
+      MANTLE_SPACES_ROOT: /data/spaces
     volumes:
       # Scheduled backups land here (see MANTLE_BACKUP_DIR in x-app-env).
       - ${MANTLE_DATA_DIR:-./data}/backups:/data/backups
@@ -1082,12 +1166,15 @@ services:
       # backup that silently contains no table or app data.
       - ${MANTLE_DATA_DIR:-./data}/table-dbs:/data/table-dbs
       - ${MANTLE_DATA_DIR:-./data}/app-dbs:/data/app-dbs
+      # Members' personal-space file bytes, archived by the same tick
+      # (mantle-spaces-<ts>.tgz). Read-only: this worker never writes them.
+      - ${MANTLE_DATA_DIR:-./data}/spaces:/data/spaces:ro
 
   # Calendar sync: pulls subscribed external calendars (ICS feeds; Google/MS
   # later) into the brain as event nodes. No volume — events live in Postgres.
   worker_calendar:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/calendar-sync.ts"]
+    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/calendar-sync.ts']
     container_name: mantle_worker_calendar
     restart: unless-stopped
     logging: *default-logging
@@ -1100,7 +1187,7 @@ services:
       - autoheal=true
     depends_on:
       postgres: { condition: service_healthy }
-      migrate:  { condition: service_completed_successfully }
+      migrate: { condition: service_completed_successfully }
     environment:
       <<: *app-env
 
@@ -1110,7 +1197,7 @@ services:
   # same history the CLI and the /debug/integrity Maintenance tab write.
   worker_maintenance:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/maintenance.ts"]
+    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/maintenance.ts']
     container_name: mantle_worker_maintenance
     restart: unless-stopped
     logging: *default-logging
@@ -1123,9 +1210,16 @@ services:
       - autoheal=true
     depends_on:
       postgres: { condition: service_healthy }
-      migrate:  { condition: service_completed_successfully }
+      migrate: { condition: service_completed_successfully }
     environment:
       <<: *app-env
+      MANTLE_SPACES_ROOT: /data/spaces
+    volumes:
+      # The nightly space-purge (member logins plan 6.4) deletes a deactivated
+      # login's private items after 30 days: the rows AND their bytes, so it
+      # writes both personal file bytes and personal table workbooks.
+      - ${MANTLE_DATA_DIR:-./data}/spaces:/data/spaces
+      - ${MANTLE_DATA_DIR:-./data}/table-dbs:/data/table-dbs
 
   # Runs worker — the runner-queue engine (docs/runs.md): dispatches queued
   # run items (tool/note now, worker agents in slice 2), runs responder resume
@@ -1134,7 +1228,7 @@ services:
   # healthy with the feature off.
   worker_runs:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/runs.ts"]
+    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/runs.ts']
     container_name: mantle_worker_runs
     restart: unless-stopped
     logging: *default-logging
@@ -1144,7 +1238,7 @@ services:
       - autoheal=true
     depends_on:
       postgres: { condition: service_healthy }
-      migrate:  { condition: service_completed_successfully }
+      migrate: { condition: service_completed_successfully }
     environment:
       <<: *app-env
 
@@ -1153,7 +1247,7 @@ services:
   # No-op until a device Connects (push_instance/push_subscriptions empty).
   worker_push:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/push-notify.ts"]
+    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/push-notify.ts']
     container_name: mantle_worker_push
     restart: unless-stopped
     logging: *default-logging
@@ -1166,6 +1260,6 @@ services:
       - autoheal=true
     depends_on:
       postgres: { condition: service_healthy }
-      migrate:  { condition: service_completed_successfully }
+      migrate: { condition: service_completed_successfully }
     environment:
       <<: *app-env

@@ -38,7 +38,8 @@ const appDel = APP_TOOLS.find((t) => t.slug === 'app_delete')!;
 const fileDel = APP_TOOLS.find((t) => t.slug === 'app_file_delete')!;
 const exportRm = APP_TOOLS.find((t) => t.slug === 'app_table_export_remove')!;
 
-const ctx: ToolHandlerContext = { ownerId: 'o1' };
+// The owner's chat: the app write tools run only for the owner (audit I8).
+const ctx: ToolHandlerContext = { ownerId: 'o1', surface: { kind: 'web' } };
 const APP_ID = '11111111-2222-4333-8444-555555555555';
 
 type Result = Awaited<ReturnType<BuiltinToolDef['handler']>>;

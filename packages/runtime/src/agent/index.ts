@@ -57,6 +57,7 @@ export {
 } from './skills';
 
 export { invokeAgent } from './invoke-agent';
+export { agentLevel, withAgentViewer } from './agent-viewer';
 
 export {
   recordTurn,

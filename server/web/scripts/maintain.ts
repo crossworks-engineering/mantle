@@ -133,10 +133,13 @@ async function run(slug: string, rawArgs: string[]): Promise<void> {
   }
 
   const live = isLiveRun(t, args);
-  if (live && (t.cost === 'llm' || t.cost === 'embedding') && !yes) {
+  const spend = live ? t.cost : t.dryRunCost;
+  if ((spend === 'llm' || spend === 'embedding') && !yes) {
     console.error(
-      `maintain: a live run of "${slug}" spends real ${t.cost} calls. Re-run with --yes to confirm.\n` +
-        `         (Preview first: ${t.applyFlag ? `omit ${t.applyFlag}` : `pass ${t.dryRunFlag ?? '(no dry-run mode)'}`}.)`,
+      live
+        ? `maintain: a live run of "${slug}" spends real ${spend} calls. Re-run with --yes to confirm.\n` +
+            `         (Preview first: ${t.applyFlag ? `omit ${t.applyFlag}` : `pass ${t.dryRunFlag ?? '(no dry-run mode)'}`}.)`
+        : `maintain: even a dry run of "${slug}" spends real ${spend} calls. Re-run with --yes to confirm.`,
     );
     process.exit(1);
   }

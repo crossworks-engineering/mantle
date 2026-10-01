@@ -34,8 +34,15 @@ import {
   type ProfilePreferences,
 } from '@mantle/content';
 import { step } from '@mantle/tracing';
+import {
+  conversationTaintKey,
+  loadConversationTaint,
+  newTurnTaint,
+  taintFromText,
+} from '@mantle/tools/client-sourced';
 import { stageLabelForStep } from './stage-label';
 import type { AssembledResponderTurn } from './assemble-turn';
+import { agentLevel, withAgentViewer } from '../agent/agent-viewer';
 
 /** Rebuild the persistable thought trail from a turn's tool calls — the same
  *  grounded action labels the live trail shows (search/write/delegate), via the
@@ -163,6 +170,9 @@ export type RunResponderLoopOptions = {
   /** The per-turn abort signal, when the surface supports Stop. An aborted
    *  turn keeps its partial reply — no fallback substitution. */
   abortSignal?: AbortSignal | null;
+  /** false: this turn neither starts from nor keeps the conversation's
+   *  client-sourced mark (a Studio simulation, which persists nothing). */
+  conversationTaint?: false;
 };
 
 /**
@@ -170,7 +180,14 @@ export type RunResponderLoopOptions = {
  * Everything before (inbound persistence, transcription, attachment ingest)
  * and after (delivery, outbound persistence) stays in the surface adapter.
  */
-export async function runResponderLoop(
+/** The responder loop, at the agent's level (member logins Phase 0b): every
+ *  tool it dispatches reads through row level security for a below-admin
+ *  agent, whoever called it. */
+export function runResponderLoop(opts: RunResponderLoopOptions): Promise<ResponderLoopResult> {
+  return withAgentViewer(opts.agent, () => runResponderLoopAtLevel(opts));
+}
+
+async function runResponderLoopAtLevel(
   opts: RunResponderLoopOptions,
 ): Promise<ResponderLoopResult> {
   const { agent, assembled } = opts;
@@ -204,6 +221,26 @@ export async function runResponderLoop(
     },
   );
 
+  // The conversation's mark (I9): a turn of a conversation that read
+  // client-written text in the last 24 hours starts marked, since the text
+  // is still in its history. Client-written text in the retrieval context (a
+  // reviewed client request is indexed like any task) marks the turn before
+  // any tool runs (plan N18), and renews the conversation's mark.
+  const taint =
+    opts.conversationTaint === false
+      ? newTurnTaint()
+      : await loadConversationTaint(opts.ownerId, conversationTaintKey(agent.id, opts.surface));
+  await taintFromText(
+    taint,
+    opts.ownerId,
+    [
+      ...ctx.facts.map((f) => f.sourceNodeId ?? ''),
+      ...ctx.contentHits.map((c) => c.nodeId),
+      ...ctx.chunkHits.map((c) => c.nodeId),
+    ].join(' '),
+    'context',
+  );
+
   const loop = await runToolLoop({
     adapter: opts.adapter,
     apiKey: opts.apiKey,
@@ -215,6 +252,7 @@ export async function runResponderLoop(
     ownerId: opts.ownerId,
     agentId: agent.id,
     agentSlug: agent.slug,
+    agentLevel: agentLevel(agent),
     agentDepth: 1,
     delegateTo: assembled.delegateTo,
     resultHandling: assembled.resultHandling,
@@ -224,6 +262,7 @@ export async function runResponderLoop(
     initialMessages: await opts.buildMessages(ctx),
     tools: assembled.allowedTools,
     surface: opts.surface,
+    taint,
   });
 
   // A user Stop ends the turn with whatever partial reply streamed (often

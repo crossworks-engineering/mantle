@@ -6,16 +6,146 @@
  * those tasks for the /team-admin Requests view and closes the loop by posting
  * the owner's resolution back into the member's thread.
  */
-import { and, desc, eq, sql } from 'drizzle-orm';
-import { db, nodes } from '@mantle/db';
+import { and, count, desc, eq, gte, sql } from 'drizzle-orm';
+import {
+  CLIENT_REQUEST_SOURCE,
+  REQUEST_SOURCES,
+  clientRequestFilings,
+  db,
+  nodes,
+  notifyNodeIngested,
+} from '@mantle/db';
 import { appendTeamMessage } from './team-messages';
 import type { TeamRequest } from '@mantle/client-types';
 export type { TeamRequest };
 
 export const TEAM_REQUEST_TAG = 'team-request';
 
+/**
+ * How many requests a member may file through the team agent (audit F08).
+ * Each one is an admin task in the review queue; the caps keep a runaway or
+ * injected turn from flooding it. Per turn = per inbound message; per day =
+ * the last 24 hours, per member login.
+ */
+export const TEAM_REQUESTS_PER_TURN = 3;
+export const TEAM_REQUESTS_PER_DAY = 20;
+
+/**
+ * A CLIENT's request (client logins C4, `client_request_create`) is a team
+ * request too: the same task, tag and Requests queue, so an admin's reply
+ * reaches the client's thread by login. It also carries this tag, and
+ * `data.source = 'client-request'` (client-sourced text, extract-exempt until
+ * an admin acts). Lower caps than a member's (plan section 8).
+ */
+export const CLIENT_REQUEST_TAG = 'client-request';
+export const CLIENT_REQUESTS_PER_TURN = 3;
+export const CLIENT_REQUESTS_PER_DAY = 10;
+
+/**
+ * Team requests already filed: those stamped with this inbound message (the
+ * turn), or by this requester since `since`. The tasks are admin level: a
+ * caller on the limited team role (the team turn) must run this inside
+ * `asSystem`, as `team_request_create` does, or it counts nothing and the cap
+ * never closes.
+ */
+export async function countTeamRequestsFiled(
+  ownerId: string,
+  by:
+    | { threadMessageId: string }
+    | { loginId: string; since: Date }
+    | { contactId: string; since: Date },
+): Promise<number> {
+  const conds = [
+    eq(nodes.ownerId, ownerId),
+    eq(nodes.type, 'task'),
+    sql`${TEAM_REQUEST_TAG} = ANY(${nodes.tags})`,
+  ];
+  if ('threadMessageId' in by) {
+    conds.push(sql`${nodes.data}->'teamRequest'->>'threadMessageId' = ${by.threadMessageId}`);
+  } else {
+    conds.push(gte(nodes.createdAt, by.since));
+    conds.push(
+      'loginId' in by
+        ? sql`${nodes.data}->'teamRequest'->>'loginId' = ${by.loginId}`
+        : sql`${nodes.data}->'teamRequest'->>'contactId' = ${by.contactId}`,
+    );
+  }
+  const [row] = await db
+    .select({ n: count() })
+    .from(nodes)
+    .where(and(...conds));
+  return row?.n ?? 0;
+}
+
+/**
+ * Client requests filed, from the ledger (client_request_filings, migration
+ * 0197): those of this inbound message (the turn), or by this client login
+ * since `since`. A row is written for every request filed and never removed
+ * with the task, so deleting a request never gives the quota back (C5 audit
+ * fix I12). Admin level: run it inside `asSystem`, as client_request_create
+ * does.
+ */
+export async function countClientRequestFilings(
+  ownerId: string,
+  by: { threadMessageId: string } | { loginId: string; since: Date },
+): Promise<number> {
+  const conds = [eq(clientRequestFilings.ownerId, ownerId)];
+  if ('threadMessageId' in by) {
+    conds.push(eq(clientRequestFilings.threadMessageId, by.threadMessageId));
+  } else {
+    conds.push(eq(clientRequestFilings.loginId, by.loginId));
+    conds.push(gte(clientRequestFilings.createdAt, by.since));
+  }
+  const [row] = await db
+    .select({ n: count() })
+    .from(clientRequestFilings)
+    .where(and(...conds));
+  return row?.n ?? 0;
+}
+
+/** Record one client request filed, in the ledger the caps count. */
+export async function recordClientRequestFiling(
+  ownerId: string,
+  row: { loginId: string; threadMessageId: string | null; taskId: string },
+): Promise<void> {
+  await db.insert(clientRequestFilings).values({ ownerId, ...row });
+}
+
+/**
+ * An admin acted on a team request (edited it, closed it, answered it): stamp
+ * `data.reviewed_at` so the extractor may index it from now on
+ * (extract-exempt.ts), and announce it once, as an ordinary task's insert is
+ * announced. A no-op for any other task and for one already reviewed. Called
+ * from the admin paths only (the task routes and tools, the Requests reply).
+ */
+export async function markTeamRequestReviewed(ownerId: string, taskId: string): Promise<boolean> {
+  const rows = await db
+    .update(nodes)
+    .set({
+      data: sql`coalesce(${nodes.data}, '{}'::jsonb) || jsonb_build_object('reviewed_at', ${new Date().toISOString()}::text)`,
+    })
+    .where(
+      and(
+        eq(nodes.id, taskId),
+        eq(nodes.ownerId, ownerId),
+        eq(nodes.type, 'task'),
+        sql`${nodes.data}->>'source' in (${sql.join(
+          REQUEST_SOURCES.map((s) => sql`${s}`),
+          sql`, `,
+        )})`,
+        sql`coalesce(${nodes.data}->>'reviewed_at', '') = ''`,
+      ),
+    )
+    .returning({ id: nodes.id });
+  if (!rows.length) return false;
+  await notifyNodeIngested(taskId);
+  return true;
+}
+
 type TeamRequestData = {
-  contactId?: string;
+  contactId?: string | null;
+  /** The member login that filed it (team_request_create stamps both). */
+  loginId?: string | null;
   contactName?: string | null;
   notifiedAt?: string | null;
 };
@@ -23,6 +153,24 @@ type TeamRequestData = {
 /** Every team-request task for this owner, newest first. `contactId` narrows
  *  to one requester — the Members tab's per-person view (filtered in SQL, not
  *  by loading the whole queue and discarding most of it). */
+/** Unresolved team requests, counted (the Requests badge and the "needs you"
+ *  count): the same condition as `listTeamRequests` with status 'open', with
+ *  no cap. */
+export async function countOpenTeamRequests(ownerId: string): Promise<number> {
+  const [r] = await db
+    .select({ n: count() })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, ownerId),
+        eq(nodes.type, 'task'),
+        sql`${TEAM_REQUEST_TAG} = ANY(${nodes.tags})`,
+        sql`coalesce(${nodes.data}->>'status', 'open') <> 'done'`,
+      ),
+    );
+  return Number(r?.n ?? 0);
+}
+
 export async function listTeamRequests(
   ownerId: string,
   opts: { status?: 'open' | 'done' | 'all'; limit?: number; contactId?: string } = {},
@@ -63,21 +211,28 @@ export async function listTeamRequests(
       priority: typeof d.priority === 'string' ? d.priority : 'normal',
       createdAt: r.createdAt.toISOString(),
       contactId: typeof tr.contactId === 'string' ? tr.contactId : null,
+      loginId: typeof tr.loginId === 'string' && tr.loginId ? tr.loginId : null,
       contactName: typeof tr.contactName === 'string' ? tr.contactName : null,
       notifiedAt: typeof tr.notifiedAt === 'string' ? tr.notifiedAt : null,
+      ...(d.source === CLIENT_REQUEST_SOURCE ? { fromClient: true } : {}),
     };
   });
 }
 
 export type NotifyTeamRequesterResult =
-  { ok: true; contactId: string } | { ok: false; error: string };
+  { ok: true; contactId: string | null; loginId: string | null } | { ok: false; error: string };
 
 /**
  * Close the loop on a team request: post the owner's reply into the requesting
- * member's thread (an outbound message with no agent — a human admin note),
+ * member's thread (an outbound message with no agent, a human admin note),
  * stamp `data.teamRequest.notifiedAt`, and optionally mark the task done. The
  * message + the task stamp are the durable record; the member sees the reply
- * next time they open Team Chat.
+ * the next time they open their chat.
+ *
+ * A request a member LOGIN filed goes into that login's own thread (the one
+ * the dock shows). Only a request from the retired team-code portal, with a
+ * contact and no login, still lands in the contact's old thread, where
+ * admins read it as history (Phase 6).
  */
 export async function notifyTeamRequester(
   ownerId: string,
@@ -96,13 +251,18 @@ export async function notifyTeamRequester(
 
   const d = (task.data ?? {}) as Record<string, unknown>;
   const tr = (d.teamRequest ?? {}) as TeamRequestData;
-  if (!tr.contactId) return { ok: false, error: 'not a team request (no requester on file)' };
+  const loginId = typeof tr.loginId === 'string' && tr.loginId ? tr.loginId : null;
+  const contactId = typeof tr.contactId === 'string' && tr.contactId ? tr.contactId : null;
+  if (!loginId && !contactId) {
+    return { ok: false, error: 'not a team request (no requester on file)' };
+  }
 
-  // The reply lands in the member's thread as an outbound message. No agentId —
-  // it's the brain admin speaking, not the responder.
+  // The reply lands in the requester's thread as an outbound message. No
+  // agentId: it is the brain admin speaking, not the responder.
   await appendTeamMessage({
     ownerId,
-    contactId: tr.contactId,
+    contactId: loginId ? null : contactId,
+    loginId,
     direction: 'outbound',
     text,
     channel: 'web',
@@ -121,6 +281,9 @@ export async function notifyTeamRequester(
       updatedAt: new Date(),
     })
     .where(and(eq(nodes.id, taskId), eq(nodes.ownerId, ownerId)));
+  // Answering the member is an admin acting on the request: from now on the
+  // extractor may index it (audit F08).
+  await markTeamRequestReviewed(ownerId, taskId);
 
-  return { ok: true, contactId: tr.contactId };
+  return { ok: true, contactId, loginId };
 }

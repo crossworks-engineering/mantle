@@ -1,10 +1,12 @@
 /**
  * Email-sync worker. Runs as a separate Node process during `pnpm dev`.
  *
- * Three queues:
+ * Four queues:
  *   - mantle.email.sync       — single-flight per-account incremental sync
  *   - mantle.email.backfill   — per-sender 90-day backfill when a sender is approved
  *   - mantle.email.scheduler  — fan-out: enqueues a `sync` job for every enabled account
+ *   - mantle.client.code      — a client sign-in code request (client logins C2b):
+ *                               decide, store the code, mail it from the sign-in sender
  *
  * The scheduler is itself a recurring pg-boss job (every 2 minutes). The
  * sync queue uses `singletonKey: accountId` so two ticks can't stomp on
@@ -17,6 +19,7 @@ import { BACKFILL_QUEUE, backfillMatch, imap, syncAccount } from '@mantle/email'
 import { db, emailAccounts } from '@mantle/db';
 import { maskEmail } from './mask-email';
 import { runQueueWorker } from './_runner';
+import { CLIENT_CODE_QUEUE, workClientCodeQueue } from '../lib/client-codes';
 
 const SYNC_QUEUE = 'mantle.email.sync';
 const SCHEDULER_QUEUE = 'mantle.email.scheduler';
@@ -124,5 +127,15 @@ runQueueWorker('email-sync', async ({ boss }) => {
     }
   });
 
-  console.log('[email-sync] queues:', [SYNC_QUEUE, BACKFILL_QUEUE, SCHEDULER_QUEUE].join(', '));
+  // ── client sign-in codes ─────────────────────────────────────────────
+  // Queued by POST /api/auth/client-code, which answers the same for every
+  // email; the lookup, the caps and the mail happen here. The log names the
+  // outcome only, never the email or the code. Short job retention (the
+  // jobs carry an email and an address): lib/client-codes.ts.
+  await workClientCodeQueue(boss);
+
+  console.log(
+    '[email-sync] queues:',
+    [SYNC_QUEUE, BACKFILL_QUEUE, SCHEDULER_QUEUE, CLIENT_CODE_QUEUE].join(', '),
+  );
 });

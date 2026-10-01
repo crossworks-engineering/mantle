@@ -22,7 +22,25 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { Param, SQL } from 'drizzle-orm';
 
-const agentRows: Array<{ id: string; personaNotes: unknown[] }> = [];
+const agentRows: Array<{ id: string; personaNotes: unknown[]; memoryConfig?: unknown }> = [];
+let reconcileReport: unknown = null;
+const writeLearned = vi.fn(async (...args: unknown[]) => ({
+  written: (args[2] as Array<{ content: string }>).map((n) => ({
+    kind: 'preference',
+    content: n.content,
+  })),
+  reconcile: reconcileReport,
+}));
+vi.mock('./rule-reconciler', () => ({
+  ruleReconcilerFor: (ownerId: string) => ({ ownerId }),
+  reconcileMeta: (r: { mode: string }) => ({ mode: r.mode }),
+}));
+
+vi.mock('@mantle/content', () => ({
+  notesTargetOf: (m: { notes_target?: string } | null | undefined) =>
+    m?.notes_target === 'persona' ? 'persona' : 'journal',
+  writeLearnedEntries: (...args: unknown[]) => writeLearned(...args),
+}));
 const selectChain = {
   from: vi.fn().mockReturnThis(),
   where: vi.fn().mockReturnThis(),
@@ -80,7 +98,13 @@ const FORMAL = { id: 'n-formal', kind: 'style', content: 'Formal tone.', at: 't0
 beforeEach(() => {
   vi.clearAllMocks();
   // clearAllMocks clears CALLS, not implementations: re-establish defaults.
-  agentRows.splice(0, agentRows.length, { id: 'a1', personaNotes: [BULLETS, FORMAL] });
+  // The persona-notes path is an explicit opt-out since the Journal became
+  // the default (2026-09-24).
+  agentRows.splice(0, agentRows.length, {
+    id: 'a1',
+    personaNotes: [BULLETS, FORMAL],
+    memoryConfig: { notes_target: 'persona' },
+  });
   selectChain.from.mockReturnThis();
   selectChain.where.mockReturnThis();
   selectChain.limit.mockImplementation(async () => agentRows);
@@ -152,6 +176,98 @@ describe('update_persona', () => {
       retired: [{ ref: 'n-bullets', reason: 'superseded' }],
       active_note_count: 2,
     });
+  });
+
+  it('notes_target = journal: an add becomes a general Journal entry, the persona array is untouched', async () => {
+    agentRows.splice(0, agentRows.length, {
+      id: 'a1',
+      personaNotes: [BULLETS],
+      memoryConfig: { notes_target: 'journal' },
+    });
+    const res = await tool.handler(
+      { add: { kind: 'style', content: 'Prefers prose.' }, supersede_refs: ['n-bullets'] },
+      ctx,
+    );
+    // The entry is written, and the model is told the old one was NOT
+    // retired (persona refs mean nothing in the Journal), never "done".
+    expect(outputOf(res)).toMatchObject({
+      journal: { kind: 'preference', content: 'Prefers prose.' },
+      not_retired: expect.stringMatching(/journal_list[\s\S]*journal_update/),
+    });
+    expect(writeLearned).toHaveBeenCalledWith(
+      'o1',
+      'responder',
+      [{ kind: 'style', content: 'Prefers prose.', scope: 'general' }],
+      'update_persona',
+      { reconcile: { ownerId: 'o1' } },
+    );
+    expect(db.update).not.toHaveBeenCalled();
+  });
+
+  it('notes_target = journal: a plain add reports no retirement note', async () => {
+    agentRows.splice(0, agentRows.length, {
+      id: 'a1',
+      personaNotes: [],
+      memoryConfig: { notes_target: 'journal' },
+    });
+    const res = await tool.handler(
+      { add: { kind: 'correction', content: 'Use US spelling.' } },
+      ctx,
+    );
+    expect(outputOf(res)).toEqual({ journal: { kind: 'preference', content: 'Use US spelling.' } });
+  });
+
+  it('notes_target = journal: a live rule_reconcile retire is reported to the model', async () => {
+    agentRows.splice(0, agentRows.length, {
+      id: 'a1',
+      personaNotes: [],
+      memoryConfig: { notes_target: 'journal' },
+    });
+    reconcileReport = {
+      mode: 'live',
+      threshold: 0.8,
+      pairs: 1,
+      calls: 1,
+      failed: 0,
+      ms: 300,
+      errors: 0,
+      retires: [
+        {
+          olderId: 'j-old',
+          newerId: 'j-new',
+          older: 'Use British spelling.',
+          newer: 'Use US spelling.',
+          same: 0.1,
+          replaces: 0.93,
+        },
+      ],
+    };
+    try {
+      const res = await tool.handler(
+        { add: { kind: 'correction', content: 'Use US spelling.' }, supersede_refs: ['n-x'] },
+        ctx,
+      );
+      expect(outputOf(res)).toMatchObject({
+        journal: { kind: 'preference', content: 'Use US spelling.' },
+        retired: ['Use British spelling.'],
+        not_retired: expect.stringMatching(/superseded automatically/),
+      });
+    } finally {
+      reconcileReport = null;
+    }
+  });
+
+  it('notes_target = journal: refs alone point at the Journal tools', async () => {
+    agentRows.splice(0, agentRows.length, {
+      id: 'a1',
+      personaNotes: [BULLETS],
+      memoryConfig: { notes_target: 'journal' },
+    });
+    expect(errorOf(await tool.handler({ remove_refs: ['n-bullets'] }, ctx))).toMatch(
+      /journal_update/,
+    );
+    expect(writeLearned).not.toHaveBeenCalled();
+    expect(db.update).not.toHaveBeenCalled();
   });
 
   it('supersede_refs without an add retires nothing (no replacement, no write)', async () => {

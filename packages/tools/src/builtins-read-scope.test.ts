@@ -36,7 +36,8 @@ vi.mock('@mantle/db', async (importOriginal) => {
     then: (res: (v: unknown) => void, rej?: (e: unknown) => void) =>
       Promise.resolve(selectQueue.shift() ?? []).then(res, rej),
   };
-  return { ...actual, db: { ...actual.db, select: vi.fn(() => chain) } };
+  const fake = { ...actual.db, select: vi.fn(() => chain) };
+  return { ...actual, db: fake, systemDb: fake };
 });
 
 import { paramsOf } from './test-support';
@@ -107,27 +108,31 @@ describe('telegram_pending', () => {
  * teaching error — as long as the lookup it DID issue carried the owner. The
  * scope has to be in the query, not in whether the row came back.
  */
-const SCOPED_READS: Array<[string, Record<string, unknown>]> = [
+/** The Recall tools answer owner surfaces only (a missing surface is not the
+ *  owner), so they are driven as the owner's MCP client. */
+const OWNER_SURFACE = { surface: { kind: 'owner', via: 'mcp' } } as Partial<ToolHandlerContext>;
+
+const SCOPED_READS: Array<[string, Record<string, unknown>, Partial<ToolHandlerContext>?]> = [
   ['agent_list', {}],
   ['tool_group_list', {}],
   ['worker_group_list', {}],
   ['tree_list', {}],
   ['node_read', { node_id: 'n1' }],
   ['file_read', { file_id: 'f1' }],
-  ['recall_index', {}],
-  ['recall_open', { map: 'm' }],
-  ['recall_go', { map: 'm', target: 't' }],
+  ['recall_index', {}, OWNER_SURFACE],
+  ['recall_open', { map: 'm' }, OWNER_SURFACE],
+  ['recall_go', { map: 'm', target: 't' }, OWNER_SURFACE],
   ['find_window', { topic: 'x' }],
   ['replay_window', { from: '2026-01-01T00:00:00Z', to: '2026-01-02T00:00:00Z' }],
   ['run_state', { run_id: 'r1' }],
 ];
 
-describe.each(SCOPED_READS)('%s', (slug, input) => {
+describe.each(SCOPED_READS)('%s', (slug, input, extra) => {
   it('binds the caller owner id into every lookup it issues', async () => {
     for (let i = 0; i < 6; i++) selectQueue.push([]);
     const def = BUILTIN_TOOLS.find((t) => t.slug === slug);
     expect(def, `${slug} is no longer a builtin`).toBeTruthy();
-    await def!.handler(input, ctx);
+    await def!.handler(input, { ...ctx, ...extra });
     expect(whereArgs.length, `${slug} issued no WHERE`).toBeGreaterThan(0);
     expect(scopedByOwner(), `${slug} queried without an owner clause`).toBe(true);
   });

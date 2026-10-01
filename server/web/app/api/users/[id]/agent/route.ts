@@ -34,7 +34,7 @@ const PutBody = z.object({
 
 async function targetUser(id: string) {
   const [row] = await db
-    .select({ id: authUsers.id, email: authUsers.email })
+    .select({ id: authUsers.id, email: authUsers.email, role: authUsers.role })
     .from(authUsers)
     .where(eq(authUsers.id, id))
     .limit(1);
@@ -55,6 +55,21 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
 
   const target = await targetUser(targetId);
   if (!target) return NextResponse.json({ error: 'User not found.' }, { status: 404 });
+  // A member chats only with team-level agents (member-logins.md section 3):
+  // a personal assistant is an admin's, and ONLY an admin's (client logins
+  // C0: any other role is refused, not only member). Demoting a login
+  // releases it.
+  if (target.role !== 'admin') {
+    return NextResponse.json(
+      {
+        error:
+          target.role === 'member'
+            ? 'A member login cannot have a personal assistant.'
+            : 'Only an admin login can have a personal assistant.',
+      },
+      { status: 400 },
+    );
+  }
 
   const { name, sourceAgentId } = parsed.data;
 

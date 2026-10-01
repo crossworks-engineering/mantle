@@ -39,7 +39,7 @@ type OrChatResponse = {
 function headers(apiKey: string): Record<string, string> {
   return {
     Authorization: `Bearer ${apiKey}`,
-    'HTTP-Referer': 'https://mantle.crossworks.network',
+    'HTTP-Referer': 'https://mantle-ai.tech',
     'X-Title': 'Mantle',
     'Content-Type': 'application/json',
   };

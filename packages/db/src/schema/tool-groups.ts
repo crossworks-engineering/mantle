@@ -197,6 +197,9 @@ export const toolGroups = pgTable(
     /** Service binding when this group IS an API integration; NULL otherwise. */
     integration: jsonb('integration').$type<ToolGroupIntegration>(),
     enabled: boolean('enabled').default(true).notNull(),
+    /** The group's level (admin | team | client | public): an agent may hold
+     *  only groups at or below its own level. Default admin. */
+    audience: text('audience').notNull().default('admin'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },

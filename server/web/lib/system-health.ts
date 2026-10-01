@@ -210,14 +210,14 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
     }
   }
 
-  const [load, mem, disk, pg, attBytes, minioUp, tikaVer, browserH, emb, net, sbx, media] =
+  const [load, mem, disk, pg, attBytes, storeUp, tikaVer, browserH, emb, net, sbx, media] =
     await Promise.all([
       probe('host.cpu', () => si.currentLoad()),
       probe('host.mem', () => si.mem()),
       probe('host.disk', () => filesDisk()),
       probe('postgres', () => pgHealth()),
       probe('storage.attachments', () => attachmentBytes(userId)),
-      probe('storage.minio', () => bucketReachable()),
+      probe('storage.objectstore', () => bucketReachable()),
       // tikaVersion is itself never-throws (returns null on any failure),
       // so the probe wrapper is mostly belt-and-braces here — the timeout
       // still applies if the wrapper hangs longer than expected.
@@ -267,7 +267,8 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
       topTables: pg?.topTables ?? [],
     },
     storage: {
-      minioUp: minioUp,
+      objectStoreUp: storeUp,
+      minioUp: storeUp,
       attachmentBytes: attBytes,
       filesDisk: disk,
     },

@@ -31,6 +31,7 @@ import {
   type AssistantTurnRunResult,
 } from '@mantle/runtime/assistant';
 import { errorMessage } from '@mantle/std';
+import { assertNoViewer } from '@mantle/db/viewer';
 
 export type { AssistantTurnInput, AssistantTurnRunResult };
 
@@ -108,6 +109,7 @@ export const assistantTurnWorkflow = DBOS.registerWorkflow(assistantTurnImpl, {
  *  route enqueues cross-process via DBOSClient instead — Step 5. `workflowID`,
  *  when supplied (e.g. the inbound message id), makes the enqueue idempotent. */
 export function enqueueAssistantTurn(input: AssistantTurnInput, opts?: { workflowID?: string }) {
+  assertNoViewer('enqueueAssistantTurn');
   return DBOS.startWorkflow(assistantTurnWorkflow, {
     queueName: RUNNER_QUEUE,
     ...(opts?.workflowID ? { workflowID: opts.workflowID } : {}),

@@ -272,6 +272,10 @@ const CHAT_CATALOG_KINDS = new Set([
   'search_advanced',
   'narrator',
   'suggester',
+  // The decider's model is in the same catalog (OpenRouter lists Jev with
+  // output modality `decisions`); the existence check applies, and there is
+  // no curated pool for it so the modality check is a no-op.
+  'decider',
 ]);
 
 /**

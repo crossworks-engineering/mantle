@@ -86,6 +86,21 @@ export type ModelSpend = {
   tokensOut: number;
   cacheReadTokens: number;
   calls: number;
+  /** Per-use split of this model's calls, for models that serve typed
+   *  decisions (trace_steps.meta.use, the decider's uses). Absent otherwise. */
+  uses?: UseSpend[];
+};
+
+/** One decider use's share of a model's spend (see ModelSpend.uses). */
+export type UseSpend = {
+  use: string;
+  costMicroUsd: number;
+  tokensIn: number;
+  calls: number;
+  /** Calls that returned no decision (step skipped: decision_failed). */
+  failed: number;
+  /** Mean call time over the answered calls, from meta.decision_ms. */
+  avgMs: number | null;
 };
 
 export type DailySpend = {
@@ -580,6 +595,10 @@ export type SystemHealth = {
     topTables: { name: string; bytes: number }[];
   };
   storage: {
+    /** The object store answered (any S3 backend). */
+    objectStoreUp: boolean | null;
+    /** @deprecated Same value as `objectStoreUp`; kept for clients built
+     *  before the object store went backend-neutral. */
     minioUp: boolean | null;
     attachmentBytes: number | null;
     filesDisk: DiskInfo | null;

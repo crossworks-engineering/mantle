@@ -8,6 +8,8 @@ import { buildSessionCookie, SESSION_COOKIE_NAME } from '@/lib/auth';
 import { secureCookies } from '@/lib/auth-constants';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { clientIp, rateLimit } from '@/lib/rate-limit';
+import { refuseCrossSiteAuthPost } from '@/lib/auth/preflight';
+import { AUTH_BODY_CEILING_BYTES, readJsonCapped } from '@/lib/body-limit';
 
 /**
  * First-run account creation — the signup that replaces the old manual
@@ -23,6 +25,8 @@ const SignupBody = z.object({
 });
 
 export async function POST(req: Request) {
+  const refused = refuseCrossSiteAuthPost(req);
+  if (refused) return refused;
   // Rate limit before the (intentionally slow) bcrypt hash.
   const ip = clientIp(req);
   const limit = rateLimit(`auth:signup:${ip}`, { max: 5, windowMs: 60_000 });
@@ -41,7 +45,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const raw = await req.json().catch(() => ({}));
+  const raw = (await readJsonCapped(req, AUTH_BODY_CEILING_BYTES)) ?? {};
   const parsed = SignupBody.safeParse(raw);
   if (!parsed.success) {
     return NextResponse.json(
@@ -62,9 +66,11 @@ export async function POST(req: Request) {
   try {
     // is_owner: the first-run account is the ANCHOR — the identity all brain
     // content is keyed to. Later co-admin logins (Settings → Logins) are not.
+    // The role is named: the column has no default (0190), and the anchor is
+    // always an admin (CHECK).
     const inserted = await db.execute(sql`
-      INSERT INTO auth.users (id, email, password_hash, is_owner)
-      SELECT ${id}, ${email}, ${passwordHash}, true
+      INSERT INTO auth.users (id, email, password_hash, is_owner, role)
+      SELECT ${id}, ${email}, ${passwordHash}, true, 'admin'
       WHERE NOT EXISTS (SELECT 1 FROM auth.users)
       RETURNING id
     `);
@@ -92,7 +98,8 @@ export async function POST(req: Request) {
   });
 
   // Sign them straight in — onboarding picks up from /onboarding.
-  const { value, maxAgeSec } = buildSessionCookie(id);
+  // A brand-new login: its session epoch is the column default, 0.
+  const { value, maxAgeSec } = buildSessionCookie(id, { epoch: 0 });
   const res = NextResponse.json({ ok: true });
   res.cookies.set(SESSION_COOKIE_NAME, value, {
     httpOnly: true,

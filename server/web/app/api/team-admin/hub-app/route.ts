@@ -1,27 +1,26 @@
 /**
- * Owner-only designation of the TEAM HUB APP — the mini-app the /team shell
- * renders full-bleed in place of the built-in hub (see @mantle/content/team-hub
- * `resolveTeamHubApp` for the chain that must hold at read time).
+ * Owner-only designation of the HOME APP: the mini-app a member login's home
+ * renders full-bleed in place of the built-in member home
+ * (`resolveMemberHomeApp`, GET /api/member/home). The pref is still named
+ * `teamHubAppId`: the retired team-code /hub (member logins Phase 6) was its
+ * first reader.
  *
- * PUT { appId } — designate: requires a green PUBLISHED build, then ensures the
- * app's active share exists and is TEAM-mode (members authenticate to
- * /s/<token>/* with the team cookie), then points the `teamHubAppId` pref at
- * it. Share creation happens HERE, at designation time — never as a side
- * effect of a member loading the hub.
+ * PUT { appId } — designate: requires a green PUBLISHED build, puts an app
+ * still at admin at team (members run apps by level, not by link), then
+ * points the `teamHubAppId` pref at it. An app at team, client or public
+ * keeps its level. No share link is made (team links are retired, member
+ * logins Phase 6 stage 6). Answers `{ appId, levelChanged }`.
  *
- * DELETE — undesignate: clears the pref only. The share is left alone (it may
- * be serving other purposes); revoking it stays a separate, deliberate act on
- * the app's own share controls.
+ * DELETE — undesignate: clears the pref only. The app keeps its level.
  *
  * Session-gated — under /api/team-admin, which is NOT in PUBLIC_PATHS, so it
  * carries the owner session, never a team token.
  */
 import { NextResponse } from '@/server/http-compat';
 import {
-  createShare,
   getApp,
   projectTeamHubAppId,
-  setShareMode,
+  setItemLevel,
   updateProfilePreferences,
 } from '@mantle/content';
 import { getOwnerOr401 } from '@/lib/auth';
@@ -52,15 +51,13 @@ export async function PUT(req: Request) {
     );
   }
 
-  // Idempotent: returns the existing active share when there is one. If that
-  // share was PUBLIC we flip it to team — the hub slot must never be reachable
-  // without a member token. Surfaced in the response so the UI can say so.
-  const share = await createShare(user.id, appId);
-  const modeChanged = share.mode !== 'team';
-  if (modeChanged) await setShareMode(user.id, share.id, 'team');
+  // A member runs an app at team, client or public (resolveMemberHomeApp);
+  // one still at admin goes to team, or the designation would show nobody.
+  const levelChanged = app.audience === 'admin';
+  if (levelChanged) await setItemLevel(user.id, appId, 'team');
 
   await updateProfilePreferences(user.id, { teamHubAppId: appId });
-  return NextResponse.json({ appId, shareToken: share.token, modeChanged });
+  return NextResponse.json({ appId, levelChanged });
 }
 
 export async function DELETE() {

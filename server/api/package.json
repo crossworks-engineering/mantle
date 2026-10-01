@@ -8,6 +8,7 @@
     "start": "tsx --env-file-if-exists=../web/.env.local src/main.ts",
     "provision": "tsx --env-file-if-exists=../web/.env.local src/provision.ts",
     "smoke": "tsx --env-file-if-exists=../web/.env.local src/smoke.ts",
+    "bench:memory": "tsx src/bench/run.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -18,6 +19,7 @@
     "@mantle/content": "workspace:*",
     "@mantle/content-core": "workspace:*",
     "@mantle/db": "workspace:*",
+    "@mantle/decisions": "workspace:*",
     "@mantle/embeddings": "workspace:*",
     "@mantle/files": "workspace:*",
     "@mantle/runs": "workspace:*",

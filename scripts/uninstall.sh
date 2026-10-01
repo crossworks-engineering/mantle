@@ -115,7 +115,7 @@ fi
 if [[ -d "$DATA_DIR" ]]; then
   # A bare "0" next to "WILL BE DELETED" reads as "there's nothing here" — the
   # opposite of what a confirmation should convey if du just can't measure it.
-  # `|| true`: on a real deploy the postgres/minio subdirs are root-owned, so
+  # `|| true`: on a real deploy the postgres/rustfs subdirs are root-owned, so
   # du prints a partial total but EXITS NONZERO — under pipefail + set -e that
   # killed the whole uninstall right after the summary (found on the first
   # non-root --purge run). The partial size is still worth showing.

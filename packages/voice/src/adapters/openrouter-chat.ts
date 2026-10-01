@@ -526,8 +526,10 @@ async function openrouterChat(opts: ChatOptions): Promise<ChatResult> {
     ...(typeof opts.maxTokens === 'number' ? { maxTokens: opts.maxTokens } : {}),
     ...(typeof opts.topP === 'number' ? { topP: opts.topP } : {}),
     ...(reasoningParam ? { reasoning: reasoningParam } : {}),
+    ...affinity(opts).body,
     ...(opts.extra ?? {}),
   };
+  const affinityHeaders = affinity(opts).headers;
   // Every other adapter bounds its one-shot call with
   // `chatAbortSignal(opts.signal, 60_000)`; this one passed no options at all,
   // so a user Stop was a no-op and a stalled request had nothing to end it.
@@ -538,8 +540,15 @@ async function openrouterChat(opts: ChatOptions): Promise<ChatResult> {
       client.chat.send(
         {
           chatRequest,
+          // Routing metadata on the response: which upstream served the call.
+          xOpenRouterMetadata: 'enabled',
         },
-        { signal: callSignal, timeoutMs: ONE_SHOT_TIMEOUT_MS, retries: sdkRetries() },
+        {
+          signal: callSignal,
+          timeoutMs: ONE_SHOT_TIMEOUT_MS,
+          retries: sdkRetries(),
+          ...(affinityHeaders ? { headers: affinityHeaders } : {}),
+        },
       ),
       callSignal,
     );
@@ -602,9 +611,13 @@ async function openrouterChat(opts: ChatOptions): Promise<ChatResult> {
     orChoice?.finishReason ?? orChoice?.finish_reason,
   );
 
+  const servedBy = servedProvider(
+    (result as { openrouterMetadata?: OrRoutingMeta }).openrouterMetadata,
+  );
   return {
     text,
     model: (result as { model?: string }).model || opts.model,
+    ...(servedBy ? { servedBy } : {}),
     ...(toolCalls && toolCalls.length > 0 ? { toolCalls } : {}),
     ...(finishReason ? { finishReason } : {}),
     tokensIn: usage?.promptTokens,
@@ -722,11 +735,51 @@ async function openrouterDiscover(apiKey: string): Promise<DiscoveryResult<ChatM
   }
 }
 
+/** Routing metadata OpenRouter returns when asked (`X-OpenRouter-Metadata:
+ *  enabled`): on the result, or on the final stream chunk. */
+type OrRoutingMeta = {
+  attempts?: Array<{ provider?: string; status?: number }>;
+  endpoints?: { available?: Array<{ provider?: string; selected?: boolean }> };
+  summary?: string;
+};
+
+/** The upstream that served the call: the last successful attempt when the
+ *  router retried, else the selected endpoint, else the summary's
+ *  `selected=<name>`. Undefined when the metadata says nothing. */
+export function servedProvider(meta: OrRoutingMeta | null | undefined): string | undefined {
+  if (!meta) return undefined;
+  const ok = (meta.attempts ?? []).filter((a) => a.status === 200 && a.provider);
+  if (ok.length > 0) return ok[ok.length - 1]!.provider;
+  const selected = meta.endpoints?.available?.find((e) => e.selected)?.provider;
+  if (selected) return selected;
+  const m = /selected=([^,]+)/.exec(meta.summary ?? '');
+  return m ? m[1]!.trim() : undefined;
+}
+
+/** Cache affinity for one call: OpenRouter's sticky-routing key in the body,
+ *  plus xAI's own conversation header for Grok routes (xAI routes requests
+ *  with the same `x-grok-conv-id` to the same server, where its cache lives).
+ *  Nothing when the caller has no conversation id. */
+function affinity(opts: { model: string; sessionId?: string }): {
+  body: { sessionId?: string };
+  headers: Record<string, string> | undefined;
+} {
+  const id = opts.sessionId?.trim().slice(0, 256);
+  if (!id) return { body: {}, headers: undefined };
+  return {
+    body: { sessionId: id },
+    // `~x-ai/grok-latest` (the shipped default) is a distinct string: a bare
+    // `startsWith('x-ai/')` sent the header to no fleet agent at all.
+    headers: /^~?x-ai\//.test(opts.model) ? { 'x-grok-conv-id': id } : undefined,
+  };
+}
+
 /** Loose shape of one OpenRouter SSE chunk (the SDK parses to camelCase). Kept
  *  local + defensive (snake_case fallbacks) so this adapter doesn't depend on the
  *  SDK's internal streaming model exports. */
 type OrStreamChunk = {
   model?: string;
+  openrouterMetadata?: OrRoutingMeta;
   error?: { code?: number; message?: string };
   usage?: {
     promptTokens?: number;
@@ -818,8 +871,10 @@ async function openrouterChatStream(
     ...(typeof opts.maxTokens === 'number' ? { maxTokens: opts.maxTokens } : {}),
     ...(typeof opts.topP === 'number' ? { topP: opts.topP } : {}),
     ...(reasoningParam ? { reasoning: reasoningParam } : {}),
+    ...affinity(opts).body,
     ...(opts.extra ?? {}),
   };
+  const affinityHeaders = affinity(opts).headers;
 
   const startedAt = Date.now();
   // The user already hit Stop before we even sent — don't spend the request.
@@ -833,13 +888,19 @@ async function openrouterChatStream(
       client.chat.send(
         {
           chatRequest,
+          // Routing metadata on the response: which upstream served the call.
+          xOpenRouterMetadata: 'enabled',
         },
         // Thread the cancellation signal into the underlying fetch so a Stop aborts
         // the HTTP stream — halting upstream token generation, not just our reading.
         // `retries` bounds the SDK's own one-hour envelope; no `timeoutMs` here,
         // which the SDK would fold into the Request signal and use to cut a long
         // but healthy stream.
-        { signal: abort.signal, retries: sdkRetries() },
+        {
+          signal: abort.signal,
+          retries: sdkRetries(),
+          ...(affinityHeaders ? { headers: affinityHeaders } : {}),
+        },
       ),
       // The SDK treats our connect-timeout abort as retryable and re-sends it
       // against the same dead signal, so awaiting it alone can hang past the
@@ -856,6 +917,7 @@ async function openrouterChatStream(
   let rawFinish: string | null | undefined;
   let model = opts.model;
   let usage: OrStreamChunk['usage'];
+  let routing: OrRoutingMeta | undefined;
   // Tool-call fragments accumulate by index: id+name land first, arguments arrive
   // in pieces. Assembled into ChatToolCall[] after the stream closes.
   const toolAccum = new Map<number, { id: string; name: string; args: string }>();
@@ -879,6 +941,7 @@ async function openrouterChatStream(
       }
       if (chunk.model) model = chunk.model;
       if (chunk.usage) usage = chunk.usage;
+      if (chunk.openrouterMetadata) routing = chunk.openrouterMetadata;
       const choice = chunk.choices?.[0];
       // Read before the `!delta` bail: the terminal chunk carries the finish
       // reason and usually no delta at all.
@@ -956,9 +1019,11 @@ async function openrouterChatStream(
 
   const details = reasoningDetails.result();
   const finishReason = mapOpenAICompatFinishReason(rawFinish);
+  const servedBy = servedProvider(routing);
   return {
     text: text.trim(),
     model,
+    ...(servedBy ? { servedBy } : {}),
     ...(toolCalls.length > 0 ? { toolCalls } : {}),
     ...(finishReason ? { finishReason } : {}),
     tokensIn: usage?.promptTokens ?? usage?.prompt_tokens,

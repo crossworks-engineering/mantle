@@ -10,6 +10,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('@mantle/db', () => ({ db: {}, nodes: {} }));
 
 import { checkToolPreconditions } from './preconditions';
+import { FOLDER_ID_PRE } from './builtins-common';
 import type { ToolPrecondition } from './types';
 
 const PAGE_PRE: readonly ToolPrecondition[] = [
@@ -187,5 +188,34 @@ describe('checkToolPreconditions — markdown_refs', () => {
     );
     expect(res).toBeNull();
     expect(lookup).not.toHaveBeenCalled();
+  });
+});
+
+describe('a Files folder id (pathRoot)', () => {
+  const ID = '11111111-2222-4333-8444-555555555555';
+  it('refuses another kind’s folder and names the tree tools', async () => {
+    const res = await checkToolPreconditions(
+      FOLDER_ID_PRE,
+      { folder_id: ID },
+      'o1',
+      async () => 'branch',
+      async () => 'notes.clients',
+    );
+    expect(res?.ok).toBe(false);
+    if (res && !res.ok) {
+      expect(res.error).toMatch(/not under files/);
+      expect(res.error).toMatch(/tree_folder_delete/);
+    }
+  });
+  it('lets a Files folder through', async () => {
+    expect(
+      await checkToolPreconditions(
+        FOLDER_ID_PRE,
+        { folder_id: ID },
+        'o1',
+        async () => 'branch',
+        async () => 'files.clients',
+      ),
+    ).toBeNull();
   });
 });

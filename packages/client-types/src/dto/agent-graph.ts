@@ -197,7 +197,8 @@ export type AiWorkerKind =
   | 'search'
   | 'search_advanced'
   | 'narrator'
-  | 'suggester';
+  | 'suggester'
+  | 'decider';
 
 /** An AI worker as returned by `GET /api/ai-workers`. `params` is jsonb (shape
  *  varies by kind) — kept loose here; the form narrows per kind. */

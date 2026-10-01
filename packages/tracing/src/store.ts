@@ -12,7 +12,9 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { eq, sql } from 'drizzle-orm';
-import { db, traces, traceSteps } from '@mantle/db';
+import { systemDb, traces, traceSteps } from '@mantle/db';
+// Infrastructure writes: systemDb (the admin pool) whatever the viewer, so a
+// turn under a limited role (member logins Phase 0b) still records them.
 import { truncateJson } from './truncate';
 import { runDurableStep } from './durable';
 import { errorMessage } from '@mantle/std';
@@ -49,12 +51,20 @@ export type StartTraceInit = {
    *  omit for the root turn — the responder's own steps stay unprefixed. */
   streamLabel?: string;
   data?: Record<string, unknown>;
+  /** Steps that ran before this trace opened (see createTracePrelude). They are
+   *  written first, and their tokens + cost count toward this trace. Consumed:
+   *  a second trace given the same prelude (an image-fallback retry) gets none. */
+  prelude?: TracePrelude;
 };
 
 export type StartStepInit = {
   name: string;
   kind: TraceStepKind;
   input?: Record<string, unknown>;
+  /** false: never route this step through the durable executor, so its
+   *  result is not journaled. For a read whose result must not be kept (a
+   *  member's private item, audit S3); a resume simply runs it again. */
+  durable?: false;
 };
 
 /** Lifecycle phase of a step, for the optional step observer. */
@@ -156,6 +166,166 @@ const stepStore = new AsyncLocalStorage<ActiveStep>();
 
 export function currentTrace(): TraceContext | null {
   return traceStore.getStore() ?? null;
+}
+
+// ─── Prelude: steps that run before their trace opens ───────────────────────
+//
+// A responder turn loads its context (and makes the decider's pruning + hint
+// calls) BEFORE its trace opens: the trace's subject is the inbound row, which
+// is written only after the context load so the history block cannot contain
+// the new message. Without a home, those steps ran untraced and their cost
+// went unrecorded. A prelude holds them in memory; startTrace writes them.
+
+/** One step captured by a prelude. */
+export type PreludeStep = {
+  name: string;
+  kind: TraceStepKind;
+  input: Record<string, unknown>;
+  output: Record<string, unknown>;
+  meta: Record<string, unknown>;
+  status: StepStatus;
+  error: string | null;
+  startedAtMs: number;
+  durationMs: number | null;
+  tokens: { in: number; out: number; cacheRead: number };
+  costMicroUsd: number;
+  /** Index of the enclosing prelude step, or null for a root step. */
+  parentIndex: number | null;
+};
+
+export type TracePrelude = { steps: PreludeStep[] };
+
+const preludeStore = new AsyncLocalStorage<TracePrelude>();
+const preludeStepStore = new AsyncLocalStorage<number>();
+
+export function createTracePrelude(): TracePrelude {
+  return { steps: [] };
+}
+
+/**
+ * Run `fn` so that any `step()` it makes with no trace open is captured into
+ * `prelude` instead of being dropped. Inside an open trace this is a plain
+ * call: steps go to that trace as usual. Several calls may share one prelude.
+ */
+export function withTracePrelude<T>(prelude: TracePrelude, fn: () => Promise<T>): Promise<T> {
+  if (currentTrace()) return fn();
+  return preludeStore.run(prelude, fn);
+}
+
+async function preludeStep<T>(
+  prelude: TracePrelude,
+  init: StartStepInit,
+  fn: (handle: StepHandle) => Promise<T>,
+): Promise<T> {
+  const entry: PreludeStep = {
+    name: init.name,
+    kind: init.kind,
+    input: init.input ?? {},
+    output: {},
+    meta: {},
+    status: 'running',
+    error: null,
+    startedAtMs: Date.now(),
+    durationMs: null,
+    tokens: { in: 0, out: 0, cacheRead: 0 },
+    costMicroUsd: 0,
+    parentIndex: preludeStepStore.getStore() ?? null,
+  };
+  const index = prelude.steps.push(entry) - 1;
+  let skippedReason: string | null = null;
+  let failedReason: string | null = null;
+  const handle: StepHandle = {
+    id: '',
+    traceId: '',
+    setOutput(o) {
+      entry.output = { ...entry.output, ...o };
+    },
+    setMeta(m) {
+      entry.meta = { ...entry.meta, ...m };
+    },
+    addTokens(delta) {
+      entry.tokens.in += delta.input ?? 0;
+      entry.tokens.out += delta.output ?? 0;
+      entry.tokens.cacheRead += delta.cacheRead ?? 0;
+    },
+    addCost(microUsd) {
+      entry.costMicroUsd += microUsd;
+    },
+    setSkipped(reason) {
+      skippedReason = reason ?? 'skipped';
+    },
+    setError(message) {
+      failedReason = message;
+    },
+  };
+  return preludeStepStore.run(index, async () => {
+    try {
+      const result = await fn(handle);
+      if (skippedReason) {
+        entry.status = 'skipped';
+        entry.meta = { ...entry.meta, skipped: skippedReason };
+      } else if (failedReason) {
+        entry.status = 'error';
+        entry.error = failedReason;
+      } else {
+        entry.status = 'success';
+      }
+      return result;
+    } catch (err) {
+      entry.status = 'error';
+      entry.error = errorMessage(err);
+      throw err;
+    } finally {
+      entry.durationMs = Date.now() - entry.startedAtMs;
+      entry.meta = { ...entry.meta, prelude: true };
+    }
+  });
+}
+
+/** Write a prelude's steps as the trace's first steps and add their usage. */
+async function writePrelude(ctx: TraceContext, steps: PreludeStep[]): Promise<void> {
+  if (steps.length === 0) return;
+  const ids = steps.map(() => genId());
+  const rows = steps.map((s, i) => {
+    const parentStepId = s.parentIndex === null ? null : ids[s.parentIndex]!;
+    let ordinal: number;
+    if (parentStepId) {
+      ordinal = ctx.childOrdinals.get(parentStepId) ?? 0;
+      ctx.childOrdinals.set(parentStepId, ordinal + 1);
+    } else {
+      ordinal = ctx.ordinalCounter++;
+    }
+    ctx.tokens.in += s.tokens.in;
+    ctx.tokens.out += s.tokens.out;
+    ctx.tokens.cacheRead += s.tokens.cacheRead;
+    ctx.costMicroUsd += s.costMicroUsd;
+    ctx.stepCount++;
+    return {
+      id: ids[i]!,
+      traceId: ctx.id,
+      parentStepId,
+      ordinal,
+      name: s.name,
+      kind: s.kind,
+      // A step still running when the trace opens (should not happen: callers
+      // await their prelude work) is recorded as what it is.
+      status: s.status,
+      startedAt: new Date(s.startedAtMs),
+      finishedAt: s.durationMs === null ? null : new Date(s.startedAtMs + s.durationMs),
+      durationMs: s.durationMs,
+      input: truncateJson(s.input) as Record<string, unknown>,
+      output: truncateJson(s.output) as Record<string, unknown>,
+      meta: truncateJson(s.meta) as Record<string, unknown>,
+      error: s.error,
+    };
+  });
+  try {
+    // One statement: a child row may reference a parent in the same batch
+    // (Postgres checks the FK at the end of the statement).
+    await systemDb.insert(traceSteps).values(rows);
+  } catch (err) {
+    logErr('write prelude', err);
+  }
 }
 
 export function currentStep(): ActiveStep | null {
@@ -419,7 +589,24 @@ export function recordStepUsage(usage: {
   costMicroUsd: number;
 }): void {
   const trace = currentTrace();
-  if (!trace) return;
+  if (!trace) {
+    const prelude = preludeStore.getStore();
+    const index = preludeStepStore.getStore();
+    const entry = prelude && index !== undefined ? prelude.steps[index] : undefined;
+    if (!entry) return;
+    entry.tokens.in += usage.input;
+    entry.tokens.out += usage.output;
+    entry.tokens.cacheRead += usage.cacheRead ?? 0;
+    entry.costMicroUsd += usage.costMicroUsd;
+    entry.meta = {
+      ...entry.meta,
+      model: usage.model,
+      tokens_in: usage.input,
+      tokens_out: usage.output,
+      cost_micro_usd: usage.costMicroUsd,
+    };
+    return;
+  }
   trace.tokens.in += usage.input;
   trace.tokens.out += usage.output;
   trace.tokens.cacheRead += usage.cacheRead ?? 0;
@@ -499,7 +686,7 @@ export async function startTrace<T>(init: StartTraceInit, fn: () => Promise<T>):
   // the user-visible behaviour (reply gets sent, business logic works)
   // is preserved.
   try {
-    await db.insert(traces).values({
+    await systemDb.insert(traces).values({
       id,
       ownerId: init.ownerId,
       kind: init.kind,
@@ -520,6 +707,8 @@ export async function startTrace<T>(init: StartTraceInit, fn: () => Promise<T>):
   } catch (err) {
     logErr('open trace', err);
   }
+  // splice(0) consumes the prelude so a retry trace cannot double-count it.
+  if (init.prelude) await writePrelude(ctx, init.prelude.steps.splice(0));
 
   return traceStore.run(ctx, async () => {
     try {
@@ -540,7 +729,8 @@ export async function startTrace<T>(init: StartTraceInit, fn: () => Promise<T>):
         turnSeqCounters.delete(turnId);
       }
       const duration = Date.now() - ctx.startedAtMs;
-      db.update(traces)
+      systemDb
+        .update(traces)
         .set({
           status: ctx.status,
           finishedAt: new Date(),
@@ -568,7 +758,10 @@ export async function step<T>(
 ): Promise<T> {
   const trace = currentTrace();
   if (!trace) {
-    // No trace: bypass entirely. Caller's body runs without instrumentation.
+    // No trace, but a prelude is collecting: hold the step for the trace that
+    // is about to open. Otherwise bypass entirely.
+    const prelude = preludeStore.getStore();
+    if (prelude) return preludeStep(prelude, init, fn);
     return fn(noopHandle());
   }
   const parent = currentStep();
@@ -606,7 +799,7 @@ export async function step<T>(
   // silent: the step throws inside its own open, which bubbles up and
   // kills the surrounding work.
   try {
-    await db.insert(traceSteps).values({
+    await systemDb.insert(traceSteps).values({
       id,
       traceId: trace.id,
       parentStepId: parentStepId,
@@ -665,7 +858,10 @@ export async function step<T>(
       // a crash-resume returns the recorded result instead of re-running the
       // LLM call / tool dispatch. Inert (pure passthrough) otherwise. The trace
       // bookkeeping around it stays best-effort and engine-agnostic.
-      const result = await runDurableStep(init.name, () => fn(handle));
+      const result =
+        init.durable === false
+          ? await fn(handle)
+          : await runDurableStep(init.name, () => fn(handle));
       if (stepInfo.skippedReason) {
         status = 'skipped';
         stepInfo.meta = { ...stepInfo.meta, skipped: stepInfo.skippedReason };
@@ -686,7 +882,8 @@ export async function step<T>(
       throw err;
     } finally {
       const duration = Date.now() - stepInfo.startedAtMs;
-      db.update(traceSteps)
+      systemDb
+        .update(traceSteps)
         .set({
           status,
           finishedAt: new Date(),
@@ -754,7 +951,7 @@ export async function recordSkippedTrace(init: {
   const id = genId();
   const now = new Date();
   try {
-    await db.insert(traces).values({
+    await systemDb.insert(traces).values({
       id,
       ownerId: init.ownerId,
       kind: init.kind,
@@ -816,7 +1013,7 @@ export async function recordIngest(init: {
   const id = genId();
   const now = new Date();
   try {
-    await db.insert(traces).values({
+    await systemDb.insert(traces).values({
       id,
       ownerId: init.ownerId,
       kind: 'content_ingest',
@@ -838,7 +1035,7 @@ export async function recordIngest(init: {
     // standard truncateJson budget — full content lives on the
     // node itself.
     if (init.snippet && init.snippet.trim().length > 0) {
-      await db.insert(traceSteps).values({
+      await systemDb.insert(traceSteps).values({
         traceId: id,
         parentStepId: null,
         ordinal: 0,

@@ -1,5 +1,7 @@
 import { lt, sql } from 'drizzle-orm';
-import { db, turnStreamBuffer } from '@mantle/db';
+import { systemDb, turnStreamBuffer } from '@mantle/db';
+// Infrastructure writes: systemDb (the admin pool) whatever the viewer, so a
+// turn under a limited role (member logins Phase 0b) still records them.
 import type { TurnEvent } from '@mantle/client-types';
 import { TURN_STREAM_CHANNEL, TURN_CANCEL_CHANNEL } from './channel';
 import { env } from '@mantle/config';
@@ -43,7 +45,7 @@ const BUFFER_TTL_SQL = sql`now() - interval '15 minutes'`;
 async function bufferTurnEvent(ownerId: string, event: TurnEvent): Promise<void> {
   if (!isBufferingEnabled()) return;
   try {
-    await db
+    await systemDb
       .insert(turnStreamBuffer)
       // `event` column is typed loosely (no client-types dep in @mantle/db); a
       // TurnEvent (a tagged union, no index signature) needs the widening cast.
@@ -55,7 +57,7 @@ async function bufferTurnEvent(ownerId: string, event: TurnEvent): Promise<void>
       })
       .onConflictDoNothing();
     if (event.type === 'turn-start') {
-      await db.delete(turnStreamBuffer).where(lt(turnStreamBuffer.createdAt, BUFFER_TTL_SQL));
+      await systemDb.delete(turnStreamBuffer).where(lt(turnStreamBuffer.createdAt, BUFFER_TTL_SQL));
     }
   } catch (err) {
     console.warn(
@@ -99,7 +101,7 @@ export async function publishTurnEvent(ownerId: string, event: TurnEvent): Promi
   try {
     // Channel is a string literal; payload is parameterised — injection-safe.
     const payload = JSON.stringify({ ownerId, event } satisfies TurnStreamEnvelope);
-    await db.execute(sql`SELECT pg_notify(${TURN_STREAM_CHANNEL}, ${payload})`);
+    await systemDb.execute(sql`SELECT pg_notify(${TURN_STREAM_CHANNEL}, ${payload})`);
   } catch (err) {
     console.warn(
       '[turn-stream] pg_notify failed (delta dropped; the answer is durable):',
@@ -129,7 +131,7 @@ export interface TurnCancelEnvelope {
 export async function publishTurnCancel(ownerId: string, turnId: string): Promise<void> {
   try {
     const payload = JSON.stringify({ ownerId, turnId } satisfies TurnCancelEnvelope);
-    await db.execute(sql`SELECT pg_notify(${TURN_CANCEL_CHANNEL}, ${payload})`);
+    await systemDb.execute(sql`SELECT pg_notify(${TURN_CANCEL_CHANNEL}, ${payload})`);
   } catch (err) {
     console.warn(
       '[turn-stream] cancel pg_notify failed:',

@@ -22,6 +22,14 @@ const h = vi.hoisted(() => ({
   thinkingBudget: 2048,
 }));
 
+vi.mock('@mantle/decisions', () => ({
+  // The decider is off by default; the assembler must behave exactly as
+  // before when it answers nothing.
+  loadDelegates: vi.fn(async () => []),
+  suggestDelegate: vi.fn(async () => null),
+  delegationHintLine: vi.fn(() => null),
+}));
+
 vi.mock('../agent', () => ({
   // Arbitrary stand-in so these tests can control the split: '-tool-a' reads,
   // everything else writes. The REAL classification is tested where it lives,
@@ -59,6 +67,13 @@ vi.mock('@mantle/content', () => ({
     if (h.identityError) throw h.identityError;
     return h.identity;
   }),
+  buildJournalTier1: vi.fn(async () => 'TIER1'),
+  journalTiersOf: (m?: { journal_tiers?: string; notes_target?: string }) =>
+    m?.notes_target !== 'persona'
+      ? 'live'
+      : m?.journal_tiers === 'off' || m?.journal_tiers === 'live'
+        ? m.journal_tiers
+        : 'shadow',
   buildTimeContextLine: () => 'TIME-LINE',
   resolveThinkingBudget: () => h.thinkingBudget,
   // Mirrors the real tier mapping (1024→low, 4096→medium, 8000→high) closely
@@ -132,9 +147,10 @@ describe('assembleResponderTurn — prompt composition', () => {
   it('cached prefix = identity + skills prompt + suffix; volatile = time + extras + heartbeat', async () => {
     h.identity = 'IDENTITY';
     h.openHeartbeats = [{ slug: 'hb-1', name: 'HB', state: {} }];
+    // The legacy identity block only rides a persona-notes agent now.
     const a = await assembleResponderTurn({
       ...BASE,
-      agent: agent({ skillSlugs: ['recall'] }),
+      agent: agent({ skillSlugs: ['recall'], memoryConfig: { notes_target: 'persona' } }),
       systemPromptSuffix: '\n\nAUDIO-TAGS',
       volatileExtras: ['LOCATION-LINE', '', null, 'TZ-NOTE'],
       heartbeatSurface: { kind: 'web' },
@@ -184,6 +200,38 @@ describe('assembleResponderTurn — prompt composition', () => {
       agent: agent({ memoryConfig: { inject_journal: false } }),
     });
     expect(a.effectiveSystemPrompt).toBe('PERSONA');
+  });
+
+  it('tiers live (the default): no Journal in the persona prompt, tier 1 returned for the notes block', async () => {
+    h.identity = 'IDENTITY';
+    const live = await assembleResponderTurn({ ...BASE, agent: agent() });
+    expect(live.effectiveSystemPrompt).toBe('PERSONA');
+    expect(live.journalBlock).toBe('TIER1');
+    const shadow = await assembleResponderTurn({
+      ...BASE,
+      agent: agent({ memoryConfig: { notes_target: 'persona' } }),
+    });
+    expect(shadow.effectiveSystemPrompt).toContain('IDENTITY');
+    expect(shadow.journalBlock).toBe('');
+    const team = await assembleResponderTurn({
+      ...BASE,
+      agent: agent({ memoryConfig: { journal_tiers: 'live' } }),
+      includeIdentity: false,
+    });
+    expect(team.journalBlock).toBe('');
+  });
+
+  it('notes_target=journal switches the tiers live, scoped to this agent', async () => {
+    h.identity = 'IDENTITY';
+    const { buildJournalTier1 } = await import('@mantle/content');
+    (buildJournalTier1 as ReturnType<typeof vi.fn>).mockClear();
+    const r = await assembleResponderTurn({
+      ...BASE,
+      agent: agent({ memoryConfig: { notes_target: 'journal' } }),
+    });
+    expect(r.effectiveSystemPrompt).toBe('PERSONA');
+    expect(r.journalBlock).toBe('TIER1');
+    expect((buildJournalTier1 as ReturnType<typeof vi.fn>).mock.calls[0]?.[1]).toBeTruthy();
   });
 
   it('includeIdentity=false (team isolation) never calls the identity builder', async () => {

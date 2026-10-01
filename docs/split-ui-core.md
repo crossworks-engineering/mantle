@@ -16,7 +16,7 @@ else it unlocks.
 
 | | What it is | Where it runs |
 |---|---|---|
-| **Core (the brain)** | Postgres (the graph + vault) · object store (MinIO/S3, the file bytes) · always-on workers (extractor, summarizer, reflector, document) + agent | The server, one durable home for the data + indexing |
+| **Core (the brain)** | Postgres (the graph + vault) · object store (RustFS or any S3, the file bytes) · always-on workers (extractor, summarizer, reflector, document) + agent | The server, one durable home for the data + indexing |
 | **App / UI layer** | The Next app and its tool loop (web `/assistant`, settings, pages, tables), stateless over the core | Anywhere on the tailnet: a laptop dev server today, an Electron desktop build tomorrow, multiple devices |
 
 The app layer holds no durable state of its own; it reads and writes the core.
@@ -39,7 +39,7 @@ your machines. Mantle uses it **two ways**:
   (new)     │                              └▶ mantle.<tailnet>.ts.net:9000  (object)   │
             │                                                                          │
             └──────────────────────────────────────────────────────────────────────────┘
-                                   core = Postgres + MinIO + workers (on the server)
+                                   core = Postgres + RustFS + workers (on the server)
 ```
 
 - **Outbound** (already shipped): the core proxies *out* to a model box you own,

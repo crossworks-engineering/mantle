@@ -7,7 +7,7 @@ import { openTableFile, type SqliteDb } from './sqlite';
  * L1 deterministic profile (plan §6, as amended 2026-07-15): pure SQL over the
  * workbook file, no LLM, cheap enough to refresh on every commit. This is what
  * the brain indexes for a table — column names, types, top-N distinct values,
- * counts — because those are what real lookups key off (NATREF audit evidence:
+ * counts — because those are what real lookups key off (client-box audit evidence:
  * exact-term hits ride column names and categorical values, not row bodies).
  * Rows are NEVER embedded; deep row lookup is table_sql's job.
  */

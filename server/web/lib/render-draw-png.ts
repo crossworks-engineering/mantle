@@ -1,5 +1,5 @@
 import puppeteer from 'puppeteer-core';
-import { printOrigin } from './render-pdf';
+import { openRenderPage, printOrigin } from './render-sandbox';
 import { DrawRendererUnavailableError } from './render-draw-svg';
 import { env } from '@mantle/config';
 
@@ -49,9 +49,10 @@ export type DrawPng = {
  * Screenshot `/print/draws/<id>` and return the PNG. Null means "no picture to
  * embed": the drawing has no committed snapshot, or the image failed to decode.
  * Throws DrawRendererUnavailableError when the sidecar itself is unusable, so
- * a caller can tell a missing drawing from a missing browser.
+ * a caller can tell a missing drawing from a missing browser. `renderToken` is
+ * a render cookie for this drawing (buildRenderToken).
  */
-export async function renderDrawPng(nodeId: string, cookie: string): Promise<DrawPng | null> {
+export async function renderDrawPng(nodeId: string, renderToken: string): Promise<DrawPng | null> {
   const endpoint = env('BROWSER_WS_ENDPOINT');
   if (!endpoint) throw new DrawRendererUnavailableError('BROWSER_WS_ENDPOINT is not set');
 
@@ -65,9 +66,8 @@ export async function renderDrawPng(nodeId: string, cookie: string): Promise<Dra
   }
 
   try {
-    const page = await browser.newPage();
+    const page = await openRenderPage(browser, renderToken);
     await page.setViewport({ ...VIEWPORT, deviceScaleFactor: PIXEL_RATIO });
-    if (cookie) await page.setExtraHTTPHeaders({ cookie });
     const res = await page.goto(`${printOrigin()}/print/draws/${encodeURIComponent(nodeId)}`, {
       waitUntil: 'domcontentloaded',
       timeout: 30_000,

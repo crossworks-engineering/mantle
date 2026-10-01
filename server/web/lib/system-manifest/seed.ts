@@ -52,7 +52,7 @@ import {
   type ManifestToolGroup,
 } from './manifest';
 import { convergeManifestSkills } from './reconcile-util';
-import { resolveWorkerRoute } from './worker-route';
+import { adoptWorkerParams, resolveWorkerRoute } from './worker-route';
 import { resolveEffectivePersona } from './persona';
 import { seedCuratedModelPools } from '../model-pools-seed';
 import type { AdoptKind } from '@mantle/client-types';
@@ -145,7 +145,7 @@ export async function seedManifestWorkers(
       model: route.model,
       apiKeyId: keys[route.keyService]!,
       params: route.params,
-      enabled: true,
+      enabled: w.enabled ?? true,
       isDefault: true,
     });
     created.push({ kind: w.kind, name: w.name, provider: route.provider, model: route.model });
@@ -218,6 +218,10 @@ async function upsertToolGroup(
           name: def.name,
           description: def.description,
           toolSlugs: def.toolSlugs,
+          // A product-owned level converges with the membership (the level is
+          // what a group like client-read is for); a group without one keeps
+          // the level its owner set.
+          ...(def.level ? { audience: def.level } : {}),
           enabled: true,
           updatedAt: new Date(),
         })
@@ -231,6 +235,7 @@ async function upsertToolGroup(
     name: def.name,
     description: def.description,
     toolSlugs: def.toolSlugs,
+    ...(def.level ? { audience: def.level } : {}),
     enabled: true,
   });
 }
@@ -311,6 +316,9 @@ async function upsertAgent(
       params: def.params as AgentParams,
       memoryConfig: (def.memoryConfig ?? {}) as AgentMemoryConfig,
       priority: def.priority,
+      // A manifest level ships the agent at it (client-responder at client);
+      // without one the column default (admin) applies.
+      ...(def.level ? { audience: def.level } : {}),
       enabled: true,
     });
     return;
@@ -330,6 +338,7 @@ async function upsertAgent(
         toolGroupSlugs: groupSlugs,
         params: def.params as AgentParams,
         memoryConfig: (def.memoryConfig ?? {}) as AgentMemoryConfig,
+        ...(def.level ? { audience: def.level } : {}),
         enabled: true,
         updatedAt: new Date(),
       })
@@ -696,7 +705,8 @@ async function adoptWorker(ownerId: string, kind: AiWorkerKind): Promise<void> {
       provider: route.provider,
       model: route.model,
       apiKeyId: keys[route.keyService]!,
-      params: route.params,
+      // The decider keeps its operator switchboard (uses, gates); see adoptWorkerParams.
+      params: adoptWorkerParams(kind, existing.params, route.params),
     });
   } else {
     await createAiWorker({
@@ -707,7 +717,7 @@ async function adoptWorker(ownerId: string, kind: AiWorkerKind): Promise<void> {
       model: route.model,
       apiKeyId: keys[route.keyService]!,
       params: route.params,
-      enabled: true,
+      enabled: w.enabled ?? true,
       isDefault: true,
     });
   }

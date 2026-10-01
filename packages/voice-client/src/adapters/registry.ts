@@ -15,6 +15,7 @@
 import type { Provider, ProviderCapability, ProviderId } from '../providers';
 import type {
   ChatDispatcher,
+  DecisionDispatcher,
   EmbeddingDispatcher,
   ImageGenDispatcher,
   SttDispatcher,
@@ -29,8 +30,10 @@ const STT = new Map<ProviderId, SttDispatcher>();
 const VISION = new Map<ProviderId, VisionDispatcher>();
 const IMAGE_GEN = new Map<ProviderId, ImageGenDispatcher>();
 const EMBEDDING = new Map<ProviderId, EmbeddingDispatcher>();
+const DECISION = new Map<ProviderId, DecisionDispatcher>();
 
-export type WiredCapability = 'chat' | 'tts' | 'stt' | 'vision' | 'image_gen' | 'embedding';
+export type WiredCapability =
+  'chat' | 'tts' | 'stt' | 'vision' | 'image_gen' | 'embedding' | 'decision';
 
 /**
  * STATIC mirror of which providers have a registered adapter, per capability —
@@ -70,6 +73,8 @@ export const WIRED_PROVIDERS: Record<WiredCapability, ReadonlySet<ProviderId>> =
   vision: new Set<ProviderId>(['openai', 'anthropic', 'google', 'xai', 'openrouter']),
   image_gen: new Set<ProviderId>(['openrouter', 'openai', 'xai', 'google', 'huggingface']),
   embedding: new Set<ProviderId>(['openrouter', 'openai', 'google', 'mistral', 'cohere', 'local']),
+  // Typed decisions: only OpenRouter's alpha decisions endpoint today.
+  decision: new Set<ProviderId>(['openrouter']),
 };
 
 function mapFor(capability: WiredCapability): ReadonlyMap<ProviderId, unknown> {
@@ -80,6 +85,7 @@ function mapFor(capability: WiredCapability): ReadonlyMap<ProviderId, unknown> {
     vision: VISION,
     image_gen: IMAGE_GEN,
     embedding: EMBEDDING,
+    decision: DECISION,
   }[capability];
 }
 
@@ -189,6 +195,19 @@ export function listEmbeddingAdapters(): EmbeddingDispatcher[] {
   return Array.from(EMBEDDING.values());
 }
 
+// ─── Decision (typed answers, no prose) ──────────────────────────────
+
+export function registerDecisionAdapter(adapter: DecisionDispatcher): void {
+  DECISION.set(adapter.providerId, adapter);
+}
+
+/** No retry wrapper on purpose: a decision sits IN FRONT of a call the caller
+ *  will make anyway, so a failed decision is simply "no decision" — retrying
+ *  would spend the latency budget the caller was trying to save. */
+export function getDecisionAdapter(providerId: string): DecisionDispatcher | null {
+  return DECISION.get(providerId as ProviderId) ?? null;
+}
+
 // ─── Capability check (used by UI to derive `wired` flag) ────────────
 
 /**
@@ -220,10 +239,7 @@ export function findAdapterCatalogDrift(
   const problems: string[] = [];
   const catalogById = new Map(providers.map((p) => [p.id as string, p.capabilities]));
 
-  function check(
-    label: 'chat' | 'tts' | 'stt' | 'vision' | 'image_gen' | 'embedding',
-    registry: Map<ProviderId, { adapterName: string }>,
-  ): void {
+  function check(label: WiredCapability, registry: Map<ProviderId, { adapterName: string }>): void {
     for (const [providerId, adapter] of registry) {
       const caps = catalogById.get(providerId);
       if (!caps) {
@@ -247,6 +263,7 @@ export function findAdapterCatalogDrift(
   check('vision', VISION);
   check('image_gen', IMAGE_GEN);
   check('embedding', EMBEDDING);
+  check('decision', DECISION);
 
   return problems;
 }

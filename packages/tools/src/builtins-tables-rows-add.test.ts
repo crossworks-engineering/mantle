@@ -16,7 +16,10 @@ vi.mock('@mantle/content', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/content')>();
   return { ...actual, getTable: vi.fn(), applyTableOps: vi.fn() };
 });
-vi.mock('@mantle/content/table-storage', () => ({ tableSqlSurface: vi.fn() }));
+vi.mock('@mantle/content/table-storage', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  tableSqlSurface: vi.fn(),
+}));
 vi.mock('@mantle/files', () => ({ fileById: vi.fn(), readFileById: vi.fn() }));
 vi.mock('@mantle/files/sheet-to-grid', () => ({
   parseSheetToGrid: vi.fn(),
@@ -150,7 +153,7 @@ describe('table_rows_add', () => {
 
 /** Fixture with EXISTING rows for the upsert (legacy doc path: no sqlite
  *  surface mocked, so the handler reads `doc.rows` directly). Keyed on the
- *  composite Service Name + Fluid Name, like the NATREF services table. */
+ *  composite Service Name + Fluid Name, like a client's services table. */
 const detailWithRows = () => ({
   ...detail(),
   data: {

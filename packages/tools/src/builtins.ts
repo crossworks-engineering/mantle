@@ -16,15 +16,20 @@ import { EVENT_TOOLS } from './builtins-events';
 import { PROFILE_TOOLS } from './builtins-profile';
 import { TASK_TOOLS } from './builtins-tasks';
 import { TEAM_TOOLS } from './builtins-team';
+import { MY_SPACE_TOOLS } from './builtins-my-space';
+import { CLIENT_TOOLS } from './builtins-client';
 import { PERSONA_TOOLS } from './builtins-persona';
 import { TERMINAL_TOOLS } from './builtins-terminal';
 import { SANDBOX_TOOLS } from './builtins-sandbox';
 import { RECALL_TOOLS } from './builtins-recall';
+import { RECALL_WRITE_TOOLS } from './builtins-recall-write';
+import { RECALL_OWNER_TOOLS } from './builtins-recall-owner';
 import { REPLAY_TOOLS } from './builtins-replay';
 import { RESEARCH_TOOLS } from './builtins-research';
 import { CRAWL_TOOLS } from './builtins-crawl';
 import { CURATION_TOOLS } from './builtins-curation';
 import { NOTE_TOOLS } from './builtins-notes';
+import { TREE_OPERATOR_TOOLS, TREE_TOOLS } from './builtins-tree';
 import { EMAIL_TOOLS } from './builtins-email';
 import { PAGE_TOOLS } from './builtins-pages';
 import { DRAW_TOOLS } from './builtins-draws';
@@ -42,6 +47,7 @@ import { RUN_TOOLS } from './builtins-runs';
 import { TOOLSMITH_TOOLS } from './builtins-toolsmith';
 import { LOCATION_TOOLS } from './builtins-locations';
 import { EXPORT_TOOLS } from './builtins-export';
+import { ACCESS_TOOLS } from './builtins-access';
 import { SHEET_TOOLS } from './builtins-sheets';
 import { read_section, search_chunks, search_nodes, tree_list } from './builtins-search';
 import {
@@ -131,6 +137,10 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // manage tasks from chat. None require_confirm (trivially reversible).
   ...TASK_TOOLS,
   ...TEAM_TOOLS,
+  // The member's own personal items, read on behalf of the member a team
+  // turn serves (member logins Phase 2). Fail closed on any other surface.
+  ...MY_SPACE_TOOLS,
+  ...CLIENT_TOOLS,
   // Persona self-edit — lets Saskia adjust her own style/relationship
   // notes when the user explicitly asks ("be more professional").
   // Scoped resolution + soft-retire; pure logic in @mantle/db.
@@ -146,6 +156,8 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // permanent message archive. The toolset for the `remy` recall agent
   // (find_window locates via digests, replay_window pulls raw turns).
   ...RECALL_TOOLS,
+  ...RECALL_WRITE_TOOLS,
+  ...RECALL_OWNER_TOOLS,
   ...REPLAY_TOOLS,
   // Research — outward to the live internet via Perplexity Sonar. The
   // raw-search primitive for the `researcher` agent; the smart layer is
@@ -163,6 +175,7 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // Notes — persist a markdown note (auto-indexed into the brain). Lets
   // Saskia keep research findings she's decided are worth saving.
   ...NOTE_TOOLS,
+  ...TREE_TOOLS,
   // Email — send mail from the user's own mailbox via provider SMTP. Pairs
   // with web_search/researcher ("research X and email it to me").
   ...EMAIL_TOOLS,
@@ -220,9 +233,10 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // Reverse-geocoding / search / directions are seeded Mapbox HTTP tools.
   ...LOCATION_TOOLS,
   // Export — render a page/note to Word (.docx) or a table to Excel (.xlsx) and
-  // save it under /files/exports. Shares @mantle/content's resolveExport with
+  // save it under /files/auto-filed/exports. Shares @mantle/content's resolveExport with
   // the web download button, so the assistant and the UI emit identical files.
   ...EXPORT_TOOLS,
+  ...ACCESS_TOOLS,
   ...SHEET_TOOLS,
   // Runner queues — durable, inspectable execution plans (docs/runs.md).
   // Responder-only via the `runs` tool group; creation gated by MANTLE_RUNS.
@@ -237,6 +251,7 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   ...TELEGRAM_OPERATOR_TOOLS,
   ...FILE_OPERATOR_TOOLS,
   ...NOTE_OPERATOR_TOOLS,
+  ...TREE_OPERATOR_TOOLS,
 ];
 
 // P6: there is no flat "default assistant grant" anymore. A generalist persona's

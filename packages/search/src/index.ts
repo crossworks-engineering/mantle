@@ -2,6 +2,7 @@ import { db, nodes, type Node } from '@mantle/db';
 import { and, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { withHnswPool } from './hnsw';
 import { grantUnionFilter, pgArrayLiteral } from './pg';
+import { keywordSql, resolveKeywordQuery } from './keyword-query';
 import { env } from '@mantle/config';
 
 export { withHnswPool } from './hnsw';
@@ -33,6 +34,7 @@ export {
   type GraphPathOptions,
   type GraphHop,
   type GraphPathResult,
+  visibleFactSource,
 } from './entities';
 
 export { resolveSupersededTargets, terminalSuccessors, type SupersededTarget } from './supersede';
@@ -40,6 +42,7 @@ export { resolveSupersededTargets, terminalSuccessors, type SupersededTarget } f
 export {
   searchChunks,
   readSection,
+  bestChunkPerNode,
   buildSectionOutline,
   selectSectionChunks,
   assembleSection,
@@ -49,6 +52,12 @@ export {
   type ReadSectionOptions,
   type ReadSectionResult,
 } from './chunks';
+export {
+  chunkPairSimilarities,
+  MAX_CHUNK_PAIR_KEYS,
+  type ChunkKey,
+  type ChunkPairSimilarity,
+} from './chunk-pairs';
 
 export interface SearchOptions {
   ownerId: string;
@@ -58,6 +67,9 @@ export interface SearchOptions {
   type?: Node['type'];
   /** Restrict to these node types (plural OR). Composable with `type`. */
   types?: string[];
+  /** Node types to leave out (a team surface's hidden types). Applied in
+   *  every arm, so a hidden node can never be ranked in. */
+  excludeTypes?: readonly string[];
   tags?: string[];
   since?: Date;
   limit?: number;
@@ -115,6 +127,10 @@ export async function searchNodes(opts: SearchOptions): Promise<Node[]> {
   if (opts.type) filters.push(eq(nodes.type, opts.type));
   if (opts.types?.length)
     filters.push(sql`${nodes.type}::text = any(${pgArrayLiteral(opts.types)}::text[])`);
+  if (opts.excludeTypes?.length)
+    filters.push(
+      sql`${nodes.type}::text <> all(${pgArrayLiteral([...opts.excludeTypes])}::text[])`,
+    );
   if (opts.branch) filters.push(sql`${nodes.path} <@ ${opts.branch}::ltree`);
   // Array param via pgArrayLiteral — a raw JS array binds as a plain string
   // under postgres-js and the ::text[] cast throws (see pgArrayLiteral's doc).
@@ -167,12 +183,15 @@ export async function searchNodes(opts: SearchOptions): Promise<Node[]> {
   )) as unknown as { id: string }[];
 
   let ftsRows: { id: string }[] = [];
-  if (opts.q && opts.q.trim()) {
+  // Rarest terms ORed (see keyword-query.ts): a long query ANDed matched nothing.
+  const kq = opts.q?.trim() ? await resolveKeywordQuery(opts.q.trim(), 'nodes') : null;
+  if (kq) {
+    const kw = keywordSql(nodes.searchTsv, kq);
     ftsRows = await db
       .select({ id: nodes.id })
       .from(nodes)
-      .where(and(...filters, sql`${nodes.searchTsv} @@ plainto_tsquery('english', ${opts.q})`))
-      .orderBy(sql`ts_rank(${nodes.searchTsv}, plainto_tsquery('english', ${opts.q})) desc`)
+      .where(and(...filters, kw.match))
+      .orderBy(...kw.order)
       .limit(pool);
   }
 

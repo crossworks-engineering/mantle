@@ -21,6 +21,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 // installs via `setMockResult`. Defined at module scope so vi.mock's
 // hoisting can reference it.
 const sendCalls: Array<{ chatRequest: Record<string, unknown> }> = [];
+/** The SDK request options (second arg) of each send, same order. */
+const sendOpts: Array<{ headers?: Record<string, string> } | undefined> = [];
 let mockResult: unknown = {
   model: 'anthropic/claude-haiku-4.5',
   choices: [{ message: { role: 'assistant', content: 'hi' } }],
@@ -39,17 +41,23 @@ let mockSendImpl: ((call: number) => Promise<unknown>) | null = null;
 vi.mock('@openrouter/sdk', () => ({
   OpenRouter: class {
     chat = {
-      send: vi.fn(async (req: { chatRequest: Record<string, unknown> }) => {
-        sendCalls.push(req);
-        if (mockSendImpl) return mockSendImpl(sendCalls.length);
-        return mockResult;
-      }),
+      send: vi.fn(
+        async (
+          req: { chatRequest: Record<string, unknown> },
+          opts?: { headers?: Record<string, string> },
+        ) => {
+          sendCalls.push(req);
+          sendOpts.push(opts);
+          if (mockSendImpl) return mockSendImpl(sendCalls.length);
+          return mockResult;
+        },
+      ),
     };
   },
 }));
 
 // Import AFTER vi.mock so the adapter picks up the mocked SDK.
-import { openrouterChatAdapter } from './openrouter-chat';
+import { openrouterChatAdapter, servedProvider } from './openrouter-chat';
 
 // The REAL outbound schema. `vi.mock('@openrouter/sdk')` above replaces that
 // exact module id only, so this subpath import is the genuine article — which is
@@ -115,6 +123,7 @@ afterEach(() => {
     expect(dropped, `call ${i}: field(s) silently discarded by the SDK`).toEqual([]);
   }
   sendCalls.length = 0;
+  sendOpts.length = 0;
   mockSendImpl = null;
 });
 
@@ -493,6 +502,107 @@ describe('openrouter-chat usage round-trip', () => {
       messages: [{ role: 'user', content: 'hi' }],
     });
     expect(result.reportedCostUsd).toBeUndefined();
+  });
+});
+
+describe('openrouter-chat served provider (cache routing)', () => {
+  it('asks for routing metadata and reports the selected upstream (one-shot)', async () => {
+    setMockResult({
+      model: 'anthropic/claude-haiku-4.5',
+      choices: [{ message: { role: 'assistant', content: 'r' } }],
+      usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+      openrouterMetadata: {
+        endpoints: {
+          available: [
+            { provider: 'Amazon Bedrock', selected: true },
+            { provider: 'Anthropic', selected: false },
+          ],
+        },
+        summary: 'available=2, selected=Amazon Bedrock',
+      },
+    });
+    const r = await openrouterChatAdapter.chat({
+      apiKey: 'sk-test',
+      model: 'anthropic/claude-haiku-4.5',
+      messages: [{ role: 'user', content: 'hi' }],
+    });
+    expect(
+      (sendCalls.at(-1) as unknown as { xOpenRouterMetadata?: string }).xOpenRouterMetadata,
+    ).toBe('enabled');
+    expect(r.servedBy).toBe('Amazon Bedrock');
+  });
+
+  it('reads it off the final stream chunk', async () => {
+    mockSendImpl = async () =>
+      streamOf([
+        { choices: [{ delta: { content: 'ok' }, finishReason: 'stop' }] },
+        {
+          usage: { promptTokens: 1, completionTokens: 1 },
+          openrouterMetadata: { summary: 'available=4, selected=Anthropic' },
+        },
+      ]);
+    const r = await openrouterChatAdapter.chatStream!(
+      {
+        apiKey: 'sk-test',
+        model: 'anthropic/claude-sonnet-5',
+        messages: [{ role: 'user', content: 'hi' }],
+      },
+      () => {},
+    );
+    expect(r.servedBy).toBe('Anthropic');
+  });
+
+  it('prefers the last successful attempt after a router retry; undefined when silent', () => {
+    expect(
+      servedProvider({
+        attempts: [
+          { provider: 'Anthropic', status: 529 },
+          { provider: 'Google', status: 200 },
+        ],
+        endpoints: { available: [{ provider: 'Anthropic', selected: true }] },
+      }),
+    ).toBe('Google');
+    expect(servedProvider(undefined)).toBeUndefined();
+    expect(servedProvider({})).toBeUndefined();
+  });
+});
+
+describe('openrouter-chat cache affinity (sessionId)', () => {
+  it('sends session_id on the wire; x-grok-conv-id only on Grok routes', async () => {
+    const base = { apiKey: 'sk-test', messages: [{ role: 'user' as const, content: 'hi' }] };
+    await openrouterChatAdapter.chat({
+      ...base,
+      model: 'anthropic/claude-sonnet-5',
+      sessionId: 'mantle-agent-a1',
+    });
+    expect(wireBody(sendCalls.length - 1).session_id).toBe('mantle-agent-a1');
+    expect(sendOpts.at(-1)?.headers).toBeUndefined();
+    await openrouterChatAdapter.chat({
+      ...base,
+      model: 'x-ai/grok-4.3',
+      sessionId: 'mantle-agent-a1',
+    });
+    expect(sendOpts.at(-1)?.headers).toEqual({ 'x-grok-conv-id': 'mantle-agent-a1' });
+  });
+
+  it('the tilde alias (~x-ai/grok-latest, the fleet default) gets the Grok header too', async () => {
+    await openrouterChatAdapter.chat({
+      apiKey: 'sk-test',
+      messages: [{ role: 'user' as const, content: 'hi' }],
+      model: '~x-ai/grok-latest',
+      sessionId: 'mantle-agent-a1',
+    });
+    expect(sendOpts.at(-1)?.headers).toEqual({ 'x-grok-conv-id': 'mantle-agent-a1' });
+  });
+
+  it('sends nothing when there is no conversation id', async () => {
+    await openrouterChatAdapter.chat({
+      apiKey: 'sk-test',
+      model: 'x-ai/grok-4.3',
+      messages: [{ role: 'user', content: 'hi' }],
+    });
+    expect(wireBody(sendCalls.length - 1).session_id).toBeUndefined();
+    expect(sendOpts.at(-1)?.headers).toBeUndefined();
   });
 });
 

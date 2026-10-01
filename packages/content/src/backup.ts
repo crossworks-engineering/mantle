@@ -23,10 +23,11 @@
  *     `backup` / `backupStatus` keys, jsonb-merged) so the settings UI and
  *     the worker share one source of truth.
  *
- * Object bytes (data/minio), host files (data/files), and quarantined member
- * forum uploads awaiting review (data/forum-uploads) are already plain files
- * on disk next to this directory in the default layout — the offsite copy
- * should include them; the settings page says so.
+ * Object bytes (data/rustfs) and host files (data/files) are already plain
+ * files on disk next to this directory in the default layout — the offsite copy
+ * should include them; the settings page says so. Members' personal-space
+ * file bytes (MANTLE_SPACES_ROOT) are archived here too, as
+ * `mantle-spaces-<ts>.tgz`: they are the only copy of a member's upload.
  */
 
 import { spawn } from 'node:child_process';
@@ -43,6 +44,7 @@ import type { BackupConfig, BackupFile, BackupStatus } from '@mantle/client-type
 import type { BackupFrequency } from '@mantle/client-types';
 import { env } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
+import { spacesRoot } from '@mantle/files';
 
 export type { BackupFrequency };
 export type { BackupConfig, BackupFile, BackupStatus };
@@ -327,6 +329,44 @@ export async function listBackups(cfg?: BackupConfig | null): Promise<BackupFile
 
 // One backup at a time per process — Run-now and the scheduler must not
 // overlap (two pg_dumps are harmless but wasteful; interleaved rotation isn't).
+/**
+ * Tar the personal-space root (every member's file bytes) to `out`, the same
+ * archive scripts/db-dump.sh writes; scripts/db-restore.sh puts it back.
+ * Written via a `.part` name so a half-written archive is never kept. The
+ * upload spool (in-flight uploads) is left out. Returns 'no-root' when this
+ * process has no spaces root, or it does not exist yet (no member ever
+ * uploaded): nothing to keep.
+ */
+export async function archiveSpaces(out: string): Promise<'archived' | 'no-root'> {
+  let root: string;
+  try {
+    root = spacesRoot();
+  } catch {
+    return 'no-root';
+  }
+  if (!existsSync(root)) return 'no-root';
+  const part = `${out}.part`;
+  const exit = await new Promise<{ code: number | null; stderr: string; spawnErr?: string }>(
+    (resolve) => {
+      const child = spawn('tar', ['-C', root, '--exclude=./.upload-spool', '-czf', part, '.'], {
+        stdio: ['ignore', 'ignore', 'pipe'],
+      });
+      let stderr = '';
+      child.stderr.on('data', (d) => {
+        stderr += String(d);
+      });
+      child.on('error', (err) => resolve({ code: null, stderr, spawnErr: msg(err) }));
+      child.on('close', (code) => resolve({ code, stderr }));
+    },
+  );
+  if (exit.spawnErr || exit.code !== 0) {
+    await unlink(part).catch(() => {});
+    throw new Error(exit.spawnErr ?? `tar exited ${exit.code}: ${exit.stderr.slice(0, 300)}`);
+  }
+  await rename(part, out);
+  return 'archived';
+}
+
 let inflight: Promise<BackupStatus> | null = null;
 
 export async function runBackup(
@@ -489,6 +529,16 @@ async function runBackupInner(
     console.error(`[backup] ⚠ app-database snapshot pass crashed: ${msg(err)}`);
   }
 
+  // Personal-space file bytes (member logins): plain files, written once per
+  // upload and never edited in place, so a tar is consistent enough. Same
+  // timestamp + rotation. Loud but non-fatal, like the passes above.
+  try {
+    const r = await archiveSpaces(path.join(dir, `mantle-spaces-${ts}.tgz`));
+    if (r === 'no-root') console.warn('[backup] ▷ no personal-space root in this process');
+  } catch (err) {
+    console.error(`[backup] ⚠ personal-space archive failed: ${msg(err)}`);
+  }
+
   // Rotate: newest `keep` survive — dumps AND their table-db sibling dirs.
   // Only our own mantle-* names are candidates, so manual files in the same
   // directory are never touched.
@@ -502,6 +552,7 @@ async function runBackupInner(
     await rm(path.join(dir, `mantle-app-dbs-${stamp}`), { recursive: true, force: true }).catch(
       () => {},
     );
+    await unlink(path.join(dir, `mantle-spaces-${stamp}.tgz`)).catch(() => {});
   }
 
   const finishedAt = new Date().toISOString();

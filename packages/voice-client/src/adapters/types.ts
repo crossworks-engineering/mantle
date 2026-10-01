@@ -203,6 +203,11 @@ export interface ChatResult {
    *  providers return `undefined` here; the trace falls back to
    *  `fallbackCostMicroUsd(model, ...)`. */
   reportedCostUsd?: number;
+  /** The upstream provider that actually served the call, when a router
+   *  reports it (OpenRouter: "Anthropic", "Amazon Bedrock", "Google", …).
+   *  Each upstream keeps its own prompt cache, so a switch between them is a
+   *  cache miss that no prompt change explains. Undefined when unknown. */
+  servedBy?: string;
   /** Provider reasoning blocks from this turn (OpenRouter `reasoning_details`).
    *  When the model thought before answering, the tool-loop stores these on the
    *  assistant message it appends so the NEXT request can echo them back —
@@ -463,6 +468,12 @@ export interface ChatOptions {
   /** Provider-neutral prompt-cache hints. See {@link ChatCacheControl}.
    *  Adapters that don't talk to a cache-aware provider ignore this. */
   cacheControl?: ChatCacheControl;
+  /** A stable id for the conversation this call belongs to (≤256 chars).
+   *  Routers use it as the cache-affinity key: OpenRouter's `session_id`
+   *  (sticky routing: follow-up calls go back to the upstream holding the
+   *  warm cache) and xAI's `x-grok-conv-id` (the same server). Adapters that
+   *  have no such key ignore it. Never per-call: a new id per call defeats it. */
+  sessionId?: string;
   /** Optional provider-specific overrides — adapter chooses what to honour.
    *  Used for things like xAI's `reasoning_effort` or HF's `:fastest`
    *  routing suffix. */
@@ -863,4 +874,66 @@ export interface EmbeddingDispatcher extends AdapterMeta {
    *  is configured yet (so the dropdown isn't empty in create mode)
    *  AND as a last-resort if discovery errors. */
   staticCatalog?(): readonly EmbeddingModelInfo[];
+}
+
+// ─── Decision (typed answers, no prose) ─────────────────────────────
+
+/** One question for a decision model. Three shapes, mirroring TypeSafe's
+ *  primitives: `choice` picks one key from `criteria`; `score` places the
+ *  state on an ORDERED rubric (index 0 = lowest); `noul` is a yes/no whose
+ *  answer is the probability of "yes". Write `instructions` as one direct
+ *  question and name the state fields it refers to in backticks — the model
+ *  reads literally, so contrastive criteria ("not for …") pay off. */
+export type DecisionQuestion =
+  | { type: 'choice'; instructions: string; criteria: Record<string, string> }
+  | { type: 'score'; instructions: string; criteria: readonly string[] }
+  | { type: 'noul'; instructions: string; criteria?: { true?: string; false?: string } };
+
+/** One answer. `confidence` (0-1) is the SHAPE of the distribution — 1 when
+ *  all mass sits on one option, 0 when it is flat — and is the number the
+ *  caller gates on; `probabilities` say WHICH options were likely. A `noul`
+ *  has no separate confidence: its probability is the whole answer. */
+export type DecisionAnswer =
+  | {
+      type: 'choice';
+      choice: string;
+      confidence: number;
+      probabilities: Record<string, number>;
+    }
+  | {
+      type: 'score';
+      /** Probability-weighted mean over the rubric indexes (fractional). */
+      score: number;
+      confidence: number;
+      probabilities: Record<string, number>;
+    }
+  | { type: 'noul'; probability: number };
+
+export interface DecisionOptions {
+  apiKey: string;
+  model: string;
+  /** The evidence: a string, a JSON object (preferred — every part has a
+   *  name the questions can point at) or an array. Text only. */
+  state: unknown;
+  questions: Record<string, DecisionQuestion>;
+  /** Ask the provider for zero-data-retention routing and no data
+   *  collection. The state can hold the owner's documents. */
+  zeroDataRetention?: boolean;
+  /** Hard ceiling; the adapter aborts and throws past it. */
+  timeoutMs?: number;
+}
+
+export interface DecisionResult {
+  answers: Record<string, DecisionAnswer>;
+  /** Echo of the model the provider actually served. */
+  model: string;
+  tokensIn?: number;
+  tokensOut?: number;
+  /** Provider-reported USD cost (OpenRouter `usage.cost`). */
+  reportedCostUsd?: number;
+}
+
+export interface DecisionDispatcher extends AdapterMeta {
+  /** One evaluation: all questions answered in one parallel pass. */
+  decide(opts: DecisionOptions): Promise<DecisionResult>;
 }

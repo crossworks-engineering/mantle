@@ -23,9 +23,22 @@
  */
 
 import { and, eq, sql } from 'drizzle-orm';
-import { db, nodes, type Node } from '@mantle/db';
+import {
+  carrySpaceRows,
+  db,
+  nodes,
+  takeShareWriteLock,
+  type Node,
+  takeShareReadLock,
+} from '@mantle/db';
 import { moveFile as moveFileOnDisk, renameFolder as renameFolderOnDisk } from './disk';
-import { FILES_ROOT_LABEL } from './paths';
+import {
+  FILES_MAX_FOLDER_DEPTH,
+  FILES_ROOT_LABEL,
+  filesFolderDepth,
+  isFilesPath,
+  notAFilesFolder,
+} from './paths';
 import { reconcileFilesIndexing } from './indexing';
 import {
   createFolder,
@@ -115,10 +128,15 @@ export async function moveFileById(args: {
   const oldPath = node.path;
   await moveFileOnDisk(oldPath, filename, args.destPath);
   try {
-    await db
-      .update(nodes)
-      .set({ path: args.destPath, updatedAt: new Date() })
-      .where(eq(nodes.id, node.id));
+    // The share lock (shared) before the row: see takeShareReadLock.
+    await db.transaction(async (tx) => {
+      await takeShareReadLock(tx, args.ownerId);
+      await tx
+        .update(nodes)
+        // Filing is not editing: the file keeps its updated_at (node-ops.ts).
+        .set({ path: args.destPath })
+        .where(eq(nodes.id, node.id));
+    });
   } catch (err) {
     await moveFileOnDisk(args.destPath, filename, oldPath).catch(() => {});
     throw err;
@@ -131,6 +149,32 @@ export async function moveFileById(args: {
 
   const row = await fileById({ ownerId: args.ownerId, fileId: node.id });
   return row!;
+}
+
+/** Refuse a move or copy that would put the folder's deepest subfolder more
+ *  than FILES_MAX_FOLDER_DEPTH below `files`. */
+async function assertSubtreeFits(
+  ownerId: string,
+  folderPath: string,
+  destParentPath: string,
+  op: string,
+): Promise<void> {
+  const [row] = await db
+    .select({ deepest: sql<number>`max(nlevel(${nodes.path}))::int` })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, ownerId),
+        eq(nodes.type, 'branch'),
+        sql`${nodes.path} <@ ${folderPath}::ltree`,
+      ),
+    );
+  const span = (row?.deepest ?? 0) - folderPath.split('.').length + 1;
+  if (filesFolderDepth(destParentPath) + Math.max(span, 1) > FILES_MAX_FOLDER_DEPTH) {
+    throw new Error(
+      `${op}: '${folderPath}' would sit deeper than ${FILES_MAX_FOLDER_DEPTH} folder levels under '${destParentPath}'; move it higher up`,
+    );
+  }
 }
 
 /**
@@ -154,6 +198,15 @@ export async function moveFolderById(args: {
   if (node.path === FILES_ROOT_LABEL) {
     throw new Error('moveFolderById: cannot move the files root');
   }
+  if (!isFilesPath(node.path)) throw notAFilesFolder('moveFolderById', node.path);
+  if (!isFilesPath(args.destParentPath)) {
+    throw notAFilesFolder('moveFolderById', args.destParentPath);
+  }
+  if ((node.data as Record<string, unknown> | null)?.system === true) {
+    throw new Error(
+      'moveFolderById: this folder is made by Mantle and found by its path; it cannot be moved',
+    );
+  }
   const destParent = await branchAt(args.ownerId, args.destParentPath);
   if (!destParent) {
     throw new Error(
@@ -174,6 +227,7 @@ export async function moveFolderById(args: {
       `moveFolderById: cannot move '${oldPath}' into its own subtree ('${args.destParentPath}')`,
     );
   }
+  await assertSubtreeFits(args.ownerId, oldPath, args.destParentPath, 'moveFolderById');
   if (await branchAt(args.ownerId, newPath)) {
     throw new Error(
       `moveFolderById: a folder named '${label}' already exists under '${args.destParentPath}' — rename one of them first`,
@@ -185,15 +239,19 @@ export async function moveFolderById(args: {
   await renameFolderOnDisk(oldPath, newPath);
   try {
     await db.transaction(async (tx) => {
+      await takeShareWriteLock(tx, args.ownerId);
       await tx.execute(sql`
         UPDATE ${nodes}
         SET path = CASE
               WHEN path = ${oldPath}::ltree THEN text2ltree(${newPath})
               ELSE (text2ltree(${newPath}) || subpath(path, nlevel(${oldPath}::ltree)))::ltree
             END,
-            updated_at = now()
+            -- Filing is not editing (as for every other kind, node-ops.ts):
+            -- only the folder itself is stamped, never what it holds.
+            updated_at = CASE WHEN path = ${oldPath}::ltree THEN now() ELSE updated_at END
         WHERE owner_id = ${args.ownerId} AND path <@ ${oldPath}::ltree
       `);
+      await carrySpaceRows(tx, args.ownerId, oldPath, newPath);
     });
   } catch (err) {
     await renameFolderOnDisk(newPath, oldPath).catch(() => {});
@@ -291,6 +349,10 @@ export async function copyFolderById(args: {
     throw new Error('copyFolderById: folder not found — find the id with folder_list');
   }
   if (node.path === FILES_ROOT_LABEL) throw new Error('copyFolderById: cannot copy the files root');
+  if (!isFilesPath(node.path)) throw notAFilesFolder('copyFolderById', node.path);
+  if (!isFilesPath(args.destParentPath)) {
+    throw notAFilesFolder('copyFolderById', args.destParentPath);
+  }
   const destParent = await branchAt(args.ownerId, args.destParentPath);
   if (!destParent) {
     throw new Error(
@@ -302,6 +364,7 @@ export async function copyFolderById(args: {
       `copyFolderById: cannot copy '${node.path}' into its own subtree ('${args.destParentPath}')`,
     );
   }
+  await assertSubtreeFits(args.ownerId, node.path, args.destParentPath, 'copyFolderById');
   const label = node.path.split('.').at(-1)!;
   if (await branchAt(args.ownerId, `${args.destParentPath}.${label}`)) {
     throw new Error(

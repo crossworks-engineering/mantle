@@ -33,6 +33,7 @@ export async function GET(req: Request) {
     author,
     status: url.searchParams.get('status') ?? undefined,
     tag: url.searchParams.get('tag') ?? undefined,
+    learnedBy: url.searchParams.get('learned_by')?.slice(0, 80) || undefined,
   };
   const [journals, total, tags] = await Promise.all([
     listJournals(user.id, { ...opts, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),

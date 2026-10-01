@@ -10,7 +10,12 @@
  * data (plus invariant assertions) — it must stay importable from CLI, worker,
  * and Next.js contexts alike, so no side effects and no app imports.
  */
-import type { TaskCost, TaskKind, TaskStatus } from '@mantle/client-types/types/maintenance';
+import type {
+  MaintenanceArg,
+  TaskCost,
+  TaskKind,
+  TaskStatus,
+} from '@mantle/client-types/types/maintenance';
 export type { TaskCost, TaskKind, TaskStatus };
 
 /** What a LIVE run of the task spends. `sql` and `io` are free; `imap` costs
@@ -35,6 +40,15 @@ export interface MaintenanceTask {
    *  guardrail without an `applyFlag`. Set this ONLY when the script provably
    *  writes nothing: it is the thing that lets the unattended cron run it. */
   readOnly?: boolean;
+  /** What a DRY run spends, when it is not free (a preview that calls a
+   *  model). The runner then asks for --yes on the dry run too. */
+  dryRunCost?: TaskCost;
+  /** The task needs flags only a terminal can pass (an agent slug, a page
+   *  id): the UI runner refuses it with this reason instead of failing. */
+  cliOnly?: string;
+  /** Values the UI runner collects and passes as `--<name>=<value>` (an
+   *  agent slug for the dry run, a review page id for the apply). */
+  uiArgs?: MaintenanceArg[];
   /** Flag that switches the script from dry-run (its default) to live. */
   applyFlag?: string;
   /** Flag that switches the script from live (its default) to dry-run. */
@@ -111,6 +125,66 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       "Idempotent; a no-op once clean. Threshold sits well clear of the adapters' own guards (60s connect, 120s idle, 90s SDK retry envelope) and of a long tool-loop turn.",
   },
   {
+    slug: 'space-purge',
+    title: "Purge deactivated logins' private items",
+    description:
+      "Deletes the PRIVATE personal items of every login deactivated for 30 days or more (member logins plan 6.4, decided 2026-09-26), rows and bytes; a space left empty loses its MANTLE_SPACES_ROOT and TABLE_DB_DIR directories too. Team-shared and submitted items stay: an admin accepts or discards them from Team admin > Review. Counts only, never titles: admins never browse a member's private items.",
+    kind: 'recurring',
+    status: 'live',
+    cost: 'io',
+    schedulable: true,
+    script: 'scripts/space-purge.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    notes:
+      'Pure SQL and file removal. Needs the /data/spaces and /data/table-dbs mounts (worker_maintenance carries both); without MANTLE_SPACES_ROOT it skips rather than leave orphan bytes.',
+  },
+  {
+    slug: 'client-codes-reap',
+    title: 'Reap old client sign-in codes',
+    description:
+      'Deletes client sign-in code rows older than 30 days that are finished (used, revoked or expired; a used sign-in link is kept as the admin\'s "last used" record), blanks the request address on code rows older than 7 days, and deletes skipped-request rows older than 30 days (client logins audit B21). Only hashes and addresses are removed: nothing a client or an admin reads.',
+    kind: 'recurring',
+    status: 'live',
+    cost: 'sql',
+    schedulable: true,
+    script: 'scripts/client-codes-reap.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    notes:
+      'Plain SQL, no model, idempotent; a no-op once clean. The rule lives in @mantle/content client-codes.ts (reapClientSigninCodes), shared by the cron and the script.',
+  },
+  {
+    slug: 'share-drift',
+    title: 'Repair folder-share drift',
+    description:
+      "Finds rows whose stored inherited share (nodes.inherited_level) differs from what their folders give (migration 0204's rule) and sets them right. The triggers keep it true for every ordinary write; this catches a race between an unshare and an insert into the same folder, which would leave a row readable at a share nobody set (folder audit Y1). Also puts the embed edges back to what the stored pages, drawings and notes say and repairs the level embeds are read through (nodes.embedded_level, migration 0208). Reports how many were read more openly than allowed.",
+    kind: 'recurring',
+    status: 'live',
+    cost: 'sql',
+    schedulable: true,
+    script: 'scripts/share-drift.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    notes:
+      'Plain SQL, no model, idempotent; a no-op once clean. The rule lives in @mantle/content/tree share-drift.ts (repairShareDrift), shared by the cron and the script.',
+  },
+  {
+    slug: 'app-access-log-reap',
+    title: 'Trim the app access log',
+    description:
+      "Deletes app access log rows older than 90 days (client tier audit I4): every app ticket, tool call and write by a member, a client or a share link, and each caller's reads at most once a minute, land a row, and nothing else removes them. The owner's access log view shows the newest 100 rows of an app.",
+    kind: 'recurring',
+    status: 'live',
+    cost: 'sql',
+    schedulable: true,
+    script: 'scripts/app-access-log-reap.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    notes:
+      'Plain SQL in batches, no model, idempotent; a no-op once clean. The rule lives in @mantle/content app-access-log.ts (reapAppAccessLog), shared by the cron and the script.',
+  },
+  {
     slug: 'traces-reap',
     title: 'Reap abandoned traces (all owners)',
     description:
@@ -181,6 +255,54 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     extraFlags: ['--types=<list>', '--since=<date>', '--limit=<n>', '--rate=<seconds>'],
     notes:
       'Indirect chat + embedding spend via the extractor; requires the agent (server/api) to be running. No dry-run flag — it prints the candidate count before firing.',
+  },
+  {
+    slug: 'persona-notes-to-journal',
+    title: "Move an agent's persona notes into the Journal",
+    description:
+      "Dry run (default): the agent's own chat model sorts every live persona note into a Journal kind (general = always on, topic = picked per turn by journal_recall), near-copies are merged, and the plan is written to a review page. --apply --page=<id> turns that reviewed plan into Journal entries (no sorting call; each entry is indexed, which runs the extractor; idempotent; notes retired since the dry run are skipped). Persona notes are never touched.",
+    kind: 'ops',
+    status: 'live',
+    // Both runs spend: the dry run sorts with the agent's model; the apply
+    // indexes each new entry, which runs the extractor.
+    cost: 'llm',
+    dryRunCost: 'llm',
+    uiArgs: [
+      { name: 'agent', kind: 'agent', label: 'Agent', for: 'dry' },
+      { name: 'page', kind: 'page', label: 'Review page', for: 'apply' },
+    ],
+    schedulable: false,
+    script: 'scripts/persona-notes-to-journal.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    extraFlags: ['--agent=<slug>', '--page=<review page id>'],
+    requiresEnv: ['ALLOWED_USER_ID'],
+    notes:
+      "Spike 13 (dev-brain page 9f57fa46). The dry run spends the agent's model (measured 2026-09-23: $0.79 for 503 notes on Sonnet 5, $0.12 for 119 on grok) plus embeddings; applying creates one Journal entry per kept note, each indexed like any Journal write. Inside a box's container pass the owner: docker exec -e ALLOWED_USER_ID=<owner id>. The agent keeps reading its persona notes until memory_config.notes_target = journal, which also switches its Journal tiers live.",
+  },
+  {
+    slug: 'journal-rules-reconcile',
+    title: "Clean up an agent's learned Journal rules",
+    description:
+      "Dry run (default): every close pair of the agent's live learned rules goes to the decider's rule_reconcile use (same rule? does the newer one change the older?), and the older rules it would retire, each into its newer rule, are written to a review page. --apply --page=<id> applies that reviewed plan as supersede marks (reversible; a retire whose rules changed since the dry run is skipped). Only rules the agent learned; what it recorded for the user is never touched.",
+    kind: 'ops',
+    status: 'live',
+    // Apply only writes supersede marks; the dry run calls the decider (Jev)
+    // and the embedder.
+    cost: 'sql',
+    dryRunCost: 'llm',
+    uiArgs: [
+      { name: 'agent', kind: 'agent', label: 'Agent', for: 'dry' },
+      { name: 'page', kind: 'page', label: 'Review page', for: 'apply' },
+    ],
+    schedulable: false,
+    script: 'scripts/journal-rules-reconcile.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    extraFlags: ['--agent=<slug>', '--page=<review page id>'],
+    requiresEnv: ['ALLOWED_USER_ID'],
+    notes:
+      "Spike 14 (dev-brain page d58e4ed3). Needs the decider's rule_reconcile use enabled (shadow or live). Jev cost is tiny (spike: $0.01 for 387 pairs); embeddings are cached by content. Inside a box's container pass the owner: docker exec -e ALLOWED_USER_ID=<owner id>.",
   },
   {
     slug: 'draws-re-render',
@@ -255,7 +377,7 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     slug: 'extract-images-backfill',
     title: 'Extract embedded images from existing documents',
     description:
-      'Re-fires node_ingested for documents ingested before embedded-image extraction existed, so their diagrams and screenshots become real image files under files/extracted-images/. Skips documents that already produced images.',
+      'Re-fires node_ingested for documents ingested before embedded-image extraction existed, so their diagrams and screenshots become real image files under files/auto-filed/extracted-images/. Skips documents that already produced images.',
     kind: 'backfill',
     status: 'live',
     cost: 'llm',
@@ -493,6 +615,23 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       "Keyless — OpenRouter's catalog is public, fetched once per run and cached 6h, and no model is invoked. Exits 0 even when a misfit is found. Only OpenRouter routes are subjects: the modality facts come from OpenRouter's catalog, so a direct-provider slug ('claude-opus-5') is out of scope rather than a finding, and the meta-routers (openrouter/auto*) are reported unchecked because their modalities are the union over everything they might route to. Same rule as the four write guards (`poolModelIssue`), so the report and the guards can never disagree.",
   },
   {
+    slug: 'curate-pools',
+    title: 'Re-curate model pools',
+    description:
+      "Rebuilds every curated model shortlist from live evidence: OpenRouter's catalog (what exists, what it costs, what it can DO), Artificial Analysis benchmark indices (what scores), and OpenRouter's usage rankings (what real traffic trusts). Benchmarks alone over-rate models nobody ships; usage alone over-rates whatever is cheapest, so the ranking blends them. Complements the three model reports, which all stop at a finding: pool-fit asks whether an entry can do its pool's job, pinned-model-drift whether a model still exists, models-drift whether our catalogue is current — none proposes a replacement, and this is the one that does. Dry-run by default: it prints the plan, and only --apply writes.",
+    kind: 'recurring',
+    status: 'live',
+    cost: 'io',
+    schedulable: false,
+    script: 'scripts/curate-pools.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    extraFlags: ['--json', '--export'],
+    requiresEnv: ['MANTLE_MASTER_KEY'],
+    notes:
+      "Invokes no model — the three datasets are HTTP reads and the ranking is arithmetic, so a run costs network round-trips and no tokens. The master key is needed only to decrypt the owner's OpenRouter key for the benchmark/usage endpoints; the catalog itself is keyless, and without a key the run still produces a plan but says out loud that it ranked on price and modality alone. NOT schedulable: --apply REPLACES each pool (a ranked list merged into a stale one yields an order that is neither), and a shortlist rearranging itself unattended is the kind of change an owner should see before it lands. --export <path> writes the repo template in the /api/model-pools/export shape, which is how a re-curation reaches a release.",
+  },
+  {
     slug: 'models-drift',
     title: 'Model catalogue drift report',
     description:
@@ -510,6 +649,10 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       'Reads api_keys and calls each provider once; no model is invoked, so there is no token spend. Skips OpenRouter, Copilot, local and custom — they build their lists from the provider and cannot drift by construction. Exits 0 even when drift is found: a provider shipping a model is not a failure.',
   },
 ];
+
+/** Env the UI runner fills from the signed-in owner when the box leaves it
+ *  empty: the scripts scope their work to that user. */
+export const SESSION_ENV = ['ALLOWED_USER_ID'] as const;
 
 export function getTask(slug: string): MaintenanceTask | undefined {
   return MAINTENANCE_TASKS.find((t) => t.slug === slug);

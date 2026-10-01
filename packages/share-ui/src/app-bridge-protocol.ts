@@ -31,7 +31,12 @@ export type HubNavTarget = 'chat' | { briefing: string } | { app: string };
 
 /** Fire-and-forget lifecycle events the app emits (no response expected). */
 export type BridgeEvt =
+  // Mounted AND painted once (the kit posts it after the first commit's frame).
   | { v: 1; kind: 'ready' }
+  // host.ui.holdReady() / host.ui.ready(): an app that loads what the host
+  // can't see keeps the host's loader up until it says so (see app-reveal.ts).
+  | { v: 1; kind: 'ready.hold' }
+  | { v: 1; kind: 'ready.release' }
   | { v: 1; kind: 'resize'; height: number }
   | { v: 1; kind: 'error'; message: string; stack?: string }
   // Inspect mode (host-injected overlay → host): the user locked/cleared a
@@ -69,8 +74,11 @@ export function isFromApp(m: unknown): m is FromApp {
  *  renders, handed to a designated hub app so it can render the same things its
  *  own way. Mirrors the /api/team/hub response; every field is member-safe by
  *  construction (sections are the owner's team-mode page shares, stats are
- *  whitelisted coarse counts). `memberName` is display-grade — a hub app must
- *  never build permission logic on it. */
+ *  whitelisted coarse counts). The member shell's home answers the same shape
+ *  from /api/member/home: sections are team-level pages with the page id as
+ *  `token`, counts are Library counts, apps are the apps members may run
+ *  (member logins Phase 4b). Treat `token` as opaque. `memberName` is
+ *  display-grade — a hub app must never build permission logic on it. */
 export type HubData = {
   /** Brain's site-name pref; null ⇒ the app should fall back to its own label. */
   siteName: string | null;

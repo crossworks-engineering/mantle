@@ -4,9 +4,11 @@
  * Split out of ops.ts; bodies moved verbatim.
  */
 
-import { promises as fsp } from 'node:fs';
+import { createReadStream, promises as fsp } from 'node:fs';
+import { Readable } from 'node:stream';
 import { and, eq, sql } from 'drizzle-orm';
 import {
+  assertFilesFolderDepth,
   diskPathForFile,
   extOf,
   isFilesPath,
@@ -22,17 +24,10 @@ import {
 } from '../index';
 import { derivedCountsOf, type DerivedCounts } from '../derived-counts';
 import { deleteThumbnailsFor } from '../thumbnail';
-import {
-  db,
-  draws,
-  emailAttachments,
-  forumUploads,
-  nodes,
-  notifyNodeIngested,
-  type Node,
-} from '@mantle/db';
+import { db, draws, emailAttachments, nodes, notifyNodeIngested, type Node } from '@mantle/db';
 import { getContent } from '@mantle/storage';
 import { fileRowFromNode, type FileRow } from './shared';
+import { currentViewerLevel } from '@mantle/db/viewer';
 
 const TEXT_BYTE_CAP = 1_000_000; // 1 MB cap for content-in-DB caching.
 
@@ -152,46 +147,13 @@ export async function upsertFile(args: {
     ...(content != null ? { content } : {}),
   };
 
-  let row: Node;
-  if (existing) {
-    const oldData = (existing.data ?? {}) as Record<string, unknown>;
-    // Preserve summary / entities from the extractor across edits unless
-    // the content changed — in which case we clear them so the next
-    // extractor run gets a fresh shot.
-    const sameContent = oldData.sha256 === written.sha256;
-    const preserved = sameContent
-      ? {
-          summary: oldData.summary,
-          summary_model: oldData.summary_model,
-          summary_at: oldData.summary_at,
-          entities: oldData.entities,
-        }
-      : {};
-    // Title: an explicit one wins; otherwise keep whatever the node already
-    // carries when it differs from the filename (something deliberately
-    // named it), and fall back to the filename. Blindly resetting to the
-    // filename here used to erase a caller's title on every re-upsert.
-    const existingTitle = typeof existing.title === 'string' ? existing.title : '';
-    const nextTitle =
-      args.title?.trim() ||
-      (existingTitle && existingTitle !== filename ? existingTitle : filename);
-    const [updated] = await db
-      .update(nodes)
-      .set({
-        title: nextTitle,
-        data: { ...preserved, ...newData },
-        updatedAt: new Date(),
-        ...(sameContent ? {} : { embedding: null }),
-      })
-      .where(eq(nodes.id, existing.id))
-      .returning();
-    if (!updated) throw new Error('upsertFile: update returned no row');
-    row = updated;
-    // Notify the extractor again only when content changed.
-    if (!sameContent) {
-      await notifyNodeIngested(updated.id);
-    }
-  } else {
+  // Insert first when no row owns the name. A file is unique per (owner,
+  // folder, filename) (migration 0184), so the only clash left is a race:
+  // the files watcher saw the bytes written above and inserted the node
+  // between our lookup and this insert. That node IS this file; fall through
+  // and update it like any existing row, so the caller's title/data/tags land.
+  let target: Node | undefined = existing;
+  if (!target) {
     const [inserted] = await db
       .insert(nodes)
       .values({
@@ -203,14 +165,69 @@ export async function upsertFile(args: {
         data: newData,
         tags: [...new Set(['file', ...(args.tags ?? [])])],
       })
+      .onConflictDoNothing({
+        target: [nodes.ownerId, nodes.path, nodes.slug],
+        where: sql`${nodes.slug} is not null and ${nodes.type} = 'file'`,
+      })
       .returning();
-    if (!inserted) throw new Error('upsertFile: insert returned no row');
-    row = inserted;
     // pg_notify('node_ingested') is fired by migration 0018's trigger;
     // no explicit notify needed for fresh inserts.
+    if (inserted) return fileRowFromNode(inserted);
+    [target] = await db
+      .select()
+      .from(nodes)
+      .where(
+        and(
+          eq(nodes.ownerId, args.ownerId),
+          eq(nodes.type, 'file'),
+          sql`${nodes.path}::text = ${args.parentPath}`,
+          eq(nodes.slug, filename),
+        ),
+      )
+      .limit(1);
+    if (!target) throw new Error('upsertFile: insert returned no row');
   }
 
-  return fileRowFromNode(row);
+  const oldData = (target.data ?? {}) as Record<string, unknown>;
+  // Preserve summary / entities from the extractor across edits unless
+  // the content changed — in which case we clear them so the next
+  // extractor run gets a fresh shot.
+  const sameContent = oldData.sha256 === written.sha256;
+  const preserved = sameContent
+    ? {
+        summary: oldData.summary,
+        summary_model: oldData.summary_model,
+        summary_at: oldData.summary_at,
+        entities: oldData.entities,
+      }
+    : {};
+  // Title: an explicit one wins; otherwise keep whatever the node already
+  // carries when it differs from the filename (something deliberately
+  // named it), and fall back to the filename. Blindly resetting to the
+  // filename here used to erase a caller's title on every re-upsert.
+  const existingTitle = typeof target.title === 'string' ? target.title : '';
+  const nextTitle =
+    args.title?.trim() || (existingTitle && existingTitle !== filename ? existingTitle : filename);
+  const [updated] = await db
+    .update(nodes)
+    .set({
+      title: nextTitle,
+      data: { ...preserved, ...newData },
+      // Only when the caller brings tags: a plain re-upsert leaves them be,
+      // and the race path above must still land them on the watcher's row.
+      ...(args.tags?.length ? { tags: [...new Set([...target.tags, 'file', ...args.tags])] } : {}),
+      updatedAt: new Date(),
+      ...(sameContent ? {} : { embedding: null }),
+    })
+    .where(eq(nodes.id, target.id))
+    .returning();
+  if (!updated) throw new Error('upsertFile: update returned no row');
+  // Notify the extractor again only when content changed.
+  if (!sameContent) {
+    await notifyNodeIngested(updated.id);
+  }
+
+  return fileRowFromNode(updated);
 }
 
 /**
@@ -225,6 +242,10 @@ export async function upsertFile(args: {
  * file, so callers 404 cleanly rather than taking a 500 from the S3 client.
  */
 async function storageBytesForNode(nodeId: string): Promise<Buffer | null> {
+  // An email attachment is part of the private corpus: never readable below
+  // admin (member logins Phase 0b), and the team role cannot read
+  // email_attachments anyway.
+  if (currentViewerLevel() !== 'admin') return null;
   const [attachment] = await db
     .select({ storageKey: emailAttachments.storageKey })
     .from(emailAttachments)
@@ -290,6 +311,43 @@ export async function readFileById(args: {
   const stored = await storageBytesForNode(node.id);
   if (!stored) return null;
   return { row: fileRowFromNode(node), bytes: stored, path: null };
+}
+
+/**
+ * {@link readFileById}'s streaming twin, for serving a download: the same
+ * three sources in the same order, but a file on disk is opened as a stream
+ * with its size from `stat`, so a large file never sits in memory. Inline text
+ * and an object-storage attachment are already bounded (the inline cap, and
+ * an attachment is admin-only) and come back as a one-chunk stream.
+ */
+export async function openFileById(args: {
+  ownerId: string;
+  fileId: string;
+}): Promise<{ row: FileRow; stream: Readable; size: number } | null> {
+  const [node] = await db
+    .select()
+    .from(nodes)
+    .where(and(eq(nodes.id, args.fileId), eq(nodes.ownerId, args.ownerId)))
+    .limit(1);
+  if (!node || node.type !== 'file') return null;
+  const data = (node.data ?? {}) as Record<string, unknown>;
+  const row = fileRowFromNode(node);
+  const whole = (bytes: Buffer) => ({ row, stream: Readable.from([bytes]), size: bytes.length });
+
+  if (typeof data.content === 'string') return whole(Buffer.from(data.content, 'utf8'));
+
+  const filePath = diskPathForFile(node.path, String(data.filename ?? ''));
+  if (filePath) {
+    try {
+      const st = await fsp.stat(filePath);
+      if (st.isFile()) return { row, stream: createReadStream(filePath), size: st.size };
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+    }
+  }
+
+  const stored = await storageBytesForNode(node.id);
+  return stored ? whole(stored) : null;
 }
 
 /**
@@ -420,14 +478,6 @@ export async function deleteFileById(args: {
   // Reap the cached thumbnail derivatives too — keyed by content hash, so a
   // deleted photo doesn't leave its preview behind. Best-effort.
   void deleteThumbnailsFor(typeof data.sha256 === 'string' ? (data.sha256 as string) : null);
-  // A filed forum upload points here by node_id (no FK — the node is a
-  // derived artifact). Clear the pointer so its member serve route 404s
-  // cleanly instead of chasing a deleted node. Cheap and almost always a
-  // no-op (only file nodes filed from the forum review ever match).
-  await db
-    .update(forumUploads)
-    .set({ nodeId: null })
-    .where(and(eq(forumUploads.ownerId, args.ownerId), eq(forumUploads.nodeId, node.id)));
   return { ok: true };
 }
 
@@ -493,6 +543,9 @@ export async function syncFileFromDisk(args: {
     )
     .limit(1);
   if (!parent) {
+    // A directory made on disk deeper than the tree allows stays out of the
+    // brain: the caller (the watcher) logs the refusal and moves on.
+    assertFilesFolderDepth(args.parentPath, 'syncFileFromDisk');
     await ensureBranchChain(args.ownerId, args.parentPath);
   }
 
@@ -572,8 +625,30 @@ export async function syncFileFromDisk(args: {
       data: newData,
       tags: ['file'],
     })
+    // A file is unique per (owner, folder, filename): migration 0184. The one
+    // clash left is a race: an upload wrote these bytes and inserted its node
+    // between our lookup and this insert. That node IS this file; no-op.
+    .onConflictDoNothing({
+      target: [nodes.ownerId, nodes.path, nodes.slug],
+      where: sql`${nodes.slug} is not null and ${nodes.type} = 'file'`,
+    })
     .returning({ id: nodes.id });
-  if (!inserted) throw new Error('syncFileFromDisk: insert returned no row');
+  if (!inserted) {
+    const [winner] = await db
+      .select({ id: nodes.id })
+      .from(nodes)
+      .where(
+        and(
+          eq(nodes.ownerId, args.ownerId),
+          eq(nodes.type, 'file'),
+          sql`${nodes.path}::text = ${args.parentPath}`,
+          eq(nodes.slug, filename),
+        ),
+      )
+      .limit(1);
+    if (!winner) throw new Error('syncFileFromDisk: insert returned no row');
+    return { status: 'noop', nodeId: winner.id };
+  }
   return { status: 'inserted', nodeId: inserted.id };
 }
 
@@ -584,9 +659,13 @@ export async function deleteFileByPath(args: {
   parentPath: string;
   filename: string;
 }): Promise<{ ok: boolean }> {
-  const [node] = await db
-    .select({ id: nodes.id })
-    .from(nodes)
+  // One statement, the path and name in its WHERE: a move that commits
+  // while this waits on the row lock is re-checked against the moved row
+  // (READ COMMITTED re-evaluates the WHERE), so the watcher's unlink for the
+  // old path never deletes a file that just moved (folder audit C1). A
+  // select-then-delete by id did.
+  const done = await db
+    .delete(nodes)
     .where(
       and(
         eq(nodes.ownerId, args.ownerId),
@@ -595,10 +674,8 @@ export async function deleteFileByPath(args: {
         sql`lower(${nodes.data}->>'filename') = lower(${args.filename})`,
       ),
     )
-    .limit(1);
-  if (!node) return { ok: false };
-  await db.delete(nodes).where(eq(nodes.id, node.id));
-  return { ok: true };
+    .returning({ id: nodes.id });
+  return { ok: done.length > 0 };
 }
 
 /** Lazy-mkdir for an arbitrary ltree path under `files.*`. Inserts a

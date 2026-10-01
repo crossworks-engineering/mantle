@@ -1,9 +1,10 @@
 /**
  * Behavioural tests for page_split and page_extract_section, the two
- * structural tools that carve sub-pages OUT of a page.
+ * structural tools that carve pages OUT of a page (next to it: pages do not
+ * nest since folder phase 7).
  *
  * Both delegate the walk to @mantle/content (splitPage /
- * extractSectionToChild), so the tools' own contribution is small and easy
+ * extractSectionToPage), so the tools' own contribution is small and easy
  * to get subtly wrong: the `by` argument is a heading LEVEL, and 'h1' has
  * to reach the store as 1, not as the string; `preserve_intro` defaults to
  * true and only an explicit false turns it off; a bad level must be refused
@@ -25,14 +26,14 @@ vi.mock('@mantle/content', async (importOriginal) => {
   return {
     ...actual,
     splitPage: vi.fn(),
-    extractSectionToChild: vi.fn(),
+    extractSectionToPage: vi.fn(),
     nodeUrl: (id: string) => `https://brain.test/n/${id}`,
   };
 });
 vi.mock('@mantle/files', () => ({ fileById: vi.fn(), readFileById: vi.fn() }));
 vi.mock('@mantle/tracing', () => ({ recordIngest: vi.fn() }));
 
-import { splitPage, extractSectionToChild } from '@mantle/content';
+import { splitPage, extractSectionToPage } from '@mantle/content';
 import { PAGE_TOOLS } from './builtins-pages';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 
@@ -63,7 +64,7 @@ const children = [
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(splitPage).mockResolvedValue({ children, introKept: true } as never);
-  vi.mocked(extractSectionToChild).mockResolvedValue({
+  vi.mocked(extractSectionToPage).mockResolvedValue({
     childId: 'c-9',
     title: 'Appendix',
   } as never);
@@ -89,7 +90,11 @@ describe('page_split', () => {
 
   it('maps h1 to level 1 and keeps the intro by default', async () => {
     const res = await split.handler({ page_id: PAGE_ID, by: 'h1' }, ctx);
-    expect(splitPage).toHaveBeenCalledWith('o1', PAGE_ID, { by: 1, preserveIntro: true });
+    expect(splitPage).toHaveBeenCalledWith('o1', PAGE_ID, {
+      by: 1,
+      preserveIntro: true,
+      confirm: false,
+    });
     expect(outputOf(res)).toMatchObject({
       page_id: PAGE_ID,
       split_into: 2,
@@ -100,13 +105,17 @@ describe('page_split', () => {
 
   it('maps h2 to level 2, case-insensitively, and honours preserve_intro:false', async () => {
     await split.handler({ page_id: PAGE_ID, by: 'H2', preserve_intro: false }, ctx);
-    expect(splitPage).toHaveBeenCalledWith('o1', PAGE_ID, { by: 2, preserveIntro: false });
+    expect(splitPage).toHaveBeenCalledWith('o1', PAGE_ID, {
+      by: 2,
+      preserveIntro: false,
+      confirm: false,
+    });
   });
 
   it('tells the caller the TOC is in DRAFT while the children are already real', async () => {
     const res = await split.handler({ page_id: PAGE_ID, by: 'h2' }, ctx);
     const hint = String(outputOf(res).hint);
-    expect(hint).toMatch(/2 sub-pages/);
+    expect(hint).toMatch(/2 pages next to this one/);
     expect(hint).toMatch(/DRAFT/);
     // Discarding the parent's draft does not remove the children.
     expect(hint).toMatch(/manual cleanup/);
@@ -126,12 +135,12 @@ describe('page_extract_section', () => {
     expect(errorOf(await extract.handler({ page_id: PAGE_ID }, ctx))).toMatch(
       /heading_block_id is required/,
     );
-    expect(extractSectionToChild).not.toHaveBeenCalled();
+    expect(extractSectionToPage).not.toHaveBeenCalled();
   });
 
   it('moves the section into a child, owner-scoped, and reports the child', async () => {
     const res = await extract.handler({ page_id: PAGE_ID, heading_block_id: 'h_1' }, ctx);
-    expect(extractSectionToChild).toHaveBeenCalledWith('o1', PAGE_ID, 'h_1');
+    expect(extractSectionToPage).toHaveBeenCalledWith('o1', PAGE_ID, 'h_1', { confirm: false });
     expect(outputOf(res)).toMatchObject({ page_id: PAGE_ID, child_id: 'c-9', title: 'Appendix' });
     const hint = String(outputOf(res).hint);
     expect(hint).toContain('Appendix');
@@ -139,8 +148,8 @@ describe('page_extract_section', () => {
   });
 
   it('surfaces a store failure as the error', async () => {
-    vi.mocked(extractSectionToChild).mockRejectedValue(
-      new Error('extractSectionToChild: heading h_1 is not a top-level heading'),
+    vi.mocked(extractSectionToPage).mockRejectedValue(
+      new Error('extractSectionToPage: heading h_1 is not a top-level heading'),
     );
     const res = await extract.handler({ page_id: PAGE_ID, heading_block_id: 'h_1' }, ctx);
     expect(errorOf(res)).toMatch(/top-level heading/);

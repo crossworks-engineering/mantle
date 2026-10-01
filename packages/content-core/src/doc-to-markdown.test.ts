@@ -108,10 +108,11 @@ describe('docToMarkdown — round-trip stability', () => {
     roundTrips('Inline $E=mc^2$ here.\n\n$$\n\\int_0^1 x\\,dx\n$$');
   });
 
-  it('reference links: mention, uploaded image, file embed, sub-page card', () => {
+  it('reference links: mention, uploaded image, file embed, page link card, folder index', () => {
     roundTrips(
       'ping [Sarah](mention:entity:n-1) about [the plan](mention:node:p-2)\n\n' +
-        '![gantry](media:f-1)\n\n[spec.pdf](media:f-2)\n\n[Sub plan](page:p-9)',
+        '![gantry](media:f-1)\n\n[spec.pdf](media:f-2)\n\n[Sub plan](page:p-9)\n\n' +
+        '[Folder index](folder:f-3)\n\n[Folder index](folder:here)',
     );
   });
 

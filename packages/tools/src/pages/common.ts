@@ -1,31 +1,16 @@
 /**
- * Shared page helpers: owner-only tag stripping, the id preconditions,
+ * Shared page helpers: the id preconditions,
  * the editing-baseline pick, and the draft-conflict reply.
  *
  * Split out of builtins-pages.ts; bodies moved verbatim.
  */
 
-import type { ToolPrecondition } from '../types';
+import type { ToolHandlerContext, ToolPrecondition } from '../types';
+import { str } from '../coerce';
+import { isOwnerSurface } from '../surface';
 
 // Shared referential preconditions (checked centrally in dispatch — see
 // preconditions.ts): the id must name an EXISTING page the owner holds.
-/** The `recall` and `prompt` tags are OWNER GESTURES — `recall` turns a page
- *  tree into a served map, `prompt` makes a page auto-matchable by
- *  recall_match, and the security model (docs/recall.md) rests on a human
- *  making both calls in the editor. Agent-facing page tools therefore strip
- *  them: agents can DRAFT map and prompt pages freely; the owner activates
- *  them by tagging. (S7's recall_propose_* tools will route activation
- *  through pending approvals instead.) */
-const OWNER_ONLY_TAGS = new Set(['recall', 'prompt']);
-
-export function stripOwnerOnlyTags(tags: string[]): { tags: string[]; stripped: string[] } {
-  const stripped = tags.filter((x) => OWNER_ONLY_TAGS.has(x.trim().toLowerCase()));
-  return {
-    tags: tags.filter((x) => !OWNER_ONLY_TAGS.has(x.trim().toLowerCase())),
-    stripped,
-  };
-}
-
 export const PAGE_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'page_id', nodeType: 'page', lookup: 'page_list / search_nodes' },
 ];
@@ -40,6 +25,11 @@ export const FILE_ID_PRE: readonly ToolPrecondition[] = [
 
 export const NOTE_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'note_id', nodeType: 'note', lookup: 'note_list / search_nodes' },
+];
+
+/** A pages folder to file a new page in (folder phase 7): a `branch` row. */
+export const FOLDER_ID_PRE: readonly ToolPrecondition[] = [
+  { kind: 'node_exists', param: 'folder_id', nodeType: 'branch', lookup: 'tree_folders' },
 ];
 
 // Body check with one reason: the write looks fine, the page renders broken,
@@ -89,3 +79,85 @@ export const draftConflict = (pageId: string): { ok: false; error: string } => (
     `(or page_get for one block), re-apply your edit against the current content, ` +
     `then re-issue.`,
 });
+
+/** Where a new page goes (folder phase 7): a folder of the pages tree. */
+export const FOLDER_ID_PROP = {
+  type: 'string',
+  format: 'uuid',
+  description:
+    'the pages folder to file the new page in, from `tree_folders` (kind pages); omit for the top level',
+} as const;
+
+/** The pre-tree way to place a page, kept so older callers still land near
+ *  where they meant to: pages do not nest any more. */
+export const PARENT_ID_PROP = {
+  type: 'string',
+  format: 'uuid',
+  description:
+    'DEPRECATED, pages do not nest: a page id here files the new page in the SAME FOLDER as that page. Prefer `folder_id`.',
+} as const;
+
+/** The placement a create-a-page tool passes to `createPage`: `folder_id`
+ *  wins over the deprecated `parent_id`; neither means the top level.
+ *  `confirm` rides along: a page made in a shared folder is refused with
+ *  the list of what it opens until the user agreed (visibility-refusal.ts). */
+export function placementOf(input: Record<string, unknown>): {
+  folderId?: string;
+  parentId?: string;
+  confirm?: boolean;
+} {
+  const confirm = input.confirm === true ? { confirm: true } : {};
+  const folderId = str(input.folder_id).trim();
+  if (folderId) return { folderId, ...confirm };
+  const parentId = str(input.parent_id).trim();
+  return parentId ? { parentId, ...confirm } : { ...confirm };
+}
+
+/** Filing a page in a folder, or confirming what that opens, is the
+ *  owner's (like page_move and the tree tools): a member's or client's turn
+ *  runs with the brain's owner id, so without this a member-facing agent
+ *  could confirm a page into a client-shared brain folder. The refusal, or
+ *  null when the surface is the owner's or nothing was asked. */
+export function placementRefusal(
+  input: Record<string, unknown>,
+  ctx: ToolHandlerContext,
+): string | null {
+  if (isOwnerSurface(ctx.surface)) return null;
+  const asked = [
+    str(input.folder_id).trim() && 'folder_id',
+    str(input.parent_id).trim() && 'parent_id',
+    input.confirm === true && 'confirm',
+  ].filter(Boolean);
+  if (!asked.length) return null;
+  return `${asked.join(', ')} is the owner's: a page made in this turn goes to the top level of Pages, and only the owner files it in a folder or confirms what a shared folder opens.`;
+}
+
+/** The placement as a tool echoes it back (only what was given). */
+export function placementOutput(placement: {
+  folderId?: string;
+  parentId?: string;
+  confirm?: boolean;
+}): {
+  folder_id?: string;
+  parent_id?: string;
+} {
+  return {
+    ...(placement.folderId ? { folder_id: placement.folderId } : {}),
+    ...(placement.parentId ? { parent_id: placement.parentId } : {}),
+  };
+}
+
+/** The teaching error for a placement `createPage` refused
+ *  (PageFolderNotFoundError, ParentPageNotFoundError), or null. */
+export function placementError(
+  message: string,
+  placement: { folderId?: string; parentId?: string; confirm?: boolean },
+): string | null {
+  if (placement.folderId && message.includes('folder not found')) {
+    return `folder_id '${placement.folderId}' is not a folder of your pages: pass the id of a pages folder (see tree_folders with kind pages), or omit it for the top level.`;
+  }
+  if (placement.parentId && message.includes('parent page not found')) {
+    return `parent_id '${placement.parentId}' is not one of your pages: pass the id of an existing page (see page_list / search_nodes), or better a folder_id (tree_folders, kind pages).`;
+  }
+  return null;
+}

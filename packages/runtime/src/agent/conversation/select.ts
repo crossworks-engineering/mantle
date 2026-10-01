@@ -44,11 +44,23 @@ export const RELATION_ANCHOR_LIMIT = 5;
 /** Cosine cutoff for a section-level passage to be worth its tokens. */
 export const CHUNK_CUTOFF = 0.65;
 
+/** How many of the top facts' source notes get a passage (promotePassages). */
+export const FACT_PASSAGES = 3;
+
+/** A promoted passage must still be this close to the question. Looser than
+ *  CHUNK_CUTOFF: the note is already vouched for by a matching fact, and a
+ *  2.7k-char chunk sits further from a short question than the one sentence
+ *  inside it that answers. Not open: it keeps a small-talk turn, whose facts
+ *  match only loosely, from pulling in whole passages. */
+export const PROMOTED_PASSAGE_CUTOFF = 0.75;
+
 export type FactRow = {
   content: string;
   kind: string;
   entityId: string | null;
   entityName: string | null;
+  /** The node the fact was extracted from (a Journal entry, a page, …). */
+  sourceNodeId?: string | null;
   dist: number | null;
 };
 
@@ -66,6 +78,7 @@ export type ChunkSearchHit = {
   nodeTitle: string;
   nodeType: string;
   nodeSupersededBy?: string | null;
+  ordinal?: number;
   headingPath: string | null;
   text: string;
   distance: number;
@@ -100,7 +113,12 @@ export function selectFacts(rows: FactRow[]): {
     // surfacing garbage-space rows. Loose by design (0.85) — legitimate facts
     // still pass even when only loosely related.
     .filter((r) => (r.dist ?? 1) < 0.85)
-    .map((r) => ({ content: r.content, kind: r.kind as string, entityName: r.entityName }));
+    .map((r) => ({
+      content: r.content,
+      kind: r.kind as string,
+      entityName: r.entityName,
+      sourceNodeId: r.sourceNodeId ?? null,
+    }));
   const toSnapItem = (r: (typeof rows)[number]): SnapshotItem => ({
     text: snip(r.content),
     dist: round3(r.dist),
@@ -130,12 +148,22 @@ export function selectFacts(rows: FactRow[]): {
 export function mergePreferences(
   factRows: FactSnippet[],
   factsSentSnap: SnapshotItem[],
-  prefRows: Array<{ content: string; kind: string; entityName: string | null }>,
+  prefRows: Array<{
+    content: string;
+    kind: string;
+    entityName: string | null;
+    sourceNodeId?: string | null;
+  }>,
 ): { facts: FactSnippet[]; sent: SnapshotItem[] } {
   const seen = new Set(factRows.map((f) => f.content));
   const prefs = prefRows
     .filter((p) => !seen.has(p.content))
-    .map((p) => ({ content: p.content, kind: p.kind as string, entityName: p.entityName }));
+    .map((p) => ({
+      content: p.content,
+      kind: p.kind as string,
+      entityName: p.entityName,
+      sourceNodeId: p.sourceNodeId ?? null,
+    }));
   if (prefs.length) {
     factRows = [...prefs, ...factRows];
     factsSentSnap = [
@@ -197,19 +225,27 @@ export function selectContentHits(rows: ContentRow[]): {
   return { hits: contentHits, sent: contentSentSnap, dropped: contentDroppedSnap };
 }
 
-/** Section-level passages worth their tokens, plus the snapshot split. */
+/** Section-level passages worth their tokens, plus the snapshot split.
+ *  `promote` (see promotePassages) gives trusted notes their text inside the
+ *  same chunk_limit. */
 export function selectChunkHits(
   hits: ChunkSearchHit[],
   chunkLimit: number,
+  promote?: {
+    sources: ReadonlyArray<{ nodeIds: readonly string[]; max: number }>;
+    best: readonly ChunkSearchHit[];
+  },
 ): { hits: ChunkContextHit[]; sent: SnapshotItem[]; dropped: SnapshotItem[] } {
-  const selected = hits
+  const cut = hits
     .filter((h) => h.distance < CHUNK_CUTOFF && h.nodeType !== 'telegram_message')
     .slice(0, chunkLimit);
+  const selected = promote ? promotePassages(cut, promote.sources, promote.best, chunkLimit) : cut;
   const chunkHits = selected.map((h) => ({
     nodeId: h.nodeId,
     title: h.nodeTitle,
     heading: h.headingPath,
     text: h.text,
+    ...(h.ordinal !== undefined ? { ordinal: h.ordinal } : {}),
     ...(h.nodeSupersededBy ? { supersededBy: { id: h.nodeSupersededBy, title: '' } } : {}),
   }));
   const toSnapItem = (h: (typeof hits)[number]): SnapshotItem => ({
@@ -226,6 +262,46 @@ export function selectChunkHits(
     .map(toSnapItem);
 
   return { hits: chunkHits, sent: chunkSentSnap, dropped: chunkDroppedSnap };
+}
+
+/**
+ * Give the notes retrieval already trusts their text. `sources` lists node
+ * ids best first, each with its own cap (the notes the top facts came from);
+ * for each such node with no passage in `selected`, its closest passage
+ * (`best`, one per node) joins the cut if it clears PROMOTED_PASSAGE_CUTOFF.
+ * The budget holds: free slots go first, then the weakest selected passages
+ * make room.
+ *
+ * Why: a fact is one sentence and matches a question far better than a
+ * 2.7k-char passage does, so the facts point at the right notes when the
+ * passages do not. LoCoMo at the lean budget: 71 of 1,540 questions got no
+ * passage at all and 430 fewer than 8 (the 0.65 cutoff), while the facts
+ * named the note holding the answer; giving the top 3 facts' notes a passage
+ * raised evidence reach from 77.5% to 84.3% (multi-hop 43% to 56%).
+ */
+export function promotePassages(
+  selected: readonly ChunkSearchHit[],
+  sources: ReadonlyArray<{ nodeIds: readonly string[]; max: number }>,
+  best: readonly ChunkSearchHit[],
+  limit: number,
+  cutoff = PROMOTED_PASSAGE_CUTOFF,
+): ChunkSearchHit[] {
+  const have = new Set(selected.map((h) => h.nodeId));
+  const byNode = new Map(best.map((b) => [b.nodeId, b]));
+  const promoted: ChunkSearchHit[] = [];
+  for (const src of sources) {
+    let taken = 0;
+    for (const id of src.nodeIds) {
+      if (taken >= src.max || promoted.length >= limit) break;
+      const b = byNode.get(id);
+      if (!b || have.has(id) || b.distance >= cutoff || b.nodeType === 'telegram_message') continue;
+      have.add(id);
+      promoted.push(b);
+      taken++;
+    }
+  }
+  const keep = Math.max(0, Math.min(selected.length, limit - promoted.length));
+  return [...selected.slice(0, keep), ...promoted];
 }
 
 /** Node ids of hits that point at a superseded node, so one batched query can
@@ -338,4 +414,67 @@ export function buildHistory(rows: HistoryRow[]): {
   });
 
   return { history, toolRecords: historyToolRecords, mediaRecords: historyMediaRecords };
+}
+
+// ─── history_recall helpers (pure) ──────────────────────────────────────────
+
+/** An exchange as the decider reads it: `USER: …` / `ASSISTANT: …` lines. */
+export const exchangeText = (turns: readonly HistoryTurn[]): string =>
+  turns.map((t) => `${t.role === 'user' ? 'USER' : 'ASSISTANT'}: ${t.text}`).join('\n');
+
+/** Group oldest-first turns into exchanges: each user turn opens one; a
+ *  leading reply with no user turn before it forms its own. `start` is the
+ *  index of the exchange's first turn. */
+export function groupExchanges(
+  turns: readonly HistoryTurn[],
+): Array<{ start: number; turns: HistoryTurn[] }> {
+  const out: Array<{ start: number; turns: HistoryTurn[] }> = [];
+  turns.forEach((t, i) => {
+    if (t.role === 'user' || out.length === 0) out.push({ start: i, turns: [] });
+    out[out.length - 1]!.turns.push(t);
+  });
+  return out;
+}
+
+/** Join consecutive same-role turns: strict-alternation providers reject
+ *  two user (or two assistant) messages in a row. */
+function mergeSameRole(turns: readonly HistoryTurn[]): HistoryTurn[] {
+  const out: HistoryTurn[] = [];
+  for (const t of turns) {
+    const last = out[out.length - 1];
+    if (last && last.role === t.role)
+      out[out.length - 1] = { ...last, text: `${last.text}\n\n${t.text}` };
+    else out.push(t);
+  }
+  return out;
+}
+
+/** Put recalled older exchanges (time order) in front of the recent history.
+ *  The first turn of each carries a marker, so the model knows it was picked
+ *  from further back and that the messages between are not shown.
+ *
+ *  `bridge`: the turns just before the recent part, unmarked. The recent part
+ *  is cut by row count, so it can open on a reply whose question sits in the
+ *  older rows; recalling other exchanges in front of that orphan would show
+ *  two replies in a row and hide the question the reply answers. The caller
+ *  passes the orphan's own exchange here. Same-role neighbours in the
+ *  recalled part and at the seam are joined, never the recent part itself. */
+export function withRecalledExchanges(
+  history: readonly HistoryTurn[],
+  recalled: ReadonlyArray<{ turns: HistoryTurn[]; back: number }>,
+  bridge: readonly HistoryTurn[] = [],
+): HistoryTurn[] {
+  if (recalled.length === 0) return [...history];
+  const marked = recalled.flatMap((e) =>
+    e.turns.map((t, i) =>
+      i === 0
+        ? {
+            ...t,
+            text: `[Recalled from earlier in this conversation, ${e.back} messages back, because it bears on the new message. The messages between are not shown.]\n${t.text}`,
+          }
+        : t,
+    ),
+  );
+  const head = mergeSameRole([...marked, ...bridge, ...history.slice(0, 1)]);
+  return [...head, ...history.slice(1)];
 }

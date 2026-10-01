@@ -1,0 +1,90 @@
+# Mirrors the object store image (RustFS) into our Docker Hub namespace as
+# <namespace>/mantle-rustfs:<TAG>, the image docker-compose.yml pins. The
+# source and tag live in infra/rustfs/IMAGE, pinned by digest.
+#
+# Why a mirror: MinIO deleted its public images in 2026-09 and every roll broke
+# at `compose pull`. A copy under our own name keeps pulls working whatever
+# upstream does. It is a byte-for-byte copy (imagetools create), not a
+# rebuild, so the pushed digest can be checked against upstream's.
+#
+# Runs when infra/rustfs/IMAGE changes, or by hand. An existing tag is NOT
+# overwritten unless `force` is set.
+#
+# Secrets: DOCKERHUB_USERNAME / DOCKERHUB_TOKEN, the same pair release.yml uses.
+
+name: rustfs-image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - infra/rustfs/**
+      - .github/workflows/rustfs-image.yml
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Overwrite the tag even if it already exists
+        type: boolean
+        default: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/mantle-rustfs
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the pin
+        run: |
+          set -eu
+          src=$(sed -n 's/^SOURCE=//p' infra/rustfs/IMAGE)
+          tag=$(sed -n 's/^TAG=//p' infra/rustfs/IMAGE)
+          case "$src" in *@sha256:*) ;; *) echo "::error::SOURCE must be pinned by digest"; exit 1 ;; esac
+          [ -n "$tag" ] || { echo "::error::no TAG in infra/rustfs/IMAGE"; exit 1; }
+          echo "SOURCE=$src" >> "$GITHUB_ENV"
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+          echo "DIGEST=${src#*@}" >> "$GITHUB_ENV"
+
+      # Both compose files must pin this tag, or boxes would pull something
+      # this job never mirrored.
+      - name: Assert compose pins this tag
+        run: |
+          grep -qF "mantle-rustfs:\${RUSTFS_IMAGE_TAG:-${TAG}}" docker-compose.yml \
+            || { echo "::error::docker-compose.yml does not pin mantle-rustfs:${TAG}"; exit 1; }
+          grep -qF "mantle-rustfs:${TAG}" docker-compose.dev.yml \
+            || { echo "::error::docker-compose.dev.yml does not pin mantle-rustfs:${TAG}"; exit 1; }
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Skip if the tag is already published
+        id: exists
+        run: |
+          if docker buildx imagetools inspect "${IMAGE}:${TAG}" >/dev/null 2>&1 \
+             && [ "${{ inputs.force }}" != "true" ]; then
+            echo "${IMAGE}:${TAG} already exists; not overwriting (run by hand with force to replace)."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Mirror
+        if: steps.exists.outputs.skip != 'true'
+        run: docker buildx imagetools create -t "${IMAGE}:${TAG}" "${SOURCE}"
+
+      - name: Assert both platforms, compare digests
+        run: |
+          docker buildx imagetools inspect "${IMAGE}:${TAG}" | tee /tmp/inspect.txt
+          grep -q "linux/amd64" /tmp/inspect.txt
+          grep -q "linux/arm64" /tmp/inspect.txt
+          got=$(docker buildx imagetools inspect "${IMAGE}:${TAG}" --format '{{json .Manifest.Digest}}' | tr -d '"')
+          if [ "$got" = "$DIGEST" ]; then
+            echo "mirror digest matches upstream: $got"
+          else
+            echo "::warning::mirror digest $got differs from upstream $DIGEST (index re-serialised); the per-platform images are still upstream's"
+          fi

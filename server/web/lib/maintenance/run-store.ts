@@ -116,6 +116,7 @@ export function startRun(
   task: MaintenanceTask,
   args: string[],
   live: boolean,
+  env: NodeJS.ProcessEnv = process.env,
 ): { ok: true; id: string } | { ok: false; error: string } {
   if (isRunning()) {
     return { ok: false, error: 'a maintenance run is already in progress' };
@@ -141,7 +142,7 @@ export function startRun(
   try {
     child = spawn('pnpm', ['exec', 'tsx', task.script, ...args], {
       cwd,
-      env: process.env,
+      env,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
   } catch (err) {

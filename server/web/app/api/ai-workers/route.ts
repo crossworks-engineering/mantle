@@ -11,6 +11,7 @@ import {
 } from '@/lib/ai-workers';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
+import { isUniqueViolation } from '@mantle/db';
 
 const KIND = z.enum([
   'reflector',
@@ -26,6 +27,7 @@ const KIND = z.enum([
   'search_advanced',
   'narrator',
   'suggester',
+  'decider',
 ]);
 
 /** Connection/route fields shared by create + patch (all optional on patch). */
@@ -94,7 +96,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ worker: toAiWorkerDTO(worker) });
   } catch (err) {
     const msg = errorMessage(err);
-    if (msg.includes('duplicate key') || msg.includes('_uq')) {
+    if (isUniqueViolation(err)) {
       return NextResponse.json(
         { error: 'A worker with that slug already exists.' },
         { status: 409 },

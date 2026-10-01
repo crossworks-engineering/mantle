@@ -41,17 +41,33 @@ export function filesRoot(): string {
   return path.resolve(configured || DEFAULT_ROOT);
 }
 
-/**
- * The forum-upload QUARANTINE root — a SIBLING of the files root, deliberately
- * outside the `files` ltree so nothing under it is ever picked up by ingestion
- * (the migration-0018 trigger fires on file NODES; quarantined bytes have no
- * node until the owner files them). Layout: `<root>/<ownerId>/<uploadId>`,
- * see quarantine.ts. With the default files root `./data/files` this resolves
- * to `./data/forum-uploads`, staying inside the same MANTLE_DATA_DIR
- * bind-mount in production.
- */
-export function quarantineRoot(): string {
-  return path.resolve(filesRoot(), '..', 'forum-uploads');
+/** Folders nest at most this deep below `files`: folder › subfolder ›
+ *  sub-subfolder. The item tree's limit (TREE_MAX_DEPTH in
+ *  @mantle/client-types/tree; a content test pins the two together), and the
+ *  database refuses a deeper folder (migration 0201). */
+export const FILES_MAX_FOLDER_DEPTH = 3;
+
+/** How deep below `files` a path is: 0 for the root, 1 for a top folder. */
+export function filesFolderDepth(ltreePath: string): number {
+  return ltreePath.split('.').length - 1;
+}
+
+/** Cut a folder path back to its first FILES_MAX_FOLDER_DEPTH folders: a
+ *  deeper chain lands in its third folder instead of failing. */
+export function clampFilesFolderPath(ltreePath: string): string {
+  return ltreePath
+    .split('.')
+    .slice(0, FILES_MAX_FOLDER_DEPTH + 1)
+    .join('.');
+}
+
+/** Throw a readable error when a folder at `ltreePath` would sit too deep. */
+export function assertFilesFolderDepth(ltreePath: string, op: string): void {
+  if (filesFolderDepth(ltreePath) > FILES_MAX_FOLDER_DEPTH) {
+    throw new Error(
+      `${op}: '${ltreePath}' is deeper than ${FILES_MAX_FOLDER_DEPTH} folder levels; folders nest folder, subfolder, sub-subfolder`,
+    );
+  }
 }
 
 /**
@@ -131,4 +147,18 @@ export function ltreeForDiskPath(absPath: string): { parentPath: string; filenam
   const parentPath =
     segments.length === 0 ? FILES_ROOT_LABEL : `${FILES_ROOT_LABEL}.${segments.join('.')}`;
   return { parentPath, filename };
+}
+
+/**
+ * The refusal for a Files folder operation handed a folder (or a
+ * destination) of another kind. Every kind's folders are branch rows, but
+ * only Files folders are directories: the others hold their items by path
+ * alone, so a Files delete would leave them behind (and any share they
+ * inherited through it), and a move would carry them across kinds.
+ */
+export function notAFilesFolder(op: string, path: string): Error {
+  return new Error(
+    `${op}: '${path}' is not a Files folder; organise another kind's folders with ` +
+      'tree_folder_update and tree_folder_delete (or its own screen)',
+  );
 }

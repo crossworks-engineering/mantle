@@ -25,7 +25,7 @@ explicitly grant it and an optional per-app SQLite database.
      locally, or
    - `app_file_write(id, path, content)`, one file at a time;
      `app_file_delete(id, path)` to remove one (can't delete the entry).
-3. **Grant data access** (see *Binding to data* below):
+3. **Grant data access** (see _Binding to data_ below):
    - `app_tools_set(id, tool_slugs)`, the runtime allowlist of tool slugs the
      app may call. The host refuses any slug not declared here.
    - `app_db_schema_set(id, schema_sql)`, optional per-app SQLite DDL.
@@ -76,7 +76,7 @@ app decides its own size, layout, and scrolling.** So:
 - A small form or list doesn't have to fill it, render a centred column
   (`mx-auto max-w-md`) and let the rest be empty; that's fine.
 - Viewport-height utilities (`h-dvh`, `min-h-screen`, `vh`/`vw`) are **real** here
-, use them. (The old guidance to avoid them applied to the previous
+  , use them. (The old guidance to avoid them applied to the previous
   auto-sizing frame and no longer holds.)
 - `host.ui.resize()` is a legacy no-op; there's nothing to resize; the frame is
   the viewport.
@@ -101,7 +101,18 @@ await host.db.exec(sql, params?)     // write to this app's own SQLite
 host.ui.resize(heightPx)             // legacy no-op — apps get a real full-screen viewport now (see Layout)
 host.ui.notifyError(message)         // surface an error to the host UI
 host.ui.onAnnotate(fn)               // subscribe to inspector annotations
+host.ui.holdReady()                  // keep the host's loader up (call while first rendering)…
+host.ui.ready()                      // …until this: the app is ready to be seen
 ```
+
+**Loading is the host's job.** The host shows its loader until the app has
+mounted, painted, and its first `host.db` / `host.tools` calls have been
+answered (it brokers them, so it can see them in flight), then fades the app
+in. An app that loads data through the bridge needs nothing extra and should
+not draw its own full-screen loading state. `holdReady()` / `ready()` are for
+work the host can't see, such as a heavy client-side computation. The host
+reveals the app after a few seconds regardless, so a missing `ready()` can't
+hang it.
 
 Everything is brokered by the parent over postMessage and executed server-side,
 so the iframe never sees secrets or credentials.
@@ -124,18 +135,34 @@ only reach owner data via:
 
 So to show your data in an app, you give it a tool that returns that data:
 
-- **Mint a purpose-built tool** with the Toolsmith MCP tools (also available over
-  MCP): `recipe_tool_create` composes existing tools/builtins (e.g. `note_list`,
-  `table_rows_list`, `search`) into one tool that returns exactly the shape the
-  app needs; `api_tool_create` wraps an external HTTP API.
-- Or **declare an existing owned tool** you already have, if it returns what you
-  need.
+- **Declare a built-in tool** that returns what you need (`note_list`,
+  `table_rows_list`, `table_query`, `search_nodes`, …). This is the only kind
+  that works for **members**: members running a team app get built-in tools
+  only (a share link gets no tools at all).
+- **Admin-only apps** may also use a purpose-built tool from the Toolsmith
+  MCP tools: `recipe_tool_create` composes existing tools into one tool that
+  returns exactly the shape the app needs; `api_tool_create` wraps an
+  external HTTP API. Members and share links are refused these (a recipe,
+  http or shell tool runs under the brain), so never give one to an app you
+  set to team level or share.
 
-Then `app_tools_set(id, ['that_slug'])` and call it from the app.
+Then `app_tools_set(id, ['that_slug'])` and call it from the app. For an app at
+team level or lower the result carries `warnings`: one per declared tool the
+app's level refuses (see "Team apps" below).
 
-**Recommended flow (this is the synergy):** first *explore the data yourself*
+**A client-level app's tools never read above client, whoever runs it.** A
+client-level app runs the client rules for every runner, yours included
+(only `client_shared_list`, `client_shared_search` and `client_shared_open`,
+on the client role): what a tool returns can end up in the app's shared
+database, which every client reads with any SQL. Any other app keeps the
+runner's rules: your run of an admin, team or public app runs any declared
+tool, and a member's run of a team or public app uses the member rules below. Only the owner authors apps: the app write
+tools refuse a team or client surface.
+
+**Recommended flow (this is the synergy):** first _explore the data yourself_
 with your own MCP read tools (`search`, `table_list`, `note_list`, …) to learn
-its real shape; then mint a recipe tool that returns precisely that; then build
+its real shape; then pick the built-in tool that returns it (or, for an
+admin-only app, mint a recipe tool that returns precisely that); then build
 the app against it. You're binding the app to data you've actually inspected, so
 the queries are correct, not guessed.
 
@@ -144,7 +171,17 @@ the queries are correct, not guessed.
 For app-local state (caches, user-entered rows, preferences). Declare DDL via
 `app_db_schema_set(id, "CREATE TABLE IF NOT EXISTS …")`; the host provisions the
 DB on first use. At runtime use `host.db.query/exec`. `ATTACH`, `DETACH`,
-`PRAGMA`, and `VACUUM INTO` are blocked. Treat schema as **append-only**: there
+`VACUUM` and every `PRAGMA` except `table_info` / `table_xinfo` are blocked.
+Each statement may run 5 seconds at most and return 50,000 rows and 8 MB at
+most (add a LIMIT, select fewer columns or aggregate), and no single string or
+blob may pass 16 MiB. The whole database file may hold 256 MB
+(`APP_SQL_MAX_DB_MB`): a write past it fails with "database or disk is full"
+and rolls back. Each member login, client login or share link runs one
+statement at a time, and the next waits its turn (a burst of more than 16 at
+once answers 429 busy), so prefer one query that joins over many small ones.
+The
+declared schema runs under the same rules as one transaction (30 seconds at
+most): a script that fails anywhere applies nothing. Treat schema as **append-only**: there
 are no destructive migrations; add columns/tables, use views for renames.
 
 **Seeding reference data**: when the app needs pre-loaded lookup data (a
@@ -180,7 +217,10 @@ app_table_export_remove(id, table)        → dissolves the link
 Direction of authority: **the app is the master.** After an app write
 (`host.db.exec`, member or owner, and `app_db_seed`) the platform
 re-materializes the Table from the SQLite rows — debounced, hash-gated (an
-unchanged table never re-commits), pure SQL, no LLM. Typed columns derive
+unchanged table never re-commits), pure SQL, no LLM. An app at client level
+re-commits at most once every 10 minutes, and the Table of an app clients
+write is indexed at retrieval depth only (no facts or entities from client
+text). Typed columns derive
 from the SQLite declared types (INTEGER/REAL → number, BOOLEAN → checkbox,
 DATE/DATETIME → date/datetime, else text).
 
@@ -196,7 +236,7 @@ Choose the direction deliberately, one master per table, ever:
 - Data managed **in Tables** → keep the table ordinary and declare a read
   tool for the app (the hub Tier-2 pattern). Never both on one table.
 
-(If the assistant only needs to *query* the data, no export is required at
+(If the assistant only needs to _query_ the data, no export is required at
 all — see the next section.)
 
 ## Reading app data from the brain (the assistant can query your apps)
@@ -204,14 +244,14 @@ all — see the next section.)
 The user's **assistant can read any of their apps' databases**: the responder
 holds two read-only tools, `app_db_list` (which apps have a DB + their tables)
 and `app_db_query` (a `SELECT` against one app by id). So data an app stores is
-answerable in normal conversation: *"how many open items in my tracker app?"*,
-*"what's in the inventory table?"*, no extra wiring by you, the author.
+answerable in normal conversation: _"how many open items in my tracker app?"_,
+_"what's in the inventory table?"_, no extra wiring by you, the author.
 
 Two things follow for how you design an app's schema:
 
 - **Give tables and columns clear, self-describing names.** The assistant reads
   the live schema (`sqlite_master`) to know what to query, so `tasks(title,
-  status, due_at)` is far more useful to it than `t(a, b, c)`.
+status, due_at)` is far more useful to it than `t(a, b, c)`.
 - **It is strictly read-only**: the database is opened read-only, so no query
   the assistant runs can ever mutate your app's data. (Writes still come only
   from the app itself via `host.db.exec`.)
@@ -271,8 +311,9 @@ export default function App() {
 ## Sharing an app
 
 A **published** app can be shared at an unguessable, revocable, full-screen URL
-via the **Share** control on the app header. There are two admission modes, and
-they grant very different capability, pick with the "Team members only" toggle:
+via the **Share** control on the app header. A link is always public: team
+links were retired (member logins Phase 6 stage 6). Your team runs the app
+from their own member logins instead (see "Team apps" below).
 
 ### Public (anyone with the link)
 
@@ -280,50 +321,65 @@ Anonymous visitors. A public app can use **only its own SQLite database, and
 only for reads** (`host.db.query`). It gets **no brain tools at all**: every
 `host.tools.call` is refused on a public link, and `host.db.exec` (writes) is
 blocked. This is deliberate and enforced server-side: the whole brain is private
-data, and there's no way to expose a *slice* of it safely to the anonymous
+data, and there's no way to expose a _slice_ of it safely to the anonymous
 public, so the answer is "none." A public app is a self-contained, read-only
 view over data it already holds (or data baked into its bundle).
 
 > This changed: earlier, a public link could invoke an app's declared tools.
 > It can't anymore; declaring a data tool does nothing for a public share.
-> If your app needs brain data for outside viewers, it needs **team** mode.
+> If your app needs brain data, it is for **members**: set the app to team
+> level and they run it from their own login.
 
-### Team (your team members, identified)
+### Team links (retired)
 
-Team mode requires the visitor to enter a **team token**. You mint one per
-person by marking a Contact a *team member* (`/contacts` → the "Team member"
-toggle → the token is shown once; regenerate or remove to revoke). Entering a
-valid token identifies the visitor as that Contact, and from then on:
+A team link used to ask the visitor for a **team token** (a Contact's code),
+then let the app use its declared tools and write to its SQLite, audited to
+that Contact. Team links were retired in member logins Phase 6 stage 6: every
+one was revoked (migration 0176), an old one shows a "Sign in as a member"
+page, and a member login does all of it now, audited to the login.
 
-- the app may use its **declared tools** (they run under **your** scope, secrets
-  resolving server-side, the iframe never sees a key) and **write** to its
-  SQLite;
-- every action (token entry, each tool call, each DB write) is **audited to
-  that team member**, visible on the app's **Activity** tab.
+**Rule of thumb:** a link = "a read-only view of this app's own data, safe for
+anyone"; a member login = "identified, audited teammates who may use my tools
+and write data." Treat any share link as a secret; revoke by turning the share
+off.
 
-Removing or disabling a team member kills their access immediately (membership
-is re-checked on every request, not just at token entry).
+## Team apps (members run them)
 
-**One safety limit even in team mode:** a shared app can drive **built-in tools
-only**, `http`/`shell`/`recipe` tools are refused through a share, so an app
-can never hand a team member arbitrary server-side HTTP or command execution
-under your account. Declare built-in data tools; keep custom HTTP/shell tools
-out of an app you intend to share.
+Members (member logins, [member-logins.md](member-logins.md) section 7) run
+apps from their own shell. Set the app's level to **Team** (its Access
+control) and publish it; members then find it under Apps. They run the
+PUBLISHED build only and never edit it.
 
-**Rule of thumb:** public = "a read-only view of this app's own data, safe for
-anyone"; team = "identified, audited teammates who may use my tools and write
-data." Treat any share link as a secret; revoke by turning the share off.
+- **Tools:** a declared **read-only built-in** tool that an enabled tool
+  group at team level or lower holds (usually `team-read`), with no
+  confirmation. It runs at the team level: it reads team-, client- and
+  public-level items, never admin ones. Recipe, http, shell and MCP tools are
+  refused, so are built-ins that write, and so are `my_items_list`,
+  `my_item_open`, `summarize_text`, `search_chunks`, `team_request_create`
+  and `read_result`. `app_tools_set`, `app_publish` and `access_set` list a
+  warning for each declared tool members would be refused.
+- **Data:** `host.db.query` and `host.db.exec` both work on a team- or
+  client-level app (unless an admin marked it informational); on a
+  public-level app members only read. The database is shared
+  by the whole team (not one per member): design for that (put who wrote a
+  row in the row if it matters; the app cannot learn the member from the
+  host yet).
+- **Home app:** the app pinned as the hub (Team admin > Settings) is also the
+  members' home page while it is at team level or lower with a green
+  published build. `host.hub.get()` answers there too: sections are the
+  newest team pages, and a section's `token` is the page id.
 
-## Team Hub apps (a designated app as the /hub surface)
+## Team Hub apps (a designated app as the members' home)
 
-A brain can designate one published app as its **Team Hub**: team members
-visiting `/hub` get that app full-screen, while the platform keeps the token
-gate, the live Team Chat, and the briefing reader core. (`/team` itself is the
-read-only member **workspace**: see [`team-chat.md`](team-chat.md) §2; the
-same team cookie opens both surfaces.) Hub apps get one extra
-namespace, `host.hub.get()` (site name, member name, briefing sections, live
-stats), `host.hub.openChat()`, `host.hub.openBriefing(token)`, and the
-built-in hub renders automatically if the app ever breaks.
+A brain can designate one published app as its **home app**: member logins
+get it full-screen on their home page (`GET /api/member/home`, member-logins.md
+section 7) while it is at team level or lower with a green published build.
+Until member logins Phase 6 the same app was the team-code **Team Hub** at
+`/hub`, beside the `/team` workspace and the Forum; those are retired and
+redirect to `/login`. Home apps get one extra namespace, `host.hub.get()`
+(site name, member name, briefing sections, Library counts),
+`host.hub.openChat()`, `host.hub.openBriefing(token)`, and the built-in member
+home renders automatically if the app ever breaks.
 
 Everything else about building one is this guide, plus the hub-specific
 contract, project structure, and content-update patterns (including the

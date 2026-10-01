@@ -5,7 +5,7 @@
 # bring-up via up.sh.
 #
 # What it does NOT touch: server/web/.env.local (your keys), the host filesystem
-# outside ${MANTLE_DATA_DIR:-./data}/{postgres,minio}, the production stack, or
+# outside ${MANTLE_DATA_DIR:-./data}/{postgres,rustfs,minio}, the production stack, or
 # any other docker-compose project.
 
 set -euo pipefail
@@ -32,8 +32,8 @@ cat <<EOF
 
 This will:
   • Take a backup of the current dev brain (→ backups/mantle-<ts>.dump)
-  • Stop + remove the dev containers (mantle_dev_pg, mantle_dev_minio, mantle_dev_tika)
-  • DELETE the bind-mounted data dirs $DATA_DIR/{postgres,minio}
+  • Stop + remove the dev containers (mantle_dev_pg, mantle_dev_objectstore, mantle_dev_tika)
+  • DELETE the bind-mounted data dirs $DATA_DIR/{postgres,rustfs,minio}
     (your dev brain, uploads, embeddings cache — all gone)
   • Re-run \`pnpm start\` (infra → bucket → migrate → pg-boss → dev servers)
 
@@ -67,15 +67,15 @@ echo
 echo "→ Tearing down dev infra…"
 bash scripts/dev-compose.sh down -v
 
-# The postgres + minio data are BIND MOUNTS (not named volumes) since v0.103,
+# The postgres + object-store data are BIND MOUNTS (not named volumes) since v0.103,
 # so `down -v` does NOT delete them — remove the dirs explicitly. Do it from a
 # container: on Linux the postgres files are owned by the container's uid and
 # a plain rm would need sudo.
 if [[ -d "$DATA_DIR" ]]; then
   ABS_DATA_DIR="$(cd "$DATA_DIR" && pwd)"
-  echo "→ Deleting bind-mounted data ($ABS_DATA_DIR/{postgres,minio})…"
+  echo "→ Deleting bind-mounted data ($ABS_DATA_DIR/{postgres,rustfs,minio})…"
   docker run --rm -v "$ABS_DATA_DIR:/wipe" alpine \
-    rm -rf /wipe/postgres /wipe/minio
+    rm -rf /wipe/postgres /wipe/rustfs /wipe/rustfs.partial /wipe/rustfs.copied-from-minio /wipe/minio
 else
   echo "→ No data dir at $DATA_DIR — nothing to delete."
 fi

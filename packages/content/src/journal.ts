@@ -4,7 +4,9 @@
  *   nodes.title            short display title (auto-derived from body if blank)
  *   nodes.data.body        the entry — a short plain-text paragraph
  *   nodes.data.author      'user' | 'agent' — stamped server-side (never model-supplied)
- *   nodes.data.agent_slug  authoring agent's slug when author='agent'
+ *   nodes.data.agent_slug  the agent the entry belongs to: the author when
+ *                          author='agent', or the agent a rule written by the
+ *                          user over MCP is for (author stays 'user')
  *   nodes.data.kind        optional kind (see KINDS); free text tolerated
  *   nodes.data.status      gap lifecycle ('open'|'resolved'); kind='gap' only
  *   nodes.data.resolved_at ISO timestamp set when a gap is resolved
@@ -25,7 +27,7 @@
  * anymore; `category` maps to a kind at read time (legacyCategoryToKind).
  */
 import { and, eq, ilike, or, sql, type SQL } from 'drizzle-orm';
-import { db, nodes, notifyNodeIngested, type Node } from '@mantle/db';
+import { agents, db, nodes, notifyNodeIngested, type Node } from '@mantle/db';
 import { legacyCategoryToKind, normalizeEntryDate } from '@mantle/content-core/journal-options';
 
 export const JOURNAL_ROOT_LABEL = 'journal';
@@ -65,18 +67,22 @@ export function journalSortSql(): SQL {
     case when ${nodes.data}->>'entry_date' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
       then (${nodes.data}->>'entry_date')::timestamptz end,
     ${nodes.updatedAt}
-  ) desc`;
+  ) desc, ${nodes.id} desc`;
 }
 
 /** Effective kind of a row in SQL, with the legacy `category` mapping applied
  *  (rows written before kinds existed have no `kind`). Mirrors
  *  `legacyCategoryToKind` — keep the two in step. */
-function journalKindSql(): SQL {
+export function journalKindSql(): SQL {
+  // btrim everywhere: the JS mapping trims kind, category and mood, and the
+  // two must agree on every row.
   return sql`coalesce(
-    nullif(${nodes.data}->>'kind', ''),
-    case ${nodes.data}->>'category'
-      when 'identity' then 'identity'
-      when 'goal' then 'goal'
+    nullif(btrim(${nodes.data}->>'kind'), ''),
+    case
+      when btrim(${nodes.data}->>'category') = 'identity' then 'identity'
+      when btrim(${nodes.data}->>'category') = 'goal' then 'goal'
+      when btrim(${nodes.data}->>'category') in ('family', 'relationships', 'faith', 'health')
+        and coalesce(btrim(${nodes.data}->>'mood'), '') = '' then 'identity'
       else 'context'
     end
   )`;
@@ -98,7 +104,7 @@ function rowOf(n: Node): JournalRow {
     agentSlug: str(d, 'agent_slug'),
     // Legacy rows (no kind) surface their old category mapped to a kind, so
     // every consumer sees ONE vocabulary.
-    kind: kind ?? legacyCategoryToKind(str(d, 'category')),
+    kind: kind ?? legacyCategoryToKind(str(d, 'category'), str(d, 'mood')),
     status: str(d, 'status'),
     entryDate: str(d, 'entry_date'),
     tags: n.tags ?? [],
@@ -151,7 +157,21 @@ type ListJournalsOpts = {
   /** Gap lifecycle filter; meaningful with kind='gap'. */
   status?: string;
   tag?: string;
+  /** Only the rules this agent learned (the Journal's replacement for the
+   *  agent form's old "Learned" tab): learned (journalLearnedSql) and carrying
+   *  its slug. */
+  learnedBy?: string;
 };
+
+/** SQL: the entry is a rule an agent learned (the twin of isLearnedRule in
+ *  ./identity-context, without the agent check). NULL-safe: journalKindSql
+ *  never returns NULL and the other branches are plain booleans, so it can
+ *  sit under NOT. */
+export function journalLearnedSql(): SQL {
+  return sql`(${journalKindSql()} in ('lesson', 'expectation')
+    or coalesce(${nodes.data}->'source'->>'via', '') in ('reflector', 'update_persona')
+    or ${nodes.data}->'source'->>'persona_note_ref' is not null)`;
+}
 
 /** Shared WHERE conditions for journal list/count queries. */
 function journalConds(ownerId: string, opts: ListJournalsOpts) {
@@ -176,6 +196,10 @@ function journalConds(ownerId: string, opts: ListJournalsOpts) {
   }
   if (opts.status) conds.push(sql`${nodes.data}->>'status' = ${opts.status}`);
   if (opts.tag) conds.push(sql`${opts.tag} = ANY(${nodes.tags})`);
+  if (opts.learnedBy?.trim()) {
+    conds.push(journalLearnedSql());
+    conds.push(sql`btrim(${nodes.data}->>'agent_slug') = ${opts.learnedBy.trim()}`);
+  }
   return conds;
 }
 
@@ -236,8 +260,26 @@ export type CreateJournalInput = {
   /** Provenance — set by the SERVER from the calling context (tool loop agent
    *  slug, REST session), never from model-supplied args. Defaults to 'user'. */
   author?: 'user' | 'agent';
+  /** With author='agent': the authoring agent. With author='user': the agent a
+   *  learned rule (lesson/expectation) is FOR, set over MCP; the rule is then
+   *  scoped to that agent like one it learned itself. */
   agentSlug?: string;
+  /** Provenance of a converted entry (server-set, e.g. the persona-note
+   *  conversion stamps `{persona_note_ref, agent_slug}`); stored as
+   *  `data.source`. Never from model-supplied args. */
+  source?: Record<string, unknown>;
 };
+
+/** Does this owner have an agent with this slug? (A user-written rule may
+ *  only be scoped to a real agent.) */
+export async function ownerHasAgent(ownerId: string, slug: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: agents.id })
+    .from(agents)
+    .where(and(eq(agents.ownerId, ownerId), eq(agents.slug, slug.trim())))
+    .limit(1);
+  return Boolean(row);
+}
 
 export async function createJournal(
   ownerId: string,
@@ -249,9 +291,8 @@ export async function createJournal(
   const kind = input.kind?.trim();
   if (kind) data.kind = kind;
   data.author = input.author === 'agent' ? 'agent' : 'user';
-  if (input.author === 'agent' && input.agentSlug?.trim()) {
-    data.agent_slug = input.agentSlug.trim();
-  }
+  if (input.agentSlug?.trim()) data.agent_slug = input.agentSlug.trim();
+  if (input.source) data.source = input.source;
   // A gap is born open — the lifecycle is create(open) → resolveGapEntry.
   if (kind === 'gap') data.status = 'open';
   if (input.entryDate?.trim()) {

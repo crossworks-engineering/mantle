@@ -14,8 +14,8 @@ What is here:
   Auth: the gate (`server/web/server/middleware/gate.ts`) answers 401 to any `/api/**`
   request without a credential unless the path is in `PUBLIC_PATHS`
   (`lib/auth-constants.ts`); every handler then re-authenticates with
-  `getOwnerOr401()` (owner), `resolveTeamChatCaller()` (team token) or
-  `resolveShareVisitor*()` (share token). `server/web/server/auth-sweep.test.ts` drives
+  `getOwnerOr401()` (owner), `getMemberOr401()` (member login) or
+  `resolveActiveShareByToken()` (an open share link, `/s/<token>`). `server/web/server/auth-sweep.test.ts` drives
   every route credential-less and pins that contract. Bodies are validated
   with zod; report the first problem with `firstIssue()` (`lib/zod-issue.ts`).
   Errors: throw and let `app.onError` answer an opaque 500, or return a

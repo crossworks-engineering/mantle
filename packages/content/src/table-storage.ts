@@ -2,7 +2,7 @@ import { copyFileSync, existsSync, rmSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { and, eq, isNotNull, sql } from 'drizzle-orm';
-import { db, nodes, tables } from '@mantle/db';
+import { acceptedSnapshots, db, nodes, readsDrafts, tables } from '@mantle/db';
 import {
   ENGINE_VERSION,
   MATERIALIZE_MAX,
@@ -115,7 +115,10 @@ export type LoadedDocs = {
  *  window (un-split imports can exceed it). Missing published file throws
  *  TableFileMissingError (never self-healed — durability gate 1); a missing
  *  draft file just means "no uncommitted edits". */
-export function loadDocsFromFile(storagePath: string, opts: { tabId?: string } = {}): LoadedDocs {
+export function loadDocsFromFile(
+  storagePath: string,
+  opts: { tabId?: string; publishedOnly?: boolean } = {},
+): LoadedDocs {
   const abs = resolveStoragePath(storagePath);
   // A tab created in the DRAFT doesn't exist published yet — an empty doc is
   // the honest published view of it (and vice versa below for the draft).
@@ -136,8 +139,13 @@ export function loadDocsFromFile(storagePath: string, opts: { tabId?: string } =
   const draftAbs = draftPathFor(abs);
   // A commit in the other process can consume the draft between the exists
   // check and the open — that's "no draft now", not an error (audit finding 7).
+  // Below admin the draft is never read (member logins): a Library reader, a
+  // teammate reading a shared table, or a team-level agent sees the published
+  // workbook only. Only the owner and the item's own space read the draft,
+  // and `publishedOnly` keeps it from a reader on the admin pool who must not
+  // see it (the author of an accepted item, member-accepted.ts).
   let draftClipped: ReturnType<typeof readDocClipped> | null = null;
-  if (existsSync(draftAbs)) {
+  if (!opts.publishedOnly && readsDrafts() && existsSync(draftAbs)) {
     try {
       draftClipped = readDocClipped(draftAbs, MATERIALIZE_MAX, opts.tabId);
     } catch (err) {
@@ -205,7 +213,11 @@ export async function ensureFileBacked(
   node: EnsureFileNode,
   locked: EnsureLocked,
 ): Promise<{ storagePath: string; migrated: boolean }> {
-  if (locked?.storagePath) return { storagePath: locked.storagePath, migrated: false };
+  // A null lock means the caller holds no registry row (gone, or hidden by a
+  // personal space's frozen rule): rebuilding the published file from JSONB
+  // then would overwrite the real workbook. Refuse loudly.
+  if (!locked) throw new Error(`ensureFileBacked without a locked registry row for ${node.id}`);
+  if (locked.storagePath) return { storagePath: locked.storagePath, migrated: false };
   const [row] = await tx
     .select({ data: tables.data, draftData: tables.draftData })
     .from(tables)
@@ -365,6 +377,10 @@ export async function sweepLegacyTables(batch = 5): Promise<number> {
 
 // ── Backup (durability gate 2) ───────────────────────────────────────────────
 
+/** The owner segment, inside TABLE_DB_DIR, of the workbook copies member
+ *  authors read their accepted tables from (member-snapshots.ts). */
+export const SNAPSHOT_OWNER = 'accepted-snapshots';
+
 export type TableDbSnapshotReport = {
   snapshotted: { ownerId: string; nodeId: string; bytes: number; draft: boolean }[];
   /** Registry rows whose published file is absent — already-lost data, NOT
@@ -387,8 +403,20 @@ export async function snapshotAllTableDatabases(destDir: string): Promise<TableD
     .innerJoin(nodes, eq(nodes.id, tables.nodeId))
     .where(and(isNotNull(tables.storagePath)));
 
+  // The workbook copies member authors read their accepted tables from
+  // (audit F07, member-snapshots.ts): kept under their own owner segment,
+  // so an untar into TABLE_DB_DIR puts them back where they were.
+  const snaps = await db
+    .select({ nodeId: acceptedSnapshots.nodeId, storagePath: acceptedSnapshots.tablePath })
+    .from(acceptedSnapshots)
+    .where(isNotNull(acceptedSnapshots.tablePath));
+  const all = [
+    ...rows.map((r) => ({ ...r, snapshot: false })),
+    ...snaps.map((r) => ({ ...r, ownerId: SNAPSHOT_OWNER, snapshot: true })),
+  ];
+
   const report: TableDbSnapshotReport = { snapshotted: [], missing: [], failed: [] };
-  for (const r of rows) {
+  for (const r of all) {
     const storagePath = r.storagePath!;
     let abs: string;
     try {
@@ -408,6 +436,7 @@ export async function snapshotAllTableDatabases(destDir: string): Promise<TableD
       [abs, false],
       [draftPathFor(abs), true],
     ] as const) {
+      if (draft && r.snapshot) continue;
       if (draft && !existsSync(file)) continue;
       try {
         const dest = path.join(destDir, r.ownerId, path.basename(file));

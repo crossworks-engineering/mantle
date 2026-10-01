@@ -1,6 +1,7 @@
 import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import { agents, db, traceSteps, traces } from '@mantle/db';
 import { contextLimitFor, contextSourceFor, refreshModelCatalog } from '@mantle/tracing';
+import { attachUseSpend } from './metrics-uses';
 import type {
   AgentContext,
   SpendRange,
@@ -289,13 +290,49 @@ export async function spendByModel(userId: string, daysBack: number): Promise<Mo
     .groupBy(sql`coalesce(${traceSteps.meta}->>'model', '(unknown)')`)
     .orderBy(desc(sql`coalesce(sum((${traceSteps.meta}->>'cost_micro_usd')::bigint), 0)`));
 
-  return rows.map((r) => ({
+  const models = rows.map((r) => ({
     model: r.model,
     costMicroUsd: Number(r.costMicroUsd),
     tokensIn: r.tokensIn,
     tokensOut: r.tokensOut,
     cacheReadTokens: r.cacheReadTokens,
     calls: r.calls,
+  }));
+  return attachUseSpend(models, await spendByDecisionUse(userId, since));
+}
+
+/**
+ * The decider's steps (`decide_<use>`) carry `meta.use`; split their model's
+ * spend by it. A failed call (no decision) is a skipped step with no cost.
+ * Cache hits make no call and leave no step, so they are not counted.
+ */
+async function spendByDecisionUse(userId: string, since: Date) {
+  const rows = await db
+    .select({
+      model: sql<string>`${traceSteps.meta}->>'model'`,
+      use: sql<string>`${traceSteps.meta}->>'use'`,
+      costMicroUsd: sql<number>`coalesce(sum((${traceSteps.meta}->>'cost_micro_usd')::bigint), 0)::bigint`,
+      tokensIn: sql<number>`coalesce(sum((${traceSteps.meta}->>'tokens_in')::int), 0)::int`,
+      calls: sql<number>`count(*)::int`,
+      failed: sql<number>`count(*) filter (where ${traceSteps.status} = 'skipped')::int`,
+      msSum: sql<number>`coalesce(sum((${traceSteps.meta}->>'decision_ms')::int), 0)::bigint`,
+      msCount: sql<number>`count(${traceSteps.meta}->>'decision_ms')::int`,
+    })
+    .from(traceSteps)
+    .innerJoin(traces, eq(traceSteps.traceId, traces.id))
+    .where(
+      and(
+        eq(traces.ownerId, userId),
+        gte(traceSteps.startedAt, since),
+        sql`${traceSteps.meta} ? 'model'`,
+        sql`${traceSteps.meta} ? 'use'`,
+      ),
+    )
+    .groupBy(sql`${traceSteps.meta}->>'model'`, sql`${traceSteps.meta}->>'use'`);
+  return rows.map((r) => ({
+    ...r,
+    costMicroUsd: Number(r.costMicroUsd),
+    msSum: Number(r.msSum),
   }));
 }
 

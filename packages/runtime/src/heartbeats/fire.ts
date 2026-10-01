@@ -54,6 +54,7 @@ import { withHeartbeatContext } from './context';
 import { buildHeartbeatPrompt, HEARTBEAT_DATA_BOUNDARY } from './prompt';
 import { runWithInflightLock } from './inflight';
 import { errorMessage } from '@mantle/std';
+import { agentLevel } from '../agent/agent-viewer';
 
 const HEARTBEAT_CONTROL_TOOLS = [
   'heartbeat_complete',
@@ -206,7 +207,11 @@ async function fireInner(hb: Heartbeat, opts: { skipGates: boolean }): Promise<F
   // groups; P6) + the heartbeat control tools (always granted on a heartbeat
   // turn). The bound heartbeat skill is pure teaching (P4) — it contributes
   // instructions via the synthetic prompt, never tools.
-  const agentGroupTools = await resolveAgentToolGroups(hb.ownerId, agent.toolGroupSlugs ?? []);
+  const agentGroupTools = await resolveAgentToolGroups(
+    hb.ownerId,
+    agent.toolGroupSlugs ?? [],
+    agentLevel(agent),
+  );
   const allSlugs = new Set<string>([
     ...effectiveToolSlugs(agentGroupTools),
     ...HEARTBEAT_CONTROL_TOOLS,
@@ -290,6 +295,7 @@ async function fireInner(hb: Heartbeat, opts: { skipGates: boolean }): Promise<F
               ownerId: hb.ownerId,
               agentId: agent.id,
               agentSlug: agent.slug,
+              agentLevel: agentLevel(agent),
               agentDepth: 1,
               delegateTo: [],
               // Per-user adaptive thinking on unattended heartbeat runs too (same

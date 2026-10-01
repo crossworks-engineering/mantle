@@ -17,13 +17,20 @@ export async function resolveTool(ownerId: string, slug: string): Promise<Tool |
   return row ?? null;
 }
 
-/** Resolve a batch of slugs at once. Skips missing/disabled silently. */
+/** Resolve a batch of slugs at once. Skips missing/disabled silently.
+ *  Returned in the order of `slugs`, not row order: the tool list is the
+ *  front of every cached prompt prefix, and Postgres row order is not
+ *  stable (every boot rewrites the builtin rows), so row order made the
+ *  prompt cache miss for no reason. */
 export async function resolveTools(ownerId: string, slugs: string[]): Promise<Tool[]> {
   if (slugs.length === 0) return [];
   const rows = await db
     .select()
     .from(tools)
     .where(and(eq(tools.ownerId, ownerId), eq(tools.enabled, true)));
-  const want = new Set(slugs);
-  return rows.filter((r) => want.has(r.slug));
+  const bySlug = new Map(rows.map((r) => [r.slug, r]));
+  return [...new Set(slugs)].flatMap((s) => {
+    const row = bySlug.get(s);
+    return row ? [row] : [];
+  });
 }

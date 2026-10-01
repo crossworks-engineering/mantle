@@ -9,6 +9,7 @@
  * credentials use secret_create; for file-shaped content use file_create.
  */
 
+import { EMBEDS_SHARED } from './visibility-refusal';
 import {
   createNote,
   deleteNote,
@@ -42,7 +43,8 @@ const note_create: BuiltinToolDef = {
   slug: 'note_create',
   name: 'Create a note',
   description:
-    "Save a markdown note into the user's Mantle (a `note` node under /notes). Title required; `content` is markdown. The note is automatically indexed into the brain — summary, embedding, facts, and entities — so it becomes searchable and is recalled in future turns. Use this to capture research findings, decisions, drafts, or anything the user asks you to remember as plain text. Include source URLs in the body when saving research. For passwords/keys use secret_create instead; for file-shaped content use file_create.",
+    "Save a markdown note into the user's Mantle (a `note` node under /notes). Title required; `content` is markdown. The note is automatically indexed into the brain — summary, embedding, facts, and entities — so it becomes searchable and is recalled in future turns. Use this to capture research findings, decisions, drafts, or anything the user asks you to remember as plain text. Include source URLs in the body when saving research. For passwords/keys use secret_create instead; for file-shaped content use file_create." +
+    EMBEDS_SHARED,
   inputSchema: {
     type: 'object',
     properties: {
@@ -166,7 +168,7 @@ const note_get: BuiltinToolDef = {
 };
 
 // Edit-in-place was a real gap: with only note_create, "add today's entries to
-// the work log" forced a duplicate note or a copy-paste handoff (NATREF
+// the work log" forced a duplicate note or a copy-paste handoff (a client box
 // 2026-07-18 — the responder flagged it herself). `append` covers the recurring
 // log-style flow in one call without re-emitting the whole body.
 const note_update: BuiltinToolDef = {
@@ -178,7 +180,8 @@ const note_update: BuiltinToolDef = {
     'the full body), or `append` (adds a block to the END of the current body — the right mode ' +
     'for log/journal-style notes; never combine with `content`). The note re-indexes into the ' +
     'brain on any body change. This edits in place — do NOT create a duplicate note with ' +
-    '`note_create` when the user means an existing one.',
+    '`note_create` when the user means an existing one.' +
+    EMBEDS_SHARED,
   inputSchema: {
     type: 'object',
     properties: {

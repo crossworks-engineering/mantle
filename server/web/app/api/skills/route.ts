@@ -4,6 +4,7 @@ import { getOwnerOr401 } from '@/lib/auth';
 import { createSkill, listSkills } from '@/lib/skills';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
+import { isUniqueViolation } from '@mantle/db';
 
 export async function GET() {
   const user = await getOwnerOr401();
@@ -41,7 +42,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ skill: row });
   } catch (err) {
     const msg = errorMessage(err);
-    if (msg.includes('skills_owner_slug_uq') || msg.includes('duplicate key')) {
+    if (isUniqueViolation(err)) {
       return NextResponse.json(
         { error: `A skill with slug "${parsed.data.slug}" already exists.` },
         { status: 409 },

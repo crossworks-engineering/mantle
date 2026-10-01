@@ -8,6 +8,7 @@ import { step, isTurnStreaming, emitTurnDelta, currentTurnAbortSignal } from '@m
 import type { ChatDispatcher, ChatOptions, ChatResult, ChatToolDefinition } from '@mantle/voice';
 import { errorMessage } from '@mantle/std';
 import { recordChatUsage } from '../llm-usage';
+import { cacheFingerprint } from './cache-fingerprint';
 import { isChatFailover } from '../chat-failover';
 import type { ChatMessage } from '../messages';
 import type { ToolLoopArgs } from '../tool-loop';
@@ -92,6 +93,10 @@ export function createModelCaller(deps: {
     model: active.model,
     ...(active.baseUrl ? { baseUrl: active.baseUrl } : {}),
     ...(active.viaTailnet ? { viaTailnet: true } : {}),
+    // Cache affinity: one stable key per agent (its conversation is one
+    // unified stream), so every call of every turn routes back to the
+    // upstream that holds the warm prefix. Spike 9 / cache_fp.provider.
+    ...(args.agentId ? { sessionId: `mantle-agent-${args.agentId}` } : {}),
   });
   const maxRetries = () =>
     typeof args.params.max_retries === 'number' ? { maxRetries: args.params.max_retries } : {};
@@ -184,6 +189,13 @@ export function createModelCaller(deps: {
               streamed,
             );
             recordChatUsage(h, r, active.model);
+            // Which cached part changed, when a call misses the cache.
+            h.setMeta({
+              cache_fp: {
+                ...cacheFingerprint(messages, sendTools ? toolsForModel : null),
+                provider: r.servedBy ?? null,
+              },
+            });
             tokensOut += r.tokensOut ?? 0;
             return r;
           } catch (err) {
@@ -227,6 +239,12 @@ export function createModelCaller(deps: {
             failedOver = true;
             const r = await dispatchChat(active.adapter, { ...routeOpts(), ...chatOpts }, iter);
             recordChatUsage(h, r, active.model);
+            h.setMeta({
+              cache_fp: {
+                ...cacheFingerprint(messages, sendTools ? toolsForModel : null),
+                provider: r.servedBy ?? null,
+              },
+            });
             tokensOut += r.tokensOut ?? 0;
             return r;
           }
@@ -267,6 +285,9 @@ export function createModelCaller(deps: {
             iter,
           );
           recordChatUsage(h, r, active.model);
+          h.setMeta({
+            cache_fp: { ...cacheFingerprint(messages, null), provider: r.servedBy ?? null },
+          });
           tokensOut += r.tokensOut ?? 0;
           return r;
         },
@@ -307,6 +328,9 @@ export function createModelCaller(deps: {
             ...maxRetries(),
           });
           recordChatUsage(h, r, active.model);
+          h.setMeta({
+            cache_fp: { ...cacheFingerprint(messages, null), provider: r.servedBy ?? null },
+          });
           tokensOut += r.tokensOut ?? 0;
           if (!r.text.trim()) h.setMeta({ still_empty: true });
           return r.text;

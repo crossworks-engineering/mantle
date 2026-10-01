@@ -5,7 +5,7 @@ in: clone a repository and explain it, evaluate a package, build and run a
 small service; anything that should never execute next to the brain. It is
 `run_terminal`'s sibling with the opposite blast radius: the terminal acts on
 the server itself (the brain's own container); a sandbox is a disposable box
-on an isolated network that cannot reach postgres, minio, or the web tier.
+on an isolated network that cannot reach postgres, the object store, or the web tier.
 Untrusted work (cloned repos, `curl | bash`, code you're only inspecting)
 belongs in a sandbox, always.
 
@@ -121,8 +121,8 @@ The same nine verbs are also on the **MCP surface**, so a client like Claude
 Code or Claude Desktop can work in a sandbox directly instead of asking the
 brain to delegate. That is the one command-execution path an MCP client gets:
 `run_terminal` (the brain's own shell) is deliberately NOT bridged, while
-`sandbox_exec` runs inside a container with no route to postgres, minio or
-the web tier. On a box without the `sandboxes` profile the tools are still
+`sandbox_exec` runs inside a container with no route to postgres, the object
+store or the web tier. On a box without the `sandboxes` profile the tools are still
 listed and answer "sandboxes are not enabled on this box", so the client can
 say why rather than appear to lack the capability.
 
@@ -132,7 +132,7 @@ say why rather than appear to lack the capability.
 | `sandbox_exec` | run a bash command; `run_terminal`'s exact timeout/output/trace discipline |
 | `sandbox_list` | rows merged with live state + disk usage |
 | `sandbox_stop` / `sandbox_rm` | stop (keeps everything) / remove (keeps `/files` unless `purge_files`; confirm-gated) |
-| `sandbox_export` | tar a `/files` path into `files/sandbox-exports/` (100 MB cap); `raw: true` brings ONE file out under its own name instead |
+| `sandbox_export` | tar a `/files` path into `files/auto-filed/sandbox-exports/` (100 MB cap); `raw: true` brings ONE file out under its own name instead |
 | `sandbox_import` | copy a Files-workspace file into `/files`, byte for byte (100 MB cap); works on a stopped sandbox |
 | `sandbox_ls` | structured directory listing (name, type, size, modified); works stopped, does not wake the container |
 | `sandbox_autostart` | store a command re-run on every wake, so an idle-stopped service comes back by itself |

@@ -37,8 +37,10 @@ stack:
 1. checks the Docker daemon,
 2. checks `server/web/.env.local` exists (and prints the exact `cp .env.example …`
    fix if not),
-3. `docker compose -f docker-compose.dev.yml up -d --wait` (postgres + minio + tika),
-4. ensures the MinIO `mantle` bucket,
+3. `docker compose -f docker-compose.dev.yml up -d --wait` (postgres + rustfs +
+   tika; an existing `data/minio` is copied to `data/rustfs` once, on first
+   start),
+4. ensures the `mantle` bucket (`pnpm -C packages/storage objectstore:ensure`),
 5. `pnpm -C packages/db migrate`,
 6. `pnpm -C server/web pgboss:init`, creates the `pgboss` schema _before_ the
    workers race each other to create it on a fresh DB,
@@ -86,7 +88,7 @@ db-less-dev.md in the jackdaw repo (moved with the frontend).
 
 "Start over." Requires typing `wipe` to confirm, then: takes a best-effort
 backup via `db-dump.sh`, `docker compose down -v`, deletes the bind-mounted
-`$MANTLE_DATA_DIR/{postgres,minio}` (from inside an Alpine container, since
+`$MANTLE_DATA_DIR/{postgres,rustfs,minio}` (from inside an Alpine container, since
 Postgres' files are container-uid-owned on Linux), comments out the now-stale
 `ALLOWED_USER_ID` in `.env.local` so the next signup becomes owner, then execs
 `up.sh`.
@@ -112,12 +114,12 @@ is wedged, or you need one service rather than the stack, you drop to these.
 Each compose file pins its project with a `name:` key, so the project is the
 same no matter which directory you run it from:
 
-| File                           | Project         | Containers                                                                                                   | What it is                                                                                     |
-| ------------------------------ | --------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
-| `docker-compose.dev.yml`       | `mantle-dev`    | `mantle_dev_pg`, `mantle_dev_minio`, `mantle_dev_tika`, `mantle_dev_browser`                                 | Local dev **infra only**: the app runs on your host under `pnpm dev`                           |
-| `docker-compose.yml`           | `mantle`        | `mantle_pg`, `mantle_minio`, `mantle_tika`, `mantle_web`, `mantle_api`, `mantle_caddy`, `mantle_worker_*`, … | The deployed backend: ~25 services, most of them the _same_ image differing only by `command:` |
-| `docker-compose.client.yml`    | `mantle-client` | `mantle_client_web`, `mantle_client_caddy`                                                                   | The zero-secret owner UI (split out at v0.200)                                                 |
-| `e2e/stack/docker-compose.yml` | `mantle-e2e`    | `mantle_e2e_pg`, `mantle_e2e_minio`, `mantle_e2e_browser`                                                    | Throwaway stack for the Playwright suite                                                       |
+| File                           | Project         | Containers                                                                                                         | What it is                                                                                     |
+| ------------------------------ | --------------- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| `docker-compose.dev.yml`       | `mantle-dev`    | `mantle_dev_pg`, `mantle_dev_objectstore`, `mantle_dev_tika`, `mantle_dev_browser`                                 | Local dev **infra only**: the app runs on your host under `pnpm dev`                           |
+| `docker-compose.yml`           | `mantle`        | `mantle_pg`, `mantle_objectstore`, `mantle_tika`, `mantle_web`, `mantle_api`, `mantle_caddy`, `mantle_worker_*`, … | The deployed backend: ~25 services, most of them the _same_ image differing only by `command:` |
+| `docker-compose.client.yml`    | `mantle-client` | `mantle_client_web`, `mantle_client_caddy`                                                                         | The zero-secret owner UI (split out at v0.200)                                                 |
+| `e2e/stack/docker-compose.yml` | `mantle-e2e`    | `mantle_e2e_pg`, `mantle_e2e_minio`, `mantle_e2e_browser`                                                          | Throwaway stack for the Playwright suite                                                       |
 
 > **`-p` does not isolate a second stack.** Every service sets an explicit
 > `container_name:`, so running the same file under a different project name
@@ -138,16 +140,16 @@ The equivalents, plus what has no alias:
 ```bash
 docker compose -f docker-compose.dev.yml ps
 docker compose -f docker-compose.dev.yml restart postgres
-docker compose -f docker-compose.dev.yml logs -f --tail=100 minio
+docker compose -f docker-compose.dev.yml logs -f --tail=100 objectstore
 docker compose -f docker-compose.dev.yml stop                    # keep containers
 docker compose -f docker-compose.dev.yml start                   # bring them back
 docker compose -f docker-compose.dev.yml down -v                 # + named volumes
 ```
 
-Ports (all bound to `127.0.0.1`): Postgres `54323`, MinIO `9000` (API) and
+Ports (all bound to `127.0.0.1`): Postgres `54323`, RustFS `9000` (S3 API) and
 `9001` (console), Tika `9998`, headless Chromium `9222`.
 
-`down -v` is safe for data: since v0.103 Postgres and MinIO are **bind mounts**
+`down -v` is safe for data: since v0.103 Postgres and the object store are **bind mounts**
 under `MANTLE_DATA_DIR`, not named volumes, which is exactly why `reset.sh` has
 to delete those directories explicitly.
 
@@ -182,11 +184,11 @@ docker compose --profile local-embedder up -d    # one-off profile activation
 Ports: Caddy publishes `${MANTLE_BIND_ADDR:-0.0.0.0}` on `${MANTLE_HTTP_PORT:-80}`
 and `${MANTLE_HTTPS_PORT:-443}` (TCP + UDP for HTTP/3); the app itself is
 reachable only on `127.0.0.1:${MANTLE_WEB_DEBUG_PORT:-3000}`
-for debugging. Postgres and MinIO publish **nothing**: which is why
+for debugging. Postgres and the object store publish **nothing**: which is why
 `prod-db-tunnel.sh` resolves container IPs instead of a host port.
 
-`migrate` (migrations + `pgboss:init` + API provisioning), `createbuckets` and
-`ollama_pull` are **one-shots**: `exited (0)` is success, not a failure, which
+`migrate` (migrations + `pgboss:init` + API provisioning + creating the
+object-store bucket if it is missing) and `ollama_pull` are **one-shots**: `exited (0)` is success, not a failure, which
 is why `sanity.sh` treats them separately.
 
 Two services are opt-in via `COMPOSE_PROFILES` in `.env` (set by
@@ -284,13 +286,17 @@ Refuses when the tree is dirty unless you pass `-f`.
 
 ### `pnpm db:dump` → `scripts/db-dump.sh`
 
-Backs up **all three halves** of a running stack's state into `./backups`:
+Backs up **all four parts** of a running stack's state into `./backups`:
 
-| Output                      | What                                         | Restore with                            |
-| --------------------------- | -------------------------------------------- | --------------------------------------- |
-| `mantle-<ts>.dump`          | Postgres (`pg_dump -Fc --no-owner`)          | `scripts/db-restore.sh`                 |
-| `mantle-app-dbs-<ts>.tgz`   | per-app SQLite (`/apps` databases)           | `scripts/app-dbs-restore.sh`            |
-| `mantle-table-dbs-<ts>.tgz` | file-backed table workbooks (`TABLE_DB_DIR`) | untar into `$MANTLE_DATA_DIR/table-dbs` |
+| Output                      | What                                                      | Restore with                                    |
+| --------------------------- | --------------------------------------------------------- | ----------------------------------------------- |
+| `mantle-<ts>.dump`          | Postgres (`pg_dump -Fc --no-owner`)                       | `scripts/db-restore.sh`                         |
+| `mantle-app-dbs-<ts>.tgz`   | per-app SQLite (`/apps` databases)                        | `scripts/app-dbs-restore.sh`                    |
+| `mantle-table-dbs-<ts>.tgz` | file-backed table workbooks (`TABLE_DB_DIR`)              | untar into `$MANTLE_DATA_DIR/table-dbs`         |
+| `mantle-spaces-<ts>.tgz`    | members' personal-space file bytes (`MANTLE_SPACES_ROOT`) | `scripts/db-restore.sh` (same step as the dump) |
+
+The scheduled backup (`/settings/backups`) writes the same `mantle-spaces-<ts>.tgz`
+next to its dump.
 
 The SQLite halves live on a **separate volume from Postgres**, so `pg_dump`
 alone would silently miss them. They're snapshotted with `VACUUM INTO` inside
@@ -316,8 +322,13 @@ docker compose up -d --wait              # migrate is now a no-op
 Because the init scripts pre-create `auth`, `auth.users` and the extensions,
 `pg_restore` prints benign "already exists" notices for those, expected. The
 script doesn't trust the exit code; it verifies by counting `public.nodes`
-afterwards. It **refuses to restore over a populated brain**. Don't forget the
-file bytes: rsync `$MANTLE_DATA_DIR/{files,minio}` across too.
+afterwards. It **refuses to restore over a populated brain**. It then puts the
+members' personal-space files back: when `mantle-spaces-<ts>.tgz` with the
+dump's timestamp sits next to the dump, it is untarred into
+`$MANTLE_DATA_DIR/spaces` (read from the environment or `.env`, default
+`./data`), only while that folder is empty. `MANTLE_SPACES_ARCHIVE=<tgz>` names
+another archive. Don't forget the other file bytes: rsync
+`$MANTLE_DATA_DIR/{files,rustfs}` across too.
 
 ### `scripts/app-dbs-restore.sh <tgz>`
 
@@ -328,7 +339,7 @@ exist), then `docker compose up -d --wait`, then this, with apps idle.
 
 ### `pnpm db:tunnel` / `db:tunnel:down` → `scripts/prod-db-tunnel.sh [up|down|status]`
 
-SSH-forwards a remote Mantle's **data plane** (Postgres _and_ MinIO) to local
+SSH-forwards a remote Mantle's **data plane** (Postgres _and_ the object store) to local
 ports, so a local dev server runs as a thin client over the deployed brain
 ([remote-db-dev.md](./remote-db-dev.md)). Those containers publish no host
 ports, so the script resolves their container IPs over SSH **every run** (they
@@ -336,13 +347,14 @@ change when a container is recreated). Both forwards ride one SSH connection, so
 `down` drops them together.
 
 Config via env: `PROD_SSH_HOST` (default `mantle-prod`), `MANTLE_PG_CONTAINER`,
-`MANTLE_MINIO_CONTAINER`, `PROD_DB_LOCAL_PORT` (55432), `PROD_S3_LOCAL_PORT`
-(9100). Holds no secrets, DB password and S3 keys stay in `.env.local`.
+`MANTLE_OBJECTSTORE_CONTAINER` (default `mantle_objectstore`; the old
+`MANTLE_MINIO_CONTAINER` is still honoured), `PROD_DB_LOCAL_PORT` (55432),
+`PROD_S3_LOCAL_PORT` (9100). Holds no secrets, DB password and S3 keys stay in `.env.local`.
 
 ### `pnpm tailscale:serve` → `scripts/prod-tailscale-serve.sh [up|status|reset]`
 
 The tunnel-free alternative: `tailscale serve --tcp` on the remote node
-publishes Postgres (5432) and MinIO (9000) on the tailnet by MagicDNS. Same
+publishes Postgres (5432) and the object store (9000) on the tailnet by MagicDNS. Same
 container-IP re-resolution problem, same solution, re-run `up` after a redeploy
 if the endpoints stop answering. **This is a standing exposure** to every device
 on your tailnet (scope with ACLs); `reset` removes it.
@@ -397,7 +409,7 @@ Key flags (`--help` for the full list):
 ### `scripts/sanity.sh`: "is it actually serving?"
 
 Inspects every container in the compose project, reports health, treats the
-known one-shots (`migrate`, `createbuckets`, `ollama_pull`) as OK when they
+known one-shots (`migrate`, `ollama_pull`) as OK when they
 exited cleanly, flags services that were never _created_ (a stack missing its
 web container otherwise reads as "all good"), folds in the separate
 `mantle-client` project (a healthy backend with no usable interface must not
@@ -531,7 +543,8 @@ spawns. Full detail (including the nightly cron and the `/settings` UI tab) in
 [maintenance-runner.md](./maintenance-runner.md).
 
 Registry kinds: **recurring hygiene** (`entities-dedupe`, `backup-app-dbs`,
-`backup-table-dbs`, `traces-reap`) · **remedies** (`dedupe-edges`) · **ops**
+`backup-table-dbs`, `traces-reap`, `turns-reap`, `space-purge`,
+`client-codes-reap`, `app-access-log-reap`) · **remedies** (`dedupe-edges`) · **ops**
 (`re-embed`, `extract-backfill`, `rotate-master-key`, `sync-now`,
 `imap-folders`, `pgboss-init`) · **retired backfills** (the rest).
 
@@ -596,9 +609,9 @@ because they're wired into `predev` / `prebuild` / `pretypecheck`.
 
 | Script                                        | Emits                                                                                                                                                                       | Wired into                                                                                            |
 | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `server/web/scripts/gen-route-manifest.ts`    | `server/web/server/route-manifest.gen.ts` from the `app/**/route.ts` tree, the bridge from Next's file-per-route convention to Hono                                                    | `predev`, `build`, `pretypecheck`                                                                     |
+| `server/web/scripts/gen-route-manifest.ts`    | `server/web/server/route-manifest.gen.ts` from the `app/**/route.ts` tree, the bridge from Next's file-per-route convention to Hono                                         | `predev`, `build`, `pretypecheck`, vitest `globalSetup` (`vitest.global-setup.ts`)                    |
 | `server/web/scripts/build-share-runtime.ts`   | `public/share-runtime/`, CSS + JS for the server-rendered `/s` share pages and `/print`                                                                                     | `predev`, `build`                                                                                     |
-| `packages/app-build/scripts/build-runtime.ts` | the shared mini-app runtime into each app's `public/app-runtime/`                                                                                                           | `predev`/`prebuild` in both `server/web` and `jackdaw`                                             |
+| `packages/app-build/scripts/build-runtime.ts` | the shared mini-app runtime into each app's `public/app-runtime/`                                                                                                           | `predev`/`prebuild` in both `server/web` and `jackdaw`                                                |
 | `packages/share-ui/themes/generate.mjs`       | `styles/themes.css` + the picker registry from `seeds.mjs`                                                                                                                  | `pnpm themes:build`; `--check` fails on drift (CI), `--report` prints per-token ΔE against a baseline |
 | `scripts/generate-notices.mjs`                | `THIRD-PARTY-NOTICES.md` from the production dependency tree, with verbatim license texts                                                                                   | `pnpm licenses:notices`, re-run after any dependency change                                           |
 | `scripts/readme-stats.mjs`                    | the **By the numbers** block in `README.md` (between the `<!-- stats:start -->` markers), LOC, test cases, migrations, manifest counts, commit cadence, the LOC-by-area pie | `pnpm readme:stats`; auto-run by `version:bump`, so every `release:` commit carries fresh numbers     |
@@ -633,7 +646,7 @@ does, and `pnpm readme:stats --check` to see whether the block is stale.
 
 ### `pnpm verify` and the git hooks
 
-`pnpm verify` = `typecheck` (all packages) + `lint` + `format:check` + `vitest run`.
+`pnpm verify` = `typecheck` (all packages) + `lint` + `format:check` + `docs:check` + `vitest run`.
 It's what CI runs and what the pre-push hook runs.
 
 ```bash
@@ -657,10 +670,27 @@ survive fresh worktrees.
 
 | Workflow                            | Trigger                                    | What                                                                                                                                                                                                                                                 |
 | ----------------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `.github/workflows/build-check.yml` | push to `feat/**` or `main`, PRs to `main` | typecheck + lint + format + vitest + the **production build** (the webpack/edge-runtime gate `tsc` and vitest miss). Hermetic, no Postgres/MinIO. Does not build images.                                                                             |
+| `.github/workflows/build-check.yml` | push to `feat/**` or `main`, PRs to `main` | typecheck + lint + format + vitest + the **production build** (the webpack/edge-runtime gate `tsc` and vitest miss). No object store; a throwaway Postgres for the database tests only. Does not build images.                             |
 | `.github/workflows/release.yml`     | push of a `v*` tag                         | builds `mantle-server` + `mantle-client` for amd64 and arm64 on native runners in parallel, merges digests into multi-arch manifests on Docker Hub, and cuts a GitHub Release carrying the deploy bundle so compose and image are versioned together |
 
 Release needs the `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` repo secrets.
+
+**Database tests on CI.** Every `*.db.test.ts` skips without its database
+URL (`MANTLE_TEST_DATABASE_URL`, `RUNS_TEST_DATABASE_URL`). On CI (`CI`
+set) the vitest global setup (`vitest.global-setup.ts`, via
+`packages/db/src/test-env-guard.ts`) fails the whole run when one is
+missing, so a job cannot report green with them skipped. A local run
+without them still skips them.
+
+**Public routes that read a session.** The role sweeps
+(`server/web/server/role-sweep.test.ts`, `member-sweep.test.ts`) drive every
+manifest route with a signed session, but a public route has no gate in
+front of it. Each public route that reads the caller's session itself
+(under `/api/auth`, `/api/oauth`, the print pages) is listed with an answer
+per role in `server/web/server/public-session-routes.ts`, and the sweeps
+drive each one. A completeness test reads the source of every other public
+route and fails when one calls a session reader: add any new one to that
+list, with its answers.
 
 ---
 

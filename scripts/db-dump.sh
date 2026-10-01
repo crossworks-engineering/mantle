@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Back up the running Mantle stack under ./backups — ALL THREE halves of its state:
+# Back up the running Mantle stack under ./backups — ALL FOUR parts of its state:
 #   1. Postgres     → backups/mantle-<ts>.dump           (pg_dump -Fc; restore: db-restore.sh)
 #   2. App SQLite   → backups/mantle-app-dbs-<ts>.tgz    (per-app /apps databases;
 #      restore: app-dbs-restore.sh). These live on a SEPARATE volume from
@@ -7,9 +7,20 @@
 #   3. Table SQLite → backups/mantle-table-dbs-<ts>.tgz  (sqlite-native table
 #      workbooks under TABLE_DB_DIR; restore: untar into ${MANTLE_DATA_DIR}/table-dbs —
 #      the archive mirrors the live <owner>/<node>.sqlite layout).
+#   4. Space files  → backups/mantle-spaces-<ts>.tgz     (member personal-space file
+#      bytes under MANTLE_SPACES_ROOT; restore: scripts/db-restore.sh does it with the dump).
 #
 # Usage:   scripts/db-dump.sh
 #          MANTLE_PG_CONTAINER=other  MANTLE_APP_CONTAINER=other  scripts/db-dump.sh
+#          MANTLE_DUMP_DIR=/abs/dir  scripts/db-dump.sh   # write the set there, not ./backups
+#          MANTLE_DUMP_STRICT=1  scripts/db-dump.sh      # exit non-zero when ANY part failed
+#
+# Parts 2 to 4 are loud but non-fatal by default: a hiccup there must not
+# throw away a good Postgres dump. MANTLE_DUMP_STRICT=1 keeps every part it
+# managed to write but exits 3 at the end when one was NOT backed up, so a
+# caller that must not proceed without all four (the updater's pre-roll
+# backup, scripts/roll.sh) can tell. Runs under bash or a POSIX sh (the
+# updater sidecar has busybox sh only), so keep it free of bashisms.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -29,10 +40,13 @@ pick() { # pick <prod-name> <dev-name> <label> <override>
 }
 CONTAINER="$(pick mantle_pg mantle_dev_pg MANTLE_PG_CONTAINER "${MANTLE_PG_CONTAINER:-}")"
 APP_CONTAINER="$(pick mantle_web mantle_dev_web MANTLE_APP_CONTAINER "${MANTLE_APP_CONTAINER:-}")"
-mkdir -p backups
+DUMP_DIR="${MANTLE_DUMP_DIR:-backups}"
+mkdir -p "$DUMP_DIR"
 TS="$(date +%Y%m%d-%H%M%S)"
-OUT="backups/mantle-${TS}.dump"
-APPDB_OUT="backups/mantle-app-dbs-${TS}.tgz"
+OUT="${DUMP_DIR}/mantle-${TS}.dump"
+APPDB_OUT="${DUMP_DIR}/mantle-app-dbs-${TS}.tgz"
+# Parts that were NOT backed up (space-separated), reported at the end.
+FAILED_PARTS=""
 
 if ! docker exec "$CONTAINER" pg_isready -U postgres -d postgres >/dev/null 2>&1; then
   echo "✗ postgres container '$CONTAINER' not reachable — is the stack up?" >&2
@@ -41,7 +55,12 @@ fi
 
 echo "▶ Dumping '$CONTAINER' (postgres/postgres) → $OUT"
 # --no-owner keeps the dump portable across roles. Custom format is compressed.
-docker exec "$CONTAINER" pg_dump -U postgres -d postgres -Fc --no-owner > "$OUT"
+# A failed or empty dump is removed, never left looking like a backup.
+if ! docker exec "$CONTAINER" pg_dump -U postgres -d postgres -Fc --no-owner > "$OUT" || [ ! -s "$OUT" ]; then
+  rm -f "$OUT"
+  echo "✗ pg_dump of '$CONTAINER' FAILED: no Postgres backup was written." >&2
+  exit 1
+fi
 echo "✔ Wrote $(du -h "$OUT" | cut -f1) → $OUT"
 
 # --- Per-app SQLite ---------------------------------------------------------
@@ -55,6 +74,7 @@ echo "✔ Wrote $(du -h "$OUT" | cut -f1) → $OUT"
 if ! running "$APP_CONTAINER"; then
   echo "⚠ app container '$APP_CONTAINER' not running — per-app SQLite NOT backed up." >&2
   echo "  Set MANTLE_APP_CONTAINER if it has a different name." >&2
+  FAILED_PARTS="$FAILED_PARTS app-dbs"
 elif ! docker exec "$APP_CONTAINER" sh -c 'test -d "${APP_DB_DIR:-/data/app-dbs}"'; then
   echo "▷ no app databases yet in '$APP_CONTAINER' — skipping per-app SQLite."
 else
@@ -72,6 +92,7 @@ else
     rm -f "$APPDB_OUT"
     echo "⚠ app-db snapshot FAILED — per-app SQLite NOT backed up (Postgres dump is intact)." >&2
     echo "  See the output above; re-run once the app container is healthy." >&2
+    FAILED_PARTS="$FAILED_PARTS app-dbs"
   fi
 fi
 
@@ -80,9 +101,10 @@ fi
 # container (consistent under concurrent writes), tarred to the host. Loud but
 # non-fatal; a box with no table-dbs dir yet (no compose refresh, or no
 # file-backed tables) is "nothing to back up", not a failure.
-TABLEDB_OUT="backups/mantle-table-dbs-${TS}.tgz"
+TABLEDB_OUT="${DUMP_DIR}/mantle-table-dbs-${TS}.tgz"
 if ! running "$APP_CONTAINER"; then
   echo "⚠ app container '$APP_CONTAINER' not running — table workbooks NOT backed up." >&2
+  FAILED_PARTS="$FAILED_PARTS table-dbs"
 elif ! docker exec "$APP_CONTAINER" sh -c 'test -d "${TABLE_DB_DIR:-/data/table-dbs}"'; then
   echo "▷ no table workbooks yet in '$APP_CONTAINER' — skipping table SQLite."
 else
@@ -99,7 +121,40 @@ else
   else
     rm -f "$TABLEDB_OUT"
     echo "⚠ table-db snapshot FAILED — table workbooks NOT backed up (Postgres dump is intact)." >&2
+    FAILED_PARTS="$FAILED_PARTS table-dbs"
+  fi
+fi
+
+# --- Personal-space file bytes (member logins) -------------------------------
+# Plain files under MANTLE_SPACES_ROOT (<spaceId>/files/<nodeId>), written
+# once per upload and never edited in place, so a tar is consistent enough.
+# Loud but non-fatal; a box whose compose predates the spaces mount, or with
+# no member uploads yet, has nothing to back up.
+SPACES_OUT="${DUMP_DIR}/mantle-spaces-${TS}.tgz"
+if ! running "$APP_CONTAINER"; then
+  echo "⚠ app container '$APP_CONTAINER' not running — personal-space files NOT backed up." >&2
+  FAILED_PARTS="$FAILED_PARTS spaces"
+elif ! docker exec "$APP_CONTAINER" sh -c 'test -n "$MANTLE_SPACES_ROOT" && test -d "$MANTLE_SPACES_ROOT"'; then
+  echo "▷ no personal-space files in '$APP_CONTAINER' — skipping."
+else
+  echo "▶ Archiving personal-space files via '$APP_CONTAINER' → $SPACES_OUT"
+  if docker exec "$APP_CONTAINER" sh -c \
+      'tar -C "$MANTLE_SPACES_ROOT" --exclude=./.upload-spool -czf - .' > "$SPACES_OUT"; then
+    echo "✔ Wrote $(du -h "$SPACES_OUT" | cut -f1) → $SPACES_OUT"
+    echo "  scripts/db-restore.sh restores personal-space files with the dump"
+  else
+    rm -f "$SPACES_OUT"
+    echo "⚠ personal-space archive FAILED — member files NOT backed up (Postgres dump is intact)." >&2
+    FAILED_PARTS="$FAILED_PARTS spaces"
   fi
 fi
 
 echo "  Restore Postgres with:  scripts/db-restore.sh $OUT"
+
+if [ -n "$FAILED_PARTS" ]; then
+  echo "⚠ INCOMPLETE backup set ${TS}: NOT backed up:${FAILED_PARTS}" >&2
+  if [ "${MANTLE_DUMP_STRICT:-}" = 1 ]; then
+    echo "✗ MANTLE_DUMP_STRICT=1: exiting non-zero (the parts above were kept)." >&2
+    exit 3
+  fi
+fi

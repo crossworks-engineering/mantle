@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Bring up Mantle dev infra (postgres + minio + tika), apply migrations, create
+# Bring up Mantle dev infra (postgres + object store + tika), apply migrations, create
 # the pg-boss schema, then run the dev servers. Idempotent — safe to run on a
 # clean machine or against an already-running stack.
 #
@@ -63,31 +63,19 @@ EOF
   exit 1
 fi
 
-echo "→ Bringing up postgres + minio (docker-compose.dev.yml)…"
+echo "→ Bringing up postgres + object store + tika (docker-compose.dev.yml)…"
 # Via the wrapper: the stack (and its data) belongs to the ORIGINAL clone,
 # even when this script is invoked from a worktree. The dev SERVERS below
 # still run from this tree — you want your branch's code against the one
 # database. See scripts/dev-compose.sh.
 bash scripts/dev-compose.sh up -d --wait
 
-# ── 4. Ensure MinIO bucket --------------------------------------------------
-# Read S3 creds from .env.local so the bucket gets created with the same
-# credentials the app uses. Defaults match docker-compose.dev.yml.
-S3_ACCESS_KEY_VAL=$(grep -E '^S3_ACCESS_KEY=' server/web/.env.local | head -1 | cut -d= -f2- || echo minio)
-S3_SECRET_KEY_VAL=$(grep -E '^S3_SECRET_KEY=' server/web/.env.local | head -1 | cut -d= -f2- || echo minio12345)
-: "${S3_ACCESS_KEY_VAL:=minio}"
-: "${S3_SECRET_KEY_VAL:=minio12345}"
-
-echo "→ Ensuring MinIO bucket 'mantle' exists…"
-docker run --rm --network mantle-dev_default \
-  -e ACCESS_KEY="$S3_ACCESS_KEY_VAL" \
-  -e SECRET_KEY="$S3_SECRET_KEY_VAL" \
-  --entrypoint sh \
-  quay.io/minio/mc -c '
-    mc alias set local http://minio:9000 "$ACCESS_KEY" "$SECRET_KEY" >/dev/null
-    mc mb -p local/mantle 2>/dev/null || true
-    mc anonymous set none local/mantle >/dev/null
-  ' || echo "  (bucket setup failed — proceeding, the app may auto-create)"
+# ── 4. Ensure the object-store bucket ----------------------------------------
+# Plain S3 CreateBucket through the app's own storage package, with the same
+# .env.local credentials the app uses: no vendor CLI, works on any backend.
+echo "→ Ensuring the object-store bucket exists…"
+pnpm -C packages/storage objectstore:ensure \
+  || echo "  (bucket setup failed — proceeding; the sanity check will flag it)"
 
 # ── 5. Migrations ----------------------------------------------------------
 echo "→ Running Drizzle migrations…"

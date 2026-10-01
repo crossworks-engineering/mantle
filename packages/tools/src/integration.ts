@@ -9,7 +9,7 @@
  * authoring-time template inheritance — live in `integration-meta.ts` and are
  * re-exported here so callers only need one import.
  *
- * Docs are stored as a normal markdown FILE under `files/api-docs/<group>.md`,
+ * Docs are stored as a normal markdown FILE under `files/auto-filed/api-docs/<group>.md`,
  * through the same pipeline an upload uses, so they summarise + embed + FTS-index
  * like any other file and EVERY agent's `search_nodes` can find them.
  */
@@ -17,10 +17,8 @@
 import { and, eq } from 'drizzle-orm';
 import { db, toolGroups, type ToolGroupIntegration } from '@mantle/db';
 import {
-  dashToLtree,
-  createFolder,
-  ensureFilesRootBranch,
-  folderByPath,
+  autoFiledSourcePath,
+  ensureAutoFiledFolder,
   readFileById,
   upsertFile,
 } from '@mantle/files';
@@ -106,32 +104,19 @@ export async function setGroupIntegration(
 /* ───────────────────────── stored API documentation ───────────────────── */
 
 /** Folder every integration's docs file lives in (disk name; the ltree label is
- *  `api_docs`). Files auto-index, so `search_nodes` finds these docs. */
+ *  `api_docs`), inside Auto-filed. Files auto-index, so `search_nodes` finds
+ *  these docs. */
 export const API_DOCS_FOLDER_SLUG = 'api-docs';
-export const API_DOCS_FOLDER_PATH = `files.${dashToLtree(API_DOCS_FOLDER_SLUG)}`;
-const API_DOCS_FOLDER_DESCRIPTION =
-  'Stored API documentation for integration tool groups. One markdown file per group, written by Toolsmith (api_docs_set) and read back with api_docs_get.';
+/** Where stored API docs live: Auto-filed's API docs folder. */
+export const API_DOCS_FOLDER_PATH = autoFiledSourcePath('api-docs');
 
-/** Lazy-create `files/api-docs`, tolerating the concurrent-create race the same
- *  way `ensureDatedUploadFolder` does. */
+/** Make the API docs folder if it is missing. */
 async function ensureApiDocsFolder(ownerId: string): Promise<void> {
-  await ensureFilesRootBranch(ownerId);
-  const existing = await folderByPath({ ownerId, path: API_DOCS_FOLDER_PATH });
-  if (existing) return;
-  try {
-    await createFolder({
-      ownerId,
-      parentPath: 'files',
-      slug: API_DOCS_FOLDER_SLUG,
-      description: API_DOCS_FOLDER_DESCRIPTION,
-    });
-  } catch (err) {
-    if (!(err instanceof Error) || !/duplicate|unique/i.test(err.message)) throw err;
-  }
+  await ensureAutoFiledFolder(ownerId, 'api-docs');
 }
 
 /**
- * Write (or replace) an integration's docs as `files/api-docs/<group-slug>.md`
+ * Write (or replace) an integration's docs as `files/auto-filed/api-docs/<group-slug>.md`
  * through the normal file pipeline, so it indexes + embeds like any other file.
  * Returns the node id to stash in `integration.docsNodeId`.
  */

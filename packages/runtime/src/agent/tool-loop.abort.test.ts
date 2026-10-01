@@ -50,6 +50,11 @@ vi.mock('@mantle/tools', async () => ({
       '../../../tools/src/untrusted',
     )
   ).UNTRUSTED_CONTENT_TOOL_SLUGS,
+  PRIVATE_OUTPUT_TOOL_SLUGS: (
+    await vi.importActual<typeof import('../../../tools/src/private-output')>(
+      '../../../tools/src/private-output',
+    )
+  ).PRIVATE_OUTPUT_TOOL_SLUGS,
   getDynamicSchema: (
     await vi.importActual<typeof import('../../../tools/src/dynamic-schema')>(
       '../../../tools/src/dynamic-schema',

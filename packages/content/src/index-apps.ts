@@ -48,7 +48,7 @@ export {
   type LockedDrawRow,
 } from './draws';
 export { sceneToText } from './scene-to-text';
-export { acceptSceneSvg, SCENE_SVG_MAX_BYTES, EXCALIDRAW_ENGINE } from './scene-svg';
+export { acceptSceneSvg, keepSvgImages, SCENE_SVG_MAX_BYTES, EXCALIDRAW_ENGINE } from './scene-svg';
 export {
   APPS_ROOT_LABEL,
   DEFAULT_ENTRY,
@@ -84,6 +84,37 @@ export {
 } from './apps';
 
 export {
+  MEMBER_APP_LEVELS,
+  isMemberAppLevel,
+  listMemberApps,
+  getMemberRunnableApp,
+  listTeamLevelAppIds,
+  memberMayWriteAppData,
+  resolveMemberHomeApp,
+  type MemberAppCard,
+  type MemberRunnableApp,
+} from './member-apps';
+
+export {
+  CLIENT_APP_LEVELS,
+  isClientAppLevel,
+  listClientApps,
+  getClientRunnableApp,
+  type ClientAppCard,
+  type ClientRunnableApp,
+} from './client-apps';
+
+export {
+  APP_NAV_CHANGED_CHANNEL,
+  APP_NAV_LAYOUT_RETIRED,
+  listAppNavItems,
+  loadAppNavView,
+  notifyAppNavChanged,
+  recordAppOpen,
+  saveAppPins,
+} from './app-nav';
+
+export {
   SANDBOX_NAME_RE,
   createSandboxRow,
   listSandboxes,
@@ -95,6 +126,9 @@ export {
 export {
   recordAppAccess,
   listAppAccess,
+  reapAppAccessLog,
+  APP_ACCESS_LOG_RETENTION_DAYS,
+  APP_ACCESS_QUERY_SAMPLE_MS,
   type AppAccessKind,
   type AppAccessEntry,
   type AppAccessRow,

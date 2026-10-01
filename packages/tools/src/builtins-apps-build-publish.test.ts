@@ -59,7 +59,8 @@ const publish = APP_TOOLS.find((t) => t.slug === 'app_publish')!;
 const schemaSet = APP_TOOLS.find((t) => t.slug === 'app_db_schema_set')!;
 const seed = APP_TOOLS.find((t) => t.slug === 'app_db_seed')!;
 
-const ctx: ToolHandlerContext = { ownerId: 'o1' };
+// The owner's chat: the app write tools run only for the owner (audit I8).
+const ctx: ToolHandlerContext = { ownerId: 'o1', surface: { kind: 'web' } };
 const APP_ID = '11111111-2222-4333-8444-555555555555';
 
 type Result = Awaited<ReturnType<BuiltinToolDef['handler']>>;

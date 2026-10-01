@@ -16,7 +16,7 @@ Rules:
 - Only `handle`, `handle_path`, `redir`, `header` and friends that are valid
   inside a site block. No site addresses here; a second vhost is a different
   Caddyfile.
-- Caddy orders `handle` blocks by path length, so `handle /pcms-mcp/*` wins
+- Caddy orders `handle` blocks by path length, so `handle /db-mcp/*` wins
   over the catch-all regardless of import position.
 - Secrets never go in a drop-in. Put the bearer check in the upstream, or use
   Caddy's `{$ENV}` placeholders with the value in `.env`.
@@ -33,7 +33,7 @@ docker exec mantle_caddy caddy validate --config /etc/caddy/Caddyfile
 Example, an MCP bridge on the internal network behind a public path:
 
 ```caddyfile
-handle /pcms-mcp/* {
-	reverse_proxy pcms-mcp:8000
+handle /db-mcp/* {
+	reverse_proxy db-mcp:8000
 }
 ```

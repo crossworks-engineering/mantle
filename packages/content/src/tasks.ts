@@ -16,7 +16,7 @@
  * carry only the count.
  */
 import { and, desc, eq, ilike, or, sql } from 'drizzle-orm';
-import { db, nodes, notifyNodeIngested, type Node } from '@mantle/db';
+import { TEAM_REQUEST_SOURCE, db, nodes, notifyNodeIngested, type Node } from '@mantle/db';
 import type { TaskRow, TaskStatus, TaskPriority, TaskTodo } from '@mantle/client-types';
 import { isValidRank } from './rank';
 export type { TaskRow, TaskStatus, TaskPriority, TaskTodo };
@@ -322,6 +322,12 @@ export async function updateTask(
     delete newData.summary_at;
     delete newData.entities;
   }
+  // A team request a member filed is extract-exempt until an admin acts on
+  // it (audit F08, extract-exempt.ts). This IS the admin acting: every caller
+  // of updateTask is an owner path (the task routes and tools). Stamp it and
+  // announce it once below, as an ordinary task's insert is announced.
+  const becameReviewed = oldData.source === TEAM_REQUEST_SOURCE && !oldData.reviewed_at;
+  if (becameReviewed) newData.reviewed_at = new Date().toISOString();
   const [updated] = await db
     .update(nodes)
     .set({
@@ -334,7 +340,7 @@ export async function updateTask(
     .where(eq(nodes.id, id))
     .returning();
   if (!updated) throw new Error('updateTask: update returned no row');
-  if (contentChanged) {
+  if (contentChanged || becameReviewed) {
     await notifyNodeIngested(id);
   }
   return rowOf(updated, found.commentCount);

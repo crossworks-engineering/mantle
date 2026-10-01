@@ -189,12 +189,12 @@ describe('telegram_pair', () => {
   });
 
   it('names the agent bound to the bot in the confirmation', async () => {
-    selectQueue.push([pendingChat()], [{ ...ACCOUNT, channelId: 'ch-1' }], [{ name: 'Rea' }]);
+    selectQueue.push([pendingChat()], [{ ...ACCOUNT, channelId: 'ch-1' }], [{ name: 'Nova' }]);
     await pair.handler({ code: CODE }, ctx);
     expect(sendMessage).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'acct-1' }),
       CHAT,
-      'Paired! Say hi to Rea.',
+      'Paired! Say hi to Nova.',
     );
   });
 

@@ -76,6 +76,28 @@ export function rateLimit(key: string, opts: { max: number; windowMs: number }):
 }
 
 /**
+ * Look at `key`'s bucket WITHOUT taking a token: `ok` is false when the
+ * window already holds `max` hits, so the next take would be refused. For a
+ * bucket that counts only some outcomes (failed invite codes, say): peek
+ * before the work, take with rateLimit() after a failure.
+ */
+export function rateLimitPeek(
+  key: string,
+  opts: { max: number; windowMs: number },
+): RateLimitResult {
+  const now = Date.now();
+  const bucket = buckets.get(key);
+  const max = opts.max * SCALE;
+  if (!bucket || now - bucket.windowStartMs >= opts.windowMs) {
+    return { ok: true, retryAfterSec: 0, remaining: max };
+  }
+  const retryAfterSec = Math.max(1, Math.ceil((bucket.windowStartMs + opts.windowMs - now) / 1000));
+  return bucket.count >= max
+    ? { ok: false, retryAfterSec, remaining: 0 }
+    : { ok: true, retryAfterSec, remaining: max - bucket.count };
+}
+
+/**
  * Pull a stable client identifier from the request. Trusts the standard
  * reverse-proxy headers (`x-forwarded-for`, `x-real-ip`) which Caddy /
  * nginx set; falls back to `unknown` for direct connections.
@@ -93,7 +115,12 @@ export function rateLimit(key: string, opts: { max: number; windowMs: number }):
  * the hop count if you chain more than one trusted proxy.
  */
 export function clientIp(req: Request): string {
-  const xff = req.headers.get('x-forwarded-for');
+  return clientIpFromHeaders(req.headers);
+}
+
+/** `clientIp` from bare headers (a Server Component's `headers()`). */
+export function clientIpFromHeaders(headers: { get(name: string): string | null }): string {
+  const xff = headers.get('x-forwarded-for');
   if (xff) {
     const parts = xff
       .split(',')
@@ -104,7 +131,60 @@ export function clientIp(req: Request): string {
       return parts[Math.max(0, parts.length - hops)]!;
     }
   }
-  const xri = req.headers.get('x-real-ip');
+  const xri = headers.get('x-real-ip');
   if (xri) return xri.trim();
   return 'unknown';
+}
+
+/**
+ * The eight groups of an IPv6 address, each without leading zeros, or null
+ * when `ip` is not one. Accepts `::` shorthand, brackets, a zone id and an
+ * embedded IPv4 tail (`::ffff:192.0.2.1`).
+ */
+function ipv6Groups(ip: string): string[] | null {
+  let s = ip
+    .trim()
+    .replace(/^\[|\]$/g, '')
+    .split('%')[0]!
+    .toLowerCase();
+  if (!s.includes(':')) return null;
+  const v4 = /(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(s);
+  if (v4) {
+    const [a, b, c, d] = v4.slice(1).map(Number) as [number, number, number, number];
+    if ([a, b, c, d].some((n) => n > 255)) return null;
+    s = `${s.slice(0, v4.index)}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+  }
+  const halves = s.split('::');
+  if (halves.length > 2) return null;
+  const head = halves[0] ? halves[0].split(':') : [];
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
+  const fill = 8 - head.length - tail.length;
+  if (halves.length === 1 ? fill !== 0 : fill < 0) return null;
+  const groups = [...head, ...Array<string>(fill).fill('0'), ...tail];
+  if (!groups.every((g) => /^[0-9a-f]{1,4}$/.test(g))) return null;
+  return groups.map((g) => g.replace(/^0+(?=.)/, ''));
+}
+
+/**
+ * The rate-limit key for an address. An IPv6 address counts by its /64: one
+ * host is handed a whole /64, so keying by the full address would give a
+ * caller 2^64 fresh buckets (client logins audit B2, B11). An IPv4 address,
+ * and an IPv4-mapped IPv6 one, counts as itself. Anything else (`unknown`)
+ * is returned unchanged.
+ */
+export function ipRateKey(ip: string): string {
+  const groups = ipv6Groups(ip);
+  if (!groups) return ip.trim();
+  if (groups.slice(0, 5).every((g) => g === '0') && groups[5] === 'ffff') {
+    const hi = parseInt(groups[6]!, 16);
+    const lo = parseInt(groups[7]!, 16);
+    return `${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`;
+  }
+  return `${groups.slice(0, 4).join(':')}::/64`;
+}
+
+/** The caller's rate-limit key: `clientIp(req)` through `ipRateKey`. Use it
+ *  for every per-address cap a stranger could dodge by rotating addresses. */
+export function clientIpKey(req: Request): string {
+  return ipRateKey(clientIp(req));
 }

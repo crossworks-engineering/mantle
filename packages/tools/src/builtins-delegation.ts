@@ -7,11 +7,24 @@
 
 import { and, eq } from 'drizzle-orm';
 import { agents, db } from '@mantle/db';
-import { type BuiltinToolDef } from './types';
+import { type BuiltinToolDef, type ToolHandlerContext } from './types';
+import { isOwnerSurface } from './surface';
 import { str } from './coerce';
+
+/** The surface a delegated child runs on. A non-owner parent (team, client,
+ *  none) passes its own surface down unchanged. An owner parent's child is
+ *  the owner too, but as `owner/delegate` rather than the parent's chat
+ *  channel: the child never delivered to the chat itself (no Telegram photo
+ *  or voice note from a child), and that stays so. */
+export function childSurface(
+  surface: ToolHandlerContext['surface'],
+): ToolHandlerContext['surface'] {
+  return isOwnerSurface(surface) ? { kind: 'owner', via: 'delegate' } : surface;
+}
 
 export const invoke_agent: BuiltinToolDef = {
   slug: 'invoke_agent',
+  spends: true,
   name: 'Delegate to another agent',
   description:
     "Hand off a single, self-contained prompt to another agent (e.g. a researcher with a stronger model + retrieval tools). Use only when the work would clearly benefit from a different persona or model — not for routing every turn. The child runs once and returns its final text; its conversation history is NOT shared with the parent. Pack the prompt to stand alone: the user's ask (their words, not a paraphrase), the exact node ids via `subject_node_ids`, any composed content IN FULL, and what 'done' looks like. The runtime also attaches the triggering user message automatically as a safety net. The parent agent's `memory_config.delegate_to` must list the target slug, or this call is refused.",
@@ -129,6 +142,7 @@ export const invoke_agent: BuiltinToolDef = {
     // it in the parent step's meta for /traces visibility, but the
     // parent's `traces.cost_micro_usd` does NOT roll it up — that
     // would double-count in /debug aggregates.
+    const surface = childSurface(ctx.surface);
     const result = await invoker({
       ownerId: ctx.ownerId,
       agentSlug: targetSlug,
@@ -137,6 +151,11 @@ export const invoke_agent: BuiltinToolDef = {
       parentTraceId: ctx.agent.parentTraceId ?? null,
       // Inherit the parent turn's thinking budget; the child re-clamps it.
       ...(ctx.agent.thinkingBudget ? { thinkingBudget: ctx.agent.thinkingBudget } : {}),
+      // The child works for the parent's caller (client logins C4), so a team
+      // or client turn cannot reach owner-only tools by delegating.
+      ...(surface ? { surface } : {}),
+      // One taint for the whole delegation tree (plan N18).
+      ...(ctx.agent.taint ? { taint: ctx.agent.taint } : {}),
     });
     if (!result.ok) {
       return { ok: false, error: `child agent failed: ${result.error}` };

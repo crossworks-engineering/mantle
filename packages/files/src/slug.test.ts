@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest';
 import {
   dashToLtree,
   EXPORT_REQUIRED_EXTS,
+  folderSlugOf,
   exportHintForExt,
   extOf,
   INGESTABLE_EXTS,
@@ -362,5 +363,18 @@ describe('isVisionImage (ext routing beats client-supplied mime)', () => {
 
   it('unrouted non-images stay off the vision path', () => {
     expect(isVisionImage('bin', 'application/octet-stream')).toBe(false);
+  });
+});
+
+describe('folderSlugOf (names people give folders)', () => {
+  it('keeps the plain slug when the name has Latin letters or digits', () => {
+    expect(folderSlugOf('Acme Corp')).toBe('acme-corp');
+  });
+  it('gives a non-Latin name a short stable slug instead of refusing it', () => {
+    const a = folderSlugOf('Проекты');
+    expect(a).toMatch(/^f-[0-9a-f]{10}$/);
+    expect(folderSlugOf('Проекты')).toBe(a);
+    expect(folderSlugOf('项目')).not.toBe(a);
+    expect(folderSlugOf('   ')).toBeNull();
   });
 });

@@ -1,10 +1,10 @@
 /**
  * The owner SSO handoff handler — POST /api/auth/sso (route re-exports this;
  * lives in lib with relative imports so the co-located vitest run resolves it,
- * same pattern as token-login.ts / team-sso.ts).
+ * same pattern as token-login.ts).
  *
- * The owner counterpart of the member `/api/team/sso` upgrade, and it exists
- * for the same reason. Until v0.204 the owner UI decided "am I split?" with
+ * It began as the owner counterpart of the team-code `/api/team/sso` upgrade
+ * (retired in member logins Phase 6). Until v0.204 the owner UI decided "am I split?" with
  * `runtimeApiBase() !== ''`, which is TRUE on every same-origin box that sets
  * a base — so owners on a one-domain deployment authenticated in BEARER mode
  * and hold no session cookie. The API surface doesn't care (the bearer is a
@@ -21,13 +21,13 @@
  * between carriers, it does not widen it — which is also why a caller who is
  * already on a cookie is served idempotently rather than refused.
  *
- * Unlike the team route this takes NO `next` and never redirects: it is called
+ * Unlike the retired team route this takes NO `next` and never redirects: it is called
  * by `fetch` from our own shell, not by a top-level form navigation, so there
  * is no open-redirect surface to constrain and the bearer rides the
  * Authorization header rather than a form body.
  */
 import { NextResponse } from '../server/http-compat';
-import { buildSessionCookie, getOwnerOr401, SESSION_COOKIE_NAME } from './auth';
+import { buildSessionCookie, getOwnerOr401, loginSessionEpoch, SESSION_COOKIE_NAME } from './auth';
 import { isTrustedOrigin, rateLimited } from './auth/preflight';
 import { secureCookies } from './auth-constants';
 import { rateLimit, clientIp } from './rate-limit';
@@ -56,13 +56,17 @@ export async function handleOwnerSso(req: Request): Promise<NextResponse> {
   // row an added login writes to the anchor instead.
   //
   // SHORT TTL, deliberately — not the password login's year. The bearer this
-  // upgrades is 30-day and revocable per device; the session cookie has no
-  // revocation at all, so a long mint here would convert a revocable
-  // credential into an irrevocable one that outlives it. Seven days is
+  // upgrades is 30-day and revocable per device; the session cookie is
+  // revocable only for the whole login (its session epoch, 0181), not per
+  // device, so a long mint here would let one device's cookie outlive that
+  // device's revoked token. Seven days is
   // enough because the shell re-fires upgradeOwnerCookie on EVERY page load:
   // the cookie renews continuously while the bearer stays valid, and dies
   // within a week of the device's token being revoked.
-  const { value, maxAgeSec } = buildSessionCookie(user.actor.id, OWNER_SSO_COOKIE_TTL_SECONDS);
+  const { value, maxAgeSec } = buildSessionCookie(user.actor.id, {
+    epoch: await loginSessionEpoch(user.actor.id),
+    ttlSeconds: OWNER_SSO_COOKIE_TTL_SECONDS,
+  });
   const res = new NextResponse(null, { status: 204 });
   res.cookies.set(SESSION_COOKIE_NAME, value, {
     httpOnly: true,

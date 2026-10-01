@@ -61,6 +61,10 @@ export const traceSteps = pgTable(
   (t) => [
     index('trace_steps_trace_idx').on(t.traceId, t.ordinal),
     index('trace_steps_parent_idx').on(t.parentStepId),
+    // The "What clients see" email hints (migration 0189, audit A23).
+    index('trace_steps_email_page_idx')
+      .on(t.createdAt)
+      .where(sql`${t.name} = 'tool: email_page'`),
   ],
 );
 

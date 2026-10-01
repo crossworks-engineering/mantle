@@ -39,7 +39,9 @@ document. Heavy/large data lives in the sidecar so tree and index scans over
 ```
 nodes (type='page')
   title                 display name
-  slug / path / tags    standard node fields ('pages' ltree root)
+  slug / path / tags    standard node fields; path = the page's FOLDER
+                        (a branch row under the 'pages' root, or the root
+                        itself: docs/folder-tree.md, "Pages")
   data.icon             emoji/icon (optional)
   data.width            'narrow' | 'wide'  (Notion-style page width)
   data.visibility       'private' | 'public'  (read-only sharing, Phase 5)
@@ -108,6 +110,27 @@ durable; commits make indexing deliberate. A 30-minute editing session is now
   and its summary reflects, what's _inside_ its images/docs, not just their
   filenames. A referenced file whose own extraction hasn't landed yet is
   skipped and picked up on the next commit (no reactive re-extract).
+- **Client and public pages index only what their level reads** (client
+  logins, audit B1; `packages/content/src/pages/level-text.ts`). `doc_text`
+  is what the extractor summarises, chunks and embeds and what search
+  matches, so for a page at client or public it holds only what a reader at
+  that level may read. An embedded file or drawing folds its text in only
+  when the page's level reads it. A mention, a link or a page link card of
+  an item the level cannot read is written as "Private item"; a readable one
+  carries its item's current title. A team or admin page is unchanged: the
+  whole doc and every embed. The filter is the client redactor
+  ([client-logins.md](./client-logins.md) section 5), with the page's level
+  deciding what is readable.
+- **A level change re-folds `doc_text` by SQL only.** When a level moves
+  (the page's own, an embed that follows it down, a link that makes it
+  public, an Accept), `refoldPageTexts` recomputes the text of that page and
+  of every client or public page that names the item. It writes `doc_text`
+  and nothing else: no extraction, no summary, no chunks, no embedding, no
+  version (cost safety: a level change never starts model work). The
+  summary and chunks catch up at the page's next commit. So client chat
+  (client logins C4) must re-chunk the client-level items before it
+  searches their chunks: a chunk made before this rule, or before a level
+  change, can hold text the level may not read.
 
 ---
 
@@ -280,13 +303,17 @@ cache + `extract_cost_cap_micro_usd`.
   `/api/pages/[id]/draft` (PUT), `/api/pages/[id]/commit` (POST),
   `/api/mentions/search` (mention/link autocomplete, pages, notes, entities;
   read-only).
+  Where pages sit (their folders) is the pages tree's: `GET /api/tree/pages`
+  ([folder-tree.md](./folder-tree.md)); `POST /api/pages` takes `folderId`
+  and `POST /api/pages/:id/move` files a page in a folder.
 - **MCP (read-only for pages):** `page_list`, `page_get`, plus `search_chunks`
   (passage-level vector search across all content).
 - **In-app agent (read + write):** the web assistant's builtins include
-  `page_create` (pass `parent_id` to nest a **sub-page**) / `page_update` / `page_delete` / `page_list` / `page_get`
+  `page_create` (pass `folder_id` to file it in a pages folder) / `page_update` / `page_delete` / `page_list` / `page_get`
   ([`packages/tools/src/builtins-pages.ts`](../packages/tools/src/builtins-pages.ts)),
-  block-addressed edits (`page_block_*`), and `page_split` (break a long page
-  into sub-pages along its headings, see §8 Phase 4b).
+  block-addressed edits (`page_block_*`), `page_move` (into a folder) and
+  `page_split` (break a long page into pages along its headings, next to it,
+  see §8 Phase 4b).
   Authoring goes through `markdownToDoc` (the LLM writes the rich-markdown
   dialect, not raw ProseMirror JSON), see [`rich-writing.md`](./rich-writing.md).
   _(The MCP surface above is still read-only; only the in-app agent authors.)_
@@ -311,7 +338,7 @@ cache + `extract_cost_cap_micro_usd`.
   `resolveExport()` dispatches by node type (`page`/`note` → `.docx`, `table` →
   `.xlsx`; see [`tables.md`](./tables.md)). A **Download** button in the page /
   note detail header hits `GET /api/export/[id]`; the `export_node` agent tool
-  saves under `/files/exports` (a dedicated `export` tool group granted to the
+  saves under `/files/auto-filed/exports` (a dedicated `export` tool group granted to the
   persona + Pages / Ledger). OOXML opens cleanly in Word / Google Docs /
   LibreOffice.
 
@@ -456,10 +483,10 @@ cache + `extract_cost_cap_micro_usd`.
     (`lib/focus-directive.ts`) telling Pages to operate ONLY on those ids and
     leave the rest byte-for-byte. **No new agent tools**: Pages already edits
     by block id; the marker just names the targets.
-  - Deferred (next slice): **gutter break → child page**, a between-blocks
-    "break here" / "extract marked range → sub-page" that creates a child from
-    the selected blocks and drops a `childPage` card in their place (Phase 4c
-    realized through the gutter, landing on the 4a foundation).
+  - Deferred (next slice): **gutter break → new page**, a between-blocks
+    "break here" / "extract marked range → new page" that creates a page from
+    the selected blocks, next to this one, and drops a page link card in
+    their place (Phase 4c realized through the gutter).
 
 - **Block-editor safety skill (architectural note, not slated)**: Pages's
   HARD RULE block grew organically over the testing days (preserve words,
@@ -475,100 +502,35 @@ cache + `extract_cost_cap_micro_usd`.
   remember Skills... maybe design a more structured ruleset for the
   models that does tasks like pages."_
 
-- **Hierarchy / sub-pages (Phase 4)**: **4a + 4b + 4c shipped.**
-  The architectural lever for documents past ~50 KB. Insight
-  (2026-05-27 audit conversation): no model AND no human reads a 170 KB
-  document as one unit. The right answer to "this doc is too long for Pages
-  to restyle" is not "make Pages handle bigger docs"; it's structure. Notion
-  does this via sub-pages; Mantle's `nodes.parent_id` + `ltree path` already
-  support the tree at the data layer, just not at the UX or content-model
-  layer.
+- **Hierarchy / sub-pages (Phase 4)**: **4a + 4b + 4c shipped 2026-05, and the
+  NESTING RETIRED 2026-09-30 (folder system phase 7).** Pages no longer nest:
+  a page is never the parent of another page, and a page's place is its
+  folder in the pages tree ([folder-tree.md](./folder-tree.md), "Pages").
+  Migration 0210 filed the old hierarchy into folders. What stayed:
 
-  Three slices, in order:
+  - **The page link card** (`childPage`, `[Title](page:<page-id>)` on its
+    own line; `components/page-editor/child-page.ts` in jackdaw): a link to
+    another page that refreshes its title and icon, and an embed edge (a
+    shared page opens what it links to while it is shared). The `/page`
+    slash command makes a new page NEXT TO this one (same folder) and
+    inserts its card.
+  - **`page_split`** (4b): every heading of the chosen level becomes a page
+    of its own in the same folder; the source becomes a table of contents of
+    link cards, written to draft. **`page_extract_section`** (4c) lifts one
+    section into a page next to the source. Both byte-faithful, both
+    indexing each new page on its own: the scaling lever for documents too
+    big to hold in one transform.
+  - **The Folder index block** (`folderIndex`, `[Folder index](folder:<id>)`
+    or `folder:here`): a live, title-only list of a folder's pages, as the
+    reader sees it, in place of what sub-page cards did for navigation.
 
-  - **4a (Manual sub-pages**) ✅ **built (2026-05-28).** What makes Mantle
-    a Notion peer.
-    1. TipTap block-level atom node `childPage` with attrs
-       `{ pageId, title, icon? }` (`components/page-editor/child-page.ts` +
-       `child-page-view.tsx`), renders as a clickable card linking to
-       `/pages/<pageId>`; the block-level cousin of `PageMention`. The card
-       refreshes the child's live title/icon on mount so renames show up. In
-       the shared `pageExtensions` so PageView renders it too; the public
-       renderer emits an inert label (sub-pages aren't part of a shared
-       subtree). `childPage` joins `BLOCK_NODE_TYPES` (addressable +
-       block-id'd) and `docToText`'s `BLOCK_TYPES`.
-    2. `/page` slash command ("Sub-page") creates a page with
-       `parent_id = current page`, then inserts a `childPage` card at the
-       cursor. The page id reaches the static slash item via a `pageId`
-       option on the editor-only `SlashCommand` extension (exposed through
-       `editor.storage`); `PageEditor` gained a `pageId` prop. (Inline
-       `/page <title>` capture deferred, TipTap's Suggestion stops the query
-       at whitespace; the card is created "Untitled" and renamed in-child.)
-    3. `/pages` renders as a collapsible tree (built from `parent_id`) when
-       no filter is active; search / tag-filter falls back to the existing
-       flat paginated list (scattered matches aren't a tree, mirrors Notion).
-       Per-row hover actions: add sub-page, delete. Delete-confirm warns when
-       the target has sub-pages (`parent_id` is **ON DELETE CASCADE**: a
-       parent delete removes its whole subtree).
-    4. `createPage` accepts `parentId` (it did NOT before; it hardcoded the
-       flat `pages` root): it resolves the parent, sets `nodes.parent_id`,
-       and extends the parent's ltree `path` (`pages.<childId>`, nesting
-       deeper for grandchildren). Bad parent → `ParentPageNotFoundError` →
-       400 at `POST /api/pages`. New helper `listChildPages(ownerId, parentId)`.
-       The tree is driven by `parent_id` (the reliable FK); the ltree path is
-       the materialised mirror. Zero schema cost.
-
-  - **4b (`page_split` tool for Pages**) ✅ **built.** The AI-driven
-    scaling lever. Signature: `page_split({ page_id, by: 'h1' | 'h2',
-preserve_intro?: boolean })`. Walks the doc, every Hx heading becomes
-    a child page's title, content until the next Hx becomes the child's
-    body. Original page becomes a TOC of `childPage` blocks. Server-side,
-    deterministic, byte-faithful (blocks redistributed, never rewritten,
-    same object refs; see [`page-split.ts`](../packages/content-core/src/page-split.ts)).
-    The pure splitter is `splitDocByHeading`; `splitPage` (pages.ts) wraps
-    it: children via `createPage` (the `nodes` insert fires the extractor →
-    each child indexed independently), parent TOC written to **`draft_doc`
-    only** (reviewable; the agent has no commit tool). Operates on
-    `draft ?? doc`. Lands in the `pages` tool group (so the Pages agent
-    holds it); the persona proposes a split when a whole-doc transform is
-    too large. Indexing win: search becomes granular ("find the section
-    about X" returns a child page, not a haystack), the brain gets
-    _better_, not just smaller per-page.
-
-  - **4c (Promote-to-sub-page**) ✅ **built.** The surgical cousin of 4b:
-    lift ONE section into a sub-page. Pure core `extractSection`
-    ([`page-split.ts`](../packages/content-core/src/page-split.ts)) finds the
-    top-level heading by block id, takes everything from it until the next
-    heading of **equal-or-higher level** (an h2 section ends at the next h2
-    or h1), and returns the section body + the surrounding `before`/`after`
-    blocks. `extractSectionToChild` (pages.ts) wraps it like `splitPage`
-    (child via `createPage` → indexed; parent rewritten to `draft_doc`).
-    Two surfaces: the agent tool `page_extract_section({ page_id,
-heading_block_id })` (in the `pages` group), and a **drag-handle
-    "Extract to sub-page"** action shown on top-level headings
-    ([`drag-handle.tsx`](../jackdaw/components/page-editor/drag-handle.tsx)),
-    client-side mirror that reuses the same `extractSection`, creates the
-    child via `POST /api/pages` (with its body), and swaps the section for a
-    `childPage` card (autosaved to draft like any edit).
-
-  Pages persona update (lands with 4b): when a request like "restyle this
-  X-block document" exceeds a threshold, Pages PROPOSES a split first
-  rather than attempting the full transform. Stops pretending to scale
-  infinitely; starts coaching the user toward the right structure.
-
-  Bonus effect: the section-highlighting feature (an earlier Phase 3a.2
-  proposal) becomes less urgent, most "restyle a region" asks become
-  "restyle this sub-page", which is just a normal AI-assist call on a
-  smaller page.
-
-  Why this is the right shape:
-  - Data layer already supports it (parent_id + ltree). Zero schema cost.
-  - Matches how humans organise long content (the Notion paradigm).
-  - Each child stays within Pages's current iteration budget cleanly,
-    no architectural tuning needed.
-  - Each child is independently searchable, shareable, editable.
-  - The "wall of text" problem is dissolved at the model level, not
-    worked around at the tool level.
+  What went: `nodes.parent_id` on pages (cleared), `movePage` and
+  `POST /api/pages/:id/move { parentId }` (it takes `folderId` now, through
+  the tree's item move with the visibility confirm), `childCount` and
+  `parentTitle` on list rows, `countPageDescendants`, the delete warning
+  about nested pages, and the "Share sub-pages" cascade on a link
+  (`setShareCascade`, `POST /api/shares/cascade`, `page_share`'s
+  `children`): a set of pages is shared by sharing its folder.
 
 ---
 

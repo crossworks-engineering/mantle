@@ -8,6 +8,35 @@ import { env } from '@mantle/config';
 
 export const SESSION_COOKIE_NAME = 'mantle_session';
 
+/**
+ * The render cookie (kind 'r', lib/auth/tokens.ts): what the browser sidecar
+ * carries on the print origin when it renders an export. Its own name, so it
+ * can never be read as the session cookie.
+ */
+export const RENDER_COOKIE_NAME = 'mantle_render';
+
+/** The render surfaces themselves: the only pages a render cookie opens, each
+ *  bound to the node the cookie names. */
+const RENDER_PAGE_RE = /^\/(?:print\/pages|print\/draws|render\/draws)\/[^/]+$/;
+
+/** The byte routes a render surface loads: page images and scene images
+ *  (/api/files/files/:id) and embedded drawings (/api/draws/:id/svg). Nothing
+ *  else: not the admin private-space bytes, not any JSON API. */
+const RENDER_ASSET_RE = /^\/api\/(?:files\/files\/[^/]+|draws\/[^/]+\/svg)$/;
+
+export function isRenderPagePath(path: string): boolean {
+  return RENDER_PAGE_RE.test(path);
+}
+
+export function isRenderAssetPath(path: string): boolean {
+  return RENDER_ASSET_RE.test(path);
+}
+
+/** Every path a render cookie is accepted on (GET only; the gate checks). */
+export function isRenderPath(path: string): boolean {
+  return isRenderPagePath(path) || isRenderAssetPath(path);
+}
+
 // `/s` is the public read-only share surface (token-gated, no session). The
 // /s pages + /s/[token]/a/[fileId] asset route authorize by share token, not by
 // the owner cookie — see docs/sharing.md.
@@ -22,6 +51,9 @@ export const SESSION_COOKIE_NAME = 'mantle_session';
 export const PUBLIC_PATHS = [
   '/login',
   '/api/auth',
+  // The QR sign-in URL's landing page for a browser that scanned it (the
+  // phone app parses the URL itself and never opens it).
+  '/pair',
   '/s',
   '/api/federation',
   '/api/version',
@@ -41,25 +73,32 @@ export const PUBLIC_PATHS = [
   '/api/oauth',
   '/.well-known/oauth-authorization-server',
   '/.well-known/oauth-protected-resource',
-  // Team surfaces: /api/team/* self-authenticates with contact team tokens
-  // (signed team-chat cookie or bearer), never the session cookie. The /team
-  // and /hub UI moved to the CLIENT app with the member carve — here they are
-  // redirect stubs for canonical-domain bookmarks, public for the same
-  // reason. The owner's admin view (/team-admin) lives in the client app too,
-  // behind the owner credential.
-  '/team',
-  '/hub',
-  '/api/team',
+  // /team, /hub and /api/team/* (the team-code portal) were retired in member
+  // logins Phase 6: their old page URLs redirect to /login BEFORE this gate
+  // (server/pages/stubs.ts mountRetiredTeamPages) and the API paths are gone.
 ];
 
 /**
  * Paths whose routes emit their own richer audit events (`user.*`) — the
  * choke point skips its generic `api.write` row for these to avoid doubles.
  */
-export const AUDIT_SELF_LOGGED_PATHS = ['/api/users'];
+export const AUDIT_SELF_LOGGED_PATHS = ['/api/users', '/api/team-admin/clients'];
 
 export function isAuditSelfLogged(path: string): boolean {
   return AUDIT_SELF_LOGGED_PATHS.some((p) => path === p || path.startsWith(p + '/'));
+}
+
+/**
+ * A client app's broker calls (host.db and host.tools, client tier audit
+ * I4): a running app makes them by the hundred, and the app's own access
+ * log already records them (tool and write calls each, reads sampled), so
+ * the choke point writes no `api.write` row for them. Every other client
+ * write, the app's frame ticket included, is still audited.
+ */
+const CLIENT_APP_BROKER_PATH = /^\/api\/client\/apps\/[^/]+\/(?:db|tool)-broker\/?$/;
+
+export function isClientAppBrokerPath(path: string): boolean {
+  return CLIENT_APP_BROKER_PATH.test(path);
 }
 
 /**

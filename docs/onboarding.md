@@ -63,7 +63,7 @@ replaced the older `actions.ts`); the stepper is `onboarding-client.tsx`.
 
 | # | Step | What it does |
 |---|------|--------------|
-| 1 | **Welcome** | timezone + locale (prefilled from the browser) → `updateProfilePreferences`, plus a **System status** panel that probes the infrastructure vitals, Postgres, the pg-boss schema, MinIO + the bucket, Tika, the required secrets, and Domain & HTTPS, and **blocks Continue on failure** (so a broken stack surfaces on screen one, not mid-wizard) |
+| 1 | **Welcome** | timezone + locale (prefilled from the browser) → `updateProfilePreferences`, plus a **System status** panel that probes the infrastructure vitals, Postgres, the pg-boss schema, the object store + the bucket, Tika, the required secrets, and Domain & HTTPS, and **blocks Continue on failure** (so a broken stack surfaces on screen one, not mid-wizard) |
 | 2 | **Your key** (required) | the one required key, OpenRouter. **Save & test** genuinely validates the key against OpenRouter's `/api/v1/key`; with a key already saved the button reads **Test saved key** |
 | 3 | **Models** | curated model cards. Assistant (top-tier): **Claude Sonnet 5** (recommended, $2/$10 per M tokens, 1M ctx), Claude Opus 4.8, GPT-5.5 (Azure-capable), Grok 4.20. Worker (fast): **Gemini 3.1 Flash Lite** (recommended), GPT-5.4 Nano/Mini (Azure-capable), Claude Haiku 4.5. Route: **OpenRouter**, or **Azure OpenAI** via the `custom` provider (endpoint + key) |
 | 4 | **Voice** | works by default on the OpenRouter key (grok voice ara); optionally add a dedicated **xAI** key for a smoother voice route |
@@ -95,22 +95,23 @@ kind/slug that already exists is left alone):
 
 | Capability | Worker kind | Provider · model | Gated by |
 |---|---|---|---|
-| Fact/summary/persona extraction | `extractor`, `summarizer`, `reflector` | OpenRouter · `google/gemini-3.1-flash-lite` | OpenRouter key |
-| Document/PDF reading | `document` | OpenRouter · `google/gemini-3.1-flash-lite` | OpenRouter key |
-| Image / scan reading | `vision` | OpenRouter · `google/gemini-3.1-flash-lite` | OpenRouter key |
+| Fact/summary/persona extraction | `extractor`, `summarizer`, `reflector` | OpenRouter · `google/gemini-3.5-flash-lite` | OpenRouter key |
+| Document/PDF reading | `document` | OpenRouter · `google/gemini-3.5-flash-lite` | OpenRouter key |
+| Image / scan reading | `vision` | OpenRouter · `google/gemini-3.5-flash-lite` | OpenRouter key |
 | Image generation | `image_gen` | OpenRouter · `google/gemini-3.1-flash-image-preview` | OpenRouter key |
 | Spoken replies | `tts` | xAI · `grok-voice-latest` (ara/rex) **or** OpenRouter · `x-ai/grok-voice-tts-1.0` (ara) | xAI key if added, else OpenRouter |
 | Voice notes → text | `stt` | xAI · `grok-stt` **or** OpenRouter · `openai/gpt-4o-mini-transcribe` | xAI key if added, else OpenRouter |
 
 All OpenRouter model picks above are operator-verified as working + affordable on
-a single OpenRouter key. `gemini-3.1-flash-lite` is multimodal, so it backs the
+a single OpenRouter key. `gemini-3.5-flash-lite` is multimodal, so it backs the
 indexing workers, document reading, and vision alike.
 | Memory search | embeddings | chosen in the **Memory** step, online `text-embedding-3-large` @768 via OpenRouter/OpenAI by default; the keyless local EmbeddingGemma config is the pre-onboarding fallback | always |
 
 The **assistant** is one `agents` row (slug `assistant`, role `responder`, serves
 both web `/assistant` and Telegram). Its model, params, memory config, and tool
 grant all come from `PERSONA_MANIFEST` (the system manifest), not hardcoded here:
-model `anthropic/claude-sonnet-5`, granted `PERSONA_TOOL_GROUP_SLUGS`. It's
+model `DEFAULT_AGENT_MODEL` (`~x-ai/grok-latest`, an auto-updating OpenRouter
+alias), granted `PERSONA_TOOL_GROUP_SLUGS`. It's
 created with the Warm/Saskia default and refined by the personality step
 (`savePersonaAgent`: rebuilds the system prompt from the chosen preset, sets the
 name + temperature, points the TTS voice at the gender).

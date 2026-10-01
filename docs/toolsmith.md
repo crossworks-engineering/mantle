@@ -52,7 +52,7 @@ short usage skill. Two payoffs:
   authored before this feature still runs byte-identically, and `api_tool_get`
   shows exactly what will fire. The result reports what was inherited.
 - **The knowledge doesn't evaporate.** `api_docs_set` stores the documentation as
-  `files/api-docs/<group-slug>.md` through the ordinary file pipeline, so it
+  `files/auto-filed/api-docs/<group-slug>.md` through the ordinary file pipeline, so it
   summarises, embeds, and FTS-indexes like any upload, every agent's
   `search_nodes` can find it. Adding endpoint #2 next month starts with
   `api_docs_get`, not a re-fetch of a page that may have moved or gone behind

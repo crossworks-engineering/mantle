@@ -4,15 +4,15 @@ import { agents } from './agents';
 import { authUsers } from './auth-users';
 import { nodes } from './nodes';
 
-export type NodeCommentAuthorKind = 'owner' | 'member' | 'agent';
+export type NodeCommentAuthorKind = 'owner' | 'member' | 'agent' | 'client';
 
 /**
  * Comments on a content node — tasks first, but node-generic by design so
  * pages/notes can adopt it without a migration. Flat, chronological,
  * multi-author; the discussion thread on a task's detail pane.
  *
- * `author_kind` distinguishes the three voices (same vocabulary as
- * `forum_posts`): `owner` is any admin login (`login_id` — logins share one
+ * `author_kind` distinguishes the three voices (the vocabulary the retired
+ * forum's posts used): `owner` is any admin login (`login_id` — logins share one
  * brain, so the name snapshot is what tells them apart), `member` is a
  * contact holding a team token (`contact_id`), `agent` is an assistant
  * (`agent_id`). All three author FKs go SET NULL on deletion with
@@ -38,6 +38,15 @@ export const nodeComments = pgTable(
     /** Display-name snapshot at post time. */
     authorName: text('author_name').notNull(),
     body: text('body').notNull(),
+    /** On a personal item (0171, audit S6): 'team' = written while the item
+     *  was shared with the team (teammates read it); 'review' = the author's
+     *  review talk while it was private and submitted (never teammates).
+     *  'client' (0194, decision 8) = the thread on a client-level brain item:
+     *  the team, admins and every client login read and write it. */
+    threadScope: text('thread_scope')
+      .$type<'team' | 'review' | 'client'>()
+      .default('team')
+      .notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     editedAt: timestamp('edited_at', { withTimezone: true }),
   },

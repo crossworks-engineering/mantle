@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 /**
  * Slug + filename normalisation. The user expects lowercase everywhere;
  * the filesystem layer also has to satisfy Postgres ltree (labels are
@@ -23,6 +25,22 @@ export function slugifyFolder(raw: string): string | null {
     .replace(/^-+|-+$/g, '')
     .slice(0, 64);
   return s.length === 0 ? null : s;
+}
+
+/**
+ * The slug of a folder a PERSON names (the tree's folders, every kind): as
+ * slugifyFolder, but a name with no Latin letters or digits (Cyrillic, Greek,
+ * Arabic, CJK, emoji) gets a short stable slug from its text instead of
+ * being refused (folder audit C6). The display name is kept apart from the
+ * slug, so people still see their own name. Null only for a blank name.
+ * (Machine paths keep slugifyFolder: their slugs must not change.)
+ */
+export function folderSlugOf(name: string): string | null {
+  const plain = slugifyFolder(name);
+  if (plain) return plain;
+  const text = name.trim();
+  if (!text) return null;
+  return `f-${createHash('sha1').update(text.normalize('NFC')).digest('hex').slice(0, 10)}`;
 }
 
 /**

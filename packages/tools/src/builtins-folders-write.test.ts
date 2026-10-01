@@ -27,6 +27,21 @@
 
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
+vi.mock('@mantle/content/tree', () => {
+  class TreeVisibilityError extends Error {
+    constructor(readonly diff: { changes: unknown[]; total: number }) {
+      super('visibility');
+    }
+  }
+  return {
+    TreeVisibilityError,
+    guardFileTo: vi.fn(async () => ({ changes: [], total: 0 })),
+    guardFolderTo: vi.fn(async () => ({ changes: [], total: 0 })),
+    guardFileCopyTo: vi.fn(async () => ({ changes: [], total: 0 })),
+    guardFolderCopyTo: vi.fn(async () => ({ changes: [], total: 0 })),
+    guardNewFileIn: vi.fn(async () => ({ changes: [], total: 0 })),
+  };
+});
 vi.mock('@mantle/files', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/files')>();
   return {

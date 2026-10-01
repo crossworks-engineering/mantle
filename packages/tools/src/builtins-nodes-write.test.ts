@@ -3,7 +3,7 @@
  * generic node group. It had no test.
  *
  * Supersession re-weights retrieval for the whole brain, which is why the
- * tool refuses on the team and forum surfaces: a member contact must not be
+ * tool refuses on the team surface: a team member must not be
  * able to demote the owner's content by asking the assistant nicely. That
  * refusal has to fire BEFORE the store is touched, and it has to be keyed on
  * `ctx.surface` (runtime-stamped), not on anything in the arguments.
@@ -34,7 +34,8 @@ import { supersedeNode, unsupersedeNode } from '@mantle/content';
 import { CONTENT_CURATION_TOOLS } from './builtins-nodes';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 
-const ctx: ToolHandlerContext = { ownerId: 'o1' };
+// The owner's own chat: since client logins C4 a missing surface is not the owner.
+const ctx: ToolHandlerContext = { ownerId: 'o1', surface: { kind: 'web' } };
 const teamCtx: ToolHandlerContext = { ownerId: 'o1', surface: { kind: 'team', contactId: 'c1' } };
 const OLD = '11111111-2222-4333-8444-555555555555';
 const NEW = '22222222-2222-4333-8444-555555555555';
@@ -58,6 +59,7 @@ beforeEach(() => {
   vi.mocked(supersedeNode).mockResolvedValue({
     id: OLD,
     title: 'Old spec',
+    audience: 'admin',
     supersededBy: NEW,
     supersededReason: 'migrated',
   } as never);
@@ -126,6 +128,24 @@ describe('content_supersede', () => {
     expect(err).toContain(NEW);
     expect(err).toMatch(/search_nodes/);
     expect(err).toMatch(/page_list/);
+  });
+
+  it('says nothing about levels when the old version is admin', async () => {
+    const out = outputOf(await supersede.handler({ node_id: OLD, superseded_by: NEW }, ctx));
+    expect(out.warning).toBeUndefined();
+  });
+
+  it('warns that an old version below admin is still visible, and how to raise it', async () => {
+    vi.mocked(supersedeNode).mockResolvedValue({
+      id: OLD,
+      title: 'Old spec',
+      audience: 'client',
+      supersededBy: NEW,
+      supersededReason: 'migrated',
+    } as never);
+    const out = outputOf(await supersede.handler({ node_id: OLD, superseded_by: NEW }, ctx));
+    expect(out.warning).toMatch(/still visible at client level/);
+    expect(out.warning).toContain(`access_set(node_id: '${OLD}', level: 'admin')`);
   });
 
   it('passes any other store failure through as-is', async () => {

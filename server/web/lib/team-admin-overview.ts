@@ -4,21 +4,16 @@
  * tab loaded first — one helper, one definition of "what's awaiting the
  * specialist".
  */
-import { listTeamRequests, countPendingForumUploads } from '@mantle/content';
+import { countOpenTeamRequests } from '@mantle/content';
 
 export type TeamAdminBadges = {
-  /** The Requests-tab badge: open change requests + forum uploads pending
-   *  review — everything awaiting the specialist. */
+  /** The Requests-tab badge: open change requests, everything awaiting the
+   *  specialist. */
   openRequestCount: number;
-  /** Raw halves, for panes that need them (the uploads queue shows "N more"). */
-  openRequests: number;
-  pendingUploadCount: number;
 };
 
 export async function teamAdminBadges(userId: string): Promise<TeamAdminBadges> {
-  const [openRequests, pendingUploadCount] = await Promise.all([
-    listTeamRequests(userId, { status: 'open' }).then((r) => r.length),
-    countPendingForumUploads(userId),
-  ]);
-  return { openRequestCount: openRequests + pendingUploadCount, openRequests, pendingUploadCount };
+  // A count query, not the list (which stops at 100): the badge must agree
+  // with the "needs you" count on every device.
+  return { openRequestCount: await countOpenTeamRequests(userId) };
 }

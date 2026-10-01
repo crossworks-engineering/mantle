@@ -89,6 +89,28 @@ export type AgentMemoryConfig = {
    *  Default true for conversational agents; false on the team responder
    *  (owner-internal context) and utility agents. Deterministic, no LLM. */
   inject_working_notes?: boolean;
+  /** Responder/assistant-only: how the Journal reaches the prompt (spike 10,
+   *  docs/journal.md "Tiers"). `off`: the two always-on blocks only (the old
+   *  layout, no per-turn lookup). `shadow` (default): the old layout, plus
+   *  the per-turn tier 2/3 pick recorded in the load_context snapshot. `live`:
+   *  tier 1 (purpose + identity/goal/preference, full text) in the cached
+   *  notes block after the persona prompt; tier 2 (context, lessons,
+   *  expectations that match the message) and tier 3 (one matching open gap)
+   *  in an uncached per-turn block. `inject_journal` / `inject_working_notes`
+   *  still gate each lane. */
+  journal_tiers?: 'off' | 'shadow' | 'live';
+  /** Tier 2/3 cosine similarity cutoff. Default 0.70; ~0.60 suits long work
+   *  logs, 0.72 to 0.75 short personal entries. */
+  journal_relevance_min?: number;
+  /** Tier 2/3 characters per turn. Default 3000. */
+  journal_relevant_chars?: number;
+  /** Where this agent's learned notes live. `journal` (default since
+   *  2026-09-24): the reflector and `update_persona` write Journal entries
+   *  (general → tier 1, topic → tier 2), the agent does not read its persona
+   *  notes, and its Journal tiers are live. `persona`: the old path, the
+   *  `persona_notes` array in every prompt; kept only as the undo while the
+   *  array still exists (move notes first with `persona-notes-to-journal`). */
+  notes_target?: 'persona' | 'journal';
   /** Summarizer-only: undigested-turn count that triggers a summarization.
    *  Default 30, capped at max(history_limit, summarize_batch) so no turn
    *  can age out of the live history window while still undigested. */
@@ -314,6 +336,10 @@ export const agents = pgTable(
     /** Higher = wins. Convention: 100 default. */
     priority: integer('priority').default(100).notNull(),
     enabled: boolean('enabled').default(true).notNull(),
+    /** The agent's level (admin | team | client | public), member logins
+     *  Phase 0b: who may chat with it AND what it reads. A below-admin agent
+     *  runs inside its level (withAgentViewer). Default admin. */
+    audience: text('audience').notNull().default('admin'),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
     usageCount: bigint('usage_count', { mode: 'number' }).default(0).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

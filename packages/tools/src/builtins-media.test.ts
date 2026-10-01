@@ -90,6 +90,7 @@ vi.mock('@mantle/files', async (importOriginal) => {
   return {
     ...actual,
     createFolder: vi.fn(),
+    ensureAutoFiledFolder: vi.fn(),
     fileById: vi.fn(),
     readFileById: vi.fn(),
     upsertFile: vi.fn(),
@@ -116,7 +117,7 @@ import { accountForChat, sendPhoto, sendVoice } from '@mantle/telegram';
 import { getImageGenAdapter, getSttAdapter, getTtsAdapter } from '@mantle/voice';
 import {
   createFolder,
-  dashToLtree,
+  ensureAutoFiledFolder,
   fileById,
   mediaAudio,
   mediaCaptions,
@@ -128,7 +129,6 @@ import {
 } from '@mantle/files';
 import { createPage } from '@mantle/content';
 import { recordIngest } from '@mantle/tracing';
-import { paramsOf } from './test-support';
 import { WORKER_DELEGATION_TOOLS } from './builtins-workers';
 import { VIDEO_TOOLS } from './builtins-video';
 import { IMAGE_TOOLS } from './builtins-images';
@@ -284,6 +284,9 @@ beforeEach(() => {
     model: 'whisper-1',
   });
   vi.mocked(createFolder).mockResolvedValue({} as never);
+  vi.mocked(ensureAutoFiledFolder).mockImplementation(
+    async (_owner, source) => `files.auto_filed.${source.replace(/-/g, '_')}.2026_09`,
+  );
   vi.mocked(upsertFile).mockResolvedValue({ id: 'n1' } as never);
   vi.mocked(fileById).mockResolvedValue(null);
   vi.mocked(readFileById).mockResolvedValue(null);
@@ -388,34 +391,18 @@ describe('generate_image', () => {
     );
   });
 
-  it('scopes the folder-existence lookups to the caller', async () => {
-    // ensureBranch decides whether to create the folder. Drop
-    // `eq(nodes.ownerId, ...)` and another owner's identically-pathed folder
-    // satisfies the check, so the create is skipped and the image is written
-    // against a path this brain does not own.
-    h.selectQueue.push([], []);
+  it("files the image into the caller's own Auto-filed month folder", async () => {
     await generateImage.handler({ prompt: 'A red fox' }, WEB_CTX);
-    expect(h.selectWheres.length).toBeGreaterThan(0);
-    for (const clause of h.selectWheres) expect(paramsOf(clause)).toContain('o1');
+    expect(ensureAutoFiledFolder).toHaveBeenCalledWith('o1', 'generated-images');
   });
 
-  it('stores the image under the caller in the dated folder and hands back the inline ref', async () => {
-    h.selectQueue.push([], []); // neither the top folder nor today's exists yet
+  it('stores the image under the caller in the month folder and hands back the inline ref', async () => {
     const res = await generateImage.handler({ prompt: 'A red fox' }, WEB_CTX);
 
     expect(imageAdapter.generate).toHaveBeenCalledWith(
       expect.objectContaining({ apiKey: 'sk-test', prompt: 'A red fox', model: 'gpt-image-1' }),
     );
-    const today = new Date().toISOString().slice(0, 10);
-    expect(createFolder).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({ ownerId: 'o1', parentPath: 'files', slug: 'generated-images' }),
-    );
-    expect(createFolder).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({ ownerId: 'o1', slug: today }),
-    );
-    const parentPath = `files.generated_images.${dashToLtree(today)}`;
+    const parentPath = 'files.auto_filed.generated_images.2026_09';
     expect(upsertFile).toHaveBeenCalledWith(
       expect.objectContaining({
         ownerId: 'o1',
@@ -520,6 +507,18 @@ describe('synthesize_speech', () => {
     expect(errorOf(await synthesizeSpeech.handler({ text: 'hi' }, ctx))).toMatch(
       /needs a delivery surface/,
     );
+    expect(getDefaultWorker).not.toHaveBeenCalled();
+  });
+
+  // Client logins C4: MCP, runs and approved pending calls now name the owner
+  // surface. It says who asked, not where to deliver: still no audio.
+  it('refuses an owner surface that is not a chat channel', async () => {
+    for (const via of ['mcp', 'run', 'pending', 'delegate'] as const) {
+      const owner: ToolHandlerContext = { ownerId: 'o1', surface: { kind: 'owner', via } };
+      expect(errorOf(await synthesizeSpeech.handler({ text: 'hi' }, owner))).toMatch(
+        /needs a delivery surface/,
+      );
+    }
     expect(getDefaultWorker).not.toHaveBeenCalled();
   });
 
@@ -741,9 +740,11 @@ describe('video_ingest', () => {
 
     const out = outputOf(await videoIngest.handler({ url: PUBLIC_VIDEO }, WEB_CTX));
 
+    expect(ensureAutoFiledFolder).toHaveBeenCalledWith('o1', 'video-ingest');
     expect(upsertFile).toHaveBeenCalledWith(
       expect.objectContaining({
         ownerId: 'o1',
+        parentPath: 'files.auto_filed.video_ingest.2026_09',
         filename: expect.stringMatching(/^\d+-setting-the-apn\.mp3$/),
         bytes: MP3,
         overwrite: false,

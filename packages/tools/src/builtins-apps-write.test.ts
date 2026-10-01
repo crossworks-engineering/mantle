@@ -31,6 +31,10 @@ vi.mock('@mantle/content', async (importOriginal) => {
     writeDraftFile: vi.fn(),
     saveDraftSource: vi.fn(),
     setManifest: vi.fn(),
+    // app_tools_set reads the app's level to decide on member warnings; an
+    // admin-level app gets none (proven on Postgres in
+    // member-app-tools.viewer.db.test.ts).
+    getApp: vi.fn(async () => ({ audience: 'admin' })),
   };
 });
 vi.mock('@mantle/content/app-table-exports', async (importOriginal) => {
@@ -59,7 +63,8 @@ const sourceSet = APP_TOOLS.find((t) => t.slug === 'app_source_set')!;
 const toolsSet = APP_TOOLS.find((t) => t.slug === 'app_tools_set')!;
 const exportSet = APP_TOOLS.find((t) => t.slug === 'app_table_export_set')!;
 
-const ctx: ToolHandlerContext = { ownerId: 'o1' };
+// The owner's chat: the app write tools run only for the owner (audit I8).
+const ctx: ToolHandlerContext = { ownerId: 'o1', surface: { kind: 'web' } };
 const APP_ID = '11111111-2222-4333-8444-555555555555';
 
 type Result = Awaited<ReturnType<BuiltinToolDef['handler']>>;

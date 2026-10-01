@@ -502,7 +502,7 @@ through MCP, is handled by **two cleanly-separated responsibilities**:
 ### Per-surface flow
 
 - **Web `/assistant`** (`processUpload`): save to
-  `/files/assistant-uploads/<date>/` → `extractAttachmentForTurn` → fold into
+  `/files/auto-filed/assistant-uploads/<month>/` → `extractAttachmentForTurn` → fold into
   the turn. Images also echo an inbound artifact so the bubble renders them;
   documents render a client-side file chip. Accepts images + documents
   (pdf/docx/xlsx/csv/txt/md/json/yaml); anything else → 415.
@@ -1305,6 +1305,11 @@ If you're reading the code, the canonical files to start with are:
 12. `packages/embeddings/src/reembed.ts`, `runReembed`, used by both
     the CLI script (`pnpm re-embed`) and the workers form's
     Rebuild Index button.
+13. `packages/decisions/src/decide.ts`, the `decider` worker's one door:
+    a typed-decision model (choice / score / yes-no with probabilities, no
+    prose) that is optional at every level and switched per use in the UI.
+    Its own capability (`decision`) and dispatcher, because it is not
+    chat-shaped. See [decisions.md](decisions.md).
 
 ---
 

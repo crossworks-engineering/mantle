@@ -6,37 +6,62 @@
 
 import { and, eq, sql } from 'drizzle-orm';
 import {
+  assertFilesFolderDepth,
+  clampFilesFolderPath,
   dashToLtree,
   ensureDir,
   FILES_ROOT_LABEL,
   isFilesPath,
+  notAFilesFolder,
   removeFolder as removeFolderOnDisk,
   renameFolder as renameFolderOnDisk,
-  slugifyFolder,
+  folderSlugOf,
+  untrackedFilesOnDisk,
 } from '../index';
-import { db, nodes } from '@mantle/db';
+import { carrySpaceRows, isUniqueViolation, db, nodes, takeShareWriteLock } from '@mantle/db';
 import { folderCounts, folderRowFromNode, type FolderRow } from './shared';
 import { folderById } from './queries';
 
+/** Longest folder name people see (TREE_FOLDER_NAME_MAX in
+ *  @mantle/client-types/tree). */
+export const FOLDER_NAME_MAX = 60;
+
+/** A folder's display name: what the person typed, trimmed and capped. Its
+ *  slug (the path label and the disk name) is derived from it separately. */
+export function folderDisplayName(name: string): string {
+  return name.trim().replace(/\s+/g, ' ').slice(0, FOLDER_NAME_MAX);
+}
+
 /**
- * Create a folder under `parentPath` with the given disk slug + description.
- * Throws if the parent isn't a host-mirrored branch or the slug collides.
+ * Create a folder under `parentPath`. `slug` names it on disk and in the path
+ * (slugified here); `name` is what people see, defaulting to the slug. Throws
+ * if the parent isn't a host-mirrored branch, the folder would sit deeper than
+ * three levels, or the slug collides.
  */
 export async function createFolder(args: {
   ownerId: string;
   parentPath: string;
   slug: string;
+  name?: string;
   description?: string;
+  /** Made and filled by Mantle (Auto-filed): its name is locked and it
+   *  cannot be moved, since writers find it by its path. */
+  system?: boolean;
+  /** Its look from the start (updateFolderLook's values; an empty string or
+   *  null is none). The caller validates them; this only stores them. */
+  icon?: string | null;
+  color?: string | null;
 }): Promise<FolderRow> {
   if (!isFilesPath(args.parentPath)) {
     throw new Error(`createFolder: parent '${args.parentPath}' is outside the files root`);
   }
-  const slug = slugifyFolder(args.slug);
+  const slug = folderSlugOf(args.slug);
   if (!slug) {
     throw new Error(`createFolder: invalid slug '${args.slug}'`);
   }
   const childLabel = dashToLtree(slug);
   const childPath = `${args.parentPath}.${childLabel}`;
+  assertFilesFolderDepth(childPath, 'createFolder');
 
   // Make sure parent ltree node exists (when parent is `files`, the
   // lazy root-creation handles it; deeper parents must already exist).
@@ -62,11 +87,14 @@ export async function createFolder(args: {
     .values({
       ownerId: args.ownerId,
       type: 'branch',
-      title: slug,
+      title: folderDisplayName(args.name ?? '') || slug,
       slug,
       path: childPath,
       data: {
         description: args.description ?? '',
+        ...(args.system ? { system: true } : {}),
+        ...(args.icon ? { icon: args.icon } : {}),
+        ...(args.color ? { color: args.color } : {}),
       },
       tags: [],
     })
@@ -78,142 +106,38 @@ export async function createFolder(args: {
   return folderRowFromNode(row, 0, 0);
 }
 
-/**
- * Ensure `files.<topSlug>.<YYYY-MM-DD>` exists (both levels) and return the
- * per-day folder's ltree path. The upload surfaces (web /assistant, Telegram)
- * use this to file an incoming image under a dated folder before persisting
- * the bytes. Idempotent — tolerates the unique-index race when two uploads
- * land in the same second. Note ltree labels use underscores, so the stored
- * path uses `dashToLtree(slug)` while `createFolder` keeps the dash slug as
- * the disk dir name (mirrors the original per-surface helpers).
- */
-export async function ensureDatedUploadFolder(args: {
-  ownerId: string;
-  topSlug: string;
-  topDescription?: string;
-}): Promise<string> {
-  const { ownerId, topSlug } = args;
-  const topLtree = `files.${dashToLtree(topSlug)}`;
-  const dateSlug = new Date().toISOString().slice(0, 10); // 'YYYY-MM-DD'
-  for (const [parent, slug, description] of [
-    ['files', topSlug, args.topDescription ?? ''],
-    [topLtree, dateSlug, `Uploads from ${dateSlug}.`],
-  ] as const) {
-    const childPath = `${parent}.${dashToLtree(slug)}`;
-    const [exists] = await db
-      .select({ id: nodes.id })
-      .from(nodes)
-      .where(
-        and(
-          eq(nodes.ownerId, ownerId),
-          eq(nodes.type, 'branch'),
-          sql`${nodes.path}::text = ${childPath}`,
-        ),
-      )
-      .limit(1);
-    if (!exists) {
-      try {
-        await createFolder({ ownerId, parentPath: parent, slug, description });
-      } catch (err) {
-        if (!(err instanceof Error) || !/duplicate|unique/i.test(err.message)) throw err;
-      }
-    }
-  }
-  return `${topLtree}.${dashToLtree(dateSlug)}`;
-}
-
-/**
- * Ensure `files/extracted-images/<source-doc>/` exists and return its ltree
- * path.
- *
- * One folder per source document rather than one shared bucket: a single
- * 40-image manual would otherwise bury every other document's pictures, and
- * the per-document folder makes "everything that came out of this file"
- * answerable by browsing as well as by search.
- *
- * The folder slug is derived from the source document's own slug, so
- * re-ingesting the same file lands in the same place. Idempotent — a
- * concurrent create loses the race harmlessly, same as
- * {@link ensureDatedUploadFolder}.
- */
-export async function ensureExtractedImagesFolder(args: {
-  ownerId: string;
-  sourceSlug: string;
-  sourceTitle: string;
-}): Promise<string> {
-  const docSlug = slugifyFolder(args.sourceSlug) ?? 'document';
-  const topLtree = `files.${dashToLtree(EXTRACTED_IMAGES_SLUG)}`;
-  for (const [parent, slug, description] of [
-    [
-      'files',
-      EXTRACTED_IMAGES_SLUG,
-      'Pictures pulled out of documents — diagrams, screenshots and charts that the text of a file cannot convey.',
-    ],
-    [topLtree, docSlug, `Images extracted from ${args.sourceTitle}.`],
-  ] as const) {
-    const childPath = `${parent}.${dashToLtree(slug)}`;
-    const [exists] = await db
-      .select({ id: nodes.id })
-      .from(nodes)
-      .where(
-        and(
-          eq(nodes.ownerId, args.ownerId),
-          eq(nodes.type, 'branch'),
-          sql`${nodes.path}::text = ${childPath}`,
-        ),
-      )
-      .limit(1);
-    if (!exists) {
-      try {
-        await createFolder({ ownerId: args.ownerId, parentPath: parent, slug, description });
-      } catch (err) {
-        if (!(err instanceof Error) || !/duplicate|unique/i.test(err.message)) throw err;
-      }
-    }
-  }
-  return `${topLtree}.${dashToLtree(docSlug)}`;
-}
-
 /** Top-level folder holding every document's extracted pictures. */
 export const EXTRACTED_IMAGES_SLUG = 'extracted-images';
 
-/** How deep below `files` an agent may bring a folder chain into existence.
- *  Generous for real filing, short enough that a malformed path cannot walk a
- *  tree of empty folders into the store. */
-const MAX_ENSURED_DEPTH = 6;
-
 /**
  * Bring every missing folder on an ltree path under `files` into existence and
- * return the path. The `mkdir -p` every other writer here already performs for
- * itself — {@link ensureDatedUploadFolder} for uploads,
- * {@link ensureExtractedImagesFolder} for the extractor — lifted to one place so
- * an AGENT writing a file gets it too.
+ * return the path the caller should write into. The `mkdir -p` every other
+ * writer here already performs for itself (`ensureAutoFiledFolder` for
+ * uploads and extracted images) lifted to one
+ * place so an AGENT writing a file gets it too.
  *
  * Why it is needed: a skill can name a folder ("save the SVG under
  * `files/diagrams`") that nothing on a fresh brain ever creates, and `upsertFile`
  * refuses an absent parent. The agent then either fails or improvises a
  * different folder, and the artifact lands somewhere the instructions did not
- * intend — measured on the Draftsman, whose every first diagram errored and then
- * landed in the files ROOT instead.
+ * intend (measured on the Draftsman, whose every first diagram errored and then
+ * landed in the files ROOT instead).
  *
- * Deliberately narrow: `files` only (never a new top-level root), depth-capped,
- * and each segment must survive {@link slugifyFolder}, so a malformed path is
- * still an error rather than a tree of junk. Idempotent, and a concurrent create
- * loses the race harmlessly — same contract as the two helpers above.
+ * Folders nest at most FILES_MAX_FOLDER_DEPTH deep, so a deeper chain is cut
+ * back to its first three folders and the RETURNED path is where the file
+ * belongs. Deliberately narrow otherwise: `files` only (never a new top-level
+ * root), and each segment must survive {@link slugifyFolder}, so a malformed
+ * path is still an error rather than a tree of junk. Idempotent, and a
+ * concurrent create loses the race harmlessly, as with the two helpers above.
  */
 export async function ensureFolderPath(args: {
   ownerId: string;
   path: string;
   description?: string;
 }): Promise<string> {
-  const segments = args.path.split('.');
+  const segments = clampFilesFolderPath(args.path).split('.');
   if (segments[0] !== 'files') {
     throw new Error(`ensureFolderPath: '${args.path}' is not under 'files'`);
-  }
-  if (segments.length > MAX_ENSURED_DEPTH) {
-    throw new Error(
-      `ensureFolderPath: '${args.path}' is deeper than ${MAX_ENSURED_DEPTH} levels — create it deliberately with folder_create`,
-    );
   }
   let parent = 'files';
   for (const label of segments.slice(1)) {
@@ -240,12 +164,12 @@ export async function ensureFolderPath(args: {
           description: args.description ?? '',
         });
       } catch (err) {
-        if (!(err instanceof Error) || !/duplicate|unique/i.test(err.message)) throw err;
+        if (!isUniqueViolation(err)) throw err;
       }
     }
     parent = childPath;
   }
-  return args.path;
+  return parent;
 }
 
 export async function updateFolderDescription(args: {
@@ -274,6 +198,40 @@ export async function updateFolderDescription(args: {
 }
 
 /**
+ * Set a folder's look: its icon and/or tint. An omitted field is left as it
+ * is; null clears it back to the default. The caller validates the values
+ * (the route checks the tint against APP_TINTS); this only stores them.
+ */
+export async function updateFolderLook(args: {
+  ownerId: string;
+  folderId: string;
+  icon?: string | null;
+  color?: string | null;
+}): Promise<FolderRow | null> {
+  const [existing] = await db
+    .select()
+    .from(nodes)
+    .where(and(eq(nodes.id, args.folderId), eq(nodes.ownerId, args.ownerId)))
+    .limit(1);
+  if (!existing || existing.type !== 'branch') return null;
+  const data = { ...((existing.data ?? {}) as Record<string, unknown>) };
+  for (const key of ['icon', 'color'] as const) {
+    const value = args[key];
+    if (value === undefined) continue;
+    if (value === null || value === '') delete data[key];
+    else data[key] = value;
+  }
+  const [row] = await db
+    .update(nodes)
+    .set({ data, updatedAt: new Date() })
+    .where(eq(nodes.id, args.folderId))
+    .returning();
+  if (!row) return null;
+  const counts = await folderCounts(args.ownerId, row.path);
+  return folderRowFromNode(row, counts.childFolderCount, counts.fileCount);
+}
+
+/**
  * Delete a folder. Refuses if it still has children (folders or files)
  * so the operator has to do it bottom-up — guards against accidental
  * mass-delete via a single click.
@@ -281,6 +239,10 @@ export async function updateFolderDescription(args: {
 export async function deleteFolder(args: {
   ownerId: string;
   folderId: string;
+  /** Mantle's own housekeeping only (the extracted-images reaper, the
+   *  Auto-filed reconcile): a system folder it made and emptied may go.
+   *  Never from a route or a tool. */
+  allowSystem?: boolean;
 }): Promise<{ ok: true } | { ok: false; reason: string }> {
   const [folder] = await db
     .select()
@@ -293,11 +255,46 @@ export async function deleteFolder(args: {
   if (folder.path === FILES_ROOT_LABEL) {
     return { ok: false, reason: 'cannot delete the files root' };
   }
+  if (!isFilesPath(folder.path)) {
+    return { ok: false, reason: notAFilesFolder('folder_delete', folder.path).message };
+  }
+  if ((folder.data as Record<string, unknown> | null)?.system === true && !args.allowSystem) {
+    return { ok: false, reason: 'this folder is made by Mantle and found by its path; it stays' };
+  }
   const counts = await folderCounts(args.ownerId, folder.path);
   if (counts.childFolderCount > 0 || counts.fileCount > 0) {
     return { ok: false, reason: 'folder is not empty — delete its contents first' };
   }
-  await db.delete(nodes).where(eq(nodes.id, args.folderId));
+  // Empty in the DB is not empty on disk: a file the watcher refused (a slug
+  // clash) or never watches has no row, and the recursive rm below would
+  // destroy it unseen. Refuse; OS chaff (._x, .DS_Store, ~, .swp) still goes.
+  const untracked = await untrackedFilesOnDisk(folder.path);
+  if (untracked.length > 0) {
+    return {
+      ok: false,
+      reason: `folder still holds file(s) on disk that the brain does not track (${untracked.join(', ')}) — move or delete them first`,
+    };
+  }
+  // Members' drafts and folders in it move up to the parent (never deleted).
+  // Checked again under the lock: an upload filing into it meanwhile (the
+  // insert takes the same lock, shared) is committed by then and seen here,
+  // so its bytes are never removed with the directory (review F9).
+  const refused = await db.transaction(async (tx) => {
+    await takeShareWriteLock(tx, args.ownerId);
+    const again = await folderCounts(args.ownerId, folder.path);
+    if (again.childFolderCount > 0 || again.fileCount > 0) {
+      return 'folder is not empty — delete its contents first';
+    }
+    const stray = await untrackedFilesOnDisk(folder.path);
+    if (stray.length > 0) {
+      return `folder still holds file(s) on disk that the brain does not track (${stray.join(', ')}) — move or delete them first`;
+    }
+    const parent = folder.path.slice(0, folder.path.lastIndexOf('.'));
+    await carrySpaceRows(tx, args.ownerId, folder.path, parent, { lift: true });
+    await tx.delete(nodes).where(eq(nodes.id, args.folderId));
+    return null;
+  });
+  if (refused) return { ok: false, reason: refused };
   await removeFolderOnDisk(folder.path);
   return { ok: true };
 }
@@ -367,7 +364,8 @@ export function renamedFolderPath(oldPath: string, newLabel: string): string {
 export async function renameFolderById(args: {
   ownerId: string;
   folderId: string;
-  /** New display name; slugified the same way createFolder does. */
+  /** The new name people see. Its slug (path label and disk name) is
+   *  derived the way createFolder derives one, and the directory follows. */
   newSlug: string;
 }): Promise<FolderRow | null> {
   const [node] = await db
@@ -379,14 +377,25 @@ export async function renameFolderById(args: {
   if (node.path === FILES_ROOT_LABEL) {
     throw new Error('renameFolderById: cannot rename the files root');
   }
-  const slug = slugifyFolder(args.newSlug);
-  if (!slug) throw new Error(`renameFolderById: invalid name '${args.newSlug}'`);
+  if (!isFilesPath(node.path)) throw notAFilesFolder('renameFolderById', node.path);
+  if ((node.data as Record<string, unknown> | null)?.system === true) {
+    throw new Error('renameFolderById: this folder is made by Mantle; its name is fixed');
+  }
+  const slug = folderSlugOf(args.newSlug);
+  const name = folderDisplayName(args.newSlug);
+  if (!slug || !name) throw new Error(`renameFolderById: invalid name '${args.newSlug}'`);
   const newLabel = dashToLtree(slug);
   const oldPath = node.path;
   const newPath = renamedFolderPath(oldPath, newLabel);
   if (newPath === oldPath) {
-    const counts = await folderCounts(args.ownerId, oldPath);
-    return folderRowFromNode(node, counts.childFolderCount, counts.fileCount);
+    // Same slug ("acme" to "Acme"): only the name people see changes.
+    if (name !== node.title) {
+      await db
+        .update(nodes)
+        .set({ title: name, updatedAt: new Date() })
+        .where(eq(nodes.id, node.id));
+    }
+    return folderById({ ownerId: args.ownerId, folderId: args.folderId });
   }
 
   // Collision: another branch already at the target path. The
@@ -413,6 +422,7 @@ export async function renameFolderById(args: {
   await renameFolderOnDisk(oldPath, newPath);
   try {
     await db.transaction(async (tx) => {
+      await takeShareWriteLock(tx, args.ownerId);
       // Rewrite the prefix for the folder itself + every descendant (folders and
       // files — a file's path IS its parent folder's path). The folder itself is
       // handled by the CASE: `subpath(path, nlevel(oldPath))` would throw
@@ -424,14 +434,19 @@ export async function renameFolderById(args: {
               WHEN path = ${oldPath}::ltree THEN text2ltree(${newPath})
               ELSE (text2ltree(${newPath}) || subpath(path, nlevel(${oldPath}::ltree)))::ltree
             END,
-            updated_at = now()
+            -- Filing is not editing (as for every other kind, node-ops.ts):
+            -- only the folder itself is stamped, never what it holds.
+            updated_at = CASE WHEN path = ${oldPath}::ltree THEN now() ELSE updated_at END
         WHERE owner_id = ${args.ownerId} AND path <@ ${oldPath}::ltree
       `);
+      // Members' drafts and folders under it follow (no bytes move: member
+      // files are keyed by id, never by path).
+      await carrySpaceRows(tx, args.ownerId, oldPath, newPath);
       // The folder's own label fields (path already rewritten above).
       const data = (node.data ?? {}) as Record<string, unknown>;
       await tx
         .update(nodes)
-        .set({ title: slug, slug, data: { ...data, slug }, updatedAt: new Date() })
+        .set({ title: name, slug, data: { ...data, slug }, updatedAt: new Date() })
         .where(eq(nodes.id, node.id));
     });
   } catch (err) {

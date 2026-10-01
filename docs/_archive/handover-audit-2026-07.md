@@ -1,10 +1,10 @@
-# Session handover: pre-Pinnacle audit (2026-07-16/17)
+# Session handover: pre-pilot audit (2026-07-16/17)
 
 **Branch `feat/audit-fixes`** (worktree `.claude/worktrees/audit-fixes`), 7
 commits on top of `7ff039cd` (v0.140.0). Typecheck clean, ESLint 0 errors,
 Prettier clean, **2161 tests green**. **NOT merged, NOT pushed, NOT released**,
 Jason decides. Full audit report: dev-brain page `754184b8` (shared link
-`https://dev.crossworks.network/s/f8dZCX1_jLnRWqGV8qIFXQ`). Running log +
+`https://dev.example.com/s/f8dZCX1_jLnRWqGV8qIFXQ`). Running log +
 complete remaining list: dev-brain task `de19ce14` (tag `audit`). Overall
 system rating from the audit: **8.0 / 10**.
 
@@ -17,14 +17,14 @@ items tracked in `de19ce14`.
 
 | Commit                | Area                     | Summary                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | --------------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `732e3898`            | data-integrity / backups | `app-broker` anchors the `APP_DB_DIR` fallback to the monorepo root (kills the dev split-brain that produced the NATREF table-500s; parity with `tabledb/paths.ts`). Scheduled backups now snapshot per-app SQLite (`app-dbs`) beside `pg_dump` + `table-dbs`, with rotation + status counts; `docker-compose.yml` mounts `table-dbs` + `app-dbs` into `worker_events` (which runs the backup tick) so the snapshot passes see real files. Mini-app schema DDL wrapped in a transaction (no half-applied/bricked schema).                                                                                                                                                                                                                                                                                             |
+| `732e3898`            | data-integrity / backups | `app-broker` anchors the `APP_DB_DIR` fallback to the monorepo root (kills the dev split-brain that produced the client-box table-500s; parity with `tabledb/paths.ts`). Scheduled backups now snapshot per-app SQLite (`app-dbs`) beside `pg_dump` + `table-dbs`, with rotation + status counts; `docker-compose.yml` mounts `table-dbs` + `app-dbs` into `worker_events` (which runs the backup tick) so the snapshot passes see real files. Mini-app schema DDL wrapped in a transaction (no half-applied/bricked schema).                                                                                                                                                                                                                                                                                             |
 | `732e3898`            | reliability              | `worker_push` gets the `unhandledRejection` keep-alive backstop the other workers already had; `markPushed` hardened so a transient DB blip can't kill the worker mid-batch. `docker-compose.yml` gets `json-file` log rotation (10m×3) on every long-running service (disk-fill outage guard).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `0bc290bf` `d885ddb0` | CI quality gate          | The repo shipped a `.prettierrc.json` but was never formatted to it (785 files drifted) and ESLint had **no config** and never ran in CI. Now: full Prettier reformat (mechanical), `eslint.config.mjs` flat config (`@eslint/js` + `typescript-eslint` recommended, syntactic; react-hooks/@next wired for `server/web`), and `Lint` + `Format check` steps in `build-check.yml`. The gate immediately caught a latent bug, a `tabledb` test wrote `.toBeNull` (property access, never called → dead assertion); corrected to `.toBeUndefined()`.                                                                                                                                                                                                                                                                     |
 | `8e93248d` `f1212499` | performance              | Entity resolution was seq-scanning the owner's entity set per query and, at ingest, per @-mention. Trigram fuzzy now uses `name % $q` so the trigram GIN prefilters; the exact-resolve alias branch switched from `q = any(aliases)` to the containment form `aliases @> array[q]` so the array GIN is actually used (**live-verified via EXPLAIN; the scalar form does not use the index**). Redundant per-mention duplicate-probe dropped (`reconcileEntity` returns `{entity, created}`). Migration `0121` adds a GIN on `entities.aliases` + a partial `entity_edges (owner_id, relation) WHERE valid_to IS NULL`. Dashboard: unbounded `embedding_cache count(*)` → planner `reltuples` estimate (no scan); `/api/dashboard` bundle memoized per-user 5s. All plans confirmed against the local dev DB (54323). |
 
 ## What's left
 
-Ordered by value for the Pinnacle pitch. None of these are started.
+Ordered by value for the pilot pitch. None of these are started.
 
 ### 1. Operational alerting (highest-value gap)
 
@@ -92,7 +92,7 @@ the base gate has settled.
 
 The Microsoft and calendar sync workers mutate user data on a timer with almost
 no test net (`packages/microsoft` 1 test file / 17 source; `packages/calendar`
-0 / 5). Highest-leverage place to add coverage before Pinnacle usage grows.
+0 / 5). Highest-leverage place to add coverage before pilot usage grows.
 
 > A few additional hardening follow-ups (not in this handover) are tracked in
 > dev-brain task `de19ce14`, check there for the complete list before

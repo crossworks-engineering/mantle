@@ -24,7 +24,7 @@ const FRESH_WINDOW_MS = 2 * 60 * 1000;
 
 /** Hard ceiling on how old a running turn may be and still be considered at
  *  all. Delegation turns average ~7 min on real fleets (428s measured on
- *  NATREF, 2026-07-18) — far past FRESH_WINDOW_MS, which used to black the
+ *  a client box, 2026-07-18) — far past FRESH_WINDOW_MS, which used to black the
  *  poll out for the tail of every long delegation. Generous, because beyond
  *  the window everything still has to prove itself via recent child steps. */
 const DELEGATION_WINDOW_MS = 15 * 60 * 1000;
@@ -81,7 +81,7 @@ export async function currentTurnStageLabel(ownerId: string): Promise<string | n
     // child runs for minutes under ONE parent step (`tool: invoke_agent`), so
     // the label sat on "Delegating to pages…"; and past FRESH_WINDOW_MS the
     // old startedAt guard blacked the poll out entirely, for exactly the long
-    // delegations where feedback matters most (428s average on NATREF). The
+    // delegations where feedback matters most (428s average on a client box). The
     // streaming trail follows the child (inherited turnId); this poll is the
     // streaming-off fallback. While the invoke_agent step is RUNNING, follow
     // into the newest running child trace and name its current activity,

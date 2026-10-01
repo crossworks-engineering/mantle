@@ -333,6 +333,11 @@ registered leaves jobs WAITING until the api rolls; an unregistered queue is
 never drained, not an error. Compose restarts web + api together, so the window
 is transient and the jobs run as soon as the api runner comes up.
 
+Member chat turns have their own queue on the same pattern, `MEMBER_TURN_QUEUE`
+(`'mantle.member'`, `packages/runtime/src/assistant/contract.ts`; env
+`MANTLE_MEMBER_TURN_CONCURRENCY`, default 2), so a few busy members never
+queue ahead of the owner (member-logins.md).
+
 ## Live repaint: the `runs_changed` channel (v0.158.1)
 
 The run surfaces (`/runs` list + detail, the active-runs strip on

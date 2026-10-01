@@ -4,6 +4,1463 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.365: folder system phase 7, pages in folders
+
+Pages join the item tree like notes, and a page is never the parent of
+another page (Jason, 2026-09-30: pages live in folders exactly like notes;
+no page children; no index pages; a page may reference another page
+without it becoming a child; nothing is lost). Plan: "PLAN: Universal
+folder system", section 10; docs/folder-tree.md, "Pages".
+
+- **Pages are a live tree kind.** `GET /api/tree/pages` and the member and
+  client trees serve them; folders, three levels, shares and their
+  inheritance, embeds and the confirm diff apply as for notes. The tree
+  tools take `kind: 'pages'` and sit in the `pages` tool group; a private
+  page shows at the root of the owner's tree.
+- **Migration 0210** (`0210_pages_in_folders.sql`, idempotent) files the
+  old hierarchy: every page that had child pages becomes a page next to a
+  folder of its name, its former children move into that folder (a child
+  with children makes its folder inside its parent's), cut to three levels;
+  every page's `parent_id` that named a page is cleared (it was ON DELETE
+  CASCADE); a stray `pages.<id>` path lands at the deepest folder above it.
+  Folder slugs follow `folderSlugOf` (`mantle_folder_label` in SQL, pinned
+  to the TypeScript by a test); a taken slug gets `-2`. A member's nested
+  draft becomes the member's own folder.
+- **Creating and moving.** `createPage` takes `folderId` (the deprecated
+  `parentId` means "the same folder as that page"); `POST /api/pages` takes
+  `folderId`; `POST /api/pages/:id/move` files a page in a folder through
+  the tree's item move, with the 409 `visibility` confirm. `page_create`
+  and the `page_from_*` tools take `folder_id`; `page_move` takes
+  `folder_id` or `to_top_level` and `confirm`. Accept lands a page like a
+  note (`folderId`; `parentPageId` is ignored). `page_split` and
+  `page_extract_section` (`extractSectionToPage`) make pages next to the
+  source, in the same folder.
+- **The page link card.** The `childPage` block (`[Title](page:<id>)` on its
+  own line) is a link to another page, still an embed edge (0208), never a
+  parent-child bond. The public renderer keeps its inert label.
+- **The Folder index block** (`folderIndex`; `[Folder index](folder:<id>)`
+  or `folder:here` on its own line): a live, title-only list of a folder's
+  pages as the reader sees them (the owner's, member's or client's tree
+  read); the open link renders an inert label; it indexes as nothing.
+- **Gone with the nesting**: `movePage`, `listChildPages`,
+  `countPageDescendants`, `withPagePlacement` (list rows are plain
+  `PageRow`s; `childCount` and `parentTitle` are absent), the "Share
+  sub-pages" cascade (`setShareCascade`, `listPageDescendantIds`,
+  `POST /api/shares/cascade`, `page_share`'s `children`, the `preferred`
+  level on `createShare`): a set of pages is shared by sharing its folder.
+  Kept on the wire for older clients: `PageRow.parentId` (null),
+  `AccessNodeView.childCount` (0), a link's `cascade` (false),
+  `GET /api/pages/:id/descendant-count` (`{ count: 0 }`).
+- `PageDetail.folderId` names the folder a page sits in (null at the top
+  level; null too when the reader may not read the folder row).
+
+## 0.232.363: Recall R5, page-built maps retired
+
+Recall v1 compiled a map from a page tree whose root carried the `recall`
+tag. The dev maps were re-authored as native maps (R4), so the compiler and
+everything around it goes (Jason, 2026-09-30: "completely remove the Page
+Built Maps, that is legacy").
+
+- **A map is only a native `recall` item.** The page compiler, the page
+  hooks (create, commit, update, move, delete), the extractor's metadata-only
+  path for map pages, `GET /api/recall/pages/:id`, the compile report
+  (`lastCompileOk`, the map `report`, `RecallLintIssueDTO`,
+  `RecallPageStateDTO`) and the v1 fallbacks in `recall_open` and
+  `recall_map_get` are removed. `content-core/recall-compile` keeps only
+  `recallSlug` and the two caps clients read.
+- **`recall` and `prompt` are ordinary page tags** again; agent page tools no
+  longer strip them.
+- **Nothing serves a leftover v1 row.** Every serving read, the owner API and
+  the write path require `recall_maps.node_id`, so a row without its tree item
+  is never listed, opened, followed, matched, embedded or written.
+- **Migration 0209** deletes those rows (their cards cascade) and names them
+  in a NOTICE. `last_compile_ok` and `last_compile_report` stay, unused, so
+  the previous release still runs after a rollback.
+- **`scripts/roll.sh` refuses a box that still has a page-built map**, naming
+  its slugs; `ROLL_ALLOW_V1_RECALL=1` overrides for a map the owner agreed may
+  go. Pre-roll checks and the rollback note are in docs/update-prod.md.
+- The in-app Recall help page is rewritten for native maps, and the folder
+  tools' `kind` hint now names `recall`.
+
+## 0.232.361: a folder delete merges; embeds follow their embedder
+
+Follow-up to the folder system audit of 2026-09-30 (findings C2 and S5),
+decided by Jason the same day.
+
+- **A folder delete always merges** (plan section 5, option B; it used to
+  refuse on any clash). What the folder holds lands one level up; a
+  subfolder whose name is taken there merges into that folder,
+  recursively, and the folder that was there keeps its name, look and
+  share. A file whose name is taken gets `-2` (`report-2.pdf`, as
+  Auto-filed does); other kinds may share titles and keep theirs. A
+  subfolder named like the deleted folder takes its place. Rows-only kinds
+  do it in one transaction; Files check everything read only first
+  (untracked files in every directory that goes, a name already on disk
+  where a folder moves up) and then move child by child, disk first.
+  Members' drafts follow by path. The visibility confirm compares each row
+  at its real landing place: what merges into a shared folder takes its
+  share and is listed.
+- **Embeds follow their embedder** (audit S5; Jason: an embed "should not
+  show it anymore as technically it does not have permission"). A folder
+  share no longer lowers the own level of what its pages, drawings and
+  notes embed. **Migration 0208** keeps the embed edges (`node_embeds`, by
+  triggers on `pages.doc`, `draws.file_refs` and a note's markdown) and a
+  derived `nodes.embedded_level`: an embed is read through a shared
+  embedder, transitively, only while that embedder is. Unshare, move out,
+  delete the folder or take the embed out, and the access goes; nothing's
+  own level moves. `nodes_viewer_read` reads own level OR inherited share
+  OR embedded level (still a same-row check); the reader checks, the
+  client-exposure checks, the page text folding and the tree's `level`
+  (with `embedded`) follow; the client thread does not. Accept and saves
+  lower embeds only to the item's own level. The visibility refusal lists
+  `alsoEmbeds` (from, to and type) instead of the unreleased
+  `alsoLowered`; an embed opens any workspace item it names (Jason: a
+  shared folder shares everything in it), never an admin-only kind. An
+  Accept into a shared folder lists what its bundle embeds too. The agent
+  tools that write note and page content say it. Page, note and drawing
+  saves retry once on a lock clash, then answer 409 "try again". The
+  nightly `share-drift` sweep repairs edges and embedded levels too.
+  Review fixes: an unshare closes a loop of embeds; a drawing embeds what
+  its published scene places (a draft opens nothing); an embed opens an app
+  for reading only; the Access control, access_get and the rows say what
+  an item is read through (readThrough, embedded) and floor at it; the tree
+  confirm counts every embed a change opens (embedsTotal, in seen) and asks
+  when only embeds change; Accept lists what its bundle opens even at the
+  folder's own level; a member's note save checks every media id.
+  Measured: 0208 takes about 15 s on a 212,000-row brain (10,000 pages,
+  20,000 notes, 180,000 edges); the largest live brains are about 100
+  times smaller.
+  Existing data: items lowered by earlier folder shares keep their level;
+  nothing is raised.
+
+## 0.232.360: folder system audit fixes
+
+From the folder system audit of 2026-09-30 (dev brain, "AUDIT: Universal
+folder system, phases 1 to 5") and a second audit's review.
+
+- **Nothing changes who can see an item without asking.** Accept in place
+  now checks the share of every folder its items land in (the item and its
+  bundle, the legacy Files folder too, for a reviewed and an admin's own
+  Accept) and answers 409 `visibility` with the list until
+  `visibilityConfirmed`; the client-level confirmation and the embeds
+  follow the level the item is read at. The Files screen's move, copy and
+  new-file routes, uploads, and the agent tools `file_move`, `file_copy`,
+  `folder_move`, `folder_copy`, `file_create` and `file_upload` ask the
+  same way (`confirm`). `tree_folder_update` declares `confirm` (over MCP
+  it could never go ahead), and a test pins that every tool reading it
+  declares it. A confirm may carry `seen`; a different change by then is
+  asked again. The refusal also lists the embeds that go down with it
+  (`alsoLowered`).
+- **Migration 0207**: a shared folder deleted by any writer leaves no share
+  behind; an unshare can no longer race an insert into the folder (a share
+  lock in the triggers for rows under shareable roots, always taken before
+  row locks, with a 10 second wait; a conflict answers "busy, try again");
+  the share refresh skips brains with no shared folder. A nightly `share-drift` sweep repairs and reports any row read at
+  a share its folders no longer give.
+- **Files folder tools and operations refuse another kind's folder** (a
+  notes folder deleted through them left its notes behind with their
+  share), a kind root and an Auto-filed folder.
+- **A member's tree never reveals a folder the member cannot see** (naming
+  an own folder like a hidden one showed its name, look and id); a member
+  keeps at most 500 folders per kind; the tree counts children in one pass
+  (it was quadratic) and pages drafts like items. A member's folder holding
+  a submitted draft stays put until the review is done.
+- A copy into a shared folder asks too (copies take the destination's
+  share, never the shares inside the source).
+- Agents can make and move Recall folders (`tree_*` with kind `recall`).
+- Notes, drawings, files and Files folders report the share they inherit
+  (`inherited`; folders also `share`), so screens show the level an item is
+  read at.
+- Smaller: folder renames and moves re-check on locked rows; a combined
+  folder update checks its share before writing anything; a Files
+  delete-lift refuses over untracked files before moving anything; a
+  forged tree cursor restarts at the top; an app in a client-shared folder
+  counts as a client app for the client-sourced rules.
+- Tests: the viewer DB tests no longer race on the cluster-wide viewer
+  roles, and the two client byte-total tests share a lock; a full
+  `packages/content` run is green 3 of 3 on a fresh database.
+
+## 0.232.356: client v0.6.184 (folder system and Recall v2 screens)
+
+- Pairs the client at jackdaw v0.6.184. It brings the UI for the folder
+  system, phases 2 to 5: one folder tree on every item screen, folder
+  sharing with the visibility confirm, member and client trees, members'
+  own folders and drafts in place, and the Accept dialog's "Where it
+  goes" with a folder picker. It also brings the Recall v2 screens (the
+  native map editor and Recall in the item tree, behind
+  `features.recallV2`).
+
+## 0.232.354: the universal folder system, phases 2 to 5
+
+- **One folder tree for every item kind** (docs/folder-tree.md). Notes,
+  drawings, tables, formulas, tasks, events, contacts and secrets join
+  Files on the tree (phase 2); Apps' layout document becomes folder rows,
+  with pins and opens in `item_marks` (phase 3). Agents get folder tools
+  for every row-only kind.
+- **Share a folder** with the team or clients: everything in it, now and
+  later, is read at that level (phase 4, migration 0204). A tree write
+  that changes who can see something asks first (409 `visibility` until
+  confirmed); Accept, the Files routes and the Files agent tools did not
+  yet (fixed after the audit, above). Access control says "Shared via" the
+  folder. Members and
+  clients browse read-only trees of what they may read; folder-shared items
+  reach the member Library, the client's "Shared with you", redaction,
+  images and apps; the owner's gates count folder shares. Clients comment
+  on folder-shared items (migration 0205).
+- **Members file drafts in place** (phase 5): private folders of their own
+  inside any folder they see, new drafts and uploads filed there, a merged
+  tree with their drafts and teammates' shared drafts. Brain folder renames,
+  moves and deletes carry members' drafts along. **Accept claims in place**:
+  a draft lands where its author filed it, the author's folders becoming
+  brain folders; the admin may pick another folder.
+- Migrations 0204 (folder sharing; the Recall root joins the folder depth
+  check) and 0205 (the client thread on folder-shared items) run after
+  main's 0201 to 0203. Pairs with jackdaw's folder phases 2 to 5.
+
+## 0.232.352: the universal folder system, phase 1 (Files)
+
+- **Files gets the folder tree** (docs/folder-tree.md): folders nest at
+  most three levels (writers refuse or clamp; a deeper directory made on
+  disk stays out of the brain), a folder's name is kept apart from its slug
+  (the path label and the directory name), pins and opens live in the new
+  `item_marks` table, and the tree pages 50 items at a time.
+- **Auto-filed**: everything Mantle files by itself now lives under
+  `files/auto-filed/` (assistant and Telegram uploads, exports, generated
+  images, video, extracted images, sandbox exports, API docs), dated
+  folders by month. On first start the file watcher moves an older brain's
+  top-level machine folders there ON DISK and merges day folders into
+  months (a clashing name gets `-2`). Operators: expect those top-level
+  Files folders to move.
+- Migration 0201 (`item_marks`, the folder depth check, added NOT VALID).
+  (Entry added after the fact, by the folder audit.)
+
+## 0.232.351: client v0.6.180 (whole client tier audit)
+
+- Pairs the client at jackdaw v0.6.180, the client half of 0.232.350.
+  Admins see and answer the client thread on drawings. A client's pictures
+  load from the client routes in its own editor and in notes, sub-page cards
+  make no admin call, and staff screens show no remote pictures from client
+  text. Clients no longer read "admin" or "Library". A large client draft is
+  saved again after a reload. Sign out from a neutral screen goes to the
+  client sign-in. The storage card shows what client apps' databases hold.
+  The Informational switch shows on team and client apps only.
+
+## 0.232.350: whole client tier audit fixes
+
+- **Client-level apps run the client tool rules for every runner**: an
+  admin's or a member's run of a client-level app can no longer read team
+  or admin data into a database every client reads (audit L1).
+- **App databases are bounded**: 256 MB a file (`APP_SQL_MAX_DB_MB`), 8 MB a
+  reply, one statement at a time per caller; server error text never
+  reaches an app (I1, L4).
+- **Client app exports** index at retrieval depth and commit at most every
+  10 minutes; a Table that holds rows clients wrote stays client-sourced
+  after its app is raised or its export removed (I2, I3, migration 0199).
+- **Access log upkeep**: reads sampled once a minute, no audit row per
+  client broker call, a 90-day sweep (I4). App write tools are owner only
+  (I8).
+- **Give back** reads absolute brain URLs as references (L2). Deleting a
+  client login deletes its comments; its log rows read "Removed client"
+  (I5). A trigger refuses any role change to or from client (migration
+  0200). Race tests for the client caps (I7). A client's embed refusal no
+  longer names the Library (U6).
+- Roll notes: update-prod.md, "Rolling to v0.232.350".
+
+## 0.232.349: the notes behind the top facts get a passage
+
+- **Retrieval reads the note a matching fact came from.** A fact is one
+  sentence, so it matches a question far better than a whole passage does.
+  Now up to 3 of the top facts' source notes that have no passage in the
+  context get their closest passage, inside the same chunk_limit (empty
+  slots first, then the weakest passages make room). The memory limits are
+  unchanged; one small extra query per turn, no model call. The average
+  context grows about 10% (slots the passage cutoff used to leave empty now
+  fill). LoCoMo at the default limits, same ingest: 84.0% to 85.0%,
+  retrieval misses 123 to 98, multi-hop evidence reach 46.5% to 55.3%.
+- **Benchmark: `--snapshot` and `--retrieve-only`.** A run can keep each
+  conversation's ingested database and later runs answer on a copy of it,
+  so a retrieval change is measured without extraction noise and without
+  paying for extraction again. `--retrieve-only` measures evidence reach
+  with no answer calls. See docs/benchmarks.md.
+
+## 0.232.348: client v0.6.179 (client logins C6)
+
+- Pairs the client at jackdaw v0.6.179, the client half of 0.232.346/347.
+  Clients get Apps beside Shared with you and My requests: the apps an admin
+  set to client level, run in the sandbox. An informational app says so to
+  members and clients; an admin marks an app informational on its page. The
+  admin's client thread panel shows only the client thread.
+
+## 0.232.347: C6, released
+
+- The release of 0.232.346 (client apps and finish). The 0.232.346 tag built
+  no image and published no contract: one route test warmed its route
+  imports in parallel, which raced its auth mock in CI. The imports now run
+  one at a time. No product change.
+
+## 0.232.346: client apps and finish (client logins C6)
+
+- **Clients run apps set to client level** (`/api/client/apps`, the frame,
+  the tool and db brokers; the member routes' twins): read AND write, with
+  every call logged with the client login. Never a team, admin or public app
+  (the same 404). The frame ticket carries the client's session epoch, so End
+  sessions stops a running app at once. App tools for clients: only the
+  client read tools (redacted), declared by the app and held by a client-level
+  group; no requiresConfirm, spending or owner-only tool.
+- **Apps are shared workspaces** (Jason, 2026-09-30): members write apps at
+  team AND client level, clients write client-level apps, unless an admin
+  marks the app informational (`dataReadOnly`, migration 0198; owner PATCH
+  /api/apps/:id). Only admins create or change apps.
+- **Client-written app data counts for the lowering guard**: a table exported
+  from a client-level app is client-sourced.
+- **Finish:** an accepted item carries nothing from the live node to its
+  author (tables and drawings redacted too, live summary, tags and app link
+  dropped); the member files route serves an accepted file under its accepted
+  name; `?scope=client` on the owner comment route; chat reply images point at
+  the reader's own file route or are dropped. Docs: security.md 5a,
+  access-levels.md 8, sharing.md 4a, member-logins.md 14, client-logins.md 10.
+
+## 0.232.345: the benchmark judge always gets its verdict out
+
+- **No more cut-off verdicts.** The benchmark's judge sometimes stopped
+  before writing its CORRECT/WRONG label, which counted a right answer as
+  wrong (7 of 762 in one run). It now has room for a long reply and asks once
+  more when no verdict can be read.
+
+## 0.232.344: client v0.6.178 (client logins C5)
+
+- Pairs the client at jackdaw v0.6.178, the client half of 0.232.342 and
+  0.232.343. Clients get My requests (their pages, notes and uploads, with
+  Submit, Recall, the Returned banner and the review talk) and a comment
+  thread on every item shared with them. Members get Client requests in
+  their one list and the thread on client-level Library items. Admins get
+  the thread on client-level items, and Team admin > Clients shows client
+  comments and client storage. Threads are paged and show no remote images;
+  a client never reads the word "admin".
+- A client's item a reviewer holds answers in the client's words ("a
+  reviewer"), never "admin".
+
+## 0.232.343: client tier audit fixes (C2 to C5)
+
+All findings of AUDIT: client logins C2 to C5 (leak paths 7, integrity 6.5,
+UI 7 of 10; no Blockers). Migrations 0195, 0196, 0197.
+
+- **An accepted item is redacted for its author.** A reviewer's edits made
+  after Take over no longer show a client (or a member) the titles of items
+  above their level; search, a held item's title and an accepted file's name
+  come from the snapshot, not the live item.
+- **The client chat's tools are fixed in code.** A client turn gets only the
+  client tools plus read_result, whatever the tool groups say; an agent
+  changing a group below admin goes to Pending; the reconcile resets
+  client-read.
+- **The lowering guard checks the target.** In a turn that read
+  client-written text, every write to an item at client or public level,
+  and every lowering, waits in Pending; every write tool is classified (a
+  sweep fails on a new one). The mark lasts 24 hours per conversation,
+  follows nodes the turn creates, and scans every id. Client requests stay
+  out of the corpus map. The MCP surface is documented as not gated.
+- **Abuse limits.** 100 comments a day per client login (a ledger), 1000 per
+  thread, paged threads; page and note text count toward the 200 MB and 5 GB
+  client limits (500 KB a page, 50,000 characters a note); an 8 MB JSON body
+  ceiling (64 KB on auth routes); the item cap takes the quota lock; give
+  back checks the client limits; client_request_create counts a ledger.
+- **Admins see clients' storage and comments**
+  (`/api/team-admin/clients/storage`, `/comments`, delete a client's
+  comments); the total is `MANTLE_CLIENT_SPACES_TOTAL_BYTES`.
+- A deleted client's item keeps the Client badge and the client-level
+  confirmation at Accept.
+
+## 0.232.342: client drafts, requests and comments (client logins C5)
+
+- **Clients write their own pages and notes and upload files** in their own
+  space, submit them for review and recall them (`/api/client/space*`), with
+  My requests as one list (`/api/client/items`) and their accepted items
+  (`/api/client/accepted/:id`). Lower caps than members: 20 MB a file,
+  200 MB a client, 50 MB a day, 500 items, 10 submissions a day, 50
+  waiting, and 5 GB for all client spaces together.
+- **Members read clients' submitted items** as Client requests (decision
+  5 B), read only, through row security that needs a member's own request.
+- **Comment threads on items shared with clients** (decision 8): the team,
+  admins and every client login read and write them. In a client's own
+  space the client reads only the reviewers' comments and their own.
+- **An item accepted from a client counts as client-written** for the
+  lowering guard, even after the client login is deleted.
+- Migration 0194. See docs/client-logins.md section 9.
+## 0.232.341: memory benchmark experiments
+
+- **Benchmark runs can change retrieval limits.** `bench:memory
+  --memory-config='{"chunk_limit":20}'` runs with the retrieval limits a
+  real brain's agent carries, so a setting that scores better can be applied
+  to a brain as it is.
+- **The benchmark's answer prompt may infer.** The default answer prompt now
+  reasons from what the memory says ("would she...?") and answers "not in the
+  memory" only when nothing in it bears on the question; the strict prompt of
+  the first runs stays available as `--answer-prompt=strict`.
+
+## 0.232.340: memory benchmark fixes
+
+- **Big benchmark results no longer crash the run.** With every answer's
+  context saved, a conversation's result runs to megabytes; handed over on
+  stdout it was cut off when the child exited. It is now written to a file,
+  and one failed conversation is logged and skipped instead of ending the run.
+- **The evidence check counts only what retrieval brought.** The corpus map
+  lists every note title, and a benchmark brain has only a few dozen notes,
+  so every answer-holding session always looked "found". The check now reads
+  the retrieved blocks only.
+
+## 0.232.339: the memory benchmark says why an answer was wrong
+
+- **Each benchmark answer keeps its evidence.** `bench:memory` now saves
+  the exact memory context every answer was given, checks whether the
+  conversation sessions that hold the answer reached that context, and
+  notes when the answer said the memory lacked it. The report splits wrong
+  answers into retrieval misses (the right session never arrived) and
+  answer misses (it arrived; the answer was still wrong), with evidence
+  recall per question type. See docs/benchmarks.md.
+
+## 0.232.338: client v0.6.177
+
+- Pairs the client at jackdaw v0.6.177, the client half of 0.232.334 (one
+  item list for members and admins). Every list screen uses one list kit
+  with the state as a pill: the admin lists show private items beside the
+  brain's (no Brain / Private switch), the member workspace is one list,
+  and a client's "Shared with you" is the same list as every other screen.
+
+## 0.232.337: client v0.6.176
+
+- Pairs the client at jackdaw v0.6.176, the client half of 0.232.336
+  (client logins C4). A client opens a chat dock from "Shared with you" and
+  talks with the client-responder: the thread polls every 3 seconds while a
+  reply is on its way and every 30 seconds while open, never while closed;
+  a refused send says why in plain words (chat not open, too fast, today's
+  limit). Team admin > Member chats filters All, Members or Clients and
+  marks client rows; Requests marks a request from a client; Team admin >
+  Clients shows each client's chat use today against the caps.
+
+## 0.232.336: client logins C4, client chat
+
+A client chats with the brain's client-responder in the client portal. Pair
+it with jackdaw v0.6.176 (the client chat dock, a Clients filter on Member
+chats, each client's chat use in Team admin > Clients). No migration.
+Operator guide: docs/client-logins.md section 8.
+
+- **Every brain gets client-responder, at client level.** The system
+  manifest ships the agent and its `client-read` tool group at client level:
+  fresh installs at onboarding, existing brains on the boot reconcile. No
+  setup step. The reconcile converges `client-read` back to client; the
+  agent's level stays the admin's.
+- **The chat reads what the portal shows.** `client_shared_list`,
+  `client_shared_search` and `client_shared_open` serve the portal's
+  redacted items ("Private item" for anything a client may not read); the
+  client's own drafts through `my_items_list` and `my_item_open`; no
+  brain-wide search and no retrieval context (their chunks, facts and
+  summaries were built from text that can name team items).
+- **Client level, twice.** The agent must be exactly at client level (the
+  route and the engine refuse any other), and the whole turn also runs
+  inside `withViewer('client')`. The member chat now takes exactly a
+  team-level agent. A spilled tool result is readable only by the client or
+  member turn that wrote it.
+- **Requests.** `client_request_create` files a "from client" request in the
+  Requests queue (3 per message, 10 a day), extract-exempt until an admin
+  acts; the admin's reply reaches the client's thread.
+- **Client-written text cannot lower anything.** In a turn that read a
+  client request or a client's thread, `access_set` to client or public, a
+  share link or `email_page` with a link waits in Pending. Delegated
+  children share the mark.
+- **Owner-only tools refuse a missing surface.** They run only for the
+  owner's web and Telegram turns and the owner paths that name themselves
+  (MCP, runs, delegated children, approved pending calls, the dev console);
+  a team or client turn, or a caller with no surface, is refused. A
+  sweep pins the owner-only set and every owner call site.
+- **Caps and queue.** The member caps per client login, taken from the turn
+  ledger when queued; client turns run on their own queue (`mantle.client`),
+  one per login at a time, `MANTLE_CLIENT_TURN_CONCURRENCY` (default 2). A
+  turn queued before a sign-out, End sessions or Disable never runs.
+- **Admin.** `GET /api/team-admin/clients/usage`: each client login's chat
+  use today against the caps.
+
+## 0.232.334: client v0.6.175
+
+- Pairs the client at jackdaw v0.6.175, the client half of 0.232.333 (the
+  C2/C2b audit fixes). The client portal never shows a summary, shows tables
+  as the grid only, opens readable mentions in place and offers embedded
+  files as downloads, refreshes on each poll, and uses the site name, never
+  the peer name. Sign-in and invite pages read the code from the fragment
+  (old `?code=` links still work), strip it at once and send no Referer;
+  on a split-origin address client sign-in says it is not available. Team
+  admin > Clients previews a sign-in sender and its Sent folders before it
+  is chosen, shows delivered, failed, cap skips and whether an email worker
+  runs, asks before a new link revokes an open one, and closes the link
+  dialog only on Done or Copy. Member chats and accepted items name a
+  client as a client.
+
+## 0.232.334: one item list for members and admins
+
+The brain side of the item-list alignment: a member's screen for a kind and
+an admin's brain lists can now show everything the reader may see in ONE
+list, each row with a small state pill, instead of hiding items behind
+source switches. The jackdaw screens follow. Operator notes:
+docs/member-logins.md section 13.
+
+- **`GET /api/member/items?kind=&q=&state=&page=`.** A member's own items
+  (with the ones an admin took over), teammates' shared drafts, the Library,
+  and their accepted items above the Library's levels, merged newest first.
+  Each row names its `source` and wears its `pill` (`private`, `draft`,
+  `submitted`, `returned`, `with-admin`; brain rows none). Every source is
+  read under its own rules exactly as its own route reads it; the route only
+  merges. `state` narrows by pill, `brain` or `by-me`, pushed into each
+  source's own query, so paging and `total` stay exact. Pages stop at 100.
+- **`?state=brain|private|all` on the admin lists** (`/api/pages`,
+  `/api/notes`, `/api/tables`, `/api/draws`, the files root and Recent).
+  `brain`, the default, is the list as before. `all` merges the acting
+  admin's own private items in the list's sort order as
+  `AdminPrivateListRow` rows; `private` lists them alone. None under a tag,
+  in a sub-page level or outside the files root.
+- **Contract:** `MemberItemRow`, `MemberItemsPage`, `MemberItemSource`,
+  `MemberItemPill`, `AdminPrivateListRow`; `MEMBER_ITEM_FILTERS` and
+  `ADMIN_LIST_STATES` in `@mantle/client-types/member-kinds`; space rows
+  carry `createdAt`.
+
+## 0.232.333: client logins, fixes from the C2/C2b audit
+
+Every finding of the C2/C2b audit (2026-09-29, 28 findings) is fixed. Pair
+it with jackdaw v0.6.175: new sign-in and invite links carry the code in the
+fragment, which only that client reads. Migration 0193. Operator guide:
+docs/client-logins.md.
+
+- **No summary reaches a client (B1).** The client list and reader no longer
+  send `summary`, which the extractor wrote from the unredacted page text.
+  Client and public pages now store only text their level can read: embeds
+  the level reads, and "Private item" for mentions, links and child cards of
+  anything else. A level change re-folds that text by SQL only (no
+  extraction). Summaries and chunks refresh at the next commit.
+- **Client tables are the grid only (B13)**, and cell refs to items a client
+  cannot read show as "Private item". Every refused reference is hidden
+  (external images too); scheme case and own-host URLs no longer slip past
+  the redactor; readable labels show current titles; the drawing SVG drops
+  links to hidden items and is rate limited (B25).
+- **Members open public items by id again (B10).** A public item is open to
+  anyone. The Library list stays team and client.
+- **Email codes (B2, B3, B17 to B21).** Send caps are per email plus address
+  (3 an hour, 5 a day), 20 a day per login (an address the client signed in
+  from before is exempt), 200 a day brain-wide; IPv6 counts by /64. Every
+  send records its outcome; Team admin > Clients shows delivered, failed,
+  the last failure, cap skips and whether an email worker runs (codes are
+  off without one). Verify does the same work on every branch. Codes are
+  stored as an HMAC; open codes at deploy stop working. A plain-SQL
+  `client-codes-reap` sweep clears old rows and addresses.
+- **The sign-in sender (B4, B19)** is previewed before it is chosen, refused
+  without a Sent folder, and choosing None or another sender restores the
+  folders it excluded. Mail sync skips code mails and replies to them, and
+  blanks sign-in link codes in ingested mail.
+- **Sign-in links (B11, B12, B14, B15, B16).** No brain-wide failure cap
+  (Jason's decision); the per-address cap stays. Links and invites use
+  `#code=`; the Caddy log drops codes and Referer, and the sign-in pages
+  send `Referrer-Policy: no-referrer`. Disable and End sessions revoke open
+  links and codes. `/api/auth` POSTs refuse non-JSON (415) and cross-site
+  (403) requests. Audit rows record the address Caddy saw.
+- **Sessions (B23, B24).** Client asset tokens live 10 minutes; a client's
+  Sign out ends all its sessions; `clientLoginActive` needs the epoch.
+- **Restore (B22)** revokes open client links and codes and lists client
+  logins. **Roster and authors (B26):** clients carry their role and are
+  never shown as team members; Add client refuses an email the contact does
+  not own.
+- **Tests (B6, B7, B8, B18, B28).** Real byte routes driven with a client
+  token, the thumbnail branch, row-lock races, the code queue end to end,
+  and two flaky or order-dependent tests fixed.
+## 0.232.332: memory dates from the document, and faster extraction
+
+- **Facts start on their document's date.** A fact that is not an event
+  (someone's job, a thing they own) used to start on the day it was
+  extracted, so everything imported from years back looked brand new and
+  outranked its own dated events. It now starts on the source's date: an
+  email's sent date, else when the note was made.
+- **Relative dates land on the right day.** The extractor now works
+  "yesterday", "last Saturday" and "two weeks ago" out from the date the
+  document was written, instead of stamping the event with that date. A
+  vague time ("last week") is written against that date instead of guessed
+  to a day.
+- **Extraction makes fewer embedding calls.** A note's entity names are
+  embedded in one call instead of two per new name. A provider key's
+  throughput is capped under steady load, so fewer calls means faster
+  extraction: 30% fewer calls and about 10 to 20% less time on the benchmark
+  conversation, with the same facts and links.
+- **Benchmark harness:** `--ingest-only` (extract, ask nothing, about $0.03
+  per LoCoMo conversation) and an event-loop delay reading per run.
+
+## 0.232.331: duplicate writes answer 409 again
+
+- **A duplicate now answers 409, not 500.** Drizzle wraps every Postgres
+  error from its query builder: the message is only "Failed query: ...",
+  and the error code sits one level down, on `cause`. Code that looked for
+  "duplicate key" or a constraint name in the message, or read `.code` off
+  the top, never matched. So creating a login with a taken email, a key
+  with a taken label, or an agent, skill, tool, tool group, worker group,
+  heartbeat, model pool entry, docs collection, file or folder with a taken
+  name answered 500 instead of 409.
+- **Folder races no longer fail the call.** Nine "create the folder unless
+  a parallel call just did" paths (generated images, video, API docs,
+  sandbox exports, member review, folder paths) meant to ignore the
+  duplicate and carry on. They threw instead.
+- **The rfc_message_id backfill counts a duplicate as a collision** again,
+  instead of logging it as an error.
+- One shared check in `@mantle/db` now: `isUniqueViolation(err)`,
+  `pgErrorCode(err)` and `pgConstraint(err)` walk the cause chain. The
+  three private copies are gone. A database test pins what drizzle throws,
+  so an upgrade that changes the wrapping fails there first.
+
+## 0.232.330: memory benchmarks, and entities no longer lost to a race
+
+- **A benchmark harness for the whole memory path.** `pnpm -C server/api
+  bench:memory` runs LoCoMo and LongMemEval through the real brain: each
+  conversation goes into its own scratch database as dated notes, the
+  shipped extractor processes them, the responder's retrieval answers each
+  question, and the published judges grade it. Manual runs only, with a cost
+  estimate and a hard spend cap. First smoke run (one LoCoMo conversation,
+  20 questions): 80%, at about 5.4k tokens of context per question.
+  Runbook: docs/benchmarks.md.
+- **Parallel extraction no longer drops entity links.** When two documents
+  being extracted at the same time both named a new person, the second one
+  lost its link to that person (a unique-violation handler never matched
+  the wrapped database error). It now reuses the entity the first one
+  created. The benchmark found it: 5 speaker mentions across 19 notes.
+
+## 0.232.329: client v0.6.174
+
+- Pairs the client at jackdaw v0.6.174, the client half of 0.232.328 (old
+  client links retire). Team admin > Shared links lists the retired client
+  links under the live ones: each item, its level now, how often the old
+  link was viewed and when last, and when it retired, with a pointer to
+  Clients to add the people who used them. A retired link has no Copy and
+  no open action: it answers "Sign in as a client" now.
+
+## 0.232.328: client logins, phase C3 (old client links retire)
+
+Before client logins, "client" meant "anyone with the link". Clients sign in
+now (C2, C2b), so the old links retire (decision 4 A).
+
+- **Migration 0192** revokes every link on an item at client level, an
+  expired one included, and marks it `settings.retired = 'client'` (a link
+  revoked earlier without the mark gets it too, keeping its revoked date).
+  Every item keeps its level; links on items at other levels are untouched.
+  On every box counted before the roll to 323 there were no such links.
+- **/s answers an old client link with 410 "Sign in as a client"**: no item
+  title, a Sign in button to `/client-signin`. The public link routes never
+  serve a link on a client item, even one the migration did not reach, and
+  a retired link stays retired if its item later leaves client.
+- **Every link is public**: a folder or page link shows public items only
+  (`linkLevels`).
+- **Shared links** (Team admin) lists the retired client links, without a
+  token: title, level now, views, last view, retired date.
+- From C2b: `GET /api/auth/client-code` fails closed (codes off, never a
+  500) when the sender cannot be read; the code routes join the public
+  session sweep.
+## 0.232.327: keyword search finds the rare words in a chat question
+
+- **The keyword half of hybrid search works on real questions.** It used to
+  need a passage that held every word of the message, so it matched almost
+  nothing on a chat turn (4 of 35 recent turns on dev). It now searches the
+  rarest words of the message, ORed, and ranks the rows that hold the rarest
+  ones first. On the same turns: 33 of 35 get keyword hits, and a task id
+  buried in a long question now ranks its passages first. Applies to the
+  responder's automatic passages and to the `search` and `search_chunks`
+  tools. No model call; a short query of common words keeps the old
+  behaviour. Idea from the Hindsight memory engine's term selection.
+
+## 0.232.326: client v0.6.173
+
+- Pairs the client at jackdaw v0.6.173, the client half of 0.232.324 and
+  0.232.325: sign-in by an emailed code. /client-signin without a link asks
+  for the email, then for the 8-digit code (paste friendly), with the same
+  neutral words for every email ("If this email has a client login, we
+  sent it a code"), Send a new code and Use a different email. The option
+  shows only when the brain sends codes; otherwise the page says to ask the
+  admin for a sign-in link. /login has a quiet line for clients. Team admin
+  > Clients has a "Sign-in codes by email" card: pick the sender (or none),
+  see the sent folders kept out of the brain, and a banner when the daily
+  limit is reached.
+
+## 0.232.325: client email codes, asking again
+
+- **Asking again no longer strands the mailed code.** A browser that asks
+  for a code again ("Send a new code", a double click) keeps its request
+  id, so the code already in the inbox still works there; no second mail
+  goes out while it is open. Once that code is used, dead or expired, the
+  same browser gets a new one. Found by the jackdaw C2b build: before, the
+  second request set a new request id and the client was stuck for up to
+  10 minutes.
+- **One browser, two emails.** "Use a different email" gets a code for each
+  email, and each code redeems only with its own email. A wrong email finds
+  no code (it no longer costs another email's code a try).
+
+## 0.232.324: client logins, phase C2b (email sign-in codes)
+
+A client who has no sign-in link can ask for a code by email, when an admin
+has chosen a sign-in sender (Team admin > Clients). Codes stay off until then.
+
+- **No oracle.** `POST /api/auth/client-code { email }` answers 200 with a
+  fresh request cookie for every email and every body, and does the same
+  work each time: it only queues the request. The email-sync worker looks
+  the email up, applies the caps, stores the code and mails it (plain SMTP
+  from the chosen account: no agent, no LLM).
+- **The code.** 8 digits, 10 minutes, one use, 5 wrong tries counted in the
+  database, stored only as SHA-256 of the request id and the code, and
+  tied to the browser that asked: `POST /api/auth/client-code/verify` needs
+  that browser's request cookie, so a forwarded code opens nothing. Every
+  failure is the same 401. Success sets the 30-day client session.
+- **Limits.** No new code while one is open for the same email and address;
+  5 codes a day per email and address, 10 an hour per email, 200 a day for
+  the brain (then nothing is sent and Team admin says so). Failed tries are
+  limited per email plus address; there is no brain-wide failure lockout.
+- **Codes never enter the brain.** Choosing a sender leaves its sent-mail
+  folders out of mail sync, and every code mail carries a Message-ID marker
+  that the sync skips in any folder (a provider's All Mail too).
+- Migration 0191 adds `request_ip` and two indexes to `client_signin_codes`.
+
+## 0.232.323: client v0.6.172
+
+- Pairs the client at jackdaw v0.6.172, the client half of 0.232.322 (the
+  C0/C1 audit fixes). The app shell keeps failing closed when /api/shell
+  fails, but now retries by itself (2, 4, 8 s, then every 15 s), treats an
+  offline probe as failed, and offers Sign out on every neutral screen.
+  "What clients see" acknowledges by the fingerprint of the whole set,
+  shows "New since checked" only after a check, names old links above an
+  item, and never shows the title of an item outside the brain. The Access
+  popover can revoke an old client link on the item (it stays at Client),
+  names old links above it, and keeps the old copy on brains before C1.
+  Shared links reads each link's level from Team admin and hides Copy on
+  old client links. The review dialog shows the author's role, starts a
+  client's item at Team, and at Client or Public asks for a tick on every
+  item that goes down. Reset password shows for admin and member rows only.
+
+## 0.232.322: client logins, fixes from the C0/C1 audit
+
+Every finding of the C0/C1 audit (2026-09-29, 32 findings, none a leak to a
+client) is fixed. Migrations 0189 and 0190; 0186 and 0187 gain a lock
+timeout.
+
+**Roll note (boxes on v0.232.315).** 0186 to 0190 land together. No manual
+step. Admins will see: the Access popover with no link box at Client, level
+badges in Shared links, the "What clients see" tab, needs-you notices, and
+the share tools refusing a client item (`client-links-retired`). Read-only
+counts before a roll: `scripts/client-level-counts.sql`. Rollback floor:
+never below v0.232.318 once any client login exists (older images treat
+every role that is not member as an admin); from this updater on, a roll
+below it is refused while client logins exist (`MANTLE_ALLOW_BELOW_CLIENT_FLOOR=1`
+overrides). The roll that brings this release still runs the old updater.
+
+- **Restore works again (A1).** `scripts/db-restore.sh` restores into a
+  pristine database. Before, the init script's `auth.users` (without
+  `session_epoch`) made pg_restore skip the table: every login and the role
+  CHECK were lost while the script said "Restore complete". It now exits 2
+  when logins, the role CHECK or the row rules for nodes, agents and tool
+  groups are missing, and prints every pg_restore error.
+- **Client and public are siblings (A5).** The client role reads client
+  items, agents and tool groups only (0189). A client scope never runs
+  public-level work and a public scope never client-level work: refused
+  (`ViewerLevelConflictError`, HTTP 403 `level-conflict`), never widened. An
+  agent holds a tool group only at a level it reads.
+- **Client role narrowed (A27).** `mantle_brain_id()` runs for the viewer
+  and space roles only; the client role reads no embedding config and only
+  `user_id, preferences` of profiles. A `read_result` spill carries its
+  writer's level; a reader below it gets not found.
+- **A client's items stay private (A17).** A database trigger refuses
+  sharing a client's space item with the team.
+- **Logins name their role (A14, A15, A16).** `auth.users.role` has no
+  default (0190). Token refresh rotates admin and member bearers only.
+  `withSpace` refuses a space that is not the login's own, and a disabled
+  login. Admin password reset refuses a client or unknown-role target with
+  400 `not-a-password-login` (member resets stay).
+- **"What clients see" (A7, A8, A23, A24, A11).** Acknowledged by a
+  fingerprint of every client item (409 `report-changed` when the set moved),
+  so a brain with more than 2000 client items can be acknowledged. A ref to
+  an item outside the brain shows no title. Email hints count finished
+  sends only (to, cc, bcc, 400 days, indexed). Drawings and tables are
+  scanned for refs. Old live links above an item (a client folder holding
+  it, a client page embedding it) are named, here and in the Access
+  popover (`oldLinksAbove`, `openLinkLevels`).
+- **Links (A9, A10, A12, A18, A19, A20, A21).** "Include sub-pages" skips
+  client sub-pages in one transaction. A client embed that goes public with
+  its page is called out in the tool answer. Setting client on an item
+  already at client keeps its old link. `/api/team-admin/shares` carries
+  each link's level. `email_page` with `includeLink` on a client page is
+  refused before sending. A revoked client link is marked
+  `retired = 'client'`. The refusal tells a model to ask the owner.
+- **Accept (A6, A22, A28).** The review queue names the author's role. The
+  Accept preview lists the embed closure; accepting a client's item at
+  client or public needs every going-down item ticked (`confirmedIds`), on
+  the review path and after Take over. The confirm copy is right at public.
+- **The admin shell survives a broken part (A13).** `/api/shell` answers
+  200 when preferences, the pending count, onboarding or the asset token
+  fail; member and client shells likewise for their brand.
+- **Tests (A3, A4, A31).** Session-reading public routes are driven for
+  every role from one table (`public-session-routes.ts`) with a completeness
+  check; a fast unknown-role check; a real team-delegation DB test;
+  non-circular client grant facts; CI fails when a database test URL is
+  missing; the admin-space count no longer races client submissions.
+
+## 0.232.321: client v0.6.171
+
+- Pairs the client at jackdaw v0.6.171, the client half of 0.232.320: the
+  client portal. A client opens the sign-in link, types their email and
+  lands on "Shared with you": the items at client level, newest first, by
+  kind, with read-only viewers and downloads. A reference the client may
+  not read shows as plain "Private item". The client chrome shows the brand
+  name only, with Sign out and Sign out everywhere; the portal polls, so an
+  ended session goes to sign-in on the next poll. Team admin > Clients adds
+  client logins, issues sign-in links (shown once, with copy), revokes
+  them, ends sessions, disables and deletes; Add client and Issue sign-in
+  link stay disabled until "What clients see" is acknowledged. Settings >
+  Logins shows the role Client. The member Library marks client items with
+  a Client badge.
+
+## 0.232.320: client logins, phase C2 (client logins and the portal, read)
+
+Clients can now sign in. An admin adds a client login in Team admin >
+Clients and hands the client a sign-in link. A client reads the items set to
+client level, and nothing else.
+
+- **Client logins and sign-in links (migration 0188).** Add client and Issue
+  sign-in link are refused (409 `report-not-acknowledged`) until an admin
+  has acknowledged "What clients see", and again once a new item goes to
+  client. A client login is made with role client and a password nobody
+  knows: password sign-in, a mobile bearer and pairing never open it. A
+  sign-in link lives 72 hours, is one use, is stored only as its SHA-256,
+  and asks the client to type their email as a check; a new link revokes
+  the older one. `POST /api/auth/client-link` answers every failure with
+  the same 401 and is rate limited per address and, on failures,
+  brain-wide. End sessions, Disable and Delete are the users routes.
+- **Client sessions last 30 days**, bound to the login's session epoch. A
+  client cookie that claims to last longer is refused.
+- **Deny by default.** A client reaches only the routes in
+  `CLIENT_ROUTES` (`GET /api/client/shell`, `shared`, `shared/:id`,
+  `files/:id`, `draws/:id/svg`); every other route refuses it, and admins
+  and members are refused on these. `client-sweep.test.ts` and
+  `role-sweep.test.ts` drive every route.
+- **The client portal, read only.** "Shared with you" lists the items at
+  client level, read at the client level. A reference in a page or note to
+  something a client may not read shows as "Private item" with no target;
+  an embed of one is left out. Client answers carry no staff or author
+  names. The client polls; there is no live stream for clients.
+- **Members see what clients see (decision 6).** The member Library lists
+  team AND client items; each row carries its level.
+- **Mail gates (decision 10).** A client login's email passes the email
+  gates only when the client is also a contact.
+
+## 0.232.319: client v0.6.170
+
+- Pairs the client at jackdaw v0.6.170, the client half of 0.232.318: the
+  app shell knows three roles and fails closed (a neutral loading screen
+  until the role is known, never the admin chrome by default; a client
+  login sees a plain "client portal not available yet" card with Sign out).
+  The Access popover says Client is "Signed-in clients (and the team)" with
+  no link box (Public keeps its link). Shared links show each link's level
+  and mark old client links. Team admin > "What clients see" lists every
+  client-level item and records the acknowledgement.
+
+## 0.232.318: client logins, phases C0 and C1 (the client level, dark)
+
+No client login can be made yet (the users API refuses role client until
+phase C2). What changes for an admin today: **client no longer means "anyone
+with the link"**. It means signed-in clients, and public is the only level
+with an open link.
+
+- **Three login roles, fail closed (C0).** A login is an admin, a member or a
+  client. The session code names each role; a role it does not know is no
+  login at all (before, every role that was not member resolved as an
+  admin). Every admin and member gate refuses a client with 403
+  `client-login`. Password sign-in, an admin password reset, change
+  password, a personal assistant and MCP consent refuse a client; a role
+  change to or from client is refused. `role-sweep.test.ts` drives every
+  route with a client login and with an unknown role. Contract types
+  `LoginKind`, `LoginRefusedReason`, `LoginRefused`.
+- **The client level in the database (C1, migration 0187).** The role CHECK
+  admits client. The client role reads client items only, not public ones
+  (decision 3), on every search arm. It reads agents and tool groups at
+  client level and below only (the team role keeps every row), and holds no
+  grant on logins (`mantle_brain_id()` is SECURITY DEFINER). The access
+  matrix is per role. Proven on a copy of the dev brain: no leak on any arm,
+  client searches 1 to 5 ms. The team-drafts read rule stops early now
+  (it called the brain id once per hidden row).
+- **No client links.** Setting an item to client removes its open link. A
+  link on a client item is refused (`client-links-retired`) inside
+  `createShare`, so `node_share`, `page_share`, `POST /api/shares`, the
+  email link and the sub-page cascade all meet it. Old client links stay live
+  until phase C3 retires them, and no re-sync moves their item. Turning an
+  old client link off keeps the item at client. `/api/shares/all` shows each
+  link's level. Contract type `ShareRetiredReason`, `SharedLinkRow`.
+- **"What clients see"** (`GET /api/access/client-report`, `POST
+  /api/access/client-report/ack`, table `client_report_acks`): every item
+  at client level, its old link and views, the addresses a page was
+  emailed to, and the team or admin items it names. Adding a client (C2)
+  waits until an admin acknowledges it. Contract types `ClientReport*`.
+- **Client spaces.** `withSpace` takes its level from the login's role
+  (client for a client). A client draft may name only its own items and
+  client items. Accept of a client-authored item defaults to team; client
+  or public needs `lowerConfirmed` (409 `confirm-level`). Give back after
+  Take over checks the item at the author's level.
+## 0.232.317: client v0.6.169
+
+- Pairs the client at jackdaw v0.6.169, the client half of 0.232.316: a live
+  "N waiting for review / N open requests" notice at the top of the rail, a
+  toast when something arrives, the tab title "(N)" and a favicon dot, an
+  opt-in browser notification (profile menu, per browser), and in the desktop
+  app the dock badge, a dock bounce (macOS) or taskbar flash (Linux) until
+  focused, and a native notification that opens the item.
+
+## 0.232.316: admins are told what waits for them
+
+- **"Needs you" live event.** Migration 0186 raises `needs_you_changed`
+  (payload: the brain's owner id) from triggers whenever something starts or
+  stops waiting for an admin: a member submits or recalls, an admin returns,
+  accepts, takes over, gives back or discards, a login is deactivated or
+  reactivated, a team request is filed, done, reopened or deleted. Saves,
+  shares and edits never fire it. Notify-only: nothing listening starts LLM
+  work (a test pins the two listeners).
+- **`GET /api/team-admin/needs-you`** (admins only): the Review queue
+  (submitted, left behind) and open requests as counts, plus the newest of
+  each by title and author, never content. The owner live stream sends
+  `needs_you` when they may have moved. Contract type `NeedsYou`.
+- **Phone push** to active admin devices only (never a member's, a
+  deactivated admin's or an unattributed device), once per arrival, title
+  and member name only; follows the approvals toggle.
+- The Requests badge counts with a count query (it stopped at 100).
+- Scratch test databases get the access matrix grants, as migrate gives them.
+- The client half (rail notice, toast, tab title and favicon, browser
+  notification opt-in, desktop dock badge and bounce) ships in the next
+  client release.
+
+## 0.232.315: client v0.6.168
+
+- Pairs the client at jackdaw v0.6.168: the Access popover says how many
+  embedded items will be shared too before you confirm a lower level, and
+  shows what went down with the item afterwards. Also the client halves of
+  0.232.310 to 0.232.313 (agent delete keeps or deletes the conversation,
+  onboarding purpose limit and Memory "Runs via" default).
+
+## 0.232.314: embedding means sharing
+
+- **An item's embeds follow it down.** Lowering a page, drawing or note below
+  admin (the Access control, `access_set`, `node_share`, `page_share`, a share
+  link, the accept level) is one admin decision for the item and what it
+  embeds: images, files, drawings and child pages go down with it, in the
+  same transaction. Nothing is ever raised, an embed already lower is left
+  alone, and a kind that can never leave admin is reported (`stillAbove`).
+  Answers carry `alsoLowered`. Folders keep their own rule: a folder's
+  contents do not follow it.
+- **Later embeds follow on save.** A new embed saved into a page, drawing or
+  note below admin takes that level. One an admin raised on purpose stays
+  raised.
+- **Pages lowered before this release** get the same decision applied once
+  per brain on first boot (a marker keeps it from running again).
+- **Share links serve by level.** A page or drawing link serves an embed only
+  at the link's level, so an embed an admin raised back to admin leaves the
+  link.
+- The Access popover says how many embedded items will be shared too before
+  you confirm (client release after this one).
+- `scripts/roll.sh` checks the updater's pre-roll backup line as one quoted
+  phrase (it failed every check on a box whose updater takes the backup).
+
+## 0.232.310 to 0.232.313: files, agents and onboarding
+
+Tagged together with 0.232.314 (these releases were not tagged on their own).
+
+- Deleting a folder no longer removes files on disk that the brain does not
+  track.
+- A file name is unique per folder, not per brain.
+- Deleting an agent can keep or delete its conversation.
+- Onboarding refuses an over-long purpose instead of trimming it.
+- Model pool prices round, so onboarding cards stop showing float noise.
+
+## 0.232.309: the client with the audit fixes and Take over
+
+- Pairs the client at jackdaw v0.6.164: Take over and Give back in Team
+  admin > Review and the Private view, "With admin" for members, the
+  accepted snapshot notice, "Sign out everywhere" (account menu, and each
+  login's Devices card in Settings > Users), member citation links that open
+  from any source, the admin reply to a member's request, and the error
+  states the audit listed.
+- `scripts/roll.sh` no longer reads a fleet box's url as its stack dir when
+  the box has no `stack` field.
+
+## 0.232.308: final audit fixes for member logins, and Take over
+
+Fixes every finding of the final member-logins audit (F01 to F31). Migrations
+0180 to 0183. Roll web and api together, refresh compose (new env names), and
+take the first roll with `scripts/roll.sh` (the box still runs the old
+updater, which takes no backup). Never roll back below this release once
+0183 ran without giving back or accepting taken items first.
+
+- **PDF and drawing renders no longer carry a session (F01).** The render
+  sidecar gets its own short `render` cookie for the acting admin and one
+  node, set on the print origin only; every request to another origin is
+  aborted, and `/print` sends a strict CSP. An outside image in an exported
+  page used to receive the anchor's live session.
+- **Take over (F07).** An admin can take a submitted member item (and its
+  bundle) into their own private space, correct it out of the member's
+  sight, then accept it into the brain (the extractor runs once, on the
+  corrected version) or give it back with a note. The member sees "With
+  admin" meanwhile. Every Accept now stores a snapshot for the author: a
+  member reads what was accepted, never later admin edits.
+- **The submitted bundle is frozen (F04).** Submit records the bundle and
+  refuses unsaved bundle drafts; its items stay frozen until a decision, and
+  Accept moves exactly that bundle.
+- **Safe deletes (F03, F18, F21).** Purge and Discard delete only rows still
+  in the space and lock like Accept; the purge keeps anything a shared or
+  submitted item embeds; a deleted login's space is purged after 30 days
+  and no longer counts as a member's; promotion to admin turns shared and
+  submitted rows back into private drafts.
+- **Sessions can be ended (F06).** A signed session epoch (0181) ends every
+  session and bearer on password change, disable, role change, and the new
+  "Sign out everywhere" (`POST /api/auth/logout {everywhere:true}`,
+  `PATCH /api/users/:id {signOut:true}`). OAuth codes and web-token
+  refreshes are claimed atomically; a login for an unknown email takes the
+  same time; one login per contact is a unique index.
+- **Member chat cost (F08, F09, F17).** A turn ledger at enqueue (0182) holds
+  the daily cap, plus a daily token budget per login
+  (`MANTLE_MEMBER_DAILY_TOKENS`), on a member queue of its own
+  (`MANTLE_MEMBER_TURN_CONCURRENCY`). Member change requests are capped and
+  reach no model until an admin acts. Member apps never call a built-in that
+  spends. Member writes are rate limited and NUL-stripped.
+- **Rolls (F02, F15, F16).** The updater takes a strict four-part backup
+  before every roll and refuses the roll when it fails, then prunes old
+  server and client images (never sandbox images). New `scripts/roll.sh`
+  with the apps, sandboxes and app-db count guard.
+- **Links and levels (F19).** A shared folder lists and serves only items at
+  or below the link's level.
+- **Smaller items.** `TeamRequest.loginId` (admins can reply to member
+  requests), `used_private` backfilled, re-embed skips archive pages, a
+  recovered team turn no longer sees its message twice, audit paths and
+  my-space traces drop personal item ids, SECURITY DEFINER functions are
+  not PUBLIC, `linked` removed from the member chat answer.
+- **Tests and docs.** The team-agent level rule, the member realtime filter
+  and the RLS owner check have tests that run in CI; drop-table tests use
+  their own database; security.md, access-levels.md, member-logins.md and
+  update-prod.md match the code.
+
+## 0.232.307: the installer survives a dropped image download
+
+- `scripts/install.sh` retries a failed `docker compose pull` three times
+  (10s, then 20s). One reset connection to a registry used to abort the
+  whole pull, and the `up` after it created only some services. If every
+  attempt fails, the installer now stops before `up` and prints the exact
+  command to re-run. A re-run is safe. The client image pull retries too.
+- The owner UI step first checks that the server network (`mantle_default`,
+  read from `docker-compose.client.yml`) exists. If it does not, the step is
+  skipped with a clear message instead of compose's "declared as external,
+  but could not be found".
+- `scripts/install.sh --check` no longer calls Caddy's own HTTP to HTTPS
+  redirect for the configured site address "not Mantle". It names it as the
+  redirect. Other output is unchanged.
+
+## 0.232.306: sandboxd negotiates the Docker API version
+
+- sandboxd no longer pins Docker Engine API 1.43. Docker 29.0 and 29.1
+  raised the daemon's minimum to 1.44, so every sandboxd call failed,
+  `/healthz` answered 503 and a fresh install ended "Installation
+  incomplete". sandboxd now asks the daemon's unversioned `/version` once
+  and keeps 1.43 inside the range the daemon accepts (1.44 on Docker
+  29.0/29.1). If Docker is not up yet, it asks again on the next call.
+- `scripts/install.sh` preflight notes a raised Docker API minimum, since
+  an older pinned `--image-tag` still carries the 1.43-only sandboxd.
+
+## 0.232.305: Phase 6 compatibility fields removed
+
+- The fields Phase 6 kept for one client cycle are gone (every box runs
+  client v0.6.162 or newer): `TeamMemberActivity.tokenLastUsedAt`, the
+  hub-app `modeChanged` (the answer is `{ appId, levelChanged }`),
+  `membersEnabled` on `GET /api/users`, and the forum parts of the Team
+  admin answers (upload badges and lists, `dashboardTags`, member `forum`
+  and forum post paging). The unused frozen `Forum*` types leave
+  `@mantle/client-types`.
+
+## 0.232.304: client v0.6.163
+
+- Paired with jackdaw v0.6.163: the client no longer reads the retired
+  one-cycle fields (the hub-app `modeChanged` fallback and the forum badge
+  types are gone).
+
+## 0.232.303: member file links take an asset token
+
+- The gate admits a member's `?at=` asset token on the member space byte
+  routes (`/api/member/space/:id/bytes`), as it already did for admins.
+  Another member's file is still a 404 in the token's own space, and a token
+  from another brain is a 401.
+
+## 0.232.302: client v0.6.162
+
+- Paired with jackdaw v0.6.162. Team codes: the first Team admin tab is the
+  Chat archive (contacts with old portal chat; Invite as member stays), the
+  invite page takes invite codes only. Phase 7: a Keep private switch in New
+  page, table, note, drawing and a Private upload; a Brain | Private switch
+  on each list; private items open with Save version, Delete and Accept into
+  brain. The client pins the contract at 0.232.301.
+
+## 0.232.301: team codes retired (0178) and admin private items (Phase 7, 0179)
+
+- Migration 0178 drops `contact_team_tokens` (its one FK to nodes dropped by
+  name first, then the table without CASCADE). Contacts, their old portal
+  chat and every other row stay.
+- An old 8-character team code no longer redeems anything: only a
+  16-character invite code does. Invites made before 0178 still redeem. The
+  invite code's alphabet cutoff is fixed (216, not 224) so every character is
+  equally likely.
+- Team admin's first tab lists every contact with old portal chat (a chat
+  archive), newest first. `TeamMemberActivity.tokenLastUsedAt` is always null
+  (deprecated one cycle); `memberSince` is the first portal message.
+  `ContactRow.team` is gone.
+- Phase 7: an admin keeps items private in their own space (routes
+  `/api/admin/space*`, mirroring the member ones with no share, submit,
+  recall or comments) and accepts them into the brain themselves
+  (`POST /api/admin/space/:id/accept`, the Team admin accept body and
+  answer; no author badge). While private, an admin's item may embed any
+  brain item. Migration 0179 limits the team-drafts read rules to member
+  spaces, so a member promoted to admin never exposes later edits to
+  members. The review queue shows only member-written items.
+
+## 0.232.300: client v0.6.161
+
+- Paired with jackdaw v0.6.161: Team admin no longer shows the forum Export
+  banner (the brain dropped the forum tables in 0.232.299; the Forum archive
+  pages stay in Pages).
+
+## 0.232.299: the forum tables are dropped (Phase 6, migration 0177)
+
+- Migration 0177 drops forum_topics, forum_posts, forum_uploads and
+  forum_read_cursors. Their foreign keys are dropped by name first, then each
+  table without CASCADE. It aborts if a topic has no Forum archive page.
+  The archive pages, the files the export filed, the JSON dump and every row
+  outside those four tables stay.
+- The forum export goes with the tables: its api boot task, the
+  `/api/team-admin/forum/export` route (now 404) and the Drizzle schemas.
+  The archive pages stay admin-level and un-indexed.
+
+## 0.232.298: client v0.6.160
+
+- Paired with jackdaw v0.6.160, the client side of stage 6: no Revoke code
+  button (its route is gone), a shared link is always public (no team pill),
+  the home app toast speaks of the Team level, and /team or /hub go straight
+  to /login with nothing carried (an old team code no longer rides along in
+  `next`). The client pins the contract at 0.232.297.
+
+## 0.232.297: team links retired (Phase 6 stage 6)
+
+- Migration 0176 revokes every team-mode share link. Items keep their level:
+  a team item stays at team, members read it with their own logins.
+- A team link can no longer be made: `PATCH /api/shares/:id` answers 400
+  `team-links-retired`, and `node_share` / `page_share` take only `public`.
+  An old team `/s` link shows a "Sign in as a member" page (410).
+- Removed: the team gate, `/s/[token]/auth`, the team visitor cookie, the
+  contact id on share frame tickets and `/api/contacts/[id]/team`. A shared
+  app's tool broker refuses every call (public apps never had tools).
+- Home app designation puts an admin-level app at team instead of making a
+  team link, and answers `levelChanged` (`modeChanged` stays one cycle).
+- Contract: `ShareMode` is `'public'`; `DELETE /api/shares/:id` drops
+  `keptTeam`; the hub-app PUT drops `shareToken`.
+
+## 0.232.296: client v0.6.159
+
+- Paired with jackdaw v0.6.159: the team-code portal screens (/team, /hub,
+  the team workspace, the forum pages and the Team admin Topics tab) are
+  gone, matching the brain's stage 5 in 0.232.295. The forum Export button
+  shows only while topics are left to export.
+
+## 0.232.295: the team-code portal is retired (Phase 6 stage 5)
+
+- /team, anything under it, and /hub redirect to /login; /api/team/* and
+  /api/team-portal are gone, with the raw team-code bearer and the signed
+  team-chat credential. Team-mode /s links and contact_team_tokens stay
+  until stage 6 (invites still accept an old code once).
+- The forum turn runner is gone: a forum turn still queued on a box runs
+  into a no-op stub under its old name and ends cleanly. The admin forum
+  routes, topics, thread-read and dashboard-tags go; members, requests and
+  settings keep their answer shape with the forum parts empty.
+- team_member_list, team_notify and the team-notify group are retired (the
+  boot reconcile disables them). The team-responder prompt is rewritten for
+  member chat; it replaces a live prompt only when that prompt is exactly a
+  shipped default (an edited prompt is kept; the old text stays as v1).
+- An admin's reply to a request a member login filed lands in that
+  member's own chat thread.
+
+## 0.232.294: client v0.6.158
+
+- Paired with jackdaw v0.6.158: Team admin shows a member's earlier team
+  chat apart from their thread; the forum is read-only with a closed notice
+  and an Export to Pages action; the team portal points code holders to
+  /invite.
+
+## 0.232.293: the team forum closes and becomes an archive (Phase 6 stage 4)
+
+- The forum takes no new topics, replies, uploads or admin posts (410
+  forum-closed, with a hint to ask for an invite); reads stay for now.
+- Team admin can export the forum (POST /api/team-admin/forum/export; a
+  boot task also runs it once while topics are unexported): one admin-level
+  page per topic under "Forum archive", a JSON dump in files/archive,
+  unreviewed uploads filed to files/review/forum-archive, requests linked.
+  Archive pages are never extracted or embedded (no model cost).
+- The member daily cap and dedupeFilename moved out of the forum modules.
+
+## 0.232.292: invites in the client; old team history follows the login (Phase 6 stage 3)
+
+- Paired with jackdaw v0.6.157: Team admin > Invites (Invite as member on a
+  code holder, copy the link and code, revoke), the public /invite page, a
+  notice on the old team code gate, and the Users role picker always shows.
+- Migration 0175: team_access_log.login_id; a redeemed contact's access log
+  and comments are linked to its member login (also at redeem time). Old
+  portal chats stay with the contact: admins see them beside the member's
+  thread (member-chats portalThread, team_chat_read portal_history), the
+  member never does, and they never enter the model's context.
+- Removing a team link keeps the item at team level (team sub-pages too);
+  team_access_list filters by loginId.
+
+## 0.232.291: members always on, member invites, app SQL in child processes
+
+- Phase 6 stage 1: the MANTLE_MEMBERS flag is gone; member logins work on
+  every brain (GET /api/users still answers membersEnabled: true for one
+  contract cycle).
+- Phase 6 stage 2: member invites (migration 0174, member_invites). An admin
+  invites a contact from Team admin and copies the link; the person sets a
+  password at /invite and lands as a member. An old 8-character team code
+  works once in place of the invite code while an invite is open for that
+  contact; redeeming deletes the old code. Routes: /api/team-admin/invites,
+  /api/auth/invite/:code, /api/auth/invite/accept. Contract: MemberInvite*.
+- App SQL runs in a small pool of child processes: a write stopped at the
+  time limit no longer leaves the app's database locked until a restart,
+  and statements are faster (no thread start per statement).
+
+## 0.232.290: client v0.6.156
+
+- Paired with jackdaw v0.6.156: member chat stops polling a reply the brain
+  never finished and a retried send is run once; a member table no longer
+  adds a row twice after a lost save (it reloads on a conflict); a big edit
+  a reload cut off is sent on the next open; the Access popover names an old
+  brain on a 404; member app and member-chats types come from the contract.
+
+## 0.232.289: member logins, the audit's small items (session 9)
+
+- Lockout also unpairs the login's push devices (migration 0173,
+  push_subscriptions.login_id), refuses its unclaimed pairing codes and
+  releases its assigned assistant. A member cannot be given an assistant.
+- /api/member/files/:id streams and is rate limited per login. A drawing's
+  SVG keeps only the images the member may read.
+- Member chat: a reused Idempotency-Key with new text is a 409. OAuth
+  authorize tells a member plainly they cannot connect.
+- Unsharing (the shares route, node_unshare, page_unshare) applies the admin
+  closure rule and reports what stays below admin. Level and link change in
+  one transaction; an expired link no longer blocks a new one; a sub-page
+  cascade never passes through public. content_supersede warns when the old
+  version is still visible. 0161: the deepest shared folder wins (new
+  installs; boxes keep their levels).
+- An app's schema DDL runs in the SQL runner (worker, authorizer, limit).
+- Contract: member app, home and member-chats DTOs in client-types.
+
+## 0.232.287: the member's own chrome (Phase 5); client v0.6.154
+
+- Paired with jackdaw v0.6.154: a member changes their own password from the
+  account menu, gets their own tour (once, on the member home; Take the tour
+  opens it again), and reads the contract banner as text with no admin link.
+  A `?tour=` link to an admin tour no longer traps a member on Home.
+- docs/member-logins.md section 8. No brain change: the password route
+  already served every login.
+
+## 0.232.286: member uploads with a taken name; client v0.6.153
+
+- A member uploading a file whose name their space already holds got a 500;
+  it now files as `name-2.ext` (the rule Accept uses).
+- Paired with jackdaw v0.6.153: the Accepted source on each member screen,
+  the author byline, and the member-authored badge in the Library and the
+  admin Access panel.
+
+## 0.232.285: what a member wrote stays theirs to read (Phase 4 "not yet")
+
+- A member lists what they wrote and an admin accepted
+  (`GET /api/member/accepted`) and reads each one's saved version at any
+  level (`GET /api/member/accepted/:id`), never an admin's draft. An image
+  or drawing they wrote, accepted at admin, still renders in their other
+  drafts. Nobody else gets anything new (docs/member-logins.md section 6).
+- The member-authored badge: the member Library and the admin Access panel
+  carry `author: { name, acceptedAt }` on an accepted item.
+- `@crossworks/client-types`: `MemberAcceptedRow`, `MemberAcceptedPage`,
+  `MemberAcceptedItem`, `MemberItemAuthor`; `author` on `MemberLibraryRow`
+  and `AccessNodeView`. Additive; older clients ignore them.
+
+## 0.232.283: member types in the contract (audit M2, M3, S13, P2)
+
+- `@crossworks/client-types` publishes the personal-space wire shapes
+  (`MemberSpaceItemRow`, `MemberSpaceList`, `MemberSpaceFile`,
+  `MemberSpaceItemBody`, `MemberSpaceItem`, `MemberSpaceSharing`,
+  `MemberReviewState`) and the one member kind list
+  (`@crossworks/client-types/member-kinds`: `MEMBER_ITEM_KINDS`). The brain's
+  space row is that type, and compile-time checks tie its body, file and
+  enums to it. No wire change.
+- Migration 0168 drops each policy before creating it, so it re-runs by
+  hand (run 0171 after it). Boxes that ran it are unchanged.
+
+## 0.232.281 and the patch after it: members run apps; app SQL is hardened
+
+- Members run team-level apps from their shell (docs/member-logins.md
+  section 7): published build only, a run-only tool broker (read-only
+  built-ins from an enabled team-level group), writes only to team-level
+  apps, access log by login (migration 0172), the pinned hub app as the
+  members' home.
+- **App SQL, every caller** (share links, members, the owner, `app_db_query`):
+  each statement now runs in a worker thread with a 5 second limit, 50,000
+  rows and 16 MiB per string or blob at most. The engine refuses ATTACH,
+  DETACH, VACUUM and every PRAGMA but `table_info` / `table_xinfo`. Before,
+  a leading comment slipped VACUUM INTO past the check, and one endless
+  query froze the web process. An app that ran `VACUUM` itself, or queries
+  more than 50,000 rows at once, now gets an error.
+- Team Chat's `app_db_list` / `app_db_query` read apps at team level or
+  lower (before: apps with an active team-mode share; the same set on every
+  box checked).
+
+## Unreleased: the object store is RustFS; boxes copy their MinIO data over once (branch feat/objectstore-rustfs)
+
+MinIO left open source (repo archived, public images deleted, only the licensed
+AIStor build left), so the bundled object store is now RustFS (Apache-2.0,
+S3-compatible). The `minio` service is replaced by two:
+
+- `objectstore_init`, a one-shot that runs before the store. On a box with
+  MinIO data it copies `data/minio` to `data/rustfs` ONCE (free disk checked
+  first; staged in `rustfs.partial` so an interrupted copy restarts clean) and
+  records the counts in `data/rustfs.copied-from-minio`. `data/minio` is never
+  touched, so updating back to a MinIO release finds it exactly as it was;
+  objects written after the switch exist only in `data/rustfs`. A new box
+  gets an empty store. It copies rather than moves because RustFS rewrites
+  its data dir on first start.
+- `objectstore` (container `mantle_objectstore`), RustFS on `data/rustfs` as
+  UID 10001, `mem_limit: 1g` (a full read of a 667 MB store peaked at 293 MiB
+  and a 256m cap was OOM-killed), `nofile` 65536, console off.
+
+The image is `titanwest/mantle-rustfs:1.0.0`, a byte-for-byte mirror of
+`rustfs/rustfs:1.0.0` pinned by digest in `infra/rustfs/IMAGE` and published by
+the new `rustfs-image` workflow, so an upstream repo vanishing cannot break a
+pull again. `RUSTFS_IMAGE_TAG` replaces `MINIO_IMAGE_TAG`; `S3_ENDPOINT` now
+defaults to `http://objectstore:9000`. Dev compose runs the same (console on
+127.0.0.1:9001, creds unchanged).
+
+Tested before this release: RustFS on copies of three real boxes' MinIO data
+verified every object (10, 266 and 403), every S3 call the app makes passed,
+and this compose file migrated a copy end to end with `data/minio` left
+byte-identical.
+
+New: `objectstore:copy-from --endpoint=<url> [--apply]` copies whatever the
+store lacks from another S3 store (dry run by default): the repair for an
+upload that landed in MinIO during the switch, and a way in from any S3.
+`prod-db-tunnel.sh` / `prod-tailscale-serve.sh` default to
+`mantle_objectstore` (`MANTLE_MINIO_CONTAINER` still honoured); `reset.sh`
+wipes `data/rustfs` too. The MinIO image (`infra/minio`) stays published for
+rollback and for reading an old `data/minio`.
+
+Deploy note: a changed default service set (`minio` out, `objectstore_init` +
+`objectstore` in). Check free disk first (the copy needs the size of
+`data/minio` plus a margin; the init refuses and the update fails cleanly
+otherwise). After the roll: `docker logs mantle_objectstore_init`, then
+`docker exec mantle_web pnpm -C packages/storage objectstore:verify`. Delete
+`data/minio` only after a couple of weeks green.
+
+## Unreleased: the object store goes backend-neutral; `createbuckets` is gone (branch feat/objectstore-neutral)
+
+Step 1 of moving off MinIO (to RustFS, planned): nothing outside the storage
+package may depend on which S3 server answers. The bucket is now created by the
+`migrate` one-shot with a plain S3 CreateBucket
+(`pnpm -C packages/storage objectstore:ensure`), so the `createbuckets` service
+and its dependency on MinIO's `mc` are gone; `scripts/up.sh` runs the same step
+in dev. The S3 client sends flexible checksums only when an operation requires
+them (the SDK default breaks on servers that do not implement them), and
+`S3_FORCE_PATH_STYLE`, which compose always set, is now actually read.
+`S3_ENDPOINT` / `S3_REGION` / `S3_BUCKET` / `S3_FORCE_PATH_STYLE` can be
+overridden from `.env`. New: `objectstore:verify` re-hashes every stored object
+against its sha256 key, the check for any backend swap or data restore
+(docs/backups.md). The dead presigned-URL helper went with its package.
+
+Contract: `SystemHealth.storage.objectStoreUp` is added; `minioUp` stays as a
+deprecated alias with the same value. Labels read "Object storage", the health
+probe is `storage.objectstore`, and the sanity check's bucket fix is
+`docker exec mantle_web pnpm -C packages/storage objectstore:ensure`.
+
+Deploy note: removing `createbuckets` changes the default service set. The
+updater's `up --remove-orphans` removes the old exited container; boxes
+brought up by hand keep it harmlessly until their next `up --remove-orphans`.
+
+## Unreleased: our own MinIO image, so rolls and fresh installs pull again (branch fix/minio-own-image)
+
+The v0.232.243 roll failed on every box at `compose pull`: the quay.io MinIO
+images now answer 401, two weeks after MinIO deleted its Docker Hub repos. MinIO
+has left open source (the repo is archived); the only image it still publishes,
+`quay.io/minio/aistor/minio`, is the commercial AIStor build, and without a
+licence it denies every S3 call. So we now build MinIO ourselves:
+`infra/minio/Dockerfile` compiles the same pinned releases (minio
+`RELEASE.2025-09-07T16-13-09Z`, mc `RELEASE.2025-08-13T08-35-41Z`) from
+upstream's AGPL source, on the same ubi9-micro base, for amd64 and arm64, and
+the new `minio-image` workflow publishes it as `titanwest/mantle-minio`. The
+commit ids and `--version` output match the official binaries, and on a copy of
+a real box's data every object came back with the same key, size and ETag.
+
+The minio image already carries mc, so `createbuckets` and `scripts/up.sh` now
+use it too: one image to host instead of two, and `MC_IMAGE_TAG` is gone
+(`MINIO_IMAGE_TAG` still overrides the tag). Boxes recreate the minio container
+once on their next update; the data is a bind mount and stays put. This is a
+stopgap: replacing MinIO with a maintained S3-compatible store is planned.
+## Unreleased: a mini app appears when it's ready, behind the host's loader (branch feat/app-nav-folders)
+
+An app used to announce `ready` in the same tick as `root.render()`, before
+React had drawn anything, and the frame sat `display:none` until then: the
+host said "Loading…", then showed a blank or half-empty app, then the app's
+own spinners.
+
+- **Ready means painted.** The kit posts `ready` after the first commit's
+  frame (or a 100ms timer, since background tabs run no animation frames), and
+  after the app's own mount effects, so its first bridge requests reach the
+  host first.
+- **Revealed when settled.** `AppSandbox` keeps its loader up until the app has
+  mounted and its in-flight `host.db` / `host.tools` requests have been quiet
+  for 150ms (the host brokers them, so it sees them), then cross-fades. Never
+  longer than 8s after mount. The rules live in `share-ui/app-reveal.ts`.
+- **Explicit hold.** `host.ui.holdReady()` / `host.ui.ready()` for work the
+  host can't see; the Appsmith prompt and the app authoring guide say loading
+  is the host's job.
+- **A `loader` slot** on `AppSandbox` (the owner UI passes its thinking orb);
+  the frame stays laid out under it, so an app measuring itself on mount gets
+  real sizes. A crash during the first render now shows the host's failure
+  state with its reason.
+- **The app list knows what can be previewed.** `AppNavItem.hasBuild` is a
+  green published or draft build (the frame-ticket test), and building,
+  discarding a draft or publishing notify `app_nav_changed`.
+
+## Unreleased: apps get folders, pins, icons and colours in the sidebar, synced everywhere (branch feat/app-nav-folders)
+
+The server half of the sidebar apps tree. A brain with a dozen or more mini
+apps had no way to organise them: the sidebar showed one "Apps" row and the
+list page sorted by date. Mantle now stores the organisation, so every client
+(web, desktop, phone) renders the same menu.
+
+- **Shared layout.** `appNav` is a brain-level preference (one record on the
+  anchor row, like the theme): folders nested up to three levels, their order,
+  and where each app sits. An app placed nowhere is "unsorted", which is where
+  a new app lands. `GET /api/app-nav` returns the tree, the login's pins and
+  open counts, and every app in slim form in one round-trip, already pruned of
+  deleted apps. `PUT /api/app-nav { baseRev, entries }` saves it
+  compare-and-set: when another client saved first the answer is 409 with the
+  current layout, so two devices can't silently overwrite each other.
+- **Personal pins and usage.** `PUT /api/app-nav/pins` keeps up to 12 pinned
+  apps per login. `POST /api/apps/:id/opened` counts opens per login, feeding
+  "Most used" and "Recent".
+- **Favourites follow the person.** `PUT /api/profile/nav-favorites` moves the
+  sidebar favourites off the browser's localStorage onto the login's profile;
+  `GET /api/shell` returns them as `navFavorites`.
+- **Icons and colours.** An app's icon may now be `lucide:<name>` as well as an
+  emoji, and it takes a `color` tint key (`APP_TINTS`, never a raw colour, so
+  each theme supplies its own shade). Both are projected on read, so an old
+  icon value that isn't renderable reads as unset.
+- **Live.** Layout, pin and app create/rename/recolour/delete writes notify
+  `app_nav_changed`, broadcast on `/api/realtime` as type `app-nav`.
+
+The pure tree logic (projection, strict write check, move/place/dissolve, and
+the flattening the sidebar renders its guide lines from) lives in
+`@mantle/content-core/app-nav`, so a move the client offers is one the server
+accepts. Types and limits are in `@mantle/client-types/app-nav`.
+
 ## Unreleased: MCP connectors sign in with pre-registered OAuth apps, so Power BI works (branch feat/mcp-entra-oauth)
 
 Connecting Microsoft's Power BI MCP server failed silently: the connector sat
@@ -237,7 +1694,7 @@ container and no LibreOffice in the image. Honest about what it costs: Tika's
 XHTML is a rendering, so **boolean cells are lost** (they render empty, though
 column alignment survives) and **dates arrive as display text**. Numbers come
 through and re-infer cleanly. In practice this is theoretical — across the dev,
-prod and NATREF brains there is not a single `.xls` or `.xlsb` — and
+prod and a client brain there is not a single `.xls` or `.xlsb` — and
 `legacy-sheet.ts` records exactly what degrades if one ever lands.
 
 ### Smaller consequences

@@ -35,11 +35,14 @@ import {
   ensureRoot,
   extOf,
   filesRoot,
+  isDiskChaff,
   ltreeForDiskPath,
+  reconcileAutoFiled,
   syncFileFromDisk,
 } from '@mantle/files';
 import { waitForOwner } from '@mantle/db';
 import { runWorker } from './_runner';
+import { describeError } from './describe-error';
 import { env } from '@mantle/config';
 
 // Resolved at startup via waitForOwner — ALLOWED_USER_ID when set, else the sole
@@ -71,12 +74,7 @@ const WATCHED_EXTS = new Set<string>([
 
 function shouldSync(absPath: string): boolean {
   const base = path.basename(absPath);
-  // Editor + OS chaff.
-  if (base.startsWith('.')) return false;
-  if (base.endsWith('~')) return false;
-  if (base.endsWith('.swp') || base.endsWith('.swx')) return false;
-  if (base.endsWith('.tmp')) return false;
-  if (base.startsWith('#') && base.endsWith('#')) return false; // emacs
+  if (isDiskChaff(base)) return false; // editor + OS chaff
   const ext = extOf(base);
   if (!ext) return false;
   return WATCHED_EXTS.has(ext);
@@ -114,7 +112,10 @@ async function handleUpsert(absPath: string): Promise<void> {
       console.log(`[files-watch] ${res.status} ${loc.parentPath}/${loc.filename}`);
     }
   } catch (err) {
-    console.error('[files-watch] upsert failed', absPath, err);
+    // One line, not the error object: a wrapped query error carries the whole
+    // INSERT and the file's text. The file stays on disk with no node (folder
+    // delete refuses while it is there: untrackedFilesOnDisk).
+    console.error(`[files-watch] upsert failed ${absPath}: ${describeError(err)}`);
   }
 }
 
@@ -123,6 +124,14 @@ async function handleUnlink(absPath: string): Promise<void> {
     if (!shouldSync(absPath)) return;
     const loc = ltreeForDiskPath(absPath);
     if (!loc) return;
+    // Back already (a move undone, a quick replace): nothing was deleted.
+    if (
+      await fs.stat(absPath).then(
+        () => true,
+        () => false,
+      )
+    )
+      return;
     const res = await deleteFileByPath({
       ownerId: USER_ID!,
       parentPath: loc.parentPath,
@@ -132,7 +141,7 @@ async function handleUnlink(absPath: string): Promise<void> {
       console.log(`[files-watch] deleted ${loc.parentPath}/${loc.filename}`);
     }
   } catch (err) {
-    console.error('[files-watch] unlink failed', absPath, err);
+    console.error(`[files-watch] unlink failed ${absPath}: ${describeError(err)}`);
   }
 }
 
@@ -140,6 +149,19 @@ runWorker('files-watch', async () => {
   USER_ID = await waitForOwner({ label: 'files-watch' });
   const root = filesRoot();
   await ensureRoot(); // mkdir -p
+  // Bring an older brain's machine folders into Auto-filed before watching,
+  // so the watcher never sees these moves as deletes and adds. Idempotent;
+  // a failure is logged and the watcher starts anyway.
+  try {
+    const moved = await reconcileAutoFiled(USER_ID);
+    if (moved.moved.length || moved.mergedDays) {
+      console.log(
+        `[files-watch] auto-filed: moved ${moved.moved.join(', ') || 'nothing'}; merged ${moved.mergedDays} day folder(s) into months`,
+      );
+    }
+  } catch (err) {
+    console.error(`[files-watch] auto-filed reconcile failed: ${describeError(err)}`);
+  }
   console.log(`[files-watch] watching ${root}`);
 
   const watcher = chokidar.watch(root, {
@@ -152,16 +174,7 @@ runWorker('files-watch', async () => {
       stabilityThreshold: 400,
       pollInterval: 100,
     },
-    ignored: (p) => {
-      const base = path.basename(p);
-      return (
-        base.startsWith('.') ||
-        base.endsWith('~') ||
-        base.endsWith('.swp') ||
-        base.endsWith('.swx') ||
-        base.endsWith('.tmp')
-      );
-    },
+    ignored: (p) => isDiskChaff(path.basename(p)),
   });
 
   watcher.on('add', handleUpsert);

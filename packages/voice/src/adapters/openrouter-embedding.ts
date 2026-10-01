@@ -110,7 +110,7 @@ export const openrouterEmbedding: EmbeddingDispatcher = {
       headers: {
         authorization: `Bearer ${req.apiKey}`,
         'content-type': 'application/json',
-        'http-referer': 'https://mantle.crossworks.network',
+        'http-referer': 'https://mantle-ai.tech',
         'x-title': 'Mantle',
       },
       body: JSON.stringify(body),

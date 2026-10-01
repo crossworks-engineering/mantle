@@ -48,7 +48,7 @@
  */
 import { and, eq, inArray } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
-import { db, agents, skills, type AgentParams } from '@mantle/db';
+import { db, agents, skills, toolGroups, tools, type AgentParams } from '@mantle/db';
 import { loadProfilePreferences, updateProfilePreferences } from '@mantle/content';
 import { APP_VERSION } from '@mantle/client-types/version';
 import { applyManifest, seedToolCapabilities, seedManifestWorkers } from './seed';
@@ -57,8 +57,16 @@ import {
   MANIFEST_SKILL_SLUGS,
   PERSONA_MANIFEST,
   PERSONA_TOOL_GROUP_SLUGS,
+  RETIRED_BUILTIN_TOOL_SLUGS,
+  RETIRED_TOOL_GROUP_SLUGS,
 } from './manifest';
-import { convergeManifestSkills, missingPersonaGroups } from './reconcile-util';
+import {
+  convergeManifestSkills,
+  groupsWithinLevel,
+  missingPersonaGroups,
+  shippedPromptUpgrade,
+} from './reconcile-util';
+import { saveProse } from '../studio/prompt-versions';
 import { env } from '@mantle/config';
 
 let ranThisProcess = false;
@@ -100,11 +108,22 @@ async function resolveOwnerId(): Promise<string | null> {
  * change land on an operator-persona box WITHOUT a manual SQL detach. Returns the
  * `slug:+added -removed` strings changed.
  */
+/** Every tool group's level, for the level check on reconcile grants. */
+async function toolGroupLevels(ownerId: string): Promise<Map<string, string>> {
+  const rows = await db
+    .select({ slug: toolGroups.slug, audience: toolGroups.audience })
+    .from(toolGroups)
+    .where(eq(toolGroups.ownerId, ownerId));
+  return new Map(rows.map((r) => [r.slug, r.audience]));
+}
+
 async function reconcilePersonaCapabilitiesByRole(ownerId: string): Promise<string[]> {
+  const levels = await toolGroupLevels(ownerId);
   const responders = await db
     .select({
       id: agents.id,
       slug: agents.slug,
+      audience: agents.audience,
       groups: agents.toolGroupSlugs,
       skills: agents.skillSlugs,
     })
@@ -134,7 +153,11 @@ async function reconcilePersonaCapabilitiesByRole(ownerId: string): Promise<stri
   const addable = present.map((p) => p.slug);
   const changes: string[] = [];
   for (const a of responders) {
-    const missingGroups = missingPersonaGroups(a.groups, PERSONA_TOOL_GROUP_SLUGS);
+    const missingGroups = groupsWithinLevel(
+      missingPersonaGroups(a.groups, PERSONA_TOOL_GROUP_SLUGS),
+      a.audience,
+      levels,
+    );
     const curSkills = a.skills ?? [];
     const nextSkills = convergeManifestSkills(curSkills, wantSkills, MANIFEST_SKILL_SLUGS, addable);
     const skillsChanged =
@@ -167,10 +190,12 @@ async function reconcilePersonaCapabilitiesByRole(ownerId: string): Promise<stri
  * `slug:+added -removed` strings changed.
  */
 async function grantSpecialistCapabilities(ownerId: string): Promise<string[]> {
+  const levels = await toolGroupLevels(ownerId);
   const rows = await db
     .select({
       id: agents.id,
       slug: agents.slug,
+      audience: agents.audience,
       groups: agents.toolGroupSlugs,
       skills: agents.skillSlugs,
     })
@@ -182,7 +207,11 @@ async function grantSpecialistCapabilities(ownerId: string): Promise<string[]> {
     if (a.isPersona) continue;
     const row = bySlug.get(a.slug);
     if (!row) continue; // absent (or disabled) → provisionMissingSpecialists owns it
-    const missingGroups = missingPersonaGroups(row.groups, a.toolGroupSlugs ?? []);
+    const missingGroups = groupsWithinLevel(
+      missingPersonaGroups(row.groups, a.toolGroupSlugs ?? []),
+      row.audience,
+      levels,
+    );
     const curSkills = row.skills ?? [];
     const nextSkills = convergeManifestSkills(curSkills, a.skillSlugs, MANIFEST_SKILL_SLUGS);
     const skillsChanged =
@@ -266,6 +295,85 @@ async function syncSpecialistDefs(ownerId: string): Promise<string[]> {
 }
 
 /**
+ * Move an agent whose prompt is still an EARLIER shipped default to the
+ * current one (ManifestAgent.retiredPromptSha256). The exception to "prompts
+ * are operator-owned" is exactly that: nobody edited it, so it is the product's
+ * text, not the operator's. An edited prompt is never touched. The write goes
+ * through the Studio's prose versioning (saveProse), so the old default is
+ * kept as v1 and one revert brings it back. Disabled agents are upgraded too:
+ * the text is the same product default either way. Returns the slugs moved.
+ */
+export async function upgradeUneditedPrompts(ownerId: string): Promise<string[]> {
+  const defs = MANIFEST_AGENTS.filter((a) => !a.isPersona && a.retiredPromptSha256?.length);
+  if (defs.length === 0) return [];
+  const rows = await db
+    .select({ id: agents.id, slug: agents.slug, systemPrompt: agents.systemPrompt })
+    .from(agents)
+    .where(
+      and(
+        eq(agents.ownerId, ownerId),
+        inArray(
+          agents.slug,
+          defs.map((d) => d.slug),
+        ),
+      ),
+    );
+  const upgraded: string[] = [];
+  for (const row of rows) {
+    const def = defs.find((d) => d.slug === row.slug)!;
+    const next = shippedPromptUpgrade(row.systemPrompt, def.systemPrompt, def.retiredPromptSha256);
+    if (next === null) continue;
+    await saveProse({
+      ownerId,
+      entityType: 'agent',
+      entityId: row.id,
+      field: 'system_prompt',
+      body: next,
+      note: `Shipped default updated on upgrade to v${APP_VERSION} (the prompt was unedited).`,
+    });
+    upgraded.push(row.slug);
+  }
+  return upgraded;
+}
+
+/**
+ * Disable the tool groups and builtin tools the manifest retired
+ * (RETIRED_TOOL_GROUP_SLUGS / RETIRED_BUILTIN_TOOL_SLUGS). Only rows still
+ * enabled change, and only builtin tool rows (an operator's own http tool that
+ * happens to share a slug is left alone). Returns what was disabled.
+ */
+export async function disableRetiredManifestItems(ownerId: string): Promise<string[]> {
+  const groups = RETIRED_TOOL_GROUP_SLUGS.length
+    ? await db
+        .update(toolGroups)
+        .set({ enabled: false, updatedAt: new Date() })
+        .where(
+          and(
+            eq(toolGroups.ownerId, ownerId),
+            inArray(toolGroups.slug, [...RETIRED_TOOL_GROUP_SLUGS]),
+            eq(toolGroups.enabled, true),
+          ),
+        )
+        .returning({ slug: toolGroups.slug })
+    : [];
+  const retiredTools = RETIRED_BUILTIN_TOOL_SLUGS.length
+    ? await db
+        .update(tools)
+        .set({ enabled: false, updatedAt: new Date() })
+        .where(
+          and(
+            eq(tools.ownerId, ownerId),
+            inArray(tools.slug, [...RETIRED_BUILTIN_TOOL_SLUGS]),
+            eq(tools.enabled, true),
+            sql`${tools.handler}->>'kind' = 'builtin'`,
+          ),
+        )
+        .returning({ slug: tools.slug })
+    : [];
+  return [...groups.map((g) => `group ${g.slug}`), ...retiredTools.map((t) => `tool ${t.slug}`)];
+}
+
+/**
  * Create any manifest specialist agent the brain is missing (a NEW specialist
  * shipped this version), and wire the persona's delegation to it. Keyed on
  * existence (not enabled) so an operator-disabled specialist is never recreated.
@@ -286,6 +394,43 @@ async function provisionMissingSpecialists(ownerId: string): Promise<string[]> {
   // ones that are isDelegate. Existing agents are untouched.
   await applyManifest(ownerId, { only: missing, mode: 'gap-fill' });
   return missing;
+}
+
+/**
+ * One brain's reconcile, the steps of the boot reconcile (the propagation
+ * contract in ./CLAUDE.md) without its production, owner and once-per-version
+ * gates. Exported for the tests: an existing brain gets what this version
+ * ships (client-responder and client-read, client logins C4, included).
+ */
+export async function reconcileOwner(ownerId: string) {
+  await seedToolCapabilities(ownerId, 'overwrite');
+  const { seededHeartbeats } = await applyManifest(ownerId, {
+    only: [],
+    mode: 'gap-fill',
+    skillMode: 'overwrite',
+  });
+  const personaChanges = await reconcilePersonaCapabilitiesByRole(ownerId);
+  const provisioned = await provisionMissingSpecialists(ownerId);
+  const specialistGrants = await grantSpecialistCapabilities(ownerId);
+  const defsSynced = await syncSpecialistDefs(ownerId);
+  const promptsUpgraded = await upgradeUneditedPrompts(ownerId);
+  const retired = await disableRetiredManifestItems(ownerId);
+  // Create any MISSING required worker (a new always-on worker shipped this
+  // version). Provision-only: an existing worker's model/provider is never
+  // overwritten (operator cost choices stand); optional media workers are left
+  // to onboarding.
+  const { created: workersCreated } = await seedManifestWorkers(ownerId, { requiredOnly: true });
+
+  return {
+    seededHeartbeats,
+    personaChanges,
+    provisioned,
+    specialistGrants,
+    defsSynced,
+    promptsUpgraded,
+    retired,
+    workersCreated,
+  };
 }
 
 export async function reconcileManifestOnBoot(): Promise<void> {
@@ -329,21 +474,16 @@ export async function reconcileManifestOnBoot(): Promise<void> {
     const prefs = await loadProfilePreferences(ownerId);
     if (prefs.lastReconciledVersion === APP_VERSION) return;
 
-    await seedToolCapabilities(ownerId, 'overwrite');
-    const { seededHeartbeats } = await applyManifest(ownerId, {
-      only: [],
-      mode: 'gap-fill',
-      skillMode: 'overwrite',
-    });
-    const personaChanges = await reconcilePersonaCapabilitiesByRole(ownerId);
-    const provisioned = await provisionMissingSpecialists(ownerId);
-    const specialistGrants = await grantSpecialistCapabilities(ownerId);
-    const defsSynced = await syncSpecialistDefs(ownerId);
-    // Create any MISSING required worker (a new always-on worker shipped this
-    // version). Provision-only: an existing worker's model/provider is never
-    // overwritten (operator cost choices stand); optional media workers are left
-    // to onboarding.
-    const { created: workersCreated } = await seedManifestWorkers(ownerId, { requiredOnly: true });
+    const {
+      seededHeartbeats,
+      personaChanges,
+      provisioned,
+      specialistGrants,
+      defsSynced,
+      promptsUpgraded,
+      retired,
+      workersCreated,
+    } = await reconcileOwner(ownerId);
     await updateProfilePreferences(ownerId, { lastReconciledVersion: APP_VERSION });
 
     console.log(
@@ -352,6 +492,8 @@ export async function reconcileManifestOnBoot(): Promise<void> {
         (provisioned.length ? `; provisioned ${provisioned.join(', ')}` : '') +
         (specialistGrants.length ? `; specialists ${specialistGrants.join('; ')}` : '') +
         (defsSynced.length ? `; defs synced ${defsSynced.join(', ')}` : '') +
+        (promptsUpgraded.length ? `; prompts upgraded ${promptsUpgraded.join(', ')}` : '') +
+        (retired.length ? `; retired ${retired.join(', ')}` : '') +
         (workersCreated.length ? `; workers +${workersCreated.map((w) => w.kind).join(',')}` : '') +
         (seededHeartbeats.length ? `; heartbeats +${seededHeartbeats.join(',')}` : ''),
     );

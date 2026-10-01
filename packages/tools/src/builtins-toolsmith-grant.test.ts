@@ -359,6 +359,89 @@ describe('tool_group_ensure', () => {
   });
 });
 
+describe('tool_group_ensure on a group below admin (client logins C5 audit, L3)', () => {
+  // client-read as the manifest ships it: the client agent's whole surface.
+  const CLIENT_READ = {
+    ...EXISTING_GROUP,
+    slug: 'client-read',
+    audience: 'client',
+    toolSlugs: ['client_shared_list', 'client_shared_open'],
+  };
+  const owner: ToolHandlerContext = { ownerId: 'o1', surface: { kind: 'owner', via: 'mcp' } };
+
+  it('an agent adding a recipe to client-read waits in Pending; nothing is written', async () => {
+    h.selectQueue.push([CLIENT_READ], [{ id: 'agent-toolsmith' }]);
+    h.insertReturning.mockResolvedValueOnce([{ id: 'p1' }]);
+    const input = { slug: 'client-read', tool_slugs: ['note_to_page'] };
+    const res = await ensure.handler(input, agentCtx);
+    expect(outputOf(res)).toMatchObject({ status: 'queued_for_approval', pending_id: 'p1' });
+    expect(h.update).not.toHaveBeenCalled();
+    expect(h.insert).toHaveBeenCalledWith(pendingToolCalls);
+    expect(h.insertValues).toHaveBeenCalledWith({
+      ownerId: 'o1',
+      agentId: 'agent-toolsmith',
+      toolSlug: 'tool_group_ensure',
+      args: input,
+    });
+    expect(notifyPendingCreated).toHaveBeenCalledWith(
+      expect.objectContaining({ pendingId: 'p1', toolSlug: 'tool_group_ensure' }),
+    );
+  });
+
+  it("an agent's replace of a team group waits too", async () => {
+    h.selectQueue.push([{ ...CLIENT_READ, audience: 'team' }], [{ id: 'agent-toolsmith' }]);
+    const res = await ensure.handler(
+      { slug: 'client-read', tool_slugs: ['client_shared_list'], mode: 'replace' },
+      agentCtx,
+    );
+    expect(outputOf(res)).toMatchObject({ status: 'queued_for_approval' });
+    expect(h.update).not.toHaveBeenCalled();
+  });
+
+  it('the owner (the approved pending call, MCP) changes it directly', async () => {
+    h.selectQueue.push([CLIENT_READ]);
+    const res = await ensure.handler(
+      { slug: 'client-read', tool_slugs: ['note_to_page'] },
+      { ownerId: 'o1', surface: { kind: 'owner', via: 'pending' } },
+    );
+    expect(outputOf(res)).toMatchObject({ created: false });
+    expect(h.updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolSlugs: ['client_shared_list', 'client_shared_open', 'note_to_page'],
+      }),
+    );
+    h.selectQueue.push([CLIENT_READ]);
+    await ensure.handler({ slug: 'client-read', tool_slugs: ['note_to_page'] }, owner);
+    expect(h.update).toHaveBeenCalledTimes(2);
+  });
+
+  it('a caller that is neither an agent nor the owner is refused', async () => {
+    h.selectQueue.push([CLIENT_READ]);
+    const res = await ensure.handler(
+      { slug: 'client-read', tool_slugs: ['note_to_page'] },
+      { ownerId: 'o1', surface: { kind: 'client', loginId: 'c1' } },
+    );
+    expect(errorOf(res)).toMatch(/only the owner changes its tools/);
+    expect(h.update).not.toHaveBeenCalled();
+    expect(h.insert).not.toHaveBeenCalled();
+  });
+
+  it('control: an agent may still add to an admin group, and re-send what a client group holds', async () => {
+    h.selectQueue.push([EXISTING_GROUP]);
+    await ensure.handler({ slug: 'geo-tools', tool_slugs: ['note_to_page'] }, agentCtx);
+    expect(h.updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({ toolSlugs: ['geocode', 'note_to_page'] }),
+    );
+    h.selectQueue.push([CLIENT_READ]);
+    const res = await ensure.handler(
+      { slug: 'client-read', tool_slugs: ['client_shared_open'] },
+      agentCtx,
+    );
+    expect(outputOf(res)).toMatchObject({ created: false });
+    expect(h.insert).not.toHaveBeenCalled();
+  });
+});
+
 describe('agent_grant_tool_group', () => {
   const AGENT = { id: 'a1', groups: ['core'] };
   const GROUP = { id: 'g1', toolSlugs: ['geocode', 'note_to_page'] };

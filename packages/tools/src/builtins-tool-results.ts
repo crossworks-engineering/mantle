@@ -10,9 +10,25 @@
  * offers it so a handle is always dereferenceable.
  */
 
-import type { BuiltinToolDef } from './types';
+import { currentTrace } from '@mantle/tracing';
+import type { BuiltinToolDef, ToolHandlerContext } from './types';
 import { str } from './coerce';
-import { readResultPage, grepResult, queryResult, DEFAULT_RESULT_HANDLING } from './tool-results';
+import {
+  readResultPage,
+  grepResult,
+  queryResult,
+  DEFAULT_RESULT_HANDLING,
+  type ResultBinding,
+} from './tool-results';
+
+/** A client's or member's turn reads only the spills its own turn wrote
+ *  (client logins C4, plan section 8): the trace IS the turn, so the handle
+ *  is bound to that turn and its login. Owner paths read by handle as before. */
+export function resultBindingFor(ctx: ToolHandlerContext): ResultBinding | undefined {
+  const kind = ctx.surface?.kind;
+  if (kind !== 'client' && kind !== 'team') return undefined;
+  return { traceId: currentTrace()?.id ?? null };
+}
 
 const read_result: BuiltinToolDef = {
   slug: 'read_result',
@@ -45,17 +61,18 @@ const read_result: BuiltinToolDef = {
   handler: async (input, ctx) => {
     const handle = str(input.handle).trim();
     if (!handle) return { ok: false, error: 'handle is required' };
+    const bind = resultBindingFor(ctx);
 
     const query = str(input.query).trim();
     if (query) {
-      const r = await queryResult(ctx.ownerId, handle, query);
+      const r = await queryResult(ctx.ownerId, handle, query, 5, bind);
       ctx.step?.setMeta({ mode: 'query', handle, hits: r.ok ? r.hits.length : 0 });
       return r.ok ? { ok: true, output: { mode: 'query', handle, hits: r.hits } } : r;
     }
 
     const grep = str(input.grep).trim();
     if (grep) {
-      const r = await grepResult(ctx.ownerId, handle, grep);
+      const r = await grepResult(ctx.ownerId, handle, grep, undefined, bind);
       ctx.step?.setMeta({ mode: 'grep', handle, count: r.ok ? r.count : 0 });
       return r.ok
         ? { ok: true, output: { mode: 'grep', handle, count: r.count, matches: r.matches } }
@@ -63,7 +80,13 @@ const read_result: BuiltinToolDef = {
     }
 
     const page = typeof input.page === 'number' && Number.isFinite(input.page) ? input.page : 1;
-    const r = await readResultPage(ctx.ownerId, handle, page, DEFAULT_RESULT_HANDLING.pageBytes);
+    const r = await readResultPage(
+      ctx.ownerId,
+      handle,
+      page,
+      DEFAULT_RESULT_HANDLING.pageBytes,
+      bind,
+    );
     ctx.step?.setMeta({ mode: 'page', handle, page: r.ok ? r.page : undefined });
     return r.ok
       ? {

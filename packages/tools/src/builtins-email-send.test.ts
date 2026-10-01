@@ -78,6 +78,7 @@ vi.mock('@mantle/content', async (importOriginal) => {
     ...actual,
     getPage: vi.fn(),
     contactEmails: vi.fn(async () => [] as string[]),
+    loginEmails: vi.fn(async () => [] as string[]),
     findContactsByEmails: vi.fn(async () => []),
     recordContactSent: vi.fn(async () => {}),
     // SYNC, and `{ html, imageFileIds }` — the real signature. The old stub was
@@ -90,7 +91,7 @@ vi.mock('@mantle/content', async (importOriginal) => {
 });
 
 import { sendEmail, accountCanSend } from '@mantle/email';
-import { getPage, contactEmails, renderPageEmail } from '@mantle/content';
+import { getPage, contactEmails, createShare, loginEmails, renderPageEmail } from '@mantle/content';
 import { paramsOf } from './test-support';
 import { EMAIL_TOOLS } from './builtins-email';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
@@ -120,6 +121,7 @@ beforeEach(() => {
   vi.mocked(accountCanSend).mockReturnValue(true);
   // Default: the recipient IS a known contact.
   vi.mocked(contactEmails).mockResolvedValue(['friend@example.com']);
+  vi.mocked(loginEmails).mockResolvedValue([]);
   vi.mocked(sendEmail).mockResolvedValue({
     messageId: 'm1',
     accepted: ['friend@example.com'],
@@ -188,6 +190,14 @@ describe('email_send', () => {
       // still mail the user, just nobody else.
       vi.mocked(contactEmails).mockResolvedValue([]);
       const res = await send.handler({ ...OK_ARGS, to: 'me@example.com' }, ctx);
+      expect(res.ok).toBe(true);
+      expect(sendEmail).toHaveBeenCalledTimes(1);
+    });
+
+    it('allows a user of the brain: users are contacts in user form', async () => {
+      vi.mocked(contactEmails).mockResolvedValue([]);
+      vi.mocked(loginEmails).mockResolvedValue(['teammate@example.com']);
+      const res = await send.handler({ ...OK_ARGS, to: 'Teammate@Example.com' }, ctx);
       expect(res.ok).toBe(true);
       expect(sendEmail).toHaveBeenCalledTimes(1);
     });
@@ -276,6 +286,45 @@ describe('email_page', () => {
       messageId: 'm1',
       inlineImages: 0,
     });
+  });
+
+  it('refuses includeLink on a client page BEFORE sending (client logins C1, A20)', async () => {
+    const { ClientLinkRetiredError } =
+      await vi.importActual<typeof import('@mantle/content')>('@mantle/content');
+    vi.mocked(createShare).mockRejectedValue(new ClientLinkRetiredError());
+    const res = await page.handler(
+      { pageId: 'p1', to: 'friend@example.com', includeLink: true },
+      ctx,
+    );
+    expect(errorOf(res)).toMatch(/Nothing was sent: this page is at client level/);
+    expect(errorOf(res)).toMatch(/without includeLink/);
+    // The mail never goes out promising a link it does not carry.
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("names an embedded client item that the link took out of client logins' view (A10)", async () => {
+    vi.mocked(createShare).mockImplementation((async (
+      _o: string,
+      _id: string,
+      opts: { alsoLowered?: unknown[] },
+    ) => {
+      opts.alsoLowered?.push({
+        id: 'f1',
+        type: 'file',
+        title: 'plan.pdf',
+        from: 'client',
+        to: 'public',
+      });
+      return { id: 's1', token: 'tok', mode: 'public' };
+    }) as never);
+    const res = await page.handler(
+      { pageId: 'p1', to: 'friend@example.com', includeLink: true },
+      ctx,
+    );
+    expect(res.ok).toBe(true);
+    expect(res.ok && (res.output as { warning?: string }).warning).toMatch(
+      /from client to public .*left client logins' view: plan\.pdf \(file\)/,
+    );
   });
 
   it('defaults the subject to the page title', async () => {

@@ -25,6 +25,15 @@ import type {
 } from '@mantle/client-types';
 
 import { thinkingEffortForBudget, type ThinkingEffort } from './thinking-tiers';
+import {
+  APP_OPENS_MAX,
+  APP_PINS_MAX,
+  NAV_FAVORITE_HREF_MAX,
+  NAV_FAVORITES_MAX,
+  type AppOpenStat,
+} from '@mantle/client-types/app-nav';
+
+export { projectAppNav } from './app-nav';
 
 export type { OnboardingModelChoices, ProfilePreferences, ReminderChannel, ThoughtTrailMode };
 
@@ -75,6 +84,26 @@ export function isTeamPrivateReadsEnabled(
   prefs: Pick<ProfilePreferences, 'teamPrivateReads'>,
 ): boolean {
   return prefs.teamPrivateReads === true;
+}
+
+/** Node types that hold the owner's private corpus (email + journal). A team
+ *  surface sees them only when the owner opted in (`teamPrivateReads`). */
+export const TEAM_PRIVATE_CORPUS_TYPES: readonly string[] = ['email', 'email_thread', 'journal'];
+
+/** Node types a team surface NEVER sees, opt-in or not: credentials, the
+ *  owner's own Telegram chats, saved places ("home") and federation peers. */
+export const TEAM_NEVER_TYPES: readonly string[] = [
+  'secret',
+  'telegram_message',
+  'location',
+  'mantle_peer',
+];
+
+/** Every node type hidden from a team-member surface (team chat, forum, a
+ *  team-mode shared app). The ONE list the read tools and the context loader
+ *  filter on; see `surfaceHiddenNodeTypes` in @mantle/tools. */
+export function teamHiddenNodeTypes(privateReads: boolean): readonly string[] {
+  return privateReads ? TEAM_NEVER_TYPES : [...TEAM_NEVER_TYPES, ...TEAM_PRIVATE_CORPUS_TYPES];
 }
 
 /** Project a stored `thinkingBudget` jsonb value to the typed field — a positive
@@ -386,6 +415,56 @@ export function projectTeamHubTags(raw: unknown): string[] | undefined {
     if (out.length >= TEAM_HUB_TAGS_MAX) break;
   }
   return out.length > 0 ? out : undefined;
+}
+
+/** Project stored `appPins`: lowercased, deduped UUIDs in order, capped at
+ *  APP_PINS_MAX; undefined for unset/empty/garbage. Read and write share it. */
+export function projectAppPins(raw: unknown): string[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: string[] = [];
+  for (const v of raw) {
+    if (typeof v !== 'string') continue;
+    const id = v.trim().toLowerCase();
+    if (!UUID_RE.test(id) || out.includes(id)) continue;
+    out.push(id);
+    if (out.length >= APP_PINS_MAX) break;
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+/** Project stored `navFavorites`: in-app hrefs (a single leading '/', never
+ *  '//' which would be protocol-relative), deduped, capped. */
+export function projectNavFavorites(raw: unknown): string[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: string[] = [];
+  for (const v of raw) {
+    if (typeof v !== 'string') continue;
+    const href = v.trim();
+    if (!href.startsWith('/') || href.startsWith('//') || href.length > NAV_FAVORITE_HREF_MAX) {
+      continue;
+    }
+    if (out.includes(href)) continue;
+    out.push(href);
+    if (out.length >= NAV_FAVORITES_MAX) break;
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+/** Project stored `appOpens`: well-formed counters only, keeping the
+ *  APP_OPENS_MAX most recently opened. */
+export function projectAppOpens(raw: unknown): Record<string, AppOpenStat> | undefined {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return undefined;
+  const rows: [string, AppOpenStat][] = [];
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!UUID_RE.test(k) || typeof v !== 'object' || v === null) continue;
+    const { n, at } = v as { n?: unknown; at?: unknown };
+    if (typeof n !== 'number' || !Number.isFinite(n) || n < 1) continue;
+    if (typeof at !== 'string' || Number.isNaN(Date.parse(at))) continue;
+    rows.push([k.toLowerCase(), { n: Math.floor(n), at }]);
+  }
+  if (rows.length === 0) return undefined;
+  rows.sort((a, b) => Date.parse(b[1].at) - Date.parse(a[1].at));
+  return Object.fromEntries(rows.slice(0, APP_OPENS_MAX));
 }
 
 export const DEFAULT_PREFERENCES: ProfilePreferences = {

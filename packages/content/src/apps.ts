@@ -4,7 +4,8 @@
  * pointers:
  *
  *   nodes.title           display name
- *   nodes.data.icon       optional emoji / icon
+ *   nodes.data.icon       optional emoji or `lucide:<name>` (projectAppIcon)
+ *   nodes.data.color      optional tile tint key (APP_TINTS)
  *   nodes.data.summary    extractor-written summary (if 'app' is extracted)
  *   apps.source           { entry, files } — built + run
  *   apps.source_text      derived plaintext (concatenated source; FTS reads this)
@@ -18,6 +19,7 @@
 import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, ilike, isNull, or, sql } from 'drizzle-orm';
 import {
+  asViewerLevel,
   db,
   nodes,
   apps,
@@ -28,9 +30,10 @@ import {
   type AppManifest,
   type BuildRef,
 } from '@mantle/db';
-import { shareModeOf } from './shares';
 import { loadProfilePreferences } from './profile-preferences';
-import type { AppRow, AppDetail } from '@mantle/client-types';
+import { notifyAppNavChanged } from './app-nav';
+import type { AppRow, AppDetail, AppTint } from '@mantle/client-types';
+import { projectAppIcon, projectAppTint } from '@mantle/content-core/app-nav';
 export type { AppRow, AppDetail };
 
 export const APPS_ROOT_LABEL = 'apps';
@@ -94,6 +97,8 @@ type SidecarCols = {
   shareSettings: Record<string, unknown> | null;
   /** prefs.teamHubAppId — resolved once per query, compared per row. */
   hubAppId: string | null;
+  /** apps.data_read_only: informational (client logins C6). */
+  dataReadOnly: boolean;
 };
 
 function rowOf(n: Node, s: Partial<SidecarCols> = {}): AppRow {
@@ -102,15 +107,24 @@ function rowOf(n: Node, s: Partial<SidecarCols> = {}): AppRow {
   return {
     id: n.id,
     title: n.title,
-    icon: typeof d.icon === 'string' ? d.icon : null,
+    // Stored icons predate validation; project on read so a client only ever
+    // sees a shape it can render.
+    icon: projectAppIcon(d.icon) ?? null,
+    color: projectAppTint(d.color) ?? null,
     tags: n.tags ?? [],
     summary: typeof d.summary === 'string' ? d.summary : null,
     description: typeof manifest.description === 'string' ? manifest.description : null,
     toolCount: manifest.toolSlugs?.length ?? 0,
     hasBuild: !!s.publishedBuild?.ok,
     hasDraft: s.draftSource != null,
-    shareMode: s.shareSettings ? shareModeOf({ settings: s.shareSettings }) : null,
+    // Every live link is open: team links are retired (migration 0176).
+    shareMode: s.shareSettings ? 'public' : null,
     isHub: s.hubAppId != null && s.hubAppId === n.id,
+    audience: asViewerLevel(n.audience),
+    inherited:
+      n.inheritedLevel === 'team' || n.inheritedLevel === 'client' ? n.inheritedLevel : null,
+    embedded: n.embeddedLevel === 'team' || n.embeddedLevel === 'client' ? n.embeddedLevel : null,
+    dataReadOnly: s.dataReadOnly === true,
     createdAt: n.createdAt.toISOString(),
     updatedAt: n.updatedAt.toISOString(),
   };
@@ -196,6 +210,7 @@ export async function listApps(
         manifest: apps.manifest,
         draftSource: apps.draftSource,
         publishedBuild: apps.publishedBuild,
+        dataReadOnly: apps.dataReadOnly,
         shareSettings: shares.settings,
       })
       .from(nodes)
@@ -215,6 +230,7 @@ export async function listApps(
       publishedBuild: r.publishedBuild ?? null,
       shareSettings: r.shareSettings ?? null,
       hubAppId,
+      dataReadOnly: r.dataReadOnly === true,
     }),
   );
 }
@@ -250,6 +266,7 @@ async function loadDetail(ownerId: string, id: string): Promise<AppDetail | null
         manifest: apps.manifest,
         draftBuild: apps.draftBuild,
         publishedBuild: apps.publishedBuild,
+        dataReadOnly: apps.dataReadOnly,
         shareSettings: shares.settings,
       })
       .from(nodes)
@@ -268,6 +285,7 @@ async function loadDetail(ownerId: string, id: string): Promise<AppDetail | null
     publishedBuild: row.publishedBuild ?? null,
     shareSettings: row.shareSettings ?? null,
     hubAppId: prefs.teamHubAppId ?? null,
+    dataReadOnly: row.dataReadOnly === true,
   });
 }
 
@@ -283,6 +301,7 @@ export function workingSource(app: AppDetail): AppSource {
 export type CreateAppInput = {
   title: string;
   icon?: string;
+  color?: AppTint;
   description?: string;
   tags?: string[];
   source?: AppSource;
@@ -303,7 +322,10 @@ export async function createApp(ownerId: string, input: CreateAppInput): Promise
         type: 'app',
         title: input.title.trim().slice(0, 200) || 'Untitled app',
         path: APPS_ROOT_LABEL,
-        data: { ...(input.icon ? { icon: input.icon } : {}) },
+        data: {
+          ...(projectAppIcon(input.icon) ? { icon: projectAppIcon(input.icon) } : {}),
+          ...(projectAppTint(input.color) ? { color: input.color } : {}),
+        },
         tags: dedupeTags(input.tags ?? []),
       })
       .returning();
@@ -320,14 +342,21 @@ export async function createApp(ownerId: string, input: CreateAppInput): Promise
       // A just-created app has no share and can't be the designated hub.
       shareSettings: null,
       hubAppId: null,
+      dataReadOnly: false,
     });
   });
 }
 
 export type UpdateAppInput = Partial<{
   title: string;
+  /** '' clears back to the default tile. */
   icon: string;
+  /** null clears back to the neutral tint. */
+  color: AppTint | null;
   tags: string[];
+  /** Informational (client logins C6): members and clients only read the
+   *  app's data. The owner's app update route is its one writer. */
+  dataReadOnly: boolean;
 }>;
 
 export async function updateAppMeta(
@@ -342,7 +371,16 @@ export async function updateAppMeta(
     .limit(1);
   if (!node) return null;
   const newData = { ...((node.data ?? {}) as Record<string, unknown>) };
-  if (input.icon !== undefined) newData.icon = input.icon;
+  if (input.icon !== undefined) {
+    const icon = projectAppIcon(input.icon);
+    if (icon) newData.icon = icon;
+    else delete newData.icon;
+  }
+  if (input.color !== undefined) {
+    const color = projectAppTint(input.color);
+    if (color) newData.color = color;
+    else delete newData.color;
+  }
   await db
     .update(nodes)
     .set({
@@ -354,6 +392,12 @@ export async function updateAppMeta(
       updatedAt: new Date(),
     })
     .where(eq(nodes.id, id));
+  if (input.dataReadOnly !== undefined) {
+    await db
+      .update(apps)
+      .set({ dataReadOnly: input.dataReadOnly, updatedAt: new Date() })
+      .where(eq(apps.nodeId, id));
+  }
   return loadDetail(ownerId, id);
 }
 
@@ -452,6 +496,8 @@ export async function setDraftBuild(
     .update(apps)
     .set({ draftBuild: build, updatedAt: new Date() })
     .where(eq(apps.nodeId, id));
+  // The app list shows whether each app can be previewed.
+  void notifyAppNavChanged(ownerId);
   return true;
 }
 
@@ -461,6 +507,7 @@ export async function discardDraft(ownerId: string, id: string): Promise<boolean
     .update(apps)
     .set({ draftSource: null, draftUpdatedAt: null, draftBuild: null })
     .where(eq(apps.nodeId, id));
+  void notifyAppNavChanged(ownerId);
   return true;
 }
 
@@ -534,6 +581,7 @@ export async function publishApp(ownerId: string, id: string): Promise<AppDetail
     await tx.update(nodes).set({ embedding: null, updatedAt: new Date() }).where(eq(nodes.id, id));
   });
   await notifyNodeIngested(id);
+  void notifyAppNavChanged(ownerId);
   return loadDetail(ownerId, id);
 }
 

@@ -1,0 +1,489 @@
+# Decisions: the `decider` worker and `decide()`
+
+A typed-decision model sits beside the chat models. It writes no prose. You
+give it **state** (text or JSON) and **typed questions**; it returns typed
+answers with probabilities in about 300 ms:
+
+| Question type | You give                              | You get                                                                    |
+| ------------- | ------------------------------------- | -------------------------------------------------------------------------- |
+| `choice`      | option key → description              | the key, a probability per key, a confidence                               |
+| `score`       | an ordered list of level descriptions | a fractional position on the rubric, a probability per level, a confidence |
+| `noul`        | a yes/no question                     | P(yes)                                                                     |
+
+**Confidence** is the shape of the distribution (1 = all mass on one option,
+0 = flat). It is the number code gates on. **Probability** says which option.
+
+The model is TypeSafe **Jev** (`~typesafe/jev-latest` on OpenRouter — the auto-updating alias), reached
+through OpenRouter's `POST /api/alpha/decisions` endpoint — not chat
+completions. Input-only billing ($0.042 per 1M tokens, answers free), 32k
+context. The endpoint is **alpha**; everything below is built so that it
+going away breaks nothing.
+
+## 1. The rules
+
+1. **Jev decides, the LLM writes. When Jev is not sure, the LLM decides.**
+2. **Optional at every level.** No `decider` worker, worker disabled, use
+   switched off, no key, HTTP error, timeout, malformed answer → `decide()`
+   returns `null` and the caller runs the path it always ran. A decision sits
+   in front of work the caller does anyway; it never blocks and never breaks
+   it. No retries: a retry spends the latency the caller wanted to save.
+3. **Switched per use, in the UI.** The worker's `enabled` toggle is the
+   master switch. Each use has its own switch in `params.uses` with a `mode`:
+   `shadow` (Jev runs, the answer lands in the trace, behaviour does not
+   change) or `live` (the answer is used). Since 2026-09-24 a **fresh**
+   brain is seeded with the worker **on and every built use `live`** (the
+   whole fleet ran that way first; `model_routing` is not built and stays
+   off). The worker is optional, so an upgrade never creates or turns it on
+   for an EXISTING brain: that stays an operator act. A new use is developed
+   in `shadow` on the pilots first.
+4. **Two confidence floors.** Below `defer_below` (0.6) the answer is recorded
+   and not acted on. Only at or above `act_alone_at` (0.9) may a caller act
+   with no second check. Both are worker-level with per-use `min_confidence`
+   overrides.
+5. **Jev ranks, groups and flags. Code applies dates, `superseded_by` and
+   thresholds. Jev alone never retires, merges or overwrites data.** This came
+   out of the fact-reconcile spike (below): a confident wrong `UPDATE` retires
+   a true fact, and a confidence gate does not stop it.
+6. **Keep in code:** counting, arithmetic, date comparison, numeric closeness.
+   Jev treats all of these as text. **Filter state first:** unrelated state
+   lowers accuracy and costs tokens; name the fields a question uses in
+   backticks. **Write contrastive criteria** ("not for …"); the model reads
+   literally. **Never let a Jev answer alone authorise a side effect:** text
+   inside the state can steer it.
+7. **The state leaves the box** (OpenRouter → TypeSafe). Every call carries
+   `provider: { zdr: true, data_collection: 'deny' }` (`params.zdr`, default
+   on; OpenRouter honours both on this endpoint). Keep the worker off on a
+   brain whose owner has not opted in.
+
+## 2. Where it lives
+
+| Piece                                                                                                                                         | File                                                                                      |
+| --------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Worker kind `decider`, `DeciderParams`, `DecisionUse`                                                                                         | `packages/db/src/schema/ai-workers.ts` (migration 0158)                                   |
+| Capability `decision`, `CAPABILITY_FOR_KIND.decider`                                                                                          | `packages/voice-client/src/providers.ts`                                                  |
+| `DecisionDispatcher`, question/answer types                                                                                                   | `packages/voice-client/src/adapters/types.ts`                                             |
+| Registry (`registerDecisionAdapter` / `getDecisionAdapter`, `WIRED_PROVIDERS.decision`)                                                       | `packages/voice-client/src/adapters/registry.ts`                                          |
+| The one adapter                                                                                                                               | `packages/voice/src/adapters/openrouter-decision.ts` (+ wire-shape test)                  |
+| **`decide()`**, `resolveUse`, per-owner resolution cache, in-process answer cache                                                             | `packages/decisions/src/decide.ts`, `cache.ts`                                            |
+| Use: passage scoring                                                                                                                          | `packages/decisions/src/passage-scoring.ts`                                               |
+| Manifest entry (optional, `enabled: true`, built uses `live`)                                                                                                   | `server/web/lib/system-manifest/manifest.ts`                                              |
+| Test button RPC + route                                                                                                                       | `server/web/lib/ai-worker-rpc.ts` `testDecision`, `app/api/ai-workers/[id]/test/decision` |
+| Model pool `decider` (output modality `decisions`; a chat model is rejected here and Jev is rejected in every text pool) + one template entry | `packages/client-types/src/model-pools.ts`, `model-pools-data.json`                       |
+| Pricing fallback rows                                                                                                                         | `packages/tracing/src/pricing.ts`                                                         |
+
+`@mantle/decisions` depends on db, api-keys, voice, tracing. Both `@mantle/tools`
+and `@mantle/runtime` depend on it (a tool cannot import runtime), which is why
+it is its own package.
+
+## 3. `decide()`
+
+```ts
+const outcome = await decide({
+  ownerId,
+  use: 'passage_scoring',
+  state: { question, passages: { p1: {...}, p2: {...} } },
+  questions: { p1: { type: 'score', instructions: '...', criteria: [...] }, ... },
+  summarize: (answers) => ({ would_drop: 3 }),   // extra trace meta, optional
+});
+if (!outcome) { /* run the old path */ }
+else if (outcome.mode === 'live') { /* act */ }
+```
+
+What one call does: resolve the owner's decider (worker + adapter + key,
+cached 30 s, negative results too, so a brain without the worker pays one
+query per half minute); read the use's switch; look the (use, model, state,
+questions) tuple up in an in-process LRU (500 entries, 10 min); otherwise open
+one `llm_call` trace step named `decide_<use>` and call the adapter with the
+worker's `timeout_ms` (1500, clamped to 200-5,000). Success: `recordChatUsage` (same meta keys as
+every LLM step, so `/debug` spend-by-model shows Jev with no special case),
+plus `meta.use`, `meta.mode`, `meta.decision_ms`, a compact `meta.answers`
+(`"technical@0.75"`, `"2.99@0.99"`, `0.96`) and anything `summarize` adds.
+Failure: `meta.failed`, the step is marked skipped (`decision_failed`, amber
+in `/traces`), the caller gets `null`.
+
+Circuit breaker (`breaker.ts`): after 3 failed decisions in a row for one
+worker, `decide()` returns `null` at once, with no call and no step, for 5
+minutes. A slow endpoint then costs 3 timeouts, not 1.5 s on every decision
+of every turn. A fan-out (`scoreInGroups`: many parallel requests for one
+decision) is ONE decision: it passes a `DecideBatch`, and the breaker hears
+one success when any group answered, one failure only when every group that
+went out failed. Before that, the fast groups' successes reset the count and
+a slow tail's timeouts then opened the breaker over one turn. The step that
+opens it on a single call carries `meta.breaker_opened: true`; a batch that
+opens it logs the warning instead. When the
+5 minutes end, one call goes through as a probe: success closes the breaker,
+failure keeps it open for another 5 minutes. Cache hits are still served
+while it is open. Per process, like the cache. In a shadow week read, a gap
+in `decide_*` steps after a `breaker_opened` step is the breaker, not a lack
+of traffic.
+
+A shadow week is read from these steps: per use, how many calls, cache hits,
+what the answers were, how many were under the floor, what it cost.
+
+## 4. Uses
+
+### `passage_scoring` (built; ships `live`)
+
+After hybrid search returns its passages, one request scores each 0-3 on
+"how well does this passage answer the question" (rubric in
+`PASSAGE_LEVELS`). Code drops passages under `threshold` (1.5) and orders the
+rest by score, ties in search order; passages past the per-request cap (25)
+stay, unscored, at the end.
+
+Wired at both passage sites:
+
+- `search_chunks` tool (`packages/tools/src/builtins-search.ts`): when the use
+  is on, the pool is `max(2×limit, 16)` capped at 25 instead of `limit`;
+  `live` returns the top `limit` after pruning and adds `relevance` to each
+  hit; `shadow` returns the first `limit` in search order (unchanged reply)
+  and writes `passage_scoring*` meta on the tool step.
+- Responder auto-context (`packages/runtime/src/agent/conversation.ts`): same
+  pool rule; `live` prunes + reorders before the existing `selectChunkHits`
+  budget cut; `shadow` leaves the list as it was.
+
+Spike (dev brain, 2026-09-21, 40 synthetic questions × 20 passages): right
+passage at rank 1 30% → 57%, MRR 0.41 → 0.63; dropping scores under 2.0 kept
+16-29% of passage text and every gold passage; one batched request ≈ 430 ms,
+≈ $0.0006 per search. Real questions are vaguer, so the shadow week measures
+the true gain before anyone flips `live`. Freshness is **not** in the score:
+a stale passage reads as a perfect answer; the supersede annotation stays in
+charge.
+
+### `delegation_hint` (built; ships `live`)
+
+Before a responder turn, one `choice` over the agent's `delegate_to` roster
+plus `none`, with each agent's description as the criterion (`remy` and
+`none` carry tightened contrastive wording). State: the message and the
+previous user message, and `open_surface: { kind, title }` when the user has
+something open. Skipped for messages under 8 words (3 when a surface is
+open), for surfaces that cannot delegate (team, forum), and when the roster
+is empty.
+
+`open_surface` (v2) is read off the note the web UI appends to a sent message
+("On screen right now … - page "Title" (node …)", jackdaw
+`buildContextPreamble`): `splitOnScreenNote` cuts the message at the note's
+markers (the same three jackdaw's own transcript view splits on), so
+`message` is what the user typed and the surface is a named field. No wire
+change: surfaces that send no note (Telegram, mobile) simply have no
+surface. The `none` criterion matches how the responder works today: it
+edits pages and tables itself (the open one included) and hands a specialist
+large jobs, work inside an app, and work on a specialist's own data source.
+The trace data carries `surface` (the kind) next to the pick.
+
+Re-run (a work brain, 2026-09-23, 130 web turns, 104 with an on-screen note): v2's
+state beat today's on exact match (67 vs 63) and correct `none` (37 vs 33),
+but hint precision stayed ~45% at 0.6 for every variant, because the labels
+are stale: the responder stopped delegating page edits on 2026-08-12, and
+the newest specialist only exists since 2026-09-03. **Do not go live on the old
+numbers**; the shadow week scores it against current behaviour.
+
+Wired in `assembleResponderTurn` (`packages/runtime/src/assistant/assemble-turn.ts`),
+so every delegating surface gets it through the same door; the web turn
+passes the previous user message, Telegram passes the message only.
+
+- `shadow`: the pick and confidence land on the `decide_delegation_hint`
+  step; the same trace shows what the responder then did (`invoke_agent`
+  steps), so the shadow week reads "hint given / right / wrong" per agent.
+- `live`: when the pick is not `none` and confidence ≥ `defer_below`, one
+  line joins the **volatile** system context: "Delegation hint: this message
+  looks like work for `pages` (confidence 84%). Use your own judgment…". It
+  is a hint. The tool loop's allowlist is still what delegation is checked
+  against, and the responder can ignore it.
+
+Spike (a work brain, 2026-09-22, 83 real turns): with that policy, 36 hints, 31
+right, 4 wrong (2 arguable), 1 on a turn the responder answered itself —
+86% precision, 296 ms, ~$0.00004 per turn. Jev said `none` on 15 of 30
+direct turns; the chat baseline delegated 29 of them. Most misses were short
+instructions about what the user had open, with the note still inside the
+message: the reason for v2.
+
+### `context_pruning` (built; ships `live`)
+
+Once per responder turn, after retrieval and the supersede pass, ONE request
+scores every injected item — facts, content hits, passages — 0-3 for "does
+this help answer the question" (`packages/decisions/src/context-pruning.ts`,
+wired in `loadConversationContext`). Code drops items under `threshold`
+(default **1.0**) and keeps the rest best-first; each block keeps a floor
+(2 facts, 1 hit, 2 passages); **preference facts are exempt**; history, the
+corpus map, digests and relations are never touched. When this use is on,
+the auto-context's separate `passage_scoring` call is skipped — the one
+request covers the passages too (the `search_chunks` tool keeps its own).
+
+- `shadow`: the `/debug/context` snapshot gains `pruning: { mode, threshold,
+wouldDrop: {facts, contentHits, chunkHits}, charsSaved, ms, cached }`.
+  Lists unchanged. A shadow week reads the cut per turn from there.
+- `live`: the lists are pruned before the prompt is built, and the snapshot's
+  `sent` / `dropped` rows move with them, so `/debug/context` shows what the
+  model really received.
+
+Spike (a work brain, 2026-09-22, 60 real turns, 1 524 items, dev-brain page
+29a6b411): the answer relied on **13%** of injected context (facts 9%, hits
+18%, passages 17%). Jev ranked a needed item above a not-needed one 82% of
+the time. Cut under 1.0: 51% of characters kept, 10% of needed items lost;
+under 1.5: 30% kept but 30% lost. A plain threshold beat every top-k mix.
+One request per turn: ~26 items, 356 ms, $0.0002. Those were 240-character
+snippets; production sends fuller text, so tighten only after a shadow week
+on full items.
+
+### `version_grouping` (built; ships `live`)
+
+Once per responder turn, after context pruning, in `loadConversationContext`
+(`packages/decisions/src/version-grouping.ts`). Stops two versions of one
+passage from both reaching the prompt. Two parts:
+
+- **Part A, code, no model.** A hit (content hit or passage) whose node is
+  superseded, and whose living successor is also in the pool, goes. The
+  supersede pass already resolved each stale hit to the living end of its
+  chain, so this is a set lookup. It counts even when the model call fails.
+- **Part B, the model, on what code cannot resolve.** Passage pairs from
+  DIFFERENT nodes, not linked by `superseded_by`, with embedding similarity
+  ≥ 0.75 (`chunkPairSimilarities` in `@mantle/search`: one query, the
+  vectors stay in Postgres), at most 60 per request. One noul per pair:
+  "are these two versions of the same passage", with the contrastive
+  criteria from the spike. A direct yes at `threshold` (default **0.9**)
+  drops the LOWER-RANKED passage. Never chained (a dropped passage causes no
+  further drop); two sections of one node are never compared; the model
+  never picks the newer copy (search rank keeps salience and recency).
+
+- `shadow`: the `/debug/context` snapshot gains `versionGrouping: { mode,
+threshold, wouldDrop: {superseded, versions}, pairs, ms, cached }`.
+- `live`: the lists shrink before the prompt is built; the snapshot's
+  `sent` / `dropped` rows move with them.
+
+Spike (dev, 2026-09-22, dev-brain page b564522b): 30 real superseded pairs,
+26 search pools, 47 stale passages. Part A alone: 0 stale passages above
+their successor, 0 other drops. The wording above: precision 1.00 at 0.8 and
+0.9 on 33 labelled negatives (the older "same fact about the same subject"
+wording grouped 14 of 33 at 0.5); at 0.9 every grouping in real pools was a
+genuine unlinked copy. ~400 ms, ~$0.0005 per request.
+
+### `fact_add_prefilter` (built; ships `live`)
+
+On the extractor's slow path (a candidate fact with close neighbours,
+`server/api/src/agent/extract/facts.ts`), before the chat classifier: one
+four-way choice, add / update / delete / noop
+(`packages/decisions/src/fact-add-prefilter.ts`). The `add` and `update`
+criteria spell out the multi-valued case ("a project uses many line
+classes") because that is where the spike saw Jev go wrong.
+
+- The ONE rule: a Jev `add` at or above the gate (the use's `threshold`, else
+  the worker's `act_alone_at`, 0.9) skips the chat call in `live`. Every
+  other answer (any update / delete / noop, or a low-confidence add) goes to
+  the chat classifier as today. Jev never retires or rewrites a fact.
+- Evidence: a `fact_add_prefilter_verdict` step in the `extractor_run` trace
+  per slow-path fact: `meta.jev` (`add@0.93`), `gate`, `would_skip`, `chat`
+  (the classifier's decision, null on a live skip) and `agree`. The shadow
+  week reads: of the steps with `would_skip: true`, how many have `chat: ADD`
+  (target ≥ 95%).
+
+Spike (a work brain, 2026-09-21, 60 real slow-path cases, dev-brain page
+f28a25cf): Jev ADD at ≥ 0.9 on 22 of 60 cases (37%), the chat model also
+said ADD on 22 of 22. Jev's UPDATE was wrong once at 0.99, so no confidence
+makes its update / delete safe. The shipped wording is new (the spike's exact
+round-2 text was not kept); the shadow week is its test.
+
+### `history_recall` (built; ships `live`)
+
+The responder's history is the last `history_limit` messages; a message just
+past that line drops out even when the new message returns to it. Once per
+responder turn, the exchanges OLDER than `history_limit` (up to 50 messages
+back; a whole exchange = user message + reply, as the history renders it) are
+scored 0-3 for "does a reply to this message need it"
+(`packages/decisions/src/history-recall.ts`, wired in
+`loadConversationContext`). The recent part is never touched. Groups of 10
+exchanges (5,000 chars each, plus the most recent exchange as context) go out
+as separate requests in parallel; the rows are fetched and scored from the TOP
+of `loadConversationContext`, so the ~0.5 s overlaps the embedding and
+retrieval instead of adding to the turn. Threshold default **1.0**.
+
+- `shadow`: the `/debug/context` snapshot gains `historyRecall: { mode,
+threshold, exchanges: [{back, score, chars}], wouldAdd, chars, calls, failed,
+skipped, ms, cached }` (`ms` is the fan-out's wall time, timeouts included;
+`skipped` counts groups the open breaker held back). History unchanged.
+- `live`: exchanges at the threshold rejoin the history before the recent
+  part, in time order; the first turn of each carries `[Recalled from earlier
+  in this conversation, N messages back, …]` so the model knows the messages
+  between are not shown. A failed group leaves its exchanges out (today's
+  behaviour). The recent part is cut by row count, so it can open on a reply
+  whose question is older: that question then comes along, unmarked, right
+  before it, and same-role neighbours where the recalled part meets the
+  recent part are joined, so the model never sees two replies (or two user
+  messages) in a row.
+- Small talk ("thanks", "ok") skips the use, like `journal_recall`.
+
+The intended pairing is a SMALLER `history_limit` plus this use: the spike's
+winner was the last 20 messages + Jev over the last 50.
+
+Spike 12 (a work brain, 2026-09-23, 50 real turns, Sonnet 5 answer key with full
+text, dev-brain page c8c2256f): today's last 30 missed a needed exchange on 4
+turns, 3 of them a return to a topic after 8 h to 10 days (Jev scored those
+2.2 to 2.85). Last 20 + Jev ≥ 1.0 missed on 3 turns with 78% of the tokens;
+11 of the 18 needed exchanges outside the last 20 came back (12 at 0.5).
+Losers: one chat-model context worker over all 50 (flash-lite 14 misses,
+flash 12), and a walk back in blocks of 10 until the topic ends (13 to 17;
+the walk stopped after one block on 36 of 50 turns, and it stops at the topic
+in between on a return). The money is small there (history is ~12% of
+responder spend); this use is about the returns, not the cost.
+
+### `journal_recall` (built; ships `live`)
+
+Journal tier 2 (journal.md §4a) picks context entries, lessons and
+expectations by embedding similarity. For the agent lane (lessons,
+expectations: the RULES an agent learned) that fails: a rule ("the user
+requires the assistant to log edits in the change log…") and a request ("yes,
+do the header next") do not embed alike, and a follow-up message names no
+topic. With this use on, Jev scores every agent-lane rule 0-3 for "must a
+reply to this message follow it" (`packages/decisions/src/journal-recall.ts`),
+in parallel groups of 40 with the previous exchange as context, started at the
+top of `loadConversationContext` beside `history_recall`. The rules are the
+agent's own lessons and expectations (plus tier 1 overflow: always-on entries
+that did not fit), newest first, up to 1,000. Threshold default **1.5**. The
+shared engine of both uses is `group-scoring.ts`: it caps the message each
+group carries at 3,000 chars and counts the fan-out as ONE decision for the
+breaker (`DecideBatch`), so a slow tail in one turn cannot switch the decider
+off.
+
+- `shadow`: tier 2 keeps its similarity pick; `snapshot.journal.recall`
+  records what Jev WOULD send (`picked: [{nodeId, score, chars}]`, `rules`,
+  `scored`, `calls`, `failed`, `skipped`, `ms`), picked from the same
+  candidate load as the real pick.
+- `live`: the rules Jev scored are picked by score (≥ threshold, best first,
+  ≤ 25 rules, ≤ 6,000 chars, their own budget beside the 3,000 for the rest);
+  a rule Jev did not score (its group failed) falls back to similarity, so a
+  failed group costs nothing a turn without Jev would have. User-lane context
+  entries and the tier 3 gap stay on similarity. Live only has an effect
+  when the Journal tiers are live too (the default since 2026-09-24; only an
+  agent with `notes_target = 'persona'` can have them in shadow, where
+  nothing reaches the prompt).
+
+Spike 13 (a work brain, 2026-09-23, 435 topic rules from the owner assistant's persona notes, 30
+real turns, Sonnet 5 key, dev-brain page 9f57fa46): similarity found 15 to
+49% of the rules a turn needed; Jev 84% at 1.5 (5k chars a turn) and 89% at
+1.0 (8k), against 91k chars when every rule rides every turn. Median 0.93 s
+with groups of 60 (hence 40 here), $0.0037 a turn.
+
+### `rule_reconcile` (built; ships `live`)
+
+When an agent learns a rule (the reflector or `update_persona`, in Journal
+mode), is a rule it already holds now a copy or out of date? Each new rule is
+paired with the agent's close learned rules (embedding cosine of the rule
+texts ≥ **0.70**, at most 5), and Jev answers two nouls per (older, newer)
+pair (`packages/decisions/src/rule-reconcile.ts`, 20 pairs per request): "do
+they state the same rule?" and "does the newer one change or reverse the
+older, so that following the older as written would now be wrong?". Code
+names which rule is newer (dates); Jev never picks it. When either answer is
+at or above the threshold (default **0.8**), the OLDER rule is superseded by
+the new one (`packages/content/src/rule-reconcile.ts`): reason `corrected`
+when the change answer cleared it, else `version`. Only rules THIS agent
+learned are candidates; what an agent records for the user is never
+touched. The wiring is `ruleReconcilerFor` (`packages/tools/src/rule-reconciler.ts`).
+
+- `shadow`: nothing is retired. The reflector's `append_journal` step and the
+  `update_persona` tool step carry `rule_reconcile` meta with `would_retire:
+  [{older, newer, same, replaces}]`.
+- `live`: the older rules are superseded (reversible; hidden from turns,
+  kept for audit), listed as `retired` in the same meta; `update_persona`
+  also tells the model which rules it retired. A reflector note the decider
+  matched skips the token-Jaccard backstop: it replaces the old rule instead
+  of being dropped, so a correction that reads like a copy lands.
+- Cleanup of what is already there: the maintenance task
+  `journal-rules-reconcile` asks the same about every close pair of the
+  agent's existing rules and writes the plan to a review page; `--apply
+  --page=<id>` applies it (journal.md §4c). It needs the use enabled in
+  either mode: there the review page is the gate.
+
+Spike 14 (two work brains, 2026-09-24, 387 real pairs of learned rules at
+cosine ≥ 0.70, Sonnet 5 answer key with four labels, every retire hand
+checked; dev-brain page d58e4ed3). The reframe that makes it safe: for
+"same", "extends" (the newer adds detail) AND "replaces", the right action is
+the same, keep the newer and retire the older; only "different" is harmed.
+At 0.8 on either answer: 102 retires, **0 harmful**; 0.7 let one or two
+through. "Same" alone reads as "same rule", its extra yeses were "extends"
+(the newer rule covers the older, now and then minus a small detail).
+"Replaces" was right 8 of 8 at 0.8 and found live contradictions the notes
+had carried side by side for weeks. A 4-way choice was no better. Jev cost
+$0.01 for all 387 pairs, ~330-400 ms per 20-pair request.
+
+### Declared, not built
+
+- `model_routing`: per-request complexity score + needs-tools / needs-code /
+  sensitive nouls + language choice; code picks a route from the model pool;
+  short conversational replies skip the router; under the floor the current
+  route stays. Mantle owns the adapter call, so it can switch routes for real
+  (shadow = the verdict is only a trace note).
+
+## 5. Spike results (what decided the order)
+
+- **Fact reconcile `ADD/UPDATE/DELETE/NOOP`** (60 real cases): Jev 3× faster,
+  4.3× cheaper, but only ~70% agreement with the chat classifier, and on the
+  adjudicated disagreements the chat model was right 10-4. Jev reads a
+  multi-valued attribute ("project uses line class A" vs "… B") as a conflict
+  and says `DELETE` / `UPDATE`, once at confidence 0.99. **Not a replacement.**
+- **Stale vs fresh from text alone** (60 old/new fact pairs): 68% right (chat
+  60%). Superseded passages scored 2.5-2.9 for relevance and ~0.03 on "says it
+  is outdated". **Text cannot tell Jev what is current; code has the dates.**
+- **Passage scoring:** see above. **Build first.**
+
+Full write-ups: dev-brain pages `cdf6a97c-5b84-485e-8698-9c266614318c`
+(study + integration rules), `f28a25cf-8911-43a3-a9e9-f10e40e90a38` (spike 1),
+`bb01f5dd-e0e9-4c22-b712-1ee81dacc560` (spike 2 + switch design).
+
+## 6. Adding a use
+
+1. Add the name to `DecisionUse` (`packages/db/src/schema/ai-workers.ts`).
+2. Write the use beside `passage-scoring.ts`: build a focused state, atomic
+   questions with contrastive criteria, call `decide()`, and give the caller a
+   **pure** apply function it can run in `live` and merely count in `shadow`.
+3. At the call site: `decisionUseEnabled()` if the pool size depends on it,
+   `null` → old path, honour `outcome.mode`.
+4. Add the use to the manifest `params.uses` (`{ enabled: false, mode:
+'shadow' }` while it is measured, `live` once the fleet runs it), and to the
+jackdaw worker form under "Experimental".
+5. Check the question against the weak-spot list (rule 6) and make sure no
+   answer alone can retire, merge or overwrite anything.
+6. Document it here.
+
+## 7. Operating it
+
+- **Turn on (existing brain):** Settings → AI Workers → Decider: enable the
+  worker, then enable the uses in `params.uses` (a fresh brain has them all
+  live already). Until the jackdaw form ships the
+  toggles, edit `params` as JSON. The resolution cache means a flip takes up
+  to 30 s to reach a running process.
+- **Read the shadow week.** Every use leaves a `decide_<use>` step in the
+  turn's trace, with its cost. On the web, MCP sim, forum and team surfaces
+  the context load and the turn assembly run BEFORE the trace opens (the
+  trace's subject is the inbound row, written only after the load so history
+  cannot contain the new message). Those steps are held in a trace prelude
+  (`createTracePrelude` / `withTracePrelude` in `@mantle/tracing`) and
+  written as the trace's first steps, marked `meta.prelude: true`, with their
+  tokens and cost added to the trace total. Telegram and the runs resume
+  already run inside their trace. Per use, also read:
+  - `passage_scoring`: the `decide_passage_scoring` step inside each
+    `search_chunks` tool call, plus the tool step's `passage_scoring_*` meta.
+  - `context_pruning`: the `load_context` step's output →
+    `snapshot.pruning` (`mode`, `threshold`, `wouldDrop`, `charsSaved`, `ms`).
+  - `delegation_hint`: the turn's `traces.data.delegation_hint` (`pick`,
+    `confidence`, `mode`), read against the same trace's `invoke_agent` steps.
+  - `history_recall`: the `load_context` step's output →
+    `snapshot.historyRecall` (`exchanges[].score`, `wouldAdd`, `failed`, `ms`).
+  - `journal_recall`: the `load_context` step's output →
+    `snapshot.journal.recall` (`picked`, `scored`, `failed`, `ms`), beside
+    `snapshot.journal.picked` (the similarity pick) and `.tier1`.
+  - `rule_reconcile`: the reflector's `append_journal` step and the
+    `update_persona` tool step → `meta.rule_reconcile` (`mode`, `pairs`,
+    `would_retire` or `retired`, `failed`, `ms`).
+  - Shadow waits: both recall uses are awaited in shadow too (the snapshot
+    needs the scores), but they start at the top of the turn and are bounded
+    by the worker's `timeout_ms` (clamped 0.2-5 s), so the most a shadow use
+    adds is the part of that bound retrieval does not already cover.
+  - Cost: `/api/debug/spend` splits each decision model's row by use
+    (`modelSpend[].uses`: calls, failed, cost, tokens in, mean ms). Cache hits
+    make no call and leave no step. A failed call is logged under the model
+    id the worker asked for (`~typesafe/jev-latest`), not the served one.
+- **Go live:** set `mode: 'live'` on the one use. Everything else stays shadow.
+- **Kill switch:** disable the worker. Every call site is back to today's
+  behaviour within 30 s, with no restart.
+- **Cost guard:** the decider only rides on calls that happen anyway (a search,
+  a turn, a learned rule being written). It adds no trigger, cron or sweep,
+  per the cost-safety rule; the rule cleanup is a manual maintenance task.

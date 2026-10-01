@@ -19,7 +19,7 @@ import {
 } from '@mantle/files';
 import { recordSkippedTrace, step } from '@mantle/tracing';
 import { documentWorkerPrefersNative } from '@mantle/runtime/agent';
-import { parseFormulaSpec, formulaToText, isRecallTreePage } from '@mantle/content';
+import { parseFormulaSpec, formulaToText } from '@mantle/content';
 import { isHollowFilenameBody } from '../extractor-parse';
 import { cleanText } from './text';
 import { loadFileBytes, tryUnlockPdf } from './file-bytes';
@@ -87,7 +87,7 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
   // The description carries the real semantic payload ("Modular sells aluminium
   // profiles, used for printer projects") so the extractor produces useful
   // facts + entities on the contact's identity. Keeping the structured fields
-  // in the body too means search_nodes(q='@modular.co.za') still hits.
+  // in the body too means search_nodes(q='@example.co.za') still hits.
   if (node.type === 'contact') {
     const d = (node.data ?? {}) as Record<string, unknown>;
     const company = typeof d.company === 'string' ? d.company : '';
@@ -153,20 +153,22 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
     ];
     return lines.join('\n');
   }
+  // ─── Recall maps (v2) — metadata only ────────────────────────────────
+  // A `recall` node is a memory MAP; its cards are rows in recall_nodes and
+  // are served through the recall tools. Indexing them here would leak
+  // prompt and map text into general search and team-turn retrieval, exactly
+  // what the design excludes — same posture as secrets. Title and enter-when
+  // only.
+  if (node.type === 'recall') {
+    const d = (node.data ?? {}) as Record<string, unknown>;
+    const enterWhen = typeof d.enterWhen === 'string' ? d.enterWhen.trim() : '';
+    const when = enterWhen ? `\n\nEnter when: ${enterWhen}` : '';
+    return `${node.title}\n\nRecall map — content served via the recall tools.${when}`.trim();
+  }
   // ─── Pages — derived plaintext from the TipTap sidecar ───────────────
   // The ProseMirror doc lives in `pages.doc`; `pages.doc_text` is its
   // flattened plaintext, computed on every save in @mantle/content.
   if (node.type === 'page') {
-    // ─── Recall maps — metadata only ───────────────────────────────────
-    // A page inside a `recall`-tagged tree is SERVED through the compiled
-    // recall_nodes rows (docs/recall.md); indexing its body here would leak
-    // prompt/map text into general search and team-turn retrieval, exactly
-    // what the design excludes. Title + tags only — same posture as secrets.
-    if (await isRecallTreePage(node.ownerId, node.id)) {
-      const tagLine =
-        Array.isArray(node.tags) && node.tags.length > 0 ? `\n\nTags: ${node.tags.join(', ')}` : '';
-      return `${node.title}\n\nRecall map page — content served via the recall tools.${tagLine}`.trim();
-    }
     const [row] = await db
       .select({ docText: pages.docText })
       .from(pages)

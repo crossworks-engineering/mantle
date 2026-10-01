@@ -322,6 +322,28 @@ an agent to one login. Moving parts:
 - **Releasing never deletes.** `DELETE /api/users/[id]/agent` only clears the
   binding; the agent and its archive stay, per the reasoning in migration 0127.
 
+## 6b. Deleting an agent: keep or delete its conversation
+
+`DELETE /api/agents/[id]?conversation=keep|delete` (`deleteAgent`,
+`server/web/lib/agents.ts`). The stream is per agent, so once the agent row is
+gone no UI can open its thread; the owner decides what happens to it.
+
+- **`keep`** (the default, and what a bare `DELETE` does): the 0127 behaviour.
+  `assistant_messages.agent_id` goes NULL by the FK's `ON DELETE SET NULL`; the
+  turns stay replayable (`replay_window` reads web turns by owner) and the
+  agent's digests stay in `find_window` and search.
+- **`delete`**: in one transaction, the agent's `assistant_messages` rows and
+  its `conversation-digest` notes (matched on `data.agent_id`, not the
+  `agent:<slug>` tag, which a later agent can reuse) are removed, then the
+  agent. Nothing agent-less is left for replay or search to return.
+- Either way, read cursors and `channels` rows CASCADE, and traces stay (the
+  audit log). Telegram transport rows (`telegram_messages` and their
+  `telegram_message` nodes) are ingested brain content, like emails, and are
+  not touched; `replay_window` with `surface='telegram'` still reads them.
+- The response is `{ ok, conversation, deletedMessages, deletedDigests }`. An
+  unknown `conversation` value is a 400 and deletes nothing.
+- Pinned by `server/web/app/api/agents/[id]/agent-delete.db.test.ts`.
+
 ## 7. Risks & call-outs
 
 - **Multiple Telegram chats on one agent interleave** in the single stream. For the

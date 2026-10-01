@@ -53,6 +53,7 @@ export { isValidRank, rankBetween, ranksAfter, RANK_RE } from './rank';
 
 export {
   COMMENT_BODY_MAX,
+  COMMENT_PAGE_SIZE,
   COMMENTS_CHANGED_CHANNEL,
   addNodeComment,
   deleteNodeComment,
@@ -63,9 +64,12 @@ export {
   toNodeCommentDto,
   updateNodeComment,
   type CommentAuthor,
+  type CommentPage,
+  type CommentPageQuery,
   type CommentViewer,
   type NodeComment,
   type NodeCommentAuthorKind,
+  type NodeCommentScope,
 } from './node-comments';
 
 export {
@@ -102,6 +106,7 @@ export {
   updateContact,
   // Gate + activity helpers used by the send path
   contactEmails,
+  loginEmails,
   findContactsByEmails,
   recordContactSent,
   type ContactWriteResult,
@@ -152,6 +157,7 @@ export {
   listJournalTags,
   getJournal,
   createJournal,
+  ownerHasAgent,
   updateJournal,
   deleteJournal,
   resolveGapEntry,

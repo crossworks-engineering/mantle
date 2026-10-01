@@ -42,6 +42,8 @@ import {
   resolveChatKey,
   resolveChatRoutes,
 } from '@mantle/runtime/agent';
+import { knownJournalEntries, notesTargetOf, writeLearnedEntries } from '@mantle/content';
+import { reconcileMeta, ruleReconcilerFor } from '@mantle/tools';
 import { CONVERSATIONAL_ROLES, rankActiveAgents } from './agent-select.js';
 
 /** How many recent turns the reflector reviews per agent per run. */
@@ -53,7 +55,7 @@ const REFLECTION_WINDOW = 50;
  *  rest are picked up on the next tick. Most-active-first. */
 const MAX_AGENTS_PER_RUN = 5;
 
-export const DEFAULT_REFLECTOR_PROMPT = `You are a reflector for a personal AI assistant. You will be given a transcript of recent exchanges between the user and the assistant, plus the assistant's current persona_notes (preferences, relationship notes, corrections already learned).
+export const DEFAULT_REFLECTOR_PROMPT = `You are a reflector for a personal AI assistant. You will be given a transcript of recent exchanges between the user and the assistant, plus the notes the assistant has already learned (preferences, relationship notes, corrections).
 
 Your job: spot NEW signals worth remembering, AND ONLY new ones.
 
@@ -74,7 +76,7 @@ Output STRICT JSON, no markdown:
 }
 
 Rules:
-- Skip anything already covered by an existing persona_note (read the list before deciding).
+- Skip anything already covered by an existing note (read the list before deciding).
 - Be specific — "the user prefers terse, no-bullet replies" beats "user likes brevity".
 - Don't invent — only return notes grounded in the transcript.
 - Return an EMPTY new_notes array if nothing notable surfaces.
@@ -134,8 +136,24 @@ type ReflectorOutput = {
   new_notes: Array<{
     kind: 'style' | 'relationship' | 'correction';
     content: string;
+    /** Journal mode only (notes_target = 'journal'): does the note apply to
+     *  most conversations, or to one task or topic. */
+    scope?: 'general' | 'topic';
   }>;
 };
+
+/** One known entry as the reflector reads it: enough to recognise a rule it
+ *  already has, not the whole of a long entry (the whole Journal once went
+ *  in, ~50x the persona-notes input). */
+function flattenNote(body: string, max = 240): string {
+  const flat = body.replace(/\s+/g, ' ').trim();
+  return flat.length > max ? `${flat.slice(0, max - 1).trimEnd()}…` : flat;
+}
+
+/** Added to the reflector's input when the agent learns into the Journal:
+ *  the one extra field the Journal needs (always on vs picked per turn). */
+const JOURNAL_SCOPE_INSTRUCTION = `
+This agent keeps what it learns in the Journal. For EACH new note also give "scope": "general" when it applies to most conversations (tone, format, how to address the user, working habits), or "topic" when it only applies to one task, document, app, dataset or calculation. Example: {"kind": "style", "content": "…", "scope": "topic"}.`;
 
 function parseReflectorOutput(raw: string): ReflectorOutput {
   const cleaned = raw
@@ -154,6 +172,11 @@ function parseReflectorOutput(raw: string): ReflectorOutput {
             n.content.trim().length > 0 &&
             ['style', 'relationship', 'correction'].includes(n.kind),
         )
+        .map((n) => ({
+          kind: n.kind,
+          content: n.content,
+          ...(n.scope === 'general' || n.scope === 'topic' ? { scope: n.scope } : {}),
+        }))
         .slice(0, 10), // hard cap per run
     };
   } catch {
@@ -291,18 +314,27 @@ async function reflectOnAgent(
         })
         .join('\n');
 
+      // memory_config.notes_target = 'journal': the agent learns into the
+      // Journal (its persona notes were moved there), so "already known" is
+      // the Journal, and new notes become Journal entries below.
+      const target = notesTargetOf(agent.memoryConfig);
       const existingNotes = (agent.personaNotes ?? []) as PersonaNote[];
       // Dedup against ACTIVE notes only — a note the user explicitly
       // retired via update_persona shouldn't read as "already covered"
       // (which would stop the reflector re-learning) nor be shown back
       // to the model as current guidance.
       const liveNotes = activeNotes(existingNotes);
-      const existingNotesText =
-        liveNotes.length === 0
-          ? '(no existing notes)'
-          : liveNotes.map((n) => `- (${n.kind}) ${n.content}`).join('\n');
+      const known =
+        target === 'journal'
+          ? (await knownJournalEntries(ownerId, agent.slug)).map(
+              (e) => `- (${e.kind}) ${flattenNote(e.body)}`,
+            )
+          : liveNotes.map((n) => `- (${n.kind}) ${n.content}`);
+      const existingNotesText = known.length === 0 ? '(no existing notes)' : known.join('\n');
 
-      const userPayload = `Existing persona_notes:\n${existingNotesText}\n\nRecent transcript (${turns.length} turns):\n${transcript}`;
+      const userPayload =
+        `Existing ${target === 'journal' ? 'Journal entries' : 'persona_notes'}:\n${existingNotesText}\n\nRecent transcript (${turns.length} turns):\n${transcript}` +
+        (target === 'journal' ? `\n${JOURNAL_SCOPE_INSTRUCTION}` : '');
 
       const params = (reflector.params ?? {}) as ReflectorParams;
       const routes = resolveChatRoutes(reflector);
@@ -352,6 +384,35 @@ async function reflectOnAgent(
       );
 
       const parsed = parseReflectorOutput(result.text);
+
+      if (target === 'journal') {
+        const written = await step(
+          {
+            name: 'append_journal',
+            kind: 'db_write',
+            input: { candidates: parsed.new_notes.length },
+          },
+          async (h) => {
+            const { written: w, reconcile } = await writeLearnedEntries(
+              ownerId,
+              agent.slug,
+              parsed.new_notes,
+              'reflector',
+              { reconcile: ruleReconcilerFor(ownerId) },
+            );
+            h.setMeta({
+              written: w.length,
+              kinds: w.map((e) => e.kind),
+              ...(reconcile ? { rule_reconcile: reconcileMeta(reconcile) } : {}),
+            });
+            return w;
+          },
+        );
+        console.log(
+          `[reflector]   → ${agent.slug}: wrote ${written.length} Journal entr${written.length === 1 ? 'y' : 'ies'} (${parsed.new_notes.length} candidate(s))`,
+        );
+        return;
+      }
 
       // Backstop dedup: the prompt asks for only-new signals, but the reflector
       // still re-learns the same trait worded differently across runs. Drop notes

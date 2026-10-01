@@ -5,6 +5,7 @@ import {
   buildHistory,
   mergePreferences,
   patchSuperseded,
+  promotePassages,
   selectChunkHits,
   selectContentHits,
   selectFacts,
@@ -361,5 +362,82 @@ describe('buildHistory', () => {
     expect(history).toEqual([{ role: 'user', text: 'just talking' }]);
     expect(toolRecords).toBe(0);
     expect(mediaRecords).toBe(0);
+  });
+});
+
+describe('promotePassages', () => {
+  const hit = (nodeId: string, distance = 0.3): ChunkSearchHit => ({
+    nodeId,
+    nodeTitle: nodeId,
+    nodeType: 'note',
+    headingPath: null,
+    text: `text of ${nodeId}`,
+    distance,
+  });
+  const selected = ['p1', 'p2', 'p3'].map((id) => hit(id));
+
+  it('fills free slots first', () => {
+    const out = promotePassages(selected, [{ nodeIds: ['h1'], max: 2 }], [hit('h1')], 4);
+    expect(out.map((x) => x.nodeId)).toEqual(['p1', 'p2', 'p3', 'h1']);
+  });
+
+  it('replaces the weakest passages when the cut is full, holding the budget', () => {
+    const out = promotePassages(
+      selected,
+      [{ nodeIds: ['h1', 'h2'], max: 2 }],
+      [hit('h1'), hit('h2')],
+      3,
+    );
+    expect(out.map((x) => x.nodeId)).toEqual(['p1', 'h1', 'h2']);
+  });
+
+  it('skips a node already passaged, one past the cutoff, and one with no chunk', () => {
+    const out = promotePassages(
+      selected,
+      [{ nodeIds: ['p2', 'far', 'none', 'h1'], max: 5 }],
+      [hit('p2'), hit('far', 0.75), hit('h1')],
+      3,
+    );
+    expect(out.map((x) => x.nodeId)).toEqual(['p1', 'p2', 'h1']);
+  });
+
+  it('caps each source on its own, in source order, without double-counting a node', () => {
+    const best = ['h1', 'h2', 'f1', 'f2'].map((id) => hit(id));
+    const out = promotePassages(
+      [],
+      [
+        { nodeIds: ['h1', 'h2'], max: 1 },
+        { nodeIds: ['h1', 'f1', 'f2'], max: 1 },
+      ],
+      best,
+      8,
+    );
+    expect(out.map((x) => x.nodeId)).toEqual(['h1', 'f1']);
+  });
+
+  it('lets a trusted note in looser than the 0.65 passage cutoff, but not open', () => {
+    const out = promotePassages(
+      [],
+      [{ nodeIds: ['a', 'b'], max: 2 }],
+      [hit('a', 0.7), hit('b', 0.9)],
+      8,
+    );
+    expect(out.map((x) => x.nodeId)).toEqual(['a']);
+  });
+
+  it('runs inside selectChunkHits: the cut first, then promotion within chunk_limit', () => {
+    const pool = ['p1', 'p2', 'p3'].map((id) => hit(id));
+    const { hits, sent } = selectChunkHits([...pool, hit('weak', 0.7)], 3, {
+      sources: [{ nodeIds: ['f1'], max: 3 }],
+      best: [hit('f1', 0.68)],
+    });
+    expect(hits.map((x) => x.nodeId)).toEqual(['p1', 'p2', 'f1']);
+    expect(sent.map((x) => x.nodeId)).toEqual(['p1', 'p2', 'f1']);
+  });
+
+  it('does nothing with no sources or zero caps', () => {
+    expect(promotePassages(selected, [{ nodeIds: ['h1'], max: 0 }], [hit('h1')], 3)).toEqual(
+      selected,
+    );
   });
 });

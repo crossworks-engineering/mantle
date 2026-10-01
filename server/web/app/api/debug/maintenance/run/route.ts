@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import { getOwnerOr401 } from '@/lib/auth';
 import { getTask } from '@/lib/maintenance/registry';
-import { planRun } from '@/lib/maintenance/run-args';
+import { planRun, runEnv } from '@/lib/maintenance/run-args';
 import { getRun, isRunning, startRun } from '@/lib/maintenance/run-store';
 import { firstIssue } from '@/lib/zod-issue';
 
@@ -15,6 +15,7 @@ const Body = z.object({
   apply: z.boolean(),
   confirmSpend: z.boolean().optional(),
   forceRetired: z.boolean().optional(),
+  args: z.record(z.string(), z.string().max(200)).optional(),
 });
 
 export async function GET() {
@@ -38,7 +39,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: `unknown task "${parsed.data.slug}"` }, { status: 404 });
   }
 
-  const plan = planRun(task, parsed.data, process.env);
+  const env = runEnv(process.env, user.id);
+  const plan = planRun(task, parsed.data, env);
   if (!plan.ok) {
     return NextResponse.json({ error: plan.error }, { status: plan.status });
   }
@@ -50,7 +52,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const started = startRun(task, plan.args, plan.live);
+  const started = startRun(task, plan.args, plan.live, env);
   if (!started.ok) {
     return NextResponse.json({ error: started.error }, { status: 409 });
   }

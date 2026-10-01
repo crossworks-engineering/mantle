@@ -2,9 +2,10 @@
 // @mantle/crypto (AES-256-GCM under the master key); subscriptions hold the
 // relay's routing token + the device's public key.
 
-import { and, eq } from 'drizzle-orm';
-import { db, pushInstance, pushPrefs, pushSubscriptions } from '@mantle/db';
+import { and, eq, isNull } from 'drizzle-orm';
+import { authUsers, db, pushInstance, pushPrefs, pushSubscriptions } from '@mantle/db';
 import { open, seal } from '@mantle/crypto';
+import { relayDeleteDevice } from './relay-client';
 
 export interface PushInstanceSecret {
   instanceToken: string;
@@ -79,8 +80,36 @@ export async function listSubscriptions(ownerId: string): Promise<DeviceRow[]> {
   return rows as DeviceRow[];
 }
 
+/**
+ * The devices of ACTIVE ADMIN logins only (the "needs you" push: what waits
+ * for an admin is never a member's business). Fails closed: a device with no
+ * login on record, or whose login is a member or deactivated, is left out.
+ */
+export async function listAdminSubscriptions(ownerId: string): Promise<DeviceRow[]> {
+  const rows = await db
+    .select({
+      id: pushSubscriptions.id,
+      routingToken: pushSubscriptions.routingToken,
+      publicKey: pushSubscriptions.publicKey,
+      platform: pushSubscriptions.platform,
+      label: pushSubscriptions.label,
+    })
+    .from(pushSubscriptions)
+    .innerJoin(authUsers, eq(authUsers.id, pushSubscriptions.loginId))
+    .where(
+      and(
+        eq(pushSubscriptions.ownerId, ownerId),
+        eq(authUsers.role, 'admin'),
+        isNull(authUsers.disabledAt),
+      ),
+    );
+  return rows as DeviceRow[];
+}
+
 export async function insertSubscription(args: {
   ownerId: string;
+  /** The login that enrolled the device (0173): its lockout unpairs it. */
+  loginId: string;
   routingToken: string;
   publicKey: string;
   platform: 'ios' | 'android';
@@ -91,6 +120,7 @@ export async function insertSubscription(args: {
     .insert(pushSubscriptions)
     .values({
       ownerId: args.ownerId,
+      loginId: args.loginId,
       routingToken: args.routingToken,
       publicKey: args.publicKey,
       platform: args.platform,
@@ -117,6 +147,34 @@ export async function deleteAllSubscriptions(ownerId: string): Promise<string[]>
     .where(eq(pushSubscriptions.ownerId, ownerId))
     .returning({ routingToken: pushSubscriptions.routingToken });
   return rows.map((r) => r.routingToken);
+}
+
+type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** Delete every device one LOGIN enrolled (its lockout, or just before the
+ *  login is deleted, where the FK cascade alone would not tell the relay).
+ *  Returns their routing tokens for {@link forgetRelayDevices}. */
+export async function deleteLoginSubscriptions(
+  loginId: string,
+  exec: Executor = db,
+): Promise<string[]> {
+  const rows = await exec
+    .delete(pushSubscriptions)
+    .where(eq(pushSubscriptions.loginId, loginId))
+    .returning({ routingToken: pushSubscriptions.routingToken });
+  return rows.map((r) => r.routingToken);
+}
+
+/** Best-effort: tell the relay to drop these devices, as the single unpair
+ *  route does. Fire and forget; the local rows are already gone, so a device
+ *  the relay keeps can no longer be addressed by this brain anyway. */
+export async function forgetRelayDevices(routingTokens: string[]): Promise<void> {
+  if (routingTokens.length === 0) return;
+  const instance = await getPushInstance();
+  if (!instance) return;
+  for (const token of routingTokens) {
+    void relayDeleteDevice(instance.relayUrl, instance.instanceToken, token);
+  }
 }
 
 /** Drop a device by routing token (worker cleanup on a 410 from the relay). */

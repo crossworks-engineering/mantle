@@ -6,7 +6,7 @@
  *
  * Bundled by scripts/build-share-runtime.ts (esbuild) into
  * public/share-runtime/islands.js and loaded as a module script by the /s
- * template. Client-only mount (no SSR hydration): these three were 'use
+ * template. Client-only mount (no SSR hydration): these were 'use
  * client' components under Next too, and none of them paints meaningful
  * static content.
  */
@@ -14,7 +14,6 @@ import { createRoot } from 'react-dom/client';
 import { AppPresenter } from '@mantle/share-ui/app-presenter';
 import { TablePresenter } from '@mantle/share-ui/table-presenter';
 import { FormulaCalculator } from '@mantle/share-ui/formula-calculator';
-import { TeamTokenPrompt } from '../../components/share/team-token-prompt';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const ISLANDS: Record<string, (props: any) => React.ReactNode> = {
@@ -24,7 +23,6 @@ const ISLANDS: Record<string, (props: any) => React.ReactNode> = {
   // a shared formula renders its equations, tables and warnings as HTML, and
   // only the calculator needs JavaScript.
   'formula-calculator': FormulaCalculator,
-  'team-token-prompt': TeamTokenPrompt,
 };
 
 for (const el of document.querySelectorAll<HTMLElement>('[data-island]')) {

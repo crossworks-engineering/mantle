@@ -68,7 +68,8 @@ const fromJournal = all.find((t) => t.slug === 'page_from_journal')!;
 const fromFile = all.find((t) => t.slug === 'page_from_file')!;
 const replaceFromFile = all.find((t) => t.slug === 'page_replace_from_file')!;
 
-const ctx: ToolHandlerContext = { ownerId: 'o1' };
+// An owner surface: filing a page (folder_id, parent_id) is the owner's.
+const ctx: ToolHandlerContext = { ownerId: 'o1', surface: { kind: 'owner', via: 'mcp' } };
 const PAGE_ID = 'p-new';
 const FILE_ID = 'f-1';
 
@@ -484,10 +485,13 @@ describe('page_replace_from_file', () => {
       { ...input, title: 'Renamed', tags: ['recall', 'ops'] },
       ctx,
     );
-    // Title and tags reach the nodes row (owner-only tag stripped); the body
-    // still goes to the draft. updatePage must not carry a doc, or the
-    // published page would change without a commit.
-    expect(updatePage).toHaveBeenCalledWith('o1', 'p-1', { title: 'Renamed', tags: ['ops'] });
+    // Title and tags reach the nodes row as given; the body still goes to
+    // the draft. updatePage must not carry a doc, or the published page would
+    // change without a commit.
+    expect(updatePage).toHaveBeenCalledWith('o1', 'p-1', {
+      title: 'Renamed',
+      tags: ['recall', 'ops'],
+    });
     expect(saveDraft).toHaveBeenCalledTimes(1);
     expect(outputOf(res).meta_updated).toBe(true);
   });

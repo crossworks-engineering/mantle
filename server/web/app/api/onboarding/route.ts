@@ -14,6 +14,7 @@ import {
 } from '@mantle/embeddings';
 import { upsertEmbeddingConfig } from '@/lib/embedding-config';
 import { ASSISTANT_MODEL_CHOICES, WORKER_MODEL_CHOICES } from '@mantle/client-types/model-choices';
+import { PURPOSE_MAX_CHARS, purposeTooLongError } from '@mantle/client-types/purpose-limits';
 import { getOwnerOr401 } from '@/lib/auth';
 import { probeApiKey } from '@/lib/api-key-test';
 import {
@@ -38,9 +39,6 @@ import { firstIssue } from '@/lib/zod-issue';
  */
 
 export type SanityCheck = { label: string; ok: boolean; detail: string };
-/** Mirror of identity-context's MAX_PURPOSE_CHARS — trim at the edge so the
- *  stored value never exceeds what the injected block would render anyway. */
-const MAX_PURPOSE_CHARS = 600;
 
 // The only onboarding action that took an unchecked `body as SavePersonaInput`
 // cast — and savePersonaAgent does `input.assistantName.trim()` with no guard,
@@ -198,32 +196,32 @@ async function runInfraChecks(browserHost: string | null): Promise<SanityCheck[]
   }
 
   // Object store — reachability AND the bucket (a registry-pull box that never
-  // ran the createbuckets one-shot has MinIO up but no bucket).
+  // ran the migrate one-shot has the store up but no bucket).
   try {
     const s = await bucketStatus();
     if (!s.reachable) {
       checks.push({
-        label: 'Object storage (MinIO)',
+        label: 'Object storage',
         ok: false,
         detail:
-          'unreachable — is the minio container running? File uploads and app builds will fail.',
+          'unreachable — is the object store container running? File uploads and app builds will fail.',
       });
     } else if (s.exists === false) {
       checks.push({
-        label: 'Object storage (MinIO)',
+        label: 'Object storage',
         ok: false,
         detail: `up, but bucket “${s.bucket}” does not exist — uploads and app builds will fail until it's created.`,
       });
     } else {
       checks.push({
-        label: 'Object storage (MinIO)',
+        label: 'Object storage',
         ok: true,
         detail: `bucket “${s.bucket}” reachable`,
       });
     }
   } catch (err) {
     checks.push({
-      label: 'Object storage (MinIO)',
+      label: 'Object storage',
       ok: false,
       detail: `couldn't verify: ${errorMessage(err)}`,
     });
@@ -334,17 +332,23 @@ async function savePurpose(
   userId: string,
   archetype: string,
   purpose: string,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; error?: string; status?: number }> {
   const p = (purpose ?? '').trim();
   if (!p) {
     return { ok: false, error: 'Describe what this brain is for.' };
+  }
+  // Refuse, never trim: a silent slice once dropped 3,288 characters of a
+  // pasted persona prompt and nobody knew. The wizard counts against the same
+  // limit, so only a stale or hand-rolled client reaches this.
+  if (p.length > PURPOSE_MAX_CHARS) {
+    return { ok: false, error: purposeTooLongError(p.length), status: 400 };
   }
   // Unknown/blank archetype falls back to 'custom' — the description is the
   // load-bearing field; the archetype is a (validated) hint.
   const key = isPurposeArchetype(archetype) ? archetype : 'custom';
   try {
     await savePreferencesFor(userId, {
-      purpose: p.slice(0, MAX_PURPOSE_CHARS),
+      purpose: p,
       purposeArchetype: key,
       onboardingStep: 'personality',
     });
@@ -591,10 +595,14 @@ export async function POST(req: Request) {
       );
     case 'sanity':
       return NextResponse.json(await runSanityChecks(user.id));
-    case 'purpose':
-      return NextResponse.json(
-        await savePurpose(user.id, String(body.archetype ?? ''), String(body.purpose ?? '')),
+    case 'purpose': {
+      const { status, ...result } = await savePurpose(
+        user.id,
+        String(body.archetype ?? ''),
+        String(body.purpose ?? ''),
       );
+      return NextResponse.json(result, status ? { status } : undefined);
+    }
     case 'persona': {
       const parsed = PersonaInput.safeParse(body);
       if (!parsed.success) {

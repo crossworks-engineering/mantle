@@ -20,6 +20,10 @@ export const teamAccessLog = pgTable(
       .default(sql`gen_random_uuid()`),
     ownerId: uuid('owner_id').notNull(),
     contactId: uuid('contact_id').references(() => nodes.id, { onDelete: 'set null' }),
+    /** The member LOGIN the event belongs to (0175): a member's own events,
+     *  and the portal history of a contact that became a login. SET NULL on
+     *  login delete. FK to auth.users declared in the SQL (cross-schema). */
+    loginId: uuid('login_id'),
     /** 'auth' | 'turn' | 'api' | 'denied' */
     kind: text('kind').notNull(),
     /** e.g. { channel } for turns, { reason } for denials. */
@@ -32,6 +36,7 @@ export const teamAccessLog = pgTable(
   (t) => [
     index('team_access_log_recent_idx').on(t.ownerId, t.createdAt.desc()),
     index('team_access_log_contact_idx').on(t.ownerId, t.contactId, t.createdAt.desc()),
+    index('team_access_log_login_idx').on(t.ownerId, t.loginId, t.createdAt.desc()),
   ],
 );
 

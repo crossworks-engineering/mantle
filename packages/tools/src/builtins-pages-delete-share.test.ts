@@ -8,11 +8,8 @@
  * that would empty one has to be refused BEFORE the draft is written. A stub
  * would assert only that the tool forwards a flag.
  *
- * page_share is the page-specific twin of node_share, and it carries one extra
- * thing worth pinning: `children` cascades to every sub-page. That makes the
- * "unspecified" case load-bearing — omitting `children` must leave sub-page
- * links exactly as they are. Sharing a whole documentation subtree because the
- * argument was absent rather than false is the failure to avoid.
+ * page_share is the page-specific twin of node_share (the sub-page cascade
+ * it carried went with folder phase 7: pages do not nest).
  *
  * Store edges (getPage / saveDraft / the share writes) are stubbed; the tools'
  * own guards, ordering and branching are real.
@@ -27,11 +24,9 @@ vi.mock('@mantle/content', async (importOriginal) => {
     getPage: vi.fn(),
     saveDraft: vi.fn(),
     createShare: vi.fn(),
-    applyShareMode: vi.fn(),
-    setShareCascade: vi.fn(),
     deletePage: vi.fn(),
     getActiveShareForNode: vi.fn(),
-    revokeShareTree: vi.fn(),
+    unshareItem: vi.fn(),
     shareUrlForToken: (token: string) => `https://brain.test/s/${token}`,
   };
 });
@@ -42,11 +37,9 @@ import {
   getPage,
   saveDraft,
   createShare,
-  applyShareMode,
-  setShareCascade,
   deletePage,
   getActiveShareForNode,
-  revokeShareTree,
+  unshareItem,
 } from '@mantle/content';
 import { PAGE_TOOLS } from './builtins-pages';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
@@ -103,10 +96,9 @@ beforeEach(() => {
   vi.mocked(getPage).mockResolvedValue(page() as never);
   vi.mocked(saveDraft).mockResolvedValue({ ok: true, rev: 4 } as never);
   vi.mocked(createShare).mockResolvedValue({ id: 's-1', token: 'tok', mode: 'public' } as never);
-  vi.mocked(setShareCascade).mockResolvedValue({ count: 3 } as never);
   vi.mocked(deletePage).mockResolvedValue(true as never);
   vi.mocked(getActiveShareForNode).mockResolvedValue({ id: 's-1', token: 'tok' } as never);
-  vi.mocked(revokeShareTree).mockResolvedValue(true as never);
+  vi.mocked(unshareItem).mockResolvedValue({ revoked: true, stillBelow: [] });
 });
 
 describe('page_block_delete', () => {
@@ -181,42 +173,28 @@ describe('page_share', () => {
     expect(createShare).not.toHaveBeenCalled();
   });
 
-  it('leaves sub-pages ALONE when children is not given', async () => {
+  it('mints the link and returns its URL', async () => {
     const res = await share.handler({ id: PAGE_ID }, ctx);
-    // The load-bearing default. An absent `children` must not be read as
-    // "cascade" — that would publish a whole subtree nobody asked about.
-    expect(setShareCascade).not.toHaveBeenCalled();
-    expect(outputOf(res)).not.toHaveProperty('subpagesShared');
+    expect(createShare).toHaveBeenCalledWith('o1', PAGE_ID, { alsoLowered: [] });
+    expect(outputOf(res)).toMatchObject({ id: PAGE_ID, url: 'https://brain.test/s/tok' });
   });
 
-  it('cascades and reports the count when children is true', async () => {
-    const res = await share.handler({ id: PAGE_ID, children: true }, ctx);
-    expect(setShareCascade).toHaveBeenCalledWith('o1', PAGE_ID, true);
-    expect(outputOf(res).subpagesShared).toBe(3);
+  it('takes no `children` (pages do not nest): the schema names no such input', () => {
+    expect(share.inputSchema.properties).not.toHaveProperty('children');
   });
 
-  it('revokes sub-page links when children is false', async () => {
-    const res = await share.handler({ id: PAGE_ID, children: false }, ctx);
-    expect(setShareCascade).toHaveBeenCalledWith('o1', PAGE_ID, false);
-    // Reported under a DIFFERENT key, so the caller can tell "shared 3" from
-    // "revoked 3" without inspecting the request it sent.
-    expect(outputOf(res).subpagesRevoked).toBe(3);
+  it('refuses a team link before touching the page or its link', async () => {
+    // Team links are retired (member logins Phase 6 stage 6): a "share this
+    // section with the team" call must not publish it instead.
+    const res = await share.handler({ id: PAGE_ID, mode: 'team' }, ctx);
+    expect(errorOf(res)).toMatch(/Team links are retired.*own logins/);
+    expect(createShare).not.toHaveBeenCalled();
   });
 
-  it('sets the mode BEFORE cascading, so descendants inherit it', async () => {
-    await share.handler({ id: PAGE_ID, mode: 'team', children: true }, ctx);
-    const modeAt = vi.mocked(applyShareMode).mock.invocationCallOrder[0]!;
-    const cascadeAt = vi.mocked(setShareCascade).mock.invocationCallOrder[0]!;
-    // Reversed, the children are cascaded at the OLD mode and a "share this
-    // section with the team" call leaves the sub-pages public.
-    expect(modeAt).toBeLessThan(cascadeAt);
-  });
-
-  it('treats an unrecognised mode as unspecified, never as public', async () => {
-    vi.mocked(createShare).mockResolvedValue({ id: 's-1', token: 'tok', mode: 'team' } as never);
+  it('refuses an unrecognised mode, never reading it as public', async () => {
     const res = await share.handler({ id: PAGE_ID, mode: 'everyone' }, ctx);
-    expect(applyShareMode).not.toHaveBeenCalled();
-    expect(outputOf(res).mode).toBe('team');
+    expect(errorOf(res)).toMatch(/mode must be 'public'/);
+    expect(createShare).not.toHaveBeenCalled();
   });
 });
 
@@ -253,7 +231,7 @@ describe('page_delete', () => {
 describe('page_unshare', () => {
   it('refuses an empty id and revokes nothing', async () => {
     expect(errorOf(await unshare.handler({ id: '' }, ctx))).toMatch(/id is required/);
-    expect(revokeShareTree).not.toHaveBeenCalled();
+    expect(unshareItem).not.toHaveBeenCalled();
   });
 
   it('succeeds as a no-op when the page was never shared', async () => {
@@ -262,19 +240,25 @@ describe('page_unshare', () => {
     // "Make it private" on an already-private page is not an error — and it
     // must not reach the revoke path with an undefined share id.
     expect(outputOf(res)).toEqual({ id: PAGE_ID, unshared: false });
-    expect(revokeShareTree).not.toHaveBeenCalled();
+    expect(unshareItem).not.toHaveBeenCalled();
   });
 
-  it('revokes the whole share TREE, not just the one link', async () => {
+  it('revokes by share id through unshareItem', async () => {
     const res = await unshare.handler({ id: PAGE_ID }, ctx);
-    // A share made with children:true cascaded to sub-pages; unsharing the
-    // parent alone would leave every sub-page link live.
-    expect(revokeShareTree).toHaveBeenCalledWith('o1', 's-1');
+    expect(unshareItem).toHaveBeenCalledWith('o1', 's-1');
     expect(outputOf(res)).toEqual({ id: PAGE_ID, unshared: true });
   });
 
+  it('reports the embedded files still below admin (MED 7)', async () => {
+    const file = { id: 'f-1', type: 'file', title: 'img.png', audience: 'client' as const };
+    vi.mocked(unshareItem).mockResolvedValue({ revoked: true, stillBelow: [file] });
+    const out = outputOf(await unshare.handler({ id: PAGE_ID }, ctx));
+    expect(out.stillBelow).toEqual([file]);
+    expect(out.warning).toMatch(/img\.png \(file, client\)/);
+  });
+
   it('surfaces a store failure as a tool error, not a throw', async () => {
-    vi.mocked(revokeShareTree).mockRejectedValue(new Error('db down'));
+    vi.mocked(unshareItem).mockRejectedValue(new Error('db down'));
     expect(errorOf(await unshare.handler({ id: PAGE_ID }, ctx))).toMatch(/db down/);
   });
 });

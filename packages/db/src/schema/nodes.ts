@@ -39,6 +39,7 @@ export const nodeType = pgEnum('node_type', [
   'app',
   'formula',
   'draw',
+  'recall',
 ]);
 
 export const nodes = pgTable(
@@ -80,6 +81,23 @@ export const nodes = pgTable(
      *  hits with the successor so the model prefers it. See
      *  packages/content/src/supersede.ts. */
     supersededBy: uuid('superseded_by'),
+    /** Who may read this item: admin | team | client | public (member logins
+     *  Phase 0b). Default admin; only workspace kinds may go lower (CHECK
+     *  nodes_audience_kind_ck). Enforced by row level security for the
+     *  viewer roles; the admin pool ignores it. */
+    audience: text('audience').notNull().default('admin'),
+    /** A folder's share, 'team' or 'client' (folder plan phase 4): shares
+     *  everything below it, now and later. Null for everything else. */
+    shareLevel: text('share_level'),
+    /** The share of the nearest shared folder above this row (same owner),
+     *  kept by the database (migration 0204 triggers); never written by
+     *  code. Null when nothing above is shared. */
+    inheritedLevel: text('inherited_level'),
+    /** The most open share among the owner's rows that reach this row
+     *  through embeds (a shared note embeds this image), kept by the
+     *  database (migration 0208 triggers over node_embeds); never written by
+     *  code. Null when nothing that embeds it is shared. */
+    embeddedLevel: text('embedded_level'),
     /** Why: 'version' (filename-family sibling), 'migrated' (page built from
      *  this source), 'corrected' (explicit mark — demotes harder). */
     supersededReason: text('superseded_reason').$type<'version' | 'migrated' | 'corrected'>(),
@@ -95,13 +113,18 @@ export const nodes = pgTable(
     index('nodes_superseded_by_idx')
       .on(t.supersededBy)
       .where(sql`${t.supersededBy} is not null`),
-    // Slug uniqueness applies to NON-branch nodes only. Folders (branches)
-    // rely on path-uniqueness below — two folders under different parents may
-    // share a name (e.g. each upload surface's dated `…/YYYY-MM-DD`). See
-    // migration 0032.
+    // Owner-wide slug uniqueness applies to nodes that are neither folders nor
+    // files. Folders (branches) rely on path-uniqueness below — two folders
+    // under different parents may share a name (e.g. each upload surface's
+    // dated `…/YYYY-MM-DD`). See migration 0032.
     uniqueIndex('nodes_owner_slug_uq')
       .on(t.ownerId, t.slug)
-      .where(sql`${t.slug} is not null and ${t.type} <> 'branch'`),
+      .where(sql`${t.slug} is not null and ${t.type} not in ('branch', 'file')`),
+    // A file's slug is its filename, unique per FOLDER (its path), like on
+    // disk: the same name may live in two folders. Migrations 0184/0185.
+    uniqueIndex('nodes_file_owner_path_slug_uq')
+      .on(t.ownerId, t.path, t.slug)
+      .where(sql`${t.slug} is not null and ${t.type} = 'file'`),
     // One branch per (owner, path). Emails and files legitimately share
     // paths so this is a partial index gated on type='branch'.
     uniqueIndex('nodes_branch_owner_path_uq')

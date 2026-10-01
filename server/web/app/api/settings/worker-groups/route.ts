@@ -9,6 +9,7 @@ import {
 } from '@/lib/worker-groups';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
+import { isUniqueViolation } from '@mantle/db';
 
 /** GET /api/settings/worker-groups — the owner's worker groups + the enabled
  *  worker agents available as members (so the picker needs no second call). */
@@ -47,7 +48,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ group: row });
   } catch (err) {
     const msg = errorMessage(err);
-    if (msg.includes('agent_groups_owner_slug_uq') || msg.includes('duplicate key')) {
+    if (isUniqueViolation(err)) {
       return NextResponse.json(
         { error: `A worker group with slug "${parsed.data.slug}" already exists.` },
         { status: 409 },

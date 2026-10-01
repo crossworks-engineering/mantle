@@ -137,25 +137,18 @@ go live.
 ## Sharing an app
 
 A **published** app can be shared at an unguessable, revocable link; it opens
-**full-screen**, so a dashboard gets the whole window. The Share control on the
-app header offers two modes, and they grant very different things:
+**full-screen**, so a dashboard gets the whole window. A link is always
+**public** (anyone with it): the app becomes a self-contained, **read-only**
+view of its own data. It gets *no brain tools at all* and cannot write, so a
+public link can never become a window into your notes, email, or anything else
+in your brain. Good for a read-only dashboard or a reference tool. Treat any
+share link as a secret; revoke it by turning the share off.
 
-- **Public** (anyone with the link): the app becomes a self-contained,
-  **read-only** view of its own data. It gets *no brain tools at all* and
-  cannot write, so a public link can never become a window into your notes,
-  email, or anything else in your brain. Good for a read-only dashboard or a
-  reference tool.
-- **Team members only**: the visitor is asked for their **team token** (the
-  one minted when you mark a Contact a [team member](07-team-chat.md)). Once
-  identified, they get the app's full capability, its granted tools and the
-  ability to save data, and **every action is recorded against their name**
-  on the app's **Activity** tab: each open, each tool call, each write.
-  Removing a team member cuts their access immediately, mid-session.
-
-Even in team mode there's a hard limit: a shared app can only use built-in
-data tools (never web-request or shell tools) so a share can't hand anyone
-arbitrary network or command access under your account. Treat any share link
-as a secret; revoke it by turning the share off.
+Your team doesn't use links: members sign in with their own logins and run the
+apps you set to **team** level, with the app's granted tools and the ability to
+save data, and every action is recorded against their name on the app's
+**Activity** tab. (The old "team members only" links, opened with a team token,
+were retired; an old one now asks its visitor to sign in as a member.)
 
 ## Safety
 

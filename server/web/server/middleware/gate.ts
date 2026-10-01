@@ -1,10 +1,13 @@
 import type { MiddlewareHandler } from 'hono';
 import {
   PUBLIC_PATHS,
+  RENDER_COOKIE_NAME,
   SESSION_COOKIE_NAME,
   isDetachedDev,
+  isRenderPath,
   requestOrigin,
 } from '../../lib/auth-constants';
+import { bodyCeilingFor, bodyTooLargeResponse, declaredOver } from '../../lib/body-limit';
 import { runWithRequestContext } from '../request-context';
 import { tokenKind, verifySignedToken } from './token-verify';
 import { env } from '@mantle/config';
@@ -42,16 +45,45 @@ function isAssetPath(path: string): boolean {
     // admitted the path, so the gate 401'd the token before the route ran
     // (worked same-origin via cookie, broken only detached). Registering an
     // asset route means BOTH ends: getOwnerForAsset in the route AND here.
-    /^\/api\/draws\/[^/]+\/svg$/.test(path)
+    /^\/api\/draws\/[^/]+\/svg$/.test(path) ||
+    // Member Library bytes (member logins): file bytes and drawing SVGs a
+    // member may read. The routes call getMemberForAsset and read at the team
+    // level, so the token opens only what the member's level can see.
+    path.startsWith('/api/member/files/') ||
+    /^\/api\/member\/draws\/[^/]+\/svg$/.test(path) ||
+    // A member's own private file, and a teammate's team-shared one (member
+    // logins Phase 2). The member shell mints the token for exactly these
+    // <img>/download srcs. Both routes call getMemberForAsset: the own-file
+    // read runs in the space of the member the token's `act` names, so the
+    // token opens only that member's items; another member's file is a 404.
+    /^\/api\/member\/space\/[^/]+\/bytes$/.test(path) ||
+    /^\/api\/member\/team-drafts\/[^/]+\/bytes$/.test(path) ||
+    // A file a client submitted (client logins C5, client requests): the
+    // route calls getMemberForAsset and reads on the team role with the
+    // human flag, so the token opens only a submitted client file.
+    /^\/api\/member\/client-requests\/[^/]+\/bytes$/.test(path) ||
+    // An admin's own private file (member logins Phase 7). The route calls
+    // getOwnerForAsset and reads the space of the login the token's `act`
+    // names, so the token opens only that admin's own items.
+    /^\/api\/admin\/space\/[^/]+\/bytes$/.test(path) ||
+    // Client bytes (client logins C2): file bytes and drawing SVGs of items
+    // at client level. The routes call getClientForAsset and read at the
+    // client level; the client shell mints the token with `act` = the login.
+    path.startsWith('/api/client/files/') ||
+    /^\/api\/client\/draws\/[^/]+\/svg$/.test(path) ||
+    // A client's own private file (client logins C5). The route calls
+    // getClientForAsset and reads the space of the client the token's `act`
+    // names, so the token opens only that client's own items.
+    /^\/api\/client\/space\/[^/]+\/bytes$/.test(path)
   );
 }
 
-/** The /s sub-paths a client-origin page calls cross-origin (bearer-authed by
- *  resolveShareVisitorFromRequest): the app brokers the hub uses, plus the
- *  view/rows pair the /team inline reader fetches. They get the same CORS
+/** The /s sub-paths a client-origin page may call cross-origin (the share
+ *  token is the only credential; team links, and the bearer they took, are
+ *  retired): the app brokers, plus the view/rows pair. They get the same CORS
  *  treatment as /api/** — and ONLY they: the /s/<token> HTML page and the
- *  remaining sub-paths (auth, a/, evaluate) stay same-origin cookie surfaces
- *  with no CORS headers at all. */
+ *  remaining sub-paths (a/, evaluate, draw) stay same-origin surfaces with no
+ *  CORS headers at all. */
 const SHARE_BROKER_RE =
   /^\/s\/[^/]+\/(bundle(\/css)?|frame-ticket|tool-broker|db-broker|view|rows)$/;
 
@@ -60,6 +92,13 @@ const SHARE_BROKER_RE =
  *  ticket (kind 'f'), accepted for THIS path shape only; the route re-verifies
  *  and binds the ticket to the app id. Mirrors the `?at=` asset-path carve. */
 const OWNER_FRAME_RE = /^\/api\/apps\/[^/]+\/frame$/;
+/** The member-surface frame document (member logins Phase 4b): same ticket
+ *  carve; the route accepts only a MEMBER ticket (`mem` claim). */
+const MEMBER_FRAME_RE = /^\/api\/member\/apps\/[^/]+\/frame$/;
+/** The client-surface frame document (client logins C6): same ticket carve;
+ *  the route accepts only a CLIENT ticket (`mem` and `cep` claims) at the
+ *  login's current session epoch. */
+const CLIENT_FRAME_RE = /^\/api\/client\/apps\/[^/]+\/frame$/;
 
 /** Old middleware matcher exclusion: bare image paths never hit the gate. */
 const IMAGE_EXT_RE = /\.(?:svg|png|jpg|jpeg|gif|webp)$/;
@@ -68,8 +107,8 @@ const IMAGE_EXT_RE = /\.(?:svg|png|jpg|jpeg|gif|webp)$/;
 // Opt-in via MANTLE_API_CORS_ORIGINS (comma list, or '*' to reflect any).
 // Detached clients authenticate with a BEARER token, never cookies, so we
 // deliberately DO NOT emit Access-Control-Allow-Credentials. The '*' wildcard
-// is refused on the credential-minting surfaces (/api/auth*, /api/team/auth,
-// /api/team/sso) — those need an explicit allowlist entry.
+// is refused on the credential-minting surfaces (/api/auth*): those need an
+// explicit allowlist entry.
 function corsOrigins(): string[] {
   return (env('MANTLE_API_CORS_ORIGINS') ?? '')
     .split(',')
@@ -82,11 +121,7 @@ function corsOrigin(req: Request, path: string): string | null {
   if (allowed.length === 0) return null;
   const origin = req.headers.get('origin');
   if (!origin) return null; // same-origin / non-browser — no CORS needed
-  const isAuth =
-    path === '/api/auth' ||
-    path.startsWith('/api/auth/') ||
-    path === '/api/team/auth' ||
-    path === '/api/team/sso';
+  const isAuth = path === '/api/auth' || path.startsWith('/api/auth/');
   if (allowed.includes('*') && !isAuth) return origin;
   return allowed.includes(origin) ? origin : null;
 }
@@ -142,6 +177,17 @@ export function gate(): MiddlewareHandler {
       return withCors(new Response(null, { status: 204 }));
     }
 
+    // The body ceiling (client logins C5 audit, I4): a declared body over
+    // the route's ceiling is refused before any handler buffers it, public
+    // routes included. Uploads stream under their own caps (null here); a
+    // chunked body is capped while it is read (readJsonNoNul).
+    if (isApi && req.method !== 'GET' && req.method !== 'HEAD') {
+      const ceiling = bodyCeilingFor(path);
+      if (ceiling !== null && declaredOver(req.headers, ceiling)) {
+        return withCors(bodyTooLargeResponse(ceiling));
+      }
+    }
+
     // Old matcher exclusion: image-suffixed paths bypass the gate entirely
     // (static already had its chance; this just falls through to the 404).
     if (IMAGE_EXT_RE.test(path)) return proceed();
@@ -194,10 +240,25 @@ export function gate(): MiddlewareHandler {
 
     // The sandbox frame document navigates with a `?t=` frame ticket — same
     // can't-carry-a-credential shape as the asset paths above, same narrow
-    // acceptance: this path only, GET only, kind 'f' only.
-    if (OWNER_FRAME_RE.test(path) && req.method === 'GET') {
+    // acceptance: these three paths only, GET only, kind 'f' only.
+    if (
+      (OWNER_FRAME_RE.test(path) || MEMBER_FRAME_RE.test(path) || CLIENT_FRAME_RE.test(path)) &&
+      req.method === 'GET'
+    ) {
       const t = url.searchParams.get('t');
       if (t && (await verifySignedToken(t, secret)) && tokenKind(t) === 'f') {
+        return proceed();
+      }
+    }
+
+    // The browser sidecar rendering an export carries a render cookie (kind
+    // 'r', set on the print origin only). Accepted for the render surfaces and
+    // the byte routes they load, GET only, and never as a session: anywhere
+    // else it is no credential at all. The route re-checks the login and, on
+    // a render surface, the node the cookie names.
+    if (isRenderPath(path) && req.method === 'GET') {
+      const r = cookieValue(req, RENDER_COOKIE_NAME);
+      if (r && (await verifySignedToken(r, secret)) && tokenKind(r) === 'r') {
         return proceed();
       }
     }

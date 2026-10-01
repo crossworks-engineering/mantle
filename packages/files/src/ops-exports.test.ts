@@ -23,6 +23,7 @@ const PUBLIC = [
   // ops/files.ts
   'upsertFile',
   'readFileById',
+  'openFileById',
   'countDerivedFromFile',
   'drawsReferencingFile',
   'deleteFileById',
@@ -38,16 +39,18 @@ const PUBLIC = [
   'fileById',
   // ops/folders.ts
   'createFolder',
-  'ensureDatedUploadFolder',
   'ensureExtractedImagesFolder',
   'EXTRACTED_IMAGES_SLUG',
   'ensureFolderPath',
   'updateFolderDescription',
+  'updateFolderLook',
   'deleteFolder',
   'listFolders',
   'listAllFolders',
   'renamedFolderPath',
   'renameFolderById',
+  'FOLDER_NAME_MAX',
+  'folderDisplayName',
 ] as const;
 
 /** Exported from ops/shared.ts for the siblings only. */

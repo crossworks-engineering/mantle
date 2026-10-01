@@ -28,11 +28,11 @@
  *    then weave into its reply.
  */
 
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { db, nodes, getDefaultWorker, type AiWorkerKind } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import { accountForChat, downloadTelegramFile, sendPhoto, sendVoice } from '@mantle/telegram';
-import { createFolder, dashToLtree, fileById, readFileById, upsertFile } from '@mantle/files';
+import { ensureAutoFiledFolder, fileById, readFileById, upsertFile } from '@mantle/files';
 import { getChatAdapter, getImageGenAdapter, getTtsAdapter, getVisionAdapter } from '@mantle/voice';
 import type { ImageGenModelInfo, ImageGenParam, TtsParam } from '@mantle/voice';
 import type { BuiltinToolDef, ToolArtifact, ToolHandlerResult, ToolPrecondition } from './types';
@@ -96,6 +96,7 @@ export async function resolveDefaultWorker(
 
 const synthesize_speech: BuiltinToolDef = {
   slug: 'synthesize_speech',
+  spends: true,
   name: 'Send a voice reply',
   description:
     "Synthesize text-to-speech using the owner's default TTS worker. On Telegram it sends as a voice note; on the web /assistant it returns audio bytes that the page renders inline as a play-button bubble. Use when the user explicitly asks for audio ('send me a voice note', 'read that aloud') or when a long answer would land better as audio. After calling, write a brief text follow-up — don't repeat the spoken content verbatim.",
@@ -119,7 +120,9 @@ const synthesize_speech: BuiltinToolDef = {
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
     const text = str(input.text).trim();
     if (!text) return { ok: false, error: 'text required' };
-    if (!ctx.surface) {
+    // An `owner` surface (MCP, a run, an approved pending call) names the
+    // caller, not a delivery channel: no one to play the audio to.
+    if (!ctx.surface || ctx.surface.kind === 'owner') {
       return {
         ok: false,
         error:
@@ -278,6 +281,7 @@ const synthesize_speech: BuiltinToolDef = {
 
 const extract_from_image: BuiltinToolDef = {
   slug: 'extract_from_image',
+  spends: true,
   readOnly: true,
   name: 'Read text from an image',
   description:
@@ -410,6 +414,7 @@ const extract_from_image: BuiltinToolDef = {
 
 const summarize_text: BuiltinToolDef = {
   slug: 'summarize_text',
+  spends: true,
   readOnly: true,
   name: 'Summarize a note or block of text',
   description:
@@ -552,82 +557,17 @@ function extForMime(mime: string): string {
   throw new Error(`generate_image: unsupported image mime '${mime}'`);
 }
 
-const GENERATED_IMAGES_FOLDER_SLUG = 'generated-images';
-// ltree labels use underscores, not dashes — createFolder stores the
-// dash slug as `generated_images`, so the path constant must match or the
-// per-day subfolder's parent lookup fails ("parent folder not found").
-const GENERATED_IMAGES_FOLDER_LTREE = `files.${dashToLtree(GENERATED_IMAGES_FOLDER_SLUG)}`;
-
-/** Ensure /files/generated-images/<yyyy-mm-dd>/ exists. Returns the
- *  ltree path the file should land in. Idempotent — re-creating an
- *  existing folder is a no-op-with-error which we swallow. */
-async function ensureGeneratedImagesDateFolder(ownerId: string): Promise<string> {
-  // Top-level "Generated images" folder.
-  const topPath = GENERATED_IMAGES_FOLDER_LTREE;
-  const [topExists] = await db
-    .select({ id: nodes.id })
-    .from(nodes)
-    .where(
-      and(
-        eq(nodes.ownerId, ownerId),
-        eq(nodes.type, 'branch'),
-        sql`${nodes.path}::text = ${topPath}`,
-      ),
-    )
-    .limit(1);
-  if (!topExists) {
-    try {
-      await createFolder({
-        ownerId,
-        parentPath: 'files',
-        slug: GENERATED_IMAGES_FOLDER_SLUG,
-        description: 'AI-generated images. Auto-created by the generate_image tool.',
-      });
-    } catch (err) {
-      // Concurrent creation racing — swallow the unique-constraint
-      // hit and keep going. Anything else re-throw.
-      if (!(err instanceof Error) || !/duplicate|unique/i.test(err.message)) {
-        throw err;
-      }
-    }
-  }
-
-  // Per-day subfolder so the top folder doesn't grow unboundedly.
-  const today = new Date().toISOString().slice(0, 10); // 'YYYY-MM-DD'
-  const datePath = `${topPath}.${today.replace(/-/g, '_')}`;
-  const [dateExists] = await db
-    .select({ id: nodes.id })
-    .from(nodes)
-    .where(
-      and(
-        eq(nodes.ownerId, ownerId),
-        eq(nodes.type, 'branch'),
-        sql`${nodes.path}::text = ${datePath}`,
-      ),
-    )
-    .limit(1);
-  if (!dateExists) {
-    try {
-      await createFolder({
-        ownerId,
-        parentPath: topPath,
-        slug: today,
-        description: `Generated images from ${today}.`,
-      });
-    } catch (err) {
-      if (!(err instanceof Error) || !/duplicate|unique/i.test(err.message)) {
-        throw err;
-      }
-    }
-  }
-  return datePath;
+/** Where a generated image lands: this month's folder under Auto-filed. */
+function ensureGeneratedImagesDateFolder(ownerId: string): Promise<string> {
+  return ensureAutoFiledFolder(ownerId, 'generated-images');
 }
 
 const generate_image: BuiltinToolDef = {
   slug: 'generate_image',
+  spends: true,
   name: 'Generate an image',
   description:
-    "Generate an image from a prompt using the owner's default image_gen worker. The image is saved under /files/generated-images/<date>/ AND sent inline when running on Telegram. Use when the user asks for an illustration, mockup, sketch, or visual aid. Be concrete in the prompt — vague prompts produce vague images. After calling, summarise what you sent in one sentence (don't repeat the prompt verbatim).",
+    "Generate an image from a prompt using the owner's default image_gen worker. The image is saved under /files/auto-filed/generated-images/<month>/ AND sent inline when running on Telegram. Use when the user asks for an illustration, mockup, sketch, or visual aid. Be concrete in the prompt — vague prompts produce vague images. After calling, summarise what you sent in one sentence (don't repeat the prompt verbatim).",
   inputSchema: {
     type: 'object',
     properties: {
@@ -766,7 +706,7 @@ const generate_image: BuiltinToolDef = {
       if (reason) ignored.push({ ...s, reason });
     }
 
-    // Persist as a file node under /files/generated-images/<date>/.
+    // Persist as a file node under /files/auto-filed/generated-images/<month>/.
     // Naming: <unix-ms>-<slug>.<ext>. The unix prefix keeps natural
     // sort = chronological; the slug gives a human-readable hint of
     // the prompt.

@@ -13,7 +13,15 @@ import {
   type WiredCapability,
 } from './registry';
 
-const CAPS: WiredCapability[] = ['chat', 'tts', 'stt', 'vision', 'image_gen', 'embedding'];
+const CAPS: WiredCapability[] = [
+  'chat',
+  'tts',
+  'stt',
+  'vision',
+  'image_gen',
+  'embedding',
+  'decision',
+];
 
 describe('WIRED_PROVIDERS mirrors the live adapter registry', () => {
   for (const cap of CAPS) {

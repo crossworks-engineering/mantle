@@ -25,15 +25,19 @@ import {
   docToText,
   renderPageEmail,
   cidForPageImage,
+  ClientLinkRetiredError,
   createShare,
   shareUrlForToken,
   contactEmails,
+  loginEmails,
   findContactsByEmails,
   recordContactSent,
   normalizeEmail,
+  type LoweredItem,
 } from '@mantle/content';
 import { readFileById } from '@mantle/files';
 import type { BuiltinToolDef } from './types';
+import { clientLeftWarning } from './builtins-share';
 import { str, strOptTrim as strOpt } from './coerce';
 import { errorMessage } from '@mantle/std';
 
@@ -61,7 +65,8 @@ function flatRecipients(...raws: (string | undefined)[]): string[] {
 }
 
 /** Recipients NOT permitted by the allowlist. The allowlist is the user's own
- *  account addresses plus their `contact` nodes. Fail CLOSED: with no contacts
+ *  account addresses, their `contact` nodes and the brain's active logins
+ *  (users are contacts in user form). Fail CLOSED: with no contacts
  *  yet, an agent can still email the user themselves but not arbitrary outside
  *  addresses — so a prompt-injected agent on a fresh install can't exfiltrate
  *  by emailing a stranger. Add a contact to permit sending to them. */
@@ -75,7 +80,12 @@ async function blockedRecipients(ownerId: string, addrs: string[]): Promise<stri
     .select({ address: emailAccounts.address })
     .from(emailAccounts)
     .where(eq(emailAccounts.userId, ownerId));
-  const allowed = new Set<string>([...contacts, ...accounts.map((a) => a.address.toLowerCase())]);
+  const logins = await loginEmails();
+  const allowed = new Set<string>([
+    ...contacts,
+    ...logins,
+    ...accounts.map((a) => a.address.toLowerCase()),
+  ]);
   return addrs.filter((a) => !allowed.has(normalizeEmail(a)));
 }
 
@@ -257,7 +267,7 @@ const email_page: BuiltinToolDef = {
   slug: 'email_page',
   name: 'Email a page',
   description:
-    "Send one of the user's pages as a richly-formatted HTML email — the page's headings, callouts, columns, tables, lists, highlights, and embedded images all render inline in the recipient's mail client (images are attached inline; a plain-text version is included as a fallback). Provide the page's `pageId` (from page_list) and the recipient `to`. `subject` defaults to the page title. Optional `cc`/`bcc`, `from` (which account sends), and `includeLink` to also mint a public read-only link and add a 'View online' footer. The mail goes out under the user's real address, so only use it when they ask to email or send a page. If no account can send the call fails with a clear message.",
+    "Send one of the user's pages as a richly-formatted HTML email: the page's headings, callouts, columns, tables, lists, highlights, and embedded images all render inline in the recipient's mail client (images are attached inline; a plain-text version is included as a fallback). Provide the page's `pageId` (from page_list) and the recipient `to`. `subject` defaults to the page title. Optional `cc`/`bcc`, `from` (which account sends), and `includeLink` to also mint a public read-only link and add a 'View online' footer (refused for a client-level page). The mail goes out under the user's real address, so only use it when they ask to email or send a page. If no account can send the call fails with a clear message.",
   // Outward-facing under the user's real address — same gate as email_send.
   requiresConfirm: true,
   preconditions: [
@@ -281,7 +291,7 @@ const email_page: BuiltinToolDef = {
       includeLink: {
         type: 'boolean',
         description:
-          "optional: also create a public read-only share link and add a 'View online' footer",
+          "optional: also create a public read-only share link and add a 'View online' footer. A client-level page has none: the call is refused before sending.",
       },
     },
     required: ['pageId', 'to'],
@@ -310,14 +320,28 @@ const email_page: BuiltinToolDef = {
 
     // Optionally mint a public link and surface it in the email footer + text.
     let shareUrl: string | undefined;
+    const alsoLowered: LoweredItem[] = [];
     if (input.includeLink === true) {
       try {
-        const share = await createShare(ctx.ownerId, pageId);
+        const share = await createShare(ctx.ownerId, pageId, { alsoLowered });
         shareUrl = shareUrlForToken(share.token);
-      } catch {
-        // Non-fatal: send the page without the online link if sharing fails.
+      } catch (err) {
+        // A client page has no open link (client logins C1): refused BEFORE
+        // anything is sent (audit A20), so the mail never goes out promising
+        // a link it does not carry. createShare refuses before any write.
+        if (err instanceof ClientLinkRetiredError) {
+          return {
+            ok: false,
+            error:
+              'Nothing was sent: this page is at client level, and client items have no open ' +
+              'link (clients sign in to read them). Send it without includeLink, or ask the ' +
+              'owner whether to make the page public first.',
+          };
+        }
+        // Anything else stays non-fatal: the page goes without the online link.
       }
     }
+    const leftClients = clientLeftWarning(alsoLowered);
     const footerHtml = shareUrl
       ? `<a href="${shareUrl}" style="color:#2563eb;text-decoration:underline">View this page online &rarr;</a>`
       : undefined;
@@ -380,6 +404,8 @@ const email_page: BuiltinToolDef = {
           rejected: res.rejected,
           inlineImages: attachments.length,
           ...(shareUrl ? { shareUrl } : {}),
+          ...(alsoLowered.length ? { alsoLowered } : {}),
+          ...(leftClients ? { warning: leftClients } : {}),
         },
       };
     } catch (err) {

@@ -14,13 +14,18 @@
  */
 
 import { DBOS } from '@dbos-inc/dbos-sdk';
-import { resolveSystemDatabaseUrl, RUNNER_QUEUE } from '@mantle/runtime/assistant';
+import {
+  resolveSystemDatabaseUrl,
+  RUNNER_QUEUE,
+  MEMBER_TURN_QUEUE,
+  CLIENT_TURN_QUEUE,
+} from '@mantle/runtime/assistant';
 import { env } from '@mantle/config';
 
 // The system-DB resolver + queue name are the shared cross-process contract
 // (the web enqueuer uses the same), so they live in @mantle/runtime/assistant.
 // Re-exported here so the rest of server/api keeps importing them from './config'.
-export { resolveSystemDatabaseUrl, RUNNER_QUEUE };
+export { resolveSystemDatabaseUrl, RUNNER_QUEUE, MEMBER_TURN_QUEUE, CLIENT_TURN_QUEUE };
 
 /** DBOS admin server config. DBOS ships its own HTTP run-inspection server, but
  *  we DON'T run it: run inspection is going to live in Mantle's /debug, built on
@@ -79,4 +84,29 @@ export function runnerConcurrency(): number {
 export function runsTurnConcurrency(): number {
   const raw = Number(env('MANTLE_RUNS_TURN_CONCURRENCY'));
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 2;
+}
+
+/** Concurrency cap for MEMBER_TURN_QUEUE: in-flight member chat turns across
+ *  every member, off the owner's RUNNER_QUEUE so members never queue ahead of
+ *  the owner (audit F31). Low by default; a member turn waiting a little is
+ *  fine. Override with MANTLE_MEMBER_TURN_CONCURRENCY. */
+export function memberTurnConcurrency(): number {
+  const raw = Number(env('MANTLE_MEMBER_TURN_CONCURRENCY'));
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 2;
+}
+
+/** Concurrency cap for CLIENT_TURN_QUEUE (client logins C4): in-flight client
+ *  chat turns across every client login, off the owner's and the members'
+ *  queues. The queue is partitioned by login with one turn in flight each, so
+ *  this is how many different clients are served at once. Override with
+ *  MANTLE_CLIENT_TURN_CONCURRENCY. */
+export function clientTurnConcurrency(): number {
+  const raw = Number(env('MANTLE_CLIENT_TURN_CONCURRENCY'));
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 2;
+}
+
+/** The client queue's parameters: the global cap, and ONE turn in flight per
+ *  partition (the client login, the enqueue's queuePartitionKey). */
+export function clientTurnQueueParams(): { globalConcurrency: number; partitionConcurrency: 1 } {
+  return { globalConcurrency: clientTurnConcurrency(), partitionConcurrency: 1 };
 }

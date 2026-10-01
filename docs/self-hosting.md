@@ -54,7 +54,9 @@ First boot downloads ~2 GB of images and runs DB migrations (the one-shot
 
 Before the pull it also checks free disk and memory and whether ports 80/443
 are already held, the failures that otherwise surface halfway through a 2 GB
-download. And the health check's verdict is the installer's verdict: when it
+download. A pull that fails on a network blip is retried (three attempts); if
+it still fails, nothing is started and the installer tells you to re-run it,
+which is safe. And the health check's verdict is the installer's verdict: when it
 fails you get **"Installation incomplete"** and a non-zero exit, not a URL that
 won't answer.
 

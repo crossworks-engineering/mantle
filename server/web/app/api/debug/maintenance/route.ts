@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 
 import { getOwnerOr401 } from '@/lib/auth';
 import { listRecentRuns, reapStaleRuns } from '@/lib/maintenance/history';
-import { MAINTENANCE_TASKS } from '@/lib/maintenance/registry';
+import { MAINTENANCE_TASKS, SESSION_ENV } from '@/lib/maintenance/registry';
 import { getRun } from '@/lib/maintenance/run-store';
 import type {
   MaintenanceOverview,
@@ -27,8 +27,13 @@ export async function GET() {
     cost: t.cost,
     schedulable: t.schedulable,
     supportsDryRun: Boolean(t.applyFlag || t.dryRunFlag),
-    uiRunnable: !t.positionalArgs?.length,
-    missingEnv: (t.requiresEnv ?? []).filter((k) => !envDynamic(k)),
+    uiRunnable: !t.positionalArgs?.length && !t.cliOnly,
+    ...(t.uiArgs?.length ? { args: t.uiArgs } : {}),
+    ...(t.dryRunCost ? { dryRunCost: t.dryRunCost } : {}),
+    // The UI run fills SESSION_ENV from the signed-in owner (runEnv).
+    missingEnv: (t.requiresEnv ?? []).filter(
+      (k) => !envDynamic(k) && !(SESSION_ENV as readonly string[]).includes(k),
+    ),
     notes: t.notes,
   }));
 

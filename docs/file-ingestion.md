@@ -52,7 +52,7 @@ Every file triggers up to two distinct jobs:
 | Source | Entry point | Accepts | Saved to | Inline extract (live answer) | Durable index | Runs responder? | Traces | Failure handling |
 |---|---|---|---|---|---|---|---|---|
 | **Files UI** | `server/web/app/api/files/files/route.ts` | any type, ≤64 MB | target folder (`upsertFile`) |, | extractor (on insert) | no | `content_ingest` (save) → `extractor_run` (+`photo_ingest` for images) | 409 dup / 400 / 413 |
-| **Web /assistant** | `server/web/app/api/assistant/turn/route.ts` | images + docs¹, ≤64 MB | `/files/assistant-uploads/<date>/` | `extractAttachmentForTurn` (question-aware) | extractor (on insert) | **yes** | `content_ingest` (save) → `photo_ingest`/`content_ingest` (inline) → `responder_turn` → `extractor_run` | graceful note + 1× text-only retry; **idempotent** (Idempotency-Key) |
+| **Web /assistant** | `server/web/app/api/assistant/turn/route.ts` | images + docs¹, ≤64 MB | `/files/auto-filed/assistant-uploads/<month>/` | `extractAttachmentForTurn` (question-aware) | extractor (on insert) | **yes** | `content_ingest` (save) → `photo_ingest`/`content_ingest` (inline) → `responder_turn` → `extractor_run` | graceful note + 1× text-only retry; **idempotent** (Idempotency-Key) |
 | **Telegram** | `server/api/src/main.ts` (`handleMessage`) | `photo` + `document` (voice → STT) | `/files/telegram-uploads/<date>/` | `extractAttachmentForTurn` (question-aware) | extractor (on insert) | **yes** | `photo_ingest`/`content_ingest` (inline) → `responder_turn` → `extractor_run` | graceful apology on download failure (M1); atomic claim prevents dup reply |
 | **Disk-sync watcher** | `server/web/workers/files-watch.ts` → `syncFileFromDisk` | `WATCHED_EXTS`² | (already on disk; DB only) |, | extractor (insert trigger; explicit notify on update) | no | `extractor_run` (+`photo_ingest`) | per-event try/catch; sha no-op |
 | **MCP `file_upload`** | `server/mcp/src/server.ts` | `content_text` / `content_base64`, ≤64 MB | parent folder (`upsertFile`) |, | extractor (on insert) | no | `extractor_run` (+`photo_ingest`) | `isError` on failure / oversize |
@@ -210,7 +210,7 @@ than risk a silently inverted picture.
 `maybeExtractEmbeddedImages` (extractor) is shaped exactly like
 `maybeAutoTableSpreadsheet`: best-effort, isolated, deduped by
 `data.sourceFileId`, never able to block the text pass. Images are written to
-`files/extracted-images/<document>/` as ordinary `file` nodes, which is what
+`files/auto-filed/extracted-images/<document>/` as ordinary `file` nodes, which is what
 keeps the feature small, since the extractor already indexes images (vision
 describe + OCR reads the labels *inside* a screenshot) and Pages already embeds
 a stored image by node id.

@@ -5,7 +5,7 @@
  * Split out of builtins-sandbox.ts; bodies moved verbatim.
  */
 
-import { createFolder, dashToLtree, ensureFilesRootBranch, folderByPath } from '@mantle/files';
+import { autoFiledSourcePath, ensureAutoFiledFolder } from '@mantle/files';
 import { env } from '@mantle/config';
 
 export const DEFAULT_TIMEOUT_S = 120;
@@ -105,27 +105,12 @@ export async function sandboxdBinary(
   return { ok: true, bytes: Buffer.from(await res.arrayBuffer()) };
 }
 
-const EXPORTS_FOLDER_SLUG = 'sandbox-exports';
+/** Where sandbox exports land: Auto-filed's Sandbox exports folder. */
+export const EXPORTS_FOLDER_PATH = autoFiledSourcePath('sandbox-exports');
 
-export const EXPORTS_FOLDER_PATH = `files.${dashToLtree(EXPORTS_FOLDER_SLUG)}`;
-
-/** Lazy-create `files/sandbox-exports`, tolerating the concurrent-create race
- *  the same way the api-docs folder does. */
+/** Make the sandbox exports folder if it is missing. */
 export async function ensureExportsFolder(ownerId: string): Promise<void> {
-  await ensureFilesRootBranch(ownerId);
-  const existing = await folderByPath({ ownerId, path: EXPORTS_FOLDER_PATH });
-  if (existing) return;
-  try {
-    await createFolder({
-      ownerId,
-      parentPath: 'files',
-      slug: EXPORTS_FOLDER_SLUG,
-      description:
-        'Work exported from CLI sandboxes (sandbox_export): tar.gz snapshots of /files paths, one per export.',
-    });
-  } catch (err) {
-    if (!(err instanceof Error) || !/duplicate|unique/i.test(err.message)) throw err;
-  }
+  await ensureAutoFiledFolder(ownerId, 'sandbox-exports');
 }
 
 /* ── tools ────────────────────────────────────────────────────────────── */

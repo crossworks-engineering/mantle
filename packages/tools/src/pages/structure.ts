@@ -1,22 +1,27 @@
 /**
  * Reshaping a page: split, extract a section, move, mention.
  *
- * Split out of builtins-pages.ts; bodies moved verbatim.
+ * Split out of builtins-pages.ts; bodies moved verbatim. Pages do not nest
+ * (folder phase 7): a split or an extract makes pages NEXT TO the source,
+ * and a move files a page in a folder of the pages tree.
  */
 
-import { movePage, addPageMention, splitPage, extractSectionToChild } from '@mantle/content';
+import { addPageMention, splitPage, extractSectionToPage, getPage } from '@mantle/content';
+import { moveTreeItems, notifyTreeChanged } from '@mantle/content/tree';
 import type { BuiltinToolDef } from '../types';
 import { str } from '../coerce';
 import { notFound } from '../errors';
 import { errorMessage } from '@mantle/std';
 import { DRAFT_REVIEW_HINT, PAGE_ID_PRE, PAGE_NODE_ID_PRE } from './common';
+import { CONFIRM_INPUT, visibilityRefusal } from '../visibility-refusal';
+import { isOwnerSurface, OWNER_ONLY_ERROR } from '../surface';
 
 export const page_split: BuiltinToolDef = {
   slug: 'page_split',
   preconditions: PAGE_ID_PRE,
-  name: 'Split a page into sub-pages',
+  name: 'Split a page into pages',
   description:
-    "Break a long page into sub-pages along its headings — the SCALING LEVER for documents too big to restyle or hold faithfully in one transform. Walks the page and turns every heading of the chosen level into a child page (heading text → child title; the blocks under it → child body), then replaces THIS page's body with a table-of-contents of links to the new children. **Byte-faithful: every word + block is preserved, just redistributed — nothing is rewritten or summarised.** Writes the TOC to DRAFT only (the published page is untouched until the user commits); each child page is created + indexed immediately, so they're independently searchable and each is small enough to restyle with the block tools afterwards. **When a 'restyle/reformat this whole document' request is too large to do faithfully in one pass, PROPOSE this instead of attempting a doomed full-document transform.**",
+    "Break a long page into pages along its headings: the SCALING LEVER for documents too big to restyle or hold faithfully in one transform. Walks the page and turns every heading of the chosen level into a page of its own, in the same folder (heading text → title; the blocks under it → body), then replaces THIS page's body with a table-of-contents of link cards to the new pages. **Byte-faithful: every word + block is preserved, just redistributed, nothing is rewritten or summarised.** Writes the TOC to DRAFT only (the published page is untouched until the user commits); each new page is created + indexed immediately, so they're independently searchable and each is small enough to restyle with the block tools afterwards. **When a 'restyle/reformat this whole document' request is too large to do faithfully in one pass, PROPOSE this instead of attempting a doomed full-document transform.**",
   inputSchema: {
     type: 'object',
     properties: {
@@ -32,6 +37,7 @@ export const page_split: BuiltinToolDef = {
         description:
           'keep the content BEFORE the first heading at the top of this page (as an intro above the table of contents). Default true.',
       },
+      confirm: CONFIRM_INPUT,
     },
     required: ['page_id', 'by'],
   },
@@ -43,7 +49,11 @@ export const page_split: BuiltinToolDef = {
     if (!level) return { ok: false, error: "by must be 'h1' or 'h2'" };
     const preserveIntro = input.preserve_intro !== false;
     try {
-      const res = await splitPage(ctx.ownerId, pageId, { by: level, preserveIntro });
+      const res = await splitPage(ctx.ownerId, pageId, {
+        by: level,
+        preserveIntro,
+        confirm: input.confirm === true,
+      });
       ctx.step?.setOutput({ split_into: res.children.length });
       const n = res.children.length;
       return {
@@ -54,13 +64,17 @@ export const page_split: BuiltinToolDef = {
           children: res.children,
           intro_kept: res.introKept,
           hint:
-            `Created ${n} sub-page${n === 1 ? '' : 's'} (each indexed independently). ` +
+            `Created ${n} page${n === 1 ? '' : 's'} next to this one (each indexed independently). ` +
             `This page's new table-of-contents is in DRAFT — tell the user to open ` +
             `/pages/${pageId} to review, then Commit to publish. Discarding the draft ` +
-            `reverts THIS page only; the created sub-pages would then need manual cleanup.`,
+            `reverts THIS page only; the created pages would then need manual cleanup.`,
         },
       };
     } catch (err) {
+      // A draft-only embed of the source would open in a shared folder: the
+      // list, until the user agrees (confirm: true).
+      const refusal = visibilityRefusal(err);
+      if (refusal) return { ok: false, error: refusal };
       return { ok: false, error: errorMessage(err) };
     }
   },
@@ -69,9 +83,9 @@ export const page_split: BuiltinToolDef = {
 export const page_extract_section: BuiltinToolDef = {
   slug: 'page_extract_section',
   preconditions: PAGE_ID_PRE,
-  name: 'Promote a section to a sub-page',
+  name: 'Lift a section into its own page',
   description:
-    "Lift ONE section out of a page into its own sub-page. Given a heading's block id (from page_blocks_list), moves that heading + everything under it (until the next heading of equal-or-higher level) into a new child page — heading text → child title, the blocks under it → child body — and drops a link card (childPage) where the section was. Byte-faithful (blocks moved, not rewritten). The surgical cousin of `page_split`: use it to peel off ONE oversized or self-contained section (e.g. 'pull the Appendix out into its own page') rather than splitting the whole document. Writes the parent's new body to DRAFT only; the child is created + indexed immediately.",
+    "Lift ONE section out of a page into a page of its own, in the same folder. Given a heading's block id (from page_blocks_list), moves that heading + everything under it (until the next heading of equal-or-higher level) into a new page (heading text becomes the title, the blocks under it the body) and drops a link card (`[Title](page:<id>)`) where the section was. Byte-faithful (blocks moved, not rewritten). The surgical cousin of `page_split`: use it to peel off ONE oversized or self-contained section (e.g. 'pull the Appendix out into its own page') rather than splitting the whole document. Writes the source's new body to DRAFT only; the new page is created + indexed immediately.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -81,6 +95,7 @@ export const page_extract_section: BuiltinToolDef = {
         description:
           "block id of the section's heading (from page_blocks_list({ kinds:['heading'] })). Must be a top-level heading.",
       },
+      confirm: CONFIRM_INPUT,
     },
     required: ['page_id', 'heading_block_id'],
   },
@@ -90,7 +105,9 @@ export const page_extract_section: BuiltinToolDef = {
     if (!pageId) return { ok: false, error: 'page_id is required' };
     if (!headingId) return { ok: false, error: 'heading_block_id is required' };
     try {
-      const res = await extractSectionToChild(ctx.ownerId, pageId, headingId);
+      const res = await extractSectionToPage(ctx.ownerId, pageId, headingId, {
+        confirm: input.confirm === true,
+      });
       ctx.step?.setOutput({ child_id: res.childId });
       return {
         ok: true,
@@ -99,12 +116,16 @@ export const page_extract_section: BuiltinToolDef = {
           child_id: res.childId,
           title: res.title,
           hint:
-            `Section "${res.title}" moved into a new sub-page (indexed). This page's ` +
+            `Section "${res.title}" moved into a new page next to this one (indexed). This page's ` +
             `body — now with a link card where the section was — is in DRAFT; tell the ` +
             `user to open /pages/${pageId} to review, then Commit.`,
         },
       };
     } catch (err) {
+      // A draft-only embed of the source would open in a shared folder: the
+      // list, until the user agrees (confirm: true).
+      const refusal = visibilityRefusal(err);
+      if (refusal) return { ok: false, error: refusal };
       return { ok: false, error: errorMessage(err) };
     }
   },
@@ -112,74 +133,96 @@ export const page_extract_section: BuiltinToolDef = {
 
 export const page_move: BuiltinToolDef = {
   slug: 'page_move',
-  preconditions: PAGE_NODE_ID_PRE,
-  name: 'Move a page (re-parent)',
+  // Like tree_item_move: a member or client organises through its own tree.
+  ownerOnly: true,
+  preconditions: [
+    ...PAGE_NODE_ID_PRE,
+    { kind: 'node_exists', param: 'folder_id', nodeType: 'branch', lookup: 'tree_folders' },
+  ],
+  name: 'Move a page into a folder',
   description:
-    "Move an EXISTING page to a new spot in the /pages tree — nest it UNDER another page or promote it back to the top level. Pass `parent_id` OR `to_top_level: true` (exactly one). The page keeps everything — body, tags, sharing link, draft, brain index — and its sub-pages move with it. **Publishes immediately: a structural move, not a body edit, so there is no draft/commit step.** Refuses to create a cycle (a page can't move under itself or its own descendants). Use when the user says 'move X under Y'. To create a NEW page already nested, pass `parent_id` to `page_create`; to carve sub-pages OUT of one page use `page_split` / `page_extract_section`.",
+    'File an EXISTING page in a folder of the pages tree, or move it to the top level. Pass `folder_id` (a pages folder from `tree_folders`, kind pages) OR `to_top_level: true` (exactly one). Only where the page sits changes: body, tags, link, draft and brain index stay. A move into or out of a shared folder changes who can see the page: it is refused with the list until the call repeats with `confirm: true`, which you send only once the user agreed. Pages do not nest: to keep pages together, file them in one folder (`tree_folder_create` makes it). The same as `tree_item_move` with kind pages.',
   inputSchema: {
     type: 'object',
     properties: {
-      id: { type: 'string', format: 'uuid', description: 'id of the page to move' },
-      parent_id: {
+      id: { type: 'string', description: 'id of the page to move' },
+      folder_id: {
         type: 'string',
         format: 'uuid',
         description:
-          'id of the page to nest this one UNDER (its new parent). Give this OR to_top_level, not both.',
+          'the pages folder to file it in, from `tree_folders` (kind pages). Give this OR to_top_level, not both.',
       },
       to_top_level: {
         type: 'boolean',
         description:
-          'set true to move the page out to the top level (no parent). Give this OR parent_id, not both.',
+          'set true to move the page out to the top level (no folder). Give this OR folder_id, not both.',
       },
+      parent_id: {
+        type: 'string',
+        format: 'uuid',
+        description:
+          'DEPRECATED, pages do not nest: a page id here files this page in the SAME FOLDER as that page. Prefer `folder_id`.',
+      },
+      confirm: CONFIRM_INPUT,
     },
     required: ['id'],
   },
   handler: async (input, ctx) => {
+    if (!isOwnerSurface(ctx.surface)) return { ok: false, error: OWNER_ONLY_ERROR };
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
+    const folderId = str(input.folder_id).trim();
     const parentId = str(input.parent_id).trim();
     const toTop = input.to_top_level === true;
-    if (parentId && toTop) {
-      return { ok: false, error: 'give either parent_id OR to_top_level:true, not both' };
+    const given = [folderId, parentId, toTop ? 'top' : ''].filter(Boolean).length;
+    if (given > 1) {
+      return { ok: false, error: 'give either folder_id OR to_top_level:true, not both' };
     }
-    if (!parentId && !toTop) {
+    if (given === 0) {
       return {
         ok: false,
         error:
-          'specify a destination: parent_id (to nest under a page) or to_top_level:true (to move to the top level)',
+          'specify a destination: folder_id (a pages folder from tree_folders) or to_top_level:true (the top level)',
       };
     }
     if (parentId && parentId === id) {
-      return { ok: false, error: 'a page cannot be its own parent' };
+      return { ok: false, error: 'a page cannot be moved next to itself; name another page' };
     }
     try {
-      const row = await movePage(ctx.ownerId, id, toTop ? null : parentId);
-      if (!row) return notFound('page', id, 'page_list / search_nodes');
-      ctx.step?.setOutput({ id, parent_id: row.parentId });
+      let dest: string | null = folderId || null;
+      if (parentId) {
+        const beside = await getPage(ctx.ownerId, parentId);
+        if (!beside) {
+          return {
+            ok: false,
+            error: `parent_id '${parentId}' is not one of your pages: pass a folder_id (tree_folders, kind pages) instead.`,
+          };
+        }
+        dest = beside.folderId ?? null;
+      }
+      const result = await moveTreeItems(ctx.ownerId, 'pages', [id], dest, {
+        confirm: input.confirm === true,
+      });
+      if (!result.moved) {
+        const why = result.failed[0]?.error ?? 'not found';
+        return /not found/.test(why)
+          ? notFound('page', id, 'page_list / search_nodes')
+          : { ok: false, error: why };
+      }
+      await notifyTreeChanged(ctx.ownerId, 'pages');
+      ctx.step?.setOutput({ id, folder_id: dest });
       return {
         ok: true,
         output: {
-          id: row.id,
-          title: row.title,
-          parent_id: row.parentId,
-          moved_to: row.parentId ? 'sub-page' : 'top-level',
+          id,
+          folder_id: dest,
+          moved_to: dest ? 'folder' : 'top-level',
         },
       };
     } catch (err) {
-      const msg = errorMessage(err);
-      if (parentId && msg.includes('parent page not found')) {
-        return {
-          ok: false,
-          error: `parent_id '${parentId}' is not one of your pages — pass the id of an existing page (see page_list / search_nodes).`,
-        };
-      }
-      if (msg.includes('under itself or one of its own descendants')) {
-        return {
-          ok: false,
-          error: `cannot move page ${id} under '${parentId}' — that target is the page itself or one of its sub-pages, which would create a cycle.`,
-        };
-      }
-      return { ok: false, error: msg };
+      const refusal = visibilityRefusal(err);
+      if (refusal) return { ok: false, error: refusal };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };

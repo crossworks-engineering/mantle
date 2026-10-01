@@ -7,9 +7,14 @@ import {
   renameFolderById,
   setIndexingMode,
   updateFolderDescription,
+  updateFolderLook,
 } from '@/lib/files';
 import { copyFolderById, moveFolderById } from '@mantle/files';
+import { APP_ICON_MAX, APP_TINTS } from '@mantle/client-types/app-nav';
 import { firstIssue } from '@/lib/zod-issue';
+import { TreeVisibilityError, guardFolderCopyTo, guardFolderTo } from '@mantle/content/tree';
+import { treeErrorResponse } from '@/lib/tree-route';
+import { isBusy } from '@mantle/db';
 
 const IdParams = z.object({ id: z.string().uuid() });
 const PatchBody = z.union([
@@ -19,8 +24,23 @@ const PatchBody = z.union([
   // nearest flagged ancestor (or full). Setting it re-queues extraction for
   // every descendant file whose effective mode changed.
   z.object({ indexing: z.enum(['full', 'metadata', 'inherit']) }),
-  // Move this folder (subtree included) under another parent.
-  z.object({ move: z.string().min(1).max(500) }),
+  // Move this folder (subtree included) under another parent. Into or out
+  // of a shared folder: 409 `visibility` unless `confirm`.
+  z.object({
+    move: z.string().min(1).max(500),
+    confirm: z.boolean().optional(),
+    seen: z.number().int().min(0).optional(),
+  }),
+  // The folder's face in the Files tree, the same vocabulary as an app's
+  // look. An omitted field is kept; null clears it.
+  z.object({
+    look: z
+      .object({
+        icon: z.string().max(APP_ICON_MAX).nullable().optional(),
+        color: z.enum(APP_TINTS).nullable().optional(),
+      })
+      .strict(),
+  }),
 ]);
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -49,6 +69,10 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   }
   try {
     if ('move' in parsed.data) {
+      await guardFolderTo(user.id, idParsed.data.id, parsed.data.move, {
+        confirm: parsed.data.confirm === true,
+        seen: parsed.data.seen,
+      });
       const { folder, requeued } = await moveFolderById({
         ownerId: user.id,
         folderId: idParsed.data.id,
@@ -65,6 +89,15 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       const folder = await folderById({ ownerId: user.id, folderId: idParsed.data.id });
       if (!folder) return NextResponse.json({ error: 'not found' }, { status: 404 });
       return NextResponse.json({ folder, requeued });
+    }
+    if ('look' in parsed.data) {
+      const folder = await updateFolderLook({
+        ownerId: user.id,
+        folderId: idParsed.data.id,
+        ...parsed.data.look,
+      });
+      if (!folder) return NextResponse.json({ error: 'not found' }, { status: 404 });
+      return NextResponse.json({ folder });
     }
     if ('rename' in parsed.data) {
       const folder = await renameFolderById({
@@ -83,6 +116,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     if (!folder) return NextResponse.json({ error: 'not found' }, { status: 404 });
     return NextResponse.json({ folder });
   } catch (err) {
+    if (err instanceof TreeVisibilityError || isBusy(err)) return treeErrorResponse(err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'rename failed' },
       { status: 400 },
@@ -98,11 +132,21 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   const raw = await req.json().catch(() => ({}));
-  const body = z.object({ copy_to: z.string().min(1).max(500) }).safeParse(raw);
+  const body = z
+    .object({
+      copy_to: z.string().min(1).max(500),
+      confirm: z.boolean().optional(),
+      seen: z.number().int().min(0).optional(),
+    })
+    .safeParse(raw);
   if (!body.success) {
     return NextResponse.json({ error: firstIssue(body.error) }, { status: 400 });
   }
   try {
+    await guardFolderCopyTo(user.id, idParsed.data.id, body.data.copy_to, {
+      confirm: body.data.confirm === true,
+      seen: body.data.seen,
+    });
     const result = await copyFolderById({
       ownerId: user.id,
       folderId: idParsed.data.id,
@@ -110,6 +154,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     });
     return NextResponse.json(result, { status: 201 });
   } catch (err) {
+    if (err instanceof TreeVisibilityError || isBusy(err)) return treeErrorResponse(err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'copy failed' },
       { status: 400 },

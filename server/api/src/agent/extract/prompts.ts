@@ -46,7 +46,13 @@ Relations:
 
 Fact kinds:
 - "factual" = a verifiable claim with a value ("Alex's birthday is March 4").
-- "episodic" = a record of something that happened, anchored to a date ("On 2026-03-04 Alex completed a workout"). Set "occurred_at" to that date (YYYY-MM-DD) when the content states or clearly implies one; omit it if no specific date is knowable. Resolve relative dates ("yesterday", "last Tuesday") against the document's own date if present, otherwise omit.
+- "episodic" = a record of something that happened, anchored to a date ("On 2026-03-04 Alex completed a workout"). Set "occurred_at" to that date (YYYY-MM-DD) when the content states or clearly implies one; omit it if no specific date is knowable. Resolve relative dates ("yesterday", "last Tuesday") against the document's own date if present, otherwise omit (see Dates below).
+
+Dates:
+- The document's own date (a "written on" or "held on" line, an email's date) is when it was WRITTEN, not when the things it mentions happened. Work each event's date out from it: "yesterday" is one day before it, "last Saturday" is the most recent Saturday before it, "two weeks ago" is 14 days before it, "next month" is the month after it.
+- Worked example: a note written on Monday 2024-03-11 says "Dropped the car at the garage yesterday". The fact is "On 2024-03-10, Sam dropped the car at the garage" with occurred_at 2024-03-10, not 2024-03-11.
+- Put the resolved date in the fact's text as well as in occurred_at, so the sentence still means the same thing read on its own.
+- When only a period is knowable ("last week", "last summer", "a few years ago"), write the period against the document date in the text ("the week before 2024-03-11", "about three years before 2024-03-11") and omit occurred_at rather than guess a day.
 - "semantic" = a STABLE identity, and ONLY when the content clearly establishes it or there's strong repeated evidence ("Alex is a teacher"). Do NOT infer an identity from a single mundane action.
 - "preference" = how the user wants to be helped, and ONLY when they EXPLICITLY state it ("the user prefers concise replies"). Never infer a preference from one action.
 

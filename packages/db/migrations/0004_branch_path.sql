@@ -1,7 +1,7 @@
 -- Per-account branch path so emails always know which ltree path to land
 -- under. Replaces the runtime `accountSlug(address)` derivation, which
 -- collided for matching local-parts across providers
--- (e.g. jason@schoeman.me vs jason@gmail.com both produced `inbox.jason`).
+-- (e.g. jason@example.com vs jason@gmail.com both produced `inbox.jason`).
 --
 -- For existing accounts we backfill the *legacy* slug so previously-ingested
 -- mail keeps its current branch path — no data migration needed, no

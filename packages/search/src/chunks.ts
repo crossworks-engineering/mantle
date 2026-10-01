@@ -16,6 +16,7 @@ import { and, asc, eq, isNotNull, sql, type SQL } from 'drizzle-orm';
 import { contentChunks, db, nodes } from '@mantle/db';
 import { withHnswPool } from './hnsw';
 import { grantUnionFilter, pgArrayLiteral } from './pg';
+import { keywordSql, resolveKeywordQuery } from './keyword-query';
 import { applyRescueFloor, fuseRrf } from './rrf';
 import { env } from '@mantle/config';
 
@@ -59,6 +60,9 @@ export type ChunkSearchOptions = {
    *  auto-context sets this so Mantle's own documentation isn't injected as "your
    *  content"; the explicit search_chunks tool leaves it off (docs are findable). */
   excludeSystemOrigin?: boolean;
+  /** Node types to leave out (a team surface's hidden types). Applied in
+   *  every arm, so a hidden node can never be ranked in. */
+  excludeTypes?: readonly string[];
   /**
    * Hard allowlist of parent node ids — passages are strictly a subset. Used by
    * the federation surface to search exactly the peer's granted set
@@ -86,6 +90,8 @@ export async function searchChunks(opts: ChunkSearchOptions): Promise<ChunkHit[]
   if (opts.branch) scope.push(sql`${nodes.path} <@ ${opts.branch}::ltree`);
   if (opts.excludeSystemOrigin)
     scope.push(sql`(${nodes.data}->>'origin') is distinct from 'system'`);
+  if (opts.excludeTypes?.length)
+    scope.push(sql`${nodes.type}::text <> all(${pgArrayLiteral([...opts.excludeTypes])}::text[])`);
   if (opts.nodeIds)
     scope.push(sql`${contentChunks.nodeId} = any(${pgArrayLiteral(opts.nodeIds)}::uuid[])`);
   if (opts.nodeIdsOrTypes) scope.push(grantUnionFilter(contentChunks.nodeId, opts.nodeIdsOrTypes));
@@ -145,13 +151,19 @@ export async function searchChunks(opts: ChunkSearchOptions): Promise<ChunkHit[]
     `),
   )) as unknown as Array<{ id: string }>;
 
-  const ftsRows = await db
-    .select({ id: contentChunks.id })
-    .from(contentChunks)
-    .innerJoin(nodes, eq(nodes.id, contentChunks.nodeId))
-    .where(and(...scope, sql`${contentChunks.searchTsv} @@ plainto_tsquery('english', ${q})`))
-    .orderBy(sql`ts_rank(${contentChunks.searchTsv}, plainto_tsquery('english', ${q})) desc`)
-    .limit(pool);
+  // Rarest terms ORed, not every stem ANDed: a whole chat message ANDed
+  // matched nothing, so this arm (and the rescue floor) never fired.
+  const kq = await resolveKeywordQuery(q, 'content_chunks');
+  const kw = kq ? keywordSql(contentChunks.searchTsv, kq) : null;
+  const ftsRows = kw
+    ? await db
+        .select({ id: contentChunks.id })
+        .from(contentChunks)
+        .innerJoin(nodes, eq(nodes.id, contentChunks.nodeId))
+        .where(and(...scope, kw.match))
+        .orderBy(...kw.order)
+        .limit(pool)
+    : [];
 
   const ftsIds = ftsRows.map((r) => r.id);
   const fused = fuseRrf(
@@ -186,6 +198,40 @@ export async function searchChunks(opts: ChunkSearchOptions): Promise<ChunkHit[]
     .map((id) => byId.get(id))
     .filter((r): r is RawChunkRow & { id: string } => Boolean(r))
     .map(toChunkHit);
+}
+
+/**
+ * Each listed node's closest passage to the query embedding (one per node,
+ * raw cosine). For a node retrieval already trusts (the source of a matching
+ * fact) whose text never made the passage cut: its best passage is what the
+ * model needs to answer from it. Nodes with no embedded chunk are absent, and
+ * so are system-seeded docs when `excludeSystemOrigin` is set (as in
+ * searchChunks).
+ */
+export async function bestChunkPerNode(opts: {
+  ownerId: string;
+  embedding: number[];
+  nodeIds: readonly string[];
+  excludeSystemOrigin?: boolean;
+}): Promise<ChunkHit[]> {
+  if (opts.nodeIds.length === 0) return [];
+  const vec = JSON.stringify(opts.embedding);
+  const rows = (await db.execute(sql`
+    select distinct on (${contentChunks.nodeId})
+           ${contentChunks.nodeId} as node_id, ${nodes.title} as node_title,
+           ${nodes.type} as node_type, ${contentChunks.ordinal} as ordinal,
+           ${contentChunks.headingPath} as heading_path, ${contentChunks.text} as text,
+           ${nodes.supersededBy} as superseded_by,
+           ${contentChunks.embedding} <=> ${vec}::vector as dist
+    from ${contentChunks}
+    inner join ${nodes} on ${nodes.id} = ${contentChunks.nodeId}
+    where ${contentChunks.ownerId} = ${opts.ownerId}
+      and ${contentChunks.nodeId} = any(${pgArrayLiteral([...opts.nodeIds])}::uuid[])
+      and ${contentChunks.embedding} is not null
+      ${opts.excludeSystemOrigin ? sql`and (${nodes.data}->>'origin') is distinct from 'system'` : sql``}
+    order by ${contentChunks.nodeId}, dist
+  `)) as unknown as RawChunkRow[];
+  return rows.map(toChunkHit);
 }
 
 type RawChunkRow = {
@@ -332,6 +378,8 @@ export type ReadSectionOptions = {
   fromOrdinal?: number;
   toOrdinal?: number;
   maxChars?: number;
+  /** Node types the caller may not read; such a node reads as not found. */
+  excludeTypes?: readonly string[];
 };
 
 export type ReadSectionResult =
@@ -369,7 +417,7 @@ export async function readSection(opts: ReadSectionOptions): Promise<ReadSection
     .from(nodes)
     .where(and(eq(nodes.id, opts.nodeId), eq(nodes.ownerId, opts.ownerId)))
     .limit(1);
-  if (!node) return { error: 'node not found' };
+  if (!node || opts.excludeTypes?.includes(node.type)) return { error: 'node not found' };
 
   const all = await db
     .select({

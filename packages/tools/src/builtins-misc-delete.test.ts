@@ -5,7 +5,7 @@
  * They share no structure, so each is pinned on the property that makes ITS
  * deletion safe:
  *
- *  - `model_pool_remove` is owner-side and must refuse on the team and forum
+ *  - `model_pool_remove` is owner-side and must refuse on the team
  *    surfaces BEFORE it touches the table, so a team caller cannot mutate the
  *    owner's curated shortlist even through a failed attempt.
  *  - `formula_delete` is excluded from its own auto-grant list — the same
@@ -66,7 +66,8 @@ const deleteWheres = (dbmod as unknown as { __deleteWheres: unknown[] }).__delet
 const poolRemove = CURATION_TOOLS.find((t) => t.slug === 'model_pool_remove')!;
 const formulaDel = FORMULA_TOOLS.find((t) => t.slug === 'formula_delete')!;
 
-const ctx: ToolHandlerContext = { ownerId: 'o1' };
+// The owner's own chat: since client logins C4 a missing surface is not the owner.
+const ctx: ToolHandlerContext = { ownerId: 'o1', surface: { kind: 'web' } };
 const ID = '11111111-2222-4333-8444-555555555555';
 
 type Result = Awaited<ReturnType<BuiltinToolDef['handler']>>;
@@ -106,14 +107,6 @@ describe('model_pool_remove', () => {
     // The refusal has to come first — a team caller must not be able to
     // mutate the owner's curated shortlist even by a failed attempt.
     expect(vi.mocked(dbmod.db.delete)).not.toHaveBeenCalled();
-  });
-
-  it('refuses on the forum surface too', async () => {
-    const res = await poolRemove.handler({ pool: 'chat', name: 'Some Model' }, {
-      ...ctx,
-      surface: { kind: 'forum' },
-    } as ToolHandlerContext);
-    expect(errorOf(res)).toMatch(/owner-side tool/);
   });
 
   it('reports a miss with the lookup that would fix it', async () => {

@@ -7,7 +7,14 @@
  * sync, and a direct grid edit would be silently overwritten by the next one.
  */
 import { eq, sql } from 'drizzle-orm';
-import { db, nodes, appTableExports, type Node } from '@mantle/db';
+import {
+  asViewerLevel,
+  currentSpaceScope,
+  db,
+  nodes,
+  appTableExports,
+  type Node,
+} from '@mantle/db';
 import {
   ensureTableDoc,
   emptyTableDoc,
@@ -48,6 +55,10 @@ export async function appExportLinkOf(tableNodeId: string) {
  *  sync itself. Metadata edits (updateTable) stay allowed and don't call this. */
 export async function assertTableWritable(tableNodeId: string, appSync?: boolean): Promise<void> {
   if (appSync) return;
+  // A personal table is never app-bound (exports are brain tables), and the
+  // personal-space role holds no grant on the export registry: asking would
+  // fail, and inside a space transaction even a caught failure aborts it.
+  if (currentSpaceScope()) return;
   const link = await appExportLinkOf(tableNodeId);
   if (!link) return;
   const [app] = await db
@@ -81,6 +92,10 @@ export function rowOf(n: Node, counts: { columnCount: number; rowCount: number }
     appLink: appLinkOf(d),
     columnCount: counts.columnCount,
     rowCount: counts.rowCount,
+    audience: asViewerLevel(n.audience),
+    inherited:
+      n.inheritedLevel === 'team' || n.inheritedLevel === 'client' ? n.inheritedLevel : null,
+    embedded: n.embeddedLevel === 'team' || n.embeddedLevel === 'client' ? n.embeddedLevel : null,
     createdAt: n.createdAt.toISOString(),
     updatedAt: n.updatedAt.toISOString(),
   };
@@ -147,6 +162,7 @@ export type DocsRow = { storagePath: string | null; data: unknown; draft: unknow
 export function docsOf(
   row: DocsRow,
   tabId?: string,
+  opts: { publishedOnly?: boolean } = {},
 ): {
   data: TableDoc;
   draft: TableDoc | null;
@@ -154,7 +170,7 @@ export function docsOf(
   docClipped: boolean;
 } {
   if (row.storagePath) {
-    const loaded = loadDocsFromFile(row.storagePath, { tabId });
+    const loaded = loadDocsFromFile(row.storagePath, { tabId, publishedOnly: opts.publishedOnly });
     return {
       data: loaded.data,
       draft: loaded.draft,

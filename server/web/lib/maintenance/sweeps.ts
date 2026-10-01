@@ -17,7 +17,14 @@
  */
 import { sql } from 'drizzle-orm';
 import { db } from '@mantle/db';
-import { findDuplicateCandidates, mergeEntities, type MergeCandidate } from '@mantle/content';
+import {
+  findDuplicateCandidates,
+  mergeEntities,
+  purgeDeactivatedSpaces,
+  reapAppAccessLog,
+  reapClientSigninCodes,
+  type MergeCandidate,
+} from '@mantle/content';
 
 import { MAINTENANCE_TASKS, isFreeCost } from './registry';
 import { finishRun, hasRecentCronRun, recordRunStart } from './history';
@@ -28,6 +35,7 @@ import { runPinnedModelDrift } from './pinned-model-drift-run';
 import { summarisePoolFit } from './pool-fit';
 import { runPoolFit } from './pool-fit-run';
 import { reapAbandonedTracesAllOwners } from '../journey';
+import { repairShareDrift } from '@mantle/content/tree';
 import { reapStalePendingTurns, summariseTurnsReap } from './turns-reap';
 import { errorMessage } from '@mantle/std';
 
@@ -129,6 +137,45 @@ export const SWEEPS: Record<string, (ownerId: string) => Promise<string>> = {
   // Turns, not traces: a trace can be closed while its assistant_messages row
   // is still 'pending', so these are genuinely separate surfaces.
   'turns-reap': async () => summariseTurnsReap(await reapStalePendingTurns()),
+  // Client logins audit B21: old sign-in code rows, addresses and skips.
+  'client-codes-reap': async () => {
+    const r = await reapClientSigninCodes();
+    return r.deleted + r.ipsCleared + r.skipsDeleted === 0
+      ? 'nothing to reap'
+      : `deleted ${r.deleted} code row(s) and ${r.skipsDeleted} skip row(s); cleared ${r.ipsCleared} address(es)`;
+  },
+  // Folder audit Y1: rows read at a share their folders no longer give;
+  // S5 (0208): embed edges and the level embeds are read at.
+  'share-drift': async () => {
+    const r = await repairShareDrift();
+    const parts = [
+      ...(r.drifted
+        ? [
+            `repaired ${r.repaired} of ${r.drifted} drifted row(s) (${r.openedTooFar} read too openly)`,
+          ]
+        : []),
+      ...(r.edgesDrifted ? [`put back ${r.edgesDrifted} embed edge(s)`] : []),
+      ...(r.embeddedDrifted
+        ? [
+            `repaired ${r.embeddedDrifted} embedded level(s) (${r.embeddedOpenedTooFar} read too openly)`,
+          ]
+        : []),
+    ];
+    return parts.length ? parts.join('; ') : 'no drift';
+  },
+  // Client tier audit I4: app access log rows older than 90 days.
+  'app-access-log-reap': async () => {
+    const r = await reapAppAccessLog();
+    return r.deleted === 0 ? 'nothing to reap' : `deleted ${r.deleted} access log row(s)`;
+  },
+  // Member logins plan 6.4: a deactivated login's private items, after 30 days.
+  'space-purge': async () => {
+    const r = await purgeDeactivatedSpaces();
+    if (r.skipped) return `skipped: ${r.skipped}`;
+    return r.items === 0
+      ? 'nothing to purge'
+      : `purged ${r.items} private item(s) in ${r.spaces} space(s); ${r.emptied} space(s) emptied`;
+  },
 };
 
 /** Double-fire guard: skip a sweep whose last cron run (any state — a failed

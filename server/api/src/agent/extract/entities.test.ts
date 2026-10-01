@@ -69,7 +69,10 @@ vi.mock('@mantle/db', async (importOriginal) => {
   };
   return { ...actual, db };
 });
-vi.mock('@mantle/embeddings', () => ({ embed: vi.fn(async () => [0.1]) }));
+vi.mock('@mantle/embeddings', () => ({
+  embed: vi.fn(async () => [0.1]),
+  embedBatch: vi.fn(async (_o: string, texts: string[]) => texts.map(() => [0.1])),
+}));
 vi.mock('@mantle/tracing', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/tracing')>();
   return {
@@ -79,6 +82,7 @@ vi.mock('@mantle/tracing', async (importOriginal) => {
   };
 });
 
+import { embedBatch } from '@mantle/embeddings';
 import { reconcileEntities } from './entities';
 
 const NODE = { id: 'n1', ownerId: 'o1', type: 'note', title: 'T', data: {} } as never;
@@ -111,6 +115,29 @@ describe('reconcileEntities', () => {
     // normalisation is part of the contract, not an implementation detail.
     expect(map.get('sarah lister')).toBe('e1');
     expect(map.get('lister group')).toBe('e2');
+  });
+
+  it('embeds every mention in ONE batched call before the per-mention work', async () => {
+    // A provider key's throughput is capped under sustained load, so the
+    // number of round trips sets the pace: the bare name (compared) and
+    // "kind: name" (stored) for every mention go in one call.
+    h.selectQueue.push(entity('e1', 'Sarah'), entity('e2', 'Lister'));
+    await reconcileEntities(NODE, 'o1', [
+      { name: ' Sarah ', kind: 'person' },
+      { name: 'Lister', kind: 'org' },
+    ] as never);
+    expect(embedBatch).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(embedBatch).mock.calls[0]![1]).toEqual([
+      'Sarah',
+      'person: Sarah',
+      'Lister',
+      'org: Lister',
+    ]);
+  });
+
+  it('makes no embedding call for a node with no mentions', async () => {
+    await reconcileEntities(NODE, 'o1', [] as never);
+    expect(embedBatch).not.toHaveBeenCalled();
   });
 
   it('writes one mentioned_in edge per mention, under the caller', async () => {

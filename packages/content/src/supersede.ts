@@ -1,7 +1,7 @@
 /**
  * Node-level supersession — the content-currency lineage layer (write side).
  *
- * The problem this solves (measured on NATREF, 2026-07-17): source files whose
+ * The problem this solves (measured on a client brain, 2026-07-17): source files whose
  * content was migrated into corrected pages kept ranking at full weight — the
  * stale file often carries MORE chunks than its successor page, so passage
  * queries preferred the dead document, and the responder cited rev0 .docx

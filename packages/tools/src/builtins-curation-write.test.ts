@@ -4,7 +4,7 @@
  *
  * Three properties carry the tool's safety:
  *
- *  - Surface. It is owner-side: a team or forum caller is refused before the
+ *  - Surface. It is owner-side: a team caller is refused before the
  *    catalog or the table is touched, so a failed attempt cannot leak a
  *    curated shortlist change either.
  *  - Fit. The live catalog is consulted and a model that positively cannot do
@@ -72,7 +72,8 @@ const update = (dbmod as unknown as { __update: Chain }).__update;
 const insert = (dbmod as unknown as { __insert: Chain }).__insert;
 
 const poolSet = CURATION_TOOLS.find((t) => t.slug === 'model_pool_set')!;
-const ctx: ToolHandlerContext = { ownerId: 'o1' };
+// The owner's own chat: since client logins C4 a missing surface is not the owner.
+const ctx: ToolHandlerContext = { ownerId: 'o1', surface: { kind: 'web' } };
 
 const ROUTES = [{ provider: 'openrouter', model: 'anthropic/claude-sonnet-5' }];
 const GENERATOR = [{ provider: 'openrouter', model: 'openai/gpt-image-1' }];
@@ -129,8 +130,8 @@ beforeEach(() => {
 });
 
 describe('model_pool_set', () => {
-  it('refuses on the team and forum surfaces before touching anything', async () => {
-    for (const kind of ['team', 'forum'] as const) {
+  it('refuses on the team surface before touching anything', async () => {
+    for (const kind of ['team'] as const) {
       const res = await poolSet.handler({ pool: 'agents', name: 'Claude', routes: ROUTES }, {
         ...ctx,
         surface: { kind, contactId: 'c1', topicId: 't1' },

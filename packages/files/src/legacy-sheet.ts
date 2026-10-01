@@ -36,8 +36,8 @@
  *
  * That is a real loss and it is why this path is reserved for the two formats
  * that cannot be read any other way. It is also, in practice, theoretical:
- * across the dev, prod and NATREF brains there is not a single `.xls` or
- * `.xlsb` (NATREF's spreadsheet corpus is 60 `.xlsx` + 13 `.xlsm`). If a real
+ * across three production brains there is not a single `.xls` or
+ * `.xlsb` (the largest spreadsheet corpus is 60 `.xlsx` + 13 `.xlsm`). If a real
  * one ever lands, this comment is the record of exactly what degrades.
  *
  * Never-throws, matching `./tika.ts`: any failure — Tika down, unreadable

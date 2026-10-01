@@ -32,6 +32,7 @@ import {
 } from '@mantle/content';
 import { listReminderCapableAgents } from '@/lib/agents';
 import { errorMessage } from '@mantle/std';
+import { PURPOSE_MAX_CHARS, purposeTooLongError } from '@mantle/client-types/purpose-limits';
 
 export async function GET() {
   const user = await getOwnerOr401();
@@ -126,6 +127,13 @@ export async function PUT(req: Request) {
     );
   }
   const purposeTrimmed = (purpose ?? '').trim();
+  // Refuse, never trim (see @mantle/client-types/purpose-limits).
+  if (purposeTrimmed.length > PURPOSE_MAX_CHARS) {
+    return NextResponse.json(
+      { error: purposeTooLongError(purposeTrimmed.length) },
+      { status: 400 },
+    );
+  }
   const archetype = (purposeArchetype ?? '').trim();
   try {
     // The ACTOR's id: personal keys land on this login's own row, brain keys
@@ -147,7 +155,7 @@ export async function PUT(req: Request) {
         : {}),
       // purpose is sent on every save (empty = cleared); archetype only sticks
       // when it's a known key.
-      ...(purpose !== undefined ? { purpose: purposeTrimmed.slice(0, 600) } : {}),
+      ...(purpose !== undefined ? { purpose: purposeTrimmed } : {}),
       ...(isPurposeArchetype(archetype) ? { purposeArchetype: archetype } : {}),
       // Sent on every save; empty stores '' which projects to unset (= "mantle").
       ...(siteName !== undefined ? { siteName: siteName.trim().slice(0, SITE_NAME_MAX) } : {}),

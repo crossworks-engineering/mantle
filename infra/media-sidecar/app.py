@@ -1322,7 +1322,7 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
             # rebuilds them from the layout unless they are passed in, which
             # silently discards the override. Drawings whose entities carry
             # explicit colours rendered fine and hid this for weeks; a drawing
-            # that is all colour 7 rendered ENTIRELY BLANK (NATREF 2026-09-02:
+            # that is all colour 7 rendered ENTIRELY BLANK (a client box 2026-09-02:
             # 9681 entities, exactly one non-white pixel in the output).
             lp = LayoutProperties.from_layout(msp_layout)
             lp.set_colors("#FFFFFF")  # white page ⇒ colour 7 resolves to black

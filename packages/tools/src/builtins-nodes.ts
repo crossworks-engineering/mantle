@@ -6,13 +6,15 @@
  */
 
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
-import { db, nodes, notifyNodeIngested } from '@mantle/db';
+import { db, isViewerLevel, nodes, notifyNodeIngested } from '@mantle/db';
 import { resolveSupersededTargets } from '@mantle/search';
 import { corpusCapacity, nodeUrl, supersedeNode, unsupersedeNode } from '@mantle/content';
 import { type BuiltinToolDef } from './types';
 import { str, strOpt, numOpt as num } from './coerce';
 import { errorMessage } from '@mantle/std';
 import { NODE_ID_PRE } from './builtins-common';
+import { HIDDEN_NODE_ERROR, surfaceHiddenNodeTypes } from './team-visibility';
+import { isOwnerSurface } from './surface';
 
 export const brain_capacity: BuiltinToolDef = {
   slug: 'brain_capacity',
@@ -70,12 +72,8 @@ export const node_read: BuiltinToolDef = {
       .from(nodes)
       .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ctx.ownerId)))
       .limit(1);
-    if (!row)
-      return {
-        ok: false,
-        error:
-          'node not found — the id may be stale or mistyped; find it with search_nodes / tree_list, then re-issue.',
-      };
+    if (!row || surfaceHiddenNodeTypes(ctx.surface)?.includes(row.type))
+      return { ok: false, error: HIDDEN_NODE_ERROR };
     ctx.step?.setOutput({ type: row.type });
     // Content-currency annotation: reading a superseded node names its living
     // successor so stale content is never presented as current.
@@ -121,6 +119,7 @@ export const node_read: BuiltinToolDef = {
 
 export const content_supersede: BuiltinToolDef = {
   slug: 'content_supersede',
+  ownerOnly: true,
   name: 'Mark content superseded',
   description:
     'Mark a node OUTDATED, optionally naming its replacement — the old copy is down-weighted in retrieval, and when a replacement is named every future hit on it carries a "superseded by" pointer to the successor (a bare mark down-weights only). Returns the updated mark. ' +
@@ -159,13 +158,13 @@ export const content_supersede: BuiltinToolDef = {
     required: ['node_id'],
   },
   handler: async (input, ctx) => {
-    // Members must not re-weight the owner's brain: curation is an owner-side
-    // action (mirrors the other owner-only tools' team-surface refusal).
-    if (ctx.surface?.kind === 'team' || ctx.surface?.kind === 'forum') {
+    // Members and clients must not re-weight the owner's brain: curation is
+    // an owner-side action (the other owner-only tools refuse the same way).
+    if (!isOwnerSurface(ctx.surface)) {
       return {
         ok: false,
         error:
-          'content_supersede is owner-side only — on the team surface, ask the owner (or file a request with team_request_create) instead of re-weighting content directly.',
+          'content_supersede is owner-side only: ask the owner (or file a request with team_request_create or client_request_create) instead of re-weighting content directly.',
       };
     }
     const nodeId = str(input.node_id).trim();
@@ -188,6 +187,10 @@ export const content_supersede: BuiltinToolDef = {
         reason,
       });
       ctx.step?.setOutput({ id: row.id, superseded_by: successorId, reason });
+      // Superseding re-weights; it never changes a level. An old version below
+      // admin stays readable at that level, so say so (and how to hide it).
+      const stillVisible =
+        isViewerLevel(row.audience) && row.audience !== 'admin' ? row.audience : null;
       return {
         ok: true,
         output: {
@@ -196,6 +199,11 @@ export const content_supersede: BuiltinToolDef = {
           superseded_by: row.supersededBy,
           reason: row.supersededReason,
           note: 'Down-weighted in retrieval (reversible with clear: true) — not deleted.',
+          ...(stillVisible
+            ? {
+                warning: `The old version is still visible at ${stillVisible} level: superseding does not change who can open it. To hide it, raise it: access_set(node_id: '${row.id}', level: 'admin').`,
+              }
+            : {}),
         },
       };
     } catch (err) {

@@ -33,9 +33,8 @@ export {
   getPage,
   createPage,
   updatePage,
-  movePage,
-  countPageDescendants,
-  PageCycleError,
+  ParentPageNotFoundError,
+  PageFolderNotFoundError,
   addPageMention,
   MentionTargetNotFoundError,
   MentionAnchorNotFoundError,
@@ -46,7 +45,7 @@ export {
   deletePage,
   splitPage,
   NoSplitHeadingsError,
-  extractSectionToChild,
+  extractSectionToPage,
   SectionNotFoundError,
   type PageRow,
   type PageDetail,
@@ -107,7 +106,7 @@ export {
 
 export { diffBlocks, type BlockDiff, type BlockChange } from '@mantle/content-core/block-diff';
 
-export { referencedFileIds, referencedDrawIds } from './doc-assets';
+export { referencedFileIds, referencedDrawIds, referencedEmbedIds } from './doc-assets';
 
 export {
   supersedeNode,

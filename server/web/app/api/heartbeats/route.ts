@@ -4,6 +4,7 @@ import { createHeartbeat, listHeartbeats } from '@/lib/heartbeats';
 import { CreateHeartbeatBody, toCreateInput } from '@/lib/heartbeat-schema';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
+import { isUniqueViolation } from '@mantle/db';
 
 /** List the owner's heartbeats (summaries). */
 export async function GET() {
@@ -30,7 +31,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ heartbeat });
   } catch (err) {
     const msg = errorMessage(err);
-    if (msg.includes('heartbeats_owner_slug') || msg.includes('duplicate key')) {
+    if (isUniqueViolation(err)) {
       return NextResponse.json(
         { error: `A heartbeat with slug "${parsed.data.slug}" already exists.` },
         { status: 409 },

@@ -1,13 +1,16 @@
 import puppeteer from 'puppeteer-core';
 import { env } from '@mantle/config';
+import { openRenderPage } from './render-sandbox';
+
+export { printOrigin } from './render-sandbox';
 
 /**
  * PDF rendering for Pages via the BROWSER SIDECAR — Mantle's Tika-for-browsers.
  *
  * Rather than re-implement the page schema a fourth time (editor /
  * markdownToDoc / renderPageDoc / renderDocx), a real Chromium loads the app's
- * OWN owner-authed `/print/pages/<id>` route — with the caller's session cookie
- * forwarded — and prints it. The PDF therefore reuses the live page CSS
+ * OWN admin-only `/print/pages/<id>` route, carrying a render cookie for the
+ * acting admin (lib/render-sandbox.ts), and prints it. The PDF therefore reuses the live page CSS
  * (callouts, code highlight, KaTeX, images, asides) and looks exactly like the
  * on-screen page.
  *
@@ -23,11 +26,8 @@ import { env } from '@mantle/config';
  *   BROWSER_WS_ENDPOINT  ws URL incl. token, e.g. ws://browser:3000?token=…
  *                        dev compose publishes 127.0.0.1:9222 →
  *                        ws://127.0.0.1:9222?token=mantle
- *   MANTLE_PRINT_ORIGIN  origin the SIDECAR uses to reach this app.
- *                        prod compose: http://web:3000 (service DNS).
- *                        dev default:  http://host.docker.internal:$PORT
- *                        (the app runs as native node; the sidecar container
- *                        reaches the host via its host-gateway alias).
+ *   MANTLE_PRINT_ORIGIN  origin the SIDECAR uses to reach this app (see
+ *                        printOrigin in lib/render-sandbox.ts).
  */
 
 /** Thrown when the sidecar isn't configured or can't be reached — the export
@@ -41,15 +41,6 @@ export class PdfRendererUnavailableError extends Error {
     );
     this.name = 'PdfRendererUnavailableError';
   }
-}
-
-/** The origin Chromium-in-the-sidecar uses to reach this app's /print route. */
-export function printOrigin(): string {
-  const configured = env('MANTLE_PRINT_ORIGIN');
-  if (configured) return configured.replace(/\/+$/, '');
-  // Dev: the app is native node on the host; the sidecar reaches it through the
-  // host-gateway alias baked into docker-compose.dev.yml.
-  return `http://host.docker.internal:${env('PORT') || '3000'}`;
 }
 
 /**
@@ -88,12 +79,12 @@ export async function browserHealth(
 }
 
 /**
- * Render an app URL (an owner-authed `/print/...` surface) to a PDF Buffer.
- * `cookie` is the caller's raw `Cookie` header, forwarded so the print route —
- * and every image subresource it loads from the authed asset route —
- * authenticates as the owner.
+ * Render an app URL (a `/print/...` surface) to a PDF Buffer. `renderToken` is
+ * a render cookie value (buildRenderToken) for the acting admin and the node
+ * the URL prints; the print route and the image routes it loads accept it, and
+ * nothing outside the print origin is ever fetched (lib/render-sandbox.ts).
  */
-export async function renderUrlToPdf(url: string, cookie: string): Promise<Buffer> {
+export async function renderUrlToPdf(url: string, renderToken: string): Promise<Buffer> {
   const endpoint = env('BROWSER_WS_ENDPOINT');
   if (!endpoint) throw new PdfRendererUnavailableError('BROWSER_WS_ENDPOINT is not set');
 
@@ -109,8 +100,7 @@ export async function renderUrlToPdf(url: string, cookie: string): Promise<Buffe
   }
 
   try {
-    const page = await browser.newPage();
-    if (cookie) await page.setExtraHTTPHeaders({ cookie });
+    const page = await openRenderPage(browser, renderToken);
     await page.goto(url, { waitUntil: 'networkidle0', timeout: 30_000 });
     // Diagram blocks render client-side after load (print.ts injects a script
     // tagged data-diagram-print that sets data-diagrams-ready on completion —

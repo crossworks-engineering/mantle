@@ -64,13 +64,22 @@ export function kindLane(key: string | null): JournalLane {
   return found?.lane ?? 'user';
 }
 
+/** Legacy life areas that describe WHO the user is (background), not what
+ *  happened lately. Spike 10 (dev-brain page 60a2f51e): mapping these to
+ *  `context` let the newest-first cap drop a personal brain's family, faith
+ *  and health baseline entries from every prompt. */
+const LEGACY_BACKGROUND = new Set(['family', 'relationships', 'faith', 'health']);
+
 /** Map a legacy pre-v2 `category` value to a kind, for rows written before
- *  the kind vocabulary existed. `identity`/`goal` carry over; every other
- *  life area (work, family, faith, health, emotion, …) reads as `context`.
- *  Only consulted when a row has no `kind`. */
-export function legacyCategoryToKind(category: string | null): KindKey {
+ *  the kind vocabulary existed. `identity`/`goal` carry over; background life
+ *  areas (family, relationships, faith, health) read as `identity`, unless the
+ *  row carries a `mood`: a mood-era entry is a reflection on a moment, so it
+ *  reads as `context`. Everything else (work, emotion, reflection, ad hoc
+ *  categories) reads as `context`. Only consulted when a row has no `kind`. */
+export function legacyCategoryToKind(category: string | null, mood: string | null = null): KindKey {
   if (category === 'identity') return 'identity';
   if (category === 'goal') return 'goal';
+  if (category && LEGACY_BACKGROUND.has(category) && !mood) return 'identity';
   return 'context';
 }
 

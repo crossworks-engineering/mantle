@@ -7,6 +7,14 @@
 
 import { and, eq, inArray } from 'drizzle-orm';
 import { db, skills, toolGroups, type Skill } from '@mantle/db';
+import {
+  currentViewerLevel,
+  isViewerLevel,
+  levelCovers,
+  levelsMeet,
+  lowerLevel,
+  type ViewerLevel,
+} from '@mantle/db/viewer';
 
 export type SkillForRuntime = {
   id: string;
@@ -68,7 +76,7 @@ export async function resolveToolGroupSkillSlugs(
 ): Promise<string[]> {
   if (groupSlugs.length === 0) return [];
   const rows = await db
-    .select({ integration: toolGroups.integration })
+    .select({ slug: toolGroups.slug, integration: toolGroups.integration })
     .from(toolGroups)
     .where(
       and(
@@ -77,9 +85,12 @@ export async function resolveToolGroupSkillSlugs(
         inArray(toolGroups.slug, groupSlugs),
       ),
     );
+  // In grant order, not row order: skill bodies land in the cached persona
+  // block, so an unstable order would bust the prompt cache.
+  const bySlug = new Map(rows.map((r) => [r.slug, r]));
   const out = new Set<string>();
-  for (const r of rows) {
-    const slug = r.integration?.skillSlug;
+  for (const g of groupSlugs) {
+    const slug = bySlug.get(g)?.integration?.skillSlug;
     if (slug) out.add(slug);
   }
   return Array.from(out);
@@ -112,10 +123,28 @@ export function effectiveSkillSlugs(ownSlugs: string[], groupSkillSlugs: string[
  * tool slugs (ENABLED groups only, matching the runtime's resolve-or-omit rule).
  * Empty in ⇒ empty out (no DB hit). See docs/tools-and-skills.md (Phase 3).
  */
-export async function resolveAgentToolGroups(ownerId: string, slugs: string[]): Promise<string[]> {
+export async function resolveAgentToolGroups(
+  ownerId: string,
+  slugs: string[],
+  level: ViewerLevel = 'admin',
+): Promise<string[]> {
   if (slugs.length === 0) return [];
+  // Level cap (member logins Phase 0b): a group above the agent's level, or
+  // above the current viewer scope (whichever is lower), is left out whatever
+  // the grant says. Fail closed: the tools simply are not there. A client
+  // scope and a public agent (or the reverse) have no common level: no tools.
+  const current = currentViewerLevel();
+  if (!levelsMeet(current, level)) {
+    console.warn(`[skills] a ${level}-level agent under a ${current}-level caller gets no tools`);
+    return [];
+  }
+  const cap = lowerLevel(current, level);
   const rows = await db
-    .select({ toolSlugs: toolGroups.toolSlugs })
+    .select({
+      slug: toolGroups.slug,
+      toolSlugs: toolGroups.toolSlugs,
+      audience: toolGroups.audience,
+    })
     .from(toolGroups)
     .where(
       and(
@@ -124,8 +153,20 @@ export async function resolveAgentToolGroups(ownerId: string, slugs: string[]): 
         inArray(toolGroups.slug, slugs),
       ),
     );
+  // In grant order, not row order: the tool list is the front of every
+  // cached prompt prefix, so it must be byte-stable between turns (and the
+  // cap in effectiveToolSlugs then cuts the same tools every time).
+  const allowed = rows.filter((r) => {
+    const groupLevel = isViewerLevel(r.audience) ? r.audience : 'admin';
+    if (levelCovers(cap, groupLevel)) return true;
+    console.warn(
+      `[skills] tool group '${r.slug}' is ${groupLevel}-level; left out for a ${cap}-level agent`,
+    );
+    return false;
+  });
+  const bySlug = new Map(allowed.map((r) => [r.slug, r]));
   const set = new Set<string>();
-  for (const r of rows) for (const t of r.toolSlugs ?? []) set.add(t);
+  for (const g of slugs) for (const t of bySlug.get(g)?.toolSlugs ?? []) set.add(t);
   return Array.from(set);
 }
 
@@ -146,7 +187,7 @@ export async function resolveAgentToolGroups(ownerId: string, slugs: string[]): 
  * persona note cannot, and why the preview shows it (no hidden prompts).
  *
  * Being that seam is also why `{{name}}` resolves HERE rather than deeper in
- * `renderPersonaBlock`: substituting later would make the model see a name the
+ * `renderPersonaPrompt`: substituting later would make the model see a name the
  * Studio preview does not, which is exactly the hidden prompt this seam exists
  * to prevent. `agentName` is REQUIRED so a new call site cannot forget it and
  * silently ship a literal token to a model.

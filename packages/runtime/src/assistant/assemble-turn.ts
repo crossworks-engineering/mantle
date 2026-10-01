@@ -28,6 +28,12 @@
 
 import type { Agent } from '@mantle/db';
 import {
+  delegationHintLine,
+  loadDelegates,
+  suggestDelegate,
+  type DelegationHint,
+} from '@mantle/decisions';
+import {
   composeSystemPromptWithSkills,
   effectiveToolSlugs,
   isBuiltinReadOnly,
@@ -38,7 +44,9 @@ import {
 } from '../agent';
 import {
   buildIdentityContext,
+  buildJournalTier1,
   buildWorkingNotesContext,
+  journalTiersOf,
   buildTimeContextLine,
   resolveThinkingBudget,
   resolveThinkingEffort,
@@ -68,6 +76,7 @@ import {
   openHeartbeatsForSurface,
 } from '../heartbeats';
 import { maxImageBytesFor, modelSupportsVision, refreshModelCatalog } from '@mantle/tracing';
+import { agentLevel, withAgentViewer } from '../agent/agent-viewer';
 
 /** Where a turn's open-heartbeat awareness is scoped. Mirrors the surface
  *  union `openHeartbeatsForSurface` takes (Team Chat has no heartbeats, so
@@ -113,6 +122,13 @@ export type AssembleResponderTurnOptions = {
   /** Honour memory_config.delegate_to. Team turns pass false — the team
    *  responder never delegates (fail closed). */
   allowDelegation?: boolean;
+  /** The user's message for this turn (plus the previous user message as
+   *  context). Enables the decider's `delegation_hint` use: one typed
+   *  decision picks which delegate (or none) the message looks like, and in
+   *  live mode a hint line joins the volatile context. Omit on surfaces that
+   *  cannot delegate; the hint is skipped when `delegateTo` is empty. */
+  inboundText?: string;
+  previousUserText?: string | null;
   /** Slugs removed AFTER group resolution — the team private-reads gate.
    *  Enforced here at tool resolution so a manifest change that re-adds the
    *  slugs to a group can't bypass the switch. */
@@ -130,6 +146,10 @@ export type AssembledResponderTurn = {
   /** Cached prefix (breakpoint 1): identity + persona + skills + suffix —
    *  stable across turns. */
   effectiveSystemPrompt: string;
+  /** Journal tier 1 (purpose + identity/goal/preference) for the cached
+   *  notes block, when memory_config.journal_tiers is `live`; '' otherwise
+   *  (the old blocks are then inside effectiveSystemPrompt). */
+  journalBlock: string;
   /** Uncached volatile slot: time line + surface extras + heartbeat block. */
   volatileContext: string;
   /** Slugs of open (expecting-reply) heartbeats that influenced this turn —
@@ -140,6 +160,11 @@ export type AssembledResponderTurn = {
   thinkingBudget: number | undefined;
   thinkingEffort: ThinkingEffort | undefined;
   delegateTo: string[];
+  /** The decider's delegation hint for this turn (null = use off / short
+   *  message / no delegates / failed). Callers put its compact form into the
+   *  turn's trace `data` (`delegationHintTraceData`) so shadow mode leaves a
+   *  record even though the assembly ran before the trace opened. */
+  delegationHint: DelegationHint | null;
   resultHandling: NonNullable<Agent['memoryConfig']>['result_handling'] | null;
   loopOverrides: ResponderLoopOverrides;
 };
@@ -150,13 +175,22 @@ export type AssembledResponderTurn = {
  * context (identity, heartbeats) soft-fails with a warning, never sinks the
  * turn.
  */
-export async function assembleResponderTurn(
+/** Assemble at the agent's level: the prompt derives context from the brain
+ *  too (member logins Phase 0b). */
+export function assembleResponderTurn(
+  opts: AssembleResponderTurnOptions,
+): Promise<AssembledResponderTurn> {
+  return withAgentViewer(opts.agent, () => assembleResponderTurnAtLevel(opts));
+}
+
+async function assembleResponderTurnAtLevel(
   opts: AssembleResponderTurnOptions,
 ): Promise<AssembledResponderTurn> {
   const { ownerId, agent, prefs, logPrefix } = opts;
   const memoryConfig = (agent.memoryConfig ?? {}) as {
     inject_journal?: boolean;
     inject_working_notes?: boolean;
+    journal_tiers?: 'off' | 'shadow' | 'live';
     delegate_to?: string[];
     max_iterations?: number;
     max_tool_calls?: number;
@@ -206,10 +240,28 @@ export async function assembleResponderTurn(
   // user's Journal (deterministic, no LLM; empty when there are none). Opt
   // out per-agent with memory_config.inject_journal=false. Prepended so it
   // reads as durable user-truth at the top of the (cached) system block.
-  let identityBlock = '';
-  if ((opts.includeIdentity ?? true) && memoryConfig.inject_journal !== false) {
+  // With the tiers live (memory_config.journal_tiers = 'live', implied by
+  // notes_target = 'journal') neither block goes here: tier 1 rides the
+  // cached notes block (after the persona prompt, so a Journal write no
+  // longer re-bills the whole prefix) and tiers 2/3 come per turn from
+  // loadConversationContext. Every block is scoped to this agent: an entry
+  // another agent learned is not ours. docs/journal.md "Tiers".
+  const journalLive = journalTiersOf(memoryConfig) === 'live';
+  let journalBlock = '';
+  if (journalLive && (opts.includeIdentity ?? true) && memoryConfig.inject_journal !== false) {
     try {
-      const block = await buildIdentityContext(ownerId);
+      journalBlock = await buildJournalTier1(ownerId, agent.slug);
+    } catch (err) {
+      console.error(
+        `${logPrefix} journal tier 1 skipped:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+  let identityBlock = '';
+  if (!journalLive && (opts.includeIdentity ?? true) && memoryConfig.inject_journal !== false) {
+    try {
+      const block = await buildIdentityContext(ownerId, agent.slug);
       if (block) identityBlock = `${block}\n\n`;
     } catch (err) {
       console.error(
@@ -225,7 +277,11 @@ export async function assembleResponderTurn(
   // out per-agent with memory_config.inject_working_notes=false. Deterministic
   // and cached, same posture as the identity block.
   let workingNotesBlock = '';
-  if ((opts.includeIdentity ?? true) && memoryConfig.inject_working_notes !== false) {
+  if (
+    !journalLive &&
+    (opts.includeIdentity ?? true) &&
+    memoryConfig.inject_working_notes !== false
+  ) {
     try {
       const block = await buildWorkingNotesContext(ownerId, agent.slug);
       if (block) workingNotesBlock = `${block}\n\n`;
@@ -243,9 +299,37 @@ export async function assembleResponderTurn(
   // slot instead.
   const effectiveSystemPrompt =
     identityBlock + workingNotesBlock + promptWithSkills + (opts.systemPromptSuffix ?? '');
+
+  // Decider, use `delegation_hint` (experimental, owner-switched): which
+  // delegate does this message look like work for. Null (off / short
+  // message / no delegates / failed) = no line. In shadow the answer only
+  // lands in the trace; in live one hint line rides in the volatile slot —
+  // a hint, never a route: the tool loop's allowlist is what delegation is
+  // checked against. Best-effort like the blocks above.
+  const delegateTo = (opts.allowDelegation ?? true) ? (memoryConfig.delegate_to ?? []) : [];
+  let delegationHint: DelegationHint | null = null;
+  let delegationHintText: string | null = null;
+  if (opts.inboundText && delegateTo.length > 0) {
+    try {
+      delegationHint = await suggestDelegate({
+        ownerId,
+        message: opts.inboundText,
+        previousUserMessage: opts.previousUserText ?? null,
+        delegates: await loadDelegates(ownerId, delegateTo),
+      });
+      delegationHintText = delegationHintLine(delegationHint);
+    } catch (err) {
+      console.error(
+        `${logPrefix} delegation hint skipped:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
   const volatileContext = [
     timeContextLine,
     ...(opts.volatileExtras ?? []),
+    delegationHintText,
     openHeartbeatBlock.trim(),
   ]
     .filter(Boolean)
@@ -259,7 +343,11 @@ export async function assembleResponderTurn(
   // there's an active heartbeat on this surface for the model to act on.
   // No runtime magic the rest of the time. See docs/heartbeats.md §4
   // "Permission model & runtime hygiene".
-  const groupTools = await resolveAgentToolGroups(ownerId, agent.toolGroupSlugs ?? []);
+  const groupTools = await resolveAgentToolGroups(
+    ownerId,
+    agent.toolGroupSlugs ?? [],
+    agentLevel(agent),
+  );
   let allowedToolSlugs = effectiveToolSlugs(groupTools);
   if (opts.excludeToolSlugs?.length) {
     const gated = new Set(opts.excludeToolSlugs);
@@ -307,6 +395,7 @@ export async function assembleResponderTurn(
   return {
     attachedSkills,
     effectiveSystemPrompt,
+    journalBlock,
     volatileContext,
     relatedHeartbeatSlugs,
     allowedTools,
@@ -317,7 +406,8 @@ export async function assembleResponderTurn(
     // undefined ⇒ omit the field so mandatory-reasoning models don't see a
     // rejected `none`.
     thinkingEffort: (opts.withThinking ?? true) ? resolveThinkingEffort(prefs) : undefined,
-    delegateTo: (opts.allowDelegation ?? true) ? (memoryConfig.delegate_to ?? []) : [],
+    delegateTo,
+    delegationHint,
     resultHandling: agent.memoryConfig?.result_handling ?? null,
     loopOverrides,
   };

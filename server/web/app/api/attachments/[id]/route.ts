@@ -12,7 +12,7 @@ import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
  * a user-owned email, then streams the bytes back through Next. We proxy
  * (rather than redirect to a presigned URL) so the browser never needs to
  * reach the internal object store endpoint — important now that storage is
- * self-hosted MinIO on a docker-network address.
+ * a self-hosted S3 store on a docker-network address.
  */
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   // getOwnerForAsset: this download URL is an <a href>/<img> src that can't

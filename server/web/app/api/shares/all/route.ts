@@ -3,7 +3,9 @@ import { listActiveShares } from '@mantle/content';
 import { getOwnerOr401 } from '@/lib/auth';
 
 /** GET /api/shares/all → every ACTIVE share the owner has, newest first — the
- *  "what is exposed right now" registry (public and team links alike). */
+ *  "what is exposed right now" registry (every live link is public). `level`
+ *  is the item's level (client logins C1): a live link on a client item is
+ *  an old one, made when client meant an open link. */
 export async function GET() {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
@@ -21,6 +23,7 @@ export async function GET() {
       createdAt: s.createdAt,
       viewCount: s.viewCount,
       lastViewedAt: s.lastViewedAt,
+      level: s.level,
     })),
   });
 }

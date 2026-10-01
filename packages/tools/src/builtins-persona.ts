@@ -30,6 +30,8 @@ import {
   type PersonaNote,
   type PersonaUpdate,
 } from '@mantle/db';
+import { notesTargetOf, writeLearnedEntries } from '@mantle/content';
+import { reconcileMeta, ruleReconcilerFor } from './rule-reconciler';
 import type { BuiltinToolDef } from './types';
 
 function asStringArray(v: unknown): string[] {
@@ -39,6 +41,7 @@ function asStringArray(v: unknown): string[] {
 
 const update_persona: BuiltinToolDef = {
   slug: 'update_persona',
+  spends: true,
   name: 'Update persona',
   description:
     "Adjust how YOU (the assistant) behave with this user — style, tone, how you address them — ONLY when they explicitly ask for a durable change ('be more professional', 'call me Jay', 'stop using bullet lists'). " +
@@ -119,12 +122,69 @@ const update_persona: BuiltinToolDef = {
     }
 
     const [row] = await db
-      .select({ id: agents.id, personaNotes: agents.personaNotes })
+      .select({
+        id: agents.id,
+        personaNotes: agents.personaNotes,
+        memoryConfig: agents.memoryConfig,
+      })
       .from(agents)
       .where(and(eq(agents.ownerId, ctx.ownerId), eq(agents.slug, slug)))
       .limit(1);
     if (!row) {
       return { ok: false, error: `agent '${slug}' not found for this owner` };
+    }
+
+    // memory_config.notes_target = 'journal': this agent's notes live in the
+    // Journal now. An explicit request is a standing preference (always on);
+    // retiring an old one is a Journal edit, which the Journal tools do.
+    if (notesTargetOf(row.memoryConfig) === 'journal') {
+      if (!update.add) {
+        return {
+          ok: false,
+          error:
+            'Your notes live in the Journal: change or remove the entry with journal_update / journal_delete.',
+        };
+      }
+      const { written, reconcile } = await writeLearnedEntries(
+        ctx.ownerId,
+        slug,
+        [{ ...update.add, scope: 'general' }],
+        'update_persona',
+        { reconcile: ruleReconcilerFor(ctx.ownerId) },
+      );
+      // Persona refs mean nothing in the Journal. The new entry is written
+      // (a correction must land). With rule_reconcile live, an older rule it
+      // repeats or changes is retired here; anything else the model retires
+      // with the Journal tools, and it is told so rather than told "done".
+      const retired = reconcile?.mode === 'live' ? reconcile.retires.length - reconcile.errors : 0;
+      const ignoredRefs = [...(update.supersedeRefs ?? []), ...(update.removeRefs ?? [])];
+      const staleRefs = ignoredRefs.length > 0;
+      ctx.step?.setMeta({
+        agent: slug,
+        target: 'journal',
+        written: written.length,
+        ...(staleRefs ? { refs_ignored: ignoredRefs } : {}),
+        ...(reconcile ? { rule_reconcile: reconcileMeta(reconcile) } : {}),
+      });
+      return {
+        ok: true,
+        output: {
+          journal: written[0] ?? null,
+          ...(retired > 0
+            ? {
+                retired: reconcile!.retires.map((r) => r.older),
+              }
+            : {}),
+          ...(staleRefs
+            ? {
+                not_retired:
+                  retired > 0
+                    ? 'The older rules listed in `retired` were superseded automatically. supersede_refs / remove_refs are persona-note refs and do not apply in the Journal; retire anything else with journal_list, then journal_delete / journal_update.'
+                    : 'supersede_refs / remove_refs are persona-note refs and do not apply in the Journal. Find the entry this replaces with journal_list, then remove or rewrite it with journal_delete / journal_update.',
+              }
+            : {}),
+        },
+      };
     }
 
     const current = (row.personaNotes ?? []) as PersonaNote[];

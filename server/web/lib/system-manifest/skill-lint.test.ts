@@ -34,7 +34,7 @@ const NOT_A_TOOL_SLUG = new Set<string>([
   'draft_doc', // pages draft-state field on page rows (page_editing)
   'has_draft', // page_get result flag (page_editing)
   'mentioned_in', // page_mention edge kind (page_editing)
-  'parent_id', // page_create / page_move param (page_editing)
+  'folder_id', // page_create / page_move param (page_editing)
   'subject_node_ids', // heartbeat_create param (specialist_routing)
   'coverage_gaps', // formula_get result field (formula_use / formula_authoring)
   'dimension_issues', // formula_get result field (formula_use / formula_authoring)

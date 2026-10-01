@@ -160,8 +160,124 @@ export async function renameFolder(fromLtree: string, toLtree: string): Promise<
   return { path: to };
 }
 
-/** Recursively remove a folder. Caller must check it's empty in the DB
- *  beforehand — this is the unconditional "delete from disk" half. */
+/** Editor + OS chaff the files tree never tracks: dotfiles (macOS `._x`
+ *  AppleDouble twins, `.DS_Store`), `~` backups, vim/editor temps, emacs
+ *  autosaves. The watcher ignores these; folder delete may sweep them. */
+export function isDiskChaff(basename: string): boolean {
+  return (
+    basename.startsWith('.') ||
+    basename.endsWith('~') ||
+    basename.endsWith('.swp') ||
+    basename.endsWith('.swx') ||
+    basename.endsWith('.tmp') ||
+    (basename.startsWith('#') && basename.endsWith('#'))
+  );
+}
+
+/** Real (non-chaff) files on disk under a folder, as paths relative to it,
+ *  up to `limit`. A folder that is empty in the DB can still hold these: a
+ *  file dropped in that the watcher refused (e.g. a slug clash), or one of a
+ *  type it does not watch. They are user data the brain has no row for. */
+export async function untrackedFilesOnDisk(ltreePath: string, limit = 5): Promise<string[]> {
+  const dir = isFilesPath(ltreePath) ? diskPathForLtree(ltreePath) : null;
+  if (!dir) return [];
+  const found: string[] = [];
+  const walk = async (d: string): Promise<void> => {
+    let entries: import('node:fs').Dirent[];
+    try {
+      entries = await fs.readdir(d, { withFileTypes: true });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
+      throw err;
+    }
+    for (const e of entries) {
+      if (found.length >= limit) return;
+      const abs = path.join(d, e.name);
+      if (e.isDirectory()) await walk(abs);
+      else if (!isDiskChaff(e.name)) found.push(path.relative(dir, abs));
+    }
+  };
+  await walk(dir);
+  return found;
+}
+
+/** Files directly in a folder's directory (not its subfolders) that the
+ *  brain does not track: names (lower-cased) outside `tracked`, OS chaff
+ *  aside. Read only. A folder delete that lifts its contents asks this first,
+ *  so it refuses before moving anything rather than after (the final delete
+ *  refuses a folder still holding untracked files). */
+export async function strayFilesIn(
+  ltreePath: string,
+  tracked: ReadonlySet<string>,
+  limit = 5,
+  /** With it, a subdirectory outside this set (lower-cased names) that holds
+   *  a real file is stray too, reported as `name/`: a folder delete removes
+   *  the directory it sits in. */
+  trackedDirs?: ReadonlySet<string>,
+): Promise<string[]> {
+  const dir = isFilesPath(ltreePath) ? diskPathForLtree(ltreePath) : null;
+  if (!dir) return [];
+  let entries: import('node:fs').Dirent[];
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw err;
+  }
+  const found: string[] = [];
+  for (const e of entries) {
+    if (found.length >= limit) break;
+    if (e.isDirectory()) {
+      if (!trackedDirs || trackedDirs.has(e.name.toLowerCase())) continue;
+      if ((await realFilesUnder(path.join(dir, e.name), 1)).length) found.push(`${e.name}/`);
+      continue;
+    }
+    if (isDiskChaff(e.name)) continue;
+    if (!tracked.has(e.name.toLowerCase())) found.push(e.name);
+  }
+  return found;
+}
+
+/** Real (non-chaff) files anywhere under a directory, up to `limit`. */
+async function realFilesUnder(dir: string, limit: number): Promise<string[]> {
+  const found: string[] = [];
+  const walk = async (d: string): Promise<void> => {
+    let entries: import('node:fs').Dirent[];
+    try {
+      entries = await fs.readdir(d, { withFileTypes: true });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
+      throw err;
+    }
+    for (const e of entries) {
+      if (found.length >= limit) return;
+      const abs = path.join(d, e.name);
+      if (e.isDirectory()) await walk(abs);
+      else if (!isDiskChaff(e.name)) found.push(abs);
+    }
+  };
+  await walk(dir);
+  return found;
+}
+
+/** Every name in a folder's directory (files and directories, chaff aside),
+ *  lower-cased; empty when it does not exist. Read only: what a file moving
+ *  in must not be named. */
+export async function diskNamesIn(ltreePath: string): Promise<Set<string>> {
+  const dir = isFilesPath(ltreePath) ? diskPathForLtree(ltreePath) : null;
+  if (!dir) return new Set();
+  try {
+    const names = await fs.readdir(dir);
+    return new Set(names.filter((n) => !isDiskChaff(n)).map((n) => n.toLowerCase()));
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return new Set();
+    throw err;
+  }
+}
+
+/** Recursively remove a folder. Caller must check it's empty in the DB AND
+ *  on disk (`untrackedFilesOnDisk`) beforehand — this is the unconditional
+ *  "delete from disk" half, and it takes any chaff with it. */
 export async function removeFolder(ltreePath: string): Promise<void> {
   if (!isFilesPath(ltreePath)) return;
   const dir = diskPathForLtree(ltreePath);
@@ -214,7 +330,11 @@ export function spoolDir(): string {
  */
 export async function spoolUpload(
   source: Readable,
-  opts: { maxBytes: number },
+  opts: {
+    maxBytes: number;
+    /** Default `spoolDir()`; member uploads spool
+     *  inside the spaces root (space-disk.ts) so adoption stays a rename. */ dir?: string;
+  },
 ): Promise<SpooledUpload> {
   // Nothing listens on `source` until `pipeline` below, and the awaits before
   // it leave a window: a client drop there destroys the stream with an error
@@ -223,7 +343,7 @@ export async function spoolUpload(
   // destroyed) and the cleanup below runs as usual.
   const holdError = () => {};
   source.on('error', holdError);
-  const dir = spoolDir();
+  const dir = opts.dir ?? spoolDir();
   try {
     await fs.mkdir(dir, { recursive: true });
   } catch (err) {
@@ -308,8 +428,7 @@ export async function adoptSpooled(
 
 /** Delete spool files older than `maxAgeMs` (default 2 h): residue from a
  *  process that died mid-upload. Cheap; the route fires it on each upload. */
-export async function sweepSpool(maxAgeMs = 2 * 60 * 60 * 1000): Promise<number> {
-  const dir = spoolDir();
+export async function sweepSpool(maxAgeMs = 2 * 60 * 60 * 1000, dir = spoolDir()): Promise<number> {
   let names: string[];
   try {
     names = await fs.readdir(dir);

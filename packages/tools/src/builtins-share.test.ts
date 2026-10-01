@@ -4,11 +4,13 @@
  * that gap: these are the two tools that decide whether brain content is
  * reachable by someone with no login at all.
  *
- * The DB edges (createShare / applyShareMode / getActiveShareForNode /
- * revokeShareTree) are stubbed; the tools' own logic is real. What is worth
- * pinning is the branching, because each branch is a different answer to
- * "who can now read this":
+ * The DB edges (createShare / getActiveShareForNode / unshareItem) are
+ * stubbed; the tools' own logic is real. What is worth pinning is the
+ * branching, because each branch is a different answer to "who can now read
+ * this":
  *
+ *  - team links are retired (member logins Phase 6 stage 6): `mode: 'team'`
+ *    is refused with what to do instead, and nothing is created;
  *  - an unrecognised `mode` must NOT fall through to public;
  *  - unsharing something that was never shared must not call revoke at all;
  *  - a refused share (not owned / not a shareable type) must surface the
@@ -19,18 +21,17 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 vi.mock('@mantle/content', () => ({
   createShare: vi.fn(),
-  applyShareMode: vi.fn(),
   getActiveShareForNode: vi.fn(),
-  revokeShareTree: vi.fn(),
+  unshareItem: vi.fn(),
   shareUrlForToken: (token: string) => `https://brain.test/s/${token}`,
+  TeamLinkRetiredError: class extends Error {
+    constructor() {
+      super('Team links are retired: members sign in with their own logins now.');
+    }
+  },
 }));
 
-import {
-  createShare,
-  applyShareMode,
-  getActiveShareForNode,
-  revokeShareTree,
-} from '@mantle/content';
+import { createShare, getActiveShareForNode, unshareItem } from '@mantle/content';
 import { SHARE_TOOLS } from './builtins-share';
 import type { ToolHandlerContext } from './types';
 
@@ -75,38 +76,56 @@ describe('node_share', () => {
     expect(createShare).not.toHaveBeenCalled();
   });
 
-  it('creates the link and returns the store’s mode when none is asked for', async () => {
-    const res = await share.handler({ id: NODE_ID }, ctx);
-    expect(outputOf(res)).toEqual({
-      id: NODE_ID,
-      url: 'https://brain.test/s/tok',
-      mode: 'public',
-    });
-    // No mode requested means no mode WRITE — an existing team link keeps its
-    // setting instead of being quietly reset.
-    expect(applyShareMode).not.toHaveBeenCalled();
+  it('creates the link and returns the store’s mode', async () => {
+    for (const input of [{ id: NODE_ID }, { id: NODE_ID, mode: 'public' }]) {
+      const res = await share.handler(input, ctx);
+      expect(outputOf(res)).toEqual({
+        id: NODE_ID,
+        url: 'https://brain.test/s/tok',
+        mode: 'public',
+      });
+    }
+    expect(createShare).toHaveBeenCalledTimes(2);
   });
 
-  it('applies an explicit team mode and reports it', async () => {
+  it('refuses a team link, saying members use their own logins, and creates nothing', async () => {
     const res = await share.handler({ id: NODE_ID, mode: 'team' }, ctx);
-    expect(applyShareMode).toHaveBeenCalledWith('o1', 's-1', 'team');
-    expect(outputOf(res).mode).toBe('team');
+    expect(errorOf(res)).toMatch(/Team links are retired.*own logins/);
+    expect(createShare).not.toHaveBeenCalled();
+    expect(
+      (share.inputSchema as { properties: Record<string, unknown> }).properties.mode,
+    ).toMatchObject({ enum: ['public'] });
   });
 
-  it('treats an unrecognised mode as "unspecified", never as public', async () => {
-    // The guard is `input.mode === 'team' ? … : input.mode === 'public' ? … :
-    // undefined`. A typo like 'everyone' must fall to undefined — which leaves
-    // the link's current setting alone — and must NOT be coerced to public,
-    // which would silently widen access on an existing team link.
-    vi.mocked(createShare).mockResolvedValue({
-      id: 's-1',
-      token: 'tok',
-      mode: 'team',
-    } as unknown as Awaited<ReturnType<typeof createShare>>);
-
+  it('refuses an unrecognised mode, never reading it as public', async () => {
     const res = await share.handler({ id: NODE_ID, mode: 'everyone' }, ctx);
-    expect(applyShareMode).not.toHaveBeenCalled();
-    expect(outputOf(res).mode).toBe('team');
+    expect(errorOf(res)).toMatch(/mode must be 'public'/);
+    expect(createShare).not.toHaveBeenCalled();
+  });
+
+  it("calls out an embedded client item the link took out of client logins' view (A10)", async () => {
+    vi.mocked(createShare).mockImplementation((async (
+      _o: string,
+      _id: string,
+      opts: { alsoLowered?: unknown[] },
+    ) => {
+      opts.alsoLowered?.push(
+        { id: 'f-1', type: 'file', title: 'plan.pdf', from: 'client', to: 'public' },
+        { id: 'f-2', type: 'file', title: 'logo.png', from: 'admin', to: 'public' },
+      );
+      return { id: 's-1', token: 'tok', mode: 'public' };
+    }) as never);
+    const out = outputOf(await share.handler({ id: NODE_ID }, ctx));
+    expect(out.warning).toBe(
+      "An embedded client item went from client to public with it and so left client logins' view: plan.pdf (file). Tell the owner; if clients should keep them, the owner decides what to change.",
+    );
+    // An admin embed going public is the ordinary rule, not called out.
+    expect(out.warning).not.toMatch(/logo\.png/);
+  });
+
+  it('says nothing extra when no client item moved', async () => {
+    const out = outputOf(await share.handler({ id: NODE_ID }, ctx));
+    expect(out).not.toHaveProperty('warning');
   });
 
   it('surfaces the store’s own corrective when the item is not shareable', async () => {
@@ -123,7 +142,7 @@ describe('node_unshare', () => {
     const res = await unshare.handler({ id: '  ' }, ctx);
     expect(errorOf(res)).toMatch(/id is required/);
     expect(getActiveShareForNode).not.toHaveBeenCalled();
-    expect(revokeShareTree).not.toHaveBeenCalled();
+    expect(unshareItem).not.toHaveBeenCalled();
   });
 
   it('is a no-op success when the item was never shared', async () => {
@@ -133,19 +152,19 @@ describe('node_unshare', () => {
     // Nothing to revoke — and revoking "nothing" must not reach the tree
     // walker, which is what would make an unshare of an unshared node
     // expensive (or, on a bad id, wrong).
-    expect(revokeShareTree).not.toHaveBeenCalled();
+    expect(unshareItem).not.toHaveBeenCalled();
   });
 
   it('revokes the active share by its share id, not the node id', async () => {
     vi.mocked(getActiveShareForNode).mockResolvedValue({ id: 's-9' } as unknown as Awaited<
       ReturnType<typeof getActiveShareForNode>
     >);
-    vi.mocked(revokeShareTree).mockResolvedValue(true);
+    vi.mocked(unshareItem).mockResolvedValue({ revoked: true, stillBelow: [] });
 
     const res = await unshare.handler({ id: NODE_ID }, ctx);
     // Passing the node id here would revoke nothing (or the wrong tree) while
     // still reporting success — the failure this asserts against.
-    expect(revokeShareTree).toHaveBeenCalledWith('o1', 's-9');
+    expect(unshareItem).toHaveBeenCalledWith('o1', 's-9');
     expect(outputOf(res)).toEqual({ id: NODE_ID, unshared: true });
   });
 
@@ -153,12 +172,25 @@ describe('node_unshare', () => {
     vi.mocked(getActiveShareForNode).mockResolvedValue({ id: 's-9' } as unknown as Awaited<
       ReturnType<typeof getActiveShareForNode>
     >);
-    vi.mocked(revokeShareTree).mockResolvedValue(false);
+    vi.mocked(unshareItem).mockResolvedValue({ revoked: false, stillBelow: [] });
 
     const res = await unshare.handler({ id: NODE_ID }, ctx);
     // Still ok:true — the call worked — but the caller must be able to tell
     // that the link may still be live.
     expect(outputOf(res)).toEqual({ id: NODE_ID, unshared: false });
+  });
+
+  it('names what the item embeds that is still below admin, and how to raise it (MED 7)', async () => {
+    vi.mocked(getActiveShareForNode).mockResolvedValue({ id: 's-9' } as unknown as Awaited<
+      ReturnType<typeof getActiveShareForNode>
+    >);
+    const file = { id: 'f-1', type: 'file', title: 'plan.pdf', audience: 'client' as const };
+    vi.mocked(unshareItem).mockResolvedValue({ revoked: true, stillBelow: [file] });
+
+    const out = outputOf(await unshare.handler({ id: NODE_ID }, ctx));
+    expect(out.stillBelow).toEqual([file]);
+    expect(out.warning).toMatch(/plan\.pdf \(file, client\)/);
+    expect(out.warning).toMatch(/raise_closure: true/);
   });
 
   it('surfaces a revoke failure rather than reporting success', async () => {

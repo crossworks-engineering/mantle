@@ -1,11 +1,20 @@
 /**
  * Moving and copying files and folders around the tree.
  *
- * Split out of builtins-files.ts; bodies moved verbatim.
+ * Split out of builtins-files.ts. A move or copy into (or out of) a shared
+ * folder changes who can see the files: refused with the list until the
+ * call repeats with `confirm: true` (docs/folder-tree.md, "Confirm first").
  */
 
 import { moveFileById, moveFolderById, copyFileById, copyFolderById } from '@mantle/files';
+import {
+  guardFileCopyTo,
+  guardFileTo,
+  guardFolderCopyTo,
+  guardFolderTo,
+} from '@mantle/content/tree';
 import { type BuiltinToolDef } from '../types';
+import { CONFIRM_INPUT, visibilityRefusal } from '../visibility-refusal';
 import { str } from '../coerce';
 import { errorMessage } from '@mantle/std';
 import { FILE_ID_PRE, FOLDER_ID_PRE } from '../builtins-common';
@@ -28,6 +37,7 @@ export const file_move: BuiltinToolDef = {
         type: 'string',
         description: "Destination FOLDER ltree path, e.g. 'files.archive.2026'.",
       },
+      confirm: CONFIRM_INPUT,
     },
     required: ['file_id', 'dest_path'],
   },
@@ -36,11 +46,12 @@ export const file_move: BuiltinToolDef = {
     const destPath = str(input.dest_path);
     if (!fileId || !destPath) return { ok: false, error: 'file_id and dest_path required' };
     try {
+      await guardFileTo(ctx.ownerId, fileId, destPath, { confirm: input.confirm === true });
       const row = await moveFileById({ ownerId: ctx.ownerId, fileId, destPath });
       ctx.step?.setOutput({ fileId, destPath });
       return { ok: true, output: row };
     } catch (err) {
-      return { ok: false, error: errorMessage(err) };
+      return { ok: false, error: visibilityRefusal(err) ?? errorMessage(err) };
     }
   },
 };
@@ -67,6 +78,7 @@ export const file_copy: BuiltinToolDef = {
         type: 'string',
         description: "Optional name for the copy, e.g. 'report-v2.pdf'; defaults to the source's.",
       },
+      confirm: CONFIRM_INPUT,
     },
     required: ['file_id', 'dest_path'],
   },
@@ -76,11 +88,12 @@ export const file_copy: BuiltinToolDef = {
     const newFilename = str(input.new_filename) || undefined;
     if (!fileId || !destPath) return { ok: false, error: 'file_id and dest_path required' };
     try {
+      await guardFileCopyTo(ctx.ownerId, fileId, destPath, { confirm: input.confirm === true });
       const row = await copyFileById({ ownerId: ctx.ownerId, fileId, destPath, newFilename });
       ctx.step?.setOutput({ sourceId: fileId, newId: row.id });
       return { ok: true, output: row };
     } catch (err) {
-      return { ok: false, error: errorMessage(err) };
+      return { ok: false, error: visibilityRefusal(err) ?? errorMessage(err) };
     }
   },
 };
@@ -103,6 +116,7 @@ export const folder_move: BuiltinToolDef = {
         type: 'string',
         description: "The NEW PARENT folder's ltree path, e.g. 'files.archive'.",
       },
+      confirm: CONFIRM_INPUT,
     },
     required: ['folder_id', 'dest_parent_path'],
   },
@@ -112,6 +126,9 @@ export const folder_move: BuiltinToolDef = {
     if (!folderId || !destParentPath)
       return { ok: false, error: 'folder_id and dest_parent_path required' };
     try {
+      await guardFolderTo(ctx.ownerId, folderId, destParentPath, {
+        confirm: input.confirm === true,
+      });
       const { folder, requeued } = await moveFolderById({
         ownerId: ctx.ownerId,
         folderId,
@@ -120,7 +137,7 @@ export const folder_move: BuiltinToolDef = {
       ctx.step?.setOutput({ folderId, destParentPath, requeued });
       return { ok: true, output: { folder, requeued } };
     } catch (err) {
-      return { ok: false, error: errorMessage(err) };
+      return { ok: false, error: visibilityRefusal(err) ?? errorMessage(err) };
     }
   },
 };
@@ -143,6 +160,7 @@ export const folder_copy: BuiltinToolDef = {
         type: 'string',
         description: "The parent folder to copy INTO, e.g. 'files.backups'.",
       },
+      confirm: CONFIRM_INPUT,
     },
     required: ['folder_id', 'dest_parent_path'],
   },
@@ -152,6 +170,9 @@ export const folder_copy: BuiltinToolDef = {
     if (!folderId || !destParentPath)
       return { ok: false, error: 'folder_id and dest_parent_path required' };
     try {
+      await guardFolderCopyTo(ctx.ownerId, folderId, destParentPath, {
+        confirm: input.confirm === true,
+      });
       const result = await copyFolderById({ ownerId: ctx.ownerId, folderId, destParentPath });
       ctx.step?.setOutput({
         folderId,
@@ -160,7 +181,7 @@ export const folder_copy: BuiltinToolDef = {
       });
       return { ok: true, output: result };
     } catch (err) {
-      return { ok: false, error: errorMessage(err) };
+      return { ok: false, error: visibilityRefusal(err) ?? errorMessage(err) };
     }
   },
 };

@@ -1,11 +1,22 @@
 # Team Hub apps: the builder's guide
 
+> **The `/hub` host is retired (member logins Phase 6, 2026-09-28).** The
+> team-code `/hub` (and `/team`, and `/api/team/hub`) went with the team
+> portal; `/hub` now redirects to `/login`. The one host left is the **member
+> home**: a member login's home page runs the pinned app, and `hub.get`
+> answers from `GET /api/member/home` in the same `HubData` shape (section 3,
+> "The member home is a second host", now the only one;
+> [member-logins.md](member-logins.md) section 7). Designation is unchanged
+> (`PUT /api/team-admin/hub-app`, pref `teamHubAppId`). Where this guide says
+> `/hub`, the team token gate, the Forum link or the signed team bearer, read
+> it as history.
+
 How to build, structure, and maintain a **team hub app**: the mini-app a brain
 designates to render as its Team Hub (served at `/hub` since the Team Workspace took over `/team`) for external team members. This is the
 canonical reference for hub-app authors (human or agent). It builds on the
 general mini-app reference, read
 [app-authoring-guide.md](app-authoring-guide.md) first for the build loop,
-allowed imports, and styling rules; this document covers what is *specific* to
+allowed imports, and styling rules; this document covers what is _specific_ to
 hub apps: the `host.hub` SDK, the designation lifecycle, the structure to
 follow, and the content-update patterns.
 
@@ -18,7 +29,8 @@ An ordinary `/apps` mini-app plus one namespace. When designated (Team admin →
 members. The shell keeps everything that must stay core:
 
 - the **member token gate** and cookie minting/revocation,
-- the **live Team Chat**,
+- the **Forum** link (the 1:1 Team Chat was removed 2026-09-26; the forum
+  itself in Phase 6),
 - the **in-hub briefing reader** (team-shared pages),
 - per-member **access logging** and membership liveness checks.
 
@@ -30,7 +42,7 @@ network, no cookies; the only egress is the postMessage bridge.
 
 **The built-in hub is the safety net.** If the designation chain breaks at any
 link, pref unset, app deleted, build red, share revoked, bundle fails to fetch
-*or* fetches but never boots, members get the built-in hub. Designation can
+_or_ fetches but never boots, members get the built-in hub. Designation can
 never cost a team a working page.
 
 ## 2. The designation chain (how `/hub` decides what to render)
@@ -38,24 +50,25 @@ never cost a team a working page.
 ```
 prefs.teamHubAppId  →  app exists under this owner
                     →  green PUBLISHED build
-                    →  active TEAM-mode share
+                    →  app at a level members may run (team, client, public)
 ```
 
-Designation (the Team-admin picker, or `PUT /api/team-admin/hub-app`) ensures
-the app's share exists and is team-mode, then sets the pref. Undesignating
+Designation (the Team-admin picker, or `PUT /api/team-admin/hub-app`) puts an
+app still at admin at team level, then sets the pref, and answers
+`{ appId, levelChanged }`; it makes no share link (team links were retired in
+member logins Phase 6 stage 6). Undesignating
 clears the pref only. Members are always served the **published** build,
 drafts never leave the owner editor.
 
-Brokered traffic (bundle, tool calls, SQLite) goes through the app's team-mode
-share routes, so the member's identity is re-derived server-side on every call
-and every access is logged per member.
+Brokered traffic (bundle, tool calls, SQLite) goes through the member app
+routes (`/api/member/apps/:id/*`), so the member's login is re-checked
+server-side on every call and every access is logged per member.
 
-Since the v0.200 member carve, `/hub` renders on the **client origin** and the
-broker calls cross to the server origin: the sandbox host page attaches the
-member's signed team bearer (`AppSandbox`'s `apiBase` + `fetcher` props), the
-`/s/<token>/{bundle,tool-broker,db-broker}` routes accept it
-(`resolveShareVisitorFromRequest`), and the middleware gives exactly those
-three sub-paths the `/api/**` CORS treatment. Nothing changes for the app
+Since the v0.200 member carve, `/hub` rendered on the **client origin** and the
+broker calls crossed to the server origin with the member's signed team
+bearer. That bearer is retired (Phase 6): the `/s/<token>` brokers accept
+only the share-scoped visitor cookie now, and the member home runs the app
+through the member app routes instead. Nothing changes for the app
 author, broker calls still happen in the parent page, never the sandboxed
 iframe.
 
@@ -65,7 +78,7 @@ iframe.
 import { host } from '@host';
 
 host.hub.get(): Promise<HubData>    // REJECTS off the /team surface
-host.hub.openChat(): void           // shell switches to live Team Chat
+host.hub.openChat(): void           // shell opens the team Forum
 host.hub.openBriefing(token): void  // shell opens the in-hub reader
 
 type HubData = {
@@ -97,10 +110,21 @@ Rules that bind the SDK (and any future addition to it):
   embeds, restyles, or intercepts them.
 - **`openBriefing` only opens real sections.** The shell validates the token
   against the current `sections`; anything else is ignored. Deep-link by
-  *finding* a section (e.g. by title match), never by hardcoding a token.
-- **`hub.get` is answered locally by the shell** from the `/api/team/hub`
-  payload, extending `HubData` means extending that route, where it is gated
-  and audited.
+  _finding_ a section (e.g. by title match), never by hardcoding a token.
+- **`hub.get` is answered locally by the shell** from the host's payload
+  (`/api/member/home` now; the retired `/api/team/hub` before Phase 6):
+  extending `HubData` means extending that route, where it is gated and
+  audited.
+- **The member home is a second host** (member logins Phase 4b,
+  [member-logins.md](member-logins.md) section 7). The same app, pinned as
+  the hub and set to team level, is the members' home page. There `hub.get`
+  answers from `/api/member/home` in the same `HubData` shape, with these
+  differences: `sections` are the newest team-level pages (a section's
+  `token` is the page id, and `openBriefing` opens it in the member Library),
+  `counts` are Library counts per kind (`page`, `note`, `draw`, `table`,
+  `file`), and `apps` are the other apps members may run (`token` is the app
+  id; `openApp` opens it). `openChat` opens the member's chat. Keep `token`
+  opaque and the app works on both hosts.
 
 Call the SDK defensively (`host.hub?.get`) so the same bundle renders on a
 box whose runtime predates the namespace.
@@ -173,8 +197,8 @@ const [tiles, setTiles] = useState<Tile[] | null>(null);
 useEffect(() => {
   host.tools
     .call('table_rows_list', { table_id: WHATS_NEW_TABLE_ID })
-    .then((r) => setTiles(parseTiles(r)))        // validate + filter Active,
-    .catch(() => setTiles(FALLBACK_TILES));      // sort by Order, cap at N
+    .then((r) => setTiles(parseTiles(r))) // validate + filter Active,
+    .catch(() => setTiles(FALLBACK_TILES)); // sort by Order, cap at N
 }, []);
 ```
 
@@ -191,7 +215,7 @@ useEffect(() => {
 Notes that keep this safe and honest:
 
 - `table_rows_list` is a **builtin**, so it passes the team broker's
-  builtin-only gate; it runs under the *owner's* scope and is access-logged
+  builtin-only gate; it runs under the _owner's_ scope and is access-logged
   per member. It reads the **published** table, draft edits stay invisible
   until commit, which gives table updates the same review step as app
   publishes.
@@ -211,7 +235,7 @@ Read-acknowledgements, polls, per-section feedback: declare a schema with
 `host.db.query/exec`. Team members' writes are allowed and access-logged.
 
 **The attribution caveat (do not skip):** the app runs in the member's
-browser, so a `memberName` you write into SQLite is *advisory*, display it,
+browser, so a `memberName` you write into SQLite is _advisory_, display it,
 but never build permission or integrity logic on it. The host's per-member
 access log is the tamper-proof trail. Server-stamped writes (a reserved
 `$member_contact_id` binding substituted by the team db-broker) are the
@@ -240,13 +264,13 @@ reserved, not implemented. Propose additions there rather than overloading
 
 ## 7. Updating a live hub: the workflows
 
-| Change | Workflow | Live when |
-|---|---|---|
-| Copy / tiles (Tier 1) | edit `content.ts` → `app_build` → `app_publish` | next member page load |
-| Tiles (Tier 2) | edit table → `table_commit` | next hub load, no publish |
-| Layout / new section | edit `components/` → build → publish | next page load |
-| Briefing set / order | share or revoke team-mode pages (share time = order) | next hub load |
-| Revert to built-in hub | Team admin → Hub app → "Built-in hub" | immediately |
+| Change                 | Workflow                                        | Live when                 |
+| ---------------------- | ----------------------------------------------- | ------------------------- |
+| Copy / tiles (Tier 1)  | edit `content.ts` → `app_build` → `app_publish` | next member page load     |
+| Tiles (Tier 2)         | edit table → `table_commit`                     | next hub load, no publish |
+| Layout / new section   | edit `components/` → build → publish            | next page load            |
+| Briefing set / order   | set pages to team level or back (newest first)  | next hub load             |
+| Revert to built-in hub | Team admin → Hub app → "Built-in hub"           | immediately               |
 
 Members with `/hub` already open see updates on their next load; there is no
 live push to an open tab. The shell keeps the app mounted across chat/reader
@@ -270,12 +294,12 @@ that must survive a reload goes in SQLite (Tier 3).
 
 - **Members see the built-in hub instead of the app**: the chain broke.
   Check, in order: pref set (Team-admin picker shows the app), published build
-  green (`app_get`), share active and team-mode. The picker labels a
+  green (`app_get`), app at team level or lower. The picker labels a
   designated app whose build went red.
 - **Members see "Loading…" then the built-in hub**: the bundle booted badly
   (module-level throw) or an import failed; the shell's ready-watchdog fired.
   Reproduce in the `/apps` editor, fix, republish.
-- **`hub.get` rejects**: you're off the `/team` surface (editor, ordinary
+- **`hub.get` rejects**: you're off the member home (editor, ordinary
   share, pre-rollout runtime). That's the R2 preview path, not an error.
 - **A tool call returns 403**: the slug isn't declared via `app_tools_set`,
   or it's a non-builtin handler (team surfaces refuse those by design).

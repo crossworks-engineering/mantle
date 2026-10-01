@@ -2,14 +2,14 @@
 
 The owner UI lives in the jackdaw repo and runs **detached**: the browser app
 on your machine, the brain (this repo: server/web + server/api + Postgres +
-MinIO) on a box you can reach over HTTP. Nothing in jackdaw touches the
+the object store) on a box you can reach over HTTP. Nothing in jackdaw touches the
 database; every screen fetches over `/api/**` with a bearer token.
 
 ## On the brain (this repo)
 
 | Variable                  | Effect                                                                                                                                                                                                                                                           |
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MANTLE_API_CORS_ORIGINS` | Comma list of client origins (or `*`) allowed to call `/api/**` cross-origin. Bearer auth only, never cookies, so no `Allow-Credentials`. The `*` wildcard is refused on the credential-minting routes (`/api/auth*`, `/api/team/auth`, `/api/team/sso`).        |
+| `MANTLE_API_CORS_ORIGINS` | Comma list of client origins (or `*`) allowed to call `/api/**` cross-origin. Bearer auth only, never cookies, so no `Allow-Credentials`. The `*` wildcard is refused on the credential-minting routes (`/api/auth*`).                                           |
 | `MANTLE_DETACHED_DEV`     | Dev only (hard-off when `NODE_ENV=production`). Lets a page navigation render without a session cookie so the client shell can boot; `/api/**` still answers 401 without a credential. Identity for those page renders comes from `MANTLE_API_TOKEN` (below).    |
 | `MANTLE_API_TOKEN`        | The bearer the detached client presents; `detachedDevUser()` in `server/web/lib/auth/session.ts` reads the owner id out of it for the page gate. (Was `NEXT_PUBLIC_MANTLE_API_TOKEN`; the old name is still honoured with a warning, see docs/configuration.md.) |
 | `MANTLE_DEV_EMAIL`        | Optional display email for the placeholder identity.                                                                                                                                                                                                             |

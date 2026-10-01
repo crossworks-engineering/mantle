@@ -10,6 +10,9 @@
  * public surface is byte-identical — only the file a symbol lives in moved.
  */
 
+import type { AppNav, AppOpenStat, AppTint } from '../app-nav';
+import type { AccessLevel } from './access';
+
 // ── Row/DTO shapes moved from the server packages (jackdaw split P0) ─────────
 // Sources: @mantle/content, @mantle/email, @mantle/microsoft, @mantle/runtime/agent
 // re-export these names, so server code keeps its original import paths.
@@ -47,7 +50,7 @@ export type TaskTodo = {
 };
 
 /** Mirrors @mantle/db `NodeCommentAuthorKind`. */
-export type NodeCommentAuthorKind = 'owner' | 'member' | 'agent';
+export type NodeCommentAuthorKind = 'owner' | 'member' | 'agent' | 'client';
 
 /**
  * A comment on a node (tasks first; the table is node-generic). `authorName`
@@ -117,8 +120,10 @@ export type PageWidth = 'narrow' | 'wide';
 
 export type PageRow = {
   id: string;
-  /** Parent page id, or null for a top-level page. Drives the /pages tree
-   *  and the `childPage` card (Phase 4a sub-pages). */
+  /** DEPRECATED (folder phase 7): pages do not nest, so this is always
+   *  null. A page's place is its folder in the pages tree
+   *  (`GET /api/tree/pages`; `PageDetail.folderId`). Kept so a client from
+   *  before the tree, which built a hierarchy from it, still parses the row. */
   parentId: string | null;
   title: string;
   icon: string | null;
@@ -126,14 +131,31 @@ export type PageRow = {
   summary: string | null;
   visibility: PageVisibility;
   width: PageWidth;
+  /** Access level (admin > team > client > public); the owner UI's badge. */
+  audience: AccessLevel;
   createdAt: string;
   updatedAt: string;
+};
+
+/**
+ * DEPRECATED (folder phase 7): `GET /api/pages` answers plain `PageRow`s.
+ * Pages do not nest, so nothing has sub-pages or a parent page any more; a
+ * client from before the tree reads `childCount` as 0 and `parentTitle` as
+ * null (both absent from the wire). Where a page sits is the pages tree's
+ * (`GET /api/tree/pages`).
+ */
+export type PageListRow = PageRow & {
+  childCount: number;
+  parentTitle: string | null;
 };
 
 export type AppRow = {
   id: string;
   title: string;
+  /** Emoji, or `lucide:<name>` from the client's curated set (app-nav.ts). */
   icon: string | null;
+  /** Tile tint key (APP_TINTS); null = the client's neutral default. */
+  color: AppTint | null;
   tags: string[];
   summary: string | null;
   description: string | null;
@@ -144,12 +166,26 @@ export type AppRow = {
   /** Whether an uncommitted draft exists. */
   hasDraft: boolean;
   /**
-   * The app's exposure: mode of its active share ('public' | 'team'), or null
-   * when it has never been shared / the share is revoked (owner-only).
+   * The app's exposure: mode of its active share ('public'), or null when it
+   * has never been shared / the share is revoked (owner-only).
    */
   shareMode: ShareMode | null;
   /** Whether this app is the designated Team Hub (prefs.teamHubAppId). */
   isHub: boolean;
+  /** Access level (admin > team > client > public); the owner UI's badge. */
+  audience: AccessLevel;
+  /** The share it inherits from a folder above it (team or client), or
+   *  null; it is read at the more open of this and `audience`. Optional:
+   *  absent from brains before the folder audit fixes. */
+  inherited?: 'team' | 'client' | null;
+  /** The share it is read at through something that embeds it (migration
+   *  0208), or null. Optional: absent from brains before it. */
+  embedded?: 'team' | 'client' | null;
+  /** Informational (client logins C6): members and clients only read the
+   *  app's data. Off, an app at team or client level is a shared workspace
+   *  everyone who runs it writes. Set with PATCH /api/apps/:id
+   *  `{ dataReadOnly }`. Absent from an older brain: read as false. */
+  dataReadOnly?: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -420,14 +456,16 @@ export type ProfilePreferences = {
    *  group grant, so the switch can't be bypassed by a manifest change. Flip it
    *  from the Team admin surface. */
   teamPrivateReads?: boolean;
-  /** Node id of the mini-app designated as this brain's TEAM HUB. When set (and
-   *  the app has a green published build + an active team-mode share), the /team
-   *  shell renders that app full-bleed in place of the built-in hub body; the
-   *  built-in hub remains the fallback for every other state. Resolve via
-   *  `resolveTeamHubApp` (team-hub.ts), never raw — designation is only honoured
-   *  when the whole chain (pref → app → build → share) is intact. Read via
+  /** Node id of the mini-app designated as the members' HOME APP (the name
+   *  is from the retired /team hub). A member login's home renders it
+   *  full-bleed while it has a green published build and is at a level
+   *  members may run (`resolveMemberHomeApp`, member-apps.ts); the built-in
+   *  member home is the fallback. No share link is involved. Read via
    *  projectTeamHubAppId, never raw. */
   teamHubAppId?: string;
+  /** The email account client sign-in codes are sent from (client logins
+   *  C2b). A BRAIN key: one sender for the brain. Unset = codes are off. */
+  clientSigninSenderId?: string;
   /** Tags the owner curates as Dashboard sections on the /team overview: each
    *  tag renders a section of up to 5 team-visible shared pages carrying it
    *  (newest-updated first, title + summary + /s link). Order here = section
@@ -435,6 +473,18 @@ export type ProfilePreferences = {
    *  this pref only chooses which tag groupings get pinned. Unset/empty ⇒ no
    *  curated sections. Read via projectTeamHubTags, never raw. */
   teamHubTags?: string[];
+  /** BRAIN-level sidebar layout for mini apps: folders (nested up to
+   *  APP_NAV_MAX_DEPTH), their order, and where each app sits. Written ONLY
+   *  through saveAppNav (rev-checked), read via projectAppNav, never raw. */
+  appNav?: AppNav;
+  /** Per-login: app ids pinned above the tree, in order. */
+  appPins?: string[];
+  /** Per-login: sidebar favourite hrefs, in order. Moved server-side from the
+   *  web client's localStorage so they follow the person across devices. */
+  navFavorites?: string[];
+  /** Per-login: open count + last-opened instant per app id, feeding the
+   *  "Most used" and "Recent" filters. Written by recordAppOpen. */
+  appOpens?: Record<string, AppOpenStat>;
 };
 
 export type BackupConfig = {
@@ -483,13 +533,18 @@ export type CuratedTeamSection = {
   items: TeamVisibleShare[];
 };
 
+/** One contact's OLD team portal chat (the Members tab's "Chat archive"
+ *  roster, GET /api/team-admin/members). Since team codes were retired
+ *  (member logins Phase 6, migration 0178) the roster is every contact with
+ *  portal chat, not every code holder. */
 export type TeamMemberActivity = {
   contactId: string;
-  /** Contact node title; '(deleted contact)' can't occur here — membership
+  /** Contact node title; '(deleted contact)' can't occur here: portal chat
    *  rows cascade with the contact. */
   contactName: string;
+  /** The first portal message (it was when the contact's team code was
+   *  made, before 0178). */
   memberSince: string;
-  tokenLastUsedAt: string | null;
   lastMessageAt: string | null;
   lastMessageText: string | null;
   lastMessageDirection: 'inbound' | 'outbound' | null;
@@ -506,93 +561,56 @@ export type TeamRequest = {
   status: 'open' | 'done';
   priority: string;
   createdAt: string;
-  /** Provenance from data.teamRequest — null contactId means a malformed row
-   *  (shouldn't happen; team_request_create always stamps it). */
+  /** Provenance from data.teamRequest. A member LOGIN's request (the only
+   *  kind filed since the team-code portal retired) has `loginId` set and
+   *  `contactId` null; a request from the old portal has a contact and no
+   *  login. Reply and "View their chat" apply when either is set. */
   contactId: string | null;
+  /** The member login that filed it; null on a portal-era request. */
+  loginId: string | null;
   contactName: string | null;
   /** When the owner last posted a resolution to the member for this request. */
   notifiedAt: string | null;
+  /** True for a request a CLIENT login filed through the client-responder
+   *  (client logins C4, 0.232.336 on): the reply still goes into that
+   *  login's thread. Absent on older brains = a member's request. */
+  fromClient?: boolean;
 };
 
-export type ForumTopicListItem = {
+/** The newest thing waiting in one "needs you" queue: its title and who it
+ *  is from, never its content (a notification shows exactly this). */
+export type NeedsYouItem = {
   id: string;
   title: string;
-  kind: ForumTopicKind;
-  visibility: ForumTopicVisibility;
-  pinned: boolean;
-  status: ForumTopicStatus;
-  authorName: string;
-  createdByContactId: string | null;
-  postCount: number;
-  lastPostAt: string;
-  createdAt: string;
-  lastPostAuthor: string | null;
-  lastPostPreview: string | null;
-  /** Posts by OTHERS since this viewer last read the topic (all of them when
-   *  never read). Drives the unread dot. */
-  unread: number;
+  /** The member's display name (or the email's local part). */
+  from: string;
+  /** When it started waiting (submitted, or the request was filed). */
+  at: string;
 };
 
-export type ForumMemberActivity = {
-  contactId: string;
-  postCount: number;
-  topicsStarted: number;
-  lastPostAt: string | null;
-  lastPostBody: string | null;
-  lastPostTopicTitle: string | null;
-  /** This member's posts newer than the OWNER's read cursor on the containing
-   *  topic. Deliberately only cleared by opening the TOPIC — reading someone's
-   *  activity feed is not reading the thread the whole room saw. */
-  unread: number;
-};
-
-export type ForumMemberPost = {
-  id: string;
-  body: string;
-  createdAt: string;
-  /** Set when this post filed a review/feature/bug request. */
-  kind: ForumPostRequestKind | null;
-  attachments: ConversationAttachment[];
-  topicId: string;
-  topicTitle: string;
-  topicVisibility: ForumTopicVisibility;
-  topicStatus: ForumTopicStatus;
-  /** The agent's answer to THIS post, or null when the turn was waved off
-   *  ("no answer needed") or is still owed. */
-  reply: {
-    id: string;
-    body: string;
-    authorName: string;
-    traceId: string | null;
-    status: 'pending' | 'complete' | 'failed';
-    error: string | null;
-    createdAt: string;
-  } | null;
-};
-
-export type ForumAuthoredTopic = {
-  id: string;
-  title: string;
-  kind: ForumTopicKind;
-  visibility: ForumTopicVisibility;
-  status: ForumTopicStatus;
-  pinned: boolean;
-  postCount: number;
-  lastPostAt: string | null;
-  createdAt: string;
-};
-
-export type PendingForumUpload = {
-  id: string;
-  topicId: string | null;
-  postId: string | null;
-  topicTitle: string | null;
-  contactId: string | null;
-  contactName: string | null;
-  filename: string;
-  mime: string;
-  sizeBytes: number;
-  createdAt: string;
+/**
+ * GET /api/team-admin/needs-you: what waits for an admin, as counts from
+ * count queries (never a capped list), so every window and device shows the
+ * same number. The owner live stream (/api/realtime) sends a change typed
+ * `needs_you` whenever one of these counts may have moved; the client
+ * refetches this. Admins only: a member login gets 403.
+ */
+export type NeedsYou = {
+  review: {
+    /** Items members submitted (incl. taken items whose admin is gone). */
+    submitted: number;
+    /** Team-shared items deactivated logins left behind. */
+    leftBehind: number;
+    /** The newest submitted item, or null. */
+    newest: NeedsYouItem | null;
+  };
+  requests: {
+    /** Open (not done) team requests. */
+    open: number;
+    newest: NeedsYouItem | null;
+  };
+  /** review.submitted + review.leftBehind + requests.open. */
+  total: number;
 };
 
 export type AccountFoldersResult =
@@ -675,6 +693,97 @@ export type ContextSnapshot = {
   };
   personaNotes: { count: number };
   corpusMap: { count: number; truncated: boolean };
+  /** The decider's `context_pruning` use, when it ran on this turn. In
+   *  `shadow` the counts say what WOULD have been dropped; in `live` they were.
+   *  Absent when the use is off or the call failed (nothing changed). */
+  pruning?: {
+    mode: 'shadow' | 'live';
+    threshold: number;
+    wouldDrop: { facts: number; contentHits: number; chunkHits: number };
+    /** Characters of item text under the threshold (≈ tokens × 4). */
+    charsSaved: number;
+    ms: number;
+    cached: boolean;
+  };
+  /** The decider's `version_grouping` use, when it ran on this turn. Part A
+   *  (code): hits whose living successor is also in the pool. Part B (the
+   *  model): passages judged a version of a higher-ranked passage from an
+   *  unlinked node. `shadow`: counts only; `live`: dropped. */
+  versionGrouping?: {
+    mode: 'shadow' | 'live';
+    threshold: number;
+    wouldDrop: { superseded: number; versions: number };
+    /** Candidate pairs asked about (0 = no model call). */
+    pairs: number;
+    ms: number;
+    cached: boolean;
+  };
+  /** The decider's `history_recall` use, when it ran on this turn: every
+   *  exchange older than history_limit (up to 50 messages back) with its
+   *  score. `shadow`: `wouldAdd` says how many WOULD have rejoined the
+   *  history; `live`: they did, before the recent part. */
+  historyRecall?: {
+    mode: 'shadow' | 'live';
+    threshold: number;
+    /** `back` = messages back from the newest; `score` null = unscored. */
+    exchanges: Array<{ back: number; score: number | null; chars: number }>;
+    wouldAdd: number;
+    chars: number;
+    calls: number;
+    failed: number;
+    /** Of `failed`: groups the open breaker kept from going out. */
+    skipped?: number;
+    /** Wall time of the whole fan-out (timeouts included). */
+    ms: number;
+    cached: boolean;
+  };
+  /** Journal tiers 2 and 3 (memory_config.journal_tiers), when the lookup
+   *  ran. `shadow`: what WOULD have joined the prompt; `live`: what did.
+   *  Absent when the tiers are off, both lanes are off, or no embedding. */
+  journal?: {
+    mode: 'shadow' | 'live';
+    cutoff: number;
+    /** Set when the lookup was skipped on purpose (greetings, thanks). */
+    skipped: 'small_talk' | null;
+    picked: Array<{
+      nodeId: string;
+      kind: string;
+      similarity: number;
+      chars: number;
+      passage: boolean;
+      /** The complete body went out (not a passage, not cut). */
+      whole?: boolean;
+      /** Jev's score when journal_recall picked it. */
+      score?: number;
+    }>;
+    gap: { nodeId: string; similarity: number } | null;
+    nearMisses: Array<{ nodeId: string; kind: string; similarity: number }>;
+    chars: number;
+    /** Facts, passages and content hits the tiers made redundant (dropped
+     *  in `live`): only a whole entry (tier 1, or a whole tier 2 pick) makes
+     *  its facts and hits redundant; a passage replaces its own chunk. */
+    dedupe: { facts: number; chunkHits: number; contentHits?: number };
+    /** Tier 1 for this agent: entries shown always-on, and those that did
+     *  not fit and compete in tier 2 instead. */
+    tier1?: { shown: number; overflow: number; chars: number };
+    /** The decider's `journal_recall` use, when it ran: Jev's scores over
+     *  the agent-lane rules. `shadow`: `picked` is what Jev WOULD send in
+     *  place of the similarity pick; `live`: it did. */
+    recall?: {
+      mode: 'shadow' | 'live';
+      threshold: number;
+      /** Rules loaded / rules Jev answered for. */
+      rules: number;
+      scored: number;
+      picked: Array<{ nodeId: string; score: number; chars: number }>;
+      calls: number;
+      failed: number;
+      /** Of `failed`: groups the open breaker kept from going out. */
+      skipped?: number;
+      ms: number;
+      cached: boolean;
+    };
+  };
 };
 
 export type BackupFrequency = 'daily' | 'weekly';
@@ -714,13 +823,24 @@ export interface OnboardingModelChoices {
  * every pre-existing share keeps its behavior).
  *
  *   public — anyone with the link (the original model).
- *   team   — the visitor must additionally present a live team credential
- *            (see @mantle/content/team-tokens). Enforced for every kind on
- *            the /s/ surface (page render, asset bytes, app brokers).
- *            Team-mode PAGE shares double as the /team hub's briefing
- *            sections (see ./team-hub).
+ *
+ * 'team' is retired (member logins Phase 6 stage 6): members read team items
+ * by level with their own logins. Migration 0176 revoked every team link, no
+ * link is created or switched to team (PATCH /api/shares answers 400
+ * `team-links-retired`), and an old team `/s` link shows a "sign in as a
+ * member" page. Kept as a named type so the fields that carry it
+ * (`AccessLinkView.mode`, `AppRow.shareMode`) keep their shape.
  */
-export type ShareMode = 'public' | 'team';
+export type ShareMode = 'public';
+
+/**
+ * Why a link was refused (the `reason` of a 400 from the share routes):
+ * `team-links-retired` for a team link (member logins Phase 6), and
+ * `client-links-retired` for any link on an item at client level (client
+ * logins C1): client means signed-in clients, and public is the only level
+ * with an open link.
+ */
+export type ShareRetiredReason = 'team-links-retired' | 'client-links-retired';
 
 export type TeamVisibleShare = {
   /** Share token — the workspace opens /s/<token>. */
@@ -763,16 +883,6 @@ export type TeamVisibleShare = {
  *  consts, which are `satisfies`-checked against these unions. */
 export type TaskStatus = 'open' | 'in_progress' | 'blocked' | 'done';
 export type TaskPriority = 'low' | 'normal' | 'high';
-
-/** Mirrors @mantle/db `ForumTopicKind`. */
-export type ForumTopicKind = 'question' | 'review' | 'feature' | 'bug' | 'discussion';
-/** Mirrors @mantle/db `ForumTopicVisibility`. */
-export type ForumTopicVisibility = 'team' | 'private';
-/** Mirrors @mantle/db `ForumTopicStatus`. */
-export type ForumTopicStatus = 'open' | 'answered' | 'closed';
-/** Mirrors @mantle/db `ForumPostRequestKind` — the topic kinds that file an
- *  owner review task. */
-export type ForumPostRequestKind = 'review' | 'feature' | 'bug';
 
 /** Mirrors @mantle/db `ConversationAttachment` (jsonb on conversation rows). */
 export type ConversationAttachment = {

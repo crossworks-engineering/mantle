@@ -20,7 +20,7 @@
  * enabled on a box and the client still reported it had no such tool).
  *
  * ONE tool is transport-dependent: `run_terminal` runs a shell in the brain's
- * OWN container — postgres, minio, the file store, the master key. Over stdio
+ * OWN container — postgres, the object store, the file store, the master key. Over stdio
  * that is no escalation at all (spawning the process already grants the owner's
  * full data access on a machine you control), so it ships. Over HTTP the
  * surface is reachable from the network and a stolen OAuth token would become a
@@ -34,17 +34,22 @@ import {
   CONTACT_TOOLS,
   WORKER_DELEGATION_TOOLS,
   EXPORT_TOOLS,
+  ACCESS_TOOLS,
   SHEET_TOOLS,
   DRAW_TOOLS,
   APP_TOOLS,
   TOOLSMITH_TOOLS,
   NOTE_TOOLS,
+  TREE_TOOLS,
+  TREE_OPERATOR_TOOLS,
   TASK_TOOLS,
   EVENT_TOOLS,
   JOURNAL_TOOLS,
   PEER_TOOLS,
   EMAIL_TOOLS,
   RECALL_TOOLS,
+  RECALL_WRITE_TOOLS,
+  RECALL_OWNER_TOOLS,
   SANDBOX_TOOLS,
   NODE_READ_TOOLS,
   SEARCH_TOOLS,
@@ -169,14 +174,30 @@ export function registerMantleTools(
   registerBuiltinTools(NOTE_OPERATOR_TOOLS);
   registerBuiltinTools(TASK_TOOLS);
   registerBuiltinTools(EVENT_TOOLS);
+  // Folders for every row-only tree kind (docs/folder-tree.md); Files keeps
+  // its own folder_* tools above.
+  registerBuiltinTools(TREE_TOOLS);
+  registerBuiltinTools(TREE_OPERATOR_TOOLS);
 
   // ─── Recall — the memory-map system (docs/recall.md) ─────────────────────
   // The tier-1 hook for external agents: these four read-only tools plus the
   // server instructions (MANTLE_MCP_INSTRUCTIONS) are the only surfaces an
   // MCP client auto-loads, so their descriptions carry the "enter the map /
-  // match your task" nudge. Serving rows are compiled at page commit; every
-  // read here is one indexed row.
+  // match your task" nudge. Every read here is one indexed row.
   registerBuiltinTools(RECALL_TOOLS);
+  // And the v2 authoring tools, so an external agent can keep a map current
+  // rather than only read it. ALWAYS registered here, deliberately (decided
+  // 2026-09-30, Recall audit M1): an MCP client holds the owner's token, like
+  // for every other owner tool on this surface. Inside the app they stay the
+  // `recall-write` grant, in no default. Either way they run as an AGENT, so
+  // publishing a map, minting a prompt and deleting a map stay the owner's act.
+  registerBuiltinTools(RECALL_WRITE_TOOLS);
+  // And the OWNER's Recall acts (builtins-recall-owner.ts): confirm a prompt,
+  // publish or delete a map, reorder, restore, change a slug, and the owner's
+  // own reads of what waits. mcpOnly, like pending_approve: the MCP client is
+  // the owner, and no in-app agent can ever hold them (Jason, 2026-09-30:
+  // "I still want to be able to confirm it through mcp if needed").
+  registerBuiltinTools(RECALL_OWNER_TOOLS);
   registerBuiltinTools(JOURNAL_TOOLS);
   registerBuiltinTools(PEER_TOOLS);
   // Outbound email included: email_send is gated by the contacts allowlist the
@@ -220,9 +241,12 @@ export function registerMantleTools(
   registerResponderTools(ctx);
 
   // ─── Export (Word / Excel) ───────────────────────────────────────────────────
-  // Renders a page/note → .docx or a table → .xlsx into /files/exports and returns
+  // Renders a page/note → .docx or a table → .xlsx into /files/auto-filed/exports and returns
   // the new file's id/path. Pure (no surface, no artifact) — bridges as-is.
   registerBuiltinTools(EXPORT_TOOLS);
+  // Levels (member logins Phase 0b): the owner sets item / agent / tool-group
+  // levels from Claude before the UI exists.
+  registerBuiltinTools(ACCESS_TOOLS);
 
   // ─── Spreadsheet authoring ───────────────────────────────────────────────────
   // `sheet_build` composes a formatted .xlsx from data the client already holds
@@ -248,7 +272,7 @@ export function registerMantleTools(
   // an MCP client gets command execution, and it is deliberately the contained
   // one: `run_terminal` (the brain's own shell) stays off this surface, while
   // `sandbox_exec` runs inside a container on an egress-only network with no
-  // route to postgres, minio or the web tier (docs/sandboxes.md).
+  // route to postgres, the object store or the web tier (docs/sandboxes.md).
   //
   // Bridged unconditionally, exactly as the in-app coder agent holds them: the
   // handlers already answer "sandboxes are not enabled on this box" when the

@@ -12,13 +12,42 @@
  * writing while the user types) from silently winning a lost update.
  */
 import { and, eq, sql } from 'drizzle-orm';
-import { db, nodes, notifyNodeIngested, pages } from '@mantle/db';
+import { asViewerLevel, db, nodes, notifyNodeIngested, pages, withBusyRetry } from '@mantle/db';
 import { ensureBlockIds, repairTableRows } from '@mantle/content-core/block-ids';
 import type { PageVisibility, PageWidth } from '@mantle/client-types';
 import { docToText } from '../doc-to-text';
-import { recallAfterPageWrite } from '../recall';
 import { EMPTY_DOC, dedupeTags, detailOf, type PageDetail } from './shared';
-import { embeddedAssetText } from './embed';
+import { filtersPageText, pageDocText } from './level-text';
+import { referencedEmbedIds } from '../doc-assets';
+import { followNewEmbeds, itemLevel, refoldEmbedReach } from '../embed-closure';
+
+/** Later embeds follow on save (embedding means sharing): a page whose OWN
+ *  level is below admin and that gains an embed in this write takes it, and
+ *  what it embeds, to that level, inside the write's transaction. A folder
+ *  share it is read through is the database's to follow (0208), not this.
+ *  Reads the page's level and its published doc BEFORE the write replaces
+ *  it; returns what the published doc embedded, for `refoldEmbedReach`
+ *  once the new doc is written. */
+async function followPageEmbeds(
+  tx: PageTx,
+  ownerId: string,
+  id: string,
+  next: Record<string, unknown>,
+): Promise<string[]> {
+  const [prev] = await tx
+    .select({ audience: nodes.audience, doc: pages.doc })
+    .from(nodes)
+    .innerJoin(pages, eq(pages.nodeId, nodes.id))
+    .where(eq(nodes.id, id))
+    .limit(1);
+  if (!prev) return [];
+  const before = referencedEmbedIds(prev.doc);
+  const level = asViewerLevel(prev.audience);
+  if (level !== 'admin') {
+    await followNewEmbeds(ownerId, { id, audience: level }, before, referencedEmbedIds(next), tx);
+  }
+  return before;
+}
 
 // ── Draft concurrency control (audit item #3) ────────────────────────────────
 // Page drafts mirror the Tables registry-lock spine (see table-storage.ts):
@@ -88,7 +117,17 @@ export type UpdatePageInput = Partial<{
   width: PageWidth;
 }>;
 
-export async function updatePage(
+/** updatePage, once more when another write held its rows (withBusyRetry). */
+export function updatePage(
+  ownerId: string,
+  id: string,
+  input: UpdatePageInput,
+  opts: { reindex?: boolean } = {},
+): Promise<PageDetail | null> {
+  return withBusyRetry(() => updatePageOnce(ownerId, id, input, opts));
+}
+
+async function updatePageOnce(
   ownerId: string,
   id: string,
   input: UpdatePageInput,
@@ -139,15 +178,22 @@ export async function updatePage(
 
     if (docChanged) {
       const doc = input.doc as Record<string, unknown>;
+      const before = await followPageEmbeds(tx, ownerId, id, doc);
+      // At client or public, the text of what that level reads (level-text.ts).
+      const level = itemLevel(node.audience, node.inheritedLevel, node.embeddedLevel);
+      const docText = filtersPageText(level)
+        ? await pageDocText(ownerId, level, doc, tx, { assets: false })
+        : docToText(doc);
       await tx
         .update(pages)
         .set({
           doc,
-          docText: docToText(doc),
+          docText,
           version: sql`${pages.version} + 1`,
           updatedAt: new Date(),
         })
         .where(eq(pages.nodeId, id));
+      await refoldEmbedReach(ownerId, id, before, referencedEmbedIds(doc), tx);
       return detailOf(row, doc);
     }
     const [p] = await tx
@@ -160,11 +206,6 @@ export async function updatePage(
 
   if (willReindex) {
     await notifyNodeIngested(id);
-  }
-  // Recall: tags decide map membership, titles decide slugs, and a
-  // programmatic doc write changes the body — any of the three recompiles.
-  if (input.tags !== undefined || input.title !== undefined || docChanged) {
-    await recallAfterPageWrite(ownerId, id);
   }
   return result;
 }
@@ -262,7 +303,16 @@ export type CommitPageResult =
  * a page body — autosaves never do, so a long editing session produces exactly
  * one index per commit instead of one per pause.
  */
-export async function commitPage(
+export function commitPage(
+  ownerId: string,
+  id: string,
+  doc: Record<string, unknown>,
+  opts: { baseRev?: number } = {},
+): Promise<CommitPageResult> {
+  return withBusyRetry(() => commitPageOnce(ownerId, id, doc, opts));
+}
+
+async function commitPageOnce(
   ownerId: string,
   id: string,
   doc: Record<string, unknown>,
@@ -284,13 +334,6 @@ export async function commitPage(
   delete newData.summary_model;
   delete newData.summary_at;
   delete newData.entities;
-  // Fold the text *inside* embedded images (vision/OCR) + doc chips into the
-  // indexed plaintext, so the page is searchable by — and its summary reflects —
-  // its own assets, not just their filenames.
-  const baseText = docToText(enriched);
-  const assetText = await embeddedAssetText(ownerId, enriched);
-  const docText = assetText ? `${baseText}\n\n${assetText}` : baseText;
-
   // Same etag guard as saveDraft, under the same lock: a stale `baseRev`
   // returns a conflict WITHOUT publishing, so a client committing a doc it
   // built on an out-of-date draft can't blow away a newer draft. The
@@ -301,6 +344,18 @@ export async function commitPage(
     if (decision.conflict) {
       return { ok: false as const, conflict: true as const, rev: decision.rev };
     }
+    const before = await followPageEmbeds(tx, ownerId, id, enriched);
+    // Fold the text *inside* embedded images (vision/OCR) + doc chips into the
+    // indexed plaintext, so the page is searchable by its own assets (and
+    // its summary reflects them), not just their filenames. At client or
+    // public, only what that level reads (pages/level-text.ts). Read after
+    // the embeds followed the page down, in this transaction.
+    const docText = await pageDocText(
+      ownerId,
+      itemLevel(node.audience, node.inheritedLevel, node.embeddedLevel),
+      enriched,
+      tx,
+    );
     const [row] = await tx
       .update(nodes)
       .set({ data: newData, embedding: null, updatedAt: new Date() })
@@ -319,6 +374,7 @@ export async function commitPage(
         updatedAt: new Date(),
       })
       .where(eq(pages.nodeId, id));
+    await refoldEmbedReach(ownerId, id, before, referencedEmbedIds(enriched), tx);
     return {
       ok: true as const,
       page: detailOf(row, enriched, null, { draftRev: decision.nextRev }),
@@ -327,9 +383,6 @@ export async function commitPage(
 
   if (result.ok) {
     await notifyNodeIngested(id);
-    // Recall: a commit is the compile moment for a map's serving rows. The
-    // hook is no-throw and skips instantly for pages outside a `recall` tree.
-    await recallAfterPageWrite(ownerId, id);
   }
   return result;
 }

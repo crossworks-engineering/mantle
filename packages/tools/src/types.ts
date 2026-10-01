@@ -3,6 +3,8 @@
  * this file is the runtime contract every handler implements.
  */
 
+import type { TurnTaint } from './client-sourced';
+
 export type ToolHandlerContext = {
   /** The owner running this tool. Every handler scopes its work to one owner. */
   ownerId: string;
@@ -41,6 +43,11 @@ export type ToolHandlerContext = {
      *  specialist inherits the operator's per-user thinking preference. The
      *  child re-clamps it against its OWN max_tokens. Unset/0 ⇒ no thinking. */
     thinkingBudget?: number;
+    /** The turn's client-sourced taint (client logins C4, plan N18),
+     *  shared by reference: invoke_agent hands it to the child, so a child
+     *  that reads client-written text holds the parent back too, and a
+     *  tainted parent's child cannot lower anything on its own either. */
+    taint?: TurnTaint;
     /** The turn's latest USER message (text parts joined). invoke_agent
      *  attaches it to the child prompt as ground-truth intent — the one-shot
      *  hand-off's main miscommunication gap is a parent under-packing the
@@ -74,31 +81,64 @@ export type ToolHandlerContext = {
       }
     | { kind: 'web' }
     | {
-        /** Turn came from the external Team Chat surface (/team or
-         *  /api/team/*) — the caller is a team-member CONTACT, not the
-         *  owner. `team_request_create` reads its provenance from here
-         *  (never from model args, which an injected prompt could forge);
-         *  owner-only and send tools must refuse on this surface. */
+        /** A team member is on the other end, not the owner: a member
+         *  login's chat turn (POST /api/member/chat) or app tool call.
+         *  (Team-mode shared apps on /s, which also ran here, are retired:
+         *  member logins Phase 6 stage 6.) `team_request_create`
+         *  reads its provenance from here (never from model args, which an
+         *  injected prompt could forge); owner-only and send tools must
+         *  refuse on this surface. */
         kind: 'team';
-        contactId: string;
+        /** The team-code contact of the retired portal and team links;
+         *  nothing sets it now. Absent on a member LOGIN's turn: users are
+         *  the team, and `loginId` names the member instead. */
+        contactId?: string;
+        /** A member login's turn (member logins): the login is the member. */
+        loginId?: string;
         contactName?: string;
+        /** The owner's `teamPrivateReads` switch, read when the turn starts.
+         *  Absent = OFF: the read tools hide the private corpus (email,
+         *  journal) as well as the always-hidden types. */
+        privateReads?: boolean;
         /** The inbound team_messages row that started this turn — stamped
          *  into a request task so the specialist can jump to the ask. */
         inboundMessageId?: string;
       }
     | {
-        /** Turn came from the Team Forum (/team/forum) — a team-member
-         *  CONTACT posting in a SHARED topic every member can read. Same
-         *  trust posture and provenance rules as 'team'; the topic/post ids
-         *  let `team_request_create` stamp which thread the ask came from. */
-        kind: 'forum';
-        contactId: string;
+        /** A CLIENT login is on the other end (client logins C4): a client's
+         *  chat turn with the client-responder (POST /api/client/chat).
+         *  Never the owner and never a team member. `client_request_create`
+         *  reads its provenance from here; owner-only tools refuse. */
+        kind: 'client';
+        /** The client login the turn works for (server-stamped). */
+        loginId: string;
         contactName?: string;
-        topicId: string;
-        /** The forum_posts row that triggered this turn. */
-        inboundPostId?: string;
+        /** The inbound team_messages row that started this turn. */
+        inboundMessageId?: string;
+      }
+    | {
+        /** The OWNER, on a path that is not a chat channel (client logins
+         *  C4, plan section 8): MCP, a run, a delegated child, an approved
+         *  pending call, the dev tool console, an owner app. Since C4 a
+         *  missing surface is NOT the owner (see surface.ts): every owner
+         *  path names itself with this, or with 'web' / 'telegram'. */
+        kind: 'owner';
+        /** Which owner path (telemetry and the owner-regression sweep). */
+        via: OwnerSurfaceVia;
       };
 };
+
+/** The owner paths that carry an explicit owner surface (client logins C4). */
+export type OwnerSurfaceVia =
+  | 'mcp'
+  | 'run'
+  | 'delegate'
+  | 'pending'
+  | 'dev-tools'
+  | 'app'
+  | 'recipe-test'
+  | 'federation'
+  | 'heartbeat';
 
 /** A sidecar artifact a tool produces alongside its JSON output —
  *  audio bytes from synthesize_speech, an image from generate_image,
@@ -123,7 +163,7 @@ export type ToolArtifact = {
    *  (audio ≤ 300KB, images ≤ 2MB). */
   base64: string;
   /** Optional persisted node id when the artifact is also stored
-   *  (e.g. generate_image saves to /files/generated-images and
+   *  (e.g. generate_image saves to /files/auto-filed/generated-images and
    *  returns the node id so the client can deep-link). */
   nodeId?: string;
   /** Optional human-readable caption — the prompt for image gen,
@@ -169,6 +209,10 @@ export type ToolPrecondition =
       param: string;
       /** Expected node type ('page', 'table', 'note', …). Unset ⇒ any node. */
       nodeType?: string;
+      /** The node must sit at or under this root path ('files'): every kind's
+       *  folders are branch rows, and a Files folder tool must not be handed
+       *  another kind's (folder audit X1). Unset ⇒ anywhere. */
+      pathRoot?: string;
       /** Lookup tools quoted in the teaching error, e.g. 'page_list / search_nodes'. */
       lookup: string;
     }
@@ -210,6 +254,14 @@ export type BuiltinToolDef = {
    *  If you are unsure, leave it off. Excluding a safe read costs a probe
    *  some reach; including an unsafe one sends real mail. */
   readOnly?: true;
+  /** Starts paid model work on a call: a chat, vision, speech, image or
+   *  decider adapter, a web-search model, or a delegated agent turn (the
+   *  local embedder does not count). Orthogonal to `readOnly`: a read can
+   *  spend (extract_from_image reads an image through the vision model). A
+   *  member's app never calls a spending tool (member-app-tools.ts), and
+   *  spends-drift.test.ts fails until every builtin that calls one of those
+   *  adapters carries this flag. */
+  spends?: true;
   /** Referential requirements checked centrally pre-dispatch — see
    *  {@link ToolPrecondition}. */
   preconditions?: readonly ToolPrecondition[];
@@ -225,6 +277,12 @@ export type BuiltinToolDef = {
    *  before the audit; the flag preserves that exposure exactly while the
    *  implementation stops being a second copy. */
   mcpOnly?: true;
+  /** Runs only for the brain owner (client logins C4, plan section 8).
+   *  dispatchTool refuses it with OWNER_ONLY_ERROR unless `isOwnerSurface`
+   *  holds, before preconditions and the handler: a team, client or missing
+   *  surface never reaches it. The handler keeps its own check too, because
+   *  the MCP server calls `def.handler` directly. */
+  ownerOnly?: true;
   /** Handler implementation. */
   handler: BuiltinToolHandler;
   /** Input fields that contain sensitive data and MUST be replaced with

@@ -98,7 +98,11 @@ export async function describeResponderPersona(
       model: agent.model,
       provider: agent.provider,
     },
-    systemPrompt: assembled.effectiveSystemPrompt,
+    // Journal tier 1 rides its own block when the tiers are live; the persona
+    // as taught still carries it.
+    systemPrompt: [assembled.effectiveSystemPrompt, assembled.journalBlock]
+      .filter(Boolean)
+      .join('\n\n'),
     skills: assembled.attachedSkills.map((s) => ({ slug: s.slug, name: s.name })),
     toolSlugs: assembled.allowedTools.map((t) => t.slug).sort(),
     delegateTo: assembled.delegateTo,

@@ -1,7 +1,17 @@
 import postgres from 'postgres';
 import { eq } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
-import { COMMENTS_CHANGED_CHANNEL, TASKS_CHANGED_CHANNEL } from '@mantle/content';
+import {
+  APP_NAV_CHANGED_CHANNEL,
+  COMMENTS_CHANGED_CHANNEL,
+  NEEDS_YOU_CHANGED_CHANNEL,
+  NEEDS_YOU_REALTIME_TYPE,
+  SPACE_ITEM_CHANGED_CHANNEL,
+  TASKS_CHANGED_CHANNEL,
+  parseSpaceItemChange,
+  type SpaceItemChange,
+} from '@mantle/content';
+import { TREE_CHANGED_CHANNEL } from '@mantle/content/tree';
 import { PENDING_CHANGED_CHANNEL } from '@mantle/tools';
 import { RUNS_CHANGED_CHANNEL, RUNS_CHANGED_TYPE } from '@mantle/runs';
 import { TURN_STREAM_CHANNEL, type TurnStreamEnvelope } from '@mantle/turn-stream';
@@ -42,10 +52,15 @@ type ConvSubscriber = (c: ConversationChange) => void;
  *  owner id is used to filter per subscriber and never reaches the browser. */
 type TurnStreamSubscriber = (env: TurnStreamEnvelope) => void;
 
+/** A personal item changed (member logins Phase 2): ids and flags only. The
+ *  member SSE route filters per member (own space, or team-shared). */
+type SpaceSubscriber = (c: SpaceItemChange) => void;
+
 type Bridge = {
   subs: Set<Subscriber>;
   convSubs: Set<ConvSubscriber>;
   turnSubs: Set<TurnStreamSubscriber>;
+  spaceSubs: Set<SpaceSubscriber>;
   starting: Promise<void> | null;
   stop: (() => Promise<void>) | null;
 };
@@ -59,6 +74,7 @@ const bridge: Bridge = globalThis.__mantleRealtime ?? {
   subs: new Set<Subscriber>(),
   convSubs: new Set<ConvSubscriber>(),
   turnSubs: new Set<TurnStreamSubscriber>(),
+  spaceSubs: new Set<SpaceSubscriber>(),
   starting: null,
   stop: null,
 };
@@ -66,6 +82,7 @@ const bridge: Bridge = globalThis.__mantleRealtime ?? {
 // it — backfill so subscribe* can't hit `undefined`.
 bridge.convSubs ??= new Set<ConvSubscriber>();
 bridge.turnSubs ??= new Set<TurnStreamSubscriber>();
+bridge.spaceSubs ??= new Set<SpaceSubscriber>();
 globalThis.__mantleRealtime = bridge;
 
 async function ensureListening(): Promise<void> {
@@ -94,6 +111,14 @@ async function ensureListening(): Promise<void> {
     const subPending = await sql.listen(PENDING_CHANGED_CHANNEL, (ownerId) => {
       broadcast({ ownerId, type: 'pending_tool_call', id: '' });
     });
+    // "Needs you" (migration 0186 triggers): a Review item or a team request
+    // started or stopped waiting for an admin. Owner-id payload, like
+    // pending_changed. It reaches admin sessions only: /api/realtime is the
+    // owner stream (members are refused there), and the member stream reads
+    // spaceSubs, never this. The client refetches /api/team-admin/needs-you.
+    const subNeedsYou = await sql.listen(NEEDS_YOU_CHANGED_CHANNEL, (ownerId) => {
+      if (ownerId) broadcast({ ownerId, type: NEEDS_YOU_REALTIME_TYPE, id: '' });
+    });
     // Runner-queue changes (a run created / an item changing state / a run
     // finishing). Same owner-id-as-payload shape as `pending_changed`; raised
     // by the migration-0135 triggers rather than by application code, so no
@@ -107,6 +132,22 @@ async function ensureListening(): Promise<void> {
     // forget it). Owner-id payload; the client refetches its task list.
     const subTasks = await sql.listen(TASKS_CHANGED_CHANNEL, (ownerId) => {
       broadcast({ ownerId, type: 'task', id: '' });
+    });
+    // App-nav writes (layout, pins, app create/rename/recolour/delete) —
+    // owner-id payload; the sidebar refetches /api/app-nav on every device.
+    const subAppNav = await sql.listen(APP_NAV_CHANGED_CHANNEL, (ownerId) => {
+      broadcast({ ownerId, type: 'app-nav', id: '' });
+    });
+    // Item-tree writes (folders created, renamed, moved, restyled, deleted;
+    // items moved; pins). JSON {ownerId, kind} payload, broadcast typed 'tree'
+    // with the kind as id so a client refetches that kind's open folders.
+    const subTree = await sql.listen(TREE_CHANGED_CHANNEL, (payload) => {
+      try {
+        const c = JSON.parse(payload) as { ownerId?: string; kind?: string };
+        if (c && c.ownerId && c.kind) broadcast({ ownerId: c.ownerId, type: 'tree', id: c.kind });
+      } catch {
+        /* malformed payload: drop it rather than crash the listener */
+      }
     });
     // Comment writes (migration 0149) — JSON {ownerId, nodeId} payload,
     // broadcast typed 'comment' with the node id so a thread view can
@@ -143,13 +184,30 @@ async function ensureListening(): Promise<void> {
         /* malformed payload — drop it rather than crash the listener */
       }
     });
+    // Personal items (member logins Phase 2): raised by the personal-space
+    // functions inside their own transaction, so only committed changes arrive.
+    const subSpace = await sql.listen(SPACE_ITEM_CHANGED_CHANNEL, (payload) => {
+      const c = parseSpaceItemChange(payload);
+      if (!c) return;
+      for (const cb of bridge.spaceSubs) {
+        try {
+          cb(c);
+        } catch {
+          /* one bad subscriber shouldn't break the rest */
+        }
+      }
+    });
     bridge.stop = async () => {
       try {
+        await subSpace.unlisten();
         await subIngested.unlisten();
         await subIndexed.unlisten();
         await subPending.unlisten();
+        await subNeedsYou.unlisten();
         await subRuns.unlisten();
         await subTasks.unlisten();
+        await subAppNav.unlisten();
+        await subTree.unlisten();
         await subComments.unlisten();
         await subConversation.unlisten();
         await subTurnStream.unlisten();
@@ -270,5 +328,19 @@ export async function subscribeTurnStream(
   }
   return () => {
     bridge.turnSubs.delete(wrapped);
+  };
+}
+
+/** Subscribe to personal-item changes (the member SSE route). Shares the one
+ *  LISTEN connection; returns an unsubscribe fn. */
+export async function subscribeSpaceItems(cb: SpaceSubscriber): Promise<() => void> {
+  bridge.spaceSubs.add(cb);
+  try {
+    await ensureListening();
+  } catch (err) {
+    console.error('[realtime] listener start failed:', err);
+  }
+  return () => {
+    bridge.spaceSubs.delete(cb);
   };
 }

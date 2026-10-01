@@ -9,7 +9,9 @@
  * Provenance is stamped SERVER-SIDE from the tool-loop context (ctx.agent):
  * an agent call records author='agent' + its slug; the model cannot spoof
  * authorship, and calls with no agent context (MCP upstream) record as the
- * user. Gap entries are born open; `journal_resolve_gap` closes one and files
+ * user. An MCP call may name the `agent` a lesson or expectation is for: the
+ * author stays the user, and the rule is scoped to that agent (read by it
+ * alone, listed under its learned rules) instead of reaching every agent. Gap entries are born open; `journal_resolve_gap` closes one and files
  * the user's answer as new user-lane knowledge.
  *
  * All `nodes` of type='journal'; create/update goes through @mantle/content
@@ -24,6 +26,7 @@ import {
   getJournal,
   listJournals,
   nodeUrl,
+  ownerHasAgent,
   resolveGapEntry,
   updateJournal,
   KIND_KEYS,
@@ -176,12 +179,32 @@ const journal_create: BuiltinToolDef = {
         items: { type: 'string' },
         description: "Labels for organisation and filtering, e.g. ['deploys'].",
       },
+      agent: {
+        type: 'string',
+        description:
+          "MCP clients only: the slug of the agent a `lesson` or `expectation` is for; that agent alone then follows it. Omit and every agent reads it. Ignored when an agent calls this tool (the rule is that agent's own).",
+      },
     },
     required: ['body', 'kind'],
   },
   handler: async (input, ctx) => {
     const body = str(input.body).trim();
     if (!body) return { ok: false, error: 'body is required' };
+    // The target agent of a user-written rule (MCP only; an agent's own call
+    // is always stamped with the calling agent).
+    const forAgent = ctx.agent ? undefined : strOpt(input.agent);
+    if (forAgent) {
+      const kind = strOpt(input.kind);
+      if (kind !== 'lesson' && kind !== 'expectation') {
+        return {
+          ok: false,
+          error: '`agent` only applies to a lesson or expectation (a rule for that agent).',
+        };
+      }
+      if (!(await ownerHasAgent(ctx.ownerId, forAgent))) {
+        return { ok: false, error: `no agent "${forAgent}" on this brain (see agent_list).` };
+      }
+    }
     try {
       const row = await createJournal(ctx.ownerId, {
         body,
@@ -193,7 +216,7 @@ const journal_create: BuiltinToolDef = {
           : [],
         // Provenance comes from the runtime, never the model's arguments.
         author: ctx.agent ? 'agent' : 'user',
-        agentSlug: ctx.agent?.slug,
+        agentSlug: ctx.agent?.slug ?? forAgent,
       });
       ctx.step?.setOutput({ id: row.id, title: row.title, kind: row.kind });
       return { ok: true, output: compact(row) };

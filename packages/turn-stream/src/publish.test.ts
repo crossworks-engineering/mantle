@@ -16,6 +16,10 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock('@mantle/db', () => ({
+  // Infrastructure writes go through systemDb; the fake stands in for both.
+  get systemDb(): unknown {
+    return (this as { db: unknown }).db;
+  },
   turnStreamBuffer: h.buffer,
   db: {
     insert: (_tbl: unknown) => ({

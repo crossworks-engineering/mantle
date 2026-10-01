@@ -1,7 +1,7 @@
 # Session changelog: 2026-06-01 (Contabo go-live + polish)
 
 The session that took Mantle from "containerized but never deployed" to **live on
-the Contabo VPS** (https://jason.crossworks.network), then fixed a string of
+the Contabo VPS** (https://brain.example.com), then fixed a string of
 things the first real production run + first real UI walkthrough surfaced.
 21 commits on `main`, `e4ae962 … c21c428`. Companion docs linked per section.
 

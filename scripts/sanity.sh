@@ -4,7 +4,7 @@
 #
 # Inspects every container in the `mantle` compose project (works for both the
 # prod docker-compose.yml and the dev docker-compose.dev.yml), reports health,
-# treats the known one-shots (migrate / createbuckets / ollama_pull) as OK when
+# treats the known one-shots (migrate / objectstore_init / ollama_pull) as OK when
 # they've completed cleanly, then confirms the app answers over HTTP.
 #
 # Exit 0 = all good; 1 = something is down. Run standalone or via install.sh.
@@ -35,7 +35,9 @@ hd "Sanity check"
 if ! docker info >/dev/null 2>&1; then bad "Docker daemon isn't running."; exit 1; fi
 
 # One-shots that are HEALTHY when exited(0), not when "running".
-is_oneshot() { case "$1" in *_migrate|*_createbuckets|*_ollama_pull) return 0 ;; *) return 1 ;; esac; }
+# (*_createbuckets: the service is gone (migrate creates the bucket now), but a box
+# installed before that keeps the exited container until an `up --remove-orphans`.)
+is_oneshot() { case "$1" in *_migrate|*_objectstore_init|*_createbuckets|*_ollama_pull) return 0 ;; *) return 1 ;; esac; }
 
 mapfile -t NAMES < <(docker ps -a --filter "label=com.docker.compose.project=$PROJECT" --format '{{.Names}}' | sort)
 # Dev machines run the `mantle-dev` compose project (docker-compose.dev.yml);
@@ -158,14 +160,30 @@ HTTPS_PORT="$(envval MANTLE_HTTPS_PORT)"; HTTPS_PORT="${HTTPS_PORT:-443}"
 http_at()  { if [[ "$HTTP_PORT"  == 80  ]]; then printf 'http://%s' "$1";  else printf 'http://%s:%s' "$1" "$HTTP_PORT"; fi; }
 https_at() { if [[ "$HTTPS_PORT" == 443 ]]; then printf 'https://%s' "$1"; else printf 'https://%s:%s' "$1" "$HTTPS_PORT"; fi; }
 
-P_CODE=""; P_BODY=""
+P_CODE=""; P_BODY=""; P_REDIRECT=""
 probe() { # $1 = base url, $2 = extra curl args (unquoted, may be empty)
   local out
   # shellcheck disable=SC2086
-  out="$(curl -sk --max-time 6 -w $'\n%{http_code}' $2 "$1/api/auth/bootstrap-state" 2>/dev/null)" || out=$'\n000'
-  P_CODE="${out##*$'\n'}"; P_BODY="${out%$'\n'*}"
+  out="$(curl -sk --max-time 6 -w $'\n%{redirect_url}\n%{http_code}' $2 "$1/api/auth/bootstrap-state" 2>/dev/null)" || out=$'\n\n000'
+  P_CODE="${out##*$'\n'}"; out="${out%$'\n'*}"
+  P_REDIRECT="${out##*$'\n'}"; P_BODY="${out%$'\n'*}"
 }
 is_mantle() { [[ "$P_BODY" == *'"firstRun"'* ]]; }
+# Our own Caddy, sending plain HTTP to HTTPS: a redirect to https:// on the
+# configured site address, or on the very host that was probed. That is the
+# front door doing its job, not a squatter, so it must not read as "not Mantle".
+# The HTTPS candidates are the real evidence either way.
+is_https_redirect() { # $1 = the probed url
+  local to host probed
+  case "$P_CODE" in 301|302|307|308) ;; *) return 1 ;; esac
+  to="${P_REDIRECT#https://}"
+  [[ "$to" != "$P_REDIRECT" ]] || return 1
+  host="${to%%/*}"; probed="${1#*://}"; probed="${probed%%/*}"
+  [[ "$host" =~ ^(.*):[0-9]+$ ]] && host="${BASH_REMATCH[1]}"
+  [[ "$probed" =~ ^(.*):[0-9]+$ ]] && probed="${BASH_REMATCH[1]}"
+  host="${host,,}"
+  [[ -n "$host" && ( "$host" == "${SITE_ADDRESS,,}" || "$host" == "${probed,,}" ) ]]
+}
 
 # Front door first. With a domain, resolve the real hostname to this box —
 # Caddy routes on the hostname, so probing bare `localhost` would miss the
@@ -194,6 +212,8 @@ for cand in "${CANDIDATES[@]}"; do
     bad "$url answered HTTP $P_CODE — the app is up but its bootstrap check failed (database unreachable?)."
     inf "   ${DIM}Check: docker logs --tail 50 mantle_web${RS}"
     fail=$((fail+1)); reached="$url"; break
+  elif is_https_redirect "$url"; then
+    inf "$url redirects to HTTPS (HTTP $P_CODE) ${DIM}(the front door's own redirect; the HTTPS probe is the check)${RS}"
   else
     warn "$url answered HTTP $P_CODE, but it is not Mantle — something else holds this address."
   fi

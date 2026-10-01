@@ -107,6 +107,8 @@ async function main(): Promise<void> {
   await savePushInstance({ instanceToken, relayInstanceId: instanceId, relayUrl: RELAY });
   await insertSubscription({
     ownerId: OWNER,
+    // The anchor's own id is also its login's id.
+    loginId: OWNER,
     routingToken,
     publicKey: device.publicKey,
     platform: 'ios',

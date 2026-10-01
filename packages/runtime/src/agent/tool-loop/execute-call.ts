@@ -12,12 +12,16 @@ import {
   redactArgsForLogging,
   processToolResultForModel,
   notifyPendingCreated,
+  isBuiltinReadOnly,
   sanitizeToolError,
   UNTRUSTED_CONTENT_TOOL_SLUGS,
+  PRIVATE_OUTPUT_TOOL_SLUGS,
   type ValidateArgsResult,
   type ToolHandlerResult,
 } from '@mantle/tools';
-import { db, pendingToolCalls, type Tool } from '@mantle/db';
+import type { TurnTaint } from '@mantle/tools/client-sourced';
+import { clientSourcedGate, type GateVerdict } from '@mantle/tools/client-sourced-rules';
+import { systemDb, pendingToolCalls, type Tool } from '@mantle/db';
 import { fenceRetrieved } from '../messages';
 import type { ToolLoopArgs, ToolValidationMode } from '../tool-loop';
 import { REPEATED_FAILURE_LIMIT, type TurnGuards } from './guards';
@@ -34,6 +38,11 @@ export async function executeToolCall(p: {
   lastUserMessage: string | undefined;
   /** Pending-call ids the loop is collecting; a confirm-gated call appends. */
   pendingIds: string[];
+  /** The turn's client-sourced taint (plan N18): once set, a call that
+   *  lowers anything to client or public, or writes into an item clients or
+   *  the public read (client-sourced-rules.ts), waits for approval like a
+   *  requires_confirm tool. */
+  taint?: TurnTaint;
 }): Promise<ToolHandlerResult> {
   const { args, slug, call, tool, input, argParseError, argValidation, argValidationMode } = p;
   // Redact sensitive input fields BEFORE they're written to
@@ -49,6 +58,8 @@ export async function executeToolCall(p: {
       name: `tool: ${slug}`,
       kind: 'compute',
       input: { slug, args: redactedInput },
+      // A member's private content is never journaled (audit S3).
+      ...(PRIVATE_OUTPUT_TOOL_SLUGS.has(slug) ? { durable: false as const } : {}),
     },
     async (handle) => {
       if (argParseError) {
@@ -99,7 +110,21 @@ export async function executeToolCall(p: {
       // the operator approves/rejects via /pending. The synthetic
       // tool_result tells the model the action is queued so it can
       // wrap up its turn coherently.
-      if (tool.requiresConfirm) {
+      // The injection guard (client logins C4, plan N18; by target since the
+      // C5 audit fixes): a turn that has read text a client wrote cannot, on
+      // its own say, lower anything to client or public or write into an
+      // item clients or the public read. The call waits at /pending for the
+      // owner, exactly as a requires_confirm tool does. Reads run.
+      const verdict: GateVerdict =
+        p.taint?.clientSourced === true
+          ? await clientSourcedGate({
+              ownerId: args.ownerId,
+              tool,
+              input,
+              isReadOnlyBuiltin: isBuiltinReadOnly,
+            })
+          : { gate: false };
+      if (tool.requiresConfirm || verdict.gate) {
         const traceId = currentTrace()?.id ?? null;
         // Note: pendingToolCalls.args stores the UN-REDACTED input —
         // post-repair (the central validator's safe coercions applied),
@@ -109,7 +134,8 @@ export async function executeToolCall(p: {
         // args to /pending until they're approved or rejected. That's
         // an acceptable single-user tradeoff; if multi-tenant ever
         // happens, pendingToolCalls.args needs to be sealed too.
-        const [pending] = await db
+        // systemDb: the approval queue is infrastructure (written under any viewer).
+        const [pending] = await systemDb
           .insert(pendingToolCalls)
           .values({
             ownerId: args.ownerId,
@@ -134,14 +160,23 @@ export async function executeToolCall(p: {
           });
         }
         handle.setSkipped('requires_confirm');
-        handle.setMeta({ pendingId, requiresConfirm: true });
+        handle.setMeta({
+          pendingId,
+          requiresConfirm: true,
+          ...(verdict.gate
+            ? { clientSourcedGate: true, taintedBy: p.taint?.via, gateReason: verdict.why }
+            : {}),
+        });
         return {
           ok: true as const,
           output: {
             status: 'queued_for_approval',
             pending_id: pendingId,
             message:
-              `The tool '${slug}' requires operator approval. ` +
+              (verdict.gate
+                ? `This turn read text a client wrote, so '${slug}' (${verdict.why}) ` +
+                  `needs the owner's approval. `
+                : `The tool '${slug}' requires operator approval. `) +
               `A pending entry was queued at /pending. Tell the user what's queued ` +
               `and that it'll run once approved. Do not call the same tool again ` +
               `in this turn.`,
@@ -172,6 +207,8 @@ export async function executeToolCall(p: {
                 // delegated specialist inherits the per-user thinking pref.
                 ...(args.thinkingBudget ? { thinkingBudget: args.thinkingBudget } : {}),
                 ...(p.lastUserMessage ? { lastUserMessage: p.lastUserMessage } : {}),
+                // Shared with a delegated child (plan N18).
+                ...(p.taint ? { taint: p.taint } : {}),
               },
             }
           : {}),
@@ -242,6 +279,10 @@ export async function toolResultPayload(p: {
     serialized = fenceRetrieved(serialized);
   }
   if (Buffer.byteLength(serialized, 'utf8') <= handling.inlineMaxBytes) return serialized;
+  // A member's private content is never spilled: the store outlives the turn
+  // and a handle in the trace would open it for an admin (audit S3). The
+  // my-space tools clip their own text, so it stays inline.
+  if (PRIVATE_OUTPUT_TOOL_SLUGS.has(slug)) return serialized;
   return step(
     {
       name: `spill_result: ${slug}`,

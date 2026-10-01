@@ -14,6 +14,9 @@ import { AGENT_GRANTABLE_KINDS } from '../recipe';
 import { type BuiltinToolDef, type ToolHandlerResult } from '../types';
 import { str } from '../coerce';
 import { SLUG_RE, integrationWarnings } from './common';
+import { agentGrantProblems } from '@mantle/content';
+import { isViewerLevel } from '@mantle/db/viewer';
+import { isOwnerSurface } from '../surface';
 
 export const tool_group_list: BuiltinToolDef = {
   slug: 'tool_group_list',
@@ -69,6 +72,7 @@ export const tool_group_ensure: BuiltinToolDef = {
   description:
     "Create a tool group if it doesn't exist, or update its tool list. mode 'add' (default) merges slugs in; 'replace' overwrites the list. Unknown tool slugs are reported as warnings, not errors. " +
     'Pass `service` (+ `base_url` / `secret_ref` / `auth_template`) to make the group an INTEGRATION: auth placement and the base URL are decided ONCE here, and every tool later authored with group_slug inherits them. ' +
+    "Changing the tools of a group below admin level (a team or client group) waits for the operator's approval (Pending). " +
     'Then `api_docs_set` the API documentation onto the same group so the next authoring pass reads it instead of the web.',
   inputSchema: {
     type: 'object',
@@ -171,6 +175,63 @@ export const tool_group_ensure: BuiltinToolDef = {
         ok: false,
         error: `'${slug}' is ${existing ? 'a connector group' : "in a reserved connector namespace ('mcp-' / 'openapi-')"} — its membership is owned by the connector sync; manage it via Settings → Connectors (or the connectors APIs), and pick another slug for a plain bundle`,
       };
+    }
+
+    // A group below admin level is what team and client agents hold: a tool
+    // added to it reaches members or clients (client-read is the client
+    // agent's whole surface). An agent never changes its tools on its own
+    // say-so (client logins C5 audit, L3): the call waits in Pending for the
+    // operator, as agent_grant_tool_group does, and on approval runs again
+    // with no agent, as the owner. Only the owner changes it directly.
+    const level = existing && isViewerLevel(existing.audience) ? existing.audience : 'admin';
+    if (existing && level !== 'admin') {
+      const next =
+        mode === 'replace'
+          ? [...new Set(requested)]
+          : [...new Set([...(existing.toolSlugs ?? []), ...requested])];
+      const before = existing.toolSlugs ?? [];
+      const changed = next.length !== before.length || next.some((t) => !before.includes(t));
+      if (changed && ctx.agent) {
+        const [requester] = await db
+          .select({ id: agents.id })
+          .from(agents)
+          .where(and(eq(agents.ownerId, ctx.ownerId), eq(agents.slug, ctx.agent.slug)))
+          .limit(1);
+        const [pending] = await db
+          .insert(pendingToolCalls)
+          .values({
+            ownerId: ctx.ownerId,
+            agentId: requester?.id ?? null,
+            toolSlug: 'tool_group_ensure',
+            args: input,
+          })
+          .returning({ id: pendingToolCalls.id });
+        if (pending?.id) {
+          void notifyPendingCreated({
+            ownerId: ctx.ownerId,
+            pendingId: pending.id,
+            toolSlug: 'tool_group_ensure',
+            args: input,
+            via: `agent ${ctx.agent.slug}`,
+          });
+        }
+        return {
+          ok: true,
+          output: {
+            status: 'queued_for_approval',
+            pending_id: pending?.id ?? null,
+            message:
+              `'${slug}' is a ${level}-level group: changing its tools needs operator approval. ` +
+              `Queued at /pending; it applies once approved. Do not retry this turn.`,
+          },
+        };
+      }
+      if (changed && !isOwnerSurface(ctx.surface)) {
+        return {
+          ok: false,
+          error: `'${slug}' is a ${level}-level group: only the owner changes its tools.`,
+        };
+      }
     }
 
     // Integration binding. Only touched when the call carries one of its fields,
@@ -323,11 +384,24 @@ export const agent_grant_tool_group: BuiltinToolDef = {
       };
     }
     const [agent] = await db
-      .select({ id: agents.id, groups: agents.toolGroupSlugs })
+      .select({ id: agents.id, groups: agents.toolGroupSlugs, audience: agents.audience })
       .from(agents)
       .where(and(eq(agents.ownerId, ctx.ownerId), eq(agents.slug, agentSlug)))
       .limit(1);
     if (!agent) return { ok: false, error: `agent '${agentSlug}' not found` };
+    // Level rule (member logins Phase 0b): an agent may hold only groups at or
+    // below its own level.
+    const levelProblems = await agentGrantProblems(
+      ctx.ownerId,
+      isViewerLevel(agent.audience) ? agent.audience : 'admin',
+      [groupSlug],
+    );
+    if (levelProblems.length > 0) {
+      return {
+        ok: false,
+        error: `${levelProblems[0]}: grant a group at or below the agent's level, or ask the operator to raise the agent's level`,
+      };
+    }
     const [group] = await db
       .select({ id: toolGroups.id, toolSlugs: toolGroups.toolSlugs })
       .from(toolGroups)

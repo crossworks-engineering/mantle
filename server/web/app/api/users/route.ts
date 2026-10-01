@@ -1,20 +1,31 @@
 import { NextResponse } from '@/server/http-compat';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import bcrypt from 'bcryptjs';
-import { db, authUsers, agents, asc, eq, sql } from '@mantle/db';
-import { getOwnerOr401 } from '@/lib/auth';
+import {
+  isUniqueViolation,
+  pgConstraint,
+  db,
+  authUsers,
+  agents,
+  and,
+  asc,
+  eq,
+  nodes,
+  sql,
+} from '@mantle/db';
+import { getOwnerOr401, hashLoginPassword } from '@/lib/auth';
 import { cloneAgentForUser } from '@/lib/agents';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
-import { errorMessage } from '@mantle/std';
 
 /**
  * Co-admin login management (Settings → Logins). Logins are NOT tenants: every
  * account operates on the one brain (content stays keyed to the anchor); a row
  * here is just an identity for the audit trail.
  *
- * No permission tiers by design — every login is a full admin (access tiers are
- * a separate team-member surface). These routes emit their own `user.*` audit
+ * Two roles (member logins, Phase 1): an ADMIN login is a full co-owner; a
+ * MEMBER login is refused by every admin route
+ * and reads team-level items through the member routes. These routes emit
+ * their own `user.*` audit
  * events (the choke point skips its generic row for /api/users — see
  * AUDIT_SELF_LOGGED_PATHS).
  *
@@ -35,6 +46,9 @@ export async function GET() {
       email: authUsers.email,
       displayName: authUsers.displayName,
       isOwner: authUsers.isOwner,
+      role: authUsers.role,
+      contactId: authUsers.contactId,
+      disabledAt: authUsers.disabledAt,
       createdAt: authUsers.createdAt,
       lastLoginAt: authUsers.lastLoginAt,
       agentId: agents.id,
@@ -69,8 +83,12 @@ const CreateBody = z.object({
   password: z.string().min(8).max(1024),
   displayName: z.string().trim().min(1).max(120).optional(),
   /** Omit to keep today's behaviour exactly: the login shares the brain's
-   *  default agent, as every login did before 0143. */
+   *  default agent, as every login did before 0143. Admins only. */
   agent: AgentAssignmentBody.optional(),
+  /** Default admin. */
+  role: z.enum(['admin', 'member']).optional(),
+  /** The team contact a member login belongs to. */
+  contactId: z.string().uuid().optional(),
 });
 
 export async function POST(req: Request) {
@@ -85,8 +103,37 @@ export async function POST(req: Request) {
     );
   }
 
+  const role = parsed.data.role ?? 'admin';
+  if (role === 'member') {
+    if (parsed.data.agent) {
+      return NextResponse.json(
+        {
+          error:
+            'A member login cannot own a personal assistant: members chat with team-level agents.',
+        },
+        { status: 400 },
+      );
+    }
+    // Users are the team (Jason, 2026-09-26): a member login IS the team
+    // member. It needs no contact; its name is the login's display name.
+  }
+  if (parsed.data.contactId) {
+    const [contact] = await db
+      .select({ id: nodes.id })
+      .from(nodes)
+      .where(
+        and(
+          eq(nodes.id, parsed.data.contactId),
+          eq(nodes.ownerId, user.id),
+          eq(nodes.type, 'contact'),
+        ),
+      )
+      .limit(1);
+    if (!contact) return NextResponse.json({ error: 'Contact not found.' }, { status: 400 });
+  }
+
   const email = parsed.data.email.trim().toLowerCase();
-  const passwordHash = await bcrypt.hash(parsed.data.password, 12);
+  const passwordHash = await hashLoginPassword(parsed.data.password);
   const id = randomUUID();
 
   // Case-insensitive pre-check: login matches on lower(email), but the column's
@@ -111,11 +158,20 @@ export async function POST(req: Request) {
       displayName: parsed.data.displayName ?? null,
       // Never the anchor — that's the first-run signup only.
       isOwner: false,
+      role,
+      contactId: parsed.data.contactId ?? null,
     });
   } catch (err) {
-    const msg = errorMessage(err);
-    // 23505 = unique_violation (concurrent create of the same email).
-    if (msg.includes('duplicate key') || msg.includes('users_email_key')) {
+    // 23505 = unique_violation. Two rules on auth.users can fire: the contact
+    // (one login per contact, 0181; not pre-checked above) and the email
+    // (the race behind the pre-check).
+    if (isUniqueViolation(err) && pgConstraint(err) === 'users_contact_id_unique') {
+      return NextResponse.json(
+        { error: 'That contact is already linked to another user.' },
+        { status: 409 },
+      );
+    }
+    if (isUniqueViolation(err)) {
       return NextResponse.json(
         { error: 'A user with that email already exists.' },
         { status: 409 },
@@ -130,7 +186,7 @@ export async function POST(req: Request) {
     action: 'user.create',
     method: 'POST',
     path: '/api/users',
-    detail: { targetId: id, targetEmail: email },
+    detail: { targetId: id, targetEmail: email, role },
     ...requestMetaFrom(req),
   });
 

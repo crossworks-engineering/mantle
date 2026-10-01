@@ -16,10 +16,20 @@ import { mkdir, rm, stat } from 'node:fs/promises';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { db, nodes, appDatabases } from '@mantle/db';
 import { env } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
+import { stripLiterals } from '@mantle/tabledb';
+import {
+  APP_SCHEMA_TIMEOUT_MS,
+  APP_SQL_JOURNAL_LIMIT_BYTES,
+  AppSqlError,
+  appSqlMaxDbBytes,
+  runAppSql,
+} from './app-sql-runner';
+
+export { AppSqlBusyError, AppSqlError } from './app-sql-runner';
 
 /** Root dir for per-app SQLite files. A dedicated volume in prod (see compose);
  *  one file per app: <root>/<owner>/<app>.sqlite. When APP_DB_DIR is unset
@@ -54,6 +64,9 @@ function appDbRoot(): string {
 export type AppDbSchema = { schemaSql: string; schemaVersion: number };
 export type DbRows = Record<string, unknown>[];
 export type DbExecResult = { changes: number; lastInsertRowid: number };
+/** Who runs a broker statement: one statement at a time per key (a client
+ *  login, a member login, a share link; client tier audit I1). */
+export type AppDbCaller = { callerKey?: string };
 
 /** Minimal structural type for the bits of node:sqlite we use (keeps us
  *  independent of whether @types/node ships the declarations yet). */
@@ -100,9 +113,16 @@ async function openSqlite(file: string): Promise<SqliteDb> {
   //     trade for app data, and materially faster.
   //   busy_timeout=5000 — still wait (not instantly fail) on the one lock WAL
   //     keeps: two concurrent writers to the same app DB.
+  //   journal_size_limit / max_page_count: the same WAL and file caps the
+  //     SQL runner sets on its writable opens (app-sql-runner.ts), so a seed
+  //     cannot grow an app's file past APP_SQL_MAX_DB_MB either.
   handle.exec('PRAGMA journal_mode = WAL');
   handle.exec('PRAGMA synchronous = NORMAL');
   handle.exec('PRAGMA busy_timeout = 5000');
+  handle.exec(`PRAGMA journal_size_limit = ${APP_SQL_JOURNAL_LIMIT_BYTES}`);
+  const [ps] = handle.prepare('PRAGMA page_size').all() as { page_size: number }[];
+  const pageSize = Number(ps?.page_size) || 4096;
+  handle.exec(`PRAGMA max_page_count = ${Math.max(1, Math.floor(appSqlMaxDbBytes() / pageSize))}`);
   return handle;
 }
 
@@ -124,8 +144,12 @@ async function openSqliteReadOnly(file: string): Promise<SqliteDb> {
   return handle;
 }
 
-/** Statements an app must not run through the broker (file/engine escapes). */
-const BLOCKED = /^\s*(attach|detach|vacuum\s+into|pragma)\b/i;
+/** Verbs an app must not use anywhere in a statement (file and engine
+ *  escapes). Checked on the text with string literals and comments stripped
+ *  (audit 2026-09-27: a leading SQL comment let VACUUM INTO pass a
+ *  first-word check), and backed by the engine authorizer in
+ *  app-sql-runner.ts, which is the real lock. */
+const BLOCKED = /\b(attach|detach|vacuum|pragma)\b/i;
 /**
  * The one PRAGMA family apps MAY run: read-only schema introspection
  * (`PRAGMA table_info(<table>)` / `table_xinfo`). Generated apps legitimately
@@ -139,9 +163,9 @@ const INTROSPECTION =
   /^\s*pragma\s+table_x?info\s*\(\s*(?:"[^"]*"|'[^']*'|`[^`]*`|\[[^\]]*\]|[A-Za-z_][A-Za-z0-9_$]*)\s*\)\s*;?\s*$/i;
 export function assertSafe(sql: string): void {
   if (INTROSPECTION.test(sql)) return;
-  if (BLOCKED.test(sql)) {
-    throw new Error(
-      'statement not allowed (ATTACH/DETACH/PRAGMA/VACUUM INTO are blocked; the one exception is read-only `PRAGMA table_info(<table>)`)',
+  if (BLOCKED.test(stripLiterals(sql))) {
+    throw new AppSqlError(
+      'statement not allowed (ATTACH/DETACH/PRAGMA/VACUUM are blocked; the one exception is read-only `PRAGMA table_info(<table>)`)',
     );
   }
 }
@@ -214,33 +238,25 @@ export async function ensureAppDatabase(
 ): Promise<{ id: string; storagePath: string; schemaVersion: number }> {
   const reg = await ensureRegistry(ownerId, appNodeId);
   if (schema && schema.schemaSql.trim() && schema.schemaVersion > reg.schemaVersion) {
-    // Defense in depth: the schema DDL is agent-authored and applied via a raw
-    // multi-statement exec, so it must clear the same file-escape guard as the
-    // runtime broker — otherwise an ATTACH in the DDL would reach the filesystem.
+    // Defense in depth: the schema DDL is agent-authored, so it must clear the
+    // same file-escape guard as the runtime broker, and then runs in the
+    // worker runner like every other app statement: the engine authorizer
+    // refuses ATTACH, VACUUM and PRAGMA whatever the text looks like, and a
+    // time limit stops an endless statement without freezing this process
+    // (it used to run here, on the main thread, with no timeout).
     assertSafeScript(schema.schemaSql);
-    const handle = await openSqlite(reg.storagePath);
-    try {
-      // Apply the whole DDL atomically. SQLite autocommits each statement, so a
-      // bare multi-statement exec that fails on statement 3 leaves 1–2
-      // committed while schemaVersion stays old — the next open re-runs the
-      // full script and now trips on the already-created table, bricking the
-      // app until someone hand-writes guarded DDL. A wrapping transaction makes
-      // it all-or-nothing (SQLite DDL is transactional).
-      handle.exec('BEGIN IMMEDIATE');
-      try {
-        handle.exec(schema.schemaSql);
-        handle.exec('COMMIT');
-      } catch (err) {
-        try {
-          handle.exec('ROLLBACK');
-        } catch {
-          /* already rolled back by the failing statement */
-        }
-        throw err;
-      }
-    } finally {
-      handle.close();
-    }
+    await mkdir(path.dirname(reg.storagePath), { recursive: true });
+    // Applied atomically ('script' mode wraps it in one transaction). SQLite
+    // autocommits each statement, so a bare multi-statement exec that fails
+    // on statement 3 would leave 1-2 committed while schemaVersion stays old;
+    // the next open re-runs the full script, trips on the already-created
+    // table, and bricks the app until someone hand-writes guarded DDL.
+    await runAppSql(reg.storagePath, {
+      sql: schema.schemaSql,
+      mode: 'script',
+      readOnly: false,
+      timeoutMs: APP_SCHEMA_TIMEOUT_MS,
+    });
     await db
       .update(appDatabases)
       .set({ schemaVersion: schema.schemaVersion, updatedAt: new Date() })
@@ -266,6 +282,7 @@ export async function appDbQuery(
   sql: string,
   params: unknown[] = [],
   schema?: AppDbSchema,
+  opts: AppDbCaller = {},
 ): Promise<DbRows> {
   assertSafe(sql);
   const reg = await ensureAppDatabase(ownerId, appNodeId, schema);
@@ -277,13 +294,13 @@ export async function appDbQuery(
   } catch {
     (await openSqlite(reg.storagePath)).close();
   }
-  const handle = await openSqliteReadOnly(reg.storagePath);
-  try {
-    const rows = handle.prepare(sql).all(...params);
-    return rows as DbRows;
-  } finally {
-    handle.close();
-  }
+  return (await runAppSql(reg.storagePath, {
+    sql,
+    params,
+    mode: 'all',
+    readOnly: true,
+    ...(opts.callerKey ? { callerKey: opts.callerKey } : {}),
+  })) as DbRows;
 }
 
 /** Run a write statement against the app's own database. */
@@ -293,17 +310,18 @@ export async function appDbExec(
   sql: string,
   params: unknown[] = [],
   schema?: AppDbSchema,
+  opts: AppDbCaller = {},
 ): Promise<DbExecResult> {
   assertSafe(sql);
   const reg = await ensureAppDatabase(ownerId, appNodeId, schema);
-  const handle = await openSqlite(reg.storagePath);
-  let res: DbExecResult;
-  try {
-    const r = handle.prepare(sql).run(...params);
-    res = { changes: Number(r.changes), lastInsertRowid: Number(r.lastInsertRowid) };
-  } finally {
-    handle.close();
-  }
+  await mkdir(path.dirname(reg.storagePath), { recursive: true });
+  const res = (await runAppSql(reg.storagePath, {
+    sql,
+    params,
+    mode: 'run',
+    readOnly: false,
+    ...(opts.callerKey ? { callerKey: opts.callerKey } : {}),
+  })) as DbExecResult;
   // Best-effort: keep the registry's size_bytes truthful after a write (a write
   // is the only thing that grows the file). Never fail the exec over this.
   try {
@@ -316,6 +334,26 @@ export async function appDbExec(
     /* size tracking is best-effort */
   }
   return res;
+}
+
+/**
+ * Record that a CLIENT login wrote this app's database (client tier audit
+ * I3): set once, on the first client write, and never cleared, so a Table
+ * exported from the app stays client-sourced after the app is raised above
+ * client (packages/tools/src/client-sourced.ts). The client db-broker calls
+ * it after a successful exec, so the registry row exists.
+ */
+export async function markAppClientWritten(ownerId: string, appNodeId: string): Promise<void> {
+  await db
+    .update(appDatabases)
+    .set({ clientWrittenAt: new Date() })
+    .where(
+      and(
+        eq(appDatabases.appNodeId, appNodeId),
+        eq(appDatabases.ownerId, ownerId),
+        isNull(appDatabases.clientWrittenAt),
+      ),
+    );
 }
 
 // ── Bulk seeding (authoring tools) ───────────────────────────────────────────
@@ -501,12 +539,13 @@ export async function appDbReadQuery(
   } catch {
     return { rows: [], empty: true };
   }
-  const handle = await openSqliteReadOnly(reg.storagePath);
-  try {
-    return { rows: handle.prepare(sql).all(...params) as DbRows, empty: false };
-  } finally {
-    handle.close();
-  }
+  const rows = (await runAppSql(reg.storagePath, {
+    sql,
+    params,
+    mode: 'all',
+    readOnly: true,
+  })) as DbRows;
+  return { rows, empty: false };
 }
 
 /** The app's live table/view schema, read from `sqlite_master` (the actual

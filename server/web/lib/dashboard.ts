@@ -329,7 +329,7 @@ export async function pendingToolCount(userId: string): Promise<number> {
   return rows[0]?.count ?? 0;
 }
 
-// ─── Storage bytes (attachment content in MinIO; owner-scoped via account) ────
+// ─── Storage bytes (attachment content in the object store; owner-scoped) ────
 
 export async function attachmentBytes(userId: string): Promise<number> {
   const rows = await db

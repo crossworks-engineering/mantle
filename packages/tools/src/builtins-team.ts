@@ -1,5 +1,5 @@
 /**
- * Team Chat tools.
+ * Team tools.
  *
  * `team_request_create` — the ONLY write tool the team responder holds. A team
  * member's change request ("please update X, here's the file") becomes a task
@@ -9,35 +9,34 @@
  * a request that masquerades as someone else or hides its origin. Worst-case
  * injection outcome: a clearly-labeled task in a human-reviewed queue.
  *
- * `team_member_list` / `team_notify` — the member-to-member reach. A member
- * could always ASK the responder to tell a colleague something, and it could
- * only answer that it had no way to (a real Pinnacle forum topic, 2026-07-21).
- * Same provenance discipline as above: the SENDER is the authenticated member,
- * the forum topic/post is stamped from the surface, and a recipient is always
- * an id from `team_member_list` re-verified against live membership — there is
- * no free-text address, so the blast radius is the brain's own team.
- *
  * `team_chat_list` / `team_chat_read` / `team_access_list` — OWNER-side admin
  * tools (granted via the `team-admin` group to the persona, never to the team
  * responder). They make team activity queryable by the brain: "what has Sam
- * asked about this week?".
+ * asked about this week?". Users are the team: the chats they read are member
+ * LOGIN threads; the retired team-code portal threads stay readable as
+ * history by contact id, and a login invited from a contact gets its
+ * contact's portal thread with its own, labelled apart (never merged).
  */
 
 import {
+  countTeamRequestsFiled,
   createTask,
-  listNotifiableMembers,
   listTeamAccess,
+  listLoginPortalThread,
+  listMemberChatActivity,
   listTeamMemberActivity,
   listTeamThread,
   nodeUrl,
-  notifyMembers,
-  MAX_NOTIFICATION_BODY,
-  MAX_NOTIFY_RECIPIENTS,
+  TEAM_REQUESTS_PER_DAY,
+  TEAM_REQUESTS_PER_TURN,
   type TaskPriority,
 } from '@mantle/content';
 import type { ToolPrecondition, BuiltinToolDef, ToolHandlerResult } from './types';
-import { str, strArr, strOpt, numOpt } from './coerce';
-import { errorMessage } from '@mantle/std';
+import { isOwnerSurface, OWNER_ONLY_ERROR } from './surface';
+import { str, strOpt, numOpt } from './coerce';
+import { errorMessage, UUID_RE } from '@mantle/std';
+import { asSystem } from '@mantle/db/viewer';
+import { TEAM_REQUEST_SOURCE } from '@mantle/db';
 
 const TEAM_CONTACT_ID_PRE: readonly ToolPrecondition[] = [
   {
@@ -56,7 +55,8 @@ const team_request_create: BuiltinToolDef = {
   description:
     'File a change/update/correction REQUEST from the team member you are serving into the review queue for a brain specialist. You cannot modify any content yourself — this is your only write action. ' +
     "`title` is a short imperative summary of what they want changed ('Update RBI report 30257 with revised inspection dates'); `body` restates the request in full: WHAT should change, WHERE (link the pages/notes/tables you found), and the member's reasoning. Any files the member attached to their message are linked to the request automatically. " +
-    'After filing, tell the member their request is queued for specialist review — do not promise it will be applied.',
+    'After filing, tell the member their request is queued for specialist review — do not promise it will be applied. ' +
+    `Limit: ${TEAM_REQUESTS_PER_TURN} per message, ${TEAM_REQUESTS_PER_DAY} a day.`,
   inputSchema: {
     type: 'object',
     properties: {
@@ -82,11 +82,11 @@ const team_request_create: BuiltinToolDef = {
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
     const surface = ctx.surface;
-    if (surface?.kind !== 'team' && surface?.kind !== 'forum') {
+    if (surface?.kind !== 'team') {
       return {
         ok: false,
         error:
-          'team_request_create only runs on the Team Chat / Team Forum surfaces — the requesting team member must be the one asking.',
+          'team_request_create only runs on the team surface: the requesting team member must be the one asking.',
       };
     }
     const title = str(input.title).trim();
@@ -94,43 +94,81 @@ const team_request_create: BuiltinToolDef = {
     if (!title || !body) return { ok: false, error: 'title and body required' };
 
     // Provenance comes from the authenticated surface context, not the model.
-    const { contactId, contactName } = surface;
-    const inboundMessageId = surface.kind === 'team' ? surface.inboundMessageId : undefined;
+    const { contactId, contactName, loginId, inboundMessageId } = surface;
+
+    // Caps (audit F08): each request is an admin task, so a runaway or
+    // injected turn must not flood the review queue. Counted from the tasks
+    // already filed, per turn (this inbound message) and per member per day;
+    // asSystem, as the team role cannot see admin tasks to count them.
+    if (inboundMessageId) {
+      const thisTurn = await asSystem(() =>
+        countTeamRequestsFiled(ctx.ownerId, { threadMessageId: inboundMessageId }),
+      );
+      if (thisTurn >= TEAM_REQUESTS_PER_TURN) {
+        return {
+          ok: false,
+          error:
+            `request limit reached: ${TEAM_REQUESTS_PER_TURN} requests per message. Tell the member ` +
+            'the requests so far are queued, and to send any others in a later message.',
+        };
+      }
+    }
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const requester = loginId ? { loginId, since } : contactId ? { contactId, since } : null;
+    if (
+      requester &&
+      (await asSystem(() => countTeamRequestsFiled(ctx.ownerId, requester))) >=
+        TEAM_REQUESTS_PER_DAY
+    ) {
+      return {
+        ok: false,
+        error:
+          `request limit reached: ${TEAM_REQUESTS_PER_DAY} requests in 24 hours. Tell the member the ` +
+          'requests so far are queued, and to try again tomorrow or ask an admin directly.',
+      };
+    }
+
     let attachments: { nodeId: string }[] = [];
     if (inboundMessageId) {
-      const [msg] = await listTeamThread(ctx.ownerId, contactId, { limit: 200 }).then((rows) => [
-        rows.find((r) => r.id === inboundMessageId),
-      ]);
+      // A member login's thread is read by login; a portal thread by contact.
+      const [msg] = await listTeamThread(ctx.ownerId, contactId ?? '', {
+        limit: 200,
+        ...(loginId ? { loginId } : {}),
+      }).then((rows) => [rows.find((r) => r.id === inboundMessageId)]);
       attachments = (msg?.attachments ?? [])
         .filter((a) => typeof a.nodeId === 'string' && a.nodeId.length > 0)
         .map((a) => ({ nodeId: a.nodeId! }));
     }
 
     try {
-      const requester = contactName ? `${contactName}` : 'a team member';
+      const who = contactName ? `${contactName}` : 'a team member';
       const attachmentLines = attachments.length
         ? `\n\n**Attachments:**\n${attachments.map((a) => `- [attached file](${nodeUrl(a.nodeId)})`).join('\n')}`
         : '';
-      const row = await createTask(ctx.ownerId, {
-        title,
-        body: `**Team request from ${requester}.**\n\n${body}${attachmentLines}`,
-        priority: (strOpt(input.priority) as TaskPriority | undefined) ?? 'normal',
-        tags: [TEAM_REQUEST_TAG],
-        extraData: {
-          teamRequest: {
-            contactId,
-            contactName: contactName ?? null,
-            threadMessageId: inboundMessageId ?? null,
-            // Forum provenance — which shared topic/post the ask came from,
-            // so Phase 2's review round-trip can deliver the owner's reply
-            // back into that thread.
-            topicId: surface.kind === 'forum' ? surface.topicId : null,
-            postId: surface.kind === 'forum' ? (surface.inboundPostId ?? null) : null,
-            attachments: attachments.map((a) => a.nodeId),
-            filedAt: new Date().toISOString(),
+      // asSystem: a team turn runs on the limited team role, which never
+      // writes; the request is an admin-level task filed on the member's
+      // behalf with server-stamped provenance (the one audited escape).
+      const row = await asSystem(() =>
+        createTask(ctx.ownerId, {
+          title,
+          body: `**Team request from ${who}.**\n\n${body}${attachmentLines}`,
+          priority: (strOpt(input.priority) as TaskPriority | undefined) ?? 'normal',
+          tags: [TEAM_REQUEST_TAG],
+          extraData: {
+            // Member text no admin has read yet: extract-exempt until an
+            // admin acts on the task (audit F08, extract-exempt.ts).
+            source: TEAM_REQUEST_SOURCE,
+            teamRequest: {
+              contactId: contactId ?? null,
+              loginId: loginId ?? null,
+              contactName: contactName ?? null,
+              threadMessageId: inboundMessageId ?? null,
+              attachments: attachments.map((a) => a.nodeId),
+              filedAt: new Date().toISOString(),
+            },
           },
-        },
-      });
+        }),
+      );
       ctx.step?.setMeta({ contactId, attachments: attachments.length });
       return {
         ok: true,
@@ -146,154 +184,78 @@ const team_request_create: BuiltinToolDef = {
   },
 };
 
-/** Shared surface guard: these tools act AS the member currently talking, so
- *  they only run where an authenticated member context exists. Returns the
- *  member's identity, or a teaching error for the owner-side surfaces. */
-function memberSurfaceOf(
-  ctx: { surface?: { kind: string; contactId?: string; contactName?: string } },
-  slug: string,
-): { contactId: string; contactName?: string } | ToolHandlerResult {
-  const s = ctx.surface;
-  if ((s?.kind !== 'team' && s?.kind !== 'forum') || !s.contactId) {
-    return {
-      ok: false,
-      error: `${slug} only runs on the Team Chat / Team Forum surfaces — it acts on behalf of the member you are talking to, so there must be one.`,
-    };
-  }
-  return { contactId: s.contactId, ...(s.contactName ? { contactName: s.contactName } : {}) };
-}
-
-const team_member_list: BuiltinToolDef = {
-  slug: 'team_member_list',
-  readOnly: true,
-  name: 'List team members you can notify',
-  description:
-    "List this brain's team members — display name and id only — so you can resolve a name the member mentioned ('let Deepthi know') to a `team_notify` recipient. Call it when you need an id, not routinely. Names may be ambiguous or absent: if you can't match one confidently, ASK the member which colleague they meant rather than guessing. For the owner-side view of team activity use `team_chat_list` instead.",
-  inputSchema: { type: 'object', properties: {} },
-  handler: async (_input, ctx): Promise<ToolHandlerResult> => {
-    const who = memberSurfaceOf(ctx, 'team_member_list');
-    if ('ok' in who) return who;
-    const all = await listNotifiableMembers(ctx.ownerId);
-    // Drop the caller: "notify myself" is never the ask, and offering it back
-    // invites the model to resolve an ambiguous name to the person in front
-    // of it.
-    const members = all.filter((m) => m.id !== who.contactId);
-    ctx.step?.setMeta({ count: members.length });
-    return { ok: true, output: { members, count: members.length } };
-  },
-};
-
-const team_notify: BuiltinToolDef = {
-  slug: 'team_notify',
-  name: 'Notify a team member',
-  description:
-    "Send a short notification to one or more team members on behalf of the member you're talking to ('can you ask Deepthi to check this?'). It lands in the recipient's dash — where they can REPLY to it — and, if they've allowed browser notifications, as one of those too. Recipient ids come from `team_member_list`; there is no free-text address, and only live members of this brain can be reached. When you're in a forum topic the link back to it is attached automatically, so write the message about WHAT you need from them, not about where to find it. Tell the member who was notified — and name anyone who wasn't.",
-  inputSchema: {
-    type: 'object',
-    properties: {
-      recipient_ids: {
-        type: 'array',
-        items: { type: 'string' },
-        minItems: 1,
-        maxItems: MAX_NOTIFY_RECIPIENTS,
-        description: "Contact ids from `team_member_list`, e.g. ['a1b2c3d4-…'].",
-      },
-      body: {
-        type: 'string',
-        minLength: 1,
-        maxLength: MAX_NOTIFICATION_BODY,
-        description:
-          "What you need from them, in the requesting member's voice, e.g. 'Jaya asked if you could check the answer on the new-service question.'",
-      },
-    },
-    required: ['recipient_ids', 'body'],
-  },
-  handler: async (input, ctx): Promise<ToolHandlerResult> => {
-    const who = memberSurfaceOf(ctx, 'team_notify');
-    if ('ok' in who) return who;
-
-    const body = str(input.body).trim();
-    if (!body) return { ok: false, error: 'body is required' };
-    const recipientIds = strArr(input.recipient_ids).filter(Boolean);
-    if (recipientIds.length === 0) {
-      return {
-        ok: false,
-        error: 'recipient_ids is required — get ids from `team_member_list` first.',
-      };
-    }
-
-    // Provenance from the authenticated surface, never the model — the same
-    // discipline as team_request_create. This is what makes "notify her about
-    // this" a link she can click.
-    const surface = ctx.surface!;
-    const topicId = surface.kind === 'forum' ? surface.topicId : null;
-    const postId = surface.kind === 'forum' ? (surface.inboundPostId ?? null) : null;
-
-    try {
-      const res = await notifyMembers(ctx.ownerId, {
-        recipientIds,
-        senderId: who.contactId,
-        senderName: who.contactName ?? null,
-        body,
-        topicId,
-        postId,
-      });
-      ctx.step?.setMeta({ delivered: res.delivered.length, rejected: res.rejected.length });
-      if (res.delivered.length === 0) {
-        return {
-          ok: false,
-          error:
-            'nobody was notified — none of those ids is a live team member of this brain. Re-run `team_member_list` and match the name again.',
-        };
-      }
-      return {
-        ok: true,
-        output: {
-          notified: res.delivered.length,
-          recipient_ids: res.delivered.map((d) => d.recipientId),
-          // Surfaced so the responder can tell the member who it could NOT
-          // reach — silently dropping a recipient reads as "done" and the
-          // colleague is never told.
-          not_notified: res.rejected,
-          ...(topicId ? { linked_topic: topicId } : {}),
-        },
-      };
-    } catch (err) {
-      return { ok: false, error: errorMessage(err) };
-    }
-  },
-};
-
 const team_chat_list: BuiltinToolDef = {
   slug: 'team_chat_list',
+  ownerOnly: true,
   readOnly: true,
   name: 'List team chat members',
   description:
-    "List the brain's team members and their Team Chat activity: last message, thread size, membership since, token last used. Use for questions like 'who has been using team chat' or as the index before `team_chat_read`.",
+    "List the brain's member logins (the team) and their chat activity: last message, thread size, whether the login is still active. Use for questions like 'who has been chatting with the team agent' or as the index before `team_chat_read`. The portal_archive field lists old team-code portal threads (history only; read them by `contactId`).",
   inputSchema: { type: 'object', properties: {} },
   handler: async (_input, ctx): Promise<ToolHandlerResult> => {
-    if (ctx.surface?.kind === 'team' || ctx.surface?.kind === 'forum') {
-      return { ok: false, error: 'owner-side tool — not available on the team surfaces' };
-    }
-    const members = await listTeamMemberActivity(ctx.ownerId);
-    ctx.step?.setMeta({ count: members.length });
-    return { ok: true, output: { members, count: members.length } };
+    if (!isOwnerSurface(ctx.surface)) return { ok: false, error: OWNER_ONLY_ERROR };
+    const [members, portal] = await Promise.all([
+      listMemberChatActivity(ctx.ownerId),
+      listTeamMemberActivity(ctx.ownerId),
+    ]);
+    const portal_archive = portal
+      .filter((p) => p.messageCount > 0)
+      .map((p) => ({
+        contactId: p.contactId,
+        contactName: p.contactName,
+        messageCount: p.messageCount,
+        lastMessageAt: p.lastMessageAt,
+      }));
+    ctx.step?.setMeta({ count: members.length, archive: portal_archive.length });
+    return {
+      ok: true,
+      output: {
+        members,
+        count: members.length,
+        ...(portal_archive.length ? { portal_archive } : {}),
+      },
+    };
   },
 };
 
+/** One thread row as the owner-side tools return it. */
+function chatLine(m: {
+  id: string;
+  direction: string;
+  text: string;
+  channel: string;
+  traceId: string | null;
+  createdAt: Date;
+}) {
+  return {
+    id: m.id,
+    direction: m.direction,
+    text: m.text,
+    channel: m.channel,
+    traceId: m.traceId,
+    createdAt: m.createdAt.toISOString(),
+  };
+}
+
 const team_chat_read: BuiltinToolDef = {
   slug: 'team_chat_read',
+  ownerOnly: true,
   readOnly: true,
   preconditions: TEAM_CONTACT_ID_PRE,
   name: 'Read a team chat thread',
   description:
-    "Read a window of one team member's Team Chat thread (ascending; newest window by default, `before` pages older). `contactId` comes from `team_chat_list` or `contact_find`. Use to answer 'what has <member> asked about'.",
+    "Read a window of one team member's chat thread (ascending; newest window by default, `before` pages older). Pass `loginId` (from `team_chat_list`) for a member login's thread, or `contactId` for an old team-code portal thread (history). With `loginId` and no `before`, a login invited from a team contact also returns `portal_history`: that contact's OLD portal chat, a separate thread from `messages` (page it with its `contactId` and `before`). Use to answer 'what has <member> asked about'.",
   inputSchema: {
     type: 'object',
     properties: {
+      loginId: {
+        type: 'string',
+        description: "The member login's id, from `team_chat_list`.",
+      },
       contactId: {
         type: 'string',
-        description: "The member's contact id, from `team_chat_list` or `contact_find`.",
+        description:
+          'A contact id from the portal_archive field of `team_chat_list`: reads that old team-code portal thread.',
       },
       before: {
         type: 'string',
@@ -307,31 +269,48 @@ const team_chat_read: BuiltinToolDef = {
         description: 'Max messages to return.',
       },
     },
-    required: ['contactId'],
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
-    if (ctx.surface?.kind === 'team' || ctx.surface?.kind === 'forum') {
-      return { ok: false, error: 'owner-side tool — not available on the team surfaces' };
+    if (!isOwnerSurface(ctx.surface)) return { ok: false, error: OWNER_ONLY_ERROR };
+    const loginId = strOpt(input.loginId);
+    const contactId = strOpt(input.contactId);
+    if (!loginId && !contactId) {
+      return { ok: false, error: 'loginId (or contactId for a portal thread) required' };
     }
-    const contactId = str(input.contactId);
-    if (!contactId) return { ok: false, error: 'contactId required' };
-    const messages = await listTeamThread(ctx.ownerId, contactId, {
-      before: strOpt(input.before),
-      limit: numOpt(input.limit) ?? 50,
+    if (loginId && !UUID_RE.test(loginId)) {
+      return { ok: false, error: 'loginId must be a login id from `team_chat_list`' };
+    }
+    const before = strOpt(input.before);
+    const limit = numOpt(input.limit) ?? 50;
+    const messages = await listTeamThread(ctx.ownerId, contactId ?? '', {
+      before,
+      limit,
+      ...(loginId ? { loginId } : {}),
     });
-    ctx.step?.setMeta({ contactId, count: messages.length });
+    // The login's old portal chat (its contact's, from before the invite):
+    // on the first window only, and apart from `messages`, never merged.
+    const portal =
+      loginId && !before ? await listLoginPortalThread(ctx.ownerId, loginId, { limit }) : null;
+    const portal_history =
+      portal && portal.messages.length > 0
+        ? {
+            note: "The member's OLD team-code portal chat, from before they had a login. History only: a separate thread, not part of their current chat.",
+            contactId: portal.contactId,
+            messages: portal.messages.map(chatLine),
+            count: portal.messages.length,
+          }
+        : null;
+    ctx.step?.setMeta({
+      ...(loginId ? { loginId } : { contactId }),
+      count: messages.length,
+      ...(portal_history ? { portal: portal_history.count } : {}),
+    });
     return {
       ok: true,
       output: {
-        messages: messages.map((m) => ({
-          id: m.id,
-          direction: m.direction,
-          text: m.text,
-          channel: m.channel,
-          traceId: m.traceId,
-          createdAt: m.createdAt.toISOString(),
-        })),
+        messages: messages.map(chatLine),
         count: messages.length,
+        ...(portal_history ? { portal_history } : {}),
       },
     };
   },
@@ -339,18 +318,23 @@ const team_chat_read: BuiltinToolDef = {
 
 const team_access_list: BuiltinToolDef = {
   slug: 'team_access_list',
+  ownerOnly: true,
   readOnly: true,
   preconditions: TEAM_CONTACT_ID_PRE,
   name: 'List team access log',
   description:
-    'The Team Chat audit trail, newest first: token auths, turns, API calls, denied attempts — each with the contact and detail. Optional `contactId` narrows to one member.',
+    'The Team Chat audit trail, newest first: token auths, turns, API calls, denied attempts, each with the contact, the member login (`loginId`) and detail. Optional `loginId` narrows to one member login (its own events and the portal history of the contact it was invited from); optional `contactId` narrows to one team contact.',
   inputSchema: {
     type: 'object',
     properties: {
+      loginId: {
+        type: 'string',
+        description: 'Narrow the log to one member login, an id from `team_chat_list`.',
+      },
       contactId: {
         type: 'string',
         description:
-          'Narrow the log to one member — a contact id from `team_chat_list` or `contact_find`.',
+          'Narrow the log to one team contact, an id from `team_chat_list` (portal_archive) or `contact_find`.',
       },
       limit: {
         type: 'integer',
@@ -362,11 +346,14 @@ const team_access_list: BuiltinToolDef = {
     },
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
-    if (ctx.surface?.kind === 'team' || ctx.surface?.kind === 'forum') {
-      return { ok: false, error: 'owner-side tool — not available on the team surfaces' };
+    if (!isOwnerSurface(ctx.surface)) return { ok: false, error: OWNER_ONLY_ERROR };
+    const loginId = strOpt(input.loginId);
+    if (loginId && !UUID_RE.test(loginId)) {
+      return { ok: false, error: 'loginId must be a login id from `team_chat_list`' };
     }
     const rows = await listTeamAccess(ctx.ownerId, {
       contactId: strOpt(input.contactId),
+      ...(loginId ? { loginId } : {}),
       limit: numOpt(input.limit) ?? 100,
     });
     ctx.step?.setMeta({ count: rows.length });
@@ -376,8 +363,6 @@ const team_access_list: BuiltinToolDef = {
 
 export const TEAM_TOOLS: BuiltinToolDef[] = [
   team_request_create,
-  team_member_list,
-  team_notify,
   team_chat_list,
   team_chat_read,
   team_access_list,

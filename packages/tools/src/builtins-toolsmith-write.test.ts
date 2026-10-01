@@ -54,6 +54,14 @@ const h = vi.hoisted(() => {
   };
 });
 
+/** What drizzle throws on a duplicate insert: the Postgres error (code
+ *  23505) sits on `cause`; the top message is only "Failed query: ...". */
+function uniqueViolation(constraint: string): Error {
+  return Object.assign(new Error('Failed query: insert into "tools" ...\nparams: ...'), {
+    cause: { code: '23505', constraint_name: constraint },
+  });
+}
+
 vi.mock('@mantle/db', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/db')>();
   return { ...actual, db: { ...actual.db, select: h.select, update: h.update } };
@@ -332,9 +340,7 @@ describe('api_tool_create', () => {
   });
 
   it('maps a duplicate-slug insert to the update hint', async () => {
-    vi.mocked(createTool).mockRejectedValue(
-      new Error('duplicate key value violates unique constraint "tools_owner_slug_uq"'),
-    );
+    vi.mocked(createTool).mockRejectedValue(uniqueViolation('tools_owner_slug_uq'));
     expect(errorOf(await create.handler(VALID, ctx))).toMatch(
       /'geocode' already exists — use api_tool_update/,
     );
@@ -561,7 +567,7 @@ describe('api_docs_set', () => {
     });
     expect(outputOf(res)).toMatchObject({
       group_slug: 'weather-tools',
-      file: 'files/api-docs/weather-tools.md',
+      file: 'files/auto-filed/api-docs/weather-tools.md',
       chars: 120,
       stored: true,
       warnings: [],
@@ -699,7 +705,7 @@ describe('recipe_tool_create', () => {
 
   it('maps a duplicate-slug insert to the delete-and-recreate hint', async () => {
     vi.mocked(listToolsForOwner).mockResolvedValue(OWNED as never);
-    vi.mocked(createTool).mockRejectedValue(new Error('duplicate key'));
+    vi.mocked(createTool).mockRejectedValue(uniqueViolation('tools_owner_slug_uq'));
     expect(errorOf(await recipeCreate.handler(VALID_RECIPE, ctx))).toMatch(
       /already exists — use api_tool_delete/,
     );

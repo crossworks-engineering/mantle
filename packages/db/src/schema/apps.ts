@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { integer, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { boolean, integer, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { nodes } from './nodes';
 
 /**
@@ -38,6 +38,10 @@ export const apps = pgTable('apps', {
   draftBuild: jsonb('draft_build').$type<BuildRef>(),
   publishedBuild: jsonb('published_build').$type<BuildRef>(),
   version: integer('version').default(1).notNull(),
+  // Informational (client logins C6, 0198): members and clients only READ the
+  // app's database. Off, an app at team or client level is a shared workspace
+  // everyone who runs it writes. Set only by the owner's app update route.
+  dataReadOnly: boolean('data_read_only').default(false).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
@@ -63,7 +67,7 @@ export type AppManifest = {
 
 /** Pointer to a bundled artifact in object storage. */
 export type BuildRef = {
-  /** MinIO key of the bundled ESM (`app-bundles/<owner>/<app>/<sha>.js`). */
+  /** Object-store key of the bundled ESM (content-addressed, see @mantle/storage contentKey). */
   storageKey: string;
   sha256: string;
   builtAt: string;

@@ -10,7 +10,16 @@
  * + embedding land automatically on the next pg_notify('node_ingested').
  */
 import { and, desc, eq, ilike, or, sql } from 'drizzle-orm';
-import { db, nodes, notifyNodeIngested, type Node } from '@mantle/db';
+import {
+  asViewerLevel,
+  db,
+  nodes,
+  notifyNodeIngested,
+  type Node,
+  type ViewerLevel,
+  withBusyRetry,
+} from '@mantle/db';
+import { followNewEmbeds, noteEmbedIds, refoldEmbedReach } from './embed-closure';
 
 export const NOTES_ROOT_LABEL = 'notes';
 
@@ -20,6 +29,15 @@ export type NoteRow = {
   content: string;
   tags: string[];
   summary: string | null;
+  /** Access level (admin > team > client > public); the owner UI's badge. */
+  audience: ViewerLevel;
+  /** The share it inherits from a folder above it (team or client), or
+   *  null. It is read at the more open of this and `audience`. */
+  inherited: 'team' | 'client' | null;
+  /** The share it is read at through something that embeds it (migration
+   *  0208), or null. It is read at the most open of this, `inherited` and
+   *  `audience`. */
+  embedded: 'team' | 'client' | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -32,6 +50,10 @@ function rowOf(n: Node): NoteRow {
     content: typeof d.content === 'string' ? d.content : '',
     tags: n.tags ?? [],
     summary: typeof d.summary === 'string' ? d.summary : null,
+    audience: asViewerLevel(n.audience),
+    inherited:
+      n.inheritedLevel === 'team' || n.inheritedLevel === 'client' ? n.inheritedLevel : null,
+    embedded: n.embeddedLevel === 'team' || n.embeddedLevel === 'client' ? n.embeddedLevel : null,
     createdAt: n.createdAt.toISOString(),
     updatedAt: n.updatedAt.toISOString(),
   };
@@ -168,7 +190,15 @@ export async function createNote(ownerId: string, input: CreateNoteInput): Promi
 
 export type UpdateNoteInput = Partial<CreateNoteInput>;
 
-export async function updateNote(
+export function updateNote(
+  ownerId: string,
+  id: string,
+  input: UpdateNoteInput,
+): Promise<NoteRow | null> {
+  return withBusyRetry(() => updateNoteOnce(ownerId, id, input));
+}
+
+async function updateNoteOnce(
   ownerId: string,
   id: string,
   input: UpdateNoteInput,
@@ -190,19 +220,33 @@ export async function updateNote(
     delete newData.summary_at;
     delete newData.entities;
   }
-  const [updated] = await db
-    .update(nodes)
-    .set({
-      ...(input.title !== undefined
-        ? { title: input.title.trim().slice(0, 200) || 'Untitled note' }
-        : {}),
-      ...(input.tags !== undefined ? { tags: dedupeTags(input.tags) } : {}),
-      data: newData,
-      ...(contentChanged ? { embedding: null } : {}),
-      updatedAt: new Date(),
-    })
-    .where(eq(nodes.id, id))
-    .returning();
+  const [updated] = await db.transaction(async (tx) => {
+    // Later embeds follow on save: a note whose own level is below admin and
+    // that gains an image, file or drawing takes it to that level (embedding
+    // means sharing). A folder share it is read through is the database's to
+    // follow (0208).
+    const level = asViewerLevel(node.audience);
+    const before = noteEmbedIds(typeof oldData.content === 'string' ? oldData.content : '');
+    const after = contentChanged ? noteEmbedIds(input.content ?? '') : before;
+    if (contentChanged && level !== 'admin') {
+      await followNewEmbeds(ownerId, { id, audience: level }, before, after, tx);
+    }
+    const rows = await tx
+      .update(nodes)
+      .set({
+        ...(input.title !== undefined
+          ? { title: input.title.trim().slice(0, 200) || 'Untitled note' }
+          : {}),
+        ...(input.tags !== undefined ? { tags: dedupeTags(input.tags) } : {}),
+        data: newData,
+        ...(contentChanged ? { embedding: null } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(nodes.id, id))
+      .returning();
+    if (contentChanged) await refoldEmbedReach(ownerId, id, before, after, tx);
+    return rows;
+  });
   if (!updated) throw new Error('updateNote: update returned no row');
   if (contentChanged) {
     await notifyNodeIngested(id);

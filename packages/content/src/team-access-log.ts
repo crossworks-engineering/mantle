@@ -1,30 +1,35 @@
 /**
- * Audit writes for the external Team Chat surface (/team + /api/team/*). One
- * row per member action: token auth, chat turn, bearer API call, or a denied
- * attempt. The `app_access_log` pattern, brain-level instead of per-app.
+ * Audit writes for the team surfaces: a member login's chat turns and denials,
+ * the invite redeem, and (history) the retired team-code portal's token auth,
+ * chat turns and bearer calls. The `app_access_log` pattern, brain-level
+ * instead of per-app.
  *
  * Fire-and-forget by design: `recordTeamAccess` swallows failures so an audit
  * hiccup can never take the chat surface down for a member. Best-effort trail,
- * not a gate — the gate is the per-request `isTeamMember` liveness check.
+ * not a gate.
  */
 import { and, desc, eq } from 'drizzle-orm';
-import { db, teamAccessLog, nodes } from '@mantle/db';
+import { db, systemDb, teamAccessLog, nodes } from '@mantle/db';
 
 export type TeamAccessKind = 'auth' | 'turn' | 'api' | 'denied';
 
 export type TeamAccessEntry = {
   ownerId: string;
   contactId?: string | null;
+  /** The member login acting (0175). */
+  loginId?: string | null;
   kind: TeamAccessKind;
   detail?: Record<string, unknown>;
 };
 
 export function recordTeamAccess(entry: TeamAccessEntry): void {
-  void db
+  // systemDb: an access record is written even under a limited viewer role.
+  void systemDb
     .insert(teamAccessLog)
     .values({
       ownerId: entry.ownerId,
       contactId: entry.contactId ?? null,
+      loginId: entry.loginId ?? null,
       kind: entry.kind,
       detail: entry.detail ?? {},
     })
@@ -39,25 +44,31 @@ export type TeamAccessRow = {
   /** Resolved at read time; null once the contact is deleted (rows outlive
    *  the person by design). */
   contactName: string | null;
+  /** The member login the event belongs to: its own events, and the portal
+   *  history of the contact it was invited from (0175). */
+  loginId: string | null;
   kind: TeamAccessKind;
   detail: Record<string, unknown>;
   createdAt: string;
 };
 
-/** Recent team-surface activity, newest first — the whole brain or one
- *  member. Owner predicate is IN the WHERE so LIMIT never under-returns. */
+/** Recent team-surface activity, newest first: the whole brain, one
+ *  contact, or one member login (both filters AND). Owner predicate is IN the
+ *  WHERE so LIMIT never under-returns. */
 export async function listTeamAccess(
   ownerId: string,
-  opts: { contactId?: string; limit?: number } = {},
+  opts: { contactId?: string; loginId?: string; limit?: number } = {},
 ): Promise<TeamAccessRow[]> {
   const limit = Math.min(Math.max(opts.limit ?? 100, 1), 500);
   const conds = [eq(teamAccessLog.ownerId, ownerId)];
   if (opts.contactId) conds.push(eq(teamAccessLog.contactId, opts.contactId));
+  if (opts.loginId) conds.push(eq(teamAccessLog.loginId, opts.loginId));
   const rows = await db
     .select({
       id: teamAccessLog.id,
       contactId: teamAccessLog.contactId,
       contactName: nodes.title,
+      loginId: teamAccessLog.loginId,
       kind: teamAccessLog.kind,
       detail: teamAccessLog.detail,
       createdAt: teamAccessLog.createdAt,
@@ -71,6 +82,7 @@ export async function listTeamAccess(
     id: r.id,
     contactId: r.contactId,
     contactName: r.contactName ?? null,
+    loginId: r.loginId,
     kind: r.kind as TeamAccessKind,
     detail: r.detail,
     createdAt: r.createdAt.toISOString(),

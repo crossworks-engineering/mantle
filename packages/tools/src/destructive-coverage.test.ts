@@ -67,6 +67,10 @@ const DESTRUCTIVE_WITHOUT_CONFIRM: Record<string, { reason: string; mcpOnly?: tr
   // no agent can be granted these (registry.listSeedableBuiltins excludes them).
   file_delete: { reason: 'owner-only operator surface', mcpOnly: true },
   folder_delete: { reason: 'owner-only operator surface', mcpOnly: true },
+  tree_folder_delete: {
+    reason: 'owner-only operator surface; lifts what it holds, deletes only the folder',
+    mcpOnly: true,
+  },
   note_delete: { reason: 'owner-only operator surface', mcpOnly: true },
   // Recoverable: undoes a share, a draft edit, or a pool entry.
   node_unshare: { reason: 'revokes a link; the gated half is node_share' },
@@ -86,6 +90,15 @@ const DESTRUCTIVE_WITHOUT_CONFIRM: Record<string, { reason: string; mcpOnly?: tr
   task_delete: { reason: 'row delete via the deliberate tasks group' },
   formula_delete: { reason: 'row delete via formulas-admin, deliberate-only' },
   api_tool_delete: { reason: 'row delete via the toolsmith kit, specialist-only' },
+  // One card inside an admin-only Recall map, granted only through the
+  // deliberately-held recall-write group. The card's whole content is kept in
+  // recall_revisions, the entry card is refused outright, and retiring a whole
+  // map is the owner's own act rather than an agent's.
+  recall_card_delete: { reason: 'card delete via the deliberate recall-write group' },
+  // The owner's own map delete, on the MCP surface only (mcpOnly, never
+  // granted in the app). It has its own gate: without confirm: true it only
+  // says what would go, and asks the model to tell the user first.
+  recall_map_delete: { reason: 'owner act on MCP; refuses without confirm: true', mcpOnly: true },
 };
 
 /**

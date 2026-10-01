@@ -5,6 +5,7 @@ import { AvatarSchema } from '@/lib/avatar-schema';
 import { createAgent, listAgents } from '@/lib/agents';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
+import { isUniqueViolation } from '@mantle/db';
 
 export async function GET() {
   const user = await getOwnerOr401();
@@ -127,7 +128,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ agent: row });
   } catch (err) {
     const msg = errorMessage(err);
-    if (msg.includes('agents_owner_slug_uq') || msg.includes('duplicate key')) {
+    if (isUniqueViolation(err)) {
       return NextResponse.json(
         { error: `An agent with slug "${parsed.data.slug}" already exists.` },
         { status: 409 },

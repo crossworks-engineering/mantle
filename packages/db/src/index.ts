@@ -1,5 +1,41 @@
 export * from './schema/index';
-export { db, closeDb, type Db } from './client';
+export {
+  db,
+  systemDb,
+  closeDb,
+  withSpace,
+  withTeamDrafts,
+  withHumanViewer,
+  type Db,
+} from './client';
+export {
+  VIEWER_LEVELS,
+  currentViewerLevel,
+  currentSpaceScope,
+  readsDrafts,
+  isViewerLevel,
+  asViewerLevel,
+  lowerLevel,
+  levelCovers,
+  levelsMeet,
+  itemLevelAbove,
+  ViewerLevelConflictError,
+  withViewer,
+  asSystem,
+  afterCommit,
+  afterRollback,
+  viewerRoleName,
+  type LimitedLevel,
+  type SpaceScope,
+  type ViewerLevel,
+} from './viewer';
+export { ensureViewerRoles, LIMITED_LEVELS } from './viewer-roles';
+export {
+  ACCESS_MATRIX,
+  WORKSPACE_NODE_TYPES,
+  applyViewerGrants,
+  type TableAccess,
+} from './access-matrix';
 export { getDefaultWorker, getAgentTtsWorker, bumpWorkerUsage } from './ai-workers-resolve';
 export { bumpAgentUsage } from './agents-resolve';
 export {
@@ -10,10 +46,31 @@ export {
   type ResolvedContextRef,
 } from './context-ref-resolve';
 export { notifyNodeIngested, notifyNodeIndexed } from './notify';
+export {
+  FORUM_ARCHIVE_SOURCE,
+  TEAM_REQUEST_SOURCE,
+  CLIENT_REQUEST_SOURCE,
+  REQUEST_SOURCES,
+  isExtractExempt,
+  extractExemptSql,
+  unextractedNodeConds,
+} from './extract-exempt';
 export { isWriteRefused } from './write-refused';
+export {
+  BUSY_MESSAGE,
+  BusyError,
+  SAVE_BUSY_MESSAGE,
+  withBusyRetry,
+  isBusy,
+  isCheckViolation,
+  isUniqueViolation,
+  pgConstraint,
+  pgErrorCode,
+} from './pg-error';
 export {
   countUsers,
   resolveSingleOwnerId,
+  isBrainOwnerId,
   waitForOwner,
   type WaitForOwnerOpts,
 } from './resolve-owner';
@@ -46,3 +103,5 @@ export {
   desc,
   asc,
 } from 'drizzle-orm';
+export { carrySpaceRows, spaceFilesPath, SPACE_FILES_ROOT } from './space-carry';
+export { takeShareReadLock, takeShareWriteLock } from './share-lock';

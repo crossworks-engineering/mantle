@@ -48,7 +48,17 @@ export type ProviderId =
  *
  *  When a new ai_workers kind ships, add its capability here too so
  *  the provider filter knows which providers to expose for that kind. */
-export type ProviderCapability = 'chat' | 'embedding' | 'tts' | 'stt' | 'vision' | 'image_gen';
+export type ProviderCapability =
+  | 'chat'
+  | 'embedding'
+  | 'tts'
+  | 'stt'
+  | 'vision'
+  | 'image_gen'
+  /** Typed decisions (choice / score / yes-no with probabilities, no prose)
+   *  — TypeSafe Jev through OpenRouter's decisions endpoint. Not chat-shaped:
+   *  its own dispatcher, its own endpoint. */
+  | 'decision';
 
 export type Provider = {
   id: ProviderId;
@@ -82,7 +92,7 @@ export const SUPPORTED_PROVIDERS: readonly Provider[] = [
     label: 'OpenRouter',
     description:
       'Aggregator covering OpenAI, Anthropic, Google, Mistral, DeepSeek, and most open models behind one key — plus audio (TTS/STT) and image generation. One key powers chat, memory, voice, and images.',
-    capabilities: ['chat', 'embedding', 'vision', 'tts', 'stt', 'image_gen'],
+    capabilities: ['chat', 'embedding', 'vision', 'tts', 'stt', 'image_gen', 'decision'],
     signupUrl: 'https://openrouter.ai/keys',
     docsUrl: 'https://openrouter.ai/docs',
     isAggregator: true,
@@ -259,4 +269,7 @@ export const CAPABILITY_FOR_KIND: Record<string, ProviderCapability> = {
   // The suggester runs a plain chat-completion to propose one follow-up
   // question after a turn; same 'chat' capability as the narrator.
   suggester: 'chat',
+  // The decider is the first kind whose output is neither prose nor media: a
+  // typed-decision model behind its own endpoint, so its own capability.
+  decider: 'decision',
 };

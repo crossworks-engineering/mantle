@@ -36,6 +36,13 @@ import {
   type ResultHandlingConfig,
   type ToolCallRecord,
 } from '@mantle/tools';
+import {
+  markCreatedClientSourced,
+  newTurnTaint,
+  taintFromText,
+  type TurnTaint,
+} from '@mantle/tools/client-sourced';
+import { toolCreatesNodes } from '@mantle/tools/client-sourced-rules';
 import { type Tool, type AgentParams } from '@mantle/db';
 import type { ToolArtifact } from '@mantle/tools';
 import {
@@ -61,6 +68,7 @@ import { createModelCaller } from './tool-loop/model-caller';
 import { executeToolCall, toolResultPayload } from './tool-loop/execute-call';
 import { env } from '@mantle/config';
 import { UUID_RE } from '@mantle/std';
+import { withViewer, type ViewerLevel } from '@mantle/db/viewer';
 
 const DEFAULT_MAX_ITERATIONS = 6;
 
@@ -389,6 +397,9 @@ export type ToolLoopArgs = {
    *  /pending UI can show which agent proposed each call. Optional —
    *  callers without an agent context (manual scripts) can skip it. */
   agentId?: string;
+  /** The agent's level (agents.audience): required with `agentId`. The loop
+   *  runs every query at this level (member logins Phase 0b). */
+  agentLevel?: ViewerLevel;
   /** The agent row's slug. Passed to handlers (specifically
    *  `invoke_agent`) so they can refuse self-calls + reason about who
    *  invoked them. Optional for scripts that aren't running an agent. */
@@ -449,6 +460,15 @@ export type ToolLoopArgs = {
    *  absent. The canonical union lives on ToolHandlerContext
    *  (@mantle/tools) — this mirrors it so the two can't drift. */
   surface?: NonNullable<import('@mantle/tools').ToolHandlerContext['surface']>;
+  /** Whether this turn has read text a client wrote (client logins C4, plan
+   *  N18). Shared by reference: the responder loop marks it from the
+   *  retrieval context, every tool call's input and output marks it, and a
+   *  delegated child shares its parent's. Once marked, a lowering to client
+   *  or public, or a write into an item clients or the public read, goes to
+   *  pending approval instead of running (client-sourced-rules.ts), and a
+   *  node the turn creates is marked too. Absent = a fresh one for this
+   *  loop. */
+  taint?: TurnTaint;
 };
 
 /**
@@ -512,8 +532,24 @@ export async function buildToolsForModel(
   );
 }
 
+/**
+ * The tool loop, at the agent's level (member logins Phase 0b). A loop run for
+ * an agent MUST say the agent's level: a missing one throws rather than
+ * silently running at admin. The level only ever goes down.
+ */
 export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
+  if (args.agentId && !args.agentLevel) {
+    throw new Error(
+      `runToolLoop: agent '${args.agentSlug ?? args.agentId}' needs agentLevel (agentLevel(agent)): ` +
+        'the loop runs at the agent level.',
+    );
+  }
+  return withViewer(args.agentLevel ?? 'admin', () => runToolLoopAtLevel(args));
+}
+
+async function runToolLoopAtLevel(args: ToolLoopArgs): Promise<ToolLoopResult> {
   const maxIters = args.maxIterations ?? DEFAULT_MAX_ITERATIONS;
+  const taint = args.taint ?? newTurnTaint();
   const handling = resolveResultHandling(args.resultHandling);
   // Always offer `read_result` when the agent has any tools, so a spilled
   // (oversized) result is never a dead end — even if the operator didn't add
@@ -795,7 +831,16 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         argValidationMode,
         lastUserMessage,
         pendingIds,
+        taint,
       });
+      // Did this call bring client-written text into the turn? Its input
+      // (a client login's id) or its output (a client request's id) says so.
+      await taintFromText(
+        taint,
+        args.ownerId,
+        JSON.stringify({ input, output: outcome.ok ? outcome.output : null }),
+        slug,
+      );
 
       const duration = Date.now() - startedAt;
       // A confirm-gated call returns ok:true (the QUEUING succeeded) but the
@@ -806,6 +851,24 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         outcome.output !== null &&
         typeof outcome.output === 'object' &&
         (outcome.output as { status?: unknown }).status === 'queued_for_approval';
+      // A node a marked turn created carries the mark (L10): a later turn
+      // that reads the copy is marked as if it read the client's text. Set
+      // here, by the loop, never by the tool or the model; after the scan
+      // above, so a copy made from a client item by id is marked too.
+      if (
+        taint.clientSourced &&
+        outcome.ok &&
+        !queuedForApproval &&
+        tool &&
+        toolCreatesNodes(tool)
+      ) {
+        await markCreatedClientSourced(
+          args.ownerId,
+          JSON.stringify(outcome.output),
+          Date.now() - startedAt,
+          slug,
+        );
+      }
       const writeTarget =
         outcome.ok && !queuedForApproval && looksLikeWriteTool(slug)
           ? extractWriteTarget(outcome.output)
@@ -853,7 +916,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
     if (turnAborted()) return stoppedResult(result.text, iter, { pushAssistantMessage: false });
     const boundary = guards.endBatch(calls.length);
     if (boundary === 'batch_fully_skipped') {
-      // (NATREF 2026-07-28: a capped child re-issued 47 blocked row-adds across
+      // (a client box 2026-07-28: a capped child re-issued 47 blocked row-adds across
       // two more rounds before giving up.) Force the final answer now instead
       // of paying LLM rounds for more of the same.
       batchFullySkipped = true;

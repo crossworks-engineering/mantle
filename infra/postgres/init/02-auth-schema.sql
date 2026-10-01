@@ -17,7 +17,21 @@ CREATE TABLE IF NOT EXISTS auth.users (
   -- audit trail. No per-user access scope here (team tiers are a separate surface).
   is_owner      boolean     NOT NULL DEFAULT false,
   display_name  text,
-  last_login_at timestamptz
+  last_login_at timestamptz,
+  -- Member logins (0162), client logins (0187): admin, member or client; the
+  -- anchor is always admin. The contact FK is added by migration 0162 (nodes
+  -- does not exist yet at cluster init). No default (0190): every insert
+  -- names the role.
+  role          text        NOT NULL,
+  contact_id    uuid,
+  disabled_at   timestamptz,
+  -- Signed into every session (0181); bumping it ends them all.
+  session_epoch integer     NOT NULL DEFAULT 0,
+  -- The same CHECK 0187 leaves (0162 skips it when it exists, 0187 drops and
+  -- re-adds it). Kept in step with the migrations so this table has the
+  -- dumped shape; db-restore.sh no longer relies on it (pristine database).
+  CONSTRAINT users_role_ck
+    CHECK (role IN ('admin', 'member', 'client') AND (NOT is_owner OR role = 'admin'))
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS users_single_owner_idx ON auth.users (is_owner) WHERE is_owner;

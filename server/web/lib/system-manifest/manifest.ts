@@ -41,7 +41,7 @@ import {
   TOOLSMITH_TOOL_SLUGS,
   type HttpHandler,
 } from '@mantle/tools';
-import type { AiWorkerKind, AiWorkerParams, AgentMemoryConfig } from '@mantle/db';
+import type { AiWorkerKind, AiWorkerParams, AgentMemoryConfig, ViewerLevel } from '@mantle/db';
 import {
   DEFAULT_WORKER_SLUG,
   WORKER_MODEL_INHERIT,
@@ -81,6 +81,11 @@ export type ManifestToolGroup = {
   description: string;
   /** Builtin tool slugs this group confers when granted to an agent. */
   toolSlugs: string[];
+  /** The group's level (tool_groups.audience). Omitted = admin, the column
+   *  default. A group with a level is PRODUCT-owned at that level: seeded at
+   *  it and converged back to it by the boot reconcile, because the level is
+   *  what the group is for (client-read exists to be held by a client agent). */
+  level?: ViewerLevel;
 };
 
 /** A templated HTTP API tool shipped with a provisioned Mantle and seeded at
@@ -113,6 +118,13 @@ export type ManifestAgent = {
   /** Verbatim system prompt (from ./prompts) — specialists only; the persona
    *  carries none (its prompt is built from the persona bank). */
   systemPrompt?: string;
+  /** SHA-256 (hex) of every EARLIER shipped default of `systemPrompt`. The
+   *  boot reconcile replaces a live prompt with the current default only when
+   *  it hashes to one of these: the operator never edited it. An edited prompt
+   *  hashes to none of them and is kept (prompts are operator-owned; see
+   *  CLAUDE.md). Add the old default's hash here in the change that rewrites a
+   *  prompt, when existing brains should get the rewrite. */
+  retiredPromptSha256?: readonly string[];
   /** Skills that SHOULD be attached to this agent. */
   skillSlugs: string[];
   /** Tool groups granted to this agent (named bundles). P6: the SOLE grant
@@ -130,6 +142,12 @@ export type ManifestAgent = {
    *  toolsmith for data-tool authoring. */
   memoryConfig?: AgentMemoryConfig;
   priority: number;
+  /** The agent's level (agents.audience). Omitted = admin, the column
+   *  default, and the level is then operator-owned (team-responder ships at
+   *  admin and an admin lowers it). Set = product-owned: seeded at it, so the
+   *  agent works on every brain with no manual step (client-responder at
+   *  client, client logins C4). */
+  level?: ViewerLevel;
 };
 
 export type ManifestWorker = {
@@ -150,6 +168,10 @@ export type ManifestWorker = {
   altProvider?: string;
   altModel?: string;
   altParams?: AiWorkerParams;
+  /** Seed the row switched OFF (default true = on). For a worker that is an
+   *  experiment the owner must opt into — it exists in Settings, ready to
+   *  flip, but spends nothing until then. An upgrade never turns it on. */
+  enabled?: boolean;
 };
 
 /** A heartbeat the product ships: a scheduled, self-directed agent turn.
@@ -485,6 +507,21 @@ export const MANIFEST_HTTP_TOOL_SLUGS: readonly string[] = MANIFEST_HTTP_TOOLS.m
 // deliberate group membership, never as a side effect of an authoring grant.
 // The `pages`/`tables` groups carry the AUTHORING subsets only.
 
+/**
+ * Tool groups and builtin tools the manifest USED to ship and no longer does.
+ * Removals are otherwise add-only (the rows live on), so the boot reconcile
+ * DISABLES these rows: a stale builtin row would still be offered to any
+ * agent granted it, and its handler is gone (the call would only fail). Kept
+ * disabled, not deleted, so an operator can see what went and nothing that
+ * points at a row breaks.
+ *
+ *   team-notify / team_member_list / team_notify: member-to-member
+ *   notifications from the forum era, attached to no agent by default
+ *   (member logins Phase 6).
+ */
+export const RETIRED_TOOL_GROUP_SLUGS: readonly string[] = ['team-notify'];
+export const RETIRED_BUILTIN_TOOL_SLUGS: readonly string[] = ['team_member_list', 'team_notify'];
+
 export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
   {
     slug: 'memory-core',
@@ -541,6 +578,12 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'Create/edit/list/read notes + import a file or page as a note. note_update covers the ' +
       'recurring append-to-a-log flow (client-site gap, 2026-07-18); note_delete stays out — deliberate.',
     toolSlugs: [
+      // The kind's folders (builtins-tree.ts; one set for every row-only kind).
+      'tree_folders',
+      'tree_folder_create',
+      'tree_folder_update',
+      'tree_item_move',
+
       'note_create',
       'note_update',
       'note_list',
@@ -553,13 +596,30 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'events',
     name: 'Calendar',
     description: 'Calendar event CRUD.',
-    toolSlugs: ['event_list', 'event_get', 'event_create', 'event_update', 'event_delete'],
+    toolSlugs: [
+      // The kind's folders (builtins-tree.ts; one set for every row-only kind).
+      'tree_folders',
+      'tree_folder_create',
+      'tree_folder_update',
+      'tree_item_move',
+      'event_list',
+      'event_get',
+      'event_create',
+      'event_update',
+      'event_delete',
+    ],
   },
   {
     slug: 'tasks',
     name: 'Tasks',
     description: 'Task CRUD + the per-task comment thread.',
     toolSlugs: [
+      // The kind's folders (builtins-tree.ts; one set for every row-only kind).
+      'tree_folders',
+      'tree_folder_create',
+      'tree_folder_update',
+      'tree_item_move',
+
       'task_list',
       'task_get',
       'task_create',
@@ -574,7 +634,16 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     name: 'Pages toolkit',
     description:
       'Author + edit rich pages, incl. block-level deletes (authoring subset; excludes whole-page delete/overwrite + the share toggles).',
-    toolSlugs: [...PAGE_AUTHORING_TOOL_SLUGS],
+    toolSlugs: [
+      // The kind's folders (builtins-tree.ts; folder phase 7: pages live in
+      // folders like notes, and never nest).
+      'tree_folders',
+      'tree_folder_create',
+      'tree_folder_update',
+      'tree_item_move',
+
+      ...PAGE_AUTHORING_TOOL_SLUGS,
+    ],
   },
   {
     slug: 'page-admin',
@@ -593,7 +662,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'sharing',
     name: 'Item sharing',
     description:
-      'Mint/revoke a read-only public or team link for ANY shareable item (note, task, event, file, app, table, folder) — the type-agnostic counterpart of page-share. node_share is confirm-gated (publishes outward).',
+      'Mint/revoke a read-only public link for ANY shareable item (note, task, event, file, app, table, folder) — the type-agnostic counterpart of page-share. node_share is confirm-gated (publishes outward).',
     toolSlugs: ['node_share', 'node_unshare'],
   },
   {
@@ -601,7 +670,14 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     name: 'Apps toolkit',
     description:
       'Author + build mini apps: source files, esbuild, declared api_tools + sqlite schema (authoring subset; excludes whole-app delete + publish).',
-    toolSlugs: [...APP_AUTHORING_TOOL_SLUGS],
+    toolSlugs: [
+      // The kind's folders (builtins-tree.ts; one set for every row-only kind).
+      'tree_folders',
+      'tree_folder_create',
+      'tree_folder_update',
+      'tree_item_move',
+      ...APP_AUTHORING_TOOL_SLUGS,
+    ],
   },
   {
     slug: 'app-admin',
@@ -621,7 +697,14 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     name: 'Tables toolkit',
     description:
       'Build + edit typed grids, incl. row/column deletes (authoring subset; excludes the whole-table delete).',
-    toolSlugs: [...TABLE_AUTHORING_TOOL_SLUGS],
+    toolSlugs: [
+      // The kind's folders (builtins-tree.ts; one set for every row-only kind).
+      'tree_folders',
+      'tree_folder_create',
+      'tree_folder_update',
+      'tree_item_move',
+      ...TABLE_AUTHORING_TOOL_SLUGS,
+    ],
   },
   {
     slug: 'table-admin',
@@ -683,7 +766,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'export',
     name: 'Document export',
     description:
-      'Render a page/note to Word (.docx) or a table to Excel (.xlsx) and save it under /files/exports. Non-destructive.',
+      'Render a page/note to Word (.docx) or a table to Excel (.xlsx) and save it under /files/auto-filed/exports. Non-destructive.',
     toolSlugs: ['export_node'],
   },
   {
@@ -708,7 +791,14 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     // No-delete subset (mirrors pages/tables, decision 3); contact_delete rides
     // the `contacts-admin` group. Matches CORE_AUTO_GRANT exactly, so an
     // auto-granted conversational agent qualifies for the whole group.
-    toolSlugs: [...CONTACT_AUTO_GRANT_SLUGS],
+    toolSlugs: [
+      // The kind's folders (builtins-tree.ts; one set for every row-only kind).
+      'tree_folders',
+      'tree_folder_create',
+      'tree_folder_update',
+      'tree_item_move',
+      ...CONTACT_AUTO_GRANT_SLUGS,
+    ],
   },
   {
     slug: 'contacts-admin',
@@ -739,7 +829,14 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'Author, read and evaluate calculation models taken from standards. No delete (escape hatch).',
     // No-delete subset (decision 3 pattern); formula_delete rides the
     // `formulas-admin` group.
-    toolSlugs: [...FORMULA_AUTO_GRANT_SLUGS],
+    toolSlugs: [
+      // The kind's folders (builtins-tree.ts; one set for every row-only kind).
+      'tree_folders',
+      'tree_folder_create',
+      'tree_folder_update',
+      'tree_item_move',
+      ...FORMULA_AUTO_GRANT_SLUGS,
+    ],
   },
   {
     slug: 'formulas-eval',
@@ -756,7 +853,12 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     name: 'Draw (read)',
     description:
       'List + read whiteboard drawings as text (committed scenes only). No authoring — the canvas is the only writer; agent authoring is a future, separate decision.',
-    toolSlugs: ['draw_list', 'draw_get'],
+    toolSlugs: [
+      // The kind's folders (builtins-tree.ts; one set for every row-only kind).
+      'tree_folders',
+      'draw_list',
+      'draw_get',
+    ],
   },
   {
     slug: 'calculator',
@@ -793,8 +895,26 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'recall-read',
     name: 'Recall',
     description:
-      "Walk the brain's Recall maps and match its prompts — the owner-authored memory-map system (docs/recall.md). Read-only: the four tools serve compiled rows and never write.",
-    toolSlugs: ['recall_index', 'recall_open', 'recall_go', 'recall_match'],
+      "Walk the brain's Recall maps and match its prompts — the owner-authored memory-map system (docs/recall.md). Read-only: the four tools serve the maps' cards and never write.",
+    toolSlugs: ['recall_index', 'recall_open', 'recall_go', 'recall_match', 'tree_folders'],
+  },
+  {
+    slug: 'recall-write',
+    name: 'Recall authoring',
+    description:
+      "Keep the owner's Recall maps current: add and edit CARDS in an existing map (served to every agent at once), and start a new map for the owner to publish. Publishing a map, making a card a prompt and deleting a map stay the owner's act; what an agent may change here is what the brain knows, not what the brain tells other agents to do. Not in any default grant: hand it out deliberately. (An MCP client on the owner's token always has these tools.)",
+    toolSlugs: [
+      'recall_map_create',
+      'recall_card_put',
+      'recall_card_delete',
+      'recall_map_update',
+      // Recall's folders (builtins-tree.ts, kind 'recall'): a map is filed
+      // into one by recall_map_create's `folder`.
+      'tree_folders',
+      'tree_folder_create',
+      'tree_folder_update',
+      'tree_item_move',
+    ],
   },
   {
     slug: 'research',
@@ -826,7 +946,14 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'secrets',
     name: 'Secrets',
     description: 'Store a secret/credential the user shares in conversation.',
-    toolSlugs: ['secret_create'],
+    toolSlugs: [
+      // The kind's folders (builtins-tree.ts; one set for every row-only kind).
+      'tree_folders',
+      'tree_folder_create',
+      'tree_folder_update',
+      'tree_item_move',
+      'secret_create',
+    ],
   },
   {
     slug: 'ingest',
@@ -962,7 +1089,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
   },
   {
     slug: 'team-read',
-    name: 'Team Chat (member-facing)',
+    name: 'Team reads (member-facing)',
     description:
       "The team responder's entire tool surface: read-only access across the brain (search, files, notes, pages, tables, events, tasks, contacts, app data) — including `show_image`, which renders a file the member could already read — plus its ONE write action — filing a team change request into the specialist review queue. email_*/journal_* are ALSO granted here but gated at runtime by the owner's `teamPrivateReads` switch (default OFF — see run-team-turn.ts / TEAM_PRIVATE_READ_SLUGS), so the owner's private corpus is off-limits unless explicitly opted in. Deliberately excludes export_node (bulk exfiltration ease), replay_window (replays the OWNER's private conversations), all other writes, delegation, terminal, http, and send tools. Non-private reads are brain-wide BY DESIGN (brain = the trust boundary).",
     toolSlugs: [
@@ -972,18 +1099,12 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'read_section',
       'tree_list',
       'node_read',
-      'entity_search',
-      'entity_neighbors',
-      'graph_path',
-      'entity_facts',
-      'entity_mentions',
       // file/folder reads (no create/rename)
       'folder_list',
       'folder_get_by_path',
       'file_list',
       'file_get',
       'file_read',
-      'folder_describe',
       // Showing a stored image is a file READ that renders instead of
       // returning text (see the `files` group). A member could already
       // file_read every one of these bytes; without this they simply could
@@ -1007,6 +1128,32 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'table_rows_list',
       'table_row_get',
       'table_aggregate',
+      'app_db_list',
+      'app_db_query',
+      // utilities the read loop needs
+      'summarize_text',
+      'read_result',
+      // the single write path: provenance-stamped request task
+      'team_request_create',
+      // the member's own personal items, on behalf of the member this turn
+      // serves (member logins Phase 2; fail closed on any other surface)
+      'my_items_list',
+      'my_item_open',
+    ],
+  },
+  {
+    slug: 'team-read-admin',
+    name: 'Team reads that need admin level',
+    description:
+      "The team responder's reads that touch what a team-level role may never read: the knowledge graph (entity names are learned from every source, email included), events, tasks, contacts, and the private corpus (email_* / journal_*, still gated by `teamPrivateReads`). ADMIN level (member logins Phase 0b): the responder holds it while it runs at admin; lowering the responder to team first means removing this group, and the run-time level cap drops it regardless.",
+    toolSlugs: [
+      // A folder-description WRITE: a team-level role never writes.
+      'folder_describe',
+      'entity_search',
+      'entity_neighbors',
+      'graph_path',
+      'entity_facts',
+      'entity_mentions',
       'event_list',
       'event_get',
       'task_list',
@@ -1018,27 +1165,35 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'journal_get',
       'email_list',
       'email_get',
-      'app_db_list',
-      'app_db_query',
-      // utilities the read loop needs
-      'summarize_text',
-      'read_result',
-      // the single write path: provenance-stamped request task
-      'team_request_create',
     ],
   },
   {
-    slug: 'team-notify',
-    name: 'Team notifications (member-to-member)',
+    slug: 'client-read',
+    name: 'Client reads (client-facing)',
     description:
-      "Let the team responder tell one member's message to another ('can you ask Deepthi to check this?') — resolve a colleague's name to an id, then send. The notification lands in the recipient's dash, carries a link back to the forum topic it came from, and can be replied to. NOT an outbound send: it reaches only LIVE members of this brain, by id, with the sender stamped from the authenticated surface — so unlike email/telegram it cannot carry anything across the trust boundary. ⚠ ATTACHED TO NO AGENT YET: the data path ships (migration 0138) but the recipient's dash inbox does not, and a responder that reports 'I've let her know' for a notification nobody can see is worse than today's honest 'I can't reach her'. Grant this to the team responder in the change that lands the surface.",
-    toolSlugs: ['team_member_list', 'team_notify'],
+      "The client responder's entire tool surface (client logins C4): the items shared with clients, listed, searched and opened exactly as the client portal shows them (a reference to anything a client may not read is Private item, embeds of it left out, no summaries or staff names), the client's OWN drafts, and ONE write action, filing a client request for the team. CLIENT level. Deliberately not the brain-wide search and read tools: their chunks, facts and summaries were built from page text that can name team and admin items. No web, no email, no delegation, no apps.",
+    level: 'client',
+    toolSlugs: [
+      'client_shared_list',
+      'client_shared_search',
+      'client_shared_open',
+      'my_items_list',
+      'my_item_open',
+      'client_request_create',
+    ],
+  },
+  {
+    slug: 'access',
+    name: 'Access levels',
+    description:
+      "The owner's levers for the one level system (admin > team > client > public) on brain items, agents and tool groups: read a level (and what an item embeds: lowering an item takes its embeds down with it), set one. Owner-side only (refused on team surfaces). ⚠ ATTACHED TO NO AGENT: levels are set by the owner through MCP / the API first; grant it to the persona once the Access UI ships.",
+    toolSlugs: ['access_get', 'access_set', 'access_shadow_report'],
   },
   {
     slug: 'team-admin',
-    name: 'Team Chat admin',
+    name: 'Team chat admin',
     description:
-      "Owner-side view over the Team Chat surface: list members + activity, read any member's thread, read the access log. Granted to the persona so the brain can answer 'what has <member> asked about?' — NEVER to the team responder itself.",
+      "Owner-side view over the member chats: list member logins + activity, read any member's thread (and old team-code portal threads, history), read the access log. Granted to the persona so the brain can answer 'what has <member> asked about?', NEVER to the team responder itself.",
     toolSlugs: ['team_chat_list', 'team_chat_read', 'team_access_list'],
   },
   {
@@ -1053,6 +1208,42 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
   },
 ];
 
+// ── Shipped model defaults ───────────────────────────────────────────────────
+
+/**
+ * The model every shipped agent is seeded on.
+ *
+ * It is an ALIAS, not a pin. OpenRouter marks an auto-updating alias with a
+ * leading `~`: `~x-ai/grok-latest` resolves to xAI's current flagship (Grok 4.7
+ * today, 500k context, tools + vision) and follows the family forward on its
+ * own. A pinned id is a decision that nothing ages — six months on, a fresh
+ * install seeds a model two generations behind and no one notices until a turn
+ * 404s. An alias is the standing instruction "ship whatever is current", which
+ * is what a default should mean.
+ *
+ * `pinned-model-drift` deliberately reports an alias as `current` rather than
+ * `newer-in-family` — "something newer exists" is not a finding when tracking
+ * the family is exactly what was asked for.
+ *
+ * Operator-owned after seeding: an agent's model is never overwritten by the
+ * boot reconcile (decision 2026-07-29), and `coder` / `appsmith` additionally
+ * accept a `CODER_MODEL` / `APPSMITH_MODEL` env override at seed time.
+ */
+export const DEFAULT_AGENT_MODEL = '~x-ai/grok-latest';
+
+/**
+ * The model the always-on indexing workers run on (extractor, summarizer,
+ * reflector, document reader, vision, narrator, suggester).
+ *
+ * NOT an alias, and deliberately so: the only Google alias OpenRouter offers is
+ * `~google/gemini-flash-latest`, which is full Flash at ~3x the token price.
+ * These workers read EVERYTHING the brain ingests, so the cheap Flash Lite tier
+ * dominates the cost of running a brain and there is no `flash-lite-latest` to
+ * track. So this one stays pinned, and `pinned-model-drift` is what tells us a
+ * newer Flash Lite has landed, to bump on purpose rather than by surprise.
+ */
+export const DEFAULT_WORKER_MODEL = 'google/gemini-3.5-flash-lite';
+
 // ── Agents ───────────────────────────────────────────────────────────────────
 
 export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
@@ -1061,7 +1252,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     name: 'Assistant',
     description: 'The generalist persona — serves web /assistant and Telegram.',
     role: 'responder',
-    model: 'anthropic/claude-sonnet-5',
+    model: DEFAULT_AGENT_MODEL,
     isPersona: true,
     // P6: grants are pure tool groups — the generalist's effective set is the
     // union of these bundles. Page/table work is HYBRID (2026-07-18 delegation
@@ -1181,7 +1372,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     name: 'Pages',
     description: 'Document authoring + editing specialist; backs the /pages Assist panel.',
     role: 'custom',
-    model: 'anthropic/claude-sonnet-5',
+    model: DEFAULT_AGENT_MODEL,
     envModelVar: 'PAGES_MODEL',
     systemPrompt: AGENT_PROMPTS['pages']!,
     // P6: full page capability via groups — `pages` (authoring) + `page-admin`
@@ -1213,7 +1404,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     name: 'Ledger',
     description: 'Typed-grid + data specialist; backs the /tables Assist panel.',
     role: 'custom',
-    model: 'anthropic/claude-sonnet-5',
+    model: DEFAULT_AGENT_MODEL,
     envModelVar: 'TABLES_MODEL',
     systemPrompt: AGENT_PROMPTS['tables']!,
     // P6: `tables` is the authoring subset (no `table-admin`/table_delete);
@@ -1240,7 +1431,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     description:
       'Diagram + chart specialist — hand-draws editorial SVG into pages beside a readable spec block (38 visual types).',
     role: 'custom',
-    model: 'anthropic/claude-sonnet-5',
+    model: DEFAULT_AGENT_MODEL,
     envModelVar: 'DIAGRAMMER_MODEL',
     systemPrompt: AGENT_PROMPTS['diagrammer']!,
     // `pages` for the spec block + embed edits, `files` for the SVG upload
@@ -1264,7 +1455,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     name: 'Remy',
     description: 'Memory-recall agent — replays past conversations from the archive.',
     role: 'custom',
-    model: 'anthropic/claude-sonnet-5',
+    model: DEFAULT_AGENT_MODEL,
     envModelVar: 'REMY_MODEL',
     systemPrompt: AGENT_PROMPTS['remy']!,
     // P6: `replay` (replay_window) + `replay-search` (find_window, Remy's specialty) +
@@ -1280,7 +1471,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     name: 'Researcher',
     description: 'Live-web research agent (Perplexity Sonar via OpenRouter).',
     role: 'custom',
-    model: 'anthropic/claude-sonnet-5',
+    model: DEFAULT_AGENT_MODEL,
     envModelVar: 'RESEARCHER_MODEL',
     systemPrompt: AGENT_PROMPTS['researcher']!,
     // P6: `research` (web_search) + `memory-core` for the node lookups it cites.
@@ -1298,7 +1489,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'OpenRouter usage rankings, benchmarks, and pricing. Advisory shortlists only; never ' +
       'changes what any agent or worker runs.',
     role: 'custom',
-    model: 'anthropic/claude-sonnet-5',
+    model: DEFAULT_AGENT_MODEL,
     envModelVar: 'CURATOR_MODEL',
     systemPrompt: AGENT_PROMPTS['curator']!,
     toolGroupSlugs: ['model-curation'],
@@ -1315,7 +1506,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     description:
       'Calculation librarian — transcribes equations out of standards into stored formulas, and audits the ones already there.',
     role: 'custom',
-    model: 'anthropic/claude-sonnet-5',
+    model: DEFAULT_AGENT_MODEL,
     envModelVar: 'MATHEMATICIAN_MODEL',
     systemPrompt: AGENT_PROMPTS['mathematician']!,
     // `formulas` (author + evaluate, no delete) + `calculator` for arithmetic it
@@ -1337,7 +1528,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     description:
       'Web page reader — opens a URL and reads its content back as context for the responder.',
     role: 'custom',
-    model: 'anthropic/claude-sonnet-5',
+    model: DEFAULT_AGENT_MODEL,
     envModelVar: 'READER_MODEL',
     systemPrompt: AGENT_PROMPTS['reader']!,
     // Just `web-read` (web_fetch) — a focused page reader, deliberately without
@@ -1355,7 +1546,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     description:
       'API integration specialist — reads service docs, authors + tests agent-callable HTTP tools. Reached by delegation (invoke_agent) from the responder, like every specialist — no surface pre-selects it.',
     role: 'custom',
-    model: 'anthropic/claude-sonnet-5',
+    model: DEFAULT_AGENT_MODEL,
     envModelVar: 'TOOLSMITH_MODEL',
     systemPrompt: AGENT_PROMPTS['toolsmith']!,
     // `toolsmith` (the api_tool_*/group/grant/web_fetch kit) + `research` so it
@@ -1374,7 +1565,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     name: 'Brian the Coder',
     description: 'Code + ops specialist (holds the unrestricted terminal).',
     role: 'custom',
-    model: 'anthropic/claude-opus-4.7',
+    model: DEFAULT_AGENT_MODEL,
     envModelVar: 'CODER_MODEL',
     systemPrompt: AGENT_PROMPTS['coder']!,
     // P6: `terminal` (unrestricted shell) + `sandboxes` (contained shell) +
@@ -1391,7 +1582,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     description:
       "Mini-app builder — writes real TSX against the app's shadcn UI + theme, bundles with esbuild, renders in a sandbox; backs the /apps Assist panel.",
     role: 'custom',
-    model: 'anthropic/claude-opus-4.8',
+    model: DEFAULT_AGENT_MODEL,
     envModelVar: 'APPSMITH_MODEL',
     systemPrompt: AGENT_PROMPTS['appsmith']!,
     // `apps` (authoring) + `app-admin` (delete/publish) reassemble the full
@@ -1414,11 +1605,18 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     slug: 'team-responder',
     name: 'Team Responder',
     description:
-      "Permission-limited responder for the external Team Chat surface (/team) — serves team-member contacts, read-only plus filing change requests. Never appears in the owner's Conversations inbox and is never a delegate.",
+      "Permission-limited responder for the member chat (member logins chat with it in the assistant dock): read-only plus filing change requests. Never appears in the owner's Conversations inbox and is never a delegate.",
     role: 'custom',
-    model: 'anthropic/claude-sonnet-5',
+    model: DEFAULT_AGENT_MODEL,
     envModelVar: 'TEAM_RESPONDER_MODEL',
     systemPrompt: AGENT_PROMPTS['team-responder']!,
+    // The two defaults it shipped with before member logins Phase 6 (the
+    // 1:1 portal chat, 2026-07-05, and the forum, 2026-07-17). A brain whose
+    // prompt is still one of them gets the member-chat rewrite on upgrade.
+    retiredPromptSha256: [
+      '60f5262a299ecaefe17696d89fba1234cf03d76de1283aed8c61f62d2cb305b1',
+      '3cc6514ff02f41ae7c32bc2bca326b764440ebbadd39ff23a883d4c1da074841',
+    ],
     // `team-read` is the bulk of its surface (see that group's description for
     // the exclusion rationale). `formulas-eval` is the one addition, and it
     // holds to the same posture: non-private reads of the owner's calculation
@@ -1427,7 +1625,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     // a number with its derivation; authoring stays owner-side.
     // Not a delegate, no assist surface — it is resolved explicitly by the team
     // turn pipeline and nothing else.
-    toolGroupSlugs: ['team-read', 'formulas-eval'],
+    toolGroupSlugs: ['team-read', 'team-read-admin', 'formulas-eval'],
     // `visual_answers` rides on the `show_image` grant in `team-read`: the
     // documents a team shares are full of extracted diagrams and screenshots,
     // and describing one when it could be shown is the weaker answer on the
@@ -1459,6 +1657,41 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       inject_working_notes: false,
       delegate_to: [],
       max_iterations: 15,
+    },
+    priority: 100,
+  },
+  {
+    // Client logins C4 (plan section 8): the client chat's agent. Ships AT
+    // CLIENT LEVEL on every brain (fresh installs through onboarding, existing
+    // brains through the boot reconcile), so no admin has to lower it before a
+    // client can chat (Jason, 2026-09-29). Its turn runs at client level twice
+    // over: the agent's own level and the client turn's wrap.
+    slug: 'client-responder',
+    name: 'Client Responder',
+    description:
+      "Permission-limited responder for the client chat (client logins chat with it in the client portal): reads what is shared with clients, the client's own drafts, and files client requests for the team. Client level. Never appears in the owner's Conversations inbox and is never a delegate.",
+    role: 'custom',
+    level: 'client',
+    model: DEFAULT_AGENT_MODEL,
+    envModelVar: 'CLIENT_RESPONDER_MODEL',
+    systemPrompt: AGENT_PROMPTS['client-responder']!,
+    toolGroupSlugs: ['client-read'],
+    skillSlugs: ['tool_grounding', 'chat_writing', 'writing_style'],
+    params: { temperature: 0.4, max_tokens: 8000 },
+    // No retrieval context at all (facts, summaries, chunks and graph were
+    // built from text that can name team items; the client turn skips the
+    // loader whatever this says, and these zeros keep the config honest).
+    // History is the client's own thread.
+    memoryConfig: {
+      history_limit: 20,
+      digest_limit: 0,
+      fact_limit: 0,
+      content_hit_limit: 0,
+      chunk_limit: 0,
+      inject_journal: false,
+      inject_working_notes: false,
+      delegate_to: [],
+      max_iterations: 12,
     },
     priority: 100,
   },
@@ -1495,8 +1728,9 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
 
 // ── Workers ──────────────────────────────────────────────────────────────────
 
-// One OpenRouter key powers everything; gemini-3.1-flash-lite is the cheap
-// multimodal workhorse behind the indexing pipeline + document/vision. Voice
+// One OpenRouter key powers everything; DEFAULT_WORKER_MODEL (Gemini Flash
+// Lite) is the cheap multimodal workhorse behind the indexing pipeline +
+// document/vision. Voice
 // (tts/stt) runs on the OpenRouter route by default and UPGRADES to a dedicated
 // xAI route when the user has an xAI key (the proven grok path). These models +
 // params are the single source — onboarding and reconcile both seed from here
@@ -1536,7 +1770,7 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
     name: 'Extractor',
     required: true,
     provider: 'openrouter',
-    model: 'google/gemini-3.1-flash-lite',
+    model: DEFAULT_WORKER_MODEL,
     params: { extract_facts: true },
   },
   {
@@ -1544,35 +1778,38 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
     name: 'Summarizer',
     required: true,
     provider: 'openrouter',
-    model: 'google/gemini-3.1-flash-lite',
+    model: DEFAULT_WORKER_MODEL,
   },
   {
     kind: 'reflector',
     name: 'Reflector',
     required: true,
     provider: 'openrouter',
-    model: 'google/gemini-3.1-flash-lite',
+    model: DEFAULT_WORKER_MODEL,
   },
   {
     kind: 'document',
     name: 'Document reader',
     required: true,
     provider: 'openrouter',
-    model: 'google/gemini-3.1-flash-lite',
+    model: DEFAULT_WORKER_MODEL,
   },
   {
     kind: 'vision',
     name: 'Read images',
     required: false,
     provider: 'openrouter',
-    model: 'google/gemini-3.1-flash-lite',
+    model: DEFAULT_WORKER_MODEL,
   },
   {
     kind: 'image_gen',
+    // The STABLE id, not `-preview`: same vendor, same price, but 131k context
+    // instead of 65k and no preview-window withdrawal risk. (Verified against
+    // the live OpenRouter catalog 2026-09-22.)
     name: 'Image generation',
     required: false,
     provider: 'openrouter',
-    model: 'google/gemini-3.1-flash-image-preview',
+    model: 'google/gemini-3.1-flash-image',
   },
   {
     kind: 'tts',
@@ -1627,7 +1864,7 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
     name: 'Narrator',
     required: true,
     provider: 'openrouter',
-    model: 'google/gemini-3.1-flash-lite',
+    model: DEFAULT_WORKER_MODEL,
   },
   // Suggester: proposes one follow-up question after a completed turn (the
   // accept-with-Enter chip above the chat composer). OPTIONAL: fresh onboarding
@@ -1640,7 +1877,43 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
     name: 'Follow-up suggester',
     required: false,
     provider: 'openrouter',
-    model: 'google/gemini-3.1-flash-lite',
+    model: DEFAULT_WORKER_MODEL,
+  },
+  // Decider: the typed-decision model (TypeSafe Jev) behind `decide()` in
+  // @mantle/decisions. Since 2026-09-24 a fresh brain ships it ON with every
+  // built use live: the whole fleet ran that way first (Jason's call, the
+  // pilots' full-range test), and the Journal tiers need journal_recall to
+  // pick an agent's rules (similarity alone finds 15-49% of them).
+  // `required: false` keeps it off EXISTING brains on upgrade: an optional
+  // worker is seeded at onboarding only, so switching an existing brain on
+  // stays an operator act (worker enabled + params.uses). model_routing is
+  // not built. The state sent to it leaves the box (OpenRouter → TypeSafe);
+  // `zdr` asks for zero-data-retention routing on every call. Without an
+  // OpenRouter key every use falls back to its old path. docs/decisions.md.
+  {
+    kind: 'decider',
+    name: 'Decider (typed decisions)',
+    required: false,
+    enabled: true,
+    provider: 'openrouter',
+    model: '~typesafe/jev-latest',
+    params: {
+      zdr: true,
+      timeout_ms: 1500,
+      defer_below: 0.6,
+      act_alone_at: 0.9,
+      uses: {
+        passage_scoring: { enabled: true, mode: 'live', threshold: 1.5 },
+        delegation_hint: { enabled: true, mode: 'live' },
+        context_pruning: { enabled: true, mode: 'live', threshold: 1.0 },
+        version_grouping: { enabled: true, mode: 'live', threshold: 0.9 },
+        fact_add_prefilter: { enabled: true, mode: 'live' },
+        history_recall: { enabled: true, mode: 'live', threshold: 1.0 },
+        journal_recall: { enabled: true, mode: 'live', threshold: 1.5 },
+        rule_reconcile: { enabled: true, mode: 'live', threshold: 0.8 },
+        model_routing: { enabled: false, mode: 'shadow' },
+      },
+    },
   },
 ];
 

@@ -266,6 +266,12 @@ vi.mock('@mantle/tracing', () => ({
 // ── Remaining collaborators ───────────────────────────────────────────────
 vi.mock('@mantle/content', () => ({
   buildIdentityContext: vi.fn(async () => ''),
+  journalTiersOf: (m?: { journal_tiers?: string; notes_target?: string }) =>
+    m?.notes_target === 'journal'
+      ? 'live'
+      : m?.journal_tiers === 'off' || m?.journal_tiers === 'live'
+        ? m.journal_tiers
+        : 'shadow',
   buildTimeContextLine: () => 'Current time: 2026-07-17T10:00:00+02:00 (Africa/Johannesburg)',
   loadProfilePreferences: vi.fn(async () => ({})),
   resolveThinkingBudget: () => 0,
@@ -286,7 +292,7 @@ vi.mock('@mantle/content', () => ({
 }));
 vi.mock('@mantle/content/table-storage', () => ({ sweepLegacyTables: vi.fn(async () => {}) }));
 vi.mock('@mantle/files', () => ({
-  ensureDatedUploadFolder: vi.fn(async () => '/telegram-uploads/2026-07-17'),
+  ensureAutoFiledFolder: vi.fn(async () => 'files.auto_filed.telegram_uploads.2026_07'),
   upsertFile: (...a: unknown[]) => h.upsertFile(...a),
 }));
 vi.mock('@mantle/api-keys', () => ({

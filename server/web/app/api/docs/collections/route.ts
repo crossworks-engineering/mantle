@@ -7,6 +7,7 @@ import { getReaderNav } from '@/lib/docs-reader';
 import { getOwnerOr401 } from '@/lib/auth';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
+import { isUniqueViolation } from '@mantle/db';
 
 /** Doc collections + their server-formatted "last synced" strings (tz/locale
  *  stable) + a first-doc link per collection, for the /docs management pane. */
@@ -114,7 +115,7 @@ export async function POST(req: Request) {
     });
   } catch (err) {
     const msg = errorMessage(err);
-    if (/duplicate key|doc_collections_owner_key_uq|unique/i.test(msg)) {
+    if (isUniqueViolation(err)) {
       return NextResponse.json({
         ok: false,
         message: 'A collection with that key already exists.',

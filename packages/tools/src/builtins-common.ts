@@ -36,6 +36,8 @@ export const FOLDER_ID_PRE: readonly ToolPrecondition[] = [
     kind: 'node_exists',
     param: 'folder_id',
     nodeType: 'branch',
+    // A Files folder only: another kind's folder is a branch row too.
+    pathRoot: 'files',
     lookup: 'folder_list / tree_list',
   },
 ];

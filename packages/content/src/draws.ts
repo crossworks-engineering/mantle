@@ -18,12 +18,22 @@
  * sidecar.
  */
 import { and, asc, desc, eq, ilike, inArray, isNull, ne, or, sql } from 'drizzle-orm';
-import { db, nodes, draws, notifyNodeIngested, type Node } from '@mantle/db';
+import {
+  asViewerLevel,
+  db,
+  nodes,
+  draws,
+  notifyNodeIngested,
+  type Node,
+  type ViewerLevel,
+  withBusyRetry,
+} from '@mantle/db';
 import { sceneToText } from './scene-to-text';
 import { acceptSceneSvg, EXCALIDRAW_ENGINE } from './scene-svg';
 // The etag decision and the embedded-asset text bounds are shared with
 // pages — identical semantics, one truth.
 import { evaluateDraftRev, foldEmbeddedText } from './pages';
+import { drawPlacedFileIds, followNewEmbeds, refoldEmbedReach } from './embed-closure';
 
 export const DRAWS_ROOT_LABEL = 'draw';
 
@@ -107,6 +117,15 @@ export type DrawRow = {
    *  rendered (that is the whole point of the commit gate), so the list can
    *  only SAY it exists — see the badge in the preview pane. */
   hasDraft: boolean;
+  /** Access level (admin > team > client > public); the owner UI's badge. */
+  audience: ViewerLevel;
+  /** The share it inherits from a folder above it (team or client), or
+   *  null. It is read at the more open of this and `audience`. */
+  inherited: 'team' | 'client' | null;
+  /** The share it is read at through something that embeds it (migration
+   *  0208), or null. It is read at the most open of this, `inherited` and
+   *  `audience`. */
+  embedded: 'team' | 'client' | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -137,6 +156,10 @@ function rowOf(n: Node, hasSvg = false, hasDraft = false): DrawRow {
     visibility: d.visibility === 'public' ? 'public' : 'private',
     hasSvg,
     hasDraft,
+    audience: asViewerLevel(n.audience),
+    inherited:
+      n.inheritedLevel === 'team' || n.inheritedLevel === 'client' ? n.inheritedLevel : null,
+    embedded: n.embeddedLevel === 'team' || n.embeddedLevel === 'client' ? n.embeddedLevel : null,
     createdAt: n.createdAt.toISOString(),
     updatedAt: n.updatedAt.toISOString(),
   };
@@ -665,7 +688,16 @@ export type CommitDrawResult =
  * `svg` is the client's exportToSvg output; it is validated (acceptSceneSvg)
  * and dropped to null on any doubt — the commit itself never fails on it.
  */
-export async function commitDraw(
+export function commitDraw(
+  ownerId: string,
+  id: string,
+  scene: Record<string, unknown>,
+  opts: { baseRev?: number; svg?: string; fileRefs?: Record<string, string> } = {},
+): Promise<CommitDrawResult> {
+  return withBusyRetry(() => commitDrawOnce(ownerId, id, scene, opts));
+}
+
+async function commitDrawOnce(
   ownerId: string,
   id: string,
   scene: Record<string, unknown>,
@@ -704,6 +736,35 @@ export async function commitDraw(
     if (decision.conflict) {
       return { ok: false as const, conflict: true as const, rev: decision.rev };
     }
+    // Later embeds follow on save: a drawing below admin that gains an image
+    // takes it to its level. "Before" is what the committed scene placed (a
+    // draft autosave may already have rewritten the file map).
+    const [prev] = await tx
+      .select({
+        audience: nodes.audience,
+        scene: draws.scene,
+        fileRefs: draws.fileRefs,
+      })
+      .from(nodes)
+      .innerJoin(draws, eq(draws.nodeId, nodes.id))
+      .where(eq(nodes.id, id))
+      .limit(1);
+    // Its own level only: a folder share it is read through is the
+    // database's to follow (0208).
+    const level = prev ? asViewerLevel(prev.audience) : 'admin';
+    // What the published scene places, before and after: the edges the
+    // database keeps for a drawing (0208).
+    const embedsBefore = prev ? drawPlacedFileIds(prev.scene, prev.fileRefs) : [];
+    const embedsAfter = prev ? drawPlacedFileIds(normalized, opts.fileRefs ?? prev.fileRefs) : [];
+    if (prev && level !== 'admin') {
+      await followNewEmbeds(
+        ownerId,
+        { id, audience: level },
+        drawPlacedFileIds(prev.scene, prev.fileRefs),
+        embedsAfter,
+        tx,
+      );
+    }
     const [row] = await tx
       .update(nodes)
       .set({ data: newData, embedding: null, updatedAt: new Date() })
@@ -728,6 +789,7 @@ export async function commitDraw(
         ...(opts.fileRefs !== undefined ? { fileRefs: opts.fileRefs } : {}),
       })
       .where(eq(draws.nodeId, id));
+    await refoldEmbedReach(ownerId, id, embedsBefore, embedsAfter, tx);
     return {
       ok: true as const,
       draw: detailOf(row, normalized, null, {

@@ -4,6 +4,7 @@ import { getOwnerOr401 } from '@/lib/auth';
 import { createToolGroup, listToolGroups, listToolGroupBackrefs } from '@/lib/tool-groups';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
+import { isUniqueViolation } from '@mantle/db';
 
 export async function GET() {
   const user = await getOwnerOr401();
@@ -43,7 +44,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ group: row });
   } catch (err) {
     const msg = errorMessage(err);
-    if (msg.includes('tool_groups_owner_slug_uq') || msg.includes('duplicate key')) {
+    if (isUniqueViolation(err)) {
       return NextResponse.json(
         { error: `A tool group with slug "${parsed.data.slug}" already exists.` },
         { status: 409 },

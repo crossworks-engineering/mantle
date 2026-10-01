@@ -210,7 +210,7 @@ describe('stripAudioTags', () => {
     // the stripper matches an explicit name allowlist, not any `<word>`.
     const samples = [
       'See <https://example.com> for more.',
-      'Email <jason@schoeman.me> if stuck.',
+      'Email <jason@example.com> if stuck.',
       'A <div> and a <span> walk in.',
       'Markdown *em* and _underscore_ stay.',
     ];

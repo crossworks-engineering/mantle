@@ -36,19 +36,35 @@ export {
 } from './entity-dedup';
 
 export {
-  RECALL_TAG,
-  RECALL_PROMPT_TAG,
-  compileRecallMap,
+  RECALL_ROOT_LABEL,
+  ensureRecallRoot,
   embedPendingRecallPrompts,
-  findPageRoot,
-  getRecallMap,
-  recallAfterPageDelete,
-  recallAfterPageMove,
-  recallAfterPageWrite,
-  removeRecallForPage,
-  isRecallTreePage,
-  type RecallCompileResult,
+  recallFolderCrumbs,
 } from './recall';
+
+export {
+  RECALL_LABEL_MAX,
+  RECALL_LINE_MAX,
+  RECALL_OPTIONS_MAX,
+  RECALL_TITLE_MAX,
+  RecallWriteError,
+  confirmRecallPrompt,
+  createRecallMap,
+  deleteRecallCard,
+  deleteRecallMap,
+  getRecallCard,
+  listRecallRevisions,
+  putRecallCard,
+  recallNativeSlug,
+  reorderRecallCards,
+  restoreRecallRevision,
+  updateRecallMap,
+  type RecallActor,
+  type RecallCardInput,
+  type RecallOptionInput,
+  type RecallWarning,
+  type RecallWriteResult,
+} from './recall-native';
 
 export { registerRecallEmbedder, hasRecallEmbedder, type RecallEmbedder } from './embed-bridge';
 export {

@@ -128,7 +128,7 @@ describe('CLI sandboxes are on the MCP surface', () => {
 
   it('is available on both transports', () => {
     // The contained shell is never the transport-dependent one — that is
-    // run_terminal's job (below). A sandbox has no route to postgres, minio or
+    // run_terminal's job (below). A sandbox has no route to postgres, the object store or
     // the web tier, so nothing about the network changes its blast radius.
     expect(surface('stdio').has('sandbox_exec')).toBe(true);
     expect(surface('http').has('sandbox_exec')).toBe(true);
@@ -153,6 +153,17 @@ describe('every in-app tool reaches the MCP surface', () => {
     // Needs a live delivery surface (a Telegram chat / the web reply stream) to
     // play the audio into. Over MCP it could only ever error.
     synthesize_speech: 'needs a delivery surface the bridge cannot supply',
+    // Read a member's personal items on behalf of the member a team turn
+    // serves (member logins, plan 2e). MCP has no member to act for, so the
+    // tools could only ever answer "nobody to act for".
+    my_items_list: 'acts for the member of a team turn; MCP has none',
+    my_item_open: 'acts for the member of a team turn; MCP has none',
+    // The client-responder's tools (client logins C4): they serve the client
+    // login of a client turn only. MCP is the owner, never a client.
+    client_shared_list: 'serves the client of a client turn; MCP has none',
+    client_shared_search: 'serves the client of a client turn; MCP has none',
+    client_shared_open: 'serves the client of a client turn; MCP has none',
+    client_request_create: 'files for the client of a client turn; MCP has none',
   };
 
   it('exposes every builtin slug over stdio, except the documented ones', () => {

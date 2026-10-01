@@ -64,11 +64,14 @@ export function docsRoot(): string {
 /**
  * The effective brain depth for a node. Documentation defaults to
  * retrieval-only (L5 index, no L4 facts/entities/graph) unless its collection
- * is explicitly 'full'; every other node type is always 'full'. Pure — the
- * extractor calls this to decide whether to run the L4 passes.
+ * is explicitly 'full'. A Table stamped 'retrieval' is retrieval-only too:
+ * an app-table export of an app clients write (client tier audit I2), so
+ * client text never becomes graph facts. Every other node is always 'full'.
+ * Pure: the extractor calls this to decide whether to run the L4 passes.
  */
 export function effectiveBrainDepth(nodeType: string, rawDepth: unknown): DocBrainDepth {
   if (nodeType === 'documentation' && rawDepth !== 'full') return 'retrieval';
+  if (nodeType === 'table' && rawDepth === 'retrieval') return 'retrieval';
   return 'full';
 }
 

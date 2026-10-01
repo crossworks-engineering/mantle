@@ -13,7 +13,7 @@
  *   - every request must carry the shared bearer token (SANDBOXD_TOKEN).
  *
  * Sandboxes are hardened-runc Ubuntu containers on the isolated
- * `mantle_sandbox` network (egress only — no route to postgres/minio/web).
+ * `mantle_sandbox` network (egress only — no route to postgres/objectstore/web).
  * Each owns `${SANDBOXES_DIR}/<id>/files`, bind-mounted at /files (default
  * cwd): the container is disposable, /files survives rm unless purged.
  * Containers run as root (apt must work), so work in /files is root-written —
@@ -962,6 +962,10 @@ if (IDLE_STOP_MINUTES > 0) {
 await mkdir(SANDBOXES_DIR, { recursive: true }).catch((e) =>
   console.warn('[sandboxd] could not create SANDBOXES_DIR:', (e as Error).message),
 );
+
+// Negotiate the docker API version up front so the choice is in the boot log;
+// every call also negotiates lazily, so a daemon that is not up yet is fine.
+void docker.apiVersion();
 
 startEgressProxy(EGRESS_PROXY_PORT);
 console.log(`[sandboxd] balanced-tier egress proxy on :${EGRESS_PROXY_PORT}`);

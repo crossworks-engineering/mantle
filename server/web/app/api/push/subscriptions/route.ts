@@ -28,6 +28,8 @@ export async function POST(req: NextRequest) {
 
   const { id } = await insertSubscription({
     ownerId: owner.id,
+    // The login, not the brain: locking this login out unpairs the device.
+    loginId: owner.actor.id,
     routingToken,
     publicKey,
     platform,

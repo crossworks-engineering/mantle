@@ -6,7 +6,9 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./client-sourced": "./src/client-sourced.ts",
+    "./client-sourced-rules": "./src/client-sourced-rules.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
@@ -20,6 +22,7 @@
     "@mantle/content-core": "workspace:*",
     "@mantle/crypto": "workspace:*",
     "@mantle/db": "workspace:*",
+    "@mantle/decisions": "workspace:*",
     "@mantle/email": "workspace:*",
     "@mantle/embeddings": "workspace:*",
     "@mantle/files": "workspace:*",

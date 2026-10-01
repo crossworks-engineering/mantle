@@ -8,9 +8,9 @@ import {
 
 /**
  * The bridge's whole job is to fail LOUDLY. Its caller
- * (`embedPendingRecallPrompts`, inside `recallAfterPageWrite`) is
- * fire-and-forget on a path contractually forbidden from throwing, so an
- * unregistered embedder cannot surface as a broken page write — it can only
+ * (`embedPendingRecallPrompts`, after a card write or from `recall_match`) is
+ * fire-and-forget on a path that must not fail because an embed did, so an
+ * unregistered embedder cannot surface as a broken write — it can only
  * surface as prompts that never get a vector, which looks like nothing at all
  * until `recall_match` stops returning hits.
  *

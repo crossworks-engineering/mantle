@@ -34,6 +34,7 @@ export {
 
 export { notFound, sanitizeToolError, type NotFoundResult } from './errors';
 export { UNTRUSTED_CONTENT_TOOL_SLUGS } from './untrusted';
+export { PRIVATE_OUTPUT_TOOL_SLUGS } from './private-output';
 export {
   registerDynamicSchema,
   getDynamicSchema,
@@ -96,7 +97,10 @@ export {
 export { PERSONA_TOOLS, PERSONA_TOOL_SLUGS } from './builtins-persona';
 export { TASK_TOOLS, TASK_TOOL_SLUGS } from './builtins-tasks';
 export { NOTE_TOOLS, NOTE_OPERATOR_TOOLS } from './builtins-notes';
+export { TREE_TOOLS, TREE_OPERATOR_TOOLS, TREE_TOOL_KINDS } from './builtins-tree';
 export { RECALL_TOOLS } from './builtins-recall';
+export { RECALL_WRITE_TOOLS } from './builtins-recall-write';
+export { RECALL_OWNER_TOOLS } from './builtins-recall-owner';
 export { EVENT_TOOLS } from './builtins-events';
 export { PEER_TOOLS } from './builtins-peers';
 export { EMAIL_TOOLS } from './builtins-email';
@@ -105,6 +109,7 @@ export { SANDBOX_TOOLS, SANDBOX_TOOL_SLUGS } from './builtins-sandbox';
 export { CONTACT_TOOLS, CONTACT_AUTO_GRANT_SLUGS } from './builtins-contacts';
 export { WORKER_DELEGATION_TOOLS } from './builtins-workers';
 export { EXPORT_TOOLS } from './builtins-export';
+export { ACCESS_TOOLS } from './builtins-access';
 export { SHEET_TOOLS, SHEET_TOOL_SLUGS } from './builtins-sheets';
 export { TOOLSMITH_TOOLS, TOOLSMITH_TOOL_SLUGS } from './builtins-toolsmith';
 export { JOURNAL_TOOLS, JOURNAL_TOOL_SLUGS, JOURNAL_AUTO_GRANT_SLUGS } from './builtins-journal';
@@ -116,7 +121,10 @@ export { RUN_TOOLS, BANNED_ITEM_TOOLS, parsePlan } from './builtins-runs';
 export { REPLAY_TOOLS } from './builtins-replay';
 export { IMAGE_TOOLS } from './builtins-images';
 export { TEAM_TOOLS } from './builtins-team';
-export { RESEARCH_TOOLS } from './builtins-research';
+export { MY_SPACE_TOOLS } from './builtins-my-space';
+export { CLIENT_TOOLS } from './builtins-client';
+export { CLIENT_TURN_TOOL_SLUGS } from './client-turn-tools';
+export { RESEARCH_TOOLS, resolveOpenRouterKey } from './builtins-research';
 export { CURATION_TOOLS } from './builtins-curation';
 export { CRAWL_TOOLS } from './builtins-crawl';
 export { VIDEO_TOOLS } from './builtins-video';
@@ -127,7 +135,29 @@ export { EVAL_TOOLS } from './builtins-eval';
 export { ASK_HUMAN_FORM_LIMITS } from '@mantle/client-types';
 export { seedBuiltinTools, closeToolInputSchema } from './seed';
 export { resolveTool, resolveTools, dispatchTool } from './dispatch';
-export { isPublicToolAllowed } from './readonly-tools';
+export {
+  memberAppToolVerdict,
+  MEMBER_APP_REFUSED_SLUGS,
+  type MemberAppToolVerdict,
+} from './member-app-tools';
+export {
+  clientAppToolVerdict,
+  CLIENT_APP_TOOL_SLUGS,
+  type ClientAppToolVerdict,
+} from './client-app-tools';
+export {
+  appToolLevel,
+  appToolScope,
+  appToolVerdict,
+  appToolWarnings,
+  APP_NO_TOOLS,
+  type AppToolLevel,
+  type AppToolRunner,
+  type AppToolVerdict,
+} from './app-tool-level';
+export { surfaceHiddenNodeTypes, HIDDEN_NODE_ERROR } from './team-visibility';
+export { isOwnerSurface, OWNER_ONLY_ERROR, type ToolSurface } from './surface';
+export type { OwnerSurfaceVia } from './types';
 export { safeFetch } from './safe-fetch';
 export { guardedFetch, assertFetchableUrl, isBlockedIp } from './ssrf-guard';
 export {
@@ -287,3 +317,13 @@ export {
   type OpenapiSyncRowState,
 } from './openapi-sync';
 export { parseOpenapiBinding, type ToolGroupOpenapiBinding } from './integration-meta';
+export { reconcileMeta, ruleReconcilerFor } from './rule-reconciler';
+export {
+  newTurnTaint,
+  taintFromText,
+  isLoweringCall,
+  uuidsIn,
+  namesClientSourced,
+  LOWERING_TOOL_SLUGS,
+  type TurnTaint,
+} from './client-sourced';

@@ -38,17 +38,15 @@ export {
   countPages,
   listPageTags,
   getPage,
-  listChildPages,
-  countPageDescendants,
   listBacklinks,
+  pageFolderIdOf,
 } from './read';
 
 export {
   createPage,
-  movePage,
   deletePage,
   ParentPageNotFoundError,
-  PageCycleError,
+  PageFolderNotFoundError,
   type CreatePageInput,
 } from './tree';
 
@@ -69,7 +67,7 @@ export {
 
 export {
   splitPage,
-  extractSectionToChild,
+  extractSectionToPage,
   addPageMention,
   NoSplitHeadingsError,
   SectionNotFoundError,

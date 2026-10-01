@@ -15,6 +15,8 @@ import {
   setIndexingMode,
 } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
+import { guardNewFileIn } from '@mantle/content/tree';
+import { CONFIRM_INPUT, visibilityRefusal } from '../visibility-refusal';
 import { type BuiltinToolDef } from '../types';
 import { str, boolOpt as bool } from '../coerce';
 import { errorMessage } from '@mantle/std';
@@ -42,6 +44,7 @@ export const file_create: BuiltinToolDef = {
         description:
           'replace the existing file of the same name; default false errors on a name collision',
       },
+      confirm: CONFIRM_INPUT,
     },
     required: ['parent_path', 'filename', 'content'],
   },
@@ -58,10 +61,13 @@ export const file_create: BuiltinToolDef = {
       // `files/diagrams` was one), and refusing sent the agent off to file the
       // artifact somewhere the instructions never meant. Capped and confined to
       // `files` inside the helper, so a malformed path is still an error.
-      await ensureFolderPath({ ownerId: ctx.ownerId, path: parentPath });
+      // Folders nest three deep: a deeper path lands in its third folder.
+      const folderPath = await ensureFolderPath({ ownerId: ctx.ownerId, path: parentPath });
+      // A shared folder makes the file readable by the team or clients: ask.
+      await guardNewFileIn(ctx.ownerId, folderPath, filename, { confirm: input.confirm === true });
       const row = await upsertFile({
         ownerId: ctx.ownerId,
-        parentPath,
+        parentPath: folderPath,
         filename,
         bytes: Buffer.from(content, 'utf8'),
         overwrite: bool(input.overwrite),
@@ -77,7 +83,7 @@ export const file_create: BuiltinToolDef = {
         nodeId: row.id,
         summary: `File created by tool: ${row.filename}`,
         payload: {
-          parentPath,
+          parentPath: folderPath,
           filename: row.filename,
           mimeType: row.mimeType,
           sizeBytes: row.sizeBytes,
@@ -88,7 +94,7 @@ export const file_create: BuiltinToolDef = {
       });
       return { ok: true, output: row };
     } catch (err) {
-      return { ok: false, error: errorMessage(err) };
+      return { ok: false, error: visibilityRefusal(err) ?? errorMessage(err) };
     }
   },
 };

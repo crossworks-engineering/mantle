@@ -278,6 +278,37 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  packages/decisions:
+    dependencies:
+      '@mantle/api-keys':
+        specifier: workspace:*
+        version: link:../api-keys
+      '@mantle/db':
+        specifier: workspace:*
+        version: link:../db
+      '@mantle/std':
+        specifier: workspace:*
+        version: link:../std
+      '@mantle/tracing':
+        specifier: workspace:*
+        version: link:../tracing
+      '@mantle/voice':
+        specifier: workspace:*
+        version: link:../voice
+      drizzle-orm:
+        specifier: ^0.45.2
+        version: 0.45.2(pg@8.22.0)(postgres@3.4.9)
+    devDependencies:
+      '@types/node':
+        specifier: ^26.4.1
+        version: 26.4.1
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^5.0.0
+        version: 5.0.0(@types/node@26.4.1)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0))
+
   packages/email:
     dependencies:
       '@mantle/client-types':
@@ -581,6 +612,9 @@ importers:
       '@mantle/db':
         specifier: workspace:*
         version: link:../db
+      '@mantle/decisions':
+        specifier: workspace:*
+        version: link:../decisions
       '@mantle/embeddings':
         specifier: workspace:*
         version: link:../embeddings
@@ -716,9 +750,6 @@ importers:
       '@aws-sdk/client-s3':
         specifier: ^3.1127.0
         version: 3.1127.0
-      '@aws-sdk/s3-request-presigner':
-        specifier: ^3.1127.0
-        version: 3.1127.0
       '@mantle/config':
         specifier: workspace:*
         version: link:../config
@@ -726,6 +757,9 @@ importers:
       '@types/node':
         specifier: ^26.4.1
         version: 26.4.1
+      tsx:
+        specifier: ^4.23.13
+        version: 4.23.13
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -797,6 +831,9 @@ importers:
       '@mantle/db':
         specifier: workspace:*
         version: link:../db
+      '@mantle/decisions':
+        specifier: workspace:*
+        version: link:../decisions
       '@mantle/email':
         specifier: workspace:*
         version: link:../email
@@ -960,6 +997,9 @@ importers:
       '@mantle/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@mantle/decisions':
+        specifier: workspace:*
+        version: link:../../packages/decisions
       '@mantle/embeddings':
         specifier: workspace:*
         version: link:../../packages/embeddings
@@ -1311,10 +1351,6 @@ packages:
 
   '@aws-sdk/nested-clients@3.997.44':
     resolution: {integrity: sha512-NhEgryjlBF9w38ZXqGymQV28IhkYa1mKhlbYnqIis57AYwWGVYfUPgg/qC2rLRqOUfblxx++irvju10kVTa8Vw==}
-    engines: {node: '>=20.0.0'}
-
-  '@aws-sdk/s3-request-presigner@3.1127.0':
-    resolution: {integrity: sha512-vl3WBaE2fMqfnEhyqulKT6ZIPNsCR2caCps92tyt1yGfLVlDXScSXBDXf4m3E2ejXBb4pplX0EdwBukJyBXtBg==}
     engines: {node: '>=20.0.0'}
 
   '@aws-sdk/signature-v4-multi-region@3.996.46':
@@ -6154,15 +6190,6 @@ snapshots:
       '@smithy/core': 3.33.3
       '@smithy/fetch-http-handler': 5.8.0
       '@smithy/node-http-handler': 4.12.1
-      '@smithy/types': 4.18.0
-      tslib: 2.8.1
-
-  '@aws-sdk/s3-request-presigner@3.1127.0':
-    dependencies:
-      '@aws-sdk/core': 3.977.9
-      '@aws-sdk/signature-v4-multi-region': 3.996.46
-      '@aws-sdk/types': 3.974.5
-      '@smithy/core': 3.33.3
       '@smithy/types': 4.18.0
       tslib: 2.8.1
 

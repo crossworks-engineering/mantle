@@ -27,14 +27,14 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 vi.mock('@mantle/content', () => ({ resolveExport: vi.fn() }));
 vi.mock('@mantle/files', () => ({
-  ensureDatedUploadFolder: vi.fn(),
+  ensureAutoFiledFolder: vi.fn(),
   readFileById: vi.fn(),
   upsertFile: vi.fn(),
 }));
 vi.mock('@mantle/tracing', () => ({ recordIngest: vi.fn() }));
 
 import { resolveExport } from '@mantle/content';
-import { ensureDatedUploadFolder, readFileById, upsertFile } from '@mantle/files';
+import { ensureAutoFiledFolder, readFileById, upsertFile } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 import { EXPORT_TOOLS } from './builtins-export';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
@@ -85,7 +85,7 @@ function savedRow(filename: string, size: number) {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(resolveExport).mockResolvedValue(pageExport as never);
-  vi.mocked(ensureDatedUploadFolder).mockResolvedValue(EXPORT_PATH);
+  vi.mocked(ensureAutoFiledFolder).mockResolvedValue(EXPORT_PATH);
   vi.mocked(upsertFile).mockImplementation(
     async (args) => savedRow(args.filename, args.bytes?.byteLength ?? 0) as never,
   );
@@ -134,7 +134,7 @@ describe('export_node', () => {
     const err = errorOf(await exportNode.handler({ node_id: NODE_ID }, ctx));
     expect(err).toMatch(new RegExp(`${NODE_ID} not found`));
     expect(err).toMatch(/exportable page\/note\/table/);
-    expect(ensureDatedUploadFolder).not.toHaveBeenCalled();
+    expect(ensureAutoFiledFolder).not.toHaveBeenCalled();
     expect(upsertFile).not.toHaveBeenCalled();
     expect(recordIngest).not.toHaveBeenCalled();
   });
@@ -146,13 +146,9 @@ describe('export_node', () => {
     expect(upsertFile).not.toHaveBeenCalled();
   });
 
-  it('saves a page as .docx under the dated exports folder and returns the file facts', async () => {
+  it('saves a page as .docx under the current month folder of exports and returns the file facts', async () => {
     const res = await exportNode.handler({ node_id: NODE_ID }, ctx);
-    expect(ensureDatedUploadFolder).toHaveBeenCalledWith({
-      ownerId: 'o1',
-      topSlug: 'exports',
-      topDescription: expect.any(String),
-    });
+    expect(ensureAutoFiledFolder).toHaveBeenCalledWith('o1', 'exports');
     // The rendered bytes go to the store untouched, under the owner.
     expect(upsertFile).toHaveBeenCalledWith({
       ownerId: 'o1',
@@ -188,7 +184,7 @@ describe('export_node', () => {
     expect(a.filename).toBe('plan.docx');
     vi.clearAllMocks();
     vi.mocked(resolveExport).mockResolvedValue(pageExport as never);
-    vi.mocked(ensureDatedUploadFolder).mockResolvedValue(EXPORT_PATH);
+    vi.mocked(ensureAutoFiledFolder).mockResolvedValue(EXPORT_PATH);
     vi.mocked(upsertFile).mockImplementation(async (args) => savedRow(args.filename, 1) as never);
     const b = outputOf(await exportNode.handler({ node_id: NODE_ID, filename: 'plan' }, ctx));
     expect(b.filename).toBe('plan.docx');

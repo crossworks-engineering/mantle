@@ -13,14 +13,21 @@
  * client behind it, import this module directly.
  *
  * Stateless by design: there is no session table. Rotating SESSION_SECRET
- * invalidates every outstanding credential at once.
+ * invalidates every outstanding credential at once. One login's cookies and
+ * asset tokens end together through their `ep` claim: the login's
+ * auth.users.session_epoch when they were minted (0181). The session layer
+ * compares it with the row on every request, so bumping the column (password
+ * change, disable, role change, sign out everywhere) ends them all. A value
+ * without `ep` is epoch 0: what every login starts at.
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { SESSION_COOKIE_NAME } from '../auth-constants';
+import { RENDER_COOKIE_NAME, SESSION_COOKIE_NAME } from '../auth-constants';
 import { env } from '@mantle/config';
 
-/** The `k` claim: mobile bearer, asset token, team visitor, team chat, app frame. */
-type TokenKind = 'm' | 'a' | 't' | 'c' | 'f';
+/** The `k` claim: mobile bearer, asset token, app frame, render cookie. 'c'
+ *  (the retired team-chat credential) and 't' (the retired team-visitor
+ *  cookie) are reserved: no verifier takes them. */
+type TokenKind = 'm' | 'a' | 'f' | 'r';
 
 /**
  * Claims whose signature, kind and expiry have already been checked. Every
@@ -103,19 +110,36 @@ function verifySigned(value: string, kind: TokenKind | null): SignedClaims | nul
   }
 }
 
+/** The `ep` claim: absent is epoch 0 (a value minted before 0181); anything
+ *  but a non-negative integer makes the value invalid (null). */
+function epochClaim(claims: SignedClaims): number | null {
+  const ep = claims.ep;
+  if (ep === undefined) return 0;
+  return typeof ep === 'number' && Number.isInteger(ep) && ep >= 0 ? ep : null;
+}
+
 // ── Session cookies (kindless) ───────────────────────────────────────────────
 
-export { SESSION_COOKIE_NAME };
+export { RENDER_COOKIE_NAME, SESSION_COOKIE_NAME };
 
+/** Mint a session cookie for the login `userId`. `epoch` is the login's
+ *  session_epoch now (a stale one fails on the next request, so a caller
+ *  that passes the wrong value signs the user out, never in). */
 export function buildSessionCookie(
   userId: string,
-  ttlSeconds: number = ONE_YEAR_SECONDS,
+  opts: { epoch?: number; ttlSeconds?: number } = {},
 ): { value: string; maxAgeSec: number } {
-  return { value: signClaims({ uid: userId }, ttlSeconds).value, maxAgeSec: ttlSeconds };
+  const ttlSeconds = opts.ttlSeconds ?? ONE_YEAR_SECONDS;
+  return {
+    value: signClaims({ uid: userId, ep: opts.epoch ?? 0 }, ttlSeconds).value,
+    maxAgeSec: ttlSeconds,
+  };
 }
 
 /**
  * Verify a session cookie value: signature, expiry, and that it is KINDLESS.
+ * `ep` is the login's session epoch when it was minted; the caller compares
+ * it with the row (see resolveLogin).
  *
  * The kind check is the load-bearing part. Mobile (`k:'m'`) and asset (`k:'a'`)
  * tokens share the `{uid, exp}` payload, so without it a signed mobile token
@@ -123,21 +147,67 @@ export function buildSessionCookie(
  * never consults mobile_tokens.revoked_at, dodging a mobile logout — and an
  * asset token would grant full session access instead of just byte-serving.
  */
-export function verifySessionCookie(value: string): { uid: string; exp: number } | null {
+export function verifySessionCookie(
+  value: string,
+): { uid: string; exp: number; ep: number } | null {
   const claims = verifySigned(value, null);
   if (!claims || typeof claims.uid !== 'string') return null;
-  return { uid: claims.uid, exp: claims.exp };
+  const ep = epochClaim(claims);
+  if (ep === null) return null;
+  return { uid: claims.uid, exp: claims.exp, ep };
 }
 
-/**
- * Short-lived session-cookie VALUE for server-internal renders — the PDF path
- * (lib/render-pdf.ts) hands it to the browserless sidecar so /print/pages/[id]
- * and its image subresources authenticate as the owner REGARDLESS of how the
- * caller authenticated (cookie, mobile bearer, web bearer). Never sent to a
- * client; ~5 minutes bounds a leaked render URL.
- */
-export function buildInternalRenderCookie(userId: string, ttlSeconds = 300): string {
-  return `${SESSION_COOKIE_NAME}=${buildSessionCookie(userId, ttlSeconds).value}`;
+// ── Render cookies (`k:'r'`) ────────────────────────────────────────────────
+// What the browser sidecar carries when it loads a render surface for an
+// export (lib/render-sandbox.ts). It used to be a full kindless session cookie
+// for the anchor, sent as an extra header on EVERY request the page made, so an
+// external image in a printed page handed the anchor's session to that host
+// (audit F01). Now it is its own kind, minted for the ACTING login, set as a
+// cookie on the print origin only, and the gate accepts it for the render
+// surfaces and the byte routes they load, GET only (isRenderPath in
+// lib/auth-constants.ts). The session, asset and bearer verifiers all reject
+// kind 'r', so it is never a session. `n` binds the page it opens: a render
+// cookie for one drawing cannot print another page.
+
+const RENDER_TOKEN_TTL_SECONDS = 300; // one render; bounds a leaked value.
+
+export type RenderClaims = {
+  /** The anchor: whose brain the render reads. */
+  uid: string;
+  /** The login the render is for: the admin who asked for the export, or the
+   *  anchor for a cache fill nobody asked for. Re-checked on every request. */
+  act: string;
+  /** The node the render surface may open (/print/pages/:n, /print/draws/:n,
+   *  /render/draws/:n). Byte routes the page loads are not bound to it. */
+  n: string;
+};
+
+/** Mint a render cookie VALUE (see block comment). Never sent to a client. */
+export function buildRenderToken(opts: {
+  ownerId: string;
+  actorId: string;
+  nodeId: string;
+  ttlSeconds?: number;
+}): string {
+  return signClaims(
+    { uid: opts.ownerId, act: opts.actorId, n: opts.nodeId, k: 'r' },
+    opts.ttlSeconds ?? RENDER_TOKEN_TTL_SECONDS,
+  ).value;
+}
+
+/** Verify a render cookie's signature, expiry and kind (`k:'r'`). No DB: the
+ *  caller must still confirm `act` is a usable admin of the `uid` brain. */
+export function verifyRenderToken(value: string): RenderClaims | null {
+  const claims = verifySigned(value, 'r');
+  if (
+    !claims ||
+    typeof claims.uid !== 'string' ||
+    typeof claims.act !== 'string' ||
+    typeof claims.n !== 'string'
+  ) {
+    return null;
+  }
+  return { uid: claims.uid, act: claims.act, n: claims.n };
 }
 
 // ── Mobile companion bearer tokens (`k:'m'`) ─────────────────────────────────
@@ -186,120 +256,76 @@ export function mobileTokenJti(token: string): string | null {
 // Authorization header, so a
 // detached/Electron client (cross-origin, no cookie) can't otherwise load them.
 // Delivered in the URL (`?at=`), so the TTL is deliberately short to bound a
-// leaked URL; no revocation row (unlike mobile tokens) — TTL + secret rotation
-// is the kill switch. Scope is byte-serving only: the gate accepts it for asset
+// leaked URL; no revocation row (unlike mobile tokens): the TTL, the login's
+// session epoch (`ep`, compared with the row on use) and secret rotation are
+// the kill switches. Scope is byte-serving only: the gate accepts it for asset
 // paths exclusively, and the session verifier rejects any kinded token.
 
 const ASSET_TOKEN_TTL_SECONDS = 2 * 60 * 60; // 2h — one working session.
+/** A CLIENT login's asset token (client logins audit B23): 10 minutes. The
+ *  client shell re-mints it every 60 s, so a live portal never sees it
+ *  expire, while a download URL left in a shared browser's history dies
+ *  soon after the client leaves. */
+export const CLIENT_ASSET_TOKEN_TTL_SECONDS = 10 * 60;
 
 /** Mint a short-lived asset-access token for `userId` (see block comment).
  *  `actorId` names the LOGIN the token was minted for, when it differs from
  *  the anchor: per-login asset routes (the profile photo) read it so a
  *  detached second admin sees their own face, while owner-scoped byte routes
- *  keep using `uid` (everything is owned by the anchor). */
-export function buildAssetToken(userId: string, actorId?: string): string {
+ *  keep using `uid` (everything is owned by the anchor). `epoch` is the
+ *  session_epoch of that login (`actorId`, else `userId`): a bump ends the
+ *  token within its 2 hours, like the login's cookies. `ttlSeconds` shortens
+ *  it (a client's: CLIENT_ASSET_TOKEN_TTL_SECONDS). */
+export function buildAssetToken(
+  userId: string,
+  actorId?: string,
+  epoch = 0,
+  ttlSeconds = ASSET_TOKEN_TTL_SECONDS,
+): string {
   return signClaims(
-    { uid: userId, ...(actorId && actorId !== userId ? { act: actorId } : {}), k: 'a' },
-    ASSET_TOKEN_TTL_SECONDS,
+    {
+      uid: userId,
+      ...(actorId && actorId !== userId ? { act: actorId } : {}),
+      ep: epoch,
+      k: 'a',
+    },
+    Math.min(ttlSeconds, ASSET_TOKEN_TTL_SECONDS),
   ).value;
 }
 
-/** Verify an asset token's signature, expiry and kind (`k:'a'`). No DB. */
-export function verifyAssetToken(token: string): { uid: string; act?: string } | null {
+/** Verify an asset token's signature, expiry and kind (`k:'a'`). No DB: the
+ *  caller compares `ep` with the login row. */
+export function verifyAssetToken(token: string): { uid: string; act?: string; ep: number } | null {
   const claims = verifySigned(token, 'a');
   if (!claims || typeof claims.uid !== 'string') return null;
+  const ep = epochClaim(claims);
+  if (ep === null) return null;
   return {
     uid: claims.uid,
     ...(typeof claims.act === 'string' ? { act: claims.act } : {}),
+    ep,
   };
 }
 
-// ── Team-visitor cookies (`k:'t'`) ───────────────────────────────────────────
-// Set after a team member enters their contact team token on a TEAM-mode app
-// share (/s/<token>). Payload binds the visitor to ONE share (`sh` = shares.id)
-// and carries WHO they are (`cid` = contact node id) for the audit trail. The
-// cookie is path-scoped to that share's /s/<token> — it authenticates nothing
-// else, and the session verifier rejects any kinded token, so it can never
-// escalate. Stateless signature + expiry here; LIVENESS (is this contact still
-// a team member?) is re-checked against contact_team_tokens on every broker
-// request, so revoking membership kills the session immediately.
+// ── Team-visitor cookies (`k:'t'`): retired ──────────────────────────────────
+// The share-scoped visitor cookie (`mantle_team`) a team-code holder got at a
+// team link's token prompt went with team links in member logins Phase 6
+// stage 6. Nothing mints or accepts kind 't' any more; the kind stays
+// reserved so an old value can never be read as something else.
 
-export const TEAM_VISITOR_COOKIE = 'mantle_team';
-const TEAM_VISITOR_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days, then re-enter the token.
-
-/** Mint the team-visitor cookie value for a share + contact pair. */
-export function buildTeamVisitorCookie(
-  shareId: string,
-  contactId: string,
-): { value: string; maxAgeSec: number } {
-  const { value } = signClaims({ sh: shareId, cid: contactId, k: 't' }, TEAM_VISITOR_TTL_SECONDS);
-  return { value, maxAgeSec: TEAM_VISITOR_TTL_SECONDS };
-}
-
-/** Verify a team-visitor cookie value: signature, expiry, kind (`k:'t'`). No DB
- *  — callers must still confirm the share matches and membership is live. */
-export function verifyTeamVisitorValue(
-  value: string,
-): { shareId: string; contactId: string } | null {
-  const claims = verifySigned(value, 't');
-  if (!claims || typeof claims.sh !== 'string' || typeof claims.cid !== 'string') return null;
-  return { shareId: claims.sh, contactId: claims.cid };
-}
-
-// ── Team-chat cookies (`k:'c'`) ──────────────────────────────────────────────
-// Set after a team member enters their contact team token on the /team chat
-// surface. Unlike the app-share visitor cookie (`k:'t'`, bound to ONE share and
-// path-scoped to it), this is BRAIN-LEVEL: the claims carry who they are
-// (`cid`) and whose brain (`own`), and the cookie rides `/` so it reaches both
-// /team (the page) and /api/team/* (the routes). Safe at path `/` because the
-// only verifier that accepts kind 'c' is verifyTeamChatValue below — the
-// session/mobile/asset verifiers all reject it — so it can never escalate.
-// Stateless signature + expiry here; LIVENESS is re-checked on every request.
-
-export const TEAM_CHAT_COOKIE = 'mantle_team_chat';
-const TEAM_CHAT_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days, then re-enter the token.
-
-/**
- * Mint the signed team-chat credential for an (owner, contact) pair. One
- * format, two carriers: same-origin browsers get it as the `mantle_team_chat`
- * cookie value; the split client app holds it in localStorage and sends it as
- * `Authorization: Bearer` (resolveTeamChatCaller verifies both identically).
- */
-export function buildTeamChatToken(
-  ownerId: string,
-  contactId: string,
-): { value: string; maxAgeSec: number; expiresAt: number } {
-  const { value, exp } = signClaims(
-    { own: ownerId, cid: contactId, k: 'c' },
-    TEAM_CHAT_TTL_SECONDS,
-  );
-  return { value, maxAgeSec: TEAM_CHAT_TTL_SECONDS, expiresAt: exp };
-}
-
-/** Mint the team-chat cookie value for an (owner, contact) pair. */
-export function buildTeamChatCookie(
-  ownerId: string,
-  contactId: string,
-): { value: string; maxAgeSec: number } {
-  const { value, maxAgeSec } = buildTeamChatToken(ownerId, contactId);
-  return { value, maxAgeSec };
-}
-
-/** Verify a team-chat cookie value: signature, expiry, kind (`k:'c'`). No DB —
- *  callers must still confirm membership is live (isTeamMember). */
-export function verifyTeamChatValue(value: string): { ownerId: string; contactId: string } | null {
-  const claims = verifySigned(value, 'c');
-  if (!claims || typeof claims.own !== 'string' || typeof claims.cid !== 'string') return null;
-  return { ownerId: claims.own, contactId: claims.cid };
-}
+// ── Team-chat cookies (`k:'c'`): retired ─────────────────────────────────────
+// The brain-level team-chat credential (the `mantle_team_chat` cookie, and the
+// same value as a bearer) went with /team, /hub and /api/team/* in member
+// logins Phase 6. Nothing mints or accepts kind 'c' any more; the kind stays
+// reserved so an old value can never be read as something else.
 
 // ── App-frame tickets (`k:'f'`) ──────────────────────────────────────────────
 // The mini-app sandbox iframe navigates to a real URL (/api/apps/[id]/frame or
 // /s/[token]/frame) instead of an inlined srcdoc. That navigation can carry NO
 // credential: the iframe is sandboxed without allow-same-origin (opaque origin
 // ⇒ no cookies), and an iframe src can't attach a bearer header. So the parent
-// — which CAN authenticate (session cookie, share visitor cookie, or the split
-// client's bearer) — mints this ticket first and puts it in the frame URL
+// — which CAN authenticate (session cookie, an active share token, or the
+// split client's bearer) — mints this ticket first and puts it in the frame URL
 // (`?t=`). Delivered in a URL, so the TTL is seconds, not hours: it outlives
 // one navigation and nothing else. Claims bind the ticket to ONE app (and, on
 // the share surface, ONE share), so a leaked ticket can serve exactly one
@@ -309,37 +335,65 @@ export function verifyTeamChatValue(value: string): { ownerId: string; contactId
 const APP_FRAME_TICKET_TTL_SECONDS = 120;
 
 /** Mint an app-frame ticket. `shareId` set ⇒ share surface (published build
- *  only); absent ⇒ owner surface (`uid` = the owner, draft build allowed).
- *  `contactId` records WHO a team-mode share visitor is, so the frame route
- *  can re-check membership LIVENESS — a removed member must lose access
- *  immediately, not at ticket expiry (the team-gate doctrine). */
+ *  only); `loginId` set ⇒ member surface (a member login, published build
+ *  only, /api/member/apps/:id/frame); `loginId` AND `clientEpoch` set ⇒
+ *  client surface (a client login, published build only,
+ *  /api/client/apps/:id/frame, client logins C6); none ⇒ owner surface
+ *  (`uid` = the owner, draft build allowed). `loginId` lets the member and
+ *  client frame routes re-check the login's liveness: a removed member loses
+ *  access at once, not at ticket expiry. `clientEpoch` is the client login's
+ *  session epoch at mint time: Sign out, End sessions and Disable bump it,
+ *  and the client frame refuses a ticket of an older epoch. A client ticket
+ *  still carries `mem`, so every frame that refuses a login ticket (owner,
+ *  share) refuses a client's too. */
 export function buildAppFrameTicket(opts: {
   ownerId: string;
   appId: string;
   shareId?: string;
-  contactId?: string | null;
+  loginId?: string;
+  clientEpoch?: number;
 }): string {
   const claims: Record<string, unknown> = { uid: opts.ownerId, app: opts.appId, k: 'f' };
   if (opts.shareId) claims.sh = opts.shareId;
-  if (opts.contactId) claims.cid = opts.contactId;
+  if (opts.loginId) claims.mem = opts.loginId;
+  if (opts.loginId && opts.clientEpoch !== undefined) claims.cep = opts.clientEpoch;
   return signClaims(claims, APP_FRAME_TICKET_TTL_SECONDS).value;
 }
 
 /** Verify an app-frame ticket: signature, expiry, kind (`k:'f'`). No DB —
  *  callers must still confirm the app (and share, when `shareId` is set)
- *  matches the route being served, and re-check team liveness via
- *  `contactId` on team-mode shares. */
-export function verifyAppFrameTicket(
-  value: string,
-): { ownerId: string; appId: string; shareId?: string; contactId?: string } | null {
+ *  matches the route being served, and re-check a member login's liveness
+ *  via `loginId`. A `cid` claim (a team visitor's contact, retired with team
+ *  links) is ignored. */
+export type AppFrameTicket = {
+  ownerId: string;
+  appId: string;
+  shareId?: string;
+  /** A member login's ticket: only the member frame route may accept it.
+   *  Also set on a client's ticket (with `clientEpoch`). */
+  loginId?: string;
+  /** A CLIENT login's ticket (client logins C6): the login's session epoch
+   *  at mint time. Only the client frame route accepts it; the member frame
+   *  refuses a ticket that carries it. */
+  clientEpoch?: number;
+};
+
+export function verifyAppFrameTicket(value: string): AppFrameTicket | null {
   const claims = verifySigned(value, 'f');
   if (!claims || typeof claims.uid !== 'string' || typeof claims.app !== 'string') return null;
-  const out: { ownerId: string; appId: string; shareId?: string; contactId?: string } = {
-    ownerId: claims.uid,
-    appId: claims.app,
-  };
+  const out: AppFrameTicket = { ownerId: claims.uid, appId: claims.app };
   if (typeof claims.sh === 'string') out.shareId = claims.sh;
-  if (typeof claims.cid === 'string') out.contactId = claims.cid;
+  if (typeof claims.mem === 'string') out.loginId = claims.mem;
+  if (
+    typeof claims.cep === 'number' &&
+    Number.isSafeInteger(claims.cep) &&
+    claims.cep >= 0 &&
+    out.loginId
+  ) {
+    out.clientEpoch = claims.cep;
+  } else if (claims.cep !== undefined) {
+    return null;
+  }
   return out;
 }
 

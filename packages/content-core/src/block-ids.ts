@@ -66,8 +66,11 @@ const BLOCK_TYPES = new Set([
   'fileEmbed',
   'blockMath',
   'diagram',
-  // Sub-page link card (Phase 4a) — addressable so block tools can move/remove it
+  // Page link card (Phase 4a; a link, never a parent since folder phase 7),
+  // addressable so block tools can move/remove it
   'childPage',
+  // Folder index (folder phase 7): a live list of a folder's pages
+  'folderIndex',
 ]);
 
 type AnyNode = {

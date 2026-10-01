@@ -7,60 +7,60 @@ import {
 
 describe('tokenizePersonName', () => {
   it('splits a normal full name', () => {
-    expect(tokenizePersonName('Don Schoeman')).toEqual(['Don', 'Schoeman']);
+    expect(tokenizePersonName('Don Botha')).toEqual(['Don', 'Botha']);
   });
 
   it('drops a leading honorific', () => {
-    expect(tokenizePersonName('Mr J Schoeman')).toEqual(['J', 'Schoeman']);
+    expect(tokenizePersonName('Mr J Botha')).toEqual(['J', 'Botha']);
     expect(tokenizePersonName('Dr. Mary Jones')).toEqual(['Mary', 'Jones']);
     expect(tokenizePersonName('Prof Doe')).toEqual(['Doe']);
   });
 
   it('keeps single-token names intact', () => {
     expect(tokenizePersonName('Modular')).toEqual(['Modular']);
-    expect(tokenizePersonName('  Schoeman  ')).toEqual(['Schoeman']);
+    expect(tokenizePersonName('  Botha  ')).toEqual(['Botha']);
   });
 
   it('collapses internal whitespace', () => {
-    expect(tokenizePersonName('Don   Schoeman')).toEqual(['Don', 'Schoeman']);
+    expect(tokenizePersonName('Don   Botha')).toEqual(['Don', 'Botha']);
   });
 });
 
 describe('arePersonNamesDistinct', () => {
   it('the motivating case: siblings with the same surname are distinct', () => {
-    expect(arePersonNamesDistinct('Don Schoeman', 'Jason Schoeman')).toBe(true);
-    expect(arePersonNamesDistinct('Jonathan Schoeman', 'Don Schoeman')).toBe(true);
+    expect(arePersonNamesDistinct('Don Botha', 'Jason Botha')).toBe(true);
+    expect(arePersonNamesDistinct('Jonathan Botha', 'Don Botha')).toBe(true);
   });
 
   it("different surnames are NOT this rule's concern (let normal logic decide)", () => {
-    expect(arePersonNamesDistinct('Don Schoeman', 'Don Smith')).toBe(false);
+    expect(arePersonNamesDistinct('Don Botha', 'Don Smith')).toBe(false);
   });
 
   it('initials are ambiguous — could be the same person', () => {
-    expect(arePersonNamesDistinct('J Schoeman', 'Don Schoeman')).toBe(false);
-    expect(arePersonNamesDistinct('J. Schoeman', 'Don Schoeman')).toBe(false);
-    expect(arePersonNamesDistinct('Don Schoeman', 'D Schoeman')).toBe(false);
+    expect(arePersonNamesDistinct('J Botha', 'Don Botha')).toBe(false);
+    expect(arePersonNamesDistinct('J. Botha', 'Don Botha')).toBe(false);
+    expect(arePersonNamesDistinct('Don Botha', 'D Botha')).toBe(false);
   });
 
   it('honorifics + initials are also ambiguous', () => {
-    expect(arePersonNamesDistinct('Mr J Schoeman', 'Don Schoeman')).toBe(false);
-    expect(arePersonNamesDistinct('Mr J Schoeman', 'Jason Schoeman')).toBe(false);
+    expect(arePersonNamesDistinct('Mr J Botha', 'Don Botha')).toBe(false);
+    expect(arePersonNamesDistinct('Mr J Botha', 'Jason Botha')).toBe(false);
   });
 
   it('prefix overlap (nickname/long-form) leans "same"', () => {
-    expect(arePersonNamesDistinct('Don Schoeman', 'Donald Schoeman')).toBe(false);
+    expect(arePersonNamesDistinct('Don Botha', 'Donald Botha')).toBe(false);
     expect(arePersonNamesDistinct('John Smith', 'Johnathan Smith')).toBe(false);
     expect(arePersonNamesDistinct('Sam Brown', 'Samantha Brown')).toBe(false);
   });
 
   it('single-token name on either side is ambiguous', () => {
-    expect(arePersonNamesDistinct('Don', 'Don Schoeman')).toBe(false);
-    expect(arePersonNamesDistinct('Schoeman', 'Don Schoeman')).toBe(false);
+    expect(arePersonNamesDistinct('Don', 'Don Botha')).toBe(false);
+    expect(arePersonNamesDistinct('Botha', 'Don Botha')).toBe(false);
     expect(arePersonNamesDistinct('Modular', 'Jane Modular')).toBe(false);
   });
 
   it('identical full names are not "distinct"', () => {
-    expect(arePersonNamesDistinct('Don Schoeman', 'don schoeman')).toBe(false);
+    expect(arePersonNamesDistinct('Don Botha', 'don botha')).toBe(false);
   });
 
   it('three-token names compare on first + last', () => {
@@ -72,11 +72,11 @@ describe('arePersonNamesDistinct', () => {
 });
 
 describe('isLikelyDifferentPerson', () => {
-  it('refuses to merge when every known name on the existing entity is a different Schoeman', () => {
+  it('refuses to merge when every known name on the existing entity is a different Botha', () => {
     expect(
       isLikelyDifferentPerson(
-        { name: 'Don Schoeman', kind: 'person' },
-        { name: 'Jason Schoeman', aliases: ['Jonathan Schoeman'] },
+        { name: 'Don Botha', kind: 'person' },
+        { name: 'Jason Botha', aliases: ['Jonathan Botha'] },
       ),
     ).toBe(true);
   });
@@ -85,8 +85,8 @@ describe('isLikelyDifferentPerson', () => {
     // The candidate is already an alias on the existing entity (initials).
     expect(
       isLikelyDifferentPerson(
-        { name: 'Don Schoeman', kind: 'person' },
-        { name: 'Jason Schoeman', aliases: ['J Schoeman'] },
+        { name: 'Don Botha', kind: 'person' },
+        { name: 'Jason Botha', aliases: ['J Botha'] },
       ),
     ).toBe(false);
   });
@@ -106,8 +106,8 @@ describe('isLikelyDifferentPerson', () => {
   it('handles an empty aliases array gracefully', () => {
     expect(
       isLikelyDifferentPerson(
-        { name: 'Don Schoeman', kind: 'person' },
-        { name: 'Jason Schoeman', aliases: [] },
+        { name: 'Don Botha', kind: 'person' },
+        { name: 'Jason Botha', aliases: [] },
       ),
     ).toBe(true);
   });

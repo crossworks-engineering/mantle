@@ -132,3 +132,26 @@ describe('the shipped curated template', () => {
     }
   });
 });
+
+describe('poolModelIssue: the decider pool', () => {
+  it('accepts a decisions-out model and rejects a chat model', () => {
+    expect(poolModelIssue('decider', { input: ['text'], output: ['decisions'] })).toBeNull();
+    expect(poolModelIssue('decider', { input: ['text'], output: ['text'] })).toMatch(
+      /not decisions/,
+    );
+  });
+
+  it('keeps a decisions-out model out of every text pool', () => {
+    expect(poolModelIssue('summarizer', { input: ['text'], output: ['decisions'] })).toMatch(
+      /belongs in the Decider pool/,
+    );
+    expect(poolModelIssue('agents', { input: ['text'], output: ['decisions'] })).toMatch(
+      /belongs in the Decider pool/,
+    );
+  });
+
+  it('stays fail-open with no catalog evidence', () => {
+    expect(poolModelIssue('decider', null)).toBeNull();
+    expect(poolModelIssue('decider', { input: [], output: [] })).toBeNull();
+  });
+});

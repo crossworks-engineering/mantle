@@ -1,4 +1,5 @@
 export {
+  folderSlugOf,
   slugifyFolder,
   sanitizeFilename,
   dashToLtree,
@@ -44,22 +45,18 @@ export { MAX_UPLOAD_BYTES, maxStreamedUploadBytes } from './limits';
 
 export {
   filesRoot,
-  quarantineRoot,
   isFilesPath,
+  notAFilesFolder,
   diskPathForLtree,
   diskPathForFile,
   isSafeDiskBasename,
   ltreeForDiskPath,
   FILES_ROOT_LABEL,
+  FILES_MAX_FOLDER_DEPTH,
+  filesFolderDepth,
+  assertFilesFolderDepth,
+  clampFilesFolderPath,
 } from './paths';
-
-export {
-  quarantinePathFor,
-  writeQuarantineBytes,
-  readQuarantineBytes,
-  deleteQuarantineBytes,
-  listQuarantineBlobIds,
-} from './quarantine';
 
 export {
   ensureRoot,
@@ -70,6 +67,10 @@ export {
   renameFile,
   renameFolder,
   removeFolder,
+  isDiskChaff,
+  strayFilesIn,
+  diskNamesIn,
+  untrackedFilesOnDisk,
   spoolUpload,
   discardSpooled,
   adoptSpooled,
@@ -78,6 +79,20 @@ export {
   UploadTooLargeError,
   type SpooledUpload,
 } from './disk';
+
+export {
+  SpacesRootUnavailableError,
+  spacesRoot,
+  spaceThumbsDir,
+  spacesRootAvailable,
+  spaceDir,
+  spaceFilePath,
+  spaceSpoolDir,
+  adoptSpooledIntoSpace,
+  openSpaceFile,
+  readSpaceFile,
+  removeSpaceFile,
+} from './space-disk';
 
 export {
   DOCS_ROOT_LABEL,
@@ -113,22 +128,37 @@ export {
 } from './derived-counts';
 
 export {
+  AUTO_FILED_PATH,
+  AUTO_FILED_SLUG,
+  AUTO_FILED_SOURCES,
+  autoFiledMonth,
+  autoFiledSourcePath,
+  ensureAutoFiledFolder,
+  ensureExtractedImagesFolder,
+  reconcileAutoFiled,
+  type AutoFiledReport,
+  type AutoFiledSource,
+} from './auto-filed';
+
+export {
   ensureFilesRootBranch,
   createFolder,
-  ensureDatedUploadFolder,
-  ensureExtractedImagesFolder,
   ensureFolderPath,
   EXTRACTED_IMAGES_SLUG,
   updateFolderDescription,
+  updateFolderLook,
   deleteFolder,
   renameFolderById,
   renamedFolderPath,
+  FOLDER_NAME_MAX,
+  folderDisplayName,
   listFolders,
   listAllFolders,
   folderById,
   folderByPath,
   upsertFile,
   readFileById,
+  openFileById,
   countDerivedFromFile,
   deleteFileById,
   drawsReferencingFile,

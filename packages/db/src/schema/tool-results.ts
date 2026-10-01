@@ -34,6 +34,10 @@ export const toolResults = pgTable(
     /** Whether the lazy chunk+embed pass has run (only the first semantic
      *  `query` triggers it; page/grep never need it). */
     chunked: boolean('chunked').notNull().default(false),
+    /** The viewer level the spill was written at (migration 0189, audit
+     *  A27): null = admin (no viewer scope). `read_result` refuses a spill
+     *  its reader's level does not cover. */
+    viewerLevel: text('viewer_level'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [

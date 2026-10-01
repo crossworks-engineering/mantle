@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { and, desc, eq } from 'drizzle-orm';
-import { db, apiKeys, type ApiKey } from '@mantle/db';
+import { db, systemDb, apiKeys, type ApiKey } from '@mantle/db';
 import { open, seal } from '@mantle/crypto';
 
 /**
@@ -52,14 +52,18 @@ export async function listApiKeys(userId: string): Promise<ApiKeySummary[]> {
   return rows;
 }
 
+// Key READS use systemDb: the process needs a model's credentials whatever the
+// viewer (a team turn runs on a limited role, member logins Phase 0b), and a
+// key never reaches the model. Key management stays on `db` (owner paths).
+
 /** Read the plaintext for one key by its row id. Used by agents that reference
  * a specific vault entry via `api_key_id`. No owner check here — callers
  * that hold a referenced id have already passed the owner gate. */
 export async function getApiKeyById(id: string): Promise<string | null> {
-  const [row] = await db.select().from(apiKeys).where(eq(apiKeys.id, id)).limit(1);
+  const [row] = await systemDb.select().from(apiKeys).where(eq(apiKeys.id, id)).limit(1);
   if (!row) return null;
   const plaintext = open(row.keyEnc, row.id);
-  void db
+  void systemDb
     .update(apiKeys)
     .set({ lastUsed: new Date() })
     .where(eq(apiKeys.id, row.id))
@@ -73,7 +77,7 @@ export async function getApiKey(
   service: string,
   label = 'default',
 ): Promise<string | null> {
-  const [row] = await db
+  const [row] = await systemDb
     .select()
     .from(apiKeys)
     .where(and(eq(apiKeys.userId, userId), eq(apiKeys.service, service), eq(apiKeys.label, label)))
@@ -81,7 +85,7 @@ export async function getApiKey(
   if (!row) return null;
   const plaintext = open(row.keyEnc, row.id);
   // Best-effort last_used bump.
-  void db
+  void systemDb
     .update(apiKeys)
     .set({ lastUsed: new Date() })
     .where(eq(apiKeys.id, row.id))

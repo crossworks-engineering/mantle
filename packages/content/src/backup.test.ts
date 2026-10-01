@@ -168,3 +168,36 @@ describe('isResolvedBackupDirPersistent', () => {
     expect(isResolvedBackupDirPersistent('/whatever', null, true)).toBe(true);
   });
 });
+
+describe('archiveSpaces (audit D4)', () => {
+  it('tars every member file, leaves the upload spool out', async () => {
+    const { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } = await import('node:fs');
+    const { execFileSync } = await import('node:child_process');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const { archiveSpaces } = await import('./backup');
+    const tmp = mkdtempSync(path.join(os.tmpdir(), 'spaces-backup-'));
+    const prev = process.env.MANTLE_SPACES_ROOT;
+    try {
+      const root = path.join(tmp, 'spaces');
+      process.env.MANTLE_SPACES_ROOT = path.join(tmp, 'missing');
+      expect(await archiveSpaces(path.join(tmp, 'none.tgz'))).toBe('no-root');
+
+      mkdirSync(path.join(root, 'space-a', 'files'), { recursive: true });
+      mkdirSync(path.join(root, '.upload-spool'), { recursive: true });
+      writeFileSync(path.join(root, 'space-a', 'files', 'node-1'), 'member bytes');
+      writeFileSync(path.join(root, '.upload-spool', 'in-flight'), 'half an upload');
+      process.env.MANTLE_SPACES_ROOT = root;
+      const out = path.join(tmp, 'mantle-spaces-x.tgz');
+      expect(await archiveSpaces(out)).toBe('archived');
+      expect(existsSync(`${out}.part`)).toBe(false);
+      const listed = execFileSync('tar', ['-tzf', out], { encoding: 'utf8' });
+      expect(listed).toContain('space-a/files/node-1');
+      expect(listed).not.toContain('upload-spool');
+    } finally {
+      if (prev === undefined) delete process.env.MANTLE_SPACES_ROOT;
+      else process.env.MANTLE_SPACES_ROOT = prev;
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+});

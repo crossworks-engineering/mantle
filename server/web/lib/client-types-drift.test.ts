@@ -6,17 +6,25 @@ import type {
   BuildRef,
   ConversationAttachment,
   ContextSource as CtContextSource,
-  ForumPostRequestKind,
-  ForumTopicKind,
-  ForumTopicStatus,
-  ForumTopicVisibility,
+  MemberAppCard,
+  MemberAppLevel,
+  MemberChatArchiveMessage,
+  MemberChatRow,
+  MemberHomeApp,
   NodeCommentAuthorKind,
   TaskPriority,
   TaskStatus,
 } from '@mantle/client-types';
 import type * as Db from '@mantle/db';
 import type { ContextSource } from '@mantle/tracing';
-import { TASK_PRIORITIES, TASK_STATUSES } from '@mantle/content';
+import {
+  MEMBER_APP_LEVELS,
+  TASK_PRIORITIES,
+  TASK_STATUSES,
+  type listMemberApps,
+  type listMemberChatActivity,
+  type resolveMemberHomeApp,
+} from '@mantle/content';
 
 /**
  * Drift pins for the hand-copied types in @mantle/client-types.
@@ -82,10 +90,6 @@ describe('client-types mirrors have not drifted from their source of truth', () 
     expectTypeOf<
       SameUnion<Db.NodeCommentAuthorKind, NodeCommentAuthorKind>
     >().toEqualTypeOf<true>();
-    expectTypeOf<SameUnion<Db.ForumTopicKind, ForumTopicKind>>().toEqualTypeOf<true>();
-    expectTypeOf<SameUnion<Db.ForumTopicVisibility, ForumTopicVisibility>>().toEqualTypeOf<true>();
-    expectTypeOf<SameUnion<Db.ForumTopicStatus, ForumTopicStatus>>().toEqualTypeOf<true>();
-    expectTypeOf<SameUnion<Db.ForumPostRequestKind, ForumPostRequestKind>>().toEqualTypeOf<true>();
   });
 
   /**
@@ -123,5 +127,31 @@ describe('client-types mirrors have not drifted from their source of truth', () 
   it('task vocabulary matches the const arrays in content', () => {
     expectTypeOf<SameUnion<(typeof TASK_STATUSES)[number], TaskStatus>>().toEqualTypeOf<true>();
     expectTypeOf<SameUnion<(typeof TASK_PRIORITIES)[number], TaskPriority>>().toEqualTypeOf<true>();
+  });
+
+  /**
+   * The member app routes (member logins Phase 4b) and the admin's member
+   * chats. The routes check their bodies with `satisfies`; these pin the
+   * builders in content, and the level list the queries filter on, to the
+   * published shapes. A level added to MEMBER_APP_LEVELS (say admin) without
+   * the contract fails here.
+   */
+  it('member apps and member chats match the builders in content', () => {
+    expectTypeOf<
+      SameUnion<(typeof MEMBER_APP_LEVELS)[number], MemberAppLevel>
+    >().toEqualTypeOf<true>();
+    expectTypeOf<
+      SameUnion<(typeof MEMBER_APP_LEVELS)[number], MemberAppCard['audience']>
+    >().toEqualTypeOf<true>();
+    expectTypeOf<Awaited<ReturnType<typeof listMemberApps>>>().toEqualTypeOf<MemberAppCard[]>();
+    expectTypeOf<
+      Awaited<ReturnType<typeof resolveMemberHomeApp>>
+    >().toEqualTypeOf<MemberHomeApp | null>();
+    expectTypeOf<Awaited<ReturnType<typeof listMemberChatActivity>>>().toEqualTypeOf<
+      MemberChatRow[]
+    >();
+    expectTypeOf<
+      SameUnion<Db.TeamMessage['status'], MemberChatArchiveMessage['status']>
+    >().toEqualTypeOf<true>();
   });
 });

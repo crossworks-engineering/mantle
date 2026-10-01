@@ -19,12 +19,14 @@ import {
   setDraftBuild,
   publishApp,
   deleteApp,
+  notifyAppNavChanged,
   workingSource,
   nodeUrl,
   CannotDeleteEntryError,
   AppSourceLimitError,
   NoGreenBuildError,
   type AppDetail,
+  listTeamLevelAppIds,
 } from '@mantle/content';
 import { buildApp, loadRuntimeExports } from '@mantle/app-build';
 import {
@@ -42,9 +44,26 @@ import {
 import { putContent } from '@mantle/storage';
 import { recordIngest } from '@mantle/tracing';
 import { resolveTool } from './resolve';
+import { appToolWarnings } from './app-tool-level';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { str, strArr } from './coerce';
 import { errorMessage } from '@mantle/std';
+import { isOwnerSurface, OWNER_ONLY_ERROR } from './surface';
+import { currentViewerLevel } from '@mantle/db/viewer';
+
+/**
+ * The app write tools (everything that writes an app's code, manifest,
+ * schema, data or exports outside the brokers) run only for the owner
+ * (client tier audit I8). Marked `ownerOnly` so dispatchTool refuses a team,
+ * client or missing surface first; this is the handler's own check, for the
+ * MCP path that calls handlers directly. Before, only the column grant held
+ * it (a limited role cannot read `apps.draft_source`).
+ */
+function ownerOnlyRefusal(
+  ctx: Parameters<BuiltinToolDef['handler']>[1],
+): { ok: false; error: string } | null {
+  return isOwnerSurface(ctx.surface) ? null : { ok: false, error: OWNER_ONLY_ERROR };
+}
 
 const APP_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'id', nodeType: 'app', lookup: 'app_list' },
@@ -70,6 +89,7 @@ function fileList(app: AppDetail) {
 
 const app_create: BuiltinToolDef = {
   slug: 'app_create',
+  ownerOnly: true,
   name: 'Create a mini app',
   description:
     'Create a new mini app (an `app` node under /apps). `name` required. Starts with a trivial entry file you then flesh out with `app_file_write` + `app_build`. ' +
@@ -89,6 +109,8 @@ const app_create: BuiltinToolDef = {
     required: ['name'],
   },
   handler: async (input, ctx) => {
+    const refused = ownerOnlyRefusal(ctx);
+    if (refused) return refused;
     const name = str(input.name).trim();
     if (!name) return { ok: false, error: 'name is required' };
     try {
@@ -99,6 +121,8 @@ const app_create: BuiltinToolDef = {
         tags: strArr(input.tags),
       });
       ctx.step?.setOutput({ id: app.id, name: app.title });
+      // Lands in every open sidebar's Unsorted group.
+      void notifyAppNavChanged(ctx.ownerId);
       void recordIngest({
         source: 'agent_tool',
         ownerId: ctx.ownerId,
@@ -167,6 +191,7 @@ const app_get: BuiltinToolDef = {
 
 const app_file_write: BuiltinToolDef = {
   slug: 'app_file_write',
+  ownerOnly: true,
   preconditions: APP_ID_PRE,
   name: 'Write a file in a mini app',
   description:
@@ -185,6 +210,8 @@ const app_file_write: BuiltinToolDef = {
     required: ['id', 'path', 'content'],
   },
   handler: async (input, ctx) => {
+    const refused = ownerOnlyRefusal(ctx);
+    if (refused) return refused;
     const id = str(input.id).trim();
     const path = str(input.path).trim();
     if (!id || !path) return { ok: false, error: 'id and path are required' };
@@ -211,6 +238,7 @@ const app_file_write: BuiltinToolDef = {
 
 const app_file_delete: BuiltinToolDef = {
   slug: 'app_file_delete',
+  ownerOnly: true,
   preconditions: APP_ID_PRE,
   name: 'Delete a file from a mini app',
   description:
@@ -224,6 +252,8 @@ const app_file_delete: BuiltinToolDef = {
     required: ['id', 'path'],
   },
   handler: async (input, ctx) => {
+    const refused = ownerOnlyRefusal(ctx);
+    if (refused) return refused;
     const id = str(input.id).trim();
     const path = str(input.path).trim();
     if (!id || !path) return { ok: false, error: 'id and path are required' };
@@ -244,6 +274,7 @@ const app_file_delete: BuiltinToolDef = {
 
 const app_source_set: BuiltinToolDef = {
   slug: 'app_source_set',
+  ownerOnly: true,
   preconditions: APP_ID_PRE,
   name: "Set a mini app's whole source tree",
   description:
@@ -267,6 +298,8 @@ const app_source_set: BuiltinToolDef = {
     required: ['id', 'entry', 'files'],
   },
   handler: async (input, ctx) => {
+    const refused = ownerOnlyRefusal(ctx);
+    if (refused) return refused;
     const id = str(input.id).trim();
     const entry = str(input.entry).trim();
     if (!id) return { ok: false, error: 'id is required' };
@@ -311,6 +344,7 @@ const app_source_set: BuiltinToolDef = {
 
 const app_build: BuiltinToolDef = {
   slug: 'app_build',
+  ownerOnly: true,
   preconditions: APP_ID_PRE,
   name: 'Build a mini app',
   description:
@@ -321,6 +355,8 @@ const app_build: BuiltinToolDef = {
     required: ['id'],
   },
   handler: async (input, ctx) => {
+    const refused = ownerOnlyRefusal(ctx);
+    if (refused) return refused;
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
     const app = await getApp(ctx.ownerId, id);
@@ -384,10 +420,11 @@ const app_build: BuiltinToolDef = {
 
 const app_tools_set: BuiltinToolDef = {
   slug: 'app_tools_set',
+  ownerOnly: true,
   preconditions: APP_ID_PRE,
   name: "Declare a mini app's data tools",
   description:
-    'Set the list of api_tool slugs this app may call through the host bridge (host.tools.call). This IS the runtime allowlist — the host refuses any slug not declared here. Each slug must be an existing tool you own (build them first via the toolsmith / API Console, or delegate to the `toolsmith` agent). Replaces the current list.',
+    'Set the list of api_tool slugs this app may call through the host bridge (host.tools.call). This IS the runtime allowlist — the host refuses any slug not declared here. Each slug must be an existing tool you own (build them first via the toolsmith / API Console, or delegate to the `toolsmith` agent). Replaces the current list. An app at team level or lower is run by members, who get only read-only built-in tools from an enabled team-level tool group (no http, shell, recipe or confirm-gated tools); the result lists `warnings` for any declared tool they cannot use.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -401,6 +438,8 @@ const app_tools_set: BuiltinToolDef = {
     required: ['id', 'tool_slugs'],
   },
   handler: async (input, ctx) => {
+    const refused = ownerOnlyRefusal(ctx);
+    if (refused) return refused;
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
     const slugs = strArr(input.tool_slugs);
@@ -418,13 +457,18 @@ const app_tools_set: BuiltinToolDef = {
     }
     const manifest = await setManifest(ctx.ownerId, id, { toolSlugs: slugs });
     if (!manifest) return { ok: false, error: `app ${id} not found` };
-    ctx.step?.setOutput({ id, tool_slugs: slugs });
-    return { ok: true, output: { id, tool_slugs: slugs } };
+    const warnings = await appToolWarnings(ctx.ownerId, id);
+    ctx.step?.setOutput({ id, tool_slugs: slugs, warnings: warnings.length });
+    return {
+      ok: true,
+      output: { id, tool_slugs: slugs, ...(warnings.length ? { warnings } : {}) },
+    };
   },
 };
 
 const app_db_schema_set: BuiltinToolDef = {
   slug: 'app_db_schema_set',
+  ownerOnly: true,
   preconditions: APP_ID_PRE,
   name: "Set a mini app's SQLite schema",
   description:
@@ -441,6 +485,8 @@ const app_db_schema_set: BuiltinToolDef = {
     required: ['id', 'schema_sql'],
   },
   handler: async (input, ctx) => {
+    const refused = ownerOnlyRefusal(ctx);
+    if (refused) return refused;
     const id = str(input.id).trim();
     const schemaSql = str(input.schema_sql);
     if (!id) return { ok: false, error: 'id is required' };
@@ -473,6 +519,7 @@ const app_db_schema_set: BuiltinToolDef = {
 
 const app_db_seed: BuiltinToolDef = {
   slug: 'app_db_seed',
+  ownerOnly: true,
   preconditions: APP_ID_PRE,
   name: "Bulk-load rows into a mini app's database",
   description:
@@ -500,6 +547,8 @@ const app_db_seed: BuiltinToolDef = {
     required: ['id', 'table', 'rows'],
   },
   handler: async (input, ctx) => {
+    const refused = ownerOnlyRefusal(ctx);
+    if (refused) return refused;
     const id = str(input.id).trim();
     const table = str(input.table).trim();
     if (!id) return { ok: false, error: 'id is required' };
@@ -590,6 +639,7 @@ const app_list: BuiltinToolDef = {
 
 const app_publish: BuiltinToolDef = {
   slug: 'app_publish',
+  ownerOnly: true,
   preconditions: APP_ID_PRE,
   name: 'Publish a mini app',
   description:
@@ -600,13 +650,25 @@ const app_publish: BuiltinToolDef = {
     required: ['id'],
   },
   handler: async (input, ctx) => {
+    const refused = ownerOnlyRefusal(ctx);
+    if (refused) return refused;
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
     try {
       const app = await publishApp(ctx.ownerId, id);
       if (!app) return { ok: false, error: `app ${id} not found` };
-      ctx.step?.setOutput({ id, published: true });
-      return { ok: true, output: { id, url: nodeUrl(id), name: app.title, published: true } };
+      const warnings = await appToolWarnings(ctx.ownerId, id);
+      ctx.step?.setOutput({ id, published: true, warnings: warnings.length });
+      return {
+        ok: true,
+        output: {
+          id,
+          url: nodeUrl(id),
+          name: app.title,
+          published: true,
+          ...(warnings.length ? { warnings } : {}),
+        },
+      };
     } catch (err) {
       if (err instanceof NoGreenBuildError) return { ok: false, error: err.message };
       return { ok: false, error: errorMessage(err) };
@@ -616,6 +678,7 @@ const app_publish: BuiltinToolDef = {
 
 const app_delete: BuiltinToolDef = {
   slug: 'app_delete',
+  ownerOnly: true,
   preconditions: APP_ID_PRE,
   name: 'Delete a mini app',
   description:
@@ -627,12 +690,15 @@ const app_delete: BuiltinToolDef = {
     required: ['id'],
   },
   handler: async (input, ctx) => {
+    const refused = ownerOnlyRefusal(ctx);
+    if (refused) return refused;
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
     try {
       const ok = await deleteApp(ctx.ownerId, id);
       if (!ok) return { ok: false, error: `app ${id} not found` };
       ctx.step?.setOutput({ id, deleted: true });
+      void notifyAppNavChanged(ctx.ownerId);
       return { ok: true, output: { id, deleted: true } };
     } catch (err) {
       return { ok: false, error: errorMessage(err) };
@@ -646,6 +712,21 @@ const app_delete: BuiltinToolDef = {
 // (the authoring group Appsmith gets) so the responder can be granted reads
 // without create/build/publish/delete.
 
+/** On a team surface, the apps at team level or lower; null on owner surfaces
+ *  (no filter). A team member must not read the data of an admin-level app
+ *  (member logins Phase 4b: the level is the access, not a share). A client
+ *  or a missing surface reaches no app at all (client logins C4): no client
+ *  app level exists yet, so fail closed. */
+async function teamReachableApps(ctx: Parameters<BuiltinToolDef['handler']>[1]) {
+  // Below admin, row level security already limits app databases to apps at
+  // the viewer's level (member logins Phase 0b); this lookup is for an
+  // admin-level agent serving a non-owner surface.
+  if (currentViewerLevel() !== 'admin') return null;
+  if (isOwnerSurface(ctx.surface)) return null;
+  if (ctx.surface?.kind === 'team') return listTeamLevelAppIds(ctx.ownerId);
+  return new Set<string>();
+}
+
 const app_db_list: BuiltinToolDef = {
   slug: 'app_db_list',
   readOnly: true,
@@ -655,7 +736,10 @@ const app_db_list: BuiltinToolDef = {
   inputSchema: { type: 'object', properties: {} },
   handler: async (_input, ctx) => {
     try {
-      const apps = await listAppDatabaseSummaries(ctx.ownerId);
+      const teamApps = await teamReachableApps(ctx);
+      const apps = (await listAppDatabaseSummaries(ctx.ownerId)).filter(
+        (a) => !teamApps || teamApps.has(a.appNodeId),
+      );
       const out = [];
       for (const a of apps) {
         const tables = await appDbSchema(ctx.ownerId, a.appNodeId);
@@ -690,7 +774,7 @@ const app_db_query: BuiltinToolDef = {
       // `items` is mandatory, not decoration: Google validates every function
       // declaration before the model runs and 400s the WHOLE request when an
       // array property omits it, so one itemless schema takes down every tool
-      // the agent has (NATREF, 2026-09-16). Enforced by
+      // the agent has (a client box, 2026-09-16). Enforced by
       // schema-provider-compat.test.ts.
       params: {
         type: 'array',
@@ -709,6 +793,17 @@ const app_db_query: BuiltinToolDef = {
     if (!sql) return { ok: false, error: 'sql is required' };
     const params = Array.isArray(input.params) ? (input.params as unknown[]) : [];
     try {
+      const teamApps = await teamReachableApps(ctx);
+      if (teamApps && !teamApps.has(appId)) {
+        // Same answer as an app with no database: do not confirm it exists.
+        return {
+          ok: true,
+          output: {
+            rows: [],
+            note: 'This app has no database yet (nothing stored, or no such app).',
+          },
+        };
+      }
       const { rows, empty } = await appDbReadQuery(ctx.ownerId, appId, sql, params);
       ctx.step?.setOutput({ rows: rows.length, empty });
       if (empty) {
@@ -729,6 +824,7 @@ const app_db_query: BuiltinToolDef = {
 
 const app_table_export_set: BuiltinToolDef = {
   slug: 'app_table_export_set',
+  ownerOnly: true,
   preconditions: APP_ID_PRE,
   name: "Export an app's table to Tables",
   description:
@@ -749,6 +845,8 @@ const app_table_export_set: BuiltinToolDef = {
     required: ['id', 'table'],
   },
   handler: async (input, ctx) => {
+    const refused = ownerOnlyRefusal(ctx);
+    if (refused) return refused;
     const id = str(input.id).trim();
     const table = str(input.table).trim();
     if (!id) return { ok: false, error: 'id is required' };
@@ -778,6 +876,7 @@ const app_table_export_set: BuiltinToolDef = {
 
 const app_table_export_remove: BuiltinToolDef = {
   slug: 'app_table_export_remove',
+  ownerOnly: true,
   preconditions: APP_ID_PRE,
   name: 'Remove an app-table export',
   description:
@@ -791,6 +890,8 @@ const app_table_export_remove: BuiltinToolDef = {
     required: ['id', 'table'],
   },
   handler: async (input, ctx) => {
+    const refused = ownerOnlyRefusal(ctx);
+    if (refused) return refused;
     const id = str(input.id).trim();
     const table = str(input.table).trim();
     if (!id) return { ok: false, error: 'id is required' };

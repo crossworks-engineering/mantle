@@ -145,7 +145,7 @@ This local-embeddings work sat on top of a large hardening + audit effort,
 ### Open threads worth remembering
 - **Chat/extraction local** is the natural next privacy step (embeddings were
   first). Models already pulled on the boxes: `gemma-4-26b-a4b`, `gemma-3-4b`
-  (LM Studio on the AMD box `192.168.100.75:1234`). Would need a `local` **chat**
+  (LM Studio on the AMD box `192.0.2.10:1234`). Would need a `local` **chat**
   adapter (the provider exists; add chat capability + register a chat dispatcher
   reusing `openai-compat`). The dual-config/failover idea (local primary + cloud
   fallback per worker) was designed but not built, chat-only; embeddings can't

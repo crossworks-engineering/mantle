@@ -46,6 +46,10 @@ export const pushSubscriptions = pgTable(
       .primaryKey()
       .default(sql`gen_random_uuid()`),
     ownerId: uuid('owner_id').notNull(),
+    /** The login that enrolled the device (0173). Locking that login out
+     *  deletes its devices; deleting it cascades. Null only on a brain that
+     *  had no anchor row when 0173 backfilled. */
+    loginId: uuid('login_id'),
     /** The relay's deviceId (from /enroll), kept for reference/unpair. */
     relayDeviceId: text('relay_device_id'),
     routingToken: text('routing_token').notNull(),
@@ -56,7 +60,10 @@ export const pushSubscriptions = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     lastPushAt: timestamp('last_push_at', { withTimezone: true }),
   },
-  (t) => [index('push_subscriptions_owner_idx').on(t.ownerId)],
+  (t) => [
+    index('push_subscriptions_owner_idx').on(t.ownerId),
+    index('push_subscriptions_login_idx').on(t.loginId),
+  ],
 );
 
 export type PushSubscription = typeof pushSubscriptions.$inferSelect;

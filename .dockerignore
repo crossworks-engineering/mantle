@@ -17,7 +17,7 @@
 **/.DS_Store
 **/*.log
 backups
-# Host bind-mount data root (postgres/minio/files) — never goes in an image.
+# Host bind-mount data root (postgres/rustfs/files) — never goes in an image.
 data
 # NOTE: docs/ IS baked into the image on purpose — it's the source for the
 # `documentation` node type (MANTLE_DOCS_ROOT=/app/docs), reconciled into the

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { getTask } from './registry';
-import { planRun } from './run-args';
+import { planRun, runEnv } from './run-args';
 
 const ENV = { ALLOWED_USER_ID: 'u1', MANTLE_MASTER_KEY: 'k' };
 
@@ -56,5 +56,48 @@ describe('planRun', () => {
     const res = planRun(t, { apply: true }, ENV);
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error).toContain('terminal');
+  });
+
+  it('a dry run of an agent task needs the agent, and a spend confirm', () => {
+    for (const slug of ['persona-notes-to-journal', 'journal-rules-reconcile']) {
+      const t = getTask(slug)!;
+      const noAgent = planRun(t, { apply: false, confirmSpend: true }, ENV);
+      expect(noAgent.ok).toBe(false);
+      if (!noAgent.ok) expect(noAgent.error).toMatch(/needs agent/);
+      const noConfirm = planRun(t, { apply: false, args: { agent: 'assistant' } }, ENV);
+      expect(noConfirm.ok).toBe(false);
+      if (!noConfirm.ok) expect(noConfirm).toMatchObject({ status: 403 });
+      const ok = planRun(
+        t,
+        { apply: false, confirmSpend: true, args: { agent: 'assistant' } },
+        ENV,
+      );
+      expect(ok).toEqual({ ok: true, args: ['--agent=assistant'], live: false });
+    }
+  });
+
+  it('an apply needs the review page id, and only passes the args it needs', () => {
+    const t = getTask('journal-rules-reconcile')!;
+    const page = '0a3a19e3-eb87-49ab-aa7b-e90ceff5958f';
+    const res = planRun(t, { apply: true, args: { page, agent: 'assistant' } }, ENV);
+    expect(res).toEqual({ ok: true, args: ['--apply', `--page=${page}`], live: true });
+    const noPage = planRun(t, { apply: true, args: { agent: 'assistant' } }, ENV);
+    expect(noPage.ok).toBe(false);
+  });
+
+  it('arg values become argv, so a bad shape is refused', () => {
+    const t = getTask('journal-rules-reconcile')!;
+    for (const agent of ['Assistant', 'a b', '--apply', 'x;rm -rf /', '../x']) {
+      const res = planRun(t, { apply: false, confirmSpend: true, args: { agent } }, ENV);
+      expect(res.ok).toBe(false);
+    }
+    const res = planRun(t, { apply: true, args: { page: 'not-a-uuid' } }, ENV);
+    expect(res.ok).toBe(false);
+  });
+
+  it('runEnv fills an empty ALLOWED_USER_ID from the owner; a set value wins', () => {
+    expect(runEnv({ ALLOWED_USER_ID: '' }, 'owner-1').ALLOWED_USER_ID).toBe('owner-1');
+    expect(runEnv({}, 'owner-1').ALLOWED_USER_ID).toBe('owner-1');
+    expect(runEnv({ ALLOWED_USER_ID: 'set' }, 'owner-1').ALLOWED_USER_ID).toBe('set');
   });
 });

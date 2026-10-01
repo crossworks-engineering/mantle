@@ -17,6 +17,7 @@
 import {
   findAdapterCatalogDrift,
   registerChatAdapter,
+  registerDecisionAdapter,
   registerEmbeddingAdapter,
   registerImageGenAdapter,
   registerSttAdapter,
@@ -61,6 +62,7 @@ import { mistralEmbedding } from './mistral-embedding';
 import { cohereEmbedding } from './cohere-embedding';
 import { localEmbedding } from './local-embedding';
 import { localChatAdapter } from './local-chat';
+import { openrouterDecisionAdapter } from './openrouter-decision';
 
 // Built-in adapters. Order doesn't matter — these are just into a
 // Map keyed by providerId.
@@ -101,6 +103,7 @@ registerEmbeddingAdapter(googleEmbedding);
 registerEmbeddingAdapter(mistralEmbedding);
 registerEmbeddingAdapter(cohereEmbedding);
 registerEmbeddingAdapter(localEmbedding);
+registerDecisionAdapter(openrouterDecisionAdapter);
 
 // Surface drift between registered adapters and the providers catalog
 // at module-load time. The catalog drives UI dropdown filters via
@@ -139,6 +142,8 @@ export {
   registerEmbeddingAdapter,
   getEmbeddingAdapter,
   listEmbeddingAdapters,
+  registerDecisionAdapter,
+  getDecisionAdapter,
   isProviderWired,
   wiredCapabilitiesFor,
 } from './registry';
@@ -178,6 +183,11 @@ export {
   type EmbedInput,
   type EmbedRequest,
   type EmbedResult,
+  type DecisionAnswer,
+  type DecisionDispatcher,
+  type DecisionOptions,
+  type DecisionQuestion,
+  type DecisionResult,
   type AdapterMeta,
 } from './types';
 
@@ -194,6 +204,7 @@ export { ChatHttpError, classifyChatError, parseRetryAfterMs } from './retry';
 // Re-export the built-in adapter objects so apps can compose them
 // (e.g. for testing against a mocked HTTP layer).
 export { openAiTtsAdapter } from './openai-tts';
+export { openrouterDecisionAdapter } from './openrouter-decision';
 export { openAiSttAdapter } from './openai-stt';
 export { xaiSttAdapter } from './xai-stt';
 export { elevenLabsSttAdapter } from './elevenlabs-stt';

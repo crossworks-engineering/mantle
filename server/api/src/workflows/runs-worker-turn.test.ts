@@ -89,6 +89,7 @@ vi.mock('@mantle/runs', () => ({
 }));
 
 vi.mock('@mantle/runtime/agent', () => ({
+  agentLevel: () => 'admin',
   composeSystemPromptWithSkills: (p: string) => p ?? 'sys',
   effectiveToolSlugs: () => [],
   resolveAgentSkills: async () => [],

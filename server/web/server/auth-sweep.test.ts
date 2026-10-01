@@ -25,6 +25,11 @@ const here = dirname(fileURLToPath(import.meta.url));
 const manifestPath = join(here, 'route-manifest.gen.ts');
 const hasManifest = existsSync(manifestPath);
 
+// vitest.global-setup.ts generates the manifest; in CI a missing one is a
+// failure, never a silent skip of a security sweep.
+if (!hasManifest && process.env.CI) {
+  throw new Error('server/web/server/route-manifest.gen.ts is missing: the sweep cannot run');
+}
 if (!hasManifest) {
   console.warn(
     '[auth-sweep] server/web/server/route-manifest.gen.ts is missing — run `pnpm -C server/web route-manifest` (typecheck does it) to enable this sweep',
@@ -100,6 +105,98 @@ describe.skipIf(!hasManifest)('route manifest auth sweep', () => {
     expect(failures).toEqual([]);
   }, 120_000);
 
+  // Member logins Phase 6 retired the team-code portal: its pages redirect to
+  // /login for everyone (before the gate, so no `next` and no query that may
+  // carry a team code), and its API is gone rather than public.
+  it('the retired /team and /hub pages redirect to /login, signed in or not', async () => {
+    const { buildSessionCookie } = await import('../lib/auth');
+    const session = `mantle_session=${buildSessionCookie('11111111-1111-4111-8111-111111111111').value}`;
+    const failures: string[] = [];
+    for (const path of ['/team', '/team/forum/abc?code=ABCD2345', '/team/apps', '/hub', '/hub/x']) {
+      for (const cookie of [undefined, session]) {
+        const res = await app.request(path, cookie ? { headers: { cookie } } : {});
+        const loc = res.headers.get('location');
+        if (res.status !== 307 || loc !== '/login') {
+          failures.push(`${path}${cookie ? ' (signed in)' : ''} -> ${res.status} ${loc}`);
+        }
+      }
+    }
+    expect(failures).toEqual([]);
+  });
+
+  it('the retired /api/team surface is neither public nor routed', async () => {
+    expect(
+      manifest.filter((e) => /^\/(api\/team(\/|-portal)|team(\/|$)|hub(\/|$))/.test(e.pattern)),
+    ).toEqual([]);
+    const anon = await app.request('/api/team/auth', { method: 'POST' });
+    expect(anon.status).toBe(401);
+    const { buildSessionCookie } = await import('../lib/auth');
+    const cookie = `mantle_session=${buildSessionCookie('11111111-1111-4111-8111-111111111111').value}`;
+    const signedIn = await app.request('/api/team/forum/topics', { headers: { cookie } });
+    expect(signedIn.status).toBe(404);
+  });
+
+  // Stage 6 retired team links: the token prompt's exchange route and the
+  // team-code switch on contacts are gone, not merely refused.
+  it('the retired team-link routes are not routed', async () => {
+    expect(
+      manifest.filter(
+        (e) => e.pattern === '/s/:token/auth' || /^\/api\/contacts\/[^/]+\/team$/.test(e.pattern),
+      ),
+    ).toEqual([]);
+    const prompt = await app.request('/s/some-token/auth', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token: 'ABCD2345' }),
+    });
+    expect(prompt.status).toBe(404);
+    const { buildSessionCookie } = await import('../lib/auth');
+    const cookie = `mantle_session=${buildSessionCookie('11111111-1111-4111-8111-111111111111').value}`;
+    const team = await app.request('/api/contacts/11111111-1111-4111-8111-111111111111/team', {
+      method: 'POST',
+      headers: { cookie },
+    });
+    expect(team.status).toBe(404);
+  });
+
+  // Migration 0177 dropped the forum tables; the archive export went with
+  // them, so an older client's export banner finds no route.
+  it('the retired forum export route is not routed', async () => {
+    expect(manifest.filter((e) => e.pattern.startsWith('/api/team-admin/forum'))).toEqual([]);
+    const { buildSessionCookie } = await import('../lib/auth');
+    const cookie = `mantle_session=${buildSessionCookie('11111111-1111-4111-8111-111111111111').value}`;
+    for (const method of ['GET', 'POST']) {
+      const res = await app.request('/api/team-admin/forum/export', {
+        method,
+        headers: { cookie },
+      });
+      expect(res.status, method).toBe(404);
+    }
+  });
+
+  // Member logins Phase 7: an admin's private items. Anonymous here; a
+  // member login's 403 and the admin's own space are pinned in
+  // admin-space-sweep.test.ts (it stands in the login rows).
+  it('the admin private-space routes refuse a credential-less request', async () => {
+    const admin = manifest.filter((e) => e.pattern.startsWith('/api/admin/'));
+    expect(admin.map((e) => e.pattern).sort()).toEqual([
+      '/api/admin/space',
+      '/api/admin/space-files',
+      '/api/admin/space/:id',
+      '/api/admin/space/:id/accept',
+      '/api/admin/space/:id/bytes',
+      '/api/admin/space/:id/draft',
+      '/api/admin/space/:id/give-back',
+      '/api/admin/space/:id/save',
+    ]);
+    for (const entry of admin) {
+      for (const method of entry.methods.filter((m) => m !== 'OPTIONS')) {
+        const res = await app.request(concretePath(entry.pattern), { method });
+        expect(res.status, `${method} ${entry.pattern}`).toBe(401);
+      }
+    }
+  });
+
   it('lists which manifest routes are public, so a new public prefix is a visible diff', () => {
     const publicPatterns = manifest
       .filter((e) => isPublic(concretePath(e.pattern)))
@@ -120,8 +217,8 @@ describe.skipIf(!hasManifest)('route manifest auth sweep', () => {
         '/api/federation',
         '/api/mcp',
         '/api/oauth',
-        '/api/team',
         '/api/version',
+        '/pair',
         '/s',
       ].sort(),
     );

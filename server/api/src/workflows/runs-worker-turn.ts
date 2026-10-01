@@ -69,6 +69,7 @@ import { spillToolResult } from '@mantle/tools';
 import { currentTrace, runDurableStep, startTrace, withDurableSteps } from '@mantle/tracing';
 import { getChatAdapter } from '@mantle/voice';
 import { errorMessage } from '@mantle/std';
+import { agentLevel } from '@mantle/runtime/agent';
 
 const PROPOSAL_CAP_CHARS = 2_000;
 
@@ -323,7 +324,11 @@ export async function runsWorkerTurnImpl(
           { role: 'system', content: systemPrompt },
           { role: 'user', content: buildEnvelopePrompt(payload) },
         ];
-        const groupTools = await resolveAgentToolGroups(run.ownerId, worker.toolGroupSlugs ?? []);
+        const groupTools = await resolveAgentToolGroups(
+          run.ownerId,
+          worker.toolGroupSlugs ?? [],
+          agentLevel(worker),
+        );
         const allowedTools = await resolveAgentTools(run.ownerId, effectiveToolSlugs(groupTools));
 
         let traceId: string | undefined;
@@ -357,12 +362,16 @@ export async function runsWorkerTurnImpl(
               ownerId: run.ownerId,
               agentId: worker.id,
               agentSlug: worker.slug,
+              agentLevel: agentLevel(worker),
               // Depth 2 + empty allowlist: run_* and invoke_agent refuse —
               // propose-don't-mutate is enforced structurally, not by prompt.
               agentDepth: 2,
               delegateTo: [],
               initialMessages,
               tools: allowedTools,
+              // The owner's own run (client logins C4): a missing surface is
+              // not the owner.
+              surface: { kind: 'owner', via: 'run' },
             });
             const ctx = currentTrace();
             if (ctx) {

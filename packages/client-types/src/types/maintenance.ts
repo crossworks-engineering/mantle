@@ -15,6 +15,17 @@ export type TaskKind =
   | 'backfill';
 export type TaskStatus = 'live' | 'retired';
 
+/** A value the UI runner asks for and passes to the script as
+ *  `--<name>=<value>`: the agent a dry run works on, the review page an apply
+ *  reads. `for` says which run needs it. */
+export interface MaintenanceArg {
+  name: string;
+  /** What the value is, so the UI can offer the right picker. */
+  kind: 'agent' | 'page';
+  label: string;
+  for: 'dry' | 'apply';
+}
+
 export interface MaintenanceTaskInfo {
   slug: string;
   title: string;
@@ -27,6 +38,10 @@ export interface MaintenanceTaskInfo {
   supportsDryRun: boolean;
   /** False when the task needs positional args (backups' destDir) — CLI only. */
   uiRunnable: boolean;
+  /** Values the UI must collect before a run (see MaintenanceArg). */
+  args?: MaintenanceArg[];
+  /** What a DRY run spends when it is not free: the UI asks to confirm it. */
+  dryRunCost?: TaskCost;
   /** Env vars from requiresEnv that are NOT set on the server, if any. */
   missingEnv: string[];
   notes?: string;
@@ -71,8 +86,11 @@ export interface StartRunRequest {
   slug: string;
   /** Live run (maps to the script's own apply flag / omits its dry-run flag). */
   apply: boolean;
-  /** Required acknowledgement for live runs of llm/embedding-cost tasks. */
+  /** Required acknowledgement for any run that spends llm/embedding calls
+   *  (live runs of such tasks, and dry runs with a costly dryRunCost). */
   confirmSpend?: boolean;
+  /** Values for the task's `args`, keyed by MaintenanceArg.name. */
+  args?: Record<string, string>;
   /** Required acknowledgement for retired backfills. */
   forceRetired?: boolean;
 }

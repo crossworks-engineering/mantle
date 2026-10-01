@@ -20,6 +20,7 @@ import type { PostCommitAction } from './engine';
 import { notifyPendingCreated } from './notify';
 import { RUN_RESUME_QUEUE, RUN_TOOL_QUEUE, RUN_WORKER_QUEUE } from './queues';
 import { env } from '@mantle/config';
+import { assertNoViewer } from '@mantle/db/viewer';
 
 let bossPromise: Promise<PgBoss> | null = null;
 
@@ -82,6 +83,7 @@ export async function runPendingNotices(actions: readonly PostCommitAction[]): P
 /** The queue-job half of a batch. Pairs with {@link runPendingNotices} for
  *  callers that handle the two halves separately. */
 export async function enqueueRunJobs(actions: readonly PostCommitAction[]): Promise<void> {
+  assertNoViewer('enqueueRunJobs');
   const jobs = actions.filter(
     (a): a is Exclude<PostCommitAction, { type: 'pending_created' }> =>
       a.type !== 'pending_created',

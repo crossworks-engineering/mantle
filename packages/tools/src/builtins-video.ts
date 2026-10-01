@@ -28,8 +28,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { db, nodes, bumpWorkerUsage } from '@mantle/db';
 import {
-  createFolder,
-  dashToLtree,
+  ensureAutoFiledFolder,
   fileById,
   mediaAudio,
   mediaCaptions,
@@ -46,6 +45,7 @@ import { createPage, markdownToDoc } from '@mantle/content';
 import { getSttAdapter } from '@mantle/voice';
 import { recordIngest, step } from '@mantle/tracing';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
+import { isOwnerSurface, OWNER_ONLY_ERROR } from './surface';
 import { assertFetchableUrl } from './ssrf-guard';
 import { notFound } from './errors';
 import { resolveDefaultWorker } from './builtins-workers';
@@ -74,44 +74,9 @@ const MAX_STT_DURATION_S = () => intEnv('MEDIA_MAX_STT_DURATION_S', 3600);
 const MAX_AUDIO_BYTES = () => intEnv('MEDIA_MAX_AUDIO_BYTES', 20_000_000);
 const MAX_VIDEO_BYTES = () => intEnv('MEDIA_MAX_VIDEO_BYTES', 1024 ** 3);
 
-// ─── files/video-ingest/<date>/ (the generated-images folder pattern) ──────
-const VIDEO_INGEST_FOLDER_SLUG = 'video-ingest';
-const VIDEO_INGEST_FOLDER_LTREE = `files.${dashToLtree(VIDEO_INGEST_FOLDER_SLUG)}`;
-
-async function ensureFolder(
-  ownerId: string,
-  parentPath: string,
-  slug: string,
-  description: string,
-) {
-  const path = `${parentPath}.${dashToLtree(slug)}`;
-  const [exists] = await db
-    .select({ id: nodes.id })
-    .from(nodes)
-    .where(
-      and(eq(nodes.ownerId, ownerId), eq(nodes.type, 'branch'), sql`${nodes.path}::text = ${path}`),
-    )
-    .limit(1);
-  if (!exists) {
-    try {
-      await createFolder({ ownerId, parentPath, slug, description });
-    } catch (err) {
-      // Concurrent creation racing — swallow the unique hit, keep going.
-      if (!(err instanceof Error) || !/duplicate|unique/i.test(err.message)) throw err;
-    }
-  }
-  return path;
-}
-
-async function ensureVideoIngestDateFolder(ownerId: string): Promise<string> {
-  await ensureFolder(
-    ownerId,
-    'files',
-    VIDEO_INGEST_FOLDER_SLUG,
-    'Audio + video pulled in by the video_ingest tool.',
-  );
-  const today = new Date().toISOString().slice(0, 10);
-  return ensureFolder(ownerId, VIDEO_INGEST_FOLDER_LTREE, today, `Video ingests from ${today}.`);
+/** Where an ingested video lands: this month's folder under Auto-filed. */
+function ensureVideoIngestDateFolder(ownerId: string): Promise<string> {
+  return ensureAutoFiledFolder(ownerId, 'video-ingest');
 }
 
 function slugBase(title: string | null, fallback: string): string {
@@ -136,6 +101,8 @@ type TranscriptSource = `captions:${'manual' | 'auto'}` | `stt:${string}`;
 
 const video_ingest: BuiltinToolDef = {
   slug: 'video_ingest',
+  ownerOnly: true,
+  spends: true,
   name: 'Ingest a video into the brain',
   description:
     "Turn a video into a searchable, timestamped transcript page. Pass `url` for an online video (captions are used when available — free; otherwise the audio is extracted and transcribed via the STT worker), or `file_node_id` for a video file already in Files (always audio + STT). The extracted audio is kept as a file beside the source; `keep_video: true` additionally stores the video itself. For the user's own reference material. Long-running — up to several minutes for an uncaptioned video.",
@@ -178,11 +145,10 @@ const video_ingest: BuiltinToolDef = {
     },
   ],
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
-    // Belt-and-braces on top of the tool-group grant: an outbound fetch of an
-    // arbitrary URL never runs for a team surface.
-    if (ctx.surface?.kind === 'team' || ctx.surface?.kind === 'forum') {
-      return { ok: false, error: 'owner-side tool — not available on the team surfaces' };
-    }
+    // Belt-and-braces on top of the tool-group grant and the dispatch gate (the
+    // MCP server calls handlers directly): an outbound fetch of an arbitrary
+    // URL runs only for the owner.
+    if (!isOwnerSurface(ctx.surface)) return { ok: false, error: OWNER_ONLY_ERROR };
     if (!mediaSidecarEnabled()) {
       return {
         ok: false,

@@ -28,8 +28,8 @@ so "tomorrow at 3pm" resolves correctly. Shared events offer an "add to calendar
 People you know, **name, company, one or more emails, phone**, and an
 **AI-facing description** ("my electrician; prefers WhatsApp"). The description is
 read into the brain, so the assistant understands who each person is. A contact can
-hold **several email entries**, each either a full address (`jane@modular.co`) or a
-**whole-domain wildcard** (`@modular.co` = anyone at that domain).
+hold **several email entries**, each either a full address (`jane@example.com`) or a
+**whole-domain wildcard** (`@example.com` = anyone at that domain).
 
 Contacts are the **email allowlist in both directions:**
 
@@ -44,7 +44,7 @@ Contacts are the **email allowlist in both directions:**
 Adding a contact unlocks both; removing one revokes both. Mantle also tracks light
 activity (how many times, last contacted) per person.
 
-Tell the assistant "save Jane at Modular, jane@modular.co" and it creates the
+Tell the assistant "save Jane at Modular, jane@example.com" and it creates the
 contact (it won't add people on its own initiative, only when you ask).
 
 ## Secrets

@@ -5,6 +5,7 @@
  * Split out of builtins-pages.ts; bodies moved verbatim.
  */
 
+import { CONFIRM_INPUT, EMBEDS_SHARED, visibilityRefusal } from '../visibility-refusal';
 import {
   createPage,
   updatePage,
@@ -25,36 +26,39 @@ import { notFound } from '../errors';
 import { errorMessage } from '@mantle/std';
 import {
   FILE_ID_PRE,
+  FOLDER_ID_PRE,
+  FOLDER_ID_PROP,
   MARKDOWN_HINT,
   MARKDOWN_REFS_PRE,
   PAGE_ID_PRE,
   PAGE_NODE_ID_PRE,
-  stripOwnerOnlyTags,
+  PARENT_ID_PROP,
+  placementError,
+  placementOf,
+  placementOutput,
+  placementRefusal,
 } from './common';
 
 export const page_create: BuiltinToolDef = {
   slug: 'page_create',
-  preconditions: MARKDOWN_REFS_PRE,
+  preconditions: [...MARKDOWN_REFS_PRE, ...FOLDER_ID_PRE],
   name: 'Create a page',
   description:
-    "Create a rich document (a `page` node under /pages) in the user's Mantle from content YOU compose. The page is indexed into the brain — summary, embedding, facts, entities — so it becomes searchable and recallable. To make a SUB-PAGE, pass `parent_id` (an existing page's id); omit for a top-level page. Prefer this over `note_create` when the content is long-form or structured (a plan, a doc, a comparison); use `note_create` for quick plain-text captures. **For importing an existing file use `page_from_file` instead — re-emitting the file body in `markdown` truncates silently above ~6 K output tokens. When the content already lives in a NOTE, use `page_from_note` — it copies the body server-side.**",
+    "Create a rich document (a `page` node under /pages) in the user's Mantle from content YOU compose. The page is indexed into the brain — summary, embedding, facts, entities — so it becomes searchable and recallable. `folder_id` files it in a pages folder (`tree_folders`, kind pages); omit for the top level. Prefer this over `note_create` when the content is long-form or structured (a plan, a doc, a comparison); use `note_create` for quick plain-text captures. **For importing an existing file use `page_from_file` instead — re-emitting the file body in `markdown` truncates silently above ~6 K output tokens. When the content already lives in a NOTE, use `page_from_note` — it copies the body server-side.**",
   inputSchema: {
     type: 'object',
     properties: {
       title: { type: 'string', description: 'page title, e.g. "Q3 Launch Plan"' },
-      markdown: { type: 'string', description: MARKDOWN_HINT },
+      markdown: { type: 'string', description: MARKDOWN_HINT + EMBEDS_SHARED },
       tags: {
         type: 'array',
         items: { type: 'string' },
         description: "Labels for organisation and filtering, e.g. ['work'].",
       },
       icon: { type: 'string', description: 'optional emoji icon, e.g. "📄"' },
-      parent_id: {
-        type: 'string',
-        format: 'uuid',
-        description:
-          'optional — id of an existing page to nest this new page UNDER (creates a sub-page). Omit for a top-level page.',
-      },
+      folder_id: FOLDER_ID_PROP,
+      parent_id: PARENT_ID_PROP,
+      confirm: CONFIRM_INPUT,
     },
     required: ['title'],
   },
@@ -62,9 +66,11 @@ export const page_create: BuiltinToolDef = {
     const title = str(input.title).trim();
     if (!title) return { ok: false, error: 'title is required' };
     const markdown = str(input.markdown);
-    const { tags, stripped: strippedTags } = stripOwnerOnlyTags(strArr(input.tags));
+    const tags = strArr(input.tags);
     const icon = str(input.icon).trim();
-    const parentId = str(input.parent_id).trim();
+    const gated = placementRefusal(input, ctx);
+    if (gated) return { ok: false, error: gated };
+    const placement = placementOf(input);
     try {
       const doc = markdownToDoc(markdown);
       const page = await createPage(ctx.ownerId, {
@@ -72,7 +78,7 @@ export const page_create: BuiltinToolDef = {
         doc,
         tags,
         ...(icon ? { icon } : {}),
-        ...(parentId ? { parentId } : {}),
+        ...placement,
       });
       ctx.step?.setOutput({ id: page.id, title: page.title });
       void recordIngest({
@@ -83,7 +89,7 @@ export const page_create: BuiltinToolDef = {
         payload: {
           via: 'page_create_tool',
           tags,
-          ...(parentId ? { parentId } : {}),
+          ...placementOutput(placement),
           ...(ctx.agent ? { invokingAgent: ctx.agent.slug } : {}),
         },
         snippet: markdown,
@@ -95,24 +101,17 @@ export const page_create: BuiltinToolDef = {
           url: nodeUrl(page.id),
           title: page.title,
           tags: page.tags,
-          ...(parentId ? { parent_id: parentId } : {}),
-          ...(strippedTags.length > 0
-            ? {
-                note: `The ${strippedTags.map((x) => `\`${x}\``).join(', ')} tag is owner-only — the owner sets it in the editor to turn a tree into a Recall map.`,
-              }
-            : {}),
+          ...placementOutput(placement),
         },
       };
     } catch (err) {
+      // A shared folder: the list, until the user agrees (confirm: true).
+      const refusal = visibilityRefusal(err);
+      if (refusal) return { ok: false, error: refusal };
       const msg = errorMessage(err);
-      // createPage throws ParentPageNotFoundError ("…parent page not found") when
-      // parent_id isn't one of the owner's pages — surface that plainly.
-      if (parentId && msg.includes('parent page not found')) {
-        return {
-          ok: false,
-          error: `parent_id '${parentId}' is not one of your pages — pass the id of an existing page (see page_list / search_nodes).`,
-        };
-      }
+      // createPage refuses a placement it cannot resolve: say so plainly.
+      const placed = placementError(msg, placement);
+      if (placed) return { ok: false, error: placed };
       return { ok: false, error: msg };
     }
   },
@@ -175,7 +174,7 @@ export const page_replace_from_file: BuiltinToolDef = {
       if (typeof input.title === 'string' && input.title.trim()) {
         metaPatch.title = input.title.trim().slice(0, 200);
       }
-      if (Array.isArray(input.tags)) metaPatch.tags = stripOwnerOnlyTags(strArr(input.tags)).tags;
+      if (Array.isArray(input.tags)) metaPatch.tags = strArr(input.tags);
       if (typeof input.icon === 'string' && input.icon.trim()) {
         metaPatch.icon = input.icon.trim();
       }
@@ -234,7 +233,10 @@ export const page_update: BuiltinToolDef = {
     properties: {
       id: { type: 'string', description: 'page node id (from page_list / page_create)' },
       title: { type: 'string', description: 'new page title; replaces the current one' },
-      markdown: { type: 'string', description: `Replacement body. ${MARKDOWN_HINT}` },
+      markdown: {
+        type: 'string',
+        description: `Replacement body. ${MARKDOWN_HINT}${EMBEDS_SHARED}`,
+      },
       tags: {
         type: 'array',
         items: { type: 'string' },
@@ -251,7 +253,7 @@ export const page_update: BuiltinToolDef = {
     const patch: Record<string, unknown> = {};
     if (typeof input.title === 'string') patch.title = input.title.trim().slice(0, 200);
     if (typeof input.markdown === 'string') patch.doc = markdownToDoc(input.markdown);
-    if (Array.isArray(input.tags)) patch.tags = stripOwnerOnlyTags(strArr(input.tags)).tags;
+    if (Array.isArray(input.tags)) patch.tags = strArr(input.tags);
     if (typeof input.icon === 'string') patch.icon = input.icon.trim();
     if (Object.keys(patch).length === 0) {
       return { ok: false, error: 'nothing to update — pass title, markdown, tags, or icon' };
@@ -308,7 +310,7 @@ export const page_update_draft: BuiltinToolDef = {
     // Metadata patch (low-risk, direct). Body change goes to draft separately.
     const metaPatch: Record<string, unknown> = {};
     if (typeof input.title === 'string') metaPatch.title = input.title.trim().slice(0, 200);
-    if (Array.isArray(input.tags)) metaPatch.tags = stripOwnerOnlyTags(strArr(input.tags)).tags;
+    if (Array.isArray(input.tags)) metaPatch.tags = strArr(input.tags);
     if (typeof input.icon === 'string') metaPatch.icon = input.icon.trim();
 
     let metaUpdated = false;
@@ -372,7 +374,8 @@ export const page_commit: BuiltinToolDef = {
   preconditions: PAGE_NODE_ID_PRE,
   name: 'Commit a page draft',
   description:
-    "Publish a page's pending draft as the canonical body and re-index it into the brain. Use after a batch of body edits when the user has confirmed they want the changes live (or asked you to 'save'/'publish'). No-op error if there's no draft. Usually you LEAVE the draft for the user to review + commit in the editor — only commit yourself when explicitly asked. Publishing is what makes the new body searchable and recallable; until then only the old one is.",
+    "Publish a page's pending draft as the canonical body and re-index it into the brain. Use after a batch of body edits when the user has confirmed they want the changes live (or asked you to 'save'/'publish'). No-op error if there's no draft. Usually you LEAVE the draft for the user to review + commit in the editor — only commit yourself when explicitly asked. Publishing is what makes the new body searchable and recallable; until then only the old one is." +
+    EMBEDS_SHARED,
   inputSchema: {
     type: 'object',
     properties: {

@@ -24,7 +24,7 @@ on one box, sharing one `.env`:
 
 | Project | File | What it runs |
 |---|---|---|
-| `mantle` | `docker-compose.yml` | the **brain**: Postgres, MinIO, the API and MCP server, the ingest workers, Caddy (the front door), the updater and autoheal sidecars, Tika and a headless browser for documents. Image `titanwest/mantle-server`. |
+| `mantle` | `docker-compose.yml` | the **brain**: Postgres, RustFS (the S3 object store), the API and MCP server, the ingest workers, Caddy (the front door), the updater and autoheal sidecars, Tika and a headless browser for documents. Image `titanwest/mantle-server`. |
 | `mantle-client` | `docker-compose.client.yml` | the **owner UI**: one small container, image `titanwest/mantle-client`, built from the separate [jackdaw](https://github.com/crossworks-engineering/jackdaw) repo. Sign-up and every owner screen live here. |
 
 The installer brings up both and points Caddy at them on one address,
@@ -153,6 +153,11 @@ recreates Caddy so it can route to the client, then runs a per-service sanity
 check. If that check fails it prints **"Installation incomplete"** and exits
 non-zero rather than a URL that will not answer.
 
+A failed image pull is retried three times with a growing wait (a reset
+connection to the registry is the usual cause). If it still fails, the
+installer stops **before** starting anything and prints the exact command to
+re-run; a re-run is safe. It never brings up a stack with some images missing.
+
 > **Back up the generated `.env`.** `MANTLE_MASTER_KEY` encrypts your stored
 > API keys and mailbox passwords at rest. Lose it and that vault is unrecoverable.
 
@@ -187,7 +192,7 @@ base image `titanwest/mantle-sandbox:24.04-v2`.
 
 Nothing is installed on the host. Sandboxes are hardened runc containers
 (`cap-drop ALL`, `no-new-privileges`, 1 GB RAM, 1 CPU, 512 pids each), on their
-own bridge network with no route to Postgres, MinIO or the app. Limits default
+own bridge network with no route to Postgres, the object store or the app. Limits default
 to 3 sandboxes and a 10 GB disk budget.
 
 Turn them off at install with `--no-sandboxes` (or `MANTLE_SANDBOXES=0` on the
@@ -319,7 +324,7 @@ No `psql`, no `ALLOWED_USER_ID` to fill in.
 ## State, backups, updates
 
 Everything that holds state lives under `MANTLE_DATA_DIR` on the host (default
-`./data`): Postgres, MinIO, your files, backups, mini-app databases, Caddy's
+`./data`): Postgres, the object store (`rustfs/`), your files, backups, mini-app databases, Caddy's
 certificates, and, when enabled, the local embedder's models and the Tailscale
 node state. The only named Docker volume is the Tailscale socket. **A backup is a
 database dump plus a copy of that directory plus `.env`.**
@@ -348,7 +353,7 @@ and rollback: [self-hosting.md](../self-hosting.md).
 ## Local development
 
 This repo is the **brain only**. `pnpm start` runs the API, MCP server and
-workers against Postgres, MinIO and Tika in Docker; it serves the API on
+workers against Postgres, RustFS and Tika in Docker; it serves the API on
 http://localhost:3000 and **no owner UI**. The UI is the separate
 [jackdaw](https://github.com/crossworks-engineering/jackdaw) repo.
 

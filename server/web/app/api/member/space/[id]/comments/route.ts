@@ -1,0 +1,73 @@
+import { NextResponse } from '@/server/http-compat';
+import { addMineComment, listMineComments, toNodeCommentDto } from '@mantle/content';
+import { getMemberOr401 } from '@/lib/auth';
+import { readJsonNoNul } from '@/lib/strip-nul';
+import {
+  CommentBody,
+  inMySpace,
+  memberAuthor,
+  memberWriteGate,
+  notFound,
+  SpaceIdParams,
+  spaceStateResponse,
+  withAdminGuard,
+} from '@/lib/member-space';
+import { commentPageQuery } from '@/lib/comment-page';
+import { firstIssue } from '@/lib/zod-issue';
+
+/**
+ * GET /api/member/space/:id/comments[?before=ISO] : the thread on one of the
+ * member's own items: its newest 100 comments, oldest first, and `hasMore`.
+ * POST { body } : add to it, open while the item is
+ * shared with the team or submitted for review (409 `not-shared` otherwise).
+ * Comments are kept with the brain's id, so the thread survives Accept.
+ */
+export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const member = await getMemberOr401();
+  if (member instanceof Response) return member;
+  const params = SpaceIdParams.safeParse(await ctx.params);
+  if (!params.success) return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
+  const page = commentPageQuery(req);
+  if (page instanceof Response) return page;
+  const held = await withAdminGuard(member, params.data.id);
+  if (held) return held;
+  const thread = await inMySpace(member, () =>
+    listMineComments(member.spaceId, params.data.id, page),
+  );
+  if (!thread) return notFound();
+  const viewer = { loginId: member.loginId };
+  return NextResponse.json({
+    comments: thread.rows.map((r) => toNodeCommentDto(r, viewer)),
+    hasMore: thread.hasMore,
+  });
+}
+
+export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const member = await getMemberOr401();
+  if (member instanceof Response) return member;
+  const limited = memberWriteGate(member);
+  if (limited) return limited;
+  const params = SpaceIdParams.safeParse(await ctx.params);
+  if (!params.success) return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
+  const held = await withAdminGuard(member, params.data.id);
+  if (held) return held;
+  const body = CommentBody.safeParse(await readJsonNoNul(req));
+  if (!body.success) return NextResponse.json({ error: firstIssue(body.error) }, { status: 400 });
+  try {
+    const row = await inMySpace(member, () =>
+      addMineComment(
+        member.spaceId,
+        member.anchorId,
+        params.data.id,
+        memberAuthor(member),
+        body.data.body,
+      ),
+    );
+    return NextResponse.json(
+      { comment: toNodeCommentDto(row, { loginId: member.loginId }) },
+      { status: 201 },
+    );
+  } catch (err) {
+    return spaceStateResponse(err);
+  }
+}

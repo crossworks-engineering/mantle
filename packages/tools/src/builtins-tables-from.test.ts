@@ -2,7 +2,7 @@
  * Tests for the two import tools: table_from_text and table_from_file.
  *
  * Both ALWAYS create a new table. That is the property that bit hardest in
- * production (NATREF 2026-07-28: an agent reached for table_from_text to
+ * production (a client box 2026-07-28: an agent reached for table_from_text to
  * append rows and left a stray import behind), so both suites pin that no
  * draft op is ever issued on an existing table.
  *
@@ -15,7 +15,7 @@
  *    is coerced through the column type before reaching the store, and an
  *    empty parse is refused before createTable is called.
  *  - table_from_file: the extension gate runs BEFORE the bytes are read (a
- *    500 MB pdf must not be pulled from MinIO to be told it is not a
+ *    500 MB pdf must not be pulled from the object store to be told it is not a
  *    sheet), every non-empty sheet becomes a TAB of one table (not sibling
  *    tables), the source file id is recorded, and the title falls back to
  *    the filename without its extension.
@@ -27,7 +27,10 @@ vi.mock('@mantle/content', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/content')>();
   return { ...actual, getTable: vi.fn(), applyTableOps: vi.fn(), createTable: vi.fn() };
 });
-vi.mock('@mantle/content/table-storage', () => ({ tableSqlSurface: vi.fn(async () => null) }));
+vi.mock('@mantle/content/table-storage', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  tableSqlSurface: vi.fn(async () => null),
+}));
 vi.mock('@mantle/files', () => ({ fileById: vi.fn(), readFileById: vi.fn() }));
 vi.mock('@mantle/files/sheet-to-grid', () => ({
   parseSpreadsheetToGrid: vi.fn(),

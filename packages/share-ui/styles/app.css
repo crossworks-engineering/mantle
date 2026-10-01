@@ -801,9 +801,11 @@
   overflow-wrap: anywhere;
 }
 
-/* Sub-page card on the raw/public render. In-app it's a React NodeView (a
-   Link); the public surface emits an inert [data-child-page] div (sub-pages
-   aren't part of a shared subtree), styled to match the in-app card. */
+/* Page link card on the raw/public render. In-app it's a React NodeView (a
+   Link); the public surface emits an inert [data-child-page] div (the linked
+   page is not part of what the link shares), styled to match the in-app
+   card. The node is named from when pages nested; they no longer do (folder
+   phase 7). */
 .ProseMirror [data-child-page] {
   display: flex;
   align-items: center;
@@ -825,6 +827,26 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Folder index block (folder phase 7) on the raw/public render: a live list
+   of a folder's pages for a signed-in reader; an open link has no reader to
+   list for, so the public surface emits an inert label. In-app the block is
+   filled after rendering (StaticDoc) or drawn by a NodeView. */
+.ProseMirror [data-folder-index] {
+  margin-block: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background-color: var(--card);
+  padding: 0.625rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.ProseMirror [data-folder-index]:empty::before {
+  content: 'Folder index';
 }
 
 /* ============================================================================

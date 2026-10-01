@@ -1,6 +1,6 @@
 {
   "name": "@mantle/web",
-  "version": "0.232.200",
+  "version": "0.232.366",
   "private": true,
   "type": "module",
   "scripts": {
@@ -26,6 +26,7 @@
     "models:drift": "tsx --env-file-if-exists=./.env.local scripts/models-drift.ts",
     "models:pinned": "tsx --env-file-if-exists=./.env.local scripts/pinned-model-drift.ts",
     "models:pool-fit": "tsx --env-file-if-exists=./.env.local scripts/pool-fit.ts",
+    "models:curate": "tsx --env-file-if-exists=./.env.local scripts/curate-pools.ts",
     "pgboss:init": "tsx --env-file-if-exists=./.env.local scripts/pgboss-init.ts",
     "predev": "pnpm run generate",
     "pretypecheck": "pnpm run route-manifest",
@@ -57,6 +58,10 @@
     "test:fire-heartbeat": "tsx --env-file-if-exists=./.env.local scripts/test-fire-heartbeat.ts",
     "traces:reap": "tsx --env-file-if-exists=./.env.local scripts/traces-reap.ts",
     "turns:reap": "tsx --env-file-if-exists=./.env.local scripts/turns-reap.ts",
+    "space:purge": "tsx --env-file-if-exists=./.env.local scripts/space-purge.ts",
+    "client-codes:reap": "tsx --env-file-if-exists=./.env.local scripts/client-codes-reap.ts",
+    "share-drift": "tsx --env-file-if-exists=./.env.local scripts/share-drift.ts",
+    "app-access-log:reap": "tsx --env-file-if-exists=./.env.local scripts/app-access-log-reap.ts",
     "typecheck": "tsc --noEmit",
     "widen:content-hits": "tsx --env-file-if-exists=./.env.local scripts/widen-content-hits.ts",
     "worker:calendar:dev": "tsx --watch --env-file-if-exists=./.env.local workers/calendar-sync.ts",

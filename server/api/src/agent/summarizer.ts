@@ -26,6 +26,7 @@ import {
   type SummarizerParams,
 } from '@mantle/db';
 import { recordSkippedTrace, startTrace, step } from '@mantle/tracing';
+import { NOTES_ASSISTANT_PATH, ensureNotesAssistantFolder } from '@mantle/content/tree';
 import { digestEmbedText, embedBatch } from '@mantle/embeddings';
 import {
   buildChatMessages,
@@ -67,11 +68,11 @@ async function resolveSummarizer(ownerId: string): Promise<AiWorker | null> {
   return await getDefaultWorker(ownerId, 'summarizer');
 }
 
-/** ltree path conversation digests hang under. The unified per-(owner, agent)
- *  stream isn't chat-scoped, so digests live under a fixed cosmetic label —
+/** Conversation digests live in Notes / Auto-filed / Assistant (a system
+ *  folder; docs/folder-tree.md). The path is only where people find them:
  *  find_window/responder match by the `conversation-digest` tag + the digest
  *  note's data.agent_id + embedding, not by path. */
-const CONVERSATION_DIGEST_PATH = 'assistant';
+const CONVERSATION_DIGEST_PATH = NOTES_ASSISTANT_PATH;
 
 /**
  * Unified summarizer — rolls the oldest undigested turns of ONE per-(owner,
@@ -292,6 +293,7 @@ export async function summarizeAgentConversation(ownerId: string, agentId: strin
       // 10-60s LLM call — abort cleanly instead of double-digesting the same
       // turns; the single transaction means a crash can't leave digests
       // inserted but turns unmarked (the orphan-then-redigest failure).
+      await ensureNotesAssistantFolder(ownerId);
       const inserted = await step(
         {
           name: 'persist_digests',

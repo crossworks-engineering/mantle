@@ -44,7 +44,7 @@ async function checkBucket(): Promise<SanityCheck> {
     return {
       ...base,
       status: 'warn',
-      detail: `Couldn't reach the object store to verify bucket “${s.bucket}”. Check S3_ENDPOINT / that MinIO is up (the health pills cover liveness).`,
+      detail: `Couldn't reach the object store to verify bucket “${s.bucket}”. Check S3_ENDPOINT / that the object store is up (the health pills cover liveness).`,
       fix: null,
     };
   }
@@ -52,10 +52,10 @@ async function checkBucket(): Promise<SanityCheck> {
     return {
       ...base,
       status: 'fail',
-      detail: `MinIO is up but the “${s.bucket}” bucket does not exist — every app build and file upload fails with “The specified bucket does not exist”. Only scripts/up.sh creates it; a registry-pull box that never ran it has no bucket.`,
+      detail: `The object store is up but the “${s.bucket}” bucket does not exist — every app build and file upload fails with “The specified bucket does not exist”. The migrate one-shot creates it on every boot, so it is missing only if migrate has not run since, or failed.`,
       fix: {
-        summary: `Create the bucket in MinIO (one-shot, matches what up.sh does), then app builds / uploads work immediately.`,
-        command: `docker exec mantle_minio sh -c 'mc alias set local http://127.0.0.1:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null && mc mb -p local/${s.bucket} && mc anonymous set none local/${s.bucket}'`,
+        summary: `Create the bucket (the same idempotent step migrate runs), then app builds / uploads work immediately.`,
+        command: `docker exec mantle_web pnpm -C packages/storage objectstore:ensure`,
       },
     };
   }

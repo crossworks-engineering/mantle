@@ -47,6 +47,8 @@ import {
   effectiveToolSlugs,
 } from './skills';
 import type { ChatMessage } from './messages';
+import { agentLevel } from './agent-viewer';
+import { currentViewerLevel, levelsMeet } from '@mantle/db/viewer';
 
 export const invokeAgent: AgentInvoker = async ({
   ownerId,
@@ -55,6 +57,8 @@ export const invokeAgent: AgentInvoker = async ({
   depth,
   parentTraceId,
   thinkingBudget,
+  surface,
+  taint,
 }): Promise<InvokeAgentResult> => {
   if (depth > MAX_TERMINAL_EDGE_DEPTH) {
     // Defence in depth: the dispatcher already refused, but a caller
@@ -77,6 +81,21 @@ export const invokeAgent: AgentInvoker = async ({
     return {
       ok: false,
       error: `agent '${agentSlug}' not found, not owned by this user, or disabled`,
+    };
+  }
+
+  // Client and public read different items (client logins C1, decision 3):
+  // a client-level caller never runs a public agent and a public-level
+  // caller never a client one. Refused here, before any trace or LLM work
+  // (runToolLoop would refuse too, with ViewerLevelConflictError).
+  const callerLevel = currentViewerLevel();
+  const targetLevel = agentLevel(target);
+  if (!levelsMeet(callerLevel, targetLevel)) {
+    return {
+      ok: false,
+      error:
+        `agent '${agentSlug}' is ${targetLevel}-level and this turn runs at ${callerLevel}: ` +
+        'client and public read different items, so it cannot run here',
     };
   }
 
@@ -149,7 +168,11 @@ export const invokeAgent: AgentInvoker = async ({
     { role: 'system', content: systemPrompt },
     { role: 'user', content: prompt },
   ];
-  const groupTools = await resolveAgentToolGroups(ownerId, (target as Agent).toolGroupSlugs ?? []);
+  const groupTools = await resolveAgentToolGroups(
+    ownerId,
+    (target as Agent).toolGroupSlugs ?? [],
+    agentLevel(target),
+  );
   const allowedToolSlugs = effectiveToolSlugs(groupTools);
   const allowedTools = await resolveAgentTools(ownerId, allowedToolSlugs);
 
@@ -208,6 +231,7 @@ export const invokeAgent: AgentInvoker = async ({
         ownerId,
         agentId: target.id,
         agentSlug: target.slug,
+        agentLevel: agentLevel(target),
         agentDepth: depth,
         delegateTo: (mc?.delegate_to ?? []) as readonly string[],
         resultHandling: mc?.result_handling ?? null,
@@ -215,6 +239,11 @@ export const invokeAgent: AgentInvoker = async ({
         // invoke_agent tool-context bridge). The child loop re-clamps it against
         // THIS agent's own max_tokens. Omitted/0 ⇒ no thinking.
         ...(thinkingBudget ? { thinkingBudget } : {}),
+        // The child runs for the parent's caller (client logins C4): the
+        // parent's surface, never an implicit owner.
+        ...(surface ? { surface } : {}),
+        // The parent's taint, shared: reads here hold the parent back too.
+        ...(taint ? { taint } : {}),
         parentTraceId,
         initialMessages,
         tools: allowedTools,

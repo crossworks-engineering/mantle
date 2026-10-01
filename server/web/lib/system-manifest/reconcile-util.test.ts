@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { convergeManifestSkills, missingPersonaGroups } from './reconcile-util';
+import { createHash } from 'node:crypto';
+import {
+  convergeManifestSkills,
+  groupsWithinLevel,
+  missingPersonaGroups,
+  shippedPromptUpgrade,
+} from './reconcile-util';
 
 describe('missingPersonaGroups', () => {
   it('returns the manifest groups the agent does not yet hold', () => {
@@ -94,5 +100,50 @@ describe('convergeManifestSkills', () => {
 
   it('converging to an empty wanted set strips all manifest-owned skills, keeps operator ones', () => {
     expect(convergeManifestSkills(['rich_writing', 'custom'], [], owned)).toEqual(['custom']);
+  });
+});
+
+describe('groupsWithinLevel', () => {
+  const levels = new Map([
+    ['team-read', 'team'],
+    ['team-read-admin', 'admin'],
+  ]);
+  it('never re-adds an admin group to a team-level agent', () => {
+    expect(groupsWithinLevel(['team-read', 'team-read-admin'], 'team', levels)).toEqual([
+      'team-read',
+    ]);
+  });
+  it('keeps everything for an admin agent (and a missing level means admin)', () => {
+    expect(groupsWithinLevel(['team-read', 'team-read-admin'], 'admin', levels)).toEqual([
+      'team-read',
+      'team-read-admin',
+    ]);
+    expect(groupsWithinLevel(['team-read-admin'], null, levels)).toEqual(['team-read-admin']);
+  });
+  it('treats a group with no known level as admin', () => {
+    expect(groupsWithinLevel(['mystery'], 'team', levels)).toEqual([]);
+  });
+});
+
+describe('shippedPromptUpgrade', () => {
+  const sha = (t: string) => createHash('sha256').update(t, 'utf8').digest('hex');
+  const OLD = 'You are the Team Responder. Old default.';
+  const NEW = 'You are the Team Responder. New default.';
+
+  it('moves an unedited earlier default to the current one', () => {
+    expect(shippedPromptUpgrade(OLD, NEW, [sha(OLD)])).toBe(NEW);
+  });
+
+  it('keeps an edited prompt, even a whitespace edit', () => {
+    expect(shippedPromptUpgrade(`${OLD} Also greet in Afrikaans.`, NEW, [sha(OLD)])).toBeNull();
+    expect(shippedPromptUpgrade(`${OLD}\n`, NEW, [sha(OLD)])).toBeNull();
+  });
+
+  it('leaves a prompt that is already current, and does nothing with no history', () => {
+    expect(shippedPromptUpgrade(NEW, NEW, [sha(OLD), sha(NEW)])).toBeNull();
+    expect(shippedPromptUpgrade(OLD, NEW, undefined)).toBeNull();
+    expect(shippedPromptUpgrade(OLD, NEW, [])).toBeNull();
+    expect(shippedPromptUpgrade(null, NEW, [sha(OLD)])).toBeNull();
+    expect(shippedPromptUpgrade(OLD, undefined, [sha(OLD)])).toBeNull();
   });
 });

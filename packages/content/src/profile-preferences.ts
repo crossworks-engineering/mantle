@@ -28,6 +28,9 @@ import {
   isReminderChannel,
   isValidLocale,
   isValidTimezone,
+  projectAppNav,
+  projectAppOpens,
+  projectAppPins,
   projectAvatarParts,
   projectAvatarPhotoType,
   projectAvatarStyle,
@@ -40,6 +43,7 @@ import {
   projectHouseStyle,
   projectLogoKey,
   projectLogoType,
+  projectNavFavorites,
   projectNeatBackground,
   projectOnboardingModels,
   projectPeerName,
@@ -50,7 +54,8 @@ import {
   type ProfilePreferences,
 } from '@mantle/content-core/profile-projections';
 
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
+import { APP_OPENS_MAX } from '@mantle/client-types/app-nav';
 import { db, profiles, resolveSingleOwnerId, type ConversationChannel } from '@mantle/db';
 
 /** Read prefs jsonb and project to typed shape. Missing keys fall
@@ -160,7 +165,12 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
     // explicitly opted in.
     teamPrivateReads: prefs.teamPrivateReads === true,
     teamHubAppId: projectTeamHubAppId(prefs.teamHubAppId),
+    clientSigninSenderId: projectTeamHubAppId(prefs.clientSigninSenderId),
     teamHubTags: projectTeamHubTags(prefs.teamHubTags),
+    appNav: projectAppNav(prefs.appNav),
+    appPins: projectAppPins(prefs.appPins),
+    navFavorites: projectNavFavorites(prefs.navFavorites),
+    appOpens: projectAppOpens(prefs.appOpens),
     lastReconciledVersion:
       typeof prefs.lastReconciledVersion === 'string' && prefs.lastReconciledVersion.length > 0
         ? prefs.lastReconciledVersion
@@ -243,6 +253,16 @@ export async function updateProfilePreferences(
   ) {
     throw new Error(`'${patch.teamHubAppId}' is not a valid app id (expected a UUID).`);
   }
+  // The client sign-in sender (C2b): an email account id, or '' for none.
+  if (
+    patch.clientSigninSenderId != null &&
+    patch.clientSigninSenderId !== '' &&
+    projectTeamHubAppId(patch.clientSigninSenderId) === undefined
+  ) {
+    throw new Error(
+      `'${patch.clientSigninSenderId}' is not a valid email account id (expected a UUID).`,
+    );
+  }
   if (patch.teamHubTags != null) {
     if (!Array.isArray(patch.teamHubTags) || patch.teamHubTags.some((t) => typeof t !== 'string')) {
       throw new Error(`teamHubTags must be an array of tag strings.`);
@@ -250,6 +270,21 @@ export async function updateProfilePreferences(
     // Store the canonical form; [] is the deliberate "clear curation" write
     // (projects to undefined on read).
     patch = { ...patch, teamHubTags: projectTeamHubTags(patch.teamHubTags) ?? [] };
+  }
+
+  // Revisioned values are written ONLY by savePreferenceIfRev: a plain merge
+  // here would clobber whatever another client saved since this one loaded.
+  for (const k of REVISIONED_PREFERENCE_KEYS) {
+    if (patch[k] !== undefined) {
+      throw new Error(`${k} is written through savePreferenceIfRev, not a preference patch.`);
+    }
+  }
+  // Canonical forms; [] is the deliberate "clear" write for both lists.
+  if (patch.appPins !== undefined) {
+    patch = { ...patch, appPins: projectAppPins(patch.appPins) ?? [] };
+  }
+  if (patch.navFavorites !== undefined) {
+    patch = { ...patch, navFavorites: projectNavFavorites(patch.navFavorites) ?? [] };
   }
 
   const merge = JSON.stringify(patch);
@@ -315,7 +350,12 @@ export async function updateProfilePreferences(
     remoteMcpEnabled: merged.remoteMcpEnabled === true,
     teamPrivateReads: merged.teamPrivateReads === true,
     teamHubAppId: projectTeamHubAppId(merged.teamHubAppId),
+    clientSigninSenderId: projectTeamHubAppId(merged.clientSigninSenderId),
     teamHubTags: projectTeamHubTags(merged.teamHubTags),
+    appNav: projectAppNav(merged.appNav),
+    appPins: projectAppPins(merged.appPins),
+    navFavorites: projectNavFavorites(merged.navFavorites),
+    appOpens: projectAppOpens(merged.appOpens),
     lastReconciledVersion: merged.lastReconciledVersion || undefined,
   };
 }
@@ -384,6 +424,12 @@ export const BRAIN_PREFERENCE_KEYS = [
   'onboardedAt',
   'onboardingStep',
   'onboardingModels',
+  // How the brain's apps are organised: one shared tree, so a team sees the
+  // same folders on every device. Pins and open counts stay personal.
+  'appNav',
+  // Where client sign-in codes are mailed from (client logins C2b): one
+  // sender for the brain, whichever admin chose it.
+  'clientSigninSenderId',
 ] as const satisfies ReadonlyArray<keyof ProfilePreferences>;
 
 type BrainPreferenceKey = (typeof BRAIN_PREFERENCE_KEYS)[number];
@@ -399,7 +445,7 @@ function isBrainKey(k: string): k is BrainPreferenceKey {
  * throws (corrupt multi-user state): degrading to per-user is strictly better
  * than failing a settings save.
  */
-async function brandRowId(userId: string): Promise<string> {
+export async function brandRowId(userId: string): Promise<string> {
   try {
     return (await resolveSingleOwnerId()) ?? userId;
   } catch {
@@ -462,6 +508,119 @@ export async function savePreferencesFor(
     (merged as Record<string, unknown>)[k] = brand[k];
   }
   return merged;
+}
+
+// ── Concurrency-safe writes ────────────────────────────────────────────────
+//
+// `savePreferencesFor` merges a patch blindly (`preferences || patch`): the
+// last write wins, which is right for a theme or a timezone. Two kinds of
+// value need more, and both live here so feature code never hand-writes SQL
+// against the preferences column.
+
+/**
+ * Preferences whose value is one structure edited from several clients at
+ * once (a whole tree, say), so a blind merge would silently drop one client's
+ * work. Each carries a `rev` and is written only by `savePreferenceIfRev`;
+ * `updateProfilePreferences` refuses them.
+ */
+export const REVISIONED_PREFERENCE_KEYS = ['appNav'] as const satisfies ReadonlyArray<
+  keyof ProfilePreferences
+>;
+export type RevisionedPreferenceKey = (typeof REVISIONED_PREFERENCE_KEYS)[number];
+type RevisionedValue<K extends RevisionedPreferenceKey> = NonNullable<ProfilePreferences[K]>;
+
+export type RevSaveResult<K extends RevisionedPreferenceKey> =
+  { ok: true; value: RevisionedValue<K> } | { ok: false; current: RevisionedValue<K> | undefined };
+
+/**
+ * Save a revisioned preference compare-and-set: it lands, stamped
+ * `rev: expectedRev + 1`, only while the stored value's rev still equals
+ * `expectedRev` (an unset value counts as rev 0). Otherwise nothing is written
+ * and the CURRENT value comes back, so the caller can reapply its edit on top
+ * and retry. Brain-level keys go to the anchor row, like savePreferencesFor.
+ *
+ * The caller validates `value`; this only guarantees no lost update.
+ */
+export async function savePreferenceIfRev<K extends RevisionedPreferenceKey>(
+  userId: string,
+  key: K,
+  value: Omit<RevisionedValue<K>, 'rev'>,
+  expectedRev: number,
+): Promise<RevSaveResult<K>> {
+  const rowId = isBrainKey(key) ? await brandRowId(userId) : userId;
+  // Materialise the row so the conditional UPDATE has one to match.
+  await loadProfilePreferences(rowId);
+  const next = { ...value, rev: expectedRev + 1 } as RevisionedValue<K>;
+  const updated = await db
+    .update(profiles)
+    .set({
+      preferences: sql`${profiles.preferences} || ${JSON.stringify({ [key]: next })}::jsonb`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(profiles.userId, rowId),
+        sql`coalesce((${profiles.preferences}->${key}->>'rev')::int, 0) = ${expectedRev}`,
+      ),
+    )
+    .returning({ userId: profiles.userId });
+  if (updated.length > 0) return { ok: true, value: next };
+  const current = (await loadProfilePreferences(rowId))[key] as RevisionedValue<K> | undefined;
+  return { ok: false, current };
+}
+
+/**
+ * Per-id counters (`{ [id]: { n, at } }`), bumped far more often than they are
+ * read. Each names its cap and its read projection; the map is trimmed to the
+ * cap in batches once it grows `slack` past it, not on every bump.
+ */
+const COUNTER_PREFERENCES = {
+  appOpens: { max: APP_OPENS_MAX, slack: 50, project: projectAppOpens },
+} as const;
+export type CounterPreferenceKey = keyof typeof COUNTER_PREFERENCES;
+
+/**
+ * Add one to counter `id` under `key` and stamp it now. One atomic jsonb
+ * update, so concurrent bumps (two tabs, two devices) all count, which a
+ * read-modify-write through savePreferencesFor would not. Personal rows only:
+ * a counter describes one login's use.
+ */
+export async function bumpPreferenceCounter(
+  userId: string,
+  key: CounterPreferenceKey,
+  id: string,
+): Promise<void> {
+  const spec = COUNTER_PREFERENCES[key];
+  await loadProfilePreferences(userId);
+  const at = new Date().toISOString();
+  const map = sql`coalesce(${profiles.preferences}->${key}, '{}'::jsonb)`;
+  const [row] = await db
+    .update(profiles)
+    .set({
+      preferences: sql`jsonb_set(
+        ${profiles.preferences},
+        ARRAY[${key}]::text[],
+        ${map} || jsonb_build_object(
+          ${id}::text,
+          jsonb_build_object(
+            'n', coalesce((${map}->${id}::text->>'n')::int, 0) + 1,
+            'at', ${at}::text
+          )
+        )
+      )`,
+    })
+    .where(eq(profiles.userId, userId))
+    .returning({ map: sql<unknown>`${profiles.preferences}->${key}` });
+  const stored = row?.map;
+  if (stored && typeof stored === 'object' && Object.keys(stored).length > spec.max + spec.slack) {
+    const trimmed = JSON.stringify(spec.project(stored) ?? {});
+    await db
+      .update(profiles)
+      .set({
+        preferences: sql`jsonb_set(${profiles.preferences}, ARRAY[${key}]::text[], ${trimmed}::jsonb)`,
+      })
+      .where(eq(profiles.userId, userId));
+  }
 }
 
 /** Format a Date in the user's timezone + locale. Cached per-locale

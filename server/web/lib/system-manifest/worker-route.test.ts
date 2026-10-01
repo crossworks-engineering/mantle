@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { resolveWorkerRoute } from './worker-route';
-import { MANIFEST_WORKERS, type ManifestWorker } from './manifest';
+import { adoptWorkerParams, resolveWorkerRoute } from './worker-route';
+import { MANIFEST_WORKERS, DEFAULT_WORKER_MODEL, type ManifestWorker } from './manifest';
 
 const tts = MANIFEST_WORKERS.find((w) => w.kind === 'tts')!;
 const extractor = MANIFEST_WORKERS.find((w) => w.kind === 'extractor')!;
@@ -39,12 +39,15 @@ describe('resolveWorkerRoute', () => {
   it('keeps the expected provider/model per worker kind (drift guard)', () => {
     const byKind = Object.fromEntries(MANIFEST_WORKERS.map((w) => [w.kind, w]));
     const expected: Record<string, { provider: string; model: string }> = {
-      extractor: { provider: 'openrouter', model: 'google/gemini-3.1-flash-lite' },
-      summarizer: { provider: 'openrouter', model: 'google/gemini-3.1-flash-lite' },
-      reflector: { provider: 'openrouter', model: 'google/gemini-3.1-flash-lite' },
-      document: { provider: 'openrouter', model: 'google/gemini-3.1-flash-lite' },
-      vision: { provider: 'openrouter', model: 'google/gemini-3.1-flash-lite' },
-      image_gen: { provider: 'openrouter', model: 'google/gemini-3.1-flash-image-preview' },
+      // Model asserted via the manifest constant, not a literal: this guard is
+      // about the ROUTE (which provider each kind lands on), and a second copy
+      // of the model id here would just be one more place to forget.
+      extractor: { provider: 'openrouter', model: DEFAULT_WORKER_MODEL },
+      summarizer: { provider: 'openrouter', model: DEFAULT_WORKER_MODEL },
+      reflector: { provider: 'openrouter', model: DEFAULT_WORKER_MODEL },
+      document: { provider: 'openrouter', model: DEFAULT_WORKER_MODEL },
+      vision: { provider: 'openrouter', model: DEFAULT_WORKER_MODEL },
+      image_gen: { provider: 'openrouter', model: 'google/gemini-3.1-flash-image' },
       tts: { provider: 'openrouter', model: 'x-ai/grok-voice-tts-1.0' },
       stt: { provider: 'openrouter', model: 'openai/gpt-4o-mini-transcribe' },
       search: { provider: 'openrouter', model: 'perplexity/sonar' },
@@ -74,5 +77,56 @@ describe('resolveWorkerRoute', () => {
     expect(resolveWorkerRoute(altOnly, new Set())).toBeNull();
     // Only xai → alt route is chosen.
     expect(resolveWorkerRoute(altOnly, new Set(['xai']))?.provider).toBe('xai');
+  });
+});
+
+describe('adoptWorkerParams', () => {
+  const decider = MANIFEST_WORKERS.find((w) => w.kind === 'decider')!;
+  const live = {
+    zdr: true,
+    timeout_ms: 2000,
+    defer_below: 0.5,
+    act_alone_at: 0.95,
+    uses: {
+      passage_scoring: { enabled: true, mode: 'live' as const, threshold: 2 },
+      delegation_hint: { enabled: true, mode: 'shadow' as const },
+      context_pruning: { enabled: true, mode: 'shadow' as const, threshold: 1 },
+    },
+  };
+
+  it('keeps the decider switchboard on adopt (uses stay on)', () => {
+    const out = adoptWorkerParams('decider', live, decider.params) as typeof live;
+    expect(out).toMatchObject(live);
+    // Nothing the operator set is lost; only uses the row lacks are added.
+    for (const [use, cfg] of Object.entries(out.uses)) {
+      if (use in live.uses) expect(cfg).toEqual(live.uses[use as keyof typeof live.uses]);
+      else expect(cfg).toEqual((decider.params as { uses: Record<string, unknown> }).uses[use]);
+    }
+  });
+
+  it('adds a manifest use the live row lacks, as the manifest ships it', () => {
+    const { context_pruning: _drop, ...rest } = live.uses;
+    const out = adoptWorkerParams(
+      'decider',
+      { ...live, uses: rest },
+      decider.params,
+    ) as typeof live;
+    expect(out.uses.passage_scoring).toEqual(live.uses.passage_scoring);
+    expect(out.uses.context_pruning).toEqual({ enabled: true, mode: 'live', threshold: 1.0 });
+  });
+
+  it('fills missing top-level keys from the manifest', () => {
+    const out = adoptWorkerParams('decider', { uses: live.uses }, decider.params);
+    expect(out).toMatchObject({ zdr: true, timeout_ms: 1500, defer_below: 0.6, act_alone_at: 0.9 });
+  });
+
+  it('takes the manifest params when the decider row has none', () => {
+    expect(adoptWorkerParams('decider', null, decider.params)).toBe(decider.params);
+  });
+
+  it('other workers still reset to the manifest params', () => {
+    expect(adoptWorkerParams('extractor', { extract_facts: false }, extractor.params)).toBe(
+      extractor.params,
+    );
   });
 });

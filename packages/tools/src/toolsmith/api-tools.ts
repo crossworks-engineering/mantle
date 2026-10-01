@@ -5,7 +5,7 @@
  * Split out of builtins-toolsmith.ts; bodies moved verbatim.
  */
 
-import { type ToolHandler } from '@mantle/db';
+import { isUniqueViolation, type ToolHandler } from '@mantle/db';
 import { listApiKeys } from '@mantle/api-keys';
 import { loadProfilePreferences } from '@mantle/content';
 import { createTool, deleteTool, listToolsForOwner, updateTool } from '../crud';
@@ -227,7 +227,7 @@ export const api_tool_create: BuiltinToolDef = {
       };
     } catch (err) {
       const msg = errorMessage(err);
-      if (msg.includes('tools_owner_slug_uq') || msg.includes('duplicate key')) {
+      if (isUniqueViolation(err)) {
         return {
           ok: false,
           error: `a tool with slug '${slug}' already exists — use api_tool_update`,
@@ -488,7 +488,12 @@ export const api_tool_test: BuiltinToolDef = {
     }
     const args = rec(input.input) ?? {};
     const t0 = performance.now();
-    const result = await dispatchTool(row, args, { ownerId: ctx.ownerId, step: ctx.step });
+    // The test call runs for whoever asked for the test: it inherits the surface.
+    const result = await dispatchTool(row, args, {
+      ownerId: ctx.ownerId,
+      step: ctx.step,
+      ...(ctx.surface ? { surface: ctx.surface } : {}),
+    });
     const duration_ms = Math.round(performance.now() - t0);
     if (!result.ok) {
       return { ok: true, output: { slug, test_passed: false, error: result.error, duration_ms } };

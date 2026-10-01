@@ -17,11 +17,12 @@
  * multi-DB setup — and is validated as a UUID so a typo fails loud instead of
  * silently scoping every query to nothing.
  */
-import { eq } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import { db } from './client';
 import { authUsers } from './schema/auth-users';
 import { env } from '@mantle/config';
 import { UUID_RE } from '@mantle/std';
+import { currentSpaceScope } from './viewer';
 
 /** Number of rows in auth.users. 0 ⇒ fresh install (signup is open). */
 export async function countUsers(): Promise<number> {
@@ -48,12 +49,13 @@ export async function resolveSingleOwnerId(): Promise<string | null> {
     }
     return configured;
   }
-  const [anchor] = await db
-    .select({ id: authUsers.id })
-    .from(authUsers)
-    .where(eq(authUsers.isOwner, true))
-    .limit(1);
-  if (anchor) return anchor.id;
+  // Through mantle_brain_id() (SECURITY DEFINER since 0187), not a read of
+  // auth.users: the answer is the same, and it works under every viewer
+  // scope, the client level included, whose role holds no grant on logins.
+  const [anchor] = (await db.execute(sql`select mantle_brain_id() as id`)) as unknown as {
+    id: string | null;
+  }[];
+  if (anchor?.id) return anchor.id;
   // No anchor marked — fresh install (0 rows: wait) or a pre-0111 DB mid-upgrade
   // (1 row: it's the owner). Multiple rows without an anchor is corrupt.
   const rows = await db.select({ id: authUsers.id }).from(authUsers).limit(2);
@@ -95,4 +97,24 @@ export async function waitForOwner(opts: WaitForOwnerOpts = {}): Promise<string>
     }
     await new Promise((r) => setTimeout(r, intervalMs));
   }
+}
+
+// The brain id never changes for the life of a process (the anchor row can't be
+// deleted), so it is resolved once. Null results are not cached: a fresh
+// install gets its first account later.
+let brainOwnerIdCache: string | null = null;
+
+/**
+ * Whether `ownerId` is the BRAIN, the owner every brain path keys on. Items
+ * owned by anything else (a member's personal space, from member logins Phase
+ * 2) must never be learned: no extraction, no Recall compile. Today the brain
+ * is the anchor login, whose id is also the brain space's id (0165), so the
+ * answer did not change when nodes.owner_id moved to spaces.
+ */
+export async function isBrainOwnerId(ownerId: string): Promise<boolean> {
+  // Inside a personal-space scope every row is the space's own: never the
+  // brain (and the space role may not read auth.users to find out).
+  if (currentSpaceScope()) return false;
+  if (!brainOwnerIdCache) brainOwnerIdCache = await resolveSingleOwnerId();
+  return brainOwnerIdCache !== null && ownerId === brainOwnerIdCache;
 }

@@ -61,7 +61,7 @@ describe('purposeArchetypeLabel', () => {
 
 describe('deriveDisplayName', () => {
   it('takes the first name from a full name', () => {
-    expect(deriveDisplayName('Jason Schoeman')).toBe('Jason');
+    expect(deriveDisplayName('Jason Botha')).toBe('Jason');
     expect(deriveDisplayName('  Mary  Jane  Watson ')).toBe('Mary');
   });
 

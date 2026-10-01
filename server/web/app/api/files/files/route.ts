@@ -1,6 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
+import { allPrivateRows, listStateOf } from '@/lib/admin-private-rows';
 import { ensureFilesRootBranch, listFiles, listRecentFiles, upsertFile } from '@/lib/files';
 import {
   MEDIA_EXTS,
@@ -10,12 +11,16 @@ import {
   extOf,
   maxStreamedUploadBytes,
   sweepSpool,
+  FILES_ROOT_LABEL,
 } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 import { promises as fs } from 'node:fs';
 import { readMultipartUpload, type ParsedUpload } from '@/lib/upload-stream';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
+import { isBusy, isUniqueViolation } from '@mantle/db';
+import { TreeVisibilityError, guardNewFileIn } from '@mantle/content/tree';
+import { treeErrorResponse } from '@/lib/tree-route';
 
 const ListQuery = z.union([
   z.object({ parent: z.string().min(1).max(500) }),
@@ -33,11 +38,29 @@ export async function GET(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: 'invalid query' }, { status: 400 });
   }
+  // `?state=brain|private|all` (item-list alignment, lib/admin-private-rows):
+  // the caller's own private files join the ROOT folder (by name) and Recent
+  // (by time); no other folder holds any. Default brain, as before.
+  const state = listStateOf(url.searchParams);
   if ('recent' in parsed.data) {
-    const files = await listRecentFiles({ ownerId: user.id, limit: parsed.data.limit });
+    const limit = parsed.data.limit;
+    const [brain, own] = await Promise.all([
+      state === 'private' ? [] : listRecentFiles({ ownerId: user.id, limit }),
+      state === 'brain' ? [] : allPrivateRows(user, 'file', { cap: limit ?? 50 }),
+    ]);
+    const files = [...brain, ...own]
+      .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0))
+      .slice(0, Math.min(200, Math.max(1, limit ?? 50)));
     return NextResponse.json({ files });
   }
-  const files = await listFiles({ ownerId: user.id, parentPath: parsed.data.parent });
+  const atRoot = parsed.data.parent === FILES_ROOT_LABEL;
+  const [brain, own] = await Promise.all([
+    state === 'private' ? [] : listFiles({ ownerId: user.id, parentPath: parsed.data.parent }),
+    state === 'brain' || !atRoot ? [] : allPrivateRows(user, 'file', { sort: 'title' }),
+  ]);
+  const files = [...brain, ...own].sort((a, b) =>
+    ('filename' in a ? a.filename : a.title).localeCompare('filename' in b ? b.filename : b.title),
+  );
   return NextResponse.json({ files });
 }
 
@@ -47,6 +70,9 @@ export async function GET(req: Request) {
  *      STREAMED to disk, capped by MANTLE_MAX_UPLOAD_MB (default 512)
  *   2. application/json with `{ parentPath, filename, content }` for
  *      text-file creation (markdown / txt / json from the editor)
+ * Into a shared folder the file is read by the team or clients at once:
+ * 409 `visibility` (TreeVisibilityRefusal) unless `confirm` is `true` (a
+ * form field, sent before the file part, or the JSON body's `confirm`).
  */
 export async function POST(req: Request) {
   const user = await getOwnerOr401();
@@ -95,6 +121,9 @@ export async function POST(req: Request) {
       }
       let row;
       try {
+        await guardNewFileIn(user.id, parentPath, upload.filename, {
+          confirm: parsed.fields.confirm === 'true',
+        });
         row = await upsertFile({
           ownerId: user.id,
           parentPath,
@@ -132,12 +161,16 @@ export async function POST(req: Request) {
       parentPath: z.string().min(1).max(500),
       filename: z.string().min(1).max(200),
       content: z.string().max(2_000_000), // 2 MB cap for inline text creation
+      confirm: z.boolean().optional(),
     });
     const parsed = TextBody.safeParse(raw);
     if (!parsed.success) {
       return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
     }
     const buf = Buffer.from(parsed.data.content, 'utf8');
+    await guardNewFileIn(user.id, parsed.data.parentPath, parsed.data.filename, {
+      confirm: parsed.data.confirm === true,
+    });
     const row = await upsertFile({
       ownerId: user.id,
       parentPath: parsed.data.parentPath,
@@ -161,8 +194,9 @@ export async function POST(req: Request) {
     });
     return NextResponse.json({ file: row });
   } catch (err) {
+    if (err instanceof TreeVisibilityError || isBusy(err)) return treeErrorResponse(err);
     const msg = errorMessage(err);
-    if (msg.includes('file_filename_in_parent_uq') || msg.includes('duplicate key')) {
+    if (isUniqueViolation(err)) {
       return NextResponse.json(
         { error: 'a file with that name already exists in this folder' },
         { status: 409 },

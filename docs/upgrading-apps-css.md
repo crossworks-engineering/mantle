@@ -1,7 +1,7 @@
 # Rolling a box past v0.230.57: every mini app must be rebuilt
 
 **Applies to any box whose apps were built before v0.230.57 (2026-08-14).**
-Found on NATREF 2026-08-19, in the roll from v0.230.27 to v0.230.69.
+Found on a client box 2026-08-19, in the roll from v0.230.27 to v0.230.69.
 
 ## The symptom
 

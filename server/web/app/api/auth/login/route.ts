@@ -1,10 +1,11 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { db, authUsers, eq, sql } from '@mantle/db';
-import { buildSessionCookie, loginWithPassword, SESSION_COOKIE_NAME } from '@/lib/auth';
-import { secureCookies } from '@/lib/auth-constants';
+import { authenticatePassword, setSessionCookie } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { clientIp, rateLimit } from '@/lib/rate-limit';
+import { refuseCrossSiteAuthPost } from '@/lib/auth/preflight';
+import { AUTH_BODY_CEILING_BYTES, readJsonCapped } from '@/lib/body-limit';
 
 const LoginBody = z.object({
   email: z.string().email(),
@@ -17,6 +18,8 @@ const LoginBody = z.object({
 const AUTH_FAILED_MESSAGE = 'Invalid email or password.';
 
 export async function POST(req: Request) {
+  const refused = refuseCrossSiteAuthPost(req);
+  if (refused) return refused;
   // Rate limit by client IP before bcrypt so a flood doesn't pin CPU.
   // 10/min comfortably fits a user mistyping a password a few times;
   // it's brutal for credential stuffing.
@@ -32,15 +35,15 @@ export async function POST(req: Request) {
     );
   }
 
-  const raw = await req.json().catch(() => ({}));
+  const raw = (await readJsonCapped(req, AUTH_BODY_CEILING_BYTES)) ?? {};
   const parsed = LoginBody.safeParse(raw);
   if (!parsed.success) {
     return NextResponse.json({ error: AUTH_FAILED_MESSAGE }, { status: 401 });
   }
 
   const email = parsed.data.email.trim().toLowerCase();
-  const userId = await loginWithPassword(email, parsed.data.password);
-  if (!userId) {
+  const login = await authenticatePassword(email, parsed.data.password);
+  if (!login) {
     // No actor id — the attempted email may not even exist. The 10/min/IP rate
     // limit above caps how fast this can grow the trail.
     auditFireAndForget({
@@ -53,6 +56,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: AUTH_FAILED_MESSAGE }, { status: 401 });
   }
 
+  const userId = login.id;
   await db
     .update(authUsers)
     .set({ lastLoginAt: sql`now()` })
@@ -66,14 +70,7 @@ export async function POST(req: Request) {
     ...requestMetaFrom(req),
   });
 
-  const { value, maxAgeSec } = buildSessionCookie(userId);
   const res = NextResponse.json({ ok: true });
-  res.cookies.set(SESSION_COOKIE_NAME, value, {
-    httpOnly: true,
-    secure: secureCookies(req),
-    sameSite: 'lax',
-    path: '/',
-    maxAge: maxAgeSec,
-  });
+  setSessionCookie(res, req, userId, login.sessionEpoch);
   return res;
 }

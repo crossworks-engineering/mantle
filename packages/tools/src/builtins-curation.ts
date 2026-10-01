@@ -39,7 +39,7 @@ import { DEEPGRAM_STT_MODELS } from '@mantle/voice-client/catalogs/deepgram';
 import { ASSEMBLYAI_STT_MODELS } from '@mantle/voice-client/catalogs/assemblyai';
 import { XAI_TTS_MODEL_ID, XAI_STT_MODELS } from '@mantle/voice-client/catalogs/xai';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
-import { refuseTeamSurface } from './builtins-crawl';
+import { refuseNonOwner } from './builtins-crawl';
 import { resolveOpenRouterKey } from './builtins-research';
 import { str } from './coerce';
 import { errorMessage } from '@mantle/std';
@@ -166,7 +166,7 @@ async function loadCatalog(): Promise<
   const data = (res.json as { data?: unknown[] }).data ?? [];
   const perM = (v: unknown): number | null => {
     const n = Number(v);
-    return Number.isFinite(n) && n >= 0 ? n * 1_000_000 : null;
+    return Number.isFinite(n) && n >= 0 ? Math.round(n * 1_000_000 * 10_000) / 10_000 : null;
   };
   const models: CatalogModel[] = [];
   for (const raw of data) {
@@ -206,6 +206,7 @@ async function loadCatalog(): Promise<
 
 const openrouter_rankings: BuiltinToolDef = {
   slug: 'openrouter_rankings',
+  ownerOnly: true,
   name: 'OpenRouter usage rankings',
   description:
     "Real-world model popularity: total tokens per model across OpenRouter, aggregated over the requested window (their public top-50 daily dataset). Returns `models` (slug + tokens, busiest first), `asOf`, and the required `attribution` line. Filter by `category` (e.g. 'programming') or `modality` to rank for a specific job. Use with `openrouter_benchmarks` when curating pools — usage says what people trust, benchmarks say what scores. Uses the owner's OpenRouter key.",
@@ -238,7 +239,7 @@ const openrouter_rankings: BuiltinToolDef = {
     },
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
-    const refused = refuseTeamSurface(ctx);
+    const refused = refuseNonOwner(ctx);
     if (refused) return refused;
     const apiKey = await resolveOpenRouterKey(ctx.ownerId);
     if (!apiKey) return { ok: false, error: needKey() };
@@ -287,6 +288,7 @@ const openrouter_rankings: BuiltinToolDef = {
 
 const openrouter_benchmarks: BuiltinToolDef = {
   slug: 'openrouter_benchmarks',
+  ownerOnly: true,
   name: 'OpenRouter benchmarks',
   description:
     "Benchmark scores for models, from OpenRouter's benchmarks dataset. `source` picks the shape: 'artificial-analysis' (composite intelligence/coding/agentic indices with pricing), 'design-arena' (ELO/win rates), 'openrouter' (their web-search + classic evals). Filter with `task_type` ('coding', 'intelligence', 'agentic', 'search'). Pair with `openrouter_rankings` when curating: scores + real usage together beat either alone. Uses the owner's OpenRouter key.",
@@ -314,7 +316,7 @@ const openrouter_benchmarks: BuiltinToolDef = {
     },
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
-    const refused = refuseTeamSurface(ctx);
+    const refused = refuseNonOwner(ctx);
     if (refused) return refused;
     const apiKey = await resolveOpenRouterKey(ctx.ownerId);
     if (!apiKey) return { ok: false, error: needKey() };
@@ -338,12 +340,13 @@ const openrouter_benchmarks: BuiltinToolDef = {
 
 const openrouter_task_classes: BuiltinToolDef = {
   slug: 'openrouter_task_classes',
+  ownerOnly: true,
   name: 'OpenRouter task classifications',
   description:
     'Market-share breakdown of OpenRouter traffic by task type (code generation, summarization, web search, …) over the last 7 days, including the top models per classification. The fastest way to see which models dominate a specific JOB — useful for the worker pools (summarizer, vision, …). Uses the owner’s OpenRouter key.',
   inputSchema: { type: 'object', properties: {} },
   handler: async (_input, ctx): Promise<ToolHandlerResult> => {
-    const refused = refuseTeamSurface(ctx);
+    const refused = refuseNonOwner(ctx);
     if (refused) return refused;
     const apiKey = await resolveOpenRouterKey(ctx.ownerId);
     if (!apiKey) return { ok: false, error: needKey() };
@@ -355,6 +358,7 @@ const openrouter_task_classes: BuiltinToolDef = {
 
 const model_catalog: BuiltinToolDef = {
   slug: 'model_catalog',
+  ownerOnly: true,
   name: 'Model catalog with pricing',
   description:
     "Look up models with pricing: OpenRouter's FULL catalog — chat, image/video generators, speech (TTS) and transcription (STT) engines, embeddings, rerank — each with slug, live input/output $ per 1M, context, `kind`, and `inputModalities`/`outputModalities` (the output side separates an image READER from a GENERATOR). Plus the voice models Mantle reaches through its own adapters (ElevenLabs, Deepgram, AssemblyAI, Google). Pricing is NULL wherever a model is not token-billed — per-minute audio and video routes, those adapter rows — so leave that snapshot empty rather than invent a rate. THE source for slugs and pricing when writing `model_pool_set` entries; each row's `provider` is the route to record. Filter by `kind` per pool; `q` searches name/slug, `ids` fetches exact slugs. Keyless; cached ~5 minutes.",
@@ -383,7 +387,7 @@ const model_catalog: BuiltinToolDef = {
     },
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
-    const refused = refuseTeamSurface(ctx);
+    const refused = refuseNonOwner(ctx);
     if (refused) return refused;
     const res = await loadCatalog();
     if (!res.ok) return { ok: false, error: res.error };
@@ -483,6 +487,7 @@ async function poolFitIssue(pool: string, routes: CuratedRoute[]): Promise<strin
 
 const model_pool_set: BuiltinToolDef = {
   slug: 'model_pool_set',
+  ownerOnly: true,
   name: 'Add or update a curated pool entry',
   description:
     "Upsert one model into a curated pool (matched by pool + name; existing entries are updated in place). `routes` is the model's slug per provider — always include the `openrouter` route, plus the direct-provider slug when it differs (e.g. anthropic 'claude-sonnet-5'). Copy `pricing` from `model_catalog` — it is a snapshot that keeps the $100 comparison working on direct-connected brains. Checked against the live catalog and REFUSED when the model cannot do the pool's job: read `outputModalities` first — one that outputs images is a GENERATOR, never a reader (the Read-images pool wants a capable text-out model that accepts pictures). Curation only: this changes the shortlist at /models/pools, never what any agent or worker runs.",
@@ -521,7 +526,7 @@ const model_pool_set: BuiltinToolDef = {
     required: ['pool', 'name', 'routes'],
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
-    const refused = refuseTeamSurface(ctx);
+    const refused = refuseNonOwner(ctx);
     if (refused) return refused;
     const pool = str(input.pool).trim();
     if (!MODEL_POOL_IDS.has(pool)) {
@@ -607,6 +612,7 @@ const model_pool_set: BuiltinToolDef = {
 
 const model_pool_remove: BuiltinToolDef = {
   slug: 'model_pool_remove',
+  ownerOnly: true,
   name: 'Remove a curated pool entry',
   description:
     'Remove one model from a curated pool, matched by pool + exact name (find both with `model_pool_list`). Only the shortlist changes — nothing that currently uses the model is affected.',
@@ -619,7 +625,7 @@ const model_pool_remove: BuiltinToolDef = {
     required: ['pool', 'name'],
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
-    const refused = refuseTeamSurface(ctx);
+    const refused = refuseNonOwner(ctx);
     if (refused) return refused;
     const pool = str(input.pool).trim();
     const name = str(input.name).trim();

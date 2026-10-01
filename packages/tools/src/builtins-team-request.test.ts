@@ -1,6 +1,6 @@
 /**
  * Behavioural tests for team_request_create's WRITE path. builtins-team.test.ts
- * pins the surface gate, the arg check and the forum-side provenance stamp;
+ * pins the surface gate, the arg check and the member provenance stamp;
  * this file pins what actually lands in the task row and for whom.
  *
  * The tool is the ONLY write the team responder holds, and its whole safety
@@ -21,18 +21,17 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 vi.mock('@mantle/content', () => ({
+  countTeamRequestsFiled: vi.fn(),
+  TEAM_REQUESTS_PER_TURN: 3,
+  TEAM_REQUESTS_PER_DAY: 20,
   createTask: vi.fn(),
-  listNotifiableMembers: vi.fn(),
   listTeamAccess: vi.fn(),
   listTeamMemberActivity: vi.fn(),
   listTeamThread: vi.fn(),
   nodeUrl: (id: string) => `https://brain.test/n/${id}`,
-  notifyMembers: vi.fn(),
-  MAX_NOTIFICATION_BODY: 2000,
-  MAX_NOTIFY_RECIPIENTS: 5,
 }));
 
-import { createTask, listTeamThread } from '@mantle/content';
+import { countTeamRequestsFiled, createTask, listTeamThread } from '@mantle/content';
 import { TEAM_TOOLS, TEAM_REQUEST_TAG } from './builtins-team';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 
@@ -73,6 +72,7 @@ beforeEach(() => {
     async (_ownerId, args) => ({ id: 'task-new', title: args.title }) as never,
   );
   vi.mocked(listTeamThread).mockResolvedValue([]);
+  vi.mocked(countTeamRequestsFiled).mockResolvedValue(0);
 });
 
 describe('team_request_create write path', () => {
@@ -92,8 +92,6 @@ describe('team_request_create write path', () => {
       contactId: 'contact-9',
       contactName: 'Sam',
       threadMessageId: null,
-      topicId: null,
-      postId: null,
       attachments: [],
     });
     expect(typeof teamRequest.filedAt).toBe('string');
@@ -159,6 +157,58 @@ describe('team_request_create write path', () => {
     expect(teamRequest.threadMessageId).toBe('gone');
     expect(teamRequest.attachments).toEqual([]);
     expect(args.body).not.toContain('**Attachments:**');
+  });
+
+  it('stamps the task extract-exempt (source team-request) until an admin acts', async () => {
+    outputOf(await request.handler(ARGS, teamCtx));
+    const extra = written().args.extraData as Record<string, unknown>;
+    expect(extra.source).toBe('team-request');
+    expect(extra.reviewed_at).toBeUndefined();
+  });
+
+  it('refuses a fourth request in one member message, before any write', async () => {
+    vi.mocked(countTeamRequestsFiled).mockImplementation(async (_o, by) =>
+      'threadMessageId' in by ? 3 : 0,
+    );
+    const err = errorOf(
+      await request.handler(ARGS, {
+        ownerId: 'owner-1',
+        surface: { kind: 'team', loginId: 'login-1', inboundMessageId: 'm1' },
+      }),
+    );
+    expect(err).toMatch(/request limit reached: 3 requests per message/);
+    expect(countTeamRequestsFiled).toHaveBeenCalledWith('owner-1', { threadMessageId: 'm1' });
+    expect(createTask).not.toHaveBeenCalled();
+  });
+
+  it('refuses past the daily cap for the login, before any write', async () => {
+    vi.mocked(countTeamRequestsFiled).mockImplementation(async (_o, by) =>
+      'loginId' in by ? 20 : 0,
+    );
+    const err = errorOf(
+      await request.handler(ARGS, {
+        ownerId: 'owner-1',
+        surface: { kind: 'team', loginId: 'login-1', inboundMessageId: 'm1' },
+      }),
+    );
+    expect(err).toMatch(/request limit reached: 20 requests in 24 hours/);
+    const byLogin = vi
+      .mocked(countTeamRequestsFiled)
+      .mock.calls.find(([, by]) => 'loginId' in by)?.[1] as { loginId: string; since: Date };
+    expect(byLogin.loginId).toBe('login-1');
+    expect(Date.now() - byLogin.since.getTime()).toBeGreaterThanOrEqual(24 * 60 * 60 * 1000 - 1000);
+    expect(createTask).not.toHaveBeenCalled();
+  });
+
+  it('files the request while under both caps', async () => {
+    vi.mocked(countTeamRequestsFiled).mockResolvedValue(2);
+    outputOf(
+      await request.handler(ARGS, {
+        ownerId: 'owner-1',
+        surface: { kind: 'team', loginId: 'login-1', inboundMessageId: 'm1' },
+      }),
+    );
+    expect(createTask).toHaveBeenCalledTimes(1);
   });
 
   it('reports a store failure as a tool error', async () => {

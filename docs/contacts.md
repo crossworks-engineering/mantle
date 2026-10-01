@@ -5,22 +5,23 @@ people whose mail Mantle will ingest. It does **two** jobs at once:
 
 1. **Identity**: fields the human form expects (name + company + emails + cell).
 2. **Allowlist; both directions.** The set of contact emails IS the gate for
-   *outbound* `email_send` *and* (since 2026-06-04) *inbound* ingestion. Each
+   _outbound_ `email_send` _and_ (since 2026-06-04) _inbound_ ingestion. Each
    contact carries a list of entries (`data.emails`), each a full address
-   (`jason@schoeman.me`) or a `@domain` wildcard (`@schoeman.me` = all mail from
-   that domain). With zero contacts, *sending* is open (bootstrap) but *inbound*
+   (`alice@example.com`) or a `@domain` wildcard (`@example.com` = all mail from
+   that domain). With zero contacts, _sending_ is open (bootstrap) but _inbound_
    ingests nothing. Adding a contact unlocks mailing them AND lets their mail
    into the brain (with a 90-day backfill). See §2 for the deliberate
    send-vs-ingest asymmetry.
 
 Companion docs:
+
 - [`email-send.md`](./email-send.md), the send half; its gate reads from here.
 - [`email-ingest.md`](./email-ingest.md), the inbound half; its `ContactGate`
   reads from here (`§3a`, `§6`).
 - [`memory.md`](./memory.md), the brain layers a contact node's `description`
   feeds into (summary / embedding / facts / entities).
 - [`architecture.md` §6](./architecture.md#6-the-nodes-table--mantles-central-abstraction)
-, the `nodes` pattern this rides on (no new table).
+  , the `nodes` pattern this rides on (no new table).
 
 ---
 
@@ -94,13 +95,13 @@ All unit-tested in [`contacts.test.ts`](../packages/content/src/contacts.test.ts
 `blockedRecipients` / `allowlistError`, called from both `email_send` and
 `email_page`:
 
-| Contacts list | Send gate | Allowed recipients |
-|---|---|---|
-| **Empty** | OFF (bootstrap) | anyone |
-| **Non-empty** | ON | the user's own account addresses **∪** contacts' **concrete** addresses |
+| Contacts list | Send gate       | Allowed recipients                                                      |
+| ------------- | --------------- | ----------------------------------------------------------------------- |
+| **Empty**     | OFF (bootstrap) | anyone                                                                  |
+| **Non-empty** | ON              | the user's own account addresses **∪** contacts' **concrete** addresses |
 
-Refusal returns a clear message: *"these recipients aren't in the user's
-contact list: …  Ask the user to confirm and add them as contacts at /contacts."*
+Refusal returns a clear message: _"these recipients aren't in the user's
+contact list: … Ask the user to confirm and add them as contacts at /contacts."_
 No tool-loop side effects, no surprise sends.
 
 **Inbound**: defined in [`contact-gate.ts`](../packages/content/src/contact-gate.ts)
@@ -111,7 +112,7 @@ nothing inbound (an empty allowlist is an empty inbox). Full detail in
 [`email-ingest.md` §3a](./email-ingest.md#3a-the-gate--loadcontactgate).
 
 **The deliberate asymmetry:** domains are **inbound-only**. A `@domain` wildcard
-means "trust mail *from* this domain"; it does **not** let Saskia send to an
+means "trust mail _from_ this domain"; it does **not** let Saskia send to an
 arbitrary address there (you can't mail a whole domain). So the send gate reads
 concrete addresses only (`partitionEmailEntries(...).addresses`); the inbound
 gate uses both addresses and domains.
@@ -123,28 +124,21 @@ unlocks emailing them + ingesting their mail; deleting one revokes both.
 
 ---
 
-## 2a. Team membership: a role a contact can hold
+## 2a. Team membership (retired)
 
-Since v0.114.0 a contact can additionally be a **team member**: a live row in
-`contact_team_tokens` holding the SHA-256 of a short shown-once token (8
-chars, look-alike-free alphabet). The `/contacts` UI mints it via a header
-"Team member" switch (shown-once dialog with copy; regenerate + remove
-confirms; a list badge marks members).
+From v0.114.0 until member logins Phase 6 a contact could be a **team
+member**: a row in `contact_team_tokens` holding the SHA-256 of a short
+shown-once team code, minted from a "Team member" switch on `/contacts`. The
+code opened the team portal (`/team`, `/hub`, the forum) and team links on
+`/s`; all of those were retired in Phase 6 ([team-chat.md](./team-chat.md)),
+and for one release a code could still redeem a member invite once.
 
-The token is that person's **only credential** on Mantle's external surfaces,
-team-mode shares (`/s/<token>`, see
-[`app-authoring-guide.md`](./app-authoring-guide.md)), the Team Workspace +
-its Assistant (`/team`), and the Team Hub (`/hub`), see
-[`team-chat.md`](./team-chat.md), and every action on those surfaces is
-audited against the contact. Membership is the single source of truth:
-disabling the toggle or deleting the contact deletes the row, and because
-every request re-checks liveness, access dies immediately, mid-session.
-
-Helpers live in `packages/content/src/team-tokens.ts`
-(`enableTeamMember` / `rotateTeamToken` / `disableTeamMember` /
-`verifyTeamToken` + a status map); `ContactRow` carries
-`team: { since, lastUsedAt } | null`; the API is
-`POST /api/contacts/[id]/team` (`enable | rotate | disable`).
+Team codes are gone now (migration 0178 dropped the table, and
+`ContactRow` no longer carries `team`). Users are the team: an admin
+invites a person, from their contact or by email, and they sign in as a
+member login ([member-logins.md](./member-logins.md) section 9). A
+contact's old portal chat stays readable as its Chat archive on
+`/team-admin`.
 
 ---
 
@@ -184,6 +178,7 @@ Cell: <country_code> <cell>
 ```
 
 …and produces:
+
 - `nodes.data.summary`, a one-sentence summary.
 - `nodes.data.entities`, names mentioned.
 - `nodes.embedding`, the search vector.
@@ -212,18 +207,18 @@ note.
 
 In [`builtins-contacts.ts`](../packages/tools/src/builtins-contacts.ts):
 
-| Tool | Purpose |
-|---|---|
-| `contact_find(query)` | The name→{id,email,cell} resolver. Use FIRST when the user says "email Modular". |
-| `contact_list` | Browse, newest-updated first. |
-| `contact_get(id)` | Full record incl. counters. |
-| `contact_create(…)` | Save someone. **Only when explicitly asked.** |
-| `contact_update(id, …)` | Patch, only fields you pass change. |
-| `contact_delete(id)` | Removes from the email allowlist too. |
+| Tool                    | Purpose                                                                          |
+| ----------------------- | -------------------------------------------------------------------------------- |
+| `contact_find(query)`   | The name→{id,email,cell} resolver. Use FIRST when the user says "email Modular". |
+| `contact_list`          | Browse, newest-updated first.                                                    |
+| `contact_get(id)`       | Full record incl. counters.                                                      |
+| `contact_create(…)`     | Save someone. **Only when explicitly asked.**                                    |
+| `contact_update(id, …)` | Patch, only fields you pass change.                                              |
+| `contact_delete(id)`    | Removes from the email allowlist too.                                            |
 
 All ungated (`requiresConfirm: false`), restraint lives in the tool
-descriptions, which are loud about *"use ONLY when the user explicitly asks…
-Never add contacts on your own initiative just because someone's name came up."*
+descriptions, which are loud about _"use ONLY when the user explicitly asks…
+Never add contacts on your own initiative just because someone's name came up."_
 
 **Auto-granted at boot** to responder/assistant via `CONTACT_AUTO_GRANT_SLUGS`
 (part of `CORE_AUTO_GRANT_SLUGS` in `server/api/src/main.ts`): read + add +
@@ -278,20 +273,20 @@ split is the intentional shape.
 
 ## 7. Files
 
-| Concern | File |
-|---|---|
-| Pure shape + format helpers (browser-safe leaf) | [`packages/content-core/src/contacts-format.ts`](../packages/content-core/src/contacts-format.ts) |
-| DB CRUD + activity bumper | [`packages/content/src/contacts.ts`](../packages/content/src/contacts.ts) |
-| Pure-helper tests | [`packages/content/src/contacts.test.ts`](../packages/content/src/contacts.test.ts) |
-| Saskia's tools | [`packages/tools/src/builtins-contacts.ts`](../packages/tools/src/builtins-contacts.ts) |
-| Send-side gate + counter bump | [`packages/tools/src/builtins-email.ts`](../packages/tools/src/builtins-email.ts) (`blockedRecipients`, `noteContactActivity`) |
-| Auto-grant to responder/assistant | `CORE_AUTO_GRANT_SLUGS` in [`server/api/src/main.ts`](../server/api/src/main.ts) |
-| Extractor body resolver | [`server/api/src/agent/extractor.ts`](../server/api/src/agent/extractor.ts) (`contact` case + `DEFAULT_EXTRACT_TYPES`) |
-| Same-surname reconciler guard | [`server/api/src/agent/person-names.ts`](../server/api/src/agent/person-names.ts) |
-| Server REST | [`server/web/app/api/contacts/`](../server/web/app/api/contacts/) |
-| Server page (SSR) | [`jackdaw/app/(app)/contacts/page.tsx`](../jackdaw/app/(app)/contacts/page.tsx) |
-| Client UI | [`jackdaw/app/(app)/contacts/contacts-client.tsx`](../jackdaw/app/(app)/contacts/contacts-client.tsx) |
-| Lib re-export (server-only) | [`server/web/lib/contacts.ts`](../server/web/lib/contacts.ts) |
+| Concern                                         | File                                                                                                                           |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Pure shape + format helpers (browser-safe leaf) | [`packages/content-core/src/contacts-format.ts`](../packages/content-core/src/contacts-format.ts)                              |
+| DB CRUD + activity bumper                       | [`packages/content/src/contacts.ts`](../packages/content/src/contacts.ts)                                                      |
+| Pure-helper tests                               | [`packages/content/src/contacts.test.ts`](../packages/content/src/contacts.test.ts)                                            |
+| Saskia's tools                                  | [`packages/tools/src/builtins-contacts.ts`](../packages/tools/src/builtins-contacts.ts)                                        |
+| Send-side gate + counter bump                   | [`packages/tools/src/builtins-email.ts`](../packages/tools/src/builtins-email.ts) (`blockedRecipients`, `noteContactActivity`) |
+| Auto-grant to responder/assistant               | `CORE_AUTO_GRANT_SLUGS` in [`server/api/src/main.ts`](../server/api/src/main.ts)                                               |
+| Extractor body resolver                         | [`server/api/src/agent/extractor.ts`](../server/api/src/agent/extractor.ts) (`contact` case + `DEFAULT_EXTRACT_TYPES`)         |
+| Same-surname reconciler guard                   | [`server/api/src/agent/person-names.ts`](../server/api/src/agent/person-names.ts)                                              |
+| Server REST                                     | [`server/web/app/api/contacts/`](../server/web/app/api/contacts/)                                                              |
+| Server page (SSR)                               | [`jackdaw/app/(app)/contacts/page.tsx`](<../jackdaw/app/(app)/contacts/page.tsx>)                                              |
+| Client UI                                       | [`jackdaw/app/(app)/contacts/contacts-client.tsx`](<../jackdaw/app/(app)/contacts/contacts-client.tsx>)                        |
+| Lib re-export (server-only)                     | [`server/web/lib/contacts.ts`](../server/web/lib/contacts.ts)                                                                  |
 
 ---
 
@@ -301,8 +296,8 @@ split is the intentional shape.
   the protocol; the cell field is normalised; just wire a `sms_send` builtin
   with a provider adapter. The gate will mirror email naturally.
 - **Photo-to-contact.** Saskia + `extract_from_image` can already read a
-  business card; pairing that with `contact_create` gives a *"add this card
-  as a contact"* flow.
+  business card; pairing that with `contact_create` gives a _"add this card
+  as a contact"_ flow.
 - **MCP parity.** The `contact_*` builtins live on the agent runtime side;
   exposing them through `server/mcp/src/server.ts` for Claude Desktop is the
   natural follow-up.

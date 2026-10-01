@@ -255,7 +255,7 @@ const CHECKS: CheckDef[] = [
     key: 'stray_import_tables',
     label: 'Stray imported tables',
     severity: 'low',
-    note: "a table still titled 'Imported table' — the table_from_text/table_from_file default when no title was given. Usually an agent mis-invoked an import mid-task and the orphan was never named, referenced, or cleaned up (NATREF 2026-07-28: a capped bulk-append pushed the tables agent into table_from_text, which CREATES a table). Rename it if it's real; delete it if it's a stray.",
+    note: "a table still titled 'Imported table' — the table_from_text/table_from_file default when no title was given. Usually an agent mis-invoked an import mid-task and the orphan was never named, referenced, or cleaned up (a client box 2026-07-28: a capped bulk-append pushed the tables agent into table_from_text, which CREATES a table). Rename it if it's real; delete it if it's a stray.",
     query: (o) => sql`
       SELECT n.id, n.type::text AS kind, ('created ' || n.created_at::date::text) AS detail
       FROM nodes n

@@ -1,5 +1,6 @@
-import { resolveActiveShareByToken } from '@/lib/shares';
-import { resolveShareVisitor } from '@/lib/team-gate';
+import { isDrawServable, linkLevels, resolveActiveShareByToken } from '@/lib/shares';
+import { db, nodes } from '@mantle/db';
+import { and, eq } from 'drizzle-orm';
 import { getDrawSvg } from '@mantle/content';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 
@@ -15,9 +16,11 @@ import { rateLimit, clientIp } from '@/lib/rate-limit';
  * second layer; neither one is load-bearing alone.
  *
  * Authorization mirrors /s/:token/a/:fileId exactly: the token must be active,
- * a team-mode share needs a live visitor session, and the node behind the token
- * must actually be a draw (getDrawSvg filters ownerId + type). Uniform 404 so a
- * URL never reveals that a token exists.
+ * and the node behind the token must actually be a draw (getDrawSvg filters
+ * ownerId + type). Uniform 404 so a URL never reveals that a token exists.
+ * The snapshot carries the drawing's images, so every image it places must
+ * sit at the link's levels (linkLevels): one an admin raised above the
+ * drawing on purpose keeps the snapshot off the link.
  */
 
 function notFound() {
@@ -40,7 +43,19 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
 
   const share = await resolveActiveShareByToken(token);
   if (!share) return notFound();
-  if (!(await resolveShareVisitor(req.headers.get('cookie'), share))) return notFound();
+  const [node] = await db
+    .select({ audience: nodes.audience })
+    .from(nodes)
+    .where(and(eq(nodes.id, share.nodeId), eq(nodes.ownerId, share.ownerId)))
+    .limit(1);
+  if (!node) return notFound();
+  if (
+    !(await isDrawServable(share.ownerId, share.nodeId, linkLevels(node.audience), {
+      self: false,
+    }))
+  ) {
+    return notFound();
+  }
 
   const svg = await getDrawSvg(share.ownerId, share.nodeId);
   if (!svg) return notFound();

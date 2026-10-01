@@ -1,0 +1,23 @@
+-- Adds 'recall' to the node_type enum: Recall v2 makes a memory MAP its own
+-- item, one `recall` node in the item tree, instead of a page tree whose root
+-- carries the `recall` tag. Its cards are rows in recall_nodes and are NOT
+-- nodes, so this is the only new type the redesign needs.
+--
+-- Lives in its own file because `ALTER TYPE ... ADD VALUE` cannot run in the
+-- same transaction that later references the new value; isolating it sidesteps
+-- that (same reason as the 0008 / 0037 / 0067 / 0069 / 0075 / 0136 enum-adds).
+-- 0203 carries the columns and tables that go with it and references nothing
+-- from this file.
+--
+-- Numbering: written as 0201 / 0202, renumbered to 0202 / 0203 on landing
+-- (2026-09-30) because main had taken 0199 / 0200 (client logins) and 0201
+-- (the item tree). The journal `when` values were restamped above main's too:
+-- the runner applies only entries whose `when` is above the highest one a box
+-- has run, so a reused timestamp is skipped silently. A gap in the numbers is
+-- harmless; an entry stamped BEFORE already-applied ones is not.
+--
+-- Rollback: `ADD VALUE` is NOT reversible (unlike `RENAME VALUE`, see 0109).
+-- Nothing has to be undone: an unused enum value costs nothing, and the
+-- previous release never writes or reads a node of this type. The tables and
+-- columns in 0203 are what a rollback would drop.
+alter type "public"."node_type" add value if not exists 'recall';

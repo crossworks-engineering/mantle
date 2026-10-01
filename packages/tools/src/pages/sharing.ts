@@ -1,32 +1,34 @@
 /**
  * Public sharing: share and unshare.
  *
- * Split out of builtins-pages.ts; bodies moved verbatim.
+ * Split out of builtins-pages.ts; bodies moved verbatim. The `children`
+ * option (share the page's sub-pages too) went with folder phase 7: pages do
+ * not nest; a set of pages is shared by sharing their folder with the team
+ * or clients (`tree_folder_update`), never by link.
  */
 
 import {
   getPage,
   createShare,
-  revokeShareTree,
-  applyShareMode,
-  setShareCascade,
+  unshareItem,
   getActiveShareForNode,
   shareUrlForToken,
+  type LoweredItem,
 } from '@mantle/content';
 import type { BuiltinToolDef } from '../types';
 import { str } from '../coerce';
 import { notFound } from '../errors';
 import { errorMessage } from '@mantle/std';
 import { PAGE_NODE_ID_PRE } from './common';
+import { clientLeftWarning, linkModeRefusal, unshareOutput } from '../builtins-share';
 
 export const page_share: BuiltinToolDef = {
   slug: 'page_share',
   preconditions: PAGE_NODE_ID_PRE,
   name: 'Share a page',
   description:
-    "Create (or fetch) a read-only link to a page and return its URL. Idempotent — one active link per page. The link is **public** (anyone with it can view, no login) unless `mode: 'team'`, which requires a team credential and lists the page on the Team Hub. `children: true` also shares every sub-page beneath it at the same mode (a whole documentation section in one call); `children: false` revokes those sub-page links. Publishes brain content outward-facing. Use when the user asks to share or publish a page or a section; to turn a link off use `page_unshare`.",
-  // Publishes brain content outward-facing (public web, or the whole team) —
-  // gated. Team + children can share a large subtree at once, so confirm.
+    'Create (or fetch) a read-only link to a page and return its URL. Idempotent: one active link per page. The link is **public**: anyone with it can view, no login, and the page goes to public level, its embeds too (`alsoLowered`). No team or client links: members and clients sign in, so for them set the level with `access_set` instead (a client page is refused a link). To show a whole folder of pages to the team or clients, share the folder (`tree_folder_update` with `share`), not the pages one by one. Publishes brain content outward-facing. Use when the user asks to share or publish a page or section; to turn a link off use `page_unshare`.',
+  // Publishes brain content to the public web, so gated.
   requiresConfirm: true,
   inputSchema: {
     type: 'object',
@@ -34,14 +36,9 @@ export const page_share: BuiltinToolDef = {
       id: { type: 'string', description: 'page node id (from page_list / page_create)' },
       mode: {
         type: 'string',
-        enum: ['public', 'team'],
+        enum: ['public'],
         description:
-          "Who may open the link: 'public' (anyone) or 'team' (team members only — also lists the page on the Team Hub). Omit to keep the link's current setting (public for a new link).",
-      },
-      children: {
-        type: 'boolean',
-        description:
-          'Also share every sub-page nested under this page, matched to the same mode. false revokes those sub-page links. Omit to leave sub-pages untouched.',
+          "Always 'public' (the default). Team links are retired: use access_set(level: 'team') to show a page to members.",
       },
     },
     required: ['id'],
@@ -49,21 +46,16 @@ export const page_share: BuiltinToolDef = {
   handler: async (input, ctx) => {
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
-    const mode = input.mode === 'team' ? 'team' : input.mode === 'public' ? 'public' : undefined;
-    const children = typeof input.children === 'boolean' ? input.children : undefined;
+    const refused = linkModeRefusal(input.mode);
+    if (refused) return { ok: false, error: refused };
     try {
       const page = await getPage(ctx.ownerId, id);
       if (!page) return notFound('page', id, 'page_list / search_nodes');
-      const share = await createShare(ctx.ownerId, id);
-      // Set mode before cascading so descendants inherit the intended mode.
-      if (mode) await applyShareMode(ctx.ownerId, share.id, mode);
-      let subpages: number | undefined;
-      if (children !== undefined) {
-        subpages = (await setShareCascade(ctx.ownerId, id, children)).count;
-      }
+      const alsoLowered: LoweredItem[] = [];
+      const share = await createShare(ctx.ownerId, id, { alsoLowered });
       const url = shareUrlForToken(share.token);
-      const finalMode = mode ?? share.mode;
-      ctx.step?.setOutput({ id, url, mode: finalMode });
+      ctx.step?.setOutput({ id, url, mode: share.mode });
+      const warning = clientLeftWarning(alsoLowered);
       return {
         ok: true,
         output: {
@@ -71,9 +63,9 @@ export const page_share: BuiltinToolDef = {
           title: page.title,
           url,
           token: share.token,
-          mode: finalMode,
-          ...(children === true ? { subpagesShared: subpages } : {}),
-          ...(children === false ? { subpagesRevoked: subpages } : {}),
+          mode: share.mode,
+          ...(alsoLowered.length ? { alsoLowered } : {}),
+          ...(warning ? { warning } : {}),
         },
       };
     } catch (err) {
@@ -87,7 +79,7 @@ export const page_unshare: BuiltinToolDef = {
   preconditions: PAGE_NODE_ID_PRE,
   name: 'Stop sharing a page',
   description:
-    "Revoke a page's share link — and, if it was sharing its sub-pages, theirs too. The existing URL stops working immediately. No-op (still succeeds) if the page wasn't shared. Use when the user asks to unshare, unpublish, or make a page private again.",
+    "Revoke a page's share link. The existing URL stops working immediately. No-op (still succeeds) if the page wasn't shared. Use when the user asks to unshare, unpublish, or make a page private again.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -101,9 +93,9 @@ export const page_unshare: BuiltinToolDef = {
     try {
       const share = await getActiveShareForNode(ctx.ownerId, id);
       if (!share) return { ok: true, output: { id, unshared: false } };
-      const ok = await revokeShareTree(ctx.ownerId, share.id);
-      ctx.step?.setOutput({ id, unshared: ok });
-      return { ok: true, output: { id, unshared: ok } };
+      const { revoked, stillBelow } = await unshareItem(ctx.ownerId, share.id);
+      ctx.step?.setOutput({ id, unshared: revoked });
+      return { ok: true, output: unshareOutput(id, revoked, stillBelow) };
     } catch (err) {
       return { ok: false, error: errorMessage(err) };
     }

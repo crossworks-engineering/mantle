@@ -7,11 +7,12 @@
  */
 import { and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm';
 import { existsSync } from 'node:fs';
-import { fileStats } from '@mantle/tabledb';
+import { fileStats, resolveStoragePath } from '@mantle/tabledb';
 import { draftAbsFor } from '../table-storage';
 import { db, nodes, tables } from '@mantle/db';
 import type { TableRow, TableDetail, TableSort } from '@mantle/content-core/table-model';
 import { countsFromRegistry, detailOf, docsOf, rowOf, tabsFromStats } from './shared';
+import { readsDrafts } from '@mantle/db/viewer';
 
 type ListTablesOpts = { query?: string; tag?: string; sort?: TableSort };
 
@@ -88,15 +89,28 @@ export async function listTableTags(ownerId: string): Promise<{ tag: string; cou
 export async function getTable(
   ownerId: string,
   id: string,
-  opts: { tabId?: string } = {},
+  opts: {
+    tabId?: string;
+    /** An unknown `tabId` reads the first tab instead of throwing: for
+     *  readers whose tab id comes from outside (a member's query string). */
+    unknownTabIsFirst?: boolean;
+    /** The saved table only, even where the scope reads drafts: for a reader
+     *  on the admin pool who must not see an admin's working copy (the
+     *  author of an accepted item, member-accepted.ts). */
+    publishedOnly?: boolean;
+  } = {},
 ): Promise<TableDetail | null> {
+  // Below admin (member logins Phase 0b) the draft is not readable: the
+  // published table only, and no draft file from disk either. A member's own
+  // space (Phase 2) reads its own draft.
+  const published = opts.publishedOnly === true || !readsDrafts();
   const [row] = await db
     .select({
       node: nodes,
       data: tables.data,
-      draft: tables.draftData,
+      draft: published ? sql<null>`null` : tables.draftData,
       storagePath: tables.storagePath,
-      draftRev: tables.draftRev,
+      draftRev: published ? sql<null>`null` : tables.draftRev,
       stats: tables.stats,
     })
     .from(nodes)
@@ -107,7 +121,7 @@ export async function getTable(
   // Tab list: the DRAFT file's when one exists (a tab added/renamed in the
   // draft must show), else registry stats (published, no file open needed).
   let tabs = row.storagePath ? tabsFromStats(row.stats) : undefined;
-  if (row.storagePath) {
+  if (row.storagePath && !published) {
     const draftAbs = draftAbsFor(row.storagePath);
     if (existsSync(draftAbs)) {
       try {
@@ -117,16 +131,51 @@ export async function getTable(
       }
     }
   }
-  const tabId = opts.tabId ?? tabs?.[0]?.id;
+  const known = !opts.unknownTabIsFirst || tabs?.some((t) => t.id === opts.tabId);
+  const tabId = (known ? opts.tabId : undefined) ?? tabs?.[0]?.id;
   // Materialize the RESOLVED tab, not the caller's (possibly undefined) one:
   // when a draft tab_delete/tab_reorder changed the first tab, "default tab"
   // must mean the same tab on both the published and draft side (audit: the
   // payload mixed published tab A with draft tab B).
-  const { data, draft, totalRows, docClipped } = docsOf(row, tabId);
+  const { data, draft, totalRows, docClipped } = docsOf(row, tabId, { publishedOnly: published });
   return detailOf(row.node, data, draft, {
     totalRows,
     docClipped,
     draftRev: row.draftRev ?? 0,
+    ...(tabs ? { tabs } : {}),
+    ...(tabs && tabId ? { tabId } : {}),
+  });
+}
+
+/**
+ * A table as its author's accepted snapshot holds it (member logins, audit
+ * F07): the workbook copy at `storagePath` (relative to TABLE_DB_DIR), or
+ * the document of a table with no workbook. Never a draft. `node` supplies
+ * the id and the other row fields; the caller passes the snapshot's title.
+ */
+export function tableFromSnapshot(
+  node: typeof nodes.$inferSelect,
+  snap: { storagePath: string | null; doc: unknown },
+  opts: { tabId?: string } = {},
+): TableDetail {
+  let tabs: ReturnType<typeof tabsFromStats> | undefined;
+  if (snap.storagePath) {
+    try {
+      tabs = tabsFromStats(fileStats(resolveStoragePath(snap.storagePath)));
+    } catch {
+      tabs = undefined;
+    }
+  }
+  const known = tabs?.some((t) => t.id === opts.tabId);
+  const tabId = (known ? opts.tabId : undefined) ?? tabs?.[0]?.id;
+  const { data, totalRows, docClipped } = docsOf(
+    { storagePath: snap.storagePath, data: snap.doc, draft: null },
+    tabId,
+    { publishedOnly: true },
+  );
+  return detailOf(node, data, null, {
+    totalRows,
+    docClipped,
     ...(tabs ? { tabs } : {}),
     ...(tabs && tabId ? { tabId } : {}),
   });

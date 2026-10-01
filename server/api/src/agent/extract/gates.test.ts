@@ -154,6 +154,59 @@ describe('admitForExtraction — refusals', () => {
     expect(disposition()).toBe('node_not_found');
   });
 
+  it('refuses a node the brain does not own, before any side pass', async () => {
+    // A member's personal item (member logins Phase 2) must never be learned,
+    // whichever commit path notified the extractor.
+    h.selectQueue.push([node({ ownerId: 'personal-space-1' })]);
+    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(false);
+    expect(disposition()).toBe('not_brain_owner');
+    expect(h.autoTable).not.toHaveBeenCalled();
+    expect(h.embeddedImages).not.toHaveBeenCalled();
+    expect(h.embed).not.toHaveBeenCalled();
+  });
+
+  it('refuses a Forum archive page before any pass, whatever the allowlist says', async () => {
+    // Member logins Phase 6: the archive holds private topics too and must
+    // never be indexed. Nothing downstream may run, not even the free-looking
+    // side passes or the local embedder.
+    h.resolveExtractor.mockResolvedValue({ ...WORKER, params: { target_types: ['*'] } });
+    h.selectQueue.push([node({ type: 'page', data: { source: 'forum-archive' } })]);
+    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(false);
+    expect(disposition()).toBe('extract_exempt');
+    expect(h.autoTable).not.toHaveBeenCalled();
+    expect(h.embeddedImages).not.toHaveBeenCalled();
+    expect(h.embed).not.toHaveBeenCalled();
+    expect(h.resolveChatKey).not.toHaveBeenCalled();
+    expect(h.updates).toEqual([]);
+  });
+
+  it('refuses an unreviewed team request before any pass (member text, no admin read yet)', async () => {
+    // Audit F08: a member asking the team agent to file ten requests must not
+    // start ten extractor runs before an admin has looked at any of them.
+    h.selectQueue.push([
+      node({ type: 'task', data: { source: 'team-request', body: 'please change X' } }),
+    ]);
+    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(false);
+    expect(disposition()).toBe('extract_exempt');
+    expect(h.embed).not.toHaveBeenCalled();
+    expect(h.resolveChatKey).not.toHaveBeenCalled();
+  });
+
+  it('admits a team request once an admin has acted on it (reviewed_at)', async () => {
+    h.selectQueue.push([
+      node({
+        type: 'task',
+        data: { source: 'team-request', reviewed_at: '2026-09-28T10:00:00.000Z', body: 'x' },
+      }),
+    ]);
+    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(true);
+  });
+
+  it('admits an ordinary page (the exemption is the source, not the type)', async () => {
+    h.selectQueue.push([node({ type: 'page', data: { source: 'editor' } })]);
+    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(true);
+  });
+
   it('refuses a hard-skip type whatever the allowlist says', async () => {
     // `branch` is refused in code, not in config — a worker configured with
     // '*' must not reach folder rows.

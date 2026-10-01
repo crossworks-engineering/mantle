@@ -3,11 +3,12 @@
 > ✅ **DONE & MERGED (v0.66.x, PR #1).** Both phases shipped: Phase 1 (durable
 > runners) and Phase 2 (the FE/BE separation, `server/web` is now a pure client,
 > no `@mantle/db` in the browser bundle). This file is preserved as the **design
-> + plan**; for what actually shipped and what remains (mostly Electron-scoped),
-> read the completion record
-> [`fe-be-split-session-handover.md`](_archive/fe-be-split-session-handover.md). A
-> current, condensed summary lives in
-> [`architecture.md` §3a](./architecture.md#3a-durable-runners-the-febe-split-and-live-turn-streaming).
+>
+> - plan**; for what actually shipped and what remains (mostly Electron-scoped),
+>   read the completion record
+>   [`fe-be-split-session-handover.md`](_archive/fe-be-split-session-handover.md). A
+>   current, condensed summary lives in
+>   [`architecture.md` §3a](./architecture.md#3a-durable-runners-the-febe-split-and-live-turn-streaming).
 
 Status (as written): **Phase 1 complete** (durable runners). **Phase 2 not
 started** (the actual FE/BE separation). This doc is the handover for Phase 2.
@@ -21,7 +22,7 @@ Branch for Phase 1: `feat/dedicated-api-runners`. Project memory:
 
 Two originating goals, neither yet delivered by Phase 1:
 
-1. **A desktop (Electron) client** that reuses the *same* UI as the web app.
+1. **A desktop (Electron) client** that reuses the _same_ UI as the web app.
 2. **DB-less local development**: stop needing direct Postgres access (over
    Tailscale) just to run the frontend.
 
@@ -30,7 +31,7 @@ full-stack app.** It server-renders against the database in-process (React
 Server Components + Server Actions), so even "just the UI" needs DB credentials,
 and there is no client bundle an Electron shell could load and point at an API.
 
-Phase 1 addressed a *different*, adjacent problem (LLM work dying when you
+Phase 1 addressed a _different_, adjacent problem (LLM work dying when you
 navigate away) by making execution durable on a dedicated runner. That work
 hardened the backend but did **not** split the frontend from it. Phase 2 is the
 split.
@@ -62,7 +63,7 @@ Net effect for Phase 2: **all business logic is in reusable packages**, there is
 a **proven durable backend**, and there is **precedent** for non-Next consumers
 of the same logic (`server/api`, `server/mcp`, and the agent service that has
 since been folded into `server/api`). What's missing is the
-HTTP boundary as a *contract* and a frontend that consumes it.
+HTTP boundary as a _contract_ and a frontend that consumes it.
 
 ---
 
@@ -73,8 +74,9 @@ HTTP boundary as a *contract* and a frontend that consumes it.
 > order-of-magnitude.
 
 **`server/web` (Next.js 15, App Router):**
+
 - ~**72 server pages** (`app/**/page.tsx`): most `await` data functions
-  *in-process* during render (RSC). This is the core coupling.
+  _in-process_ during render (RSC). This is the core coupling.
 - ~**20 server actions** (`actions.ts`, `'use server'`): mutate the DB in-process
   on form submit. ~5 import `@mantle/db` directly.
 - ~**121 API route handlers** (`app/api/**/route.ts`): already a substantial
@@ -95,6 +97,7 @@ assistant-runtime and heartbeats packages),
 `@mantle/tracing`, `@mantle/api-keys`, `@mantle/storage`, `@mantle/embeddings`.
 
 **Auth (`server/web/lib/auth.ts`, `auth-constants.ts`):**
+
 - Stateless HMAC **session cookie** `mantle_session` (`{uid, exp}` payload).
 - **Mobile bearer tokens** already exist (`getBearerUser`, `buildMobileToken`,
   `Authorization: Bearer …`), the companion app uses them. **This is the auth
@@ -155,10 +158,10 @@ single-tenant assumption.
 
 2. **HTTP surface: keep in Next vs standalone service.** Phase 1 chose
    "runners-first, keep HTTP in Next." For Phase 2, the cheapest correct move is
-   to **treat `app/api/**` as the formal contract** and *not* immediately extract
+   to **treat `app/api/**` as the formal contract** and _not_ immediately extract
    a separate HTTP service, extraction (e.g. a Hono app in `server/api`) can come
    later once the frontend is fully client-side. Decide based on whether Electron
-   talks to a *deployed* web (fine) or needs the API decoupled from the Next
+   talks to a _deployed_ web (fine) or needs the API decoupled from the Next
    server (then extract).
 
 3. **Cache/mutation strategy.** Pick one client data layer (React Query or SWR)
@@ -178,6 +181,7 @@ single-tenant assumption.
 ## 6. Phase 2 work breakdown (recommended sequencing: strangler, not big-bang)
 
 **Task 0, Re-inventory (do first; the §3 numbers are stale).**
+
 ```bash
 # server pages
 find server/web/app -name 'page.tsx' | wc -l
@@ -190,12 +194,13 @@ grep -rl "@mantle/db" server/web/app --include='*.tsx' --include='*.ts' | grep -
 # revalidatePath call sites (the cache-invalidation migration)
 grep -rn "revalidatePath" server/web/app | wc -l
 ```
+
 Produce a living checklist: every page/component/server-action that touches the
 DB without an endpoint = an **API gap** to close.
 
 **Task 1, Close the API gaps.** For each direct-DB page/component/server-action,
 add (or route it through) an `app/api/**` endpoint that calls the same package
-function. After this, the API is *complete*, a prerequisite for any external
+function. After this, the API is _complete_, a prerequisite for any external
 client. (~19 pages + ~5 server actions + attachment/mention routes from the
 audit.) This is independently valuable and low-risk.
 
@@ -205,7 +210,7 @@ endpoints which were cookie-only). Now dev/Electron can authenticate without
 cookies. Add CORS for the eventual separate origin.
 
 **Task 3, Solve DB-less dev immediately (high ROI, low effort).** Point local
-frontend dev at a *deployed/remote* API via a bearer token instead of giving
+frontend dev at a _deployed/remote_ API via a bearer token instead of giving
 every dev DB creds. Two ways: (a) full client-fetch screens hit the remote API;
 (b) interim; even RSC pages can `fetch()` the remote API instead of importing
 `@mantle/db`, removing local DB creds while keeping SSR. This delivers one of the
@@ -284,6 +289,11 @@ the `agent` service, the `api` service already exists.
 
 ## 10. The v0.200 member carve (T1–T5): /team, /hub, /team-admin
 
+> **Retired (member logins Phase 6, 2026-09-28).** Everything this section
+> describes for team-code members (the `mantle_team_chat` credential, `/team`,
+> `/hub`, `/api/team/*`, the team SSO) is gone; `/team` and `/hub` redirect to
+> `/login`. Team members sign in with member logins. Kept as history.
+
 The v0.200 "true split" (P0–P5) carved the owner UI into `jackdaw` but
 froze the team-member surfaces server-side (locked decision 4): members
 authenticated with cookies, and cookies don't cross origins. The member carve
@@ -331,15 +341,17 @@ authenticated with cookies, and cookies don't cross origins. The member carve
   Save-As). The bearer-only sessions those loaders would strand are covered by
   `upgradeOwnerCookie()` → `POST /api/auth/sso`, the owner twin of the team
   SSO upgrade: it verifies whatever credential the caller has and answers 204
-  + Set-Cookie. It grants nothing new, the bearer it accepts already
-  authorises every owner API call, and mints for the ACTOR, not the anchor,
-  so an added login's audit rows stay its own.
+  - Set-Cookie. It grants nothing new, the bearer it accepts already
+    authorises every owner API call, and mints for the ACTOR, not the anchor,
+    so an added login's audit rows stay its own.
 - **The designated hub app stays first-class**: `AppSandbox` broker fetches
   happen in the parent page, so the client-origin hub passes an absolute
   `apiBase` + a bearer-attaching `fetcher`; the `/s` sub-paths a client-origin
   page calls (`bundle`/`tool-broker`/`db-broker`, plus `view`/`rows` for the
-  inline reader) accept the bearer (`resolveShareVisitorFromRequest`) and get
-  the `/api/**` CORS treatment, and ONLY they.
+  inline reader) accepted the bearer (`resolveShareVisitorFromRequest`) and get
+  the `/api/**` CORS treatment, and ONLY they. (The team bearer and team links
+  are retired since member logins Phase 6: those paths take the share token
+  alone.)
 - **`/team-admin` rehomed under the owner bearer**: per-tab
   `GET /api/team-admin/*` routes + a client page in `jackdaw`; the old
   render side effects (mark thread/topic read) became explicit POSTs.
@@ -391,7 +403,8 @@ runtime `server/api` and the workers have always used. Next.js is **gone** from
   `server/web/scripts/build-share-runtime.ts` into `public/share-runtime/` (a Tailwind v4
   CLI compile of `globals.css`, an esbuild islands bundle, and KaTeX css+fonts).
   `/print/pages/[id]` is a plain HTML template wrapped around `renderPageDoc`,
-  no React at all. `/login`, `/hub`, `/team/*` are Hono redirect stubs.
+  no React at all. `/login` is a Hono redirect stub; `/team/*` and `/hub` (retired in member
+  logins Phase 6) redirect to `/login`.
 
 **What did NOT change:** the HTTP contract (same routes, request/response
 shapes), the port (3000), `/api/health`, and the **env contract, no new env

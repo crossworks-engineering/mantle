@@ -270,7 +270,7 @@ AbortError (the one-shot `chat()` path, `MANTLE_TURN_TOKENS` off) no longer burn
 
 Local DB is **Docker Desktop** (`mantle_pg`/`mantle_minio`/`mantle_tika`); app DB is `postgres` at
 `127.0.0.1:54323` (line 10 of `server/web/.env.local`; prod-tailnet + tunnel URLs commented below it). Owner id
-= `bc505da9-c323-43c7-bafb-6c06a2d443de`. Query the row state with:
+= `00000000-0000-4000-8000-00000000d001`. Query the row state with:
 `docker exec mantle_pg psql -U postgres -d postgres -t -A -F '|' -c "select direction,status,length(text) from assistant_messages order by created_at desc limit 4;"`
 
 The four flags are already in `.env.local` (gitignored): `MANTLE_TURN_STREAMING=1`,

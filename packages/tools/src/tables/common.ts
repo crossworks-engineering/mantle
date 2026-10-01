@@ -19,6 +19,7 @@ import {
   type TableDetail,
 } from '@mantle/content';
 import { existsSync } from 'node:fs';
+import { readsDrafts } from '@mantle/db/viewer';
 import { tableSqlSurface } from '@mantle/content/table-storage';
 import { draftPathFor, readRowById, type TableOp } from '@mantle/tabledb';
 import type { ToolHandlerResult } from '../types';
@@ -112,10 +113,12 @@ export const DRAFT_REVIEW_HINT = (tableId: string) =>
   `publishes (and re-indexes), Discard reverts.`;
 
 /** Draft-first workbook file for windowed reads/writes; null = legacy JSONB
- *  table (still served by the doc path). */
+ *  table (still served by the doc path). Below admin (a team-level agent) it
+ *  is the published file only: an admin's unsaved draft is never read there. */
 export async function windowFile(ownerId: string, tableId: string): Promise<string | null> {
   const surface = await tableSqlSurface(ownerId, tableId).catch(() => null);
   if (!surface) return null;
+  if (!readsDrafts()) return surface.abs;
   const draftAbs = draftPathFor(surface.abs);
   return existsSync(draftAbs) ? draftAbs : surface.abs;
 }

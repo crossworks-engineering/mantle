@@ -11,13 +11,13 @@ work by pointing at a directory.
 
 Configure at **Settings → Backups**:
 
-| Setting | Meaning | Default |
-|---|---|---|
-| Enabled | master switch | off |
-| Frequency | daily, or weekly (Sundays) | daily |
-| At hour | hour of day **in your profile timezone** | 02:00 |
-| Keep | newest N dumps retained (rotation) | 7 |
-| Folder | destination directory | `MANTLE_BACKUP_DIR` → `/data/backups` in Docker (host: `${MANTLE_DATA_DIR}/backups`) |
+| Setting   | Meaning                                  | Default                                                                              |
+| --------- | ---------------------------------------- | ------------------------------------------------------------------------------------ |
+| Enabled   | master switch                            | off                                                                                  |
+| Frequency | daily, or weekly (Sundays)               | daily                                                                                |
+| At hour   | hour of day **in your profile timezone** | 02:00                                                                                |
+| Keep      | newest N dumps retained (rotation)       | 7                                                                                    |
+| Folder    | destination directory                    | `MANTLE_BACKUP_DIR` → `/data/backups` in Docker (host: `${MANTLE_DATA_DIR}/backups`) |
 
 The page also offers **Run backup now**, shows the last-run status (success or
 the error), and lists the dumps currently on disk.
@@ -30,8 +30,14 @@ Engine: [`packages/content/src/backup.ts`](../packages/content/src/backup.ts).
   `mantle-<ts>.dump` via a `.part` temp name (a partial dump can never be
   mistaken for a good one), then verified against the `PGDMP` magic bytes
   before being promoted.
+- Beside each dump the same run snapshots the table workbooks
+  (`mantle-table-dbs-<ts>/`), the app databases (`mantle-app-dbs-<ts>/`) and
+  members' personal-space file bytes (`mantle-spaces-<ts>.tgz`, the only copy
+  of a member's upload). Each is loud but non-fatal: a failure there never
+  spoils the Postgres dump.
 - Rotation deletes beyond `keep`, and only files matching Mantle's own
-  `mantle-*.dump` pattern, anything else in the folder is never touched.
+  `mantle-*.dump` pattern (with their siblings), anything else in the folder
+  is never touched.
 - The scheduler is a cheap tick hosted by the **events worker**: when the
   wall-clock hour in your timezone matches the configured hour (and the last
   run is old enough to rule out a double-fire), it runs. Consequence: backups
@@ -53,12 +59,14 @@ Engine: [`packages/content/src/backup.ts`](../packages/content/src/backup.ts).
 Your offsite sync should include, from `${MANTLE_DATA_DIR}` (default
 `./data` next to the compose file):
 
-| Path | What it is |
-|---|---|
-| `backups/` | the rotated DB dumps (this feature's output) |
-| `files/` | your host-mirrored files (`/files` surface) |
-| `minio/` | attachment object bytes |
-| `forum-uploads/` | quarantined member forum uploads awaiting review, the ONLY copy of a pending upload until you file it |
+| Path             | What it is                                                                                                                                                                                                                                                       |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `backups/`       | the rotated DB dumps (this feature's output)                                                                                                                                                                                                                     |
+| `files/`         | your host-mirrored files (`/files` surface)                                                                                                                                                                                                                      |
+| `rustfs/`        | attachment object bytes: the RustFS object store's data dir, not plain files (a restore needs the same RustFS version; see below)                                                                                                                                |
+| `minio/`         | only on boxes that ran MinIO before 2026-09: the pre-switch copy kept for rollback, removable once `objectstore:verify` has been green for a couple of weeks ([deploy.md §5c](./deploy.md#5c-object-store-rustfs))                                               |
+| `forum-uploads/` | only on boxes that ran the retired team forum: its old upload quarantine. Nothing reads it since the forum tables were dropped (migration 0177); the Forum archive export filed every upload whose bytes were there ([team-forum.md](./team-forum.md) section 8) |
+| `spaces/`        | members' personal-space file bytes (also archived by every backup as `mantle-spaces-<ts>.tgz`)                                                                                                                                                                   |
 
 One `rsync -a` of the `data/` directory (minus `postgres/`, the live cluster
 files are useless mid-write; the dumps are the DB backup) covers everything.
@@ -73,16 +81,35 @@ and separate. Losing the key loses the vault; nothing else.
 Onto a fresh stack:
 
 ```bash
-docker compose down                      # keep volumes/binds for files/minio
+docker compose down                      # keep volumes/binds for files/rustfs
 # wipe ONLY the Postgres state (named volume or ${MANTLE_DATA_DIR}/postgres)
-docker compose up -d postgres --wait     # init scripts recreate extensions + auth
+docker compose up -d postgres --wait
 bash scripts/db-restore.sh <path-to>/mantle-<ts>.dump
 docker compose up -d --wait
 ```
 
-Files, MinIO, and pending forum uploads restore by putting the `files/`,
-`minio/`, and `forum-uploads/` directories back under `${MANTLE_DATA_DIR}`
-while the stack is stopped.
+`db-restore.sh` drops the init-made `postgres` database and restores into a
+pristine one, so the init scripts do not matter to a restore. It refuses a
+target that already holds items or logins. After the restore it checks the
+logins, the login role CHECK and the viewer row policies. Exit code 2 means
+the restore is not usable: do not start the app. Read the `pg_restore`
+errors it printed, fix the cause, drop the database and run it again.
+
+`db-restore.sh` also puts members' personal-space files back from the
+`mantle-spaces-<ts>.tgz` beside the dump (into `${MANTLE_DATA_DIR}/spaces`,
+only while that folder is empty).
+
+Files and the object store restore by putting the
+`files/` and `rustfs/` directories back under
+`${MANTLE_DATA_DIR}` while the stack is stopped. `rustfs/` is RustFS's own
+on-disk format, so restore it under the same RustFS version that wrote it
+(`RUSTFS_IMAGE_TAG`, default in `docker-compose.yml`). Then prove the object
+store is intact: every stored attachment's key is the sha256 of its bytes, so
+this re-hashes each one and exits non-zero on any mismatch or unreadable object:
+
+```bash
+docker exec mantle_web pnpm -C packages/storage objectstore:verify
+```
 
 Worth doing once deliberately: a full end-to-end restore rehearsal onto a
 scratch stack, so the first time isn't the bad day.

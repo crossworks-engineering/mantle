@@ -22,11 +22,13 @@
  * writes are idempotent per-row but the API spend would double).
  */
 
-import { and, eq, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, not, sql, type SQL } from 'drizzle-orm';
 import {
   contentChunks,
   db,
+  recallNodes,
   entities,
+  extractExemptSql,
   facts,
   nodes,
   type ContentChunk,
@@ -241,6 +243,10 @@ async function _runReembedInner(ownerId: string, opts: ReembedOpts): Promise<Ree
       // are included since 2026-06-10 (the summarizer embeds them at insert
       // for find_window), so a dimension migration repopulates them too.
       conds.push(sql`${nodes.type}::text not in ('branch','telegram_message')`);
+      // Nor the extract-exempt ones (Forum archive pages, a team request no
+      // admin has acted on): they are never indexed, and a null embedding
+      // there is by design, not a dimension migration's hole (audit F27).
+      conds.push(not(extractExemptSql()));
     } else {
       conds.push(isNotNull(nodes.embedding));
     }
@@ -364,6 +370,18 @@ async function _runReembedInner(ownerId: string, opts: ReembedOpts): Promise<Ree
         await db.update(contentChunks).set({ embedding: vec }).where(eq(contentChunks.id, id));
       },
     });
+  }
+
+  // Recall prompts carry a vector too (recall_nodes, kind 'prompt'). After a
+  // model swap an old-space vector scores under recall_match's floor, so
+  // every prompt would quietly stop matching. They are few, so rather than a
+  // fifth walk they are cleared here: recall_match refills a prompt with a
+  // NULL vector in the background, in the new model's space.
+  if (!dryRun && tables.has('nodes') && !types) {
+    await db
+      .update(recallNodes)
+      .set({ embedding: null })
+      .where(and(eq(recallNodes.ownerId, ownerId), eq(recallNodes.kind, 'prompt')));
   }
 
   const totalRows =

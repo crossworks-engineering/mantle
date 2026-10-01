@@ -14,10 +14,13 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { checkToolPreconditions } from '@mantle/tools';
-import type { BuiltinToolDef } from '@mantle/tools';
+import type { BuiltinToolDef, ToolSurface } from '@mantle/tools';
 import { env } from '@mantle/config';
 import { zodShapeFromJsonSchema } from './zod-schema';
 import type { MantleMcpTransport } from '../build-server';
+
+/** The surface every bridged builtin runs under on the MCP server. */
+export const MCP_OWNER_SURFACE: ToolSurface = { kind: 'owner', via: 'mcp' };
 
 export function makeRegisterContext(
   server: McpServer,
@@ -70,9 +73,9 @@ export function makeRegisterContext(
 
   /** Bridge a set of in-app `BuiltinToolDef`s onto the MCP server, reusing the
    *  exact same handlers the in-app agent runs so the two surfaces never drift.
-   *  Handlers get the minimal context `{ ownerId }` — every other `ctx` field
-   *  (`step`, `surface`, `agent`) is optional and the handler degrades on its
-   *  own (e.g. a worker tool that needs a Telegram chat refuses cleanly here).
+   *  Handlers get the minimal context `{ ownerId, surface: owner/mcp }`; the
+   *  other `ctx` fields (`step`, `agent`) are optional and the handler degrades
+   *  on its own (e.g. a worker tool that needs a Telegram chat refuses cleanly here).
    *  Binary `artifacts` are dropped (MCP results are text/JSON); tools that also
    *  persist their output to a node — e.g. `generate_image` → /files — still
    *  surface the node id in `output`.
@@ -103,7 +106,9 @@ export function makeRegisterContext(
         };
       }
     }
-    const result = await def.handler(input, { ownerId: ownerId });
+    // The MCP caller holds the owner's credential: it names itself as the
+    // owner (client logins C4), since a missing surface is not the owner.
+    const result = await def.handler(input, { ownerId: ownerId, surface: MCP_OWNER_SURFACE });
     if (!result.ok) {
       return {
         content: [{ type: 'text' as const, text: `Error: ${result.error}` }],

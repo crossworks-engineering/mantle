@@ -55,7 +55,7 @@ tools-and-skills split. Audit findings, all **fixed and merged to main**:
 Everything in `docs/tools-and-skills.md` (canonical) + `docs/audit-brief-tools-skills.md`.
 `docs/system-integrity.md` + `apps/web/lib/system-manifest/manifest.test.ts`
 remain the runtime guardrails. Memory note at
-`~/.claude/projects/-Users-jasonschoeman-Projects-mantle/memory/project_tools_skills_split.md`
+`~/.claude/projects/-Users-me-Projects-mantle/memory/project_tools_skills_split.md`
 is up to date with the P6c audit follow-up.
 
 ### Phase B: Open-source prep (v0.20.10 – 0.20.13)
@@ -210,8 +210,8 @@ dev brain can become his new production. Execution:
     per Jason's call, extractor regenerates those.
   - `telegram_accounts`, 4 rows bridged: `saskianewbot` got a
     `channels` row attached to dev's `assistant` agent
-    (`909a02b7-…0a42f`); the other 3 (`apostle_paulus_bot`,
-    `brianthecoder_bot`, `miaschoemanbot`) inserted with `channel_id=NULL`
+    (`909a02b7-…0a42f`); the other 3 (`study_example_bot`,
+    `coder_example_bot`, `family_example_bot`) inserted with `channel_id=NULL`
     because their custom-persona responder agents don't exist on dev yet
 , wire them up manually when those personas are recreated.
 - **Prod state.** Only the `worker_telegram` container was stopped
@@ -236,8 +236,8 @@ dev brain can become his new production. Execution:
 
 | | |
 |---|---|
-| **Dev user** | `bc505da9-c323-43c7-bafb-6c06a2d443de` (jason@schoeman.me; created by onboarding) |
-| **Prod user** | `61572800-924c-4597-b6f0-facde6640f6a` (jason@schoeman.me; original) |
+| **Dev user** | `00000000-0000-4000-8000-00000000d001` (alice@example.com; created by onboarding) |
+| **Prod user** | `00000000-0000-4000-8000-00000000d002` (alice@example.com; original) |
 | **Master key** | `MANTLE_MASTER_KEY` is the SAME on dev + prod, no rotation needed |
 | **Dev DB content** | 7 api_keys, 12 secrets (+ 12 secret nodes), 3 email_accounts, 1 tailscale_config, 2 pdf_passwords, 7 contact nodes, 1 channel (saskianewbot→assistant), 4 telegram_accounts |
 | **Prod state** | `worker_telegram` STOPPED. All other prod containers still running (web, agent, files/events/docs/email workers, pg). Falls back via `docker compose start worker_telegram` if needed. |
@@ -276,7 +276,7 @@ dev brain can become his new production. Execution:
    secrets/contacts/accounts; his actual brain content still lives on
    prod.
 
-**Custom personas not migrated.** `apostle_paulus_bot` and `brianthecoder_bot`
+**Custom personas not migrated.** `study_example_bot` and `coder_example_bot`
 came across as `telegram_accounts` rows with `channel_id=NULL`. Their
 responder agents (`78148ac5-…` and `f42037c2-…`) don't exist on dev. To
 re-enable: recreate the personas on dev (via `/settings/agents` or the

@@ -27,6 +27,7 @@ import { withDurableSteps } from '@mantle/tracing';
 import { RUNNER_QUEUE } from '@mantle/runtime/assistant';
 import { handleTelegramMessage } from '../agent/runtime';
 import { errorMessage } from '@mantle/std';
+import { assertNoViewer } from '@mantle/db/viewer';
 
 /** DBOS workflow name the runner registers under. Internal to server/api — the
  *  only enqueuer is this process's own LISTEN handler + boot drain, so unlike
@@ -69,6 +70,7 @@ export const telegramTurnWorkflow = DBOS.registerWorkflow(telegramTurnImpl, {
  *  messageId` makes a duplicate enqueue (re-notify, or boot-drain vs. live
  *  notify) idempotent — DBOS dedups to the single existing run. */
 export function enqueueTelegramTurn(messageId: string) {
+  assertNoViewer('enqueueTelegramTurn');
   return DBOS.startWorkflow(telegramTurnWorkflow, {
     queueName: RUNNER_QUEUE,
     workflowID: messageId,

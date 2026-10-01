@@ -46,7 +46,8 @@ Lives entirely in `nodes.data` (no sidecar, the Notes/Contacts pattern):
 data = {
   body: string,          // the entry — a short first-person paragraph
   author: 'user'|'agent',// provenance — stamped SERVER-SIDE, never model args
-  agent_slug?: string,   // authoring agent when author='agent'
+  agent_slug?: string,   // the agent it belongs to: the author when author='agent',
+                         // or the agent a user-written rule is for (MCP `agent`)
   kind?: string,         // identity·context·preference·goal | lesson·expectation·gap
   status?: string,       // gap lifecycle: 'open' | 'resolved' (kind='gap' only)
   resolved_at?: string,  // stamped when a gap is resolved
@@ -64,10 +65,14 @@ import it without dragging `postgres` into the bundle):
 | user | `identity`, `context`, `preference`, `goal` | `# About the user` |
 | agent | `lesson`, `expectation`, `gap` | `# Working notes` |
 
-**Legacy rows** (pre-v2) carry `mood`/`category` in jsonb. Nothing reads
-`mood` anymore. `category` maps to a kind at read time
-(`legacyCategoryToKind`: identity→identity, goal→goal, everything else→
-context). No migration, no backfill.
+**Legacy rows** (pre-v2) carry `mood`/`category` in jsonb. `category` maps to
+a kind at read time (`legacyCategoryToKind`, mirrored in `journalKindSql`):
+identity→identity, goal→goal; the background life areas family,
+relationships, faith and health→identity, unless the row carries a `mood` (a
+mood-era entry reflects on a moment)→context; everything else→context. The
+mood is read only for that split. No migration, no backfill. (Spike 10: with
+every background area mapped to context, a personal brain's family, faith and
+health baseline fell off the always-on block.)
 
 `nodes.title` is an optional short title, auto-derived from the first
 sentence / ~60 chars of `body`. All entries live under the lazy-created
@@ -135,6 +140,202 @@ responder — owner-internal context never reaches an external member).
 working notes before the persona/skills prompt, inside cache breakpoint 1.
 Team turns pass `includeIdentity: false`, which gates BOTH blocks.
 
+### 4a. Tiers (`memory_config.journal_tiers`, 2026-09-23)
+
+Spike 10 (dev-brain page 60a2f51e) found three faults in the two blocks above:
+newest-first caps showed the wrong entries (six cut-off release notes as
+"About the user" on dev; a personal brain's background entries silently
+dropped), every Journal write re-billed the whole cached prefix (it sits in
+front of the persona prompt), and relevance played no part. The tiers replace
+them, per agent:
+
+| `journal_tiers` | What the prompt gets |
+|---|---|
+| `off` | the two blocks above; no per-turn lookup |
+| `shadow` | the two blocks above; tiers 2 + 3 are picked and recorded in the `load_context` snapshot (`snapshot.journal`) only |
+| `live` | the tiers below; the two blocks above are gone |
+
+`journal_tiers` is only read for an agent that opted back into persona notes
+(`notes_target = 'persona'`; there `shadow` is the default). Every other agent
+is `live` whatever `journal_tiers` says (`journalTiersOf`): the Journal is
+where learned notes live by default since 2026-09-24 (§4b), and the
+old capped blocks would show about 6 of hundreds.
+
+**Scope.** A rule an agent learned belongs to that agent: other agents do not
+see it, in any block or tier. A learned rule is a lesson or expectation, or
+any entry that came from the agent's own learning (`data.source.via` =
+`reflector` / `update_persona`, or `data.source.persona_note_ref`), with
+`agent_slug` set (`isLearnedRule`, `visibleToAgent`). What an agent RECORDS
+for the user (`journal_create` of "I'm vegetarian", a resolved gap's answer)
+is the user's knowledge and stays brain-wide whoever wrote it, as do entries
+with no agent and open gaps. Superseded entries (`nodes.superseded_by`) never
+show, and neither does an entry marked wrong without a replacement (a bare
+`corrected` mark from `content_supersede`; `journalLiveSql`); a bare
+`version` or `migrated` mark only down-weights search. Decided 2026-09-23, when persona notes, which were per agent, moved
+into the Journal. A learned rule keeps its `source` through edits, so it
+stays scoped; to share one agent's rule with every agent, re-create it as a
+plain entry (no agent). The scope SQL has a real-Postgres test,
+`packages/content/src/journal-scope.db.test.ts` (gated on
+`MANTLE_TEST_DATABASE_URL`).
+
+- **Tier 1, always on** (`buildJournalTier1` → `planJournalTier1` →
+  `renderJournalTier1Block`): the purpose block + the identity / goal /
+  preference entries the agent may see, full text (≤1,500 chars each),
+  grouped by kind, oldest first by `created_at`, so a new entry appends and an
+  edit never reorders. The block holds 16,000 chars: each kind first fills its
+  own share (identity 4,000, goal 2,000, preference 10,000), oldest first,
+  stopping at the first that does not fit; then what is left of the 16,000
+  is shared in kind order. A new entry never pushes out an older one of its
+  own kind. An entry that does not fit **overflows to tier 2** and to the
+  rules `journal_recall` scores: it is then picked per turn, by Jev when that
+  use is on, otherwise by similarity, which rarely matches a standing rule
+  (turn `journal_recall` on for an agent whose rules overflow).
+  `snapshot.journal.tier1` counts shown and overflow. It rides the
+  **persona-notes block** (cache marker 2), after the persona prompt: a Journal
+  write re-bills that block onward, never the persona prompt.
+  `assembleResponderTurn` returns it as `journalBlock`; `buildChatMessages`
+  renders it.
+- **Tier 2, per turn** (`journalTiersForTurn`, runtime
+  `conversation/journal-tiers.ts`, with the turn's one query embedding): every
+  non-gap entry not shown in tier 1 (context entries, free-text user kinds,
+  lessons, expectations, tier 1 overflow) whose cosine similarity to the
+  message is at least `journal_relevance_min` (default 0.70, clamped 0 to 1;
+  ~0.60 suits long work logs, 0.72 to 0.75 short personal entries). Best
+  first, ≤6 entries, ≤`journal_relevant_chars` (default 3,000, clamped 200 to
+  20,000) a turn. A body over 1,200 chars sends its best-matching chunk, not
+  the whole; a pick cut to fit the budget is dropped when under 80 chars.
+  Greetings, thanks and acknowledgements skip the lookup (`isSmallTalk`; a
+  one-word request such as "invoices" is not small talk). The scan is a plain
+  distance select over the agent's visible entries (not an index walk a type
+  filter would starve), capped at 5,000 rows.
+  With the decider's `journal_recall` use live, the rules Jev scored are
+  picked by score instead (≤25 rules, ≤6,000 chars): similarity cannot match a
+  rule to a request (spike 13, decisions.md §4). A rule Jev did not score (its
+  group failed) falls back to similarity, and a scored rule with no embedding
+  yet is still a candidate. In shadow, Jev's pick is traced beside the
+  similarity pick from the same candidate load (`snapshot.journal.recall`).
+- **Tier 3, per turn**: at most one open gap whose similarity passes the same
+  cutoff, with the ask/record instructions.
+- Tiers 2 + 3 render as `# From the Journal (relevant to this message)`, an
+  **uncached** system block right after the volatile context
+  (`ctx.journalRelevant`). In `live`, what a **whole** entry in the prompt
+  (tier 1, or a tier 2 pick sent in full) makes redundant is dropped: facts
+  extracted from it, its chunk hits and its content hit. A passage pick drops
+  only its own chunk. `snapshot.journal.dedupe` counts them in both modes.
+- The embedding is computed when the tiers need it, even with `fact_limit`
+  and `content_hit_limit` at 0. Passages, context pruning and version
+  grouping still ride only on the retrieval an agent asked for, so an
+  embedding computed for the tiers alone does not switch them on.
+- If the tier 1 plan cannot be loaded, tier 2 leaves out every tier 1 kind,
+  so no entry can show twice.
+- Lanes stay gated: `inject_journal` (user lane, and with it tier 1) and
+  `inject_working_notes` (agent lane). Team and forum turns never render the
+  Journal, so they call `loadConversationContext` with `includeJournal:
+  false`: the tiers do not run there, spend no decider call and drop nothing.
+- The legacy mapping (a family / relationships / faith / health row with no
+  mood reads as identity) applies to the old blocks too, so with `off` or
+  `shadow` such rows moved from "Other" into the identity group.
+
+To go live on one agent: set `memory_config.journal_tiers` to `live` (the
+agent PATCH route accepts it, with the clamps above); read a few
+`load_context` snapshots first (`snapshot.journal.picked`, `nearMisses`,
+`tier1`) and tune `journal_relevance_min` for that brain.
+
+### 4b. Persona notes move into the Journal (`memory_config.notes_target`)
+
+Persona notes (`agents.persona_notes`, written by the reflector and
+`update_persona`) and the Journal's agent lane hold the same thing: what an
+agent learned about helping its user. The notes ride every prompt in full and
+were never retired (spike 13, dev-brain page 9f57fa46: one work brain held 503
+notes, 103k chars, 68 of them general and 435 topic rules). The move, per
+agent (both runs spend, so both take `--yes`; the task runs from a terminal
+only, since it needs `--agent` or `--page`):
+
+1. **Dry run:** `pnpm maintain persona-notes-to-journal --agent=<slug> --yes`.
+   Inside a box's container the owner id is not in the environment:
+   `docker exec -w /app -e ALLOWED_USER_ID=<owner id> mantle_web pnpm maintain persona-notes-to-journal --agent=<slug> --yes`.
+   The agent's own model sorts every live note at low reasoning effort, in
+   batches of 15 with one retry each (general → `preference` / `identity`,
+   tier 1; topic → `expectation` / `lesson` / `context`, tier 2; a correction
+   is always general). Answers are checked; a note with no usable answer is
+   "unsorted" and goes per turn, listed on the page. A batch that still fails
+   leaves its notes unsorted instead of ending the run. Near-copies are merged
+   (embedding ≥ 0.85, confirmed by the model); a group keeps its strongest
+   note (a correction, then a general note, then the earliest). The plan goes
+   to a review page (the plan itself in the page's `data.persona_notes_plan`),
+   which warns when the always-on notes outgrow tier 1 (16,000 chars, shared
+   with the user's own entries). Measured 2026-09-23:
+   $0.79 for 503 notes on Sonnet 5, $0.12 for 119 on grok.
+2. **Apply:** `pnpm maintain persona-notes-to-journal --apply --page=<id> --yes`
+   checks the stored plan and its agent, then creates exactly the reviewed
+   entries, authored as the agent (so they belong to it), tagged
+   `from-persona-notes`, `data.source.persona_note_ref` set (idempotent).
+   Notes retired since the dry run are skipped; notes learned since are
+   reported (re-run the dry run for them). No sorting call, but each new
+   entry is indexed, which runs the extractor once per entry. Persona notes
+   untouched.
+3. **Switch:** set the agent's `memory_config.notes_target` to `journal`.
+   This also switches its tiers live (§4a). The agent stops reading its
+   persona notes; the reflector reads this agent's rule entries (identity,
+   goal, preference, lesson, expectation; newest 300, each cut to 240 chars)
+   as "already known" and writes Journal entries (it also gives each note a
+   `scope`: general → `preference`, topic → `expectation`; relationship →
+   `identity`; correction → `preference`), dropping near-copies of what the
+   agent knows (token Jaccard ≥ 0.6). `update_persona` always writes a general
+   `preference` (an explicit request, and a correction must land even when it
+   reads like the rule it replaces); its `supersede_refs` do not apply in the
+   Journal, and the tool says so: retiring the old entry is `journal_list`,
+   then `journal_update` / `journal_delete`. With the decider's
+   `rule_reconcile` use live, both writers retire the older rule a new one
+   repeats or changes themselves (§4c).
+4. Rules then reach the prompt through tier 2, picked by Jev when the
+   decider's `journal_recall` use is live (embedding similarity cannot match
+   a rule to a request).
+
+There is no one-step undo: the converted entries carry the
+`from-persona-notes` tag, and setting `notes_target` back to `persona` makes
+the agent read its (untouched) persona notes again.
+
+**The Journal is the default (2026-09-24).** Once every fleet agent's notes had
+moved, `notesTargetOf` flipped: an agent with no `notes_target` learns into
+the Journal and reads it through live tiers, so no agent writes persona notes
+any more and a manifest reconcile (which rewrites a system agent's
+`memory_config`) cannot put one back on them. `notes_target = 'persona'` is
+the explicit opt-out and the undo; the `persona_notes` column stays until the
+Journal has soaked, then goes in its own migration.
+
+### 4c. Rule reconcile: copies and stale versions (`rule_reconcile`)
+
+An agent's learned rules pile up: the reflector re-reads overlapping turns and
+writes the same lesson again in other words, and a rule that changed ("use
+the external time tracker" → "use a table") leaves the old one beside the new
+one, both read as current. Spike 14 (dev-brain page d58e4ed3) found both on
+real brains. The decider's `rule_reconcile` use (decisions.md §4) handles it
+in two places, both limited to rules THIS agent learned
+(`learnedRuleOfAgentSql` in `packages/content/src/rule-reconcile.ts`: a live
+identity / goal / preference / lesson / expectation entry that the agent
+learned and that carries its slug). What an agent records for the user is
+never a candidate.
+
+1. **On write** (`writeLearnedEntries`): each new rule is paired with the
+   agent's close rules (cosine ≥ 0.70 of the rule texts, at most 5) and Jev
+   answers "same rule?" and "does the newer change the older?". Live: at 0.8
+   on either, the new rule is written and the older one superseded by it
+   (reason `corrected` or `version`; reversible). Shadow: nothing changes and
+   the would-be retires are traced. A failed or absent decider writes exactly
+   as before.
+2. **Cleanup** (maintenance task `journal-rules-reconcile`, terminal only):
+   - dry run: `pnpm maintain journal-rules-reconcile --agent=<slug> --yes`
+     judges every close pair of the agent's existing rules and writes the
+     retires to a review page (plan in `data.rule_reconcile_plan`). An older
+     rule matched by several newer ones goes to the newest, and a chain
+     (a → b → c, each a direct yes) ends at its living end.
+   - apply: `pnpm maintain journal-rules-reconcile --apply --page=<id> --yes`
+     writes the reviewed supersede marks; a retire whose rules changed since
+     the dry run is skipped.
+
+Undo a retire with the supersede undo (`unsupersedeNode`); nothing is deleted.
+
 ---
 
 ## 5. The gap loop
@@ -143,7 +344,8 @@ Team turns pass `includeIdentity: false`, which gates BOTH blocks.
    with `kind='gap'`: one answerable question, written to be answered cold.
    Born `status='open'`.
 2. **Ask.** Every conversational agent sees open questions in its Working
-   notes. The `gap_questions` manifest skill teaches the etiquette: ask only
+   notes (with the tiers live, only the one open gap that matches the message
+   joins a turn: tier 3, §4a). The `gap_questions` manifest skill teaches the etiquette: ask only
    when relevant to the current conversation, at most one per turn, never as
    an opener, drop it if declined. The UI's "Questions for you" view (jackdaw
    P2, including a home-screen block) is the out-of-chat path.
@@ -189,6 +391,13 @@ Gap creation only happens inside an existing turn — no cron, no trigger.
 - MCP serves the same builtins through the shared registry; a Claude
   Desktop/Code call has no `ctx.agent`, so upstream-ingest entries record as
   the user — correct, it's the user's surface.
+- **A rule for one agent, from MCP.** `journal_create` takes an optional
+  `agent` (slug) that only counts without `ctx.agent`: a `lesson` or
+  `expectation` then stays `author='user'` but gets that `agent_slug`, so it is
+  scoped like a rule the agent learned itself (`journalVisibleSql`: read by
+  that agent alone, listed under `/journal?learned_by=<slug>`). Without it an
+  MCP rule has no agent and every agent reads it. The agent must exist on the
+  brain; any other kind refuses the field.
 
 Tool descriptions steer the lanes: user-lane on the user's explicit ask;
 agent-lane for the agent's own lessons/expectations/gaps; never world-facts

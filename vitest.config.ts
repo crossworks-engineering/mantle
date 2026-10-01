@@ -23,6 +23,8 @@ export default defineConfig({
   test: {
     include: ['packages/**/src/**/*.test.ts', 'server/**/*.test.ts', 'eslint-rules/**/*.test.ts'],
     environment: 'node',
+    // Writes the route manifest the security sweeps need (vitest.global-setup.ts).
+    globalSetup: ['./vitest.global-setup.ts'],
     globals: false,
     // The 5s default assumes a test only times its own logic. Several tests
     // import modules INSIDE the test body — sometimes because the module reads

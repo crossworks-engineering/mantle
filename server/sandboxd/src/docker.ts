@@ -11,8 +11,9 @@
 
 import http from 'node:http';
 
+import { chooseApiVersion, PREFERRED_API_VERSION } from './api-version';
+
 const SOCK = process.env.DOCKER_SOCK || '/var/run/docker.sock';
-const API = '/v1.43';
 
 export class DockerError extends Error {
   constructor(
@@ -23,7 +24,9 @@ export class DockerError extends Error {
   }
 }
 
-function request(
+/** One HTTP round trip on the socket. `path` is sent as given; callers add
+ *  the version prefix (only `/version` itself goes out unversioned). */
+function rawRequest(
   method: string,
   path: string,
   body?: unknown,
@@ -35,7 +38,7 @@ function request(
       {
         socketPath: SOCK,
         method,
-        path: `${API}${path}`,
+        path,
         headers: {
           'Content-Type': 'application/json',
           ...(payload ? { 'Content-Length': payload.length } : {}),
@@ -55,6 +58,61 @@ function request(
   });
 }
 
+/* ── API version negotiation ──────────────────────────────────────────── */
+
+let negotiated: string | null = null;
+let inflight: Promise<string> | null = null;
+let warnedFallback = false;
+
+/**
+ * The Engine API version this daemon accepts, asked once via the UNVERSIONED
+ * `GET /version` (the one call that works whatever the daemon's range is) and
+ * clamped by api-version.ts. Only a successful answer is cached: if docker is
+ * not up yet we speak the preferred version for now and ask again next call,
+ * so a daemon that starts after sandboxd still gets negotiated.
+ */
+export function apiVersion(): Promise<string> {
+  if (negotiated) return Promise.resolve(negotiated);
+  inflight ??= negotiate().finally(() => {
+    inflight = null;
+  });
+  return inflight;
+}
+
+async function negotiate(): Promise<string> {
+  try {
+    const res = await rawRequest('GET', '/version', undefined, { timeoutMs: 5_000 });
+    if (res.status !== 200) throw new Error(`HTTP ${res.status}`);
+    const info = JSON.parse(res.body.toString('utf8')) as {
+      ApiVersion?: unknown;
+      MinAPIVersion?: unknown;
+    };
+    negotiated = chooseApiVersion(info);
+    console.log(
+      `[sandboxd] docker API v${negotiated} (daemon accepts ${String(info.MinAPIVersion ?? '?')} to ${String(info.ApiVersion ?? '?')})`,
+    );
+    return negotiated;
+  } catch (e) {
+    if (!warnedFallback) {
+      warnedFallback = true;
+      console.warn(
+        `[sandboxd] docker /version failed (${(e as Error).message}); using API v${PREFERRED_API_VERSION} until it answers`,
+      );
+    }
+    return PREFERRED_API_VERSION;
+  }
+}
+
+const prefixed = async (path: string): Promise<string> => `/v${await apiVersion()}${path}`;
+
+const request = async (
+  method: string,
+  path: string,
+  body?: unknown,
+  opts?: { timeoutMs?: number },
+): Promise<{ status: number; body: Buffer }> =>
+  rawRequest(method, await prefixed(path), body, opts);
+
 async function json<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await request(method, path, body);
   if (res.status >= 400) {
@@ -73,14 +131,17 @@ async function json<T>(method: string, path: string, body?: unknown): Promise<T>
 export const ping = async (): Promise<boolean> => (await request('GET', '/_ping')).status === 200;
 
 /** Pull an image, consuming the progress stream to completion. */
-export function pullImage(image: string): Promise<void> {
+export async function pullImage(image: string): Promise<void> {
   const [name, tag = 'latest'] = image.split(':');
+  const path = await prefixed(
+    `/images/create?fromImage=${encodeURIComponent(name!)}&tag=${encodeURIComponent(tag)}`,
+  );
   return new Promise((resolve, reject) => {
     const req = http.request(
       {
         socketPath: SOCK,
         method: 'POST',
-        path: `${API}/images/create?fromImage=${encodeURIComponent(name!)}&tag=${encodeURIComponent(tag)}`,
+        path,
         // Image pulls are big; no read timeout — the stream itself is progress.
         timeout: 0,
       },
@@ -167,11 +228,12 @@ export async function execInteractive(containerId: string, cmd: string[]): Promi
     WorkingDir: '/files',
     Cmd: cmd,
   });
+  const startPath = await prefixed(`/exec/${execId}/start`);
   const socket = await new Promise<import('node:net').Socket>((resolve, reject) => {
     const req = http.request({
       socketPath: SOCK,
       method: 'POST',
-      path: `${API}/exec/${execId}/start`,
+      path: startPath,
       headers: {
         'Content-Type': 'application/json',
         Connection: 'Upgrade',
@@ -226,12 +288,13 @@ export async function execInContainer(
     Cmd: cmd,
   });
 
+  const startPath = await prefixed(`/exec/${execId}/start`);
   const captured = await new Promise<{ stdout: Buffer[]; stderr: Buffer[] }>((resolve, reject) => {
     const req = http.request(
       {
         socketPath: SOCK,
         method: 'POST',
-        path: `${API}/exec/${execId}/start`,
+        path: startPath,
         headers: { 'Content-Type': 'application/json' },
         timeout: 0,
       },
