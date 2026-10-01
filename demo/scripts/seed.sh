@@ -27,9 +27,9 @@ export TIKA_URL="http://127.0.0.1:56998"
 # generator's output. Absolute, and shared by every process that reads docs.
 export MANTLE_DOCS_ROOT="$(cd "$(dirname "$0")/../.." && pwd)/demo/generator/out/docs"
 # The origin the app writes into GENERATED TEXT — share links, and the node
-# links the agent puts in forum answers. Those are baked into stored content at
+# links the agent puts in its answers. Those are baked into stored content at
 # seed time and never re-resolved, so an unset value is permanent: the first
-# forum answers came out citing http://localhost:3000/n/<id>, which is a dead
+# seeded answers came out citing http://localhost:3000/n/<id>, which is a dead
 # link everywhere the demo actually runs. Point it at the public demo origin
 # (override for a local bench: DEMO_PUBLIC_URL=http://127.0.0.1:56080).
 export MANTLE_PUBLIC_URL="${DEMO_PUBLIC_URL:-https://demo.mantle-ai.tech}"
@@ -178,23 +178,23 @@ DEMO_SERVER_URL="http://127.0.0.1:$WEB_PORT" \
 
 # Needs the WRITABLE api that is still up at this point — the serve-time reader
 # could not do this, which is the whole reason it belongs to seeding.
-echo "→ team member + team-visible shares"
+echo "→ team: member logins, team-level items, the member chat, one client login"
 DEMO_SERVER_URL="http://127.0.0.1:$WEB_PORT" \
   pnpm -C server/web exec tsx ../../demo/seed/enable-team.ts
 
-# Real agent turns, so server/api must still be up — it is, until cleanup. The
-# member cookie is minted here rather than inside the seeder so the seeder never
-# needs database credentials.
-echo "→ forum topics (the brain answers these for real)"
-# Non-fatal on purpose (2026-09-17): the forum turn is a real agent turn, and
-# on a busy bench its chat stream can time out while the extractor is still
-# working through eight hundred nodes. That is a missing ANSWER, not a broken
-# brain; the app seed and verify below are worth more than aborting here. The
-# failure is re-raised at the very end, after everything else has run.
-forum_failed=0
-DEMO_TEAM_COOKIE="$(pnpm -s -C server/web exec tsx ../../demo/seed/mint-team-cookie.ts | tail -1)" \
+# Real agent turns, so server/api must still be up; it is, until cleanup. The
+# member signs in with its own login (enable-team.ts made it), so this needs
+# no minted cookie and no database credentials.
+echo "→ member chat (the brain answers these for real)"
+# Non-fatal on purpose (2026-09-17, then for the forum this replaced): the
+# turn is a real agent turn, and on a busy bench its chat stream can time out
+# while the extractor is still working through eight hundred nodes. That is a
+# missing ANSWER, not a broken brain; the app seed and verify below are worth
+# more than aborting here. The failure is re-raised at the very end, after
+# everything else has run.
+chat_failed=0
 DEMO_SERVER_URL="http://127.0.0.1:$WEB_PORT" \
-  pnpm -C server/web exec tsx ../../demo/seed/seed-forum.ts || forum_failed=1
+  pnpm -C server/web exec tsx ../../demo/seed/seed-member-chat.ts || chat_failed=1
 
 # Create → draft → build → publish, through the same endpoints an owner uses.
 # A broken app fails HERE with a compiler error rather than as an error card in
@@ -205,8 +205,8 @@ DEMO_SERVER_URL="http://127.0.0.1:$WEB_PORT" \
 
 echo "→ verify (waits for extraction to drain)"
 pnpm -C server/web exec tsx ../../demo/seed/verify.ts --wait "${DEMO_VERIFY_WAIT:-900}"
-if [ "$forum_failed" = "1" ]; then
-  echo "✗ the forum topics were posted but not all were answered — re-run seed-forum.ts once the extractor is quiet:" >&2
-  echo "    DEMO_TEAM_COOKIE=\"\$(pnpm -s -C server/web exec tsx ../../demo/seed/mint-team-cookie.ts | tail -1)\" DEMO_SERVER_URL=http://127.0.0.1:$WEB_PORT pnpm -C server/web exec tsx ../../demo/seed/seed-forum.ts" >&2
+if [ "$chat_failed" = "1" ]; then
+  echo "✗ the member chat questions were asked but not all were answered. Run seed-member-chat.ts again once the extractor is quiet (it skips what is already asked):" >&2
+  echo "    DEMO_SERVER_URL=http://127.0.0.1:$WEB_PORT pnpm -C server/web exec tsx ../../demo/seed/seed-member-chat.ts" >&2
   exit 1
 fi

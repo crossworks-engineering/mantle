@@ -155,7 +155,6 @@ x-demo-app-env: &demo-app-env
   # would not fix that — the runs would have to be seeded, writably, before
   # the dump was taken.
   MANTLE_RUNS: ''
-  TEAM_CHAT_POST_ENABLED: ''
   SANDBOXD_TOKEN: ''
 
 services:

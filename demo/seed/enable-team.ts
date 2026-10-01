@@ -1,168 +1,178 @@
 /**
- * Give the demo a team member, and give that member something to look at.
+ * Give the demo a team and a client, the way main does it now.
  *
- * The team portal (/team, /hub) is gated by a credential the edge CANNOT fake,
- * unlike the owner session. Two independent conditions have to hold:
+ * Until v0.232.200 a team member was a CONTACT with a token (`POST
+ * /api/contacts/:id/team`), admitted to a portal by its own cookie, and an
+ * item was shown to the team by a share link in `team` mode. Main retired all
+ * three (member logins, migrations 0162 to 0178): the route answers 404, the
+ * `contact_team_tokens` table is dropped, and `PATCH /api/shares/:id { mode:
+ * 'team' }` is refused. What replaced them, and what this script does:
  *
- *   1. `mantle_team_chat` is an HMAC over SESSION_SECRET, so Caddy cannot sign
- *      one — it is minted by demo/seed/mint-team-cookie.ts, same as the owner
- *      session is minted by mint-session.ts.
- *   2. `isTeamMember()` re-queries `contact_team_tokens` on EVERY call, by
- *      design, so removing someone locks them out mid-session. A perfectly
- *      signed cookie for a contact with no row is refused.
+ *   1. A team member IS a login with role `member` (`POST /api/users`). The
+ *      studio is five people besides the owner, so all five get one: the
+ *      Team screen then shows a team, not a row.
+ *   2. An item is shown to the team by its LEVEL. Folders carry most of it
+ *      (the seeder shares the Studio Handbook with the team). Tables have no
+ *      shared folder here, so two of them are set to team level one by one
+ *      (`PATCH /api/access/nodes/:id`). Tasks and events can no longer be
+ *      shown to a member at all: they are admin-only kinds on main.
+ *   3. The member chat opens when the `team-responder` agent is at team
+ *      level, and the brain refuses that while the agent holds an admin-level
+ *      tool group. So the group goes first, then the level, in that order.
+ *      The seed changes; the brain's rule does not.
+ *   4. One client login, for the person who approves the PUMPHOUSE procedure
+ *      revisions, which sit in the folder the seeder shares with clients. The
+ *      brain refuses a client login until an admin has acknowledged the list
+ *      of everything clients can read, so this reads that list and
+ *      acknowledges exactly it (by its fingerprint), as the dialog does.
  *
- * So a visitor cannot be let in by cookie alone: one of the seeded contacts has
- * to genuinely become a member. That is a write, done here at seed time under
- * the owner role — the serve-time reader stays read-only.
+ * Membership alone would be an empty room, so the script signs in AS a member
+ * at the end and fails when that member's Library is empty.
  *
- * Membership alone would only move the demo from an honest locked door to an
- * empty room: the portal lists SHARED content, and a freshly seeded brain
- * shares nothing. So this also shares a representative slice of the brain with
- * the team, which is what makes the portal worth opening.
- *
- * Everything goes through the REAL endpoints — POST /api/contacts/:id/team and
- * the shares API — so the brain ends up in a state an owner could have reached
- * from the UI, the same principle enable-runs.ts follows.
+ * Everything goes through the real endpoints, so the brain ends up in a state
+ * an owner could have reached from the UI. Safe to run again: a login that is
+ * already there is a 409, which is treated as done.
  *
  *   pnpm -C server/web exec tsx ../../demo/seed/enable-team.ts
  */
 const SERVER = process.env.DEMO_SERVER_URL ?? 'http://127.0.0.1:3902';
 const OWNER_EMAIL = process.env.DEMO_OWNER_EMAIL ?? 'alex@harbourlabs.example.com';
 const OWNER_PASSWORD = process.env.DEMO_OWNER_PASSWORD ?? 'demo-brain-not-a-real-password';
+// Fictional people on a documentation domain, on a brain that holds only
+// generated content: like the owner's, this is not a secret.
+const MEMBER_PASSWORD = process.env.DEMO_MEMBER_PASSWORD ?? 'demo-member-not-a-real-password';
+// The client contact who gets the one client login (demo/world/world.json).
+const CLIENT_EMAIL = process.env.DEMO_CLIENT_EMAIL ?? 'g.bekker@meridianww.example.org';
+// Tables a colleague would work in. Shown to the team by level; everything
+// else the team sees comes from the shared handbook folder.
+const TEAM_TABLES = ['Studio risk register', 'PS3 snag list'];
 
-// How much of each kind to put in front of the member. Enough that every tab
-// has something, not so much that the portal looks like the owner's whole
-// brain — a member sees a deliberate slice, and the demo should show that.
-const SHARE_COUNTS: Record<string, number> = {
-  note: 6,
-  page: 4,
-  table: 2,
-  task: 5,
-  event: 3,
-};
+const TEAM_RESPONDER = 'team-responder';
 
-// Which list endpoint yields which node type, and the key its array sits under.
-const SOURCES: { type: string; path: string; key: string }[] = [
-  { type: 'note', path: '/api/notes?limit=40', key: 'notes' },
-  { type: 'page', path: '/api/pages?limit=40', key: 'pages' },
-  { type: 'table', path: '/api/tables?limit=40', key: 'tables' },
-  { type: 'task', path: '/api/tasks?limit=40', key: 'tasks' },
-  { type: 'event', path: '/api/events?limit=40', key: 'events' },
-  // NO files. The portal's Files section is fed by shared FOLDERS (`branch` in
-  // TEAM_WORKSPACE_TYPES) — `file` is not a member-surface type at all, so
-  // sharing individual files creates links that appear nowhere in the portal.
-  // The seeded brain has no folders, so that section stays honestly empty
-  // until the generator grows one. Sharing files anyway would have looked like
-  // progress in this script's output while changing nothing a visitor sees.
-];
+type Jar = { cookie: string };
+const owner: Jar = { cookie: '' };
 
-let cookie = '';
-async function api(path: string, init: RequestInit = {}) {
+async function api(jar: Jar, path: string, init: RequestInit = {}) {
   const res = await fetch(`${SERVER}${path}`, {
     ...init,
     headers: {
       'content-type': 'application/json',
-      ...(cookie ? { cookie } : {}),
+      ...(jar.cookie ? { cookie: jar.cookie } : {}),
       ...(init.headers ?? {}),
     },
   });
   const sc = res.headers.getSetCookie?.() ?? [];
-  if (sc.length) cookie = sc.map((c) => c.split(';')[0]).join('; ');
+  if (sc.length) jar.cookie = sc.map((c) => c.split(';')[0]).join('; ');
   return res;
 }
+const call = (jar: Jar, method: string, path: string, body?: unknown) =>
+  api(jar, path, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
 
-async function json(path: string): Promise<Record<string, unknown> | null> {
-  const res = await api(path);
-  if (!res.ok) return null;
-  return (await res.json().catch(() => null)) as Record<string, unknown> | null;
+async function json<T>(jar: Jar, path: string): Promise<T> {
+  const res = await api(jar, path);
+  if (!res.ok) throw new Error(`GET ${path} → ${res.status} ${(await res.text()).slice(0, 200)}`);
+  return (await res.json()) as T;
 }
 
+async function login(jar: Jar, email: string, password: string) {
+  const res = await call(jar, 'POST', '/api/auth/login', { email, password });
+  if (!res.ok) throw new Error(`login ${email} → ${res.status} ${(await res.text()).slice(0, 160)}`);
+}
+
+type Contact = { id: string; title: string; emails?: string[] };
+
 async function main() {
-  const login = await api('/api/auth/login', {
-    method: 'POST',
-    body: JSON.stringify({ email: OWNER_EMAIL, password: OWNER_PASSWORD }),
-  });
-  if (!login.ok) {
-    console.error(`✗ login failed: ${login.status} ${(await login.text()).slice(0, 160)}`);
-    process.exit(1);
+  await login(owner, OWNER_EMAIL, OWNER_PASSWORD);
+
+  const contacts = (await json<{ contacts?: Contact[] }>(owner, '/api/contacts?limit=100')).contacts ?? [];
+  if (!contacts.length) throw new Error('no contacts on this brain: seed it first');
+  const emailOf = (c: Contact) => (c.emails ?? [])[0]?.toLowerCase() ?? '';
+
+  // ── 1. The team: the owner's own colleagues ───────────────────────────────
+  // By email domain, not by sort order: the first contact by name is only a
+  // colleague by luck, and a client's contact must never become a member.
+  const domain = OWNER_EMAIL.split('@')[1]!.toLowerCase();
+  const colleagues = contacts
+    .filter((c) => emailOf(c).endsWith(`@${domain}`) && emailOf(c) !== OWNER_EMAIL.toLowerCase())
+    .sort((a, b) => a.title.localeCompare(b.title));
+  if (!colleagues.length) throw new Error(`no contact on ${domain} besides the owner: nobody to make a member`);
+  for (const c of colleagues) {
+    const res = await call(owner, 'POST', '/api/users', {
+      email: emailOf(c),
+      password: MEMBER_PASSWORD,
+      displayName: c.title,
+      role: 'member',
+      contactId: c.id,
+    });
+    // 409: the login (or a login for this contact) is already there.
+    if (!res.ok && res.status !== 409) {
+      throw new Error(`member ${c.title}: ${res.status} ${(await res.text()).slice(0, 200)}`);
+    }
+    console.log(`· member: ${c.title}${res.status === 409 ? ' (already a login)' : ''}`);
   }
 
-  // ── The member ────────────────────────────────────────────────────────────
-  // Deterministic pick: contacts sorted by name, first one. A random member
-  // would make the demo's "who am I" change on every re-seed.
-  const contacts = (await json('/api/contacts?limit=100'))?.contacts as
-    | { id: string; title: string; emails?: string[] }[]
-    | undefined;
-  if (!contacts?.length) {
-    console.error('✗ no contacts on this brain — seed it first.');
-    process.exit(1);
+  // ── 2. Team-level tables ──────────────────────────────────────────────────
+  const tables = (await json<{ tables?: Array<{ id: string; title: string }> }>(owner, '/api/tables?limit=100')).tables ?? [];
+  for (const title of TEAM_TABLES) {
+    const t = tables.find((x) => x.title === title);
+    if (!t) throw new Error(`table "${title}" is not on this brain (the generator renamed it?)`);
+    const res = await call(owner, 'PATCH', `/api/access/nodes/${t.id}`, { audience: 'team' });
+    if (!res.ok) throw new Error(`table "${title}" → team: ${res.status} ${(await res.text()).slice(0, 200)}`);
+    console.log(`· team level: table "${title}"`);
   }
-  // Exclude the owner's own contact card. It sorts first alphabetically in the
-  // seeded cast, and making the owner their own team member would show a
-  // visitor the portal as the very person whose brain it is — which tells them
-  // nothing about what a colleague sees.
-  const candidates = contacts.filter(
-    (c) => !(c.emails ?? []).some((e) => e.toLowerCase() === OWNER_EMAIL.toLowerCase()),
+
+  // ── 3. The member chat ────────────────────────────────────────────────────
+  // An agent may hold only tool groups at or below its own level, so the
+  // admin-level group goes before the level comes down. The other order is
+  // refused (`group_above_agent`).
+  const agents = (await json<{ agents?: Array<{ id: string; slug: string; toolGroupSlugs?: string[] }> }>(owner, '/api/agents')).agents ?? [];
+  const responder = agents.find((a) => a.slug === TEAM_RESPONDER);
+  if (!responder) throw new Error(`no '${TEAM_RESPONDER}' agent on this brain`);
+  const keep = (responder.toolGroupSlugs ?? []).filter((g) => g !== 'team-read-admin');
+  let res = await call(owner, 'PATCH', `/api/agents/${responder.id}`, { toolGroupSlugs: keep });
+  if (!res.ok) throw new Error(`${TEAM_RESPONDER} tool groups: ${res.status} ${(await res.text()).slice(0, 200)}`);
+  res = await call(owner, 'PATCH', `/api/access/agents/${TEAM_RESPONDER}`, { audience: 'team' });
+  if (!res.ok) throw new Error(`${TEAM_RESPONDER} → team: ${res.status} ${(await res.text()).slice(0, 200)}`);
+  console.log(`· member chat open: ${TEAM_RESPONDER} at team level, tool groups ${keep.join(', ') || '(none)'}`);
+
+  // ── 4. One client login ───────────────────────────────────────────────────
+  const clientContact = contacts.find((c) => emailOf(c) === CLIENT_EMAIL.toLowerCase());
+  if (!clientContact) throw new Error(`no contact with ${CLIENT_EMAIL}: nobody to make a client login for`);
+  const report = await json<{ total: number; acknowledged: boolean; fingerprint?: string }>(owner, '/api/access/client-report');
+  if (report.total === 0) {
+    // A client login with nothing to read is the empty room again.
+    throw new Error('nothing is at client level: the seeder shares a folder with clients, did that step run?');
+  }
+  if (!report.acknowledged) {
+    if (!report.fingerprint) throw new Error('the client report carries no fingerprint to acknowledge');
+    res = await call(owner, 'POST', '/api/access/client-report/ack', { fingerprint: report.fingerprint });
+    if (!res.ok) throw new Error(`client report ack: ${res.status} ${(await res.text()).slice(0, 200)}`);
+  }
+  res = await call(owner, 'POST', '/api/team-admin/clients', { contactId: clientContact.id });
+  if (!res.ok && res.status !== 409) {
+    throw new Error(`client login ${clientContact.title}: ${res.status} ${(await res.text()).slice(0, 200)}`);
+  }
+  console.log(
+    `· client login: ${clientContact.title}${res.status === 409 ? ' (already there)' : ''}, ${report.total} item(s) at client level, list acknowledged`,
   );
-  if (!candidates.length) {
-    console.error('✗ the only contact is the owner — nobody to make a member.');
-    process.exit(1);
-  }
-  const member = [...candidates].sort((a, b) => a.title.localeCompare(b.title))[0]!;
 
-  const enable = await api(`/api/contacts/${member.id}/team`, {
-    method: 'POST',
-    body: JSON.stringify({ action: 'enable' }),
-  });
-  // 409 means they are already a member. `enable` deliberately refuses to
-  // rotate a live token, so re-running this script must treat that as done
-  // rather than as a failure — a seed step that breaks on its second run is
-  // a seed step nobody can re-run.
-  if (!enable.ok && enable.status !== 409) {
-    console.error(`✗ enable team member failed: ${enable.status} ${(await enable.text()).slice(0, 200)}`);
-    process.exit(1);
+  // ── 5. Prove it from the member's side ────────────────────────────────────
+  const first = colleagues[0]!;
+  const member: Jar = { cookie: '' };
+  await login(member, emailOf(first), MEMBER_PASSWORD);
+  const library = await json<{ total: number }>(member, '/api/member/library');
+  const chat = await json<{ agent: { slug: string } | null }>(member, '/api/member/chat');
+  if (library.total === 0) {
+    // Zero is the failure that would present as a working-but-empty portal.
+    throw new Error(`${first.title} signs in to an empty Library: nothing is at team level`);
   }
-  // The plaintext token crosses the wire exactly once here and is deliberately
-  // NOT printed: nothing downstream needs it. The injected cookie is signed
-  // from (ownerId, contactId), and the stored hash exists only so the liveness
-  // check passes.
-  console.log(`· member: ${member.title}${enable.status === 409 ? ' (already a member)' : ''}`);
-
-  // ── Something for them to see ─────────────────────────────────────────────
-  let created = 0;
-  for (const src of SOURCES) {
-    const want = SHARE_COUNTS[src.type] ?? 0;
-    const body = await json(src.path);
-    const items = (body?.[src.key] as { id: string }[] | undefined) ?? [];
-    if (!items.length) {
-      console.log(`  ${src.type.padEnd(6)} — nothing seeded, skipped`);
-      continue;
-    }
-    let made = 0;
-    for (const item of items.slice(0, want)) {
-      const res = await api('/api/shares', { method: 'POST', body: JSON.stringify({ nodeId: item.id }) });
-      if (!res.ok) continue;
-      const out = (await res.json().catch(() => ({}))) as { share?: { id: string; mode?: string } };
-      const shareId = out.share?.id;
-      if (!shareId) continue;
-      // Shares are born public; the portal is for TEAM admission.
-      const patch = await api(`/api/shares/${shareId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ mode: 'team' }),
-      });
-      if (patch.ok) made++;
-    }
-    created += made;
-    console.log(`  ${src.type.padEnd(6)} ${made} shared with the team`);
-  }
-
-  if (created === 0) {
-    // Zero shares is the failure that would present as a working-but-empty
-    // portal, which is exactly the shape of bug this demo keeps producing.
-    console.error('✗ no shares created — the portal would open onto nothing.');
-    process.exit(1);
-  }
-  console.log(`✓ team enabled: ${member.title}, ${created} shared items`);
+  if (!chat.agent) throw new Error(`${first.title} signs in, but the member chat is not open`);
+  // A member must NOT reach an owner route: the same cookie name carries both.
+  const refused = await api(member, '/api/contacts?limit=1');
+  if (refused.ok) throw new Error('a member login can read /api/contacts: it was made an admin');
+  console.log(
+    `✓ team enabled: ${colleagues.length} member login(s); ${first.title} sees ${library.total} Library item(s) and the chat with ${chat.agent.slug}`,
+  );
 }
 
 main().catch((err) => {

@@ -61,16 +61,6 @@ SESSION=$(pnpm -s -C server/web exec tsx ../../demo/seed/mint-session.ts | tail 
 [ -n "$SESSION" ] || fail "failed to mint the owner session"
 echo "  session (${#SESSION} chars, never printed)" >&2
 
-# Half of team-portal admission; the other half is a live contact_team_tokens
-# row, re-queried on every call. An empty value still serves — /team just shows
-# the token box instead of eleven working screens.
-TEAM=$(pnpm -s -C server/web exec tsx ../../demo/seed/mint-team-cookie.ts 2>/dev/null | tail -1 || true)
-if [ -n "$TEAM" ]; then
-  echo "  team cookie (${#TEAM} chars, never printed)" >&2
-else
-  echo "  ⚠ no team member on this brain — /team and /hub will show the token box" >&2
-fi
-
 # The phone app's credential. The edge answers POST /api/auth/mobile-login
 # itself with this bearer (a real mobile_tokens row for the demo owner), so
 # store reviewers can sign in with any username and password. Until now this
@@ -82,7 +72,6 @@ echo "  mobile token (${#MOBILE_TOKEN} chars, never printed)" >&2
 
 RENDERED="$ART/demo.caddy"
 sed -e "s|__DEMO_SESSION__|$SESSION|" \
-    -e "s|__DEMO_TEAM__|$TEAM|" \
     -e "s|__DEMO_MOBILE_TOKEN__|$MOBILE_TOKEN|" \
     -e "s|__DEMO_WEB__|$UPSTREAM_UI|" \
     -e "s|__DEMO_API__|$UPSTREAM_API|" \

@@ -67,6 +67,57 @@ async function snapshot() {
   };
 }
 
+/**
+ * The two shapes main retired, and what replaced them. These are not volume
+ * targets: they are the difference between a demo that shows the feature and
+ * one that shows an empty screen with no error anywhere.
+ *
+ *   Recall   a map is a `recall` item plus card rows. A page-built map (a row
+ *            with no item) is deleted by migration 0209 and refused by
+ *            scripts/roll.sh, so one left here would vanish on the box.
+ *   Pages    live in folders; a page is never the parent of a page (0210).
+ */
+async function structure() {
+  return {
+    recallMaps: await one(sql`select count(*)::int n from recall_maps where node_id is not null and published`),
+    recallPageBuilt: await one(sql`select count(*)::int n from recall_maps where node_id is null`),
+    recallCards: await one(
+      sql`select count(*)::int n from recall_nodes c join recall_maps m on m.id = c.map_id where m.node_id is not null`,
+    ),
+    recallPrompts: await one(sql`select count(*)::int n from recall_nodes where kind = 'prompt' and not prompt_pending`),
+    recallPromptsWaiting: await one(sql`select count(*)::int n from recall_nodes where prompt_pending`),
+    // An entry card with no options is a map nobody can walk.
+    recallEntryOptions: await one(
+      sql`select coalesce(min(jsonb_array_length(options)), 0)::int n from recall_nodes where kind = 'index'`,
+    ),
+    nestedPages: await one(
+      sql`select count(*)::int n from nodes c join nodes p on p.id = c.parent_id and p.type = 'page' where c.type = 'page'`,
+    ),
+    // A page's place is its folder's path. A page at a path with no folder
+    // row (the old `pages.<id>.<id>`) shows nowhere in the tree.
+    pagesOffTree: await one(
+      sql`select count(*)::int n from nodes c
+           where c.type = 'page' and c.path::text <> 'pages'
+             and not exists (select 1 from nodes f where f.type = 'branch' and f.owner_id = c.owner_id and f.path = c.path)`,
+    ),
+    pageFolders: await one(sql`select count(*)::int n from nodes where type = 'branch' and path <@ 'pages' and nlevel(path) > 1`),
+    pageFolderDepth: await one(
+      sql`select coalesce(max(nlevel(path)) - 1, 0)::int n from nodes where type = 'branch' and path <@ 'pages'`,
+    ),
+    pagesInFolders: await one(sql`select count(*)::int n from nodes where type = 'page' and nlevel(path) > 1`),
+    noteFolders: await one(sql`select count(*)::int n from nodes where type = 'branch' and path <@ 'notes' and nlevel(path) > 1 and coalesce(data->>'system', 'false') <> 'true'`),
+    notesInFolders: await one(sql`select count(*)::int n from nodes where type = 'note' and nlevel(path) > 1`),
+    styledFolders: await one(
+      sql`select count(*)::int n from nodes where type = 'branch' and data->>'icon' is not null and data->>'color' is not null`,
+    ),
+    folderIndexBlocks: await one(sql`select count(*)::int n from pages where doc::text like '%"folderIndex"%'`),
+    teamFolders: await one(sql`select count(*)::int n from nodes where type = 'branch' and share_level = 'team'`),
+    clientFolders: await one(sql`select count(*)::int n from nodes where type = 'branch' and share_level = 'client'`),
+    readAtTeam: await one(sql`select count(*)::int n from nodes where type <> 'branch' and inherited_level = 'team'`),
+    readAtClient: await one(sql`select count(*)::int n from nodes where type <> 'branch' and inherited_level = 'client'`),
+  };
+}
+
 async function waitForDrain() {
   const started = Date.now();
   let last = -1;
@@ -124,14 +175,44 @@ async function main() {
     ['maintenance_runs', s.maintenanceRuns, b.maintenance_runs.min],
   );
 
+  const t = await structure();
+  checks.push(
+    ['recall: native maps', t.recallMaps, 1],
+    ['recall: cards', t.recallCards, 5],
+    ['recall: prompts', t.recallPrompts, 1],
+    ['recall: entry options', t.recallEntryOptions, 1],
+    ['pages: folders', t.pageFolders, 4],
+    ['pages: folder depth', t.pageFolderDepth, 2],
+    ['pages: in a folder', t.pagesInFolders, 30],
+    ['pages: Folder index', t.folderIndexBlocks, 4],
+    ['notes: folders', t.noteFolders, 4],
+    ['notes: in a folder', t.notesInFolders, 60],
+    ['folders: icon+colour', t.styledFolders, 8],
+    ['folders: team share', t.teamFolders, 1],
+    ['folders: client share', t.clientFolders, 1],
+    ['read at team level', t.readAtTeam, 5],
+    ['read at client level', t.readAtClient, 5],
+  );
+  // What must be ZERO. Each is a shape main no longer serves.
+  const mustBeZero: Array<[string, number]> = [
+    ['recall: page-built maps', t.recallPageBuilt],
+    ['recall: prompts waiting', t.recallPromptsWaiting],
+    ['pages with a page parent', t.nestedPages],
+    ['pages off the tree', t.pagesOffTree],
+  ];
+
   console.log('\nlayer-2 assertions (min = a seed below this is a FAILED seed)\n');
   const pad = (x: string | number, n: number) => String(x).padEnd(n);
-  console.log(`${pad('metric', 22)}${pad('got', 9)}${pad('min', 8)}status`);
+  console.log(`${pad('metric', 26)}${pad('got', 9)}${pad('min', 8)}status`);
   let failed = 0;
   for (const [name, got, min] of checks) {
     const ok = got >= min;
     if (!ok) failed++;
-    console.log(`${pad(name, 22)}${pad(got, 9)}${pad(min, 8)}${ok ? 'ok' : 'UNDER'}`);
+    console.log(`${pad(name, 26)}${pad(got, 9)}${pad(min, 8)}${ok ? 'ok' : 'UNDER'}`);
+  }
+  for (const [name, got] of mustBeZero) {
+    if (got !== 0) failed++;
+    console.log(`${pad(name, 26)}${pad(got, 9)}${pad('= 0', 8)}${got === 0 ? 'ok' : 'NOT ZERO'}`);
   }
 
   const unextracted = s.nodes - s.extracted;
@@ -139,7 +220,7 @@ async function main() {
     (unextracted > 0 ? ` (${unextracted} outstanding)` : ''));
 
   if (failed) {
-    console.error(`\n✗ ${failed} assertion(s) under minimum — this seed is NOT publishable.`);
+    console.error(`\n✗ ${failed} assertion(s) failed: this seed is NOT publishable.`);
     if (s.chunks === 0 || s.facts === 0) {
       console.error(
         '  Derived data is zero: content was created but EXTRACTION NEVER RAN.\n' +
