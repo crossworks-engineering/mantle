@@ -375,13 +375,17 @@ async function seedRecallMap(map: GenRecallMap) {
   if (!made.mapId || made.version === undefined) throw new Error(`recall ${map.slug}: the create answered no map id`);
   const base = `/api/recall/maps/${made.mapId}`;
   let version = made.version;
-  const step = (w: RecallWrite, what: string) => {
-    for (const warn of w.warnings ?? []) console.log(`  (recall ${what}: ${warn.code}: ${warn.message})`);
+  // Every write answers the map's warnings as they stand after it. While the
+  // map is being built they are expected (a card nothing leads to yet), so
+  // only the LAST write's warnings are kept: what is left then is real.
+  let warnings: NonNullable<RecallWrite['warnings']> = [];
+  const step = (w: RecallWrite) => {
     version = w.version;
+    warnings = w.warnings ?? [];
     return w;
   };
   if (made.slug !== map.slug) {
-    step((await send('PATCH', base, { slug: map.slug, version })) as RecallWrite, 'slug');
+    step((await send('PATCH', base, { slug: map.slug, version })) as RecallWrite);
   }
 
   const opts = (list?: GenRecallOption[]) =>
@@ -396,26 +400,16 @@ async function seedRecallMap(map: GenRecallMap) {
         ...(card.kind === 'prompt' ? { prompt: true } : {}),
         version,
       })) as RecallWrite,
-      card.slug,
     );
     if (w.cardSlug !== card.slug) {
-      step(
-        (await send('PUT', `${base}/cards/${w.cardSlug}`, { title: card.title, bodyMd: card.body, slug: card.slug, version })) as RecallWrite,
-        card.slug,
-      );
+      step((await send('PUT', `${base}/cards/${w.cardSlug}`, { title: card.title, bodyMd: card.body, slug: card.slug, version })) as RecallWrite);
     }
   }
 
   // Options, now that every target exists. The entry card's title is the map's.
-  step(
-    (await send('PUT', `${base}/cards/start`, { title: map.title, bodyMd: map.entry.body, options: opts(map.entry.options), version })) as RecallWrite,
-    'start',
-  );
+  step((await send('PUT', `${base}/cards/start`, { title: map.title, bodyMd: map.entry.body, options: opts(map.entry.options), version })) as RecallWrite);
   for (const card of map.cards.filter((c) => c.options?.length)) {
-    step(
-      (await send('PUT', `${base}/cards/${card.slug}`, { title: card.title, bodyMd: card.body, options: opts(card.options), version })) as RecallWrite,
-      card.slug,
-    );
+    step((await send('PUT', `${base}/cards/${card.slug}`, { title: card.title, bodyMd: card.body, options: opts(card.options), version })) as RecallWrite);
   }
 
   const read = async () => ((await get(base)) as { map: RecallMapRow }).map;
@@ -423,9 +417,9 @@ async function seedRecallMap(map: GenRecallMap) {
   for (const card of map.cards.filter((c) => c.kind === 'prompt')) {
     const row = live.nodes?.find((x) => x.slug === card.slug);
     if (row?.kind === 'prompt' && !row.promptPending) continue;
-    step((await post(`${base}/cards/${card.slug}/prompt`, { confirm: true, version })) as RecallWrite, card.slug);
+    step((await post(`${base}/cards/${card.slug}/prompt`, { confirm: true, version })) as RecallWrite);
   }
-  if (!live.published) step((await send('PATCH', base, { published: true, version })) as RecallWrite, 'publish');
+  if (!live.published) step((await send('PATCH', base, { published: true, version })) as RecallWrite);
 
   live = await read();
   const problems: string[] = [];
@@ -441,6 +435,9 @@ async function seedRecallMap(map: GenRecallMap) {
       if (row.options.length !== (card.options?.length ?? 0)) problems.push(`card '${card.slug}' has ${row.options.length} option(s), wanted ${card.options?.length ?? 0}`);
     }
   }
+  // A warning left after the last write is a map a reader cannot walk fully
+  // (a card nothing leads to, an entry card with no options).
+  for (const warn of warnings) problems.push(`${warn.code}: ${warn.message}`);
   if (problems.length) throw new Error(`recall ${map.slug}: ${problems.join('; ')}`);
   created.set(map.id, made.mapId);
   console.log(`  map '${live.slug}': ${live.nodes?.length} cards, ${map.cards.filter((c) => c.kind === 'prompt').length} confirmed prompt(s), published, version ${live.version}`);
