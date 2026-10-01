@@ -151,6 +151,30 @@ app; `PUT /api/app-nav/pins` and the open counter keep working through
 `item_marks`. Tree writes to apps also notify `app_nav_changed`, so an older
 client refetches.
 
+### Apps for members and clients
+
+Apps are not a reader tree kind (`READER_TREE_KINDS`): a member or a client
+RUNS an app, and that rule is not the Library's read rule (a green published
+build, never through an embed, and for a client the client level exactly).
+So their launcher gets its folders from the list that already holds the
+rule: `GET /api/member/apps` and `GET /api/client/apps` answer `folders`
+next to `apps` (`AppLauncherFolder`: id, name, icon, colour, `parentId`,
+`appIds`; `packages/content/src/app-folders.ts`).
+
+- **One rule.** The route reads the apps the reader may run, as the reader
+  (`listMemberAppsPlaced`, `listClientAppsPlaced`), then reads the folder
+  rows on the way to those apps, as the brain, and nothing else. A folder is
+  answered only when it holds, at any depth, an app of the same answer. A
+  folder of admin apps, a folder of drafts and an empty folder are absent,
+  name and id, whatever their share says.
+- **Names are organisational.** A team app in a folder nobody shared still
+  shows in its folder: the folder's name, icon and colour come with it.
+- **Read only.** No level, share or system flag on a folder, no path on a
+  card, and no write route. Siblings come in the admin's order.
+- **Older clients** read `apps` (and `homeAppId`) as before and ignore
+  `folders`; an older brain sends none, and the launcher shows one flat
+  list.
+
 ## Sharing a folder (phase 4)
 
 A folder of a shareable kind (files, notes, pages, draw, tables, formulas,

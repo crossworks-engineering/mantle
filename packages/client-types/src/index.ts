@@ -96,6 +96,7 @@ export type {
   MemberSpaceSharing,
 } from './dto/member';
 export type {
+  AppLauncherFolder,
   ClientAppCard,
   ClientAppList,
   MemberAppCard,

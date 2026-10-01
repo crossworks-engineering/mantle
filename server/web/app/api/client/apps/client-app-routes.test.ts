@@ -26,6 +26,7 @@ const h = vi.hoisted(() => ({
   displayName: 'Casey' as string | null,
   lookups: [] as Array<{ id: string; level: string }>,
   reads: [] as Array<{ fn: string; level: string }>,
+  folderReads: [] as Array<{ level: string; places: unknown }>,
   active: [] as Array<{ loginId: string; epoch: number }>,
   loginActive: true,
   verdict: { ok: true } as { ok: boolean; status?: number; reason?: string },
@@ -73,19 +74,26 @@ vi.mock('@mantle/content', async (importOriginal) => {
           }
         : null;
     }),
-    listClientApps: vi.fn(async () => {
-      h.reads.push({ fn: 'listClientApps', level: currentViewerLevel() });
-      return [
-        {
-          id: APP,
-          title: 'Orders',
-          icon: null,
-          color: null,
-          description: null,
-          updatedAt: '2026-09-30T00:00:00.000Z',
-          dataReadOnly: false,
-        },
-      ];
+    listClientAppsPlaced: vi.fn(async () => {
+      h.reads.push({ fn: 'listClientAppsPlaced', level: currentViewerLevel() });
+      return {
+        apps: [
+          {
+            id: APP,
+            title: 'Orders',
+            icon: null,
+            color: null,
+            description: null,
+            updatedAt: '2026-09-30T00:00:00.000Z',
+            dataReadOnly: false,
+          },
+        ],
+        places: [{ id: APP, path: 'apps.orders' }],
+      };
+    }),
+    appLauncherFolders: vi.fn(async (_anchor: string, places: unknown) => {
+      h.folderReads.push({ level: currentViewerLevel(), places });
+      return [{ id: 'f1', name: 'Orders', icon: null, color: null, parentId: null, appIds: [APP] }];
     }),
     recordAppAccess: vi.fn((e: Record<string, unknown>) => h.logged.push(e)),
   };
@@ -178,6 +186,7 @@ beforeEach(() => {
   h.displayName = 'Casey';
   h.lookups.length = 0;
   h.reads.length = 0;
+  h.folderReads.length = 0;
   h.active.length = 0;
   h.loginActive = true;
   h.verdict = { ok: true };
@@ -196,7 +205,19 @@ describe('client app list', () => {
   it('lists on the client role', async () => {
     const body = (await (await listRoute()).json()) as { apps: Array<{ id: string }> };
     expect(body.apps.map((a) => a.id)).toEqual([APP]);
-    expect(h.reads).toEqual([{ fn: 'listClientApps', level: 'client' }]);
+    expect(h.reads).toEqual([{ fn: 'listClientAppsPlaced', level: 'client' }]);
+  });
+
+  it('adds the folders of those apps, read as the brain from the apps it listed', async () => {
+    const body = (await (await listRoute()).json()) as Record<string, unknown>;
+    // The field an older client reads is still there, unchanged.
+    expect(Object.keys(body).sort()).toEqual(['apps', 'folders']);
+    expect(body.folders).toEqual([
+      { id: 'f1', name: 'Orders', icon: null, color: null, parentId: null, appIds: [APP] },
+    ]);
+    // A card never carries its path: the places stay on the brain.
+    expect(JSON.stringify(body.apps)).not.toContain('apps.orders');
+    expect(h.folderReads).toEqual([{ level: 'admin', places: [{ id: APP, path: 'apps.orders' }] }]);
   });
 });
 

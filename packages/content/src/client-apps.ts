@@ -19,6 +19,7 @@ import { and, asc, eq, sql } from 'drizzle-orm';
 import { apps, asViewerLevel, db, nodes, type AppManifest, type BuildRef } from '@mantle/db';
 import { projectAppIcon, projectAppTint } from '@mantle/content-core/app-nav';
 import type { AppTint, ClientAppCard } from '@mantle/client-types';
+import type { AppPlace } from './app-folders';
 import { isReadAt, readAtSql } from './item-level';
 
 /** An app is used, not only read (run, tools, its database): an embed in a
@@ -62,10 +63,19 @@ function runnableWhere(anchorId: string) {
 
 /** The apps a client may run, by title. No level and no author. */
 export async function listClientApps(anchorId: string): Promise<ClientAppCard[]> {
+  return (await listClientAppsPlaced(anchorId)).apps;
+}
+
+/** The same list, with the folder path of each app: what the launcher's
+ *  folders are built from (./app-folders.ts). The paths stay on the brain. */
+export async function listClientAppsPlaced(
+  anchorId: string,
+): Promise<{ apps: ClientAppCard[]; places: AppPlace[] }> {
   const rows = await db
     .select({
       id: nodes.id,
       title: nodes.title,
+      path: sql<string>`${nodes.path}::text`,
       data: nodes.data,
       audience: nodes.audience,
       inheritedLevel: nodes.inheritedLevel,
@@ -78,10 +88,12 @@ export async function listClientApps(anchorId: string): Promise<ClientAppCard[]>
     .where(runnableWhere(anchorId))
     .orderBy(asc(nodes.title))
     .limit(500);
-  return rows.flatMap((r): ClientAppCard[] => {
+  const places: AppPlace[] = [];
+  const cards = rows.flatMap((r): ClientAppCard[] => {
     // The query already keeps to client level; a row outside it is never a
     // card, whatever the column holds.
     if (!isReadAt(r.audience, r.inheritedLevel, CLIENT_APP_LEVELS)) return [];
+    places.push({ id: r.id, path: r.path });
     const d = (r.data ?? {}) as Record<string, unknown>;
     const description = (r.manifest as AppManifest | null)?.description;
     return [
@@ -96,6 +108,7 @@ export async function listClientApps(anchorId: string): Promise<ClientAppCard[]>
       },
     ];
   });
+  return { apps: cards, places };
 }
 
 /** One app a client may run, or null: not an app, not at client level, no

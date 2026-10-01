@@ -568,7 +568,11 @@ write tools are `ownerOnly`: refused on a team, client or missing surface).
   nothing else: never a team, admin or public app (a public app is for
   visitors on its link), never a draft. `GET /api/client/apps` lists them by
   title (no level, no author). Any other id, a team app's included, is the
-  same plain 404 as an id that does not exist, on every route.
+  same plain 404 as an id that does not exist, on every route. It also
+  answers `folders`: the admin's Apps folders that lead to one of those
+  apps, read only, with no level and no share (docs/folder-tree.md, "Apps
+  for members and clients"); a folder with nothing the client may run is
+  never named.
 - **A shared workspace.** An app at team or client level is a shared
   workspace: everyone who runs it reads AND writes its one database. Members
   write team and client apps; clients write client apps. A public app stays

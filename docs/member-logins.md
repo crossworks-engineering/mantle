@@ -645,13 +645,19 @@ app's level in its Access control; nothing else lists it to members.
 
 | Route                                    | What                                               |
 | ---------------------------------------- | -------------------------------------------------- |
-| `GET /api/member/apps`                   | The apps the member may run, and the home app id   |
+| `GET /api/member/apps`                   | The apps the member may run, their folders, home id |
 | `POST /api/member/apps/:id/frame-ticket` | A seconds-lived frame ticket that names the login  |
 | `GET /api/member/apps/:id/frame?t=`      | The frame document: the PUBLISHED build            |
 | `POST /api/member/apps/:id/tool-broker`  | `host.tools.call()` (rules below)                  |
 | `POST /api/member/apps/:id/db-broker`    | `host.db.query` / `host.db.exec` on the app SQLite |
 | `GET /api/member/home`                   | The home app and what its `host.hub.get()` answers |
 
+- **Folders.** `GET /api/member/apps` also answers `folders`: where those
+  apps sit in the admin's Apps folders, read only (`AppLauncherFolder`: id,
+  name, icon, colour, `parentId`, `appIds`). A folder is answered only when
+  it leads to an app of the same list, so a folder with nothing the member
+  may run is never named (docs/folder-tree.md, "Apps for members and
+  clients"). `apps` and `homeAppId` are unchanged, for older clients.
 - **The frame.** A sandboxed iframe sends no cookie, so the member mints a
   ticket (`mem` = the login) and the frame URL carries it. Only the member
   frame route accepts a member ticket, and it re-checks that the login is

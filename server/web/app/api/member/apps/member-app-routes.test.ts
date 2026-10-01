@@ -23,6 +23,7 @@ const h = vi.hoisted(() => ({
   displayName: 'Pat' as string | null,
   lookups: [] as string[],
   reads: [] as Array<{ fn: string; level: string }>,
+  folderReads: [] as Array<{ level: string; places: unknown }>,
   homeAppId: undefined as string | undefined,
   loginActive: true,
   verdict: { ok: true } as { ok: boolean; status?: number; reason?: string },
@@ -92,6 +93,21 @@ vi.mock('@mantle/content', async (importOriginal) => {
     listMemberApps: vi.fn(async () =>
       read('listMemberApps', [card(APP, 'Polls'), card(OTHER_APP, 'Budget')]),
     ),
+    listMemberAppsPlaced: vi.fn(async () =>
+      read('listMemberAppsPlaced', {
+        apps: [card(APP, 'Polls'), card(OTHER_APP, 'Budget')],
+        places: [
+          { id: APP, path: 'apps.tools' },
+          { id: OTHER_APP, path: 'apps' },
+        ],
+      }),
+    ),
+    appLauncherFolders: vi.fn(async (_anchor: string, places: unknown) => {
+      h.folderReads.push({ level: currentViewerLevel(), places });
+      return [
+        { id: 'f1', name: 'Tools', icon: null, color: 'teal', parentId: null, appIds: [APP] },
+      ];
+    }),
     listLibrary: vi.fn(async () =>
       read('listLibrary', {
         items: [
@@ -207,6 +223,7 @@ beforeEach(() => {
   h.displayName = 'Pat';
   h.lookups.length = 0;
   h.reads.length = 0;
+  h.folderReads.length = 0;
   h.homeAppId = undefined;
   verdictMock?.mockClear();
   h.loginActive = true;
@@ -511,6 +528,30 @@ describe('member app list and home', () => {
     expect(h.reads.every((r) => r.level === 'team')).toBe(true);
     h.runnable = false;
     expect(((await (await listRoute()).json()) as { homeAppId: unknown }).homeAppId).toBeNull();
+  });
+
+  it('adds the folders of those apps, read as the brain from the apps it listed', async () => {
+    const body = (await (await listRoute()).json()) as Record<string, unknown>;
+    // The fields an older client reads are still there, unchanged.
+    expect(Object.keys(body).sort()).toEqual(['apps', 'folders', 'homeAppId']);
+    expect(body.apps).toHaveLength(2);
+    expect(body.folders).toEqual([
+      { id: 'f1', name: 'Tools', icon: null, color: 'teal', parentId: null, appIds: [APP] },
+    ]);
+    // A card never carries its path: the places stay on the brain.
+    expect(JSON.stringify(body.apps)).not.toContain('apps.tools');
+    // The apps are read on the team role; the folder rows on the admin pool,
+    // and only from the places of the apps the team role listed.
+    expect(h.reads.find((r) => r.fn === 'listMemberAppsPlaced')?.level).toBe('team');
+    expect(h.folderReads).toEqual([
+      {
+        level: 'admin',
+        places: [
+          { id: APP, path: 'apps.tools' },
+          { id: OTHER_APP, path: 'apps' },
+        ],
+      },
+    ]);
   });
 
   it('gives no hub data when nothing is pinned, and skips the hub reads', async () => {

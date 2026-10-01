@@ -29,9 +29,35 @@ export type MemberAppCard = {
   dataReadOnly?: boolean;
 };
 
+/**
+ * One folder of the Apps launcher as a member or a client sees it (GET
+ * /api/member/apps, /api/client/apps): read only. A folder is listed only
+ * when it holds, at any depth, an app of the same answer's `apps`; a folder
+ * with nothing the reader may run is absent, name and all. No level, share
+ * or system flag.
+ */
+export type AppLauncherFolder = {
+  id: string;
+  name: string;
+  icon: string | null;
+  color: AppTint | null;
+  /** The folder it sits in (always one of the same list), null at the top
+   *  level. */
+  parentId: string | null;
+  /** The apps directly in it, in the order of `apps`. An app no folder
+   *  names is at the top level. */
+  appIds: string[];
+};
+
 /** GET /api/member/apps: the apps a member may run, by title, and the
- *  brain's home app when a member may run it (else null). */
-export type MemberAppList = { apps: MemberAppCard[]; homeAppId: string | null };
+ *  brain's home app when a member may run it (else null). `folders`: where
+ *  those apps sit, siblings in the admin's order (0.232.367 on; absent from
+ *  an older brain: show the apps as one flat list). */
+export type MemberAppList = {
+  apps: MemberAppCard[];
+  homeAppId: string | null;
+  folders?: AppLauncherFolder[];
+};
 
 /** One launcher card of a CLIENT login (client logins C6, GET
  *  /api/client/apps): an app at client level with a green published build.
@@ -51,7 +77,11 @@ export type ClientAppCard = {
  *  are the member routes' twins under `/api/client/apps/:id` (frame-ticket,
  *  frame, tool-broker, db-broker), so the sandbox takes that as its API
  *  base. */
-export type ClientAppList = { apps: ClientAppCard[] };
+export type ClientAppList = {
+  apps: ClientAppCard[];
+  /** Where those apps sit (0.232.367 on; absent from an older brain). */
+  folders?: AppLauncherFolder[];
+};
 
 /** The brain's pinned home app, when a member may run it. */
 export type MemberHomeApp = {

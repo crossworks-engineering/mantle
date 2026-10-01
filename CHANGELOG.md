@@ -4,6 +4,19 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.367: the team and client Apps launchers get the folders
+
+`GET /api/member/apps` and `GET /api/client/apps` answer `folders` next to
+`apps`: where the apps a reader may run sit in the admin's Apps folders,
+read only (`AppLauncherFolder`: id, name, icon, colour, `parentId`,
+`appIds`). A folder is answered only when it holds, at any depth, an app of
+the same answer, so a folder of admin apps, of drafts, or of nothing is
+never named, whatever its share. The existing fields are unchanged; an
+older client ignores `folders`. Apps stay out of the reader tree kinds: the
+rule to run an app (published build, no embed, client level exactly for a
+client) is the list's own. docs/folder-tree.md, "Apps for members and
+clients".
+
 ## 0.232.365: folder system phase 7, pages in folders
 
 Pages join the item tree like notes, and a page is never the parent of
