@@ -808,8 +808,11 @@ in the brain's data: the switch "Team apps may use" on the tool row
   logins only), or the owner's own MCP client or dev tool console
   (`api_tool_update` with `team_apps: true, read_only_confirmed: true`). An
   in-brain agent may switch it off, never on. The UI warns: every team
-  member can call this tool, with any input, through any team app that
-  declares it.
+  member can call this tool through any team app that declares it, and also
+  BY HAND (a request to the member tool broker from the browser, with their
+  own login) with ANY input, not only what the app's screens send. For a
+  tool that takes free SQL, that means the member can read anything the
+  connector can read.
 - **The read-only confirmation** is required to switch on. It is stored on
   the row (`tools.team_apps`, migration 0215): when, which admin (their
   login, or the owner's MCP client), and a sha256 signature of the handler

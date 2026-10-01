@@ -165,7 +165,7 @@ export async function setToolTeamApps(
       return {
         ok: false,
         status: 400,
-        error: `Confirm that '${row.slug}' only reads data (readOnlyConfirmed: true). The brain cannot check what an outside tool does, and every team member can call it, with any input, through any team app that declares it.`,
+        error: `Confirm that '${row.slug}' only reads data (readOnlyConfirmed: true). The brain cannot check what an outside tool does, and every team member can call it through any team app that declares it, or by hand from the browser with their own login, with ANY input (for a tool that takes free SQL: anything the connector can read).`,
       };
     }
     value = {

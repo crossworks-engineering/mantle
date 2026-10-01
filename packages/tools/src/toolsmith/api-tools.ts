@@ -331,7 +331,7 @@ export const api_tool_update: BuiltinToolDef = {
       team_apps: {
         type: 'boolean',
         description:
-          '"Team apps may use": true lets team members call this mcp or http tool through any team app that declares it, when it is also in an enabled team-level tool group; false closes it. Never for recipe or shell tools.',
+          '"Team apps may use": true lets team members call this mcp or http tool through any team app that declares it (and by hand, with any input), when it is also in an enabled team-level tool group; false closes it. Never for recipe or shell tools.',
       },
       read_only_confirmed: {
         type: 'boolean',
