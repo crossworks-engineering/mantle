@@ -501,7 +501,9 @@ describe.skipIf(!URL)('embeds follow their embedder', () => {
         );
       });
       const out = await repair;
-      expect(out instanceof Error ? out.message : null).toBeNull();
+      // The database's own error (drizzle wraps it as the cause), not the SQL.
+      const cause = out instanceof Error ? ((out.cause as Error | undefined) ?? out) : null;
+      expect(cause?.message ?? null).toBeNull();
       expect(out).toMatchObject({ edgesDrifted: expect.any(Number) });
     });
     const left = await admin`select 1 from node_embeds where from_id = ${n} or to_id = ${img}`;
