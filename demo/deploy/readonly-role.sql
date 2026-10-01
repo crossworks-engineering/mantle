@@ -58,3 +58,29 @@ revoke insert, update, delete, truncate on all tables in schema auth   from demo
 -- pgboss is the job queue. The serve-time demo runs no workers, and a reader
 -- that could enqueue would be a write path by another name.
 revoke all on schema pgboss from demo_reader;
+
+-- `mantle_brain_id()` names the brain's owner (resolveSingleOwnerId). Migration
+-- 0189 took EXECUTE away from PUBLIC and gives it to demo_reader only when the
+-- role already exists at migrate time, which it never does: this file runs
+-- after the migrations, and a dump is taken without privileges. Without the
+-- grant nothing errors: the appearance falls back to default branding and the
+-- app-frame backdrop is dropped.
+grant execute on function public.mantle_brain_id() to demo_reader;
+
+-- The app has MORE connections than demo_reader since member logins (0159,
+-- 0165): the level roles and the personal-space role, which migrate creates
+-- and grants (`applyViewerGrants`). The space role may write the space
+-- tables, so on a demo it would be a second way in that this file did not
+-- cover. Every app connection on the demo is read-only: take the write verbs
+-- from those roles too. Run this file AFTER migrate, which re-grants them.
+do $$
+declare r text;
+begin
+  foreach r in array array['mantle_view_team', 'mantle_view_client', 'mantle_view_public', 'mantle_view_space'] loop
+    if exists (select 1 from pg_roles where rolname = r) then
+      execute format('revoke insert, update, delete, truncate on all tables in schema public from %I', r);
+      execute format('revoke insert, update, delete, truncate on all tables in schema auth from %I', r);
+    end if;
+  end loop;
+end
+$$;

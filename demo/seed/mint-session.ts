@@ -33,15 +33,21 @@ async function main() {
     process.exit(1);
   }
   const sql = postgres(DB, { onnotice: () => {} }) as unknown as Sql;
-  const rows = await sql`select id from auth.users where email = ${OWNER_EMAIL} limit 1`;
+  // `session_epoch` (migration 0181): the app compares the cookie's `ep` with
+  // it on every request, and a cookie with no `ep` counts as epoch 0. A
+  // password change or "sign out everywhere" on the bench raises the epoch,
+  // and a cookie minted without it would then be a login screen for every
+  // visitor, with nothing in any log to say why. Sign the real one in.
+  const rows = await sql`select id, session_epoch from auth.users where email = ${OWNER_EMAIL} limit 1`;
   const uid = rows[0]?.id;
+  const ep = Number(rows[0]?.session_epoch ?? 0);
   if (!uid) {
     console.error(`✗ no owner ${OWNER_EMAIL} on this database — seed it first.`);
     process.exit(1);
   }
 
   const exp = Math.floor(Date.now() / 1000) + TTL_SECONDS;
-  const payload = b64url(Buffer.from(JSON.stringify({ uid: String(uid), exp }), 'utf8'));
+  const payload = b64url(Buffer.from(JSON.stringify({ uid: String(uid), ep, exp }), 'utf8'));
   const sig = b64url(createHmac('sha256', SECRET).update(payload).digest());
 
   // Value only — the caller decides how it reaches the edge config, so the

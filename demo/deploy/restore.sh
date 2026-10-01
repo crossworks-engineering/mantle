@@ -119,6 +119,24 @@ fi
 docker exec "$PG" psql -U postgres -d template1 -q -v ON_ERROR_STOP=1 \
   -c "drop database if exists postgres" -c "create database postgres"
 
+# The level roles and the personal-space role (member logins, migrations 0159
+# and 0165) are CLUSTER objects: a dump does not carry them, but its row
+# policies name them, so on a new cluster every such policy fails to restore
+# ("role mantle_view_team does not exist"). Create them first, with no login,
+# exactly as main's scripts/db-restore.sh does; the migrate step below gives
+# them their login, password and grants.
+docker exec -i "$PG" psql -U postgres -d postgres -q -v ON_ERROR_STOP=1 <<'SQL'
+DO $$
+DECLARE r text;
+BEGIN
+  FOREACH r IN ARRAY ARRAY['mantle_view_team', 'mantle_view_client', 'mantle_view_public', 'mantle_view_space'] LOOP
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
+      EXECUTE format('CREATE ROLE %I NOLOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT', r);
+    END IF;
+  END LOOP;
+END $$;
+SQL
+
 RESTORE_LOG="$BUNDLE/restore.log"
 set +e
 docker exec -i "$PG" pg_restore -U postgres -d postgres \
@@ -132,8 +150,22 @@ if [ "${ERRS:-0}" -gt 0 ]; then
 fi
 echo "  restored clean"
 
-# AFTER the restore, never before: the grants have to attach to the schema that
-# actually landed. This is also why the dump is taken --no-privileges.
+# As the OWNER, through the server image the stack runs. Two jobs. The level
+# roles get their login, their password (derived from MANTLE_MASTER_KEY, which
+# is why it must match the seed) and their grants: the dump is taken without
+# privileges, and the app connects as those roles too, so without this step
+# the owner's own tree reads fail. And a dump from an older release than the
+# pinned image is brought up to it. On a dump of the same release it applies
+# nothing and says "Already up to date."
+echo "→ level roles and schema (migrate, as the owner)"
+"${COMPOSE[@]}" --profile restore run --rm --no-deps -T migrate > "$BUNDLE/migrate.log" 2>&1 \
+  || { tail -20 "$BUNDLE/migrate.log" >&2; fail "migrate failed: see $BUNDLE/migrate.log"; }
+echo "  $(grep -E 'Already up to date|applied [0-9]+ migration' "$BUNDLE/migrate.log" | tail -1)"
+
+# AFTER the restore and AFTER migrate, never before: the grants have to attach
+# to the schema that actually landed (which is also why the dump is taken
+# --no-privileges), and this file takes the write verbs back from the level
+# roles that migrate has just granted.
 echo "→ read-only role"
 docker exec -i "$PG" psql -U postgres -d postgres -q -v ON_ERROR_STOP=1 < "$BUNDLE/readonly-role.sql"
 echo "  demo_reader ready"

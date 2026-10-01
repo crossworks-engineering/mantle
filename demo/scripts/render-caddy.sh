@@ -42,8 +42,8 @@ PRINT_ONLY=0
 UPSTREAM_UI="${DEMO_UPSTREAM_UI:-mantle_demo_srv_client:3000}"
 UPSTREAM_API="${DEMO_UPSTREAM_API:-mantle_demo_srv_web:3000}"
 
-# The seed stack's owner connection — minting reads auth.users and
-# contact_team_tokens, and the reader role cannot see what it needs.
+# The seed stack's owner connection: minting reads auth.users and writes the
+# phone-app token row, and the reader role can do neither.
 export DATABASE_URL="${DEMO_OWNER_URL:-postgres://postgres:postgres@127.0.0.1:56432/postgres}"
 export SESSION_SECRET="${DEMO_SESSION_SECRET:-demo-session-secret-0123456789abcdef0123456789ab}"
 export MANTLE_MASTER_KEY="${DEMO_MASTER_KEY:-ZGVtby1tYXN0ZXIta2V5LTAxMjM0NTY3ODlhYmNkZWY=}"

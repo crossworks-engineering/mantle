@@ -17,9 +17,13 @@
  *      (`PATCH /api/access/nodes/:id`). Tasks and events can no longer be
  *      shown to a member at all: they are admin-only kinds on main.
  *   3. The member chat opens when the `team-responder` agent is at team
- *      level, and the brain refuses that while the agent holds an admin-level
- *      tool group. So the group goes first, then the level, in that order.
- *      The seed changes; the brain's rule does not.
+ *      level, and the brain refuses that while the agent holds a tool group
+ *      above team level (`group_above_agent`). On a FRESH brain all three of
+ *      its groups are admin level (migration 0159 lowered `team-read` and
+ *      `formulas-eval` only on brains that existed then). So, in the order
+ *      the rule asks for: the admin-only group comes off the agent, the two
+ *      member-facing groups go to team level, then the agent does. The seed
+ *      changes; the brain's rule does not.
  *   4. One client login, for the person who approves the PUMPHOUSE procedure
  *      revisions, which sit in the folder the seeder shares with clients. The
  *      brain refuses a client login until an admin has acknowledged the list
@@ -122,15 +126,20 @@ async function main() {
   }
 
   // ── 3. The member chat ────────────────────────────────────────────────────
-  // An agent may hold only tool groups at or below its own level, so the
-  // admin-level group goes before the level comes down. The other order is
-  // refused (`group_above_agent`).
+  // An agent may hold only tool groups at or below its own level. So the
+  // admin-only group comes off, the groups it keeps go to team level, and
+  // only then does the agent. Any other order is refused
+  // (`group_above_agent`).
   const agents = (await json<{ agents?: Array<{ id: string; slug: string; toolGroupSlugs?: string[] }> }>(owner, '/api/agents')).agents ?? [];
   const responder = agents.find((a) => a.slug === TEAM_RESPONDER);
   if (!responder) throw new Error(`no '${TEAM_RESPONDER}' agent on this brain`);
   const keep = (responder.toolGroupSlugs ?? []).filter((g) => g !== 'team-read-admin');
   let res = await call(owner, 'PATCH', `/api/agents/${responder.id}`, { toolGroupSlugs: keep });
   if (!res.ok) throw new Error(`${TEAM_RESPONDER} tool groups: ${res.status} ${(await res.text()).slice(0, 200)}`);
+  for (const slug of keep) {
+    res = await call(owner, 'PATCH', `/api/access/tool-groups/${slug}`, { audience: 'team' });
+    if (!res.ok) throw new Error(`tool group ${slug} → team: ${res.status} ${(await res.text()).slice(0, 200)}`);
+  }
   res = await call(owner, 'PATCH', `/api/access/agents/${TEAM_RESPONDER}`, { audience: 'team' });
   if (!res.ok) throw new Error(`${TEAM_RESPONDER} → team: ${res.status} ${(await res.text()).slice(0, 200)}`);
   console.log(`· member chat open: ${TEAM_RESPONDER} at team level, tool groups ${keep.join(', ') || '(none)'}`);

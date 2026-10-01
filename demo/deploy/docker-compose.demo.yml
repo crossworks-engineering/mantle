@@ -18,8 +18,10 @@
 # Normally you do not run this by hand at all: deploy/restore.sh does it.
 #
 # ── What is NOT here, and why ────────────────────────────────────────────────
-#   migrate   the dump is already migrated, and demo_reader could not run it
-#             anyway. Restoring is the transfer script's job, not compose's.
+#   migrate   not part of `up`: the dump is already migrated, and demo_reader
+#             could not run it anyway. It IS defined, behind the `restore`
+#             profile, because restore.sh runs it once as the owner (see the
+#             service below for why).
 #   workers   a read-only brain has nothing to process. readonly-role.sql
 #             revokes pgboss outright — "a reader that could enqueue would be a
 #             write path by another name".
@@ -105,9 +107,10 @@ x-demo-app-env: &demo-app-env
   # permanently. v0.217.1 warns loudly on boot; earlier releases did not.
   MANTLE_PUBLIC_URL: ${MANTLE_PUBLIC_URL:?set MANTLE_PUBLIC_URL=https://demo.mantle-ai.tech}
   # Must be BYTE-IDENTICAL to what the brain was sealed with at seed time.
-  # SESSION_SECRET is what the injected mantle_session / mantle_team_chat
-  # cookies are HMAC'd over — a different value is not an error, it is a login
-  # screen. MANTLE_MASTER_KEY unseals the vault.
+  # SESSION_SECRET is what the injected mantle_session cookie is HMAC'd
+  # over: a different value is not an error, it is a login screen.
+  # MANTLE_MASTER_KEY unseals the vault, and the level roles' passwords are
+  # derived from it.
   SESSION_SECRET: ${SESSION_SECRET:?must match the seed-time value exactly}
   MANTLE_MASTER_KEY: ${MANTLE_MASTER_KEY:?must match the seed-time value exactly}
   # Blank: the runtime resolves the sole auth.users row, which the dump carries.
@@ -192,6 +195,28 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+
+  # ── migrate: one-shot, run by restore.sh only ──────────────────────────────
+  # Behind the `restore` profile, so `up` never starts it. It connects as the
+  # OWNER, never as demo_reader, and does what the header says compose does not
+  # do by itself: after the dump is restored it gives the level roles
+  # (mantle_view_*) their login, password and grants, and it applies any
+  # migration the pinned image has that the dump does not. The app connects as
+  # those roles too (member logins), so a restore without this step serves an
+  # owner whose tree reads fail.
+  migrate:
+    profiles: ['restore']
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:?pin the release the brain was seeded on, e.g. v0.232.366}
+    container_name: mantle_demo_srv_migrate
+    restart: 'no'
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/postgres
+      # The level roles' passwords are derived from it: it must be the value
+      # the app runs with, or the app cannot sign in as them.
+      MANTLE_MASTER_KEY: ${MANTLE_MASTER_KEY:?must match the seed-time value exactly}
+    command: ['pnpm', '-C', 'packages/db', 'migrate']
 
   # ── Object store: file blobs and image bytes ───────────────────────────────
   # RustFS (S3-compatible), as on main since v0.232.249. It was MinIO until
