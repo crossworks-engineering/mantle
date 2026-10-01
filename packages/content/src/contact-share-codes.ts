@@ -5,7 +5,7 @@
  * this code opens the item.
  *
  * Properties the gate and the code prompt rely on:
- *  - the code is 8 characters from the look-alike-free 56-character alphabet
+ *  - the code is 8 characters from the look-alike-free 54-character alphabet
  *    (about 46 bits), rejection sampled, so every character is equally
  *    likely;
  *  - only an HMAC-SHA256 of (contact id, code) is stored, keyed from
@@ -41,10 +41,15 @@ export const CONTACT_CODE_SHARE_HOURLY_FAILURES = 10;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
 
-/** Mixed-case alphanumerics minus the look-alikes (0/O/o, 1/l/I), so a code
- *  read over the phone or retyped from paper survives the trip. 56 chars
- *  (the alphabet of the retired team codes, migration 0112). */
+/** Mixed-case alphanumerics minus the look-alikes (0/O/o, 1/l/I/i), so a
+ *  code read over the phone or retyped from paper survives the trip: the
+ *  alphabet of the retired team codes (migration 0112). It is 54 characters,
+ *  not the 56 that code's comment said, so the rejection bound is computed
+ *  from the real length (a fixed 224 would favour the first characters). */
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+/** The largest multiple of the alphabet length below 256: bytes at or
+ *  above it are thrown away, so every character is equally likely. */
+const REJECT_AT = Math.floor(256 / CODE_ALPHABET.length) * CODE_ALPHABET.length;
 
 /** An id no row has: the no-match branches run the same statements on it. */
 const NO_ID = '00000000-0000-0000-0000-000000000000';
@@ -75,9 +80,9 @@ function codeKey(): Buffer {
 export function generateContactCode(): string {
   const out: string[] = [];
   while (out.length < CONTACT_CODE_LENGTH) {
-    // Rejection sampling: only bytes below 224 (56 x 4) are used.
+    // Rejection sampling: only bytes below REJECT_AT are used.
     for (const b of randomBytes(CONTACT_CODE_LENGTH * 2)) {
-      if (b >= 224) continue;
+      if (b >= REJECT_AT) continue;
       out.push(CODE_ALPHABET[b % CODE_ALPHABET.length]!);
       if (out.length === CONTACT_CODE_LENGTH) break;
     }
