@@ -333,6 +333,18 @@ describe.skipIf(!URL)('member personal space', () => {
       const moved = await tree.moveMemberItems(scope, 'pages', [inOwn.id], null);
       expect(moved).toEqual({ moved: 1, failed: [] });
       expect(await folderOf(inOwn.id)).toBeNull();
+
+      // The admin unshares the brain folder: the draft stays at its path, so
+      // the body still names that folder (the id alone gives nothing away),
+      // but the member's tree no longer opens it (the block says "not shared
+      // with you") and shows the draft at the top level instead.
+      await m.systemDb.execute(
+        sqlTag`update nodes set share_level = null where id = ${brainFolder}`,
+      );
+      expect(await folderOf(inBrain.id)).toBe(brainFolder);
+      expect(await tree.loadMemberTreeFolder(scope, 'pages', { folderId: brainFolder })).toBeNull();
+      const top2 = await tree.loadMemberTreeFolder(scope, 'pages', { folderId: null });
+      expect(top2?.items.map((i) => i.id)).toContain(inBrain.id);
     } finally {
       await m.systemDb.execute(sqlTag`delete from nodes where owner_id = ${spaceA}`);
       await m.systemDb.execute(sqlTag`delete from nodes where id = ${brainFolder}`);

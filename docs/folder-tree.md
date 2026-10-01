@@ -487,11 +487,25 @@ path of `pages.<id>.<id>`) is gone:
   lists the folder it is in now. The slash menu offers the block to a member
   only when the member shell names `pages` in `treeKinds` and the folder is
   known; a body with no `folderId` (an older brain) shows the block's label
-  alone, never the root. A folder the member cannot open says "This folder
-  is not shared with you". After Submit and Accept the page sits in a brain
-  folder (accept claims in place), and `folder:here` means that folder for
-  every reader. An admin's private item and a client's own page are in no
-  folder a tree lists: no block there.
+  alone, never the root; so does a brain that sends it while its member
+  tree does not serve pages. In the block a member's drafts come first
+  (newest first), then what it reads of the brain's, by name. A folder the
+  member cannot open says "This folder is not shared with you"; that
+  includes the member's own draft under a brain folder an admin has since
+  unshared (the body still names that folder).
+- **Before and after Accept.** A reviewer reads the submitted draft through
+  the owner tree: a draft in a brain folder lists that folder's brain pages
+  (not the draft itself, which is not in the brain yet), a draft at the
+  member's top level lists the brain's top level, and a draft in the
+  member's OWN folder shows the block's label alone, because the owner tree
+  does not hold that folder. A teammate reading a shared draft gets the same
+  label-alone face for the author's own folder. After Accept the page sits
+  in a brain folder (accept claims in place: the author's own folder becomes
+  a brain folder; a top-level draft lands at the top level), and
+  `folder:here` means that place for every reader. An admin's private item,
+  a client's own page and a client's submitted page are in no folder a tree
+  lists: the slash menu offers no block there, and a block that arrives
+  another way (a paste) shows its label alone.
 - **Where a page sits.** `PageDetail.folderId` names the folder (null at
   the top level); `PageRow.parentId` is always null and stays on the wire
   for older clients, as do `childCount` and `parentTitle` (absent),

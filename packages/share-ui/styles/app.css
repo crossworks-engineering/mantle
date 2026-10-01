@@ -832,9 +832,15 @@
 /* Folder index block (folder phase 7) on the raw/public render: a live list
    of a folder's pages for a signed-in reader; an open link has no reader to
    list for, so the public surface emits an inert label. In-app the block is
-   filled after rendering (StaticDoc) or drawn by a NodeView. */
+   filled after rendering (StaticDoc) or drawn by a NodeView.
+   The label's chrome is only for the unfilled block (empty, or holding the
+   public render's `.folder-index-label`): a block the client filled with its
+   own card must not get a second border and capitals around it. */
 .ProseMirror [data-folder-index] {
   margin-block: 0.5rem;
+}
+.ProseMirror [data-folder-index]:empty,
+.ProseMirror [data-folder-index]:has(> .folder-index-label) {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background-color: var(--card);
