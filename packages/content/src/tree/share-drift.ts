@@ -13,7 +13,8 @@
  * nodes.embedded_level that differs from its rule (mantle_embedded_level) is
  * repaired. An edge or a level a trigger missed (a write while a trigger was
  * off, a race between two changes to one embed's embedders) fails open or
- * closed; both are counted.
+ * closed; both are counted. A row deleted while the repair runs drops out
+ * of it; it never fails the sweep.
  */
 import { sql } from 'drizzle-orm';
 import { db } from '@mantle/db';
@@ -69,8 +70,19 @@ async function repairEmbedDrift(
       delete from node_embeds e
        where not exists (select 1 from ${EXPECTED} x
                           where x.from_id = e.from_id and x.to_id = e.to_id)`);
+    // Only the missing edges, each with both ends locked. The sweep runs
+    // against a live brain: a row deleted after this statement's snapshot
+    // read it would fail the foreign key and with it the whole sweep. Under
+    // the lock such a row drops out instead (read committed skips a locked
+    // row that turns out deleted), and a delete that comes later waits.
     await db.execute(sql`
-      insert into node_embeds (from_id, to_id) select x.from_id, x.to_id from ${EXPECTED} x
+      insert into node_embeds (from_id, to_id)
+      select x.from_id, x.to_id from ${EXPECTED} x
+        join nodes a on a.id = x.from_id
+        join nodes b on b.id = x.to_id
+       where not exists (select 1 from node_embeds e
+                          where e.from_id = x.from_id and e.to_id = x.to_id)
+         for key share of a, b
       on conflict do nothing`);
   }
   const rule = sql`mantle_embedded_level(n.owner_id, n.id, n.type)`;
