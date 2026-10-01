@@ -1,0 +1,62 @@
+// The pure half of login-notices.ts: reading a `login_notice` payload and
+// turning a chat reply into a lock-screen line. Who is told, and with which
+// words, is proven on Postgres (login-notices.db.test.ts).
+
+import { describe, expect, it } from 'vitest';
+import { chatTeaser, parseLoginNotice } from './login-notices';
+
+const A = '11111111-1111-4111-8111-111111111111';
+const B = '22222222-2222-4222-8222-222222222222';
+
+describe('parseLoginNotice', () => {
+  it('reads the three kinds the triggers send', () => {
+    expect(parseLoginNotice(JSON.stringify({ kind: 'chat', loginId: A, id: B }))).toEqual({
+      kind: 'chat',
+      loginId: A,
+      id: B,
+    });
+    expect(
+      parseLoginNotice(JSON.stringify({ kind: 'review', loginId: A, id: B, state: 'returned' })),
+    ).toEqual({ kind: 'review', loginId: A, id: B, state: 'returned' });
+    expect(parseLoginNotice(JSON.stringify({ kind: 'comment', id: B }))).toEqual({
+      kind: 'comment',
+      id: B,
+    });
+  });
+
+  it('drops anything else: bad JSON, a missing or malformed id, an unknown kind or state', () => {
+    for (const payload of [
+      'not json',
+      'null',
+      '[]',
+      JSON.stringify({ kind: 'chat', loginId: A }),
+      JSON.stringify({ kind: 'chat', loginId: 'x', id: B }),
+      JSON.stringify({ kind: 'chat', id: B }),
+      JSON.stringify({ kind: 'review', loginId: A, id: B, state: 'submitted' }),
+      JSON.stringify({ kind: 'review', loginId: A, id: B }),
+      JSON.stringify({ kind: 'comment', id: "1'; drop table x" }),
+      JSON.stringify({ kind: 'owner', loginId: A, id: B }),
+    ]) {
+      expect(parseLoginNotice(payload), payload).toBeNull();
+    }
+  });
+});
+
+describe('chatTeaser', () => {
+  it('is one clipped line', () => {
+    expect(chatTeaser('  Hello\n\nthere  ')).toBe('Hello there');
+    const long = chatTeaser('A'.repeat(300));
+    expect(long).toHaveLength(140);
+    expect(long.endsWith('…')).toBe(true);
+  });
+
+  it('leaves pictures out, kept or escaped', () => {
+    expect(chatTeaser('See ![the plan](/api/member/files/abc) below')).toBe('See below');
+    expect(chatTeaser('Look !\\[x](https://elsewhere.example/a.png) here')).toBe('Look here');
+  });
+
+  it('says so when the reply is a picture and nothing else', () => {
+    expect(chatTeaser('![chart](/api/client/draws/abc/svg)')).toBe('New message');
+    expect(chatTeaser('')).toBe('New message');
+  });
+});

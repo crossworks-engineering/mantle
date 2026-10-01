@@ -19,10 +19,15 @@
  * per role (server/public-session-routes.ts, audit A4), and a completeness
  * test fails when another public route starts reading the session.
  *
- * No database: the login row and the anchor come from a stand-in
- * (lib/auth/login-row is mocked), as in the member sweep. A handler that
+ * The CLIENT sweep runs twice: with the session cookie, and with the phone
+ * app's device token (a bearer at the login's session epoch, the three-role
+ * phone app). A client bearer reaches the client routes and nothing else.
+ *
+ * No database: the login row, the anchor and the device token rows come from
+ * a stand-in (lib/auth/login-row is mocked), as in the member sweep. A handler that
  * touches the database BEFORE its gate would fail here with a 500.
  */
+import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -44,6 +49,11 @@ const row = (id: string, role: string) => ({
   sessionEpoch: 0,
 });
 
+/** The device token rows (mobile_tokens) the bearer sweeps stand in. */
+const bearers = vi.hoisted(() => ({
+  rows: new Map<string, { userId: string; revokedAt: Date | null; expiresAt: Date }>(),
+}));
+
 vi.mock('../lib/auth/login-row', () => ({
   loadLoginRow: async (id: string) =>
     id === CLIENT_ID
@@ -53,6 +63,8 @@ vi.mock('../lib/auth/login-row', () => ({
         : null,
   loadAnchorId: async () => ANCHOR_ID,
   loadPersonalSpaceId: async () => SPACE_ID,
+  loadBearerToken: async (jti: string) => bearers.rows.get(jti) ?? null,
+  touchBearerToken: async () => undefined,
 }));
 
 // The MCP consent page checks that remote MCP is on and the client is
@@ -141,16 +153,25 @@ describe.skipIf(!hasManifest)('role sweep: three roles, fail closed', () => {
   let app: import('hono').Hono;
   let manifest: Array<{ pattern: string; methods: string[] }>;
   let cookieFor: (id: string) => string;
+  /** A live device token for `id`, as the client's code sign-in mints it:
+   *  30 days, at the login's session epoch. */
+  let bearerFor: (id: string) => string;
 
   beforeAll(async () => {
     process.env.SESSION_SECRET = 'role-sweep-secret-that-is-at-least-32-chars!';
     delete process.env.MANTLE_API_CORS_ORIGINS;
     delete process.env.MANTLE_DETACHED_DEV;
-    const { buildSessionCookie } = await import('../lib/auth/tokens');
+    const { buildSessionCookie, buildMobileToken } = await import('../lib/auth/tokens');
     // 30 days, as the client sign-in mints it: a longer client cookie is
     // refused outright (a 401 everywhere would hide the gates' answers).
     const ttlSeconds = 30 * 24 * 60 * 60;
     cookieFor = (id) => `${SESSION_COOKIE_NAME}=${buildSessionCookie(id, { ttlSeconds }).value}`;
+    bearerFor = (id) => {
+      const jti = randomUUID();
+      const t = buildMobileToken(id, jti, ttlSeconds, 0);
+      bearers.rows.set(jti, { userId: id, revokedAt: null, expiresAt: t.expiresAt });
+      return `Bearer ${t.value}`;
+    };
     const { createApp } = await import('./app');
     app = await createApp();
     manifest = (await import('./route-manifest.gen')).routeManifest;
@@ -167,11 +188,12 @@ describe.skipIf(!hasManifest)('role sweep: three roles, fail closed', () => {
     }
   });
 
-  /** Drive every route with `cookie`; collect those whose answer `refused`
-   *  does not accept, and every key driven (so an allow-list the callback
-   *  consults can be checked for keys the sweep never reaches). */
+  /** Drive every route with `auth` (a cookie or an authorization header);
+   *  collect those whose answer `refused` does not accept, and every key
+   *  driven (so an allow-list the callback consults can be checked for keys
+   *  the sweep never reaches). */
   async function sweep(
-    cookie: string,
+    auth: Record<string, string>,
     refused: (a: {
       key: string;
       status: number;
@@ -192,7 +214,7 @@ describe.skipIf(!hasManifest)('role sweep: three roles, fail closed', () => {
         visited.add(key);
         const res = await app.request(path, {
           method,
-          headers: { cookie, 'content-type': 'application/json' },
+          headers: { ...auth, 'content-type': 'application/json' },
           body: method === 'GET' || method === 'HEAD' ? undefined : '{}',
         });
         if (isApi) {
@@ -218,13 +240,34 @@ describe.skipIf(!hasManifest)('role sweep: three roles, fail closed', () => {
   // resolvedFor (an unknown role read as an admin) was once caught only by
   // their timeout. Each shell answers a login it cannot name with 401.
   it('answers an UNKNOWN role 401 on every shell (fast)', async () => {
-    const cookie = cookieFor(UNKNOWN_ID);
-    for (const path of ['/api/shell', '/api/member/shell', '/api/client/shell']) {
-      const res = await app.request(path, { headers: { cookie } });
-      const body = (await res.json().catch(() => null)) as { error?: string } | null;
-      expect(res.status, path).toBe(401);
-      expect(body?.error, path).toBe('unauthorized');
+    for (const auth of [
+      { cookie: cookieFor(UNKNOWN_ID) },
+      { authorization: bearerFor(UNKNOWN_ID) },
+    ] as Array<Record<string, string>>) {
+      for (const path of ['/api/shell', '/api/member/shell', '/api/client/shell']) {
+        const res = await app.request(path, { headers: auth });
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        expect(res.status, path).toBe(401);
+        expect(body?.error, path).toBe('unauthorized');
+      }
     }
+  });
+
+  it('tells a client bearer who it is, and an unknown role nothing', async () => {
+    const who = await app.request('/api/auth/whoami', {
+      headers: { authorization: bearerFor(CLIENT_ID) },
+    });
+    expect(who.status).toBe(200);
+    expect(await who.json()).toMatchObject({
+      role: 'client',
+      loginId: CLIENT_ID,
+      shell: '/api/client/shell',
+      pushBase: '/api/client/push',
+    });
+    const none = await app.request('/api/auth/whoami', {
+      headers: { authorization: bearerFor(UNKNOWN_ID) },
+    });
+    expect(none.status).toBe(401);
   });
 
   describe('public routes that read a session (audit A4)', () => {
@@ -299,10 +342,14 @@ describe.skipIf(!hasManifest)('role sweep: three roles, fail closed', () => {
     });
   });
 
-  it('refuses a CLIENT login on every route but its own, member routes included', async () => {
-    const { checked, failures, visited } = await sweep(
-      cookieFor(CLIENT_ID),
-      ({ key, status, body }) => {
+  it.each(['cookie', 'bearer'] as const)(
+    'refuses a CLIENT login (%s) on every route but its own, member routes included',
+    async (how) => {
+      const auth: Record<string, string> =
+        how === 'cookie'
+          ? { cookie: cookieFor(CLIENT_ID) }
+          : { authorization: bearerFor(CLIENT_ID) };
+      const { checked, failures, visited } = await sweep(auth, ({ key, status, body }) => {
         // The client routes answer a client (client-sweep.test.ts proves it).
         const [method, pattern] = key.split(' ') as [string, string];
         if (isClientRoute(method, pattern)) return true;
@@ -311,17 +358,18 @@ describe.skipIf(!hasManifest)('role sweep: three roles, fail closed', () => {
           (status === 401 && body?.error === 'unauthorized') ||
           (status === 401 && TICKET_GATED.has(key))
         );
-      },
-    );
-    expect(checked).toBeGreaterThan(300);
-    expect(failures).toEqual([]);
-    // Every allow-list the callback consults was reached (none is dead).
-    expect([...TICKET_GATED, ...CLIENT_ROUTES].filter((k) => !visited.has(k))).toEqual([]);
-  }, 300_000);
+      });
+      expect(checked).toBeGreaterThan(300);
+      expect(failures).toEqual([]);
+      // Every allow-list the callback consults was reached (none is dead).
+      expect([...TICKET_GATED, ...CLIENT_ROUTES].filter((k) => !visited.has(k))).toEqual([]);
+    },
+    300_000,
+  );
 
   it('treats a login with an UNKNOWN role as no login at all', async () => {
     const { checked, failures, visited } = await sweep(
-      cookieFor(UNKNOWN_ID),
+      { cookie: cookieFor(UNKNOWN_ID) },
       ({ key, status, body }) =>
         (status === 401 && body?.error === 'unauthorized') ||
         (status === 401 && TICKET_GATED.has(key)) ||
@@ -334,13 +382,17 @@ describe.skipIf(!hasManifest)('role sweep: three roles, fail closed', () => {
   }, 300_000);
 
   it('never answers a client with an admin or member answer on the gates', async () => {
-    const cookie = cookieFor(CLIENT_ID);
     // An admin read and a member read, each past its gate for its own role.
-    for (const path of ['/api/shell', '/api/member/shell', '/api/member/space/not-a-uuid']) {
-      const res = await app.request(path, { headers: { cookie } });
-      const body = (await res.json().catch(() => null)) as { reason?: string } | null;
-      expect(res.status, path).toBe(403);
-      expect(body?.reason, path).toBe('client-login');
+    for (const headers of [
+      { cookie: cookieFor(CLIENT_ID) },
+      { authorization: bearerFor(CLIENT_ID) },
+    ] as Array<Record<string, string>>) {
+      for (const path of ['/api/shell', '/api/member/shell', '/api/member/space/not-a-uuid']) {
+        const res = await app.request(path, { headers });
+        const body = (await res.json().catch(() => null)) as { reason?: string } | null;
+        expect(res.status, path).toBe(403);
+        expect(body?.reason, path).toBe('client-login');
+      }
     }
   });
 

@@ -56,3 +56,20 @@ describe('sanitizePushPrefs', () => {
     ).toEqual({ approvals: true });
   });
 });
+
+describe('sanitizeLoginPushPrefs (a member or a client login)', () => {
+  it('keeps the three known booleans and drops everything else', async () => {
+    const { sanitizeLoginPushPrefs } = await import('./preferences-sanitize');
+    expect(
+      sanitizeLoginPushPrefs({
+        chatReplies: false,
+        reviewResults: true,
+        comments: 'no',
+        assistantMessages: false,
+        approvals: false,
+        loginId: 'someone-else',
+      }),
+    ).toEqual({ chatReplies: false, reviewResults: true });
+    expect(sanitizeLoginPushPrefs({})).toEqual({});
+  });
+});

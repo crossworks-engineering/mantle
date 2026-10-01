@@ -12,6 +12,11 @@
  * request cookie cleared on success; failed tries capped per email plus
  * address, and NO brain-wide lockout. The code logic is proven on Postgres
  * in packages/content/src/client-codes.db.test.ts.
+ *
+ * Device mode (the phone app): the request answers its request id in the
+ * body and sets no cookie, the same for every email; the verify takes that
+ * id from the body, never from the cookie, answers a 30-day device token at
+ * the login's session epoch and sets no session cookie.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -26,6 +31,19 @@ const h = vi.hoisted(() => ({
   redeemed: null as null | Record<string, unknown>,
   redeemCalls: [] as Array<{ requestId: string; email: string; code: string }>,
   audits: [] as Array<Record<string, unknown>>,
+  tokenRows: [] as Array<Record<string, unknown>>,
+}));
+
+// The device token row a device-mode verify writes (no database here).
+vi.mock('@mantle/db', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  db: {
+    insert: () => ({
+      values: async (row: Record<string, unknown>) => {
+        h.tokenRows.push(row);
+      },
+    }),
+  },
 }));
 
 vi.mock('@/lib/client-codes', () => ({
@@ -72,6 +90,7 @@ beforeEach(() => {
   h.redeemed = null;
   h.redeemCalls = [];
   h.audits = [];
+  h.tokenRows = [];
 });
 
 const request = async (body: unknown, ip = '203.0.113.1', cookie?: string) => {
@@ -231,6 +250,53 @@ describe('POST /api/auth/client-code', () => {
   });
 });
 
+describe('POST /api/auth/client-code, device mode', () => {
+  beforeEach(() => {
+    h.sender = { id: 'acc' };
+  });
+
+  it('answers the request id in the body and sets no cookie, the same for every email', async () => {
+    const shapes = new Set<string>();
+    for (const email of ['client@example.invalid', 'stranger@example.invalid', 'not an email']) {
+      const res = await request({ email, device: true });
+      expect(res.status).toBe(200);
+      expect(res.headers.get('set-cookie')).toBeNull();
+      const body = (await res.json()) as { ok: boolean; requestId: string };
+      expect(body.requestId).toMatch(/^[0-9a-f-]{36}$/);
+      shapes.add(JSON.stringify(Object.keys(body).sort()));
+    }
+    expect(shapes).toEqual(new Set([JSON.stringify(['ok', 'requestId'])]));
+    // Queued with the id the body answered, never a code.
+    expect(h.queued).toHaveLength(3);
+  });
+
+  it('queues the id it answered, and keeps an id the app sends back', async () => {
+    const first = (await (await request({ email: 'c@example.invalid', device: true })).json()) as {
+      requestId: string;
+    };
+    const again = (await (
+      await request({ email: 'c@example.invalid', device: true, requestId: first.requestId })
+    ).json()) as { requestId: string };
+    expect(again.requestId).toBe(first.requestId);
+    expect(h.queued.map((j) => j.requestId)).toEqual([first.requestId, first.requestId]);
+    // Not an id: replaced, never trusted.
+    const odd = (await (
+      await request({ email: 'c@example.invalid', device: true, requestId: 'abc' })
+    ).json()) as { requestId: string };
+    expect(odd.requestId).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it('never reads the browser cookie in device mode', async () => {
+    const res = await request(
+      { email: 'c@example.invalid', device: true },
+      '203.0.113.1',
+      `mantle_code_req=${REQ}`,
+    );
+    const body = (await res.json()) as { requestId: string };
+    expect(body.requestId).not.toBe(REQ);
+  });
+});
+
 const GOOD = { email: 'client@example.invalid', code: '01234567' };
 const REDEEMED = { loginId: LOGIN, email: 'client@example.invalid', codeId: 'c1', sessionEpoch: 2 };
 
@@ -320,5 +386,64 @@ describe('POST /api/auth/client-code/verify', () => {
     }
     h.redeemed = REDEEMED;
     expect((await verify(GOOD, { ip: '198.51.100.200' })).status).toBe(200);
+  });
+});
+
+describe('POST /api/auth/client-code/verify, device mode', () => {
+  const DEVICE_REQ = '1a1a1a1a-1a1a-4a1a-8a1a-1a1a1a1a1a1a';
+
+  it('answers a 30-day device token at the login epoch, and no cookie', async () => {
+    h.redeemed = REDEEMED;
+    await import('./verify/route');
+    const before = Math.floor(Date.now() / 1000);
+    const res = await verify(
+      { ...GOOD, requestId: DEVICE_REQ, deviceName: 'Test phone' },
+      { cookie: null },
+    );
+    const after = Math.ceil(Date.now() / 1000);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('set-cookie')).toBeNull();
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({ ok: true, role: 'client', loginId: LOGIN, expiresIn: 2592000 });
+    // Redeemed by the BODY's request id.
+    expect(h.redeemCalls).toEqual([{ requestId: DEVICE_REQ, email: GOOD.email, code: GOOD.code }]);
+    const { verifyMobileToken } = await import('@/lib/auth');
+    const claims = verifyMobileToken(body.token as string)!;
+    expect(claims).toMatchObject({ uid: LOGIN, jti: body.deviceId, ep: 2 });
+    expect(claims.exp).toBeLessThanOrEqual(after + 30 * 24 * 60 * 60);
+    expect(claims.exp).toBeGreaterThanOrEqual(before + 30 * 24 * 60 * 60);
+    // The row that makes it listable and revocable, under the client login.
+    expect(h.tokenRows).toHaveLength(1);
+    expect(h.tokenRows[0]).toMatchObject({ id: body.deviceId, userId: LOGIN, label: 'Test phone' });
+    expect(h.audits.map((a) => a.action)).toEqual(['auth.client_code_signin']);
+  });
+
+  it('uses only the body request id: a cookie is no fallback', async () => {
+    h.redeemed = REDEEMED;
+    // A malformed id in the body with a good cookie: a failure, no redeem.
+    const res = await verify({ ...GOOD, requestId: 'not-an-id' }, {});
+    expect(res.status).toBe(401);
+    expect(h.redeemCalls).toHaveLength(0);
+    expect(h.tokenRows).toHaveLength(0);
+    // Both present: the body's id is the one redeemed.
+    await verify({ ...GOOD, requestId: DEVICE_REQ }, {});
+    expect(h.redeemCalls.map((c) => c.requestId)).toEqual([DEVICE_REQ]);
+  });
+
+  it('a refused redeem mints nothing and answers the same 401 as the browser flow', async () => {
+    h.redeemed = null;
+    const device = await verify({ ...GOOD, requestId: DEVICE_REQ }, { cookie: null });
+    const browser = await verify(GOOD, { ip: '203.0.113.9' });
+    expect(device.status).toBe(401);
+    expect(await device.json()).toEqual(await browser.json());
+    expect(h.tokenRows).toHaveLength(0);
+  });
+
+  it('the browser flow still sets the cookie and mints no device token', async () => {
+    h.redeemed = REDEEMED;
+    const res = await verify(GOOD);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(res.headers.get('set-cookie') ?? '').toMatch(/mantle_session=[^;]/);
+    expect(h.tokenRows).toHaveLength(0);
   });
 });

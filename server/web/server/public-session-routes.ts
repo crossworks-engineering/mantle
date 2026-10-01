@@ -76,6 +76,13 @@ export const PUBLIC_SESSION_ROUTES: PublicSessionRoute[] = [
     expect: { member: { status: 400 }, client: refused('client-login'), unknown: stranger },
   },
   {
+    // Who am I, for any credential: the role and the routes that differ per
+    // role (the phone app, three roles). About the login only.
+    key: 'GET /api/auth/whoami',
+    path: '/api/auth/whoami',
+    expect: { member: { status: 200 }, client: { status: 200 }, unknown: stranger },
+  },
+  {
     // Every role signs out; a client's sign-out also ends its sessions (audit
     // B23; the sweeps stand the epoch bump in). A stranger just gets a
     // cleared cookie.
