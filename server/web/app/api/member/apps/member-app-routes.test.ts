@@ -23,7 +23,7 @@ const h = vi.hoisted(() => ({
   displayName: 'Pat' as string | null,
   lookups: [] as string[],
   reads: [] as Array<{ fn: string; level: string }>,
-  folderReads: [] as Array<{ level: string; places: unknown }>,
+  launcherReads: [] as Array<{ level: string; reader: string }>,
   homeAppId: undefined as string | undefined,
   loginActive: true,
   verdict: { ok: true } as { ok: boolean; status?: number; reason?: string },
@@ -93,20 +93,14 @@ vi.mock('@mantle/content', async (importOriginal) => {
     listMemberApps: vi.fn(async () =>
       read('listMemberApps', [card(APP, 'Polls'), card(OTHER_APP, 'Budget')]),
     ),
-    listMemberAppsPlaced: vi.fn(async () =>
-      read('listMemberAppsPlaced', {
+    appLauncher: vi.fn(async (_anchor: string, reader: string) => {
+      h.launcherReads.push({ level: currentViewerLevel(), reader });
+      return {
         apps: [card(APP, 'Polls'), card(OTHER_APP, 'Budget')],
-        places: [
-          { id: APP, path: 'apps.tools' },
-          { id: OTHER_APP, path: 'apps' },
+        folders: [
+          { id: 'f1', name: 'Tools', icon: null, color: 'teal', parentId: null, appIds: [APP] },
         ],
-      }),
-    ),
-    appLauncherFolders: vi.fn(async (_anchor: string, places: unknown) => {
-      h.folderReads.push({ level: currentViewerLevel(), places });
-      return [
-        { id: 'f1', name: 'Tools', icon: null, color: 'teal', parentId: null, appIds: [APP] },
-      ];
+      };
     }),
     listLibrary: vi.fn(async () =>
       read('listLibrary', {
@@ -223,7 +217,7 @@ beforeEach(() => {
   h.displayName = 'Pat';
   h.lookups.length = 0;
   h.reads.length = 0;
-  h.folderReads.length = 0;
+  h.launcherReads.length = 0;
   h.homeAppId = undefined;
   verdictMock?.mockClear();
   h.loginActive = true;
@@ -530,7 +524,7 @@ describe('member app list and home', () => {
     expect(((await (await listRoute()).json()) as { homeAppId: unknown }).homeAppId).toBeNull();
   });
 
-  it('adds the folders of those apps, read as the brain from the apps it listed', async () => {
+  it('adds the folders of those apps, from the launcher read as a member', async () => {
     const body = (await (await listRoute()).json()) as Record<string, unknown>;
     // The fields an older client reads are still there, unchanged.
     expect(Object.keys(body).sort()).toEqual(['apps', 'folders', 'homeAppId']);
@@ -538,20 +532,10 @@ describe('member app list and home', () => {
     expect(body.folders).toEqual([
       { id: 'f1', name: 'Tools', icon: null, color: 'teal', parentId: null, appIds: [APP] },
     ]);
-    // A card never carries its path: the places stay on the brain.
-    expect(JSON.stringify(body.apps)).not.toContain('apps.tools');
-    // The apps are read on the team role; the folder rows on the admin pool,
-    // and only from the places of the apps the team role listed.
-    expect(h.reads.find((r) => r.fn === 'listMemberAppsPlaced')?.level).toBe('team');
-    expect(h.folderReads).toEqual([
-      {
-        level: 'admin',
-        places: [
-          { id: APP, path: 'apps.tools' },
-          { id: OTHER_APP, path: 'apps' },
-        ],
-      },
-    ]);
+    // The route hands no path to anything: the launcher is asked for the
+    // team reader, on the admin pool (it scopes its own reads; the rule is
+    // proven on Postgres in packages/content/src/app-folders.viewer.db.test.ts).
+    expect(h.launcherReads).toEqual([{ level: 'admin', reader: 'team' }]);
   });
 
   it('gives no hub data when nothing is pinned, and skips the hub reads', async () => {

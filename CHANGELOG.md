@@ -14,8 +14,16 @@ the same answer, so a folder of admin apps, of drafts, or of nothing is
 never named, whatever its share. The existing fields are unchanged; an
 older client ignores `folders`. Apps stay out of the reader tree kinds: the
 rule to run an app (published build, no embed, client level exactly for a
-client) is the list's own. docs/folder-tree.md, "Apps for members and
+client) is the list's own. A failed folder read never hides the apps: the
+answer then carries no folders. docs/folder-tree.md, "Apps for members and
 clients".
+
+- **Fixed: a member's tree by name.** In a search and in the A to Z view
+  (`GET /api/member/tree/:kind/search`) a member's drafts were put first in
+  the order they were last changed (Beta before Alpha), and only the first
+  page carried any, so a member with more drafts than a page never saw the
+  rest. Drafts and the brain's items are now one list by name, paged by one
+  cursor; a page holds at most `limit` items.
 
 ## 0.232.365: folder system phase 7, pages in folders
 

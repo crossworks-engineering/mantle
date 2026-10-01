@@ -166,12 +166,13 @@ rule: `GET /api/member/apps` and `GET /api/client/apps` answer `folders`
 next to `apps` (`AppLauncherFolder`: id, name, icon, colour, `parentId`,
 `appIds`; `packages/content/src/app-folders.ts`).
 
-- **One rule.** The route reads the apps the reader may run, as the reader
-  (`listMemberAppsPlaced`, `listClientAppsPlaced`), then reads the folder
-  rows on the way to those apps, as the brain, and nothing else. A folder is
-  answered only when it holds, at any depth, an app of the same answer. A
-  folder of admin apps, a folder of drafts and an empty folder are absent,
-  name and id, whatever their share says.
+- **One rule.** `appLauncher(anchor, reader)` reads the apps the reader may
+  run, as the reader, then reads the folder rows on the way to those apps,
+  as the brain, and nothing else. It takes no paths from its caller. A
+  folder is answered only when it holds, at any depth, an app of the same
+  answer. A folder of admin apps, a folder of drafts and an empty folder are
+  absent, name and id, whatever their share says. When the folder read
+  fails the apps still list, with no folders, and the failure is logged.
 - **Names are organisational.** A team app in a folder nobody shared still
   shows in its folder: the folder's name, icon and colour come with it.
 - **Read only.** No level, share or system flag on a folder, no path on a
@@ -374,7 +375,10 @@ A member files its drafts in the brain's tree and keeps private folders there.
   folder it does not see, its own row shows (its name and id), never the
   brain's; its rows below a folder it no longer sees show at the deepest
   folder above them it does. A folder's pages run through its drafts first,
-  then the brain's items, at most `limit` per page.
+  then the brain's items, at most `limit` per page. By name (a search and
+  the A to Z view, `GET /api/member/tree/:kind/search`) drafts and brain
+  items are one list in one order, paged together by one cursor, so every
+  draft is reached however many there are.
 - **The member's writes** (`member-tree-write.ts`, `POST /api/member/tree/:kind/folders`,
   `PATCH|DELETE .../folders/:id`, `POST .../move`): create, rename, restyle,
   move and delete its own folders, file its own drafts. A place must be a

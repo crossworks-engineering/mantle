@@ -87,7 +87,6 @@ export {
   MEMBER_APP_LEVELS,
   isMemberAppLevel,
   listMemberApps,
-  listMemberAppsPlaced,
   getMemberRunnableApp,
   listTeamLevelAppIds,
   memberMayWriteAppData,
@@ -97,9 +96,10 @@ export {
 } from './member-apps';
 
 export {
-  appLauncherFolders,
+  appLauncher,
   buildAppLauncherFolders,
   type AppFolderRow,
+  type AppLauncherReader,
   type AppPlace,
 } from './app-folders';
 
@@ -107,7 +107,6 @@ export {
   CLIENT_APP_LEVELS,
   isClientAppLevel,
   listClientApps,
-  listClientAppsPlaced,
   getClientRunnableApp,
   type ClientAppCard,
   type ClientRunnableApp,

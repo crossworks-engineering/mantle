@@ -1,8 +1,9 @@
 /**
- * The Apps launcher's folders for members and clients, on a real, migrated
- * Postgres (./app-folders.ts): the apps are read inside withViewer, as the
- * real team and client roles, and the folders are built from those apps
- * alone, as the routes do (GET /api/member/apps, /api/client/apps).
+ * The Apps launcher for members and clients, on a real, migrated Postgres
+ * (./app-folders.ts, `appLauncher`): the apps are read as the real team and
+ * client roles, and the folders are the brain's rows on the way to those
+ * apps and nothing else, as the routes answer them (GET /api/member/apps,
+ * /api/client/apps).
  *
  *  - a member sees a team app inside a folder shared with the team, with the
  *    folder's name, icon and colour;
@@ -12,8 +13,13 @@
  *    answered at all: not its name, not its id, shared or not;
  *  - the folders on the way to an app come with it, each under its parent;
  *  - a client sees a folder only through an app at CLIENT level (its own, or
- *    a folder shared with clients), never a team folder;
- *  - when a folder stops sharing, its apps and the folder go.
+ *    a folder shared with clients): a client app in a team-shared folder
+ *    under an unshared one names both, and the team and public apps next to
+ *    it are never named;
+ *  - when a folder stops sharing, its apps and the folder go;
+ *  - another owner's folder at the same path, and a member's own folder
+ *    there, are never answered;
+ *  - an app read only through an embed is not run, and names no folder.
  *
  * Rows belong to the shared test anchor, under folders of this run's own,
  * and carry this run's label (other files use the anchor in parallel, so
@@ -22,7 +28,6 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { AppPlace } from './app-folders';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -31,8 +36,6 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
   let m: Db;
   let tree: typeof import('./tree/index');
   let folders: typeof import('./app-folders');
-  let memberApps: typeof import('./member-apps');
-  let clientApps: typeof import('./client-apps');
   let sqlTag: typeof import('drizzle-orm').sql;
   let brain = '';
   const label = `apf${randomUUID().slice(0, 8)}`;
@@ -46,6 +49,13 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
     leaf: `apps.${label}_deep.${label}_mid.${label}_leaf`,
     side: `apps.${label}_deep.${label}_side`,
     client: `apps.${label}_client`,
+    /** Unshared, above a folder shared with the team. */
+    grand: `apps.${label}_grand`,
+    parent: `apps.${label}_grand.${label}_parent`,
+    /** Unshared: holds only an app that a shared note embeds. */
+    embedded: `apps.${label}_embedded`,
+    /** A notes folder shared with the team, for the note that embeds. */
+    notes: `notes.${label}_notes`,
   };
   const f = {
     shared: randomUUID(),
@@ -57,6 +67,9 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
     leaf: randomUUID(),
     side: randomUUID(),
     client: randomUUID(),
+    grand: randomUUID(),
+    parent: randomUUID(),
+    embedded: randomUUID(),
   };
   const a = {
     /** Admin by its own level, published, in the folder shared with the team. */
@@ -81,33 +94,63 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
     adminInClient: randomUUID(),
     /** Team, published, at the top level. */
     teamTop: randomUUID(),
+    /** Client, team (admin by its own level) and public, published, in the
+     *  team-shared folder under the unshared one. */
+    clientInParent: randomUUID(),
+    adminInParent: randomUUID(),
+    publicInParent: randomUUID(),
+    /** Admin, published, read at team only through a shared note's embed. */
+    embeddedOnly: randomUUID(),
   };
+  /** Rows that are not this brain's: another owner's, and a member's own. */
+  const other = randomUUID();
+  const member = randomUUID();
+  const foreign = {
+    otherFolder: randomUUID(),
+    otherApp: randomUUID(),
+    memberFolder: randomUUID(),
+  };
+  const notesFolder = randomUUID();
+  const embedNote = randomUUID();
+  let memberSpace = '';
+
   const nameOf = (ids: Record<string, string>, id: string) =>
     `${label} ${Object.entries(ids).find(([, v]) => v === id)![0]}`;
   const folderName = (id: string) => `${nameOf(f, id)} folder`;
   const appTitle = (id: string) => `${nameOf(a, id)} app`;
+  const foreignName = (id: string) => `${nameOf(foreign, id)} foreign`;
 
-  const folder = async (id: string, at: string, data: Record<string, unknown> = {}) => {
+  const row = async (
+    id: string,
+    owner: string,
+    type: string,
+    title: string,
+    at: string,
+    audience = 'admin',
+    data: Record<string, unknown> = {},
+  ) => {
     await m.systemDb.execute(sqlTag`
       insert into nodes (id, owner_id, type, title, path, audience, data, tags)
-      values (${id}, ${brain}, 'branch', ${folderName(id)}, ${at}::ltree, 'admin',
+      values (${id}, ${owner}, ${type}::node_type, ${title}, ${at}::ltree, ${audience},
               ${JSON.stringify(data)}::jsonb, '{}')`);
   };
-  const app = async (id: string, at: string, audience: string, published: boolean) => {
-    await m.systemDb.execute(sqlTag`
-      insert into nodes (id, owner_id, type, title, path, audience, data, tags)
-      values (${id}, ${brain}, 'app', ${appTitle(id)}, ${at}::ltree, ${audience}, '{}'::jsonb, '{}')`);
-    const green = JSON.stringify({
-      storageKey: 'apps/x.js',
-      sha256: 'x',
-      builtAt: '2026-10-01T00:00:00Z',
-      esbuildVersion: '0',
-      bytes: 1,
-      ok: true,
-    });
-    await m.systemDb.execute(sqlTag`
+  const folder = (id: string, at: string, data: Record<string, unknown> = {}) =>
+    row(id, brain, 'branch', folderName(id), at, 'admin', data);
+  const green = JSON.stringify({
+    storageKey: 'apps/x.js',
+    sha256: 'x',
+    builtAt: '2026-10-01T00:00:00Z',
+    esbuildVersion: '0',
+    bytes: 1,
+    ok: true,
+  });
+  const publish = (id: string, published: boolean) =>
+    m.systemDb.execute(sqlTag`
       insert into apps (node_id, manifest, published_build, draft_build)
       values (${id}, '{}'::jsonb, ${published ? green : null}::jsonb, ${green}::jsonb)`);
+  const app = async (id: string, at: string, audience: string, published: boolean) => {
+    await row(id, brain, 'app', appTitle(id), at, audience);
+    await publish(id, published);
   };
   const share = (id: string, level: string | null) =>
     m.systemDb.execute(sqlTag`update nodes set share_level = ${level} where id = ${id}`);
@@ -116,18 +159,20 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
   const ourApps = new Set<string>(Object.values(a));
   /** What the route answers for a reader, narrowed to this run's rows. */
   const launcher = async (reader: 'team' | 'client') => {
-    const { apps, places }: { apps: Array<{ id: string }>; places: AppPlace[] } =
+    const all: {
+      apps: Array<{ id: string }>;
+      folders: Awaited<ReturnType<typeof folders.appLauncher>>['folders'];
+    } =
       reader === 'team'
-        ? await m.withViewer('team', () => memberApps.listMemberAppsPlaced(brain))
-        : await m.withViewer('client', () => clientApps.listClientAppsPlaced(brain));
-    const all = await folders.appLauncherFolders(brain, places);
+        ? await folders.appLauncher(brain, 'team')
+        : await folders.appLauncher(brain, 'client');
     return {
-      apps: apps.filter((x) => ourApps.has(x.id)),
-      folders: all
+      apps: all.apps.filter((x) => ourApps.has(x.id)),
+      folders: all.folders
         .filter((x) => ourFolders.has(x.id))
         .map((x) => ({ ...x, appIds: x.appIds.filter((id) => ourApps.has(id)) })),
       /** Everything the reader is answered, as it goes over the wire. */
-      wire: JSON.stringify({ apps, folders: all }),
+      wire: JSON.stringify(all),
     };
   };
   const byId = <T extends { id: string }>(list: T[], id: string) => list.find((x) => x.id === id);
@@ -138,8 +183,6 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
     m = await import('@mantle/db');
     tree = await import('./tree/index');
     folders = await import('./app-folders');
-    memberApps = await import('./member-apps');
-    clientApps = await import('./client-apps');
     sqlTag = (await import('drizzle-orm')).sql;
     const { ensureTestAnchor } = await import('@mantle/db/test-support');
     const admin = (m.systemDb as unknown as { $client: Parameters<Db['ensureViewerRoles']>[0] })
@@ -147,6 +190,7 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
     await m.ensureViewerRoles(admin, process.env.MANTLE_MASTER_KEY);
     brain = await ensureTestAnchor(admin);
     await tree.ensureKindRoot(brain, 'apps');
+    await tree.ensureKindRoot(brain, 'notes');
 
     await folder(f.shared, path.shared, { icon: 'lucide:rocket', color: 'teal' });
     await folder(f.plain, path.plain);
@@ -157,6 +201,9 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
     await folder(f.leaf, path.leaf);
     await folder(f.side, path.side);
     await folder(f.client, path.client);
+    await folder(f.grand, path.grand);
+    await folder(f.parent, path.parent);
+    await folder(f.embedded, path.embedded);
 
     await app(a.adminInShared, path.shared, 'admin', true);
     await app(a.draftInShared, path.shared, 'admin', false);
@@ -169,10 +216,48 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
     await app(a.adminSide, path.side, 'admin', true);
     await app(a.adminInClient, path.client, 'admin', true);
     await app(a.teamTop, 'apps', 'team', true);
+    await app(a.clientInParent, path.parent, 'client', true);
+    await app(a.adminInParent, path.parent, 'admin', true);
+    await app(a.publicInParent, path.parent, 'public', true);
+    await app(a.embeddedOnly, path.embedded, 'admin', true);
 
     await share(f.shared, 'team');
     await share(f.drafts, 'team');
     await share(f.client, 'client');
+    await share(f.parent, 'team');
+
+    // A note in a notes folder shared with the team embeds the app: the app
+    // is then READ at team (migration 0208), which must not make it run.
+    await row(notesFolder, brain, 'branch', `${label} notes folder`, path.notes);
+    await share(notesFolder, 'team');
+    await row(embedNote, brain, 'note', `${label} embeds an app`, path.notes, 'admin', {
+      content: `![x](media:${a.embeddedOnly})`,
+    });
+
+    // Another brain with a folder and a team app at one of our paths, and a
+    // member's own folder there: rows of other owners at the same path.
+    await m.systemDb.execute(sqlTag`
+      insert into auth.users (id, email, password_hash, role, display_name) values
+        (${other}, ${`${label}-other@example.invalid`}, 'x', 'admin', null),
+        (${member}, ${`${label}-pat@example.invalid`}, 'x', 'member', 'Pat Member')`);
+    await m.systemDb.execute(sqlTag`
+      insert into spaces (id, kind, login_id) values (${other}, 'brain', ${other})`);
+    memberSpace = (
+      (await m.systemDb.execute(sqlTag`
+        select id from spaces where kind = 'personal' and login_id = ${member}`)) as unknown as {
+        id: string;
+      }[]
+    )[0]!.id;
+    await row(foreign.otherFolder, other, 'branch', foreignName(foreign.otherFolder), path.shared);
+    await row(foreign.otherApp, other, 'app', foreignName(foreign.otherApp), path.shared, 'team');
+    await publish(foreign.otherApp, true);
+    await row(
+      foreign.memberFolder,
+      memberSpace,
+      'branch',
+      foreignName(foreign.memberFolder),
+      path.shared,
+    );
   }, 60_000);
 
   afterAll(async () => {
@@ -181,7 +266,14 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
         id = ${a.teamTop}
         or path <@ ${path.shared}::ltree or path <@ ${path.plain}::ltree
         or path <@ ${path.hidden}::ltree or path <@ ${path.drafts}::ltree
-        or path <@ ${path.deep}::ltree or path <@ ${path.client}::ltree)`);
+        or path <@ ${path.deep}::ltree or path <@ ${path.client}::ltree
+        or path <@ ${path.grand}::ltree or path <@ ${path.embedded}::ltree
+        or path <@ ${path.notes}::ltree)`);
+    await m.systemDb.execute(
+      sqlTag`delete from nodes where owner_id in (${other}, ${memberSpace})`,
+    );
+    await m.systemDb.execute(sqlTag`delete from spaces where login_id in (${other}, ${member})`);
+    await m.systemDb.execute(sqlTag`delete from auth.users where id in (${other}, ${member})`);
   }, 60_000);
 
   it('shows a member a team app inside a folder shared with the team, with the folder’s look', async () => {
@@ -241,18 +333,46 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
 
   it('shows a client only the folders that lead to an app at client level', async () => {
     const got = await launcher('client');
-    expect(got.apps.map((x) => x.id).sort()).toEqual([a.adminInClient, a.clientInPlain].sort());
+    expect(got.apps.map((x) => x.id).sort()).toEqual(
+      [a.adminInClient, a.clientInPlain, a.clientInParent].sort(),
+    );
     expect(got.folders.map((x) => `${x.id} ${x.parentId} ${x.appIds.join(',')}`).sort()).toEqual(
-      [`${f.client} null ${a.adminInClient}`, `${f.plain} null ${a.clientInPlain}`].sort(),
+      [
+        `${f.client} null ${a.adminInClient}`,
+        `${f.plain} null ${a.clientInPlain}`,
+        `${f.grand} null `,
+        `${f.parent} ${f.grand} ${a.clientInParent}`,
+      ].sort(),
     );
     // Not the team folder, the deep chain, or anything of the admin's.
-    for (const id of [f.shared, f.hidden, f.drafts, f.deep, f.mid, f.leaf, f.side]) {
+    for (const id of [f.shared, f.hidden, f.drafts, f.deep, f.mid, f.leaf, f.side, f.embedded]) {
       expect(got.wire, nameOf(f, id)).not.toContain(id);
       expect(got.wire, nameOf(f, id)).not.toContain(folderName(id));
     }
     for (const id of [a.adminInShared, a.teamInPlain, a.teamDeep, a.teamTop, a.adminInPlain]) {
       expect(got.wire, nameOf(a, id)).not.toContain(id);
     }
+  });
+
+  it('names a client the team-shared folder and the unshared one above its client app, and no app of theirs it may not run', async () => {
+    const got = await launcher('client');
+    // Names are organisational: both folders on the way come, by name.
+    expect(byId(got.folders, f.grand)).toMatchObject({ name: folderName(f.grand), parentId: null });
+    expect(byId(got.folders, f.parent)).toMatchObject({
+      name: folderName(f.parent),
+      parentId: f.grand,
+      appIds: [a.clientInParent],
+    });
+    // The team app (an admin app the folder shares with the team) and the
+    // public app in the same folder are never named to the client.
+    for (const id of [a.adminInParent, a.publicInParent]) {
+      expect(got.wire, nameOf(a, id)).not.toContain(id);
+      expect(got.wire, nameOf(a, id)).not.toContain(appTitle(id));
+    }
+    // A member runs all three there.
+    expect(byId((await launcher('team')).folders, f.parent)?.appIds.sort()).toEqual(
+      [a.clientInParent, a.adminInParent, a.publicInParent].sort(),
+    );
   });
 
   it('drops the app and its folder when the folder stops sharing', async () => {
@@ -268,8 +388,35 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
     expect(byId((await launcher('team')).folders, f.shared)).toBeDefined();
   });
 
-  it('refuses to read folder rows inside a viewer scope', async () => {
-    await expect(m.withViewer('team', () => folders.appLauncherFolders(brain, []))).rejects.toThrow(
+  it('never answers another owner’s rows, or a member’s own folder, at the same path', async () => {
+    for (const reader of ['team', 'client'] as const) {
+      const got = await launcher(reader);
+      for (const id of Object.values(foreign)) {
+        expect(got.wire, `${reader} ${nameOf(foreign, id)}`).not.toContain(id);
+        expect(got.wire, `${reader} ${nameOf(foreign, id)}`).not.toContain(foreignName(id));
+      }
+    }
+    // The path still answers this brain's own folder, once.
+    const got = await launcher('team');
+    expect(got.folders.filter((x) => x.name === folderName(f.shared))).toHaveLength(1);
+  });
+
+  it('does not run an app that is only read through an embed, and names no folder for it', async () => {
+    const [row] = (await m.systemDb.execute(sqlTag`
+      select audience, inherited_level, embedded_level from nodes
+       where id = ${a.embeddedOnly}`)) as unknown as Array<Record<string, string | null>>;
+    // The fixture holds: the app is read at team through the note, and by
+    // nothing else.
+    expect(row).toEqual({ audience: 'admin', inherited_level: null, embedded_level: 'team' });
+    const got = await launcher('team');
+    expect(byId(got.apps, a.embeddedOnly)).toBeUndefined();
+    expect(byId(got.folders, f.embedded)).toBeUndefined();
+    expect(got.wire).not.toContain(a.embeddedOnly);
+    expect(got.wire).not.toContain(folderName(f.embedded));
+  });
+
+  it('refuses to run inside a viewer scope', async () => {
+    await expect(m.withViewer('team', () => folders.appLauncher(brain, 'team'))).rejects.toThrow(
       /admin pool/,
     );
   });

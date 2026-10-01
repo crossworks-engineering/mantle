@@ -1,26 +1,31 @@
 /**
- * Where a reader's apps sit: the Apps folders a member or a client login
- * sees in its launcher (GET /api/member/apps, /api/client/apps), read only.
+ * The Apps launcher of a member or a client login (GET /api/member/apps,
+ * /api/client/apps): the apps the reader may RUN, and the admin's Apps
+ * folders those apps sit in, read only.
  *
- * The rule is the list's own. The caller passes the apps the reader may RUN
+ * The rule is the list's own. The apps are read as the reader
  * (`listMemberAppsPlaced`, `listClientAppsPlaced`: the level rule and the
- * green published build), and a folder is answered only when it is on the
- * way to one of them. So a folder that holds nothing the reader may run is
- * never named, whatever its share says: an empty shared folder, a folder of
- * drafts and a folder of admin apps are all absent. Nothing is stored and
- * nothing is read below those paths.
+ * green published build, inside `withViewer`), and a folder is answered only
+ * when it is on the way to one of them. So a folder that holds nothing the
+ * reader may run is never named, whatever its share says: an empty shared
+ * folder, a folder of drafts and a folder of admin apps are all absent.
+ * Nothing is stored and nothing is read below those paths.
  *
  * Folder rows are the brain's (a shared folder's own row is not the
- * reader's to read: it inherits only from above itself), so call this on
- * the admin pool, outside any viewer scope, as the reader trees are
- * (./tree/reader.ts).
+ * reader's to read: it inherits only from above itself), so they are read
+ * on the admin pool. That read takes no paths from a caller: `appLauncher`
+ * reads the reader's apps itself and looks up the folders on their paths
+ * only, as the reader trees do (./tree/reader.ts, `visibleFolders`). Call it
+ * on the admin pool, outside any viewer scope.
  */
 import { sql } from 'drizzle-orm';
-import { currentSpaceScope, currentViewerLevel, db } from '@mantle/db';
-import type { AppLauncherFolder } from '@mantle/client-types';
+import { currentSpaceScope, currentViewerLevel, db, withViewer } from '@mantle/db';
+import type { AppLauncherFolder, ClientAppCard, MemberAppCard } from '@mantle/client-types';
 import { TREE_KIND_SPECS } from '@mantle/client-types/tree';
 import { projectAppIcon, projectAppTint } from '@mantle/content-core/app-nav';
 import { treeFolderChain } from '@mantle/content-core/tree';
+import { listClientAppsPlaced } from './client-apps';
+import { listMemberAppsPlaced } from './member-apps';
 
 /** An app the reader may run, and the path of the folder it sits in. */
 export type AppPlace = { id: string; path: string };
@@ -32,6 +37,10 @@ export type AppFolderRow = {
   title: string;
   data: Record<string, unknown> | null;
 };
+
+/** Who opens the launcher: a member login reads at team, a client login at
+ *  client. */
+export type AppLauncherReader = 'team' | 'client';
 
 const APPS_ROOT = TREE_KIND_SPECS.apps.root;
 
@@ -80,27 +89,60 @@ export function buildAppLauncherFolders(
   });
 }
 
-/**
- * The launcher folders for the apps a reader may run. Only the rows on the
- * way to those apps are read, in the folder order (manual rank, then name).
- */
-export async function appLauncherFolders(
+/** The brain's folder rows on the way to `places`, in the folder order
+ *  (manual rank, then name). Private to this module: the places are always
+ *  the ones the reader's own list gave. */
+async function folderRowsFor(
   anchorId: string,
   places: readonly AppPlace[],
-): Promise<AppLauncherFolder[]> {
-  if (currentViewerLevel() !== 'admin' || currentSpaceScope()) {
-    throw new Error('app folders called inside a viewer scope: call it on the admin pool');
-  }
+): Promise<AppFolderRow[]> {
   const wanted = [...new Set(places.flatMap((p) => chainOf(p.path)))];
   if (!wanted.length) return [];
-  const rows = (await db.execute(sql`
+  // An ltree label holds no comma, brace or quote, so the array literal
+  // needs no quoting (as ./tree/member-tree.ts builds it); one bound value,
+  // compared as ltree so the (owner, path) branch index serves.
+  return (await db.execute(sql`
     select f.id, f.path::text as path, f.title, f.data
       from nodes f
      where f.owner_id = ${anchorId} and f.type = 'branch'
-       and f.path::text in (${sql.join(
-         wanted.map((w) => sql`${w}`),
-         sql`, `,
-       )})
+       and f.path = any(${`{${wanted.join(',')}}`}::ltree[])
      order by f.data->>'rank' collate "C" nulls last, lower(f.title), f.id`)) as unknown as AppFolderRow[];
-  return buildAppLauncherFolders(rows, places);
+}
+
+/**
+ * The launcher of one reader: its apps, by title, and the folders that lead
+ * to them. The apps are read as the reader; the folders as the brain, from
+ * those apps' paths alone. A failed folder read never hides the apps: the
+ * launcher then answers no folders (one flat list) and the failure is
+ * logged.
+ */
+export function appLauncher(
+  anchorId: string,
+  reader: 'team',
+): Promise<{ apps: MemberAppCard[]; folders: AppLauncherFolder[] }>;
+export function appLauncher(
+  anchorId: string,
+  reader: 'client',
+): Promise<{ apps: ClientAppCard[]; folders: AppLauncherFolder[] }>;
+export async function appLauncher(
+  anchorId: string,
+  reader: AppLauncherReader,
+): Promise<{ apps: Array<MemberAppCard | ClientAppCard>; folders: AppLauncherFolder[] }> {
+  if (currentViewerLevel() !== 'admin' || currentSpaceScope()) {
+    throw new Error('app launcher called inside a viewer scope: call it on the admin pool');
+  }
+  const { apps, places }: { apps: Array<MemberAppCard | ClientAppCard>; places: AppPlace[] } =
+    reader === 'team'
+      ? await withViewer('team', () => listMemberAppsPlaced(anchorId))
+      : await withViewer('client', () => listClientAppsPlaced(anchorId));
+  let folders: AppLauncherFolder[] = [];
+  try {
+    folders = buildAppLauncherFolders(await folderRowsFor(anchorId, places), places);
+  } catch (err) {
+    console.error(
+      '[app-folders] the launcher folders could not be read:',
+      err instanceof Error ? err.message : err,
+    );
+  }
+  return { apps, folders };
 }

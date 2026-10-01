@@ -1,6 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { withViewer } from '@mantle/db';
-import { appLauncherFolders, listClientAppsPlaced } from '@mantle/content';
+import { appLauncher } from '@mantle/content';
 import type { ClientAppList } from '@mantle/client-types';
 import { getClientOr401 } from '@/lib/auth';
 
@@ -13,13 +12,14 @@ import { getClientOr401 } from '@/lib/auth';
  * `folders`: where those apps sit in the admin's Apps folders, read only,
  * with no level and no share. A folder is answered only when it leads to an
  * app of this list, so a folder with nothing the client may run (team apps,
- * drafts, nothing at all) is never named. The folder rows are the brain's,
- * read on the admin pool along those apps' paths and nowhere else.
+ * drafts, nothing at all) is never named. `appLauncher` reads the apps on
+ * the client role and the folder rows (the brain's) on the admin pool, along
+ * those apps' paths and nowhere else; when that folder read fails the apps
+ * still list, with no folders.
  */
 export async function GET() {
   const client = await getClientOr401();
   if (client instanceof Response) return client;
-  const { apps, places } = await withViewer('client', () => listClientAppsPlaced(client.anchorId));
-  const folders = await appLauncherFolders(client.anchorId, places);
+  const { apps, folders } = await appLauncher(client.anchorId, 'client');
   return NextResponse.json({ apps, folders } satisfies ClientAppList);
 }

@@ -18,11 +18,13 @@
  * brain folder (the admin unshared or moved it) show at the deepest folder
  * above them the member sees, like a teammate's draft.
  *
- * Drafts come before the brain's items, newest first (own, then the team's),
- * and page like them: a folder's pages run through its drafts first, then
- * its brain items (a draft cursor, then the reader tree's keyset cursor). A
- * space holds at most SPACE_ITEM_LIMIT items, so a member's own drafts are
- * read whole; the team's newest SPACE_ITEM_LIMIT drafts of the kind are.
+ * In a folder, drafts come before the brain's items, newest first (own, then
+ * the team's), and page like them: a folder's pages run through its drafts
+ * first, then its brain items (a draft cursor, then the reader tree's keyset
+ * cursor). By name (search and the A to Z view) drafts and brain items are
+ * one list in one order, paged by one keyset cursor. A space holds at most
+ * SPACE_ITEM_LIMIT items, so a member's own drafts are read whole; the
+ * team's newest SPACE_ITEM_LIMIT drafts of the kind are.
  *
  * Files: a member's files and file folders sit under `space_files`, the
  * mirror of the brain's `files` (spaceFilesPath, @mantle/db), so no brain
@@ -59,7 +61,13 @@ import { treeFolderChain, treeParentPath } from '@mantle/content-core/tree';
 import { projectAppIcon, projectAppTint } from '@mantle/content-core/app-nav';
 import { pillOf } from '../member-items';
 import { SPACE_ITEM_LIMIT } from '../member-space-core';
-import { decodeDraftCursor, encodeDraftCursor, encodeTreeCursor } from './cursor';
+import {
+  decodeDraftCursor,
+  decodeTreeCursor,
+  encodeDraftCursor,
+  encodeTreeCursor,
+  type TreeCursor,
+} from './cursor';
 import { READER_TREE_KINDS, kindItemFilter } from './kinds';
 import {
   itemPage,
@@ -109,7 +117,10 @@ type DraftRow = ItemSqlRow & {
   author_login_id: string | null;
 };
 
-export type MemberDraft = { item: TreeItem; path: string };
+/** A draft, the tree path it shows at, and its name key as the database
+ *  computed it (`lower(title)`): what the by-name order and its cursor
+ *  compare, exactly as the brain's rows are compared. */
+export type MemberDraft = { item: TreeItem; path: string; sortKey: string };
 
 /** Everything a member's tree of one kind is drawn from. */
 export type MemberView = {
@@ -257,7 +268,11 @@ export async function memberView(scope: MemberTreeScope, kind: TreeKind): Promis
 
   const names = await authorNames(teamItems.map((r) => r.author_login_id));
   const drafts: MemberDraft[] = [
-    ...ownItems.map((r) => ({ item: draftItem(kind, r, 'own'), path: shownAt(r.path) })),
+    ...ownItems.map((r) => ({
+      item: draftItem(kind, r, 'own'),
+      path: shownAt(r.path),
+      sortKey: String(r.sort_key),
+    })),
     ...teamItems.map((r) => ({
       item: draftItem(
         kind,
@@ -266,6 +281,7 @@ export async function memberView(scope: MemberTreeScope, kind: TreeKind): Promis
         (r.author_login_id && names.get(r.author_login_id)) || 'A teammate',
       ),
       path: shownAt(r.path),
+      sortKey: String(r.sort_key),
     })),
   ];
 
@@ -400,9 +416,35 @@ export async function loadMemberTreeFolder(
 }
 
 /**
- * Search as the member: matching folders it sees and the drafts matching by
- * name (first page only), then the brain's items it reads by name, paged.
- * An empty `q` is the A to Z view (items only).
+ * The ids of `entries` that come after `cursor`, by name then id, at most
+ * `limit`. The database orders them: drafts and the brain's rows are then
+ * merged, and cut at the cursor, by the very comparison the brain's keyset
+ * page uses (`(lower(title), id)` in the database's collation), which a
+ * sort in JavaScript would not match.
+ */
+async function byNameAfter(
+  entries: ReadonlyArray<{ id: string; k: string }>,
+  cursor: TreeCursor | null,
+  limit: number,
+): Promise<string[]> {
+  if (!entries.length) return [];
+  const after = cursor ? sql`where (t.k, t.id) > (${cursor.key}, ${cursor.id}::uuid)` : sql``;
+  const rows = (await db.execute(sql`
+    select t.id::text as id
+      from jsonb_to_recordset(${JSON.stringify(entries)}::jsonb) as t(id uuid, k text)
+      ${after}
+     order by t.k, t.id
+     limit ${limit}`)) as unknown as Array<{ id: string }>;
+  return rows.map((r) => r.id);
+}
+
+/**
+ * Search as the member: the matching folders it sees (first page only), then
+ * the items matching by name, its drafts and the brain's items it reads in
+ * ONE order, by name, paged together by one keyset cursor. An empty `q` is
+ * the A to Z view (items only): every draft and every item, by name. A page
+ * holds at most `limit` items, so a member with more drafts than a page
+ * reaches all of them.
  */
 export async function searchMemberTree(
   scope: MemberTreeScope,
@@ -416,32 +458,40 @@ export async function searchMemberTree(
   const term = q.trim();
   const view = await memberView(scope, kind);
   const needle = term.toLowerCase();
+  const cursor = decodeTreeCursor(opts.cursor, 'name');
   const folders =
-    opts.cursor || !term
+    cursor || !term
       ? []
       : sortedFolders(
           view,
           [...view.byPath.values()].filter((f) => f.name.toLowerCase().includes(needle)),
         ).slice(0, limit);
-  const drafts = opts.cursor
-    ? []
-    : view.drafts
-        .filter((d) => !term || d.item.title.toLowerCase().includes(needle))
-        .slice(0, limit);
+  const drafts = view.drafts.filter((d) => !term || d.item.title.toLowerCase().includes(needle));
+  // The brain's next `limit` rows after the cursor. Any row it holds beyond
+  // them sorts after all of these, so the first `limit` of these and the
+  // drafts together are the true next page.
   const { page, more } = await withViewer('team', () =>
     searchItemRows(scope.anchorId, kind, term, opts.cursor, limit, readerItems('team', 'n')),
   );
-  const last = page.at(-1);
+  const found = new Map<string, { item: TreeItem; path: string; key: string }>();
+  for (const d of drafts) found.set(d.item.id, { item: d.item, path: d.path, key: d.sortKey });
+  for (const r of page) {
+    found.set(r.id, { item: treeItemFromRow(kind, r), path: r.path, key: String(r.sort_key) });
+  }
+  const order = await byNameAfter(
+    [...found].map(([id, f]) => ({ id, k: f.key })),
+    cursor,
+    limit + 1,
+  );
+  const shown = order.slice(0, limit).map((id) => found.get(id)!);
+  const last = shown.at(-1);
   return {
     kind,
     folders: folders.map((f) => ({ ...f, crumbs: crumbsOf(view, treeParentPath(f.path)) })),
-    items: [
-      ...drafts.map((d) => ({ ...d.item, crumbs: crumbsOf(view, d.path) })),
-      ...page.map((r) => ({ ...treeItemFromRow(kind, r), crumbs: crumbsOf(view, r.path) })),
-    ],
+    items: shown.map((f) => ({ ...f.item, crumbs: crumbsOf(view, f.path) })),
     nextCursor:
-      more && last
-        ? encodeTreeCursor({ sort: 'name', key: String(last.sort_key), id: last.id })
+      (more || order.length > limit) && last
+        ? encodeTreeCursor({ sort: 'name', key: last.key, id: last.item.id })
         : null,
   };
 }
