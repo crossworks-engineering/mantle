@@ -35,6 +35,7 @@ import {
   spaces,
   teamMessages,
 } from '@mantle/db';
+import { markdownPreview } from '@mantle/content-core/markdown-to-text';
 import { chatTextsForReader } from './chat-images';
 import { readAtSql } from './item-level';
 import { loadPreferencesFor } from './profile-preferences';
@@ -115,13 +116,17 @@ async function noticeLogin(loginId: string): Promise<{ id: string; role: LoginNo
   return { id: row.id, role };
 }
 
-/** A chat reply as a lock-screen line: pictures out, one line, clipped. */
+/**
+ * A chat reply as a lock-screen line: plain words, one line, clipped. A reply
+ * is markdown and a notification renders none of it, so the marks go
+ * (markdownPreview). Pictures go whole, alt text too, BEFORE that: the
+ * reader's chat route already took out every picture the reader may not see
+ * and escaped what it could not read, and neither may come back as words.
+ * Never empty: a reply with no words says "New message".
+ */
 export function chatTeaser(text: string, max = 140): string {
-  const plain = text
-    .replace(/!\\?\[[^\]]*\]\([^)]*\)/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return plain ? clip(plain, max) : 'New message';
+  const noPictures = text.replace(/!\\?\[[^\]]*\]\([^)]*\)/g, ' ');
+  return markdownPreview(noPictures, max) || 'New message';
 }
 
 /**
@@ -241,7 +246,8 @@ export function reviewResultNotice(
 
     // While an admin holds it, the author knows it by the title it had.
     const name = `"${clip((state === 'taken' ? main.takenTitle : null) || main.title || 'Untitled', 80)}"`;
-    const note = state === 'returned' ? clip(main.returnedNote ?? '', 100) : '';
+    // The note is the reviewer's own text: plain words on a lock screen.
+    const note = state === 'returned' ? markdownPreview(main.returnedNote ?? '', 100) : '';
     const words =
       state === 'accepted'
         ? { title: 'Accepted', body: `${name} was accepted.` }
@@ -298,11 +304,16 @@ export function commentNotices(commentId: string, now = Date.now()): Promise<Log
       .where(eq(nodeComments.id, commentId))
       .limit(1);
     if (!c || !fresh(c.createdAt, now)) return [];
+    // The comment as plain words; one with no words (a picture) still says
+    // who commented on what. Names and titles are names, not markdown: they
+    // are shown as they are.
+    const said = markdownPreview(c.body, 100);
+    const where = `${clip(c.authorName, 40)} on "${clip(c.title || 'Untitled', 60)}"`;
     const words = {
       kind: 'comment' as const,
       ownerId: c.ownerId,
       title: 'New comment',
-      body: `${clip(c.authorName, 40)} on "${clip(c.title || 'Untitled', 60)}": ${clip(c.body, 100)}`,
+      body: said ? `${where}: ${said}` : where,
       itemId: c.nodeId,
       collapseKey: `comment:${c.nodeId}`,
     };

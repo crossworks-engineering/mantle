@@ -222,7 +222,8 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
       ownerId: anchor,
       kind: 'chat',
       title: 'Tess',
-      body: 'The pump spec is **ready**.',
+      // Plain words: the marks and the picture are gone.
+      body: 'The pump spec is ready.',
       deepLink: '/portal/chat',
       collapseKey: 'chat',
     });
@@ -400,11 +401,14 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
       anchor,
       mine,
       { loginId: adminA, name: 'Ada Admin' },
-      'One question',
+      '**One** question:\n\n- which `pump`?',
     );
-    expect((await ln.commentNotices(c1.id)).map((n) => [n.loginId, n.role, n.deepLink])).toEqual([
+    const told = await ln.commentNotices(c1.id);
+    expect(told.map((n) => [n.loginId, n.role, n.deepLink])).toEqual([
       [member, 'member', `/portal/items/${mine}`],
     ]);
+    // Plain words on the lock screen, not markdown.
+    expect(told[0]!.body).toBe(`Ada Admin on "${tag} for review": One question: which pump?`);
     const theirs = await newNote(client, `${tag} client ask`);
     await submit(client, theirs);
     const c2 = await rv.addReviewComment(

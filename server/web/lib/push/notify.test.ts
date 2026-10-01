@@ -207,6 +207,41 @@ describe('pushOutbound — delivery', () => {
     expect(body.startsWith('A')).toBe(true);
   });
 
+  it('shows a markdown reply as plain words: no heading, list, link, code or chip marks', async () => {
+    const id = '11111111-1111-4111-8111-111111111111';
+    const replies: Array<[string, string]> = [
+      ['## Summary\n\nThe **pump** spec is _ready_.', 'Summary The pump spec is ready.'],
+      ['- first item\n- second item\n\n1. then this', 'first item second item then this'],
+      ['See [the docs](https://example.invalid/a?b=1) now', 'See the docs now'],
+      ['Run:\n```bash\npnpm verify\n```', 'Run: pnpm verify'],
+      ['| Item | Qty |\n|---|---|\n| Pump | 2 |', 'Item Qty Pump 2'],
+      [
+        `Open [Pump spec](page:${id}) and ask [Ada](mention:entity:${id})`,
+        'Open Pump spec and ask Ada',
+      ],
+    ];
+    for (const [text, shown] of replies) {
+      vi.mocked(sealToDevice).mockClear();
+      dbState.queue = [[{ id: 'a1', name: 'Ada' }], [{ text }]];
+      await pushOutbound('owner', 'ada');
+      const body = JSON.parse(vi.mocked(sealToDevice).mock.calls[0]![1]).b as string;
+      expect(body, text).toBe(shown);
+    }
+  });
+
+  it('cuts after the marks are gone, and never sends an empty teaser', async () => {
+    dbState.queue = [[{ id: 'a1', name: 'Ada' }], [{ text: `# ${'**word** '.repeat(60)}` }]];
+    await pushOutbound('owner', 'ada');
+    const long = JSON.parse(vi.mocked(sealToDevice).mock.calls[0]![1]).b as string;
+    expect(long).toHaveLength(140);
+    expect(long).not.toMatch(/[*#]/);
+    // A reply that is a picture and nothing else.
+    vi.mocked(sealToDevice).mockClear();
+    dbState.queue = [[{ id: 'a1', name: 'Ada' }], [{ text: '![](media:abc)' }]];
+    await pushOutbound('owner', 'ada');
+    expect(JSON.parse(vi.mocked(sealToDevice).mock.calls[0]![1]).b).toBe('New message');
+  });
+
   it('prunes a device the relay reports unregistered (410) instead of delivering', async () => {
     dbState.queue = [[{ id: 'a1', name: 'Ada' }], [{ text: 'hi' }]];
     vi.mocked(relayNotify).mockResolvedValue({ ok: false, status: 410, unregistered: true });

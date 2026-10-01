@@ -50,7 +50,19 @@ describe('chatTeaser', () => {
     expect(long.endsWith('…')).toBe(true);
   });
 
-  it('leaves pictures out, kept or escaped', () => {
+  it('shows plain words, not markdown', () => {
+    const id = '11111111-1111-4111-8111-111111111111';
+    expect(chatTeaser('## Update\n\nThe **pump** spec is _ready_.')).toBe(
+      'Update The pump spec is ready.',
+    );
+    expect(chatTeaser('- one\n- two')).toBe('one two');
+    expect(chatTeaser('See [the docs](https://example.invalid/a) now')).toBe('See the docs now');
+    expect(chatTeaser('Run:\n```\npnpm verify\n```')).toBe('Run: pnpm verify');
+    expect(chatTeaser('| A | B |\n|---|---|\n| 1 | 2 |')).toBe('A B 1 2');
+    expect(chatTeaser(`Open [Pump spec](page:${id})`)).toBe('Open Pump spec');
+  });
+
+  it('leaves pictures out whole, alt text too, kept or escaped', () => {
     expect(chatTeaser('See ![the plan](/api/member/files/abc) below')).toBe('See below');
     expect(chatTeaser('Look !\\[x](https://elsewhere.example/a.png) here')).toBe('Look here');
   });

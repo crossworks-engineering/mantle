@@ -5,7 +5,7 @@
  * request, never from a token.
  */
 import { and, eq } from 'drizzle-orm';
-import { authUsers, db, mobileTokens, spaces, type LoginRole } from '@mantle/db';
+import { authUsers, db, isWriteRefused, mobileTokens, spaces, type LoginRole } from '@mantle/db';
 
 export type LoginRow = {
   id: string;
@@ -64,7 +64,15 @@ export async function loadPersonalSpaceId(loginId: string): Promise<string | nul
     )[0]?.id ?? null;
   const found = await find();
   if (found) return found;
-  await db.insert(spaces).values({ kind: 'personal', loginId }).onConflictDoNothing();
+  // On a brain that refuses writes (a read-only database, such as the public
+  // demo) the missing space cannot be made: answer without it, never fail
+  // the request on this write.
+  try {
+    await db.insert(spaces).values({ kind: 'personal', loginId }).onConflictDoNothing();
+  } catch (err) {
+    if (!isWriteRefused(err)) throw err;
+    return null;
+  }
   return find();
 }
 
@@ -85,7 +93,13 @@ export async function loadBearerToken(jti: string): Promise<BearerTokenRow | nul
   return row ?? null;
 }
 
-/** Stamp a device token as used now (the Devices card's "last used"). */
+/** Stamp a device token as used now (the Devices card's "last used"). Best
+ *  effort on a brain that refuses writes (a read-only database): the stamp
+ *  is a convenience, and a bearer request must not fail on it. */
 export async function touchBearerToken(jti: string): Promise<void> {
-  await db.update(mobileTokens).set({ lastUsedAt: new Date() }).where(eq(mobileTokens.id, jti));
+  try {
+    await db.update(mobileTokens).set({ lastUsedAt: new Date() }).where(eq(mobileTokens.id, jti));
+  } catch (err) {
+    if (!isWriteRefused(err)) throw err;
+  }
 }

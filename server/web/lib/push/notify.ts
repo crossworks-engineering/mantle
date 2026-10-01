@@ -10,6 +10,7 @@
 
 import { and, desc, eq } from 'drizzle-orm';
 import { db, agents, assistantMessages } from '@mantle/db';
+import { markdownPreview } from '@mantle/content-core/markdown-to-text';
 import { countPending, listPendingCalls } from '@mantle/tools';
 import { loadNeedsYou, loadProfilePreferences } from '@mantle/content';
 import { needsYouArrivals, needsYouMessage, rememberArrivals } from './needs-you';
@@ -47,9 +48,11 @@ export interface PushResult {
   skipped?: 'not_connected' | 'no_devices' | 'no_message' | 'disabled' | 'wrong_channel';
 }
 
+/** A reply as a lock-screen line: plain words (a reply is markdown, and a
+ *  notification renders none of it), one line, cut after the marks are gone.
+ *  Never empty: a reply with no words (a picture only) says so. */
 function teaser(text: string, max = 140): string {
-  const oneLine = text.replace(/\s+/g, ' ').trim();
-  return oneLine.length > max ? `${oneLine.slice(0, max - 1)}…` : oneLine;
+  return markdownPreview(text, max) || 'New message';
 }
 
 async function latestOutbound(
@@ -164,12 +167,6 @@ export async function pushOutbound(ownerId: string, agentSlug: string): Promise<
   return { attempted: devices.length, delivered, dropped };
 }
 
-/** One-line clip for a lock-screen body: collapse whitespace, cap, ellipsis. */
-function clip(s: string, max: number): string {
-  const one = s.replace(/\s+/g, ' ').trim();
-  return one.length <= max ? one : `${one.slice(0, max - 1)}…`;
-}
-
 /**
  * Push a pending-approval nudge to the ADMIN devices — unless the approvals
  * trigger is off, or the operator's last communication channel isn't the
@@ -207,10 +204,13 @@ export async function pushApproval(ownerId: string): Promise<PushResult> {
     newest?.toolSlug === 'ask_human'
       ? ((newest.args?.['question'] as string | undefined)?.trim() ?? '')
       : '';
-  const body = question
+  // The question is the agent's own words, so it may be markdown: plain
+  // words only (empty after that reads as no question).
+  const asked = question ? markdownPreview(question, count === 1 ? 120 : 100) : '';
+  const body = asked
     ? count === 1
-      ? `A run needs your answer: ${clip(question, 120)}`
-      : `${clip(question, 100)} (+${count - 1} more waiting)`
+      ? `A run needs your answer: ${asked}`
+      : `${asked} (+${count - 1} more waiting)`
     : count === 1
       ? 'An action needs your approval.'
       : `${count} actions need your approval.`;

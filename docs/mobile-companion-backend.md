@@ -476,6 +476,22 @@ the item is at client level.
 
 `collapseKey`: `chat`, `review:<id>`, `comment:<id>`.
 
+**Teasers are plain text.** Every body (`b`) that comes from markdown is sent
+as plain words: an owner assistant reply, a run's question in an approval, a
+member or client chat reply, a comment, a return note. Headings, bold and
+italic, list markers, block quotes and code fences lose their marks; a link
+and a reference chip (`page:`, `media:`, `mention:`, `folder:`, `draw:`)
+keep the label and drop the target; a table keeps its cell text; code keeps
+its text (a short command is the useful part); math keeps its source without
+the `$`. An image keeps its alt text in an owner teaser; in a member or
+client chat teaser pictures go whole. The cut to length happens after the
+marks are gone. A teaser is never empty: a reply with no words reads
+`New message`. Item titles and people's names are names, not markdown: they
+are sent as they are (the "needs you" notice holds only those). The helper is
+`markdownPreview` in `packages/content-core/src/markdown-to-text.ts`
+(`@mantle/content-core/markdown-to-text`), so a client can use the same one;
+the app keeps its own strip as a fallback for older brains.
+
 **Version 1 is push plus refetch.** On a `chat` push the app refetches
 `GET /api/member/chat` or `GET /api/client/chat`. There is no token stream for
 these roles yet.
