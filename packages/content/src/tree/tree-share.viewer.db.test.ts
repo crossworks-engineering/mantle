@@ -435,18 +435,24 @@ describe.skipIf(!URL)('sharing a folder', () => {
         insert into nodes (id, owner_id, type, title, path, data, tags)
         values (${stray}, ${brain}, 'note', 'drifted', 'notes',
                 ${JSON.stringify({ content: 'x' })}::jsonb, '{}')`);
-      // Forged drift (what a race could leave): the trigger sets it on
-      // insert and on path changes only.
-      await m.systemDb.execute(
-        sqlTag`update nodes set inherited_level = 'client' where id = ${stray}`,
-      );
-      const dry = await tree.repairShareDrift({ dryRun: true });
-      expect(dry.drifted).toBeGreaterThanOrEqual(1);
-      expect(dry.repaired).toBe(0);
-      expect(await inherited(stray)).toBe('client');
-      const done = await tree.repairShareDrift();
-      expect(done.repaired).toBeGreaterThanOrEqual(1);
-      expect(await inherited(stray)).toBeNull();
+      // The repair is brain-wide: embeds-follow.viewer.db.test.ts forges
+      // and repairs drift too, under the same lock, so neither repairs the
+      // other's forgery between its dry run and its checks.
+      const { withTestLock } = await import('@mantle/db/test-support');
+      await withTestLock(URL!, 'share-drift', async () => {
+        // Forged drift (what a race could leave): the trigger sets it on
+        // insert and on path changes only.
+        await m.systemDb.execute(
+          sqlTag`update nodes set inherited_level = 'client' where id = ${stray}`,
+        );
+        const dry = await tree.repairShareDrift({ dryRun: true });
+        expect(dry.drifted).toBeGreaterThanOrEqual(1);
+        expect(dry.repaired).toBe(0);
+        expect(await inherited(stray)).toBe('client');
+        const done = await tree.repairShareDrift();
+        expect(done.repaired).toBeGreaterThanOrEqual(1);
+        expect(await inherited(stray)).toBeNull();
+      });
       await m.systemDb.execute(sqlTag`delete from nodes where id = ${stray}`);
     });
 
