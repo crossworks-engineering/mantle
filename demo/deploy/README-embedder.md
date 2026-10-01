@@ -70,10 +70,23 @@ re-embed is a write, and `demo_reader` cannot do it:
    `content_chunks` — exactly the four that carry vectors. `tool_result_chunks`
    is deliberately excluded: it is a transient spill store that self-heals on a
    model swap.
-3. Spot-check a search whose answer lives only inside a PDF ("issued for
+3. Re-embed the Recall prompts. `re-embed` does not walk `recall_nodes`
+   (main, v0.232.366), and a prompt card carries a vector that `recall_match`
+   compares the embedded question with. Left alone, the prompt keeps its
+   seed-time vector from the local model while the question is embedded by
+   the online one: two different spaces, a match that is quietly wrong, and
+   no error. Clear the vectors and let the brain fill them again, on the
+   WRITABLE seed stack (same env as `demo/scripts/seed.sh`; the serve-time
+   reader cannot write the vector):
+   ```bash
+   pnpm -C server/web exec tsx ../../demo/seed/reembed-recall.ts
+   ```
+   It clears the prompt vectors, lets the brain's own code fill them with
+   the current embedder, and fails when one is still empty.
+4. Spot-check a search whose answer lives only inside a PDF ("issued for
    tender" is the one that proved the file-bytes fix) and confirm the
    transmittals still come back.
-4. **Then** take the dump. A dump taken before the re-embed carries the old
+5. **Then** take the dump. A dump taken before the re-embed carries the old
    vectors and looks perfectly healthy.
 
 Cost is small — ~2,840 vectors of already-extracted text, cents at
@@ -116,15 +129,20 @@ so it has been true for every read-only run of this brain. The re-embed above
 was still necessary and correct; it just cannot be exercised until this is
 fixed.
 
-**The fix belongs on main, not here.** One line —
-`packages/embeddings/src/index.ts:519` — a cache write is an optimisation and
-must never fail the read it was meant to speed up. Same shape as the
-`reapAbandonedTraces` fix that the Caddyfile block records: the demo-branch
-invariant is about not editing app code from `demo`, and this goes to main.
-Still unguarded on `origin/main` as of 6ebe1eb5.
+**The fix belonged on main, not here**, and it is there now. `embed()` keeps
+the cache write in a guard (`isWriteRefused`, `packages/embeddings/src/
+index.ts`, in main by v0.232.366): a refused cache write is logged once and
+the read goes on. Same shape as the `reapAbandonedTraces` fix that the
+Caddyfile block records: the demo-branch invariant is about not editing app
+code from `demo`.
 
-Until it lands, treat demo search as FTS-only and do not link the demo from the
-site header on the strength of a green route sweep.
+**The same class of bug came back with the folder tree** (found 2026-10-01,
+merging main v0.232.366). `GET /api/tree/:kind` makes sure the kind's root
+folder exists with an `INSERT ... ON CONFLICT DO NOTHING` (`ensureKindRoot`,
+`packages/content/src/tree/node-ops.ts`), and Postgres checks the INSERT
+right before it looks for the row. So as `demo_reader` the first read of any
+tree is refused. That fix belongs on main too. See "What the read-only role
+still breaks" in `demo/seed/README.md` for what was measured on the bench.
 
 ## Two things to decide, not to discover
 
