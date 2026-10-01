@@ -29,7 +29,16 @@ DEMO_CLIENT_TAG="${DEMO_CLIENT_TAG:-$(tr -d '[:space:]' < client-pair.tag)}"
 DEMO_UI_IMAGE="${DEMO_UI_IMAGE:-${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-client:$DEMO_CLIENT_TAG}"
 # The guided tour the client opens once per browser (jackdaw docs/tour.md).
 DEMO_TOUR="${DEMO_TOUR:-demo}"
-export DATABASE_URL="postgres://demo_reader:demo_reader_not_a_secret@127.0.0.1:56432/postgres"
+# demo_reader is what the site box runs as, and what --check proves. A BENCH may
+# override it to see a screen that the read-only role still breaks: when main
+# adds a read that writes (the folder tree did, v0.232.366), the screen hangs
+# for demo_reader until main is fixed, and this is how you look at it in the
+# meantime. The edge in front still refuses every write. Never set it on the box.
+export DATABASE_URL="${DEMO_SERVE_DATABASE_URL:-postgres://demo_reader:demo_reader_not_a_secret@127.0.0.1:56432/postgres}"
+case "$DATABASE_URL" in
+  *://demo_reader:*) ;;
+  *) echo "⚠ serving as a NON read-only database role (DEMO_SERVE_DATABASE_URL is set): bench use only" ;;
+esac
 export S3_ENDPOINT="http://127.0.0.1:56900"
 export S3_REGION="us-east-1"; export S3_ACCESS_KEY="minio"; export S3_SECRET_KEY="minio12345"; export S3_BUCKET="mantle"
 export TIKA_URL="http://127.0.0.1:56998"
@@ -140,7 +149,7 @@ sed -e "s|__DEMO_SESSION__|$SESSION|" \
     -e "s|^demo\.mantle-ai\.tech {|:80 {|" \
     "$DEMO/deploy/Caddyfile.demo" > "$ART/edge/Caddyfile"
 
-echo "→ API (server/web) on :$API_PORT (as demo_reader)"
+echo "→ API (server/web) on :$API_PORT (as $(printf '%s' "$DATABASE_URL" | sed -E 's#^[a-z]+://([^:]+):.*#\1#'))"
 ( setsid pnpm -C server/web dev >"$web_log" 2>&1 & echo $! >"$web_pid_file" )
 for i in $(seq 1 120); do
   curl -sf "http://127.0.0.1:$API_PORT/api/version" >/dev/null 2>&1 && break

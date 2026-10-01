@@ -86,6 +86,36 @@ once, before the POST. Until 2026-09-17 the grid was posted as-is and
 map — eleven tables with columns and no data, on the public demo. A date
 cell is a day offset like every other date here; the seeder resolves it.
 
+## The team is logins, and the forum is the member chat
+
+Main retired the contact team token, the team portal cookie, team links and
+the Team Forum (member logins, migrations 0162 to 0178; `docs/member-logins.md`).
+What the seed does now, in `seed.sh` order:
+
+| script | what it makes |
+|---|---|
+| `enable-team.ts` | a member login for each of the owner's colleagues (`POST /api/users`, role `member`); two tables at team level (`PATCH /api/access/nodes/:id`); the member chat opened (the `team-responder` agent at team level); one client login for the person who approves the procedures in the client-shared folder |
+| `seed-member-chat.ts` | a member signs in and asks four questions; the brain answers each with a real turn |
+
+Three brain rules shaped it, and the seed follows each one:
+
+- An agent may hold only tool groups at or below its own level. On a fresh
+  brain the team responder's groups are all admin level, so the admin-only
+  group comes off, the two member-facing groups go to team level, and only
+  then does the agent.
+- A client login is refused until an admin has acknowledged the list of
+  everything clients can read. The script reads the report and acknowledges
+  exactly it, by its fingerprint.
+- Tasks and events are admin-only kinds. The old seed shared five tasks and
+  three events with the team; a member can no longer see either.
+
+A member signs in with the same `mantle_session` cookie as the owner, so one
+visitor is one of them, never both. The public demo injects the OWNER's
+session: a visitor sees the team from the admin side (the Team screen, the
+member chats, what the team reads). Showing a member's own view needs a
+second origin that injects a member's session. That is a decision about the
+site box, not something the seed can settle.
+
 ## Real product paths, and the two deliberate exceptions
 
 Content is created over the HTTP API, and markdown becomes ProseMirror through
