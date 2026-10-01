@@ -170,15 +170,13 @@ export async function setContactShareCanWrite(
   return rows.length > 0;
 }
 
-/** Revoke every live share of one contact (the "Shared" tab's Revoke all).
- *  No level changes; the contact's sharing stays on. */
+/** Revoke every live share of one contact (the "Shared" tab's Revoke all)
+ *  and answer how many. No level changes; the contact's sharing stays on. */
 export async function revokeAllContactShares(ownerId: string, contactId: string): Promise<number> {
   const rows = await db
     .update(shares)
     .set({ revokedAt: new Date() })
-    .where(
-      and(eq(shares.ownerId, ownerId), eq(shares.contactId, contactId), isNull(shares.revokedAt)),
-    )
+    .where(and(eq(shares.ownerId, ownerId), eq(shares.contactId, contactId), live()))
     .returning({ id: shares.id });
   return rows.length;
 }
