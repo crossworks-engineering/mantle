@@ -51,7 +51,7 @@ export type AppLauncherFolder = {
 
 /** GET /api/member/apps: the apps a member may run, by title, and the
  *  brain's home app when a member may run it (else null). `folders`: where
- *  those apps sit, siblings in the admin's order (0.232.367 on; absent from
+ *  those apps sit, siblings in the admin's order (0.232.368 on; absent from
  *  an older brain: show the apps as one flat list). */
 export type MemberAppList = {
   apps: MemberAppCard[];
@@ -79,7 +79,7 @@ export type ClientAppCard = {
  *  base. */
 export type ClientAppList = {
   apps: ClientAppCard[];
-  /** Where those apps sit (0.232.367 on; absent from an older brain). */
+  /** Where those apps sit (0.232.368 on; absent from an older brain). */
   folders?: AppLauncherFolder[];
 };
 

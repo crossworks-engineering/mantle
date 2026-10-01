@@ -86,6 +86,11 @@ pins or unpins (at most 12 per kind); `GET /api/tree/:kind/marks?view=` lists
 pinned, recent or most used items with their crumbs. Per login, so two admins
 of one brain keep their own.
 
+The app opens every tree on Folders, every time its screen is opened
+(Jason, 2026-10-01). Recent, Most used and A to Z are one click away and
+hold for that visit only: the chosen view is never stored. The sort and the
+open folders are still remembered per browser.
+
 ## Writing
 
 - `POST /api/tree/:kind/folders` creates a folder under `parentId` (null = top),

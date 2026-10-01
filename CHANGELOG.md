@@ -4,7 +4,7 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
-## 0.232.367: the team and client Apps launchers get the folders
+## 0.232.368: the team and client Apps launchers get the folders
 
 `GET /api/member/apps` and `GET /api/client/apps` answer `folders` next to
 `apps`: where the apps a reader may run sit in the admin's Apps folders,
