@@ -330,6 +330,23 @@ view over data it already holds (or data baked into its bundle).
 > If your app needs brain data, it is for **members**: set the app to team
 > level and they run it from their own login.
 
+A public app is **not listed** for members (contact shares plan P0,
+2026-10-01): Public means "anyone with the link" for an app as for every
+other kind, so it is in no member launcher and not in the member home's
+app list. A member who has the link still runs it, read only.
+
+### Shared with a contact (one outsider)
+
+Share, "Share with contact": pick one or more contacts whose sharing is on
+(docs/contacts.md section 2b). Each gets their own link, opened with their
+own code; the app's level does not change, so an admin app stays admin and
+the team never sees it. The contact reads the app's SQLite
+(`host.db.query`). With **Can write** on (per contact, off by default) the
+contact also writes it (`host.db.exec`): the write schedules the app-table
+export sync like a member's. Never brain tools: `host.tools.call` is
+refused on every link. The app's Activity tab names the contact. See
+docs/sharing.md section 4b.
+
 ### Team links (retired)
 
 A team link used to ask the visitor for a **team token** (a Contact's code),

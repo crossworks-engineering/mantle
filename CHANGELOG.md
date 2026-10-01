@@ -4,6 +4,50 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: contact shares, one item for one contact
+
+An admin shares ONE workspace item with ONE outsider, without showing it to
+the team (docs/sharing.md section 4b). The item's level never changes.
+
+- **Migration 0214** (`0214_contact_shares`): `contact_share_codes` (one row
+  per contact that ever had sharing: an HMAC of the code keyed from
+  `MANTLE_MASTER_KEY`, an epoch that only goes up, the failure counters and
+  the lock), `shares.contact_id` and `shares.can_write` (apps only, a
+  CHECK), a trigger (a contact of the same owner, a workspace item, never a
+  folder), the open-link unique index split from a per-contact one, and
+  `share_access_log`. A lock change raises `needs_you_changed`.
+- **The contact.** "Enable sharing" makes an 8-character code, shown once.
+  Regenerate, switch off (revokes every share), a "Locked" state after 30
+  wrong codes in a day (24 hours, a "Needs you" notice). The contact DTO
+  carries `sharing`. Deleting the contact removes its code and shares.
+- **The gate.** A contact share's `/s/<token>` opens only with the
+  contact's `mantle_contact` cookie (path `/s/`, 30 days), set by
+  `POST /s/<token>/code`. Without it: the code prompt (401, no title) and
+  401 on every other route. Same 401 and same work for every failed code;
+  limits per address, per share (10 an hour) and per contact (30 a day).
+- **What a contact may do.** Read the item and what it embeds, at any
+  level. An app with "Can write": write its SQLite (export sync scheduled,
+  `client_written_at` marked). Never brain tools. A "Shared with you" menu
+  on the view links the contact's other live shares.
+- **Owner API.** `POST /api/contacts/:id/sharing`, `GET` and `DELETE
+  /api/contacts/:id/shares` (the "Shared" tab, Revoke all),
+  `POST /api/shares/contacts`, `PATCH /api/shares/:id { canWrite }`;
+  `DELETE /api/shares/:id` on a contact share changes no level.
+  `contactShares` on the access view and `access_get`; Shared links name
+  the contact.
+- **Levels.** Every level path reads open links only: a level change never
+  touches a contact share, and the other open-link queries (client report,
+  old client links, comments visibility, app share mode) skip them.
+- **Contract** (`@mantle/client-types`): `dto/contact-shares.ts`,
+  `AccessNodeView.contactShares`, `SharedLinkRow.contactId/contactName/
+  canWrite`, `NeedsYou.sharing`; `ContactRow.sharing` in content-core.
+- **Fix.** The code alphabet of the retired team codes is 54 characters, not
+  56; the new generator rejects bytes from the real length, so every
+  character is equally likely.
+- **Docs.** sharing.md 4 and 4b, access-levels.md 7, contacts.md 2a and 2b,
+  security.md 3, app-authoring-guide.md "Sharing an app",
+  maintenance-runner.md.
+
 ## Unreleased: public apps leave the member launcher
 
 Public now means "anyone with the link" for an app, as it does for every

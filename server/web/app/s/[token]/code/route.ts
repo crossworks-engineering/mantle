@@ -1,5 +1,5 @@
 /**
- * POST /s/[token]/code { code } — a contact types their code at a contact
+ * POST /s/[token]/code { code }: a contact types their code at a contact
  * share's prompt (contact shares, migration 0214; docs/sharing.md).
  *
  * The code is trimmed, its spaces dropped, then checked in constant time

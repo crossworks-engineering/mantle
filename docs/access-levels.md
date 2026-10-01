@@ -322,6 +322,16 @@ The level is the truth; an item's share link (docs/sharing.md) follows it.
 | client | none: signed-in clients read it (client logins C1)                        |
 | public | open (anyone with the link), shown to the owner                           |
 
+| Share         | What it does to the level                                                                                                                                                                                       |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| contact share | none: one item, one contact, opened with the item's link plus that contact's code; read only, an app may let the contact write ("Can write"); never tools (migration 0214, docs/sharing.md section 4b) |
+
+A contact share is beside the level, never part of it: every level path
+reads open links only, so a level change (any of the four) leaves contact
+shares alone, and removing one changes no level. An item at any level,
+client included, may carry contact shares; a contact-shared admin item is
+in no member or client list.
+
 Team links are retired (member logins Phase 6 stage 6, migration 0176; see
 docs/member-logins.md section 9): a link is always open, and there is no
 share mode but `public`. The team codes those links took are gone too

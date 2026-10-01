@@ -176,7 +176,9 @@ streams a run.
   `device-tokens-reap` (device token rows 30 days after they were revoked or
   expired; plain SQL; by hand `pnpm -C server/web device-tokens:reap`, dry
   run unless `--apply`),
-  `app-access-log-reap` (app access log rows older than 90 days; plain SQL
+  `app-access-log-reap` (app access log rows older than 90 days, and the
+  contact share trail `share_access_log` by the same 90 days since
+  migration 0214, [sharing.md](./sharing.md) section 4b; plain SQL
   in batches, see [client-logins.md](./client-logins.md) section 10; by hand
   `pnpm -C server/web app-access-log:reap`, dry run unless `--apply`), and
   the four read-only reports `deps-drift`, `models-drift`, `pinned-model-drift`

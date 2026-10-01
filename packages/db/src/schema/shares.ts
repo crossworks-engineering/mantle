@@ -18,7 +18,7 @@ import { nodes, nodeType } from './nodes';
  * token (not revoked, not past `expires_at`) and never exposes `owner_id`.
  *
  * One active OPEN link per node is enforced by the partial unique index on
- * `node_id WHERE revoked_at IS NULL AND contact_id IS NULL` — toggling a
+ * `node_id WHERE revoked_at IS NULL AND contact_id IS NULL`: toggling a
  * share off sets `revoked_at`, toggling on mints a fresh row. See
  * docs/sharing.md.
  *

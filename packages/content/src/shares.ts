@@ -455,7 +455,7 @@ export async function revokeShare(
   return rows.length > 0;
 }
 
-/** Resolve an active OPEN link by its public token. NOT owner-scoped — this
+/** Resolve an active OPEN link by its public token. NOT owner-scoped: this
  *  is the public read path. Returns the full row (caller decides what to
  *  expose). A contact share's token never resolves here: a caller that
  *  forgets the contact gate cannot serve one. The /s layer uses
