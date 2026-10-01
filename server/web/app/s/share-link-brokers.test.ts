@@ -4,17 +4,31 @@
  * the tool broker refuses every call (403, pointing members at their own
  * login), the db broker takes queries only, and a frame ticket needs only the
  * active share and carries no contact.
+ *
+ * A CONTACT share (migration 0214) without the contact's cookie gets 401 on
+ * every broker and the frame ticket; with it, the tool broker still refuses
+ * every call, the db broker writes only with Can write, and the frame
+ * ticket names the contact and its code epoch. (On Postgres:
+ * contact-share-gate.db.test.ts.)
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({ queries: 0, execs: 0 }));
 
 const SHARE = { id: 'share-1', ownerId: 'owner-1', nodeId: 'app-1', nodeType: 'app', settings: {} };
+const CONTACT = 'contact-7';
+const CONTACT_SHARE = { ...SHARE, id: 'share-2', contactId: CONTACT, canWrite: false };
+const WRITER_SHARE = { ...SHARE, id: 'share-3', contactId: CONTACT, canWrite: true };
+const byToken: Record<string, unknown> = {
+  live: SHARE,
+  contact: CONTACT_SHARE,
+  writer: WRITER_SHARE,
+};
 
 vi.mock('@/lib/shares', () => ({
   resolveActiveShareByToken: vi.fn(async (token: string) => (token === 'live' ? SHARE : null)),
   // The /s gate (contact shares, 0214) resolves through this one.
-  resolveActiveShareRowByToken: vi.fn(async (token: string) => (token === 'live' ? SHARE : null)),
+  resolveActiveShareRowByToken: vi.fn(async (token: string) => byToken[token] ?? null),
 }));
 
 vi.mock('@mantle/content', async (importOriginal) => ({
@@ -25,7 +39,12 @@ vi.mock('@mantle/content', async (importOriginal) => ({
     manifest: { toolSlugs: ['search_chunks'] },
   })),
   recordAppAccess: vi.fn(),
+  recordShareAccess: vi.fn(),
+  contactShareGateRow: vi.fn(async (contactId: string) =>
+    contactId === CONTACT ? { ownerId: 'owner-1', codeEpoch: 3, open: true } : null,
+  ),
 }));
+vi.mock('@mantle/content/app-table-exports', () => ({ scheduleAppTableExportSync: vi.fn() }));
 
 vi.mock('@mantle/content/app-broker', async (importOriginal) => ({
   AppSqlError: (await importOriginal<typeof import('@mantle/content/app-broker')>()).AppSqlError,
@@ -39,6 +58,7 @@ vi.mock('@mantle/content/app-broker', async (importOriginal) => ({
     h.execs += 1;
     return { changes: 1 };
   }),
+  markAppClientWritten: vi.fn(async () => {}),
 }));
 
 beforeAll(() => {
@@ -106,5 +126,75 @@ describe('/s/:token/frame-ticket', () => {
       Buffer.from(ticket.slice(0, ticket.lastIndexOf('.')), 'base64url').toString('utf8'),
     ) as Record<string, unknown>;
     expect(claims.cid).toBeUndefined();
+  });
+});
+
+describe('a contact share (0214)', () => {
+  const cookieFor = async (codeEpoch: number) => {
+    const { buildContactVisitorValue, CONTACT_VISITOR_COOKIE } = await import('@/lib/auth');
+    const { value } = buildContactVisitorValue({
+      contactId: CONTACT,
+      ownerId: 'owner-1',
+      codeEpoch,
+    });
+    return `${CONTACT_VISITOR_COOKIE}=${value}`;
+  };
+  const withCookie = (path: string, body: unknown, cookie: string) => {
+    const r = post(path, body);
+    r.headers.set('cookie', cookie);
+    return r;
+  };
+
+  it('answers 401 on every broker and the ticket without the contact cookie, or with a stale one', async () => {
+    const tool = (await import('./[token]/tool-broker/route')).POST;
+    const db = (await import('./[token]/db-broker/route')).POST;
+    const ticket = (await import('./[token]/frame-ticket/route')).POST;
+    const stale = await cookieFor(2);
+    for (const cookie of ['', stale]) {
+      const at = (path: string, body: unknown) =>
+        cookie ? withCookie(path, body, cookie) : post(path, body);
+      expect(
+        (await tool(at('/s/contact/tool-broker', { slug: 'x' }), params('contact'))).status,
+      ).toBe(401);
+      expect(
+        (await db(at('/s/contact/db-broker', { op: 'query', sql: 'select 1' }), params('contact')))
+          .status,
+      ).toBe(401);
+      expect((await ticket(at('/s/contact/frame-ticket', {}), params('contact'))).status).toBe(401);
+    }
+    expect(h.queries + h.execs).toBe(0);
+  });
+
+  it('with the cookie: no tools ever; a write only with Can write; a ticket that names the contact', async () => {
+    const cookie = await cookieFor(3);
+    const tool = (await import('./[token]/tool-broker/route')).POST;
+    const db = (await import('./[token]/db-broker/route')).POST;
+    const ticket = (await import('./[token]/frame-ticket/route')).POST;
+    for (const token of ['contact', 'writer']) {
+      const res = await tool(
+        withCookie(`/s/${token}/tool-broker`, { slug: 'x' }, cookie),
+        params(token),
+      );
+      expect(res.status, token).toBe(403);
+    }
+    const ro = await db(
+      withCookie('/s/contact/db-broker', { op: 'exec', sql: 'delete from t' }, cookie),
+      params('contact'),
+    );
+    expect(ro.status).toBe(403);
+    expect(await ro.json()).toMatchObject({ reason: 'read-only' });
+    const rw = await db(
+      withCookie('/s/writer/db-broker', { op: 'exec', sql: 'delete from t' }, cookie),
+      params('writer'),
+    );
+    expect(rw.status).toBe(200);
+    expect(h.execs).toBe(1);
+    const t = await ticket(withCookie('/s/contact/frame-ticket', {}, cookie), params('contact'));
+    const { verifyAppFrameTicket } = await import('@/lib/auth');
+    expect(verifyAppFrameTicket(((await t.json()) as { ticket: string }).ticket)).toMatchObject({
+      shareId: 'share-2',
+      contactId: CONTACT,
+      codeEpoch: 3,
+    });
   });
 });

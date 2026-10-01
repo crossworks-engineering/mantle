@@ -159,6 +159,30 @@ describe.skipIf(!hasManifest)('route manifest auth sweep', () => {
     expect(team.status).toBe(404);
   });
 
+  // Contact shares (0214): the owner's routes refuse an anonymous call; the
+  // code prompt is a /s route, public at the gate (its handler limits and
+  // checks every try itself, contact-share-gate.db.test.ts).
+  it('contact shares: owner routes are refused anonymously; the code prompt is a public /s route', async () => {
+    const owner: Array<[string, string]> = [
+      ['POST', '/api/contacts/:id/sharing'],
+      ['GET', '/api/contacts/:id/shares'],
+      ['DELETE', '/api/contacts/:id/shares'],
+      ['POST', '/api/shares/contacts'],
+      ['PATCH', '/api/shares/:id'],
+    ];
+    for (const [method, pattern] of owner) {
+      expect(
+        manifest.some((e) => e.pattern === pattern && e.methods.includes(method)),
+        pattern,
+      ).toBe(true);
+      const res = await app.request(concretePath(pattern), { method });
+      expect(res.status, `${method} ${pattern}`).toBe(401);
+    }
+    const code = manifest.find((e) => e.pattern === '/s/:token/code');
+    expect(code?.methods).toEqual(['POST']);
+    expect(isPublic(concretePath('/s/:token/code'))).toBe(true);
+  });
+
   // Migration 0177 dropped the forum tables; the archive export went with
   // them, so an older client's export banner finds no route.
   it('the retired forum export route is not routed', async () => {
