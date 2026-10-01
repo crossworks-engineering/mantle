@@ -71,6 +71,18 @@ describe.skipIf(!URL)('contact shares on Postgres', () => {
                  and contact_id is not null and revoked_at is null`,
       )
     )[0]!.n;
+  /** A statement the database refuses: drizzle wraps the Postgres error,
+   *  so match the cause's message and constraint too. */
+  const refused = async (q: ReturnType<typeof sqlTag>, re: RegExp) => {
+    let text = '';
+    try {
+      await m.db.execute(q);
+    } catch (err) {
+      const cause = (err as { cause?: { message?: string; constraint_name?: string } }).cause;
+      text = `${(err as Error).message} ${cause?.message ?? ''} ${cause?.constraint_name ?? ''}`;
+    }
+    expect(text).toMatch(re);
+  };
   const insertNodes = async (rows: Array<[string, string, string, string]>) => {
     for (const [id, type, title, path] of rows) {
       await m.db.execute(sqlTag`
@@ -145,40 +157,45 @@ describe.skipIf(!URL)('contact shares on Postgres', () => {
       const [first] = await cs.createContactShares(owner, page, [contactA]);
       const [again] = await cs.createContactShares(owner, page, [contactA]);
       expect(again!.shareId).toBe(first!.shareId);
-      await expect(
-        m.db.execute(sqlTag`
+      await refused(
+        sqlTag`
           insert into shares (token, owner_id, node_id, node_type, contact_id)
-          values (${randomUUID()}, ${owner}, ${page}, 'page', ${contactA})`),
-      ).rejects.toThrow();
+          values (${randomUUID()}, ${owner}, ${page}, 'page', ${contactA})`,
+        /shares_node_contact_uq/,
+      );
     });
 
     it('refuses a folder, by the rules and by the database', async () => {
       await expect(cs.createContactShares(owner, folder, [contactA])).rejects.toMatchObject({
         reason: 'folder',
       });
-      await expect(
-        m.db.execute(sqlTag`
+      await refused(
+        sqlTag`
           insert into shares (token, owner_id, node_id, node_type, contact_id)
-          values (${randomUUID()}, ${owner}, ${folder}, 'branch', ${contactA})`),
-      ).rejects.toThrow(/not a folder/);
+          values (${randomUUID()}, ${owner}, ${folder}, 'branch', ${contactA})`,
+        /not a folder/,
+      );
     });
 
     it('the CHECK refuses can_write on a page; the trigger a share to a non-contact', async () => {
-      await expect(
-        m.db.execute(sqlTag`
+      await refused(
+        sqlTag`
           insert into shares (token, owner_id, node_id, node_type, contact_id, can_write)
-          values (${randomUUID()}, ${owner}, ${note}, 'note', ${contactB}, true)`),
-      ).rejects.toThrow(/shares_can_write_ck/);
-      await expect(
-        m.db.execute(sqlTag`
+          values (${randomUUID()}, ${owner}, ${note}, 'note', ${contactB}, true)`,
+        /shares_can_write_ck/,
+      );
+      await refused(
+        sqlTag`
           insert into shares (token, owner_id, node_id, node_type, can_write)
-          values (${randomUUID()}, ${owner}, ${app}, 'app', true)`),
-      ).rejects.toThrow(/shares_can_write_ck/);
-      await expect(
-        m.db.execute(sqlTag`
+          values (${randomUUID()}, ${owner}, ${app}, 'app', true)`,
+        /shares_can_write_ck/,
+      );
+      await refused(
+        sqlTag`
           insert into shares (token, owner_id, node_id, node_type, contact_id)
-          values (${randomUUID()}, ${owner}, ${note}, 'note', ${page})`),
-      ).rejects.toThrow(/not a contact/);
+          values (${randomUUID()}, ${owner}, ${note}, 'note', ${page})`,
+        /not a contact/,
+      );
       await expect(cs.createContactShares(owner, note, [contactA], true)).rejects.toMatchObject({
         reason: 'write-not-app',
       });
