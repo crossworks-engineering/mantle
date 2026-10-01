@@ -201,7 +201,20 @@ export type MemberSpaceFile = {
  * narrows them with `TDoc` / `TTable`.
  */
 export type MemberSpaceItemBody<TDoc = unknown, TTable = unknown> =
-  | { type: 'page'; page: { doc: TDoc; draft: TDoc | null; draftRev?: number; title: string } }
+  | {
+      type: 'page';
+      page: {
+        doc: TDoc;
+        draft: TDoc | null;
+        draftRev?: number;
+        title: string;
+        /** The folder the page sits in (folder phase 7): the member's own
+         *  folder or a brain folder, null at the top level. It is what a
+         *  Folder index block set to `here` lists, through the reader's own
+         *  tree route. Absent from a brain before the pages tree. */
+        folderId?: string | null;
+      };
+    }
   | { type: 'note'; note: { content: string; title: string } }
   /** Null for a teammate: their drawing shows from its saved SVG route. */
   | { type: 'draw'; draw: { scene: TDoc; draft: TDoc | null; draftRev?: number } | null }

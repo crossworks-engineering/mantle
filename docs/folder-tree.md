@@ -475,6 +475,22 @@ path of `pages.<id>.<id>`) is gone:
   folder): it lists the folder's pages live, title only, as the reader sees
   them (the owner, member or client tree read), never stored. An open link
   renders it as an inert label.
+- **A member's draft has the block too.** The member's own draft read
+  (`GET /api/member/space/:id`) carries `folderId` on the page body, as
+  every page detail does (`MemberSpaceItemBody`, pinned by
+  `member-space.viewer.db.test.ts`): the member's own folder, the brain
+  folder the draft was filed in, or null at the member's top level. The
+  member draft editor hands it to the block, so `folder:here` lists the
+  draft's own folder through `GET /api/member/tree/pages` (the member's
+  drafts first, then what it reads of the brain's); a draft at the top level
+  lists the member's top level. The slash menu offers the block to a member
+  only when the member shell names `pages` in `treeKinds` and the folder is
+  known; a body with no `folderId` (an older brain) shows the block's label
+  alone, never the root. A folder the member cannot open says "This folder
+  is not shared with you". After Submit and Accept the page sits in a brain
+  folder (accept claims in place), and `folder:here` means that folder for
+  every reader. An admin's private item and a client's own page are in no
+  folder a tree lists: no block there.
 - **Where a page sits.** `PageDetail.folderId` names the folder (null at
   the top level); `PageRow.parentId` is always null and stays on the wire
   for older clients, as do `childCount` and `parentTitle` (absent),
