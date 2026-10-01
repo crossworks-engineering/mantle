@@ -32,6 +32,7 @@ export * from './dto/turns';
 export * from './dto/rows';
 export * from './dto/views';
 export * from './dto/recall';
+export * from './dto/contact-shares';
 // Types only; ACCESS_LEVELS (runtime) is the `@mantle/client-types/dto/access` subpath.
 export type {
   AccessItemView,

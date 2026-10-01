@@ -369,12 +369,15 @@ export type UnshareItemResult = {
  */
 export async function unshareItem(ownerId: string, shareId: string): Promise<UnshareItemResult> {
   const [row] = await db
-    .select({ nodeId: shares.nodeId })
+    .select({ nodeId: shares.nodeId, contactId: shares.contactId })
     .from(shares)
     .where(and(eq(shares.id, shareId), eq(shares.ownerId, ownerId), isNull(shares.revokedAt)))
     .limit(1);
   const revoked = await revokeShareTree(ownerId, shareId);
   if (!row) return { revoked, stillBelow: [] };
+  // A contact share (0214) never set a level, so removing one changes none:
+  // the item stays where the admin put it.
+  if (row.contactId) return { revoked, stillBelow: [] };
   // A client item keeps its level (client logins C1): its old link is gone,
   // and client means signed-in clients, which no link decides.
   const [node] = await db

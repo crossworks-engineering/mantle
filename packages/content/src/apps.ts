@@ -215,7 +215,11 @@ export async function listApps(
       })
       .from(nodes)
       .leftJoin(apps, eq(apps.nodeId, nodes.id))
-      .leftJoin(shares, and(eq(shares.nodeId, nodes.id), isNull(shares.revokedAt)))
+      .leftJoin(
+        shares,
+        // The open link only: an app may carry many contact shares (0214).
+        and(eq(shares.nodeId, nodes.id), isNull(shares.revokedAt), isNull(shares.contactId)),
+      )
       .where(and(...appConds(ownerId, opts)))
       .orderBy(appOrderBy(opts.sort))
       .limit(opts.limit ?? 500)
@@ -271,7 +275,11 @@ async function loadDetail(ownerId: string, id: string): Promise<AppDetail | null
       })
       .from(nodes)
       .leftJoin(apps, eq(apps.nodeId, nodes.id))
-      .leftJoin(shares, and(eq(shares.nodeId, nodes.id), isNull(shares.revokedAt)))
+      .leftJoin(
+        shares,
+        // The open link only: an app may carry many contact shares (0214).
+        and(eq(shares.nodeId, nodes.id), isNull(shares.revokedAt), isNull(shares.contactId)),
+      )
       .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'app')))
       .limit(1),
     loadProfilePreferences(ownerId),

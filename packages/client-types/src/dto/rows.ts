@@ -609,7 +609,15 @@ export type NeedsYou = {
     open: number;
     newest: NeedsYouItem | null;
   };
-  /** review.submitted + review.leftBehind + requests.open. */
+  /** Contacts whose sharing locked after 30 wrong codes in a day (contact
+   *  shares, migration 0214): the code opens nothing until the lock lapses
+   *  or an admin regenerates it. `newest.from` is empty. Absent from brains
+   *  before 0214. */
+  sharing?: {
+    locked: number;
+    newest: NeedsYouItem | null;
+  };
+  /** review.submitted + review.leftBehind + requests.open (+ sharing.locked). */
   total: number;
 };
 

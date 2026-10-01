@@ -24,6 +24,7 @@ export {
   createShare,
   revokeShare,
   resolveActiveShareByToken,
+  resolveActiveShareRowByToken,
   isRetiredTeamLinkToken,
   isRetiredClientLinkToken,
   listRetiredClientLinks,
@@ -45,6 +46,51 @@ export {
   type ShareableType,
   type ShareSummary,
 } from './shares';
+
+export {
+  CONTACT_CODE_LENGTH,
+  CONTACT_CODE_DAILY_FAILURES,
+  CONTACT_CODE_LOCK_MS,
+  CONTACT_CODE_SHARE_HOURLY_FAILURES,
+  generateContactCode,
+  normalizeContactCode,
+  hashContactCode,
+  contactSharingByContact,
+  contactSharingFor,
+  enableContactSharing,
+  regenerateContactCode,
+  disableContactSharing,
+  contactShareGateRow,
+  checkContactShareCode,
+  lockedContactSharing,
+  type ContactSharingStatus,
+  type ContactShareGateRow,
+  type EnableContactSharingResult,
+} from './contact-share-codes';
+
+export {
+  ContactShareRefusedError,
+  CONTACT_SHAREABLE_TYPES,
+  CONTACT_MENU_LIMIT,
+  CONTACT_SHARES_PAGE,
+  createContactShares,
+  setContactShareCanWrite,
+  revokeAllContactShares,
+  listContactShares,
+  listContactSharesForAdmin,
+  contactSharesForNode,
+  getContactShare,
+  type ContactMenuItem,
+} from './contact-shares';
+
+export {
+  recordShareAccess,
+  listShareAccess,
+  reapShareAccessLog,
+  SHARE_ACCESS_LOG_RETENTION_DAYS,
+  type ShareAccessEntry,
+  type ShareAccessRow,
+} from './share-access-log';
 
 export {
   appendTeamMessage,

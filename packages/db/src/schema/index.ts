@@ -37,6 +37,7 @@ export * from './model-pools';
 export * from './tables';
 export * from './doc-collections';
 export * from './shares';
+export * from './contact-shares';
 export * from './mantle-peers';
 export * from './peer-shares';
 export * from './peer-share-scopes';

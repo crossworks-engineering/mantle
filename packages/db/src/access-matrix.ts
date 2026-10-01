@@ -321,6 +321,10 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.push_subscriptions', 'system'),
   none('public.push_login_prefs', 'system'),
   none('public.shares', 'system'),
+  // Contact shares (0214): the /s layer reads and writes these on the admin
+  // pool, for the brain. No viewer role ever does.
+  none('public.contact_share_codes', 'system'),
+  none('public.share_access_log', 'system'),
 
   // ── Admin only: the private corpus, credentials, the owner's own memory ───
   none('public.api_keys'),

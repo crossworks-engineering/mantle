@@ -7,6 +7,7 @@
  * docs/access-levels.md.
  */
 import type { ShareMode } from './rows';
+import type { AccessContactShare } from './contact-shares';
 
 /** Highest first: the order the control shows them in. */
 export const ACCESS_LEVELS = ['admin', 'team', 'client', 'public'] as const;
@@ -82,6 +83,10 @@ export type AccessNodeView = {
   /** What it is read through by embeds (migration 0208); null when nothing
    *  reaches it. Absent from brains before 0208. */
   readThrough?: AccessReadThrough | null;
+  /** The contacts it is shared with (contact shares, migration 0214): each
+   *  has its own link, opened with that contact's code. They change no
+   *  level. Absent from brains before 0214. */
+  contactShares?: AccessContactShare[];
 };
 
 /** An item is read through the items that embed it (migration 0208): a
@@ -255,6 +260,12 @@ export type SharedLinkRow = {
   /** The item's level (client logins C1): `client` marks an old link, from
    *  when client meant an open link. Absent from brains before C1. */
   level?: AccessLevel;
+  /** A contact share (migration 0214): the contact it is for, by id and
+   *  name. Null or absent on an open link and on brains before 0214. */
+  contactId?: string | null;
+  contactName?: string | null;
+  /** A contact share of an app whose contact may write its data. */
+  canWrite?: boolean;
 };
 
 /** An old client link the brain retired (client logins C3, migration 0192):

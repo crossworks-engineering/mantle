@@ -188,7 +188,7 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     slug: 'app-access-log-reap',
     title: 'Trim the app access log',
     description:
-      "Deletes app access log rows older than 90 days (client tier audit I4): every app ticket, tool call and write by a member, a client or a share link, and each caller's reads at most once a minute, land a row, and nothing else removes them. The owner's access log view shows the newest 100 rows of an app.",
+      "Deletes app access log rows older than 90 days (client tier audit I4): every app ticket, tool call and write by a member, a client or a share link, and each caller's reads at most once a minute, land a row, and nothing else removes them. The owner's access log view shows the newest 100 rows of an app. Since contact shares (0214) it trims the contact share trail (share_access_log) by the same 90 days.",
     kind: 'recurring',
     status: 'live',
     cost: 'sql',
@@ -197,7 +197,7 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     cwd: 'server/web',
     applyFlag: '--apply',
     notes:
-      'Plain SQL in batches, no model, idempotent; a no-op once clean. The rule lives in @mantle/content app-access-log.ts (reapAppAccessLog), shared by the cron and the script.',
+      'Plain SQL in batches, no model, idempotent; a no-op once clean. The rules live in @mantle/content app-access-log.ts (reapAppAccessLog) and share-access-log.ts (reapShareAccessLog), shared by the cron and the script.',
   },
   {
     slug: 'traces-reap',

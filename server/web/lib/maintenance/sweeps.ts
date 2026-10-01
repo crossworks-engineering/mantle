@@ -23,6 +23,7 @@ import {
   mergeEntities,
   purgeDeactivatedSpaces,
   reapAppAccessLog,
+  reapShareAccessLog,
   reapClientSigninCodes,
   type MergeCandidate,
 } from '@mantle/content';
@@ -170,9 +171,12 @@ export const SWEEPS: Record<string, (ownerId: string) => Promise<string>> = {
     return parts.length ? parts.join('; ') : 'no drift';
   },
   // Client tier audit I4: app access log rows older than 90 days.
+  // Contact shares (0214): the contact share trail, same 90 days.
   'app-access-log-reap': async () => {
     const r = await reapAppAccessLog();
-    return r.deleted === 0 ? 'nothing to reap' : `deleted ${r.deleted} access log row(s)`;
+    const s = await reapShareAccessLog();
+    if (r.deleted === 0 && s.deleted === 0) return 'nothing to reap';
+    return `deleted ${r.deleted} access log row(s), ${s.deleted} contact share row(s)`;
   },
   // Member logins plan 6.4: a deactivated login's private items, after 30 days.
   'space-purge': async () => {

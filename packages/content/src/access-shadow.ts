@@ -131,6 +131,9 @@ export async function accessShadowReport(
       and(
         eq(shares.ownerId, ownerId),
         isNull(shares.revokedAt),
+        // Open links only: a contact share (0214) is on a workspace item and
+        // changes no level.
+        isNull(shares.contactId),
         or(isNull(shares.expiresAt), gt(shares.expiresAt, new Date())),
       ),
     );

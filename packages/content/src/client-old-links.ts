@@ -49,7 +49,7 @@ export async function oldLinksAbove(
       join nodes f on f.owner_id = i.owner_id and f.type = 'branch' and f.id <> i.id
                   and f.audience = 'client' and i.path <@ f.path
       join shares s on s.node_id = f.id and s.owner_id = ${ownerId}
-                   and s.revoked_at is null
+                   and s.revoked_at is null and s.contact_id is null
                    and (s.expires_at is null or s.expires_at > now())
      where i.owner_id = ${ownerId} and i.id in (${idList})
      order by s.created_at`)) as unknown as {
@@ -89,6 +89,8 @@ export async function oldLinksAbove(
         eq(nodes.type, 'page'),
         eq(nodes.audience, 'client'),
         isNull(shares.revokedAt),
+        // Open links only: a contact share (0214) is not an old client link.
+        isNull(shares.contactId),
         LIVE,
       ),
     )

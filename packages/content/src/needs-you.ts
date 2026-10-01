@@ -2,7 +2,8 @@
  * "Needs you": what waits for an admin (Jason, 2026-09-28: an admin must
  * never be blind to work waiting for them). Two queues: the Review queue
  * (items members submitted, and what deactivated logins left behind) and
- * open team requests.
+ * open team requests. Since contact shares (0214), a third: contacts whose
+ * sharing locked after 30 wrong codes in a day.
  *
  * The live event is `needs_you_changed` (migration 0186): database triggers
  * raise it, with the brain's owner id as the payload, whenever a space item
@@ -20,6 +21,7 @@
 import type { NeedsYou } from '@mantle/client-types';
 import { countReviewQueue, newestSubmitted } from './member-review';
 import { countOpenTeamRequests, listTeamRequests } from './team-requests';
+import { lockedContactSharing } from './contact-share-codes';
 
 export const NEEDS_YOU_CHANGED_CHANNEL = 'needs_you_changed';
 /** The change type the owner live stream sends for this event. */
@@ -28,11 +30,12 @@ export const NEEDS_YOU_REALTIME_TYPE = 'needs_you';
 export type { NeedsYou };
 
 export async function loadNeedsYou(ownerId: string): Promise<NeedsYou> {
-  const [queue, reviewNewest, open, [request]] = await Promise.all([
+  const [queue, reviewNewest, open, [request], locked] = await Promise.all([
     countReviewQueue(),
     newestSubmitted(),
     countOpenTeamRequests(ownerId),
     listTeamRequests(ownerId, { status: 'open', limit: 1 }),
+    lockedContactSharing(ownerId),
   ]);
   return {
     review: { submitted: queue.submitted, leftBehind: queue.leftBehind, newest: reviewNewest },
@@ -47,6 +50,10 @@ export async function loadNeedsYou(ownerId: string): Promise<NeedsYou> {
           }
         : null,
     },
-    total: queue.submitted + queue.leftBehind + open,
+    sharing: {
+      locked: locked.count,
+      newest: locked.newest ? { ...locked.newest, from: '' } : null,
+    },
+    total: queue.submitted + queue.leftBehind + open + locked.count,
   };
 }

@@ -37,6 +37,8 @@ import {
   type UpdateContactInput,
 } from '@mantle/content-core/contacts-format';
 
+import { contactSharingByContact } from './contact-share-codes';
+
 export const CONTACTS_ROOT_LABEL = 'contacts';
 
 // Re-export the pure module's surface so existing importers of `@mantle/content`
@@ -123,6 +125,17 @@ function rowOf(n: Node): ContactRow {
   };
 }
 
+/** Rows with their contact-share status (migration 0214): one batched read
+ *  for the whole list. */
+async function withSharing(ownerId: string, list: ContactRow[]): Promise<ContactRow[]> {
+  if (list.length === 0) return list;
+  const sharing = await contactSharingByContact(
+    ownerId,
+    list.map((c) => c.id),
+  );
+  return list.map((c) => ({ ...c, sharing: sharing.get(c.id) ?? null }));
+}
+
 async function ensureRoot(ownerId: string): Promise<void> {
   await db
     .insert(nodes)
@@ -176,7 +189,10 @@ export async function listContacts(
     .orderBy(desc(nodes.updatedAt))
     .limit(opts.limit ?? 500)
     .offset(opts.offset ?? 0);
-  return rows.map((r) => rowOf(r));
+  return withSharing(
+    ownerId,
+    rows.map((r) => rowOf(r)),
+  );
 }
 
 export async function countContacts(ownerId: string, opts: ListContactsOpts = {}): Promise<number> {
@@ -193,7 +209,7 @@ export async function getContact(ownerId: string, id: string): Promise<ContactRo
     .from(nodes)
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'contact')))
     .limit(1);
-  return row ? rowOf(row) : null;
+  return row ? ((await withSharing(ownerId, [rowOf(row)]))[0] ?? null) : null;
 }
 
 /**
@@ -434,7 +450,7 @@ export async function createContact(
     })
     .returning();
   if (!row) throw new Error('createContact: insert returned no row');
-  return { contact: rowOf(row), addedEmails: fields.emails };
+  return { contact: { ...rowOf(row), sharing: null }, addedEmails: fields.emails };
 }
 
 export async function updateContact(
@@ -534,7 +550,8 @@ export async function updateContact(
     const { notifyNodeIngested } = await import('@mantle/db');
     await notifyNodeIngested(id);
   }
-  return { contact: rowOf(updated), addedEmails };
+  const [contact] = await withSharing(ownerId, [rowOf(updated)]);
+  return { contact: contact!, addedEmails };
 }
 
 export async function deleteContact(ownerId: string, id: string): Promise<boolean> {
