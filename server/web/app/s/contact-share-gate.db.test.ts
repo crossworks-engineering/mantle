@@ -82,10 +82,7 @@ vi.mock('@/lib/files', async (importOriginal) => ({
   })),
 }));
 
-type Handler = (
-  req: Request,
-  ctx: { params: Promise<Record<string, string>> },
-) => Promise<Response>;
+type Handler = (req: Request, ctx: { params: Promise<any> }) => Promise<Response>;
 
 describe.skipIf(!URL)('contact shares through /s on Postgres', () => {
   type Db = typeof import('@mantle/db');
@@ -161,15 +158,15 @@ describe.skipIf(!URL)('contact shares through /s on Postgres', () => {
     sqlTag = (await import('drizzle-orm')).sql;
     content = await import('@mantle/content');
     tokens = await import('@/lib/auth/tokens');
-    r.code = (await import('./[token]/code/route')).POST as Handler;
-    r.view = (await import('./[token]/view/route')).GET as Handler;
-    r.bundle = (await import('./[token]/bundle/route')).GET as Handler;
-    r.css = (await import('./[token]/bundle/css/route')).GET as Handler;
-    r.ticket = (await import('./[token]/frame-ticket/route')).POST as Handler;
-    r.frame = (await import('./[token]/frame/route')).GET as Handler;
-    r.asset = (await import('./[token]/a/[fileId]/route')).GET as Handler;
-    r.db = (await import('./[token]/db-broker/route')).POST as Handler;
-    r.tool = (await import('./[token]/tool-broker/route')).POST as Handler;
+    r.code = (await import('./[token]/code/route')).POST as unknown as Handler;
+    r.view = (await import('./[token]/view/route')).GET as unknown as Handler;
+    r.bundle = (await import('./[token]/bundle/route')).GET as unknown as Handler;
+    r.css = (await import('./[token]/bundle/css/route')).GET as unknown as Handler;
+    r.ticket = (await import('./[token]/frame-ticket/route')).POST as unknown as Handler;
+    r.frame = (await import('./[token]/frame/route')).GET as unknown as Handler;
+    r.asset = (await import('./[token]/a/[fileId]/route')).GET as unknown as Handler;
+    r.db = (await import('./[token]/db-broker/route')).POST as unknown as Handler;
+    r.tool = (await import('./[token]/tool-broker/route')).POST as unknown as Handler;
     const { mountShare } = await import('@/server/pages/share');
     shareApp = new Hono();
     mountShare(shareApp);

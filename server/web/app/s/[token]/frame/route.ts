@@ -16,11 +16,18 @@ import { renderAppFrame } from '@/lib/app-frame';
 export async function GET(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
   const share = await resolveActiveShareRowByToken(token);
-  if (!share || share.nodeType !== 'app') return new NextResponse('not found', { status: 404 });
+  if (!share) return new NextResponse('not found', { status: 404 });
 
   const t = new URL(req.url).searchParams.get('t');
   const ticket = t ? verifyAppFrameTicket(t) : null;
-  if (!ticket || ticket.shareId !== share.id || ticket.appId !== share.nodeId) {
+  const forThisShare = !!ticket && ticket.shareId === share.id && ticket.appId === share.nodeId;
+  // A contact share without a ticket of its own answers 401 whatever its
+  // kind, like every other /s route behind the contact gate.
+  if (share.contactId && !forThisShare) {
+    return new NextResponse('frame ticket required', { status: 401 });
+  }
+  if (share.nodeType !== 'app') return new NextResponse('not found', { status: 404 });
+  if (!ticket || !forThisShare) {
     return new NextResponse('frame ticket required', { status: 401 });
   }
   // A contact share: the ticket must name this share's contact at the

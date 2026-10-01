@@ -19,6 +19,8 @@ export const SYSTEM_DB_ALLOWLIST = [
   'packages/embeddings/src/index.ts',
   'packages/content/src/team-messages.ts',
   'packages/content/src/app-access-log.ts',
+  // The contact share trail (0214): written for any visitor, like the above.
+  'packages/content/src/share-access-log.ts',
   'packages/content/src/team-access-log.ts',
   // member_turn_ledger writes and the member chat traces' token sums (audit F09).
   'packages/content/src/member-turn-ledger.ts',
