@@ -31,7 +31,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import postgres from '../../server/web/node_modules/postgres/src/index.js';
-import type { GenNode, Manifest, Sql } from './lib/types.ts';
+import type { GenFolder, GenNode, GenRecallMap, GenRecallOption, Manifest, Sql } from './lib/types.ts';
 // The app's own markdown dialect — imported by relative path because the demo
 // tree is not a workspace member (joining it would edit a main-owned file);
 // each package still resolves its own deps from its own node_modules.
@@ -104,6 +104,18 @@ async function post(path: string, body: unknown) {
   if (!res.ok) throw new Error(`POST ${path} → ${res.status} ${(await res.text()).slice(0, 200)}`);
   return res.json().catch(() => ({}));
 }
+/** Any verb, JSON in and out. A refusal is thrown with the brain's own words:
+ *  the seed changes to fit the brain, never the reverse. */
+async function send(method: 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown) {
+  const res = await api(path, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+  if (!res.ok) throw new Error(`${method} ${path} → ${res.status} ${(await res.text()).slice(0, 300)}`);
+  return res.json().catch(() => ({}));
+}
+async function get(path: string) {
+  const res = await api(path);
+  if (!res.ok) throw new Error(`GET ${path} → ${res.status} ${(await res.text()).slice(0, 300)}`);
+  return res.json();
+}
 
 // ── Bootstrap: the real onboarding flow ─────────────────────────────────────
 async function bootstrap() {
@@ -161,6 +173,10 @@ async function seedSimple(m: Manifest) {
     })) as { note?: { id?: string } };
     if (r.note?.id) created.set(n.id, r.note.id);
   }
+  // `POST /api/notes` takes no folder, so notes are filed afterwards with the
+  // tree's own move, which is what dragging them in the UI does.
+  await seedFolders(m, 'notes');
+  await fileItems(m, 'notes', 'note');
   for (const n of m.nodes.filter((x) => x.kind === 'journal')) {
     const r = (await post('/api/journal', {
       title: n.title,
@@ -198,48 +214,236 @@ async function seedSimple(m: Manifest) {
   }
 }
 
-// Pages must be created parents-first so parentId resolves and the ltree
-// sub-page tree actually forms.
+// ── Folders (the item tree) ──────────────────────────────────────────────────
+// One tree per kind, folders at most three deep, and an item is never a parent
+// (docs/folder-tree.md). Folders are created parents first. A folder that is
+// already there (same name, same parent) is reused, so `seed.sh --keep` with
+// DEMO_SEED_ONLY can run again without a name clash.
+type TreeFolderRow = { id: string; name: string; share: string | null };
+async function seedFolders(m: Manifest, kind: GenFolder['kind']) {
+  const folders = (m.folders ?? []).filter((f) => f.kind === kind);
+  const byId = new Map(folders.map((f) => [f.id, f]));
+  const emit = async (f: GenFolder): Promise<string> => {
+    const have = created.get(f.id);
+    if (have) return have;
+    const parent = f.parent ? byId.get(f.parent) : null;
+    if (f.parent && !parent) throw new Error(`folder ${f.id}: parent ${f.parent} is not in the manifest`);
+    const parentId = parent ? await emit(parent) : null;
+    const page = (await get(`/api/tree/${kind}${parentId ? `?folder=${parentId}` : ''}`)) as { folders?: TreeFolderRow[] };
+    const existing = (page.folders ?? []).find((x) => x.name === f.name);
+    let id = existing?.id;
+    if (!id) {
+      const r = (await post(`/api/tree/${kind}/folders`, {
+        parentId,
+        name: f.name,
+        ...(f.icon ? { icon: f.icon } : {}),
+        ...(f.color ? { color: f.color } : {}),
+      })) as { folder?: { id?: string } };
+      id = r.folder?.id;
+    }
+    if (!id) throw new Error(`folder ${f.id}: no id came back`);
+    created.set(f.id, id);
+    return id;
+  };
+  for (const f of folders) await emit(f);
+  return folders.length;
+}
+
+/** The real folder id for a node, or null for the top level. */
+function folderIdOf(n: GenNode): string | null {
+  const gen = n.meta?.folder;
+  if (!gen) return null;
+  const id = created.get(gen);
+  if (!id) throw new Error(`${n.id}: folder ${gen} was not created`);
+  return id;
+}
+
+/** File already-created items into their folders: one move per folder. */
+async function fileItems(m: Manifest, kind: GenFolder['kind'], nodeKind: string) {
+  const byFolder = new Map<string, string[]>();
+  for (const n of m.nodes.filter((x) => x.kind === nodeKind)) {
+    const folderId = folderIdOf(n);
+    const id = created.get(n.id);
+    if (!folderId || !id) continue;
+    byFolder.set(folderId, [...(byFolder.get(folderId) ?? []), id]);
+  }
+  for (const [folderId, ids] of byFolder) {
+    // The route takes at most 200 ids a call.
+    for (let i = 0; i < ids.length; i += 200) {
+      const r = (await post(`/api/tree/${kind}/move`, { ids: ids.slice(i, i + 200), folderId })) as {
+        moved?: number;
+        failed?: unknown[];
+      };
+      if (r.failed?.length) throw new Error(`filing ${kind}: ${JSON.stringify(r.failed).slice(0, 300)}`);
+    }
+  }
+}
+
+/**
+ * Share the folders the manifest marks, AFTER their items are filed.
+ *
+ * A share that changes who can see items is refused first (409 `visibility`,
+ * with the list) and goes ahead only when the same call is repeated with
+ * `confirm: true` and the count that was shown. The seeder does what the
+ * dialog does: read the refusal, then confirm exactly that count. Sharing
+ * first and filing afterwards would need a confirm on every single create.
+ */
+async function shareFolders(m: Manifest) {
+  let n = 0;
+  for (const f of (m.folders ?? []).filter((x) => x.share)) {
+    const id = created.get(f.id);
+    if (!id) continue; // its kind was not seeded on this run (DEMO_SEED_ONLY)
+    const path = `/api/tree/${f.kind}/folders/${id}`;
+    let res = await api(path, { method: 'PATCH', body: JSON.stringify({ share: f.share }) });
+    if (res.status === 409) {
+      const refusal = (await res.json().catch(() => ({}))) as { error?: string; total?: number; embedsTotal?: number };
+      if (refusal.error !== 'visibility') throw new Error(`share ${f.id}: 409 ${JSON.stringify(refusal).slice(0, 200)}`);
+      const seen = (refusal.total ?? 0) + (refusal.embedsTotal ?? 0);
+      res = await api(path, { method: 'PATCH', body: JSON.stringify({ share: f.share, confirm: true, seen }) });
+      if (res.ok) console.log(`  "${f.name}" shared with ${f.share === 'team' ? 'the team' : 'clients'}: ${seen} item(s) now read at that level`);
+    }
+    if (!res.ok) throw new Error(`share ${f.id}: ${res.status} ${(await res.text()).slice(0, 200)}`);
+    n++;
+  }
+  return n;
+}
+
+// Pages live in folders, like notes: `POST /api/pages` takes `folderId`, so a
+// page is born in its place. A Folder index block names its folder by
+// GENERATOR id (`folder:gen:<id>`); the real id goes in before the markdown
+// becomes a document. `folder:here` needs nothing: it is the page's own folder.
 async function seedPages(m: Manifest) {
-  const pages = m.nodes.filter((x) => x.kind === 'page');
-  const byId = new Map(pages.map((p) => [p.id, p]));
-  const done = new Set<string>();
-  const emit = async (p: GenNode): Promise<void> => {
-    if (done.has(p.id)) return;
-    const parent = p.meta?.parent_id ? byId.get(p.meta.parent_id) : null;
-    if (parent) await emit(parent);
+  await seedFolders(m, 'pages');
+  const withFolderIds = (p: GenNode) =>
+    p.body.replace(/\(folder:gen:([^)\s]+)\)/g, (_all, gen: string) => {
+      const id = created.get(gen);
+      if (!id) throw new Error(`${p.id}: Folder index names folder ${gen}, which was not created`);
+      return `(folder:${id})`;
+    });
+  for (const p of m.nodes.filter((x) => x.kind === 'page')) {
     const r = (await post('/api/pages', {
       title: p.title,
-      doc: markdownToDoc(p.body),
+      doc: markdownToDoc(withFolderIds(p)),
       tags: p.tags,
-      ...(p.meta?.parent_id && created.has(p.meta.parent_id)
-        ? { parentId: created.get(p.meta.parent_id) }
-        : {}),
+      folderId: folderIdOf(p),
     })) as { page?: { id?: string }; id?: string };
     const id = r.page?.id ?? r.id;
-    if (id) created.set(p.id, id);
-    done.add(p.id);
-  };
-  for (const p of pages) await emit(p);
-
-  // Recall maps: a node's Options list links SIBLINGS by page id, and a page
-  // cannot link a page that does not exist yet — so the tree is created
-  // first (above) and the options are written afterwards, by real id, with a
-  // PATCH that commits the body and recompiles the map.
-  for (const p of pages) {
-    const opts = p.meta?.recall_options;
-    if (!opts?.length || !created.has(p.id)) continue;
-    const lines = opts.map((o) => {
-      const target = created.get(o.target);
-      if (!target) throw new Error(`recall: option "${o.label}" on ${p.id} targets unknown page ${o.target}`);
-      return `- [${o.label}](page:${target}) — use when ${o.use_when}`;
-    });
-    const res = await api(`/api/pages/${created.get(p.id)}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ doc: markdownToDoc(`${p.body}\n\n## Options\n\n${lines.join('\n')}`) }),
-    });
-    if (!res.ok) throw new Error(`recall: PATCH ${p.id} → ${res.status} ${(await res.text()).slice(0, 200)}`);
+    if (!id) throw new Error(`page ${p.id}: no id came back`);
+    created.set(p.id, id);
   }
+}
+
+// ── Recall: a native map through the owner API ───────────────────────────────
+// A map is a `recall` item plus card rows (docs/recall.md). Every write
+// carries the map `version` it was made against and answers the next one, so
+// the version is threaded through the whole build. Order matters:
+//   1. the map (born published on the owner's surface, with its entry card)
+//   2. the cards, without options: an option may only lead to a card that exists
+//   3. the options, by card slug, entry card included
+//   4. the prompt: an owner's `prompt: true` makes the card a prompt at once;
+//      a card left waiting (`promptPending`) is confirmed through the owner's
+//      confirm route, because a prompt serves only once it is confirmed
+// Then the map is read back and checked, so a half-built map fails the seed
+// here and not in front of an audience.
+type RecallWrite = { version: number; cardSlug?: string; warnings?: Array<{ code: string; message: string }> };
+type RecallCardRow = { slug: string; kind: string; promptPending: boolean; options: unknown[] };
+type RecallMapRow = { id: string; slug: string; published: boolean; version: number; nodes?: RecallCardRow[] };
+
+async function seedRecall(m: Manifest) {
+  let n = 0;
+  for (const map of m.recall_maps ?? []) {
+    await seedRecallMap(map);
+    n++;
+  }
+  return n;
+}
+
+async function seedRecallMap(map: GenRecallMap) {
+  // A re-run replaces the map: a second create would only earn the slug a
+  // `-2`, and agents remember slugs.
+  const catalog = (await get(`/api/recall/maps?q=${encodeURIComponent(map.slug)}`)) as { maps?: RecallMapRow[] };
+  for (const old of (catalog.maps ?? []).filter((x) => x.slug === map.slug)) {
+    await send('DELETE', `/api/recall/maps/${old.id}`);
+    console.log(`  replaced the existing map '${map.slug}'`);
+  }
+
+  const made = (await post('/api/recall/maps', { title: map.title, enterWhen: map.enter_when })) as {
+    mapId?: string;
+    slug?: string;
+    version?: number;
+  };
+  if (!made.mapId || made.version === undefined) throw new Error(`recall ${map.slug}: the create answered no map id`);
+  const base = `/api/recall/maps/${made.mapId}`;
+  let version = made.version;
+  const step = (w: RecallWrite, what: string) => {
+    for (const warn of w.warnings ?? []) console.log(`  (recall ${what}: ${warn.code}: ${warn.message})`);
+    version = w.version;
+    return w;
+  };
+  if (made.slug !== map.slug) {
+    step((await send('PATCH', base, { slug: map.slug, version })) as RecallWrite, 'slug');
+  }
+
+  const opts = (list?: GenRecallOption[]) =>
+    (list ?? []).map((o) => ({ label: o.label, useWhen: o.use_when, targetSlug: o.target }));
+
+  for (const card of map.cards) {
+    const w = step(
+      (await post(`${base}/cards`, {
+        title: card.title,
+        bodyMd: card.body,
+        ...(card.use_when ? { useWhen: card.use_when } : {}),
+        ...(card.kind === 'prompt' ? { prompt: true } : {}),
+        version,
+      })) as RecallWrite,
+      card.slug,
+    );
+    if (w.cardSlug !== card.slug) {
+      step(
+        (await send('PUT', `${base}/cards/${w.cardSlug}`, { title: card.title, bodyMd: card.body, slug: card.slug, version })) as RecallWrite,
+        card.slug,
+      );
+    }
+  }
+
+  // Options, now that every target exists. The entry card's title is the map's.
+  step(
+    (await send('PUT', `${base}/cards/start`, { title: map.title, bodyMd: map.entry.body, options: opts(map.entry.options), version })) as RecallWrite,
+    'start',
+  );
+  for (const card of map.cards.filter((c) => c.options?.length)) {
+    step(
+      (await send('PUT', `${base}/cards/${card.slug}`, { title: card.title, bodyMd: card.body, options: opts(card.options), version })) as RecallWrite,
+      card.slug,
+    );
+  }
+
+  const read = async () => ((await get(base)) as { map: RecallMapRow }).map;
+  let live = await read();
+  for (const card of map.cards.filter((c) => c.kind === 'prompt')) {
+    const row = live.nodes?.find((x) => x.slug === card.slug);
+    if (row?.kind === 'prompt' && !row.promptPending) continue;
+    step((await post(`${base}/cards/${card.slug}/prompt`, { confirm: true, version })) as RecallWrite, card.slug);
+  }
+  if (!live.published) step((await send('PATCH', base, { published: true, version })) as RecallWrite, 'publish');
+
+  live = await read();
+  const problems: string[] = [];
+  if (live.slug !== map.slug) problems.push(`slug is '${live.slug}'`);
+  if (!live.published) problems.push('not published');
+  if ((live.nodes?.length ?? 0) !== map.cards.length + 1) problems.push(`${live.nodes?.length} cards, wanted ${map.cards.length + 1}`);
+  for (const card of [{ slug: 'start', kind: 'index', options: map.entry.options }, ...map.cards]) {
+    const row = live.nodes?.find((x) => x.slug === card.slug);
+    if (!row) problems.push(`card '${card.slug}' is missing`);
+    else {
+      if (row.kind !== card.kind) problems.push(`card '${card.slug}' is ${row.kind}, wanted ${card.kind}`);
+      if (row.promptPending) problems.push(`card '${card.slug}' still waits for the owner's confirm`);
+      if (row.options.length !== (card.options?.length ?? 0)) problems.push(`card '${card.slug}' has ${row.options.length} option(s), wanted ${card.options?.length ?? 0}`);
+    }
+  }
+  if (problems.length) throw new Error(`recall ${map.slug}: ${problems.join('; ')}`);
+  created.set(map.id, made.mapId);
+  console.log(`  map '${live.slug}': ${live.nodes?.length} cards, ${map.cards.filter((c) => c.kind === 'prompt').length} confirmed prompt(s), published, version ${live.version}`);
 }
 
 // Heartbeats: scheduled skill→agent triggers. Created through the real
@@ -546,7 +750,8 @@ async function seedEmails(sql: Sql, m: Manifest, ownerId: string) {
 // ── Backdating: the manifest's offsets become the brain's history ───────────
 async function backdate(sql: Sql, m: Manifest) {
   const rows: Array<[string, string]> = [];
-  for (const n of [...m.nodes, ...m.tables, ...m.files]) {
+  // A Recall map's tree item is a node too (its id is the map's id).
+  for (const n of [...m.nodes, ...m.tables, ...m.files, ...(m.recall_maps ?? [])]) {
     const id = created.get(n.id);
     if (id) rows.push([id, at(n.offset).toISOString()]);
   }
@@ -573,21 +778,20 @@ async function main() {
   const ownerId = ownerRows[0]?.id;
   if (!ownerId) throw new Error('seed: owner row not found after bootstrap');
 
-  // DEMO_SEED_ONLY=tables,recall,heartbeats,draws — seed just those kinds into
+  // DEMO_SEED_ONLY=tables,recall,heartbeats,draws: seed just those kinds into
   // an EXISTING brain (`seed.sh --keep`), for iterating on one content type
   // without a fifteen-minute wipe-and-refill. Unset = everything. `recall`
-  // means the pages of the Recall map only (branch `studio.recall`).
+  // is the Recall map alone; it replaces a map of the same slug, so it can
+  // run again and again.
   const only = new Set((process.env.DEMO_SEED_ONLY ?? '').split(',').map((s) => s.trim()).filter(Boolean));
   const want = (kind: string) => only.size === 0 || only.has(kind);
   if (only.size) console.log(`· DEMO_SEED_ONLY: ${[...only].join(', ')}`);
 
   if (want('contacts')) { console.log('· contacts');   await seedContacts(manifest); }
-  if (want('simple')) { console.log('· notes, journals, tasks, events'); await seedSimple(manifest); }
-  if (want('pages')) { console.log('· pages (parents first)'); await seedPages(manifest); }
-  else if (want('recall')) {
-    console.log('· pages: the Recall map only');
-    await seedPages({ ...manifest, nodes: manifest.nodes.filter((n) => n.branch === 'studio.recall') });
-  }
+  if (want('simple')) { console.log('· notes (filed in folders), journals, tasks, events'); await seedSimple(manifest); }
+  if (want('pages')) { console.log('· pages (folders first, then pages in them)'); await seedPages(manifest); }
+  if (want('simple') || want('pages')) console.log(`· folder shares: ${await shareFolders(manifest)}`);
+  if (want('recall')) { console.log('· Recall: the native map, through the owner API'); await seedRecall(manifest); }
   if (want('tables')) { console.log('· tables');     await seedTables(manifest); }
   if (want('oddments')) { console.log('· secrets, formulas'); await seedOddments(manifest); }
   if (want('heartbeats')) console.log(`· heartbeats: ${await seedHeartbeats(manifest)}`);

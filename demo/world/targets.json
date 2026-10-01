@@ -13,7 +13,7 @@
     "note":          { "target": 130, "min": 90,  "notes": "site-visit series, technical queries, minutes, personal notes" },
     "journal":       { "target": 100, "min": 70,  "notes": "work + LATHE + TRAILRUN with mood; first-person" },
     "task":          { "target": 90,  "min": 60,  "notes": "≥15 open at seed time, ≥5 due in the future window" },
-    "page":          { "target": 70,  "min": 50,  "notes": "≥10 in nested sub-trees; ≥3 procedure revision families (supersession)" },
+    "page":          { "target": 70,  "min": 50,  "notes": "filed in folders at least two levels deep (pages do not nest on main since v0.232.365); ≥3 procedure revision families (supersession)" },
     "file":          { "target": 110, "min": 70,  "notes": "mix: pdf drawings/references, docx, xlsx budgets, png site/lathe photos" },
     "event":         { "target": 45,  "min": 30,  "notes": "recurring standups + runs; ≥6 AFTER seed time so the dashboard shows a future" },
     "contact":       { "target": 16,  "min": 15,  "notes": "exactly the world.json cast (16 incl. owner); the email allowlist" },

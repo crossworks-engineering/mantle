@@ -17,9 +17,10 @@ export interface GenNode {
   tags: string[];
   branch?: string;
   meta: {
-    /** Recall map index nodes: the Options list, by GENERATOR page id; the
-     *  seeder resolves targets to real ids after the tree exists. */
-    recall_options?: Array<{ label: string; target: string; use_when: string }>;
+    /** Pages and notes: the GENERATOR id of the folder the item sits in;
+     *  null or absent is the top level. Pages do not nest on main (folder
+     *  phase 7), so there is no parent page. */
+    folder?: string | null;
     status?: string;
     priority?: string;
     due_offset?: number;
@@ -28,7 +29,6 @@ export interface GenNode {
     location?: string;
     mood?: string;
     category?: string;
-    parent_id?: string | null;
     family?: string;
     rev?: string;
     supersedes?: string | null;
@@ -39,6 +39,48 @@ export interface GenNode {
     spec?: Record<string, unknown>;
     path?: string;
   };
+}
+
+/** A folder of one kind's item tree, as `POST /api/tree/:kind/folders` takes
+ *  it. `parent` is a GENERATOR folder id (the seeder creates parents first);
+ *  folders nest at most three deep. `share` is set after the items are filed. */
+export interface GenFolder {
+  id: string;
+  kind: 'pages' | 'notes';
+  parent: string | null;
+  name: string;
+  /** An emoji or `lucide:<name>`. */
+  icon?: string;
+  /** One of the app's tints (APP_TINTS in @mantle/client-types). */
+  color?: string;
+  share?: 'team' | 'client';
+}
+
+/** An option of a Recall card: where it leads, by CARD SLUG in the same map. */
+export interface GenRecallOption {
+  label: string;
+  target: string;
+  use_when: string;
+}
+
+/** A native Recall map (v2): a `recall` item plus card rows, created through
+ *  the owner Recall API. The entry card always exists (slug `start`). */
+export interface GenRecallMap {
+  id: string;
+  slug: string;
+  title: string;
+  enter_when: string;
+  offset: number;
+  entry: { body: string; options?: GenRecallOption[] };
+  cards: Array<{
+    slug: string;
+    kind: 'knowledge' | 'prompt';
+    title: string;
+    body: string;
+    /** Prompts: the line recall_match compares against. Required for one. */
+    use_when?: string;
+    options?: GenRecallOption[];
+  }>;
 }
 
 export interface GenColumn {
@@ -139,6 +181,8 @@ export interface Manifest {
   turns: Array<{ id: string; agent: string; offset: number; prompt: string; wantsRun?: boolean; followUp?: boolean }>;
   heartbeats?: GenHeartbeat[];
   draws?: GenDraw[];
+  folders?: GenFolder[];
+  recall_maps?: GenRecallMap[];
 }
 
 /** The slice of the `postgres` tagged-template client this seeder touches. */

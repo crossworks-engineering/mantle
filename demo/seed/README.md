@@ -14,7 +14,7 @@ which is how v1 died.
 | step | how |
 |---|---|
 | infra | `demo/scripts/stack-up.sh` — the isolated demo stack |
-| schema | `pnpm --filter @mantle/db migrate` + `pgboss:init` |
+| schema | `pnpm --filter @mantle/db migrate` + `pgboss:init` + `provision` (the DBOS database) + `objectstore:ensure` (the bucket): the root compose's `migrate` step |
 | content | `demo/generator/gen.mjs` → `out/manifest.json` + real file bytes |
 | guard | `demo/generator/guard.mjs` — blocks on any finding |
 | bootstrap | real signup → saveKey → provision → finish |
@@ -29,11 +29,49 @@ DEMO_SEED_ONLY=tables,draws demo/scripts/seed.sh --keep
 ```
 
 `DEMO_SEED_ONLY` names the kinds to seed into an EXISTING brain
-(`contacts`, `simple`, `pages`, `recall` = the Recall map's pages only,
-`tables`, `oddments`, `heartbeats`, `draws`, `docs`, `files`, `emails`). It
-exists for iterating on one content type without a wipe-and-refill; it does
-not reconcile, so running it twice adds the kind twice. The full seed is
-still one command.
+(`contacts`, `simple`, `pages`, `recall` = the Recall map alone, `tables`,
+`oddments`, `heartbeats`, `draws`, `docs`, `files`, `emails`). It exists for
+iterating on one content type without a wipe-and-refill; it does not
+reconcile, so running it twice adds the kind twice. Two things do reconcile:
+folders (a folder with the same name in the same place is reused) and the
+Recall map (`recall` replaces a map of the same slug). The full seed is still
+one command.
+
+## Folders, and pages that do not nest
+
+Every kind has one folder tree on main (`docs/folder-tree.md`): folders with
+an icon and a colour, at most three levels deep, and an item is never a
+parent. Pages stopped nesting in v0.232.365 (migration 0210). The manifest
+carries `folders` (`GenFolder` in `lib/types.ts`) and each page or note names
+its folder in `meta.folder`.
+
+- Folders go first, parents first: `POST /api/tree/:kind/folders` with
+  `parentId`, `name`, `icon`, `color`.
+- A page is born in its folder (`POST /api/pages` takes `folderId`). A note
+  is created and then filed with `POST /api/tree/notes/move`, which is what
+  dragging it does.
+- A page that used to have sub-pages sits NEXT TO the folder of its own
+  name and ends in a Folder index block. The generator names that folder by
+  its own id (`[Folder index](folder:gen:<id>)`) and the seeder puts the real
+  id in. `[Folder index](folder:here)` lists the page's own folder and needs
+  nothing.
+- Shares come last. A share that changes who can see items is refused first
+  (409 `visibility`, with the list) and goes ahead when the call is repeated
+  with `confirm: true` and the count shown. The seeder reads the refusal and
+  confirms exactly that count; it never sends a blind confirm.
+
+## The Recall map is native
+
+Page-built Recall maps were retired in v0.232.363: migration 0209 deletes
+them, and `scripts/roll.sh` refuses a box that still has one. The manifest
+carries `recall_maps` (`GenRecallMap`) and the seeder builds each map through
+the owner Recall API (`docs/recall.md`): the map (`POST /api/recall/maps`),
+the cards (`POST .../cards`), then the options by card slug (`PUT
+.../cards/:slug`), once every target exists. Every write sends the map
+`version` and takes the next one from the answer. A prompt card is made with
+`prompt: true`; a card that is left waiting is confirmed through `POST
+.../cards/:slug/prompt`. The seeder then reads the map back and fails the
+seed when a card, an option or the confirmed prompt is missing.
 
 ## Tables travel as a grid and land as a document
 
@@ -51,9 +89,9 @@ cell is a day offset like every other date here; the seeder resolves it.
 ## Real product paths, and the two deliberate exceptions
 
 Content is created over the HTTP API, and markdown becomes ProseMirror through
-the app's own `markdownToDoc`. Pages are emitted parents-first so the sub-page
-tree actually forms. Nothing hand-writes a chunk, a fact or an embedding —
-those come from the real extractor, which is the whole point.
+the app's own `markdownToDoc`. Folders are created parents first, then the
+pages in them. Nothing hand-writes a chunk, a fact or an embedding: those
+come from the real extractor, which is the whole point.
 
 Two things have no API, and are done in SQL narrowly and on purpose:
 
