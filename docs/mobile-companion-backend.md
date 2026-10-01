@@ -315,3 +315,199 @@ companion uses it at launch for the two rules it must not re-implement:
   watermark because it holds a sticky `mantle_assistant_agent` cookie; the app
   holds no such cookie, so the resolved agent is simply its default — and a
   turn that omits `agentSlug` resolves the same way server-side.
+
+## Three roles on the phone: members and clients (contract v1)
+
+The Jackdaw mobile app serves all three roles: admin, member and client. This
+section is the contract the app mirrors by hand (no OpenAPI exists). Paths,
+bodies, error bodies, deep links and token lifetimes below are stable; a change
+is announced to the app session before it lands.
+
+Everything above this section still holds for admins and for shipped builds.
+`POST /api/auth/mobile-login` stays frozen: admins only, 1 year, same shape.
+
+### 1. Sign-in
+
+**Admin or member: `POST /api/auth/device-login`** (public, 10 a minute per
+address, one bucket with the other token logins).
+
+    body   { email, password, deviceName? }
+    200    { token, expiresIn, expiresAt, deviceId, role, loginId }
+    401    { error: "Invalid email or password." }   (every failure, same line)
+    429    { error }  + Retry-After
+
+`role` is `admin` or `member`. The token lasts 30 days and rotates through
+`POST /api/auth/token/refresh` (below). A client email always answers 401: a
+client has no password.
+
+Why a new route and not `/api/auth/token`: the answer names the role (the app
+must know which shell to call before it calls one), the audit line says
+`mobile` and not `web-client`, and one route serves the admin and the member
+with the same 30-day rotating token. `mobile-login` cannot change, because
+shipped builds read its 403 for a member.
+
+**Client: the emailed code, device mode.** A client has no password. The app
+asks for a code, the person reads it from their email, the app trades it for a
+token. No cookie is set or read in device mode.
+
+    GET  /api/auth/client-code
+    200    { enabled }            codes are on for this brain, or not
+
+    POST /api/auth/client-code
+    body   { email, device: true }
+    200    { ok: true, requestId }   always, whatever the email
+    429    { error } + Retry-After
+
+    POST /api/auth/client-code/verify
+    body   { email, code, requestId, deviceName? }
+    200    { ok: true, token, expiresIn, expiresAt, deviceId, role: "client", loginId }
+    401    { error: "That code did not work. Ask for a new one." }
+    429    { error } + Retry-After
+
+`requestId` ties the code to the app that asked for it, as the request cookie
+does for a browser. The app keeps it in memory until the verify. A body with
+`requestId` is device mode: the answer carries a token and sets no cookie.
+A body without it is the browser flow, unchanged.
+
+**Token rotation: `POST /api/auth/token/refresh`** (Authorization: Bearer).
+All three roles. The old token dies in the same statement.
+
+    200    { token, expiresIn, expiresAt, deviceId, role }
+    401    { error: "unauthorized" }
+    429    { error } + Retry-After
+
+Call it when less than 7 days remain. Lifetimes:
+
+| Role   | Minted by                         | Lifetime | Rotation |
+|--------|-----------------------------------|----------|----------|
+| admin  | `mobile-login` (old builds)       | 1 year   | none     |
+| admin  | `device-login`                    | 30 days  | refresh  |
+| member | `device-login`                    | 30 days  | refresh  |
+| client | `client-code/verify` device mode  | 30 days  | refresh, each new token at most 30 days |
+
+A client token also carries the login's session epoch. It ends at once when
+the client signs out anywhere (web or phone), when an admin ends the client's
+sessions, disables the login or changes its role. A client token never lasts
+longer than `CLIENT_SESSION_TTL_SECONDS` (30 days); one that claims more is
+refused.
+
+**Who am I: `GET /api/auth/whoami`** (any bearer or session).
+
+    200    { role, loginId, email, displayName, shell, pushBase }
+    401    { error: "unauthorized" }
+
+| role   | shell               | pushBase           |
+|--------|---------------------|--------------------|
+| admin  | `/api/shell`        | `/api/push`        |
+| member | `/api/member/shell` | `/api/member/push` |
+| client | `/api/client/shell` | `/api/client/push` |
+
+**Sign-out: `POST /api/auth/mobile-logout`** (Authorization: Bearer). Always
+200 `{ ok: true }`. It revokes this device's token and removes the push
+devices that token enrolled. For a client it ends every session of the login,
+the browser ones too (a client sign-out always did).
+
+**Devices.** Every device token is a `mobile_tokens` row under its login. An
+admin sees and revokes it in Settings > Logins > Devices
+(`GET /api/users/:id/devices`, `DELETE /api/users/:id/devices/:jti`).
+
+**What a token reaches.** A member token reaches only `MEMBER_ROUTES`, a
+client token only `CLIENT_ROUTES` (`server/web/lib/auth/*-routes.ts`). Every
+other route answers 403 with `reason` = `member-login` or `client-login`, or
+401. A wrong-role call on a member or client route answers 403 with the
+caller's role in `reason` (`admin-login`, `member-login`, `client-login`).
+
+### 2. Push for members and clients
+
+**Who gets what (the targeting rule).** A push goes only to devices of the
+login it concerns, and only while the token that enrolled the device is live.
+
+| Event | Goes to |
+|-------|---------|
+| Owner assistant message | Devices of active ADMIN logins. If the agent is assigned to one login, only that login's devices. |
+| Approval waiting | Devices of active admin logins. |
+| "Needs you" (review queue, team request) | Devices of active admin logins. |
+| Reply in a member or client chat | Devices of that ONE login. |
+| Review result on an item | Devices of the item's author. |
+| Comment on an item | Devices of the item's author (not when the author wrote it). On a client-level item's client thread: every active client login but the writer. |
+
+A member or client device never gets an owner teaser. A device whose token was
+revoked, expired or rotated away without the app gets nothing.
+
+**Routes.** Same shapes as the admin routes, under the role's `pushBase`.
+All need a bearer (a browser session answers 400 `bearer_required` on the
+enrol step).
+
+    POST   {pushBase}/connect         { platform: "ios"|"android", osPushToken }
+           200 { ticket, relayUrl }
+           409 { error: "push_not_set_up" }   client only: no admin or member
+                                              has switched push on yet
+           502 { error: "relay_unreachable" }
+    POST   {pushBase}/subscriptions   { routingToken, publicKey, platform, label?, deviceId? }
+           200 { id }
+    GET    {pushBase}/subscriptions   200 { devices: [{ id, platform, label, current }] }
+    DELETE {pushBase}/subscriptions/:id   200 { ok: true } | 404 { error: "not_found" }
+    GET    {pushBase}/preferences     200 { chatReplies, reviewResults, comments }
+    PUT    {pushBase}/preferences     partial patch, same answer
+
+A member or client lists and removes only its own devices. Enrolling a routing
+token again replaces the old row, so one phone belongs to one login.
+`POST /api/push/reset` stays admin only. Preferences are per login and all
+default to true.
+
+**Payload** (sealed to the device, as today). New fields are additive.
+
+    { v: 1, t, b, deepLink, ts, kind, itemId?, state? }
+
+| kind      | t (title)                | b (body)                                   | deepLink                 | extra |
+|-----------|--------------------------|--------------------------------------------|--------------------------|-------|
+| `chat`    | the agent's name, or the brain's site name for an admin's note | the reply, pictures removed, 140 chars | `/portal/chat` | |
+| `review`  | `Accepted`, `Returned`, or `With an admin` | the item's title (and the return note) | `/portal/items/<id>`, or `/portal/items` when taken | `itemId`, `state`: `accepted`, `returned`, `taken` |
+| `comment` | `New comment`            | `<name> on "<title>": <comment>`           | `/portal/items/<id>` (own item) or `/portal/shared/<id>` (a client-level item) | `itemId` |
+
+Owner pushes keep their links (`/chat/<slug>`, `/pending`, `/team-admin?...`)
+and carry no `kind`. A teaser never holds text its reader cannot open: the
+chat text is the reader's own thread as their chat route returns it, an item
+title is the author's own item, a client-thread comment goes out only while
+the item is at client level.
+
+`collapseKey`: `chat`, `review:<id>`, `comment:<id>`.
+
+**Version 1 is push plus refetch.** On a `chat` push the app refetches
+`GET /api/member/chat` or `GET /api/client/chat`. There is no token stream for
+these roles yet.
+
+### 3. Unread for the member and client chat
+
+    GET  /api/member/chat/unread     200 { unread, lastReadAt }
+    POST /api/member/chat/read       { at? }   200 { unread, lastReadAt }
+    GET  /api/client/chat/unread     same
+    POST /api/client/chat/read       same
+
+`unread` counts finished replies in the login's own thread newer than
+`lastReadAt`. A login starts with nothing unread: the first call sets
+`lastReadAt` to now. `POST read` moves the cursor to `at` (an ISO time, not in
+the future) or to now, and never backwards.
+
+### 4. Pictures in a member or client thread
+
+A reply is markdown. Image links are relative paths to the reader's own
+routes: `/api/member/files/<id>`, `/api/member/draws/<id>/svg`,
+`/api/client/files/<id>`, `/api/client/draws/<id>/svg`. Images the reader may
+not read are already removed. Two ways to load one:
+
+1. Send the bearer: `Authorization: Bearer <token>` on the image request.
+   Preferred in a native app.
+2. Append `?at=<assetToken>` (the shell's `assetToken`) when the renderer
+   cannot set headers. A member's asset token lasts 2 hours, a client's 10
+   minutes: call the shell again for a fresh one. It opens byte routes only.
+
+### 5. Not in version 1 (deferred)
+
+- A live token stream for member and client chat. Version 1 is push plus
+  refetch.
+- QR pairing from a signed-in member or client web session. Design note: a
+  payload version 2 (`/pair#v=2&code=`) so shipped builds, which accept only
+  version 1, never claim a code that would hand them a non-admin token.
+- A push when a reply fails.
+- The forum (retired) and apps on the phone.
