@@ -8,11 +8,10 @@
  * Rows keyed by a contact (`contact_id`, no login) are the retired team-code
  * portal chat: history only, read by the admin archive and `team_chat_read`.
  */
-import { and, desc, eq, gt, inArray, isNull, lt, or, sql as dsql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, lt, or, sql as dsql } from 'drizzle-orm';
 import {
   authUsers,
   db,
-  loginChatReadCursors,
   systemDb,
   teamMessages,
   type ConversationAttachment,
@@ -351,86 +350,78 @@ export async function listMemberChatActivity(ownerId: string): Promise<MemberCha
 /** What a member or a client has not read in its own thread. */
 export type LoginChatUnread = { unread: number; lastReadAt: string };
 
-/** A reply still being written holds the cursor back only this long: a turn
- *  that crashed and left its bubble pending must not pin the count forever. */
-const PENDING_HOLDS_CURSOR_MS = 60 * 60 * 1000;
+/**
+ * Where a read cursor may go: `at` (never the future), else now, on the
+ * DATABASE's clock (the rows it is compared with are stamped there). A reply
+ * still being written was made BEFORE this moment and finishes after it, so
+ * the cursor stops just short of the oldest such row: that reply counts as
+ * unread when it lands. A bubble older than an hour is a turn that crashed;
+ * it holds nothing back.
+ */
+function cursorTarget(ownerId: string, loginId: string, at?: Date) {
+  const asked = at ? dsql`least(${at.toISOString()}::timestamptz, now())` : dsql`now()`;
+  return dsql`least(${asked}, coalesce(
+    (select min(tm.created_at) - interval '1 microsecond'
+       from team_messages tm
+      where tm.owner_id = ${ownerId}
+        and tm.login_id = ${loginId}
+        and tm.direction = 'outbound'
+        and tm.status = 'pending'
+        and tm.created_at > now() - interval '1 hour'),
+    'infinity'::timestamptz))`;
+}
 
+/** The count against the stored cursor, compared in the database (a cursor
+ *  read into JS loses its microseconds, and a reply made in the same
+ *  millisecond would count as unread again). */
 async function readLoginChatUnread(ownerId: string, loginId: string): Promise<LoginChatUnread> {
-  const [cursor] = await systemDb
-    .select({ lastReadAt: loginChatReadCursors.lastReadAt })
-    .from(loginChatReadCursors)
-    .where(eq(loginChatReadCursors.loginId, loginId))
-    .limit(1);
-  const lastReadAt = cursor?.lastReadAt ?? new Date();
-  const [n] = await systemDb
-    .select({ n: dsql<number>`count(*)::int` })
-    .from(teamMessages)
-    .where(
-      and(
-        eq(teamMessages.ownerId, ownerId),
-        eq(teamMessages.loginId, loginId),
-        eq(teamMessages.direction, 'outbound'),
-        eq(teamMessages.status, 'complete'),
-        gt(teamMessages.createdAt, lastReadAt),
-      ),
-    );
-  return { unread: Number(n?.n ?? 0), lastReadAt: lastReadAt.toISOString() };
+  const rows = (await systemDb.execute(dsql`
+    select c.last_read_at as "lastReadAt",
+           (select count(*)::int
+              from team_messages tm
+             where tm.owner_id = ${ownerId}
+               and tm.login_id = ${loginId}
+               and tm.direction = 'outbound'
+               and tm.status = 'complete'
+               and tm.created_at > c.last_read_at) as unread
+      from login_chat_read_cursors c
+     where c.login_id = ${loginId}`)) as unknown as Array<{
+    lastReadAt: string | Date;
+    unread: number;
+  }>;
+  const row = rows[0];
+  return {
+    unread: Number(row?.unread ?? 0),
+    lastReadAt: new Date(row?.lastReadAt ?? Date.now()).toISOString(),
+  };
 }
 
 /**
  * The login's unread count: finished replies in its own thread newer than
  * its read cursor. A login starts with nothing unread: the first call makes
- * the cursor at `now` (so a long history never shows as a badge of 50).
+ * the cursor (so a long history never shows as a badge of 50).
  */
-export async function loginChatUnread(
-  ownerId: string,
-  loginId: string,
-  now = new Date(),
-): Promise<LoginChatUnread> {
-  await systemDb
-    .insert(loginChatReadCursors)
-    .values({ loginId, lastReadAt: now })
-    .onConflictDoNothing({ target: loginChatReadCursors.loginId });
+export async function loginChatUnread(ownerId: string, loginId: string): Promise<LoginChatUnread> {
+  await systemDb.execute(dsql`
+    insert into login_chat_read_cursors (login_id, last_read_at)
+    values (${loginId}, ${cursorTarget(ownerId, loginId)})
+    on conflict (login_id) do nothing`);
   return readLoginChatUnread(ownerId, loginId);
 }
 
 /**
- * Move the login's read cursor to `at` (never the future, never backwards),
- * or to now. A reply that is still being written was made BEFORE this
- * moment and finishes after it, so the cursor stops just short of the oldest
- * such row: that reply counts as unread when it lands.
+ * Move the login's read cursor to `at` (never the future), or to now. It
+ * never moves backwards.
  */
 export async function markLoginChatRead(
   ownerId: string,
   loginId: string,
   at?: Date,
-  now = new Date(),
 ): Promise<LoginChatUnread> {
-  let to = at && at.getTime() < now.getTime() ? at : now;
-  const [pending] = await systemDb
-    .select({ createdAt: dsql<Date | null>`min(${teamMessages.createdAt})` })
-    .from(teamMessages)
-    .where(
-      and(
-        eq(teamMessages.ownerId, ownerId),
-        eq(teamMessages.loginId, loginId),
-        eq(teamMessages.direction, 'outbound'),
-        eq(teamMessages.status, 'pending'),
-        gt(teamMessages.createdAt, new Date(now.getTime() - PENDING_HOLDS_CURSOR_MS)),
-      ),
-    );
-  const oldestPending = pending?.createdAt ? new Date(pending.createdAt) : null;
-  if (oldestPending && oldestPending.getTime() <= to.getTime()) {
-    to = new Date(oldestPending.getTime() - 1);
-  }
-  await systemDb
-    .insert(loginChatReadCursors)
-    .values({ loginId, lastReadAt: to })
-    .onConflictDoUpdate({
-      target: loginChatReadCursors.loginId,
-      set: {
-        lastReadAt: dsql`greatest(${loginChatReadCursors.lastReadAt}, excluded.last_read_at)`,
-      },
-    });
+  await systemDb.execute(dsql`
+    insert into login_chat_read_cursors (login_id, last_read_at)
+    values (${loginId}, ${cursorTarget(ownerId, loginId, at)})
+    on conflict (login_id) do update
+      set last_read_at = greatest(login_chat_read_cursors.last_read_at, excluded.last_read_at)`);
   return readLoginChatUnread(ownerId, loginId);
 }
