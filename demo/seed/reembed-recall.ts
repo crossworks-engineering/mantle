@@ -35,13 +35,18 @@ async function main() {
   const sql = postgres(DB, { onnotice: () => {} }) as unknown as Sql;
   const owner = (await sql`select id from auth.users where email = ${OWNER_EMAIL} limit 1`)[0]?.id;
   if (!owner) throw new Error(`no owner ${OWNER_EMAIL} on this database: seed it first`);
-  const prompts = Number((await sql`select count(*)::int n from recall_nodes where kind = 'prompt' and not prompt_pending`)[0]?.n ?? 0);
+  const prompts = Number((await sql`select count(*)::int n from recall_nodes where kind = 'prompt' and not prompt_pending and owner_id = ${owner}::uuid`)[0]?.n ?? 0);
   if (prompts === 0) throw new Error('no confirmed Recall prompt on this brain: nothing to re-embed (did the Recall seed run?)');
 
   registerRecallEmbedder(embedBatch);
-  await sql`update recall_nodes set embedding = null where kind = 'prompt'`;
+  // Owner-scoped, like the refill. The clear and the refill cannot be one
+  // transaction (the refill is a network call to the embedder), so a failure
+  // in between leaves prompts with no vector. That state is safe and loud:
+  // this script exits 1 below, pack.sh refuses a brain that has one, and on a
+  // writable brain the next recall_match fills it.
+  await sql`update recall_nodes set embedding = null where kind = 'prompt' and owner_id = ${owner}::uuid`;
   const filled = await embedPendingRecallPrompts(String(owner));
-  const left = Number((await sql`select count(*)::int n from recall_nodes where kind = 'prompt' and not prompt_pending and embedding is null`)[0]?.n ?? 0);
+  const left = Number((await sql`select count(*)::int n from recall_nodes where kind = 'prompt' and not prompt_pending and embedding is null and owner_id = ${owner}::uuid`)[0]?.n ?? 0);
   const model = (await sql`select model, dimensions from embedding_config limit 1`)[0];
   await sql.end();
   if (left > 0) throw new Error(`${left} of ${prompts} prompt(s) still have no vector: is the embedder reachable?`);

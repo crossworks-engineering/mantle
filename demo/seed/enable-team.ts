@@ -13,16 +13,17 @@
  *      Team screen then shows a team, not a row.
  *   2. An item is shown to the team by its LEVEL. Folders carry most of it
  *      (the seeder shares the Studio Handbook with the team). Tables have no
- *      shared folder here, so two of them are set to team level one by one
- *      (`PATCH /api/access/nodes/:id`). Tasks and events can no longer be
+ *      shared folder here, so the ones the generator marks are set to team
+ *      level one by one (`PATCH /api/access/nodes/:id`). Tasks and events can no longer be
  *      shown to a member at all: they are admin-only kinds on main.
  *   3. The member chat opens when the `team-responder` agent is at team
  *      level, and the brain refuses that while the agent holds a tool group
  *      above team level (`group_above_agent`). On a FRESH brain all three of
  *      its groups are admin level (migration 0159 lowered `team-read` and
  *      `formulas-eval` only on brains that existed then). So, in the order
- *      the rule asks for: the admin-only group comes off the agent, the two
- *      member-facing groups go to team level, then the agent does. The seed
+ *      the rule asks for: every group that is not on the member allowlist
+ *      comes off the agent, the two member-facing groups go to team level,
+ *      then the agent does. The seed
  *      changes; the brain's rule does not.
  *   4. One client login, for the person who approves the PUMPHOUSE procedure
  *      revisions, which sit in the folder the seeder shares with clients. The
@@ -39,19 +40,28 @@
  *
  *   pnpm -C server/web exec tsx ../../demo/seed/enable-team.ts
  */
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { memberPassword, ownerPassword } from './lib/secrets.ts';
+import type { Manifest } from './lib/types.ts';
+
+const MANIFEST = join(dirname(fileURLToPath(import.meta.url)), '..', 'generator', 'out', 'manifest.json');
+
 const SERVER = process.env.DEMO_SERVER_URL ?? 'http://127.0.0.1:3902';
 const OWNER_EMAIL = process.env.DEMO_OWNER_EMAIL ?? 'alex@harbourlabs.example.com';
-const OWNER_PASSWORD = process.env.DEMO_OWNER_PASSWORD ?? 'demo-brain-not-a-real-password';
-// Fictional people on a documentation domain, on a brain that holds only
-// generated content: like the owner's, this is not a secret.
-const MEMBER_PASSWORD = process.env.DEMO_MEMBER_PASSWORD ?? 'demo-member-not-a-real-password';
+const OWNER_PASSWORD = ownerPassword();
+// One password for the five member logins, made per checkout like the
+// owner's (demo/scripts/lib/secrets.sh) and never committed.
+const MEMBER_PASSWORD = memberPassword();
 // The client contact who gets the one client login (demo/world/world.json).
 const CLIENT_EMAIL = process.env.DEMO_CLIENT_EMAIL ?? 'g.bekker@meridianww.example.org';
-// Tables a colleague would work in. Shown to the team by level; everything
-// else the team sees comes from the shared handbook folder.
-const TEAM_TABLES = ['Studio risk register', 'PS3 snag list'];
-
 const TEAM_RESPONDER = 'team-responder';
+// The tool groups a member-facing responder keeps. An ALLOWLIST: lowering
+// "whatever it holds" would hand a team-level agent any group a later
+// release adds to it. (A fresh brain has these two at admin level; when main
+// seeds them at team level, lowering them here becomes a no-op.)
+const MEMBER_TOOL_GROUPS = ['team-read', 'formulas-eval'];
 
 type Jar = { cookie: string };
 const owner: Jar = { cookie: '' };
@@ -86,6 +96,21 @@ async function login(jar: Jar, email: string, password: string) {
 type Contact = { id: string; title: string; emails?: string[] };
 
 async function main() {
+  // WHAT may be shown to whom comes from the generator, never from this
+  // script and never from "whatever the brain reports": the tables the team
+  // reads, and how many items each shared folder reaches. Every count below
+  // is compared with these, and a difference stops the script before it
+  // acknowledges or confirms anything.
+  const manifest = JSON.parse(readFileSync(MANIFEST, 'utf8')) as Manifest;
+  const teamTables = manifest.tables.filter((t) => t.level === 'team').map((t) => t.title);
+  const reach = (share: 'team' | 'client') =>
+    (manifest.folders ?? []).filter((f) => f.share === share).reduce((n, f) => n + (f.expect?.items ?? 0), 0);
+  const expectTeamItems = reach('team');
+  const expectClientItems = reach('client');
+  if (!teamTables.length || !expectTeamItems || !expectClientItems) {
+    throw new Error('the manifest names no team tables or no shared folders: regenerate (node demo/generator/gen.mjs)');
+  }
+
   await login(owner, OWNER_EMAIL, OWNER_PASSWORD);
 
   const contacts = (await json<{ contacts?: Contact[] }>(owner, '/api/contacts?limit=100')).contacts ?? [];
@@ -117,7 +142,7 @@ async function main() {
 
   // ── 2. Team-level tables ──────────────────────────────────────────────────
   const tables = (await json<{ tables?: Array<{ id: string; title: string }> }>(owner, '/api/tables?limit=100')).tables ?? [];
-  for (const title of TEAM_TABLES) {
+  for (const title of teamTables) {
     const t = tables.find((x) => x.title === title);
     if (!t) throw new Error(`table "${title}" is not on this brain (the generator renamed it?)`);
     const res = await call(owner, 'PATCH', `/api/access/nodes/${t.id}`, { audience: 'team' });
@@ -133,7 +158,8 @@ async function main() {
   const agents = (await json<{ agents?: Array<{ id: string; slug: string; toolGroupSlugs?: string[] }> }>(owner, '/api/agents')).agents ?? [];
   const responder = agents.find((a) => a.slug === TEAM_RESPONDER);
   if (!responder) throw new Error(`no '${TEAM_RESPONDER}' agent on this brain`);
-  const keep = (responder.toolGroupSlugs ?? []).filter((g) => g !== 'team-read-admin');
+  const keep = (responder.toolGroupSlugs ?? []).filter((g) => MEMBER_TOOL_GROUPS.includes(g));
+  if (!keep.length) throw new Error(`${TEAM_RESPONDER} holds none of ${MEMBER_TOOL_GROUPS.join(', ')}: it would answer with no tools`);
   let res = await call(owner, 'PATCH', `/api/agents/${responder.id}`, { toolGroupSlugs: keep });
   if (!res.ok) throw new Error(`${TEAM_RESPONDER} tool groups: ${res.status} ${(await res.text()).slice(0, 200)}`);
   for (const slug of keep) {
@@ -148,9 +174,16 @@ async function main() {
   const clientContact = contacts.find((c) => emailOf(c) === CLIENT_EMAIL.toLowerCase());
   if (!clientContact) throw new Error(`no contact with ${CLIENT_EMAIL}: nobody to make a client login for`);
   const report = await json<{ total: number; acknowledged: boolean; fingerprint?: string }>(owner, '/api/access/client-report');
-  if (report.total === 0) {
-    // A client login with nothing to read is the empty room again.
-    throw new Error('nothing is at client level: the seeder shares a folder with clients, did that step run?');
+  // Acknowledging the report says "an admin read this list and it is right".
+  // Nobody reads it here, so the script may only acknowledge the list the
+  // generator intended: exactly the items of the client-shared folders. One
+  // more would be something published to clients that nobody chose; fewer
+  // (or none) means the share step did not run.
+  if (report.total !== expectClientItems) {
+    throw new Error(
+      `the client report lists ${report.total} item(s) at client level, the generator intends ${expectClientItems}. ` +
+        'NOT acknowledged, and no client login made.',
+    );
   }
   if (!report.acknowledged) {
     if (!report.fingerprint) throw new Error('the client report carries no fingerprint to acknowledge');
@@ -171,9 +204,15 @@ async function main() {
   await login(member, emailOf(first), MEMBER_PASSWORD);
   const library = await json<{ total: number }>(member, '/api/member/library');
   const chat = await json<{ agent: { slug: string } | null }>(member, '/api/member/chat');
-  if (library.total === 0) {
-    // Zero is the failure that would present as a working-but-empty portal.
-    throw new Error(`${first.title} signs in to an empty Library: nothing is at team level`);
+  // A member's Library holds the team items and the client items. Exactly
+  // what was intended: zero is a working-but-empty portal, and more is an item
+  // a colleague can read that nobody meant to share.
+  const expectLibrary = expectTeamItems + teamTables.length + expectClientItems;
+  if (library.total !== expectLibrary) {
+    throw new Error(
+      `${first.title}'s Library holds ${library.total} item(s); intended ${expectLibrary} ` +
+        `(${expectTeamItems} in team-shared folders + ${teamTables.length} table(s) + ${expectClientItems} shared with clients)`,
+    );
   }
   if (!chat.agent) throw new Error(`${first.title} signs in, but the member chat is not open`);
   // A member must NOT reach an owner route: the same cookie name carries both.

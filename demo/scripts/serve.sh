@@ -37,7 +37,14 @@ DEMO_TOUR="${DEMO_TOUR:-demo}"
 export DATABASE_URL="${DEMO_SERVE_DATABASE_URL:-postgres://demo_reader:demo_reader_not_a_secret@127.0.0.1:56432/postgres}"
 case "$DATABASE_URL" in
   *://demo_reader:*) ;;
-  *) echo "⚠ serving as a NON read-only database role (DEMO_SERVE_DATABASE_URL is set): bench use only" ;;
+  *)
+    # --check is the gate that says "the read-only edge holds". It must never
+    # say that about an app that can write.
+    if [ "${1:-}" = "--check" ]; then
+      echo "✗ --check with DEMO_SERVE_DATABASE_URL set would pass the read-only gate for an app that is NOT read-only. Unset it." >&2
+      exit 2
+    fi
+    echo "⚠ serving as a NON read-only database role (DEMO_SERVE_DATABASE_URL is set): bench use only" ;;
 esac
 export S3_ENDPOINT="http://127.0.0.1:56900"
 export S3_REGION="us-east-1"; export S3_ACCESS_KEY="minio"; export S3_SECRET_KEY="minio12345"; export S3_BUCKET="mantle"
@@ -60,8 +67,10 @@ export TABLE_DB_DIR="${DEMO_TABLE_DB_DIR:-$(pwd)/demo/.run/table-dbs}"
 # and no chunks, unsearchable, with no error anywhere. filesRoot() warns
 # about exactly this; nothing was listening.
 export MANTLE_FILES_ROOT="${DEMO_FILES_ROOT:-$(pwd)/demo/.run/files}"
-export SESSION_SECRET="${DEMO_SESSION_SECRET:-demo-session-secret-0123456789abcdef0123456789ab}"
-export MANTLE_MASTER_KEY="${DEMO_MASTER_KEY:-ZGVtby1tYXN0ZXIta2V5LTAxMjM0NTY3ODlhYmNkZWY=}"
+# The brain's secrets, from demo/.run/secrets (demo/scripts/lib/secrets.sh):
+# exports SESSION_SECRET, MANTLE_MASTER_KEY and the two demo passwords. They
+# must be the ones the brain was seeded with, so this never makes new ones.
+. "$DEMO/scripts/lib/secrets.sh"; demo_secrets require
 export MANTLE_LOCAL_EMBEDDING_URL="${MANTLE_LOCAL_EMBEDDING_URL:-http://127.0.0.1:56434/v1}"
 # The origin absolute links are built against. seed.sh already sets this because
 # generated content bakes links permanently; serve time needs it too, for the
@@ -125,6 +134,10 @@ echo "  $(grep -oE 'applied [0-9]+ migration' "$ART/serve-migrate.log" | tail -1
 echo "→ read-only Postgres role"
 docker exec -i mantle_demo_pg psql -U postgres -d postgres -q < "$DEMO/deploy/readonly-role.sql"
 echo "  demo_reader ready"
+# The migrate above re-granted write verbs to the level roles; the file just
+# applied took them back. Prove it, before anything is served.
+docker exec -i mantle_demo_pg psql -U postgres -d postgres -At -v ON_ERROR_STOP=1 < "$DEMO/deploy/readonly-check.sql" \
+  | sed 's/^/  /' || { echo "✗ an app role can still write: not serving" >&2; exit 1; }
 
 echo "→ mint the visitor session"
 # Minted with the OWNER connection: the reader role cannot even read auth.users

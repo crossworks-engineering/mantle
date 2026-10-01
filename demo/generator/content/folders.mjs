@@ -18,6 +18,19 @@
 //   - PUMPHOUSE / Procedures (pages) is shared with CLIENTS: the issued
 //     procedure revisions are what the client approves and works to
 // A share reaches everything in the folder and below it.
+//
+// WHAT IS SHARED IS PINNED, here and in the test. A share is the one thing in
+// this tree that changes who can read an item, and nothing downstream could
+// tell a wrong one from a right one: the seeder confirms the count the brain
+// shows, and the client report is acknowledged as it stands. So gen.mjs
+// writes on each shared folder how many items and folders the share must
+// reach (`expect`), the seeder refuses to confirm any other count, and
+// verify.ts asserts the exact numbers. To share another folder, change it
+// here AND in the test; a `share` added anywhere else fails both.
+
+// Tables a colleague works in, shown to the team by their own LEVEL (there is
+// no shared tables folder). By generator table id.
+export const TEAM_TABLE_IDS = ['traffic-risk-register', 'pump-snag-list'];
 
 const PROJECTS = [
   { key: 'pumphouse', name: 'PUMPHOUSE', icon: 'lucide:droplets', color: 'blue' },

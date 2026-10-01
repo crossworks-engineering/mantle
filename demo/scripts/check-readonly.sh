@@ -102,6 +102,32 @@ done
 # the demo would show a login screen to the public.
 echo
 
+# ── The DATABASE half: every role the app connects as holds no write right ───
+# Everything above asks the HTTP edge. This asks Postgres, because the edge is
+# only one of the two layers and the other one breaks silently: any `migrate`
+# that is not followed by readonly-role.sql leaves mantle_view_space able to
+# write (demo/deploy/readonly-check.sql explains). It needs a shell that can
+# reach the brain's container, so it runs on the bench and on the box; from
+# anywhere else it says plainly that it did NOT check.
+PG_CHECK="${DEMO_PG_CONTAINER:-}"
+if [ -z "$PG_CHECK" ] && command -v docker >/dev/null 2>&1; then
+  for c in mantle_demo_srv_pg mantle_demo_pg; do
+    docker inspect -f '{{.State.Running}}' "$c" 2>/dev/null | grep -q true && { PG_CHECK="$c"; break; }
+  done
+fi
+CHECK_SQL="$(dirname "$0")/../deploy/readonly-check.sql"
+[ -f "$CHECK_SQL" ] || CHECK_SQL="$(dirname "$0")/readonly-check.sql"
+if [ -n "$PG_CHECK" ] && [ -f "$CHECK_SQL" ]; then
+  if out=$(docker exec -i "$PG_CHECK" psql -U postgres -d postgres -At -v ON_ERROR_STOP=1 < "$CHECK_SQL" 2>&1); then
+    say "database roles ($PG_CHECK)" "read-only"
+  else
+    say "database roles ($PG_CHECK)" "✗ $(printf '%s' "$out" | grep -m1 -E 'NOT read-only|ERROR' | cut -c1-200)"; fail=1
+  fi
+else
+  say "database roles" "NOT CHECKED (no brain container in reach of this shell; run this on the box too)"
+fi
+echo
+
 # ── Reads that WRITE: the ones the read-only role breaks ─────────────────────
 # Every screen's left column is the item tree, and the tree is where "make
 # sure it exists" inserts hide: Postgres checks the INSERT right before it

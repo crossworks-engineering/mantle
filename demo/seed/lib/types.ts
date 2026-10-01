@@ -54,6 +54,11 @@ export interface GenFolder {
   /** One of the app's tints (APP_TINTS in @mantle/client-types). */
   color?: string;
   share?: 'team' | 'client';
+  /** On a shared folder: what the share must reach, counted by the
+   *  generator. `items` are the pages or notes in the folder and below it,
+   *  `folders` the folders below it. The seeder confirms a share only for
+   *  exactly `items + folders` changed rows. */
+  expect?: { items: number; folders: number };
 }
 
 /** An option of a Recall card: where it leads, by CARD SLUG in the same map. */
@@ -112,6 +117,8 @@ export interface GenTable {
   /** Footer aggregates keyed by column NAME. */
   aggregates?: Record<string, string>;
   views?: GenView[];
+  /** Set by the generator on the tables the team reads (by their own level). */
+  level?: 'team';
   offset: number;
 }
 

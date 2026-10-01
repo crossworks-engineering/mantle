@@ -150,25 +150,13 @@ if [ "${ERRS:-0}" -gt 0 ]; then
 fi
 echo "  restored clean"
 
-# As the OWNER, through the server image the stack runs. Two jobs. The level
-# roles get their login, their password (derived from MANTLE_MASTER_KEY, which
-# is why it must match the seed) and their grants: the dump is taken without
-# privileges, and the app connects as those roles too, so without this step
-# the owner's own tree reads fail. And a dump from an older release than the
-# pinned image is brought up to it. On a dump of the same release it applies
-# nothing and says "Already up to date."
-echo "→ level roles and schema (migrate, as the owner)"
-"${COMPOSE[@]}" --profile restore run --rm --no-deps -T migrate > "$BUNDLE/migrate.log" 2>&1 \
-  || { tail -20 "$BUNDLE/migrate.log" >&2; fail "migrate failed: see $BUNDLE/migrate.log"; }
-echo "  $(grep -E 'Already up to date|applied [0-9]+ migration' "$BUNDLE/migrate.log" | tail -1)"
-
-# AFTER the restore and AFTER migrate, never before: the grants have to attach
-# to the schema that actually landed (which is also why the dump is taken
-# --no-privileges), and this file takes the write verbs back from the level
-# roles that migrate has just granted.
-echo "→ read-only role"
-docker exec -i "$PG" psql -U postgres -d postgres -q -v ON_ERROR_STOP=1 < "$BUNDLE/readonly-role.sql"
-echo "  demo_reader ready"
+# Migrate as the owner, make every app role read-only again, put back the
+# function privileges the dump could not carry, and PROVE the roles cannot
+# write. One script, because a roll needs exactly the same four steps in the
+# same order (see its header). AFTER the restore, never before: the grants
+# have to attach to the schema that actually landed, which is also why the
+# dump is taken --no-privileges.
+"$BUNDLE/migrate-readonly.sh" || fail "migrate-readonly.sh failed: the brain is restored but NOT safe to serve"
 
 echo "→ object store"
 # Plain S3 calls, run inside the server image the stack already uses (it
@@ -196,6 +184,10 @@ check vec_facts_live "$(manifest vec_facts_live)" "$(q "select count(*) from fac
 check vec_entities   "$(manifest vec_entities)"   "$(q "select count(*) from entities where embedding is not null")"
 check table_nodes    "$(manifest table_nodes)"    "$(q "select count(*) from nodes where type = 'table'")"
 check file_nodes     "$(manifest file_nodes)"     "$(q "select count(*) from nodes where type = 'file'")"
+# Functions that PUBLIC may not execute: the same number as on the bench, or
+# function-privileges.sql did not apply.
+check restricted_functions "$(manifest restricted_functions)" "$(q "select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proacl is not null and not exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0 and a.privilege_type = 'EXECUTE')")"
+check recall_prompts "$(manifest recall_prompts)" "$(q "select count(*) from recall_nodes where kind = 'prompt' and not prompt_pending and embedding is not null")"
 
 # The three on-disk roots, checked here rather than trusted: they are bind
 # mounts, and a mount that silently resolved to an empty directory is exactly

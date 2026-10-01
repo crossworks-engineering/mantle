@@ -16,8 +16,10 @@ export S3_ENDPOINT="http://127.0.0.1:56900"
 export S3_REGION="us-east-1"; export S3_ACCESS_KEY="minio"; export S3_SECRET_KEY="minio12345"; export S3_BUCKET="mantle"
 export TIKA_URL="http://127.0.0.1:56998"
 export MANTLE_DOCS_ROOT="$(pwd)/demo/generator/out/docs"
-export SESSION_SECRET="${DEMO_SESSION_SECRET:-demo-session-secret-0123456789abcdef0123456789ab}"
-export MANTLE_MASTER_KEY="${DEMO_MASTER_KEY:-ZGVtby1tYXN0ZXIta2V5LTAxMjM0NTY3ODlhYmNkZWY=}"
+# The brain's secrets, from demo/.run/secrets (demo/scripts/lib/secrets.sh):
+# exports SESSION_SECRET, MANTLE_MASTER_KEY and the two demo passwords. They
+# must be the ones the brain was seeded with, so this never makes new ones.
+. "$DEMO/scripts/lib/secrets.sh"; demo_secrets require
 export MANTLE_LOCAL_EMBEDDING_URL="${MANTLE_LOCAL_EMBEDDING_URL:-http://127.0.0.1:56434/v1}"
 export MANTLE_RATE_LIMIT_SCALE="${MANTLE_RATE_LIMIT_SCALE:-50}"
 # Runner queues. This flag is only HALF the switch — the `runs` tool group must

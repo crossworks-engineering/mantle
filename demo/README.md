@@ -25,6 +25,19 @@ UI — no fixture server, no per-screen demo code.
    is designed to run *alongside* a real stack; "both up at once" is the
    acceptance test. `scripts/preflight.sh` looks and reports — it never kills.
 
+## Secrets are made per checkout, never committed
+
+A fresh `demo/scripts/seed.sh` makes four values in `demo/.run/secrets`
+(gitignored): the session secret, the master key, and the passwords of the
+demo owner and of the member logins. Every other script reads them from
+there (`demo/scripts/lib/secrets.sh`). They were constants in the scripts
+until 2026-10-01; that stopped being acceptable when the seed began to need
+a real model key, which the vault seals under the master key. The box that
+serves a bundle needs the same session secret and master key in its
+`.env.demo`: `pack.sh` names the two files, and they travel by hand. The
+box's ssh login is not in the repo either: `render-caddy.sh` requires
+`DEMO_HOST`.
+
 ## The seed/test stack
 
 Throwaway infra (Postgres + RustFS + Tika + Ollama) for generating, ingesting

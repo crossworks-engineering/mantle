@@ -27,7 +27,7 @@ import * as turns from './content/turns.mjs';
 import * as showcase from './content/showcase.mjs';
 import * as automation from './content/automation.mjs';
 import * as folders from './content/folders.mjs';
-import { folderFor, INDEX_HERE } from './content/folders.mjs';
+import { folderFor, INDEX_HERE, TEAM_TABLE_IDS } from './content/folders.mjs';
 
 const MODULES = { studio, pumphouse, storefront, island, handbook, personal, traffic, turns, showcase, automation, folders };
 
@@ -56,6 +56,18 @@ export function generateAll(seed = 1) {
       meta: { ...n.meta, folder },
     };
   });
+  // What each share must reach: the items in the folder and below it, and the
+  // folders below it. The seeder confirms a share only for exactly this many
+  // changed rows, and verify.ts asserts the totals (content/folders.mjs).
+  const below = (id) => all.folders.filter((f) => f.parent === id).flatMap((f) => [f.id, ...below(f.id)]);
+  all.folders = all.folders.map((f) => {
+    if (!f.share) return f;
+    const subtree = below(f.id);
+    const inside = new Set([f.id, ...subtree]);
+    return { ...f, expect: { items: all.nodes.filter((n) => inside.has(n.meta?.folder)).length, folders: subtree.length } };
+  });
+  // Tables shown to the team by their own level.
+  all.tables = all.tables.map((t) => (TEAM_TABLE_IDS.includes(t.id) ? { ...t, level: 'team' } : t));
   return all;
 }
 
@@ -82,15 +94,22 @@ export function structuralProblems(all) {
   }
   const treeOf = { page: 'pages', note: 'notes' };
   for (const n of all.nodes) {
+    // These two hold for every node, a top-level page included.
+    if (n.meta?.parent_id) problems.push(`${n.id}: pages do not nest, use meta.folder`);
+    for (const m of (n.body ?? '').matchAll(/\(folder:gen:([^)\s]+)\)/g)) {
+      if (!folderById.has(m[1])) problems.push(`${n.id}: Folder index names unknown folder ${m[1]}`);
+    }
     const folder = n.meta?.folder;
-    if (folder == null) continue;
+    if (folder == null) {
+      if (/\(folder:here\)/.test(n.body ?? '')) problems.push(`${n.id}: lists "this folder" but sits at the top level`);
+      continue;
+    }
     const f = folderById.get(folder);
     if (!f) problems.push(`${n.id}: folder ${folder} does not exist`);
     else if (f.kind !== treeOf[n.kind]) problems.push(`${n.id}: a ${n.kind} cannot sit in a ${f.kind} folder`);
-    for (const m of n.body.matchAll(/\(folder:gen:([^)\s]+)\)/g)) {
-      if (!folderById.has(m[1])) problems.push(`${n.id}: Folder index names unknown folder ${m[1]}`);
-    }
-    if (n.meta?.parent_id) problems.push(`${n.id}: pages do not nest, use meta.folder`);
+  }
+  for (const id of TEAM_TABLE_IDS) {
+    if (!all.tables.some((t) => t.id === id)) problems.push(`team table ${id} does not exist`);
   }
   for (const map of all.recall_maps) {
     const slugs = new Set(['start', ...map.cards.map((c) => c.slug)]);

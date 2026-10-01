@@ -3,7 +3,7 @@
 #
 #   demo/scripts/render-caddy.sh              render → install → reload
 #   demo/scripts/render-caddy.sh --print      render to stdout, install nothing
-#   DEMO_HOST=cwe@other.box demo/scripts/render-caddy.sh
+#   DEMO_HOST=user@demo-box demo/scripts/render-caddy.sh   (required, no default)
 #
 # The rendered file injects MINTED SESSION COOKIES into every upstream request,
 # which makes it a secret. That is the entire reason it is not a committed vhost
@@ -15,9 +15,9 @@
 # the site normally — which is why the import can be committed even though its
 # contents cannot.
 #
-# Re-run this whenever the cookies need reminting (a rotated SESSION_SECRET, a
-# re-seeded brain, a new team member). Nothing else has to change: the site
-# repo holds no demo state at all.
+# Re-run this whenever the cookie needs reminting (a rotated SESSION_SECRET, a
+# re-seeded brain, a changed session epoch). Nothing else has to change: the
+# site repo holds no demo state at all.
 #
 # One thing crosses from the bench to the box besides the vhost: the phone-app
 # bearer is minted as a mobile_tokens row in the BENCH brain, and the box's
@@ -31,10 +31,16 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 DEMO="demo"; ART="$DEMO/.run"; mkdir -p "$ART"
 
-HOST="${DEMO_HOST:-cwe@mantle-ai.tech}"
+# No default: the box's ssh login is not something a public repository names.
+HOST="${DEMO_HOST:-}"
 REMOTE_DIR="${DEMO_REMOTE_DIR:-mantle-site}"
 PRINT_ONLY=0
 [ "${1:-}" = "--print" ] && PRINT_ONLY=1
+if [ -z "$HOST" ] && [ "$PRINT_ONLY" = "0" ]; then
+  echo "✗ DEMO_HOST is not set: the ssh login of the box that serves the demo (user@demo-box)." >&2
+  echo "  --print renders without it." >&2
+  exit 2
+fi
 
 # Upstreams are the SERVE stack's container names, reachable because the site's
 # Caddy joins mantle_demo_net. Container names, not service names: unambiguous
@@ -45,8 +51,10 @@ UPSTREAM_API="${DEMO_UPSTREAM_API:-mantle_demo_srv_web:3000}"
 # The seed stack's owner connection: minting reads auth.users and writes the
 # phone-app token row, and the reader role can do neither.
 export DATABASE_URL="${DEMO_OWNER_URL:-postgres://postgres:postgres@127.0.0.1:56432/postgres}"
-export SESSION_SECRET="${DEMO_SESSION_SECRET:-demo-session-secret-0123456789abcdef0123456789ab}"
-export MANTLE_MASTER_KEY="${DEMO_MASTER_KEY:-ZGVtby1tYXN0ZXIta2V5LTAxMjM0NTY3ODlhYmNkZWY=}"
+# The brain's secrets, from demo/.run/secrets (demo/scripts/lib/secrets.sh):
+# exports SESSION_SECRET, MANTLE_MASTER_KEY and the two demo passwords. They
+# must be the ones the brain was seeded with, so this never makes new ones.
+. "$DEMO/scripts/lib/secrets.sh"; demo_secrets require
 
 fail() { echo "✗ $1" >&2; exit 1; }
 
@@ -101,9 +109,9 @@ echo "→ carrying mobile_tokens to $HOST ($REMOTE_PG)" >&2
 docker exec mantle_demo_pg pg_dump -U postgres -d postgres --data-only --inserts \
     --on-conflict-do-nothing -t mobile_tokens \
   | ssh "$HOST" "docker exec -i $REMOTE_PG psql -U postgres -d postgres -q -v ON_ERROR_STOP=1" \
-  || fail "carrying mobile_tokens to the box failed — the phone-app bearer would be refused there; NOT installing"
+  || fail "carrying mobile_tokens to the box failed: the phone-app bearer would be refused there; NOT installing"
 FOUND=$(ssh "$HOST" "docker exec $REMOTE_PG psql -U postgres -d postgres -Atc \"select count(*) from mobile_tokens where id = '$JTI'\"")
-[ "$FOUND" = "1" ] || fail "the minted bearer's row ($JTI) is not on the box after the carry — NOT installing"
+[ "$FOUND" = "1" ] || fail "the minted bearer's row ($JTI) is not on the box after the carry; NOT installing"
 echo "  row $JTI present on the box" >&2
 
 echo "→ installing on $HOST" >&2

@@ -32,6 +32,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import postgres from '../../server/web/node_modules/postgres/src/index.js';
 import type { GenFolder, GenNode, GenRecallMap, GenRecallOption, Manifest, Sql } from './lib/types.ts';
+import { ownerPassword } from './lib/secrets.ts';
 // The app's own markdown dialect — imported by relative path because the demo
 // tree is not a workspace member (joining it would edit a main-owned file);
 // each package still resolves its own deps from its own node_modules.
@@ -45,7 +46,7 @@ const MANIFEST = join(here, '..', 'generator', 'out', 'manifest.json');
 const SERVER = process.env.DEMO_SERVER_URL ?? 'http://127.0.0.1:3902';
 const DB = process.env.DATABASE_URL ?? 'postgres://postgres:postgres@127.0.0.1:56432/postgres';
 const OWNER_EMAIL = process.env.DEMO_OWNER_EMAIL ?? 'alex@harbourlabs.example.com';
-const OWNER_PASSWORD = process.env.DEMO_OWNER_PASSWORD ?? 'demo-brain-not-a-real-password';
+const OWNER_PASSWORD = ownerPassword();
 const FORCE = process.argv.includes('--force');
 
 const DAY = 86_400_000;
@@ -170,7 +171,9 @@ async function seedSimple(m: Manifest) {
     const r = (await post('/api/notes', {
       title: n.title, content: n.body, tags: n.tags,
     })) as { note?: { id?: string } };
-    if (r.note?.id) created.set(n.id, r.note.id);
+    // A note with no id cannot be filed or backdated: stop, do not skip.
+    if (!r.note?.id) throw new Error(`note ${n.id}: no id came back`);
+    created.set(n.id, r.note.id);
   }
   // `POST /api/notes` takes no folder, so notes are filed afterwards with the
   // tree's own move, which is what dragging them in the UI does.
@@ -269,11 +272,15 @@ async function fileItems(m: Manifest, kind: GenFolder['kind'], nodeKind: string)
   for (const [folderId, ids] of byFolder) {
     // The route takes at most 200 ids a call.
     for (let i = 0; i < ids.length; i += 200) {
-      const r = (await post(`/api/tree/${kind}/move`, { ids: ids.slice(i, i + 200), folderId })) as {
+      const batch = ids.slice(i, i + 200);
+      const r = (await post(`/api/tree/${kind}/move`, { ids: batch, folderId })) as {
         moved?: number;
         failed?: unknown[];
       };
       if (r.failed?.length) throw new Error(`filing ${kind}: ${JSON.stringify(r.failed).slice(0, 300)}`);
+      // The route counts what it moved; anything less than what was sent is
+      // an item left at the top level with no error.
+      if (r.moved !== batch.length) throw new Error(`filing ${kind}: sent ${batch.length} item(s), the brain moved ${r.moved}`);
     }
   }
 }
@@ -286,6 +293,12 @@ async function fileItems(m: Manifest, kind: GenFolder['kind'], nodeKind: string)
  * `confirm: true` and the count that was shown. The seeder does what the
  * dialog does: read the refusal, then confirm exactly that count. Sharing
  * first and filing afterwards would need a confirm on every single create.
+ *
+ * A person reads that list before they confirm. The seeder cannot read, so it
+ * COUNTS: the generator wrote on each shared folder how many rows the share
+ * must reach (`expect`), and a refusal that shows any other number is not
+ * confirmed. Without that, a `share` put on the wrong folder would publish
+ * its whole subtree and every step would report success.
  */
 async function shareFolders(m: Manifest) {
   let n = 0;
@@ -293,11 +306,20 @@ async function shareFolders(m: Manifest) {
     const id = created.get(f.id);
     if (!id) continue; // its kind was not seeded on this run (DEMO_SEED_ONLY)
     const path = `/api/tree/${f.kind}/folders/${id}`;
+    if (!f.expect) throw new Error(`share ${f.id}: the manifest carries no expected count for it (regenerate)`);
+    const expected = f.expect.items + f.expect.folders;
     let res = await api(path, { method: 'PATCH', body: JSON.stringify({ share: f.share }) });
     if (res.status === 409) {
       const refusal = (await res.json().catch(() => ({}))) as { error?: string; total?: number; embedsTotal?: number };
       if (refusal.error !== 'visibility') throw new Error(`share ${f.id}: 409 ${JSON.stringify(refusal).slice(0, 200)}`);
       const seen = (refusal.total ?? 0) + (refusal.embedsTotal ?? 0);
+      if (seen !== expected) {
+        throw new Error(
+          `share ${f.id} ("${f.name}" with ${f.share}): the brain says ${seen} row(s) would change ` +
+            `(${refusal.total ?? 0} + ${refusal.embedsTotal ?? 0} through embeds), the generator expects ${expected} ` +
+            `(${f.expect.items} item(s) + ${f.expect.folders} folder(s)). NOT confirmed: something else would be published.`,
+        );
+      }
       res = await api(path, { method: 'PATCH', body: JSON.stringify({ share: f.share, confirm: true, seen }) });
       if (res.ok) console.log(`  "${f.name}" shared with ${f.share === 'team' ? 'the team' : 'clients'}: ${seen} item(s) now read at that level`);
     }

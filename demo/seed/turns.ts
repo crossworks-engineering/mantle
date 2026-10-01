@@ -18,13 +18,14 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import postgres from '../../server/web/node_modules/postgres/src/index.js';
 import type { Manifest, Sql } from './lib/types.ts';
+import { ownerPassword } from './lib/secrets.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const MANIFEST = join(here, '..', 'generator', 'out', 'manifest.json');
 const SERVER = process.env.DEMO_SERVER_URL ?? 'http://127.0.0.1:3902';
 const DB = process.env.DATABASE_URL ?? 'postgres://postgres:postgres@127.0.0.1:56432/postgres';
 const OWNER_EMAIL = process.env.DEMO_OWNER_EMAIL ?? 'alex@harbourlabs.example.com';
-const OWNER_PASSWORD = process.env.DEMO_OWNER_PASSWORD ?? 'demo-brain-not-a-real-password';
+const OWNER_PASSWORD = ownerPassword();
 
 const argOf = (flag: string, dflt: number) => {
   const i = process.argv.indexOf(flag);

@@ -105,7 +105,12 @@ test('generated content passes the publish guard', () => {
 });
 
 test('the publish guard actually catches a leak (negative control)', () => {
-  const findings = scanText('mail me at someone@realcompany.co.za or ssh 192.168.100.75', 'x', []);
+  // An address the guard must refuse, and nobody's real one: `.invalid` is a
+  // reserved top-level domain (RFC 2606) that is NOT one of the allowed
+  // example.* domains, and 10.20.30.40 is a private address picked at random.
+  // (A documentation range like 192.0.2.x is public by definition, so the
+  // private-address rule would not, and should not, catch it.)
+  const findings = scanText('mail me at someone@realcompany.invalid or ssh 10.20.30.40', 'x', []);
   assert.equal(findings.length, 2);
   assert.deepEqual(findings.map((f) => f.kind).sort(), ['email', 'private-ip']);
 });
@@ -186,6 +191,7 @@ test('folders and Recall maps are structurally sound', () => {
 });
 
 test('the structural check catches what the brain would refuse (negative control)', () => {
+  const map = gen.recall_maps[0];
   const bad = {
     ...gen,
     folders: [
@@ -193,13 +199,42 @@ test('the structural check catches what the brain would refuse (negative control
       { id: 'x1', kind: 'pages', parent: 'hb-f-kit', name: 'Third level, allowed' },
       { id: 'x2', kind: 'notes', parent: 'x1', name: 'Wrong tree' },
       { id: 'x3', kind: 'pages', parent: 'x1', name: 'Fourth level' },
+      { id: 'x4', kind: 'pages', parent: 'no-such-folder', name: 'Orphan' },
     ],
-    nodes: [...gen.nodes, { id: 'p1', kind: 'page', title: 't', body: '', meta: { folder: 'fld-notes-island', parent_id: 'hb-root' } }],
-    recall_maps: [{ ...gen.recall_maps[0], entry: { body: '', options: [{ label: 'Nowhere', target: 'no-such-card', use_when: 'never' }] } }],
+    nodes: [
+      ...gen.nodes,
+      { id: 'p1', kind: 'page', title: 't', body: '', meta: { folder: 'fld-notes-island', parent_id: 'hb-root' } },
+      { id: 'p2', kind: 'page', title: 't', body: '', meta: { folder: 'no-such-folder' } },
+      // Top-level pages: the checks must not stop at "no folder".
+      { id: 'p3', kind: 'page', title: 't', body: '[Folder index](folder:gen:no-such-folder)', meta: { folder: null } },
+      { id: 'p4', kind: 'page', title: 't', body: '', meta: { folder: null, parent_id: 'hb-root' } },
+      { id: 'p5', kind: 'page', title: 't', body: '[Folder index](folder:here)', meta: { folder: null } },
+    ],
+    recall_maps: [
+      { ...map, entry: { body: '', options: [{ label: 'Nowhere', target: 'no-such-card', use_when: 'never' }, { label: 'No line', target: map.cards[0].slug, use_when: ' ' }] } },
+      { ...map, slug: 'dup', cards: [map.cards[0], map.cards[0]] },
+      { ...map, slug: 'quiet', enter_when: ' ' },
+      { ...map, slug: 'mute', cards: map.cards.map((c) => (c.kind === 'prompt' ? { ...c, use_when: '' } : c)) },
+    ],
   };
   const found = structuralProblems(bad).join('\n');
   assert.ok(!found.includes('folder x1:'), 'a third-level folder is allowed');
-  for (const probe of ['x3: deeper than', 'x2: parent x1 is in another tree', 'p1: a page cannot sit in a notes folder', 'p1: pages do not nest', 'leads to unknown card no-such-card']) {
+  for (const probe of [
+    'x3: deeper than',
+    'x2: parent x1 is in another tree',
+    'x4: parent no-such-folder does not exist',
+    'p1: a page cannot sit in a notes folder',
+    'p1: pages do not nest',
+    'p2: folder no-such-folder does not exist',
+    'p3: Folder index names unknown folder no-such-folder',
+    'p4: pages do not nest',
+    'p5: lists "this folder" but sits at the top level',
+    'leads to unknown card no-such-card',
+    'option "No line" has no use_when line',
+    'recall dup: duplicate card slug',
+    'recall quiet: no enter_when line',
+    'a prompt needs a use_when line',
+  ]) {
     assert.ok(found.includes(probe), `not caught: ${probe}\n${found}`);
   }
 });
@@ -221,9 +256,25 @@ test('pages and notes are filed: every folder holds something, and some items st
 test('folders show the features: icon and colour, a team share and a client share', () => {
   assert.ok(gen.folders.every((f) => f.icon && f.color), 'every demo folder has an icon and a colour');
   assert.ok(new Set(gen.folders.map((f) => f.color)).size >= 4, 'use more than a few colours');
-  assert.deepEqual([...new Set(gen.folders.map((f) => f.share).filter(Boolean))].sort(), ['client', 'team']);
-  // Only these kinds can be shared on the brain (TREE_KIND_SPECS on main).
-  for (const f of gen.folders.filter((x) => x.share)) assert.ok(['pages', 'notes'].includes(f.kind));
+});
+
+// A share changes who can read an item, and no later gate can tell a wrong
+// share from a right one: the seeder confirms the count the brain shows and
+// the client report is acknowledged as it stands. So WHICH folders are shared,
+// and how much each share reaches, is pinned here. Changing a share means
+// changing this test, on purpose.
+test('exactly two folders are shared, and each share reaches exactly what is pinned', () => {
+  const shared = Object.fromEntries(gen.folders.filter((f) => f.share).map((f) => [f.id, { share: f.share, ...f.expect }]));
+  assert.deepEqual(shared, {
+    'hb-f-handbook': { share: 'team', items: 13, folders: 3 },
+    'fld-pages-pumphouse-procedures': { share: 'client', items: 9, folders: 0 },
+  });
+  // What clients can read is the issued procedure revisions and nothing else.
+  const procedures = gen.nodes.filter((n) => n.meta?.folder === 'fld-pages-pumphouse-procedures');
+  assert.ok(procedures.every((n) => n.kind === 'page' && n.meta.family && n.meta.rev), 'only procedure revisions sit in the client-shared folder');
+  // No project folder, and no notes folder, carries a share.
+  assert.deepEqual(gen.folders.filter((f) => f.share && f.kind !== 'pages').map((f) => f.id), []);
+  assert.deepEqual(gen.tables.filter((t) => t.level).map((t) => [t.id, t.level]), [['pump-snag-list', 'team'], ['traffic-risk-register', 'team']]);
 });
 
 test('a page that used to be a parent sits NEXT TO its folder and lists it', () => {

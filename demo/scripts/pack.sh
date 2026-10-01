@@ -84,6 +84,19 @@ ENTITIES=$(psql_owner "select count(*) from entities where embedding is not null
 echo "  vectors: $NODES nodes · $CHUNKS chunks · $FACTS live facts · $ENTITIES entities"
 [ "$CHUNKS" -gt 0 ] || fail "no content_chunks carry a vector — passage search would be empty"
 
+# Recall prompts are matched by vector too, and `re-embed` does not walk them:
+# after the embedder switch they need demo/seed/reembed-recall.ts. A prompt
+# with no vector can never be matched on the box, where nothing can write one.
+PROMPTS=$(psql_owner "select count(*) from recall_nodes where kind = 'prompt' and not prompt_pending and embedding is not null")
+PROMPTS_EMPTY=$(psql_owner "select count(*) from recall_nodes where kind = 'prompt' and not prompt_pending and embedding is null")
+[ "$PROMPTS_EMPTY" = "0" ] || fail "$PROMPTS_EMPTY Recall prompt(s) have no vector: run demo/seed/reembed-recall.ts (see demo/deploy/README-embedder.md)"
+echo "  recall: $PROMPTS prompt vector(s)"
+
+# Functions the migrations took from PUBLIC. The dump is taken without
+# privileges, so they travel as their own file (function-privileges.sql).
+RESTRICTED=$(psql_owner "select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proacl is not null and not exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0 and a.privilege_type = 'EXECUTE')")
+echo "  restricted functions: $RESTRICTED"
+
 # Table workbooks vs the registry that points at them. Postgres stores only the
 # path; if the counts disagree the tables 500 with TableFileMissingError on the
 # box and nowhere else, because here the files happen to be present.
@@ -144,6 +157,14 @@ cp -a "$DOCS_ROOT" "$B/docs"
 echo "  deploy files"
 cp -a "$DEMO/deploy/docker-compose.demo.yml" "$B/"
 cp -a "$DEMO/deploy/readonly-role.sql" "$B/"
+cp -a "$DEMO/deploy/readonly-check.sql" "$B/"
+cp -a "$DEMO/deploy/migrate-readonly.sh" "$B/"
+# The EXECUTE restrictions of THIS brain, read from its catalog (see the file).
+docker exec -i "$PG_CONTAINER" psql -U postgres -d postgres -At -v ON_ERROR_STOP=1 \
+  < "$DEMO/deploy/function-privileges-dump.sql" | grep -E '^(REVOKE|DO) ' > "$B/function-privileges.sql" \
+  || fail "could not write function-privileges.sql"
+[ "$(grep -c '^REVOKE ' "$B/function-privileges.sql")" = "$RESTRICTED" ] \
+  || fail "function-privileges.sql names $(grep -c '^REVOKE ' "$B/function-privileges.sql") function(s), the brain has $RESTRICTED restricted"
 cp -a "$DEMO/deploy/.env.demo.example" "$B/"
 cp -a "$DEMO/deploy/README-embedder.md" "$B/"
 cp -a "$DEMO/deploy/restore.sh" "$B/" 2>/dev/null || echo "    ⚠ restore.sh not found — bundle will need it copied in by hand"
@@ -174,6 +195,8 @@ table_nodes      $REG
 table_workbooks  $WB
 file_nodes       $INDEXED
 file_bytes       $FCOUNT
+restricted_functions $RESTRICTED
+recall_prompts   $PROMPTS
 objectstore_objects $OBJ
 docs_markdown    $MD
 help_topics      $HELP
@@ -197,5 +220,10 @@ echo
 echo "  The dump carries the vault — api_keys.key_enc, encrypted under"
 echo "  MANTLE_MASTER_KEY. Treat this file as a secret and do not commit it."
 echo
-echo "  Next:  scp $TARBALL cwe@mantle-ai.tech:~/"
-echo "         ssh cwe@mantle-ai.tech 'tar -xzf $NAME.tar.gz && cd $NAME && ./restore.sh'"
+echo "  The box's .env.demo needs the two values this brain was sealed with:"
+echo "    SESSION_SECRET     $DEMO/.run/secrets/session-secret"
+echo "    MANTLE_MASTER_KEY  $DEMO/.run/secrets/master-key"
+echo "  They are not in the bundle. Copy them by hand, over ssh, never through chat."
+echo
+echo "  Next:  scp $TARBALL user@demo-box:~/"
+echo "         ssh user@demo-box 'tar -xzf $NAME.tar.gz && cd $NAME && ./restore.sh'"

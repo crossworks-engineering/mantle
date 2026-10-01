@@ -20,11 +20,13 @@
  *
  *   pnpm -C server/web exec tsx ../../demo/seed/seed-member-chat.ts
  */
+import { memberPassword } from './lib/secrets.ts';
+
 const SERVER = process.env.DEMO_SERVER_URL ?? 'http://127.0.0.1:3902';
 // The member who asks: the design lead, one of the logins enable-team.ts makes
 // (demo/world/world.json). Fictional, on a documentation domain.
 const MEMBER_EMAIL = process.env.DEMO_CHAT_MEMBER_EMAIL ?? 'dana@harbourlabs.example.com';
-const MEMBER_PASSWORD = process.env.DEMO_MEMBER_PASSWORD ?? 'demo-member-not-a-real-password';
+const MEMBER_PASSWORD = memberPassword();
 /** Seconds to wait for each answer before giving up on it. */
 const REPLY_WAIT_S = Number(process.env.DEMO_CHAT_REPLY_WAIT ?? 180);
 

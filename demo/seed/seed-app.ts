@@ -20,10 +20,11 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ownerPassword } from './lib/secrets.ts';
 
 const SERVER = process.env.DEMO_SERVER_URL ?? 'http://127.0.0.1:3902';
 const OWNER_EMAIL = process.env.DEMO_OWNER_EMAIL ?? 'alex@harbourlabs.example.com';
-const OWNER_PASSWORD = process.env.DEMO_OWNER_PASSWORD ?? 'demo-brain-not-a-real-password';
+const OWNER_PASSWORD = ownerPassword();
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const APP_DIR = join(HERE, '../apps/control-room');

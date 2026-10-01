@@ -31,8 +31,10 @@ export MANTLE_DOCS_ROOT="$(pwd)/demo/generator/out/docs"
 export MANTLE_PUBLIC_URL="${DEMO_PUBLIC_URL:-https://demo.mantle-ai.tech}"
 export TABLE_DB_DIR="${DEMO_TABLE_DB_DIR:-$(pwd)/demo/.run/table-dbs}"
 export MANTLE_FILES_ROOT="${DEMO_FILES_ROOT:-$(pwd)/demo/.run/files}"
-export SESSION_SECRET="${DEMO_SESSION_SECRET:-demo-session-secret-0123456789abcdef0123456789ab}"
-export MANTLE_MASTER_KEY="${DEMO_MASTER_KEY:-ZGVtby1tYXN0ZXIta2V5LTAxMjM0NTY3ODlhYmNkZWY=}"
+# The brain's secrets, from demo/.run/secrets (demo/scripts/lib/secrets.sh):
+# exports SESSION_SECRET, MANTLE_MASTER_KEY and the two demo passwords. They
+# must be the ones the brain was seeded with, so this never makes new ones.
+. "$DEMO/scripts/lib/secrets.sh"; demo_secrets require
 export MANTLE_RATE_LIMIT_SCALE="${MANTLE_RATE_LIMIT_SCALE:-50}"
 export EXTRACT_CONCURRENCY="${EXTRACT_CONCURRENCY:-4}"
 export MANTLE_LOCAL_EMBEDDING_URL="${MANTLE_LOCAL_EMBEDDING_URL:-http://127.0.0.1:56434/v1}"

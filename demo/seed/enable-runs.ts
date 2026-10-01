@@ -13,9 +13,11 @@
  *
  *   pnpm -C server/web exec tsx ../../demo/seed/enable-runs.ts
  */
+import { ownerPassword } from './lib/secrets.ts';
+
 const SERVER = process.env.DEMO_SERVER_URL ?? 'http://127.0.0.1:3902';
 const OWNER_EMAIL = process.env.DEMO_OWNER_EMAIL ?? 'alex@harbourlabs.example.com';
-const OWNER_PASSWORD = process.env.DEMO_OWNER_PASSWORD ?? 'demo-brain-not-a-real-password';
+const OWNER_PASSWORD = ownerPassword();
 
 let cookie = '';
 async function api(path: string, init: RequestInit = {}) {

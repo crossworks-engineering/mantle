@@ -16,11 +16,16 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import postgres from '../../server/web/node_modules/postgres/src/index.js';
-import type { Row, Sql } from './lib/types.ts';
+import type { Manifest, Row, Sql } from './lib/types.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const targets = JSON.parse(readFileSync(join(here, '..', 'world', 'targets.json'), 'utf8'));
 const DB = process.env.DATABASE_URL ?? 'postgres://postgres:postgres@127.0.0.1:56432/postgres';
+// What the generator intended to share. Read from the manifest the seed used,
+// so "how much is published" is asserted as an exact number, not a minimum.
+const manifest = JSON.parse(
+  readFileSync(join(here, '..', 'generator', 'out', 'manifest.json'), 'utf8'),
+) as Manifest;
 
 const argOf = (flag: string, dflt: number) => {
   const i = process.argv.indexOf(flag);
@@ -115,6 +120,12 @@ async function structure() {
     clientFolders: await one(sql`select count(*)::int n from nodes where type = 'branch' and share_level = 'client'`),
     readAtTeam: await one(sql`select count(*)::int n from nodes where type <> 'branch' and inherited_level = 'team'`),
     readAtClient: await one(sql`select count(*)::int n from nodes where type <> 'branch' and inherited_level = 'client'`),
+    // Items lowered by their OWN level (not through a folder). The seed sets
+    // only the team tables; anything at client or public level by its own
+    // level is something nobody meant to publish.
+    ownTeam: await one(sql`select count(*)::int n from nodes where type <> 'branch' and audience = 'team'`),
+    ownBelowTeam: await one(sql`select count(*)::int n from nodes where type <> 'branch' and audience in ('client', 'public')`),
+    openLinks: await one(sql`select count(*)::int n from shares where revoked_at is null`).catch(() => 0),
   };
 }
 
@@ -188,17 +199,25 @@ async function main() {
     ['notes: folders', t.noteFolders, 4],
     ['notes: in a folder', t.notesInFolders, 60],
     ['folders: icon+colour', t.styledFolders, 8],
-    ['folders: team share', t.teamFolders, 1],
-    ['folders: client share', t.clientFolders, 1],
-    ['read at team level', t.readAtTeam, 5],
-    ['read at client level', t.readAtClient, 5],
   );
-  // What must be ZERO. Each is a shape main no longer serves.
-  const mustBeZero: Array<[string, number]> = [
-    ['recall: page-built maps', t.recallPageBuilt],
-    ['recall: prompts waiting', t.recallPromptsWaiting],
-    ['pages with a page parent', t.nestedPages],
-    ['pages off the tree', t.pagesOffTree],
+  // What must be an EXACT number: [name, got, want]. Zero for the shapes main
+  // no longer serves, and for sharing the numbers the generator intended. A
+  // minimum cannot do this job: "at least five items at client level" is
+  // still true when a whole project folder was published by mistake.
+  const shared = (share: 'team' | 'client') => (manifest.folders ?? []).filter((f) => f.share === share);
+  const reach = (share: 'team' | 'client') => shared(share).reduce((n, f) => n + (f.expect?.items ?? 0), 0);
+  const mustEqual: Array<[string, number, number]> = [
+    ['recall: page-built maps', t.recallPageBuilt, 0],
+    ['recall: prompts waiting', t.recallPromptsWaiting, 0],
+    ['pages with a page parent', t.nestedPages, 0],
+    ['pages off the tree', t.pagesOffTree, 0],
+    ['folders shared with team', t.teamFolders, shared('team').length],
+    ['folders shared w. clients', t.clientFolders, shared('client').length],
+    ['items read at team', t.readAtTeam, reach('team')],
+    ['items read at client', t.readAtClient, reach('client')],
+    ['own level team (tables)', t.ownTeam, manifest.tables.filter((x) => x.level === 'team').length],
+    ['own level client/public', t.ownBelowTeam, 0],
+    ['open share links', t.openLinks, 0],
   ];
 
   console.log('\nlayer-2 assertions (min = a seed below this is a FAILED seed)\n');
@@ -210,9 +229,9 @@ async function main() {
     if (!ok) failed++;
     console.log(`${pad(name, 26)}${pad(got, 9)}${pad(min, 8)}${ok ? 'ok' : 'UNDER'}`);
   }
-  for (const [name, got] of mustBeZero) {
-    if (got !== 0) failed++;
-    console.log(`${pad(name, 26)}${pad(got, 9)}${pad('= 0', 8)}${got === 0 ? 'ok' : 'NOT ZERO'}`);
+  for (const [name, got, want] of mustEqual) {
+    if (got !== want) failed++;
+    console.log(`${pad(name, 26)}${pad(got, 9)}${pad(`= ${want}`, 8)}${got === want ? 'ok' : 'WRONG'}`);
   }
 
   const unextracted = s.nodes - s.extracted;

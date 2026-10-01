@@ -46,11 +46,17 @@ export TABLE_DB_DIR="${DEMO_TABLE_DB_DIR:-$(cd "$(dirname "$0")/../.." && pwd)/d
 # and no chunks, unsearchable, with no error anywhere. filesRoot() warns
 # about exactly this; nothing was listening.
 export MANTLE_FILES_ROOT="${DEMO_FILES_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)/demo/.run/files}"
-export SESSION_SECRET="${DEMO_SESSION_SECRET:-demo-session-secret-0123456789abcdef0123456789ab}"
-# Must base64-decode to EXACTLY 32 bytes or onboarding 500s ("must decode to
-# 32 bytes"). This is 'demo-master-key-0123456789abcdef' — a fixed dummy, so a
-# re-seed can reopen the vault it sealed; the demo holds no real secrets.
-export MANTLE_MASTER_KEY="${DEMO_MASTER_KEY:-ZGVtby1tYXN0ZXIta2V5LTAxMjM0NTY3ODlhYmNkZWY=}"
+# The brain's four secrets (demo/scripts/lib/secrets.sh): the session secret,
+# the master key and the two demo passwords. Each checkout makes its own in
+# demo/.run/secrets; none is committed. They were fixed constants in this file
+# while "the demo holds no real secrets" was true. It is not true any more: a
+# real model key is now required (see the KEY_FILE note below) and the vault
+# seals it under the master key. A FRESH seed may make them; `--keep` opens an
+# existing brain, so it requires the ones that brain was sealed with.
+# The master key must base64-decode to EXACTLY 32 bytes or onboarding 500s
+# ("must decode to 32 bytes"); the generator makes exactly that.
+. "$DEMO/scripts/lib/secrets.sh"
+if [ "${1:-}" = "--keep" ]; then demo_secrets require; else demo_secrets create; fi
 export MANTLE_RATE_LIMIT_SCALE="${MANTLE_RATE_LIMIT_SCALE:-50}"   # a seed is a burst by nature
 export EXTRACT_CONCURRENCY="${EXTRACT_CONCURRENCY:-4}"
 # Onboarding provisions LOCAL embeddings, whose default URL is the compose
@@ -144,9 +150,14 @@ SQL
   # ones (27 after three seeds), and pack.sh ships all of them. Only the
   # default locations under demo/.run are cleared: a path someone pointed
   # elsewhere is theirs.
+  # The bucket is NOT cleared: its objects are content-addressed (the key is
+  # the sha256 of the bytes) and the generator is deterministic, so a re-seed
+  # writes the same keys again.
   for d in "$TABLE_DB_DIR" "$MANTLE_FILES_ROOT"; do
     case "$d" in
-      "$(pwd)/demo/.run/"*) rm -rf "$d" ;;
+      # A path with a `..` step can start under demo/.run and end anywhere.
+      *..*) echo "  (not clearing $d: it has a .. step)" ;;
+      "$(pwd)/demo/.run/"?*) rm -rf -- "$d" ;;
       *) echo "  (not clearing $d: it is outside demo/.run)" ;;
     esac
   done
