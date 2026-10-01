@@ -1,9 +1,9 @@
+import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
 import { NextResponse } from '@/server/http-compat';
 import { and, eq } from 'drizzle-orm';
 import { db, nodes, tables } from '@mantle/db';
 import { aggregateWindow, resolveStoragePath } from '@mantle/tabledb';
 import { AGGREGATE_KINDS, type AggregateKind } from '@mantle/content';
-import { resolveActiveShareByToken } from '@/lib/shares';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 
 /**
@@ -51,7 +51,9 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
     );
   }
 
-  const share = await resolveActiveShareByToken(token);
+  const gate = await gateShare(req, token);
+  if (gate.kind === 'code') return contactCodeRequired();
+  const share = gate.kind === 'ok' ? gate.share : null;
   if (!share || share.nodeType !== 'table') return notFound();
 
   const url = new URL(req.url);

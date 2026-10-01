@@ -1,4 +1,5 @@
-import { isDrawServable, linkLevels, resolveActiveShareByToken } from '@/lib/shares';
+import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
+import { isDrawServable, shareLevels } from '@/lib/shares';
 import { db, nodes } from '@mantle/db';
 import { and, eq } from 'drizzle-orm';
 import { getDrawSvg } from '@mantle/content';
@@ -41,7 +42,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     });
   }
 
-  const share = await resolveActiveShareByToken(token);
+  const gate = await gateShare(req, token);
+  if (gate.kind === 'code') return contactCodeRequired();
+  const share = gate.kind === 'ok' ? gate.share : null;
   if (!share) return notFound();
   const [node] = await db
     .select({ audience: nodes.audience })
@@ -50,7 +53,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     .limit(1);
   if (!node) return notFound();
   if (
-    !(await isDrawServable(share.ownerId, share.nodeId, linkLevels(node.audience), {
+    !(await isDrawServable(share.ownerId, share.nodeId, shareLevels(share, node.audience), {
       self: false,
     }))
   ) {

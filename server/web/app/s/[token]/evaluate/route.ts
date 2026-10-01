@@ -1,8 +1,8 @@
+import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
 import { NextResponse } from '@/server/http-compat';
 import { evaluateSpec, parseFormulaSpec, type FormulaValue } from '@mantle/content';
 import { and, eq } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
-import { resolveActiveShareByToken } from '@/lib/shares';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 
 /**
@@ -56,7 +56,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     );
   }
 
-  const share = await resolveActiveShareByToken(token);
+  const gate = await gateShare(req, token);
+  if (gate.kind === 'code') return contactCodeRequired();
+  const share = gate.kind === 'ok' ? gate.share : null;
   if (!share || share.nodeType !== 'formula') return notFound();
 
   const declaredLength = Number(req.headers.get('content-length') ?? 0);

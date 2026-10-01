@@ -13,6 +13,8 @@ const SHARE = { id: 'share-1', ownerId: 'owner-1', nodeId: 'app-1', nodeType: 'a
 
 vi.mock('@/lib/shares', () => ({
   resolveActiveShareByToken: vi.fn(async (token: string) => (token === 'live' ? SHARE : null)),
+  // The /s gate (contact shares, 0214) resolves through this one.
+  resolveActiveShareRowByToken: vi.fn(async (token: string) => (token === 'live' ? SHARE : null)),
 }));
 
 vi.mock('@mantle/content', async (importOriginal) => ({

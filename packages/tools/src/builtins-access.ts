@@ -9,6 +9,7 @@ import {
   AccessError,
   accessClosure,
   accessShadowReport,
+  contactSharesForNode,
   setAgentAudience,
   setItemLevel,
   setToolGroupAudience,
@@ -72,7 +73,7 @@ export const access_get: BuiltinToolDef = {
   preconditions: NODE_ID_PRE,
   name: 'Get an access level',
   description:
-    'Read the level (admin, team, client or public) of one brain item, agent or tool group. For an item in a shared folder it returns `sharedVia`: the folder it takes its share from; for one a shared item embeds, `readThrough`: those items. It is read at least at their level. For an item it also returns its CLOSURE, each with its own level: for a page, drawing or note what it embeds (images, files, drawings, child pages), which goes down with it when it is lowered; for a folder its contents, which keep their own levels. Use before `access_set` to see what lowering an item will also share.',
+    'Read the level (admin, team, client or public) of one brain item, agent or tool group. For an item in a shared folder it returns `sharedVia`: the folder it takes its share from; for one a shared item embeds, `readThrough`: those items. It is read at least at their level. For an item it also returns its CLOSURE, each with its own level: for a page, drawing or note what it embeds (images, files, drawings, child pages), which goes down with it when it is lowered; for a folder its contents, which keep their own levels. Use before `access_set` to see what lowering an item will also share. `contactShares` lists the contacts an item is shared with (read only; no level).',
   inputSchema: {
     type: 'object',
     properties: {
@@ -99,10 +100,11 @@ export const access_get: BuiltinToolDef = {
           .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ctx.ownerId)))
           .limit(1);
         if (!row) return { ok: false, error: 'item not found: find its id with search_nodes' };
-        const [closure, sharedVia, readThrough] = await Promise.all([
+        const [closure, sharedVia, readThrough, contactShares] = await Promise.all([
           accessClosure(ctx.ownerId, nodeId),
           sharedViaFolder(ctx.ownerId, nodeId),
           readThroughEmbeds(ctx.ownerId, nodeId),
+          contactSharesForNode(ctx.ownerId, nodeId),
         ]);
         // In a shared folder it is read at least at the folder's share, and
         // through what embeds it at least at theirs (0208).
@@ -113,6 +115,18 @@ export const access_get: BuiltinToolDef = {
             closure,
             ...(sharedVia ? { sharedVia } : {}),
             ...(readThrough ? { readThrough } : {}),
+            // Contact shares (0214), read only: who it is shared with, by
+            // name and right. They change no level; no tool makes one (v1).
+            ...(contactShares.length
+              ? {
+                  contactShares: contactShares.map((c) => ({
+                    contactId: c.contactId,
+                    name: c.name,
+                    canWrite: c.canWrite,
+                    lastOpenedAt: c.lastOpenedAt,
+                  })),
+                }
+              : {}),
           },
         };
       }

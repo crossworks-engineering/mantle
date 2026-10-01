@@ -13,8 +13,8 @@
  * own login (/api/member/apps/:id/tool-broker), where the level rules decide
  * what it reads.
  */
+import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
 import { NextResponse } from '@/server/http-compat';
-import { resolveActiveShareByToken } from '@/lib/shares';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 
 export async function POST(req: Request, ctx: { params: Promise<{ token: string }> }) {
@@ -31,7 +31,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     );
   }
 
-  const share = await resolveActiveShareByToken(token);
+  const gate = await gateShare(req, token);
+  if (gate.kind === 'code') return contactCodeRequired();
+  const share = gate.kind === 'ok' ? gate.share : null;
   if (!share || share.nodeType !== 'app') {
     return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 });
   }

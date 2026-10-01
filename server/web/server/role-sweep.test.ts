@@ -95,6 +95,7 @@ vi.mock('../lib/auth/session', async (importOriginal) => ({
 vi.mock('../lib/shares', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   resolveActiveShareByToken: async () => null,
+  resolveActiveShareRowByToken: async () => null,
 }));
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),

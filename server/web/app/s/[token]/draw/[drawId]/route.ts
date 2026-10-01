@@ -1,4 +1,5 @@
-import { isDrawServable, linkLevels, resolveActiveShareByToken } from '@/lib/shares';
+import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
+import { isDrawServable, shareLevels } from '@/lib/shares';
 import { getDrawSvg, getPage, referencedDrawIds } from '@mantle/content';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 
@@ -40,12 +41,18 @@ export async function GET(
     });
   }
 
-  const share = await resolveActiveShareByToken(token);
+  const gate = await gateShare(req, token);
+  if (gate.kind === 'code') return contactCodeRequired();
+  const share = gate.kind === 'ok' ? gate.share : null;
   if (!share || share.nodeType !== 'page') return notFound();
 
   const page = await getPage(share.ownerId, share.nodeId);
   if (!page || !referencedDrawIds(page.doc).includes(drawId)) return notFound();
-  if (!(await isDrawServable(share.ownerId, drawId, linkLevels(page.audience), { self: true }))) {
+  if (
+    !(await isDrawServable(share.ownerId, drawId, shareLevels(share, page.audience), {
+      self: true,
+    }))
+  ) {
     return notFound();
   }
 

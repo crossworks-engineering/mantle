@@ -2,23 +2,32 @@
  * GET /s/[token]/frame — the SHARE-surface sandbox frame document. Auth is the
  * `?t=` frame ticket minted by POST /s/[token]/frame-ticket; the ticket binds
  * to THIS share (claims.shareId), and the share is re-resolved so a revocation
- * inside the ticket's short life still cuts access. Published build only —
+ * inside the ticket's short life still cuts access. On a contact share the
+ * ticket also names the contact and its code epoch, re-checked here. Published build only —
  * a share never serves a draft.
  */
 import { NextResponse } from '@/server/http-compat';
-import { resolveActiveShareByToken } from '@/lib/shares';
+import { resolveActiveShareRowByToken } from '@/lib/shares';
+import { contactTicketAdmits } from '@/lib/contact-share-gate';
 import { verifyAppFrameTicket } from '@/lib/auth';
 import { getApp } from '@mantle/content';
 import { renderAppFrame } from '@/lib/app-frame';
 
 export async function GET(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
-  const share = await resolveActiveShareByToken(token);
+  const share = await resolveActiveShareRowByToken(token);
   if (!share || share.nodeType !== 'app') return new NextResponse('not found', { status: 404 });
 
   const t = new URL(req.url).searchParams.get('t');
   const ticket = t ? verifyAppFrameTicket(t) : null;
   if (!ticket || ticket.shareId !== share.id || ticket.appId !== share.nodeId) {
+    return new NextResponse('frame ticket required', { status: 401 });
+  }
+  // A contact share: the ticket must name this share's contact at the
+  // contact's current code epoch, with sharing on and not locked (the
+  // navigation carries no cookie, so the gate is re-run on the ticket). An
+  // open link refuses a ticket that names a contact.
+  if (!(await contactTicketAdmits(share, ticket))) {
     return new NextResponse('frame ticket required', { status: 401 });
   }
 

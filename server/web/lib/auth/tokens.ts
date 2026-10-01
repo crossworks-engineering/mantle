@@ -24,10 +24,11 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { RENDER_COOKIE_NAME, SESSION_COOKIE_NAME } from '../auth-constants';
 import { env } from '@mantle/config';
 
-/** The `k` claim: mobile bearer, asset token, app frame, render cookie. 'c'
- *  (the retired team-chat credential) and 't' (the retired team-visitor
- *  cookie) are reserved: no verifier takes them. */
-type TokenKind = 'm' | 'a' | 'f' | 'r';
+/** The `k` claim: mobile bearer, asset token, app frame, render cookie,
+ *  contact visitor (contact shares). 'c' (the retired team-chat credential)
+ *  and 't' (the retired team-visitor cookie) are reserved: no verifier takes
+ *  them. */
+type TokenKind = 'm' | 'a' | 'f' | 'r' | 'v';
 
 /**
  * Claims whose signature, kind and expiry have already been checked. Every
@@ -340,6 +341,70 @@ export function verifyAssetToken(token: string): { uid: string; act?: string; ep
 // logins Phase 6. Nothing mints or accepts kind 'c' any more; the kind stays
 // reserved so an old value can never be read as something else.
 
+// ── Contact visitor values (`k:'v'`) ─────────────────────────────────────────
+// Set after a contact types their code at a contact share's prompt (contact
+// shares, migration 0214; POST /s/<token>/code). The value names the CONTACT
+// (`cid`), the brain (`oid`, its owner id) and the contact's code epoch
+// (`ce`) when it was minted. It opens nothing by itself: the gate
+// (lib/contact-share-gate.ts) admits it only on a live share for THAT
+// contact, while the contact's sharing is on, not locked, and still at that
+// epoch. Regenerate and switch off move the epoch, so every value of the
+// contact dies on its next request. The cookie (`mantle_contact`, path
+// /s/) may carry values for several contacts, joined by '~'; the gate tries
+// each. Every other verifier rejects kind 'v'.
+
+export const CONTACT_VISITOR_COOKIE = 'mantle_contact';
+export const CONTACT_VISITOR_TTL_SECONDS = 30 * 24 * 60 * 60;
+
+export type ContactVisitorClaims = {
+  contactId: string;
+  ownerId: string;
+  codeEpoch: number;
+  /** Seconds since the epoch at mint time. */
+  issuedAt: number;
+};
+
+/** Mint a contact visitor value. */
+export function buildContactVisitorValue(opts: {
+  contactId: string;
+  ownerId: string;
+  codeEpoch: number;
+}): { value: string; maxAgeSec: number } {
+  const { value } = signClaims(
+    {
+      cid: opts.contactId,
+      oid: opts.ownerId,
+      ce: opts.codeEpoch,
+      iat: Math.floor(Date.now() / 1000),
+      k: 'v',
+    },
+    CONTACT_VISITOR_TTL_SECONDS,
+  );
+  return { value, maxAgeSec: CONTACT_VISITOR_TTL_SECONDS };
+}
+
+/** Verify a contact visitor value: signature, expiry, kind. No DB: the gate
+ *  still checks the share, the contact's sharing and the epoch. */
+export function verifyContactVisitorValue(value: string): ContactVisitorClaims | null {
+  const claims = verifySigned(value, 'v');
+  if (
+    !claims ||
+    typeof claims.cid !== 'string' ||
+    typeof claims.oid !== 'string' ||
+    typeof claims.ce !== 'number' ||
+    !Number.isSafeInteger(claims.ce) ||
+    claims.ce < 1
+  ) {
+    return null;
+  }
+  return {
+    contactId: claims.cid,
+    ownerId: claims.oid,
+    codeEpoch: claims.ce,
+    issuedAt: typeof claims.iat === 'number' ? claims.iat : 0,
+  };
+}
+
 // ── App-frame tickets (`k:'f'`) ──────────────────────────────────────────────
 // The mini-app sandbox iframe navigates to a real URL (/api/apps/[id]/frame or
 // /s/[token]/frame) instead of an inlined srcdoc. That navigation can carry NO
@@ -373,9 +438,16 @@ export function buildAppFrameTicket(opts: {
   shareId?: string;
   loginId?: string;
   clientEpoch?: number;
+  /** A contact share's contact and code epoch (contact shares): the share
+   *  frame re-checks both, since the frame navigation carries no cookie. */
+  contact?: { contactId: string; codeEpoch: number };
 }): string {
   const claims: Record<string, unknown> = { uid: opts.ownerId, app: opts.appId, k: 'f' };
   if (opts.shareId) claims.sh = opts.shareId;
+  if (opts.shareId && opts.contact) {
+    claims.cid = opts.contact.contactId;
+    claims.ce = opts.contact.codeEpoch;
+  }
   if (opts.loginId) claims.mem = opts.loginId;
   if (opts.loginId && opts.clientEpoch !== undefined) claims.cep = opts.clientEpoch;
   return signClaims(claims, APP_FRAME_TICKET_TTL_SECONDS).value;
@@ -384,8 +456,9 @@ export function buildAppFrameTicket(opts: {
 /** Verify an app-frame ticket: signature, expiry, kind (`k:'f'`). No DB —
  *  callers must still confirm the app (and share, when `shareId` is set)
  *  matches the route being served, and re-check a member login's liveness
- *  via `loginId`. A `cid` claim (a team visitor's contact, retired with team
- *  links) is ignored. */
+ *  via `loginId`. A `cid` claim counts only on a share ticket, with its `ce`
+ *  (a contact share's contact and code epoch); the share frame re-checks
+ *  both. A `cid` alone (a retired team visitor's) is ignored. */
 export type AppFrameTicket = {
   ownerId: string;
   appId: string;
@@ -397,6 +470,10 @@ export type AppFrameTicket = {
    *  at mint time. Only the client frame route accepts it; the member frame
    *  refuses a ticket that carries it. */
   clientEpoch?: number;
+  /** A contact share's ticket: the contact and its code epoch at mint time
+   *  (only with `shareId`). */
+  contactId?: string;
+  codeEpoch?: number;
 };
 
 export function verifyAppFrameTicket(value: string): AppFrameTicket | null {
@@ -405,6 +482,17 @@ export function verifyAppFrameTicket(value: string): AppFrameTicket | null {
   const out: AppFrameTicket = { ownerId: claims.uid, appId: claims.app };
   if (typeof claims.sh === 'string') out.shareId = claims.sh;
   if (typeof claims.mem === 'string') out.loginId = claims.mem;
+  // A contact share's ticket carries both `cid` and `ce`. A `cid` alone (a
+  // team visitor's, retired with team links) is ignored, as before.
+  if (
+    out.shareId &&
+    typeof claims.cid === 'string' &&
+    typeof claims.ce === 'number' &&
+    Number.isSafeInteger(claims.ce)
+  ) {
+    out.contactId = claims.cid;
+    out.codeEpoch = claims.ce;
+  }
   if (
     typeof claims.cep === 'number' &&
     Number.isSafeInteger(claims.cep) &&

@@ -1,4 +1,6 @@
-import { resolveActiveShareByToken, isAssetAllowed } from '@/lib/shares';
+import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
+import { isAssetAllowed } from '@/lib/shares';
+import { recordShareAccess } from '@mantle/content';
 import { readFileById } from '@/lib/files';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
@@ -32,9 +34,20 @@ export async function GET(
     });
   }
 
-  const share = await resolveActiveShareByToken(token);
+  const gate = await gateShare(req, token);
+  if (gate.kind === 'code') return contactCodeRequired();
+  const share = gate.kind === 'ok' ? gate.share : null;
   if (!share) return notFound();
   if (!(await isAssetAllowed(share, fileId))) return notFound();
+  if (share.contactId) {
+    recordShareAccess({
+      ownerId: share.ownerId,
+      shareId: share.id,
+      contactId: share.contactId,
+      kind: 'asset',
+      detail: { fileId },
+    });
+  }
 
   const res = await readFileById({ ownerId: share.ownerId, fileId });
   if (!res) return notFound();

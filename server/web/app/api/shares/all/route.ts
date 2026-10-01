@@ -24,6 +24,10 @@ export async function GET() {
       viewCount: s.viewCount,
       lastViewedAt: s.lastViewedAt,
       level: s.level,
+      // A contact share (0214): the contact it is for, and its right.
+      contactId: s.contactId,
+      contactName: s.contactName,
+      canWrite: s.canWrite,
     })),
   });
 }

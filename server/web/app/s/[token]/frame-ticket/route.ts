@@ -1,12 +1,13 @@
 /**
  * POST /s/[token]/frame-ticket — mint the seconds-lived signed ticket the
- * sandbox iframe presents to GET /s/[token]/frame. The visitor needs only
- * the active share, as for /bundle; the frame navigation then carries the
- * ticket, which binds it to this share and app for a few seconds.
+ * sandbox iframe presents to GET /s/[token]/frame. The visitor needs the
+ * active share, as for /bundle, and on a contact share the contact gate's
+ * cookie; the frame navigation then carries the ticket, which binds it to
+ * this share and app (and contact, and code epoch) for a few seconds.
  * 404 when the app has no published build.
  */
 import { NextResponse } from '@/server/http-compat';
-import { resolveActiveShareByToken } from '@/lib/shares';
+import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
 import { buildAppFrameTicket } from '@/lib/auth';
 import { getApp } from '@mantle/content';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
@@ -26,7 +27,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     });
   }
 
-  const share = await resolveActiveShareByToken(token);
+  const gate = await gateShare(req, token);
+  if (gate.kind === 'code') return contactCodeRequired();
+  const share = gate.kind === 'ok' ? gate.share : null;
   if (!share || share.nodeType !== 'app') return new NextResponse('not found', { status: 404 });
 
   const app = await getApp(share.ownerId, share.nodeId);
@@ -37,6 +40,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
       ownerId: share.ownerId,
       appId: share.nodeId,
       shareId: share.id,
+      // A contact share's ticket names the contact and its code epoch: the
+      // frame route re-checks both (its navigation carries no cookie).
+      ...(gate.kind === 'ok' && gate.contact ? { contact: gate.contact } : {}),
     }),
   });
 }

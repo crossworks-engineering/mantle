@@ -14,6 +14,7 @@ import { createRoot } from 'react-dom/client';
 import { AppPresenter } from '@mantle/share-ui/app-presenter';
 import { TablePresenter } from '@mantle/share-ui/table-presenter';
 import { FormulaCalculator } from '@mantle/share-ui/formula-calculator';
+import { ContactCodePrompt } from '../../components/share/contact-code-prompt';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const ISLANDS: Record<string, (props: any) => React.ReactNode> = {
@@ -23,6 +24,8 @@ const ISLANDS: Record<string, (props: any) => React.ReactNode> = {
   // a shared formula renders its equations, tables and warnings as HTML, and
   // only the calculator needs JavaScript.
   'formula-calculator': FormulaCalculator,
+  // A contact share's code prompt (contact shares, migration 0214).
+  'contact-code': ContactCodePrompt,
 };
 
 for (const el of document.querySelectorAll<HTMLElement>('[data-island]')) {
