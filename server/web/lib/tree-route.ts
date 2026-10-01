@@ -54,6 +54,11 @@ export async function treeKindOr404(ctx: {
  *  after the first skips the writes (audit P9). */
 const ensured = new Set<string>();
 
+/** A tree read never needs write rights (docs/folder-tree.md, "Reading"):
+ *  every step below looks first, writes only what is missing, and skips a
+ *  write the database refuses (a read-only replica, a role with SELECT only).
+ *  Such a brain is not remembered as ensured, so the steps look again on the
+ *  next read; any other failure still throws. */
 export async function ensureTreeRoot(
   ownerId: string,
   kind: TreeKind,
@@ -61,24 +66,27 @@ export async function ensureTreeRoot(
 ): Promise<void> {
   const key = `${ownerId}:${kind}:${actorId ?? ''}`;
   if (ensured.has(key)) return;
-  await ensureTreeRootOnce(ownerId, kind, actorId);
-  ensured.add(key);
+  if (await ensureTreeRootOnce(ownerId, kind, actorId)) ensured.add(key);
 }
 
+/** False when the database refused a write one of the steps had to make. */
 async function ensureTreeRootOnce(
   ownerId: string,
   kind: TreeKind,
   actorId?: string,
-): Promise<void> {
-  if (kind === 'files') await ensureFilesRootBranch(ownerId);
-  else await ensureKindRoot(ownerId, kind);
+): Promise<boolean> {
+  let done =
+    kind === 'files'
+      ? (await ensureFilesRootBranch(ownerId)) !== null
+      : await ensureKindRoot(ownerId, kind);
   // Older digests move into Notes / Auto-filed / Assistant once.
-  if (kind === 'notes') await reconcileNotesAutoFiled(ownerId);
+  if (kind === 'notes') done = (await reconcileNotesAutoFiled(ownerId)) !== null && done;
   // The Apps layout document and this login's app pins and opens.
   if (kind === 'apps') {
-    await reconcileAppNav(ownerId);
-    if (actorId) await reconcileAppMarks(ownerId, actorId);
+    done = (await reconcileAppNav(ownerId)) !== null && done;
+    if (actorId) done = (await reconcileAppMarks(ownerId, actorId)) !== null && done;
   }
+  return done;
 }
 
 /** A TreeError as its HTTP answer; anything else is rethrown (a 500). */

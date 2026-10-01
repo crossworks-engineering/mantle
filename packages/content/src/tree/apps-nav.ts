@@ -26,6 +26,7 @@ import { slugifyFolder } from '@mantle/files';
 import { loadProfilePreferences } from '../profile-preferences';
 import { ranksAfter } from '../rank';
 import { NodeOpRefusal, createNodeFolder, ensureKindRoot } from './node-ops';
+import { unlessWriteRefused } from './refused-write';
 
 const APPS_ROOT = 'apps';
 /** A claim older than this is a crashed run; the next read takes over. */
@@ -161,26 +162,36 @@ async function moveEntries(
 }
 
 /** Move the brain's app-nav document into folder rows, once. Returns whether
- *  this call did the move. */
-export async function reconcileAppNav(ownerId: string): Promise<boolean> {
-  await ensureKindRoot(ownerId, 'apps');
+ *  this call did the move; null when the move is still to do but the database
+ *  refuses writes (refused-write.ts): the apps are then read as the rows
+ *  stand, and the move waits for a database that takes it. */
+export async function reconcileAppNav(ownerId: string): Promise<boolean | null> {
+  if (!(await ensureKindRoot(ownerId, 'apps'))) return null;
   if ((await rootData(ownerId)).appNavMigratedAt) return false;
-  if (!(await claimAppNavMove(ownerId))) return false;
-  // The anchor's own row holds the layout (a brain-level preference).
-  const nav = (await loadProfilePreferences(ownerId)).appNav ?? EMPTY_APP_NAV;
-  await moveEntries(ownerId, nav.entries, APPS_ROOT, 0);
-  await markAppNavMoved(ownerId);
-  return true;
+  return unlessWriteRefused(async () => {
+    if (!(await claimAppNavMove(ownerId))) return false;
+    // The anchor's own row holds the layout (a brain-level preference).
+    const nav = (await loadProfilePreferences(ownerId)).appNav ?? EMPTY_APP_NAV;
+    await moveEntries(ownerId, nav.entries, APPS_ROOT, 0);
+    await markAppNavMoved(ownerId);
+    return true;
+  });
 }
 
 /**
  * Copy one login's app pins (order kept) and open counts into item_marks,
  * once. Pins keep their order through staggered pinned_at; counts take the
  * larger of what is there and what was kept, so a repeat changes nothing.
+ * Null when the copy is still to do but the database refuses writes
+ * (refused-write.ts): the login's marks are read as the rows stand.
  */
-export async function reconcileAppMarks(ownerId: string, actorId: string): Promise<boolean> {
-  await ensureKindRoot(ownerId, 'apps');
+export async function reconcileAppMarks(ownerId: string, actorId: string): Promise<boolean | null> {
+  if (!(await ensureKindRoot(ownerId, 'apps'))) return null;
   if ((await rootData(ownerId)).appMarksMigrated?.includes(actorId)) return false;
+  return unlessWriteRefused(() => copyAppMarks(ownerId, actorId));
+}
+
+async function copyAppMarks(ownerId: string, actorId: string): Promise<boolean> {
   // Pins and opens are personal: the login's own row.
   const prefs = await loadProfilePreferences(actorId);
   const pins = prefs.appPins ?? [];

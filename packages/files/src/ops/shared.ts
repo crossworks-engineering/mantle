@@ -7,7 +7,7 @@
 
 import { and, eq, sql } from 'drizzle-orm';
 import { ensureRoot, extOf, FILES_ROOT_LABEL, mimeForExt, TEXT_EXTS } from '../index';
-import { asViewerLevel, db, nodes, type Node, type ViewerLevel } from '@mantle/db';
+import { asViewerLevel, db, isWriteRefused, nodes, type Node, type ViewerLevel } from '@mantle/db';
 
 export type FolderRow = {
   id: string;
@@ -77,8 +77,13 @@ export type FileRow = {
 /**
  * The `files` root branch must exist before any folder under it can be
  * created. Lazy-creates the row + the on-disk directory on first call.
+ *
+ * Reads call this too (the Files lists, the tree), so it looks first and
+ * writes only a missing root. Null when the root is missing and the database
+ * refused to make it (a read-only replica, a role with SELECT only): the read
+ * then finds no files, and a write that follows fails by itself.
  */
-export async function ensureFilesRootBranch(ownerId: string): Promise<Node> {
+export async function ensureFilesRootBranch(ownerId: string): Promise<Node | null> {
   const existing = await db
     .select()
     .from(nodes)
@@ -97,22 +102,30 @@ export async function ensureFilesRootBranch(ownerId: string): Promise<Node> {
   // Concurrent first-uploads race this create-if-missing (two requests can
   // both see "missing" and insert) — the nodes_branch_owner_path_uq constraint
   // is the arbiter, so swallow the loser's 23505 and re-read the winner's row.
-  const [row] = await db
-    .insert(nodes)
-    .values({
-      ownerId,
-      type: 'branch',
-      title: 'Files',
-      slug: FILES_ROOT_LABEL,
-      path: FILES_ROOT_LABEL,
-      data: {
-        description:
-          'Host-mirrored filesystem. Folders and files here live on disk under MANTLE_FILES_ROOT.',
-      },
-      tags: ['files-root'],
-    })
-    .onConflictDoNothing()
-    .returning();
+  let row: Node | undefined;
+  try {
+    [row] = await db
+      .insert(nodes)
+      .values({
+        ownerId,
+        type: 'branch',
+        title: 'Files',
+        slug: FILES_ROOT_LABEL,
+        path: FILES_ROOT_LABEL,
+        data: {
+          description:
+            'Host-mirrored filesystem. Folders and files here live on disk under MANTLE_FILES_ROOT.',
+        },
+        tags: ['files-root'],
+      })
+      .onConflictDoNothing()
+      .returning();
+  } catch (err) {
+    // Narrow on purpose: only "the database refused to write". Anything else
+    // is a real failure and must still surface.
+    if (!isWriteRefused(err)) throw err;
+    return null;
+  }
   if (!row) {
     const [won] = await db
       .select()

@@ -69,7 +69,7 @@ export async function ensureViewerRoles(
 /** Two processes setting the same (cluster-wide) role at once make Postgres
  *  answer "tuple concurrently updated" (XX000) to one of them: parallel DB
  *  test files do exactly that. The statements are idempotent, so try again. */
-async function withRoleRetry<T>(fn: () => Promise<T>): Promise<T> {
+export async function withRoleRetry<T>(fn: () => Promise<T>): Promise<T> {
   for (let attempt = 1; ; attempt++) {
     try {
       return await fn();

@@ -18,6 +18,10 @@
  *  - setLoginRoleUnguarded: a login's role never changes to or from client
  *    (0200). A test that pins what the code does for a login that is no
  *    longer a client (or turned client) makes that state around the guard.
+ *  - createReadOnlyRole: a read path must be served by a database that
+ *    refuses writes (a read-only replica, the public demo's reader role). A
+ *    test proves it by running the read as a login that can SELECT
+ *    everything and write nothing.
  *  - createMigratedScratchDatabase: a test that DROPs or re-creates tables
  *    takes locks on `nodes` that deadlock with other test files deleting
  *    nodes. Such a test runs on a database of its own, migrated from scratch
@@ -30,7 +34,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
 import postgres from 'postgres';
-import { POOL_ROLES, ensureViewerRoles } from './viewer-roles';
+import { POOL_ROLES, ensureViewerRoles, withRoleRetry } from './viewer-roles';
 import { applyViewerGrants } from './access-matrix';
 import { viewerRoleName } from './viewer';
 
@@ -72,6 +76,50 @@ export async function setLoginRoleUnguarded(
     await tx`update auth.users set role = ${role} where id = ${loginId}`;
     await tx`alter table auth.users enable trigger users_client_role_guard`;
   });
+}
+
+/**
+ * A LOGIN role that reads everything and writes nothing, as the public demo's
+ * reader does: SELECT on every table of the app's schemas, BYPASSRLS, and no
+ * INSERT, UPDATE or DELETE anywhere. Returns its name and the database URL
+ * that logs in as it; `dropReadOnlyRole` removes it.
+ *
+ * `sql` must be a superuser connection to the database `adminUrl` names
+ * (BYPASSRLS is a superuser's to give). Grants touch the catalog rows other
+ * test files grant on at the same time, hence the retries.
+ */
+export async function createReadOnlyRole(
+  sql: Sql,
+  adminUrl: string,
+): Promise<{ name: string; url: string }> {
+  const name = `mantle_test_reader_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
+  const password = randomUUID().replace(/-/g, '');
+  await sql.unsafe(
+    `create role "${name}" with login bypassrls nosuperuser nocreatedb nocreaterole noinherit password '${password}'`,
+  );
+  const schemas = await sql<{ nspname: string }[]>`
+    select nspname from pg_namespace
+     where nspname !~ '^pg_' and nspname <> 'information_schema'`;
+  for (const { nspname } of schemas) {
+    await withRoleRetry(() => sql.unsafe(`grant usage on schema "${nspname}" to "${name}"`));
+    await withRoleRetry(() =>
+      sql.unsafe(`grant select on all tables in schema "${nspname}" to "${name}"`),
+    );
+  }
+  const url = new URL(adminUrl);
+  url.username = name;
+  url.password = password;
+  return { name, url: url.toString() };
+}
+
+/** Remove a role `createReadOnlyRole` made. Close every connection made with
+ *  its URL first: a role that is logged in cannot be dropped. */
+export async function dropReadOnlyRole(sql: Sql, name: string): Promise<void> {
+  if (!/^mantle_test_reader_[0-9a-f]+$/.test(name)) {
+    throw new Error('dropReadOnlyRole: not a test reader role');
+  }
+  await withRoleRetry(() => sql.unsafe(`drop owned by "${name}"`));
+  await sql.unsafe(`drop role if exists "${name}"`);
 }
 
 /** Poll `check` until it holds, or fail after `timeoutMs`. */
