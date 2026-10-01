@@ -85,6 +85,7 @@ export {
 
 export {
   MEMBER_APP_LEVELS,
+  MEMBER_LISTED_APP_LEVELS,
   isMemberAppLevel,
   listMemberApps,
   getMemberRunnableApp,

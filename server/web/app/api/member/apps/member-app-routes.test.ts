@@ -474,6 +474,20 @@ describe('member frame', () => {
     expect(h.rendered).toEqual([]);
   });
 
+  // Contact shares plan P0 (2026-10-01): a public app is in no member list
+  // (proven on Postgres in packages/content/src/member-apps.viewer.db.test.ts),
+  // but a member who has its link still runs it, read only.
+  it('still opens a public app the member reaches by its link, read only', async () => {
+    h.audience = 'public';
+    const res = await ticketRoute(post({}), params());
+    expect(res.status).toBe(200);
+    const { ticket } = (await res.json()) as { ticket: string };
+    expect((await frame(frameReq(ticket), params())).status).toBe(200);
+    expect(h.rendered).toEqual([PUBLISHED.storageKey]);
+    const write = await dbBroker(post({ op: 'exec', sql: 'insert into t values (1)' }), params());
+    expect(write.status).toBe(403);
+  });
+
   it('answers 404 once the app is no longer one the member may run', async () => {
     h.runnable = false;
     const t = tokens.buildAppFrameTicket({ ownerId: ANCHOR, appId: APP, loginId: LOGIN });

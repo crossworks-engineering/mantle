@@ -53,6 +53,11 @@ prefs.teamHubAppId  →  app exists under this owner
                     →  app at a level members may run (team, client, public)
 ```
 
+The home app may be a public app (members may run one), but the OTHER apps
+that `host.hub.get()` answers are the launcher's list: team and client apps
+only, never a public one (contact shares plan P0, 2026-10-01). Public means
+"anyone with the link", so a public app is in no member list.
+
 Designation (the Team-admin picker, or `PUT /api/team-admin/hub-app`) puts an
 app still at admin at team level, then sets the pref, and answers
 `{ appId, levelChanged }`; it makes no share link (team links were retired in

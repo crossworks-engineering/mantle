@@ -674,9 +674,18 @@ with a green **published** build, never a draft
 and the routes read on the team role as well, so both locks hold. Set an
 app's level in its Access control; nothing else lists it to members.
 
+The launcher LISTS fewer apps than a member may run: team and client apps
+only, never a public one (`MEMBER_LISTED_APP_LEVELS`; contact shares plan
+P0, decided 2026-10-01). Public means "anyone with the link" for an app as
+for every other kind, so a public app is in no member list: not
+`GET /api/member/apps`, not its folders, not the home app's `apps`. A
+member who has a public app's link still runs it, read only. A public app
+inside a folder shared with the team is read at team through the folder,
+so it is listed like any team app there.
+
 | Route                                    | What                                                |
 | ---------------------------------------- | --------------------------------------------------- |
-| `GET /api/member/apps`                   | The apps the member may run, their folders, home id |
+| `GET /api/member/apps`                   | Team and client apps to run, their folders, home id |
 | `POST /api/member/apps/:id/frame-ticket` | A seconds-lived frame ticket that names the login   |
 | `GET /api/member/apps/:id/frame?t=`      | The frame document: the PUBLISHED build             |
 | `POST /api/member/apps/:id/tool-broker`  | `host.tools.call()` (rules below)                   |
@@ -768,7 +777,8 @@ app's level in its Access control; nothing else lists it to members.
   built-in view, and `/api/member/home` answers `{ homeApp: null, hub: null }`.
   With a home app, `host.hub.get()` answers from that route: the site name,
   the member's name, the newest team pages as sections (a section's `token`
-  is the page id), Library counts and the other apps members may run.
+  is the page id), Library counts and the other apps the launcher lists
+  (team and client, never public).
 - **Contract.** The response shapes are published in
   `@crossworks/client-types` (`packages/client-types/src/dto/member-apps.ts`):
   `MemberAppCard`, `MemberAppList`, `MemberHomeApp`, `MemberHomeData<THub>`

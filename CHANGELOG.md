@@ -4,6 +4,22 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: public apps leave the member launcher
+
+Public now means "anyone with the link" for an app, as it does for every
+other kind (contact shares plan P0, decided 2026-10-01).
+
+- **Member launcher.** `GET /api/member/apps` (and its folders) and the
+  member home's `apps` list team and client apps only, never a public one
+  (`MEMBER_LISTED_APP_LEVELS` in `packages/content/src/member-apps.ts`).
+  A public app inside a folder shared with the team is still listed: the
+  team reads it through the folder.
+- **Running is unchanged.** A member who has a public app's link still runs
+  it, read only. The pinned home app is unchanged. The contract is
+  unchanged (`MemberAppLevel` still names public).
+- **Docs.** `docs/member-logins.md` section 7, `docs/access-levels.md`
+  section 7, `docs/team-hub-app-sdk.md` section 2.
+
 ## 0.232.370: a restored brain keeps its folder share refresh
 
 Every `pg_restore` of a dump taken at migration 0204 or later gave one

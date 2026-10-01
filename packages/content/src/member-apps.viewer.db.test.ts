@@ -1,7 +1,8 @@
 /**
  * Apps for members on a real, migrated Postgres (member logins Phase 4b, plan
  * v3.1 section 4a): a member may run an app at team level or lower with a
- * green PUBLISHED build, never an admin app, a draft-only app, a red build or
+ * green PUBLISHED build, and the launcher lists only team and client apps,
+ * never a public one (contact shares plan P0), never an admin app, a draft-only app, a red build or
  * another brain's app (the rule is in the query, so the admin pool proves
  * it); the lookups work on the team role (no draft column is read); the home
  * app is honoured only while a member may run it; the access log names the
@@ -100,13 +101,27 @@ describe.skipIf(!URL)('apps for members', () => {
   // The rule is written in the query, so the admin pool proves it. The team
   // role adds row security keyed on the box's one brain (mantle_brain_id()),
   // which this test's own brain is not: see the team-role case below.
-  it('lists team-level and lower apps with a green published build, by title', async () => {
+  it('lists team and client apps with a green published build, by title', async () => {
     const apps = await ma.listMemberApps(anchor);
-    expect(apps.map((a) => a.id)).toEqual([ids.pub, ids.team]);
+    expect(apps.map((a) => a.id)).toEqual([ids.team]);
     expect(apps.find((a) => a.id === ids.team)).toMatchObject({
       description: 'Polls',
       audience: 'team',
     });
+  });
+
+  // Contact shares plan P0 (decided 2026-10-01): Public means "anyone with
+  // the link" for an app as for every other kind. A public app is in no
+  // member list, the launcher's folders included; a member who has the link
+  // still runs it, read only.
+  it('lists no public app, yet a member still runs one from its link', async () => {
+    const placed = await ma.listMemberAppsPlaced(anchor);
+    expect(placed.apps.map((a) => a.id)).not.toContain(ids.pub);
+    expect(placed.places.map((p) => p.id)).not.toContain(ids.pub);
+    const pub = await ma.getMemberRunnableApp(anchor, ids.pub);
+    expect(pub).toMatchObject({ id: ids.pub, audience: 'public' });
+    expect(ma.memberMayWriteAppData(pub!)).toBe(false);
+    expect(ma.MEMBER_LISTED_APP_LEVELS).toEqual(['team', 'client']);
   });
 
   it('never opens an admin app, a draft-only app, a red build or another brain', async () => {

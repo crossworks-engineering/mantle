@@ -437,7 +437,11 @@ outside a login reaches a team item.
   client items only. Public items are in nobody's Library list: 0161 made
   every link-shared item public. A member still opens a public item by id
   (anyone with its link can read it), and a client never does
-  (docs/member-logins.md section 3).
+  (docs/member-logins.md section 3). Apps too, since contact shares plan
+  P0 (2026-10-01): the member launcher lists team and client apps, never a
+  public one, so Public means "anyone with the link" for every kind. A
+  member still runs a public app from its link, read only
+  (docs/member-logins.md section 7).
 - **Admin-only kinds** (tasks, events, …) stay admin whatever link they
   carry. Setting one to admin removes an old link.
 - Migration 0161 re-derived every level from the links once, for the window

@@ -164,12 +164,13 @@ describe.skipIf(!URL)('apps for clients', () => {
   });
 
   it('reports the informational flag to members: read only on a public or informational app', async () => {
+    // A public app is in no member list (contact shares plan P0), so its
+    // read-only flag is seen where the member runs it from its link.
     const cards = mine(await ma.listMemberApps(brain));
     const flag = Object.fromEntries(cards.map((c) => [c.id, c.dataReadOnly]));
     expect(flag).toEqual({
       [ids.client]: false,
       [ids.team]: false,
-      [ids.pub]: true,
       [ids.info]: true,
     });
     const info = await ma.getMemberRunnableApp(brain, ids.info);
