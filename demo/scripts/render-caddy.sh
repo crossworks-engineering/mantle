@@ -18,6 +18,15 @@
 # Re-run this whenever the cookies need reminting (a rotated SESSION_SECRET, a
 # re-seeded brain, a new team member). Nothing else has to change: the site
 # repo holds no demo state at all.
+#
+# One thing crosses from the bench to the box besides the vhost: the phone-app
+# bearer is minted as a mobile_tokens row in the BENCH brain, and the box's
+# brain, restored from a bundle dumped earlier, has never seen it. The edge
+# would hand reviewers a bearer the server rejects. So after minting, this
+# script copies the mobile_tokens rows into the box's database (INSERT … ON
+# CONFLICT DO NOTHING, so a re-run is harmless) and checks the new jti is
+# there before it installs the vhost. DEMO_REMOTE_PG names the box's postgres
+# container (default mantle_demo_srv_pg, the serve stack's).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 DEMO="demo"; ART="$DEMO/.run"; mkdir -p "$ART"
@@ -86,6 +95,27 @@ if [ "$PRINT_ONLY" = "1" ]; then
   echo "(not installed — --print)" >&2
   exit 0
 fi
+
+# The bearer's jti is inside its payload (base64url JSON, first segment). It
+# is what the box has to hold for the token to be honoured, and it is how the
+# carry below is verified rather than assumed.
+JTI=$(printf '%s' "${MOBILE_TOKEN%%.*}" | tr '_-' '/+' \
+  | awk '{ l = length($0) % 4; if (l == 2) $0 = $0 "=="; else if (l == 3) $0 = $0 "="; print }' \
+  | base64 -d 2>/dev/null | sed -n 's/.*"jti":"\([^"]*\)".*/\1/p')
+[ -n "$JTI" ] || fail "could not read the jti out of the minted bearer"
+
+REMOTE_PG="${DEMO_REMOTE_PG:-mantle_demo_srv_pg}"
+echo "→ carrying mobile_tokens to $HOST ($REMOTE_PG)" >&2
+# --inserts + --on-conflict-do-nothing: rows the box already has (an earlier
+# run, or the bundle itself) are skipped instead of failing the load. Only this
+# table travels; nothing else on the box's brain is touched.
+docker exec mantle_demo_pg pg_dump -U postgres -d postgres --data-only --inserts \
+    --on-conflict-do-nothing -t mobile_tokens \
+  | ssh "$HOST" "docker exec -i $REMOTE_PG psql -U postgres -d postgres -q -v ON_ERROR_STOP=1" \
+  || fail "carrying mobile_tokens to the box failed — the phone-app bearer would be refused there; NOT installing"
+FOUND=$(ssh "$HOST" "docker exec $REMOTE_PG psql -U postgres -d postgres -Atc \"select count(*) from mobile_tokens where id = '$JTI'\"")
+[ "$FOUND" = "1" ] || fail "the minted bearer's row ($JTI) is not on the box after the carry — NOT installing"
+echo "  row $JTI present on the box" >&2
 
 echo "→ installing on $HOST" >&2
 ssh "$HOST" "mkdir -p ~/$REMOTE_DIR/conf.d && chmod 700 ~/$REMOTE_DIR/conf.d"
