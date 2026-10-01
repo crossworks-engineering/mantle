@@ -14,6 +14,13 @@
 [![commit activity](https://img.shields.io/github/commit-activity/m/crossworks-engineering/mantle?label=commits%2Fmonth&logo=git&logoColor=white)](https://github.com/crossworks-engineering/mantle/commits/main)
 [![last commit](https://img.shields.io/github/last-commit/crossworks-engineering/mantle?label=last%20commit&logo=github)](https://github.com/crossworks-engineering/mantle/commits/main)
 
+> **Mantle and Jackdaw.** Jackdaw is the app: the web and desktop interface you
+> use. Mantle is the engine underneath it: the memory, the agents, and the API.
+> This repo is Mantle. The app lives in
+> [crossworks-engineering/jackdaw](https://github.com/crossworks-engineering/jackdaw),
+> and one Jackdaw can connect to many Mantle brains. If you only use it, think
+> "Jackdaw". If you self-host it or build on it, you work with Mantle.
+
 **A second brain that's actually awake.** Most AI assistants are a chat window
 with amnesia; they wait for you to ask. Mantle ingests your emails, files,
 notes, conversations, contacts, and calendar into one structured memory you
