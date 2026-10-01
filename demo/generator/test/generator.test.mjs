@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { generateAll, renderFile } from '../gen.mjs';
+import { generateAll, renderFile, structuralProblems, MAX_FOLDER_DEPTH } from '../gen.mjs';
 import { world, targets, owner, SPAN } from '../lib/world.mjs';
 import { makeRng } from '../lib/rng.mjs';
 import { scanText } from '../guard.mjs';
@@ -15,6 +15,12 @@ const allText = [
   ...gen.tables.flatMap((t) => [t.title, ...t.rows.flat().map(String)]),
   ...gen.docs.map((d) => d.body),
   ...gen.turns.map((t) => t.prompt),
+  ...gen.folders.map((f) => f.name),
+  ...gen.recall_maps.flatMap((m) => [
+    m.title, m.enter_when, m.entry.body,
+    ...m.cards.flatMap((c) => [c.title, c.body, c.use_when]),
+    ...[m.entry, ...m.cards].flatMap((c) => (c.options ?? []).flatMap((o) => [o.label, o.use_when])),
+  ]),
 ].filter(Boolean).join('\n');
 
 // ── Determinism ──────────────────────────────────────────────────────────────
@@ -158,10 +164,115 @@ test('procedure revision families form supersession chains', () => {
   }
 });
 
-test('pages nest at least three deep', () => {
+// Pages stopped nesting on main in v0.232.365 (folder phase 7): a page is
+// never the parent of a page, and the depth lives in the folders.
+test('no page has a page parent', () => {
+  const nested = gen.nodes.filter((n) => n.kind === 'page' && n.meta?.parent_id);
+  assert.deepEqual(nested.map((n) => n.id), [], 'pages do not nest: file them in a folder (meta.folder)');
+});
+
+test('folders nest at least two deep and never deeper than the brain allows', () => {
+  const byId = Object.fromEntries(gen.folders.map((f) => [f.id, f]));
+  const depth = (f) => (f.parent ? 1 + depth(byId[f.parent]) : 1);
+  for (const kind of ['pages', 'notes']) {
+    const depths = gen.folders.filter((f) => f.kind === kind).map(depth);
+    assert.ok(Math.max(...depths) >= 2, `the ${kind} tree is flat: no folder inside a folder`);
+    assert.ok(Math.max(...depths) <= MAX_FOLDER_DEPTH, `a ${kind} folder is deeper than ${MAX_FOLDER_DEPTH} levels; the brain refuses it`);
+  }
+});
+
+test('folders and Recall maps are structurally sound', () => {
+  assert.deepEqual(structuralProblems(gen), []);
+});
+
+test('the structural check catches what the brain would refuse (negative control)', () => {
+  const bad = {
+    ...gen,
+    folders: [
+      ...gen.folders,
+      { id: 'x1', kind: 'pages', parent: 'hb-f-kit', name: 'Third level, allowed' },
+      { id: 'x2', kind: 'notes', parent: 'x1', name: 'Wrong tree' },
+      { id: 'x3', kind: 'pages', parent: 'x1', name: 'Fourth level' },
+    ],
+    nodes: [...gen.nodes, { id: 'p1', kind: 'page', title: 't', body: '', meta: { folder: 'fld-notes-island', parent_id: 'hb-root' } }],
+    recall_maps: [{ ...gen.recall_maps[0], entry: { body: '', options: [{ label: 'Nowhere', target: 'no-such-card', use_when: 'never' }] } }],
+  };
+  const found = structuralProblems(bad).join('\n');
+  assert.ok(!found.includes('folder x1:'), 'a third-level folder is allowed');
+  for (const probe of ['x3: deeper than', 'x2: parent x1 is in another tree', 'p1: a page cannot sit in a notes folder', 'p1: pages do not nest', 'leads to unknown card no-such-card']) {
+    assert.ok(found.includes(probe), `not caught: ${probe}\n${found}`);
+  }
+});
+
+test('pages and notes are filed: every folder holds something, and some items stay unsorted', () => {
+  for (const [kind, tree] of [['page', 'pages'], ['note', 'notes']]) {
+    const items = gen.nodes.filter((n) => n.kind === kind);
+    const used = new Set(items.map((n) => n.meta.folder).filter(Boolean));
+    const parents = new Set(gen.folders.map((f) => f.parent).filter(Boolean));
+    for (const f of gen.folders.filter((x) => x.kind === tree)) {
+      assert.ok(used.has(f.id) || parents.has(f.id), `${tree} folder "${f.name}" is empty`);
+    }
+    const filed = items.filter((n) => n.meta.folder).length;
+    assert.ok(filed / items.length >= 0.6, `only ${filed}/${items.length} ${tree} are in a folder`);
+    assert.ok(filed < items.length, `every ${kind} is filed; a real tree has unsorted items too`);
+  }
+});
+
+test('folders show the features: icon and colour, a team share and a client share', () => {
+  assert.ok(gen.folders.every((f) => f.icon && f.color), 'every demo folder has an icon and a colour');
+  assert.ok(new Set(gen.folders.map((f) => f.color)).size >= 4, 'use more than a few colours');
+  assert.deepEqual([...new Set(gen.folders.map((f) => f.share).filter(Boolean))].sort(), ['client', 'team']);
+  // Only these kinds can be shared on the brain (TREE_KIND_SPECS on main).
+  for (const f of gen.folders.filter((x) => x.share)) assert.ok(['pages', 'notes'].includes(f.kind));
+});
+
+test('a page that used to be a parent sits NEXT TO its folder and lists it', () => {
   const pages = Object.fromEntries(gen.nodes.filter((n) => n.kind === 'page').map((p) => [p.id, p]));
-  const depth = (p, d = 0) => (p?.meta?.parent_id ? depth(pages[p.meta.parent_id], d + 1) : d);
-  assert.ok(Math.max(...Object.values(pages).map((p) => depth(p))) >= 2, 'handbook tree is too flat');
+  const byId = Object.fromEntries(gen.folders.map((f) => [f.id, f]));
+  const indexPages = Object.values(pages).filter((p) => /\(folder:gen:/.test(p.body));
+  assert.ok(indexPages.length >= 4, 'the handbook has four pages that were parents');
+  for (const p of indexPages) {
+    const target = byId[/\(folder:gen:([^)]+)\)/.exec(p.body)[1]];
+    assert.equal(target.name, p.title, 'the folder carries the name of the page it came from');
+    assert.equal(target.parent ?? null, p.meta.folder ?? null, `${p.id} must sit next to "${target.name}", not in it`);
+    // The block must be a paragraph of its own, or it stays a plain link.
+    assert.match(p.body, /\n\n\[Folder index\]\(folder:gen:[^)]+\)$/);
+  }
+  const here = Object.values(pages).filter((p) => p.body.endsWith('\n\n[Folder index](folder:here)'));
+  assert.ok(here.length >= 1, 'no page shows the Folder index of its own folder');
+  for (const p of here) assert.ok(p.meta.folder, `${p.id} lists "this folder" but sits at the top level`);
+});
+
+// ── Recall: a native map, not tagged pages ───────────────────────────────────
+test('the Recall map is native: entry card, four cards, one prompt, no tagged pages', () => {
+  assert.equal(gen.recall_maps.length, 1);
+  const map = gen.recall_maps[0];
+  assert.equal(map.cards.length, 4);
+  assert.equal(map.entry.options.length, 4, 'the entry card leads to every card');
+  const prompts = map.cards.filter((c) => c.kind === 'prompt');
+  assert.equal(prompts.length, 1);
+  assert.ok(prompts[0].use_when.length > 20 && prompts[0].body.length > 100);
+  // Page-built maps were retired (migration 0209 deletes them): no page may
+  // carry the old markers.
+  const pages = gen.nodes.filter((n) => n.kind === 'page');
+  assert.deepEqual(pages.filter((p) => p.tags.includes('recall') || p.tags.includes('prompt')).map((p) => p.id), []);
+  assert.deepEqual(pages.filter((p) => p.meta?.recall_options || p.branch === 'studio.recall').map((p) => p.id), []);
+});
+
+test('Recall slugs are the ones the brain derives from the titles', () => {
+  // recallSlug in packages/content-core/src/recall-compile.ts, restated: the
+  // generator has no dependencies. A slug that differs would make the seeder
+  // change it after the create and leave a former slug behind.
+  const slug = (title) => title.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/g, '');
+  for (const map of gen.recall_maps) {
+    assert.ok(map.title.length < 60 && map.cards.every((c) => c.title.length < 60), 'keep titles under the 60-character slug cut');
+    assert.equal(map.slug, slug(map.title));
+    for (const c of map.cards) assert.equal(c.slug, slug(c.title));
+    // Sizes the brain caps: 6,000 characters of body, 500 per line, 200 per title.
+    for (const c of [map.entry, ...map.cards]) assert.ok(c.body.length <= 6000);
+    assert.ok(map.enter_when.length <= 500);
+  }
 });
 
 test('tables carry formulas, aggregates, currency and select columns', () => {

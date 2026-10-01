@@ -26,8 +26,10 @@ import * as traffic from './content/traffic.mjs';
 import * as turns from './content/turns.mjs';
 import * as showcase from './content/showcase.mjs';
 import * as automation from './content/automation.mjs';
+import * as folders from './content/folders.mjs';
+import { folderFor, INDEX_HERE } from './content/folders.mjs';
 
-const MODULES = { studio, pumphouse, storefront, island, handbook, personal, traffic, turns, showcase, automation };
+const MODULES = { studio, pumphouse, storefront, island, handbook, personal, traffic, turns, showcase, automation, folders };
 
 const args = process.argv.slice(2);
 const argVal = (flag, dflt) => { const i = args.indexOf(flag); return i === -1 ? dflt : args[i + 1]; };
@@ -37,12 +39,72 @@ const OUT = join(here, argVal('--out', 'out'));
 
 export function generateAll(seed = 1) {
   const rng = makeRng(seed);
-  const all = { nodes: [], tables: [], emails: [], files: [], docs: [], turns: [], heartbeats: [], draws: [] };
+  const all = { nodes: [], tables: [], emails: [], files: [], docs: [], turns: [], heartbeats: [], draws: [], folders: [], recall_maps: [] };
   for (const [name, mod] of Object.entries(MODULES)) {
     const r = mod.generate(rng);
     for (const key of Object.keys(all)) for (const item of r[key] ?? []) all[key].push({ ...item, _module: name });
   }
+  // File pages and notes in their project's folder (content/folders.mjs). A
+  // node that names its own folder keeps it; null is the top level.
+  all.nodes = all.nodes.map((n) => {
+    if (n.kind !== 'page' && n.kind !== 'note') return n;
+    const folder = n.meta?.folder !== undefined ? n.meta.folder : folderFor(n);
+    const here = INDEX_HERE[n.id];
+    return {
+      ...n,
+      ...(here ? { body: `${n.body}\n\n## In this folder\n\n${here}\n\n[Folder index](folder:here)` } : {}),
+      meta: { ...n.meta, folder },
+    };
+  });
   return all;
+}
+
+/** The brain's limit: a folder sits one to three levels below its kind's root. */
+export const MAX_FOLDER_DEPTH = 3;
+
+/** Structural problems in the folders and the Recall maps, as messages. The
+ *  brain refuses each of these on the write, so finding them here turns a
+ *  failed seed (minutes in) into a failed generate (at once). */
+export function structuralProblems(all) {
+  const problems = [];
+  const folderById = new Map(all.folders.map((f) => [f.id, f]));
+  const depthOf = (f, seen = new Set()) => {
+    if (!f.parent) return 1;
+    if (seen.has(f.id)) return Infinity;
+    seen.add(f.id);
+    const parent = folderById.get(f.parent);
+    return parent ? 1 + depthOf(parent, seen) : Infinity;
+  };
+  for (const f of all.folders) {
+    if (f.parent && !folderById.has(f.parent)) problems.push(`folder ${f.id}: parent ${f.parent} does not exist`);
+    else if (f.parent && folderById.get(f.parent).kind !== f.kind) problems.push(`folder ${f.id}: parent ${f.parent} is in another tree`);
+    else if (depthOf(f) > MAX_FOLDER_DEPTH) problems.push(`folder ${f.id}: deeper than ${MAX_FOLDER_DEPTH} levels`);
+  }
+  const treeOf = { page: 'pages', note: 'notes' };
+  for (const n of all.nodes) {
+    const folder = n.meta?.folder;
+    if (folder == null) continue;
+    const f = folderById.get(folder);
+    if (!f) problems.push(`${n.id}: folder ${folder} does not exist`);
+    else if (f.kind !== treeOf[n.kind]) problems.push(`${n.id}: a ${n.kind} cannot sit in a ${f.kind} folder`);
+    for (const m of n.body.matchAll(/\(folder:gen:([^)\s]+)\)/g)) {
+      if (!folderById.has(m[1])) problems.push(`${n.id}: Folder index names unknown folder ${m[1]}`);
+    }
+    if (n.meta?.parent_id) problems.push(`${n.id}: pages do not nest, use meta.folder`);
+  }
+  for (const map of all.recall_maps) {
+    const slugs = new Set(['start', ...map.cards.map((c) => c.slug)]);
+    if (slugs.size !== map.cards.length + 1) problems.push(`recall ${map.slug}: duplicate card slug (or a card named 'start', the entry card's slug)`);
+    if (!map.enter_when?.trim()) problems.push(`recall ${map.slug}: no enter_when line`);
+    for (const card of [{ slug: 'start', ...map.entry }, ...map.cards]) {
+      if (card.kind === 'prompt' && !card.use_when?.trim()) problems.push(`recall ${map.slug}/${card.slug}: a prompt needs a use_when line`);
+      for (const o of card.options ?? []) {
+        if (!slugs.has(o.target)) problems.push(`recall ${map.slug}/${card.slug}: option "${o.label}" leads to unknown card ${o.target}`);
+        if (!o.use_when?.trim()) problems.push(`recall ${map.slug}/${card.slug}: option "${o.label}" has no use_when line`);
+      }
+    }
+  }
+  return problems;
 }
 
 // Render a file spec to real bytes. The P3 ingest runs Tika and the image
@@ -64,7 +126,7 @@ function main() {
   // Fail loudly on anything structurally wrong before writing a byte.
   const problems = [];
   const ids = new Set();
-  for (const key of ['nodes', 'tables', 'emails', 'files']) {
+  for (const key of ['nodes', 'tables', 'emails', 'files', 'folders', 'recall_maps']) {
     for (const item of all[key]) {
       if (ids.has(item.id)) problems.push(`duplicate id: ${item.id}`);
       ids.add(item.id);
@@ -72,6 +134,7 @@ function main() {
       if (off != null && (off < SPAN[0] || off > SPAN[1])) problems.push(`${item.id}: offset ${off} outside span ${SPAN}`);
     }
   }
+  problems.push(...structuralProblems(all));
   if (problems.length) { console.error('GENERATION FAILED:\n  ' + problems.join('\n  ')); process.exit(1); }
 
   rmSync(OUT, { recursive: true, force: true });
@@ -114,10 +177,12 @@ function main() {
         draw: all.draws.length,
       },
       emails: all.emails.length, turns: all.turns.length, heartbeats: all.heartbeats.length,
+      folders: all.folders.length, recall_maps: all.recall_maps.length,
     },
     nodes: all.nodes, tables: all.tables, emails: all.emails,
     files: fileIndex, docs: all.docs.map(({ collection, relpath, title }) => ({ collection, relpath, title })),
     turns: all.turns, heartbeats: all.heartbeats, draws: all.draws,
+    folders: all.folders, recall_maps: all.recall_maps,
   };
   writeFileSync(join(OUT, 'manifest.json'), JSON.stringify(manifest, null, 2));
 
@@ -133,7 +198,7 @@ function main() {
   const pad = (s, n) => String(s).padEnd(n);
   console.log(`${pad('type', 16)}${pad('got', 7)}${pad('target', 8)}${pad('min', 7)}status`);
   for (const r of rows) console.log(`${pad(r[0], 16)}${pad(r[1], 7)}${pad(r[2], 8)}${pad(r[3], 7)}${r[4]}`);
-  console.log(`\nfiles ${all.files.length} · docs ${all.docs.length} · scripted turns ${all.turns.length}`);
+  console.log(`\nfiles ${all.files.length} · docs ${all.docs.length} · scripted turns ${all.turns.length} · folders ${all.folders.length} · recall maps ${all.recall_maps.length}`);
   const under = rows.filter((r) => r[4] === 'UNDER');
   if (under.length) {
     console.error(`\n✗ ${under.length} type(s) under the minimum: ${under.map((r) => r[0]).join(', ')}`);

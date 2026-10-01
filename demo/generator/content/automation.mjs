@@ -6,12 +6,13 @@
 //  - heartbeats: scheduled skill→agent triggers. Two the studio would keep.
 //    They never fire on the demo (the box runs no worker, and the seed sets
 //    earliest_at a day out), so they read as configured automation, honestly.
-//  - a Recall map: a page tree whose root carries the `recall` tag and whose
-//    nodes end in an "Options" list (`[label](page:<id>) — use when …`). The
-//    generator writes the options by GENERATOR id; the seeder resolves them
-//    to real page ids after the tree exists (a page cannot link a sibling
-//    that has not been created yet), then commits the root so the map
-//    compiles. One prompt node, tagged `prompt`, declares its matcher line.
+//  - a Recall map: a NATIVE map (Recall v2). One map with a slug, a title and
+//    an "enter when" line; an entry card; four cards. Options name their
+//    target by card SLUG. The house-style card is a prompt (kind `prompt`,
+//    with the `use_when` line that recall_match compares against). The seeder
+//    creates all of it through the owner Recall API. Page-built maps (pages
+//    tagged `recall` / `prompt`) were retired on main in v0.232.363: migration
+//    0209 deletes them, so nothing here makes a page any more.
 //  - a draw: an Excalidraw scene of the PS3 telemetry after the changeover.
 //    Elements carry the fields Excalidraw's restore path expects; ids are
 //    fixed strings so the scene is byte-identical run to run.
@@ -64,7 +65,7 @@ function note(id, x, y, text, seed) {
 }
 
 export function generate() {
-  const nodes = [], heartbeats = [], draws = [];
+  const heartbeats = [], draws = [], recall_maps = [];
 
   // ── Heartbeats ────────────────────────────────────────────────────────────
   heartbeats.push({
@@ -88,72 +89,63 @@ export function generate() {
   });
 
   // ── Recall map: how we work at Harbour Labs ───────────────────────────────
-  const R = 'studio.recall';
-  nodes.push({
-    id: 'recall-root', kind: 'page', branch: R, title: 'How we work — a map for the assistant',
-    body: [
-      '# How we work — a map for the assistant',
-      '',
-      'Start here when a question is about the studio\'s own way of doing things rather than a project fact. Each option below is one situation; follow it and apply what it says before answering. Project facts live in the project branches, not here.',
-    ].join('\n'),
-    offset: -30, tags: ['recall', 'handbook'],
-    meta: {
-      recall_options: [
-        { label: 'Before a site visit', target: 'recall-site-visit', use_when: 'someone is planning, packing for, or asking what to check before going to site' },
-        { label: 'Issuing a procedure revision', target: 'recall-procedure-revision', use_when: 'a procedure changes, a client asks which revision is current, or a revision needs approval' },
-        { label: 'When a client withholds a certificate', target: 'recall-certificate', use_when: 'practical completion, snag disputes, retention or a withheld certificate come up' },
-        { label: 'Site visit report — house style', target: 'recall-site-report-prompt', use_when: 'writing up a site visit, a loop check, or a commissioning day' },
+  // Card slugs are what the brain derives from each title (kebab-case), so
+  // the seeder never has to change a slug after it creates a card. The test
+  // pins that.
+  recall_maps.push({
+    id: 'recall-how-we-work',
+    slug: 'how-we-work-at-harbour-labs',
+    title: 'How we work at Harbour Labs',
+    enter_when: 'a question is about the studio\'s own way of doing things (site visits, procedure revisions, withheld certificates, site reports) and not about a project fact',
+    offset: -30,
+    entry: {
+      body: 'Start here when a question is about the studio\'s own way of doing things rather than a project fact. Each option below is one situation; follow it and apply what it says before answering. Project facts live in the project folders, not here.',
+      options: [
+        { label: 'Before a site visit', target: 'before-a-site-visit', use_when: 'someone is planning, packing for, or asking what to check before going to site' },
+        { label: 'Issuing a procedure revision', target: 'issuing-a-procedure-revision', use_when: 'a procedure changes, a client asks which revision is current, or a revision needs approval' },
+        { label: 'When a client withholds a certificate', target: 'when-a-client-withholds-a-certificate', use_when: 'practical completion, snag disputes, retention or a withheld certificate come up' },
+        { label: 'Site visit report: house style', target: 'site-visit-report-house-style', use_when: 'writing up a site visit, a loop check, or a commissioning day' },
       ],
     },
-  });
-  nodes.push({
-    id: 'recall-site-visit', kind: 'page', branch: R, title: 'Before a site visit',
-    body: [
-      '# Before a site visit',
-      '',
-      '- Confirm access with the client contact the day before, in writing. At a Vantage store that is Marcus Bell; at PS3 it is the Meridian control room.',
-      '- Take the standard site kit (handbook: "Standard site kit"). Calibrator certificate must be in date, or the readings are worthless.',
-      '- Print the loop schedule and the CURRENT procedure revision; the brain knows which one that is.',
-      '- Photograph before touching anything: wide shot for context, close shot for the label.',
-      '- Leave with a snag list that has an owner per line, not a paragraph.',
-    ].join('\n'),
-    offset: -30, tags: ['recall', 'handbook'], meta: { parent_id: 'recall-root' },
-  });
-  nodes.push({
-    id: 'recall-procedure-revision', kind: 'page', branch: R, title: 'Issuing a procedure revision',
-    body: [
-      '# Issuing a procedure revision',
-      '',
-      'A procedure is a revision family: rev B supersedes rev A, and the newest committed revision is the living one. Never edit an issued revision; issue the next one.',
-      '',
-      '1. Draft the new revision as its own page; say in its first paragraph what changed and why (the Bekker review changed scope at rev B; Marsh\'s loop-check order corrected rev C).',
-      '2. Second pair of eyes through the review gate before anything leaves the studio.',
-      '3. Client approval: at Meridian, Gordon Bekker approves every revision; witnesses are named separately.',
-      '4. Commit; the old revision stays for the record and retrieval prefers the new one on its own.',
-    ].join('\n'),
-    offset: -30, tags: ['recall', 'handbook'], meta: { parent_id: 'recall-root' },
-  });
-  nodes.push({
-    id: 'recall-certificate', kind: 'page', branch: R, title: 'When a client withholds a certificate',
-    body: [
-      '# When a client withholds a certificate',
-      '',
-      'Separate the snags from the certificate. Measure what is measurable (grid alignment against the spec tolerance, filed), accept what is genuinely ours (install damage), and propose a retention against the open items rather than holding practical completion for them. Store 214 is the worked example: position summary in the STOREFRONT pages, thread in mail.',
-      '',
-      'Escalation order: Dana on the technical position, Felix on the money, Alex with the client. The invoice does not go out until the position summary is agreed internally.',
-    ].join('\n'),
-    offset: -30, tags: ['recall', 'handbook'], meta: { parent_id: 'recall-root' },
-  });
-  nodes.push({
-    id: 'recall-site-report-prompt', kind: 'page', branch: R, title: 'Site visit report — house style',
-    body: [
-      '# Site visit report — house style',
-      '',
-      'Use when: writing up a site visit, a loop check, or a commissioning day for Harbour Labs.',
-      '',
-      'Write it as the engineer who was there, past tense, in this order: purpose of the visit in one line; who was on site (client people by name and role); what was done, as a numbered list with times; what was found, each finding as "observation → consequence → action, owner, date"; open items carried to the snag list by reference number; next visit and its precondition. Tight bullets, no adjectives, no "as mentioned". Photos are referenced by drawing grid, never described.',
-    ].join('\n'),
-    offset: -30, tags: ['recall', 'prompt', 'handbook'], meta: { parent_id: 'recall-root' },
+    cards: [
+      {
+        slug: 'before-a-site-visit', kind: 'knowledge', title: 'Before a site visit',
+        body: [
+          '- Confirm access with the client contact the day before, in writing. At a Vantage store that is Marcus Bell; at PS3 it is the Meridian control room.',
+          '- Take the standard site kit (handbook: "Site kit list"). Calibrator certificate must be in date, or the readings are worthless.',
+          '- Print the loop schedule and the CURRENT procedure revision; the brain knows which one that is.',
+          '- Photograph before touching anything: wide shot for context, close shot for the label.',
+          '- Leave with a snag list that has an owner per line, not a paragraph.',
+        ].join('\n'),
+        options: [
+          { label: 'Site visit report: house style', target: 'site-visit-report-house-style', use_when: 'the visit is done and it needs writing up' },
+        ],
+      },
+      {
+        slug: 'issuing-a-procedure-revision', kind: 'knowledge', title: 'Issuing a procedure revision',
+        body: [
+          'A procedure is a revision family: rev B supersedes rev A, and the newest committed revision is the living one. Never edit an issued revision; issue the next one.',
+          '',
+          '1. Draft the new revision as its own page; say in its first paragraph what changed and why (the Bekker review changed scope at rev B; Marsh\'s loop-check order corrected rev C).',
+          '2. Second pair of eyes through the review gate before anything leaves the studio.',
+          '3. Client approval: at Meridian, Gordon Bekker approves every revision; witnesses are named separately.',
+          '4. Commit; the old revision stays for the record and retrieval prefers the new one on its own.',
+        ].join('\n'),
+      },
+      {
+        slug: 'when-a-client-withholds-a-certificate', kind: 'knowledge', title: 'When a client withholds a certificate',
+        body: [
+          'Separate the snags from the certificate. Measure what is measurable (grid alignment against the spec tolerance, filed), accept what is genuinely ours (install damage), and propose a retention against the open items rather than holding practical completion for them. Store 214 is the worked example: position summary in the STOREFRONT pages, thread in mail.',
+          '',
+          'Escalation order: Dana on the technical position, Felix on the money, Alex with the client. The invoice does not go out until the position summary is agreed internally.',
+        ].join('\n'),
+      },
+      {
+        slug: 'site-visit-report-house-style', kind: 'prompt', title: 'Site visit report: house style',
+        use_when: 'writing up a site visit, a loop check, or a commissioning day for Harbour Labs',
+        body: 'Write it as the engineer who was there, past tense, in this order: purpose of the visit in one line; who was on site (client people by name and role); what was done, as a numbered list with times; what was found, each finding as "observation, consequence, action, owner, date"; open items carried to the snag list by reference number; next visit and its precondition. Tight bullets, no adjectives, no "as mentioned". Photos are referenced by drawing grid, never described.',
+      },
+    ],
   });
 
   // ── Draw: PS3 telemetry after the changeover ──────────────────────────────
@@ -177,5 +169,5 @@ export function generate() {
     offset: -12,
   });
 
-  return { nodes, heartbeats, draws };
+  return { heartbeats, draws, recall_maps };
 }
