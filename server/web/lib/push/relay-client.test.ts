@@ -48,11 +48,23 @@ describe('relay client', () => {
     expect(await relayDeleteDevice(URL, 't', 'r')).toBe(false);
   });
 
-  it('reports a device the relay no longer knows (410 or 404) as gone', async () => {
-    for (const status of [410, 404]) {
-      vi.stubGlobal('fetch', respond(status, { error: 'gone' }));
-      expect(await relayNotify(URL, 't', args)).toMatchObject({ ok: false, unregistered: true });
-    }
+  it('reports a device gone only when the relay says so (410, or 404 unknown_device)', async () => {
+    // The relay's own answers (mantle-push src/app.ts, POST /notify): 410
+    // device_unregistered when the provider dropped it, 404 unknown_device
+    // when it has no such routing token.
+    vi.stubGlobal('fetch', respond(410, { error: 'device_unregistered', reason: 'x' }));
+    expect(await relayNotify(URL, 't', args)).toMatchObject({ ok: false, unregistered: true });
+    vi.stubGlobal('fetch', respond(404, { error: 'unknown_device' }));
+    expect(await relayNotify(URL, 't', args)).toMatchObject({ ok: false, unregistered: true });
+    // A 404 that is not the relay's (a proxy, a wrong relay URL, an HTML
+    // page) says nothing about the device: kept.
+    vi.stubGlobal('fetch', respond(404, { error: 'not_found' }));
+    expect(await relayNotify(URL, 't', args)).toMatchObject({ ok: false, unregistered: false });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('<html>Not Found</html>', { status: 404 })),
+    );
+    expect(await relayNotify(URL, 't', args)).toMatchObject({ ok: false, unregistered: false });
     // Any other failure keeps the device (the relay may be back in a minute).
     for (const status of [429, 500, 503]) {
       vi.stubGlobal('fetch', respond(status, { error: 'busy' }));

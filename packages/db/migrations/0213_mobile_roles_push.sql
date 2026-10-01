@@ -4,8 +4,9 @@
 -- 1. push_subscriptions.token_id: the device token (mobile_tokens row) that
 --    enrolled the device. A member's or a client's device gets a push only
 --    while that token is live, so a signed-out or revoked phone gets nothing.
---    NULL on rows from before this release (admin devices): those keep the
---    login-level rule they had.
+--    Rows from before this release (admin devices) are bound to their
+--    login's phone token where the login holds exactly one live phone token;
+--    the rest stay NULL and keep the login-level rule they had.
 -- 2. push_login_prefs: per-login push toggles (chat replies, review results,
 --    comments). No row means all on.
 -- 3. login_chat_read_cursors: how far a member or a client has read its own
@@ -54,6 +55,22 @@ END
 $$;
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "push_subscriptions_token_idx" ON "push_subscriptions" ("token_id");
+--> statement-breakpoint
+-- Bind the old rows where it is certain: a login that holds exactly ONE live
+-- phone token (not the web client's) enrolled its devices with it. Those rows
+-- now follow that token (a sign-out of that phone removes them). The rest stay
+-- unbound until End sessions, a password change, a disable or a device revoke.
+UPDATE "push_subscriptions" ps
+   SET "token_id" = t.id
+  FROM (SELECT "user_id", (array_agg("id"))[1] AS id
+          FROM "mobile_tokens"
+         WHERE "revoked_at" IS NULL
+           AND "expires_at" > now()
+           AND "label" <> 'Web client'
+         GROUP BY "user_id"
+        HAVING count(*) = 1) t
+ WHERE ps."token_id" IS NULL
+   AND ps."login_id" = t."user_id";
 --> statement-breakpoint
 DELETE FROM "push_subscriptions" a
  USING "push_subscriptions" b

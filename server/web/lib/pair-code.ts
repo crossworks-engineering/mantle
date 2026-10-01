@@ -109,6 +109,8 @@ export async function claimPairCode(
     userId: won.userId,
     label,
     expiresAt: minted.expiresAt,
+    // The QR claim is where this person proved who they are for the device.
+    signedInAt: new Date(),
   });
   await db.update(pairingCodes).set({ claimedDeviceId: jti }).where(eq(pairingCodes.id, won.id));
 

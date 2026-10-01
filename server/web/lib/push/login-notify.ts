@@ -58,7 +58,7 @@ export async function pushToLogin(
     ...(m.state ? { state: m.state } : {}),
   };
   const { delivered, dropped } = await sendToDevices(instance, devices, payload, m.collapseKey, {
-    opaqueKey: true,
+    opaqueFor: m.loginId,
   });
   return { attempted: devices.length, delivered, dropped };
 }

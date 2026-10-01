@@ -521,21 +521,56 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
     const claims = tokens.verifyMobileToken(body.token as string)!;
     expect(claims).toMatchObject({ uid: id, ep: 0 });
     expect(claims.exp).toBeLessThanOrEqual(before + 30 * DAY + 60);
-    expect(await clientProbe({ bearer: body.token as string })).toBe(400);
-    expect(await clientProbe({ bearer: phone.token })).toBe(401);
-    // The sign-in time travels with the rotation; the old row says where it went.
+    // The sign-in time travels with the rotation; the old row says where it
+    // went; the new row is unused until its first real use.
     const [oldRow] = await sql<Row[]>`
       select signed_in_at, rotated_to from mobile_tokens where id = ${phone.deviceId}`;
     const [newRow] = await sql<Row[]>`
-      select signed_in_at from mobile_tokens where id = ${body.deviceId as string}`;
+      select signed_in_at, last_used_at from mobile_tokens where id = ${body.deviceId as string}`;
     expect(oldRow!.rotated_to).toBe(body.deviceId);
+    expect(newRow!.last_used_at).toBeNull();
     expect(new Date(newRow!.signed_in_at as string).getTime()).toBe(
       new Date(oldRow!.signed_in_at as string).getTime(),
     );
-    // The old token, presented again at once (a lost answer retried): a
-    // plain 401, and the new token still works.
-    expect((await refresh(phone.token)).status).toBe(401);
+    // The answer was lost: the old token again, before the new one was
+    // used, gets the SAME new token (its jti, its expiry, the epoch). As
+    // often as it takes; no row is written and nothing ends.
+    for (let i = 0; i < 2; i += 1) {
+      const retry = await refresh(phone.token);
+      expect(retry.status).toBe(200);
+      expect(retry.headers.get('cache-control')).toBe('no-store');
+      const again = await json(retry);
+      expect(again).toMatchObject({ deviceId: body.deviceId, role: 'client' });
+      const c2 = tokens.verifyMobileToken(again.token as string)!;
+      expect(c2).toMatchObject({ uid: id, jti: body.deviceId, ep: 0 });
+      expect(Math.abs(c2.exp - claims.exp)).toBeLessThanOrEqual(2);
+    }
+    expect(await liveTokens(id)).toBe(1);
+    // The new token is used: it works, and it is stamped.
     expect(await clientProbe({ bearer: body.token as string })).toBe(400);
+    const [used] = await sql<Row[]>`
+      select last_used_at from mobile_tokens where id = ${body.deviceId as string}`;
+    expect(used!.last_used_at).not.toBeNull();
+  });
+
+  it('a lost refresh answer of the web client is answered again, too', async () => {
+    const id = await addLogin('web-retry', 'admin');
+    const web = await json(
+      await call('/api/auth/token', {
+        method: 'POST',
+        body: { email: emailOf('web-retry'), password: PASSWORD },
+      }),
+    );
+    await nearExpiry(web.deviceId as string);
+    const first = await json(await refresh(web.token as string));
+    expect(first.deviceId).not.toBe(web.deviceId);
+    // The next shell boot retries with the token it still holds.
+    const again = await json(await refresh(web.token as string));
+    expect(again).toMatchObject({ deviceId: first.deviceId, role: 'admin' });
+    expect(tokens.verifyMobileToken(again.token as string)!.ep).toBeUndefined();
+    expect(await liveTokens(id)).toBe(1);
+    const whoami = await call('/api/auth/whoami', { bearer: again.token as string });
+    expect(whoami.status).toBe(200);
   });
 
   it("a client's device is refreshed for at most 90 days from the code that signed it in", async () => {
@@ -566,45 +601,153 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
     expect((await refresh(m1.token as string)).status).toBe(200);
   });
 
-  it('a rotated token presented again is reuse: it ends the login sessions, and is logged', async () => {
+  /** The audit rows of one action for a login, after a short settle (the
+   *  writes are fire and forget): for "exactly this many, no more". */
+  const auditedSettled = async (action: string, actorId: string) => {
+    await audited(action, actorId);
+    await new Promise((r) => setTimeout(r, 300));
+    return sql<
+      Row[]
+    >`select detail from audit_log where action = ${action} and actor_id = ${actorId}`;
+  };
+
+  it('a rotated token presented after its successor was used is reuse: everything ends, once', async () => {
     const id = await addClient('thf');
     const phone = await clientPhone('thf');
     const browser = await clientBrowser('thf');
     await nearExpiry(phone.deviceId);
-    // A thief holding a copy refreshes first.
+    // A thief holding a copy refreshes first, and uses the new token.
     const stolen = await json(await refresh(phone.token));
     expect(await clientProbe({ bearer: stolen.token as string })).toBe(400);
     // Later the real phone presents the token it still holds.
-    await sql`update mobile_tokens set revoked_at = now() - interval '10 minutes'
-              where id = ${phone.deviceId}`;
     const again = await refresh(phone.token);
     expect(again.status).toBe(401);
     // Everything of the login ended: the thief's token and the browser too.
     expect(await clientProbe({ bearer: stolen.token as string })).toBe(401);
     expect(await clientProbe({ cookie: browser })).toBe(401);
     expect(await liveTokens(id)).toBe(0);
-    const rows = await audited('auth.token_reuse', id);
+    const rows = await auditedSettled('auth.token_reuse', id);
     expect(rows).toHaveLength(1);
-    expect(rows[0]!.detail).toMatchObject({ reason: 'rotated-token-presented-again' });
+    expect(rows[0]!.detail).toMatchObject({
+      reason: 'rotated-token-presented-again',
+      deviceId: phone.deviceId,
+      successor: stolen.deviceId,
+    });
+    // Handled: the same stale token again, on refresh or on any route, is
+    // a plain 401. It cannot end the login's next sessions, and logs no
+    // second reuse.
+    const back = await clientPhone('thf');
+    expect((await refresh(phone.token)).status).toBe(401);
+    expect(await clientProbe({ bearer: phone.token })).toBe(401);
+    expect(await clientProbe({ bearer: back.token })).toBe(400);
+    expect(await auditedSettled('auth.token_reuse', id)).toHaveLength(1);
 
-    // The same for a member (every role).
-    const mem = await addLogin('reuse-member', 'member');
-    const m1 = await json(await deviceLogin(emailOf('reuse-member')));
-    await nearExpiry(m1.deviceId as string);
-    const m2 = await json(await refresh(m1.token as string));
-    await sql`update mobile_tokens set revoked_at = now() - interval '10 minutes'
-              where id = ${m1.deviceId as string}`;
-    expect((await refresh(m1.token as string)).status).toBe(401);
-    expect(await memberProbe({ bearer: m2.token as string })).toBe(401);
-    expect((await audited('auth.token_reuse', mem)).length).toBe(1);
     // A token revoked by a sign-out (not by rotation) is no reuse: nothing ends.
+    const mem = await addLogin('reuse-member', 'member');
     const m3 = await json(await deviceLogin(emailOf('reuse-member')));
     const m4 = await json(await deviceLogin(emailOf('reuse-member')));
     await call('/api/auth/mobile-logout', { method: 'POST', bearer: m3.token as string });
-    await sql`update mobile_tokens set revoked_at = now() - interval '10 minutes'
-              where id = ${m3.deviceId as string}`;
     expect((await refresh(m3.token as string)).status).toBe(401);
+    expect(await memberProbe({ bearer: m3.token as string })).toBe(401);
     expect(await memberProbe({ bearer: m4.token as string })).toBe(400);
+    expect(await auditedSettled('auth.token_reuse', mem)).toHaveLength(0);
+  });
+
+  it('reuse is caught on any route, not only on refresh (a member)', async () => {
+    const mem = await addLogin('reuse-route', 'member');
+    const m1 = await json(await deviceLogin(emailOf('reuse-route')));
+    await nearExpiry(m1.deviceId as string);
+    // A thief rotates first and uses the new token.
+    const m2 = await json(await refresh(m1.token as string));
+    expect(await memberProbe({ bearer: m2.token as string })).toBe(400);
+    // The real phone's next call with the old token is an ordinary route.
+    expect(await memberProbe({ bearer: m1.token as string })).toBe(401);
+    expect(await memberProbe({ bearer: m2.token as string })).toBe(401);
+    expect(await liveTokens(mem)).toBe(0);
+    const rows = await auditedSettled('auth.token_reuse', mem);
+    expect(rows).toHaveLength(1);
+    // And once only: the old token again changes nothing.
+    const fresh = await json(await deviceLogin(emailOf('reuse-route')));
+    expect(await memberProbe({ bearer: m1.token as string })).toBe(401);
+    expect(await memberProbe({ bearer: fresh.token as string })).toBe(400);
+    expect(await auditedSettled('auth.token_reuse', mem)).toHaveLength(1);
+  });
+
+  it('reuse on an admin login ends its cookies and removes its push devices', async () => {
+    const id = await addLogin('reuse-admin', 'admin');
+    const cookie = `mantle_session=${tokens.buildSessionCookie(id).value}`;
+    const adminList = () => call('/api/push/subscriptions', { cookie }).then((r) => r.status);
+    expect(await adminList()).toBe(200);
+    const a1 = await json(await deviceLogin(emailOf('reuse-admin')));
+    const enrolled = await call('/api/push/subscriptions', {
+      method: 'POST',
+      bearer: a1.token as string,
+      body: { routingToken: `${tag}-ra1`, publicKey: 'pk', platform: 'ios' },
+    });
+    expect(enrolled.status).toBe(200);
+    await nearExpiry(a1.deviceId as string);
+    const a2 = await json(await refresh(a1.token as string));
+    expect((await pushRows(id))[0]!.token_id).toBe(a2.deviceId);
+    expect((await call('/api/auth/whoami', { bearer: a2.token as string })).status).toBe(200);
+    // The stale token shows up: the admin's sessions, tokens and devices go.
+    expect((await refresh(a1.token as string)).status).toBe(401);
+    expect(await adminList()).toBe(401);
+    expect((await call('/api/auth/whoami', { bearer: a2.token as string })).status).toBe(401);
+    expect(await pushRows(id)).toHaveLength(0);
+    expect(await auditedSettled('auth.token_reuse', id)).toHaveLength(1);
+  });
+
+  it('an enrol that loses the race to a refresh lands on the new token', async () => {
+    const id = await addLogin('enrol-race', 'member');
+    const t1 = await json(await deviceLogin(emailOf('enrol-race')));
+    await nearExpiry(t1.deviceId as string);
+    const t2 = await json(await refresh(t1.token as string));
+    // The enrol checked the old token before the refresh, and writes after it.
+    const store = await import('../push/store');
+    await store.insertSubscription({
+      ownerId: anchor,
+      loginId: id,
+      tokenId: t1.deviceId as string,
+      routingToken: `${tag}-race`,
+      publicKey: 'pk',
+      platform: 'ios',
+    });
+    expect((await pushRows(id))[0]!.token_id).toBe(t2.deviceId);
+    expect(await store.listLoginSubscriptions(anchor, id)).toHaveLength(1);
+  });
+
+  it('the admin push routes are limited per login: ten a minute', async () => {
+    await addLogin('limit-admin', 'admin');
+    const phone = await json(await deviceLogin(emailOf('limit-admin')));
+    const statuses: number[] = [];
+    for (let i = 0; i < 6; i += 1) {
+      const r = await call('/api/push/subscriptions', {
+        method: 'POST',
+        bearer: phone.token as string,
+        body: { routingToken: `${tag}-lim${i}`, publicKey: 'pk', platform: 'ios' },
+      });
+      statuses.push(r.status);
+    }
+    for (let i = 0; i < 5; i += 1) {
+      const r = await call('/api/push/connect', {
+        method: 'POST',
+        bearer: phone.token as string,
+        body: { platform: 'ios', osPushToken: 'x' },
+      });
+      statuses.push(r.status === 429 ? 429 : 0);
+    }
+    // One bucket for enrol and connect: the 11th call is refused.
+    expect(statuses.slice(0, 6)).toEqual([200, 200, 200, 200, 200, 200]);
+    expect(statuses.slice(6, 10)).not.toContain(429);
+    expect(statuses[10]).toBe(429);
+    const last = await call('/api/push/subscriptions', {
+      method: 'POST',
+      bearer: phone.token as string,
+      body: { routingToken: `${tag}-lim-x`, publicKey: 'pk', platform: 'ios' },
+    });
+    expect(last.status).toBe(429);
+    expect(await json(last)).toEqual({ error: 'too_many_requests' });
+    expect(last.headers.get('retry-after')).toBeTruthy();
   });
 
   it('a refresh racing End sessions never leaves a live token', async () => {
@@ -633,8 +776,9 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
     expect(res.status).toBe(200);
     const body = await json(res);
     expect(body.role).toBe('member');
-    expect(await memberProbe({ bearer: body.token as string })).toBe(400);
+    // The old token is dead (asked before the new one is used: no reuse).
     expect(await memberProbe({ bearer: phone.token as string })).toBe(401);
+    expect(await memberProbe({ bearer: body.token as string })).toBe(400);
   });
 
   // ── Dead tokens, limits, labels ─────────────────────────────────────────
@@ -893,10 +1037,31 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
     expect(changed.status).toBe(200);
     expect(await pushRows(id)).toHaveLength(0);
 
-    // 4. The phone signs out.
+    // 4. A sign-out is NOT a revoke of the login: it takes only the
+    // devices its own token enrolled. The web and desktop client signs out
+    // on the same route, and must not cost the old phone its pushes.
     await legacy('lg4');
     const again = await json(await deviceLogin(emailOf('legacy-admin'), 'another long password'));
+    const bound = await call('/api/push/subscriptions', {
+      method: 'POST',
+      bearer: again.token as string,
+      body: { routingToken: `${tag}-lg4-bound`, publicKey: 'pk', platform: 'ios' },
+    });
+    expect(bound.status).toBe(200);
+    const webClient = await json(
+      await call('/api/auth/token', {
+        method: 'POST',
+        body: { email: emailOf('legacy-admin'), password: 'another long password' },
+      }),
+    );
+    const routing = async () => (await pushRows(id)).map((r) => r.routing_token).sort();
+    await call('/api/auth/mobile-logout', { method: 'POST', bearer: webClient.token as string });
+    expect(await routing()).toEqual([`${tag}-lg4`, `${tag}-lg4-bound`].sort());
+    // The phone signs out: its own device goes, the legacy row stays.
     await call('/api/auth/mobile-logout', { method: 'POST', bearer: again.token as string });
+    expect(await routing()).toEqual([`${tag}-lg4`]);
+    // The next revoke of the login (End sessions) takes the legacy row.
+    await call(`/api/users/${id}`, { method: 'PATCH', cookie: asAdmin(), body: { signOut: true } });
     expect(await pushRows(id)).toHaveLength(0);
   });
 

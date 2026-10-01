@@ -2,11 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { db, authUsers, mobileTokens, eq } from '@mantle/db';
 import { endLoginSessions, verifyMobileToken } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
-import {
-  deleteLegacySubscriptions,
-  deleteTokenSubscriptions,
-  forgetRelayDevices,
-} from '@/lib/push/store';
+import { deleteTokenSubscriptions, forgetRelayDevices } from '@/lib/push/store';
 
 /**
  * Revoke the calling device's mobile token. Self-authenticates from the
@@ -20,9 +16,10 @@ import {
  * current epoch (a client's must carry one). A dead copy someone kept ends
  * nothing.
  *
- * The push devices that token enrolled go with it, and so do the login's
- * devices from before tokens were recorded (which phone they are is not
- * known): a signed-out phone gets no more teasers. A CLIENT's sign-out ends
+ * The push devices that token enrolled go with it, and only those: the web
+ * and desktop client signs out here as well, so a login's devices from
+ * before tokens were recorded stay (End sessions, a password change, a
+ * disable and a device revoke take them). A CLIENT's sign-out ends
  * every session of the login (its other devices and its browser too), as its
  * web sign-out does (client logins audit B23).
  */
@@ -68,10 +65,10 @@ export async function POST(req: Request) {
           .update(mobileTokens)
           .set({ revokedAt: new Date() })
           .where(eq(mobileTokens.id, jti));
-        await forgetRelayDevices([
-          ...(await deleteTokenSubscriptions(jti)),
-          ...(await deleteLegacySubscriptions(row.userId)),
-        ]);
+        // Only the devices THIS token enrolled. The web and desktop client
+        // signs out here too (with its own bearer), and the login's phone
+        // from before tokens were recorded must not lose its pushes for it.
+        await forgetRelayDevices(await deleteTokenSubscriptions(jti));
       }
       // Attribute the logout via the token row (the signed jti proves possession).
       auditFireAndForget({

@@ -90,16 +90,20 @@
     `/api/auth/token`. There is no per-account lockout yet (a follow-up).
     The device name is trimmed and cut to 80 characters and never fails a
     sign-in.
-  - Refresh answers the SAME token while more than 23 days remain. A
-    rotated token presented again after a 2-minute grace ends every session
-    of the login (`endLoginSessions`) and writes the audit row
-    `auth.token_reuse`. The refresh locks the login row, so a refresh that
-    races End sessions or a password change cannot outlive it.
+  - Refresh answers the SAME token while more than 23 days remain. A retry
+    with a rotated token whose successor was never used (a lost answer)
+    gets that same successor again. A rotated token presented after its
+    successor WAS used, on a refresh or on any route, ends every session of
+    the login once (`presentRotatedToken`, then `endLoginSessions`) and
+    writes the audit row `auth.token_reuse`; later it is a plain 401. The
+    refresh locks the login row, so a refresh that races End sessions or a
+    password change cannot outlive it.
   - A member's push devices are its own (`/api/member/push/*`): at most 10
     a login (the oldest goes), connect and enrol 10 a minute per login (429
-    `too_many_requests`). Every way the member's sessions or a device token
-    end removes the devices that token enrolled, and the login's devices
-    with no token on record. A member's first Connect may register the
+    `too_many_requests`). Every way a device token ends removes the devices that token enrolled.
+    End sessions, a password change, a disable and a device revoke also
+    remove the login's devices with no token on record; a sign-out does not
+    (the web client signs out on the same route). A member's first Connect may register the
     brain with the push relay; that writes the audit row
     `push.relay_registered`.
 - **No personal assistant.** A member chats only with team-level agents, so

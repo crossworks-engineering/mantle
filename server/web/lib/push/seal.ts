@@ -16,6 +16,19 @@ async function sodium(): Promise<typeof _sodium> {
   return readyPromise;
 }
 
+/**
+ * Whether a stored device public key can ever be sealed to: standard base64
+ * of exactly 32 bytes (an X25519 key). Plain Node, no libsodium: a send
+ * prunes a device only when THIS is false, never because libsodium failed
+ * to load or threw for another reason (that would delete every device the
+ * worker walks).
+ */
+export function publicKeyValid(publicKeyB64: string): boolean {
+  if (typeof publicKeyB64 !== 'string' || publicKeyB64.length !== 44) return false;
+  const bytes = Buffer.from(publicKeyB64, 'base64');
+  return bytes.length === 32 && bytes.toString('base64') === publicKeyB64;
+}
+
 /** Seal `plaintext` to a device public key. Returns base64 ciphertext. */
 export async function sealToDevice(publicKeyB64: string, plaintext: string): Promise<string> {
   const s = await sodium();

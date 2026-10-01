@@ -16,7 +16,8 @@ vi.mock('@mantle/content', () => ({
   reviewResultNotice: vi.fn(),
   commentNotices: vi.fn(),
 }));
-vi.mock('./seal', () => ({ sealToDevice: vi.fn() }));
+vi.mock('./seal', () => ({ sealToDevice: vi.fn(), publicKeyValid: () => true }));
+vi.mock('../auth/tokens', () => ({ derivedSecret: () => Buffer.from('test-secret') }));
 vi.mock('./relay-client', () => ({ relayNotify: vi.fn() }));
 vi.mock('./store', () => ({
   getPushInstance: vi.fn(),

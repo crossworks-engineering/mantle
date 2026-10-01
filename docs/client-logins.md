@@ -256,10 +256,14 @@ rule is `reapClientSigninCodes` in `packages/content/src/client-codes.ts`.
   `reason: "sign-in-expired"` and the app asks for a new code. A browser
   session has no refresh: it ends after 30 days.
 - **Refresh rules (every role).** While more than 23 days remain, refresh
-  answers the SAME token and writes nothing. A rotated token presented again
-  after a 2-minute grace is a copy in someone else's hands: the brain ends
-  every session of the login and writes the audit row `auth.token_reuse`.
-  The refresh locks the login row, so it cannot outlive End sessions.
+  answers the SAME token and writes nothing. A retry with a rotated token
+  whose successor was never used (the answer was lost) gets that same
+  successor again. A rotated token presented again after its successor WAS
+  used is a copy in someone else's hands: on a refresh or on any route, the
+  brain ends every session of the login once, removes its push devices and
+  writes the audit row `auth.token_reuse`; the same old token later is a
+  plain 401. The refresh locks the login row, so it cannot outlive End
+  sessions.
 - **Device mode is for the app only.** `POST /api/auth/client-code` and
   `/verify` in device mode answer 403 `reason: "device-only"` when the
   request carries an `Origin` or any `Sec-Fetch-*` header: a page must not

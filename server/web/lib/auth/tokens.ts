@@ -46,6 +46,15 @@ function secret(): Buffer {
   return Buffer.from(s);
 }
 
+/**
+ * A key for one purpose, derived from SESSION_SECRET (HMAC with the purpose
+ * as the message): local to this brain, never sent anywhere, and never the
+ * signing key itself. Rotating SESSION_SECRET rotates it.
+ */
+export function derivedSecret(purpose: string): Buffer {
+  return createHmac('sha256', secret()).update(`mantle-derived:${purpose}`).digest();
+}
+
 function b64urlEncode(buf: Buffer): string {
   return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }

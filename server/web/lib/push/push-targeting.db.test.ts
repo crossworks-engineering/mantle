@@ -43,6 +43,8 @@ vi.mock('./seal', () => ({
     h.sealed.push({ publicKey, payload: JSON.parse(plaintext) as Record<string, unknown> });
     return 'ciphertext';
   }),
+  // The devices here carry stand-in keys; what is under test is who gets one.
+  publicKeyValid: () => true,
 }));
 // The brain-wide singletons (one row per database, shared by every test
 // file): stood in. Everything about DEVICES is the real store.
@@ -105,6 +107,8 @@ describe.skipIf(!URL)('push targeting: who a push goes to', () => {
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
+    // A member's push key is a keyed hash under a key derived from it.
+    process.env.SESSION_SECRET ??= 'push-targeting-db-test-secret-at-least-32-chars';
     m = await import('@mantle/db');
     sql = (m.systemDb as unknown as { $client: typeof sql }).$client;
     await m.ensureViewerRoles(sql, process.env.MANTLE_MASTER_KEY);

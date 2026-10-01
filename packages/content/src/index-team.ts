@@ -409,6 +409,7 @@ export {
 export {
   LOGIN_NOTICE_CHANNEL,
   LOGIN_NOTICE_FRESH_MS,
+  MAX_CLIENTS_PER_NOTICE,
   MAX_LOGINS_PER_NOTICE,
   chatReplyNotice,
   chatTeaser,

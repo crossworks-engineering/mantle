@@ -141,12 +141,22 @@ describe.skipIf(!URL)('credential races', () => {
           },
         }),
       );
-    const statuses = (await Promise.all([refresh(), refresh(), refresh()])).map((r) => r.status);
-    expect(statuses.sort()).toEqual([200, 401, 401]);
+    const answers = await Promise.all([refresh(), refresh(), refresh()]);
+    // One rotation. A refresh that lost the claim answers 401; one that read
+    // the row after the winner committed is a retry of a lost answer and gets
+    // the SAME new token (the successor is still unused).
+    const ok = answers.filter((r) => r.status === 200);
+    expect(ok.length).toBeGreaterThan(0);
+    expect(answers.every((r) => r.status === 200 || r.status === 401)).toBe(true);
+    const ids = new Set(
+      await Promise.all(ok.map(async (r) => ((await r.json()) as { deviceId: string }).deviceId)),
+    );
+    expect(ids.size).toBe(1);
     const live = await sql<Row[]>`select id from mobile_tokens
                                   where user_id = ${admin} and label = ${tag} and revoked_at is null`;
     expect(live).toHaveLength(1);
     expect(live[0]!.id).not.toBe(jti);
+    expect(ids.has(live[0]!.id as string)).toBe(true);
   });
 
   // Audit A15: a bearer as the password logins mint it (no session epoch)

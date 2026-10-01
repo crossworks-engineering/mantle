@@ -408,12 +408,19 @@ Every answer carries `Cache-Control: no-store`. Rules:
   refresh answers 401 with `reason: "sign-in-expired"`. The app shows the
   sign-in screen and the person asks for a new code. Each new client token
   lasts at most 30 days and never past the cap.
-- **Reuse ends everything.** The app must keep only the newest token. A
-  rotated token that is presented again within 2 minutes (a lost answer, a
-  retry) gets a plain 401. Presented again after 2 minutes, the brain treats
-  it as a stolen copy: it ends every session and device token of the login
-  (the phone and the browser) and writes the audit row `auth.token_reuse`.
-  The person signs in again.
+- **A lost answer is safe to retry.** If the answer to a rotating refresh is
+  lost, the app retries with the token it still holds. Until the new token
+  is used for the first time, that retry gets the SAME new token again (the
+  same `deviceId`, the same expiry). No time limit, no row written. The first
+  real use of the new token (any route, or a refresh with it) closes that
+  door.
+- **Reuse ends everything.** The app must keep only the newest token, and
+  use it. A rotated token presented again AFTER its successor was used is a
+  copy in someone else's hands. On a refresh or on any other route, the
+  brain then ends every session and device token of the login (the phone
+  and the browser), removes the login's push devices, and writes the audit
+  row `auth.token_reuse`, once. The person signs in again. The same old
+  token presented later is a plain 401 and ends nothing more.
 - **Every other 401** (revoked, expired, ended sessions, a disabled login) is
   final for this token: show the sign-in screen. Each one writes the audit
   row `auth.token_refresh_failed` with the reason.
@@ -447,7 +454,8 @@ refused.
 
 **Sign-out: `POST /api/auth/mobile-logout`** (Authorization: Bearer). Always
 200 `{ ok: true }`. It revokes this device's token and removes the push
-devices that token enrolled. For a client it ends every session of the login,
+devices that token enrolled, and only those (the web and desktop client
+signs out here too; it must not take a phone's pushes). For a client it ends every session of the login,
 the browser ones too (a client sign-out always did). A token that is already
 dead ends nothing, and neither does a client token whose session epoch has
 moved on (those sessions are already over).
@@ -513,11 +521,22 @@ token of the signed-in admin. The app always sends it. A device enrolled from
 a browser session would be a device nothing can revoke.
 
 **Admin devices from older releases.** An admin device enrolled before
-migration 0213 has no token on record. It keeps getting owner pushes until
-the first revoke of a device token, End sessions, a password change or a
-phone sign-out of that login. Then the brain removes it, because it cannot
-tell which phone it is. That phone must tap Connect again in Settings > Push
-(the app enrols only on a tap of Connect, never on its own).
+migration 0213 had no token on record. The migration binds it to the login's
+phone token when the login holds exactly one live phone token (the web
+client's token does not count). Then it goes with that token, as a new
+device does. The others stay unbound and keep getting owner pushes until a
+revoke of the login's device tokens, End sessions, a password change or a
+disable. Then the brain removes them, because it cannot tell which phone
+they are. A sign-out does not remove them. That phone must tap Connect again
+in Settings > Push (the app enrols only on a tap of Connect, never on its
+own).
+
+**When the brain removes a device by itself.** Only when the relay says the
+device is gone: 410, or 404 with the relay's body
+`{ "error": "unknown_device" }`. A bare 404 (a proxy, a wrong relay address)
+removes nothing. Also when the stored public key is not a key (not base64 of
+32 bytes): it can never be sent to. A failure to seal for any other reason
+skips the device for that push and is logged; the device stays.
 
 **Payload** (sealed to the device, as today). New fields are additive.
 
@@ -539,8 +558,11 @@ for another person's words. Open the item to read it.
 
 `collapseKey`: the brain names a member's or client's push by `chat`,
 `review:<id>` or `comment:<id>`, but sends it to the relay as a keyed hash
-(32 hex characters). The relay and the push provider see neither the kind of
-event nor an item id. The app must not parse the collapse key; read `kind`
+(32 hex characters) of the login id and that name. The key of the hash is
+derived from the brain's `SESSION_SECRET` and never leaves the brain. The
+relay and the push provider see neither the kind of event nor an item id,
+cannot compute the hash themselves, and cannot match one login's keys to
+another's. The app must not parse the collapse key; read `kind`
 and `itemId` from the sealed payload. Owner pushes keep their plain keys.
 
 **Teasers are plain text.** Every body (`b`) that comes from markdown is sent
@@ -635,13 +657,29 @@ per event.
   routes only. The three sweeps (`role-sweep`, `client-sweep`, `member-sweep`)
   run each role's pass with a cookie AND with a bearer.
 - `endLoginSessions` also deletes the push devices the revoked tokens
-  enrolled; `token/refresh` moves them to the new token. Every way a login's
-  device or session ends (revoke one device, End sessions, a password change,
-  a phone sign-out, a disable) also deletes that login's devices that have
-  no token on record (enrolled before migration 0213).
-- `token/refresh` locks the login row (`for share`) while it rotates. End
-  sessions, a password change and a disable update that row first, so a
-  refresh racing one of them cannot mint a token that outlives it.
+  enrolled; `token/refresh` moves them to the new token. A revoke of one
+  device, End sessions, a password change and a disable also delete that
+  login's devices that have no token on record (enrolled before migration
+  0213 and not bound by its backfill). A sign-out (`mobile-logout`) deletes
+  only its own token's devices.
+- Rotation and reuse (`presentRotatedToken` in `session.ts`). A refresh
+  mints the successor with no `last_used_at`; `getBearerLogin` stamps it on
+  first use. A rotated token presented again: successor unused and live,
+  the refresh answers the successor again (re-signed to its own expiry);
+  successor used, the rotated row's `rotated_to` is cleared in one guarded
+  UPDATE (so two presentations at once end things once), then
+  `endLoginSessions`, the relay forgets the devices, and `auth.token_reuse`
+  is written. `getBearerLogin` runs the same check on every bearer route. On
+  a database that refuses writes the presentation is a plain 401.
+- `token/refresh` locks the login row (`for share`) while it rotates, and an
+  enrol locks its token row the same way (an enrol that lost the race to a
+  refresh binds the device to the successor). End sessions, a password
+  change and a disable update the login row first, so a refresh racing one
+  of them cannot mint a token that outlives it. Postgres grants `for share`
+  only to a role that may also UPDATE the table: the app's database role
+  needs ordinary write rights (it has them on every brain); on a read-only
+  database the lock is a refused write, so a refresh and an enrol fail there
+  and write nothing (`lib/push/enrol-lock-roles.db.test.ts`).
 - Device mode writes the token row inside the same transaction that redeems
   the emailed code, and writes the audit row after the insert, with the
   device id.

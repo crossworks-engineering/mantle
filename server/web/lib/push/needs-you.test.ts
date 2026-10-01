@@ -9,7 +9,8 @@ import type { NeedsYou } from '@mantle/client-types';
 vi.mock('@mantle/db', () => ({ db: {}, agents: {}, assistantMessages: {} }));
 vi.mock('@mantle/tools', () => ({ countPending: vi.fn(), listPendingCalls: vi.fn() }));
 vi.mock('@mantle/content', () => ({ loadProfilePreferences: vi.fn(), loadNeedsYou: vi.fn() }));
-vi.mock('./seal', () => ({ sealToDevice: vi.fn() }));
+vi.mock('./seal', () => ({ sealToDevice: vi.fn(), publicKeyValid: () => true }));
+vi.mock('../auth/tokens', () => ({ derivedSecret: () => Buffer.from('test-secret') }));
 vi.mock('./relay-client', () => ({ relayNotify: vi.fn() }));
 vi.mock('./store', () => ({
   getPushInstance: vi.fn(),

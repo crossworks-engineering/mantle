@@ -10,7 +10,11 @@ vi.mock('./login-notify', () => ({
   pushReviewResult: vi.fn(),
 }));
 
-import { createLoginNoticeHandler } from './login-notice-handler';
+import {
+  SCHEMA_REMINDER_MS,
+  createLoginNoticeHandler,
+  warnIfSchemaBehind,
+} from './login-notice-handler';
 import type { PushResult } from './notify';
 
 const LOGIN = '22222222-2222-4222-8222-222222222222';
@@ -120,5 +124,26 @@ describe('the login_notice handler', () => {
     expect(String(loud[0]![0])).toContain('NO push is being sent');
     // And nothing else was logged for the same cause.
     expect(errors).toHaveBeenCalledTimes(1);
+  });
+
+  it('after the loud line, says at a low rate that pushes are still not sent', () => {
+    const missing = Object.assign(new Error('Failed query'), {
+      cause: { code: '42P01', message: 'relation "push_login_prefs" does not exist' },
+    });
+    const t0 = Date.now();
+    warnIfSchemaBehind(missing, t0); // the loud line, or a count if it was said
+    errors.mockClear();
+    // Within the interval: counted, not logged.
+    for (let i = 1; i <= 5; i++) warnIfSchemaBehind(missing, t0 + i * 1000);
+    expect(errors).not.toHaveBeenCalled();
+    // Past it: one short line with the count, then quiet again.
+    warnIfSchemaBehind(missing, t0 + SCHEMA_REMINDER_MS + 1);
+    warnIfSchemaBehind(missing, t0 + SCHEMA_REMINDER_MS + 2);
+    expect(errors).toHaveBeenCalledTimes(1);
+    expect(String(errors.mock.calls[0]![0])).toMatch(
+      /still behind the schema: \d+ push\(es\) not sent/,
+    );
+    // Not a schema error: not ours to count.
+    expect(warnIfSchemaBehind(new Error('relay down'), t0)).toBe(false);
   });
 });

@@ -23,7 +23,7 @@
  * makes that hold wherever this is called from. Nothing here starts LLM
  * work.
  */
-import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNull, ne, sql } from 'drizzle-orm';
 import {
   acceptedSnapshots,
   agents,
@@ -47,9 +47,14 @@ export const LOGIN_NOTICE_CHANNEL = 'login_notice';
  *  touches old rows must never page anyone. */
 export const LOGIN_NOTICE_FRESH_MS = 30 * 60 * 1000;
 
-/** The most logins one event tells (a comment on a client-level item tells
- *  every client): one event never holds the send chain for long. */
+/** How many logins one read of the client list takes (a comment on a
+ *  client-level item tells every client): the list is read in pages. */
 export const MAX_LOGINS_PER_NOTICE = 100;
+
+/** The most clients one comment tells: far above one client company's
+ *  logins, and the bound that keeps one event from holding the send chain
+ *  (each login holds at most ten devices). */
+export const MAX_CLIENTS_PER_NOTICE = 2000;
 
 /** "Is this row news?", asked of the DATABASE: the rows are stamped on its
  *  clock, so the worker's clock never decides. */
@@ -121,6 +126,9 @@ async function noticeLogin(loginId: string): Promise<{ id: string; role: LoginNo
   return { id: row.id, role };
 }
 
+/** How much of a reply a teaser reads (markdownPreview reads no more). */
+const TEASER_READ_MAX = 4000;
+
 /**
  * A chat reply as a lock-screen line: plain words, one line, clipped. A reply
  * is markdown and a notification renders none of it, so the marks go
@@ -130,7 +138,14 @@ async function noticeLogin(loginId: string): Promise<{ id: string; role: LoginNo
  * Never empty: a reply with no words says "New message".
  */
 export function chatTeaser(text: string, max = 140): string {
-  const noPictures = text.replace(/!\\?\[[^\]]*\]\([^)]*\)/g, ' ');
+  // Cut first: the picture pattern is slow on a long run of `![`, and a
+  // preview reads only the start (markdownPreview reads 4000 characters).
+  // A picture the cut splits loses its tail too, so its alt text never
+  // becomes words.
+  const noPictures = text
+    .slice(0, TEASER_READ_MAX)
+    .replace(/!\\?\[[^\]]*\]\([^)]*\)/g, ' ')
+    .replace(/!\\?\[[^\]]*(\]\([^)]*)?$/, ' ');
   return markdownPreview(noPictures, max) || 'New message';
 }
 
@@ -362,18 +377,29 @@ export function commentNotices(commentId: string): Promise<LoginNoticeMessage[]>
       )
       .limit(1);
     if (!open) return [];
-    const clients = await db
-      .select({ id: authUsers.id })
-      .from(authUsers)
-      .where(
-        and(
-          eq(authUsers.role, 'client'),
-          isNull(authUsers.disabledAt),
-          ...(c.writer ? [ne(authUsers.id, c.writer)] : []),
-        ),
-      )
-      .orderBy(authUsers.id)
-      .limit(MAX_LOGINS_PER_NOTICE);
+    // Every active client, read in pages of MAX_LOGINS_PER_NOTICE (by id),
+    // up to MAX_CLIENTS_PER_NOTICE: a brain with more than one page of
+    // clients tells them all, not the same first page every time.
+    const clients: Array<{ id: string }> = [];
+    let after: string | null = null;
+    while (clients.length < MAX_CLIENTS_PER_NOTICE) {
+      const page: Array<{ id: string }> = await db
+        .select({ id: authUsers.id })
+        .from(authUsers)
+        .where(
+          and(
+            eq(authUsers.role, 'client'),
+            isNull(authUsers.disabledAt),
+            ...(c.writer ? [ne(authUsers.id, c.writer)] : []),
+            ...(after ? [gt(authUsers.id, after)] : []),
+          ),
+        )
+        .orderBy(authUsers.id)
+        .limit(MAX_LOGINS_PER_NOTICE);
+      clients.push(...page);
+      if (page.length < MAX_LOGINS_PER_NOTICE) break;
+      after = page[page.length - 1]!.id;
+    }
     // On a thread every client reads, the lock screen says who commented on
     // what and not what they wrote: one client's words do not appear on
     // every other client's phone. The app shows the comment.

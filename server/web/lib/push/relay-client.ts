@@ -59,8 +59,10 @@ export async function relayNotify(
   }
   if (res.ok) return { ok: true, status: res.status };
   let reason: string | undefined;
+  let error: string | undefined;
   try {
     const j = (await res.json()) as { reason?: string; error?: string };
+    error = j.error;
     reason = j.reason ?? j.error;
   } catch {
     /* non-JSON */
@@ -68,7 +70,11 @@ export async function relayNotify(
   return {
     ok: false,
     status: res.status,
-    unregistered: res.status === 410 || res.status === 404,
+    // The device is gone for good only when the RELAY says so: 410
+    // (`device_unregistered`, the push provider dropped it), or 404 with the
+    // relay's own body `{ error: "unknown_device" }`. A bare 404 (a proxy, a
+    // wrong relay URL) says nothing about the device and must not prune it.
+    unregistered: res.status === 410 || (res.status === 404 && error === 'unknown_device'),
     reason,
   };
 }

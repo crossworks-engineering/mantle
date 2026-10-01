@@ -25,17 +25,34 @@ export const REVIEW_GATHER_MS = 750;
 const SCHEMA_BEHIND = new Set(['42703', '42P01']);
 
 let schemaWarned = false;
+let schemaRepeatAt = 0;
+let schemaSkipped = 0;
+
+/** How often, after the loud line, a short line says it is still so. */
+export const SCHEMA_REMINDER_MS = 10 * 60 * 1000;
 
 /**
  * Say LOUDLY, once per process, that the database is behind the code. A
  * skipped migration (push_subscriptions.token_id missing) makes every send
  * fail, the admins' too, and a line per event that reads like one bad push
- * is easy to miss.
+ * is easy to miss. After it, a short line at most every
+ * {@link SCHEMA_REMINDER_MS} counts the pushes not sent since, so a log
+ * read later still shows the worker is failing.
  */
-export function warnIfSchemaBehind(err: unknown): boolean {
+export function warnIfSchemaBehind(err: unknown, now = Date.now()): boolean {
   if (!SCHEMA_BEHIND.has(pgErrorCode(err) ?? '')) return false;
-  if (!schemaWarned) {
+  if (schemaWarned) {
+    schemaSkipped++;
+    if (now >= schemaRepeatAt) {
+      schemaRepeatAt = now + SCHEMA_REMINDER_MS;
+      console.error(
+        `[push-notify] still behind the schema: ${schemaSkipped} push(es) not sent so far. ` +
+          `Last error: ${errorMessage(err)}`,
+      );
+    }
+  } else {
     schemaWarned = true;
+    schemaRepeatAt = now + SCHEMA_REMINDER_MS;
     console.error(
       '[push-notify] THE DATABASE IS BEHIND THE CODE: a table or column the push worker ' +
         'needs is missing, so NO push is being sent (admin pushes too). A migration was ' +

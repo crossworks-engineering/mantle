@@ -62,6 +62,17 @@ describe('chatTeaser', () => {
     expect(chatTeaser(`Open [Pump spec](page:${id})`)).toBe('Open Pump spec');
   });
 
+  it('reads only the start, fast, and a picture the cut splits leaks no alt text', () => {
+    // A long run of `![` was slow before the cut (the pattern backtracks).
+    const t0 = performance.now();
+    expect(chatTeaser('![x'.repeat(200_000))).toBe('New message');
+    expect(performance.now() - t0).toBeLessThan(2000);
+    // Pictures up to the cut, then one the cut splits in its alt text.
+    const pics = '![p](/api/member/files/a) '.repeat(150); // 3900 characters
+    const split = `${pics}![secret alt text`.padEnd(4000, 'x') + '](/api/member/files/b)';
+    expect(chatTeaser(split)).not.toContain('secret');
+  });
+
   it('leaves pictures out whole, alt text too, kept or escaped', () => {
     expect(chatTeaser('See ![the plan](/api/member/files/abc) below')).toBe('See below');
     expect(chatTeaser('Look !\\[x](https://elsewhere.example/a.png) here')).toBe('Look here');

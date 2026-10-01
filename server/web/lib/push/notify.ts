@@ -15,7 +15,9 @@ import { markdownPreview } from '@mantle/content-core/markdown-to-text';
 import { countPending, listPendingCalls } from '@mantle/tools';
 import { loadNeedsYou, loadProfilePreferences } from '@mantle/content';
 import { needsYouArrivals, needsYouMessage, rememberArrivals } from './needs-you';
-import { sealToDevice } from './seal';
+import { errorMessage } from '@mantle/std';
+import { derivedSecret } from '../auth/tokens';
+import { publicKeyValid, sealToDevice } from './seal';
 import { relayNotify } from './relay-client';
 import {
   deleteSubscriptionByRoutingToken,
@@ -91,34 +93,54 @@ async function latestOutbound(
  *  the bound is what keeps one event from holding the chain. */
 export const MAX_DEVICES_PER_SEND = 100;
 
+/** A member's or a client's collapse key as the relay sees it: 32 hex
+ *  characters, keyed by a secret the relay never holds, per login. */
+export function opaqueCollapseKey(loginId: string, collapseKey: string): string {
+  return createHmac('sha256', derivedSecret('push-collapse-key'))
+    .update(`${loginId}\n${collapseKey}`)
+    .digest('hex')
+    .slice(0, 32);
+}
+
 /**
  * Seal `payload` to each device and forward to the relay. Prunes a device
- * the relay no longer knows (410, 404) and one whose public key cannot be
- * sealed to (it could never be sent to). `opaqueKey`: send the collapse key
- * as a keyed hash, so the relay and the push provider see neither the kind
- * of event nor an item id (a member's and a client's pushes).
+ * the relay says it does not know (relay-client: 410, or 404
+ * `unknown_device`) and one whose stored public key is not a key at all
+ * (publicKeyValid: it could never be sent to). Any other seal failure (a
+ * libsodium that failed to load) skips the device and logs: it says nothing
+ * about the device.
+ *
+ * `opaqueFor` (a member's or a client's push, the login's id): the collapse
+ * key goes out as a keyed hash of the login and the key, under a secret only
+ * this brain holds (derivedSecret). The relay and the push provider see
+ * neither the kind of event nor an item id, cannot compute the hash
+ * themselves, and cannot link one login's keys to another's.
  */
 export async function sendToDevices(
   instance: PushInstanceSecret,
   devices: DeviceRow[],
   payload: PushPayload,
   collapseKey: string,
-  opts: { opaqueKey?: boolean } = {},
+  opts: { opaqueFor?: string } = {},
 ): Promise<{ delivered: number; dropped: number }> {
   const plaintext = JSON.stringify(payload);
-  const key = opts.opaqueKey
-    ? createHmac('sha256', instance.instanceToken).update(collapseKey).digest('hex').slice(0, 32)
-    : collapseKey;
+  const key = opts.opaqueFor ? opaqueCollapseKey(opts.opaqueFor, collapseKey) : collapseKey;
   let delivered = 0;
   let dropped = 0;
   for (const device of devices.slice(0, MAX_DEVICES_PER_SEND)) {
+    if (!publicKeyValid(device.publicKey)) {
+      // Not a key: it never gets better, and it should not break the others.
+      dropped++;
+      await deleteSubscriptionByRoutingToken(device.routingToken);
+      continue;
+    }
     let ciphertext: string;
     try {
       ciphertext = await sealToDevice(device.publicKey, plaintext);
-    } catch {
-      // A bad public key shouldn't break the others, and never gets better.
-      dropped++;
-      await deleteSubscriptionByRoutingToken(device.routingToken);
+    } catch (err) {
+      // The key is well formed, so the failure is ours (libsodium): skip,
+      // never prune.
+      console.error(`[push] seal failed, device skipped: ${errorMessage(err)}`);
       continue;
     }
     const res = await relayNotify(instance.relayUrl, instance.instanceToken, {

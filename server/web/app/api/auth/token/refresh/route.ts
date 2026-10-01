@@ -4,13 +4,13 @@ import { db, authUsers, mobileTokens, pushSubscriptions, and, eq, isNull, sql } 
 import {
   CLIENT_DEVICE_MAX_AGE_SECONDS,
   CLIENT_SESSION_TTL_SECONDS,
-  REUSE_GRACE_MS,
   ROTATE_WHEN_UNDER_SECONDS,
   buildMobileToken,
-  endLoginSessions,
   loginUsable,
+  presentRotatedToken,
   verifyMobileToken,
   WEB_TOKEN_TTL_SECONDS,
+  type UnusedSuccessor,
 } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { clientIpKey, rateLimit } from '@/lib/rate-limit';
@@ -46,11 +46,17 @@ import { clientIpKey, rateLimit } from '@/lib/rate-limit';
  *    after it, 401 with `reason: 'sign-in-expired'` and the person asks for
  *    a new code. Each token lasts at most a client session and never past
  *    the cap.
- *  - Reuse. A token that was rotated away and is presented AGAIN is a copy
- *    in someone else's hands (the app holds only the newest). Past a short
- *    grace (a lost answer retried), that ends every session of the login
- *    and writes an audit row: the thief and the owner are both signed out,
- *    and the admin can see why.
+ *  - A lost answer. A token that was rotated away and is presented AGAIN
+ *    while its successor has never been used is a retry: the answer is the
+ *    SAME successor (its jti, re-signed to its own expiry). So a refresh is
+ *    idempotent until the new token is first used. The successor is minted
+ *    with no `last_used_at`; its first real use stamps it.
+ *  - Reuse. A rotated token presented again once its successor HAS been
+ *    used is a copy in someone else's hands (the app holds only the
+ *    newest). That ends every session of the login once, writes
+ *    `auth.token_reuse`, and marks the rotated row handled: every later
+ *    presentation is a plain 401 (presentRotatedToken, which every bearer
+ *    route runs too).
  *
  * The push devices the old token enrolled follow the new one.
  */
@@ -71,6 +77,40 @@ const unauthorized = (reason?: string) =>
     { error: 'unauthorized', ...(reason ? { reason } : {}) },
     { status: 401, headers: NO_STORE },
   );
+
+/**
+ * A refresh whose answer was lost, retried with the old token: answer the
+ * successor again (the same jti, signed to its own expiry, a client's at the
+ * login's epoch). Null when the login may not hold a token now.
+ */
+async function answerSuccessorAgain(
+  next: UnusedSuccessor,
+  row: {
+    email: string;
+    disabledAt: Date | null;
+    role: string;
+    sessionEpoch: number;
+  },
+): Promise<Response | null> {
+  if (!loginUsable({ email: row.email, disabledAt: row.disabledAt })) return null;
+  if (!BEARER_ROLES.has(row.role)) return null;
+  const leftSec = Math.floor((next.expiresAt.getTime() - Date.now()) / 1000);
+  if (leftSec <= 0) return null;
+  const minted =
+    row.role === 'client'
+      ? buildMobileToken(next.userId, next.id, leftSec, row.sessionEpoch)
+      : buildMobileToken(next.userId, next.id, leftSec);
+  return NextResponse.json(
+    {
+      token: minted.value,
+      expiresIn: minted.expiresInSec,
+      expiresAt: minted.expiresAt.toISOString(),
+      deviceId: next.id,
+      role: row.role,
+    },
+    { headers: NO_STORE },
+  );
+}
 
 export async function POST(req: Request) {
   // Per address, an IPv6 caller by its /64 (as the code routes count).
@@ -107,14 +147,11 @@ export async function POST(req: Request) {
     .limit(1);
   if (!row) return unauthorized();
 
-  const refused = (
-    reason: string,
-    action: 'auth.token_refresh_failed' | 'auth.token_reuse' = 'auth.token_refresh_failed',
-  ) => {
+  const refused = (reason: string) => {
     auditFireAndForget({
       actorId: row.userId,
       actorEmail: row.email ?? '',
-      action,
+      action: 'auth.token_refresh_failed',
       method: 'POST',
       path: '/api/auth/token/refresh',
       detail: { device: row.label, deviceId: jti, reason },
@@ -122,14 +159,20 @@ export async function POST(req: Request) {
     });
   };
 
-  // Reuse: this token was rotated away, and here it is again.
+  // This token was rotated away, and here it is again: a retry of a refresh
+  // whose answer was lost (the successor is unused: answer it again), or a
+  // copy in other hands (the successor was used: presentRotatedToken ends
+  // the login's sessions once and writes auth.token_reuse).
   if (row.revokedAt && row.rotatedTo && row.userId === claims.uid) {
-    if (Date.now() - row.revokedAt.getTime() > REUSE_GRACE_MS) {
-      await endLoginSessions(row.userId);
-      refused('rotated-token-presented-again', 'auth.token_reuse');
-    } else {
-      refused('rotated');
+    const seen = await presentRotatedToken(
+      { jti, userId: row.userId, rotatedTo: row.rotatedTo },
+      { method: 'POST', path: '/api/auth/token/refresh', meta: requestMetaFrom(req) },
+    );
+    if (seen.kind === 'retry') {
+      const again = await answerSuccessorAgain(seen.successor, row);
+      if (again) return again;
     }
+    if (seen.kind !== 'reuse') refused('rotated');
     return unauthorized();
   }
 
@@ -212,7 +255,9 @@ export async function POST(req: Request) {
       userId: row.userId,
       label: row.label,
       expiresAt: minted.expiresAt,
-      lastUsedAt: new Date(),
+      // Unused until its first real use (getBearerLogin stamps it): until
+      // then a retry with the old token is answered with this one again.
+      lastUsedAt: null,
       signedInAt,
     });
     // The push devices the old token enrolled follow the new one: a device

@@ -50,7 +50,12 @@ vi.mock('@mantle/db', () => {
 
 vi.mock('@mantle/tools', () => ({ countPending: vi.fn(), listPendingCalls: vi.fn() }));
 vi.mock('@mantle/content', () => ({ loadProfilePreferences: vi.fn() }));
-vi.mock('./seal', () => ({ sealToDevice: vi.fn() }));
+// The real key check is seal.test.ts; here only 'broken' is not a key.
+vi.mock('./seal', () => ({
+  sealToDevice: vi.fn(),
+  publicKeyValid: (k: string) => k !== 'broken',
+}));
+vi.mock('../auth/tokens', () => ({ derivedSecret: () => Buffer.from('test-secret') }));
 vi.mock('./relay-client', () => ({ relayNotify: vi.fn() }));
 vi.mock('./store', () => ({
   getPushInstance: vi.fn(),
@@ -60,7 +65,7 @@ vi.mock('./store', () => ({
   deleteSubscriptionByRoutingToken: vi.fn(),
 }));
 
-import { pushOutbound, pushApproval, wantsOutboundPush } from './notify';
+import { opaqueCollapseKey, pushOutbound, pushApproval, wantsOutboundPush } from './notify';
 import { countPending, listPendingCalls } from '@mantle/tools';
 import { loadProfilePreferences } from '@mantle/content';
 import { sealToDevice } from './seal';
@@ -79,6 +84,7 @@ const INSTANCE = {
   relayUrl: 'https://relay.example',
 };
 const PREFS = { assistantMessages: true, approvals: true };
+const GOOD_KEY = 'pk-good';
 const device = (over: Partial<Record<string, unknown>> = {}) => ({
   id: 'dev-1',
   routingToken: 'route-1',
@@ -255,24 +261,48 @@ describe('pushOutbound — delivery', () => {
   it('a single device with a bad public key does not break the others', async () => {
     vi.mocked(listAdminSubscriptions).mockResolvedValue([
       device({ id: 'bad', routingToken: 'route-bad', publicKey: 'broken' }),
-      device({ id: 'good', routingToken: 'route-good', publicKey: 'pk-good' }),
+      device({ id: 'good', routingToken: 'route-good', publicKey: GOOD_KEY }),
     ]);
     dbState.queue = [[{ id: 'a1', name: 'Ada' }], [{ text: 'hi' }]];
-    vi.mocked(sealToDevice).mockRejectedValueOnce(new Error('bad key')).mockResolvedValueOnce('ct');
+    vi.mocked(sealToDevice).mockResolvedValue('ct');
 
     const res = await pushOutbound('owner', 'ada');
-    // The device that cannot be sealed to is pruned: it could never be sent to.
+    // The stored key is not a key: pruned, it could never be sent to.
     expect(res).toEqual({ attempted: 2, delivered: 1, dropped: 1 });
+    expect(vi.mocked(sealToDevice).mock.calls.map((c) => c[0])).toEqual([GOOD_KEY]);
     expect(relayNotify).toHaveBeenCalledTimes(1); // only the good device reached the relay
     expect(deleteSubscriptionByRoutingToken).toHaveBeenCalledWith('route-bad');
   });
 
-  it('prunes a device the relay does not know (404), as one it reports gone (410)', async () => {
+  it('a seal that fails on a well-formed key (libsodium did not load) skips and never prunes', async () => {
+    vi.mocked(listAdminSubscriptions).mockResolvedValue([
+      device({ id: 'a', routingToken: 'route-a', publicKey: GOOD_KEY }),
+      device({ id: 'b', routingToken: 'route-b', publicKey: GOOD_KEY }),
+    ]);
+    dbState.queue = [[{ id: 'a1', name: 'Ada' }], [{ text: 'hi' }]];
+    vi.mocked(sealToDevice).mockRejectedValue(new Error('libsodium failed to load'));
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const res = await pushOutbound('owner', 'ada');
+    expect(res).toEqual({ attempted: 2, delivered: 0, dropped: 0 });
+    expect(deleteSubscriptionByRoutingToken).not.toHaveBeenCalled();
+    expect(relayNotify).not.toHaveBeenCalled();
+    quiet.mockRestore();
+  });
+
+  it('prunes a device the relay says it does not know (unregistered), and keeps it on any other failure', async () => {
     dbState.queue = [[{ id: 'a1', name: 'Ada' }], [{ text: 'hi' }]];
     vi.mocked(relayNotify).mockResolvedValue({ ok: false, status: 404, unregistered: true });
     const res = await pushOutbound('owner', 'ada');
     expect(res).toEqual({ attempted: 1, delivered: 0, dropped: 1 });
     expect(deleteSubscriptionByRoutingToken).toHaveBeenCalledWith('route-1');
+
+    vi.mocked(deleteSubscriptionByRoutingToken).mockClear();
+    dbState.queue = [[{ id: 'a1', name: 'Ada' }], [{ text: 'hi' }]];
+    vi.mocked(relayNotify).mockResolvedValue({ ok: false, status: 404, unregistered: false });
+    const kept = await pushOutbound('owner', 'ada');
+    expect(kept).toEqual({ attempted: 1, delivered: 0, dropped: 0 });
+    expect(deleteSubscriptionByRoutingToken).not.toHaveBeenCalled();
   });
 
   it('walks at most MAX_DEVICES_PER_SEND devices in one send', async () => {
@@ -285,6 +315,23 @@ describe('pushOutbound — delivery', () => {
     dbState.queue = [[{ id: 'a1', name: 'Ada' }], [{ text: 'hi' }]];
     await pushOutbound('owner', 'ada');
     expect(relayNotify).toHaveBeenCalledTimes(MAX_DEVICES_PER_SEND);
+  });
+});
+
+describe('opaqueCollapseKey: what the relay sees of a login push key', () => {
+  it('is 32 hex, per login, and not computable from the relay instance token', async () => {
+    const { createHmac } = await import('node:crypto');
+    const a = opaqueCollapseKey('login-a', 'chat');
+    expect(a).toMatch(/^[0-9a-f]{32}$/);
+    expect(opaqueCollapseKey('login-a', 'chat')).toBe(a); // stable: it still collapses
+    expect(opaqueCollapseKey('login-b', 'chat')).not.toBe(a); // per login
+    expect(opaqueCollapseKey('login-a', 'review:1')).not.toBe(a);
+    // The relay holds the instance token: the key must not be its HMAC.
+    const relayCould = createHmac('sha256', INSTANCE.instanceToken)
+      .update('chat')
+      .digest('hex')
+      .slice(0, 32);
+    expect(a).not.toBe(relayCould);
   });
 });
 

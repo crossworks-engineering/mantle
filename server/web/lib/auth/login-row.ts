@@ -78,7 +78,13 @@ export async function loadPersonalSpaceId(loginId: string): Promise<string | nul
 
 /** A device token's row (mobile_tokens): what makes a bearer revocable. Read
  *  here, with the login row, so the role sweeps can stand a token in. */
-export type BearerTokenRow = { userId: string; revokedAt: Date | null; expiresAt: Date };
+export type BearerTokenRow = {
+  userId: string;
+  revokedAt: Date | null;
+  expiresAt: Date;
+  /** The row a refresh replaced this one with (reuse detection). */
+  rotatedTo: string | null;
+};
 
 export async function loadBearerToken(jti: string): Promise<BearerTokenRow | null> {
   const [row] = await db
@@ -86,6 +92,7 @@ export async function loadBearerToken(jti: string): Promise<BearerTokenRow | nul
       userId: mobileTokens.userId,
       revokedAt: mobileTokens.revokedAt,
       expiresAt: mobileTokens.expiresAt,
+      rotatedTo: mobileTokens.rotatedTo,
     })
     .from(mobileTokens)
     .where(eq(mobileTokens.id, jti))

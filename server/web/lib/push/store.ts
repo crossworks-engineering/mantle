@@ -209,6 +209,22 @@ export async function insertSubscription(args: {
   relayDeviceId?: string | null;
 }): Promise<{ id: string; dropped: string[] }> {
   return db.transaction(async (tx) => {
+    // The enrolling token, locked (FOR SHARE) for the enrol: a refresh, a
+    // sign-out or End sessions updates that row first, so it waits for this
+    // insert and then sees the new device (a refresh moves it to the new
+    // token, an ending deletes it). If the refresh went first, the token was
+    // rotated: bind the device to the token it was rotated to, so it is not
+    // stranded on a revoked token.
+    let tokenId = args.tokenId;
+    for (let hop = 0; hop < 3; hop++) {
+      const [t] = (await tx.execute(sql`
+        select revoked_at, rotated_to from mobile_tokens where id = ${tokenId} for share`)) as unknown as Array<{
+        revoked_at: Date | null;
+        rotated_to: string | null;
+      }>;
+      if (!t?.revoked_at || !t.rotated_to) break;
+      tokenId = t.rotated_to;
+    }
     // One phone belongs to one login: a routing token enrolled again (the
     // same app signed in as someone else, or the same login once more)
     // replaces the row it had, whoever held it. One statement on the unique
@@ -218,7 +234,7 @@ export async function insertSubscription(args: {
       .values({
         ownerId: args.ownerId,
         loginId: args.loginId,
-        tokenId: args.tokenId,
+        tokenId,
         routingToken: args.routingToken,
         publicKey: args.publicKey,
         platform: args.platform,
@@ -230,7 +246,7 @@ export async function insertSubscription(args: {
         set: {
           ownerId: args.ownerId,
           loginId: args.loginId,
-          tokenId: args.tokenId,
+          tokenId,
           publicKey: args.publicKey,
           platform: args.platform,
           label: args.label ?? null,

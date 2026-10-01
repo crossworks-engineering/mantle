@@ -11,7 +11,14 @@ import { NextResponse } from '../../server/http-compat';
 import { RedirectError } from '../../server/http-compat/redirect-error';
 import { and, eq, isNull, ne, or, sql } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
-import { db, authUsers, mobileTokens, pushSubscriptions, countUsers } from '@mantle/db';
+import {
+  db,
+  authUsers,
+  mobileTokens,
+  pushSubscriptions,
+  countUsers,
+  isWriteRefused,
+} from '@mantle/db';
 import {
   loadAnchorId,
   loadBearerToken,
@@ -139,9 +146,6 @@ export const CLIENT_DEVICE_MAX_AGE_SECONDS = 90 * 24 * 60 * 60;
  *  left (23 of a 30-day token's days); before that it answers the same
  *  token, so a caller that loops on refresh writes no rows. */
 export const ROTATE_WHEN_UNDER_SECONDS = 23 * 24 * 60 * 60;
-/** A rotated token presented again within this long is a retry of a refresh
- *  whose answer was lost, not a theft: a plain 401, no sessions ended. */
-export const REUSE_GRACE_MS = 2 * 60_000;
 
 /** Whether a login row may hold a session at all: not disabled, and it has
  *  an email. Admin and member alike (member logins are always on since
@@ -262,7 +266,24 @@ async function getBearerLogin(): Promise<Resolved | null> {
   if (!claims) return null;
 
   const tok = await loadBearerToken(claims.jti);
-  if (!tok || tok.revokedAt || tok.userId !== claims.uid) return null;
+  if (!tok || tok.userId !== claims.uid) return null;
+  if (tok.revokedAt) {
+    // A token a refresh replaced, presented on an ordinary route: when its
+    // successor has been used, this is the stolen-from copy (the app holds
+    // only the newest), on whatever route it shows up.
+    if (tok.rotatedTo) {
+      const h = await headers();
+      await presentRotatedToken(
+        { jti: claims.jti, userId: tok.userId, rotatedTo: tok.rotatedTo },
+        {
+          method: (h.get(MANTLE_METHOD_HEADER) ?? '').toUpperCase(),
+          path: h.get(MANTLE_PATH_HEADER) ?? '',
+          meta: await requestMeta(),
+        },
+      );
+    }
+    return null;
+  }
   if (tok.expiresAt.getTime() <= Date.now()) return null;
 
   const row = await loadLoginRow(claims.uid);
@@ -899,6 +920,99 @@ export async function endLoginSessions(
     return row.epoch;
   };
   return opts.tx ? run(opts.tx) : db.transaction((tx) => run(tx));
+}
+
+// ── A rotated device token presented again (reuse detection) ────────────────
+
+/** The successor a lost refresh answer may be answered with again. */
+export type UnusedSuccessor = { id: string; userId: string; expiresAt: Date };
+
+/**
+ * A device token that a refresh replaced (`rotated_to` set) is presented
+ * again. The app keeps only the newest token, so there are two cases, told
+ * apart by the successor row:
+ *
+ *  - The successor has NEVER been used (no `last_used_at`, not rotated on,
+ *    still live): the refresh answer was lost and the caller retries. Not a
+ *    theft. `retry` hands the successor back, so the refresh route answers
+ *    it again (the same jti, re-signed). Every other route answers 401.
+ *  - The successor HAS been used: the presented token is a copy in other
+ *    hands (or the holder kept a copy). That is the theft signal: end every
+ *    session of the login, once, write `auth.token_reuse`, and mark the
+ *    rotated row handled (`rotated_to` cleared), so every later presentation
+ *    of it is a plain 401 and cannot end the login's sessions again.
+ *
+ * Anything else (the successor is gone, revoked unused, expired) is `dead`.
+ * The claim on `rotated_to` is one statement, so two presentations at once
+ * end the sessions once.
+ */
+export async function presentRotatedToken(
+  tok: { jti: string; userId: string; rotatedTo: string },
+  ctx: { method?: string; path: string; meta: { ip: string | null; userAgent: string | null } },
+): Promise<{ kind: 'retry'; successor: UnusedSuccessor } | { kind: 'reuse' } | { kind: 'dead' }> {
+  const [next] = await db
+    .select({
+      id: mobileTokens.id,
+      userId: mobileTokens.userId,
+      revokedAt: mobileTokens.revokedAt,
+      rotatedTo: mobileTokens.rotatedTo,
+      lastUsedAt: mobileTokens.lastUsedAt,
+      expiresAt: mobileTokens.expiresAt,
+    })
+    .from(mobileTokens)
+    .where(eq(mobileTokens.id, tok.rotatedTo))
+    .limit(1);
+  if (!next || next.userId !== tok.userId) return { kind: 'dead' };
+  const used = next.lastUsedAt !== null || next.rotatedTo !== null;
+  if (!used) {
+    return !next.revokedAt && next.expiresAt.getTime() > Date.now()
+      ? {
+          kind: 'retry',
+          successor: { id: next.id, userId: next.userId, expiresAt: next.expiresAt },
+        }
+      : { kind: 'dead' };
+  }
+
+  // A brain that refuses writes (a read-only database) cannot end anything:
+  // the presentation is a plain 401 there, never a 500.
+  let claimed: Array<{ id: string }>;
+  try {
+    claimed = await db
+      .update(mobileTokens)
+      .set({ rotatedTo: null })
+      .where(and(eq(mobileTokens.id, tok.jti), eq(mobileTokens.rotatedTo, tok.rotatedTo)))
+      .returning({ id: mobileTokens.id });
+  } catch (err) {
+    if (isWriteRefused(err)) return { kind: 'dead' };
+    throw err;
+  }
+  if (claimed.length === 0) return { kind: 'dead' };
+
+  const removedRoutingTokens: string[] = [];
+  await endLoginSessions(tok.userId, { removedRoutingTokens });
+  // Loaded here, not at the top: the session layer must not load the push
+  // store (and its table columns) on every import.
+  const { forgetRelayDevices } = await import('../push/store');
+  await forgetRelayDevices(removedRoutingTokens);
+  const [login] = await db
+    .select({ email: authUsers.email })
+    .from(authUsers)
+    .where(eq(authUsers.id, tok.userId))
+    .limit(1);
+  auditFireAndForget({
+    actorId: tok.userId,
+    actorEmail: login?.email ?? '',
+    action: 'auth.token_reuse',
+    method: ctx.method || 'POST',
+    path: ctx.path || '/api/auth/token/refresh',
+    detail: {
+      deviceId: tok.jti,
+      successor: tok.rotatedTo,
+      reason: 'rotated-token-presented-again',
+    },
+    ...ctx.meta,
+  });
+  return { kind: 'reuse' };
 }
 
 /** The login's session epoch now (0 for an unknown login: whatever is minted

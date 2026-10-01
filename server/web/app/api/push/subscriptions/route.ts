@@ -25,16 +25,24 @@ export async function POST(req: NextRequest) {
   const routingToken = body?.['routingToken'];
   const publicKey = body?.['publicKey'];
   const platform = body?.['platform'];
+  // The same checks as the member and client enrol (login-routes.ts).
   if (
     typeof routingToken !== 'string' ||
+    !routingToken ||
+    routingToken.length > 512 ||
     typeof publicKey !== 'string' ||
+    !publicKey ||
+    publicKey.length > 512 ||
     (platform !== 'ios' && platform !== 'android')
   ) {
     return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
   }
-  const label = typeof body?.['label'] === 'string' ? (body['label'] as string) : null;
+  const label =
+    typeof body?.['label'] === 'string'
+      ? (body['label'] as string).trim().slice(0, 80) || null
+      : null;
   const relayDeviceId =
-    typeof body?.['deviceId'] === 'string' ? (body['deviceId'] as string) : null;
+    typeof body?.['deviceId'] === 'string' ? (body['deviceId'] as string).slice(0, 200) : null;
 
   const { id, dropped } = await insertSubscription({
     ownerId: owner.id,
