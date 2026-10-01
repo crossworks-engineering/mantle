@@ -139,6 +139,17 @@ SQL
   # provision). Left in place, a fresh brain would start with the old brain's
   # unfinished workflows waiting to be recovered against it.
   docker exec -i mantle_demo_pg psql -U postgres -d postgres -q -c "drop database if exists mantle_dbos_sys"
+  # The brain's two on-disk stores belong to the brain that is being dropped.
+  # Left in place, every re-seed adds nine more table workbooks next to the old
+  # ones (27 after three seeds), and pack.sh ships all of them. Only the
+  # default locations under demo/.run are cleared: a path someone pointed
+  # elsewhere is theirs.
+  for d in "$TABLE_DB_DIR" "$MANTLE_FILES_ROOT"; do
+    case "$d" in
+      "$(pwd)/demo/.run/"*) rm -rf "$d" ;;
+      *) echo "  (not clearing $d: it is outside demo/.run)" ;;
+    esac
+  done
   docker exec -i mantle_demo_pg psql -U postgres -d postgres -q < infra/postgres/init/01-extensions.sql
   docker exec -i mantle_demo_pg psql -U postgres -d postgres -q < infra/postgres/init/02-auth-schema.sql
 fi

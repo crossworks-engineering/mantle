@@ -62,9 +62,12 @@ re-embed is a write, and `demo_reader` cannot do it:
    ```bash
    docker exec mantle_demo_pg psql -U postgres -d postgres -x -c "select model, dimensions, primary_provider from embedding_config"
    ```
-2. Re-embed all four tables:
+2. Re-embed all four tables. Name the model: the CLI does not read the
+   config row for it, and without `--model` it asks the online provider for
+   the LOCAL model ("Model embeddinggemma does not exist", measured on main
+   v0.232.366). It needs the owner's id in `ALLOWED_USER_ID`:
    ```bash
-   pnpm -C server/web re-embed --dry-run
+   ALLOWED_USER_ID=<owner id> pnpm -C server/web re-embed --model=openai/text-embedding-3-large --dry-run
    ```
    then drop `--dry-run`. It walks `nodes`, `facts`, `entities` and
    `content_chunks` — exactly the four that carry vectors. `tool_result_chunks`
