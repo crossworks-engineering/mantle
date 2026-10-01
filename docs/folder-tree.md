@@ -483,7 +483,8 @@ path of `pages.<id>.<id>`) is gone:
   member draft editor hands it to the block, so `folder:here` lists the
   draft's own folder through `GET /api/member/tree/pages` (the member's
   drafts first, then what it reads of the brain's); a draft at the top level
-  lists the member's top level. The slash menu offers the block to a member
+  lists the member's top level, and a draft moved while its editor is open
+  lists the folder it is in now. The slash menu offers the block to a member
   only when the member shell names `pages` in `treeKinds` and the folder is
   known; a body with no `folderId` (an older brain) shows the block's label
   alone, never the root. A folder the member cannot open says "This folder
