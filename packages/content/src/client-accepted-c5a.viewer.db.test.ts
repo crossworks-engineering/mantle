@@ -52,6 +52,10 @@ describe.skipIf(!URL)('held and accepted items, as their author reads them', () 
   let branchesBefore: string[] = [];
   /** Every node this file made or moved into the brain. */
   const mine: string[] = [];
+  /** A folder that is NOT this file's work: new, empty, in the shared
+   *  anchor, as another test file's folder is while that file sets up. */
+  const bystander = randomUUID();
+  const bystanderLabel = `bystander_${bystander.slice(0, 8)}`;
   const adminA = randomUUID();
   const member = randomUUID();
   const client = randomUUID();
@@ -138,6 +142,12 @@ describe.skipIf(!URL)('held and accepted items, as their author reads them', () 
         sqlTag`select id from nodes where owner_id = ${anchor} and type = 'branch'`,
       )
     ).map((r) => r.id);
+    // What another test file does at the same time: a new folder in the
+    // anchor with nothing in it yet. The cleanup below must leave it.
+    await m.systemDb.execute(sqlTag`
+      insert into nodes (id, owner_id, type, title, path, audience, data, tags)
+      values (${bystander}, ${anchor}, 'branch', ${`${tag} bystander`},
+              ${`notes.${bystanderLabel}`}::ltree, 'admin', '{}'::jsonb, '{}')`);
     await m.systemDb.execute(sqlTag`
       insert into auth.users (id, email, password_hash, role, display_name) values
         (${adminA}, ${`${tag}-a@example.invalid`}, 'x', 'admin', 'Staff Person'),
@@ -153,15 +163,40 @@ describe.skipIf(!URL)('held and accepted items, as their author reads them', () 
   afterAll(async () => {
     if (!m) return;
     const spaces = Object.values(spaceOf);
+    // Where this file's own items sat in the shared anchor, read before they go.
+    const places = mine.length
+      ? (
+          await exec<{ path: string }>(sqlTag`
+            select distinct path::text as path from nodes
+             where owner_id = ${anchor} and id = any(${`{${mine.join(',')}}`}::uuid[])`)
+        ).map((r) => r.path)
+      : [];
     for (const id of mine) await m.systemDb.execute(sqlTag`delete from nodes where id = ${id}`);
-    // The root folders Accept made in the shared anchor, once empty.
-    await m.systemDb.execute(sqlTag`
-      delete from nodes b
-       where b.owner_id = ${anchor} and b.type = 'branch'
-         and not (b.id = any(${`{${branchesBefore.join(',')}}`}::uuid[]))
-         and not exists (select 1 from nodes c
-                          where c.owner_id = b.owner_id and c.id <> b.id
-                            and c.path <@ b.path)`);
+    // The folders Accept made in the shared anchor for THOSE items, once
+    // empty: only a folder on the way to one of them (its path or above),
+    // made since this file started. Never "every new empty folder of the
+    // anchor": other files set their folders up in parallel, and a folder of
+    // theirs with nothing in it yet is not this file's to remove. (It was:
+    // this delete took app-folders.viewer.db.test's folders in the middle of
+    // its setup, three cases failed there, 2026-10-01.) Deepest first: a
+    // parent is empty only once its child has gone.
+    if (places.length) {
+      for (let depth = 0; depth < 4; depth++) {
+        await m.systemDb.execute(sqlTag`
+          delete from nodes b
+           where b.owner_id = ${anchor} and b.type = 'branch'
+             and b.path @> any(${`{${places.join(',')}}`}::ltree[])
+             and not (b.id = any(${`{${branchesBefore.join(',')}}`}::uuid[]))
+             and not exists (select 1 from nodes c
+                              where c.owner_id = b.owner_id and c.id <> b.id
+                                and c.path <@ b.path)`);
+      }
+    }
+    // Another file's folder, new and still empty, is left alone.
+    const kept = await exec<{ id: string }>(
+      sqlTag`select id from nodes where id = ${bystander} and owner_id = ${anchor}`,
+    );
+    await m.systemDb.execute(sqlTag`delete from nodes where id = ${bystander}`);
     for (const s of spaces) {
       await m.systemDb.execute(sqlTag`delete from nodes where owner_id = ${s}`);
       await m.systemDb.execute(sqlTag`delete from spaces where id = ${s}`);
@@ -171,6 +206,8 @@ describe.skipIf(!URL)('held and accepted items, as their author reads them', () 
     );
     await m.closeDb();
     rmSync(root, { recursive: true, force: true });
+    // Asserted last, so a failure here never leaves this file's rows behind.
+    expect(kept, 'the cleanup removed a folder that is not this file’s').toHaveLength(1);
   });
 
   // Brain items the taken items name.

@@ -29,6 +29,7 @@ describe.skipIf(!URL)('a member’s tree by name: drafts and brain items in one 
   const b = randomUUID();
   const spaceOf: Record<string, string> = {};
   const folderId = randomUUID();
+  const keeperId = randomUUID();
   const folderPath = `notes.${L}_team`;
   let scopeA: import('./member-tree').MemberTreeScope;
 
@@ -87,10 +88,18 @@ describe.skipIf(!URL)('a member’s tree by name: drafts and brain items in one 
     for (const r of rows) spaceOf[r.login_id] = r.id;
     scopeA = { anchorId: brain, spaceId: spaceOf[a]!, loginId: a };
 
+    // The folder and a note that keeps it from ever being empty, in one
+    // statement: this file runs next to others on the shared anchor, and a
+    // folder with nothing in it yet could be taken by another file's cleanup
+    // of empty folders (it happened to app-folders.viewer.db.test). The
+    // keeper's title ("zz keeper") matches none of the reads below, whether
+    // or not a member reads it.
     await m.systemDb.execute(sqlTag`
       insert into nodes (id, owner_id, type, title, slug, path, audience, data, tags, share_level)
       values (${folderId}, ${brain}, 'branch', ${`${L} team`}, ${`${L}_team`},
-              ${folderPath}::ltree, 'admin', '{}'::jsonb, '{}', 'team')`);
+              ${folderPath}::ltree, 'admin', '{}'::jsonb, '{}', 'team'),
+             (${keeperId}, ${brain}, 'note', ${`${L} zz keeper`}, null,
+              ${folderPath}::ltree, 'admin', '{"content":"x"}'::jsonb, '{}', null)`);
   }, 60_000);
 
   afterAll(async () => {

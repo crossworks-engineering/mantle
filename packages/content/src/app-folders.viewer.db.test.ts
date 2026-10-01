@@ -23,7 +23,8 @@
  *
  * Rows belong to the shared test anchor, under folders of this run's own,
  * and carry this run's label (other files use the anchor in parallel, so
- * answers are narrowed by it).
+ * answers are narrowed by it). Every folder is inserted in one statement
+ * with what it holds, so it never sits in the anchor empty.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/app-folders.viewer.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -120,22 +121,48 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
   const appTitle = (id: string) => `${nameOf(a, id)} app`;
   const foreignName = (id: string) => `${nameOf(foreign, id)} foreign`;
 
-  const row = async (
-    id: string,
-    owner: string,
-    type: string,
-    title: string,
-    at: string,
-    audience = 'admin',
-    data: Record<string, unknown> = {},
-  ) => {
-    await m.systemDb.execute(sqlTag`
-      insert into nodes (id, owner_id, type, title, path, audience, data, tags)
-      values (${id}, ${owner}, ${type}::node_type, ${title}, ${at}::ltree, ${audience},
-              ${JSON.stringify(data)}::jsonb, '{}')`);
+  type NodeRow = {
+    id: string;
+    owner: string;
+    type: string;
+    title: string;
+    at: string;
+    audience?: string;
+    data?: Record<string, unknown>;
   };
-  const folder = (id: string, at: string, data: Record<string, unknown> = {}) =>
-    row(id, brain, 'branch', folderName(id), at, 'admin', data);
+  /**
+   * Rows in ONE statement, so none is ever seen without the others. A folder
+   * goes in together with what it holds: this file runs next to others on
+   * the shared anchor, and a folder that sat there empty for a moment was
+   * once deleted by another file's cleanup of "new, empty folders" in the
+   * middle of this setup (three cases failed, 2026-10-01).
+   */
+  const insertNodes = (rows: NodeRow[]) =>
+    m.systemDb.execute(sqlTag`
+      insert into nodes (id, owner_id, type, title, path, audience, data, tags)
+      values ${sqlTag.join(
+        rows.map(
+          (r) => sqlTag`(${r.id}, ${r.owner}, ${r.type}::node_type, ${r.title}, ${r.at}::ltree,
+                         ${r.audience ?? 'admin'}, ${JSON.stringify(r.data ?? {})}::jsonb, '{}')`,
+        ),
+        sqlTag`, `,
+      )}`);
+  const folderRow = (id: string, at: string, data: Record<string, unknown> = {}): NodeRow => ({
+    id,
+    owner: brain,
+    type: 'branch',
+    title: folderName(id),
+    at,
+    data,
+  });
+  const appRow = (id: string, at: string, audience: string): NodeRow => ({
+    id,
+    owner: brain,
+    type: 'app',
+    title: appTitle(id),
+    at,
+    audience,
+  });
   const green = JSON.stringify({
     storageKey: 'apps/x.js',
     sha256: 'x',
@@ -144,14 +171,17 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
     bytes: 1,
     ok: true,
   });
-  const publish = (id: string, published: boolean) =>
+  /** The app rows of `builds`: [node id, has a green published build]. */
+  const publish = (builds: Array<[string, boolean]>) =>
     m.systemDb.execute(sqlTag`
       insert into apps (node_id, manifest, published_build, draft_build)
-      values (${id}, '{}'::jsonb, ${published ? green : null}::jsonb, ${green}::jsonb)`);
-  const app = async (id: string, at: string, audience: string, published: boolean) => {
-    await row(id, brain, 'app', appTitle(id), at, audience);
-    await publish(id, published);
-  };
+      values ${sqlTag.join(
+        builds.map(
+          ([id, published]) =>
+            sqlTag`(${id}, '{}'::jsonb, ${published ? green : null}::jsonb, ${green}::jsonb)`,
+        ),
+        sqlTag`, `,
+      )}`);
   const share = (id: string, level: string | null) =>
     m.systemDb.execute(sqlTag`update nodes set share_level = ${level} where id = ${id}`);
 
@@ -192,34 +222,54 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
     await tree.ensureKindRoot(brain, 'apps');
     await tree.ensureKindRoot(brain, 'notes');
 
-    await folder(f.shared, path.shared, { icon: 'lucide:rocket', color: 'teal' });
-    await folder(f.plain, path.plain);
-    await folder(f.hidden, path.hidden);
-    await folder(f.drafts, path.drafts);
-    await folder(f.deep, path.deep);
-    await folder(f.mid, path.mid);
-    await folder(f.leaf, path.leaf);
-    await folder(f.side, path.side);
-    await folder(f.client, path.client);
-    await folder(f.grand, path.grand);
-    await folder(f.parent, path.parent);
-    await folder(f.embedded, path.embedded);
-
-    await app(a.adminInShared, path.shared, 'admin', true);
-    await app(a.draftInShared, path.shared, 'admin', false);
-    await app(a.teamInPlain, path.plain, 'team', true);
-    await app(a.clientInPlain, path.plain, 'client', true);
-    await app(a.adminInPlain, path.plain, 'admin', true);
-    await app(a.adminHidden, path.hidden, 'admin', true);
-    await app(a.draftOnly, path.drafts, 'team', false);
-    await app(a.teamDeep, path.leaf, 'team', true);
-    await app(a.adminSide, path.side, 'admin', true);
-    await app(a.adminInClient, path.client, 'admin', true);
-    await app(a.teamTop, 'apps', 'team', true);
-    await app(a.clientInParent, path.parent, 'client', true);
-    await app(a.adminInParent, path.parent, 'admin', true);
-    await app(a.publicInParent, path.parent, 'public', true);
-    await app(a.embeddedOnly, path.embedded, 'admin', true);
+    // Every folder with every app, in one statement: no folder of this file
+    // is ever in the anchor with nothing in it.
+    await insertNodes([
+      folderRow(f.shared, path.shared, { icon: 'lucide:rocket', color: 'teal' }),
+      folderRow(f.plain, path.plain),
+      folderRow(f.hidden, path.hidden),
+      folderRow(f.drafts, path.drafts),
+      folderRow(f.deep, path.deep),
+      folderRow(f.mid, path.mid),
+      folderRow(f.leaf, path.leaf),
+      folderRow(f.side, path.side),
+      folderRow(f.client, path.client),
+      folderRow(f.grand, path.grand),
+      folderRow(f.parent, path.parent),
+      folderRow(f.embedded, path.embedded),
+      appRow(a.adminInShared, path.shared, 'admin'),
+      appRow(a.draftInShared, path.shared, 'admin'),
+      appRow(a.teamInPlain, path.plain, 'team'),
+      appRow(a.clientInPlain, path.plain, 'client'),
+      appRow(a.adminInPlain, path.plain, 'admin'),
+      appRow(a.adminHidden, path.hidden, 'admin'),
+      appRow(a.draftOnly, path.drafts, 'team'),
+      appRow(a.teamDeep, path.leaf, 'team'),
+      appRow(a.adminSide, path.side, 'admin'),
+      appRow(a.adminInClient, path.client, 'admin'),
+      appRow(a.teamTop, 'apps', 'team'),
+      appRow(a.clientInParent, path.parent, 'client'),
+      appRow(a.adminInParent, path.parent, 'admin'),
+      appRow(a.publicInParent, path.parent, 'public'),
+      appRow(a.embeddedOnly, path.embedded, 'admin'),
+    ]);
+    await publish([
+      [a.adminInShared, true],
+      [a.draftInShared, false],
+      [a.teamInPlain, true],
+      [a.clientInPlain, true],
+      [a.adminInPlain, true],
+      [a.adminHidden, true],
+      [a.draftOnly, false],
+      [a.teamDeep, true],
+      [a.adminSide, true],
+      [a.adminInClient, true],
+      [a.teamTop, true],
+      [a.clientInParent, true],
+      [a.adminInParent, true],
+      [a.publicInParent, true],
+      [a.embeddedOnly, true],
+    ]);
 
     await share(f.shared, 'team');
     await share(f.drafts, 'team');
@@ -227,12 +277,26 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
     await share(f.parent, 'team');
 
     // A note in a notes folder shared with the team embeds the app: the app
-    // is then READ at team (migration 0208), which must not make it run.
-    await row(notesFolder, brain, 'branch', `${label} notes folder`, path.notes);
+    // is then READ at team (migration 0208), which must not make it run. The
+    // folder and its note in one statement, for the same reason as above.
+    await insertNodes([
+      {
+        id: notesFolder,
+        owner: brain,
+        type: 'branch',
+        title: `${label} notes folder`,
+        at: path.notes,
+      },
+      {
+        id: embedNote,
+        owner: brain,
+        type: 'note',
+        title: `${label} embeds an app`,
+        at: path.notes,
+        data: { content: `![x](media:${a.embeddedOnly})` },
+      },
+    ]);
     await share(notesFolder, 'team');
-    await row(embedNote, brain, 'note', `${label} embeds an app`, path.notes, 'admin', {
-      content: `![x](media:${a.embeddedOnly})`,
-    });
 
     // Another brain with a folder and a team app at one of our paths, and a
     // member's own folder there: rows of other owners at the same path.
@@ -248,16 +312,31 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
         id: string;
       }[]
     )[0]!.id;
-    await row(foreign.otherFolder, other, 'branch', foreignName(foreign.otherFolder), path.shared);
-    await row(foreign.otherApp, other, 'app', foreignName(foreign.otherApp), path.shared, 'team');
-    await publish(foreign.otherApp, true);
-    await row(
-      foreign.memberFolder,
-      memberSpace,
-      'branch',
-      foreignName(foreign.memberFolder),
-      path.shared,
-    );
+    await insertNodes([
+      {
+        id: foreign.otherFolder,
+        owner: other,
+        type: 'branch',
+        title: foreignName(foreign.otherFolder),
+        at: path.shared,
+      },
+      {
+        id: foreign.otherApp,
+        owner: other,
+        type: 'app',
+        title: foreignName(foreign.otherApp),
+        at: path.shared,
+        audience: 'team',
+      },
+      {
+        id: foreign.memberFolder,
+        owner: memberSpace,
+        type: 'branch',
+        title: foreignName(foreign.memberFolder),
+        at: path.shared,
+      },
+    ]);
+    await publish([[foreign.otherApp, true]]);
   }, 60_000);
 
   afterAll(async () => {
@@ -275,6 +354,26 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
     await m.systemDb.execute(sqlTag`delete from spaces where login_id in (${other}, ${member})`);
     await m.systemDb.execute(sqlTag`delete from auth.users where id in (${other}, ${member})`);
   }, 60_000);
+
+  it('holds every folder of the fixture, each with something in it (no other file can take it for an empty one)', async () => {
+    // What another file's cleanup of empty folders in the shared anchor
+    // would delete: a folder with nothing at or below its path. None of
+    // ours, at any moment, since each went in with what it holds.
+    const ours = [...Object.values(f), notesFolder];
+    const rows = (await m.systemDb.execute(sqlTag`
+      select b.id::text as id,
+             not exists (select 1 from nodes c
+                          where c.owner_id = b.owner_id and c.id <> b.id
+                            and c.path <@ b.path) as empty
+        from nodes b
+       where b.owner_id = ${brain} and b.type = 'branch'
+         and b.id = any(${`{${ours.join(',')}}`}::uuid[])`)) as unknown as Array<{
+      id: string;
+      empty: boolean;
+    }>;
+    expect(rows.map((r) => r.id).sort()).toEqual([...ours].sort());
+    expect(rows.filter((r) => r.empty)).toEqual([]);
+  });
 
   it('shows a member a team app inside a folder shared with the team, with the folder’s look', async () => {
     const got = await launcher('team');
