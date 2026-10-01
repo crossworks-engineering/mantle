@@ -451,6 +451,14 @@ approval like any agent-initiated grant). Every result comes back
 give them to a no-write specialist (researcher pattern). Full detail:
 [`mcp-connectors.md`](./mcp-connectors.md).
 
+### Connector tools in team apps
+
+A member's run of a team app may call only read-only built-ins, unless an
+admin switches on "Team apps may use" on an MCP or http tool and confirms it
+only reads. The tool must still sit in an enabled team-level group. Rules,
+surfaces and how the switch is voided: docs/member-logins.md, "Outside tools
+in team apps".
+
 ## OpenAPI connector groups: a group compiled from a service's spec
 
 The third binding: `integration.openapi` marks a group as an **OpenAPI

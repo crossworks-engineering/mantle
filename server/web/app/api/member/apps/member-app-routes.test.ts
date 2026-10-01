@@ -27,6 +27,9 @@ const h = vi.hoisted(() => ({
   homeAppId: undefined as string | undefined,
   loginActive: true,
   verdict: { ok: true } as { ok: boolean; status?: number; reason?: string },
+  // The handler kind of the tool an allowed verdict hands back: 'mcp' stands
+  // for an outside tool an admin opened to team apps.
+  toolKind: 'builtin' as 'builtin' | 'mcp',
   toolSlugs: ['note_list'] as string[],
   levels: [] as string[],
   dispatched: [] as Array<{ level: string; ctx: Record<string, unknown> }>,
@@ -141,7 +144,11 @@ vi.mock('@mantle/tools', async (importOriginal) => {
           const real = await importOriginal<typeof import('@mantle/tools')>();
           return real.appToolVerdict(level, owner, declared, slug);
         }
-        return h.verdict.ok ? { ok: true, tool: { slug } } : h.verdict;
+        const handler =
+          h.toolKind === 'builtin'
+            ? { kind: 'builtin', ref: slug }
+            : { kind: 'mcp', group: 'mcp-site', toolName: 'query' };
+        return h.verdict.ok ? { ok: true, tool: { slug, handler } } : h.verdict;
       },
     ),
     dispatchTool: vi.fn(async (_tool: unknown, _input: unknown, ctx: Record<string, unknown>) => {
@@ -222,6 +229,7 @@ beforeEach(() => {
   verdictMock?.mockClear();
   h.loginActive = true;
   h.verdict = { ok: true };
+  h.toolKind = 'builtin';
   h.toolSlugs = ['note_list'];
   h.levels.length = 0;
   h.dispatched.length = 0;
@@ -234,6 +242,39 @@ beforeEach(() => {
 });
 
 describe('member tool broker', () => {
+  it('an outside tool an admin opened to team apps runs on the team role, and the log names the member and the kind', async () => {
+    h.toolKind = 'mcp';
+    h.toolSlugs = ['site_query'];
+    const res = await toolBroker(post({ slug: 'site_query', input: { q: 'x' } }), params());
+    expect(res.status).toBe(200);
+    expect(h.dispatched).toHaveLength(1);
+    expect(h.dispatched[0]!.level).toBe('team');
+    expect(h.dispatched[0]!.ctx).toMatchObject({
+      surface: { kind: 'team', loginId: LOGIN, privateReads: false },
+    });
+    expect(h.logged[0]).toMatchObject({
+      actorId: LOGIN,
+      kind: 'tool',
+      detail: { via: 'member', slug: 'site_query', handler: 'mcp' },
+    });
+  });
+
+  it('a refused outside tool is logged with the member and the reason, and never dispatched', async () => {
+    h.toolSlugs = ['site_query'];
+    h.verdict = {
+      ok: false,
+      status: 403,
+      reason: "The tool 'site_query' can't be used from a team app",
+    };
+    const res = await toolBroker(post({ slug: 'site_query', input: {} }), params());
+    expect(res.status).toBe(403);
+    expect(h.dispatched).toHaveLength(0);
+    expect(h.logged[0]).toMatchObject({
+      actorId: LOGIN,
+      detail: { via: 'member', slug: 'site_query', refused: expect.stringMatching(/team app/) },
+    });
+  });
+
   it('dispatches on the team role with a team surface that names the login', async () => {
     const res = await toolBroker(post({ slug: 'note_list', input: {} }), params());
     expect(res.status).toBe(200);
@@ -281,7 +322,7 @@ describe('member tool broker', () => {
     verdictMock.mockImplementationOnce(
       async (level: string, _o: string, _d: string[], slug: string) => {
         h.levels.push(level);
-        return { ok: true, tool: { slug } };
+        return { ok: true, tool: { slug, handler: { kind: 'builtin', ref: slug } } };
       },
     );
     const res = await toolBroker(post({ slug: 'client_shared_list', input: {} }), params());

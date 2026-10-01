@@ -10,7 +10,7 @@
  */
 
 import { and, eq } from 'drizzle-orm';
-import { db, toolGroups, type Tool, type ToolHandler } from '@mantle/db';
+import { asSystem, db, toolGroups, type Tool, type ToolHandler } from '@mantle/db';
 import { getApiKey } from '@mantle/api-keys';
 import { getBuiltin, getBuiltinHandler } from './registry';
 import { checkToolPreconditions } from './preconditions';
@@ -124,7 +124,15 @@ async function dispatchMcp(
     };
   }
   try {
-    const res = await mcpCallRemoteTool(ctx.ownerId, h.group, mcp, h.toolName, input);
+    // asSystem: the remote call reads and, for an OAuth connector, refreshes
+    // the connector's OWN credentials (api_keys), which a limited role may
+    // not write. A team app's call to a tool an admin opened to team apps
+    // (team-apps.ts) runs under the team role, and the token refresh failed
+    // there. Nothing of the brain's content is read here: the result comes
+    // from the remote server, and the call stays on the caller's surface.
+    const res = await asSystem(() =>
+      mcpCallRemoteTool(ctx.ownerId, h.group, mcp, h.toolName, input),
+    );
     const scrub = (s: string) => scrubSecrets(s, res.secrets);
     let text = scrub(res.text);
     const truncated = text.length > MCP_RESULT_TEXT_CAP;

@@ -141,6 +141,18 @@ export {
   type MemberAppToolVerdict,
 } from './member-app-tools';
 export {
+  setToolTeamApps,
+  clearConnectorTeamApps,
+  teamAppsActive,
+  teamAppsHandlerSig,
+  teamAppsIneligible,
+  teamAppsSummary,
+  TEAM_APPS_KINDS,
+  type SetTeamAppsResult,
+  type TeamAppsActor,
+  type TeamAppsOffActor,
+} from './team-apps';
+export {
   clientAppToolVerdict,
   CLIENT_APP_TOOL_SLUGS,
   type ClientAppToolVerdict,

@@ -79,8 +79,30 @@ export interface ToolDTO {
   handler: ToolHandler;
   requiresConfirm: boolean;
   enabled: boolean;
+  /** "Team apps may use" on an outside tool (mcp or http): team members'
+   *  runs of a team app may call it. Null when off. Absent from servers
+   *  before it shipped. Set it with `PUT /api/tools/:id/team-apps`. */
+  teamApps?: ToolTeamAppsDTO | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/** The "Team apps may use" switch of one tool, as the server reports it. */
+export interface ToolTeamAppsDTO {
+  /** False when the handler changed after the admin confirmed it: the switch
+   *  no longer counts and must be switched on again. */
+  on: boolean;
+  /** When the admin confirmed the tool only reads (ISO time). */
+  confirmedReadOnlyAt: string;
+  /** Who switched it on. */
+  by: { via: 'web' | 'mcp' | 'dev-tools'; actorId?: string; actorEmail?: string };
+}
+
+/** `PUT /api/tools/:id/team-apps` body. Switching on needs
+ *  `readOnlyConfirmed: true` (the admin confirms the tool only reads). */
+export interface ToolTeamAppsBody {
+  allow: boolean;
+  readOnlyConfirmed?: boolean;
 }
 
 /** `GET/PUT /api/tools/settings` — the two owner-level tool policy toggles. */

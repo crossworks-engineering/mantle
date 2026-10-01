@@ -12,6 +12,7 @@
 import { and, asc, eq } from 'drizzle-orm';
 import { db, tools, type Tool, type ToolHandler } from '@mantle/db';
 import type { ToolDTO } from '@mantle/client-types';
+import { teamAppsHandlerSig, teamAppsSummary } from './team-apps';
 
 /** The API/wire shape (see @mantle/client-types). Aliased here so `toSummary`'s
  *  output is checked against the client contract — drift is a type error. */
@@ -27,6 +28,7 @@ function toSummary(t: Tool): ToolSummary {
     handler: t.handler as ToolHandler,
     requiresConfirm: t.requiresConfirm,
     enabled: t.enabled,
+    teamApps: teamAppsSummary(t),
     createdAt: t.createdAt.toISOString(),
     updatedAt: t.updatedAt.toISOString(),
   };
@@ -176,7 +178,15 @@ export async function updateTool(
   if (patch.name !== undefined) next.name = patch.name;
   if (patch.description !== undefined) next.description = patch.description;
   if (patch.inputSchema !== undefined) next.inputSchema = patch.inputSchema;
-  if (patch.handler !== undefined) next.handler = patch.handler;
+  if (patch.handler !== undefined) {
+    next.handler = patch.handler;
+    // "Team apps may use" was confirmed for the handler the admin looked at:
+    // a new one goes off until an admin confirms again (team-apps.ts; the
+    // broker would refuse it anyway, as the signature no longer matches).
+    if (teamAppsHandlerSig(patch.handler) !== teamAppsHandlerSig(existing.handler)) {
+      next.teamApps = null;
+    }
+  }
   if (patch.requiresConfirm !== undefined) next.requiresConfirm = patch.requiresConfirm;
   if (patch.enabled !== undefined) next.enabled = patch.enabled;
   const [row] = await db

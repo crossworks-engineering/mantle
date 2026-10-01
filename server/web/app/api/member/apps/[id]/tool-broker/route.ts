@@ -21,7 +21,9 @@ const Body = z.object({
  * the member rules (memberAppToolVerdict: declared by the app, a built-in,
  * no confirmation, in an enabled team-level tool group, not on the refused
  * list, read-only) and runs on the TEAM role, on a team surface that names
- * the login (so team refusals apply), with the private corpus off. A
+ * the login (so team refusals apply), with the private corpus off. An
+ * outside tool (mcp or http) passes only when an admin switched on "Team
+ * apps may use" on it (team-apps.ts), on the same role and surface. A
  * client-level app gets the client rules (clientAppToolVerdict) and runs on
  * the CLIENT role, on a client surface, as a client's run does: its
  * database is read by every client, so nothing above client level may land
@@ -53,7 +55,17 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     appNodeId: app.id,
     actorId: member.loginId,
     kind: 'tool',
-    detail: verdict.ok ? { via: 'member', slug } : { via: 'member', slug, refused: verdict.reason },
+    // An outside tool (one an admin opened to team apps) names its kind, so
+    // the log shows which member calls reached outside the brain.
+    detail: verdict.ok
+      ? {
+          via: 'member',
+          slug,
+          ...(verdict.tool.handler.kind !== 'builtin'
+            ? { handler: verdict.tool.handler.kind }
+            : {}),
+        }
+      : { via: 'member', slug, refused: verdict.reason },
   });
   if (!verdict.ok) {
     return NextResponse.json({ ok: false, error: verdict.reason }, { status: verdict.status });

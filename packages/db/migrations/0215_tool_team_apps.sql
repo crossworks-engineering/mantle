@@ -1,0 +1,16 @@
+-- "Team apps may use" (docs/member-logins.md, "Outside tools in team apps").
+--
+-- A site adds its own connectors (an MCP server, an http API) and its team
+-- apps call them. A member's run of an app may call only read-only built-in
+-- tools, because the brain cannot judge an outside tool and an app loop has
+-- no model in between. This column is the admin's switch on ONE outside tool
+-- (mcp or http): "team apps may use this tool, and I confirm it only reads".
+--
+-- NULL is off. Set, it holds when and by whom the read-only confirmation was
+-- given and a signature of the handler the admin looked at
+-- (packages/tools/src/team-apps.ts). The switch counts only while that
+-- signature equals the current handler's, so any change to the handler (an
+-- edit, a connector sync, SQL by hand) voids it with no trigger. Deleting the
+-- tool deletes the switch with the row. Additive and nullable: no backfill,
+-- every existing tool stays off.
+ALTER TABLE "public"."tools" ADD COLUMN IF NOT EXISTS "team_apps" jsonb;

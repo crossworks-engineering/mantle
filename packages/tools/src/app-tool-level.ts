@@ -143,7 +143,7 @@ export async function appToolWarnings(ownerId: string, appId: string): Promise<s
         );
       } else {
         warnings.push(
-          `${verdict.reason} Members running this app get an error: declare a read-only built-in tool from an enabled team-level group instead (\`tool_group_list\` shows levels), or keep the app at admin level.`,
+          `${verdict.reason} Members running this app get an error: declare a read-only built-in tool from an enabled team-level group instead (\`tool_group_list\` shows levels), have an admin switch on "Team apps may use" on an outside (MCP or http) tool that only reads and put it in an enabled team-level group, or keep the app at admin level.`,
         );
       }
     }
