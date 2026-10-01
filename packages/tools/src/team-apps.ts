@@ -33,14 +33,7 @@
  */
 import { createHash } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
-import {
-  auditLog,
-  db,
-    tools,
-  type Tool,
-  type ToolHandler,
-  type ToolTeamApps,
-} from '@mantle/db';
+import { auditLog, db, tools, type Tool, type ToolHandler, type ToolTeamApps } from '@mantle/db';
 import type { ToolTeamAppsDTO } from '@mantle/client-types';
 
 /** The handler kinds an admin may open to team apps. */
