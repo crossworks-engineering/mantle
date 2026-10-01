@@ -84,7 +84,11 @@ export type ManifestToolGroup = {
   /** The group's level (tool_groups.audience). Omitted = admin, the column
    *  default. A group with a level is PRODUCT-owned at that level: seeded at
    *  it and converged back to it by the boot reconcile, because the level is
-   *  what the group is for (client-read exists to be held by a client agent). */
+   *  what the group is for (client-read exists to be held by a client agent,
+   *  team-read and formulas-eval by the team responder once an admin opens
+   *  it). A level here only says who MAY hold the group; granting it to an
+   *  agent stays an admin's act. Giving a group a level widens who can use
+   *  its tools: manifest.test.ts pins the list. */
   level?: ViewerLevel;
 };
 
@@ -144,7 +148,8 @@ export type ManifestAgent = {
   priority: number;
   /** The agent's level (agents.audience). Omitted = admin, the column
    *  default, and the level is then operator-owned (team-responder ships at
-   *  admin and an admin lowers it). Set = product-owned: seeded at it, so the
+   *  admin, closed to members, and an admin lowers it in one step:
+   *  docs/access-levels.md section 5). Set = product-owned: seeded at it, so the
    *  agent works on every brain with no manual step (client-responder at
    *  client, client logins C4). */
   level?: ViewerLevel;
@@ -846,6 +851,10 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     // Authoring is a different responsibility from asking. A team member should
     // be able to get a computed release rate with its derivation; writing a new
     // calculation model into the owner's brain is the mathematician's job.
+    // TEAM level on every brain: migration 0159 set it by UPDATE, which only
+    // reached brains that existed then; the manifest is what a fresh install
+    // (and the boot reconcile) reads.
+    level: 'team',
     toolSlugs: ['formula_list', 'formula_get', 'formula_evaluate'],
   },
   {
@@ -1091,7 +1100,12 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'team-read',
     name: 'Team reads (member-facing)',
     description:
-      "The team responder's entire tool surface: read-only access across the brain (search, files, notes, pages, tables, events, tasks, contacts, app data) — including `show_image`, which renders a file the member could already read — plus its ONE write action — filing a team change request into the specialist review queue. email_*/journal_* are ALSO granted here but gated at runtime by the owner's `teamPrivateReads` switch (default OFF — see run-team-turn.ts / TEAM_PRIVATE_READ_SLUGS), so the owner's private corpus is off-limits unless explicitly opted in. Deliberately excludes export_node (bulk exfiltration ease), replay_window (replays the OWNER's private conversations), all other writes, delegation, terminal, http, and send tools. Non-private reads are brain-wide BY DESIGN (brain = the trust boundary).",
+      "The team responder's entire tool surface: read-only access across the brain (search, files, notes, pages, tables, app data), including `show_image`, which renders a file the member could already read, plus its ONE write action: filing a team change request into the specialist review queue. TEAM level. The reads a team-level role may never make (the knowledge graph, events, tasks, contacts, email_*/journal_*) are not here: they sit in `team-read-admin`. Deliberately excludes export_node (bulk exfiltration ease), replay_window (replays the OWNER's private conversations), all other writes, delegation, terminal, http, and send tools. Non-private reads are brain-wide BY DESIGN (brain = the trust boundary).",
+    // TEAM level on every brain (see formulas-eval): without it a fresh
+    // install could not lower team-responder to team in one step, the group
+    // sat above it. Every tool here runs on the team viewer role
+    // (team-groups.viewer.db.test.ts).
+    level: 'team',
     toolSlugs: [
       // memory-core reads
       'search_nodes',
@@ -1145,7 +1159,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'team-read-admin',
     name: 'Team reads that need admin level',
     description:
-      "The team responder's reads that touch what a team-level role may never read: the knowledge graph (entity names are learned from every source, email included), events, tasks, contacts, and the private corpus (email_* / journal_*, still gated by `teamPrivateReads`). ADMIN level (member logins Phase 0b): the responder holds it while it runs at admin; lowering the responder to team first means removing this group, and the run-time level cap drops it regardless.",
+      "The team responder's reads that touch what a team-level role may never read: the knowledge graph (entity names are learned from every source, email included), events, tasks, contacts, and the private corpus (email_* / journal_*, still gated by `teamPrivateReads`). ADMIN level (member logins Phase 0b): the responder holds it while it is at admin; lowering the responder to team takes this group off it (access_set with drop_groups_above, or remove it by hand first), and the run-time level cap drops it regardless.",
     toolSlugs: [
       // A folder-description WRITE: a team-level role never writes.
       'folder_describe',

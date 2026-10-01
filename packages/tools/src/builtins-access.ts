@@ -172,6 +172,12 @@ export const access_set: BuiltinToolDef = {
         description:
           "items only: also raise the item's embeds / folder contents that sit below the new level",
       },
+      drop_groups_above: {
+        type: 'boolean',
+        default: false,
+        description:
+          "agents only: also take off the agent the tool groups above the new level (listed in `removedGroups`); without it such an agent is refused. Opening the team responder: agent_slug 'team-responder', level 'team', drop_groups_above true",
+      },
     },
     required: ['level'],
   },
@@ -218,8 +224,10 @@ export const access_set: BuiltinToolDef = {
           .limit(1);
         if (!row)
           return { ok: false, error: `agent '${agentSlug}' not found: list them with agent_list` };
-        const res = await setAgentAudience(ctx.ownerId, row.id, level);
-        ctx.step?.setOutput({ agent: agentSlug, level });
+        const res = await setAgentAudience(ctx.ownerId, row.id, level, {
+          dropGroupsAbove: input.drop_groups_above === true,
+        });
+        ctx.step?.setOutput({ agent: agentSlug, level, removedGroups: res.removedGroups });
         return { ok: true, output: { agent: res } };
       }
       if (groupSlug) {

@@ -193,4 +193,43 @@ describe.skipIf(!URL)('setting levels on Postgres', () => {
       code: 'group_above_agent',
     });
   });
+
+  it('dropGroupsAbove lowers the agent and takes the groups above the new level off it', async () => {
+    // State from the tests above: `-admin` at admin, `-team` at client,
+    // `-public` at public. A new agent at admin holds all three.
+    const id = randomUUID();
+    const held = [`${tag}-admin`, `${tag}-team`, `${tag}-public`];
+    await m.db.execute(sqlTag`
+      insert into agents (id, owner_id, slug, name, model, system_prompt, tool_group_slugs)
+      values (${id}, ${owner}, ${`${tag}-agent2`}, 'B', 'm', 'p', ${`{${held.join(',')}}`}::text[])`);
+    const groupsOf = async () =>
+      (
+        (await m.db.execute(
+          sqlTag`select audience, tool_group_slugs from agents where id = ${id}`,
+        )) as unknown as { audience: string; tool_group_slugs: string[] }[]
+      )[0]!;
+
+    // Without it: refused, nothing changes, and the refusal names the fix.
+    const refusal = await a.setAgentAudience(owner, id, 'client').catch((e: Error) => e);
+    expect(refusal).toMatchObject({ code: 'group_above_agent' });
+    expect((refusal as Error).message).toContain(`'${tag}-admin' is admin-level`);
+    expect((refusal as Error).message).toContain(`agent '${tag}-agent2'`);
+    expect((refusal as Error).message).toContain('dropGroupsAbove: true');
+    expect(await groupsOf()).toEqual({ audience: 'admin', tool_group_slugs: held });
+
+    // With it: one call. A client agent reads neither admin nor public.
+    await expect(
+      a.setAgentAudience(owner, id, 'client', { dropGroupsAbove: true }),
+    ).resolves.toMatchObject({
+      audience: 'client',
+      removedGroups: [`${tag}-admin`, `${tag}-public`],
+    });
+    expect(await groupsOf()).toEqual({ audience: 'client', tool_group_slugs: [`${tag}-team`] });
+
+    // Raising never touches the groups, with or without the option.
+    await expect(
+      a.setAgentAudience(owner, id, 'admin', { dropGroupsAbove: true }),
+    ).resolves.toMatchObject({ audience: 'admin', removedGroups: [] });
+    expect(await groupsOf()).toEqual({ audience: 'admin', tool_group_slugs: [`${tag}-team`] });
+  });
 });

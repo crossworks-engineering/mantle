@@ -16,8 +16,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { MANIFEST_TOOL_GROUPS } from './manifest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
-/** The groups migration 0159 sets to team level. */
-const TEAM_LEVEL_GROUPS = ['team-read', 'formulas-eval'];
+/** The groups the manifest ships at team level (manifest.test.ts pins which). */
+const TEAM_LEVEL_GROUPS = MANIFEST_TOOL_GROUPS.filter((g) => g.level === 'team').map((g) => g.slug);
 
 const h = vi.hoisted(() => ({ vec: [] as number[] }));
 vi.mock('@mantle/embeddings', async (importOriginal) => ({

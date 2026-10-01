@@ -208,7 +208,9 @@ it to Team (or Client, when clients should read it too).
 Member logins are always on; there is nothing to switch on (Phase 6 removed
 the `MANTLE_MEMBERS` flag).
 
-1. Set item levels and lower `team-responder` to team (access-levels.md §5).
+1. Set item levels and lower `team-responder` to team (access-levels.md §5:
+   one call, `access_set` with `drop_groups_above: true`, on a fresh install
+   too).
    Its shipped prompt speaks to a member login in their own chat; a brain
    whose team-responder prompt was never edited gets it on upgrade (section
    9, "The team portal is retired").

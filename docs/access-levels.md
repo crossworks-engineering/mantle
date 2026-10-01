@@ -103,13 +103,31 @@ from, to}]`: the Access control and `PATCH /api/access/nodes/:id`,
   `invoke_agent` refuses before any trace or LLM work, and one that
   reaches the HTTP layer answers 403 with `reason: 'level-conflict'`
   (`server/web/server/level-conflict.ts`). `team-responder` ships at
-  admin; an admin lowers it once the shadow report is clean (section 5).
+  admin, closed to members, on every brain; an admin lowers it once the
+  shadow report is clean (section 5).
 - **Tool groups.** An agent may hold a tool group only at a level it
   reads: a team agent may hold client and public groups, but a client agent
   holds no public group and a public agent no client group. Refused at grant
   time (`PATCH /api/agents/:id`, `agent_grant_tool_group`) and when an
   agent's or a group's level changes, left out at run time
-  (`resolveAgentToolGroups`).
+  (`resolveAgentToolGroups`). Lowering an agent that holds a group above the
+  new level is refused (400, code `group_above_agent`); the message names
+  each group and the fix. The fix in the same call: `dropGroupsAbove: true`
+  on the API (`drop_groups_above: true` on `access_set`) takes those groups
+  off the agent with the change and lists them in `removedGroups`. It is
+  never the default: a wrong slug must not strip an agent of its groups, and
+  raising the level again does not put them back.
+- **Which groups ship below admin.** Three, set in the system manifest
+  (`level` on the group, `server/web/lib/system-manifest/manifest.ts`):
+  `team-read` and `formulas-eval` at team, `client-read` at client. A group
+  with a manifest level is product-owned at that level: a fresh install
+  seeds it there, and the boot reconcile sets it back there once per
+  version, on every brain, also when an admin moved it (the level is what
+  the group is for). Every other group is admin by default and its level is
+  the admin's to set; the reconcile never touches it. A group's level only
+  says who MAY hold it: giving the group to an agent stays an admin's act.
+  `manifest.test.ts` pins the three groups and the tool list of the two
+  team-level ones, so a change that widens them is made on purpose.
 
 ## 2. How it is enforced
 
@@ -201,9 +219,17 @@ removing any one wrap fails a test.
 - API (owner only): `GET|PATCH /api/access/nodes/:id`,
   `PATCH /api/access/agents/:slug`, `PATCH /api/access/tool-groups/:slug`,
   `GET /api/access/shadow?days=30`.
+  The agent PATCH takes `{ audience, dropGroupsAbove? }` and answers
+  `{ agent: { id, slug, audience, removedGroups } }`.
 - Migration 0159 carried today's sharing over: active team shares went to
-  team, public links to public, a shared folder's contents with it. The
-  member-facing groups `team-read` and `formulas-eval` are team level.
+  team, public links to public, a shared folder's contents with it.
+- The member-facing groups `team-read` and `formulas-eval` are team level
+  on every brain, from the manifest (section 1, "Which groups ship below
+  admin"). Migration 0159 also set them, by UPDATE, but that reached only
+  the brains that existed when it ran: a brain installed after it seeded
+  both at admin until the manifest carried the level (October 2026). Such
+  a brain gets the right levels from the boot reconcile of its next update,
+  with no manual step and no migration.
 
 ## 5. Turning it on for the team responder
 
@@ -215,8 +241,20 @@ removing any one wrap fails a test.
    purpose), and how many facts stay usable.
 2. Set the levels of what the team should keep reading (a page's embeds go
    with it; a folder's contents with "Lower them too").
-3. `access_set(agent_slug: 'team-responder', level: 'team')`. From the next
-   turn it reads only team-level items. Undo: set it back to admin.
+3. Open the responder, one call:
+   `access_set(agent_slug: 'team-responder', level: 'team', drop_groups_above: true)`,
+   or `PATCH /api/access/agents/team-responder` with
+   `{ "audience": "team", "dropGroupsAbove": true }`. The responder ships
+   with three groups: `team-read` and `formulas-eval` (team level) and
+   `team-read-admin` (admin level: the knowledge graph, events, tasks,
+   contacts, email and Journal reads, which a team-level role may never
+   make). The call takes `team-read-admin` off it (`removedGroups`) and sets
+   the level. Without `drop_groups_above` the call is refused and the
+   message names the group and this fix. From the next turn the responder
+   reads only team-level items and members can chat with it.
+   Undo: set it back to admin (members can no longer chat). The next
+   update's reconcile gives an admin-level responder `team-read-admin`
+   back; a team-level one never gets it.
 
 ## 6. Operations
 
