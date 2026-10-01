@@ -26,7 +26,11 @@ vi.mock('@/lib/auth', () => ({
   buildMobileToken: () => ({ value: 'tok', expiresInSec: 60, expiresAt: new Date() }),
 }));
 vi.mock('@/lib/audit', () => ({ auditFireAndForget: vi.fn(), requestMetaFrom: () => ({}) }));
-vi.mock('@/lib/rate-limit', () => ({ clientIp: () => '1.1.1.1', rateLimit: () => ({ ok: true }) }));
+vi.mock('@/lib/rate-limit', () => ({
+  clientIp: () => '1.1.1.1',
+  clientIpKey: () => '1.1.1.1',
+  rateLimit: () => ({ ok: true }),
+}));
 
 import { handleTokenLogin } from './token-login';
 
