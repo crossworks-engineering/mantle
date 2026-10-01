@@ -1,6 +1,6 @@
 // The "needs you" phone push: only an ARRIVAL pushes (the same NOTIFY fires
 // when something leaves a queue), each arrival once, to ACTIVE ADMIN devices
-// only (listAdminSubscriptions, never the brain-wide list), with the item's
+// only (listAdminSubscriptions; the store has no brain-wide list), with the item's
 // title and author and never its content. All I/O is mocked.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -14,7 +14,6 @@ vi.mock('./relay-client', () => ({ relayNotify: vi.fn() }));
 vi.mock('./store', () => ({
   getPushInstance: vi.fn(),
   getPushPrefs: vi.fn(),
-  listSubscriptions: vi.fn(),
   listAdminSubscriptions: vi.fn(),
   markPushed: vi.fn(),
   deleteSubscriptionByRoutingToken: vi.fn(),
@@ -31,7 +30,7 @@ import {
 import { loadNeedsYou } from '@mantle/content';
 import { sealToDevice } from './seal';
 import { relayNotify } from './relay-client';
-import { getPushInstance, getPushPrefs, listAdminSubscriptions, listSubscriptions } from './store';
+import { getPushInstance, getPushPrefs, listAdminSubscriptions } from './store';
 
 const NOW = Date.parse('2026-09-28T18:00:00Z');
 const ago = (ms: number) => new Date(NOW - ms).toISOString();
@@ -140,16 +139,6 @@ describe('pushNeedsYou', () => {
     });
     vi.mocked(getPushPrefs).mockResolvedValue({ assistantMessages: true, approvals: true });
     vi.mocked(listAdminSubscriptions).mockResolvedValue(admins);
-    vi.mocked(listSubscriptions).mockResolvedValue([
-      ...admins,
-      {
-        id: 'dm',
-        routingToken: 'rm',
-        publicKey: 'pkm',
-        platform: 'android',
-        label: 'member phone',
-      },
-    ]);
     vi.mocked(sealToDevice).mockResolvedValue('ciphertext');
     vi.mocked(relayNotify).mockResolvedValue({ ok: true, status: 200 });
     vi.mocked(loadNeedsYou).mockResolvedValue(needsYou());
@@ -158,7 +147,7 @@ describe('pushNeedsYou', () => {
   it('pushes an arrival to admin devices only, title and author, never content', async () => {
     const res = await pushNeedsYou('owner', new Set(), NOW);
     expect(res).toEqual({ attempted: 1, delivered: 1, dropped: 0 });
-    expect(listSubscriptions).not.toHaveBeenCalled();
+    expect(listAdminSubscriptions).toHaveBeenCalledWith('owner');
     expect(vi.mocked(sealToDevice).mock.calls.map((c) => c[0])).toEqual(['pk1']);
     const sent = JSON.parse(vi.mocked(sealToDevice).mock.calls[0]![1]) as Record<string, unknown>;
     expect(sent).toEqual({

@@ -14,6 +14,7 @@ export * from './client-report-acks';
 export * from './client-signin-codes';
 export * from './client-guard';
 export * from './team-read-cursors';
+export * from './login-chat-read-cursors';
 export * from './oauth';
 export * from './assistant-read-cursors';
 export * from './push';

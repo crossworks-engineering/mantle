@@ -124,6 +124,13 @@ export function clientCodeVerifyFailed(req: Request, email: string): void {
 
 const REQUEST_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** A request id a caller sent in a body (device mode), when it is one. */
+export function requestIdFrom(value: unknown): string | null {
+  return typeof value === 'string' && REQUEST_ID_RE.test(value.trim())
+    ? value.trim().toLowerCase()
+    : null;
+}
+
 /** The request id this browser's request cookie holds, when it holds one. */
 export function existingRequestId(req: Request): string | null {
   for (const part of (req.headers.get('cookie') ?? '').split(';')) {

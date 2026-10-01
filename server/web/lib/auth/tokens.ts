@@ -224,24 +224,36 @@ export const WEB_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30;
 
 /** Mint a per-device mobile bearer token. Caller inserts the matching
  *  mobile_tokens row keyed by `jti`. `ttlSeconds` defaults to the mobile
- *  year; the web client passes WEB_TOKEN_TTL_SECONDS. */
+ *  year; the web client passes WEB_TOKEN_TTL_SECONDS. `epoch` binds the token
+ *  to the login's session epoch (a CLIENT's device token always carries it:
+ *  the session layer refuses the token once the row's epoch moves on, as it
+ *  refuses the client's cookie). */
 export function buildMobileToken(
   userId: string,
   jti: string,
   ttlSeconds: number = MOBILE_TOKEN_TTL_SECONDS,
+  epoch?: number,
 ): { value: string; expiresInSec: number; expiresAt: Date } {
-  const { value, exp } = signClaims({ uid: userId, jti, k: 'm' }, ttlSeconds);
+  const { value, exp } = signClaims(
+    { uid: userId, jti, k: 'm', ...(epoch !== undefined ? { ep: epoch } : {}) },
+    ttlSeconds,
+  );
   return { value, expiresInSec: ttlSeconds, expiresAt: new Date(exp * 1000) };
 }
 
-export type MobileClaims = { uid: string; jti: string; exp: number };
+/** `ep` is set only on a token minted with an epoch (a client's). */
+export type MobileClaims = { uid: string; jti: string; exp: number; ep?: number };
 
 /** Verify a mobile token's signature, expiry and kind. No DB — the caller must
- *  still confirm the mobile_tokens row is present and unrevoked. */
+ *  still confirm the mobile_tokens row is present and unrevoked, and compare
+ *  `ep` (when the token carries one) with the login row. */
 export function verifyMobileToken(token: string): MobileClaims | null {
   const claims = verifySigned(token, 'm');
   if (!claims || typeof claims.uid !== 'string' || typeof claims.jti !== 'string') return null;
-  return { uid: claims.uid, jti: claims.jti, exp: claims.exp };
+  if (claims.ep === undefined) return { uid: claims.uid, jti: claims.jti, exp: claims.exp };
+  const ep = epochClaim(claims);
+  if (ep === null) return null;
+  return { uid: claims.uid, jti: claims.jti, exp: claims.exp, ep };
 }
 
 /** Extract the `jti` from a (valid) mobile token — used by logout to revoke. */

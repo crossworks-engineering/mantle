@@ -7,22 +7,32 @@
  * client session cookie (at the login's epoch) and clears the request
  * cookie.
  *
+ * Device mode, for the phone app (docs/mobile-companion-backend.md): a body
+ * with `requestId` (what POST /api/auth/client-code answered in device mode)
+ * names the request itself. Success then answers a per-device bearer for the
+ * client login and sets NO cookie: 30 days, signed with the login's session
+ * epoch, a mobile_tokens row like every device (listed and revoked under the
+ * login's devices; ended by the client's sign-out and by End sessions).
+ *
  * Every failure (no request cookie, unknown, used, expired or dead code, a
  * wrong code or email, a disabled login, a malformed body) is the same 401.
  * Rate limited per address, and failed tries per email plus address; there
  * is no brain-wide failure lockout (lib/client-logins.ts).
  */
 import { NextResponse } from '@/server/http-compat';
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
+import { db, mobileTokens } from '@mantle/db';
 import { redeemClientEmailCode } from '@mantle/content';
 import type { ClientCodeSignIn } from '@mantle/client-types';
-import { setClientSessionCookie } from '@/lib/auth';
+import { CLIENT_SESSION_TTL_SECONDS, buildMobileToken, setClientSessionCookie } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import {
   clearClientCodeCookie,
   clientCodeVerifyFailed,
   clientCodeVerifyLimited,
   existingRequestId,
+  requestIdFrom,
 } from '@/lib/client-logins';
 import { refuseCrossSiteAuthPost } from '@/lib/auth/preflight';
 import { AUTH_BODY_CEILING_BYTES, readJsonCapped } from '@/lib/body-limit';
@@ -30,6 +40,9 @@ import { AUTH_BODY_CEILING_BYTES, readJsonCapped } from '@/lib/body-limit';
 const Body = z.object({
   email: z.string().trim().min(3).max(320),
   code: z.string().trim().min(1).max(32),
+  // Device mode: the request id the app was given, and a name for the device.
+  requestId: z.string().trim().max(64).optional(),
+  deviceName: z.string().trim().min(1).max(80).optional(),
 });
 
 const FAILED_MESSAGE = 'That code did not work. Ask for a new one.';
@@ -42,11 +55,13 @@ export async function POST(req: Request) {
   const limited = clientCodeVerifyLimited(req, email);
   if (limited) return limited;
 
-  const requestId = existingRequestId(req);
+  // Device mode is the body's request id, and then ONLY that: the cookie is
+  // not a fallback (a malformed id is a failure, not a browser sign-in).
+  const data = parsed.success ? parsed.data : null;
+  const device = data?.requestId !== undefined;
+  const requestId = device ? requestIdFrom(data?.requestId) : existingRequestId(req);
   const redeemed =
-    parsed.success && requestId
-      ? await redeemClientEmailCode({ requestId, email, code: parsed.data.code })
-      : null;
+    data && requestId ? await redeemClientEmailCode({ requestId, email, code: data.code }) : null;
   if (!redeemed) {
     clientCodeVerifyFailed(req, email);
     auditFireAndForget({
@@ -65,9 +80,34 @@ export async function POST(req: Request) {
     action: 'auth.client_code_signin',
     method: 'POST',
     path: '/api/auth/client-code/verify',
-    detail: { codeId: redeemed.codeId },
+    detail: { codeId: redeemed.codeId, ...(device ? { channel: 'mobile' } : {}) },
     ...requestMetaFrom(req),
   });
+  if (device) {
+    const jti = randomUUID();
+    const label = data?.deviceName ?? 'Mobile device';
+    const minted = buildMobileToken(
+      redeemed.loginId,
+      jti,
+      CLIENT_SESSION_TTL_SECONDS,
+      redeemed.sessionEpoch,
+    );
+    await db
+      .insert(mobileTokens)
+      .values({ id: jti, userId: redeemed.loginId, label, expiresAt: minted.expiresAt });
+    return NextResponse.json(
+      {
+        ok: true,
+        token: minted.value,
+        expiresIn: minted.expiresInSec,
+        expiresAt: minted.expiresAt.toISOString(),
+        deviceId: jti,
+        role: 'client',
+        loginId: redeemed.loginId,
+      },
+      { headers: { 'Cache-Control': 'no-store' } },
+    );
+  }
   const body: ClientCodeSignIn = { ok: true };
   const res = NextResponse.json(body);
   setClientSessionCookie(res, req, redeemed.loginId, redeemed.sessionEpoch);

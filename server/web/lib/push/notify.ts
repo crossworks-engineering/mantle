@@ -1,6 +1,9 @@
 // The send path: given an outbound conversation turn (or a pending approval),
-// seal a teaser to each of the owner's devices and hand it to the relay —
-// gated by the owner's per-trigger toggles (push-notifications.md §10). Quiet
+// seal a teaser to each ADMIN device and hand it to the relay — gated by the
+// owner's per-trigger toggles (push-notifications.md §10). Everything here is
+// the owner's side of the brain, so it goes to the devices of active admin
+// logins and to no other device: a member's or a client's phone never gets
+// an owner teaser (their own pushes are login-notify.ts). Quiet
 // hours were removed (docs/reminder-delivery-routing.md §C); OS-level Do Not
 // Disturb handles night muting. Pure server logic, shared by the push-notify
 // worker. Content never leaves here unsealed.
@@ -17,20 +20,24 @@ import {
   getPushInstance,
   getPushPrefs,
   listAdminSubscriptions,
-  listSubscriptions,
   markPushed,
   type DeviceRow,
   type PushInstanceSecret,
 } from './store';
 
-/** The plaintext that gets sealed to the device (push-notifications.md §6). */
-interface PushPayload {
+/** The plaintext that gets sealed to the device (push-notifications.md §6).
+ *  `kind`, `itemId` and `state` are set on a member's or a client's pushes
+ *  only (login-notify.ts); an owner push carries none of them. */
+export interface PushPayload {
   v: 1;
   t: string; // title (agent name, or "Mantle")
   b: string; // body (teaser)
   agentSlug?: string;
   deepLink: string;
   ts: number;
+  kind?: 'chat' | 'review' | 'comment';
+  itemId?: string;
+  state?: 'accepted' | 'returned' | 'taken';
 }
 
 export interface PushResult {
@@ -48,9 +55,9 @@ function teaser(text: string, max = 140): string {
 async function latestOutbound(
   ownerId: string,
   agentSlug: string,
-): Promise<{ agentName: string; text: string } | null> {
+): Promise<{ agentName: string; text: string; assignedUserId: string | null } | null> {
   const [agent] = await db
-    .select({ id: agents.id, name: agents.name })
+    .select({ id: agents.id, name: agents.name, assignedUserId: agents.assignedUserId })
     .from(agents)
     .where(and(eq(agents.ownerId, ownerId), eq(agents.slug, agentSlug)))
     .limit(1);
@@ -72,11 +79,11 @@ async function latestOutbound(
     .orderBy(desc(assistantMessages.createdAt))
     .limit(1);
   if (!msg) return null;
-  return { agentName: agent.name, text: msg.text };
+  return { agentName: agent.name, text: msg.text, assignedUserId: agent.assignedUserId ?? null };
 }
 
 /** Seal `payload` to each device and forward to the relay. Prunes dead devices. */
-async function sendToDevices(
+export async function sendToDevices(
   instance: PushInstanceSecret,
   devices: DeviceRow[],
   payload: PushPayload,
@@ -121,8 +128,14 @@ export function wantsOutboundPush(c: { direction?: string; status?: string | nul
 }
 
 /**
- * Push the latest outbound turn for {ownerId, agentSlug} to every enrolled
- * device — unless the assistant-messages trigger is off.
+ * Push the latest outbound turn for {ownerId, agentSlug} to the ADMIN
+ * devices, unless the assistant-messages trigger is off. Never to a
+ * member's or a client's device: the owner's conversation is the admins'.
+ *
+ * An agent assigned to one login (agents.assigned_user_id: that admin's own
+ * assistant) pushes to that login's devices only; the other admins can open
+ * the thread, but it is not their conversation and their phones stay quiet.
+ * An agent assigned to nobody pushes to every active admin.
  */
 export async function pushOutbound(ownerId: string, agentSlug: string): Promise<PushResult> {
   const instance = await getPushInstance();
@@ -132,12 +145,12 @@ export async function pushOutbound(ownerId: string, agentSlug: string): Promise<
   if (!prefs.assistantMessages)
     return { attempted: 0, delivered: 0, dropped: 0, skipped: 'disabled' };
 
-  const devices = await listSubscriptions(ownerId);
-  if (devices.length === 0)
-    return { attempted: 0, delivered: 0, dropped: 0, skipped: 'no_devices' };
-
   const msg = await latestOutbound(ownerId, agentSlug);
   if (!msg) return { attempted: 0, delivered: 0, dropped: 0, skipped: 'no_message' };
+
+  const devices = await listAdminSubscriptions(ownerId, { loginId: msg.assignedUserId });
+  if (devices.length === 0)
+    return { attempted: 0, delivered: 0, dropped: 0, skipped: 'no_devices' };
 
   const payload: PushPayload = {
     v: 1,
@@ -158,7 +171,7 @@ function clip(s: string, max: number): string {
 }
 
 /**
- * Push a pending-approval nudge to the owner's devices — unless the approvals
+ * Push a pending-approval nudge to the ADMIN devices — unless the approvals
  * trigger is off, or the operator's last communication channel isn't the
  * companion app. Approvals follow `reminderChannel` (the sticky last-channel
  * signal, see docs/reminder-delivery-routing.md): a `telegram`/unset operator
@@ -178,7 +191,7 @@ export async function pushApproval(ownerId: string): Promise<PushResult> {
     return { attempted: 0, delivered: 0, dropped: 0, skipped: 'wrong_channel' };
   }
 
-  const devices = await listSubscriptions(ownerId);
+  const devices = await listAdminSubscriptions(ownerId);
   if (devices.length === 0)
     return { attempted: 0, delivered: 0, dropped: 0, skipped: 'no_devices' };
 

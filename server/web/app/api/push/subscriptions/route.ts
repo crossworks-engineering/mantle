@@ -1,11 +1,14 @@
 // /api/push/subscriptions
 //   POST — store a device the app just enrolled with the relay (routing token +
 //          public key). Called after the app's /enroll round-trip.
-//   GET  — list this owner's enrolled devices (metadata only; for settings).
+//   GET  — list the brain's admin devices (metadata only; for settings). A
+//          member's or a client's device is its own login's business
+//          (/api/member/push, /api/client/push) and is not listed here.
 
 import { type NextRequest, NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
-import { insertSubscription, listSubscriptions } from '@/lib/push/store';
+import { callerTokenId } from '@/lib/push/login-routes';
+import { insertSubscription, listAdminDeviceList } from '@/lib/push/store';
 
 export async function POST(req: NextRequest) {
   const owner = await getOwnerOr401();
@@ -30,6 +33,9 @@ export async function POST(req: NextRequest) {
     ownerId: owner.id,
     // The login, not the brain: locking this login out unpairs the device.
     loginId: owner.actor.id,
+    // The device token it signed in with (0211), when it did so by bearer:
+    // revoking that device then stops its pushes too.
+    tokenId: await callerTokenId(req, owner.actor.id),
     routingToken,
     publicKey,
     platform,
@@ -42,7 +48,7 @@ export async function POST(req: NextRequest) {
 export async function GET() {
   const owner = await getOwnerOr401();
   if (owner instanceof NextResponse) return owner;
-  const devices = await listSubscriptions(owner.id);
+  const devices = await listAdminDeviceList(owner.id);
   // Don't leak routing tokens / public keys to the list view.
   return NextResponse.json({
     devices: devices.map((d) => ({ id: d.id, platform: d.platform, label: d.label })),

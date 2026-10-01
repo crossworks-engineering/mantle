@@ -1,6 +1,7 @@
 // POST /api/push/reset — roll the instance token (push-notifications.md §5.3),
 // e.g. after a suspected leak. Registers a fresh instance with the relay and
-// invalidates every existing subscription; devices must re-Connect. Old relay
+// invalidates every existing subscription (members' and clients' too); devices
+// must re-Connect. Admin only. Old relay
 // device rows become unreachable (no one holds the old instance token).
 
 import { NextResponse } from '@/server/http-compat';
@@ -8,9 +9,8 @@ import { getOwnerOr401 } from '@/lib/auth';
 import { generateInstanceToken } from '@/lib/push/tokens';
 import { registerInstance } from '@/lib/push/relay-client';
 import { deleteAllSubscriptions, getPushInstance, savePushInstance } from '@/lib/push/store';
+import { DEFAULT_RELAY_URL } from '@/lib/push/connect';
 import { env } from '@mantle/config';
-
-const DEFAULT_RELAY_URL = 'https://push.crossworks.network';
 
 export async function POST() {
   const owner = await getOwnerOr401();

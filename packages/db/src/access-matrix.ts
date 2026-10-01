@@ -304,6 +304,9 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.team_messages', 'system'),
   none('public.team_notifications', 'system'),
   none('public.team_read_cursors', 'system'),
+  // A member's or a client's own chat read cursor (0211): its own routes
+  // read and write it on the admin pool, by the session's login.
+  none('public.login_chat_read_cursors', 'system'),
   none('public.assistant_read_cursors', 'system'),
   // Per-login pins and opens of the item tree (docs/folder-tree.md). Owner
   // paths only for now; members get their own when the tree reaches them.
@@ -316,6 +319,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.push_instance', 'system'),
   none('public.push_prefs', 'system'),
   none('public.push_subscriptions', 'system'),
+  none('public.push_login_prefs', 'system'),
   none('public.shares', 'system'),
 
   // ── Admin only: the private corpus, credentials, the owner's own memory ───

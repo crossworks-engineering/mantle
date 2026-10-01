@@ -35,6 +35,7 @@ vi.mock('@mantle/db', () => {
       name: 'agents.name',
       ownerId: 'agents.ownerId',
       slug: 'agents.slug',
+      assignedUserId: 'agents.assignedUserId',
     },
     assistantMessages: {
       text: 'am.text',
@@ -54,7 +55,7 @@ vi.mock('./relay-client', () => ({ relayNotify: vi.fn() }));
 vi.mock('./store', () => ({
   getPushInstance: vi.fn(),
   getPushPrefs: vi.fn(),
-  listSubscriptions: vi.fn(),
+  listAdminSubscriptions: vi.fn(),
   markPushed: vi.fn(),
   deleteSubscriptionByRoutingToken: vi.fn(),
 }));
@@ -67,7 +68,7 @@ import { relayNotify } from './relay-client';
 import {
   getPushInstance,
   getPushPrefs,
-  listSubscriptions,
+  listAdminSubscriptions,
   markPushed,
   deleteSubscriptionByRoutingToken,
 } from './store';
@@ -93,7 +94,7 @@ beforeEach(() => {
   // Sensible "everything allowed" defaults; individual tests override.
   vi.mocked(getPushInstance).mockResolvedValue(INSTANCE);
   vi.mocked(getPushPrefs).mockResolvedValue(PREFS);
-  vi.mocked(listSubscriptions).mockResolvedValue([device()]);
+  vi.mocked(listAdminSubscriptions).mockResolvedValue([device()]);
   vi.mocked(sealToDevice).mockResolvedValue('ciphertext');
   vi.mocked(relayNotify).mockResolvedValue({ ok: true, status: 200 });
   vi.mocked(countPending).mockResolvedValue(1);
@@ -112,18 +113,19 @@ describe('pushOutbound — gating', () => {
     const res = await pushOutbound('owner', 'ada');
     expect(res).toEqual({ attempted: 0, delivered: 0, dropped: 0, skipped: 'not_connected' });
     expect(relayNotify).not.toHaveBeenCalled();
-    expect(listSubscriptions).not.toHaveBeenCalled();
+    expect(listAdminSubscriptions).not.toHaveBeenCalled();
   });
 
   it('skips disabled when the assistant-messages trigger is off (before touching devices)', async () => {
     vi.mocked(getPushPrefs).mockResolvedValue({ ...PREFS, assistantMessages: false });
     const res = await pushOutbound('owner', 'ada');
     expect(res.skipped).toBe('disabled');
-    expect(listSubscriptions).not.toHaveBeenCalled();
+    expect(listAdminSubscriptions).not.toHaveBeenCalled();
   });
 
-  it('skips no_devices when the owner has no enrolled devices', async () => {
-    vi.mocked(listSubscriptions).mockResolvedValue([]);
+  it('skips no_devices when no admin has an enrolled device', async () => {
+    vi.mocked(listAdminSubscriptions).mockResolvedValue([]);
+    dbState.queue = [[{ id: 'a1', name: 'Ada' }], [{ text: 'hi' }]];
     const res = await pushOutbound('owner', 'ada');
     expect(res.skipped).toBe('no_devices');
     expect(relayNotify).not.toHaveBeenCalled();
@@ -140,6 +142,32 @@ describe('pushOutbound — gating', () => {
     dbState.queue = [[{ id: 'a1', name: 'Ada' }], []]; // agent found, no message
     const res = await pushOutbound('owner', 'ada');
     expect(res.skipped).toBe('no_message');
+  });
+});
+
+describe('pushOutbound — who is told (admin devices only)', () => {
+  it('an agent assigned to nobody goes to every active admin', async () => {
+    dbState.queue = [[{ id: 'a1', name: 'Ada', assignedUserId: null }], [{ text: 'hi' }]];
+    await pushOutbound('owner', 'ada');
+    expect(listAdminSubscriptions).toHaveBeenCalledTimes(1);
+    expect(listAdminSubscriptions).toHaveBeenCalledWith('owner', { loginId: null });
+  });
+
+  it('an agent assigned to one login goes to that login only', async () => {
+    dbState.queue = [[{ id: 'a1', name: 'Ada', assignedUserId: 'login-b' }], [{ text: 'hi' }]];
+    await pushOutbound('owner', 'ada');
+    expect(listAdminSubscriptions).toHaveBeenCalledWith('owner', { loginId: 'login-b' });
+  });
+
+  it('the store has no list of every device on the brain to send to', async () => {
+    // The trap this replaced: a brain-wide list handed an owner teaser to a
+    // member's or a client's device. The real store is checked on Postgres
+    // (push-targeting.db.test.ts); this pins that notify.ts imports none.
+    const src = (await import('node:fs')).readFileSync(
+      new URL('./notify.ts', import.meta.url),
+      'utf8',
+    );
+    expect(src).not.toMatch(/\blistSubscriptions\b/);
   });
 });
 
@@ -190,7 +218,7 @@ describe('pushOutbound — delivery', () => {
   });
 
   it('a single device with a bad public key does not break the others', async () => {
-    vi.mocked(listSubscriptions).mockResolvedValue([
+    vi.mocked(listAdminSubscriptions).mockResolvedValue([
       device({ id: 'bad', routingToken: 'route-bad', publicKey: 'broken' }),
       device({ id: 'good', routingToken: 'route-good', publicKey: 'pk-good' }),
     ]);
@@ -239,7 +267,7 @@ describe('pushApproval', () => {
     } as Awaited<ReturnType<typeof loadProfilePreferences>>);
     expect((await pushApproval('owner')).skipped).toBe('wrong_channel');
     // Bails before touching devices — the Telegram card is the notification.
-    expect(listSubscriptions).not.toHaveBeenCalled();
+    expect(listAdminSubscriptions).not.toHaveBeenCalled();
     expect(relayNotify).not.toHaveBeenCalled();
   });
 
@@ -251,7 +279,7 @@ describe('pushApproval', () => {
   });
 
   it('skips no_devices when the owner has no devices', async () => {
-    vi.mocked(listSubscriptions).mockResolvedValue([]);
+    vi.mocked(listAdminSubscriptions).mockResolvedValue([]);
     expect((await pushApproval('owner')).skipped).toBe('no_devices');
   });
 

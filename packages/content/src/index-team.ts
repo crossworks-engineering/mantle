@@ -56,6 +56,9 @@ export {
   recentTeamMessages,
   listTeamMemberActivity,
   listMemberChatActivity,
+  loginChatUnread,
+  markLoginChatRead,
+  type LoginChatUnread,
   type AppendTeamMessageInput,
   type UpdateTeamMessageOutcomeInput,
   type TeamMemberActivity,
@@ -403,6 +406,18 @@ export {
   type ClientRequestRow,
   type ListClientRequestsOpts,
 } from './client-requests';
+export {
+  LOGIN_NOTICE_CHANNEL,
+  LOGIN_NOTICE_FRESH_MS,
+  chatReplyNotice,
+  chatTeaser,
+  commentNotices,
+  parseLoginNotice,
+  reviewResultNotice,
+  type LoginNotice,
+  type LoginNoticeMessage,
+  type LoginNoticeRole,
+} from './login-notices';
 export {
   addClientThreadComment,
   deleteClientThreadComment,

@@ -14,6 +14,9 @@ import { AUTH_BODY_CEILING_BYTES, readJsonCapped } from '@/lib/body-limit';
  *                            with every shipped client)
  *   /api/auth/token        — the web client (30-day TTL, rotated via
  *                            /api/auth/token/refresh)
+ *   /api/auth/device-login — the phone app for an admin or a member (30-day
+ *                            TTL, rotated the same way; the answer names
+ *                            the role)
  *
  * Same credentials as the cookie login, but the response body carries a
  * per-device kind-'m' bearer (hashed-by-id row in mobile_tokens, revocable
@@ -39,6 +42,9 @@ export async function handleTokenLogin(
     /** Refuse a member login (the mobile companion: every route it calls is
      *  an admin route, so a member bearer would only collect 403s). */
     adminsOnly?: boolean;
+    /** Name the login in the answer (`role`, `loginId`): the phone app must
+     *  know which shell to call before it calls one. */
+    withRole?: boolean;
   },
 ): Promise<NextResponse> {
   // Rate limit by client IP before bcrypt so a flood can't pin CPU. One shared
@@ -73,25 +79,26 @@ export async function handleTokenLogin(
     return NextResponse.json({ error: AUTH_FAILED_MESSAGE }, { status: 401 });
   }
 
-  if (opts.adminsOnly) {
-    const [row] = await db
-      .select({ role: authUsers.role })
-      .from(authUsers)
-      .where(eq(authUsers.id, userId))
-      .limit(1);
-    // After the password check, so this cannot tell anyone whether an email
-    // exists. No token is minted.
-    if (row?.role !== 'admin') {
-      return NextResponse.json(
-        row?.role === 'member'
-          ? {
-              error: 'Member logins use the web app. Sign in from a browser instead.',
-              reason: 'member-login',
-            }
-          : { error: 'This login cannot use this app.', reason: 'client-login' },
-        { status: 403 },
-      );
-    }
+  const [login] =
+    opts.adminsOnly || opts.withRole
+      ? await db
+          .select({ role: authUsers.role })
+          .from(authUsers)
+          .where(eq(authUsers.id, userId))
+          .limit(1)
+      : [];
+  // After the password check, so this cannot tell anyone whether an email
+  // exists. No token is minted.
+  if (opts.adminsOnly && login?.role !== 'admin') {
+    return NextResponse.json(
+      login?.role === 'member'
+        ? {
+            error: 'Member logins use the web app. Sign in from a browser instead.',
+            reason: 'member-login',
+          }
+        : { error: 'This login cannot use this app.', reason: 'client-login' },
+      { status: 403 },
+    );
   }
 
   const label = parsed.data.deviceName ?? opts.defaultLabel;
@@ -117,5 +124,6 @@ export async function handleTokenLogin(
     expiresIn: expiresInSec,
     expiresAt: expiresAt.toISOString(),
     deviceId: jti,
+    ...(opts.withRole ? { role: login?.role, loginId: userId } : {}),
   });
 }

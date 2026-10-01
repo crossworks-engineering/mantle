@@ -5,7 +5,7 @@
  * request, never from a token.
  */
 import { and, eq } from 'drizzle-orm';
-import { authUsers, db, spaces, type LoginRole } from '@mantle/db';
+import { authUsers, db, mobileTokens, spaces, type LoginRole } from '@mantle/db';
 
 export type LoginRow = {
   id: string;
@@ -66,4 +66,26 @@ export async function loadPersonalSpaceId(loginId: string): Promise<string | nul
   if (found) return found;
   await db.insert(spaces).values({ kind: 'personal', loginId }).onConflictDoNothing();
   return find();
+}
+
+/** A device token's row (mobile_tokens): what makes a bearer revocable. Read
+ *  here, with the login row, so the role sweeps can stand a token in. */
+export type BearerTokenRow = { userId: string; revokedAt: Date | null; expiresAt: Date };
+
+export async function loadBearerToken(jti: string): Promise<BearerTokenRow | null> {
+  const [row] = await db
+    .select({
+      userId: mobileTokens.userId,
+      revokedAt: mobileTokens.revokedAt,
+      expiresAt: mobileTokens.expiresAt,
+    })
+    .from(mobileTokens)
+    .where(eq(mobileTokens.id, jti))
+    .limit(1);
+  return row ?? null;
+}
+
+/** Stamp a device token as used now (the Devices card's "last used"). */
+export async function touchBearerToken(jti: string): Promise<void> {
+  await db.update(mobileTokens).set({ lastUsedAt: new Date() }).where(eq(mobileTokens.id, jti));
 }

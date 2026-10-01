@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { boolean, index, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { mobileTokens } from './mobile-tokens';
 
 /**
  * Push-notification state (Mantle Push, M2). See
@@ -50,6 +51,10 @@ export const pushSubscriptions = pgTable(
      *  deletes its devices; deleting it cascades. Null only on a brain that
      *  had no anchor row when 0173 backfilled. */
     loginId: uuid('login_id'),
+    /** The device token that enrolled the device (0211). A member's or a
+     *  client's device is pushed to only while this token is live; null on
+     *  admin rows from before 0211, which keep the login-level rule. */
+    tokenId: uuid('token_id').references(() => mobileTokens.id, { onDelete: 'cascade' }),
     /** The relay's deviceId (from /enroll), kept for reference/unpair. */
     relayDeviceId: text('relay_device_id'),
     routingToken: text('routing_token').notNull(),
@@ -63,6 +68,7 @@ export const pushSubscriptions = pgTable(
   (t) => [
     index('push_subscriptions_owner_idx').on(t.ownerId),
     index('push_subscriptions_login_idx').on(t.loginId),
+    index('push_subscriptions_token_idx').on(t.tokenId),
   ],
 );
 
@@ -92,3 +98,22 @@ export const pushPrefs = pgTable(
 );
 
 export type PushPrefsRow = typeof pushPrefs.$inferSelect;
+
+/**
+ * `push_login_prefs`: one login's push toggles (0211), for a member or a
+ * client. No row means every toggle is on. `push_prefs` above is the brain's
+ * single row for the admin pushes. The `login_id` FK into `auth.users` is
+ * declared in the SQL migration (cross-schema, cascade).
+ */
+export const pushLoginPrefs = pgTable('push_login_prefs', {
+  loginId: uuid('login_id').primaryKey(),
+  /** A reply in the login's own chat thread. */
+  chatReplies: boolean('chat_replies').notNull().default(true),
+  /** An own item accepted, returned or taken over. */
+  reviewResults: boolean('review_results').notNull().default(true),
+  /** A comment on an own item, or on an item shared with a client. */
+  comments: boolean('comments').notNull().default(true),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type PushLoginPrefsRow = typeof pushLoginPrefs.$inferSelect;

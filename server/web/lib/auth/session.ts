@@ -9,10 +9,17 @@
 import { cookies, headers } from '../../server/http-compat/headers';
 import { NextResponse } from '../../server/http-compat';
 import { RedirectError } from '../../server/http-compat/redirect-error';
-import { and, eq, isNull, ne, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
-import { db, authUsers, mobileTokens, countUsers } from '@mantle/db';
-import { loadAnchorId, loadLoginRow, loadPersonalSpaceId, type LoginRow } from './login-row';
+import { db, authUsers, mobileTokens, pushSubscriptions, countUsers } from '@mantle/db';
+import {
+  loadAnchorId,
+  loadBearerToken,
+  loadLoginRow,
+  loadPersonalSpaceId,
+  touchBearerToken,
+  type LoginRow,
+} from './login-row';
 import {
   isDetachedDev,
   isAuditSelfLogged,
@@ -72,7 +79,7 @@ export type Actor = {
 export type SessionUser = { id: string; email: string; actor: Actor };
 
 /** How a request authenticated: a session cookie is the web browser; a mobile
- *  bearer token is the companion app. Maps 1:1 onto the inbound
+ *  bearer token is the phone app (any role) or the split web client. Maps 1:1 onto the inbound
  *  ConversationChannel for web/mobile turns, so a reply/reminder can follow the
  *  surface the user is actually on. See docs/reminder-delivery-routing.md. */
 export type AuthSource = 'web' | 'mobile';
@@ -225,9 +232,16 @@ export async function getMemberForAsset(req: Request): Promise<MemberCaller | Ne
 }
 
 /**
- * Resolve the owner from an `Authorization: Bearer <mobile-token>` header:
- * verify the signature, confirm the row is present/unrevoked/unexpired, bump
- * last_used_at. Returns null on any failure.
+ * Resolve the login from an `Authorization: Bearer <mobile-token>` header:
+ * verify the signature, confirm the row is present/unrevoked/unexpired and
+ * names the same login, bump last_used_at. Returns null on any failure.
+ *
+ * A token that carries a session epoch (`ep`: a CLIENT's device token always
+ * does) is also held to it: once the login's epoch moves on (sign out, End
+ * sessions, disable, a role change) the token is dead, as the client's
+ * cookie is. A client token WITHOUT an epoch, or one that claims to last
+ * longer than a client session, was not minted by the client sign-in and is
+ * refused.
  */
 async function getBearerLogin(): Promise<Resolved | null> {
   const token = bearerFromHeader((await headers()).get('authorization'));
@@ -235,21 +249,20 @@ async function getBearerLogin(): Promise<Resolved | null> {
   const claims = verifyMobileToken(token);
   if (!claims) return null;
 
-  const [tok] = await db
-    .select({ revokedAt: mobileTokens.revokedAt, expiresAt: mobileTokens.expiresAt })
-    .from(mobileTokens)
-    .where(eq(mobileTokens.id, claims.jti))
-    .limit(1);
-  if (!tok || tok.revokedAt) return null;
+  const tok = await loadBearerToken(claims.jti);
+  if (!tok || tok.revokedAt || tok.userId !== claims.uid) return null;
   if (tok.expiresAt.getTime() <= Date.now()) return null;
 
   const row = await loadLoginRow(claims.uid);
   if (!row || !loginUsable(row)) return null;
+  if (claims.ep !== undefined && claims.ep !== row.sessionEpoch) return null;
+  if (row.role === 'client') {
+    const latest = Date.now() + (CLIENT_SESSION_TTL_SECONDS + 60) * 1000;
+    if (claims.ep === undefined) return null;
+    if (claims.exp * 1000 > latest || tok.expiresAt.getTime() > latest) return null;
+  }
 
-  await db
-    .update(mobileTokens)
-    .set({ lastUsedAt: new Date() })
-    .where(eq(mobileTokens.id, claims.jti));
+  await touchBearerToken(claims.jti);
 
   return resolvedFor(row, 'mobile');
 }
@@ -356,9 +369,9 @@ async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved 
       };
     }
     case 'client': {
-      // Browser sessions only: a client never holds a bearer (no password
-      // login, no mobile app, no pairing), so one presented is refused.
-      if (source !== 'web') return null;
+      // A browser session, or the phone app's device token (minted only by
+      // the emailed code in device mode; getBearerLogin holds it to the
+      // login's session epoch and to the 30 days).
       const anchorId = await getAnchorId();
       if (!anchorId) return null;
       const spaceId = await loadPersonalSpaceId(row.id);
@@ -742,8 +755,8 @@ export async function authenticatePassword(
     : null;
 }
 
-/** authenticatePassword, the login id only (the bearer logins: a bearer is
- *  a mobile_tokens row, so it carries no epoch). */
+/** authenticatePassword, the login id only (the password bearer logins: an
+ *  admin's or a member's bearer is a mobile_tokens row and carries no epoch). */
 export async function loginWithPassword(email: string, password: string): Promise<string | null> {
   return (await authenticatePassword(email, password))?.id ?? null;
 }
@@ -843,6 +856,19 @@ export async function endLoginSessions(
           eq(mobileTokens.userId, loginId),
           isNull(mobileTokens.revokedAt),
           ...(opts.keepJti ? [ne(mobileTokens.id, opts.keepJti)] : []),
+        ),
+      );
+    // The push devices those tokens enrolled go with them (0211): a signed
+    // out phone gets no more teasers. The send path refuses a device whose
+    // token is dead anyway; this removes the rows. The relay keeps a device
+    // nobody can address (the routing token lived only here).
+    await tx
+      .delete(pushSubscriptions)
+      .where(
+        and(
+          eq(pushSubscriptions.loginId, loginId),
+          isNotNull(pushSubscriptions.tokenId),
+          ...(opts.keepJti ? [ne(pushSubscriptions.tokenId, opts.keepJti)] : []),
         ),
       );
     return row.epoch;

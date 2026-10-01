@@ -8,10 +8,11 @@
  * Rows keyed by a contact (`contact_id`, no login) are the retired team-code
  * portal chat: history only, read by the admin archive and `team_chat_read`.
  */
-import { and, desc, eq, inArray, isNull, lt, or, sql as dsql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNull, lt, or, sql as dsql } from 'drizzle-orm';
 import {
   authUsers,
   db,
+  loginChatReadCursors,
   systemDb,
   teamMessages,
   type ConversationAttachment,
@@ -343,4 +344,93 @@ export async function listMemberChatActivity(ownerId: string): Promise<MemberCha
     lastMessageDirection: (r.lastMessageDirection ?? null) as 'inbound' | 'outbound' | null,
     messageCount: r.messageCount,
   }));
+}
+
+// ── A login's own unread count (the phone app's badge, migration 0211) ──────
+
+/** What a member or a client has not read in its own thread. */
+export type LoginChatUnread = { unread: number; lastReadAt: string };
+
+/** A reply still being written holds the cursor back only this long: a turn
+ *  that crashed and left its bubble pending must not pin the count forever. */
+const PENDING_HOLDS_CURSOR_MS = 60 * 60 * 1000;
+
+async function readLoginChatUnread(ownerId: string, loginId: string): Promise<LoginChatUnread> {
+  const [cursor] = await systemDb
+    .select({ lastReadAt: loginChatReadCursors.lastReadAt })
+    .from(loginChatReadCursors)
+    .where(eq(loginChatReadCursors.loginId, loginId))
+    .limit(1);
+  const lastReadAt = cursor?.lastReadAt ?? new Date();
+  const [n] = await systemDb
+    .select({ n: dsql<number>`count(*)::int` })
+    .from(teamMessages)
+    .where(
+      and(
+        eq(teamMessages.ownerId, ownerId),
+        eq(teamMessages.loginId, loginId),
+        eq(teamMessages.direction, 'outbound'),
+        eq(teamMessages.status, 'complete'),
+        gt(teamMessages.createdAt, lastReadAt),
+      ),
+    );
+  return { unread: Number(n?.n ?? 0), lastReadAt: lastReadAt.toISOString() };
+}
+
+/**
+ * The login's unread count: finished replies in its own thread newer than
+ * its read cursor. A login starts with nothing unread: the first call makes
+ * the cursor at `now` (so a long history never shows as a badge of 50).
+ */
+export async function loginChatUnread(
+  ownerId: string,
+  loginId: string,
+  now = new Date(),
+): Promise<LoginChatUnread> {
+  await systemDb
+    .insert(loginChatReadCursors)
+    .values({ loginId, lastReadAt: now })
+    .onConflictDoNothing({ target: loginChatReadCursors.loginId });
+  return readLoginChatUnread(ownerId, loginId);
+}
+
+/**
+ * Move the login's read cursor to `at` (never the future, never backwards),
+ * or to now. A reply that is still being written was made BEFORE this
+ * moment and finishes after it, so the cursor stops just short of the oldest
+ * such row: that reply counts as unread when it lands.
+ */
+export async function markLoginChatRead(
+  ownerId: string,
+  loginId: string,
+  at?: Date,
+  now = new Date(),
+): Promise<LoginChatUnread> {
+  let to = at && at.getTime() < now.getTime() ? at : now;
+  const [pending] = await systemDb
+    .select({ createdAt: dsql<Date | null>`min(${teamMessages.createdAt})` })
+    .from(teamMessages)
+    .where(
+      and(
+        eq(teamMessages.ownerId, ownerId),
+        eq(teamMessages.loginId, loginId),
+        eq(teamMessages.direction, 'outbound'),
+        eq(teamMessages.status, 'pending'),
+        gt(teamMessages.createdAt, new Date(now.getTime() - PENDING_HOLDS_CURSOR_MS)),
+      ),
+    );
+  const oldestPending = pending?.createdAt ? new Date(pending.createdAt) : null;
+  if (oldestPending && oldestPending.getTime() <= to.getTime()) {
+    to = new Date(oldestPending.getTime() - 1);
+  }
+  await systemDb
+    .insert(loginChatReadCursors)
+    .values({ loginId, lastReadAt: to })
+    .onConflictDoUpdate({
+      target: loginChatReadCursors.loginId,
+      set: {
+        lastReadAt: dsql`greatest(${loginChatReadCursors.lastReadAt}, excluded.last_read_at)`,
+      },
+    });
+  return readLoginChatUnread(ownerId, loginId);
 }

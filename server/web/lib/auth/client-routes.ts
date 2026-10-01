@@ -31,6 +31,16 @@ export const CLIENT_ROUTES: readonly string[] = [
   // The client's own chat with the client-responder (Phase C4).
   'GET /api/client/chat',
   'POST /api/client/chat',
+  // Its own unread count and read cursor (the phone app's badge, 0211).
+  'GET /api/client/chat/unread',
+  'POST /api/client/chat/read',
+  // Its own phone's push enrolment, device list and toggles (0211).
+  'POST /api/client/push/connect',
+  'POST /api/client/push/subscriptions',
+  'GET /api/client/push/subscriptions',
+  'DELETE /api/client/push/subscriptions/:id',
+  'GET /api/client/push/preferences',
+  'PUT /api/client/push/preferences',
   // The client's own space (Phase C5): pages and notes they write, files
   // they upload; private until submitted. No share, no team drafts.
   'GET /api/client/space',
