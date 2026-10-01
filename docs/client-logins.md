@@ -249,6 +249,30 @@ rule is `reapClientSigninCodes` in `packages/content/src/client-codes.ts`.
   token of the login; End sessions and Disable do too. A client token
   reaches only `CLIENT_ROUTES`: `role-sweep.test.ts` drives every manifest
   route with one.
+- **90 days from the code, then a new code.** Refresh keeps a client's
+  device token alive for at most 90 days from the emailed code that signed
+  the phone in (`mobile_tokens.signed_in_at`, copied through every
+  rotation). After that, refresh answers 401 with
+  `reason: "sign-in-expired"` and the app asks for a new code. A browser
+  session has no refresh: it ends after 30 days.
+- **Refresh rules (every role).** While more than 23 days remain, refresh
+  answers the SAME token and writes nothing. A rotated token presented again
+  after a 2-minute grace is a copy in someone else's hands: the brain ends
+  every session of the login and writes the audit row `auth.token_reuse`.
+  The refresh locks the login row, so it cannot outlive End sessions.
+- **Device mode is for the app only.** `POST /api/auth/client-code` and
+  `/verify` in device mode answer 403 `reason: "device-only"` when the
+  request carries an `Origin` or any `Sec-Fetch-*` header: a page must not
+  mint a bearer its script can read (the browser flow's session is an
+  httpOnly cookie). A device code is stored under an id derived from the
+  app's request id, so a browser code and a device code cannot be crossed.
+  The device name is trimmed and cut to 80 characters; it never fails a
+  sign-in.
+- **Dead token rows are reaped.** The nightly sweep `device-tokens-reap`
+  deletes a token row 30 days after it was revoked or expired (see
+  [maintenance-runner.md](./maintenance-runner.md)).
+- The full phone contract is mobile-companion-backend.md, "Three roles on
+  the phone".
 - **Asset tokens live 10 minutes.** The `?at=` token a client's image and
   file sources carry lives 10 minutes (a member's lives 2 hours). The client
   byte routes accept it; the admin and member byte routes refuse it.

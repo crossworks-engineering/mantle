@@ -85,6 +85,23 @@
   rotated by `/api/auth/token/refresh`). That token reaches only
   `MEMBER_ROUTES` (`member-sweep.test.ts` drives every manifest route with
   one). See mobile-companion-backend.md, "Three roles on the phone".
+  - `device-login` shares the token-login limit: 10 a minute per address
+    (an IPv6 caller by its /64), one bucket with `mobile-login` and
+    `/api/auth/token`. There is no per-account lockout yet (a follow-up).
+    The device name is trimmed and cut to 80 characters and never fails a
+    sign-in.
+  - Refresh answers the SAME token while more than 23 days remain. A
+    rotated token presented again after a 2-minute grace ends every session
+    of the login (`endLoginSessions`) and writes the audit row
+    `auth.token_reuse`. The refresh locks the login row, so a refresh that
+    races End sessions or a password change cannot outlive it.
+  - A member's push devices are its own (`/api/member/push/*`): at most 10
+    a login (the oldest goes), connect and enrol 10 a minute per login (429
+    `too_many_requests`). Every way the member's sessions or a device token
+    end removes the devices that token enrolled, and the login's devices
+    with no token on record. A member's first Connect may register the
+    brain with the push relay; that writes the audit row
+    `push.relay_registered`.
 - **No personal assistant.** A member chats only with team-level agents, so
   `PUT /api/users/:id/agent` refuses a member login (400), and demoting a
   login releases the assistant it had.
@@ -134,7 +151,8 @@
   (`POST /api/auth/token/refresh`) rotates the bearers of the three named
   roles; a client's bearer exists only as the phone app's device token (the
   emailed code in device mode, client-logins.md section 4) and is held to
-  the login's session epoch and to 30 days. `server/web/server/role-sweep.test.ts` drives every
+  the login's session epoch, to 30 days a token, and to 90 days from the
+  emailed code (then 401 `sign-in-expired`). `server/web/server/role-sweep.test.ts` drives every
   manifest route, member routes included, with a client login (each
   refuses it) and with an unknown role (each answers as to a stranger).
   Public routes that read a session themselves (password change, sign

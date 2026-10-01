@@ -329,7 +329,8 @@ Everything above this section still holds for admins and for shipped builds.
 ### 1. Sign-in
 
 **Admin or member: `POST /api/auth/device-login`** (public, 10 a minute per
-address, one bucket with the other token logins).
+address, one bucket shared with the other token logins: `mobile-login` and
+`/api/auth/token`. An IPv6 caller counts by its /64).
 
     body   { email, password, deviceName? }
     200    { token, expiresIn, expiresAt, deviceId, role, loginId }
@@ -338,7 +339,11 @@ address, one bucket with the other token logins).
 
 `role` is `admin` or `member`. The token lasts 30 days and rotates through
 `POST /api/auth/token/refresh` (below). A client email always answers 401: a
-client has no password.
+client has no password. The answer is sent with `Cache-Control: no-store`.
+
+`deviceName` is a label, not a credential. The brain trims it and cuts it to
+80 characters. A missing, empty or wrong-type name gets a default label. It
+never fails a sign-in (here and on the client verify).
 
 Why a new route and not `/api/auth/token`: the answer names the role (the app
 must know which shell to call before it calls one), the audit line says
@@ -372,21 +377,56 @@ browser flow, unchanged. When the person asks for the code again, send the
 `requestId` you hold (`{ email, device: true, requestId }`): the code already
 mailed keeps working, and no second mail goes out while it is open.
 
+Device mode is for the app only. A device-mode request that carries an
+`Origin` header or any `Sec-Fetch-*` header came from a web page, and both
+routes answer it before any work:
+
+    403    { error: "Device sign-in is for the phone app.", reason: "device-only" }
+
+A native HTTP client sends none of these headers. Do not add them. The brain
+stores a device code under an id derived from the app's `requestId`, never
+under that id itself. So a browser's request cookie cannot redeem a device
+code, and a device `requestId` put in a cookie finds no code. The verify
+answer is sent with `Cache-Control: no-store`.
+
 **Token rotation: `POST /api/auth/token/refresh`** (Authorization: Bearer).
-All three roles. The old token dies in the same statement.
+All three roles. When it rotates, the old token dies in the same transaction.
 
     200    { token, expiresIn, expiresAt, deviceId, role }
     401    { error: "unauthorized" }
+    401    { error: "unauthorized", reason: "sign-in-expired" }   client only
     429    { error } + Retry-After
 
-Call it when less than 7 days remain. Lifetimes:
+Every answer carries `Cache-Control: no-store`. Rules:
 
-| Role   | Minted by                        | Lifetime | Rotation                                |
-| ------ | -------------------------------- | -------- | --------------------------------------- |
-| admin  | `mobile-login` (old builds)      | 1 year   | none                                    |
-| admin  | `device-login`                   | 30 days  | refresh                                 |
-| member | `device-login`                   | 30 days  | refresh                                 |
-| client | `client-code/verify` device mode | 30 days  | refresh, each new token at most 30 days |
+- **Too early is a no-op.** While more than 23 days remain, the answer is the
+  SAME token with its own `expiresAt` and `deviceId`. Nothing rotates and no
+  row is written. So the app may call it at every launch. A new token comes
+  back only in the last 23 days. Always store the `token` of the answer.
+- **A client's 90-day cap.** Refresh keeps a client's device token alive for
+  at most 90 days from the emailed code that signed the phone in. After that,
+  refresh answers 401 with `reason: "sign-in-expired"`. The app shows the
+  sign-in screen and the person asks for a new code. Each new client token
+  lasts at most 30 days and never past the cap.
+- **Reuse ends everything.** The app must keep only the newest token. A
+  rotated token that is presented again within 2 minutes (a lost answer, a
+  retry) gets a plain 401. Presented again after 2 minutes, the brain treats
+  it as a stolen copy: it ends every session and device token of the login
+  (the phone and the browser) and writes the audit row `auth.token_reuse`.
+  The person signs in again.
+- **Every other 401** (revoked, expired, ended sessions, a disabled login) is
+  final for this token: show the sign-in screen. Each one writes the audit
+  row `auth.token_refresh_failed` with the reason.
+- The limit is 30 a minute per address (an IPv6 caller by its /64).
+
+Lifetimes:
+
+| Role   | Minted by                        | Lifetime | Rotation                                                       |
+| ------ | -------------------------------- | -------- | -------------------------------------------------------------- |
+| admin  | `mobile-login` (old builds)      | 1 year   | none                                                           |
+| admin  | `device-login`                   | 30 days  | refresh                                                        |
+| member | `device-login`                   | 30 days  | refresh                                                        |
+| client | `client-code/verify` device mode | 30 days  | refresh, each new token at most 30 days, 90 days from the code |
 
 A client token also carries the login's session epoch. It ends at once when
 the client signs out anywhere (web or phone), when an admin ends the client's
@@ -409,7 +449,8 @@ refused.
 200 `{ ok: true }`. It revokes this device's token and removes the push
 devices that token enrolled. For a client it ends every session of the login,
 the browser ones too (a client sign-out always did). A token that is already
-dead ends nothing.
+dead ends nothing, and neither does a client token whose session epoch has
+moved on (those sessions are already over).
 
 **Devices.** Every device token is a `mobile_tokens` row under its login. An
 admin sees and revokes it in Settings > Logins > Devices
@@ -446,35 +487,61 @@ enrol step).
            409 { error: "push_not_set_up" }   client only: no admin or member
                                               has switched push on yet
            502 { error: "relay_unreachable" }
+           429 { error: "too_many_requests" } + Retry-After
     POST   {pushBase}/subscriptions   { routingToken, publicKey, platform, label?, deviceId? }
            200 { id }
+           400 { error: "bearer_required" }   no live device token of this login
+           429 { error: "too_many_requests" } + Retry-After
     GET    {pushBase}/subscriptions   200 { devices: [{ id, platform, label, current }] }
     DELETE {pushBase}/subscriptions/:id   200 { ok: true } | 404 { error: "not_found" }
     GET    {pushBase}/preferences     200 { chatReplies, reviewResults, comments }
     PUT    {pushBase}/preferences     partial patch, same answer
 
 A member or client lists and removes only its own devices. Enrolling a routing
-token again replaces the old row, so one phone belongs to one login.
-`POST /api/push/reset` stays admin only. Preferences are per login and all
-default to true.
+token again replaces the old row (one row per routing token), so one phone
+belongs to one login. `POST /api/push/reset` stays admin only. Preferences are
+per login and all default to true.
+
+**Limits.** Connect and enrol share one bucket: 10 a minute per login, above
+that 429 `{ error: "too_many_requests" }` with `Retry-After`. A login holds at
+most 10 push devices: the 11th enrol removes the oldest. These limits hold for
+the admin routes (`/api/push/connect`, `/api/push/subscriptions`) too.
+
+**The admin enrol needs the bearer.** `POST /api/push/subscriptions` answers
+400 `{ error: "bearer_required" }` unless the request carries a live device
+token of the signed-in admin. The app always sends it. A device enrolled from
+a browser session would be a device nothing can revoke.
+
+**Admin devices from older releases.** An admin device enrolled before
+migration 0213 has no token on record. It keeps getting owner pushes until
+the first revoke of a device token, End sessions, a password change or a
+phone sign-out of that login. Then the brain removes it, because it cannot
+tell which phone it is. That phone must tap Connect again in Settings > Push
+(the app enrols only on a tap of Connect, never on its own).
 
 **Payload** (sealed to the device, as today). New fields are additive.
 
     { v: 1, t, b, deepLink, ts, kind, itemId?, state? }
 
-| kind      | t (title)                                                                       | b (body)                                                                         | deepLink                                                                       | extra                                              |
-| --------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------- |
-| `chat`    | the agent's name; for an admin's note the brain's site name, else `New message` | the reply, pictures removed, 140 chars (`New message` when it is a picture only) | `/portal/chat`                                                                 |                                                    |
-| `review`  | `Accepted`, `Returned`, or `With an admin`                                      | the item's title (and the return note)                                           | `/portal/items/<id>`, or `/portal/items` when taken                            | `itemId`, `state`: `accepted`, `returned`, `taken` |
-| `comment` | `New comment`                                                                   | `<name> on "<title>": <comment>`                                                 | `/portal/items/<id>` (own item) or `/portal/shared/<id>` (a client-level item) | `itemId`                                           |
+| kind      | t (title)                                                                       | b (body)                                                                                                        | deepLink                                                                       | extra                                              |
+| --------- | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------- |
+| `chat`    | the agent's name; for an admin's note the brain's site name, else `New message` | the reply, pictures removed, 140 chars (`New message` when it is a picture only)                                | `/portal/chat`                                                                 |                                                    |
+| `review`  | `Accepted`, `Returned`, or `With an admin`                                      | the item's title (and the return note); for `Accepted`, the title it was accepted under                         | `/portal/items/<id>`, or `/portal/items` when taken                            | `itemId`, `state`: `accepted`, `returned`, `taken` |
+| `comment` | `New comment`                                                                   | on the author's own item: `<name> on "<title>": <comment>`; on a client thread: `<name> commented on "<title>"` | `/portal/items/<id>` (own item) or `/portal/shared/<id>` (a client-level item) | `itemId`                                           |
 
 Owner pushes keep their links (`/chat/<slug>`, `/pending`, `/team-admin?...`)
 and carry no `kind`. A teaser never holds text its reader cannot open: the
 chat text is the reader's own thread as their chat route returns it, an item
 title is the author's own item, a client-thread comment goes out only while
-the item is at client level.
+the item is at client level. A client-thread comment push carries no comment
+text: every client of the brain gets it, and a lock screen is not the place
+for another person's words. Open the item to read it.
 
-`collapseKey`: `chat`, `review:<id>`, `comment:<id>`.
+`collapseKey`: the brain names a member's or client's push by `chat`,
+`review:<id>` or `comment:<id>`, but sends it to the relay as a keyed hash
+(32 hex characters). The relay and the push provider see neither the kind of
+event nor an item id. The app must not parse the collapse key; read `kind`
+and `itemId` from the sealed payload. Owner pushes keep their plain keys.
 
 **Teasers are plain text.** Every body (`b`) that comes from markdown is sent
 as plain words: an owner assistant reply, a run's question in an approval, a
@@ -510,7 +577,9 @@ future counts as now) or to now, and never backwards. A malformed `at` is
 400 `{ error: "invalid_body" }`. A reply that is still being written when the
 thread is read is not marked read: it counts when it lands. The cursor runs
 on the database's clock; pass `at` = the `createdAt` of the newest message
-you showed, or nothing.
+you showed, or nothing. An `at` with millisecond precision covers that whole
+millisecond: the database keeps microseconds, so the message you name is
+marked read even when it was written later in the same millisecond.
 
 ### 4. Pictures in a member or client thread
 
@@ -537,14 +606,23 @@ not read are already removed. Two ways to load one:
 
 ### 6. How the brain does it (server notes)
 
-**Migration `mobile_roles_push`.** `push_subscriptions.token_id` (the
-device token that enrolled the device), `push_login_prefs` (per-login
-toggles), `login_chat_read_cursors` (per-login read cursor), and the
-`login_notice` NOTIFY channel with three notify-only triggers: a finished
-outbound row in a login's thread (`team_messages`), a review state becoming
-accepted, returned or taken (`space_items`), a new comment (`node_comments`).
-The payload carries ids only. Cost safety: the triggers write nothing and the
-only listener is the push worker, which sends pushes and starts no LLM work.
+**Migration 0213 `mobile_roles_push`.** `push_subscriptions.token_id` (the
+device token that enrolled the device), a unique index on
+`push_subscriptions.routing_token` (enrol is an upsert), `push_login_prefs`
+(per-login toggles), `login_chat_read_cursors` (per-login read cursor),
+`mobile_tokens.signed_in_at` (when the emailed code signed a client's phone
+in; copied through every rotation) and `mobile_tokens.rotated_to` (the token
+a rotated row was replaced by; reuse detection), and the `login_notice`
+NOTIFY channel with three notify-only triggers: a finished outbound row in a
+login's thread (`team_messages`), a review state becoming accepted, returned
+or taken (`space_items`), a new comment (`node_comments`). The payload
+carries ids only. Cost safety: the triggers write nothing and the only
+listener is the push worker, which sends pushes and starts no LLM work.
+
+If the migration is not applied, every push fails (the admins' too). The
+worker says so once per process in one loud log line (`THE DATABASE IS
+BEHIND THE CODE`, `lib/push/login-notice-handler.ts`), not one quiet line
+per event.
 
 **Auth** (`server/web/lib/auth/session.ts`, `tokens.ts`, `login-row.ts`).
 
@@ -557,7 +635,24 @@ only listener is the push worker, which sends pushes and starts no LLM work.
   routes only. The three sweeps (`role-sweep`, `client-sweep`, `member-sweep`)
   run each role's pass with a cookie AND with a bearer.
 - `endLoginSessions` also deletes the push devices the revoked tokens
-  enrolled; `token/refresh` moves them to the new token.
+  enrolled; `token/refresh` moves them to the new token. Every way a login's
+  device or session ends (revoke one device, End sessions, a password change,
+  a phone sign-out, a disable) also deletes that login's devices that have
+  no token on record (enrolled before migration 0213).
+- `token/refresh` locks the login row (`for share`) while it rotates. End
+  sessions, a password change and a disable update that row first, so a
+  refresh racing one of them cannot mint a token that outlives it.
+- Device mode writes the token row inside the same transaction that redeems
+  the emailed code, and writes the audit row after the insert, with the
+  device id.
+- The nightly maintenance sweep `device-tokens-reap`
+  (`lib/auth/device-token-reap.ts`, plain SQL, no model) deletes a
+  `mobile_tokens` row 30 days after it was revoked or expired. The push
+  devices it enrolled go with it (FK cascade). By hand:
+  `pnpm -C server/web device-tokens:reap` (dry run unless `--apply`).
+- Audit rows: `auth.token_refreshed`, `auth.token_refresh_failed` (with the
+  reason), `auth.token_reuse`, and `push.relay_registered` when a member's
+  Connect registers the brain with the relay for the first time.
 
 **Push targeting** (`server/web/lib/push/store.ts`, `notify.ts`,
 `login-notify.ts`, `workers/push-notify.ts`).
@@ -581,6 +676,20 @@ only listener is the push worker, which sends pushes and starts no LLM work.
   tells nobody (a backfill must never page people).
 - A bundle (Accept and Take over change every item in one transaction) is
   one push: the worker gathers a login's review events for 750 ms.
+- The 30-minute freshness check runs on the database's clock, not the
+  worker's.
+- Bounds on one send: every relay call times out after 10 seconds, one send
+  walks at most 100 devices, and the worker handles one notice at a time. A
+  device the relay no longer knows (404 or 410) and a device whose public key
+  cannot be sealed to are removed.
+
+**Follow-ups (not in this release).**
+
+- A per-account lockout on `device-login`. Today the limit is per address
+  (10 a minute, the shared token-login bucket).
+- Binding the relay connect ticket to the login. Not done: the relay fixes
+  the ticket format. The per-login limit on connect (10 a minute) covers the
+  abuse it would stop.
 
 **Tests.** `server/web/lib/push/push-targeting.db.test.ts` is the gate: a
 member device and a client device, enrolled and live, never receive an owner
