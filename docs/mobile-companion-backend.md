@@ -1,6 +1,6 @@
 # Mobile Companion: backend additions
 
-_Last updated: 2026-08-06._
+_Last updated: 2026-10-01 (three roles on the phone: members and clients)._
 
 API + schema added to Mantle to support the **Mantle Companion** mobile app
 (Flutter; repo `~/Projects/mantle-companion`). Single-user/self-hosted, so the
@@ -366,8 +366,11 @@ token. No cookie is set or read in device mode.
 
 `requestId` ties the code to the app that asked for it, as the request cookie
 does for a browser. The app keeps it in memory until the verify. A body with
-`requestId` is device mode: the answer carries a token and sets no cookie.
-A body without it is the browser flow, unchanged.
+`requestId` is device mode: the answer carries a token and sets no cookie
+(a cookie on the request is not read at all). A body without it is the
+browser flow, unchanged. When the person asks for the code again, send the
+`requestId` you hold (`{ email, device: true, requestId }`): the code already
+mailed keeps working, and no second mail goes out while it is open.
 
 **Token rotation: `POST /api/auth/token/refresh`** (Authorization: Bearer).
 All three roles. The old token dies in the same statement.
@@ -378,12 +381,12 @@ All three roles. The old token dies in the same statement.
 
 Call it when less than 7 days remain. Lifetimes:
 
-| Role   | Minted by                         | Lifetime | Rotation |
-|--------|-----------------------------------|----------|----------|
-| admin  | `mobile-login` (old builds)       | 1 year   | none     |
-| admin  | `device-login`                    | 30 days  | refresh  |
-| member | `device-login`                    | 30 days  | refresh  |
-| client | `client-code/verify` device mode  | 30 days  | refresh, each new token at most 30 days |
+| Role   | Minted by                        | Lifetime | Rotation                                |
+| ------ | -------------------------------- | -------- | --------------------------------------- |
+| admin  | `mobile-login` (old builds)      | 1 year   | none                                    |
+| admin  | `device-login`                   | 30 days  | refresh                                 |
+| member | `device-login`                   | 30 days  | refresh                                 |
+| client | `client-code/verify` device mode | 30 days  | refresh, each new token at most 30 days |
 
 A client token also carries the login's session epoch. It ends at once when
 the client signs out anywhere (web or phone), when an admin ends the client's
@@ -397,7 +400,7 @@ refused.
     401    { error: "unauthorized" }
 
 | role   | shell               | pushBase           |
-|--------|---------------------|--------------------|
+| ------ | ------------------- | ------------------ |
 | admin  | `/api/shell`        | `/api/push`        |
 | member | `/api/member/shell` | `/api/member/push` |
 | client | `/api/client/shell` | `/api/client/push` |
@@ -405,7 +408,8 @@ refused.
 **Sign-out: `POST /api/auth/mobile-logout`** (Authorization: Bearer). Always
 200 `{ ok: true }`. It revokes this device's token and removes the push
 devices that token enrolled. For a client it ends every session of the login,
-the browser ones too (a client sign-out always did).
+the browser ones too (a client sign-out always did). A token that is already
+dead ends nothing.
 
 **Devices.** Every device token is a `mobile_tokens` row under its login. An
 admin sees and revokes it in Settings > Logins > Devices
@@ -413,8 +417,7 @@ admin sees and revokes it in Settings > Logins > Devices
 
 **What a token reaches.** A member token reaches only `MEMBER_ROUTES`, a
 client token only `CLIENT_ROUTES` (`server/web/lib/auth/*-routes.ts`). Every
-other route answers 403 with `reason` = `member-login` or `client-login`, or
-401. A wrong-role call on a member or client route answers 403 with the
+other route answers 403 with `reason` = `member-login` or `client-login`, or 401. A wrong-role call on a member or client route answers 403 with the
 caller's role in `reason` (`admin-login`, `member-login`, `client-login`).
 
 ### 2. Push for members and clients
@@ -422,14 +425,14 @@ caller's role in `reason` (`admin-login`, `member-login`, `client-login`).
 **Who gets what (the targeting rule).** A push goes only to devices of the
 login it concerns, and only while the token that enrolled the device is live.
 
-| Event | Goes to |
-|-------|---------|
-| Owner assistant message | Devices of active ADMIN logins. If the agent is assigned to one login, only that login's devices. |
-| Approval waiting | Devices of active admin logins. |
-| "Needs you" (review queue, team request) | Devices of active admin logins. |
-| Reply in a member or client chat | Devices of that ONE login. |
-| Review result on an item | Devices of the item's author. |
-| Comment on an item | Devices of the item's author (not when the author wrote it). On a client-level item's client thread: every active client login but the writer. |
+| Event                                    | Goes to                                                                                                                                        |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Owner assistant message                  | Devices of active ADMIN logins. If the agent is assigned to one login, only that login's devices.                                              |
+| Approval waiting                         | Devices of active admin logins.                                                                                                                |
+| "Needs you" (review queue, team request) | Devices of active admin logins.                                                                                                                |
+| Reply in a member or client chat         | Devices of that ONE login.                                                                                                                     |
+| Review result on an item                 | Devices of the item's author.                                                                                                                  |
+| Comment on an item                       | Devices of the item's author (not when the author wrote it). On a client-level item's client thread: every active client login but the writer. |
 
 A member or client device never gets an owner teaser. A device whose token was
 revoked, expired or rotated away without the app gets nothing.
@@ -459,11 +462,11 @@ default to true.
 
     { v: 1, t, b, deepLink, ts, kind, itemId?, state? }
 
-| kind      | t (title)                | b (body)                                   | deepLink                 | extra |
-|-----------|--------------------------|--------------------------------------------|--------------------------|-------|
-| `chat`    | the agent's name, or the brain's site name for an admin's note | the reply, pictures removed, 140 chars | `/portal/chat` | |
-| `review`  | `Accepted`, `Returned`, or `With an admin` | the item's title (and the return note) | `/portal/items/<id>`, or `/portal/items` when taken | `itemId`, `state`: `accepted`, `returned`, `taken` |
-| `comment` | `New comment`            | `<name> on "<title>": <comment>`           | `/portal/items/<id>` (own item) or `/portal/shared/<id>` (a client-level item) | `itemId` |
+| kind      | t (title)                                                                       | b (body)                                                                         | deepLink                                                                       | extra                                              |
+| --------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------- |
+| `chat`    | the agent's name; for an admin's note the brain's site name, else `New message` | the reply, pictures removed, 140 chars (`New message` when it is a picture only) | `/portal/chat`                                                                 |                                                    |
+| `review`  | `Accepted`, `Returned`, or `With an admin`                                      | the item's title (and the return note)                                           | `/portal/items/<id>`, or `/portal/items` when taken                            | `itemId`, `state`: `accepted`, `returned`, `taken` |
+| `comment` | `New comment`                                                                   | `<name> on "<title>": <comment>`                                                 | `/portal/items/<id>` (own item) or `/portal/shared/<id>` (a client-level item) | `itemId`                                           |
 
 Owner pushes keep their links (`/chat/<slug>`, `/pending`, `/team-admin?...`)
 and carry no `kind`. A teaser never holds text its reader cannot open: the
@@ -486,8 +489,12 @@ these roles yet.
 
 `unread` counts finished replies in the login's own thread newer than
 `lastReadAt`. A login starts with nothing unread: the first call sets
-`lastReadAt` to now. `POST read` moves the cursor to `at` (an ISO time, not in
-the future) or to now, and never backwards.
+`lastReadAt` to now. `POST read` moves the cursor to `at` (an ISO time; the
+future counts as now) or to now, and never backwards. A malformed `at` is
+400 `{ error: "invalid_body" }`. A reply that is still being written when the
+thread is read is not marked read: it counts when it lands. The cursor runs
+on the database's clock; pass `at` = the `createdAt` of the newest message
+you showed, or nothing.
 
 ### 4. Pictures in a member or client thread
 
@@ -511,3 +518,58 @@ not read are already removed. Two ways to load one:
   version 1, never claim a code that would hand them a non-admin token.
 - A push when a reply fails.
 - The forum (retired) and apps on the phone.
+
+### 6. How the brain does it (server notes)
+
+**Migration `0211_mobile_roles_push`.** `push_subscriptions.token_id` (the
+device token that enrolled the device), `push_login_prefs` (per-login
+toggles), `login_chat_read_cursors` (per-login read cursor), and the
+`login_notice` NOTIFY channel with three notify-only triggers: a finished
+outbound row in a login's thread (`team_messages`), a review state becoming
+accepted, returned or taken (`space_items`), a new comment (`node_comments`).
+The payload carries ids only. Cost safety: the triggers write nothing and the
+only listener is the push worker, which sends pushes and starts no LLM work.
+
+**Auth** (`server/web/lib/auth/session.ts`, `tokens.ts`, `login-row.ts`).
+
+- `getBearerLogin` checks the token row (present, not revoked, not expired,
+  the same login as the token names). A token that carries an epoch is
+  refused once the login's `session_epoch` differs. A client token must carry
+  one and may not claim more than `CLIENT_SESSION_TTL_SECONDS`.
+- `resolvedFor` accepts a client from a bearer. The gates are unchanged: a
+  client reaches `getClientOr401` routes only, a member `getMemberOr401`
+  routes only. The three sweeps (`role-sweep`, `client-sweep`, `member-sweep`)
+  run each role's pass with a cookie AND with a bearer.
+- `endLoginSessions` also deletes the push devices the revoked tokens
+  enrolled; `token/refresh` moves them to the new token.
+
+**Push targeting** (`server/web/lib/push/store.ts`, `notify.ts`,
+`login-notify.ts`, `workers/push-notify.ts`).
+
+- The store has NO list of every device of the brain for the send path.
+  `listAdminSubscriptions` (active admin logins; an optional single login)
+  serves the owner pushes. `listLoginSubscriptions` (one active member or
+  client, live token of that same login) serves a login's own pushes.
+- Decision: an agent assigned to one login (`agents.assigned_user_id`) pushes
+  its replies to that login's devices only. An agent assigned to nobody
+  pushes to every active admin. Approvals and "needs you" go to every active
+  admin.
+- Decision: a member may be the first to register the brain with the push
+  relay (the first Connect). A client may not: it gets 409 `push_not_set_up`
+  until an admin or a member has connected once.
+- Who is told and with which words is `packages/content/src/login-notices.ts`
+  (chat: the text as the reader's own chat route returns it; review: the
+  author's own item, by the title it had when taken; comment: the author of
+  a personal item in its own space, or every active client but the writer
+  for a client-level item's client thread). An event older than 30 minutes
+  tells nobody (a backfill must never page people).
+- A bundle (Accept and Take over change every item in one transaction) is
+  one push: the worker gathers a login's review events for 750 ms.
+
+**Tests.** `server/web/lib/push/push-targeting.db.test.ts` is the gate: a
+member device and a client device, enrolled and live, never receive an owner
+teaser, an approval or a "needs you" notice. `device-tokens.db.test.ts`
+drives the three sign-ins, every way a token ends, refresh, the push device
+routes and the unread routes through the real app.
+`packages/content/src/login-notices.viewer.db.test.ts` proves the triggers
+and who is told.

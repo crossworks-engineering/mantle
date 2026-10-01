@@ -6,7 +6,9 @@
  * a client session ends:
  *
  *   - the link is one use;
- *   - password sign-in and a mobile bearer never open a client;
+ *   - password sign-in never opens a client, nor does a bearer minted
+ *     without the session epoch (the phone app's device token, which does
+ *     open one, is device-tokens.db.test.ts);
  *   - an admin's "End sessions" (PATCH /api/users/:id {signOut:true});
  *   - the client's own "sign out everywhere";
  *   - an admin disabling the login (enabling it again does not revive the
@@ -158,7 +160,7 @@ describe.skipIf(!URL)('a client login, end to end', () => {
     expect(((await shell.json()) as { reason?: string }).reason).toBe('client-login');
   });
 
-  it('never opens a client with a password or a mobile bearer', async () => {
+  it('never opens a client with a password, or a bearer without the session epoch', async () => {
     const id = await addClient('bea');
     const login = await call('/api/auth/login', {
       method: 'POST',
@@ -175,6 +177,8 @@ describe.skipIf(!URL)('a client login, end to end', () => {
     });
     expect(known.status).toBe(401);
     expect(known.headers.get('set-cookie') ?? '').not.toMatch(/mantle_session=[^;]/);
+    // A bearer as the password logins mint it (no epoch): only the emailed
+    // code in device mode mints a client's token, and that one carries it.
     const jti = randomUUID();
     const t = tokens.buildMobileToken(id, jti, 3600);
     await sql`insert into mobile_tokens (id, user_id, label, expires_at)

@@ -77,9 +77,14 @@
   exchange and every refresh re-read that login: a grant works only while it
   is an admin that is not disabled. Grants made before 0164 are attributed to
   the anchor.
-- **Web only.** The mobile companion calls admin routes only, so its login
-  (`/api/auth/mobile-login`) refuses a member (403 `member-login`) and mints
-  no token, and QR pairing is admin-only. A member signs in from a browser.
+- **The web, and the three-role phone app.** The first mobile companion
+  calls admin routes only, so its login (`/api/auth/mobile-login`, frozen for
+  shipped builds) refuses a member (403 `member-login`) and mints no token,
+  and QR pairing is admin-only. The three-role phone app signs a member in
+  with `POST /api/auth/device-login` (the answer names the role; 30 days,
+  rotated by `/api/auth/token/refresh`). That token reaches only
+  `MEMBER_ROUTES` (`member-sweep.test.ts` drives every manifest route with
+  one). See mobile-companion-backend.md, "Three roles on the phone".
 - **No personal assistant.** A member chats only with team-level agents, so
   `PUT /api/users/:id/agent` refuses a member login (400), and demoting a
   login releases the assistant it had.
@@ -126,8 +131,10 @@
   not know, answers 400 with `reason: 'not-a-password-login'`; a member's
   reset still works (it is a member's only way back in), and jackdaw hides
   Reset password on client rows. Token refresh
-  (`POST /api/auth/token/refresh`) rotates admin and member bearers only: a
-  client never holds a bearer. `server/web/server/role-sweep.test.ts` drives every
+  (`POST /api/auth/token/refresh`) rotates the bearers of the three named
+  roles; a client's bearer exists only as the phone app's device token (the
+  emailed code in device mode, client-logins.md section 4) and is held to
+  the login's session epoch and to 30 days. `server/web/server/role-sweep.test.ts` drives every
   manifest route, member routes included, with a client login (each
   refuses it) and with an unknown role (each answers as to a stranger).
   Public routes that read a session themselves (password change, sign
@@ -1404,7 +1411,11 @@ it used to stop at 100.
 **The phone.** The push worker pushes an ARRIVAL only (the newest item of a
 queue, started waiting in the last two minutes, not pushed before), to
 devices of active admin logins only (`listAdminSubscriptions`: a member's,
-a deactivated admin's or an unattributed device is never listed). The
+a client's, a deactivated admin's or an unattributed device is never
+listed). Since 0211 every owner push follows that rule (assistant messages
+and approvals too), and a member or a client gets pushes of its own: a
+reply in its chat, a review result, a comment
+(mobile-companion-backend.md, "Three roles on the phone"). The
 lock screen shows the title and the member's name. It follows the
 approvals toggle in the push preferences. The mobile companion has no Team
 admin screen yet, so a tap opens the app.

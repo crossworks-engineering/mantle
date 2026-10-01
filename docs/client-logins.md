@@ -11,8 +11,9 @@
 
 **Contents.**
 
-1. **What a client login is**: role client, no password, browser only, deny
-   by default, one client company per brain.
+1. **What a client login is**: role client, no password, a browser session
+   or the phone app's device token, deny by default, one client company per
+   brain.
 2. **Team admin > Clients**: acknowledge "What clients see", add a client,
    issue a sign-in link, end sessions, disable, delete.
 3. **Email sign-in codes**: the sign-in sender, the email worker, the card,
@@ -42,8 +43,12 @@
   consent all refuse a client. An admin password reset on a client answers
   400 `not-a-password-login`. A client signs in with a link an admin issues
   (section 2), or with a code the brain emails (section 3).
-- **Browser only.** A client never holds a bearer. Its session is a cookie
-  on the brain's origin (section 6).
+- **A browser, or the phone app.** In a browser the session is a cookie on
+  the brain's origin (section 6). The phone app holds a device token (a
+  bearer): the emailed code in device mode answers one instead of a cookie
+  (section 4, and mobile-companion-backend.md "Three roles on the phone").
+  Nothing else mints a client bearer: no password sign-in, no web-client
+  token login, no QR pairing.
 - **Deny by default.** A client reaches only the routes in `CLIENT_ROUTES`
   (`server/web/lib/auth/client-routes.ts`): its shell, "Shared with you"
   (list, item and the item's comment thread), the bytes of client files and
@@ -231,6 +236,19 @@ rule is `reapClientSigninCodes` in `packages/content/src/client-codes.ts`.
   a shared computer, and a download URL left in its history must stop
   working. It does not revoke a sign-in link or an emailed code the client
   has not used yet: End sessions and Disable do (section 2).
+- **The phone app's device token** (migration 0211). `POST
+/api/auth/client-code/verify` with the request id in the body (device
+  mode) answers a bearer and sets no cookie. It is a `mobile_tokens` row
+  under the client login (listed and revoked in Team admin like every
+  device), lasts 30 days, and carries the login's session epoch: the session
+  layer refuses it once the epoch moves on, exactly as it refuses the
+  cookie, and refuses a client token with no epoch or one that claims more
+  than 30 days. `POST /api/auth/token/refresh` rotates it (each new token at
+  most 30 days, at the same epoch). The client's sign-out, in the browser or
+  on the phone (`POST /api/auth/mobile-logout`), ends every session and
+  token of the login; End sessions and Disable do too. A client token
+  reaches only `CLIENT_ROUTES`: `role-sweep.test.ts` drives every manifest
+  route with one.
 - **Asset tokens live 10 minutes.** The `?at=` token a client's image and
   file sources carry lives 10 minutes (a member's lives 2 hours). The client
   byte routes accept it; the admin and member byte routes refuse it.
@@ -267,8 +285,8 @@ text of client and public pages ([pages.md](./pages.md) section 3).
 
 ## 6. One origin
 
-The client session is a cookie on the brain's origin, and a client never
-holds a bearer. So the client pages must be served on the same origin as
+The client's browser session is a cookie on the brain's origin (only the
+phone app holds a bearer). So the client pages must be served on the same origin as
 the brain: the same-origin Caddy shape (`MANTLE_CADDY_SHAPE=same-origin`,
 the default). On a split-origin box (the owner UI on its own hostname) the
 sign-in page says client sign-in is not available, shows no form and posts

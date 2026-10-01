@@ -146,10 +146,12 @@ describe.skipIf(!URL)('credential races', () => {
     expect(live[0]!.id).not.toBe(jti);
   });
 
-  // Audit A15: only the password roles hold a bearer. A client never does
-  // (no password login, no app, no pairing); a row that somehow carries one
-  // is refused and left as it was, never rotated into a fresh 30-day token.
-  it('rotates an admin or member bearer, never a client one', async () => {
+  // Audit A15: a bearer as the password logins mint it (no session epoch)
+  // is never a client's. A client row that somehow carries one is refused
+  // and left as it was, never rotated into a fresh 30-day token. The phone
+  // app's client token carries the epoch and does rotate
+  // (device-tokens.db.test.ts).
+  it('rotates an admin or member bearer, never a client bearer without the epoch', async () => {
     const { buildMobileToken, WEB_TOKEN_TTL_SECONDS } = await import('./tokens');
     const { POST } = await import('../../app/api/auth/token/refresh/route');
     let n = 0;
