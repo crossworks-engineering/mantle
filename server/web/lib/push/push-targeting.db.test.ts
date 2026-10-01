@@ -81,7 +81,8 @@ describe.skipIf(!URL)('push targeting: who a push goes to', () => {
   const goneAdmin = randomUUID(); // deactivated
   const member = randomUUID();
   const client = randomUUID();
-  const logins = [admin1, admin2, admin3, goneAdmin, member, client];
+  // The brain is a login row of its own (agents name their owner by FK).
+  const logins = [brain, admin1, admin2, admin3, goneAdmin, member, client];
   const agentAll = randomUUID();
   const agentOfAdmin2 = randomUUID();
   const rt = (label: string) => `${tag}-${label}`;
@@ -111,6 +112,7 @@ describe.skipIf(!URL)('push targeting: who a push goes to', () => {
     notify = await import('./notify');
     loginNotify = await import('./login-notify');
     for (const [id, role] of [
+      [brain, 'admin'],
       [admin1, 'admin'],
       [admin2, 'admin'],
       [admin3, 'admin'],
