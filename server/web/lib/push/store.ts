@@ -281,10 +281,17 @@ export async function deleteLoginSubscriptions(
  *  the relay keeps can no longer be addressed by this brain anyway. */
 export async function forgetRelayDevices(routingTokens: string[]): Promise<void> {
   if (routingTokens.length === 0) return;
-  const instance = await getPushInstance();
-  if (!instance) return;
-  for (const token of routingTokens) {
-    void relayDeleteDevice(instance.relayUrl, instance.instanceToken, token);
+  // Never throws: the rows are gone and the caller (an unpair, a sign-out, a
+  // lockout) has done its work. A relay identity that cannot be read (a
+  // changed master key) must not turn that into a 500.
+  try {
+    const instance = await getPushInstance();
+    if (!instance) return;
+    for (const token of routingTokens) {
+      void relayDeleteDevice(instance.relayUrl, instance.instanceToken, token);
+    }
+  } catch (err) {
+    console.error('[push] forgetRelayDevices failed (non-fatal):', (err as Error).message);
   }
 }
 

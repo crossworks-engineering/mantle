@@ -45,6 +45,7 @@ vi.mock('./store', () => ({
     h.deleted.push([loginId, id]);
     return id === DEVICE_ID ? 'routing-1' : null;
   }),
+  forgetRelayDevices: vi.fn(async () => undefined),
   getLoginPushPrefs: vi.fn(async () => h.prefs),
   updateLoginPushPrefs: vi.fn(async (_login: string, patch: Record<string, boolean>) => {
     h.prefs = { ...h.prefs, ...patch };
@@ -52,7 +53,7 @@ vi.mock('./store', () => ({
   }),
 }));
 
-import { relayDeleteDevice } from './relay-client';
+import { forgetRelayDevices } from './store';
 import {
   loginPushConnect,
   loginPushDevices,
@@ -225,11 +226,9 @@ describe('devices and toggles', () => {
     const other = await loginPushUnpair(member, '55555555-5555-4555-8555-555555555555');
     expect(other.status).toBe(404);
     expect((await loginPushUnpair(member, 'not-an-id')).status).toBe(404);
-    // The relay is told only when a device was removed (and push is set up).
-    expect(relayDeleteDevice).not.toHaveBeenCalled();
-    h.instance = { instanceToken: 't', relayInstanceId: 'iid', relayUrl: 'https://relay.example' };
-    await loginPushUnpair(member, DEVICE_ID);
-    expect(relayDeleteDevice).toHaveBeenCalledWith('https://relay.example', 't', 'routing-1');
+    // The relay is told only for a device that was removed.
+    expect(forgetRelayDevices).toHaveBeenCalledTimes(1);
+    expect(forgetRelayDevices).toHaveBeenCalledWith(['routing-1']);
   });
 
   it('reads and patches the caller own toggles; unknown fields are ignored', async () => {

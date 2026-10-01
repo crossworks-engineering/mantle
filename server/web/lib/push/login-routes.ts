@@ -14,11 +14,10 @@ import { loadBearerToken } from '@/lib/auth/login-row';
 import { readJsonNoNul } from '@/lib/strip-nul';
 import { connectDevice, parseConnectBody } from './connect';
 import { sanitizeLoginPushPrefs } from './preferences-sanitize';
-import { relayDeleteDevice } from './relay-client';
 import {
   deleteOwnSubscription,
+  forgetRelayDevices,
   getLoginPushPrefs,
-  getPushInstance,
   insertSubscription,
   listOwnDevices,
   updateLoginPushPrefs,
@@ -112,8 +111,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export async function loginPushUnpair(caller: LoginPushCaller, id: string): Promise<Response> {
   const routingToken = UUID_RE.test(id) ? await deleteOwnSubscription(caller.loginId, id) : null;
   if (!routingToken) return NextResponse.json({ error: 'not_found' }, { status: 404 });
-  const instance = await getPushInstance();
-  if (instance) void relayDeleteDevice(instance.relayUrl, instance.instanceToken, routingToken);
+  // Best effort, as every unpair: the row is gone either way.
+  await forgetRelayDevices([routingToken]);
   return NextResponse.json({ ok: true });
 }
 
