@@ -102,6 +102,22 @@ done
 # the demo would show a login screen to the public.
 echo
 
+# ── Reads that WRITE: the ones the read-only role breaks ─────────────────────
+# Every screen's left column is the item tree, and the tree is where "make
+# sure it exists" inserts hide: Postgres checks the INSERT right before it
+# looks for the row, so as demo_reader such a read answers 500 while the page
+# around it answers 200 and shows "Loading" for ever. That happened with main
+# v0.232.366 (ensureKindRoot) and this gate passed, because it never asked. It
+# asks now. A red line here is a fix for MAIN, never a grant for demo_reader.
+for path in /api/tree/files /api/tree/notes /api/tree/pages /api/tree/tables \
+            /api/tree/tasks /api/tree/recall /api/tree/apps /api/app-nav \
+            /api/recall/maps; do
+  c=$(code GET "$path")
+  if [ "$c" = "200" ]; then say "GET $path" "200 ok"
+  else say "GET $path" "$c  ✗ EXPECTED 200 (a read that writes? see demo/seed/README.md)"; fail=1; fi
+done
+echo
+
 # ── Writes must be refused, on every verb and both route families ────────────
 for spec in "POST /api/notes {\"title\":\"pwned\",\"content\":\"x\"}" \
             "POST /api/tasks {\"title\":\"pwned\"}" \

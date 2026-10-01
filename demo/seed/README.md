@@ -116,6 +116,28 @@ member chats, what the team reads). Showing a member's own view needs a
 second origin that injects a member's session. That is a decision about the
 site box, not something the seed can settle.
 
+## What the read-only role still breaks
+
+The serve-time app connects as `demo_reader`, which cannot write. A read
+that writes therefore fails only on the demo, and it fails quietly: the page
+answers 200 and its data call answers 500. Measured on the bench with main
+v0.232.366 (2026-10-01):
+
+| read | as `demo_reader` | why |
+|---|---|---|
+| `GET /api/tree/files` | 200 | |
+| `GET /api/tree/{notes,pages,tables,tasks,recall,apps}` | 500 | `ensureKindRoot` inserts the kind's root folder (`INSERT ... ON CONFLICT DO NOTHING`); Postgres checks the INSERT right before it looks for the row (42501) |
+| `GET /api/app-nav` | 500 | the same, through the Apps layout reconcile |
+| `GET /api/recall/maps`, `/api/pages`, `/api/notes`, `/api/search`, the team and client screens' reads | 200 | |
+
+On screen: the left tree of Notes, Pages, Tables, Tasks, Recall and Apps
+stays on "Loading". The fix belongs on main (skip a refused write, as
+`reapAbandonedTraces` and the embedding cache already do), then main is
+merged into demo again. `check-readonly.sh` asks for these reads now, so the
+gate is red until then. To LOOK at those screens before the fix, a bench can
+serve as the owner role: `DEMO_SERVE_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:56432/postgres demo/scripts/serve.sh`
+(the edge still refuses writes; never on the box).
+
 ## Real product paths, and the two deliberate exceptions
 
 Content is created over the HTTP API, and markdown becomes ProseMirror through
