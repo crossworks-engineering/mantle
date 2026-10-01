@@ -359,7 +359,13 @@ export type LoginChatUnread = { unread: number; lastReadAt: string };
  * it holds nothing back.
  */
 function cursorTarget(ownerId: string, loginId: string, at?: Date) {
-  const asked = at ? dsql`least(${at.toISOString()}::timestamptz, now())` : dsql`now()`;
+  // `at` is a message's createdAt as the chat route sent it: milliseconds.
+  // The row holds microseconds, so the cursor goes to the END of that
+  // millisecond; else it would land just under the very message it names
+  // and that message would stay unread.
+  const asked = at
+    ? dsql`least(${at.toISOString()}::timestamptz + interval '999 microseconds', now())`
+    : dsql`now()`;
   return dsql`least(${asked}, coalesce(
     (select min(tm.created_at) - interval '1 microsecond'
        from team_messages tm

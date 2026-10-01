@@ -5,12 +5,18 @@
 export interface RelayNotifyResult {
   ok: boolean;
   status: number;
-  /** The device's OS push token is dead (410) — drop the subscription. */
+  /** The relay has no such device: its OS push token is dead (410), or the
+   *  routing token names nothing (404). Drop the subscription. */
   unregistered?: boolean;
   reason?: string;
 }
 
 const JSON_HEADERS = { 'content-type': 'application/json' } as const;
+
+/** No call to the relay waits longer than this: a relay that hangs must not
+ *  hold the send chain (every later push would queue behind it). */
+export const RELAY_TIMEOUT_MS = 10_000;
+const timeout = () => AbortSignal.timeout(RELAY_TIMEOUT_MS);
 
 /** TOFU register/claim this install. Returns the relay's instance id. */
 export async function registerInstance(
@@ -21,6 +27,7 @@ export async function registerInstance(
     method: 'POST',
     headers: JSON_HEADERS,
     body: JSON.stringify({ instanceToken }),
+    signal: timeout(),
   });
   if (!res.ok) {
     throw new Error(`relay /instances failed: ${res.status} ${await res.text().catch(() => '')}`);
@@ -45,6 +52,7 @@ export async function relayNotify(
       method: 'POST',
       headers: { ...JSON_HEADERS, authorization: `Bearer ${instanceToken}` },
       body: JSON.stringify(args),
+      signal: timeout(),
     });
   } catch (err) {
     return { ok: false, status: 0, reason: (err as Error).message };
@@ -57,7 +65,12 @@ export async function relayNotify(
   } catch {
     /* non-JSON */
   }
-  return { ok: false, status: res.status, unregistered: res.status === 410, reason };
+  return {
+    ok: false,
+    status: res.status,
+    unregistered: res.status === 410 || res.status === 404,
+    reason,
+  };
 }
 
 /** Unpair a device on the relay (instance-token auth). */
@@ -71,6 +84,7 @@ export async function relayDeleteDevice(
       method: 'DELETE',
       headers: { ...JSON_HEADERS, authorization: `Bearer ${instanceToken}` },
       body: JSON.stringify({ routingToken }),
+      signal: timeout(),
     });
     return res.ok;
   } catch {

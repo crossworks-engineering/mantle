@@ -242,9 +242,13 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
     // An admin's own thread with the team agent: not a member or a client.
     const own = await reply(adminA, 'admin thread');
     expect(await ln.chatReplyNotice({ loginId: adminA, id: own.id })).toBeNull();
-    // Old: a backfill that touches old rows pages nobody.
-    const later = Date.now() + ln.LOGIN_NOTICE_FRESH_MS + 60_000;
-    expect(await ln.chatReplyNotice({ loginId: member, id: row.id }, later)).toBeNull();
+    // Old: a backfill that touches old rows pages nobody. Judged on the
+    // database's clock, against the row's own time.
+    const old = await reply(member, 'from long ago');
+    expect(await ln.chatReplyNotice({ loginId: member, id: old.id })).not.toBeNull();
+    await m.systemDb.execute(sqlTag`
+      update team_messages set created_at = now() - interval '31 minutes' where id = ${old.id}`);
+    expect(await ln.chatReplyNotice({ loginId: member, id: old.id })).toBeNull();
     // Disabled.
     const m2 = await reply(member2, 'for Noah');
     await m.systemDb.execute(
@@ -327,6 +331,18 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
       body: `"${tag} spec" was accepted.`,
       deepLink: `/portal/items/${pageId}`,
     });
+    // The item is the brain's now. An admin renames it: the author is told
+    // by the title it was accepted with, never the admin's new one.
+    await m.systemDb.execute(
+      sqlTag`update nodes set title = 'ADMIN RENAMED IT' where id = ${pageId}`,
+    );
+    const after = await ln.reviewResultNotice(member, 'accepted', [pageId]);
+    expect(after?.body).toBe(`"${tag} spec" was accepted.`);
+    expect(JSON.stringify(after)).not.toContain('ADMIN RENAMED IT');
+    // A result that is old tells nobody (the database's clock).
+    await m.systemDb.execute(sqlTag`
+      update space_items set updated_at = now() - interval '31 minutes' where node_id = ${pageId}`);
+    expect(await ln.reviewResultNotice(member, 'accepted', [pageId])).toBeNull();
   });
 
   it('a bundle is one message, named after its main item', async () => {
@@ -446,13 +462,16 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
     );
     const told = await ln.commentNotices(fromTeam!.id);
     expect(told.map((n) => n.loginId).sort()).toEqual([client, client2].sort());
+    // On a thread every client reads, the lock screen says who commented on
+    // what, never what they wrote.
     expect(told[0]).toMatchObject({
       role: 'client',
       kind: 'comment',
-      body: `Mia Member on "${tag} for clients": Updated the drawing`,
+      body: `Mia Member commented on "${tag} for clients"`,
       deepLink: `/portal/shared/${shared}`,
       itemId: shared,
     });
+    expect(JSON.stringify(told)).not.toContain('Updated the drawing');
     // A client writes: the other client is told, never the writer, never staff.
     const fromClient = await ct.addClientThreadComment(
       anchor,
@@ -521,6 +540,28 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
     expect(new Date(future.lastReadAt).getTime()).toBeLessThanOrEqual(Date.now() + 1000);
     await reply(member, 'three');
     expect((await tm.loginChatUnread(anchor, member)).unread).toBe(1);
+  });
+
+  it('`at` = the createdAt the chat route sent (milliseconds) clears that message', async () => {
+    await tm.markLoginChatRead(anchor, member);
+    // Several replies: with microseconds in the row, a cursor set to the
+    // millisecond the app was given must still cover the row it names.
+    const shown: string[] = [];
+    for (let i = 0; i < 12; i += 1) {
+      const row = await reply(member, `reply ${i}`);
+      // What GET /api/member/chat sends: an ISO time, milliseconds.
+      shown.push(row.createdAt.toISOString());
+    }
+    expect((await tm.loginChatUnread(anchor, member)).unread).toBe(12);
+    // The app showed the first eleven.
+    expect((await tm.markLoginChatRead(anchor, member, new Date(shown[10]!))).unread).toBe(1);
+    // Then the last one.
+    expect((await tm.markLoginChatRead(anchor, member, new Date(shown[11]!))).unread).toBe(0);
+    // The row itself holds more than milliseconds (else this proves nothing).
+    const [micro] = await exec<{ n: number }>(sqlTag`
+      select count(*)::int as n from team_messages
+       where login_id = ${member} and created_at <> date_trunc('milliseconds', created_at)`);
+    expect(micro!.n).toBeGreaterThan(0);
   });
 
   it('a reply still being written is not marked read: it counts when it lands', async () => {

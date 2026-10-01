@@ -14,6 +14,9 @@ import { createHash, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
+/** A token close enough to its end that a refresh rotates it (a token with
+ *  more than 23 days left is answered with itself). */
+const NEAR_EXPIRY_SECONDS = 10 * 24 * 60 * 60;
 
 type Row = Record<string, unknown>;
 
@@ -121,10 +124,10 @@ describe.skipIf(!URL)('credential races', () => {
   });
 
   it('rotates a web-client bearer once when two refreshes race', async () => {
-    const { buildMobileToken, WEB_TOKEN_TTL_SECONDS } = await import('./tokens');
+    const { buildMobileToken } = await import('./tokens');
     const { POST } = await import('../../app/api/auth/token/refresh/route');
     const jti = randomUUID();
-    const minted = buildMobileToken(admin, jti, WEB_TOKEN_TTL_SECONDS);
+    const minted = buildMobileToken(admin, jti, NEAR_EXPIRY_SECONDS);
     await sql`insert into mobile_tokens (id, user_id, label, expires_at)
               values (${jti}, ${admin}, ${tag}, ${minted.expiresAt.toISOString()})`;
     let n = 0;
@@ -152,12 +155,12 @@ describe.skipIf(!URL)('credential races', () => {
   // app's client token carries the epoch and does rotate
   // (device-tokens.db.test.ts).
   it('rotates an admin or member bearer, never a client bearer without the epoch', async () => {
-    const { buildMobileToken, WEB_TOKEN_TTL_SECONDS } = await import('./tokens');
+    const { buildMobileToken } = await import('./tokens');
     const { POST } = await import('../../app/api/auth/token/refresh/route');
     let n = 0;
     const refreshAs = async (login: string) => {
       const jti = randomUUID();
-      const minted = buildMobileToken(login, jti, WEB_TOKEN_TTL_SECONDS);
+      const minted = buildMobileToken(login, jti, NEAR_EXPIRY_SECONDS);
       await sql`insert into mobile_tokens (id, user_id, label, expires_at)
                 values (${jti}, ${login}, ${`${tag}-a15`}, ${minted.expiresAt.toISOString()})`;
       const res = await POST(

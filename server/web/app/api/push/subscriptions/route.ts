@@ -7,12 +7,19 @@
 
 import { type NextRequest, NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
-import { callerTokenId } from '@/lib/push/login-routes';
-import { insertSubscription, listAdminDeviceList } from '@/lib/push/store';
+import { callerTokenId, pushEnrolLimited } from '@/lib/push/login-routes';
+import { forgetRelayDevices, insertSubscription, listAdminDeviceList } from '@/lib/push/store';
 
 export async function POST(req: NextRequest) {
   const owner = await getOwnerOr401();
   if (owner instanceof NextResponse) return owner;
+  const limited = pushEnrolLimited(owner.actor.id);
+  if (limited) return limited;
+  // The phone app always signs in with a device token, and a device is
+  // pushed to only while that token is live: an enrol with no bearer of this
+  // login (a browser session) would make a device nothing can revoke.
+  const tokenId = await callerTokenId(req, owner.actor.id);
+  if (!tokenId) return NextResponse.json({ error: 'bearer_required' }, { status: 400 });
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   const routingToken = body?.['routingToken'];
@@ -29,19 +36,21 @@ export async function POST(req: NextRequest) {
   const relayDeviceId =
     typeof body?.['deviceId'] === 'string' ? (body['deviceId'] as string) : null;
 
-  const { id } = await insertSubscription({
+  const { id, dropped } = await insertSubscription({
     ownerId: owner.id,
     // The login, not the brain: locking this login out unpairs the device.
     loginId: owner.actor.id,
-    // The device token it signed in with (mobile_roles_push), when it did so by bearer:
-    // revoking that device then stops its pushes too.
-    tokenId: await callerTokenId(req, owner.actor.id),
+    // The device token it signed in with: revoking that device, a sign-out
+    // or End sessions stops its pushes too.
+    tokenId,
     routingToken,
     publicKey,
     platform,
     label,
     relayDeviceId,
   });
+  // Devices over the cap were dropped (the oldest): tell the relay.
+  await forgetRelayDevices(dropped);
   return NextResponse.json({ id });
 }
 

@@ -15,6 +15,7 @@
  * schedulable, passed the registry assertion, and was dropped here on every
  * single run. It never fired once. One rule, one definition.
  */
+import { reapDeviceTokens } from '../auth/device-token-reap';
 import { sql } from 'drizzle-orm';
 import { db } from '@mantle/db';
 import {
@@ -143,6 +144,11 @@ export const SWEEPS: Record<string, (ownerId: string) => Promise<string>> = {
     return r.deleted + r.ipsCleared + r.skipsDeleted === 0
       ? 'nothing to reap'
       : `deleted ${r.deleted} code row(s) and ${r.skipsDeleted} skip row(s); cleared ${r.ipsCleared} address(es)`;
+  },
+  // Dead device tokens (revoked or expired more than 30 days ago).
+  'device-tokens-reap': async () => {
+    const r = await reapDeviceTokens();
+    return r.deleted === 0 ? 'nothing to reap' : `deleted ${r.deleted} device token row(s)`;
   },
   // Folder audit Y1: rows read at a share their folders no longer give;
   // S5 (0208): embed edges and the level embeds are read at.

@@ -22,7 +22,11 @@
  *      and sets no cookie. The app holds the request id as a browser holds
  *      the cookie, and sends it back with the code. The id is random and is
  *      returned for every email alike; an app that asks again passes the id
- *      it has, so the code already mailed keeps working.
+ *      it has, so the code already mailed keeps working. The code is stored
+ *      under an id DERIVED from the app's (deviceRequestId), so a browser's
+ *      id and a device's id never open each other's code. A request that
+ *      carries `Origin` or a `Sec-Fetch-*` header is a page, not the app:
+ *      403 `device-only`.
  */
 import { randomUUID } from 'node:crypto';
 import { NextResponse } from '@/server/http-compat';
@@ -35,7 +39,9 @@ import {
 } from '@/lib/client-codes';
 import {
   clientCodeRequestLimited,
+  deviceRequestId,
   existingRequestId,
+  refuseBrowserDeviceMode,
   requestIdFrom,
   setClientCodeCookie,
 } from '@/lib/client-logins';
@@ -67,6 +73,10 @@ export async function POST(req: Request) {
   const email = typeof raw?.email === 'string' ? raw.email.trim().slice(0, 320) : '';
   // Device mode never reads or sets the cookie: the app holds the id.
   const device = raw?.device === true;
+  if (device) {
+    const notTheApp = refuseBrowserDeviceMode(req);
+    if (notTheApp) return notTheApp;
+  }
   const requestId =
     (device ? requestIdFrom(raw?.requestId) : existingRequestId(req)) ?? randomUUID();
   try {
@@ -76,7 +86,7 @@ export async function POST(req: Request) {
     if (sender) {
       await enqueueClientCode({
         email,
-        requestId,
+        requestId: device ? deviceRequestId(requestId) : requestId,
         ip: clientIpKey(req),
         requestedAt: new Date().toISOString(),
       });

@@ -12,7 +12,12 @@
  * names the request itself. Success then answers a per-device bearer for the
  * client login and sets NO cookie: 30 days, signed with the login's session
  * epoch, a mobile_tokens row like every device (listed and revoked under the
- * login's devices; ended by the client's sign-out and by End sessions).
+ * login's devices; ended by the client's sign-out and by End sessions). The
+ * row is written in the redeem's own transaction. The code is looked up
+ * under the id derived from the app's (deviceRequestId): a browser's request
+ * id in the body opens nothing. A request with `Origin` or a `Sec-Fetch-*`
+ * header is a page, not the app: 403 `device-only`. The device name is a
+ * label: clamped, never a reason to refuse.
  *
  * Every failure (no request cookie, unknown, used, expired or dead code, a
  * wrong code or email, a disabled login, a malformed body) is the same 401.
@@ -22,7 +27,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { db, mobileTokens } from '@mantle/db';
 import { redeemClientEmailCode } from '@mantle/content';
 import type { ClientCodeSignIn } from '@mantle/client-types';
 import { CLIENT_SESSION_TTL_SECONDS, buildMobileToken, setClientSessionCookie } from '@/lib/auth';
@@ -31,9 +35,12 @@ import {
   clearClientCodeCookie,
   clientCodeVerifyFailed,
   clientCodeVerifyLimited,
+  deviceRequestId,
   existingRequestId,
+  refuseBrowserDeviceMode,
   requestIdFrom,
 } from '@/lib/client-logins';
+import { deviceLabel } from '@/lib/token-login';
 import { refuseCrossSiteAuthPost } from '@/lib/auth/preflight';
 import { AUTH_BODY_CEILING_BYTES, readJsonCapped } from '@/lib/body-limit';
 
@@ -42,7 +49,7 @@ const Body = z.object({
   code: z.string().trim().min(1).max(32),
   // Device mode: the request id the app was given, and a name for the device.
   requestId: z.string().trim().max(64).optional(),
-  deviceName: z.string().trim().min(1).max(80).optional(),
+  deviceName: z.unknown().optional(),
 });
 
 const FAILED_MESSAGE = 'That code did not work. Ask for a new one.';
@@ -59,9 +66,22 @@ export async function POST(req: Request) {
   // not a fallback (a malformed id is a failure, not a browser sign-in).
   const data = parsed.success ? parsed.data : null;
   const device = data?.requestId !== undefined;
-  const requestId = device ? requestIdFrom(data?.requestId) : existingRequestId(req);
+  if (device) {
+    const notTheApp = refuseBrowserDeviceMode(req);
+    if (notTheApp) return notTheApp;
+  }
+  const appRequestId = device ? requestIdFrom(data?.requestId) : null;
+  const requestId = device ? appRequestId && deviceRequestId(appRequestId) : existingRequestId(req);
+  const jti = randomUUID();
+  const label = deviceLabel(data?.deviceName, 'Mobile device');
   const redeemed =
-    data && requestId ? await redeemClientEmailCode({ requestId, email, code: data.code }) : null;
+    data && requestId
+      ? await redeemClientEmailCode(
+          { requestId, email, code: data.code },
+          new Date(),
+          device ? { device: { id: jti, label, ttlSeconds: CLIENT_SESSION_TTL_SECONDS } } : {},
+        )
+      : null;
   if (!redeemed) {
     clientCodeVerifyFailed(req, email);
     auditFireAndForget({
@@ -69,32 +89,32 @@ export async function POST(req: Request) {
       action: 'auth.client_code_failed',
       method: 'POST',
       path: '/api/auth/client-code/verify',
+      ...(device ? { detail: { channel: 'mobile' } } : {}),
       ...requestMetaFrom(req),
     });
     return NextResponse.json({ error: FAILED_MESSAGE }, { status: 401 });
   }
 
+  // After the redeem committed (in device mode the token row with it).
   auditFireAndForget({
     actorId: redeemed.loginId,
     actorEmail: redeemed.email,
     action: 'auth.client_code_signin',
     method: 'POST',
     path: '/api/auth/client-code/verify',
-    detail: { codeId: redeemed.codeId, ...(device ? { channel: 'mobile' } : {}) },
+    detail: {
+      codeId: redeemed.codeId,
+      ...(device ? { channel: 'mobile', device: label, deviceId: jti } : {}),
+    },
     ...requestMetaFrom(req),
   });
   if (device) {
-    const jti = randomUUID();
-    const label = data?.deviceName ?? 'Mobile device';
     const minted = buildMobileToken(
       redeemed.loginId,
       jti,
       CLIENT_SESSION_TTL_SECONDS,
       redeemed.sessionEpoch,
     );
-    await db
-      .insert(mobileTokens)
-      .values({ id: jti, userId: redeemed.loginId, label, expiresAt: minted.expiresAt });
     return NextResponse.json(
       {
         ok: true,

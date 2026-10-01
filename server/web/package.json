@@ -60,6 +60,7 @@
     "turns:reap": "tsx --env-file-if-exists=./.env.local scripts/turns-reap.ts",
     "space:purge": "tsx --env-file-if-exists=./.env.local scripts/space-purge.ts",
     "client-codes:reap": "tsx --env-file-if-exists=./.env.local scripts/client-codes-reap.ts",
+    "device-tokens:reap": "tsx --env-file-if-exists=./.env.local scripts/device-tokens-reap.ts",
     "share-drift": "tsx --env-file-if-exists=./.env.local scripts/share-drift.ts",
     "app-access-log:reap": "tsx --env-file-if-exists=./.env.local scripts/app-access-log-reap.ts",
     "typecheck": "tsc --noEmit",

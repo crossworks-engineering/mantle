@@ -30,20 +30,8 @@ const h = vi.hoisted(() => ({
   worker: true,
   redeemed: null as null | Record<string, unknown>,
   redeemCalls: [] as Array<{ requestId: string; email: string; code: string }>,
+  redeemOpts: [] as Array<{ device?: { id: string; label: string; ttlSeconds: number } }>,
   audits: [] as Array<Record<string, unknown>>,
-  tokenRows: [] as Array<Record<string, unknown>>,
-}));
-
-// The device token row a device-mode verify writes (no database here).
-vi.mock('@mantle/db', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  db: {
-    insert: () => ({
-      values: async (row: Record<string, unknown>) => {
-        h.tokenRows.push(row);
-      },
-    }),
-  },
 }));
 
 vi.mock('@/lib/client-codes', () => ({
@@ -58,8 +46,13 @@ vi.mock('@/lib/client-codes', () => ({
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   redeemClientEmailCode: vi.fn(
-    async (input: { requestId: string; email: string; code: string }) => {
+    async (
+      input: { requestId: string; email: string; code: string },
+      _now?: Date,
+      opts: { device?: { id: string; label: string; ttlSeconds: number } } = {},
+    ) => {
       h.redeemCalls.push(input);
+      h.redeemOpts.push(opts);
       return h.redeemed;
     },
   ),
@@ -90,14 +83,20 @@ beforeEach(() => {
   h.redeemed = null;
   h.redeemCalls = [];
   h.audits = [];
-  h.tokenRows = [];
+  h.redeemOpts = [];
 });
 
-const request = async (body: unknown, ip = '203.0.113.1', cookie?: string) => {
+const request = async (
+  body: unknown,
+  ip = '203.0.113.1',
+  cookie?: string,
+  extra: Record<string, string> = {},
+) => {
   const { POST } = await import('./route');
   const headers: Record<string, string> = {
     'content-type': 'application/json',
     'x-forwarded-for': ip,
+    ...extra,
   };
   if (cookie) headers.cookie = cookie;
   return POST(
@@ -109,11 +108,15 @@ const request = async (body: unknown, ip = '203.0.113.1', cookie?: string) => {
   );
 };
 
-const verify = async (body: unknown, opts: { ip?: string; cookie?: string | null } = {}) => {
+const verify = async (
+  body: unknown,
+  opts: { ip?: string; cookie?: string | null; headers?: Record<string, string> } = {},
+) => {
   const { POST } = await import('./verify/route');
   const headers: Record<string, string> = {
     'content-type': 'application/json',
     'x-forwarded-for': opts.ip ?? '203.0.113.1',
+    ...opts.headers,
   };
   if (opts.cookie !== null) headers.cookie = opts.cookie ?? `mantle_code_req=${REQ}`;
   return POST(
@@ -270,7 +273,8 @@ describe('POST /api/auth/client-code, device mode', () => {
     expect(h.queued).toHaveLength(3);
   });
 
-  it('queues the id it answered, and keeps an id the app sends back', async () => {
+  it('keeps an id the app sends back, and stores the code under a DERIVED id', async () => {
+    const { deviceRequestId } = await import('@/lib/client-logins');
     const first = (await (await request({ email: 'c@example.invalid', device: true })).json()) as {
       requestId: string;
     };
@@ -278,12 +282,41 @@ describe('POST /api/auth/client-code, device mode', () => {
       await request({ email: 'c@example.invalid', device: true, requestId: first.requestId })
     ).json()) as { requestId: string };
     expect(again.requestId).toBe(first.requestId);
-    expect(h.queued.map((j) => j.requestId)).toEqual([first.requestId, first.requestId]);
+    // Queued under the derived id, never the one the app holds: a browser's
+    // id and a device's id cannot open each other's code.
+    const stored = deviceRequestId(first.requestId);
+    expect(stored).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(stored).not.toBe(first.requestId);
+    expect(h.queued.map((j) => j.requestId)).toEqual([stored, stored]);
     // Not an id: replaced, never trusted.
     const odd = (await (
       await request({ email: 'c@example.invalid', device: true, requestId: 'abc' })
     ).json()) as { requestId: string };
     expect(odd.requestId).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it('is for the phone app: a request from a page is refused before any work', async () => {
+    const pages: Array<Record<string, string>> = [
+      { origin: 'https://brain.example.invalid' },
+      { 'sec-fetch-site': 'same-origin' },
+      { 'sec-fetch-mode': 'cors' },
+    ];
+    for (const extra of pages) {
+      const res = await request(
+        { email: 'c@example.invalid', device: true },
+        '203.0.113.1',
+        undefined,
+        extra,
+      );
+      expect(res.status).toBe(403);
+      expect(await res.json()).toMatchObject({ reason: 'device-only' });
+    }
+    expect(h.queued).toHaveLength(0);
+    // The browser flow from the same page is untouched.
+    const web = await request({ email: 'c@example.invalid' }, '203.0.113.1', undefined, {
+      origin: 'https://brain.example.invalid',
+    });
+    expect(web.status).toBe(200);
   });
 
   it('never reads the browser cookie in device mode', async () => {
@@ -393,6 +426,7 @@ describe('POST /api/auth/client-code/verify, device mode', () => {
   const DEVICE_REQ = '1a1a1a1a-1a1a-4a1a-8a1a-1a1a1a1a1a1a';
 
   it('answers a 30-day device token at the login epoch, and no cookie', async () => {
+    const { deviceRequestId } = await import('@/lib/client-logins');
     h.redeemed = REDEEMED;
     await import('./verify/route');
     const before = Math.floor(Date.now() / 1000);
@@ -403,31 +437,88 @@ describe('POST /api/auth/client-code/verify, device mode', () => {
     const after = Math.ceil(Date.now() / 1000);
     expect(res.status).toBe(200);
     expect(res.headers.get('set-cookie')).toBeNull();
+    expect(res.headers.get('cache-control')).toBe('no-store');
     const body = (await res.json()) as Record<string, unknown>;
     expect(body).toMatchObject({ ok: true, role: 'client', loginId: LOGIN, expiresIn: 2592000 });
-    // Redeemed by the BODY's request id.
-    expect(h.redeemCalls).toEqual([{ requestId: DEVICE_REQ, email: GOOD.email, code: GOOD.code }]);
+    // Redeemed by the id DERIVED from the body's request id.
+    expect(h.redeemCalls).toEqual([
+      { requestId: deviceRequestId(DEVICE_REQ), email: GOOD.email, code: GOOD.code },
+    ]);
+    // The token row is the redeem's to write, in its own transaction.
+    expect(h.redeemOpts).toEqual([
+      { device: { id: body.deviceId, label: 'Test phone', ttlSeconds: 2592000 } },
+    ]);
     const { verifyMobileToken } = await import('@/lib/auth');
     const claims = verifyMobileToken(body.token as string)!;
     expect(claims).toMatchObject({ uid: LOGIN, jti: body.deviceId, ep: 2 });
     expect(claims.exp).toBeLessThanOrEqual(after + 30 * 24 * 60 * 60);
     expect(claims.exp).toBeGreaterThanOrEqual(before + 30 * 24 * 60 * 60);
-    // The row that makes it listable and revocable, under the client login.
-    expect(h.tokenRows).toHaveLength(1);
-    expect(h.tokenRows[0]).toMatchObject({ id: body.deviceId, userId: LOGIN, label: 'Test phone' });
-    expect(h.audits.map((a) => a.action)).toEqual(['auth.client_code_signin']);
+    // The sign-in is logged after the redeem, with the device.
+    expect(h.audits).toHaveLength(1);
+    expect(h.audits[0]).toMatchObject({
+      action: 'auth.client_code_signin',
+      detail: { channel: 'mobile', device: 'Test phone', deviceId: body.deviceId },
+    });
   });
 
   it('uses only the body request id: a cookie is no fallback', async () => {
+    const { deviceRequestId } = await import('@/lib/client-logins');
     h.redeemed = REDEEMED;
     // A malformed id in the body with a good cookie: a failure, no redeem.
     const res = await verify({ ...GOOD, requestId: 'not-an-id' }, {});
     expect(res.status).toBe(401);
     expect(h.redeemCalls).toHaveLength(0);
-    expect(h.tokenRows).toHaveLength(0);
-    // Both present: the body's id is the one redeemed.
+    // Both present: the body's id (derived) is the one redeemed, never the cookie's.
     await verify({ ...GOOD, requestId: DEVICE_REQ }, {});
-    expect(h.redeemCalls.map((c) => c.requestId)).toEqual([DEVICE_REQ]);
+    expect(h.redeemCalls.map((c) => c.requestId)).toEqual([deviceRequestId(DEVICE_REQ)]);
+  });
+
+  it("a browser's request id sent in the body is not the id its code is stored under", async () => {
+    const { deviceRequestId } = await import('@/lib/client-logins');
+    h.redeemed = REDEEMED;
+    // REQ is the id a browser's cookie holds (its code is stored under REQ).
+    await verify({ ...GOOD, requestId: REQ }, { cookie: null });
+    expect(h.redeemCalls[0]!.requestId).toBe(deviceRequestId(REQ));
+    expect(h.redeemCalls[0]!.requestId).not.toBe(REQ);
+    // And a device's id in a cookie is looked up as it is, so it finds
+    // nothing either (the device's code is under the derived id).
+    h.redeemCalls = [];
+    await verify(GOOD, { cookie: `mantle_code_req=${DEVICE_REQ}` });
+    expect(h.redeemCalls[0]!.requestId).toBe(DEVICE_REQ);
+    expect(h.redeemOpts.at(-1)).toEqual({});
+  });
+
+  it('is for the phone app: a verify from a page is refused before any lookup', async () => {
+    h.redeemed = REDEEMED;
+    const pages: Array<Record<string, string>> = [
+      { origin: 'https://brain.example.invalid' },
+      { 'sec-fetch-site': 'same-origin' },
+      { 'sec-fetch-dest': 'empty' },
+    ];
+    for (const headers of pages) {
+      const res = await verify({ ...GOOD, requestId: DEVICE_REQ }, { cookie: null, headers });
+      expect(res.status).toBe(403);
+      expect(await res.json()).toMatchObject({ reason: 'device-only' });
+    }
+    expect(h.redeemCalls).toHaveLength(0);
+  });
+
+  it('a device name is a label: clamped or defaulted, never a failed sign-in', async () => {
+    h.redeemed = REDEEMED;
+    const names: Array<[unknown, string]> = [
+      ['x'.repeat(200), 'x'.repeat(80)],
+      ['   ', 'Mobile device'],
+      ['', 'Mobile device'],
+      [42, 'Mobile device'],
+      [undefined, 'Mobile device'],
+      ['  Ada phone  ', 'Ada phone'],
+    ];
+    for (const [deviceName, label] of names) {
+      h.redeemOpts = [];
+      const res = await verify({ ...GOOD, requestId: DEVICE_REQ, deviceName }, { cookie: null });
+      expect(res.status, String(deviceName)).toBe(200);
+      expect(h.redeemOpts[0]!.device!.label).toBe(label);
+    }
   });
 
   it('a refused redeem mints nothing and answers the same 401 as the browser flow', async () => {
@@ -436,14 +527,28 @@ describe('POST /api/auth/client-code/verify, device mode', () => {
     const browser = await verify(GOOD, { ip: '203.0.113.9' });
     expect(device.status).toBe(401);
     expect(await device.json()).toEqual(await browser.json());
-    expect(h.tokenRows).toHaveLength(0);
   });
 
-  it('the browser flow still sets the cookie and mints no device token', async () => {
+  it('shares the failure cap with the browser flow: five failed tries, either way', async () => {
+    const ip = '198.51.100.77';
+    for (let i = 0; i < 3; i += 1) {
+      expect((await verify({ ...GOOD, requestId: DEVICE_REQ }, { cookie: null, ip })).status).toBe(
+        401,
+      );
+    }
+    for (let i = 0; i < 2; i += 1) expect((await verify(GOOD, { ip })).status).toBe(401);
+    // The sixth, in either mode, from that address for that email: held.
+    expect((await verify({ ...GOOD, requestId: DEVICE_REQ }, { cookie: null, ip })).status).toBe(
+      429,
+    );
+    expect((await verify(GOOD, { ip })).status).toBe(429);
+  });
+
+  it('the browser flow still sets the cookie and asks for no device token', async () => {
     h.redeemed = REDEEMED;
     const res = await verify(GOOD);
     expect(await res.json()).toEqual({ ok: true });
     expect(res.headers.get('set-cookie') ?? '').toMatch(/mantle_session=[^;]/);
-    expect(h.tokenRows).toHaveLength(0);
+    expect(h.redeemOpts).toEqual([{}]);
   });
 });

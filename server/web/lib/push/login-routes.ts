@@ -11,6 +11,8 @@
 import { NextResponse } from '@/server/http-compat';
 import { bearerFrom, verifyMobileToken } from '@/lib/auth';
 import { loadBearerToken } from '@/lib/auth/login-row';
+import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
+import { rateLimit } from '@/lib/rate-limit';
 import { readJsonNoNul } from '@/lib/strip-nul';
 import { connectDevice, parseConnectBody } from './connect';
 import { sanitizeLoginPushPrefs } from './preferences-sanitize';
@@ -23,9 +25,27 @@ import {
   updateLoginPushPrefs,
 } from './store';
 
-export type LoginPushCaller = { role: 'member' | 'client'; loginId: string; anchorId: string };
+export type LoginPushCaller = {
+  role: 'member' | 'client';
+  loginId: string;
+  anchorId: string;
+  email: string;
+};
 
 const invalidBody = () => NextResponse.json({ error: 'invalid_body' }, { status: 400 });
+
+/** Connect and enrol are once-per-install steps: 10 a minute per login is
+ *  far above any real use and stops a login filling the device list or
+ *  minting tickets in a loop. One bucket for both. */
+export function pushEnrolLimited(loginId: string): Response | null {
+  const gate = rateLimit(`push-enrol:${loginId}`, { max: 10, windowMs: 60_000 });
+  return gate.ok
+    ? null
+    : NextResponse.json(
+        { error: 'too_many_requests' },
+        { status: 429, headers: { 'Retry-After': String(gate.retryAfterSec) } },
+      );
+}
 
 /**
  * The device token the request carries, when it is a live token of THIS
@@ -44,11 +64,28 @@ export async function callerTokenId(req: Request, loginId: string): Promise<stri
 
 /** POST {pushBase}/connect { platform, osPushToken } -> { ticket, relayUrl }. */
 export async function loginPushConnect(req: Request, caller: LoginPushCaller): Promise<Response> {
+  const limited = pushEnrolLimited(caller.loginId);
+  if (limited) return limited;
   const body = parseConnectBody(await readJsonNoNul(req));
   if (!body) return invalidBody();
   // A member may switch the brain's push link on; a client may not.
   const res = await connectDevice(body.osPushToken, { mayRegister: caller.role === 'member' });
-  if (res.ok) return NextResponse.json({ ticket: res.ticket, relayUrl: res.relayUrl });
+  if (res.ok) {
+    // A member's Connect was the brain's first: the admins can see who
+    // registered the brain with the relay, and when.
+    if (res.registered) {
+      auditFireAndForget({
+        actorId: caller.loginId,
+        actorEmail: caller.email,
+        action: 'push.relay_registered',
+        method: 'POST',
+        path: `/api/${caller.role}/push/connect`,
+        detail: { role: caller.role, relayUrl: res.relayUrl },
+        ...requestMetaFrom(req),
+      });
+    }
+    return NextResponse.json({ ticket: res.ticket, relayUrl: res.relayUrl });
+  }
   if (res.error === 'push_not_set_up') {
     return NextResponse.json({ error: 'push_not_set_up' }, { status: 409 });
   }
@@ -58,6 +95,8 @@ export async function loginPushConnect(req: Request, caller: LoginPushCaller): P
 
 /** POST {pushBase}/subscriptions: store the device the app just enrolled. */
 export async function loginPushSubscribe(req: Request, caller: LoginPushCaller): Promise<Response> {
+  const limited = pushEnrolLimited(caller.loginId);
+  if (limited) return limited;
   const tokenId = await callerTokenId(req, caller.loginId);
   if (!tokenId) return NextResponse.json({ error: 'bearer_required' }, { status: 400 });
   const body = ((await readJsonNoNul(req)) ?? {}) as Record<string, unknown>;
@@ -76,7 +115,7 @@ export async function loginPushSubscribe(req: Request, caller: LoginPushCaller):
   const label = typeof body['label'] === 'string' ? body['label'].trim().slice(0, 80) : null;
   const relayDeviceId =
     typeof body['deviceId'] === 'string' ? body['deviceId'].slice(0, 200) : null;
-  const { id } = await insertSubscription({
+  const { id, dropped } = await insertSubscription({
     ownerId: caller.anchorId,
     loginId: caller.loginId,
     tokenId,
@@ -86,6 +125,8 @@ export async function loginPushSubscribe(req: Request, caller: LoginPushCaller):
     label: label || null,
     relayDeviceId,
   });
+  // Devices over the cap were dropped (the oldest): tell the relay.
+  await forgetRelayDevices(dropped);
   return NextResponse.json({ id });
 }
 

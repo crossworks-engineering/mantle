@@ -8,6 +8,7 @@
 // Disturb handles night muting. Pure server logic, shared by the push-notify
 // worker. Content never leaves here unsealed.
 
+import { createHmac } from 'node:crypto';
 import { and, desc, eq } from 'drizzle-orm';
 import { db, agents, assistantMessages } from '@mantle/db';
 import { markdownPreview } from '@mantle/content-core/markdown-to-text';
@@ -85,27 +86,45 @@ async function latestOutbound(
   return { agentName: agent.name, text: msg.text, assignedUserId: agent.assignedUserId ?? null };
 }
 
-/** Seal `payload` to each device and forward to the relay. Prunes dead devices. */
+/** The most devices one send walks. A login holds at most ten
+ *  (MAX_DEVICES_PER_LOGIN), so only a brain with many admins comes near it;
+ *  the bound is what keeps one event from holding the chain. */
+export const MAX_DEVICES_PER_SEND = 100;
+
+/**
+ * Seal `payload` to each device and forward to the relay. Prunes a device
+ * the relay no longer knows (410, 404) and one whose public key cannot be
+ * sealed to (it could never be sent to). `opaqueKey`: send the collapse key
+ * as a keyed hash, so the relay and the push provider see neither the kind
+ * of event nor an item id (a member's and a client's pushes).
+ */
 export async function sendToDevices(
   instance: PushInstanceSecret,
   devices: DeviceRow[],
   payload: PushPayload,
   collapseKey: string,
+  opts: { opaqueKey?: boolean } = {},
 ): Promise<{ delivered: number; dropped: number }> {
   const plaintext = JSON.stringify(payload);
+  const key = opts.opaqueKey
+    ? createHmac('sha256', instance.instanceToken).update(collapseKey).digest('hex').slice(0, 32)
+    : collapseKey;
   let delivered = 0;
   let dropped = 0;
-  for (const device of devices) {
+  for (const device of devices.slice(0, MAX_DEVICES_PER_SEND)) {
     let ciphertext: string;
     try {
       ciphertext = await sealToDevice(device.publicKey, plaintext);
     } catch {
-      continue; // a bad public key shouldn't break the others
+      // A bad public key shouldn't break the others, and never gets better.
+      dropped++;
+      await deleteSubscriptionByRoutingToken(device.routingToken);
+      continue;
     }
     const res = await relayNotify(instance.relayUrl, instance.instanceToken, {
       routingToken: device.routingToken,
       ciphertext,
-      collapseKey,
+      collapseKey: key,
     });
     if (res.ok) {
       delivered++;

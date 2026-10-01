@@ -32,6 +32,14 @@ export const mobileTokens = pgTable(
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    /** When the person last proved who they are for this device (the
+     *  password, the emailed code, the QR claim), copied through every
+     *  rotation: `created_at` restarts at each refresh. Null on rows from
+     *  before the column (it then reads as `created_at`). */
+    signedInAt: timestamp('signed_in_at', { withTimezone: true }),
+    /** The row a refresh replaced this one with. A token that was rotated
+     *  away and is presented again is reuse (a copy in other hands). */
+    rotatedTo: uuid('rotated_to'),
   },
   (t) => [index('mobile_tokens_user_idx').on(t.userId)],
 );

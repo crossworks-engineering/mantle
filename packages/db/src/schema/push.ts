@@ -69,6 +69,8 @@ export const pushSubscriptions = pgTable(
     index('push_subscriptions_owner_idx').on(t.ownerId),
     index('push_subscriptions_login_idx').on(t.loginId),
     index('push_subscriptions_token_idx').on(t.tokenId),
+    // One row per phone: the enrol is an upsert on the routing token.
+    uniqueIndex('push_subscriptions_routing_token_uq').on(t.routingToken),
   ],
 );
 

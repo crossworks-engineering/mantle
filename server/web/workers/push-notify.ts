@@ -27,14 +27,9 @@
  */
 import postgres from 'postgres';
 import { PENDING_CHANGED_CHANNEL } from '@mantle/tools';
-import {
-  LOGIN_NOTICE_CHANNEL,
-  NEEDS_YOU_CHANGED_CHANNEL,
-  parseLoginNotice,
-  type LoginNotice,
-} from '@mantle/content';
+import { LOGIN_NOTICE_CHANNEL, NEEDS_YOU_CHANGED_CHANNEL } from '@mantle/content';
 import { pushApproval, pushNeedsYou, pushOutbound, wantsOutboundPush } from '../lib/push/notify';
-import { pushChatReply, pushComment, pushReviewResult } from '../lib/push/login-notify';
+import { createLoginNoticeHandler, warnIfSchemaBehind } from '../lib/push/login-notice-handler';
 import { runWorker } from './_runner';
 import { env } from '@mantle/config';
 
@@ -64,7 +59,9 @@ async function handleConversation(payload: string): Promise<void> {
       );
     }
   } catch (err) {
-    console.error('[push-notify] send failed:', (err as Error).message);
+    if (!warnIfSchemaBehind(err)) {
+      console.error('[push-notify] send failed:', (err as Error).message);
+    }
   }
 }
 
@@ -77,7 +74,9 @@ async function handlePending(ownerId: string): Promise<void> {
       console.log(`[push-notify] approvals: delivered ${r.delivered}/${r.attempted}`);
     }
   } catch (err) {
-    console.error('[push-notify] approval send failed:', (err as Error).message);
+    if (!warnIfSchemaBehind(err)) {
+      console.error('[push-notify] approval send failed:', (err as Error).message);
+    }
   }
 }
 
@@ -95,58 +94,27 @@ function handleNeedsYou(ownerId: string): void {
         console.log(`[push-notify] needs-you: delivered ${r.delivered}/${r.attempted}`);
       }
     } catch (err) {
-      console.error('[push-notify] needs-you send failed:', (err as Error).message);
+      if (!warnIfSchemaBehind(err)) {
+        console.error('[push-notify] needs-you send failed:', (err as Error).message);
+      }
     }
   });
 }
 
-// Member and client notices (migration mobile_roles_push). One at a time, in order, so a
-// burst cannot open many relay connections at once.
-let loginChain: Promise<void> = Promise.resolve();
-const queueLogin = (
-  what: string,
-  run: () => Promise<{ skipped?: string; delivered: number; attempted: number }>,
-) => {
-  loginChain = loginChain.then(async () => {
-    try {
-      const r = await run();
-      if (!r.skipped) console.log(`[push-notify] ${what}: delivered ${r.delivered}/${r.attempted}`);
-    } catch (err) {
-      console.error(`[push-notify] ${what} send failed:`, (err as Error).message);
-    }
-  });
-};
+// Member and client notices: lib/push/login-notice-handler.ts.
+const loginNotices = createLoginNoticeHandler();
 
-// Accept and Take over change every item of a bundle in ONE transaction, so
-// their events arrive together at commit: they are gathered for a moment and
-// sent as one push per author and result.
-const REVIEW_GATHER_MS = 750;
-type ReviewNotice = Extract<LoginNotice, { kind: 'review' }>;
-const reviewPending = new Map<
-  string,
-  { loginId: string; state: ReviewNotice['state']; ids: Set<string> }
->();
-
-function handleLoginNotice(payload: string): void {
-  const n = parseLoginNotice(payload);
-  if (!n) return; // malformed: drop rather than crash the listener
-  if (n.kind === 'chat') return queueLogin('chat reply', () => pushChatReply(n));
-  if (n.kind === 'comment') return queueLogin('comment', () => pushComment(n.id));
-  const key = `${n.loginId}:${n.state}`;
-  const waiting = reviewPending.get(key);
-  if (waiting) {
-    waiting.ids.add(n.id);
-    return;
+/** Before listening: is the schema this code needs there? A skipped
+ *  migration would make every send fail; say so at boot, loudly, instead of
+ *  one quiet line per event. The worker keeps running (a later migrate and
+ *  restart fixes it; the supervisor would only loop on a crash). */
+async function checkSchema(sql: postgres.Sql): Promise<void> {
+  try {
+    await sql`select token_id from push_subscriptions limit 0`;
+    await sql`select login_id from push_login_prefs limit 0`;
+  } catch (err) {
+    if (!warnIfSchemaBehind(err)) throw err;
   }
-  reviewPending.set(key, { loginId: n.loginId, state: n.state, ids: new Set([n.id]) });
-  setTimeout(() => {
-    const batch = reviewPending.get(key);
-    reviewPending.delete(key);
-    if (!batch) return;
-    queueLogin(`review ${batch.state}`, () =>
-      pushReviewResult(batch.loginId, batch.state, [...batch.ids]),
-    );
-  }, REVIEW_GATHER_MS);
 }
 
 // This worker is a pure LISTEN loop with no business tick, so the runner's
@@ -160,6 +128,7 @@ runWorker('push-notify', async () => {
     '[push-notify] listening on conversation_changed + pending_changed + needs_you_changed + login_notice',
   );
   const sql = postgres(url, { max: 1, prepare: false });
+  await checkSchema(sql);
   const subConversation = await sql.listen('conversation_changed', (payload) => {
     void handleConversation(payload);
   });
@@ -168,7 +137,9 @@ runWorker('push-notify', async () => {
   });
 
   const subNeedsYou = await sql.listen(NEEDS_YOU_CHANGED_CHANNEL, handleNeedsYou);
-  const subLogin = await sql.listen(LOGIN_NOTICE_CHANNEL, handleLoginNotice);
+  const subLogin = await sql.listen(LOGIN_NOTICE_CHANNEL, (payload) =>
+    loginNotices.handle(payload),
+  );
 
   return async () => {
     try {

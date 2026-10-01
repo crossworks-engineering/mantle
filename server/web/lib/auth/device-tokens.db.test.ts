@@ -46,6 +46,7 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
   let app: import('hono').Hono;
   let tokens: typeof import('./tokens');
   let content: typeof import('@mantle/content');
+  let logins: typeof import('../client-logins');
   const tag = `dtok-${randomUUID().slice(0, 8)}`;
   const admin = randomUUID();
   const member = randomUUID();
@@ -95,15 +96,18 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
   /** An open emailed code for the client, written as the worker stores it.
    *  Not through createClientEmailCode: its brain-wide daily cap is shared
    *  with every test file on this database (client-codes.db.test.ts fills
-   *  it on purpose), and what this file tests is the redeem. */
-  const mailedCode = async (name: string) => {
+   *  it on purpose), and what this file tests is the redeem. A device-mode
+   *  code is stored under the id DERIVED from the app's (deviceRequestId),
+   *  a browser's under the cookie's id itself. */
+  const mailedCode = async (name: string, mode: 'device' | 'browser' = 'device') => {
     const requestId = randomUUID();
+    const stored = mode === 'device' ? logins.deviceRequestId(requestId) : requestId;
     const code = content.generateClientCode();
     const [login] = await sql<Row[]>`select id from auth.users where email = ${emailOf(name)}`;
     await sql`insert into client_signin_codes
                 (owner_id, login_id, kind, code_hash, request_id, request_ip, expires_at)
               values (${anchor}, ${login!.id as string}, 'email',
-                      ${content.hashClientCode(requestId, code)}, ${requestId},
+                      ${content.hashClientCode(stored, code)}, ${stored},
                       ${`198.51.100.${(ip += 1) % 250}`}, now() + interval '10 minutes')`;
     return { requestId, code };
   };
@@ -121,7 +125,7 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
   };
   /** Sign a client in in a browser (the cookie flow of the same code). */
   const clientBrowser = async (name: string) => {
-    const { requestId, code } = await mailedCode(name);
+    const { requestId, code } = await mailedCode(name, 'browser');
     const res = await call('/api/auth/client-code/verify', {
       method: 'POST',
       cookie: `mantle_code_req=${requestId}`,
@@ -140,6 +144,35 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
   const pushRows = (login: string) =>
     sql<Row[]>`select id, token_id, routing_token from push_subscriptions
                where login_id = ${login} order by created_at`;
+  const refresh = (bearer: string) => call('/api/auth/token/refresh', { method: 'POST', bearer });
+  /** Bring a device token close to its end, so a refresh rotates it (one
+   *  with more than 23 days left is answered with itself). */
+  const nearExpiry = (deviceId: string) =>
+    sql`update mobile_tokens set expires_at = now() + interval '5 days' where id = ${deviceId}`;
+  const liveTokens = async (login: string) =>
+    Number(
+      (
+        await sql<Row[]>`select count(*)::int as n from mobile_tokens
+                         where user_id = ${login} and revoked_at is null and expires_at > now()`
+      )[0]!.n,
+    );
+  /** A login made for one test, with a password. */
+  const addLogin = async (name: string, role: 'admin' | 'member'): Promise<string> => {
+    const id = randomUUID();
+    await sql`insert into auth.users (id, email, password_hash, role, display_name)
+              values (${id}, ${emailOf(name)}, ${bcrypt.hashSync(PASSWORD, 4)}, ${role}, ${name})`;
+    made.push(id);
+    return id;
+  };
+  const audited = async (action: string, actorId: string) => {
+    for (let i = 0; i < 100; i += 1) {
+      const rows = await sql<Row[]>`
+        select detail from audit_log where action = ${action} and actor_id = ${actorId}`;
+      if (rows.length) return rows;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    return [];
+  };
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
@@ -150,6 +183,7 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
     sql = (m.systemDb as unknown as { $client: typeof sql }).$client;
     tokens = await import('./tokens');
     content = await import('@mantle/content');
+    logins = await import('../client-logins');
     anchor = await ensureTestAnchor(sql);
     const hash = bcrypt.hashSync(PASSWORD, 4);
     await sql`insert into auth.users (id, email, password_hash, role, display_name) values
@@ -305,10 +339,61 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
       `mantle_code_req=${requestId}`,
     );
     expect(bad.status).toBe(401);
+    // The device's id in a browser cookie opens nothing either.
+    const asCookie = await verify({ email: emailOf('ben'), code }, `mantle_code_req=${requestId}`);
+    expect(asCookie.status).toBe(401);
     const ok = await verify({ email: emailOf('ben'), code, requestId });
     expect(ok.status).toBe(200);
     // One use.
     expect((await verify({ email: emailOf('ben'), code, requestId })).status).toBe(401);
+  });
+
+  it("a browser's code cannot be turned into a device token, and a page cannot use device mode", async () => {
+    const id = await addClient('web');
+    const verify = (body: Json, headers: Record<string, string> = {}) => {
+      ip += 1;
+      return app.request('/api/auth/client-code/verify', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-forwarded-for': `203.0.113.${ip % 250}`,
+          ...headers,
+        },
+        body: JSON.stringify(body),
+      });
+    };
+    // A code asked for by a browser (its id is the cookie's), sent in the
+    // BODY: the device lookup uses a derived id, so it finds no code.
+    const web = await mailedCode('web', 'browser');
+    const crossed = await verify({
+      email: emailOf('web'),
+      code: web.code,
+      requestId: web.requestId,
+    });
+    expect(crossed.status).toBe(401);
+    // Device mode from a page (an Origin or a Sec-Fetch header): refused.
+    const dev = await mailedCode('web');
+    const pages: Array<Record<string, string>> = [
+      { origin: 'http://localhost' },
+      { 'sec-fetch-site': 'same-origin' },
+    ];
+    for (const headers of pages) {
+      const res = await verify(
+        { email: emailOf('web'), code: dev.code, requestId: dev.requestId },
+        headers,
+      );
+      expect(res.status).toBe(403);
+      expect((await json(res)).reason).toBe('device-only');
+    }
+    expect(await liveTokens(id)).toBe(0);
+    // The same code from the app still works (the refusals burned nothing).
+    const ok = await verify({ email: emailOf('web'), code: dev.code, requestId: dev.requestId });
+    expect(ok.status).toBe(200);
+    // The token row was written with the redeem: one live device, signed in now.
+    const [tok] = await sql<Row[]>`
+      select signed_in_at, label from mobile_tokens where user_id = ${id} and revoked_at is null`;
+    expect(tok!.signed_in_at).not.toBeNull();
+    expect(tok!.label).toBe('Mobile device');
   });
 
   it('an admin revoking the device, ending the sessions or disabling the login ends the token', async () => {
@@ -407,11 +492,28 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
 
   // ── Refresh ─────────────────────────────────────────────────────────────
 
+  it('refresh answers a token with plenty of life left with itself: nothing rotates', async () => {
+    const id = await addClient('zed');
+    const phone = await clientPhone('zed');
+    for (let i = 0; i < 3; i += 1) {
+      const res = await refresh(phone.token);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('cache-control')).toBe('no-store');
+      const body = await json(res);
+      expect(body).toMatchObject({ token: phone.token, deviceId: phone.deviceId, role: 'client' });
+      expect(body.expiresIn as number).toBeGreaterThan(29 * DAY);
+    }
+    const rows = await sql<Row[]>`select id from mobile_tokens where user_id = ${id}`;
+    expect(rows).toHaveLength(1);
+    expect(await clientProbe({ bearer: phone.token })).toBe(400);
+  });
+
   it('refresh rotates a client token: same epoch, at most 30 days, the old one dead', async () => {
     const id = await addClient('fay');
     const phone = await clientPhone('fay');
+    await nearExpiry(phone.deviceId);
     const before = Math.floor(Date.now() / 1000);
-    const res = await call('/api/auth/token/refresh', { method: 'POST', bearer: phone.token });
+    const res = await refresh(phone.token);
     expect(res.status).toBe(200);
     const body = await json(res);
     expect(body).toMatchObject({ role: 'client', expiresIn: 30 * DAY });
@@ -421,23 +523,196 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
     expect(claims.exp).toBeLessThanOrEqual(before + 30 * DAY + 60);
     expect(await clientProbe({ bearer: body.token as string })).toBe(400);
     expect(await clientProbe({ bearer: phone.token })).toBe(401);
-    // The old token cannot be rotated twice.
-    expect(
-      (await call('/api/auth/token/refresh', { method: 'POST', bearer: phone.token })).status,
-    ).toBe(401);
+    // The sign-in time travels with the rotation; the old row says where it went.
+    const [oldRow] = await sql<Row[]>`
+      select signed_in_at, rotated_to from mobile_tokens where id = ${phone.deviceId}`;
+    const [newRow] = await sql<Row[]>`
+      select signed_in_at from mobile_tokens where id = ${body.deviceId as string}`;
+    expect(oldRow!.rotated_to).toBe(body.deviceId);
+    expect(new Date(newRow!.signed_in_at as string).getTime()).toBe(
+      new Date(oldRow!.signed_in_at as string).getTime(),
+    );
+    // The old token, presented again at once (a lost answer retried): a
+    // plain 401, and the new token still works.
+    expect((await refresh(phone.token)).status).toBe(401);
+    expect(await clientProbe({ bearer: body.token as string })).toBe(400);
+  });
+
+  it("a client's device is refreshed for at most 90 days from the code that signed it in", async () => {
+    const id = await addClient('cap');
+    const phone = await clientPhone('cap');
+    // 85 days in: it rotates, but the new token ends at the cap, not 30 days on.
+    await nearExpiry(phone.deviceId);
+    await sql`update mobile_tokens set signed_in_at = now() - interval '85 days'
+              where id = ${phone.deviceId}`;
+    const late = await json(await refresh(phone.token));
+    expect(late.expiresIn as number).toBeLessThanOrEqual(5 * DAY);
+    expect(late.expiresIn as number).toBeGreaterThan(4 * DAY);
+    const claims = tokens.verifyMobileToken(late.token as string)!;
+    expect(claims.exp).toBeLessThanOrEqual(Math.floor(Date.now() / 1000) + 5 * DAY + 60);
+    expect(await clientProbe({ bearer: late.token as string })).toBe(400);
+    // Past 90 days: no refresh, and the app is told to sign in again.
+    await sql`update mobile_tokens set signed_in_at = now() - interval '91 days'
+              where id = ${late.deviceId as string}`;
+    const over = await refresh(late.token as string);
+    expect(over.status).toBe(401);
+    expect(await json(over)).toEqual({ error: 'unauthorized', reason: 'sign-in-expired' });
+    expect((await audited('auth.token_refresh_failed', id)).length).toBeGreaterThan(0);
+    // A member has no such cap.
+    const m1 = await json(await deviceLogin(emailOf('member')));
+    await nearExpiry(m1.deviceId as string);
+    await sql`update mobile_tokens set signed_in_at = now() - interval '400 days'
+              where id = ${m1.deviceId as string}`;
+    expect((await refresh(m1.token as string)).status).toBe(200);
+  });
+
+  it('a rotated token presented again is reuse: it ends the login sessions, and is logged', async () => {
+    const id = await addClient('thf');
+    const phone = await clientPhone('thf');
+    const browser = await clientBrowser('thf');
+    await nearExpiry(phone.deviceId);
+    // A thief holding a copy refreshes first.
+    const stolen = await json(await refresh(phone.token));
+    expect(await clientProbe({ bearer: stolen.token as string })).toBe(400);
+    // Later the real phone presents the token it still holds.
+    await sql`update mobile_tokens set revoked_at = now() - interval '10 minutes'
+              where id = ${phone.deviceId}`;
+    const again = await refresh(phone.token);
+    expect(again.status).toBe(401);
+    // Everything of the login ended: the thief's token and the browser too.
+    expect(await clientProbe({ bearer: stolen.token as string })).toBe(401);
+    expect(await clientProbe({ cookie: browser })).toBe(401);
+    expect(await liveTokens(id)).toBe(0);
+    const rows = await audited('auth.token_reuse', id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.detail).toMatchObject({ reason: 'rotated-token-presented-again' });
+
+    // The same for a member (every role).
+    const mem = await addLogin('reuse-member', 'member');
+    const m1 = await json(await deviceLogin(emailOf('reuse-member')));
+    await nearExpiry(m1.deviceId as string);
+    const m2 = await json(await refresh(m1.token as string));
+    await sql`update mobile_tokens set revoked_at = now() - interval '10 minutes'
+              where id = ${m1.deviceId as string}`;
+    expect((await refresh(m1.token as string)).status).toBe(401);
+    expect(await memberProbe({ bearer: m2.token as string })).toBe(401);
+    expect((await audited('auth.token_reuse', mem)).length).toBe(1);
+    // A token revoked by a sign-out (not by rotation) is no reuse: nothing ends.
+    const m3 = await json(await deviceLogin(emailOf('reuse-member')));
+    const m4 = await json(await deviceLogin(emailOf('reuse-member')));
+    await call('/api/auth/mobile-logout', { method: 'POST', bearer: m3.token as string });
+    await sql`update mobile_tokens set revoked_at = now() - interval '10 minutes'
+              where id = ${m3.deviceId as string}`;
+    expect((await refresh(m3.token as string)).status).toBe(401);
+    expect(await memberProbe({ bearer: m4.token as string })).toBe(400);
+  });
+
+  it('a refresh racing End sessions never leaves a live token', async () => {
+    const id = await addLogin('racer', 'member');
+    for (let round = 0; round < 12; round += 1) {
+      const t = await json(await deviceLogin(emailOf('racer')));
+      await nearExpiry(t.deviceId as string);
+      const [refreshed] = await Promise.all([
+        refresh(t.token as string),
+        call(`/api/users/${id}`, { method: 'PATCH', cookie: asAdmin(), body: { signOut: true } }),
+      ]);
+      expect([200, 401]).toContain(refreshed.status);
+      // Whichever went first: no token of the login survives End sessions.
+      expect(await liveTokens(id), `round ${round}`).toBe(0);
+      if (refreshed.status === 200) {
+        const body = await json(refreshed);
+        expect(await memberProbe({ bearer: body.token as string })).toBe(401);
+      }
+    }
   });
 
   it('refresh rotates a member token and names the role', async () => {
     const phone = await json(await deviceLogin(emailOf('member')));
-    const res = await call('/api/auth/token/refresh', {
-      method: 'POST',
-      bearer: phone.token as string,
-    });
+    await nearExpiry(phone.deviceId as string);
+    const res = await refresh(phone.token as string);
     expect(res.status).toBe(200);
     const body = await json(res);
     expect(body.role).toBe('member');
     expect(await memberProbe({ bearer: body.token as string })).toBe(400);
     expect(await memberProbe({ bearer: phone.token as string })).toBe(401);
+  });
+
+  // ── Dead tokens, limits, labels ─────────────────────────────────────────
+
+  it('a token that is dead signs nobody out, and tells nobody who it is', async () => {
+    const id = await addClient('old');
+    const stale = await clientPhone('old');
+    // The epoch moved on with the row still live (a verify racing End sessions).
+    await sql`update auth.users set session_epoch = session_epoch + 1 where id = ${id}`;
+    const fresh = await clientPhone('old');
+    expect(await clientProbe({ bearer: fresh.token })).toBe(400);
+    expect(
+      (await call('/api/auth/mobile-logout', { method: 'POST', bearer: stale.token })).status,
+    ).toBe(200);
+    // Nothing ended: the stale token's row is untouched, the newer session lives.
+    const [row] = await sql<
+      Row[]
+    >`select revoked_at from mobile_tokens where id = ${stale.deviceId}`;
+    expect(row!.revoked_at).toBeNull();
+    expect(await clientProbe({ bearer: fresh.token })).toBe(400);
+
+    // An expired token (not revoked): the same, and whoami answers 401.
+    const other = await clientPhone('old');
+    await sql`update mobile_tokens set expires_at = now() - interval '1 minute'
+              where id = ${other.deviceId}`;
+    expect((await call('/api/auth/whoami', { bearer: other.token })).status).toBe(401);
+    expect(
+      (await call('/api/auth/mobile-logout', { method: 'POST', bearer: other.token })).status,
+    ).toBe(200);
+    expect(await clientProbe({ bearer: fresh.token })).toBe(400);
+  });
+
+  it('device-login refuses a disabled login like a wrong password, and clamps the device name', async () => {
+    const id = await addLogin('gone-member', 'member');
+    const named = await json(await deviceLogin(emailOf('gone-member'), PASSWORD, 'x'.repeat(200)));
+    const [tok] = await sql<
+      Row[]
+    >`select label from mobile_tokens where id = ${named.deviceId as string}`;
+    expect(tok!.label).toBe('x'.repeat(80));
+    // An empty or a non-text name is no reason to refuse a good password.
+    for (const deviceName of ['   ', 42]) {
+      const res = await call('/api/auth/device-login', {
+        method: 'POST',
+        body: { email: emailOf('gone-member'), password: PASSWORD, deviceName },
+      });
+      expect(res.status, String(deviceName)).toBe(200);
+      expect(res.headers.get('cache-control')).toBe('no-store');
+    }
+    await sql`update auth.users set disabled_at = now() where id = ${id}`;
+    const off = await deviceLogin(emailOf('gone-member'));
+    expect(off.status).toBe(401);
+    expect(await json(off)).toEqual({ error: 'Invalid email or password.' });
+  });
+
+  it('the token logins are limited per address: ten a minute, one bucket', async () => {
+    const from = (path: string) =>
+      app.request(path, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-forwarded-for': '192.0.2.77' },
+        body: JSON.stringify({ email: emailOf('member'), password: 'wrong password' }),
+      });
+    for (let i = 0; i < 10; i += 1) {
+      const path = i % 2 ? '/api/auth/device-login' : '/api/auth/mobile-login';
+      expect((await from(path)).status).toBe(401);
+    }
+    const held = await from('/api/auth/device-login');
+    expect(held.status).toBe(429);
+    expect(held.headers.get('retry-after')).toBeTruthy();
+    expect((await from('/api/auth/token')).status).toBe(429);
+    // An IPv6 caller counts by its /64, not by each address in it.
+    const v6 = (host: string) =>
+      app.request('/api/auth/device-login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-forwarded-for': `2001:db8:5:5::${host}` },
+        body: JSON.stringify({ email: emailOf('member'), password: 'wrong password' }),
+      });
+    for (let i = 1; i <= 10; i += 1) expect((await v6(i.toString(16))).status).toBe(401);
+    expect((await v6('ff')).status).toBe(429);
   });
 
   // ── Push devices of a member and a client ───────────────────────────────
@@ -520,9 +795,8 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
     const clientId = await addClient('hal');
     const phone = await clientPhone('hal');
     expect((await enrol('/api/client/push', phone.token, `${tag}-h1`)).status).toBe(200);
-    const fresh = await json(
-      await call('/api/auth/token/refresh', { method: 'POST', bearer: phone.token }),
-    );
+    await nearExpiry(phone.deviceId);
+    const fresh = await json(await refresh(phone.token));
     const [row] = await pushRows(clientId);
     expect(row!.token_id).toBe(fresh.deviceId);
     const { listLoginSubscriptions } = await import('../push/store');
@@ -546,6 +820,156 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
     });
     expect(end.status).toBe(200);
     expect(await pushRows(member)).toHaveLength(0);
+  });
+
+  it("an admin's phone enrols with its bearer; a browser session cannot enrol a device", async () => {
+    const id = await addLogin('push-admin', 'admin');
+    const cookie = `mantle_session=${tokens.buildSessionCookie(id).value}`;
+    const body = { routingToken: `${tag}-adm1`, publicKey: 'pk', platform: 'ios' };
+    const noBearer = await call('/api/push/subscriptions', { method: 'POST', cookie, body });
+    expect(noBearer.status).toBe(400);
+    expect(await json(noBearer)).toEqual({ error: 'bearer_required' });
+    const phone = await json(await deviceLogin(emailOf('push-admin')));
+    const ok = await call('/api/push/subscriptions', {
+      method: 'POST',
+      bearer: phone.token as string,
+      body,
+    });
+    expect(ok.status).toBe(200);
+    const [row] = await pushRows(id);
+    expect(row).toMatchObject({ token_id: phone.deviceId, routing_token: `${tag}-adm1` });
+    // The admin list shows admin devices, never a member's or a client's.
+    const list = await json(await call('/api/push/subscriptions', { cookie }));
+    const ids = (list.devices as Array<{ id: string }>).map((d) => d.id);
+    expect(ids).toContain(row!.id);
+    const others = await sql<Row[]>`
+      select ps.id from push_subscriptions ps join auth.users u on u.id = ps.login_id
+       where u.role in ('member', 'client')`;
+    for (const o of others) expect(ids).not.toContain(o.id);
+  });
+
+  it('devices from before tokens were recorded go with every revoke of their login', async () => {
+    const id = await addLogin('legacy-admin', 'admin');
+    const legacy = (label: string) =>
+      sql`insert into push_subscriptions (owner_id, login_id, routing_token, public_key, platform)
+          values (${anchor}, ${id}, ${`${tag}-${label}`}, 'pk', 'ios')`;
+    const store = await import('../push/store');
+    const listed = async () => (await store.listAdminSubscriptions(anchor, { loginId: id })).length;
+
+    // 1. An admin revokes one of the login's devices (a lost phone).
+    await legacy('lg1');
+    const phone = await json(await deviceLogin(emailOf('legacy-admin')));
+    expect(await listed()).toBe(1);
+    const revoke = await call(`/api/users/${id}/devices/${phone.deviceId as string}`, {
+      method: 'DELETE',
+      cookie: asAdmin(),
+    });
+    expect(revoke.status).toBe(200);
+    expect(await pushRows(id)).toHaveLength(0);
+    expect(await listed()).toBe(0);
+
+    // 2. End sessions.
+    await legacy('lg2');
+    const end = await call(`/api/users/${id}`, {
+      method: 'PATCH',
+      cookie: asAdmin(),
+      body: { signOut: true },
+    });
+    expect(end.status).toBe(200);
+    expect(await pushRows(id)).toHaveLength(0);
+
+    // 3. The login changes its own password from the web.
+    await legacy('lg3');
+    const web = await call('/api/auth/login', {
+      method: 'POST',
+      body: { email: emailOf('legacy-admin'), password: PASSWORD },
+    });
+    const cookie = /mantle_session=([^;]*)/.exec(web.headers.get('set-cookie') ?? '')![1]!;
+    const changed = await call('/api/auth/change-password', {
+      method: 'POST',
+      cookie: `mantle_session=${cookie}`,
+      body: { oldPassword: PASSWORD, newPassword: 'another long password' },
+    });
+    expect(changed.status).toBe(200);
+    expect(await pushRows(id)).toHaveLength(0);
+
+    // 4. The phone signs out.
+    await legacy('lg4');
+    const again = await json(await deviceLogin(emailOf('legacy-admin'), 'another long password'));
+    await call('/api/auth/mobile-logout', { method: 'POST', bearer: again.token as string });
+    expect(await pushRows(id)).toHaveLength(0);
+  });
+
+  it('a password change from the phone keeps that phone and its device, and ends the others', async () => {
+    const id = await addLogin('pw-member', 'member');
+    const a = await json(await deviceLogin(emailOf('pw-member'), PASSWORD, 'A'));
+    const b = await json(await deviceLogin(emailOf('pw-member'), PASSWORD, 'B'));
+    await enrol('/api/member/push', a.token as string, `${tag}-pwa`);
+    await enrol('/api/member/push', b.token as string, `${tag}-pwb`);
+    const res = await call('/api/auth/change-password', {
+      method: 'POST',
+      bearer: a.token as string,
+      body: { oldPassword: PASSWORD, newPassword: 'a second long password' },
+    });
+    expect(res.status).toBe(200);
+    expect(await memberProbe({ bearer: a.token as string })).toBe(400);
+    expect(await memberProbe({ bearer: b.token as string })).toBe(401);
+    expect((await pushRows(id)).map((r) => r.routing_token)).toEqual([`${tag}-pwa`]);
+  });
+
+  it('a role change ends the tokens and removes the devices', async () => {
+    const id = await addLogin('promoted', 'member');
+    const phone = await json(await deviceLogin(emailOf('promoted')));
+    await enrol('/api/member/push', phone.token as string, `${tag}-prm`);
+    const { listLoginSubscriptions } = await import('../push/store');
+    expect(await listLoginSubscriptions(anchor, id)).toHaveLength(1);
+    const res = await call(`/api/users/${id}`, {
+      method: 'PATCH',
+      cookie: asAdmin(),
+      body: { role: 'admin' },
+    });
+    expect(res.status).toBe(200);
+    expect(await memberProbe({ bearer: phone.token as string })).toBe(401);
+    expect(await pushRows(id)).toHaveLength(0);
+    // Now an admin: never a target of a member's push, whatever it enrols.
+    const adminPhone = await json(await deviceLogin(emailOf('promoted')));
+    expect(adminPhone.role).toBe('admin');
+    await call('/api/push/subscriptions', {
+      method: 'POST',
+      bearer: adminPhone.token as string,
+      body: { routingToken: `${tag}-prm2`, publicKey: 'pk', platform: 'ios' },
+    });
+    expect(await listLoginSubscriptions(anchor, id)).toHaveLength(0);
+  });
+
+  it('the nightly reaper deletes tokens dead for 30 days, and nothing else', async () => {
+    const id = await addLogin('reaped', 'member');
+    const live = await json(await deviceLogin(emailOf('reaped'), PASSWORD, 'live'));
+    const mk = async (label: string, set: ReturnType<typeof sql>) => {
+      const t = await json(await deviceLogin(emailOf('reaped'), PASSWORD, label));
+      await sql`update mobile_tokens set ${set} where id = ${t.deviceId as string}`;
+      return t.deviceId as string;
+    };
+    const oldRevoked = await mk('old-revoked', sql`revoked_at = now() - interval '31 days'`);
+    const newRevoked = await mk('new-revoked', sql`revoked_at = now() - interval '2 days'`);
+    const oldExpired = await mk('old-expired', sql`expires_at = now() - interval '31 days'`);
+    const newExpired = await mk('new-expired', sql`expires_at = now() - interval '2 days'`);
+    await sql`insert into push_subscriptions
+                (owner_id, login_id, token_id, routing_token, public_key, platform)
+              values (${anchor}, ${id}, ${oldRevoked}, ${`${tag}-reap`}, 'pk', 'ios')`;
+    const { reapDeviceTokens } = await import('./device-token-reap');
+    const dry = await reapDeviceTokens({ dryRun: true });
+    expect(dry.deleted).toBeGreaterThanOrEqual(2);
+    expect(await sql`select 1 from mobile_tokens where id = ${oldRevoked}`).toHaveLength(1);
+    await reapDeviceTokens();
+    const left = (await sql<Row[]>`select id from mobile_tokens where user_id = ${id}`).map(
+      (r) => r.id,
+    );
+    expect(left.sort()).toEqual([live.deviceId, newRevoked, newExpired].sort());
+    expect(left).not.toContain(oldExpired);
+    // The device the reaped token enrolled went with it.
+    expect(await pushRows(id)).toHaveLength(0);
+    expect(await memberProbe({ bearer: live.token as string })).toBe(400);
   });
 
   // ── Unread ──────────────────────────────────────────────────────────────

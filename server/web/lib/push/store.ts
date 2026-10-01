@@ -74,6 +74,8 @@ export interface DeviceRow {
   label: string | null;
 }
 
+type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
+
 const DEVICE_COLUMNS = {
   id: pushSubscriptions.id,
   routingToken: pushSubscriptions.routingToken,
@@ -114,7 +116,10 @@ export async function listAdminSubscriptions(
         eq(pushSubscriptions.ownerId, ownerId),
         eq(authUsers.role, 'admin'),
         isNull(authUsers.disabledAt),
-        or(isNull(pushSubscriptions.tokenId), tokenLive()),
+        or(
+          isNull(pushSubscriptions.tokenId),
+          and(eq(mobileTokens.userId, pushSubscriptions.loginId), tokenLive()),
+        ),
         ...(opts.loginId ? [eq(pushSubscriptions.loginId, opts.loginId)] : []),
       ),
     );
@@ -186,38 +191,65 @@ export async function listOwnDevices(loginId: string): Promise<OwnDevice[]> {
   return rows as OwnDevice[];
 }
 
+/** How many devices one login may hold. Enrolling one more drops the
+ *  oldest: a login cannot grow the list every push walks. */
+export const MAX_DEVICES_PER_LOGIN = 10;
+
 export async function insertSubscription(args: {
   ownerId: string;
   /** The login that enrolled the device (0173): its lockout unpairs it. */
   loginId: string;
-  /** The device token the caller authenticated with (mobile_roles_push), when it did so
-   *  by bearer: the device is pushed to only while that token is live. */
-  tokenId?: string | null;
+  /** The device token the caller authenticated with: the device is pushed
+   *  to only while that token is live. */
+  tokenId: string;
   routingToken: string;
   publicKey: string;
   platform: 'ios' | 'android';
   label?: string | null;
   relayDeviceId?: string | null;
-}): Promise<{ id: string }> {
+}): Promise<{ id: string; dropped: string[] }> {
   return db.transaction(async (tx) => {
     // One phone belongs to one login: a routing token enrolled again (the
     // same app signed in as someone else, or the same login once more)
-    // replaces the row it had, whoever held it.
-    await tx.delete(pushSubscriptions).where(eq(pushSubscriptions.routingToken, args.routingToken));
+    // replaces the row it had, whoever held it. One statement on the unique
+    // routing token, so two enrols at once leave one row.
     const [row] = await tx
       .insert(pushSubscriptions)
       .values({
         ownerId: args.ownerId,
         loginId: args.loginId,
-        tokenId: args.tokenId ?? null,
+        tokenId: args.tokenId,
         routingToken: args.routingToken,
         publicKey: args.publicKey,
         platform: args.platform,
         label: args.label ?? null,
         relayDeviceId: args.relayDeviceId ?? null,
       })
+      .onConflictDoUpdate({
+        target: pushSubscriptions.routingToken,
+        set: {
+          ownerId: args.ownerId,
+          loginId: args.loginId,
+          tokenId: args.tokenId,
+          publicKey: args.publicKey,
+          platform: args.platform,
+          label: args.label ?? null,
+          relayDeviceId: args.relayDeviceId ?? null,
+          createdAt: new Date(),
+          lastPushAt: null,
+        },
+      })
       .returning({ id: pushSubscriptions.id });
-    return row!;
+    // The cap: the login's oldest devices beyond it go.
+    const over = (await tx.execute(sql`
+      delete from push_subscriptions
+       where id in (
+         select id from push_subscriptions
+          where login_id = ${args.loginId}
+          order by created_at desc, id desc
+          offset ${MAX_DEVICES_PER_LOGIN})
+      returning routing_token`)) as unknown as Array<{ routing_token: string }>;
+    return { id: row!.id, dropped: over.map((r) => r.routing_token) };
   });
 }
 
@@ -251,6 +283,21 @@ export async function deleteTokenSubscriptions(tokenId: string): Promise<string[
   return rows.map((r) => r.routingToken);
 }
 
+/** Delete a login's devices from before tokens were recorded (no token on
+ *  the row): nothing says which phone each is, so every way a device or a
+ *  session of that login ends takes them (the phone connects again).
+ *  Returns their routing tokens for {@link forgetRelayDevices}. */
+export async function deleteLegacySubscriptions(
+  loginId: string,
+  exec: Executor = db,
+): Promise<string[]> {
+  const rows = await exec
+    .delete(pushSubscriptions)
+    .where(and(eq(pushSubscriptions.loginId, loginId), isNull(pushSubscriptions.tokenId)))
+    .returning({ routingToken: pushSubscriptions.routingToken });
+  return rows.map((r) => r.routingToken);
+}
+
 /** Delete all of an owner's devices (used by reset); returns their routing tokens. */
 export async function deleteAllSubscriptions(ownerId: string): Promise<string[]> {
   const rows = await db
@@ -259,8 +306,6 @@ export async function deleteAllSubscriptions(ownerId: string): Promise<string[]>
     .returning({ routingToken: pushSubscriptions.routingToken });
   return rows.map((r) => r.routingToken);
 }
-
-type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /** Delete every device one LOGIN enrolled (its lockout, or just before the
  *  login is deleted, where the FK cascade alone would not tell the relay).
@@ -295,7 +340,8 @@ export async function forgetRelayDevices(routingTokens: string[]): Promise<void>
   }
 }
 
-/** Drop a device by routing token (worker cleanup on a 410 from the relay). */
+/** Drop a device by routing token (worker cleanup: the relay says the
+ *  device is gone, or its public key cannot be sealed to). */
 export async function deleteSubscriptionByRoutingToken(routingToken: string): Promise<void> {
   await db.delete(pushSubscriptions).where(eq(pushSubscriptions.routingToken, routingToken));
 }

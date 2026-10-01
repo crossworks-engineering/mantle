@@ -26,6 +26,14 @@ export type AuditEntry = {
     | 'auth.login_failed'
     | 'auth.logout'
     | 'auth.token_refreshed'
+    // A refresh that was refused (detail.reason), and a rotated token
+    // presented again: a copy in other hands, which ended the login's
+    // sessions.
+    | 'auth.token_refresh_failed'
+    | 'auth.token_reuse'
+    // A member's Connect was the first on this brain: it registered the
+    // brain with the push relay.
+    | 'push.relay_registered'
     | 'auth.device_revoked'
     | 'auth.password_change'
     // A member invite redeemed (member logins Phase 6), or a failed try.

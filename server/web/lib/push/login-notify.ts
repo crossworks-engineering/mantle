@@ -57,7 +57,9 @@ export async function pushToLogin(
     ...(m.itemId ? { itemId: m.itemId } : {}),
     ...(m.state ? { state: m.state } : {}),
   };
-  const { delivered, dropped } = await sendToDevices(instance, devices, payload, m.collapseKey);
+  const { delivered, dropped } = await sendToDevices(instance, devices, payload, m.collapseKey, {
+    opaqueKey: true,
+  });
   return { attempted: devices.length, delivered, dropped };
 }
 
@@ -66,7 +68,7 @@ export async function pushChatReply(
   n: Extract<LoginNotice, { kind: 'chat' }>,
   now = Date.now(),
 ): Promise<PushResult> {
-  return pushToLogin(await chatReplyNotice(n, now), now);
+  return pushToLogin(await chatReplyNotice(n), now);
 }
 
 /** A review result on an author's item (or its bundle: one push). */
@@ -76,14 +78,16 @@ export async function pushReviewResult(
   nodeIds: readonly string[],
   now = Date.now(),
 ): Promise<PushResult> {
-  return pushToLogin(await reviewResultNotice(loginId, state, nodeIds, now), now);
+  return pushToLogin(await reviewResultNotice(loginId, state, nodeIds), now);
 }
 
 /** A new comment: one push per login it concerns. */
 export async function pushComment(commentId: string, now = Date.now()): Promise<PushResult> {
   const total: PushResult = { attempted: 0, delivered: 0, dropped: 0 };
-  const messages = await commentNotices(commentId, now);
+  const messages = await commentNotices(commentId);
   if (messages.length === 0) return skipped('no_message');
+  // commentNotices bounds how many logins one comment tells
+  // (MAX_LOGINS_PER_NOTICE); each holds at most ten devices.
   for (const m of messages) {
     const r = await pushToLogin(m, now);
     total.attempted += r.attempted;

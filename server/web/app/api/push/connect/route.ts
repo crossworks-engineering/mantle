@@ -7,10 +7,13 @@
 import { type NextRequest, NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { connectDevice, parseConnectBody } from '@/lib/push/connect';
+import { pushEnrolLimited } from '@/lib/push/login-routes';
 
 export async function POST(req: NextRequest) {
   const owner = await getOwnerOr401();
   if (owner instanceof NextResponse) return owner;
+  const limited = pushEnrolLimited(owner.actor.id);
+  if (limited) return limited;
 
   const body = parseConnectBody(await req.json().catch(() => null));
   if (!body) return NextResponse.json({ error: 'invalid_body' }, { status: 400 });

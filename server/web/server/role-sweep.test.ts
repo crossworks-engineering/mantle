@@ -273,15 +273,24 @@ describe.skipIf(!hasManifest)('role sweep: three roles, fail closed', () => {
   describe('public routes that read a session (audit A4)', () => {
     const table = [...PUBLIC_SESSION_ROUTES, ...RENDER_PAGES];
 
-    it.each(['client', 'unknown'] as const)('each answers a %s cookie as listed', async (role) => {
-      const cookie = cookieFor(role === 'client' ? CLIENT_ID : UNKNOWN_ID);
-      const failures: string[] = [];
-      for (const route of table) {
-        const failure = await drivePublic(app, route, role, cookie);
-        if (failure) failures.push(failure);
-      }
-      expect(failures).toEqual([]);
-    });
+    it.each(['client', 'unknown'] as const)(
+      'each answers a %s cookie, and a %s device token, as listed',
+      async (role) => {
+        const id = role === 'client' ? CLIENT_ID : UNKNOWN_ID;
+        const failures: string[] = [];
+        for (const route of table) {
+          const failure = await drivePublic(app, route, role, cookieFor(id));
+          if (failure) failures.push(failure);
+          if (route.cookieOnly) continue;
+          // The same login with its bearer (the bearer to cookie upgrade,
+          // pairing, password change and MCP consent among them): the same
+          // answer, never more.
+          const asBearer = await drivePublic(app, route, role, { authorization: bearerFor(id) });
+          if (asBearer) failures.push(asBearer);
+        }
+        expect(failures).toEqual([]);
+      },
+    );
 
     it('lists only public manifest routes, each once', () => {
       const known = new Set(
@@ -367,19 +376,27 @@ describe.skipIf(!hasManifest)('role sweep: three roles, fail closed', () => {
     300_000,
   );
 
-  it('treats a login with an UNKNOWN role as no login at all', async () => {
-    const { checked, failures, visited } = await sweep(
-      { cookie: cookieFor(UNKNOWN_ID) },
-      ({ key, status, body }) =>
-        (status === 401 && body?.error === 'unauthorized') ||
-        (status === 401 && TICKET_GATED.has(key)) ||
-        // Routes about the login itself answer a stranger their own 401.
-        (status === 401 && typeof body?.error === 'string'),
-    );
-    expect(checked).toBeGreaterThan(300);
-    expect(failures).toEqual([]);
-    expect([...TICKET_GATED].filter((k) => !visited.has(k))).toEqual([]);
-  }, 300_000);
+  it.each(['cookie', 'bearer'] as const)(
+    'treats a login with an UNKNOWN role (%s) as no login at all',
+    async (how) => {
+      const auth: Record<string, string> =
+        how === 'cookie'
+          ? { cookie: cookieFor(UNKNOWN_ID) }
+          : { authorization: bearerFor(UNKNOWN_ID) };
+      const { checked, failures, visited } = await sweep(
+        auth,
+        ({ key, status, body }) =>
+          (status === 401 && body?.error === 'unauthorized') ||
+          (status === 401 && TICKET_GATED.has(key)) ||
+          // Routes about the login itself answer a stranger their own 401.
+          (status === 401 && typeof body?.error === 'string'),
+      );
+      expect(checked).toBeGreaterThan(300);
+      expect(failures).toEqual([]);
+      expect([...TICKET_GATED].filter((k) => !visited.has(k))).toEqual([]);
+    },
+    300_000,
+  );
 
   it('never answers a client with an admin or member answer on the gates', async () => {
     // An admin read and a member read, each past its gate for its own role.

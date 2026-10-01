@@ -16,6 +16,8 @@ const h = vi.hoisted(() => ({
   instance: null as null | { instanceToken: string; relayInstanceId: string; relayUrl: string },
   registered: 0,
   inserted: [] as Array<Record<string, unknown>>,
+  overCap: [] as string[],
+  audits: [] as Array<Record<string, unknown>>,
   own: [] as Array<{ id: string; platform: string; label: string | null; tokenId: string | null }>,
   deleted: [] as Array<[string, string]>,
   prefs: { chatReplies: true, reviewResults: true, comments: true },
@@ -23,6 +25,10 @@ const h = vi.hoisted(() => ({
 
 vi.mock('@/lib/auth/login-row', () => ({
   loadBearerToken: async (jti: string) => h.tokens.get(jti) ?? null,
+}));
+vi.mock('@/lib/audit', () => ({
+  auditFireAndForget: (e: Record<string, unknown>) => h.audits.push(e),
+  requestMetaFrom: () => ({}),
 }));
 vi.mock('./relay-client', () => ({
   registerInstance: vi.fn(async () => {
@@ -38,7 +44,7 @@ vi.mock('./store', () => ({
   }),
   insertSubscription: vi.fn(async (row: Record<string, unknown>) => {
     h.inserted.push(row);
-    return { id: DEVICE_ID };
+    return { id: DEVICE_ID, dropped: h.overCap };
   }),
   listOwnDevices: vi.fn(async () => h.own),
   deleteOwnSubscription: vi.fn(async (loginId: string, id: string) => {
@@ -65,8 +71,18 @@ import {
 } from './login-routes';
 import { buildMobileToken } from '@/lib/auth/tokens';
 
-const member: LoginPushCaller = { role: 'member', loginId: MEMBER, anchorId: ANCHOR };
-const client: LoginPushCaller = { role: 'client', loginId: CLIENT, anchorId: ANCHOR };
+const member: LoginPushCaller = {
+  role: 'member',
+  loginId: MEMBER,
+  anchorId: ANCHOR,
+  email: 'member@example.invalid',
+};
+const client: LoginPushCaller = {
+  role: 'client',
+  loginId: CLIENT,
+  anchorId: ANCHOR,
+  email: 'client@example.invalid',
+};
 
 let savedSecret: string | undefined;
 let savedKey: string | undefined;
@@ -77,13 +93,22 @@ beforeAll(() => {
   process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
 });
 afterAll(() => {
+  vi.useRealTimers();
   if (savedSecret === undefined) delete process.env.SESSION_SECRET;
   else process.env.SESSION_SECRET = savedSecret;
   if (savedKey === undefined) delete process.env.MANTLE_MASTER_KEY;
 });
 
+let clock = Date.now();
 beforeEach(() => {
   vi.clearAllMocks();
+  // The enrol limiter keeps its counts in the process, per minute: each test
+  // starts two minutes after the one before (only the clock is faked).
+  clock += 2 * 60_000;
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(clock);
+  h.overCap = [];
+  h.audits = [];
   h.tokens.clear();
   h.instance = null;
   h.registered = 0;
@@ -123,7 +148,7 @@ const ENROL = {
 describe('connect', () => {
   const body = { platform: 'android', osPushToken: 'os-token' };
 
-  it('a member may be the first to register the brain with the relay', async () => {
+  it('a member may be the first to register the brain with the relay, and the admins can see it', async () => {
     const res = await loginPushConnect(req('POST', body), member);
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
@@ -131,6 +156,12 @@ describe('connect', () => {
       relayUrl: expect.any(String),
     });
     expect(h.registered).toBe(1);
+    expect(h.audits).toHaveLength(1);
+    expect(h.audits[0]).toMatchObject({ action: 'push.relay_registered', actorId: MEMBER });
+    // The next Connect registers nothing and writes no such row.
+    await loginPushConnect(req('POST', body), member);
+    expect(h.registered).toBe(1);
+    expect(h.audits).toHaveLength(1);
   });
 
   it('a client never registers it: 409 until push is set up, then a ticket', async () => {
@@ -185,6 +216,34 @@ describe('subscribe', () => {
       expect(await res.json()).toEqual({ error: 'bearer_required' });
     }
     expect(h.inserted).toHaveLength(0);
+  });
+
+  it('tells the relay about the devices the cap dropped', async () => {
+    const { forgetRelayDevices: forget } = await import('./store');
+    h.overCap = ['old-routing-1'];
+    const { header } = bearerFor(MEMBER);
+    expect((await loginPushSubscribe(req('POST', ENROL, header), member)).status).toBe(200);
+    expect(forget).toHaveBeenCalledWith(['old-routing-1']);
+  });
+
+  it('limits connect and enrol per login: ten a minute, both together', async () => {
+    const { header } = bearerFor(CLIENT);
+    h.instance = { instanceToken: 't', relayInstanceId: 'iid', relayUrl: 'https://relay.example' };
+    for (let i = 0; i < 5; i += 1) {
+      expect((await loginPushSubscribe(req('POST', ENROL, header), client)).status).toBe(200);
+      expect(
+        (await loginPushConnect(req('POST', { platform: 'ios', osPushToken: 'x' }), client)).status,
+      ).toBe(200);
+    }
+    const over = await loginPushSubscribe(req('POST', ENROL, header), client);
+    expect(over.status).toBe(429);
+    expect(over.headers.get('retry-after')).toBeTruthy();
+    expect(
+      (await loginPushConnect(req('POST', { platform: 'ios', osPushToken: 'x' }), client)).status,
+    ).toBe(429);
+    // Another login is not held by it.
+    const mine = bearerFor(MEMBER);
+    expect((await loginPushSubscribe(req('POST', ENROL, mine.header), member)).status).toBe(200);
   });
 
   it('refuses a body without a routing token, a key or a platform', async () => {

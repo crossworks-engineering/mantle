@@ -49,6 +49,7 @@ import {
   clientSigninCodeSkips,
   clientSigninCodes,
   db,
+  mobileTokens,
   resolveSingleOwnerId,
 } from '@mantle/db';
 import { env } from '@mantle/config';
@@ -533,6 +534,11 @@ export const redeemSteps = {
 export async function redeemClientEmailCode(
   input: { requestId: string; email: string; code: string },
   now = new Date(),
+  /** Device mode (the phone app): the device token's row is written in the
+   *  SAME transaction as the redeem, so a code is never burned without its
+   *  token, and no token row exists for a redeem that did not commit. The
+   *  caller signs the token for `id` with the epoch this returns. */
+  opts: { device?: { id: string; label: string; ttlSeconds: number } } = {},
 ): Promise<RedeemedClientEmailCode | null> {
   const email = input.email.trim().toLowerCase();
   const code = input.code.replace(/\s+/g, '');
@@ -554,6 +560,15 @@ export async function redeemClientEmailCode(
       return null;
     }
     await steps.finish(tx, row, login, now);
+    if (opts.device) {
+      await tx.insert(mobileTokens).values({
+        id: opts.device.id,
+        userId: login.id,
+        label: opts.device.label,
+        expiresAt: new Date(now.getTime() + opts.device.ttlSeconds * 1000),
+        signedInAt: now,
+      });
+    }
     return {
       loginId: login.id,
       email: login.email,

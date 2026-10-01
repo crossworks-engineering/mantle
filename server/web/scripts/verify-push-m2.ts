@@ -14,7 +14,8 @@
  * Leaves push_instance + one subscription seeded so the worker test can fire a
  * pg_notify next; clean up with --cleanup.
  */
-import { db, pushInstance } from '@mantle/db';
+import { randomUUID } from 'node:crypto';
+import { db, mobileTokens, pushInstance } from '@mantle/db';
 import { generateDeviceKeypair, openSealed, sealToDevice } from '../lib/push/seal';
 import { generateInstanceToken } from '../lib/push/tokens';
 import { mintTicket } from '../lib/push/ticket';
@@ -105,10 +106,19 @@ async function main(): Promise<void> {
 
   // 3) DB-driven pushOutbound() — seal the latest real outbound turn + deliver.
   await savePushInstance({ instanceToken, relayInstanceId: instanceId, relayUrl: RELAY });
+  // A device is enrolled with the token its phone signed in with.
+  const tokenId = randomUUID();
+  await db.insert(mobileTokens).values({
+    id: tokenId,
+    userId: OWNER,
+    label: 'verify-device',
+    expiresAt: new Date(Date.now() + 3_600_000),
+  });
   await insertSubscription({
     ownerId: OWNER,
     // The anchor's own id is also its login's id.
     loginId: OWNER,
+    tokenId,
     routingToken,
     publicKey: device.publicKey,
     platform: 'ios',

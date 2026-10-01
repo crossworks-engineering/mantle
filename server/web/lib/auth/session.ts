@@ -9,7 +9,7 @@
 import { cookies, headers } from '../../server/http-compat/headers';
 import { NextResponse } from '../../server/http-compat';
 import { RedirectError } from '../../server/http-compat/redirect-error';
-import { and, eq, isNotNull, isNull, ne, sql } from 'drizzle-orm';
+import { and, eq, isNull, ne, or, sql } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import { db, authUsers, mobileTokens, pushSubscriptions, countUsers } from '@mantle/db';
 import {
@@ -130,6 +130,18 @@ export type ClientCaller = {
  *  The cookie is minted with it, and a client cookie that claims to last
  *  longer is refused, whoever signed it. */
 export const CLIENT_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
+/** How long a client's DEVICE token may be kept alive by refresh, counted
+ *  from the emailed code that signed the phone in: 90 days. After it the
+ *  person asks for a new code. (A browser session does not refresh: it ends
+ *  at 30 days.) */
+export const CLIENT_DEVICE_MAX_AGE_SECONDS = 90 * 24 * 60 * 60;
+/** POST /api/auth/token/refresh rotates a token only when less than this is
+ *  left (23 of a 30-day token's days); before that it answers the same
+ *  token, so a caller that loops on refresh writes no rows. */
+export const ROTATE_WHEN_UNDER_SECONDS = 23 * 24 * 60 * 60;
+/** A rotated token presented again within this long is a retry of a refresh
+ *  whose answer was lost, not a theft: a plain 401, no sessions ended. */
+export const REUSE_GRACE_MS = 2 * 60_000;
 
 /** Whether a login row may hold a session at all: not disabled, and it has
  *  an email. Admin and member alike (member logins are always on since
@@ -831,15 +843,22 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 /**
  * End every session the login holds: bump auth.users.session_epoch, which
  * kills each cookie and `?at=` asset token signed with the old epoch on its
- * next request, and revoke the login's bearers (mobile_tokens rows: the
- * mobile app and the web client). `keepJti` spares one bearer: the device
+ * next request, revoke the login's bearers (mobile_tokens rows: the
+ * mobile app and the web client), and delete its push devices. `keepJti` spares one bearer: the device
  * that asked (a password change made from the web client stays signed in).
  * Returns the new epoch, for a caller that re-issues its own cookie. Run it
  * inside the caller's transaction when there is one.
  */
 export async function endLoginSessions(
   loginId: string,
-  opts: { keepJti?: string | null; tx?: Tx } = {},
+  opts: {
+    keepJti?: string | null;
+    tx?: Tx;
+    /** Filled with the routing tokens of the push devices this removed, for
+     *  a caller that tells the relay after its transaction commits
+     *  (forgetRelayDevices). */
+    removedRoutingTokens?: string[];
+  } = {},
 ): Promise<number | null> {
   const run = async (tx: Tx | typeof db) => {
     const [row] = await tx
@@ -858,19 +877,25 @@ export async function endLoginSessions(
           ...(opts.keepJti ? [ne(mobileTokens.id, opts.keepJti)] : []),
         ),
       );
-    // The push devices those tokens enrolled go with them (mobile_roles_push): a signed
-    // out phone gets no more teasers. The send path refuses a device whose
-    // token is dead anyway; this removes the rows. The relay keeps a device
+    // The login's push devices go with its tokens: a signed out phone gets
+    // no more teasers. The devices a revoked token enrolled, and the ones
+    // from before tokens were recorded (no token on the row: nothing says
+    // which phone each is, so all go and the phone connects again). Only
+    // the device of the token that is kept stays. A caller that passes
+    // `removedRoutingTokens` tells the relay; else the relay keeps a device
     // nobody can address (the routing token lived only here).
-    await tx
+    const removed = await tx
       .delete(pushSubscriptions)
       .where(
         and(
           eq(pushSubscriptions.loginId, loginId),
-          isNotNull(pushSubscriptions.tokenId),
-          ...(opts.keepJti ? [ne(pushSubscriptions.tokenId, opts.keepJti)] : []),
+          opts.keepJti
+            ? or(isNull(pushSubscriptions.tokenId), ne(pushSubscriptions.tokenId, opts.keepJti))
+            : undefined,
         ),
-      );
+      )
+      .returning({ routingToken: pushSubscriptions.routingToken });
+    opts.removedRoutingTokens?.push(...removed.map((r) => r.routingToken));
     return row.epoch;
   };
   return opts.tx ? run(opts.tx) : db.transaction((tx) => run(tx));

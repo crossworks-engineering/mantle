@@ -261,8 +261,30 @@ describe('pushOutbound — delivery', () => {
     vi.mocked(sealToDevice).mockRejectedValueOnce(new Error('bad key')).mockResolvedValueOnce('ct');
 
     const res = await pushOutbound('owner', 'ada');
-    expect(res).toEqual({ attempted: 2, delivered: 1, dropped: 0 });
+    // The device that cannot be sealed to is pruned: it could never be sent to.
+    expect(res).toEqual({ attempted: 2, delivered: 1, dropped: 1 });
     expect(relayNotify).toHaveBeenCalledTimes(1); // only the good device reached the relay
+    expect(deleteSubscriptionByRoutingToken).toHaveBeenCalledWith('route-bad');
+  });
+
+  it('prunes a device the relay does not know (404), as one it reports gone (410)', async () => {
+    dbState.queue = [[{ id: 'a1', name: 'Ada' }], [{ text: 'hi' }]];
+    vi.mocked(relayNotify).mockResolvedValue({ ok: false, status: 404, unregistered: true });
+    const res = await pushOutbound('owner', 'ada');
+    expect(res).toEqual({ attempted: 1, delivered: 0, dropped: 1 });
+    expect(deleteSubscriptionByRoutingToken).toHaveBeenCalledWith('route-1');
+  });
+
+  it('walks at most MAX_DEVICES_PER_SEND devices in one send', async () => {
+    const { MAX_DEVICES_PER_SEND } = await import('./notify');
+    vi.mocked(listAdminSubscriptions).mockResolvedValue(
+      Array.from({ length: MAX_DEVICES_PER_SEND + 40 }, (_, i) =>
+        device({ id: `d${i}`, routingToken: `r${i}` }),
+      ),
+    );
+    dbState.queue = [[{ id: 'a1', name: 'Ada' }], [{ text: 'hi' }]];
+    await pushOutbound('owner', 'ada');
+    expect(relayNotify).toHaveBeenCalledTimes(MAX_DEVICES_PER_SEND);
   });
 });
 

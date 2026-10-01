@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { NextResponse } from '@/server/http-compat';
 import { ClientLoginError } from '@mantle/content';
 import { hashLoginPassword } from '@/lib/auth';
@@ -129,6 +129,37 @@ export function requestIdFrom(value: unknown): string | null {
   return typeof value === 'string' && REQUEST_ID_RE.test(value.trim())
     ? value.trim().toLowerCase()
     : null;
+}
+
+/**
+ * The request id a DEVICE-mode code is stored under: derived from the id the
+ * app holds, never that id itself. So the two flows cannot be crossed: a
+ * browser's request id (its cookie) sent in a body finds no code, and a
+ * device's id put in a cookie finds none either. One way: the stored id
+ * does not give the app's id back.
+ */
+export function deviceRequestId(appRequestId: string): string {
+  const h = createHash('sha256').update(`mantle-device-code:${appRequestId}`).digest('hex');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
+}
+
+/**
+ * Device mode is for the phone app, which is not a browser: it sends no
+ * `Origin` and no `Sec-Fetch-*` header. A request that carries one came from
+ * a page, and a page must not be able to mint a bearer its script can read
+ * (the browser flow's session is an httpOnly cookie). 403, before any work.
+ */
+export function refuseBrowserDeviceMode(req: Request): Response | null {
+  const fromBrowser =
+    req.headers.has('origin') ||
+    req.headers.has('sec-fetch-site') ||
+    req.headers.has('sec-fetch-mode') ||
+    req.headers.has('sec-fetch-dest');
+  if (!fromBrowser) return null;
+  return NextResponse.json(
+    { error: 'Device sign-in is for the phone app.', reason: 'device-only' },
+    { status: 403 },
+  );
 }
 
 /** The request id this browser's request cookie holds, when it holds one. */

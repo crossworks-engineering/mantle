@@ -164,7 +164,7 @@ streams a run.
   key, so CLI, UI, and cron (three different processes) can never merge
   concurrently, a contender fails fast with a clear message. Dry-runs skip
   the lock.
-- The schedule contains ten tasks: `entities-dedupe` (auto tier),
+- The schedule contains eleven tasks: `entities-dedupe` (auto tier),
   `traces-reap` and `turns-reap` (all owners), `space-purge` (a deactivated
   login's private personal items after 30 days, see
   [member-logins.md](./member-logins.md) section 6; the worker mounts
@@ -173,6 +173,9 @@ streams a run.
   addresses blanked after 7; plain SQL, see
   [client-logins.md](./client-logins.md) section 3; by hand
   `pnpm -C server/web client-codes:reap`, dry run unless `--apply`),
+  `device-tokens-reap` (device token rows 30 days after they were revoked or
+  expired; plain SQL; by hand `pnpm -C server/web device-tokens:reap`, dry
+  run unless `--apply`),
   `app-access-log-reap` (app access log rows older than 90 days; plain SQL
   in batches, see [client-logins.md](./client-logins.md) section 10; by hand
   `pnpm -C server/web app-access-log:reap`, dry run unless `--apply`), and

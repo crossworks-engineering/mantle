@@ -93,10 +93,24 @@ describe('pushToLogin', () => {
       ts: NOW,
       kind: 'chat',
     });
-    expect(vi.mocked(relayNotify).mock.calls[0]![2]).toMatchObject({
-      routingToken: 'r-m',
-      collapseKey: 'chat',
-    });
+    // The collapse key goes out as a keyed hash: the relay and the push
+    // provider see neither the kind of event nor an item id.
+    const sent = vi.mocked(relayNotify).mock.calls[0]![2];
+    expect(sent.routingToken).toBe('r-m');
+    expect(sent.collapseKey).toMatch(/^[0-9a-f]{32}$/);
+    expect(sent.collapseKey).not.toContain('chat');
+  });
+
+  it('the same event collapses on the same key, another event on another', async () => {
+    const keyOf = async (collapseKey: string) => {
+      vi.mocked(relayNotify).mockClear();
+      await pushToLogin(message({ collapseKey }), NOW);
+      return vi.mocked(relayNotify).mock.calls[0]![2].collapseKey;
+    };
+    const a = await keyOf('comment:n1');
+    expect(await keyOf('comment:n1')).toBe(a);
+    expect(await keyOf('comment:n2')).not.toBe(a);
+    expect(a).not.toContain('n1');
   });
 
   it('carries the item and the state on a review result', async () => {
@@ -113,7 +127,7 @@ describe('pushToLogin', () => {
       NOW,
     );
     expect(sealed()).toMatchObject({ kind: 'review', itemId: 'n1', state: 'returned' });
-    expect(vi.mocked(relayNotify).mock.calls[0]![2]).toMatchObject({ collapseKey: 'review:n1' });
+    expect(vi.mocked(relayNotify).mock.calls[0]![2].collapseKey).not.toContain('n1');
   });
 
   it.each([
@@ -149,10 +163,7 @@ describe('the three events', () => {
     vi.mocked(chatReplyNotice).mockResolvedValue(message());
     const res = await pushChatReply({ kind: 'chat', loginId: 'login-m', id: 'msg-1' }, NOW);
     expect(res.delivered).toBe(1);
-    expect(chatReplyNotice).toHaveBeenCalledWith(
-      { kind: 'chat', loginId: 'login-m', id: 'msg-1' },
-      NOW,
-    );
+    expect(chatReplyNotice).toHaveBeenCalledWith({ kind: 'chat', loginId: 'login-m', id: 'msg-1' });
     // The rules said nobody is told (a stale row, an admin's thread): nothing.
     vi.mocked(chatReplyNotice).mockResolvedValue(null);
     expect(
@@ -166,7 +177,7 @@ describe('the three events', () => {
     );
     const res = await pushReviewResult('login-m', 'accepted', ['n1', 'n2', 'n3'], NOW);
     expect(res).toEqual({ attempted: 1, delivered: 1, dropped: 0 });
-    expect(reviewResultNotice).toHaveBeenCalledWith('login-m', 'accepted', ['n1', 'n2', 'n3'], NOW);
+    expect(reviewResultNotice).toHaveBeenCalledWith('login-m', 'accepted', ['n1', 'n2', 'n3']);
     expect(relayNotify).toHaveBeenCalledTimes(1);
   });
 

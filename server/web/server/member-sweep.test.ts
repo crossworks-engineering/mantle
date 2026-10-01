@@ -193,6 +193,10 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
     for (const route of [...PUBLIC_SESSION_ROUTES, ...RENDER_PAGES]) {
       const failure = await drivePublic(app, route, 'member', cookie);
       if (failure) failures.push(failure);
+      if (route.cookieOnly) continue;
+      // The same member with its device token: the same answer, never more.
+      const asBearer = await drivePublic(app, route, 'member', bearerFor(MEMBER_ID));
+      if (asBearer) failures.push(asBearer);
     }
     expect(failures).toEqual([]);
   });

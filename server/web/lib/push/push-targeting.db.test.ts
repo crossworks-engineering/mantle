@@ -336,7 +336,8 @@ describe.skipIf(!URL)('push targeting: who a push goes to', () => {
       platform: 'android',
       label: 'shared-phone',
     });
-    expect(second.id).not.toBe(first.id);
+    // The same row, now the client's (the enrol is an upsert on the token).
+    expect(second.id).toBe(first.id);
     const rows = await sql<{ login_id: string }[]>`
       select login_id from push_subscriptions where routing_token = ${phone}`;
     expect(rows.map((r) => r.login_id)).toEqual([client]);
@@ -344,6 +345,116 @@ describe.skipIf(!URL)('push targeting: who a push goes to', () => {
     // A login removes only its own device.
     expect(await store.deleteOwnSubscription(member, second.id)).toBeNull();
     expect(await store.deleteOwnSubscription(client, second.id)).toBe(phone);
+  });
+
+  it('two enrols of one routing token at once leave one row', async () => {
+    const phone = rt('raced-phone');
+    const tokens = await Promise.all([token(member), token(member), token(client)]);
+    const results = await Promise.allSettled(
+      tokens.map((tokenId, i) =>
+        store.insertSubscription({
+          ownerId: brain,
+          loginId: i === 2 ? client : member,
+          tokenId,
+          routingToken: phone,
+          publicKey: 'pk-raced',
+          platform: 'ios',
+          label: 'raced-phone',
+        }),
+      ),
+    );
+    expect(results.map((r) => r.status)).toEqual(['fulfilled', 'fulfilled', 'fulfilled']);
+    const rows = await sql`select id from push_subscriptions where routing_token = ${phone}`;
+    expect(rows).toHaveLength(1);
+    await sql`delete from push_subscriptions where routing_token = ${phone}`;
+    // The index that holds it.
+    const [idx] = await sql<{ indexdef: string }[]>`
+      select indexdef from pg_indexes where indexname = 'push_subscriptions_routing_token_uq'`;
+    expect(idx?.indexdef).toMatch(/UNIQUE/);
+  });
+
+  it('a login holds at most ten devices: one more drops the oldest', async () => {
+    const jti = await token(client);
+    const before = labels(await store.listOwnDevices(client));
+    const dropped: string[] = [];
+    for (let i = 0; i < store.MAX_DEVICES_PER_LOGIN + 2; i += 1) {
+      const r = await store.insertSubscription({
+        ownerId: brain,
+        loginId: client,
+        tokenId: jti,
+        routingToken: rt(`cap-${i}`),
+        publicKey: 'pk-cap',
+        platform: 'android',
+        label: `cap-${i}`,
+      });
+      dropped.push(...r.dropped);
+    }
+    const now = await sql<{ label: string }[]>`
+      select label from push_subscriptions where login_id = ${client} order by created_at, id`;
+    expect(now).toHaveLength(store.MAX_DEVICES_PER_LOGIN);
+    // The newest ten stay; the client's first device and the first two of
+    // this run went, and the caller was told which (for the relay).
+    expect(now.map((r) => r.label)).toEqual(
+      Array.from({ length: store.MAX_DEVICES_PER_LOGIN }, (_, i) => `cap-${i + 2}`),
+    );
+    expect(dropped.sort()).toEqual([...before.map((l) => rt(l!)), rt('cap-0'), rt('cap-1')].sort());
+    // Another login's devices are never counted or dropped.
+    expect(labels(await store.listOwnDevices(member))).toEqual(['member-live']);
+    await sql`delete from push_subscriptions where routing_token like ${`${tag}-cap-%`}`;
+    await device(brain, client, 'client-live', await token(client));
+  });
+
+  it("an admin device whose token expired, or is another login's, gets nothing", async () => {
+    const expired = await token(admin2, { expired: true });
+    await device(brain, admin2, 'admin2-expired', expired);
+    // A row that names admin2 but carries a token of admin1 (never made by
+    // the routes): the token is not this login's, so it is not live for it.
+    await device(brain, admin2, 'admin2-foreign-token', await token(admin1));
+    expect(labels(await store.listAdminSubscriptions(brain))).toEqual(
+      ['admin1-legacy', 'admin2-live'].sort(),
+    );
+    await sql`delete from push_subscriptions
+              where routing_token in (${rt('admin2-expired')}, ${rt('admin2-foreign-token')})`;
+  });
+
+  it('the worker path: a NOTIFY for a reply reaches that login device, and only it', async () => {
+    const { createLoginNoticeHandler } = await import('./login-notice-handler');
+    const content = await import('@mantle/content');
+    const ts = await import('@mantle/db/test-support');
+    const seen: string[] = [];
+    const handler = createLoginNoticeHandler({ gatherMs: 20, log: () => {} });
+    const sub = await sql.listen(content.LOGIN_NOTICE_CHANNEL, (payload: string) => {
+      seen.push(payload);
+      handler.handle(payload);
+    });
+    try {
+      // The trigger fires on the finished reply in the member's own thread.
+      const row = await content.appendTeamMessage({
+        ownerId: brain,
+        contactId: null,
+        loginId: member,
+        direction: 'outbound',
+        text: '## Done\n\nThe **order** is placed.',
+      });
+      await ts.notifyBarrier(sql, content.LOGIN_NOTICE_CHANNEL, {
+        payload: (s) => JSON.stringify({ kind: 'barrier', id: s }),
+        seen: (s) => seen.some((p) => p.includes(s)),
+      });
+      await handler.idle();
+      expect(seen.some((p) => p.includes(row.id))).toBe(true);
+      // This brain's devices: the member's got it; no admin's, not the client's.
+      const mine = h.sent.filter((t) => t.startsWith(`${tag}-`));
+      expect(mine).toEqual([rt('member-live')]);
+      const payload = h.sealed.find((x) => x.publicKey === 'pk-member-live')!.payload;
+      expect(payload).toMatchObject({
+        kind: 'chat',
+        b: 'Done The order is placed.',
+        deepLink: '/portal/chat',
+      });
+    } finally {
+      await sub.unlisten();
+      await sql`delete from team_messages where owner_id = ${brain}`;
+    }
   });
 
   it('a token that signs out takes the devices it enrolled with it', async () => {

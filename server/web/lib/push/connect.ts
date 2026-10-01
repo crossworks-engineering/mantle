@@ -27,7 +27,9 @@ export function parseConnectBody(body: unknown): ConnectBody | null {
 }
 
 export type ConnectResult =
-  | { ok: true; ticket: string; relayUrl: string }
+  /** `registered`: this call was the brain's first Connect and registered it
+   *  with the relay. */
+  | { ok: true; ticket: string; relayUrl: string; registered: boolean }
   | { ok: false; error: 'push_not_set_up' }
   | { ok: false; error: 'relay_unreachable'; reason: string };
 
@@ -43,6 +45,7 @@ export async function connectDevice(
   opts: { mayRegister: boolean },
 ): Promise<ConnectResult> {
   let instance = await getPushInstance();
+  let registered = false;
   if (!instance) {
     if (!opts.mayRegister) return { ok: false, error: 'push_not_set_up' };
     const relayUrl = env('MANTLE_PUSH_RELAY_URL') ?? DEFAULT_RELAY_URL;
@@ -51,6 +54,7 @@ export async function connectDevice(
       const { instanceId } = await registerInstance(relayUrl, instanceToken);
       await savePushInstance({ instanceToken, relayInstanceId: instanceId, relayUrl });
       instance = { instanceToken, relayInstanceId: instanceId, relayUrl };
+      registered = true;
     } catch (err) {
       return { ok: false, error: 'relay_unreachable', reason: (err as Error).message };
     }
@@ -60,5 +64,5 @@ export async function connectDevice(
     osPushToken,
     instanceToken: instance.instanceToken,
   });
-  return { ok: true, ticket, relayUrl: instance.relayUrl };
+  return { ok: true, ticket, relayUrl: instance.relayUrl, registered };
 }

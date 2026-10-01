@@ -23,6 +23,20 @@
 --    these functions write nothing and no listener starts LLM work
 --    (cost-safety).
 
+-- 5. mobile_tokens.signed_in_at and rotated_to. A refresh mints a new row, so
+--    created_at restarts at every rotation and nothing said when the person
+--    last proved who they are. signed_in_at is that moment (the password or
+--    the emailed code), copied through every rotation: a client's device
+--    token is refused a refresh 90 days after it. rotated_to names the row a
+--    refresh replaced this one with: a token that was rotated away and is
+--    presented again is a copy in someone else's hands (reuse), and ends the
+--    login's sessions. Both NULL on rows from before this release
+--    (signed_in_at then reads as created_at).
+
+-- 6. One row per routing token: a unique index, so two enrols of one phone
+--    at once leave one row (the enrol is an upsert on it). Rows that share a
+--    token today are deduplicated first; the newest stays.
+
 -- The space_items trigger takes an exclusive lock on a hot table: wait at
 -- most 30 s for it, then fail and stop the roll (0186 does the same).
 SET LOCAL lock_timeout = '30s';
@@ -40,6 +54,19 @@ END
 $$;
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "push_subscriptions_token_idx" ON "push_subscriptions" ("token_id");
+--> statement-breakpoint
+DELETE FROM "push_subscriptions" a
+ USING "push_subscriptions" b
+ WHERE a."routing_token" = b."routing_token"
+   AND (a."created_at", a."id") < (b."created_at", b."id");
+--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "push_subscriptions_routing_token_uq"
+  ON "push_subscriptions" ("routing_token");
+--> statement-breakpoint
+
+ALTER TABLE "mobile_tokens" ADD COLUMN IF NOT EXISTS "signed_in_at" timestamp with time zone;
+--> statement-breakpoint
+ALTER TABLE "mobile_tokens" ADD COLUMN IF NOT EXISTS "rotated_to" uuid;
 --> statement-breakpoint
 
 CREATE TABLE IF NOT EXISTS "push_login_prefs" (

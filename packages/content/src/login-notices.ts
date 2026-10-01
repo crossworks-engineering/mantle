@@ -25,6 +25,7 @@
  */
 import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import {
+  acceptedSnapshots,
   agents,
   asSystem,
   authUsers,
@@ -45,6 +46,15 @@ export const LOGIN_NOTICE_CHANNEL = 'login_notice';
 /** An event older than this is not news: a backfill or a bulk repair that
  *  touches old rows must never page anyone. */
 export const LOGIN_NOTICE_FRESH_MS = 30 * 60 * 1000;
+
+/** The most logins one event tells (a comment on a client-level item tells
+ *  every client): one event never holds the send chain for long. */
+export const MAX_LOGINS_PER_NOTICE = 100;
+
+/** "Is this row news?", asked of the DATABASE: the rows are stamped on its
+ *  clock, so the worker's clock never decides. */
+const freshSql = (column: unknown) =>
+  sql<boolean>`(now() - ${column} <= make_interval(secs => ${LOGIN_NOTICE_FRESH_MS / 1000}))`;
 
 export type LoginNoticeRole = 'member' | 'client';
 type ReviewNoticeState = 'accepted' | 'returned' | 'taken';
@@ -98,11 +108,6 @@ function clip(s: string, max: number): string {
   return one.length <= max ? one : `${one.slice(0, max - 1)}…`;
 }
 
-const fresh = (at: Date | string | null | undefined, now: number): boolean => {
-  const t = at ? new Date(at).getTime() : NaN;
-  return Number.isFinite(t) && now - t <= LOGIN_NOTICE_FRESH_MS;
-};
-
 /** The login, when it is an active member or client (else null: an admin,
  *  a disabled login and a role this code does not know are told nothing). */
 async function noticeLogin(loginId: string): Promise<{ id: string; role: LoginNoticeRole } | null> {
@@ -134,10 +139,10 @@ export function chatTeaser(text: string, max = 140): string {
  * finished outbound row of that login's thread, is old, or the login is not
  * an active member or client.
  */
-export function chatReplyNotice(
-  n: { loginId: string; id: string },
-  now = Date.now(),
-): Promise<LoginNoticeMessage | null> {
+export function chatReplyNotice(n: {
+  loginId: string;
+  id: string;
+}): Promise<LoginNoticeMessage | null> {
   return asSystem(async () => {
     const [msg] = await db
       .select({
@@ -147,14 +152,14 @@ export function chatReplyNotice(
         status: teamMessages.status,
         text: teamMessages.text,
         agentId: teamMessages.agentId,
-        createdAt: teamMessages.createdAt,
+        fresh: freshSql(teamMessages.createdAt),
       })
       .from(teamMessages)
       .where(eq(teamMessages.id, n.id))
       .limit(1);
     if (!msg || msg.loginId !== n.loginId) return null;
     if (msg.direction !== 'outbound' || msg.status !== 'complete') return null;
-    if (!fresh(msg.createdAt, now)) return null;
+    if (!msg.fresh) return null;
     const login = await noticeLogin(n.loginId);
     if (!login) return null;
 
@@ -204,7 +209,6 @@ export function reviewResultNotice(
   loginId: string,
   state: ReviewNoticeState,
   nodeIds: readonly string[],
-  now = Date.now(),
 ): Promise<LoginNoticeMessage | null> {
   return asSystem(async () => {
     if (!nodeIds.length) return null;
@@ -216,12 +220,17 @@ export function reviewResultNotice(
         type: nodes.type,
         title: nodes.title,
         takenTitle: spaceItems.takenTitle,
+        // The title as accepted (the snapshot taken at Accept): after Accept
+        // the item is the brain's, and an admin's later rename is not the
+        // author's to read.
+        acceptedTitle: acceptedSnapshots.title,
         takenRoot: spaceItems.takenRoot,
         returnedNote: spaceItems.returnedNote,
-        updatedAt: spaceItems.updatedAt,
+        fresh: freshSql(spaceItems.updatedAt),
       })
       .from(spaceItems)
       .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))
+      .leftJoin(acceptedSnapshots, eq(acceptedSnapshots.nodeId, spaceItems.nodeId))
       .where(
         and(
           inArray(spaceItems.nodeId, [...nodeIds]),
@@ -229,7 +238,7 @@ export function reviewResultNotice(
           eq(spaceItems.reviewState, state),
         ),
       );
-    const live = rows.filter((r) => fresh(r.updatedAt, now));
+    const live = rows.filter((r) => r.fresh);
     if (!live.length) return null;
     const main = [...live].sort(
       (a, b) =>
@@ -244,8 +253,13 @@ export function reviewResultNotice(
       .limit(1);
     if (!anchor) return null;
 
-    // While an admin holds it, the author knows it by the title it had.
-    const name = `"${clip((state === 'taken' ? main.takenTitle : null) || main.title || 'Untitled', 80)}"`;
+    // The author's own title for it: while an admin holds it, the title it
+    // had when taken; once accepted, the title it was accepted with; never
+    // an admin's working title or later rename.
+    const known =
+      state === 'taken' ? main.takenTitle : state === 'accepted' ? main.acceptedTitle : null;
+    const name = `"${clip(known || main.title || 'Untitled', 80)}"`;
+
     // The note is the reviewer's own text: plain words on a lock screen.
     const note = state === 'returned' ? markdownPreview(main.returnedNote ?? '', 100) : '';
     const words =
@@ -280,7 +294,7 @@ export function reviewResultNotice(
  * level. Every other comment (an admin's talk on a brain item, a thread on
  * an item an admin holds) tells nobody.
  */
-export function commentNotices(commentId: string, now = Date.now()): Promise<LoginNoticeMessage[]> {
+export function commentNotices(commentId: string): Promise<LoginNoticeMessage[]> {
   return asSystem(async () => {
     const [c] = await db
       .select({
@@ -290,7 +304,7 @@ export function commentNotices(commentId: string, now = Date.now()): Promise<Log
         authorName: nodeComments.authorName,
         body: nodeComments.body,
         scope: nodeComments.threadScope,
-        createdAt: nodeComments.createdAt,
+        fresh: freshSql(nodeComments.createdAt),
         title: nodes.title,
         space: nodes.ownerId,
         spaceKind: spaces.kind,
@@ -303,7 +317,7 @@ export function commentNotices(commentId: string, now = Date.now()): Promise<Log
       .leftJoin(spaceItems, eq(spaceItems.nodeId, nodes.id))
       .where(eq(nodeComments.id, commentId))
       .limit(1);
-    if (!c || !fresh(c.createdAt, now)) return [];
+    if (!c || !c.fresh) return [];
     // The comment as plain words; one with no words (a picture) still says
     // who commented on what. Names and titles are names, not markdown: they
     // are shown as they are.
@@ -357,9 +371,15 @@ export function commentNotices(commentId: string, now = Date.now()): Promise<Log
           isNull(authUsers.disabledAt),
           ...(c.writer ? [ne(authUsers.id, c.writer)] : []),
         ),
-      );
+      )
+      .orderBy(authUsers.id)
+      .limit(MAX_LOGINS_PER_NOTICE);
+    // On a thread every client reads, the lock screen says who commented on
+    // what and not what they wrote: one client's words do not appear on
+    // every other client's phone. The app shows the comment.
     return clients.map((login) => ({
       ...words,
+      body: `${clip(c.authorName, 40)} commented on "${clip(c.title || 'Untitled', 60)}"`,
       loginId: login.id,
       role: 'client' as const,
       deepLink: `/portal/shared/${c.nodeId}`,

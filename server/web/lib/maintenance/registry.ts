@@ -155,6 +155,21 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       'Plain SQL, no model, idempotent; a no-op once clean. The rule lives in @mantle/content client-codes.ts (reapClientSigninCodes), shared by the cron and the script.',
   },
   {
+    slug: 'device-tokens-reap',
+    title: 'Reap dead device tokens',
+    description:
+      'Deletes device token rows (the phone app and the web client) 30 days after they were revoked or expired. The row is what says a token is revoked, and a rotated row is what detects an old token presented again; neither is needed past the lifetime of the token. The push devices a deleted row enrolled go with it.',
+    kind: 'recurring',
+    status: 'live',
+    cost: 'sql',
+    schedulable: true,
+    script: 'scripts/device-tokens-reap.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    notes:
+      'Plain SQL, no model, idempotent; a no-op once clean. The rule lives in server/web/lib/auth/device-token-reap.ts (reapDeviceTokens), shared by the cron and the script.',
+  },
+  {
     slug: 'share-drift',
     title: 'Repair folder-share drift',
     description:
