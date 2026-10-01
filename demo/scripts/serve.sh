@@ -136,7 +136,7 @@ docker exec -i mantle_demo_pg psql -U postgres -d postgres -q < "$DEMO/deploy/re
 echo "  demo_reader ready"
 # The migrate above re-granted write verbs to the level roles; the file just
 # applied took them back. Prove it, before anything is served.
-docker exec -i mantle_demo_pg psql -U postgres -d postgres -At -v ON_ERROR_STOP=1 < "$DEMO/deploy/readonly-check.sql" \
+docker exec -i mantle_demo_pg psql -U postgres -d postgres -q -At -v ON_ERROR_STOP=1 < "$DEMO/deploy/readonly-check.sql" \
   | sed 's/^/  /' || { echo "✗ an app role can still write: not serving" >&2; exit 1; }
 
 echo "→ mint the visitor session"

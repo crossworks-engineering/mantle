@@ -48,5 +48,5 @@ psql_file "$BUNDLE/function-privileges.sql"
 echo "  $(grep -c '^REVOKE ' "$BUNDLE/function-privileges.sql") restricted function(s)"
 
 echo "→ read-only check"
-docker exec -i "$PG" psql -U postgres -d postgres -At -v ON_ERROR_STOP=1 < "$BUNDLE/readonly-check.sql" \
+docker exec -i "$PG" psql -U postgres -d postgres -q -At -v ON_ERROR_STOP=1 < "$BUNDLE/readonly-check.sql" \
   || fail "an app role can still write: NOT starting the app"
