@@ -558,10 +558,7 @@ export async function setManifest(
     const app = await lockAppRow(tx, ownerId, id);
     if (!app) return null;
     const next: AppManifest = { ...app.manifest, ...patch };
-    await tx
-      .update(apps)
-      .set({ manifest: next, updatedAt: new Date() })
-      .where(eq(apps.nodeId, id));
+    await tx.update(apps).set({ manifest: next, updatedAt: new Date() }).where(eq(apps.nodeId, id));
     return next;
   });
 }
