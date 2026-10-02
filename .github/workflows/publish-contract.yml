@@ -67,7 +67,7 @@ jobs:
       # default branch the dispatch happens to run on: re-running a partial
       # publish must verify and pack the tag's tree, not whatever main looks
       # like today.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.tag || github.ref }}
 
@@ -135,7 +135,7 @@ jobs:
     needs: verify
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.tag || github.ref }}
 

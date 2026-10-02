@@ -57,7 +57,7 @@ jobs:
     env:
       CI_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # pnpm first, so setup-node's pnpm cache has a binary to key on. Version
       # matches package.json `packageManager` (pnpm@11.1.2).
