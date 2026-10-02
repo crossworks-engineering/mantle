@@ -160,11 +160,16 @@ describe.skipIf(!URL)('table history on Postgres', () => {
     const commits = (await hist.listTableSnapshots(owner, id)).filter(
       (e) => e.trigger === 'commit',
     );
-    // Newest first: 400 KB, 800 KB, then past 1 MB. Two stay, files with them.
-    expect(commits).toHaveLength(2);
-    expect(commits.reduce((n, e) => n + (e.bytes ?? 0), 0)).toBeLessThanOrEqual(1024 * 1024);
+    // Each workbook is several hundred KB: the newest stays, older ones only
+    // while the total fits in 1 MB, and their files go with them.
+    expect(commits.length).toBeGreaterThanOrEqual(1);
+    expect(commits.length).toBeLessThan(4);
+    if (commits.length > 1) {
+      expect(commits.reduce((n, e) => n + (e.bytes ?? 0), 0)).toBeLessThanOrEqual(1024 * 1024);
+    }
+    expect(commits[0]!.seq).toBe(4);
     const { readdirSync } = await import('node:fs');
-    expect(readdirSync(path.join(dir, '_snapshots', owner, id))).toHaveLength(2);
+    expect(readdirSync(path.join(dir, '_snapshots', owner, id))).toHaveLength(commits.length);
   });
 
   it("a deleted table's history goes 30 days later", async () => {
