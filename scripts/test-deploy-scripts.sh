@@ -24,6 +24,8 @@
 #   pull:    install.sh retries a failed image pull with backoff, and never
 #            runs `up` on a partial pull; the client step checks the server
 #            network exists before joining it
+#   setup:   install.sh writes the first-run setup code once, keeps it on a
+#            re-run, and --setup-code prints it again (or says "claimed")
 #   sanity:  Caddy's own HTTP->HTTPS redirect is not reported as "not Mantle"
 
 #   dump:    db-dump.sh strict mode exits non-zero when any of the four parts
@@ -384,6 +386,58 @@ mkdir -p "$T/net"
 printf 'services:\n  client-web:\n    networks: [x]\nnetworks:\n  x:\n    external: true\n    name: "brain_default"\nvolumes:\n  v:\n    name: not_this\n' > "$T/net/docker-compose.client.yml"
 check "follows a renamed network, quotes stripped" test "$(net_run "$T/net" brain_default)" = "ready brain_default"
 check "falls back to mantle_default without a client compose" test "$(net_run "$T/nowhere" mantle_default)" = "ready mantle_default"
+
+# ═════════════════════════════════════════════════════════════════════════════
+echo "install.sh: the setup code is generated once, kept, and printed again"
+# While auth.users is empty, signup makes its caller the owner; the setup code
+# is what stops the first stranger to reach a fresh box from claiming it. A
+# whole --skip-up run, with docker, curl and the port probes stubbed on PATH.
+T="$WORK/setup"; mkdir -p "$T/bin" "$T/stack/scripts"
+cp "$ROOT/docker-compose.yml" "$T/stack/"
+cp "$ROOT/scripts/install.sh" "$T/stack/scripts/install.sh"
+cat > "$T/bin/docker" <<'STUB'
+#!/bin/sh
+case "$1 $2" in
+  "compose version") echo v2.30.0 ;;
+esac
+exit 0
+STUB
+# curl: only the bootstrap-state probe matters here; $CURL_BOOT is its body,
+# unset means the brain is not reachable.
+cat > "$T/bin/curl" <<'STUB'
+#!/bin/sh
+[ -n "${CURL_BOOT:-}" ] || exit 7
+printf '%s' "$CURL_BOOT"
+STUB
+printf '#!/bin/sh\nexit 0\n' > "$T/bin/ss"     # nothing listening
+printf '#!/bin/sh\nexit 1\n' > "$T/bin/lsof"
+chmod +x "$T/bin/"*
+install_run() { # <args...>: run the configurator in the fake stack
+  PATH="$T/bin:$PATH" NO_COLOR=1 bash "$T/stack/scripts/install.sh" "$@" < /dev/null > "$T/out" 2>&1
+}
+code_line() { grep -E '^MANTLE_SETUP_CODE=' "$T/stack/.env" | cut -d= -f2-; }
+
+if install_run --localhost -y --skip-up --data-dir "$T/stack/data"; then ok "a --skip-up install runs to completion"
+else fail "a --skip-up install exited non-zero (see below)"; sed 's/^/    /' "$T/out"; fi
+first="$(code_line)"
+check "the setup code is written to .env" test -n "$first"
+check "4 groups of 5 from the no-look-alikes alphabet" sh -c "echo '$first' | grep -Eqx '[2-9A-HJKMNP-Z]{5}(-[2-9A-HJKMNP-Z]{5}){3}'"
+check "--skip-up says how to print it" grep -q 'install.sh --setup-code' "$T/out"
+install_run --localhost -y --skip-up --data-dir "$T/stack/data" || true
+check "a re-run keeps the same code" test "$(code_line)" = "$first"
+check "and writes it once" test "$(grep -c '^MANTLE_SETUP_CODE=' "$T/stack/.env")" = 1
+check "a re-run says it was kept" grep -q 'MANTLE_SETUP_CODE kept' "$T/out"
+check "two installs do not share a code" sh -c "test \"\$(env PATH='$T/bin':\"\$PATH\" bash -c \"\$(awk 'index(\$0, \"gen_setup_code() {\") == 1 { p = 1 } p { print } p && /^}\$/ { exit }' '$ROOT/scripts/install.sh'); gen_setup_code\")\" != '$first'"
+
+CURL_BOOT='{"firstRun":true,"setupCodeRequired":true}' install_run --setup-code || true
+check "--setup-code prints the code while the brain is unclaimed" grep -q "Setup code: $first" "$T/out"
+CURL_BOOT='{"firstRun":false,"setupCodeRequired":false}' install_run --setup-code || true
+check "--setup-code says 'already claimed' once an account exists" sh -c "grep -q 'already claimed' '$T/out' && ! grep -q '$first' '$T/out'"
+install_run --setup-code || true
+check "--setup-code still prints it when the brain cannot be asked" sh -c "grep -q 'Setup code: $first' '$T/out' && grep -q 'Could not ask the brain' '$T/out'"
+rm -f "$T/stack/.env"
+if install_run --setup-code; then fail "--setup-code without a .env should fail"; else ok "--setup-code without a .env fails and says why"; fi
+check "  (it names the fix)" grep -q 'Run scripts/install.sh to create one' "$T/out"
 
 # ═════════════════════════════════════════════════════════════════════════════
 echo "sanity.sh: our own HTTP->HTTPS redirect is not 'not Mantle'"

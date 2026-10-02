@@ -184,7 +184,7 @@ confirm() { # $1 = prompt, $2 = default y|n → 0 when yes
 DOMAIN="${MANTLE_DOMAIN:-}"; SITE_ADDRESS="${MANTLE_SITE_ADDRESS:-}"
 ACCESS_MODE=""   # domain | localhost | lan — resolved interactively when unset
 DATA_DIR="${MANTLE_DATA_DIR:-./data}"; STACK_DIR="${MANTLE_STACK_DIR:-$STACK_DIR_DEFAULT}"
-IMAGE_TAG="${MANTLE_IMAGE_TAG:-latest}"; ASSUME_YES=0; SKIP_UP=0; SANITY_ONLY=0
+IMAGE_TAG="${MANTLE_IMAGE_TAG:-latest}"; ASSUME_YES=0; SKIP_UP=0; SANITY_ONLY=0; SETUP_CODE_ONLY=0
 # Local embedder (bundled Ollama): 1=enable, 0=disable, empty=keep .env as-is.
 LOCAL_EMBEDDER="${MANTLE_LOCAL_EMBEDDER:-}"
 # CLI sandboxes (sandboxd): 1=enable, 0=disable, empty=default (ON for a FRESH
@@ -259,8 +259,10 @@ ${B}Options${RS}
   --client               Run the owner web UI (the default; a separate small
                          container on its own version stream)
   --no-client            Headless box: API + MCP + share pages only. No owner
-                         UI means no signup and no owner screens — pair a
-                         headless brain from another brain or over MCP.
+                         UI on this box. Create the owner and finish setup
+                         from the Jackdaw desktop app (connect it to this
+                         brain's address and enter the setup code), or on
+                         this box with scripts/onboard.sh.
                          Persists as MANTLE_CLIENT_ENABLED in .env; the
                          updater and the sanity check honour it.
   --client-image-tag <t> Pin the owner UI image tag (MANTLE_CLIENT_IMAGE_TAG,
@@ -269,6 +271,8 @@ ${B}Options${RS}
   -y, --yes              Non-interactive: accept defaults, never prompt
   --skip-up              Write .env only; don't bring the stack up
   --sanity, --check      Only run the post-install sanity check, then exit
+  --setup-code           Print the setup code again (signup asks for it until
+                         the first account exists), then exit
   -h, --help             This help
 
 ${B}Examples${RS}
@@ -307,6 +311,7 @@ while [[ $# -gt 0 ]]; do case "$1" in
   -y|--yes|--non-interactive) ASSUME_YES=1; shift ;;
   --skip-up) SKIP_UP=1; shift ;;
   --sanity|--check) SANITY_ONLY=1; shift ;;
+  --setup-code) SETUP_CODE_ONLY=1; shift ;;
   -h|--help) usage; exit 0 ;;
   *) die "unknown argument: $1  (try --help)" ;;
 esac; done
@@ -333,6 +338,38 @@ if [[ $ASSUME_YES -eq 0 && $TTY_IN -eq 1 ]]; then INTERACTIVE=1; fi
 
 # ── sanity-only shortcut ─────────────────────────────────────────────────────
 if [[ $SANITY_ONLY -eq 1 ]]; then MANTLE_ENV_FILE="$ENV_FILE" MANTLE_STACK_DIR="$STACK_DIR" MANTLE_COMPOSE_PROJECT="$COMPOSE_PROJECT" exec bash "$(dirname "$0")/sanity.sh"; fi
+
+# ── setup code ───────────────────────────────────────────────────────────────
+# While the brain has no account, signup asks for MANTLE_SETUP_CODE, so only
+# whoever can read this box's .env can claim it. Without it a fresh box on a
+# public address belongs to the first caller to reach it.
+setup_code_from_env() { [[ -f "$ENV_FILE" ]] && grep -E '^MANTLE_SETUP_CODE=' "$ENV_FILE" | head -1 | cut -d= -f2- || true; }
+# Is the brain still unclaimed? Asks the running web container over its
+# loopback debug port (published on 127.0.0.1 only). Prints yes, no, or
+# unknown (not running, or an image from before the field existed).
+brain_unclaimed() {
+  local port body
+  port="$( { [[ -f "$ENV_FILE" ]] && grep -E '^MANTLE_WEB_DEBUG_PORT=' "$ENV_FILE" | head -1 | cut -d= -f2-; } || true)"
+  body="$(curl -fsS --max-time 5 "http://127.0.0.1:${port:-3000}/api/auth/bootstrap-state" 2>/dev/null || true)"
+  if [[ "$body" == *'"firstRun":true'* ]]; then printf yes
+  elif [[ "$body" == *'"firstRun":false'* ]]; then printf no
+  else printf unknown; fi
+}
+print_setup_code() { # $1 = code
+  inf "Setup code: ${B}$1${RS}"
+  inf "${DIM}Signup asks for it until the first account exists. Print it again with: scripts/install.sh --setup-code${RS}"
+}
+if [[ $SETUP_CODE_ONLY -eq 1 ]]; then
+  code="$(setup_code_from_env)"
+  [[ -n "$code" ]] || die "No setup code in $ENV_FILE yet. Run scripts/install.sh to create one."
+  case "$(brain_unclaimed)" in
+    no)  ok "This brain is already claimed: an account exists, so signup asks for no code. Sign in instead." ;;
+    yes) print_setup_code "$code" ;;
+    *)   print_setup_code "$code"
+         inf "${DIM}(Could not ask the brain whether an account exists yet. Is the stack up?)${RS}" ;;
+  esac
+  exit 0
+fi
 
 banner
 
@@ -719,12 +756,27 @@ upsert() { # KEY VALUE — replace-in-place or append; preserves other lines
 }
 gen_key()    { openssl rand -base64 32 | tr '+/' '-_' | tr -d '='; }  # 43-char base64url
 gen_hex()    { openssl rand -hex "${1:-32}"; }
+# Setup code: 4 groups of 5 from an alphabet with no look-alikes (no 0/O, 1/I/L),
+# 31 symbols, so about 99 bits. Rejection sampling keeps every symbol equally
+# likely: bytes 248-255 would favour the first 8 symbols, so they are skipped.
+gen_setup_code() {
+  local alpha='23456789ABCDEFGHJKMNPQRSTUVWXYZ' out='' b
+  while [[ ${#out} -lt 20 ]]; do
+    for b in $(openssl rand 64 | od -An -tu1); do
+      if (( b >= 248 )); then continue; fi
+      out+="${alpha:b%31:1}"
+      if [[ ${#out} -ge 20 ]]; then break; fi
+    done
+  done
+  printf '%s-%s-%s-%s' "${out:0:5}" "${out:5:5}" "${out:10:5}" "${out:15:5}"
+}
 ensure() {  # KEY GENERATOR-CMD — keep existing (never regenerate), else generate
   local k="$1" g="$2" cur; cur="$(getval "$k")"
   if [[ -n "$cur" ]]; then upsert "$k" "$cur"; inf "$k kept (already set)"; else upsert "$k" "$($g)"; ok "$k generated"; fi
 }
 ensure MANTLE_MASTER_KEY gen_key          # NEVER rotated on re-run (would orphan secrets)
 ensure SESSION_SECRET    "gen_hex 48"
+ensure MANTLE_SETUP_CODE gen_setup_code   # first-run signup gate; never rotated (harmless once claimed)
 # POSTGRES_PASSWORD: generate ONLY for a genuinely fresh database. An older
 # install may have no POSTGRES_PASSWORD line yet an initialized data dir
 # (password baked in at initdb) — generating one there would break DB auth.
@@ -967,7 +1019,12 @@ fi
 chmod 600 "$ENV_FILE" 2>/dev/null || true
 ok "Wrote ${B}$ENV_FILE${RS} ${DIM}(chmod 600)${RS}"
 
-if [[ $SKIP_UP -eq 1 ]]; then hd "Done (--skip-up)"; inf "Config written; stack not started. Bring it up with: ${B}docker compose up -d --wait${RS}"; exit 0; fi
+if [[ $SKIP_UP -eq 1 ]]; then
+  hd "Done (--skip-up)"
+  inf "Config written; stack not started. Bring it up with: ${B}docker compose up -d --wait${RS}"
+  inf "Signup will ask for the setup code. Print it with: ${B}scripts/install.sh --setup-code${RS}"
+  exit 0
+fi
 
 # 80 and 443 were both settled with the access mode above, where the advice can
 # be specific and the port can still be changed.
@@ -1133,7 +1190,17 @@ if [[ $SANITY_RC -ne 0 ]]; then
 fi
 
 hd "Installation complete"
-inf "Open ${B}$OPEN_URL${RS} and create your account — onboarding starts there."
+UNCLAIMED="$(brain_unclaimed)"
+if [[ "$(getval MANTLE_CLIENT_ENABLED)" == 0 ]]; then
+  inf "Headless brain: no owner web UI on this box. Create your account and finish setup in one of two ways:"
+  inf "  the Jackdaw desktop app: connect it to ${B}$OPEN_URL${RS}, then sign up with the setup code"
+  inf "  on this box: ${B}scripts/onboard.sh${RS}"
+else
+  inf "Open ${B}$OPEN_URL${RS} and create your account — onboarding starts there."
+fi
+if [[ "$UNCLAIMED" != no && -n "$(getval MANTLE_SETUP_CODE)" ]]; then
+  print_setup_code "$(getval MANTLE_SETUP_CODE)"
+fi
 if [[ "$ACCESS_MODE" == domain ]]; then
   inf "${DIM}The certificate is issued on the first request; the first load can take a few seconds.${RS}"
 elif [[ "$ACCESS_MODE" == localhost ]]; then

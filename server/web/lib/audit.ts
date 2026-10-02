@@ -36,6 +36,9 @@ export type AuditEntry = {
     | 'push.relay_registered'
     | 'auth.device_revoked'
     | 'auth.password_change'
+    // A first-run signup refused for a wrong or missing setup code
+    // (detail.reason). The signup that lands is a user.create.
+    | 'auth.signup_failed'
     // A member invite redeemed (member logins Phase 6), or a failed try.
     | 'auth.invite_accepted'
     | 'auth.invite_failed'

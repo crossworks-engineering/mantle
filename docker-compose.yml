@@ -717,6 +717,10 @@ services:
       # Its own bind mount (below), deliberately OUTSIDE /data/files so the
       # files watcher never sees a member's private file.
       MANTLE_SPACES_ROOT: /data/spaces
+      # First-run setup code (scripts/install.sh writes it): signup asks for it
+      # while no account exists. Web only, NOT the shared anchor: no other
+      # service needs it. Empty = no code asked for (a box installed before it).
+      MANTLE_SETUP_CODE: ${MANTLE_SETUP_CODE:-}
     volumes:
       - ${MANTLE_DATA_DIR:-./data}/files:/data/files
       - ${MANTLE_DATA_DIR:-./data}/backups:/data/backups
