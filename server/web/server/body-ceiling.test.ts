@@ -20,6 +20,7 @@ import {
   BodyTooLargeError,
   JSON_BODY_CEILING_BYTES,
   OWNER_DOCUMENT_CEILING_BYTES,
+  SHARE_BODY_CEILING_BYTES,
   bodyCeilingFor,
   readBodyCapped,
 } from '../lib/body-limit';
@@ -87,6 +88,10 @@ describe('the body ceiling: which route gets which', () => {
       expect(bodyCeilingFor(p), p).toBeNull();
     }
     expect(bodyCeilingFor('/api/auth/client-code')).toBe(AUTH_BODY_CEILING_BYTES);
+    // The public share routes (apps audit S2): anyone with a link posts there.
+    for (const p of ['/s/tok/db-broker', '/s/tok/code', '/s/tok/evaluate']) {
+      expect(bodyCeilingFor(p), p).toBe(SHARE_BODY_CEILING_BYTES);
+    }
     for (const p of ['/api/pages/p1/draft', '/api/mcp', '/api/admin/space/i1/save']) {
       expect(bodyCeilingFor(p), p).toBe(OWNER_DOCUMENT_CEILING_BYTES);
     }
@@ -175,6 +180,8 @@ describe.skipIf(!hasManifest)('the body ceiling: through the app', () => {
     }
     // A public sign-in route has its own small ceiling.
     expect((await declared('/api/auth/client-code', 100 * 1024)).status).toBe(413);
+    // So has a public share route (apps audit S2), before its handler runs.
+    expect((await declared('/s/tok/db-broker', 2 * MB)).status).toBe(413);
     // Under the ceiling the request goes on (to auth: no session, 401).
     expect((await declared('/api/client/space', 7 * MB)).status).toBe(401);
     // An upload is not held to it; an owner document surface has more room.

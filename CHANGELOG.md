@@ -28,6 +28,19 @@ restore work depends on (docs/app-authoring-guide.md, "Per-app SQLite").
 - **The owner's db-broker** answers errors like the other brokers (429 when
   busy, the server's own errors not shown) and runs one statement at a time
   per admin login.
+- **A tool that needs confirmation asks the owner first.** An owner's app
+  could run a tool flagged "needs confirmation" with no confirmation. Now
+  the owner tool broker answers 409 `reason: 'confirm'` with a five-minute
+  ticket for that exact call (tool, input, app, login); the host page shows
+  the owner what will run and sends the call again with the ticket on Yes.
+  The app never sees the ticket. `AppSandbox` (share-ui) takes
+  `confirmTool`; without it the browser's own confirm dialog asks.
+  `app_tools_set` warns when it declares such a tool. Member, client and
+  share runs refuse these tools as before.
+- **The public share routes cap the request body** (1 MB, `/s/**`): the
+  gate refuses a declared length over it, and the app db-broker and the
+  formula `evaluate` route stop a chunked body while reading. The share
+  db-broker used to buffer any body an anonymous caller sent.
 
 ## Unreleased: app identity, an app knows who runs it
 

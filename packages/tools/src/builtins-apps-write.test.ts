@@ -285,6 +285,16 @@ describe('app_tools_set', () => {
     expect(outputOf(res)).toEqual({ id: APP_ID, tool_slugs: ['geocode', 'weather'] });
   });
 
+  it('warns that a confirm-gated tool asks the owner on every call (apps audit S1)', async () => {
+    vi.mocked(resolveTool).mockImplementation(async (_owner, slug) =>
+      slug === 'node_share' ? ({ slug, requiresConfirm: true } as never) : ({ slug } as never),
+    );
+    const res = await toolsSet.handler({ id: APP_ID, tool_slugs: ['geocode', 'node_share'] }, ctx);
+    const { warnings } = outputOf(res) as { warnings?: string[] };
+    expect(warnings).toHaveLength(1);
+    expect(warnings?.[0]).toMatch(/'node_share' needs the owner's confirmation/);
+  });
+
   it('accepts an empty list, which clears the allowlist', async () => {
     await toolsSet.handler({ id: APP_ID, tool_slugs: [] }, ctx);
     expect(resolveTool).not.toHaveBeenCalled();

@@ -181,7 +181,9 @@ export function gate(): MiddlewareHandler {
     // the route's ceiling is refused before any handler buffers it, public
     // routes included. Uploads stream under their own caps (null here); a
     // chunked body is capped while it is read (readJsonNoNul).
-    if (isApi && req.method !== 'GET' && req.method !== 'HEAD') {
+    // The public share routes too (apps audit S2): their db-broker read any
+    // body an anonymous caller sent.
+    if ((isApi || path.startsWith('/s/')) && req.method !== 'GET' && req.method !== 'HEAD') {
       const ceiling = bodyCeilingFor(path);
       if (ceiling !== null && declaredOver(req.headers, ceiling)) {
         return withCors(bodyTooLargeResponse(ceiling));

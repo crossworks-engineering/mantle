@@ -29,6 +29,11 @@ export const OWNER_DOCUMENT_CEILING_BYTES = 128 * MB;
  *  fields each, so a much lower ceiling. */
 export const AUTH_BODY_CEILING_BYTES = 64 * 1024;
 
+/** The public share routes (/s/<token>/**): anyone with a link can post
+ *  there, so a small ceiling. The app db-broker's largest honest body is a
+ *  20 KB statement with up to 999 parameters (apps audit S2). */
+export const SHARE_BODY_CEILING_BYTES = 1 * MB;
+
 /** Routes that stream an upload (multipart or raw) under their own cap. */
 const UPLOAD_PATHS: readonly RegExp[] = [
   /^\/api\/files\/files$/,
@@ -59,6 +64,7 @@ const OWNER_DOCUMENT_PREFIXES: readonly string[] = [
 export function bodyCeilingFor(path: string): number | null {
   if (UPLOAD_PATHS.some((re) => re.test(path))) return null;
   if (path === '/api/auth' || path.startsWith('/api/auth/')) return AUTH_BODY_CEILING_BYTES;
+  if (path.startsWith('/s/')) return SHARE_BODY_CEILING_BYTES;
   if (OWNER_DOCUMENT_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`))) {
     return OWNER_DOCUMENT_CEILING_BYTES;
   }

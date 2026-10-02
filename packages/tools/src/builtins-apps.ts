@@ -446,9 +446,11 @@ const app_tools_set: BuiltinToolDef = {
     const slugs = strArr(input.tool_slugs);
     // Validate each slug resolves to an owned, enabled tool.
     const missing: string[] = [];
+    const confirmGated: string[] = [];
     for (const slug of slugs) {
       const tool = await resolveTool(ctx.ownerId, slug);
       if (!tool) missing.push(slug);
+      else if (tool.requiresConfirm) confirmGated.push(slug);
     }
     if (missing.length) {
       return {
@@ -459,6 +461,12 @@ const app_tools_set: BuiltinToolDef = {
     const manifest = await setManifest(ctx.ownerId, id, { toolSlugs: slugs });
     if (!manifest) return { ok: false, error: `app ${id} not found` };
     const warnings = await appToolWarnings(ctx.ownerId, id);
+    // Apps audit S1: such a tool never runs on the app's word alone.
+    for (const slug of confirmGated) {
+      warnings.push(
+        `The tool '${slug}' needs the owner's confirmation: every call from this app pauses and asks the admin running it (member, client and share runs refuse it). Call it only from a deliberate user action, never on load or in a loop.`,
+      );
+    }
     ctx.step?.setOutput({ id, tool_slugs: slugs, warnings: warnings.length });
     return {
       ok: true,

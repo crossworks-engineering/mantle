@@ -4,6 +4,7 @@ import { evaluateSpec, parseFormulaSpec, type FormulaValue } from '@mantle/conte
 import { and, eq } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
+import { readJsonCapped } from '@/lib/body-limit';
 
 /**
  * Evaluate one target of a SHARED formula — the public counterpart of
@@ -28,8 +29,8 @@ import { rateLimit, clientIp } from '@/lib/rate-limit';
 const MAX_INPUT_KEYS = 200;
 const MAX_VALUE_LENGTH = 1000;
 /** The legit ceiling is ~MAX_INPUT_KEYS × MAX_VALUE_LENGTH plus JSON overhead
- *  (~250KB). Anything past double that is not a calculation — refuse it before
- *  `req.json()` buffers it, since there is no server-wide body limit. */
+ *  (~250KB). Anything past double that is not a calculation: a declared
+ *  length is refused up front, and a chunked body stops at it while read. */
 const MAX_BODY_BYTES = 512_000;
 
 function notFound() {
@@ -69,7 +70,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     );
   }
 
-  const raw = (await req.json().catch(() => null)) as {
+  const raw = (await readJsonCapped(req, MAX_BODY_BYTES)) as {
     target?: unknown;
     inputs?: unknown;
   } | null;

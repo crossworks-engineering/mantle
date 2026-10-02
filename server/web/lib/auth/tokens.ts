@@ -25,10 +25,10 @@ import { RENDER_COOKIE_NAME, SESSION_COOKIE_NAME } from '../auth-constants';
 import { env } from '@mantle/config';
 
 /** The `k` claim: mobile bearer, asset token, app frame, render cookie,
- *  contact visitor (contact shares). 'c' (the retired team-chat credential)
- *  and 't' (the retired team-visitor cookie) are reserved: no verifier takes
- *  them. */
-type TokenKind = 'm' | 'a' | 'f' | 'r' | 'v';
+ *  contact visitor (contact shares), app tool confirmation. 'c' (the retired
+ *  team-chat credential) and 't' (the retired team-visitor cookie) are
+ *  reserved: no verifier takes them. */
+type TokenKind = 'm' | 'a' | 'f' | 'r' | 'v' | 'q';
 
 /**
  * Claims whose signature, kind and expiry have already been checked. Every
@@ -513,6 +513,49 @@ export function verifyAppFrameTicket(value: string): AppFrameTicket | null {
     return null;
   }
   return out;
+}
+
+// ── App tool confirmations ───────────────────────────────────────────────────
+//
+// An owner's app may call a tool that needs the owner's confirmation (apps
+// audit S1, Jason 2026-10-02: ask in the app, do not refuse). The owner tool
+// broker answers such a call with this ticket instead of running it; the
+// HOST page (never the sandboxed app, which only sees the final answer)
+// shows the owner what will run and, on Yes, sends the same call again with
+// the ticket. It names the owner, the admin login, the app, the tool and a
+// hash of the exact input, and lives five minutes: it confirms one call, as
+// the owner saw it, and nothing else.
+
+const APP_TOOL_CONFIRM_TTL_SECONDS = 300;
+
+export type AppToolConfirmClaims = {
+  ownerId: string;
+  actorId: string;
+  appId: string;
+  slug: string;
+  /** sha256 hex of the call's input as JSON. */
+  inputHash: string;
+};
+
+export function buildAppToolConfirmToken(c: AppToolConfirmClaims): string {
+  return signClaims(
+    { k: 'q', uid: c.ownerId, act: c.actorId, app: c.appId, slug: c.slug, ih: c.inputHash },
+    APP_TOOL_CONFIRM_TTL_SECONDS,
+  ).value;
+}
+
+/** Whether `value` confirms exactly this call: signature, kind, expiry, and
+ *  every claim equal to `expected`. */
+export function verifyAppToolConfirmToken(value: string, expected: AppToolConfirmClaims): boolean {
+  const claims = verifySigned(value, 'q');
+  if (!claims) return false;
+  return (
+    claims.uid === expected.ownerId &&
+    claims.act === expected.actorId &&
+    claims.app === expected.appId &&
+    claims.slug === expected.slug &&
+    claims.ih === expected.inputHash
+  );
 }
 
 /**

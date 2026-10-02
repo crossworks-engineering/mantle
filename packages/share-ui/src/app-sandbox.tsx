@@ -32,6 +32,31 @@ import {
 
 type Status = 'loading' | 'ready' | 'nobuild' | 'error';
 
+/** A tool call the owner must confirm before it runs (apps audit S1): what
+ *  the owner tool broker named in its 409 `reason: 'confirm'` answer, and the
+ *  input the app sent. */
+export type AppToolConfirmRequest = {
+  appId: string;
+  slug: string;
+  name: string;
+  description: string;
+  input: Record<string, unknown>;
+};
+
+/** Ask with the browser's own dialog when the host passes no `confirmTool`.
+ *  Plain, but the app keeps working on a host that predates the prop. */
+function defaultConfirmTool(req: AppToolConfirmRequest): Promise<boolean> {
+  if (typeof window === 'undefined' || typeof window.confirm !== 'function') {
+    return Promise.resolve(false);
+  }
+  const shown = JSON.stringify(req.input, null, 2);
+  return Promise.resolve(
+    window.confirm(
+      `This app wants to run "${req.name}" (${req.slug}).\n\n${req.description}\n\nWith:\n${shown.length > 800 ? `${shown.slice(0, 800)}…` : shown}\n\nRun it?`,
+    ),
+  );
+}
+
 export function AppSandbox({
   appId,
   shareToken,
@@ -47,6 +72,7 @@ export function AppSandbox({
   fetcher,
   onLoadFailure,
   loader,
+  confirmTool,
 }: {
   appId: string;
   /** When set, render in share mode: the bundle + tool/db brokers are
@@ -101,6 +127,12 @@ export function AppSandbox({
    *  plain "Loading…" line. Kept a slot so this package needs no animation
    *  dependency. */
   loader?: ReactNode;
+  /** Ask the owner whether a confirm-gated tool may run (apps audit S1);
+   *  resolve true to run it. Only the owner surface ever gets asked (member,
+   *  client and share brokers refuse such tools). Absent ⇒ the browser's
+   *  own confirm dialog. The app never sees the ticket: this host sends the
+   *  second call itself. */
+  confirmTool?: (req: AppToolConfirmRequest) => Promise<boolean>;
 }) {
   // Public share mode swaps the session-authed API base for the token-authed
   // public one; the route suffixes (bundle / tool-broker / db-broker) match.
@@ -143,8 +175,8 @@ export function AppSandbox({
   // re-ran the bundle-fetch effect below and reloaded the iframe (white flash).
   // `fetcher` rides along for the same reason (the split hub passes an inline
   // bearer-attaching wrapper); the default stays a plain window-bound fetch.
-  const cbRef = useRef({ onError, onSelect, onInspectChange, hub, onLoadFailure });
-  cbRef.current = { onError, onSelect, onInspectChange, hub, onLoadFailure };
+  const cbRef = useRef({ onError, onSelect, onInspectChange, hub, onLoadFailure, confirmTool });
+  cbRef.current = { onError, onSelect, onInspectChange, hub, onLoadFailure, confirmTool };
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
   const doFetch = useCallback(
@@ -206,12 +238,36 @@ export function AppSandbox({
         }
         if (req.kind === 'tool.call') {
           gateRef.current?.requestStart();
-          const r = await doFetch(`${apiBase}/tool-broker`, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ slug: req.slug, input: req.input }),
-          });
-          const data = await r.json();
+          // The body is built here from the slug and input only: nothing the
+          // app sends can carry a confirmation ticket.
+          const send = (confirmToken?: string) =>
+            doFetch(`${apiBase}/tool-broker`, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({
+                slug: req.slug,
+                input: req.input,
+                ...(confirmToken ? { confirmToken } : {}),
+              }),
+            });
+          let r = await send();
+          let data = await r.json();
+          if (r.status === 409 && data?.reason === 'confirm' && data.confirm?.token) {
+            const ask = cbRef.current.confirmTool ?? defaultConfirmTool;
+            const yes = await ask({
+              appId,
+              slug: String(data.confirm.slug ?? req.slug),
+              name: String(data.confirm.name ?? req.slug),
+              description: String(data.confirm.description ?? ''),
+              input: (req.input ?? {}) as Record<string, unknown>,
+            });
+            if (!yes) {
+              reply({ ok: false, error: `You declined to run the tool “${req.slug}”.` });
+              return;
+            }
+            r = await send(String(data.confirm.token));
+            data = await r.json();
+          }
           // 403 == the slug isn't in the app's declared tools. That's a wiring
           // bug, not a transient failure — surface it plainly to the builder
           // even if the app's own code swallows the rejection.
@@ -240,7 +296,7 @@ export function AppSandbox({
         if (req.kind !== 'hub.get') gateRef.current?.requestEnd();
       }
     },
-    [apiBase, doFetch],
+    [apiBase, appId, doFetch],
   );
 
   // Listen for messages from THIS iframe only.
