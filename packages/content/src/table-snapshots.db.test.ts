@@ -172,6 +172,25 @@ describe.skipIf(!URL)('table history on Postgres', () => {
     expect(readdirSync(path.join(dir, '_snapshots', owner, id))).toHaveLength(commits.length);
   });
 
+  it('a backup hard-links the history and copies the workbook off the event loop (audit items 5, 14)', async () => {
+    const id = await tableWith('backup', 'one');
+    await commitWith(id, 'two');
+    const [entry] = await hist.listTableSnapshots(owner, id);
+    const kept = (await hist.tableSnapshotFile(owner, id, entry!.id))!.path;
+    const { snapshotAllTableDatabases } = await import('./table-storage');
+    const dest = path.join(dir, '..', `${path.basename(dir)}-backup`);
+    try {
+      const report = await snapshotAllTableDatabases(dest);
+      expect(report.failed.filter((f) => f.nodeId === '_snapshots')).toEqual([]);
+      expect(report.snapshotted.some((r) => r.nodeId === id && !r.draft)).toBe(true);
+      const { statSync } = await import('node:fs');
+      const linked = path.join(dest, path.relative(dir, kept));
+      expect(statSync(linked).ino).toBe(statSync(kept).ino);
+    } finally {
+      await rm(dest, { recursive: true, force: true });
+    }
+  });
+
   it("a deleted table's history goes 30 days later", async () => {
     const id = await tableWith('gone', 'x');
     await commitWith(id, 'y');

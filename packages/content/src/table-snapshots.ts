@@ -14,9 +14,10 @@
  * registry lock; the owner reviews it and commits as usual, and that commit
  * keeps the version it replaces, so a restore is undone the same way.
  * Files live under TABLE_DB_DIR/_snapshots/<owner>/<table>/<id>.sqlite and
- * ride the table backup. A commit's copy is a hard link to the file the
- * commit is about to replace (no copy, no wait); that file is never written
- * again once it is replaced.
+ * ride the table backup (hard-linked, history-files.ts). A commit's copy is a
+ * hard link to the file the commit is about to replace (no copy, no wait);
+ * that file is never written again once it is replaced. The other copies run
+ * off the event loop (a SQL child, or an async copy).
  *
  * Not kept: app-bound tables (the app is the master, its data has its own
  * history) and commits made in a personal space or under a limited viewer
@@ -25,21 +26,15 @@
  * Server-only (node:fs): import via '@mantle/content/table-snapshots'.
  */
 import { randomUUID } from 'node:crypto';
-import {
-  copyFileSync,
-  existsSync,
-  linkSync,
-  mkdirSync,
-  renameSync,
-  rmSync,
-  statSync,
-} from 'node:fs';
+import { existsSync, renameSync, rmSync, statSync } from 'node:fs';
+import { copyFile, mkdir } from 'node:fs/promises';
 import * as path from 'node:path';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { db, nodeSnapshots, nodes, tables } from '@mantle/db';
 import { currentSpaceScope, currentViewerLevel } from '@mantle/db/viewer';
-import { draftPathFor, resolveStoragePath, snapshotFile, tableDbRoot } from '@mantle/tabledb';
+import { draftPathFor, resolveStoragePath, tableDbRoot } from '@mantle/tabledb';
 import type { TableSnapshot } from '@mantle/client-types';
+import { copySqliteFile, linkOrCopy } from './history-files';
 import { envMbBytes, insertNodeSnapshot, pruneHistoryRows } from './node-snapshot-rows';
 import { removeTableFile, withTableRegistryLock } from './table-storage';
 import { assertTableWritable } from './tables/shared';
@@ -118,14 +113,10 @@ export async function keepCommitSnapshot(
   const id = randomUUID();
   const rel = snapshotRelPath(opts.ownerId, opts.tableId, id);
   const abs = snapshotAbsPath(rel);
-  mkdirSync(path.dirname(abs), { recursive: true });
-  try {
-    linkSync(opts.publishedAbs, abs);
-  } catch {
-    // Another filesystem, or links refused: a copy (the file is at rest
-    // under the lock, its WAL checkpointed by the commit that wrote it).
-    copyFileSync(opts.publishedAbs, abs);
-  }
+  await mkdir(path.dirname(abs), { recursive: true });
+  // Another filesystem, or links refused: an async copy (the file is at rest
+  // under the lock, its WAL checkpointed by the commit that wrote it).
+  await linkOrCopy(opts.publishedAbs, abs);
   try {
     await insertNodeSnapshot(tx, {
       id,
@@ -323,7 +314,8 @@ export async function createTableSnapshot(
     const id = randomUUID();
     const rel = snapshotRelPath(ownerId, tableId, id);
     const abs = snapshotAbsPath(rel);
-    snapshotFile(publishedAbs, abs);
+    // In a SQL child, off the event loop (apps audit 2026-10-02, item 14).
+    await copySqliteFile(publishedAbs, abs);
     try {
       const row = await insertNodeSnapshot(tx, {
         id,
@@ -385,7 +377,7 @@ export async function restoreTableSnapshot(
     // would replay a stale WAL into the new file), then one rename.
     const tmp = `${draftAbs}.restore-${randomUUID().slice(0, 8)}`;
     try {
-      copyFileSync(source, tmp);
+      await copyFile(source, tmp);
       removeTableFile(draftAbs);
       renameSync(tmp, draftAbs);
     } finally {

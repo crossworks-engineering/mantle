@@ -12,7 +12,7 @@
  * NOT re-exported from the package index — import via '@mantle/content/app-broker'
  * so it stays out of client/edge bundles.
  */
-import { copyFile, cp, mkdir, open, rename, rm, stat, utimes, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, open, rename, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +21,7 @@ import { db, nodes, appDatabases } from '@mantle/db';
 import { env } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 import { stripLiterals } from '@mantle/tabledb';
+import { linkHistoryTree } from './history-files';
 import {
   APP_DB_RESTORE_MARKER_TTL_MS,
   APP_SCHEMA_TIMEOUT_MS,
@@ -798,11 +799,12 @@ export async function snapshotAllAppDatabases(destDir: string): Promise<AppDbSna
     .from(appDatabases);
   const report: AppDbSnapshotReport = { snapshotted: [], missing: [], failed: [] };
   // The apps' own snapshots (History tab) ride along: immutable files, so a
-  // plain copy is consistent. A restored box keeps every app's history.
+  // hard link is as good as a copy and costs no disk (apps audit 2026-10-02,
+  // item 5). A restored box keeps every app's history.
   const snapshots = path.join(appDbRoot(), '_snapshots');
   if (await fileExists(snapshots)) {
     try {
-      await cp(snapshots, path.join(destDir, '_snapshots'), { recursive: true });
+      await linkHistoryTree(snapshots, path.join(destDir, '_snapshots'));
     } catch (err) {
       report.failed.push({ ownerId: '-', appNodeId: '_snapshots', error: errorMessage(err) });
     }
