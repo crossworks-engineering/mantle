@@ -141,8 +141,8 @@ describe.skipIf(!URL)('reopen restores the status before done', () => {
     // A plain status move out of done is explicit too (a board drag).
     const u = await create('Dragged one');
     await patch(u.id, { status: 'blocked' });
-    await patch(u.id, { status: 'done', rank: 'a0' });
-    expect((await patch(u.id, { status: 'open', rank: 'a1' })).status).toBe('open');
+    await patch(u.id, { status: 'done', rank: 'm' });
+    expect((await patch(u.id, { status: 'open', rank: 'n' })).status).toBe('open');
   });
 
   it('reopen leaves a task that is not done alone; done twice keeps the first', async () => {
