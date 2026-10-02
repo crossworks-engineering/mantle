@@ -69,7 +69,15 @@ vi.mock('../lib/onboarding-steps', () => {
   };
 });
 
-import { parseArgs, parseSecrets, resumeIndex, run, type Options } from './onboard';
+import {
+  feedKeys,
+  parseArgs,
+  parseSecrets,
+  resumeIndex,
+  run,
+  type KeyState,
+  type Options,
+} from './onboard';
 
 /** Every question takes its default; secrets come from the given map. */
 function io(secrets: { password?: string; key?: string } = {}) {
@@ -139,8 +147,68 @@ describe('parseSecrets', () => {
       openrouterKey: 'sk-or-1',
     });
   });
-  it('refuses an unknown key rather than dropping a secret', () => {
-    expect(() => parseSecrets('passwrd=x')).toThrow(/Unknown secret "passwrd"/);
+  it('refuses an unknown name rather than dropping a secret', () => {
+    expect(() => parseSecrets('passwrd=x')).toThrow(/line 1: unknown name "passwrd"/);
+  });
+
+  // A bare key piped without its name must never reach a terminal or CI log.
+  const throwsWithout = (input: string, secret: string) => {
+    let message = '';
+    try {
+      parseSecrets(input);
+    } catch (err) {
+      message = (err as Error).message;
+    }
+    expect(message).not.toBe('');
+    expect(message).not.toContain(secret);
+    return message;
+  };
+
+  it('a line with no "=" names only its line number, never its content', () => {
+    const key = 'sk-or-v1-0123456789abcdef0123456789abcdef';
+    expect(throwsWithout(`password=fine\n${key}\n`, key)).toMatch(/stdin line 2 has no "="/);
+  });
+
+  it('a value that only looks like a name (a password with "=") is not quoted either', () => {
+    const pw = 'Tr0ub4dor&3=correct horse';
+    const msg = throwsWithout(`${pw}\n`, 'Tr0ub4dor');
+    expect(msg).toMatch(/line 1: unknown name \(/);
+  });
+});
+
+describe('feedKeys (the raw-mode prompt)', () => {
+  const fresh = (): KeyState => ({ buf: '', esc: 0 });
+
+  it('keeps type-ahead after Enter for the next prompt', () => {
+    const r = feedKeys(fresh(), 'first\rsecond\r', false);
+    expect(r).toMatchObject({ kind: 'line', value: 'first', rest: 'second\r' });
+    const s = fresh();
+    expect(feedKeys(s, 'a\r\nb', true)).toMatchObject({ kind: 'line', value: 'a', rest: 'b' });
+  });
+
+  it('drops escape sequences whole (arrows, function keys, Alt+key)', () => {
+    const s = fresh();
+    expect(feedKeys(s, 'ab\u001b[Dc\u001bOPd\u001b[1;5Ce\u001bxf', false)).toMatchObject({
+      kind: 'more',
+    });
+    expect(s.buf).toBe('abcdef');
+    // A sequence split across chunks is still dropped.
+    const t = fresh();
+    feedKeys(t, 'x\u001b', false);
+    feedKeys(t, '[A', false);
+    expect(feedKeys(t, 'y\r', false)).toMatchObject({ kind: 'line', value: 'xy' });
+  });
+
+  it('hidden input echoes nothing; visible input echoes and erases', () => {
+    expect(feedKeys(fresh(), 'secret', true)).toEqual({ kind: 'more', echo: '' });
+    expect(feedKeys(fresh(), 'ab\u007f', false)).toEqual({ kind: 'more', echo: 'ab\b \b' });
+  });
+
+  it('Ctrl-C interrupts; Ctrl-D on an empty line is end of input, otherwise ignored', () => {
+    expect(feedKeys(fresh(), 'ab\u0003', false)).toEqual({ kind: 'interrupt' });
+    expect(feedKeys(fresh(), '\u0004', false)).toEqual({ kind: 'eof' });
+    const s = fresh();
+    expect(feedKeys(s, 'ab\u0004\r', false)).toMatchObject({ kind: 'line', value: 'ab' });
   });
 });
 
@@ -215,6 +283,18 @@ describe('run', () => {
     expect(h.calls.some((c) => c.startsWith('profile') || c.startsWith('createFirstOwner'))).toBe(
       false,
     );
+  });
+
+  it('warns when --email differs from the existing owner, and carries on', async () => {
+    h.users = 1;
+    h.state = { ...h.state, onboarded: true };
+    const lines: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((m: string) => lines.push(m));
+    expect(await run(yes({ email: 'someone-else@example.invalid' }), io())).toBe(0);
+    expect(lines.some((l) => /--email someone-else@example.invalid is ignored/.test(l))).toBe(true);
+    lines.length = 0;
+    await run(yes({ email: 'OWNER@example.invalid' }), io());
+    expect(lines.some((l) => /is ignored/.test(l))).toBe(false);
   });
 
   it('an onboarded brain is left alone', async () => {

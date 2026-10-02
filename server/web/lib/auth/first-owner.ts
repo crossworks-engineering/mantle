@@ -10,7 +10,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
-import { db } from '@mantle/db';
+import { db, isUniqueViolation } from '@mantle/db';
 import { hashLoginPassword } from './session';
 
 export type FirstOwnerResult =
@@ -36,8 +36,13 @@ export async function createFirstOwner(
       RETURNING id
     `);
     if (inserted.length === 0) return { ok: false, reason: 'exists' };
-  } catch {
-    return { ok: false, reason: 'exists' };
+  } catch (err) {
+    // Only a unique violation means "someone else got there first" (two
+    // first-run signups with the same email). Anything else (the database is
+    // down, a schema problem) is a real failure and must not read as "an
+    // account already exists": it propagates, and the route answers 500.
+    if (isUniqueViolation(err)) return { ok: false, reason: 'exists' };
+    throw err;
   }
   return { ok: true, id, email };
 }

@@ -22,7 +22,6 @@
 # infra/updater/updater.sh SCRIPT_NAMES and server/web/lib/updates.ts.
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
-cd "$(dirname "$0")/.."
 
 die() { printf '\n✗ %s\n' "$*" >&2; exit 1; }
 usage() {
@@ -43,13 +42,25 @@ Everything else passes through to the wizard: --yes, --email, --name,
 EOF
 }
 
+# A secret file given as a relative path means relative to where the operator
+# ran this, so it is made absolute BEFORE the cd to the stack dir below.
+abs_path() { case "$1" in /*) printf '%s' "$1" ;; *) printf '%s/%s' "$(pwd -P)" "$1" ;; esac; }
+need_value() { # <flag> <value>: a flag given last, or with an empty value, is an error, not a silent exit
+  [[ -n "$2" ]] || die "$1 needs a path, for example: $1 ./secret.txt"
+}
 PASS_FILE=""; KEY_FILE=""; HELP=0; ARGS=()
 while [[ $# -gt 0 ]]; do case "$1" in
-  --password-file) PASS_FILE="${2:-}"; shift 2 ;;
-  --key-file) KEY_FILE="${2:-}"; shift 2 ;;
+  --password-file|--key-file)
+    need_value "$1" "${2:-}"
+    if [[ "$1" == --password-file ]]; then PASS_FILE="$(abs_path "$2")"; else KEY_FILE="$(abs_path "$2")"; fi
+    shift 2 ;;
+  --password-file=*) need_value --password-file "${1#*=}"; PASS_FILE="$(abs_path "${1#*=}")"; shift ;;
+  --key-file=*) need_value --key-file "${1#*=}"; KEY_FILE="$(abs_path "${1#*=}")"; shift ;;
   -h|--help) HELP=1; shift ;;
   *) ARGS+=("$1"); shift ;;
 esac; done
+
+cd "$(dirname "$0")/.."
 
 command -v docker >/dev/null 2>&1 || die "Docker isn't installed here. Run this on the box that runs the brain."
 [[ -f docker-compose.yml ]] || die "No docker-compose.yml in $(pwd). Run this from the stack directory's scripts/."

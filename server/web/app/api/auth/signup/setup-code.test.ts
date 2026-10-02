@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const h = vi.hoisted(() => ({
   users: 0,
   inserts: 0,
+  insertError: null as unknown,
   audits: [] as { action: string; detail?: Record<string, unknown> }[],
 }));
 
@@ -16,10 +17,12 @@ vi.mock('@mantle/db', () => ({
   countUsers: async () => h.users,
   db: {
     execute: async () => {
+      if (h.insertError) throw h.insertError;
       h.inserts += 1;
       return [{ id: 'x' }];
     },
   },
+  isUniqueViolation: (e: unknown) => (e as { code?: string })?.code === '23505',
 }));
 vi.mock('@/lib/audit', () => ({
   auditFireAndForget: (e: { action: string; detail?: Record<string, unknown> }) => h.audits.push(e),
@@ -48,6 +51,7 @@ async function load() {
 beforeEach(() => {
   h.users = 0;
   h.inserts = 0;
+  h.insertError = null;
   h.audits = [];
   process.env.MANTLE_SETUP_CODE = CODE;
 });
@@ -151,5 +155,22 @@ describe('GET /api/auth/bootstrap-state', () => {
     delete process.env.MANTLE_SETUP_CODE;
     const { GET } = await load();
     expect(await (await GET()).json()).toEqual({ firstRun: true, setupCodeRequired: false });
+  });
+});
+
+describe('POST /api/auth/signup when the insert fails', () => {
+  it('a unique violation (a concurrent first signup) is "an account already exists"', async () => {
+    h.insertError = Object.assign(new Error('duplicate key'), { code: '23505' });
+    const { POST } = await load();
+    const res = await POST(signup({ setupCode: CODE }));
+    expect(res.status).toBe(403);
+    expect((await res.json()).error).toMatch(/already exists/);
+  });
+
+  it('any other database error propagates (the app answers an opaque 500), never "exists"', async () => {
+    h.insertError = Object.assign(new Error('connection refused'), { code: '08006' });
+    const { POST } = await load();
+    await expect(POST(signup({ setupCode: CODE }))).rejects.toThrow(/connection refused/);
+    expect(h.audits.map((a) => a.action)).not.toContain('user.create');
   });
 });

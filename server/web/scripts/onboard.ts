@@ -144,20 +144,32 @@ export function parseArgs(argv: string[]): Options {
 }
 
 /** `password=...` / `openrouter_key=...` lines. Values are taken verbatim
- *  after the first '=', minus a trailing CR; unknown keys are refused so a
- *  typo cannot silently drop a secret. */
+ *  after the first '=', minus a trailing CR. A bad line is refused so a typo
+ *  cannot silently drop a secret, and the error NEVER repeats line content:
+ *  a bare key piped without its name must not land in a terminal or a CI log.
+ *  A name is quoted only when it looks like one. */
 export function parseSecrets(text: string): { password?: string; openrouterKey?: string } {
   const out: { password?: string; openrouterKey?: string } = {};
-  for (const line of text.split('\n')) {
-    const l = line.replace(/\r$/, '');
+  const lines = text.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i]!.replace(/\r$/, '');
     if (!l.trim()) continue;
     const eq = l.indexOf('=');
-    const key = eq < 0 ? l.trim() : l.slice(0, eq).trim();
-    const value = eq < 0 ? '' : l.slice(eq + 1);
+    if (eq < 0) {
+      throw new Error(
+        `stdin line ${i + 1} has no "=" (expected password=... or openrouter_key=...); its content is not shown.`,
+      );
+    }
+    const key = l.slice(0, eq).trim();
+    const value = l.slice(eq + 1);
     if (key === 'password') out.password = value;
     else if (key === 'openrouter_key') out.openrouterKey = value;
-    else
-      throw new Error(`Unknown secret "${key}" on stdin (expected password= or openrouter_key=).`);
+    else {
+      const named = /^[a-z_]{1,32}$/.test(key) ? ` "${key}"` : '';
+      throw new Error(
+        `stdin line ${i + 1}: unknown name${named} (expected password= or openrouter_key=).`,
+      );
+    }
   }
   return out;
 }
@@ -195,51 +207,124 @@ const paint = (code: string, s: string) => (color ? `\u001b[${code}m${s}\u001b[0
 const ok = (s: string) => console.log(`  ${paint('32', '✓')} ${s}`);
 const bad = (s: string) => console.log(`  ${paint('31', '✗')} ${s}`);
 const inf = (s: string) => console.log(`  ${paint('34', '•')} ${s}`);
+const warn = (s: string) => console.log(`  ${paint('33', '!')} ${s}`);
 const hd = (s: string) => console.log(`\n${paint('1;36', `━━ ${s}`)}`);
 
+/** Key handling for one prompt, pure so it can be tested. Feed it raw-mode
+ *  input; it returns the finished line plus any type-ahead after Enter (kept
+ *  for the next prompt), or asks for more input. Escape sequences (arrows,
+ *  function keys) are dropped whole rather than landing in the value. */
+export type KeyState = { buf: string; esc: 0 | 1 | 2 };
+export type KeyResult =
+  | { kind: 'line'; value: string; rest: string; echo: string }
+  | { kind: 'more'; echo: string }
+  | { kind: 'interrupt' }
+  | { kind: 'eof' };
+
+export function feedKeys(state: KeyState, chunk: string, hidden: boolean): KeyResult {
+  let echo = '';
+  const chars = [...chunk];
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i]!;
+    // Escape sequences: ESC, then '[' or 'O' and parameters up to a final
+    // byte in @..~ (CSI / SS3); ESC plus any other key is Alt+key. Dropped.
+    if (state.esc === 1) {
+      state.esc = ch === '[' || ch === 'O' ? 2 : 0;
+      continue;
+    }
+    if (state.esc === 2) {
+      const c = ch.charCodeAt(0);
+      if (c >= 0x40 && c <= 0x7e) state.esc = 0;
+      continue;
+    }
+    if (ch === '\u001b') {
+      state.esc = 1;
+      continue;
+    }
+    if (ch === '\r' || ch === '\n') {
+      let rest = chars.slice(i + 1).join('');
+      if (ch === '\r' && rest.startsWith('\n')) rest = rest.slice(1);
+      const value = state.buf;
+      state.buf = '';
+      return { kind: 'line', value, rest, echo };
+    }
+    if (ch === '\u0003') return { kind: 'interrupt' };
+    // Ctrl-D on an empty line is end of input, as in a cooked terminal.
+    if (ch === '\u0004') {
+      if (state.buf === '') return { kind: 'eof' };
+      continue;
+    }
+    if (ch === '\u007f' || ch === '\b') {
+      if (state.buf.length > 0) {
+        state.buf = [...state.buf].slice(0, -1).join('');
+        if (!hidden) echo += '\b \b';
+      }
+      continue;
+    }
+    if (ch >= ' ') {
+      state.buf += ch;
+      if (!hidden) echo += ch;
+    }
+  }
+  return { kind: 'more', echo };
+}
+
+/** Input that ended (a closed pipe, a dropped session, Ctrl-D) mid-prompt. */
+class InputEnded extends Error {
+  constructor() {
+    super('Input ended before the question was answered.');
+  }
+}
+
+/** Type-ahead after Enter, carried to the next prompt. */
+let pendingKeys = '';
+
 /** One line from the terminal, echoed or hidden. Raw mode, so a hidden value
- *  never reaches the screen or a scrollback. Ctrl-C exits (progress so far is
- *  saved; the next run resumes). */
+ *  never reaches the screen or a scrollback. Ctrl-C exits 130 and end of
+ *  input rejects (progress so far is saved either way; the next run resumes). */
 function readLine(prompt: string, hidden: boolean): Promise<string> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const stdin = process.stdin;
     process.stdout.write(prompt);
-    let buf = '';
-    stdin.setRawMode(true);
-    stdin.resume();
-    stdin.setEncoding('utf8');
+    const state: KeyState = { buf: '', esc: 0 };
     const finish = () => {
       stdin.off('data', onData);
+      stdin.off('end', onEnd);
       stdin.setRawMode(false);
       stdin.pause();
       process.stdout.write('\n');
     };
-    const onData = (chunk: string) => {
-      for (const ch of chunk) {
-        if (ch === '\r' || ch === '\n') {
-          finish();
-          resolve(buf);
-          return;
-        }
-        if (ch === '\u0003') {
-          finish();
-          console.log('Stopped. Progress so far is saved; run this again to pick up.');
-          process.exit(130);
-        }
-        if (ch === '\u007f' || ch === '\b') {
-          if (buf.length > 0) {
-            buf = buf.slice(0, -1);
-            if (!hidden) process.stdout.write('\b \b');
-          }
-          continue;
-        }
-        if (ch >= ' ') {
-          buf += ch;
-          if (!hidden) process.stdout.write(ch);
-        }
+    const handle = (chunk: string): boolean => {
+      const r = feedKeys(state, chunk, hidden);
+      if (r.kind === 'more' || r.kind === 'line') process.stdout.write(r.echo);
+      if (r.kind === 'more') return false;
+      finish();
+      if (r.kind === 'line') {
+        pendingKeys = r.rest;
+        resolve(r.value);
+      } else if (r.kind === 'interrupt') {
+        console.log('Stopped. Progress so far is saved; run this again to pick up.');
+        process.exit(130);
+      } else {
+        reject(new InputEnded());
       }
+      return true;
     };
+    const onData = (chunk: string) => {
+      handle(chunk);
+    };
+    const onEnd = () => {
+      finish();
+      reject(new InputEnded());
+    };
+    const carried = pendingKeys;
+    pendingKeys = '';
+    if (carried && handle(carried)) return;
+    stdin.setRawMode(true);
+    stdin.setEncoding('utf8');
     stdin.on('data', onData);
+    stdin.on('end', onEnd);
+    stdin.resume();
   });
 }
 
@@ -308,6 +393,9 @@ async function ensureOwner(o: Options, io: Io): Promise<{ id: string; email: str
     if (!owner)
       throw new Error('This brain has logins but no owner account. Nothing to onboard here.');
     ok(`Owner account exists: ${owner.email}`);
+    if (o.email && o.email.trim().toLowerCase() !== owner.email.toLowerCase()) {
+      warn(`--email ${o.email.trim()} is ignored: this brain's owner is ${owner.email}.`);
+    }
     return owner;
   }
   inf('No account yet. This creates the owner: the identity every brain item belongs to.');

@@ -42,13 +42,7 @@ export async function POST(req: Request) {
     case 'step':
       return NextResponse.json(await saveStep(user.id, String(body.step ?? '')));
     case 'profile':
-      return NextResponse.json(
-        await saveProfile(user.id, {
-          timezone: String(body.timezone ?? ''),
-          locale: String(body.locale ?? ''),
-          displayName: String(body.displayName ?? ''),
-        }),
-      );
+      return NextResponse.json(await saveProfile(user.id, body));
     case 'saveKey':
       return NextResponse.json(
         await saveKey(user.id, String(body.service ?? ''), String(body.plaintext ?? '')),

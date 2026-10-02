@@ -27,6 +27,7 @@ import { getAgentBySlug } from '@/lib/agents';
 import { env } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
+import { tikaIsOptional } from '@/lib/compose-shape';
 
 /**
  * The onboarding wizard's steps, as plain functions of the owner's id and
@@ -210,21 +211,20 @@ export async function runInfraChecks(browserHost: string | null): Promise<Sanity
   }
 
   // Tika — the long-tail document parser (office formats, odd PDFs). A
-  // brain-core box sheds it on purpose (docker-compose.core.yml; the installer
-  // writes MANTLE_CORE_SHAPE=1 with --core), and common
-  // formats parse in-process without it, so there it is optional: reported,
-  // never blocking.
+  // brain-core box without the helpers profile sheds it on purpose
+  // (docker-compose.core.yml), and common formats parse in-process without
+  // it, so there it is optional: reported, never blocking. The shape is
+  // derived from the box's compose settings (lib/compose-shape.ts).
   const tika = await tikaVersion(2_500);
-  const coreShape = env('MANTLE_CORE_SHAPE') === '1';
   checks.push(
     tika
       ? { label: 'Document parser (Tika)', ok: true, detail: tika }
-      : coreShape
+      : tikaIsOptional()
         ? {
             label: 'Document parser (Tika)',
             ok: true,
             detail:
-              'not running: optional on a brain-core box. PDF, DOCX, text and markdown parse without it; add it with scripts/install.sh --helpers for .odt, .pptx, .doc and .rtf.',
+              'not running: optional on a brain-core box. PDF, DOCX, text and markdown parse without it; add it with scripts/install.sh --helpers for .odt, .pptx, .doc, .xls and .rtf.',
           }
         : {
             label: 'Document parser (Tika)',
@@ -381,15 +381,17 @@ export async function saveStep(userId: string, step: string) {
 
 export async function saveProfile(
   userId: string,
-  input: { timezone: string; locale: string; displayName?: string },
+  input: { timezone?: unknown; locale?: unknown; displayName?: unknown },
 ): Promise<{ ok: boolean; error?: string }> {
   try {
+    // Coerced INSIDE the try: a hand-made body with an object here answers
+    // 200 { ok: false } as it always did, not a 500.
     // Optional "Your name": what the assistant should call the operator
     // (replaces the old interview's name questions). Stored verbatim.
-    const displayName = (input.displayName ?? '').trim();
+    const displayName = String(input.displayName ?? '').trim();
     await savePreferencesFor(userId, {
-      timezone: input.timezone,
-      locale: input.locale,
+      timezone: String(input.timezone ?? ''),
+      locale: String(input.locale ?? ''),
       ...(displayName ? { displayName } : {}),
       onboardingStep: 'openrouter',
     });
