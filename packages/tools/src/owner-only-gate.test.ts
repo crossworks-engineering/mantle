@@ -60,6 +60,7 @@ const EXPECTED_OWNER_ONLY = [
   'app_table_export_remove',
   'app_table_export_set',
   'app_tools_set',
+  'app_update',
   'content_supersede',
   'model_catalog',
   'model_pool_remove',

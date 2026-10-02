@@ -443,6 +443,8 @@ export type UpdateAppInput = Partial<{
   /** null clears back to the neutral tint. */
   color: AppTint | null;
   tags: string[];
+  /** The description (kept on the manifest); '' clears it. */
+  description: string;
   /** Informational (client logins C6): members and clients only read the
    *  app's data. The owner's app update route is its one writer. */
   dataReadOnly: boolean;
@@ -486,6 +488,18 @@ export async function updateAppMeta(
       .update(apps)
       .set({ dataReadOnly: input.dataReadOnly, updatedAt: new Date() })
       .where(eq(apps.nodeId, id));
+  }
+  if (input.description !== undefined) {
+    // On the manifest, under the row lock like every manifest write.
+    const description = input.description.trim().slice(0, 2000);
+    await db.transaction(async (tx) => {
+      const app = await lockAppRow(tx, ownerId, id);
+      if (!app) return;
+      const manifest: AppManifest = { ...app.manifest };
+      if (description) manifest.description = description;
+      else delete manifest.description;
+      await tx.update(apps).set({ manifest, updatedAt: new Date() }).where(eq(apps.nodeId, id));
+    });
   }
   return loadDetail(ownerId, id);
 }

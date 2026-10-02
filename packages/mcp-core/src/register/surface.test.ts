@@ -187,6 +187,7 @@ const HTTP_SURFACE = [
   'sheet_build',
   'app_create',
   'app_get',
+  'app_update',
   'app_file_write',
   'app_file_delete',
   'app_source_set',

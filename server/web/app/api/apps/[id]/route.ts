@@ -6,7 +6,9 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { APP_ICON_MAX, APP_TINTS } from '@mantle/client-types/app-nav';
 import { getOwnerOr401 } from '@/lib/auth';
+import { APP_DESCRIPTION_MAX } from '@/lib/app-meta';
 import { getApp, updateAppMeta, deleteApp, notifyAppNavChanged } from '@mantle/content';
+import { firstIssue } from '@/lib/zod-issue';
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
@@ -24,6 +26,8 @@ const PatchBody = z.object({
   // A tint key, or null to clear back to the neutral tile.
   color: z.enum(APP_TINTS).nullable().optional(),
   tags: z.array(z.string().max(40)).max(20).optional(),
+  // '' clears it.
+  description: z.string().max(APP_DESCRIPTION_MAX).optional(),
   // Informational (client logins C6): members and clients only read the
   // app's data. This route (admin only) is its one writer.
   dataReadOnly: z.boolean().optional(),
@@ -35,7 +39,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const { id } = await ctx.params;
   const parsed = PatchBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
-    return NextResponse.json({ error: 'invalid input' }, { status: 400 });
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   const { name, ...rest } = parsed.data;
   const app = await updateAppMeta(user.id, id, { ...(name ? { title: name } : {}), ...rest });

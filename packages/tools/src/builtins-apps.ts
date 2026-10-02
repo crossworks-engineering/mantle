@@ -16,8 +16,8 @@ import {
   deleteDraftFile,
   saveDraftSource,
   setManifest,
-  setDraftBuild,
   publishApp,
+  updateAppMeta,
   deleteApp,
   notifyAppNavChanged,
   workingSource,
@@ -29,7 +29,6 @@ import {
   type AppDetail,
   listTeamLevelAppIds,
 } from '@mantle/content';
-import { buildApp, loadRuntimeExports } from '@mantle/app-build';
 import {
   assertSafeScript,
   checkAppSchemaScript,
@@ -51,8 +50,9 @@ import {
   listAppSnapshots,
   restoreAppSnapshot,
 } from '@mantle/content/app-snapshots';
-import { putContent } from '@mantle/storage';
 import { recordIngest } from '@mantle/tracing';
+import { buildAndStageApp } from './app-build-stage';
+import { APP_ICON_MAX, APP_TINTS, type AppTint } from '@mantle/client-types/app-nav';
 import { resolveTool } from './resolve';
 import { appToolWarnings } from './app-tool-level';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
@@ -158,6 +158,80 @@ const app_create: BuiltinToolDef = {
           name: app.title,
           entry: app.source.entry,
           hint: `Write source with app_file_write, then app_build. Review at /apps/${app.id}.`,
+        },
+      };
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) };
+    }
+  },
+};
+
+const app_update: BuiltinToolDef = {
+  slug: 'app_update',
+  ownerOnly: true,
+  preconditions: APP_ID_PRE,
+  name: "Update a mini app's name and look",
+  description:
+    "Change an app's name, description, icon, tile colour or tags; returns the updated app. Pass only what changes. Touches neither the code (use `app_file_write`) nor the data.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', description: "The app's id (UUID) — from `app_list`." },
+      name: {
+        type: 'string',
+        minLength: 1,
+        maxLength: 200,
+        description: "The app's new name, e.g. 'Price list'.",
+      },
+      description: {
+        type: 'string',
+        maxLength: 2000,
+        description: "What the app is for, shown on its card; '' clears it.",
+      },
+      icon: {
+        type: 'string',
+        maxLength: APP_ICON_MAX,
+        description: "An emoji or 'lucide:<name>', e.g. 'lucide:calculator'; '' clears it.",
+      },
+      color: { type: 'string', enum: [...APP_TINTS], description: 'The tile colour.' },
+      tags: {
+        type: 'array',
+        items: { type: 'string', maxLength: 40 },
+        maxItems: 20,
+        description: "Replaces the tags, e.g. ['work'].",
+      },
+    },
+    required: ['id'],
+  },
+  handler: async (input, ctx) => {
+    const refused = ownerOnlyRefusal(ctx);
+    if (refused) return refused;
+    const id = str(input.id).trim();
+    if (!id) return { ok: false, error: 'id is required' };
+    const patch = {
+      ...(typeof input.name === 'string' ? { title: input.name } : {}),
+      ...(typeof input.description === 'string' ? { description: input.description } : {}),
+      ...(typeof input.icon === 'string' ? { icon: input.icon } : {}),
+      ...(typeof input.color === 'string' ? { color: input.color as AppTint } : {}),
+      ...(Array.isArray(input.tags) ? { tags: strArr(input.tags) } : {}),
+    };
+    if (!Object.keys(patch).length) {
+      return { ok: false, error: 'nothing to change: pass name, description, icon, color or tags' };
+    }
+    try {
+      const app = await updateAppMeta(ctx.ownerId, id, patch);
+      if (!app) return { ok: false, error: `app ${id} not found` };
+      void notifyAppNavChanged(ctx.ownerId);
+      ctx.step?.setOutput({ id, changed: Object.keys(patch) });
+      return {
+        ok: true,
+        output: {
+          id,
+          name: app.title,
+          description: app.description,
+          icon: app.icon,
+          color: app.color,
+          tags: app.tags,
         },
       };
     } catch (err) {
@@ -375,33 +449,15 @@ const app_build: BuiltinToolDef = {
     if (refused) return refused;
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
-    const app = await getApp(ctx.ownerId, id);
-    if (!app) return { ok: false, error: `app ${id} not found` };
-    const source = workingSource(app);
     try {
-      const res = await buildApp(source, {
-        declaredToolSlugs: app.manifest.toolSlugs ?? [],
-        runtimeExports: await loadRuntimeExports(),
+      const res = await buildAndStageApp(ctx.ownerId, id);
+      if (!res) return { ok: false, error: `app ${id} not found` };
+      ctx.step?.setMeta({
+        ok: res.buildOk,
+        errors: res.errors.length,
+        warnings: res.warnings.length,
       });
-      ctx.step?.setMeta({ ok: res.ok, errors: res.errors.length, warnings: res.warnings.length });
-      if (res.ok && res.code) {
-        const buf = Buffer.from(res.code, 'utf8');
-        const put = await putContent(buf, 'application/javascript');
-        const cssPut = res.css ? await putContent(Buffer.from(res.css, 'utf8'), 'text/css') : null;
-        await setDraftBuild(ctx.ownerId, id, {
-          storageKey: put.key,
-          sha256: put.sha256,
-          builtAt: new Date().toISOString(),
-          esbuildVersion: res.esbuildVersion,
-          bytes: put.size,
-          ok: true,
-          ...(res.warnings.length ? { warnings: res.warnings.map((w) => w.text) } : {}),
-          ...(cssPut
-            ? { css: { storageKey: cssPut.key, sha256: cssPut.sha256, bytes: cssPut.size } }
-            : {}),
-        });
-      }
-      if (!res.ok) {
+      if (!res.buildOk) {
         // A failed compile fails the CALL: an agent scanning only the top-level
         // ok (the convention everywhere else) must not read a red build as
         // success, sail on to app_publish, and hit NoGreenBuildError confused.
@@ -422,7 +478,7 @@ const app_build: BuiltinToolDef = {
         output: {
           id,
           build_ok: true,
-          bytes: res.code ? Buffer.byteLength(res.code, 'utf8') : 0,
+          bytes: res.bytes,
           errors: [],
           warnings: res.warnings,
           hint: `Build succeeded. Review the live preview at /apps/${id}; app_publish when approved.`,
@@ -1177,6 +1233,7 @@ const app_snapshot_delete: BuiltinToolDef = {
 export const APP_TOOLS: BuiltinToolDef[] = [
   app_create,
   app_get,
+  app_update,
   app_file_write,
   app_file_delete,
   app_source_set,

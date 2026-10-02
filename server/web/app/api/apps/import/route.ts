@@ -8,18 +8,24 @@
  * unauthenticated/headless push on a single-user box use `pnpm apps:push`, which
  * talks to the content layer directly (owner resolved at boot).
  *
- * Mirrors the app_* builtins (createApp / saveDraftSource / setManifest /
- * runAppBuild / publishApp) — the same handlers the agent and MCP client use.
+ * Everything is checked BEFORE anything is written (apps audit G6): the tool
+ * slugs, and the schema on a trial copy of the database. A bad slug or schema
+ * used to leave a half-made app behind. The name and dress fields follow the
+ * create route's rules (lib/app-meta.ts). An update first takes a snapshot of
+ * the app (`pre_import`), so an import over a working app can be undone.
  */
+import { randomUUID } from 'node:crypto';
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
+import { AppMetaFields } from '@/lib/app-meta';
 import {
   createApp,
   saveDraftSource,
-  getApp,
+  getAppRuntime,
   setManifest,
   publishApp,
+  notifyAppNavChanged,
   AppSourceLimitError,
   NoGreenBuildError,
   MAX_APP_FILES,
@@ -27,17 +33,15 @@ import {
   MAX_APP_PATH_LEN,
 } from '@mantle/content';
 import { checkAppSchemaScript } from '@mantle/content/app-broker';
+import { createAppSnapshot } from '@mantle/content/app-snapshots';
 import { resolveTool } from '@mantle/tools';
+import { recordIngest } from '@mantle/tracing';
 import { runAppBuild } from '@/lib/app-build-run';
 import { errorMessage } from '@mantle/std';
 
-const Body = z.object({
+const Body = AppMetaFields.partial({ name: true }).extend({
   /** Update this app if given; otherwise create a new one (then `name` is required). */
   appId: z.string().uuid().optional(),
-  name: z.string().min(1).max(200).optional(),
-  description: z.string().max(2000).optional(),
-  icon: z.string().max(16).optional(),
-  tags: z.array(z.string().max(64)).max(50).optional(),
   /** Source tree. `entry` must be one of the `files` keys. */
   entry: z.string().min(1).max(MAX_APP_PATH_LEN),
   files: z.record(z.string().max(MAX_APP_PATH_LEN), z.string().max(MAX_APP_FILE_BYTES)),
@@ -68,23 +72,57 @@ export async function POST(req: Request) {
   }
   const b = parsed.data;
 
+  // ── check everything before anything is written ──
   if (!(b.entry in b.files)) return bad(`entry '${b.entry}' is not one of the files`);
   if (Object.keys(b.files).length > MAX_APP_FILES)
     return bad(`too many files (max ${MAX_APP_FILES})`);
+  if (!b.appId && !b.name) return bad('name is required when appId is omitted');
+  const existing = b.appId ? await getAppRuntime(user.id, b.appId) : null;
+  if (b.appId && !existing) return bad('app not found', 404);
+  if (b.toolSlugs) {
+    const missing: string[] = [];
+    for (const slug of b.toolSlugs) {
+      if (!(await resolveTool(user.id, slug))) missing.push(slug);
+    }
+    if (missing.length) return bad(`unknown tool slug(s): ${missing.join(', ')}`);
+  }
+  const schemaSql = b.schemaSql?.trim() ? b.schemaSql : null;
+  if (schemaSql) {
+    try {
+      // A new app is tried on an empty database (its id is only a file name).
+      await checkAppSchemaScript(user.id, b.appId ?? randomUUID(), schemaSql);
+    } catch (err) {
+      return bad(errorMessage(err));
+    }
+  }
 
-  // ── create or locate ──
+  // ── create, or keep what an update replaces ──
   let appId = b.appId;
   let created = false;
   if (!appId) {
-    if (!b.name) return bad('name is required when appId is omitted');
     const app = await createApp(user.id, {
-      title: b.name,
+      title: b.name!,
       ...(b.icon ? { icon: b.icon } : {}),
+      ...(b.color ? { color: b.color } : {}),
       ...(b.description ? { description: b.description } : {}),
       tags: b.tags ?? [],
     });
     appId = app.id;
     created = true;
+    void recordIngest({
+      source: 'page_create',
+      ownerId: user.id,
+      nodeId: app.id,
+      summary: `App imported: ${app.title.slice(0, 80)}`,
+      payload: { title: app.title, via: 'import', kind: 'app' },
+      snippet: app.title,
+    });
+  } else {
+    await createAppSnapshot(user.id, appId, {
+      trigger: 'pre_import',
+      actor: 'owner',
+      note: 'before an import',
+    });
   }
 
   // ── write the whole source tree to the draft ──
@@ -95,29 +133,10 @@ export async function POST(req: Request) {
     if (err instanceof AppSourceLimitError) return bad(err.message);
     throw err;
   }
-
-  // ── declare the data-tool allowlist (validate each slug is owned) ──
-  if (b.toolSlugs) {
-    const missing: string[] = [];
-    for (const slug of b.toolSlugs) {
-      if (!(await resolveTool(user.id, slug))) missing.push(slug);
-    }
-    if (missing.length) return bad(`unknown tool slug(s): ${missing.join(', ')}`);
-    await setManifest(user.id, appId, { toolSlugs: b.toolSlugs });
-  }
-
-  // ── declare the per-app SQLite schema (bump version) ──
-  if (b.schemaSql && b.schemaSql.trim()) {
-    try {
-      await checkAppSchemaScript(user.id, appId, b.schemaSql);
-    } catch (err) {
-      return bad(errorMessage(err));
-    }
-    const app = await getApp(user.id, appId);
-    const nextVersion = (app?.manifest.sqlite?.schemaVersion ?? 0) + 1;
-    await setManifest(user.id, appId, {
-      sqlite: { schemaSql: b.schemaSql, schemaVersion: nextVersion },
-    });
+  if (b.toolSlugs) await setManifest(user.id, appId, { toolSlugs: b.toolSlugs });
+  if (schemaSql) {
+    const nextVersion = (existing?.manifest.sqlite?.schemaVersion ?? 0) + 1;
+    await setManifest(user.id, appId, { sqlite: { schemaSql, schemaVersion: nextVersion } });
   }
 
   // ── build + optional publish ──
@@ -126,12 +145,13 @@ export async function POST(req: Request) {
   let published = false;
   if (b.publish && build?.buildOk) {
     try {
-      await publishApp(user.id, appId);
+      await publishApp(user.id, appId, { note: 'imported', actor: 'owner' });
       published = true;
     } catch (err) {
       if (!(err instanceof NoGreenBuildError)) throw err;
     }
   }
+  void notifyAppNavChanged(user.id);
 
   return NextResponse.json({
     ok: true,

@@ -2,9 +2,8 @@
  * /api/apps — list (GET) + create (POST) mini apps. Mirrors /api/pages.
  */
 import { NextResponse } from '@/server/http-compat';
-import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
-import { APP_ICON_MAX, APP_TINTS } from '@mantle/client-types/app-nav';
+import { AppMetaFields } from '@/lib/app-meta';
 import { createApp, listApps, countApps, notifyAppNavChanged, type AppSort } from '@mantle/content';
 import { recordIngest } from '@mantle/tracing';
 import { firstIssue } from '@/lib/zod-issue';
@@ -27,12 +26,8 @@ export async function GET(req: Request) {
   return NextResponse.json({ apps, total, page, pageSize: PAGE_SIZE });
 }
 
-const CreateBody = z.object({
-  name: z.string().min(1).max(200),
-  description: z.string().max(280).optional(),
-  icon: z.string().max(APP_ICON_MAX).optional(),
-  color: z.enum(APP_TINTS).optional(),
-  tags: z.array(z.string().max(40)).max(20).optional().default([]),
+const CreateBody = AppMetaFields.extend({
+  tags: AppMetaFields.shape.tags.default([]),
 });
 
 export async function POST(req: Request) {

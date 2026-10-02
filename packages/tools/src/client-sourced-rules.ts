@@ -210,6 +210,7 @@ export const WRITE_RULES: Readonly<Record<string, WriteRule>> = {
 
   // ── Apps ─────────────────────────────────────────────────────────────────
   app_create: creates(),
+  app_update: onApp,
   app_build: onApp,
   app_db_schema_set: onApp,
   app_db_seed: onApp,
