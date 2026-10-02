@@ -1,6 +1,6 @@
 # Mobile Companion: backend additions
 
-_Last updated: 2026-10-01 (three roles on the phone: members and clients)._
+_Last updated: 2026-10-02 (contract v1.1: every push names its brain and its login, for devices that hold several logins)._
 
 API + schema added to Mantle to support the **Mantle Companion** mobile app
 (Flutter; repo `~/Projects/mantle-companion`). Single-user/self-hosted, so the
@@ -316,12 +316,19 @@ companion uses it at launch for the two rules it must not re-implement:
   holds no such cookie, so the resolved agent is simply its default — and a
   turn that omits `agentSlug` resolves the same way server-side.
 
-## Three roles on the phone: members and clients (contract v1)
+## Three roles on the phone: members and clients (contract v1.1)
 
 The Jackdaw mobile app serves all three roles: admin, member and client. This
 section is the contract the app mirrors by hand (no OpenAPI exists). Paths,
 bodies, error bodies, deep links and token lifetimes below are stable; a change
 is announced to the app session before it lands.
+
+**Versions.** v1 (2026-10-01): the three roles. v1.1 (2026-10-02, migration
+0226): `whoami` answers `brainId`, and every push payload carries `brainId`
+and `loginId`, so a device holding several logins (on one brain or on
+several) opens the right one on a tap (section 2, "Push routing on a device
+with several logins"). Additive only: an app built for v1 ignores the new
+fields, and the payload's `v` stays `1`.
 
 Everything above this section still holds for admins and for shipped builds.
 `POST /api/auth/mobile-login` stays frozen: admins only, 1 year, same shape.
@@ -443,8 +450,31 @@ refused.
 
 **Who am I: `GET /api/auth/whoami`** (any bearer or session).
 
-    200    { role, loginId, email, displayName, shell, pushBase }
+    200    { role, loginId, email, displayName, shell, pushBase, brainId }
     401    { error: "unauthorized" }
+
+For example, a member's phone token:
+
+    {
+      "role": "member",
+      "loginId": "5d1f0c2a-7b4e-4f61-9a0d-2c8e6b3f1a77",
+      "email": "member@example.invalid",
+      "displayName": "Mia Member",
+      "shell": "/api/member/shell",
+      "pushBase": "/api/member/push",
+      "brainId": "0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f"
+    }
+
+`brainId` (v1.1) names this brain: a random uuid, made once when migration
+0226 ran, the same for every login and every role, unchanged by restarts and
+upgrades. It is not a secret and says nothing about the brain (not its
+address, not its owner). The app calls whoami right after every sign-in and
+files the session under the pair (`brainId`, `loginId`); it calls it again at
+launch and replaces a stored `brainId` that differs (a brain restored from
+another brain's dump is given a new id by hand, see section 6). `loginId` is
+the same id the sign-in answers carry. `brainId` is missing only on a brain
+whose database is behind its code (migration 0226 not applied) and on brains
+older than v1.1: treat that session as having no `brainId` (below).
 
 | role   | shell               | pushBase           |
 | ------ | ------------------- | ------------------ |
@@ -540,7 +570,38 @@ skips the device for that push and is logged; the device stays.
 
 **Payload** (sealed to the device, as today). New fields are additive.
 
-    { v: 1, t, b, deepLink, ts, kind, itemId?, state? }
+    { v: 1, t, b, deepLink, ts, kind, itemId?, state?, brainId, loginId }
+
+`brainId` (v1.1) is this brain, the same value whoami answers. `loginId` (v1.1)
+is the login the receiving device was enrolled for (the login whose bearer
+called `{pushBase}/subscriptions`). Both are on every push of every role,
+owner pushes included. The payload is sealed per device, so when one owner
+teaser goes to two admins, each admin's device reads its own `loginId` and
+never the other's. A field the brain cannot name is left out, never guessed:
+`brainId` while migration 0226 is not applied, `loginId` on an admin device
+row that has no login on record (from before migration 0173; no send list
+returns one).
+
+A member's chat reply, before and after v1.1:
+
+    v1    { "v": 1, "t": "Tess", "b": "Here is the answer.", "deepLink": "/portal/chat",
+            "ts": 1790845200000, "kind": "chat" }
+    v1.1  { "v": 1, "t": "Tess", "b": "Here is the answer.", "deepLink": "/portal/chat",
+            "ts": 1790845200000, "kind": "chat",
+            "brainId": "0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f",
+            "loginId": "5d1f0c2a-7b4e-4f61-9a0d-2c8e6b3f1a77" }
+
+An owner assistant reply to an admin's device:
+
+    v1    { "v": 1, "t": "Ada", "b": "The pump spec is ready.", "agentSlug": "ada",
+            "deepLink": "/chat/ada", "ts": 1790845200000 }
+    v1.1  { "v": 1, "t": "Ada", "b": "The pump spec is ready.", "agentSlug": "ada",
+            "deepLink": "/chat/ada", "ts": 1790845200000,
+            "brainId": "0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f",
+            "loginId": "9c3e5a10-4d2b-4e8f-b1a6-7f0d2c9e4b13" }
+
+An approval (`/pending`) and a "needs you" notice gain the same two fields
+and nothing else.
 
 | kind      | t (title)                                                                       | b (body)                                                                                                        | deepLink                                                                       | extra                                              |
 | --------- | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------- |
@@ -555,6 +616,43 @@ title is the author's own item, a client-thread comment goes out only while
 the item is at client level. A client-thread comment push carries no comment
 text: every client of the brain gets it, and a lock screen is not the place
 for another person's words. Open the item to read it.
+
+**Push routing on a device with several logins (v1.1).** A phone or a
+desktop may hold several sessions (a session is a brain origin, a login and
+that login's device bearer; one is active), on one brain or on several. The
+device has one OS push token for all of them, so a push alone does not say
+which session it is for; `brainId` and `loginId` do. On a tap the app:
+
+1. Opens the payload with the device's key, as today.
+2. Looks for the session whose stored (`brainId`, `loginId`) equals the
+   payload's pair. Both must match; a `loginId` alone is not enough (two
+   brains restored from one dump share login ids).
+3. Found: makes that session the active one, if it is not already, and then
+   follows `deepLink` in it. The deep link is a path on THAT brain, under
+   that session's role (`/portal/...` for a member or a client, `/chat/...`,
+   `/pending`, `/team-admin?...` for an admin).
+4. Not found (the login signed out on this device, or the session was
+   removed): opens that brain's sign-in screen when the app still knows the
+   brain's origin for that `brainId` (from a session it held before), with
+   the login's email filled in when it knows it; otherwise opens the app on
+   its active session with no deep link. It never follows the deep link
+   anywhere until the person has signed in as that login.
+5. Never shows, sends or follows anything of the payload in another
+   session: not the text, not the item id, not the deep link. No call goes
+   to another brain or under another login's bearer because of this push.
+
+A payload with no `brainId` comes from a brain older than v1.1 (or one whose
+database is behind its code). If the device holds exactly one session, the
+app behaves as in v1. If it holds more, it does not guess: it opens on the
+active session without following the deep link (or offers the session list).
+A payload with a `brainId` but no `loginId` is matched only when the device
+holds exactly one session on that brain.
+
+What a phone receives at all is unchanged: a device is enrolled under ONE
+login of a brain, and enrolling the same routing token again (another login
+of the same brain on the same phone) replaces the row, so on one brain a
+phone gets the pushes of the login that enrolled last. Logins on DIFFERENT
+brains each enrol with that brain, and each brain pushes its own.
 
 `collapseKey`: the brain names a member's or client's push by `chat`,
 `review:<id>` or `comment:<id>`, but sends it to the relay as a keyed hash
@@ -646,6 +744,25 @@ worker says so once per process in one loud log line (`THE DATABASE IS
 BEHIND THE CODE`, `lib/push/login-notice-handler.ts`), not one quiet line
 per event.
 
+**Migration 0226 `brain_identity`** (v1.1). One row: `brain_id`, a random
+uuid made by the migration itself (`gen_random_uuid()`), guarded to one row
+(the primary key is a boolean that can only be true). The code reads it and
+never changes it (`server/web/lib/brain-identity.ts`, cached per process), so
+it holds across restarts, upgrades and a restore of this brain's own backup.
+A database built from ANOTHER brain's dump carries that brain's id: give the
+copy its own before any device signs in to it,
+`update brain_identity set brain_id = gen_random_uuid()`, then restart the
+server and the push worker (phones that held a session on it re-learn the id
+at their next launch through whoami). If the table cannot be read, whoami
+and every push leave `brainId` out and the process says so once in one loud
+log line; nothing else fails. No trigger, no job.
+
+The send path sets the routing pair per device: `sendToDevices` reads the id
+once per send, and `payloadForDevice` (`server/web/lib/push/notify.ts`) adds
+it and the device row's `login_id` to the content the caller built. A caller
+cannot set either field (the type leaves them out, and a stray one is
+dropped).
+
 **Auth** (`server/web/lib/auth/session.ts`, `tokens.ts`, `login-row.ts`).
 
 - `getBearerLogin` checks the token row (present, not revoked, not expired,
@@ -731,7 +848,11 @@ per event.
 
 **Tests.** `server/web/lib/push/push-targeting.db.test.ts` is the gate: a
 member device and a client device, enrolled and live, never receive an owner
-teaser, an approval or a "needs you" notice. `device-tokens.db.test.ts`
+teaser, an approval or a "needs you" notice; each device's payload names this
+brain and its own login. `packages/db/src/brain-identity-migration.db.test.ts`
+proves the one row and that a second run of 0226 keeps the id;
+`server/web/lib/brain-identity.test.ts`, `notify.test.ts`,
+`login-notify.test.ts` and `needs-you.test.ts` pin the payload fields. `device-tokens.db.test.ts`
 drives the three sign-ins, every way a token ends, refresh, the push device
 routes and the unread routes through the real app.
 `packages/content/src/login-notices.viewer.db.test.ts` proves the triggers
