@@ -28,6 +28,7 @@ import {
   AppRestoreDraftError,
   type AppDetail,
   listTeamLevelAppIds,
+  listAppAccess,
 } from '@mantle/content';
 import {
   assertSafeScript,
@@ -1343,6 +1344,61 @@ const app_duplicate: BuiltinToolDef = {
   },
 };
 
+// ── Errors (apps first-class plan, Phase 3, G4) ─────────────────────────────
+
+const app_errors: BuiltinToolDef = {
+  slug: 'app_errors',
+  ownerOnly: true,
+  readOnly: true,
+  preconditions: APP_ID_PRE,
+  name: "Read a mini app's errors",
+  description:
+    "List the errors a running app got back from the brain, newest first: failed SQL (with the statement), refused or failed tool calls, who ran it (owner, member, client, contact or public) and when. Use it when someone says an app is broken, or after a change, to see what fails for real users. Errors in the app's own JavaScript (a render crash) are not logged here: preview the app to see those. For who used the app, read its Activity tab.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', description: "The app's id (UUID) — from `app_list`." },
+      limit: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 200,
+        default: 50,
+        description: 'Max errors to return.',
+      },
+      since_hours: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 2160,
+        description: 'Only errors from the last this many hours, e.g. 24.',
+      },
+    },
+    required: ['id'],
+  },
+  handler: async (input, ctx) => {
+    const refused = ownerOnlyRefusal(ctx);
+    if (refused) return refused;
+    const id = str(input.id).trim();
+    if (!id) return { ok: false, error: 'id is required' };
+    const limit = typeof input.limit === 'number' ? input.limit : 50;
+    const hours = typeof input.since_hours === 'number' ? input.since_hours : null;
+    try {
+      const rows = await listAppAccess(ctx.ownerId, id, limit, {
+        kind: 'error',
+        ...(hours ? { since: new Date(Date.now() - hours * 3_600_000) } : {}),
+      });
+      const errors = rows.map((r) => ({
+        at: r.createdAt,
+        ...r.detail,
+        ...(r.contactName ? { who: r.contactName } : {}),
+      }));
+      ctx.step?.setOutput({ id, count: errors.length });
+      return { ok: true, output: { id, count: errors.length, errors } };
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) };
+    }
+  },
+};
+
 export const APP_TOOLS: BuiltinToolDef[] = [
   app_create,
   app_get,
@@ -1366,6 +1422,7 @@ export const APP_TOOLS: BuiltinToolDef[] = [
   app_deleted_list,
   app_undelete,
   app_duplicate,
+  app_errors,
 ];
 
 export const APP_TOOL_SLUGS: string[] = APP_TOOLS.map((t) => t.slug);

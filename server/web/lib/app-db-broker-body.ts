@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { NextResponse } from '@/server/http-compat';
+import { recordAppError, type AppErrorEntry } from '@mantle/content';
 import { AppDbMissingError, AppSqlBusyError, AppSqlError } from '@mantle/content/app-broker';
 
 /**
@@ -38,32 +39,32 @@ export function appDbBodyError(err: z.ZodError): string {
  * on the server or the brain's id, so the caller gets a generic message and
  * the log gets the rest.
  */
-export function appDbErrorResponse(err: unknown, where: string): NextResponse {
+/** Where a broker's error is logged for the app's owner (apps first-class
+ *  plan G4): the app, who ran it, and the statement. */
+export type AppDbErrorLog = Omit<AppErrorEntry, 'source' | 'message' | 'status'>;
+
+export function appDbErrorResponse(err: unknown, where: string, log?: AppDbErrorLog): NextResponse {
   if (err instanceof AppSqlBusyError) {
+    // A wait, not a fault: the kit retries it, so it is not logged.
     return NextResponse.json(
       { ok: false, error: err.message, reason: 'busy' },
       { status: 429, headers: { 'retry-after': '1' } },
     );
   }
-  if (err instanceof AppSqlError) {
-    return NextResponse.json({ ok: false, error: err.message }, { status: 400 });
-  }
+  const answer = (error: string, status: number, extra: Record<string, unknown> = {}) => {
+    if (log) recordAppError({ ...log, source: 'db', message: error, status });
+    return NextResponse.json({ ok: false, error, ...extra }, { status });
+  };
+  if (err instanceof AppSqlError) return answer(err.message, 400);
   if (err instanceof AppDbMissingError) {
     // Lost on the server (apps audit D1): logged in full where it was found;
     // the caller hears what happened, not where the file lived.
-    return NextResponse.json(
-      {
-        ok: false,
-        error:
-          "This app's data is missing on the server. The owner has to restore it from a backup.",
-        reason: 'missing',
-      },
-      { status: 503 },
+    return answer(
+      "This app's data is missing on the server. The owner has to restore it from a backup.",
+      503,
+      { reason: 'missing' },
     );
   }
   console.error(`[${where}] app database error:`, err);
-  return NextResponse.json(
-    { ok: false, error: "The app's database is not available right now. Try again later." },
-    { status: 500 },
-  );
+  return answer("The app's database is not available right now. Try again later.", 500);
 }

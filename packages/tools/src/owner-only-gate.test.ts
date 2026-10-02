@@ -51,6 +51,7 @@ const EXPECTED_OWNER_ONLY = [
   'app_delete',
   'app_deleted_list',
   'app_duplicate',
+  'app_errors',
   'app_file_delete',
   'app_file_write',
   'app_publish',

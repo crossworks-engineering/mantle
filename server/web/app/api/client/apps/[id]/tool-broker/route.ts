@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { withViewer } from '@mantle/db';
-import { recordAppAccess } from '@mantle/content';
+import { recordAppAccess, recordAppError } from '@mantle/content';
 import { appToolLevel, appToolScope, appToolVerdict, dispatchTool } from '@mantle/tools';
 import { getClientOr401 } from '@/lib/auth';
 import { clientAppOr404, clientName } from '@/lib/client-apps';
@@ -54,12 +54,25 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     kind: 'tool',
     detail: verdict.ok ? { via: 'client', slug } : { via: 'client', slug, refused: verdict.reason },
   });
+  const logError = (message: string, status: number) =>
+    recordAppError({
+      ownerId: client.anchorId,
+      appNodeId: app.id,
+      actorId: client.loginId,
+      source: 'tool',
+      via: 'client',
+      slug,
+      message,
+      status,
+    });
   if (!verdict.ok) {
+    logError(verdict.reason, verdict.status);
     return NextResponse.json({ ok: false, error: verdict.reason }, { status: verdict.status });
   }
   const scope = appToolScope(level, { loginId: client.loginId, name: clientName(client) });
   const result = await withViewer(scope.viewer, () =>
     dispatchTool(verdict.tool, input, { ownerId: client.anchorId, surface: scope.surface }),
   );
+  if (!result.ok) logError(result.error, 200);
   return NextResponse.json(result);
 }

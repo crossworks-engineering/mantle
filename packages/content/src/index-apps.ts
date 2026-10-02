@@ -142,11 +142,14 @@ export {
 } from './sandboxes';
 export {
   recordAppAccess,
+  recordAppError,
   listAppAccess,
   reapAppAccessLog,
   APP_ACCESS_LOG_RETENTION_DAYS,
   APP_ACCESS_QUERY_SAMPLE_MS,
+  APP_ERROR_LOG_PER_MINUTE,
   type AppAccessKind,
+  type AppErrorEntry,
   type AppAccessEntry,
   type AppAccessRow,
 } from './app-access-log';

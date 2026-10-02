@@ -32,6 +32,7 @@ const h = vi.hoisted(() => ({
   verdict: { ok: true } as { ok: boolean; status?: number; reason?: string },
   dispatched: [] as Array<{ level: string; ctx: Record<string, unknown> }>,
   logged: [] as Array<Record<string, unknown>>,
+  errors: [] as Array<Record<string, unknown>>,
   dbCalls: [] as string[],
   dbError: null as Error | null,
   callers: [] as unknown[],
@@ -95,6 +96,7 @@ vi.mock('@mantle/content', async (importOriginal) => {
       };
     }),
     recordAppAccess: vi.fn((e: Record<string, unknown>) => h.logged.push(e)),
+    recordAppError: vi.fn((e: Record<string, unknown>) => h.errors.push(e)),
   };
 });
 vi.mock('@mantle/tools', async (importOriginal) => {
@@ -195,6 +197,7 @@ beforeEach(() => {
   h.verdict = { ok: true };
   h.dispatched.length = 0;
   h.logged.length = 0;
+  h.errors.length = 0;
   h.dbCalls.length = 0;
   h.dbError = null;
   h.callers.length = 0;
@@ -342,6 +345,21 @@ describe('client db broker', () => {
     expect(text).not.toContain('/data/app-dbs');
     expect(text).not.toContain(ANCHOR);
     expect(h.synced).toEqual([]);
+
+    // The owner's error log (G4) holds what the app was told, never the
+    // server's own text; a busy wait is not an error.
+    expect(h.errors).toEqual([
+      expect.objectContaining({
+        appNodeId: APP,
+        source: 'db',
+        via: 'client',
+        message: 'no such table: nope',
+        sql: 'select * from nope',
+        status: 400,
+      }),
+      expect.objectContaining({ op: 'exec', status: 500 }),
+    ]);
+    expect(JSON.stringify(h.errors)).not.toContain('/data/app-dbs');
   });
 
   it('writes the app database, schedules the export sync, and logs the login', async () => {

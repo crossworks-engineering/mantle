@@ -33,6 +33,10 @@ vi.mock('@mantle/content/app-trash', () => {
 });
 
 vi.mock('@mantle/content/app-package', () => ({ duplicateApp: vi.fn() }));
+vi.mock('@mantle/content', async (orig) => ({
+  ...(await orig<typeof import('@mantle/content')>()),
+  listAppAccess: vi.fn(),
+}));
 
 import { duplicateApp } from '@mantle/content/app-package';
 import { AppDbMissingError } from '@mantle/content/app-broker';
@@ -48,7 +52,7 @@ import {
   listAppSnapshots,
   restoreAppSnapshot,
 } from '@mantle/content/app-snapshots';
-import { AppRestoreDraftError } from '@mantle/content';
+import { AppRestoreDraftError, listAppAccess } from '@mantle/content';
 import { APP_TOOLS } from './builtins-apps';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 
@@ -250,5 +254,42 @@ describe('the duplicate tool (Phase 3)', () => {
     expect(errorOf(await duplicate.handler({ id: APP }, chat))).toMatch(/with_data false/);
     vi.mocked(duplicateApp).mockResolvedValueOnce(null);
     expect(errorOf(await duplicate.handler({ id: APP }, chat))).toMatch(/not found/);
+  });
+});
+
+describe('the error log tool (Phase 3, G4)', () => {
+  const errors = tool('app_errors');
+
+  it('lists the error rows, newest first, with who ran the app', async () => {
+    vi.mocked(listAppAccess).mockResolvedValueOnce([
+      {
+        id: 'r1',
+        contactId: null,
+        contactName: 'Ann',
+        actorId: 'm1',
+        kind: 'error',
+        detail: { source: 'db', via: 'member', message: 'no such table: itms', sql: 'SELECT 1' },
+        createdAt: '2026-10-02T10:00:00.000Z',
+      },
+    ]);
+    expect(outputOf(await errors.handler({ id: APP, since_hours: 24 }, chat))).toEqual({
+      id: APP,
+      count: 1,
+      errors: [
+        {
+          at: '2026-10-02T10:00:00.000Z',
+          source: 'db',
+          via: 'member',
+          message: 'no such table: itms',
+          sql: 'SELECT 1',
+          who: 'Ann',
+        },
+      ],
+    });
+    const [, , limit, opts] = vi.mocked(listAppAccess).mock.calls[0]!;
+    expect(limit).toBe(50);
+    expect(opts).toMatchObject({ kind: 'error', since: expect.any(Date) });
+    expect(errors.readOnly).toBe(true);
+    expect(errorOf(await errors.handler({ id: APP }, member))).toMatch(/owner/);
   });
 });

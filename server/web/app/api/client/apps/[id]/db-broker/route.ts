@@ -87,6 +87,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     }
     return NextResponse.json({ ok: true, output });
   } catch (err) {
-    return appDbErrorResponse(err, 'client-db-broker');
+    return appDbErrorResponse(err, 'client-db-broker', {
+      ownerId: client.anchorId,
+      appNodeId: app.id,
+      actorId: client.loginId,
+      via: 'client',
+      op,
+      sql,
+    });
   }
 }

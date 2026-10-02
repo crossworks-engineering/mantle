@@ -15,11 +15,18 @@
  * row each, but a caller's database READS at most one row per app per
  * minute (a running app polls), and the `app-access-log-reap` maintenance
  * sweep deletes rows older than APP_ACCESS_LOG_RETENTION_DAYS.
+ *
+ * Errors (apps first-class plan, Phase 3, G4): a broker that answers a
+ * running app with an error (its SQL failed, a tool refused or failed) lands
+ * an `error` row through `recordAppError`, whoever ran the app, the owner
+ * included. The owner reads them on the app's Activity tab, the agent with
+ * `app_errors`. At most APP_ERROR_LOG_PER_MINUTE rows per app per minute: an
+ * app that fails in a loop must not flood the table.
  */
-import { and, desc, eq, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, lt, sql } from 'drizzle-orm';
 import { db, systemDb, appAccessLog, authUsers, nodes } from '@mantle/db';
 
-export type AppAccessKind = 'auth' | 'tool' | 'db';
+export type AppAccessKind = 'auth' | 'tool' | 'db' | 'error';
 
 export type AppAccessEntry = {
   ownerId: string;
@@ -62,20 +69,81 @@ function readAlreadyLogged(entry: AppAccessEntry, now: number): boolean {
 export function recordAppAccess(entry: AppAccessEntry): void {
   if (readAlreadyLogged(entry, Date.now())) return;
   // systemDb: an access record is written even under a limited viewer role.
-  void systemDb
-    .insert(appAccessLog)
-    .values({
-      ownerId: entry.ownerId,
-      appNodeId: entry.appNodeId,
-      shareId: entry.shareId ?? null,
-      contactId: entry.contactId ?? null,
-      actorId: entry.actorId ?? null,
-      kind: entry.kind,
-      detail: entry.detail ?? {},
-    })
-    .catch(() => {
-      /* best-effort — never block the visitor on audit */
-    });
+  // Best effort both ways: a failed insert, and one that throws before it is
+  // sent (no database configured), never reach the visitor.
+  try {
+    void systemDb
+      .insert(appAccessLog)
+      .values({
+        ownerId: entry.ownerId,
+        appNodeId: entry.appNodeId,
+        shareId: entry.shareId ?? null,
+        contactId: entry.contactId ?? null,
+        actorId: entry.actorId ?? null,
+        kind: entry.kind,
+        detail: entry.detail ?? {},
+      })
+      .catch(() => {
+        /* best-effort — never block the visitor on audit */
+      });
+  } catch {
+    /* best-effort — never block the visitor on audit */
+  }
+}
+
+/** Error rows one app may land per minute (this process). */
+export const APP_ERROR_LOG_PER_MINUTE = 30;
+/** The longest error message kept, and the longest SQL beside it. */
+const APP_ERROR_MESSAGE_MAX = 1000;
+const APP_ERROR_SQL_MAX = 500;
+
+/** Error rows per app in the current minute (this process). */
+const errorWindow = new Map<string, { start: number; n: number }>();
+
+function errorBudgetSpent(appNodeId: string, now: number): boolean {
+  const w = errorWindow.get(appNodeId);
+  if (!w || now - w.start >= 60_000) {
+    if (errorWindow.size >= 10_000) errorWindow.clear();
+    errorWindow.set(appNodeId, { start: now, n: 1 });
+    return false;
+  }
+  w.n += 1;
+  return w.n > APP_ERROR_LOG_PER_MINUTE;
+}
+
+export type AppErrorEntry = Omit<AppAccessEntry, 'kind' | 'detail'> & {
+  /** Which broker answered with the error. */
+  source: 'db' | 'tool';
+  /** Who ran the app: 'owner', 'member', 'client', 'contact', 'public'. */
+  via: string;
+  /** What the app was told (an app's own SQL error keeps its text). */
+  message: string;
+  /** 'db': the statement kind and its SQL; 'tool': the slug. */
+  op?: string;
+  sql?: string;
+  slug?: string;
+  /** The HTTP status the app got. */
+  status?: number;
+};
+
+/** Log an error a broker answered a running app with (best effort, capped
+ *  per app per minute). */
+export function recordAppError(entry: AppErrorEntry, now = Date.now()): void {
+  if (errorBudgetSpent(entry.appNodeId, now)) return;
+  const { source, via, message, op, sql: text, slug, status, ...who } = entry;
+  recordAppAccess({
+    ...who,
+    kind: 'error',
+    detail: {
+      source,
+      via,
+      message: message.slice(0, APP_ERROR_MESSAGE_MAX),
+      ...(op ? { op } : {}),
+      ...(text ? { sql: text.slice(0, APP_ERROR_SQL_MAX) } : {}),
+      ...(slug ? { slug } : {}),
+      ...(status ? { status } : {}),
+    },
+  });
 }
 
 export type AppAccessRow = {
@@ -108,6 +176,7 @@ export async function listAppAccess(
   ownerId: string,
   appNodeId: string,
   limit = 100,
+  opts: { kind?: AppAccessKind; since?: Date } = {},
 ): Promise<AppAccessRow[]> {
   const rows = await db
     .select({
@@ -125,7 +194,14 @@ export async function listAppAccess(
     .from(appAccessLog)
     .leftJoin(nodes, eq(nodes.id, appAccessLog.contactId))
     .leftJoin(authUsers, eq(authUsers.id, appAccessLog.actorId))
-    .where(and(eq(appAccessLog.ownerId, ownerId), eq(appAccessLog.appNodeId, appNodeId)))
+    .where(
+      and(
+        eq(appAccessLog.ownerId, ownerId),
+        eq(appAccessLog.appNodeId, appNodeId),
+        opts.kind ? eq(appAccessLog.kind, opts.kind) : undefined,
+        opts.since ? gte(appAccessLog.createdAt, opts.since) : undefined,
+      ),
+    )
     .orderBy(desc(appAccessLog.createdAt))
     .limit(limit);
   return rows.map((r) => ({

@@ -6,6 +6,15 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
 ## Unreleased: apps first-class, Phase 3 (trash, import, app_update)
 
+- **App error log (G4).** Every broker (owner, member, client, share) logs
+  the errors it answers a running app with: kind `error` in
+  `app_access_log`, with the message, the SQL or the tool slug, who ran it
+  and the status. Capped at 30 rows per app per minute; busy waits are not
+  logged; a server fault keeps the generic text. Read with `app_errors`
+  (owner only, group apps) or `GET /api/apps/:id/access-log?kind=error`
+  (`kind` and `limit` are new). An access-log write that throws before it is
+  sent no longer reaches the caller.
+
 - **Duplicate.** `app_duplicate` / `POST /api/apps/:id/duplicate` copies an
   app with its builds (live at once), draft, tools, schema and data
   (`with_data: false` for code only). Admin-only, unshared, no history but a

@@ -54,6 +54,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     scheduleAppTableExportSync(user.id, id);
     return NextResponse.json({ ok: true, output: res });
   } catch (err) {
-    return appDbErrorResponse(err, 'apps/db-broker');
+    return appDbErrorResponse(err, 'apps/db-broker', {
+      ownerId: user.id,
+      appNodeId: id,
+      actorId: user.actor.id,
+      via: 'owner',
+      op: parsed.data.op,
+      sql: parsed.data.sql,
+    });
   }
 }

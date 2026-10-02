@@ -207,6 +207,7 @@ const HTTP_SURFACE = [
   'app_deleted_list',
   'app_undelete',
   'app_duplicate',
+  'app_errors',
   'sandbox_create',
   'sandbox_exec',
   'sandbox_list',

@@ -348,6 +348,19 @@ same id, admin-only and unshared. The nightly `app-trash-purge` sweep removes
 it after 30 days; `DELETE /api/apps/deleted/:id` does it at once. An app
 whose database file was already lost keeps a code-only snapshot.
 
+## The error log
+
+When a broker answers a running app with an error, it logs one row: a
+failed statement (the message the app got, the SQL), a tool call that was
+refused or failed (the slug and the message), who ran the app (owner,
+member, client, contact or public) and when. `app_errors` reads them for an
+agent (`since_hours` narrows it); `GET /api/apps/:id/access-log?kind=error`
+for the Activity tab. A server fault is logged with the generic text the app
+got, never the server's own. A busy wait (429) is not an error. At most 30
+rows per app per minute, so an app that fails in a loop cannot flood the
+log; rows go after 90 days with the rest of the access log. Errors inside
+the app's own JavaScript are not logged: preview the app to see them.
+
 ## Export, import and duplicate
 
 **Duplicate** (`app_duplicate`, or `POST /api/apps/:id/duplicate`) copies an

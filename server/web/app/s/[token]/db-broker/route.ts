@@ -139,6 +139,14 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     );
     return NextResponse.json({ ok: true, output });
   } catch (err) {
-    return appDbErrorResponse(err, 'share-db-broker');
+    return appDbErrorResponse(err, 'share-db-broker', {
+      ownerId: share.ownerId,
+      appNodeId: share.nodeId,
+      shareId: share.id,
+      contactId,
+      via: contactId ? 'contact' : 'public',
+      op,
+      sql: parsed.data.sql,
+    });
   }
 }

@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { withViewer } from '@mantle/db';
-import { recordAppAccess } from '@mantle/content';
+import { recordAppAccess, recordAppError } from '@mantle/content';
 import { appToolLevel, appToolScope, appToolVerdict, dispatchTool } from '@mantle/tools';
 import { getMemberOr401 } from '@/lib/auth';
 import { memberAppOr404, memberName } from '@/lib/member-apps';
@@ -67,12 +67,25 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         }
       : { via: 'member', slug, refused: verdict.reason },
   });
+  const logError = (message: string, status: number) =>
+    recordAppError({
+      ownerId: member.anchorId,
+      appNodeId: app.id,
+      actorId: member.loginId,
+      source: 'tool',
+      via: 'member',
+      slug,
+      message,
+      status,
+    });
   if (!verdict.ok) {
+    logError(verdict.reason, verdict.status);
     return NextResponse.json({ ok: false, error: verdict.reason }, { status: verdict.status });
   }
   const scope = appToolScope(level, { loginId: member.loginId, name: memberName(member) });
   const result = await withViewer(scope.viewer, () =>
     dispatchTool(verdict.tool, input, { ownerId: member.anchorId, surface: scope.surface }),
   );
+  if (!result.ok) logError(result.error, 200);
   return NextResponse.json(result);
 }

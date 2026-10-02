@@ -33,7 +33,7 @@ import {
   verifyAppToolConfirmToken,
   type AppToolConfirmClaims,
 } from '@/lib/auth';
-import { getAppRuntime } from '@mantle/content';
+import { getAppRuntime, recordAppError } from '@mantle/content';
 import { appToolLevel, appToolScope, appToolVerdict, dispatchTool } from '@mantle/tools';
 
 const Body = z.object({
@@ -61,7 +61,19 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     app.manifest.toolSlugs ?? [],
     parsed.data.slug,
   );
+  const logError = (message: string, status: number) =>
+    recordAppError({
+      ownerId: user.id,
+      appNodeId: id,
+      actorId: user.actor.id,
+      source: 'tool',
+      via: 'owner',
+      slug: parsed.data.slug,
+      message,
+      status,
+    });
   if (!verdict.ok) {
+    logError(verdict.reason, verdict.status);
     return NextResponse.json({ ok: false, error: verdict.reason }, { status: verdict.status });
   }
 
@@ -91,6 +103,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       );
     }
     if (!verifyAppToolConfirmToken(token, claims)) {
+      logError('the confirmation expired or did not match the call', 403);
       return NextResponse.json(
         {
           ok: false,
@@ -108,5 +121,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const result = await withViewer(scope.viewer, () =>
     dispatchTool(verdict.tool, parsed.data.input, { ownerId: user.id, surface: scope.surface }),
   );
+  if (!result.ok) logError(result.error, 200);
   return NextResponse.json(result);
 }
