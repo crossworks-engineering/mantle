@@ -145,6 +145,9 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
     sql<Row[]>`select id, token_id, routing_token from push_subscriptions
                where login_id = ${login} order by created_at`;
   const refresh = (bearer: string) => call('/api/auth/token/refresh', { method: 'POST', bearer });
+  /** This brain's id (migration 0226): every sign-in answer and whoami name it. */
+  const brainId = async () =>
+    String((await sql<Row[]>`select brain_id::text as id from brain_identity`)[0]!['id']);
   /** Bring a device token close to its end, so a refresh rotates it (one
    *  with more than 23 days left is answered with itself). */
   const nearExpiry = (deviceId: string) =>
@@ -213,6 +216,7 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
     expect(res.headers.get('set-cookie')).toBeNull();
     const body = await json(res);
     expect(body).toMatchObject({ role: 'member', loginId: member, expiresIn: 30 * DAY });
+    expect(body.brainId).toBe(await brainId());
     const bearer = body.token as string;
     expect(await memberProbe({ bearer })).toBe(400); // past the member gate
     for (const path of ['/api/shell', '/api/client/shell', '/api/push/subscriptions']) {
@@ -295,6 +299,7 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
     const before = Math.floor(Date.now() / 1000);
     const phone = await clientPhone('ada', 'Ada phone');
     expect(phone.body).toMatchObject({ ok: true, role: 'client', loginId: id });
+    expect(phone.body.brainId).toBe(await brainId());
     expect(phone.body.expiresIn).toBe(30 * DAY);
     const claims = tokens.verifyMobileToken(phone.token)!;
     expect(claims.ep).toBe(0);
@@ -506,6 +511,7 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
       expect(res.headers.get('cache-control')).toBe('no-store');
       const body = await json(res);
       expect(body).toMatchObject({ token: phone.token, deviceId: phone.deviceId, role: 'client' });
+      expect(body).toMatchObject({ loginId: id, brainId: await brainId() });
       expect(body.expiresIn as number).toBeGreaterThan(29 * DAY);
     }
     const rows = await sql<Row[]>`select id from mobile_tokens where user_id = ${id}`;
@@ -522,6 +528,7 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
     expect(res.status).toBe(200);
     const body = await json(res);
     expect(body).toMatchObject({ role: 'client', expiresIn: 30 * DAY });
+    expect(body).toMatchObject({ loginId: id, brainId: await brainId() });
     expect(body.deviceId).not.toBe(phone.deviceId);
     const claims = tokens.verifyMobileToken(body.token as string)!;
     expect(claims).toMatchObject({ uid: id, ep: 0 });
@@ -545,7 +552,8 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
       expect(retry.status).toBe(200);
       expect(retry.headers.get('cache-control')).toBe('no-store');
       const again = await json(retry);
-      expect(again).toMatchObject({ deviceId: body.deviceId, role: 'client' });
+      expect(again).toMatchObject({ deviceId: body.deviceId, role: 'client', loginId: id });
+      expect(again.brainId).toBe(await brainId());
       const c2 = tokens.verifyMobileToken(again.token as string)!;
       expect(c2).toMatchObject({ uid: id, jti: body.deviceId, ep: 0 });
       expect(Math.abs(c2.exp - claims.exp)).toBeLessThanOrEqual(2);

@@ -58,6 +58,7 @@ const bearers = vi.hoisted(() => ({
 vi.mock('../lib/brain-identity', () => ({
   brainIdOrNull: async () => '0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f',
   getBrainId: async () => '0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f',
+  brainIdField: async () => ({ brainId: '0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f' }),
 }));
 
 vi.mock('../lib/auth/login-row', () => ({

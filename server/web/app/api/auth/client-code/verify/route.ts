@@ -43,6 +43,7 @@ import {
 import { deviceLabel } from '@/lib/token-login';
 import { refuseCrossSiteAuthPost } from '@/lib/auth/preflight';
 import { AUTH_BODY_CEILING_BYTES, readJsonCapped } from '@/lib/body-limit';
+import { brainIdField } from '@/lib/brain-identity';
 
 const Body = z.object({
   email: z.string().trim().min(3).max(320),
@@ -124,6 +125,8 @@ export async function POST(req: Request) {
         deviceId: jti,
         role: 'client',
         loginId: redeemed.loginId,
+        // This brain: with loginId, the key the app files the session under.
+        ...(await brainIdField()),
       },
       { headers: { 'Cache-Control': 'no-store' } },
     );

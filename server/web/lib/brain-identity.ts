@@ -55,6 +55,13 @@ export async function brainIdOrNull(): Promise<string | null> {
   }
 }
 
+/** `{ brainId }` to spread into an answer, or nothing when the id cannot be
+ *  read (whoami and the sign-in answers: additive, never a failure). */
+export async function brainIdField(): Promise<{ brainId?: string }> {
+  const brainId = await brainIdOrNull();
+  return brainId ? { brainId } : {};
+}
+
 /** Tests only: forget the cached id and the warning. */
 export function resetBrainIdCache(): void {
   cached = null;

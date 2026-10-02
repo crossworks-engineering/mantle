@@ -6,6 +6,7 @@ import { buildMobileToken, loginWithPassword } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 import { AUTH_BODY_CEILING_BYTES, readJsonCapped } from '@/lib/body-limit';
+import { brainIdField } from '@/lib/brain-identity';
 
 /**
  * Shared credentials→bearer flow behind BOTH token-login routes:
@@ -135,7 +136,9 @@ export async function handleTokenLogin(
       expiresIn: expiresInSec,
       expiresAt: expiresAt.toISOString(),
       deviceId: jti,
-      ...(opts.withRole ? { role: login?.role, loginId: userId } : {}),
+      // device-login: the login and this brain (the key a device holding
+      // several logins files the session under, docs/mobile-companion-backend.md).
+      ...(opts.withRole ? { role: login?.role, loginId: userId, ...(await brainIdField()) } : {}),
     },
     { headers: { 'Cache-Control': 'no-store' } },
   );

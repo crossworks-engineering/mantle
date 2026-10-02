@@ -26,6 +26,9 @@ vi.mock('@/lib/auth', () => ({
   buildMobileToken: () => ({ value: 'tok', expiresInSec: 60, expiresAt: new Date() }),
 }));
 vi.mock('@/lib/audit', () => ({ auditFireAndForget: vi.fn(), requestMetaFrom: () => ({}) }));
+vi.mock('@/lib/brain-identity', () => ({
+  brainIdField: async () => ({ brainId: '0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f' }),
+}));
 vi.mock('@/lib/rate-limit', () => ({
   clientIp: () => '1.1.1.1',
   clientIpKey: () => '1.1.1.1',
@@ -66,5 +69,35 @@ describe('token login: adminsOnly', () => {
   it('admits a member where the route does not ask (the web token route)', async () => {
     state.role = 'member';
     expect((await login()).status).toBe(200);
+  });
+});
+
+describe('token login: what the answer names', () => {
+  const signIn = (opts: { withRole?: boolean; adminsOnly?: boolean }) =>
+    handleTokenLogin(
+      new Request('https://brain.example.com/api/auth/x', {
+        method: 'POST',
+        body: JSON.stringify({ email: 'm@example.com', password: 'pw' }),
+      }),
+      { path: '/api/auth/x', channel: 'mobile', defaultLabel: 'Mobile device', ...opts },
+    );
+
+  it('device-login (withRole) names the role, the login and this brain', async () => {
+    state.role = 'member';
+    const body = (await (await signIn({ withRole: true })).json()) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      token: 'tok',
+      deviceId: expect.any(String),
+      role: 'member',
+      loginId: 'login-1',
+      brainId: '0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f',
+    });
+  });
+
+  it('the frozen mobile-login (adminsOnly) and the web token answer as before: no login, no brain', async () => {
+    for (const opts of [{ adminsOnly: true }, {}]) {
+      const body = (await (await signIn(opts)).json()) as Record<string, unknown>;
+      expect(Object.keys(body).sort()).toEqual(['deviceId', 'expiresAt', 'expiresIn', 'token']);
+    }
   });
 });

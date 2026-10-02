@@ -5,6 +5,7 @@ import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { clientIp, rateLimit } from '@/lib/rate-limit';
 import { claimPairCode } from '@/lib/pair-code';
 import { AUTH_BODY_CEILING_BYTES, readJsonCapped } from '@/lib/body-limit';
+import { brainIdField } from '@/lib/brain-identity';
 
 /**
  * POST /api/auth/pair/claim — the phone's half of QR sign-in. Public (the
@@ -71,5 +72,9 @@ export async function POST(req: Request) {
     expiresAt: claimed.expiresAt.toISOString(),
     deviceId: claimed.deviceId,
     email: claimed.email,
+    // Additive (v1.1): the login and this brain, the pair a device holding
+    // several logins files the session under. Shipped builds ignore both.
+    loginId: claimed.userId,
+    ...(await brainIdField()),
   });
 }

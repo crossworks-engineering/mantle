@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { getLoginOr401 } from '@/lib/auth';
-import { brainIdOrNull } from '@/lib/brain-identity';
+import { brainIdField } from '@/lib/brain-identity';
 
 /**
  * GET /api/auth/whoami: who a credential belongs to, for any role
@@ -30,7 +30,6 @@ export async function GET() {
       : login.kind === 'member'
         ? login.member.displayName
         : login.client.displayName;
-  const brainId = await brainIdOrNull();
   return NextResponse.json(
     {
       role: login.kind,
@@ -38,7 +37,7 @@ export async function GET() {
       email: login.email,
       displayName,
       ...ROUTES[login.kind],
-      ...(brainId ? { brainId } : {}),
+      ...(await brainIdField()),
     },
     { headers: { 'Cache-Control': 'no-store' } },
   );

@@ -58,6 +58,11 @@ vi.mock('@mantle/content', async (importOriginal) => ({
   ),
 }));
 
+// This brain's id (migration 0226): a stand-in.
+vi.mock('@/lib/brain-identity', () => ({
+  brainIdField: async () => ({ brainId: '0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f' }),
+}));
+
 vi.mock('@/lib/audit', () => ({
   auditFireAndForget: (e: Record<string, unknown>) => h.audits.push(e),
   requestMetaFrom: () => ({}),
@@ -440,6 +445,8 @@ describe('POST /api/auth/client-code/verify, device mode', () => {
     expect(res.headers.get('cache-control')).toBe('no-store');
     const body = (await res.json()) as Record<string, unknown>;
     expect(body).toMatchObject({ ok: true, role: 'client', loginId: LOGIN, expiresIn: 2592000 });
+    // v1.1: this brain, beside the login (the pair the app files the session under).
+    expect(body.brainId).toBe('0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f');
     // Redeemed by the id DERIVED from the body's request id.
     expect(h.redeemCalls).toEqual([
       { requestId: deviceRequestId(DEVICE_REQ), email: GOOD.email, code: GOOD.code },

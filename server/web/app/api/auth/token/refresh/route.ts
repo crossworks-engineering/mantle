@@ -14,6 +14,7 @@ import {
 } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { clientIpKey, rateLimit } from '@/lib/rate-limit';
+import { brainIdField } from '@/lib/brain-identity';
 
 /**
  * Rotate the calling bearer: mint a new jti + token, revoke the old row,
@@ -107,6 +108,8 @@ async function answerSuccessorAgain(
       expiresAt: minted.expiresAt.toISOString(),
       deviceId: next.id,
       role: row.role,
+      loginId: next.userId,
+      ...(await brainIdField()),
     },
     { headers: NO_STORE },
   );
@@ -209,6 +212,8 @@ export async function POST(req: Request) {
         expiresAt: new Date(expiresAtMs).toISOString(),
         deviceId: jti,
         role: row.role,
+        loginId: row.userId,
+        ...(await brainIdField()),
       },
       { headers: NO_STORE },
     );
@@ -290,6 +295,8 @@ export async function POST(req: Request) {
       expiresAt: minted.expiresAt.toISOString(),
       deviceId: newJti,
       role: row.role,
+      loginId: row.userId,
+      ...(await brainIdField()),
     },
     { headers: NO_STORE },
   );
