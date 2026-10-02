@@ -210,7 +210,8 @@ export async function runInfraChecks(browserHost: string | null): Promise<Sanity
   }
 
   // Tika — the long-tail document parser (office formats, odd PDFs). A
-  // brain-core box sheds it on purpose (docker-compose.core.yml), and common
+  // brain-core box sheds it on purpose (docker-compose.core.yml; the installer
+  // writes MANTLE_CORE_SHAPE=1 with --core), and common
   // formats parse in-process without it, so there it is optional: reported,
   // never blocking.
   const tika = await tikaVersion(2_500);

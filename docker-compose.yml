@@ -721,6 +721,9 @@ services:
       # while no account exists. Web only, NOT the shared anchor: no other
       # service needs it. Empty = no code asked for (a box installed before it).
       MANTLE_SETUP_CODE: ${MANTLE_SETUP_CODE:-}
+      # 1 on a brain-core box (scripts/install.sh --core writes it): the
+      # onboarding stack check then treats the shed Tika as optional.
+      MANTLE_CORE_SHAPE: ${MANTLE_CORE_SHAPE:-}
     volumes:
       - ${MANTLE_DATA_DIR:-./data}/files:/data/files
       - ${MANTLE_DATA_DIR:-./data}/backups:/data/backups

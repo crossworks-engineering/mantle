@@ -61,15 +61,7 @@
 # ollama_pull (local-embedder), sandboxd (sandboxes). A core is expected to
 # use ONLINE embeddings; the CPU embedder does not fit a 4 GB box.
 
-# One more entry is not a profile gate: `web` learns it runs the core shape
-# (MANTLE_CORE_SHAPE), so the onboarding wizard's stack check reports a missing
-# Tika as optional rather than blocking a core box that sheds it on purpose.
-# Compose merges `environment` maps, so the main file's list is kept.
-
 services:
-  web:
-    environment:
-      MANTLE_CORE_SHAPE: "1"
   tika:
     profiles: ["full", "helpers"]
   browser:

@@ -906,6 +906,9 @@ if [[ -n "$CORE" ]]; then
     [[ -f "$STACK_DIR/docker-compose.core.yml" ]] \
       || die "docker-compose.core.yml missing from $STACK_DIR — re-download the deploy bundle (--core needs it)."
     upsert COMPOSE_FILE "$STACK_DIR/docker-compose.yml:$STACK_DIR/docker-compose.core.yml"
+    # Tells web it runs the core shape: the onboarding stack check then reports
+    # the shed Tika as optional instead of blocking the first step.
+    upsert MANTLE_CORE_SHAPE 1
     # Best-effort: stop + remove the services the core sheds (a fresh box has
     # none of them yet; a downsized box drops them here). Naming a service
     # explicitly overrides its profile gate, so this works post-COMPOSE_FILE.
@@ -918,6 +921,7 @@ if [[ -n "$CORE" ]]; then
       rm -sf $SHED >/dev/null 2>&1 || true
     ok "Brain-core shape ON — channel workers + doc helpers won't start (see docker-compose.core.yml)"
   else
+    upsert MANTLE_CORE_SHAPE 0
     if [[ "$(getval COMPOSE_FILE)" == *docker-compose.core.yml* ]]; then
       tmp="$(mktemp)"; grep -vE '^COMPOSE_FILE=' "$ENV_FILE" > "$tmp"; mv "$tmp" "$ENV_FILE"
       ok "Brain-core shape OFF — the full service set starts on the next 'docker compose up -d'"

@@ -410,6 +410,8 @@ cat > "$T/bin/curl" <<'STUB'
 printf '%s' "$CURL_BOOT"
 STUB
 printf '#!/bin/sh\nexit 0\n' > "$T/bin/ss"     # nothing listening
+# A small /tmp must not fail the installer's disk preflight: report 100 GB free.
+printf '#!/bin/sh\necho "Filesystem 1024-blocks Used Available Capacity Mounted"\necho "fake 209715200 0 104857600 0%% /"\n' > "$T/bin/df"
 printf '#!/bin/sh\nexit 1\n' > "$T/bin/lsof"
 chmod +x "$T/bin/"*
 install_run() { # <args...>: run the configurator in the fake stack
