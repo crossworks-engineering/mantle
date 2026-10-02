@@ -43,6 +43,11 @@ import {
   scheduleAppTableExportSync,
 } from '@mantle/content/app-table-exports';
 import {
+  AppTrashRefusedError,
+  listDeletedApps,
+  restoreDeletedApp,
+} from '@mantle/content/app-trash';
+import {
   AppSnapshotBudgetError,
   AppSnapshotRefusedError,
   createAppSnapshot,
@@ -795,7 +800,7 @@ const app_delete: BuiltinToolDef = {
   preconditions: APP_ID_PRE,
   name: 'Delete a mini app',
   description:
-    'Permanently delete a mini app by id — its source, builds, and per-app database. Irreversible; confirm with the user first.',
+    'Delete a mini app by id: its source, builds and database. A snapshot is kept first, so for 30 days it can come back with `app_undelete` (`app_deleted_list` shows it); after that it is gone for good. Confirm with the user first.',
   requiresConfirm: true,
   inputSchema: {
     type: 'object',
@@ -808,7 +813,7 @@ const app_delete: BuiltinToolDef = {
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
     try {
-      const ok = await deleteApp(ctx.ownerId, id);
+      const ok = await deleteApp(ctx.ownerId, id, { actor: historyActor(ctx) });
       if (!ok) return { ok: false, error: `app ${id} not found` };
       ctx.step?.setOutput({ id, deleted: true });
       void notifyAppNavChanged(ctx.ownerId);
@@ -1230,6 +1235,63 @@ const app_snapshot_delete: BuiltinToolDef = {
   },
 };
 
+const app_deleted_list: BuiltinToolDef = {
+  slug: 'app_deleted_list',
+  ownerOnly: true,
+  readOnly: true,
+  name: 'List recently deleted mini apps',
+  description:
+    'List the apps deleted in the last 30 days, newest first: id, name, when, until when it can come back, and whether its data was kept. Bring one back with `app_undelete`.',
+  inputSchema: { type: 'object', properties: {} },
+  handler: async (_input, ctx) => {
+    const refused = ownerOnlyRefusal(ctx);
+    if (refused) return refused;
+    try {
+      const deleted = await listDeletedApps(ctx.ownerId);
+      ctx.step?.setOutput({ count: deleted.length });
+      return { ok: true, output: { apps: deleted } };
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) };
+    }
+  },
+};
+
+const app_undelete: BuiltinToolDef = {
+  slug: 'app_undelete',
+  ownerOnly: true,
+  name: 'Bring back a deleted mini app',
+  description:
+    'Restore an app deleted in the last 30 days (`app_deleted_list`), with its id, code, name, look and data. It comes back admin-only and unshared; publishing state is as it was. Returns its id and name.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', description: "The deleted app's id, from `app_deleted_list`." },
+    },
+    required: ['id'],
+  },
+  handler: async (input, ctx) => {
+    const refused = ownerOnlyRefusal(ctx);
+    if (refused) return refused;
+    const id = str(input.id).trim();
+    if (!id) return { ok: false, error: 'id is required' };
+    try {
+      const app = await restoreDeletedApp(ctx.ownerId, id, { actor: historyActor(ctx) });
+      if (!app) {
+        return {
+          ok: false,
+          error: `app ${id} is not in Recently deleted (past 30 days, or never deleted) — see app_deleted_list`,
+        };
+      }
+      void notifyAppNavChanged(ctx.ownerId);
+      ctx.step?.setOutput({ id, restored: true });
+      return { ok: true, output: { id: app.id, name: app.title, url: nodeUrl(app.id) } };
+    } catch (err) {
+      if (err instanceof AppTrashRefusedError) return { ok: false, error: err.message };
+      return { ok: false, error: errorMessage(err) };
+    }
+  },
+};
+
 export const APP_TOOLS: BuiltinToolDef[] = [
   app_create,
   app_get,
@@ -1250,6 +1312,8 @@ export const APP_TOOLS: BuiltinToolDef[] = [
   app_snapshot_list,
   app_snapshot_restore,
   app_snapshot_delete,
+  app_deleted_list,
+  app_undelete,
 ];
 
 export const APP_TOOL_SLUGS: string[] = APP_TOOLS.map((t) => t.slug);

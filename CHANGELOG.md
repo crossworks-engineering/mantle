@@ -4,6 +4,26 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: apps first-class, Phase 3 (trash, import, app_update)
+
+- **Recently deleted.** Deleting an app keeps a `pre_delete` snapshot (code,
+  name, look and data) and its history for 30 days; it comes back with the
+  same id (`app_undelete`, `POST /api/apps/deleted/:id/restore`), admin-only
+  and unshared. `app_deleted_list` / `GET /api/apps/deleted` list them;
+  `DELETE /api/apps/deleted/:id` purges one now; the nightly
+  `app-trash-purge` sweep (`pnpm -C server/web app-trash:purge`) after 30
+  days. A delete whose snapshot cannot be taken does not happen.
+- **Migration 0220** (`0220_node_snapshots_outlive_node`): drops the
+  node_snapshots foreign key so the history outlives the app.
+- **`app_update`**: rename an app, change its description, icon, colour or
+  tags. `PATCH /api/apps/:id` takes `description`.
+- **Import checks first.** `POST /api/apps/import` validates the tool slugs
+  and tries the schema before it writes anything (a bad one used to leave a
+  half-made app), follows the create route's field rules, and snapshots an
+  existing app before it overwrites it.
+- **One build step** (`buildAndStageApp` in @mantle/tools) behind `app_build`,
+  Preview, Commit, import and `apps:push`.
+
 ## Unreleased: app history, versions and snapshots (apps first-class, Phase 2)
 
 An app's code AND its data can now be put back

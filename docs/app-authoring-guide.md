@@ -341,6 +341,13 @@ The copies live under `APP_DB_DIR/_snapshots/<owner>/<app>/` and ride the
 backup (`mantle-app-dbs-<ts>/_snapshots`). Download one from the History tab
 as a `.sqlite` file.
 
+**Recently deleted.** Deleting an app takes a snapshot first (code, name,
+look and data), and its history stays for 30 days: `app_deleted_list` (or
+`GET /api/apps/deleted`) lists it and `app_undelete` brings it back with the
+same id, admin-only and unshared. The nightly `app-trash-purge` sweep removes
+it after 30 days; `DELETE /api/apps/deleted/:id` does it at once. An app
+whose database file was already lost keeps a code-only snapshot.
+
 ## Exporting app data to a Table (the app as master)
 
 When a team manages data **inside** an app (Tier 3 SQLite with member writes),

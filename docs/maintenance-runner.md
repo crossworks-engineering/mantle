@@ -180,7 +180,10 @@ streams a run.
   contact share trail `share_access_log` by the same 90 days since
   migration 0214, [sharing.md](./sharing.md) section 4b; plain SQL
   in batches, see [client-logins.md](./client-logins.md) section 10; by hand
-  `pnpm -C server/web app-access-log:reap`, dry run unless `--apply`), and
+  `pnpm -C server/web app-access-log:reap`, dry run unless `--apply`),
+  `app-trash-purge` (deleted apps past their 30 days in Recently deleted:
+  their history rows and snapshot files; by hand
+  `pnpm -C server/web app-trash:purge`, dry run unless `--apply`), and
   the four read-only reports `deps-drift`, `models-drift`, `pinned-model-drift`
   and `pool-fit`. Backups stay on the
   `db-dump.sh` path; they are already scheduled there.

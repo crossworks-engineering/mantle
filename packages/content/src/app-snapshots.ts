@@ -155,6 +155,9 @@ function toSummary(r: SummaryRow): AppSnapshot {
 async function currentCode(ownerId: string, appId: string): Promise<AppSnapshotCode | null> {
   const [row] = await db
     .select({
+      title: nodes.title,
+      data: nodes.data,
+      tags: nodes.tags,
       source: apps.source,
       draft: apps.draftSource,
       manifest: apps.manifest,
@@ -165,7 +168,14 @@ async function currentCode(ownerId: string, appId: string): Promise<AppSnapshotC
     .where(and(eq(apps.nodeId, appId), eq(nodes.ownerId, ownerId), eq(nodes.type, 'app')))
     .limit(1);
   if (!row) return null;
+  const d = (row.data ?? {}) as Record<string, unknown>;
   return {
+    meta: {
+      title: row.title,
+      ...(typeof d.icon === 'string' ? { icon: d.icon } : {}),
+      ...(typeof d.color === 'string' ? { color: d.color } : {}),
+      tags: row.tags ?? [],
+    },
     source: row.source,
     draft: row.draft ?? null,
     manifest: row.manifest ?? {},
@@ -192,6 +202,7 @@ async function snapshotLocked(
     actor: AppHistoryActor;
     note?: string | null;
     requireData?: boolean;
+    withData?: boolean;
   },
 ): Promise<AppSnapshot | null> {
   const code = await currentCode(ownerId, appId);
@@ -206,7 +217,7 @@ async function snapshotLocked(
   const id = randomUUID();
   const rel = snapshotRelPath(ownerId, appId, id);
   const abs = snapshotAbsPath(rel);
-  const data = await snapshotAppDatabase(ownerId, appId, abs);
+  const data = opts.withData === false ? null : await snapshotAppDatabase(ownerId, appId, abs);
   if (!data && opts.requireData) return null;
   try {
     const row = await db.transaction((tx) =>
@@ -296,6 +307,8 @@ export async function createAppSnapshot(
     /** Skip (null) when the app has no database yet: an automatic snapshot
      *  before a schema change has nothing to protect then. */
     requireData?: boolean;
+    /** False: keep the code only (an app whose database file is lost). */
+    withData?: boolean;
   } = {},
 ): Promise<AppSnapshot | null> {
   const trigger = opts.trigger ?? 'manual';
@@ -306,6 +319,7 @@ export async function createAppSnapshot(
       actor: opts.actor ?? 'owner',
       note: opts.note,
       requireData: opts.requireData === true,
+      withData: opts.withData !== false,
     });
   });
   if (snap && trigger !== 'manual') await pruneAutoSnapshots(appId);
@@ -507,10 +521,4 @@ export async function restoreAppSnapshot(
   await pruneAutoSnapshots(appId);
   const { code: _code, schemaVersion: _sv, ...restored } = result.restored;
   return { ...result, restored };
-}
-
-/** Remove every snapshot file of an app (its rows go with the node). */
-export async function removeAppSnapshotFiles(ownerId: string, appId: string): Promise<void> {
-  const dir = path.join(appDbRoot(), '_snapshots', ownerId, appId);
-  await rm(dir, { recursive: true, force: true });
 }

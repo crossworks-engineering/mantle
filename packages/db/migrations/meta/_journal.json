@@ -1534,6 +1534,13 @@
       "when": 1790019420000,
       "tag": "0219_node_snapshots",
       "breakpoints": true
+    },
+    {
+      "idx": 220,
+      "version": "7",
+      "when": 1790019480000,
+      "tag": "0220_node_snapshots_outlive_node",
+      "breakpoints": true
     }
   ]
 }

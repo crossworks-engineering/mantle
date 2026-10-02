@@ -204,6 +204,8 @@ const HTTP_SURFACE = [
   'app_snapshot_list',
   'app_snapshot_restore',
   'app_snapshot_delete',
+  'app_deleted_list',
+  'app_undelete',
   'sandbox_create',
   'sandbox_exec',
   'sandbox_list',

@@ -4,7 +4,8 @@
  * restore puts back the code (draft), the data, or both (live), always after
  * an undo snapshot; a version holds no data and cannot be deleted; the
  * automatic snapshots are pruned, the owner's are not; a restore marker
- * stops the app's SQL while the file is swapped. Seeds its own owner and
+ * stops the app's SQL while the file is swapped; a deleted app waits in the
+ * trash for 30 days and comes back with its id (Phase 3). Seeds its own owner and
  * apps on random ids; removes them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/app-snapshots.db.test.ts
  */
@@ -201,12 +202,44 @@ describe.skipIf(!URL)('app history on Postgres', () => {
     expect(existsSync(`${live}.restoring`)).toBe(false);
   });
 
-  it('deleting the app removes its snapshot files', async () => {
-    const id = await publishedApp('gone');
+  it('a deleted app waits in the trash and comes back with its id, code and data (Phase 3)', async () => {
+    const trash = await import('./app-trash');
+    const id = await publishedApp('trash');
     const snap = await snaps.createAppSnapshot(owner, id);
-    const file = (await snaps.appSnapshotFile(owner, id, snap!.id))!.path;
+    const kept = (await snaps.appSnapshotFile(owner, id, snap!.id))!.path;
     await apps.deleteApp(owner, id);
-    expect(existsSync(file)).toBe(false);
-    expect(await snaps.listAppSnapshots(owner, id)).toEqual([]);
+    expect(await apps.getApp(owner, id)).toBeNull();
+    // The history and its files outlive the app.
+    expect(existsSync(kept)).toBe(true);
+    const listed = (await trash.listDeletedApps(owner)).find((d) => d.id === id);
+    expect(listed).toMatchObject({ title: `${tag} trash`, hasData: true });
+
+    const back = await trash.restoreDeletedApp(owner, id);
+    expect(back).toEqual({ id, title: `${tag} trash` });
+    expect((await apps.getApp(owner, id))?.source.files['App.tsx']).toContain('"one"');
+    expect(await names(id)).toEqual(['a']);
+    expect((await trash.listDeletedApps(owner)).some((d) => d.id === id)).toBe(false);
+    // The history line carries on: the restore is its newest version.
+    expect((await snaps.listAppSnapshots(owner, id))[0]).toMatchObject({ kind: 'version' });
+    await expect(trash.restoreDeletedApp(owner, id)).rejects.toThrow(/not deleted/);
+  });
+
+  it('purges a deleted app for good: now on request, or after the 30 days', async () => {
+    const trash = await import('./app-trash');
+    const a = await publishedApp('purge-now');
+    const b = await publishedApp('purge-later');
+    await apps.deleteApp(owner, a);
+    await apps.deleteApp(owner, b);
+    expect(await trash.purgeDeletedApp(owner, a)).toBe(true);
+    expect(await snaps.listAppSnapshots(owner, a)).toEqual([]);
+    expect(existsSync(path.join(dir, '_snapshots', owner, a))).toBe(false);
+
+    const later = new Date(Date.now() + (trash.APP_TRASH_DAYS + 1) * 86_400_000);
+    expect(
+      (await trash.purgeExpiredDeletedApps({ dryRun: true, now: later })).apps,
+    ).toBeGreaterThan(0);
+    await trash.purgeExpiredDeletedApps({ now: later });
+    expect(await snaps.listAppSnapshots(owner, b)).toEqual([]);
+    expect(await trash.restoreDeletedApp(owner, b)).toBeNull();
   });
 });

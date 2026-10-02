@@ -388,6 +388,8 @@ export function workingSource(app: AppDetail): AppSource {
 }
 
 export type CreateAppInput = {
+  /** Only to bring a deleted app back with its old id (app-trash.ts). */
+  id?: string;
   title: string;
   icon?: string;
   color?: AppTint;
@@ -400,7 +402,7 @@ export async function createApp(ownerId: string, input: CreateAppInput): Promise
   await ensureRoot(ownerId);
   const source = input.source ?? emptySource();
   const manifest: AppManifest = input.description ? { description: input.description } : {};
-  const id = randomUUID();
+  const id = input.id ?? randomUUID();
 
   return db.transaction(async (tx) => {
     const [node] = await tx
@@ -917,22 +919,46 @@ export async function restoreAppLive(
   return done;
 }
 
-export async function deleteApp(ownerId: string, id: string): Promise<boolean> {
+/**
+ * Delete an app. A `pre_delete` snapshot comes first (the code, the name and
+ * look, and a copy of the database), and the app's history outlives it, so
+ * for 30 days the app can come back from Recently deleted (app-trash.ts).
+ * When that snapshot cannot be taken the app is NOT deleted. An app whose
+ * database file was already lost keeps a code-only snapshot.
+ */
+export async function deleteApp(
+  ownerId: string,
+  id: string,
+  opts: { actor?: AppHistoryActor } = {},
+): Promise<boolean> {
   if (!(await ownsApp(ownerId, id))) return false;
-  // The node goes first, then the SQLite file (apps audit D6). The other way
-  // round, a node delete that failed left an app whose data was gone. The
-  // file's path is read now: the `app_databases` row cascades away with the
-  // node. Dynamic import keeps the server-only broker (node:fs/sqlite) out of
-  // the content index / edge bundles.
+  // Dynamic imports keep the server-only modules (node:fs, sqlite) out of the
+  // content index / edge bundles.
   const broker = await import('./app-broker');
+  const { createAppSnapshot } = await import('./app-snapshots');
+  const keep = {
+    trigger: 'pre_delete' as const,
+    actor: opts.actor ?? 'owner',
+    note: 'before delete',
+  };
+  try {
+    await createAppSnapshot(ownerId, id, keep);
+  } catch (err) {
+    if (!(err instanceof broker.AppDbMissingError)) throw err;
+    await createAppSnapshot(ownerId, id, { ...keep, withData: false });
+  }
+  // The node goes first, then the live database file (apps audit D6). Its
+  // path is read now: the `app_databases` row cascades away with the node.
+  // The snapshot files stay, with the history rows, for the trash.
   const dbPath = await broker.appDatabasePath(ownerId, id);
   await db.delete(nodes).where(eq(nodes.id, id)); // `apps` + `app_databases` cascade.
-  try {
-    if (dbPath) await broker.removeAppDatabaseFiles(dbPath);
-    await broker.removeAppSnapshotDir(ownerId, id);
-  } catch (err) {
-    // The app is gone either way; a stray file is only disk.
-    console.error(`[apps] app ${id} deleted, but some of its files stayed:`, err);
+  if (dbPath) {
+    try {
+      await broker.removeAppDatabaseFiles(dbPath);
+    } catch (err) {
+      // The app is gone either way; a stray file is only disk.
+      console.error(`[apps] app ${id} deleted, but its database file stayed:`, err);
+    }
   }
   return true;
 }

@@ -10,7 +10,6 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
-import { nodes } from './nodes';
 import type { AppManifest, AppSource, BuildRef } from './apps';
 
 /**
@@ -26,7 +25,8 @@ import type { AppManifest, AppSource, BuildRef } from './apps';
  *    APP_DB_DIR/_snapshots (`db_path`, relative to APP_DB_DIR).
  *
  * Append-only: a restore writes a new row (and the publish after it carries
- * `restored_from`); history is never rewritten. Rows go with the node.
+ * `restored_from`); history is never rewritten. Rows outlive a deleted app
+ * for 30 days (migration 0220), then the nightly purge removes them.
  */
 export const nodeSnapshots = pgTable(
   'node_snapshots',
@@ -35,9 +35,9 @@ export const nodeSnapshots = pgTable(
       .primaryKey()
       .default(sql`gen_random_uuid()`),
     ownerId: uuid('owner_id').notNull(),
-    nodeId: uuid('node_id')
-      .notNull()
-      .references(() => nodes.id, { onDelete: 'cascade' }),
+    /** The item's id. No foreign key since migration 0220: an app's history
+     *  outlives the app for 30 days (the trash, app-trash.ts). */
+    nodeId: uuid('node_id').notNull(),
     /** 'app' (tables later). */
     nodeKind: text('node_kind').notNull(),
     /** 1, 2, 3 … per node. */
@@ -69,11 +69,21 @@ export const nodeSnapshots = pgTable(
 
 /** What an app snapshot or version keeps of the code. */
 export type AppSnapshotCode = {
+  /** The app's name and look when it was taken (what a deleted app comes
+   *  back as). Absent on rows before Phase 3. */
+  meta?: AppSnapshotMeta;
   source: AppSource;
   /** The unpublished draft at the time, when there was one. */
   draft: AppSource | null;
   manifest: AppManifest;
   publishedBuild: BuildRef | null;
+};
+
+export type AppSnapshotMeta = {
+  title: string;
+  icon?: string;
+  color?: string;
+  tags: string[];
 };
 
 export type NodeSnapshot = typeof nodeSnapshots.$inferSelect;

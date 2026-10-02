@@ -200,6 +200,21 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       'Plain SQL in batches, no model, idempotent; a no-op once clean. The rules live in @mantle/content app-access-log.ts (reapAppAccessLog) and share-access-log.ts (reapShareAccessLog), shared by the cron and the script.',
   },
   {
+    slug: 'app-trash-purge',
+    title: 'Purge deleted apps',
+    description:
+      "Removes deleted apps past their 30 days in Recently deleted: the app's history rows and its snapshot files (APP_DB_DIR/_snapshots). Until then the app can be restored with its id, code and data. Also clears the history of apps deleted before the trash existed, 30 days after its newest row.",
+    kind: 'recurring',
+    status: 'live',
+    cost: 'sql',
+    schedulable: true,
+    script: 'scripts/app-trash-purge.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    notes:
+      'Plain SQL and file removal, no model, idempotent; a no-op once clean. The rule lives in @mantle/content/app-trash (purgeExpiredDeletedApps), shared by the cron and the script.',
+  },
+  {
     slug: 'traces-reap',
     title: 'Reap abandoned traces (all owners)',
     description:

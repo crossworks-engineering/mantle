@@ -23,6 +23,20 @@ vi.mock('@mantle/content/app-snapshots', () => {
   };
 });
 
+vi.mock('@mantle/content/app-trash', () => {
+  class AppTrashRefusedError extends Error {}
+  return {
+    AppTrashRefusedError,
+    listDeletedApps: vi.fn(),
+    restoreDeletedApp: vi.fn(),
+  };
+});
+
+import {
+  AppTrashRefusedError,
+  listDeletedApps,
+  restoreDeletedApp,
+} from '@mantle/content/app-trash';
 import {
   AppSnapshotRefusedError,
   createAppSnapshot,
@@ -172,5 +186,31 @@ describe('app_snapshot_delete', () => {
     expect(errorOf(await del.handler({ id: APP, snapshot_id: SNAP }, chat))).toMatch(
       /app_snapshot_list/,
     );
+  });
+});
+
+describe('the trash tools (Phase 3)', () => {
+  const deletedList = tool('app_deleted_list');
+  const undelete = tool('app_undelete');
+
+  it('lists the deleted apps', async () => {
+    vi.mocked(listDeletedApps).mockResolvedValue([{ id: APP, title: 'Prices' }] as never);
+    expect(outputOf(await deletedList.handler({}, chat))).toEqual({
+      apps: [{ id: APP, title: 'Prices' }],
+    });
+  });
+
+  it('brings one back, and says why not when it cannot', async () => {
+    vi.mocked(restoreDeletedApp).mockResolvedValueOnce({ id: APP, title: 'Prices' });
+    expect(outputOf(await undelete.handler({ id: APP }, mcp))).toMatchObject({
+      id: APP,
+      name: 'Prices',
+    });
+    expect(restoreDeletedApp).toHaveBeenCalledWith('o1', APP, { actor: 'mcp' });
+    vi.mocked(restoreDeletedApp).mockResolvedValueOnce(null);
+    expect(errorOf(await undelete.handler({ id: APP }, chat))).toMatch(/app_deleted_list/);
+    vi.mocked(restoreDeletedApp).mockRejectedValueOnce(new AppTrashRefusedError('not deleted'));
+    expect(errorOf(await undelete.handler({ id: APP }, chat))).toBe('not deleted');
+    expect(errorOf(await undelete.handler({ id: APP }, member))).toMatch(/owner/);
   });
 });

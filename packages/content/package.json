@@ -18,6 +18,7 @@
     "./pages": "./src/pages/index.ts",
     "./app-broker": "./src/app-broker.ts",
     "./app-snapshots": "./src/app-snapshots.ts",
+    "./app-trash": "./src/app-trash.ts",
     "./app-table-exports": "./src/app-table-exports.ts",
     "./tables": "./src/tables/index.ts",
     "./table-to-text": "./src/table-to-text.ts",

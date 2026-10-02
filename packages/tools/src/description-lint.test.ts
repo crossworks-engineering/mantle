@@ -68,6 +68,9 @@ const PRECONDITION_EXEMPT = new Set<string>([
   // peer_node_get.nodeId names a node on a REMOTE peer — a local node_exists
   // check would reject every valid id.
   'peer_node_get.nodeId',
+  // app_undelete.id names a DELETED app: its node is gone by definition, so
+  // a node_exists check would reject every valid id.
+  'app_undelete.id',
 ]);
 
 /** Walk every {path, schema} pair under `properties` (nested objects and

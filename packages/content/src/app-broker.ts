@@ -947,12 +947,3 @@ export async function appDatabasePath(ownerId: string, appNodeId: string): Promi
 export async function removeAppDatabaseFiles(storagePath: string): Promise<void> {
   await Promise.all(appDbFiles(storagePath).map((f) => rm(f, { force: true })));
 }
-
-/** Remove an app's snapshot copies (APP_DB_DIR/_snapshots/<owner>/<app>);
- *  their rows go with the node. */
-export async function removeAppSnapshotDir(ownerId: string, appNodeId: string): Promise<void> {
-  await rm(path.join(appDbRoot(), '_snapshots', ownerId, appNodeId), {
-    recursive: true,
-    force: true,
-  });
-}
