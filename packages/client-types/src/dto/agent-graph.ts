@@ -9,6 +9,8 @@
  * public surface is byte-identical — only the file a symbol lives in moved.
  */
 
+import type { AccessLevel } from './access';
+
 // ── Skills ────────────────────────────────────────────────────────────────────
 
 /** A skill as returned by `GET /api/skills`. */
@@ -191,6 +193,11 @@ export interface ToolGroupDTO {
   /** Set when the group is an API integration; null for capability-only bundles. */
   integration: ToolGroupIntegrationDTO | null;
   enabled: boolean;
+  /** The group's level: an agent or a team app may hold it only at or above
+   *  it, and team apps call only tools in an enabled group at team level or
+   *  below. Absent from servers before it shipped. Set it with
+   *  `PATCH /api/access/tool-groups/:slug { audience }`. */
+  audience?: AccessLevel;
   createdAt: string;
   updatedAt: string;
 }
