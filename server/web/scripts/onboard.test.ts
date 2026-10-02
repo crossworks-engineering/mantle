@@ -19,6 +19,7 @@ const h = vi.hoisted(() => ({
     assistantAgentId: null as string | null,
   },
   keyOk: true,
+  testKeyOk: true,
 }));
 
 vi.mock('@mantle/db', () => ({
@@ -52,7 +53,10 @@ vi.mock('../lib/onboarding-steps', () => {
       saved: true,
       test: { ok: h.keyOk, message: h.keyOk ? 'key works' : 'key refused' },
     })),
-    testKey: step('testKey', { ok: true, message: 'key works' }),
+    testKey: step('testKey', () => ({
+      ok: h.testKeyOk,
+      message: h.testKeyOk ? 'key works' : 'key refused',
+    })),
     saveModels: step('models', { ok: true, assistantModel: 'a', workerModel: 'w' }),
     saveEmbedding: step('embedding', {
       configured: true,
@@ -81,6 +85,7 @@ beforeEach(() => {
   h.users = 0;
   h.calls = [];
   h.keyOk = true;
+  h.testKeyOk = true;
   h.state = { ...h.state, onboarded: false, step: 'profile', savedServices: [] };
   vi.spyOn(console, 'log').mockImplementation(() => {});
 });
@@ -224,6 +229,14 @@ describe('run', () => {
     h.state = { ...h.state, step: 'openrouter' };
     expect(await run(yes(), io())).toBe(1);
     expect(h.calls.some((c) => c.startsWith('finish'))).toBe(false);
+  });
+
+  it('a saved key that no longer works stops a --yes run too', async () => {
+    h.users = 1;
+    h.state = { ...h.state, step: 'openrouter', savedServices: ['openrouter'] };
+    h.testKeyOk = false;
+    expect(await run(yes(), io())).toBe(1);
+    expect(h.calls.some((c) => c.startsWith('models'))).toBe(false);
   });
 
   it('a refused key under --yes stops before provisioning', async () => {

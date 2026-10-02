@@ -393,7 +393,8 @@ export async function run(o: Options, io: Io): Promise<number> {
       if (!typed && haveKey) {
         const t = await testKey(owner.id, 'openrouter');
         (t.ok ? ok : bad)(`Saved key: ${t.message}`);
-        if (t.ok || o.yes) break;
+        if (t.ok) break;
+        if (o.yes) return 1;
         continue;
       }
       if (!typed) {
