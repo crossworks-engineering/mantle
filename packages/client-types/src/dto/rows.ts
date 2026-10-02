@@ -38,6 +38,11 @@ export type TaskRow = {
    *  it is what keeps a Done column from growing without bound. Orthogonal to
    *  `status`: an archived task keeps the status it had. */
   archivedAt: string | null;
+  /** On a done task: the status it had before it was marked done, which a
+   *  reopen (`PATCH {reopen: true}`) restores. Null when the brain does not
+   *  know it (the reopen then lands on 'open') and on every task that is not
+   *  done. Optional: brains before this field do not send it. */
+  statusBeforeDone?: TaskStatus | null;
   createdAt: string;
   updatedAt: string;
 };

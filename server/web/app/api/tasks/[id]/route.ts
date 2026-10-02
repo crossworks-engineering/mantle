@@ -26,6 +26,10 @@ const PatchBody = z.object({
   /** `true` files the task away, `false` restores it. A boolean rather than a
    *  timestamp so a client cannot backdate the archive; the server stamps it. */
   archived: z.boolean().optional(),
+  /** `true` takes a done task back to the status it had before it was marked
+   *  done (the brain remembers it; 'open' when it does not know). An explicit
+   *  `status` in the same body wins. */
+  reopen: z.boolean().optional(),
 });
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {

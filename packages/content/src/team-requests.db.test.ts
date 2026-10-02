@@ -75,8 +75,14 @@ describe.skipIf(!URL)('notifyTeamRequester', () => {
     const own = await listTeamThread(anchor, '', { loginId: member, withPrivate: true });
     expect(own.map((r) => r.text)).toContain('Done, see Pages.');
     const [t] = await admin`select data from nodes where id = ${fromLogin}`;
-    const data = t!.data as { status: string; teamRequest: { notifiedAt: string | null } };
+    const data = t!.data as {
+      status: string;
+      status_before_done?: string;
+      teamRequest: { notifiedAt: string | null };
+    };
     expect(data.status).toBe('done');
+    // Resolving remembers the status it had, so a reopen restores it.
+    expect(data.status_before_done).toBe('open');
     expect(data.teamRequest.notifiedAt).toBeTruthy();
   });
 

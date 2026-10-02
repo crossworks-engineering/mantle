@@ -11,6 +11,7 @@ import {
   type TreeKind,
 } from '@mantle/client-types/tree';
 import { isMemberItemKind } from '@mantle/client-types/member-kinds';
+import { statusBeforeDoneOf } from '../task-status';
 
 /** The kinds the tree serves on this brain. A client offers the tree for
  *  these and keeps its older screen for the rest (the shell lists them).
@@ -76,8 +77,11 @@ const iso = (v: unknown): string | null => (typeof v === 'string' && v ? v : nul
  *  event's start. Undefined for kinds without any. */
 export function itemMeta(kind: TreeKind, data: Record<string, unknown>): TreeItemMeta | undefined {
   switch (kind) {
-    case 'tasks':
-      return { done: data.status === 'done', due: iso(data.due_at) };
+    case 'tasks': {
+      const done = data.status === 'done';
+      const reopensTo = done ? statusBeforeDoneOf(data) : null;
+      return { done, due: iso(data.due_at), ...(reopensTo ? { reopensTo } : {}) };
+    }
     case 'events':
       return { start: iso(data.starts_at) };
     default:
