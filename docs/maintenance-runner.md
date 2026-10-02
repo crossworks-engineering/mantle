@@ -183,7 +183,11 @@ streams a run.
   `pnpm -C server/web app-access-log:reap`, dry run unless `--apply`),
   `app-trash-purge` (deleted apps past their 30 days in Recently deleted:
   their history rows and snapshot files; by hand
-  `pnpm -C server/web app-trash:purge`, dry run unless `--apply`), and
+  `pnpm -C server/web app-trash:purge`, dry run unless `--apply`),
+  `app-export-catch-up` (app table exports still dirty 20 minutes after a
+  write, a sync a restart lost; by hand only, as a changed table is
+  re-indexed: `pnpm -C server/web app-export:catch-up`, dry run unless
+  `--apply`; the web process already resumes them at boot), and
   the four read-only reports `deps-drift`, `models-drift`, `pinned-model-drift`
   and `pool-fit`. Backups stay on the
   `db-dump.sh` path; they are already scheduled there.

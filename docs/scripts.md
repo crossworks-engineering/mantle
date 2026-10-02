@@ -548,7 +548,8 @@ spawns. Full detail (including the nightly cron and the `/settings` UI tab) in
 
 Registry kinds: **recurring hygiene** (`entities-dedupe`, `backup-app-dbs`,
 `backup-table-dbs`, `traces-reap`, `turns-reap`, `space-purge`,
-`client-codes-reap`, `device-tokens-reap`, `app-access-log-reap`, `app-trash-purge`) · **remedies** (`dedupe-edges`) · **ops**
+`client-codes-reap`, `device-tokens-reap`, `app-access-log-reap`, `app-trash-purge`,
+`app-export-catch-up`) · **remedies** (`dedupe-edges`) · **ops**
 (`re-embed`, `extract-backfill`, `rotate-master-key`, `sync-now`,
 `imap-folders`, `pgboss-init`) · **retired backfills** (the rest).
 

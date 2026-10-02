@@ -215,6 +215,22 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       'Plain SQL and file removal, no model, idempotent; a no-op once clean. The rule lives in @mantle/content/app-trash (purgeExpiredDeletedApps), shared by the cron and the script.',
   },
   {
+    slug: 'app-export-catch-up',
+    title: 'Sync app table exports a restart left behind',
+    description:
+      'Syncs every app table export still marked dirty 20 minutes after an app write: a sync whose timer was lost (a restart, a crash) or that failed. The web process already resumes the dirty ones at boot; this catches the rest. Hash-gated: a table whose rows did not change commits nothing.',
+    kind: 'recurring',
+    status: 'live',
+    // A changed table is committed, and the commit re-indexes it (extractor).
+    cost: 'llm',
+    schedulable: false,
+    script: 'scripts/app-export-catch-up.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    notes:
+      'One commit per export whose rows changed, the same commit the lost timer would have made; never on the nightly cron (it spends). The rule lives in @mantle/content/app-table-exports (syncDirtyAppTableExports).',
+  },
+  {
     slug: 'traces-reap',
     title: 'Reap abandoned traces (all owners)',
     description:

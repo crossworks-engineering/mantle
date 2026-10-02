@@ -6,6 +6,14 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
 ## Unreleased: apps first-class, Phase 3 (trash, import, app_update)
 
+- **App table exports survive a restart (D8).** The first app write of a
+  burst stamps the app's exports `dirty_since` (**migration 0221**,
+  `0221_app_table_exports_dirty`); the sync that reads the rows clears it.
+  The web process resumes the dirty ones at boot. The maintenance task
+  `app-export-catch-up` (`pnpm -C server/web app-export:catch-up`, dry run
+  unless `--apply`) syncs any dirty for 20 minutes; by hand only, since a
+  changed table is re-indexed (not on the nightly cron).
+
 - **App error log (G4).** Every broker (owner, member, client, share) logs
   the errors it answers a running app with: kind `error` in
   `app_access_log`, with the message, the SQL or the tool slug, who ran it

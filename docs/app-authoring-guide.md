@@ -410,7 +410,8 @@ re-materializes the Table from the SQLite rows — debounced, hash-gated (an
 unchanged table never re-commits), pure SQL, no LLM. An app at client level
 re-commits at most once every 10 minutes, and the Table of an app clients
 write is indexed at retrieval depth only (no facts or entities from client
-text). Typed columns derive
+text). A sync a restart interrupted is not lost: the write marks the export
+dirty in Postgres, and the server resumes it at boot. Typed columns derive
 from the SQLite declared types (INTEGER/REAL → number, BOOLEAN → checkbox,
 DATE/DATETIME → date/datetime, else text).
 

@@ -20,7 +20,14 @@ const h = vi.hoisted(() => ({
   created: [] as Array<Record<string, unknown>>,
 }));
 
-vi.mock('drizzle-orm', () => ({ and: () => ({}), eq: () => ({}) }));
+vi.mock('drizzle-orm', () => ({
+  and: () => ({}),
+  eq: () => ({}),
+  lt: () => ({}),
+  lte: () => ({}),
+  isNotNull: () => ({}),
+  sql: () => 'now()',
+}));
 vi.mock('@mantle/db', () => {
   const nodes = { t: 'nodes', id: {}, ownerId: {}, audience: {}, data: {} };
   const appDatabases = { t: 'appDatabases', appNodeId: {}, clientWrittenAt: {} };
@@ -134,6 +141,16 @@ describe('export sync of a client-level app', () => {
     expect(h.commits).toHaveLength(2);
     expect(h.commits[1]!.version).toBe(5);
     expect(h.commits[1]!.at - h.commits[0]!.at).toBeGreaterThanOrEqual(CLIENT_SYNC_MIN_GAP_MS);
+  });
+
+  it('stamps the export dirty at the first write, and the sync clears it (D8)', async () => {
+    h.audience = 'team';
+    scheduleAppTableExportSync(OWNER, `app-${appSeq}`);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.link!.dirtySince).toBe('now()');
+    await vi.advanceTimersByTimeAsync(16_000);
+    expect(h.commits).toHaveLength(1);
+    expect(h.link!.dirtySince).toBeNull();
   });
 
   it('a team app keeps its timing and full depth', async () => {

@@ -36,6 +36,10 @@ export const appTableExports = pgTable(
     contentHash: text('content_hash'),
     lastSyncedAt: timestamp('last_synced_at', { withTimezone: true }),
     lastError: text('last_error'),
+    /** Set by the first app write a sync has not read yet; cleared by the
+     *  sync that reads it (migration 0221, apps plan D8). The boot and the
+     *  nightly sweep sync what a restart left dirty. */
+    dirtySince: timestamp('dirty_since', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -43,6 +47,9 @@ export const appTableExports = pgTable(
     uniqueIndex('app_table_exports_table_uq').on(t.tableNodeId),
     uniqueIndex('app_table_exports_app_table_uq').on(t.appNodeId, t.sqliteTable),
     index('app_table_exports_owner_idx').on(t.ownerId),
+    index('app_table_exports_dirty_idx')
+      .on(t.dirtySince)
+      .where(sql`${t.dirtySince} IS NOT NULL`),
   ],
 );
 

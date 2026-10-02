@@ -24,11 +24,21 @@
  * a client writing a row every few seconds would otherwise re-index the
  * Table all day.
  *
+ * Durable (apps first-class plan D8): the debounce timer lives in one
+ * process's memory, so the first write of a burst also stamps the app's
+ * exports `dirty_since`, and the sync that reads the rows clears it. A
+ * restart in between no longer loses the sync: the web process resumes the
+ * dirty ones at boot (`resumeDirtyAppTableExports`), and the
+ * `app-export-catch-up` maintenance task syncs any still dirty
+ * (`syncDirtyAppTableExports`). Same hash-gated sync, so no extra commits.
+ * The task is not on the nightly cron: a commit re-indexes the Table (the
+ * extractor), and the cron runs free tasks only.
+ *
  * Server-only (opens the app SQLite via app-broker) — imported as
  * `@mantle/content/app-table-exports`, never from the content index.
  */
 import { createHash } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNotNull, lt, lte, sql } from 'drizzle-orm';
 import {
   asSystem,
   clientSourcedNodes,
@@ -236,9 +246,14 @@ export async function listAppTableExports(
  *  else replace the Table's workbook and commit. Records success or the
  *  failure message on the link row; never throws for a data problem. */
 async function materialize(link: AppTableExport): Promise<'synced' | 'unchanged' | 'error'> {
+  // A write after this moment stamps dirty_since later, and stays dirty.
+  const readAt = new Date();
   try {
     const grid = await readAppTableGrid(link.ownerId, link.appNodeId, link.sqliteTable);
-    if (grid.hash === link.contentHash) return 'unchanged';
+    if (grid.hash === link.contentHash) {
+      await clearDirty(link.id, readAt);
+      return 'unchanged';
+    }
     const { clientWritten } = await clientAppState(link.ownerId, link.appNodeId);
     await stampExportDepth(link.tableNodeId, clientWritten);
     if (clientWritten) await markExportClientSourced(link.ownerId, link.tableNodeId);
@@ -260,6 +275,7 @@ async function materialize(link: AppTableExport): Promise<'synced' | 'unchanged'
         updatedAt: new Date(),
       })
       .where(eq(appTableExports.id, link.id));
+    await clearDirty(link.id, readAt);
     return 'synced';
   } catch (err) {
     await db
@@ -268,6 +284,69 @@ async function materialize(link: AppTableExport): Promise<'synced' | 'unchanged'
       .where(eq(appTableExports.id, link.id));
     return 'error';
   }
+}
+
+/** The sync read the rows as of `readAt`: clear a dirty stamp that is not
+ *  newer (a write during the sync keeps its own). */
+async function clearDirty(linkId: string, readAt: Date): Promise<void> {
+  await db
+    .update(appTableExports)
+    .set({ dirtySince: null })
+    .where(and(eq(appTableExports.id, linkId), lte(appTableExports.dirtySince, readAt)));
+}
+
+/** Stamp an app's exports dirty (the first write of a burst). No exports:
+ *  no rows, a no-op. Best effort: the timer still runs if this fails. */
+function markExportsDirty(ownerId: string, appNodeId: string): void {
+  try {
+    void db
+      .update(appTableExports)
+      .set({ dirtySince: sql`coalesce(${appTableExports.dirtySince}, now())` })
+      .where(and(eq(appTableExports.ownerId, ownerId), eq(appTableExports.appNodeId, appNodeId)))
+      .catch((err: unknown) =>
+        console.error('[app-table-exports] could not mark exports dirty', appNodeId, err),
+      );
+  } catch (err) {
+    console.error('[app-table-exports] could not mark exports dirty', appNodeId, err);
+  }
+}
+
+/** The apps with an export still dirty since before `before`. */
+async function dirtyApps(before: Date): Promise<{ ownerId: string; appNodeId: string }[]> {
+  const rows = await db
+    .selectDistinct({ ownerId: appTableExports.ownerId, appNodeId: appTableExports.appNodeId })
+    .from(appTableExports)
+    .where(and(isNotNull(appTableExports.dirtySince), lt(appTableExports.dirtySince, before)));
+  return rows;
+}
+
+/** At boot (web): schedule the sync of every app a restart left dirty, through
+ *  the usual debounce (and an app at client level's gap). */
+export async function resumeDirtyAppTableExports(): Promise<number> {
+  const apps = await dirtyApps(new Date());
+  for (const a of apps) scheduleAppTableExportSync(a.ownerId, a.appNodeId);
+  return apps.length;
+}
+
+/** The `app-export-catch-up` maintenance task: sync now every app whose
+ *  exports have been dirty longer than `olderThanMs` (a sync the timers
+ *  lost). Hash-gated like every sync: unchanged rows commit nothing. */
+export async function syncDirtyAppTableExports(
+  opts: { olderThanMs?: number; dryRun?: boolean; now?: Date } = {},
+): Promise<{ apps: number; synced: number; unchanged: number; errors: number }> {
+  const before = new Date(
+    (opts.now ?? new Date()).getTime() - (opts.olderThanMs ?? CLIENT_SYNC_MIN_GAP_MS * 2),
+  );
+  const apps = await dirtyApps(before);
+  const out = { apps: apps.length, synced: 0, unchanged: 0, errors: 0 };
+  if (opts.dryRun) return out;
+  for (const a of apps) {
+    const r = await syncAppTableExports(a.ownerId, a.appNodeId);
+    out.synced += r.synced;
+    out.unchanged += r.unchanged;
+    out.errors += r.errors;
+  }
+  return out;
 }
 
 /** Sync every export of an app now (or one table when named). */
@@ -427,6 +506,7 @@ export function scheduleAppTableExportSync(ownerId: string, appNodeId: string): 
   // A client-level app waiting out its gap: that sync takes this write too.
   if (existing?.held) return;
   if (existing) clearTimeout(existing.timer);
+  else markExportsDirty(ownerId, appNodeId);
   const firstAt = existing?.firstAt ?? Date.now();
   const wait = exportSyncDelay(firstAt, Date.now());
   const timer = setTimeout(() => void runScheduledSync(ownerId, appNodeId, key), wait);

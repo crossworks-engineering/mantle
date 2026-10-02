@@ -64,6 +64,7 @@
     "share-drift": "tsx --env-file-if-exists=./.env.local scripts/share-drift.ts",
     "app-access-log:reap": "tsx --env-file-if-exists=./.env.local scripts/app-access-log-reap.ts",
     "app-trash:purge": "tsx --env-file-if-exists=./.env.local scripts/app-trash-purge.ts",
+    "app-export:catch-up": "tsx --env-file-if-exists=./.env.local scripts/app-export-catch-up.ts",
     "typecheck": "tsc --noEmit",
     "widen:content-hits": "tsx --env-file-if-exists=./.env.local scripts/widen-content-hits.ts",
     "worker:calendar:dev": "tsx --watch --env-file-if-exists=./.env.local workers/calendar-sync.ts",
