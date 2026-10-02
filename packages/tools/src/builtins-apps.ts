@@ -31,6 +31,7 @@ import {
 import { buildApp, loadRuntimeExports } from '@mantle/app-build';
 import {
   assertSafeScript,
+  checkAppSchemaScript,
   appDbReadQuery,
   appDbSchema,
   appDbSeedRows,
@@ -500,6 +501,14 @@ const app_db_schema_set: BuiltinToolDef = {
     }
     const app = await getApp(ctx.ownerId, id);
     if (!app) return { ok: false, error: `app ${id} not found` };
+    // Then try it on a copy of the app's live database: once declared it runs
+    // on the live file at the app's next statement, and a script that fails
+    // there stops every read and write of the app (apps audit D2).
+    try {
+      await checkAppSchemaScript(ctx.ownerId, id, schemaSql);
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) };
+    }
     const nextVersion = (app.manifest.sqlite?.schemaVersion ?? 0) + 1;
     const manifest = await setManifest(ctx.ownerId, id, {
       sqlite: { schemaSql, schemaVersion: nextVersion },

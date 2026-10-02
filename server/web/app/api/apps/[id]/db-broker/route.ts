@@ -17,8 +17,7 @@ import { getOwnerOr401 } from '@/lib/auth';
 import { getApp } from '@mantle/content';
 import { appDbQuery, appDbExec } from '@mantle/content/app-broker';
 import { scheduleAppTableExportSync } from '@mantle/content/app-table-exports';
-import { AppDbBody, appDbBodyError } from '@/lib/app-db-broker-body';
-import { errorMessage } from '@mantle/std';
+import { AppDbBody, appDbBodyError, appDbErrorResponse } from '@/lib/app-db-broker-body';
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
@@ -31,7 +30,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const app = await getApp(user.id, id);
   if (!app) return NextResponse.json({ ok: false, error: 'app not found' }, { status: 404 });
   const schema = app.manifest.sqlite;
+  // One statement at a time per login, like every other broker: an app
+  // cannot hold every SQL process while other callers wait.
   const caller = {
+    callerKey: `admin:${user.actor.id}`,
     viewer: { kind: 'admin' as const, loginId: user.actor.id, name: user.actor.displayName },
   };
 
@@ -52,6 +54,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     scheduleAppTableExportSync(user.id, id);
     return NextResponse.json({ ok: true, output: res });
   } catch (err) {
-    return NextResponse.json({ ok: false, error: errorMessage(err) }, { status: 400 });
+    return appDbErrorResponse(err, 'apps/db-broker');
   }
 }

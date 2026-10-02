@@ -29,7 +29,7 @@ import {
   AppSourceLimitError,
   NoGreenBuildError,
 } from '@mantle/content';
-import { assertSafeScript } from '@mantle/content/app-broker';
+import { checkAppSchemaScript } from '@mantle/content/app-broker';
 import { resolveTool } from '@mantle/tools';
 import { runAppBuild } from '../lib/app-build-run';
 import { errorMessage } from '@mantle/std';
@@ -159,7 +159,7 @@ if (manifest.toolSlugs?.length) {
 
 if (manifest.schemaSql?.trim()) {
   try {
-    assertSafeScript(manifest.schemaSql);
+    await checkAppSchemaScript(ownerId, id, manifest.schemaSql);
   } catch (err) {
     die(errorMessage(err));
   }

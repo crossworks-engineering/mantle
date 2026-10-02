@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
+import { existsSync, readdirSync } from 'node:fs';
+import * as nodePath from 'node:path';
 import {
+  AppDbMissingError,
   appDbExec,
   appDbQuery,
+  appDbReadQuery,
+  checkAppSchemaScript,
   ensureAppDatabase,
   assertSafe,
   assertSafeScript,
@@ -12,7 +17,16 @@ import {
 } from './app-broker';
 import { APP_SCHEMA_TIMEOUT_MS, runAppSql } from './app-sql-runner';
 
-const h = vi.hoisted(() => ({ storagePath: '', timeoutMs: undefined as number | undefined }));
+const h = vi.hoisted(() => ({
+  storagePath: '',
+  timeoutMs: undefined as number | undefined,
+  registryRow: null as null | {
+    id: string;
+    storagePath: string;
+    schemaVersion: number;
+    sizeBytes: number;
+  },
+}));
 
 /** The real runner, watched: the schema tests check the DDL goes through it
  *  (not a main-thread exec), and shorten its time limit for the endless case. */
@@ -35,12 +49,20 @@ vi.mock('@mantle/db', async () => {
   const path = await import('node:path');
   const dir = await mkdtemp(path.join(os.tmpdir(), 'app-broker-ro-'));
   h.storagePath = path.join(dir, 'app.sqlite');
-  const registryRow = { id: 'reg-1', storagePath: h.storagePath, schemaVersion: 0 };
+  const registryRow = { id: 'reg-1', storagePath: h.storagePath, schemaVersion: 0, sizeBytes: 0 };
+  h.registryRow = registryRow;
+  const update = () => ({ set: () => ({ where: async () => undefined }) });
   return {
     db: {
       select: () => ({ from: () => ({ where: () => ({ limit: async () => [registryRow] }) }) }),
       insert: () => ({ values: () => ({ onConflictDoNothing: async () => undefined }) }),
-      update: () => ({ set: () => ({ where: async () => undefined }) }),
+      update,
+      // The schema applier's row lock (apps audit D3).
+      transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({
+          select: () => ({ from: () => ({ where: () => ({ for: async () => [registryRow] }) }) }),
+          update,
+        }),
     },
     nodes: {},
     appDatabases: {},
@@ -357,6 +379,60 @@ describe('seedRowsIntoHandle', () => {
 });
 
 /**
+ * Apps audit D1: an app that stored something and lost its file is refused
+ * loudly. It used to be recreated empty, with the schema not re-run (the
+ * registry version was current), so every statement failed with "no such
+ * table" and nothing said why.
+ */
+describe('a lost database file is never recreated empty', () => {
+  const swap = async (
+    patch: { storagePath: string; schemaVersion: number; sizeBytes: number },
+    body: () => Promise<void>,
+  ) => {
+    const row = h.registryRow!;
+    const saved = { ...row };
+    Object.assign(row, patch);
+    try {
+      await body();
+    } finally {
+      Object.assign(row, saved);
+    }
+  };
+  const gone = () => nodePath.join(nodePath.dirname(h.storagePath), `gone-${Math.random()}.sqlite`);
+
+  it('refuses an app that had data: queries, writes and the agent read', async () => {
+    const file = gone();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await swap({ storagePath: file, schemaVersion: 2, sizeBytes: 0 }, async () => {
+      await expect(appDbQuery('o', 'lost-app', 'SELECT 1')).rejects.toBeInstanceOf(
+        AppDbMissingError,
+      );
+      await expect(appDbExec('o', 'lost-app', 'CREATE TABLE t (x)')).rejects.toBeInstanceOf(
+        AppDbMissingError,
+      );
+      await expect(appDbReadQuery('o', 'lost-app', 'SELECT 1')).rejects.toBeInstanceOf(
+        AppDbMissingError,
+      );
+    });
+    await swap({ storagePath: file, schemaVersion: 0, sizeBytes: 4096 }, async () => {
+      await expect(appDbQuery('o', 'lost-app', 'SELECT 1')).rejects.toBeInstanceOf(
+        AppDbMissingError,
+      );
+    });
+    expect(existsSync(file)).toBe(false);
+    vi.mocked(console.error).mockRestore();
+  });
+
+  it('still provisions an app that never stored anything', async () => {
+    const file = gone();
+    await swap({ storagePath: file, schemaVersion: 0, sizeBytes: 0 }, async () => {
+      expect(await appDbQuery('o', 'new-app', 'SELECT 1 AS one')).toEqual([{ one: 1 }]);
+    });
+    expect(existsSync(file)).toBe(true);
+  });
+});
+
+/**
  * An app's schema DDL (audit item C) runs in the SQL runner like every other
  * app statement: a worker with the engine authorizer and a time limit, one
  * transaction. It used to run here on the main thread with no timeout, so an
@@ -385,10 +461,55 @@ describe('ensureAppDatabase applies the schema DDL through the SQL runner', () =
     expect(scripts()).toEqual([
       [
         h.storagePath,
-        { sql: schemaSql, mode: 'script', readOnly: false, timeoutMs: APP_SCHEMA_TIMEOUT_MS },
+        {
+          sql: schemaSql,
+          mode: 'script',
+          readOnly: false,
+          timeoutMs: APP_SCHEMA_TIMEOUT_MS,
+          userVersion: 1,
+        },
       ],
     ]);
     expect(await names()).toEqual(['sv_polls', 'sv_polls_title']);
+  });
+
+  it('stamps the version into the file; a lost registry update is skipped, not re-run', async () => {
+    const { DatabaseSync } = await import('node:sqlite');
+    const file = new DatabaseSync(h.storagePath, { readOnly: true });
+    try {
+      expect(file.prepare('PRAGMA user_version').get()).toEqual({ user_version: 1 });
+    } finally {
+      file.close();
+    }
+    // As if the process died between the SQLite commit and the registry
+    // update: the registry still says 0. The plain CREATE would now fail on
+    // "already exists"; the stamp makes the runner skip it.
+    h.registryRow!.schemaVersion = 0;
+    const reg = await ensureAppDatabase(owner, app, {
+      schemaSql: 'CREATE TABLE sv_polls (id INTEGER PRIMARY KEY, title TEXT);',
+      schemaVersion: 1,
+    });
+    expect(reg.schemaVersion).toBe(1);
+    expect(await names()).toEqual(['sv_polls', 'sv_polls_title']);
+  });
+
+  it('checkAppSchemaScript refuses a script that fails on the live tables, and changes nothing', async () => {
+    const dir = nodePath.dirname(h.storagePath);
+    await expect(checkAppSchemaScript(owner, app, 'CREATE TABLE sv_polls (x);')).rejects.toThrow(
+      /fails against the app's current database.*already exists/s,
+    );
+    await expect(
+      checkAppSchemaScript(owner, app, "CREATE TABLE sv_y (x); ATTACH DATABASE 'x' AS y;"),
+    ).rejects.toThrow(/not allowed/);
+    // A script that runs over the existing tables passes, and the live file
+    // does not get its new table: it was tried on a copy.
+    await checkAppSchemaScript(
+      owner,
+      app,
+      'CREATE TABLE IF NOT EXISTS sv_polls (id INTEGER PRIMARY KEY, title TEXT); CREATE TABLE IF NOT EXISTS sv_more (x);',
+    );
+    expect(await names()).toEqual(['sv_polls', 'sv_polls_title']);
+    expect(readdirSync(dir).filter((f) => f.startsWith('.schema-check'))).toEqual([]);
   });
 
   it('does not re-run a version already applied', async () => {

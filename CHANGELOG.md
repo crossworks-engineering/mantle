@@ -4,6 +4,31 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: apps safety (apps first-class, Phase 0)
+
+The first slice of the apps audit of 2026-10-02: the fixes the snapshot and
+restore work depends on (docs/app-authoring-guide.md, "Per-app SQLite").
+
+- **A lost app database is an error, not an empty app.** An app that stored
+  something and lost its file used to get a new empty file, with its schema
+  not re-run, so every statement failed with "no such table" and nothing
+  said why. Now every read and write refuses (`AppDbMissingError`; the
+  brokers answer 503 `reason: 'missing'`), the agent's `app_db_query` and
+  `app_db_list` say so instead of returning no rows, and the log names the
+  path.
+- **A bad schema can no longer stop a live app.** `app_db_schema_set`, the
+  import route and `apps-push` try the script on a copy of the app's live
+  database first (`checkAppSchemaScript`, a VACUUM INTO copy in a SQL
+  child, off the event loop) and refuse one that fails there.
+- **Schema versions apply once.** The applier takes a row lock, so web and
+  api cannot both run a version, and the script stamps its version into the
+  file (`user_version`, in the same transaction): a crash between the
+  SQLite commit and the registry update is skipped on the next run instead
+  of failing on "already exists".
+- **The owner's db-broker** answers errors like the other brokers (429 when
+  busy, the server's own errors not shown) and runs one statement at a time
+  per admin login.
+
 ## Unreleased: app identity, an app knows who runs it
 
 A mini app can show who runs it and record who did what, and the record

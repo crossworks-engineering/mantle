@@ -55,6 +55,8 @@ vi.mock('@mantle/content/app-broker', async (importOriginal) => ({
   AppSqlError: (await importOriginal<typeof import('@mantle/content/app-broker')>()).AppSqlError,
   AppSqlBusyError: (await importOriginal<typeof import('@mantle/content/app-broker')>())
     .AppSqlBusyError,
+  AppDbMissingError: (await importOriginal<typeof import('@mantle/content/app-broker')>())
+    .AppDbMissingError,
   appDbQuery: vi.fn(async (...args: unknown[]) => {
     h.callers.push(args[5]);
     h.queries += 1;

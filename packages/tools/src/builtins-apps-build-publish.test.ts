@@ -39,7 +39,7 @@ vi.mock('@mantle/app-build', () => ({ buildApp: vi.fn(), loadRuntimeExports: vi.
 vi.mock('@mantle/storage', () => ({ putContent: vi.fn() }));
 vi.mock('@mantle/content/app-broker', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/content/app-broker')>();
-  return { ...actual, appDbSeedRows: vi.fn() };
+  return { ...actual, appDbSeedRows: vi.fn(), checkAppSchemaScript: vi.fn() };
 });
 vi.mock('@mantle/content/app-table-exports', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/content/app-table-exports')>();
@@ -49,7 +49,7 @@ vi.mock('@mantle/content/app-table-exports', async (importOriginal) => {
 import { getApp, setDraftBuild, setManifest, publishApp, NoGreenBuildError } from '@mantle/content';
 import { buildApp, loadRuntimeExports } from '@mantle/app-build';
 import { putContent } from '@mantle/storage';
-import { appDbSeedRows } from '@mantle/content/app-broker';
+import { AppSqlError, appDbSeedRows, checkAppSchemaScript } from '@mantle/content/app-broker';
 import { scheduleAppTableExportSync } from '@mantle/content/app-table-exports';
 import { APP_TOOLS } from './builtins-apps';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
@@ -321,6 +321,20 @@ describe('app_db_schema_set', () => {
       sqlite: { schemaSql: DDL, schemaVersion: 5 },
     });
     expect(outputOf(res).schema_version).toBe(5);
+  });
+
+  it("refuses a script that fails on a copy of the app's database, declaring nothing", async () => {
+    // Apps audit D2: a declared script runs in full on the live file at the
+    // app's next statement; one that fails there stops the whole app.
+    vi.mocked(checkAppSchemaScript).mockRejectedValueOnce(
+      new AppSqlError(
+        "the schema fails against the app's current database: table x already exists",
+      ),
+    );
+    const res = await schemaSet.handler({ id: APP_ID, schema_sql: DDL }, ctx);
+    expect(errorOf(res)).toMatch(/fails against the app's current database/);
+    expect(checkAppSchemaScript).toHaveBeenCalledWith('o1', APP_ID, DDL);
+    expect(setManifest).not.toHaveBeenCalled();
   });
 
   it('reports a missing app from either lookup, writing nothing', async () => {

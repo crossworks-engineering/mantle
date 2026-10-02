@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { NextResponse } from '@/server/http-compat';
-import { AppSqlBusyError, AppSqlError } from '@mantle/content/app-broker';
+import { AppDbMissingError, AppSqlBusyError, AppSqlError } from '@mantle/content/app-broker';
 
 /**
  * Shared request shape for the two app db-broker routes (owner + share).
@@ -47,6 +47,19 @@ export function appDbErrorResponse(err: unknown, where: string): NextResponse {
   }
   if (err instanceof AppSqlError) {
     return NextResponse.json({ ok: false, error: err.message }, { status: 400 });
+  }
+  if (err instanceof AppDbMissingError) {
+    // Lost on the server (apps audit D1): logged in full where it was found;
+    // the caller hears what happened, not where the file lived.
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          "This app's data is missing on the server. The owner has to restore it from a backup.",
+        reason: 'missing',
+      },
+      { status: 503 },
+    );
   }
   console.error(`[${where}] app database error:`, err);
   return NextResponse.json(

@@ -265,13 +265,28 @@ Each statement may run 5 seconds at most and return 50,000 rows and 8 MB at
 most (add a LIMIT, select fewer columns or aggregate), and no single string or
 blob may pass 16 MiB. The whole database file may hold 256 MB
 (`APP_SQL_MAX_DB_MB`): a write past it fails with "database or disk is full"
-and rolls back. Each member login, client login or share link runs one
-statement at a time, and the next waits its turn (a burst of more than 16 at
-once answers 429 busy), so prefer one query that joins over many small ones.
-The
-declared schema runs under the same rules as one transaction (30 seconds at
-most): a script that fails anywhere applies nothing. Treat schema as **append-only**: there
-are no destructive migrations; add columns/tables, use views for renames.
+and rolls back. Each login (the admin too), member login, client login or share link runs
+one statement at a time, and the next waits its turn (a burst of more than 16
+at once answers 429 busy), so prefer one query that joins over many small
+ones. The declared schema runs under the same rules as one transaction (30
+seconds at most): a script that fails anywhere applies nothing. Treat schema
+as **append-only**: there are no destructive migrations; add columns/tables,
+use views for renames.
+
+**The whole script runs again on every new version**, over the tables the
+app already has. So write it to be re-runnable: `CREATE TABLE IF NOT EXISTS`,
+`CREATE INDEX IF NOT EXISTS`. `app_db_schema_set` (and import, and
+`apps-push`) first tries the script on a copy of the app's live database; a
+script that fails there is refused with the reason and nothing is declared,
+so a bad schema can no longer stop a running app. Each version is applied
+once, across processes, and stamped into the file, so a crash in the middle
+cannot leave the app stuck on "already exists".
+
+**A lost database file is an error, never an empty app.** When an app has
+stored something (a schema applied or a write recorded) and its file is gone
+from the server, every read and write refuses with a clear error (503 to the
+app, "missing on the server") and the server log names the path. The file is
+not recreated empty: it has to come back from a backup.
 
 **Seeding reference data**: when the app needs pre-loaded lookup data (a
 reference table, a rate matrix, rows imported from a spreadsheet), load it at

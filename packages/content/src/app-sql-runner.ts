@@ -73,6 +73,9 @@ export const APP_SQL_DEFAULT_MAX_DB_MB = 256;
  *  query fails with an "add a LIMIT" error. The rows cross into the web
  *  process and are JSON-encoded there, so this bounds its memory. */
 export const APP_SQL_MAX_REPLY_BYTES = 8 * 1024 * 1024;
+/** How long the server's copy of one app file may take (a 256 MB file
+ *  copies in a few seconds; this leaves room for a slow disk). */
+export const APP_DB_COPY_TIMEOUT_MS = 120_000;
 /** The WAL an app database keeps after a checkpoint (journal_size_limit). */
 export const APP_SQL_JOURNAL_LIMIT_BYTES = 64 * 1024 * 1024;
 /** Statements one caller may have waiting behind its running one; beyond it
@@ -127,7 +130,21 @@ function rowBytes(row) {
   return n;
 }
 function run(job) {
-  const { file, sql, params, mode, readOnly, maxRows, maxLength, maxReplyBytes, maxDbBytes, journalLimit } = job;
+  const { file, sql, params, mode, readOnly, maxRows, maxLength, maxReplyBytes, maxDbBytes, journalLimit, userVersion, dest } = job;
+  if (mode === 'copy') {
+    // The server's own copy of an app's file (a schema trial run, a
+    // snapshot): VACUUM INTO from a read-only open, a consistent copy under
+    // WAL. Never reachable from app SQL: the parent alone picks the mode and
+    // the destination, and no authorizer is set because no app text runs.
+    const src = new DatabaseSync(file, { readOnly: true });
+    try {
+      src.exec('PRAGMA busy_timeout = 5000');
+      src.exec("VACUUM INTO '" + String(dest).replace(/'/g, "''") + "'");
+    } finally {
+      src.close();
+    }
+    return null;
+  }
   const db = new DatabaseSync(file, { readOnly, limits: { length: maxLength } });
   try {
     // Connection settings first: the authorizer below refuses app PRAGMAs.
@@ -140,6 +157,14 @@ function run(job) {
       // SQLITE_FULL and rolls back. (A file already past it keeps its size.)
       const pageSize = Number(db.prepare('PRAGMA page_size').get().page_size);
       db.exec('PRAGMA max_page_count = ' + Math.max(1, Math.floor(maxDbBytes / pageSize)));
+    }
+    // A schema script stamps its version into the file (user_version, which
+    // the authorizer keeps apps from touching). A file already at or past it
+    // got this script before, and only the registry update was lost (a crash
+    // between the two): running it again would fail on "already exists".
+    if (mode === 'script' && userVersion > 0) {
+      const have = Number(db.prepare('PRAGMA user_version').get().user_version);
+      if (have >= userVersion) return { skipped: true, userVersion: have };
     }
     db.setAuthorizer((action, arg1) => {
       if (action === C.SQLITE_ATTACH || action === C.SQLITE_DETACH) return C.SQLITE_DENY;
@@ -155,6 +180,11 @@ function run(job) {
       db.exec('BEGIN IMMEDIATE');
       try {
         db.exec(sql);
+        if (userVersion > 0) {
+          // The app's statements have run; the stamp is the server's own.
+          db.setAuthorizer(null);
+          db.exec('PRAGMA user_version = ' + Math.floor(Number(userVersion)));
+        }
         db.exec('COMMIT');
       } catch (err) {
         try {
@@ -164,7 +194,7 @@ function run(job) {
         }
         throw err;
       }
-      return null;
+      return { skipped: false, userVersion: userVersion > 0 ? userVersion : 0 };
     }
     if (mode === 'run') {
       const r = db.prepare(sql).run(...params);
@@ -367,7 +397,9 @@ function takeTurn(key: string, waitMs: number): Promise<() => void> {
 
 /** Run `sql` with `params`: mode 'all' returns rows, 'run' returns
  *  `{ changes, lastInsertRowid }`, 'script' runs several statements (no
- *  params) in one transaction and returns null. Rejects with an AppSqlError
+ *  params) in one transaction and returns `{ skipped, userVersion }`: with
+ *  `userVersion`, the script stamps it into the file, and a file already at
+ *  or past it skips the script. Rejects with an AppSqlError
  *  on SQL error, a refused statement, a row, size or file cap, the time
  *  limit, or a busy pool or caller (AppSqlBusyError). With `callerKey`, the
  *  statement waits for that caller's earlier ones (at most twice its time
@@ -384,6 +416,8 @@ export async function runAppSql(
     callerKey?: string;
     /** The file cap in bytes; default appSqlMaxDbBytes(). */
     maxDbBytes?: number;
+    /** 'script' only: the schema version the script brings the file to. */
+    userVersion?: number;
   },
 ): Promise<unknown> {
   const timeoutMs = opts.timeoutMs ?? APP_SQL_TIMEOUT_MS;
@@ -398,11 +432,28 @@ export async function runAppSql(
   }
 }
 
-async function runOnChild(
+/** A job for a child: an app statement, or the server's own file copy. */
+type ChildJob = Omit<Parameters<typeof runAppSql>[1], 'mode'> & {
+  mode: 'all' | 'run' | 'script' | 'copy';
+  /** 'copy' only: the file to write (must not exist). */
+  dest?: string;
+};
+
+/**
+ * Copy an app's database file to `dest` (which must not exist) in a SQL child,
+ * off the event loop: `VACUUM INTO` from a read-only open, a consistent and
+ * compacted copy even while the app writes. The server's own step (schema
+ * trial runs, snapshots); app SQL can never reach it.
+ */
+export async function copyAppDbFile(
   file: string,
-  opts: Parameters<typeof runAppSql>[1],
-  timeoutMs: number,
-): Promise<unknown> {
+  dest: string,
+  timeoutMs = APP_DB_COPY_TIMEOUT_MS,
+): Promise<void> {
+  await runOnChild(file, { sql: '', mode: 'copy', readOnly: true, dest }, timeoutMs);
+}
+
+async function runOnChild(file: string, opts: ChildJob, timeoutMs: number): Promise<unknown> {
   const child = await acquire(timeoutMs);
   const id = ++nextId;
   const reply = await new Promise<Reply>((resolve) => {
@@ -443,6 +494,8 @@ async function runOnChild(
       maxReplyBytes: APP_SQL_MAX_REPLY_BYTES,
       maxDbBytes: opts.maxDbBytes ?? appSqlMaxDbBytes(),
       journalLimit: APP_SQL_JOURNAL_LIMIT_BYTES,
+      userVersion: opts.mode === 'script' ? Math.max(0, Math.floor(opts.userVersion ?? 0)) : 0,
+      dest: opts.mode === 'copy' ? opts.dest : undefined,
     });
   });
   release(child);

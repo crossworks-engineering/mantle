@@ -43,6 +43,8 @@ vi.mock('@mantle/content/app-broker', async (importOriginal) => ({
   AppSqlError: (await importOriginal<typeof import('@mantle/content/app-broker')>()).AppSqlError,
   AppSqlBusyError: (await importOriginal<typeof import('@mantle/content/app-broker')>())
     .AppSqlBusyError,
+  AppDbMissingError: (await importOriginal<typeof import('@mantle/content/app-broker')>())
+    .AppDbMissingError,
   appDbQuery: vi.fn(async (...args: unknown[]) => (h.callers.push(args[5]), [])),
   appDbExec: vi.fn(async (...args: unknown[]) => (h.callers.push(args[5]), { changes: 1 })),
 }));
@@ -77,7 +79,10 @@ describe('owner db broker', () => {
     expect(
       (await POST(post({ op: 'exec', sql: 'insert into t values (1)' }), params())).status,
     ).toBe(200);
-    const caller = { viewer: { kind: 'admin', loginId: ADMIN_LOGIN, name: 'Robin' } };
+    const caller = {
+      callerKey: `admin:${ADMIN_LOGIN}`,
+      viewer: { kind: 'admin', loginId: ADMIN_LOGIN, name: 'Robin' },
+    };
     expect(h.callers).toEqual([caller, caller]);
   });
 });

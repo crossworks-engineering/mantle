@@ -26,7 +26,7 @@ import {
   MAX_APP_FILE_BYTES,
   MAX_APP_PATH_LEN,
 } from '@mantle/content';
-import { assertSafeScript } from '@mantle/content/app-broker';
+import { checkAppSchemaScript } from '@mantle/content/app-broker';
 import { resolveTool } from '@mantle/tools';
 import { runAppBuild } from '@/lib/app-build-run';
 import { errorMessage } from '@mantle/std';
@@ -109,7 +109,7 @@ export async function POST(req: Request) {
   // ── declare the per-app SQLite schema (bump version) ──
   if (b.schemaSql && b.schemaSql.trim()) {
     try {
-      assertSafeScript(b.schemaSql);
+      await checkAppSchemaScript(user.id, appId, b.schemaSql);
     } catch (err) {
       return bad(errorMessage(err));
     }

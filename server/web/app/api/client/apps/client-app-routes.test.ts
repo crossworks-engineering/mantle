@@ -111,7 +111,7 @@ vi.mock('@mantle/tools', async (importOriginal) => {
   };
 });
 vi.mock('@mantle/content/app-broker', async (importOriginal) => {
-  const { AppSqlError, AppSqlBusyError } =
+  const { AppSqlError, AppSqlBusyError, AppDbMissingError } =
     await importOriginal<typeof import('@mantle/content/app-broker')>();
   const { currentViewerLevel } = await import('@mantle/db');
   // The SQLite work runs on the admin pool: it writes registry rows.
@@ -120,6 +120,7 @@ vi.mock('@mantle/content/app-broker', async (importOriginal) => {
   return {
     AppSqlError,
     AppSqlBusyError,
+    AppDbMissingError,
     markAppClientWritten: vi.fn(async (owner: string, app: string) => {
       h.marked.push(`${owner}:${app}`);
     }),
