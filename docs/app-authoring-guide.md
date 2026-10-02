@@ -389,6 +389,11 @@ back on top as the draft. Declared tools this brain does not have are left
 out and named in the answer (`droppedToolSlugs`). The cap is the app
 database cap (`APP_SQL_MAX_DB_MB`) plus the code.
 
+Agents and MCP clients do the same with tools (owner only, group `apps`):
+`app_duplicate`, `app_export` (saves the file under /files, folder
+exports, and returns its id) and `app_import` (a `file_id`, `name`,
+`with_data`).
+
 None of the three carries the original's sharing, level, history or table
 exports (an export has one master): the new app is admin-only in Unsorted.
 `POST /api/apps/import` (JSON source tree, create or update) stays for

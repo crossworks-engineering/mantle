@@ -230,6 +230,8 @@ export const WRITE_RULES: Readonly<Record<string, WriteRule>> = {
   app_snapshot_delete: onApp,
   app_undelete: creates(),
   app_duplicate: onApp,
+  app_export: onApp,
+  app_import: creates(),
 
   // ── Records (tasks, events, contacts, journal, formulas, secrets) ────────
   task_create: creates(),

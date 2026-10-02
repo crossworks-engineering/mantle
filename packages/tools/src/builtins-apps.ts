@@ -49,7 +49,18 @@ import {
   listDeletedApps,
   restoreDeletedApp,
 } from '@mantle/content/app-trash';
-import { duplicateApp } from '@mantle/content/app-package';
+import {
+  AppPackageError,
+  appPackageMaxBytes,
+  appPackageTempPath,
+  duplicateApp,
+  writeAppPackage,
+} from '@mantle/content/app-package';
+import { createReadStream } from 'node:fs';
+import { rm } from 'node:fs/promises';
+import { ensureAutoFiledFolder, readFileById, spoolUpload, upsertFile } from '@mantle/files';
+import { importAppPackage } from './app-package-import';
+import { FILE_ID_PRE } from './tables/common';
 import {
   AppSnapshotBudgetError,
   AppSnapshotRefusedError,
@@ -1344,6 +1355,141 @@ const app_duplicate: BuiltinToolDef = {
   },
 };
 
+// ── Export and import as brain files (apps first-class plan, Phase 3) ───────
+
+const app_export: BuiltinToolDef = {
+  slug: 'app_export',
+  ownerOnly: true,
+  preconditions: APP_ID_PRE,
+  name: 'Export a mini app as a file',
+  description:
+    "Save an app as a `.mantleapp` file under /files (folder exports): its code, draft, declared tools and schema, and a copy of its data unless with_data is false. Returns the file id. Use it to move an app to another brain (`app_import` there) or to keep a copy outside its history. For a copy in this brain use `app_duplicate`. The file holds the app's data: it is readable by whoever can read the file.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', description: "The app's id (UUID) — from `app_list`." },
+      with_data: {
+        type: 'boolean',
+        default: true,
+        description: "False: the code only, no copy of the app's database.",
+      },
+    },
+    required: ['id'],
+  },
+  handler: async (input, ctx) => {
+    const refused = ownerOnlyRefusal(ctx);
+    if (refused) return refused;
+    const id = str(input.id).trim();
+    if (!id) return { ok: false, error: 'id is required' };
+    const tmp = await appPackageTempPath('.mantleapp');
+    try {
+      const written = await writeAppPackage(ctx.ownerId, id, tmp, {
+        withData: input.with_data !== false,
+      });
+      if (!written) return { ok: false, error: `app ${id} not found` };
+      const spooled = await spoolUpload(createReadStream(tmp), {
+        maxBytes: appPackageMaxBytes() + 64 * 1024 * 1024,
+      });
+      const parentPath = await ensureAutoFiledFolder(ctx.ownerId, 'exports');
+      const filename = `${
+        written.title
+          .replace(/[^\w.-]+/g, '-')
+          .replace(/^-+|-+$/g, '')
+          .slice(0, 60)
+          .toLowerCase() || 'app'
+      }.mantleapp`;
+      const file = await upsertFile({ ownerId: ctx.ownerId, parentPath, filename, spooled });
+      ctx.step?.setOutput({ id, file_id: file.id, has_data: written.hasData });
+      return {
+        ok: true,
+        output: {
+          id,
+          file_id: file.id,
+          filename: file.filename,
+          path: `${file.parentPath}/${file.filename}`,
+          size_bytes: file.sizeBytes,
+          has_data: written.hasData,
+        },
+      };
+    } catch (err) {
+      if (err instanceof AppDbMissingError) {
+        return { ok: false, error: `${err.message}. Or export the code only: with_data false.` };
+      }
+      return { ok: false, error: errorMessage(err) };
+    } finally {
+      await rm(tmp, { force: true });
+    }
+  },
+};
+
+const app_import: BuiltinToolDef = {
+  slug: 'app_import',
+  ownerOnly: true,
+  preconditions: FILE_ID_PRE,
+  name: 'Import a mini app from a file',
+  description:
+    "Make a NEW app from a `.mantleapp` file in /files (from `app_export`, here or on another brain). Everything is checked first; a bad file makes nothing. The code is built here and published when it was published where it came from; the draft comes back as the draft; the data comes too unless with_data is false. Declared tools this brain lacks are left out and named in the answer (dropped_tool_slugs). Returns the new app's id. To replace an existing app's code use `app_source_set`.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      file_id: {
+        type: 'string',
+        description: 'The .mantleapp file (UUID) — from `file_list` or `app_export`.',
+      },
+      name: {
+        type: 'string',
+        maxLength: 200,
+        description: "The new app's name, if not the file's.",
+      },
+      with_data: {
+        type: 'boolean',
+        default: true,
+        description: "False: leave the file's data out; the app starts with an empty database.",
+      },
+    },
+    required: ['file_id'],
+  },
+  handler: async (input, ctx) => {
+    const refused = ownerOnlyRefusal(ctx);
+    if (refused) return refused;
+    const fileId = str(input.file_id).trim();
+    if (!fileId) return { ok: false, error: 'file_id is required' };
+    const name = str(input.name).trim();
+    try {
+      const file = await readFileById({ ownerId: ctx.ownerId, fileId });
+      if (!file) return { ok: false, error: `file ${fileId} not found: find it with file_list` };
+      if (file.bytes.length > appPackageMaxBytes()) {
+        return { ok: false, error: 'the file is larger than an app package can be' };
+      }
+      const res = await importAppPackage(ctx.ownerId, file.bytes, {
+        ...(name ? { title: name } : {}),
+        withData: input.with_data !== false,
+        actor: historyActor(ctx),
+      });
+      ctx.step?.setOutput({ id: res.appId, published: res.published });
+      return {
+        ok: true,
+        output: {
+          id: res.appId,
+          name: res.title,
+          published: res.published,
+          build_ok: res.build?.buildOk ?? null,
+          ...(res.build && !res.build.buildOk
+            ? { build_errors: res.build.errors.slice(0, 10) }
+            : {}),
+          has_draft: res.hasDraft,
+          data_bytes: res.dataBytes,
+          dropped_tool_slugs: res.droppedToolSlugs,
+          url: nodeUrl(res.appId),
+        },
+      };
+    } catch (err) {
+      if (err instanceof AppPackageError) return { ok: false, error: err.message };
+      return { ok: false, error: errorMessage(err) };
+    }
+  },
+};
+
 // ── Errors (apps first-class plan, Phase 3, G4) ─────────────────────────────
 
 const app_errors: BuiltinToolDef = {
@@ -1422,6 +1568,8 @@ export const APP_TOOLS: BuiltinToolDef[] = [
   app_deleted_list,
   app_undelete,
   app_duplicate,
+  app_export,
+  app_import,
   app_errors,
 ];
 

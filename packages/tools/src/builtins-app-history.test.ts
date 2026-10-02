@@ -32,13 +32,41 @@ vi.mock('@mantle/content/app-trash', () => {
   };
 });
 
-vi.mock('@mantle/content/app-package', () => ({ duplicateApp: vi.fn() }));
+vi.mock('@mantle/content/app-package', () => {
+  class AppPackageError extends Error {}
+  return {
+    AppPackageError,
+    duplicateApp: vi.fn(),
+    writeAppPackage: vi.fn(),
+    appPackageTempPath: vi.fn(async () => '/tmp/x.mantleapp'),
+    appPackageMaxBytes: () => 1024 * 1024,
+  };
+});
+vi.mock('@mantle/files', async (orig) => ({
+  ...(await orig<typeof import('@mantle/files')>()),
+  readFileById: vi.fn(),
+  spoolUpload: vi.fn(async () => ({ tempPath: '/tmp/s', sha256: 'x', size: 10 })),
+  ensureAutoFiledFolder: vi.fn(async () => 'exports'),
+  upsertFile: vi.fn(async (a: { filename: string }) => ({
+    id: 'file-1',
+    filename: a.filename,
+    parentPath: 'exports',
+    sizeBytes: 10,
+  })),
+}));
+vi.mock('node:fs', async (orig) => ({
+  ...(await orig<typeof import('node:fs')>()),
+  createReadStream: vi.fn(() => 'stream'),
+}));
+vi.mock('./app-package-import', () => ({ importAppPackage: vi.fn() }));
 vi.mock('@mantle/content', async (orig) => ({
   ...(await orig<typeof import('@mantle/content')>()),
   listAppAccess: vi.fn(),
 }));
 
-import { duplicateApp } from '@mantle/content/app-package';
+import { AppPackageError, duplicateApp, writeAppPackage } from '@mantle/content/app-package';
+import { readFileById, upsertFile } from '@mantle/files';
+import { importAppPackage } from './app-package-import';
 import { AppDbMissingError } from '@mantle/content/app-broker';
 import {
   AppTrashRefusedError,
@@ -291,5 +319,58 @@ describe('the error log tool (Phase 3, G4)', () => {
     expect(opts).toMatchObject({ kind: 'error', since: expect.any(Date) });
     expect(errors.readOnly).toBe(true);
     expect(errorOf(await errors.handler({ id: APP }, member))).toMatch(/owner/);
+  });
+});
+
+describe('the export and import tools (Phase 3)', () => {
+  const exp = tool('app_export');
+  const imp = tool('app_import');
+
+  it('app_export saves the package under /files and returns the file', async () => {
+    vi.mocked(writeAppPackage).mockResolvedValueOnce({
+      title: 'Stock Count',
+      bytes: 10,
+      hasData: true,
+    });
+    expect(outputOf(await exp.handler({ id: APP }, mcp))).toMatchObject({
+      id: APP,
+      file_id: 'file-1',
+      filename: 'stock-count.mantleapp',
+      has_data: true,
+    });
+    expect(writeAppPackage).toHaveBeenCalledWith('o1', APP, '/tmp/x.mantleapp', { withData: true });
+    expect(vi.mocked(upsertFile).mock.calls[0]![0]).toMatchObject({ parentPath: 'exports' });
+    vi.mocked(writeAppPackage).mockResolvedValueOnce(null);
+    expect(errorOf(await exp.handler({ id: APP }, chat))).toMatch(/not found/);
+    expect(errorOf(await exp.handler({ id: APP }, member))).toMatch(/owner/);
+  });
+
+  it('app_import makes a new app from a file and names the tools it left out', async () => {
+    vi.mocked(readFileById).mockResolvedValueOnce({ bytes: Buffer.from('zip') } as never);
+    vi.mocked(importAppPackage).mockResolvedValueOnce({
+      appId: SNAP,
+      title: 'Stock Count',
+      published: true,
+      build: { buildOk: true, errors: [], warnings: [], bytes: 1 },
+      dataBytes: 4096,
+      droppedToolSlugs: ['crm_lookup'],
+      hasDraft: false,
+    });
+    expect(outputOf(await imp.handler({ file_id: 'f1', name: 'Copy' }, chat))).toMatchObject({
+      id: SNAP,
+      published: true,
+      build_ok: true,
+      dropped_tool_slugs: ['crm_lookup'],
+    });
+    expect(importAppPackage).toHaveBeenCalledWith('o1', Buffer.from('zip'), {
+      title: 'Copy',
+      withData: true,
+      actor: 'agent',
+    });
+    vi.mocked(readFileById).mockResolvedValueOnce({ bytes: Buffer.from('zip') } as never);
+    vi.mocked(importAppPackage).mockRejectedValueOnce(new AppPackageError('not a zip'));
+    expect(errorOf(await imp.handler({ file_id: 'f1' }, chat))).toBe('not a zip');
+    vi.mocked(readFileById).mockResolvedValueOnce(null);
+    expect(errorOf(await imp.handler({ file_id: 'f1' }, chat))).toMatch(/file_list/);
   });
 });

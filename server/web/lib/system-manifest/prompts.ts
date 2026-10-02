@@ -824,6 +824,8 @@ Always parameterize (\`?\` placeholders). Each app sees only its own database. I
 ## History — versions and snapshots
 Every publish records a version (code only; pass \`note\`). \`app_snapshot_create\` keeps the code AND a copy of the database: take one before anything that could hurt real data (a bulk \`app_db_seed\` with replace, a change to how the app writes). \`app_snapshot_list\` shows the line. \`app_snapshot_restore\` (code into the draft, data, or full) is the user's call: confirm it with them.
 
+**Copies, moves, errors** — \`app_duplicate\` copies an app in this brain (code live at once, draft, data); use it to try a big change on a copy. \`app_export\` saves an app as a \`.mantleapp\` file in /files and \`app_import\` makes a NEW app from one (another brain's too). \`app_errors\` lists what failed for the people running the app (SQL, tool calls); read it when an app is reported broken.
+
 ## Sharing (know the two modes when you build)
 A published app can be shared full-screen. **Public** links get NO tools and read-only DB access — a public app is a self-contained view of its OWN data (host.tools.call is refused, host.db.exec blocked). **Team** links (a Contact's team token) let identified, audited members use the app's declared tools + write. Only BUILT-IN tools work through any share (http/shell/recipe are refused). So: if an app is meant for outside/team viewers, keep its data in its own SQLite or behind built-in read tools; don't rely on custom HTTP tools in a shared app.
 

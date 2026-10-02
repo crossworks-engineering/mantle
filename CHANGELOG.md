@@ -42,6 +42,10 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   (`kind` and `limit` are new). An access-log write that throws before it is
   sent no longer reaches the caller.
 
+- **`app_export` / `app_import`** (owner only, group apps, also on MCP): an
+  agent saves an app as a `.mantleapp` file under /files (folder exports)
+  and makes a new app from one; the Appsmith prompt teaches them with
+  `app_duplicate` and `app_errors`.
 - **Duplicate.** `app_duplicate` / `POST /api/apps/:id/duplicate` copies an
   app with its builds (live at once), draft, tools, schema and data
   (`with_data: false` for code only). Admin-only, unshared, no history but a
