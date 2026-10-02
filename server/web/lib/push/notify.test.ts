@@ -57,6 +57,7 @@ vi.mock('./seal', () => ({
 }));
 vi.mock('../auth/tokens', () => ({ derivedSecret: () => Buffer.from('test-secret') }));
 vi.mock('./relay-client', () => ({ relayNotify: vi.fn() }));
+vi.mock('../brain-identity', () => ({ brainIdOrNull: vi.fn() }));
 vi.mock('./store', () => ({
   getPushInstance: vi.fn(),
   getPushPrefs: vi.fn(),
@@ -65,7 +66,14 @@ vi.mock('./store', () => ({
   deleteSubscriptionByRoutingToken: vi.fn(),
 }));
 
-import { opaqueCollapseKey, pushOutbound, pushApproval, wantsOutboundPush } from './notify';
+import {
+  opaqueCollapseKey,
+  payloadForDevice,
+  pushApproval,
+  pushOutbound,
+  wantsOutboundPush,
+} from './notify';
+import { brainIdOrNull } from '../brain-identity';
 import { countPending, listPendingCalls } from '@mantle/tools';
 import { loadProfilePreferences } from '@mantle/content';
 import { sealToDevice } from './seal';
@@ -85,12 +93,14 @@ const INSTANCE = {
 };
 const PREFS = { assistantMessages: true, approvals: true };
 const GOOD_KEY = 'pk-good';
+const BRAIN_ID = '0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f';
 const device = (over: Partial<Record<string, unknown>> = {}) => ({
   id: 'dev-1',
   routingToken: 'route-1',
   publicKey: 'pk-1',
   platform: 'ios' as const,
   label: null,
+  loginId: 'admin-1' as string | null,
   ...over,
 });
 
@@ -99,6 +109,7 @@ beforeEach(() => {
   dbState.queue = [];
   // Sensible "everything allowed" defaults; individual tests override.
   vi.mocked(getPushInstance).mockResolvedValue(INSTANCE);
+  vi.mocked(brainIdOrNull).mockResolvedValue(BRAIN_ID);
   vi.mocked(getPushPrefs).mockResolvedValue(PREFS);
   vi.mocked(listAdminSubscriptions).mockResolvedValue([device()]);
   vi.mocked(sealToDevice).mockResolvedValue('ciphertext');
@@ -193,6 +204,8 @@ describe('pushOutbound — delivery', () => {
       b: 'hello there',
       agentSlug: 'ada',
       deepLink: '/chat/ada',
+      brainId: BRAIN_ID,
+      loginId: 'admin-1',
     });
     // Relay call carries the device routing token + collapseKey = agent slug.
     expect(relayNotify).toHaveBeenCalledWith('https://relay.example', 'itok', {
@@ -436,5 +449,89 @@ describe('pushApproval', () => {
     await pushApproval('owner');
     const body = JSON.parse(vi.mocked(sealToDevice).mock.calls[0]![1]).b as string;
     expect(body).toBe('Deploy to production? (+2 more waiting)');
+  });
+});
+
+describe('every push names the brain and the login its device was enrolled for', () => {
+  const sealedFor = () =>
+    vi.mocked(sealToDevice).mock.calls.map(([publicKey, plaintext]) => ({
+      publicKey,
+      payload: JSON.parse(plaintext) as Record<string, unknown>,
+    }));
+
+  it('an owner teaser to two admins: each device gets its own login, the same brain', async () => {
+    vi.mocked(listAdminSubscriptions).mockResolvedValue([
+      device({ id: 'a', routingToken: 'route-a', publicKey: 'pk-a', loginId: 'admin-a' }),
+      device({ id: 'b', routingToken: 'route-b', publicKey: 'pk-b', loginId: 'admin-b' }),
+    ]);
+    dbState.queue = [[{ id: 'a1', name: 'Ada' }], [{ text: 'hi' }]];
+    await pushOutbound('owner', 'ada');
+    const sent = sealedFor();
+    expect(sent.map((s) => [s.publicKey, s.payload.loginId, s.payload.brainId])).toEqual([
+      ['pk-a', 'admin-a', BRAIN_ID],
+      ['pk-b', 'admin-b', BRAIN_ID],
+    ]);
+    // The brain is read once per send, not once per device.
+    expect(brainIdOrNull).toHaveBeenCalledTimes(1);
+    // Everything that was there before is still there (additive).
+    for (const { payload } of sent) {
+      expect(payload).toMatchObject({ v: 1, t: 'Ada', b: 'hi', agentSlug: 'ada' });
+      expect(payload).toHaveProperty('deepLink', '/chat/ada');
+      expect(payload).toHaveProperty('ts');
+    }
+  });
+
+  it('an approval carries both', async () => {
+    await pushApproval('owner');
+    expect(sealedFor()[0]!.payload).toMatchObject({
+      deepLink: '/pending',
+      brainId: BRAIN_ID,
+      loginId: 'admin-1',
+    });
+  });
+
+  it('a brain id the database cannot give is left out, and the push still goes', async () => {
+    vi.mocked(brainIdOrNull).mockResolvedValue(null);
+    dbState.queue = [[{ id: 'a1', name: 'Ada' }], [{ text: 'hi' }]];
+    const res = await pushOutbound('owner', 'ada');
+    expect(res.delivered).toBe(1);
+    const payload = sealedFor()[0]!.payload;
+    expect(payload).not.toHaveProperty('brainId');
+    expect(payload.loginId).toBe('admin-1');
+  });
+
+  it('a device row with no login (pre-0173) names no login: never a guessed one', async () => {
+    vi.mocked(listAdminSubscriptions).mockResolvedValue([device({ loginId: null })]);
+    dbState.queue = [[{ id: 'a1', name: 'Ada' }], [{ text: 'hi' }]];
+    await pushOutbound('owner', 'ada');
+    const payload = sealedFor()[0]!.payload;
+    expect(payload).not.toHaveProperty('loginId');
+    expect(payload.brainId).toBe(BRAIN_ID);
+  });
+});
+
+describe('payloadForDevice', () => {
+  const content = { v: 1 as const, t: 'T', b: 'B', deepLink: '/x', ts: 5 };
+
+  it('adds the brain and the login to the content, and changes nothing else', () => {
+    expect(payloadForDevice(content, BRAIN_ID, 'login-1')).toEqual({
+      ...content,
+      brainId: BRAIN_ID,
+      loginId: 'login-1',
+    });
+  });
+
+  it('leaves out what it cannot name', () => {
+    expect(payloadForDevice(content, null, null)).toEqual(content);
+  });
+
+  it('the routing pair always comes from the send, never from the content', () => {
+    const smuggled = { ...content, brainId: 'other-brain', loginId: 'other-login' };
+    expect(payloadForDevice(smuggled, BRAIN_ID, 'login-1')).toMatchObject({
+      brainId: BRAIN_ID,
+      loginId: 'login-1',
+    });
+    expect(payloadForDevice(smuggled, null, null)).not.toHaveProperty('brainId');
+    expect(payloadForDevice(smuggled, null, null)).not.toHaveProperty('loginId');
   });
 });

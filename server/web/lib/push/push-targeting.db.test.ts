@@ -181,6 +181,16 @@ describe.skipIf(!URL)('push targeting: who a push goes to', () => {
     expect(h.sent).not.toContain(rt('client-live'));
     expect(h.sealed.map((s) => s.publicKey).sort()).toEqual(['pk-admin1-legacy', 'pk-admin2-live']);
     expect(h.sealed.every((s) => String(s.payload.b).includes('OWNER SECRET'))).toBe(true);
+    // Multi-login routing: each device's payload names this brain and the
+    // login THAT device was enrolled for (never another admin's).
+    const [row] = await sql`select brain_id::text as id from brain_identity`;
+    const routing = h.sealed
+      .map((s) => [s.publicKey, s.payload.brainId, s.payload.loginId])
+      .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+    expect(routing).toEqual([
+      ['pk-admin1-legacy', row!.id, admin1],
+      ['pk-admin2-live', row!.id, admin2],
+    ]);
   });
 
   it('an agent assigned to one admin pushes to that admin only', async () => {
@@ -450,10 +460,13 @@ describe.skipIf(!URL)('push targeting: who a push goes to', () => {
       const mine = h.sent.filter((t) => t.startsWith(`${tag}-`));
       expect(mine).toEqual([rt('member-live')]);
       const payload = h.sealed.find((x) => x.publicKey === 'pk-member-live')!.payload;
+      const [brainRow] = await sql`select brain_id::text as id from brain_identity`;
       expect(payload).toMatchObject({
         kind: 'chat',
         b: 'Done The order is placed.',
         deepLink: '/portal/chat',
+        brainId: brainRow!.id,
+        loginId: member,
       });
     } finally {
       await sub.unlisten();

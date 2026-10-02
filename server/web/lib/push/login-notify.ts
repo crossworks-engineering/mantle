@@ -13,7 +13,7 @@ import {
   type LoginNotice,
   type LoginNoticeMessage,
 } from '@mantle/content';
-import { sendToDevices, type PushPayload, type PushResult } from './notify';
+import { sendToDevices, type PushContent, type PushResult } from './notify';
 import {
   getLoginPushPrefs,
   getPushInstance,
@@ -47,7 +47,7 @@ export async function pushToLogin(
   if (!prefs[PREF_OF[m.kind]]) return skipped('disabled');
   const devices = await listLoginSubscriptions(m.ownerId, m.loginId);
   if (devices.length === 0) return skipped('no_devices');
-  const payload: PushPayload = {
+  const payload: PushContent = {
     v: 1,
     t: m.title,
     b: m.body,

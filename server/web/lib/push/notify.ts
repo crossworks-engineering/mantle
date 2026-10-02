@@ -17,6 +17,7 @@ import { loadNeedsYou, loadProfilePreferences } from '@mantle/content';
 import { needsYouArrivals, needsYouMessage, rememberArrivals } from './needs-you';
 import { errorMessage } from '@mantle/std';
 import { derivedSecret } from '../auth/tokens';
+import { brainIdOrNull } from '../brain-identity';
 import { publicKeyValid, sealToDevice } from './seal';
 import { relayNotify } from './relay-client';
 import {
@@ -31,7 +32,9 @@ import {
 
 /** The plaintext that gets sealed to the device (push-notifications.md §6).
  *  `kind`, `itemId` and `state` are set on a member's or a client's pushes
- *  only (login-notify.ts); an owner push carries none of them. */
+ *  only (login-notify.ts); an owner push carries none of them. `brainId` and
+ *  `loginId` are on every push, set per device by {@link sendToDevices}: the
+ *  callers build the rest. */
 export interface PushPayload {
   v: 1;
   t: string; // title (agent name, or "Mantle")
@@ -42,6 +45,35 @@ export interface PushPayload {
   kind?: 'chat' | 'review' | 'comment';
   itemId?: string;
   state?: 'accepted' | 'returned' | 'taken';
+  /** This brain (migration 0226, lib/brain-identity.ts). A device may hold
+   *  logins on several brains with one OS push token. */
+  brainId?: string;
+  /** The login the receiving device was enrolled for. */
+  loginId?: string;
+}
+
+/** What a caller hands {@link sendToDevices}: the routing pair is not its to set. */
+export type PushContent = Omit<PushPayload, 'brainId' | 'loginId'>;
+
+/**
+ * The payload one device gets: the content, plus the brain and the login
+ * the device was enrolled for, so a device holding several logins (on one
+ * brain or several) opens the right session on a tap. Additive: an older app
+ * ignores both. A field the brain cannot name is left out, never guessed.
+ */
+export function payloadForDevice(
+  content: PushContent,
+  brainId: string | null,
+  loginId: string | null,
+): PushPayload {
+  // Only the send names the brain and the login: a stray pair on the content
+  // never reaches a device.
+  const payload: PushPayload = { ...content };
+  delete payload.brainId;
+  delete payload.loginId;
+  if (brainId) payload.brainId = brainId;
+  if (loginId) payload.loginId = loginId;
+  return payload;
 }
 
 export interface PushResult {
@@ -115,15 +147,19 @@ export function opaqueCollapseKey(loginId: string, collapseKey: string): string 
  * this brain holds (derivedSecret). The relay and the push provider see
  * neither the kind of event nor an item id, cannot compute the hash
  * themselves, and cannot link one login's keys to another's.
+ *
+ * Each device's payload names this brain and the login that device was
+ * enrolled for ({@link payloadForDevice}); the payload is sealed per device,
+ * so one admin's device never learns another admin's login id.
  */
 export async function sendToDevices(
   instance: PushInstanceSecret,
   devices: DeviceRow[],
-  payload: PushPayload,
+  content: PushContent,
   collapseKey: string,
   opts: { opaqueFor?: string } = {},
 ): Promise<{ delivered: number; dropped: number }> {
-  const plaintext = JSON.stringify(payload);
+  const brainId = await brainIdOrNull();
   const key = opts.opaqueFor ? opaqueCollapseKey(opts.opaqueFor, collapseKey) : collapseKey;
   let delivered = 0;
   let dropped = 0;
@@ -134,6 +170,7 @@ export async function sendToDevices(
       await deleteSubscriptionByRoutingToken(device.routingToken);
       continue;
     }
+    const plaintext = JSON.stringify(payloadForDevice(content, brainId, device.loginId));
     let ciphertext: string;
     try {
       ciphertext = await sealToDevice(device.publicKey, plaintext);
@@ -196,7 +233,7 @@ export async function pushOutbound(ownerId: string, agentSlug: string): Promise<
   if (devices.length === 0)
     return { attempted: 0, delivered: 0, dropped: 0, skipped: 'no_devices' };
 
-  const payload: PushPayload = {
+  const payload: PushContent = {
     v: 1,
     t: msg.agentName,
     b: teaser(msg.text),
@@ -256,7 +293,7 @@ export async function pushApproval(ownerId: string): Promise<PushResult> {
       ? 'An action needs your approval.'
       : `${count} actions need your approval.`;
 
-  const payload: PushPayload = {
+  const payload: PushContent = {
     v: 1,
     t: 'Mantle',
     b: body,
@@ -302,7 +339,7 @@ export async function pushNeedsYou(
     return { attempted: 0, delivered: 0, dropped: 0, skipped: 'no_devices' };
 
   const m = needsYouMessage(arrivals[0]!, n.total);
-  const payload: PushPayload = { v: 1, t: m.title, b: m.body, deepLink: m.deepLink, ts: now };
+  const payload: PushContent = { v: 1, t: m.title, b: m.body, deepLink: m.deepLink, ts: now };
   const { delivered, dropped } = await sendToDevices(instance, devices, payload, 'needs-you');
   return { attempted: devices.length, delivered, dropped };
 }

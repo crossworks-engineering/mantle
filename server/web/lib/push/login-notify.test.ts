@@ -19,6 +19,9 @@ vi.mock('@mantle/content', () => ({
 vi.mock('./seal', () => ({ sealToDevice: vi.fn(), publicKeyValid: () => true }));
 vi.mock('../auth/tokens', () => ({ derivedSecret: () => Buffer.from('test-secret') }));
 vi.mock('./relay-client', () => ({ relayNotify: vi.fn() }));
+vi.mock('../brain-identity', () => ({
+  brainIdOrNull: async () => '0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f',
+}));
 vi.mock('./store', () => ({
   getPushInstance: vi.fn(),
   getPushPrefs: vi.fn(),
@@ -42,12 +45,14 @@ import {
 
 const NOW = Date.parse('2026-10-01T09:00:00Z');
 const ALL_ON = { chatReplies: true, reviewResults: true, comments: true };
-const device = (n: string) => ({
+const BRAIN_ID = '0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f';
+const device = (n: string, loginId = 'login-m') => ({
   id: `d-${n}`,
   routingToken: `r-${n}`,
   publicKey: `pk-${n}`,
   platform: 'ios' as const,
   label: null,
+  loginId,
 });
 const message = (over: Partial<LoginNoticeMessage> = {}): LoginNoticeMessage => ({
   loginId: 'login-m',
@@ -93,6 +98,10 @@ describe('pushToLogin', () => {
       deepLink: '/portal/chat',
       ts: NOW,
       kind: 'chat',
+      // The routing pair (multi-login): this brain, and the login the
+      // device was enrolled for.
+      brainId: BRAIN_ID,
+      loginId: 'login-m',
     });
     // The collapse key goes out as a keyed hash: the relay and the push
     // provider see neither the kind of event nor an item id.
@@ -127,7 +136,13 @@ describe('pushToLogin', () => {
       }),
       NOW,
     );
-    expect(sealed()).toMatchObject({ kind: 'review', itemId: 'n1', state: 'returned' });
+    expect(sealed()).toMatchObject({
+      kind: 'review',
+      itemId: 'n1',
+      state: 'returned',
+      brainId: BRAIN_ID,
+      loginId: 'login-m',
+    });
     expect(vi.mocked(relayNotify).mock.calls[0]![2].collapseKey).not.toContain('n1');
   });
 
@@ -188,7 +203,7 @@ describe('the three events', () => {
       message({ kind: 'comment', loginId: 'client-b', role: 'client', collapseKey: 'comment:n1' }),
     ]);
     vi.mocked(listLoginSubscriptions).mockImplementation(async (_owner, login) =>
-      login === 'client-a' ? [device('a')] : [device('b')],
+      login === 'client-a' ? [device('a', 'client-a')] : [device('b', 'client-b')],
     );
     vi.mocked(getLoginPushPrefs).mockImplementation(async (login) =>
       login === 'client-b' ? { ...ALL_ON, comments: false } : ALL_ON,
@@ -196,6 +211,8 @@ describe('the three events', () => {
     const res = await pushComment('c1', NOW);
     expect(res).toEqual({ attempted: 1, delivered: 1, dropped: 0 });
     expect(vi.mocked(sealToDevice).mock.calls.map((c) => c[0])).toEqual(['pk-a']);
+    // Each login's push names that login, under the one brain.
+    expect(sealed()).toMatchObject({ kind: 'comment', brainId: BRAIN_ID, loginId: 'client-a' });
     vi.mocked(commentNotices).mockResolvedValue([]);
     expect((await pushComment('c2', NOW)).skipped).toBe('no_message');
   });

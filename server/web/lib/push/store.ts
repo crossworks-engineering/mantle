@@ -72,6 +72,10 @@ export interface DeviceRow {
   publicKey: string;
   platform: 'ios' | 'android';
   label: string | null;
+  /** The login the device was enrolled for: every push payload names it
+   *  (notify.ts payloadForDevice). Null only on a pre-0173 row with no
+   *  login, which no send list returns. */
+  loginId: string | null;
 }
 
 type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -82,6 +86,7 @@ const DEVICE_COLUMNS = {
   publicKey: pushSubscriptions.publicKey,
   platform: pushSubscriptions.platform,
   label: pushSubscriptions.label,
+  loginId: pushSubscriptions.loginId,
 };
 
 /** The device token that enrolled the device is still live (mobile_roles_push). */

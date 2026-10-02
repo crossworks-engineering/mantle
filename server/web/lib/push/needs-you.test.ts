@@ -12,6 +12,9 @@ vi.mock('@mantle/content', () => ({ loadProfilePreferences: vi.fn(), loadNeedsYo
 vi.mock('./seal', () => ({ sealToDevice: vi.fn(), publicKeyValid: () => true }));
 vi.mock('../auth/tokens', () => ({ derivedSecret: () => Buffer.from('test-secret') }));
 vi.mock('./relay-client', () => ({ relayNotify: vi.fn() }));
+vi.mock('../brain-identity', () => ({
+  brainIdOrNull: async () => '0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f',
+}));
 vi.mock('./store', () => ({
   getPushInstance: vi.fn(),
   getPushPrefs: vi.fn(),
@@ -129,7 +132,14 @@ describe('needsYouMessage', () => {
 
 describe('pushNeedsYou', () => {
   const admins = [
-    { id: 'd1', routingToken: 'r1', publicKey: 'pk1', platform: 'ios' as const, label: null },
+    {
+      id: 'd1',
+      routingToken: 'r1',
+      publicKey: 'pk1',
+      platform: 'ios' as const,
+      label: null,
+      loginId: 'admin-1',
+    },
   ];
   beforeEach(() => {
     vi.clearAllMocks();
@@ -157,6 +167,9 @@ describe('pushNeedsYou', () => {
       b: '"Pump spec" from Mia Member',
       deepLink: '/team-admin?view=review',
       ts: NOW,
+      // Multi-login routing: this brain, and the admin the device is for.
+      brainId: '0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f',
+      loginId: 'admin-1',
     });
     expect(vi.mocked(relayNotify).mock.calls[0]![2]).toMatchObject({ collapseKey: 'needs-you' });
   });
