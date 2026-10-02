@@ -85,6 +85,26 @@ describe.skipIf(!URL)('apps write paths on Postgres', () => {
     expect(await apps.saveDraftSource(owner, app.id, source)).toBeTruthy();
   });
 
+  it('a build of source that changed meanwhile is not recorded (audit item 10)', async () => {
+    const app = await newApp('stale-build');
+    await apps.writeDraftFile(owner, app.id, 'App.tsx', 'export default () => "one";');
+    const built = apps.workingSource((await apps.getApp(owner, app.id))!);
+    // An autosave lands while the build runs.
+    await apps.writeDraftFile(owner, app.id, 'App.tsx', 'export default () => "two";');
+    const ref = {
+      storageKey: 'attachments/aa/bb/test',
+      sha256: 'test',
+      builtAt: '2026-10-02T00:00:00.000Z',
+      esbuildVersion: 'test',
+      bytes: 1,
+      ok: true,
+    };
+    expect(await apps.setDraftBuild(owner, app.id, ref, { builtFrom: built })).toBe('stale');
+    expect((await apps.getApp(owner, app.id))?.draftBuild ?? null).toBeNull();
+    const now = apps.workingSource((await apps.getApp(owner, app.id))!);
+    expect(await apps.setDraftBuild(owner, app.id, ref, { builtFrom: now })).toBe(true);
+  });
+
   it('two callers reaching a new schema version together apply it once (D3)', async () => {
     const app = await newApp('schema');
     // A plain CREATE TABLE: run twice, it fails on "already exists".

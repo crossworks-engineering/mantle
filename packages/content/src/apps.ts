@@ -695,20 +695,34 @@ export async function declareAppSchema(
 
 /** Record a build of the draft (preview). A failed build still updates the ref
  *  so the agent sees the errors, but callers should keep the last green ref for
- *  rendering — they pass the ref to render; this only persists the latest. */
+ *  rendering — they pass the ref to render; this only persists the latest.
+ *
+ *  `builtFrom`: the source the build compiled. Under the app row lock, a
+ *  build of source that is no longer the working source is NOT recorded
+ *  ('stale'): an autosave during the build cleared the build, and recording
+ *  the old one after it paired new source with an old bundle, which the next
+ *  publish would ship (apps audit 2026-10-02, item 10). */
 export async function setDraftBuild(
   ownerId: string,
   id: string,
   build: BuildRef,
-): Promise<boolean> {
-  if (!(await ownsApp(ownerId, id))) return false;
-  await db
-    .update(apps)
-    .set({ draftBuild: build, updatedAt: new Date() })
-    .where(eq(apps.nodeId, id));
+  opts: { builtFrom?: AppSource } = {},
+): Promise<boolean | 'stale'> {
+  const done = await db.transaction(async (tx) => {
+    const app = await lockAppRow(tx, ownerId, id);
+    if (!app) return false;
+    if (opts.builtFrom && codeHash(app.draft ?? app.source) !== codeHash(opts.builtFrom)) {
+      return 'stale' as const;
+    }
+    await tx
+      .update(apps)
+      .set({ draftBuild: build, updatedAt: new Date() })
+      .where(eq(apps.nodeId, id));
+    return true;
+  });
   // The app list shows whether each app can be previewed.
-  void notifyAppNavChanged(ownerId);
-  return true;
+  if (done === true) void notifyAppNavChanged(ownerId);
+  return done;
 }
 
 export async function discardDraft(ownerId: string, id: string): Promise<boolean> {

@@ -20,37 +20,63 @@ export type AppBuildOutcome = {
   bytes: number;
 };
 
-/** Null when the app is not this owner's. */
+/** Builds of source that changed meanwhile, before the step gives up. */
+const STALE_RETRIES = 2;
+
+/** Null when the app is not this owner's. A build of source that changed
+ *  while it ran is not recorded (setDraftBuild 'stale'): the step builds
+ *  the new source, a few times, then reports the build as not staged. */
 export async function buildAndStageApp(
   ownerId: string,
   id: string,
 ): Promise<AppBuildOutcome | null> {
-  const app = await getApp(ownerId, id);
-  if (!app) return null;
-  const res = await buildApp(workingSource(app), {
-    declaredToolSlugs: app.manifest.toolSlugs ?? [],
-    runtimeExports: await loadRuntimeExports(),
-  });
-  if (res.ok && res.code) {
+  for (let attempt = 0; ; attempt++) {
+    const app = await getApp(ownerId, id);
+    if (!app) return null;
+    const source = workingSource(app);
+    const res = await buildApp(source, {
+      declaredToolSlugs: app.manifest.toolSlugs ?? [],
+      runtimeExports: await loadRuntimeExports(),
+    });
+    const outcome: AppBuildOutcome = {
+      buildOk: res.ok,
+      errors: res.errors,
+      warnings: res.warnings,
+      bytes: res.code ? Buffer.byteLength(res.code, 'utf8') : 0,
+    };
+    if (!res.ok || !res.code) return outcome;
     const put = await putContent(Buffer.from(res.code, 'utf8'), 'application/javascript');
     const cssPut = res.css ? await putContent(Buffer.from(res.css, 'utf8'), 'text/css') : null;
-    await setDraftBuild(ownerId, id, {
-      storageKey: put.key,
-      sha256: put.sha256,
-      builtAt: new Date().toISOString(),
-      esbuildVersion: res.esbuildVersion,
-      bytes: put.size,
-      ok: true,
-      ...(res.warnings.length ? { warnings: res.warnings.map((w) => w.text) } : {}),
-      ...(cssPut
-        ? { css: { storageKey: cssPut.key, sha256: cssPut.sha256, bytes: cssPut.size } }
-        : {}),
-    });
+    const staged = await setDraftBuild(
+      ownerId,
+      id,
+      {
+        storageKey: put.key,
+        sha256: put.sha256,
+        builtAt: new Date().toISOString(),
+        esbuildVersion: res.esbuildVersion,
+        bytes: put.size,
+        ok: true,
+        ...(res.warnings.length ? { warnings: res.warnings.map((w) => w.text) } : {}),
+        ...(cssPut
+          ? { css: { storageKey: cssPut.key, sha256: cssPut.sha256, bytes: cssPut.size } }
+          : {}),
+      },
+      { builtFrom: source },
+    );
+    if (staged === false) return null;
+    if (staged === true) return outcome;
+    if (attempt >= STALE_RETRIES) {
+      return {
+        ...outcome,
+        buildOk: false,
+        errors: [
+          {
+            text: 'the source changed while it was building, again and again: build it again when the edits stop',
+            location: null,
+          },
+        ],
+      };
+    }
   }
-  return {
-    buildOk: res.ok,
-    errors: res.errors,
-    warnings: res.warnings,
-    bytes: res.code ? Buffer.byteLength(res.code, 'utf8') : 0,
-  };
 }

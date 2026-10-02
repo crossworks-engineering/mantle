@@ -179,6 +179,7 @@ describe('app_build', () => {
         esbuildVersion: '0.25.0',
         ok: true,
       }),
+      { builtFrom: expect.anything() },
     );
     // No CSS sidecar and no warnings: neither key should be written at all.
     const ref = vi.mocked(setDraftBuild).mock.calls[0]![2];
@@ -202,6 +203,7 @@ describe('app_build', () => {
         warnings: ['undeclared tool slug: weather'],
         css: { storageKey: 'content/text/css', sha256: 'sha', bytes: 18 },
       }),
+      { builtFrom: expect.anything() },
     );
     // Warnings do not fail the call; they ride along for the agent to read.
     expect(outputOf(res).build_ok).toBe(true);
@@ -239,6 +241,16 @@ describe('app_build', () => {
     expect(err).toMatch(/13 error\(s\) \(\+3 more\)/);
     expect(err).toMatch(/e9/);
     expect(err).not.toMatch(/e10/);
+  });
+
+  it('builds again when the source changed during the build; gives up after a few (audit item 10)', async () => {
+    vi.mocked(setDraftBuild).mockResolvedValueOnce('stale').mockResolvedValueOnce(true);
+    expect(outputOf(await build.handler({ id: APP_ID }, ctx)).build_ok).toBe(true);
+    expect(buildApp).toHaveBeenCalledTimes(2);
+    vi.mocked(buildApp).mockClear();
+    vi.mocked(setDraftBuild).mockResolvedValue('stale');
+    expect(errorOf(await build.handler({ id: APP_ID }, ctx))).toMatch(/changed while it was building/);
+    expect(buildApp).toHaveBeenCalledTimes(3);
   });
 
   it('surfaces a runner crash as a tool error, not a throw', async () => {
