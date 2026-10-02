@@ -45,6 +45,8 @@ export const appAccessLog = pgTable(
     index('app_access_log_owner_idx').on(t.ownerId),
     index('app_access_log_contact_idx').on(t.contactId),
     index('app_access_log_actor_idx').on(t.actorId),
+    // The retention reaper's range scan (migration 0218).
+    index('app_access_log_created_idx').on(t.createdAt),
   ],
 );
 

@@ -90,6 +90,9 @@ export function assertSourceWithinLimits(source: AppSource): void {
 type SidecarCols = {
   source: AppSource;
   draftSource: AppSource | null;
+  /** Set by listApps, which reads `draft_source IS NOT NULL` rather than the
+   *  draft itself; wins over `draftSource` for `hasDraft`. */
+  hasDraft?: boolean;
   manifest: AppManifest;
   draftBuild: BuildRef | null;
   publishedBuild: BuildRef | null;
@@ -103,7 +106,21 @@ type SidecarCols = {
   draftUpdatedAt?: Date | null;
 };
 
-function rowOf(n: Node, s: Partial<SidecarCols> = {}): AppRow {
+/** The node columns an app row shows (listApps reads only these). */
+type RowNode = Pick<
+  Node,
+  | 'id'
+  | 'title'
+  | 'data'
+  | 'tags'
+  | 'audience'
+  | 'inheritedLevel'
+  | 'embeddedLevel'
+  | 'createdAt'
+  | 'updatedAt'
+>;
+
+function rowOf(n: RowNode, s: Partial<SidecarCols> = {}): AppRow {
   const d = (n.data ?? {}) as Record<string, unknown>;
   const manifest = (s.manifest ?? {}) as AppManifest;
   return {
@@ -118,7 +135,7 @@ function rowOf(n: Node, s: Partial<SidecarCols> = {}): AppRow {
     description: typeof manifest.description === 'string' ? manifest.description : null,
     toolCount: manifest.toolSlugs?.length ?? 0,
     hasBuild: !!s.publishedBuild?.ok,
-    hasDraft: s.draftSource != null,
+    hasDraft: s.hasDraft ?? s.draftSource != null,
     // Every live link is open: team links are retired (migration 0176).
     shareMode: s.shareSettings ? 'public' : null,
     isHub: s.hubAppId != null && s.hubAppId === n.id,
@@ -206,12 +223,26 @@ export async function listApps(
 ): Promise<AppRow[]> {
   // The active share (unique per node) + the hub designation give each row its
   // exposure badge: Hub ⊃ Team ⊃ Public ⊃ owner-only.
+  //
+  // Only the columns a row shows (apps audit P2): the whole node row carried
+  // the embedding, and the draft column the whole draft source tree (up to
+  // 50 × 256 KB per app, up to 500 apps), to answer "is there a draft".
   const [rows, prefs] = await Promise.all([
     db
       .select({
-        node: nodes,
+        node: {
+          id: nodes.id,
+          title: nodes.title,
+          data: nodes.data,
+          tags: nodes.tags,
+          audience: nodes.audience,
+          inheritedLevel: nodes.inheritedLevel,
+          embeddedLevel: nodes.embeddedLevel,
+          createdAt: nodes.createdAt,
+          updatedAt: nodes.updatedAt,
+        },
         manifest: apps.manifest,
-        draftSource: apps.draftSource,
+        hasDraft: sql<boolean>`${apps.draftSource} is not null`,
         publishedBuild: apps.publishedBuild,
         dataReadOnly: apps.dataReadOnly,
         shareSettings: shares.settings,
@@ -233,7 +264,7 @@ export async function listApps(
   return rows.map((r) =>
     rowOf(r.node, {
       manifest: r.manifest ?? {},
-      draftSource: r.draftSource ?? null,
+      hasDraft: r.hasDraft === true,
       publishedBuild: r.publishedBuild ?? null,
       shareSettings: r.shareSettings ?? null,
       hubAppId,
@@ -304,6 +335,50 @@ async function loadDetail(ownerId: string, id: string): Promise<AppDetail | null
 
 export async function getApp(ownerId: string, id: string): Promise<AppDetail | null> {
   return loadDetail(ownerId, id);
+}
+
+/** What RUNNING an app needs: its level, manifest and builds. */
+export type AppRuntime = {
+  id: string;
+  title: string;
+  audience: AppDetail['audience'];
+  manifest: AppManifest;
+  draftBuild: BuildRef | null;
+  publishedBuild: BuildRef | null;
+  dataReadOnly: boolean;
+};
+
+/**
+ * The slim read for the brokers and frames (apps audit P1). Every
+ * `host.db.query` and tool call used to load the whole app through getApp:
+ * the published AND draft source (up to 50 × 256 KB each), the open share and
+ * the owner's preferences, to read the manifest. One row, the columns that
+ * running the app needs, nothing else.
+ */
+export async function getAppRuntime(ownerId: string, id: string): Promise<AppRuntime | null> {
+  const [row] = await db
+    .select({
+      title: nodes.title,
+      audience: nodes.audience,
+      manifest: apps.manifest,
+      draftBuild: apps.draftBuild,
+      publishedBuild: apps.publishedBuild,
+      dataReadOnly: apps.dataReadOnly,
+    })
+    .from(nodes)
+    .innerJoin(apps, eq(apps.nodeId, nodes.id))
+    .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'app')))
+    .limit(1);
+  if (!row) return null;
+  return {
+    id,
+    title: row.title,
+    audience: asViewerLevel(row.audience),
+    manifest: row.manifest ?? {},
+    draftBuild: row.draftBuild ?? null,
+    publishedBuild: row.publishedBuild ?? null,
+    dataReadOnly: row.dataReadOnly === true,
+  };
 }
 
 /** The working tree the editor + build operate on: draft if present, else published. */

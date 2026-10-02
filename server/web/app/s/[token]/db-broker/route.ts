@@ -22,7 +22,7 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
-import { getApp, recordAppAccess, recordShareAccess } from '@mantle/content';
+import { getAppRuntime, recordAppAccess, recordShareAccess } from '@mantle/content';
 import { appDbExec, appDbQuery, markAppClientWritten } from '@mantle/content/app-broker';
 import { scheduleAppTableExportSync } from '@mantle/content/app-table-exports';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
@@ -85,7 +85,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     );
   }
 
-  const app = await getApp(share.ownerId, share.nodeId);
+  const app = await getAppRuntime(share.ownerId, share.nodeId);
   if (!app || !app.publishedBuild?.ok) {
     return NextResponse.json({ ok: false, error: 'app not found' }, { status: 404 });
   }

@@ -196,6 +196,32 @@ function run(job) {
       }
       return { skipped: false, userVersion: userVersion > 0 ? userVersion : 0 };
     }
+    if (mode === 'batch') {
+      // The server's own write batch (an authoring-time seed): its statements
+      // run all or nothing, under the same authorizer and caps.
+      const stmts = new Map();
+      const changes = [];
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        for (const st of job.statements) {
+          let prepared = stmts.get(st.sql);
+          if (!prepared) {
+            prepared = db.prepare(st.sql);
+            stmts.set(st.sql, prepared);
+          }
+          changes.push(Number(prepared.run(...st.params).changes));
+        }
+        db.exec('COMMIT');
+      } catch (err) {
+        try {
+          db.exec('ROLLBACK');
+        } catch {
+          // already rolled back by the failing statement
+        }
+        throw err;
+      }
+      return { changes };
+    }
     if (mode === 'run') {
       const r = db.prepare(sql).run(...params);
       return { changes: Number(r.changes), lastInsertRowid: Number(r.lastInsertRowid) };
@@ -432,12 +458,37 @@ export async function runAppSql(
   }
 }
 
-/** A job for a child: an app statement, or the server's own file copy. */
+/** One statement of a server write batch. */
+export type AppSqlBatchStatement = { sql: string; params: unknown[] };
+
+/** A job for a child: an app statement, or the server's own file copy or
+ *  write batch. */
 type ChildJob = Omit<Parameters<typeof runAppSql>[1], 'mode'> & {
-  mode: 'all' | 'run' | 'script' | 'copy';
+  mode: 'all' | 'run' | 'script' | 'copy' | 'batch';
   /** 'copy' only: the file to write (must not exist). */
   dest?: string;
+  /** 'batch' only: the statements, run in one transaction. */
+  statements?: AppSqlBatchStatement[];
 };
+
+/**
+ * Run the server's own statements against an app's file in ONE transaction,
+ * in a SQL child, under the same authorizer, caps and time limit as app SQL
+ * (apps audit P5: the authoring-time seed used to run on the main thread).
+ * Returns each statement's change count. Nothing stays when one fails.
+ */
+export async function runAppSqlBatch(
+  file: string,
+  statements: AppSqlBatchStatement[],
+  timeoutMs = APP_SCHEMA_TIMEOUT_MS,
+): Promise<number[]> {
+  const res = (await runOnChild(
+    file,
+    { sql: '', mode: 'batch', readOnly: false, statements },
+    timeoutMs,
+  )) as { changes: number[] };
+  return res.changes;
+}
 
 /**
  * Copy an app's database file to `dest` (which must not exist) in a SQL child,
@@ -496,6 +547,7 @@ async function runOnChild(file: string, opts: ChildJob, timeoutMs: number): Prom
       journalLimit: APP_SQL_JOURNAL_LIMIT_BYTES,
       userVersion: opts.mode === 'script' ? Math.max(0, Math.floor(opts.userVersion ?? 0)) : 0,
       dest: opts.mode === 'copy' ? opts.dest : undefined,
+      statements: opts.mode === 'batch' ? opts.statements : undefined,
     });
   });
   release(child);

@@ -38,7 +38,7 @@ vi.mock('@/lib/shares', () => ({
 
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@mantle/content')>()),
-  getApp: vi.fn(async () => ({
+  getAppRuntime: vi.fn(async () => ({
     id: 'app-1',
     publishedBuild: { ok: true },
     manifest: { toolSlugs: ['search_chunks'] },

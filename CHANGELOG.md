@@ -4,6 +4,25 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: apps speed (apps first-class, Phase 1)
+
+- **Running an app reads less.** The db and tool brokers and the frame
+  routes (owner and `/s`) load the app through `getAppRuntime`: its level,
+  manifest and builds. They used to load the whole app (published and draft
+  source, up to 50 × 256 KB each, the share, the owner's preferences) on
+  every `host.db.query` and tool call.
+- **The app list** reads only the columns a row shows: no draft source tree
+  (it asks `draft_source IS NOT NULL`) and no node embedding.
+- **Opening an app** serves its bundle and CSS from a 32 MB in-process cache
+  keyed by content hash, instead of reading object storage on every load.
+- **Off the main thread:** the authoring-time seed (`app_db_seed`, now one
+  transaction in a SQL child via `runAppSqlBatch`), the schema read behind
+  `app_db_list`, and the backup's per-app copy (`copyAppDbFile`).
+- `app_db_list` reports an app whose database is missing on its own line
+  instead of failing the whole list.
+- **Migration 0218** (`0218_app_access_log_created_idx`): an index on
+  `app_access_log.created_at` for the retention reaper. Additive.
+
 ## Unreleased: apps safety (apps first-class, Phase 0)
 
 The first slice of the apps audit of 2026-10-02: the fixes the snapshot and

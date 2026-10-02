@@ -9,7 +9,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
 import { buildAppFrameTicket } from '@/lib/auth';
-import { getApp } from '@mantle/content';
+import { getAppRuntime } from '@mantle/content';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 
 export async function POST(req: Request, ctx: { params: Promise<{ token: string }> }) {
@@ -32,7 +32,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   const share = gate.kind === 'ok' ? gate.share : null;
   if (!share || share.nodeType !== 'app') return new NextResponse('not found', { status: 404 });
 
-  const app = await getApp(share.ownerId, share.nodeId);
+  const app = await getAppRuntime(share.ownerId, share.nodeId);
   if (!app?.publishedBuild?.ok) return new NextResponse('no build', { status: 404 });
 
   return NextResponse.json({

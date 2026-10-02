@@ -10,7 +10,7 @@ import { NextResponse } from '@/server/http-compat';
 import { resolveActiveShareRowByToken } from '@/lib/shares';
 import { contactTicketAdmits } from '@/lib/contact-share-gate';
 import { verifyAppFrameTicket } from '@/lib/auth';
-import { getApp } from '@mantle/content';
+import { getAppRuntime } from '@mantle/content';
 import { renderAppFrame } from '@/lib/app-frame';
 
 export async function GET(req: Request, ctx: { params: Promise<{ token: string }> }) {
@@ -38,7 +38,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
     return new NextResponse('frame ticket required', { status: 401 });
   }
 
-  const app = await getApp(share.ownerId, share.nodeId);
+  const app = await getAppRuntime(share.ownerId, share.nodeId);
   const build = app?.publishedBuild?.ok ? app.publishedBuild : null;
   if (!build) return new NextResponse('no build', { status: 404 });
 

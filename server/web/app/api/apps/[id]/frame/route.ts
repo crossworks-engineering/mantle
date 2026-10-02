@@ -8,7 +8,7 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { verifyAppFrameTicket } from '@/lib/auth';
-import { getApp } from '@mantle/content';
+import { getAppRuntime } from '@mantle/content';
 import { renderAppFrame } from '@/lib/app-frame';
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -22,7 +22,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     return new NextResponse('frame ticket required', { status: 401 });
   }
 
-  const app = await getApp(ticket.ownerId, id);
+  const app = await getAppRuntime(ticket.ownerId, id);
   if (!app) return new NextResponse('not found', { status: 404 });
   const build = app.draftBuild?.ok
     ? app.draftBuild

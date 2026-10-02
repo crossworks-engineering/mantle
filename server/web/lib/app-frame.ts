@@ -16,6 +16,13 @@ import { resolveSingleOwnerId } from '@mantle/db';
 import { requestOrigin } from '@/lib/auth-constants';
 import type { Readable } from 'node:stream';
 import { env } from '@mantle/config';
+import { BundleTextCache } from './bundle-text-cache';
+
+/** Bundle and CSS text by content-addressed key (apps audit P3): one read
+ *  from object storage per build per process, not one per frame load. */
+const bundleText = new BundleTextCache();
+const loadText = (key: string) =>
+  bundleText.get(key, () => getContent(key).then(({ body }) => streamToString(body)));
 
 /** The shared-runtime import map, read once from the generated public/ asset
  *  (cwd is server/web in dev and in the image — same relative convention as
@@ -96,12 +103,8 @@ export async function renderAppFrame(
 ): Promise<Response> {
   const url = new URL(req.url);
   const [bundleCode, appCss, importMapJson, neatSpec, viewer] = await Promise.all([
-    getContent(build.storageKey).then(({ body }) => streamToString(body)),
-    build.css
-      ? getContent(build.css.storageKey)
-          .then(({ body }) => streamToString(body))
-          .catch(() => '')
-      : Promise.resolve(''),
+    loadText(build.storageKey),
+    build.css ? loadText(build.css.storageKey).catch(() => '') : Promise.resolve(''),
     loadImportMapJson(),
     resolveFrameNeat(opts.shared === true),
     resolveFrameViewer(opts.viewer),

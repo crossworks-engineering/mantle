@@ -759,8 +759,19 @@ const app_db_list: BuiltinToolDef = {
       );
       const out = [];
       for (const a of apps) {
-        const tables = await appDbSchema(ctx.ownerId, a.appNodeId);
-        out.push({ app_id: a.appNodeId, title: a.title, size_bytes: a.sizeBytes, tables });
+        // One app's trouble (a lost file, AppDbMissingError) is that app's
+        // line, not the end of the list.
+        try {
+          const tables = await appDbSchema(ctx.ownerId, a.appNodeId);
+          out.push({ app_id: a.appNodeId, title: a.title, size_bytes: a.sizeBytes, tables });
+        } catch (err) {
+          out.push({
+            app_id: a.appNodeId,
+            title: a.title,
+            size_bytes: a.sizeBytes,
+            error: errorMessage(err),
+          });
+        }
       }
       ctx.step?.setOutput({ count: out.length });
       return { ok: true, output: { apps: out } };

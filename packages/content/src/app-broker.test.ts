@@ -11,8 +11,7 @@ import {
   assertSafe,
   assertSafeScript,
   appDbFiles,
-  seedRowsIntoHandle,
-  vacuumIntoStatement,
+  planSeedStatements,
   snapshotDestPath,
 } from './app-broker';
 import { APP_SCHEMA_TIMEOUT_MS, runAppSql } from './app-sql-runner';
@@ -262,23 +261,6 @@ describe('appDbFiles', () => {
   });
 });
 
-/**
- * The backup snapshots each app DB with `VACUUM INTO '<dest>'`. The dest path is
- * server-derived, but the statement builder must still single-quote-escape it so
- * a path containing a quote can't break the SQL literal.
- */
-describe('vacuumIntoStatement', () => {
-  it('wraps the destination in a single-quoted literal', () => {
-    expect(vacuumIntoStatement('/backups/o/a.sqlite')).toBe("VACUUM INTO '/backups/o/a.sqlite'");
-  });
-
-  it("doubles embedded single quotes so the literal can't be broken out of", () => {
-    expect(vacuumIntoStatement("/b/a'; DROP TABLE t;--.sqlite")).toBe(
-      "VACUUM INTO '/b/a''; DROP TABLE t;--.sqlite'",
-    );
-  });
-});
-
 describe('snapshotDestPath', () => {
   it('mirrors the live <owner>/<app>.sqlite layout under destDir', () => {
     expect(snapshotDestPath('/tmp/snap', 'owner-1', 'app-9')).toBe(
@@ -288,93 +270,58 @@ describe('snapshotDestPath', () => {
 });
 
 /**
- * `seedRowsIntoHandle` is the core of the `app_db_seed` builtin — the
- * authoring-time bulk load of reference data. It must validate the table and
- * every row against the LIVE columns, insert all-or-nothing, and support the
- * replace-then-append batching contract.
+ * The `app_db_seed` plan (apps audit P5): every row is checked against the
+ * LIVE columns before anything runs, and the statements then run in one
+ * transaction in a SQL child (the transaction itself is pinned in
+ * app-sql-runner.test.ts and on Postgres in apps-concurrency.db.test.ts).
  */
-describe('seedRowsIntoHandle', () => {
-  function memDb() {
-    const { DatabaseSync } = process.getBuiltinModule(
-      'node:sqlite',
-    ) as typeof import('node:sqlite');
-    const db = new DatabaseSync(':memory:');
-    db.exec(
-      'CREATE TABLE fluids (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, sg REAL, flammable INTEGER)',
-    );
-    return db;
-  }
+describe('planSeedStatements', () => {
+  const COLS = ['id', 'name', 'sg', 'flammable'];
 
-  it('inserts rows and reports counts', () => {
-    const db = memDb();
-    const res = seedRowsIntoHandle(db, 'fluids', [
-      { name: 'WATER', sg: 1 },
-      { name: 'BUTANE', sg: 0.58, flammable: true },
-      { name: 'UNKNOWN', sg: null },
+  it('one INSERT per row, booleans as 1/0, null kept', () => {
+    expect(
+      planSeedStatements('fluids', COLS, [
+        { name: 'WATER', sg: 1 },
+        { name: 'BUTANE', sg: 0.58, flammable: true },
+        { name: 'UNKNOWN', sg: null },
+      ]),
+    ).toEqual([
+      { sql: 'INSERT INTO "fluids" ("name", "sg") VALUES (?, ?)', params: ['WATER', 1] },
+      {
+        sql: 'INSERT INTO "fluids" ("name", "sg", "flammable") VALUES (?, ?, ?)',
+        params: ['BUTANE', 0.58, 1],
+      },
+      { sql: 'INSERT INTO "fluids" ("name", "sg") VALUES (?, ?)', params: ['UNKNOWN', null] },
     ]);
-    expect(res).toMatchObject({ inserted: 3, deleted: 0, table: 'fluids' });
-    const rows = db.prepare('SELECT name, sg, flammable FROM fluids ORDER BY id').all() as {
-      name: string;
-      sg: number | null;
-      flammable: number | null;
-    }[];
-    expect(rows).toEqual([
-      { name: 'WATER', sg: 1, flammable: null },
-      { name: 'BUTANE', sg: 0.58, flammable: 1 }, // boolean stored as 1
-      { name: 'UNKNOWN', sg: null, flammable: null },
-    ]);
-    db.close();
   });
 
-  it('replace empties the table first; append batches keep prior rows', () => {
-    const db = memDb();
-    seedRowsIntoHandle(db, 'fluids', [{ name: 'OLD' }]);
-    const res = seedRowsIntoHandle(db, 'fluids', [{ name: 'A' }, { name: 'B' }], {
-      replace: true,
+  it('replace empties the table first, in the same batch', () => {
+    expect(planSeedStatements('fluids', COLS, [{ name: 'A' }], { replace: true })[0]).toEqual({
+      sql: 'DELETE FROM "fluids"',
+      params: [],
     });
-    expect(res).toMatchObject({ inserted: 2, deleted: 1 });
-    seedRowsIntoHandle(db, 'fluids', [{ name: 'C' }]); // second batch appends
-    const names = (
-      db.prepare('SELECT name FROM fluids ORDER BY id').all() as { name: string }[]
-    ).map((r) => r.name);
-    expect(names).toEqual(['A', 'B', 'C']);
-    db.close();
   });
 
-  it('rolls the whole batch back when any row is bad (all-or-nothing)', () => {
-    const db = memDb();
+  it('refuses the whole batch on a bad row, naming the columns', () => {
     expect(() =>
-      seedRowsIntoHandle(db, 'fluids', [{ name: 'GOOD' }, { nope: 'bad column' }]),
+      planSeedStatements('fluids', COLS, [{ name: 'GOOD' }, { nope: 'bad column' }]),
     ).toThrow(/unknown column 'nope'.*columns are/i);
-    expect((db.prepare('SELECT count(*) c FROM fluids').get() as { c: number }).c).toBe(0);
-    db.close();
+    expect(() => planSeedStatements('fluids', COLS, [{}])).toThrow(/row 0 is empty/);
   });
 
   it('rejects nested values with a teaching error', () => {
-    const db = memDb();
-    expect(() => seedRowsIntoHandle(db, 'fluids', [{ name: { deep: true } }])).toThrow(
+    expect(() => planSeedStatements('fluids', COLS, [{ name: { deep: true } }])).toThrow(
       /must be string, number, boolean, or null/i,
     );
-    db.close();
-  });
-
-  it('names the existing tables when the target table is missing', () => {
-    const db = memDb();
-    expect(() => seedRowsIntoHandle(db, 'fluidz', [{ name: 'X' }])).toThrow(
-      /does not exist.*app_db_schema_set.*fluids/is,
-    );
-    db.close();
   });
 
   it('refuses invalid and sqlite-internal table names', () => {
-    const db = memDb();
-    expect(() => seedRowsIntoHandle(db, 'fluids"; DROP TABLE fluids;--', [{ name: 'X' }])).toThrow(
+    expect(() =>
+      planSeedStatements('fluids"; DROP TABLE fluids;--', COLS, [{ name: 'X' }]),
+    ).toThrow(/not a valid table name/i);
+    expect(() => planSeedStatements('sqlite_master', COLS, [{ name: 'X' }])).toThrow(
       /not a valid table name/i,
     );
-    expect(() => seedRowsIntoHandle(db, 'sqlite_master', [{ name: 'X' }])).toThrow(
-      /not a valid table name/i,
-    );
-    db.close();
   });
 });
 

@@ -104,6 +104,42 @@ describe.skipIf(!URL)('apps write paths on Postgres', () => {
     ]);
   });
 
+  it('the seed runs in the SQL child, all or nothing, and names the tables on a miss (P5)', async () => {
+    const app = await newApp('seed');
+    const schema = {
+      schemaSql: 'CREATE TABLE IF NOT EXISTS fluids (id INTEGER PRIMARY KEY, name TEXT NOT NULL);',
+      schemaVersion: 1,
+    };
+    const first = await broker.appDbSeedRows(
+      owner,
+      app.id,
+      'fluids',
+      [{ name: 'OLD' }],
+      {},
+      schema,
+    );
+    expect(first).toMatchObject({ inserted: 1, deleted: 0 });
+    const res = await broker.appDbSeedRows(
+      owner,
+      app.id,
+      'fluids',
+      [{ name: 'A' }, { name: 'B' }],
+      { replace: true },
+      schema,
+    );
+    expect(res).toMatchObject({ inserted: 2, deleted: 1, columns: ['id', 'name'] });
+    // NOT NULL fails on the second row: nothing of the batch stays.
+    await expect(
+      broker.appDbSeedRows(owner, app.id, 'fluids', [{ name: 'C' }, { name: null }], {}, schema),
+    ).rejects.toThrow(/NOT NULL/);
+    await expect(
+      broker.appDbSeedRows(owner, app.id, 'fluidz', [{ name: 'X' }], {}, schema),
+    ).rejects.toThrow(/does not exist.*fluids/s);
+    expect(
+      await broker.appDbQuery(owner, app.id, 'SELECT name FROM fluids ORDER BY id', [], schema),
+    ).toEqual([{ name: 'A' }, { name: 'B' }]);
+  });
+
   it('a lost file is an error, and a delete removes the node before the file (D1, D6)', async () => {
     const app = await newApp('lost');
     const schema = { schemaSql: 'CREATE TABLE IF NOT EXISTS t (x);', schemaVersion: 1 };

@@ -28,6 +28,7 @@ import {
   appSqlMaxDbBytes,
   copyAppDbFile,
   runAppSql,
+  runAppSqlBatch,
 } from './app-sql-runner';
 import {
   appViewerSalt,
@@ -129,7 +130,7 @@ async function openSqlite(file: string): Promise<SqliteDb> {
   //     (several members) and the responder's read-only queries running while
   //     the app writes. In the old rollback-journal mode those blocked each
   //     other and could hit SQLITE_BUSY; under WAL a reader just sees a
-  //     consistent snapshot. Read-only opens (openSqliteReadOnly) read a WAL db
+  //     consistent snapshot. Read-only opens (the SQL child's) read a WAL db
   //     fine — verified on the deployed runtime.
   //   synchronous=NORMAL — the safe+fast pairing WITH WAL: fsync at checkpoints
   //     rather than every commit. Durable across an app/process crash; only a
@@ -147,24 +148,6 @@ async function openSqlite(file: string): Promise<SqliteDb> {
   const [ps] = handle.prepare('PRAGMA page_size').all() as { page_size: number }[];
   const pageSize = Number(ps?.page_size) || 4096;
   handle.exec(`PRAGMA max_page_count = ${Math.max(1, Math.floor(appSqlMaxDbBytes() / pageSize))}`);
-  return handle;
-}
-
-/** Open an app's SQLite file READ-ONLY. Any write throws at the ENGINE level
- *  ("attempt to write a readonly database"), so an agent-facing query tool
- *  cannot mutate app data no matter what SQL it sends — no SELECT-only regex to
- *  outsmart (SQLite allows DML inside CTEs; a regex guard would leak). Assumes
- *  the file exists (callers check) — read-only open never creates it. */
-async function openSqliteReadOnly(file: string): Promise<SqliteDb> {
-  const DatabaseSync = await sqliteCtor();
-  const handle = new DatabaseSync(file, { readOnly: true });
-  // busy_timeout is a connection setting (no file write), fine on a read-only
-  // handle; wrap defensively in case a driver quirk rejects it.
-  try {
-    handle.exec('PRAGMA busy_timeout = 5000');
-  } catch {
-    /* readers rarely block; non-fatal */
-  }
   return handle;
 }
 
@@ -425,7 +408,7 @@ export async function appViewerFor(
  *  rejected with a "shared apps are read-only" promise. A read-write open would
  *  let `{op:'query', sql:'DELETE FROM t'}` mutate the owner's app database
  *  anyway. Engine-level read-only closes that for any SQL (same rationale as
- *  openSqliteReadOnly: no SELECT-only regex to outsmart). Writes go through
+ *  the child's read-only open: no SELECT-only regex to outsmart). Writes go through
  *  appDbExec (op:'exec'), which the routes gate. */
 export async function appDbQuery(
   ownerId: string,
@@ -517,93 +500,74 @@ export type AppDbSeedResult = {
 /** SQLite identifier we accept for a seed target table (no quoting tricks). */
 const TABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
-/**
- * The seed core, against an already-open handle — separated from the registry
- * and file plumbing so it is directly testable on an in-memory database.
- * Validates the table name against the live schema and every row against the
- * live columns, then inserts all-or-nothing in one transaction. `replace`
- * empties the table first (same transaction). Values must be
- * string/number/boolean/null (booleans stored as 1/0).
- */
-export function seedRowsIntoHandle(
-  handle: SqliteDb,
-  table: string,
-  rows: Record<string, unknown>[],
-  opts: { replace?: boolean } = {},
-): AppDbSeedResult {
-  if (!TABLE_NAME.test(table) || table.toLowerCase().startsWith('sqlite_')) {
-    throw new Error(
+/** Why a seed's target table is refused: a bad name, or not in the app's
+ *  database (with the tables that are). */
+function seedTableError(table: string, knownTables: string[] | null): Error {
+  if (knownTables === null) {
+    return new Error(
       `table '${table}' is not a valid table name — use the exact name from the declared schema (app_db_schema_set)`,
     );
   }
-  const cols = handle.prepare(`PRAGMA table_info("${table}")`).all() as { name: string }[];
-  if (!cols.length) {
-    const known = (
-      handle
-        .prepare(
-          "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
-        )
-        .all() as { name: string }[]
-    ).map((t) => t.name);
-    throw new Error(
-      `table '${table}' does not exist in this app's database — declare it via app_db_schema_set first` +
-        (known.length ? ` (existing tables: ${known.join(', ')})` : ''),
-    );
-  }
-  const colSet = new Set(cols.map((c) => c.name));
+  return new Error(
+    `table '${table}' does not exist in this app's database — declare it via app_db_schema_set first` +
+      (knownTables.length ? ` (existing tables: ${knownTables.join(', ')})` : ''),
+  );
+}
 
-  handle.exec('BEGIN IMMEDIATE');
-  try {
-    let deleted = 0;
-    if (opts.replace) {
-      deleted = Number(handle.prepare(`DELETE FROM "${table}"`).run().changes);
-    }
-    // Rows may carry differing key subsets; cache one prepared INSERT per
-    // distinct key signature.
-    const stmts = new Map<string, ReturnType<SqliteDb['prepare']>>();
-    let inserted = 0;
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i] ?? {};
-      const keys = Object.keys(row);
-      if (!keys.length) throw new Error(`row ${i} is empty — every row needs at least one column`);
-      const values: unknown[] = [];
-      for (const k of keys) {
-        if (!colSet.has(k)) {
-          throw new Error(
-            `row ${i} has unknown column '${k}' — this table's columns are: ${[...colSet].join(', ')}`,
-          );
-        }
-        const v = row[k];
-        if (v === null || v === undefined) values.push(null);
-        else if (typeof v === 'boolean') values.push(v ? 1 : 0);
-        else if (typeof v === 'string' || typeof v === 'number') values.push(v);
-        else {
-          throw new Error(
-            `row ${i} column '${k}' has a ${Array.isArray(v) ? 'array' : typeof v} value — seed values must be string, number, boolean, or null (JSON-encode nested data yourself if the column stores it)`,
-          );
-        }
+/** Whether `table` may be a seed target at all (no quoting tricks, no
+ *  SQLite internals). */
+export function isSeedTableName(table: string): boolean {
+  return TABLE_NAME.test(table) && !table.toLowerCase().startsWith('sqlite_');
+}
+
+/**
+ * The seed plan: every row checked against the LIVE `columns`, then one
+ * INSERT per row (an empty `DELETE` first with `replace`). Pure, so the rules
+ * are testable without a file; the statements run in one transaction in a
+ * SQL child (apps audit P5: the seed used to run on the main thread, where a
+ * writer holding the file's lock could stall the whole process for up to
+ * busy_timeout). Values must be string/number/boolean/null (booleans stored
+ * as 1/0).
+ */
+export function planSeedStatements(
+  table: string,
+  columns: string[],
+  rows: Record<string, unknown>[],
+  opts: { replace?: boolean } = {},
+): { sql: string; params: unknown[] }[] {
+  if (!isSeedTableName(table)) throw seedTableError(table, null);
+  const colSet = new Set(columns);
+  const statements: { sql: string; params: unknown[] }[] = [];
+  if (opts.replace) statements.push({ sql: `DELETE FROM "${table}"`, params: [] });
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i] ?? {};
+    const keys = Object.keys(row);
+    if (!keys.length) throw new Error(`row ${i} is empty — every row needs at least one column`);
+    const values: unknown[] = [];
+    for (const k of keys) {
+      if (!colSet.has(k)) {
+        throw new Error(
+          `row ${i} has unknown column '${k}' — this table's columns are: ${columns.join(', ')}`,
+        );
       }
-      const sig = keys.join(' ');
-      let stmt = stmts.get(sig);
-      if (!stmt) {
-        const colList = keys.map((k) => `"${k}"`).join(', ');
-        const placeholders = keys.map(() => '?').join(', ');
-        stmt = handle.prepare(`INSERT INTO "${table}" (${colList}) VALUES (${placeholders})`);
-        stmts.set(sig, stmt);
+      const v = row[k];
+      if (v === null || v === undefined) values.push(null);
+      else if (typeof v === 'boolean') values.push(v ? 1 : 0);
+      else if (typeof v === 'string' || typeof v === 'number') values.push(v);
+      else {
+        throw new Error(
+          `row ${i} column '${k}' has a ${Array.isArray(v) ? 'array' : typeof v} value — seed values must be string, number, boolean, or null (JSON-encode nested data yourself if the column stores it)`,
+        );
       }
-      stmt.run(...values);
-      inserted++;
     }
-    handle.exec('COMMIT');
-    return { inserted, deleted, table, columns: [...colSet] };
-  } catch (err) {
-    try {
-      handle.exec('ROLLBACK');
-    } catch {
-      /* already rolled back */
-    }
-    throw err;
+    const colList = keys.map((k) => `"${k}"`).join(', ');
+    const placeholders = keys.map(() => '?').join(', ');
+    statements.push({
+      sql: `INSERT INTO "${table}" (${colList}) VALUES (${placeholders})`,
+      params: values,
+    });
   }
+  return statements;
 }
 
 /**
@@ -621,14 +585,24 @@ export async function appDbSeedRows(
   opts: { replace?: boolean } = {},
   schema?: AppDbSchema,
 ): Promise<AppDbSeedResult> {
+  if (!isSeedTableName(table)) throw seedTableError(table, null);
   const reg = await ensureAppDatabase(ownerId, appNodeId, schema);
-  const handle = await openSqlite(reg.storagePath);
-  let result: AppDbSeedResult;
-  try {
-    result = seedRowsIntoHandle(handle, table, rows, opts);
-  } finally {
-    handle.close();
+  if (!(await fileExists(reg.storagePath))) (await openSqlite(reg.storagePath)).close();
+  const read = (sql: string) =>
+    runAppSql(reg.storagePath, { sql, mode: 'all', readOnly: true }) as Promise<DbRows>;
+  const columns = (await read(`PRAGMA table_info("${table}")`)).map((c) => String(c.name));
+  if (!columns.length) {
+    const known = (
+      await read(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+      )
+    ).map((t) => String(t.name));
+    throw seedTableError(table, known);
   }
+  const changes = await runAppSqlBatch(
+    reg.storagePath,
+    planSeedStatements(table, columns, rows, opts),
+  );
   // Same best-effort size tracking as appDbExec.
   try {
     const { size } = await stat(reg.storagePath);
@@ -639,7 +613,12 @@ export async function appDbSeedRows(
   } catch {
     /* size tracking is best-effort */
   }
-  return result;
+  return {
+    inserted: rows.length,
+    deleted: opts.replace ? (changes[0] ?? 0) : 0,
+    table,
+    columns,
+  };
 }
 
 // ── Read-only access (agent tools) ──────────────────────────────────────────
@@ -710,17 +689,13 @@ export async function appDbSchema(ownerId: string, appNodeId: string): Promise<A
   if (!reg) return [];
   await assertNotLost(appNodeId, reg);
   if (!(await fileExists(reg.storagePath))) return [];
-  const handle = await openSqliteReadOnly(reg.storagePath);
-  try {
-    const rows = handle
-      .prepare(
-        "SELECT name, sql FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' AND sql IS NOT NULL ORDER BY name",
-      )
-      .all() as { name: string; sql: string }[];
-    return rows.map((r) => ({ name: r.name, sql: r.sql }));
-  } finally {
-    handle.close();
-  }
+  // In a SQL child, read-only (apps audit P5): not on the main thread.
+  const rows = (await runAppSql(reg.storagePath, {
+    sql: "SELECT name, sql FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' AND sql IS NOT NULL ORDER BY name",
+    mode: 'all',
+    readOnly: true,
+  })) as { name: string; sql: string }[];
+  return rows.map((r) => ({ name: r.name, sql: r.sql }));
 }
 
 /** Every app of this owner that has a registered database, with its title +
@@ -754,13 +729,6 @@ export type AppDbSnapshotReport = {
   /** Rows that errored on open/vacuum (e.g. lock contention past busy_timeout). */
   failed: { ownerId: string; appNodeId: string; error: string }[];
 };
-
-/** Build the `VACUUM INTO '<file>'` statement with the destination path safely
- *  single-quote-escaped. The path is server-derived (never app input), but we
- *  escape defensively so a stray quote can't break out of the literal. */
-export function vacuumIntoStatement(destFile: string): string {
-  return `VACUUM INTO '${destFile.replace(/'/g, "''")}'`;
-}
 
 /** Where an app's snapshot lands under destDir — mirrors the live layout
  *  (<destDir>/<owner>/<app>.sqlite) so a restore drops straight back into
@@ -806,12 +774,9 @@ export async function snapshotAllAppDatabases(destDir: string): Promise<AppDbSna
     try {
       await mkdir(path.dirname(destFile), { recursive: true });
       await rm(destFile, { force: true }); // VACUUM INTO refuses an existing target
-      const handle = await openSqlite(r.storagePath);
-      try {
-        handle.exec(vacuumIntoStatement(destFile));
-      } finally {
-        handle.close();
-      }
+      // In a SQL child (apps audit P5): a 256 MB VACUUM INTO on the main
+      // thread froze the process that runs the backup.
+      await copyAppDbFile(r.storagePath, destFile);
       const { size } = await stat(destFile);
       report.snapshotted.push({ ownerId: r.ownerId, appNodeId: r.appNodeId, bytes: size });
     } catch (err) {

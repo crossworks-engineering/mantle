@@ -33,7 +33,7 @@ import {
   verifyAppToolConfirmToken,
   type AppToolConfirmClaims,
 } from '@/lib/auth';
-import { getApp } from '@mantle/content';
+import { getAppRuntime } from '@mantle/content';
 import { appToolLevel, appToolScope, appToolVerdict, dispatchTool } from '@mantle/tools';
 
 const Body = z.object({
@@ -51,7 +51,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!parsed.success)
     return NextResponse.json({ ok: false, error: 'invalid input' }, { status: 400 });
 
-  const app = await getApp(user.id, id);
+  const app = await getAppRuntime(user.id, id);
   if (!app) return NextResponse.json({ ok: false, error: 'app not found' }, { status: 404 });
 
   const level = appToolLevel('admin', app.audience);

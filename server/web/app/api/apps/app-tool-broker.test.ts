@@ -29,7 +29,7 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
 }));
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  getApp: vi.fn(async (_owner: string, id: string) =>
+  getAppRuntime: vi.fn(async (_owner: string, id: string) =>
     id === APP ? { id, audience: h.audience, manifest: { toolSlugs: h.toolSlugs } } : null,
   ),
 }));

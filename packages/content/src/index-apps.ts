@@ -63,6 +63,8 @@ export {
   updateAppMeta,
   saveDraftSource,
   AppDraftConflictError,
+  getAppRuntime,
+  type AppRuntime,
   writeDraftFile,
   deleteDraftFile,
   setManifest,

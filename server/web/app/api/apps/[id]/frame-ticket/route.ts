@@ -8,13 +8,13 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401, buildAppFrameTicket } from '@/lib/auth';
-import { getApp } from '@mantle/content';
+import { getAppRuntime } from '@mantle/content';
 
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const { id } = await ctx.params;
-  const app = await getApp(user.id, id);
+  const app = await getAppRuntime(user.id, id);
   if (!app) return new NextResponse('not found', { status: 404 });
 
   const build = app.draftBuild?.ok

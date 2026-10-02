@@ -32,7 +32,7 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
 }));
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@mantle/content')>()),
-  getApp: vi.fn(async () => ({
+  getAppRuntime: vi.fn(async () => ({
     id: APP,
     manifest: { sqlite: undefined },
     draftBuild: { ok: true, storageKey: 'draft-key' },

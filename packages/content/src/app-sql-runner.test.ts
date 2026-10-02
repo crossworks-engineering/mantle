@@ -19,6 +19,7 @@ import {
   appSqlMaxDbBytes,
   copyAppDbFile,
   runAppSql,
+  runAppSqlBatch,
 } from './app-sql-runner';
 
 describe('runAppSql', () => {
@@ -223,6 +224,36 @@ describe("runAppSql mode 'script' (schema DDL)", () => {
       });
     expect(await read(copy)).toEqual(await read(file));
     await expect(copyAppDbFile(file, copy)).rejects.toThrow(/exists|output file/i);
+    // The destination is a SQL literal inside the child: a quote in it stays a quote.
+    const quoted = path.join(dir, "it's a copy.sqlite");
+    await copyAppDbFile(file, quoted);
+    expect(existsSync(quoted)).toBe(true);
+  });
+
+  it('runAppSqlBatch: the server write batch is all or nothing, under the authorizer', async () => {
+    const batchFile = path.join(dir, 'batch.sqlite');
+    await runAppSql(batchFile, { sql: 'CREATE TABLE b (x);', mode: 'script', readOnly: false });
+    expect(
+      await runAppSqlBatch(batchFile, [
+        { sql: 'INSERT INTO b VALUES (?)', params: [1] },
+        { sql: 'INSERT INTO b VALUES (?)', params: [2] },
+      ]),
+    ).toEqual([1, 1]);
+    await expect(
+      runAppSqlBatch(batchFile, [
+        { sql: 'DELETE FROM b', params: [] },
+        { sql: 'INSERT INTO nope VALUES (?)', params: [3] },
+      ]),
+    ).rejects.toThrow(/no such table/);
+    const count = await runAppSql(batchFile, {
+      sql: 'SELECT count(*) AS n FROM b',
+      mode: 'all',
+      readOnly: true,
+    });
+    expect(count).toEqual([{ n: 2 }]);
+    await expect(
+      runAppSqlBatch(batchFile, [{ sql: `ATTACH DATABASE '${dir}/x.db' AS x`, params: [] }]),
+    ).rejects.toThrow(/authoriz/i);
   });
 });
 
