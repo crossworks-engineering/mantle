@@ -31,7 +31,8 @@ Engine: [`packages/content/src/backup.ts`](../packages/content/src/backup.ts).
   mistaken for a good one), then verified against the `PGDMP` magic bytes
   before being promoted.
 - Beside each dump the same run snapshots the table workbooks
-  (`mantle-table-dbs-<ts>/`), the app databases (`mantle-app-dbs-<ts>/`) and
+  (`mantle-table-dbs-<ts>/`), the app databases (`mantle-app-dbs-<ts>/`,
+  with each app's own snapshots under `_snapshots/`) and
   members' personal-space file bytes (`mantle-spaces-<ts>.tgz`, the only copy
   of a member's upload). Each is loud but non-fatal: a failure there never
   spoils the Postgres dump.

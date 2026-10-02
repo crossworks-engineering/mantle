@@ -226,12 +226,18 @@ const PAGE_AUTHORING_TOOL_SLUGS = PAGE_TOOL_SLUGS.filter(
 /** Table authoring set: every table tool except the whole-table delete (that
  *  rides `table-admin`). Row/column deletes stay — they're routine grid editing. */
 const TABLE_AUTHORING_TOOL_SLUGS = TABLE_TOOL_SLUGS.filter((s) => s !== 'table_delete');
-/** App authoring set for the `apps` group: every app tool except whole-app
- *  delete + publish (those ride the `app-admin` group, the Appsmith specialist
- *  only). No overlap between `apps` and `app-admin`. */
-const APP_AUTHORING_TOOL_SLUGS = APP_TOOL_SLUGS.filter(
-  (s) => !['app_delete', 'app_publish'].includes(s),
-);
+/** The app tools that change what is live or destroy history: whole-app
+ *  delete, publish, and the snapshot restore and delete. They ride the
+ *  `app-admin` group (the Appsmith specialist only). */
+const APP_ADMIN_TOOL_SLUGS = [
+  'app_delete',
+  'app_publish',
+  'app_snapshot_restore',
+  'app_snapshot_delete',
+];
+/** App authoring set for the `apps` group: every other app tool (taking and
+ *  listing snapshots included). No overlap between `apps` and `app-admin`. */
+const APP_AUTHORING_TOOL_SLUGS = APP_TOOL_SLUGS.filter((s) => !APP_ADMIN_TOOL_SLUGS.includes(s));
 
 // ── Skills ───────────────────────────────────────────────────────────────────
 
@@ -687,8 +693,9 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
   {
     slug: 'app-admin',
     name: 'App admin',
-    description: 'Destructive + go-live app ops (delete, publish) — the Appsmith specialist only.',
-    toolSlugs: ['app_delete', 'app_publish'],
+    description:
+      'Destructive + go-live app ops (delete, publish, restore from a snapshot, delete a snapshot) — the Appsmith specialist only.',
+    toolSlugs: APP_ADMIN_TOOL_SLUGS,
   },
   {
     slug: 'app-data',

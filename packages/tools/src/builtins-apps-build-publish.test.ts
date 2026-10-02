@@ -41,6 +41,11 @@ vi.mock('@mantle/content/app-broker', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/content/app-broker')>();
   return { ...actual, appDbSeedRows: vi.fn(), checkAppSchemaScript: vi.fn() };
 });
+vi.mock('@mantle/content/app-snapshots', () => ({
+  createAppSnapshot: vi.fn(async () => null),
+  AppSnapshotBudgetError: class extends Error {},
+  AppSnapshotRefusedError: class extends Error {},
+}));
 vi.mock('@mantle/content/app-table-exports', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/content/app-table-exports')>();
   return { ...actual, scheduleAppTableExportSync: vi.fn() };
@@ -50,6 +55,7 @@ import { getApp, setDraftBuild, setManifest, publishApp, NoGreenBuildError } fro
 import { buildApp, loadRuntimeExports } from '@mantle/app-build';
 import { putContent } from '@mantle/storage';
 import { AppSqlError, appDbSeedRows, checkAppSchemaScript } from '@mantle/content/app-broker';
+import { createAppSnapshot } from '@mantle/content/app-snapshots';
 import { scheduleAppTableExportSync } from '@mantle/content/app-table-exports';
 import { APP_TOOLS } from './builtins-apps';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
@@ -242,7 +248,7 @@ describe('app_publish', () => {
 
   it('promotes the draft under the caller and reports the live app', async () => {
     const res = await publish.handler({ id: APP_ID }, ctx);
-    expect(publishApp).toHaveBeenCalledWith('o1', APP_ID);
+    expect(publishApp).toHaveBeenCalledWith('o1', APP_ID, { note: null, actor: 'agent' });
     expect(outputOf(res)).toMatchObject({ id: APP_ID, name: 'Weather', published: true });
     expect(outputOf(res).url).toMatch(APP_ID);
   });
@@ -334,6 +340,22 @@ describe('app_db_schema_set', () => {
     const res = await schemaSet.handler({ id: APP_ID, schema_sql: DDL }, ctx);
     expect(errorOf(res)).toMatch(/fails against the app's current database/);
     expect(checkAppSchemaScript).toHaveBeenCalledWith('o1', APP_ID, DDL);
+    expect(setManifest).not.toHaveBeenCalled();
+  });
+
+  it('takes a safety snapshot of the data first; if it fails, nothing changes', async () => {
+    vi.mocked(getApp).mockResolvedValue(app({ manifest: {} }) as never);
+    await schemaSet.handler({ id: APP_ID, schema_sql: DDL }, ctx);
+    expect(createAppSnapshot).toHaveBeenCalledWith('o1', APP_ID, {
+      trigger: 'pre_schema',
+      actor: 'agent',
+      note: 'before schema v1',
+      requireData: true,
+    });
+    vi.mocked(setManifest).mockClear();
+    vi.mocked(createAppSnapshot).mockRejectedValueOnce(new Error('disk full'));
+    const res = await schemaSet.handler({ id: APP_ID, schema_sql: DDL }, ctx);
+    expect(errorOf(res)).toMatch(/safety snapshot.*nothing changed.*disk full/);
     expect(setManifest).not.toHaveBeenCalled();
   });
 

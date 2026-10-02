@@ -308,6 +308,39 @@ reads it while the app writes), and it's **included in the backup**
 consistent `VACUUM INTO`). App-authored data is real data, and it's protected
 like the rest of the brain.
 
+## History: versions and snapshots
+
+Every app has one numbered history line (v1, v2 …), on its **History** tab
+and through `app_snapshot_list`.
+
+- **Versions.** Each publish records the code that went live (source,
+  manifest, the build it runs), with an optional `note`. Code only, never
+  data. They stay: a version cannot be deleted.
+- **Snapshots.** The code (and any draft) **and a copy of the app's
+  database**, taken with `app_snapshot_create` or the History tab's
+  **Take snapshot**. Mantle also takes one by itself before a restore and
+  before `app_db_schema_set` changes a schema (only when the app has data).
+  The automatic ones keep the newest 20 per app; the owner's own stay until
+  deleted, within `APP_SNAPSHOT_MAX_MB` (default 2048) per owner.
+
+**Restore** (`app_snapshot_restore`, or the History tab) has three modes:
+
+| Mode | What comes back | Where |
+|---|---|---|
+| `code` | the code | the **draft**: preview it, then publish. The publish is a new version "restored from vN". The declared tools come back; the declared schema does not (it belongs to the live data). |
+| `data` | the database | live at once. If the restored data has an older schema than the app declares, the declared script runs over it on the next statement (so keep it re-runnable). |
+| `full` | both | live at once, the code with the build it ran on and its schema: the pair that worked together. A new version "restored vN". |
+
+Every restore first takes a snapshot of what it replaces, so it can be
+undone the same way. A data restore pauses the app's database for a few
+seconds (its statements answer 429 busy, and the kit retries); a code
+restore over an unpublished draft needs `discard_draft`. A version holds no
+data, so `data` and `full` need a snapshot.
+
+The copies live under `APP_DB_DIR/_snapshots/<owner>/<app>/` and ride the
+backup (`mantle-app-dbs-<ts>/_snapshots`). Download one from the History tab
+as a `.sqlite` file.
+
 ## Exporting app data to a Table (the app as master)
 
 When a team manages data **inside** an app (Tier 3 SQLite with member writes),

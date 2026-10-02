@@ -32,6 +32,7 @@ import {
 } from '@mantle/db';
 import { loadProfilePreferences } from './profile-preferences';
 import { notifyAppNavChanged } from './app-nav';
+import { codeHash, insertNodeSnapshot } from './node-snapshot-rows';
 import type { AppRow, AppDetail, AppTint } from '@mantle/client-types';
 import { projectAppIcon, projectAppTint } from '@mantle/content-core/app-nav';
 export type { AppRow, AppDetail };
@@ -515,6 +516,8 @@ async function lockAppRow(tx: DbTx, ownerId: string, id: string) {
       manifest: apps.manifest,
       draftBuild: apps.draftBuild,
       draftUpdatedAt: apps.draftUpdatedAt,
+      publishedBuild: apps.publishedBuild,
+      restoredFromSeq: apps.restoredFromSeq,
     })
     .from(apps)
     .innerJoin(nodes, eq(nodes.id, apps.nodeId))
@@ -527,6 +530,8 @@ async function lockAppRow(tx: DbTx, ownerId: string, id: string) {
     manifest: row.manifest ?? {},
     draftBuild: row.draftBuild ?? null,
     draftUpdatedAt: row.draftUpdatedAt ?? null,
+    publishedBuild: row.publishedBuild ?? null,
+    restoredFromSeq: row.restoredFromSeq ?? null,
   };
 }
 
@@ -660,7 +665,7 @@ export async function discardDraft(ownerId: string, id: string): Promise<boolean
   if (!(await ownsApp(ownerId, id))) return false;
   await db
     .update(apps)
-    .set({ draftSource: null, draftUpdatedAt: null, draftBuild: null })
+    .set({ draftSource: null, draftUpdatedAt: null, draftBuild: null, restoredFromSeq: null })
     .where(eq(apps.nodeId, id));
   void notifyAppNavChanged(ownerId);
   return true;
@@ -706,7 +711,17 @@ export class NoGreenBuildError extends Error {
  * pairing invariant that `apps-build-staleness.test.ts` guards — never ship new
  * source beside an old bundle — is untouched in both.
  */
-export async function publishApp(ownerId: string, id: string): Promise<AppDetail | null> {
+/** Who published, and why (the version row's actor and note). */
+export type PublishAppOpts = { note?: string | null; actor?: AppHistoryActor };
+
+/** Who wrote a version or snapshot row. */
+export type AppHistoryActor = 'owner' | 'agent' | 'mcp' | 'system';
+
+export async function publishApp(
+  ownerId: string,
+  id: string,
+  opts: PublishAppOpts = {},
+): Promise<AppDetail | null> {
   // Under the row lock (apps audit D4): an autosave that lands while this
   // runs waits for it and becomes the next draft, and one that landed before
   // is what is read here (and it cleared the build, so the publish refuses
@@ -718,6 +733,25 @@ export async function publishApp(ownerId: string, id: string): Promise<AppDetail
     if (!app.draft && !app.draftBuild) return false;
     if (!app.draftBuild?.ok) throw new NoGreenBuildError();
     await promote(tx, id, app.draft, app.draftBuild);
+    // The version this publish makes (apps snapshots, Phase 2): the code
+    // that just went live, appended in the same transaction.
+    const code = {
+      source: app.draft ?? app.source,
+      draft: null,
+      manifest: app.manifest,
+      publishedBuild: app.draftBuild,
+    };
+    await insertNodeSnapshot(tx, {
+      ownerId,
+      nodeId: id,
+      nodeKind: 'app',
+      trigger: 'publish',
+      note: opts.note?.trim().slice(0, 500) || null,
+      actor: opts.actor ?? 'owner',
+      code,
+      sourceHash: codeHash(code.source),
+      restoredFrom: app.restoredFromSeq,
+    });
     return true;
   });
   if (published === null) return null;
@@ -749,11 +783,124 @@ async function promote(
       draftSource: null,
       draftUpdatedAt: null,
       draftBuild: null,
+      restoredFromSeq: null,
       version: sql`${apps.version} + 1`,
       updatedAt: new Date(),
     })
     .where(eq(apps.nodeId, id));
   await tx.update(nodes).set({ embedding: null, updatedAt: new Date() }).where(eq(nodes.id, id));
+}
+
+/** The draft holds unpublished work, and a restore into it would drop that
+ *  work: the caller must say to discard it. */
+export class AppRestoreDraftError extends Error {
+  constructor() {
+    super(
+      'the app has an unpublished draft, and restoring code replaces it: pass discard_draft (or confirm in the editor) to drop the draft, or commit it first',
+    );
+    this.name = 'AppRestoreDraftError';
+  }
+}
+
+/** A snapshot's code, as restore takes it. */
+type RestorableCode = {
+  source: AppSource;
+  draft: AppSource | null;
+  manifest: AppManifest;
+  publishedBuild: BuildRef | null;
+};
+
+/**
+ * Code-only restore (apps snapshots, Phase 2): the snapshot's code goes into
+ * the DRAFT, never straight to live. The editor then previews and commits it
+ * as usual, and that publish becomes a new version "restored from v{seq}".
+ * The declared tools come back with the code (the code calls them); the
+ * declared SQLite schema does not, since it belongs to the live data.
+ */
+export async function restoreAppDraft(
+  ownerId: string,
+  id: string,
+  code: RestorableCode,
+  seq: number,
+  opts: { discardDraft?: boolean } = {},
+): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const app = await lockAppRow(tx, ownerId, id);
+    if (!app) return false;
+    if (app.draft && !opts.discardDraft) throw new AppRestoreDraftError();
+    const manifest: AppManifest = { ...app.manifest, toolSlugs: code.manifest.toolSlugs ?? [] };
+    await tx
+      .update(apps)
+      .set({
+        draftSource: code.draft ?? code.source,
+        draftUpdatedAt: new Date(),
+        draftBuild: null,
+        restoredFromSeq: seq,
+        manifest,
+        updatedAt: new Date(),
+      })
+      .where(eq(apps.nodeId, id));
+    return true;
+  });
+}
+
+/**
+ * Full rollback (apps snapshots, Phase 2): the snapshot's code goes LIVE with
+ * the build it ran on, together with its declared schema, because that code
+ * and the data restored beside it were known to work together. Appends the
+ * version "restored from v{seq}". The data half is restoreAppDatabaseFile's.
+ */
+export async function restoreAppLive(
+  ownerId: string,
+  id: string,
+  code: RestorableCode & { publishedBuild: BuildRef },
+  seq: number,
+  opts: { discardDraft?: boolean; actor?: AppHistoryActor } = {},
+): Promise<boolean> {
+  const done = await db.transaction(async (tx) => {
+    const app = await lockAppRow(tx, ownerId, id);
+    if (!app) return false;
+    if (app.draft && !opts.discardDraft) throw new AppRestoreDraftError();
+    await tx
+      .update(apps)
+      .set({
+        source: code.source,
+        sourceText: sourceToText(code.source),
+        publishedBuild: code.publishedBuild,
+        manifest: code.manifest,
+        draftSource: null,
+        draftUpdatedAt: null,
+        draftBuild: null,
+        restoredFromSeq: null,
+        version: sql`${apps.version} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(eq(apps.nodeId, id));
+    await tx.update(nodes).set({ embedding: null, updatedAt: new Date() }).where(eq(nodes.id, id));
+    const live = {
+      source: code.source,
+      draft: null,
+      manifest: code.manifest,
+      publishedBuild: code.publishedBuild,
+    };
+    await insertNodeSnapshot(tx, {
+      ownerId,
+      nodeId: id,
+      nodeKind: 'app',
+      trigger: 'publish',
+      note: `restored v${seq}`,
+      actor: opts.actor ?? 'owner',
+      code: live,
+      sourceHash: codeHash(code.source),
+      restoredFrom: seq,
+    });
+    return true;
+  });
+  if (done) {
+    await notifyNodeIngested(id);
+    void notifyAppNavChanged(ownerId);
+  }
+  return done;
 }
 
 export async function deleteApp(ownerId: string, id: string): Promise<boolean> {
@@ -766,13 +913,12 @@ export async function deleteApp(ownerId: string, id: string): Promise<boolean> {
   const broker = await import('./app-broker');
   const dbPath = await broker.appDatabasePath(ownerId, id);
   await db.delete(nodes).where(eq(nodes.id, id)); // `apps` + `app_databases` cascade.
-  if (dbPath) {
-    try {
-      await broker.removeAppDatabaseFiles(dbPath);
-    } catch (err) {
-      // The app is gone either way; a stray file is only disk.
-      console.error(`[apps] app ${id} deleted, but its database file stayed:`, err);
-    }
+  try {
+    if (dbPath) await broker.removeAppDatabaseFiles(dbPath);
+    await broker.removeAppSnapshotDir(ownerId, id);
+  } catch (err) {
+    // The app is gone either way; a stray file is only disk.
+    console.error(`[apps] app ${id} deleted, but some of its files stayed:`, err);
   }
   return true;
 }

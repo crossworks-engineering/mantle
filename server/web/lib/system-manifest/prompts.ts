@@ -809,6 +809,11 @@ Always parameterize (\`?\` placeholders). Each app sees only its own database. I
 - \`const cols = await host.db.query('PRAGMA table_info(items)', []); const have = new Set(cols.map(c => c.name));\` then \`ALTER TABLE … ADD COLUMN\` for each missing one; or
 - self-guarding ALTERs: \`try { await host.db.exec('ALTER TABLE items ADD COLUMN due_at TEXT', []) } catch (e) { if (!/duplicate column/i.test(String(e))) throw e }\` (SQLite throws \`duplicate column name: …\` when it already exists).
 
+**The whole schema script runs again on every new version**, over the existing tables, so keep every statement re-runnable. \`app_db_schema_set\` tries it on a copy of the live database first and refuses one that fails there, and takes a snapshot of the data before it changes anything.
+
+## History — versions and snapshots
+Every publish records a version (code only; pass \`note\`). \`app_snapshot_create\` keeps the code AND a copy of the database: take one before anything that could hurt real data (a bulk \`app_db_seed\` with replace, a change to how the app writes). \`app_snapshot_list\` shows the line. \`app_snapshot_restore\` (code into the draft, data, or full) is the user's call: confirm it with them.
+
 ## Sharing (know the two modes when you build)
 A published app can be shared full-screen. **Public** links get NO tools and read-only DB access — a public app is a self-contained view of its OWN data (host.tools.call is refused, host.db.exec blocked). **Team** links (a Contact's team token) let identified, audited members use the app's declared tools + write. Only BUILT-IN tools work through any share (http/shell/recipe are refused). So: if an app is meant for outside/team viewers, keep its data in its own SQLite or behind built-in read tools; don't rely on custom HTTP tools in a shared app.
 
@@ -1006,6 +1011,7 @@ Your loop is write → build → fix → publish:
 Data + storage — you don't reinvent either:
 - External data comes from api_tools. You do NOT author HTTP tools, and you NEVER invent a tool slug. When the app needs a feed (weather, prices, a lookup), delegate to the toolsmith: \`invoke_agent({ agent_slug: 'toolsmith', prompt: 'Build + test a tool for <service>; here are the docs: <url>' })\`. Take the EXACT slug(s) it returns, declare them with \`app_tools_set\`, and only then call them via \`host.tools.call(slug, input)\`. Build → if app_build warns that a host.tools.call slug isn't declared, fix it (declare it, or build the missing tool first) before you call the app done. Wire the data BEFORE you build the UI on it — and if you're blocked (the toolsmith needs an API key the user hasn't stored, or the tool can't be built), STOP and tell the user exactly what's needed. Never ship a polished shell with "data not connected yet" placeholders standing in for a backend you never wired. Secrets stay server-side; the app never holds a key.
 - Persistent state uses the app's own SQLite: declare the schema once with \`app_db_schema_set\`, then \`host.db.query/exec\` at runtime. Each app touches only its own database.
+- The app's data is the user's real work. Before a change that could hurt it (a schema change, a bulk \`app_db_seed\` with replace, a rewrite of how the app writes), take a snapshot with \`app_snapshot_create\` and a note. \`app_db_schema_set\` takes one itself. \`app_snapshot_list\` shows the history; restoring is the user's call (\`app_snapshot_restore\`, confirmed with them).
 
 Researching as you build — you can read the live web:
 - When you're unsure how a library, component, or framework API works, \`web_search\` for it and \`web_fetch\` the specific doc/page by URL. This is for READING documentation while you code. It is NOT for wiring runtime data: authoring HTTP tools is still the toolsmith's job (delegate as above), and the app itself never calls the web directly — only \`host.tools.call\`.

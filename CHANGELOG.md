@@ -4,6 +4,36 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: app history, versions and snapshots (apps first-class, Phase 2)
+
+An app's code AND its data can now be put back
+(docs/app-authoring-guide.md, "History: versions and snapshots").
+
+- **Versions.** Every publish records the code that went live, with an
+  optional note (`app_publish` takes `note`).
+- **Snapshots.** The code and a copy of the app's database
+  (`app_snapshot_create`, or the History tab). One is taken automatically
+  before every restore and before `app_db_schema_set` changes the schema of
+  an app with data. The newest 20 automatic ones are kept per app; the
+  owner's own count against `APP_SNAPSHOT_MAX_MB` (default 2048).
+- **Restore** in three modes (`app_snapshot_restore`, confirm-gated, or
+  `POST /api/apps/:id/snapshots/:sid/restore`): `code` into the draft,
+  `data` back as the live database, `full` both live. A data restore puts a
+  marker beside the file: every broker and the SQL child answer busy (429)
+  for the few seconds the swap takes.
+- **Routes:** `GET/POST /api/apps/:id/snapshots`, `GET/PATCH/DELETE
+  …/snapshots/:sid`, `…/restore`, `…/download` (the `.sqlite` copy).
+- **Tools:** `app_snapshot_create`, `app_snapshot_list` (group `apps`);
+  `app_snapshot_restore`, `app_snapshot_delete` (group `app-admin`, both
+  confirm-gated).
+- Contract: `@crossworks/client-types` gains `AppSnapshot` and
+  `AppRestoreMode`. Additive.
+- The backup copies each app's snapshots with its database; deleting an app
+  removes them.
+- **Migration 0219** (`0219_node_snapshots`): the `node_snapshots` table (one
+  numbered line per item, apps now, tables later), `apps.restored_from_seq`,
+  and v1 for every published app (pure SQL).
+
 ## Unreleased: apps speed (apps first-class, Phase 1)
 
 - **Running an app reads less.** The db and tool brokers and the frame

@@ -76,6 +76,12 @@ export const APP_SQL_MAX_REPLY_BYTES = 8 * 1024 * 1024;
 /** How long the server's copy of one app file may take (a 256 MB file
  *  copies in a few seconds; this leaves room for a slow disk). */
 export const APP_DB_COPY_TIMEOUT_MS = 120_000;
+/** A restore marker (`<file>.restoring`) older than this is a crash's
+ *  leftover and is ignored (apps snapshots, Phase 2). */
+export const APP_DB_RESTORE_MARKER_TTL_MS = 5 * 60_000;
+/** The reply a child gives for a file under restore; the parent turns it
+ *  into AppDbRestoringError. */
+const RESTORING_REPLY = 'mantle:app-db-restoring';
 /** The WAL an app database keeps after a checkpoint (journal_size_limit). */
 export const APP_SQL_JOURNAL_LIMIT_BYTES = 64 * 1024 * 1024;
 /** Statements one caller may have waiting behind its running one; beyond it
@@ -110,10 +116,28 @@ export class AppSqlBusyError extends AppSqlError {
   }
 }
 
+/** The app's database is being restored from a snapshot (a few seconds):
+ *  try again. A busy error, so every broker answers 429 with retry-after. */
+export class AppDbRestoringError extends AppSqlBusyError {
+  constructor() {
+    super("the app's data is being restored from a snapshot; try again in a few seconds");
+    this.name = 'AppDbRestoringError';
+  }
+}
+
 /** The child: a plain CommonJS script passed with `-e`, so it needs no file
  *  on disk and runs the same under tsx in dev, in tests and in the image. */
 const CHILD_SOURCE = `
 const { DatabaseSync, constants: C } = require('node:sqlite');
+const fs = require('node:fs');
+// A restore is swapping this file (its marker is fresh): open nothing.
+function restoring(file) {
+  try {
+    return Date.now() - fs.statSync(file + '.restoring').mtimeMs < ${APP_DB_RESTORE_MARKER_TTL_MS};
+  } catch {
+    return false;
+  }
+}
 process.title = 'mantle-app-sql';
 // The parent is gone (exited or crashed): so is the reason to live.
 process.on('disconnect', () => process.exit(0));
@@ -131,6 +155,7 @@ function rowBytes(row) {
 }
 function run(job) {
   const { file, sql, params, mode, readOnly, maxRows, maxLength, maxReplyBytes, maxDbBytes, journalLimit, userVersion, dest } = job;
+  if (mode !== 'copy' && restoring(file)) throw new Error('${RESTORING_REPLY}');
   if (mode === 'copy') {
     // The server's own copy of an app's file (a schema trial run, a
     // snapshot): VACUUM INTO from a read-only open, a consistent copy under
@@ -551,7 +576,10 @@ async function runOnChild(file: string, opts: ChildJob, timeoutMs: number): Prom
     });
   });
   release(child);
-  if (!reply.ok) throw new AppSqlError(reply.error);
+  if (!reply.ok) {
+    if (reply.error === RESTORING_REPLY) throw new AppDbRestoringError();
+    throw new AppSqlError(reply.error);
+  }
   return reply.result;
 }
 

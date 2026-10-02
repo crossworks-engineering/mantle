@@ -12,7 +12,7 @@
  * NOT re-exported from the package index — import via '@mantle/content/app-broker'
  * so it stays out of client/edge bundles.
  */
-import { mkdir, rm, stat } from 'node:fs/promises';
+import { copyFile, cp, mkdir, open, rename, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,8 +22,11 @@ import { env } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 import { stripLiterals } from '@mantle/tabledb';
 import {
+  APP_DB_RESTORE_MARKER_TTL_MS,
   APP_SCHEMA_TIMEOUT_MS,
   APP_SQL_JOURNAL_LIMIT_BYTES,
+  APP_SQL_TIMEOUT_MS,
+  AppDbRestoringError,
   AppSqlError,
   appSqlMaxDbBytes,
   copyAppDbFile,
@@ -38,7 +41,7 @@ import {
   type AppViewerSubject,
 } from './app-viewer';
 
-export { AppSqlBusyError, AppSqlError } from './app-sql-runner';
+export { AppDbRestoringError, AppSqlBusyError, AppSqlError } from './app-sql-runner';
 
 /**
  * An app's database file is gone although the app had stored something in it
@@ -64,7 +67,9 @@ export type { AppViewer, AppViewerSubject } from './app-viewer';
  *  splits web (cwd server/web) and api (cwd server/api) into two roots, the same
  *  split-brain that hit table-dbs (see packages/tabledb/src/paths.ts). */
 let cachedRoot: string | undefined;
-function appDbRoot(): string {
+/** The root of the per-app SQLite files (APP_DB_DIR); snapshots live under
+ *  its `_snapshots/` (app-snapshots.ts). */
+export function appDbRoot(): string {
   if (cachedRoot) return cachedRoot;
   const configured = env('APP_DB_DIR');
   if (configured) return (cachedRoot = configured);
@@ -264,15 +269,36 @@ async function assertNotLost(
   throw new AppDbMissingError(appNodeId);
 }
 
+/** The marker a restore writes beside the live file while it swaps it. */
+function restoreMarker(storagePath: string): string {
+  return `${storagePath}.restoring`;
+}
+
+/** Whether a restore is swapping this file now. A marker past its TTL is a
+ *  crashed restore's leftover: removed, and the app runs again. */
+async function isRestoring(storagePath: string): Promise<boolean> {
+  try {
+    const { mtimeMs } = await stat(restoreMarker(storagePath));
+    if (Date.now() - mtimeMs < APP_DB_RESTORE_MARKER_TTL_MS) return true;
+    await rm(restoreMarker(storagePath), { force: true });
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 /** Ensure the app's DB exists and its declared DDL has been applied (idempotent;
  *  applies only when the manifest schema version is newer than what's recorded).
- *  Refuses an app whose file is gone although it held data (AppDbMissingError). */
+ *  Refuses an app whose file is gone although it held data (AppDbMissingError),
+ *  and one being restored from a snapshot right now (AppDbRestoringError, a
+ *  busy error: the brokers answer 429 and the app retries). */
 export async function ensureAppDatabase(
   ownerId: string,
   appNodeId: string,
   schema?: AppDbSchema,
 ): Promise<AppDbRegistry> {
   const reg = await ensureRegistry(ownerId, appNodeId);
+  if (await isRestoring(reg.storagePath)) throw new AppDbRestoringError();
   await assertNotLost(appNodeId, reg);
   if (schema && schema.schemaSql.trim() && schema.schemaVersion > reg.schemaVersion) {
     // Defense in depth: the schema DDL is agent-authored, so it must clear the
@@ -670,6 +696,7 @@ export async function appDbReadQuery(
   const bound = await bindViewerParams(sql, params, null);
   const reg = await lookupAppDatabase(ownerId, appNodeId);
   if (!reg) return { rows: [], empty: true };
+  if (await isRestoring(reg.storagePath)) throw new AppDbRestoringError();
   await assertNotLost(appNodeId, reg);
   if (!(await fileExists(reg.storagePath))) return { rows: [], empty: true };
   const rows = (await runAppSql(reg.storagePath, {
@@ -759,6 +786,16 @@ export async function snapshotAllAppDatabases(destDir: string): Promise<AppDbSna
     })
     .from(appDatabases);
   const report: AppDbSnapshotReport = { snapshotted: [], missing: [], failed: [] };
+  // The apps' own snapshots (History tab) ride along: immutable files, so a
+  // plain copy is consistent. A restored box keeps every app's history.
+  const snapshots = path.join(appDbRoot(), '_snapshots');
+  if (await fileExists(snapshots)) {
+    try {
+      await cp(snapshots, path.join(destDir, '_snapshots'), { recursive: true });
+    } catch (err) {
+      report.failed.push({ ownerId: '-', appNodeId: '_snapshots', error: errorMessage(err) });
+    }
+  }
   for (const r of rows) {
     try {
       await stat(r.storagePath);
@@ -796,6 +833,105 @@ export function appDbFiles(storagePath: string): string[] {
   return ['', '-journal', '-wal', '-shm'].map((suffix) => `${storagePath}${suffix}`);
 }
 
+// ── Snapshots (the file half; app-snapshots.ts keeps the rows) ─────────────
+
+/**
+ * Copy an app's live database to `destAbs` (which must not exist): a VACUUM
+ * INTO in a SQL child, consistent while the app writes, off the event loop.
+ * Null when the app has no file yet (nothing stored, nothing to keep);
+ * AppDbMissingError when it had data and lost it.
+ */
+export async function snapshotAppDatabase(
+  ownerId: string,
+  appNodeId: string,
+  destAbs: string,
+): Promise<{ bytes: number; schemaVersion: number } | null> {
+  const reg = await lookupAppDatabase(ownerId, appNodeId);
+  if (!reg) return null;
+  await assertNotLost(appNodeId, reg);
+  if (!(await fileExists(reg.storagePath))) return null;
+  await mkdir(path.dirname(destAbs), { recursive: true });
+  const tmp = `${destAbs}.tmp-${process.pid}-${Date.now()}`;
+  try {
+    await copyAppDbFile(reg.storagePath, tmp);
+    await rename(tmp, destAbs);
+  } catch (err) {
+    await rm(tmp, { force: true });
+    throw err;
+  }
+  const { size } = await stat(destAbs);
+  return { bytes: size, schemaVersion: reg.schemaVersion };
+}
+
+/** How long a restore waits, after its marker is down, for statements that
+ *  had already opened the file: the longest a statement may run, plus a
+ *  margin. A statement past it is killed with its process (app-sql-runner). */
+export const APP_DB_RESTORE_DRAIN_MS = APP_SQL_TIMEOUT_MS + 750;
+
+/**
+ * Put a snapshot's database back as the app's live file (apps snapshots,
+ * Phase 2). The marker beside the live file stops new statements in every
+ * process (the brokers and the SQL child both check it) and the drain waits
+ * out the ones already running; the registry row lock waits out a schema
+ * applier. Then the snapshot is copied next to the live file, the live
+ * file's WAL and shared-memory sidecars go (they belong to the old file and
+ * SQLite would replay them into the new one), and the copy is renamed over.
+ * The registry takes the snapshot's schema version, so the declared schema
+ * re-applies only when the restored manifest is newer than it.
+ */
+export async function restoreAppDatabaseFile(
+  ownerId: string,
+  appNodeId: string,
+  snapshotAbs: string,
+  schemaVersion: number,
+  opts: { drainMs?: number } = {},
+): Promise<{ bytes: number }> {
+  const reg = await ensureRegistry(ownerId, appNodeId);
+  const marker = restoreMarker(reg.storagePath);
+  await mkdir(path.dirname(reg.storagePath), { recursive: true });
+  await writeFile(marker, String(Date.now()));
+  try {
+    await new Promise((r) => setTimeout(r, opts.drainMs ?? APP_DB_RESTORE_DRAIN_MS));
+    return await db.transaction(async (tx) => {
+      await tx
+        .select({ id: appDatabases.id })
+        .from(appDatabases)
+        .where(eq(appDatabases.id, reg.id))
+        .for('update');
+      // Fresh marker for the swap itself (a slow drain must not age it out).
+      const now = new Date();
+      await utimes(marker, now, now);
+      const tmp = `${reg.storagePath}.restore-${process.pid}-${Date.now()}`;
+      try {
+        await copyFile(snapshotAbs, tmp);
+        const fh = await open(tmp, 'r+');
+        try {
+          await fh.sync();
+        } finally {
+          await fh.close();
+        }
+        await Promise.all(
+          appDbFiles(reg.storagePath)
+            .slice(1)
+            .map((f) => rm(f, { force: true })),
+        );
+        await rename(tmp, reg.storagePath);
+      } catch (err) {
+        await rm(tmp, { force: true });
+        throw err;
+      }
+      const { size } = await stat(reg.storagePath);
+      await tx
+        .update(appDatabases)
+        .set({ schemaVersion, sizeBytes: size, updatedAt: new Date() })
+        .where(eq(appDatabases.id, reg.id));
+      return { bytes: size };
+    });
+  } finally {
+    await rm(marker, { force: true });
+  }
+}
+
 /** Where an app's database file lives, or null when it never had one. Read
  *  BEFORE the app is deleted: the registry row cascades away with the node. */
 export async function appDatabasePath(ownerId: string, appNodeId: string): Promise<string | null> {
@@ -810,4 +946,13 @@ export async function appDatabasePath(ownerId: string, appNodeId: string): Promi
  */
 export async function removeAppDatabaseFiles(storagePath: string): Promise<void> {
   await Promise.all(appDbFiles(storagePath).map((f) => rm(f, { force: true })));
+}
+
+/** Remove an app's snapshot copies (APP_DB_DIR/_snapshots/<owner>/<app>);
+ *  their rows go with the node. */
+export async function removeAppSnapshotDir(ownerId: string, appNodeId: string): Promise<void> {
+  await rm(path.join(appDbRoot(), '_snapshots', ownerId, appNodeId), {
+    recursive: true,
+    force: true,
+  });
 }

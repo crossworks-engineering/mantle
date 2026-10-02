@@ -46,6 +46,7 @@ export type KnownEnvName =
   | 'APP_DB_DIR'
   | 'APP_RUNTIME_OUT'
   | 'APP_SQL_MAX_DB_MB'
+  | 'APP_SNAPSHOT_MAX_MB'
   | 'ATTACH_AGENT'
   | 'BROWSER_WS_ENDPOINT'
   | 'CRASH_MARKER'

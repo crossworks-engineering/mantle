@@ -1527,6 +1527,13 @@
       "when": 1790019360000,
       "tag": "0218_app_access_log_created_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 219,
+      "version": "7",
+      "when": 1790019420000,
+      "tag": "0219_node_snapshots",
+      "breakpoints": true
     }
   ]
 }

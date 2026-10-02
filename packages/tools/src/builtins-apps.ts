@@ -25,6 +25,7 @@ import {
   CannotDeleteEntryError,
   AppSourceLimitError,
   NoGreenBuildError,
+  AppRestoreDraftError,
   type AppDetail,
   listTeamLevelAppIds,
 } from '@mantle/content';
@@ -42,6 +43,14 @@ import {
   removeAppTableExport,
   scheduleAppTableExportSync,
 } from '@mantle/content/app-table-exports';
+import {
+  AppSnapshotBudgetError,
+  AppSnapshotRefusedError,
+  createAppSnapshot,
+  deleteAppSnapshot,
+  listAppSnapshots,
+  restoreAppSnapshot,
+} from '@mantle/content/app-snapshots';
 import { putContent } from '@mantle/storage';
 import { recordIngest } from '@mantle/tracing';
 import { resolveTool } from './resolve';
@@ -64,6 +73,12 @@ function ownerOnlyRefusal(
   ctx: Parameters<BuiltinToolDef['handler']>[1],
 ): { ok: false; error: string } | null {
   return isOwnerSurface(ctx.surface) ? null : { ok: false, error: OWNER_ONLY_ERROR };
+}
+
+/** Who a history row names for a tool call: the owner's MCP client, or an
+ *  agent in a chat or run. */
+function historyActor(ctx: Parameters<BuiltinToolDef['handler']>[1]): 'mcp' | 'agent' {
+  return ctx.surface?.kind === 'owner' && ctx.surface.via === 'mcp' ? 'mcp' : 'agent';
 }
 
 const APP_ID_PRE: readonly ToolPrecondition[] = [
@@ -517,6 +532,21 @@ const app_db_schema_set: BuiltinToolDef = {
     } catch (err) {
       return { ok: false, error: errorMessage(err) };
     }
+    // The data as it was, one restore away (apps snapshots): only when the
+    // app has a database to protect.
+    try {
+      await createAppSnapshot(ctx.ownerId, id, {
+        trigger: 'pre_schema',
+        actor: historyActor(ctx),
+        note: `before schema v${(app.manifest.sqlite?.schemaVersion ?? 0) + 1}`,
+        requireData: true,
+      });
+    } catch (err) {
+      return {
+        ok: false,
+        error: `could not take the safety snapshot before the schema change, so nothing changed: ${errorMessage(err)}`,
+      };
+    }
     const nextVersion = (app.manifest.sqlite?.schemaVersion ?? 0) + 1;
     const manifest = await setManifest(ctx.ownerId, id, {
       sqlite: { schemaSql, schemaVersion: nextVersion },
@@ -660,10 +690,17 @@ const app_publish: BuiltinToolDef = {
   preconditions: APP_ID_PRE,
   name: 'Publish a mini app',
   description:
-    'Publish the app draft: promote the draft source + its build to the live app. Refuses if the draft has no successful build (run app_build until ok first). Use after the user has reviewed the preview and approved. With NO draft staged this promotes a rebuild instead — `app_build` compiles the published source when there is no draft, so app_build then app_publish refreshes a stale bundle (e.g. one predating per-app CSS) without touching the code.',
+    'Publish the app draft: promote the draft source + its build to the live app, recorded as a new version on its history (`app_snapshot_list`). Refuses if the draft has no successful build (run app_build until ok first). Use after the user has reviewed the preview and approved. With NO draft staged this promotes a rebuild instead — `app_build` compiles the published source when there is no draft, so app_build then app_publish refreshes a stale bundle (e.g. one predating per-app CSS) without touching the code.',
   inputSchema: {
     type: 'object',
-    properties: { id: { type: 'string', description: "The app's id (UUID) — from `app_list`." } },
+    properties: {
+      id: { type: 'string', description: "The app's id (UUID) — from `app_list`." },
+      note: {
+        type: 'string',
+        maxLength: 500,
+        description: "Why this version, shown on the app's history, e.g. 'adds the export button'.",
+      },
+    },
     required: ['id'],
   },
   handler: async (input, ctx) => {
@@ -672,7 +709,10 @@ const app_publish: BuiltinToolDef = {
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
     try {
-      const app = await publishApp(ctx.ownerId, id);
+      const app = await publishApp(ctx.ownerId, id, {
+        note: str(input.note) || null,
+        actor: historyActor(ctx),
+      });
       if (!app) return { ok: false, error: `app ${id} not found` };
       const warnings = await appToolWarnings(ctx.ownerId, id);
       ctx.step?.setOutput({ id, published: true, warnings: warnings.length });
@@ -940,6 +980,200 @@ const app_table_export_remove: BuiltinToolDef = {
 export const APP_DATA_TOOLS: BuiltinToolDef[] = [app_db_list, app_db_query];
 export const APP_DATA_TOOL_SLUGS: string[] = APP_DATA_TOOLS.map((t) => t.slug);
 
+// ── History: versions and snapshots (apps snapshots, Phase 2) ───────────────
+
+const app_snapshot_create: BuiltinToolDef = {
+  slug: 'app_snapshot_create',
+  ownerOnly: true,
+  preconditions: APP_ID_PRE,
+  name: 'Snapshot a mini app',
+  description:
+    "Take a snapshot of an app: its code (published, plus any draft) AND a copy of its database, as a new entry on its history. Returns the entry (seq, sizes). Take one before a risky change to an app with real data; restore with `app_snapshot_restore`. Publishing already records the code as a version, so this is for protecting the DATA. Refused past the owner's snapshot budget: delete old ones with `app_snapshot_delete`.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', description: "The app's id (UUID) — from `app_list`." },
+      note: {
+        type: 'string',
+        maxLength: 500,
+        description: "Why, shown on the app's history, e.g. 'before the price import'.",
+      },
+    },
+    required: ['id'],
+  },
+  handler: async (input, ctx) => {
+    const refused = ownerOnlyRefusal(ctx);
+    if (refused) return refused;
+    const id = str(input.id).trim();
+    if (!id) return { ok: false, error: 'id is required' };
+    try {
+      const snap = await createAppSnapshot(ctx.ownerId, id, {
+        note: str(input.note) || null,
+        actor: historyActor(ctx),
+      });
+      if (!snap) return { ok: false, error: `app ${id} not found` };
+      ctx.step?.setOutput({ id, seq: snap.seq, has_data: snap.hasData });
+      return { ok: true, output: { id, snapshot: snap } };
+    } catch (err) {
+      if (err instanceof AppSnapshotBudgetError) return { ok: false, error: err.message };
+      return { ok: false, error: errorMessage(err) };
+    }
+  },
+};
+
+const app_snapshot_list: BuiltinToolDef = {
+  slug: 'app_snapshot_list',
+  ownerOnly: true,
+  readOnly: true,
+  preconditions: APP_ID_PRE,
+  name: "List a mini app's history",
+  description:
+    "List an app's history, newest first: versions (what each publish made live, code only) and snapshots (code AND a database copy). Each entry has its id, seq (v1, v2 …), trigger, note, when, sizes and whether it holds data. Use it to pick the entry id to pass to `app_snapshot_restore`.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', description: "The app's id (UUID) — from `app_list`." },
+      limit: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 200,
+        default: 50,
+        description: 'Max entries to return.',
+      },
+    },
+    required: ['id'],
+  },
+  handler: async (input, ctx) => {
+    const refused = ownerOnlyRefusal(ctx);
+    if (refused) return refused;
+    const id = str(input.id).trim();
+    if (!id) return { ok: false, error: 'id is required' };
+    try {
+      const limit = typeof input.limit === 'number' ? input.limit : 50;
+      const entries = await listAppSnapshots(ctx.ownerId, id, { limit });
+      ctx.step?.setOutput({ id, count: entries.length });
+      return { ok: true, output: { id, entries } };
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) };
+    }
+  },
+};
+
+const app_snapshot_restore: BuiltinToolDef = {
+  slug: 'app_snapshot_restore',
+  ownerOnly: true,
+  requiresConfirm: true,
+  preconditions: APP_ID_PRE,
+  name: 'Restore a mini app from its history',
+  description:
+    "Restore an app from an entry on its history (`app_snapshot_list`). `mode`: 'code' puts that code in the DRAFT (preview, then `app_publish`); 'data' replaces the live database with the snapshot's copy; 'full' does both and the code goes live. A snapshot of the current state is taken first, so the restore can itself be undone. Data and full need a snapshot (a version holds no data). Code over an unpublished draft needs `discard_draft`. Confirm with the user first: the live data is replaced.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', description: "The app's id (UUID) — from `app_list`." },
+      snapshot_id: {
+        type: 'string',
+        description: 'The history entry to restore, from `app_snapshot_list`.',
+      },
+      mode: { type: 'string', enum: ['code', 'data', 'full'], description: 'What to put back.' },
+      discard_draft: {
+        type: 'boolean',
+        description: 'Drop an unpublished draft the restored code would replace.',
+      },
+    },
+    required: ['id', 'snapshot_id', 'mode'],
+  },
+  handler: async (input, ctx) => {
+    const refused = ownerOnlyRefusal(ctx);
+    if (refused) return refused;
+    const id = str(input.id).trim();
+    const snapshotId = str(input.snapshot_id).trim();
+    const mode = str(input.mode) as 'code' | 'data' | 'full';
+    if (!id) return { ok: false, error: 'id is required' };
+    if (!snapshotId) return { ok: false, error: 'snapshot_id is required — see app_snapshot_list' };
+    if (!['code', 'data', 'full'].includes(mode)) {
+      return { ok: false, error: "mode must be 'code', 'data' or 'full'" };
+    }
+    try {
+      const res = await restoreAppSnapshot(ctx.ownerId, id, snapshotId, {
+        mode,
+        discardDraft: input.discard_draft === true,
+        actor: historyActor(ctx),
+      });
+      if (!res) {
+        return {
+          ok: false,
+          error: `no entry ${snapshotId} on app ${id}'s history — pick one from app_snapshot_list`,
+        };
+      }
+      void notifyAppNavChanged(ctx.ownerId);
+      ctx.step?.setOutput({ id, restored: res.restored.seq, mode, code: res.code });
+      return {
+        ok: true,
+        output: {
+          id,
+          mode,
+          restored: res.restored.seq,
+          code: res.code,
+          undo_snapshot_id: res.undo?.id ?? null,
+          hint:
+            res.code === 'draft'
+              ? 'The code is in the draft: build it (app_build), check the preview, then app_publish.'
+              : 'Done. To undo, restore undo_snapshot_id the same way.',
+        },
+      };
+    } catch (err) {
+      if (err instanceof AppSnapshotRefusedError || err instanceof AppRestoreDraftError) {
+        return { ok: false, error: err.message };
+      }
+      return { ok: false, error: errorMessage(err) };
+    }
+  },
+};
+
+const app_snapshot_delete: BuiltinToolDef = {
+  slug: 'app_snapshot_delete',
+  ownerOnly: true,
+  requiresConfirm: true,
+  preconditions: APP_ID_PRE,
+  name: 'Delete a mini app snapshot',
+  description:
+    "Delete one snapshot from an app's history, with its database copy, to free snapshot space. Versions (what a publish made live) stay and cannot be deleted. Irreversible; confirm with the user first.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', description: "The app's id (UUID) — from `app_list`." },
+      snapshot_id: {
+        type: 'string',
+        description: 'The snapshot to delete, from `app_snapshot_list`.',
+      },
+    },
+    required: ['id', 'snapshot_id'],
+  },
+  handler: async (input, ctx) => {
+    const refused = ownerOnlyRefusal(ctx);
+    if (refused) return refused;
+    const id = str(input.id).trim();
+    const snapshotId = str(input.snapshot_id).trim();
+    if (!id) return { ok: false, error: 'id is required' };
+    if (!snapshotId) return { ok: false, error: 'snapshot_id is required — see app_snapshot_list' };
+    try {
+      const ok = await deleteAppSnapshot(ctx.ownerId, id, snapshotId);
+      if (!ok) {
+        return {
+          ok: false,
+          error: `no snapshot ${snapshotId} on app ${id} — see app_snapshot_list`,
+        };
+      }
+      ctx.step?.setOutput({ id, deleted: snapshotId });
+      return { ok: true, output: { id, deleted: snapshotId } };
+    } catch (err) {
+      if (err instanceof AppSnapshotRefusedError) return { ok: false, error: err.message };
+      return { ok: false, error: errorMessage(err) };
+    }
+  },
+};
+
 export const APP_TOOLS: BuiltinToolDef[] = [
   app_create,
   app_get,
@@ -955,6 +1189,10 @@ export const APP_TOOLS: BuiltinToolDef[] = [
   app_list,
   app_publish,
   app_delete,
+  app_snapshot_create,
+  app_snapshot_list,
+  app_snapshot_restore,
+  app_snapshot_delete,
 ];
 
 export const APP_TOOL_SLUGS: string[] = APP_TOOLS.map((t) => t.slug);

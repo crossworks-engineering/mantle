@@ -203,6 +203,37 @@ export type AppDetail = AppRow & {
   draftUpdatedAt?: string | null;
 };
 
+/**
+ * One entry on an app's History line (apps snapshots, Phase 2). A VERSION
+ * (`trigger` 'publish') is the code a publish made live; a SNAPSHOT (the
+ * owner's, or one taken automatically before a restore or a schema change)
+ * also holds a copy of the app's database. `seq` is the number the owner sees
+ * (v1, v2 …).
+ */
+export type AppSnapshot = {
+  id: string;
+  seq: number;
+  trigger:
+    'publish' | 'manual' | 'pre_restore' | 'pre_schema' | 'pre_delete' | 'pre_import' | 'nightly';
+  kind: 'version' | 'snapshot';
+  note: string | null;
+  actor: 'owner' | 'agent' | 'mcp' | 'system';
+  createdAt: string;
+  /** The seq this one's content was restored from, when it was. */
+  restoredFrom: number | null;
+  /** Whether it holds a copy of the database (a snapshot), and its size. */
+  hasData: boolean;
+  dbBytes: number | null;
+  /** The code it holds: files and their total size. */
+  fileCount: number;
+  sourceBytes: number;
+  /** Whether an unpublished draft was saved with it. */
+  hasDraft: boolean;
+};
+
+/** What a restore puts back: code into the draft, the data, or both live. */
+export type AppRestoreMode = 'code' | 'data' | 'full';
+
 export type ProfilePreferences = {
   /** IANA timezone, e.g. 'Africa/Johannesburg'. UTC when not set. */
   timezone: string;

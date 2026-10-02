@@ -394,6 +394,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.channels'),
   none('public.curated_models'),
   none('public.prompt_versions'),
+  none('public.node_snapshots'),
   none('public.doc_collections'),
   none('public.ingest_rules'),
   none('public.saved_filters'),
