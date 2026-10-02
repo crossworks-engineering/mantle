@@ -25,7 +25,7 @@ import { describe, expect, it } from 'vitest';
 /** The first jackdaw release whose signup shows the Setup code field
  *  (jackdaw feat/headless-onboarding: client/web/app/login/setup-code-field.tsx).
  *  null until that release exists: set it when bumping client-pair.tag. */
-const FIRST_CLIENT_WITH_SETUP_CODE_FIELD: string | null = null;
+const FIRST_CLIENT_WITH_SETUP_CODE_FIELD: string | null = 'v0.6.214';
 
 const ROOT = join(__dirname, '..', '..', '..');
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
