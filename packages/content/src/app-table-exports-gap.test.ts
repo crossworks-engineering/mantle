@@ -26,6 +26,8 @@ vi.mock('drizzle-orm', () => ({
   lt: () => ({}),
   lte: () => ({}),
   isNotNull: () => ({}),
+  isNull: () => ({}),
+  or: () => ({}),
   sql: () => 'now()',
 }));
 vi.mock('@mantle/db', () => {

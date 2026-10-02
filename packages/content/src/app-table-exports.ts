@@ -25,8 +25,9 @@
  * Table all day.
  *
  * Durable (apps first-class plan D8): the debounce timer lives in one
- * process's memory, so the first write of a burst also stamps the app's
- * exports `dirty_since`, and the sync that reads the rows clears it. A
+ * process's memory, so every write also stamps the app's exports
+ * (`dirty_since` the burst's first, `last_write_at` this one), and the sync
+ * that reads the rows clears the mark unless a write came after its read. A
  * restart in between no longer loses the sync: the web process resumes the
  * dirty ones at boot (`resumeDirtyAppTableExports`), and the
  * `app-export-catch-up` maintenance task syncs any still dirty
@@ -38,7 +39,7 @@
  * `@mantle/content/app-table-exports`, never from the content index.
  */
 import { createHash } from 'node:crypto';
-import { and, eq, isNotNull, lt, lte, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import {
   asSystem,
   clientSourcedNodes,
@@ -286,22 +287,34 @@ async function materialize(link: AppTableExport): Promise<'synced' | 'unchanged'
   }
 }
 
-/** The sync read the rows as of `readAt`: clear a dirty stamp that is not
- *  newer (a write during the sync keeps its own). */
+/** The sync read the rows as of `readAt`: clear the dirty mark unless a
+ *  write came after that (apps audit 2026-10-02, item 7: `dirtySince` keeps
+ *  a burst's FIRST write, so a write during the sync was cleared with it). */
 async function clearDirty(linkId: string, readAt: Date): Promise<void> {
   await db
     .update(appTableExports)
     .set({ dirtySince: null })
-    .where(and(eq(appTableExports.id, linkId), lte(appTableExports.dirtySince, readAt)));
+    .where(
+      and(
+        eq(appTableExports.id, linkId),
+        or(isNull(appTableExports.lastWriteAt), lte(appTableExports.lastWriteAt, readAt)),
+      ),
+    );
 }
 
-/** Stamp an app's exports dirty (the first write of a burst). No exports:
- *  no rows, a no-op. Best effort: the timer still runs if this fails. */
+/** Stamp an app's exports with a write: dirty since the burst's first
+ *  write, and the time of this one. EVERY write stamps (one indexed update;
+ *  no exports, no rows): a write in another process, or one that lands
+ *  while a sync runs, must outlive the sync's clear. Best effort: the timer
+ *  still runs if this fails. */
 function markExportsDirty(ownerId: string, appNodeId: string): void {
   try {
     void db
       .update(appTableExports)
-      .set({ dirtySince: sql`coalesce(${appTableExports.dirtySince}, now())` })
+      .set({
+        dirtySince: sql`coalesce(${appTableExports.dirtySince}, now())`,
+        lastWriteAt: sql`now()`,
+      })
       .where(and(eq(appTableExports.ownerId, ownerId), eq(appTableExports.appNodeId, appNodeId)))
       .catch((err: unknown) =>
         console.error('[app-table-exports] could not mark exports dirty', appNodeId, err),
@@ -503,10 +516,10 @@ export function exportSyncDelay(firstAt: number, now: number): number {
 export function scheduleAppTableExportSync(ownerId: string, appNodeId: string): void {
   const key = `${ownerId}:${appNodeId}`;
   const existing = pending.get(key);
+  markExportsDirty(ownerId, appNodeId);
   // A client-level app waiting out its gap: that sync takes this write too.
   if (existing?.held) return;
   if (existing) clearTimeout(existing.timer);
-  else markExportsDirty(ownerId, appNodeId);
   const firstAt = existing?.firstAt ?? Date.now();
   const wait = exportSyncDelay(firstAt, Date.now());
   const timer = setTimeout(() => void runScheduledSync(ownerId, appNodeId, key), wait);

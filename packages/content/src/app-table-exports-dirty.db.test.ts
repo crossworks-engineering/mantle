@@ -1,8 +1,8 @@
 /**
  * The durable "dirty" stamp of app table exports on Postgres (apps
- * first-class plan D8; migration 0221): the first write of a burst stamps the
- * app's exports, a sync that reads the rows clears it, a write during a sync
- * keeps its own later stamp, and the catch-up syncs what a lost timer left
+ * first-class plan D8; migrations 0221, 0223): the first write of a burst
+ * stamps the app's exports and every write its time, a sync that reads the
+ * rows clears the mark, a write during a sync keeps it, and the catch-up syncs what a lost timer left
  * dirty and nothing that is fresh. Seeds its own owner and app on random ids;
  * removes them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/app-table-exports-dirty.db.test.ts
@@ -89,9 +89,25 @@ describe.skipIf(!URL)('app table export dirty stamp on Postgres', () => {
 
   it('a write stamped after the sync read the rows stays dirty', async () => {
     const { appId, linkId } = await appWithExport('during');
-    await admin`update app_table_exports set dirty_since = now() + interval '1 hour' where id = ${linkId}`;
+    await admin`update app_table_exports set dirty_since = now() + interval '1 hour', last_write_at = now() + interval '1 hour' where id = ${linkId}`;
     await exportsMod.syncAppTableExports(owner, appId);
     expect(await dirtyOf(linkId)).toEqual(expect.any(Number));
+  });
+
+  it('a write during a sync keeps the burst dirty, though the burst began before it (audit item 7)', async () => {
+    const { appId, linkId } = await appWithExport('hole');
+    // The burst began an hour ago (the first write's stamp) ...
+    await admin`update app_table_exports set dirty_since = now() - interval '1 hour' where id = ${linkId}`;
+    // ... and a write lands while the sync runs: after its read.
+    await admin`update app_table_exports set last_write_at = now() + interval '1 hour' where id = ${linkId}`;
+    await exportsMod.syncAppTableExports(owner, appId);
+    expect(await dirtyOf(linkId)).toEqual(expect.any(Number));
+    // Every write stamps last_write_at, not only a burst's first.
+    exportsMod.scheduleAppTableExportSync(owner, appId);
+    exportsMod.scheduleAppTableExportSync(owner, appId);
+    await settle();
+    const [row] = await admin`select last_write_at from app_table_exports where id = ${linkId}`;
+    expect(new Date(row!.last_write_at as string).getTime()).toBeLessThanOrEqual(Date.now() + 1000);
   });
 
   it('the catch-up syncs what a lost timer left dirty, and leaves a fresh stamp alone', async () => {

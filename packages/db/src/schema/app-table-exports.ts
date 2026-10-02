@@ -40,6 +40,10 @@ export const appTableExports = pgTable(
      *  sync that reads it (migration 0221, apps plan D8). The boot and the
      *  nightly sweep sync what a restart left dirty. */
     dirtySince: timestamp('dirty_since', { withTimezone: true }),
+    /** Every app write's time (migration 0223, apps audit 2026-10-02 item
+     *  7): a sync clears `dirtySince` only when no write came after it read
+     *  the rows. */
+    lastWriteAt: timestamp('last_write_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
