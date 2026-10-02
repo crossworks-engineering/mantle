@@ -361,6 +361,93 @@ describe.skipIf(!URL)('push targeting: who a push goes to', () => {
     expect(await store.deleteOwnSubscription(client, second.id)).toBe(phone);
   });
 
+  it('one phone, three logins of this brain: each Connect is its own row, each login gets its own pushes', async () => {
+    // Multi-login (contract v1.1). The relay mints a NEW routing token on
+    // every /enroll (mantle-push src/lib/store.ts createDevice: 32 random
+    // bytes, no lookup by OS push token), and the app enrols on every
+    // Connect. So the admin, a test member and a test client signed in on
+    // one phone (one OS push token, one device key) are three rows, and none
+    // steals another's.
+    const key = 'pk-one-phone';
+    const adminTok = await token(admin2);
+    const memberTok = await token(member);
+    const clientTok = await token(client);
+    const enrol = (loginId: string, tokenId: string, label: string) =>
+      store.insertSubscription({
+        ownerId: brain,
+        loginId,
+        tokenId,
+        routingToken: rt(label),
+        publicKey: key,
+        platform: 'ios',
+        label,
+      });
+    try {
+      const a = await enrol(admin2, adminTok, 'one-phone-admin');
+      const m = await enrol(member, memberTok, 'one-phone-member');
+      const c = await enrol(client, clientTok, 'one-phone-client');
+      expect(new Set([a.id, m.id, c.id]).size).toBe(3);
+      const rows = await sql<{ login_id: string }[]>`
+        select login_id from push_subscriptions where public_key = ${key} order by label`;
+      expect(rows.map((r) => r.login_id)).toEqual([admin2, client, member]);
+
+      const brainRow = (await sql`select brain_id::text as id from brain_identity`)[0]!;
+      const toPhone = () =>
+        h.sealed
+          .filter((x) => x.publicKey === key)
+          .map((x) => [x.payload.brainId, x.payload.loginId]);
+
+      // The owner teaser: the admin's row on this phone, never the member's
+      // or the client's, though they share the phone and the key.
+      await notify.pushOutbound(brain, `${tag}-own`);
+      expect(h.sent).toEqual(expect.arrayContaining([rt('one-phone-admin')]));
+      expect(h.sent).not.toContain(rt('one-phone-member'));
+      expect(h.sent).not.toContain(rt('one-phone-client'));
+      expect(toPhone()).toEqual([[brainRow.id, admin2]]);
+
+      // The member's reply: the member's row only, naming the member.
+      h.sent = [];
+      h.sealed = [];
+      await loginNotify.pushToLogin({
+        loginId: member,
+        role: 'member',
+        ownerId: brain,
+        kind: 'chat',
+        title: 'Tess',
+        body: 'for the member',
+        deepLink: '/portal/chat',
+        collapseKey: 'chat',
+      });
+      expect(h.sent.sort()).toEqual([rt('member-live'), rt('one-phone-member')].sort());
+      expect(toPhone()).toEqual([[brainRow.id, member]]);
+
+      // The client's comment: the client's row only, naming the client.
+      h.sent = [];
+      h.sealed = [];
+      await loginNotify.pushToLogin({
+        loginId: client,
+        role: 'client',
+        ownerId: brain,
+        kind: 'comment',
+        title: 'New comment',
+        body: 'for the client',
+        deepLink: '/portal/shared/x',
+        collapseKey: 'comment:x',
+      });
+      expect(h.sent.sort()).toEqual([rt('client-live'), rt('one-phone-client')].sort());
+      expect(toPhone()).toEqual([[brainRow.id, client]]);
+
+      // The member signs out on the phone: its row goes, the admin's and the
+      // client's stay.
+      expect(await store.deleteTokenSubscriptions(memberTok)).toEqual([rt('one-phone-member')]);
+      const left = await sql<{ login_id: string }[]>`
+        select login_id from push_subscriptions where public_key = ${key} order by label`;
+      expect(left.map((r) => r.login_id)).toEqual([admin2, client]);
+    } finally {
+      await sql`delete from push_subscriptions where public_key = ${key}`;
+    }
+  });
+
   it('two enrols of one routing token at once leave one row', async () => {
     const phone = rt('raced-phone');
     const tokens = await Promise.all([token(member), token(member), token(client)]);

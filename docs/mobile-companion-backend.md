@@ -36,7 +36,8 @@ so each route works unchanged from web and mobile.
 url, expiresAt, ttlSeconds}` and shows `url` (`<brain>/pair#v=1&code=…`,
   the code in the fragment so no log sees it) as a QR. The phone scans it and
   calls `POST /api/auth/pair/claim` `{code, deviceName?}` (public, 10/min per
-  IP) → the `mobile-login` shape plus `email`. Codes are 192 random bits
+  IP) → the `mobile-login` shape plus `email` (and, since contract v1.1,
+  `loginId` and `brainId`; see "Three roles on the phone"). Codes are 192 random bits
   stored as SHA-256, live 90 s, and are single-use (one conditional UPDATE);
   every claim failure is one 401 line. `GET /api/auth/pair/[id]` (owner) →
   `{status: pending|claimed|expired, deviceLabel}` for the page's poll.
@@ -324,11 +325,12 @@ bodies, error bodies, deep links and token lifetimes below are stable; a change
 is announced to the app session before it lands.
 
 **Versions.** v1 (2026-10-01): the three roles. v1.1 (2026-10-02, migration
-0226): `whoami` answers `brainId`, and every push payload carries `brainId`
-and `loginId`, so a device holding several logins (on one brain or on
-several) opens the right one on a tap (section 2, "Push routing on a device
-with several logins"). Additive only: an app built for v1 ignores the new
-fields, and the payload's `v` stays `1`.
+0226): `whoami` and every sign-in answer carry `brainId` (and `loginId`
+where they did not), and every push payload carries `brainId` and
+`loginId`, so a device holding several logins (on one brain or on several)
+opens the right one on a tap (section 2, "Push routing on a device with
+several logins"). Additive only: an app built for v1 ignores the new fields,
+and the payload's `v` stays `1`.
 
 Everything above this section still holds for admins and for shipped builds.
 `POST /api/auth/mobile-login` stays frozen: admins only, 1 year, same shape.
@@ -340,7 +342,7 @@ address, one bucket shared with the other token logins: `mobile-login` and
 `/api/auth/token`. An IPv6 caller counts by its /64).
 
     body   { email, password, deviceName? }
-    200    { token, expiresIn, expiresAt, deviceId, role, loginId }
+    200    { token, expiresIn, expiresAt, deviceId, role, loginId, brainId }
     401    { error: "Invalid email or password." }   (every failure, same line)
     429    { error }  + Retry-After
 
@@ -372,7 +374,7 @@ token. No cookie is set or read in device mode.
 
     POST /api/auth/client-code/verify
     body   { email, code, requestId, deviceName? }
-    200    { ok: true, token, expiresIn, expiresAt, deviceId, role: "client", loginId }
+    200    { ok: true, token, expiresIn, expiresAt, deviceId, role: "client", loginId, brainId }
     401    { error: "That code did not work. Ask for a new one." }
     429    { error } + Retry-After
 
@@ -399,12 +401,18 @@ answer is sent with `Cache-Control: no-store`.
 **Token rotation: `POST /api/auth/token/refresh`** (Authorization: Bearer).
 All three roles. When it rotates, the old token dies in the same transaction.
 
-    200    { token, expiresIn, expiresAt, deviceId, role }
+    200    { token, expiresIn, expiresAt, deviceId, role, loginId, brainId }
     401    { error: "unauthorized" }
     401    { error: "unauthorized", reason: "sign-in-expired" }   client only
     429    { error } + Retry-After
 
-Every answer carries `Cache-Control: no-store`. Rules:
+Every answer carries `Cache-Control: no-store`. `loginId` and `brainId` are
+v1.1, on all three 200 answers (too early, a rotation, a lost answer
+retried). `brainId` in a sign-in answer (here, `device-login`, the client
+verify and `pair/claim`) is the same value whoami answers; like there, it is
+left out only while the database is behind the code. The frozen
+`mobile-login` and the web client's `/api/auth/token` answer as before.
+Rules:
 
 - **Too early is a no-op.** While more than 23 days remain, the answer is the
   SAME token with its own `expiresAt` and `deviceId`. Nothing rotates and no
@@ -469,10 +477,11 @@ For example, a member's phone token:
 0226 ran, the same for every login and every role, unchanged by restarts and
 upgrades. It is not a secret and says nothing about the brain (not its
 address, not its owner). The app calls whoami right after every sign-in and
-files the session under the pair (`brainId`, `loginId`); it calls it again at
-launch and replaces a stored `brainId` that differs (a brain restored from
-another brain's dump is given a new id by hand, see section 6). `loginId` is
-the same id the sign-in answers carry. `brainId` is missing only on a brain
+files the session under the pair (`brainId`, `loginId`), which the sign-in
+answer already carries; it calls whoami again at launch and replaces a
+stored `brainId` that differs (a brain made from another brain's dump is
+given its own id, see section 6). `loginId` is the same id the sign-in
+answers carry. `brainId` is missing only on a brain
 whose database is behind its code (migration 0226 not applied) and on brains
 older than v1.1: treat that session as having no `brainId` (below).
 
@@ -536,8 +545,10 @@ enrol step).
     PUT    {pushBase}/preferences     partial patch, same answer
 
 A member or client lists and removes only its own devices. Enrolling a routing
-token again replaces the old row (one row per routing token), so one phone
-belongs to one login. `POST /api/push/reset` stays admin only. Preferences are
+token again replaces the old row (one row per routing token), so one routing
+token belongs to one login. The relay mints a new routing token on every
+enrol, so each Connect of each login is its own row (see "Push routing on a
+device with several logins"). `POST /api/push/reset` stays admin only. Preferences are
 per login and all default to true.
 
 **Limits.** Connect and enrol share one bucket: 10 a minute per login, above
@@ -626,7 +637,13 @@ which session it is for; `brainId` and `loginId` do. On a tap the app:
 1. Opens the payload with the device's key, as today.
 2. Looks for the session whose stored (`brainId`, `loginId`) equals the
    payload's pair. Both must match; a `loginId` alone is not enough (two
-   brains restored from one dump share login ids).
+   brains made from one dump share login ids).
+   **Ambiguous:** when the sessions the device holds with that `brainId`
+   are at more than one origin (two brains share an id: a copy that was not
+   given its own, or one brain reached under two addresses), the push is
+   ambiguous. The app does not switch sessions and follows no deep link: it
+   opens on the active session, or offers the session list. It should also
+   say so when a sign-in's `brainId` is already held under another origin.
 3. Found: makes that session the active one, if it is not already, and then
    follows `deepLink` in it. The deep link is a path on THAT brain, under
    that session's role (`/portal/...` for a member or a client, `/chat/...`,
@@ -648,11 +665,19 @@ active session without following the deep link (or offers the session list).
 A payload with a `brainId` but no `loginId` is matched only when the device
 holds exactly one session on that brain.
 
-What a phone receives at all is unchanged: a device is enrolled under ONE
-login of a brain, and enrolling the same routing token again (another login
-of the same brain on the same phone) replaces the row, so on one brain a
-phone gets the pushes of the login that enrolled last. Logins on DIFFERENT
-brains each enrol with that brain, and each brain pushes its own.
+**Several logins of ONE brain on one phone each get their own pushes.** The
+relay mints a new routing token on every `/enroll` (32 random bytes; it does
+not look the device up by its OS push token), and the app runs the whole
+Connect (connect, enroll, subscriptions) per login. So an admin, a test
+member and a test client signed in on one phone are three device rows, with
+one OS push token and one device key between them: each gets its own
+pushes, each payload names its own `loginId`, and a sign-out of one takes
+only its own row. A member's or a client's row never gets an owner teaser
+(the send lists name logins, not phones). The phone shows one notification
+per login an event concerns. Logins on DIFFERENT brains each enrol with that
+brain, and each brain pushes its own. App side: keep the push subscription
+id per session, and do not clear the shared device key when ONE session
+disconnects while others still use it.
 
 `collapseKey`: the brain names a member's or client's push by `chat`,
 `review:<id>` or `comment:<id>`, but sends it to the relay as a keyed hash
@@ -749,11 +774,17 @@ uuid made by the migration itself (`gen_random_uuid()`), guarded to one row
 (the primary key is a boolean that can only be true). The code reads it and
 never changes it (`server/web/lib/brain-identity.ts`, cached per process), so
 it holds across restarts, upgrades and a restore of this brain's own backup.
-A database built from ANOTHER brain's dump carries that brain's id: give the
-copy its own before any device signs in to it,
+A plain `scripts/db-restore.sh` keeps the dump's id, and says which: that is
+the same brain (its own backup, the way back from a roll, a move that
+replaces the old box). A NEW brain made from another brain's dump, one that
+will run beside it (dev data seeded into a new prod box, one generated demo
+dump seeded onto several boxes), is restored with
+`scripts/db-restore.sh --new-brain <dump>`: the restored brain gets an id of
+its own before the app starts. After the fact (the app already ran):
 `update brain_identity set brain_id = gen_random_uuid()`, then restart the
-server and the push worker (phones that held a session on it re-learn the id
-at their next launch through whoami). If the table cannot be read, whoami
+server and the push worker; phones that held a session on it re-learn the id
+at their next launch through whoami. A dump from before 0226 carries no id:
+the next migrate gives the brain a fresh one either way. If the table cannot be read, whoami
 and every push leave `brainId` out and the process says so once in one loud
 log line; nothing else fails. No trigger, no job.
 
@@ -851,6 +882,10 @@ member device and a client device, enrolled and live, never receive an owner
 teaser, an approval or a "needs you" notice; each device's payload names this
 brain and its own login. `packages/db/src/brain-identity-migration.db.test.ts`
 proves the one row and that a second run of 0226 keeps the id;
+`packages/db/src/db-restore-run.db.test.ts` that a plain restore keeps it
+and `--new-brain` gives a new one; the targeting test also enrols one phone
+(one key) as an admin, a member and a client and checks each gets only its
+own pushes, naming its own login;
 `server/web/lib/brain-identity.test.ts`, `notify.test.ts`,
 `login-notify.test.ts` and `needs-you.test.ts` pin the payload fields. `device-tokens.db.test.ts`
 drives the three sign-ins, every way a token ends, refresh, the push device
