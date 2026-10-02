@@ -510,6 +510,59 @@ describe.skipIf(!URL)('embeds follow their embedder', () => {
     expect(left).toHaveLength(0);
   });
 
+  // The save path (mantle_sync_embeds, 0216): a save reads the item it embeds,
+  // then writes the edge. A delete of that item can commit in between. The
+  // delete here holds the item until the save waits on it, then commits.
+  it.each([
+    {
+      kind: 'note',
+      make: async () => note(folderF.path, 'race note', 'nothing yet'),
+      save: (id: string, img: string) => sqlTag`
+        update nodes /* embed-save-race */
+           set data = jsonb_set(data, '{content}', to_jsonb(${`![x](media:${img})`}::text))
+         where id = ${id}`,
+    },
+    {
+      kind: 'page',
+      make: async () => page(folderF.path, 'race page', { type: 'doc', content: [] }),
+      save: (id: string, img: string) => sqlTag`
+        update pages /* embed-save-race */
+           set doc = ${JSON.stringify({
+             type: 'doc',
+             content: [{ type: 'image', attrs: { nodeId: img } }],
+           })}::jsonb
+         where node_id = ${id}`,
+    },
+  ])(
+    'an item deleted while a $kind save writes its embeds drops out, the save goes on',
+    async ({ make, save }) => {
+      const img = await node('file', 'files', 'race.png');
+      const item = await make();
+      let saved: Promise<unknown> | undefined;
+      await admin.begin(async (tx) => {
+        const [me] = await tx<{ pid: number }[]>`select pg_backend_pid() as pid`;
+        await tx`delete from nodes where id = ${img}`;
+        saved = m.systemDb.execute(save(item, img)).catch((err: unknown) => err);
+        await support.pollUntil(
+          async () => {
+            const [w] = await admin<{ n: number }[]>`
+              select count(*)::int as n from pg_stat_activity
+               where ${me!.pid}::int = any (pg_blocking_pids(pid))
+                 and query like '%embed-save-race%'`;
+            return (w?.n ?? 0) > 0;
+          },
+          { what: 'the save to wait on the deleted item' },
+        );
+      });
+      const out = await saved;
+      // The database's own error (drizzle wraps it as the cause), not the SQL.
+      const cause = out instanceof Error ? ((out.cause as Error | undefined) ?? out) : null;
+      expect(cause?.message ?? null).toBeNull();
+      const left = await admin`select 1 from node_embeds where from_id = ${item} or to_id = ${img}`;
+      expect(left).toHaveLength(0);
+    },
+  );
+
   it('keeps a same-row policy: no sub-query in nodes_viewer_read', async () => {
     const [p] = (await m.systemDb.execute(sqlTag`
       select pg_get_expr(polqual, polrelid) as q from pg_policy
