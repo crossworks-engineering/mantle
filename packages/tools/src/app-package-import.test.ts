@@ -13,11 +13,15 @@ vi.mock('@mantle/content', () => ({
   publishApp: vi.fn(async () => ({})),
   saveDraftSource: vi.fn(async () => ({})),
 }));
-vi.mock('@mantle/content/app-broker', () => ({ checkAppSchemaScript: vi.fn(async () => {}) }));
+vi.mock('@mantle/content/app-broker', () => ({
+  checkAppSchemaScript: vi.fn(async () => {}),
+  checkAppSchemaScriptOnFile: vi.fn(async () => {}),
+}));
 vi.mock('@mantle/content/app-package', () => ({
   AppPackageError: class extends Error {},
   openAppPackage: vi.fn(),
   installAppPackage: vi.fn(),
+  dropUnfinishedApp: vi.fn(async () => {}),
 }));
 vi.mock('@mantle/tracing', () => ({ recordIngest: vi.fn(async () => {}) }));
 vi.mock('./app-build-stage', () => ({
@@ -27,7 +31,12 @@ vi.mock('./resolve', () => ({
   resolveTool: vi.fn(async (_o: string, slug: string) => (slug === 'nope' ? null : { slug })),
 }));
 
-import { installAppPackage, openAppPackage } from '@mantle/content/app-package';
+import {
+  dropUnfinishedApp,
+  installAppPackage,
+  openAppPackage,
+} from '@mantle/content/app-package';
+import { checkAppSchemaScriptOnFile } from '@mantle/content/app-broker';
 import { publishApp } from '@mantle/content';
 import { importAppPackage } from './app-package-import';
 
@@ -53,5 +62,34 @@ describe('importAppPackage', () => {
     // Still published: the code runs, but with no tools.
     expect(publishApp).toHaveBeenCalledOnce();
     expect(res.published).toBe(true);
+  });
+
+  it('drops the new app when a step after the install fails (audit, low)', async () => {
+    vi.mocked(openAppPackage).mockResolvedValueOnce({
+      pkg: {
+        manifest: {},
+        code: { published: { files: {} }, draft: null },
+        data: null,
+      },
+      extractData: vi.fn(),
+    } as never);
+    vi.mocked(installAppPackage).mockResolvedValueOnce({ id: 'a2', title: 'Y' } as never);
+    vi.mocked(publishApp).mockRejectedValueOnce(new Error('store down'));
+    await expect(importAppPackage('o1', Buffer.from('zip'))).rejects.toThrow('store down');
+    expect(dropUnfinishedApp).toHaveBeenCalledWith('o1', 'a2');
+  });
+
+  it('checks a newer schema over the data the package brings (audit, low)', async () => {
+    vi.mocked(openAppPackage).mockResolvedValueOnce({
+      pkg: {
+        manifest: { sqlite: { schemaSql: 'CREATE TABLE t (x);', schemaVersion: 3 } },
+        code: { published: null, draft: null },
+        data: { file: 'data.sqlite', bytes: 10, schemaVersion: 2 },
+      },
+      extractData: vi.fn(async () => ({ path: '/tmp/none.sqlite', schemaVersion: 2 })),
+    } as never);
+    vi.mocked(checkAppSchemaScriptOnFile).mockRejectedValueOnce(new Error('no such table'));
+    await expect(importAppPackage('o1', Buffer.from('zip'))).rejects.toThrow(/over the data/);
+    expect(installAppPackage).not.toHaveBeenCalled();
   });
 });

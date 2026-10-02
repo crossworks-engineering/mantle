@@ -376,10 +376,29 @@ export async function checkAppSchemaScript(
   const reg = await lookupAppDatabase(ownerId, appNodeId);
   if (reg) await assertNotLost(appNodeId, reg);
   const dir = reg ? path.dirname(reg.storagePath) : path.join(appDbRoot(), ownerId);
+  const src = reg && (await fileExists(reg.storagePath)) ? reg.storagePath : null;
+  await trySchemaScript(src, dir, appNodeId, schemaSql);
+}
+
+/** The same check against a database file that is not an app's yet (an
+ *  imported package's data, apps audit 2026-10-02, low): the schema the
+ *  package declares must run over the data it brings. */
+export async function checkAppSchemaScriptOnFile(file: string, schemaSql: string): Promise<void> {
+  assertSafeScript(schemaSql);
+  await trySchemaScript(file, path.dirname(file), 'file', schemaSql);
+}
+
+/** Run `schemaSql` on a copy of `src` (or on an empty database), in `dir`. */
+async function trySchemaScript(
+  src: string | null,
+  dir: string,
+  label: string,
+  schemaSql: string,
+): Promise<void> {
   await mkdir(dir, { recursive: true });
-  const trial = path.join(dir, `.schema-check-${appNodeId}-${process.pid}-${Date.now()}.sqlite`);
+  const trial = path.join(dir, `.schema-check-${label}-${process.pid}-${Date.now()}.sqlite`);
   try {
-    if (reg && (await fileExists(reg.storagePath))) await copyAppDbFile(reg.storagePath, trial);
+    if (src) await copyAppDbFile(src, trial);
     await runAppSql(trial, {
       sql: schemaSql,
       mode: 'script',

@@ -53,13 +53,14 @@ import {
 import {
   AppPackageError,
   appPackageMaxBytes,
+  takeAppImportSlot,
   appPackageTempPath,
   duplicateApp,
   writeAppPackage,
 } from '@mantle/content/app-package';
 import { createReadStream } from 'node:fs';
 import { rm } from 'node:fs/promises';
-import { ensureAutoFiledFolder, readFileById, spoolUpload, upsertFile } from '@mantle/files';
+import { ensureAutoFiledFolder, openFileById, spoolUpload, upsertFile } from '@mantle/files';
 import { importAppPackage } from './app-package-import';
 import { FILE_ID_PRE } from './tables/common';
 import {
@@ -1454,13 +1455,21 @@ const app_import: BuiltinToolDef = {
     const fileId = str(input.file_id).trim();
     if (!fileId) return { ok: false, error: 'file_id is required' };
     const name = str(input.name).trim();
+    // One turn of the per-process import limit, shared with the upload route
+    // (apps audit 2026-10-02, item 13): each holds its package in memory.
+    const release = takeAppImportSlot();
+    if (!release) return { ok: false, error: 'another import is running: try again when it is done' };
     try {
-      const file = await readFileById({ ownerId: ctx.ownerId, fileId });
+      // The size first, from the file itself: a file past the cap is never
+      // read into memory.
+      const file = await openFileById({ ownerId: ctx.ownerId, fileId });
       if (!file) return { ok: false, error: `file ${fileId} not found: find it with file_list` };
-      if (file.bytes.length > appPackageMaxBytes()) {
+      if (file.size > appPackageMaxBytes()) {
+        file.stream.destroy();
         return { ok: false, error: 'the file is larger than an app package can be' };
       }
-      const res = await importAppPackage(ctx.ownerId, file.bytes, {
+      const bytes = await readStreamCapped(file.stream, file.size, appPackageMaxBytes());
+      const res = await importAppPackage(ctx.ownerId, bytes, {
         ...(name ? { title: name } : {}),
         withData: input.with_data !== false,
         actor: historyActor(ctx),
@@ -1486,9 +1495,31 @@ const app_import: BuiltinToolDef = {
     } catch (err) {
       if (err instanceof AppPackageError) return { ok: false, error: err.message };
       return { ok: false, error: errorMessage(err) };
+    } finally {
+      release();
     }
   },
 };
+
+/** A stream's bytes in ONE buffer of the size it said (no chunk list and
+ *  concat beside it), refusing past `max`. */
+async function readStreamCapped(
+  stream: NodeJS.ReadableStream,
+  size: number,
+  max: number,
+): Promise<Buffer> {
+  const out = Buffer.allocUnsafe(Math.min(size, max));
+  let at = 0;
+  for await (const chunk of stream as AsyncIterable<Buffer | string>) {
+    const buf = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+    if (at + buf.length > out.length) {
+      throw new AppPackageError('the file is larger than an app package can be');
+    }
+    buf.copy(out, at);
+    at += buf.length;
+  }
+  return at === out.length ? out : out.subarray(0, at);
+}
 
 // ── Errors (apps first-class plan, Phase 3, G4) ─────────────────────────────
 

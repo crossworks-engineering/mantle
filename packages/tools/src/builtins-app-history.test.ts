@@ -40,11 +40,12 @@ vi.mock('@mantle/content/app-package', () => {
     writeAppPackage: vi.fn(),
     appPackageTempPath: vi.fn(async () => '/tmp/x.mantleapp'),
     appPackageMaxBytes: () => 1024 * 1024,
+    takeAppImportSlot: vi.fn(() => () => {}),
   };
 });
 vi.mock('@mantle/files', async (orig) => ({
   ...(await orig<typeof import('@mantle/files')>()),
-  readFileById: vi.fn(),
+  openFileById: vi.fn(),
   spoolUpload: vi.fn(async () => ({ tempPath: '/tmp/s', sha256: 'x', size: 10 })),
   ensureAutoFiledFolder: vi.fn(async () => 'exports'),
   upsertFile: vi.fn(async (a: { filename: string }) => ({
@@ -64,8 +65,14 @@ vi.mock('@mantle/content', async (orig) => ({
   listAppAccess: vi.fn(),
 }));
 
-import { AppPackageError, duplicateApp, writeAppPackage } from '@mantle/content/app-package';
-import { readFileById, upsertFile } from '@mantle/files';
+import {
+  AppPackageError,
+  duplicateApp,
+  takeAppImportSlot,
+  writeAppPackage,
+} from '@mantle/content/app-package';
+import { Readable } from 'node:stream';
+import { openFileById, upsertFile } from '@mantle/files';
 import { importAppPackage } from './app-package-import';
 import { AppDbMissingError } from '@mantle/content/app-broker';
 import {
@@ -346,8 +353,10 @@ describe('the export and import tools (Phase 3)', () => {
     expect(errorOf(await exp.handler({ id: APP }, member))).toMatch(/owner/);
   });
 
+  const zipFile = () => ({ stream: Readable.from([Buffer.from('zip')]), size: 3, row: {} });
+
   it('app_import makes a new app from a file and names the tools it did not grant', async () => {
-    vi.mocked(readFileById).mockResolvedValueOnce({ bytes: Buffer.from('zip') } as never);
+    vi.mocked(openFileById).mockResolvedValueOnce(zipFile() as never);
     vi.mocked(importAppPackage).mockResolvedValueOnce({
       appId: SNAP,
       title: 'Stock Count',
@@ -370,10 +379,20 @@ describe('the export and import tools (Phase 3)', () => {
       withData: true,
       actor: 'agent',
     });
-    vi.mocked(readFileById).mockResolvedValueOnce({ bytes: Buffer.from('zip') } as never);
+    vi.mocked(openFileById).mockResolvedValueOnce(zipFile() as never);
     vi.mocked(importAppPackage).mockRejectedValueOnce(new AppPackageError('not a zip'));
     expect(errorOf(await imp.handler({ file_id: 'f1' }, chat))).toBe('not a zip');
-    vi.mocked(readFileById).mockResolvedValueOnce(null);
+    vi.mocked(openFileById).mockResolvedValueOnce(null);
     expect(errorOf(await imp.handler({ file_id: 'f1' }, chat))).toMatch(/file_list/);
+  });
+
+  it('app_import refuses a file past the cap before reading it, and a third import at once (audit item 13)', async () => {
+    const big = { stream: Readable.from([]), size: 2 * 1024 * 1024, row: {} };
+    vi.mocked(openFileById).mockResolvedValueOnce(big as never);
+    expect(errorOf(await imp.handler({ file_id: 'f1' }, chat))).toMatch(/larger than/);
+    expect(importAppPackage).not.toHaveBeenCalled();
+    vi.mocked(takeAppImportSlot).mockReturnValueOnce(null);
+    expect(errorOf(await imp.handler({ file_id: 'f1' }, chat))).toMatch(/another import/);
+    expect(openFileById).toHaveBeenCalledTimes(1);
   });
 });

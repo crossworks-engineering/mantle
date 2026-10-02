@@ -117,6 +117,8 @@ describe.skipIf(!URL)('app packages and copies on Postgres', () => {
     });
     expect(opened.pkg.code.source.files['App.tsx']).toContain('one');
     expect(opened.pkg.code.draft?.files['App.tsx']).toContain('wip');
+    // The database is stored, not deflated on the main thread (audit, low).
+    expect(res!.bytes).toBeGreaterThan(opened.pkg.data!.bytes);
 
     const data = await opened.extractData();
     expect(data).not.toBeNull();
@@ -184,6 +186,12 @@ describe.skipIf(!URL)('app packages and copies on Postgres', () => {
     await expect(
       pack.openAppPackage(await noEntry.generateAsync({ type: 'nodebuffer' })),
     ).rejects.toThrow(/entry 'Main.tsx'/);
+    // A zip with too many entries is refused before it is parsed (audit, low).
+    const crowded = new JSZip();
+    for (let i = 0; i < 40; i++) crowded.file(`x${i}.txt`, 'x');
+    await expect(
+      pack.openAppPackage(await crowded.generateAsync({ type: 'nodebuffer' })),
+    ).rejects.toThrow(/40 entries/);
     expect(await countApps()).toBe(before);
     // No work files are left behind.
     const { readdir } = await import('node:fs/promises');

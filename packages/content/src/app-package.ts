@@ -98,6 +98,42 @@ export function appPackageMaxBytes(): number {
   return appSqlMaxDbBytes() + MAX_MANIFEST_BYTES;
 }
 
+/** Imports at a time per process: each holds its package in memory while
+ *  it is read (apps audit 2026-10-02, item 13). */
+export const APP_IMPORT_MAX_PARALLEL = 2;
+let importsRunning = 0;
+
+/** A turn to import a package, or null when APP_IMPORT_MAX_PARALLEL are
+ *  running. Take it BEFORE the package is read; call the release when done
+ *  (once). The route and the app_import tool share it. */
+export function takeAppImportSlot(): (() => void) | null {
+  if (importsRunning >= APP_IMPORT_MAX_PARALLEL) return null;
+  importsRunning++;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    importsRunning--;
+  };
+}
+
+/** The most entries a package may have. Ours has two; a zip's entry list is
+ *  read whole into memory before any entry, so a crafted one with millions
+ *  of entries must be refused before it is parsed. */
+const MAX_PACKAGE_ENTRIES = 16;
+
+/** The entry count a zip's end record claims, or null when it has none
+ *  (not a zip). Read from the last bytes only, before the zip is parsed. */
+function zipEntryCount(bytes: Buffer | Uint8Array): number | null {
+  const buf = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes.buffer, bytes.byteOffset, bytes.length);
+  // The end record is 22 bytes plus a comment of at most 65535.
+  const stop = Math.max(0, buf.length - 22 - 0xffff);
+  for (let i = buf.length - 22; i >= stop; i--) {
+    if (buf.readUInt32LE(i) === 0x06054b50) return buf.readUInt16LE(i + 10);
+  }
+  return null;
+}
+
 // ── temp files ──────────────────────────────────────────────────────────────
 
 /** Work files live under APP_DB_DIR/_tmp: the same volume as the app files
@@ -184,7 +220,12 @@ export async function writeAppPackage(
     };
     const zip = new JSZip();
     zip.file(MANIFEST_ENTRY, JSON.stringify(pkg, null, 2));
-    if (data && dataTmp) zip.file(DATA_ENTRY, createReadStream(dataTmp));
+    // Stored, not deflated: jszip compresses in JavaScript on this thread, and
+    // deflating a 256 MB database held the process for seconds (apps audit
+    // 2026-10-02, low).
+    if (data && dataTmp) {
+      zip.file(DATA_ENTRY, createReadStream(dataTmp), { compression: 'STORE' });
+    }
     await pipeline(
       zip.generateNodeStream({
         type: 'nodebuffer',
@@ -364,6 +405,15 @@ export type OpenedAppPackage = {
 
 /** Read a `.mantleapp` file. Throws AppPackageError when it is not one. */
 export async function openAppPackage(bytes: Buffer | Uint8Array): Promise<OpenedAppPackage> {
+  const entries = zipEntryCount(bytes);
+  if (entries === null) {
+    throw new AppPackageError(`this is not a ${APP_PACKAGE_EXT} file (it is not a zip)`);
+  }
+  if (entries > MAX_PACKAGE_ENTRIES) {
+    throw new AppPackageError(
+      `this zip has ${entries} entries; a ${APP_PACKAGE_EXT} file has ${MAX_PACKAGE_ENTRIES} at most`,
+    );
+  }
   let zip: JSZip;
   try {
     zip = await JSZip.loadAsync(bytes);
@@ -417,8 +467,9 @@ export async function openAppPackage(bytes: Buffer | Uint8Array): Promise<Opened
 // ── install ─────────────────────────────────────────────────────────────────
 
 /** Remove a just-made app that could not be finished (no snapshot: it never
- *  held anything of the owner's). */
-async function dropNewApp(ownerId: string, appId: string): Promise<void> {
+ *  held anything of the owner's): an import, a copy or an undelete that
+ *  failed half way leaves nothing behind. */
+export async function dropUnfinishedApp(ownerId: string, appId: string): Promise<void> {
   const dbPath = await appDatabasePath(ownerId, appId);
   await db.delete(nodes).where(eq(nodes.id, appId));
   if (dbPath) await removeAppDatabaseFiles(dbPath).catch(() => {});
@@ -459,7 +510,7 @@ export async function installAppPackage(
       });
     }
   } catch (err) {
-    await dropNewApp(ownerId, app.id);
+    await dropUnfinishedApp(ownerId, app.id);
     throw err;
   }
   return app;
@@ -512,7 +563,7 @@ export async function duplicateApp(
         });
       }
     } catch (err) {
-      await dropNewApp(ownerId, copy.id);
+      await dropUnfinishedApp(ownerId, copy.id);
       throw err;
     }
     void notifyAppNavChanged(ownerId);
