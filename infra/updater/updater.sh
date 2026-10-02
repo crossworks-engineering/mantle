@@ -947,6 +947,28 @@ prune_images() {
   prune_repo "${pi_ns:-titanwest}/mantle-client" "$2" "$(container_image mantle_client_web)" | tee -a "$SIG/update.log"
 }
 
+# topup_scripts: install an operator script the RUNNING release names but the
+# box lacks. refresh_scripts runs inside the OLD updater with the OLD
+# SCRIPT_NAMES, so a script a release ADDS (onboard.sh, 2026-10) would land one
+# roll late: the swapped-in updater knows the name but never ran a refresh.
+# Called once at startup (a fresh container, or the re-exec after a
+# self-refresh, whichever copy did the exec), it reads the image the web
+# container runs, which after a roll is the release just applied. A no-op
+# unless a name is missing, so a restart costs one test per script.
+topup_scripts() {
+  tu_missing=""
+  for n in $SCRIPT_NAMES; do
+    [ -f "$STACK/$SCRIPTS_REL/$n" ] || tu_missing="$tu_missing $n"
+  done
+  [ -n "$tu_missing" ] || return 0
+  tu_img=$(container_image mantle_web)
+  [ -n "$tu_img" ] || return 0
+  IMG="$tu_img"
+  echo "[updater] operator scripts missing on this box:$tu_missing; reading them from the running web image" \
+    | tee -a "$SIG/update.log"
+  refresh_scripts running
+}
+
 # Library mode for scripts/test-deploy-scripts.sh: with MANTLE_UPDATER_LIB=1
 # the file defines its functions and stops here, so the refresh logic runs
 # against a fake stack with a stubbed docker instead of the poll loop.
@@ -965,6 +987,7 @@ else
     '' | unconfigured) write_status idle "" "" "" null "" ;;
   esac
   echo "[updater] ready — stack: $STACK"
+  topup_scripts
   write_stack_info
 fi
 

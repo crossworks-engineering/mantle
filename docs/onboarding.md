@@ -295,7 +295,14 @@ scripts/onboard.sh --yes --email you@example.com \
 ```
 
 It runs `server/web/scripts/onboard.ts` in the web container
-(`docker compose exec web ...`). Shell access proves ownership, so it does not
+(`docker compose exec web ...`). If `scripts/onboard.sh` is not on the box
+yet (the updater installs it when the release that ships it starts), run the
+same wizard directly from the stack directory:
+
+```bash
+docker compose exec -it web pnpm -C server/web exec tsx scripts/onboard.ts
+```
+ Shell access proves ownership, so it does not
 ask for the setup code. It creates the owner (`createFirstOwner`, the same
 function signup uses), then walks the wizard's own steps in its order:
 profile, OpenRouter key (saved and tested), models, memory search, set up,
@@ -310,10 +317,25 @@ container on stdin as `password=...` and `openrouter_key=...` lines
 failing key stops the run with exit 1 instead of finishing half way. Inside a
 checkout the same wizard is `pnpm -C server/web onboard`.
 
-A brain-core box sheds Tika on purpose. The installer writes
-`MANTLE_CORE_SHAPE=1` with `--core`, and the wizard's stack check (both
-wizards) then reports a missing Tika as optional instead of blocking.
+A brain-core box sheds Tika on purpose. Compose passes the box's
+`COMPOSE_FILE` and `COMPOSE_PROFILES` to web (as `MANTLE_COMPOSE_FILE` and
+`MANTLE_COMPOSE_PROFILES`), and web derives the shape from them on every
+start (`server/web/lib/compose-shape.ts`): on a core box WITHOUT the
+`helpers` profile, the wizard's stack check (both wizards) reports a missing
+Tika as optional instead of blocking. Everywhere else a missing Tika still
+fails the check.
 
 Not covered: the mobile app has no wizard screens; a lost headless owner
 password has no terminal reset yet.
+
+### Release order
+
+The installer writes the setup code on every install, and signup refuses
+without it, so the owner UI a fresh install runs must have the Setup code
+field. **jackdaw ships first** (its first release with the field); then the
+SAME mantle release that carries the setup code bumps `client-pair.tag` to
+that jackdaw release or later. `server/web/lib/client-pair-setup-code.test.ts`
+enforces it: it fails (and with it `pnpm verify` and the pre-push gate) until
+its `FIRST_CLIENT_WITH_SETUP_CODE_FIELD` names that jackdaw tag and
+`client-pair.tag` is at least that.
 

@@ -48,7 +48,8 @@ hand-written `.env`:
 | `MANTLE_CLIENT_ENABLED` | `--no-client` writes `0` | whether the owner UI stack runs; missing means on |
 | `MANTLE_CLIENT_IMAGE_TAG` | updater (`client-tag.auto`) or a hand pin | the `mantle-client` image tag, on its own stream since the repo split |
 | `COMPOSE_PROFILES` | installer flags | opt-in services: `sandboxes`, `media`, `local-embedder`, `helpers` |
-| `COMPOSE_FILE` | `--core` | adds `docker-compose.core.yml` as an override (absolute paths, the updater needs them) |
+| `COMPOSE_FILE` | `--core` | adds `docker-compose.core.yml` as an override (absolute paths, the updater needs them). Compose also hands it, with `COMPOSE_PROFILES`, to web as `MANTLE_COMPOSE_FILE` / `MANTLE_COMPOSE_PROFILES`, so the onboarding check knows a core box without `helpers` sheds Tika on purpose |
+| `MANTLE_SETUP_CODE` | installer (generated once, never rotated) | the code first-run signup asks for until the first account exists; web only. `scripts/install.sh --setup-code` prints it; unset means no code is asked for ([onboarding.md](./onboarding.md) section 8) |
 | `MEDIA_SIDECAR_TOKEN` | you (`openssl rand -hex 32`) | bearer between the app and the media sidecar; the installer never sets it |
 | `SANDBOXD_TOKEN` | installer when sandboxes are on | bearer between web/api and `sandboxd`; never rotated on a re-run |
 | `MANTLE_SANDBOXES_HOST_DIR` | installer (`<data-dir>/sandboxes`) | host-absolute bind source `sandboxd` hands to the Docker daemon |

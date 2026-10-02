@@ -68,7 +68,8 @@ export type KnownEnvName =
   | 'MANTLE_BACKUP_DIR'
   | 'MANTLE_BUILD_TIME'
   | 'MANTLE_CLIENT_ORIGIN'
-  | 'MANTLE_CORE_SHAPE'
+  | 'MANTLE_COMPOSE_FILE'
+  | 'MANTLE_COMPOSE_PROFILES'
   | 'MANTLE_CORRECTED_SALIENCE'
   | 'MANTLE_CRASH_TEST'
   | 'MANTLE_DETACHED_DEV'
@@ -223,8 +224,8 @@ export const INTERNAL_ENV: Partial<Record<KnownEnvName, string>> = {
   MANTLE_HEARTBEAT_FILE: 'platform: per-container heartbeat path for the healthcheck',
   MANTLE_UPDATE_SIGNAL_DIR: 'platform: the /signal mount the updater watches',
   MANTLE_PRINT_ORIGIN: 'platform: how the print sidecar reaches the web tier, set by compose',
-  MANTLE_CORE_SHAPE:
-    'platform: scripts/install.sh --core / --no-core writes it, compose passes it to web',
+  MANTLE_COMPOSE_FILE: "platform: compose passes the box's COMPOSE_FILE to web",
+  MANTLE_COMPOSE_PROFILES: "platform: compose passes the box's COMPOSE_PROFILES to web",
   DBOS_SYSTEM_DATABASE_URL: 'platform: defaults to DATABASE_URL; split only by the runner image',
   APP_RUNTIME_OUT: 'platform: output path for the app-runtime build script',
   MANTLE_APP_RUNTIME_MANIFEST: 'platform: override for the generated app-runtime manifest',

@@ -721,9 +721,13 @@ services:
       # while no account exists. Web only, NOT the shared anchor: no other
       # service needs it. Empty = no code asked for (a box installed before it).
       MANTLE_SETUP_CODE: ${MANTLE_SETUP_CODE:-}
-      # 1 on a brain-core box (scripts/install.sh --core writes it): the
-      # onboarding stack check then treats the shed Tika as optional.
-      MANTLE_CORE_SHAPE: ${MANTLE_CORE_SHAPE:-}
+      # The box's own COMPOSE_FILE / COMPOSE_PROFILES, as compose resolved them
+      # for THIS `up` (from .env, the updater's rolls included). Web derives
+      # the deploy shape from them (lib/compose-shape.ts): on a core box
+      # without the helpers profile the onboarding check treats the shed Tika
+      # as optional. Derived on every start, so it cannot go stale.
+      MANTLE_COMPOSE_FILE: ${COMPOSE_FILE:-}
+      MANTLE_COMPOSE_PROFILES: ${COMPOSE_PROFILES:-}
     volumes:
       - ${MANTLE_DATA_DIR:-./data}/files:/data/files
       - ${MANTLE_DATA_DIR:-./data}/backups:/data/backups

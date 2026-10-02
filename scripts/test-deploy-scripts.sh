@@ -20,7 +20,8 @@
 #            refuses the swap, keeps the old file, and names the variables
 #   caddy:   shapes are installed before the Caddyfile; a shape change forces
 #            the caddy recreate even when the Caddyfile itself is modified
-#   scripts: .pre-adopt backups are pruned to the newest three per script
+#   scripts: .pre-adopt backups are pruned to the newest three per script;
+#            a script the release adds is installed at the updater's startup
 #   pull:    install.sh retries a failed image pull with backoff, and never
 #            runs `up` on a partial pull; the client step checks the server
 #            network exists before joining it
@@ -323,6 +324,25 @@ check "the fresh backup holds the previous copy" sh -c "grep -l 'echo old instal
 check "other scripts got no backup (they were absent)" sh -c "! ls '$T/stack/scripts'/sanity.sh.pre-adopt.* >/dev/null 2>&1"
 
 # ═════════════════════════════════════════════════════════════════════════════
+echo "updater.sh: a script the release adds is installed at startup, not a roll late"
+# refresh_scripts runs in the OLD updater with the OLD SCRIPT_NAMES; the copy
+# it swaps in re-execs and must fetch what that list missed (onboard.sh).
+T="$WORK/topup"; fake_stack "$T"
+for s in $SCRIPTS; do printf '#!/bin/sh\necho %s\n' "$s" > "$T/img/scripts/$s"; done
+for s in $SCRIPTS; do [ "$s" = onboard.sh ] || { cp "$T/img/scripts/$s" "$T/stack/scripts/$s"; cp "$T/img/scripts/$s" "$T/stack/scripts/$s.release"; }; done
+out=$(updater_run "$T/stack" "$T/sig" "$T/img" 'container_image() { echo sha256:running; }; topup_scripts >/dev/null; echo "SCRIPTS_REFRESH=$SCRIPTS_REFRESH IMG=$IMG"')
+check "the missing script is installed from the running web image" sh -c "test '$out' = 'SCRIPTS_REFRESH=refreshed IMG=sha256:running' && cmp -s '$T/stack/scripts/onboard.sh' '$T/img/scripts/onboard.sh'"
+check "it is executable and has its baseline" sh -c "test -x '$T/stack/scripts/onboard.sh' && test -f '$T/stack/scripts/onboard.sh.release'"
+out=$(updater_run "$T/stack" "$T/sig" "$T/img" 'container_image() { echo sha256:running; }; docker() { echo "docker $*" >> "'"$T"'/dockercalls"; }; topup_scripts; echo "SCRIPTS_REFRESH=$SCRIPTS_REFRESH"')
+check "nothing missing: a no-op, docker never called" sh -c "test '$out' = 'SCRIPTS_REFRESH=none' && test ! -e '$T/dockercalls'"
+rm -f "$T/stack/scripts/onboard.sh" "$T/stack/scripts/onboard.sh.release"
+out=$(updater_run "$T/stack" "$T/sig" "$T/img" 'container_image() { :; }; topup_scripts; echo "SCRIPTS_REFRESH=$SCRIPTS_REFRESH"')
+check "web not running: nothing to read from, nothing done" sh -c "test '$out' = 'SCRIPTS_REFRESH=none' && test ! -e '$T/stack/scripts/onboard.sh'"
+startup=$(grep -n '^  topup_scripts$' "$ROOT/infra/updater/updater.sh" | cut -d: -f1)
+loop=$(grep -n '^while true; do$' "$ROOT/infra/updater/updater.sh" | cut -d: -f1)
+check "startup calls it before the poll loop" test -n "$startup" -a -n "$loop" -a "${startup:-0}" -lt "${loop:-0}"
+
+# ═════════════════════════════════════════════════════════════════════════════
 echo "install.sh: image pull retries, and no 'up' without every image"
 # A fresh install (2026-09-28) lost one layer to a reset connection; the pull
 # aborted, `up` created 5 of 24 services, and the client step died on a network
@@ -472,6 +492,16 @@ onboard_run --password-file "$T/nope" || true
 check "an unreadable secret file stops before docker exec" sh -c "grep -q \"Can't read the password file\" '$T/out' && ! grep -q 'exec' '$T/calls'"
 onboard_run --yes || true
 check "without a terminal or files it still uses exec -T (no -it)" sh -c "grep -q 'exec -T web' '$T/calls' && ! grep -q 'exec -it' '$T/calls'"
+# Relative secret paths mean relative to where the operator ran it, not the
+# stack dir the script cd's into; --flag=path works too.
+mkdir -p "$T/elsewhere"; printf 'rel-pass\n' > "$T/elsewhere/pw"; printf 'rel-key\n' > "$T/elsewhere/key"
+rm -f "$T/calls" "$T/stdin"
+(cd "$T/elsewhere" && T="$T" PATH="$T/bin:$PATH" bash "$T/stack/scripts/onboard.sh" --yes --password-file=pw --key-file ./key < /dev/null > "$T/out" 2>&1) || true
+check "relative paths resolve from the caller's directory, --flag=path form included" sh -c "grep -qx 'password=rel-pass' '$T/stdin' && grep -qx 'openrouter_key=rel-key' '$T/stdin'"
+onboard_run --yes --key-file || true
+check "a path flag given last is a clear error, and nothing is exec'd" sh -c "grep -q -- '--key-file needs a path' '$T/out' && ! grep -q 'exec' '$T/calls' 2>/dev/null"
+onboard_run --password-file= || true
+check "an empty --flag= is the same clear error" grep -q -- '--password-file needs a path' "$T/out"
 
 # ═════════════════════════════════════════════════════════════════════════════
 echo "sanity.sh: our own HTTP->HTTPS redirect is not 'not Mantle'"
@@ -726,6 +756,9 @@ sleep() { exit 0; }
 }
 roll_case() { # <name>: a stack with a request for v8, images and containers
   T="$WORK/roll-$1"; fake_stack "$T"; fake_dump "$T"
+  # A configured box has its operator scripts, so the updater's startup
+  # top-up (topup_scripts) has nothing to fetch before the roll begins.
+  for s in $SCRIPTS; do [ -f "$T/stack/scripts/$s" ] || printf '#!/bin/sh\n' > "$T/stack/scripts/$s"; done
   printf 'services: {client_web: {image: c}}\n' > "$T/stack/docker-compose.client.yml"
   printf 'MANTLE_PRE_ROLL_MIN_FREE_MB=0\n' >> "$T/stack/.env"
   printf '{"target":"v8"}\n' > "$T/sig/request.json"
