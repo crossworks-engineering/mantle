@@ -89,19 +89,19 @@ export type ToolHandler =
     };
 
 /**
- * The admin's "Team apps may use" switch on an OUTSIDE tool (mcp or http):
+ * The admin's "External access" switch on an OUTSIDE tool (mcp or http):
  * team members' runs of a team app may call it (packages/tools/src/
- * team-apps.ts, docs/member-logins.md). NULL on the row is off. Counts only
+ * external-access.ts, docs/member-logins.md). NULL on the row is off. Counts only
  * while `handlerSig` equals the signature of the row's current handler, so a
  * changed handler voids it whoever changed it.
  */
-export type ToolTeamApps = {
+export type ToolExternalAccess = {
   /** When the admin confirmed the tool only reads (ISO time). */
   confirmedReadOnlyAt: string;
   /** Who switched it on: an admin on the web (their login), or the owner's
    *  own MCP client or dev tool console. */
   by: { via: 'web' | 'mcp' | 'dev-tools'; actorId?: string; actorEmail?: string };
-  /** sha256 of the handler the admin looked at (teamAppsHandlerSig). */
+  /** sha256 of the handler the admin looked at (externalAccessHandlerSig). */
   handlerSig: string;
 };
 
@@ -126,8 +126,8 @@ export const tools = pgTable(
     handler: jsonb('handler').$type<ToolHandler>().notNull(),
     requiresConfirm: boolean('requires_confirm').default(false).notNull(),
     enabled: boolean('enabled').default(true).notNull(),
-    /** "Team apps may use" (migration 0215); NULL = off. */
-    teamApps: jsonb('team_apps').$type<ToolTeamApps>(),
+    /** "External access" (migrations 0215, 0225); NULL = off. */
+    externalAccess: jsonb('external_access').$type<ToolExternalAccess>(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },

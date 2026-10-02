@@ -31,6 +31,7 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db, toolGroups, type Tool } from '@mantle/db';
 import { resolveTool } from './resolve';
+import { externalToolVerdict } from './external-access';
 
 /**
  * The tools a client's app may call: the client chat's tools
@@ -94,6 +95,18 @@ export async function clientAppToolVerdict(
     };
   }
   if (!CLIENT_APP_TOOL_SLUGS.includes(slug)) {
+    // Off the list, only an outside tool with External access may pass
+    // (external-access.ts, 2026-10-02): it reads no brain text, so the C4
+    // reason for the narrow list does not apply, and the admin confirmed it
+    // only reads. A built-in's slug is refused before any lookup, as before;
+    // only another slug is looked up, for an outside tool.
+    const { getBuiltin } = await import('./registry');
+    if (!getBuiltin(slug)) {
+      const outside = await resolveTool(ownerId, slug);
+      if (outside && outside.handler.kind !== 'builtin') {
+        return externalToolVerdict(outside, slug, 'client');
+      }
+    }
     return { ok: false, status: 403, reason: notForClients(slug) };
   }
   const tool = await resolveTool(ownerId, slug);

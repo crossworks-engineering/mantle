@@ -19,11 +19,12 @@
  *      chat must not become callable 60 times a minute (audit 2026-09-27;
  *      `spends` since audit F17, as a read can spend too);
  *   5. an ENABLED tool group at team level or lower holds it.
- * One way past rules 3 and 4 for an OUTSIDE tool (mcp or http): an admin
- * switched on "Team apps may use" on it and confirmed it only reads
- * (team-apps.ts; decided 2026-10-01). The switch counts only while the
- * handler is the one the admin confirmed; rules 1, 2 and 5 and "no
- * confirmation" still hold every call. Never for recipe or shell tools.
+ * An OUTSIDE tool (mcp or http) takes another path after rule 2: an admin
+ * switched on "External access" on it and confirmed it only reads
+ * (external-access.ts; widened 2026-10-02). It needs no group level: the
+ * app's sharing decides who runs it. The switch counts only while the
+ * handler is the one the admin confirmed and the tool needs no confirmation.
+ * Never for recipe or shell tools.
  * The caller then dispatches inside `withViewer('team', …)` on a team surface
  * that carries the login, so row security still decides what the tool reads.
  *
@@ -34,7 +35,7 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db, toolGroups, type Tool } from '@mantle/db';
 import { resolveTool } from './resolve';
-import { teamAppsActive } from './team-apps';
+import { externalToolVerdict } from './external-access';
 
 /** The group levels a member's app may draw tools from. */
 const MEMBER_GROUP_LEVELS = ['team', 'client', 'public'];
@@ -104,25 +105,12 @@ export async function memberAppToolVerdict(
   const tool = await resolveTool(ownerId, slug);
   if (!tool) return { ok: false, status: 404, reason: `tool '${slug}' not found` };
   if (tool.handler.kind !== 'builtin') {
-    // An outside tool an admin opened to team apps (team-apps.ts): its
-    // read-only confirmation stands in for the built-in flags below.
-    // teamAppsActive refuses recipe and shell tools, a write method, a
-    // tool that needs confirmation and a handler changed since.
-    if (!teamAppsActive(tool)) {
-      return {
-        ok: false,
-        status: 403,
-        reason: `The tool '${slug}' can't be used from a team app (only built-in tools are, and outside tools an admin switched on for team apps).`,
-      };
-    }
-    if (!(await inTeamLevelGroup(ownerId, slug))) {
-      return {
-        ok: false,
-        status: 403,
-        reason: `The tool '${slug}' is not in a team-level tool group, so team members can't use it.`,
-      };
-    }
-    return { ok: true, tool };
+    // An outside tool with External access (external-access.ts): the admin's
+    // read-only confirmation stands in for the built-in flags below, and the
+    // app's sharing, not a group level, decides who calls it. It refuses
+    // recipe and shell tools, a write method, a tool that needs confirmation
+    // and a handler changed since.
+    return externalToolVerdict(tool, slug, 'member');
   }
   if (MEMBER_APP_REFUSED_SLUGS.includes(tool.handler.ref)) {
     return { ok: false, status: 403, reason: `The tool '${slug}' is not available in team apps.` };

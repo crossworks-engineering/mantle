@@ -23,7 +23,7 @@ const Body = z.object({
  * list, read-only) and runs on the TEAM role, on a team surface that names
  * the login (so team refusals apply), with the private corpus off. An
  * outside tool (mcp or http) passes only when an admin switched on "Team
- * apps may use" on it (team-apps.ts), on the same role and surface. A
+ * apps may use" on it (external-access.ts), on the same role and surface. A
  * client-level app gets the client rules (clientAppToolVerdict) and runs on
  * the CLIENT role, on a client surface, as a client's run does: its
  * database is read by every client, so nothing above client level may land
@@ -55,7 +55,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     appNodeId: app.id,
     actorId: member.loginId,
     kind: 'tool',
-    // An outside tool (one an admin opened to team apps) names its kind, so
+    // An outside tool (one with External access) names its kind, so
     // the log shows which member calls reached outside the brain.
     detail: verdict.ok
       ? {

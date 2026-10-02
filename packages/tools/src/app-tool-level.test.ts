@@ -2,8 +2,8 @@
  * The one app tool level rule (client tier audit 2026-09-30, L1): a
  * client-level app's tools run at client level for every runner (owner,
  * member and client brokers alike); any other app keeps the runner's rules.
- * The author warnings follow the same rule. No database: the refusals pinned here all happen before any
- * lookup (the team and client rules themselves are proven on Postgres in
+ * The author warnings follow the same rule. No database: the lookups are
+ * stood in (the team and client rules themselves are proven on Postgres in
  * {member,client}-app-tools.viewer.db.test.ts).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -13,10 +13,26 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock('./resolve', () => ({
+  // 'missing' is no tool; 'weather' is an outside (http) tool without
+  // External access; every other slug is its own built-in.
   resolveTool: vi.fn(async (_owner: string, slug: string) =>
     slug === 'missing'
       ? null
-      : { slug, enabled: true, requiresConfirm: false, handler: { kind: 'http' } },
+      : slug === 'weather'
+        ? {
+            slug,
+            enabled: true,
+            requiresConfirm: false,
+            handler: { kind: 'http', url: 'https://x.test' },
+            externalAccess: null,
+          }
+        : {
+            slug,
+            enabled: true,
+            requiresConfirm: false,
+            handler: { kind: 'builtin', ref: slug },
+            externalAccess: null,
+          },
   ),
   resolveTools: vi.fn(),
 }));
@@ -62,13 +78,20 @@ describe('appToolLevel: a client app runs client rules for everyone', () => {
 });
 
 describe('appToolVerdict', () => {
-  it('at client level refuses the brain-wide and team reads before any lookup', async () => {
+  it('at client level refuses the brain-wide and team reads (built-ins off the client list)', async () => {
     for (const slug of ['page_get', 'contact_list', 'table_rows_list', 'search_chunks']) {
       const v = await appToolVerdict('client', 'brain', [slug], slug);
       expect(v, slug).toMatchObject({ ok: false, status: 403 });
       if (!v.ok) expect(v.reason).toMatch(/client apps/);
     }
+    // A built-in's slug is refused before any lookup.
     expect(resolveTool).not.toHaveBeenCalled();
+  });
+
+  it('at client level refuses an outside tool without External access', async () => {
+    const v = await appToolVerdict('client', 'brain', ['weather'], 'weather');
+    expect(v).toMatchObject({ ok: false, status: 403 });
+    if (!v.ok) expect(v.reason).toMatch(/External access/);
   });
 
   it('at none refuses every tool, declared or not', async () => {

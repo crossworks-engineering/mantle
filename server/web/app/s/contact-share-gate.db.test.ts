@@ -459,7 +459,7 @@ describe.skipIf(!URL)('contact shares through /s on Postgres', () => {
       });
     });
 
-    it('the tool broker refuses every call, on a contact share and an open link', async () => {
+    it('the tool broker refuses a built-in on a contact share (only External access tools run there)', async () => {
       const a = await signIn(tok.aApp!, codeA);
       const res = await r.tool!(
         post(`/s/${tok.aApp}/tool-broker`, { slug: 'note_list' }, a.cookie),
@@ -469,7 +469,9 @@ describe.skipIf(!URL)('contact shares through /s on Postgres', () => {
       const rows = await trail(tok.aApp!, 'refused', (all) =>
         all.some((x) => x.detail.refused === 'tools'),
       );
-      expect(rows.map((x) => x.detail)).toContainEqual({ refused: 'tools' });
+      expect(rows.map((x) => x.detail)).toContainEqual(
+        expect.objectContaining({ refused: 'tools', slug: 'note_list' }),
+      );
     });
   });
 

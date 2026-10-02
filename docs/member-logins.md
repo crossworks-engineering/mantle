@@ -722,7 +722,7 @@ so it is listed like any team app there.
   team surface that names the login, with the private corpus off: row
   security decides what it reads (team, client and public items), and team
   refusals apply. An outside tool (MCP or http) passes only when an admin
-  switched on "Team apps may use" on it (next section). `app_tools_set`,
+  switched "External access" on for it (next section). `app_tools_set`,
   `app_publish` and `access_set` on an app return `warnings` for every
   declared tool its members would be refused, so the warnings follow the
   switch.
@@ -790,44 +790,55 @@ so it is listed like any team app there.
   card's `audience` is `MemberAppLevel` (team, client or public). The routes
   check their bodies with `satisfies`.
 
-### Outside tools in team apps ("Team apps may use", 2026-10-01)
+### External access: outside tools in shared apps (2026-10-02)
 
 A site adds its own connectors: an MCP server or an http API, for example a
 read-only SQL bridge to a site database. None ship with Mantle, and the
 brain cannot judge what an outside tool does. So an admin decides, per tool,
-in the brain's data: the switch "Team apps may use" on the tool row
-(`packages/tools/src/team-apps.ts`).
+in the brain's data: the switch "External access" on the tool row
+(`packages/tools/src/external-access.ts`). It shipped on 2026-10-01 as
+"Team apps may use", for members only; on 2026-10-02 it became "External
+access": whoever an app is shared with may need the site service it calls
+(for example one app, given to a contact, that reads a site database).
 
 - **Which tools.** MCP and http tools only. An http tool must not send PUT,
   PATCH or DELETE. Never a recipe (its steps can call tools that write, and
   they change when a step tool changes) and never a shell tool. Built-ins
-  need no switch: their `readOnly` flag decides. A tool that requires
-  confirmation cannot get it (nobody is there to confirm in an app loop).
-- **Who.** Only an admin switches it on: Settings > Tools on the tool
-  (`PUT /api/tools/:id/team-apps` `{ allow, readOnlyConfirmed }`, admin
-  logins only), or the owner's own MCP client or dev tool console
-  (`api_tool_update` with `team_apps: true, read_only_confirmed: true`). An
-  in-brain agent may switch it off, never on. The UI warns: every team
-  member can call this tool through any team app that declares it, and also
-  BY HAND (a request to the member tool broker from the browser, with their
-  own login) with ANY input, not only what the app's screens send. For a
-  tool that takes free SQL, that means the member can read anything the
-  connector can read.
+  need no switch: their `readOnly` flag and the level rules decide. A tool
+  that requires confirmation cannot get it (nobody is there to confirm in an
+  app loop).
+- **Who switches it.** Only an admin switches it on: Settings > Tools on the
+  tool (`PUT /api/tools/:id/external-access` `{ allow, readOnlyConfirmed }`,
+  admin logins only), or the owner's own MCP client or dev tool console
+  (`api_tool_update` with `external_access: true, read_only_confirmed:
+true`). An in-brain agent may switch it off, never on.
+- **Who may call it.** The app's sharing decides, nothing else (no tool
+  group level gates it): a member running a team or public app (the member
+  tool broker), anyone running a client-level app (the client rules, for
+  every runner), and a contact on a CONTACT-share link who passed the code
+  (the `/s` tool broker). Never an open link (no contact): anyone with the
+  URL would be the caller. The app must declare the tool. The UI warns:
+  everyone the app reaches can call the tool BY HAND (a request to the tool
+  broker from the browser, with their own login or the contact's link) with
+  ANY input, not only what the app's screens send. For a tool that takes
+  free SQL, that means they can read anything the connector can read.
 - **The read-only confirmation** is required to switch on. It is stored on
-  the row (`tools.team_apps`, migration 0215): when, which admin (their
-  login, or the owner's MCP client), and a sha256 signature of the handler
-  the admin looked at. Each switch also writes an `audit_log` row
-  (`tool.team_apps.on` / `tool.team_apps.off`) with the actor.
-- **Still required, every call.** The app declares the tool; it is not on
-  the refused list; it is enabled and needs no confirmation; an ENABLED
-  tool group at team level or lower holds it (for an MCP connector, set its
-  group to team level). Spending built-ins stay refused; the brain cannot
-  know whether an outside tool spends, so the admin's confirmation covers
-  that too. The call runs as every member call: the team role, a team
-  surface that names the login, the private corpus off. The remote MCP call
-  itself runs on the admin pool (`asSystem`), because an OAuth connector
-  may refresh its own token there; it reads no brain content.
-- **Off.** Switching off refuses the next call (the broker reads the row
+  the row (`tools.external_access`, migration 0215, renamed from
+  `team_apps` by 0225): when, which admin (their login, or the owner's MCP
+  client), and a sha256 signature of the handler the admin looked at. Each
+  switch also writes an `audit_log` row (`tool.external_access.on` /
+  `tool.external_access.off`) with the actor.
+- **Every call.** The app declares the tool; it is enabled and needs no
+  confirmation; the switch holds for the current handler. An MCP tool's
+  connector must be enabled (the dispatch reads it every call). Spending
+  built-ins stay refused; the brain cannot know whether an outside tool
+  spends, so the admin's confirmation covers that too. A member's call runs
+  on the team role and a team surface, a client app's on the client role
+  and a client surface, a contact's on the public role and a contact
+  surface. The remote MCP call itself runs on the admin pool (`asSystem`),
+  because an OAuth connector may refresh its own token there; it reads no
+  brain content. On a link, no built-in ever runs.
+- **Off.** Switching off refuses the next call (the brokers read the row
   every call). The switch counts only while the handler's signature equals
   the stored one, so a changed handler voids it whoever changed it (an
   edit, a connector sync, SQL by hand); bookkeeping a sync writes
@@ -835,12 +846,14 @@ in the brain's data: the switch "Team apps may use" on the tool row
   through the tool API also clears the column. A connector moved to another
   server or another credential clears the switch on all its tools. Deleting
   the tool deletes the switch with the row.
-- **Not for clients or the public.** A client-level app keeps the client
-  rules for every runner (only the client tools, never an outside tool).
-  A public share link's apps run no tools.
-- **Audit.** Every member call, allowed or refused, lands in the app's
-  access log with the login; an allowed outside call adds
-  `handler: 'mcp' | 'http'` to the detail.
+- **Audit.** Every call, allowed or refused, lands in the app's access log
+  with the member or client login, or the contact and the share; an allowed
+  outside call adds `handler: 'mcp' | 'http'` to the detail. A contact's
+  call also lands in the share's trail (`share_access_log` kind `tool`, or
+  `refused`).
+- **Later, not now.** An optional per-app list of fixed queries in the app
+  manifest, where the brokers run only those (with parameters) for anyone
+  below admin. Not built.
 
 ## 8. The member's own chrome (Phase 5)
 

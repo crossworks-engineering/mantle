@@ -1,16 +1,17 @@
 /**
- * "Team apps may use" on a real, migrated Postgres (team-apps.ts,
- * docs/member-logins.md "Outside tools in team apps"). The remote MCP server
- * is a fake: `mcpCallRemoteTool` is stood in, so no connector or site data is
- * ever reached. Proves: an outside tool is refused until an admin switches it
- * on with the read-only confirmation; on, it still needs an enabled
- * team-level group and the app's declaration; it runs under the team role;
- * a client-level app never gets it; confirm-gated, shell and recipe tools
- * never get it; switching off, a changed handler or a moved connector
- * refuses the next call; the author warnings follow the switch; only the
- * owner's MCP client may switch it on through `api_tool_update`; each switch
- * writes an audit row with the actor.
- *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/tools/src/team-apps.viewer.db.test.ts
+ * "External access" on a real, migrated Postgres (external-access.ts,
+ * docs/member-logins.md "External access: outside tools in shared apps").
+ * The remote MCP server is a fake: `mcpCallRemoteTool` is stood in, so no
+ * connector or site data is ever reached. Proves: an outside tool is refused
+ * until an admin switches it on with the read-only confirmation; on, it needs
+ * the app's declaration and nothing else (no group level), for a member, a
+ * client app and a contact link alike; it runs under the caller's role; a
+ * disabled connector still refuses the call; confirm-gated, shell and recipe
+ * tools never get it, nor any built-in on a link; switching off, a changed
+ * handler or a moved connector refuses the next call; the author warnings
+ * follow the switch; only the owner's MCP client may switch it on through
+ * `api_tool_update`; each switch writes an audit row with the actor.
+ *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/tools/src/external-access.viewer.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -37,10 +38,10 @@ vi.mock('./mcp-client', async (importOriginal) => ({
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
-describe.skipIf(!URL)('team apps may use an outside tool', () => {
+describe.skipIf(!URL)('external access to an outside tool', () => {
   type Db = typeof import('@mantle/db');
   let m: Db;
-  let ta: typeof import('./team-apps');
+  let ta: typeof import('./external-access');
   let level: typeof import('./app-tool-level');
   let crud: typeof import('./crud');
   let dispatch: typeof import('./dispatch');
@@ -65,9 +66,13 @@ describe.skipIf(!URL)('team apps may use an outside tool', () => {
   const verdict = (slug: string, declared = DECLARED) =>
     level.appToolVerdict('team', anchor, declared, slug);
   const switchOn = (slug: string) =>
-    ta.setToolTeamApps(anchor, ids[slug]!, { allow: true, readOnlyConfirmed: true, by: ADMIN });
+    ta.setToolExternalAccess(anchor, ids[slug]!, {
+      allow: true,
+      readOnlyConfirmed: true,
+      by: ADMIN,
+    });
   const switchOff = (slug: string) =>
-    ta.setToolTeamApps(anchor, ids[slug]!, { allow: false, by: ADMIN });
+    ta.setToolExternalAccess(anchor, ids[slug]!, { allow: false, by: ADMIN });
   const toolDef = (slug: string) => {
     const def = builtins.BUILTIN_TOOLS.find((t) => t.slug === slug);
     if (!def) throw new Error(`${slug} is not a builtin any more`);
@@ -78,7 +83,7 @@ describe.skipIf(!URL)('team apps may use an outside tool', () => {
     process.env.DATABASE_URL = URL;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('@mantle/db');
-    ta = await import('./team-apps');
+    ta = await import('./external-access');
     level = await import('./app-tool-level');
     crud = await import('./crud');
     dispatch = await import('./dispatch');
@@ -145,12 +150,12 @@ describe.skipIf(!URL)('team apps may use an outside tool', () => {
     expect(await verdict('site_query')).toMatchObject({
       ok: false,
       status: 403,
-      reason: expect.stringMatching(/only built-in tools are/),
+      reason: expect.stringMatching(/without External access/),
     });
   });
 
   it('will not switch on without the read-only confirmation', async () => {
-    const res = await ta.setToolTeamApps(anchor, ids.site_query!, { allow: true, by: ADMIN });
+    const res = await ta.setToolExternalAccess(anchor, ids.site_query!, { allow: true, by: ADMIN });
     expect(res).toMatchObject({
       ok: false,
       status: 400,
@@ -159,7 +164,7 @@ describe.skipIf(!URL)('team apps may use an outside tool', () => {
     expect((await verdict('site_query')).ok).toBe(false);
   });
 
-  it('on + an enabled team-level group + declared: allowed, and it runs under the team role', async () => {
+  it('on + declared: a member may call it, and it runs under the team role', async () => {
     const res = await switchOn('site_query');
     expect(res.ok).toBe(true);
     const v = await verdict('site_query');
@@ -178,21 +183,24 @@ describe.skipIf(!URL)('team apps may use an outside tool', () => {
     expect(await verdict('site_query', ['site_http'])).toMatchObject({ ok: false, status: 403 });
   });
 
-  it('on but held only by an admin-level group: refused', async () => {
+  it('on: a group level does not gate it (held only by an admin-level group)', async () => {
     expect((await switchOn('site_admin_only')).ok).toBe(true);
-    expect(await verdict('site_admin_only')).toMatchObject({
-      ok: false,
-      status: 403,
-      reason: expect.stringMatching(/team-level tool group/),
-    });
+    expect((await verdict('site_admin_only')).ok).toBe(true);
   });
 
-  it('on but its team-level group switched off: refused on the next call', async () => {
+  it('its connector switched off: the call is refused (dispatch reads the connector each call)', async () => {
     await exec(
       sqlTag`update tool_groups set enabled = false where owner_id = ${anchor} and slug = 'mcp-site'`,
     );
     try {
-      expect((await verdict('site_query')).ok).toBe(false);
+      const v = await verdict('site_query');
+      if (!v.ok) throw new Error(v.reason);
+      fake.calls.length = 0;
+      const out = await m.withViewer('team', () =>
+        dispatch.dispatchTool(v.tool, {}, { ownerId: anchor, surface: { kind: 'team' } }),
+      );
+      expect(out).toMatchObject({ ok: false, error: expect.stringMatching(/disabled/) });
+      expect(fake.calls).toEqual([]);
     } finally {
       await exec(
         sqlTag`update tool_groups set enabled = true where owner_id = ${anchor} and slug = 'mcp-site'`,
@@ -201,15 +209,66 @@ describe.skipIf(!URL)('team apps may use an outside tool', () => {
     expect((await verdict('site_query')).ok).toBe(true);
   });
 
-  it('a client-level app never gets an outside tool, switch or not', async () => {
-    expect((await verdict('site_query')).ok).toBe(true);
-    expect(await level.appToolVerdict('client', anchor, DECLARED, 'site_query')).toMatchObject({
-      ok: false,
-      status: 403,
-    });
+  it('a client-level app may call it while the switch is on, under the client role', async () => {
+    const v = await level.appToolVerdict('client', anchor, DECLARED, 'site_query');
+    if (!v.ok) throw new Error(v.reason);
+    const scope = level.appToolScope('client', { loginId: randomUUID(), name: 'A client' });
+    fake.calls.length = 0;
+    const out = await m.withViewer(scope.viewer, () =>
+      dispatch.dispatchTool(v.tool, { q: 'c' }, { ownerId: anchor, surface: scope.surface }),
+    );
+    expect(out).toMatchObject({ ok: true, output: { rows: [{ n: 1 }] } });
+    expect(fake.calls).toEqual([{ toolName: 'query', args: { q: 'c' } }]);
     // An admin's or a member's run of a client app gets the client rules too.
     expect(level.appToolLevel('team', 'client')).toBe('client');
     expect(level.appToolLevel('admin', 'client')).toBe('client');
+    // Off: refused, and a built-in off the client list stays refused.
+    await switchOff('site_query');
+    try {
+      expect(await level.appToolVerdict('client', anchor, DECLARED, 'site_query')).toMatchObject({
+        ok: false,
+        status: 403,
+        reason: expect.stringMatching(/client app/),
+      });
+      expect(await level.appToolVerdict('client', anchor, DECLARED, 'quick_sum')).toMatchObject({
+        ok: false,
+        status: 403,
+      });
+    } finally {
+      await switchOn('site_query');
+    }
+  });
+
+  it('a contact link: only a declared outside tool with the switch on, never a built-in', async () => {
+    const v = await ta.contactAppToolVerdict(anchor, DECLARED, 'site_query');
+    if (!v.ok) throw new Error(v.reason);
+    fake.calls.length = 0;
+    const out = await m.withViewer('public', () =>
+      dispatch.dispatchTool(
+        v.tool,
+        { q: 'l' },
+        {
+          ownerId: anchor,
+          surface: { kind: 'contact', contactId: randomUUID(), shareId: randomUUID() },
+        },
+      ),
+    );
+    expect(out).toMatchObject({ ok: true, output: { rows: [{ n: 1 }] } });
+    expect(fake.calls).toEqual([{ toolName: 'query', args: { q: 'l' } }]);
+    expect(await ta.contactAppToolVerdict(anchor, ['site_http'], 'site_query')).toMatchObject({
+      ok: false,
+      status: 403,
+    });
+    expect(await ta.contactAppToolVerdict(anchor, DECLARED, 'quick_sum')).toMatchObject({
+      ok: false,
+      status: 403,
+      reason: expect.stringMatching(/built in/),
+    });
+    expect(await ta.contactAppToolVerdict(anchor, DECLARED, 'site_http')).toMatchObject({
+      ok: false,
+      status: 403,
+      reason: expect.stringMatching(/shared link/),
+    });
   });
 
   it('a confirm-gated tool cannot be switched on, and a gate added later refuses the call', async () => {
@@ -246,9 +305,11 @@ describe.skipIf(!URL)('team apps may use an outside tool', () => {
       const forged = JSON.stringify({
         confirmedReadOnlyAt: 't',
         by: { via: 'web' },
-        handlerSig: ta.teamAppsHandlerSig(handler),
+        handlerSig: ta.externalAccessHandlerSig(handler),
       });
-      await exec(sqlTag`update tools set team_apps = ${forged}::jsonb where id = ${ids[slug]!}`);
+      await exec(
+        sqlTag`update tools set external_access = ${forged}::jsonb where id = ${ids[slug]!}`,
+      );
       expect(await verdict(slug), slug).toMatchObject({ ok: false, status: 403 });
     }
   });
@@ -259,7 +320,9 @@ describe.skipIf(!URL)('team apps may use an outside tool', () => {
       by: { via: 'web' },
       handlerSig: 'x',
     });
-    await exec(sqlTag`update tools set team_apps = ${forged}::jsonb where id = ${ids.quick_sum!}`);
+    await exec(
+      sqlTag`update tools set external_access = ${forged}::jsonb where id = ${ids.quick_sum!}`,
+    );
     expect(await verdict('quick_sum')).toMatchObject({ ok: false, status: 403 });
   });
 
@@ -281,7 +344,7 @@ describe.skipIf(!URL)('team apps may use an outside tool', () => {
     const updated = await crud.updateTool(anchor, ids.site_http!, {
       handler: { kind: 'http', url: 'https://api.example.test/other', method: 'GET' },
     });
-    expect(updated?.teamApps).toBeNull();
+    expect(updated?.externalAccess).toBeNull();
     expect((await verdict('site_http')).ok).toBe(false);
     await crud.updateTool(anchor, ids.site_http!, {
       handler: { kind: 'http', url: 'https://api.example.test/rows', method: 'DELETE' },
@@ -297,7 +360,7 @@ describe.skipIf(!URL)('team apps may use an outside tool', () => {
     const moved = JSON.stringify({ kind: 'mcp', group: 'mcp-site', toolName: 'execute' });
     await exec(sqlTag`update tools set handler = ${moved}::jsonb where id = ${ids.site_query!}`);
     expect((await verdict('site_query')).ok).toBe(false);
-    expect((await crud.getToolById(anchor, ids.site_query!))?.teamApps).toMatchObject({
+    expect((await crud.getToolById(anchor, ids.site_query!))?.externalAccess).toMatchObject({
       on: false,
     });
     const back = JSON.stringify({ kind: 'mcp', group: 'mcp-site', toolName: 'query' });
@@ -307,9 +370,9 @@ describe.skipIf(!URL)('team apps may use an outside tool', () => {
 
   it('a connector moved to another server clears every switch on its tools', async () => {
     expect((await verdict('site_query')).ok).toBe(true);
-    await ta.clearConnectorTeamApps(anchor, 'mcp-site');
+    await ta.clearConnectorExternalAccess(anchor, 'mcp-site');
     expect((await verdict('site_query')).ok).toBe(false);
-    expect((await crud.getToolById(anchor, ids.site_query!))?.teamApps).toBeNull();
+    expect((await crud.getToolById(anchor, ids.site_query!))?.externalAccess).toBeNull();
     expect((await switchOn('site_query')).ok).toBe(true);
   });
 
@@ -328,7 +391,7 @@ describe.skipIf(!URL)('team apps may use an outside tool', () => {
     const warned = await warn();
     expect(warned).toHaveLength(1);
     expect(warned[0]).toContain("'site_query'");
-    expect(warned[0]).toContain('Team apps may use');
+    expect(warned[0]).toContain('External access');
     const access = await toolDef('access_set').handler(
       { node_id: appId, level: 'team' },
       { ownerId: anchor, surface: { kind: 'web' } },
@@ -342,35 +405,35 @@ describe.skipIf(!URL)('team apps may use an outside tool', () => {
     const def = toolDef('api_tool_update');
     await switchOff('site_query');
     const fromChat = await def.handler(
-      { slug: 'site_query', team_apps: true, read_only_confirmed: true },
+      { slug: 'site_query', external_access: true, read_only_confirmed: true },
       { ownerId: anchor, surface: { kind: 'web' } },
     );
     expect(fromChat).toMatchObject({ ok: false, error: expect.stringMatching(/Only an admin/) });
     const noConfirm = await def.handler(
-      { slug: 'site_query', team_apps: true },
+      { slug: 'site_query', external_access: true },
       { ownerId: anchor, surface: { kind: 'owner', via: 'mcp' } },
     );
     expect(noConfirm).toMatchObject({ ok: false, error: expect.stringMatching(/only reads/) });
     const fromMcp = await def.handler(
-      { slug: 'site_query', team_apps: true, read_only_confirmed: true },
+      { slug: 'site_query', external_access: true, read_only_confirmed: true },
       { ownerId: anchor, surface: { kind: 'owner', via: 'mcp' } },
     );
     expect(fromMcp).toMatchObject({
       ok: true,
-      output: { team_apps: { on: true, by: { via: 'mcp' } } },
+      output: { external_access: { on: true, by: { via: 'mcp' } } },
     });
     expect((await verdict('site_query')).ok).toBe(true);
     const off = await def.handler(
-      { slug: 'site_query', team_apps: false },
+      { slug: 'site_query', external_access: false },
       { ownerId: anchor, surface: { kind: 'web' } },
     );
-    expect(off).toMatchObject({ ok: true, output: { team_apps: null } });
+    expect(off).toMatchObject({ ok: true, output: { external_access: null } });
     expect((await verdict('site_query')).ok).toBe(false);
     const get = await toolDef('api_tool_get').handler(
       { slug: 'site_query' },
       { ownerId: anchor, surface: { kind: 'web' } },
     );
-    expect(get).toMatchObject({ ok: true, output: { team_apps: null } });
+    expect(get).toMatchObject({ ok: true, output: { external_access: null } });
   });
 
   it('every switch writes an audit row with the actor', async () => {
@@ -383,11 +446,11 @@ describe.skipIf(!URL)('team apps may use an outside tool', () => {
       rows = (await exec(sqlTag`
         select action, actor_id from audit_log
         where detail->>'toolId' = ${ids.site_admin_only!} and actor_email = ${ADMIN.actorEmail}`)) as unknown as typeof rows;
-      if (rows.some((r) => r.action === 'tool.team_apps.off')) break;
+      if (rows.some((r) => r.action === 'tool.external_access.off')) break;
       await new Promise((r) => setTimeout(r, 50));
     }
     expect(new Set(rows.map((r) => r.action))).toEqual(
-      new Set(['tool.team_apps.on', 'tool.team_apps.off']),
+      new Set(['tool.external_access.on', 'tool.external_access.off']),
     );
     expect(rows.every((r) => r.actor_id === anchor)).toBe(true);
   });

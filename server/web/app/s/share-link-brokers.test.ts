@@ -6,8 +6,9 @@
  * active share and carries no contact.
  *
  * A CONTACT share (migration 0214) without the contact's cookie gets 401 on
- * every broker and the frame ticket; with it, the tool broker still refuses
- * every call, the db broker writes only with Can write, and the frame
+ * every broker and the frame ticket; with it, the tool broker runs only a
+ * declared outside tool with External access (on the public role, a contact
+ * surface, logged with the contact), the db broker writes only with Can write, and the frame
  * ticket names the contact and its code epoch. (On Postgres:
  * contact-share-gate.db.test.ts.)
  */
@@ -18,6 +19,9 @@ const h = vi.hoisted(() => ({
   execs: 0,
   callers: [] as unknown[],
   frameViewers: [] as unknown[],
+  dispatched: [] as Array<{ level: string; ctx: Record<string, unknown> }>,
+  appLog: [] as Array<Record<string, unknown>>,
+  shareLog: [] as Array<Record<string, unknown>>,
 }));
 
 const SHARE = { id: 'share-1', ownerId: 'owner-1', nodeId: 'app-1', nodeType: 'app', settings: {} };
@@ -41,15 +45,38 @@ vi.mock('@mantle/content', async (importOriginal) => ({
   getAppRuntime: vi.fn(async () => ({
     id: 'app-1',
     publishedBuild: { ok: true },
-    manifest: { toolSlugs: ['search_chunks'] },
+    manifest: { toolSlugs: ['search_chunks', 'site_query'] },
   })),
-  recordAppAccess: vi.fn(),
-  recordShareAccess: vi.fn(),
+  recordAppAccess: vi.fn((e: Record<string, unknown>) => h.appLog.push(e)),
+  recordShareAccess: vi.fn((e: Record<string, unknown>) => h.shareLog.push(e)),
   contactShareGateRow: vi.fn(async (contactId: string) =>
     contactId === CONTACT ? { ownerId: 'owner-1', codeEpoch: 3, open: true } : null,
   ),
 }));
 vi.mock('@mantle/content/app-table-exports', () => ({ scheduleAppTableExportSync: vi.fn() }));
+
+// 'site_query' stands for an outside tool an admin switched External access on
+// for; every other slug gets the real rule (an undeclared slug is refused
+// before any lookup).
+vi.mock('@mantle/tools', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@mantle/tools')>();
+  const { currentViewerLevel } = await import('@mantle/db');
+  return {
+    ...real,
+    contactAppToolVerdict: vi.fn(async (owner: string, declared: string[], slug: string) =>
+      slug === 'site_query' && declared.includes(slug)
+        ? {
+            ok: true,
+            tool: { slug, handler: { kind: 'mcp', group: 'mcp-site', toolName: 'query' } },
+          }
+        : real.contactAppToolVerdict(owner, declared, slug),
+    ),
+    dispatchTool: vi.fn(async (_t: unknown, _i: unknown, ctx: Record<string, unknown>) => {
+      h.dispatched.push({ level: currentViewerLevel(), ctx });
+      return { ok: true, output: { rows: [] } };
+    }),
+  };
+});
 
 vi.mock('@mantle/content/app-broker', async (importOriginal) => ({
   AppSqlError: (await importOriginal<typeof import('@mantle/content/app-broker')>()).AppSqlError,
@@ -84,6 +111,9 @@ beforeEach(() => {
   h.execs = 0;
   h.callers.length = 0;
   h.frameViewers.length = 0;
+  h.dispatched.length = 0;
+  h.appLog.length = 0;
+  h.shareLog.length = 0;
 });
 
 const post = (path: string, body: unknown) =>
@@ -95,11 +125,14 @@ const post = (path: string, body: unknown) =>
 const params = (token: string) => ({ params: Promise.resolve({ token }) });
 
 describe('/s/:token/tool-broker', () => {
-  it('refuses every tool on a live link, naming the member login', async () => {
+  it('refuses every tool on an open link, even an External access tool', async () => {
     const { POST } = await import('./[token]/tool-broker/route');
-    const res = await POST(post('/s/live/tool-broker', { slug: 'search_chunks' }), params('live'));
-    expect(res.status).toBe(403);
-    expect(((await res.json()) as { error: string }).error).toMatch(/own login/);
+    for (const slug of ['search_chunks', 'site_query']) {
+      const res = await POST(post('/s/live/tool-broker', { slug }), params('live'));
+      expect(res.status, slug).toBe(403);
+      expect(((await res.json()) as { error: string }).error).toMatch(/own login/);
+    }
+    expect(h.dispatched).toHaveLength(0);
   });
 
   it('is a 404 for a dead token', async () => {
@@ -184,7 +217,33 @@ describe('a contact share (0214)', () => {
     expect(h.queries + h.execs).toBe(0);
   });
 
-  it('with the cookie: no tools ever; a write only with Can write; a ticket that names the contact', async () => {
+  it('with the cookie: a declared External access tool runs on the public role and is logged with the contact', async () => {
+    const cookie = await cookieFor(3);
+    const tool = (await import('./[token]/tool-broker/route')).POST;
+    const res = await tool(
+      withCookie('/s/contact/tool-broker', { slug: 'site_query', input: { q: 'x' } }, cookie),
+      params('contact'),
+    );
+    expect(res.status).toBe(200);
+    expect(h.dispatched).toEqual([
+      {
+        level: 'public',
+        ctx: {
+          ownerId: 'owner-1',
+          surface: { kind: 'contact', contactId: CONTACT, shareId: 'share-2' },
+        },
+      },
+    ]);
+    expect(h.appLog[0]).toMatchObject({
+      contactId: CONTACT,
+      shareId: 'share-2',
+      kind: 'tool',
+      detail: { via: 'contact', contactId: CONTACT, slug: 'site_query', handler: 'mcp' },
+    });
+    expect(h.shareLog[0]).toMatchObject({ contactId: CONTACT, kind: 'tool' });
+  });
+
+  it('with the cookie: an undeclared tool is refused and logged; a write only with Can write; a ticket that names the contact', async () => {
     const cookie = await cookieFor(3);
     const tool = (await import('./[token]/tool-broker/route')).POST;
     const db = (await import('./[token]/db-broker/route')).POST;

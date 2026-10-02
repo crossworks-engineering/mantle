@@ -150,7 +150,7 @@ function fakeTool(): Tool {
     handler: { kind: 'builtin', slug: 'fake_tool' } as never,
     requiresConfirm: false,
     enabled: true,
-    teamApps: null,
+    externalAccess: null,
     createdAt: new Date(),
     updatedAt: new Date(),
   } as Tool;

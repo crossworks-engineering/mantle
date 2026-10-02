@@ -126,8 +126,8 @@ async function dispatchMcp(
   try {
     // asSystem: the remote call reads and, for an OAuth connector, refreshes
     // the connector's OWN credentials (api_keys), which a limited role may
-    // not write. A team app's call to a tool an admin opened to team apps
-    // (team-apps.ts) runs under the team role, and the token refresh failed
+    // not write. A shared app's call to a tool with External access
+    // (external-access.ts) runs under the team role, and the token refresh failed
     // there. Nothing of the brain's content is read here: the result comes
     // from the remote server, and the call stays on the caller's surface.
     const res = await asSystem(() =>

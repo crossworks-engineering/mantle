@@ -36,7 +36,15 @@ export const contactShareCodes = pgTable(
 export type ContactShareCodeRow = typeof contactShareCodes.$inferSelect;
 
 /** What a contact did on a contact share. */
-export type ShareAccessKind = 'open' | 'asset' | 'query' | 'write' | 'refused' | 'code_failed';
+export type ShareAccessKind =
+  | 'open'
+  | 'asset'
+  | 'query'
+  | 'write'
+  // A contact's call of an outside tool with External access (migration 0225).
+  | 'tool'
+  | 'refused'
+  | 'code_failed';
 
 /**
  * The contact share audit trail (migration 0214): one row per open (at most

@@ -204,7 +204,7 @@ section 7):
 An admin shares ONE item with ONE outsider without showing it to the team:
 a contact share. The item's level never changes, so an admin item stays
 admin and no member or client lists it. No login, no role, no email, no
-brain tools.
+brain tools (only an outside tool with External access, below).
 
 **The contact's code.** On the contact, "Enable sharing" makes an
 8-character code from the look-alike-free 54-character alphabet of the
@@ -277,8 +277,12 @@ writes `auth.contact_code_signin`; a bad one `auth.contact_code_failed`.
 **What a contact may do.** Read the item. An app only: write its data when
 the share has "Can write" (the db broker's `exec`; the write schedules the
 app-table export sync and marks `app_databases.client_written_at`, so an
-export of those rows counts as written from outside). Never brain tools:
-the tool broker refuses every call, on every link. Pages, notes, files,
+export of those rows counts as written from outside). Never brain tools.
+One kind of tool runs: an outside (MCP or http) tool the app declares that
+an admin switched "External access" on for (docs/member-logins.md,
+"External access: outside tools in shared apps"). It runs on the public
+role and a contact surface; the contact may call it by hand with any
+input. Every built-in is refused, and an open link runs no tool at all. Pages, notes, files,
 tables and drawings stay read only.
 
 **Embeds.** A contact share lowers nothing, so an admin page's images stay
@@ -297,8 +301,8 @@ open link shows no menu.
 
 **Audit.** `share_access_log` records opens (at most one a minute per
 share), assets, database reads (sampled the same way) and writes, failed
-codes, and refusals with the share's contact: a read-only `exec`, a tool
-broker call, and a gate 401 (no admitting cookie; sampled like an open, at
+codes, and refusals with the share's contact: a read-only `exec`, a refused tool
+call, and a gate 401 (an allowed tool call is a `tool` row) (no admitting cookie; sampled like an open, at
 most one row per share a minute). Rows are reaped after 90 days by the
 `app-access-log-reap` sweep. Deleting a share or its contact sets
 `share_id` and `contact_id` NULL (like `app_access_log`): the trail stays.
@@ -315,14 +319,14 @@ that message gets in. Send them apart. Revoke and regenerate are one click.
 
 **Owner API** (admins only):
 
-| Route | What |
-| --- | --- |
-| `POST /api/contacts/:id/sharing` `{ action }` | `enable` / `regenerate` (answer the code once), `disable` (revokes every live share) |
-| `GET /api/contacts/:id/shares?cursor=` | The contact's "Shared" tab: live shares, newest first, 100 a page |
-| `DELETE /api/contacts/:id/shares` | Revoke all: no level change, sharing stays on |
-| `POST /api/shares/contacts` `{ nodeId, contactIds[], canWrite? }` | One share per contact (idempotent per item and contact) |
-| `PATCH /api/shares/:id` `{ canWrite }` | "Can write" on a contact share of an app |
-| `DELETE /api/shares/:id` | Revoke one (no level change for a contact share) |
+| Route                                                             | What                                                                                 |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `POST /api/contacts/:id/sharing` `{ action }`                     | `enable` / `regenerate` (answer the code once), `disable` (revokes every live share) |
+| `GET /api/contacts/:id/shares?cursor=`                            | The contact's "Shared" tab: live shares, newest first, 100 a page                    |
+| `DELETE /api/contacts/:id/shares`                                 | Revoke all: no level change, sharing stays on                                        |
+| `POST /api/shares/contacts` `{ nodeId, contactIds[], canWrite? }` | One share per contact (idempotent per item and contact)                              |
+| `PATCH /api/shares/:id` `{ canWrite }`                            | "Can write" on a contact share of an app                                             |
+| `DELETE /api/shares/:id`                                          | Revoke one (no level change for a contact share)                                     |
 
 `GET /api/access/nodes/:id` lists `contactShares`; Shared links
 (`/api/shares/all`, `/api/team-admin/shares`) name each share's contact;

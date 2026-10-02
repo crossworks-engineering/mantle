@@ -665,7 +665,11 @@ write tools are `ownerOnly`: refused on a team, client or missing surface).
   above client level. `my_items_list` and `my_item_open` are refused as well:
   they read the client's private drafts, and an app could copy them into its
   shared database (`clientAppToolVerdict`,
-  `packages/tools/src/client-app-tools.ts`).
+  `packages/tools/src/client-app-tools.ts`). One more kind passes: an
+  outside (MCP or http) tool the app declares that an admin switched
+  "External access" on for (it reads no brain text; docs/member-logins.md,
+  "External access: outside tools in shared apps"). A built-in's slug
+  off the list is still refused before any lookup.
 - **The same rules for every runner.** A client-level app's tools run by
   the client rules whoever runs it (`appToolLevel`,
   `packages/tools/src/app-tool-level.ts`, client tier audit L1), in the

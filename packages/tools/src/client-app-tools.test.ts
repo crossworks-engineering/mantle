@@ -1,19 +1,20 @@
 /**
  * The client app tool allowlist (client logins C6): only the client tools a
  * client chat already reads with, never a write, `read_result` or a client's
- * private-item reader, and never a brain-wide read tool. A slug off the list
- * is refused before any lookup, whatever the app declares and whatever a
- * client-level group holds. The rest of the rule is proven on Postgres in
+ * private-item reader, and never a brain-wide read tool. A built-in's slug
+ * off the list is refused before any lookup, whatever the app declares and
+ * whatever a client-level group holds; any other slug is looked up only to
+ * find an outside tool with External access (external-access.ts). The rest of the rule is proven on Postgres in
  * client-app-tools.viewer.db.test.ts.
  */
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('./resolve', () => ({
-  resolveTool: vi.fn(async () => {
-    throw new Error('a slug off the list must be refused before any lookup');
-  }),
+  // No such row: an unknown slug is no outside tool either.
+  resolveTool: vi.fn(async () => null),
 }));
 
+import { resolveTool } from './resolve';
 import { BUILTIN_TOOLS } from './builtins';
 import { CLIENT_APP_TOOL_SLUGS, clientAppToolVerdict } from './client-app-tools';
 import { CLIENT_TURN_TOOL_SLUGS } from './client-turn-tools';
@@ -36,7 +37,7 @@ describe('CLIENT_APP_TOOL_SLUGS', () => {
     }
   });
 
-  it('refuses the brain-wide reads, the writes and the private-item readers before any lookup', async () => {
+  it('refuses the brain-wide reads, the writes and the private-item readers; a built-in before any lookup', async () => {
     const off = [
       'search_chunks',
       'page_get',
@@ -52,6 +53,8 @@ describe('CLIENT_APP_TOOL_SLUGS', () => {
       const v = await clientAppToolVerdict('owner', off, slug);
       expect(v, slug).toMatchObject({ ok: false, status: 403 });
     }
+    // 'search' is the MCP surface's name, not a built-in: the only lookup.
+    expect(vi.mocked(resolveTool).mock.calls.map((c) => c[1])).toEqual(['search']);
   });
 
   it('refuses an undeclared slug, even a client tool', async () => {

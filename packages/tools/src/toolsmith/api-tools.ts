@@ -15,11 +15,11 @@ import { describeInheritance, type InheritedPieces } from '../integration';
 import { isMcpManagedSecretService } from '../mcp-oauth';
 import { type BuiltinToolDef, type ToolHandlerContext, type ToolHandlerResult } from '../types';
 import {
-  setToolTeamApps,
-  teamAppsSummary,
-  type TeamAppsActor,
-  type TeamAppsOffActor,
-} from '../team-apps';
+  setToolExternalAccess,
+  externalAccessSummary,
+  type ExternalAccessActor,
+  type ExternalAccessOffActor,
+} from '../external-access';
 import { str } from '../coerce';
 import { errorMessage } from '@mantle/std';
 import {
@@ -71,7 +71,7 @@ export const api_tool_list: BuiltinToolDef = {
         kind: t.handler.kind,
         enabled: t.enabled,
         requires_confirm: t.requiresConfirm,
-        ...(t.teamApps?.on ? { team_apps: true } : {}),
+        ...(t.externalAccess?.on ? { external_access: true } : {}),
         description: t.description.length > 200 ? `${t.description.slice(0, 200)}…` : t.description,
       }));
     ctx.step?.setMeta({ count: out.length });
@@ -106,7 +106,7 @@ export const api_tool_get: BuiltinToolDef = {
         handler: summarizeHandler(row.handler as ToolHandler),
         requires_confirm: row.requiresConfirm,
         enabled: row.enabled,
-        team_apps: teamAppsSummary(row),
+        external_access: externalAccessSummary(row),
       },
     };
   },
@@ -246,27 +246,27 @@ export const api_tool_create: BuiltinToolDef = {
   },
 };
 
-const TEAM_APPS_ADMIN_ONLY =
-  'Only an admin can switch "Team apps may use" on: in Settings → Tools on the tool, or from the owner\'s own MCP client. Ask the owner to do it there; you may switch it off (team_apps: false).';
+const EXTERNAL_ACCESS_ADMIN_ONLY =
+  'Only an admin can switch "External access" on: in Settings → Tools on the tool, or from the owner\'s own MCP client. Ask the owner to do it there; you may switch it off (external_access: false).';
 
-/** Who may switch "Team apps may use" ON through this tool: the owner's own
+/** Who may switch "External access" ON through this tool: the owner's own
  *  MCP client or dev tool console, never an in-brain agent turn. */
-function teamAppsOnActor(ctx: ToolHandlerContext): TeamAppsActor | null {
+function externalAccessOnActor(ctx: ToolHandlerContext): ExternalAccessActor | null {
   const s = ctx.surface;
   if (s?.kind === 'owner' && (s.via === 'mcp' || s.via === 'dev-tools')) return { via: s.via };
   return null;
 }
 
 /** Who an OFF is recorded as: the owner path, or an in-brain agent. */
-function teamAppsOffActor(ctx: ToolHandlerContext): TeamAppsOffActor {
-  return teamAppsOnActor(ctx) ?? { via: 'agent' };
+function externalAccessOffActor(ctx: ToolHandlerContext): ExternalAccessOffActor {
+  return externalAccessOnActor(ctx) ?? { via: 'agent' };
 }
 
 export const api_tool_update: BuiltinToolDef = {
   slug: 'api_tool_update',
   name: 'Update an HTTP API tool',
   description:
-    "Update a user-defined HTTP tool by slug. Provide only the fields to change; headers/query replace the whole map when given; body: null clears the template. Pass group_slug to (re)join an integration group — the tool is added to it and re-inherits its base URL + auth placement into the stored templates. Built-in tools only allow enabled/requires_confirm changes; shell tools cannot be edited by agents. `team_apps` opens an mcp or http tool to team apps (members can call it with any input); only the owner's MCP client may switch it on, any caller may switch it off.",
+    "Update a user-defined HTTP tool by slug. Provide only the fields to change; headers/query replace the whole map when given; body: null clears the template. Pass group_slug to (re)join an integration group — the tool is added to it and re-inherits its base URL + auth placement into the stored templates. Built-in tools only allow enabled/requires_confirm changes; shell tools cannot be edited by agents. `external_access` opens an mcp or http tool to everyone a shared app reaches (members, clients, contact links; any input, by hand too); only the owner's MCP client may switch it on, any caller may switch it off.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -328,15 +328,15 @@ export const api_tool_update: BuiltinToolDef = {
         type: 'boolean',
         description: 'set false to disable the tool without deleting it; true re-enables',
       },
-      team_apps: {
+      external_access: {
         type: 'boolean',
         description:
-          '"Team apps may use": true lets team members call this mcp or http tool through any team app that declares it (and by hand, with any input), when it is also in an enabled team-level tool group; false closes it. Never for recipe or shell tools.',
+          '"External access": true lets everyone an app that declares this mcp or http tool is shared with (members, clients, contacts on a contact link) call it, by hand too, with any input; false closes it. Never for recipe or shell tools.',
       },
       read_only_confirmed: {
         type: 'boolean',
         description:
-          'with team_apps: true, the admin confirms the tool only reads data (the brain cannot check an outside tool). Required to switch on.',
+          'with external_access: true, the admin confirms the tool only reads data (the brain cannot check an outside tool). Required to switch on.',
       },
     },
     required: ['slug'],
@@ -347,12 +347,12 @@ export const api_tool_update: BuiltinToolDef = {
     if (!row) return { ok: false, error: `tool '${slug}' not found` };
     const existing = row.handler as ToolHandler;
 
-    // "Team apps may use" on: an admin's decision, refused before ANY field
+    // "External access" on: an admin's decision, refused before ANY field
     // is applied when the caller is not the owner's own MCP client or tool
     // console (an in-brain agent can be steered by what it reads).
-    const teamAppsActor = input.team_apps === true ? teamAppsOnActor(ctx) : null;
-    if (input.team_apps === true && !teamAppsActor) {
-      return { ok: false, error: TEAM_APPS_ADMIN_ONLY };
+    const externalAccessActor = input.external_access === true ? externalAccessOnActor(ctx) : null;
+    if (input.external_access === true && !externalAccessActor) {
+      return { ok: false, error: EXTERNAL_ACCESS_ADMIN_ONLY };
     }
 
     // Shell tools are human-only end to end: refuse before applying ANY field.
@@ -455,15 +455,15 @@ export const api_tool_update: BuiltinToolDef = {
           warnings.push(...(await integrationWarnings(ctx.ownerId, group.integration)));
         }
       }
-      let teamApps = updated.teamApps ?? null;
-      if (input.team_apps === true || input.team_apps === false) {
-        const set = await setToolTeamApps(ctx.ownerId, row.id, {
-          allow: input.team_apps === true,
+      let externalAccess = updated.externalAccess ?? null;
+      if (input.external_access === true || input.external_access === false) {
+        const set = await setToolExternalAccess(ctx.ownerId, row.id, {
+          allow: input.external_access === true,
           readOnlyConfirmed: input.read_only_confirmed === true,
-          by: teamAppsActor ?? teamAppsOffActor(ctx),
+          by: externalAccessActor ?? externalAccessOffActor(ctx),
         });
         if (!set.ok) return { ok: false, error: set.error };
-        teamApps = teamAppsSummary(set.tool);
+        externalAccess = externalAccessSummary(set.tool);
       }
       ctx.step?.setOutput({ slug, warnings });
       return {
@@ -471,7 +471,7 @@ export const api_tool_update: BuiltinToolDef = {
         output: {
           slug,
           updated: true,
-          ...(input.team_apps !== undefined ? { team_apps: teamApps } : {}),
+          ...(input.external_access !== undefined ? { external_access: externalAccess } : {}),
           warnings,
           ...(group
             ? {

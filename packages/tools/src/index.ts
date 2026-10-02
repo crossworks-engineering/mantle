@@ -143,17 +143,19 @@ export {
   type MemberAppToolVerdict,
 } from './member-app-tools';
 export {
-  setToolTeamApps,
-  clearConnectorTeamApps,
-  teamAppsActive,
-  teamAppsHandlerSig,
-  teamAppsIneligible,
-  teamAppsSummary,
-  TEAM_APPS_KINDS,
-  type SetTeamAppsResult,
-  type TeamAppsActor,
-  type TeamAppsOffActor,
-} from './team-apps';
+  setToolExternalAccess,
+  externalToolVerdict,
+  contactAppToolVerdict,
+  clearConnectorExternalAccess,
+  externalAccessActive,
+  externalAccessHandlerSig,
+  externalAccessIneligible,
+  externalAccessSummary,
+  EXTERNAL_ACCESS_KINDS,
+  type SetExternalAccessResult,
+  type ExternalAccessActor,
+  type ExternalAccessOffActor,
+} from './external-access';
 export {
   clientAppToolVerdict,
   CLIENT_APP_TOOL_SLUGS,

@@ -84,14 +84,14 @@ export const PUBLIC_PATHS = [
  */
 export const AUDIT_SELF_LOGGED_PATHS = ['/api/users', '/api/team-admin/clients'];
 
-/** "Team apps may use" on a tool: setToolTeamApps writes its own
- *  `tool.team_apps.on` / `.off` row with the actor and the tool. */
-const TOOL_TEAM_APPS_PATH = /^\/api\/tools\/[^/]+\/team-apps\/?$/;
+/** "External access" on a tool: setToolExternalAccess writes its own
+ *  `tool.external_access.on` / `.off` row with the actor and the tool. */
+const TOOL_EXTERNAL_ACCESS_PATH = /^\/api\/tools\/[^/]+\/external-access\/?$/;
 
 export function isAuditSelfLogged(path: string): boolean {
   return (
     AUDIT_SELF_LOGGED_PATHS.some((p) => path === p || path.startsWith(p + '/')) ||
-    TOOL_TEAM_APPS_PATH.test(path)
+    TOOL_EXTERNAL_ACCESS_PATH.test(path)
   );
 }
 

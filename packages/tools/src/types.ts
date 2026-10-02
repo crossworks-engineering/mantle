@@ -105,6 +105,15 @@ export type ToolHandlerContext = {
         inboundMessageId?: string;
       }
     | {
+        /** A CONTACT on a contact-share link (/s, past the code gate) runs a
+         *  shared app that calls an outside tool with External access
+         *  (external-access.ts). Only such tools are ever dispatched here:
+         *  no built-in runs on a link. Never the owner. */
+        kind: 'contact';
+        contactId: string;
+        shareId: string;
+      }
+    | {
         /** A CLIENT login is on the other end (client logins C4): a client's
          *  chat turn with the client-responder (POST /api/client/chat).
          *  Never the owner and never a team member. `client_request_create`
