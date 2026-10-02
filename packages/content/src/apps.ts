@@ -99,6 +99,8 @@ type SidecarCols = {
   hubAppId: string | null;
   /** apps.data_read_only: informational (client logins C6). */
   dataReadOnly: boolean;
+  /** apps.draft_updated_at: detail only (the editor's save check). */
+  draftUpdatedAt?: Date | null;
 };
 
 function rowOf(n: Node, s: Partial<SidecarCols> = {}): AppRow {
@@ -138,6 +140,7 @@ function detailOf(n: Node, s: SidecarCols): AppDetail {
     manifest: s.manifest,
     draftBuild: s.draftBuild,
     publishedBuild: s.publishedBuild,
+    draftUpdatedAt: s.draftUpdatedAt?.toISOString() ?? null,
   };
 }
 
@@ -271,6 +274,7 @@ async function loadDetail(ownerId: string, id: string): Promise<AppDetail | null
         draftBuild: apps.draftBuild,
         publishedBuild: apps.publishedBuild,
         dataReadOnly: apps.dataReadOnly,
+        draftUpdatedAt: apps.draftUpdatedAt,
         shareSettings: shares.settings,
       })
       .from(nodes)
@@ -294,6 +298,7 @@ async function loadDetail(ownerId: string, id: string): Promise<AppDetail | null
     shareSettings: row.shareSettings ?? null,
     hubAppId: prefs.teamHubAppId ?? null,
     dataReadOnly: row.dataReadOnly === true,
+    draftUpdatedAt: row.draftUpdatedAt ?? null,
   });
 }
 
@@ -417,19 +422,80 @@ export async function updateAppMeta(
 // did nothing": the source is correct, the served bundle is not, and no cache
 // clear or rebuild-less republish can converge them.
 
-/** Replace the entire draft source tree (autosave). Returns false if missing. */
+// CONCURRENCY (apps audit D4, D5, U1): the editor's autosave, the agent's
+// file writes, the manifest setters and publish all read-modify-write one
+// `apps` row, from two processes. Each takes the row lock first (lockAppRow),
+// so two writes in flight cannot each keep only their own change, and a
+// publish cannot clear a draft that changed after it read it.
+
+type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** The app's sidecar row, locked FOR UPDATE until the transaction ends;
+ *  null when the app is missing or not this owner's. */
+async function lockAppRow(tx: DbTx, ownerId: string, id: string) {
+  const [row] = await tx
+    .select({
+      source: apps.source,
+      draft: apps.draftSource,
+      manifest: apps.manifest,
+      draftBuild: apps.draftBuild,
+      draftUpdatedAt: apps.draftUpdatedAt,
+    })
+    .from(apps)
+    .innerJoin(nodes, eq(nodes.id, apps.nodeId))
+    .where(and(eq(apps.nodeId, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'app')))
+    .for('update', { of: apps });
+  if (!row) return null;
+  return {
+    source: row.source ?? emptySource(),
+    draft: row.draft ?? null,
+    manifest: row.manifest ?? {},
+    draftBuild: row.draftBuild ?? null,
+    draftUpdatedAt: row.draftUpdatedAt ?? null,
+  };
+}
+
+/** The draft changed since the editor last read it (apps audit U1): an
+ *  agent or another tab wrote it. Saving would silently drop that work. */
+export class AppDraftConflictError extends Error {
+  constructor() {
+    super(
+      'the draft changed since you opened it (the assistant or another window edited it). Reload to see the latest, then make your change again.',
+    );
+    this.name = 'AppDraftConflictError';
+  }
+}
+
+/**
+ * Replace the entire draft source tree (autosave). Returns false if missing,
+ * else the draft's new `draftUpdatedAt`. With `baseDraftUpdatedAt` (the
+ * value the editor last read, null for "no draft"), a draft changed since
+ * then throws AppDraftConflictError and nothing is written. Without it the
+ * write goes through as before (an older editor).
+ */
 export async function saveDraftSource(
   ownerId: string,
   id: string,
   source: AppSource,
-): Promise<boolean> {
-  if (!(await ownsApp(ownerId, id))) return false;
+  opts: { baseDraftUpdatedAt?: string | null } = {},
+): Promise<false | { draftUpdatedAt: string }> {
   assertSourceWithinLimits(source);
-  await db
-    .update(apps)
-    .set({ draftSource: source, draftUpdatedAt: new Date(), draftBuild: null })
-    .where(eq(apps.nodeId, id));
-  return true;
+  return db.transaction(async (tx) => {
+    const app = await lockAppRow(tx, ownerId, id);
+    if (!app) return false;
+    if (
+      opts.baseDraftUpdatedAt !== undefined &&
+      (app.draftUpdatedAt?.toISOString() ?? null) !== opts.baseDraftUpdatedAt
+    ) {
+      throw new AppDraftConflictError();
+    }
+    const draftUpdatedAt = new Date();
+    await tx
+      .update(apps)
+      .set({ draftSource: source, draftUpdatedAt, draftBuild: null })
+      .where(eq(apps.nodeId, id));
+    return { draftUpdatedAt: draftUpdatedAt.toISOString() };
+  });
 }
 
 /** Write/replace one file in the draft (creating the draft from published if
@@ -440,16 +506,18 @@ export async function writeDraftFile(
   path: string,
   content: string,
 ): Promise<AppSource | null> {
-  const app = await loadDetail(ownerId, id);
-  if (!app) return null;
-  const base = workingSource(app);
-  const next: AppSource = { entry: base.entry, files: { ...base.files, [path]: content } };
-  assertSourceWithinLimits(next);
-  await db
-    .update(apps)
-    .set({ draftSource: next, draftUpdatedAt: new Date(), draftBuild: null })
-    .where(eq(apps.nodeId, id));
-  return next;
+  return db.transaction(async (tx) => {
+    const app = await lockAppRow(tx, ownerId, id);
+    if (!app) return null;
+    const base = app.draft ?? app.source;
+    const next: AppSource = { entry: base.entry, files: { ...base.files, [path]: content } };
+    assertSourceWithinLimits(next);
+    await tx
+      .update(apps)
+      .set({ draftSource: next, draftUpdatedAt: new Date(), draftBuild: null })
+      .where(eq(apps.nodeId, id));
+    return next;
+  });
 }
 
 export class CannotDeleteEntryError extends Error {
@@ -464,18 +532,20 @@ export async function deleteDraftFile(
   id: string,
   path: string,
 ): Promise<AppSource | null> {
-  const app = await loadDetail(ownerId, id);
-  if (!app) return null;
-  const base = workingSource(app);
-  if (path === base.entry) throw new CannotDeleteEntryError();
-  const files = { ...base.files };
-  delete files[path];
-  const next: AppSource = { entry: base.entry, files };
-  await db
-    .update(apps)
-    .set({ draftSource: next, draftUpdatedAt: new Date(), draftBuild: null })
-    .where(eq(apps.nodeId, id));
-  return next;
+  return db.transaction(async (tx) => {
+    const app = await lockAppRow(tx, ownerId, id);
+    if (!app) return null;
+    const base = app.draft ?? app.source;
+    if (path === base.entry) throw new CannotDeleteEntryError();
+    const files = { ...base.files };
+    delete files[path];
+    const next: AppSource = { entry: base.entry, files };
+    await tx
+      .update(apps)
+      .set({ draftSource: next, draftUpdatedAt: new Date(), draftBuild: null })
+      .where(eq(apps.nodeId, id));
+    return next;
+  });
 }
 
 /** Shallow-merge a manifest patch (e.g. toolSlugs, sqlite, description). */
@@ -484,11 +554,16 @@ export async function setManifest(
   id: string,
   patch: Partial<AppManifest>,
 ): Promise<AppManifest | null> {
-  const app = await loadDetail(ownerId, id);
-  if (!app) return null;
-  const next: AppManifest = { ...app.manifest, ...patch };
-  await db.update(apps).set({ manifest: next, updatedAt: new Date() }).where(eq(apps.nodeId, id));
-  return next;
+  return db.transaction(async (tx) => {
+    const app = await lockAppRow(tx, ownerId, id);
+    if (!app) return null;
+    const next: AppManifest = { ...app.manifest, ...patch };
+    await tx
+      .update(apps)
+      .set({ manifest: next, updatedAt: new Date() })
+      .where(eq(apps.nodeId, id));
+    return next;
+  });
 }
 
 /** Record a build of the draft (preview). A failed build still updates the ref
@@ -532,11 +607,11 @@ export class NoGreenBuildError extends Error {
 /**
  * Publish: promote `draft_source` → `source`, `draft_build` → `published_build`,
  * recompute `source_text`, clear the draft, bump version, fire the extractor.
- * Refuses if the draft hasn't been built green. Returns the published detail, or
- * null if the app doesn't exist (or has nothing to publish).
- */
-/**
- * Ship the staged draft — or, when nothing is staged, a REBUILD of what is
+ * Refuses if the draft hasn't been built green (NoGreenBuildError). Returns
+ * the app's detail (unchanged when there was nothing to publish), or null if
+ * the app doesn't exist.
+ *
+ * It ships the staged draft — or, when nothing is staged, a REBUILD of what is
  * already published.
  *
  * That second case is not a nicety. `app_build` compiles `draft ?? source`, so
@@ -560,52 +635,73 @@ export class NoGreenBuildError extends Error {
  * source beside an old bundle — is untouched in both.
  */
 export async function publishApp(ownerId: string, id: string): Promise<AppDetail | null> {
-  const app = await loadDetail(ownerId, id);
-  if (!app) return null;
-  // Nothing staged and no rebuild waiting — already published.
-  if (!app.draft && !app.draftBuild) return app;
-  if (!app.draftBuild?.ok) throw new NoGreenBuildError();
+  // Under the row lock (apps audit D4): an autosave that lands while this
+  // runs waits for it and becomes the next draft, and one that landed before
+  // is what is read here (and it cleared the build, so the publish refuses
+  // rather than shipping the old build as the new source).
+  const published = await db.transaction(async (tx) => {
+    const app = await lockAppRow(tx, ownerId, id);
+    if (!app) return null;
+    // Nothing staged and no rebuild waiting — already published.
+    if (!app.draft && !app.draftBuild) return false;
+    if (!app.draftBuild?.ok) throw new NoGreenBuildError();
+    await promote(tx, id, app.draft, app.draftBuild);
+    return true;
+  });
+  if (published === null) return null;
+  if (published) {
+    await notifyNodeIngested(id);
+    void notifyAppNavChanged(ownerId);
+  }
+  return loadDetail(ownerId, id);
+}
 
-  const published = app.draft;
-  const build = app.draftBuild;
+/** The publish write itself: the staged draft (when there is one) and the
+ *  build validated from it, promoted together. */
+async function promote(
+  tx: DbTx,
+  id: string,
+  published: AppSource | null,
+  build: BuildRef,
+): Promise<void> {
   // Only when a draft is actually staged. A build-only publish must not touch
   // the source — it was built from what is already there. Hoisted out of the
   // `.set({…})` rather than spread inline: the staleness tripwire parses those
   // payloads with a non-greedy match, and a nested `})` truncates what it sees.
   const sourceFields = published ? { source: published, sourceText: sourceToText(published) } : {};
-  await db.transaction(async (tx) => {
-    await tx
-      .update(apps)
-      .set({
-        ...sourceFields,
-        publishedBuild: build,
-        draftSource: null,
-        draftUpdatedAt: null,
-        draftBuild: null,
-        version: sql`${apps.version} + 1`,
-        updatedAt: new Date(),
-      })
-      .where(eq(apps.nodeId, id));
-    await tx.update(nodes).set({ embedding: null, updatedAt: new Date() }).where(eq(nodes.id, id));
-  });
-  await notifyNodeIngested(id);
-  void notifyAppNavChanged(ownerId);
-  return loadDetail(ownerId, id);
+  await tx
+    .update(apps)
+    .set({
+      ...sourceFields,
+      publishedBuild: build,
+      draftSource: null,
+      draftUpdatedAt: null,
+      draftBuild: null,
+      version: sql`${apps.version} + 1`,
+      updatedAt: new Date(),
+    })
+    .where(eq(apps.nodeId, id));
+  await tx.update(nodes).set({ embedding: null, updatedAt: new Date() }).where(eq(nodes.id, id));
 }
 
 export async function deleteApp(ownerId: string, id: string): Promise<boolean> {
   if (!(await ownsApp(ownerId, id))) return false;
-  // Remove the per-app SQLite file BEFORE the node delete cascades the
-  // `app_databases` row away (we resolve the path from that row). Best-effort:
-  // a stray file must not block the delete. Dynamic import keeps the server-only
-  // broker (node:fs/sqlite) out of the content index / edge bundles.
-  try {
-    const { deleteAppDatabaseFile } = await import('./app-broker');
-    await deleteAppDatabaseFile(ownerId, id);
-  } catch {
-    /* best-effort file cleanup; the DB rows still cascade below */
-  }
+  // The node goes first, then the SQLite file (apps audit D6). The other way
+  // round, a node delete that failed left an app whose data was gone. The
+  // file's path is read now: the `app_databases` row cascades away with the
+  // node. Dynamic import keeps the server-only broker (node:fs/sqlite) out of
+  // the content index / edge bundles.
+  const broker = await import('./app-broker');
+  const dbPath = await broker.appDatabasePath(ownerId, id);
   await db.delete(nodes).where(eq(nodes.id, id)); // `apps` + `app_databases` cascade.
+  if (dbPath) {
+    try {
+      await broker.removeAppDatabaseFiles(dbPath);
+    } catch (err) {
+      // The app is gone either way; a stray file is only disk.
+      console.error(`[apps] app ${id} deleted, but its database file stayed:`, err);
+    }
+  }
   return true;
 }
 

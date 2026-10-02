@@ -37,6 +37,19 @@ restore work depends on (docs/app-authoring-guide.md, "Per-app SQLite").
   `confirmTool`; without it the browser's own confirm dialog asks.
   `app_tools_set` warns when it declares such a tool. Member, client and
   share runs refuse these tools as before.
+- **Edits in flight no longer overwrite each other.** The editor's autosave,
+  the assistant's file writes (`app_file_write` / delete), the manifest
+  setters and publish now take the app row's lock: two writes in flight keep
+  both changes, and a publish cannot clear a draft saved while it ran. The
+  draft PUT takes `baseDraftUpdatedAt` and answers 409 `reason: 'conflict'`
+  when the draft changed since the editor read it (the assistant wrote a
+  file); `AppDetail.draftUpdatedAt` carries the stamp. Without the field a
+  save goes through as before.
+- **Delete removes the app before its database file**, so a delete that
+  fails no longer leaves an app whose data is gone.
+- **`scripts/app-dbs-restore.sh`** removes each restored file's old `-wal`
+  / `-shm` first, so SQLite cannot replay a stale WAL into the restored
+  database.
 - **The public share routes cap the request body** (1 MB, `/s/**`): the
   gate refuses a declared length over it, and the app db-broker and the
   formula `evaluate` route stop a chunked body while reading. The share

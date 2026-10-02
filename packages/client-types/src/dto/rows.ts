@@ -196,6 +196,11 @@ export type AppDetail = AppRow & {
   manifest: AppManifest;
   draftBuild: BuildRef | null;
   publishedBuild: BuildRef | null;
+  /** When the draft last changed (ISO), null with no draft. The editor sends
+   *  it back as `baseDraftUpdatedAt` on save, and the save answers 409 when
+   *  the draft changed since (an agent or another window). Optional: absent
+   *  from an older brain. */
+  draftUpdatedAt?: string | null;
 };
 
 export type ProfilePreferences = {

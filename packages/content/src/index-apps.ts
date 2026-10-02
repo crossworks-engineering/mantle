@@ -62,6 +62,7 @@ export {
   createApp,
   updateAppMeta,
   saveDraftSource,
+  AppDraftConflictError,
   writeDraftFile,
   deleteDraftFile,
   setManifest,

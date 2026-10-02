@@ -34,6 +34,22 @@ fi
 
 # Extract into the container's APP_DB_DIR (=/data/app-dbs), which is the mounted
 # host volume — so the files land exactly where the registry expects them.
+#
+# Each restored file's old -wal / -shm / -journal go first (apps audit D9).
+# The snapshot is a complete database; a WAL left from the file it replaces
+# belongs to THAT file, and SQLite would replay it into the restored one on
+# the next open. The archive is staged once in the container: it is read twice
+# (list, then extract) and stdin can be read once.
 echo "▶ Restoring app SQLite snapshots from $TGZ → $APP_CONTAINER:/data/app-dbs"
-docker exec -i "$APP_CONTAINER" sh -c 'mkdir -p /data/app-dbs && tar -C /data/app-dbs -xzf -' < "$TGZ"
+docker exec -i "$APP_CONTAINER" sh -c '
+  set -e
+  t=$(mktemp)
+  trap "rm -f \"$t\"" EXIT
+  cat > "$t"
+  mkdir -p /data/app-dbs
+  tar -tzf "$t" | grep "\.sqlite$" | while IFS= read -r f; do
+    rm -f "/data/app-dbs/$f-wal" "/data/app-dbs/$f-shm" "/data/app-dbs/$f-journal"
+  done
+  tar -C /data/app-dbs -xzf "$t"
+' < "$TGZ"
 echo "✔ Restored. (Restore the Postgres dump first if you haven't — the registry rows point at these files.)"

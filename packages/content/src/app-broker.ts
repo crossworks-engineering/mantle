@@ -831,18 +831,18 @@ export function appDbFiles(storagePath: string): string[] {
   return ['', '-journal', '-wal', '-shm'].map((suffix) => `${storagePath}${suffix}`);
 }
 
+/** Where an app's database file lives, or null when it never had one. Read
+ *  BEFORE the app is deleted: the registry row cascades away with the node. */
+export async function appDatabasePath(ownerId: string, appNodeId: string): Promise<string | null> {
+  return (await lookupAppDatabase(ownerId, appNodeId))?.storagePath ?? null;
+}
+
 /**
- * Remove an app's on-disk SQLite file(s). Called when the app node is deleted —
- * the `app_databases` registry row cascades away with the node, but the file on
- * the volume would otherwise leak. Best-effort + idempotent (`force` ignores a
- * missing file); no-op if the app never opened a database.
+ * Remove an app's on-disk SQLite file(s), given the path read before the app
+ * was deleted (apps audit D6: the files go AFTER the node, so a delete that
+ * fails leaves the app with its data, never an app with none). Idempotent
+ * (`force` ignores a missing file).
  */
-export async function deleteAppDatabaseFile(ownerId: string, appNodeId: string): Promise<void> {
-  const [row] = await db
-    .select({ storagePath: appDatabases.storagePath })
-    .from(appDatabases)
-    .where(and(eq(appDatabases.appNodeId, appNodeId), eq(appDatabases.ownerId, ownerId)))
-    .limit(1);
-  if (!row) return;
-  await Promise.all(appDbFiles(row.storagePath).map((f) => rm(f, { force: true })));
+export async function removeAppDatabaseFiles(storagePath: string): Promise<void> {
+  await Promise.all(appDbFiles(storagePath).map((f) => rm(f, { force: true })));
 }
