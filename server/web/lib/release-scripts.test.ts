@@ -30,6 +30,7 @@ const SCRIPTS = [
   'sanity.sh',
   'compose-adopt.sh',
   'uninstall.sh',
+  'onboard.sh',
 ];
 
 describe('release-owned operator scripts', () => {

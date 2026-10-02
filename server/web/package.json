@@ -23,6 +23,7 @@
     "extract:images-backfill": "tsx --env-file-if-exists=./.env.local scripts/extract-images-backfill.ts",
     "generate": "pnpm run app-runtime && pnpm run route-manifest && pnpm run excalidraw-assets && pnpm run share-runtime",
     "maintain": "tsx --env-file-if-exists=./.env.local scripts/maintain.ts",
+    "onboard": "tsx --env-file-if-exists=./.env.local scripts/onboard.ts",
     "models:drift": "tsx --env-file-if-exists=./.env.local scripts/models-drift.ts",
     "models:pinned": "tsx --env-file-if-exists=./.env.local scripts/pinned-model-drift.ts",
     "models:pool-fit": "tsx --env-file-if-exists=./.env.local scripts/pool-fit.ts",

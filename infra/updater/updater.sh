@@ -116,7 +116,7 @@ SCRIPTS_REL=scripts
 # image disagree, which reads as "scripts drifted" fleet-wide. That is why
 # scripts/install.sh still shares a name with the root bootstrap (2026-09-03
 # audit); both files carry a header saying which is which instead.
-SCRIPT_NAMES='db-dump.sh db-restore.sh install.sh sanity.sh compose-adopt.sh uninstall.sh'
+SCRIPT_NAMES='db-dump.sh db-restore.sh install.sh sanity.sh compose-adopt.sh uninstall.sh onboard.sh'
 
 sha_of() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
 

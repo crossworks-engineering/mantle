@@ -258,6 +258,7 @@ COPY scripts/install.sh /app/release/scripts/install.sh
 COPY scripts/sanity.sh /app/release/scripts/sanity.sh
 COPY scripts/compose-adopt.sh /app/release/scripts/compose-adopt.sh
 COPY scripts/uninstall.sh /app/release/scripts/uninstall.sh
+COPY scripts/onboard.sh /app/release/scripts/onboard.sh
 # The jackdaw client tag this server release was tested against (the "release
 # pair"). The updater reads it from the TARGET image during a roll and moves
 # the client stack to it — the client image versions on its own stream since

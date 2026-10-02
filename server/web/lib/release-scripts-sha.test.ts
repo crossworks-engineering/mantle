@@ -24,6 +24,7 @@ const NAMES = [
   'sanity.sh',
   'compose-adopt.sh',
   'uninstall.sh',
+  'onboard.sh',
 ];
 
 /** Extract `sha_of` + `scripts_sha_of` from updater.sh and run them for real. */

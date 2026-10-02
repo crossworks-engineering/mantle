@@ -260,6 +260,7 @@ describe('readComposeStatus: operator-scripts state', () => {
     'sanity.sh',
     'compose-adopt.sh',
     'uninstall.sh',
+    'onboard.sh',
   ];
   const sha = (s: string) => createHash('sha256').update(s).digest('hex');
   /** The set fingerprint, exactly as the updater's scripts_sha_of builds it. */

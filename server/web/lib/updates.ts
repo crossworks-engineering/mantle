@@ -255,6 +255,7 @@ const RELEASE_SCRIPT_NAMES = [
   'sanity.sh',
   'compose-adopt.sh',
   'uninstall.sh',
+  'onboard.sh',
 ] as const;
 
 /** Canonical-compose hashes are constant for the life of the build. */

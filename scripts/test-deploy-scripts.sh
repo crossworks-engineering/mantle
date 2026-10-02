@@ -129,7 +129,7 @@ echo "install.sh: baselines on both fetch paths"
 # unpack, seed) is what gets tested, hermetically.
 mkdir -p "$WORK/bin"
 printf '#!/bin/sh\nexit 0\n' > "$WORK/bin/docker"; chmod +x "$WORK/bin/docker"
-SCRIPTS='db-dump.sh db-restore.sh install.sh sanity.sh compose-adopt.sh uninstall.sh'
+SCRIPTS='db-dump.sh db-restore.sh install.sh sanity.sh compose-adopt.sh uninstall.sh onboard.sh'
 RELEASE_FILES='docker-compose.yml docker-compose.client.yml docker-compose.core.yml infra/caddy/Caddyfile infra/caddy/shapes/same-origin.caddy infra/caddy/shapes/split.caddy'
 
 # The tree both paths serve: the worktree's real files, one stub.
