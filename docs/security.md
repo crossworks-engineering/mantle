@@ -53,6 +53,7 @@
 | **Client login** + session cookie (30 days)                   | a person at the brain's client company (role client) | the client routes only (`CLIENT_ROUTES`): "Shared with you", their own space and requests, comment threads, their chat, client apps; read at the client level | sign out (ends every session of the login), End sessions, disable or delete the login                      |
 | **Client sign-in link** (16 chars, SHA-256 at rest, 72 hours) | the client an admin issued it to                     | one sign-in as that client login, with the login's email typed as a check                                                                                     | revoke it, issue a new one, End sessions or disable the login; it expires                                  |
 | **Client email code** (8 digits, HMAC at rest, 10 minutes)    | the client who asked, in that browser                | one sign-in as that client login, from the browser that asked; 5 wrong tries                                                                                  | End sessions or disable the login; it expires                                                              |
+| **Setup code** (`MANTLE_SETUP_CODE`, about 99 bits)            | whoever can read the box's `.env`                    | one first-run signup, while no account exists                                                                                                                 | it stops working once the first account exists                                                             |
 | Share token (~128-bit CSPRNG in the URL)                      | anyone with the link                                 | exactly one shared item (or one public app)                                                                                                                   | turn the share off                                                                                         |
 
 Notes that matter to a reviewer:
@@ -100,6 +101,17 @@ Notes that matter to a reviewer:
   brain-wide failure lockout. A client's plain sign-out ends all its
   sessions. Disabling a client, or ending its sessions, revokes its open
   links and codes in the same transaction.
+- **The setup code closes the first-run claim race.** While no account
+  exists, signup makes its caller the owner, and a native caller passes the
+  CSRF guard below; a fresh box on a public address would belong to whoever
+  reached it first. The installer generates `MANTLE_SETUP_CODE` (never
+  rotated) and prints it; signup requires it until the first account exists
+  (timing-safe compare after the per-address rate limit, 403 `setup-code`,
+  audited as `auth.signup_failed`). Only the web container receives it, and
+  `/api/auth/bootstrap-state` reveals only whether one is required. The
+  terminal wizard (`scripts/onboard.sh`) does not ask for it: shell access to
+  the box is the stronger proof. See [onboarding.md](./onboarding.md)
+  section 8.
 - **Login CSRF guard on the auth POSTs** (client logins audit B15). The
   JSON `/api/auth` POSTs that set or use the session cookie (login, signup,
   invite/accept, change-password, client-link, client-code,

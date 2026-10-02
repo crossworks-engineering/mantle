@@ -419,6 +419,8 @@ Key flags (`--help` for the full list):
 | `--local-embedder` / `--no-local-embedder`   | bundled Ollama + EmbeddingGemma (persists via `COMPOSE_PROFILES`; needs a large box)                  |
 | `--sandboxes` / `--no-sandboxes`             | CLI sandboxes for the coder agent ([sandboxes.md](./sandboxes.md)); on by default for a fresh install |
 | `-y`, `--skip-up`, `--sanity`/`--check`      | scripted run, write-`.env`-only, health-check-only                                                    |
+| `--no-client`                                | headless: API + MCP + share pages, no owner UI; onboard with the desktop app or `scripts/onboard.sh`  |
+| `--setup-code`                               | print the first-run setup code again (signup asks for it until the first account exists)              |
 
 ### `scripts/sanity.sh`: "is it actually serving?"
 
@@ -447,6 +449,18 @@ Two deliberately separated operations:
 
 Also `--images` (frees ~4 GB), `--stack-dir`, `--data-dir`, `--dry-run`, `-y`.
 Never touches the `mantle-dev` project.
+
+### `scripts/onboard.sh`
+
+Creates the owner and finishes first-run setup from the terminal, for a brain
+installed with `--no-client`. Runs `server/web/scripts/onboard.ts` in the web
+container (`docker compose exec web ...`, from the stack dir), the wizard's own
+steps in its order, resumable. Every prompt has a default. `--yes` takes them
+all; `--password-file` / `--key-file` pipe the owner password and the
+OpenRouter key on stdin (never argv). Other flags pass through (`--email`,
+`--purpose`, `--persona`, ... see `--help`). In a checkout:
+`pnpm -C server/web onboard`. Details: [`onboarding.md`](./onboarding.md)
+section 8.
 
 ### `scripts/compose-adopt.sh [--apply]`
 

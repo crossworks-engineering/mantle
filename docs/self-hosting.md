@@ -126,6 +126,10 @@ check, then walks you through your API key, model choices, voice, and
 memory-search (embeddings) setup. Everything is configured in the
 interface, not in files.
 
+Signup asks for the **setup code** the installer printed next to that URL:
+until the first account exists, only someone who can read the box's `.env`
+can claim it. Lost it? `scripts/install.sh --setup-code` prints it again.
+
 > **Embeddings:** semantic search uses an online embedder by default
 > (`text-embedding-3-large`, chosen in the wizard's Memory step; it can
 > reuse the same OpenRouter key as chat). The fully-local embedder
@@ -154,6 +158,20 @@ interface, not in files.
 > object store, files) and the `.env` file (`MANTLE_MASTER_KEY` decrypts
 > your stored API keys; lose it and the vault is unrecoverable).
 > Scheduled DB backups are built in: `/settings/backups`.
+
+### Headless: no owner UI on the box
+
+`scripts/install.sh --no-client` (or "no" to "Run the owner web UI?") runs
+the API, MCP and share pages only. Create the owner and finish setup in one
+of two ways:
+
+- **The Jackdaw desktop app**: connect it to the brain's address, sign up with
+  the setup code, and walk the wizard there.
+- **The terminal**, on the box: `scripts/onboard.sh` (every prompt has a
+  default; `--yes` with `--password-file` and `--key-file` for unattended
+  runs).
+
+Details: [`onboarding.md`](./onboarding.md) section 8.
 
 ### Brain-core shape (small headless memory core)
 

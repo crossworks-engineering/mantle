@@ -1200,7 +1200,7 @@ if [[ "$(getval MANTLE_CLIENT_ENABLED)" == 0 ]]; then
   inf "  the Jackdaw desktop app: connect it to ${B}$OPEN_URL${RS}, then sign up with the setup code"
   inf "  on this box: ${B}scripts/onboard.sh${RS}"
 else
-  inf "Open ${B}$OPEN_URL${RS} and create your account — onboarding starts there."
+  inf "Open ${B}$OPEN_URL${RS} and create your account: onboarding starts there."
 fi
 if [[ "$UNCLAIMED" != no && -n "$(getval MANTLE_SETUP_CODE)" ]]; then
   print_setup_code "$(getval MANTLE_SETUP_CODE)"
