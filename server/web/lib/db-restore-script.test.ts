@@ -152,7 +152,9 @@ describe('db-restore.sh', () => {
       script.match(
         /KEEP_LOG=1\n\s+echo " {2}The full pg_restore output is kept in \$RESTORE_LOG" >&2\n\s+exit [23]\n/g,
       ),
-    ).toHaveLength(2);
+      // A failed check (2), a --new-brain that could not re-id (2), an
+      // unexplained pg_restore error (3).
+    ).toHaveLength(3);
     const exit3 = script.search(
       /if \[ "\$UNEXPLAINED" -gt 0 \]; then\n(?:\s+(?:echo .*|KEEP_LOG=1)\n)+\s+exit 3\n/,
     );
@@ -174,5 +176,26 @@ describe('db-restore.sh', () => {
     expect(complete).toBeGreaterThan(failExit);
     // The guard counts logins as data: the script drops the database.
     expect(script).toMatch(/SELECT count\(\*\) FROM auth\.users\) > 0/);
+  });
+
+  it('keeps the brain id on a plain restore, and gives a new brain its own only with --new-brain', () => {
+    // The flag is parsed, and the dump is still the one positional argument.
+    expect(script).toMatch(/--new-brain\) NEW_BRAIN=1 ;;/);
+    expect(script).not.toMatch(/DUMP="\$\{1:\?/);
+    // The only write to brain_identity sits inside the --new-brain branch.
+    const writes = [...script.matchAll(/UPDATE public\.brain_identity/g)];
+    expect(writes).toHaveLength(1);
+    const branch = script.indexOf('if [ "$NEW_BRAIN" = 1 ]; then');
+    const plain = script.indexOf('elif [ -n "$DUMP_BRAIN_ID" ]; then', branch);
+    expect(branch).toBeGreaterThan(0);
+    expect(writes[0]!.index).toBeGreaterThan(branch);
+    expect(writes[0]!.index).toBeLessThan(plain);
+    // A plain restore says which id it kept and how to give a copy its own.
+    expect(script.slice(plain)).toMatch(/kept: this is the same brain/);
+    // Gated on the table, not the ledger: an older dump has none, and the
+    // next migrate makes a fresh one.
+    expect(script).toMatch(/to_regclass\('public\.brain_identity'\)/);
+    // After the checks: a restore that failed them never re-ids anything.
+    expect(branch).toBeGreaterThan(script.search(/Restore FAILED[\s\S]*?exit 2/));
   });
 });

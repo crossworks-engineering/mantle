@@ -319,6 +319,16 @@ scripts/db-restore.sh backups/mantle-<ts>.dump
 docker compose up -d --wait              # migrate is now a no-op
 ```
 
+The brain id (migration 0226) comes back with the dump: a plain restore is the
+SAME brain (its own backup, a roll back, a move that replaces the old box)
+and keeps it. A NEW brain made from another brain's dump, one that will run
+beside it (dev data seeded into a new prod box, one generated dump seeded
+onto several boxes), takes `--new-brain`:
+`scripts/db-restore.sh --new-brain <dump>` gives it an id of its own, so a
+phone holding logins on both can tell them apart
+(docs/mobile-companion-backend.md, "Push routing on a device with several
+logins").
+
 The script drops the init-made `postgres` database and restores into a
 pristine one, so `pg_restore` should print no error (a dump from before
 migration 0212 prints one, for a trigger the script then makes itself). It

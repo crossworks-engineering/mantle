@@ -69,6 +69,8 @@ describe.skipIf(!DB_URL || (!source && !isCi()))('scripts/db-restore.sh, run for
   /** Where the dumps go; made in setup, so a skipped run leaves nothing. */
   let dir = '';
   let targetStarted = false;
+  /** The dumped brain's id (migration 0226), read before any dump. */
+  let sourceBrainId = '';
 
   const inTarget = (statement: string) => {
     const r = runCommand('docker', [
@@ -90,7 +92,7 @@ describe.skipIf(!DB_URL || (!source && !isCi()))('scripts/db-restore.sh, run for
   };
 
   /** Restore a variant's dump into a pristine target, as an operator would. */
-  const restore = (variant: Variant) => {
+  const restore = (variant: Variant, flags: string[] = []) => {
     // The script refuses a target that holds logins: start from an empty one.
     const reset = runCommand('docker', [
       'exec',
@@ -108,7 +110,7 @@ describe.skipIf(!DB_URL || (!source && !isCi()))('scripts/db-restore.sh, run for
       'CREATE DATABASE postgres',
     ]);
     expect(reset.status, reset.stderr).toBe(0);
-    const r = runCommand('bash', [SCRIPT, join(dir, `mantle-${variant}.dump`)], {
+    const r = runCommand('bash', [SCRIPT, ...flags, join(dir, `mantle-${variant}.dump`)], {
       cwd: ROOT,
       env: { ...process.env, MANTLE_PG_CONTAINER: target, MANTLE_DATA_DIR: join(dir, 'data') },
     });
@@ -145,6 +147,8 @@ describe.skipIf(!DB_URL || (!source && !isCi()))('scripts/db-restore.sh, run for
           insert into "drizzle"."__drizzle_migrations" (hash, created_at)
           values (${e.tag}, ${e.when})`;
       }
+      const [row] = await seed`select brain_id::text as id from brain_identity`;
+      sourceBrainId = String(row!['id']);
     } finally {
       await seed.end();
     }
@@ -226,6 +230,34 @@ describe.skipIf(!DB_URL || (!source && !isCi()))('scripts/db-restore.sh, run for
     expect(r.out).toMatch(/✔ Restore complete: public\.nodes has \d+ rows, auth\.users 1\./);
     expect(r.status, r.out).toBe(0);
     expect(shareTrigger()).toMatch(/\(old\.path\)::text IS DISTINCT FROM \(new\.path\)::text/);
+  }, 120_000);
+
+  const restoredBrainId = () => inTarget('select brain_id::text from brain_identity');
+
+  it('a plain restore keeps the brain id: the same brain (its backup, a roll back, a move)', () => {
+    const r = restore('new');
+    expect(r.status, r.out).toBe(0);
+    expect(sourceBrainId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(restoredBrainId()).toBe(sourceBrainId);
+    expect(r.out).toContain(`Brain id ${sourceBrainId} kept`);
+  }, 120_000);
+
+  it("--new-brain gives a brain made from another brain's dump an id of its own, and changes nothing else", () => {
+    const r = restore('new', ['--new-brain']);
+    expect(r.status, r.out).toBe(0);
+    expect(r.out).toMatch(/✔ Restore complete: public\.nodes has \d+ rows, auth\.users 1\./);
+    const id = restoredBrainId();
+    expect(id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(id).not.toBe(sourceBrainId);
+    expect(r.out).toContain(`New brain: brain id ${id}`);
+    expect(inTarget('select count(*) from brain_identity')).toBe('1');
+    // An unknown option is refused before anything is touched.
+    const bad = runCommand('bash', [SCRIPT, '--new-brian', join(dir, 'mantle-new.dump')], {
+      cwd: ROOT,
+      env: { ...process.env, MANTLE_PG_CONTAINER: target },
+    });
+    expect(bad.status).toBe(1);
+    expect(inTarget('select brain_id::text from brain_identity')).toBe(id);
   }, 120_000);
 
   it('old: a dump from before 0212 gives the one known error; the trigger is made and the restore is complete', () => {

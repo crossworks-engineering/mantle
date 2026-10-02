@@ -13,10 +13,10 @@ import { boolean, check, pgTable, timestamp, uuid } from 'drizzle-orm/pg-core';
  * Random, so it says nothing about the brain: not its address, not its
  * owner, not a secret. Written once by the migration and never changed by
  * the code: it survives restarts, upgrades and a restore of this brain's own
- * backup. A database cloned from another brain's dump carries that brain's
- * id; give the clone its own with
- * `update brain_identity set brain_id = gen_random_uuid()` before any phone
- * signs in to it (then restart the server and the push worker).
+ * backup. A database made from another brain's dump carries that brain's
+ * id: restore it with `scripts/db-restore.sh --new-brain` (or, after the
+ * fact, `update brain_identity set brain_id = gen_random_uuid()` and restart
+ * the server and the push worker).
  */
 export const brainIdentity = pgTable(
   'brain_identity',

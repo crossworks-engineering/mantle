@@ -107,6 +107,10 @@ that had already lost the trigger can carry stale folder share levels:
 migration 0212 repairs them at the next migrate, and under a release before
 0212 the nightly `share-drift` sweep does.
 
+A restore drill brings back the SAME brain: the plain restore keeps its
+brain id (migration 0226). Restoring the dump as a second, separate brain
+is `db-restore.sh --new-brain` (docs/scripts.md, db:restore).
+
 `db-restore.sh` also puts members' personal-space files back from the
 `mantle-spaces-<ts>.tgz` beside the dump (into `${MANTLE_DATA_DIR}/spaces`,
 only while that folder is empty).

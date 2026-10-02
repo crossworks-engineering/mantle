@@ -26,10 +26,33 @@
 # every trigger the dump lists, and exits 2 when one is missing. It exits 3,
 # after its last step, when pg_restore reported an error it cannot explain:
 # the brain passed the checks, but something in the dump did not restore.
+#
+# The brain id (migration 0226, docs/mobile-companion-backend.md "Push
+# routing on a device with several logins"). Phones and desktops tell brains
+# apart by it. A plain restore KEEPS the dump's id: this is the same brain
+# (its own backup, the way back from a roll, or a move to a new machine that
+# replaces the old one). When the restored database is a NEW brain made from
+# another brain's dump, one that will run BESIDE the brain the dump came
+# from (dev data seeded into a new prod box, one generated dump seeded onto
+# several boxes), pass --new-brain: the restored brain gets an id of its own,
+# so a device holding logins on both can still tell them apart.
+#
+#   scripts/db-restore.sh [--new-brain] <path-to.dump>
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-DUMP="${1:?usage: scripts/db-restore.sh <path-to.dump>}"
+NEW_BRAIN=0
+DUMP=""
+for arg in "$@"; do
+  case "$arg" in
+    --new-brain) NEW_BRAIN=1 ;;
+    -*) echo "✗ unknown option: $arg (usage: scripts/db-restore.sh [--new-brain] <path-to.dump>)" >&2; exit 1 ;;
+    *)
+      [ -z "$DUMP" ] || { echo "✗ one dump at a time (usage: scripts/db-restore.sh [--new-brain] <path-to.dump>)" >&2; exit 1; }
+      DUMP="$arg" ;;
+  esac
+done
+[ -n "$DUMP" ] || { echo "usage: scripts/db-restore.sh [--new-brain] <path-to.dump>" >&2; exit 1; }
 # Same container autodetect as db-dump.sh: dev machines run `mantle_dev_pg`,
 # deployed boxes run `mantle_pg`. Explicit MANTLE_PG_CONTAINER wins; refuse to
 # guess when both are running (restoring into the wrong brain is the one
@@ -272,6 +295,37 @@ if [ "$LEDGER" -ge "$WHEN_0188" ]; then
     echo "  again in Team admin > Clients as soon as the app is up."
     printf '%s\n' "$CLIENTS" | sed 's/^/    /'
   fi
+fi
+
+# The brain id (migration 0226). A dump from before 0226 has no table: the
+# migrate that runs next makes one with a fresh id, whichever way this ran.
+HAS_BRAIN_ID=$(q "SELECT to_regclass('public.brain_identity') IS NOT NULL" || echo "")
+DUMP_BRAIN_ID=""
+[ "$HAS_BRAIN_ID" = "t" ] && DUMP_BRAIN_ID=$(q "SELECT brain_id FROM public.brain_identity" || echo "")
+if [ "$NEW_BRAIN" = 1 ]; then
+  if [ "$HAS_BRAIN_ID" != "t" ]; then
+    echo "▷ New brain: the dump is from before migration 0226 (no brain id); migrate gives this brain its own."
+  elif [ -z "$DUMP_BRAIN_ID" ]; then
+    echo "▷ New brain: the dump holds no brain id row; the app makes one of its own on first use."
+  else
+    # A CTE, so psql prints the id and not the command tag after it.
+    NEW_ID=$(q "WITH u AS (UPDATE public.brain_identity SET brain_id = gen_random_uuid() RETURNING brain_id)
+                SELECT brain_id FROM u" || echo "")
+    if [ -z "$NEW_ID" ] || [ "$NEW_ID" = "$DUMP_BRAIN_ID" ]; then
+      echo "✗ --new-brain: could not give the restored brain an id of its own. Do not start the app:" >&2
+      echo "  it would share the id of the brain the dump came from. Run by hand, then start it:" >&2
+      echo "    UPDATE brain_identity SET brain_id = gen_random_uuid();" >&2
+      KEEP_LOG=1
+      echo "  The full pg_restore output is kept in $RESTORE_LOG" >&2
+      exit 2
+    fi
+    echo "▷ New brain: brain id $NEW_ID (the dump's brain keeps ${DUMP_BRAIN_ID:-its own})."
+  fi
+elif [ -n "$DUMP_BRAIN_ID" ]; then
+  echo "▷ Brain id $DUMP_BRAIN_ID kept: this is the same brain as the dump's (its backup, a roll back, a move)."
+  echo "  If this database is a NEW brain that will run beside the dump's, give it its own id before"
+  echo "  the app starts (phones would otherwise mix the two up):"
+  echo "    UPDATE brain_identity SET brain_id = gen_random_uuid();   (or restore again with --new-brain)"
 fi
 
 # Personal-space file bytes (member logins). The rows restored above point at

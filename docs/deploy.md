@@ -238,7 +238,12 @@ docker compose up -d postgres --wait
 #     policy): do not start the app, read the errors, fix and run it again.
 #     A mantle-spaces-<ts>.tgz beside the dump (members' personal-space files)
 #     is untarred into $MANTLE_DATA_DIR/spaces in the same step.
-scripts/db-restore.sh backups/mantle-<ts>.dump
+#     The dev brain keeps running beside this one? Then this is a NEW brain
+#     made from dev's dump: add --new-brain, so it gets a brain id of its own
+#     (phones holding a dev and a prod login tell them apart by it). Moving
+#     the SAME brain to a new box (the old one retires) is a plain restore,
+#     which keeps the id. See docs/scripts.md, db:restore.
+scripts/db-restore.sh [--new-brain] backups/mantle-<ts>.dump
 
 # 3d. Copy the file bytes + object store from dev (bind-mount dirs → just rsync)
 rsync -a  dev-host:/path/to/dev/data/files/  "$MANTLE_DATA_DIR"/files/
