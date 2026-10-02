@@ -625,10 +625,21 @@ export async function appDbSeedRows(
     ).map((t) => String(t.name));
     throw seedTableError(table, known);
   }
-  const changes = await runAppSqlBatch(
-    reg.storagePath,
-    planSeedStatements(table, columns, rows, opts),
-  );
+  // Under the registry row lock (apps audit 2026-10-02, item 2). A seed may
+  // run for APP_SCHEMA_TIMEOUT_MS, far past a restore's drain: without the
+  // lock it could commit into the old file's WAL, and its close could remove
+  // the restored file's sidecars. A restore takes the same lock for its swap,
+  // so it waits for the seed; a seed that waited on a restore sees the marker
+  // and is refused as busy.
+  const changes = await db.transaction(async (tx) => {
+    await tx
+      .select({ id: appDatabases.id })
+      .from(appDatabases)
+      .where(eq(appDatabases.id, reg.id))
+      .for('update');
+    if (await isRestoring(reg.storagePath)) throw new AppDbRestoringError();
+    return runAppSqlBatch(reg.storagePath, planSeedStatements(table, columns, rows, opts));
+  });
   // Same best-effort size tracking as appDbExec.
   try {
     const { size } = await stat(reg.storagePath);
@@ -865,7 +876,9 @@ export async function snapshotAppDatabase(
 
 /** How long a restore waits, after its marker is down, for statements that
  *  had already opened the file: the longest a statement may run, plus a
- *  margin. A statement past it is killed with its process (app-sql-runner). */
+ *  margin. A statement past it is killed with its process (app-sql-runner).
+ *  The server's longer writes (a schema script, a seed batch) hold the
+ *  registry row lock instead, which the swap takes too. */
 export const APP_DB_RESTORE_DRAIN_MS = APP_SQL_TIMEOUT_MS + 750;
 
 /**

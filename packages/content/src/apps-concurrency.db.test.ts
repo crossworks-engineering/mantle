@@ -140,6 +140,35 @@ describe.skipIf(!URL)('apps write paths on Postgres', () => {
     ).toEqual([{ name: 'A' }, { name: 'B' }]);
   });
 
+  it('a seed waits for the registry row lock a restore swap holds (audit item 2)', async () => {
+    const app = await newApp('seed-lock');
+    const schema = {
+      schemaSql: 'CREATE TABLE IF NOT EXISTS fluids (id INTEGER PRIMARY KEY, name TEXT);',
+      schemaVersion: 1,
+    };
+    await broker.appDbSeedRows(owner, app.id, 'fluids', [{ name: 'A' }], {}, schema);
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    let locked!: () => void;
+    const gotLock = new Promise<void>((r) => (locked = r));
+    // What restoreAppDatabaseFile holds while it swaps the file.
+    const holder = admin.begin(async (tx) => {
+      await tx`select id from app_databases where app_node_id = ${app.id} for update`;
+      locked();
+      await held;
+    });
+    await gotLock;
+    let done = false;
+    const seed = broker
+      .appDbSeedRows(owner, app.id, 'fluids', [{ name: 'B' }], {}, schema)
+      .then((r) => ((done = true), r));
+    await new Promise((r) => setTimeout(r, 500));
+    expect(done).toBe(false);
+    release();
+    await holder;
+    expect(await seed).toMatchObject({ inserted: 1 });
+  });
+
   it('a lost file is an error, and a delete removes the node before the file (D1, D6)', async () => {
     const app = await newApp('lost');
     const schema = { schemaSql: 'CREATE TABLE IF NOT EXISTS t (x);', schemaVersion: 1 };
