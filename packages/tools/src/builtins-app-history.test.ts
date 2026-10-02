@@ -32,6 +32,10 @@ vi.mock('@mantle/content/app-trash', () => {
   };
 });
 
+vi.mock('@mantle/content/app-package', () => ({ duplicateApp: vi.fn() }));
+
+import { duplicateApp } from '@mantle/content/app-package';
+import { AppDbMissingError } from '@mantle/content/app-broker';
 import {
   AppTrashRefusedError,
   listDeletedApps,
@@ -212,5 +216,39 @@ describe('the trash tools (Phase 3)', () => {
     vi.mocked(restoreDeletedApp).mockRejectedValueOnce(new AppTrashRefusedError('not deleted'));
     expect(errorOf(await undelete.handler({ id: APP }, chat))).toBe('not deleted');
     expect(errorOf(await undelete.handler({ id: APP }, member))).toMatch(/owner/);
+  });
+});
+
+describe('the duplicate tool (Phase 3)', () => {
+  const duplicate = tool('app_duplicate');
+
+  it('copies with the data by default, names the copy when asked, and is owner-only', async () => {
+    vi.mocked(duplicateApp).mockResolvedValueOnce({
+      id: SNAP,
+      title: 'Prices (copy)',
+      hasData: true,
+    });
+    expect(outputOf(await duplicate.handler({ id: APP }, mcp))).toMatchObject({
+      id: SNAP,
+      name: 'Prices (copy)',
+      has_data: true,
+    });
+    expect(duplicateApp).toHaveBeenCalledWith('o1', APP, { withData: true, actor: 'mcp' });
+    vi.mocked(duplicateApp).mockResolvedValueOnce({ id: SNAP, title: 'Try', hasData: false });
+    await duplicate.handler({ id: APP, name: 'Try', with_data: false }, chat);
+    expect(duplicateApp).toHaveBeenLastCalledWith('o1', APP, {
+      title: 'Try',
+      withData: false,
+      actor: 'agent',
+    });
+    expect(duplicate.ownerOnly).toBe(true);
+    expect(errorOf(await duplicate.handler({ id: APP }, member))).toMatch(/owner/);
+  });
+
+  it('says how to copy an app whose database file is lost', async () => {
+    vi.mocked(duplicateApp).mockRejectedValueOnce(new AppDbMissingError(APP));
+    expect(errorOf(await duplicate.handler({ id: APP }, chat))).toMatch(/with_data false/);
+    vi.mocked(duplicateApp).mockResolvedValueOnce(null);
+    expect(errorOf(await duplicate.handler({ id: APP }, chat))).toMatch(/not found/);
   });
 });

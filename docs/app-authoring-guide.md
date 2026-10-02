@@ -348,6 +348,39 @@ same id, admin-only and unshared. The nightly `app-trash-purge` sweep removes
 it after 30 days; `DELETE /api/apps/deleted/:id` does it at once. An app
 whose database file was already lost keeps a code-only snapshot.
 
+## Export, import and duplicate
+
+**Duplicate** (`app_duplicate`, or `POST /api/apps/:id/duplicate`) copies an
+app in the same brain: its code with the builds (a published app is live at
+once), its draft, its declared tools and schema, and a copy of its data
+(`with_data: false` leaves the copy's database empty). The copy is named
+"<name> (copy)" unless you give a name. Its history starts with one version
+("copied from …").
+
+**Export** (`GET /api/apps/:id/export`) downloads the app as a `.mantleapp`
+file, to move it to another brain or keep it. It is a zip:
+
+| Entry | What |
+|---|---|
+| `mantleapp.json` | name, description, icon, colour, tags; the published code and the draft; the declared tools and schema; format version 1 |
+| `data.sqlite` | a consistent copy of the database (left out with `?data=0`) |
+
+**Import** (`POST /api/apps/import-package`, the file as the raw body;
+`?title=` names it, `?data=0` leaves the data out) always makes a NEW app.
+It checks the whole package first: the format, the source limits, the schema
+(on an empty trial database when no data comes with it) and the database
+(SQLite `quick_check`, then a clean copy). A bad package makes nothing.
+Builds do not travel between brains, so the import builds the published code
+and publishes it when it was published where it came from; the draft goes
+back on top as the draft. Declared tools this brain does not have are left
+out and named in the answer (`droppedToolSlugs`). The cap is the app
+database cap (`APP_SQL_MAX_DB_MB`) plus the code.
+
+None of the three carries the original's sharing, level, history or table
+exports (an export has one master): the new app is admin-only in Unsorted.
+`POST /api/apps/import` (JSON source tree, create or update) stays for
+authoring tools such as `apps:push`.
+
 ## Exporting app data to a Table (the app as master)
 
 When a team manages data **inside** an app (Tier 3 SQLite with member writes),

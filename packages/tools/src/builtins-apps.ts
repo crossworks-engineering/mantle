@@ -36,6 +36,7 @@ import {
   appDbSchema,
   appDbSeedRows,
   listAppDatabaseSummaries,
+  AppDbMissingError,
 } from '@mantle/content/app-broker';
 import {
   createAppTableExport,
@@ -47,6 +48,7 @@ import {
   listDeletedApps,
   restoreDeletedApp,
 } from '@mantle/content/app-trash';
+import { duplicateApp } from '@mantle/content/app-package';
 import {
   AppSnapshotBudgetError,
   AppSnapshotRefusedError,
@@ -1292,6 +1294,55 @@ const app_undelete: BuiltinToolDef = {
   },
 };
 
+// ── Copies (apps first-class plan, Phase 3) ─────────────────────────────────
+
+const app_duplicate: BuiltinToolDef = {
+  slug: 'app_duplicate',
+  ownerOnly: true,
+  preconditions: APP_ID_PRE,
+  name: 'Duplicate a mini app',
+  description:
+    "Copy an app: its code (live at once when the original is published), its draft, declared tools and schema, and a copy of its data unless with_data is false. The copy is a new app named '<name> (copy)' unless you give a name; it starts admin-only and unshared, with no history and no table exports. Use it to try a big change on a copy, or to start a new app from one that works. Returns the new id and name.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', description: 'The app to copy (UUID) — from `app_list`.' },
+      name: { type: 'string', maxLength: 200, description: "The copy's name." },
+      with_data: {
+        type: 'boolean',
+        default: true,
+        description: "False: copy the code only; the copy's database starts empty.",
+      },
+    },
+    required: ['id'],
+  },
+  handler: async (input, ctx) => {
+    const refused = ownerOnlyRefusal(ctx);
+    if (refused) return refused;
+    const id = str(input.id).trim();
+    if (!id) return { ok: false, error: 'id is required' };
+    const name = str(input.name).trim();
+    try {
+      const copy = await duplicateApp(ctx.ownerId, id, {
+        ...(name ? { title: name } : {}),
+        withData: input.with_data !== false,
+        actor: historyActor(ctx),
+      });
+      if (!copy) return { ok: false, error: `app ${id} not found` };
+      ctx.step?.setOutput({ id: copy.id, copied_from: id, has_data: copy.hasData });
+      return {
+        ok: true,
+        output: { id: copy.id, name: copy.title, has_data: copy.hasData, url: nodeUrl(copy.id) },
+      };
+    } catch (err) {
+      if (err instanceof AppDbMissingError) {
+        return { ok: false, error: `${err.message}. Or copy the code only: with_data false.` };
+      }
+      return { ok: false, error: errorMessage(err) };
+    }
+  },
+};
+
 export const APP_TOOLS: BuiltinToolDef[] = [
   app_create,
   app_get,
@@ -1314,6 +1365,7 @@ export const APP_TOOLS: BuiltinToolDef[] = [
   app_snapshot_delete,
   app_deleted_list,
   app_undelete,
+  app_duplicate,
 ];
 
 export const APP_TOOL_SLUGS: string[] = APP_TOOLS.map((t) => t.slug);

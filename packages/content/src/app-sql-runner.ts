@@ -155,7 +155,7 @@ function rowBytes(row) {
 }
 function run(job) {
   const { file, sql, params, mode, readOnly, maxRows, maxLength, maxReplyBytes, maxDbBytes, journalLimit, userVersion, dest } = job;
-  if (mode !== 'copy' && restoring(file)) throw new Error('${RESTORING_REPLY}');
+  if (mode !== 'copy' && mode !== 'adopt' && restoring(file)) throw new Error('${RESTORING_REPLY}');
   if (mode === 'copy') {
     // The server's own copy of an app's file (a schema trial run, a
     // snapshot): VACUUM INTO from a read-only open, a consistent copy under
@@ -169,6 +169,27 @@ function run(job) {
       src.close();
     }
     return null;
+  }
+  if (mode === 'adopt') {
+    // A database file from outside (an app package import, app-package.ts):
+    // checked whole, then copied clean to dest. None of the file's own SQL is
+    // run: the checks read pages, VACUUM INTO copies the schema as text, and
+    // trusted_schema off keeps its views and triggers from calling functions
+    // while it is read. The parent picks the file (its own temp copy).
+    const src = new DatabaseSync(file);
+    try {
+      src.exec('PRAGMA trusted_schema = OFF');
+      const check = src.prepare('PRAGMA quick_check').all();
+      const first = check[0] ? String(Object.values(check[0])[0]) : 'no answer';
+      if (check.length !== 1 || first !== 'ok') {
+        throw new Error('the database file is damaged (' + first.slice(0, 200) + ')');
+      }
+      const userVersion = Number(src.prepare('PRAGMA user_version').get().user_version);
+      src.exec("VACUUM INTO '" + String(dest).replace(/'/g, "''") + "'");
+      return { userVersion };
+    } finally {
+      src.close();
+    }
   }
   const db = new DatabaseSync(file, { readOnly, limits: { length: maxLength } });
   try {
@@ -489,8 +510,8 @@ export type AppSqlBatchStatement = { sql: string; params: unknown[] };
 /** A job for a child: an app statement, or the server's own file copy or
  *  write batch. */
 type ChildJob = Omit<Parameters<typeof runAppSql>[1], 'mode'> & {
-  mode: 'all' | 'run' | 'script' | 'copy' | 'batch';
-  /** 'copy' only: the file to write (must not exist). */
+  mode: 'all' | 'run' | 'script' | 'copy' | 'batch' | 'adopt';
+  /** 'copy' and 'adopt' only: the file to write (must not exist). */
   dest?: string;
   /** 'batch' only: the statements, run in one transaction. */
   statements?: AppSqlBatchStatement[];
@@ -527,6 +548,23 @@ export async function copyAppDbFile(
   timeoutMs = APP_DB_COPY_TIMEOUT_MS,
 ): Promise<void> {
   await runOnChild(file, { sql: '', mode: 'copy', readOnly: true, dest }, timeoutMs);
+}
+
+/**
+ * Check a database file that came from outside (an app package import) and
+ * copy it clean to `dest` (which must not exist), in a SQL child: the file
+ * must pass SQLite's quick_check, and `VACUUM INTO` writes a fresh,
+ * compacted copy. Throws AppSqlError when the file is not a sound SQLite
+ * database. Returns the file's user_version (the schema stamp).
+ */
+export async function adoptAppDbFile(
+  file: string,
+  dest: string,
+  timeoutMs = APP_DB_COPY_TIMEOUT_MS,
+): Promise<{ userVersion: number }> {
+  return (await runOnChild(file, { sql: '', mode: 'adopt', readOnly: false, dest }, timeoutMs)) as {
+    userVersion: number;
+  };
 }
 
 async function runOnChild(file: string, opts: ChildJob, timeoutMs: number): Promise<unknown> {
@@ -571,7 +609,7 @@ async function runOnChild(file: string, opts: ChildJob, timeoutMs: number): Prom
       maxDbBytes: opts.maxDbBytes ?? appSqlMaxDbBytes(),
       journalLimit: APP_SQL_JOURNAL_LIMIT_BYTES,
       userVersion: opts.mode === 'script' ? Math.max(0, Math.floor(opts.userVersion ?? 0)) : 0,
-      dest: opts.mode === 'copy' ? opts.dest : undefined,
+      dest: opts.mode === 'copy' || opts.mode === 'adopt' ? opts.dest : undefined,
       statements: opts.mode === 'batch' ? opts.statements : undefined,
     });
   });

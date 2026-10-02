@@ -40,6 +40,7 @@ const UPLOAD_PATHS: readonly RegExp[] = [
   /^\/api\/assistant\/turn$/,
   /^\/api\/assistant\/transcribe$/,
   /^\/api\/tables\/[^/]+\/import$/,
+  /^\/api\/apps\/import-package$/,
   /^\/api\/profile\/(photo|logo)$/,
   /^\/api\/member\/space-files$/,
   /^\/api\/admin\/space-files$/,
@@ -105,8 +106,14 @@ export function declaredOver(headers: Headers, maxBytes: number): boolean {
  * ceiling. Throws BodyTooLargeError.
  */
 export async function readBodyCapped(req: Request, maxBytes: number): Promise<string> {
+  return (await readBytesCapped(req, maxBytes)).toString('utf8');
+}
+
+/** The body's bytes, read under the same rule as `readBodyCapped` (a raw
+ *  upload route reads its own cap this way). Throws BodyTooLargeError. */
+export async function readBytesCapped(req: Request, maxBytes: number): Promise<Buffer> {
   if (declaredOver(req.headers, maxBytes)) throw new BodyTooLargeError(maxBytes);
-  if (!req.body) return '';
+  if (!req.body) return Buffer.alloc(0);
   const reader = req.body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
@@ -120,7 +127,7 @@ export async function readBodyCapped(req: Request, maxBytes: number): Promise<st
     }
     chunks.push(value);
   }
-  return Buffer.concat(chunks).toString('utf8');
+  return Buffer.concat(chunks);
 }
 
 /** A request's JSON body read under `maxBytes` (the route's ceiling), or

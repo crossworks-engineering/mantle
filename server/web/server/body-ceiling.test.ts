@@ -83,6 +83,7 @@ describe('the body ceiling: which route gets which', () => {
       '/api/admin/space-files',
       '/api/assistant/turn',
       '/api/tables/t1/import',
+      '/api/apps/import-package',
       '/api/profile/photo',
     ]) {
       expect(bodyCeilingFor(p), p).toBeNull();

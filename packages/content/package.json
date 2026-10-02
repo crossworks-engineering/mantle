@@ -19,6 +19,7 @@
     "./app-broker": "./src/app-broker.ts",
     "./app-snapshots": "./src/app-snapshots.ts",
     "./app-trash": "./src/app-trash.ts",
+    "./app-package": "./src/app-package.ts",
     "./app-table-exports": "./src/app-table-exports.ts",
     "./tables": "./src/tables/index.ts",
     "./table-to-text": "./src/table-to-text.ts",
@@ -44,6 +45,7 @@
     "docx": "^9.7.1",
     "drizzle-orm": "^0.45.2",
     "exceljs": "^4.4.0",
+    "jszip": "^3.10.1",
     "marked": "^18.0.11",
     "mathjs": "15.2.0",
     "tz-lookup": "^6.1.25"

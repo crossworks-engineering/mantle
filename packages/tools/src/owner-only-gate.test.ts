@@ -50,6 +50,7 @@ const EXPECTED_OWNER_ONLY = [
   'app_db_seed',
   'app_delete',
   'app_deleted_list',
+  'app_duplicate',
   'app_file_delete',
   'app_file_write',
   'app_publish',

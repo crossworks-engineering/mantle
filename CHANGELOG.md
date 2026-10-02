@@ -6,6 +6,19 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
 ## Unreleased: apps first-class, Phase 3 (trash, import, app_update)
 
+- **Duplicate.** `app_duplicate` / `POST /api/apps/:id/duplicate` copies an
+  app with its builds (live at once), draft, tools, schema and data
+  (`with_data: false` for code only). Admin-only, unshared, no history but a
+  "copied from" version, no table exports.
+- **`.mantleapp` export and import.** `GET /api/apps/:id/export` downloads a
+  zip of the code and a copy of the data (`?data=0` without).
+  `POST /api/apps/import-package` (the file as the raw body) makes a new app
+  from one: the package, schema and database (SQLite quick_check, then a
+  clean copy in the SQL child) are checked before anything is made; the code
+  is built here and published when it was published; unknown tools are left
+  out and reported. docs/app-authoring-guide.md, "Export, import and
+  duplicate".
+
 - **Recently deleted.** Deleting an app keeps a `pre_delete` snapshot (code,
   name, look and data) and its history for 30 days; it comes back with the
   same id (`app_undelete`, `POST /api/apps/deleted/:id/restore`), admin-only

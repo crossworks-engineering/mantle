@@ -919,6 +919,57 @@ export async function restoreAppLive(
   return done;
 }
 
+/** The code a duplicate carries over: both trees, each with its build. */
+export type InstallableAppCode = RestorableCode & { draftBuild: BuildRef | null };
+
+/**
+ * Give a just-created app another app's code (a duplicate, app-package.ts):
+ * the published source with the build it runs on, the draft with its preview
+ * build, and the manifest. Builds are content-addressed objects in this
+ * brain's store, so a pair that was valid there is valid here. A published
+ * build becomes the copy's first version, noted `opts.note`.
+ */
+export async function installAppCode(
+  ownerId: string,
+  id: string,
+  code: InstallableAppCode,
+  opts: { note: string; actor?: AppHistoryActor },
+): Promise<boolean> {
+  const live = code.publishedBuild?.ok ? code.publishedBuild : null;
+  const done = await db.transaction(async (tx) => {
+    const app = await lockAppRow(tx, ownerId, id);
+    if (!app) return false;
+    await tx
+      .update(apps)
+      .set({
+        source: code.source,
+        sourceText: sourceToText(code.source),
+        publishedBuild: live,
+        manifest: code.manifest,
+        draftSource: code.draft,
+        draftUpdatedAt: code.draft ? new Date() : null,
+        draftBuild: code.draftBuild,
+        updatedAt: new Date(),
+      })
+      .where(eq(apps.nodeId, id));
+    if (live) {
+      await insertNodeSnapshot(tx, {
+        ownerId,
+        nodeId: id,
+        nodeKind: 'app',
+        trigger: 'publish',
+        note: opts.note.slice(0, 500),
+        actor: opts.actor ?? 'owner',
+        code: { source: code.source, draft: null, manifest: code.manifest, publishedBuild: live },
+        sourceHash: codeHash(code.source),
+      });
+    }
+    return true;
+  });
+  if (done && live) await notifyNodeIngested(id);
+  return done;
+}
+
 /**
  * Delete an app. A `pre_delete` snapshot comes first (the code, the name and
  * look, and a copy of the database), and the app's history outlives it, so

@@ -35,6 +35,7 @@ export {
 export { notFound, sanitizeToolError, type NotFoundResult } from './errors';
 export { UNTRUSTED_CONTENT_TOOL_SLUGS } from './untrusted';
 export { buildAndStageApp, type AppBuildOutcome } from './app-build-stage';
+export { importAppPackage, type AppPackageImportResult } from './app-package-import';
 export { PRIVATE_OUTPUT_TOOL_SLUGS } from './private-output';
 export {
   registerDynamicSchema,
