@@ -104,6 +104,32 @@ describe.skipIf(!URL)('apps write paths on Postgres', () => {
     ]);
   });
 
+  it('a new schema version is past the database version, not only the manifest one (audit item 8)', async () => {
+    const app = await newApp('drift');
+    const v1 = await apps.declareAppSchema(owner, app.id, 'CREATE TABLE IF NOT EXISTS a (x);');
+    expect(v1).toBe(1);
+    const read = async () =>
+      (await apps.getAppRuntime(owner, app.id))!.manifest.sqlite as {
+        schemaSql: string;
+        schemaVersion: number;
+      };
+    await broker.appDbExec(owner, app.id, 'INSERT INTO a VALUES (1)', [], await read());
+    // A data restore (or an undelete) left the database ahead of the manifest.
+    await admin`update app_databases set schema_version = 5 where app_node_id = ${app.id}`;
+    const v = await apps.declareAppSchema(
+      owner,
+      app.id,
+      'CREATE TABLE IF NOT EXISTS a (x); CREATE TABLE IF NOT EXISTS b (y);',
+    );
+    expect(v).toBe(6);
+    // The new version applies: table b exists.
+    await broker.appDbExec(owner, app.id, 'INSERT INTO b VALUES (2)', [], await read());
+    expect(await broker.appDbQuery(owner, app.id, 'SELECT y FROM b', [], await read())).toEqual([
+      { y: 2 },
+    ]);
+    expect(await apps.declareAppSchema(owner, randomUUID(), 'CREATE TABLE c (z);')).toBeNull();
+  });
+
   it('the seed runs in the SQL child, all or nothing, and names the tables on a miss (P5)', async () => {
     const app = await newApp('seed');
     const schema = {

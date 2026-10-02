@@ -109,6 +109,26 @@ describe.skipIf(!URL)('app history on Postgres', () => {
     expect(await names(id)).toEqual(['a', 'b']);
   });
 
+  it('restores the data when the live file is lost; the undo keeps the code (audit item 4)', async () => {
+    const id = await publishedApp('lost');
+    const before = await snaps.createAppSnapshot(owner, id);
+    const live = (await broker.appDatabasePath(owner, id))!;
+    await broker.removeAppDatabaseFiles(live);
+    const quiet = console.error;
+    console.error = () => {};
+    try {
+      const res = await snaps.restoreAppSnapshot(owner, id, before!.id, {
+        mode: 'data',
+        drainMs: 0,
+      });
+      expect(res?.undo).toMatchObject({ trigger: 'pre_restore', hasData: false });
+      expect(res?.undo?.note).toMatch(/code only/);
+    } finally {
+      console.error = quiet;
+    }
+    expect(await names(id)).toEqual(['a']);
+  });
+
   it('a code restore goes to the draft, and the next publish says where it came from', async () => {
     const id = await publishedApp('code');
     await apps.writeDraftFile(owner, id, 'App.tsx', 'export default () => "two";');

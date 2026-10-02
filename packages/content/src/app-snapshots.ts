@@ -30,7 +30,12 @@ import {
   restoreAppLive,
   type AppHistoryActor,
 } from './apps';
-import { appDbRoot, restoreAppDatabaseFile, snapshotAppDatabase } from './app-broker';
+import {
+  AppDbMissingError,
+  appDbRoot,
+  restoreAppDatabaseFile,
+  snapshotAppDatabase,
+} from './app-broker';
 import { scheduleAppTableExportSync } from './app-table-exports';
 import { codeHash, envMbBytes, insertNodeSnapshot, pruneHistoryRows } from './node-snapshot-rows';
 
@@ -210,6 +215,7 @@ async function snapshotLocked(
     note?: string | null;
     requireData?: boolean;
     withData?: boolean;
+    codeOnlyWhenLost?: boolean;
   },
 ): Promise<AppSnapshot | null> {
   const code = await currentCode(ownerId, appId);
@@ -224,8 +230,23 @@ async function snapshotLocked(
   const id = randomUUID();
   const rel = snapshotRelPath(ownerId, appId, id);
   const abs = snapshotAbsPath(rel);
-  const data = opts.withData === false ? null : await snapshotAppDatabase(ownerId, appId, abs);
+  let data: Awaited<ReturnType<typeof snapshotAppDatabase>> = null;
+  let lost = false;
+  if (opts.withData !== false) {
+    try {
+      data = await snapshotAppDatabase(ownerId, appId, abs);
+    } catch (err) {
+      if (!(err instanceof AppDbMissingError) || !opts.codeOnlyWhenLost) throw err;
+      lost = true;
+    }
+  }
   if (!data && opts.requireData) return null;
+  const note = [
+    opts.note?.trim().slice(0, 440),
+    lost ? '(code only: the live database file was lost)' : null,
+  ]
+    .filter(Boolean)
+    .join(' ');
   try {
     const row = await db.transaction((tx) =>
       insertNodeSnapshot(tx, {
@@ -234,7 +255,7 @@ async function snapshotLocked(
         nodeId: appId,
         nodeKind: 'app',
         trigger: opts.trigger,
-        note: opts.note?.trim().slice(0, 500) || null,
+        note: note || null,
         actor: opts.actor,
         code,
         sourceHash: codeHash(code.source),
@@ -300,8 +321,12 @@ export async function createAppSnapshot(
     /** Skip (null) when the app has no database yet: an automatic snapshot
      *  before a schema change has nothing to protect then. */
     requireData?: boolean;
-    /** False: keep the code only (an app whose database file is lost). */
+    /** False: keep the code only. */
     withData?: boolean;
+    /** Keep the code only when the app's database file is lost (an undo
+     *  snapshot must not block the restore that brings the data back),
+     *  instead of failing with AppDbMissingError. */
+    codeOnlyWhenLost?: boolean;
   } = {},
 ): Promise<AppSnapshot | null> {
   const trigger = opts.trigger ?? 'manual';
@@ -313,6 +338,7 @@ export async function createAppSnapshot(
       note: opts.note,
       requireData: opts.requireData === true,
       withData: opts.withData !== false,
+      codeOnlyWhenLost: opts.codeOnlyWhenLost === true,
     });
   });
   if (snap && trigger !== 'manual') await pruneAutoSnapshots(appId);
@@ -480,10 +506,14 @@ export async function restoreAppSnapshot(
       const now = await currentCode(ownerId, appId);
       if (now?.draft) throw new AppRestoreDraftError();
     }
+    // A lost live file is what a data restore is for: the undo snapshot
+    // keeps the code then, and the restore goes on (apps audit 2026-10-02,
+    // item 4).
     const undo = await snapshotLocked(ownerId, appId, {
       trigger: 'pre_restore',
       actor,
       note: `before restoring v${snap.seq} (${mode})`,
+      codeOnlyWhenLost: true,
     });
     if (wantsData) {
       const file = await appSnapshotFile(ownerId, appId, snapshotId);

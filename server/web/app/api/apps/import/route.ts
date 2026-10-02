@@ -12,7 +12,8 @@
  * slugs, and the schema on a trial copy of the database. A bad slug or schema
  * used to leave a half-made app behind. The name and dress fields follow the
  * create route's rules (lib/app-meta.ts). An update first takes a snapshot of
- * the app (`pre_import`), so an import over a working app can be undone.
+ * the app (`pre_import`: the code, and the data when the import brings a
+ * schema), so an import over a working app can be undone.
  */
 import { randomUUID } from 'node:crypto';
 import { NextResponse } from '@/server/http-compat';
@@ -24,6 +25,7 @@ import {
   saveDraftSource,
   getAppRuntime,
   setManifest,
+  declareAppSchema,
   publishApp,
   notifyAppNavChanged,
   AppSourceLimitError,
@@ -118,10 +120,16 @@ export async function POST(req: Request) {
       snippet: app.title,
     });
   } else {
+    // The data rides along only when the import changes the schema (the one
+    // part of an import that reaches the data); every push copying the
+    // database filled the disk (apps audit 2026-10-02, item 11). A lost live
+    // file keeps the code (item 4).
     await createAppSnapshot(user.id, appId, {
       trigger: 'pre_import',
       actor: 'owner',
       note: 'before an import',
+      withData: schemaSql !== null,
+      codeOnlyWhenLost: true,
     });
   }
 
@@ -134,10 +142,7 @@ export async function POST(req: Request) {
     throw err;
   }
   if (b.toolSlugs) await setManifest(user.id, appId, { toolSlugs: b.toolSlugs });
-  if (schemaSql) {
-    const nextVersion = (existing?.manifest.sqlite?.schemaVersion ?? 0) + 1;
-    await setManifest(user.id, appId, { sqlite: { schemaSql, schemaVersion: nextVersion } });
-  }
+  if (schemaSql) await declareAppSchema(user.id, appId, schemaSql);
 
   // ── build + optional publish ──
   const wantBuild = b.build !== false || b.publish === true;

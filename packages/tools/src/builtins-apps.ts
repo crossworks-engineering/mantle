@@ -16,6 +16,7 @@ import {
   deleteDraftFile,
   saveDraftSource,
   setManifest,
+  declareAppSchema,
   publishApp,
   updateAppMeta,
   deleteApp,
@@ -613,7 +614,7 @@ const app_db_schema_set: BuiltinToolDef = {
       await createAppSnapshot(ctx.ownerId, id, {
         trigger: 'pre_schema',
         actor: historyActor(ctx),
-        note: `before schema v${(app.manifest.sqlite?.schemaVersion ?? 0) + 1}`,
+        note: 'before a schema change',
         requireData: true,
       });
     } catch (err) {
@@ -622,11 +623,8 @@ const app_db_schema_set: BuiltinToolDef = {
         error: `could not take the safety snapshot before the schema change, so nothing changed: ${errorMessage(err)}`,
       };
     }
-    const nextVersion = (app.manifest.sqlite?.schemaVersion ?? 0) + 1;
-    const manifest = await setManifest(ctx.ownerId, id, {
-      sqlite: { schemaSql, schemaVersion: nextVersion },
-    });
-    if (!manifest) return { ok: false, error: `app ${id} not found` };
+    const nextVersion = await declareAppSchema(ctx.ownerId, id, schemaSql);
+    if (nextVersion === null) return { ok: false, error: `app ${id} not found` };
     ctx.step?.setOutput({ id, schema_version: nextVersion });
     return {
       ok: true,

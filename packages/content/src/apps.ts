@@ -23,6 +23,7 @@ import {
   db,
   nodes,
   apps,
+  appDatabases,
   shares,
   notifyNodeIngested,
   type Node,
@@ -659,6 +660,39 @@ export async function setManifest(
   });
 }
 
+/**
+ * Declare a new schema for an app's database: the script and the next
+ * version. Returns that version, or null when the app is not this owner's.
+ *
+ * The next version is one past BOTH the manifest's and the database's own
+ * (apps audit 2026-10-02, item 8). They drift apart: a data restore puts
+ * the snapshot's version on the database, an undelete of a never-published
+ * app keeps the old one. A schema at manifest + 1 that is not above the
+ * database's was skipped without a word, since a version applies only when
+ * it is newer than the database's. Under the app row lock, so two declares
+ * at once take two versions.
+ */
+export async function declareAppSchema(
+  ownerId: string,
+  id: string,
+  schemaSql: string,
+): Promise<number | null> {
+  return db.transaction(async (tx) => {
+    const app = await lockAppRow(tx, ownerId, id);
+    if (!app) return null;
+    const [reg] = await tx
+      .select({ schemaVersion: appDatabases.schemaVersion })
+      .from(appDatabases)
+      .where(eq(appDatabases.appNodeId, id))
+      .limit(1);
+    const schemaVersion =
+      Math.max(app.manifest.sqlite?.schemaVersion ?? 0, reg?.schemaVersion ?? 0) + 1;
+    const next: AppManifest = { ...app.manifest, sqlite: { schemaSql, schemaVersion } };
+    await tx.update(apps).set({ manifest: next, updatedAt: new Date() }).where(eq(apps.nodeId, id));
+    return schemaVersion;
+  });
+}
+
 /** Record a build of the draft (preview). A failed build still updates the ref
  *  so the agent sees the errors, but callers should keep the last green ref for
  *  rendering — they pass the ref to render; this only persists the latest. */
@@ -992,12 +1026,7 @@ export async function deleteApp(
     actor: opts.actor ?? 'owner',
     note: 'before delete',
   };
-  try {
-    await createAppSnapshot(ownerId, id, keep);
-  } catch (err) {
-    if (!(err instanceof broker.AppDbMissingError)) throw err;
-    await createAppSnapshot(ownerId, id, { ...keep, withData: false });
-  }
+  await createAppSnapshot(ownerId, id, { ...keep, codeOnlyWhenLost: true });
   // The node goes first, then the live database file (apps audit D6). Its
   // path is read now: the `app_databases` row cascades away with the node.
   // The snapshot files stay, with the history rows, for the trash.

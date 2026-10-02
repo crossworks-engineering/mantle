@@ -73,6 +73,7 @@ export {
   writeDraftFile,
   deleteDraftFile,
   setManifest,
+  declareAppSchema,
   setDraftBuild,
   discardDraft as discardAppDraft,
   publishApp,

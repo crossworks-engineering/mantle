@@ -23,7 +23,7 @@ import { resolveSingleOwnerId } from '@mantle/db';
 import {
   createApp,
   saveDraftSource,
-  getApp,
+  declareAppSchema,
   setManifest,
   publishApp,
   AppSourceLimitError,
@@ -163,11 +163,7 @@ if (manifest.schemaSql?.trim()) {
   } catch (err) {
     die(errorMessage(err));
   }
-  const app = await getApp(ownerId, id);
-  const nextVersion = (app?.manifest.sqlite?.schemaVersion ?? 0) + 1;
-  await setManifest(ownerId, id, {
-    sqlite: { schemaSql: manifest.schemaSql, schemaVersion: nextVersion },
-  });
+  const nextVersion = await declareAppSchema(ownerId, id, manifest.schemaSql);
   console.log(`set sqlite schema (v${nextVersion})`);
 }
 
