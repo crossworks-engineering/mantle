@@ -7,8 +7,13 @@
  * Then: the app is made from the PUBLISHED code, built here (builds do not
  * travel between brains) and published when it was published where it came
  * from; the draft goes back on top as the draft, with a preview build.
- * Declared tools this brain does not have are dropped and reported: the app
- * cannot call them here, and the allowlist names only tools that exist.
+ *
+ * The app gets NO tools. A package is a file from anywhere: its declared
+ * tools (access_set, web_fetch, app_source_set ...) would run as the owner
+ * the moment the published app opens. So the allowlist starts empty, and
+ * the declared tools come back as `requestedToolSlugs` (this brain has them;
+ * the owner grants them with app_tools_set after a look at the code) and
+ * `droppedToolSlugs` (this brain does not have them).
  */
 import { randomUUID } from 'node:crypto';
 import { rm } from 'node:fs/promises';
@@ -35,7 +40,10 @@ export type AppPackageImportResult = {
   build: AppBuildOutcome | null;
   /** The bytes of data it came with, or null when it brought none. */
   dataBytes: number | null;
-  /** Declared tools this brain does not have: left out of the allowlist. */
+  /** Declared tools this brain has. NOT granted: the owner grants them with
+   *  app_tools_set after reading the code. */
+  requestedToolSlugs: string[];
+  /** Declared tools this brain does not have. */
   droppedToolSlugs: string[];
   hasDraft: boolean;
 };
@@ -49,10 +57,10 @@ export async function importAppPackage(
   const { pkg } = opened;
 
   // ── check everything before anything is written ──
-  const toolSlugs: string[] = [];
+  const requestedToolSlugs: string[] = [];
   const droppedToolSlugs: string[] = [];
-  for (const slug of pkg.manifest.toolSlugs ?? []) {
-    if (await resolveTool(ownerId, slug)) toolSlugs.push(slug);
+  for (const slug of new Set(pkg.manifest.toolSlugs ?? [])) {
+    if (await resolveTool(ownerId, slug)) requestedToolSlugs.push(slug);
     else droppedToolSlugs.push(slug);
   }
   const withData = opts.withData !== false && pkg.data !== null;
@@ -70,7 +78,7 @@ export async function importAppPackage(
   try {
     const app = await installAppPackage(ownerId, pkg, {
       ...(opts.title ? { title: opts.title } : {}),
-      toolSlugs,
+      toolSlugs: [],
       data,
     });
     void recordIngest({
@@ -113,6 +121,7 @@ export async function importAppPackage(
       published,
       build,
       dataBytes: data ? (pkg.data?.bytes ?? null) : null,
+      requestedToolSlugs,
       droppedToolSlugs,
       hasDraft: pkg.code.draft !== null,
     };

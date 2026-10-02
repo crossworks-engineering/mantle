@@ -385,8 +385,11 @@ It checks the whole package first: the format, the source limits, the schema
 (SQLite `quick_check`, then a clean copy). A bad package makes nothing.
 Builds do not travel between brains, so the import builds the published code
 and publishes it when it was published where it came from; the draft goes
-back on top as the draft. Declared tools this brain does not have are left
-out and named in the answer (`droppedToolSlugs`). The cap is the app
+back on top as the draft. The new app gets NO tools: a package is a file
+from anywhere, and its declared tools would run as the owner the moment the
+app opens. The answer names them instead: `requestedToolSlugs` (this brain
+has them; grant them with `app_tools_set` or the Tools tab after reading the
+code) and `droppedToolSlugs` (this brain does not have them). The cap is the app
 database cap (`APP_SQL_MAX_DB_MB`) plus the code.
 
 Agents and MCP clients do the same with tools (owner only, group `apps`):

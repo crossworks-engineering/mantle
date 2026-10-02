@@ -345,7 +345,7 @@ describe('the export and import tools (Phase 3)', () => {
     expect(errorOf(await exp.handler({ id: APP }, member))).toMatch(/owner/);
   });
 
-  it('app_import makes a new app from a file and names the tools it left out', async () => {
+  it('app_import makes a new app from a file and names the tools it did not grant', async () => {
     vi.mocked(readFileById).mockResolvedValueOnce({ bytes: Buffer.from('zip') } as never);
     vi.mocked(importAppPackage).mockResolvedValueOnce({
       appId: SNAP,
@@ -353,6 +353,7 @@ describe('the export and import tools (Phase 3)', () => {
       published: true,
       build: { buildOk: true, errors: [], warnings: [], bytes: 1 },
       dataBytes: 4096,
+      requestedToolSlugs: ['web_fetch'],
       droppedToolSlugs: ['crm_lookup'],
       hasDraft: false,
     });
@@ -360,6 +361,7 @@ describe('the export and import tools (Phase 3)', () => {
       id: SNAP,
       published: true,
       build_ok: true,
+      requested_tool_slugs: ['web_fetch'],
       dropped_tool_slugs: ['crm_lookup'],
     });
     expect(importAppPackage).toHaveBeenCalledWith('o1', Buffer.from('zip'), {

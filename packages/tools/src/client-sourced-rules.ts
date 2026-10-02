@@ -231,7 +231,10 @@ export const WRITE_RULES: Readonly<Record<string, WriteRule>> = {
   app_undelete: creates(),
   app_duplicate: onApp,
   app_export: onApp,
-  app_import: creates(),
+  // A package from anywhere: its code is built and can be published. It is
+  // granted no tools (app-package-import.ts), but what the code does is
+  // still not in the input, so a client-sourced import always waits.
+  app_import: always(UNSEEN),
 
   // ── Records (tasks, events, contacts, journal, formulas, secrets) ────────
   task_create: creates(),

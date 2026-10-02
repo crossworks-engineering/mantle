@@ -1428,7 +1428,7 @@ const app_import: BuiltinToolDef = {
   preconditions: FILE_ID_PRE,
   name: 'Import a mini app from a file',
   description:
-    "Make a NEW app from a `.mantleapp` file in /files (from `app_export`, here or on another brain). Everything is checked first; a bad file makes nothing. The code is built here and published when it was published where it came from; the draft comes back as the draft; the data comes too unless with_data is false. Declared tools this brain lacks are left out and named in the answer (dropped_tool_slugs). Returns the new app's id. To replace an existing app's code use `app_source_set`.",
+    "Make a NEW app from a `.mantleapp` file in /files (from `app_export`, here or on another brain). Everything is checked first; a bad file makes nothing. The code is built here and published when it was published where it came from; the draft comes back as the draft; the data comes too unless with_data is false. The new app gets NO tools: the file's declared tools come back as requested_tool_slugs (grant them with `app_tools_set` after reading the code) and dropped_tool_slugs (this brain lacks them). Returns the new app's id. To replace an existing app's code use `app_source_set`.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -1479,6 +1479,7 @@ const app_import: BuiltinToolDef = {
             : {}),
           has_draft: res.hasDraft,
           data_bytes: res.dataBytes,
+          requested_tool_slugs: res.requestedToolSlugs,
           dropped_tool_slugs: res.droppedToolSlugs,
           url: nodeUrl(res.appId),
         },
