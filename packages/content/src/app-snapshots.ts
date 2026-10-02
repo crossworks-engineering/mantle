@@ -21,9 +21,8 @@
 import { randomUUID } from 'node:crypto';
 import { rm } from 'node:fs/promises';
 import * as path from 'node:path';
-import { and, desc, eq, inArray, isNotNull, notInArray, sql } from 'drizzle-orm';
+import { and, desc, eq, isNotNull, sql } from 'drizzle-orm';
 import { apps, db, nodeSnapshots, nodes, type AppSnapshotCode } from '@mantle/db';
-import { envInt } from '@mantle/config';
 import type { AppRestoreMode, AppSnapshot } from '@mantle/client-types';
 import {
   AppRestoreDraftError,
@@ -33,7 +32,7 @@ import {
 } from './apps';
 import { appDbRoot, restoreAppDatabaseFile, snapshotAppDatabase } from './app-broker';
 import { scheduleAppTableExportSync } from './app-table-exports';
-import { codeHash, insertNodeSnapshot } from './node-snapshot-rows';
+import { codeHash, envMbBytes, insertNodeSnapshot, pruneHistoryRows } from './node-snapshot-rows';
 
 export type AppSnapshotTrigger = Exclude<AppSnapshot['trigger'], 'publish'>;
 
@@ -42,6 +41,10 @@ export const APP_SNAPSHOT_AUTO_KEEP = 20;
 /** The default budget for one owner's snapshot copies, in MB
  *  (APP_SNAPSHOT_MAX_MB). */
 export const APP_SNAPSHOT_DEFAULT_MAX_MB = 2048;
+/** The default budget for one app's automatic snapshot copies, in MB
+ *  (APP_SNAPSHOT_AUTO_MAX_MB): about four copies of an app at the
+ *  256 MB database cap. */
+export const APP_SNAPSHOT_AUTO_DEFAULT_MAX_MB = 1024;
 
 /** The owner's snapshots would pass APP_SNAPSHOT_MAX_MB. */
 export class AppSnapshotBudgetError extends Error {
@@ -73,7 +76,11 @@ const AUTO_TRIGGERS: AppSnapshotTrigger[] = [
 ];
 
 function maxSnapshotBytes(): number {
-  return envInt('APP_SNAPSHOT_MAX_MB', APP_SNAPSHOT_DEFAULT_MAX_MB, 1) * 1024 * 1024;
+  return envMbBytes('APP_SNAPSHOT_MAX_MB', APP_SNAPSHOT_DEFAULT_MAX_MB);
+}
+
+function maxAutoSnapshotBytes(): number {
+  return envMbBytes('APP_SNAPSHOT_AUTO_MAX_MB', APP_SNAPSHOT_AUTO_DEFAULT_MAX_MB);
 }
 
 /** A snapshot file's place, relative to APP_DB_DIR (what the row keeps). */
@@ -253,31 +260,17 @@ async function snapshotLocked(
   }
 }
 
-/** Drop this app's automatic snapshots past the newest APP_SNAPSHOT_AUTO_KEEP
- *  (the owner's own and the versions stay), files after the rows. */
+/** Drop this app's automatic snapshots past the newest APP_SNAPSHOT_AUTO_KEEP,
+ *  and past APP_SNAPSHOT_AUTO_MAX_MB of copies (the newest stays whatever
+ *  its size; the owner's own and the versions are never pruned), files after
+ *  the rows. One statement under the app's history lock: nothing taken
+ *  meanwhile is removed, and no restore is reading a file it removes. */
 async function pruneAutoSnapshots(appId: string): Promise<void> {
-  const keep = await db
-    .select({ id: nodeSnapshots.id })
-    .from(nodeSnapshots)
-    .where(and(eq(nodeSnapshots.nodeId, appId), inArray(nodeSnapshots.trigger, AUTO_TRIGGERS)))
-    .orderBy(desc(nodeSnapshots.seq))
-    .limit(APP_SNAPSHOT_AUTO_KEEP);
-  const gone = await db
-    .delete(nodeSnapshots)
-    .where(
-      and(
-        eq(nodeSnapshots.nodeId, appId),
-        inArray(nodeSnapshots.trigger, AUTO_TRIGGERS),
-        keep.length
-          ? notInArray(
-              nodeSnapshots.id,
-              keep.map((k) => k.id),
-            )
-          : sql`true`,
-      ),
-    )
-    .returning({ dbPath: nodeSnapshots.dbPath });
-  await removeSnapshotFiles(gone.map((g) => g.dbPath));
+  const gone = await db.transaction(async (tx) => {
+    await lockAppHistory(tx, appId);
+    return pruneHistoryRows(appId, AUTO_TRIGGERS, APP_SNAPSHOT_AUTO_KEEP, maxAutoSnapshotBytes());
+  });
+  await removeSnapshotFiles(gone);
 }
 
 async function removeSnapshotFiles(paths: (string | null)[]): Promise<void> {

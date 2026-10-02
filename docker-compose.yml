@@ -281,6 +281,12 @@ x-app-env: &app-env
   # The largest one app's database file may grow, in MB (default 256, set in
   # code when empty). A write past it fails and rolls back.
   APP_SQL_MAX_DB_MB: ${APP_SQL_MAX_DB_MB:-}
+  # History budgets in MB (defaults in code when empty): one owner's own
+  # snapshots (2048), one app's automatic snapshots (1024), one table's
+  # commit history (512). .env.example explains each.
+  APP_SNAPSHOT_MAX_MB: ${APP_SNAPSHOT_MAX_MB:-}
+  APP_SNAPSHOT_AUTO_MAX_MB: ${APP_SNAPSHOT_AUTO_MAX_MB:-}
+  TABLE_HISTORY_MAX_MB: ${TABLE_HISTORY_MAX_MB:-}
   # Per-table SQLite files for sqlite-native Tables (Tables v2). One workbook
   # file per table node (<root>/<owner>/<node>.sqlite + .draft.sqlite, see
   # packages/tabledb). Tool handlers run in BOTH web and api, so BOTH services

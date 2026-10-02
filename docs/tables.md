@@ -284,7 +284,9 @@ draft, report `/tables/<id>`, only `table_commit` when the user says publish.
 published workbook it replaces on the table's history line (`node_snapshots`,
 node_kind `table`, trigger `commit`): a hard link to the file the commit is
 about to replace, under `TABLE_DB_DIR/_snapshots/<owner>/<table>/`, so it
-costs no copy. The newest 20 commit entries stay per table; the owner's own
+costs no copy. Each kept entry is a whole workbook, so the newest 20 commit
+entries stay per table, and only as many as fit in `TABLE_HISTORY_MAX_MB`
+(default 512; the newest always stays); the owner's own
 (`manual`) are never pruned and count against `APP_SNAPSHOT_MAX_MB` (shared
 with the apps). Not kept: an app-bound table's sync (the app is the master),
 and commits in a personal space or under a limited viewer (the history is

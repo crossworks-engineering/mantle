@@ -188,6 +188,52 @@ describe.skipIf(!URL)('app history on Postgres', () => {
     ).toBeNull();
   });
 
+  it('a prune never removes a snapshot taken while it runs (audit item 3)', async () => {
+    const id = await publishedApp('prune-race');
+    for (let i = 0; i < snaps.APP_SNAPSHOT_AUTO_KEEP; i++) {
+      await snaps.createAppSnapshot(owner, id, { trigger: 'pre_schema', actor: 'agent' });
+    }
+    // Several at once, each pruning after itself; the pre_delete among them
+    // (what the trash restores from) must survive every prune.
+    const made = await Promise.all([
+      ...Array.from({ length: 5 }, () =>
+        snaps.createAppSnapshot(owner, id, { trigger: 'pre_schema', actor: 'agent' }),
+      ),
+      snaps.createAppSnapshot(owner, id, { trigger: 'pre_delete', actor: 'owner' }),
+    ]);
+    const list = await snaps.listAppSnapshots(owner, id, { limit: 500 });
+    const auto = list.filter((e) => e.trigger !== 'publish');
+    expect(auto).toHaveLength(snaps.APP_SNAPSHOT_AUTO_KEEP);
+    for (const s of made) expect(auto.some((e) => e.id === s!.id), s!.trigger).toBe(true);
+    // Every kept row has its file; no removed row left one behind.
+    const { readdirSync } = await import('node:fs');
+    expect(readdirSync(path.join(dir, '_snapshots', owner, id))).toHaveLength(auto.length);
+  });
+
+  it('automatic snapshots stay within APP_SNAPSHOT_AUTO_MAX_MB; the newest always stays (audit item 11)', async () => {
+    const id = await publishedApp('budget');
+    await broker.appDbExec(
+      owner,
+      id,
+      'INSERT INTO items (name) VALUES (?)',
+      ['x'.repeat(400_000)],
+      schema,
+    );
+    process.env.APP_SNAPSHOT_AUTO_MAX_MB = '1';
+    try {
+      for (let i = 0; i < 4; i++) {
+        await snaps.createAppSnapshot(owner, id, { trigger: 'pre_schema', actor: 'agent' });
+      }
+    } finally {
+      delete process.env.APP_SNAPSHOT_AUTO_MAX_MB;
+    }
+    const auto = (await snaps.listAppSnapshots(owner, id)).filter(
+      (e) => e.trigger === 'pre_schema',
+    );
+    expect(auto).toHaveLength(2);
+    expect(auto.reduce((n, e) => n + (e.dbBytes ?? 0), 0)).toBeLessThanOrEqual(1024 * 1024);
+  });
+
   it('a fresh restore marker stops the app’s SQL; a stale one is ignored', async () => {
     const id = await publishedApp('marker');
     const live = (await broker.appDatabasePath(owner, id))!;

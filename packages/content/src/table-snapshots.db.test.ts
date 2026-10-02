@@ -3,7 +3,8 @@
  * a commit keeps the published workbook it replaces; a restore puts an entry
  * into the draft (refused over a draft unless asked), and the commit after it
  * brings the data back and keeps what it replaced; a manual snapshot is never
- * pruned, commit entries keep the newest TABLE_SNAPSHOT_COMMIT_KEEP; a
+ * pruned, commit entries keep the newest TABLE_SNAPSHOT_COMMIT_KEEP within
+ * TABLE_HISTORY_MAX_MB; a
  * deleted table's history goes after 30 days. Seeds its own owner and tables
  * on random ids; removes them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/table-snapshots.db.test.ts
@@ -145,6 +146,25 @@ describe.skipIf(!URL)('table history on Postgres', () => {
     expect(await hist.deleteTableSnapshot(owner, id, manual!.id)).toBe(true);
     expect(existsSync(file!.path)).toBe(false);
     expect(await hist.deleteTableSnapshot(owner, id, manual!.id)).toBe(false);
+  });
+
+  it('commit entries also stay within TABLE_HISTORY_MAX_MB; the newest always stays (audit item 5)', async () => {
+    const id = await tableWith('budget', 'small');
+    const big = (n: number) => `${n}`.padEnd(400_000, 'x');
+    process.env.TABLE_HISTORY_MAX_MB = '1';
+    try {
+      for (let i = 1; i <= 4; i++) await commitWith(id, big(i));
+    } finally {
+      delete process.env.TABLE_HISTORY_MAX_MB;
+    }
+    const commits = (await hist.listTableSnapshots(owner, id)).filter(
+      (e) => e.trigger === 'commit',
+    );
+    // Newest first: 400 KB, 800 KB, then past 1 MB. Two stay, files with them.
+    expect(commits).toHaveLength(2);
+    expect(commits.reduce((n, e) => n + (e.bytes ?? 0), 0)).toBeLessThanOrEqual(1024 * 1024);
+    const { readdirSync } = await import('node:fs');
+    expect(readdirSync(path.join(dir, '_snapshots', owner, id))).toHaveLength(2);
   });
 
   it("a deleted table's history goes 30 days later", async () => {

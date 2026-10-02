@@ -320,8 +320,10 @@ and through `app_snapshot_list`.
   database**, taken with `app_snapshot_create` or the History tab's
   **Take snapshot**. Mantle also takes one by itself before a restore and
   before `app_db_schema_set` changes a schema (only when the app has data).
-  The automatic ones keep the newest 20 per app; the owner's own stay until
-  deleted, within `APP_SNAPSHOT_MAX_MB` (default 2048) per owner.
+  The automatic ones keep the newest 20 per app, and of those only as many
+  as fit in `APP_SNAPSHOT_AUTO_MAX_MB` (default 1024; the newest always
+  stays); the owner's own stay until deleted, within `APP_SNAPSHOT_MAX_MB`
+  (default 2048) per owner.
 
 **Restore** (`app_snapshot_restore`, or the History tab) has three modes:
 

@@ -35,19 +35,21 @@ import {
   statSync,
 } from 'node:fs';
 import * as path from 'node:path';
-import { and, desc, eq, notInArray, sql } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { db, nodeSnapshots, nodes, tables } from '@mantle/db';
 import { currentSpaceScope, currentViewerLevel } from '@mantle/db/viewer';
-import { envInt } from '@mantle/config';
 import { draftPathFor, resolveStoragePath, snapshotFile, tableDbRoot } from '@mantle/tabledb';
 import type { TableSnapshot } from '@mantle/client-types';
-import { insertNodeSnapshot } from './node-snapshot-rows';
+import { envMbBytes, insertNodeSnapshot, pruneHistoryRows } from './node-snapshot-rows';
 import { removeTableFile, withTableRegistryLock } from './table-storage';
 import { assertTableWritable } from './tables/shared';
 import type { AppHistoryActor } from './apps';
 
 /** Commit entries kept per table (the owner's own are never pruned). */
 export const TABLE_SNAPSHOT_COMMIT_KEEP = 20;
+/** The default budget for one table's commit entries, in MB
+ *  (TABLE_HISTORY_MAX_MB). */
+export const TABLE_HISTORY_DEFAULT_MAX_MB = 512;
 /** Deleted tables' history goes this long after its newest entry. */
 export const TABLE_HISTORY_ORPHAN_DAYS = 30;
 
@@ -146,29 +148,18 @@ export async function keepCommitSnapshot(
 }
 
 /** Drop this table's commit entries past the newest
- *  TABLE_SNAPSHOT_COMMIT_KEEP, files after the rows. */
+ *  TABLE_SNAPSHOT_COMMIT_KEEP, and past TABLE_HISTORY_MAX_MB of files (the
+ *  newest stays whatever its size; each kept version is a whole workbook),
+ *  files after the rows. One statement: an entry a commit adds meanwhile is
+ *  never removed. */
 export async function pruneTableCommitSnapshots(tableId: string): Promise<void> {
-  const keep = await db
-    .select({ id: nodeSnapshots.id })
-    .from(nodeSnapshots)
-    .where(and(eq(nodeSnapshots.nodeId, tableId), eq(nodeSnapshots.trigger, 'commit')))
-    .orderBy(desc(nodeSnapshots.seq))
-    .limit(TABLE_SNAPSHOT_COMMIT_KEEP);
-  if (keep.length < TABLE_SNAPSHOT_COMMIT_KEEP) return;
-  const gone = await db
-    .delete(nodeSnapshots)
-    .where(
-      and(
-        eq(nodeSnapshots.nodeId, tableId),
-        eq(nodeSnapshots.trigger, 'commit'),
-        notInArray(
-          nodeSnapshots.id,
-          keep.map((k) => k.id),
-        ),
-      ),
-    )
-    .returning({ dbPath: nodeSnapshots.dbPath });
-  removeFiles(gone.map((g) => g.dbPath));
+  const gone = await pruneHistoryRows(
+    tableId,
+    ['commit'],
+    TABLE_SNAPSHOT_COMMIT_KEEP,
+    envMbBytes('TABLE_HISTORY_MAX_MB', TABLE_HISTORY_DEFAULT_MAX_MB),
+  );
+  removeFiles(gone);
 }
 
 function removeFiles(paths: (string | null)[]): void {
@@ -288,7 +279,7 @@ export async function tableSnapshotFile(
 }
 
 function maxSnapshotBytes(): number {
-  return envInt('APP_SNAPSHOT_MAX_MB', 2048, 1) * 1024 * 1024;
+  return envMbBytes('APP_SNAPSHOT_MAX_MB', 2048);
 }
 
 /**

@@ -6,6 +6,7 @@
  */
 import { createHash } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
+import { env, envInt } from '@mantle/config';
 import { db, nodeSnapshots, type NewNodeSnapshot, type NodeSnapshot } from '@mantle/db';
 
 type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -37,4 +38,54 @@ export async function insertNodeSnapshot(
     .returning();
   if (!inserted) throw new Error('could not record the snapshot row');
   return inserted;
+}
+
+/** A size setting in MB, as bytes. Compose passes an unset variable as '',
+ *  which must read as the default, not as 0. */
+export function envMbBytes(
+  name: Parameters<typeof envInt>[0],
+  defaultMb: number,
+): number {
+  const mb = env(name)?.trim() ? envInt(name, defaultMb, 1) : defaultMb;
+  return mb * 1024 * 1024;
+}
+
+/**
+ * Prune one node's pruneable history rows in ONE statement (apps audit
+ * 2026-10-02, items 3, 5 and 11): of the rows with one of `triggers`, keep
+ * the newest `keep`, and of those only as many as fit in `maxBytes` (the
+ * newest always stays, whatever its size). Returns the removed rows' file
+ * paths: the caller removes the files after the rows.
+ *
+ * One statement, ranked by `seq`, so a row another process inserts
+ * meanwhile is never removed: it is not in this statement's view, and its
+ * seq is above every row that is (a read-then-delete removed it with its
+ * file, a pre_delete snapshot included).
+ */
+export async function pruneHistoryRows(
+  nodeId: string,
+  triggers: readonly string[],
+  keep: number,
+  maxBytes: number,
+): Promise<(string | null)[]> {
+  if (!triggers.length) return [];
+  const list = sql.join(
+    triggers.map((t) => sql`${t}`),
+    sql`, `,
+  );
+  const rows = (await db.execute(sql`
+    delete from node_snapshots
+     where id in (
+       select id from (
+         select id,
+                row_number() over w as rn,
+                sum(coalesce(db_bytes, 0)) over w as cum
+           from node_snapshots
+          where node_id = ${nodeId} and trigger in (${list})
+         window w as (order by seq desc rows between unbounded preceding and current row)
+       ) ranked
+      where rn > ${keep} or (rn > 1 and cum > ${maxBytes})
+     )
+    returning db_path`)) as unknown as { db_path: string | null }[];
+  return rows.map((r) => r.db_path);
 }
