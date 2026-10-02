@@ -157,6 +157,28 @@ describe.skipIf(!URL)('app history on Postgres', () => {
     expect(top).toMatchObject({ kind: 'version', restoredFrom: 1 });
   });
 
+  it('a code restore leaves the live tools alone and names the old ones (audit item 9)', async () => {
+    const id = await publishedApp('tools');
+    await apps.setManifest(owner, id, { toolSlugs: ['web_fetch'] });
+    const old = await snaps.createAppSnapshot(owner, id);
+    await apps.setManifest(owner, id, { toolSlugs: [] });
+    const res = await snaps.restoreAppSnapshot(owner, id, old!.id, { mode: 'code', drainMs: 0 });
+    expect(res).toMatchObject({ code: 'draft', declaredTools: ['web_fetch'] });
+    expect((await apps.getAppRuntime(owner, id))?.manifest.toolSlugs).toEqual([]);
+  });
+
+  it('a full restore brings back the draft the snapshot held (audit, low)', async () => {
+    const id = await publishedApp('full-draft');
+    await apps.writeDraftFile(owner, id, 'App.tsx', 'export default () => "wip";');
+    const snap = await snaps.createAppSnapshot(owner, id);
+    await apps.discardDraft(owner, id);
+    const res = await snaps.restoreAppSnapshot(owner, id, snap!.id, { mode: 'full', drainMs: 0 });
+    expect(res?.code).toBe('live');
+    const detail = await apps.getApp(owner, id);
+    expect(detail?.source.files['App.tsx']).toContain('"one"');
+    expect(detail?.draft?.files['App.tsx']).toContain('"wip"');
+  });
+
   it('a full restore puts the code live with the data, as a new version', async () => {
     const id = await publishedApp('full');
     const snap = await snaps.createAppSnapshot(owner, id);

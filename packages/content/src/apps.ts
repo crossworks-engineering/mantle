@@ -864,8 +864,11 @@ type RestorableCode = {
  * Code-only restore (apps snapshots, Phase 2): the snapshot's code goes into
  * the DRAFT, never straight to live. The editor then previews and commits it
  * as usual, and that publish becomes a new version "restored from v{seq}".
- * The declared tools come back with the code (the code calls them); the
- * declared SQLite schema does not, since it belongs to the live data.
+ * The manifest does not change: the app has ONE allowlist, the live app's,
+ * so restoring the old tools with the draft granted them to the live app at
+ * once (apps audit 2026-10-02, item 9). The caller names them instead; the
+ * owner grants them with app_tools_set. The declared SQLite schema stays too
+ * (it belongs to the live data).
  */
 export async function restoreAppDraft(
   ownerId: string,
@@ -878,7 +881,6 @@ export async function restoreAppDraft(
     const app = await lockAppRow(tx, ownerId, id);
     if (!app) return false;
     if (app.draft && !opts.discardDraft) throw new AppRestoreDraftError();
-    const manifest: AppManifest = { ...app.manifest, toolSlugs: code.manifest.toolSlugs ?? [] };
     await tx
       .update(apps)
       .set({
@@ -886,7 +888,6 @@ export async function restoreAppDraft(
         draftUpdatedAt: new Date(),
         draftBuild: null,
         restoredFromSeq: seq,
-        manifest,
         updatedAt: new Date(),
       })
       .where(eq(apps.nodeId, id));
@@ -897,8 +898,10 @@ export async function restoreAppDraft(
 /**
  * Full rollback (apps snapshots, Phase 2): the snapshot's code goes LIVE with
  * the build it ran on, together with its declared schema, because that code
- * and the data restored beside it were known to work together. Appends the
- * version "restored from v{seq}". The data half is restoreAppDatabaseFile's.
+ * and the data restored beside it were known to work together. A draft the
+ * snapshot held comes back as the draft (no build: build it to preview).
+ * Appends the version "restored from v{seq}". The data half is
+ * restoreAppDatabaseFile's.
  */
 export async function restoreAppLive(
   ownerId: string,
@@ -918,8 +921,8 @@ export async function restoreAppLive(
         sourceText: sourceToText(code.source),
         publishedBuild: code.publishedBuild,
         manifest: code.manifest,
-        draftSource: null,
-        draftUpdatedAt: null,
+        draftSource: code.draft,
+        draftUpdatedAt: code.draft ? new Date() : null,
         draftBuild: null,
         restoredFromSeq: null,
         version: sql`${apps.version} + 1`,

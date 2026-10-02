@@ -463,7 +463,17 @@ export type AppRestoreResult = {
   undo: AppSnapshot | null;
   /** Where the code went: the draft (preview, then Commit) or live. */
   code: 'draft' | 'live' | null;
+  /** Code into the draft only: the tools the restored code declared, when
+   *  they differ from the app's. NOT granted (the app has one allowlist,
+   *  the live app's): the owner grants them with app_tools_set. */
+  declaredTools: string[] | null;
 };
+
+function sameTools(a: string[] | undefined, b: string[] | undefined): boolean {
+  const x = new Set(a ?? []);
+  const y = new Set(b ?? []);
+  return x.size === y.size && [...x].every((t) => y.has(t));
+}
 
 /**
  * Restore an app from an entry on its history line (`mode`: code into the
@@ -523,6 +533,7 @@ export async function restoreAppSnapshot(
       });
     }
     let code: AppRestoreResult['code'] = null;
+    let declaredTools: string[] | null = null;
     if (wantsCode && snap.code) {
       const build = snap.code.publishedBuild;
       if (mode === 'full' && build?.ok) {
@@ -536,9 +547,14 @@ export async function restoreAppSnapshot(
         // published: the code goes to the draft.
         await restoreAppDraft(ownerId, appId, snap.code, snap.seq, { discardDraft: true });
         code = 'draft';
+        // The manifest did not change: it is the live app's.
+        const live = await currentCode(ownerId, appId);
+        if (!sameTools(snap.code.manifest.toolSlugs, live?.manifest.toolSlugs)) {
+          declaredTools = snap.code.manifest.toolSlugs ?? [];
+        }
       }
     }
-    return { mode, restored: snap, undo, code };
+    return { mode, restored: snap, undo, code, declaredTools };
   });
   if (wantsData) scheduleAppTableExportSync(ownerId, appId);
   await pruneAutoSnapshots(appId);

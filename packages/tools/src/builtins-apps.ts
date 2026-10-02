@@ -1189,9 +1189,10 @@ const app_snapshot_restore: BuiltinToolDef = {
           restored: res.restored.seq,
           code: res.code,
           undo_snapshot_id: res.undo?.id ?? null,
+          ...(res.declaredTools ? { declared_tools: res.declaredTools } : {}),
           hint:
             res.code === 'draft'
-              ? 'The code is in the draft: build it (app_build), check the preview, then app_publish.'
+              ? `The code is in the draft: build it (app_build), check the preview, then app_publish.${res.declaredTools ? ' The app keeps its current tools: that version declared declared_tools; grant them with app_tools_set only if the owner wants them.' : ''}`
               : 'Done. To undo, restore undo_snapshot_id the same way.',
         },
       };

@@ -3,7 +3,8 @@
  * restore an app from an entry on its history (apps snapshots, Phase 2).
  * `mode`: 'code' (into the draft), 'data' (the live database) or 'full'
  * (both, the code live). A snapshot of the current state is taken first; its
- * id comes back as `undo`. 409 when the entry holds no data for a data
+ * id comes back as `undo`. A code restore leaves the app's tools alone:
+ * `declaredTools` names the restored code's when they differ (not granted). 409 when the entry holds no data for a data
  * restore, or a draft would be replaced without `discardDraft`. Owner only.
  */
 import { NextResponse } from '@/server/http-compat';
@@ -37,6 +38,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string; si
       undo: result.undo,
       code: result.code,
       mode: result.mode,
+      declaredTools: result.declaredTools,
     });
   } catch (err) {
     if (err instanceof AppRestoreDraftError) {

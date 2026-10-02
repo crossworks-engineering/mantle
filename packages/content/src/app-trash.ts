@@ -13,7 +13,13 @@ import { rm } from 'node:fs/promises';
 import * as path from 'node:path';
 import { and, eq, sql } from 'drizzle-orm';
 import { db, nodeSnapshots, nodes, type AppSnapshotCode } from '@mantle/db';
-import { createApp, restoreAppDraft, restoreAppLive, type AppHistoryActor } from './apps';
+import {
+  createApp,
+  restoreAppDraft,
+  restoreAppLive,
+  setManifest,
+  type AppHistoryActor,
+} from './apps';
 import { appDbRoot, restoreAppDatabaseFile } from './app-broker';
 import { notifyAppNavChanged } from './app-nav';
 
@@ -141,6 +147,9 @@ export async function restoreDeletedApp(
     });
   } else {
     await restoreAppDraft(ownerId, app.id, code, row.seq, { discardDraft: true });
+    // The same app coming back: its own tools and schema with it (a draft
+    // restore leaves the manifest alone, and createApp starts it empty).
+    await setManifest(ownerId, app.id, code.manifest);
   }
   void notifyAppNavChanged(ownerId);
   return { id: app.id, title: app.title };

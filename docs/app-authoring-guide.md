@@ -329,9 +329,9 @@ and through `app_snapshot_list`.
 
 | Mode | What comes back | Where |
 |---|---|---|
-| `code` | the code | the **draft**: preview it, then publish. The publish is a new version "restored from vN". The declared tools come back; the declared schema does not (it belongs to the live data). |
+| `code` | the code | the **draft**: preview it, then publish. The publish is a new version "restored from vN". The app's tools do not change (the app has one allowlist, the live app's): when the version declared other tools, the answer names them (`declaredTools`), and the owner grants them with `app_tools_set`. The declared schema does not come back either (it belongs to the live data). |
 | `data` | the database | live at once. If the restored data has an older schema than the app declares, the declared script runs over it on the next statement (so keep it re-runnable). |
-| `full` | both | live at once, the code with the build it ran on and its schema: the pair that worked together. A new version "restored vN". |
+| `full` | both | live at once, the code with the build it ran on, its tools and its schema: the pair that worked together. A new version "restored vN". A draft saved with the snapshot comes back as the draft. A snapshot of an app that was never published has no build to go live with: its code goes to the draft (the answer says `code: 'draft'`) and the data goes live. |
 
 Every restore first takes a snapshot of what it replaces, so it can be
 undone the same way. A data restore pauses the app's database for a few
