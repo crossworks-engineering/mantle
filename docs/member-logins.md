@@ -835,9 +835,11 @@ true`). An in-brain agent may switch it off, never on.
   spends, so the admin's confirmation covers that too. A member's call runs
   on the team role and a team surface, a client app's on the client role
   and a client surface, a contact's on the public role and a contact
-  surface. The remote MCP call itself runs on the admin pool (`asSystem`),
-  because an OAuth connector may refresh its own token there; it reads no
-  brain content. On a link, no built-in ever runs.
+  surface. The connector lookup and the remote MCP call run on the admin
+  pool (`asSystem`): a client role sees tool groups at client level only, so
+  a connector group at another level would look missing, and an OAuth
+  connector may refresh its own token. Neither reads brain content. On a
+  link, no built-in ever runs.
 - **Off.** Switching off refuses the next call (the brokers read the row
   every call). The switch counts only while the handler's signature equals
   the stored one, so a changed handler voids it whoever changed it (an

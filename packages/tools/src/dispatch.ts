@@ -105,11 +105,17 @@ async function dispatchMcp(
   input: Record<string, unknown>,
   ctx: ToolHandlerContext,
 ): Promise<ToolHandlerResult> {
-  const [group] = await db
-    .select()
-    .from(toolGroups)
-    .where(and(eq(toolGroups.ownerId, ctx.ownerId), eq(toolGroups.slug, h.group)))
-    .limit(1);
+  // asSystem: the connector's binding is infrastructure, like its keys. A
+  // client-level call (an External access tool in a client app) reads tool
+  // groups at client level only, so the connector group, whatever its level,
+  // would look missing. The caller learns nothing from it but the result.
+  const [group] = await asSystem(() =>
+    db
+      .select()
+      .from(toolGroups)
+      .where(and(eq(toolGroups.ownerId, ctx.ownerId), eq(toolGroups.slug, h.group)))
+      .limit(1),
+  );
   const mcp = group?.integration?.mcp;
   if (!group || !mcp) {
     return {

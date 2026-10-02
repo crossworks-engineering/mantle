@@ -125,6 +125,12 @@ const SITES: Record<string, Site> = {
     scope: 'call',
     why: "a client's app call: appToolScope at client level (client logins C6), never the owner",
   },
+  'server/web/app/s/[token]/tool-broker/route.ts': {
+    calls: 1,
+    surface: /surface: \{ kind: 'contact', contactId, shareId: share\.id \}/,
+    scope: 'call',
+    why: "a contact link's call of an External access tool: the contact surface, never the owner",
+  },
   // ── pass-through: the caller's surface, unchanged ──
   'packages/tools/src/dispatch.ts': {
     calls: 1,
