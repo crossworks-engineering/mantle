@@ -78,10 +78,6 @@ export function AppSandbox({
   frame = 'card',
   reloadKey = 0,
   onError,
-  inspect = false,
-  selectedRegionId = null,
-  onSelect,
-  onInspectChange,
   hub,
   apiBase: apiBaseOverride,
   fetcher,
@@ -104,16 +100,6 @@ export function AppSandbox({
   /** Bump to force a re-fetch + re-render (e.g. after a build/publish). */
   reloadKey?: number;
   onError?: (message: string) => void;
-  /** When true, hovering the preview outlines [data-app-region]s and clicking
-   *  one locks it (inspect mode). */
-  inspect?: boolean;
-  /** The host-held locked selection — pushed down to keep the iframe's outline
-   *  in sync (e.g. cleared when the user dismisses the focus chip). */
-  selectedRegionId?: string | null;
-  /** The user locked or cleared a region in the preview (null = cleared). */
-  onSelect?: (regionId: string | null) => void;
-  /** The iframe changed inspect state itself (e.g. Esc to exit). */
-  onInspectChange?: (on: boolean) => void;
   /** Team-hub host API — passed ONLY by the /team shell. `getData` answers the
    *  app's `hub.get` locally from the payload the shell already fetched (no new
    *  server surface); `onNav` handles the app's validated `hub.nav` intents
@@ -190,10 +176,10 @@ export function AppSandbox({
   // re-ran the bundle-fetch effect below and reloaded the iframe (white flash).
   // `fetcher` rides along for the same reason (the split hub passes an inline
   // bearer-attaching wrapper); the default stays a plain window-bound fetch.
-  const cbRef = useRef({ onError, onSelect, onInspectChange, hub, onLoadFailure, confirmTool });
+  const cbRef = useRef({ onError, hub, onLoadFailure, confirmTool });
   /** A tool confirmation is open (one at a time). */
   const confirmOpenRef = useRef(false);
-  cbRef.current = { onError, onSelect, onInspectChange, hub, onLoadFailure, confirmTool };
+  cbRef.current = { onError, hub, onLoadFailure, confirmTool };
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
   const doFetch = useCallback(
@@ -201,17 +187,6 @@ export function AppSandbox({
       fetcherRef.current ? fetcherRef.current(input, init) : fetch(input, init),
     [],
   );
-
-  // Push inspect-mode + the locked selection down whenever they change or the
-  // app (re)becomes ready, so a fresh iframe inherits the current state.
-  useEffect(() => {
-    if (status !== 'ready') return;
-    postToFrame({ v: 1, kind: 'inspect', on: inspect });
-  }, [inspect, status, postToFrame]);
-  useEffect(() => {
-    if (status !== 'ready') return;
-    postToFrame({ v: 1, kind: 'select', regionId: selectedRegionId });
-  }, [selectedRegionId, status, postToFrame]);
 
   // Mirror the host's live theme (the <html> class + data-color-theme) into the
   // iframe so a dark/light or colour-theme switch restyles a RUNNING app without
@@ -373,14 +348,6 @@ export function AppSandbox({
           setStatus('error');
           cbRef.current.onLoadFailure?.();
         }
-        return;
-      }
-      if (m.kind === 'select') {
-        cbRef.current.onSelect?.(m.regionId);
-        return;
-      }
-      if (m.kind === 'inspect') {
-        cbRef.current.onInspectChange?.(m.on);
         return;
       }
       if (m.kind === 'hub.nav') {

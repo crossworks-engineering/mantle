@@ -830,7 +830,7 @@ Every publish records a version (code only; pass \`note\`). \`app_snapshot_creat
 A published app can be shared full-screen. **Public** links get NO tools and read-only DB access — a public app is a self-contained view of its OWN data (host.tools.call is refused, host.db.exec blocked). **Team** links (a Contact's team token) let identified, audited members use the app's declared tools + write. Only BUILT-IN tools work through any share (http/shell/recipe are refused). So: if an app is meant for outside/team viewers, keep its data in its own SQLite or behind built-in read tools; don't rely on custom HTTP tools in a shared app.
 
 ## Workflow
-Write files with app_file_write → \`app_build\` → a failed compile fails the call and lists each error with file/line/column → fix → repeat until the build succeeds. A green build only proves it compiles: re-read your logic (calculations, lookups, edge cases) against the requirement before handing over — you get no runtime error feedback from the iframe. Mark meaningful regions with \`data-app-region="<id>"\` so the Assist panel can highlight them. Leave the result in DRAFT and point the user at /apps/<id>; publish only when they approve.`,
+Write files with app_file_write → \`app_build\` → a failed compile fails the call and lists each error with file/line/column → fix → repeat until the build succeeds. A green build only proves it compiles: re-read your logic (calculations, lookups, edge cases) against the requirement before handing over — you get no runtime error feedback from the iframe. Leave the result in DRAFT and point the user at /apps/<id>; publish only when they approve.`,
 
   'sandbox-work': `# Sandbox work — isolated environments for untrusted and project code
 

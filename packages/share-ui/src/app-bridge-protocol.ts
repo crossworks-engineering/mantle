@@ -45,11 +45,6 @@ export type BridgeEvt =
   | { v: 1; kind: 'ready.release' }
   | { v: 1; kind: 'resize'; height: number }
   | { v: 1; kind: 'error'; message: string; stack?: string }
-  // Inspect mode (host-injected overlay → host): the user locked/cleared a
-  // selection (regionId = a data-app-region value, or null when cleared), or
-  // exited inspect via Esc (`inspect` with on:false).
-  | { v: 1; kind: 'select'; regionId: string | null; label?: string }
-  | { v: 1; kind: 'inspect'; on: boolean }
   // Team-hub surface only; ignored anywhere else.
   | { v: 1; kind: 'hub.nav'; target: HubNavTarget };
 
@@ -57,13 +52,10 @@ export type BridgeEvt =
 export type BridgeRes =
   { v: 1; id: string; ok: true; output: unknown } | { v: 1; id: string; ok: false; error: string };
 
-/** Control messages the host pushes DOWN unprompted: agent region annotations,
- *  and inspect-mode control (toggle select mode; set/clear the locked selection
- *  from the host side, e.g. when the user clears the focus chip). */
+/** Control messages the host pushes DOWN unprompted: agent region annotations
+ *  and the live theme. */
 export type BridgeCtl =
   | { v: 1; kind: 'annotate'; regions: { id: string; note?: string; severity?: 'info' | 'warn' }[] }
-  | { v: 1; kind: 'inspect'; on: boolean }
-  | { v: 1; kind: 'select'; regionId: string | null }
   // Live theme: the host's <html> class + data-color-theme, mirrored onto the
   // iframe's <html> so a dark/light or colour-theme switch restyles a RUNNING
   // app (every theme's tokens are already in the linked stylesheet).

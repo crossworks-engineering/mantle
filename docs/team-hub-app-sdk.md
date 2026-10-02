@@ -163,7 +163,7 @@ Conventions:
 - **One component per section**, taking `(hub, content)` as props, so a
   restyle touches one file and a content edit touches none of the markup.
 - **`data-app-region` on each section** (`hero`, `whats-new`, `briefings`,
-  `stats`), the editor's inspect mode and agent annotations key off these.
+  `stats`), agent annotations key off these.
 - **Off-hub preview is mandatory** (SDK rule R2): `hub.get` rejects in the
   `/apps` editor, catch it and render labelled placeholder data. Never gate
   the whole render on `hub.get`.
