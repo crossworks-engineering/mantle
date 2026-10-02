@@ -26,6 +26,7 @@
 #            network exists before joining it
 #   setup:   install.sh writes the first-run setup code once, keeps it on a
 #            re-run, and --setup-code prints it again (or says "claimed")
+#   onboard: onboard.sh pipes secrets from files on stdin, never in argv
 #   sanity:  Caddy's own HTTP->HTTPS redirect is not reported as "not Mantle"
 
 #   dump:    db-dump.sh strict mode exits non-zero when any of the four parts
@@ -440,6 +441,37 @@ check "--setup-code still prints it when the brain cannot be asked" sh -c "grep 
 rm -f "$T/stack/.env"
 if install_run --setup-code; then fail "--setup-code without a .env should fail"; else ok "--setup-code without a .env fails and says why"; fi
 check "  (it names the fix)" grep -q 'Run scripts/install.sh to create one' "$T/out"
+
+# ═════════════════════════════════════════════════════════════════════════════
+echo "onboard.sh: secrets reach the container on stdin, never in argv"
+# The terminal wizard takes the owner password and the OpenRouter key from
+# files and pipes them in; argv lands in shell history and in `ps`. docker is
+# stubbed: it records every argv and whatever arrives on stdin for `exec -T`.
+T="$WORK/onboard"; mkdir -p "$T/bin" "$T/stack/scripts"
+cp "$ROOT/docker-compose.yml" "$T/stack/"
+cp "$ROOT/scripts/onboard.sh" "$T/stack/scripts/onboard.sh"
+cat > "$T/bin/docker" <<'STUB'
+#!/bin/sh
+echo "argv: $*" >> "$T/calls"
+case "$*" in
+  "compose ps --status running --services") [ -n "${WEB_DOWN:-}" ] || echo web ;;
+  *"exec -T web"*) cat > "$T/stdin" ;;
+esac
+exit 0
+STUB
+chmod +x "$T/bin/docker"
+printf 'pw-%s\n' "s3cret-value" > "$T/pw"; printf 'sk-or-v1-%s\n' "keyvalue" > "$T/key"
+onboard_run() { rm -f "$T/calls" "$T/stdin"; T="$T" PATH="$T/bin:$PATH" bash "$T/stack/scripts/onboard.sh" "$@" < /dev/null > "$T/out" 2>&1; }
+onboard_run --yes --email o@example.invalid --password-file "$T/pw" --key-file "$T/key"
+check "the wizard runs in the web container with --secrets-stdin" grep -q 'exec -T web pnpm -C server/web exec tsx scripts/onboard.ts --secrets-stdin --yes --email o@example.invalid' "$T/calls"
+check "stdin carries both secrets as key=value lines" sh -c "grep -qx 'password=pw-s3cret-value' '$T/stdin' && grep -qx 'openrouter_key=sk-or-v1-keyvalue' '$T/stdin'"
+check "no argv ever holds a secret" sh -c "! grep -q -e s3cret-value -e keyvalue '$T/calls'"
+WEB_DOWN=1 onboard_run --yes || true
+check "a stopped web service is named, and nothing is exec'd" sh -c "grep -q \"web service isn't running\" '$T/out' && ! grep -q 'exec' '$T/calls'"
+onboard_run --password-file "$T/nope" || true
+check "an unreadable secret file stops before docker exec" sh -c "grep -q \"Can't read the password file\" '$T/out' && ! grep -q 'exec' '$T/calls'"
+onboard_run --yes || true
+check "without a terminal or files it still uses exec -T (no -it)" sh -c "grep -q 'exec -T web' '$T/calls' && ! grep -q 'exec -it' '$T/calls'"
 
 # ═════════════════════════════════════════════════════════════════════════════
 echo "sanity.sh: our own HTTP->HTTPS redirect is not 'not Mantle'"
