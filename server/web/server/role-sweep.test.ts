@@ -54,6 +54,12 @@ const bearers = vi.hoisted(() => ({
   rows: new Map<string, { userId: string; revokedAt: Date | null; expiresAt: Date }>(),
 }));
 
+// This brain's id (migration 0226): a stand-in, as the login rows are.
+vi.mock('../lib/brain-identity', () => ({
+  brainIdOrNull: async () => '0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f',
+  getBrainId: async () => '0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f',
+}));
+
 vi.mock('../lib/auth/login-row', () => ({
   loadLoginRow: async (id: string) =>
     id === CLIENT_ID
@@ -264,6 +270,8 @@ describe.skipIf(!hasManifest)('role sweep: three roles, fail closed', () => {
       loginId: CLIENT_ID,
       shell: '/api/client/shell',
       pushBase: '/api/client/push',
+      // The pair a device files this session under, and every push names.
+      brainId: '0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f',
     });
     const none = await app.request('/api/auth/whoami', {
       headers: { authorization: bearerFor(UNKNOWN_ID) },

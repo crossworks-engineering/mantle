@@ -220,6 +220,8 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
       expect(refused.status, path).toBe(403);
       expect((await json(refused)).reason, path).toBe('member-login');
     }
+    // brainId (migration 0226): this brain's one row, the id every push names.
+    const [brainRow] = await sql<Row[]>`select brain_id::text as id from brain_identity`;
     expect(await json(await call('/api/auth/whoami', { bearer }))).toEqual({
       role: 'member',
       loginId: member,
@@ -227,6 +229,7 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
       displayName: 'Mia Member',
       shell: '/api/member/shell',
       pushBase: '/api/member/push',
+      brainId: brainRow!['id'],
     });
     // Listed under the login's devices, and revocable there.
     const devices = await json(await call(`/api/users/${member}/devices`, { cookie: asAdmin() }));
@@ -249,6 +252,8 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
     expect(body).toMatchObject({ role: 'admin', loginId: admin });
     const who = await json(await call('/api/auth/whoami', { bearer: body.token as string }));
     expect(who).toMatchObject({ role: 'admin', shell: '/api/shell', pushBase: '/api/push' });
+    expect(who.loginId).toBe(admin);
+    expect(String(who.brainId)).toMatch(/^[0-9a-f-]{36}$/);
     // Past the admin gate (a malformed id is the handler's own 400).
     expect(
       (await call('/api/admin/space/not-a-uuid', { bearer: body.token as string })).status,

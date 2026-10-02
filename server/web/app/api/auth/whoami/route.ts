@@ -1,5 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { getLoginOr401 } from '@/lib/auth';
+import { brainIdOrNull } from '@/lib/brain-identity';
 
 /**
  * GET /api/auth/whoami: who a credential belongs to, for any role
@@ -8,6 +9,11 @@ import { getLoginOr401 } from '@/lib/auth';
  * before this it had to try each. About the login only, never brain data:
  * the role, the login, its name, and the two route prefixes that differ per
  * role. A stranger, a dead token or a role this code does not know gets 401.
+ *
+ * `brainId` (migration 0226) names this brain: with `loginId` it is the key a
+ * device holding several logins, on several brains, files the session under,
+ * and every push payload carries the same pair (lib/push/notify.ts). Left out
+ * only while the database is behind the code (lib/brain-identity.ts).
  */
 const ROUTES = {
   admin: { shell: '/api/shell', pushBase: '/api/push' },
@@ -24,6 +30,7 @@ export async function GET() {
       : login.kind === 'member'
         ? login.member.displayName
         : login.client.displayName;
+  const brainId = await brainIdOrNull();
   return NextResponse.json(
     {
       role: login.kind,
@@ -31,6 +38,7 @@ export async function GET() {
       email: login.email,
       displayName,
       ...ROUTES[login.kind],
+      ...(brainId ? { brainId } : {}),
     },
     { headers: { 'Cache-Control': 'no-store' } },
   );

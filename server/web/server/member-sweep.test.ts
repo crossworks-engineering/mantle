@@ -35,6 +35,12 @@ const bearers = vi.hoisted(() => ({
   rows: new Map<string, { userId: string; revokedAt: Date | null; expiresAt: Date }>(),
 }));
 
+// This brain's id (migration 0226): a stand-in, as the login rows are.
+vi.mock('../lib/brain-identity', () => ({
+  brainIdOrNull: async () => '0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f',
+  getBrainId: async () => '0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f',
+}));
+
 vi.mock('../lib/auth/login-row', () => ({
   loadBearerToken: async (jti: string) => bearers.rows.get(jti) ?? null,
   touchBearerToken: async () => undefined,
@@ -260,6 +266,8 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
       loginId: MEMBER_ID,
       shell: '/api/member/shell',
       pushBase: '/api/member/push',
+      // The pair a device files this session under, and every push names.
+      brainId: '0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f',
     });
     const dead = bearerFor(MEMBER_ID, { revoked: true });
     expect((await app.request(PAST_THE_GATE[0]!, { headers: dead })).status).toBe(401);

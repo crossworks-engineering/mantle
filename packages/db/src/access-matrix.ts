@@ -316,6 +316,9 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.heartbeat_fires', 'system'),
   none('public.runs', 'system'),
   none('public.run_items', 'system'),
+  // This brain's own id (0226): written once by its migration, read by
+  // whoami and the push worker on the admin pool.
+  none('public.brain_identity', 'system'),
   none('public.push_instance', 'system'),
   none('public.push_prefs', 'system'),
   none('public.push_subscriptions', 'system'),
