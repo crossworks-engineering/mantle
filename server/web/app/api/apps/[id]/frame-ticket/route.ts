@@ -24,5 +24,8 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
       : null;
   if (!build) return new NextResponse('no build', { status: 404 });
 
-  return NextResponse.json({ ticket: buildAppFrameTicket({ ownerId: user.id, appId: id }) });
+  // The ticket names the admin login, so the frame can answer host.me().
+  return NextResponse.json({
+    ticket: buildAppFrameTicket({ ownerId: user.id, appId: id, actorId: user.actor.id }),
+  });
 }

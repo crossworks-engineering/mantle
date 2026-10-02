@@ -39,6 +39,7 @@ const h = vi.hoisted(() => ({
   callers: [] as unknown[],
   synced: 0,
   rendered: [] as string[],
+  frameViewers: [] as unknown[],
 }));
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
@@ -183,10 +184,13 @@ vi.mock('@mantle/content/app-table-exports', () => ({
   scheduleAppTableExportSync: vi.fn(() => (h.synced += 1)),
 }));
 vi.mock('@/lib/app-frame', () => ({
-  renderAppFrame: vi.fn(async (_req: Request, build: { storageKey: string }) => {
-    h.rendered.push(build.storageKey);
-    return new Response('<!doctype html>', { status: 200 });
-  }),
+  renderAppFrame: vi.fn(
+    async (_req: Request, build: { storageKey: string }, opts?: { viewer?: unknown }) => {
+      h.rendered.push(build.storageKey);
+      h.frameViewers.push(opts?.viewer);
+      return new Response('<!doctype html>', { status: 200 });
+    },
+  ),
 }));
 
 type Handler = (req: Request, ctx: { params: Promise<{ id: string }> }) => Promise<Response>;
@@ -239,6 +243,7 @@ beforeEach(() => {
   h.callers.length = 0;
   h.synced = 0;
   h.rendered.length = 0;
+  h.frameViewers.length = 0;
 });
 
 describe('member tool broker', () => {
@@ -381,7 +386,10 @@ describe('member tool broker', () => {
 describe('member db broker', () => {
   it('runs under the login as its caller key and hides a server error (audit I1, L4)', async () => {
     await dbBroker(post({ op: 'query', sql: 'select 1' }), params());
-    expect(h.callers).toEqual([{ callerKey: `member:${LOGIN}` }]);
+    // App identity: the member fills the :host_me_* parameters.
+    expect(h.callers).toEqual([
+      { callerKey: `member:${LOGIN}`, viewer: { kind: 'member', loginId: LOGIN, name: 'Pat' } },
+    ]);
     const err = console.error;
     console.error = () => {};
     let res: Response;
@@ -487,6 +495,10 @@ describe('member frame', () => {
     const res = await frame(frameReq(t), params());
     expect(res.status).toBe(200);
     expect(h.rendered).toEqual([PUBLISHED.storageKey]);
+    // host.me(): the member the ticket names (app identity).
+    expect(h.frameViewers).toEqual([
+      { ownerId: ANCHOR, appId: APP, subject: { kind: 'member', loginId: LOGIN } },
+    ]);
   });
 
   it('refuses an owner ticket, a share ticket and a ticket for another app', async () => {

@@ -14,6 +14,8 @@
  * server-side.
  */
 
+import type { AppViewer } from '@mantle/client-types/app-viewer';
+
 /** The strict sandbox CSP, served as a Content-Security-Policy HEADER on the
  *  frame response. The app may only render — NO network of its own.
  *  `connect-src 'none'` blocks fetch/XHR/WebSocket, and img/font loads are
@@ -174,6 +176,29 @@ const ERROR_REPORTER = `(function(){
   });
 })();`;
 
+/**
+ * host.me() (app identity): who runs the app, resolved by the frame route
+ * from its verified ticket and baked in BEFORE the app module, where the
+ * `@host` kit reads it. Read-only so the app cannot overwrite it by
+ * accident; the app could still lie to itself, which is why it is for
+ * display only and the SQL `:host_me_*` values are filled by the broker.
+ * JSON in a script: `<` and the two JS line separators are escaped, so a
+ * display name cannot close the tag.
+ */
+export function viewerScript(viewer: AppViewer | null | undefined): string {
+  if (!viewer) return '';
+  const safe = {
+    id: typeof viewer.id === 'string' ? viewer.id : null,
+    name: typeof viewer.name === 'string' ? viewer.name : null,
+    kind: viewer.kind,
+  };
+  const json = JSON.stringify(safe)
+    .replace(/</g, '\\u003c')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+  return `<script>Object.defineProperty(window,'__mantleHostMe',{value:Object.freeze(${json})});</script>\n`;
+}
+
 export function buildAppFrameHtml(opts: {
   /** The app's built module bundle (esbuild output; esbuild escapes any
    *  `</script` inside string literals, so inlining it is safe). */
@@ -196,6 +221,9 @@ export function buildAppFrameHtml(opts: {
   /** Neat licence key for watermark removal — same env-sourced value the
    *  other surfaces ride. */
   neatLicense?: string | null;
+  /** Who runs the app (host.me()); null/absent bakes nothing and host.me()
+   *  rejects. Never email: the type has no such field. */
+  viewer?: AppViewer | null;
 }): string {
   const colorThemeAttr = opts.colorTheme ? ` data-color-theme="${attr(opts.colorTheme)}"` : '';
   return `<!doctype html>
@@ -286,7 +314,7 @@ ${
     : ''
 }<div id="root"></div>
 <script>${ERROR_REPORTER}</script>
-<script type="module">${opts.bundleCode}</script>
+${viewerScript(opts.viewer)}<script type="module">${opts.bundleCode}</script>
 <script>${INSPECTOR}</script>
 ${opts.neatSpec ? `<script type="module" src="/share-runtime/share-page.js"></script>\n` : ''}</body>
 </html>`;

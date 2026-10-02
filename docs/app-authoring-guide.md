@@ -95,6 +95,7 @@ colours** (a hex value breaks on theme switch):
 The app's only window onto the host. `import { host } from '@host'`:
 
 ```ts
+await host.me()                      // who runs the app: { id, name, kind } (see below)
 await host.tools.call(slug, input)   // call a DECLARED tool; returns its result
 await host.db.query(sql, params?)    // read from this app's own SQLite (opened read-only — DML here fails)
 await host.db.exec(sql, params?)     // write to this app's own SQLite
@@ -116,6 +117,94 @@ hang it.
 
 Everything is brokered by the parent over postMessage and executed server-side,
 so the iframe never sees secrets or credentials.
+
+## Who is running the app
+
+An app can learn who runs it, and record it so that it cannot be faked.
+
+**For display: `host.me()`.**
+
+```ts
+const me = await host.me();
+// { id: 'u_3qK…', name: 'Pat', kind: 'member' }
+```
+
+| Field  | What it is |
+| ------ | ---------- |
+| `id`   | Stable for this person **in this app only**. `null` on an open link. |
+| `name` | The login's display name, or the contact's name. `null` when none is set, and on an open link. |
+| `kind` | `'admin'` (the owner or an admin login), `'member'`, `'client'`, `'contact'` (a Contact share), or `'public'` (an open /s link: nobody). |
+
+There is **no email**: an app is code the admin may not have written.
+`host.me()` works on every surface (the editor preview, the member and
+client shells, a Contact share, an open link) with no round trip: the
+server bakes the answer into the app's frame. Use it to greet, to show
+"you", or to filter a view. Do not build permission logic on it: the app
+can change its own copy.
+
+**Why a per-app id.** The id is a pseudonym (an HMAC of the login or
+contact id, keyed per app), so the same person has a different id in every
+app and an app cannot follow a person to another app. It does not change
+when a login's role changes. An app copied by export and import gets new
+ids.
+
+**For data: the server-filled parameters.** To record who did something,
+write these names **in the SQL itself** of a `host.db.exec` or
+`host.db.query`:
+
+| Parameter       | Filled with |
+| --------------- | ----------- |
+| `:host_me_id`   | `host.me().id` |
+| `:host_me_name` | `host.me().name` |
+| `:host_me_kind` | `host.me().kind` |
+
+The **broker fills them on the server** from the signed-in session. The
+browser cannot set them: a request that sends a value under any name
+starting with `host_me_` (any case, with or without `:`, `@` or `$`) is
+refused with 400, and so is an unknown reserved name such as
+`:host_me_email`. Mix them freely with your own `?` values (or your own
+named values: pass one object first, `[{ due: d }, x]`). SQL that uses none
+of them runs exactly as before. On an open link they are `NULL`, `NULL`,
+`'public'`, and an open link cannot write anyway. The assistant's
+`app_db_query` names no person, so SQL with these names is refused there.
+
+Example: a review log that shows who approved what.
+
+```sql
+-- app_db_schema_set
+CREATE TABLE IF NOT EXISTS review_log (
+  id          INTEGER PRIMARY KEY,
+  item        TEXT NOT NULL,
+  verdict     TEXT NOT NULL,          -- 'approved' | 'rejected'
+  by_id       TEXT,                   -- :host_me_id (NULL from an open link)
+  by_name     TEXT,                   -- :host_me_name, as it was at the time
+  by_kind     TEXT NOT NULL,          -- :host_me_kind
+  at          TEXT NOT NULL DEFAULT (datetime('now'))
+);
+```
+
+```ts
+// Record: the server fills who; the app sends only what.
+await host.db.exec(
+  'INSERT INTO review_log (item, verdict, by_id, by_name, by_kind) ' +
+    'VALUES (?, ?, :host_me_id, :host_me_name, :host_me_kind)',
+  [item, 'approved'],
+);
+
+// "My reviews": filter on the server-filled id, not on a value you send.
+const mine = await host.db.query(
+  'SELECT item, verdict, at FROM review_log WHERE by_id = :host_me_id ORDER BY at DESC',
+);
+
+// Show everyone's log, and mark your own rows.
+const me = await host.me();
+const all = await host.db.query('SELECT * FROM review_log ORDER BY at DESC LIMIT 200');
+const rows = all.map((r) => ({ ...r, mine: r.by_id === me.id }));
+```
+
+Store the name next to the id: names can change, and the row should say
+who it was at the time. The host's own access log (the app's Activity tab)
+still records every open, read and write per login, whatever the app does.
 
 ## Binding to data: the important part
 

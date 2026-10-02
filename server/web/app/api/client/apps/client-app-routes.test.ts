@@ -38,6 +38,7 @@ const h = vi.hoisted(() => ({
   marked: [] as string[],
   synced: [] as string[],
   rendered: [] as string[],
+  frameViewers: [] as unknown[],
 }));
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
@@ -140,10 +141,13 @@ vi.mock('@mantle/content/app-table-exports', () => ({
   ),
 }));
 vi.mock('@/lib/app-frame', () => ({
-  renderAppFrame: vi.fn(async (_req: Request, build: { storageKey: string }) => {
-    h.rendered.push(build.storageKey);
-    return new Response('<!doctype html>', { status: 200 });
-  }),
+  renderAppFrame: vi.fn(
+    async (_req: Request, build: { storageKey: string }, opts?: { viewer?: unknown }) => {
+      h.rendered.push(build.storageKey);
+      h.frameViewers.push(opts?.viewer);
+      return new Response('<!doctype html>', { status: 200 });
+    },
+  ),
 }));
 
 type Handler = (req: Request, ctx: { params: Promise<{ id: string }> }) => Promise<Response>;
@@ -196,6 +200,7 @@ beforeEach(() => {
   h.marked.length = 0;
   h.synced.length = 0;
   h.rendered.length = 0;
+  h.frameViewers.length = 0;
   verdictMock?.mockClear();
 });
 
@@ -304,7 +309,12 @@ describe('client db broker', () => {
     // A read marks nothing (audit I3: only a client's write does).
     expect(h.marked).toEqual([]);
     await dbBroker(post({ op: 'exec', sql: 'insert into t values (1)' }), params());
-    expect(h.callers).toEqual([{ callerKey: `client:${LOGIN}` }, { callerKey: `client:${LOGIN}` }]);
+    // App identity: the client fills the :host_me_* parameters.
+    const caller = {
+      callerKey: `client:${LOGIN}`,
+      viewer: { kind: 'client', loginId: LOGIN, name: 'Casey' },
+    };
+    expect(h.callers).toEqual([caller, caller]);
   });
 
   it("shows the app's own SQL error, but never a server error's text (audit L4)", async () => {
@@ -401,6 +411,10 @@ describe('client frame', () => {
     expect(res.status).toBe(200);
     expect(h.rendered).toEqual([PUBLISHED.storageKey]);
     expect(h.active).toEqual([{ loginId: LOGIN, epoch: EPOCH }]);
+    // host.me(): the client the ticket names (app identity).
+    expect(h.frameViewers).toEqual([
+      { ownerId: ANCHOR, appId: APP, subject: { kind: 'client', loginId: LOGIN } },
+    ]);
   });
 
   it('refuses once the client signed out, its sessions were ended or it was disabled', async () => {

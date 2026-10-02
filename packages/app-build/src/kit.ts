@@ -200,7 +200,23 @@ function paintAnnotations(regions) {
   }
 }
 
+// Who runs the app (app identity): { id, name, kind }, for DISPLAY. The
+// frame route bakes it into the frame document from its verified ticket
+// (window.__mantleHostMe), so it needs no round trip and no parent support.
+// id is a per-app pseudonym (null on an open link), name the display name
+// or null, kind 'admin' | 'member' | 'client' | 'contact' | 'public'. There
+// is no email. To RECORD who did something, put :host_me_id / :host_me_name /
+// :host_me_kind in host.db SQL: the server fills those, the browser cannot.
+function me() {
+  const v = window.__mantleHostMe;
+  if (!v || typeof v !== 'object') {
+    return Promise.reject(new Error('host.me() is not available in this frame'));
+  }
+  return Promise.resolve({ id: v.id ?? null, name: v.name ?? null, kind: v.kind });
+}
+
 export const host = {
+  me,
   tools: {
     call: (slug, input) => post({ kind: 'tool.call', slug, input: input ?? {} }),
   },

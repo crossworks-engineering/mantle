@@ -43,5 +43,15 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
   if (!build) return new NextResponse('no build', { status: 404 });
 
   // Shared surface: the Neat backdrop honours the shareNeat switch here.
-  return renderAppFrame(req, build, { shared: true });
+  // host.me(): the share's contact, or nobody on an open link.
+  return renderAppFrame(req, build, {
+    shared: true,
+    viewer: {
+      ownerId: share.ownerId,
+      appId: share.nodeId,
+      subject: share.contactId
+        ? { kind: 'contact', contactId: share.contactId }
+        : { kind: 'public' },
+    },
+  });
 }

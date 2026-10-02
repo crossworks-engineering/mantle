@@ -28,8 +28,16 @@ import {
   appSqlMaxDbBytes,
   runAppSql,
 } from './app-sql-runner';
+import {
+  appViewerSalt,
+  bindViewerParams,
+  resolveAppViewer,
+  type AppViewer,
+  type AppViewerSubject,
+} from './app-viewer';
 
 export { AppSqlBusyError, AppSqlError } from './app-sql-runner';
+export type { AppViewer, AppViewerSubject } from './app-viewer';
 
 /** Root dir for per-app SQLite files. A dedicated volume in prod (see compose);
  *  one file per app: <root>/<owner>/<app>.sqlite. When APP_DB_DIR is unset
@@ -65,8 +73,10 @@ export type AppDbSchema = { schemaSql: string; schemaVersion: number };
 export type DbRows = Record<string, unknown>[];
 export type DbExecResult = { changes: number; lastInsertRowid: number };
 /** Who runs a broker statement: one statement at a time per key (a client
- *  login, a member login, a share link; client tier audit I1). */
-export type AppDbCaller = { callerKey?: string };
+ *  login, a member login, a share link; client tier audit I1). `viewer` is
+ *  the authenticated person (app identity): it fills the reserved
+ *  `:host_me_*` parameters. Without it, SQL that uses one is refused. */
+export type AppDbCaller = { callerKey?: string; viewer?: AppViewerSubject };
 
 /** Minimal structural type for the bits of node:sqlite we use (keeps us
  *  independent of whether @types/node ships the declarations yet). */
@@ -266,6 +276,35 @@ export async function ensureAppDatabase(
   return reg;
 }
 
+/** The viewer resolver for a broker statement, or null when the caller
+ *  named no person (bindViewerParams then refuses the reserved names). */
+function viewerThunk(
+  ownerId: string,
+  appNodeId: string,
+  registryId: string,
+  opts: AppDbCaller,
+): (() => Promise<AppViewer>) | null {
+  const subject = opts.viewer;
+  if (!subject) return null;
+  return () => resolveAppViewer(ownerId, subject, () => appViewerSalt(registryId, appNodeId));
+}
+
+/**
+ * What `host.me()` answers for this person in this app (app identity): the
+ * frame routes bake it into the frame document. Provisions the app's
+ * registry row (cheap, idempotent) when the id needs the app's salt.
+ */
+export async function appViewerFor(
+  ownerId: string,
+  appNodeId: string,
+  subject: AppViewerSubject,
+): Promise<AppViewer> {
+  return resolveAppViewer(ownerId, subject, async () => {
+    const reg = await ensureRegistry(ownerId, appNodeId);
+    return appViewerSalt(reg.id, appNodeId);
+  });
+}
+
 /** Run a read query against the app's own database. Returns row objects.
  *
  *  Opens READ-ONLY. This is load-bearing, not an optimisation: SQLite happily
@@ -286,6 +325,7 @@ export async function appDbQuery(
 ): Promise<DbRows> {
   assertSafe(sql);
   const reg = await ensureAppDatabase(ownerId, appNodeId, schema);
+  const bound = await bindViewerParams(sql, params, viewerThunk(ownerId, appNodeId, reg.id, opts));
   // A read-only open never creates the file. On an app's very first query
   // (no declared DDL applied, nothing written yet) provision the empty DB
   // with a normal open first, so the read-only open has a file to attach.
@@ -296,7 +336,7 @@ export async function appDbQuery(
   }
   return (await runAppSql(reg.storagePath, {
     sql,
-    params,
+    params: bound,
     mode: 'all',
     readOnly: true,
     ...(opts.callerKey ? { callerKey: opts.callerKey } : {}),
@@ -314,10 +354,11 @@ export async function appDbExec(
 ): Promise<DbExecResult> {
   assertSafe(sql);
   const reg = await ensureAppDatabase(ownerId, appNodeId, schema);
+  const bound = await bindViewerParams(sql, params, viewerThunk(ownerId, appNodeId, reg.id, opts));
   await mkdir(path.dirname(reg.storagePath), { recursive: true });
   const res = (await runAppSql(reg.storagePath, {
     sql,
-    params,
+    params: bound,
     mode: 'run',
     readOnly: false,
     ...(opts.callerKey ? { callerKey: opts.callerKey } : {}),
@@ -532,6 +573,9 @@ export async function appDbReadQuery(
   params: unknown[] = [],
 ): Promise<{ rows: DbRows; empty: boolean }> {
   assertSafe(sql);
+  // No person runs the app here: SQL that uses a :host_me_* parameter is
+  // refused, and so is a caller-sent value for one.
+  const bound = await bindViewerParams(sql, params, null);
   const reg = await lookupAppDatabase(ownerId, appNodeId);
   if (!reg) return { rows: [], empty: true };
   try {
@@ -541,7 +585,7 @@ export async function appDbReadQuery(
   }
   const rows = (await runAppSql(reg.storagePath, {
     sql,
-    params,
+    params: bound,
     mode: 'all',
     readOnly: true,
   })) as DbRows;

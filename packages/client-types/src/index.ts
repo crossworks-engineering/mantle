@@ -178,6 +178,10 @@ export type {
   AppTint,
 } from './app-nav';
 
+// Types only at the root; the runtime constants (the reserved parameter names)
+// are the `@mantle/client-types/app-viewer` subpath.
+export type { AppViewer, AppViewerKind } from './app-viewer';
+
 // Types only at the root; the runtime constants (kinds, specs, limits) are the
 // `@mantle/client-types/tree` subpath.
 export type {

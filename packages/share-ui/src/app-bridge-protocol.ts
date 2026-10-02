@@ -15,6 +15,12 @@
 
 export const BRIDGE_VERSION = 1 as const;
 
+/** What `host.me()` answers inside an app (app identity, 2026-10-02). It is
+ *  NOT a bridge message: the frame route bakes it into the frame document
+ *  from its verified ticket, so hosts need no change to support it. Exported
+ *  here so the app-facing contract lives in one place. */
+export type { AppViewer, AppViewerKind } from '@mantle/client-types/app-viewer';
+
 /** Requests the app sends UP to the host (await a matching BridgeRes by `id`). */
 export type BridgeReq =
   | { v: 1; id: string; kind: 'tool.call'; slug: string; input: unknown }

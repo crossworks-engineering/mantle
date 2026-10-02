@@ -1,0 +1,14 @@
+-- App identity (docs/app-authoring-guide.md, "Who is running the app").
+--
+-- A mini app may learn who runs it (host.me()) and record it through the
+-- server-filled SQL parameters :host_me_id / :host_me_name / :host_me_kind.
+-- The id is a per-app pseudonym: HMAC-SHA256 of the login or contact id,
+-- keyed with this per-app random salt (packages/content/src/app-viewer.ts).
+-- The same person has a different id in every app, and the app cannot
+-- reverse it. A stored salt, not one derived from a server secret, so a
+-- secret rotation never changes the ids an app has already written.
+--
+-- Server only: no app, tool or API returns this column. Nullable and filled
+-- on first use, so no backfill. It lives and dies with the app's database
+-- row (deleted with the app node).
+ALTER TABLE "public"."app_databases" ADD COLUMN IF NOT EXISTS "viewer_salt" text;

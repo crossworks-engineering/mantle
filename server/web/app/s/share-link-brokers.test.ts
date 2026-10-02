@@ -13,7 +13,12 @@
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const h = vi.hoisted(() => ({ queries: 0, execs: 0 }));
+const h = vi.hoisted(() => ({
+  queries: 0,
+  execs: 0,
+  callers: [] as unknown[],
+  frameViewers: [] as unknown[],
+}));
 
 const SHARE = { id: 'share-1', ownerId: 'owner-1', nodeId: 'app-1', nodeType: 'app', settings: {} };
 const CONTACT = 'contact-7';
@@ -50,15 +55,23 @@ vi.mock('@mantle/content/app-broker', async (importOriginal) => ({
   AppSqlError: (await importOriginal<typeof import('@mantle/content/app-broker')>()).AppSqlError,
   AppSqlBusyError: (await importOriginal<typeof import('@mantle/content/app-broker')>())
     .AppSqlBusyError,
-  appDbQuery: vi.fn(async () => {
+  appDbQuery: vi.fn(async (...args: unknown[]) => {
+    h.callers.push(args[5]);
     h.queries += 1;
     return { rows: [] };
   }),
-  appDbExec: vi.fn(async () => {
+  appDbExec: vi.fn(async (...args: unknown[]) => {
+    h.callers.push(args[5]);
     h.execs += 1;
     return { changes: 1 };
   }),
   markAppClientWritten: vi.fn(async () => {}),
+}));
+vi.mock('@/lib/app-frame', () => ({
+  renderAppFrame: vi.fn(async (_req: Request, _build: unknown, opts?: { viewer?: unknown }) => {
+    h.frameViewers.push(opts?.viewer);
+    return new Response('<!doctype html>', { status: 200 });
+  }),
 }));
 
 beforeAll(() => {
@@ -67,6 +80,8 @@ beforeAll(() => {
 beforeEach(() => {
   h.queries = 0;
   h.execs = 0;
+  h.callers.length = 0;
+  h.frameViewers.length = 0;
 });
 
 const post = (path: string, body: unknown) =>
@@ -101,6 +116,8 @@ describe('/s/:token/db-broker', () => {
     );
     expect(q.status).toBe(200);
     expect(h.queries).toBe(1);
+    // App identity: an open link fills :host_me_* with the anonymous value.
+    expect(h.callers).toEqual([{ callerKey: 'share:share-1', viewer: { kind: 'public' } }]);
     const w = await POST(
       post('/s/live/db-broker', { op: 'exec', sql: 'delete from t' }),
       params('live'),
@@ -189,6 +206,10 @@ describe('a contact share (0214)', () => {
     );
     expect(rw.status).toBe(200);
     expect(h.execs).toBe(1);
+    // App identity: the share's contact fills :host_me_* (never the body).
+    expect(h.callers).toEqual([
+      { callerKey: 'share:share-3', viewer: { kind: 'contact', contactId: CONTACT } },
+    ]);
     const t = await ticket(withCookie('/s/contact/frame-ticket', {}, cookie), params('contact'));
     const { verifyAppFrameTicket } = await import('@/lib/auth');
     expect(verifyAppFrameTicket(((await t.json()) as { ticket: string }).ticket)).toMatchObject({
@@ -196,5 +217,35 @@ describe('a contact share (0214)', () => {
       contactId: CONTACT,
       codeEpoch: 3,
     });
+  });
+});
+
+describe('/s/:token/frame: host.me() (app identity)', () => {
+  const frameReq = (token: string, ticket: string) =>
+    new Request(`https://brain.example.invalid/s/${token}/frame?t=${encodeURIComponent(ticket)}`);
+
+  it('an open link bakes the anonymous viewer', async () => {
+    const { GET } = await import('./[token]/frame/route');
+    const { buildAppFrameTicket } = await import('@/lib/auth');
+    const t = buildAppFrameTicket({ ownerId: 'owner-1', appId: 'app-1', shareId: 'share-1' });
+    expect((await GET(frameReq('live', t), params('live'))).status).toBe(200);
+    expect(h.frameViewers).toEqual([
+      { ownerId: 'owner-1', appId: 'app-1', subject: { kind: 'public' } },
+    ]);
+  });
+
+  it("a contact share bakes the share's contact, whatever the request says", async () => {
+    const { GET } = await import('./[token]/frame/route');
+    const { buildAppFrameTicket } = await import('@/lib/auth');
+    const t = buildAppFrameTicket({
+      ownerId: 'owner-1',
+      appId: 'app-1',
+      shareId: 'share-2',
+      contact: { contactId: CONTACT, codeEpoch: 3 },
+    });
+    expect((await GET(frameReq('contact', t), params('contact'))).status).toBe(200);
+    expect(h.frameViewers).toEqual([
+      { ownerId: 'owner-1', appId: 'app-1', subject: { kind: 'contact', contactId: CONTACT } },
+    ]);
   });
 });

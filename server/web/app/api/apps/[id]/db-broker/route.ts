@@ -8,6 +8,9 @@
  * op:'query' runs on a READ-ONLY open (appDbQuery) — writes must go through
  * op:'exec'. Same semantics as the share broker, where public links depend on
  * query being unable to mutate.
+ *
+ * App identity: the admin login fills the reserved `:host_me_*` parameters
+ * (kind 'admin'); a value the browser sends for one is refused.
  */
 import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
@@ -28,13 +31,23 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const app = await getApp(user.id, id);
   if (!app) return NextResponse.json({ ok: false, error: 'app not found' }, { status: 404 });
   const schema = app.manifest.sqlite;
+  const caller = {
+    viewer: { kind: 'admin' as const, loginId: user.actor.id, name: user.actor.displayName },
+  };
 
   try {
     if (parsed.data.op === 'query') {
-      const rows = await appDbQuery(user.id, id, parsed.data.sql, parsed.data.params, schema);
+      const rows = await appDbQuery(
+        user.id,
+        id,
+        parsed.data.sql,
+        parsed.data.params,
+        schema,
+        caller,
+      );
       return NextResponse.json({ ok: true, output: rows });
     }
-    const res = await appDbExec(user.id, id, parsed.data.sql, parsed.data.params, schema);
+    const res = await appDbExec(user.id, id, parsed.data.sql, parsed.data.params, schema, caller);
     // A write may feed a linked app-table export — debounced, hash-gated.
     scheduleAppTableExportSync(user.id, id);
     return NextResponse.json({ ok: true, output: res });

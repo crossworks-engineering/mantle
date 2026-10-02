@@ -14,6 +14,11 @@
  *
  * Runs against the app's own SQLite under the share owner's scope, one
  * statement at a time per share (caller key `share:<id>`).
+ *
+ * App identity: on a contact share the contact fills the reserved
+ * `:host_me_*` parameters (kind 'contact', the contact's name, a per-app
+ * id); on an open link they are the anonymous value (id and name NULL, kind
+ * 'public'). A value the browser sends for one is refused.
  */
 import { NextResponse } from '@/server/http-compat';
 import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
@@ -101,7 +106,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   }
 
   // One statement at a time per link (client tier audit I1).
-  const caller = { callerKey: `share:${share.id}` };
+  const caller = {
+    callerKey: `share:${share.id}`,
+    viewer: contactId ? { kind: 'contact' as const, contactId } : { kind: 'public' as const },
+  };
   try {
     if (op === 'exec') {
       const output = await appDbExec(

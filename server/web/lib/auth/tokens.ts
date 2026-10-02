@@ -431,10 +431,13 @@ const APP_FRAME_TICKET_TTL_SECONDS = 120;
  *  session epoch at mint time: Sign out, End sessions and Disable bump it,
  *  and the client frame refuses a ticket of an older epoch. A client ticket
  *  still carries `mem`, so every frame that refuses a login ticket (owner,
- *  share) refuses a client's too. */
+ *  share) refuses a client's too. `actorId` (owner surface only) names the
+ *  admin login that opened the frame, so the frame can answer host.me()
+ *  (app identity); the owner frame route is the only one that reads it. */
 export function buildAppFrameTicket(opts: {
   ownerId: string;
   appId: string;
+  actorId?: string;
   shareId?: string;
   loginId?: string;
   clientEpoch?: number;
@@ -450,6 +453,9 @@ export function buildAppFrameTicket(opts: {
   }
   if (opts.loginId) claims.mem = opts.loginId;
   if (opts.loginId && opts.clientEpoch !== undefined) claims.cep = opts.clientEpoch;
+  // Only an owner ticket names an admin actor: a share, member or client
+  // ticket already says who runs the app.
+  if (opts.actorId && !opts.shareId && !opts.loginId) claims.act = opts.actorId;
   return signClaims(claims, APP_FRAME_TICKET_TTL_SECONDS).value;
 }
 
@@ -474,6 +480,8 @@ export type AppFrameTicket = {
    *  (only with `shareId`). */
   contactId?: string;
   codeEpoch?: number;
+  /** An owner ticket's admin login (app identity: host.me()). */
+  actorId?: string;
 };
 
 export function verifyAppFrameTicket(value: string): AppFrameTicket | null {
@@ -482,6 +490,7 @@ export function verifyAppFrameTicket(value: string): AppFrameTicket | null {
   const out: AppFrameTicket = { ownerId: claims.uid, appId: claims.app };
   if (typeof claims.sh === 'string') out.shareId = claims.sh;
   if (typeof claims.mem === 'string') out.loginId = claims.mem;
+  if (typeof claims.act === 'string' && !out.shareId && !out.loginId) out.actorId = claims.act;
   // A contact share's ticket carries both `cid` and `ce`. A `cid` alone (a
   // team visitor's, retired with team links) is ignored, as before.
   if (

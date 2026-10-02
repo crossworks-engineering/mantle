@@ -14,6 +14,29 @@ describe('@host kit ↔ bridge protocol mirror', () => {
     }
   });
 
+  it('exposes host.me(), read from the frame-baked viewer (app identity)', () => {
+    expect(HOST).toContain('window.__mantleHostMe');
+    expect(HOST).toMatch(/export const host = \{\n {2}me,/);
+    // No email anywhere in the answer.
+    expect(HOST).not.toMatch(/email:/);
+  });
+
+  it('host.me() answers the baked viewer, and rejects where none was baked', async () => {
+    const src = HOST.slice(HOST.indexOf('function me() {'));
+    const body = src.slice(0, src.indexOf('\n}\n') + 2);
+    const make = (win: Record<string, unknown>) =>
+      new Function('window', `${body}; return me;`)(win) as () => Promise<unknown>;
+    await expect(
+      make({ __mantleHostMe: { id: 'u_a', name: 'Pat', kind: 'member', email: 'x' } })(),
+    ).resolves.toEqual({ id: 'u_a', name: 'Pat', kind: 'member' });
+    await expect(make({ __mantleHostMe: { kind: 'public' } })()).resolves.toEqual({
+      id: null,
+      name: null,
+      kind: 'public',
+    });
+    await expect(make({})()).rejects.toThrow(/not available/);
+  });
+
   it('exposes the team-hub namespace with the enumerated hub kinds', () => {
     expect(HOST).toContain("kind: 'hub.get'");
     // All nav intents post the SAME event kind with the target shapes the

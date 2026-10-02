@@ -29,6 +29,10 @@ export const appDatabases = pgTable(
      *  migration 0199). Never cleared: a Table exported from the app stays
      *  client-sourced after the app is raised above client. */
     clientWrittenAt: timestamp('client_written_at', { withTimezone: true }),
+    /** The per-app random key of the app's viewer pseudonyms (app identity,
+     *  migration 0217): host.me().id and :host_me_id are HMAC(viewer_salt,
+     *  login or contact id). Server only; NULL until first use. */
+    viewerSalt: text('viewer_salt'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },

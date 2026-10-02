@@ -303,6 +303,42 @@ describe('client app-frame tickets', () => {
     const orphan = signRaw({ uid: 'u1', app: 'app-1', cep: 0, exp, k: 'f' });
     expect(auth.verifyAppFrameTicket(orphan)).toBeNull();
   });
+
+  it('names the admin login on an owner ticket only (app identity: host.me())', async () => {
+    const auth = await authLib();
+    const owner = auth.buildAppFrameTicket({ ownerId: 'u1', appId: 'app-1', actorId: 'admin-1' });
+    expect(auth.verifyAppFrameTicket(owner)).toEqual({
+      ownerId: 'u1',
+      appId: 'app-1',
+      actorId: 'admin-1',
+    });
+    // A share or login ticket already says who runs the app: no actor.
+    const share = auth.buildAppFrameTicket({
+      ownerId: 'u1',
+      appId: 'app-1',
+      shareId: 's1',
+      actorId: 'admin-1',
+    });
+    expect(auth.verifyAppFrameTicket(share)?.actorId).toBeUndefined();
+    const member = auth.buildAppFrameTicket({
+      ownerId: 'u1',
+      appId: 'app-1',
+      loginId: 'login-1',
+      actorId: 'admin-1',
+    });
+    expect(auth.verifyAppFrameTicket(member)?.actorId).toBeUndefined();
+    // A hand-signed act on a member ticket is ignored too.
+    const exp = Math.floor(Date.now() / 1000) + 60;
+    const forged = signRaw({
+      uid: 'u1',
+      app: 'app-1',
+      mem: 'login-1',
+      act: 'admin-1',
+      exp,
+      k: 'f',
+    });
+    expect(auth.verifyAppFrameTicket(forged)?.actorId).toBeUndefined();
+  });
 });
 
 /**

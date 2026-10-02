@@ -4,6 +4,31 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: app identity, an app knows who runs it
+
+A mini app can show who runs it and record who did what, and the record
+cannot be faked from the browser (docs/app-authoring-guide.md, "Who is
+running the app").
+
+- **`host.me()`** answers `{ id, name, kind }` on every surface (the
+  editor, member and client shells, a Contact share, an open link). `kind`
+  is `admin`, `member`, `client`, `contact` or `public`. No email. The frame
+  route bakes it into the frame document from its verified ticket, so the
+  bridge protocol and the hosts do not change; the owner frame ticket now
+  names the admin login (`act`).
+- **Server-filled SQL parameters** `:host_me_id`, `:host_me_name`,
+  `:host_me_kind` in `host.db.query` / `host.db.exec`, filled by every
+  broker (owner, member, client, /s). A browser value under any `host_me_`
+  name is refused (400), and so is an unknown one (`:host_me_email`). SQL
+  without them is unchanged. A caller that names no person (the assistant's
+  `app_db_query`) cannot use them. The access log is unchanged.
+- **Per-app pseudonymous id**: HMAC of the login or contact id, keyed with
+  a random per-app salt. **Migration 0217** (`0217_app_viewer_salt`):
+  `app_databases.viewer_salt`, nullable, filled on first use.
+- Contract: `@crossworks/client-types` gains `AppViewer` / `AppViewerKind`
+  (and the `app-viewer` subpath); `@crossworks/share-ui` re-exports the type
+  and its frame builder takes an optional `viewer`. Additive.
+
 ## Unreleased: contact shares, one item for one contact
 
 An admin shares ONE workspace item with ONE outsider, without showing it to

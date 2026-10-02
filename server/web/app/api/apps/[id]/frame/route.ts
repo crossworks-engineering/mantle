@@ -31,5 +31,10 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       : null;
   if (!build) return new NextResponse('no build', { status: 404 });
 
-  return renderAppFrame(req, build);
+  // host.me(): the admin login the ticket names (app identity).
+  return renderAppFrame(req, build, {
+    viewer: ticket.actorId
+      ? { ownerId: ticket.ownerId, appId: id, subject: { kind: 'admin', loginId: ticket.actorId } }
+      : undefined,
+  });
 }
