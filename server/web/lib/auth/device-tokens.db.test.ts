@@ -224,8 +224,6 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
       expect(refused.status, path).toBe(403);
       expect((await json(refused)).reason, path).toBe('member-login');
     }
-    // brainId (migration 0226): this brain's one row, the id every push names.
-    const [brainRow] = await sql<Row[]>`select brain_id::text as id from brain_identity`;
     expect(await json(await call('/api/auth/whoami', { bearer }))).toEqual({
       role: 'member',
       loginId: member,
@@ -233,7 +231,8 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
       displayName: 'Mia Member',
       shell: '/api/member/shell',
       pushBase: '/api/member/push',
-      brainId: brainRow!['id'],
+      // v1.1: this brain's one row, the id every push names.
+      brainId: await brainId(),
     });
     // Listed under the login's devices, and revocable there.
     const devices = await json(await call(`/api/users/${member}/devices`, { cookie: asAdmin() }));
@@ -316,6 +315,7 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
       displayName: 'ada',
       shell: '/api/client/shell',
       pushBase: '/api/client/push',
+      brainId: await brainId(),
     });
     for (const path of ['/api/shell', '/api/member/shell', '/api/member/chat']) {
       const refused = await call(path, { bearer });
