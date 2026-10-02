@@ -182,7 +182,9 @@ function removeFiles(paths: (string | null)[]): void {
   }
 }
 
-const summaryCols = {
+/** Built on use, not at import: a test that stands in for @mantle/db need
+ *  not know this table. */
+const summaryCols = () => ({
   id: nodeSnapshots.id,
   seq: nodeSnapshots.seq,
   trigger: nodeSnapshots.trigger,
@@ -192,7 +194,7 @@ const summaryCols = {
   schemaVersion: nodeSnapshots.schemaVersion,
   dbBytes: nodeSnapshots.dbBytes,
   dbPath: nodeSnapshots.dbPath,
-};
+});
 
 function toSummary(r: {
   id: string;
@@ -238,7 +240,7 @@ export async function listTableSnapshots(
   opts: { limit?: number } = {},
 ): Promise<TableSnapshot[]> {
   const rows = await db
-    .select(summaryCols)
+    .select(summaryCols())
     .from(nodeSnapshots)
     .where(
       and(
@@ -259,7 +261,7 @@ async function getEntry(
   snapshotId: string,
 ): Promise<(TableSnapshot & { abs: string | null }) | null> {
   const [row] = await db
-    .select(summaryCols)
+    .select(summaryCols())
     .from(nodeSnapshots)
     .where(
       and(
