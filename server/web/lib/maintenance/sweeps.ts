@@ -39,6 +39,7 @@ import { runPoolFit } from './pool-fit-run';
 import { reapAbandonedTracesAllOwners } from '../journey';
 import { repairShareDrift } from '@mantle/content/tree';
 import { purgeExpiredDeletedApps } from '@mantle/content/app-trash';
+import { purgeOrphanTableHistory } from '@mantle/content/table-snapshots';
 import { reapStalePendingTurns, summariseTurnsReap } from './turns-reap';
 import { errorMessage } from '@mantle/std';
 
@@ -180,9 +181,13 @@ export const SWEEPS: Record<string, (ownerId: string) => Promise<string>> = {
     return `deleted ${r.deleted} access log row(s), ${s.deleted} contact share row(s)`;
   },
   // Apps first-class plan, Phase 3: deleted apps past their 30 days.
+  // Apps plan Phase 4: the history of deleted tables, too.
   'app-trash-purge': async () => {
     const r = await purgeExpiredDeletedApps();
-    return r.apps === 0 ? 'nothing to purge' : `purged ${r.apps} deleted app(s)`;
+    const t = await purgeOrphanTableHistory();
+    return r.apps === 0 && t.tables === 0
+      ? 'nothing to purge'
+      : `purged ${r.apps} deleted app(s), the history of ${t.tables} deleted table(s)`;
   },
   // Member logins plan 6.4: a deactivated login's private items, after 30 days.
   'space-purge': async () => {

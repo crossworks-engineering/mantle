@@ -234,6 +234,25 @@ export type AppSnapshot = {
 /** What a restore puts back: code into the draft, the data, or both live. */
 export type AppRestoreMode = 'code' | 'data' | 'full';
 
+/**
+ * One entry on a table's History line (apps first-class plan, Phase 4). A
+ * `commit` entry is the published table a commit replaced (kept by
+ * itself, the newest 20); a `manual` one the owner took. Each holds a copy
+ * of the whole workbook. `seq` is the number the owner sees (v1, v2 …).
+ */
+export type TableSnapshot = {
+  id: string;
+  seq: number;
+  trigger: 'commit' | 'manual';
+  note: string | null;
+  actor: 'owner' | 'agent' | 'mcp' | 'system';
+  createdAt: string;
+  /** The table's version the copy holds (it counts commits). */
+  tableVersion: number | null;
+  /** The copy's size in bytes. */
+  bytes: number | null;
+};
+
 export type ProfilePreferences = {
   /** IANA timezone, e.g. 'Africa/Johannesburg'. UTC when not set. */
   timezone: string;

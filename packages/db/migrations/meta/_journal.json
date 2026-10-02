@@ -1548,6 +1548,13 @@
       "when": 1790019540000,
       "tag": "0221_app_table_exports_dirty",
       "breakpoints": true
+    },
+    {
+      "idx": 222,
+      "version": "7",
+      "when": 1790019600000,
+      "tag": "0222_node_snapshots_table_commit",
+      "breakpoints": true
     }
   ]
 }

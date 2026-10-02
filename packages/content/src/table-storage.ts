@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, rmSync, statSync } from 'node:fs';
+import { copyFileSync, cpSync, existsSync, rmSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { and, eq, isNotNull, sql } from 'drizzle-orm';
@@ -17,6 +17,7 @@ import {
   relativeStoragePath,
   resolveStoragePath,
   snapshotFile,
+  tableDbRoot,
   writeDocFile,
   type WorkbookStats,
   type WorkbookTabRef,
@@ -416,6 +417,16 @@ export async function snapshotAllTableDatabases(destDir: string): Promise<TableD
   ];
 
   const report: TableDbSnapshotReport = { snapshotted: [], missing: [], failed: [] };
+  // The tables' own history (apps plan Phase 4, table-snapshots.ts) rides
+  // along: immutable files, so a plain copy is consistent.
+  const history = path.join(tableDbRoot(), '_snapshots');
+  if (existsSync(history)) {
+    try {
+      cpSync(history, path.join(destDir, '_snapshots'), { recursive: true });
+    } catch (err) {
+      report.failed.push({ nodeId: '_snapshots', error: errorMessage(err) });
+    }
+  }
   for (const r of all) {
     const storagePath = r.storagePath!;
     let abs: string;

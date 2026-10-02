@@ -14,7 +14,8 @@ import type { AppManifest, AppSource, BuildRef } from './apps';
 
 /**
  * Snapshots and versions of an item, one timeline per node (apps first-class
- * plan, Phase 2; migration 0219). Apps now; tables later (`node_kind`).
+ * plan, Phase 2; migration 0219). Apps, and tables since Phase 4
+ * (`node_kind`; migration 0222).
  *
  * Two kinds of row on one numbered line (`seq`, what the owner sees as v1,
  * v2 …):
@@ -23,6 +24,10 @@ import type { AppManifest, AppSource, BuildRef } from './apps';
  *  - a SNAPSHOT (`manual`, or `pre_*` taken automatically before a risky
  *    change): the code AND a copy of the app's SQLite database, a file under
  *    APP_DB_DIR/_snapshots (`db_path`, relative to APP_DB_DIR).
+ *
+ * A TABLE's line (Phase 4) holds `commit` rows, the published workbook a
+ * commit replaced, and `manual` ones; each a file under
+ * TABLE_DB_DIR/_snapshots (`db_path` relative to TABLE_DB_DIR), no code.
  *
  * Append-only: a restore writes a new row (and the publish after it carries
  * `restored_from`); history is never rewritten. Rows outlive a deleted app
@@ -38,12 +43,12 @@ export const nodeSnapshots = pgTable(
     /** The item's id. No foreign key since migration 0220: an app's history
      *  outlives the app for 30 days (the trash, app-trash.ts). */
     nodeId: uuid('node_id').notNull(),
-    /** 'app' (tables later). */
+    /** 'app' | 'table'. */
     nodeKind: text('node_kind').notNull(),
     /** 1, 2, 3 … per node. */
     seq: integer('seq').notNull(),
-    /** 'publish' | 'manual' | 'pre_restore' | 'pre_schema' | 'pre_delete'
-     *  | 'pre_import' | 'nightly'. */
+    /** 'publish' | 'commit' (a table) | 'manual' | 'pre_restore' |
+     *  'pre_schema' | 'pre_delete' | 'pre_import' | 'nightly'. */
     trigger: text('trigger').notNull(),
     note: text('note'),
     /** 'owner' | 'agent' | 'mcp' | 'system'. */
@@ -52,10 +57,12 @@ export const nodeSnapshots = pgTable(
     code: jsonb('code').$type<AppSnapshotCode>(),
     /** sha256 of the canonical code JSON. */
     sourceHash: text('source_hash'),
-    /** The database copy, relative to APP_DB_DIR; null for a version. */
+    /** The database copy, relative to APP_DB_DIR (a table's: TABLE_DB_DIR);
+     *  null for a version. */
     dbPath: text('db_path'),
     dbBytes: bigint('db_bytes', { mode: 'number' }),
-    /** app_databases.schema_version when the copy was taken. */
+    /** app_databases.schema_version when the copy was taken; for a table,
+     *  the table's version (tables.version) the copy holds. */
     schemaVersion: integer('schema_version'),
     /** The seq this row's content was restored from, when it was. */
     restoredFrom: integer('restored_from'),

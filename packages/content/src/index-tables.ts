@@ -15,6 +15,7 @@
 
 export {
   TABLES_ROOT_LABEL,
+  AppBoundTableError,
   listTables,
   countTables,
   listTableTags,

@@ -4,6 +4,25 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: table history (apps first-class, Phase 4)
+
+- **Every table commit keeps the version it replaces** (a hard link, no
+  copy) on the table's history; the newest 20 per table, plus the owner's
+  own snapshots (never pruned, within `APP_SNAPSHOT_MAX_MB`). **Migration
+  0222** (`0222_node_snapshots_table_commit`) adds the `commit` trigger.
+- **Restore** puts a version into the table's draft; review, then commit
+  (or `commit: true`). The commit keeps what it replaced, so a restore is
+  undone the same way.
+- **Tools** (owner only, group `tables`, also on MCP): `table_history`,
+  `table_snapshot_create`, `table_snapshot_restore` and
+  `table_snapshot_delete` (both confirm-gated). `table_commit` and
+  `POST /api/tables/:id/commit` take a `note`.
+- **Routes:** `GET/POST /api/tables/:id/history`, `DELETE …/history/:sid`,
+  `POST …/history/:sid/restore`, `GET …/history/:sid/download`.
+- The table backup copies the history; `app-trash-purge` also clears a
+  deleted table's history after 30 days. The Ledger agent and the
+  `table_authoring` skill teach the history. docs/tables.md section 4.
+
 ## Unreleased: apps first-class, Phase 3 (trash, import, app_update)
 
 - **App table exports survive a restart (D8).** The first app write of a

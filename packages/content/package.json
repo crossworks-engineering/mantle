@@ -20,6 +20,7 @@
     "./app-snapshots": "./src/app-snapshots.ts",
     "./app-trash": "./src/app-trash.ts",
     "./app-package": "./src/app-package.ts",
+    "./table-snapshots": "./src/table-snapshots.ts",
     "./app-table-exports": "./src/app-table-exports.ts",
     "./tables": "./src/tables/index.ts",
     "./table-to-text": "./src/table-to-text.ts",

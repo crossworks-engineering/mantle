@@ -47,6 +47,8 @@ import {
   withTableRegistryLock,
 } from '../table-storage';
 import { TAB_NAME, assertTableWritable, detailOf } from './shared';
+import { keepCommitSnapshot, pruneTableCommitSnapshots } from '../table-snapshots';
+import type { AppHistoryActor } from '../apps';
 import {
   effectiveTabCount,
   effectiveTabName,
@@ -225,8 +227,26 @@ export async function commitTable(
   ownerId: string,
   id: string,
   data?: TableDoc | WorkbookDoc,
-  opts: { appSync?: boolean } = {},
+  opts: { appSync?: boolean; actor?: AppHistoryActor; note?: string | null } = {},
 ): Promise<TableDetail | null> {
+  // The published workbook this commit replaces is kept on the table's
+  // history (apps plan Phase 4), except for an app-bound table's sync (the
+  // app is the master). The file is removed again if the commit fails.
+  let kept: string | null = null;
+  const keep = async (tx: Parameters<typeof keepCommitSnapshot>[0], publishedAbs: string) => {
+    if (opts.appSync) return;
+    kept = await keepCommitSnapshot(tx, {
+      ownerId,
+      tableId: id,
+      publishedAbs,
+      ...(opts.actor ? { actor: opts.actor } : {}),
+      ...(opts.note ? { note: opts.note } : {}),
+    });
+  };
+  const dropKept = () => {
+    if (kept) rmSync(kept, { force: true });
+    kept = null;
+  };
   const [node] = await db
     .select()
     .from(nodes)
@@ -257,6 +277,7 @@ export async function commitTable(
       const publishedAbs = resolveStoragePath(locked.storagePath);
       const draftAbs = draftPathFor(publishedAbs);
       if (!existsSync(draftAbs)) return 'no_draft' as const;
+      await keep(tx, publishedAbs);
 
       // Promote via VACUUM INTO, not a bare rename (audit findings 1+2):
       // the snapshot reads THROUGH the draft's WAL, so frames a concurrent
@@ -328,13 +349,17 @@ export async function commitTable(
         totalRows: clipped.total,
         docClipped: clipped.clipped,
       });
+    }).catch((err: unknown) => {
+      dropKept();
+      throw err;
     });
     if (result === 'no_draft') {
       return Promise.reject(new Error('no draft to commit — the table is already published'));
     }
     if (result && typeof result === 'object' && 'legacyDraft' in result) {
-      return commitTable(ownerId, id, result.legacyDraft);
+      return commitTable(ownerId, id, result.legacyDraft, opts);
     }
+    if (kept) await pruneTableCommitSnapshots(id);
     if (result) await notifyNodeIngested(id);
     return result ?? null;
   }
@@ -389,6 +414,7 @@ export async function commitTable(
       .where(eq(nodes.id, id))
       .returning();
     if (!row) throw new Error('commitTable: update returned no row');
+    await keep(tx, publishedAbs);
     const res = writeDocFile(publishedAbs, commitDoc, { nodeId: id, ownerId, tabName, fts: true });
     removeTableFile(draftAbsFor(relativeStoragePath(ownerId, id)));
     await tx
@@ -408,8 +434,12 @@ export async function commitTable(
     return detailOf(row, workbook ? ensureTableDoc(workbook.tabs[0]) : doc!, null, {
       totalRows: commitTotalRows,
     });
+  }).catch((err: unknown) => {
+    dropKept();
+    throw err;
   });
 
+  if (kept) await pruneTableCommitSnapshots(id);
   if (result) await notifyNodeIngested(id);
   return result;
 }
