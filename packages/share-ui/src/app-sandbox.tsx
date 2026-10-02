@@ -43,16 +43,31 @@ export type AppToolConfirmRequest = {
   input: Record<string, unknown>;
 };
 
+/** The most input the browser's own dialog shows. */
+const DEFAULT_CONFIRM_SHOWN = 1200;
+
+/** A tool input as the browser's dialog shows it: whole when it fits, else
+ *  its start and end and a line that says how much is left out. */
+export function confirmInputText(input: unknown, max = DEFAULT_CONFIRM_SHOWN): string {
+  const full = JSON.stringify(input, null, 2) ?? 'null';
+  if (full.length <= max) return full;
+  const half = Math.floor(max / 2);
+  return `${full.slice(0, half)}\n… ${full.length - half * 2} characters not shown …\n${full.slice(-half)}\n\n(The input is ${full.length} characters; only its start and end are shown. Say no if you are not sure what it does.)`;
+}
+
 /** Ask with the browser's own dialog when the host passes no `confirmTool`.
- *  Plain, but the app keeps working on a host that predates the prop. */
+ *  Plain, but the app keeps working on a host that predates the prop. An
+ *  input too long for the dialog is never cut in silence (apps audit
+ *  2026-10-02, low: the tail was hidden): the start and the end show, and
+ *  the dialog says how much is left out. */
 function defaultConfirmTool(req: AppToolConfirmRequest): Promise<boolean> {
   if (typeof window === 'undefined' || typeof window.confirm !== 'function') {
     return Promise.resolve(false);
   }
-  const shown = JSON.stringify(req.input, null, 2);
+  const shown = confirmInputText(req.input);
   return Promise.resolve(
     window.confirm(
-      `This app wants to run "${req.name}" (${req.slug}).\n\n${req.description}\n\nWith:\n${shown.length > 800 ? `${shown.slice(0, 800)}…` : shown}\n\nRun it?`,
+      `This app wants to run "${req.name}" (${req.slug}).\n\n${req.description}\n\nWith:\n${shown}\n\nRun it?`,
     ),
   );
 }
@@ -176,6 +191,8 @@ export function AppSandbox({
   // `fetcher` rides along for the same reason (the split hub passes an inline
   // bearer-attaching wrapper); the default stays a plain window-bound fetch.
   const cbRef = useRef({ onError, onSelect, onInspectChange, hub, onLoadFailure, confirmTool });
+  /** A tool confirmation is open (one at a time). */
+  const confirmOpenRef = useRef(false);
   cbRef.current = { onError, onSelect, onInspectChange, hub, onLoadFailure, confirmTool };
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
@@ -253,14 +270,30 @@ export function AppSandbox({
           let r = await send();
           let data = await r.json();
           if (r.status === 409 && data?.reason === 'confirm' && data.confirm?.token) {
+            // One question at a time (apps audit 2026-10-02, item 6): a
+            // second request while the owner reads the first is refused, so
+            // an app cannot swap what sits under the open Run button.
+            if (confirmOpenRef.current) {
+              reply({
+                ok: false,
+                error: `Another tool is waiting for your confirmation; “${req.slug}” was not run.`,
+              });
+              return;
+            }
             const ask = cbRef.current.confirmTool ?? defaultConfirmTool;
-            const yes = await ask({
-              appId,
-              slug: String(data.confirm.slug ?? req.slug),
-              name: String(data.confirm.name ?? req.slug),
-              description: String(data.confirm.description ?? ''),
-              input: (req.input ?? {}) as Record<string, unknown>,
-            });
+            confirmOpenRef.current = true;
+            let yes = false;
+            try {
+              yes = await ask({
+                appId,
+                slug: String(data.confirm.slug ?? req.slug),
+                name: String(data.confirm.name ?? req.slug),
+                description: String(data.confirm.description ?? ''),
+                input: (req.input ?? {}) as Record<string, unknown>,
+              });
+            } finally {
+              confirmOpenRef.current = false;
+            }
             if (!yes) {
               reply({ ok: false, error: `You declined to run the tool “${req.slug}”.` });
               return;
