@@ -249,7 +249,9 @@ describe('app_build', () => {
     expect(buildApp).toHaveBeenCalledTimes(2);
     vi.mocked(buildApp).mockClear();
     vi.mocked(setDraftBuild).mockResolvedValue('stale');
-    expect(errorOf(await build.handler({ id: APP_ID }, ctx))).toMatch(/changed while it was building/);
+    expect(errorOf(await build.handler({ id: APP_ID }, ctx))).toMatch(
+      /changed while it was building/,
+    );
     expect(buildApp).toHaveBeenCalledTimes(3);
   });
 

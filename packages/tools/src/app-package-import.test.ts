@@ -31,11 +31,7 @@ vi.mock('./resolve', () => ({
   resolveTool: vi.fn(async (_o: string, slug: string) => (slug === 'nope' ? null : { slug })),
 }));
 
-import {
-  dropUnfinishedApp,
-  installAppPackage,
-  openAppPackage,
-} from '@mantle/content/app-package';
+import { dropUnfinishedApp, installAppPackage, openAppPackage } from '@mantle/content/app-package';
 import { checkAppSchemaScriptOnFile } from '@mantle/content/app-broker';
 import { publishApp } from '@mantle/content';
 import { importAppPackage } from './app-package-import';

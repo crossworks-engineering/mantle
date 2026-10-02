@@ -50,10 +50,7 @@ export async function insertNodeSnapshot(
 
 /** A size setting in MB, as bytes. Compose passes an unset variable as '',
  *  which must read as the default, not as 0. */
-export function envMbBytes(
-  name: Parameters<typeof envInt>[0],
-  defaultMb: number,
-): number {
+export function envMbBytes(name: Parameters<typeof envInt>[0], defaultMb: number): number {
   const mb = env(name)?.trim() ? envInt(name, defaultMb, 1) : defaultMb;
   return mb * 1024 * 1024;
 }

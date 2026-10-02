@@ -246,7 +246,11 @@ describe.skipIf(!URL)('app history on Postgres', () => {
     const list = await snaps.listAppSnapshots(owner, id, { limit: 500 });
     const auto = list.filter((e) => e.trigger !== 'publish');
     expect(auto).toHaveLength(snaps.APP_SNAPSHOT_AUTO_KEEP);
-    for (const s of made) expect(auto.some((e) => e.id === s!.id), s!.trigger).toBe(true);
+    for (const s of made)
+      expect(
+        auto.some((e) => e.id === s!.id),
+        s!.trigger,
+      ).toBe(true);
     // Every kept row has its file; no removed row left one behind.
     const { readdirSync } = await import('node:fs');
     expect(readdirSync(path.join(dir, '_snapshots', owner, id))).toHaveLength(auto.length);

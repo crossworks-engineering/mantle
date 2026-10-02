@@ -65,9 +65,7 @@ type DeletedRow = {
  *  list reads the name and look only, not every deleted app's whole code
  *  (apps audit 2026-10-02, low); a restore reads its one app's code. */
 async function deletedRows(ownerId: string, appId?: string): Promise<DeletedRow[]> {
-  const code = appId
-    ? sql`s.code`
-    : sql`jsonb_build_object('meta', s.code->'meta') as code`;
+  const code = appId ? sql`s.code` : sql`jsonb_build_object('meta', s.code->'meta') as code`;
   const rows = (await db.execute(sql`
     select distinct on (s.node_id)
            s.node_id, s.id, s.seq, s.created_at, ${code}, s.db_path, s.db_bytes, s.schema_version

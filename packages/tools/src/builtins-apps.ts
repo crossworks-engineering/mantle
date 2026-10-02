@@ -1458,7 +1458,8 @@ const app_import: BuiltinToolDef = {
     // One turn of the per-process import limit, shared with the upload route
     // (apps audit 2026-10-02, item 13): each holds its package in memory.
     const release = takeAppImportSlot();
-    if (!release) return { ok: false, error: 'another import is running: try again when it is done' };
+    if (!release)
+      return { ok: false, error: 'another import is running: try again when it is done' };
     try {
       // The size first, from the file itself: a file past the cap is never
       // read into memory.

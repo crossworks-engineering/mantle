@@ -125,7 +125,9 @@ const MAX_PACKAGE_ENTRIES = 16;
 /** The entry count a zip's end record claims, or null when it has none
  *  (not a zip). Read from the last bytes only, before the zip is parsed. */
 function zipEntryCount(bytes: Buffer | Uint8Array): number | null {
-  const buf = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes.buffer, bytes.byteOffset, bytes.length);
+  const buf = Buffer.isBuffer(bytes)
+    ? bytes
+    : Buffer.from(bytes.buffer, bytes.byteOffset, bytes.length);
   // The end record is 22 bytes plus a comment of at most 65535.
   const stop = Math.max(0, buf.length - 22 - 0xffff);
   for (let i = buf.length - 22; i >= stop; i--) {
