@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   bigint,
+  boolean,
   index,
   integer,
   jsonb,
@@ -57,6 +58,12 @@ export const nodeSnapshots = pgTable(
     code: jsonb('code').$type<AppSnapshotCode>(),
     /** sha256 of the canonical code JSON. */
     sourceHash: text('source_hash'),
+    /** The published code's file count and total size, and whether a draft
+     *  was kept, on the row so a History list never reads the code
+     *  (migration 0224); null for a table. */
+    fileCount: integer('file_count'),
+    sourceBytes: bigint('source_bytes', { mode: 'number' }),
+    hasDraft: boolean('has_draft'),
     /** The database copy, relative to APP_DB_DIR (a table's: TABLE_DB_DIR);
      *  null for a version. */
     dbPath: text('db_path'),

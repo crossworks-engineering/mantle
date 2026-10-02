@@ -6,7 +6,7 @@
  *
  * Server-only (node:fs).
  */
-import { copyFile, link, mkdir, readdir, rm } from 'node:fs/promises';
+import { copyFile, link, mkdir, readdir, rm, stat } from 'node:fs/promises';
 import * as path from 'node:path';
 import { copyAppDbFile } from './app-sql-runner';
 
@@ -86,4 +86,59 @@ export async function copySqliteFile(src: string, dest: string): Promise<void> {
   await mkdir(path.dirname(dest), { recursive: true });
   await rm(dest, { force: true }); // VACUUM INTO refuses an existing target
   await copyAppDbFile(src, dest);
+}
+
+/** A work file a crash can leave behind: a schema trial copy, a restore's
+ *  or a snapshot's temp file, a package work file, a restore marker. The
+ *  live files (<id>.sqlite, its -wal/-shm/-journal, a draft) never match. */
+function isLeftover(name: string): boolean {
+  return (
+    name.startsWith('.schema-check-') ||
+    name.includes('.restore-') ||
+    name.includes('.tmp-') ||
+    name.endsWith('.restoring')
+  );
+}
+
+/** Leftovers younger than this may still be in use. */
+const LEFTOVER_MIN_AGE_MS = 60 * 60 * 1000;
+
+/**
+ * Remove the work files crashes left under these roots (APP_DB_DIR,
+ * TABLE_DB_DIR) more than an hour ago, and anything in APP_DB_DIR/_tmp
+ * that old (apps audit 2026-10-02, low: nothing swept them). Part of the
+ * nightly `app-trash-purge`; plain file removal. Returns the count (a dry
+ * run removes nothing).
+ */
+export async function sweepCrashLeftovers(
+  roots: string[],
+  opts: { now?: number; dryRun?: boolean } = {},
+): Promise<number> {
+  const cutoff = (opts.now ?? Date.now()) - LEFTOVER_MIN_AGE_MS;
+  let n = 0;
+  const walk = async (dir: string, depth: number, all: boolean): Promise<void> => {
+    let entries;
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        if (depth < 4) await walk(p, depth + 1, all || (depth === 0 && e.name === '_tmp'));
+        continue;
+      }
+      if (!e.isFile() || !(all || isLeftover(e.name))) continue;
+      try {
+        if ((await stat(p)).mtimeMs >= cutoff) continue;
+        n++;
+        if (!opts.dryRun) await rm(p, { force: true });
+      } catch {
+        // gone already
+      }
+    }
+  };
+  for (const root of roots) await walk(root, 0, false);
+  return n;
 }

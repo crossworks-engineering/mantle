@@ -20,7 +20,10 @@ import {
   setManifest,
   type AppHistoryActor,
 } from './apps';
+import { tableDbRoot } from '@mantle/tabledb';
 import { appDbRoot, restoreAppDatabaseFile } from './app-broker';
+import { sweepCrashLeftovers } from './history-files';
+import { dropUnfinishedApp } from './app-package';
 import { notifyAppNavChanged } from './app-nav';
 
 /** How long a deleted app can come back. */
@@ -51,17 +54,23 @@ type DeletedRow = {
   id: string;
   seq: number;
   created_at: Date | string;
+  /** The whole code for a restore; only its `meta` for the list. */
   code: AppSnapshotCode | null;
   db_path: string | null;
   db_bytes: string | number | null;
   schema_version: number | null;
 };
 
-/** Each deleted app's newest pre_delete row (the app itself is gone). */
+/** Each deleted app's newest pre_delete row (the app itself is gone). The
+ *  list reads the name and look only, not every deleted app's whole code
+ *  (apps audit 2026-10-02, low); a restore reads its one app's code. */
 async function deletedRows(ownerId: string, appId?: string): Promise<DeletedRow[]> {
+  const code = appId
+    ? sql`s.code`
+    : sql`jsonb_build_object('meta', s.code->'meta') as code`;
   const rows = (await db.execute(sql`
     select distinct on (s.node_id)
-           s.node_id, s.id, s.seq, s.created_at, s.code, s.db_path, s.db_bytes, s.schema_version
+           s.node_id, s.id, s.seq, s.created_at, ${code}, s.db_path, s.db_bytes, s.schema_version
       from node_snapshots s
      where s.owner_id = ${ownerId}
        and s.node_kind = 'app'
@@ -121,6 +130,9 @@ export async function restoreDeletedApp(
   const code = row.code;
   if (!code) throw new AppTrashRefusedError(`the last snapshot of app ${appId} holds no code`);
   const meta = code.meta;
+  // The node is made first, with the same id; if a later step fails, it goes
+  // again and the app is back in the trash as it was (apps audit
+  // 2026-10-02, low: an undelete was not all or nothing).
   const app = await createApp(ownerId, {
     id: appId,
     title: meta?.title ?? 'Restored app',
@@ -130,26 +142,32 @@ export async function restoreDeletedApp(
     ...(code.manifest.description ? { description: code.manifest.description } : {}),
     source: code.source,
   });
-  if (row.db_path) {
-    await restoreAppDatabaseFile(
-      ownerId,
-      app.id,
-      path.resolve(appDbRoot(), row.db_path),
-      row.schema_version ?? 0,
-      { drainMs: 0 },
-    );
-  }
-  const build = code.publishedBuild;
-  if (build?.ok) {
-    await restoreAppLive(ownerId, app.id, { ...code, publishedBuild: build }, row.seq, {
-      discardDraft: true,
-      actor: opts.actor ?? 'owner',
-    });
-  } else {
-    await restoreAppDraft(ownerId, app.id, code, row.seq, { discardDraft: true });
-    // The same app coming back: its own tools and schema with it (a draft
-    // restore leaves the manifest alone, and createApp starts it empty).
-    await setManifest(ownerId, app.id, code.manifest);
+  try {
+    if (row.db_path) {
+      await restoreAppDatabaseFile(
+        ownerId,
+        app.id,
+        path.resolve(appDbRoot(), row.db_path),
+        row.schema_version ?? 0,
+        { drainMs: 0 },
+      );
+    }
+    const build = code.publishedBuild;
+    if (build?.ok) {
+      await restoreAppLive(ownerId, app.id, { ...code, publishedBuild: build }, row.seq, {
+        discardDraft: true,
+        actor: opts.actor ?? 'owner',
+      });
+    } else {
+      await restoreAppDraft(ownerId, app.id, code, row.seq, { discardDraft: true });
+      // The same app coming back: its own tools and schema with it (a draft
+      // restore leaves the manifest alone, and createApp starts it empty).
+      await setManifest(ownerId, app.id, code.manifest);
+    }
+  } catch (err) {
+    // The history rows outlive the node: the app is in the trash again.
+    await dropUnfinishedApp(ownerId, app.id);
+    throw err;
   }
   void notifyAppNavChanged(ownerId);
   return { id: app.id, title: app.title };
@@ -197,4 +215,11 @@ export async function purgeExpiredDeletedApps(
   if (opts.dryRun) return { apps: rows.length };
   for (const r of rows) await purgeOne(r.owner_id, r.node_id);
   return { apps: rows.length };
+}
+
+/** The work files crashes left in the app and table folders (a schema
+ *  trial, a restore's temp file, a package work file), an hour old or more.
+ *  Part of the nightly `app-trash-purge`. */
+export async function sweepAppFileLeftovers(opts: { dryRun?: boolean } = {}): Promise<number> {
+  return sweepCrashLeftovers([appDbRoot(), tableDbRoot()], opts);
 }

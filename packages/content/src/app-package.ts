@@ -309,7 +309,7 @@ function readSource(v: unknown, what: string): AppSource {
     if (typeof body !== 'string') throw new AppPackageError(`${what}: file '${p}' is not text`);
     files[p] = body;
   }
-  if (!(v.entry in files)) {
+  if (!Object.hasOwn(files, v.entry)) {
     throw new AppPackageError(`${what}: the entry '${v.entry}' is not one of its files`);
   }
   const source = { entry: v.entry, files };

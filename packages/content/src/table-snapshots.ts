@@ -215,6 +215,13 @@ async function ownedTable(
   return row ?? null;
 }
 
+/** The owner's table's title, or null when it is not this owner's: the
+ *  history routes' existence check, without loading the table itself (apps
+ *  audit 2026-10-02, low). */
+export async function tableTitle(ownerId: string, tableId: string): Promise<string | null> {
+  return (await ownedTable(ownerId, tableId))?.title ?? null;
+}
+
 /** A table's history, newest first. */
 export async function listTableSnapshots(
   ownerId: string,

@@ -426,7 +426,7 @@ const app_source_set: BuiltinToolDef = {
       }
       files[path] = content;
     }
-    if (!(entry in files)) {
+    if (!Object.hasOwn(files, entry)) {
       return {
         ok: false,
         error: `entry '${entry}' must be one of the files (${Object.keys(files).join(', ') || 'none'})`,

@@ -203,7 +203,7 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     slug: 'app-trash-purge',
     title: 'Purge deleted apps',
     description:
-      "Removes deleted apps past their 30 days in Recently deleted: the app's history rows and its snapshot files (APP_DB_DIR/_snapshots). Until then the app can be restored with its id, code and data. Also clears the history of apps deleted before the trash existed, and of deleted tables (TABLE_DB_DIR/_snapshots), 30 days after its newest row.",
+      "Removes deleted apps past their 30 days in Recently deleted: the app's history rows and its snapshot files (APP_DB_DIR/_snapshots). Until then the app can be restored with its id, code and data. Also clears the history of apps deleted before the trash existed, and of deleted tables (TABLE_DB_DIR/_snapshots), 30 days after its newest row, and the work files a crash left in APP_DB_DIR and TABLE_DB_DIR (schema trial copies, restore and snapshot temp files) after an hour.",
     kind: 'recurring',
     status: 'live',
     cost: 'sql',

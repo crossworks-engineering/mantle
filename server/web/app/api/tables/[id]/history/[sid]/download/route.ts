@@ -9,20 +9,19 @@ import { Readable } from 'node:stream';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
-import { getTable } from '@/lib/tables';
-import { tableSnapshotFile } from '@mantle/content/table-snapshots';
+import { tableSnapshotFile, tableTitle } from '@mantle/content/table-snapshots';
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string; sid: string }> }) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const { id, sid } = await ctx.params;
-  const [table, file] = await Promise.all([
-    getTable(user.id, id),
+  const [title, file] = await Promise.all([
+    tableTitle(user.id, id),
     tableSnapshotFile(user.id, id, sid),
   ]);
-  if (!table || !file) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  if (title === null || !file) return NextResponse.json({ error: 'not found' }, { status: 404 });
   const { size } = await stat(file.path);
-  const base = table.title.replace(/[^\w.-]+/g, '_').slice(0, 60) || 'table';
+  const base = title.replace(/[^\w.-]+/g, '_').slice(0, 60) || 'table';
   const web = Readable.toWeb(
     createReadStream(file.path),
   ) as unknown as NodeReadableStream<Uint8Array>;

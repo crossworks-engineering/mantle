@@ -98,7 +98,7 @@ function resolveInTree(
     `${base}/index.tsx`,
     `${base}/index.ts`,
   ];
-  for (const c of candidates) if (c in files) return c;
+  for (const c of candidates) if (Object.hasOwn(files, c)) return c;
   return null;
 }
 
@@ -347,7 +347,7 @@ export async function buildApp(
 
 async function buildAppInner(source: AppSource): Promise<BuildResult> {
   const entry = normKey(source.entry || 'App.tsx');
-  if (!(entry in source.files)) {
+  if (!Object.hasOwn(source.files, entry)) {
     return {
       ok: false,
       errors: [{ text: `Entry file '${entry}' not found in source`, location: null }],

@@ -113,8 +113,8 @@ async function lockAppHistory(tx: DbTx, appId: string): Promise<void> {
   );
 }
 
-/** The summary columns of a row, computed in SQL so a list never carries the
- *  code itself. */
+/** The summary columns of a row: a list never carries the code itself, and
+ *  never reads it either (the sizes are kept on the row, migration 0224). */
 const summaryCols = {
   id: nodeSnapshots.id,
   seq: nodeSnapshots.seq,
@@ -125,9 +125,9 @@ const summaryCols = {
   restoredFrom: nodeSnapshots.restoredFrom,
   dbPath: nodeSnapshots.dbPath,
   dbBytes: nodeSnapshots.dbBytes,
-  fileCount: sql<number>`coalesce((select count(*) from jsonb_object_keys(coalesce(${nodeSnapshots.code}->'source'->'files', '{}'::jsonb))), 0)::int`,
-  sourceBytes: sql<number>`coalesce((select sum(octet_length(value)) from jsonb_each_text(coalesce(${nodeSnapshots.code}->'source'->'files', '{}'::jsonb))), 0)::bigint`,
-  hasDraft: sql<boolean>`coalesce(jsonb_typeof(${nodeSnapshots.code}->'draft') = 'object', false)`,
+  fileCount: sql<number>`coalesce(${nodeSnapshots.fileCount}, 0)`,
+  sourceBytes: sql<number>`coalesce(${nodeSnapshots.sourceBytes}, 0)`,
+  hasDraft: sql<boolean>`coalesce(${nodeSnapshots.hasDraft}, false)`,
 };
 
 type SummaryRow = {

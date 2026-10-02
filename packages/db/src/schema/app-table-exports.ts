@@ -38,7 +38,8 @@ export const appTableExports = pgTable(
     lastError: text('last_error'),
     /** Set by the first app write a sync has not read yet; cleared by the
      *  sync that reads it (migration 0221, apps plan D8). The boot and the
-     *  nightly sweep sync what a restart left dirty. */
+     *  app-export-catch-up maintenance task (by hand, never the nightly
+     *  cron: a sync commits) sync what a restart left dirty. */
     dirtySince: timestamp('dirty_since', { withTimezone: true }),
     /** Every app write's time (migration 0223, apps audit 2026-10-02 item
      *  7): a sync clears `dirtySince` only when no write came after it read

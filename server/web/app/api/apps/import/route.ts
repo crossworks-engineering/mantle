@@ -36,9 +36,8 @@ import {
 } from '@mantle/content';
 import { checkAppSchemaScript } from '@mantle/content/app-broker';
 import { createAppSnapshot } from '@mantle/content/app-snapshots';
-import { resolveTool } from '@mantle/tools';
+import { buildAndStageApp, resolveTool } from '@mantle/tools';
 import { recordIngest } from '@mantle/tracing';
-import { runAppBuild } from '@/lib/app-build-run';
 import { errorMessage } from '@mantle/std';
 
 const Body = AppMetaFields.partial({ name: true }).extend({
@@ -75,7 +74,7 @@ export async function POST(req: Request) {
   const b = parsed.data;
 
   // ── check everything before anything is written ──
-  if (!(b.entry in b.files)) return bad(`entry '${b.entry}' is not one of the files`);
+  if (!Object.hasOwn(b.files, b.entry)) return bad(`entry '${b.entry}' is not one of the files`);
   if (Object.keys(b.files).length > MAX_APP_FILES)
     return bad(`too many files (max ${MAX_APP_FILES})`);
   if (!b.appId && !b.name) return bad('name is required when appId is omitted');
@@ -146,7 +145,7 @@ export async function POST(req: Request) {
 
   // ── build + optional publish ──
   const wantBuild = b.build !== false || b.publish === true;
-  const build = wantBuild ? await runAppBuild(user.id, appId) : null;
+  const build = wantBuild ? await buildAndStageApp(user.id, appId) : null;
   let published = false;
   if (b.publish && build?.buildOk) {
     try {

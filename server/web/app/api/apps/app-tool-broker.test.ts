@@ -150,6 +150,13 @@ describe('owner app tool broker: a confirm-gated tool asks the owner first', () 
     });
     expect(res.status).toBe(200);
     expect(h.dispatched).toHaveLength(1);
+    // The ticket is spent: the same call again needs a new one (audit, low).
+    const again = await call('node_share', {
+      input: { id: 'n1' },
+      confirmToken: first.confirm.token,
+    });
+    expect(again.status).toBe(403);
+    expect(h.dispatched).toHaveLength(1);
   });
 
   it('refuses a ticket for another input, or a forged one', async () => {

@@ -32,9 +32,17 @@ export async function insertNodeSnapshot(
     .select({ next: sql<number>`coalesce(max(${nodeSnapshots.seq}), 0) + 1` })
     .from(nodeSnapshots)
     .where(eq(nodeSnapshots.nodeId, row.nodeId));
+  const files = row.code?.source.files;
+  const sizes = files
+    ? {
+        fileCount: Object.keys(files).length,
+        sourceBytes: Object.values(files).reduce((n, f) => n + Buffer.byteLength(f, 'utf8'), 0),
+        hasDraft: row.code?.draft != null,
+      }
+    : {};
   const [inserted] = await tx
     .insert(nodeSnapshots)
-    .values({ ...row, seq: Number(top?.next ?? 1) })
+    .values({ ...row, ...sizes, seq: Number(top?.next ?? 1) })
     .returning();
   if (!inserted) throw new Error('could not record the snapshot row');
   return inserted;

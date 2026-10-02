@@ -9,18 +9,18 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { firstIssue } from '@/lib/zod-issue';
-import { getTable } from '@/lib/tables';
 import {
   TableSnapshotRefusedError,
   createTableSnapshot,
   listTableSnapshots,
+  tableTitle,
 } from '@mantle/content/table-snapshots';
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const { id } = await ctx.params;
-  if (!(await getTable(user.id, id))) {
+  if ((await tableTitle(user.id, id)) === null) {
     return NextResponse.json({ error: 'table not found' }, { status: 404 });
   }
   const limit = Number(new URL(req.url).searchParams.get('limit') ?? 100);

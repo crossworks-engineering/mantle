@@ -20,7 +20,7 @@
  * change, disable, role change, sign out everywhere) ends them all. A value
  * without `ep` is epoch 0: what every login starts at.
  */
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { RENDER_COOKIE_NAME, SESSION_COOKIE_NAME } from '../auth-constants';
 import { env } from '@mantle/config';
 
@@ -524,9 +524,25 @@ export function verifyAppFrameTicket(value: string): AppFrameTicket | null {
 // shows the owner what will run and, on Yes, sends the same call again with
 // the ticket. It names the owner, the admin login, the app, the tool and a
 // hash of the exact input, and lives five minutes: it confirms one call, as
-// the owner saw it, and nothing else.
+// the owner saw it, and nothing else. It is used ONCE (apps audit 2026-10-02,
+// low): each carries a random id, and a verified one is spent in this
+// process. The host page alone ever holds it, and it asks again for the
+// next call.
 
 const APP_TOOL_CONFIRM_TTL_SECONDS = 300;
+
+/** Spent confirmation ids, with their expiry (ms), in this process. */
+const spentConfirms = new Map<string, number>();
+
+function spendConfirm(jti: string, expMs: number): boolean {
+  const now = Date.now();
+  if (spentConfirms.size >= 10_000) {
+    for (const [k, exp] of spentConfirms) if (exp < now) spentConfirms.delete(k);
+  }
+  if (spentConfirms.has(jti)) return false;
+  spentConfirms.set(jti, expMs);
+  return true;
+}
 
 export type AppToolConfirmClaims = {
   ownerId: string;
@@ -539,23 +555,33 @@ export type AppToolConfirmClaims = {
 
 export function buildAppToolConfirmToken(c: AppToolConfirmClaims): string {
   return signClaims(
-    { k: 'q', uid: c.ownerId, act: c.actorId, app: c.appId, slug: c.slug, ih: c.inputHash },
+    {
+      k: 'q',
+      uid: c.ownerId,
+      act: c.actorId,
+      app: c.appId,
+      slug: c.slug,
+      ih: c.inputHash,
+      jti: randomUUID(),
+    },
     APP_TOOL_CONFIRM_TTL_SECONDS,
   ).value;
 }
 
-/** Whether `value` confirms exactly this call: signature, kind, expiry, and
- *  every claim equal to `expected`. */
+/** Whether `value` confirms exactly this call: signature, kind, expiry,
+ *  every claim equal to `expected`, and not used before (a true answer
+ *  spends it). */
 export function verifyAppToolConfirmToken(value: string, expected: AppToolConfirmClaims): boolean {
   const claims = verifySigned(value, 'q');
   if (!claims) return false;
-  return (
+  const match =
     claims.uid === expected.ownerId &&
     claims.act === expected.actorId &&
     claims.app === expected.appId &&
     claims.slug === expected.slug &&
-    claims.ih === expected.inputHash
-  );
+    claims.ih === expected.inputHash &&
+    typeof claims.jti === 'string';
+  return match && spendConfirm(claims.jti as string, claims.exp * 1000);
 }
 
 /**

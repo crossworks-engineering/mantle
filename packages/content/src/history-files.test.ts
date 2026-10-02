@@ -45,3 +45,41 @@ describe('linkHistoryTree', () => {
     });
   });
 });
+
+describe('sweepCrashLeftovers', () => {
+  it('removes old work files only, never a live file, and nothing young', async () => {
+    const { sweepCrashLeftovers } = await import('./history-files');
+    const { utimes } = await import('node:fs/promises');
+    dir = await mkdtemp(path.join(tmpdir(), 'history-files-'));
+    const owner = path.join(dir, 'owner');
+    await mkdir(path.join(dir, '_tmp'), { recursive: true });
+    await mkdir(owner, { recursive: true });
+    const old = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    const names = [
+      'app.sqlite',
+      'app.sqlite-wal',
+      'app.draft.sqlite',
+      '.schema-check-app-1-2.sqlite',
+      'app.sqlite.restore-1-2',
+      'snap.sqlite.tmp-1-2',
+      'app.sqlite.restoring',
+    ];
+    for (const n of names) {
+      await writeFile(path.join(owner, n), 'x');
+      await utimes(path.join(owner, n), old, old);
+    }
+    await writeFile(path.join(owner, '.schema-check-young.sqlite'), 'x');
+    await writeFile(path.join(dir, '_tmp', 'pkg.mantleapp'), 'x');
+    await utimes(path.join(dir, '_tmp', 'pkg.mantleapp'), old, old);
+
+    expect(await sweepCrashLeftovers([dir], { dryRun: true })).toBe(5);
+    expect(await sweepCrashLeftovers([dir])).toBe(5);
+    expect((await readdir(owner)).sort()).toEqual([
+      '.schema-check-young.sqlite',
+      'app.draft.sqlite',
+      'app.sqlite',
+      'app.sqlite-wal',
+    ]);
+    expect(await readdir(path.join(dir, '_tmp'))).toEqual([]);
+  });
+});
