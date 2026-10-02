@@ -25,6 +25,11 @@
  * claims a size); no test writes real megabytes. The brain-wide total is set
  * per test through MANTLE_CLIENT_SPACES_TOTAL_BYTES, from what the database
  * holds at that moment.
+ *
+ * The file holds the 'client-total' test lock from its first fixture to the
+ * end of its cleanup: its 200 MB fixtures and its cleanup move the
+ * brain-wide client bytes, which the other file that does the same
+ * (client-space-c5) reads, and its own race test reads them too.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/client-abuse.viewer.db.test.ts
  */
 import { randomBytes, randomUUID } from 'node:crypto';
@@ -34,7 +39,7 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { withTestLock } from '@mantle/db/test-support';
+import { holdTestLock } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const MB = 1024 * 1024;
@@ -84,6 +89,7 @@ describe.skipIf(!URL)('client abuse limits: comments, text, races, give back', (
   const brainNodes: string[] = [];
   const root = mkdtempSync(path.join(tmpdir(), 'mantle-cabuse-'));
   const savedTotal = process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES;
+  let releaseTotal: () => Promise<void> = async () => {};
 
   const as = <T>(login: string, fn: () => Promise<T>) =>
     m.withSpace({ spaceId: spaceOf[login]!, loginId: login }, fn);
@@ -164,6 +170,11 @@ describe.skipIf(!URL)('client abuse limits: comments, text, races, give back', (
     );
   };
 
+  // Its own hook and timeout: the other file may hold the lock for its run.
+  beforeAll(async () => {
+    releaseTotal = await holdTestLock(URL!, 'client-total');
+  }, 300_000);
+
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
@@ -205,21 +216,26 @@ describe.skipIf(!URL)('client abuse limits: comments, text, races, give back', (
   }, 60_000);
 
   afterAll(async () => {
-    if (savedTotal === undefined) delete process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES;
-    else process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES = savedTotal;
-    for (const id of brainNodes) await dropNode(id);
-    for (const s of Object.values(spaceOf)) {
-      await m.systemDb.execute(sqlTag`delete from nodes where owner_id = ${s}`);
-      await m.systemDb.execute(sqlTag`delete from spaces where id = ${s}`);
+    try {
+      if (savedTotal === undefined) delete process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES;
+      else process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES = savedTotal;
+      for (const id of brainNodes) await dropNode(id);
+      for (const s of Object.values(spaceOf)) {
+        await m.systemDb.execute(sqlTag`delete from nodes where owner_id = ${s}`);
+        await m.systemDb.execute(sqlTag`delete from spaces where id = ${s}`);
+      }
+      await m.systemDb.execute(
+        sqlTag`delete from client_quota_refusals where login_id = any(${`{${logins.join(',')}}`}::uuid[])`,
+      );
+      await m.systemDb.execute(
+        sqlTag`delete from auth.users where id = any(${`{${logins.join(',')}}`}::uuid[])`,
+      );
+      await m.closeDb();
+      rmSync(root, { recursive: true, force: true });
+    } finally {
+      // Released only once this file's client bytes are gone.
+      await releaseTotal();
     }
-    await m.systemDb.execute(
-      sqlTag`delete from client_quota_refusals where login_id = any(${`{${logins.join(',')}}`}::uuid[])`,
-    );
-    await m.systemDb.execute(
-      sqlTag`delete from auth.users where id = any(${`{${logins.join(',')}}`}::uuid[])`,
-    );
-    await m.closeDb();
-    rmSync(root, { recursive: true, force: true });
   });
 
   // ── Comment caps (I2) ───────────────────────────────────────────────────
@@ -605,33 +621,29 @@ describe.skipIf(!URL)('client abuse limits: comments, text, races, give back', (
     expect(n).toBe(1000);
   });
 
-  // The boundary is the live brain-wide sum plus 6 MB; another test file that
-  // removes megabytes of client bytes in the same moment can move it, so the
-  // test may retry. A missing lock fails every attempt (both uploads pass).
-  it(
-    'two clients’ parallel uploads at the last bytes of the total: exactly one passes',
-    { retry: 2 },
-    () =>
-      withTestLock(URL!, 'client-total', async () => {
-        process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES = String((await usedBytes()) + 6 * MB);
-        try {
-          const results = await Promise.allSettled([
-            upload(c.totalA, 4 * MB),
-            upload(c.totalB, 4 * MB),
-          ]);
-          expect(results.map((r) => r.status).sort()).toEqual(['fulfilled', 'rejected']);
-          const lost = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
-          expect(lost.reason).toMatchObject({
-            reason: 'quota',
-            message: expect.stringMatching(/client uploads is full/),
-          });
-        } finally {
-          delete process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES;
-        }
-        const reasons = [...(await refusals(c.totalA)), ...(await refusals(c.totalB))];
-        expect(reasons.map((r) => r.reason)).toEqual(['total']);
-      }),
-  );
+  // The boundary is the live brain-wide sum plus 6 MB. The other file that
+  // moves megabytes of client bytes waits on the file's 'client-total' lock,
+  // and page text other files write moves it a few KB, so no retry: a
+  // missing product lock fails it (both uploads pass).
+  it('two clients’ parallel uploads at the last bytes of the total: exactly one passes', async () => {
+    process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES = String((await usedBytes()) + 6 * MB);
+    try {
+      const results = await Promise.allSettled([
+        upload(c.totalA, 4 * MB),
+        upload(c.totalB, 4 * MB),
+      ]);
+      expect(results.map((r) => r.status).sort()).toEqual(['fulfilled', 'rejected']);
+      const lost = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
+      expect(lost.reason).toMatchObject({
+        reason: 'quota',
+        message: expect.stringMatching(/client uploads is full/),
+      });
+    } finally {
+      delete process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES;
+    }
+    const reasons = [...(await refusals(c.totalA)), ...(await refusals(c.totalB))];
+    expect(reasons.map((r) => r.reason)).toEqual(['total']);
+  });
 
   // ── Give back holds the client limits (I7) ──────────────────────────────
 

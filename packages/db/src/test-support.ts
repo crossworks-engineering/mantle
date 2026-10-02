@@ -300,14 +300,33 @@ export async function ensureTestViewerRoles(url: string, masterKey: string): Pro
  * audit T3). A session lock on its own connection, released at the end.
  */
 export async function withTestLock<T>(url: string, name: string, fn: () => Promise<T>): Promise<T> {
+  const release = await holdTestLock(url, name);
+  try {
+    return await fn();
+  } finally {
+    await release();
+  }
+}
+
+/**
+ * Take the cluster-wide test lock `name` and return its release: for a file
+ * that holds it from its first fixture to the end of its cleanup (a
+ * beforeAll takes it, the afterAll releases it), when a single test's
+ * withTestLock would leave its other tests and its cleanup outside. A
+ * session lock on its own connection; the release also closes it.
+ */
+export async function holdTestLock(url: string, name: string): Promise<() => Promise<void>> {
   const sql = postgres(url, { max: 1 });
   try {
     await sql`select pg_advisory_lock(hashtextextended(${`mantle-test:${name}`}, 0))`;
-    return await fn();
-  } finally {
+  } catch (err) {
+    await sql.end();
+    throw err;
+  }
+  return async () => {
     await sql`select pg_advisory_unlock_all()`.catch(() => {});
     await sql.end();
-  }
+  };
 }
 
 export type PgToolRun = { status: number | null; stdout: Buffer; stderr: string };
