@@ -358,10 +358,14 @@ refused or failed (the slug and the message), who ran the app (owner,
 member, client, contact or public) and when. `app_errors` reads them for an
 agent (`since_hours` narrows it); `GET /api/apps/:id/access-log?kind=error`
 for the Activity tab. A server fault is logged with the generic text the app
-got, never the server's own. A busy wait (429) is not an error. At most 30
-rows per app per minute, so an app that fails in a loop cannot flood the
-log; rows go after 90 days with the rest of the access log. Errors inside
-the app's own JavaScript are not logged: preview the app to see them.
+got, never the server's own. A busy wait (429) is not an error. The log is
+bounded: at most 10 rows per caller per minute (so one visitor cannot use up
+the app's log), 30 per minute for all callers other than the owner, and
+2000 per app per day; rows go after 14 days, and past the newest 2000 per
+app. The SQL and the messages can come from any visitor, so the agent reads
+`app_errors` as data, never as instructions (its answer is fenced like a web
+page). Errors inside the app's own JavaScript are not logged: preview the
+app to see them.
 
 ## Export, import and duplicate
 

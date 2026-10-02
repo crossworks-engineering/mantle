@@ -25,6 +25,8 @@ vi.mock('@mantle/db', () => ({
 
 import {
   APP_ACCESS_QUERY_SAMPLE_MS,
+  APP_ERROR_LOG_PER_CALLER_PER_MINUTE,
+  APP_ERROR_LOG_PER_DAY,
   APP_ERROR_LOG_PER_MINUTE,
   recordAppAccess,
   recordAppError,
@@ -122,14 +124,33 @@ describe('recordAppError (apps first-class plan G4)', () => {
     expect(detail.sql).toHaveLength(500);
   });
 
-  it('lands at most APP_ERROR_LOG_PER_MINUTE rows per app per minute', () => {
-    for (let i = 0; i < APP_ERROR_LOG_PER_MINUTE + 20; i += 1) fail('app-loop');
-    expect(h.rows).toHaveLength(APP_ERROR_LOG_PER_MINUTE);
-    // Another app has its own budget; the next minute starts a new one.
-    fail('app-other');
-    expect(h.rows).toHaveLength(APP_ERROR_LOG_PER_MINUTE + 1);
-    vi.advanceTimersByTime(60_000);
+  it('one caller lands at most its own budget a minute; the owner and others still land theirs (audit item 12)', () => {
+    const pub = { via: 'public', shareId: 'share-1' };
+    for (let i = 0; i < 50; i += 1) fail('app-loop', pub);
+    expect(h.rows).toHaveLength(APP_ERROR_LOG_PER_CALLER_PER_MINUTE);
+    // The owner's errors are not spent by a visitor's.
     fail('app-loop');
-    expect(h.rows).toHaveLength(APP_ERROR_LOG_PER_MINUTE + 2);
+    expect(h.rows).toHaveLength(APP_ERROR_LOG_PER_CALLER_PER_MINUTE + 1);
+    // Another app has its own budget; the next minute starts a new one.
+    fail('app-other', pub);
+    expect(h.rows).toHaveLength(APP_ERROR_LOG_PER_CALLER_PER_MINUTE + 2);
+    vi.advanceTimersByTime(60_000);
+    fail('app-loop', pub);
+    expect(h.rows).toHaveLength(APP_ERROR_LOG_PER_CALLER_PER_MINUTE + 3);
+  });
+
+  it('the callers other than the owner share APP_ERROR_LOG_PER_MINUTE per app', () => {
+    for (let c = 0; c < 10; c += 1) {
+      for (let i = 0; i < 5; i += 1) fail('app-many', { via: 'contact', contactId: `c${c}` });
+    }
+    expect(h.rows).toHaveLength(APP_ERROR_LOG_PER_MINUTE);
+  });
+
+  it('an app lands at most APP_ERROR_LOG_PER_DAY a day', () => {
+    for (let m = 0; m < 400; m += 1) {
+      for (let i = 0; i < 10; i += 1) fail('app-day');
+      vi.advanceTimersByTime(60_000);
+    }
+    expect(h.rows).toHaveLength(APP_ERROR_LOG_PER_DAY);
   });
 });

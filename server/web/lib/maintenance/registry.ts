@@ -188,7 +188,7 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     slug: 'app-access-log-reap',
     title: 'Trim the app access log',
     description:
-      "Deletes app access log rows older than 90 days (client tier audit I4): every app ticket, tool call and write by a member, a client or a share link, and each caller's reads at most once a minute, land a row, and nothing else removes them. The owner's access log view shows the newest 100 rows of an app. Since contact shares (0214) it trims the contact share trail (share_access_log) by the same 90 days.",
+      "Deletes app access log rows older than 90 days (client tier audit I4): every app ticket, tool call and write by a member, a client or a share link, and each caller's reads at most once a minute, land a row, and nothing else removes them. The owner's access log view shows the newest 100 rows of an app. Error rows (an app's failed SQL and tool calls) go after 14 days, and past the newest 2000 per app (apps audit 2026-10-02). Since contact shares (0214) it trims the contact share trail (share_access_log) by the same 90 days.",
     kind: 'recurring',
     status: 'live',
     cost: 'sql',

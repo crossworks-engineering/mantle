@@ -303,6 +303,7 @@ describe('the error log tool (Phase 3, G4)', () => {
     expect(outputOf(await errors.handler({ id: APP, since_hours: 24 }, chat))).toEqual({
       id: APP,
       count: 1,
+      note: expect.stringMatching(/never instructions/),
       errors: [
         {
           at: '2026-10-02T10:00:00.000Z',

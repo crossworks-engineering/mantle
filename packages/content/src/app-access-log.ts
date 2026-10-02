@@ -20,10 +20,15 @@
  * running app with an error (its SQL failed, a tool refused or failed) lands
  * an `error` row through `recordAppError`, whoever ran the app, the owner
  * included. The owner reads them on the app's Activity tab, the agent with
- * `app_errors`. At most APP_ERROR_LOG_PER_MINUTE rows per app per minute: an
- * app that fails in a loop must not flood the table.
+ * `app_errors` (whose answer the agent loop fences as data: the SQL and the
+ * messages can come from a visitor). Bounded (apps audit 2026-10-02, item
+ * 12): each caller lands at most APP_ERROR_LOG_PER_CALLER_PER_MINUTE rows a
+ * minute, so one visitor cannot spend the app's budget; the callers other
+ * than the owner share APP_ERROR_LOG_PER_MINUTE; an app lands at most
+ * APP_ERROR_LOG_PER_DAY a day; and the reaper keeps errors
+ * APP_ERROR_LOG_RETENTION_DAYS, at most APP_ERROR_LOG_KEEP_PER_APP per app.
  */
-import { and, desc, eq, gte, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import { db, systemDb, appAccessLog, authUsers, nodes } from '@mantle/db';
 
 export type AppAccessKind = 'auth' | 'tool' | 'db' | 'error';
@@ -91,24 +96,52 @@ export function recordAppAccess(entry: AppAccessEntry): void {
   }
 }
 
-/** Error rows one app may land per minute (this process). */
+/** Error rows the callers other than the owner land per app per minute,
+ *  together (this process). */
 export const APP_ERROR_LOG_PER_MINUTE = 30;
+/** Error rows ONE caller lands per app per minute (this process). */
+export const APP_ERROR_LOG_PER_CALLER_PER_MINUTE = 10;
+/** Error rows one app lands per day, all callers (this process). */
+export const APP_ERROR_LOG_PER_DAY = 2000;
+/** Error rows are kept this many days (the access log keeps 90). */
+export const APP_ERROR_LOG_RETENTION_DAYS = 14;
+/** The newest error rows the reaper keeps per app. */
+export const APP_ERROR_LOG_KEEP_PER_APP = 2000;
 /** The longest error message kept, and the longest SQL beside it. */
 const APP_ERROR_MESSAGE_MAX = 1000;
 const APP_ERROR_SQL_MAX = 500;
 
-/** Error rows per app in the current minute (this process). */
-const errorWindow = new Map<string, { start: number; n: number }>();
+/** Rows counted in a fixed window, per key (this process). */
+const errorWindows = new Map<string, { start: number; n: number }>();
 
-function errorBudgetSpent(appNodeId: string, now: number): boolean {
-  const w = errorWindow.get(appNodeId);
-  if (!w || now - w.start >= 60_000) {
-    if (errorWindow.size >= 10_000) errorWindow.clear();
-    errorWindow.set(appNodeId, { start: now, n: 1 });
-    return false;
+/** Count one row against `key`'s window of `windowMs`; true when that goes
+ *  past `max`. */
+function spent(key: string, windowMs: number, max: number, now: number): boolean {
+  const w = errorWindows.get(key);
+  if (!w || now - w.start >= windowMs) {
+    if (errorWindows.size >= 20_000) {
+      for (const [k, v] of errorWindows) if (now - v.start >= 86_400_000) errorWindows.delete(k);
+      if (errorWindows.size >= 20_000) errorWindows.clear();
+    }
+    errorWindows.set(key, { start: now, n: 1 });
+    return max < 1;
   }
   w.n += 1;
-  return w.n > APP_ERROR_LOG_PER_MINUTE;
+  return w.n > max;
+}
+
+/** Whether this error row is past a budget: the caller's own per minute,
+ *  then (callers other than the owner) the app's per minute, then the
+ *  app's per day. A row refused by an earlier budget does not count against
+ *  a later one. */
+function errorBudgetSpent(entry: AppErrorEntry, now: number): boolean {
+  const app = entry.appNodeId;
+  const who = `${entry.via}:${entry.actorId ?? entry.shareId ?? entry.contactId ?? ''}`;
+  if (spent(`c:${app}:${who}`, 60_000, APP_ERROR_LOG_PER_CALLER_PER_MINUTE, now)) return true;
+  if (entry.via !== 'owner' && spent(`m:${app}`, 60_000, APP_ERROR_LOG_PER_MINUTE, now)) {
+    return true;
+  }
+  return spent(`d:${app}`, 86_400_000, APP_ERROR_LOG_PER_DAY, now);
 }
 
 export type AppErrorEntry = Omit<AppAccessEntry, 'kind' | 'detail'> & {
@@ -126,10 +159,10 @@ export type AppErrorEntry = Omit<AppAccessEntry, 'kind' | 'detail'> & {
   status?: number;
 };
 
-/** Log an error a broker answered a running app with (best effort, capped
- *  per app per minute). */
+/** Log an error a broker answered a running app with (best effort, within
+ *  the budgets above). */
 export function recordAppError(entry: AppErrorEntry, now = Date.now()): void {
-  if (errorBudgetSpent(entry.appNodeId, now)) return;
+  if (errorBudgetSpent(entry, now)) return;
   const { source, via, message, op, sql: text, slug, status, ...who } = entry;
   recordAppAccess({
     ...who,
@@ -221,27 +254,40 @@ export async function listAppAccess(
 /**
  * The reaper (maintenance sweep `app-access-log-reap`, plain SQL, no model):
  * deletes access log rows older than {@link APP_ACCESS_LOG_RETENTION_DAYS},
- * in batches so a first run on a big table holds no long lock. `dryRun`
- * counts without deleting. Idempotent.
+ * error rows older than {@link APP_ERROR_LOG_RETENTION_DAYS}, and each app's
+ * error rows past its newest {@link APP_ERROR_LOG_KEEP_PER_APP}, in batches
+ * so a first run on a big table holds no long lock. `dryRun` counts without
+ * deleting. Idempotent.
  */
 export async function reapAppAccessLog(
   opts: { now?: Date; dryRun?: boolean } = {},
 ): Promise<{ deleted: number }> {
   const now = opts.now ?? new Date();
-  const cutoff = new Date(now.getTime() - APP_ACCESS_LOG_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+  const day = 24 * 60 * 60 * 1000;
+  const cutoff = new Date(now.getTime() - APP_ACCESS_LOG_RETENTION_DAYS * day).toISOString();
+  const errorCutoff = new Date(now.getTime() - APP_ERROR_LOG_RETENTION_DAYS * day).toISOString();
+  // The ids to go, in one place for the count and the delete.
+  const doomed = (limit: number | null) => sql`
+    select id from app_access_log where created_at < ${cutoff}::timestamptz
+    union
+    select id from app_access_log where kind = 'error' and created_at < ${errorCutoff}::timestamptz
+    union
+    select id from (
+      select id, row_number() over (partition by app_node_id order by created_at desc) as rn
+        from app_access_log where kind = 'error'
+    ) ranked where rn > ${APP_ERROR_LOG_KEEP_PER_APP}
+    ${limit === null ? sql`` : sql`limit ${limit}`}`;
   if (opts.dryRun) {
-    const [row] = await systemDb
-      .select({ n: sql<number>`count(*)::int` })
-      .from(appAccessLog)
-      .where(lt(appAccessLog.createdAt, cutoff));
+    const [row] = (await systemDb.execute(
+      sql`select count(*)::int as n from (${doomed(null)}) d`,
+    )) as unknown as { n: number }[];
     return { deleted: row?.n ?? 0 };
   }
   const BATCH = 10_000;
   let deleted = 0;
   for (;;) {
     const gone = (await systemDb.execute(sql`
-      delete from app_access_log
-       where id in (select id from app_access_log where created_at < ${cutoff.toISOString()}::timestamptz limit ${BATCH})
+      delete from app_access_log where id in (${doomed(BATCH)})
       returning id`)) as unknown as unknown[];
     deleted += gone.length;
     if (gone.length < BATCH) return { deleted };
