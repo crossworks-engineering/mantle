@@ -223,7 +223,8 @@ export const INTERNAL_ENV: Partial<Record<KnownEnvName, string>> = {
   MANTLE_HEARTBEAT_FILE: 'platform: per-container heartbeat path for the healthcheck',
   MANTLE_UPDATE_SIGNAL_DIR: 'platform: the /signal mount the updater watches',
   MANTLE_PRINT_ORIGIN: 'platform: how the print sidecar reaches the web tier, set by compose',
-  MANTLE_CORE_SHAPE: 'platform: scripts/install.sh --core / --no-core writes it, compose passes it to web',
+  MANTLE_CORE_SHAPE:
+    'platform: scripts/install.sh --core / --no-core writes it, compose passes it to web',
   DBOS_SYSTEM_DATABASE_URL: 'platform: defaults to DATABASE_URL; split only by the runner image',
   APP_RUNTIME_OUT: 'platform: output path for the app-runtime build script',
   MANTLE_APP_RUNTIME_MANIFEST: 'platform: override for the generated app-runtime manifest',
