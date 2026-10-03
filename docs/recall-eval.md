@@ -488,6 +488,39 @@ drops from first to second, one from ninth out of the top 10. Node search
 is unchanged (document R@10 18%). Search time fell from p50 150 ms to
 14 ms: the ungated OR query ranked match sets of tens of thousands of rows.
 
+### Contextual chunk headers: tested, not adopted
+
+The other lever named in point 2: embed each chunk with a header. This
+corpus has no `heading_path` on any chunk, and Bible titles are file names
+("engwebu.epub"), so the only context at hand is the document's title and
+its summary (which names the translation: "...the World English Bible
+Updated (WEB)..."). Every chunk of a second copy was re-embedded as
+`title + summary (cut near 400 chars) + blank line + chunk text`, same
+model; queries unchanged. Cost: 56.5M tokens, **$7.37** for 122,256 chunks.
+
+| exact passage, 98 cases | R@1 | R@10 | MRR  | paraphrase | verse | trap |
+| ----------------------- | --- | ---- | ---- | ---------- | ----- | ---- |
+| hybrid, no header       | 8%  | 38%  | 0.17 | 30%        | 50%   | 37%  |
+| hybrid, title + summary | 10% | 30%  | 0.17 | 23%        | 25%   | 43%  |
+| vector, title + summary | 10% | 30%  | 0.16 | 23%        | 25%   | 43%  |
+
+(group columns are R@10). Document R@10 fell too, 54% to 44%.
+
+A header shared by every chunk of a document pulls those chunks together.
+The right document wins more often at the top (trap R@1 10% to 23%), but
+when a document wins, its chunks crowd the top 10: distinct documents in
+the vector top 10 fell from 8.0 to 5.5 (paraphrase), 5.8 to 4.1 (verse)
+and 7.4 to 4.9 (trap). A verse question names its translation, so all
+3,856 chunks of that Bible move closer to it at once and the one verse
+drowns among them.
+
+So a document-level header is not a passage-level fix. What could still
+help, untested: a header that differs per chunk (the book and chapter a
+verse chunk sits in, the section a passage is under), which needs the
+chunker to carry structure it does not have for these files, or a cap on
+chunks per document in the top 10, which would keep the trap gain without
+the crowding.
+
 ## Automated eval: `recall_eval` + the brain-health heartbeat (2026-07-13)
 
 The harness above is manual (`pnpm -C server/web eval:recall`). The automated
