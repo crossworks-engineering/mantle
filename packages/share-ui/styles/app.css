@@ -571,6 +571,66 @@
   border-radius: 0.2rem;
 }
 
+/* Foldable headings (content-core heading-fold.ts). One look on every
+   surface: the editor draws the arrow as a widget, the static renders
+   (share reader, read views) add it with heading-fold-dom.ts; both use
+   `.fold-toggle` and mark a folded heading `data-folded`. The arrow sits in
+   front of the heading text, sideways when folded and down when open. Hidden
+   blocks carry `data-fold-hidden`, hidden on SCREEN only: print shows the
+   whole page unfolded and drops the arrows. */
+.ProseMirror .fold-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1em;
+  height: 1em;
+  margin-right: 0.3em;
+  padding: 0;
+  border: 0;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: var(--muted-foreground);
+  vertical-align: -0.1em;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background-color 120ms,
+    color 120ms;
+}
+.ProseMirror .fold-toggle:hover {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
+}
+.ProseMirror .fold-toggle:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+.ProseMirror .fold-toggle svg {
+  width: 0.7em;
+  height: 0.7em;
+  transform: rotate(90deg);
+  transition: transform 150ms;
+}
+.ProseMirror [data-folded] > .fold-toggle svg {
+  transform: rotate(0deg);
+}
+/* A folded heading opens on a click anywhere on it; a static render folds
+   and opens on a click on the row too. */
+.ProseMirror [data-fold][data-folded],
+.ProseMirror[data-folds-wired] [data-fold] {
+  cursor: pointer;
+}
+@media screen {
+  .ProseMirror [data-fold-hidden] {
+    display: none !important;
+  }
+}
+@media print {
+  .ProseMirror .fold-toggle {
+    display: none !important;
+  }
+}
+
 /* Callouts on the raw/public render. In-app callouts use a React NodeView; the
    public page surface (server-rendered HTML) emits raw [data-callout] divs, so
    these rules style only that path — a tinted panel + left accent, themed per

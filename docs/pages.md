@@ -150,6 +150,7 @@ strategy throughout: **reuse libraries, write only what they don't provide.**
 | Slash menu, @-mentions                                     | `@tiptap/suggestion`                                  | the popups + commands                                                                                                                                                                                                                             |
 | Callout, columns                                           | ,                                                     | custom schema nodes + CSS                                                                                                                                                                                                                         |
 | Aside                                                      | ,                                                     | custom `aside` node + NodeView; themed gradient (selected `chart-N` + angle) painted from one shared helper (`aside-style.ts`) so editor/public/email match; ✨ swatch reshuffles                                                                 |
+| Foldable headings                                          | none                                                  | `heading.attrs.fold` + a fold plugin (arrow widget, section-hiding decorations); per-reader state in localStorage. See [Foldable headings](#foldable-headings)                                                                                    |
 | Code highlighting                                          | `@tiptap/extension-code-block-lowlight` + `lowlight`  | `.hljs-*` mapped to theme tokens (CSS)                                                                                                                                                                                                            |
 | Math                                                       | `@tiptap/extension-mathematics` + `katex`             | `$…$` / `$$…$$`; `latex` surfaced in `docToText`                                                                                                                                                                                                  |
 | Diagrams (LEGACY)                                          | none (Mermaid retired 2026-08)                        | legacy `diagram` nodes in stored docs render as a labelled source block everywhere; ```mermaid fences parse as plain code blocks. New diagrams are the Draftsman specialist's SVG + spec block ([diagrams.md](./diagrams.md))                     |
@@ -177,6 +178,53 @@ for a **plain-text** paste (a rich copy carries `text/html`, left to TipTap's ow
 parser) that's **multi-line with strong block-markdown signals** (heading,
 `<aside>`, `:::` fence, code fence, table, image, task list); ordinary text paste
 is untouched. One ⌘Z reverts to raw text.
+
+### Foldable headings
+
+A heading can be made **foldable** (Notion's toggle heading). An arrow in front
+of its text shows the state: sideways = folded, down = open. Folding hides the
+blocks after it in the same parent, up to the next heading of the same or a
+higher level (level <= its own), or the end of the parent. A heading inside a
+callout or a column folds inside that container.
+
+- **Document:** only `heading.attrs.fold` is stored: `null` (a normal heading,
+  the attr is absent on every doc written before this), `'open'` (foldable,
+  starts open) or `'closed'` (foldable, starts folded). Markdown: a trailing
+  `## Title {fold}` / `## Title {fold=closed}` (Pandoc-style attribute; a plain
+  markdown reader shows a normal heading with the marker as text). A heading
+  whose own words end in the marker is written `\{fold}` so it stays text.
+  `page_blocks_list` shows `meta.fold`. Rules + tests:
+  `packages/content-core/src/heading-fold.ts` (+ `.test.ts`).
+- **Fold state is per reader, never in the document.** Folding is a reading
+  choice, like scroll position: one reader folding a section must not hide it
+  for everyone, and must not make the draft "changed". The choice lives in the
+  reader's `localStorage` (`pages.headingFolds`), keyed by the heading's block
+  id (a UUID, so one map serves every page; the newest 1000 choices are kept).
+  The same heading keeps its state across the editor, the read view, member
+  and client views and the share reader in one browser. No choice yet = the
+  document default (`fold` value).
+- **Clicks:** the arrow always folds/unfolds. In the editor a click anywhere
+  on a FOLDED heading opens it (and puts the caret there); on an OPEN heading a
+  click in the text just edits, so to fold it you click the arrow. On read-only
+  surfaces (no caret to place) a click anywhere on the heading row folds or
+  opens it; a link in the heading still navigates, and a drag to select its
+  words does not fold. The caret is never left inside folded content: moving it
+  there (Enter at the end of a folded heading, an outline jump, search) opens
+  the fold.
+- **Making one:** drag handle menu **Make foldable** (and **Start folded** /
+  **Start open** to set the default), the bubble menu's **Make foldable**, or
+  the slash items **Foldable heading 1/2/3**. **Turn into → Heading N** makes
+  it a normal heading again.
+- **Rendering:** the editor draws the arrow as a widget decoration and hides
+  sections with node decorations (`data-fold-hidden`). The static renders (the
+  client's `StaticDoc`/`PageView`, and the server's `render-page-doc.ts` for
+  the share reader) emit `<hN data-fold>`; `@mantle/share-ui/heading-fold-dom`
+  adds the arrow and folds (the share reader runs it from `share-page.js`).
+  CSS is in `packages/share-ui/styles/app.css`: hidden blocks are hidden on
+  **screen only**, so print and PDF always show the whole page, and the
+  arrows are not printed. Without script the page shows every section open.
+- This is NOT the reverted 2026-05 details/toggle block: there is no new node
+  and no NodeView, only one heading attribute plus decorations.
 
 Components live in [`jackdaw/components/page-editor/`](../jackdaw/components/page-editor/):
 

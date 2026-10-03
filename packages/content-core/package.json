@@ -18,6 +18,7 @@
     "./formula-seed": "./src/formula-seed.ts",
     "./formula-signature": "./src/formula-signature.ts",
     "./formula-spec": "./src/formula-spec.ts",
+    "./heading-fold": "./src/heading-fold.ts",
     "./journal-options": "./src/journal-options.ts",
     "./markdown": "./src/markdown-to-doc.ts",
     "./markdown-refs": "./src/markdown-refs.ts",

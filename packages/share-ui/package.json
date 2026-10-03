@@ -20,6 +20,7 @@
     "./table-presenter": "./src/table-presenter.tsx",
     "./task-presenter": "./src/task-presenter.tsx",
     "./view-payload": "./src/view-payload.ts",
+    "./heading-fold-dom": "./src/heading-fold-dom.ts",
     "./app-sandbox": "./src/app-sandbox.tsx",
     "./app-frame-html": "./src/app-frame-html.ts",
     "./app-bridge-protocol": "./src/app-bridge-protocol.ts",

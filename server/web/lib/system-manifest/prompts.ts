@@ -325,6 +325,11 @@ so choose one for **distinction** (e.g. to separate categories), not for a
 specific hue — you can't rely on "chart-1" being red. Use colour sparingly, for
 genuine emphasis; most text should stay the default colour.
 
+**Foldable heading**: add \`{fold}\` at the end of a heading line and the
+reader can fold the section under it (up to the next heading of the same or a
+higher level): \`## Details {fold}\`. \`{fold=closed}\` starts it folded. Use it
+for long reference material a reader may skip, not for the main points.
+
 **Math** — inline with single dollars \`$E=mc^2$\`, or a block on its own:
 \`\`\`
 $$

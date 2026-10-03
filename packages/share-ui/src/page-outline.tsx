@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { ChevronLeft, FileText, ListTree } from 'lucide-react';
 import { cn } from './lib/utils';
 import type { TocEntry } from '@mantle/content-core/page-toc';
+import { revealInFolds } from './heading-fold-dom';
 
 const COLLAPSE_KEY = 'mantle:page-outline-collapsed';
 
@@ -77,7 +78,10 @@ export function PageOutline({
       return;
     }
     if (typeof document !== 'undefined') {
-      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const el = document.getElementById(id);
+      // A heading inside a folded section opens first, or there is nothing to see.
+      revealInFolds(el);
+      el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   };
 

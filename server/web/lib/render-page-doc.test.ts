@@ -189,6 +189,22 @@ describe('renderPageDoc', () => {
     expect(html).toBe('<h2 id="h-1">Section</h2>');
   });
 
+  it('marks a foldable heading with data-fold (rendered open), and only that one', () => {
+    const html = renderPageDoc(
+      doc([
+        {
+          type: 'heading',
+          attrs: { id: 'h-1', level: 2, fold: 'closed' },
+          content: [{ type: 'text', text: 'A' }],
+        },
+        { type: 'paragraph', content: [{ type: 'text', text: 'body' }] },
+        { type: 'heading', attrs: { id: 'h-2', level: 2, fold: 'bogus' }, content: [] },
+      ]),
+      opts,
+    );
+    expect(html).toBe('<h2 id="h-1" data-fold="closed">A</h2><p>body</p><h2 id="h-2"></h2>');
+  });
+
   it('renders a childPage as an inert label, not a link (sub-pages stay private)', () => {
     const html = renderPageDoc(
       doc([{ type: 'childPage', attrs: { pageId: 'p1', title: '<Plans> & ideas', icon: '📋' } }]),

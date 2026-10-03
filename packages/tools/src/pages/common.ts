@@ -41,7 +41,7 @@ export const MARKDOWN_REFS_PRE: readonly ToolPrecondition[] = [
 ];
 
 export const MARKDOWN_HINT =
-  'Rich-markdown body. GFM markdown plus: callouts (`:::info` … `:::`, variants info|success|warning|danger), asides (`:::aside` … `:::`, a themed-gradient box; optional colour `:::aside chart-3`), columns (`:::columns` … `+++` … `:::`, 2+ parts), task lists (`- [ ]` / `- [x]`), tables, `==highlight==`, coloured spans (`[text]{color=chart-2}` / `[text]{highlight=chart-4}`, accents chart-1…chart-5), KaTeX math (`$E=mc^2$` inline, `$$` … `$$` block), and reference links that keep rich chips intact (`[Label](mention:entity:<id>)`, `![alt](media:<file-id>)`, `[name](media:<file-id>)`, `[Title](page:<page-id>)` — real ids only, standalone lines for the block forms). Same dialect you write replies in.';
+  'Rich-markdown body. GFM markdown plus: callouts (`:::info` … `:::`, variants info|success|warning|danger), asides (`:::aside` … `:::`, a themed-gradient box; optional colour `:::aside chart-3`), columns (`:::columns` … `+++` … `:::`, 2+ parts), task lists (`- [ ]` / `- [x]`), foldable headings (a trailing `{fold}` on the heading line, `## Title {fold}`; `{fold=closed}` starts it folded; a reader folds/unfolds the section under it), tables, `==highlight==`, coloured spans (`[text]{color=chart-2}` / `[text]{highlight=chart-4}`, accents chart-1…chart-5), KaTeX math (`$E=mc^2$` inline, `$$` … `$$` block), and reference links that keep rich chips intact (`[Label](mention:entity:<id>)`, `![alt](media:<file-id>)`, `[name](media:<file-id>)`, `[Title](page:<page-id>)` — real ids only, standalone lines for the block forms). Same dialect you write replies in.';
 
 /**
  * Pick the baseline doc for a block-edit op: the draft if one exists

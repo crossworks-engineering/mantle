@@ -23,6 +23,7 @@ import {
   normalizeAsideAngle,
   normalizeAsideColor,
 } from '@mantle/client-types/aside-style';
+import { normalizeFold } from '@mantle/content-core/heading-fold';
 
 const lowlight = createLowlight(common);
 
@@ -143,7 +144,12 @@ function renderBlock(node: PMNode, opts: RenderOptions): string {
       // Emit the block id as the element id so the outline can anchor-scroll to it.
       const id = str(node.attrs?.id);
       const idAttr = id ? ` id="${escAttr(id)}"` : '';
-      return `<h${level}${idAttr}>${renderInline(node.content)}</h${level}>`;
+      // A foldable heading (content-core heading-fold.ts) says so; the share
+      // reader's script adds the arrow and folds. Rendered open, so a page
+      // read without script (or printed) shows every section.
+      const fold = normalizeFold(node.attrs?.fold);
+      const foldAttr = fold ? ` data-fold="${fold}"` : '';
+      return `<h${level}${idAttr}${foldAttr}>${renderInline(node.content)}</h${level}>`;
     }
     case 'blockquote':
       return `<blockquote>${renderBlocks(node.content, opts)}</blockquote>`;
