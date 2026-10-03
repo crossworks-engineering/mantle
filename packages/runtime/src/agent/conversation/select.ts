@@ -55,6 +55,8 @@ export const FACT_PASSAGES = 3;
 export const PROMOTED_PASSAGE_CUTOFF = 0.75;
 
 export type FactRow = {
+  /** The fact's id (decision trace key). */
+  id?: string;
   content: string;
   kind: string;
   entityId: string | null;
@@ -62,6 +64,8 @@ export type FactRow = {
   /** The node the fact was extracted from (a Journal entry, a page, …). */
   sourceNodeId?: string | null;
   dist: number | null;
+  /** The distance the row was ranked by (cosine + kind-aware age penalty). */
+  rankDist?: number | null;
 };
 
 export type ContentRow = {
@@ -70,7 +74,12 @@ export type ContentRow = {
   type: string;
   data: unknown;
   supersededBy: string | null;
+  /** Salience-adjusted distance: the 0.6 cutoff applies to this. */
   dist: number | null;
+  /** Raw cosine distance (decision trace). */
+  rawDist?: number | null;
+  /** The distance the row was ranked by (salience + mild recency). */
+  rankDist?: number | null;
 };
 
 export type ChunkSearchHit = {
@@ -262,6 +271,42 @@ export function selectChunkHits(
     .map(toSnapItem);
 
   return { hits: chunkHits, sent: chunkSentSnap, dropped: chunkDroppedSnap };
+}
+
+/** A passage's decision-trace key. */
+export const chunkTraceKey = (h: { nodeId: string; ordinal?: number }): string =>
+  `${h.nodeId}:${h.ordinal ?? ''}`;
+
+/**
+ * Why each passage in the pool did or did not reach the cut (decision trace).
+ * Mirrors selectChunkHits: telegram turns and passages at or past
+ * CHUNK_CUTOFF are filtered, the first `chunkLimit` of the rest are the cut,
+ * and promotePassages may then give a cut passage's slot to a fact's source
+ * note. `selected` is what selectChunkHits returned. Pure.
+ */
+export function explainChunkSelection(
+  pool: readonly ChunkSearchHit[],
+  chunkLimit: number,
+  selected: ReadonlyArray<{ nodeId: string; ordinal?: number }>,
+): { dropped: Map<string, string>; promoted: Set<string> } {
+  const chosen = new Set(selected.map(chunkTraceKey));
+  const cut = new Set<string>();
+  const dropped = new Map<string, string>();
+  let passed = 0;
+  for (const h of pool) {
+    const key = chunkTraceKey(h);
+    let why: string | null = null;
+    if (h.nodeType === 'telegram_message') why = `type:${h.nodeType}`;
+    else if (h.distance >= CHUNK_CUTOFF) why = `cut:${CHUNK_CUTOFF}`;
+    else {
+      passed++;
+      if (passed <= chunkLimit) cut.add(key);
+      if (!chosen.has(key)) why = passed <= chunkLimit ? 'room:promote' : `limit:${chunkLimit}`;
+    }
+    if (why && !dropped.has(key)) dropped.set(key, why);
+  }
+  const promoted = new Set([...chosen].filter((k) => !cut.has(k)));
+  return { dropped, promoted };
 }
 
 /**

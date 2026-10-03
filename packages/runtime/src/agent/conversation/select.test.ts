@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CHUNK_CUTOFF,
   buildCorpusMap,
   buildDigests,
   buildHistory,
+  explainChunkSelection,
   mergePreferences,
   patchSuperseded,
   promotePassages,
@@ -439,5 +441,47 @@ describe('promotePassages', () => {
     expect(promotePassages(selected, [{ nodeIds: ['h1'], max: 0 }], [hit('h1')], 3)).toEqual(
       selected,
     );
+  });
+});
+
+describe('explainChunkSelection (decision trace)', () => {
+  const hit = (n: string, distance: number, nodeType = 'page'): ChunkSearchHit => ({
+    nodeId: n,
+    nodeTitle: n,
+    nodeType,
+    ordinal: 0,
+    headingPath: null,
+    text: n,
+    distance,
+  });
+
+  it('names the reason each pool passage missed the cut', () => {
+    const pool = [
+      hit('a', 0.2),
+      hit('t', 0.2, 'telegram_message'),
+      hit('b', 0.3),
+      hit('far', 0.7),
+      hit('c', 0.4),
+    ];
+    const selected = selectChunkHits(pool, 2).hits;
+    const why = explainChunkSelection(pool, 2, selected);
+    expect([...why.dropped]).toEqual([
+      ['t:0', 'type:telegram_message'],
+      ['far:0', `cut:${CHUNK_CUTOFF}`],
+      ['c:0', 'limit:2'],
+    ]);
+    expect(why.promoted.size).toBe(0);
+  });
+
+  it('a promoted passage is named, and the one it pushed out says so', () => {
+    const pool = [hit('a', 0.2), hit('b', 0.3)];
+    const best = [hit('src', 0.5)];
+    const selected = selectChunkHits(pool, 2, {
+      sources: [{ nodeIds: ['src'], max: 3 }],
+      best,
+    }).hits;
+    const why = explainChunkSelection(pool, 2, selected);
+    expect([...why.promoted]).toEqual(['src:0']);
+    expect([...why.dropped]).toEqual([['b:0', 'room:promote']]);
   });
 });

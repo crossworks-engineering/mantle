@@ -41,17 +41,28 @@ export { resolveSupersededTargets, terminalSuccessors, type SupersededTarget } f
 
 export {
   searchChunks,
+  searchChunksExplained,
   readSection,
   bestChunkPerNode,
   buildSectionOutline,
   selectSectionChunks,
   assembleSection,
   type ChunkHit,
+  type ExplainedChunkHit,
   type ChunkSearchOptions,
   type SectionRange,
   type ReadSectionOptions,
   type ReadSectionResult,
 } from './chunks';
+
+export {
+  ContextTraceBuilder,
+  TRACE_ROW_CAP,
+  armFields,
+  armOf,
+  judgeWhy,
+  type ChunkArms,
+} from './trace';
 export {
   chunkPairSimilarities,
   MAX_CHUNK_PAIR_KEYS,

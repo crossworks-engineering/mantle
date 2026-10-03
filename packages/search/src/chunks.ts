@@ -18,6 +18,8 @@ import { withHnswPool } from './hnsw';
 import { grantUnionFilter, pgArrayLiteral } from './pg';
 import { gateRareTerms, keywordSql, resolveKeywordQuery } from './keyword-query';
 import { applyRescueFloor, fuseRrf } from './rrf';
+import type { ChunkArms } from './trace';
+import type { ContextTrace } from '@mantle/client-types';
 import { env } from '@mantle/config';
 
 /** Salience down-weight strength (see @mantle/search index). Tunable via env. */
@@ -86,6 +88,29 @@ export type ChunkSearchOptions = {
 };
 
 export async function searchChunks(opts: ChunkSearchOptions): Promise<ChunkHit[]> {
+  return (await runChunkSearch(opts, false)).hits;
+}
+
+/** A passage with the ranks each arm gave it (decision trace). */
+export type ExplainedChunkHit = ChunkHit & { arms: ChunkArms };
+
+/**
+ * searchChunks plus what the decision trace needs: each hit's rank in the
+ * vector and keyword arms (and whether the rescue floor placed it), the pool
+ * size of each arm, and the keyword arm's gate. Same queries, same order,
+ * same hits: the ranking code is shared, only the bookkeeping is extra.
+ */
+export async function searchChunksExplained(
+  opts: ChunkSearchOptions,
+): Promise<{ hits: ExplainedChunkHit[]; search: NonNullable<ContextTrace['search']> }> {
+  const r = await runChunkSearch(opts, true);
+  return { hits: r.hits as ExplainedChunkHit[], search: r.search };
+}
+
+async function runChunkSearch(
+  opts: ChunkSearchOptions,
+  explain: boolean,
+): Promise<{ hits: ChunkHit[]; search: NonNullable<ContextTrace['search']> }> {
   const vec = JSON.stringify(opts.embedding);
   const limit = opts.limit ?? 10;
   // Candidate pool for the salience re-rank, same sizing as searchNodes.
@@ -133,7 +158,12 @@ export async function searchChunks(opts: ChunkSearchOptions): Promise<ChunkHit[]
         limit ${limit}
       `),
     )) as unknown as RawChunkRow[];
-    return rows.map(toChunkHit);
+    return {
+      hits: rows.map((r, i) =>
+        explain ? { ...toChunkHit(r), arms: { vr: i + 1 } } : toChunkHit(r),
+      ),
+      search: { mode: 'vector', vectorPool: rows.length, keywordPool: 0, keyword: 'off' },
+    };
   }
 
   // ── Hybrid path: fuse the vector pool with an FTS pool via weighted RRF. ──
@@ -194,7 +224,14 @@ export async function searchChunks(opts: ChunkSearchOptions): Promise<ChunkHit[]
   // vector pool is full (see applyRescueFloor) — guarantee the top keyword
   // matches a tail slot so the exact-term rescue actually happens.
   const topIds = opts.arms === 'keyword' ? fused : applyRescueFloor(fused, ftsIds, limit);
-  if (topIds.length === 0) return [];
+  const search: NonNullable<ContextTrace['search']> = {
+    mode: opts.arms === 'keyword' ? 'keyword' : 'hybrid',
+    vectorPool: vectorRows.length,
+    keywordPool: ftsIds.length,
+    keyword: !kq ? 'silent' : kq.mode === 'and' ? 'and' : 'rare',
+    ...(kq?.mode === 'or' && kq.match ? { terms: kq.match.slice(0, 8) } : {}),
+  };
+  if (topIds.length === 0) return { hits: [], search };
 
   // Hydrate the winners. `distance` stays raw cosine; an FTS-only rescue whose
   // embedding is missing reports 1.0 (the "no vector signal" ceiling) so
@@ -211,10 +248,26 @@ export async function searchChunks(opts: ChunkSearchOptions): Promise<ChunkHit[]
     where ${contentChunks.id} = any(${pgArrayLiteral(topIds)}::uuid[])
   `)) as unknown as Array<RawChunkRow & { id: string }>;
   const byId = new Map(hydrated.map((r) => [r.id, r]));
-  return topIds
+  const rows = topIds
     .map((id) => byId.get(id))
-    .filter((r): r is RawChunkRow & { id: string } => Boolean(r))
-    .map(toChunkHit);
+    .filter((r): r is RawChunkRow & { id: string } => Boolean(r));
+  if (!explain) return { hits: rows.map(toChunkHit), search };
+  const rankIn = (ids: readonly string[]) => new Map(ids.map((id, i) => [id, i + 1]));
+  const vRank = rankIn(vectorRows.map((r) => r.id));
+  const kRank = rankIn(ftsIds);
+  const fusedSet = new Set(fused);
+  return {
+    hits: rows.map((r) => {
+      const arms: ChunkArms = {};
+      const v = vRank.get(r.id);
+      const k = kRank.get(r.id);
+      if (v !== undefined) arms.vr = v;
+      if (k !== undefined) arms.kr = k;
+      if (!fusedSet.has(r.id)) arms.rescued = true;
+      return { ...toChunkHit(r), arms };
+    }),
+    search,
+  };
 }
 
 /**

@@ -74,7 +74,10 @@ import {
   type HistoryRecallScoring,
 } from '@mantle/decisions';
 import {
-  searchChunks,
+  ContextTraceBuilder,
+  armFields,
+  judgeWhy,
+  searchChunksExplained,
   bestChunkPerNode,
   chunkPairSimilarities,
   entityRelationsFor,
@@ -177,6 +180,8 @@ import {
   groupExchanges,
   mergePreferences,
   patchSuperseded,
+  chunkTraceKey,
+  explainChunkSelection,
   selectChunkHits,
   selectContentHits,
   selectFacts,
@@ -529,6 +534,10 @@ async function loadConversationContextAtLevel(args: {
   recentTurnTexts?: readonly string[];
 }): Promise<ConversationContext> {
   const { ownerId, agent, inboundText } = args;
+  // Decision trace v1 (snapshot.trace): what each stage considered, kept and
+  // dropped, and why. Read-only bookkeeping beside the lists below; it never
+  // changes what the prompt gets.
+  const trace = new ContextTraceBuilder();
   const hiddenTypes = args.excludeNodeTypes;
   const factVisible = hiddenTypes ? visibleFactSource(hiddenTypes) : undefined;
   // Inside a viewer scope (a below-admin agent, member logins Phase 0b) the
@@ -675,6 +684,7 @@ async function loadConversationContextAtLevel(args: {
       console.error('[conversation] query embed failed:', err instanceof Error ? err.message : err);
     }
   }
+  trace.stage('embed', 1, queryVec ? 1 : 0, undefined, enrichedQuery ? 'enriched' : undefined);
 
   // ─── Profile facts (top-K by vector distance, currently-valid) ──────────
   let factRows: FactSnippet[] = [];
@@ -682,12 +692,18 @@ async function loadConversationContextAtLevel(args: {
   let factsDroppedSnap: SnapshotItem[] = [];
   // The entities whose facts matched this turn — anchors for graph expansion.
   let anchorEntityIds: string[] = [];
+  // Fact content -> fact id, so later stages (pruning, Journal dedupe) can
+  // name the trace row of a fact they only know by its text.
+  const factIdByContent = new Map<string, string>();
   if (queryVec && factLimit > 0) {
     // Pool → re-rank, in one transaction: the recency-adjusted ORDER BY below is
     // not an HNSW-eligible shape (any arithmetic on the distance forces a full
     // scan + sort at scale), so first pull a bare-distance candidate pool through
     // the index, then apply the adjustment within it (see @mantle/search hnsw.ts).
     const factPool = Math.min(Math.max(factLimit * 5, 50), 200);
+    // The recency-adjusted ranking distance, also selected for the trace.
+    const factRankDist = sql<number>`(${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector) + (case ${facts.kind} when 'episodic' then ${RECENCY_EPISODIC}::float8 when 'factual' then ${RECENCY_FACTUAL}::float8 else 0::float8 end) * (1 - exp(- extract(epoch from (now() - coalesce(${facts.validFrom}, ${facts.createdAt}))) / ${RECENCY_TAU_SEC}::float8))`;
+    let factPooled = 0;
     const rows = await withHnswPool(factPool, async (tx) => {
       const factConds = and(
         eq(facts.ownerId, ownerId),
@@ -711,15 +727,18 @@ async function loadConversationContextAtLevel(args: {
               order by ${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector
               limit ${factPool}`,
       )) as unknown as { id: string }[];
+      factPooled = pooled.length;
       if (pooled.length === 0) return [];
       const hydrate = tx
         .select({
+          id: facts.id,
           content: facts.content,
           kind: facts.kind,
           entityId: facts.entityId,
           entityName: entityNameCol,
           sourceNodeId: facts.sourceNodeId,
           dist: sql<number>`${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector`,
+          rankDist: factRankDist,
         })
         .from(facts)
         .$dynamic();
@@ -736,13 +755,27 @@ async function loadConversationContextAtLevel(args: {
           // identity). Anchor on valid_from (when the fact became true) → created_at.
           // The mismatch guard below still filters on raw cosine, so recency reorders
           // but never surfaces a garbage-space row.
-          .orderBy(
-            sql`(${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector) + (case ${facts.kind} when 'episodic' then ${RECENCY_EPISODIC}::float8 when 'factual' then ${RECENCY_FACTUAL}::float8 else 0::float8 end) * (1 - exp(- extract(epoch from (now() - coalesce(${facts.validFrom}, ${facts.createdAt}))) / ${RECENCY_TAU_SEC}::float8))`,
-          )
+          .orderBy(factRankDist)
           .limit(factLimit)
       );
     });
     const selection = selectFacts(rows);
+    rows.forEach((r, i) => {
+      const kept = (r.dist ?? 1) < 0.85;
+      if (kept) factIdByContent.set(r.content, r.id);
+      trace.add({
+        b: 'fact',
+        k: r.id,
+        out: kept ? 'kept' : 'dropped',
+        at: 'facts',
+        why: kept ? 'sent' : 'guard:0.85',
+        arm: 'vector',
+        rank: i + 1,
+        d: r.dist,
+        rd: r.rankDist,
+      });
+    });
+    trace.stage('facts', factPooled, selection.facts.length, undefined, `top ${factLimit}`);
     factRows = selection.facts;
     factsSentSnap = selection.sent;
     factsDroppedSnap = selection.dropped;
@@ -758,6 +791,7 @@ async function loadConversationContextAtLevel(args: {
   if (factLimit > 0) {
     const prefQuery = db
       .select({
+        id: facts.id,
         content: facts.content,
         kind: facts.kind,
         entityName: entityNameCol,
@@ -778,7 +812,21 @@ async function loadConversationContextAtLevel(args: {
       )
       .orderBy(desc(facts.updatedAt))
       .limit(PREFERENCE_INJECT_LIMIT);
+    const vectorFacts = new Set(factRows.map((f) => f.content));
+    prefRows.forEach((p, i) => {
+      const dupe = vectorFacts.has(p.content);
+      trace.add({
+        b: 'pref',
+        k: p.id,
+        out: dupe ? 'dropped' : 'kept',
+        at: 'prefs',
+        why: dupe ? 'dedupe:fact' : 'always',
+        arm: 'always',
+        rank: i + 1,
+      });
+    });
     const merged = mergePreferences(factRows, factsSentSnap, prefRows);
+    trace.stage('prefs', prefRows.length, merged.facts.length - factRows.length);
     factRows = merged.facts;
     factsSentSnap = merged.sent;
   }
@@ -805,6 +853,9 @@ async function loadConversationContextAtLevel(args: {
       sql`(${nodes.data}->>'origin') is distinct from 'system'`,
       hiddenTypes?.length ? notInArray(nodes.type, hiddenTypes as NodeRow['type'][]) : undefined,
     );
+    // The salience + recency ranking distance, also selected for the trace.
+    const hitRankDist = sql<number>`(${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector) + ${SALIENCE_LAMBDA}::float8 * (1 - ${nodes.salience}) + ${RECENCY_CONTENT}::float8 * (1 - exp(- extract(epoch from (now() - coalesce((${nodes.data}->>'internalDate')::timestamptz, ${nodes.createdAt}))) / ${RECENCY_TAU_SEC}::float8))`;
+    let hitPooled = 0;
     const rows = await withHnswPool(contentPool, async (tx) => {
       const pooled = (await tx.execute(
         sql`select id from ${nodes}
@@ -812,6 +863,7 @@ async function loadConversationContextAtLevel(args: {
             order by ${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector
             limit ${contentPool}`,
       )) as unknown as { id: string }[];
+      hitPooled = pooled.length;
       if (pooled.length === 0) return [];
       return (
         tx
@@ -825,6 +877,8 @@ async function loadConversationContextAtLevel(args: {
             // pushed back so it can't crowd out real content. Non-email nodes have
             // salience 1.0 → no change.
             dist: sql<number>`(${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector) + ${SALIENCE_LAMBDA} * (1 - ${nodes.salience})`,
+            rawDist: sql<number>`${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector`,
+            rankDist: hitRankDist,
           })
           .from(nodes)
           .where(
@@ -838,13 +892,26 @@ async function loadConversationContextAtLevel(args: {
           // so an old email synced last month reads as old, not fresh), else
           // created_at. Recency only reorders here; the 0.6 cutoff below stays on the
           // salience distance, so a relevant-but-old doc is never dropped for age.
-          .orderBy(
-            sql`(${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector) + ${SALIENCE_LAMBDA}::float8 * (1 - ${nodes.salience}) + ${RECENCY_CONTENT}::float8 * (1 - exp(- extract(epoch from (now() - coalesce((${nodes.data}->>'internalDate')::timestamptz, ${nodes.createdAt}))) / ${RECENCY_TAU_SEC}::float8))`,
-          )
+          .orderBy(hitRankDist)
           .limit(contentHitLimit)
       );
     });
     const selection = selectContentHits(rows);
+    rows.forEach((r, i) => {
+      const kept = (r.dist ?? 1) < 0.6;
+      trace.add({
+        b: 'hit',
+        k: r.nodeId,
+        out: kept ? 'kept' : 'dropped',
+        at: 'hits',
+        why: kept ? 'sent' : 'cut:0.6',
+        arm: 'vector',
+        rank: i + 1,
+        d: r.rawDist,
+        rd: r.rankDist,
+      });
+    });
+    trace.stage('hits', hitPooled, selection.hits.length, undefined, `top ${contentHitLimit}`);
     contentHits = selection.hits;
     contentSentSnap = selection.sent;
     contentDroppedSnap = selection.dropped;
@@ -878,7 +945,8 @@ async function loadConversationContextAtLevel(args: {
     // never reach it (docs/recall-eval.md).
     const scoringUse = await decisionUseEnabled(ownerId, 'passage_scoring');
     const scoreFirst = scoringUse !== null && (!pruningUse || scoringUse.pool !== undefined);
-    let hits = await searchChunks({
+    trace.lap();
+    const searched = await searchChunksExplained({
       ownerId,
       embedding: retrievalVec,
       // Hybrid arm: the same text the embedding was computed from, so an
@@ -893,6 +961,21 @@ async function loadConversationContextAtLevel(args: {
       excludeSystemOrigin: true,
       excludeTypes: hiddenTypes,
     });
+    let hits = searched.hits;
+    trace.setSearch(searched.search);
+    hits.forEach((h, i) =>
+      trace.add({
+        b: 'chunk',
+        k: chunkTraceKey(h),
+        out: 'kept',
+        at: 'search',
+        why: 'sent',
+        ...armFields(h.arms),
+        rank: i + 1,
+        d: h.distance,
+      }),
+    );
+    trace.stage('search', hits.length, hits.length);
     // One decision call scores each passage 0-3 for "does it answer the
     // question". `live`: weak passages drop and the rest order by score
     // before the budget cut below. `shadow`: traced only, list unchanged.
@@ -909,9 +992,31 @@ async function loadConversationContextAtLevel(args: {
           text: h.text,
         })),
       );
-      if (scoring && scoring.mode === 'live') {
-        hits = applyPassageScores(hits, (h) => `${h.nodeId}:${h.ordinal}`, scoring).kept;
+      const pool = hits.length;
+      if (scoring) {
+        const applied = applyPassageScores(hits, (h) => `${h.nodeId}:${h.ordinal}`, scoring);
+        for (const h of hits) {
+          const sc = scoring.scores.get(`${h.nodeId}:${h.ordinal}`);
+          if (sc) trace.score('chunk', chunkTraceKey(h), sc.score);
+        }
+        for (const h of applied.dropped) {
+          trace.drop(
+            'chunk',
+            chunkTraceKey(h),
+            'scoring',
+            judgeWhy(scoring.threshold),
+            scoring.mode,
+          );
+        }
+        if (scoring.mode === 'live') hits = applied.kept;
       }
+      trace.stage(
+        'scoring',
+        pool,
+        hits.length,
+        undefined,
+        scoring ? `${scoring.mode} ${scoring.scores.size} scored` : 'no answer',
+      );
     }
     // Same exclusions as content hits: a raw telegram turn isn't a "passage"
     // (it's the conversation), and a weak match isn't worth the tokens.
@@ -940,6 +1045,37 @@ async function loadConversationContextAtLevel(args: {
       sources: [{ nodeIds: factNodeIds, max: FACT_PASSAGES }],
       best,
     });
+    {
+      const why = explainChunkSelection(hits, chunkLimit, selection.hits);
+      for (const [k, reason] of why.dropped) trace.drop('chunk', k, 'select', reason);
+      for (const h of selection.hits) {
+        const k = chunkTraceKey(h);
+        if (!why.promoted.has(k)) trace.set('chunk', k, { at: 'select' });
+      }
+      for (const k of why.promoted) {
+        const b = best.find((x) => chunkTraceKey(x) === k);
+        if (trace.has('chunk', k)) {
+          trace.set('chunk', k, { out: 'kept', at: 'select', why: 'promote:fact-source' });
+        } else if (b) {
+          trace.add({
+            b: 'chunk',
+            k,
+            out: 'kept',
+            at: 'select',
+            why: 'promote:fact-source',
+            arm: 'fact-source',
+            d: b.distance,
+          });
+        }
+      }
+      trace.stage(
+        'select',
+        hits.length + why.promoted.size,
+        selection.hits.length,
+        undefined,
+        `limit ${chunkLimit}, cut ${CHUNK_CUTOFF}${why.promoted.size ? `, ${why.promoted.size} promoted` : ''}`,
+      );
+    }
     chunkHits = selection.hits;
     chunkSentSnap = selection.sent;
     chunkDroppedSnap = selection.dropped;
@@ -957,6 +1093,7 @@ async function loadConversationContextAtLevel(args: {
       contentHits = patchSuperseded(contentHits, successors);
       chunkHits = patchSuperseded(chunkHits, successors);
     }
+    if (staleIds.length > 0) trace.stage('supersede', staleIds.length, staleIds.length);
   }
 
   // ─── Context pruning: one decision over everything retrieval admitted ────
@@ -993,8 +1130,21 @@ async function loadConversationContextAtLevel(args: {
         text: `${c.title}${c.heading ? ` > ${c.heading}` : ''}: ${c.text}`,
       })),
     ];
+    // Pruning key -> trace row, for the scores and the drops below.
+    const traceOf = new Map<string, { b: 'fact' | 'hit' | 'chunk'; k: string }>();
+    for (const f of factRows) {
+      const id = factIdByContent.get(f.content);
+      if (id && !isPref(f)) traceOf.set(factKey(f), { b: 'fact', k: id });
+    }
+    for (const h of contentHits) traceOf.set(hitKey(h), { b: 'hit', k: h.nodeId });
+    for (const c of chunkHits) traceOf.set(chunkKey(c), { b: 'chunk', k: chunkTraceKey(c) });
+    trace.lap();
     try {
       const scoring = await scoreContextItems(ownerId, enrichedQuery ?? inboundText, items);
+      for (const [key, sc] of scoring?.scores ?? []) {
+        const t = traceOf.get(key);
+        if (t) trace.score(t.b, t.k, sc.score);
+      }
       if (scoring) {
         const f = pruneContextItems(factRows, factKey, scoring, {
           exempt: isPref,
@@ -1002,6 +1152,22 @@ async function loadConversationContextAtLevel(args: {
         });
         const h = pruneContextItems(contentHits, hitKey, scoring, { floor: CONTEXT_FLOORS.hit });
         const c = pruneContextItems(chunkHits, chunkKey, scoring, { floor: CONTEXT_FLOORS.chunk });
+        for (const key of [
+          ...f.dropped.map(factKey),
+          ...h.dropped.map(hitKey),
+          ...c.dropped.map(chunkKey),
+        ]) {
+          const t = traceOf.get(key);
+          if (t) trace.drop(t.b, t.k, 'pruning', judgeWhy(scoring.threshold), scoring.mode);
+        }
+        trace.stage(
+          'pruning',
+          items.length,
+          items.length -
+            (scoring.mode === 'live' ? f.dropped.length + h.dropped.length + c.dropped.length : 0),
+          undefined,
+          `${scoring.mode} ${scoring.scores.size} scored`,
+        );
         const charsSaved =
           f.dropped.reduce((n, x) => n + x.content.length, 0) +
           h.dropped.reduce((n, x) => n + (x.summary?.length ?? 0), 0) +
@@ -1102,6 +1268,23 @@ async function loadConversationContextAtLevel(args: {
       const versions = grouping
         ? applyVersionGroups(staleChunks.kept, chunkId, grouping)
         : { kept: staleChunks.kept, dropped: [] as ChunkContextHit[] };
+      for (const x of staleHits.dropped)
+        trace.drop('hit', x.nodeId, 'versions', 'superseded', versionUse.mode);
+      for (const x of staleChunks.dropped) {
+        trace.drop('chunk', chunkTraceKey(x), 'versions', 'superseded', versionUse.mode);
+      }
+      for (const x of versions.dropped) {
+        trace.drop('chunk', chunkTraceKey(x), 'versions', 'version', versionUse.mode);
+      }
+      const versionDrops =
+        staleHits.dropped.length + staleChunks.dropped.length + versions.dropped.length;
+      trace.stage(
+        'versions',
+        contentHits.length + chunkHits.length,
+        contentHits.length + chunkHits.length - (versionUse.mode === 'live' ? versionDrops : 0),
+        undefined,
+        `${versionUse.mode} ${pairs.length} pairs`,
+      );
       versionSnap = {
         mode: versionUse.mode,
         threshold: grouping?.threshold ?? versionUse.threshold ?? VERSION_THRESHOLD_DEFAULT,
@@ -1154,6 +1337,7 @@ async function loadConversationContextAtLevel(args: {
   const journalRecall = await journalRecallLoad.catch(() => null);
   const tier1 = await tier1Load.catch(() => null);
   if (queryVec && journalMode !== 'off' && (userLane || agentLane)) {
+    trace.lap();
     try {
       const turn = await journalTiersForTurn({
         ownerId,
@@ -1183,6 +1367,38 @@ async function loadConversationContextAtLevel(args: {
           contentHits: contentHits.filter(redundantHit).length,
         },
       });
+      {
+        const mode = live ? 'live' : 'shadow';
+        for (const p of journalSnap.picked) {
+          trace.add({
+            b: 'journal',
+            k: p.nodeId,
+            out: live ? 'kept' : 'dropped',
+            at: 'journal',
+            why: live ? 'sent' : 'shadow',
+            arm: 'journal',
+            d: 1 - p.similarity,
+            ...(p.score !== undefined ? { s: p.score } : {}),
+          });
+        }
+        for (const f of factRows.filter(redundantFact)) {
+          const id = factIdByContent.get(f.content);
+          if (id) trace.drop('fact', id, 'journal', 'dedupe:journal', mode);
+        }
+        for (const c of chunkHits.filter(redundantChunk)) {
+          trace.drop('chunk', chunkTraceKey(c), 'journal', 'dedupe:journal', mode);
+        }
+        for (const h of contentHits.filter(redundantHit)) {
+          trace.drop('hit', h.nodeId, 'journal', 'dedupe:journal', mode);
+        }
+        trace.stage(
+          'journal',
+          journalSnap.picked.length + journalSnap.nearMisses.length,
+          live ? journalSnap.picked.length : 0,
+          undefined,
+          mode,
+        );
+      }
       if (live) {
         journalRelevant = renderRelevantJournalBlock(turn.relevance, agent.slug);
         const goneFacts = new Set(factRows.filter(redundantFact).map((f) => snip(f.content)));
@@ -1223,6 +1439,7 @@ async function loadConversationContextAtLevel(args: {
     truncated: false,
   };
   if (corpusMapLimit > 0) {
+    trace.lap();
     const rows = await db
       .select({
         id: nodes.id,
@@ -1252,6 +1469,13 @@ async function loadConversationContextAtLevel(args: {
       ...buildCorpusMap(mapped, corpusMapLimit),
       truncated: rows.length > corpusMapLimit,
     };
+    trace.stage(
+      'map',
+      rows.length,
+      corpusMap.entries.length,
+      undefined,
+      corpusMap.truncated ? 'clipped' : undefined,
+    );
   }
 
   // ─── Entity-anchored expansion: the graph axis ──────────────────────────
@@ -1260,12 +1484,14 @@ async function loadConversationContextAtLevel(args: {
   // query can return (memory.md §4.3, "expand each result's neighbourhood").
   let relations: RelationLine[] = [];
   if (!belowAdmin && anchorEntityIds.length > 0) {
+    trace.lap();
     const triples = await entityRelationsFor(ownerId, anchorEntityIds, { limit: RELATION_LIMIT });
     relations = triples.map((t) => ({
       subject: t.subject,
       relation: t.relation,
       object: t.object,
     }));
+    trace.stage('relations', anchorEntityIds.length, relations.length, undefined, 'in = anchors');
   }
 
   // ─── Conversation digests for THIS agent (per-agent, cross-channel) ─────
@@ -1291,6 +1517,7 @@ async function loadConversationContextAtLevel(args: {
       : [];
 
   const digests: Digest[] = buildDigests(digestRows);
+  if (digestLimit > 0) trace.stage('digests', digestRows.length, digests.length);
 
   // ─── Raw recent turns (all channels, per agent) ─────────────────────────
   // Filters and the early start: loadHistoryRows above.
@@ -1340,6 +1567,13 @@ async function loadConversationContextAtLevel(args: {
       history = withRecalledExchanges(history, picked.kept, bridge);
     }
   }
+  trace.stage(
+    'history',
+    recentRows.length + (recall?.exchanges.length ?? 0),
+    history.length,
+    undefined,
+    recallSnap ? `recall ${recallSnap.mode}, ${recallSnap.wouldAdd} back` : undefined,
+  );
 
   const snapshot: ContextSnapshot = {
     query: {
@@ -1366,6 +1600,7 @@ async function loadConversationContextAtLevel(args: {
     ...(versionSnap ? { versionGrouping: versionSnap } : {}),
     ...(journalSnap ? { journal: journalSnap } : {}),
     ...(recallSnap ? { historyRecall: recallSnap } : {}),
+    trace: trace.toJSON(),
   };
 
   return {

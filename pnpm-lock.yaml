@@ -655,6 +655,9 @@ importers:
 
   packages/search:
     dependencies:
+      '@mantle/client-types':
+        specifier: workspace:*
+        version: link:../client-types
       '@mantle/config':
         specifier: workspace:*
         version: link:../config

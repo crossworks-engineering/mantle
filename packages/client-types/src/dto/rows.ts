@@ -738,6 +738,92 @@ export type SnapshotItem = {
   heading?: string | null;
 };
 
+/** A context stage the decision trace names (ContextTrace). */
+export type ContextTraceStage =
+  | 'embed'
+  | 'facts'
+  | 'prefs'
+  | 'hits'
+  | 'search'
+  | 'scoring'
+  | 'select'
+  | 'supersede'
+  | 'pruning'
+  | 'versions'
+  | 'journal'
+  | 'map'
+  | 'relations'
+  | 'digests'
+  | 'history';
+
+/** What found a candidate: the vector arm, the keyword arm, both, the
+ *  source note of a matching fact (promoted), always-on (preferences), the
+ *  Journal tiers. */
+export type ContextTraceArm = 'vector' | 'keyword' | 'both' | 'fact-source' | 'always' | 'journal';
+
+/**
+ * One candidate a context stage touched (decision trace v1). Compact on
+ * purpose: ids, rounded numbers and reason codes, no text (the text is in the
+ * snapshot's sent/dropped lists, and on the node).
+ */
+export type ContextTraceRow = {
+  /** Block: fact, pref (preference), hit (content hit), chunk (passage), journal. */
+  b: 'fact' | 'pref' | 'hit' | 'chunk' | 'journal';
+  /** Item key: fact id, node id, or `nodeId:ordinal` for a passage. */
+  k: string;
+  /** The outcome for this turn's prompt. */
+  out: 'kept' | 'dropped';
+  /** The stage that decided the outcome. */
+  at: ContextTraceStage;
+  /** Reason code. Kept: `sent`, `promote:fact-source`, `always`. Dropped:
+   *  `guard:0.85` and `cut:<d>` (distance cutoffs), `limit:<n>` (the block's
+   *  budget cap), `room:promote` (gave its slot to a promoted passage),
+   *  `judge:<t>` (a Jev score under the threshold), `dedupe:journal`,
+   *  `dedupe:fact`, `superseded`, `version`, `type:<t>`, `shadow` (a Journal
+   *  pick in shadow mode). */
+  why: string;
+  arm?: ContextTraceArm;
+  /** 1-based rank in the order the stage received it (search order). */
+  rank?: number;
+  /** Passages: 1-based rank in the vector arm / the keyword arm. */
+  vr?: number;
+  kr?: number;
+  /** Passages: forced into the tail by the keyword rescue floor. */
+  rescued?: true;
+  /** Raw cosine distance (Journal: 1 - similarity). */
+  d?: number | null;
+  /** The distance it was RANKED by (salience, recency), when it differs from `d`. */
+  rd?: number;
+  /** Jev score 0-3 (passage_scoring, context_pruning, journal_recall). */
+  s?: number;
+  /** A shadow use's verdict: what WOULD have happened. `out` is unchanged. */
+  would?: string;
+};
+
+/** Decision trace v1: per stage, what was considered, kept and dropped, and
+ *  why. Recorded in the load_context snapshot and the search_chunks step.
+ *  Observation only: it never changes what the model sees. */
+export type ContextTrace = {
+  v: 1;
+  /** Stages in run order: candidates in, kept out, wall time. */
+  stages: Array<{ name: ContextTraceStage; in: number; out: number; ms: number; note?: string }>;
+  /** Passage search: pool size of each arm, and the keyword arm's gate. */
+  search?: {
+    mode: 'vector' | 'hybrid' | 'keyword';
+    vectorPool: number;
+    keywordPool: number;
+    /** `off` = no query text; `silent` = no rare term passed the gate;
+     *  `and` = no rare term, every word ANDed; `rare` = the rare-term arm ran. */
+    keyword: 'off' | 'silent' | 'and' | 'rare';
+    /** The stemmed rare terms the keyword arm matched on (at most 8). */
+    terms?: string[];
+  };
+  rows: ContextTraceRow[];
+  /** Rows left out past the row cap (kept rows go first). */
+  more?: number;
+  ms: number;
+};
+
 export type ContextSnapshot = {
   query: {
     /** The inbound text as given to retrieval (snipped). */
@@ -761,6 +847,8 @@ export type ContextSnapshot = {
   };
   personaNotes: { count: number };
   corpusMap: { count: number; truncated: boolean };
+  /** Decision trace v1 (absent on turns recorded before it). */
+  trace?: ContextTrace;
   /** The decider's `context_pruning` use, when it ran on this turn. In
    *  `shadow` the counts say what WOULD have been dropped; in `live` they were.
    *  Absent when the use is off or the call failed (nothing changed). */

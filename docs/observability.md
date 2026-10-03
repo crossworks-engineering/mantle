@@ -408,6 +408,45 @@ Five widget sections at the top of `/debug`, computed via
 All queries hit the `traces` + `trace_steps` indexes from the
 0019 migration; no extra rollup table.
 
+### 9a. The context decision trace (v1, 2026-10-03)
+
+Every chat turn's context assembly records WHY each candidate reached the
+prompt or did not. It rides in the existing `load_context` step output as
+`snapshot.trace`, and in the `search_chunks` tool step output as `trace`
+(type `ContextTrace` in `@mantle/client-types`; builder
+`ContextTraceBuilder` in `packages/search/src/trace.ts`). `/debug/journey`
+shows it as a table above the step's JSON.
+
+- `stages`: in run order (`embed`, `facts`, `prefs`, `hits`, `search`,
+  `scoring`, `select`, `supersede`, `pruning`, `versions`, `journal`, `map`,
+  `relations`, `digests`, `history`), each with candidates in, kept out,
+  milliseconds and a short note (`limit 8, cut 0.65`, `live 50 scored`).
+- `search`: the passage search's mode, the pool size of the vector and the
+  keyword arm, and the keyword gate (`silent` = no rare term, `rare` = the
+  rare-term arm ran, with its stemmed `terms`).
+- `rows`: one per candidate: block (`fact`, `pref`, `hit`, `chunk`,
+  `journal`), key (fact id, node id, or `nodeId:ordinal`), `out`
+  (`kept` / `dropped`), the stage that decided it (`at`) and the reason
+  (`why`): `sent`, `always`, `promote:fact-source`, `guard:0.85`,
+  `cut:0.6`, `cut:0.65`, `limit:<n>`, `room:promote`, `judge:<t>`,
+  `dedupe:journal`, `dedupe:fact`, `superseded`, `version`, `type:<t>`,
+  `shadow`. Provenance: `arm` (`vector`, `keyword`, `both`, `fact-source`,
+  `always`, `journal`), the 1-based rank in the search order, the rank in
+  each arm (`vr`, `kr`), `rescued` (placed by the keyword rescue floor),
+  the raw cosine distance `d`, the ranking distance `rd` when it differs
+  (salience, recency), and the Jev score `s`. A use in shadow mode never
+  changes `out`: its verdict goes in `would`.
+
+Compact on purpose: ids, rounded numbers and codes, no text (the text is in
+the snapshot's `sent` / `dropped` lists). At most 150 rows, kept rows first
+(`more` counts the rest): a usual turn is 30 to 60 rows, under 10 KB; a
+full pool of 100 passages stays under 32 KB, inside the 64 KB step ceiling.
+
+It is observation only. The builder reads the lists each stage produced and
+hands nothing back, so the prompt and its cached prefix are byte-for-byte
+what they were (`conversation-trace.db.test.ts` pins that the kept passage
+rows are exactly the passages the prompt got).
+
 ---
 
 ## 10. Adding a new trace kind
