@@ -262,6 +262,8 @@ const TEAM_KIND_ALLOWED: Record<string, string[]> = {
   'builtins-my-space.ts': [
     "const loginId = s?.kind === 'team' || s?.kind === 'client' ? s.loginId : undefined;",
   ],
+  // Own-space drafts: a folder is for a member's space only (clients have none).
+  'builtins-my-space-write.ts': ["if (ctx.surface?.kind !== 'team') {"],
   // read_result binds a client's or member's turn to its own spills.
   'builtins-tool-results.ts': ["if (kind !== 'client' && kind !== 'team') return undefined;"],
 };

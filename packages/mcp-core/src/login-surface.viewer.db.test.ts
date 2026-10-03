@@ -120,7 +120,7 @@ describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
       insert into nodes (owner_id, type, title, path, audience, data) values
         (${anchor}, 'note', ${`${tag} team note`}, 'notes', 'team', '{"content":"t"}'::jsonb),
         (${anchor}, 'note', ${`${tag} admin note`}, 'notes', 'admin', '{"content":"a"}'::jsonb),
-        (${anchor}, 'event', ${`${tag} board event`}, 'events', 'team',
+        (${anchor}, 'event', ${`${tag} board event`}, 'events', 'admin',
           ${JSON.stringify({ start_at: new Date().toISOString() })}::jsonb)`);
   }, 60_000);
 

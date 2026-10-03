@@ -319,6 +319,15 @@ export const WRITE_RULES: Readonly<Record<string, WriteRule>> = {
   recall_map_set_slug: always(RECALL_GUIDANCE),
   recall_card_set_slug: always(RECALL_GUIDANCE),
   my_items_list: free(OWN_SPACE),
+  // Own-space drafts (MCP as a login): the caller's own space, a draft an
+  // admin reviews before anything reaches the brain.
+  my_note_create: free("a draft in the caller's own space"),
+  my_page_create: free("a draft in the caller's own space"),
+  my_file_upload: free("a draft in the caller's own space"),
+  my_item_submit: free("sends the caller's own draft to review"),
+  // Calls on a federated peer as the login it binds us to.
+  peer_call: always(OUTWARD),
+  peer_file_copy: always(OUTWARD),
   my_item_open: free(OWN_SPACE),
 };
 

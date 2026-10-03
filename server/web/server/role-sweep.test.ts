@@ -74,6 +74,13 @@ vi.mock('../lib/auth/login-row', () => ({
   touchBearerToken: async () => undefined,
 }));
 
+// MCP as a login: a member's or client's MCP access is off here (the
+// default), so the consent page refuses them as it always did.
+vi.mock('../lib/mcp-auth', () => ({
+  mcpLoginEnabled: async () => false,
+  mcpTargetLogin: async () => null,
+}));
+
 // The MCP consent page checks that remote MCP is on and the client is
 // registered before it reads the login: both stood in, so the page reaches
 // its role refusals (the rest of lib/mcp-oauth is the real module).

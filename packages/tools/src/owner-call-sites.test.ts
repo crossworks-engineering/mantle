@@ -39,9 +39,19 @@ const SITES: Record<string, Site> = {
   // ── owner paths: an explicit owner surface ──
   'packages/mcp-core/src/register/context.ts': {
     calls: 1,
-    surface: /surface: MCP_OWNER_SURFACE/,
+    // `surface` is MCP_OWNER_SURFACE (owner/mcp), or owner/federation for a
+    // peer bound to the owner (MCP as a login): built before the call.
+    surface:
+      /const surface: ToolSurface = via === 'mcp' \? MCP_OWNER_SURFACE : \{ kind: 'owner', via \}/,
+    scope: 'file',
+    why: 'MCP holds the owner credential (owner/mcp, or owner/federation for a peer)',
+  },
+  // ── a member's or client's own MCP login ──
+  'packages/mcp-core/src/login-surface.ts': {
+    calls: 1,
+    surface: /surface: loginSurface\(caller, privateReads\)/,
     scope: 'call',
-    why: 'MCP holds the owner credential (owner/mcp)',
+    why: "a member's or client's MCP call runs as that login (team / client surface)",
   },
   'packages/tools/src/pending.ts': {
     calls: 1,
