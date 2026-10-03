@@ -19,6 +19,8 @@ export {
   listSeedableBuiltins,
   getBuiltinRedactFields,
   isBuiltinReadOnly,
+  isBuiltinSpending,
+  isBuiltinOwnerOnly,
   listReadOnlyBuiltinSlugs,
   redactArgsForLogging,
 } from './registry';
@@ -124,6 +126,7 @@ export { REPLAY_TOOLS } from './builtins-replay';
 export { IMAGE_TOOLS } from './builtins-images';
 export { TEAM_TOOLS } from './builtins-team';
 export { MY_SPACE_TOOLS } from './builtins-my-space';
+export { MY_SPACE_WRITE_TOOLS, MY_SPACE_WRITE_TOOL_SLUGS } from './builtins-my-space-write';
 export { CLIENT_TOOLS } from './builtins-client';
 export { CLIENT_TURN_TOOL_SLUGS } from './client-turn-tools';
 export { RESEARCH_TOOLS, resolveOpenRouterKey } from './builtins-research';

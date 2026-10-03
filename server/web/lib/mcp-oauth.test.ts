@@ -35,7 +35,7 @@ const dbState = vi.hoisted(() => ({
 vi.mock('@mantle/db', () => {
   const selectChain = () => {
     const chain: Record<string, unknown> = {};
-    for (const m of ['from', 'innerJoin', 'limit']) chain[m] = () => chain;
+    for (const m of ['from', 'innerJoin', 'leftJoin', 'limit']) chain[m] = () => chain;
     chain['where'] = (w: unknown) => {
       dbState.selectWheres.push(w);
       return chain;
@@ -100,7 +100,8 @@ vi.mock('@mantle/db', () => {
       'createdAt',
     ]),
     oauthAuthCodes: cols(['id', 'codeHash', 'clientId', 'actorId', 'expiresAt']),
-    authUsers: cols(['id', 'role', 'disabledAt', 'email']),
+    authUsers: cols(['id', 'role', 'disabledAt', 'email', 'sessionEpoch']),
+    mcpLoginAccess: cols(['loginId', 'enabled', 'writeEnabled']),
     oauthClients: cols(['id', 'clientName', 'redirectUris']),
     resolveSingleOwnerId: vi.fn(),
   };

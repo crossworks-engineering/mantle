@@ -10,6 +10,7 @@ import { getPeerNode, listPeers, queryPeer, searchPeerChunks } from '@mantle/con
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
 import { str, strArrOpt, strOpt, numOpt } from './coerce';
 import { errorMessage } from '@mantle/std';
+import { PEER_MCP_TOOLS } from './builtins-peer-mcp';
 
 const peer_list: BuiltinToolDef = {
   slug: 'peer_list',
@@ -141,4 +142,6 @@ export const PEER_TOOLS: readonly BuiltinToolDef[] = [
   peer_query,
   peer_search_chunks,
   peer_node_get,
+  // Over the peer's MCP endpoint, as the login the peer binds us to.
+  ...PEER_MCP_TOOLS,
 ];

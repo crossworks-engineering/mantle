@@ -3,8 +3,12 @@
  *
  * GET renders the consent page ("Allow Claude to access your Mantle brain") once
  * the owner is signed in; if they're not, it bounces to /login?next=… and comes
- * back. A member login gets a plain refusal page (403): only admins connect. POST is the Allow/Deny decision: Allow mints a single-use PKCE-bound code
- * and 302s back to the client's registered redirect_uri with code+state.
+ * back. A member or client login connects too (MCP as a login, plan page
+ * e5b854dd) once an admin has turned MCP on for that login; until then it
+ * gets a plain refusal page (403). Their grant carries the login's session
+ * epoch, and runs only their own role's tools. POST is the Allow/Deny
+ * decision: Allow mints a single-use PKCE-bound code and 302s back to the
+ * client's registered redirect_uri with code+state.
  *
  * This endpoint USES the Mantle session (unlike the other OAuth routes, which
  * self-authenticate) — it's the human-in-the-loop step. The consent form carries
@@ -18,6 +22,7 @@ import { NextResponse } from '@/server/http-compat';
 import { getLoginOr401, type SessionUser } from '@/lib/auth';
 import { requestOrigin } from '@/lib/auth-constants';
 import { getClient, isRemoteMcpEnabled, mintAuthCode, DEFAULT_SCOPE } from '@/lib/mcp-oauth';
+import { mcpLoginEnabled, mcpTargetLogin } from '@/lib/mcp-auth';
 import { env } from '@mantle/config';
 
 type AuthorizeParams = {
@@ -61,25 +66,55 @@ function htmlError(message: string, status = 400): Response {
   );
 }
 
-/** Who is signed in: an admin, a member or client (who cannot connect a
- *  client), or nobody. A member used to read as nobody here and was sent to
- *  /login, where they were already signed in: a loop with no way out. */
-async function signedIn(): Promise<SessionUser | 'member' | 'client' | null> {
+/** Who consents: the brain (anchor) the grant is for, the login, and for a
+ *  member or client the session epoch the grant is bound to. */
+type Consenter = {
+  ownerId: string;
+  loginId: string;
+  email: string;
+  role: 'admin' | 'member' | 'client';
+  sessionEpoch: number | null;
+};
+
+/** Who is signed in: a login that may connect, a member or client whose MCP
+ *  access is off (refused with a page, not sent to /login: they are signed
+ *  in, and a bounce would loop), or nobody. */
+async function signedIn(): Promise<Consenter | 'member' | 'client' | null> {
   const login = await getLoginOr401();
   if (login instanceof Response) return null;
   switch (login.kind) {
     case 'admin':
-      return login.user;
+      return adminConsenter(login.user);
     case 'member':
-      return 'member';
-    case 'client':
-      return 'client';
+    case 'client': {
+      if (!(await mcpLoginEnabled(login.loginId))) return login.kind;
+      const target = await mcpTargetLogin(login.loginId);
+      if (!target) return login.kind;
+      const anchorId = login.kind === 'member' ? login.member.anchorId : login.client.anchorId;
+      return {
+        ownerId: anchorId,
+        loginId: login.loginId,
+        email: login.email,
+        role: login.kind,
+        sessionEpoch: target.sessionEpoch,
+      };
+    }
   }
 }
 
+function adminConsenter(user: SessionUser): Consenter {
+  return {
+    ownerId: user.id,
+    loginId: user.actor.id,
+    email: user.email,
+    role: 'admin',
+    sessionEpoch: null,
+  };
+}
+
 const MEMBER_REFUSED =
-  'Member logins cannot connect MCP clients to this brain. Ask an admin of this brain.';
-const CLIENT_REFUSED = 'Client logins cannot connect MCP clients to this brain.';
+  'MCP is not turned on for your login. Ask an admin of this brain to turn it on in Settings, MCP.';
+const CLIENT_REFUSED = MEMBER_REFUSED;
 
 /** Bind the consent form to (user, client, redirect, challenge) so only a POST
  *  originating from the page we rendered to THIS signed-in user is honoured. */
@@ -128,8 +163,8 @@ export async function GET(req: Request) {
     return NextResponse.redirect(new URL(`/login?next=${next}`, requestOrigin(req)));
   }
 
-  const token = consentToken(user.id, p);
-  return new Response(consentPage(validated.clientName, p, token, user.email), {
+  const token = consentToken(user.loginId, p);
+  return new Response(consentPage(validated.clientName, p, token, user.email, user.role), {
     headers: { 'content-type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
   });
 }
@@ -161,7 +196,7 @@ export async function POST(req: Request) {
   if (user === 'client') return htmlError(CLIENT_REFUSED, 403);
   if (!user) return htmlError('your session expired — start the connection again', 401);
 
-  if (!consentTokenValid(get('consent_token'), consentToken(user.id, p))) {
+  if (!consentTokenValid(get('consent_token'), consentToken(user.loginId, p))) {
     return htmlError('consent could not be verified — start the connection again', 400);
   }
 
@@ -175,8 +210,9 @@ export async function POST(req: Request) {
 
   const code = await mintAuthCode({
     clientId: p.clientId,
-    ownerId: user.id,
-    actorId: user.actor.id,
+    ownerId: user.ownerId,
+    actorId: user.loginId,
+    sessionEpoch: user.sessionEpoch,
     codeChallenge: p.codeChallenge,
     codeChallengeMethod: p.codeChallengeMethod,
     redirectUri: p.redirectUri,
@@ -215,17 +251,28 @@ function consentShell(inner: string): string {
 </style></head><body><div class="card">${inner}</div></body></html>`;
 }
 
-function consentPage(clientName: string, p: AuthorizeParams, token: string, email: string): string {
+function consentPage(
+  clientName: string,
+  p: AuthorizeParams,
+  token: string,
+  email: string,
+  role: Consenter['role'],
+): string {
   const safeName = escapeHtml(clientName);
   const h = (v: string) => escapeHtml(v);
+  const scopes =
+    role === 'admin'
+      ? `<li>Read and write your notes, pages, tables, tasks, files, contacts and more</li>
+    <li>Search your knowledge and act through your Mantle tools</li>`
+      : `<li>Read what your login may read in this brain, nothing more</li>
+    <li>Create drafts in your own space, only if an admin allowed writing</li>`;
   const inner = `
   <h1>Connect ${safeName} to Mantle</h1>
   <p class="muted">${safeName} is requesting access to your Mantle brain.</p>
   <div class="who">Signed in as <b>${h(email)}</b></div>
   <p class="muted" style="margin-bottom:6px;">This will allow it to:</p>
   <ul class="scopes">
-    <li>Read and write your notes, pages, tables, tasks, files, contacts and more</li>
-    <li>Search your knowledge and act through your Mantle tools</li>
+    ${scopes}
   </ul>
   <form method="post" action="/api/oauth/authorize">
     <input type="hidden" name="client_id" value="${h(p.clientId)}" />

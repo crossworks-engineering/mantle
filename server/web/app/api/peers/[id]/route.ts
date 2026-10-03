@@ -1,13 +1,16 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
-import { deletePeer, setOutboundToken, setPeerEnabled } from '@mantle/content';
+import { deletePeer, setOutboundToken, setPeerAccess, setPeerEnabled } from '@mantle/content';
 import { firstIssue } from '@/lib/zod-issue';
+import { PeerAccessBody, resolvePeerActsAs } from '@/lib/peer-access';
 
-const PatchBody = z.object({
-  enabled: z.boolean().optional(),
-  outboundToken: z.string().min(1).max(8192).optional(),
-});
+const PatchBody = z
+  .object({
+    enabled: z.boolean().optional(),
+    outboundToken: z.string().min(1).max(8192).optional(),
+  })
+  .extend(PeerAccessBody.shape);
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
@@ -26,6 +29,20 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (parsed.data.outboundToken !== undefined) {
     const ok = await setOutboundToken(user.id, id, parsed.data.outboundToken);
     if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });
+    touched = true;
+  }
+  const { actsAs, writeEnabled, allowedRiskyTools } = parsed.data;
+  if (actsAs !== undefined || writeEnabled !== undefined || allowedRiskyTools !== undefined) {
+    const bound = actsAs === undefined ? undefined : await resolvePeerActsAs(user.id, actsAs);
+    if (bound && 'error' in bound) {
+      return NextResponse.json({ error: bound.error }, { status: 400 });
+    }
+    const row = await setPeerAccess(user.id, id, {
+      ...(bound !== undefined ? { actsAs: bound } : {}),
+      ...(writeEnabled !== undefined ? { writeEnabled } : {}),
+      ...(allowedRiskyTools !== undefined ? { allowedRiskyTools } : {}),
+    });
+    if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
     touched = true;
   }
   if (!touched) return NextResponse.json({ error: 'nothing to update' }, { status: 400 });

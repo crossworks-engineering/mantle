@@ -71,6 +71,11 @@ const PRECONDITION_EXEMPT = new Set<string>([
   // app_undelete.id names a DELETED app: its node is gone by definition, so
   // a node_exists check would reject every valid id.
   'app_undelete.id',
+  // A folder of the calling login's OWN space tree (MCP as a login): it is
+  // owned by that space, not the brain, and memberFilingPath checks it.
+  'my_note_create.folder_id',
+  'my_page_create.folder_id',
+  'my_file_upload.folder_id',
 ]);
 
 /** Walk every {path, schema} pair under `properties` (nested objects and

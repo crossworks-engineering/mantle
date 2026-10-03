@@ -17,6 +17,7 @@ import { bearerFrom } from './auth/request';
 import {
   authUsers,
   db,
+  mcpLoginAccess,
   oauthAccessTokens,
   oauthAuthCodes,
   oauthClients,
@@ -150,6 +151,9 @@ export async function mintAuthCode(input: {
   ownerId: string;
   /** The consenting login (`SessionUser.actor.id`), not the anchor. */
   actorId: string;
+  /** A member's or client's session epoch at consent (0227); null for an
+   *  admin. The grant dies when the login's epoch moves on. */
+  sessionEpoch?: number | null;
   codeChallenge: string;
   codeChallengeMethod: string;
   redirectUri: string;
@@ -161,6 +165,7 @@ export async function mintAuthCode(input: {
     clientId: input.clientId,
     ownerId: input.ownerId,
     actorId: input.actorId,
+    sessionEpoch: input.sessionEpoch ?? null,
     codeChallenge: input.codeChallenge,
     codeChallengeMethod: input.codeChallengeMethod,
     redirectUri: input.redirectUri,
@@ -181,18 +186,40 @@ export type TokenResponse = {
 type GrantResult = { ok: true; tokens: TokenResponse } | { ok: false; error: string };
 
 /**
- * May this login hold (or keep using) a connector grant? An admin that is not
- * disabled. A member, a disabled login or a deleted one may not: a grant lives
- * only as long as the login that made it. Read from the row on every use,
- * never from the token, like the session and bearer paths.
+ * May this login hold (or keep using) a connector grant? Read from the row on
+ * every use, never from the token, like the session and bearer paths. A
+ * disabled or deleted login may not: a grant lives only as long as the login
+ * that made it.
+ *
+ *  - An ADMIN grant (no epoch on it): the login is still an admin.
+ *  - A MEMBER's or CLIENT's grant (0227, MCP as a login): the login still has
+ *    that kind of role, its session epoch is the one the grant was made
+ *    under (sign out everywhere, a password change, a disable or a role
+ *    change ends it), and an admin still has its MCP switch on.
  */
-async function actorMayConnect(actorId: string): Promise<boolean> {
+export async function actorMayConnect(
+  actorId: string,
+  sessionEpoch: number | null,
+): Promise<boolean> {
   const [row] = await db
-    .select({ role: authUsers.role, disabledAt: authUsers.disabledAt, email: authUsers.email })
+    .select({
+      role: authUsers.role,
+      disabledAt: authUsers.disabledAt,
+      email: authUsers.email,
+      sessionEpoch: authUsers.sessionEpoch,
+      mcpEnabled: mcpLoginAccess.enabled,
+    })
     .from(authUsers)
+    .leftJoin(mcpLoginAccess, eq(mcpLoginAccess.loginId, authUsers.id))
     .where(eq(authUsers.id, actorId))
     .limit(1);
-  return !!row && row.role === 'admin' && !row.disabledAt && !!row.email;
+  if (!row || row.disabledAt || !row.email) return false;
+  if (sessionEpoch === null) return row.role === 'admin';
+  return (
+    (row.role === 'member' || row.role === 'client') &&
+    row.sessionEpoch === sessionEpoch &&
+    row.mcpEnabled === true
+  );
 }
 
 async function issueTokens(
@@ -200,6 +227,7 @@ async function issueTokens(
   ownerId: string,
   actorId: string,
   scope: string,
+  sessionEpoch: number | null,
 ): Promise<TokenResponse> {
   const accessToken = randomToken(ACCESS_PREFIX);
   const refreshToken = randomToken(REFRESH_PREFIX);
@@ -211,6 +239,7 @@ async function issueTokens(
     actorId,
     clientId,
     scope,
+    sessionEpoch,
     expiresAt: new Date(now + ACCESS_TTL_SEC * 1000),
     refreshExpiresAt: new Date(now + REFRESH_TTL_SEC * 1000),
   });
@@ -250,9 +279,17 @@ export async function exchangeAuthCode(input: {
   }
 
   // The login may have been demoted or disabled between consent and exchange.
-  if (!(await actorMayConnect(row.actorId))) return { ok: false, error: 'invalid_grant' };
+  if (!(await actorMayConnect(row.actorId, row.sessionEpoch ?? null))) {
+    return { ok: false, error: 'invalid_grant' };
+  }
 
-  const tokens = await issueTokens(row.clientId, row.ownerId, row.actorId, row.scope);
+  const tokens = await issueTokens(
+    row.clientId,
+    row.ownerId,
+    row.actorId,
+    row.scope,
+    row.sessionEpoch ?? null,
+  );
   return { ok: true, tokens };
 }
 
@@ -302,9 +339,17 @@ export async function refreshAccessToken(input: {
   }
   // Refresh forks new rows, so without this a locked-out login's connector
   // would outlive every revoke that ran before the fork.
-  if (!(await actorMayConnect(row.actorId))) return fail('login is no longer an active admin');
+  if (!(await actorMayConnect(row.actorId, row.sessionEpoch ?? null))) {
+    return fail('login may no longer connect');
+  }
 
-  const tokens = await issueTokens(row.clientId, row.ownerId, row.actorId, row.scope);
+  const tokens = await issueTokens(
+    row.clientId,
+    row.ownerId,
+    row.actorId,
+    row.scope,
+    row.sessionEpoch ?? null,
+  );
 
   // Shorten (never extend) the presented refresh token's remaining life to the
   // grace window, and stamp the use. The old access token is left untouched.
@@ -369,4 +414,38 @@ export async function ownerFromBearer(req: Request): Promise<string | null> {
     .where(eq(oauthAccessTokens.id, row.id))
     .catch(() => {});
   return row.ownerId;
+}
+
+/**
+ * The grant behind an access token, for any login (0227, MCP as a login):
+ * the anchor, the login and the epoch it was made under, or null for an
+ * unknown, expired or revoked token. Whether the login may still use it is
+ * `actorMayConnect`; server/web/lib/mcp-auth.ts runs both.
+ */
+export async function grantFromAccessToken(
+  token: string,
+): Promise<{ id: string; ownerId: string; actorId: string; sessionEpoch: number | null } | null> {
+  const [row] = await db
+    .select({
+      id: oauthAccessTokens.id,
+      ownerId: oauthAccessTokens.ownerId,
+      actorId: oauthAccessTokens.actorId,
+      sessionEpoch: oauthAccessTokens.sessionEpoch,
+    })
+    .from(oauthAccessTokens)
+    .where(
+      and(
+        eq(oauthAccessTokens.tokenHash, sha256Hex(token)),
+        isNull(oauthAccessTokens.revokedAt),
+        gt(oauthAccessTokens.expiresAt, new Date()),
+      ),
+    )
+    .limit(1);
+  if (!row) return null;
+  void db
+    .update(oauthAccessTokens)
+    .set({ lastUsedAt: new Date() })
+    .where(eq(oauthAccessTokens.id, row.id))
+    .catch(() => {});
+  return { ...row, sessionEpoch: row.sessionEpoch ?? null };
 }

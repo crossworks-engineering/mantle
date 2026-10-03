@@ -16,6 +16,7 @@ export * from './client-guard';
 export * from './team-read-cursors';
 export * from './login-chat-read-cursors';
 export * from './oauth';
+export * from './mcp-login';
 export * from './assistant-read-cursors';
 export * from './push';
 export * from './brain-identity';

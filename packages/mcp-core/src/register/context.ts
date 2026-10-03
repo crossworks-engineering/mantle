@@ -14,7 +14,7 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { checkToolPreconditions } from '@mantle/tools';
-import type { BuiltinToolDef, ToolSurface } from '@mantle/tools';
+import type { BuiltinToolDef, OwnerSurfaceVia, ToolSurface } from '@mantle/tools';
 import { env } from '@mantle/config';
 import { zodShapeFromJsonSchema } from './zod-schema';
 import type { MantleMcpTransport } from '../build-server';
@@ -26,7 +26,11 @@ export function makeRegisterContext(
   server: McpServer,
   ownerId: string,
   transport: MantleMcpTransport,
+  /** The owner path the builtins name: 'mcp', or 'federation' for a peer
+   *  that acts as the owner (plan page e5b854dd). */
+  via: OwnerSurfaceVia = 'mcp',
 ) {
+  const surface: ToolSurface = via === 'mcp' ? MCP_OWNER_SURFACE : { kind: 'owner', via };
   // Explicit env wins in both directions: =1 opts a network surface in, =0 opts
   // a local one out. Unset means stdio yes, HTTP no.
   const terminalEnv = env('MANTLE_MCP_TERMINAL') ?? '';
@@ -108,7 +112,7 @@ export function makeRegisterContext(
     }
     // The MCP caller holds the owner's credential: it names itself as the
     // owner (client logins C4), since a missing surface is not the owner.
-    const result = await def.handler(input, { ownerId: ownerId, surface: MCP_OWNER_SURFACE });
+    const result = await def.handler(input, { ownerId: ownerId, surface });
     if (!result.ok) {
       return {
         content: [{ type: 'text' as const, text: `Error: ${result.error}` }],

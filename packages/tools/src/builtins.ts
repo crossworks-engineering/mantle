@@ -17,6 +17,7 @@ import { PROFILE_TOOLS } from './builtins-profile';
 import { TASK_TOOLS } from './builtins-tasks';
 import { TEAM_TOOLS } from './builtins-team';
 import { MY_SPACE_TOOLS } from './builtins-my-space';
+import { MY_SPACE_WRITE_TOOLS } from './builtins-my-space-write';
 import { CLIENT_TOOLS } from './builtins-client';
 import { PERSONA_TOOLS } from './builtins-persona';
 import { TERMINAL_TOOLS } from './builtins-terminal';
@@ -140,6 +141,7 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // The member's own personal items, read on behalf of the member a team
   // turn serves (member logins Phase 2). Fail closed on any other surface.
   ...MY_SPACE_TOOLS,
+  ...MY_SPACE_WRITE_TOOLS,
   ...CLIENT_TOOLS,
   // Persona self-edit — lets Saskia adjust her own style/relationship
   // notes when the user explicitly asks ("be more professional").

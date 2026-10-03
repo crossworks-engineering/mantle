@@ -1583,6 +1583,13 @@
       "when": 1790019840000,
       "tag": "0226_brain_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 227,
+      "version": "7",
+      "when": 1790019900000,
+      "tag": "0227_mcp_login",
+      "breakpoints": true
     }
   ]
 }

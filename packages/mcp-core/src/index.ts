@@ -1,1 +1,25 @@
-export { MANTLE_MCP_INSTRUCTIONS, buildMantleMcpServer, registerMantleTools } from './build-server';
+export {
+  MANTLE_MCP_INSTRUCTIONS,
+  buildMantleMcpServer,
+  filteredServer,
+  registerMantleTools,
+} from './build-server';
+export {
+  MCP_HANDWRITTEN_READ_ONLY,
+  PEER_RISKY_TOOL_PREFIXES,
+  PEER_RISKY_TOOL_SLUGS,
+  callLoginTool,
+  isMcpToolReadOnly,
+  isPeerRiskyTool,
+  loginMayHaveTool,
+  loginSurface,
+  mcpInstructionsFor,
+  ownerPeerAllows,
+  prepareCallerTools,
+  registerLoginRows,
+  registerPreparedTools,
+  resolveLoginToolRows,
+  type McpCaller,
+  type McpLoginRole,
+  type PreparedCallerTools,
+} from './login-surface';

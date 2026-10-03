@@ -350,6 +350,9 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.oauth_auth_codes'),
   none('public.oauth_access_tokens'),
   none('public.mobile_tokens'),
+  // MCP as a login (0227): the per-login switch and static token hashes.
+  none('public.mcp_login_access'),
+  none('public.mcp_login_tokens'),
   none('public.pairing_codes'),
   none('public.member_invites'),
   // "What clients see" acknowledgements (0187): an admin's record.

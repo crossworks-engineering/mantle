@@ -36,6 +36,7 @@ export {
   rotateInboundToken,
   setOutboundToken,
   setPeerEnabled,
+  setPeerAccess,
   deletePeer,
   verifyInboundToken,
   markPeerContacted,

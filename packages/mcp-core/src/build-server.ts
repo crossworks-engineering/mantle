@@ -87,6 +87,7 @@ import {
 import {} from '@mantle/content';
 import { env } from '@mantle/config';
 import { makeRegisterContext } from './register/context';
+import type { OwnerSurfaceVia } from '@mantle/tools';
 import { registerSearchTools } from './register/search';
 import { registerFileTools } from './register/files';
 import { registerPageTools } from './register/pages';
@@ -96,7 +97,7 @@ import { registerResponderTools } from './register/responder';
 /** Mutating Toolsmith tools — gated behind MANTLE_MCP_TOOLSMITH_WRITE (default
  *  ON). Module-scope (env is process-stable) so the gate is evaluated once, not
  *  per build — for the HTTP transport a server is built per request. */
-const TOOLSMITH_WRITE_SLUGS = new Set([
+export const TOOLSMITH_WRITE_SLUGS: ReadonlySet<string> = new Set([
   'api_tool_create',
   'api_tool_update',
   'api_tool_delete',
@@ -117,6 +118,27 @@ if (!toolsmithWriteEnabled) {
   );
 }
 
+/**
+ * The server with a gate on registration: `tool` / `registerTool` skip any
+ * name `allow` refuses, so a tool the caller may not have is never listed
+ * and cannot be called. Every registrar goes through the context's
+ * `server`, so this one wrapper covers the bridged builtins and the
+ * hand-written tools alike.
+ */
+export function filteredServer(server: McpServer, allow: (slug: string) => boolean): McpServer {
+  return new Proxy(server, {
+    get(target, prop) {
+      if (prop === 'tool' || prop === 'registerTool') {
+        const fn = Reflect.get(target, prop, target) as (...a: unknown[]) => unknown;
+        return (name: unknown, ...rest: unknown[]) =>
+          typeof name === 'string' && allow(name) ? fn.call(target, name, ...rest) : undefined;
+      }
+      const v = Reflect.get(target, prop, target) as unknown;
+      return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(target) : v;
+    },
+  });
+}
+
 /** Which transport is registering. Only `run_terminal` reads it (see the file
  *  header); everything else is identical on both. */
 export type MantleMcpTransport = 'stdio' | 'http';
@@ -128,10 +150,18 @@ export type MantleMcpTransport = 'stdio' | 'http';
 export function registerMantleTools(
   server: McpServer,
   ownerId: string,
-  opts: { transport?: MantleMcpTransport } = {},
+  opts: {
+    transport?: MantleMcpTransport;
+    /** Register only the tools this answers true for (a peer acting as the
+     *  owner, plan page e5b854dd). Absent = every tool, as before. */
+    allow?: (slug: string) => boolean;
+    /** Which owner path the bridged builtins name (default 'mcp'). */
+    via?: OwnerSurfaceVia;
+  } = {},
 ): void {
   const transport = opts.transport ?? 'http';
-  const ctx = makeRegisterContext(server, ownerId, transport);
+  const target = opts.allow ? filteredServer(server, opts.allow) : server;
+  const ctx = makeRegisterContext(target, ownerId, transport, opts.via);
   const { exposeTerminal, registerBuiltinTools } = ctx;
 
   registerSearchTools(ctx);

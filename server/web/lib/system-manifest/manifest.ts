@@ -1077,7 +1077,14 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'federation',
     name: 'Federation',
     description: "Query other people's Mantles for data they've shared (docs/federation.md).",
-    toolSlugs: ['peer_list', 'peer_query', 'peer_search_chunks', 'peer_node_get'],
+    toolSlugs: ['peer_list', 'peer_query', 'peer_search_chunks', 'peer_node_get', 'peer_tools'],
+  },
+  {
+    slug: 'federation-write',
+    name: 'Federation (call and write)',
+    description:
+      "Call a peer's tools and copy files to it, as the login the peer binds this brain to (peer_call, peer_file_copy). It can WRITE on the peer when the peer's owner turned write on. Attached to no agent: the owner uses it over MCP, or grants it by hand.",
+    toolSlugs: ['peer_call', 'peer_file_copy'],
   },
   {
     slug: 'location',
@@ -1161,6 +1168,13 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'my_items_list',
       'my_item_open',
     ],
+  },
+  {
+    slug: 'my-space-write',
+    name: 'Own-space drafts (write)',
+    description:
+      'Create notes, pages and files as DRAFTS in the personal space of the member or client a turn serves, and submit one for review. Nothing reaches the brain until an admin accepts it. Offered by the login MCP surface when an admin turned write on for that login (or its peer). Attached to no agent (admin level: the login surface adds these tools itself, never through a group).',
+    toolSlugs: ['my_note_create', 'my_page_create', 'my_file_upload', 'my_item_submit'],
   },
   {
     slug: 'team-read-admin',
