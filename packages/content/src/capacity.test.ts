@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CAPACITY_POLICY, capacityZone, computeCapacity } from './capacity';
+import { CAPACITY_POLICY, capacityZone, computeCapacity, retrievalFromRunNote } from './capacity';
 
 describe('capacityZone', () => {
   const limits = { watch: 10, split: 20 };
@@ -54,5 +54,27 @@ describe('computeCapacity', () => {
     const c = computeCapacity(0, 0);
     expect(c.zone).toBe('green');
     expect(c.pctOfSplit).toBe(0);
+  });
+});
+
+describe('retrievalFromRunNote', () => {
+  const at = new Date('2026-10-03T12:00:00Z');
+  it('reads the passage (chunks) arm of a recall_eval run note', () => {
+    const content = JSON.stringify({
+      casesUsed: 12,
+      search: { recallAt10: 0.9, mrr: 0.8 },
+      chunks: { recallAt10: 0.75, mrr: 0.5 },
+    });
+    expect(retrievalFromRunNote(content, at)).toEqual({
+      at: '2026-10-03T12:00:00.000Z',
+      cases: 12,
+      recallAt10: 0.75,
+      mrr: 0.5,
+    });
+  });
+  it('is null for missing, hand-edited or foreign content', () => {
+    expect(retrievalFromRunNote(undefined, at)).toBeNull();
+    expect(retrievalFromRunNote('not json', at)).toBeNull();
+    expect(retrievalFromRunNote(JSON.stringify({ chunks: {} }), at)).toBeNull();
   });
 });

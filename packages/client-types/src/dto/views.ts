@@ -49,6 +49,20 @@ export type BrainCapacity = {
   zone: CapacityZone;
   /** Worst-axis fill as an integer percentage of the split budget (may exceed 100). */
   pctOfSplit: number;
+  /** The latest `recall_eval` passage score (the `search_chunks` arm), or
+   *  null when the brain has never run one. Size says when to look; this
+   *  says whether quality actually moved. Absent on older servers. */
+  retrieval?: RetrievalScore | null;
+};
+
+export type RetrievalScore = {
+  /** When the eval ran (ISO). */
+  at: string;
+  /** Gold cases scored. */
+  cases: number;
+  /** Fraction of cases whose gold node was in the top 10 passages, 0..1. */
+  recallAt10: number;
+  mrr: number;
 };
 
 export type AgentContext = {
