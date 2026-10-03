@@ -91,7 +91,8 @@ describe.skipIf(!URL)('a file whose bytes change drops its old index', () => {
         (${owner}, 'branch', ${tag}, ${tag}, ${top}::ltree)
       on conflict do nothing`);
     const [page] = (await m.db.execute(sqlTag`
-      insert into nodes (owner_id, type, title) values (${owner}, 'note', 'The page copy')
+      insert into nodes (owner_id, type, title, path)
+      values (${owner}, 'note', 'The page copy', 'notes'::ltree)
       returning id`)) as unknown as { id: string }[];
     pageId = page!.id;
   });
