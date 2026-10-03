@@ -33,6 +33,7 @@ import { anthropicChatAdapter } from './anthropic-chat';
 import { googleChatAdapter } from './google-chat';
 import { openrouterChatAdapter } from './openrouter-chat';
 import { deepseekChatAdapter } from './deepseek-chat';
+import { mammouthChatAdapter } from './mammouth-chat';
 import { copilotChatAdapter } from './copilot-chat';
 import { customChatAdapter } from './custom-chat';
 import { googleTtsAdapter } from './google-tts';
@@ -84,6 +85,7 @@ registerChatAdapter(anthropicChatAdapter);
 registerChatAdapter(googleChatAdapter);
 registerChatAdapter(openrouterChatAdapter);
 registerChatAdapter(deepseekChatAdapter);
+registerChatAdapter(mammouthChatAdapter);
 registerChatAdapter(copilotChatAdapter);
 registerChatAdapter(customChatAdapter);
 registerChatAdapter(localChatAdapter);
@@ -229,6 +231,7 @@ export { anthropicChatAdapter } from './anthropic-chat';
 export { googleChatAdapter } from './google-chat';
 export { openrouterChatAdapter } from './openrouter-chat';
 export { deepseekChatAdapter } from './deepseek-chat';
+export { mammouthChatAdapter } from './mammouth-chat';
 export { copilotChatAdapter } from './copilot-chat';
 export { customChatAdapter } from './custom-chat';
 export { localChatAdapter } from './local-chat';
@@ -276,6 +279,12 @@ export {
   OPENROUTER_BASE_URL,
 } from '../catalogs/openrouter';
 export { DEEPSEEK_CHAT_MODELS, DEEPSEEK_BASE_URL } from '../catalogs/deepseek';
+export {
+  MAMMOUTH_CHAT_MODELS,
+  MAMMOUTH_BASE_URL,
+  MAMMOUTH_DEFAULT_CHAT_MODEL,
+  mammouthCostUsd,
+} from '../catalogs/mammouth';
 export {
   GOOGLE_CHAT_MODELS,
   GOOGLE_BASE_URL,

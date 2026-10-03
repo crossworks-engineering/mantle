@@ -67,7 +67,7 @@ function resolveBaseUrl(opts: ChatOptions): string {
  *  budget turns reasoning on; the magnitude picks the tier. Undefined when
  *  thinking isn't requested, so the field is omitted entirely. Mirrors the
  *  Copilot adapter's tiering so the gate behaves consistently across providers. */
-function customReasoningEffort(opts: ChatOptions): 'low' | 'medium' | 'high' | undefined {
+export function customReasoningEffort(opts: ChatOptions): 'low' | 'medium' | 'high' | undefined {
   const b = typeof opts.thinkingBudget === 'number' ? opts.thinkingBudget : 0;
   if (b <= 0) return undefined;
   if (b < 2000) return 'low';
@@ -78,7 +78,7 @@ function customReasoningEffort(opts: ChatOptions): 'low' | 'medium' | 'high' | u
 /** Reasoning models reject sampling params — strip temperature/top_p when
  *  reasoning is on. The tool loop already drops them under the gate; this is
  *  belt-and-suspenders for direct callers. */
-function sanitizeForReasoning(opts: ChatOptions, reasoning: boolean): ChatOptions {
+export function sanitizeForReasoning(opts: ChatOptions, reasoning: boolean): ChatOptions {
   if (!reasoning) return opts;
   const { temperature: _t, topP: _p, ...rest } = opts;
   return rest;

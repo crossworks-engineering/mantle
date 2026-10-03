@@ -33,6 +33,7 @@ export * from './catalogs/elevenlabs';
 export * from './catalogs/deepgram';
 export * from './catalogs/assemblyai';
 export * from './catalogs/deepseek';
+export * from './catalogs/mammouth';
 
 // Pure wiring metadata (no adapter modules pulled — registry.ts only imports
 // the retry helper, which is itself dependency-free).
