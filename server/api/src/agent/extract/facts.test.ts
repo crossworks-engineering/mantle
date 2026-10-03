@@ -85,7 +85,7 @@ vi.mock('@mantle/tracing', async (importOriginal) => {
 });
 vi.mock('./model', () => ({ chatComplete: h.chatComplete, resolveExtractor: vi.fn() }));
 
-import { processFacts } from './facts';
+import { processFacts, retireUnassertedFacts } from './facts';
 import { sqlValues } from './test-support';
 
 const NODE = { id: 'n1', ownerId: 'o1', type: 'note', title: 'T', data: {} } as never;
@@ -210,5 +210,22 @@ describe('processFacts — failures', () => {
     expect(tally.ADD).toBe(1);
     expect(h.inserts).toHaveLength(2);
     expect(patches().some((p) => 'validTo' in p)).toBe(true);
+  });
+});
+
+describe('retireUnassertedFacts — an edit that leaves no facts', () => {
+  it('retires this node’s live facts, scoped to this owner and node', async () => {
+    await retireUnassertedFacts('o1', 'n1');
+    const retire = h.updates.find((u) => 'validTo' in u.patch);
+    expect(retire?.patch).toMatchObject({ dirty: false });
+    expect(retire?.patch.validTo).toBeInstanceOf(Date);
+    expect(sqlValues(retire?.where)).toEqual(expect.arrayContaining(['o1', 'n1']));
+  });
+  it('clears a stale incomplete marker: the pass is complete', async () => {
+    await retireUnassertedFacts('o1', 'n1');
+    const cleared = h.updates.find((u) =>
+      sqlValues(u.patch.data).some((v) => String(v).includes('extract_incomplete')),
+    );
+    expect(cleared).toBeDefined();
   });
 });

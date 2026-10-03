@@ -52,6 +52,9 @@ export type ExtractorOutput = {
   facts: ExtractedFact[];
   entities: { name: string; kind: string }[];
   relations: ExtractedRelation[];
+  /** True when no model ran (a table's unchanged summary was reused): an
+   *  empty `facts` then says nothing about the document's facts. */
+  reused?: boolean;
 };
 
 const FACT_KINDS = new Set(['factual', 'episodic', 'semantic', 'preference']);

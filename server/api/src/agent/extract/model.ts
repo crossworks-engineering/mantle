@@ -120,6 +120,7 @@ export async function runExtractorModel(
             facts: [],
             entities,
             relations: [],
+            reused: true,
           } as ReturnType<typeof parseExtractorOutput>;
         },
       )

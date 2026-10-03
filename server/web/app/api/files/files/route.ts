@@ -73,6 +73,9 @@ export async function GET(req: Request) {
  * Into a shared folder the file is read by the team or clients at once:
  * 409 `visibility` (TreeVisibilityRefusal) unless `confirm` is `true` (a
  * form field, sent before the file part, or the JSON body's `confirm`).
+ * A name already taken in the folder is 409 unless the multipart form says
+ * `replace=true`: then the new bytes replace the file in place (same node,
+ * so links and history hold; its old index is dropped and rebuilt).
  */
 export async function POST(req: Request) {
   const user = await getOwnerOr401();
@@ -129,6 +132,7 @@ export async function POST(req: Request) {
           parentPath,
           filename: upload.filename,
           spooled: upload.spooled,
+          overwrite: parsed.fields.replace === 'true',
         });
       } finally {
         // No-op once adopted (the rename moved it); the safety net for every

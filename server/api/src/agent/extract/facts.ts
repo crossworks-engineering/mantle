@@ -190,6 +190,33 @@ async function recordPrefilterVerdict(pre: FactAddPrefilter, chat: string | null
 // with the stage.
 
 /**
+ * A complete re-extract that found NO facts: retire every live fact this node
+ * gave, as processFacts retires the ones a re-extract does not re-assert (H4).
+ * Without it, a document edited down to no facts kept serving all its old
+ * ones. Also clears a capped run's incomplete-marker: this pass is complete.
+ */
+export async function retireUnassertedFacts(ownerId: string, nodeId: string): Promise<number> {
+  return step(
+    { name: 'retire_facts', kind: 'db_write', input: { reason: 'no_facts' } },
+    async (h) => {
+      const rows = await db
+        .update(facts)
+        .set({ validTo: new Date(), dirty: false, updatedAt: new Date() })
+        .where(
+          and(eq(facts.ownerId, ownerId), eq(facts.sourceNodeId, nodeId), isNull(facts.validTo)),
+        )
+        .returning({ id: facts.id });
+      await db
+        .update(nodes)
+        .set({ data: sql`${nodes.data} - 'extract_incomplete'` })
+        .where(and(eq(nodes.id, nodeId), sql`jsonb_exists(${nodes.data}, 'extract_incomplete')`));
+      h.setOutput({ retired: rows.length });
+      return rows.length;
+    },
+  );
+}
+
+/**
  * fact extraction pass: embed the candidate facts, then classify+apply each
  * (ADD/UPDATE/DELETE/NOOP) against near-neighbour facts, honouring the optional
  * per-run cost cap. Uses the H4 dirty-flag protocol: mark this node's live

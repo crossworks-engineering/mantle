@@ -46,7 +46,8 @@ import {
 } from './extract/index-writes';
 import { supersedeFileVersions } from './extract/supersede';
 import { processRelations, reconcileEntities } from './extract/entities';
-import { processFacts } from './extract/facts';
+import { processFacts, retireUnassertedFacts } from './extract/facts';
+import { retiresOnNoFacts } from './extract/rules';
 
 export async function extractNode(nodeId: string, ownerId: string): Promise<void> {
   // Everything that decides WHETHER to run — worker + node resolution, the
@@ -215,6 +216,20 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
       // ─── fact extraction pass ────────────────────────────────────────
       // Retrieval-only docs never persist facts (L4 skip).
       if (params.extract_facts === false || retrievalOnly || parsed.facts.length === 0) {
+        // A real answer with no facts: the document no longer states any of
+        // the ones it did, so they retire like any fact a re-extract does not
+        // re-assert (see retiresOnNoFacts for when it is NOT a real answer).
+        if (
+          retiresOnNoFacts({
+            extractFacts: params.extract_facts,
+            retrievalOnly,
+            facts: parsed.facts.length,
+            reused: parsed.reused,
+            summary: parsed.summary,
+          })
+        ) {
+          await retireUnassertedFacts(ownerId, node.id);
+        }
         await stampExtractCompleted(node.id);
         void bumpWorkerUsage(worker.id);
         return;

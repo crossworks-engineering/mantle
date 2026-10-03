@@ -24,12 +24,75 @@ import {
 } from '../index';
 import { derivedCountsOf, type DerivedCounts } from '../derived-counts';
 import { deleteThumbnailsFor } from '../thumbnail';
-import { db, draws, emailAttachments, nodes, notifyNodeIngested, type Node } from '@mantle/db';
+import {
+  contentChunks,
+  db,
+  draws,
+  emailAttachments,
+  nodes,
+  notifyNodeIngested,
+  type Node,
+} from '@mantle/db';
 import { getContent } from '@mantle/storage';
 import { fileRowFromNode, type FileRow } from './shared';
 import { currentViewerLevel } from '@mantle/db/viewer';
 
 const TEXT_BYTE_CAP = 1_000_000; // 1 MB cap for content-in-DB caching.
+
+/**
+ * Everything the extractor derived from a file's bytes. New bytes make each
+ * of these describe a document that no longer exists, so a content change
+ * drops them all; the re-extract the change notifies writes them fresh.
+ * What the bytes do NOT decide stays: the `indexing` privacy flag, a derived
+ * file's provenance (`sourceFileId`, `imageContext`, …), a deliberate title.
+ */
+export const BYTE_DERIVED_DATA_KEYS = [
+  'summary',
+  'summary_model',
+  'summary_at',
+  'entities',
+  'text',
+  'vision_model',
+  'ocr',
+  'native_pdf',
+  'schemaDigest',
+  'extract_completed_at',
+  'extract_incomplete',
+  'indexing_applied',
+] as const;
+
+/**
+ * The `data` a file node carries after a write: merged onto what it had,
+ * never replacing it. On a content change the byte-derived keys are dropped,
+ * and a cached body from the old bytes too (`newData` brings `content` only
+ * for small text files).
+ */
+export function fileDataAfterWrite(
+  oldData: Record<string, unknown>,
+  newData: Record<string, unknown>,
+  contentChanged: boolean,
+): Record<string, unknown> {
+  const next: Record<string, unknown> = { ...oldData, ...newData };
+  if (!contentChanged) return next;
+  for (const key of BYTE_DERIVED_DATA_KEYS) delete next[key];
+  if (newData.content == null) delete next.content;
+  return next;
+}
+
+/**
+ * Column changes for a file whose bytes changed. The embedding goes with the
+ * old bytes. A "migrated" mark (page_from_file made a page the living copy)
+ * no longer holds: the file now has content the page never saw, and the mark
+ * would keep search sending agents to the page.
+ */
+function columnsAfterContentChange(old: Node) {
+  return {
+    embedding: null,
+    ...(old.supersededReason === 'migrated'
+      ? { supersededBy: null, supersededReason: null, salience: 1 }
+      : {}),
+  };
+}
 
 /**
  * Create or replace a file under `parentPath`. Writes bytes to disk and
@@ -189,18 +252,11 @@ export async function upsertFile(args: {
   }
 
   const oldData = (target.data ?? {}) as Record<string, unknown>;
-  // Preserve summary / entities from the extractor across edits unless
-  // the content changed — in which case we clear them so the next
-  // extractor run gets a fresh shot.
+  // Merge onto the node's data (as syncFileFromDisk does). Rebuilding it
+  // from the storage fields dropped the per-file `indexing: 'metadata'`
+  // privacy flag on every editor save, so an excluded file went to full
+  // indexing. On new bytes the extractor's output is cleared for a fresh run.
   const sameContent = oldData.sha256 === written.sha256;
-  const preserved = sameContent
-    ? {
-        summary: oldData.summary,
-        summary_model: oldData.summary_model,
-        summary_at: oldData.summary_at,
-        entities: oldData.entities,
-      }
-    : {};
   // Title: an explicit one wins; otherwise keep whatever the node already
   // carries when it differs from the filename (something deliberately
   // named it), and fall back to the filename. Blindly resetting to the
@@ -208,19 +264,26 @@ export async function upsertFile(args: {
   const existingTitle = typeof target.title === 'string' ? target.title : '';
   const nextTitle =
     args.title?.trim() || (existingTitle && existingTitle !== filename ? existingTitle : filename);
-  const [updated] = await db
-    .update(nodes)
-    .set({
-      title: nextTitle,
-      data: { ...preserved, ...newData },
-      // Only when the caller brings tags: a plain re-upsert leaves them be,
-      // and the race path above must still land them on the watcher's row.
-      ...(args.tags?.length ? { tags: [...new Set([...target.tags, 'file', ...args.tags])] } : {}),
-      updatedAt: new Date(),
-      ...(sameContent ? {} : { embedding: null }),
-    })
-    .where(eq(nodes.id, target.id))
-    .returning();
+  const row = target;
+  const updated = await db.transaction(async (tx) => {
+    const [u] = await tx
+      .update(nodes)
+      .set({
+        title: nextTitle,
+        data: fileDataAfterWrite(oldData, newData, !sameContent),
+        // Only when the caller brings tags: a plain re-upsert leaves them be,
+        // and the race path above must still land them on the watcher's row.
+        ...(args.tags?.length ? { tags: [...new Set([...row.tags, 'file', ...args.tags])] } : {}),
+        updatedAt: new Date(),
+        ...(sameContent ? {} : columnsAfterContentChange(row)),
+      })
+      .where(eq(nodes.id, row.id))
+      .returning();
+    // Old passages go now, not when the re-extract lands: until then (and
+    // for good, should it never run) search would quote the old bytes.
+    if (u && !sameContent) await tx.delete(contentChunks).where(eq(contentChunks.nodeId, u.id));
+    return u;
+  });
   if (!updated) throw new Error('upsertFile: update returned no row');
   // Notify the extractor again only when content changed.
   if (!sameContent) {
@@ -587,29 +650,23 @@ export async function syncFileFromDisk(args: {
     // host-side re-save would revert a deliberately-excluded file to FULL
     // indexing), video_ingest provenance (sourceUrl/sourceFileId), and the
     // extractor's own summary/indexing_applied bookkeeping. The stale
-    // extraction fields ARE cleared — content changed, so they must be
-    // recomputed — but explicitly, not by omission.
-    const [updated] = await db
-      .update(nodes)
-      .set({
-        title: filename,
-        data: {
-          ...oldData,
-          ...newData,
-          // Content changed: force a fresh extract pass (summary/embedding
-          // repopulate via the node_ingested notify below).
-          summary: undefined,
-          extract_completed_at: undefined,
-          indexing_applied: undefined,
-          // A cached body from the previous bytes must not shadow the new
-          // ones (newData carries `content` only for small text files).
-          ...(content == null ? { content: undefined, text: undefined } : {}),
-        },
-        updatedAt: new Date(),
-        embedding: null,
-      })
-      .where(eq(nodes.id, existing.id))
-      .returning({ id: nodes.id });
+    // extraction fields ARE cleared (fileDataAfterWrite), and the node's old
+    // chunks with them: content changed, so all of it is recomputed by the
+    // node_ingested notify below.
+    const [updated] = await db.transaction(async (tx) => {
+      const rows = await tx
+        .update(nodes)
+        .set({
+          title: filename,
+          data: fileDataAfterWrite(oldData, newData, true),
+          updatedAt: new Date(),
+          ...columnsAfterContentChange(existing),
+        })
+        .where(eq(nodes.id, existing.id))
+        .returning({ id: nodes.id });
+      await tx.delete(contentChunks).where(eq(contentChunks.nodeId, existing.id));
+      return rows;
+    });
     if (!updated) throw new Error('syncFileFromDisk: update returned no row');
     await notifyNodeIngested(updated.id);
     return { status: 'updated', nodeId: updated.id };

@@ -6,6 +6,7 @@ import {
   parseClassifierDecision,
   planFileVersionSupersede,
   resolveCostCap,
+  retiresOnNoFacts,
   type VersionSibling,
 } from './rules';
 
@@ -177,5 +178,31 @@ describe('factValidFrom', () => {
         now,
       ).toISOString(),
     ).toBe('2023-05-08T13:56:00.000Z');
+  });
+});
+
+describe('retiresOnNoFacts', () => {
+  const real = {
+    extractFacts: undefined,
+    retrievalOnly: false,
+    facts: 0,
+    reused: false,
+    summary: 'A plan.',
+  };
+  it('retires when a real run read the document and found no facts', () => {
+    expect(retiresOnNoFacts(real)).toBe(true);
+  });
+  it('never when the run found facts (processFacts reconciles those)', () => {
+    expect(retiresOnNoFacts({ ...real, facts: 2 })).toBe(false);
+  });
+  it('never on a non-JSON reply, parsed as an empty result', () => {
+    expect(retiresOnNoFacts({ ...real, summary: '  ' })).toBe(false);
+  });
+  it('never on a reused table summary: no model ran', () => {
+    expect(retiresOnNoFacts({ ...real, reused: true })).toBe(false);
+  });
+  it('never when facts are off for the document', () => {
+    expect(retiresOnNoFacts({ ...real, extractFacts: false })).toBe(false);
+    expect(retiresOnNoFacts({ ...real, retrievalOnly: true })).toBe(false);
   });
 });

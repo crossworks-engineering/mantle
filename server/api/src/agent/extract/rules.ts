@@ -59,6 +59,30 @@ export function parseClassifierDecision(raw: string): ClassifierDecision {
  *  all mean "no cap": a literal 0 must NOT become "zero budget", because the
  *  llm_extract step has already spent by the time facts are processed and
  *  `spent >= 0` would drop every fact at #0. */
+/**
+ * Does a re-extract that found NO facts retire this node's live facts? Only
+ * when the model read the document and answered: a non-empty summary from a
+ * real run. Not when facts are off for the doc (retrieval-only, or the worker
+ * says no), not on a reused table summary (no model ran), and not on a
+ * non-JSON reply (parsed as an empty result, summary ''), which would
+ * otherwise wipe good facts after a model hiccup.
+ */
+export function retiresOnNoFacts(input: {
+  extractFacts: boolean | undefined;
+  retrievalOnly: boolean;
+  facts: number;
+  reused: boolean | undefined;
+  summary: string;
+}): boolean {
+  return (
+    input.extractFacts !== false &&
+    !input.retrievalOnly &&
+    input.facts === 0 &&
+    !input.reused &&
+    input.summary.trim().length > 0
+  );
+}
+
 export function resolveCostCap(raw: unknown): number | null {
   return typeof raw === 'number' && raw > 0 ? raw : null;
 }
