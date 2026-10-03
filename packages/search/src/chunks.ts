@@ -76,6 +76,13 @@ export type ChunkSearchOptions = {
    * arrays empty ⇒ matches nothing (safe default).
    */
   nodeIdsOrTypes?: { ids: string[]; types: string[] };
+  /**
+   * Which ranking arms run when `q` is set. `both` (default) is the hybrid
+   * every caller uses. `keyword` returns the FTS arm alone, in its own order:
+   * a diagnostic for the recall eval (docs/recall-eval.md), so the hybrid
+   * score can be read against each arm on its own. Vector alone = omit `q`.
+   */
+  arms?: 'both' | 'keyword';
 };
 
 export async function searchChunks(opts: ChunkSearchOptions): Promise<ChunkHit[]> {
@@ -135,8 +142,11 @@ export async function searchChunks(opts: ChunkSearchOptions): Promise<ChunkHit[]
   const wVec = opts.semanticWeight ?? 0.7;
   const wFts = 1 - wVec;
 
-  const vectorRows = (await withHnswPool(pool, (tx) =>
-    tx.execute(sql`
+  const vectorRows =
+    opts.arms === 'keyword'
+      ? []
+      : ((await withHnswPool(pool, (tx) =>
+          tx.execute(sql`
       select id from (
         select ${contentChunks.id} as id, ${nodes.salience} as salience,
                ${contentChunks.embedding} <=> ${vec}::vector as dist
@@ -149,7 +159,7 @@ export async function searchChunks(opts: ChunkSearchOptions): Promise<ChunkHit[]
       order by dist + ${SALIENCE_LAMBDA} * (1 - salience)
       limit ${pool}
     `),
-  )) as unknown as Array<{ id: string }>;
+        )) as unknown as Array<{ id: string }>);
 
   // Rarest terms ORed, not every stem ANDed: a whole chat message ANDed
   // matched nothing, so this arm (and the rescue floor) never fired.
@@ -166,17 +176,20 @@ export async function searchChunks(opts: ChunkSearchOptions): Promise<ChunkHit[]
     : [];
 
   const ftsIds = ftsRows.map((r) => r.id);
-  const fused = fuseRrf(
-    [
-      { ids: vectorRows.map((r) => r.id), weight: wVec },
-      { ids: ftsIds, weight: wFts },
-    ],
-    limit,
-  );
+  const fused =
+    opts.arms === 'keyword'
+      ? ftsIds.slice(0, limit)
+      : fuseRrf(
+          [
+            { ids: vectorRows.map((r) => r.id), weight: wVec },
+            { ids: ftsIds, weight: wFts },
+          ],
+          limit,
+        );
   // Down-weighted RRF can't lift an FTS-only hit into a small cut when the
   // vector pool is full (see applyRescueFloor) — guarantee the top keyword
   // matches a tail slot so the exact-term rescue actually happens.
-  const topIds = applyRescueFloor(fused, ftsIds, limit);
+  const topIds = opts.arms === 'keyword' ? fused : applyRescueFloor(fused, ftsIds, limit);
   if (topIds.length === 0) return [];
 
   // Hydrate the winners. `distance` stays raw cosine; an FTS-only rescue whose
