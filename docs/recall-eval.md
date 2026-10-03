@@ -296,6 +296,139 @@ on the server for the longest message (136 lexemes): 25 ms execution, 11 ms
 planning. The FTS-only legacy path of `searchNodes` (no query embedding) is
 unchanged.
 
+## Scale curve on a single-topic corpus (2026-10-03)
+
+The capacity policy (watch 50k / split 100k passage vectors) came from the
+literature, not from a measurement. This section measures it on the hardest
+corpus we have: a brain of about 3,600 public-domain sermons by one preacher,
+five whole Bibles, and a few commentaries (122,224 embedded chunks). Passages
+in it are very alike: one author, one subject, the same Bible texts preached
+again and again, the same verse in five translations.
+
+### Method
+
+1. **Gold set, passage level.** 98 questions, each with one target chunk
+   (node + ordinal; any chunk of that node that holds the answer counts, so
+   overlapping chunks are fair). Three groups:
+   - `paraphrase` (40): a question about the specific point of one sermon
+     passage, in modern words, no 4-word run copied from it.
+   - `verse` (28): a question that names a verse and a translation ("What
+     does Proverbs 23:13 say in the WEB about ..."). The target is that
+     translation's chunk.
+   - `trap` (30): two sermons on the same Bible text; the question has to
+     be answered from one of them, and names the text.
+
+   Generated once with a cheap model (`google/gemini-3.1-flash-lite`, 159k
+   tokens in, 7k out, **$0.05**), then read by hand: 2 dropped (their
+   "evidence" was the ESV cross-reference apparatus, not verse text), 12
+   rewritten (too vague, or the verse was not named). The set names pages of
+   one brain, so it lives outside the repo like every gold set here.
+
+2. **Retrievers.** `eval:recall` gained three passage retrievers (see the
+   header of [`eval-recall.ts`](../server/web/scripts/eval-recall.ts)):
+   `passage` is `searchChunks()` with the query text, the exact call
+   `search_chunks` and the responder's auto-context make; `passage-vector`
+   is the same call without text; `passage-keyword` is the keyword arm on
+   its own (`arms: 'keyword'`, a diagnostic option on `searchChunks`). Each
+   is scored on the exact passage and on the document. `--retrievers=` skips
+   `prod`, so it runs against a bare corpus copy with no agents.
+3. **Nested sub-corpora.** A copy of the brain in a throwaway Postgres (the
+   brain itself was only read). The gold documents and the trap partners
+   (105 documents, 22,013 chunks) are always kept; every other document
+   gets a fixed random rank and the corpus is cut at 100k, 75k, 50k and 25k
+   chunks, whole documents at a time. Each cut is VACUUMed, the HNSW index
+   rebuilt and ANALYZEd (the keyword arm reads `pg_stats`).
+4. **Past today's size.** About 2,000 English religious books from Project
+   Gutenberg (public domain; Spurgeon and King James texts left out, so no
+   gold passage gets an exact twin) were chunked with the extractor's own
+   `clampPieces(chunkDocText(...))` and embedded with the brain's own model
+   (a stored chunk re-embedded to cosine distance 0.0003). Added in a fixed
+   order, cut at 171,797 and 224,050 chunks (the load stopped at 224k).
+   Embedding cost: **about $5.60** (101,826 chunks, about 43M tokens).
+
+### Result
+
+Exact passage in the top 10 (recall@10), and MRR, per corpus size:
+
+| chunks  | hybrid R@10 | hybrid MRR | vector R@10 | keyword R@10 | doc R@10 (hybrid) |
+| ------- | ----------- | ---------- | ----------- | ------------ | ----------------- |
+| 25,000  | 50%         | 0.27       | 56%         | 8%           | 74%               |
+| 50,000  | 40%         | 0.17       | 43%         | 4%           | 59%               |
+| 75,000  | 37%         | 0.14       | 41%         | 3%           | 56%               |
+| 100,000 | 35%         | 0.13       | 40%         | 3%           | 53%               |
+| 122,224 | 33%         | 0.11       | 37%         | 2%           | 51%               |
+| 171,797 | 31%         | 0.11       | 32%         | 2%           | 47%               |
+| 224,050 | 27%         | 0.11       | 30%         | 2%           | 43%               |
+
+The 122k row was measured twice (two HNSW builds); the second gave 34% /
+38% / 52%. One case moves between parallel index builds.
+
+With 98 cases one point carries about ±9 points of noise (bootstrap 95%),
+but the cuts are nested, so the loss is paired: from 25k to 122k, 18 cases
+stopped finding their passage and 1 started.
+
+What it says:
+
+1. **There is no cliff.** Recall falls about 5 to 8 points per doubling
+   of the corpus and the slope flattens with size. Nothing in the curve
+   marks 100k as special. Past today's size the slope holds: 122k to 224k
+   (1.8x) costs 7 points (hybrid 34% to 27%), even though those added
+   books are less alike than the brain's own sermons. Search time grows
+   mildly: p50 147 ms at 122k, 200 ms at 224k (p90 236 to 393 ms, over a
+   LAN).
+2. **The absolute level is the problem, not the size.** Even at 25k only
+   half of the questions find their passage. The misses are not junk: on
+   the full corpus, most paraphrase and trap misses rank other sermons on
+   the same theme, and 11 of 16 verse misses find the right Bible but the
+   wrong chunk. Chunks are embedded as raw text, so a verse chunk knows
+   neither its book nor its translation, and a sermon chunk does not know
+   its title or text.
+3. **Hybrid costs quality on this corpus.** At every size vector-only beats
+   hybrid (R@10 by 3 to 6 points, R@1 8% vs 1% at 122k). The keyword arm
+   alone finds 2% of passages: its rarity score sums the IDF of every term,
+   so the question's frame ("author", "describe", "commentary") outvotes
+   the one rare word that matters ("nautilus"). This is the
+   user-message-shaped query the responder's auto-context sends.
+4. **A split would buy one halving.** Cutting the brain in two moves it one
+   step left on the curve: about 5 points of R@10. A single-topic corpus
+   cannot be split away from its own near-duplicates (both sermons on
+   John 6:37 land in the same half), so the split remedy fits a mixed
+   brain, where a category can leave, better than this one.
+
+### What changed in the policy
+
+`CAPACITY_POLICY.chunkVectors` moves from watch 50k / split 100k to
+**watch 100k / split 250k**. The rule: a split is worth its cost (a
+federated breakout brain, routing, a second index) when it recovers at least
+**10 points of R@10**. On this curve one halving recovers about 6 points, so
+splitting at 100k bought little; 250k is where the measured loss from 100k
+reaches about 10 points (35% at 100k, 27% at 224k, the slope projects 25% to
+26% at 250k). Watch at 100k is where the eval starts to matter, and the
+dashboard dial now shows it (below). The document axis (10k / 20k) is
+unchanged: this corpus has about 3,700 documents, so it says nothing about
+that axis. A 250k index is about 0.8 GB of HNSW, well inside a small box.
+
+The policy is one number for every brain, but corpus character changes what
+to do at the line. A mixed brain (mail, projects, a church archive) can move
+a category out and gain the halving. A single-topic brain like this one
+cannot: its distractors are its own content. For it the lever is retrieval,
+not a split: the hybrid fusion and the keyword arm's term weighting (point 3
+above), and context in the chunk itself (a verse chunk that carries its book
+and translation). The heartbeat already watches the measured score, which
+catches both kinds.
+
+The dial: `corpusCapacity` also returns `retrieval`, the passage score
+(`chunks` arm, recall@10 and MRR) of the newest `recall_eval` run note, or
+null when a brain has never run one. Size says when to look; the score says
+whether quality moved.
+
+Re-run: build the copy, then
+
+```bash
+ALLOWED_USER_ID=<uuid> pnpm -C server/web eval:recall --cases=<gold.json> \
+  --retrievers=search,passage,passage-vector,passage-keyword
+```
+
 ## Automated eval: `recall_eval` + the brain-health heartbeat (2026-07-13)
 
 The harness above is manual (`pnpm -C server/web eval:recall`). The automated
@@ -336,8 +469,9 @@ half runs the same idea inside the brain, on a schedule:
   touches an existing one, so a heartbeat you paused stays paused and your
   schedule edits survive an upgrade.
 
-The capacity half (zones vs the split policy: watch 10k docs / 50k passage
-vectors, split 20k / 100k) is `corpusCapacity` in
+The capacity half (zones vs the split policy: watch 10k docs / 100k passage
+vectors, split 20k / 250k; the passage numbers are measured, see "Scale
+curve" above) is `corpusCapacity` in
 `packages/content/src/capacity.ts`, surfaced as the dashboard's **Brain
 capacity** dial and the `brain_capacity` tool, one source, so the UI and the
 alerts can never disagree.

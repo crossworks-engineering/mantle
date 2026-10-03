@@ -1164,11 +1164,13 @@ Roughly a weekend per remaining step.
 ## 8a. Capacity & the split policy
 
 Retrieval quality is protected by never letting any single index get large.
-The policy (from the scaling whitepaper, grounded in the published
-degradation literature): per brain, **watch** at 10k documents / 50k passage
-vectors, **split** at 20k / 100k; a breakout brain is created via federation
-before any index reaches the corpus sizes where flat-RAG degradation has been
-measured (~10⁵–10⁶ passages; the 768-dim geometric ceiling is ~1.7M vectors).
+The policy: per brain, **watch** at 10k documents / 100k passage vectors,
+**split** at 20k / 250k; a breakout brain is created via federation before
+the loss a split would recover gets large. The document numbers come from the
+scaling whitepaper; the passage numbers were measured on a 224k-chunk
+single-topic corpus (recall@10 loses about 6 points per doubling, no cliff;
+[`recall-eval.md`](./recall-eval.md), "Scale curve"). The dial also shows the
+latest measured retrieval score, so size and quality read side by side.
 
 Mechanics: `CAPACITY_POLICY` + `corpusCapacity` in
 `packages/content/src/capacity.ts` (documents = non-branch nodes; passage

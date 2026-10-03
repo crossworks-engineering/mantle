@@ -1,12 +1,15 @@
 /**
  * Brain capacity accounting — real corpus counts measured against the split
- * policy from the scaling whitepaper ("Scaling Retrieval Without
- * Degradation"): a brain is split into a federated breakout brain BEFORE any
- * single index reaches the corpus sizes where the published literature records
- * flat-RAG degradation (~10⁵–10⁶ passages). Policy per brain:
+ * policy. The idea is the scaling whitepaper's ("Scaling Retrieval Without
+ * Degradation"): split a federated breakout brain off before one index grows
+ * past the size where retrieval degrades. The passage-vector numbers are
+ * MEASURED (docs/recall-eval.md, "Scale curve"): on a 224k-chunk single-topic
+ * corpus recall@10 fell about 6 points per doubling with no cliff, so a split
+ * (one halving) pays only once the loss since `watch` nears 10 points.
+ * Policy per brain:
  *
- *   documents        watch 10 000   split 20 000
- *   passage vectors  watch 50 000   split 100 000
+ *   documents        watch 10 000    split 20 000    (literature, not measured)
+ *   passage vectors  watch 100 000   split 250 000
  *
  * "Documents" = non-branch nodes (folders are structure, not content);
  * "passage vectors" = embedded content_chunks rows — the number that actually
@@ -25,7 +28,7 @@ export type CapacityLimits = { watch: number; split: number };
 
 export const CAPACITY_POLICY: { docs: CapacityLimits; chunkVectors: CapacityLimits } = {
   docs: { watch: 10_000, split: 20_000 },
-  chunkVectors: { watch: 50_000, split: 100_000 },
+  chunkVectors: { watch: 100_000, split: 250_000 },
 };
 
 export function capacityZone(count: number, limits: CapacityLimits): CapacityZone {
