@@ -63,11 +63,17 @@ vi.mock('@mantle/search', async (importOriginal) => {
   return { ...actual, searchNodes: vi.fn(), searchChunks: vi.fn() };
 });
 vi.mock('@mantle/content', () => ({ createNote: vi.fn() }));
+vi.mock('@mantle/decisions', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@mantle/decisions')>()),
+  decisionUseEnabled: vi.fn(),
+  scorePassages: vi.fn(),
+}));
 
 import * as dbmod from '@mantle/db';
 import { embed } from '@mantle/embeddings';
 import { searchChunks, searchNodes } from '@mantle/search';
 import { createNote } from '@mantle/content';
+import { decisionUseEnabled, scorePassages } from '@mantle/decisions';
 import { EVAL_TOOLS } from './builtins-eval';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 
@@ -133,6 +139,7 @@ beforeEach(() => {
     { nodeId: 'n1', nodeTitle: 'Q3 report' },
   ] as never);
   vi.mocked(createNote).mockResolvedValue({ id: 'run-1' } as never);
+  vi.mocked(decisionUseEnabled).mockResolvedValue(null);
 });
 
 describe('recall_eval', () => {
@@ -187,7 +194,14 @@ describe('recall_eval', () => {
     expect(searchNodes).toHaveBeenCalledWith(
       expect.objectContaining({ ownerId: 'o1', q: 'Q3 revenue' }),
     );
-    expect(searchChunks).toHaveBeenCalledWith(expect.objectContaining({ ownerId: 'o1' }));
+    // Passages: the hybrid path agents use (q set), and vector-only beside it.
+    expect(searchChunks).toHaveBeenCalledWith(
+      expect.objectContaining({ ownerId: 'o1', q: 'Q3 revenue' }),
+    );
+    expect(vi.mocked(searchChunks).mock.calls.some(([a]) => a.q === undefined)).toBe(true);
+    expect(out).toMatchObject({ chunksPath: 'hybrid', chunksVector: { mrr: 0.5 } });
+    expect(out).not.toHaveProperty('chunksScored');
+    expect(scorePassages).not.toHaveBeenCalled();
 
     // The one write: a NEW note carrying only the run tag. The gold note's id
     // never reaches a write, and no other table is touched.
@@ -295,5 +309,47 @@ describe('recall_eval', () => {
       casesSkipped: 1,
     });
     expect(searchNodes).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads chunks drift only against a run that measured the hybrid path too', async () => {
+    selectQueue.push([goldNote(CASES)], [prevRun(1, 1)]);
+    expect(
+      (outputOf(await evalTool.handler({}, ctx)).drift as { chunksMrr: unknown }).chunksMrr,
+    ).toBeNull();
+
+    const hybridPrev = prevRun(1, 1);
+    const content = JSON.parse(hybridPrev.data.content);
+    hybridPrev.data.content = JSON.stringify({ ...content, chunksPath: 'hybrid' });
+    selectQueue.push([goldNote(CASES)], [hybridPrev]);
+    expect(outputOf(await evalTool.handler({}, ctx)).drift).toMatchObject({ chunksMrr: -0.5 });
+  });
+
+  it('with a passage_scoring pool set, scores the deeper hybrid pool and says the cost', async () => {
+    selectQueue.push([goldNote(CASES)], []);
+    vi.mocked(decisionUseEnabled).mockResolvedValue({ mode: 'shadow', pool: 50 } as never);
+    // Search order puts the gold node second; Jev scores it first.
+    vi.mocked(searchChunks).mockResolvedValue([
+      { nodeId: 'n9', nodeTitle: 'Other', ordinal: 0, text: 'x', headingPath: null },
+      { nodeId: 'n1', nodeTitle: 'Q3 report', ordinal: 2, text: 'y', headingPath: null },
+    ] as never);
+    vi.mocked(scorePassages).mockResolvedValue({
+      scores: new Map([
+        ['n9:0', { score: 0.2, confidence: 0.9 }],
+        ['n1:2', { score: 2.8, confidence: 0.9 }],
+      ]),
+      mode: 'shadow',
+      threshold: 1.5,
+      cached: false,
+      ms: 600,
+    });
+    const out = outputOf(await evalTool.handler({}, ctx));
+    expect(searchChunks).toHaveBeenCalledWith(
+      expect.objectContaining({ q: 'Q3 revenue', limit: 50 }),
+    );
+    expect(scorePassages).toHaveBeenCalledWith('o1', 'Q3 revenue', expect.any(Array));
+    expect(out).toMatchObject({
+      chunks: { mrr: 0.5 },
+      chunksScored: { mrr: 1, mode: 'shadow', pool: 50, requests: 1, failed: 0, usd: 0.0007 },
+    });
   });
 });
