@@ -87,6 +87,17 @@ async function handler(req: Request): Promise<Response> {
   // A member's or client's tools are resolved from their responder's groups
   // here, before the adapter registers synchronously.
   const prepared = await prepareCallerTools(caller);
+  // No tools at all (the role's responder is closed, or missing): say so,
+  // rather than serve an MCP server with nothing on it.
+  if (prepared.kind === 'login' && prepared.rows.length === 0) {
+    return new Response(
+      JSON.stringify({
+        error: 'no_tools',
+        message: 'This login has no MCP tools on this brain. Ask an admin of this brain.',
+      }),
+      { status: 403, headers: { 'content-type': 'application/json' } },
+    );
+  }
 
   const mcpHandler = createMcpHandler(
     // Network transport: `run_terminal` stays off unless the operator sets

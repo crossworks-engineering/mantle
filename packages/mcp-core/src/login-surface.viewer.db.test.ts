@@ -219,8 +219,9 @@ describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
     await exec(sqlTag`update agents set audience = 'admin'
       where owner_id = ${anchor} and slug = 'team-responder'`);
     try {
-      const c = await connect(asMember(true));
-      expect(await names(c)).toEqual([]);
+      const prepared = await ls.prepareCallerTools(asMember(true));
+      // The route answers 403 for a login with no tools.
+      expect(prepared.kind === 'login' && prepared.rows).toEqual([]);
     } finally {
       await exec(sqlTag`update agents set audience = 'team'
         where owner_id = ${anchor} and slug = 'team-responder'`);
