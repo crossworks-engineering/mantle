@@ -32,6 +32,7 @@ const SLUGS = [
   'tool_group_ensure',
   'agent_list',
   'agent_grant_tool_group',
+  'agent_set_thinking_effort',
 ] as const;
 
 describe('TOOLSMITH_TOOLS', () => {

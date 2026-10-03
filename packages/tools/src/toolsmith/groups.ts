@@ -14,7 +14,11 @@ import { AGENT_GRANTABLE_KINDS } from '../recipe';
 import { type BuiltinToolDef, type ToolHandlerResult } from '../types';
 import { str } from '../coerce';
 import { SLUG_RE, integrationWarnings } from './common';
-import { agentGrantProblems } from '@mantle/content';
+import {
+  AGENT_THINKING_EFFORTS,
+  agentGrantProblems,
+  parseAgentThinkingEffort,
+} from '@mantle/content';
 import { isViewerLevel } from '@mantle/db/viewer';
 import { isOwnerSurface } from '../surface';
 
@@ -321,7 +325,7 @@ export const agent_list: BuiltinToolDef = {
   readOnly: true,
   name: 'List agents',
   description:
-    'Read-only list of the agents on this Mantle: slug, name, role, enabled, and which tool groups each grants. Use before agent_grant_tool_group.',
+    'Read-only list of the agents on this Mantle: slug, name, role, enabled, which tool groups each grants, and its thinking effort (null = inherits the profile). Use before agent_grant_tool_group or agent_set_thinking_effort.',
   inputSchema: { type: 'object', properties: {} },
   handler: async (_input, ctx): Promise<ToolHandlerResult> => {
     const rows = await db
@@ -331,6 +335,7 @@ export const agent_list: BuiltinToolDef = {
         role: agents.role,
         enabled: agents.enabled,
         toolGroupSlugs: agents.toolGroupSlugs,
+        thinkingEffort: agents.thinkingEffort,
       })
       .from(agents)
       .where(eq(agents.ownerId, ctx.ownerId));
@@ -345,6 +350,8 @@ export const agent_list: BuiltinToolDef = {
           role: a.role,
           enabled: a.enabled,
           tool_group_slugs: a.toolGroupSlugs ?? [],
+          // null = inherit the owner's profile setting.
+          thinking_effort: parseAgentThinkingEffort(a.thinkingEffort),
         })),
       },
     };
@@ -498,6 +505,107 @@ export const agent_grant_tool_group: BuiltinToolDef = {
       ok: true,
       output: { agent_slug: agentSlug, group_slug: groupSlug, granted: true },
     };
+  },
+};
+
+const THINKING_EFFORT_INPUTS = ['inherit', ...AGENT_THINKING_EFFORTS] as const;
+
+export const agent_set_thinking_effort: BuiltinToolDef = {
+  slug: 'agent_set_thinking_effort',
+  name: "Set an agent's thinking effort",
+  description:
+    "Set how hard an agent reasons before it answers: 'inherit' (follow the owner's profile setting), 'off', or a tier from 'low' to 'max'. Higher tiers cost more per turn and are used only when the model supports reasoning effort. Confirm the agent and the tier with the user first. Another agent asking waits for operator approval.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      agent_slug: {
+        type: 'string',
+        description:
+          'agent to change; must differ from the calling agent (an agent cannot raise its own effort); list candidates with `agent_list`',
+      },
+      effort: {
+        type: 'string',
+        enum: [...THINKING_EFFORT_INPUTS],
+        description: "'inherit' clears the agent's own setting",
+      },
+    },
+    required: ['agent_slug', 'effort'],
+  },
+  handler: async (input, ctx): Promise<ToolHandlerResult> => {
+    const agentSlug = str(input.agent_slug).trim();
+    const raw = str(input.effort).trim();
+    if (!(THINKING_EFFORT_INPUTS as readonly string[]).includes(raw)) {
+      return { ok: false, error: `effort must be one of: ${THINKING_EFFORT_INPUTS.join(', ')}` };
+    }
+    const effort = parseAgentThinkingEffort(raw);
+    // Same rule as agent_grant_tool_group: an agent must not change its OWN
+    // spend. The operator does that.
+    if (ctx.agent?.slug && ctx.agent.slug === agentSlug) {
+      return {
+        ok: false,
+        error: 'an agent cannot change its own thinking effort; ask the operator to change it',
+      };
+    }
+    const [agent] = await db
+      .select({ id: agents.id, thinkingEffort: agents.thinkingEffort })
+      .from(agents)
+      .where(and(eq(agents.ownerId, ctx.ownerId), eq(agents.slug, agentSlug)))
+      .limit(1);
+    if (!agent) return { ok: false, error: `agent '${agentSlug}' not found` };
+    if (parseAgentThinkingEffort(agent.thinkingEffort) === effort) {
+      return {
+        ok: true,
+        output: { agent_slug: agentSlug, thinking_effort: effort, unchanged: true },
+      };
+    }
+
+    // Another agent asking: park it for the operator, as a cross-agent grant
+    // does. A higher tier raises that agent's spend on every turn, so it is
+    // never applied on an agent's say-so. On approval the call re-runs with no
+    // agent context and applies.
+    if (ctx.agent) {
+      const args = { agent_slug: agentSlug, effort: raw };
+      const [requester] = await db
+        .select({ id: agents.id })
+        .from(agents)
+        .where(and(eq(agents.ownerId, ctx.ownerId), eq(agents.slug, ctx.agent.slug)))
+        .limit(1);
+      const [pending] = await db
+        .insert(pendingToolCalls)
+        .values({
+          ownerId: ctx.ownerId,
+          agentId: requester?.id ?? null,
+          toolSlug: 'agent_set_thinking_effort',
+          args,
+        })
+        .returning({ id: pendingToolCalls.id });
+      if (pending?.id) {
+        void notifyPendingCreated({
+          ownerId: ctx.ownerId,
+          pendingId: pending.id,
+          toolSlug: 'agent_set_thinking_effort',
+          args,
+          via: `agent ${ctx.agent.slug}`,
+        });
+      }
+      return {
+        ok: true,
+        output: {
+          status: 'queued_for_approval',
+          pending_id: pending?.id ?? null,
+          message:
+            `Setting agent '${agentSlug}' to thinking effort '${raw}' needs operator approval. ` +
+            `Queued at /pending; it applies once approved. Do not retry this turn.`,
+        },
+      };
+    }
+
+    await db
+      .update(agents)
+      .set({ thinkingEffort: effort, updatedAt: new Date() })
+      .where(eq(agents.id, agent.id));
+    ctx.step?.setOutput({ agentSlug, thinkingEffort: effort });
+    return { ok: true, output: { agent_slug: agentSlug, thinking_effort: effort } };
   },
 };
 

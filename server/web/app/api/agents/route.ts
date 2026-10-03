@@ -6,6 +6,7 @@ import { createAgent, listAgents } from '@/lib/agents';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
 import { isUniqueViolation } from '@mantle/db';
+import { AGENT_THINKING_EFFORTS } from '@mantle/content-core/thinking-tiers';
 
 export async function GET() {
   const user = await getOwnerOr401();
@@ -109,6 +110,9 @@ const CreateBody = z.object({
   toolGroupSlugs: z.array(z.string().min(1).max(120)).max(64).optional(),
   memoryConfig: MemoryConfig.optional(),
   params: Params.optional(),
+  // Per-agent thinking effort (migration 0228). null/omitted = inherit the
+  // person's profile setting.
+  thinkingEffort: z.enum(AGENT_THINKING_EFFORTS).nullish(),
   avatar: Avatar.optional(),
   priority: z.number().int().min(0).max(1_000_000).optional(),
   enabled: z.boolean().optional(),

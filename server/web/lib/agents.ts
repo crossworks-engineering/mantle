@@ -16,6 +16,10 @@ import {
   type PersonaNote,
 } from '@mantle/db';
 import { CHATTABLE_ROLES } from '@mantle/runtime/assistant';
+import {
+  parseAgentThinkingEffort,
+  type AgentThinkingEffort,
+} from '@mantle/content-core/thinking-tiers';
 import { computeAgentExperience, zeroExperience } from './agent-experience';
 import { MANIFEST_AGENTS } from './system-manifest/manifest';
 import { cloneAgentFields, slugifyAgentName, uniqueAgentSlug } from './agent-clone';
@@ -66,6 +70,7 @@ function toSummary(a: Agent): AgentSummary {
     toolGroupSlugs: a.toolGroupSlugs ?? [],
     memoryConfig: a.memoryConfig ?? {},
     params: a.params ?? {},
+    thinkingEffort: parseAgentThinkingEffort(a.thinkingEffort),
     avatar: a.avatar ?? null,
     personaNotes: (a.personaNotes ?? []) as PersonaNote[],
     assignedUserId: a.assignedUserId ?? null,
@@ -204,6 +209,8 @@ export type CreateAgentInput = {
   toolGroupSlugs?: string[];
   memoryConfig?: AgentMemoryConfig;
   params?: AgentParams;
+  /** Per-agent thinking effort (migration 0228). null/omitted = inherit. */
+  thinkingEffort?: AgentThinkingEffort | null;
   avatar?: AgentAvatar | null;
   priority?: number;
   enabled?: boolean;
@@ -252,6 +259,7 @@ export async function createAgent(
       toolGroupSlugs: input.toolGroupSlugs ?? [],
       memoryConfig: input.memoryConfig ?? {},
       params: input.params ?? {},
+      thinkingEffort: input.thinkingEffort ?? null,
       avatar: normalizeAvatar(input.avatar ?? null),
       priority: input.priority ?? 100,
       enabled: input.enabled ?? true,
@@ -300,6 +308,7 @@ export async function updateAgent(
     )}::jsonb`;
   }
   if (patch.params !== undefined) next.params = patch.params;
+  if (patch.thinkingEffort !== undefined) next.thinkingEffort = patch.thinkingEffort;
   // Avatar writes must not let a parts-unaware client wipe builder pins: a
   // pre-builder jackdaw (or any wire type predating `parts`) rebuilds the
   // avatar as {style, seed}, and a wholesale replace would silently drop the

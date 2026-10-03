@@ -104,6 +104,8 @@ export const TOOLSMITH_WRITE_SLUGS: ReadonlySet<string> = new Set([
   'recipe_tool_create',
   'tool_group_ensure',
   'agent_grant_tool_group',
+  // Raises (or lowers) an agent's per-turn spend.
+  'agent_set_thinking_effort',
   // Integration-group writes: api_docs_set writes a file node + the group's docs
   // pointer, api_skill_set writes a skills row every granted agent then reads.
   // (api_docs_get is a read — always exposed.)

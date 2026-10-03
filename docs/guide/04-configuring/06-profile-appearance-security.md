@@ -12,6 +12,10 @@ Your identity and locale:
 - **Locale**: date/number formatting and language hints for replies.
 - **Reminder agent**: which agent's bot delivers your event reminders, if you run
   more than one.
+- **Live thinking & streaming**: whether you watch the assistant think while it
+  works, and how hard agents reason by default (Off to High). An agent can
+  override the effort on its own settings; this switch then only shows or hides
+  its thinking.
 - **House style**: your writing rules, in your own words (e.g. "never use em
   dashes"). Every agent follows them in anything it writes for you, chat
   replies, pages, tables, emails, and your rules win over the built-in writing
@@ -36,7 +40,7 @@ Purely cosmetic; change it whenever.
 - **Devices**: the live sessions signed in as that login. Revoke one to end it
   immediately.
 
-A brain has one owner and one set of data; a login is a way *in*, not a separate
+A brain has one owner and one set of data; a login is a way _in_, not a separate
 world, and there are no permission tiers to manage. Sessions last a long time, so
 you rarely re-enter a password. To invalidate every session at once, that's still
 an operator action (rotating the server's session secret), not a button here.

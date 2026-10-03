@@ -37,7 +37,8 @@ import {
 import { currentTrace, startTrace } from '@mantle/tracing';
 import type { AgentInvoker, InvokeAgentResult } from '@mantle/tools';
 import { MAX_AGENT_DEPTH, MAX_TERMINAL_EDGE_DEPTH, isTerminalDelegateConfig } from '@mantle/tools';
-import { getChatAdapter } from '@mantle/voice';
+import { getChatAdapter, type ThinkingEffort } from '@mantle/voice';
+import { applyAgentThinking } from '@mantle/content';
 import { resolveAgentTools, runToolLoop } from './tool-loop';
 import { resolveBackupAdapter, resolveChatKey } from './chat-failover';
 import {
@@ -49,6 +50,21 @@ import {
 import type { ChatMessage } from './messages';
 import { agentLevel } from './agent-viewer';
 import { currentViewerLevel, levelsMeet } from '@mantle/db/viewer';
+
+/** A delegated child's thinking loop args. Inherit = the forwarded budget
+ *  alone (no effort), which is also what the child hands on to its own
+ *  delegates. Exported for the precedence tests. */
+export function childThinkingArgs(
+  target: { thinkingEffort?: string | null },
+  inheritedBudget: number | undefined,
+): { thinkingBudget?: number; thinkingEffort?: ThinkingEffort; inheritThinkingBudget?: number } {
+  const own = applyAgentThinking(target, { budget: inheritedBudget ?? 0, effort: undefined });
+  return {
+    ...(own.budget ? { thinkingBudget: own.budget } : {}),
+    ...(own.effort ? { thinkingEffort: own.effort } : {}),
+    ...(inheritedBudget ? { inheritThinkingBudget: inheritedBudget } : {}),
+  };
+}
 
 export const invokeAgent: AgentInvoker = async ({
   ownerId,
@@ -235,10 +251,12 @@ export const invokeAgent: AgentInvoker = async ({
         agentDepth: depth,
         delegateTo: (mc?.delegate_to ?? []) as readonly string[],
         resultHandling: mc?.result_handling ?? null,
-        // Inherit the parent turn's resolved thinking budget (threaded via the
-        // invoke_agent tool-context bridge). The child loop re-clamps it against
-        // THIS agent's own max_tokens. Omitted/0 ⇒ no thinking.
-        ...(thinkingBudget ? { thinkingBudget } : {}),
+        // The child's own thinking effort when set; on inherit, the budget the
+        // parent forwarded (the profile's, via the invoke_agent tool-context
+        // bridge) with no effort, exactly as before per-agent effort existed.
+        // The child loop re-clamps the budget against THIS agent's own
+        // max_tokens. Omitted/0 ⇒ no thinking.
+        ...childThinkingArgs(target, thinkingBudget),
         // The child runs for the parent's caller (client logins C4): the
         // parent's surface, never an implicit owner.
         ...(surface ? { surface } : {}),

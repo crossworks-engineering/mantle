@@ -15,7 +15,7 @@ Each agent is a configured assistant. The common settings:
 - **Model & provider**: which AI model answers. Pick from a searchable catalogue
   showing context window and pricing. Can be a cloud model or a local one.
 - **Backup route**: an optional second model the assistant fails over to if the
-  primary is down or rate-limited. The backup can be a *different* model (chat has
+  primary is down or rate-limited. The backup can be a _different_ model (chat has
   no constraint requiring them to match), which is what lets you run a **local model
   as primary with a cloud model as the safety net**, or vice versa. There's a
   "make backup primary" swap when you want to flip them.
@@ -25,6 +25,11 @@ Each agent is a configured assistant. The common settings:
   [Skills & tools](02-skills-and-tools.md)).
 - **Skills**: the know-how attached to it.
 - **Delegates to**: which specialist agents it's allowed to hand work to.
+- **Thinking effort**: how hard this agent reasons before it answers. **Inherit**
+  (the default) follows your profile setting; **Off** never reasons; Low to Max
+  ask for that effort whatever your profile says. Higher costs more per turn, and
+  it is used only when the model supports reasoning effort. A quick helper may
+  want Low; a background agent may want Off.
 - **Telegram bot**: paste a bot token here to bind this agent to a Telegram bot
   (this is also where you approve pairing requests). One responder = one bot.
 - **Enabled & priority**: turn it on/off; when two agents share a role, the
@@ -60,19 +65,19 @@ the Agents list.
 Workers are the one-shot jobs that run automatically, no personality, no
 conversation. The important ones:
 
-| Worker | What it does | When it runs |
-|---|---|---|
-| **Extractor** | Reads each new item → summary, search index, facts, graph links. The engine of memory. | Every time content is added or edited. |
-| **Summarizer** | Rolls older conversation into digests so nothing is lost as chats age. | When a conversation grows past a threshold. |
-| **Reflector** | Notices durable preferences about you and adds them to the assistant's persona. | Periodically in the background. |
-| **Speech-to-text (STT)** | Transcribes inbound voice notes. | On a voice message. |
-| **Text-to-speech (TTS)** | Synthesises spoken replies. | When a voice reply is wanted. |
-| **Vision / Document** | Describes/OCRs images and reads PDFs (incl. scanned). | When an image or PDF is ingested. |
-| **Image generation** | Creates images on request. | When the assistant uses the image tool. |
+| Worker                   | What it does                                                                           | When it runs                                |
+| ------------------------ | -------------------------------------------------------------------------------------- | ------------------------------------------- |
+| **Extractor**            | Reads each new item → summary, search index, facts, graph links. The engine of memory. | Every time content is added or edited.      |
+| **Summarizer**           | Rolls older conversation into digests so nothing is lost as chats age.                 | When a conversation grows past a threshold. |
+| **Reflector**            | Notices durable preferences about you and adds them to the assistant's persona.        | Periodically in the background.             |
+| **Speech-to-text (STT)** | Transcribes inbound voice notes.                                                       | On a voice message.                         |
+| **Text-to-speech (TTS)** | Synthesises spoken replies.                                                            | When a voice reply is wanted.               |
+| **Vision / Document**    | Describes/OCRs images and reads PDFs (incl. scanned).                                  | When an image or PDF is ingested.           |
+| **Image generation**     | Creates images on request.                                                             | When the assistant uses the image tool.     |
 
 Each worker has its own model, provider, and key, and supports the same
 **primary/backup failover** as agents, so your background indexing can run on a
-local model with a cloud fallback. There's one *default* worker per kind; you can
+local model with a cloud fallback. There's one _default_ worker per kind; you can
 run several and pick which is default.
 
 ## Keys & providers

@@ -48,8 +48,8 @@ import {
   buildWorkingNotesContext,
   journalTiersOf,
   buildTimeContextLine,
-  resolveThinkingBudget,
-  resolveThinkingEffort,
+  profileThinking,
+  resolveAgentThinking,
   type ProfilePreferences,
   type ThinkingEffort as ContentThinkingEffort,
 } from '@mantle/content';
@@ -159,6 +159,10 @@ export type AssembledResponderTurn = {
   allowedTools: Awaited<ReturnType<typeof resolveAgentTools>>;
   thinkingBudget: number | undefined;
   thinkingEffort: ThinkingEffort | undefined;
+  /** The budget a delegated agent on inherit receives: the person's profile
+   *  budget, NOT this agent's own effort (see `inheritThinkingBudget` on
+   *  runToolLoop). */
+  inheritThinkingBudget: number | undefined;
   delegateTo: string[];
   /** The decider's delegation hint for this turn (null = use off / short
    *  message / no delegates / failed). Callers put its compact form into the
@@ -399,17 +403,33 @@ async function assembleResponderTurnAtLevel(
     volatileContext,
     relatedHeartbeatSlugs,
     allowedTools,
-    // Per-user adaptive thinking: gated by the live-thinking switch AND a
-    // positive budget. 0 ⇒ no thinking (runToolLoop treats 0/unset the same).
-    thinkingBudget: (opts.withThinking ?? true) ? resolveThinkingBudget(prefs) : undefined,
-    // The tier the providers actually honour. Same gate as the budget above;
-    // undefined ⇒ omit the field so mandatory-reasoning models don't see a
-    // rejected `none`.
-    thinkingEffort: (opts.withThinking ?? true) ? resolveThinkingEffort(prefs) : undefined,
+    // The agent's own effort when set, else the person's profile (gated by
+    // the live-thinking switch AND a positive budget). 0 ⇒ no thinking
+    // (runToolLoop treats 0/unset the same); an undefined effort omits the
+    // field so mandatory-reasoning models don't see a rejected `none`.
+    ...turnThinking(agent, prefs, opts.withThinking ?? true),
     delegateTo,
     delegationHint,
     resultHandling: agent.memoryConfig?.result_handling ?? null,
     loopOverrides,
+  };
+}
+
+/** The turn's thinking fields. `withThinking: false` (team and client turns)
+ *  drops the PROFILE part only: the profile is the owner's, not the caller's.
+ *  An agent's own effort still applies there, because it was set on that
+ *  agent (the team or client responder) on purpose. Inherit + withThinking
+ *  false stays no thinking, as before per-agent effort existed. */
+function turnThinking(
+  agent: Pick<Agent, 'thinkingEffort'>,
+  prefs: AssembleResponderTurnOptions['prefs'],
+  withThinking: boolean,
+): Pick<AssembledResponderTurn, 'thinkingBudget' | 'thinkingEffort' | 'inheritThinkingBudget'> {
+  const own = resolveAgentThinking(agent, withThinking ? prefs : null);
+  return {
+    thinkingBudget: withThinking || own.budget > 0 ? own.budget : undefined,
+    thinkingEffort: own.effort,
+    inheritThinkingBudget: withThinking ? profileThinking(prefs).budget : undefined,
   };
 }
 

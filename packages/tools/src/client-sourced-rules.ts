@@ -108,6 +108,7 @@ export const WRITE_RULES: Readonly<Record<string, WriteRule>> = {
 
   // ── Agents, tool groups, tools, persona ──────────────────────────────────
   agent_grant_tool_group: { kind: 'write', agents: ['agent_slug'], groups: ['group_slug'] },
+  agent_set_thinking_effort: { kind: 'write', agents: ['agent_slug'] },
   tool_group_ensure: { kind: 'write', groups: ['slug'] },
   api_docs_set: { kind: 'write', groups: ['group_slug'] },
   api_skill_set: { kind: 'write', groups: ['group_slug'] },

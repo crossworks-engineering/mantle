@@ -920,6 +920,9 @@ export type StudioAgentDetail = {
   missingToolGroupSlugs: string[];
   toolCount: number;
   params: { temperature?: number; max_tokens?: number };
+  /** Per-agent thinking effort (migration 0228); null = inherit the profile.
+   *  Optional so an older brain's graph reads as inherit. */
+  thinkingEffort?: 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
   maxIterations?: number;
   /** Whether this is a manifest agent that can be reset to its canonical default. */
   resettable: boolean;

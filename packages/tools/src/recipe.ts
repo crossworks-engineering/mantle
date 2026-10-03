@@ -60,6 +60,7 @@ export const RECIPE_FORBIDDEN_SLUGS: ReadonlySet<string> = new Set([
   'tool_group_list',
   'agent_list',
   'agent_grant_tool_group',
+  'agent_set_thinking_effort',
   'web_fetch',
   // recipe authoring itself (no self-referential authoring from inside a recipe)
   'tool_catalog',

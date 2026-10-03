@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { AvatarSchema } from '@/lib/avatar-schema';
 import { deleteAgent, updateAgent } from '@/lib/agents';
-import { agentGrantProblems } from '@mantle/content';
+import { AGENT_THINKING_EFFORTS, agentGrantProblems } from '@mantle/content';
 import { agents, db, isViewerLevel } from '@mantle/db';
 import { and, eq } from 'drizzle-orm';
 import { firstIssue } from '@/lib/zod-issue';
@@ -107,6 +107,9 @@ const PatchBody = z
     toolGroupSlugs: z.array(z.string().min(1).max(120)).max(64),
     memoryConfig: MemoryConfig,
     params: Params,
+    // Per-agent thinking effort (migration 0228). null = inherit the person's
+    // profile setting.
+    thinkingEffort: z.enum(AGENT_THINKING_EFFORTS).nullable(),
     avatar: Avatar,
     priority: z.number().int().min(0).max(1_000_000),
     enabled: z.boolean(),

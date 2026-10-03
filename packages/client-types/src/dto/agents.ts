@@ -156,6 +156,12 @@ export interface AgentDTO {
   toolGroupSlugs: string[];
   memoryConfig: AgentMemoryConfigDTO;
   params: AgentParamsDTO;
+  /** Per-agent thinking effort (migration 0228): 'off', or a tier the
+   *  providers take ('low' … 'max'). null = inherit the person's profile
+   *  setting. Used when the model supports reasoning effort; the adapters
+   *  drop or downgrade a tier a model lacks. Optional on the wire so a client
+   *  built before the field reads a missing value as inherit. */
+  thinkingEffort?: 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
   avatar: AgentAvatarDTO | null;
   personaNotes: PersonaNoteDTO[];
   /** The co-admin login this agent is the personal assistant for (migration

@@ -447,7 +447,8 @@ async function runTeamTurnSteps(
 
     // Shared responder-turn assembly (audit #5c), configured for the team
     // surface's HARD isolation: no identity/journal block, no heartbeats, no
-    // owner thinking budget, no delegation (fail closed). The private-reads
+    // owner thinking budget (an effort set on the responder agent itself
+    // still applies), no delegation (fail closed). The private-reads
     // switch (default OFF) is enforced HERE, at tool resolution — independent
     // of the `team-read` group grant, so it can't be bypassed by a manifest
     // change that re-adds the slugs.

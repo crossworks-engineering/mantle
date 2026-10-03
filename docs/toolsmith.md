@@ -5,7 +5,7 @@ times" into a deployed capability in one prompt. It's a manifest
 specialist (like Pages and Ledger) whose trade is the tool registry:
 it reads a service's API documentation, authors templated HTTP tools
 against it, proves them against the live API, and grants them to an
-agent, at which point chat turns *and* heartbeat routines can call
+agent, at which point chat turns _and_ heartbeat routines can call
 them.
 
 **Safety switch.** A single-owner brain trusts itself, so by default an
@@ -38,7 +38,7 @@ user prompt ("read <docs url>, build me routing tools")
 ## 0. The integration lives on the group
 
 The binding layer (`tool_groups.integration`, migration `0137`) is what makes an
-integration a *thing* rather than a pile of tools that happen to hit the same
+integration a _thing_ rather than a pile of tools that happen to hit the same
 host. One group carries the service, its base URL, which vault entry
 authenticates it, WHERE that credential goes, the API's documentation, and a
 short usage skill. Two payoffs:
@@ -56,7 +56,7 @@ short usage skill. Two payoffs:
   summarises, embeds, and FTS-indexes like any upload, every agent's
   `search_nodes` can find it. Adding endpoint #2 next month starts with
   `api_docs_get`, not a re-fetch of a page that may have moved or gone behind
-  auth. `api_skill_set` then holds the *judgment* (which call answers which
+  auth. `api_skill_set` then holds the _judgment_ (which call answers which
   question, unit conventions, chaining) and travels with the grant: an agent
   granted the group gets that skill in its context automatically
   ([tools-and-skills.md](tools-and-skills.md#integration-groups--a-group-that-is-an-api)).
@@ -79,10 +79,10 @@ definition; the edit is stamped and survives re-sync.
 
 ## 1. The two ways in
 
-| Surface | Path | Who pays for the LLM |
-|---|---|---|
-| Main assistant delegation | "add a weather API" (anywhere, incl. the /dev-tools Assist button) → invoke_agent | the agent's OpenRouter key |
-| **Claude Code / Desktop over MCP** | the same tool set registered on server/mcp | **the user's Claude subscription** |
+| Surface                            | Path                                                                              | Who pays for the LLM               |
+| ---------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------- |
+| Main assistant delegation          | "add a weather API" (anywhere, incl. the /dev-tools Assist button) → invoke_agent | the agent's OpenRouter key         |
+| **Claude Code / Desktop over MCP** | the same tool set registered on server/mcp                                        | **the user's Claude subscription** |
 
 (The old third way, the API Console's own docked panel invoking Toolsmith
 directly, was removed in v0.206: no surface pre-selects a specialist anymore;
@@ -101,7 +101,8 @@ read-docs → author → test → grant loop with no Mantle-side LLM spend.
 `api_key_refs` / `api_docs_get` / `web_fetch`) are always exposed. The mutating
 set, authoring (`api_tool_create` / `_update` / `_delete`), grouping
 (`tool_group_ensure`), the integration writes (`api_docs_set` /
-`api_skill_set`), and granting (`agent_grant_tool_group`), is
+`api_skill_set`), granting (`agent_grant_tool_group`) and an agent's
+thinking effort (`agent_set_thinking_effort`), is
 gated on **`MANTLE_MCP_TOOLSMITH_WRITE`**, which defaults **on**. Set it
 to `0` / `false` / `off` on a shared or headless deployment to keep tool
 authoring + granting to the in-app agent while still letting an MCP
@@ -145,6 +146,10 @@ client browse and test the registry.
 - `agent_list / agent_grant_tool_group`, read the agent roster, add a
   group to an agent's grants. The prompt instructs Toolsmith to ask
   the user which agent gets new capabilities rather than guessing.
+- `agent_set_thinking_effort`, set one agent's thinking effort (`inherit`,
+  `off`, `low` to `max`; see [thinking.md](thinking.md)). Same guards as a
+  grant: no change to the calling agent itself, and an agent asking waits at
+  /pending for the operator.
 
 ## 3. Seeding + configuration
 

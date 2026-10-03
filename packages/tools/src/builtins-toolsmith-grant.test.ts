@@ -102,6 +102,7 @@ import type { BuiltinToolDef, ToolHandlerContext } from './types';
 const ensure = TOOLSMITH_TOOLS.find((t) => t.slug === 'tool_group_ensure')!;
 const grant = TOOLSMITH_TOOLS.find((t) => t.slug === 'agent_grant_tool_group')!;
 const skillSet = TOOLSMITH_TOOLS.find((t) => t.slug === 'api_skill_set')!;
+const setEffort = TOOLSMITH_TOOLS.find((t) => t.slug === 'agent_set_thinking_effort')!;
 
 const ctx: ToolHandlerContext = { ownerId: 'o1' };
 /** The same owner, but the call comes from an agent rather than the operator. */
@@ -687,5 +688,70 @@ describe('api_skill_set', () => {
     ]);
     // Warnings do not block the write.
     expect(h.insert).toHaveBeenCalled();
+  });
+});
+
+describe('agent_set_thinking_effort', () => {
+  // A higher tier raises an agent's spend on every turn, so the guards match
+  // the grant: no self-change, and an agent asking waits for the operator.
+  it('refuses an unknown effort before any lookup', async () => {
+    const res = await setEffort.handler({ agent_slug: 'responder', effort: 'extreme' }, ctx);
+    expect(errorOf(res)).toMatch(/effort must be one of: inherit, off, low/);
+    expect(h.select).not.toHaveBeenCalled();
+  });
+
+  it('refuses an agent changing its own effort BEFORE any lookup', async () => {
+    const res = await setEffort.handler({ agent_slug: 'toolsmith', effort: 'max' }, agentCtx);
+    expect(errorOf(res)).toMatch(/cannot change its own thinking effort/);
+    expect(h.select).not.toHaveBeenCalled();
+    expect(h.update).not.toHaveBeenCalled();
+    expect(h.insert).not.toHaveBeenCalled();
+  });
+
+  it('an operator call writes the tier, owner-scoped, to the found row', async () => {
+    h.selectQueue.push([{ id: 'a1', thinkingEffort: null }]);
+    const res = await setEffort.handler({ agent_slug: 'responder', effort: 'high' }, ctx);
+    expect(outputOf(res)).toEqual({ agent_slug: 'responder', thinking_effort: 'high' });
+    expect(paramsOf(h.selectWheres[0])).toEqual(expect.arrayContaining(['o1', 'responder']));
+    expect(h.updateSet).toHaveBeenCalledWith(expect.objectContaining({ thinkingEffort: 'high' }));
+    expect(paramsOf(h.updateWheres[0])).toContain('a1');
+  });
+
+  it("'inherit' clears the column to null", async () => {
+    h.selectQueue.push([{ id: 'a1', thinkingEffort: 'low' }]);
+    const res = await setEffort.handler({ agent_slug: 'responder', effort: 'inherit' }, ctx);
+    expect(outputOf(res)).toEqual({ agent_slug: 'responder', thinking_effort: null });
+    expect(h.updateSet).toHaveBeenCalledWith(expect.objectContaining({ thinkingEffort: null }));
+  });
+
+  it('an unchanged value writes nothing', async () => {
+    h.selectQueue.push([{ id: 'a1', thinkingEffort: 'off' }]);
+    const res = await setEffort.handler({ agent_slug: 'responder', effort: 'off' }, ctx);
+    expect(outputOf(res)).toMatchObject({ unchanged: true });
+    expect(h.update).not.toHaveBeenCalled();
+  });
+
+  it('reports an unknown agent without writing', async () => {
+    h.selectQueue.push([]);
+    const res = await setEffort.handler({ agent_slug: 'ghost', effort: 'low' }, ctx);
+    expect(errorOf(res)).toMatch(/agent 'ghost' not found/);
+    expect(h.update).not.toHaveBeenCalled();
+  });
+
+  it('parks an agent-initiated change at /pending instead of applying it', async () => {
+    h.selectQueue.push([{ id: 'a1', thinkingEffort: null }], [{ id: 'req1' }]);
+    h.insertReturning.mockResolvedValue([{ id: 'p1' }]);
+    const res = await setEffort.handler({ agent_slug: 'responder', effort: 'max' }, agentCtx);
+    expect(outputOf(res)).toMatchObject({ status: 'queued_for_approval', pending_id: 'p1' });
+    expect(h.insert).toHaveBeenCalledWith(pendingToolCalls);
+    expect(h.insertValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolSlug: 'agent_set_thinking_effort',
+        args: { agent_slug: 'responder', effort: 'max' },
+        agentId: 'req1',
+      }),
+    );
+    expect(notifyPendingCreated).toHaveBeenCalled();
+    expect(h.update).not.toHaveBeenCalled();
   });
 });

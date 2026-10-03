@@ -436,6 +436,12 @@ export type ToolLoopArgs = {
    *  signal, while this is what OpenRouter puts on the wire. Undefined ⇒ no
    *  reasoning requested. */
   thinkingEffort?: ThinkingEffort;
+  /** The budget handed to a delegated agent that has no thinking effort of
+   *  its own: the person's profile budget, so "inherit" on a specialist means
+   *  the profile and not the calling agent's own effort. Unset ⇒ forward
+   *  `thinkingBudget` (the behaviour before per-agent effort existed). Only
+   *  the budget travels, never the effort, exactly as before. */
+  inheritThinkingBudget?: number;
   /** Initial messages: system + any history + the new user turn. */
   initialMessages: ChatMessage[];
   /** Tool rows the agent is permitted to use. Empty array → no tools sent. */

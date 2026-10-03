@@ -55,6 +55,11 @@ export type AgentAvatar = {
   parts?: Record<string, string | null>;
 };
 
+/** The stored values of `agents.thinking_effort` (NULL aside). Mirrors
+ *  AGENT_THINKING_EFFORTS in @mantle/content-core (which this package must not
+ *  import); the migration's CHECK holds the same list. */
+export type AgentThinkingEffortValue = 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
 export type AgentMemoryConfig = {
   /** Max prior turns to replay into prompt. Default 20. */
   history_limit?: number;
@@ -313,6 +318,12 @@ export const agents = pgTable(
       .$type<AgentParams>()
       .default(sql`'{}'::jsonb`)
       .notNull(),
+    /** Per-agent thinking effort (migration 0228). NULL = inherit the person's
+     *  profile setting, the behaviour before the column existed. 'off' = never
+     *  ask for reasoning; a tier = ask for that effort whatever the profile
+     *  says. A CHECK pins the values; resolve with `resolveAgentThinking`
+     *  (@mantle/content), never by reading the column directly. */
+    thinkingEffort: text('thinking_effort').$type<AgentThinkingEffortValue | null>(),
     /** Reflector appends notes here. */
     personaNotes: jsonb('persona_notes')
       .$type<PersonaNote[]>()

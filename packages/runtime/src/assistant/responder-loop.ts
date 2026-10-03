@@ -258,6 +258,7 @@ async function runResponderLoopAtLevel(
     resultHandling: assembled.resultHandling,
     thinkingBudget: assembled.thinkingBudget,
     thinkingEffort: assembled.thinkingEffort,
+    inheritThinkingBudget: assembled.inheritThinkingBudget,
     ...assembled.loopOverrides,
     initialMessages: await opts.buildMessages(ctx),
     tools: assembled.allowedTools,

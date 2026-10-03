@@ -146,6 +146,7 @@ export function cloneAgentFields(
     toolGroupSlugs: [...(source.toolGroupSlugs ?? [])],
     memoryConfig: { ...(source.memoryConfig ?? {}) },
     params: { ...(source.params ?? {}) },
+    thinkingEffort: source.thinkingEffort ?? null,
     avatar: source.avatar ?? null,
     priority: Math.max(0, source.priority - 1),
     enabled: true,

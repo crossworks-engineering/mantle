@@ -33,20 +33,21 @@ CLI `pnpm seed:*` scripts, and the `/settings/config` checker **all** derive fro
 The boot reconcile runs once per `APP_VERSION` (production, best-effort). It is
 **additive and product-owned-only**:
 
-| Manifest change | Reaches existing brains automatically? | How |
-|---|---|---|
-| Tool-group membership | ✅ overwrite | `seedToolCapabilities` |
-| Tool-group **level** (`level` on the group: `team-read`, `formulas-eval`, `client-read`) | ✅ overwrite: product-owned, set back even when an admin moved it. A group with no `level` keeps the level its admin set | `seedToolCapabilities` |
-| Skill **body** (`SKILL_INSTRUCTIONS`) | ✅ overwrite | `applyManifest` `skillMode` |
-| **Persona** skill links (by ROLE, reaches operator personas too) | ✅ **converge**: add new + **drop a retired** manifest skill (e.g. `rich_writing`); operator skills kept | `reconcilePersonaCapabilitiesByRole` |
-| Persona default tool groups (by ROLE) | ✅ union (add-only) | `reconcilePersonaCapabilitiesByRole` |
-| New **specialist** agent | ✅ create + wire delegation | `provisionMissingSpecialists` |
-| Specialist tool groups | ✅ union (add-only) | `grantSpecialistCapabilities` |
-| Specialist skill links | ✅ **converge**: add new + **drop a retired** manifest skill; operator skills kept | `grantSpecialistCapabilities` |
-| Specialist **params / memoryConfig tuning** (max_iterations, limits; `delegate_to` excepted) | ✅ overwrite | `syncSpecialistDefs` |
-| New **required** worker | ✅ create | `seedManifestWorkers({requiredOnly})` |
+| Manifest change                                                                              | Reaches existing brains automatically?                                                                                   | How                                   |
+| -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------- |
+| Tool-group membership                                                                        | ✅ overwrite                                                                                                             | `seedToolCapabilities`                |
+| Tool-group **level** (`level` on the group: `team-read`, `formulas-eval`, `client-read`)     | ✅ overwrite: product-owned, set back even when an admin moved it. A group with no `level` keeps the level its admin set | `seedToolCapabilities`                |
+| Skill **body** (`SKILL_INSTRUCTIONS`)                                                        | ✅ overwrite                                                                                                             | `applyManifest` `skillMode`           |
+| **Persona** skill links (by ROLE, reaches operator personas too)                             | ✅ **converge**: add new + **drop a retired** manifest skill (e.g. `rich_writing`); operator skills kept                 | `reconcilePersonaCapabilitiesByRole`  |
+| Persona default tool groups (by ROLE)                                                        | ✅ union (add-only)                                                                                                      | `reconcilePersonaCapabilitiesByRole`  |
+| New **specialist** agent                                                                     | ✅ create + wire delegation                                                                                              | `provisionMissingSpecialists`         |
+| Specialist tool groups                                                                       | ✅ union (add-only)                                                                                                      | `grantSpecialistCapabilities`         |
+| Specialist skill links                                                                       | ✅ **converge**: add new + **drop a retired** manifest skill; operator skills kept                                       | `grantSpecialistCapabilities`         |
+| Specialist **params / memoryConfig tuning** (max_iterations, limits; `delegate_to` excepted) | ✅ overwrite                                                                                                             | `syncSpecialistDefs`                  |
+| New **required** worker                                                                      | ✅ create                                                                                                                | `seedManifestWorkers({requiredOnly})` |
 
 **Deliberately NOT auto-propagated** (operator-owned / overlay):
+
 - Persona **prompt / model / params**: operator-owned; never touched.
 - **Any agent's prompt / model / provider / key** (decision 2026-07-29): the
   route and the prompt are operator-owned on specialists too, a model switch
@@ -55,6 +56,11 @@ The boot reconcile runs once per `APP_VERSION` (production, best-effort). It is
   (Studio reset-to-default); fresh installs still seed the manifest defaults.
   (Pre-v0.212.0 `syncSpecialistDefs` force-synced prompt+model.)
 - An existing **worker's model/provider**: operator cost choice; never overwritten.
+- Any agent's **thinking effort** (`agents.thinking_effort`, migration 0228):
+  the manifest has no field for it, every shipped agent starts on Inherit
+  (NULL = the person's profile), and nothing here writes the column. Setting
+  one by default would change spend on every existing brain; see
+  [docs/thinking.md](../../../../docs/thinking.md).
 - New **optional** workers, fresh onboarding only.
 - **Removals**: mostly additive, with ONE exception: an agent's **skill links**
   converge, so dropping a skill from an agent's manifest `skillSlugs` (e.g.
