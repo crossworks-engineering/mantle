@@ -336,10 +336,16 @@ export function registerLoginRows(
 ): void {
   const { caller, rows, level, privateReads } = prepared;
   for (const row of rows) {
+    // The builtin's own definition, as the owner surface registers it: the
+    // row's copy of the schema can lag a release, and the zod shape drops
+    // every argument the schema does not name.
+    const def = getBuiltin(row.slug);
     server.tool(
       row.slug,
-      row.description,
-      zodShapeFromJsonSchema((row.inputSchema as Record<string, unknown>) ?? {}),
+      def?.description ?? row.description,
+      zodShapeFromJsonSchema(
+        def?.inputSchema ?? (row.inputSchema as Record<string, unknown>) ?? {},
+      ),
       (args) => callLoginTool(caller, row, args as Record<string, unknown>, level, privateReads),
     );
   }
