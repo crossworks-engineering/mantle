@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { idfWeight, lexemesToTsqueryText, pickKeywordTerms } from './keyword-query';
+import { gateRareTerms, idfWeight, lexemesToTsqueryText, pickKeywordTerms } from './keyword-query';
 
 const lexemes = (kq: ReturnType<typeof pickKeywordTerms>) =>
   kq?.mode === 'or' ? kq.terms.map((t) => t.lexeme) : kq;
@@ -31,12 +31,35 @@ describe('pickKeywordTerms', () => {
     expect(kq).toEqual({
       mode: 'or',
       terms: [
-        { lexeme: 'budget', weight: idfWeight(0.02) },
-        { lexeme: 'e4471', weight: idfWeight(0.002) },
+        { lexeme: 'budget', weight: idfWeight(0.02, 1), rows: null },
+        { lexeme: 'e4471', weight: idfWeight(0.002, 0), rows: null },
       ],
     });
-    // One rare hit beats a common word; ln(1/0.002) ≈ 6.2 vs ln(1/0.02) ≈ 3.9.
-    expect(idfWeight(0.002)).toBeGreaterThan(idfWeight(0.02));
+    // One rare hit beats a common word; ln(1/0.002) ≈ 6.2 vs ln(1/0.02)/2 ≈ 2.0.
+    expect(idfWeight(0.002)).toBeGreaterThan(idfWeight(0.02, 1));
+  });
+
+  it('lets the rarest term outweigh a question frame of ordinary words together', () => {
+    const kq = pickKeywordTerms('q', [
+      { lexeme: 'nautilus', df: 0.0001 },
+      { lexeme: 'commentari', df: 0.0012 },
+      { lexeme: 'behavior', df: 0.002 },
+      { lexeme: 'threaten', df: 0.01 },
+      { lexeme: 'psalm', df: 0.029 },
+    ]);
+    if (kq?.mode !== 'or') throw new Error('expected an OR query');
+    const w = Object.fromEntries(kq.terms.map((t) => [t.lexeme, t.weight]));
+    // A plain IDF sum let these four outvote the one word that matters.
+    expect(w.nautilus!).toBeGreaterThan(w.commentari! + w.behavior! + w.threaten! + w.psalm!);
+  });
+
+  it('drops question-frame words, which can be rare in an old corpus', () => {
+    const kq = pickKeywordTerms('what is the perspective of the author on the vase', [
+      { lexeme: 'perspect', df: 0.0001 },
+      { lexeme: 'author', df: 0.02 },
+      { lexeme: 'vase', df: 0.0005 },
+    ]);
+    expect(lexemes(kq)).toEqual(['vase']);
   });
 
   it('drops chat filler, which is rare in documents but carries no content', () => {
@@ -90,6 +113,32 @@ describe('pickKeywordTerms', () => {
       { lexeme: 'valv', df: 0.001 },
     ]);
     expect(lexemes(kq)).toEqual(['valv']);
+  });
+});
+
+describe('gateRareTerms', () => {
+  const kq = pickKeywordTerms('q', [
+    { lexeme: 'portland', df: 0.00001, rows: 2 },
+    { lexeme: 'vase', df: 0.0005, rows: 61 },
+    { lexeme: 'valu', df: 0.02, rows: 2200 },
+    { lexeme: 'isaiah', df: 0.03, rows: null },
+  ])!;
+
+  it('narrows the match to terms no more rows than the cap hold', () => {
+    const gated = gateRareTerms(kq, 50);
+    expect(gated).toMatchObject({ mode: 'or', match: ['portland'] });
+    // Ranking still weighs every term.
+    expect(gated?.mode === 'or' && gated.terms.length).toBe(4);
+    expect(gateRareTerms(kq, 100)).toMatchObject({ match: ['portland', 'vase'] });
+  });
+
+  it('silences the arm when no term is rare enough (unknown counts never pass)', () => {
+    expect(gateRareTerms(kq, 1)).toBeNull();
+  });
+
+  it('passes the AND fallback through untouched', () => {
+    const and = { mode: 'and', text: 'project status' } as const;
+    expect(gateRareTerms(and, 50)).toBe(and);
   });
 });
 

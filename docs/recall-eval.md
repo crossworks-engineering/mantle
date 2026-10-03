@@ -389,6 +389,7 @@ What it says:
    so the question's frame ("author", "describe", "commentary") outvotes
    the one rare word that matters ("nautilus"). This is the
    user-message-shaped query the responder's auto-context sends.
+   Fixed: see "Keyword arm on a single-topic corpus" below.
 4. **A split would buy one halving.** Cutting the brain in two moves it one
    step left on the curve: about 5 points of R@10. A single-topic corpus
    cannot be split away from its own near-duplicates (both sermons on
@@ -428,6 +429,64 @@ Re-run: build the copy, then
 ALLOWED_USER_ID=<uuid> pnpm -C server/web eval:recall --cases=<gold.json> \
   --retrievers=search,passage,passage-vector,passage-keyword
 ```
+
+## Keyword arm on a single-topic corpus (2026-10-03)
+
+Point 3 above, fixed. Same gold set, a fresh copy of the same brain
+(122,256 chunks), current code against the fix.
+
+### Why hybrid lost
+
+Two causes, measured one at a time in an offline lab (cached vector pool,
+keyword variants fused with the shipped RRF):
+
+1. **Term weighting.** Rows ranked by the plain IDF sum of the terms they
+   hold, so four ordinary question words outvoted the one rare word. Worse,
+   most query words in this corpus sit between 0.4% and 2% of rows: below
+   the `pg_stats` floor (2%) but above the count cap (500 rows), so they all
+   got the same df and the order among them was alphabetical.
+2. **The arm fires on every question.** The gold passages are paraphrased,
+   so they rarely hold the question's words: only about 10 of 98 hold the
+   rarest one (a name, "nautilus", "Portland vase"). On the rest the arm
+   still filled its pool with rows that shared ordinary words. The rescue
+   floor then pushed two of them into the top 10 (that alone cost 4 points
+   of R@10), and RRF lifted any row both arms knew above the vector's first
+   hit (that cost R@1: 8% to 1%).
+
+Better weighting alone (rank weights, a frame stoplist, exact counts,
+saturation, fewer terms) moved hybrid R@10 by at most 2 points: there is
+little for a better ranking to find. The lever is to let the arm speak
+only when it has a literal.
+
+### What changed (`packages/search/src/keyword-query.ts`)
+
+- **Rank weights.** The k-th rarest kept term weighs `idf * 0.5^k`, so the
+  rarest term outweighs all the others together; the rest only order rows
+  that tie on it.
+- **Question-frame words** ("describe", "according", "author", "speaker",
+  "perspective", "specific" ...) are dropped like chat filler. In an old
+  corpus "perspective" is as rare as a name (16 rows here).
+- **A rare-term gate on the passage arm** (`gateRareTerms`, used by
+  `searchChunks` only): the arm returns only rows holding a term that no
+  more rows hold than its pool (50 for a 10-hit search). A query without
+  such a literal leaves the arm silent, so the vector order stands. The AND
+  fallback is not gated. Node search (`searchNodes`) gets the weights and
+  the stoplist, not the gate.
+
+### Result (exact passage, 98 cases)
+
+| retriever      | R@1 | R@10 | MRR  |
+| -------------- | --- | ---- | ---- |
+| hybrid, before | 1%  | 34%  | 0.11 |
+| hybrid, after  | 8%  | 38%  | 0.17 |
+| vector only    | 8%  | 38%  | 0.16 |
+
+Hybrid now ranks the gold passage where vector-only does in 95 of 98
+cases. One is a literal win: the "Portland vase" passage, which vector
+misses, ranks first. Two are losses to rare-word rows: one gold passage
+drops from first to second, one from ninth out of the top 10. Node search
+is unchanged (document R@10 18%). Search time fell from p50 150 ms to
+14 ms: the ungated OR query ranked match sets of tens of thousands of rows.
 
 ## Automated eval: `recall_eval` + the brain-health heartbeat (2026-07-13)
 

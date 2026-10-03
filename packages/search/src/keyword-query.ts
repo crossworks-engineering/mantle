@@ -21,9 +21,24 @@
  * one in more than `dfCeiling` of the rows carries no signal and would fan
  * the match set out, so it is dropped too.
  *
- * Rows rank by the summed rarity (IDF, `ln(1/df)`) of the kept terms they
- * hold, then `ts_rank`: a row with every term ranks first (the old AND result,
- * as the head), and a rare literal outranks a pile of ordinary words.
+ * Rows rank by the rarity (IDF, `ln(1/df)`) of the kept terms they hold,
+ * each term's weight halved per rank behind the rarest (`RANK_DECAY`), then
+ * `ts_rank`. A plain IDF sum let a question's frame outvote its one rare
+ * word: "how does the author of the commentary describe the behavior of a
+ * nautilus" ranked rows holding "author", "describ", "commentari" and
+ * "behavior" above the only rows that mention a nautilus. With the decay the
+ * rarest term outweighs every rarer-ranked term together, so a row holding it
+ * always ranks first; the other terms only order rows among themselves.
+ * Question-frame words (`QUESTION_FRAME`) are dropped like chat filler: in an
+ * old corpus "perspective" or "specific" can be as rare as a real name.
+ *
+ * `gateRareTerms` is the passage arm's precision gate: the arm only returns
+ * rows holding a term that names a small set of passages (no more rows than
+ * the arm's pool). Without it, a question with no rare literal still filled
+ * the pool with rows that merely shared ordinary words, and fusion let those
+ * displace better vector hits (single-topic corpus, docs/recall-eval.md:
+ * hybrid exact-passage R@10 34% vs vector-only 38%, R@1 1% vs 8%). With it,
+ * the arm stays silent unless the query carries a literal worth rescuing.
  *
  * Fallbacks keep the old behaviour, never worse: a failed lookup, or only
  * common terms → the original `plainto_tsquery` AND. Deterministic, no model
@@ -48,6 +63,11 @@ const COUNT_CAP = 500;
 /** Floor for the rarity weight's df, so the weight stays finite. */
 const MIN_DF = 1e-6;
 
+/** Weight multiplier per rarity rank: the k-th rarest term weighs
+ *  `idf * RANK_DECAY^k`. At 0.5 the rarest term outweighs all the others
+ *  together (their IDFs are no larger and the series sums below 1). */
+export const RANK_DECAY = 0.5;
+
 /**
  * Chat glue that Postgres's `english` stopwords keep, as `english` stems.
  * These are rare in documents, so rarity alone would rank them like a part
@@ -62,16 +82,38 @@ const CHAT_FILLER: ReadonlySet<string> = new Set(
   ).split(' '),
 );
 
-export type KeywordTerm = { lexeme: string; weight: number };
+/**
+ * Words that frame a question about a text rather than say what it is about,
+ * as `english` stems ("describe", "according to", "the author's perspective").
+ * Only meta words: a word that can be a topic ("version", "statement",
+ * "impact") stays. The vector arm still sees the whole question.
+ */
+const QUESTION_FRAME: ReadonlySet<string> = new Set(
+  (
+    'accord analog anecdot author compar comparison context depict describ discuss emphas ' +
+    'emphasis exampl explain highlight illustr impli indic mention metaphor opinion passag ' +
+    'perspect portray primari regard speaker specif suggest summar summari viewpoint writer'
+  ).split(' '),
+);
+
+export type KeywordTerm = {
+  lexeme: string;
+  weight: number;
+  /** Rows holding the lexeme (an estimate for very common ones), null when
+   *  unknown. Read by `gateRareTerms`. */
+  rows: number | null;
+};
 
 export type KeywordQuery =
   /** The original behaviour: every stem ANDed. */
   | { mode: 'and'; text: string }
   /** The rarest lexemes (already stemmed by the `english` config), ORed,
-   *  each with its rarity weight for ranking. */
-  | { mode: 'or'; terms: KeywordTerm[] };
+   *  each with its rarity weight for ranking. `match`, when set, narrows
+   *  which lexemes a row must hold to be returned (see `gateRareTerms`);
+   *  ranking still weighs every term. */
+  | { mode: 'or'; terms: KeywordTerm[]; match?: string[] };
 
-export type LexemeDf = { lexeme: string; df: number };
+export type LexemeDf = { lexeme: string; df: number; rows?: number | null };
 
 const byLexeme = (a: { lexeme: string }, b: { lexeme: string }) =>
   a.lexeme < b.lexeme ? -1 : a.lexeme > b.lexeme ? 1 : 0;
@@ -94,6 +136,7 @@ export function pickKeywordTerms(
       (r) =>
         r.lexeme.length > 0 &&
         !CHAT_FILLER.has(r.lexeme) &&
+        !QUESTION_FRAME.has(r.lexeme) &&
         Number.isFinite(r.df) &&
         r.df > 0 &&
         r.df <= dfCeiling,
@@ -104,13 +147,32 @@ export function pickKeywordTerms(
   if (rare.length === 0) return { mode: 'and', text };
   return {
     mode: 'or',
-    terms: rare.map((r) => ({ lexeme: r.lexeme, weight: idfWeight(r.df) })).sort(byLexeme),
+    terms: rare
+      .map((r, rank) => ({
+        lexeme: r.lexeme,
+        weight: idfWeight(r.df, rank),
+        rows: r.rows ?? null,
+      }))
+      .sort(byLexeme),
   };
 }
 
-/** Rarity weight `ln(1/df)`, rounded so the SQL text is stable (pure). */
-export function idfWeight(df: number): number {
-  return Math.round(Math.log(1 / Math.max(df, MIN_DF)) * 1000) / 1000;
+/** Rarity weight `ln(1/df) * RANK_DECAY^rank` (rank 0 = the rarest kept
+ *  term), rounded so the SQL text is stable (pure). */
+export function idfWeight(df: number, rank = 0): number {
+  return Math.round(Math.log(1 / Math.max(df, MIN_DF)) * Math.pow(RANK_DECAY, rank) * 1000) / 1000;
+}
+
+/**
+ * The passage arm's precision gate (pure): keep only rows holding a term that
+ * at most `maxRows` rows hold, so the arm returns a literal's passages and
+ * nothing else. Null when no term qualifies (the arm stays silent). The AND
+ * fallback passes through: every-word matches are already precise.
+ */
+export function gateRareTerms(kq: KeywordQuery, maxRows: number): KeywordQuery | null {
+  if (kq.mode === 'and') return kq;
+  const match = kq.terms.filter((t) => t.rows !== null && t.rows <= maxRows).map((t) => t.lexeme);
+  return match.length > 0 ? { ...kq, match } : null;
 }
 
 /**
@@ -130,8 +192,10 @@ export function lexemesToTsqueryText(lexemes: readonly string[]): string {
  * unnests the view's `anyarray`). Untracked lexemes are counted, capped; any
  * left uncounted take the least tracked frequency (rare, lowest priority).
  * Frequencies are table-wide, not per owner: rarity is a property of the
- * vocabulary, and the match itself stays owner-scoped. A lexeme holding a
- * backslash is left uncounted: the in-SQL quoting below only doubles quotes.
+ * vocabulary, and the match itself stays owner-scoped. `rows` is the count
+ * (exact below `COUNT_CAP`), the tracked frequency times the table size, or
+ * null for the uncounted. A lexeme holding a backslash is left uncounted: the
+ * in-SQL quoting below only doubles quotes.
  */
 async function lexemeFrequencies(
   text: string,
@@ -164,22 +228,35 @@ async function lexemeFrequencies(
     total as (
       select greatest(reltuples, 1)::float8 as n from pg_class
       where oid = to_regclass(quote_ident(current_schema()) || '.' || ${table})
-    )
-    select t.lexeme as lexeme,
-      case
-        when t.freq is not null then t.freq
-        when d.rn <= ${COUNT_LEXEMES} then (
+    ),
+    counted as (
+      select t.lexeme, t.freq,
+        case when d.rn <= ${COUNT_LEXEMES} then (
           select count(*)::float8 from (
             select 1 from ${tbl} c
             where c.search_tsv @@ (chr(39) || replace(t.lexeme, chr(39), chr(39) || chr(39)) || chr(39))::tsquery
             limit ${COUNT_CAP}
           ) hits
-        ) / coalesce((select n from total), 1)
+        ) end as hits
+      from tracked t left join todo d on d.lexeme = t.lexeme
+    )
+    select k.lexeme as lexeme,
+      case
+        when k.freq is not null then k.freq * coalesce((select n from total), 1)
+        else k.hits
+      end as rows,
+      case
+        when k.freq is not null then k.freq
+        when k.hits is not null then k.hits / coalesce((select n from total), 1)
         else coalesce((select freqs[array_length(elems, 1) + 1] from col), ${KEYWORD_DF_CEILING})::float8
       end as df
-    from tracked t left join todo d on d.lexeme = t.lexeme
-  `)) as unknown as Array<{ lexeme: string; df: number | string }>;
-  return rows.map((r) => ({ lexeme: r.lexeme, df: Number(r.df) }));
+    from counted k
+  `)) as unknown as Array<{ lexeme: string; df: number | string; rows: number | string | null }>;
+  return rows.map((r) => ({
+    lexeme: r.lexeme,
+    df: Number(r.df),
+    rows: r.rows === null ? null : Number(r.rows),
+  }));
 }
 
 /**
@@ -204,6 +281,7 @@ export function keywordSql(column: AnyColumn, kq: KeywordQuery): { match: SQL; o
     return { match: sql`${column} @@ ${tsq}`, order: [sql`ts_rank(${column}, ${tsq}) desc`] };
   }
   const anyTerm = sql`${lexemesToTsqueryText(kq.terms.map((t) => t.lexeme))}::tsquery`;
+  const matchTerm = kq.match ? sql`${lexemesToTsqueryText(kq.match)}::tsquery` : anyTerm;
   const rarity = sql.join(
     kq.terms.map(
       (t) =>
@@ -212,7 +290,7 @@ export function keywordSql(column: AnyColumn, kq: KeywordQuery): { match: SQL; o
     sql` + `,
   );
   return {
-    match: sql`${column} @@ ${anyTerm}`,
+    match: sql`${column} @@ ${matchTerm}`,
     order: [sql`(${rarity}) desc`, sql`ts_rank(${column}, ${anyTerm}) desc`],
   };
 }

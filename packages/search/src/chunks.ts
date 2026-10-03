@@ -16,7 +16,7 @@ import { and, asc, eq, isNotNull, sql, type SQL } from 'drizzle-orm';
 import { contentChunks, db, nodes } from '@mantle/db';
 import { withHnswPool } from './hnsw';
 import { grantUnionFilter, pgArrayLiteral } from './pg';
-import { keywordSql, resolveKeywordQuery } from './keyword-query';
+import { gateRareTerms, keywordSql, resolveKeywordQuery } from './keyword-query';
 import { applyRescueFloor, fuseRrf } from './rrf';
 import { env } from '@mantle/config';
 
@@ -162,8 +162,12 @@ export async function searchChunks(opts: ChunkSearchOptions): Promise<ChunkHit[]
         )) as unknown as Array<{ id: string }>);
 
   // Rarest terms ORed, not every stem ANDed: a whole chat message ANDed
-  // matched nothing, so this arm (and the rescue floor) never fired.
-  const kq = await resolveKeywordQuery(q, 'content_chunks');
+  // matched nothing, so this arm (and the rescue floor) never fired. Gated to
+  // rows holding a term no more rows than the pool hold: a question with no
+  // rare literal leaves the arm silent instead of fusing in rows that merely
+  // share ordinary words (they cost vector-only quality, docs/recall-eval.md).
+  const resolved = await resolveKeywordQuery(q, 'content_chunks');
+  const kq = resolved ? gateRareTerms(resolved, pool) : null;
   const kw = kq ? keywordSql(contentChunks.searchTsv, kq) : null;
   const ftsRows = kw
     ? await db
