@@ -55,7 +55,7 @@ import { assertNoViewer } from '@mantle/db/viewer';
 const EXTRACT_QUEUE = 'mantle.extract';
 const DEAD_LETTER_QUEUE = 'mantle.extract.dead';
 const DEFAULT_CONCURRENCY = 2;
-const MAX_CONCURRENCY = 8;
+const MAX_CONCURRENCY = 16;
 
 /** How long a worker may hold a single extraction before pg-boss declares the
  *  job expired and retries it. pg-boss defaults to **15 min** — too tight for a
@@ -87,7 +87,7 @@ let boss: PgBoss | null = null;
 /** Per-node in-flight chain — see the same-node concurrency note above. */
 const inflightByNode = new Map<string, Promise<unknown>>();
 
-/** Resolve the worker concurrency, clamped 1..8. Precedence: the embedding
+/** Resolve the worker concurrency, clamped 1..16. Precedence: the embedding
  *  config's `extractionConcurrency` (DB, passed as `override`) → `EXTRACT_CONCURRENCY`
  *  env → DEFAULT_CONCURRENCY. */
 function resolveConcurrency(override?: number | null): number {

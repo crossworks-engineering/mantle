@@ -222,7 +222,7 @@ EmbeddingGemma on a GPU is instant; on a **shared-vCPU VPS with no GPU** it's se
 
 | Env var                         | Default  | What it does                            | When to change                                                                                     |
 | ------------------------------- | -------- | --------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `EXTRACT_CONCURRENCY`           | `2`      | In-flight extractor jobs (clamped 1–8). | **Drop to `1`** on a CPU-only embedder so jobs don't contend for cores.                            |
+| `EXTRACT_CONCURRENCY`           | `2`      | In-flight extractor jobs (clamped 1–16). | **Drop to `1`** on a CPU-only embedder so jobs don't contend for cores.                            |
 | `MANTLE_LOCAL_EMBED_BATCH`      | `16`     | Texts per local-embedder HTTP request.  | **Lower (e.g. `8`)** on an especially slow box so each request clears the timeout; raise on a GPU. |
 | `MANTLE_LOCAL_EMBED_TIMEOUT_MS` | `120000` | Per-request timeout (ms).               | Raise for very slow hardware so a legitimate sub-batch isn't aborted early.                        |
 
