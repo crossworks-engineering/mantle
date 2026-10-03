@@ -16,7 +16,8 @@
  *   1. Concurrency cap   — N independent `batchSize:1` workers (pg-boss v10
  *                          dropped teamSize). N is the hard ceiling on in-flight
  *                          extractions regardless of how big the insert burst
- *                          is. `EXTRACT_CONCURRENCY` env (default 2).
+ *                          is. Config row → `EXTRACT_CONCURRENCY` env → 2,
+ *                          re-read every 30s so a UI change is live.
  *   2. Retry w/ backoff  — a transient failure (rate-limit, flaky provider)
  *                          throws out of the handler → pg-boss retries the whole
  *                          job after an exponential-backoff delay. extractNode
@@ -47,15 +48,17 @@
  */
 
 import { PgBoss } from 'pg-boss';
-import { resolveEmbeddingConfig } from '@mantle/embeddings';
+import {
+  clearEmbeddingModelCache,
+  resolveEmbeddingConfig,
+  resolveExtractionConcurrency,
+} from '@mantle/embeddings';
 import { extractNode } from './extractor.js';
 import { env } from '@mantle/config';
 import { assertNoViewer } from '@mantle/db/viewer';
 
 const EXTRACT_QUEUE = 'mantle.extract';
 const DEAD_LETTER_QUEUE = 'mantle.extract.dead';
-const DEFAULT_CONCURRENCY = 2;
-const MAX_CONCURRENCY = 16;
 
 /** How long a worker may hold a single extraction before pg-boss declares the
  *  job expired and retries it. pg-boss defaults to **15 min** — too tight for a
@@ -87,15 +90,14 @@ let boss: PgBoss | null = null;
 /** Per-node in-flight chain — see the same-node concurrency note above. */
 const inflightByNode = new Map<string, Promise<unknown>>();
 
-/** Resolve the worker concurrency, clamped 1..16. Precedence: the embedding
- *  config's `extractionConcurrency` (DB, passed as `override`) → `EXTRACT_CONCURRENCY`
- *  env → DEFAULT_CONCURRENCY. */
-function resolveConcurrency(override?: number | null): number {
-  const envN = Number.parseInt(env('EXTRACT_CONCURRENCY') ?? '', 10);
-  const candidate = override != null ? override : envN;
-  if (!Number.isFinite(candidate) || candidate < 1) return DEFAULT_CONCURRENCY;
-  return Math.min(candidate, MAX_CONCURRENCY);
-}
+/** Live worker pool: one pg-boss work id per worker, sized from the config. */
+const workerIds: string[] = [];
+let activeOwnerId: string | null = null;
+let activeExpireMin = EXTRACT_EXPIRE_MIN;
+let reconcileTimer: ReturnType<typeof setInterval> | null = null;
+let reconciling = false;
+const RECONCILE_INTERVAL_MS = 30_000;
+
 
 /**
  * Re-drive dead-lettered extract jobs back onto the main queue. Runs at every
@@ -134,9 +136,9 @@ export async function startExtractQueue(databaseUrl: string, ownerId: string): P
   await boss.start();
 
   // Resolve the per-owner throughput tuning from the embedding config (null →
-  // env → code default). The concurrency + job budget are boot-time (the worker
-  // pool size and queue policy are fixed here), so a change in the UI applies on
-  // the next agent restart. Best-effort — a DB hiccup falls back to env/default.
+  // env → code default). reconcileWithConfig re-reads it every 30s, so a UI
+  // change applies without a restart. Best-effort — a DB hiccup falls back to
+  // env/default.
   const cfg = await resolveEmbeddingConfig(ownerId).catch(() => null);
   const expireMin =
     cfg?.extractionTimeBudgetMinutes && cfg.extractionTimeBudgetMinutes >= 1
@@ -172,40 +174,96 @@ export async function startExtractQueue(databaseUrl: string, ownerId: string): P
     );
   }
 
-  const concurrency = resolveConcurrency(cfg?.extractionConcurrency);
-  for (let i = 0; i < concurrency; i++) {
-    // Each registration is its own polling worker; pg-boss hands out distinct
-    // jobs via SKIP LOCKED, so N workers = up to N concurrent extractions, each
-    // retried independently. batchSize:1 keeps a slow/failing node from
-    // coupling its fate to a batch-mate.
-    await boss.work<ExtractJob>(
-      EXTRACT_QUEUE,
-      { batchSize: 1, pollingIntervalSeconds: 2 },
-      async ([job]) => {
-        if (!job?.data?.nodeId) return;
-        const { nodeId } = job.data;
-        // Serialise per node (parallel across nodes) — see module header.
-        const prev = inflightByNode.get(nodeId);
-        const run = prev
-          ? prev.catch(() => {}).then(() => extractNode(nodeId, ownerId))
-          : extractNode(nodeId, ownerId);
-        const tracked: Promise<unknown> = run
-          .catch(() => {})
-          .finally(() => {
-            if (inflightByNode.get(nodeId) === tracked) inflightByNode.delete(nodeId);
-          });
-        inflightByNode.set(nodeId, tracked);
-        // Let it throw: a thrown error propagates to pg-boss and triggers the
-        // queue's retry/backoff. A swallowed error is the bug we're fixing.
-        await run;
-      },
-    );
-  }
+  activeOwnerId = ownerId;
+  activeExpireMin = expireMin;
+  const concurrency = resolveExtractionConcurrency(cfg?.extractionConcurrency);
+  await setWorkerCount(concurrency);
+
+  // The worker count and the time budget are LIVE: the UI writes the config
+  // row from another process, so poll it. Each tick drops the resolver cache
+  // first, so a saved change lands within one interval with no restart.
+  reconcileTimer = setInterval(() => {
+    void reconcileWithConfig();
+  }, RECONCILE_INTERVAL_MS);
+  reconcileTimer.unref?.();
 
   console.log(
     `[extract-queue] ${concurrency} worker(s) on ${EXTRACT_QUEUE} ` +
       `(policy=short, ${expireMin}min budget, retry 5× w/ backoff → ${DEAD_LETTER_QUEUE})`,
   );
+}
+
+/** One pg-boss registration per worker: each polls on its own, pg-boss hands
+ *  out distinct jobs via SKIP LOCKED, so N workers = up to N concurrent
+ *  extractions, each retried independently. batchSize:1 keeps a slow/failing
+ *  node from coupling its fate to a batch-mate. */
+async function handleExtractJob([job]: { data: ExtractJob }[]): Promise<void> {
+  if (!job?.data?.nodeId || !activeOwnerId) return;
+  const ownerId = activeOwnerId;
+  const { nodeId } = job.data;
+  // Serialise per node (parallel across nodes) — see module header.
+  const prev = inflightByNode.get(nodeId);
+  const run = prev
+    ? prev.catch(() => {}).then(() => extractNode(nodeId, ownerId))
+    : extractNode(nodeId, ownerId);
+  const tracked: Promise<unknown> = run
+    .catch(() => {})
+    .finally(() => {
+      if (inflightByNode.get(nodeId) === tracked) inflightByNode.delete(nodeId);
+    });
+  inflightByNode.set(nodeId, tracked);
+  // Let it throw: a thrown error propagates to pg-boss and triggers the
+  // queue's retry/backoff. A swallowed error is the bug we're fixing.
+  await run;
+}
+
+/** Grow or shrink the worker pool to `target`. A removed worker stops polling
+ *  and finishes the job it holds (offWork without wait), so nothing is cut off
+ *  mid-extraction. */
+async function setWorkerCount(target: number): Promise<void> {
+  if (!boss) return;
+  while (workerIds.length < target) {
+    const id = await boss.work<ExtractJob>(
+      EXTRACT_QUEUE,
+      { batchSize: 1, pollingIntervalSeconds: 2 },
+      handleExtractJob,
+    );
+    workerIds.push(id);
+  }
+  while (workerIds.length > target) {
+    const id = workerIds.pop();
+    if (id) await boss.offWork(EXTRACT_QUEUE, { id, wait: false });
+  }
+}
+
+/** Re-read the config and apply a changed worker count or time budget. */
+async function reconcileWithConfig(): Promise<void> {
+  if (!boss || !activeOwnerId || reconciling) return;
+  reconciling = true;
+  try {
+    clearEmbeddingModelCache(activeOwnerId);
+    const cfg = await resolveEmbeddingConfig(activeOwnerId);
+    const target = resolveExtractionConcurrency(cfg.extractionConcurrency);
+    if (target !== workerIds.length) {
+      const from = workerIds.length;
+      await setWorkerCount(target);
+      console.log(`[extract-queue] workers ${from} → ${target} (config change, no restart)`);
+    }
+    const expireMin =
+      cfg.extractionTimeBudgetMinutes && cfg.extractionTimeBudgetMinutes >= 1
+        ? cfg.extractionTimeBudgetMinutes
+        : EXTRACT_EXPIRE_MIN;
+    if (expireMin !== activeExpireMin) {
+      const { policy: _policy, ...mutable } = EXTRACT_QUEUE_OPTIONS;
+      await boss.updateQueue(EXTRACT_QUEUE, { ...mutable, expireInSeconds: expireMin * 60 });
+      console.log(`[extract-queue] time budget ${activeExpireMin} → ${expireMin} min`);
+      activeExpireMin = expireMin;
+    }
+  } catch (err) {
+    console.error('[extract-queue] reconcile error:', err instanceof Error ? err.message : err);
+  } finally {
+    reconciling = false;
+  }
 }
 
 /**
@@ -225,6 +283,9 @@ export async function enqueueExtract(nodeId: string): Promise<void> {
 
 /** Gracefully stop the boss (lets in-flight jobs finish). */
 export async function stopExtractQueue(): Promise<void> {
+  if (reconcileTimer) clearInterval(reconcileTimer);
+  reconcileTimer = null;
+  workerIds.length = 0;
   if (!boss) return;
   const b = boss;
   boss = null;

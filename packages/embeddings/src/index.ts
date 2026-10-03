@@ -46,6 +46,11 @@ export {
   type ReembedResult,
   type ReembedProgressEvent,
 } from './reembed';
+export {
+  EXTRACTION_CONCURRENCY_DEFAULT,
+  EXTRACTION_CONCURRENCY_MAX,
+  resolveExtractionConcurrency,
+} from './extraction-concurrency';
 
 /** Models that accept non-text inputs. Kept here for callers (the
  *  extractor's attachment path) that need to know in advance which

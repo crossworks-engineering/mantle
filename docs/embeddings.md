@@ -222,9 +222,18 @@ EmbeddingGemma on a GPU is instant; on a **shared-vCPU VPS with no GPU** it's se
 
 | Env var                         | Default  | What it does                            | When to change                                                                                     |
 | ------------------------------- | -------- | --------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `EXTRACT_CONCURRENCY`           | `2`      | In-flight extractor jobs (clamped 1–16). | **Drop to `1`** on a CPU-only embedder so jobs don't contend for cores.                            |
+| `EXTRACT_CONCURRENCY`           | `2`      | In-flight extractor jobs (clamped 1–16). The UI value wins over this; see below. | **Drop to `1`** on a CPU-only embedder so jobs don't contend for cores.                            |
 | `MANTLE_LOCAL_EMBED_BATCH`      | `16`     | Texts per local-embedder HTTP request.  | **Lower (e.g. `8`)** on an especially slow box so each request clears the timeout; raise on a GPU. |
 | `MANTLE_LOCAL_EMBED_TIMEOUT_MS` | `120000` | Per-request timeout (ms).               | Raise for very slow hardware so a legitimate sub-batch isn't aborted early.                        |
+
+**Set it from the UI, live.** Settings → AI workers → Extractor (and Settings →
+Embedding → Performance & throughput) set the extractor count, 1 to 16. The
+extractor re-reads it every 30s and adds or removes workers with no restart; a
+removed worker finishes the job it holds first. The time budget is live the same
+way. The panel also shows the queue: working now, waiting, retrying, done in the
+last 10 minutes, dead-lettered (`GET/PATCH /api/embedding/extraction`). A host
+that sends extraction to a hosted model (no local CPU embedder) can run 8 or
+more; a CPU-only box should stay at 1 or 2.
 
 ```bash
 # .env on a small CPU-only box:
