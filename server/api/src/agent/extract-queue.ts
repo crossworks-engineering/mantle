@@ -98,7 +98,6 @@ let reconcileTimer: ReturnType<typeof setInterval> | null = null;
 let reconciling = false;
 const RECONCILE_INTERVAL_MS = 30_000;
 
-
 /**
  * Re-drive dead-lettered extract jobs back onto the main queue. Runs at every
  * agent start: a node that exhausted its 5 retries (e.g. the embedder was down

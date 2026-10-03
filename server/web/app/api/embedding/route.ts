@@ -78,7 +78,11 @@ export async function POST(req: Request) {
       backupBaseUrl: backupEnabled ? orNull(body.backup_base_url) : null,
       backupApiKeyId: backupEnabled ? orNull(body.backup_api_key_id) : null,
       backupLabel: backupEnabled ? orNull(body.backup_label) : null,
-      extractionConcurrency: nullableInt(body.extraction_concurrency, 1, EXTRACTION_CONCURRENCY_MAX),
+      extractionConcurrency: nullableInt(
+        body.extraction_concurrency,
+        1,
+        EXTRACTION_CONCURRENCY_MAX,
+      ),
       extractionTimeBudgetMinutes: nullableInt(body.extraction_time_budget_minutes, 1, 720),
       localEmbedBatchSize: nullableInt(body.local_embed_batch_size, 1, 512),
       localEmbedRequestTimeoutMs: nullableInt(body.local_embed_request_timeout_ms, 1000, 600000),
