@@ -521,6 +521,73 @@ chunker to carry structure it does not have for these files, or a cap on
 chunks per document in the top 10, which would keep the trap gain without
 the crowding.
 
+## Diversity cap and rerankers (2026-10-03)
+
+The next step after the keyword fix: the same 98 cases, a fresh copy of the
+same corpus. Base = hybrid `searchChunks`, top 10. All rows: exact passage.
+The gold passage is in the hybrid top 50 for 54 of 98 cases (55%) and the
+top 100 for 59: that is the ceiling any reranker of that pool can reach.
+
+### A per-document cap: no win, not built
+
+At most N chunks of one document in the top 10, the rest backfilled.
+
+| cap  | R@1 | R@10 | MRR  | distinct documents |
+| ---- | --- | ---- | ---- | ------------------ |
+| none | 9%  | 39%  | 0.18 | 7.2                |
+| 3    | 9%  | 38%  | 0.18 | 7.6                |
+| 2    | 9%  | 38%  | 0.18 | 8.0                |
+
+Without headers the top 10 is not crowded, so a cap has little to fix. It
+would matter for document-level headers (above), which are not adopted.
+
+### Rerankers on the hybrid top 50
+
+Hosted rerank models through OpenRouter (`POST /api/v1/rerank`; the model
+catalog lists them with output modality `rerank` and a price of 0, so the
+cost below is the `usage.cost` each response reports), two small chat models
+asked to pick the 10 best, and the decider's `passage_scoring` (Jev). Each
+document is the node title, a blank line and the chunk text. Latency is one
+search at a time, from the Mac.
+
+| reranker                            | R@1 | R@10 | MRR  | p50    | $ per search |
+| ----------------------------------- | --- | ---- | ---- | ------ | ------------ |
+| none (hybrid)                       | 9%  | 39%  | 0.18 | 0.02 s | 0            |
+| voyageai/rerank-2.5-lite            | 32% | 54%  | 0.39 | 1.6 s  | 0.00055      |
+| voyageai/rerank-2.5                 | 32% | 55%  | 0.39 | 1.7 s  | 0.00136      |
+| cohere/rerank-4-fast                | 17% | 52%  | 0.30 | 1.7 s  | 0.00202      |
+| cohere/rerank-4-pro                 | 34% | 54%  | 0.41 | 2.7 s  | 0.00253      |
+| qwen/qwen3-reranker-8b              | 34% | 55%  | 0.42 | 3.5 s  | 0.00621      |
+| google/gemini-2.5-flash-lite (chat) | 16% | 37%  | 0.22 | 3.5 s  | 0.00133      |
+| google/gemini-3.1-flash-lite (chat) | 27% | 39%  | 0.30 | 4.4 s  | 0.00323      |
+| Jev, top 20 (today's pool)          | 34% | 44%  | 0.37 | 0.55 s | 0.00056      |
+| Jev, top 50 (two requests)          | 36% | 53%  | 0.41 | 1.26 s | 0.00138      |
+
+The rerankers nearly reach the ceiling: almost every gold passage in the top
+50 lands in their top 10. A 100-deep pool (Voyage lite) gave 56% for twice
+the cost. The chat models do not help. Jev on the top 20 is where a brain
+with `passage_scoring` on stands today; the gap to the rerankers is the
+pool, not the model: Jev on the top 50 matches them.
+
+### What was built
+
+No new worker kind and no new model. The decider's `passage_scoring` use
+gained an optional `pool` (docs/decisions.md): unset keeps today's pool,
+`pool: 50` scores the top 50 in two requests. The `search_chunks` tool path,
+measured with the new `passage-scored` retriever (the tool's own sequence:
+search, score, drop, cut):
+
+| `search_chunks` with Jev | R@1 | R@10 | MRR  | p50 / p90       |
+| ------------------------ | --- | ---- | ---- | --------------- |
+| pool unset (20)          | 31% | 43%  | 0.35 | 0.56 s / 0.81 s |
+| `pool: 50`               | 36% | 53%  | 0.41 | 1.24 s / 1.44 s |
+
+The two requests of a fan-out are not served side by side, so its requests
+may wait the worker timeout times the request count (without that, 14 of 98
+searches ran past the 1.5 s timeout). With the pool set, the responder's
+auto-context also scores before its budget cut when `context_pruning` is on:
+before, pruning only saw the 8 passages search order had already chosen.
+
 ## Automated eval: `recall_eval` + the brain-health heartbeat (2026-07-13)
 
 The harness above is manual (`pnpm -C server/web eval:recall`). The automated

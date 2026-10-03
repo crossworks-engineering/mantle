@@ -7,6 +7,7 @@ const h = vi.hoisted(() => ({
   plan: [] as Array<'ok' | 'fail'>,
   sent: 0,
   states: [] as Array<{ message?: string }>,
+  timeouts: [] as number[],
 }));
 
 vi.mock('@mantle/db', () => ({
@@ -32,8 +33,13 @@ vi.mock('@mantle/tracing', () => ({
 vi.mock('@mantle/voice', () => ({
   getDecisionAdapter: () => ({
     decide: vi.fn(
-      async (req: { questions: Record<string, unknown>; state: { message?: string } }) => {
+      async (req: {
+        questions: Record<string, unknown>;
+        state: { message?: string };
+        timeoutMs: number;
+      }) => {
         h.states.push(req.state);
+        h.timeouts.push(req.timeoutMs);
         const outcome = h.plan[h.sent++] ?? 'ok';
         if (outcome === 'fail') throw new Error('timeout');
         return {
@@ -81,8 +87,27 @@ beforeEach(() => {
   h.plan = [];
   h.sent = 0;
   h.states = [];
+  h.timeouts = [];
   clearDecisionCache();
   forgetResolvedDecider();
+});
+
+describe('timeout', () => {
+  const call = (message: string, timeoutFactor?: number) =>
+    decide({
+      ownerId: 'o1',
+      use: 'passage_scoring',
+      state: { message },
+      questions: { q: { type: 'noul', instructions: 'x' } as never },
+      ...(timeoutFactor ? { timeoutFactor } : {}),
+    });
+
+  it('uses the worker timeout, scaled by timeoutFactor and capped at 5 s', async () => {
+    await call('one');
+    await call('two', 2);
+    await call('ten', 10);
+    expect(h.timeouts).toEqual([1500, 3000, 5000]);
+  });
 });
 
 describe('breaker and fan-outs', () => {

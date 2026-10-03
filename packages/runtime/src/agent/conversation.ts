@@ -62,6 +62,7 @@ import {
   decisionUseEnabled,
   dropSupersededInPool,
   groupVersions,
+  passageScoringPool,
   pruneContextItems,
   recallExchanges,
   scoreContextItems,
@@ -870,8 +871,13 @@ async function loadConversationContextAtLevel(args: {
     const chunkQuery = enrichedQuery ?? inboundText;
     // Decider, use `passage_scoring` (experimental, owner-switched): with it
     // on, pull a wider pool so the scorer can promote a passage search ranked
-    // 12th. Off = the same small pool as always.
+    // 12th. Off = the same small pool as always. With the use's `pool` set,
+    // it scores that deeper pool and runs even when context_pruning is on:
+    // pruning only drops among the passages that survived the budget cut,
+    // which is taken in search order, so a passage search ranked 30th would
+    // never reach it (docs/recall-eval.md).
     const scoringUse = await decisionUseEnabled(ownerId, 'passage_scoring');
+    const scoreFirst = scoringUse !== null && (!pruningUse || scoringUse.pool !== undefined);
     let hits = await searchChunks({
       ownerId,
       embedding: retrievalVec,
@@ -879,7 +885,11 @@ async function loadConversationContextAtLevel(args: {
       // exact-term question is rescued by keyword when it embeds poorly.
       q: chunkQuery,
       // small pool so the cutoff can trim without starving
-      limit: scoringUse || pruningUse ? Math.min(Math.max(chunkLimit * 2, 16), 25) : chunkLimit + 4,
+      limit: scoringUse
+        ? passageScoringPool(scoringUse, chunkLimit)
+        : pruningUse
+          ? Math.min(Math.max(chunkLimit * 2, 16), 25)
+          : chunkLimit + 4,
       excludeSystemOrigin: true,
       excludeTypes: hiddenTypes,
     });
@@ -888,7 +898,7 @@ async function loadConversationContextAtLevel(args: {
     // before the budget cut below. `shadow`: traced only, list unchanged.
     // Null (off / failed / slow) = the list search returned. Freshness is
     // NOT the scorer's job — the supersede pass further down stays in charge.
-    if (scoringUse && !pruningUse) {
+    if (scoreFirst) {
       const scoring = await scorePassages(
         ownerId,
         chunkQuery,

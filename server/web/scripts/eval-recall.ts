@@ -25,6 +25,11 @@
  *                     responder's auto-context make. The real agent path.
  *   passage-vector  — the same call with no query text (vector arm alone).
  *   passage-keyword — the keyword arm alone (`arms: 'keyword'`).
+ *   passage-scored  — what the `search_chunks` tool returns: the hybrid pool,
+ *                     scored by the decider's `passage_scoring` use when the
+ *                     brain has it on (pool and threshold from its settings).
+ *                     Costs one decision call per case; same as `passage`
+ *                     when the use is off.
  *
  * Usage:
  *   ALLOWED_USER_ID=<uuid> pnpm -C server/web eval:recall
@@ -53,6 +58,12 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import { db, agents, nodes, type Agent } from '@mantle/db';
 import { embed } from '@mantle/embeddings';
 import { searchNodes, searchChunks } from '@mantle/search';
+import {
+  applyPassageScores,
+  decisionUseEnabled,
+  passageScoringPool,
+  scorePassages,
+} from '@mantle/decisions';
 import { loadConversationContext } from '@mantle/runtime/agent';
 import { env } from '@mantle/config';
 
@@ -70,9 +81,15 @@ const RETRIEVERS = [
   'passage',
   'passage-vector',
   'passage-keyword',
+  'passage-scored',
 ] as const;
 type Retriever = (typeof RETRIEVERS)[number];
-const PASSAGE_RETRIEVERS: readonly Retriever[] = ['passage', 'passage-vector', 'passage-keyword'];
+const PASSAGE_RETRIEVERS: readonly Retriever[] = [
+  'passage',
+  'passage-vector',
+  'passage-keyword',
+  'passage-scored',
+];
 const K_VALUES = [1, 3, 5, 10] as const;
 
 type GoldCase = {
@@ -241,6 +258,10 @@ type CaseResult = {
   passageRanks: Partial<Record<Retriever, number>>;
   /** Wall time of the hybrid passage search (the agent path), ms. */
   passageMs: number | null;
+  /** Wall time of the scored passage search (search + decision), ms. */
+  scoredMs: number | null;
+  /** Distinct documents in each passage retriever's result. */
+  passageDocs: Partial<Record<Retriever, number>>;
   /** prod-only: did an expected fact substring appear in the facts Saskia saw? */
   factHit: boolean | null;
   /** For avoid-cases: did bulk/marketing junk reach the prompt window? null when
@@ -298,7 +319,11 @@ async function runCase(
 
   // Passage retrievers: the chunk list as the agent gets it (NOT deduped, so
   // a passage rank is a real position in the tool result).
-  const passageArgs = { ownerId, embedding: queryVec, limit: args.passageLimit };
+  const passageArgs = {
+    ownerId,
+    embedding: queryVec,
+    limit: args.passageLimit,
+  };
   const passageLists: Partial<Record<Retriever, Candidate[]>> = {};
   const toCands = (rows: Awaited<ReturnType<typeof searchChunks>>): Candidate[] =>
     rows.map((r) => ({ id: r.nodeId, title: r.nodeTitle, ordinal: r.ordinal }));
@@ -310,6 +335,37 @@ async function runCase(
   }
   if (want.has('passage-vector'))
     passageLists['passage-vector'] = toCands(await searchChunks(passageArgs));
+  let scoredMs: number | null = null;
+  if (want.has('passage-scored')) {
+    // The tool's path (packages/tools/src/builtins-search.ts), live mode only.
+    const t0 = performance.now();
+    const use = await decisionUseEnabled(ownerId, 'passage_scoring');
+    const limit = args.passageLimit;
+    const found = await searchChunks({
+      ...passageArgs,
+      q: gc.query,
+      limit: use ? passageScoringPool(use, limit) : limit,
+    });
+    const key = (h: (typeof found)[number]) => `${h.nodeId}:${h.ordinal}`;
+    const scoring = use
+      ? await scorePassages(
+          ownerId,
+          gc.query,
+          found.map((h) => ({
+            id: key(h),
+            title: h.nodeTitle,
+            heading: h.headingPath,
+            text: h.text,
+          })),
+        )
+      : null;
+    passageLists['passage-scored'] = toCands(
+      scoring?.mode === 'live'
+        ? applyPassageScores(found, key, scoring).kept.slice(0, limit)
+        : found.slice(0, limit),
+    );
+    scoredMs = Math.round(performance.now() - t0);
+  }
   if (want.has('passage-keyword'))
     passageLists['passage-keyword'] = toCands(
       await searchChunks({ ...passageArgs, q: gc.query, arms: 'keyword' }),
@@ -317,9 +373,11 @@ async function runCase(
 
   const ranks: Partial<Record<Retriever, number>> = {};
   const passageRanks: Partial<Record<Retriever, number>> = {};
+  const passageDocs: Partial<Record<Retriever, number>> = {};
   for (const r of args.retrievers) {
     const pl = passageLists[r];
     if (pl) {
+      passageDocs[r] = new Set(pl.map((c) => c.id)).size;
       ranks[r] = goldRank(dedup(pl), gc);
       if (gc.expectChunks?.length) passageRanks[r] = passageRank(pl, gc);
     } else if (lists[r]) {
@@ -354,6 +412,8 @@ async function runCase(
     ranks,
     passageRanks,
     passageMs,
+    scoredMs,
+    passageDocs,
     factHit,
     prodJunk,
     searchJunk,
@@ -516,6 +576,23 @@ async function main() {
       printTable(
         `passage · ${g}`,
         passageRetrievers.map((r) => [r, groupMetrics[g]![r]!]),
+      );
+  }
+
+  const scored = results
+    .map((r) => r.scoredMs)
+    .filter((x): x is number => x !== null)
+    .sort((a, b) => a - b);
+  if (scored.length)
+    console.log(
+      `  passage-scored latency: p50 ${scored[Math.floor(scored.length / 2)]} ms, ` +
+        `p90 ${scored[Math.floor(scored.length * 0.9)]} ms (search + decision)`,
+    );
+  for (const r of passageRetrievers) {
+    const docs = results.map((c) => c.passageDocs[r]).filter((x): x is number => x !== undefined);
+    if (docs.length)
+      console.log(
+        `  ${r}: ${(docs.reduce((a, b) => a + b, 0) / docs.length).toFixed(1)} distinct documents per result`,
       );
   }
 

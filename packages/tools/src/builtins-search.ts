@@ -9,7 +9,12 @@ import { and, desc, eq, notInArray, sql } from 'drizzle-orm';
 import { db, nodes, type Node } from '@mantle/db';
 import { searchNodes, searchChunks, readSection, resolveSupersededTargets } from '@mantle/search';
 import { embed } from '@mantle/embeddings';
-import { applyPassageScores, decisionUseEnabled, scorePassages } from '@mantle/decisions';
+import {
+  applyPassageScores,
+  decisionUseEnabled,
+  passageScoringPool,
+  scorePassages,
+} from '@mantle/decisions';
 import { nodeUrl } from '@mantle/content';
 import { type BuiltinToolDef } from './types';
 import { str, strOpt, numOpt as num } from './coerce';
@@ -189,10 +194,11 @@ export const search_chunks: BuiltinToolDef = {
       const limit = num(input.limit, 10) ?? 10;
       const embedding = await embed(ctx.ownerId, q);
       // Decider, use `passage_scoring` (experimental, owner-switched): when it
-      // is on, fetch a wider pool so the scorer has something to choose from.
-      // Off = the exact pool it always fetched.
+      // is on, fetch a wider pool so the scorer has something to choose from
+      // (the use's `pool` setting, see passageScoringPool). Off = the exact
+      // pool it always fetched.
       const scoringUse = await decisionUseEnabled(ctx.ownerId, 'passage_scoring');
-      const pool = scoringUse ? Math.min(Math.max(limit * 2, 16), 25) : limit;
+      const pool = scoringUse ? passageScoringPool(scoringUse, limit) : limit;
       const found = await searchChunks({
         ownerId: ctx.ownerId,
         embedding,

@@ -16,7 +16,7 @@
  * supersede annotation stays in charge of that.
  */
 import type { DecisionAnswer, DecisionQuestion } from '@mantle/voice';
-import { decide, type DecideOutcome } from './decide';
+import { DecideBatch, decide, type DecideOutcome } from './decide';
 
 /** The rubric. Index 0 = useless, 3 = states the answer. Ordered, so the
  *  model's `score` is a probability-weighted position on it. */
@@ -33,8 +33,26 @@ export const PASSAGE_LEVELS: readonly string[] = [
 export const PASSAGE_THRESHOLD_DEFAULT = 1.5;
 
 /** One request holds at most this many passages: 20 passages ≈ 14k input
- *  tokens on a 32k window. Passages past the cap are left unscored (kept). */
+ *  tokens on a 32k window. A larger list goes out as parallel requests of
+ *  this size (see `pool`). */
 export const MAX_PASSAGES_PER_REQUEST = 25;
+
+/** Ceiling on the use's `pool` setting: four requests per search. */
+export const MAX_PASSAGE_POOL = 100;
+
+/**
+ * How many passages a search fetches for scoring (pure). The use's `pool`
+ * setting when set (capped at `MAX_PASSAGE_POOL`), else the original
+ * `max(2 x limit, 16)` capped at one request. Never below `limit`.
+ * Measured on a 122k-chunk corpus (docs/recall-eval.md): scoring the top 50
+ * instead of the top 20 lifted exact-passage R@10 from 44% to 53%.
+ */
+export function passageScoringPool(use: { pool?: number } | null, limit: number): number {
+  const pool = use?.pool
+    ? Math.min(use.pool, MAX_PASSAGE_POOL)
+    : Math.min(Math.max(limit * 2, 16), MAX_PASSAGES_PER_REQUEST);
+  return Math.max(pool, limit);
+}
 
 /** Per-passage text cap sent to the model. Chunks are ~2.75k chars; the head
  *  carries the topic, and a hard cap keeps the request under the window. */
@@ -58,16 +76,53 @@ export type PassageScoring = {
   ms: number;
 };
 
-/** Ask the decider to score `passages` against `question`. Returns null when
- *  the decider is off or the call failed — the caller keeps its list as is. */
+/** Ask the decider to score `passages` against `question`, in parallel
+ *  requests of `MAX_PASSAGES_PER_REQUEST` (one request for a short list).
+ *  Returns null when the decider is off or every request failed: the caller
+ *  keeps its list as is. A failed request leaves its passages unscored. */
 export async function scorePassages(
   ownerId: string,
   question: string,
   passages: readonly ScorablePassage[],
 ): Promise<PassageScoring | null> {
-  const batch = passages.slice(0, MAX_PASSAGES_PER_REQUEST);
-  if (batch.length === 0 || !question.trim()) return null;
+  const list = passages.slice(0, MAX_PASSAGE_POOL);
+  if (list.length === 0 || !question.trim()) return null;
+  const groups: ScorablePassage[][] = [];
+  for (let i = 0; i < list.length; i += MAX_PASSAGES_PER_REQUEST) {
+    groups.push(list.slice(i, i + MAX_PASSAGES_PER_REQUEST));
+  }
+  // A fan-out is one decision to the breaker (see DecideBatch). Its requests
+  // do not run side by side at the provider: the wait grows with the total
+  // passages (top 50: p50 1.3 s, p90 1.6 s against one request's 0.6 s), so
+  // each request may wait the worker timeout once per group.
+  const batch = groups.length > 1 ? new DecideBatch() : undefined;
+  const t0 = Date.now();
+  const results = await Promise.all(
+    groups.map((g) => scoreGroup(ownerId, question, g, batch, groups.length)),
+  );
+  batch?.settle();
+  const answered = results.filter((r): r is PassageScoring => r !== null);
+  const first = answered[0];
+  if (!first) return null;
+  const scores = new Map<string, PassageScore>();
+  for (const r of answered) for (const [id, sc] of r.scores) scores.set(id, sc);
+  return {
+    scores,
+    mode: first.mode,
+    threshold: first.threshold,
+    cached: answered.every((r) => r.cached),
+    ms: groups.length > 1 ? Date.now() - t0 : first.ms,
+  };
+}
 
+/** One request: the passages of one group. */
+async function scoreGroup(
+  ownerId: string,
+  question: string,
+  batch: readonly ScorablePassage[],
+  fanOut: DecideBatch | undefined,
+  requests: number,
+): Promise<PassageScoring | null> {
   const state: Record<string, unknown> = { question, passages: {} as Record<string, unknown> };
   const questions: Record<string, DecisionQuestion> = {};
   const keyById = new Map<string, string>();
@@ -97,6 +152,7 @@ export async function scorePassages(
       would_drop: countBelow(answers, threshold),
       threshold,
     }),
+    ...(fanOut ? { batch: fanOut, timeoutFactor: requests } : {}),
   });
   if (!outcome) return null;
   threshold = outcome.use.threshold ?? PASSAGE_THRESHOLD_DEFAULT;

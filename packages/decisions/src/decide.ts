@@ -73,6 +73,8 @@ export type ResolvedUse = {
   deferBelow: number;
   /** At or above this the caller may act with no second check. */
   actAloneAt: number;
+  /** The use's `pool` setting, when set to a positive number. */
+  pool?: number;
 };
 
 /** Pure: read one use's switch off the worker params. Missing = OFF; an
@@ -90,6 +92,9 @@ export function resolveUse(
     threshold: typeof cfg.threshold === 'number' ? cfg.threshold : undefined,
     deferBelow,
     actAloneAt: Math.max(actAloneAt, deferBelow),
+    ...(typeof cfg.pool === 'number' && Number.isFinite(cfg.pool) && cfg.pool >= 1
+      ? { pool: Math.floor(cfg.pool) }
+      : {}),
   };
 }
 
@@ -111,6 +116,9 @@ export type DecideInput = {
   /** Part of a fan-out: the breaker hears the batch's one outcome (at
    *  `settle()`), not each request's. */
   batch?: DecideBatch;
+  /** Multiplies the worker's `timeout_ms` (still capped at `maxTimeoutMs`),
+   *  for a request that shares the provider with others of one fan-out. */
+  timeoutFactor?: number;
 };
 
 /**
@@ -234,10 +242,14 @@ function breakerFailure(workerId: string): boolean {
   return opened;
 }
 
-function timeoutOf(params: DeciderParams): number {
+function timeoutOf(params: DeciderParams, factor = 1): number {
   const t = params.timeout_ms;
-  if (typeof t !== 'number' || !Number.isFinite(t)) return DEFAULTS.timeoutMs;
-  return Math.min(DEFAULTS.maxTimeoutMs, Math.max(DEFAULTS.minTimeoutMs, t));
+  const base =
+    typeof t !== 'number' || !Number.isFinite(t)
+      ? DEFAULTS.timeoutMs
+      : Math.max(DEFAULTS.minTimeoutMs, t);
+  const f = Number.isFinite(factor) && factor > 1 ? factor : 1;
+  return Math.min(DEFAULTS.maxTimeoutMs, base * f);
 }
 
 export async function decide(input: DecideInput): Promise<DecideOutcome | null> {
@@ -279,7 +291,7 @@ export async function decide(input: DecideInput): Promise<DecideOutcome | null> 
           state: input.state,
           questions: input.questions,
           zeroDataRetention: params.zdr !== false,
-          timeoutMs: timeoutOf(params),
+          timeoutMs: timeoutOf(params, input.timeoutFactor),
         });
         const ms = Date.now() - t0;
         recordChatUsage(h, res, worker.model);

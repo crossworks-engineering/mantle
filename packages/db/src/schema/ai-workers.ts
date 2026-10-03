@@ -315,6 +315,11 @@ export type DecisionUseConfig = {
   threshold?: number;
   /** Per-use override of the worker-level `defer_below` / `act_alone_at`. */
   min_confidence?: number;
+  /** passage_scoring only: how many passages to fetch and score per search.
+   *  Unset = `max(2 x limit, 16)` capped at 25 (one request). Up to 100, in
+   *  parallel requests of 25: a deeper pool finds passages search ranked far
+   *  down (docs/recall-eval.md), at about $0.0005 per 25 scored. */
+  pool?: number;
 };
 
 /** Params for `kind='decider'`. The model lives on the row's `model` column
