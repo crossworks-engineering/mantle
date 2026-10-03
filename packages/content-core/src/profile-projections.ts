@@ -467,9 +467,24 @@ export function projectAppOpens(raw: unknown): Record<string, AppOpenStat> | und
   return Object.fromEntries(rows.slice(0, APP_OPENS_MAX));
 }
 
+/** The house style a NEW brain starts with (Settings, Profile). Seeded only when
+ *  a profile row is first created, so an owner who edits or clears it keeps
+ *  their choice. The dash characters are escapes so the source holds none. */
+export const DEFAULT_HOUSE_STYLE =
+  'Never use em dashes (\u2014). Rewrite instead: a comma, a colon, parentheses, or two ' +
+  'sentences all carry the same break, so use whichever reads best. The character should ' +
+  'not appear in your output at all.\n\n' +
+  'The same goes for an en dash (\u2013) used as a sentence break. En dashes inside numeric ' +
+  'ranges (2020\u20132024, pages 10\u201314) are correct and stay, and hyphens in compound ' +
+  'words (self-hosted, read-only) are unaffected.';
+
 export const DEFAULT_PREFERENCES: ProfilePreferences = {
   timezone: 'UTC',
   locale: 'en-GB',
+  houseStyle: DEFAULT_HOUSE_STYLE,
+  // Live thinking on (streamThoughts defaults on) at Medium: the 4096 tier of
+  // THINKING_TIERS. Unset would mean no thinking at all.
+  thinkingBudget: 4096,
 };
 
 /** IANA tz validation via Intl.DateTimeFormat — the runtime throws
