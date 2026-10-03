@@ -40,6 +40,27 @@ export function normalizeFold(v: unknown): HeadingFold | null {
  */
 export const FOLD_MARKER_RE = /\s*\{fold(?:=(open|closed))?\}\s*$/;
 
+/**
+ * A heading's trailing marker, read off its LAST inline `marked` token and
+ * removed from it. An escaped `\{fold}` never matches: `marked` lexes the
+ * escape as its own token, so the last text run is `fold}`. Shared by
+ * markdownToDoc and the client's chat renderer, so both read it the same way.
+ */
+export function splitFoldMarker<T extends { type: string; text?: string }>(
+  tokens: T[] | undefined,
+): { tokens: T[] | undefined; fold: HeadingFold | null } {
+  const last = tokens?.[tokens.length - 1];
+  if (!tokens || !last || last.type !== 'text') return { tokens, fold: null };
+  const m = FOLD_MARKER_RE.exec(last.text ?? '');
+  if (!m) return { tokens, fold: null };
+  const rest = (last.text ?? '').slice(0, m.index).replace(/\s+$/, '');
+  const head = tokens.slice(0, -1);
+  return {
+    tokens: rest ? [...head, { ...last, text: rest }] : head,
+    fold: m[1] === 'closed' ? 'closed' : 'open',
+  };
+}
+
 /** The marker docToMarkdown writes for a stored fold value. */
 export function foldMarker(fold: HeadingFold): string {
   return fold === 'closed' ? '{fold=closed}' : '{fold}';

@@ -38,7 +38,7 @@ import {
   FOLDER_HREF,
   FOLDER_HERE,
 } from './markdown-refs';
-import { FOLD_MARKER_RE, type HeadingFold } from './heading-fold';
+import { splitFoldMarker } from './heading-fold';
 
 type PMMark = { type: string; attrs?: Record<string, unknown> };
 type PMNode = {
@@ -367,28 +367,6 @@ function tableNode(t: Tok): PMNode {
     content: row.map((c) => ({ type: 'tableCell', content: [paragraph(c.tokens)] })),
   }));
   return { type: 'table', content: [headerRow, ...bodyRows] };
-}
-
-/**
- * A heading's trailing `{fold}` / `{fold=closed}` marker (see heading-fold.ts),
- * read off its LAST inline text token and removed from it. An escaped
- * `\{fold}` never matches: `marked` lexes the escape as its own token, so the
- * last text run is `fold}`.
- */
-function splitFoldMarker(tokens: Tok[] | undefined): {
-  tokens: Tok[] | undefined;
-  fold: HeadingFold | null;
-} {
-  const last = tokens?.[tokens.length - 1];
-  if (!tokens || !last || last.type !== 'text') return { tokens, fold: null };
-  const m = FOLD_MARKER_RE.exec(last.text ?? '');
-  if (!m) return { tokens, fold: null };
-  const rest = (last.text ?? '').slice(0, m.index).replace(/\s+$/, '');
-  const head = tokens.slice(0, -1);
-  return {
-    tokens: rest ? [...head, { ...last, text: rest }] : head,
-    fold: m[1] === 'closed' ? 'closed' : 'open',
-  };
 }
 
 /** Map marked block tokens to ProseMirror block nodes. */
