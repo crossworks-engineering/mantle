@@ -127,7 +127,9 @@ const recall_eval: BuiltinToolDef = {
   slug: 'recall_eval',
   name: 'Run the retrieval-quality eval',
   description:
-    "Run the brain's retrieval self-check: every golden case (a note tagged `recall-eval-cases` holding a JSON array of {id, query, expectNodeIds?|expectTitleIncludes?}) is searched via the shipped retrievers as agents call them (hybrid node search, hybrid passage search, and the Jev-scored passage path when passage_scoring has a pool set, which costs about USD 0.0007 per 25 passages per case; vector-only passages are a secondary line), scored (recall@k, MRR), saved as a run note, and compared to the previous run. Returns scores, drift, and `alert: true` when quality dropped enough to tell the user (`reason: 'quality_dropped'`), or when EVERY case missed in both retrievers (`reason: 'gold_set_unmatched'`: the gold set no longer describes this brain and needs repairing, see `unmatchedCases`). Writes one summary note per run. Returns `skipped: true, alert: false` when no gold set exists yet — unmeasured, not degraded, so say nothing. For a point-in-time capacity check use `brain_capacity`; this measures retrieval QUALITY.",
+    "Run the brain's retrieval self-check: every golden case (a note tagged `recall-eval-cases`, a JSON array of {id, query, expectNodeIds?|expectTitleIncludes?}) runs through the retrievers agents use (hybrid node and passage search; with passage_scoring's pool set, also the Jev-scored path, about USD 0.0007 per 25 passages per case), is scored (recall@k, MRR), saved as one run note and compared to the previous run. `alert: true` with `reason: 'quality_dropped'` when quality fell, or `reason: 'gold_set_unmatched'` when EVERY case missed both retrievers (repair the gold set, see `unmatchedCases`). `skipped: true, alert: false` when no gold set exists: unmeasured, not degraded, say nothing. Capacity is `brain_capacity`; this measures QUALITY.",
+  // The Jev-scored passage path calls the decider (when a pool is set).
+  spends: true,
   inputSchema: { type: 'object', properties: {} },
   handler: async (_input, ctx) => {
     const casesNote = await latestTaggedNoteJson(ctx.ownerId, CASES_TAG);
