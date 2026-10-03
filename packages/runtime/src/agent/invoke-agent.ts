@@ -38,7 +38,7 @@ import { currentTrace, startTrace } from '@mantle/tracing';
 import type { AgentInvoker, InvokeAgentResult } from '@mantle/tools';
 import { MAX_AGENT_DEPTH, MAX_TERMINAL_EDGE_DEPTH, isTerminalDelegateConfig } from '@mantle/tools';
 import { getChatAdapter, type ThinkingEffort } from '@mantle/voice';
-import { applyAgentThinking } from '@mantle/content';
+import { applyAgentThinking } from '@mantle/content-core/profile-projections';
 import { resolveAgentTools, runToolLoop } from './tool-loop';
 import { resolveBackupAdapter, resolveChatKey } from './chat-failover';
 import {

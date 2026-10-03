@@ -8,6 +8,11 @@
 --
 -- Additive and nullable: every existing row reads NULL, so no agent changes
 -- behaviour or spend. Plain DDL, no trigger, no job. Idempotent.
+--
+-- agents is a hot table: wait at most 30 s for the lock, then fail the roll
+-- (migrations-lock-timeout.test.ts).
+SET LOCAL lock_timeout = '30s';
+--> statement-breakpoint
 ALTER TABLE "public"."agents" ADD COLUMN IF NOT EXISTS "thinking_effort" text;
 --> statement-breakpoint
 DO $$

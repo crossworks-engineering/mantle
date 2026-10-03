@@ -277,6 +277,8 @@ vi.mock('@mantle/content', () => ({
   resolveThinkingBudget: () => 0,
   // Thinking off for these fixtures, so no effort either.
   resolveThinkingEffort: () => undefined,
+  profileThinking: () => ({ budget: 0, effort: undefined }),
+  resolveAgentThinking: () => ({ budget: 0, effort: undefined }),
   noteInboundChannel: (...a: unknown[]) => (h.noteInboundChannel(...a), Promise.resolve()),
   isStreamThoughtsEnabled: () => h.thoughtsOn,
   isPersistThoughtsEnabled: () => h.thoughtsOn,

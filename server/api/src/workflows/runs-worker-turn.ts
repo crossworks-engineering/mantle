@@ -69,7 +69,7 @@ import { spillToolResult } from '@mantle/tools';
 import { currentTrace, runDurableStep, startTrace, withDurableSteps } from '@mantle/tracing';
 import { getChatAdapter } from '@mantle/voice';
 import { errorMessage } from '@mantle/std';
-import { applyAgentThinking, NO_THINKING } from '@mantle/content';
+import { applyAgentThinking, NO_THINKING } from '@mantle/content-core/profile-projections';
 import { agentLevel } from '@mantle/runtime/agent';
 
 const PROPOSAL_CAP_CHARS = 2_000;
