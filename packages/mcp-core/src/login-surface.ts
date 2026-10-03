@@ -66,6 +66,8 @@ export type McpCaller = {
   write: boolean;
   /** A peer bound to the owner: the risky tools the owner allowed by name. */
   riskyAllowed?: readonly string[];
+  /** The peer whose token this is (its own rate budget). */
+  peerId?: string;
 };
 
 // ── The owner surface for a peer ─────────────────────────────────────────────
@@ -91,17 +93,45 @@ export const PEER_RISKY_TOOL_SLUGS: ReadonlySet<string> = new Set([
   'pending_approve',
   'pending_reject',
   'api_tool_test',
+  'recipe_tool_test',
+  // Mail out under the owner's address, and the allowlist that gates it
+  // (a new contact also starts a paid inbound backfill).
+  'email_page',
+  'contact_create',
+  'contact_update',
+  // A run queues tool calls and workers that execute later as the owner,
+  // outside this filter (audit H1).
+  'run_plan',
+  'run_append',
+  // Model routing for every agent.
+  'model_pool_set',
+  'model_pool_remove',
+  'video_ingest',
   ...TOOLSMITH_WRITE_SLUGS,
 ]);
-/** Prefixes of whole risky families: Telegram, the CLI sandboxes, the web. */
-export const PEER_RISKY_TOOL_PREFIXES: readonly string[] = ['telegram_', 'sandbox_', 'web_'];
+/** Prefixes of whole risky families: Telegram, the CLI sandboxes, the web,
+ *  and other peers (egress to a third brain on this brain's credentials). */
+export const PEER_RISKY_TOOL_PREFIXES: readonly string[] = [
+  'telegram_',
+  'sandbox_',
+  'web_',
+  'peer_',
+];
 
+/**
+ * Risky for a peer bound to the owner: listed by name or family, or it
+ * spends, or it waits for the owner's confirm in the app (deletes, restores:
+ * the owner surface does not hold that gate), or it changes a mini app's
+ * code or grants (a published app runs the change at once).
+ */
 export function isPeerRiskyTool(slug: string): boolean {
+  const def = getBuiltin(slug);
   return (
     PEER_RISKY_TOOL_SLUGS.has(slug) ||
     PEER_RISKY_TOOL_PREFIXES.some((p) => slug.startsWith(p)) ||
     isBuiltinSpending(slug) ||
-    slug === 'video_ingest'
+    def?.requiresConfirm === true ||
+    (slug.startsWith('app_') && !isBuiltinReadOnly(slug))
   );
 }
 
@@ -203,8 +233,11 @@ export async function resolveLoginToolRows(
       )
       .limit(1);
     let slugs: string[] = [];
-    if (agent) {
-      const agentLevel = (agent.audience ?? 'admin') as ViewerLevel;
+    // The role's responder must sit at the role's level, as for chat
+    // (assertAgentForRole): a responder left at admin is "closed" to that
+    // role, on MCP as in chat.
+    if (agent && agent.audience === level) {
+      const agentLevel = agent.audience as ViewerLevel;
       slugs = effectiveToolSlugs(
         await resolveAgentToolGroups(caller.anchorId, agent.toolGroupSlugs ?? [], agentLevel),
       );
@@ -217,7 +250,7 @@ export async function resolveLoginToolRows(
       const allowed = new Set(CLIENT_TURN_TOOL_SLUGS);
       slugs = slugs.filter((s) => allowed.has(s));
     }
-    if (caller.write)
+    if (slugs.length > 0 && caller.write)
       slugs = [...slugs, ...MY_SPACE_WRITE_TOOL_SLUGS.filter((s) => !slugs.includes(s))];
     if (slugs.length === 0) return [];
     return resolveTools(caller.anchorId, slugs);

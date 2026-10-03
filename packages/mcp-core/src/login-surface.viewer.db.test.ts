@@ -215,6 +215,18 @@ describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
     expect(leak).toBeUndefined();
   });
 
+  it('a responder left above the role level closes MCP to that role, as chat', async () => {
+    await exec(sqlTag`update agents set audience = 'admin'
+      where owner_id = ${anchor} and slug = 'team-responder'`);
+    try {
+      const c = await connect(asMember(true));
+      expect(await names(c)).toEqual([]);
+    } finally {
+      await exec(sqlTag`update agents set audience = 'team'
+        where owner_id = ${anchor} and slug = 'team-responder'`);
+    }
+  });
+
   it('a client with write on gets the draft tools too, and still no library tool', async () => {
     const c = await connect(asClient(true));
     const list = await names(c);

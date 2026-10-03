@@ -67,6 +67,18 @@ describe('owner surface for a peer', () => {
       'access_set',
       'pending_approve',
       'agent_grant_tool_group',
+      // audit 2026-10-03: runs, mail by page, the allowlist, confirm-gated
+      // deletes, live app code, third-brain egress, model routing
+      'run_plan',
+      'run_append',
+      'email_page',
+      'contact_create',
+      'page_delete',
+      'app_source_set',
+      'app_tools_set',
+      'peer_call',
+      'peer_file_copy',
+      'model_pool_set',
     ]) {
       expect(tools, s).not.toContain(s);
     }
@@ -80,8 +92,15 @@ describe('owner surface for a peer', () => {
     expect(tools).not.toContain('telegram_send');
   });
 
-  it('every spending builtin counts as risky', () => {
-    for (const d of BUILTIN_TOOLS) if (d.spends) expect(isPeerRiskyTool(d.slug), d.slug).toBe(true);
+  it('every spending or confirm-gated builtin counts as risky', () => {
+    for (const d of BUILTIN_TOOLS) {
+      if (d.spends || d.requiresConfirm) expect(isPeerRiskyTool(d.slug), d.slug).toBe(true);
+    }
+  });
+
+  it('write off: no peer egress either', () => {
+    const tools = registered((s) => ownerPeerAllows(s, { write: false }));
+    expect(tools.filter((s) => s.startsWith('peer_'))).toEqual([]);
   });
 });
 

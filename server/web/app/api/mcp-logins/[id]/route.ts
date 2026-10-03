@@ -6,7 +6,8 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { db, mcpLoginAccess } from '@mantle/db';
+import { and, eq, isNull } from 'drizzle-orm';
+import { db, mcpLoginAccess, mcpLoginTokens, oauthAccessTokens } from '@mantle/db';
 import { getOwnerOr401 } from '@/lib/auth';
 import { mcpTargetLogin } from '@/lib/mcp-auth';
 import { firstIssue } from '@/lib/zod-issue';
@@ -39,5 +40,18 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     .values({ loginId: login.id, ...set })
     .onConflictDoUpdate({ target: mcpLoginAccess.loginId, set })
     .returning();
+  // Off means off: the login's grants and tokens are revoked, so turning
+  // MCP on again later does not bring the old ones back.
+  if (parsed.data.enabled === false) {
+    const now = new Date();
+    await db
+      .update(oauthAccessTokens)
+      .set({ revokedAt: now })
+      .where(and(eq(oauthAccessTokens.actorId, login.id), isNull(oauthAccessTokens.revokedAt)));
+    await db
+      .update(mcpLoginTokens)
+      .set({ revokedAt: now })
+      .where(and(eq(mcpLoginTokens.loginId, login.id), isNull(mcpLoginTokens.revokedAt)));
+  }
   return NextResponse.json({ enabled: row!.enabled, writeEnabled: row!.writeEnabled });
 }

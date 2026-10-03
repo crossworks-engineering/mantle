@@ -246,8 +246,11 @@ export async function setPeerEnabled(
  * What a peer's token may do on /api/mcp (0227, plan page e5b854dd): act as
  * one login (the caller checked it exists and passes its current role), or
  * nobody (`null`: a share-only peer); the write switch; the risky owner tools
- * allowed by name. Only the fields given change. Unbinding the login also
- * turns write off and clears the risky list, so a later bind starts closed.
+ * allowed by name. Only the fields given change, with one rule: binding or
+ * rebinding the login starts CLOSED (write off, no risky tools) unless the
+ * same call sets them, so a member peer with write on that is switched to
+ * the owner does not get owner write by accident. An unbound peer keeps
+ * write off whatever is sent.
  */
 export async function setPeerAccess(
   ownerId: string,
@@ -259,19 +262,19 @@ export async function setPeerAccess(
   },
 ): Promise<PeerRow | null> {
   const set: Partial<typeof mantlePeers.$inferInsert> = { updatedAt: new Date() };
+  const risky = access.allowedRiskyTools ? [...new Set(access.allowedRiskyTools)] : undefined;
   if (access.actsAs !== undefined) {
     set.actsAsLoginId = access.actsAs?.loginId ?? null;
     set.actsAsRole = access.actsAs?.role ?? null;
-    if (access.actsAs === null) {
-      set.writeEnabled = false;
-      set.allowedRiskyTools = [];
+    set.writeEnabled = access.actsAs ? (access.writeEnabled ?? false) : false;
+    set.allowedRiskyTools = access.actsAs ? (risky ?? []) : [];
+  } else {
+    if (access.writeEnabled !== undefined) {
+      // Never on for a peer bound to nobody.
+      set.writeEnabled =
+        sql`(${access.writeEnabled} and ${mantlePeers.actsAsLoginId} is not null)` as unknown as boolean;
     }
-  }
-  if (access.writeEnabled !== undefined && access.actsAs !== null) {
-    set.writeEnabled = access.writeEnabled;
-  }
-  if (access.allowedRiskyTools !== undefined && access.actsAs !== null) {
-    set.allowedRiskyTools = [...new Set(access.allowedRiskyTools)];
+    if (risky !== undefined) set.allowedRiskyTools = risky;
   }
   const [row] = await db
     .update(mantlePeers)

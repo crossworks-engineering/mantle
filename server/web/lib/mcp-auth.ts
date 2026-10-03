@@ -142,6 +142,7 @@ async function callerFromPeerToken(token: string): Promise<McpCaller | null> {
     loginId: row.id,
     displayName: row.displayName,
     via: 'peer',
+    peerId: peer.id,
     write: peer.writeEnabled,
     riskyAllowed: row.role === 'admin' ? (peer.allowedRiskyTools ?? []) : [],
   };

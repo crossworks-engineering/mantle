@@ -46,13 +46,26 @@ with no "Acts as" is a share-only peer, as before ([federation.md](federation.md
 
 Bound to the owner, the peer gets the owner surface filtered by
 `ownerPeerAllows`: read-only tools unless write is on, and never a risky tool
-(anything that spends, sends outside, runs a shell or a container, publishes,
-or hands out privilege: `PEER_RISKY_TOOL_SLUGS`) unless the owner named it.
+unless the owner named it. Risky (`isPeerRiskyTool`): anything that spends,
+sends outside (mail, Telegram, the web, other peers), runs a shell or a
+container, publishes, queues a run, changes a mini app's code or grants,
+hands out privilege, or waits for the owner's confirm in the app (deletes,
+restores). A peer never confirms a level change for the owner: its
+`confirm` argument is dropped, so a move into a shared folder is refused.
+
+Rebinding a peer to another login starts closed: write off, no risky tools,
+unless the same request sets them. Each peer has its own rate budget.
 
 The calling brain uses `peer_tools`, `peer_call` and `peer_file_copy`
 (`packages/tools/src/builtins-peer-mcp.ts`) against the peer's `/api/mcp`.
 `peer_file_copy` uses the peer's `file_upload` (bound to the owner) or
 `my_file_upload` (bound to a member or client).
+
+Turning a login's MCP off revokes its grants and static tokens. A client's
+sign-out ends all its sessions by design, so it also ends that client's MCP
+grants and static tokens: an admin mints a new token after it. A member or
+client MCP request body is held to the plain JSON ceiling (8 MB), so a draft
+file over MCP is at most about 6 MB.
 
 ## Not done, and why
 
@@ -61,3 +74,8 @@ The calling brain uses `peer_tools`, `peer_call` and `peer_file_copy`
   rights, and own-space folders are a tree feature with its own routes.
 - Non-builtin tools (http, recipe, connector) on the member and client
   surface: their egress is not classified.
+- A peer bound to a member or client does not need that login's own MCP
+  switch: the admin bound it on purpose. Pending peers verify, as for the
+  federation routes.
+- The connected-clients list in Settings, MCP shows every login's grants
+  without naming the login.

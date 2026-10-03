@@ -95,7 +95,7 @@ export function makeRegisterContext(
    *  the name mismatch is exactly why a hand-written fork of it survived every
    *  duplicate check we had. */
   async function callBuiltin(def: BuiltinToolDef, args: Record<string, unknown>) {
-    const input = args ?? {};
+    const input = { ...(args ?? {}) };
     // Declared referential preconditions run first, exactly as
     // dispatch.ts does for the in-app agent. Without this the MCP surface
     // is the only one where an id pointing at a missing — or wrong-type —
@@ -112,6 +112,10 @@ export function makeRegisterContext(
     }
     // The MCP caller holds the owner's credential: it names itself as the
     // owner (client logins C4), since a missing surface is not the owner.
+    // A peer acting as the owner never confirms for the owner: a level
+    // change it would cause (a move into a shared folder, a page filed in
+    // one) is refused instead of confirmed by the caller's own flag.
+    if (via === 'federation' && 'confirm' in input) delete input.confirm;
     const result = await def.handler(input, { ownerId: ownerId, surface });
     if (!result.ok) {
       return {

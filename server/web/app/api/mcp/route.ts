@@ -22,6 +22,7 @@ import { createMcpHandler } from 'mcp-handler';
 import { mcpInstructionsFor, prepareCallerTools, registerPreparedTools } from '@mantle/mcp-core';
 import { isRemoteMcpEnabled, wwwAuthenticateHeader } from '@/lib/mcp-oauth';
 import { resolveMcpCaller } from '@/lib/mcp-auth';
+import { JSON_BODY_CEILING_BYTES } from '@/lib/body-limit';
 import { clientIp, rateLimit } from '@/lib/rate-limit';
 
 // Generous — the MCP client makes one HTTP request per tool call, so this must
@@ -60,7 +61,9 @@ async function handler(req: Request): Promise<Response> {
 
   const caller = await resolveMcpCaller(req);
   if (!caller) return unauthorized();
-  const perLogin = rateLimit(`mcp-login:${caller.loginId}`, LOGIN_RATE);
+  // Each peer has its own budget, so a busy peer cannot starve the owner's
+  // own connector.
+  const perLogin = rateLimit(`mcp-login:${caller.peerId ?? caller.loginId}`, LOGIN_RATE);
   if (!perLogin.ok) {
     return new Response(JSON.stringify({ error: 'rate_limited' }), {
       status: 429,
@@ -69,6 +72,17 @@ async function handler(req: Request): Promise<Response> {
         'Retry-After': String(perLogin.retryAfterSec),
       },
     });
+  }
+  // A member or client never sends a whole owner document: their bodies are
+  // held to the plain JSON ceiling (the owner's 128 MB is for file_upload).
+  if (caller.role !== 'admin') {
+    const declared = Number(req.headers.get('content-length')) || 0;
+    if (declared > JSON_BODY_CEILING_BYTES) {
+      return new Response(
+        JSON.stringify({ error: 'request body too large', reason: 'body-too-large' }),
+        { status: 413, headers: { 'content-type': 'application/json' } },
+      );
+    }
   }
   // A member's or client's tools are resolved from their responder's groups
   // here, before the adapter registers synchronously.
