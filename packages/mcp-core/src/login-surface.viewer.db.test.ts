@@ -196,10 +196,13 @@ describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
     });
     expect(text(made)).not.toMatch(/^Error/);
     expect(made.isError ?? false).toBe(false);
+    const madeId = (JSON.parse(text(made)) as { id: string }).id;
     const [draft] = (await exec(sqlTag`
-      select owner_id from nodes where title = ${`${tag} draft`}`)) as unknown as {
+      select owner_id, title from nodes where id = ${madeId}`)) as unknown as {
       owner_id: string;
+      title: string;
     }[];
+    expect(draft?.title, text(made)).toBe(`${tag} draft`);
     expect(draft?.owner_id).toBe(memberSpace);
 
     const lib = await c.callTool({
