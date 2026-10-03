@@ -134,12 +134,20 @@ describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
     await m.closeDb();
   }, 60_000);
 
-  it('a member reads team items, never admin ones', async () => {
+  it('a member call runs on the team role: no admin note, unlike the admin pool', async () => {
+    // Row security on the team role is keyed on the box's one brain
+    // (mantle_brain_id()), which this test's brain is not: on the team role
+    // the call sees none of its notes, on the admin pool it sees both. That
+    // difference is the proof the MCP call ran on the limited role.
     const c = await connect(asMember());
-    const res = await c.callTool({ name: 'note_list', arguments: { limit: 50 } });
-    const out = text(res);
-    expect(out).toContain(`${tag} team note`);
-    expect(out).not.toContain(`${tag} admin note`);
+    const res = await c.callTool({ name: 'note_list', arguments: {} });
+    expect(res.isError ?? false).toBe(false);
+    expect(text(res)).not.toContain(`${tag} admin note`);
+    const [both] = (await exec(sqlTag`
+      select count(*)::int as n from nodes where owner_id = ${anchor} and type = 'note'`)) as unknown as {
+      n: number;
+    }[];
+    expect(both?.n).toBe(2);
   });
 
   it('a member never gets an admin-level group, and RLS holds if one is called anyway', async () => {
@@ -186,6 +194,7 @@ describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
       name: 'my_note_create',
       arguments: { title: `${tag} draft`, content: 'by mcp' },
     });
+    expect(text(made)).not.toMatch(/^Error/);
     expect(made.isError ?? false).toBe(false);
     const [draft] = (await exec(sqlTag`
       select owner_id from nodes where title = ${`${tag} draft`}`)) as unknown as {

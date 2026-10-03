@@ -161,9 +161,13 @@ export function loginMayHaveTool(
   const def = getBuiltin(row.slug);
   if (!def || def.mcpOnly || def.ownerOnly || def.spends) return false;
   if (row.requiresConfirm || def.requiresConfirm) return false;
-  if (def.readOnly === true) return true;
+  if (def.readOnly === true || LOGIN_OWN_READ_TOOL_SLUGS.has(row.slug)) return true;
   return write && LOGIN_WRITE_TOOL_SLUGS.has(row.slug);
 }
+
+/** Reads of the login's OWN space: not flagged `readOnly` in the registry
+ *  (they act for a login, not over the owner's data), but they only read. */
+const LOGIN_OWN_READ_TOOL_SLUGS: ReadonlySet<string> = new Set(['my_items_list', 'my_item_open']);
 
 /** The only non-read tools a member or client gets, with write on. */
 const LOGIN_WRITE_TOOL_SLUGS: ReadonlySet<string> = new Set([
