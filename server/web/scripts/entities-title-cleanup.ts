@@ -118,8 +118,10 @@ async function main() {
   const persons = await db
     .select({
       row: entities,
+      // "entities"."id" spelled out: drizzle renders ${entities.id} here as a
+      // bare "id", which the subquery would bind to ed.id.
       edgeCount: sql<number>`(select count(*)::int from ${entityEdges} ed
-        where ed.source_id = ${entities.id} or ed.target_id = ${entities.id})`,
+        where ed.source_id = "entities"."id" or ed.target_id = "entities"."id")`,
     })
     .from(entities)
     .where(and(eq(entities.ownerId, ownerId), eq(entities.kind, 'person')));

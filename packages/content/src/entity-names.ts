@@ -32,20 +32,28 @@ const DOCUMENT_NODE_TYPES = new Set(['file', 'documentation', 'sermon']);
 
 /**
  * A comparison key for a title or a title-like entity name: file extension,
- * square-bracket tags ("[chs519]") and a leading catalogue number ("0519 - ")
- * removed, then lowercase alphanumerics with single spaces. Curly and straight
+ * square-bracket tags ("[chs519]"), a "(Sermon #1279)" label and a leading
+ * catalogue number ("0519 - ", "0039-40 - ") removed, then lowercase alphanumerics with single spaces. Curly and straight
  * apostrophes are dropped so "Lord’s" = "Lord's" = "Lords".
  */
 export function titleKey(raw: string): string {
-  return raw
-    .normalize('NFKC')
-    .replace(/\.(pdf|epub|docx?|txt|md|html?|rtf|odt)\s*$/i, '')
-    .replace(/\[[^\]]*\]/g, ' ')
-    .replace(/^\s*\d+\s*[-–—:.)]\s*/, '')
-    .toLowerCase()
-    .replace(/['’‘`]/g, '')
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
-    .trim();
+  return (
+    raw
+      .normalize('NFKC')
+      .replace(/\.(pdf|epub|docx?|txt|md|html?|rtf|odt)\s*$/i, '')
+      .replace(/\[[^\]]*\]/g, ' ')
+      // a trailing "(Sermon #1279)" style label repeats the catalogue number
+      .replace(
+        /\(\s*(sermon|homily|lecture|chapter|volume|vol|part|episode|issue|hymn|no)\.?\s*(no\.?|#)?\s*\d+\s*\)/gi,
+        ' ',
+      )
+      // leading catalogue number, also a range: "0519 - ", "0039-40 - "
+      .replace(/^\s*\d+(\s*[-–]\s*\d+)?\s*[-–—:.)]\s*/, '')
+      .toLowerCase()
+      .replace(/['’‘`]/g, '')
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .trim()
+  );
 }
 
 /** A label that only numbers a work: "Sermon #2268", "Chapter 3", "Vol. II",

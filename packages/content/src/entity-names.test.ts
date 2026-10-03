@@ -18,6 +18,13 @@ describe('titleKey', () => {
     );
     expect(titleKey('Believing with the Heart')).toBe('believing with the heart');
   });
+  it('drops a catalogue number range and a numbered label in parentheses', () => {
+    expect(titleKey('0039-40 - Heaven and Hell [chs39-40]')).toBe('heaven and hell');
+    expect(titleKey('Amazing Grace (Sermon #1279)')).toBe(
+      titleKey('1279 - Amazing Grace [chs1279]'),
+    );
+    expect(titleKey('Grace (and Peace)')).toBe('grace and peace');
+  });
   it('folds curly apostrophes and dashes', () => {
     expect(titleKey('The Soul’s Best Food')).toBe(titleKey("The Soul's Best Food"));
     expect(titleKey('Christ—The Power and Wisdom of God')).toBe(

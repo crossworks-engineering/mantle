@@ -174,9 +174,12 @@ export async function findDuplicateCandidates(ownerId: string): Promise<MergeCan
       embedding: entities.embedding,
       createdAt: entities.createdAt,
       updatedAt: entities.updatedAt,
+      // The outer column is spelled out as "entities"."id": drizzle renders
+      // ${entities.id} in a select field as a bare "id", which inside this
+      // subquery binds to ed.id, so every count came back 0.
       edgeCount: sql<number>`(
         select count(*)::int from ${entityEdges} ed
-        where (ed.source_id = ${entities.id} or ed.target_id = ${entities.id})
+        where (ed.source_id = "entities"."id" or ed.target_id = "entities"."id")
           and ed.data ? 'source_node_id')`,
     })
     .from(entities)
