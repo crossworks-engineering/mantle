@@ -69,6 +69,8 @@ export {
   type ContextSnapshot,
   type SnapshotItem,
 } from './conversation';
+// The passage cut, for the eval harnesses (scripts/eval-route.ts).
+export { CHUNK_CUTOFF, selectChunkHits } from './conversation/select';
 
 export {
   runVisionWorker,

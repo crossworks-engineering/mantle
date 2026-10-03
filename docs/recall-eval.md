@@ -588,6 +588,106 @@ searches ran past the 1.5 s timeout). With the pool set, the responder's
 auto-context also scores before its budget cut when `context_pruning` is on:
 before, pruning only saw the 8 passages search order had already chosen.
 
+## eval:route: retrieval per question type (2026-10-03)
+
+One fixed ruleset serves every question today, and a rule that wins on one
+kind of question can lose on another (document headers: trap questions up,
+verse questions down). `eval:route` scores passage retrieval PER QUESTION
+TYPE so every routing rule is gated per type, not on one blended number.
+Script: [`server/web/scripts/eval-route.ts`](../server/web/scripts/eval-route.ts);
+the pure scoring and gate: `server/web/scripts/eval/route-score.ts` (tested).
+
+```bash
+pnpm -C server/web eval:route --cases=<file> --rulesets=hybrid,vector,scored \
+  --vectors=<cache.json> --pool=50 --out=<run.json>
+pnpm -C server/web eval:route --cases=<file> --rulesets=auto,auto-scored --vectors=<cache.json>
+pnpm -C server/web eval:route --cases=<file> --rulesets=auto --baseline=<run.json> --target=T3
+```
+
+**Cases** are typed: `{id, query, type, flags?, profile?, expectChunks? |
+expectNodeIds? | expectNodeTitleIncludes?}`. Types are the routing plan's
+list: T0 small talk, T1 follow-up, T2 locate / quote (a rare literal, a code,
+a reference), T3 scoped lookup (names a source), T4 fact lookup, T5 personal
+history, T6 synthesis / explain, T7 data query, T8 action, `default`. One
+primary `type`; `flags` hold the others that apply. Gold sets name one
+brain's nodes, so they live outside the repo.
+
+**Rulesets** (the first named is the reference; every other one is compared
+to it, paired by case): `vector` (vector arm alone), `hybrid`
+(`search_chunks` with the decider off), `auto` (the responder's
+auto-context: hybrid pool of chunk_limit + 4, the 0.65 cutoff, the
+chunk_limit cut), `scored` (`search_chunks` with Jev over the pool, ordered
+as `live`), `auto-scored` (auto-context with Jev before the cut, v0.237.4).
+A new routing rule is a new entry in `RULESETS`.
+
+**Report**, per ruleset and type: n, R@1, R@10 (for `auto` rulesets, "in the
+prompt"), MRR, p50/p90 latency of the ruleset's own work, and model cost.
+Then, per type, cases won and lost against the reference at R@10 and R@1,
+and the gate: **a change passes when no type loses more than 2 cases at R@10
+or R@1 and a type (or the `--target` type) gains at either.** R@1 counts
+because on a small corpus R@10 sits at the ceiling. At n = 98 one point is
+about ±9 points of noise, so the gate reads case counts, not percentages.
+
+**Cost.** Each query is embedded once and cached in `--vectors` (a repeat
+run embeds nothing). The scored rulesets cost one Jev fan-out per case
+(about USD 0.0007 per 25 passages); the run prints its total. Manual only:
+never wire it to a cron or a trigger.
+
+**A throwaway copy.** Run it against a copy, never a live box: restore a
+dump into a throwaway Postgres (rebuild the HNSW index if the restore ran
+out of shared memory), then re-seal the copy's provider key with your own
+key and a throwaway master key (the source box's key stays on the box) and
+check embedding parity on one stored chunk (0.0003 here). Both sets below
+ran that way on the Linux workstation.
+
+### Sets
+
+| set      | profile  | n   | types (n)                                | corpus                                                 |
+| -------- | -------- | --- | ---------------------------------------- | ------------------------------------------------------ |
+| library  | library  | 98  | T2 (30), T3 (28), T6 (40)                | the sermons corpus above, 122,256 chunks               |
+| business | business | 27  | T2 6, T3 5, T4 3, T5 3, T6 4, T7 3, T8 3 | a made-up engineering firm, 24 documents, no real data |
+
+Library labels: `verse` → T3 (names a translation) with flag T2 (names a
+reference); `trap` → T2 (names a reference, but the answer is in a sermon
+ON it, the case a scope route must not misfire on) with flag T3;
+`paraphrase` → T6.
+
+### First numbers (v0.237.4 + this change, pool 50)
+
+Library, exact passage:
+
+| ruleset     | T2 R@1 / R@10 | T3 R@1 / R@10 | T6 R@1 / R@10 | all R@1 / R@10 / MRR | p50    |
+| ----------- | ------------- | ------------- | ------------- | -------------------- | ------ |
+| vector      | 7% / 37%      | 11% / 50%     | 8% / 28%      | 8% / 37% / 0.162     | 3 ms   |
+| hybrid      | 10% / 37%     | 11% / 50%     | 5% / 28%      | 8% / 37% / 0.166     | 9 ms   |
+| scored      | 43% / 57%     | 61% / 68%     | 13% / 40%     | 36% / 53% / 0.415    | 1.32 s |
+| auto        | 10% / 37%     | 11% / 46%     | 8% / 28%      | 9% / 36% / 0.170     | 17 ms  |
+| auto-scored | 50% / 57%     | 57% / 68%     | 15% / 40%     | 38% / 53% / 0.425    | 1.39 s |
+
+`auto-scored` vs `auto`: T2 +6/-0, T3 +6/-0, T6 +5/-0 at R@10 (+17/-0 all);
+R@1 +29/-1. Gate: pass. Cost: USD 0.137 per 98 searches (196 requests).
+The `scored` numbers repeat the earlier lab (36% / 53% / 0.41), so the
+harness measures what the lab measured. T6 (paraphrase) is the weak type:
+40% at R@10 even with the judge; its gold is often past the pool (embedding
+reach), not misranked.
+
+Business (24 documents, so R@10 is at the ceiling; read R@1 and MRR):
+
+| ruleset     | all R@1 / R@10 / MRR | note                                                    |
+| ----------- | -------------------- | ------------------------------------------------------- |
+| vector      | 67% / 96% / 0.809    | loses a T2 code question the keyword arm finds          |
+| hybrid      | 67% / 100% / 0.827   | T3 R@1 40%, T4 33%, T5 33%                              |
+| scored      | 100% / 100% / 1.000  | +9/-0 at R@1, every type at 100%; p50 0.48 s; USD 0.019 |
+| auto        | 63% / 96% / 0.790    | misses T2 "valve V-118": see below                      |
+| auto-scored | 96% / 96% / 0.963    | same T2 miss                                            |
+
+The T2 miss, read off the decision trace: the keyword arm found the
+commissioning plan (keyword rank 1, vector rank 17, fused rank 1), Jev scored
+it 2.77, and the fixed 0.65 cosine cutoff then dropped it (distance 0.765).
+The routing plan's "rescue fights the cut" weak point, now measured: a T2
+ruleset where a keyword hit (or a judged one) is exempt from the cosine
+cutoff is the obvious next rule to gate here.
+
 ## Automated eval: `recall_eval` + the brain-health heartbeat (2026-07-13)
 
 The harness above is manual (`pnpm -C server/web eval:recall`). The automated
@@ -599,12 +699,25 @@ half runs the same idea inside the brain, on a schedule:
   unchanged). Editable in the UI like any note, add a case the moment a recall
   miss annoys you.
 - **`recall_eval` (builtin tool)** runs every case through the shipped
-  retrievers (hybrid `search_nodes` + passage `search_chunks`), scores
+  retrievers as agents call them (hybrid `search_nodes` + hybrid passage
+  `search_chunks`), scores
   recall@1/3/5/10 + MRR (pure helpers in `packages/search/src/eval.ts`),
   persists the run as a note tagged `recall-eval-run`, and reports drift vs
   the previous run, `alert: true` on MRR −0.05 or R@5 −0.10
   (`reason: 'quality_dropped'`). Run notes are ordinary nodes, so the
   history is searchable and chartable later.
+- **Passages are scored on the hybrid path (since 2026-10-03).** Before,
+  the `chunks` line called `searchChunks` with no query text, so it measured
+  the vector arm alone while agents ran hybrid; the keyword-arm bug (above)
+  hid for weeks behind that. Now `chunks` is the hybrid path (`chunksPath:
+'hybrid'`), `chunksVector` keeps the vector-only number as a secondary
+  line, and when the decider's `passage_scoring` has a `pool` set,
+  `chunksScored` scores that pool with Jev and orders it as `live` would
+  (whatever the use's mode), with its `requests` and `usd` (about USD 0.0007
+  per 25 passages per case; the gold set bounds it). Chunks drift is read
+  only against a run that also measured hybrid, so the switch raises no false
+  alert. The capacity dial's `retrieval` number (the `chunks` R@10) now reads
+  the arm agents use.
 - **A gold set that matches nothing alerts on its own.** When EVERY case
   misses in both retrievers the run scores exactly 0/0, which drift reads as
   "no change" — that state sat silent for nine weekly runs on the dev brain
