@@ -36,6 +36,17 @@ export {
 } from './entity-dedup';
 
 export {
+  titleKey,
+  isNumberedWorkLabel,
+  isDocumentTitleMention,
+  personNameParts,
+  personNamesCompatible,
+  personNamesConflict,
+  findPersonInitialsMatch,
+  planPersonInitialMerges,
+} from './entity-names';
+
+export {
   RECALL_ROOT_LABEL,
   ensureRecallRoot,
   embedPendingRecallPrompts,

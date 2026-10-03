@@ -81,6 +81,22 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       'Interactive equivalent: the /settings/entities review UI. --go applies only the high-confidence auto tier.',
   },
   {
+    slug: 'entities-title-cleanup',
+    title: 'Remove title-like entities, merge initials',
+    description:
+      'For document corpora: removes project/event entities whose name is a document title (or a bare "Sermon #12" label) with their edges, merges person entities whose names agree by initials ("C.H. Smith" = "Charles Smith"), and drops person aliases that name someone else. Writes a JSON backup before applying.',
+    kind: 'remedy',
+    status: 'live',
+    cost: 'sql',
+    schedulable: false,
+    script: 'scripts/entities-title-cleanup.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    extraFlags: ['--types=file,documentation,sermon', '--backup-dir=<dir>', '--owner=<uuid>'],
+    notes:
+      'Title matching uses only nodes of --types, so a note or page named like a real project never removes it. Review the dry-run list before --apply.',
+  },
+  {
     slug: 'backup-app-dbs',
     title: 'Snapshot per-app SQLite DBs',
     description:

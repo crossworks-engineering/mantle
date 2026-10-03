@@ -10,7 +10,12 @@ import { and, eq, sql } from 'drizzle-orm';
 import { db, entities, entityEdges, nodes, pages, type Entity } from '@mantle/db';
 import { embed, embedBatch } from '@mantle/embeddings';
 import { step } from '@mantle/tracing';
-import { mentionRefs, normaliseOrgName } from '@mantle/content';
+import {
+  findPersonInitialsMatch,
+  mentionRefs,
+  normaliseOrgName,
+  personNameParts,
+} from '@mantle/content';
 import { isLikelyDifferentPerson } from '../person-names';
 import { type ExtractorOutput } from '../extractor-parse';
 
@@ -45,6 +50,39 @@ async function reconcileEntity(
     )
     .limit(1);
   if (exact) return { entity: exact, created: false };
+
+  // 1b. Person initials ↔ full given name ("C.H. Spurgeon" = "Charles
+  //     Spurgeon"). Neither trigram nor embedding similarity joins these, so
+  //     a corpus that writes one author both ways split them in two. Only
+  //     same-surname persons are candidates, and the match must be unique:
+  //     "J. Smith" with both "John Smith" and "Jane Smith" on file falls
+  //     through (see findPersonInitialsMatch / personNamesCompatible).
+  const parts = mention.kind === 'person' ? personNameParts(trimmed) : null;
+  if (parts) {
+    const surnameLike = `%${parts.surname.replace(/[\\%_]/g, '\\$&')}`;
+    const sameSurname = await db
+      .select()
+      .from(entities)
+      .where(
+        and(
+          eq(entities.ownerId, ownerId),
+          eq(entities.kind, 'person'),
+          sql`lower(${entities.name}) like ${surnameLike}`,
+        ),
+      )
+      .limit(200);
+    const hit = findPersonInitialsMatch(sameSurname, trimmed);
+    if (hit) {
+      const alias = aliasToAdd(hit, trimmed);
+      if (alias) {
+        await db
+          .update(entities)
+          .set({ aliases: [...hit.aliases, alias], updatedAt: new Date() })
+          .where(eq(entities.id, hit.id));
+      }
+      return { entity: hit, created: false };
+    }
+  }
 
   // 2. Trigram fuzzy match within the same kind. Pick the strongest similarity.
   //    The `name % $q` predicate lets the trigram GIN (entities_name_trgm_idx)

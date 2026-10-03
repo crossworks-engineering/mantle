@@ -35,6 +35,7 @@ import { db, bumpWorkerUsage, nodes } from '@mantle/db';
 import { recordSkippedTrace, startTrace } from '@mantle/tracing';
 import { resolveChatRoutes } from '@mantle/runtime/agent';
 import { getChatAdapter } from '@mantle/voice';
+import { isDocumentTitleMention } from '@mantle/content';
 import { TEXT_STORE_MAX_CHARS, truncateForPrompt } from './extract/text';
 import { runExtractorModel } from './extract/model';
 import { admitForExtraction } from './extract/gates';
@@ -168,6 +169,10 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
       ];
       const seenNames = new Set<string>();
       const uniqueMentions = allEntityMentions.filter((m) => {
+        // A document's own title (or a bare "Sermon #12" label) is not a
+        // project or event; on a corpus of documents those were most of the
+        // entity layer. See isDocumentTitleMention.
+        if (isDocumentTitleMention(m, node)) return false;
         const key = m.name.trim().toLowerCase();
         if (seenNames.has(key)) return false;
         seenNames.add(key);

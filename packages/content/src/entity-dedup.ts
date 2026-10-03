@@ -30,6 +30,7 @@ import {
   nodes,
   type Entity,
 } from '@mantle/db';
+import { planPersonInitialMerges } from './entity-names';
 
 /** Order two ids so a pair is direction-agnostic (matches the dismissal store). */
 function orderedPair(a: string, b: string): [low: string, high: string] {
@@ -285,6 +286,21 @@ export async function findDuplicateCandidates(ownerId: string): Promise<MergeCan
       }
     }
     if (best) add(best, a, 'review', `name "${a.name}" is a subset of "${best.name}"`);
+  }
+
+  // REVIEW 2 — initials ↔ full given name on the same surname ("C.H.
+  // Spurgeon" = "Charles Spurgeon"). Only groups whose members ALL agree;
+  // review tier, because a lone initial can still be a different person
+  // nobody has a full-name entity for.
+  const { groups } = planPersonInitialMerges(
+    ents.filter((e) => e.kind === 'person' && !claimedDup.has(e.id)),
+  );
+  for (const group of groups) {
+    let canon = group[0]!;
+    for (const e of group) [canon] = pickCanonical(canon, e);
+    for (const e of group)
+      if (e.id !== canon.id)
+        add(canon, e, 'review', `initials agree: "${e.name}" = "${canon.name}"`);
   }
 
   return candidates;
