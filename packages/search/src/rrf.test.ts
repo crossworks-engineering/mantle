@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyRescueFloor, fuseRrf, RRF_K } from './rrf';
+import { applyRescueFloor, fuseRrf, mergeIds, RRF_K } from './rrf';
 
 describe('fuseRrf', () => {
   it('returns vector order when the FTS arm is empty (pure-vector degenerate case)', () => {
@@ -96,5 +96,24 @@ describe('applyRescueFloor', () => {
 
   it('an empty booster arm returns the fused cut unchanged', () => {
     expect(applyRescueFloor(['v1', 'v2'], [], 2, 2)).toEqual(['v1', 'v2']);
+  });
+});
+
+describe('mergeIds', () => {
+  it('turns: the lists by turns, the first list first, skipping ids already taken', () => {
+    expect(mergeIds(['a', 'b', 'c'], ['x', 'a', 'y'], 10)).toEqual(['a', 'x', 'b', 'c', 'y']);
+  });
+  it('turns: stops at the limit and runs on when one list is shorter', () => {
+    expect(mergeIds(['a', 'b', 'c', 'd'], ['x'], 4)).toEqual(['a', 'x', 'b', 'c']);
+    expect(mergeIds([], ['x', 'y'], 5)).toEqual(['x', 'y']);
+    expect(mergeIds(['a'], ['b'], 0)).toEqual([]);
+  });
+  it('union: the head of the first list, then the head of the second not in it', () => {
+    expect(mergeIds(['a', 'b', 'c', 'd'], ['b', 'x', 'y', 'z'], 4, 'union')).toEqual([
+      'a',
+      'b',
+      'x',
+    ]);
+    expect(mergeIds(['a', 'b'], ['x', 'y'], 4, 'union')).toEqual(['a', 'b', 'x', 'y']);
   });
 });

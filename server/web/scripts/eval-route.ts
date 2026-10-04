@@ -41,7 +41,12 @@
  *   pnpm -C server/web eval:route --cases=<file> [--rulesets=hybrid,auto,scored]
  *     [--vectors=<file>] [--pool=50] [--chunk-limit=8] [--k=10]
  *     [--types=T2,T3] [--case=<id>] [--baseline=<run.json>] [--target=T3]
- *     [--max-loss=2] [--out=<run.json>] [--json]
+ *     [--max-loss=2] [--out=<run.json>] [--json] [--windows]
+ *
+ * `--windows` turns the passage-window arm on in every hybrid search (the
+ * brain needs window rows: `pnpm maintain chunk-windows --apply`); compare
+ * against a run without it with `--baseline`. With it, the scored pool
+ * doubles, as in the brain.
  *
  * Read-only for the corpus. The decider records its own usage (ai_workers
  * counters, trace rows) like any call.
@@ -88,6 +93,8 @@ type Ctx = {
   k: number;
   chunkLimit: number;
   pool: number | null;
+  /** Passage windows: the window arm joins every hybrid search. */
+  windows: boolean;
 };
 type RulesetRun = { hits: Hit[]; requests: number };
 type Ruleset = { name: string; describe: string; run: (x: Ctx) => Promise<RulesetRun> };
@@ -102,13 +109,17 @@ async function scoredPool(
 ): Promise<{ rows: Awaited<ReturnType<typeof searchChunksExplained>>['hits']; requests: number }> {
   const use = await decisionUseEnabled(x.ownerId, 'passage_scoring');
   if (!use) throw new Error('the scored rulesets need the decider with passage_scoring on');
-  const poolSize = passageScoringPool(x.pool !== null ? { pool: x.pool } : use, limit);
+  const poolSize = passageScoringPool(x.pool !== null ? { pool: x.pool } : use, limit, {
+    windows: x.windows,
+  });
   const { hits: found } = await searchChunksExplained({
     ownerId: x.ownerId,
     embedding: x.vec,
     q: x.c.query,
     limit: poolSize,
     excludeSystemOrigin: true,
+    windows: x.windows,
+    windowMerge: 'union',
   });
   const key = (h: ChunkHit) => `${h.nodeId}:${h.ordinal}`;
   const scoring = await scorePassages(
@@ -138,7 +149,13 @@ export const RULESETS: Record<string, Ruleset> = {
     describe: 'search_chunks, decider off: hybrid top k',
     run: async (x) => ({
       hits: toHits(
-        await searchChunks({ ownerId: x.ownerId, embedding: x.vec, q: x.c.query, limit: x.k }),
+        await searchChunks({
+          ownerId: x.ownerId,
+          embedding: x.vec,
+          q: x.c.query,
+          limit: x.k,
+          windows: x.windows,
+        }),
       ),
       requests: 0,
     }),
@@ -163,6 +180,7 @@ const autoRun =
       q: x.c.query,
       limit: x.chunkLimit + 4,
       excludeSystemOrigin: true,
+      windows: x.windows,
     });
     const sel = selectChunkHits(pool, x.chunkLimit, undefined, keywordPassages(rule));
     return { hits: selectedHits(sel.hits), requests: 0 };
@@ -216,6 +234,7 @@ type Args = {
   maxLoss: number;
   outPath: string | null;
   json: boolean;
+  windows: boolean;
 };
 
 function parseArgs(argv: string[]): Args {
@@ -233,6 +252,7 @@ function parseArgs(argv: string[]): Args {
     maxLoss: 2,
     outPath: null,
     json: false,
+    windows: false,
   };
   const val = (s: string) => s.slice(s.indexOf('=') + 1);
   for (const s of argv) {
@@ -249,6 +269,7 @@ function parseArgs(argv: string[]): Args {
     else if (s.startsWith('--max-loss=')) a.maxLoss = Number(val(s));
     else if (s.startsWith('--out=')) a.outPath = val(s);
     else if (s === '--json') a.json = true;
+    else if (s === '--windows') a.windows = true;
     else throw new Error(`unknown argument ${s}`);
   }
   if (!a.casesPath) throw new Error('--cases=<file> is required');
@@ -266,6 +287,7 @@ type RunFile = {
   k: number;
   chunkLimit: number;
   pool: number | null;
+  windows?: boolean;
   rulesets: Record<string, { describe: string; summary: TypeSummary[]; cases: CaseResult[] }>;
   cost: { embedded: number; jevRequests: number; usd: number };
 };
@@ -325,6 +347,7 @@ async function main(): Promise<void> {
     k: args.k,
     chunkLimit: args.chunkLimit,
     pool: args.pool,
+    windows: args.windows,
     rulesets: {},
     cost: { embedded, jevRequests: 0, usd: 0 },
   };
@@ -340,6 +363,7 @@ async function main(): Promise<void> {
         k: args.k,
         chunkLimit: args.chunkLimit,
         pool: args.pool,
+        windows: args.windows,
       });
       const ms = Math.round(performance.now() - t0);
       const rank = goldRankOf(c, out.hits.slice(0, args.k));

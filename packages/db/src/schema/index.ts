@@ -46,6 +46,7 @@ export * from './peer-share-scopes';
 export * from './pdf-passwords';
 export * from './entity-merge-dismissals';
 export * from './content-chunks';
+export * from './content-chunk-windows';
 export * from './rules';
 export * from './filters';
 export * from './sync-runs';

@@ -118,6 +118,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   // ── Brain content: readable at the viewer's level ─────────────────────────
   { table: 'public.nodes', read: 'all', rule: 'brain-level', writer: 'content', space: 'write' },
   { table: 'public.content_chunks', read: 'all', rule: 'follows-node', writer: 'content' },
+  { table: 'public.content_chunk_windows', read: 'all', rule: 'follows-node', writer: 'content' },
   { table: 'public.facts', read: 'all', rule: 'source-node', writer: 'content' },
   {
     table: 'public.pages',

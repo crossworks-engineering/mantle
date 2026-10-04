@@ -8,6 +8,10 @@ describe('decision trace builder', () => {
     expect(armOf({ kr: 1 })).toBe('keyword');
     expect(armOf({ vr: 2, kr: 1 })).toBe('both');
     expect(armFields({ kr: 1, rescued: true })).toEqual({ arm: 'keyword', kr: 1, rescued: true });
+    // The window arm is a vector arm (passage windows).
+    expect(armOf({ wr: 4 })).toBe('vector');
+    expect(armOf({ wr: 4, kr: 2 })).toBe('both');
+    expect(armFields({ wr: 4 })).toEqual({ arm: 'vector', wr: 4 });
   });
 
   it('a live drop sets the outcome; a shadow drop only records the verdict', () => {

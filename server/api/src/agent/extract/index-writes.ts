@@ -6,7 +6,15 @@
  */
 
 import { and, eq, sql } from 'drizzle-orm';
-import { db, nodes, notifyNodeIndexed, tables, contentChunks, type AiWorker } from '@mantle/db';
+import {
+  db,
+  nodes,
+  notifyNodeIndexed,
+  tables,
+  contentChunks,
+  contentChunkWindows,
+  type AiWorker,
+} from '@mantle/db';
 import { embed } from '@mantle/embeddings';
 import {
   describeWorkbook,
@@ -250,25 +258,71 @@ export async function writeRetrievalChunks(
         h.setOutput({ chunks: 0 });
         return;
       }
-      const { embedBatch } = await import('@mantle/embeddings');
+      const { embedBatch, chunkWindowsEnabled, planChunkWindows } =
+        await import('@mantle/embeddings');
       const vectors = await embedBatch(
         ownerId,
         pieces.map((p) => p.text),
       );
-      await db.transaction(async (tx) => {
-        await tx.delete(contentChunks).where(eq(contentChunks.nodeId, node.id));
-        await tx.insert(contentChunks).values(
+      // Passage windows (embedding_config.chunk_windows, default off): the
+      // windows inside each chunk get their own vectors, embedded here with
+      // the chunks so a failure throws before anything is replaced. A
+      // one-window chunk reuses its chunk vector (no extra embed).
+      const windows: Array<{ ordinal: number; j: number; embedding: number[] }> = [];
+      if (await chunkWindowsEnabled(ownerId)) {
+        const plan = planChunkWindows(
           pieces.map((p, i) => ({
-            ownerId,
+            id: String(i),
             nodeId: node.id,
-            ordinal: i,
-            headingPath: p.headingPath ?? null,
             text: p.text,
             embedding: vectors[i] ?? null,
           })),
         );
+        const windowVecs =
+          plan.embeds.length > 0
+            ? await embedBatch(
+                ownerId,
+                plan.embeds.map((e) => e.text),
+                { cache: false },
+              )
+            : [];
+        for (const c of plan.copies) {
+          windows.push({ ordinal: Number(c.chunk.id), j: 0, embedding: c.chunk.embedding! });
+        }
+        plan.embeds.forEach((e, k) =>
+          windows.push({ ordinal: Number(e.chunk.id), j: e.j, embedding: windowVecs[k]! }),
+        );
+      }
+      await db.transaction(async (tx) => {
+        await tx.delete(contentChunks).where(eq(contentChunks.nodeId, node.id));
+        const written = await tx
+          .insert(contentChunks)
+          .values(
+            pieces.map((p, i) => ({
+              ownerId,
+              nodeId: node.id,
+              ordinal: i,
+              headingPath: p.headingPath ?? null,
+              text: p.text,
+              embedding: vectors[i] ?? null,
+            })),
+          )
+          .returning({ id: contentChunks.id, ordinal: contentChunks.ordinal });
+        if (windows.length > 0) {
+          // The old windows went with the old chunks (FK cascade).
+          const idOf = new Map(written.map((r) => [r.ordinal, r.id]));
+          await tx.insert(contentChunkWindows).values(
+            windows.map((w) => ({
+              chunkId: idOf.get(w.ordinal)!,
+              j: w.j,
+              ownerId,
+              nodeId: node.id,
+              embedding: w.embedding,
+            })),
+          );
+        }
       });
-      h.setOutput({ chunks: pieces.length });
+      h.setOutput({ chunks: pieces.length, windows: windows.length });
     },
   );
 }

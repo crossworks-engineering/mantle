@@ -36,3 +36,22 @@ export const vector = (dim: number) =>
         .map(Number);
     },
   });
+
+/** Half-precision vector (pgvector `halfvec`): half the bytes of `vector`,
+ *  same wire format. Used where an index is large and the ranking it serves
+ *  measured the same at half precision (content_chunk_windows). */
+export const halfvec = (dim: number) =>
+  customType<{ data: number[]; driverData: string }>({
+    dataType() {
+      return `halfvec(${dim})`;
+    },
+    toDriver(value: number[]) {
+      return `[${value.join(',')}]`;
+    },
+    fromDriver(value: string) {
+      return value
+        .replace(/^\[|\]$/g, '')
+        .split(',')
+        .map(Number);
+    },
+  });

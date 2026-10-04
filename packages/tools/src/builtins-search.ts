@@ -16,7 +16,7 @@ import {
   readSection,
   resolveSupersededTargets,
 } from '@mantle/search';
-import { embed } from '@mantle/embeddings';
+import { chunkWindowsEnabled, embed } from '@mantle/embeddings';
 import {
   applyPassageScores,
   decisionUseEnabled,
@@ -206,7 +206,11 @@ export const search_chunks: BuiltinToolDef = {
       // (the use's `pool` setting, see passageScoringPool). Off = the exact
       // pool it always fetched.
       const scoringUse = await decisionUseEnabled(ctx.ownerId, 'passage_scoring');
-      const pool = scoringUse ? passageScoringPool(scoringUse, limit) : limit;
+      // Passage windows (embedding_config.chunk_windows, default off): a
+      // window arm joins the hybrid search, and the judged pool doubles so
+      // the judge sees the head of both arms.
+      const windows = await chunkWindowsEnabled(ctx.ownerId);
+      const pool = scoringUse ? passageScoringPool(scoringUse, limit, { windows }) : limit;
       // Decision trace v1 in this step's output: each passage of the pool,
       // which arm found it, its score, kept or dropped and why.
       const trace = new ContextTraceBuilder();
@@ -219,6 +223,9 @@ export const search_chunks: BuiltinToolDef = {
         branch: strOpt(input.branch),
         limit: pool,
         excludeTypes: surfaceHiddenNodeTypes(ctx.surface) ?? undefined,
+        windows,
+        // A live judge scores the whole pool: hybrid head, then window head.
+        windowMerge: scoringUse?.mode === 'live' ? 'union' : 'turns',
       });
       trace.setSearch(search);
       found.forEach((h, i) =>

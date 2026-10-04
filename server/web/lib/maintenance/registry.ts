@@ -304,6 +304,23 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     notes: 'Heavy — full walk of up to four tables. Prints an estimated USD cost. Run off-hours.',
   },
   {
+    slug: 'chunk-windows',
+    title: 'Passage windows (build, switch off, clear)',
+    description:
+      'Builds the vectors INSIDE each passage (~800-char sentence windows) so a question about one sentence of a long passage can find it; switches embedding_config.chunk_windows on first, so the extractor keeps new passages covered. Dry run prints the chunks without windows, the windows to embed and the estimated cost. Measured on a 122k-chunk library brain: paraphrased questions found their passage far more often (docs/recall-eval.md, "Passage windows"); about USD 6 and 314k windows there.',
+    kind: 'ops',
+    status: 'live',
+    cost: 'embedding',
+    schedulable: false,
+    script: 'scripts/chunk-windows.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    extraFlags: ['--off', '--clear'],
+    requiresEnv: ['ALLOWED_USER_ID'],
+    notes:
+      'Optional per brain, default off. Resumable. --off switches the window arm off (rows kept); --clear also deletes the rows. A re-embed of content_chunks drops the windows (old space): run this again after one.',
+  },
+  {
     slug: 'extract-backfill',
     title: 'Re-fire extraction for unindexed nodes',
     description:

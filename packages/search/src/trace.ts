@@ -23,17 +23,19 @@ import type {
 export const TRACE_ROW_CAP = 150;
 
 /** Passage provenance from searchChunksExplained (1-based arm ranks). */
-export type ChunkArms = { vr?: number; kr?: number; rescued?: boolean };
+export type ChunkArms = { vr?: number; kr?: number; wr?: number; rescued?: boolean };
 
 export const round3 = (n: number | null | undefined): number | null =>
   typeof n === 'number' && Number.isFinite(n) ? Math.round(n * 1000) / 1000 : null;
 
 const round2 = (n: number): number => Math.round(n * 100) / 100;
 
-/** The arm a passage came from, read off its ranks. */
+/** The arm a passage came from, read off its ranks. The window arm is a
+ *  vector arm (passage windows), so it counts as `vector`. */
 export function armOf(a: ChunkArms | undefined): ContextTraceArm {
   if (!a) return 'vector';
-  if (a.vr !== undefined && a.kr !== undefined) return 'both';
+  const vector = a.vr !== undefined || a.wr !== undefined;
+  if (vector && a.kr !== undefined) return 'both';
   if (a.kr !== undefined) return 'keyword';
   return 'vector';
 }
@@ -44,6 +46,7 @@ export function armFields(a: ChunkArms | undefined): Partial<ContextTraceRow> {
     arm: armOf(a),
     ...(a?.vr !== undefined ? { vr: a.vr } : {}),
     ...(a?.kr !== undefined ? { kr: a.kr } : {}),
+    ...(a?.wr !== undefined ? { wr: a.wr } : {}),
     ...(a?.rescued ? { rescued: true as const } : {}),
   };
 }

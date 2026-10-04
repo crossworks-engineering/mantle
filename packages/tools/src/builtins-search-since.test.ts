@@ -10,7 +10,10 @@ vi.mock('@mantle/search', async (importOriginal) => ({
   }),
   resolveSupersededTargets: vi.fn(async () => new Map()),
 }));
-vi.mock('@mantle/embeddings', () => ({ embed: vi.fn(async () => [0.1, 0.2]) }));
+vi.mock('@mantle/embeddings', () => ({
+  embed: vi.fn(async () => [0.1, 0.2]),
+  chunkWindowsEnabled: vi.fn(async () => false),
+}));
 
 import { SEARCH_TOOLS } from './builtins-search';
 

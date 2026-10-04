@@ -51,7 +51,7 @@ import {
   renderRelevantJournalBlock,
   type Tier1Plan,
 } from '@mantle/content';
-import { embed } from '@mantle/embeddings';
+import { chunkWindowsEnabled, embed } from '@mantle/embeddings';
 import {
   CONTEXT_FLOORS,
   HISTORY_RECALL_WINDOW,
@@ -946,6 +946,10 @@ async function loadConversationContextAtLevel(args: {
     // never reach it (docs/recall-eval.md).
     const scoringUse = await decisionUseEnabled(ownerId, 'passage_scoring');
     const scoreFirst = scoringUse !== null && (!pruningUse || scoringUse.pool !== undefined);
+    // Passage windows (embedding_config.chunk_windows, default off): a
+    // window arm joins the search and the judged pool doubles. The cut below
+    // keeps chunk_limit, so the prompt does not grow.
+    const windows = await chunkWindowsEnabled(ownerId);
     trace.lap();
     const searched = await searchChunksExplained({
       ownerId,
@@ -955,12 +959,15 @@ async function loadConversationContextAtLevel(args: {
       q: chunkQuery,
       // small pool so the cutoff can trim without starving
       limit: scoringUse
-        ? passageScoringPool(scoringUse, chunkLimit)
+        ? passageScoringPool(scoringUse, chunkLimit, { windows })
         : pruningUse
           ? Math.min(Math.max(chunkLimit * 2, 16), 25)
           : chunkLimit + 4,
       excludeSystemOrigin: true,
       excludeTypes: hiddenTypes,
+      windows,
+      // A live judge scores the whole pool: hybrid head, then window head.
+      windowMerge: scoreFirst && scoringUse?.mode === 'live' ? 'union' : 'turns',
     });
     let hits = searched.hits;
     trace.setSearch(searched.search);

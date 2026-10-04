@@ -788,6 +788,8 @@ export type ContextTraceRow = {
   /** Passages: 1-based rank in the vector arm / the keyword arm. */
   vr?: number;
   kr?: number;
+  /** Passages: 1-based rank in the window arm (passage windows on). */
+  wr?: number;
   /** Passages: forced into the tail by the keyword rescue floor. */
   rescued?: true;
   /** Raw cosine distance (Journal: 1 - similarity). */
@@ -812,6 +814,8 @@ export type ContextTrace = {
     mode: 'vector' | 'hybrid' | 'keyword';
     vectorPool: number;
     keywordPool: number;
+    /** Passages the window arm found (passage windows on), else absent. */
+    windowPool?: number;
     /** `off` = no query text; `silent` = no rare term passed the gate;
      *  `and` = no rare term, every word ANDed; `rare` = the rare-term arm ran. */
     keyword: 'off' | 'silent' | 'and' | 'rare';

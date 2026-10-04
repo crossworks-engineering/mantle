@@ -39,7 +39,10 @@ vi.mock('@mantle/search', async (importOriginal) => ({
   entityMentions: h.record('entityMentions', []),
   resolveSupersededTargets: vi.fn(async () => new Map()),
 }));
-vi.mock('@mantle/embeddings', () => ({ embed: vi.fn(async () => [0.1, 0.2]) }));
+vi.mock('@mantle/embeddings', () => ({
+  embed: vi.fn(async () => [0.1, 0.2]),
+  chunkWindowsEnabled: vi.fn(async () => false),
+}));
 vi.mock('@mantle/decisions', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   decisionUseEnabled: vi.fn(async () => null),
