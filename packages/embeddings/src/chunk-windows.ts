@@ -143,21 +143,38 @@ export type ChunkWindowsReport = {
   written: number;
 };
 
+/** Windows per embed call in the backfill: one provider request each (the
+ *  embedder's own batch is 100). A batch holds whole chunks only, so it can
+ *  run a few windows over. */
+export const CHUNK_WINDOW_BATCH = 100;
+
+/** Chunks read per page (text only, never vectors). */
+const READ_PAGE = 1000;
+
 /**
  * The manual backfill: window rows for every embedded chunk that has none.
  * Dry run (the default) reads and plans only: counts and the estimated cost.
  * `apply` switches the brain's `chunk_windows` on FIRST (so chunks the
- * extractor writes meanwhile get windows too), then embeds page by page.
+ * extractor writes meanwhile get windows too), then fills the rest.
  * Resumable: a re-run skips chunks that already have windows. `clear`
  * switches it off and deletes every window row instead.
+ *
+ * Memory stays flat whatever the corpus size: chunks are read as text only;
+ * a one-window chunk is copied inside Postgres (its vector never reaches
+ * Node); the others go out in batches of about `batch` windows, each one
+ * embed call and one insert, and a batch's vectors are dropped when its
+ * insert returns. Node holds at most `2 * parallel * batch` vectors
+ * (`parallel` embed calls and `parallel` inserts in flight). A batch holds whole chunks, so a crash never
+ * leaves a chunk half done (a half-done chunk would look done to a re-run).
  */
 export async function runChunkWindows(
   ownerId: string,
   opts: {
     apply?: boolean;
     clear?: boolean;
-    pageSize?: number;
-    /** Pages embedded at once (default 4). */
+    /** Windows per embed call (default {@link CHUNK_WINDOW_BATCH}). */
+    batch?: number;
+    /** Embed calls in flight (default 4). */
     parallel?: number;
     onProgress?: (done: number, total: number) => void;
   } = {},
@@ -174,30 +191,32 @@ export async function runChunkWindows(
   };
   if (opts.clear) {
     await setChunkWindows(ownerId, false);
-    const gone = await db
-      .delete(contentChunkWindows)
-      .where(eq(contentChunkWindows.ownerId, ownerId))
-      .returning({ j: contentChunkWindows.j });
-    return { ...empty, written: -gone.length };
+    const gone = await db.execute(
+      sql`delete from ${contentChunkWindows} where ${contentChunkWindows.ownerId} = ${ownerId}`,
+    );
+    return { ...empty, written: -affected(gone) };
   }
-  const pageSize = opts.pageSize ?? 500;
+  const batchSize = Math.max(1, opts.batch ?? CHUNK_WINDOW_BATCH);
+  const parallel = Math.max(1, opts.parallel ?? 4);
   const missing = sql`not exists (select 1 from ${contentChunkWindows} w where w.chunk_id = ${contentChunks.id})`;
   const scope = and(
     eq(contentChunks.ownerId, ownerId),
     isNotNull(contentChunks.embedding),
     missing,
   );
-
-  // Plan pass: text only, no vectors, so the dry run stays light.
-  const report: ChunkWindowsReport = { ...empty };
-  let after = '00000000-0000-0000-0000-000000000000';
-  for (;;) {
-    const page = await db
-      .select({ id: contentChunks.id, text: contentChunks.text })
+  const readPage = (after: string) =>
+    db
+      .select({ id: contentChunks.id, nodeId: contentChunks.nodeId, text: contentChunks.text })
       .from(contentChunks)
       .where(and(scope, gt(contentChunks.id, after)))
       .orderBy(contentChunks.id)
-      .limit(pageSize * 4);
+      .limit(READ_PAGE);
+  const FIRST = '00000000-0000-0000-0000-000000000000';
+
+  // Plan pass: text only, no vectors, so the dry run stays light.
+  const report: ChunkWindowsReport = { ...empty };
+  for (let after = FIRST; ;) {
+    const page = await readPage(after);
     if (page.length === 0) break;
     for (const r of page) {
       const ws = chunkWindows(r.text);
@@ -214,56 +233,110 @@ export async function runChunkWindows(
   if (!opts.apply || report.chunks === 0) return report;
 
   await setChunkWindows(ownerId, true);
-  // A few pages in flight: each page is one embed call of a few hundred
-  // windows, and the provider answers several at once. Pages are read by
-  // key order, so a page in flight is never read again.
-  const inFlight = new Set<Promise<void>>();
-  const writePage = async (page: WindowSource[]): Promise<void> => {
-    const { rows } = await chunkWindowRows(ownerId, page);
-    if (rows.length === 0) return;
-    // A chunk deleted meanwhile (re-extract) has no row to point at: its
-    // windows are skipped rather than failing the page.
-    await db.execute(sql`
-      insert into ${contentChunkWindows} (chunk_id, j, owner_id, node_id, embedding)
-      select v.chunk_id::uuid, v.j, v.owner_id::uuid, v.node_id::uuid, v.embedding::halfvec(768)
-      from jsonb_to_recordset(${JSON.stringify(
-        rows.map((r) => ({
-          chunk_id: r.chunkId,
-          j: r.j,
-          owner_id: r.ownerId,
-          node_id: r.nodeId,
-          embedding: `[${r.embedding.join(',')}]`,
-        })),
-      )}::jsonb) as v(chunk_id text, j int, owner_id text, node_id text, embedding text)
-      where exists (select 1 from ${contentChunks} c where c.id = v.chunk_id::uuid)
-      on conflict do nothing`);
-    report.written += rows.length;
+  const progress = (n: number) => {
+    report.written += n;
     opts.onProgress?.(report.written, report.windows);
   };
-  after = '00000000-0000-0000-0000-000000000000';
-  for (;;) {
-    const page = await db
-      .select({
-        id: contentChunks.id,
-        nodeId: contentChunks.nodeId,
-        text: contentChunks.text,
-        embedding: contentChunks.embedding,
-      })
-      .from(contentChunks)
-      .where(and(scope, gt(contentChunks.id, after)))
-      .orderBy(contentChunks.id)
-      .limit(pageSize);
+  // One-window chunks: the window IS the chunk, so its vector is copied in
+  // SQL (vector to halfvec) and never crosses into Node.
+  const copy = async (ids: string[]): Promise<void> => {
+    if (ids.length === 0) return;
+    const res = await db.execute(sql`
+      insert into ${contentChunkWindows} (chunk_id, j, owner_id, node_id, embedding)
+      select c.id, 0, c.owner_id, c.node_id, c.embedding::halfvec(768)
+      from ${contentChunks} c
+      where c.id = any(${`{${ids.join(',')}}`}::uuid[]) and c.embedding is not null
+      on conflict do nothing`);
+    progress(affected(res));
+  };
+  // Multi-window chunks: one insert per embed call, with a typed parameter
+  // per value (no page-sized JSON string). A chunk deleted meanwhile
+  // (re-extract) has no row to point at: its windows are skipped rather than
+  // failing the batch.
+  const write = async (items: EmbedItem[], vectors: number[][]): Promise<void> => {
+    const values = items.map(
+      (e, i) =>
+        sql`(${e.chunkId}::uuid, ${e.j}::int, ${e.nodeId}::uuid, ${`[${vectors[i]!.join(',')}]`}::halfvec(768))`,
+    );
+    const res = await db.execute(sql`
+      insert into ${contentChunkWindows} (chunk_id, j, owner_id, node_id, embedding)
+      select v.chunk_id, v.j, ${ownerId}::uuid, v.node_id, v.embedding
+      from (values ${sql.join(values, sql`, `)}) as v(chunk_id, j, node_id, embedding)
+      where exists (select 1 from ${contentChunks} c where c.id = v.chunk_id)
+      on conflict do nothing`);
+    progress(affected(res));
+  };
+
+  // Embed calls and inserts run side by side, each up to `parallel` at once:
+  // an embed call never waits for an insert (the HNSW index makes inserts
+  // slow), and a batch's vectors live only until its insert returns, so Node
+  // holds at most 2 x parallel batches. Chunks are read by key order, so a
+  // chunk in flight is never read again. A failed job surfaces through the
+  // race or the final wait; the empty catch only keeps a job that fails
+  // after an earlier failure from going unheard.
+  const embeds = new Set<Promise<void>>();
+  const writes = new Set<Promise<void>>();
+  const track = (set: Set<Promise<void>>, job: Promise<void>): void => {
+    const p: Promise<void> = job.finally(() => set.delete(p));
+    p.catch(() => {});
+    set.add(p);
+  };
+  const room = async (): Promise<void> => {
+    while (embeds.size >= parallel) await Promise.race(embeds);
+    while (writes.size >= parallel) await Promise.race(writes);
+  };
+  const launch = async (items: EmbedItem[]): Promise<void> => {
+    track(
+      embeds,
+      embedBatch(
+        ownerId,
+        items.map((e) => e.text),
+        { cache: false },
+      ).then((vectors) => track(writes, write(items, vectors))),
+    );
+    await room();
+  };
+  const launchCopy = async (ids: string[]): Promise<void> => {
+    track(writes, copy(ids));
+    await room();
+  };
+  let copies: string[] = [];
+  let pending: EmbedItem[] = [];
+  for (let after = FIRST; ;) {
+    const page = await readPage(after);
     if (page.length === 0) break;
     after = page[page.length - 1]!.id;
-    const p: Promise<void> = writePage(page).finally(() => inFlight.delete(p));
-    // A failed page surfaces through the race / the final wait; this only
-    // keeps a page that fails after an earlier failure from going unheard.
-    p.catch(() => {});
-    inFlight.add(p);
-    if (inFlight.size >= (opts.parallel ?? 4)) await Promise.race(inFlight);
+    for (const c of page) {
+      const ws = chunkWindows(c.text);
+      if (ws.length <= 1) {
+        copies.push(c.id);
+        continue;
+      }
+      ws.forEach((text, j) => pending.push({ chunkId: c.id, nodeId: c.nodeId, j, text }));
+      if (pending.length >= batchSize) {
+        const items = pending;
+        pending = [];
+        await launch(items);
+      }
+    }
+    if (copies.length >= READ_PAGE) {
+      await launchCopy(copies);
+      copies = [];
+    }
   }
-  await Promise.all(inFlight);
+  if (pending.length) await launch(pending);
+  if (copies.length) await launchCopy(copies);
+  // Every write is tracked by the time its embed settles.
+  await Promise.all(embeds);
+  await Promise.all(writes);
   return report;
+}
+
+type EmbedItem = { chunkId: string; nodeId: string; j: number; text: string };
+
+/** Rows a write statement touched (postgres-js puts it on the result). */
+function affected(res: unknown): number {
+  return Number((res as { count?: number }).count ?? 0);
 }
 
 /** Switch the brain's passage windows on or off (embedding_config). */

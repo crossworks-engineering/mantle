@@ -262,7 +262,20 @@ pnpm maintain chunk-windows --off      # switch off (rows kept)
 pnpm maintain chunk-windows --clear    # switch off and delete the rows
 ```
 
-`--parallel=N` (1 to 32, default 4) sets how many embed requests are in flight; each is 100 windows. `--apply` sets `embedding_config.chunk_windows` first, so the extractor writes windows for every chunk it (re)builds from then on; it is resumable. A one-window chunk reuses its chunk vector (no embed). The vectors are `halfvec` (half the bytes; the measured set ranked identically) in `content_chunk_windows`, which cascades with the chunk and has no text column. Window embeds skip `embedding_cache` (they are written once; the cache would only grow).
+`--parallel=N` (1 to 32, default 4) sets how many embed calls are in flight; each call is about 100 windows (whole chunks only, so a few over). `--apply` sets `embedding_config.chunk_windows` first, so the extractor writes windows for every chunk it (re)builds from then on; it is resumable. A one-window chunk reuses its chunk vector (no embed). The vectors are `halfvec` (half the bytes; the measured set ranked identically) in `content_chunk_windows`, which cascades with the chunk and has no text column. Window embeds skip `embedding_cache` (they are written once; the cache would only grow).
+
+**Memory and speed.** The backfill holds at most `2 x parallel x 100` window vectors in Node (`parallel` embed calls and `parallel` inserts in flight, an embed call never waiting for an insert), whatever the corpus size: chunks are read as text only, a one-window chunk is copied inside Postgres (its vector never reaches Node), and each batch's vectors are dropped when its insert returns. Up to v0.237.12 a "page" was 500 chunks (about 1,300 windows), held as JS arrays, strings and one page-sized JSON parameter at once; `--parallel=16` inside mantle_web pushed the web container past its 3 GB limit and the kernel killed the task (2026-10-04).
+
+Measured 2026-10-04 on a workstation copy shaped like the library brain (122,000 chunks of about 1,350 characters, 239,639 windows, 196,065 embedded) with a fake embedder that answers each 100-window call in 1 s (no spend). Peak RSS of the task process (it includes about 280 MB for tsx and the workspace) and wall time:
+
+| Code                        | `--parallel=4`   | `--parallel=16`   |
+| --------------------------- | ---------------- | ----------------- |
+| v0.237.12 (500-chunk pages) | 555 MB, 15.0 min | 1,047 MB, 5.6 min |
+| now (100-window batches)    | 458 MB, 13.7 min | 486 MB, 5.3 min   |
+
+Run end to end through `scripts/box-maintain.sh` with `--memory=1g --parallel=16`, the whole container (pnpm, the runner and the task) stayed at 500 to 530 MiB and finished in 5.2 min (46k windows/min). A real provider is slower per call, so on a box the windows per minute scale with `--parallel` until the provider answers 429. `--parallel=16` in a 1g container is a safe default for a brain this size.
+
+**On a box, run it in its own container**, not inside mantle_web and not with `nohup` over ssh: `scripts/box-maintain.sh <box> chunk-windows --apply --yes --parallel=16` ([maintenance-runner.md](./maintenance-runner.md), "Long runs on a box"). One maintenance run per box at a time.
 
 What it costs, measured on a 122k-chunk library brain (docs/recall-eval.md, "Paraphrased questions"): 314,004 windows, about 43M tokens, about USD 6 once with `openai/text-embedding-3-large`; about 1.1 GB of table and index; ingest embeds about twice the tokens; a judged search scores twice the pool (about USD 0.0013 more with the decider's `passage_scoring`). What it bought there: paraphrased questions found their passage in the top 10 for 63% of cases instead of 40% with the judge, 50% instead of 28% without it; all question types 75% instead of 53%. One trade: four "named verse, answer in a sermon" questions moved from rank 1 to rank 2 or 3. On a small brain with short documents it changes nothing (each document is one window).
 
