@@ -730,6 +730,142 @@ no type loses more than 2 cases on any set) and is the default. Cost of the
 gate: USD 0.16 (one Jev pass per set; the other variants hit the decider's
 cache).
 
+## Paraphrased questions (T6): passage windows (2026-10-04)
+
+T6 was the weak type: with the judge on a pool of 50, R@1 15% and R@10
+40%, against 50% to 68% for the other types. The cause was reach, not
+ranking: the gold passage was in the 50-passage pool for only 17 of 40 T6
+cases, and 13 of 40 were not in the vector top 200 at all. When a gold
+passage is in the pool, the judge almost always puts it in the top 10.
+
+Same library corpus (122,256 chunks), a fresh copy, the 98 typed cases.
+Every idea was measured on the gold-in-pool rate first (free, from cached
+vectors), then with the judge where it moved. Paired counts are cases won /
+lost against the judged pool of 50 (`auto-scored` at `--pool=50`).
+
+### 1. Query rewriting: no gain on T6
+
+A cheap chat model wrote three rephrasings and a hypothetical answer passage
+(HyDE) per question; each was embedded and searched, and the lists were
+fused (RRF), averaged, or used alone. Four models: gemini-2.5-flash-lite,
+gpt-4.1-nano, gemini-3.5-flash-lite, llama-3.1-8b (the last broke its JSON
+on 10 of 98).
+
+| T6, gold in pool (of 40)           | top 10 | top 50 | top 200 |
+| ---------------------------------- | ------ | ------ | ------- |
+| hybrid (today)                     | 11     | 17     | 26      |
+| best rewrite (flash-lite, any mix) | 11-13  | 16-19  | 24-27   |
+
+With the judge: HyDE fused with hybrid, pool 50, T6 R@10 40% to 40% (+1/-1);
+three rephrasings, 40% to 40% (+2/-2). HyDE did help the other types (T2
+R@10 57% to 67%, T3 68% to 75%), but it costs a chat call before every
+search: USD 0.0001 and 1.4 s p50 (2.4 s p90) for flash-lite. Not built. The
+rewrite cannot fix T6 here because the question and the passage already
+mean the same thing; what fails is the passage vector (below).
+
+### 2. A bigger pool for the judge: helps, at a price
+
+Gold in the hybrid pool for T6: 17 of 40 at 50, 21 at 100, 26 at 200. The
+judge over that pool (`eval:route`, the product path):
+
+| pool | T6 R@1 / R@10 | all R@1 / R@10 | won/lost R@10; R@1   | USD/search | p50    |
+| ---- | ------------- | -------------- | -------------------- | ---------- | ------ |
+| 50   | 15% / 40%     | 39% / 53%      |                      | 0.0014     | 0.91 s |
+| 100  | 18% / 50%     | 37% / 58%      | +5/-0; +3/-1 (lab)   | 0.0028     | 0.84 s |
+| 200  | 18% / 53%     | 37% / 62%      | +11/-2; +4/-6 (fail) | 0.0056     | 1.11 s |
+
+Pool 200 fails the gate: T2 lost 4 cases at R@1 (more look-alike passages
+in front of the judge). The pool setting now goes up to 200
+(`MAX_PASSAGE_POOL`); unset is unchanged.
+
+**The judge's requests now run side by side.** A pool over 25 goes out as
+several requests at once, but Node 26's built-in fetch sent them one after
+another (8 requests: 4.2 to 4.6 s, completion times stepping by about
+0.55 s), while the endpoint serves them in parallel (Python, or the `undici`
+package's own pool: 0.9 to 1.6 s). The decider adapter now uses its own
+`undici` pool (`decisionFetch` in
+`packages/voice/src/adapters/openrouter-decision.ts`). Pool 50 went from
+p50 1.39 s to 0.91 s; pool 100 from 2.5 s to 0.84 s. This touches every
+brain with the decider on, at no cost.
+
+### 3. Passage windows: the lever
+
+A chunk is about 1.6k chars; a T6 question asks about one sentence of it
+("the anecdote about a Scottish lady and her breakfast"), and the chunk's
+one vector carries that sentence weakly. Windows give the inside of a
+chunk its own vectors: each chunk is cut into sentence windows of about
+800 chars (`chunkWindows` in `packages/embeddings/src/chunk-windows.ts`),
+each window is embedded with the brain's model, and a window search returns
+its chunk. The text the model sees is the same chunk text, so the context
+size does not change.
+
+Gold in pool, vector order only, no judge:
+
+| list           | T6 top 10 / 50 / 200 | all top 10 / 50 / 200 |
+| -------------- | -------------------- | --------------------- |
+| hybrid (today) | 11 / 17 / 26         | 39 / 54 / 68          |
+| windows of 800 | 18 / 29 / 33         | 51 / 77 / 90          |
+
+At a 25k-chunk cut, 400-char windows found no more than 800-char ones (top
+50: 90 vs 91 of 98) with 1.7 times the vectors, so 800 it is. Half-precision
+vectors (`halfvec`) ranked the 98 cases exactly as full precision did, at
+half the size.
+
+How the window list joins the hybrid list matters. RRF of the two lost rank-1
+cases; plain turns (hybrid 1, window 1, hybrid 2, ...) put the most answers
+in the top 8 when no judge runs; for a judged pool, the hybrid head first and
+then the window head (`union`) kept the most rank-1 answers, because the
+judge scores in requests of 25 and the mix inside a request changes its
+scores. `mergeIds` in `packages/search/src/rrf.ts` does both.
+
+Product path, `eval:route --windows` (the judged pool doubles: 50 from each
+arm):
+
+| ruleset                   | windows | T2 R@1 / R@10 | T3 R@1 / R@10 | T6 R@1 / R@10 | all R@1 / R@10 | USD/search |
+| ------------------------- | ------- | ------------- | ------------- | ------------- | -------------- | ---------- |
+| `auto` (no judge)         | off     | 13% / 40%     | 11% / 46%     | 5% / 28%      | 9% / 37%       | 0          |
+| `auto` (no judge)         | on      | 13% / 33%     | 11% / 71%     | 5% / 50%      | 9% / 51%       | 0          |
+| `scored` (judge, pool 50) | off     | 50% / 57%     | 61% / 68%     | 15% / 40%     | 39% / 53%      | 0.0014     |
+| `scored` (judge, pool 50) | on      | 43% / 70%     | 75% / 96%     | 28% / 63%     | 46% / 75%      | 0.0027     |
+
+Paired, `scored`: T6 +11/-2 at R@10 and +5/-0 at R@1; T3
++8/-0 and +5/-1; T2 +5/-1 at R@10 but +2/-4 at R@1. So the strict gate
+fails on T2 R@1 by two cases: four trap questions (a verse named, the answer
+in a sermon on it) moved from rank 1 to rank 2 or 3, still in the prompt.
+`auto` passes the gate (T2 -2 at R@10). An A/A rerun of the baseline moved
+at most one case per type, so these counts are not judge noise. The
+business set (24 short documents, one window each) did not move: +0/-0 on
+every type.
+
+### What was built
+
+- **Passage windows**, optional per brain, **off by default**
+  (`embedding_config.chunk_windows`, migration 0229, table
+  `content_chunk_windows`, halfvec, RLS follows the node). Switch and backfill
+  with `pnpm maintain chunk-windows` (dry run prints the count and the cost;
+  `--apply` switches it on and embeds; `--off`; `--clear`). Once on, the
+  extractor writes windows with every chunk it rebuilds. Search: the
+  `windows` option of `searchChunks`, read from the switch by `search_chunks`
+  and the responder's auto-context. Cost on this brain: 314,004 windows,
+  256,864 embedded (a one-window chunk reuses its chunk vector), about
+  43M tokens, about USD 5.6 to 6.1 once; about 1.1 GB of table and index;
+  new ingest embeds about twice the tokens it did; per judged search about
+  USD 0.0013 more (the pool doubles); window search about 15 to 30 ms.
+- **The parallel judge fetch**, on for every brain (free).
+- **Pool up to 200**, still opt-in (`uses.passage_scoring.pool`).
+- `eval:route --windows`.
+
+Not built: query rewriting (no T6 gain), a per-type pool (pool 200 loses
+rank-1 cases on T2 and T3, and windows beat it on every type at half the
+cost).
+
+Literature check: HyDE (Gao et al., ACL 2023) and RAG-Fusion-style
+multi-query report gains mostly against weaker dense retrievers; ARAGOG
+(arXiv 2404.01037, 2024) found HyDE and LLM reranking raised precision,
+multi-query underperformed, and sentence-window retrieval scored best on
+retrieval precision. Our numbers agree: the rerank (the judge) and small
+windows are the gains, rewriting is not.
+
 ## Automated eval: `recall_eval` + the brain-health heartbeat (2026-07-13)
 
 The harness above is manual (`pnpm -C server/web eval:recall`). The automated

@@ -133,15 +133,20 @@ breaker hears one decision), and a request that fails leaves its passages
 unscored, at the end.
 
 **`pool` (optional, per brain).** `uses.passage_scoring.pool` sets how many
-passages a search fetches and scores (`passageScoringPool`, up to 100).
-Unset keeps the original pool, `max(2×limit, 16)` capped at 25. The
-provider does not serve a fan-out side by side (top 50: p50 1.3 s against
-0.6 s for 25), so each request of a fan-out may wait the worker
-`timeout_ms` times the number of requests (`timeoutFactor`, still capped at
+passages a search fetches and scores (`passageScoringPool`, up to 200).
+Unset keeps the original pool, `max(2×limit, 16)` capped at 25. With
+passage windows on (`embedding_config.chunk_windows`, docs/embeddings.md)
+the pool doubles: each vector arm brings it. The requests of a fan-out run
+side by side: the adapter has its own `undici` connection pool, because
+Node 26's built-in fetch sent them one after another (8 requests 4.2 s
+instead of about 1 s, measured 2026-10-04). Each request may still wait the
+worker `timeout_ms` times the number of requests (`timeoutFactor`, capped at
 5 s). Measured on a 122k-chunk corpus (docs/recall-eval.md, "Rerankers"):
 `pool: 50` lifted the `search_chunks` result from exact-passage R@10 43% to
 53% (R@1 31% to 36%, MRR 0.35 to 0.41) for about $0.0014 per search instead
-of $0.0005, and about 0.7 s more wait. Set it in the worker's params
+of $0.0005; with the parallel fetch its p50 is 0.9 s. A pool of 100 or 200
+lifts paraphrased questions further but loses some rank-1 answers; passage
+windows do more for less (docs/recall-eval.md, "Paraphrased questions"). Set it in the worker's params
 (`PATCH /api/ai-workers/<id>`); the settings form has no field for it yet,
 and saving that form drops it (back to the default, never worse).
 
