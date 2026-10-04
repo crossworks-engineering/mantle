@@ -55,6 +55,10 @@ transport path is the same as a real call.
 | openrouter.ai/api/v1/chat    | built-in       |     25 ms |     192 ms |      783 ms |
 | openrouter.ai/api/v1/chat    | providerFetch  |     24 ms |      27 ms |      174 ms |
 
+The same run on the Linux workstation (Node 26.5.0): api.openai.com 32
+parallel 6,629 ms built-in, 374 ms pooled; openrouter.ai 32 parallel 771 ms
+built-in, 37 ms pooled.
+
 One request takes the same time either way, so chat first-token latency does
 not change. Parallel requests now finish in about one request time.
 
