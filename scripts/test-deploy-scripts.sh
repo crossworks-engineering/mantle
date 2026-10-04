@@ -41,6 +41,9 @@
 #   roll:    scripts/roll.sh backs up first (its own exit status), requests
 #            only the target, and stops loudly on a lost app, sandbox or
 #            app-db file
+#   maint:   scripts/box-maintain.sh starts a --rm sibling of mantle_web with
+#            its own memory, hands the env over a pipe (never argv or disk),
+#            and refuses a second maintenance run on the box
 
 # Test code: single-quoted shell bodies are expanded by the shell they are
 # handed to (SC2016), and ls over fixture dirs whose names we chose is fine
@@ -1054,6 +1057,106 @@ roll_box fleetnostack
 printf '{"boxes":[{"label":"box-b","url":"https://brain.example.com","ssh":"fakebox"}]}\n' > "$RS/fleet.json"
 MANTLE_FLEET_FILE="$RS/fleet.json" roll_sh box-b v8
 check "a fleet box with a url and no stack: the stack comes from the updater, not the url" sh -c "test '$rc' = 0 && ! grep -q 'not an absolute path' '$RS/out'"
+
+# ═════════════════════════════════════════════════════════════════════════════
+echo "box-maintain.sh: a sibling container, the env through a pipe, one run per box"
+# A docker stub plays the box: `ps` lists $BM/running, `top` prints $BM/top,
+# `inspect` answers for mantle_web (its env holds a secret and $BM/webowner),
+# psql answers $BM/pgowner, and `run` records its argv and the env file it
+# was handed (read through the path docker got, as the real CLI does).
+BB="$WORK/bmbin"; mkdir -p "$BB"
+cat > "$BB/docker" <<'STUB'
+#!/bin/bash
+echo "docker $*" >> "$BM/calls"
+case "$1" in
+  ps) cat "$BM/running" 2>/dev/null ;;
+  top) cat "$BM/top" 2>/dev/null ;;
+  inspect)
+    [ "$2" = mantle_web ] || [ "$3" = mantle_web ] || [ "$4" = mantle_web ] || exit 1
+    case "$*" in
+      *'{{.Image}}'*) echo sha256:0123456789abcdef0123 ;;
+      *WorkingDir*) echo /app ;;
+      *Config.Env*) printf 'PATH=/usr/bin\nSECRET_KEY=topsecret\nALLOWED_USER_ID=%s\n' "$(cat "$BM/webowner" 2>/dev/null)" ;;
+    esac ;;
+  exec) cat "$BM/pgowner" 2>/dev/null ;;
+  run)
+    printf '%s\n' "$@" > "$BM/run-argv"
+    while [ $# -gt 0 ]; do
+      if [ "$1" = --env-file ]; then cat "$2" > "$BM/run-env"; fi
+      shift
+    done ;;
+  logs) echo "maintain: chunk-windows (dry-run) started" ;;
+esac
+exit 0
+STUB
+printf '#!/bin/sh\nexit 0\n' > "$BB/sleep"
+chmod +x "$BB/docker" "$BB/sleep"
+OWNER_ID=11111111-2222-3333-4444-555555555555
+bm_box() { # <name>: a fresh fake box
+  BM="$WORK/bm-$1"; mkdir -p "$BM/home"; : > "$BM/calls"
+}
+bm_sh() { # <args...>: run box-maintain.sh on the fake box; exit code in $rc, output in $BM/out
+  rc=0
+  PATH="$BB:$RB:$PATH" HOME="$BM/home" BM="$BM" RS="$BM" \
+    bash "$ROOT/scripts/box-maintain.sh" "$@" > "$BM/out" 2>&1 || rc=$?
+}
+
+bm_box happy
+echo "$OWNER_ID" > "$BM/webowner"
+bm_sh --here chunk-windows --apply --yes --parallel=16
+check "happy: exit 0" test "$rc" = 0
+check "happy: a --rm container named maint-<task> with its own memory, no swap" sh -c "
+  grep -qx -- --rm '$BM/run-argv' && grep -qx maint-chunk-windows '$BM/run-argv' &&
+  grep -A1 -x -- --memory '$BM/run-argv' | grep -qx 2g && grep -A1 -x -- --memory-swap '$BM/run-argv' | grep -qx 2g"
+check "happy: mantle_web's network, image and working dir" sh -c "
+  grep -qx container:mantle_web '$BM/run-argv' && grep -qx sha256:0123456789abcdef0123 '$BM/run-argv' &&
+  grep -A1 -x -- --workdir '$BM/run-argv' | grep -qx /app"
+check "happy: the web env reached docker through a pipe, never in argv" sh -c "
+  grep -qx SECRET_KEY=topsecret '$BM/run-env' && ! grep -q topsecret '$BM/run-argv' &&
+  grep -A1 -x -- --env-file '$BM/run-argv' | tail -1 | grep -q '^/dev/fd/'"
+check "happy: the heap cap is 75% of the memory" grep -qx -- 'NODE_OPTIONS=--max-old-space-size=1536' "$BM/run-argv"
+check "happy: the owner comes from the web env" grep -qx "ALLOWED_USER_ID=$OWNER_ID" "$BM/run-argv"
+check "happy: the task and its flags pass through unchanged" sh -c "
+  tail -4 '$BM/run-argv' | tr '\n' ' ' | grep -q '^chunk-windows --apply --yes --parallel=16 \$'"
+check "happy: the log dir on the box is private" test "$(stat -c %a "$BM/home/maint-logs" 2>/dev/null || stat -f %Lp "$BM/home/maint-logs")" = 700
+
+bm_box busy
+echo maint-re-embed > "$BM/running"; echo "$OWNER_ID" > "$BM/webowner"
+bm_sh --here chunk-windows --apply --yes
+check "a maint container already runs: refused, nothing started" sh -c "
+  test '$rc' = 1 && grep -q 'already going: maint-re-embed' '$BM/out' && test ! -e '$BM/run-argv'"
+
+bm_box inweb
+printf 'PID ARGS\n42 node tsx scripts/maintain.ts chunk-windows --apply\n' > "$BM/top"; echo "$OWNER_ID" > "$BM/webowner"
+bm_sh --here chunk-windows
+check "a pnpm maintain inside mantle_web: refused" sh -c "
+  test '$rc' = 1 && grep -q 'running inside mantle_web' '$BM/out' && test ! -e '$BM/run-argv'"
+
+bm_box pgowner
+echo "$OWNER_ID" > "$BM/pgowner"
+bm_sh --here --memory=3g chunk-windows
+check "no owner in the web env: read from Postgres; --memory sets the heap" sh -c "
+  test '$rc' = 0 && grep -qx 'ALLOWED_USER_ID=$OWNER_ID' '$BM/run-argv' &&
+  grep -qx -- 'NODE_OPTIONS=--max-old-space-size=2304' '$BM/run-argv'"
+
+bm_box noowner
+bm_sh --here chunk-windows
+check "no owner anywhere: refused, asks for --owner" sh -c "test '$rc' = 1 && grep -q 'pass --owner' '$BM/out'"
+
+bm_box badslug
+bm_sh --here 'chunk-windows;rm'
+check "a task slug outside [a-z0-9-]: refused" test "$rc" = 1
+
+bm_box overssh
+echo "$OWNER_ID" > "$BM/webowner"
+bm_sh --ssh fakebox re-embed --model='a b' --yes
+check "over ssh: an argument with a space arrives as one argument" sh -c "
+  test '$rc' = 0 && grep -qx -- '--model=a b' '$BM/run-argv'"
+
+bm_box status
+echo maint-chunk-windows > "$BM/running"
+bm_sh --here --status
+check "--status names the running container" sh -c "test '$rc' = 0 && grep -q 'maint-chunk-windows' '$BM/out'"
 
 # ═════════════════════════════════════════════════════════════════════════════
 echo

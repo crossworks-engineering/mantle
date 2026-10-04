@@ -301,7 +301,8 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       '--repopulate',
     ],
     requiresEnv: ['ALLOWED_USER_ID'],
-    notes: 'Heavy — full walk of up to four tables. Prints an estimated USD cost. Run off-hours.',
+    notes:
+      'Heavy: full walk of up to four tables. Prints an estimated USD cost. Run off-hours. On a box, run it in its own container: scripts/box-maintain.sh <box> re-embed ... (docs/maintenance-runner.md).',
   },
   {
     slug: 'chunk-windows',
@@ -318,7 +319,7 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     extraFlags: ['--off', '--clear', '--parallel=N'],
     requiresEnv: ['ALLOWED_USER_ID'],
     notes:
-      'Optional per brain, default off. Resumable. --off switches the window arm off (rows kept); --clear also deletes the rows. A re-embed of content_chunks drops the windows (old space): run this again after one. --parallel=N (1 to 32, default 4) sets the embed requests in flight; a 429 backs off and retries.',
+      'Optional per brain, default off. Resumable. --off switches the window arm off (rows kept); --clear also deletes the rows. A re-embed of content_chunks drops the windows (old space): run this again after one. --parallel=N (1 to 32, default 4) sets the embed calls in flight (about 100 windows each; memory stays under 2 x parallel x 100 vectors); a 429 backs off and retries. On a box, run it in its own container: scripts/box-maintain.sh <box> chunk-windows --apply --yes (docs/maintenance-runner.md).',
   },
   {
     slug: 'extract-backfill',

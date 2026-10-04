@@ -103,7 +103,7 @@ pnpm maintain <slug> --apply      # generic --apply is translated to the
 
 Runner behaviour:
 
-- Spawns `pnpm exec tsx <script>` in the task's `cwd` (env inherited from the
+- Spawns `tsx <script>` in the task's `cwd` (env inherited from the
   runner, which loads `.env.local`), passing flags through verbatim (except the
   generic `--apply` translation).
 - **Spend brake:** a live run of a `cost: llm | embedding` task requires an
@@ -115,6 +115,70 @@ Runner behaviour:
 This CLI is also the seam for a future in-app "CLI screen": the registry is
 data, so a web terminal page only needs an API route that lists tasks and
 streams a run.
+
+The runner always ends with one line of its own: `maintain: <slug> (LIVE)
+finished OK in 12.4 min`, or `FAILED after ...: exit 1`, or `FAILED after
+...: killed by SIGKILL (often out of memory ...)`. It spawns `tsx` itself, not
+`pnpm exec tsx`, because pnpm exec turns a killed task into a plain exit 1.
+A log with no such line was cut off from outside (the runner itself died, or
+the terminal that owned its output went away).
+
+## Long runs on a box (`scripts/box-maintain.sh`)
+
+A task that runs for more than a few minutes on a box (`chunk-windows
+--apply`, `re-embed`, `extract-backfill`, a big `entities-dedupe`) runs in
+its own throwaway container, from your machine:
+
+```sh
+scripts/box-maintain.sh <box> chunk-windows                         # dry run
+scripts/box-maintain.sh <box> chunk-windows --apply --yes --parallel=16
+scripts/box-maintain.sh <box> --follow                              # watch it
+scripts/box-maintain.sh <box> --status                              # memory, last lines
+```
+
+`<box>` is a label from `.mantle-fleet.json` (as for `scripts/roll.sh`), or
+`--ssh <alias>`, or `--here` when you are on the box. Options go before the
+task (`--memory=3g`, `--heap=<MB>`, `--owner=<uuid>`); everything after the
+task goes to `pnpm maintain` unchanged, spend brake included.
+
+What it starts: `maint-<task>`, from the image mantle_web runs, in mantle_web's
+working dir and network namespace (`--network container:mantle_web`: it
+reaches Postgres and the providers exactly as the web tier does). It gets
+mantle_web's env through a pipe (`--env-file /dev/fd/N`: never in argv, never
+on disk), `ALLOWED_USER_ID` from that env or from Postgres
+(`mantle_brain_id()`), its own memory limit (default 2g, no swap) and a Node
+heap cap at 75% of it. Its output goes to `docker logs` while it runs and to
+`~/maint-logs/maint-<task>-<time>.log` on the box (mode 600), and the
+container removes itself when the task ends (`--rm`), so the log file is
+where the final line lives. `--stop` stops it (the tasks are resumable).
+
+**One maintenance run per box.** It refuses to start while another `maint-*`
+container runs, or while a `pnpm maintain` runs inside mantle_web. Two runs
+at once in mantle_web OOM-restarted a web tier on 2026-09-24.
+
+The traps it replaces (a 314k-window `chunk-windows` backfill, 2026-10-04,
+took four tries):
+
+- **ssh logout kills the run.** `nohup docker exec ... > log &` over ssh died
+  the moment the session closed, with no error: the docker client and its
+  output pipe belonged to the session. A `docker run -d` container belongs to
+  the docker daemon.
+- **`docker exec` shares mantle_web's memory limit.** The task and the live
+  web tier sit in one cgroup (`WEB_MEM_LIMIT`, 3g by default). The task was
+  OOM-killed twice (exit 137, `oom_kill` in mantle_web's `memory.events`);
+  the next one could take the web tier with it. A sibling container has its
+  own limit: a runaway task dies alone and the runner's last line says why.
+- **A run that just stops.** The third try (`docker exec -d`, `--parallel=4`,
+  a 1200 MB heap cap) stopped after about 20k windows with no error in its
+  log and no new `oom_kill`. A Node heap abort or a thrown error goes to
+  stderr, and a detached exec keeps only what you redirect. The sibling
+  container sends both streams to its log, and the runner's last line names
+  the exit code or the signal. (Not reproduced: the old code at
+  `--parallel=4` peaked at 555 MB on a workstation copy, well under that
+  heap cap. If it happens again, check whether mantle_web restarted at that
+  time: `docker inspect mantle_web --format '{{.State.StartedAt}}'`.)
+- **The Maintenance tab is not for long runs**: it runs the task inside the
+  web process tree and kills it after 30 minutes.
 
 ## Phase 2: scheduled sweeps ✅
 

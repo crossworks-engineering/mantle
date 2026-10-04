@@ -16,6 +16,7 @@
  *   - missing requiresEnv vars fail fast before the script spawns
  */
 import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import {
   MAINTENANCE_TASKS,
@@ -24,9 +25,11 @@ import {
   type MaintenanceTask,
   type TaskKind,
 } from '../lib/maintenance/registry';
+import { finalLine } from '../lib/maintenance/final-line';
 import { env, envDynamic } from '@mantle/config';
 
 const REPO_ROOT = join(import.meta.dirname, '..', '..', '..');
+const TSX_CLI = createRequire(import.meta.url).resolve('tsx/cli');
 
 const KIND_LABELS: Record<TaskKind, string> = {
   recurring: 'Recurring hygiene',
@@ -164,18 +167,25 @@ async function run(slug: string, rawArgs: string[]): Promise<void> {
     ? await h.recordRunStart({ slug: t.slug, source: 'cli', live }).catch(() => null)
     : null;
 
-  const res = spawnSync('pnpm', ['exec', 'tsx', t.script, ...args], {
+  const t0 = Date.now();
+  // tsx itself, not `pnpm exec tsx`: pnpm exec turns a killed task into a
+  // plain exit 1, and the last line has to tell an out-of-memory kill apart
+  // from a task that failed (tsx exits 128 + the signal number).
+  const res = spawnSync(process.execPath, [TSX_CLI, t.script, ...args], {
     cwd,
     stdio: 'inherit',
     env: process.env,
   });
   const code = res.status ?? 1;
+  // Always one last line, so a log that just stops (a killed process, a
+  // closed ssh session) is told apart from a run that finished.
+  console.log(finalLine(slug, live, res.status, res.signal, Date.now() - t0));
   if (h && historyId) {
     await h
       .finishRun(historyId, {
         state: code === 0 ? 'done' : 'failed',
         exitCode: code,
-        summary: `exit ${code}`,
+        summary: finalLine(slug, live, res.status, res.signal, Date.now() - t0),
       })
       .catch(() => {});
   }
