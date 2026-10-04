@@ -58,6 +58,7 @@ export const BYTE_DERIVED_DATA_KEYS = [
   'schemaDigest',
   'extract_completed_at',
   'extract_incomplete',
+  'extract_skipped',
   'indexing_applied',
 ] as const;
 

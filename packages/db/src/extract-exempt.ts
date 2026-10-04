@@ -59,10 +59,63 @@ export function extractExemptSql(): SQL {
 }
 
 /**
+ * A TERMINAL skip: the extractor read the node and found nothing it can index
+ * (no parser for the format, a body under the minimum, a blank scan, a type
+ * the worker does not extract). `data.extract_skipped = { reason, at }`.
+ *
+ * Without it such a node has no embedding forever, so the boot drain (and the
+ * provider circuit's recovery drain, which is the same query) re-queued it on
+ * every restart and every recovery: a job and a trace each time, and a vision
+ * or OCR call each time for an image or a scan. NATREF, 2026-10-04: one .exe
+ * file, 16 jobs in 3 days; in September 75 short files had 24,605 runs.
+ *
+ * The stamp holds only while the node is unchanged: a write that bumps
+ * `updated_at` (an edit, new bytes, a rename) makes it stale, and the drain
+ * picks the node up once more, so a missed notify on a content change still
+ * self-heals. The gate never reads the stamp: an explicit notify (an edit, a
+ * manual re-extract, a stored PDF password) always runs. A successful pass
+ * removes it.
+ *
+ * A machinery failure (a vision worker that did not run, a rasterizer that
+ * threw, a failed embed) is NOT terminal: the drain must retry it once the
+ * provider is back.
+ */
+export const EXTRACT_SKIPPED_KEY = 'extract_skipped';
+
+/** Skip dispositions that are always a verdict on the CONTENT, never on the
+ *  machinery. The cleanup script (scripts/extract-skip-stamp.ts) stamps old
+ *  looping nodes by these; the extractor stamps them as it records them. The
+ *  vision and OCR verdicts (`no_vision_text`, `no_text_layer`) are terminal
+ *  only when the worker really ran, which an old trace cannot always show, so
+ *  they are not in this list. */
+export const TERMINAL_EXTRACT_SKIPS: readonly string[] = [
+  'needs_export',
+  'unsupported_media',
+  'no_parser',
+  'body_too_short',
+  'encrypted_pdf',
+  'bytes_unavailable',
+  'type_not_in_allowlist',
+  'conversation_digest',
+];
+
+/** The jsonb to merge onto `nodes.data` for a terminal skip. `at` is the
+ *  database clock, the same clock the drain compares with `updated_at`. */
+export function extractSkippedStamp(reason: string): SQL {
+  return sql`jsonb_build_object(${EXTRACT_SKIPPED_KEY}::text, jsonb_build_object('reason', ${reason}::text, 'at', now()))`;
+}
+
+/** True on `nodes` when a terminal skip stamp is current: stamped at or after
+ *  the node's last write. */
+export function extractSkippedSql(): SQL {
+  return sql`coalesce((${nodes.data}->${EXTRACT_SKIPPED_KEY}->>'at')::timestamptz >= ${nodes.updatedAt}, false)`;
+}
+
+/**
  * The nodes the extractor's safety nets re-queue: the owner's non-folder
  * nodes created since `since` that still have no embedding, less the exempt
- * ones. The boot drain uses it as is; the periodic sweep adds "never
- * processed" on top.
+ * ones and less those with a current terminal skip. The boot drain uses it as
+ * is; the periodic sweep adds "never processed" on top.
  */
 export function unextractedNodeConds(ownerId: string, since: Date): SQL {
   return and(
@@ -71,5 +124,6 @@ export function unextractedNodeConds(ownerId: string, since: Date): SQL {
     gte(nodes.createdAt, since),
     isNull(nodes.embedding),
     not(extractExemptSql()),
+    not(extractSkippedSql()),
   )!;
 }

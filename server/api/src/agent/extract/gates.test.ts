@@ -253,6 +253,42 @@ describe('admitForExtraction — refusals', () => {
     expect(h.embeddedImages).toHaveBeenCalled();
   });
 
+  // Terminal skips (`data.extract_skipped`): a verdict on the node itself is
+  // stamped so the boot drain stops re-queuing it; a config or machinery
+  // refusal is not, so the drain retries it once that is fixed.
+  it('stamps a type outside the allowlist terminal', async () => {
+    h.resolveExtractor.mockResolvedValue({ ...WORKER, params: { target_types: ['note'] } });
+    h.selectQueue.push([node({ type: 'file' })]);
+    await admitForExtraction('n1', 'o1');
+    expect(writtenJson()).toContain('extract_skipped');
+    expect(writtenJson()).toContain('type_not_in_allowlist');
+  });
+
+  it('stamps a conversation digest terminal', async () => {
+    h.selectQueue.push([node({ type: 'note', tags: ['conversation-digest'] })]);
+    await admitForExtraction('n1', 'o1');
+    expect(writtenJson()).toContain('conversation_digest');
+  });
+
+  it('stamps a telegram turn with nothing to embed terminal, never one whose embed failed', async () => {
+    h.selectQueue.push([node({ type: 'telegram_message', data: { text: '' } })]);
+    await admitForExtraction('n1', 'o1');
+    expect(writtenJson()).toContain('extract_skipped');
+
+    h.updates.length = 0;
+    h.embed.mockRejectedValueOnce(new Error('embedder down'));
+    h.selectQueue.push([node({ type: 'telegram_message', data: { text: 'hello there' } })]);
+    await admitForExtraction('n1', 'o1');
+    expect(writtenJson()).not.toContain('extract_skipped');
+  });
+
+  it('never stamps a missing key: the drain must retry once it is set', async () => {
+    h.resolveChatKey.mockResolvedValue({ ok: false, disposition: 'missing_api_key', detail: 'x' });
+    h.selectQueue.push([node()]);
+    await admitForExtraction('n1', 'o1');
+    expect(writtenJson()).not.toContain('extract_skipped');
+  });
+
   it('refuses when the worker has no usable key, naming the resolver disposition', async () => {
     h.resolveChatKey.mockResolvedValue({ ok: false, disposition: 'missing_api_key', detail: 'x' });
     h.selectQueue.push([node()]);

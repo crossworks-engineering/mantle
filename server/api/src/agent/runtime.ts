@@ -410,7 +410,10 @@ async function drainUnextractedNodes(ownerId: string): Promise<void> {
   const limit = Number(env('MANTLE_EXTRACT_DRAIN_LIMIT')) || 1000;
   const since = new Date(Date.now() - windowHours * 60 * 60 * 1000);
   // Exempt nodes (the Forum archive, @mantle/db extract-exempt.ts) are left
-  // out: they have no embedding by design and must never be queued.
+  // out: they have no embedding by design and must never be queued. So are
+  // nodes with a current terminal skip (`data.extract_skipped`: nothing to
+  // read in them); without that, a file no parser reads was re-queued on
+  // every restart and every provider recovery, forever.
   const conds = unextractedNodeConds(ownerId, since);
   const countRows = await db
     .select({ total: sql<number>`count(*)::int` })

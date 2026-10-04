@@ -40,6 +40,7 @@ import { resolveChatKey } from '@mantle/runtime/agent';
 import { resolveExtractor } from './model';
 import { maybeAutoTableSpreadsheet } from './auto-table';
 import { maybeExtractEmbeddedImages } from './images';
+import { recordTerminalSkip } from './terminal';
 
 /** Types we will NEVER extract from, no matter what the agent config says.
  *  Note `secret` is NOT here — secret nodes have metadata-only extraction
@@ -196,7 +197,7 @@ export async function admitForExtraction(
     ((node.tags ?? []).includes('conversation-digest') ||
       digestData.kind === 'conversation_digest');
   if (isConversationDigest) {
-    await recordSkippedTrace({
+    await recordTerminalSkip({
       kind: 'extractor_run',
       ownerId,
       subjectId: node.id,
@@ -232,7 +233,9 @@ export async function admitForExtraction(
         );
       }
     }
-    await recordSkippedTrace({
+    // Under 2 chars there is nothing to embed, now or later: terminal. A
+    // failed embed is not (the drain retries it once the embedder is back).
+    await (tgText.length < 2 ? recordTerminalSkip : recordSkippedTrace)({
       kind: 'extractor_run',
       ownerId,
       subjectId: node.id,
@@ -285,7 +288,7 @@ export async function admitForExtraction(
   const retrievalOnly = brainDepth === 'retrieval';
   // `*` is a wildcard meaning "any non-HARD_SKIP type" — already enforced above.
   if (!extractTypes.includes('*') && !extractTypes.includes(node.type)) {
-    await recordSkippedTrace({
+    await recordTerminalSkip({
       kind: 'extractor_run',
       ownerId,
       subjectId: node.id,
@@ -355,7 +358,7 @@ export async function admitForExtraction(
         await tx
           .update(nodes)
           .set({
-            data: sql`(${nodes.data} - 'text' - 'content') || ${JSON.stringify({
+            data: sql`(${nodes.data} - 'text' - 'content' - 'extract_skipped') || ${JSON.stringify({
               summary: spine,
               summary_model: 'metadata-only',
               indexing_applied: 'metadata',

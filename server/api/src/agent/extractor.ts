@@ -260,12 +260,13 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
  *  the recovery signal for that case. Deliberately a plain jsonb merge with
  *  no version condition: a user edit clears summary/embedding, and the guard
  *  is a conjunction, so a stale stamp can never suppress the edit's
- *  re-extract. */
+ *  re-extract. Drops a terminal-skip stamp left by an earlier pass that found
+ *  nothing to read (@mantle/db extract-exempt.ts). */
 async function stampExtractCompleted(nodeId: string): Promise<void> {
   await db
     .update(nodes)
     .set({
-      data: sql`${nodes.data} || ${JSON.stringify({ extract_completed_at: new Date().toISOString() })}::jsonb`,
+      data: sql`(${nodes.data} - 'extract_skipped') || ${JSON.stringify({ extract_completed_at: new Date().toISOString() })}::jsonb`,
     })
     .where(eq(nodes.id, nodeId));
 }

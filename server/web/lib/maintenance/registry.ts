@@ -322,6 +322,21 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       'Optional per brain, default off. Resumable. --off switches the window arm off (rows kept); --clear also deletes the rows. A re-embed of content_chunks drops the windows (old space): run this again after one. --parallel=N (1 to 32, default 4) sets the embed calls in flight (about 100 windows each; memory stays under 2 x parallel x 100 vectors); a 429 backs off and retries. On a box, run it in its own container: scripts/box-maintain.sh <box> chunk-windows --apply --yes (docs/maintenance-runner.md).',
   },
   {
+    slug: 'extract-skip-stamp',
+    title: 'Stop extractor loops on nodes with nothing to read',
+    description:
+      'Stamps data.extract_skipped on brain nodes with no embedding whose last extractor run was a content verdict (no parser, body too short, unsupported media, needs export, encrypted PDF, bytes missing, type not extracted, conversation digest; a telegram turn under 2 chars). Without the stamp the boot drain and every provider recovery re-queued them. Prints counts by type and reason, and up to 10 ids.',
+    kind: 'remedy',
+    status: 'live',
+    cost: 'sql',
+    schedulable: false,
+    script: 'scripts/extract-skip-stamp.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    notes:
+      'Plain SQL, no model, idempotent. Run once per box after the release that added the stamp; the extractor stamps new cases itself. A stamp holds only until the node next changes, and an explicit re-extract always runs.',
+  },
+  {
     slug: 'extract-backfill',
     title: 'Re-fire extraction for unindexed nodes',
     description:

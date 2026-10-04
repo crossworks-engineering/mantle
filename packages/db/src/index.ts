@@ -70,7 +70,12 @@ export {
   isExtractExempt,
   extractExemptSql,
   unextractedNodeConds,
+  EXTRACT_SKIPPED_KEY,
+  TERMINAL_EXTRACT_SKIPS,
+  extractSkippedStamp,
+  extractSkippedSql,
 } from './extract-exempt';
+export { backfillTerminalSkips, type TerminalSkipBackfill } from './extract-skip-backfill';
 export {
   WRITE_RETRY_AFTER_MS,
   bestEffortWrite,
