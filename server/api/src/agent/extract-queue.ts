@@ -30,6 +30,13 @@
  *                          RE-DRIVEN on every agent start and surfaced by the
  *                          /debug/integrity dead-letter check — visible AND
  *                          self-healing, not just "not lost".
+ *   4. Provider circuit: an ACCOUNT error (no credits, refused key) pauses
+ *                          the queue instead of burning every job's retries,
+ *                          alerts the admins, probes with backoff, and on
+ *                          recovery re-drives the dead letters and sweeps the
+ *                          unextracted nodes with no restart
+ *                          (provider-circuit.ts, docs/embeddings.md
+ *                          "Provider outages").
  *
  * Same-node concurrency is excluded by two layers:
  *
@@ -50,10 +57,23 @@
 import { PgBoss } from 'pg-boss';
 import {
   clearEmbeddingModelCache,
+  probeConfiguredEmbedding,
   resolveEmbeddingConfig,
   resolveExtractionConcurrency,
+  type EmbeddingConfig,
 } from '@mantle/embeddings';
+import {
+  countDeadLetteredExtracts,
+  listOpenProviderAlerts,
+  recordProviderFailure,
+  recordProviderProbeFailure,
+  resolveProviderAlert,
+  setProviderAlertPaused,
+  type ProviderSubject,
+} from '@mantle/db';
 import { extractNode } from './extractor.js';
+import { probeExtractionModel } from './extract/model.js';
+import { ProviderCircuit } from './provider-circuit.js';
 import { env } from '@mantle/config';
 import { assertNoViewer } from '@mantle/db/viewer';
 
@@ -98,18 +118,78 @@ let reconcileTimer: ReturnType<typeof setInterval> | null = null;
 let reconciling = false;
 const RECONCILE_INTERVAL_MS = 30_000;
 
+/** The provider circuit (provider-circuit.ts): pauses the queue on a
+ *  confirmed account error, probes, and recovers with no restart. */
+let circuit: ProviderCircuit | null = null;
+/** The embedding routes as last seen, to notice a saved change. */
+let routesFingerprint: string | null = null;
+/** The unextracted-node sweep the agent runs at boot (runtime.ts), handed in
+ *  so a recovery runs the same bounded code path. */
+let sweepUnextracted: () => Promise<void> = async () => {};
+
+function fingerprintRoutes(cfg: EmbeddingConfig): string {
+  const r = (x: EmbeddingConfig['primary'] | null) =>
+    x ? [x.provider, x.baseUrl ?? '', x.apiKeyId ?? ''].join('|') : '-';
+  return [cfg.model, r(cfg.primary), r(cfg.backup)].join('#');
+}
+
+function buildCircuit(ownerId: string): ProviderCircuit {
+  return new ProviderCircuit({
+    now: () => Date.now(),
+    probe: (subject: ProviderSubject) =>
+      subject === 'embedding' ? probeConfiguredEmbedding(ownerId) : probeExtractionModel(ownerId),
+    pauseWorkers: async () => {
+      await setWorkerCount(0);
+    },
+    resumeWorkers: async () => {
+      const cfg = await resolveEmbeddingConfig(ownerId).catch(() => null);
+      await setWorkerCount(resolveExtractionConcurrency(cfg?.extractionConcurrency));
+    },
+    recover: async () => {
+      const redriven = await redriveDeadLetters();
+      await sweepUnextracted();
+      return { redriven };
+    },
+    deadLetterCount: countDeadLetteredExtracts,
+    store: {
+      listOpen: async () =>
+        (await listOpenProviderAlerts(ownerId)).map((r) => ({
+          subject: r.subject as ProviderSubject,
+          paused: r.paused,
+          visible: r.visible,
+          nextProbeAt: r.nextProbeAt,
+          probeAttempts: r.probeAttempts,
+        })),
+      recordFailure: async (subject, cls) => {
+        await recordProviderFailure(ownerId, subject, {
+          code: cls.code,
+          permanent: cls.permanent,
+          reason: cls.reason,
+        });
+      },
+      setPaused: (subject, paused, nextProbeAt) =>
+        setProviderAlertPaused(ownerId, subject, paused, nextProbeAt),
+      probeFailed: (subject, nextProbeAt) =>
+        recordProviderProbeFailure(ownerId, subject, nextProbeAt),
+      resolve: (subject) => resolveProviderAlert(ownerId, subject),
+    },
+    log: (msg) => console.log(`[extract-queue] ${msg}`),
+  });
+}
+
 /**
  * Re-drive dead-lettered extract jobs back onto the main queue. Runs at every
- * agent start: a node that exhausted its 5 retries (e.g. the embedder was down
- * all evening) gets a fresh round once the operator restarts the agent, instead
- * of sitting in the DLQ forever with no reader. A genuinely poisoned job cycles
+ * agent start, and when the provider circuit recovers (a probe that works, an
+ * alert closing, a config save, an admin's "Try again"): a node that exhausted
+ * its 5 retries (e.g. the embedder was down all evening) gets a fresh round
+ * without a restart, instead of sitting in the DLQ forever with no reader. A genuinely poisoned job cycles
  * back to the DLQ after 5 more failures — bounded per start, and standing
  * visibility comes from the /debug/integrity dead-letter check.
  */
 async function redriveDeadLetters(): Promise<number> {
   if (!boss) return 0;
   let total = 0;
-  // Bounded sweep: 50 × 20 = 1000 jobs max per start.
+  // Bounded sweep: 50 × 20 = 1000 jobs max per start or recovery.
   for (let i = 0; i < 50; i++) {
     const jobs = await boss.fetch<ExtractJob>(DEAD_LETTER_QUEUE, { batchSize: 20 });
     if (!jobs || jobs.length === 0) break;
@@ -129,7 +209,12 @@ async function redriveDeadLetters(): Promise<number> {
  * Idempotent on the pgboss schema — safe to call alongside the web email worker
  * which shares the same `pgboss` schema.
  */
-export async function startExtractQueue(databaseUrl: string, ownerId: string): Promise<void> {
+export async function startExtractQueue(
+  databaseUrl: string,
+  ownerId: string,
+  opts: { sweepUnextracted?: () => Promise<void> } = {},
+): Promise<void> {
+  if (opts.sweepUnextracted) sweepUnextracted = opts.sweepUnextracted;
   boss = new PgBoss({ connectionString: databaseUrl, schema: 'pgboss' });
   boss.on('error', (err) => console.error('[extract-queue] pg-boss error:', err));
   await boss.start();
@@ -175,8 +260,16 @@ export async function startExtractQueue(databaseUrl: string, ownerId: string): P
 
   activeOwnerId = ownerId;
   activeExpireMin = expireMin;
+  if (cfg) routesFingerprint = fingerprintRoutes(cfg);
+
+  // An outage that was open when the agent stopped holds the queue paused
+  // again, and probes at once (a restart is a "try again" too).
+  circuit = buildCircuit(ownerId);
+  await circuit.tick().catch((err) => {
+    console.error('[extract-queue] circuit start:', err instanceof Error ? err.message : err);
+  });
   const concurrency = resolveExtractionConcurrency(cfg?.extractionConcurrency);
-  await setWorkerCount(concurrency);
+  if (!circuit.isPaused()) await setWorkerCount(concurrency);
 
   // The worker count and the time budget are LIVE: the UI writes the config
   // row from another process, so poll it. Each tick drops the resolver cache
@@ -213,7 +306,19 @@ async function handleExtractJob([job]: { data: ExtractJob }[]): Promise<void> {
   inflightByNode.set(nodeId, tracked);
   // Let it throw: a thrown error propagates to pg-boss and triggers the
   // queue's retry/backoff. A swallowed error is the bug we're fixing.
-  await run;
+  try {
+    await run;
+  } catch (err) {
+    // An account error (no credits, refused key) pauses the queue once a
+    // probe confirms it; anything else retries as before. Not awaited: the
+    // confirm probe must not hold this job's failure back from pg-boss.
+    void circuit
+      ?.onJobError(err)
+      .catch((e) =>
+        console.error('[extract-queue] circuit:', e instanceof Error ? e.message : String(e)),
+      );
+    throw err;
+  }
 }
 
 /** Grow or shrink the worker pool to `target`. A removed worker stops polling
@@ -242,7 +347,16 @@ async function reconcileWithConfig(): Promise<void> {
   try {
     clearEmbeddingModelCache(activeOwnerId);
     const cfg = await resolveEmbeddingConfig(activeOwnerId);
-    const target = resolveExtractionConcurrency(cfg.extractionConcurrency);
+    // A saved change to the embedding routes is a reason to try again: probe
+    // an open alert now, and recover a waiting backlog (provider-circuit.ts).
+    const fp = fingerprintRoutes(cfg);
+    if (routesFingerprint !== null && fp !== routesFingerprint) circuit?.requestRecovery('config');
+    routesFingerprint = fp;
+    await circuit?.tick();
+    // A paused queue stays at zero workers until the circuit resumes it.
+    const target = circuit?.isPaused()
+      ? 0
+      : resolveExtractionConcurrency(cfg.extractionConcurrency);
     if (target !== workerIds.length) {
       const from = workerIds.length;
       await setWorkerCount(target);
@@ -280,11 +394,25 @@ export async function enqueueExtract(nodeId: string): Promise<void> {
   await boss.send(EXTRACT_QUEUE, { nodeId } satisfies ExtractJob, { singletonKey: nodeId });
 }
 
+/**
+ * An admin saved provider settings or pressed "Try again" (the
+ * `provider_recover` NOTIFY, runtime.ts): probe open alerts and recover a
+ * waiting backlog now, not on the next 30 s tick. Bounded by the circuit's
+ * own gaps (provider-circuit.ts).
+ */
+export function requestProviderRecovery(trigger: 'config' | 'admin'): void {
+  if (!circuit) return;
+  circuit.requestRecovery(trigger);
+  void reconcileWithConfig();
+}
+
 /** Gracefully stop the boss (lets in-flight jobs finish). */
 export async function stopExtractQueue(): Promise<void> {
   if (reconcileTimer) clearInterval(reconcileTimer);
   reconcileTimer = null;
   workerIds.length = 0;
+  circuit = null;
+  routesFingerprint = null;
   if (!boss) return;
   const b = boss;
   boss = null;

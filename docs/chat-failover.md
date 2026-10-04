@@ -76,7 +76,7 @@ Pure. Splits a row into `{ primary, backup }`. The backup is only live when **en
 ```ts
 backup: row.backupEnabled && row.backupProvider && row.backupModel
   ? { provider: row.backupProvider, model: row.backupModel, apiKeyId: row.backupApiKeyId ?? null }
-  : null
+  : null;
 ```
 
 A `ChatRoute` is the minimal `{ provider, model, apiKeyId }`. `ChatRouteRow` is the column shape shared by agents + workers, so both tables flow through the same function.
@@ -87,42 +87,49 @@ The failover predicate, **and the most important reuse decision in the whole fea
 
 ```ts
 export function isChatFailover(err: unknown): boolean {
-  return classifyChatError(err).retry;
+  return classifyChatError(err).retry || isAccountError(err);
 }
 ```
+
+> **Account errors fail over too (2026-10-04).** `isAccountError` ([`provider-error.ts`](../packages/embeddings/src/provider-error.ts)) is true for no credits (402, a 429 or 403 that says so), a refused key (401, 403), no key, and a model the provider does not offer. The backup is another provider or key, so it gets round exactly that. A 403 for flagged input is not an account error and does not fail over. The extractor's chat calls also report to the provider-alert store, so a failing extraction model reaches the admins ([`embeddings.md` "Provider outages"](./embeddings.md#provider-outages-alerts-and-automatic-recovery)).
 
 `classifyChatError` already exists in [`packages/voice/src/adapters/retry.ts`](../packages/voice/src/adapters/retry.ts); it's what the per-adapter retry wrapper (`withChatRetry`) uses to decide whether to retry a call. Its `RETRYABLE_STATUS` set is `{408, 409, 425, 429, 500, 502, 503, 504}`, plus it treats `TypeError` (undici network failures), `AbortError`/`TimeoutError`, `ECONNREFUSED`/`ETIMEDOUT`/`fetch failed`/`socket hang up`, and an **empty/truncated JSON body** (`isEmptyJsonBodyError`, a `SyntaxError: "Unexpected end of JSON input"` from `JSON.parse('')`, the signature of an upstream stall that returned an unparseable 2xx) as retryable.
 
 > **Streaming is covered too (2026-09-02 audit).** `withChatRetry` wraps `chatStream` as well as `chat`, because the tool loop prefers the stream path whenever a turn is live; before this, live turns had no retry at all. A stream is re-sent only while nothing has reached the user yet (429/5xx/network/connect timeout before the first delta); once a delta has been emitted the error surfaces as-is rather than replaying text the client already rendered. Every stream is also time-bounded now: headers must arrive within 60s (`streamAbort`, the same bound as the one-shot path) and no more than 120s may pass between chunks (`readSSE` `idleMs` / `withIdleTimeout` for the OpenRouter SDK iterable), keep-alive frames included, so a provider that accepts the request and then goes quiet fails the turn with a `TimeoutError` instead of hanging until Stop. Constants live in `packages/voice/src/adapters/sse.ts`.
 
-> **The empty-body case (added after a prod incident).** A web assistant turn died with a context-free "Unexpected end of JSON input" after a 34s stall on its 3rd model call: the upstream returned an empty 2xx body and `@openrouter/sdk`'s `JSON.parse` threw a bare `SyntaxError`. The SDK retries HTTP transients but not a thrown parse error, and the OpenRouter adapter is intentionally **not** wrapped by `withChatRetry` (its SDK owns HTTP-level retries, double-wrapping would compound attempts). So `openrouter-chat.ts` retries *only* this empty-body case itself (full-jitter backoff, honoring `opts.maxRetries`) and, on exhaustion, throws `OpenRouterEmptyResponseError` naming the model + elapsed time instead of the bare parse message. `classifyChatError` learns the same signature so the failover predicate and the `withChatRetry`-wrapped direct adapters treat it transient too. Matched **only** for the end-of-input family, a complete-but-malformed body is a real bug we must surface, not retry.
+> **The empty-body case (added after a prod incident).** A web assistant turn died with a context-free "Unexpected end of JSON input" after a 34s stall on its 3rd model call: the upstream returned an empty 2xx body and `@openrouter/sdk`'s `JSON.parse` threw a bare `SyntaxError`. The SDK retries HTTP transients but not a thrown parse error, and the OpenRouter adapter is intentionally **not** wrapped by `withChatRetry` (its SDK owns HTTP-level retries, double-wrapping would compound attempts). So `openrouter-chat.ts` retries _only_ this empty-body case itself (full-jitter backoff, honoring `opts.maxRetries`) and, on exhaustion, throws `OpenRouterEmptyResponseError` naming the model + elapsed time instead of the bare parse message. `classifyChatError` learns the same signature so the failover predicate and the `withChatRetry`-wrapped direct adapters treat it transient too. Matched **only** for the end-of-input family, a complete-but-malformed body is a real bug we must surface, not retry.
 
 So "should we fail over?" is **exactly** "is this a transient error the retry layer would itself retry?", 429 rate-limit, 5xx, network-down, timeout, empty-body stall → yes; 4xx bad-input / 401 auth / context-length → no (a second route fails identically). Reusing the canonical classifier means the failover decision and the retry decision can never drift apart, and it's tested in one place. This required exposing `classifyChatError` / `ChatHttpError` from the `@mantle/voice` adapters barrel (they were module-private before).
 
 ### `resolveRouteAdapter(ownerId, route): ResolvedChatRoute`
 
 Turns a `ChatRoute` into a callable `{ adapter, apiKey, model, provider }`:
+
 - `getChatAdapter(route.provider)`; throws if the provider isn't wired.
 - API key: route-pinned `apiKeyId` wins → fall back to `getApiKey(owner, provider)` → **`local` is keyless** (a self-hosted OpenAI-compatible chat server needs no credential, mirroring the embedding adapter's keyless-local handling).
 
 ### `chatWithFailover(ownerId, routes, opts): { result, usedProvider, failedOver }`
 
-The single-shot wrapper. `opts` is `RoutelessChatOptions` (= `ChatOptions` minus `apiKey` and `model`; each route supplies its own, which is how the backup can run a *different* model):
+The single-shot wrapper. `opts` is `RoutelessChatOptions` (= `ChatOptions` minus `apiKey` and `model`; each route supplies its own, which is how the backup can run a _different_ model):
 
 ```ts
 const primary = await resolveRouteAdapter(ownerId, routes.primary);
 try {
-  const result = await primary.adapter.chat({ ...opts, apiKey: primary.apiKey, model: primary.model });
+  const result = await primary.adapter.chat({
+    ...opts,
+    apiKey: primary.apiKey,
+    model: primary.model,
+  });
   return { result, usedProvider: primary.provider, failedOver: false };
 } catch (err) {
-  if (!routes.backup || !isChatFailover(err)) throw err;     // no backup, or a 4xx → rethrow
+  if (!routes.backup || !isChatFailover(err)) throw err; // no backup, or a 4xx → rethrow
   const backup = await resolveRouteAdapter(ownerId, routes.backup);
   const result = await backup.adapter.chat({ ...opts, apiKey: backup.apiKey, model: backup.model });
   return { result, usedProvider: backup.provider, failedOver: true };
 }
 ```
 
-The primary's own internal retries (in `withChatRetry`) run *first*; `chatWithFailover` only sees the error after those are exhausted, so failover is a genuine "primary is down" signal, not a flaky single-request blip.
+The primary's own internal retries (in `withChatRetry`) run _first_; `chatWithFailover` only sees the error after those are exhausted, so failover is a genuine "primary is down" signal, not a flaky single-request blip.
 
 ### `resolveBackupAdapter(ownerId, row): ResolvedChatRoute | undefined`
 
@@ -134,17 +141,17 @@ For the tool-loop callers (below). Resolves the row's backup to a callable adapt
 
 The chat-shaped workers each do one `adapter.chat()` call inside a trace `step`. The migration was mechanical: replace the manual `getChatAdapter(worker.provider)` + `getApiKeyById(worker.apiKeyId)` + `adapter.chat({...})` with `chatWithFailover(ownerId, resolveChatRoutes(worker), {...})`.
 
-| Worker | File | Note |
-|---|---|---|
-| Extractor | [`extractor.ts`](../server/api/src/agent/extractor.ts) | `chatComplete(adapter, apiKey, model, …)` → `chatComplete(ownerId, routes, …)`. `classifyAndApplyFact` dropped its `adapter`/`apiKey` params and resolves routes from the worker it already holds. |
-| Summarizer ×2 | [`summarizer.ts`](../server/api/src/agent/summarizer.ts) | Telegram + web paths, identical swap. |
-| Reflector | [`reflector.ts`](../server/api/src/agent/reflector.ts) | Same. |
+| Worker        | File                                                     | Note                                                                                                                                                                                               |
+| ------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Extractor     | [`extractor.ts`](../server/api/src/agent/extractor.ts)   | `chatComplete(adapter, apiKey, model, …)` → `chatComplete(ownerId, routes, …)`. `classifyAndApplyFact` dropped its `adapter`/`apiKey` params and resolves routes from the worker it already holds. |
+| Summarizer ×2 | [`summarizer.ts`](../server/api/src/agent/summarizer.ts) | Telegram + web paths, identical swap.                                                                                                                                                              |
+| Reflector     | [`reflector.ts`](../server/api/src/agent/reflector.ts)   | Same.                                                                                                                                                                                              |
 
 Each logs when it answers via the backup (`[summarizer] summarized via backup route (…)`), and `recordChatUsage` is given `result.model || routes.primary.model` so the trace + cost dashboard attribute usage to the model that actually served.
 
 **Switch-back here is trivial:** there's no loop, so every invocation calls `chatWithFailover` fresh and tries the primary first. Summarize #1 fails over to cloud; summarize #2 a minute later tries local gemma again. Stateless self-heal, no bookkeeping.
 
-The pre-existing config guards (skipped-trace on a missing key/adapter) stay; they're *primary-route* checks done before the call, separate from *runtime* failover.
+The pre-existing config guards (skipped-trace on a missing key/adapter) stay; they're _primary-route_ checks done before the call, separate from _runtime_ failover.
 
 ---
 
@@ -199,19 +206,19 @@ runToolLoop({ adapter, apiKey, model, backup: await resolveBackupAdapter(ownerId
 
 The embedding failover ([`embeddings.md` §Primary + backup routes](./embeddings.md#primary--backup-routes-failover)) looks identical but carries a hard constraint the chat version doesn't: **the embedding backup MUST be the same model.**
 
-Embeddings are **vector-space-locked**. Two different embedding models produce vectors in different coordinate systems, so if the backup embedded a query with another model it wouldn't cosine-match the corpus the primary built, retrieval silently returns garbage, and anything ingested during the outage is permanently off-space until re-embedded. The embedding backup is therefore the *same* model on a different host.
+Embeddings are **vector-space-locked**. Two different embedding models produce vectors in different coordinate systems, so if the backup embedded a query with another model it wouldn't cosine-match the corpus the primary built, retrieval silently returns garbage, and anything ingested during the outage is permanently off-space until re-embedded. The embedding backup is therefore the _same_ model on a different host.
 
 Chat has **no such lock**. Answering one turn (or one tool-loop iteration) on gemma and the next on Claude has no correctness cost; they're both just producing text. So the chat backup is free to be a **completely different provider and model**, which is precisely what makes "local primary, cloud fallback" useful: your fallback can be the best cloud model even though your primary is a 12B local one.
 
-This is why the two features share a shape but not a constraint, and why the chat one was the *simpler* build despite touching more call sites.
+This is why the two features share a shape but not a constraint, and why the chat one was the _simpler_ build despite touching more call sites.
 
 ---
 
 ## 8. Decisions (locked)
 
-1. **Failover triggers: route-down + 429 + 5xx; never 4xx.** 429 (rate-limit) is explicitly in scope, for a local-primary that's overloaded, or a cloud-primary that's throttling, the backup should pick up. 4xx (bad input, context-length, auth) rethrows because the backup would fail identically.
+1. **Failover triggers: route-down + 429 + 5xx + account errors; never a bad input.** 429 (rate-limit) is explicitly in scope, for a local-primary that's overloaded, or a cloud-primary that's throttling, the backup should pick up. Since 2026-10-04 an account error (401, 402, a no-credits 403/429, an unknown model) fails over too: the backup's own provider or key does not share it. Other 4xx (bad input, context-length) rethrow because the backup would fail identically.
 
-2. **Optimistic, stateless switch-back, no circuit breaker.** Sticky within a turn; every fresh call/turn tries the primary first. The accepted cost: a primary that *hangs* (vs refuses fast) pays one timeout per turn while it's down. A box that's simply off refuses in milliseconds, so the common case is ~free. A circuit breaker (skip a known-down primary for a cooldown, half-open probe to recover) is the documented next step **only if the hang case proves real**: deliberately deferred to keep v1 simple and stateless.
+2. **Optimistic, stateless switch-back, no circuit breaker.** Sticky within a turn; every fresh call/turn tries the primary first. The accepted cost: a primary that _hangs_ (vs refuses fast) pays one timeout per turn while it's down. A box that's simply off refuses in milliseconds, so the common case is ~free. A circuit breaker (skip a known-down primary for a cooldown, half-open probe to recover) is the documented next step **only if the hang case proves real**: deliberately deferred to keep v1 simple and stateless.
 
    Implication worth knowing: keep the primary chat timeout reasonably short (and configurable) so the per-turn tax during a hang is bounded and failover is snappy.
 
@@ -219,7 +226,7 @@ This is why the two features share a shape but not a constraint, and why the cha
 
 ## 9. Testing
 
-- [`chat-failover.test.ts`](../packages/runtime/src/agent/chat-failover.test.ts) (7), `chatWithFailover` (primary success / 5xx→backup / 4xx→rethrow / no-backup→rethrow, asserting the backup's *different* model served), `resolveChatRoutes` mapping (enabled / disabled / incomplete), `isChatFailover` classification (429/5xx/network yes; 400/401 no). Partial-mocks `@mantle/voice` (override `getChatAdapter`, keep the real `classifyChatError`) so the transient/permanent decision is exercised for real.
+- [`chat-failover.test.ts`](../packages/runtime/src/agent/chat-failover.test.ts) (7), `chatWithFailover` (primary success / 5xx→backup / 4xx→rethrow / no-backup→rethrow, asserting the backup's _different_ model served), `resolveChatRoutes` mapping (enabled / disabled / incomplete), `isChatFailover` classification (429/5xx/network and account errors 401/402/404-model yes; 400 and flagged-input 403 no). Partial-mocks `@mantle/voice` (override `getChatAdapter`, keep the real `classifyChatError`) so the transient/permanent decision is exercised for real.
 - [`tool-loop.test.ts`](../packages/runtime/src/agent/tool-loop.test.ts) (+3), route-down→backup, 4xx→rethrow-backup-untouched, and the **sticky** case: a primary that always throws + a backup scripted for a tool-call iteration then a final answer; asserts the primary was attempted **exactly once** while the backup served **both** iterations.
 - [`extractor-chat.test.ts`](../server/api/src/agent/extractor-chat.test.ts), migrated to the new `chatComplete(ownerId, routes, …)` signature.
 
@@ -232,13 +239,13 @@ This is why the two features share a shape but not a constraint, and why the cha
 The backup route + per-route host are fully configurable from the UI, no SQL needed.
 
 - **API zod**: the backup fields (`backupProvider/backupModel/backupApiKeyId/backupEnabled`) and the per-route host fields (`baseUrl/viaTailnet/backupBaseUrl/backupViaTailnet`, migration 0063) are on the agents create/update zod ([`route.ts`](../server/web/app/api/agents/route.ts) + `[id]/route.ts`) and the ai-workers action parse (`parseBackupFromForm`).
-- **agents-client.tsx + worker-form.tsx**: a "Backup route" section (provider/model/key + enable switch), a **"Make backup primary"** swap (exchanges the primary↔backup form values *including* host + tailnet flag, so a route moves whole), and a `RouteHostFields` control (base-URL input + "Reach via Tailscale" switch) shown only when a route's provider is `local`. The worker form gates the backup section to chat-shaped kinds; the agents form shows it for all conversational agents.
+- **agents-client.tsx + worker-form.tsx**: a "Backup route" section (provider/model/key + enable switch), a **"Make backup primary"** swap (exchanges the primary↔backup form values _including_ host + tailnet flag, so a route moves whole), and a `RouteHostFields` control (base-URL input + "Reach via Tailscale" switch) shown only when a route's provider is `local`. The worker form gates the backup section to chat-shaped kinds; the agents form shows it for all conversational agents.
 
 Shipped `5220834` (chat backup UI) + `ba0aa91` (per-route host UI). Pure config ergonomics, no new runtime behaviour.
 
 ## 11. Sharp edges / future
 
-- **No circuit breaker** (see §8.2): a hanging primary costs one timeout per turn until it recovers. Still the documented next step *if* the hang case proves real.
+- **No circuit breaker** (see §8.2): a hanging primary costs one timeout per turn until it recovers. Still the documented next step _if_ the hang case proves real.
 - **The `local` chat adapter shipped** (`4cbbeeb`): `getChatAdapter('local')` resolves an OpenAI-compatible dispatcher (`packages/voice/src/adapters/local-chat.ts`) that honours a per-route `baseUrl` + `viaTailnet`, reusing the `openai-compat` helpers like `local-embedding`. Running a local chat model as the primary is live (see [`tailscale.md`](./tailscale.md) + [`ai-workers.md` §7a](./ai-workers.md#7a-chat-route-failover-primary--backup)).
 - **Per-route base URL for chat is threaded** (migration 0063, `7e81ae4`): `ChatRoute` carries `baseUrl` + `viaTailnet`, mapped by `resolveChatRoutes` for primary AND backup, so the two can point at different hosts. The matching operator UI is the `RouteHostFields` control above.
 
@@ -246,7 +253,7 @@ Shipped `5220834` (chat backup UI) + `ba0aa91` (per-route host UI). Pure config 
 
 `resolveChatKey(ownerId, route)` (in [`chat-failover.ts`](../packages/runtime/src/agent/chat-failover.ts), `e351324`) is the **single** decision for "does this chat route have a usable key?", shared by the dispatch (`resolveRouteAdapter` calls it) AND every worker / agent pre-flight, so the two can never drift. Resolution order: route-pinned key → the provider's canonical **service key** → the `local` keyless sentinel. Non-throwing, returns `{ ok, apiKey } | { ok: false, disposition, detail }`; the dispatch throws on a miss, a worker skips with a trace.
 
-This replaced **7 copy-pasted `!apiKeyId` guards** (extractor / summarizer ×2 / reflector ×2 / responder / invoke_agent) that had silently drifted: when `local` workers were first configured (keyless), the stale guards skipped them entirely. Two behaviours worth knowing: (1) keyless `local` always resolves; (2) the **service-key fallback** means a worker with no *pinned* key but a saved service key for its provider now runs, the pre-flight finally agrees with the dispatch (the old per-worker guards checked only the pinned `apiKeyId` and could wrongly skip). No key anywhere → still skips. Adding the next keyless provider is a one-line change here.
+This replaced **7 copy-pasted `!apiKeyId` guards** (extractor / summarizer ×2 / reflector ×2 / responder / invoke_agent) that had silently drifted: when `local` workers were first configured (keyless), the stale guards skipped them entirely. Two behaviours worth knowing: (1) keyless `local` always resolves; (2) the **service-key fallback** means a worker with no _pinned_ key but a saved service key for its provider now runs, the pre-flight finally agrees with the dispatch (the old per-worker guards checked only the pinned `apiKeyId` and could wrongly skip). No key anywhere → still skips. Adding the next keyless provider is a one-line change here.
 
 ## Commit map
 

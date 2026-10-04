@@ -1,17 +1,27 @@
 import { NextResponse } from '@/server/http-compat';
 import { listApiKeys } from '@/lib/api-keys';
 import { EMBEDDING_DIMS, getEmbeddingConfig, upsertEmbeddingConfig } from '@/lib/embedding-config';
+import { suggestBackupRoute } from '@/lib/embedding-backup';
 import { EXTRACTION_CONCURRENCY_MAX } from '@mantle/embeddings';
+import { loadProviderAlerts } from '@mantle/content';
 import { getOwnerOr401 } from '@/lib/auth';
 import { errorMessage } from '@mantle/std';
 
 /** The single embedder config + the vector-column dim + the owner's API keys
- *  (for the route key pickers), for /settings/embedding. */
+ *  (for the route key pickers), for /settings/embedding. Also what an admin
+ *  must act on (docs/embeddings.md "Provider outages"): the open provider
+ *  alerts, and a same-model backup route to add when none is set. */
 export async function GET() {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
-  const [config, keys] = await Promise.all([getEmbeddingConfig(user.id), listApiKeys(user.id)]);
+  const [config, keys, alerts] = await Promise.all([
+    getEmbeddingConfig(user.id),
+    listApiKeys(user.id),
+    loadProviderAlerts(user.id),
+  ]);
   return NextResponse.json({
+    alerts,
+    suggestBackup: suggestBackupRoute(config, keys),
     config: config
       ? {
           model: config.model,
@@ -87,7 +97,11 @@ export async function POST(req: Request) {
       localEmbedBatchSize: nullableInt(body.local_embed_batch_size, 1, 512),
       localEmbedRequestTimeoutMs: nullableInt(body.local_embed_request_timeout_ms, 1000, 600000),
     });
-    return NextResponse.json({ ok: true, model });
+    // No backup route: say which same-model one the brain could add (the
+    // form offers it). A save also tells the agent to probe and recover
+    // (upsertEmbeddingConfig).
+    const [saved, keys] = await Promise.all([getEmbeddingConfig(user.id), listApiKeys(user.id)]);
+    return NextResponse.json({ ok: true, model, suggestBackup: suggestBackupRoute(saved, keys) });
   } catch (err) {
     return NextResponse.json({
       ok: false,

@@ -68,7 +68,12 @@ registerAgentInvoker(invokeAgent);
 // from the in-memory registry. Idempotent.
 registerHeartbeatTools();
 import { summarizeAgentConversation } from './summarizer.js';
-import { enqueueExtract, startExtractQueue, stopExtractQueue } from './extract-queue.js';
+import {
+  enqueueExtract,
+  requestProviderRecovery,
+  startExtractQueue,
+  stopExtractQueue,
+} from './extract-queue.js';
 import { reflect } from './reflector.js';
 import { CONVERSATIONAL_ROLES, pickFallbackResponder } from './agent-select.js';
 import { computeFloorGroupAdditions } from './core-tools.js';
@@ -382,7 +387,8 @@ async function drainPending(
 }
 
 /**
- * Boot-time recovery for the extractor queue. The extract jobs themselves are
+ * Boot-time recovery for the extractor queue (also run by the provider
+ * circuit when a provider works again, provider-circuit.ts). The extract jobs themselves are
  * durable (pg-boss), so a crash no longer loses queued work — but a node
  * inserted while the agent (and its boss) was DOWN fired `pg_notify` into the
  * void with no listener, so no job was ever enqueued. This catches that case by
@@ -647,7 +653,19 @@ export async function startAgentRuntime(opts: AgentRuntimeOptions) {
 
   // Durable, concurrency-capped extractor queue. Must start BEFORE the
   // node_ingested listener (so enqueues land) and before the boot drain below.
-  await startExtractQueue(DATABASE_URL!, owner);
+  await startExtractQueue(DATABASE_URL!, owner, {
+    sweepUnextracted: () => drainUnextractedNodes(owner),
+  });
+
+  // An admin saved provider settings or pressed "Try again" (web raises
+  // provider_recover with the owner id): probe and recover now, no restart.
+  // Bounded by the circuit (provider-circuit.ts): one tiny probe call, and a
+  // recovery at most once per 2 min on these.
+  await pg.listen('provider_recover', (payload: string) => {
+    if (payload !== owner) return;
+    requestProviderRecovery('admin');
+  });
+  logger.info('LISTENing on provider_recover');
 
   await pg.listen('node_ingested', (payload: string) => {
     if (!payload) return;

@@ -10,6 +10,7 @@ import {
 } from '@mantle/embeddings';
 import { getOwnerOr401 } from '@/lib/auth';
 import { rowsOf } from '@/lib/integrity/sql-util';
+import { notifyProviderRecover } from '@/lib/embedding-config';
 
 type QueueRow = {
   running: number;
@@ -88,6 +89,9 @@ export async function PATCH(req: Request) {
     );
   }
   clearEmbeddingModelCache(user.id);
+  // A save is a reason to try again: the agent probes an open alert and
+  // recovers a waiting backlog (docs/embeddings.md "Provider outages").
+  await notifyProviderRecover(user.id);
   return NextResponse.json({
     ok: true,
     saved: parsed.data.concurrency,

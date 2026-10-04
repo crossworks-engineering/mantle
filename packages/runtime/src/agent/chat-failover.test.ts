@@ -210,12 +210,28 @@ describe('resolveChatRoutes', () => {
 });
 
 describe('isChatFailover', () => {
-  it('fails over on 429 / 5xx / network, not on 4xx', () => {
+  it('fails over on 429 / 5xx / network, not on a bad input', () => {
     expect(isChatFailover(Object.assign(new Error('x'), { status: 429 }))).toBe(true);
     expect(isChatFailover(Object.assign(new Error('x'), { status: 503 }))).toBe(true);
     expect(isChatFailover(new TypeError('fetch failed'))).toBe(true);
     expect(isChatFailover(Object.assign(new Error('x'), { status: 400 }))).toBe(false);
-    expect(isChatFailover(Object.assign(new Error('x'), { status: 401 }))).toBe(false);
+    expect(
+      isChatFailover(
+        Object.assign(new Error('openrouter chat 403: flagged by moderation'), { status: 403 }),
+      ),
+    ).toBe(false);
+  });
+
+  it('fails over on an account error: the backup is another provider or key', () => {
+    expect(isChatFailover(Object.assign(new Error('x'), { status: 401 }))).toBe(true);
+    expect(isChatFailover(Object.assign(new Error('x'), { status: 402 }))).toBe(true);
+    expect(
+      isChatFailover(
+        Object.assign(new Error('openai chat 404: The model `gpt-x` does not exist'), {
+          status: 404,
+        }),
+      ),
+    ).toBe(true);
   });
 });
 

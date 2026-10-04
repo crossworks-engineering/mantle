@@ -52,6 +52,24 @@ export {
   resolveExtractionConcurrency,
 } from './extraction-concurrency';
 import { withRateLimitBackoff } from './rate-limit';
+import { isAccountError } from './provider-error';
+import { noteProviderFailure, noteProviderSuccess, tagProviderSubject } from './provider-outage';
+export {
+  PROVIDER_ERROR_REASONS,
+  classifyProviderError,
+  isAccountError,
+  providerErrorStatus,
+  type ProviderErrorClass,
+  type ProviderErrorCode,
+} from './provider-error';
+export {
+  noteProviderFailure,
+  noteProviderSuccess,
+  providerSubjectOf,
+  resetProviderOutageCache,
+  tagProviderSubject,
+  type ProviderSubject,
+} from './provider-outage';
 export {
   CHUNK_WINDOW_CHARS,
   chunkWindows,
@@ -311,6 +329,19 @@ export async function probeEmbeddingRoute(
   const vec = res.vectors[0];
   if (!vec) throw new Error('probe returned no vector');
   return vec.length;
+}
+
+/**
+ * One tiny embed through the CONFIGURED routes (primary, then the backup on
+ * failover), with no cache, so it always reaches a provider. Used by the
+ * extract queue's outage probe (docs/embeddings.md "Provider outages"): a
+ * success closes the embedding alert like any embed that works, a failure
+ * throws the provider's error for the caller to classify. Costs one request
+ * of two tokens.
+ */
+export async function probeConfiguredEmbedding(ownerId: string): Promise<void> {
+  clearEmbeddingModelCache(ownerId);
+  await embedBatch(ownerId, ['provider health probe'], { cache: false });
 }
 
 /** OpenRouter caps batch size; 100 is well inside provider limits. */
@@ -600,29 +631,42 @@ async function doEmbed(
     }
   }
 
-  // 3a. Run primary, fail over to the same-model backup only when the route
-  //     is DOWN (connection refused / timeout / 5xx). Bad-input errors (4xx,
-  //     unsupported input) rethrow — failover wouldn't help.
+  // 3a. Run primary, fail over to the same-model backup when the route is
+  //     DOWN (connection refused / timeout / 5xx) or its ACCOUNT is the
+  //     problem (no credits, a refused key, no key, a model the provider does
+  //     not offer): another provider or key gets round both. Bad-input errors
+  //     (other 4xx, unsupported input) rethrow: failover wouldn't help.
+  //
+  //     The outcome goes to the provider-alert store (provider-outage.ts): a
+  //     failure an admin must see opens or extends the alert, a call that
+  //     reached a provider and worked closes it. Cache hits say nothing.
   let usedProvider = config.primary.provider;
   let failedOver = false;
   if (missInputs.length > 0) {
     try {
-      await fillMisses(config.primary);
-    } catch (err) {
-      if (config.backup && isRouteDownError(err)) {
-        console.warn(
-          `[embeddings] primary route '${config.primary.provider}' unavailable — failing over to ` +
-            `backup '${config.backup.provider}' (same model '${model}'): ` +
-            errorMessage(err),
-        );
-        usedProvider = config.backup.provider;
-        failedOver = true;
-        await fillMisses(config.backup);
-        void stampFailover(ownerId);
-      } else {
-        throw err;
+      try {
+        await fillMisses(config.primary);
+      } catch (err) {
+        if (config.backup && (isRouteDownError(err) || isAccountError(err))) {
+          console.warn(
+            `[embeddings] primary route '${config.primary.provider}' unavailable — failing over to ` +
+              `backup '${config.backup.provider}' (same model '${model}'): ` +
+              errorMessage(err),
+          );
+          usedProvider = config.backup.provider;
+          failedOver = true;
+          await fillMisses(config.backup);
+          void stampFailover(ownerId);
+        } else {
+          throw err;
+        }
       }
+    } catch (err) {
+      tagProviderSubject(err, 'embedding', usedProvider);
+      noteProviderFailure(ownerId, 'embedding', err, { provider: usedProvider, model });
+      throw err;
     }
+    if (apiCalls > 0) noteProviderSuccess(ownerId, 'embedding');
   }
 
   // 4. Sanity check.

@@ -37,6 +37,22 @@ export {
   type TableAccess,
 } from './access-matrix';
 export { getDefaultWorker, getAgentTtsWorker, bumpWorkerUsage } from './ai-workers-resolve';
+export {
+  PROVIDER_ALERT_VISIBLE_AFTER_MS,
+  PROVIDER_SUBJECTS,
+  countDeadLetteredExtracts,
+  countExtractBacklog,
+  isAlertShown,
+  listOpenProviderAlerts,
+  listProviderAlerts,
+  recordProviderFailure,
+  recordProviderProbeFailure,
+  requestProviderProbeNow,
+  resolveProviderAlert,
+  setProviderAlertPaused,
+  type ProviderFailure,
+  type ProviderSubject,
+} from './provider-alerts';
 export { bumpAgentUsage } from './agents-resolve';
 export {
   resolveContextRef,

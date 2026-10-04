@@ -77,6 +77,18 @@ function toPlainText(item: EmbedInput): string {
   throw new Error(`openai-embedding: non-text input slipped past the guard (${item.type})`);
 }
 
+/**
+ * The bare OpenAI id for a slug. The brain has ONE model slug for both of its
+ * embedding routes (embedding_config.model), and a common pair is OpenRouter
+ * plus OpenAI direct for the same model: OpenRouter takes both
+ * `text-embedding-3-large` and `openai/text-embedding-3-large`, OpenAI direct
+ * only the bare id. Dropping the `openai/` prefix here lets either slug serve
+ * both routes, so a same-model backup needs no second model field.
+ */
+export function openaiModelId(model: string): string {
+  return model.startsWith('openai/') ? model.slice('openai/'.length) : model;
+}
+
 export const openaiEmbedding: EmbeddingDispatcher = {
   providerId: 'openai',
   adapterName: 'openai-embedding',
@@ -84,7 +96,7 @@ export const openaiEmbedding: EmbeddingDispatcher = {
   async embed(req: EmbedRequest): Promise<EmbedResult> {
     assertTextOnly(req.input);
     const body: Record<string, unknown> = {
-      model: req.model,
+      model: openaiModelId(req.model),
       input: req.input.map(toPlainText),
       encoding_format: 'float',
     };

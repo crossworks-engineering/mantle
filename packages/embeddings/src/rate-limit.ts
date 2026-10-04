@@ -1,3 +1,5 @@
+import { classifyProviderError } from './provider-error';
+
 /**
  * Rate-limit backoff for one embed request. The provider pool
  * (@mantle/voice provider-fetch.ts) lets parallel embed calls run side by side
@@ -5,15 +7,18 @@
  * extractor pool, a windows backfill) can now meet a provider's rate limit.
  * A 429 waits and retries, at most {@link RATE_LIMIT_RETRIES} times
  * (2 s, 4 s, 8 s, 16 s, with jitter); anything else throws at once, as before.
+ *
+ * A 429 that says the account has no credits (OpenAI's `insufficient_quota`)
+ * is not a rate limit: no wait fixes it, so it throws at once too
+ * (provider-error.ts).
  */
 const RATE_LIMIT_RETRIES = 4;
 
-/** True when an embed error is a 429 (the adapters put the status in the message). */
+/** True when an embed error is a 429 rate limit (the adapters put the status
+ *  in the message). A quota 429 is an account problem, not a rate limit. */
 export function isRateLimitError(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
-  const status = (err as { status?: unknown }).status;
-  if (typeof status === 'number') return status === 429;
-  return /(?:failed|error)\D{0,20}?\b429\b/i.test(err.message);
+  return classifyProviderError(err)?.code === 'rate_limit';
 }
 
 export async function withRateLimitBackoff<T>(

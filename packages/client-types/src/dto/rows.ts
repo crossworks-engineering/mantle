@@ -677,8 +677,38 @@ export type NeedsYou = {
     locked: number;
     newest: NeedsYouItem | null;
   };
-  /** review.submitted + review.leftBehind + requests.open (+ sharing.locked). */
+  /** Embedding or extraction provider failures an admin must act on
+   *  (migration 0230, docs/embeddings.md "Provider outages"). Absent from
+   *  brains before 0230; empty while all works. */
+  providers?: ProviderAlert[];
+  /** review.submitted + review.leftBehind + requests.open (+ sharing.locked)
+   *  (+ providers.length). */
   total: number;
+};
+
+/**
+ * One open provider outage, as an admin sees it. `reason` is fixed text
+ * chosen by `code`, never provider text: it is safe on a banner and a phone.
+ */
+export type ProviderAlert = {
+  subject: 'embedding' | 'extraction';
+  /** quota | auth | no_key | model (permanent); rate_limit | server |
+   *  network | timeout (transient, shown after 10 min). */
+  code: string;
+  permanent: boolean;
+  reason: string;
+  /** Provider id (e.g. `openai`) and model slug. Never a key. */
+  provider: string | null;
+  model: string | null;
+  /** When it started failing (ISO). */
+  since: string;
+  /** The extract queue stopped taking jobs until it works again. */
+  paused: boolean;
+  /** When the brain tries one tiny call again (ISO), or null. */
+  nextProbeAt: string | null;
+  /** Extract jobs that wait: queued, retrying, running and dead-lettered.
+   *  Null when the queue has not started yet. */
+  waiting: number | null;
 };
 
 export type AccountFoldersResult =

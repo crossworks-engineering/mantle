@@ -142,6 +142,7 @@ export {
   NEEDS_YOU_CHANGED_CHANNEL,
   NEEDS_YOU_REALTIME_TYPE,
   loadNeedsYou,
+  loadProviderAlerts,
   type NeedsYou,
 } from './needs-you';
 

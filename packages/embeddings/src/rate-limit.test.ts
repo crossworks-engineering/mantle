@@ -42,6 +42,18 @@ describe('withRateLimitBackoff', () => {
     expect(sleep).toHaveBeenCalledTimes(4);
   });
 
+  it('throws a no-credits 429 at once: no wait fixes an empty account', async () => {
+    const sleep = vi.fn(async () => {});
+    const call = vi.fn(async () => {
+      throw new Error(
+        'OpenAI embeddings failed: 429 Too Many Requests — {"error":{"type":"insufficient_quota"}}',
+      );
+    });
+    await expect(withRateLimitBackoff(call, sleep)).rejects.toThrow(/insufficient_quota/);
+    expect(call).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
   it('throws any other error at once', async () => {
     const sleep = vi.fn(async () => {});
     const call = vi.fn(async () => {

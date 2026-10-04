@@ -4,7 +4,7 @@
 // title and author and never its content. All I/O is mocked.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { NeedsYou } from '@mantle/client-types';
+import type { NeedsYou, ProviderAlert } from '@mantle/client-types';
 
 vi.mock('@mantle/db', () => ({ db: {}, agents: {}, assistantMessages: {} }));
 vi.mock('@mantle/tools', () => ({ countPending: vi.fn(), listPendingCalls: vi.fn() }));
@@ -126,6 +126,71 @@ describe('needsYouMessage', () => {
       title: 'New team request',
       body: '"Fix it" from Pat',
       deepLink: '/team-admin?view=requests',
+    });
+  });
+});
+
+describe('provider outages (no credits, 2026-10-04)', () => {
+  const outage = (over: Partial<ProviderAlert> = {}): ProviderAlert => ({
+    subject: 'embedding',
+    code: 'quota',
+    permanent: true,
+    reason: 'The provider account has no credits or quota left.',
+    provider: 'openai',
+    model: 'text-embedding-3-large',
+    since: ago(30_000),
+    paused: true,
+    nextProbeAt: null,
+    waiting: 30,
+    ...over,
+  });
+  const quiet = needsYou({
+    review: { submitted: 0, leftBehind: 0, newest: null },
+    total: 1,
+  });
+
+  it('a new outage is an arrival, pushed once', () => {
+    const n = { ...quiet, providers: [outage()] };
+    const seen = new Set<string>();
+    const a = needsYouArrivals(n, seen, NOW);
+    expect(a.map((x) => x.kind)).toEqual(['provider']);
+    rememberArrivals(seen, a);
+    expect(needsYouArrivals(n, seen, NOW)).toEqual([]);
+  });
+
+  it('a transient outage that shows after 10 min still pushes; an hour-old one does not', () => {
+    expect(
+      needsYouArrivals(
+        { ...quiet, providers: [outage({ since: ago(11 * 60_000) })] },
+        new Set(),
+        NOW,
+      ),
+    ).toHaveLength(1);
+    expect(
+      needsYouArrivals(
+        { ...quiet, providers: [outage({ since: ago(60 * 60_000) })] },
+        new Set(),
+        NOW,
+      ),
+    ).toEqual([]);
+  });
+
+  it('the message is the fixed reason and the count waiting, and links to the fix', () => {
+    const [a] = needsYouArrivals({ ...quiet, providers: [outage()] }, new Set(), NOW);
+    expect(needsYouMessage(a!, 1)).toEqual({
+      title: 'Embeddings are failing',
+      body: 'The provider account has no credits or quota left. 30 items wait.',
+      deepLink: '/settings/embedding',
+    });
+    const [b] = needsYouArrivals(
+      { ...quiet, providers: [outage({ subject: 'extraction', waiting: 1 })] },
+      new Set(),
+      NOW,
+    );
+    expect(needsYouMessage(b!, 1)).toMatchObject({
+      title: 'Extraction is failing',
+      body: 'The provider account has no credits or quota left. 1 item waits.',
+      deepLink: '/settings/ai-workers',
     });
   });
 });

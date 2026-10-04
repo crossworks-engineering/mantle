@@ -287,12 +287,50 @@ How it behaves at runtime ([`doEmbed`](../packages/embeddings/src/index.ts)):
 
 - The primary route runs first.
 - On a **route-down** error, connection refused, DNS failure, request timeout, or a 5xx (classified by `isRouteDownError`); it retries the misses on the backup route and stamps `last_failover_at` (surfaced on the page).
-- On a **bad-input** error (4xx, unsupported input) it rethrows, a second route wouldn't help.
+- On an **account** error (no credits, a refused key, no key, a model the provider does not offer; `isAccountError` in [`provider-error.ts`](../packages/embeddings/src/provider-error.ts)) it fails over too: the backup is another provider or key, which gets round exactly that. Added 2026-10-04, see "Provider outages" below.
+- On a **bad-input** error (any other 4xx, unsupported input) it rethrows, a second route wouldn't help.
 - The cache is keyed on **model only**, so both routes share entries and a failover never pollutes the cache.
 
 **Why same-model only.** Unlike chat (where a different backup model is fine), a different _embedding_ model produces vectors in a different coordinate system. If the backup embedded the query with another model, it wouldn't cosine-match the corpus the primary built; retrieval would silently return garbage, and anything ingested during the outage would be permanently off-space until re-embedded. So a safe embedding backup is the _same_ model on a different host: e.g. primary `local` Ollama on the Mac → backup a second Ollama / a hosted EmbeddingGemma. (Cloud models that aren't EmbeddingGemma make sense as a _primary_ you commit to, not as a failover target.)
 
 **Why EmbeddingGemma and not jina-embeddings-v5?** jina-v5 was evaluated and rejected for the LM Studio path; it loads as `type=llm` there (Qwen3 base) and LM Studio silently falls back to another embedder. EmbeddingGemma loads as a real embedder (768-dim, proper pooling). If jina-v5 is ever wanted, serve it via llama.cpp `--pooling last` / TEI / vLLM, not LM Studio.
+
+---
+
+## Provider outages (alerts and automatic recovery)
+
+**What happened (2026-10-04).** Two brains embedded through OpenAI direct while the account had no credits. OpenAI answered `429 insufficient_quota`, which looks like a rate limit. Every extract job retried five times and went to the dead-letter queue, new files were not indexed, and some chat turns had no retrieved context. No backup route was set. Nobody was told: the only traces were log lines and the /debug/integrity dead-letter check. When the admin switched to OpenRouter, new embeds worked, but the backlog did not move until a restart.
+
+**1. Error classes** ([`provider-error.ts`](../packages/embeddings/src/provider-error.ts)). `classifyProviderError(err)` sorts a provider error:
+
+| Class               | Codes                                                                                                               | What the brain does                                                                               |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Permanent (account) | `quota` (402, a 429 or 403 that says no credits), `auth` (401, 403), `no_key`, `model` (404, a 400 about the model) | Fails over to the backup route. Pauses the extract queue once confirmed. Shows the alert at once. |
+| Transient           | `rate_limit` (a plain 429), `server` (5xx), `network`, `timeout`                                                    | Retries with backoff, as before. Shows the alert only after 10 min.                               |
+| None                | a bad input, a 403 for flagged input, a parse error                                                                 | Nothing new: it says nothing about the provider.                                                  |
+
+A no-credits 429 no longer waits through the rate-limit backoff (2, 4, 8, 16 s): no wait fixes an empty account. Chat failover uses the same rule ([`chat-failover.md`](./chat-failover.md) §4).
+
+**2. The alert** (migration `0230`, table `provider_alerts`, store in [`provider-alerts.ts`](../packages/db/src/provider-alerts.ts)). One row per brain and subject (`embedding`, `extraction`). Every embed call reports its outcome ([`provider-outage.ts`](../packages/embeddings/src/provider-outage.ts)): a failure opens or extends the row (one write per subject per minute per process), and a call that reaches a provider and works closes it. The extractor's chat calls report the same way for `extraction`. The `reason` is fixed text per code, never the provider's body, so a key or an account id never reaches a banner or a phone.
+
+What admins (owner and admin logins) see, and members and clients never see:
+
+- the app-shell banner and the Settings, Embedding page: "Embeddings are failing since 08:14: The provider account has no credits or quota left. New files are not indexed and search has less context. 30 items wait." with the fix (add credits, check the key, switch provider, add a backup route) and a **Try again** button;
+- the "Needs you" feed (`GET /api/team-admin/needs-you`, field `providers`), which the live stream refreshes: the table's trigger raises `needs_you_changed` when what an admin sees changes;
+- one phone push per outage to admin devices ("Embeddings are failing"), on the same toggle as other "things waiting for you".
+
+`GET /api/embedding/recover` returns the shown alerts; `GET /api/embedding` returns them with the config.
+
+**3. The circuit and automatic recovery** ([`provider-circuit.ts`](../server/api/src/agent/provider-circuit.ts), wired in [`extract-queue.ts`](../server/api/src/agent/extract-queue.ts)).
+
+- **Open.** A job fails with a permanent class. One tiny probe call confirms it is the account and not that one document. Then the queue pauses (no worker takes a job, so nothing burns its retries) and the alert is marked paused.
+- **Probe.** While an alert is shown, the agent makes ONE tiny call at 5 min, then 10, 20, 40, then every 60 min. One probe in flight at a time; none while all works.
+- **Recover.** When a probe works, or the alert closes elsewhere (any embed that works closes it), the agent resumes the queue, re-drives the dead-letter queue and runs the unextracted-node sweep. These are the same bounded code paths as at boot (1000 jobs, 1000 nodes, `MANTLE_EXTRACT_DRAIN_LIMIT`). No restart.
+- **Admin actions probe at once.** A save on Settings, Embedding (and `PATCH /api/embedding/extraction`) and the **Try again** button (`POST /api/embedding/recover`) raise `provider_recover`. The agent probes the open alert now, and with no alert open it still recovers a waiting dead-letter backlog after one probe works. The 30 s config poll catches a lost notify. A restart probes a paused alert at once and holds the queue paused until it works.
+
+**Worst-case cost.** A probe is one request of a few tokens: at most 26 a day per subject while an outage lasts (4 in the first 75 min, then one an hour), plus one per admin action, and none while all works. A recovery enqueues at most 1000 dead letters and 1000 unextracted nodes; they run through the queue's own worker count and retry policy, so they cost what the backlog would have cost anyway. Recovery runs at most once per 30 min on its own (a probe that works, an alert closing) and at most once per 2 min on an admin action. A job that fails for its own reason gets one more round of 6 attempts per recovery, as it does per restart. No cron, no trigger starts LLM work: the table's trigger only notifies.
+
+**4. Backup route guidance.** With no backup set, Settings, Embedding suggests a same-model one when the other provider's key is saved ([`embedding-backup.ts`](../server/web/lib/embedding-backup.ts)): OpenAI direct with `text-embedding-3-*` gets OpenRouter, and the reverse. Both serve the same vectors, and both adapters take the same slug (OpenRouter takes `text-embedding-3-large` and `openai/text-embedding-3-large`; the OpenAI adapter drops an `openai/` prefix), so the backup needs no second model field. Onboarding sets that backup by default when the key is there, after a probe at 768 dims.
 
 ---
 
@@ -308,7 +346,8 @@ How it behaves at runtime ([`doEmbed`](../packages/embeddings/src/index.ts)):
 
 - `text-embedding-3-large` (the shipped default) and `text-embedding-3-small` (the budget pick) both honour the `dimensions` parameter for MRL truncation → coerced to 768.
 - The dispatcher sends `dimensions: 768` for MRL-capable models.
-- Route via **OpenRouter** (default, the same key as chat, slug `openai/text-embedding-3-large`) or an OpenAI key direct.
+- Route via **OpenRouter** (default, the same key as chat, slug `openai/text-embedding-3-large`) or an OpenAI key direct. The OpenAI adapter drops an `openai/` prefix, so one slug serves both routes: set the other one as the backup.
+- A `429` with `insufficient_quota` means **no credits**, not a rate limit. The brain treats it as an account error (see "Provider outages").
 
 ### Google (Gemini)
 

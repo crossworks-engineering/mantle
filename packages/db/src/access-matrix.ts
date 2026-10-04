@@ -292,6 +292,9 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
 
   // ── Infrastructure: written through systemDb, never read by a viewer ─────
   none('public.traces', 'system'),
+  // Embedding / extraction outages (0230): written by the embedder and the
+  // extract queue on the admin pool, read by admin routes only.
+  none('public.provider_alerts', 'system'),
   none('public.trace_steps', 'system'),
   none('public.tool_results', 'system'),
   none('public.tool_result_chunks', 'system'),

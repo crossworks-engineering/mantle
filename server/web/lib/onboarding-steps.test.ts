@@ -13,6 +13,7 @@ const h = vi.hoisted(() => ({
   keys: [] as { id: string; service: string }[],
   probeDim: 768 as number | Error,
   embeddingSaved: 0,
+  embeddingInput: null as Record<string, unknown> | null,
   personaApplied: true,
   agent: null as { id: string; enabled: boolean } | null,
   marked: 0,
@@ -47,8 +48,9 @@ vi.mock('@mantle/embeddings', () => ({
   DEFAULT_ONLINE_EMBEDDING_PROVIDER: 'openai',
 }));
 vi.mock('@/lib/embedding-config', () => ({
-  upsertEmbeddingConfig: async () => {
+  upsertEmbeddingConfig: async (_u: string, input: Record<string, unknown>) => {
     h.embeddingSaved += 1;
+    h.embeddingInput = input;
   },
 }));
 vi.mock('@/lib/api-key-test', () => ({
@@ -92,6 +94,7 @@ beforeEach(() => {
   h.keys = [];
   h.probeDim = 768;
   h.embeddingSaved = 0;
+  h.embeddingInput = null;
   h.personaApplied = true;
   h.agent = null;
   h.marked = 0;
@@ -236,6 +239,21 @@ describe('saveEmbedding', () => {
     h.keys = [{ id: 'k1', service: 'openrouter' }];
     expect(await saveEmbedding(U, { provider: 'openrouter' })).toMatchObject({ configured: true });
     expect(h.embeddingSaved).toBe(1);
+    // No OpenAI key saved: no same-model backup to set.
+    expect(h.embeddingInput).toMatchObject({ backupEnabled: false, backupProvider: null });
+  });
+  it('OpenAI direct with the OpenRouter chat key saved gets an OpenRouter backup by default', async () => {
+    h.keys = [{ id: 'k-or', service: 'openrouter' }];
+    expect(await saveEmbedding(U, { provider: 'openai', plaintext: 'sk-test' })).toMatchObject({
+      configured: true,
+    });
+    expect(h.embeddingInput).toMatchObject({
+      model: 'text-embedding-3-large',
+      primaryProvider: 'openai',
+      backupEnabled: true,
+      backupProvider: 'openrouter',
+      backupApiKeyId: 'k-or',
+    });
   });
 });
 

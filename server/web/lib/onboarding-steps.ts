@@ -12,6 +12,7 @@ import {
   DEFAULT_ONLINE_EMBEDDING_PROVIDER,
 } from '@mantle/embeddings';
 import { upsertEmbeddingConfig } from '@/lib/embedding-config';
+import { suggestBackupRoute } from '@/lib/embedding-backup';
 import { ASSISTANT_MODEL_CHOICES, WORKER_MODEL_CHOICES } from '@mantle/client-types/model-choices';
 import { PURPOSE_MAX_CHARS, purposeTooLongError } from '@mantle/client-types/purpose-limits';
 import { probeApiKey } from '@/lib/api-key-test';
@@ -570,17 +571,23 @@ export async function saveEmbedding(
     };
   }
 
+  // A backup route by default (docs/embeddings.md "Provider outages"): the
+  // same model through the other provider when its key is already saved
+  // (OpenAI direct <-> OpenRouter, same vectors). Probed first, like the
+  // primary; a backup that fails its probe is left out, never half-set.
+  const backup = await defaultEmbeddingBackup(userId, provider, slug);
+
   await upsertEmbeddingConfig(userId, {
     model: slug,
     primaryProvider: provider,
     primaryBaseUrl: null,
     primaryApiKeyId: keyId,
     primaryLabel: provider === 'openrouter' ? 'OpenRouter' : 'OpenAI',
-    backupEnabled: false,
-    backupProvider: null,
+    backupEnabled: backup !== null,
+    backupProvider: backup?.provider ?? null,
     backupBaseUrl: null,
-    backupApiKeyId: null,
-    backupLabel: null,
+    backupApiKeyId: backup?.apiKeyId ?? null,
+    backupLabel: backup?.label ?? null,
     extractionConcurrency: null,
     extractionTimeBudgetMinutes: null,
     localEmbedBatchSize: null,
@@ -591,6 +598,30 @@ export async function saveEmbedding(
     configured: true,
     test: { ok: true, message: 'Memory search enabled.', provider, adapter: '' },
   };
+}
+
+/** The same-model backup route onboarding sets, or null: the other
+ *  provider's saved key, probed at 768 dims (one call of two tokens). */
+async function defaultEmbeddingBackup(
+  userId: string,
+  provider: string,
+  model: string,
+): Promise<{ provider: string; apiKeyId: string; label: string } | null> {
+  const suggestion = suggestBackupRoute(
+    { model, primaryProvider: provider, backupEnabled: false },
+    await listApiKeys(userId),
+  );
+  if (!suggestion) return null;
+  try {
+    const dim = await probeEmbeddingRoute(userId, {
+      provider: suggestion.provider,
+      model,
+      apiKeyId: suggestion.apiKeyId,
+    });
+    return dim === 768 ? suggestion : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function testKey(userId: string, service: string): Promise<KeyTest> {
