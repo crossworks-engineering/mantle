@@ -51,6 +51,7 @@ import {
 } from './openai-compat';
 import { scrubThinkBlocks } from './think-scrubber';
 import { errorMessage } from '@mantle/std';
+import { providerFetch } from './provider-fetch';
 
 /** HF's router speaks the OpenAI-compat wire shape verbatim — no
  *  provider-specific quirks on the response side. Aliasing the shared
@@ -102,7 +103,7 @@ async function hfChat(opts: ChatOptions): Promise<ChatResult> {
     ...(typeof opts.topP === 'number' ? { top_p: opts.topP } : {}),
   };
 
-  const res = await fetch(`${HUGGINGFACE_BASE_URL}/chat/completions`, {
+  const res = await providerFetch(`${HUGGINGFACE_BASE_URL}/chat/completions`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${opts.apiKey}`,
@@ -142,7 +143,7 @@ async function hfChat(opts: ChatOptions): Promise<ChatResult> {
 
 async function hfDiscover(apiKey: string): Promise<DiscoveryResult<ChatModelInfo>> {
   try {
-    const res = await fetch(`${HUGGINGFACE_BASE_URL}/models`, {
+    const res = await providerFetch(`${HUGGINGFACE_BASE_URL}/models`, {
       headers: { Authorization: `Bearer ${apiKey}` },
       signal: AbortSignal.timeout(15_000),
     });

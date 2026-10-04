@@ -11,6 +11,7 @@
  *   pnpm maintain chunk-windows --apply    switch windows on, then embed
  *   pnpm maintain chunk-windows --off      switch windows off (rows kept)
  *   pnpm maintain chunk-windows --clear    switch off and delete every row
+ *   --parallel=N                           embed requests in flight (1-32, default 4)
  *
  * `--apply` sets embedding_config.chunk_windows first, so the extractor
  * writes windows for new chunks while this runs; it is resumable (chunks
@@ -26,9 +27,15 @@ if (!OWNER) {
   process.exit(1);
 }
 const args = new Set(process.argv.slice(2));
+let parallel: number | undefined;
 for (const a of args) {
+  const p = /^--parallel=(\d+)$/.exec(a);
+  if (p && Number(p[1]) >= 1 && Number(p[1]) <= 32) {
+    parallel = Number(p[1]);
+    continue;
+  }
   if (!['--apply', '--off', '--clear'].includes(a)) {
-    console.error(`chunk-windows: unknown argument ${a}`);
+    console.error(`chunk-windows: unknown argument ${a} (--parallel takes 1 to 32)`);
     process.exit(1);
   }
 }
@@ -48,6 +55,7 @@ async function main(): Promise<void> {
   let last = 0;
   const r = await runChunkWindows(OWNER!, {
     apply,
+    parallel,
     onProgress: (done, total) => {
       if (done - last >= 10_000 || done === total) {
         last = done;

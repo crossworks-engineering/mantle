@@ -14,6 +14,7 @@ import type { TranscribeOptions, TranscribeResult } from '../types';
 import type { SttModelInfo } from '../catalog';
 import type { DiscoveryResult } from '../discover';
 import { OPENROUTER_BASE_URL } from '../catalogs/openrouter';
+import { providerFetch } from './provider-fetch';
 
 /** Default OpenRouter STT route — GPT-4o mini Transcribe (cheap + accurate;
  *  operator-verified on a single OpenRouter key). */
@@ -74,7 +75,7 @@ export const openrouterSttAdapter: SttDispatcher = {
     if (!audio || audio.length === 0) throw new Error('openrouter-stt: empty audio buffer');
 
     const model = opts.model || OPENROUTER_STT_DEFAULT_MODEL;
-    const res = await fetch(`${OPENROUTER_BASE_URL}/audio/transcriptions`, {
+    const res = await providerFetch(`${OPENROUTER_BASE_URL}/audio/transcriptions`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${opts.apiKey}`,

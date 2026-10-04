@@ -343,6 +343,7 @@ pie showData title Lines of TypeScript by area
 - [`system-integrity.md`](./docs/system-integrity.md), the declarative manifest + standing integrity checks.
 - [`federation.md`](./docs/federation.md), Mantle-to-Mantle.
 - [`tailscale.md`](./docs/tailscale.md), reaching models on your own tailnet.
+- [`provider-http.md`](./docs/provider-http.md), the shared connection pool every provider call uses, and why.
 - [`handover-trust-model.md`](./docs/handover-trust-model.md), **open work brief:** provenance tiers for untrusted content.
 
 **Engineering journal**: the audits and overhauls that shaped the system:

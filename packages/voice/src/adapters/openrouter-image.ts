@@ -28,6 +28,7 @@
 import type { ImageGenDispatcher, ImageGenModelInfo, ImageGenWarning } from './types';
 import type { GenerateImageOptions, GenerateImageResult } from './types';
 import { OPENROUTER_BASE_URL } from '../catalogs/openrouter';
+import { providerFetch } from './provider-fetch';
 
 export const OPENROUTER_IMAGE_DEFAULT_MODEL = 'google/gemini-3.1-flash-image-preview';
 
@@ -145,7 +146,7 @@ export const openrouterImageAdapter: ImageGenDispatcher = {
       ...(typeof opts.seed === 'number' ? { seed: opts.seed } : {}),
     };
 
-    const res = await fetch(`${OPENROUTER_BASE_URL}/images`, {
+    const res = await providerFetch(`${OPENROUTER_BASE_URL}/images`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${opts.apiKey}`,

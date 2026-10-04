@@ -35,6 +35,7 @@
 import type { SttDispatcher } from './types';
 import type { TranscribeOptions, TranscribeResult } from '../types';
 import { DEEPGRAM_BASE_URL } from '../catalogs/deepgram';
+import { providerFetch } from './provider-fetch';
 
 const DEFAULT_MODEL = 'nova-3';
 
@@ -72,7 +73,7 @@ export const deepgramSttAdapter: SttDispatcher = {
       params.set('detect_language', 'true');
     }
 
-    const res = await fetch(`${DEEPGRAM_BASE_URL}/v1/listen?${params.toString()}`, {
+    const res = await providerFetch(`${DEEPGRAM_BASE_URL}/v1/listen?${params.toString()}`, {
       method: 'POST',
       headers: {
         Authorization: `Token ${opts.apiKey}`,

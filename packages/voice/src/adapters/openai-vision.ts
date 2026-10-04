@@ -32,6 +32,7 @@ import type {
 import type { DiscoveryResult } from '../discover';
 import { OPENAI_VISION_MODELS } from '../catalogs/openai-vision';
 import { errorMessage } from '@mantle/std';
+import { providerFetch } from './provider-fetch';
 
 const OPENAI_CHAT_URL = 'https://api.openai.com/v1/chat/completions';
 const OPENAI_MODELS_URL = 'https://api.openai.com/v1/models';
@@ -79,7 +80,7 @@ export const openAiVisionAdapter: VisionDispatcher = {
       max_tokens: opts.maxTokens ?? 2000,
     };
 
-    const res = await fetch(OPENAI_CHAT_URL, {
+    const res = await providerFetch(OPENAI_CHAT_URL, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${opts.apiKey}`,
@@ -106,7 +107,7 @@ export const openAiVisionAdapter: VisionDispatcher = {
 
   async discoverModels(apiKey: string): Promise<DiscoveryResult<VisionModelInfo>> {
     try {
-      const res = await fetch(OPENAI_MODELS_URL, {
+      const res = await providerFetch(OPENAI_MODELS_URL, {
         headers: { Authorization: `Bearer ${apiKey}` },
         signal: AbortSignal.timeout(15_000),
       });

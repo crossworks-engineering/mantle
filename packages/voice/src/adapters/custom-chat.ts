@@ -50,6 +50,7 @@ import {
   type OpenAICompatChatResponse,
 } from './openai-compat';
 import { scrubThinkBlocks } from './think-scrubber';
+import { providerFetch } from './provider-fetch';
 
 /** Resolve + normalise the per-route base URL. Required — a custom cloud route
  *  has no sensible default (unlike `local`, which falls back to localhost). */
@@ -104,7 +105,7 @@ async function customChat(opts: ChatOptions): Promise<ChatResult> {
     ...(o.extra ?? {}),
   };
 
-  const res = await fetch(`${url}/chat/completions`, {
+  const res = await providerFetch(`${url}/chat/completions`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${opts.apiKey}`,

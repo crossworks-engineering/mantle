@@ -38,6 +38,7 @@ import {
   GOOGLE_IMAGE_DEFAULT_MODEL,
   GOOGLE_IMAGE_MODELS,
 } from '../catalogs/google';
+import { providerFetch } from './provider-fetch';
 
 /** Map a 'NNNNxNNNN' size to an Imagen aspect ratio. Falls back to
  *  1:1 for unknown sizes — Imagen rejects anything else with a 400. */
@@ -90,7 +91,7 @@ export const googleImageAdapter: ImageGenDispatcher = {
     };
 
     const url = `${GOOGLE_BASE_URL}/models/${encodeURIComponent(model)}:predict`;
-    const res = await fetch(url, {
+    const res = await providerFetch(url, {
       method: 'POST',
       headers: {
         'x-goog-api-key': opts.apiKey,

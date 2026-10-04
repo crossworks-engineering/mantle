@@ -32,6 +32,7 @@ import type {
   ImageGenWarning,
 } from './types';
 import { OPENAI_IMAGE_DEFAULT_MODEL, OPENAI_IMAGE_MODELS } from '../catalogs/openai-image';
+import { providerFetch } from './provider-fetch';
 
 const OPENAI_IMAGES_URL = 'https://api.openai.com/v1/images/generations';
 /** Editing is a DIFFERENT endpoint and a different encoding: multipart, with
@@ -138,7 +139,7 @@ export const openAiImageAdapter: ImageGenDispatcher = {
       headers['Content-Type'] = 'application/json';
     }
 
-    const res = await fetch(editing ? OPENAI_IMAGE_EDITS_URL : OPENAI_IMAGES_URL, {
+    const res = await providerFetch(editing ? OPENAI_IMAGE_EDITS_URL : OPENAI_IMAGES_URL, {
       method: 'POST',
       headers,
       body: payload,
@@ -157,7 +158,7 @@ export const openAiImageAdapter: ImageGenDispatcher = {
       // here. Not silently going to send the operator a half-baked
       // result.
       if (first?.url) {
-        const imgRes = await fetch(first.url);
+        const imgRes = await providerFetch(first.url);
         if (!imgRes.ok) {
           throw new Error(`openai-image: failed to fetch returned URL (${imgRes.status})`);
         }

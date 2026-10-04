@@ -35,6 +35,7 @@ import {
   audioTagsForGoogleTtsModel,
 } from '../catalogs/google';
 import { errorMessage } from '@mantle/std';
+import { providerFetch } from './provider-fetch';
 
 type GeminiTtsResponse = {
   candidates?: Array<{
@@ -72,7 +73,7 @@ async function googleTtsSynthesize(opts: SynthesizeOptions): Promise<SynthesizeR
     },
   };
 
-  const res = await fetch(`${GOOGLE_BASE_URL}/models/${modelId}:generateContent`, {
+  const res = await providerFetch(`${GOOGLE_BASE_URL}/models/${modelId}:generateContent`, {
     method: 'POST',
     headers: {
       'x-goog-api-key': opts.apiKey,
@@ -113,7 +114,7 @@ async function googleTtsSynthesize(opts: SynthesizeOptions): Promise<SynthesizeR
  *  of capability; we filter by id pattern and supportedGenerationMethods. */
 async function googleTtsDiscover(apiKey: string): Promise<DiscoveryResult<TtsModelInfo>> {
   try {
-    const res = await fetch(`${GOOGLE_BASE_URL}/models`, {
+    const res = await providerFetch(`${GOOGLE_BASE_URL}/models`, {
       headers: { 'x-goog-api-key': apiKey },
       signal: AbortSignal.timeout(15_000),
     });

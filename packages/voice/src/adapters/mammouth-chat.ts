@@ -47,6 +47,7 @@ import {
 import { customReasoningEffort, sanitizeForReasoning } from './custom-chat';
 import { scrubThinkBlocks } from './think-scrubber';
 import { errorMessage } from '@mantle/std';
+import { providerFetch } from './provider-fetch';
 
 type ListModelsResponse = {
   data?: Array<{ id: string }>;
@@ -84,7 +85,7 @@ async function mammouthChat(opts: ChatOptions): Promise<ChatResult> {
     ...(o.extra ?? {}),
   };
 
-  const res = await fetch(`${MAMMOUTH_BASE_URL}/chat/completions`, {
+  const res = await providerFetch(`${MAMMOUTH_BASE_URL}/chat/completions`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${opts.apiKey}`,
@@ -144,7 +145,7 @@ async function mammouthChatStream(opts: ChatOptions, onDelta: ChatStreamSink): P
 
 async function mammouthDiscover(apiKey: string): Promise<DiscoveryResult<ChatModelInfo>> {
   try {
-    const res = await fetch(`${MAMMOUTH_BASE_URL}/models`, {
+    const res = await providerFetch(`${MAMMOUTH_BASE_URL}/models`, {
       headers: { Authorization: `Bearer ${apiKey}` },
       signal: AbortSignal.timeout(15_000),
     });

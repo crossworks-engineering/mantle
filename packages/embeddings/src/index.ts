@@ -51,6 +51,7 @@ export {
   EXTRACTION_CONCURRENCY_MAX,
   resolveExtractionConcurrency,
 } from './extraction-concurrency';
+import { withRateLimitBackoff } from './rate-limit';
 export {
   CHUNK_WINDOW_CHARS,
   chunkWindows,
@@ -546,20 +547,22 @@ async function doEmbed(
         }
       }
       if (slice.length === 0) continue;
-      const result = await adapter.embed({
-        apiKey,
-        model,
-        input: slice,
-        // MRL truncation where supported (OpenAI's text-embedding-3-*, Google's
-        // gemini-embedding-*); ignored elsewhere. The column is `dimensions`
-        // (768) so requesting it everywhere keeps inserts compatible.
-        dimensions,
-        baseUrl: r.baseUrl ?? undefined,
-        // Per-call throughput overrides for the local adapter (null → adapter's
-        // own env/const fallback). Ignored by cloud adapters.
-        localEmbedBatchSize: config.localEmbedBatchSize ?? undefined,
-        localEmbedTimeoutMs: config.localEmbedRequestTimeoutMs ?? undefined,
-      });
+      const result = await withRateLimitBackoff(() =>
+        adapter.embed({
+          apiKey: apiKey!,
+          model,
+          input: slice,
+          // MRL truncation where supported (OpenAI's text-embedding-3-*, Google's
+          // gemini-embedding-*); ignored elsewhere. The column is `dimensions`
+          // (768) so requesting it everywhere keeps inserts compatible.
+          dimensions,
+          baseUrl: r.baseUrl ?? undefined,
+          // Per-call throughput overrides for the local adapter (null → adapter's
+          // own env/const fallback). Ignored by cloud adapters.
+          localEmbedBatchSize: config.localEmbedBatchSize ?? undefined,
+          localEmbedTimeoutMs: config.localEmbedRequestTimeoutMs ?? undefined,
+        }),
+      );
       apiCalls++;
       if (result.vectors.length !== slice.length) {
         throw new Error(

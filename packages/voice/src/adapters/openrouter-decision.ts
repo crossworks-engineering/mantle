@@ -18,6 +18,7 @@
 
 import type { DecisionAnswer, DecisionDispatcher, DecisionOptions, DecisionResult } from './types';
 import { OPENROUTER_BASE_URL } from '../catalogs/openrouter';
+import { providerFetch } from './provider-fetch';
 
 /** `${OPENROUTER_BASE_URL}` is `…/api/v1`; decisions live one level up. */
 const DECISIONS_URL = OPENROUTER_BASE_URL.replace(/\/v1\/?$/, '') + '/alpha/decisions';
@@ -39,37 +40,8 @@ type WireResponse = {
 
 // The requests of one passage-scoring fan-out are sent together, and the
 // endpoint answers them side by side (4 requests: 0.7 s). Node 26's built-in
-// fetch sent them one after another on the workstation and in the brain
-// (4 requests: 2.1 s, 8: 4.2 s; measured 2026-10-04), so the latency of a
-// deeper pool grew with every request. A keep-alive pool of the `undici`
-// package sends them in parallel. Loaded lazily, like tailnet.ts: the
-// `@mantle/voice` barrel reaches browser bundles, which must not pull in
-// node:net. The server runs as ESM, where a bare `require` does not exist, so
-// the loader comes from `process.getBuiltinModule` (no static import for a
-// bundler to follow). A replaced global fetch (a test stub) still wins.
-type UndiciFetch = typeof import('undici').fetch;
-const NATIVE_FETCH = globalThis.fetch;
-let pooled: { fetch: UndiciFetch; agent: import('undici').Agent } | null | undefined;
-
-/** The fetch the decision requests use (exported for the test). */
-export function decisionFetch(url: string, init: RequestInit): Promise<Response> {
-  if (globalThis.fetch !== NATIVE_FETCH) return globalThis.fetch(url, init);
-  if (pooled === undefined) {
-    try {
-      const nodeModule = process.getBuiltinModule('node:module');
-      const load = nodeModule.createRequire(import.meta.url);
-      const { Agent, fetch } = load('undici') as typeof import('undici');
-      pooled = { fetch, agent: new Agent({ allowH2: false, connections: 16 }) };
-    } catch {
-      pooled = null;
-    }
-  }
-  if (!pooled) return NATIVE_FETCH(url, init);
-  return pooled.fetch(url, {
-    ...(init as object),
-    dispatcher: pooled.agent,
-  } as Parameters<UndiciFetch>[1]) as unknown as Promise<Response>;
-}
+// fetch sent them one after another (4 requests: 2.1 s, 8: 4.2 s; measured
+// 2026-10-04), so they go through the shared provider pool (provider-fetch.ts).
 
 function headers(apiKey: string): Record<string, string> {
   return {
@@ -132,7 +104,7 @@ export const openrouterDecisionAdapter: DecisionDispatcher = {
   adapterName: 'openrouter-decision',
 
   async decide(opts: DecisionOptions): Promise<DecisionResult> {
-    const res = await decisionFetch(DECISIONS_URL, {
+    const res = await providerFetch(DECISIONS_URL, {
       method: 'POST',
       headers: headers(opts.apiKey),
       body: JSON.stringify(buildDecisionBody(opts)),

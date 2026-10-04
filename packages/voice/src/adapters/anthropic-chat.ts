@@ -122,6 +122,7 @@ import {
   ANTHROPIC_CHAT_MODELS,
 } from '../catalogs/anthropic';
 import { errorMessage } from '@mantle/std';
+import { providerFetch } from './provider-fetch';
 
 /** Anthropic content blocks. `string` content is the simple shape; the
  *  array form is required when any block needs a `cache_control` marker
@@ -666,7 +667,7 @@ async function anthropicChat(opts: ChatOptions): Promise<ChatResult> {
 
   const body = buildAnthropicBody(opts);
 
-  const res = await (opts.viaTailnet ? tailnetFetch : fetch)(
+  const res = await (opts.viaTailnet ? tailnetFetch : providerFetch)(
     `${routeBase(opts.baseUrl, ANTHROPIC_BASE_URL)}/v1/messages`,
     {
       method: 'POST',
@@ -786,7 +787,7 @@ function toAnthropicImageBlock(url: string): AnthropicImageBlock | null {
 
 async function anthropicDiscover(apiKey: string): Promise<DiscoveryResult<ChatModelInfo>> {
   try {
-    const res = await fetch(`${ANTHROPIC_BASE_URL}/v1/models?limit=100`, {
+    const res = await providerFetch(`${ANTHROPIC_BASE_URL}/v1/models?limit=100`, {
       headers: {
         'x-api-key': apiKey,
         'anthropic-version': ANTHROPIC_API_VERSION,
@@ -878,7 +879,7 @@ async function anthropicChatStream(
   if (opts.signal?.aborted) return { text: '', model: opts.model };
 
   const abort = streamAbort(opts.signal);
-  const res = await (opts.viaTailnet ? tailnetFetch : fetch)(
+  const res = await (opts.viaTailnet ? tailnetFetch : providerFetch)(
     `${routeBase(opts.baseUrl, ANTHROPIC_BASE_URL)}/v1/messages`,
     {
       method: 'POST',

@@ -20,6 +20,7 @@ import type {
 } from './types';
 import type { DiscoveryResult } from '../discover';
 import { errorMessage } from '@mantle/std';
+import { providerFetch } from './provider-fetch';
 
 const ENDPOINT = 'https://api.openai.com/v1/embeddings';
 const MODELS_URL = 'https://api.openai.com/v1/models';
@@ -93,7 +94,7 @@ export const openaiEmbedding: EmbeddingDispatcher = {
     // model, which the form's Test button will catch.
     if (req.dimensions) body.dimensions = req.dimensions;
 
-    const res = await fetch(ENDPOINT, {
+    const res = await providerFetch(ENDPOINT, {
       method: 'POST',
       headers: {
         authorization: `Bearer ${req.apiKey}`,
@@ -140,7 +141,7 @@ export const openaiEmbedding: EmbeddingDispatcher = {
     // form's Test button verifies dim live, so unknown models are
     // safe to expose.
     try {
-      const res = await fetch(MODELS_URL, {
+      const res = await providerFetch(MODELS_URL, {
         headers: { authorization: `Bearer ${apiKey}` },
         signal: AbortSignal.timeout(8_000),
       });

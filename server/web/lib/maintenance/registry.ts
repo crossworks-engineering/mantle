@@ -315,10 +315,10 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     script: 'scripts/chunk-windows.ts',
     cwd: 'server/web',
     applyFlag: '--apply',
-    extraFlags: ['--off', '--clear'],
+    extraFlags: ['--off', '--clear', '--parallel=N'],
     requiresEnv: ['ALLOWED_USER_ID'],
     notes:
-      'Optional per brain, default off. Resumable. --off switches the window arm off (rows kept); --clear also deletes the rows. A re-embed of content_chunks drops the windows (old space): run this again after one.',
+      'Optional per brain, default off. Resumable. --off switches the window arm off (rows kept); --clear also deletes the rows. A re-embed of content_chunks drops the windows (old space): run this again after one. --parallel=N (1 to 32, default 4) sets the embed requests in flight; a 429 backs off and retries.',
   },
   {
     slug: 'extract-backfill',

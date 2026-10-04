@@ -37,6 +37,7 @@ import {
   ANTHROPIC_VISION_MODELS,
 } from '../catalogs/anthropic';
 import { errorMessage } from '@mantle/std';
+import { providerFetch } from './provider-fetch';
 
 const DEFAULT_MODEL = 'claude-haiku-4-5';
 const ALLOWED_MIMES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
@@ -95,7 +96,7 @@ export const anthropicVisionAdapter: VisionDispatcher = {
       body.system = opts.systemPrompt;
     }
 
-    const res = await fetch(`${ANTHROPIC_BASE_URL}/v1/messages`, {
+    const res = await providerFetch(`${ANTHROPIC_BASE_URL}/v1/messages`, {
       method: 'POST',
       headers: {
         'x-api-key': opts.apiKey,
@@ -160,7 +161,7 @@ export const anthropicVisionAdapter: VisionDispatcher = {
     };
     if (opts.systemPrompt && opts.systemPrompt.trim()) body.system = opts.systemPrompt;
 
-    const res = await fetch(`${ANTHROPIC_BASE_URL}/v1/messages`, {
+    const res = await providerFetch(`${ANTHROPIC_BASE_URL}/v1/messages`, {
       method: 'POST',
       headers: {
         'x-api-key': opts.apiKey,
@@ -191,7 +192,7 @@ export const anthropicVisionAdapter: VisionDispatcher = {
 
   async discoverModels(apiKey: string): Promise<DiscoveryResult<VisionModelInfo>> {
     try {
-      const res = await fetch(`${ANTHROPIC_BASE_URL}/v1/models?limit=100`, {
+      const res = await providerFetch(`${ANTHROPIC_BASE_URL}/v1/models?limit=100`, {
         headers: {
           'x-api-key': apiKey,
           'anthropic-version': ANTHROPIC_API_VERSION,

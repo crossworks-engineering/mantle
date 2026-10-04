@@ -26,6 +26,7 @@ import type {
 import type { DiscoveryResult } from '../discover';
 import { XAI_BASE_URL, XAI_VISION_MODELS } from '../catalogs/xai';
 import { errorMessage } from '@mantle/std';
+import { providerFetch } from './provider-fetch';
 
 const DEFAULT_MODEL = 'grok-4.3';
 const ALLOWED_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp']);
@@ -72,7 +73,7 @@ export const xaiVisionAdapter: VisionDispatcher = {
       max_tokens: opts.maxTokens ?? 2000,
     };
 
-    const res = await fetch(`${XAI_BASE_URL}/chat/completions`, {
+    const res = await providerFetch(`${XAI_BASE_URL}/chat/completions`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${opts.apiKey}`,
@@ -97,7 +98,7 @@ export const xaiVisionAdapter: VisionDispatcher = {
 
   async discoverModels(apiKey: string): Promise<DiscoveryResult<VisionModelInfo>> {
     try {
-      const res = await fetch(`${XAI_BASE_URL}/models`, {
+      const res = await providerFetch(`${XAI_BASE_URL}/models`, {
         headers: { Authorization: `Bearer ${apiKey}` },
         signal: AbortSignal.timeout(15_000),
       });

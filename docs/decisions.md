@@ -137,8 +137,8 @@ passages a search fetches and scores (`passageScoringPool`, up to 200).
 Unset keeps the original pool, `max(2×limit, 16)` capped at 25. With
 passage windows on (`embedding_config.chunk_windows`, docs/embeddings.md)
 the pool doubles: each vector arm brings it. The requests of a fan-out run
-side by side: the adapter has its own `undici` connection pool, because
-Node 26's built-in fetch sent them one after another (8 requests 4.2 s
+side by side: the adapter uses the shared provider pool (docs/provider-http.md),
+because Node 26's built-in fetch sent them one after another (8 requests 4.2 s
 instead of about 1 s, measured 2026-10-04). Each request may still wait the
 worker `timeout_ms` times the number of requests (`timeoutFactor`, capped at
 5 s). Measured on a 122k-chunk corpus (docs/recall-eval.md, "Rerankers"):

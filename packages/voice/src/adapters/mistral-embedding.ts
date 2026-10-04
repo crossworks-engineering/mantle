@@ -20,6 +20,7 @@ import type {
 } from './types';
 import type { DiscoveryResult } from '../discover';
 import { errorMessage } from '@mantle/std';
+import { providerFetch } from './provider-fetch';
 
 const ENDPOINT = 'https://api.mistral.ai/v1/embeddings';
 const MODELS_URL = 'https://api.mistral.ai/v1/models';
@@ -58,7 +59,7 @@ export const mistralEmbedding: EmbeddingDispatcher = {
 
   async embed(req: EmbedRequest): Promise<EmbedResult> {
     assertTextOnly(req.input);
-    const res = await fetch(ENDPOINT, {
+    const res = await providerFetch(ENDPOINT, {
       method: 'POST',
       headers: {
         authorization: `Bearer ${req.apiKey}`,
@@ -102,7 +103,7 @@ export const mistralEmbedding: EmbeddingDispatcher = {
 
   async discoverModels(apiKey: string): Promise<DiscoveryResult<EmbeddingModelInfo>> {
     try {
-      const res = await fetch(MODELS_URL, {
+      const res = await providerFetch(MODELS_URL, {
         headers: { authorization: `Bearer ${apiKey}` },
         signal: AbortSignal.timeout(8_000),
       });

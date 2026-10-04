@@ -245,6 +245,8 @@ MANTLE_LOCAL_EMBED_BATCH=8
 
 **The real fix is hardware.** These knobs trade latency for reliability; they stop the timeouts, but a CPU embedder is still the throughput ceiling for both bulk ingest and live `search_chunks`. If you regularly ingest bulky documents, give the box more/faster vCPU, or point the embedding route at a **GPU or remote EmbeddingGemma** (`/settings/embedding`, same model, see failover below); then you can raise `MANTLE_LOCAL_EMBED_BATCH` back up. Re-ingest anything that landed thin while the box was timing out (clear its `data.summary`/`extract_completed_at` and re-fire `node_ingested`, or use the `process_extraction` tool).
 
+**Hosted embedders run in parallel.** Every embed call goes through the shared provider pool (docs/provider-http.md). Before v0.237.11, Node 26's built-in fetch sent parallel POSTs to one provider one at a time, so 8 extractors embedding at once waited in line. Now they run side by side. A 429 from the provider backs off (2, 4, 8, 16 s) and retries; after that the error stands. If a provider keeps answering 429, lower the extractor count.
+
 ---
 
 ## Passage windows (optional, per brain)
@@ -260,7 +262,7 @@ pnpm maintain chunk-windows --off      # switch off (rows kept)
 pnpm maintain chunk-windows --clear    # switch off and delete the rows
 ```
 
-`--apply` sets `embedding_config.chunk_windows` first, so the extractor writes windows for every chunk it (re)builds from then on; it is resumable. A one-window chunk reuses its chunk vector (no embed). The vectors are `halfvec` (half the bytes; the measured set ranked identically) in `content_chunk_windows`, which cascades with the chunk and has no text column. Window embeds skip `embedding_cache` (they are written once; the cache would only grow).
+`--parallel=N` (1 to 32, default 4) sets how many embed requests are in flight; each is 100 windows. `--apply` sets `embedding_config.chunk_windows` first, so the extractor writes windows for every chunk it (re)builds from then on; it is resumable. A one-window chunk reuses its chunk vector (no embed). The vectors are `halfvec` (half the bytes; the measured set ranked identically) in `content_chunk_windows`, which cascades with the chunk and has no text column. Window embeds skip `embedding_cache` (they are written once; the cache would only grow).
 
 What it costs, measured on a 122k-chunk library brain (docs/recall-eval.md, "Paraphrased questions"): 314,004 windows, about 43M tokens, about USD 6 once with `openai/text-embedding-3-large`; about 1.1 GB of table and index; ingest embeds about twice the tokens; a judged search scores twice the pool (about USD 0.0013 more with the decider's `passage_scoring`). What it bought there: paraphrased questions found their passage in the top 10 for 63% of cases instead of 40% with the judge, 50% instead of 28% without it; all question types 75% instead of 53%. One trade: four "named verse, answer in a sermon" questions moved from rank 1 to rank 2 or 3. On a small brain with short documents it changes nothing (each document is one window).
 

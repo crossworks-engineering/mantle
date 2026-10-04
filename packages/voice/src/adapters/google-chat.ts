@@ -43,6 +43,7 @@ import { wantGuardedThinking } from './thinking-guard';
 import type { DiscoveryResult } from '../discover';
 import { GOOGLE_BASE_URL, GOOGLE_CHAT_MODELS } from '../catalogs/google';
 import { errorMessage } from '@mantle/std';
+import { providerFetch } from './provider-fetch';
 
 /** A Gemini content part. The runtime emits three kinds:
  *  - text: narrative content (a `thought: true` text part is a thinking summary,
@@ -551,7 +552,7 @@ async function googleChat(opts: ChatOptions): Promise<ChatResult> {
 
   const body = buildGoogleBody(opts);
 
-  const res = await (opts.viaTailnet ? tailnetFetch : fetch)(
+  const res = await (opts.viaTailnet ? tailnetFetch : providerFetch)(
     `${routeBase(opts.baseUrl, GOOGLE_BASE_URL)}/models/${opts.model}:generateContent`,
     {
       method: 'POST',
@@ -606,7 +607,7 @@ async function googleDiscover(apiKey: string): Promise<DiscoveryResult<ChatModel
   try {
     // Gemini accepts the key as `x-goog-api-key` OR as a `?key=` query
     // param. We use the header so the URL stays clean in logs.
-    const res = await fetch(`${GOOGLE_BASE_URL}/models`, {
+    const res = await providerFetch(`${GOOGLE_BASE_URL}/models`, {
       headers: { 'x-goog-api-key': apiKey },
       signal: AbortSignal.timeout(15_000),
     });
@@ -663,7 +664,7 @@ async function googleChatStream(opts: ChatOptions, onDelta: ChatStreamSink): Pro
   if (opts.signal?.aborted) return { text: '', model: opts.model };
 
   const abort = streamAbort(opts.signal);
-  const res = await (opts.viaTailnet ? tailnetFetch : fetch)(
+  const res = await (opts.viaTailnet ? tailnetFetch : providerFetch)(
     `${routeBase(opts.baseUrl, GOOGLE_BASE_URL)}/models/${opts.model}:streamGenerateContent?alt=sse`,
     {
       method: 'POST',

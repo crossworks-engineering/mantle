@@ -34,6 +34,7 @@ import {
   HUGGINGFACE_IMAGE_DEFAULT_MODEL,
   HUGGINGFACE_IMAGE_MODELS,
 } from '../catalogs/huggingface';
+import { providerFetch } from './provider-fetch';
 
 /** Parse 'NNNNxNNNN' into separate width/height. Returns undefined
  *  for HF's "let the model decide" path when size isn't specified. */
@@ -69,7 +70,7 @@ export const huggingfaceImageAdapter: ImageGenDispatcher = {
     };
 
     const url = `${HUGGINGFACE_INFERENCE_BASE_URL}/models/${encodeURI(model)}`;
-    const res = await fetch(url, {
+    const res = await providerFetch(url, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${opts.apiKey}`,

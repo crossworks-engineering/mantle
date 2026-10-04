@@ -19,6 +19,7 @@ import type {
   EmbeddingModelInfo,
 } from './types';
 import type { DiscoveryResult } from '../discover';
+import { providerFetch } from './provider-fetch';
 
 const ENDPOINT = 'https://openrouter.ai/api/v1/embeddings';
 const CATALOG_URL = 'https://openrouter.ai/api/v1/embeddings/models';
@@ -105,7 +106,7 @@ export const openrouterEmbedding: EmbeddingDispatcher = {
       body.dimensions = req.dimensions;
     }
 
-    const res = await fetch(ENDPOINT, {
+    const res = await providerFetch(ENDPOINT, {
       method: 'POST',
       headers: {
         authorization: `Bearer ${req.apiKey}`,
@@ -162,7 +163,7 @@ export const openrouterEmbedding: EmbeddingDispatcher = {
     // from the main /v1/models. Same response shape as the chat catalog
     // (id, name, context_length, pricing, architecture). The _apiKey
     // argument is unused but kept to match the dispatcher interface.
-    const res = await fetch(CATALOG_URL, {
+    const res = await providerFetch(CATALOG_URL, {
       headers: { accept: 'application/json' },
       signal: AbortSignal.timeout(8_000),
     });
