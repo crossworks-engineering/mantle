@@ -173,7 +173,8 @@ The newsletters (Earth Day Sale, Prusameters, PiShop) leave the prompt entirely;
 The responder's context used only the coarse per-node summary; the section-level
 `content_chunks` index (~1.5k-char passages, own embeddings) was reachable only
 via the explicit `search_chunks` tool. Now `loadConversationContext` also pulls
-the top passages (`chunk_limit`, default 8 today; cutoff 0.65; salience-aware,
+the top passages (`chunk_limit`, default 8 today; cutoff 0.65, keyword-found
+passages exempt since 2026-10-04; salience-aware,
 system-docs + telegram excluded) and `buildChatMessages` renders them as a
 "Relevant passages" block. Both surfaces inherit it.
 
@@ -684,9 +685,50 @@ Business (24 documents, so R@10 is at the ceiling; read R@1 and MRR):
 The T2 miss, read off the decision trace: the keyword arm found the
 commissioning plan (keyword rank 1, vector rank 17, fused rank 1), Jev scored
 it 2.77, and the fixed 0.65 cosine cutoff then dropped it (distance 0.765).
-The routing plan's "rescue fights the cut" weak point, now measured: a T2
-ruleset where a keyword hit (or a judged one) is exempt from the cosine
-cutoff is the obvious next rule to gate here.
+The routing plan's "rescue fights the cut" weak point, now measured. The
+next section builds and gates the rule.
+
+### The T2 keyword rule (2026-10-04)
+
+A passage the keyword arm found (a rare literal: a code, a reference, a
+coined word) no longer has to clear the 0.65 cosine cutoff
+(`KEYWORD_PASSAGE_RULE = 'exempt'` in
+`packages/runtime/src/agent/conversation/select.ts`). Its place in the
+search order and the chunk_limit cut do not change, so the budget does not
+grow. The trace names it: `why: 'exempt:keyword'`. No setting: rulesets are
+code until the router lands; `eval:route --rulesets=auto:off,auto:exempt`
+re-runs the gate.
+
+Two variants were gated (fresh corpus copy, so the library baseline moved a
+little from the run above; the comparison is paired inside one run):
+
+- `exempt`: as above.
+- `slots`: `exempt`, plus up to 2 keyword passages past the cut take the
+  tail of it from the weakest other passages (the plan's "rescue enters the
+  cut").
+
+The business set gained 5 more T2 cases (codes) before any run, so T2 has 11.
+
+| set, ruleset                 | T2 R@1 / R@10 | won / lost vs `off` (R@10; R@1)     | gate                    |
+| ---------------------------- | ------------- | ----------------------------------- | ----------------------- |
+| business, auto:off           | 82% / 91%     |                                     |                         |
+| business, auto:exempt        | 91% / 100%    | T2 +1/-0; +1/-0. Others 0/0         | pass                    |
+| business, auto:slots         | 91% / 100%    | same as exempt                      | pass                    |
+| business, auto-scored:off    | 91% / 91%     |                                     |                         |
+| business, auto-scored:exempt | 100% / 100%   | T2 +1/-0; +1/-0. Others 0/0         | pass                    |
+| library, auto:exempt         | 13% / 40%     | all types 0/0 at R@10; T6 -1 at R@1 | no gain, no loss over 2 |
+| library, auto:slots          | 13% / 40%     | T3 -2 at R@10; T6 -1 at R@1         | no gain                 |
+| library, auto-scored:exempt  | 43% / 57%     | 0/0 everywhere                      | no gain                 |
+
+On the library corpus the cutoff almost never fires (gold median distance
+0.42), so the rule has nearly nothing to do there. Its one change: a T6
+question with a rare word ("auditory") let a keyword passage in above the
+gold, which went from rank 1 to rank 2, still in the prompt. `slots` pushed
+two verse passages out of the prompt (ranks 7 and 8) and won nothing over
+`exempt`: kept as an eval variant, not adopted. `exempt` passes the plan's gate (the target type gains,
+no type loses more than 2 cases on any set) and is the default. Cost of the
+gate: USD 0.16 (one Jev pass per set; the other variants hit the decider's
+cache).
 
 ## Automated eval: `recall_eval` + the brain-health heartbeat (2026-07-13)
 

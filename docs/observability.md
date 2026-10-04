@@ -429,6 +429,8 @@ shows it as a table above the step's JSON.
   (`kept` / `dropped`), the stage that decided it (`at`) and the reason
   (`why`): `sent`, `always`, `promote:fact-source`, `guard:0.85`,
   `cut:0.6`, `cut:0.65`, `limit:<n>`, `room:promote`, `judge:<t>`,
+  `exempt:keyword` (kept past the cutoff by the T2 keyword rule; the `slots`
+  variant, eval only, adds `slot:keyword` and `room:keyword`),
   `dedupe:journal`, `dedupe:fact`, `superseded`, `version`, `type:<t>`,
   `shadow`. Provenance: `arm` (`vector`, `keyword`, `both`, `fact-source`,
   `always`, `journal`), the 1-based rank in the search order, the rank in

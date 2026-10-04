@@ -414,7 +414,8 @@ cache + `extract_cost_cap_micro_usd`.
 - **Responder/assistant chunk retrieval**: ✅ **built + eval-covered** (commit
   `9afbcd0`, "auto-chunk retrieval"). `loadConversationContext`
   ([`packages/runtime/src/agent/conversation.ts`](../packages/runtime/src/agent/conversation.ts))
-  calls `searchChunks` (default `chunk_limit=3`, 0.65 cosine cutoff, salience-
+  calls `searchChunks` (default `chunk_limit=3`, 0.65 cosine cutoff, keyword-found
+  passages exempt since 2026-10-04, salience-
   aware, system-docs + telegram excluded) and injects the passages as the
   prompt's "Relevant passages" block, on **every** surface (web assistant +
   Telegram responder share this path). The recall eval's `prod` row counts
