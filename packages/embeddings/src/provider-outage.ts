@@ -50,10 +50,16 @@ export function tagProviderSubject(
   }
 }
 
-/** The subject an error was tagged with, if any. */
+/** The subject an error was tagged with, if any: on the error itself or on
+ *  an error it wraps (`cause`), since the extractor re-throws an embed
+ *  failure with its own message. */
 export function providerSubjectOf(err: unknown): ProviderSubject | undefined {
-  const s = (err as { providerSubject?: unknown } | null)?.providerSubject;
-  return s === 'embedding' || s === 'extraction' ? s : undefined;
+  for (let e = err, depth = 0; e && typeof e === 'object' && depth < 5; depth++) {
+    const s = (e as { providerSubject?: unknown }).providerSubject;
+    if (s === 'embedding' || s === 'extraction') return s;
+    e = (e as { cause?: unknown }).cause;
+  }
+  return undefined;
 }
 
 /**

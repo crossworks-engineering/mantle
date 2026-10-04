@@ -145,6 +145,16 @@ describe('ProviderCircuit: opening', () => {
     expect(t.deps.probe).toHaveBeenCalledTimes(2);
   });
 
+  it('an embed failure the extractor re-threw (with `cause`) still counts as embedding', async () => {
+    // Found on a throwaway brain (2026-10-04): index-writes.ts wraps the embed
+    // error in its own Error; the tag on the cause must still decide.
+    const wrapped = new Error('extractor: embed failed for node n1 — retrying: x', {
+      cause: noCredits(),
+    });
+    await t.circuit.onJobError(wrapped);
+    expect(t.calls).toEqual(['probe:embedding', 'pause']);
+  });
+
   it('an untagged account error counts as the extraction model', async () => {
     const err = Object.assign(new Error('openrouter chat 402: Insufficient credits'), {
       status: 402,

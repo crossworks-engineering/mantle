@@ -104,6 +104,14 @@ describe('classifyProviderError', () => {
     expect(c?.reason).not.toMatch(/SECRET|sk-/);
   });
 
+  it('reads the provider error a caller wrapped as `cause`, not the wrapper text', () => {
+    const wrapped = new Error(
+      'extractor: embed failed for node 4290abcd-0000-4000-8000-000000000000 — retrying: x',
+      { cause: noCredits() },
+    );
+    expect(classifyProviderError(wrapped)).toMatchObject({ code: 'quota', permanent: true });
+  });
+
   it('returns null for a non-provider error', () => {
     expect(
       classifyProviderError(new Error('duplicate key value violates unique constraint')),

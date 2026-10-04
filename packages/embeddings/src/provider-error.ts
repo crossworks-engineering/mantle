@@ -85,6 +85,14 @@ export function providerErrorStatus(err: unknown): number | undefined {
  */
 export function classifyProviderError(err: unknown): ProviderErrorClass | null {
   if (err === null || err === undefined) return null;
+  // A caller that wraps a provider error (the extractor: "embed failed for
+  // node ...", { cause }) keeps the provider's own error as the cause: read
+  // that first, so a number in the wrapper's text never decides.
+  const cause = (err as { cause?: unknown }).cause;
+  if (cause !== undefined && cause !== err) {
+    const inner = classifyProviderError(cause);
+    if (inner) return inner;
+  }
   const name = (err as { name?: unknown }).name;
   const msg = String((err as { message?: unknown }).message ?? err);
   const body = String((err as { body?: unknown }).body ?? '');

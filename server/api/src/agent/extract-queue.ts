@@ -280,7 +280,7 @@ export async function startExtractQueue(
   reconcileTimer.unref?.();
 
   console.log(
-    `[extract-queue] ${concurrency} worker(s) on ${EXTRACT_QUEUE} ` +
+    `[extract-queue] ${circuit.isPaused() ? `0 worker(s), PAUSED by a provider outage (${concurrency} when it works)` : `${concurrency} worker(s)`} on ${EXTRACT_QUEUE} ` +
       `(policy=short, ${expireMin}min budget, retry 5× w/ backoff → ${DEAD_LETTER_QUEUE})`,
   );
 }
