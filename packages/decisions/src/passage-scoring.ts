@@ -37,20 +37,31 @@ export const PASSAGE_THRESHOLD_DEFAULT = 1.5;
  *  this size (see `pool`). */
 export const MAX_PASSAGES_PER_REQUEST = 25;
 
-/** Ceiling on the use's `pool` setting: four requests per search. */
-export const MAX_PASSAGE_POOL = 100;
+/** Ceiling on the use's `pool` setting: eight requests per search. The
+ *  hybrid search fetches at most 200 vector candidates, so a deeper pool
+ *  would add only keyword rows. */
+export const MAX_PASSAGE_POOL = 200;
 
 /**
  * How many passages a search fetches for scoring (pure). The use's `pool`
- * setting when set (capped at `MAX_PASSAGE_POOL`), else the original
- * `max(2 x limit, 16)` capped at one request. Never below `limit`.
+ * setting when set, else the original `max(2 x limit, 16)` capped at one
+ * request; twice that with passage windows on; capped at
+ * `MAX_PASSAGE_POOL`. Never below `limit`.
  * Measured on a 122k-chunk corpus (docs/recall-eval.md): scoring the top 50
- * instead of the top 20 lifted exact-passage R@10 from 44% to 53%.
+ * instead of the top 20 lifted exact-passage R@10 from 44% to 53%; the top
+ * 200 lifted paraphrased questions (T6) from 40% to 60% (2026-10-04).
  */
-export function passageScoringPool(use: { pool?: number } | null, limit: number): number {
-  const pool = use?.pool
-    ? Math.min(use.pool, MAX_PASSAGE_POOL)
-    : Math.min(Math.max(limit * 2, 16), MAX_PASSAGES_PER_REQUEST);
+export function passageScoringPool(
+  use: { pool?: number } | null,
+  limit: number,
+  opts: { windows?: boolean } = {},
+): number {
+  const base = use?.pool ? use.pool : Math.min(Math.max(limit * 2, 16), MAX_PASSAGES_PER_REQUEST);
+  // Passage windows add a second vector arm; each arm brings `base`, so the
+  // judge sees the head of both (the merge takes them by turns). Measured:
+  // judging today's top 50 plus the window top 50 passed the per-type gate
+  // where a merged 50 lost rank-1 cases (docs/recall-eval.md).
+  const pool = Math.min(opts.windows ? base * 2 : base, MAX_PASSAGE_POOL);
   return Math.max(pool, limit);
 }
 
@@ -92,9 +103,10 @@ export async function scorePassages(
     groups.push(list.slice(i, i + MAX_PASSAGES_PER_REQUEST));
   }
   // A fan-out is one decision to the breaker (see DecideBatch). Its requests
-  // do not run side by side at the provider: the wait grows with the total
-  // passages (top 50: p50 1.3 s, p90 1.6 s against one request's 0.6 s), so
-  // each request may wait the worker timeout once per group.
+  // run side by side (the adapter's own connection pool; Node's global fetch
+  // sent them one at a time), but eight at once still queue a little at the
+  // provider, so each request may wait the worker timeout once per group
+  // (capped at 5 s).
   const batch = groups.length > 1 ? new DecideBatch() : undefined;
   const t0 = Date.now();
   const results = await Promise.all(

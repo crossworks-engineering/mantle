@@ -57,8 +57,16 @@ describe('passageScoringPool', () => {
 
   it('a set pool wins, capped at MAX_PASSAGE_POOL and never below the limit', () => {
     expect(passageScoringPool({ pool: 50 }, 10)).toBe(50);
+    expect(passageScoringPool({ pool: 200 }, 10)).toBe(200);
     expect(passageScoringPool({ pool: 500 }, 10)).toBe(MAX_PASSAGE_POOL);
     expect(passageScoringPool({ pool: 5 }, 10)).toBe(10);
+  });
+
+  it('passage windows double the pool (each arm brings it), still capped', () => {
+    expect(passageScoringPool({ pool: 50 }, 10, { windows: true })).toBe(100);
+    expect(passageScoringPool({}, 8, { windows: true })).toBe(32);
+    expect(passageScoringPool({ pool: 150 }, 10, { windows: true })).toBe(MAX_PASSAGE_POOL);
+    expect(passageScoringPool({ pool: 50 }, 10, { windows: false })).toBe(50);
   });
 });
 
@@ -92,7 +100,7 @@ describe('scorePassages', () => {
   });
 
   it('never sends more than MAX_PASSAGE_POOL passages', async () => {
-    await scorePassages('o', 'q', passages(130));
+    await scorePassages('o', 'q', passages(MAX_PASSAGE_POOL + 30));
     const sent = h.calls.reduce((n, c) => n + Object.keys(c.questions).length, 0);
     expect(sent).toBe(MAX_PASSAGE_POOL);
   });
