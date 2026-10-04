@@ -70,7 +70,13 @@ export {
   type SnapshotItem,
 } from './conversation';
 // The passage cut, for the eval harnesses (scripts/eval-route.ts).
-export { CHUNK_CUTOFF, selectChunkHits } from './conversation/select';
+export {
+  CHUNK_CUTOFF,
+  KEYWORD_PASSAGE_RULE,
+  keywordPassages,
+  selectChunkHits,
+  type KeywordPassageRule,
+} from './conversation/select';
 
 export {
   runVisionWorker,

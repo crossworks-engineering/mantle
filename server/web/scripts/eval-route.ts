@@ -16,14 +16,16 @@
  *                returns with the decider off.
  *   auto         the responder's auto-context passages: the hybrid pool of
  *                chunk_limit + 4, the 0.65 cutoff, the chunk_limit cut
- *                (selectChunkHits). What reaches the prompt. No fact-source
- *                promotion: an eval set has no facts.
+ *                (selectChunkHits) under the shipped keyword rule
+ *                (KEYWORD_PASSAGE_RULE). What reaches the prompt. No
+ *                fact-source promotion: an eval set has no facts.
+ *                `auto:off`, `auto:exempt`, `auto:slots` pin the rule.
  *   scored       `search_chunks` with Jev: the hybrid pool (--pool, else the
  *                brain's passage_scoring pool), scored, ordered and cut as
  *                `live` would, whatever the use's mode.
  *   auto-scored  auto-context with passage_scoring before the cut (v0.237.4
  *                with a pool set): pool, score, order, then the cutoff and
- *                the chunk_limit cut.
+ *                the chunk_limit cut. `auto-scored:<rule>` pins the rule.
  *
  * Per ruleset and type: n, R@1, R@k (k = 10; auto rulesets send at most
  * chunk_limit, so R@k is "in the prompt"), MRR, p50/p90 latency of the
@@ -46,7 +48,7 @@
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { embed } from '@mantle/embeddings';
-import { searchChunks, type ChunkHit } from '@mantle/search';
+import { searchChunks, searchChunksExplained, type ChunkHit } from '@mantle/search';
 import {
   MAX_PASSAGES_PER_REQUEST,
   applyPassageScores,
@@ -54,7 +56,12 @@ import {
   passageScoringPool,
   scorePassages,
 } from '@mantle/decisions';
-import { selectChunkHits } from '@mantle/runtime/agent';
+import {
+  KEYWORD_PASSAGE_RULE,
+  keywordPassages,
+  selectChunkHits,
+  type KeywordPassageRule,
+} from '@mantle/runtime/agent';
 import { env } from '@mantle/config';
 import {
   QUESTION_TYPES,
@@ -89,11 +96,14 @@ const toHits = (rows: readonly ChunkHit[]): Hit[] =>
   rows.map((r) => ({ nodeId: r.nodeId, title: r.nodeTitle, ordinal: r.ordinal }));
 
 /** The hybrid pool, scored by Jev and ordered as `live` orders it. */
-async function scoredPool(x: Ctx, limit: number): Promise<{ rows: ChunkHit[]; requests: number }> {
+async function scoredPool(
+  x: Ctx,
+  limit: number,
+): Promise<{ rows: Awaited<ReturnType<typeof searchChunksExplained>>['hits']; requests: number }> {
   const use = await decisionUseEnabled(x.ownerId, 'passage_scoring');
   if (!use) throw new Error('the scored rulesets need the decider with passage_scoring on');
   const poolSize = passageScoringPool(x.pool !== null ? { pool: x.pool } : use, limit);
-  const found = await searchChunks({
+  const { hits: found } = await searchChunksExplained({
     ownerId: x.ownerId,
     embedding: x.vec,
     q: x.c.query,
@@ -108,7 +118,9 @@ async function scoredPool(x: Ctx, limit: number): Promise<{ rows: ChunkHit[]; re
   );
   return {
     rows: scoring ? applyPassageScores(found, key, scoring).kept : found,
-    requests: Math.ceil(found.length / MAX_PASSAGES_PER_REQUEST),
+    // A repeat of the same question and pool is served from the decider's
+    // in-process cache: no request, no cost.
+    requests: scoring?.cached ? 0 : Math.ceil(found.length / MAX_PASSAGES_PER_REQUEST),
   };
 }
 
@@ -131,20 +143,6 @@ export const RULESETS: Record<string, Ruleset> = {
       requests: 0,
     }),
   },
-  auto: {
-    name: 'auto',
-    describe: 'auto-context: hybrid chunk_limit+4, cutoff, chunk_limit cut',
-    run: async (x) => {
-      const pool = await searchChunks({
-        ownerId: x.ownerId,
-        embedding: x.vec,
-        q: x.c.query,
-        limit: x.chunkLimit + 4,
-        excludeSystemOrigin: true,
-      });
-      return { hits: selectedHits(selectChunkHits(pool, x.chunkLimit).hits), requests: 0 };
-    },
-  },
   scored: {
     name: 'scored',
     describe: 'search_chunks with Jev over the pool, top k',
@@ -153,18 +151,50 @@ export const RULESETS: Record<string, Ruleset> = {
       return { hits: toHits(r.rows.slice(0, x.k)), requests: r.requests };
     },
   },
-  'auto-scored': {
-    name: 'auto-scored',
-    describe: 'auto-context with Jev before the cut (passage_scoring pool)',
-    run: async (x) => {
-      const r = await scoredPool(x, x.chunkLimit);
-      return {
-        hits: selectedHits(selectChunkHits(r.rows, x.chunkLimit).hits),
-        requests: r.requests,
-      };
-    },
-  },
 };
+
+/** The responder's auto-context cut under a keyword rule (select.ts). */
+const autoRun =
+  (rule: KeywordPassageRule) =>
+  async (x: Ctx): Promise<RulesetRun> => {
+    const { hits: pool } = await searchChunksExplained({
+      ownerId: x.ownerId,
+      embedding: x.vec,
+      q: x.c.query,
+      limit: x.chunkLimit + 4,
+      excludeSystemOrigin: true,
+    });
+    const sel = selectChunkHits(pool, x.chunkLimit, undefined, keywordPassages(rule));
+    return { hits: selectedHits(sel.hits), requests: 0 };
+  };
+const autoScoredRun =
+  (rule: KeywordPassageRule) =>
+  async (x: Ctx): Promise<RulesetRun> => {
+    const r = await scoredPool(x, x.chunkLimit);
+    const sel = selectChunkHits(r.rows, x.chunkLimit, undefined, keywordPassages(rule));
+    return { hits: selectedHits(sel.hits), requests: r.requests };
+  };
+
+// `auto` / `auto-scored` run the shipped keyword rule; `:off`, `:exempt` and
+// `:slots` pin one, so a rule change is gated against the rule before it.
+const RULE_NOTE: Record<KeywordPassageRule, string> = {
+  off: 'cutoff on every passage',
+  exempt: 'keyword passages skip the cutoff',
+  slots: 'keyword passages skip the cutoff and take tail slots',
+};
+for (const rule of [KEYWORD_PASSAGE_RULE, 'off', 'exempt', 'slots'] as const) {
+  const tag = rule === KEYWORD_PASSAGE_RULE && !RULESETS.auto ? '' : `:${rule}`;
+  RULESETS[`auto${tag}`] = {
+    name: `auto${tag}`,
+    describe: `auto-context: hybrid chunk_limit+4, cutoff, chunk_limit cut; ${RULE_NOTE[rule]}`,
+    run: autoRun(rule),
+  };
+  RULESETS[`auto-scored${tag}`] = {
+    name: `auto-scored${tag}`,
+    describe: `auto-context with Jev before the cut; ${RULE_NOTE[rule]}`,
+    run: autoScoredRun(rule),
+  };
+}
 
 function selectedHits(
   rows: ReadonlyArray<{ nodeId: string; title: string; ordinal?: number }>,

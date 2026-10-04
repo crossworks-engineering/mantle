@@ -124,7 +124,7 @@ describe.skipIf(!URL)('the decision trace on a real turn', () => {
     expect(new Set(keptChunks)).toEqual(
       new Set(ctx.chunkHits.map((c) => `${c.nodeId}:${c.ordinal ?? ''}`)),
     );
-    expect(ctx.chunkHits.map((c) => c.ordinal)).toEqual([0, 1, 2]);
+    expect(ctx.chunkHits).toHaveLength(3);
 
     // The 4th and 5th near passages lost to the budget cap.
     expect(row('chunk', `${node.near}:0`)).toMatchObject({
@@ -137,11 +137,13 @@ describe.skipIf(!URL)('the decision trace on a real turn', () => {
       at: 'select',
       why: 'limit:3',
     });
-    // The coined word: found by the keyword arm, then cut on distance.
+    // The coined word: found by the keyword arm and fused near the top. Its
+    // distance (0.9) is past the 0.65 cutoff; the T2 rule keeps it anyway.
     const far = row('chunk', `${node.far}:0`)!;
     expect(far.kr).toBe(1);
     expect(['keyword', 'both']).toContain(far.arm);
-    expect(far).toMatchObject({ out: 'dropped', at: 'select', why: 'cut:0.65' });
+    expect(far).toMatchObject({ out: 'kept', at: 'select', why: 'exempt:keyword' });
+    expect(ctx.chunkHits.some((c) => c.nodeId === node.far)).toBe(true);
     expect(trace.search).toMatchObject({ mode: 'hybrid', keyword: 'rare' });
 
     // Facts and content hits carry their raw and ranking distances.

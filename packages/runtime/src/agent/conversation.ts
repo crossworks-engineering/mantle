@@ -182,6 +182,7 @@ import {
   patchSuperseded,
   chunkTraceKey,
   explainChunkSelection,
+  keywordPassages,
   selectChunkHits,
   selectContentHits,
   selectFacts,
@@ -1041,16 +1042,23 @@ async function loadConversationContextAtLevel(args: {
             excludeSystemOrigin: true,
           })
         : [];
-    const selection = selectChunkHits(hits, chunkLimit, {
-      sources: [{ nodeIds: factNodeIds, max: FACT_PASSAGES }],
-      best,
-    });
+    // The T2 rule: a passage the keyword arm found is not held to the
+    // cosine cutoff (select.ts, KEYWORD_PASSAGE_RULE).
+    const keyword = keywordPassages();
+    const selection = selectChunkHits(
+      hits,
+      chunkLimit,
+      { sources: [{ nodeIds: factNodeIds, max: FACT_PASSAGES }], best },
+      keyword,
+    );
     {
-      const why = explainChunkSelection(hits, chunkLimit, selection.hits);
+      const why = explainChunkSelection(hits, chunkLimit, selection.hits, keyword);
       for (const [k, reason] of why.dropped) trace.drop('chunk', k, 'select', reason);
       for (const h of selection.hits) {
         const k = chunkTraceKey(h);
-        if (!why.promoted.has(k)) trace.set('chunk', k, { at: 'select' });
+        if (!why.promoted.has(k)) {
+          trace.set('chunk', k, { at: 'select', why: why.kept.get(k) ?? 'sent' });
+        }
       }
       for (const k of why.promoted) {
         const b = best.find((x) => chunkTraceKey(x) === k);
@@ -1073,7 +1081,7 @@ async function loadConversationContextAtLevel(args: {
         hits.length + why.promoted.size,
         selection.hits.length,
         undefined,
-        `limit ${chunkLimit}, cut ${CHUNK_CUTOFF}${why.promoted.size ? `, ${why.promoted.size} promoted` : ''}`,
+        `limit ${chunkLimit}, cut ${CHUNK_CUTOFF}, keyword ${keyword.rule}${why.kept.size ? ` (${why.kept.size} kept by it)` : ''}${why.promoted.size ? `, ${why.promoted.size} promoted` : ''}`,
       );
     }
     chunkHits = selection.hits;
