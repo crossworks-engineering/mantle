@@ -866,6 +866,56 @@ multi-query underperformed, and sentence-window retrieval scored best on
 retrieval precision. Our numbers agree: the rerank (the judge) and small
 windows are the gains, rewriting is not.
 
+## Real questions on a client brain (2026-10-04)
+
+The sets above are a library corpus and a made-up firm. This run built
+typed `eval:route` sets from two client business brains' OWN past
+questions, without any client text leaving the box.
+
+### Method (on the box only)
+
+- Every step runs in a throwaway sibling container (`docker run --rm
+  --network container:mantle_web --memory 1.5g`, the web container's env
+  file written mode 600 and deleted right after start, a 700 folder mounted
+  at `/eval`). One container per box at a time. The folder is deleted at
+  the end; only counts, rates, timings and costs leave the box.
+- Source: owner chat turns that have a responder trace. For each turn the
+  candidates are what the agent had: the `load_context` snapshot's sent
+  passages and hits, plus every node id its tools opened (`page_get`,
+  `read_section`, `file_read`, `node_read`, `table_sql`, ...), delegated
+  child traces included.
+- One cheap-model call per turn (the box's own summarizer model, so no new
+  provider sees the text) labels: information request or not,
+  self-contained or not, the type (T0 to T8), the answer source (document
+  text, table rows, external database, web, chat history), and the gold
+  among the candidates. A second call per gold checks that the gold item's
+  three best chunks answer the question.
+- A follow-up that is not self-contained is kept as T1 with the text the
+  brain really embedded on that turn.
+- Thin types are topped up with a few synthetic questions written from the
+  box's own chunks (codes, history, table rows); their gold is the source
+  chunk.
+- Cost: about USD 0.0005 per labelled turn.
+
+**Bias.** A real case's gold is an item the agent saw on that turn, mostly
+from today's auto-context (about 75 to 90% of them). Real cases therefore
+favour the `auto` ruleset, and a rule that reorders is penalised. Read the
+synthetic cases (no such bias) beside them, and do not judge follow-up
+enrichment on real T1 labels.
+
+### What it showed (two business brains, 111 and 70 cases)
+
+- `auto:slots` (keyword passages take tail slots of the cut) passed the gate
+  on both (codes +4/-0 on one), where it lost 2 T3 cases on the library
+  set: a profile rule, not a global one.
+- The judge's 1.5 drop hurts here: follow-up questions and table rows score
+  low (table-row gold median 1.04 on one brain). With a pool of 16 and a
+  1.0 drop, one brain gained +10/-4 passages in the 8 sent; the other
+  passed the gate only when table-row passages keep their search slot.
+- Today's follow-up enrichment (8 words or fewer plus a pronoun) fired on
+  none of the real follow-ups: they are longer.
+- Full numbers: the routing plan page, section 11 (dev brain).
+
 ## Automated eval: `recall_eval` + the brain-health heartbeat (2026-07-13)
 
 The harness above is manual (`pnpm -C server/web eval:recall`). The automated
