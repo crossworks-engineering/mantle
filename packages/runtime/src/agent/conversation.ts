@@ -33,7 +33,6 @@ import {
   entities,
   facts,
   nodes,
-  openChatThread,
   type Agent,
   type AgentMemoryConfig,
   type AssistantMessage,
@@ -405,6 +404,27 @@ export async function markTurnSuperseded(args: {
  * it (by time). The web path loads context BEFORE inserting the inbound, so it
  * omits both — the new turn simply isn't in the table yet.
  */
+/** The open chat thread of this agent (null = never archived). Read here on
+ *  the loader's own `db`, like every other arm, so it runs in the turn's
+ *  viewer scope. */
+async function loadOpenThread(
+  ownerId: string,
+  agentId: string,
+): Promise<{ startedAt: Date; seedThreadId: string | null } | null> {
+  const [row] = await db
+    .select({ startedAt: chatThreads.startedAt, seedThreadId: chatThreads.seedThreadId })
+    .from(chatThreads)
+    .where(
+      and(
+        eq(chatThreads.ownerId, ownerId),
+        eq(chatThreads.agentId, agentId),
+        eq(chatThreads.status, 'open'),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
 /**
  * The summary of the archived thread an open thread continues from ("Continue
  * from this"), as a digest entry. Null when the thread or its summary is gone
@@ -619,7 +639,7 @@ async function loadConversationContextAtLevel(args: {
     historyLimit > 0 && !belowAdmin && !isSmallTalk(inboundText)
       ? decisionUseEnabled(ownerId, 'history_recall')
       : Promise.resolve(null),
-    belowAdmin ? Promise.resolve(null) : openChatThread(ownerId, agent.id),
+    belowAdmin ? Promise.resolve(null) : loadOpenThread(ownerId, agent.id),
   ]);
   const threadSince = openThread?.startedAt ?? null;
   const rowsLoad = belowAdmin
