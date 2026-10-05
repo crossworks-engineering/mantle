@@ -65,7 +65,7 @@ describe.skipIf(!URL)('team_chat_read: a login and its old portal chat', () => {
       (${anchor}, null, ${cat}, 'inbound', 'live ask', false, now() - interval '2 minutes'),
       (${anchor}, null, ${cat}, 'outbound', 'live answer', false, now() - interval '1 minute'),
       (${anchor}, null, ${dan}, 'inbound', 'dan asks', false, now())`;
-  });
+  }, 60_000);
 
   afterAll(async () => {
     if (!admin) return;

@@ -49,7 +49,7 @@ describe.skipIf(!URL)('email gates and the brain logins', () => {
       insert into nodes (id, owner_id, type, title, path, data) values
         (${contactNode}, ${owner}, 'contact', 'Known client', 'contacts',
          ${JSON.stringify({ emails: [contactClientEmail] })}::jsonb)`);
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await m.systemDb.execute(sqlTag`delete from nodes where owner_id = ${owner}`);

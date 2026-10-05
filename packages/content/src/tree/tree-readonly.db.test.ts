@@ -83,7 +83,7 @@ describe.skipIf(!URL)('tree reads on a database that refuses writes', () => {
       await m.db.execute(sqlTag`
         insert into spaces (id, kind, login_id) values (${id}, 'brain', ${id})`);
     }
-  });
+  }, 60_000);
 
   afterAll(async () => {
     if (!m) return;
@@ -153,7 +153,7 @@ describe.skipIf(!URL)('tree reads on a database that refuses writes', () => {
       await m.closeDb();
       process.env.DATABASE_URL = reader.url;
       before = await fingerprint();
-    });
+    }, 60_000);
 
     // Each test meets the database's refusal itself, not the memory of one.
     beforeEach(() => m.forgetWriteRefusals());

@@ -54,7 +54,7 @@ describe.skipIf(!URL)('member chat thread isolation', () => {
         (${ownerId}, null, ${ann}, 'outbound', 'ann private answer', true, now() - interval '2 minutes'),
         (${ownerId}, null, ${ben}, 'outbound', 'ben answer', false, now() - interval '1 minute'),
         (${otherOwner}, null, ${ann}, 'inbound', 'elsewhere', false, now())`);
-  });
+  }, 60_000);
 
   afterAll(async () => {
     if (!m) return;

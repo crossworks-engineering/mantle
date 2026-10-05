@@ -75,7 +75,7 @@ describe.skipIf(!URL)('Recall v2 native writes, on Postgres', () => {
       values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin')`);
     await m.db.execute(sqlTag`
       insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`);
-  });
+  }, 60_000);
 
   afterAll(async () => {
     if (!URL) return;

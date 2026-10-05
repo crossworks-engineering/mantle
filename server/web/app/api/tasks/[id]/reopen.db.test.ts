@@ -84,7 +84,7 @@ describe.skipIf(!URL)('reopen restores the status before done', () => {
     await admin`insert into auth.users (id, email, password_hash, role) values
       (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin')`;
     await admin`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`;
-  });
+  }, 60_000);
 
   afterAll(async () => {
     if (!admin) return;

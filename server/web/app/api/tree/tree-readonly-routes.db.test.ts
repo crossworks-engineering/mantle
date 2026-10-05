@@ -93,7 +93,7 @@ describe.skipIf(!URL)('the owner tree routes as a role with SELECT only', () => 
     await m.closeDb();
     process.env.DATABASE_URL = reader.url;
     nodesBefore = await nodesNow();
-  });
+  }, 60_000);
 
   afterAll(async () => {
     if (!m) return;

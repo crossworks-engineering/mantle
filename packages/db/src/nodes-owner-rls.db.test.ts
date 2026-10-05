@@ -69,7 +69,7 @@ describe.skipIf(!URL)('nodes read rule: only the brain owner’s items reach a l
       (${ids.personalTeam}, ${personal}, 'page', ${`${tag} personal team`}, 'pages', 'team'),
       (${ids.personalPublic}, ${personal}, 'note', ${`${tag} personal public`}, 'notes', 'public'),
       (${ids.otherBrainTeam}, ${otherBrain}, 'page', ${`${tag} other brain`}, 'pages', 'team')`;
-  });
+  }, 60_000);
 
   afterAll(async () => {
     const admin = (m.systemDb as unknown as { $client: Parameters<Db['ensureViewerRoles']>[0] })

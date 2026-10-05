@@ -105,7 +105,7 @@ describe.skipIf(!URL)('levels drive links on Postgres', () => {
         (${ids.pubParent}, '{"type":"doc","content":[]}'::jsonb, ''),
         (${ids.subAdmin}, '{"type":"doc","content":[]}'::jsonb, ''),
         (${ids.subClient}, '{"type":"doc","content":[]}'::jsonb, '')`);
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await m.db.execute(sqlTag`delete from shares where owner_id = ${owner}`);

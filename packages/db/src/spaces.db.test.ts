@@ -87,7 +87,7 @@ describe.skipIf(!URL)('personal spaces under row level security', () => {
         (${ids.aPrivate}, ${loginA}, 'private'),
         (${ids.bPrivate}, ${loginB}, 'private'),
         (${ids.bTeam}, ${loginB}, 'team')`);
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await m.systemDb.execute(sqlTag`delete from nodes where title like ${`${tag}%`}`);

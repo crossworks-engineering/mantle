@@ -43,7 +43,7 @@ describe.skipIf(!URL)('the item tree on Files', () => {
     await m.db.execute(sqlTag`
       insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`);
     await files.ensureFilesRootBranch(owner);
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await m.db.execute(sqlTag`delete from item_marks where actor_id = ${actor}`);

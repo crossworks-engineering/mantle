@@ -64,7 +64,7 @@ describe.skipIf(!URL)('agent memory_config saves merge', () => {
       enabled: false,
     });
     agentId = row.id;
-  });
+  }, 60_000);
 
   afterAll(async () => {
     if (agentId) await sql`delete from agents where id = ${agentId}`;

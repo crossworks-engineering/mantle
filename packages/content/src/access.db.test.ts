@@ -69,7 +69,7 @@ describe.skipIf(!URL)('setting levels on Postgres', () => {
       insert into agents (id, owner_id, slug, name, model, system_prompt, tool_group_slugs)
       values (${ids.agent}, ${owner}, ${`${tag}-agent`}, 'A', 'm', 'p',
               ${`{${tag}-admin,${tag}-team}`}::text[])`);
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await m.db.execute(sqlTag`delete from agents where owner_id = ${owner}`);

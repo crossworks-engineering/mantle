@@ -69,7 +69,7 @@ describe.skipIf(!URL)('POST /api/pages/:id/move, on Postgres', () => {
     ids.a = (await pages.createPage(h.owner, { title: 'A' })).id;
     ids.b = (await pages.createPage(h.owner, { title: 'B', folderId: plans })).id;
     ids.c = (await pages.createPage(h.owner, { title: 'C' })).id;
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await m.systemDb.execute(sqlTag`

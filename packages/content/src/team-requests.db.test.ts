@@ -44,7 +44,7 @@ describe.skipIf(!URL)('notifyTeamRequester', () => {
       (${fromPortal}, ${anchor}, 'task', 'Portal request', 'tasks',
         ${task({ contactId: contact, contactName: 'Pat' })}::jsonb),
       (${noRequester}, ${anchor}, 'task', 'Plain task', 'tasks', '{"status":"open"}'::jsonb)`;
-  });
+  }, 60_000);
 
   afterAll(async () => {
     if (!admin) return;

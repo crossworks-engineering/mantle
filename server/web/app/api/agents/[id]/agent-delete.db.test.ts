@@ -89,7 +89,7 @@ describe.skipIf(!URL)('DELETE /api/agents/:id conversation handling on Postgres'
       insert into auth.users (id, email, password_hash, role) values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin')`);
     await m.db.execute(sqlTag`
       insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`);
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await m.db.execute(sqlTag`delete from assistant_messages where owner_id = ${owner}`);

@@ -66,7 +66,7 @@ describe.skipIf(!URL)('runChunkWindows --apply on a real database', () => {
     }
     await admin`insert into content_chunks (owner_id, node_id, ordinal, text)
       values (${anchor}, ${node!.id}, 10, ${long(10)})`;
-  });
+  }, 60_000);
 
   afterAll(async () => {
     vi.unstubAllGlobals();

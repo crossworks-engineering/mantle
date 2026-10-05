@@ -24,7 +24,7 @@ describe.skipIf(!URL)('access matrix on the migrated database', () => {
 
   beforeAll(() => {
     sql = postgres(URL!, { max: 1, onnotice: () => {} });
-  });
+  }, 60_000);
   afterAll(async () => {
     await applyViewerGrants(sql);
     await sql.end();

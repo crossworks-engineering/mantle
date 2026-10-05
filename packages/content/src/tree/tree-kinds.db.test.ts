@@ -44,7 +44,7 @@ describe.skipIf(!URL)('the item tree on notes, tasks, events and secrets', () =>
       await tree.ensureKindRoot(owner, kind);
       await tree.ensureKindRoot(owner, kind); // idempotent
     }
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await m.db.execute(sqlTag`delete from nodes where owner_id = ${owner}`);

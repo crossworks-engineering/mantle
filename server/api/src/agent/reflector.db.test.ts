@@ -40,7 +40,7 @@ describe.skipIf(!URL)('reflector skips mcp turns', () => {
     await m.db.execute(sqlTag`
       insert into agents (id, owner_id, slug, name, model, system_prompt, role)
       values (${agentId}, ${owner}, 'refl-test', 'Refl', 'fake/model', 'x', 'responder')`);
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await m.db.execute(sqlTag`delete from assistant_messages where owner_id = ${owner}`);

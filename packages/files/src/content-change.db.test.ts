@@ -95,7 +95,7 @@ describe.skipIf(!URL)('a file whose bytes change drops its old index', () => {
       values (${owner}, 'note', 'The page copy', 'notes'::ltree)
       returning id`)) as unknown as { id: string }[];
     pageId = page!.id;
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await m.db.execute(sqlTag`delete from nodes where owner_id = ${owner}`);

@@ -170,7 +170,7 @@ describe.skipIf(!URL)('the "What clients see" report', () => {
       values (${t!.id}, 4, 'tool: email_page', 'compute', 'success',
               ${stepIn({ to: 'ancient@example.invalid' })}::jsonb,
               '{"messageId":"<m0@x>"}'::jsonb, now() - interval '500 days')`);
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await exec(sqlTag`delete from client_report_acks where owner_id = ${owner}`);

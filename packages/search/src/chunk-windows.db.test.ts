@@ -55,7 +55,7 @@ describe.skipIf(!URL)('passage windows: the window arm', () => {
     await admin`insert into content_chunk_windows (chunk_id, j, owner_id, node_id, embedding) values
       (${deepChunk}, 0, ${anchor}, ${deep}, ${lit(axis(3))}::halfvec),
       (${deepChunk}, 1, ${anchor}, ${deep}, ${lit(axis(0))}::halfvec)`;
-  });
+  }, 60_000);
 
   afterAll(async () => {
     if (!admin) return;

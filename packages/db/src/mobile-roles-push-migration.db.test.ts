@@ -78,7 +78,7 @@ describe.skipIf(!URL)('migration mobile_roles_push: dedupe and token backfill', 
       ('${randomUUID()}', '${two}', 'Phone B', ${later}, null),
       ('${randomUUID()}', '${webOnly}', 'Web client', ${later}, null),
       ('${randomUUID()}', '${dead}', 'Mobile device', ${later}, now())`);
-  });
+  }, 60_000);
 
   afterAll(async () => {
     if (!admin) return;

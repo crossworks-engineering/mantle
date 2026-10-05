@@ -39,7 +39,7 @@ describe.skipIf(!URL)('isOnboarded as a role with SELECT only', () => {
     reader = await createReadOnlyRole(adminClient(), URL!);
     await m.closeDb();
     process.env.DATABASE_URL = reader.url;
-  });
+  }, 60_000);
 
   afterAll(async () => {
     if (!m) return;

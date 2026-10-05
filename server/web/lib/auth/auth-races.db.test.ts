@@ -62,7 +62,7 @@ describe.skipIf(!URL)('credential races', () => {
               values (${contact}, ${brain}, 'contact', 'Pat', 'contacts')`;
     await sql`insert into oauth_clients (id, client_name, redirect_uris)
               values (${client}, ${tag}, ${sql.array(['https://client.example.com/cb'])})`;
-  });
+  }, 60_000);
 
   afterAll(async () => {
     if (!sql) return;

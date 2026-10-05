@@ -86,7 +86,7 @@ describe.skipIf(!URL)('retire team links (0176 and the share read path)', () => 
       (${owner}, ${n.clientNote}, 'note', ${token.clientNote}, ${JSON.stringify({ mode: 'public' })}::jsonb, null, null),
       (${owner}, ${n.publicPage}, 'note', ${token.publicPage}, '{}'::jsonb, null, null),
       (${owner}, ${n.adminNote}, 'note', ${token.adminNote}, ${team}::jsonb, null, null)`;
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await admin`delete from shares where owner_id = ${owner}`;

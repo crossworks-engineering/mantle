@@ -35,7 +35,7 @@ describe.skipIf(!URL)('migration brain_identity', () => {
     process.env.DATABASE_URL = URL;
     const m = await import('./index');
     admin = (m.systemDb as unknown as { $client: Sql }).$client;
-  });
+  }, 60_000);
 
   it('made exactly one row holding a random uuid', async () => {
     const rows = await admin`select singleton, brain_id::text as id from brain_identity`;

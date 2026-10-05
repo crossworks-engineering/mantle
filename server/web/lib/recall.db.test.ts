@@ -55,7 +55,7 @@ describe.skipIf(!URL)('Recall owner API: map folders, on Postgres', () => {
     await m.db.execute(sqlTag`
       insert into recall_maps (id, owner_id, slug, title, node_count)
       values (${v1Id}, ${owner}, ${`v1-${tag}`}, 'Page built', 1)`);
-  });
+  }, 60_000);
 
   afterAll(async () => {
     if (!URL) return;

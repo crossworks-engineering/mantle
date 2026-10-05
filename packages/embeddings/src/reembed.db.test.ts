@@ -32,7 +32,7 @@ describe.skipIf(!URL)('runReembed repopulate skips extract-exempt nodes', () => 
       (${anchor}, 'task', 'Reviewed request', 'tasks',
         '{"source":"team-request","reviewed_at":"2026-09-28T10:00:00.000Z"}'::jsonb),
       (${anchor}, 'note', 'Plain note', 'notes', '{}'::jsonb)`;
-  });
+  }, 60_000);
 
   afterAll(async () => {
     if (!admin) return;

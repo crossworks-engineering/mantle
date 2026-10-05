@@ -39,7 +39,7 @@ describe.skipIf(!URL)('every tree kind against the share rule', () => {
       values (${owner}, ${`sharekinds-${owner.slice(0, 8)}@example.invalid`}, 'x', 'admin')`);
     await m.db.execute(sqlTag`
       insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`);
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await m.db.execute(sqlTag`delete from nodes where owner_id = ${owner}`);

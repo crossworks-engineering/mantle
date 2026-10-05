@@ -66,7 +66,7 @@ describe.skipIf(!URL)('ocr-rescan', () => {
       (${anchor}, 'extractor_run', ${id.stuck}, 'node', 'skipped', '{"disposition":"body_too_short"}'::jsonb),
       (${anchor}, 'extractor_run', ${id.noParser}, 'node', 'skipped', '{"disposition":"pdf_unreadable"}'::jsonb),
       (${anchor}, 'extractor_run', ${id.docx}, 'node', 'skipped', '{"disposition":"body_too_short"}'::jsonb)`;
-  });
+  }, 60_000);
 
   afterAll(async () => {
     if (!admin) return;

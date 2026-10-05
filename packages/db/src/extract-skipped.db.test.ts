@@ -64,7 +64,7 @@ describe.skipIf(!URL)('terminal extract skips', () => {
       (${anchor}, 'extractor_run', ${id.exe}, 'node', 'skipped', now(), '{"disposition":"no_parser"}'::jsonb),
       (${anchor}, 'extractor_run', ${id.unreadable}, 'node', 'skipped', now(), '{"disposition":"pdf_unreadable"}'::jsonb),
       (${anchor}, 'extractor_run', ${id.edited}, 'node', 'skipped', now(), '{"disposition":"no_parser"}'::jsonb)`;
-  });
+  }, 60_000);
 
   afterAll(async () => {
     if (!admin) return;

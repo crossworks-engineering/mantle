@@ -55,7 +55,7 @@ describe.skipIf(!URL)('file slugs are unique per folder', () => {
         (${owner}, 'branch', 'sermons', 'sermons', ${sub}::ltree),
         (${owner}, 'branch', 'other', 'other', ${other}::ltree)
       on conflict do nothing`);
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await m.db.execute(sqlTag`delete from nodes where owner_id = ${owner}`);

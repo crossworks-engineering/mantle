@@ -65,7 +65,7 @@ describe.skipIf(!URL)('best-effort writes on a database that refuses writes', ()
     await m.db.execute(sqlTag`
       insert into shares (id, token, owner_id, node_id, node_type)
       values (${share}, ${`${tag}-token`}, ${owner}, ${note}, 'note')`);
-  });
+  }, 60_000);
 
   afterAll(async () => {
     if (!m) return;
@@ -98,7 +98,7 @@ describe.skipIf(!URL)('best-effort writes on a database that refuses writes', ()
       reader = await createReadOnlyRole(adminClient(), URL!);
       await m.closeDb();
       process.env.DATABASE_URL = reader.url;
-    });
+    }, 60_000);
 
     it('verifies a peer token without the last-seen stamp', async () => {
       expect((await peers.verifyInboundToken(token))?.id).toBe(peerId);

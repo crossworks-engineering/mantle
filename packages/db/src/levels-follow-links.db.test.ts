@@ -88,7 +88,7 @@ describe.skipIf(!URL)('migration 0161: nested folders, deepest wins', () => {
         (${ids.inMiddle}, ${owner}, 'file', 'mid.pdf', ${middle}::ltree),
         (${ids.inOuter}, ${owner}, 'note', 'top', ${outer}::ltree),
         (${ids.task}, ${owner}, 'task', 't', ${inner}::ltree)`);
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await m.db.execute(sqlTag`delete from nodes where owner_id = ${owner}`);

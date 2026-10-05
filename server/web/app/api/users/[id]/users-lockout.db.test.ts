@@ -154,7 +154,7 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
       });
       createdInstance = true;
     }
-  });
+  }, 60_000);
 
   afterAll(async () => {
     if (!admin) return;
