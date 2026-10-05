@@ -548,10 +548,15 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
     // millisecond the app was given must still cover the row it names.
     const shown: string[] = [];
     for (let i = 0; i < 12; i += 1) {
+      // Each reply in its own millisecond. The cursor covers the whole
+      // millisecond it is given, so two replies in one are read together
+      // (the next test); on a fast runner back-to-back inserts share one.
+      await new Promise((r) => setTimeout(r, 3));
       const row = await reply(member, `reply ${i}`);
       // What GET /api/member/chat sends: an ISO time, milliseconds.
       shown.push(row.createdAt.toISOString());
     }
+    expect(new Set(shown).size).toBe(12);
     expect((await tm.loginChatUnread(anchor, member)).unread).toBe(12);
     // The app showed the first eleven.
     expect((await tm.markLoginChatRead(anchor, member, new Date(shown[10]!))).unread).toBe(1);
@@ -562,6 +567,24 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
       select count(*)::int as n from team_messages
        where login_id = ${member} and created_at <> date_trunc('milliseconds', created_at)`);
     expect(micro!.n).toBeGreaterThan(0);
+  });
+
+  it('two replies in one millisecond are read together: the app cannot tell them apart', async () => {
+    await tm.markLoginChatRead(anchor, member);
+    await new Promise((r) => setTimeout(r, 5));
+    const a = await reply(member, 'same ms a');
+    const b = await reply(member, 'same ms b');
+    // Both in the millisecond of the first, 300 and 700 microseconds into it.
+    const ms = a.createdAt.toISOString();
+    await m.systemDb.execute(sqlTag`
+      update team_messages set created_at = ${ms}::timestamptz + interval '300 microseconds'
+       where id = ${a.id}`);
+    await m.systemDb.execute(sqlTag`
+      update team_messages set created_at = ${ms}::timestamptz + interval '700 microseconds'
+       where id = ${b.id}`);
+    expect((await tm.loginChatUnread(anchor, member)).unread).toBe(2);
+    // The app names the first by its millisecond: the second goes with it.
+    expect((await tm.markLoginChatRead(anchor, member, new Date(ms))).unread).toBe(0);
   });
 
   it('a reply still being written is not marked read: it counts when it lands', async () => {
