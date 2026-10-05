@@ -160,11 +160,10 @@ describe('buildDeferredToolset', () => {
     expect(set.search('list tasks').tools.map((t) => t.name)).toContain('task_list');
   });
 
-  it('tells the model to search for actions, not for information', () => {
+  it('keeps the bench-tested rule: check the catalog before giving up or standing in', () => {
     const set = buildDeferredToolset(DEFS, GROUPS)!;
-    expect(set.systemBlock).toContain('Use tool_search only for an ACTION');
-    expect(set.systemBlock).toContain('To find INFORMATION use search_nodes or search_chunks');
-    expect(set.systemBlock).not.toContain('never answer a task without acting');
+    expect(set.systemBlock).toContain('never say you cannot do a task');
+    expect(set.systemBlock).toContain('is not a stand-in for a specific');
   });
 
   it('returns the full schema of the best match', () => {

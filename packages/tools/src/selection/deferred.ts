@@ -151,13 +151,14 @@ export function isAlwaysFull(slug: string): boolean {
   return CORE_TOOL_SLUGS.includes(slug) || ALWAYS_FULL_PREFIXES.some((p) => slug.startsWith(p));
 }
 
-// The opening sentence replaced "never answer a task without acting before you
-// checked the catalog" (2026-10-05): with that line, Grok called tool_search in
-// 24 of 30 dev probe turns, mostly for information questions, and then used
-// search_nodes anyway (13 of 34 searches led to a returned tool).
+// Tested 2026-10-05: with this rule Grok called tool_search in 24 of 30 dev probe
+// turns, often for information it then fetched with search_nodes. Two softer
+// openings ("tool_search only for an ACTION ...; for INFORMATION use
+// search_nodes") cut Claude's right-first-tool score on the bench by 2 to 3
+// cases of 101 and did not help Grok, so this wording stays.
 const SEARCH_RULE =
-  'Use tool_search only for an ACTION that none of your loaded tools can do. To find ' +
-  'INFORMATION use search_nodes or search_chunks. A general ' +
+  'The catalog tools are yours: never say you cannot do a task, and never answer a task without ' +
+  'acting, before you have checked the catalog and loaded the tool with tool_search. A general ' +
   'tool (search_nodes, search_chunks, file_read, page_list) is not a stand-in for a specific ' +
   'one. When the request is about contacts, notes, folders, entities, the graph, images, video, ' +
   'speech, your own persona or style, Recall maps, email, events, tasks, journal, sharing, ' +

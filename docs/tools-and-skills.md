@@ -532,10 +532,9 @@ call. `'deferred'` sends:
   name they were not sent.
 
 The loop appends a catalog block to the FIRST system block (the persona
-block, with the first cache breakpoint): one rule ("use `tool_search` only for
-an ACTION none of your loaded tools can do; to find INFORMATION use
-`search_nodes` or `search_chunks`; a general tool is not a stand-in for a
-specific one"), then every other granted tool under its flow
+block, with the first cache breakpoint): one rule ("check the catalog before
+you say you cannot, and before a general tool stands in for a specific one"),
+then every other granted tool under its flow
 (`packages/tools/src/selection/flows.ts`: find, pages, files, tables, plan,
 people, web, places, delegate, apps, admin). A group no flow holds (an owner's
 API integration, an MCP or OpenAPI connector) gets its own line under its
@@ -549,10 +548,11 @@ carry `handler.openapi`) and recipes are listed by NAME only, so that text
 stays out of the system prompt. On the bench the catalog in the system prompt
 beat the same text in `tool_search`'s description, a fixed core order beat
 grant order (grant order put `calculate` first and drew `calculate` calls), and
-the short lines beat names alone for Claude. The rule's first sentence replaced
-"never answer a task without checking the catalog", which made Grok search in
-24 of 30 dev probe turns, mostly for information it then fetched with
-`search_nodes`.
+the short lines beat names alone for Claude. Known cost of the rule: on a dev
+probe Grok searched in 24 of 30 turns, often for information it then fetched
+with `search_nodes`. Two softer wordings ("`tool_search` only for an ACTION; for
+INFORMATION use `search_nodes`") cut Claude's bench score by 2 to 3 cases of
+101 and did not help Grok, so the rule stays as it is.
 
 **Writing a tool so `tool_search` finds it.** Start the description with one
 sentence: action + object + what it returns, in the user's words (the ranker
