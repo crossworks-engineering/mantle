@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { AvatarSchema } from '@/lib/avatar-schema';
+import { AgentMemoryConfigSchema } from '@/lib/agent-memory-config-schema';
 import { createAgent, listAgents } from '@/lib/agents';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
@@ -23,43 +24,6 @@ const RoleEnum = z.enum([
   'reflector',
   'custom',
 ]);
-
-const MemoryConfig = z
-  .object({
-    history_limit: z.number().int().min(0).max(500).optional(),
-    history_window_hours: z
-      .number()
-      .min(0)
-      .max(24 * 365)
-      .nullable()
-      .optional(),
-    // Responder/assistant-only.
-    digest_limit: z.number().int().min(0).max(20).optional(),
-    fact_limit: z.number().int().min(0).max(100).optional(),
-    content_hit_limit: z.number().int().min(0).max(20).optional(),
-    // Summarizer-only: threshold + batch for rolling old turns into digests.
-    summarize_threshold: z.number().int().min(1).max(10_000).optional(),
-    summarize_batch: z.number().int().min(1).max(1_000).optional(),
-    // Extractor-only.
-    extract_types: z.array(z.string().min(1).max(64)).max(32).optional(),
-    extract_facts: z.boolean().optional(),
-    extract_cost_cap_micro_usd: z.number().int().min(0).max(1_000_000_000).nullable().optional(),
-    // Agent-delegation allowlist: slugs this agent may invoke_agent into.
-    // Empty array = delegation disabled (the runtime fails closed).
-    delegate_to: z.array(z.string().min(1).max(120)).max(32).optional(),
-    // Tool-result handling (KB): when a tool output exceeds inline_max_kb it
-    // spills to the tool-result store; embed_min_kb is where the envelope
-    // recommends semantic query. Fall back to env/global defaults.
-    result_handling: z
-      .object({
-        inline_max_kb: z.number().int().min(1).max(1024).optional(),
-        embed_min_kb: z.number().int().min(1).max(8192).optional(),
-        spill_max_kb: z.number().int().min(1).max(65536).optional(),
-      })
-      .strict()
-      .optional(),
-  })
-  .strict();
 
 const Params = z
   .object({
@@ -111,7 +75,7 @@ const CreateBody = z.object({
   systemPrompt: z.string().min(1).max(40_000),
   skillSlugs: z.array(z.string().min(1).max(120)).max(32).optional(),
   toolGroupSlugs: z.array(z.string().min(1).max(120)).max(64).optional(),
-  memoryConfig: MemoryConfig.optional(),
+  memoryConfig: AgentMemoryConfigSchema.optional(),
   params: Params.optional(),
   // Per-agent thinking effort (migration 0228). null/omitted = inherit the
   // person's profile setting.

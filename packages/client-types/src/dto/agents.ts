@@ -41,8 +41,11 @@ export interface AgentAvatarDTO {
 
 /** Memory/budget tuning (jsonb). All fields optional — empty = runtime defaults.
  *  Replicated standalone (NOT re-exported from @mantle/db) to keep this package
- *  zero-dep; the server aliases its `AgentMemoryConfig` against this so drift is
- *  a compile error. */
+ *  zero-dep; server/web/lib/agent-memory-config-schema.ts checks the key sets
+ *  against `AgentMemoryConfig` so drift is a compile error.
+ *
+ *  Writes (agents PATCH) MERGE onto the stored value: an omitted key keeps
+ *  its value, a key sent as `null` is removed (back to the default). */
 export interface AgentMemoryConfigDTO {
   history_limit?: number;
   history_window_hours?: number | null;
@@ -50,6 +53,11 @@ export interface AgentMemoryConfigDTO {
   fact_limit?: number;
   content_hit_limit?: number;
   chunk_limit?: number;
+  /** Corpus-map entries considered per turn. Default 300; 0 = no map. */
+  corpus_map_limit?: number;
+  /** Character budget of the rendered corpus map. Default 6,500 (about 2k
+   *  tokens); 1,000 to 50,000. */
+  corpus_map_chars?: number;
   inject_journal?: boolean;
   inject_working_notes?: boolean;
   journal_tiers?: 'off' | 'shadow' | 'live';
@@ -63,6 +71,8 @@ export interface AgentMemoryConfigDTO {
   extract_cost_cap_micro_usd?: number | null;
   delegate_to?: string[];
   max_iterations?: number;
+  max_tool_calls?: number;
+  max_calls_per_tool?: number;
   result_handling?: {
     inline_max_kb?: number;
     embed_min_kb?: number;

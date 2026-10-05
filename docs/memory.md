@@ -993,6 +993,19 @@ Visual map of who writes what, who reads what:
 > digest. The block says it is complete only when it is. The old 24k-character
 > block cost about 7.6k tokens a turn with no measured answer-quality gain
 > (dev-brain audit page e3c5d926).
+>
+> **Setting it.** `/settings/agents` → Memory → **Corpus map size**
+> (characters, 1,000 to 50,000; empty = the 6,500 default). The field shows an
+> estimate next to the value: characters ÷ **3.3** = tokens. The map is ids,
+> counts and short titles, which tokenize denser than prose (about 3.9
+> characters per token on dev). Measured on the dev assistant (Grok tokenizer,
+> round 0 of the same probe questions): the old 23,904-character map against
+> the new 6,463-character one moved round 0 by 5,288 tokens, 3.30 characters
+> per token; the whole old map was 7.6k tokens for 24,170 characters, 3.18. It
+> is an estimate: the provider's tokenizer decides the real count, and a
+> Claude or Gemini tokenizer can differ by 10 to 20%. Saving the form merges
+> `memory_config` (an omitted key keeps its stored value; a cleared field
+> sends `null`, which removes the key), see `updateAgent`.
 
 ```
 [tool definitions]                            ← front of every cached prefix (grant order)
@@ -1078,7 +1091,8 @@ Up to three Anthropic cache breakpoints emitted here (persona prompt, persona
 notes, digests + corpus map); the tool-loop adds one on the latest tail
 message, four of four total.
 Knobs: `memory_config.{fact_limit, content_hit_limit, chunk_limit,
-digest_limit}`; env `MANTLE_{SALIENCE_LAMBDA,RECENCY_*,QUERY_ENRICH}`.
+digest_limit, corpus_map_limit, corpus_map_chars}`; env
+`MANTLE_{SALIENCE_LAMBDA,RECENCY_*,QUERY_ENRICH}`.
 `chunk_limit` defaults to 8 (the runtime `CHUNK_LIMIT_DEFAULT`, ~22k chars),
 enough section passages to cover a long procedure/standard without forcing a
 full file read every turn; a per-agent override still wins.

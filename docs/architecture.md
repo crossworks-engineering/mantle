@@ -826,7 +826,8 @@ Four guardrails ([`packages/tools/src/invoke-agent-guards.ts`](../packages/tools
    even when present in the list, the closest thing to a recursion
    footgun we have. Editable via the **"Delegates to"** picker at
    `/settings/agents`; `updateAgent` jsonb-**merges** `memory_config`
-   (`||`) so a form save never silently drops the allowlist. (An earlier
+   (`||`) so a form save never silently drops the allowlist, and removes
+   a key only when the body sends it as `null` (a cleared field). (An earlier
    wholesale overwrite *did* drop it; the form doesn't render
    `delegate_to`, so saving any agent wiped the grant. That's why
    delegation looked broken until re-seeded.)

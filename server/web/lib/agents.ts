@@ -11,7 +11,6 @@ import {
   noteRef,
   type Agent,
   type AgentAvatar,
-  type AgentMemoryConfig,
   type AgentParams,
   type PersonaNote,
 } from '@mantle/db';
@@ -23,6 +22,7 @@ import {
 import { computeAgentExperience, zeroExperience } from './agent-experience';
 import { MANIFEST_AGENTS } from './system-manifest/manifest';
 import { cloneAgentFields, slugifyAgentName, uniqueAgentSlug } from './agent-clone';
+import { splitMemoryConfigPatch, type AgentMemoryConfigPatch } from './agent-memory-config-schema';
 
 /**
  * Server-side CRUD wrapper for the `agents` table. Every call is owner-scoped
@@ -207,7 +207,8 @@ export type CreateAgentInput = {
   systemPrompt: string;
   skillSlugs?: string[];
   toolGroupSlugs?: string[];
-  memoryConfig?: AgentMemoryConfig;
+  /** A null value means "key absent" (see agent-memory-config-schema.ts). */
+  memoryConfig?: AgentMemoryConfigPatch;
   params?: AgentParams;
   /** Per-agent thinking effort (migration 0228). null/omitted = inherit. */
   thinkingEffort?: AgentThinkingEffort | null;
@@ -257,7 +258,7 @@ export async function createAgent(
       systemPrompt: input.systemPrompt,
       skillSlugs: input.skillSlugs ?? [],
       toolGroupSlugs: input.toolGroupSlugs ?? [],
-      memoryConfig: input.memoryConfig ?? {},
+      memoryConfig: splitMemoryConfigPatch(input.memoryConfig ?? {}).set,
       params: input.params ?? {},
       thinkingEffort: input.thinkingEffort ?? null,
       avatar: normalizeAvatar(input.avatar ?? null),
@@ -297,15 +298,22 @@ export async function updateAgent(
   if (patch.toolGroupSlugs !== undefined) next.toolGroupSlugs = patch.toolGroupSlugs;
   // Shallow-merge memory_config instead of overwriting it. The agents form
   // only round-trips the keys it renders, so a wholesale replace silently
-  // drops any key the form doesn't send — most importantly `delegate_to`
-  // (the agent-delegation allowlist, set by the seed scripts and the
-  // Delegates-to picker). jsonb `||` is a top-level merge with the patch
-  // winning, so managed keys update while unmanaged keys survive. Clearing a
-  // key still works because the form sends it explicitly (e.g. delegate_to: []).
+  // drops any key the form doesn't send: `delegate_to` (set by the seed
+  // scripts and the Delegates-to picker), the corpus map and Journal keys, the
+  // manifest's tool caps, anything set by SQL. jsonb `||` is a top-level merge
+  // with the patch winning, so managed keys update while unmanaged keys
+  // survive. A key sent as null is REMOVED (`- text[]`), which is how a field
+  // cleared in the form goes back to the runtime default; an array or object
+  // value (delegate_to: [], result_handling: {}) still replaces as a whole.
   if (patch.memoryConfig !== undefined) {
-    next.memoryConfig = sql`coalesce(${agents.memoryConfig}, '{}'::jsonb) || ${JSON.stringify(
-      patch.memoryConfig,
-    )}::jsonb`;
+    const { set, clear } = splitMemoryConfigPatch(patch.memoryConfig);
+    const merged = sql`(coalesce(${agents.memoryConfig}, '{}'::jsonb) || ${JSON.stringify(set)}::jsonb)`;
+    // The key list goes in as one jsonb param: drizzle expands a JS array
+    // into a parenthesised value list, not a Postgres array.
+    next.memoryConfig =
+      clear.length === 0
+        ? merged
+        : sql`${merged} - array(select jsonb_array_elements_text(${JSON.stringify(clear)}::jsonb))`;
   }
   if (patch.params !== undefined) next.params = patch.params;
   if (patch.thinkingEffort !== undefined) next.thinkingEffort = patch.thinkingEffort;
