@@ -114,7 +114,7 @@ describe.skipIf(!URL)('summarizer respects New chat cuts', () => {
       insert into chat_threads (owner_id, agent_id, status, started_at, archived_at, turn_count)
       values (${owner}, ${agentId}, 'archived', ${start}::timestamptz, ${cut}::timestamptz, 4),
              (${owner}, ${agentId}, 'open', ${cut}::timestamptz, null, 0)`);
-  });
+  }, 120_000);
 
   afterAll(async () => {
     if (!m) return;

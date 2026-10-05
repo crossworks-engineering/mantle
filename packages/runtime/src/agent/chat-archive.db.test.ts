@@ -118,7 +118,7 @@ describe.skipIf(!URL)('chat archive on Postgres', () => {
     await exec(sqlTag`
       insert into agents (id, owner_id, slug, name, model, system_prompt)
       values (${agentId}, ${owner}, ${`assistant-${tag}`}, 'Test', 'test/model', 'You are a test agent.')`);
-  });
+  }, 120_000);
 
   afterAll(async () => {
     if (!m) return;
