@@ -286,7 +286,9 @@ What comes back:
 
 Sizes on a big responder (dev, 2026-10-05, 143 tools): the messages are about
 90k characters (the persona prompt about 40k, the corpus map about 24k), and
-the full tool schemas about 165k. That is why `tools` defaults to `brief`.
+the full tool schemas about 165k. That was measured before 0.238.17, which
+cut the corpus map's default budget to 6,500 characters. That is why `tools`
+defaults to `brief`.
 After the first call, pass `omit_cached: true` to drop the prefix blocks that
 did not change, and `tools: "names"` or `"none"`.
 

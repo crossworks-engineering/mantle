@@ -30,7 +30,7 @@ audit log with the service, the switch and whether the updater took it.
 ## How it works
 
 ```
-dashboard ─POST /api/services/media {enable}─▶ web
+Settings > Services ─POST /api/services/media {enable}─▶ web
 web ─writes─▶ /signal/service-request.json            (only name + boolean)
 updater sidecar ─reads, whitelists, runs─▶ docker compose on the host
 updater ─writes─▶ /signal/service-status.json, service.log, services.json

@@ -38,8 +38,7 @@ The flow is the same every time, describe, review, refine, publish:
    it running, themed to match Mantle. Try it out.
 4. **Refine in the Assist panel.** Ask for changes in plain language, *"round the
    per-person amount up,"* *"make the buttons bigger,"* *"add a dark card around
-   the result."* Each change re-builds the preview. To target one area, click
-   **Select element** and pick a region first, Appsmith then changes only that.
+   the result."* Each change re-builds the preview.
 5. **Publish when you're happy.** Until then it's a draft, see below.
 
 That tip calculator needs no outside data, so it works the moment it's built.
@@ -99,9 +98,7 @@ after changes), **Publish**, and **Discard**, and the workspace has two tabs:
 
 - **Builder**: the **live preview** of the running app (themed to match Mantle,
   including dark mode and your colour theme) next to the **Assist panel**, where
-  you ask Appsmith for changes. This is where you'll spend most of your time. Hit
-  **Select element**, then click a region of the preview to *point Appsmith at
-  it*, your next request changes only that part and leaves the rest alone.
+  you ask Appsmith for changes. This is where you'll spend most of your time.
 - **Code**: the app's **source files** in a file tree on the left and an
   **editor** on the right. Reading the code is optional, but you *can* edit it:
   type directly (with syntax highlighting), hit **Format** to tidy a file with

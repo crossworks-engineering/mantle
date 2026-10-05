@@ -108,6 +108,8 @@ Leave `liveIds` **absent** when the list call failed, the report distinguishes "
 
 **This is the big decision.** Pick the right starting template based on what the provider's wire shape looks like:
 
+Whatever the template, send the provider's HTTP calls through [`providerFetch`](../packages/voice/src/adapters/provider-fetch.ts) (or hand it to the SDK as its fetch), never the bare built-in fetch. Why: [provider-http.md](provider-http.md).
+
 ### Decision tree
 
 ```
