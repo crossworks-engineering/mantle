@@ -219,15 +219,29 @@ export function lintToolRefs(source: AppSource, declaredSlugs: string[]): BuildM
  *  and named (including a default+named combination). */
 const IMPORT_RE = /import\s+([^'";]+?)\s+from\s*['"]([^'"]+)['"]/g;
 
+/** `import type …` — the whole clause is type-only. Lookahead keeps
+ *  `import type from 'm'` and `import type, { a } from 'm'` (a default import
+ *  that happens to be NAMED `type`) as value imports. */
+const TYPE_ONLY_CLAUSE_RE = /^type(?=\s*[{*]|\s+[A-Za-z_$])/;
+
+/** `{ type X }` / `{ type X as Y }` — one type-only specifier. `{ type }` and
+ *  `{ type as t }` import a value named `type` and stay checked. */
+const TYPE_ONLY_SPECIFIER_RE = /^type\s+(?!as\b)[A-Za-z_$]/;
+
 /** Split an import clause into the names it binds FROM the module.
  *  `Foo`               → default
  *  `* as ns`           → namespace (binds nothing by name; nothing to check)
  *  `{ a, b as c }`     → a, b
  *  `Foo, { a }`        → default, a
- *  Returns the names as the MODULE must provide them, not the local aliases. */
+ *  `type { A }`        → nothing (type-only)
+ *  `{ type A, b }`     → b
+ *  Returns the names as the MODULE must provide them, not the local aliases.
+ *  Type-only imports and specifiers are skipped: the compiler erases them, so
+ *  they never reach the runtime and cannot fail to link. */
 function importedNames(clause: string): { names: string[]; namespace: boolean } {
   const names: string[] = [];
   let namespace = false;
+  if (TYPE_ONLY_CLAUSE_RE.test(clause)) return { names, namespace };
   const braced = clause.match(/\{([^}]*)\}/);
   const head = clause
     .slice(0, braced ? clause.indexOf('{') : undefined)
@@ -239,6 +253,7 @@ function importedNames(clause: string): { names: string[]; namespace: boolean } 
   }
   if (braced) {
     for (const part of braced[1]!.split(',')) {
+      if (TYPE_ONLY_SPECIFIER_RE.test(part.trim())) continue;
       const name = (part.split(/\s+as\s+/)[0] ?? '').trim();
       if (name) names.push(name);
     }
@@ -262,7 +277,8 @@ function importedNames(clause: string): { names: string[]; namespace: boolean } 
  * Errors, not warnings: the app is guaranteed not to run.
  *
  * Local/relative imports are the bundler's business and are skipped, as is a
- * namespace import (`* as ns`), which binds no names and cannot mismatch.
+ * namespace import (`* as ns`), which binds no names and cannot mismatch, and
+ * any type-only import or specifier, which the compiler erases.
  */
 export function lintRuntimeImports(
   source: AppSource,

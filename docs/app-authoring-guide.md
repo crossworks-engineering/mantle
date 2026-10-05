@@ -63,6 +63,8 @@ Only these resolve, esbuild **rejects any other bare import**:
 - relative files within the app (`./lib/fmt`, etc.)
 
 No `axios`, no `date-fns`, no arbitrary npm. Bring helpers as local files.
+Type-only imports (`import type { ReactNode } from 'react'`, `import { type X }`,
+`export type { X } from`) are erased at compile time, so neither check counts them.
 
 ## The entry contract
 
