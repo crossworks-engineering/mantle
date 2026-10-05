@@ -408,7 +408,9 @@ starts model work.
 **Continue from this.** `POST /api/assistant/threads/<id>/continue` archives the
 current chat (an empty one is only re-seeded) and opens a thread with
 `seed_thread_id`. While that thread is open, the archived thread's summary leads
-the digests ("Continued from the archived chat ..."), not its raw turns. An
+the digests ("Continued from the archived chat ..."), not its raw turns. A
+previous chat with no summary (its call failed at archive time) is summarised
+first, on that click only. An
 archived thread is read-only: there is no route that writes into it.
 
 **API** (owner-scoped, agent resolved like `/api/assistant/thread`):

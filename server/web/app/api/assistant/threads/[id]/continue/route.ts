@@ -1,6 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { getChatThread } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
+import { summarizeChatThread } from '@mantle/runtime/agent';
 import { getOwnerOr401 } from '@/lib/auth';
 import { archiveResponse } from '@/lib/chat-archive-http';
 
@@ -9,7 +10,9 @@ import { archiveResponse } from '@/lib/chat-archive-http';
  * archive, docs/conversation.md §6c). Starts a new chat for the thread's
  * agent whose context opens with that archived thread's summary, not its raw
  * turns. The current chat is archived first, like "New chat" (and summarised
- * in this request); an empty current chat is only re-seeded.
+ * in this request); an empty current chat is only re-seeded. A previous chat
+ * whose summary failed at archive time is summarised first (one call, on this
+ * click only), or the new chat would start with nothing to continue from.
  */
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
@@ -19,6 +22,11 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
   const thread = await getChatThread(user.id, id);
   if (!thread || thread.status !== 'archived') {
     return NextResponse.json({ error: 'archived chat not found' }, { status: 404 });
+  }
+  if (!thread.summaryNodeId) {
+    await summarizeChatThread(user.id, thread.id).catch((err) => {
+      console.warn('[api/assistant/threads] summary before continue failed:', err);
+    });
   }
   return archiveResponse({
     ownerId: user.id,
