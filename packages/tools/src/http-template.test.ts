@@ -14,8 +14,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildHttpRequest,
+  collectOauthRefs,
   collectParamNames,
   collectSecretRefs,
+  oauthKey,
   scrubSecrets,
   type HttpHandler,
 } from './http-template';
@@ -204,5 +206,40 @@ describe('scrubSecrets', () => {
     const s = new Map([['svc/key', plaintext]]);
     const b64 = Buffer.from(plaintext, 'utf8').toString('base64');
     expect(scrubSecrets(`echo: ${b64}`, s)).toBe('echo: [secret:svc/key]');
+  });
+});
+
+describe('{{oauth:…}} refs', () => {
+  const h: HttpHandler = {
+    kind: 'http',
+    url: 'https://api.example.com/items',
+    method: 'GET',
+    headers: { Authorization: 'Bearer {{oauth:acme-tools}}', 'x-q': '{q}' },
+  };
+  const withToken = new Map([[oauthKey('acme-tools'), 'tok-LIVE']]);
+
+  it('collects the group slug and is never mistaken for a {param}', () => {
+    expect(collectOauthRefs(h)).toEqual(['acme-tools']);
+    expect(collectParamNames(h)).toEqual(['q']);
+    expect(collectSecretRefs(h)).toEqual([]);
+  });
+
+  it('fills the token from the secrets map', () => {
+    const req = buildHttpRequest(h, { q: 'x' }, withToken);
+    expect(req.headers.Authorization).toBe('Bearer tok-LIVE');
+  });
+
+  it('does not resolve a ref passed in as model input', () => {
+    const req = buildHttpRequest(h, { q: '{{oauth:acme-tools}}' }, withToken);
+    expect(req.headers['x-q']).toBe('{{oauth:acme-tools}}');
+  });
+
+  it('leaves the ref literal when no token was resolved', () => {
+    const req = buildHttpRequest(h, { q: 'x' }, new Map());
+    expect(req.headers.Authorization).toBe('Bearer {{oauth:acme-tools}}');
+  });
+
+  it('is scrubbed like a secret', () => {
+    expect(scrubSecrets('echo tok-LIVE', withToken)).toBe('echo [secret:oauth:acme-tools]');
   });
 });

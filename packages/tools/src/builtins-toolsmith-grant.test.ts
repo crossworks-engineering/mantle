@@ -358,6 +358,138 @@ describe('tool_group_ensure', () => {
       }),
     );
   });
+
+  it('a re-declared base_url, secret_ref or auth_template replaces the stored one', async () => {
+    h.selectQueue.push([
+      {
+        ...EXISTING_GROUP,
+        integration: {
+          service: 'owm',
+          baseUrl: 'https://old.example.com',
+          secretRef: 'owm/old',
+          authTemplate: { query: { appid: '{{secret:owm/old}}' } },
+        },
+      },
+    ]);
+    vi.mocked(listApiKeys).mockResolvedValue([{ service: 'owm', label: 'new' }] as never);
+    await ensure.handler(
+      {
+        slug: 'geo-tools',
+        tool_slugs: [],
+        base_url: 'https://new.example.com',
+        secret_ref: 'owm/new',
+        auth_template: { query: { appid: '{{secret:owm/new}}' } },
+      },
+      ctx,
+    );
+    expect(h.updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        integration: {
+          service: 'owm',
+          baseUrl: 'https://new.example.com',
+          secretRef: 'owm/new',
+          authTemplate: { query: { appid: '{{secret:owm/new}}' } },
+        },
+      }),
+    );
+  });
+
+  it('binds oauth2 client credentials and defaults the bearer placement', async () => {
+    vi.mocked(listApiKeys).mockResolvedValue([{ service: 'acme', label: 'client-id' }] as never);
+    const res = await ensure.handler(
+      {
+        slug: 'acme-tools',
+        name: 'Acme',
+        tool_slugs: [],
+        service: 'acme',
+        base_url: 'https://api.example.com',
+        oauth2: {
+          token_url: 'https://auth.example.com/oauth/token',
+          client_id_ref: 'acme/client-id',
+          client_secret_ref: '{{secret:acme/client-secret}}',
+          scope: 'read',
+        },
+      },
+      ctx,
+    );
+    expect(h.insertValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        integration: {
+          service: 'acme',
+          baseUrl: 'https://api.example.com',
+          authTemplate: { headers: { Authorization: 'Bearer {{oauth:acme-tools}}' } },
+          oauth2: {
+            grant: 'client_credentials',
+            tokenUrl: 'https://auth.example.com/oauth/token',
+            clientIdRef: 'acme/client-id',
+            clientSecretRef: 'acme/client-secret',
+            scope: 'read',
+          },
+        },
+      }),
+    );
+    expect(outputOf(res).integration).toMatchObject({
+      oauth2: {
+        client_id_ref: 'acme/client-id',
+        client_secret_ref: 'acme/client-secret',
+        client_auth: 'basic',
+      },
+    });
+    // Only the secret is missing from the vault.
+    expect(outputOf(res).warnings).toEqual([
+      expect.stringMatching(
+        /oauth2\.client_secret_ref 'acme\/client-secret' has no matching vault entry/,
+      ),
+    ]);
+  });
+
+  it('refuses oauth2 without a base_url, writing nothing', async () => {
+    const res = await ensure.handler(
+      {
+        slug: 'acme-tools',
+        name: 'Acme',
+        tool_slugs: [],
+        service: 'acme',
+        oauth2: {
+          token_url: 'https://auth.example.com/oauth/token',
+          client_id_ref: 'acme/client-id',
+          client_secret_ref: 'acme/client-secret',
+        },
+      },
+      ctx,
+    );
+    expect(errorOf(res)).toMatch(/oauth2 needs integration\.base_url/);
+    expect(h.insert).not.toHaveBeenCalled();
+  });
+
+  it('oauth2: null removes the OAuth2 config', async () => {
+    h.selectQueue.push([
+      {
+        ...EXISTING_GROUP,
+        integration: {
+          service: 'acme',
+          baseUrl: 'https://api.example.com',
+          authTemplate: { headers: { 'X-Key': '{{secret:acme/key}}' } },
+          oauth2: {
+            grant: 'client_credentials',
+            tokenUrl: 'https://auth.example.com/oauth/token',
+            clientIdRef: 'acme/client-id',
+            clientSecretRef: 'acme/client-secret',
+          },
+        },
+      },
+    ]);
+    await ensure.handler({ slug: 'geo-tools', tool_slugs: [], oauth2: null }, ctx);
+    expect(h.updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        integration: {
+          service: 'acme',
+          baseUrl: 'https://api.example.com',
+          authTemplate: { headers: { 'X-Key': '{{secret:acme/key}}' } },
+        },
+      }),
+    );
+  });
 });
 
 describe('tool_group_ensure on a group below admin (client logins C5 audit, L3)', () => {

@@ -59,6 +59,7 @@ export const tool_group_list: BuiltinToolDef = {
                 base_url: g.integration.baseUrl ?? null,
                 secret_ref: g.integration.secretRef ?? null,
                 auth_template: g.integration.authTemplate ?? null,
+                oauth2: oauth2Summary(g.integration.oauth2),
                 has_stored_docs: !!g.integration.docsNodeId,
                 docs_captured_at: g.integration.docsUpdatedAt ?? null,
                 skill_slug: g.integration.skillSlug ?? null,
@@ -70,12 +71,26 @@ export const tool_group_list: BuiltinToolDef = {
   },
 };
 
+/** The non-secret OAuth2 config, for tool results: refs, never values. */
+function oauth2Summary(o: ToolGroupIntegration['oauth2']) {
+  if (!o) return null;
+  return {
+    grant: o.grant,
+    token_url: o.tokenUrl,
+    client_id_ref: o.clientIdRef,
+    client_secret_ref: o.clientSecretRef,
+    scope: o.scope ?? null,
+    audience: o.audience ?? null,
+    client_auth: o.clientAuth ?? 'basic',
+  };
+}
+
 export const tool_group_ensure: BuiltinToolDef = {
   slug: 'tool_group_ensure',
   name: 'Create or update a tool group',
   description:
     "Create a tool group if it doesn't exist, or update its tool list. mode 'add' (default) merges slugs in; 'replace' overwrites the list. Unknown tool slugs are reported as warnings, not errors. " +
-    'Pass `service` (+ `base_url` / `secret_ref` / `auth_template`) to make the group an INTEGRATION: auth placement and the base URL are decided ONCE here, and every tool later authored with group_slug inherits them. ' +
+    'Pass `service` (+ `base_url` / `secret_ref` or `oauth2` / `auth_template`) to make the group an INTEGRATION: auth placement and the base URL are decided ONCE here, and every tool later authored with group_slug inherits them. ' +
     "Changing the tools of a group below admin level (a team or client group) waits for the operator's approval (Pending). " +
     'Then `api_docs_set` the API documentation onto the same group so the next authoring pass reads it instead of the web.',
   inputSchema: {
@@ -117,6 +132,35 @@ export const tool_group_ensure: BuiltinToolDef = {
         properties: {
           headers: { type: 'object', description: 'header name → value template' },
           query: { type: 'object', description: 'query key → value template' },
+        },
+      },
+      oauth2: {
+        type: 'object',
+        description:
+          'OAuth2 client credentials, for APIs that hand out bearer tokens. Both credentials are vault refs (`api_key_refs`). Needs base_url. When auth_template is unset it defaults to { "headers": { "Authorization": "Bearer {{oauth:<this group slug>}}" } }. Pass null to remove.',
+        properties: {
+          token_url: { type: 'string', description: "the provider's https:// token endpoint" },
+          client_id_ref: {
+            type: 'string',
+            description: "vault ref 'service/label' of the client id",
+          },
+          client_secret_ref: {
+            type: 'string',
+            description: "vault ref 'service/label' of the client secret",
+          },
+          scope: {
+            type: 'string',
+            description: 'space-separated scopes, if the provider wants them',
+          },
+          audience: {
+            type: 'string',
+            description: 'audience / resource id, if the provider wants one',
+          },
+          client_auth: {
+            type: 'string',
+            enum: ['basic', 'body'],
+            description: "how the client authenticates to the token endpoint; default 'basic'",
+          },
         },
       },
     },
@@ -246,16 +290,32 @@ export const tool_group_ensure: BuiltinToolDef = {
       input.service !== undefined ||
       input.base_url !== undefined ||
       input.secret_ref !== undefined ||
-      input.auth_template !== undefined;
+      input.auth_template !== undefined ||
+      input.oauth2 !== undefined;
     let integration: ToolGroupIntegration | null = existing?.integration ?? null;
     if (wantsIntegration) {
-      const parsed = parseIntegrationMeta({
+      // Input lands on the stored row's camelCase keys: parseIntegrationMeta
+      // reads camel before snake, so a snake key beside the stored camel one
+      // would lose and a re-declared base_url / secret_ref / auth_template
+      // would be silently dropped.
+      const merged: Record<string, unknown> = {
         ...(integration ?? {}),
         ...(input.service !== undefined ? { service: str(input.service).trim() } : {}),
-        ...(input.base_url !== undefined ? { base_url: input.base_url } : {}),
-        ...(input.secret_ref !== undefined ? { secret_ref: input.secret_ref } : {}),
-        ...(input.auth_template !== undefined ? { auth_template: input.auth_template } : {}),
-      });
+        ...(input.base_url !== undefined ? { baseUrl: input.base_url } : {}),
+        ...(input.secret_ref !== undefined ? { secretRef: input.secret_ref } : {}),
+        ...(input.auth_template !== undefined ? { authTemplate: input.auth_template } : {}),
+      };
+      if (input.oauth2 === null) {
+        delete merged.oauth2;
+      } else if (input.oauth2 !== undefined) {
+        merged.oauth2 = input.oauth2;
+        // The token's placement is a given for nearly every API: default it,
+        // so declaring oauth2 alone yields tools that authenticate.
+        if (!merged.authTemplate) {
+          merged.authTemplate = { headers: { Authorization: `Bearer {{oauth:${slug}}}` } };
+        }
+      }
+      const parsed = parseIntegrationMeta(merged);
       if (!parsed.ok) return { ok: false, error: parsed.error };
       integration = parsed.value;
       warnings.push(...parsed.warnings);
@@ -307,6 +367,7 @@ export const tool_group_ensure: BuiltinToolDef = {
                 base_url: integration.baseUrl ?? null,
                 secret_ref: integration.secretRef ?? null,
                 auth_template: integration.authTemplate ?? null,
+                oauth2: oauth2Summary(integration.oauth2),
                 has_stored_docs: !!integration.docsNodeId,
                 skill_slug: integration.skillSlug ?? null,
               },

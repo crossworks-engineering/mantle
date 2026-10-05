@@ -204,8 +204,10 @@ export {
 } from './crud';
 export {
   buildHttpRequest,
+  collectOauthRefs,
   collectParamNames,
   collectSecretRefs,
+  oauthKey,
   refKey,
   scrubSecrets,
   templateStrings,
@@ -349,6 +351,7 @@ export {
   type OpenapiSyncRowState,
 } from './openapi-sync';
 export { parseOpenapiBinding, type ToolGroupOpenapiBinding } from './integration-meta';
+export { parseOauth2Binding, type ToolGroupOauth2 } from './integration-meta';
 export { reconcileMeta, ruleReconcilerFor } from './rule-reconciler';
 export {
   newTurnTaint,

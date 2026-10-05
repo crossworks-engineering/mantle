@@ -14,7 +14,7 @@ import {
   parseIntegrationMeta,
 } from './integration-meta';
 import { collectSecretRefs, refKey } from './http-template';
-import { parseMcpBinding } from './integration-meta';
+import { parseMcpBinding, parseOauth2Binding } from './integration-meta';
 
 const ok = <T extends { ok: boolean }>(r: T): Extract<T, { ok: true }> => {
   expect(r.ok, 'error' in r ? String((r as { error: string }).error) : '').toBe(true);
@@ -349,5 +349,102 @@ describe('parseMcpBinding: OAuth app + scope', () => {
       oauth: { enabled: true, scope: '{{secret:mcp-x/oauth-tokens}}' },
     });
     expect(r.ok).toBe(false);
+  });
+});
+
+describe('parseOauth2Binding', () => {
+  const base = {
+    token_url: 'https://auth.example.com/oauth/token',
+    client_id_ref: 'acme/client-id',
+    client_secret_ref: 'acme/client-secret',
+  };
+
+  it('normalises snake case, unwraps {{secret:…}} refs and defaults the grant', () => {
+    const r = ok(
+      parseOauth2Binding({
+        ...base,
+        client_secret_ref: '{{secret:acme/client-secret}}',
+        scope: ' read write ',
+        audience: 'api://acme',
+        client_auth: 'body',
+      }),
+    );
+    expect(r.value).toEqual({
+      grant: 'client_credentials',
+      tokenUrl: 'https://auth.example.com/oauth/token',
+      clientIdRef: 'acme/client-id',
+      clientSecretRef: 'acme/client-secret',
+      scope: 'read write',
+      audience: 'api://acme',
+      clientAuth: 'body',
+    });
+  });
+
+  it('accepts its own camelCase output (a DB round-trip)', () => {
+    const first = ok(parseOauth2Binding(base)).value;
+    expect(ok(parseOauth2Binding(first)).value).toEqual(first);
+  });
+
+  it('refuses a plain-http token URL: the client secret is sent to it', () => {
+    const r = parseOauth2Binding({ ...base, token_url: 'http://auth.example.com/token' });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/https:\/\/ token endpoint/);
+  });
+
+  it('refuses a plaintext credential where a vault ref belongs', () => {
+    const r = parseOauth2Binding({ ...base, client_secret_ref: 'sk_live_abc123' });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/must be 'service\/label'/);
+  });
+
+  it("refuses refs into the reserved 'mcp-' vault namespace", () => {
+    const r = parseOauth2Binding({ ...base, client_id_ref: 'mcp-x/client' });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/reserved 'mcp-' namespace/);
+  });
+
+  it('refuses other grants and unknown client auth styles', () => {
+    expect(parseOauth2Binding({ ...base, grant: 'password' }).ok).toBe(false);
+    expect(parseOauth2Binding({ ...base, client_auth: 'jwt' }).ok).toBe(false);
+  });
+
+  it('refuses a credential ref smuggled into scope', () => {
+    expect(parseOauth2Binding({ ...base, scope: '{{secret:acme/client-secret}}' }).ok).toBe(false);
+  });
+});
+
+describe('parseIntegrationMeta with oauth2', () => {
+  const oauth2 = {
+    token_url: 'https://auth.example.com/oauth/token',
+    client_id_ref: 'acme/client-id',
+    client_secret_ref: 'acme/client-secret',
+  };
+
+  it('requires a base_url, since the token only goes to its origin', () => {
+    const r = parseIntegrationMeta({ service: 'acme', oauth2 });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/oauth2 needs integration\.base_url/);
+  });
+
+  it('treats a Bearer {{oauth:…}} header as vault-backed, with no warning', () => {
+    const r = ok(
+      parseIntegrationMeta({
+        service: 'acme',
+        base_url: 'https://api.example.com',
+        oauth2,
+        auth_template: { headers: { Authorization: 'Bearer {{oauth:acme-tools}}' } },
+      }),
+    );
+    expect(r.value.oauth2?.clientSecretRef).toBe('acme/client-secret');
+    expect(r.warnings).toEqual([]);
+  });
+
+  it('warns when oauth2 is set but no template places the token', () => {
+    const r = ok(
+      parseIntegrationMeta({ service: 'acme', base_url: 'https://api.example.com', oauth2 }),
+    );
+    expect(r.warnings).toEqual([
+      expect.stringMatching(/no auth_template value carries an \{\{oauth/),
+    ]);
   });
 });

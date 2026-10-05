@@ -67,6 +67,55 @@ dispatcher. A credential-shaped literal in an auth template earns a warning
 rather than being quietly stored in the clear, and neither a stored docs file nor
 a usage skill may contain a key.
 
+### OAuth2 client credentials
+
+Some APIs do not take a fixed key. They hand out short-lived bearer tokens in
+exchange for a client id and a client secret (OAuth2 client credentials, RFC
+6749 section 4.4). A group declares that with `oauth2`:
+
+```jsonc
+// tool_group_ensure input
+{
+  "slug": "acme-tools",
+  "service": "acme",
+  "base_url": "https://api.example.com/v1",
+  "oauth2": {
+    "token_url": "https://auth.example.com/oauth/token", // https only
+    "client_id_ref": "acme/client-id", // vault refs, never plaintext
+    "client_secret_ref": "acme/client-secret",
+    "scope": "read write", // optional
+    "audience": "api://acme", // optional
+    "client_auth": "basic", // or "body"; default basic
+  },
+}
+```
+
+When `auth_template` is unset it defaults to
+`{ "headers": { "Authorization": "Bearer {{oauth:acme-tools}}" } }`, so tools
+authored into the group (and OpenAPI connector tools) inherit the token
+placement like any other credential. `{{oauth:<group-slug>}}` is a template ref
+like `{{secret:…}}`: it resolves only in the author's templates, never from
+model input. `oauth2: null` removes the config.
+
+At call time the dispatcher (`packages/tools/src/oauth2-client-credentials.ts`):
+
+- reads both credentials from the vault and posts
+  `grant_type=client_credentials` to `token_url` through `safeFetch`, so the
+  token URL meets the same egress rules as every api-tool call;
+- keeps the token **in process memory only**, never in the DB, a log or a
+  trace, until a safety margin before `expires_in` (a tenth of the lifetime,
+  at most a minute; five minutes when the provider sends no expiry). The cache
+  key hashes the config and the secret, so a rotated secret gets a new token;
+- runs **one fetch at a time per group** (single-flight), so parallel calls
+  share one token request;
+- on a **401** from the API, replaces the token once and retries once;
+- sends the token **only to the `base_url` origin**: a request to any other
+  origin is refused before anything is sent, which is why `oauth2` needs
+  `base_url`;
+- scrubs the token, the client id and the secret from every result and error,
+  and passes on only the RFC `error` / `error_description` fields of a failed
+  token response, never the raw body.
+
 The owner sees and can correct all of it at **Settings → Tool groups**: service,
 base URL, credential, stored docs (view/replace), and a link to the usage skill.
 

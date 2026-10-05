@@ -14,7 +14,15 @@ import { asSystem, db, toolGroups, type Tool, type ToolHandler } from '@mantle/d
 import { getApiKey } from '@mantle/api-keys';
 import { getBuiltin, getBuiltinHandler } from './registry';
 import { checkToolPreconditions } from './preconditions';
-import { buildHttpRequest, collectSecretRefs, refKey, scrubSecrets } from './http-template';
+import {
+  buildHttpRequest,
+  collectOauthRefs,
+  collectSecretRefs,
+  oauthKey,
+  refKey,
+  scrubSecrets,
+} from './http-template';
+import { getClientCredentialsToken } from './oauth2-client-credentials';
 import { safeFetch } from './safe-fetch';
 import {
   classifyRecipeStepTool,
@@ -351,6 +359,80 @@ async function resolveHandlerSecrets(
   return { secrets };
 }
 
+/** What a `{{oauth:<slug>}}` ref needs at send time: how to get (and, after
+ *  a 401, replace) the token, and the only origin it may be sent to. */
+type OauthBinding = {
+  slug: string;
+  origin: string;
+  token: (staleToken?: string) => Promise<string>;
+};
+
+/** Load the group behind a `{{oauth:<slug>}}` ref and its vault credentials.
+ *  Every failure is a teaching error; no token is fetched until all pass. */
+async function resolveOauthBinding(
+  ownerId: string,
+  slug: string,
+): Promise<OauthBinding | { error: string }> {
+  // asSystem: like an MCP connector's binding, the group's auth config is
+  // infrastructure; a client-level caller may not read the group row.
+  const [group] = await asSystem(() =>
+    db
+      .select()
+      .from(toolGroups)
+      .where(and(eq(toolGroups.ownerId, ownerId), eq(toolGroups.slug, slug)))
+      .limit(1),
+  );
+  const config = group?.integration?.oauth2;
+  if (!group || !config) {
+    return {
+      error: `{{oauth:${slug}}} names no integration group with OAuth2 configured. Set oauth2 on group '${slug}' with tool_group_ensure`,
+    };
+  }
+  if (!group.enabled) {
+    return {
+      error: `integration group '${slug}' is disabled. Ask the owner to enable it under Settings → Tool groups`,
+    };
+  }
+  let origin: string;
+  try {
+    origin = new URL(group.integration?.baseUrl ?? '').origin;
+  } catch {
+    return {
+      error: `integration group '${slug}' has OAuth2 but no valid base_url. The token is only ever sent to the base_url's origin, so set base_url with tool_group_ensure`,
+    };
+  }
+  const creds: string[] = [];
+  for (const ref of [config.clientIdRef, config.clientSecretRef]) {
+    const [service, label] = ref.split('/') as [string, string];
+    if (isMcpManagedSecretService(service)) {
+      return {
+        error: `OAuth2 credential '${ref}' is in the reserved 'mcp-' vault namespace. Use a key the owner added under Settings → API keys`,
+      };
+    }
+    const plaintext = await getApiKey(ownerId, service, label);
+    if (plaintext === null) {
+      return {
+        error: `OAuth2 credential '${ref}' for group '${slug}' not found in the API-key vault. Add it under Settings → API keys (service '${service}', label '${label}')`,
+      };
+    }
+    creds.push(plaintext);
+  }
+  const [clientId, clientSecret] = creds as [string, string];
+  return {
+    slug,
+    origin,
+    token: (staleToken) =>
+      getClientCredentialsToken({
+        ownerId,
+        groupSlug: slug,
+        config,
+        clientId,
+        clientSecret,
+        ...(staleToken !== undefined ? { staleToken } : {}),
+      }),
+  };
+}
+
 async function dispatchHttp(
   h: Extract<ToolHandler, { kind: 'http' }>,
   input: Record<string, unknown>,
@@ -361,23 +443,62 @@ async function dispatchHttp(
   const { secrets } = resolved;
   const scrub = (s: string) => scrubSecrets(s, secrets);
 
+  const oauthSlugs = collectOauthRefs(h);
+  if (oauthSlugs.length > 1) {
+    return {
+      ok: false,
+      error: `a tool may reference one OAuth2 group, not ${oauthSlugs.length} (${oauthSlugs.join(', ')}). Author one tool per group`,
+    };
+  }
+  let oauth: OauthBinding | null = null;
+  if (oauthSlugs.length === 1) {
+    const binding = await resolveOauthBinding(ctx.ownerId, oauthSlugs[0]!);
+    if ('error' in binding) return { ok: false, error: binding.error };
+    oauth = binding;
+  }
+
   try {
     // Inside the try: buildHttpRequest can throw (e.g. encodeURIComponent on a
     // lone surrogate in model input) and must surface as a scrubbed error, not
     // an unhandled rejection out of the dispatcher.
-    const req = buildHttpRequest(h, input, secrets);
-    const init: RequestInit = {
-      method: req.method,
-      headers: req.headers,
-      signal: AbortSignal.timeout(h.timeoutMs ?? HTTP_TIMEOUT_MS_DEFAULT),
+    const send = async (): Promise<{ res: Response; url: string; method: string }> => {
+      const req = buildHttpRequest(h, input, secrets);
+      // The token goes to the group's own API and nowhere else: a template or
+      // a model-filled {param} that points the request at another origin is
+      // refused before anything is sent.
+      if (oauth && new URL(req.url).origin !== oauth.origin) {
+        throw new Error(
+          `refused: this request goes to ${new URL(req.url).origin}, but the OAuth2 token of group '${oauth.slug}' is only sent to its base_url origin ${oauth.origin}`,
+        );
+      }
+      const init: RequestInit = {
+        method: req.method,
+        headers: req.headers,
+        signal: AbortSignal.timeout(h.timeoutMs ?? HTTP_TIMEOUT_MS_DEFAULT),
+      };
+      if (req.body !== null) init.body = req.body;
+      const res = await safeFetch(req.url, init, [...secrets.values()]);
+      return { res, url: req.url, method: req.method };
     };
-    if (req.body !== null) init.body = req.body;
 
-    const res = await safeFetch(req.url, init, [...secrets.values()]);
+    let token: string | undefined;
+    if (oauth) {
+      token = await oauth.token();
+      secrets.set(oauthKey(oauth.slug), token);
+    }
+    let { res, url, method } = await send();
+    if (oauth && token !== undefined && res.status === 401) {
+      // The token may have been revoked or expired early: replace it once and
+      // retry once. The dead token stays in the map so it is still scrubbed.
+      await res.body?.cancel().catch(() => {});
+      secrets.set(`${oauthKey(oauth.slug)}#stale`, token);
+      secrets.set(oauthKey(oauth.slug), await oauth.token(token));
+      ({ res, url, method } = await send());
+    }
     const text = await res.text();
     ctx.step?.setMeta({
-      url: scrub(req.url),
-      method: req.method,
+      url: scrub(url),
+      method,
       status: res.status,
       length: text.length,
     });

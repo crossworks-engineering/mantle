@@ -11,6 +11,11 @@
  *                                    can't inject refs (substitution order), and
  *                                    `scrubSecrets` strips plaintexts from any
  *                                    error text before it leaves the dispatcher.
+ *   `{{oauth:group-slug}}`         a bearer token the dispatcher obtains with
+ *                                    that integration group's OAuth2 client
+ *                                    credentials (see oauth2-client-credentials.ts).
+ *                                    Same injection rules as secret refs; it is
+ *                                    carried in the secrets map as `oauth:<slug>`.
  *
  * Input fields not consumed by any template spill over: into the JSON body for
  * non-GET requests (preserving the legacy whole-input-as-body behavior for
@@ -27,6 +32,9 @@ export type SecretRef = { service: string; label: string };
 
 /** `{{secret:service/label}}` — service/label match the api_keys columns. */
 const SECRET_REF_PATTERN = /\{\{\s*secret:([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)\s*\}\}/g;
+
+/** `{{oauth:group-slug}}`: the group slug charset (lowercase, digits, -, _). */
+const OAUTH_REF_PATTERN = /\{\{\s*oauth:([a-z0-9_-]{1,120})\s*\}\}/g;
 
 /** `{param}` — a brace-wrapped identifier. Secret refs can't false-match:
  *  `:` and `/` aren't in the identifier class, and in buildHttpRequest the
@@ -56,6 +64,20 @@ export function collectSecretRefs(h: HttpHandler): SecretRef[] {
     }
   }
   return [...seen.values()];
+}
+
+/** The secrets-map key a resolved `{{oauth:<slug>}}` token is carried under. */
+export function oauthKey(groupSlug: string): string {
+  return `oauth:${groupSlug}`;
+}
+
+/** Collect distinct `{{oauth:…}}` group slugs across the handler's templates. */
+export function collectOauthRefs(h: HttpHandler): string[] {
+  const seen = new Set<string>();
+  for (const s of templateStrings(h)) {
+    for (const m of s.matchAll(OAUTH_REF_PATTERN)) seen.add(m[1]!);
+  }
+  return [...seen];
 }
 
 /** Collect distinct `{param}` names across the handler's templates. */
@@ -119,22 +141,27 @@ export function buildHttpRequest(
 ): BuiltHttpRequest {
   const used = new Set<string>();
 
-  // Pre-pass: swap secret refs in the *author's* templates for opaque tokens
-  // so input-injected `{{secret:…}}` strings can never resolve.
+  // Pre-pass: swap secret and oauth refs in the *author's* templates for
+  // opaque tokens so input-injected `{{secret:…}}` / `{{oauth:…}}` strings can
+  // never resolve.
   const tokens = new Map<string, string>();
   let tokenSeq = 0;
   // Random per-call nonce so the token is unguessable: a model can't pass an
   // input value that reconstructs a live token and round-trips a secret out
   // (input NUL bytes are also stripped in encodeParam as a second line).
   const nonce = randomUUID();
+  const swap = (m: string, plaintext: string | undefined): string => {
+    if (plaintext === undefined) return m;
+    const token = '\u0000S' + nonce + ':' + tokenSeq++ + '\u0000';
+    tokens.set(token, plaintext);
+    return token;
+  };
   const tokenize = (s: string): string =>
-    s.replace(SECRET_REF_PATTERN, (m, service: string, label: string) => {
-      const plaintext = secrets.get(`${service}/${label}`);
-      if (plaintext === undefined) return m;
-      const token = '\u0000S' + nonce + ':' + tokenSeq++ + '\u0000';
-      tokens.set(token, plaintext);
-      return token;
-    });
+    s
+      .replace(SECRET_REF_PATTERN, (m, service: string, label: string) =>
+        swap(m, secrets.get(`${service}/${label}`)),
+      )
+      .replace(OAUTH_REF_PATTERN, (m, slug: string) => swap(m, secrets.get(oauthKey(slug))));
   const detokenize = (s: string, urlEncode = false): string => {
     let out = s;
     for (const [token, plaintext] of tokens) {

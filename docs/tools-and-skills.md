@@ -405,6 +405,11 @@ migration `0137`) that turns it from a grant bundle into a whole API integration
 }
 ```
 
+An API that issues OAuth2 tokens from a client id and secret carries `oauth2`
+instead of `secretRef`, and its auth template places `{{oauth:<group-slug>}}`;
+the token is fetched, cached in memory and refreshed at call time (see
+[toolsmith.md](toolsmith.md#oauth2-client-credentials)).
+
 Two things about this are worth stating plainly against the capability-only rule:
 
 1. **Configuration is not behaviour.** A base URL, a vault pointer and an auth
