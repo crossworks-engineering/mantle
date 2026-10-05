@@ -69,18 +69,47 @@ describe('renderCorpusMapBlock', () => {
     expect(renderCorpusMapBlock([a, b])).toBe(renderCorpusMapBlock([b, a]));
   });
 
-  it('folds three or more near-identical titles into one line naming the newest', () => {
+  it('folds three or more near-identical file titles into one line naming the newest', () => {
+    const f = (title: string, i: number) =>
+      entry({ title, type: 'file', branch: 'files', nodeId: id(i) });
     const out = renderCorpusMapBlock([
-      entry({ title: 'Recall eval: MRR 0.66 / R@5 1', nodeId: id(1) }),
-      entry({ title: 'Recall eval: MRR 0.00 / R@5 0', nodeId: id(2) }),
-      entry({ title: 'Recall eval: MRR 0.12 / R@5 0', nodeId: id(3) }),
-      entry({ title: 'Spike 15: Claude cache', nodeId: id(4) }),
+      f('screenshot-2026-08-25-at-10-56-37.png', 1),
+      f('screenshot-2026-08-25-at-10-55-12.png', 2),
+      f('screenshot-2026-08-24-at-09-01-00.png', 3),
+      f('site-photo.jpg', 4),
     ])!;
-    expect(out).toContain('"Recall eval: MRR 0.66 / R@5 1" (page#00000001) +2 more like it');
-    expect(out).not.toContain('page#00000002');
-    expect(out).toContain('"Spike 15: Claude cache"');
+    expect(out).toContain(
+      '"screenshot-2026-08-25-at-10-56-37.png" (file#00000001) +2 more like it',
+    );
+    expect(out).not.toContain('file#00000002');
+    expect(out).toContain('"site-photo.jpg"');
     // A fold hides ids, so the map no longer claims to be complete.
     expect(out).toContain('may still exist');
+  });
+
+  it('never folds dated or numbered titles that are not files', () => {
+    // The memory benchmark's sessions, meeting notes, invoices: the number is
+    // the meaning, so each keeps its own line.
+    const out = renderCorpusMapBlock(
+      [1, 2, 3, 4].map((n) =>
+        entry({
+          title: `Conversation ${n}, Monday ${n} May 2023`,
+          type: 'note',
+          branch: 'notes',
+          nodeId: id(n),
+        }),
+      ),
+    )!;
+    for (const n of [1, 2, 3, 4])
+      expect(out).toContain(`"Conversation ${n}, Monday ${n} May 2023"`);
+    expect(out).not.toContain('more like it');
+  });
+
+  it('folds exact duplicate titles of any type', () => {
+    const out = renderCorpusMapBlock(
+      [1, 2, 3].map((n) => entry({ title: 'Untitled draft', nodeId: id(n) })),
+    )!;
+    expect(out).toContain('"Untitled draft" (page#00000001) +2 more like it');
   });
 
   it('does not fold a pair', () => {

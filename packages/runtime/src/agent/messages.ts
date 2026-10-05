@@ -328,15 +328,15 @@ export function fenceRetrieved(body: string): string {
 export const CORPUS_MAP_MAX_CHARS = 6_500;
 
 /** A fold group needs this many near-identical titles (a generated image
- *  series, a run of eval-result pages) before it collapses to one line. */
+ *  series, a run of screenshots) before it collapses to one line. */
 const FOLD_MIN = 3;
 /** Titles longer than this are snipped; some file titles are whole prompts. */
 const TITLE_MAX = 90;
 
-/** Near-duplicate key: case, digits, punctuation and a file extension do not
- *  count, and only the head of the title does. "Recall eval: MRR 0.00 / R@5 0"
- *  and "Recall eval: MRR 0.66 / R@5 1" share a key; "Spike 15: Claude cache"
- *  and "Spike 16: Rea prefix" do not. */
+/** Near-duplicate key for FILES: case, digits, punctuation and the extension
+ *  do not count, and only the head of the title does, so a screenshot run or
+ *  a generated image series shares one key. "Spike 15: Claude cache" and
+ *  "Spike 16: Rea prefix" do not. */
 export function corpusTitleKey(title: string): string {
   return title
     .toLowerCase()
@@ -347,6 +347,18 @@ export function corpusTitleKey(title: string): string {
     .slice(0, 24);
 }
 
+/** The fold key of one entry. Only files fold across digits (screenshots,
+ *  generated images: the number carries nothing). Every other type folds on
+ *  an exact duplicate title only, because there the number or date IS the
+ *  meaning: "Conversation 3, Monday 1 May 2023", a meeting, an invoice. */
+function foldKey(e: CorpusMapEntry): string {
+  if (e.type === 'file') {
+    const k = corpusTitleKey(e.title);
+    return k.length >= 8 ? `file|${k}` : `file=${e.title}`;
+  }
+  return `${e.type}=${e.title.toLowerCase().replace(/\s+/g, ' ').trim()}`;
+}
+
 type MapLine = { title: string; text: string; folded: boolean };
 
 /**
@@ -354,7 +366,7 @@ type MapLine = { title: string; text: string; folded: boolean };
  *
  * `entries` come most recently updated first (the upstream select orders by
  * updated_at for cap selection). Per branch, near-identical titles fold into
- * one line that names the newest member. The budget is then shared round-robin
+ * one line that names the newest member (see foldKey). The budget is then shared round-robin
  * across branches, newest first, so every branch gets lines before any branch
  * gets many. Within a branch the chosen lines render sorted by title, so the
  * bytes change only when a title, a branch total or the chosen set changes,
@@ -386,15 +398,15 @@ export function renderCorpusMapBlock(
     const group = byBranch.get(branch)!;
     const byKey = new Map<string, CorpusMapEntry[]>();
     for (const e of group) {
-      const k = `${e.type}|${corpusTitleKey(e.title)}`;
+      const k = foldKey(e);
       byKey.set(k, [...(byKey.get(k) ?? []), e]);
     }
     const seen = new Set<string>();
     const lines: MapLine[] = [];
     for (const e of group) {
-      const k = `${e.type}|${corpusTitleKey(e.title)}`;
+      const k = foldKey(e);
       const members = byKey.get(k)!;
-      const fold = members.length >= FOLD_MIN && corpusTitleKey(e.title).length >= 8;
+      const fold = members.length >= FOLD_MIN;
       if (fold && seen.has(k)) continue;
       seen.add(k);
       const title = snipLine(e.title, TITLE_MAX);
