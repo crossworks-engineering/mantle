@@ -43,7 +43,7 @@ The boot reconcile runs once per `APP_VERSION` (production, best-effort). It is
 | New **specialist** agent                                                                     | ✅ create + wire delegation                                                                                              | `provisionMissingSpecialists`         |
 | Specialist tool groups                                                                       | ✅ union (add-only)                                                                                                      | `grantSpecialistCapabilities`         |
 | Specialist skill links                                                                       | ✅ **converge**: add new + **drop a retired** manifest skill; operator skills kept                                       | `grantSpecialistCapabilities`         |
-| Specialist **params / memoryConfig tuning** (max_iterations, limits; `delegate_to` excepted) | ✅ overwrite                                                                                                             | `syncSpecialistDefs`                  |
+| Specialist **params / memoryConfig tuning** (max_iterations, limits; `delegate_to` and the owner switches `tool_loading` / `suggest_follow_up` / `top_p` excepted) | ✅ overwrite, switches kept | `syncSpecialistDefs`                  |
 | New **required** worker                                                                      | ✅ create                                                                                                                | `seedManifestWorkers({requiredOnly})` |
 
 **Deliberately NOT auto-propagated** (operator-owned / overlay):
