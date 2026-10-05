@@ -49,6 +49,7 @@ export {
 } from './dynamic-schema';
 export {
   buildDeferredToolset,
+  toolSourceOf,
   unwrapUseTool,
   isAlwaysFull,
   CORE_TOOL_SLUGS,
@@ -58,6 +59,7 @@ export {
   type DeferredToolDef,
   type DeferredToolset,
   type ToolSearchResult,
+  type ToolSource,
 } from './selection/deferred';
 export { type GroupSource as ToolGroupSource } from './selection/rank';
 export {

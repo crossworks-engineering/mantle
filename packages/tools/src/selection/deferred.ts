@@ -133,13 +133,31 @@ export type ToolSearchResult = {
   note: string;
 };
 
+/** Who wrote a tool's description: Mantle's code, the brain's owner (an http
+ *  tool authored on this brain, e.g. by Toolsmith), or someone else: an MCP
+ *  connector's server, an OpenAPI spec an http tool was compiled from
+ *  (`handler.openapi`), or anything not known to be safe (recipes included,
+ *  for now). Only builtin and owner descriptions reach the catalog. */
+export type ToolSource = 'builtin' | 'owner' | 'remote';
+
+export function toolSourceOf(handler: unknown): ToolSource {
+  const h = (handler ?? {}) as { kind?: unknown; openapi?: unknown };
+  if (h.kind === 'builtin') return 'builtin';
+  if (h.kind === 'http' && h.openapi == null) return 'owner';
+  return 'remote';
+}
+
 export function isAlwaysFull(slug: string): boolean {
   return CORE_TOOL_SLUGS.includes(slug) || ALWAYS_FULL_PREFIXES.some((p) => slug.startsWith(p));
 }
 
+// The opening sentence replaced "never answer a task without acting before you
+// checked the catalog" (2026-10-05): with that line, Grok called tool_search in
+// 24 of 30 dev probe turns, mostly for information questions, and then used
+// search_nodes anyway (13 of 34 searches led to a returned tool).
 const SEARCH_RULE =
-  'The catalog tools are yours: never say you cannot do a task, and never answer a task without ' +
-  'acting, before you have checked the catalog and loaded the tool with tool_search. A general ' +
+  'Use tool_search only for an ACTION that none of your loaded tools can do. To find ' +
+  'INFORMATION use search_nodes or search_chunks. A general ' +
   'tool (search_nodes, search_chunks, file_read, page_list) is not a stand-in for a specific ' +
   'one. When the request is about contacts, notes, folders, entities, the graph, images, video, ' +
   'speech, your own persona or style, Recall maps, email, events, tasks, journal, sharing, ' +
@@ -158,7 +176,10 @@ const TOOL_SEARCH_DEF: DeferredToolDef = {
       type: 'object',
       properties: {
         query: { type: 'string', description: 'The action you need, e.g. "send an email".' },
-        flow: { type: 'string', description: 'Optional flow slug from the catalog.' },
+        flow: {
+          type: 'string',
+          description: 'Optional flow or group slug from the catalog (the word after ### or -).',
+        },
       },
       required: ['query'],
       additionalProperties: false,
@@ -204,6 +225,10 @@ const USE_TOOL_DEF: DeferredToolDef = {
 export function buildDeferredToolset(
   defs: readonly DeferredToolDef[],
   groups: readonly GroupSource[],
+  /** Who wrote each tool's description (toolSourceOf). With a map, a tool it
+   *  does not name counts as remote (names only); without one, every tool is
+   *  treated as code-authored. */
+  sources?: ReadonlyMap<string, ToolSource>,
 ): DeferredToolset | null {
   const rank = (name: string) => {
     const i = CORE_TOOL_SLUGS.indexOf(name);
@@ -219,7 +244,11 @@ export function buildDeferredToolset(
   const defBy = new Map(rest.map((d) => [d.function.name, d]));
   const sortedGroups = [...groups].sort((a, b) => a.slug.localeCompare(b.slug));
   const cards: ToolCard[] = buildToolCards(
-    rest.map((d) => ({ slug: d.function.name, description: d.function.description })),
+    rest.map((d) => ({
+      slug: d.function.name,
+      description: d.function.description,
+      authored: sources ? (sources.get(d.function.name) ?? 'remote') !== 'remote' : true,
+    })),
     sortedGroups,
   );
   const index: CardIndex = indexCards(cards);

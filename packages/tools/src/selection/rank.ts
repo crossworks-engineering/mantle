@@ -10,12 +10,19 @@
  * changes when it is used.
  */
 
-import { flowForGroup } from './flows';
+import { knownFlowForGroup } from './flows';
 
 export type ToolCard = {
   slug: string;
+  /** A TOOL_FLOWS slug; for a group no flow holds, the group's own slug (it
+   *  gets its own catalog line); `other` for a tool in no granted group. */
   flow: string;
   group: string;
+  /** The group's display name (its slug when it has none). */
+  groupName: string;
+  /** May the catalog show this tool's own description? False for text a
+   *  remote party wrote (MCP connectors, OpenAPI specs). */
+  authored: boolean;
   /** First sentences of the tool description, capped. */
   summary: string;
   /** Text the ranker indexes (slug words, summary, group text). */
@@ -25,6 +32,8 @@ export type ToolCard = {
 export type CardSource = {
   slug: string;
   description: string;
+  /** Default true. Pass false for remote-authored descriptions. */
+  authored?: boolean;
 };
 
 export type GroupSource = {
@@ -62,8 +71,10 @@ export function buildToolCards(
     const groupText = g ? `${g.name ?? g.slug} ${g.description ?? ''}` : '';
     return {
       slug: t.slug,
-      flow: g ? flowForGroup(g.slug) : 'other',
+      flow: g ? (knownFlowForGroup(g.slug) ?? g.slug) : 'other',
       group: g?.slug ?? 'other',
+      groupName: g?.name?.trim() || g?.slug || 'other',
+      authored: t.authored ?? true,
       summary: summarize(t.description),
       text: `${t.slug.replace(/_/g, ' ')} ${t.slug.replace(/_/g, ' ')} ${t.description.slice(0, INDEX_CHARS)} ${groupText.slice(0, 200)}`,
     };
@@ -258,23 +269,44 @@ export function renderCatalog(
   exclude: ReadonlySet<string> = new Set(),
   opts: { summaryChars?: number } = {},
 ): string {
+  const known = new Set(flows.map((f) => f.slug));
+  // Groups no flow holds get their own line, under the group's display name,
+  // after the flows and before `other`, in slug order (stable per grant).
+  const groupFlows = [...new Set(cards.map((c) => c.flow))]
+    .filter((f) => !known.has(f) && f !== 'other')
+    .sort()
+    .map((slug) => ({ slug, name: cards.find((c) => c.flow === slug)!.groupName }));
+  const sections = [
+    ...flows.map((f) => ({
+      slug: f.slug,
+      heading: `${f.title} (${f.when})`,
+      compact: `${f.title}; ${f.when}`,
+    })),
+    ...groupFlows.map((g) => ({ slug: g.slug, heading: g.name, compact: g.name })),
+    {
+      slug: 'other',
+      heading: 'Other (custom and connector tools)',
+      compact: 'Other; custom and connector tools',
+    },
+  ];
   const lines: string[] = [];
-  for (const f of [
-    ...flows,
-    { slug: 'other', title: 'Other', when: 'custom and connector tools' },
-  ]) {
+  for (const f of sections) {
     const inFlow = cards
       .filter((c) => c.flow === f.slug && !exclude.has(c.slug))
       .sort((a, b) => a.slug.localeCompare(b.slug));
     if (inFlow.length === 0) continue;
-    // Summaries only for known flows: tools in `other` can come from MCP
-    // connectors, whose descriptions are remote-authored and must not reach
-    // the system prompt. Their names alone are listed.
-    if (opts.summaryChars && f.slug !== 'other') {
-      lines.push(`### ${f.slug}: ${f.title} (${f.when})`);
-      for (const c of inFlow) lines.push(`- ${c.slug}: ${summarize(c.summary, opts.summaryChars)}`);
+    // A tool's own description is shown only when it is brain-authored (code
+    // or the owner); MCP connector and OpenAPI-spec text is remote-authored
+    // and must not reach the system prompt, so those tools are listed by name.
+    if (opts.summaryChars && inFlow.some((c) => c.authored)) {
+      lines.push(`### ${f.slug}: ${f.heading}`);
+      for (const c of inFlow) {
+        lines.push(
+          c.authored ? `- ${c.slug}: ${summarize(c.summary, opts.summaryChars)}` : `- ${c.slug}`,
+        );
+      }
     } else {
-      lines.push(`- ${f.slug} (${f.title}; ${f.when}): ${inFlow.map((c) => c.slug).join(', ')}`);
+      lines.push(`- ${f.slug} (${f.compact}): ${inFlow.map((c) => c.slug).join(', ')}`);
     }
   }
   return lines.join('\n');

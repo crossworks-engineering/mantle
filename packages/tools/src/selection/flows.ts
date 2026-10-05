@@ -133,3 +133,9 @@ const FLOW_BY_GROUP = new Map<string, string>(
 export function flowForGroup(groupSlug: string): string {
   return FLOW_BY_GROUP.get(groupSlug) ?? 'other';
 }
+
+/** The flow of a manifest-style group, or null for a group no flow holds (an
+ *  owner's API integration, an MCP or OpenAPI connector). */
+export function knownFlowForGroup(groupSlug: string): string | null {
+  return FLOW_BY_GROUP.get(groupSlug) ?? null;
+}

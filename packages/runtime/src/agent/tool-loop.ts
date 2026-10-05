@@ -33,6 +33,7 @@ import {
   validateToolArgs,
   getDynamicSchema,
   buildDeferredToolset,
+  toolSourceOf,
   unwrapUseTool,
   TOOL_SEARCH_SLUG,
   USE_TOOL_SLUG,
@@ -612,7 +613,11 @@ async function runToolLoopAtLevel(args: ToolLoopArgs): Promise<ToolLoopResult> {
   // the turn (and for the grant), so the cached prefix does not move.
   const deferred: DeferredToolset | null =
     args.params.tool_loading === 'deferred' && allToolDefs.length > 0
-      ? buildDeferredToolset(allToolDefs, await loadToolGroupsForCatalog(args.ownerId))
+      ? buildDeferredToolset(
+          allToolDefs,
+          await loadToolGroupsForCatalog(args.ownerId),
+          new Map(loopTools.map((t) => [t.slug, toolSourceOf(t.handler)])),
+        )
       : null;
   const toolsForModel = deferred ? deferred.sent : allToolDefs;
   /** Deferred tools whose schema an argument error already handed back. */

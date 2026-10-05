@@ -532,17 +532,34 @@ call. `'deferred'` sends:
   name they were not sent.
 
 The loop appends a catalog block to the FIRST system block (the persona
-block, with the first cache breakpoint): one rule ("check the catalog before
-you say you cannot, and before a general tool stands in for a specific one"),
-then every other granted tool under its flow (`packages/tools/src/selection/flows.ts`:
-find, pages, files, tables, plan, people, web, places, delegate, apps, admin)
-with the first sentence of its description, clipped to 90 characters. Tools in
-groups with no known flow (MCP connectors) land in `other` by NAME only: their
-descriptions are remote-authored and stay out of the system prompt. On the
-bench the catalog in the system prompt beat the same text in `tool_search`'s
-description, a fixed core order beat grant order (grant order put
-`calculate` first and drew `calculate` calls), and the short lines beat names
-alone for Claude.
+block, with the first cache breakpoint): one rule ("use `tool_search` only for
+an ACTION none of your loaded tools can do; to find INFORMATION use
+`search_nodes` or `search_chunks`; a general tool is not a stand-in for a
+specific one"), then every other granted tool under its flow
+(`packages/tools/src/selection/flows.ts`: find, pages, files, tables, plan,
+people, web, places, delegate, apps, admin). A group no flow holds (an owner's
+API integration, an MCP or OpenAPI connector) gets its own line under its
+display name, and `tool_search` takes that group slug as its `flow`.
+
+Each tool shows the first sentence of its description, clipped to 90
+characters, when that text is brain-authored: builtins, and `http` tools the
+owner wrote on this brain (`toolSourceOf`). Tools whose text a remote party
+wrote (`mcp` connector tools, `http` tools compiled from an OpenAPI spec, which
+carry `handler.openapi`) and recipes are listed by NAME only, so that text
+stays out of the system prompt. On the bench the catalog in the system prompt
+beat the same text in `tool_search`'s description, a fixed core order beat
+grant order (grant order put `calculate` first and drew `calculate` calls), and
+the short lines beat names alone for Claude. The rule's first sentence replaced
+"never answer a task without checking the catalog", which made Grok search in
+24 of 30 dev probe turns, mostly for information it then fetched with
+`search_nodes`.
+
+**Writing a tool so `tool_search` finds it.** Start the description with one
+sentence: action + object + what it returns, in the user's words (the ranker
+reads the first 600 characters, the catalog shows 90). Name it verb_noun with
+the system's name (`partsdb_part_list`); slug words count double. Give the group a
+display name and a one-line description naming the system and its data. Put the
+user's synonyms early (quote/estimate, invoice/bill). One action per tool.
 
 The model calls `tool_search {query, flow?}`; the loop ranks the deferred
 tools (BM25 over tool cards + a small synonym table + a fleet usage prior, no
