@@ -17,6 +17,9 @@
  *                                    Same injection rules as secret refs; it is
  *                                    carried in the secrets map as `oauth:<slug>`.
  *
+ * Omitted fields whose input_schema property declares a `default` are filled
+ * first (applyInputDefaults, run by the dispatcher).
+ *
  * Input fields not consumed by any template spill over: into the JSON body for
  * non-GET requests (preserving the legacy whole-input-as-body behavior for
  * handlers with no templates at all), or into query params for GET/HEAD.
@@ -116,6 +119,31 @@ function substituteParams(
     used.add(name);
     return encodeParam(input[name], mode);
   });
+}
+
+/**
+ * Fill input fields the caller left out from the tool's input_schema
+ * `default`s, top level only (templates only read top-level params). Without
+ * this an omitted optional `{param}` silently drops its query pair, so a
+ * `page_size` with `default: 50` would send an unpaged request. A field that
+ * is present, even as null, is left alone: only absence means "use the
+ * default". Defaults are cloned so a stored schema is never shared or mutated.
+ */
+export function applyInputDefaults(
+  schema: unknown,
+  input: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!schema || typeof schema !== 'object') return input;
+  const props = (schema as { properties?: unknown }).properties;
+  if (!props || typeof props !== 'object' || Array.isArray(props)) return input;
+  let out: Record<string, unknown> | null = null;
+  for (const [key, spec] of Object.entries(props as Record<string, unknown>)) {
+    if (!spec || typeof spec !== 'object' || !('default' in spec)) continue;
+    if (Object.prototype.hasOwnProperty.call(input, key)) continue;
+    out ??= { ...input };
+    out[key] = structuredClone((spec as { default: unknown }).default);
+  }
+  return out ?? input;
 }
 
 export type BuiltHttpRequest = {

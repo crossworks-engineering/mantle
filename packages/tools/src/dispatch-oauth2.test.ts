@@ -202,6 +202,26 @@ describe('dispatchHttp with an OAuth2 group', () => {
     expect(res.ok).toBe(false); // no Authorization header → the mock API says 401
   });
 
+  it("fills omitted inputs from the tool's schema defaults before templating", async () => {
+    const tool = {
+      slug: 't',
+      inputSchema: {
+        type: 'object',
+        properties: { page_size: { type: 'integer', default: 50 } },
+      },
+      handler: {
+        kind: 'http',
+        url: `${apiBase}/v1/items`,
+        method: 'GET',
+        headers: { Authorization: 'Bearer {{oauth:acme}}' },
+        query: { pageSize: '{page_size}' },
+      },
+    } as unknown as Tool;
+    const res = await dispatchTool(tool, {}, CTX);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect((res.output as { path: string }).path).toBe('/v1/items?pageSize=50');
+  });
+
   it('fails clearly when the group has no oauth2 config', async () => {
     groups.set('acme', { slug: 'acme', enabled: true, integration: { service: 'acme' } });
     const res = await dispatchTool(httpTool(`${apiBase}/v1/items`), {}, CTX);

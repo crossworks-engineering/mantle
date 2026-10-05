@@ -167,7 +167,10 @@ client browse and test the registry.
   (shell tools stay human-authored; agents can never mint arbitrary
   command execution). Returns `warnings` when a `{param}` isn't
   declared in the input schema or a `{{secret:…}}` ref has no vault
-  entry, so the agent self-corrects in the same turn.
+  entry, so the agent self-corrects in the same turn. At call time an
+  input field the caller left out is filled from its input-schema
+  `default` before templating, so an optional `{param}` with a default
+  (a page size, say) never silently drops off the request.
 - `api_tool_delete`, user-defined tools only (built-ins refuse).
 - `api_tool_test(slug, input)`, executes through the real
   `dispatchTool` (templating + vault secrets + timeouts). Refuses

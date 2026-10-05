@@ -203,6 +203,7 @@ export {
   type UpdateToolInput,
 } from './crud';
 export {
+  applyInputDefaults,
   buildHttpRequest,
   collectOauthRefs,
   collectParamNames,

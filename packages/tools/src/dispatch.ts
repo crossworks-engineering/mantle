@@ -15,6 +15,7 @@ import { getApiKey } from '@mantle/api-keys';
 import { getBuiltin, getBuiltinHandler } from './registry';
 import { checkToolPreconditions } from './preconditions';
 import {
+  applyInputDefaults,
   buildHttpRequest,
   collectOauthRefs,
   collectSecretRefs,
@@ -84,7 +85,7 @@ export async function dispatchTool(
     }
   }
   if (h.kind === 'http') {
-    return dispatchHttp(h, input, ctx);
+    return dispatchHttp(h, applyInputDefaults(tool.inputSchema, input), ctx);
   }
   if (h.kind === 'shell') {
     return dispatchShell(h, input, ctx);
