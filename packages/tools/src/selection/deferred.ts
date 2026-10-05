@@ -61,6 +61,9 @@ export const CORE_TOOL_SLUGS: readonly string[] = [
   'note_get',
   'note_create',
   'calculate',
+  // A style or relationship calibration ("keep replies shorter") does not read
+  // as a task, so the model never searches for it: keep it in full.
+  'update_persona',
 ];
 
 /** Per-turn affordances (heartbeat continuity) stay in full: they are only
@@ -103,6 +106,9 @@ const USAGE_PRIOR: Readonly<Record<string, number>> = Object.fromEntries(
 /** How many tools one search returns. */
 export const TOOL_SEARCH_LIMIT = 6;
 const SEARCH_DESCRIPTION_CHARS = 600;
+/** Per-tool "what it does" line in the catalog. On the bench, names alone
+ *  let Claude reach for search_nodes instead of the specific tool. */
+const CATALOG_SUMMARY_CHARS = 90;
 
 /** The OpenAI-compatible tool shape the chat adapters take. */
 export type DeferredToolDef = {
@@ -132,11 +138,13 @@ export function isAlwaysFull(slug: string): boolean {
 }
 
 const SEARCH_RULE =
-  'A general tool (search_nodes, search_chunks, file_read, page_list) is not a stand-in for a ' +
-  'specific one. When the request is about contacts, entities, the graph, images, speech, your ' +
-  'own persona, Recall maps, tree folders, email, events, tasks, journal, sharing, formulas, apps ' +
-  'or places, look at the catalog first: if a listed tool does that action, load it with ' +
-  'tool_search before you act.';
+  'The catalog tools are yours: never say you cannot do a task, and never answer a task without ' +
+  'acting, before you have checked the catalog and loaded the tool with tool_search. A general ' +
+  'tool (search_nodes, search_chunks, file_read, page_list) is not a stand-in for a specific ' +
+  'one. When the request is about contacts, notes, folders, entities, the graph, images, video, ' +
+  'speech, your own persona or style, Recall maps, email, events, tasks, journal, sharing, ' +
+  'formulas, apps or places, look at the catalog first: if a listed tool does that action, load ' +
+  'it with tool_search before you act.';
 
 const TOOL_SEARCH_DEF: DeferredToolDef = {
   type: 'function',
@@ -215,7 +223,9 @@ export function buildDeferredToolset(
     sortedGroups,
   );
   const index: CardIndex = indexCards(cards);
-  const catalog = renderCatalog(cards, TOOL_FLOWS);
+  const catalog = renderCatalog(cards, TOOL_FLOWS, new Set(), {
+    summaryChars: CATALOG_SUMMARY_CHARS,
+  });
   const search = (query: string, flow?: string): ToolSearchResult => {
     let hits = rankTools(index, query, {
       usage: USAGE_PRIOR,

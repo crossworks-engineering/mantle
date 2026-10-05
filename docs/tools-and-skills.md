@@ -515,19 +515,25 @@ decides HOW their definitions reach the model. Absent (or `'full'`) is the
 behaviour before this existed: every granted tool's full definition on every
 call. `'deferred'` sends:
 
-- the granted tools in `CORE_TOOL_SLUGS` (20 tools that carry most turns on
-  the fleet) plus any `heartbeat_*` affordance, in grant order, in full;
+- the granted tools in `CORE_TOOL_SLUGS` (the 20 tools that carry most turns
+  on the fleet, plus `update_persona`, whose trigger never reads as a task) in
+  that list's fixed order, then any `heartbeat_*` affordance, in full;
 - `tool_search` (load tools by describing the action);
 - `use_tool {name, arguments}`, a wrapper for models that will not call a
   name they were not sent.
 
 The loop appends a catalog block to the FIRST system block (the persona
-block, with the first cache breakpoint): one rule line, then every other
-granted tool by NAME, one line per flow (`packages/tools/src/selection/flows.ts`:
-find, pages, files, tables, plan, people, web, places, delegate, apps, admin;
-custom and connector groups land in `other`). On the bench the catalog in the
-system prompt made models search more often than the same text inside
-`tool_search`'s description.
+block, with the first cache breakpoint): one rule ("check the catalog before
+you say you cannot, and before a general tool stands in for a specific one"),
+then every other granted tool under its flow (`packages/tools/src/selection/flows.ts`:
+find, pages, files, tables, plan, people, web, places, delegate, apps, admin)
+with the first sentence of its description, clipped to 90 characters. Tools in
+groups with no known flow (MCP connectors) land in `other` by NAME only: their
+descriptions are remote-authored and stay out of the system prompt. On the
+bench the catalog in the system prompt beat the same text in `tool_search`'s
+description, a fixed core order beat grant order (grant order put
+`calculate` first and drew `calculate` calls), and the short lines beat names
+alone for Claude.
 
 The model calls `tool_search {query, flow?}`; the loop ranks the deferred
 tools (BM25 over tool cards + a small synonym table + a fleet usage prior, no

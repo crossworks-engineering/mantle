@@ -226,6 +226,23 @@ describe('runToolLoop with deferred tool loading', () => {
     expect(r.toolCalls[0]).toMatchObject({ slug: 'email_send', status: 'error' });
   });
 
+  it('hands back the real schema when a deferred tool called by name gets bad arguments', async () => {
+    const { adapter } = adapterWith([
+      [call('c1', 'email_send', { to: 'bob@example.com' })],
+      [call('c2', 'email_send', { to: 'bob@example.com' })],
+      'ok',
+    ]);
+    const r = await run(adapter, 'deferred');
+    const results = r.messages
+      .filter((m) => m.role === 'tool')
+      .map((m) => String((JSON.parse(String(m.content)) as { error?: string }).error));
+    expect(results[0]).toContain('Input schema of email_send');
+    expect(results[0]).toContain('"required":["to","body"]');
+    // Once per tool per turn: the second failure does not repeat it.
+    expect(results[1]).not.toContain('Input schema of email_send');
+    expect(dispatched).toEqual([]);
+  });
+
   it('still refuses a tool outside the grant, by name or through use_tool', async () => {
     const { adapter } = adapterWith([
       [

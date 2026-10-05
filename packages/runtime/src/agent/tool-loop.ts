@@ -615,6 +615,8 @@ async function runToolLoopAtLevel(args: ToolLoopArgs): Promise<ToolLoopResult> {
       ? buildDeferredToolset(allToolDefs, await loadToolGroupsForCatalog(args.ownerId))
       : null;
   const toolsForModel = deferred ? deferred.sent : allToolDefs;
+  /** Deferred tools whose schema an argument error already handed back. */
+  const schemaShown = new Set<string>();
 
   const messages: ChatMessage[] = deferred
     ? withCatalogBlock(args.initialMessages, deferred.systemBlock)
@@ -930,7 +932,7 @@ async function runToolLoopAtLevel(args: ToolLoopArgs): Promise<ToolLoopResult> {
       }
       guards.admit(slug);
 
-      const outcome = await executeToolCall({
+      let outcome = await executeToolCall({
         args,
         slug,
         call,
@@ -943,6 +945,24 @@ async function runToolLoopAtLevel(args: ToolLoopArgs): Promise<ToolLoopResult> {
         pendingIds,
         taint,
       });
+      // Deferred loading: a model may call a catalog tool by name without
+      // loading it first, and then guess its arguments. When such a call fails
+      // on its arguments, hand back the real schema once per tool per turn so
+      // the retry is right (the schema is what tool_search would have shown).
+      if (
+        deferred &&
+        tool &&
+        !outcome.ok &&
+        deferred.deferred.has(slug) &&
+        (argParseError || argValidation?.error) &&
+        !schemaShown.has(slug)
+      ) {
+        schemaShown.add(slug);
+        outcome = {
+          ...outcome,
+          error: `${outcome.error}\nInput schema of ${slug}: ${JSON.stringify(tool.inputSchema ?? {})}`,
+        };
+      }
       // Did this call bring client-written text into the turn? Its input
       // (a client login's id) or its output (a client request's id) says so.
       await taintFromText(

@@ -256,18 +256,26 @@ export function renderCatalog(
   cards: readonly ToolCard[],
   flows: readonly { slug: string; title: string; when: string }[],
   exclude: ReadonlySet<string> = new Set(),
+  opts: { summaryChars?: number } = {},
 ): string {
   const lines: string[] = [];
   for (const f of [
     ...flows,
     { slug: 'other', title: 'Other', when: 'custom and connector tools' },
   ]) {
-    const names = cards
+    const inFlow = cards
       .filter((c) => c.flow === f.slug && !exclude.has(c.slug))
-      .map((c) => c.slug)
-      .sort();
-    if (names.length === 0) continue;
-    lines.push(`- ${f.slug} (${f.title}; ${f.when}): ${names.join(', ')}`);
+      .sort((a, b) => a.slug.localeCompare(b.slug));
+    if (inFlow.length === 0) continue;
+    // Summaries only for known flows: tools in `other` can come from MCP
+    // connectors, whose descriptions are remote-authored and must not reach
+    // the system prompt. Their names alone are listed.
+    if (opts.summaryChars && f.slug !== 'other') {
+      lines.push(`### ${f.slug}: ${f.title} (${f.when})`);
+      for (const c of inFlow) lines.push(`- ${c.slug}: ${summarize(c.summary, opts.summaryChars)}`);
+    } else {
+      lines.push(`- ${f.slug} (${f.title}; ${f.when}): ${inFlow.map((c) => c.slug).join(', ')}`);
+    }
   }
   return lines.join('\n');
 }
