@@ -59,50 +59,74 @@ function groupChunk(group: RosterGroup): string {
   return clip(sentence ? `${group.name} (${sentence})` : group.name, ROSTER_GROUP_CLIP);
 }
 
+/** How much of a delegate's capability a line carries. The renderer steps
+ *  lines down this ladder, lowest-ranked first, until the roster fits. */
+type LineDetail = 'full' | 'one' | 'name';
+
+function delegateLabel(delegate: RosterDelegate): string {
+  return delegate.name && delegate.name.toLowerCase() !== delegate.slug.toLowerCase()
+    ? `${delegate.slug} (${delegate.name})`
+    : delegate.slug;
+}
+
+function renderLine(label: string, chunks: string[], detail: LineDetail): string {
+  if (detail === 'name') return `- ${label}`;
+  let line = `- ${label} — `;
+  if (chunks.length === 0) return `${line}(no additional tool groups)`;
+  let used = 0;
+  for (const chunk of chunks) {
+    if (detail === 'one' && used === 1) break;
+    const candidate = used === 0 ? line + chunk : `${line}; ${chunk}`;
+    if (used > 0 && candidate.length > ROSTER_LINE_MAX) break;
+    line = candidate;
+    used += 1;
+  }
+  if (used < chunks.length) line += `; +${chunks.length - used} more`;
+  return line;
+}
+
 /**
  * Render the roster block: one line per delegate in input order,
- * `slug — Group (sentence); Group (sentence)`, with the stoplist applied,
- * per-line and total caps enforced, and elisions self-announced (`+N more`).
- * Returns '' when there is nothing worth saying.
+ * `slug — Group (sentence); Group (sentence)`, with the stoplist applied and
+ * the per-line cap enforced (`+N more`).
+ *
+ * Over the total budget, every delegate STAYS: lines shrink instead, lowest
+ * rank first (rank = `delegate_to` order), first to one group chunk, then to
+ * the bare name. Dropping the tail used to hide whole specialists from the
+ * parent; a name with no description still tells it the delegate exists.
+ * Only when even all-names overflows (dozens of delegates) is the tail elided,
+ * and that self-announces (`+N more delegates`). Returns '' when there is
+ * nothing worth saying.
  */
 export function renderDelegateRoster(delegates: readonly RosterDelegate[]): string {
-  const lines: string[] = [];
-  let total = 0;
-  let elidedDelegates = 0;
+  if (delegates.length === 0) return '';
+  const rows = delegates.map((delegate) => ({
+    label: delegateLabel(delegate),
+    chunks: delegate.groups.filter((g) => !ROSTER_GROUP_STOPLIST.has(g.slug)).map(groupChunk),
+  }));
+  const detail: LineDetail[] = rows.map(() => 'full');
+  const lineAt = (i: number) => renderLine(rows[i]!.label, rows[i]!.chunks, detail[i]!);
+  const lengths = rows.map((_, i) => lineAt(i).length);
+  // Lines joined by one newline each.
+  let total = lengths.reduce((sum, n) => sum + n, 0) + rows.length - 1;
 
-  for (const delegate of delegates) {
-    const chunks = delegate.groups
-      .filter((g) => !ROSTER_GROUP_STOPLIST.has(g.slug))
-      .map(groupChunk);
-
-    const label =
-      delegate.name && delegate.name.toLowerCase() !== delegate.slug.toLowerCase()
-        ? `${delegate.slug} (${delegate.name})`
-        : delegate.slug;
-
-    let line = `- ${label} — `;
-    if (chunks.length === 0) {
-      line += '(no additional tool groups)';
-    } else {
-      let used = 0;
-      for (const chunk of chunks) {
-        const candidate = used === 0 ? line + chunk : `${line}; ${chunk}`;
-        if (used > 0 && candidate.length > ROSTER_LINE_MAX) break;
-        line = candidate;
-        used += 1;
-      }
-      if (used < chunks.length) line += `; +${chunks.length - used} more`;
+  for (const step of ['one', 'name'] as const) {
+    for (let i = rows.length - 1; i >= 0 && total > ROSTER_TOTAL_MAX; i--) {
+      if (detail[i] === 'name' || (step === 'one' && detail[i] === 'one')) continue;
+      detail[i] = step;
+      const next = lineAt(i).length;
+      total += next - lengths[i]!;
+      lengths[i] = next;
     }
-
-    if (lines.length > 0 && total + 1 + line.length > ROSTER_TOTAL_MAX) {
-      elidedDelegates += 1;
-      continue;
-    }
-    total += (lines.length > 0 ? 1 : 0) + line.length;
-    lines.push(line);
   }
 
-  if (elidedDelegates > 0) lines.push(`- +${elidedDelegates} more delegates`);
+  let kept = rows.length;
+  while (kept > 1 && total > ROSTER_TOTAL_MAX) {
+    kept -= 1;
+    total -= lengths[kept]! + 1;
+  }
+  const lines = rows.slice(0, kept).map((_, i) => lineAt(i));
+  if (kept < rows.length) lines.push(`- +${rows.length - kept} more delegates`);
   return lines.join('\n');
 }
 

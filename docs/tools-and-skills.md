@@ -505,7 +505,11 @@ Rules, in `packages/tools/src/delegate-roster.ts`:
 - **Stoplist + caps.** Ubiquitous groups (`memory-core`, `tool-results`,
   `delegation`, `persona`) are skipped; per-group chunk ~90 chars, per-line
   ~220 chars with a `+N more` marker, whole roster ~1,200 chars; newlines
-  stripped.
+  stripped. Over the whole-roster budget every delegate stays: lines shrink,
+  lowest rank (`delegate_to` order) first, to one group chunk and then to the
+  bare name. Only if all-names still overflows is the tail elided
+  (`+N more delegates`). Dropping the tail used to hide whole specialists, so
+  put the delegates that matter most first in `delegate_to`.
 - **Best-effort.** A roster failure degrades to the enum-only patch; the
   delegate-slug enum (the v0.82.2 hallucinated-slug guard) never regresses.
 
