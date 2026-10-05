@@ -24,11 +24,13 @@
  *     labelled as one;
  *   - no reminder-channel update (noteInboundChannel), no follow-up
  *     suggestion, no agent usage bump: the agent did not answer;
- *   - no phone push: the push worker skips channel 'mcp'.
+ *   - no phone push: the push worker skips channel 'mcp';
+ *   - no persona notes: the reflector skips channel 'mcp' in its activity
+ *     check and in what it reads (REFLECTOR_SKIPPED_CHANNEL, server/api).
  * The existing triggers on assistant_messages still fire, as for every turn:
- * the live window refresh, the summarizer (digests, which the extractor never
- * reads into facts) and the reflector's activity check. Conversation turns
- * are not nodes, so nothing here reaches fact extraction.
+ * the live window refresh and the summarizer (digests, which the extractor
+ * never reads into facts). Conversation turns are not nodes, so nothing here
+ * reaches fact extraction.
  *
  * Chat threads: when the chat archive lands, the open thread id belongs on
  * these two rows the same way a web turn gets it.

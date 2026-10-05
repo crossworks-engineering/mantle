@@ -334,10 +334,11 @@ What fires, and what does not:
 
 - No model call, no tool run, no phone push (the push worker skips channel
   `mcp`), no reminder-channel change, no follow-up suggestion.
+- No persona notes: the reflector neither wakes for nor reads `mcp` turns, so
+  the agent never learns its style from a test model's replies.
 - The triggers every conversation turn fires still fire: the live window
-  refresh, the summarizer (it rolls the turns into digests; digests are never
-  read into facts) and the reflector's activity check (it may add persona
-  notes, as after any chat). Conversation turns are not nodes, so nothing
+  refresh and the summarizer (it rolls the turns into digests; digests are
+  never read into facts). Conversation turns are not nodes, so nothing
   reaches fact extraction.
 
 Same access as `responder_turn_input`: the owner's connector only (a peer
