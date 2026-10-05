@@ -48,6 +48,19 @@ export {
   type DynamicSchemaFn,
 } from './dynamic-schema';
 export {
+  buildDeferredToolset,
+  unwrapUseTool,
+  isAlwaysFull,
+  CORE_TOOL_SLUGS,
+  TOOL_SEARCH_SLUG,
+  USE_TOOL_SLUG,
+  TOOL_SEARCH_LIMIT,
+  type DeferredToolDef,
+  type DeferredToolset,
+  type ToolSearchResult,
+} from './selection/deferred';
+export { type GroupSource as ToolGroupSource } from './selection/rank';
+export {
   renderDelegateRoster,
   buildDelegateRoster,
   ROSTER_GROUP_STOPLIST,

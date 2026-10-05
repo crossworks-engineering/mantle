@@ -207,6 +207,12 @@ export type AgentParams = {
    *  worker; the accept-with-Enter chip above the chat composer). One extra
    *  cheap LLM call per turn, so OFF unless explicitly true. */
   suggest_follow_up?: boolean;
+  /** How the agent's granted tools reach the model (docs/tools-and-skills.md
+   *  "Deferred tool loading"). 'full' (the default when absent) sends every
+   *  granted tool's definition on every call. 'deferred' sends a small stable
+   *  core in full and lists the rest by name for `tool_search`; every granted
+   *  tool stays callable and the cached prefix stays the same. */
+  tool_loading?: 'full' | 'deferred';
 };
 
 /**

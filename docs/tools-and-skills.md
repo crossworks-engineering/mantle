@@ -508,6 +508,51 @@ The routing skill body now points at the roster as authoritative for WHAT a
 delegate carries; the skill stays the policy for WHEN to delegate and how to
 pack the hand-off.
 
+## Deferred tool loading: many tools, one stable prefix
+
+An agent's grant decides WHICH tools it may call. `params.tool_loading`
+decides HOW their definitions reach the model. Absent (or `'full'`) is the
+behaviour before this existed: every granted tool's full definition on every
+call. `'deferred'` sends:
+
+- the granted tools in `CORE_TOOL_SLUGS` (20 tools that carry most turns on
+  the fleet) plus any `heartbeat_*` affordance, in grant order, in full;
+- `tool_search`, whose DESCRIPTION carries the catalog: every other granted
+  tool by NAME, one line per flow (`packages/tools/src/selection/flows.ts`:
+  find, pages, files, tables, plan, people, web, places, delegate, apps,
+  admin; custom and connector groups land in `other`);
+- `use_tool {name, arguments}`, a wrapper for models that will not call a
+  name they were not sent.
+
+The model calls `tool_search {query, flow?}`; the loop ranks the deferred
+tools (BM25 over tool cards + a small synonym table + a fleet usage prior, no
+model call) and returns up to 6 with their full input schemas as an ordinary
+tool RESULT. The model then calls the tool by its own name or through
+`use_tool`. Both dispatch exactly as a sent tool: `toolsByName` holds the
+whole grant, the central validator checks the real schema, the guards count
+the real slug, and the trace step is `tool: <real slug>`. A name outside the
+grant is still refused ("not in this agent's allowlist").
+
+**Why it keeps the cache.** The sent array is a pure function of the grant:
+it never changes inside a turn, and not between turns while the grant is the
+same. Loaded schemas arrive in the conversation tail, after the last cache
+breakpoint. Never change the `tools` array or `tool_choice` per turn to
+restrict tools: on Anthropic the tools come first in the prefix, so that
+rewrites the whole cached prompt (Spike 8 measured a loss).
+
+**Measured (2026-10-05, dev-brain plan page dab162c0).** 143 tools = 58.5k
+Claude tokens per call; the deferred set = about 11k. On a 101-case
+right-first-tool bench: Claude Sonnet 5 89 vs 91 (full), Grok 4.7 90 vs 81.
+When the model searched, the right tool was in the results every time; the
+misses were the model using a general core tool instead of searching, which
+the rule line in `tool_search` reduces. Real turns that need a search:
+14 to 46% depending on the brain; each adds one model round.
+
+**Turning it on.** Per agent: `PATCH /api/agents/<id>` with
+`params.tool_loading: 'deferred'` (params are replaced as a whole, so send
+the agent's other params too). Delegated specialists use their own setting.
+The MCP surface is unaffected (MCP clients do their own deferral).
+
 ## House style: the owner's prose layer (v0.214.0)
 
 Skills teach _how to do something well_; they ship with the product and speak

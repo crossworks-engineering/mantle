@@ -171,6 +171,38 @@ export async function resolveAgentToolGroups(
 }
 
 /**
+ * The owner's enabled tool groups as catalog sources for deferred tool
+ * loading (flows + cards). Brain-authored text only: group names and
+ * descriptions. One small indexed query; only called when an agent runs with
+ * `params.tool_loading = 'deferred'`. A failure returns [] so the catalog
+ * still lists every tool (under "other") rather than breaking the turn.
+ */
+export async function loadToolGroupsForCatalog(
+  ownerId: string,
+): Promise<{ slug: string; name: string; description: string; tools: string[] }[]> {
+  try {
+    const rows = await db
+      .select({
+        slug: toolGroups.slug,
+        name: toolGroups.name,
+        description: toolGroups.description,
+        toolSlugs: toolGroups.toolSlugs,
+      })
+      .from(toolGroups)
+      .where(and(eq(toolGroups.ownerId, ownerId), eq(toolGroups.enabled, true)));
+    return rows.map((r) => ({
+      slug: r.slug,
+      name: r.name,
+      description: r.description,
+      tools: r.toolSlugs,
+    }));
+  } catch (err) {
+    console.warn('[skills] tool groups for the deferred catalog failed to load:', err);
+    return [];
+  }
+}
+
+/**
  * Append every skill's instructions to a base system prompt as
  * `## Skill: <name>` blocks. Keeps each skill's voice fenced so the
  * model can tell which guidance belongs to which skill.

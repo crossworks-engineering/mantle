@@ -85,6 +85,9 @@ export interface AgentParamsDTO {
   /** Propose a follow-up question after each completed turn (the suggester
    *  worker's chip above the chat composer). Absent/false = off. */
   suggest_follow_up?: boolean;
+  /** How granted tools reach the model. 'deferred' = a stable core in full +
+   *  `tool_search` over the rest (same grant, cache-safe). Absent = 'full'. */
+  tool_loading?: 'full' | 'deferred';
 }
 
 /** One persona note (jsonb element). Soft-retired, never deleted — the read

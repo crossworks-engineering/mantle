@@ -32,6 +32,11 @@ import {
   resolveResultHandling,
   validateToolArgs,
   getDynamicSchema,
+  buildDeferredToolset,
+  unwrapUseTool,
+  TOOL_SEARCH_SLUG,
+  USE_TOOL_SLUG,
+  type DeferredToolset,
   type ValidateArgsResult,
   type ResultHandlingConfig,
   type ToolCallRecord,
@@ -66,6 +71,7 @@ import {
 } from './tool-loop/guards';
 import { createModelCaller } from './tool-loop/model-caller';
 import { executeToolCall, toolResultPayload } from './tool-loop/execute-call';
+import { loadToolGroupsForCatalog } from './skills';
 import { env } from '@mantle/config';
 import { UUID_RE } from '@mantle/std';
 import { withViewer, type ViewerLevel } from '@mantle/db/viewer';
@@ -572,10 +578,21 @@ async function runToolLoopAtLevel(args: ToolLoopArgs): Promise<ToolLoopResult> {
   // it to the agent's allowlist. It's a read-only system capability.
   const loopTools = await withReadResultTool(args.ownerId, args.tools);
   const toolsByName = new Map(loopTools.map((t) => [t.slug, t]));
-  const toolsForModel = await buildToolsForModel(loopTools, {
+  const allToolDefs = await buildToolsForModel(loopTools, {
     ownerId: args.ownerId,
     ...(args.delegateTo ? { delegateTo: args.delegateTo } : {}),
   });
+  // Deferred tool loading (params.tool_loading = 'deferred'): send a stable
+  // core + tool_search + use_tool, list the rest by name in tool_search's
+  // catalog. `toolsByName` keeps the WHOLE grant, so a deferred tool called by
+  // its own name (or through use_tool) dispatches and validates exactly as a
+  // sent one; an ungranted name is still refused. The sent array is fixed for
+  // the turn (and for the grant), so the cached prefix does not move.
+  const deferred: DeferredToolset | null =
+    args.params.tool_loading === 'deferred' && allToolDefs.length > 0
+      ? buildDeferredToolset(allToolDefs, await loadToolGroupsForCatalog(args.ownerId))
+      : null;
+  const toolsForModel = deferred ? deferred.sent : allToolDefs;
 
   const messages: ChatMessage[] = [...args.initialMessages];
   // The turn's latest USER message — threaded to handlers via ctx.agent so
@@ -775,7 +792,7 @@ async function runToolLoopAtLevel(args: ToolLoopArgs): Promise<ToolLoopResult> {
     // order, which calls run (see TurnGuards); every skipped call still gets
     // its paired synthetic result.
     guards.beginBatch();
-    for (const call of calls) {
+    for (let call of calls) {
       // Stop mid-batch: nothing new starts. Each remaining call still gets a
       // paired synthetic result (providers reject an unpaired tool_use on any
       // later request); the post-batch check below finalizes the turn.
@@ -788,11 +805,67 @@ async function runToolLoopAtLevel(args: ToolLoopArgs): Promise<ToolLoopResult> {
         continue;
       }
       const startedAt = Date.now();
+      // Deferred loading: `use_tool {name, arguments}` IS the inner call from
+      // here on (guards, validation, step name, ledger), so it is capped and
+      // traced as the real tool. A malformed wrapper becomes a parse error.
+      let useToolError: string | null = null;
+      if (deferred && call.function.name === USE_TOOL_SLUG) {
+        const unwrapped = unwrapUseTool(call.function.arguments ?? '{}');
+        if (unwrapped.ok) {
+          call = {
+            ...call,
+            function: { name: unwrapped.slug, arguments: unwrapped.argumentsRaw },
+          };
+        } else {
+          useToolError = unwrapped.error;
+        }
+      }
       const slug = call.function.name;
       const argsRaw = call.function.arguments ?? '{}';
       const pre = guards.preParse({ id: call.id, slug, argsRaw });
       if (pre) {
         await skipToolCall(call, pre.reason, pre.note, pre.firstCallId);
+        continue;
+      }
+      if (deferred && slug === TOOL_SEARCH_SLUG) {
+        const parsedSearch = parseToolArgs(call.function.arguments);
+        const q = parsedSearch.ok ? parsedSearch.input : {};
+        const query = typeof q.query === 'string' ? q.query : '';
+        const flow = typeof q.flow === 'string' && q.flow ? q.flow : undefined;
+        const searchSig = `${slug}::${canonicalJson({ query, flow: flow ?? null })}`;
+        const postSearch = guards.postParse(slug, searchSig);
+        if (postSearch) {
+          await skipToolCall(call, postSearch.reason, postSearch.note);
+          continue;
+        }
+        guards.admit(slug);
+        const found = await step(
+          { name: `tool: ${slug}`, kind: 'compute', input: { slug, args: { query, flow } } },
+          async (handle) => {
+            const r = query.trim()
+              ? deferred.search(query, flow)
+              : {
+                  tools: [],
+                  note: 'tool_search needs `query`: the action you need, in plain words.',
+                };
+            handle.setOutput({ hits: r.tools.map((t) => t.name) });
+            if (!query.trim()) handle.setError('tool_search called without a query');
+            return r;
+          },
+        );
+        toolCalls.push({
+          slug,
+          argsJson: call.function.arguments ?? '{}',
+          durationMs: Date.now() - startedAt,
+          status: query.trim() ? 'success' : 'error',
+          ...(query.trim() ? {} : { error: 'tool_search called without a query' }),
+        });
+        messages.push({
+          role: 'tool',
+          toolCallId: call.id,
+          content: JSON.stringify(found),
+          ...(query.trim() ? {} : { isError: true as const }),
+        });
         continue;
       }
       const tool = toolsByName.get(slug);
@@ -803,7 +876,8 @@ async function runToolLoopAtLevel(args: ToolLoopArgs): Promise<ToolLoopResult> {
       // canonical (post-repair, sorted keys) — pure work, no side effects.
       const parsedArgs = parseToolArgs(call.function.arguments);
       let input: Record<string, unknown> = parsedArgs.ok ? parsedArgs.input : {};
-      const argParseError: string | null = parsedArgs.ok ? null : parsedArgs.error;
+      const argParseError: string | null =
+        useToolError ?? (parsedArgs.ok ? null : parsedArgs.error);
 
       // Central coerce-then-validate against the tool's own inputSchema.
       // Safe repairs (string→number, "true"→true, scalar→array-wrap, …) are

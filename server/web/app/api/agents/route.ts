@@ -68,6 +68,9 @@ const Params = z
     top_p: z.number().min(0).max(1).optional(),
     // Per-agent opt-in for the follow-up suggester worker (the composer chip).
     suggest_follow_up: z.boolean().optional(),
+    // How granted tools reach the model: full list, or a stable core + tool_search
+    // (docs/tools-and-skills.md "Deferred tool loading"). Absent = full.
+    tool_loading: z.enum(['full', 'deferred']).optional(),
   })
   .strict();
 
