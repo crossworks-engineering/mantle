@@ -4,7 +4,617 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
-## Unreleased: table history (apps first-class, Phase 4)
+## 0.239.13: the Mantle logo files are back in brand/
+
+The Mantle marks left this repo with the jackdaw split and were later
+deleted from jackdaw too, so no repo held a canonical copy. `brand/` holds
+them again, restored unchanged from git history, with the Affinity design
+source (`brand/mantle-logo-design.af`) they were exported from.
+`brand/README.md` names the source and records where the files went.
+
+## 0.239.10: the service switches live at Settings > Services
+
+The sandbox and media switches moved off the dashboard to their own screen,
+`/settings/services` (shared nav, Power icon, a help topic). The sandbox and
+media refusals and the docs point there. docs/services.md.
+
+## 0.239.9: app builds accept type-only imports
+
+`lintRuntimeImports` read `import type { ReactNode } from 'react'` as a value
+import (and `{ type X }` as a name `type X`), so an app with type-only
+imports failed to build. Type-only clauses and specifiers are skipped now; a
+mixed import still checks its value names.
+
+## 0.239.4: a service switch's .env backups belong to the stack owner
+
+`backups/env` was made by the root sidecar with umask 077, so the box owner
+could not read their own `.env` backups without sudo. The directories now
+go to the stack directory's owner, as the pre-roll backup's do.
+
+## 0.239.3: switch sandboxes or media on and off through the updater
+
+- **The updater** takes one new request kind, in its own file
+  (`/signal/service-request.json`, so an older updater never takes it for a
+  roll): a service (`sandboxes` or `media`) and on or off.
+- **On:** a free-disk check, `.env` backed up to `backups/env` (newest 5),
+  the token and sandboxes directory written when missing, the profile
+  added, only that service pulled and started (`--no-deps`), then a health
+  wait. Any failure restores `.env` and stops the container again.
+- **Off:** running sandbox containers are stopped (never removed), the
+  service container is stopped and removed, the profile dropped. Tokens,
+  the sandboxes directory, every sandbox's files, app data and images stay.
+- **Routes** (admin logins): `GET /api/services` (state, plain descriptions
+  with download size and memory, the small-box warning, the current run),
+  `GET /api/services/status` (progress), `POST /api/services/:name
+  { enable }`, audited as `service.toggle`. A switch is refused while a roll
+  runs, and a roll while a switch runs. The brain offers the switch only
+  when the updater advertises the verb.
+- docs/services.md (new); sandboxes.md, video-ingest.md and self-hosting.md
+  point at it.
+
+## 0.239.2: outside Claude learns how a mini app knows who runs it
+
+An MCP client building an app had no way to learn about `host.me()`; only
+the in-brain `app_authoring` skill taught it.
+
+- **`app_create`** carries a short runtime hint: `host.me()`, the
+  `:host_me_*` parameters with a SQL example, `host.db`, `host.tools.call`
+  with `app_tools_set`, and the level rules. `app_file_write` and
+  `app_source_set` point at it; `app_tools_set`, `app_db_schema_set` and
+  `app_db_query` say the rules that touch them.
+- **`app_authoring_guide`** (new, MCP only, read only) serves
+  docs/app-authoring-guide.md whole or one section. The admin server
+  instructions point at it.
+- **Docs drift fixed:** the guide said a team app cannot learn the member,
+  and that share links and members never call outside tools (External
+  access says otherwise). The Appsmith skill states the current levels.
+
+## 0.239.1: the boot reconcile keeps the owner's param switches
+
+`syncSpecialistDefs` wrote the manifest `params` whole onto every enabled
+specialist, so a `tool_loading`, `suggest_follow_up` or `top_p` the owner
+set went back to the manifest on the next boot. Those three keys
+(`OWNER_PARAM_KEYS`) now keep their stored value; the manifest still owns
+`temperature` and `max_tokens`. Adopt from template follows the same rule.
+The compare ignores jsonb key order, so a row is no longer rewritten on
+order alone. The propagation table in
+`server/web/lib/system-manifest/CLAUDE.md` names the kept keys.
+
+## 0.239.0: one live source for whether sandboxes and media are on
+
+- **`serviceEnabled()`** (@mantle/config) answers for the dashboard pills,
+  `/api/sandboxes`, the sandbox tools, `video_ingest`, the CAD render path
+  and the agent tool list, instead of a check for a bearer token. On means
+  the compose profile is active (the updater's live
+  `/signal/services.json`, else the container's `COMPOSE_PROFILES`) and the
+  URL and token are set.
+- **A service that is off shows a grey pill**, not red.
+- **An agent is not offered** `sandbox_*` or `video_ingest` where the
+  service is off (`effectiveToolSlugs` drops them; the grant stays).
+- **The updater** writes `/signal/services.json` (profiles, token presence,
+  container state, host memory, disk, core shape, verbs) with `stack.json`.
+  Every app service mounts `/signal` read only.
+- **Both service tokens** are made on a roll and on install, so a later
+  switch starts one container instead of restarting the brain. Never
+  rotated.
+
+## 0.238.18: memory_config saves, and the oauth2 binding survives the editor
+
+- **One `memory_config` schema.** The agent POST and PATCH routes held two
+  copies that had drifted (a create with `chunk_limit`, `corpus_map_*` or
+  the Journal keys was a 400). Both use
+  `lib/agent-memory-config-schema.ts`. A key sent as `null` is now removed,
+  so a field cleared in the form goes back to its default.
+  `AgentMemoryConfigDTO` gains `corpus_map_limit`, `corpus_map_chars`,
+  `max_tool_calls` and `max_calls_per_tool`.
+- **The tool-group editor** has no `oauth2` field, and a save from it
+  dropped the stored client-credentials binding. An absent `oauth2` now
+  keeps the stored one; `oauth2: null` still clears it.
+
+## 0.238.17: the corpus map in about 2k tokens, every branch shown
+
+The "what exists" block rendered up to 24k characters (about 7.6k tokens a
+turn) and filled its budget alphabetically, so on a big brain `tables` and
+`tasks` never appeared. The prompt-block audit of 2026-10-05 found no
+answer-quality gain from the block at that size.
+
+- Budget 6,500 characters by default (`memory_config.corpus_map_chars` per
+  agent), shared round robin across branches, newest items first.
+- Branch headers carry the corpus-wide count. Three or more file titles
+  that differ only in digits fold into one line; other types fold only on
+  an exact duplicate, so dated titles keep their own line.
+- Page summaries are left out; tables keep their schema digest. The block
+  claims to be complete only when it is. docs/memory.md.
+
+## 0.238.16: the deferred tool catalog lists groups no flow holds
+
+Under `params.tool_loading = 'deferred'`, a group no flow holds (an owner's
+API integration, an MCP or OpenAPI connector) gets its own catalog line,
+and `tool_search` takes that group slug as its flow. A tool's first
+description sentence reaches the catalog only when the brain wrote it
+(builtins and owner-written http tools); MCP tools, OpenAPI-compiled tools
+and recipes stay names only. The search rule wording is unchanged (a
+stricter one lost on the bench). docs/tools-and-skills.md.
+
+## 0.238.15: the delegate roster shrinks lines instead of dropping delegates
+
+Over its 1,200-character budget the roster dropped delegates from the end of
+`delegate_to`, so a parent with many specialists never delegated to the
+hidden ones. Every delegate now stays: lines shrink lowest rank first, to one
+group chunk and then to the bare name. The tail is cut (and the cut said)
+only when even the bare names overflow.
+
+## 0.238.14: http tools fill omitted inputs from their schema defaults
+
+An optional `{param}` the caller left out dropped its query pair, so a
+paging field with `default: 50` sent an unpaged request. The dispatcher now
+fills absent top-level fields from the tool's `input_schema` defaults before
+templating. A field that is present (even `null`) is left alone.
+
+## 0.238.13: OAuth2 client credentials for integration groups
+
+- An integration group can carry `oauth2`: a token URL and vault refs for
+  the client id and secret. Tool templates place the token with
+  `{{oauth:<group-slug>}}`; `tool_group_ensure` defaults the placement to a
+  Bearer `Authorization` header.
+- At call time the dispatcher trades the credentials for a token through
+  `safeFetch` (the same egress rules as every api-tool call), keeps it in
+  process memory until shortly before it expires, fetches one at a time per
+  group, and on a 401 replaces the token once and retries once. The token
+  goes only to the group's `base_url` origin; the token, client id and
+  secret are scrubbed from every result and error.
+- **Fix:** `tool_group_ensure` no longer drops a re-declared `base_url`,
+  `secret_ref` or `auth_template` on an existing group.
+
+## 0.238.12: client code caps end at now
+
+The client code send caps counted codes created after "now minus the
+window" with no upper end, so codes stamped in the future (a test fixture)
+counted against every real request. The caps and
+`clientCodesSentLast24h` count only the window before now. No change on a
+live box.
+
+## 0.238.9: New chat, Previous chats
+
+"New chat" (web) and `/new` (Telegram) close the agent's open chat and start
+a fresh one. The old chat stays saved and searchable under Previous chats.
+docs/conversation.md section 6c.
+
+- **Migration 0231** (`0231_chat_threads`): `chat_threads`, one row per
+  thread, a time range over the agent's `assistant_messages`. Messages never
+  move. No row means the old single thread.
+- **What a turn reads:** the history window, digests, history recall and the
+  follow-up enrichment read only the open thread.
+- **The archive summary:** one summarizer call per archive writes one note
+  (`data.kind: chat_archive`, embedded, never extracted). It comes back by
+  relevance and in `find_window` (kind `thread`). No trigger or timer runs
+  it; a failed call leaves a plain title and a retry route. A closed range
+  is digested alone, so no digest spans the cut.
+- **Continue from this** seeds the new chat with the archived thread's
+  summary, writing the summary first when it is missing.
+- **Routes:** `GET/POST /api/assistant/threads`, `GET
+  /api/assistant/threads/:id`, `POST …/:id/continue` and `…/:id/summarize`.
+  `/thread` and `/messages` answer the open thread only
+  (`messages?thread=<id>` pages an archived one).
+- Deleting an agent removes its archive notes with the digests.
+
+## 0.238.8: the reflector skips MCP-answered turns
+
+A turn an MCP client answered as the agent (`responder_turn_record`, channel
+`mcp`) neither wakes the reflector nor reaches what it reads, so persona
+notes never learn from a test model. The summarizer still reads these turns
+into digests. docs/connecting-claude.md.
+
+## 0.238.7: deferred tool loading (opt in per agent)
+
+An agent with `params.tool_loading = 'deferred'` is sent a fixed core of its
+granted tools plus `tool_search` and `use_tool`. Every other granted tool is
+listed by name in a catalog in the first (cached) system block.
+`tool_search` ranks the deferred tools in code (BM25 over tool cards,
+synonyms, a usage prior) and returns their full schemas; the model calls a
+loaded tool by name or through `use_tool`, and both dispatch, validate,
+guard and trace as the real tool. An ungranted name is still refused. The
+tools sent depend only on the grant, so the cached prefix does not move.
+Absent or `'full'` keeps the old behaviour.
+
+- The core goes out in a fixed list order (search and read first).
+  `update_persona` is in the core.
+- A deferred tool called by name with bad arguments gets its real input
+  schema back, once per turn.
+- Bench (101 cases, right first tool): about 11k instead of 58.5k tool
+  tokens per call; Claude scored 88 to 90 against 91 with the full list.
+- docs/tools-and-skills.md, "Deferred tool loading".
+
+## 0.238.6: responder_turn_record
+
+Opt-in write after `responder_turn_input`: the user's message and the MCP
+client's reply land in the agent's conversation (channel `mcp`), so the
+Assistant window, the history window, digests and replay see them. The
+reply's model is the client's; `data.authored_by` names the client and
+model, and a trace (`mcp_turn_record`) names who answered. Owner connector
+only; team and client responders are refused. A channel `mcp` reply sends no
+push. `replay_window`'s app arm now reads web, mobile and mcp turns (it read
+web only, so mobile turns were missing too). No new trigger or cron.
+docs/connecting-claude.md, docs/conversation.md.
+
+## 0.238.5: box-maintain containers see the file bytes
+
+`box-maintain.sh` containers now mount the `mantle_web` volumes read only.
+Without `/data/files`, `ocr-rescan` counted every PDF as unreadable.
+
+## 0.238.4: responder_turn_input
+
+`responder_turn_input` (MCP, owner surface) returns one responder turn's
+exact input up to the model call, with no model call: the composed prompt,
+the retrieval for the message, the history and the tool list. An MCP client
+can answer as the agent with its own model and see what the agent saw. It
+shares the sim's read path. Tools default to name and first sentence;
+`schemas_for` fetches full schemas. A peer needs it named; team and client
+responders are refused. The sim's caller history is now cut to the agent's
+history window and drives the follow-up enrichment. docs/connecting-claude.md.
+
+## 0.238.3: ocr-rescan for scans indexed wrong
+
+Before 0.238.2 a scanned PDF of two or more pages was indexed as its own
+page markers, and a one-page scan stuck at `body_too_short`. `pnpm maintain
+ocr-rescan` (dry run by default) prints counts, pages, the models that will
+run and an estimated cost from the live catalog. `--apply` clears the bad
+text, summary, embedding and chunks and re-queues each file through the
+normal extract queue in batches; `--limit=N` to start small. Ids and counts
+only.
+
+## 0.238.2: extract skips are stamped, and scans OCR again
+
+- **A node the extractor reads and finds nothing in** (no parser, body too
+  short, media, encrypted PDF, missing bytes, a digest, an empty Telegram
+  turn) kept no embedding, so the boot drain and every provider recovery
+  queued it again. Such skips now stamp `data.extract_skipped = { reason, at
+  }`, and the drain leaves the node alone while the stamp is newer than its
+  `updated_at`. An edit makes the stamp stale; a successful pass removes
+  it. `pnpm maintain extract-skip-stamp` (dry run; `--apply`) stamps the old
+  loops in plain SQL.
+- **`parsePdf`** returned pdf-parse's `-- N of M --` page markers for a PDF
+  with no text layer. Markers alone now parse to an empty string, and the
+  scan takes the OCR path.
+
+## 0.238.0: provider outages are visible and recover without a restart
+
+An embedding account with no credits answered 429, every extract job
+dead-lettered for days, chat turns lost their context, and nobody was told.
+Fixing the account did not move the backlog until a restart.
+
+- **Error classes** (`provider-error.ts`): account errors (no credits,
+  refused key, no key, unknown model) apart from transient ones. A
+  no-credits 429 no longer waits through the rate-limit backoff. Embedding
+  and chat failover also fail over on an account error.
+- **Migration 0230** (`0230_provider_alerts`): `provider_alerts`, one row per
+  brain and subject, fixed reasons only. Every embed and extractor chat call
+  reports its outcome; a call that works closes the alert. Admins see it in
+  Needs you, the live stream and one phone push.
+- **The circuit** (`provider-circuit.ts`): a confirmed account error pauses
+  the extract queue and probes at 5, 10, 20, 40 minutes, then hourly. When a
+  probe works the queue resumes, dead letters are re-driven and unextracted
+  nodes swept, with no restart. A settings save or **Try again** (`POST
+  /api/embedding/recover`) probes at once. The boot line says PAUSED while
+  the circuit holds the queue.
+- **Same-model backup:** Settings suggests OpenRouter for OpenAI direct and
+  the reverse; onboarding sets it when the key is saved. The OpenAI adapter
+  drops an `openai/` prefix, so one slug serves both routes.
+
+## 0.237.13: box-maintain.sh, and a bounded chunk-windows backfill
+
+- **`scripts/box-maintain.sh <box> <task> [args]`** runs a long `pnpm
+  maintain` task in a throwaway sibling of `mantle_web` (same image and
+  network, the web env through a pipe, its own memory limit, `--rm`, a
+  mode-600 log file). It refuses a second run on the box. `--status`,
+  `--logs`, `--follow`, `--stop`. `pnpm maintain` now always ends with one
+  line: finished, FAILED with the exit code, or killed by a signal.
+  docs/maintenance-runner.md, update-prod.md.
+- **The chunk-windows backfill** held a page of 500 chunks as JS arrays and
+  one big JSON parameter, and was killed at `--parallel=16`. It now reads
+  chunks as text, copies a one-window chunk in SQL, and writes the others in
+  batches of about 100 windows. Measured peak memory at `--parallel=16`:
+  1,047 MB down to 486 MB.
+
+## 0.237.11: one shared connection pool for every provider call
+
+Node 26.5's built-in fetch sends POSTs one at a time on a warm HTTP/2
+session, so N parallel provider calls took N request times. `providerFetch`
+(`packages/voice/src/adapters/provider-fetch.ts`) is the built-in fetch with
+one shared undici Agent (HTTP/1.1 keep-alive, 32 connections per origin).
+Every voice adapter, the OpenRouter client and the decisions judge use it;
+32 parallel POSTs went from 9.9 s to 0.24 s. The tailnet proxy loads undici
+the same way (its bare `require` threw under ESM). Embed calls back off on a
+429 (2, 4, 8, 16 s). The windows backfill takes `--parallel=N`.
+docs/provider-http.md (new).
+
+## 0.237.10: passage windows, a deeper judge pool, a parallel judge
+
+- **Passage windows** (opt in): each chunk also gets about 800-character
+  sentence windows with their own vectors, and passage search adds a window
+  arm that returns the window's chunk, so the prompt budget does not change.
+  **Migration 0229** (`0229_chunk_windows`): `embedding_config.chunk_windows`
+  (default false) and `content_chunk_windows` (no text, HNSW halfvec, RLS
+  follows the node). `pnpm maintain chunk-windows` (dry run, `--apply`,
+  `--off`, `--clear`) and `eval:route --windows`. On the library test
+  corpus, paraphrased questions R@10 rose from 40% to 63%.
+  docs/embeddings.md.
+- **`passage_scoring.pool`** goes up to 200 (was 100); with windows on the
+  pool doubles.
+- **The judge fan-out runs side by side** (it ran one request after another
+  under the built-in fetch). Pool 50: p50 1.39 s to 0.91 s.
+- docs/recall-eval.md, docs/decisions.md.
+
+## 0.237.7: a keyword-found passage skips the cosine cutoff
+
+The 0.65 cosine cutoff threw away literal matches that embed poorly (a code,
+a reference, a coined word) even when the keyword arm ranked them first.
+Under `KEYWORD_PASSAGE_RULE = 'exempt'` a passage with a keyword-arm rank is
+not held to the cutoff; its place and the `chunk_limit` cut are unchanged.
+The trace says `exempt:keyword`. Gated with `eval:route`.
+docs/recall-eval.md.
+
+## 0.237.6: the context decision trace, and eval:route
+
+- **Decision trace v1:** every turn's `load_context` snapshot carries
+  `trace` (`ContextTrace` in @mantle/client-types): per stage the candidates
+  in, kept, dropped and milliseconds; per candidate the block, key, the
+  stage and reason code, which arm found it with its ranks, the distances
+  and the judge score. The `search_chunks` step output carries the same
+  trace. Observation only: the prompt is unchanged. Ids and codes, no text,
+  150 rows at most. docs/observability.md.
+- **`pnpm -C server/web eval:route`** runs a typed case set through named
+  rulesets and reports R@1, R@10, MRR, latency and cost per question type,
+  with a paired gate against the reference. Manual only; prints its cost.
+- **Fix:** `recall_eval`'s `chunks` line measured the vector arm alone; it
+  is now the hybrid path agents use (`chunksVector` keeps the old number).
+  docs/recall-eval.md.
+
+## 0.237.4: an optional deeper pool for passage_scoring
+
+`uses.passage_scoring.pool` (per brain; unset keeps the old pool) sets how
+many passages to fetch and score, up to 100, fanned out in requests of 25.
+With a pool set, auto-context scores before its budget cut even when
+`context_pruning` is on. `eval:recall` gains `passage-scored`. On the
+library test set, a pool of 50 lifted `search_chunks` R@10 from 43% to 53%
+at about three times the judge cost. docs/decisions.md.
+
+## 0.237.3: the keyword arm speaks only on rare literals
+
+On a large single-topic corpus the hybrid passage search scored below
+vector only: a question's frame words outvoted its one rare word. The k-th
+rarest term now weighs `idf * 0.5^k`, question-frame words are dropped like
+chat filler, and the passage keyword arm returns rows only when they hold a
+rare term (`gateRareTerms`). Passage search p50 went from 150 ms to 14 ms.
+Node search is unchanged.
+
+## 0.237.1: per-agent thinking effort
+
+- **Migration 0228** (`0228_agent_thinking_effort`): `agents.thinking_effort`,
+  nullable. NULL inherits the person's profile setting, as before; `off`
+  never reasons; a tier is that effort whatever the profile says.
+- One rule (`resolveAgentThinking` in content-core) for every turn path:
+  web, Telegram, sim and resumed runs, team and client turns, delegated
+  agents, heartbeats and run workers.
+- Read and set through `GET/POST/PATCH /api/agents`, Agent Studio, and
+  `agent_set_thinking_effort` (new; no self-change, an agent asking waits
+  at /pending). Shipped agents stay on inherit. docs/thinking.md.
+
+## 0.237.0: passage-level recall eval, and the measured capacity policy
+
+- **`eval:recall`** gains passage retrievers scored on the exact chunk and
+  on the document (`passage`, `passage-vector`, `passage-keyword`). Cases may
+  name `expectChunks` and a group; `--retrievers` picks a subset.
+- **`corpusCapacity`** (the dashboard dial and `brain_capacity`) also
+  returns `retrieval`: the passage recall@10 and MRR of the newest
+  `recall_eval` run, or null. Optional on `BrainCapacity`.
+- **Passage-vector policy:** watch at 100k and split at 250k (was 50k and
+  100k), from a measured scale curve: recall@10 falls about 6 points per
+  doubling, with no cliff. docs/recall-eval.md, "Scale curve".
+
+## 0.236.1: foldable headings in pages
+
+A heading can fold: `## Title {fold}` (open) or `{fold=closed}`. Fold state
+is the reader's own, kept in localStorage per heading block; print shows
+every section. The share reader, the page renderer and `page_blocks_list`
+(`meta.fold`) know it. Docs without the marker are unchanged.
+docs/pages.md, docs/rich-writing.md.
+
+## 0.236.0: MCP as a login
+
+`/api/mcp` now serves any login. docs/mcp-as-a-login.md.
+
+- An admin's OAuth grant keeps the full owner surface. A member's or
+  client's grant (or a static login token) gets that role's responder tools
+  at the login's level, read only unless an admin turns write on, and then
+  only the draft tools of the login's own space. A login with no tools gets
+  a plain 403.
+- A peer token can act as one login (owner, member or client) with its own
+  write switch. Bound to the owner it gets the owner surface without the
+  risky tools (runs, mail, the contacts allowlist, confirm-gated tools, live
+  app code, model routing, third-brain egress) unless they are named.
+  Rebinding a peer starts closed. Each peer has its own rate budget.
+- **Migration 0227** (`0227_mcp_login`): `mcp_login_access`,
+  `mcp_login_tokens`, `session_epoch` on OAuth codes and tokens, acts-as and
+  write columns on `mantle_peers`.
+- **Tools:** `my_note_create`, `my_page_create`, `my_file_upload`,
+  `my_item_submit`, `peer_tools`, `peer_call`, `peer_file_copy`. **Admin
+  API:** `/api/mcp-logins`. Switching a login's MCP off revokes its grants
+  and tokens.
+
+## 0.235.3: new brains start with the house style and Medium thinking
+
+`DEFAULT_PREFERENCES` seeds the no-dash house style and a Medium (4096)
+thinking budget when a profile row is first made. Existing rows keep their
+values.
+
+## 0.235.2: no document titles as entities; initials join full names
+
+- A project or event mention on a file node is dropped when it is the
+  node's own title, or a bare numbered-work label. The prompt says the same.
+- `reconcileEntity` matches a person's initials to a full given name on the
+  same surname (unique match only); the dedup review gains initials groups.
+  `entities-title-cleanup` is a dry-run-first SQL cleanup with a JSON
+  backup.
+- **Fix:** entity dedup always saw 0 edges per entity (a drizzle column
+  binding), so `pickCanonical` never used real counts.
+
+## 0.235.0: up to 16 extractors, and the count is live
+
+The extractor cap is 16 (was 8). The extractor re-reads the saved count
+every 30 s and grows or shrinks its pool (a removed worker finishes its job
+first); the time budget is live too. No restart after a change. `GET/PATCH
+/api/embedding/extraction` shows the queue (working, waiting, retrying, done
+in 10 minutes, dead-lettered) and sets the count.
+
+## 0.234.13: new file bytes leave no old version to find
+
+- A file whose bytes change (editor save, upload replace, the disk watcher)
+  drops everything made from the old bytes at write time: summary,
+  entities, text, schema digest, extract markers, embedding and chunks.
+  The "migrated" supersede mark goes too, so search no longer sends agents
+  to a page made from the old bytes.
+- **Fix:** `upsertFile` rebuilt the node's data, so every editor save
+  dropped the per-file `indexing: 'metadata'` flag and an excluded file went
+  to full indexing. It merges now.
+- A re-extract that finds no facts retires the node's live facts.
+- The upload route takes `replace=true` to write new bytes over a taken name
+  in place: same node, so links and history hold.
+
+## 0.234.12: Mammouth as a chat provider
+
+`mammouth-chat` is an OpenAI-compatible adapter for the Mammouth aggregator
+(one key, many model families), chat only. A static catalog carries the
+published models and per-1M rates, and the adapter reports cost from it;
+uncatalogued ids stay unpriced. Live discovery appends new chat ids and
+feeds `models:drift`. docs/ai-workers.md.
+
+## 0.234.7: headless onboarding, the setup code and the terminal wizard
+
+While no account existed, signup made its caller the owner, so a box on a
+public address belonged to whoever reached it first.
+
+- **The setup code.** `scripts/install.sh` makes `MANTLE_SETUP_CODE` (four
+  groups of five, about 99 bits, never rotated), prints it while the brain
+  is unclaimed, and `--setup-code` prints it again. Signup needs it while no
+  account exists and a code is set (403 `reason: 'setup-code'`, audited).
+  Unset changes nothing. `bootstrap-state` answers `{ firstRun,
+  setupCodeRequired }`. Contract: `BootstrapStateDTO`, `SignupBody`,
+  `SignupRefusedReason`.
+- **The terminal wizard.** `scripts/onboard.sh` (box wrapper) and `pnpm -C
+  server/web onboard` walk the wizard's own steps (`lib/onboarding-steps.ts`,
+  now shared with the onboarding route) with a default for every prompt,
+  resumable either way with a GUI client. Secrets come hidden or on stdin,
+  never in argv. `onboard.sh` ships with the release scripts, and the
+  updater installs a script the box lacks at start.
+- **Core shape** is derived on every start from the box's compose files and
+  profiles (`lib/compose-shape.ts`); Tika is optional only on a core box
+  without helpers.
+- **Fix:** a short follow-up on the member chat failed with "That did not
+  go through": the query enrichment read the owner's messages, which a team
+  turn may not. The team turn now passes the member's own thread.
+- **Fix:** `publish-contract` fails unless every published version is
+  visible on npm (it polls for up to 40 minutes).
+- Client pair: jackdaw v0.6.214 (the Setup code field).
+- docs/onboarding.md section 8, self-hosting.md, security.md, scripts.md,
+  configuration.md.
+
+## 0.234.6: the app inspect-to-focus overlay is gone
+
+The Select element mode reacted only to `[data-app-region]` elements, which
+apps never reliably carried. share-ui drops the inspect and select bridge
+messages, the `AppSandbox` inspect props and the overlay script. Appsmith is
+no longer told to mark regions.
+
+## 0.234.5: a stable brain id
+
+- **Migration 0226** (`0226_brain_identity`): one row, a random uuid made by
+  the migration and never changed. Not a secret.
+- `GET /api/auth/whoami` answers it as `brainId`, and so do device-login,
+  the client code verify (device mode), token refresh and pair claim (the
+  last two also gain `loginId`).
+- **Every push payload** carries `brainId` and the `loginId` the device was
+  enrolled for, so a phone with several logins opens the right one. `v`
+  stays 1.
+- **`db-restore.sh --new-brain`** gives a brain made from another brain's
+  dump its own id. A plain restore keeps the dump's id and says so.
+- docs/mobile-companion-backend.md (contract v1.1), deploy.md, scripts.md,
+  backups.md.
+
+## 0.234.3: "Team apps may use" becomes External access
+
+The switch on one outside tool (mcp or http) now follows the app's sharing:
+a member running a team or public app, anyone running a client-level app,
+and a contact on a contact-share link past the code gate. An open link
+still runs no tool, and no built-in ever runs on a link. The app must still
+declare the tool; the confirmation and clearing rules are unchanged. A
+contact's call lands in the share's trail as `tool`. **Migration 0225**
+(`0225_tool_external_access`) renames `tools.team_apps` to
+`external_access`; `PUT /api/tools/:id/external-access`,
+`ToolDTO.externalAccess`, `api_tool_update external_access`. No alias.
+
+## 0.234.1: reopen puts a task back where it was
+
+When a task moves into done, its old status is kept in
+`data.status_before_done`. `reopen: true` on `PATCH /api/tasks/:id` and
+`task_update` takes it back there (or to open). Contract, additive:
+`TaskRow.statusBeforeDone`, `TreeItemMeta.reopensTo`.
+
+## 0.234.0: the apps audit fixes
+
+The rest of the apps audit of 2026-10-02, on top of Phases 0 to 4.
+
+- **An imported package gets no tools.** A `.mantleapp` is a file from
+  anywhere, and its declared tools used to be granted at once. Import now
+  installs with an empty allowlist and answers `requestedToolSlugs` (this
+  brain has them) and `droppedToolSlugs` (it does not), for the owner to
+  grant with `app_tools_set`. `app_import` always waits for the owner in a
+  client turn.
+- **History pruning** runs in one statement under the lock, so a row added
+  meanwhile (a `pre_delete`) is never pruned with its file. It also keeps a
+  byte budget: `APP_SNAPSHOT_AUTO_MAX_MB` per app (default 1024) and
+  `TABLE_HISTORY_MAX_MB` per table (default 512), the newest always kept.
+- **Restores.** A data restore works when the live file is lost (the undo
+  snapshot keeps the code only). A code restore no longer changes the live
+  tools; it names the restored code's tools as `declaredTools` when they
+  differ. A full restore and an undelete keep the snapshot's draft. A seed
+  batch holds the registry row lock, so a restore waits for it.
+- **Schema versions** declared by `app_db_schema_set`, the import route and
+  `apps:push` start past the database's own version (after a data restore
+  or an undelete a new schema used to be skipped).
+- **Export dirty marks.** Every app write also stamps `last_write_at`, and a
+  sync clears the mark only when no write came after its read. **Migration
+  0223** (`0223_app_table_exports_last_write`).
+- **Builds.** A build of source that changed meanwhile is not staged; the
+  build step builds again (twice at most).
+- **The error log** is bounded per caller (10 rows a minute each, 30 for all
+  non-owner callers together, 2000 a day per app), the reaper drops error
+  rows after 14 days and past the newest 2000, and `app_errors` fences its
+  rows as untrusted visitor data. **Migration 0224**
+  (`0224_app_access_log_error_idx`): a partial index for the error rows.
+- **Imports** stream the upload to a spool file, check the size before
+  reading, and take a turn from one per-process limit (two at a time). A zip
+  with more than 16 entries is refused before parsing. A step that fails
+  after the install drops the half-made app.
+- **Backups** hard-link the two history trees instead of copying them; the
+  table history copies run in a SQL child, off the event loop.
+- **Lows.** Entry checks use `Object.hasOwn`. The Recently deleted and
+  History lists read from the row, not the code JSON (**migration 0224**,
+  `0224_apps_audit_lows`, adds the file count, source size and draft flag).
+  A tool confirmation ticket is used once. The nightly `app-trash-purge`
+  also sweeps work files a crash left behind after an hour.
+- **share-ui:** `AppSandbox` refuses a second tool confirmation while one is
+  open, and the browser-dialog fallback shows the start and the end of a
+  long input.
+
+## 0.234.0: app_export and app_import, the package as a brain file
+
+- **`app_export` / `app_import`** (owner only, group apps, also on MCP): an
+  agent saves an app as a `.mantleapp` file under /files (folder exports)
+  and makes a new app from one; the Appsmith prompt teaches them with
+  `app_duplicate` and `app_errors`.
+
+## 0.234.0: table history (apps first-class, Phase 4)
 
 - **Every table commit keeps the version it replaces** (a hard link, no
   copy) on the table's history; the newest 20 per table, plus the owner's
@@ -23,33 +633,8 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   deleted table's history after 30 days. The Ledger agent and the
   `table_authoring` skill teach the history. docs/tables.md section 4.
 
-## Unreleased: apps first-class, Phase 3 (trash, import, app_update)
+## 0.233.2: app export, import and duplicate; the app error log (apps first-class, Phase 3)
 
-- **App table exports survive a restart (D8).** The first app write of a
-  burst stamps the app's exports `dirty_since` (**migration 0221**,
-  `0221_app_table_exports_dirty`); the sync that reads the rows clears it.
-  The web process resumes the dirty ones at boot. The maintenance task
-  `app-export-catch-up` (`pnpm -C server/web app-export:catch-up`, dry run
-  unless `--apply`) syncs any dirty for 20 minutes; by hand only, since a
-  changed table is re-indexed (not on the nightly cron).
-
-- **App error log (G4).** Every broker (owner, member, client, share) logs
-  the errors it answers a running app with: kind `error` in
-  `app_access_log`, with the message, the SQL or the tool slug, who ran it
-  and the status. Capped at 30 rows per app per minute; busy waits are not
-  logged; a server fault keeps the generic text. Read with `app_errors`
-  (owner only, group apps) or `GET /api/apps/:id/access-log?kind=error`
-  (`kind` and `limit` are new). An access-log write that throws before it is
-  sent no longer reaches the caller.
-
-- **`app_export` / `app_import`** (owner only, group apps, also on MCP): an
-  agent saves an app as a `.mantleapp` file under /files (folder exports)
-  and makes a new app from one; the Appsmith prompt teaches them with
-  `app_duplicate` and `app_errors`.
-- **Duplicate.** `app_duplicate` / `POST /api/apps/:id/duplicate` copies an
-  app with its builds (live at once), draft, tools, schema and data
-  (`with_data: false` for code only). Admin-only, unshared, no history but a
-  "copied from" version, no table exports.
 - **`.mantleapp` export and import.** `GET /api/apps/:id/export` downloads a
   zip of the code and a copy of the data (`?data=0` without).
   `POST /api/apps/import-package` (the file as the raw body) makes a new app
@@ -58,6 +643,27 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   is built here and published when it was published; unknown tools are left
   out and reported. docs/app-authoring-guide.md, "Export, import and
   duplicate".
+- **Duplicate.** `app_duplicate` / `POST /api/apps/:id/duplicate` copies an
+  app with its builds (live at once), draft, tools, schema and data
+  (`with_data: false` for code only). Admin-only, unshared, no history but a
+  "copied from" version, no table exports.
+- **App error log (G4).** Every broker (owner, member, client, share) logs
+  the errors it answers a running app with: kind `error` in
+  `app_access_log`, with the message, the SQL or the tool slug, who ran it
+  and the status. Capped at 30 rows per app per minute; busy waits are not
+  logged; a server fault keeps the generic text. Read with `app_errors`
+  (owner only, group apps) or `GET /api/apps/:id/access-log?kind=error`
+  (`kind` and `limit` are new). An access-log write that throws before it is
+  sent no longer reaches the caller.
+- **App table exports survive a restart (D8).** The first app write of a
+  burst stamps the app's exports `dirty_since` (**migration 0221**,
+  `0221_app_table_exports_dirty`); the sync that reads the rows clears it.
+  The web process resumes the dirty ones at boot. The maintenance task
+  `app-export-catch-up` (`pnpm -C server/web app-export:catch-up`, dry run
+  unless `--apply`) syncs any dirty for 20 minutes; by hand only, since a
+  changed table is re-indexed (not on the nightly cron).
+
+## 0.233.1: recently deleted apps, app_update, an import that checks first (apps first-class, Phase 3)
 
 - **Recently deleted.** Deleting an app keeps a `pre_delete` snapshot (code,
   name, look and data) and its history for 30 days; it comes back with the
@@ -77,7 +683,7 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 - **One build step** (`buildAndStageApp` in @mantle/tools) behind `app_build`,
   Preview, Commit, import and `apps:push`.
 
-## Unreleased: app history, versions and snapshots (apps first-class, Phase 2)
+## 0.233.0: app history, versions and snapshots (apps first-class, Phase 2)
 
 An app's code AND its data can now be put back
 (docs/app-authoring-guide.md, "History: versions and snapshots").
@@ -107,7 +713,7 @@ An app's code AND its data can now be put back
   numbered line per item, apps now, tables later), `apps.restored_from_seq`,
   and v1 for every published app (pure SQL).
 
-## Unreleased: apps speed (apps first-class, Phase 1)
+## 0.232.387: apps speed (apps first-class, Phase 1)
 
 - **Running an app reads less.** The db and tool brokers and the frame
   routes (owner and `/s`) load the app through `getAppRuntime`: its level,
@@ -126,7 +732,7 @@ An app's code AND its data can now be put back
 - **Migration 0218** (`0218_app_access_log_created_idx`): an index on
   `app_access_log.created_at` for the retention reaper. Additive.
 
-## Unreleased: apps safety (apps first-class, Phase 0)
+## 0.232.386: apps safety (apps first-class, Phase 0)
 
 The first slice of the apps audit of 2026-10-02: the fixes the snapshot and
 restore work depends on (docs/app-authoring-guide.md, "Per-app SQLite").
@@ -177,7 +783,7 @@ restore work depends on (docs/app-authoring-guide.md, "Per-app SQLite").
   formula `evaluate` route stop a chunked body while reading. The share
   db-broker used to buffer any body an anonymous caller sent.
 
-## Unreleased: app identity, an app knows who runs it
+## 0.232.384: app identity, an app knows who runs it
 
 A mini app can show who runs it and record who did what, and the record
 cannot be faked from the browser (docs/app-authoring-guide.md, "Who is
@@ -202,7 +808,38 @@ running the app").
   (and the `app-viewer` subpath); `@crossworks/share-ui` re-exports the type
   and its frame builder takes an optional `viewer`. Additive.
 
-## Unreleased: contact shares, one item for one contact
+## 0.232.383: a tool group answers its level
+
+`ToolGroupDTO.audience` (optional in the contract) is set from the row, so
+`GET /api/tool-groups` and `GET /api/tool-groups/:id` carry the group's
+level. The owner UI shows and sets it with it. No migration.
+
+## 0.232.382: an item deleted during a save drops out of its embeds
+
+`mantle_sync_embeds` checked that an embedded item exists, then inserted the
+edge. An item deleted in between failed the foreign key, and with it the
+user's save of the page, drawing or note. **Migration 0216**
+(`0216_embed_sync_skips_deleted`) replaces the function: the insert joins
+the target and locks it for key share, so a delete in flight is waited for
+and the row skipped.
+
+## 0.232.380: "Team apps may use", an admin switch on one outside tool
+
+A member's run of a team app could call only read-only built-in tools, so a
+site's own connectors were refused in every team app. (Renamed External
+access in 0.234.3.)
+
+- **Migration 0215** (`0215_tool_team_apps`): `tools.team_apps`, set when an
+  admin confirms the tool only reads, with who and a signature of the
+  handler. It counts only while that signature matches, so any handler
+  change voids it; tool edits clear it.
+- mcp and http tools only (no PUT, PATCH or DELETE); never recipe or shell;
+  never a tool that needs confirmation. The app must still declare the tool.
+- `PUT /api/tools/:id/team-apps` (admin logins); `api_tool_update` takes
+  `team_apps` and `read_only_confirmed` (on only from the owner's MCP client
+  or tool console); `ToolDTO.teamApps`. Each switch writes an audit row.
+
+## 0.232.379: contact shares, one item for one contact
 
 An admin shares ONE workspace item with ONE outsider, without showing it to
 the team (docs/sharing.md section 4b). The item's level never changes.
@@ -255,7 +892,7 @@ the team (docs/sharing.md section 4b). The item's level never changes.
   security.md 3, app-authoring-guide.md "Sharing an app",
   maintenance-runner.md.
 
-## Unreleased: public apps leave the member launcher
+## 0.232.379: public apps leave the member launcher
 
 Public now means "anyone with the link" for an app, as it does for every
 other kind (contact shares plan P0, decided 2026-10-01).
@@ -271,7 +908,38 @@ other kind (contact shares plan P0, decided 2026-10-01).
 - **Docs.** `docs/member-logins.md` section 7, `docs/access-levels.md`
   section 7, `docs/team-hub-app-sdk.md` section 2.
 
-## 0.232.370: a restored brain keeps its folder share refresh
+## 0.232.378: a row deleted during the share-drift repair no longer fails the sweep
+
+`repairShareDrift` wrote every expected embed edge in one statement, so a
+node deleted meanwhile failed the foreign key and the whole nightly sweep.
+It now writes only the missing edges and locks both ends for key share.
+
+## 0.232.374: the phone app for members and clients
+
+Members and clients can use the phone app; a push reaches one login.
+docs/mobile-companion-backend.md, member-logins.md, client-logins.md.
+
+- **Sign-in:** `POST /api/auth/device-login` (admin or member, the answer
+  names the role), the emailed client code in device mode (a bearer, no
+  cookie), refresh for all three roles, `GET /api/auth/whoami`. A client's
+  device refreshes for at most 90 days from the code that signed it in. A
+  rotated token presented after its successor was used ends the login's
+  sessions once (`auth.token_reuse`). Device mode refuses a browser page.
+  Dead device tokens are reaped nightly.
+- **Push:** the owner's teasers, approvals and Needs you go to active admin
+  devices only. A member or client enrols its own phone
+  (`/api/member/push`, `/api/client/push`); a device is pushed to only while
+  the token that enrolled it is live. Ten devices a login, the oldest goes.
+  The `login_notice` channel tells one login about a reply in its chat, a
+  review result or a comment. Teasers are plain words, not markdown.
+- **Unread:** a per-login read cursor for the member and client chat thread.
+- **Migration 0213** (`0213_mobile_roles_push`): one row per routing token,
+  the login binding, and old rows bound where the login holds exactly one
+  live phone token.
+- **Fix:** an unpair or a sign-out no longer answers 500 when the relay
+  identity cannot be read.
+
+## 0.232.373: a restored brain keeps its folder share refresh
 
 Every `pg_restore` of a dump taken at migration 0204 or later gave one
 error (`operator does not exist: public.ltree = public.ltree`) and the
@@ -310,6 +978,28 @@ never lost the trigger.
   schema has the pattern.
 
 docs/access-levels.md, section 6.
+
+## 0.232.372: tree reads never need write rights
+
+`GET /api/tree/:kind`, `/api/tree/:kind/marks` and `/api/app-nav` answered
+500 on a database that refuses writes (a read-only replica, a SELECT-only
+role): each read began with an unconditional insert of the kind's root row.
+Every step a tree read makes for itself now looks first, writes only what is
+missing, and skips a refused write (`bestEffortWrite` in @mantle/db, with a
+five-minute pause per call site). The same guard covers the onboarded stamp
+(`GET /api/onboarding`), a peer's last-seen stamp and the share view
+counter.
+
+## 0.232.371: the team responder opens in one step on a fresh install
+
+`team-read` and `formulas-eval` are team level in the manifest, but a brain
+installed after migration 0159 seeded both at admin, so lowering the team
+responder to team answered 400 `group_above_agent`. A fresh install seeds
+them at team, and the boot reconcile fixes brains installed with the wrong
+levels (no migration). `setAgentAudience` takes `dropGroupsAbove` (API
+`dropGroupsAbove`, `access_set drop_groups_above`): the groups above the new
+level leave the agent in the same call and come back in `removedGroups`. The
+plain call is still refused, and the refusal names each group and the fix.
 
 ## 0.232.368: the team and client Apps launchers get the folders
 
@@ -714,6 +1404,7 @@ UI 7 of 10; no Blockers). Migrations 0195, 0196, 0197.
 - **An item accepted from a client counts as client-written** for the
   lowering guard, even after the client login is deleted.
 - Migration 0194. See docs/client-logins.md section 9.
+
 ## 0.232.341: memory benchmark experiments
 
 - **Benchmark runs can change retrieval limits.** `bench:memory
@@ -896,6 +1587,7 @@ docs/client-logins.md.
 - **Tests (B6, B7, B8, B18, B28).** Real byte routes driven with a client
   token, the thumbnail branch, row-lock races, the code queue end to end,
   and two flaky or order-dependent tests fixed.
+
 ## 0.232.332: memory dates from the document, and faster extraction
 
 - **Facts start on their document's date.** A fact that is not an event
@@ -983,6 +1675,7 @@ now (C2, C2b), so the old links retire (decision 4 A).
 - From C2b: `GET /api/auth/client-code` fails closed (codes off, never a
   500) when the sender cannot be read; the code routes join the public
   session sweep.
+
 ## 0.232.327: keyword search finds the rare words in a chat question
 
 - **The keyword half of hybrid search works on real questions.** It used to
@@ -1227,6 +1920,7 @@ with an open link.
   client items. Accept of a client-authored item defaults to team; client
   or public needs `lowerConfirmed` (409 `confirm-level`). Give back after
   Take over checks the item at the author's level.
+
 ## 0.232.317: client v0.6.169
 
 - Pairs the client at jackdaw v0.6.169, the client half of 0.232.316: a live
@@ -1730,6 +2424,7 @@ use it too: one image to host instead of two, and `MC_IMAGE_TAG` is gone
 (`MINIO_IMAGE_TAG` still overrides the tag). Boxes recreate the minio container
 once on their next update; the data is a bind mount and stays put. This is a
 stopgap: replacing MinIO with a maintained S3-compatible store is planned.
+
 ## Unreleased: a mini app appears when it's ready, behind the host's loader (branch feat/app-nav-folders)
 
 An app used to announce `ready` in the same tick as `root.render()`, before
@@ -1865,7 +2560,6 @@ browser-session export, some account-flag risk, goes stale on YouTube's
 schedule. docs/video-ingest.md ("YouTube and the bot check") carries the
 export recipe and the trade-offs.
 
-
 ## Unreleased — client pair moves to jackdaw v0.6.5 (branch claude/client-pair-v0.6.5)
 
 Interface-only roll: the paired jackdaw client moves to v0.6.5, which adds
@@ -1873,7 +2567,6 @@ the Media pill to the dashboard's system vitals (the yt-dlp/ffmpeg sidecar's
 health + running versions, beside Tika/Chromium/Sandboxes) and ships the
 files workspace's two-pane view series. No server-side changes beyond the
 pair record.
-
 
 ## Unreleased — video ingest hardened: the audit pass (branch claude/video-ingest-audit-fixes)
 
@@ -1932,7 +2625,6 @@ update-first ordering (enabling on a pre-media tag broke `docker compose
 pull` for the whole stack), `docs/deploy.md` and the disposition catalogues
 cover the new skips, and forks can build the `mantle-media` image via
 `scripts/docker-build-push.sh`.
-
 
 ## Unreleased — video ingestion: paste a link, get a searchable transcript (branch claude/mantle-video-extraction-650157)
 
@@ -2220,6 +2912,7 @@ the `sandbox` CSP is what makes that case inert. Copied from
 Both surfaces get it, deliberately. A marker that rendered in the Forum and
 broke in Team Chat would be worse than not having one: the reply text does not
 know which surface it will be read on.
+
 ## Unreleased — a shared table gets the owner's totals, and they are RIGHT (branch feat/team-tables-grid)
 
 `/team` tables were a centred `max-w-6xl` reader: a plain table, a "Load more"
@@ -2263,6 +2956,7 @@ The footer row renders even when nothing is set, because the row IS the
 affordance: a member who wants a total needs somewhere to ask for one.
 
 The standalone `/s` page keeps its centred, growing, non-sticky layout.
+
 ## Unreleased — an event listing that says when, not when it was edited (branch feat/team-list-event-time)
 
 `TeamVisibleShare` gains an optional `startsAt`, read from `nodes.data.starts_at`
