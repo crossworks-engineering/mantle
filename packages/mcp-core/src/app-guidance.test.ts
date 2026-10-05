@@ -36,23 +36,31 @@ describe('app authoring guidance on the MCP surface', () => {
     expect(MANTLE_MCP_INSTRUCTIONS).toContain('host.me()');
   });
 
-  it.each(['app_create', 'app_source_set', 'app_file_write'])(
-    '%s names host.me(), the :host_me_* parameters, the bridge and the levels early',
-    (slug) => {
-      const d = tools.get(slug)?.description ?? '';
-      // The ranker reads about the first 600 characters.
-      expect(d.slice(0, 700)).toContain('host.me()');
-      expect(d).toContain(':host_me_id');
-      expect(d).toContain(':host_me_name');
-      expect(d).toContain(':host_me_kind');
-      expect(d).toContain('host.tools.call');
-      expect(d).toContain('app_tools_set');
-      expect(d).toContain('host.db');
-      expect(d).toMatch(/team = members/);
-      expect(d).toMatch(/client = clients/);
-      expect(d).toContain('app_authoring_guide');
-    },
-  );
+  it('app_create names host.me(), the :host_me_* parameters, the bridge and the levels early', () => {
+    const d = tools.get('app_create')?.description ?? '';
+    // The ranker reads about the first 600 characters.
+    expect(d.slice(0, 600)).toContain('host.me()');
+    expect(d.slice(0, 600)).toContain(':host_me_id');
+    expect(d).toContain(':host_me_name');
+    expect(d).toContain(':host_me_kind');
+    expect(d).toContain('host.tools.call');
+    expect(d).toContain('app_tools_set');
+    expect(d).toContain('host.db');
+    expect(d).toMatch(/team = members/);
+    expect(d).toMatch(/client = clients/);
+    expect(d).toContain('app_authoring_guide');
+  });
+
+  it.each(['app_source_set', 'app_file_write'])('%s points at host.me() and the guide', (slug) => {
+    const d = tools.get(slug)?.description ?? '';
+    expect(d).toContain('host.me()');
+    expect(d).toContain(':host_me_id');
+    expect(d).toContain('app_authoring_guide');
+  });
+
+  it('app_tools_set states the client-level rule', () => {
+    expect(tools.get('app_tools_set')?.description).toContain('client_shared_list');
+  });
 
   it('app_db_schema_set says how to record who wrote a row', () => {
     expect(tools.get('app_db_schema_set')?.description).toContain(':host_me_id');

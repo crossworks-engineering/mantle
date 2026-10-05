@@ -34,6 +34,7 @@ const SANCTIONED_ESSAYS = new Set<string>([
   'search_nodes', // the retrieval entry point — carries the whole tool-ladder map
   'search_chunks', // read_section/file_read ladder + spill semantics
   'page_from_file', // boundary vs page_create + conversion caveats
+  'app_create', // the one place an MCP author learns the app runtime: host.me(), :host_me_*, the bridge, the levels
 ]);
 
 /**

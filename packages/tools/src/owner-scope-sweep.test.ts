@@ -37,6 +37,7 @@ const OWNER_FREE: Record<string, string> = {
   calculate: 'pure arithmetic on the arguments; touches no store',
   location_distance: 'pure geo maths between two given points',
   web_fetch: 'fetches a public URL through the SSRF guard; no owner state',
+  app_authoring_guide: 'reads one docs file baked into the image, the same for every owner',
   model_catalog:
     'the provider model catalog, identical for everyone on the box; the team-surface refusal is the only ctx it reads',
   run_terminal:
