@@ -167,6 +167,9 @@ write_stack_info() {
     "$(scripts_sha_of .release)" \
     "$REFRESH" "$CLIENT_REFRESH" "$CORE_REFRESH" "$UPDATER_REFRESH" "$CADDY_REFRESH" "$SCRIPTS_REFRESH" "$(now)" > "$SIG/stack.json.tmp" \
     && mv "$SIG/stack.json.tmp" "$SIG/stack.json"
+  # The optional-service state rides every stack.json refresh (boot, the
+  # ~5 min tick, after every run). Defined below; called only at run time.
+  write_services_info
 }
 
 # compose_env_ok <box-file> <incoming>: can this box's .env satisfy the
@@ -969,6 +972,100 @@ topup_scripts() {
   refresh_scripts running
 }
 
+# ── optional services: the brain's live capability source ────────────────────
+# Sandboxes and media are compose PROFILES. Whether one is on is a fact about
+# THIS box's .env, and the app containers cannot see .env: their env is what
+# compose resolved when it created them, and a dashboard switch starts or
+# stops ONE container without touching theirs. So this sidecar, which can see
+# .env, publishes the state to /signal/services.json (every app service mounts
+# /signal read-only) on boot, every ~5 min, after a roll and after a switch.
+# @mantle/config services is the reader. The file carries key NAMES' presence
+# only, never a value.
+SERVICE_PROFILES="sandboxes media"
+# Request kinds this updater understands; the UI offers a switch only when
+# 'service' is listed.
+UPDATER_VERBS='"roll"'
+
+service_container() {
+  case "$1" in sandboxes) echo mantle_sandboxd ;; media) echo mantle_media ;; esac
+}
+service_token_var() {
+  case "$1" in sandboxes) echo SANDBOXD_TOKEN ;; media) echo MEDIA_SIDECAR_TOKEN ;; esac
+}
+
+# profiles_csv: the box's COMPOSE_PROFILES, whitespace and empty items dropped.
+profiles_csv() {
+  env_val COMPOSE_PROFILES | tr -d ' \t' | tr ',' '\n' | sed '/^$/d' | tr '\n' ',' | sed 's/,$//'
+}
+# profile_active <name>: the profile is in COMPOSE_PROFILES.
+profile_active() { printf ',%s,' "$(profiles_csv)" | grep -q ",$1,"; }
+
+# write_services_info: /signal/services.json, temp + rename so a reader never
+# sees half a file.
+write_services_info() {
+  ws_profiles=$(profiles_csv | tr -cd 'A-Za-z0-9._,-')
+  ws_body=""
+  for ws_s in $SERVICE_PROFILES; do
+    ws_p=false; profile_active "$ws_s" && ws_p=true
+    ws_t=false; [ -z "$(env_val "$(service_token_var "$ws_s")")" ] || ws_t=true
+    ws_state=$(docker inspect -f '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \
+      "$(service_container "$ws_s")" 2>/dev/null | head -1)
+    ws_c=$(printf '%s' "${ws_state%% *}" | tr -cd 'a-z')
+    ws_h=$(printf '%s' "${ws_state#* }" | tr -cd 'a-z')
+    [ -n "$ws_c" ] || ws_c=absent
+    [ -n "$ws_h" ] || ws_h=none
+    ws_body="$ws_body${ws_body:+,}$(printf '"%s":{"profile":%s,"token":%s,"container":"%s","health":"%s"}' \
+      "$ws_s" "$ws_p" "$ws_t" "$ws_c" "$ws_h")"
+  done
+  ws_mt=$(awk '/^MemTotal:/ { print $2; exit }' /proc/meminfo 2>/dev/null)
+  ws_ma=$(awk '/^MemAvailable:/ { print $2; exit }' /proc/meminfo 2>/dev/null)
+  ws_df=$(free_kb "$STACK")
+  ws_core=false
+  case "$(env_val COMPOSE_FILE)" in *docker-compose.core.yml*) ws_core=true ;; esac
+  printf '{"profiles":"%s","services":{%s},"mem_total_kb":%s,"mem_available_kb":%s,"disk_free_kb":%s,"core":%s,"verbs":[%s],"checked_at":"%s"}\n' \
+    "$ws_profiles" "$ws_body" "$(num_or "$ws_mt" null)" "$(num_or "$ws_ma" null)" "$(num_or "$ws_df" null)" \
+    "$ws_core" "$UPDATER_VERBS" "$(now)" > "$SIG/services.json.tmp" \
+    && mv "$SIG/services.json.tmp" "$SIG/services.json"
+}
+
+# gen_token: 64 hex chars from the kernel CSPRNG on stdout; non-zero (and
+# nothing printed) when that cannot be had.
+gen_token() {
+  gt_hex=$(od -An -tx1 -N32 /dev/urandom 2>/dev/null | tr -d ' \n')
+  case "$gt_hex" in '' | *[!0-9a-f]*) return 1 ;; esac
+  [ "${#gt_hex}" -eq 64 ] || return 1
+  printf '%s' "$gt_hex"
+}
+
+# ensure_service_tokens: give every optional service its bearer token on a
+# roll, whether or not the service is on. A token is inert by itself (the
+# profile decides what runs, and the brain reads the profile, not the token),
+# and a roll recreates every app container anyway, so this is the free moment
+# to put it in their env. Afterwards a dashboard switch starts or stops one
+# container instead of restarting the brain. An existing token is never
+# rotated.
+#
+# Only on a compose whose app services read the live state (the read-only
+# /signal mount): a brain built before that reads "token set" as "on", and a
+# provisioned token would light up a service that is not running.
+ensure_service_tokens() {
+  if ! grep -q 'update-signal:/signal:ro' "$STACK/docker-compose.yml" 2>/dev/null; then
+    echo "[updater] optional-service tokens not provisioned: this box's compose predates the live service state" \
+      | tee -a "$SIG/update.log"
+    return 0
+  fi
+  for est_s in $SERVICE_PROFILES; do
+    est_v=$(service_token_var "$est_s")
+    [ -z "$(env_val "$est_v")" ] || continue
+    if est_tok=$(gen_token) && persist_env "$est_v" "$est_tok"; then
+      echo "[updater] $est_v provisioned (the $est_s service stays as it is: the profile decides)" | tee -a "$SIG/update.log"
+    else
+      echo "[updater] ⚠ could not provision $est_v; switching $est_s on will restart the app containers once" \
+        | tee -a "$SIG/update.log"
+    fi
+  done
+}
+
 # Library mode for scripts/test-deploy-scripts.sh: with MANTLE_UPDATER_LIB=1
 # the file defines its functions and stops here, so the refresh logic runs
 # against a fake stack with a stubbed docker instead of the poll loop.
@@ -1117,6 +1214,9 @@ while true; do
     # the scripts are run by hand — but it is what stops the next one being
     # applied by a compose-adopt three releases behind the compose it installs.
     [ "$REFRESH" = pull-failed ] || refresh_scripts "$TARGET"
+    # After the compose refresh (the check reads the compose this roll brings
+    # up) and before the pull/up that recreates the app containers with it.
+    ensure_service_tokens
     if docker compose --project-directory "$STACK" pull >> "$SIG/update.log" 2>&1; then
       write_status rolling "$TARGET" "$STARTED" "" null ""
       # Recreate every service EXCEPT this updater. A bare `up -d` would recreate

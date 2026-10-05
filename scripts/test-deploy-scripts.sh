@@ -825,6 +825,21 @@ FAKE_TS=20260105-000000 roll_loop "$T"
 check "no running server before the roll: server images left alone" sh -c "! grep -q mantle-server '$T/state/removed' 2>/dev/null"
 check "no running server before the roll: says so" grep -q 'image prune: test/mantle-server skipped' "$T/sig/update.log"
 
+roll_case tokens
+# A compose whose app services read the live service state: the roll may now
+# provision the optional-service tokens (the refused case above already pins
+# that a refused roll writes nothing to .env, these included).
+printf 'services:\n  api:\n    volumes:\n      - ./data/update-signal:/signal:ro\n' > "$T/stack/docker-compose.yml"
+cp "$T/stack/docker-compose.yml" "$T/stack/docker-compose.yml.release"
+FAKE_TS=20260105-000000 roll_loop "$T"
+check "OK roll on a live-state compose: status done" grep -q '"phase":"done","target":"v8".*"ok":true' "$T/sig/status.json"
+check "OK roll: both optional-service tokens provisioned" sh -c "
+  grep -qE '^SANDBOXD_TOKEN=[0-9a-f]{64}\$' '$T/stack/.env' && grep -qE '^MEDIA_SIDECAR_TOKEN=[0-9a-f]{64}\$' '$T/stack/.env'"
+check "OK roll: tokens written before the pull that recreates the app containers" sh -c "
+  test \"\$(grep -nE 'SANDBOXD_TOKEN provisioned' '$T/sig/update.log' | head -1 | cut -d: -f1)\" -lt \"\$(grep -n 'done → v8' '$T/sig/update.log' | head -1 | cut -d: -f1)\""
+check "OK roll: services.json refreshed, no profile switched on" sh -c "
+  grep -q '\"sandboxes\":{\"profile\":false,\"token\":true' '$T/sig/services.json'"
+
 # ═════════════════════════════════════════════════════════════════════════════
 echo "updater.sh: the client logins rollback floor (v0.232.318)"
 tb_probe='for t in v0.232.317 0.232.317 v0.231.999 v0.9.500 v0.232.318 v0.232.319 v0.233.0 v1.0.0 latest v8 v0.232 v0.232.317.1 v0.232.x ""; do
@@ -1157,6 +1172,57 @@ bm_box status
 echo maint-chunk-windows > "$BM/running"
 bm_sh --here --status
 check "--status names the running container" sh -c "test '$rc' = 0 && grep -q 'maint-chunk-windows' '$BM/out'"
+
+# ═════════════════════════════════════════════════════════════════════════════
+echo "updater.sh: services.json, the live optional-service state"
+# The brain reads it as the truth for "is sandboxes/media on" (@mantle/config
+# services). It must be valid JSON, carry the profile (not the token) as the
+# switch, the container state from docker, and never a secret value.
+SV="$WORK/services"; fake_stack "$SV"
+printf 'COMPOSE_PROFILES= local-embedder, sandboxes ,\nCOMPOSE_FILE=docker-compose.yml:docker-compose.core.yml\nSANDBOXD_TOKEN=sekrit-sandbox\nMEDIA_SIDECAR_TOKEN=\n' >> "$SV/stack/.env"
+INSPECT_STUB='docker() {
+  case "$1 $4" in
+    "inspect mantle_sandboxd") echo "running healthy" ;;
+    "inspect mantle_media") echo "Error: No such object: mantle_media" >&2; return 1 ;;
+    *) return 0 ;;
+  esac
+}'
+updater_run "$SV/stack" "$SV/sig" "$SV/img" "$INSPECT_STUB
+write_services_info"
+SJ="$SV/sig/services.json"
+check "services.json written (temp file renamed away)" sh -c "test -f '$SJ' && test ! -e '$SJ.tmp'"
+check "services.json is valid JSON" node -e "JSON.parse(require('fs').readFileSync('$SJ','utf8'))"
+svc_field() { node -e "const j=JSON.parse(require('fs').readFileSync('$SJ','utf8'));process.stdout.write(String($1))"; }
+check "profiles: trimmed, empty items dropped" test "$(svc_field 'j.profiles')" = "local-embedder,sandboxes"
+check "sandboxes: profile on, token present, running + healthy" \
+  test "$(svc_field 'JSON.stringify(j.services.sandboxes)')" = '{"profile":true,"token":true,"container":"running","health":"healthy"}'
+check "media: profile off, empty token is no token, no container" \
+  test "$(svc_field 'JSON.stringify(j.services.media)')" = '{"profile":false,"token":false,"container":"absent","health":"none"}'
+check "core shape read from COMPOSE_FILE" test "$(svc_field 'j.core')" = true
+check "verbs advertise the roll" test "$(svc_field 'j.verbs.join()')" = roll
+check "no token VALUE in the file" sh -c "! grep -q sekrit '$SJ'"
+
+echo "updater.sh: optional-service tokens provisioned on a roll"
+TK="$WORK/tokens"; fake_stack "$TK"
+printf 'SANDBOXD_TOKEN=keepme\nMEDIA_SIDECAR_TOKEN=\n' >> "$TK/stack/.env"
+# A compose WITHOUT the read-only signal mount: its brain reads "token set" as
+# "on", so nothing may be provisioned.
+updater_run "$TK/stack" "$TK/sig" "$TK/img" 'ensure_service_tokens' > /dev/null
+check "old compose: no token written" grep -qx 'MEDIA_SIDECAR_TOKEN=' "$TK/stack/.env"
+check "old compose: the reason is logged" grep -q 'predates the live service state' "$TK/sig/update.log"
+printf 'services:\n  api:\n    volumes:\n      - ./data/update-signal:/signal:ro\n' > "$TK/stack/docker-compose.yml"
+updater_run "$TK/stack" "$TK/sig" "$TK/img" 'ensure_service_tokens' > /dev/null
+check "an existing token is never rotated" grep -qx 'SANDBOXD_TOKEN=keepme' "$TK/stack/.env"
+check "a missing token gets 64 hex chars" grep -qE '^MEDIA_SIDECAR_TOKEN=[0-9a-f]{64}$' "$TK/stack/.env"
+check "one line per token" test "$(grep -c '^MEDIA_SIDECAR_TOKEN=' "$TK/stack/.env")" = 1
+check ".env keeps mode 600" test "$(mode_of "$TK/stack/.env")" = 600
+tok1=$(sed -n 's/^MEDIA_SIDECAR_TOKEN=//p' "$TK/stack/.env")
+updater_run "$TK/stack" "$TK/sig" "$TK/img" 'ensure_service_tokens' > /dev/null
+check "a second roll keeps the provisioned token" grep -qx "MEDIA_SIDECAR_TOKEN=$tok1" "$TK/stack/.env"
+check "gen_token: 64 hex, two calls differ" sh -c "
+  a=\$(MANTLE_STACK_DIR='$TK/stack' MANTLE_SIGNAL_DIR='$TK/sig' MANTLE_UPDATER_LIB=1 $SH -c \". '$ROOT/infra/updater/updater.sh'; gen_token\")
+  b=\$(MANTLE_STACK_DIR='$TK/stack' MANTLE_SIGNAL_DIR='$TK/sig' MANTLE_UPDATER_LIB=1 $SH -c \". '$ROOT/infra/updater/updater.sh'; gen_token\")
+  printf '%s' \"\$a\" | grep -qE '^[0-9a-f]{64}\$' && test \"\$a\" != \"\$b\""
 
 # ═════════════════════════════════════════════════════════════════════════════
 echo

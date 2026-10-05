@@ -6,7 +6,7 @@
  */
 
 import { autoFiledSourcePath, ensureAutoFiledFolder } from '@mantle/files';
-import { env } from '@mantle/config';
+import { env, serviceEnabled } from '@mantle/config';
 
 export const DEFAULT_TIMEOUT_S = 120;
 
@@ -25,7 +25,7 @@ export async function sandboxd(
 ): Promise<{ ok: true; data: Record<string, unknown> } | { ok: false; error: string }> {
   const base = env('SANDBOXD_URL');
   const token = env('SANDBOXD_TOKEN');
-  if (!base || !token) return { ok: false, error: NOT_ENABLED };
+  if (!base || !token || !serviceEnabled('sandboxes')) return { ok: false, error: NOT_ENABLED };
   let res: Response;
   try {
     res = await fetch(`${base}${path}`, {
@@ -56,7 +56,7 @@ export async function sandboxdUpload(
 ): Promise<{ ok: true; data: Record<string, unknown> } | { ok: false; error: string }> {
   const base = env('SANDBOXD_URL');
   const token = env('SANDBOXD_TOKEN');
-  if (!base || !token) return { ok: false, error: NOT_ENABLED };
+  if (!base || !token || !serviceEnabled('sandboxes')) return { ok: false, error: NOT_ENABLED };
   let res: Response;
   try {
     res = await fetch(`${base}${path}`, {
@@ -84,7 +84,7 @@ export async function sandboxdBinary(
 ): Promise<{ ok: true; bytes: Buffer } | { ok: false; error: string }> {
   const base = env('SANDBOXD_URL');
   const token = env('SANDBOXD_TOKEN');
-  if (!base || !token) return { ok: false, error: NOT_ENABLED };
+  if (!base || !token || !serviceEnabled('sandboxes')) return { ok: false, error: NOT_ENABLED };
   let res: Response;
   try {
     res = await fetch(`${base}${path}`, {

@@ -777,6 +777,13 @@ ensure() {  # KEY GENERATOR-CMD — keep existing (never regenerate), else gener
 ensure MANTLE_MASTER_KEY gen_key          # NEVER rotated on re-run (would orphan secrets)
 ensure SESSION_SECRET    "gen_hex 48"
 ensure MANTLE_SETUP_CODE gen_setup_code   # first-run signup gate; never rotated (harmless once claimed)
+# Optional-service bearer tokens, whether or not the service is on: the
+# compose profile decides what runs and the brain reads the profile, so a token
+# alone is inert. Having it in the app containers' env from the start is what
+# lets a dashboard switch start ONE container later instead of restarting the
+# brain. Never rotated on re-run. (The updater does the same on a roll.)
+ensure SANDBOXD_TOKEN      "gen_hex 32"
+ensure MEDIA_SIDECAR_TOKEN "gen_hex 32"
 # POSTGRES_PASSWORD: generate ONLY for a genuinely fresh database. An older
 # install may have no POSTGRES_PASSWORD line yet an initialized data dir
 # (password baked in at initdb) — generating one there would break DB auth.

@@ -1,4 +1,4 @@
-import { env } from '@mantle/config';
+import { env, serviceEnabled } from '@mantle/config';
 /**
  * Server-side sandboxd client for the Sandboxes UI surface — the web tier's
  * sibling of the tool layer's `sandboxd()` helper (packages/tools/src/
@@ -21,16 +21,17 @@ export type SandboxdList = {
   disk: { usedBytes: number | null; budgetBytes: number } | null;
 };
 
-/** Is the feature wired on this box? (sandboxd runs behind the `sandboxes`
- *  compose profile; both env vars arrive with it.) */
+/** Is the feature switched on for this box? The `sandboxes` compose profile
+ *  is active AND the URL and token are set (@mantle/config services: the
+ *  token alone stays after a disable, and is pre-provisioned on every box). */
 export function sandboxdEnabled(): boolean {
-  return Boolean(env('SANDBOXD_URL') && env('SANDBOXD_TOKEN'));
+  return serviceEnabled('sandboxes');
 }
 
 async function call(method: string, path: string): Promise<Record<string, unknown> | null> {
   const base = env('SANDBOXD_URL');
   const token = env('SANDBOXD_TOKEN');
-  if (!base || !token) return null;
+  if (!base || !token || !sandboxdEnabled()) return null;
   try {
     const res = await fetch(`${base}${path}`, {
       method,

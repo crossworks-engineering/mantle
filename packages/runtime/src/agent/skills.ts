@@ -6,6 +6,7 @@
  */
 
 import { and, eq, inArray } from 'drizzle-orm';
+import { toolServiceAvailable } from '@mantle/config';
 import { db, skills, toolGroups, type Skill } from '@mantle/db';
 import {
   currentViewerLevel,
@@ -291,9 +292,14 @@ const MAX_EFFECTIVE_TOOL_SLUGS = 512;
  * granted tool groups (pre-resolved via resolveAgentToolGroups). P6: tool groups
  * are the SOLE grant — the `agents.tool_slugs` column is gone, and skills are
  * pure teaching (P4). Deduped + capped.
+ *
+ * Tools whose optional service is switched off on this box (the sandbox verbs
+ * without the `sandboxes` profile, video_ingest without `media`) are left
+ * out: the grant stays, the tool comes back the moment the service is on, and
+ * meanwhile the model is never offered a tool that can only refuse.
  */
 export function effectiveToolSlugs(groupToolSlugs: string[]): string[] {
-  const all = Array.from(new Set<string>(groupToolSlugs));
+  const all = Array.from(new Set<string>(groupToolSlugs)).filter(toolServiceAvailable);
   if (all.length > MAX_EFFECTIVE_TOOL_SLUGS) {
     const dropped = all.slice(MAX_EFFECTIVE_TOOL_SLUGS);
     // Not silent — log exactly which slugs were cut so a misconfiguration is

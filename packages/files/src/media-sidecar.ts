@@ -1,4 +1,4 @@
-import { env } from '@mantle/config';
+import { env, serviceEnabled } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 
 /**
@@ -70,11 +70,14 @@ const T_VIDEO = 1_500_000 + BACKSTOP_MS;
 function config(): { url: string; token: string } | null {
   const url = env('MEDIA_SIDECAR_URL');
   const token = env('MEDIA_SIDECAR_TOKEN');
-  if (!url || !token) return null;
+  // The profile, not just the token: a box that switched media off keeps its
+  // token, and every box gets one pre-provisioned (@mantle/config services).
+  if (!url || !token || !serviceEnabled('media')) return null;
   return { url: url.replace(/\/$/, ''), token };
 }
 
-/** True when this box has the sidecar configured (profile on + token set). */
+/** True when the media service is switched on for this box (profile active
+ *  + URL and token set). Says nothing about whether it answers. */
 export function mediaSidecarEnabled(): boolean {
   return config() != null;
 }
