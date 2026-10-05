@@ -90,6 +90,8 @@ export const PEER_RISKY_TOOL_SLUGS: ReadonlySet<string> = new Set([
   'ask_responder',
   'ask_as_responder',
   'responder_turn_input',
+  // Writes into the owner's conversation as one of their agents.
+  'responder_turn_record',
   'access_set',
   'pending_approve',
   'pending_reject',

@@ -80,7 +80,8 @@ export interface PushResult {
   attempted: number;
   delivered: number;
   dropped: number; // unregistered devices removed
-  skipped?: 'not_connected' | 'no_devices' | 'no_message' | 'disabled' | 'wrong_channel';
+  skipped?:
+    'not_connected' | 'no_devices' | 'no_message' | 'disabled' | 'wrong_channel' | 'mcp_turn';
 }
 
 /** A reply as a lock-screen line: plain words (a reply is markdown, and a
@@ -93,7 +94,12 @@ function teaser(text: string, max = 140): string {
 async function latestOutbound(
   ownerId: string,
   agentSlug: string,
-): Promise<{ agentName: string; text: string; assignedUserId: string | null } | null> {
+): Promise<{
+  agentName: string;
+  text: string;
+  channel: string | null;
+  assignedUserId: string | null;
+} | null> {
   const [agent] = await db
     .select({ id: agents.id, name: agents.name, assignedUserId: agents.assignedUserId })
     .from(agents)
@@ -102,7 +108,7 @@ async function latestOutbound(
   if (!agent) return null;
 
   const [msg] = await db
-    .select({ text: assistantMessages.text })
+    .select({ text: assistantMessages.text, channel: assistantMessages.channel })
     .from(assistantMessages)
     .where(
       and(
@@ -117,7 +123,12 @@ async function latestOutbound(
     .orderBy(desc(assistantMessages.createdAt))
     .limit(1);
   if (!msg) return null;
-  return { agentName: agent.name, text: msg.text, assignedUserId: agent.assignedUserId ?? null };
+  return {
+    agentName: agent.name,
+    text: msg.text,
+    channel: msg.channel ?? null,
+    assignedUserId: agent.assignedUserId ?? null,
+  };
 }
 
 /** The most devices one send walks. A login holds at most ten
@@ -228,6 +239,10 @@ export async function pushOutbound(ownerId: string, agentSlug: string): Promise<
 
   const msg = await latestOutbound(ownerId, agentSlug);
   if (!msg) return { attempted: 0, delivered: 0, dropped: 0, skipped: 'no_message' };
+  // A turn an MCP client answered as the agent and wrote back
+  // (responder_turn_record): the owner is at that client, so the phone stays
+  // quiet.
+  if (msg.channel === 'mcp') return { attempted: 0, delivered: 0, dropped: 0, skipped: 'mcp_turn' };
 
   const devices = await listAdminSubscriptions(ownerId, { loginId: msg.assignedUserId });
   if (devices.length === 0)

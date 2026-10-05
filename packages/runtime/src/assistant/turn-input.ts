@@ -130,6 +130,19 @@ export const TURN_INPUT_DIFFERENCES: readonly string[] = [
  *  owner turn, so for those two it would describe a turn that never runs. */
 const ROLE_RESPONDERS: ReadonlySet<string> = new Set([TEAM_RESPONDER_SLUG, CLIENT_RESPONDER_SLUG]);
 
+/** Refuse the two role responders: the owner turn is the only one the MCP
+ *  turn tools mirror (`responder_turn_input`) and write
+ *  (`responder_turn_record`). */
+export function assertOwnerTurnAgent(agent: { slug: string }): void {
+  if (ROLE_RESPONDERS.has(agent.slug)) {
+    throw new Error(
+      `'${agent.slug}' answers team or client logins, and its turn is assembled differently ` +
+        '(no owner identity, no thinking, the private-reads gate). This tool mirrors the owner ' +
+        'turn only: pick an owner-facing responder.',
+    );
+  }
+}
+
 /**
  * Assemble one responder turn's input for `message` and return it. Runs the
  * same read path as {@link runSimulatedResponderTurn}, opens one trace for the
@@ -143,13 +156,7 @@ export async function describeResponderTurnInput(
   if (!message) throw new Error('describeResponderTurnInput: empty message');
 
   const agent = await resolveSimAgent(ownerId, opts.agentSlug);
-  if (ROLE_RESPONDERS.has(agent.slug)) {
-    throw new Error(
-      `'${agent.slug}' answers team or client logins, and its turn is assembled differently ` +
-        '(no owner identity, no thinking, the private-reads gate). This tool mirrors the owner ' +
-        'turn only: pick an owner-facing responder.',
-    );
-  }
+  assertOwnerTurnAgent(agent);
 
   const prepared = await prepareSimulatedTurn(ownerId, agent, {
     message,

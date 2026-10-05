@@ -43,6 +43,7 @@ vi.mock('@mantle/db', () => {
       agentId: 'am.agentId',
       direction: 'am.direction',
       status: 'am.status',
+      channel: 'am.channel',
       createdAt: 'am.createdAt',
     },
   };
@@ -159,6 +160,14 @@ describe('pushOutbound — gating', () => {
     dbState.queue = [[{ id: 'a1', name: 'Ada' }], []]; // agent found, no message
     const res = await pushOutbound('owner', 'ada');
     expect(res.skipped).toBe('no_message');
+  });
+
+  it('skips mcp_turn for a reply an MCP client wrote back (the owner is at the client)', async () => {
+    dbState.queue = [[{ id: 'a1', name: 'Ada' }], [{ text: 'hi', channel: 'mcp' }]];
+    const res = await pushOutbound('owner', 'ada');
+    expect(res).toEqual({ attempted: 0, delivered: 0, dropped: 0, skipped: 'mcp_turn' });
+    expect(listAdminSubscriptions).not.toHaveBeenCalled();
+    expect(relayNotify).not.toHaveBeenCalled();
   });
 });
 

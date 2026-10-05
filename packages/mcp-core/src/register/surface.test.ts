@@ -188,6 +188,7 @@ const HTTP_SURFACE = [
   'ask_responder',
   'ask_as_responder',
   'responder_turn_input',
+  'responder_turn_record',
   'export_node',
   'access_get',
   'access_set',

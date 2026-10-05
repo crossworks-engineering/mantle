@@ -18,6 +18,7 @@ const h = vi.hoisted(() => ({
   simCalls: [] as any[],
   inputResult: null as any,
   inputCalls: [] as any[],
+  recordCalls: [] as any[],
 }));
 
 vi.mock('@mantle/runtime/assistant', () => ({
@@ -28,6 +29,15 @@ vi.mock('@mantle/runtime/assistant', () => ({
   describeResponderTurnInput: vi.fn(async (_owner: string, opts: unknown) => {
     h.inputCalls.push(opts);
     return h.inputResult;
+  }),
+  recordMcpResponderTurn: vi.fn(async (_owner: string, opts: unknown) => {
+    h.recordCalls.push(opts);
+    return {
+      agent: { slug: 'saskia', name: 'Saskia' },
+      inboundId: 'in-1',
+      outboundId: 'out-1',
+      traceId: 'trace-rec',
+    };
   }),
 }));
 
@@ -275,6 +285,56 @@ describe('responder_turn_input MCP tool', () => {
     const res = await handlerFor('responder_turn_input')({ message: 'hi' });
     expect(res.isError).toBe(true);
     expect(res.content[0]!.text).toMatch(/responder_turn_input failed: answers team/);
+  });
+});
+
+describe('responder_turn_record MCP tool', () => {
+  beforeEach(() => {
+    h.recordCalls = [];
+  });
+
+  it('passes the turn and its authorship to the engine and returns the row ids', async () => {
+    const res = await handlerFor('responder_turn_record')({
+      message: 'What is Jev?',
+      reply: 'A typed-decision model.',
+      model: 'claude-haiku-4-5',
+      agent_slug: 'saskia',
+      client: 'claude-code',
+      input_trace_id: 'trace-in',
+      tools_used: ['search_chunks'],
+    });
+    expect(res.isError).toBeUndefined();
+    expect(h.recordCalls[0]).toEqual({
+      message: 'What is Jev?',
+      reply: 'A typed-decision model.',
+      model: 'claude-haiku-4-5',
+      agentSlug: 'saskia',
+      client: 'claude-code',
+      inputTraceId: 'trace-in',
+      toolsUsed: ['search_chunks'],
+    });
+    expect(parseReply(res)).toEqual({
+      recorded: true,
+      agent: { slug: 'saskia', name: 'Saskia' },
+      inbound_id: 'in-1',
+      outbound_id: 'out-1',
+      trace_id: 'trace-rec',
+    });
+  });
+
+  it('surfaces a refusal as an isError reply', async () => {
+    const { recordMcpResponderTurn } = await import('@mantle/runtime/assistant');
+    (recordMcpResponderTurn as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error('mirrors the owner turn only'),
+    );
+    const res = await handlerFor('responder_turn_record')({ message: 'q', reply: 'a', model: 'm' });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]!.text).toMatch(/responder_turn_record failed: mirrors the owner/);
+  });
+
+  it('ask_responder still records nothing', async () => {
+    await handlerFor('ask_responder')({ message: 'hi' });
+    expect(h.recordCalls).toHaveLength(0);
   });
 });
 

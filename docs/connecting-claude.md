@@ -168,7 +168,7 @@ inside the box. Two exceptions, both named below.
 | Federation             | `peer_list`, `peer_query`, `peer_search_chunks`, `peer_node_get`                                                                                                                                                                                                                       |
 | Owner state            | `update_persona`, `set_timezone`, `secret_create`, `node_share`, `node_unshare`, `process_extraction`, `brain_capacity`                                                                                                                                                                |
 | Models                 | `model_catalog`, `model_pool_*`, `openrouter_*`, `recall_eval`                                                                                                                                                                                                                         |
-| Responder              | `ask_responder`, `ask_as_responder`, `responder_turn_input`, `invoke_agent`                                                                                                                                                                                                            |
+| Responder              | `ask_responder`, `ask_as_responder`, `responder_turn_input`, `responder_turn_record`, `invoke_agent`                                                                                                                                                                                   |
 | Location               | `location_save`, `location_nearby`, `location_distance`, `route_map`                                                                                                                                                                                                                   |
 
 ### The two that are not on it
@@ -312,6 +312,37 @@ only when the owner names it (it is in the peer risky list). Member and client
 logins do not get it, and the team and client responders are refused: their
 turn is assembled differently (no owner identity, no thinking, the
 private-reads gate), so this tool would describe a turn that never runs.
+
+##### `responder_turn_record`: keep the turn you answered
+
+By default nothing you answer as the agent is kept. When the exchange should
+stay, call `responder_turn_record` with the user's `message`, your `reply`
+and the `model` that wrote it (required). It writes the two turns into the
+agent's conversation through the same writer a web turn uses, so the
+Assistant window shows them, and the history window, the digests and
+`replay_window` read them from then on. Pass `input_trace_id` from
+`responder_turn_input` to link the two, `client` to name your client, and
+`tools_used` to list the tools you called (kept as your claim, not as the
+agent's tool ledger).
+
+The rows are marked: channel `mcp` (a badge in the Assistant window), your
+model in the reply's `model`, and `data.authored_by` with the model and the
+client. A trace per recorded turn (surface `mcp_turn_record`, subject the
+user's turn) names who answered.
+
+What fires, and what does not:
+
+- No model call, no tool run, no phone push (the push worker skips channel
+  `mcp`), no reminder-channel change, no follow-up suggestion.
+- The triggers every conversation turn fires still fire: the live window
+  refresh, the summarizer (it rolls the turns into digests; digests are never
+  read into facts) and the reflector's activity check (it may add persona
+  notes, as after any chat). Conversation turns are not nodes, so nothing
+  reaches fact extraction.
+
+Same access as `responder_turn_input`: the owner's connector only (a peer
+needs it named), and the team and client responders are refused.
+`ask_responder` still writes nothing.
 
 Contrast all three with the in-app Agent Studio sandbox
 ([`agent-studio.md`](./agent-studio.md)), which composes the same prompt but

@@ -44,6 +44,7 @@ export {
   type SimToolCall,
 } from './run-sim-turn';
 export {
+  assertOwnerTurnAgent,
   describeResponderTurnInput,
   TURN_INPUT_DIFFERENCES,
   type DescribeResponderTurnInputOptions,
@@ -51,6 +52,14 @@ export {
   type TurnInputMessage,
   type TurnInputTool,
 } from './turn-input';
+export {
+  recordMcpResponderTurn,
+  MCP_TURN_CHANNEL,
+  MCP_TURN_MAX_MESSAGE,
+  MCP_TURN_MAX_REPLY,
+  type RecordMcpResponderTurnOptions,
+  type RecordMcpResponderTurnResult,
+} from './record-mcp-turn';
 export {
   describeResponderPersona,
   type DescribeResponderPersonaOptions,

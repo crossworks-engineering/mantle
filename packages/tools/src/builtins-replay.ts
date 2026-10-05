@@ -357,10 +357,13 @@ const replay_window: BuiltinToolDef = {
     }
 
     if (surface === 'all' || surface === 'web') {
-      // channel='web' ONLY. Post-unification (docs/conversation.md) Telegram
-      // turns ALSO live in assistant_messages (channel='telegram'); those are
-      // replayed from telegram_messages above, so excluding them here is what
-      // keeps surface='all' from double-counting every Telegram turn.
+      // The app's own channels only. Post-unification (docs/conversation.md)
+      // Telegram turns ALSO live in assistant_messages (channel='telegram');
+      // those are replayed from telegram_messages above, so excluding them
+      // here is what keeps surface='all' from double-counting every Telegram
+      // turn. 'mobile' is the companion app on the same HTTP surface, and
+      // 'mcp' a turn an MCP client answered as the agent and wrote back
+      // (responder_turn_record); both are part of the app conversation.
       const web = await db
         .select({
           text: assistantMessages.text,
@@ -371,7 +374,7 @@ const replay_window: BuiltinToolDef = {
         .where(
           and(
             eq(assistantMessages.ownerId, ctx.ownerId),
-            eq(assistantMessages.channel, 'web'),
+            inArray(assistantMessages.channel, ['web', 'mobile', 'mcp']),
             gte(assistantMessages.createdAt, from),
             lte(assistantMessages.createdAt, to),
           ),

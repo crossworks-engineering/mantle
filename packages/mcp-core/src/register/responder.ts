@@ -1,6 +1,8 @@
 /**
  * Responder simulation: the real pipeline (persona, retrieval, real tool
- * execution) with nothing persisted to the conversation store.
+ * execution) with nothing persisted to the conversation store. Plus the one
+ * opt-in write: `responder_turn_record`, which keeps a turn the client
+ * answered as the agent.
  *
  * Lifted out of registerMantleTools; bodies moved verbatim.
  */
@@ -9,6 +11,7 @@ import { z } from 'zod';
 import {
   describeResponderPersona,
   describeResponderTurnInput,
+  recordMcpResponderTurn,
   runSimulatedResponderTurn,
 } from '@mantle/runtime/assistant';
 import { errorMessage } from '@mantle/std';
@@ -271,6 +274,54 @@ export function registerResponderTools(ctx: McpRegisterContext): void {
         const msg = errorMessage(err);
         return {
           content: [{ type: 'text' as const, text: `responder_turn_input failed: ${msg}` }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  server.tool(
+    'responder_turn_record',
+    "WRITE a turn you answered AS one of the user's responder agents into that agent's " +
+      'conversation, so it shows in the Assistant window as if the agent had answered: the ' +
+      "user's message and your reply, as two turns. Use after `responder_turn_input`, only when " +
+      'the user wants the exchange kept. The turn is marked: channel `mcp`, your `model` as the ' +
+      'author (required), and a trace naming who answered. From then on it is part of the ' +
+      "conversation: the agent's history window, its digests and replay all read it. Nothing " +
+      'else runs: no tool, no model call, no phone push. Pass `input_trace_id` from ' +
+      '`responder_turn_input` to link the two. Not for the team or client responders. ' +
+      '`ask_responder` stays non-persisting.',
+    {
+      message: z.string().min(1),
+      reply: z.string().min(1),
+      model: z.string().min(1),
+      agent_slug: z.string().optional(),
+      client: z.string().optional(),
+      input_trace_id: z.string().optional(),
+      tools_used: z.array(z.string()).optional(),
+    },
+    async (a) => {
+      try {
+        const res = await recordMcpResponderTurn(ownerId, {
+          message: a.message,
+          reply: a.reply,
+          model: a.model,
+          ...(a.agent_slug ? { agentSlug: a.agent_slug } : {}),
+          ...(a.client ? { client: a.client } : {}),
+          ...(a.input_trace_id ? { inputTraceId: a.input_trace_id } : {}),
+          ...(a.tools_used ? { toolsUsed: a.tools_used } : {}),
+        });
+        return jsonReply({
+          recorded: true,
+          agent: res.agent,
+          inbound_id: res.inboundId,
+          outbound_id: res.outboundId,
+          trace_id: res.traceId,
+        });
+      } catch (err) {
+        const msg = errorMessage(err);
+        return {
+          content: [{ type: 'text' as const, text: `responder_turn_record failed: ${msg}` }],
           isError: true,
         };
       }
