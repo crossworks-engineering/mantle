@@ -831,8 +831,14 @@ Every publish records a version (code only; pass \`note\`). \`app_snapshot_creat
 
 **Copies, moves, errors** — \`app_duplicate\` copies an app in this brain (code live at once, draft, data); use it to try a big change on a copy. \`app_export\` saves an app as a \`.mantleapp\` file in /files and \`app_import\` makes a NEW app from one (another brain's too). \`app_errors\` lists what failed for the people running the app (SQL, tool calls); read it when an app is reported broken.
 
-## Sharing (know the two modes when you build)
-A published app can be shared full-screen. **Public** links get NO tools and read-only DB access — a public app is a self-contained view of its OWN data (host.tools.call is refused, host.db.exec blocked). **Team** links (a Contact's team token) let identified, audited members use the app's declared tools + write. Only BUILT-IN tools work through any share (http/shell/recipe are refused). So: if an app is meant for outside/team viewers, keep its data in its own SQLite or behind built-in read tools; don't rely on custom HTTP tools in a shared app.
+## Who runs it: levels and links (know them when you build)
+The app's level (its Access control) decides who runs the PUBLISHED build, and the level limits its tools:
+- **Admin** (default): admins only; any declared tool.
+- **Team**: members also run it from their own login, and read AND write its one shared database (not one per member: record who wrote a row with \`:host_me_id\`/\`:host_me_name\`). Their tools: read-only built-ins from an enabled team-level tool group; recipe and shell tools never.
+- **Client**: clients also run it, and everyone who runs it gets the client rules: only \`client_shared_list\`, \`client_shared_search\`, \`client_shared_open\`.
+- An outside (MCP or http) tool passes for members, clients and contacts only when an admin switched "External access" on for it.
+- **Share links**: an open (public) link gets NO tools and read-only DB access, so a public app is a self-contained view of its OWN data. A contact share reads (writes only with Can write) and calls no tools except an External access one.
+\`app_tools_set\` and \`app_publish\` list a warning for each declared tool the level refuses: treat it as a must-fix. So for members or clients, keep the data in the app's own SQLite or behind built-in read tools; don't rely on custom HTTP tools.
 
 ## Workflow
 Write files with app_file_write → \`app_build\` → a failed compile fails the call and lists each error with file/line/column → fix → repeat until the build succeeds. A green build only proves it compiles: re-read your logic (calculations, lookups, edge cases) against the requirement before handing over — you get no runtime error feedback from the iframe. Leave the result in DRAFT and point the user at /apps/<id>; publish only when they approve.`,

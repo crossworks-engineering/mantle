@@ -38,6 +38,7 @@ import {
   SHEET_TOOLS,
   DRAW_TOOLS,
   APP_TOOLS,
+  APP_GUIDE_TOOLS,
   TOOLSMITH_TOOLS,
   NOTE_TOOLS,
   TREE_TOOLS,
@@ -297,6 +298,11 @@ export function registerMantleTools(
   // The app reaches owner data only through its declared tool allowlist — pair
   // this with the Toolsmith tools below to mint the data-access tools an app needs.
   registerBuiltinTools(APP_TOOLS);
+  // The authoring guide (docs/app-authoring-guide.md) on demand. In the app,
+  // Appsmith carries the app_authoring skill; an outside Claude had only the
+  // tool descriptions and could not learn host.me(), the :host_me_* SQL
+  // parameters or the level rules (task 603f6970). mcpOnly, read-only.
+  registerBuiltinTools(APP_GUIDE_TOOLS);
 
   // ─── CLI sandboxes ────────────────────────────────────────────────────────────
   // Isolated Ubuntu containers the client can work in: clone a repo and explain
@@ -438,6 +444,7 @@ export const MANTLE_MCP_INSTRUCTIONS = [
   'Before starting a distinct task, call recall_match with one line describing it and apply a strong match.',
   'When working in a domain the owner has mapped, recall_index lists the maps — recall_open the relevant one and follow its options instead of searching blind.',
   "Pass intent= on recall_* calls (one line on why you came) so the owner's recall log can show it.",
+  'Before building a mini app with the app_* tools, read app_authoring_guide: it covers host.me() (who runs the app), host.db, host.tools.call and the team and client level rules.',
 ].join(' ');
 
 /** Create a fresh `McpServer` with the full Mantle tool surface, scoped to

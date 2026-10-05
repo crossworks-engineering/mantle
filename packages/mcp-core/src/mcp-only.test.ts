@@ -41,6 +41,7 @@ describe('mcpOnly builtins', () => {
   it('is exactly the owner-operator set — a new entry is a deliberate act', () => {
     expect(MCP_ONLY).toEqual(
       [
+        'app_authoring_guide',
         'file_delete',
         'file_upload',
         'folder_create',

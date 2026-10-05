@@ -4,9 +4,13 @@ How an external Claude (Claude Code / Claude Desktop, on your own subscription)
 builds a Mantle `/apps` mini-app end to end through the Mantle MCP server, and
 binds it to your real Mantle data.
 
-> This file is the canonical reference. It is mirrored to an installable Claude
-> Code skill at `~/.claude/skills/mantle-app-builder/SKILL.md`; keep the two in
-> sync when you change the app platform.
+> This file is the canonical reference. An MCP client reads it with the
+> `app_authoring_guide` tool, whole or one section (`section: "who is
+> running"`); the server instructions and the `app_create`, `app_source_set`
+> and `app_file_write` descriptions point there. Inside the brain, Appsmith
+> carries the same rules as the `app_authoring` skill
+> (`server/web/lib/system-manifest/prompts.ts`); keep the two in sync when you
+> change the app platform.
 
 ## What a mini-app is
 
@@ -18,6 +22,7 @@ explicitly grant it and an optional per-app SQLite database.
 
 ## The build loop (MCP tools)
 
+0. **`app_authoring_guide(section?)`**: read this guide first.
 1. **`app_create(name, description?, icon?, tags?)`** → returns the app `id`.
 2. **Author the source.** Either:
    - `app_source_set(id, entry, files)`, upload the **whole tree** at once
@@ -225,14 +230,17 @@ only reach owner data via:
 So to show your data in an app, you give it a tool that returns that data:
 
 - **Declare a built-in tool** that returns what you need (`note_list`,
-  `table_rows_list`, `table_query`, `search_nodes`, …). This is the only kind
-  that works for **members**: members running a team app get built-in tools
-  only (a share link gets no tools at all).
+  `table_rows_list`, `table_query`, `search_nodes`, …). This is the kind
+  that works for **members**: members running a team app get read-only
+  built-in tools, plus an outside (MCP or http) tool only when an admin
+  switched "External access" on for it (docs/member-logins.md). An open
+  share link gets no tools at all.
 - **Admin-only apps** may also use a purpose-built tool from the Toolsmith
   MCP tools: `recipe_tool_create` composes existing tools into one tool that
   returns exactly the shape the app needs; `api_tool_create` wraps an
-  external HTTP API. Members and share links are refused these (a recipe,
-  http or shell tool runs under the brain), so never give one to an app you
+  external HTTP API. Members and share links are refused recipe and shell
+  tools always (they run under the brain), and an http tool unless an admin
+  switched "External access" on for it, so never give a recipe to an app you
   set to team level or share.
 
 Then `app_tools_set(id, ['that_slug'])` and call it from the app. For an app at
@@ -549,7 +557,9 @@ the team never sees it. The contact reads the app's SQLite
 (`host.db.query`). With **Can write** on (per contact, off by default) the
 contact also writes it (`host.db.exec`): the write schedules the app-table
 export sync like a member's. Never brain tools: `host.tools.call` is
-refused on every link. The app's Activity tab names the contact. See
+refused, except for an outside (MCP or http) tool the app declares that an
+admin switched "External access" on for (docs/member-logins.md). An open
+link never calls a tool. The app's Activity tab names the contact. See
 docs/sharing.md section 4b.
 
 ### Team links (retired)
@@ -575,17 +585,19 @@ PUBLISHED build only and never edit it.
 - **Tools:** a declared **read-only built-in** tool that an enabled tool
   group at team level or lower holds (usually `team-read`), with no
   confirmation. It runs at the team level: it reads team-, client- and
-  public-level items, never admin ones. Recipe, http, shell and MCP tools are
-  refused, so are built-ins that write, and so are `my_items_list`,
+  public-level items, never admin ones. Recipe and shell tools are refused,
+  so are http and MCP tools unless an admin switched "External access" on
+  for them, so are built-ins that write, and so are `my_items_list`,
   `my_item_open`, `summarize_text`, `search_chunks`, `team_request_create`
   and `read_result`. `app_tools_set`, `app_publish` and `access_set` list a
   warning for each declared tool members would be refused.
 - **Data:** `host.db.query` and `host.db.exec` both work on a team- or
   client-level app (unless an admin marked it informational); on a
   public-level app members only read. The database is shared
-  by the whole team (not one per member): design for that (put who wrote a
-  row in the row if it matters; the app cannot learn the member from the
-  host yet).
+  by the whole team (not one per member): design for that. To record which
+  member wrote a row, fill its columns with `:host_me_id` and
+  `:host_me_name` in the SQL (see "Who is running the app"); `host.me()`
+  shows the member their own name.
 - **Home app:** the app pinned as the hub (Team admin > Settings) is also the
   members' home page while it is at team level or lower with a green
   published build. `host.hub.get()` answers there too: sections are the

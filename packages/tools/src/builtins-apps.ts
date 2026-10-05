@@ -110,7 +110,16 @@ const APP_DB_ID_PRE: readonly ToolPrecondition[] = [
 ];
 
 const SOURCE_HINT =
-  'Mini-app source is TSX. Allowed imports: `react`; the kit `@/components/ui/*` (button, card, input, label, badge, separator) + `cn` from `@/lib/utils`; `lucide-react` icons; the host bridge `host` from `@host` (host.tools.call(slug,input), host.db.query/exec(sql,params)); and relative files. Theme tokens only (bg-background, text-foreground, bg-card, bg-primary+text-primary-foreground, chart-1..5) — never hardcode colours. The entry file must `export default function App()`.';
+  'Mini-app source is TSX. Allowed imports: `react`; the kit `@/components/ui/*` (button, card, input, label, badge, separator) + `cn` from `@/lib/utils`; `lucide-react` icons; `{ host }` from `@host`; and relative files. Theme tokens only (bg-background, text-foreground, bg-card, bg-primary+text-primary-foreground, chart-1..5) — never hardcode colours. The entry file must `export default function App()`.';
+
+/** The runtime essentials an outside author (an MCP client) cannot learn
+ *  anywhere else: who runs the app, the bridge and the level rules. Kept near
+ *  the front of the descriptions, which the tool-search ranker reads first.
+ *  Checked against packages/content/src/app-viewer.ts and app-tool-level.ts;
+ *  the full text is docs/app-authoring-guide.md (app_authoring_guide on MCP,
+ *  the app_authoring skill in the app). */
+const RUNTIME_HINT =
+  "Who runs it: `await host.me()` gives `{ id, name, kind }` (kind admin, member, client, contact or public; id is per app, no email), for display. To RECORD who did something, write `:host_me_id`, `:host_me_name`, `:host_me_kind` in the SQL itself and let the server fill them: `host.db.exec('INSERT INTO log (what, by_id, by_name) VALUES (?, :host_me_id, :host_me_name)', [what])`. Never pass host.me() values as params (fakeable). `host.db.query/exec` = the app's own SQLite (app_db_schema_set). `host.tools.call(slug, input)` = only slugs declared with app_tools_set. Levels: team = members also run it and read + write its one shared database; client = clients too. The level limits the tools (team: read-only built-ins; client: client_shared_* only; an outside tool only with External access on). An open share link gets no tools and only reads. Full guide: app_authoring_guide (MCP) or the app_authoring skill. ";
 
 function fileList(app: AppDetail) {
   const src = workingSource(app);
@@ -130,6 +139,7 @@ const app_create: BuiltinToolDef = {
   name: 'Create a mini app',
   description:
     'Create a new mini app (an `app` node under /apps). `name` required. Starts with a trivial entry file you then flesh out with `app_file_write` + `app_build`. ' +
+    RUNTIME_HINT +
     SOURCE_HINT,
   inputSchema: {
     type: 'object',
@@ -307,6 +317,7 @@ const app_file_write: BuiltinToolDef = {
   name: 'Write a file in a mini app',
   description:
     "Create or replace one source file (by path) in the app's DRAFT — the published app is untouched until app_publish. After writing, call app_build to compile + see errors. " +
+    RUNTIME_HINT +
     SOURCE_HINT,
   inputSchema: {
     type: 'object',
@@ -390,6 +401,7 @@ const app_source_set: BuiltinToolDef = {
   name: "Set a mini app's whole source tree",
   description:
     "Replace the app's ENTIRE draft source tree in one call, instead of many `app_file_write` calls — use it when you authored the files elsewhere and want to upload them atomically. The published app is untouched until `app_publish`; call `app_build` afterwards to compile. " +
+    RUNTIME_HINT +
     SOURCE_HINT,
   inputSchema: {
     type: 'object',
@@ -517,7 +529,7 @@ const app_tools_set: BuiltinToolDef = {
   preconditions: APP_ID_PRE,
   name: "Declare a mini app's data tools",
   description:
-    'Set the list of api_tool slugs this app may call through the host bridge (host.tools.call). This IS the runtime allowlist — the host refuses any slug not declared here. Each slug must be an existing tool you own (build them first via the toolsmith / API Console, or delegate to the `toolsmith` agent). Replaces the current list. An app at team level or lower is run by members, who get only read-only built-in tools from an enabled team-level tool group (no http, shell, recipe or confirm-gated tools); the result lists `warnings` for any declared tool they cannot use.',
+    'Set the list of api_tool slugs this app may call through the host bridge (host.tools.call). This IS the runtime allowlist — the host refuses any slug not declared here. Each slug must be an existing tool you own (build them first via the toolsmith / API Console, or delegate to the `toolsmith` agent). Replaces the current list. An app at team level or lower is run by members, who get only read-only built-in tools from an enabled team-level tool group (no http, shell, recipe or confirm-gated tools). An app at client level runs the client rules for everyone: only client_shared_list, client_shared_search and client_shared_open (or an outside tool with External access on). An open share link calls no tools. The result lists `warnings` for any declared tool the app level refuses.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -573,7 +585,7 @@ const app_db_schema_set: BuiltinToolDef = {
   preconditions: APP_ID_PRE,
   name: "Set a mini app's SQLite schema",
   description:
-    "Declare the app's per-app SQLite schema as DDL (CREATE TABLE …). Stored on the app manifest; the host provisions/migrates the app's own SQLite database from it. The app reads/writes via host.db.query(sql, params) / host.db.exec(sql, params) — each app touches only its own database. Replaces the current schema (bumps the version). The DDL is guarded: ATTACH/DETACH/VACUUM INTO/PRAGMA are refused (read-only `PRAGMA table_info(<table>)` excepted), and it only re-runs on a version bump — it will NOT reshape a table that already exists. To add columns to an app with live data, run an idempotent ALTER TABLE migration in app code at startup (pattern in the app_authoring skill).",
+    "Declare the app's per-app SQLite schema as DDL (CREATE TABLE …). Stored on the app manifest; the host provisions/migrates the app's own SQLite database from it. The app reads/writes via host.db.query(sql, params) / host.db.exec(sql, params) — each app touches only its own database. To record who wrote a row, give it columns such as by_id and by_name and fill them with `:host_me_id` / `:host_me_name` in the app's host.db.exec SQL. Replaces the current schema (bumps the version). The DDL is guarded: ATTACH/DETACH/VACUUM INTO/PRAGMA are refused (read-only `PRAGMA table_info(<table>)` excepted), and it only re-runs on a version bump — it will NOT reshape a table that already exists. To add columns to an app with live data, run an idempotent ALTER TABLE migration in app code at startup (pattern in the app_authoring skill).",
   inputSchema: {
     type: 'object',
     properties: {
@@ -901,7 +913,7 @@ const app_db_query: BuiltinToolDef = {
   preconditions: APP_DB_ID_PRE,
   name: 'Query an app database',
   description:
-    "Run a READ-ONLY SQL query against ONE mini app's SQLite database and get rows back. Pass `app_id` (from app_db_list) and a SELECT `sql`; use `?` placeholders with `params` for values. The database is opened read-only — any write is rejected. Discover tables/columns with app_db_list first. Keep answers tight: add LIMIT or aggregate in SQL (large results are truncated).",
+    "Run a READ-ONLY SQL query against ONE mini app's SQLite database and get rows back. Pass `app_id` (from app_db_list) and a SELECT `sql`; use `?` placeholders with `params` for values. The database is opened read-only — any write is rejected, and so is SQL that uses `:host_me_*` (no person runs it here). Discover tables/columns with app_db_list first. Keep answers tight: add LIMIT or aggregate in SQL (large results are truncated).",
   inputSchema: {
     type: 'object',
     properties: {

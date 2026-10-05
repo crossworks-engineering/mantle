@@ -219,6 +219,7 @@ const HTTP_SURFACE = [
   'app_export',
   'app_import',
   'app_errors',
+  'app_authoring_guide',
   'sandbox_create',
   'sandbox_exec',
   'sandbox_list',
