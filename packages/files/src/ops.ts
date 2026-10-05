@@ -23,6 +23,7 @@ export { ensureFilesRootBranch, type FolderRow, type FileRow } from './ops/share
 export {
   upsertFile,
   readFileById,
+  BYTE_DERIVED_DATA_KEYS,
   openFileById,
   countDerivedFromFile,
   drawsReferencingFile,

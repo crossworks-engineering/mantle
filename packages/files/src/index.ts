@@ -159,6 +159,7 @@ export {
   upsertFile,
   readFileById,
   openFileById,
+  BYTE_DERIVED_DATA_KEYS,
   countDerivedFromFile,
   deleteFileById,
   drawsReferencingFile,

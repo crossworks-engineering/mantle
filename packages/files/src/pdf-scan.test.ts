@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { helveticaPdf } from './pdf-fixtures.test-helper';
-import { parsePdf } from './pdf';
+import { parsePdf, pdfPageCount } from './pdf';
 
 /** A valid PDF of `pages` blank pages: no content stream, no text. */
 function blankPdf(pages: number): Buffer {
@@ -46,5 +46,16 @@ describe('parsePdf: no text layer', () => {
   it('keeps a real text layer, markers and all', async () => {
     const text = await parsePdf(helveticaPdf('Hello Mantle'));
     expect(text).toContain('Hello Mantle');
+  });
+});
+
+describe('pdfPageCount', () => {
+  it('counts the pages of a scan without reading text', async () => {
+    expect(await pdfPageCount(blankPdf(3))).toBe(3);
+    expect(await pdfPageCount(helveticaPdf())).toBe(1);
+  });
+
+  it('returns null for bytes that are not a PDF', async () => {
+    expect(await pdfPageCount(Buffer.from('not a pdf'))).toBeNull();
   });
 });

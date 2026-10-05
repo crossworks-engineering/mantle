@@ -337,6 +337,22 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       'Plain SQL, no model, idempotent. Run once per box after the release that added the stamp; the extractor stamps new cases itself. A stamp holds only until the node next changes, and an explicit re-extract always runs.',
   },
   {
+    slug: 'ocr-rescan',
+    title: 'Re-OCR scans indexed as page markers',
+    description:
+      'Scanned PDFs the page-marker bug indexed wrong before v0.238.2: a scan of 2+ pages indexed as its own "-- N of M --" markers, a 1-page scan stuck at body_too_short. Dry run (default) prints counts, total pages, the document and vision models that will run, their price (live provider catalog, else the fallback table) and an estimated USD. --apply clears the bad text, summary, embedding and chunks and re-queues each file through the normal extract queue, a batch at a time, waiting for each batch to finish. Prints ids and counts only.',
+    kind: 'remedy',
+    status: 'live',
+    cost: 'llm',
+    schedulable: false,
+    script: 'scripts/ocr-rescan.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    extraFlags: ['--limit=<n>', '--batch=<n>', '--batch-timeout=<minutes>'],
+    notes:
+      'Spends on --apply: the OCR pass (native PDF on the document worker, page OCR on the vision worker if that reads nothing) plus summary and embedding per file. Needs the agent (server/api) running. Start with --apply --limit=3. A batch that does not finish in time stops the run; nothing is sent twice.',
+  },
+  {
     slug: 'extract-backfill',
     title: 'Re-fire extraction for unindexed nodes',
     description:

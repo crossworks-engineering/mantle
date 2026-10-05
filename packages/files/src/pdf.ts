@@ -38,6 +38,22 @@ export async function parsePdf(buf: Buffer): Promise<string> {
   }
 }
 
+/** Page count of a PDF, or null when pdfjs cannot open it (corrupt,
+ *  encrypted). Reads the page tree only: no text, no rendering. Used to price
+ *  an OCR pass before it runs (maintain `ocr-rescan`). */
+export async function pdfPageCount(bytes: Buffer): Promise<number | null> {
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const task = pdfjs.getDocument({ data: new Uint8Array(bytes), useSystemFonts: true });
+  try {
+    const doc = await task.promise;
+    return doc.numPages;
+  } catch {
+    return null;
+  } finally {
+    await task.destroy().catch(() => {});
+  }
+}
+
 // ─── embedded images ──────────────────────────────────────────────────
 
 /** Pages we'll scan for figures. The per-document image cap bounds the
