@@ -86,7 +86,7 @@ const NOT_ENABLED: MediaResult<never> = {
   ok: false,
   code: 'not_enabled',
   message:
-    'Media ingestion is not enabled on this box. It needs the `media` compose profile plus MEDIA_SIDECAR_TOKEN (see docs/video-ingest.md).',
+    'Media ingestion is not enabled on this box (the `media` service is switched off). An admin can switch Media on in the dashboard under Services (see docs/video-ingest.md).',
 };
 
 /** Sidecar text headers are percent-encoded single-line ASCII. */

@@ -1199,7 +1199,7 @@ check "sandboxes: profile on, token present, running + healthy" \
 check "media: profile off, empty token is no token, no container" \
   test "$(svc_field 'JSON.stringify(j.services.media)')" = '{"profile":false,"token":false,"container":"absent","health":"none"}'
 check "core shape read from COMPOSE_FILE" test "$(svc_field 'j.core')" = true
-check "verbs advertise the roll" test "$(svc_field 'j.verbs.join()')" = roll
+check "verbs advertise the roll and the service switch" test "$(svc_field 'j.verbs.join()')" = roll,service
 check "no token VALUE in the file" sh -c "! grep -q sekrit '$SJ'"
 
 echo "updater.sh: optional-service tokens provisioned on a roll"
@@ -1223,6 +1223,185 @@ check "gen_token: 64 hex, two calls differ" sh -c "
   a=\$(MANTLE_STACK_DIR='$TK/stack' MANTLE_SIGNAL_DIR='$TK/sig' MANTLE_UPDATER_LIB=1 $SH -c \". '$ROOT/infra/updater/updater.sh'; gen_token\")
   b=\$(MANTLE_STACK_DIR='$TK/stack' MANTLE_SIGNAL_DIR='$TK/sig' MANTLE_UPDATER_LIB=1 $SH -c \". '$ROOT/infra/updater/updater.sh'; gen_token\")
   printf '%s' \"\$a\" | grep -qE '^[0-9a-f]{64}\$' && test \"\$a\" != \"\$b\""
+
+# ═════════════════════════════════════════════════════════════════════════════
+echo "updater.sh: the service switch (service-request.json)"
+# The one new input surface on the Docker-socket holder. Every path: the
+# whitelist, on, off, and each failure, with .env and the calls checked.
+SVC_STUB='
+docker() {
+  echo "docker $*" >> "$CALLS"
+  case "$1" in
+    inspect) echo "${FAKE_HEALTH:-running healthy}"; return 0 ;;
+    ps) for i in ${FAKE_SANDBOX_IDS:-}; do echo "$i"; done; return 0 ;;
+    stop) [ -z "${FAKE_SBX_STOP_FAIL:-}" ] || return 1; return 0 ;;
+    pull) [ -z "${FAKE_BASE_PULL_FAIL:-}" ] || return 1; return 0 ;;
+    compose)
+      case "$*" in
+        *" pull "*) [ -z "${FAKE_PULL_FAIL:-}" ] || return 1 ;;
+        *" up "*) [ -z "${FAKE_UP_FAIL:-}" ] || return 1 ;;
+        *" stop "*) [ -z "${FAKE_STOP_FAIL:-}" ] || return 1 ;;
+        *"config --services"*) printf "web\napi\ncaddy\nupdater\nworker_files\n" ;;
+      esac
+      return 0 ;;
+  esac
+  return 0
+}
+sleep() { :; }
+'
+svc_case() { # <name> <request-body>: a stack with tokens provisioned, no profiles
+  T="$WORK/svc-$1"; fake_stack "$T"; mkdir -p "$T/state"; : > "$T/calls"
+  printf 'COMPOSE_PROFILES=local-embedder\nSANDBOXD_TOKEN=%s\nMEDIA_SIDECAR_TOKEN=%s\nMANTLE_DATA_DIR=./data\n' \
+    aaaa bbbb >> "$T/stack/.env"
+  printf '%s\n' "$2" > "$T/sig/service-request.json"
+  cp "$T/stack/.env" "$T/env.before"
+}
+svc_run() { # [env...] — handle the queued request under the stub
+  MANTLE_STACK_DIR="$T/stack" MANTLE_SIGNAL_DIR="$T/sig" CALLS="$T/calls" MANTLE_UPDATER_LIB=1 \
+    "$SH" -c "$SVC_STUB
+. '$ROOT/infra/updater/updater.sh'
+${SVC_PRE:-}
+handle_service_request" > "$T/out" 2>&1
+}
+st() { cat "$T/sig/service-status.json" 2>/dev/null; }
+
+for bad in '{"service":"postgres","enable":true}' '{"service":"media; rm -rf /","enable":true}' \
+           '{"service":"","enable":true}' 'not json at all'; do
+  svc_case badsvc "$bad"; svc_run
+  check "whitelist: refuses service in $bad" grep -q '"phase":"error".*"ok":false,"error":"unknown service"' "$T/sig/service-status.json"
+  check "whitelist: .env untouched for $bad" same "$T/stack/.env" "$T/env.before"
+  check "whitelist: no docker call for $bad" sh -c "! grep -qE 'compose|stop|pull' '$T/calls'"
+done
+for bad in '{"service":"media","enable":"true"}' '{"service":"media","enable":1}' '{"service":"media"}' \
+           '{"service":"media","enable":yes}'; do
+  svc_case badenable "$bad"; svc_run
+  check "whitelist: refuses the switch value in $bad" grep -q 'the switch must be true or false' "$T/sig/service-status.json"
+  check "whitelist: .env untouched for $bad" same "$T/stack/.env" "$T/env.before"
+done
+svc_case consumed '{"service":"media","enable":true}'; svc_run
+check "the request is consumed" test ! -e "$T/sig/service-request.json"
+
+# ── on, the normal path: tokens already provisioned by a roll ──
+svc_case on '{"service":"media","enable":true}'; svc_run
+check "on: status done, ok true" grep -q '"phase":"done","service":"media","enable":true.*"ok":true' "$T/sig/service-status.json"
+check "on: the profile is added, the others kept" grep -qx 'COMPOSE_PROFILES=local-embedder,media' "$T/stack/.env"
+check "on: tokens kept as they were" sh -c "grep -qx 'MEDIA_SIDECAR_TOKEN=bbbb' '$T/stack/.env' && grep -qx 'SANDBOXD_TOKEN=aaaa' '$T/stack/.env'"
+check "on: .env backed up, mode 600" sh -c "ls '$T/stack/backups/env/'.env-* >/dev/null && test \"\$(stat -c %a '$T'/stack/backups/env/.env-* 2>/dev/null || stat -f %Lp '$T'/stack/backups/env/.env-*)\" = 600"
+check "on: the backup is the .env from before" sh -c "cmp -s '$T/env.before' '$T'/stack/backups/env/.env-*"
+check "on: pulls only that service" grep -qE 'compose .*--profile media pull media$' "$T/calls"
+check "on: starts only that container (--no-deps)" grep -qE 'compose .*--profile media up -d --no-deps media$' "$T/calls"
+check "on: no other container recreated" sh -c "! grep -qE ' up -d [^-]' '$T/calls'"
+check "on: waited on the container's health" grep -q 'inspect .*mantle_media' "$T/calls"
+check "on: services.json says media is on" grep -q '"media":{"profile":true,"token":true' "$T/sig/services.json"
+check "on: .env keeps mode 600" test "$(mode_of "$T/stack/.env")" = 600
+
+svc_case onagain '{"service":"media","enable":true}'
+sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=media/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
+svc_run
+check "on when already on: profile not doubled" grep -qx 'COMPOSE_PROFILES=media' "$T/stack/.env"
+
+# ── on, first time on a box whose roll did not provision the token ──
+svc_case newtoken '{"service":"media","enable":true}'
+sed -i.bak 's/^MEDIA_SIDECAR_TOKEN=.*/MEDIA_SIDECAR_TOKEN=/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
+svc_run
+check "new token: generated, 64 hex" grep -qE '^MEDIA_SIDECAR_TOKEN=[0-9a-f]{64}$' "$T/stack/.env"
+check "new token: the app containers are recreated to carry it" grep -qE 'compose .*--profile media up -d web api worker_files$' "$T/calls"
+check "new token: never the updater or caddy" sh -c "! grep -E ' up -d ' '$T/calls' | grep -qE 'updater|caddy'"
+check "new token: status done" grep -q '"phase":"done".*"ok":true' "$T/sig/service-status.json"
+
+# ── on, sandboxes: host dir + base image ──
+svc_case sbx '{"service":"sandboxes","enable":true}'
+printf 'services:\n  sandboxd:\n    environment:\n      SANDBOX_DEFAULT_IMAGE: ${SANDBOX_DEFAULT_IMAGE:-test/mantle-sandbox:24.04-v9}\n' > "$T/stack/docker-compose.yml"
+svc_run
+check "sandboxes on: the host dir is host-absolute under the data dir" grep -qx "MANTLE_SANDBOXES_HOST_DIR=$T/stack/data/sandboxes" "$T/stack/.env"
+check "sandboxes on: pulls sandboxd" grep -qE 'compose .*--profile sandboxes pull sandboxd$' "$T/calls"
+check "sandboxes on: pre-pulls the base image from the compose default" grep -qx 'docker pull test/mantle-sandbox:24.04-v9' "$T/calls"
+check "sandboxes on: status done" grep -q '"phase":"done","service":"sandboxes"' "$T/sig/service-status.json"
+svc_case sbxbase '{"service":"sandboxes","enable":true}'
+printf 'SANDBOX_DEFAULT_IMAGE=test/pinned:1\nMANTLE_SANDBOXES_HOST_DIR=/srv/sbx\n' >> "$T/stack/.env"
+FAKE_BASE_PULL_FAIL=1 svc_run
+check "sandboxes on: an .env image pin wins" grep -qx 'docker pull test/pinned:1' "$T/calls"
+check "sandboxes on: an existing host dir is kept" grep -qx 'MANTLE_SANDBOXES_HOST_DIR=/srv/sbx' "$T/stack/.env"
+check "sandboxes on: a failed base-image pull is not fatal" grep -q '"phase":"done".*"ok":true' "$T/sig/service-status.json"
+svc_case sbxspace '{"service":"sandboxes","enable":true}'
+sed -i.bak 's|^MANTLE_DATA_DIR=.*|MANTLE_DATA_DIR=/srv/my data|' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
+cp "$T/stack/.env" "$T/env.before"
+svc_run
+check "sandboxes on: a data dir with a space is refused, .env restored" sh -c "
+  grep -q 'characters a bind mount cannot take' '$T/sig/service-status.json' && cmp -s '$T/stack/.env' '$T/env.before'"
+
+# ── on, every failure puts .env back and stops the container ──
+for f in PULL UP; do
+  svc_case "fail$f" '{"service":"media","enable":true}'
+  if [ "$f" = PULL ]; then FAKE_PULL_FAIL=1 svc_run; else FAKE_UP_FAIL=1 svc_run; fi
+  check "on, $f fails: status error says it was switched off again" grep -q '"phase":"error".*switched off again and the settings were restored' "$T/sig/service-status.json"
+  check "on, $f fails: .env restored byte for byte" same "$T/stack/.env" "$T/env.before"
+  check "on, $f fails: the container is stopped and removed" sh -c "grep -qE 'profile media stop media$' '$T/calls' && grep -qE 'profile media rm -f media$' '$T/calls'"
+done
+svc_case unhealthy '{"service":"media","enable":true}'
+FAKE_HEALTH='running unhealthy' svc_run
+check "on, unhealthy: refused with the reason, .env restored" sh -c "
+  grep -q 'it did not become healthy: it reports unhealthy' '$T/sig/service-status.json' && cmp -s '$T/stack/.env' '$T/env.before'"
+svc_case exited '{"service":"media","enable":true}'
+FAKE_HEALTH='exited none' svc_run
+check "on, the container exits: refused, names the state" grep -q 'the container is exited none' "$T/sig/service-status.json"
+svc_case slow '{"service":"media","enable":true}'
+printf 'MANTLE_SERVICE_HEALTH_TIMEOUT_S=6\n' >> "$T/stack/.env"; cp "$T/stack/.env" "$T/env.before"
+FAKE_HEALTH='running starting' svc_run
+check "on, never healthy: times out after the .env knob, .env restored" sh -c "
+  grep -q 'not healthy after 6s' '$T/sig/service-status.json' && cmp -s '$T/stack/.env' '$T/env.before'"
+check "on, never healthy: polled about every 3 s (2 checks for 6 s)" test "$(grep -c 'inspect .*mantle_media' "$T/calls")" -le 4
+svc_case disk '{"service":"media","enable":true}'
+SVC_PRE='free_kb() { echo 1024; }' svc_run
+check "on, low disk: refused, says how much, nothing changed" sh -c "
+  grep -q 'not enough disk: 1 MB free, need 4096 MB' '$T/sig/service-status.json' && cmp -s '$T/stack/.env' '$T/env.before' && ! grep -qE ' (pull|up|stop|rm) ' '$T/calls' && test ! -d '$T/stack/backups/env'"
+
+# ── off: stop, never remove; keep every piece of data ──
+svc_case off '{"service":"sandboxes","enable":false}'
+sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=local-embedder,sandboxes,media/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
+printf 'MANTLE_SANDBOXES_HOST_DIR=/srv/sbx\n' >> "$T/stack/.env"
+FAKE_SANDBOX_IDS='c1 c2' svc_run
+check "off: status done" grep -q '"phase":"done","service":"sandboxes","enable":false.*"ok":true' "$T/sig/service-status.json"
+check "off: only that profile dropped" grep -qx 'COMPOSE_PROFILES=local-embedder,media' "$T/stack/.env"
+check "off: token and host dir kept" sh -c "grep -qx 'SANDBOXD_TOKEN=aaaa' '$T/stack/.env' && grep -qx 'MANTLE_SANDBOXES_HOST_DIR=/srv/sbx' '$T/stack/.env'"
+check "off: running sandboxes are STOPPED" grep -qx 'docker stop -t 20 c1 c2' "$T/calls"
+check "off: only labelled sandbox containers are listed" grep -q 'ps -q --filter label=mantle.sandbox=true' "$T/calls"
+check "off: no sandbox container is removed" sh -c "! grep -E 'docker (rm|container rm)' '$T/calls' | grep -q ."
+check "off: the only rm is the sandboxd service container" sh -c "test \"\$(grep -c ' rm ' '$T/calls')\" = 1 && grep -qE 'profile sandboxes rm -f sandboxd$' '$T/calls'"
+check "off: nothing is pulled or started" sh -c "! grep -qE ' pull | up ' '$T/calls'"
+check "off: services.json says off" grep -q '"sandboxes":{"profile":false,"token":true' "$T/sig/services.json"
+svc_case offlast '{"service":"media","enable":false}'
+sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=media/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
+svc_run
+check "off, the last profile: COMPOSE_PROFILES empties" grep -qx 'COMPOSE_PROFILES=' "$T/stack/.env"
+check "off, media: no sandbox is touched" sh -c "! grep -qF 'label=mantle.sandbox' '$T/calls'"
+svc_case offfail '{"service":"media","enable":false}'
+sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=media/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
+cp "$T/stack/.env" "$T/env.before"
+FAKE_STOP_FAIL=1 svc_run
+check "off, stop fails: status error, .env unchanged" sh -c "
+  grep -q 'could not stop media; nothing changed in .env' '$T/sig/service-status.json' && cmp -s '$T/stack/.env' '$T/env.before'"
+svc_case sbxstopfail '{"service":"sandboxes","enable":false}'
+sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=sandboxes/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
+cp "$T/stack/.env" "$T/env.before"
+FAKE_SANDBOX_IDS='c1' FAKE_SBX_STOP_FAIL=1 svc_run
+check "off, a sandbox will not stop: sandboxd left running, .env unchanged" sh -c "
+  grep -q 'could not stop the running sandboxes' '$T/sig/service-status.json' && cmp -s '$T/stack/.env' '$T/env.before' && ! grep -q 'stop sandboxd' '$T/calls'"
+
+# ── unconfigured, and the real poll loop ──
+svc_case unconf '{"service":"media","enable":true}'
+rm "$T/stack/docker-compose.yml"
+svc_run
+check "unconfigured updater: refused with the reason" grep -q 'updater not configured' "$T/sig/service-status.json"
+svc_case loop '{"service":"media","enable":true}'
+for s in $SCRIPTS; do printf '#!/bin/sh\n' > "$T/stack/scripts/$s"; done
+MANTLE_STACK_DIR="$T/stack" MANTLE_SIGNAL_DIR="$T/sig" CALLS="$T/calls" "$SH" -c "$SVC_STUB
+sleep() { exit 0; }
+. '$ROOT/infra/updater/updater.sh'" > "$T/loop.out" 2>&1
+check "poll loop: a service request is handled" grep -q '"phase":"done","service":"media"' "$T/sig/service-status.json"
+check "poll loop: the request is consumed" test ! -e "$T/sig/service-request.json"
+check "poll loop: the update status is untouched by a switch" sh -c "! grep -q media '$T/sig/status.json'"
+check "the updater advertises the service verb" grep -q '"verbs":\["roll","service"\]' "$T/sig/services.json"
 
 # ═════════════════════════════════════════════════════════════════════════════
 echo

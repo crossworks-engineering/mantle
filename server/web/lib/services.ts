@@ -1,0 +1,235 @@
+/**
+ * Optional services (sandboxes, media) for the dashboard switches: what each
+ * one is, whether it is on, and asking the updater sidecar to switch one.
+ *
+ * "On" is @mantle/config `serviceEnabled` (the profile, live from the
+ * updater's services.json). Switching writes /signal/service-request.json,
+ * which only an updater that advertises the `service` verb reads; the
+ * request carries a service name and a boolean, nothing else, and the
+ * updater whitelists both again (infra/updater/updater.sh). Progress comes
+ * back in service-status.json and service.log.
+ */
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import {
+  OPTIONAL_SERVICES,
+  readServicesFile,
+  serviceEnabled,
+  signalDir,
+  type OptionalService,
+} from '@mantle/config';
+import { mediaSidecarHealth } from '@mantle/files';
+import type {
+  ServiceDescription,
+  ServiceInfo,
+  ServiceRunPhase,
+  ServiceRunStatus,
+  ServicesView,
+  ServiceSwitchResult,
+} from '@mantle/client-types';
+import { sandboxdHealth } from './sandboxd';
+import { readUpdaterStatus, updaterAvailable } from './updates';
+
+export function isOptionalService(v: unknown): v is OptionalService {
+  return typeof v === 'string' && (OPTIONAL_SERVICES as readonly string[]).includes(v);
+}
+
+/** What the UI says about each service. Sizes: the compressed images on the
+ *  registry (mantle-media, mantle-sandbox base); memory: the compose caps. */
+export const SERVICE_DESCRIPTIONS: Record<OptionalService, ServiceDescription> = {
+  sandboxes: {
+    title: 'Sandboxes',
+    what: 'Isolated workspaces where the coder and app agents run code, build apps and test packages. Each sandbox is its own Linux container with no route to your data.',
+    usedBy:
+      'The coder agent and the sandbox tools, and services or MCP servers an agent runs inside a sandbox.',
+    whenOff:
+      'Agents cannot create or use sandboxes. Running sandboxes stop, and services published from a sandbox stop answering.',
+    keeps:
+      'Every sandbox, its files and the apps and services in it. They come back when you switch it on again.',
+    downloadMb: 430,
+    memory: '512 MB, plus up to 1 GB for each running sandbox (3 at a time)',
+    memoryMaxMb: 3584,
+    note: null,
+  },
+  media: {
+    title: 'Media',
+    what: 'Makes transcripts from video and audio, from a web link or an uploaded file, and reads and draws CAD drawings (DWF, DWG and DXF).',
+    usedBy: 'The video_ingest tool, and file ingest for CAD drawings.',
+    whenOff:
+      'Video and audio get no transcript. DWG files are not read, and DWF files show only their small preview pictures.',
+    keeps: 'Everything already ingested. Nothing is stored in this service.',
+    downloadMb: 300,
+    memory: 'up to 1 GB (3 GB is advised for large DWF drawing sets)',
+    memoryMaxMb: 3072,
+    note: 'It runs a downloader (yt-dlp) that updates itself every day and fetches pages from the open web. It holds no keys and cannot reach your data.',
+  },
+};
+
+/** At or below this much memory a box gets the warning before a switch. */
+const SMALL_BOX_BYTES = 6 * 1024 ** 3;
+
+function file(name: string): string {
+  return path.join(signalDir(), name);
+}
+
+const RUN_PHASES: readonly ServiceRunPhase[] = [
+  'idle',
+  'requested',
+  'pulling',
+  'starting',
+  'stopping',
+  'done',
+  'error',
+];
+const BUSY: readonly ServiceRunPhase[] = ['requested', 'pulling', 'starting', 'stopping'];
+
+/** Pure, for tests: a service-status.json body. */
+export function parseServiceRun(raw: string): ServiceRunStatus | null {
+  try {
+    const j = JSON.parse(raw) as Record<string, unknown>;
+    const phase = RUN_PHASES.includes(j.phase as ServiceRunPhase)
+      ? (j.phase as ServiceRunPhase)
+      : 'idle';
+    const str = (v: unknown) => (typeof v === 'string' && v ? v : null);
+    return {
+      phase,
+      service: isOptionalService(j.service) ? j.service : null,
+      enable: typeof j.enable === 'boolean' ? j.enable : null,
+      startedAt: str(j.started_at),
+      finishedAt: str(j.finished_at),
+      ok: typeof j.ok === 'boolean' ? j.ok : null,
+      error: str(j.error),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** The current or last switch run. A request the updater has not picked up
+ *  yet reads as its own phase, so the UI shows progress at once. */
+export async function readServiceRun(): Promise<ServiceRunStatus | null> {
+  const pendingRaw = await fs.readFile(file('service-request.json'), 'utf8').catch(() => null);
+  if (pendingRaw !== null) {
+    let pending: Record<string, unknown> = {};
+    try {
+      pending = JSON.parse(pendingRaw) as Record<string, unknown>;
+    } catch {
+      // half-written or foreign: still pending
+    }
+    return {
+      phase: 'requested',
+      service: isOptionalService(pending.service) ? pending.service : null,
+      enable: typeof pending.enable === 'boolean' ? pending.enable : null,
+      startedAt: typeof pending.requested_at === 'string' ? pending.requested_at : null,
+      finishedAt: null,
+      ok: null,
+      error: null,
+    };
+  }
+  const raw = await fs.readFile(file('service-status.json'), 'utf8').catch(() => null);
+  return raw === null ? null : parseServiceRun(raw);
+}
+
+export async function readServiceLog(maxLines = 40): Promise<string> {
+  try {
+    const lines = (await fs.readFile(file('service.log'), 'utf8')).split('\n');
+    return lines
+      .slice(Math.max(0, lines.length - maxLines))
+      .join('\n')
+      .trim();
+  } catch {
+    return '';
+  }
+}
+
+/** Is a switch run in progress? Rolls check this too: one change at a time. */
+export async function serviceRunBusy(): Promise<boolean> {
+  const run = await readServiceRun();
+  return run !== null && BUSY.includes(run.phase);
+}
+
+/** Why this box cannot switch services from the UI, or null when it can. */
+async function switchBlocker(): Promise<string | null> {
+  if (!(await updaterAvailable())) {
+    return 'This box has no updater sidecar, so services can only be changed on the server.';
+  }
+  const f = readServicesFile();
+  if (!f || !f.verbs.includes('service')) {
+    return 'The updater on this box is too old to switch services. Update the box once, then try again.';
+  }
+  return null;
+}
+
+export async function getServicesView(): Promise<ServicesView> {
+  const f = readServicesFile();
+  const [blocker, run, sbx, media] = await Promise.all([
+    switchBlocker(),
+    readServiceRun(),
+    sandboxdHealth().catch(() => null),
+    mediaSidecarHealth(1_500).catch(() => null),
+  ]);
+  const probe: Record<OptionalService, boolean | null | undefined> = {
+    sandboxes: sbx?.up,
+    media: media?.up,
+  };
+  const services: ServiceInfo[] = OPTIONAL_SERVICES.map((name) => {
+    const entry = f?.services[name];
+    const on = serviceEnabled(name);
+    return {
+      name,
+      state: !on ? 'off' : probe[name] === true ? 'up' : 'down',
+      container: entry?.container ?? null,
+      health: entry?.health ?? null,
+      description: SERVICE_DESCRIPTIONS[name],
+    };
+  });
+  const kb = (v: number | null | undefined) => (typeof v === 'number' ? v * 1024 : null);
+  const memTotalBytes = kb(f?.memTotalKb);
+  return {
+    services,
+    switching: { available: blocker === null, reason: blocker },
+    box: {
+      memTotalBytes,
+      memAvailableBytes: kb(f?.memAvailableKb),
+      diskFreeBytes: kb(f?.diskFreeKb),
+      core: f?.core ?? false,
+      smallBox: (f?.core ?? false) || (memTotalBytes !== null && memTotalBytes <= SMALL_BOX_BYTES),
+    },
+    run,
+  };
+}
+
+/** Ask the updater to switch one service. Refuses (with the reason) when the
+ *  box cannot switch, or a roll or another switch is in progress. */
+export async function requestServiceSwitch(
+  name: OptionalService,
+  enable: boolean,
+): Promise<ServiceSwitchResult> {
+  if (!isOptionalService(name)) return { ok: false, error: `unknown service '${String(name)}'` };
+  if (typeof enable !== 'boolean') return { ok: false, error: 'enable must be true or false' };
+  const blocker = await switchBlocker();
+  if (blocker) return { ok: false, error: blocker };
+  const roll = await readUpdaterStatus();
+  if (
+    roll &&
+    (roll.phase === 'requested' || roll.phase === 'pulling' || roll.phase === 'rolling')
+  ) {
+    return { ok: false, error: 'An update is in progress. Try again when it has finished.' };
+  }
+  if (await serviceRunBusy()) {
+    return { ok: false, error: 'A service is already being switched. Wait for it to finish.' };
+  }
+  const body = JSON.stringify({ service: name, enable, requested_at: new Date().toISOString() });
+  const tmp = file(`.service-request.${process.pid}.tmp`);
+  try {
+    // Temp + rename: the updater polls every 5 s and must never read half a
+    // request (it would refuse it, but the switch would look broken).
+    await fs.writeFile(tmp, body, 'utf8');
+    await fs.rename(tmp, file('service-request.json'));
+    return { ok: true };
+  } catch (err) {
+    await fs.rm(tmp, { force: true }).catch(() => {});
+    console.error('[services] could not write the switch request:', err);
+    return { ok: false, error: 'Could not hand the request to the updater. See the server log.' };
+  }
+}

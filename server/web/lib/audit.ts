@@ -77,6 +77,9 @@ export type AuditEntry = {
     | 'user.agent.assign'
     | 'user.agent.rename'
     | 'user.agent.release'
+    // An admin switched an optional service (sandboxes, media) on or off
+    // from the dashboard; detail says which, and whether the updater took it.
+    | 'service.toggle'
     | 'api.write';
   method?: string | null;
   path?: string | null;

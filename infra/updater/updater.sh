@@ -984,7 +984,7 @@ topup_scripts() {
 SERVICE_PROFILES="sandboxes media"
 # Request kinds this updater understands; the UI offers a switch only when
 # 'service' is listed.
-UPDATER_VERBS='"roll"'
+UPDATER_VERBS='"roll","service"'
 
 service_container() {
   case "$1" in sandboxes) echo mantle_sandboxd ;; media) echo mantle_media ;; esac
@@ -1064,6 +1064,256 @@ ensure_service_tokens() {
         | tee -a "$SIG/update.log"
     fi
   done
+}
+
+# ── switching an optional service on or off ──────────────────────────────────
+# The dashboard's service switch writes /signal/service-request.json, a file
+# of its OWN: an updater older than this never reads it, where the same body
+# in request.json would read as "roll to latest". One fixed operation per
+# request, inputs whitelisted: the service is `sandboxes` or `media`, the
+# switch true or false. Nothing else in the request reaches a command.
+#
+# On:  free-disk check; back up .env; give the service its token (and, for
+#      sandboxes, the host-absolute sandboxes dir) when missing; add the
+#      profile; pull THAT service's image (plus the sandbox base image); start
+#      THAT container with `up --no-deps`, or, when the token was only just
+#      written, recreate the app containers too so they carry it (once per
+#      box, a roll normally provisions it first); wait for healthy. Any
+#      failure puts .env back and stops the container again.
+# Off: stop the running sandbox containers (stop, NEVER remove), stop and
+#      remove the service container, drop the profile. Tokens, the sandboxes
+#      dir, every sandbox's /files, app data and images all stay: off loses
+#      nothing, and on again is quick.
+#
+# Status: /signal/service-status.json {phase, service, enable, started_at,
+# finished_at, ok, error}; the run's output in /signal/service.log.
+#
+# .env knobs (the operator's, never the request's):
+#   MANTLE_SERVICE_MIN_FREE_MB=4096   free disk an "on" needs first
+#   MANTLE_SERVICE_HEALTH_TIMEOUT_S=180  how long "on" waits for healthy
+SVC_ENV_BAK=""
+SVC_ERR=""
+SVC_TOKEN_NEW=""
+
+compose_service() {
+  case "$1" in sandboxes) echo sandboxd ;; media) echo media ;; esac
+}
+
+# write_service_status <phase> <service> <enable> <started> <finished> <ok|""> <error>
+write_service_status() {
+  wss_err=$(printf '%s' "$7" | tr '\n"' ' .' | cut -c1-300)
+  printf '{"phase":"%s","service":"%s","enable":%s,"started_at":"%s","finished_at":"%s","ok":%s,"error":"%s"}\n' \
+    "$1" "$2" "$3" "$4" "$5" "${6:-null}" "$wss_err" > "$SIG/service-status.json.tmp" \
+    && mv "$SIG/service-status.json.tmp" "$SIG/service-status.json"
+}
+
+svc_log() { echo "[updater] $*" | tee -a "$SIG/service.log"; }
+
+# svc_compose <profile> <args...>: compose against the box's stack with the
+# profile named explicitly, so stop/rm reach the service whatever .env says.
+svc_compose() {
+  sc_p=$1; shift
+  docker compose --project-directory "$STACK" --profile "$sc_p" "$@" >> "$SIG/service.log" 2>&1
+}
+
+# backup_env: copy .env (mode and owner kept) to backups/env/, newest 5 kept.
+backup_env() {
+  be_dir="$STACK/backups/env"
+  ( umask 077; mkdir -p "$be_dir" ) || return 1
+  SVC_ENV_BAK="$be_dir/.env-$(date -u +%Y%m%d-%H%M%S)"
+  cp -p "$STACK/.env" "$SVC_ENV_BAK" || return 1
+  keep_newest "$be_dir/.env-" 5
+}
+
+# restore_env: put the backup back IN PLACE (the inode keeps its owner/mode).
+restore_env() {
+  [ -n "$SVC_ENV_BAK" ] && [ -f "$SVC_ENV_BAK" ] || return 1
+  cat "$SVC_ENV_BAK" > "$STACK/.env"
+}
+
+# profiles_without <name>: COMPOSE_PROFILES minus <name>, as a comma list.
+profiles_without() {
+  profiles_csv | tr ',' '\n' | grep -vx "$1" | tr '\n' ',' | sed 's/,$//'
+}
+
+# sandboxes_host_dir: <data dir>/sandboxes, host-absolute (sandboxd hands it to
+# the host daemon as a bind source; the stack dir is host-absolute already).
+sandboxes_host_dir() {
+  shd=$(env_val MANTLE_DATA_DIR)
+  [ -n "$shd" ] || shd=./data
+  case "$shd" in /*) ;; *) shd="$STACK/${shd#./}" ;; esac
+  printf '%s/sandboxes' "${shd%/}"
+}
+
+# sandbox_base_image: the image sandbox_create starts from (.env pin, else the
+# compose default), or nothing when it is not a plain image reference.
+sandbox_base_image() {
+  sbi=$(env_val SANDBOX_DEFAULT_IMAGE)
+  [ -n "$sbi" ] || sbi=$(sed -n 's/.*SANDBOX_DEFAULT_IMAGE: \${SANDBOX_DEFAULT_IMAGE:-\([^}]*\)}.*/\1/p' \
+    "$STACK/docker-compose.yml" 2>/dev/null | head -1)
+  case "$sbi" in '' | *[!A-Za-z0-9._/:@-]*) return 1 ;; esac
+  printf '%s' "$sbi"
+}
+
+# wait_healthy <container>: 0 once it runs healthy (or runs with no
+# healthcheck); 1 with WH_ERR when it stops, turns unhealthy or times out.
+wait_healthy() {
+  wh_t=$(num_or "$(env_val MANTLE_SERVICE_HEALTH_TIMEOUT_S)" 180)
+  wh_n=$(( (wh_t + 2) / 3 ))
+  while [ "$wh_n" -gt 0 ]; do
+    wh_s=$(docker inspect -f '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \
+      "$1" 2>/dev/null | head -1)
+    case "$wh_s" in
+      'running healthy' | 'running none') return 0 ;;
+      'running unhealthy') WH_ERR="it reports unhealthy"; return 1 ;;
+      running* | restarting* | created*) : ;;
+      *) WH_ERR="the container is ${wh_s:-missing}"; return 1 ;;
+    esac
+    sleep 3
+    wh_n=$((wh_n - 1))
+  done
+  WH_ERR="not healthy after ${wh_t}s"
+  return 1
+}
+
+# service_on_failed <name> <reason>: undo an "on" and say so.
+service_on_failed() {
+  svc_log "switching $1 on FAILED: $2. Restoring .env and stopping the container."
+  restore_env || svc_log "⚠ could not restore .env from $SVC_ENV_BAK"
+  svc_compose "$1" stop "$(compose_service "$1")" || true
+  svc_compose "$1" rm -f "$(compose_service "$1")" || true
+  SVC_ERR="$2; it was switched off again and the settings were restored (see service.log)"
+  return 1
+}
+
+# service_on <name>: 0 when the service runs healthy, else 1 with SVC_ERR.
+service_on() {
+  so_svc=$(compose_service "$1")
+  so_min_mb=$(num_or "$(env_val MANTLE_SERVICE_MIN_FREE_MB)" 4096)
+  so_free=$(free_kb "$STACK")
+  if [ -n "$so_free" ] && [ "$so_free" -lt $((so_min_mb * 1024)) ]; then
+    SVC_ERR="not enough disk: $((so_free / 1024)) MB free, need $so_min_mb MB. Free space (old images, old backups) and try again; nothing changed"
+    return 1
+  fi
+  backup_env || { SVC_ERR="could not back up .env; nothing changed"; return 1; }
+  svc_log ".env backed up to ${SVC_ENV_BAK#"$STACK"/}"
+
+  so_tv=$(service_token_var "$1")
+  SVC_TOKEN_NEW=""
+  if [ -z "$(env_val "$so_tv")" ]; then
+    so_tok=$(gen_token) || { service_on_failed "$1" "could not generate $so_tv"; return 1; }
+    persist_env "$so_tv" "$so_tok" || { service_on_failed "$1" "could not write $so_tv"; return 1; }
+    SVC_TOKEN_NEW=1
+    svc_log "$so_tv provisioned"
+  fi
+  if [ "$1" = sandboxes ] && [ -z "$(env_val MANTLE_SANDBOXES_HOST_DIR)" ]; then
+    so_hd=$(sandboxes_host_dir)
+    case "$so_hd" in
+      *[!A-Za-z0-9._/-]*) service_on_failed "$1" "the data dir path has characters a bind mount cannot take: $so_hd"; return 1 ;;
+    esac
+    persist_env MANTLE_SANDBOXES_HOST_DIR "$so_hd" || { service_on_failed "$1" "could not write MANTLE_SANDBOXES_HOST_DIR"; return 1; }
+    svc_log "MANTLE_SANDBOXES_HOST_DIR=$so_hd"
+  fi
+  if ! profile_active "$1"; then
+    so_rest=$(profiles_csv)
+    persist_env COMPOSE_PROFILES "${so_rest:+$so_rest,}$1" || { service_on_failed "$1" "could not write COMPOSE_PROFILES"; return 1; }
+  fi
+
+  write_service_status pulling "$1" true "$SVC_STARTED" "" null ""
+  svc_log "downloading $so_svc"
+  svc_compose "$1" pull "$so_svc" || { service_on_failed "$1" "the download failed"; return 1; }
+  if [ "$1" = sandboxes ]; then
+    if so_img=$(sandbox_base_image); then
+      svc_log "downloading the sandbox base image $so_img"
+      docker pull "$so_img" >> "$SIG/service.log" 2>&1 \
+        || svc_log "⚠ the sandbox base image did not download; the first new sandbox will fetch it"
+    fi
+  fi
+
+  write_service_status starting "$1" true "$SVC_STARTED" "" null ""
+  if [ -n "$SVC_TOKEN_NEW" ]; then
+    # The app containers do not have the token yet: recreate them with it
+    # (the roll's own service list: everything but this updater and caddy).
+    so_list=$(docker compose --project-directory "$STACK" config --services 2>/dev/null | grep -vx updater | grep -vx caddy | tr '\n' ' ')
+    svc_log "new token: recreating the app containers so they carry it (once)"
+    # shellcheck disable=SC2086  # word-splitting the service list is intended
+    svc_compose "$1" up -d $so_list || { service_on_failed "$1" "the containers did not start"; return 1; }
+  else
+    svc_compose "$1" up -d --no-deps "$so_svc" || { service_on_failed "$1" "the container did not start"; return 1; }
+  fi
+  svc_log "waiting for $(service_container "$1") to report healthy"
+  wait_healthy "$(service_container "$1")" || { service_on_failed "$1" "it did not become healthy: $WH_ERR"; return 1; }
+  return 0
+}
+
+# service_off <name>: 0 when the service is stopped and its profile dropped,
+# else 1 with SVC_ERR (and .env as it was).
+service_off() {
+  so_svc=$(compose_service "$1")
+  backup_env || { SVC_ERR="could not back up .env; nothing changed"; return 1; }
+  if [ "$1" = sandboxes ]; then
+    # Running sandboxes outlive sandboxd (separate containers, restart: no)
+    # and nothing would idle-stop them. Stop, never remove: the container
+    # keeps its installed packages and /files stays on the host.
+    so_ids=$(docker ps -q --filter label=mantle.sandbox=true 2>/dev/null | tr '\n' ' ')
+    if [ -n "$(printf '%s' "$so_ids" | tr -d ' ')" ]; then
+      svc_log "stopping running sandboxes (kept, not removed): $so_ids"
+      # shellcheck disable=SC2086  # one argument per container id
+      docker stop -t 20 $so_ids >> "$SIG/service.log" 2>&1 \
+        || { SVC_ERR="could not stop the running sandboxes; nothing else changed"; return 1; }
+    fi
+  fi
+  svc_log "stopping $so_svc"
+  svc_compose "$1" stop "$so_svc" || { SVC_ERR="could not stop $so_svc; nothing changed in .env"; return 1; }
+  svc_compose "$1" rm -f "$so_svc" || { SVC_ERR="could not remove the $so_svc container; nothing changed in .env"; return 1; }
+  persist_env COMPOSE_PROFILES "$(profiles_without "$1")" \
+    || { SVC_ERR="$so_svc is stopped but COMPOSE_PROFILES could not be written; the next roll would start it again"; return 1; }
+  return 0
+}
+
+# handle_service_request: consume /signal/service-request.json and run it.
+handle_service_request() {
+  hs_body=$(cat "$SIG/service-request.json" 2>/dev/null)
+  rm -f "$SIG/service-request.json"
+  hs_svc=$(printf '%s' "$hs_body" | sed -n 's/.*"service"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+  hs_en=$(printf '%s' "$hs_body" | sed -n 's/.*"enable"[[:space:]]*:[[:space:]]*\([a-z]*\).*/\1/p' | head -1)
+  SVC_STARTED=$(now)
+  # The whitelist: the only request input that reaches a command.
+  case "$hs_svc" in
+    sandboxes | media) : ;;
+    *) write_service_status error "" null "$SVC_STARTED" "$(now)" false "unknown service"; return 0 ;;
+  esac
+  case "$hs_en" in
+    true | false) : ;;
+    *) write_service_status error "$hs_svc" null "$SVC_STARTED" "$(now)" false "the switch must be true or false"; return 0 ;;
+  esac
+  hs_cfg=$(config_error)
+  if [ -n "$hs_cfg" ]; then
+    write_service_status error "$hs_svc" "$hs_en" "$SVC_STARTED" "$(now)" false "updater not configured: $hs_cfg"
+    return 0
+  fi
+  : > "$SIG/service.log"
+  SVC_ENV_BAK=""; SVC_ERR=""
+  if [ "$hs_en" = true ]; then
+    write_service_status pulling "$hs_svc" true "$SVC_STARTED" "" null ""
+    svc_log "switching $hs_svc ON"
+    if service_on "$hs_svc"; then
+      write_service_status done "$hs_svc" true "$SVC_STARTED" "$(now)" true ""
+      svc_log "done: $hs_svc is on"
+    else
+      write_service_status error "$hs_svc" true "$SVC_STARTED" "$(now)" false "$SVC_ERR"
+    fi
+  else
+    write_service_status stopping "$hs_svc" false "$SVC_STARTED" "" null ""
+    svc_log "switching $hs_svc OFF (data is kept)"
+    if service_off "$hs_svc"; then
+      write_service_status done "$hs_svc" false "$SVC_STARTED" "$(now)" true ""
+      svc_log "done: $hs_svc is off; its data is kept"
+    else
+      write_service_status error "$hs_svc" false "$SVC_STARTED" "$(now)" false "$SVC_ERR"
+    fi
+  fi
+  write_services_info
 }
 
 # Library mode for scripts/test-deploy-scripts.sh: with MANTLE_UPDATER_LIB=1
@@ -1324,6 +1574,10 @@ while true; do
         exec sh "$STACK/$UPDATER_REL"
         ;;
     esac
+  fi
+  # A service switch (one at a time; a roll above always goes first).
+  if [ -f "$SIG/service-request.json" ]; then
+    handle_service_request
   fi
   # Keep the compose fingerprint fresh (~5 min) so manual edits and manual
   # `docker compose pull` rolls surface on /settings/updates without an update

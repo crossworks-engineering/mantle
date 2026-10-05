@@ -15,8 +15,9 @@ export const MAX_TIMEOUT_S = 1800;
 /* ── sandboxd client ──────────────────────────────────────────────────── */
 
 const NOT_ENABLED =
-  'sandboxes are not enabled on this box — the sandboxd service runs behind the `sandboxes` ' +
-  'compose profile. Ask the owner to enable it; for server-side commands use `run_terminal`.';
+  'sandboxes are not enabled on this box (the `sandboxes` service is switched off). ' +
+  'An admin can switch Sandboxes on in the dashboard under Services; every sandbox and its ' +
+  'files are kept while it is off. For server-side commands use `run_terminal`.';
 
 export async function sandboxd(
   method: string,
