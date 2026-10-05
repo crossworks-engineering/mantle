@@ -212,6 +212,27 @@ export async function admitForExtraction(
     return { proceed: false };
   }
 
+  // A chat archive summary (the "New chat" note, docs/conversation.md §6c) is
+  // an authored summary too, and it blends the user's words with the brain's
+  // own answers. It is found by its embedding (search, find_window, content
+  // hits by relevance) and never extracted: facts must not come from the
+  // brain's own replies.
+  if (node.type === 'note' && digestData.kind === 'chat_archive') {
+    await recordTerminalSkip({
+      kind: 'extractor_run',
+      ownerId,
+      subjectId: node.id,
+      subjectKind: 'node',
+      disposition: 'chat_archive',
+      details: {
+        node_type: node.type,
+        worker_slug: worker.slug,
+        hint: 'Chat archive summaries are authored at archive time and are never a fact source.',
+      },
+    });
+    return { proceed: false };
+  }
+
   // Telegram turns: EMBED-ONLY. Short conversational lines are worth making
   // semantically searchable (search_nodes, Remy recall) but not worth an LLM
   // summary/fact pass each — which is why they're deliberately absent from

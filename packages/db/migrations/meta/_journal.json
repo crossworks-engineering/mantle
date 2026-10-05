@@ -1611,6 +1611,13 @@
       "when": 1790020080000,
       "tag": "0230_provider_alerts",
       "breakpoints": true
+    },
+    {
+      "idx": 231,
+      "version": "7",
+      "when": 1790106480000,
+      "tag": "0231_chat_threads",
+      "breakpoints": true
     }
   ]
 }

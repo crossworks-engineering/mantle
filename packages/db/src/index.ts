@@ -53,6 +53,12 @@ export {
   type ProviderFailure,
   type ProviderSubject,
 } from './provider-alerts';
+export {
+  closedRangeEndAfter,
+  getChatThread,
+  listChatThreads,
+  openChatThread,
+} from './chat-threads';
 export { bumpAgentUsage } from './agents-resolve';
 export {
   resolveContextRef,

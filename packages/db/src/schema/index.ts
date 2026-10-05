@@ -64,6 +64,7 @@ export * from './facts';
 export * from './traces';
 export * from './trace-steps';
 export * from './assistant-messages';
+export * from './chat-threads';
 export * from './turn-stream-buffer';
 export * from './tools';
 export * from './tool-groups';

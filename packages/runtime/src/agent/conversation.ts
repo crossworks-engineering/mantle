@@ -29,9 +29,11 @@ import {
   agents,
   assistantMessages,
   notSuperseded,
+  chatThreads,
   entities,
   facts,
   nodes,
+  openChatThread,
   type Agent,
   type AgentMemoryConfig,
   type AssistantMessage,
@@ -403,6 +405,40 @@ export async function markTurnSuperseded(args: {
  * it (by time). The web path loads context BEFORE inserting the inbound, so it
  * omits both — the new turn simply isn't in the table yet.
  */
+/**
+ * The summary of the archived thread an open thread continues from ("Continue
+ * from this"), as a digest entry. Null when the thread or its summary is gone
+ * (the summary is best effort; a thread archived during a provider outage has
+ * none), so the fresh chat simply starts without it.
+ */
+async function loadThreadSeed(
+  ownerId: string,
+  seedThreadId: string,
+): Promise<{ title: string; digest: Digest } | null> {
+  const [row] = await db
+    .select({
+      title: chatThreads.title,
+      startedAt: chatThreads.startedAt,
+      archivedAt: chatThreads.archivedAt,
+      summary: sql<string | null>`${nodes.data}->>'summary'`,
+    })
+    .from(chatThreads)
+    .leftJoin(nodes, eq(nodes.id, chatThreads.summaryNodeId))
+    .where(and(eq(chatThreads.ownerId, ownerId), eq(chatThreads.id, seedThreadId)))
+    .limit(1);
+  if (!row?.summary?.trim()) return null;
+  const title = row.title?.trim() || 'an archived chat';
+  return {
+    title,
+    digest: {
+      summary: row.summary.trim(),
+      periodStart: row.startedAt.toISOString(),
+      periodEnd: (row.archivedAt ?? row.startedAt).toISOString(),
+      topic: `Continued from the archived chat "${title}"`,
+    },
+  };
+}
+
 /** An older exchange scored by `history_recall`: its turns, and how many
  *  messages back from the newest its first message sits. */
 type RecallExchange = HistoryExchange & { turns: HistoryTurn[]; back: number };
@@ -420,6 +456,9 @@ async function loadHistoryRows(o: {
   windowHours: number | null;
   excludeMessageId?: string;
   before?: Date;
+  /** Start of the open chat thread: turns before it were archived with
+   *  "New chat" and never reach the prompt (docs/conversation.md §6c). */
+  since?: Date | null;
   recall: boolean;
 }): Promise<{ recentRows: HistoryRow[]; olderRows: HistoryRow[] }> {
   // Only 'complete' turns are real conversation: the durable runner writes the
@@ -439,6 +478,7 @@ async function loadHistoryRows(o: {
   ];
   if (o.excludeMessageId) histConds.push(ne(assistantMessages.id, o.excludeMessageId));
   if (o.before) histConds.push(lt(assistantMessages.createdAt, o.before));
+  if (o.since) histConds.push(gte(assistantMessages.createdAt, o.since));
   if (o.windowHours != null && o.windowHours > 0) {
     const base = o.before ?? new Date();
     histConds.push(
@@ -571,10 +611,17 @@ async function loadConversationContextAtLevel(args: {
   // History rows, started now: with the decider's `history_recall` use on, the
   // older rows are scored while the embedding and retrieval below run, so the
   // ~0.5 s never adds to the turn. Awaited where the history is built.
-  const recallUse =
+  // The open chat thread ("New chat", docs/conversation.md §6c): its start is
+  // the lower bound of the history window, history recall, the follow-up
+  // enrich and the digests, so a fresh chat starts clean. Null = never
+  // archived = no bound. Below admin the owner's chat is not read at all.
+  const [recallUse, openThread] = await Promise.all([
     historyLimit > 0 && !belowAdmin && !isSmallTalk(inboundText)
-      ? await decisionUseEnabled(ownerId, 'history_recall')
-      : null;
+      ? decisionUseEnabled(ownerId, 'history_recall')
+      : Promise.resolve(null),
+    belowAdmin ? Promise.resolve(null) : openChatThread(ownerId, agent.id),
+  ]);
+  const threadSince = openThread?.startedAt ?? null;
   const rowsLoad = belowAdmin
     ? Promise.resolve({ recentRows: [] as HistoryRow[], olderRows: [] as HistoryRow[] })
     : loadHistoryRows({
@@ -584,6 +631,7 @@ async function loadConversationContextAtLevel(args: {
         windowHours,
         excludeMessageId: args.excludeMessageId,
         before: args.before,
+        since: threadSince,
         recall: recallUse != null,
       });
   const historyLoad = rowsLoad.then(async ({ recentRows, olderRows }) => ({
@@ -665,6 +713,7 @@ async function loadConversationContextAtLevel(args: {
         ];
         if (args.excludeMessageId) conds.push(ne(assistantMessages.id, args.excludeMessageId));
         if (args.before) conds.push(lt(assistantMessages.createdAt, args.before));
+        if (threadSince) conds.push(gte(assistantMessages.createdAt, threadSince));
         const recent = await db
           .select({ text: assistantMessages.text })
           .from(assistantMessages)
@@ -1525,6 +1574,13 @@ async function loadConversationContextAtLevel(args: {
               eq(nodes.type, 'note'),
               sql`${nodes.tags} @> ARRAY['conversation-digest']::text[]`,
               sql`${nodes.data}->>'agent_id' = ${agent.id}`,
+              // A digest of an archived thread stays out of a fresh chat. The
+              // summarizer never lets one digest span a "New chat" cut.
+              ...(threadSince
+                ? [
+                    sql`(${nodes.data}->>'period_start')::timestamptz >= ${threadSince.toISOString()}::timestamptz`,
+                  ]
+                : []),
             ),
           )
           .orderBy(desc(nodes.createdAt))
@@ -1532,6 +1588,12 @@ async function loadConversationContextAtLevel(args: {
       : [];
 
   const digests: Digest[] = buildDigests(digestRows);
+  // "Continue from this": the archived thread's summary leads the digests,
+  // so the fresh chat knows where it picks up without its raw turns.
+  const seed = openThread?.seedThreadId
+    ? await loadThreadSeed(ownerId, openThread.seedThreadId)
+    : null;
+  if (seed) digests.unshift(seed.digest);
   if (digestLimit > 0) trace.stage('digests', digestRows.length, digests.length);
 
   // ─── Raw recent turns (all channels, per agent) ─────────────────────────
@@ -1608,6 +1670,8 @@ async function loadConversationContextAtLevel(args: {
       count: history.length,
       toolRecords: historyToolRecords,
       mediaRecords: historyMediaRecords,
+      ...(threadSince ? { since: threadSince.toISOString() } : {}),
+      ...(seed ? { continuedFrom: seed.title } : {}),
     },
     personaNotes: { count: personaNotes.length },
     corpusMap: { count: corpusMap.entries.length, truncated: corpusMap.truncated },

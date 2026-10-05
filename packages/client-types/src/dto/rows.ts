@@ -878,6 +878,13 @@ export type ContextSnapshot = {
     toolRecords: number;
     /** How many turns carried a [media record: …] read-back suffix. */
     mediaRecords: number;
+    /** Start of the open chat thread (ISO) when the chat was ever archived
+     *  ("New chat", docs/conversation.md §6c): older turns and digests are
+     *  out of the prompt. Absent on a never-archived chat. */
+    since?: string;
+    /** Title of the archived thread this chat continues from, when the open
+     *  thread was started with "Continue from this". */
+    continuedFrom?: string;
   };
   personaNotes: { count: number };
   corpusMap: { count: number; truncated: boolean };

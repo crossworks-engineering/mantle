@@ -375,6 +375,8 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.peer_shares'),
   none('public.peer_share_scopes'),
   none('public.assistant_messages'),
+  // Chat archive threads (0231): time ranges over assistant_messages, admin pool.
+  none('public.chat_threads'),
   none('public.entities', 'content'),
   none('public.entity_edges', 'content'),
   none('public.entity_merge_dismissals'),

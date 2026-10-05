@@ -510,7 +510,8 @@ export async function renameAssignedAgent(
  *    `assistant_messages` stay with `agent_id` NULL (still replayable) and its
  *    digests stay (still in find_window and search).
  *  - `delete`: the stream goes with the agent. Its `assistant_messages` rows
- *    and its `conversation-digest` notes are removed in the same transaction.
+ *    and its `conversation-digest` notes (and chat archive summaries) are
+ *    removed in the same transaction. Its chat_threads rows CASCADE.
  *    Read cursors and channels CASCADE either way. Telegram transport rows
  *    (`telegram_messages` + their `telegram_message` nodes) are ingested brain
  *    content like emails and are left alone. */
@@ -555,7 +556,9 @@ export async function deleteAgent(
           and(
             eq(nodes.ownerId, userId),
             eq(nodes.type, 'note'),
-            sql`${nodes.tags} @> ARRAY['conversation-digest']::text[]`,
+            // The chat archive summaries (0231) go with them: they are the
+            // same agent's conversation, one note per archived thread.
+            sql`(${nodes.tags} @> ARRAY['conversation-digest']::text[] or ${nodes.data}->>'kind' = 'chat_archive')`,
             sql`${nodes.data}->>'agent_id' = ${id}`,
           ),
         )

@@ -10,7 +10,7 @@
  * pager use, plus the agent-selector list.
  */
 
-import { and, desc, eq, inArray, lt } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, lt, type SQL } from 'drizzle-orm';
 import { db, agents, assistantMessages, type Agent } from '@mantle/db';
 import {
   CHATTABLE_ROLES,
@@ -93,6 +93,17 @@ function toolStatsFromData(data: unknown): ToolOutcomeStatsRow | undefined {
   };
 }
 
+/** A chat thread's time range (chat archive, docs/conversation.md §6c):
+ *  `since` is inclusive, `until` exclusive; either may be absent. */
+export type ThreadRange = { since?: Date | null; until?: Date | null };
+
+function rangeConds(range: ThreadRange | undefined): SQL[] {
+  const out: SQL[] = [];
+  if (range?.since) out.push(gte(assistantMessages.createdAt, range.since));
+  if (range?.until) out.push(lt(assistantMessages.createdAt, range.until));
+  return out;
+}
+
 /**
  * Recent transcript for one (owner, agent) thread, chronological
  * (oldest → newest). `agentId` is required — there is no
@@ -104,6 +115,7 @@ export async function recentAssistantMessages(
   ownerId: string,
   agentId: string,
   limit = 100,
+  range?: ThreadRange,
 ): Promise<AssistantTimelineRow[]> {
   const rows = await db
     .select({
@@ -119,7 +131,13 @@ export async function recentAssistantMessages(
       createdAt: assistantMessages.createdAt,
     })
     .from(assistantMessages)
-    .where(and(eq(assistantMessages.ownerId, ownerId), eq(assistantMessages.agentId, agentId)))
+    .where(
+      and(
+        eq(assistantMessages.ownerId, ownerId),
+        eq(assistantMessages.agentId, agentId),
+        ...rangeConds(range),
+      ),
+    )
     .orderBy(desc(assistantMessages.createdAt))
     .limit(limit);
   return rows.reverse().map((r) => ({
@@ -149,6 +167,7 @@ export async function assistantMessagesBefore(
   agentId: string,
   before: string,
   limit = 100,
+  range?: ThreadRange,
 ): Promise<AssistantTimelineRow[]> {
   const rows = await db
     .select({
@@ -169,6 +188,7 @@ export async function assistantMessagesBefore(
         eq(assistantMessages.ownerId, ownerId),
         eq(assistantMessages.agentId, agentId),
         lt(assistantMessages.createdAt, new Date(before)),
+        ...rangeConds(range),
       ),
     )
     .orderBy(desc(assistantMessages.createdAt))

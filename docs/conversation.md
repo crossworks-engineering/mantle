@@ -354,6 +354,85 @@ gone no UI can open its thread; the owner decides what happens to it.
   unknown `conversation` value is a 400 and deletes nothing.
 - Pinned by `server/web/app/api/agents/[id]/agent-delete.db.test.ts`.
 
+## 6c. New chat: archived threads (migration 0231)
+
+"New chat" in the UI (and `/new` on Telegram) archives the open chat and starts
+a fresh one. The old chat stays saved and searchable under **Previous chats**.
+The code and API say "archive"; the UI says "New chat" and "Previous chats".
+
+**Data model: time ranges.** `chat_threads` holds one row per thread of an
+agent's chat: `[started_at, archived_at)` over that agent's
+`assistant_messages`. The open thread has no end, and there is at most one per
+agent chat (`chat_threads_one_open_uq`). Messages never move and have no thread
+column: a turn belongs to the thread whose range holds its `created_at`. An
+agent with no row keeps its forever-thread (no lower bound), so nothing changes
+until someone presses New chat.
+
+**What the fresh chat reads** (`loadConversationContext`, lower bound = the open
+thread's `started_at`):
+
+| Path | Archived turns |
+|---|---|
+| History window (`history_limit`, default 20) | out |
+| Digests (3 newest) | out (`period_start >= started_at`) |
+| `history_recall` (Jev over older rows) | out |
+| Follow-up query enrich | out |
+| Content hits | the archive summary note comes back **by relevance**, like any note |
+| Journal, pages, tasks, notes the agent wrote | in, as before |
+| `find_window` | in: digests plus one result per archived thread (`kind: 'thread'`, `thread_id`) |
+| `replay_window`, search | in |
+
+`snapshot.history.since` (and `continuedFrom`) on the context trace show the
+bound.
+
+**The summary note.** The archive request makes ONE model call on the
+summarizer worker: the thread's digests plus its undigested tail (capped: 60
+digests, 40 turns, 1,200 chars a turn), returning a title and a summary. It
+writes a `note` (`data.kind = 'chat_archive'`, tag `chat-archive`, embedded with
+`digestEmbedText`, path Notes / Auto-filed / Assistant) and stores its id and
+the title on the thread. The extractor refuses it (terminal skip
+`chat_archive`): no facts and no entities, because it blends the user's words
+with the brain's own answers. Cost: about 0.002 to 0.005 USD per archive on a
+flash-lite summarizer. No trigger, no timer and no retry loop run it: if the
+call fails (or there is no summarizer worker), the thread keeps a plain title
+(its first user line) and `POST /api/assistant/threads/<id>/summarize` retries
+on a person's click. A thread that has a summary is never summarised again.
+
+**The summarizer and cuts.** A digest must never hold turns from both sides of
+a cut. `summarizeAgentConversation` finds the oldest undigested turn; when it
+sits in a closed range, the run digests that range alone, up to its end, even
+below the threshold (a closed range never grows, so this is ceil(turns / batch)
+runs, then never again). It rides the same `summarize_due` notify; nothing new
+starts model work.
+
+**Continue from this.** `POST /api/assistant/threads/<id>/continue` archives the
+current chat (an empty one is only re-seeded) and opens a thread with
+`seed_thread_id`. While that thread is open, the archived thread's summary leads
+the digests ("Continued from the archived chat ..."), not its raw turns. An
+archived thread is read-only: there is no route that writes into it.
+
+**API** (owner-scoped, agent resolved like `/api/assistant/thread`):
+
+- `GET /api/assistant/threads?agent=` lists threads, newest first, open on top.
+- `POST /api/assistant/threads {agent?}` = New chat. `{archived, open}`;
+  `archived: null` for an empty chat; 409 while a reply is still pending.
+- `GET /api/assistant/threads/<id>` = one thread, its summary and its latest
+  100 messages; older pages via `/api/assistant/messages?thread=<id>&before=`.
+- `/api/assistant/thread` and `/api/assistant/messages` (no `thread`) return
+  the OPEN thread only, plus `thread` (the open thread row, null if never
+  archived) on the first.
+- Telegram: `/new` (also `/newchat`, `/archive`) inside the per-chat lock; the
+  command is not recorded and never reaches the model.
+
+**Deleting an agent** with `conversation=delete` also removes its archive
+summary notes; `chat_threads` rows CASCADE with the agent.
+
+**Not yet** (later phases): member and client chats (`team_messages`, per
+login: their summary stays on the thread row, never a brain node, because
+private chats are never indexed), the mobile app, auto New chat after idle
+time (Jason: off), and the Forum v2 thread list (section 10a of the forum plan:
+archived threads list under "your agent").
+
 ## 7. Risks & call-outs
 
 - **Multiple Telegram chats on one agent interleave** in the single stream. For the

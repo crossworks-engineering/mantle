@@ -5,7 +5,9 @@ import {
   recentAssistantMessages,
   resolveAgentForActor,
 } from '@/lib/assistant';
+import { openChatThread } from '@mantle/db';
 import { getAssignedAgentSummary } from '@/lib/agents';
+import { chatThreadRow, threadRange } from '@/lib/chat-threads';
 import { getAgentExperience } from '@/lib/agent-experience';
 
 /**
@@ -25,6 +27,10 @@ import { getAgentExperience } from '@/lib/agent-experience';
  * agent cookie, so `agent` IS its resolution — but it pages its own thread
  * through the Drift cache on /api/assistant/messages, so the 100 rows would be
  * fetched and thrown away on every cold start.
+ *
+ * Chat archive (docs/conversation.md §6c): `messages` are the OPEN thread's
+ * only, and `thread` is that open thread (null for a chat never archived),
+ * so the window can show "Continued from ..." and the thread list.
  */
 
 export async function GET(req: Request) {
@@ -43,10 +49,12 @@ export async function GET(req: Request) {
     resolveAgentForActor(user, slug),
     getAssignedAgentSummary(user.id, user.actor.id),
   ]);
-  const [messages, experience] = await Promise.all([
-    agent && withMessages ? recentAssistantMessages(user.id, agent.id, 100) : [],
+  const open = agent ? await openChatThread(user.id, agent.id) : null;
+  const [messages, experience, thread] = await Promise.all([
+    agent && withMessages ? recentAssistantMessages(user.id, agent.id, 100, threadRange(open)) : [],
     // The header shows the active agent's level badge; one scoped rollup.
     agent ? getAgentExperience(user.id, agent.id) : null,
+    open ? chatThreadRow(user.id, open) : null,
   ]);
 
   return NextResponse.json(
@@ -54,6 +62,7 @@ export async function GET(req: Request) {
       agents,
       agent: agent ? { ...agent, experience } : null,
       messages,
+      thread,
       assigned: assigned ? { slug: assigned.slug, assignedAt: assigned.assignedAt } : null,
     },
     { headers: { 'Cache-Control': 'no-store' } },

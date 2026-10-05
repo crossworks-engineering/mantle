@@ -45,7 +45,12 @@ import { sweepLegacyTables } from '@mantle/content/table-storage';
 
 import { resolveEmbeddingConfig } from '@mantle/embeddings';
 import { runDurableStep, startTrace } from '@mantle/tracing';
-import { invokeAgent, resolveChatKey } from '@mantle/runtime/agent';
+import {
+  ChatArchiveBusyError,
+  archiveAgentChat,
+  invokeAgent,
+  resolveChatKey,
+} from '@mantle/runtime/agent';
 import { registerAgentInvoker, seedBuiltinTools } from '@mantle/tools';
 import { startTicker } from './ticker';
 import { log } from '@mantle/tracing';
@@ -78,7 +83,7 @@ import { reflect } from './reflector.js';
 import { CONVERSATIONAL_ROLES, pickFallbackResponder } from './agent-select.js';
 import { computeFloorGroupAdditions } from './core-tools.js';
 import { ingestTelegramAttachment } from './telegram/ingest-attachment';
-import { sendApology, startTyping } from './telegram/helpers';
+import { isNewChatCommand, newChatReply, sendApology, startTyping } from './telegram/helpers';
 import type { AttachmentContext, FileAttachment, InboundRow } from './telegram/types';
 import { runTelegramTurn } from './telegram/turn';
 import { env } from '@mantle/config';
@@ -302,6 +307,26 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
   let stopTyping: () => void = () => {};
 
   try {
+    // `/new`: start a new chat (chat archive, docs/conversation.md §6c).
+    // Inside the per-chat lock, so a reply still running for this chat lands
+    // in the old thread first. The command is not a turn: it is never
+    // recorded and never reaches the model. The archive writes the old
+    // thread's one summary note right here.
+    if (!voiceFileId && !fileAttachment && isNewChatCommand(row.text)) {
+      try {
+        const r = await archiveAgentChat({ ownerId, agentId: agent.id });
+        await sendApology(row, newChatReply(r.archived?.title ?? null, !!r.archived));
+      } catch (err) {
+        if (!(err instanceof ChatArchiveBusyError)) logger.error('/new failed:', errorMessage(err));
+        await sendApology(
+          row,
+          err instanceof ChatArchiveBusyError
+            ? err.message
+            : 'Sorry, I could not start a new chat. Please try again.',
+        );
+      }
+      return;
+    }
     const typingAccount = await accountById(row.accountId).catch(() => null);
     if (typingAccount) stopTyping = startTyping(typingAccount, row.telegramChatId);
     await startTrace(

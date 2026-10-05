@@ -93,6 +93,12 @@ summarizer ([`server/api/src/agent/summarizer.ts`](../server/api/src/agent/summa
 `data.period_start` / `period_end` / `topic` / `summary`, tagged
 `conversation-digest`).
 
+Since the chat archive (migration 0231, [`conversation.md`](./conversation.md)
+§6c), `find_window` also returns one candidate per archived chat thread: its
+summary note (`data.kind = 'chat_archive'`), marked `kind: 'thread'` with the
+`thread_id`, and `period_start`/`period_end` covering the whole thread. Its
+dates feed `replay_window` like any digest window.
+
 ### `replay_window(from, to, surface?, limit?)`
 
 Replays the **actual raw turns** in a date range, chronological and lossless.

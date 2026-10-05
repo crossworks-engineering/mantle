@@ -135,6 +135,8 @@ function textForNode(row: Node): string {
   const data = (row.data ?? {}) as Record<string, unknown>;
   const isDigest =
     data.kind === 'conversation_digest' ||
+    // Chat archive summaries share the digest shape (topic = title).
+    data.kind === 'chat_archive' ||
     ((row.tags ?? []) as string[]).includes('conversation-digest');
   if (isDigest) {
     const topic = typeof data.topic === 'string' ? data.topic.trim() : '';

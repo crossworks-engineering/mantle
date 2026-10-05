@@ -13,11 +13,12 @@
  * listeners, no LISTEN handling.
  */
 
-import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import {
   db,
   agents,
   assistantMessages,
+  closedRangeEndAfter,
   notSuperseded,
   bumpWorkerUsage,
   getDefaultWorker,
@@ -149,7 +150,30 @@ export async function summarizeAgentConversation(ownerId: string, agentId: strin
       ),
     );
   const undigested = countRows[0]?.n ?? 0;
-  if (undigested < threshold) return;
+  if (undigested === 0) return;
+
+  // "New chat" cuts (chat_threads, docs/conversation.md §6c). A digest must
+  // never hold turns from both sides of a cut, or a fresh chat would read an
+  // archived turn back through it. So when the oldest undigested turn sits in
+  // a CLOSED range, this run digests that range alone, up to its end. A
+  // closed range never grows, so it is digested even below the threshold:
+  // ceil(turns / batch) runs, then never again. No new trigger: this rides
+  // the same summarize_due notify as every other run.
+  const [oldest] = await db
+    .select({ createdAt: assistantMessages.createdAt })
+    .from(assistantMessages)
+    .where(
+      and(
+        eq(assistantMessages.ownerId, ownerId),
+        eq(assistantMessages.agentId, agentId),
+        isNull(assistantMessages.digestNodeId),
+        notSuperseded(),
+      ),
+    )
+    .orderBy(asc(assistantMessages.createdAt))
+    .limit(1);
+  const rangeEnd = oldest ? await closedRangeEndAfter(ownerId, agentId, oldest.createdAt) : null;
+  if (!rangeEnd && undigested < threshold) return;
 
   await startTrace(
     {
@@ -164,6 +188,7 @@ export async function summarizeAgentConversation(ownerId: string, agentId: strin
         threshold,
         batchSize,
         undigestedAtStart: undigested,
+        ...(rangeEnd ? { closedRangeEnd: rangeEnd.toISOString() } : {}),
       },
     },
     async () => {
@@ -185,6 +210,8 @@ export async function summarizeAgentConversation(ownerId: string, agentId: strin
                 isNull(assistantMessages.digestNodeId),
                 // Keep in step with the threshold count above (see its comment).
                 notSuperseded(),
+                // Stop at the end of a closed range (see the cut check above).
+                ...(rangeEnd ? [lt(assistantMessages.createdAt, rangeEnd)] : []),
               ),
             )
             .orderBy(asc(assistantMessages.createdAt))

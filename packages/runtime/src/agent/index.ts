@@ -58,6 +58,14 @@ export {
   type ComposePromptOptions,
 } from './skills';
 
+export {
+  ARCHIVE_SUMMARY_PROMPT,
+  ChatArchiveBusyError,
+  ChatThreadNotFoundError,
+  archiveAgentChat,
+  summarizeChatThread,
+  type ChatArchiveResult,
+} from './chat-archive';
 export { invokeAgent } from './invoke-agent';
 export { agentLevel, withAgentViewer } from './agent-viewer';
 
