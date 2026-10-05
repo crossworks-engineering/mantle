@@ -2336,7 +2336,7 @@ updater, which takes no backup). Never roll back below this release once
   lower (before: apps with an active team-mode share; the same set on every
   box checked).
 
-## Unreleased: the object store is RustFS; boxes copy their MinIO data over once (branch feat/objectstore-rustfs)
+## 0.232.249: the object store is RustFS; boxes copy their MinIO data over once (branch feat/objectstore-rustfs)
 
 MinIO left open source (repo archived, public images deleted, only the licensed
 AIStor build left), so the bundled object store is now RustFS (Apache-2.0,
@@ -2381,51 +2381,7 @@ otherwise). After the roll: `docker logs mantle_objectstore_init`, then
 `docker exec mantle_web pnpm -C packages/storage objectstore:verify`. Delete
 `data/minio` only after a couple of weeks green.
 
-## Unreleased: the object store goes backend-neutral; `createbuckets` is gone (branch feat/objectstore-neutral)
-
-Step 1 of moving off MinIO (to RustFS, planned): nothing outside the storage
-package may depend on which S3 server answers. The bucket is now created by the
-`migrate` one-shot with a plain S3 CreateBucket
-(`pnpm -C packages/storage objectstore:ensure`), so the `createbuckets` service
-and its dependency on MinIO's `mc` are gone; `scripts/up.sh` runs the same step
-in dev. The S3 client sends flexible checksums only when an operation requires
-them (the SDK default breaks on servers that do not implement them), and
-`S3_FORCE_PATH_STYLE`, which compose always set, is now actually read.
-`S3_ENDPOINT` / `S3_REGION` / `S3_BUCKET` / `S3_FORCE_PATH_STYLE` can be
-overridden from `.env`. New: `objectstore:verify` re-hashes every stored object
-against its sha256 key, the check for any backend swap or data restore
-(docs/backups.md). The dead presigned-URL helper went with its package.
-
-Contract: `SystemHealth.storage.objectStoreUp` is added; `minioUp` stays as a
-deprecated alias with the same value. Labels read "Object storage", the health
-probe is `storage.objectstore`, and the sanity check's bucket fix is
-`docker exec mantle_web pnpm -C packages/storage objectstore:ensure`.
-
-Deploy note: removing `createbuckets` changes the default service set. The
-updater's `up --remove-orphans` removes the old exited container; boxes
-brought up by hand keep it harmlessly until their next `up --remove-orphans`.
-
-## Unreleased: our own MinIO image, so rolls and fresh installs pull again (branch fix/minio-own-image)
-
-The v0.232.243 roll failed on every box at `compose pull`: the quay.io MinIO
-images now answer 401, two weeks after MinIO deleted its Docker Hub repos. MinIO
-has left open source (the repo is archived); the only image it still publishes,
-`quay.io/minio/aistor/minio`, is the commercial AIStor build, and without a
-licence it denies every S3 call. So we now build MinIO ourselves:
-`infra/minio/Dockerfile` compiles the same pinned releases (minio
-`RELEASE.2025-09-07T16-13-09Z`, mc `RELEASE.2025-08-13T08-35-41Z`) from
-upstream's AGPL source, on the same ubi9-micro base, for amd64 and arm64, and
-the new `minio-image` workflow publishes it as `titanwest/mantle-minio`. The
-commit ids and `--version` output match the official binaries, and on a copy of
-a real box's data every object came back with the same key, size and ETag.
-
-The minio image already carries mc, so `createbuckets` and `scripts/up.sh` now
-use it too: one image to host instead of two, and `MC_IMAGE_TAG` is gone
-(`MINIO_IMAGE_TAG` still overrides the tag). Boxes recreate the minio container
-once on their next update; the data is a bind mount and stays put. This is a
-stopgap: replacing MinIO with a maintained S3-compatible store is planned.
-
-## Unreleased: a mini app appears when it's ready, behind the host's loader (branch feat/app-nav-folders)
+## 0.232.246: a mini app appears when it's ready, behind the host's loader (branch feat/app-nav-folders)
 
 An app used to announce `ready` in the same tick as `root.render()`, before
 React had drawn anything, and the frame sat `display:none` until then: the
@@ -2451,7 +2407,7 @@ own spinners.
   green published or draft build (the frame-ticket test), and building,
   discarding a draft or publishing notify `app_nav_changed`.
 
-## Unreleased: apps get folders, pins, icons and colours in the sidebar, synced everywhere (branch feat/app-nav-folders)
+## 0.232.246: apps get folders, pins, icons and colours in the sidebar, synced everywhere (branch feat/app-nav-folders)
 
 The server half of the sidebar apps tree. A brain with a dozen or more mini
 apps had no way to organise them: the sidebar showed one "Apps" row and the
@@ -2484,7 +2440,51 @@ the flattening the sidebar renders its guide lines from) lives in
 `@mantle/content-core/app-nav`, so a move the client offers is one the server
 accepts. Types and limits are in `@mantle/client-types/app-nav`.
 
-## Unreleased: MCP connectors sign in with pre-registered OAuth apps, so Power BI works (branch feat/mcp-entra-oauth)
+## 0.232.245: the object store goes backend-neutral; `createbuckets` is gone (branch feat/objectstore-neutral)
+
+Step 1 of moving off MinIO (to RustFS, planned): nothing outside the storage
+package may depend on which S3 server answers. The bucket is now created by the
+`migrate` one-shot with a plain S3 CreateBucket
+(`pnpm -C packages/storage objectstore:ensure`), so the `createbuckets` service
+and its dependency on MinIO's `mc` are gone; `scripts/up.sh` runs the same step
+in dev. The S3 client sends flexible checksums only when an operation requires
+them (the SDK default breaks on servers that do not implement them), and
+`S3_FORCE_PATH_STYLE`, which compose always set, is now actually read.
+`S3_ENDPOINT` / `S3_REGION` / `S3_BUCKET` / `S3_FORCE_PATH_STYLE` can be
+overridden from `.env`. New: `objectstore:verify` re-hashes every stored object
+against its sha256 key, the check for any backend swap or data restore
+(docs/backups.md). The dead presigned-URL helper went with its package.
+
+Contract: `SystemHealth.storage.objectStoreUp` is added; `minioUp` stays as a
+deprecated alias with the same value. Labels read "Object storage", the health
+probe is `storage.objectstore`, and the sanity check's bucket fix is
+`docker exec mantle_web pnpm -C packages/storage objectstore:ensure`.
+
+Deploy note: removing `createbuckets` changes the default service set. The
+updater's `up --remove-orphans` removes the old exited container; boxes
+brought up by hand keep it harmlessly until their next `up --remove-orphans`.
+
+## 0.232.244: our own MinIO image, so rolls and fresh installs pull again (branch fix/minio-own-image)
+
+The v0.232.243 roll failed on every box at `compose pull`: the quay.io MinIO
+images now answer 401, two weeks after MinIO deleted its Docker Hub repos. MinIO
+has left open source (the repo is archived); the only image it still publishes,
+`quay.io/minio/aistor/minio`, is the commercial AIStor build, and without a
+licence it denies every S3 call. So we now build MinIO ourselves:
+`infra/minio/Dockerfile` compiles the same pinned releases (minio
+`RELEASE.2025-09-07T16-13-09Z`, mc `RELEASE.2025-08-13T08-35-41Z`) from
+upstream's AGPL source, on the same ubi9-micro base, for amd64 and arm64, and
+the new `minio-image` workflow publishes it as `titanwest/mantle-minio`. The
+commit ids and `--version` output match the official binaries, and on a copy of
+a real box's data every object came back with the same key, size and ETag.
+
+The minio image already carries mc, so `createbuckets` and `scripts/up.sh` now
+use it too: one image to host instead of two, and `MC_IMAGE_TAG` is gone
+(`MINIO_IMAGE_TAG` still overrides the tag). Boxes recreate the minio container
+once on their next update; the data is a bind mount and stays put. This is a
+stopgap: replacing MinIO with a maintained S3-compatible store is planned.
+
+## 0.232.187: MCP connectors sign in with pre-registered OAuth apps, so Power BI works (branch feat/mcp-entra-oauth)
 
 Connecting Microsoft's Power BI MCP server failed silently: the connector sat
 on "authorization pending" with no reason. Power BI signs in through Microsoft
@@ -2515,7 +2515,7 @@ optional `oauth.client` and `oauth.scope` on the MCP binding. 11 new tests
 against an in-process Entra-shaped authorization server, plus 5 parser cases.
 docs/mcp-connectors.md; help page extended.
 
-## Unreleased — MinIO images from quay.io: fresh installs pull again (branch feat/minio-quay)
+## 0.232.184: MinIO images from quay.io: fresh installs pull again (branch feat/minio-quay)
 
 On 2026-09-14 MinIO removed `minio/minio` and `minio/mc` from Docker Hub, so
 every fresh install failed at `docker compose up` with "pull access denied for
@@ -2526,7 +2526,7 @@ all moved. Existing boxes recreate the minio container once on their next
 update (the image reference changed); the data is a bind mount and stays put.
 `MINIO_IMAGE_TAG` / `MC_IMAGE_TAG` still override the tag only.
 
-## Unreleased — OpenAPI connectors: a service's spec as an http tool group (branch claude/zealous-leakey-73c34c)
+## 0.232.78: OpenAPI connectors: a service's spec as an http tool group (branch claude/zealous-leakey-73c34c)
 
 The raw-API twin of MCP connectors, per docs/plans/openapi-connector.md.
 Point the brain at an OpenAPI 3.x spec URL (JSON or YAML) and the selected
@@ -2545,7 +2545,7 @@ now dropped instead of shipping the literal brace string. API at
 docs/openapi-connectors.md; help page extended; 45 new tests including an
 in-process spec-server end to end.
 
-## Unreleased — YouTube ingests from a VPS: the cookies-file escape hatch (branch claude/media-cookies)
+## 0.232.39: YouTube ingests from a VPS: the cookies-file escape hatch (branch claude/media-cookies)
 
 Live testing surfaced the expected wall: YouTube blocks datacenter IPs
 outright ("Sign in to confirm you're not a bot"), captions included, while
@@ -2560,7 +2560,7 @@ browser-session export, some account-flag risk, goes stale on YouTube's
 schedule. docs/video-ingest.md ("YouTube and the bot check") carries the
 export recipe and the trade-offs.
 
-## Unreleased — client pair moves to jackdaw v0.6.5 (branch claude/client-pair-v0.6.5)
+## 0.232.37: client pair moves to jackdaw v0.6.5 (branch claude/client-pair-v0.6.5)
 
 Interface-only roll: the paired jackdaw client moves to v0.6.5, which adds
 the Media pill to the dashboard's system vitals (the yt-dlp/ffmpeg sidecar's
@@ -2568,7 +2568,7 @@ health + running versions, beside Tika/Chromium/Sandboxes) and ships the
 files workspace's two-pane view series. No server-side changes beyond the
 pair record.
 
-## Unreleased — video ingest hardened: the audit pass (branch claude/video-ingest-audit-fixes)
+## 0.232.36: video ingest hardened: the audit pass (branch claude/video-ingest-audit-fixes)
 
 A three-way adversarial audit of the v0.232.32 video-ingestion release, with
 every confirmed finding fixed. The two showstoppers were on the happy path:
@@ -2626,7 +2626,7 @@ pull` for the whole stack), `docs/deploy.md` and the disposition catalogues
 cover the new skips, and forks can build the `mantle-media` image via
 `scripts/docker-build-push.sh`.
 
-## Unreleased — video ingestion: paste a link, get a searchable transcript (branch claude/mantle-video-extraction-650157)
+## 0.232.32: video ingestion: paste a link, get a searchable transcript (branch claude/mantle-video-extraction-650157)
 
 The brain can now ingest a video. `video_ingest` takes a link (or a video
 file already in Files), pulls the captions when the video has them — free and
@@ -2734,53 +2734,18 @@ prod and a client brain there is not a single `.xls` or `.xlsb` — and
 - The `parse_document` trace's `parser` field gains `exceljs` and
   `legacy-sheet` in place of `sheetjs`.
 
-## Unreleased — a table exports as the workbook it actually is (branch feat/xlsx-export-polish)
+## 0.232.7: sheet_build reaches MCP clients too (branch feat/sheet-build-mcp)
 
-Downloading a table gave you one worksheet. Since Tables v2.1 a table has been
-a WORKBOOK — every sheet of an imported spreadsheet becomes a tab of the same
-table — so a six-tab table downloaded as its first tab, silently. Nothing said
-so. `renderXlsxWorkbook` now writes one worksheet per tab, in tab order.
+`sheet_build` shipped to the in-app agents but was never registered on the MCP
+surface, so a Claude Desktop or Claude Code session could not call it. That is
+the surface most likely to want it: the client is often the one holding the
+numbers, working through a costing, and wanting a file back at the end.
 
-Markdown and CSV still export the open tab alone, on purpose: they are
-single-grid formats, and flattening six tabs into one CSV would interleave
-unrelated grids under one header.
+One line next to `export_node`, which is on that surface for exactly the same
+reason. Both transports (stdio and the HTTP route) build from the same builder,
+so both get it.
 
-Tabs whose names collide after sanitising get a numeric suffix rather than
-throwing. Excel refuses duplicate sheet names, and `Q1/Q2` and `Q1?Q2` sanitise
-to the same thing, so the alternative was a download that never happened.
-
-### The file should be readable the moment it opens
-
-That is the only reason to prefer .xlsx over CSV, so the export now applies a
-house style instead of shipping bare data:
-
-- A frozen, filterable header on a slate band, white and bold.
-- Columns sized from their contents, floor 10 and ceiling 60 characters.
-- Alternate rows banded with a hairline tint.
-- Numbers right, checkboxes centred, text left.
-- Dates as real date cells formatted `yyyy-mm-dd`, so a shared export cannot be
-  read as 3 April in one office and 4 March in another.
-- `url` columns become real hyperlinks, when the value is actually navigable.
-- The totals row banded and ruled off from the data.
-
-Two constraints shaped the palette. It has to survive greyscale printing, and
-it cannot fight the reader's own dark mode, since a fill we write is fixed
-forever. So nothing carries meaning by colour, and the great majority of cells
-are left unfilled.
-
-### Three bugs the polish surfaced
-
-- **A money column showed `#######`.** Widths were measured from the STORED
-  value, so `12500` was sized as 5 characters when it displays as
-  `USD 12,500.00`, 13. Totals are wider still than any row they sum, so they
-  are computed before the widths are set now.
-- **A leading total was replaced by the word "Totals".** The label was written
-  on a falsy check, so a first column whose sum came to 0 lost it. The label
-  now goes to the first column that has no aggregate of its own.
-- **A row COUNT inherited its column's money format**, so `count` on a currency
-  column rendered the count as an amount.
-
-## Unreleased — an agent can build a spreadsheet, not just a table (branch feat/sheet-build)
+## 0.232.6: an agent can build a spreadsheet, not just a table (branch feat/sheet-build)
 
 An agent could already produce a styled `.xlsx` in two steps: `table_create`
 then `export_node`. That is right when the thing being made is DATA. It is
@@ -2833,60 +2798,53 @@ client holding two files from the same brain that did not look related.
 Ships as a `spreadsheets` tool group granted to the persona and to Ledger, plus
 a `spreadsheet_authoring` skill on Ledger covering the sheet-versus-table call.
 
-## Unreleased — sheet_build reaches MCP clients too (branch feat/sheet-build-mcp)
+## 0.232.5: a table exports as the workbook it actually is (branch feat/xlsx-export-polish)
 
-`sheet_build` shipped to the in-app agents but was never registered on the MCP
-surface, so a Claude Desktop or Claude Code session could not call it. That is
-the surface most likely to want it: the client is often the one holding the
-numbers, working through a costing, and wanting a file back at the end.
+Downloading a table gave you one worksheet. Since Tables v2.1 a table has been
+a WORKBOOK — every sheet of an imported spreadsheet becomes a tab of the same
+table — so a six-tab table downloaded as its first tab, silently. Nothing said
+so. `renderXlsxWorkbook` now writes one worksheet per tab, in tab order.
 
-One line next to `export_node`, which is on that surface for exactly the same
-reason. Both transports (stdio and the HTTP route) build from the same builder,
-so both get it.
+Markdown and CSV still export the open tab alone, on purpose: they are
+single-grid formats, and flattening six tabs into one CSV would interleave
+unrelated grids under one header.
 
-## Unreleased — the share presenters learn which shell they are in (branch feat/team-presenter-chrome)
+Tabs whose names collide after sanitising get a numeric suffix rather than
+throwing. Excel refuses duplicate sheet names, and `Q1/Q2` and `Q1?Q2` sanitise
+to the same thing, so the alternative was a download that never happened.
 
-Every presenter in `@mantle/share-ui` was written for one surface: the
-anonymous public `/s` page, where the presenter *is* the page. `/team` then
-reused them inside a master-detail pane, and two of those choices became wrong
-at once.
+### The file should be readable the moment it opens
 
-The pane draws the item's title in its own header, so the presenter's hero
-title was the second of three on screen. And the centred `max-w` cap meant
-dragging the pane divider only grew the empty margins while the content stayed
-a fixed narrow column — members read that as "the drag is broken". The handle
-was fine; the content was ignoring it. A non-previewable file was the worst of
-it: a `max-w-md` card, phone-width, marooned in the middle of a 2000px pane.
+That is the only reason to prefer .xlsx over CSV, so the export now applies a
+house style instead of shipping bare data:
 
-### `chrome`, an optional prop on six presenters
+- A frozen, filterable header on a slate band, white and bold.
+- Columns sized from their contents, floor 10 and ceiling 60 characters.
+- Alternate rows banded with a hairline tint.
+- Numbers right, checkboxes centred, text left.
+- Dates as real date cells formatted `yyyy-mm-dd`, so a shared export cannot be
+  read as 3 April in one office and 4 March in another.
+- `url` columns become real hyperlinks, when the value is actually navigable.
+- The totals row banded and ruled off from the data.
 
-`chrome?: 'share' | 'embedded'` — Note, Event, Task, File, Table and Draw.
+Two constraints shaped the palette. It has to survive greyscale printing, and
+it cannot fight the reader's own dark mode, since a fill we write is fixed
+forever. So nothing carries meaning by colour, and the great majority of cells
+are left unfilled.
 
-`'share'` is the default and is byte-for-byte what shipped before, deliberately:
-the public page must not change because an embedder forgot a prop. `'embedded'`
-means the surrounding shell already owns the title and the padding, so the
-presenter drops its hero title, tightens the vertical rhythm, and stops
-centring.
+### Three bugs the polish surfaced
 
-⚠ `'embedded'` is **not** a synonym for full-bleed. It means *the shell owns
-the chrome*; what to do with the width is still the content's call. A table, a
-media viewer and a file row all get better as they get wider, so they span the
-pane. A note does not — a 2000px line is unreadable in anyone's pane — so prose
-keeps its measure and simply stops being centred under a title it no longer
-draws. The bug was a floating box, not a reading measure.
+- **A money column showed `#######`.** Widths were measured from the STORED
+  value, so `12500` was sized as 5 characters when it displays as
+  `USD 12,500.00`, 13. Totals are wider still than any row they sum, so they
+  are computed before the widths are set now.
+- **A leading total was replaced by the word "Totals".** The label was written
+  on a falsy check, so a first column whose sum came to 0 lost it. The label
+  now goes to the first column that has no aggregate of its own.
+- **A row COUNT inherited its column's money format**, so `count` on a currency
+  column rendered the count as an amount.
 
-Event and Task also drop their card frame when embedded. On an empty page that
-border is what tells a reader where the item begins; inside a pane that already
-has a header rule and a border of its own, it is the box.
-
-### The folder listing can carry a Modified column
-
-`ShareFolderListing.files[]` gains an optional `updatedAt`, populated by
-`GET /s/[token]/view`. `FileRow` already carried it — it was simply not being
-passed on, so no consumer could show when a file last changed. Optional, so a
-client pinned to an older server still parses the payload.
-
-## Unreleased — a member can see the drawing the reply is talking about (branch feat/team-forum-drawings)
+## 0.232.0: a member can see the drawing the reply is talking about (branch feat/team-forum-drawings)
 
 `![alt](draw:<node-id>)` in a reply now resolves, on both member surfaces.
 Pictures have worked since v0.4.1; drawings were the marker in the Forum plan's
@@ -2913,7 +2871,7 @@ Both surfaces get it, deliberately. A marker that rendered in the Forum and
 broke in Team Chat would be worse than not having one: the reply text does not
 know which surface it will be read on.
 
-## Unreleased — a shared table gets the owner's totals, and they are RIGHT (branch feat/team-tables-grid)
+## 0.232.0: a shared table gets the owner's totals, and they are RIGHT (branch feat/team-tables-grid)
 
 `/team` tables were a centred `max-w-6xl` reader: a plain table, a "Load more"
 button every 200 rows, and no totals at all. The owner grid has had per-column
@@ -2957,7 +2915,7 @@ affordance: a member who wants a total needs somewhere to ask for one.
 
 The standalone `/s` page keeps its centred, growing, non-sticky layout.
 
-## Unreleased — an event listing that says when, not when it was edited (branch feat/team-list-event-time)
+## 0.232.0: an event listing that says when, not when it was edited (branch feat/team-list-event-time)
 
 `TeamVisibleShare` gains an optional `startsAt`, read from `nodes.data.starts_at`
 and null for every non-event type.
@@ -2973,7 +2931,49 @@ The row query already selected `nodes.data`; the mapper simply read `icon` and
 `summary` out of it and dropped the rest, so no query changed. Optional on the
 type, so a client pinned to an older server still parses the payload.
 
-## Unreleased — Tasks grows up: a board, a lifecycle, and somewhere to put finished work (branch claude/handover-tasks-kanban-04d026)
+## 0.231.0: the share presenters learn which shell they are in (branch feat/team-presenter-chrome)
+
+Every presenter in `@mantle/share-ui` was written for one surface: the
+anonymous public `/s` page, where the presenter *is* the page. `/team` then
+reused them inside a master-detail pane, and two of those choices became wrong
+at once.
+
+The pane draws the item's title in its own header, so the presenter's hero
+title was the second of three on screen. And the centred `max-w` cap meant
+dragging the pane divider only grew the empty margins while the content stayed
+a fixed narrow column — members read that as "the drag is broken". The handle
+was fine; the content was ignoring it. A non-previewable file was the worst of
+it: a `max-w-md` card, phone-width, marooned in the middle of a 2000px pane.
+
+### `chrome`, an optional prop on six presenters
+
+`chrome?: 'share' | 'embedded'` — Note, Event, Task, File, Table and Draw.
+
+`'share'` is the default and is byte-for-byte what shipped before, deliberately:
+the public page must not change because an embedder forgot a prop. `'embedded'`
+means the surrounding shell already owns the title and the padding, so the
+presenter drops its hero title, tightens the vertical rhythm, and stops
+centring.
+
+⚠ `'embedded'` is **not** a synonym for full-bleed. It means *the shell owns
+the chrome*; what to do with the width is still the content's call. A table, a
+media viewer and a file row all get better as they get wider, so they span the
+pane. A note does not — a 2000px line is unreadable in anyone's pane — so prose
+keeps its measure and simply stops being centred under a title it no longer
+draws. The bug was a floating box, not a reading measure.
+
+Event and Task also drop their card frame when embedded. On an empty page that
+border is what tells a reader where the item begins; inside a pane that already
+has a header rule and a border of its own, it is the box.
+
+### The folder listing can carry a Modified column
+
+`ShareFolderListing.files[]` gains an optional `updatedAt`, populated by
+`GET /s/[token]/view`. `FileRow` already carried it — it was simply not being
+passed on, so no consumer could show when a file last changed. Optional, so a
+client pinned to an older server still parses the payload.
+
+## 0.230.67: Tasks grows up: a board, a lifecycle, and somewhere to put finished work (branch claude/handover-tasks-kanban-04d026)
 
 `/tasks` was a checklist. It is now a project surface: a Kanban board, four
 states instead of two, a checklist inside each task, and comments from logins,
@@ -3011,7 +3011,36 @@ and zero LLM calls.
 - The task form, the detail view, the task list, the nav rail and the activity
   column are all resizable, and each remembers its width.
 
-## Unreleased: Four fonts, one library, every face variable (branch claude/variable-font-refactor)
+## 0.230.58: Links that survive the split (branch feat/companion-split-fix)
+
+**A stored link is permanent, so it has to be right on the day it is written.**
+`nodeUrl()` mints `${MANTLE_PUBLIC_URL}/n/<id>` and hands it to the assistant on
+every tool result; the assistant writes those links into chat replies, pages,
+forum answers and outbound email, and nothing ever re-resolves them. But
+`MANTLE_PUBLIC_URL` has to be the **server** origin — `/s/<token>` share links
+and the Microsoft OAuth callback are served there — while `/n/[id]` itself moved
+to `client/web` in the v0.200.0 split. On a deployment that gives the owner app
+its own vhost, every one of those links was a 404, and each one was written into
+the brain to stay.
+
+`/n/*` now forwards to `MANTLE_CLIENT_ORIGIN`, joining the `/login`, `/hub` and
+`/team` stubs. Keeping the minted link canonical and redirecting at the edge is
+what makes one stored URL correct under either topology; rewriting the minter to
+point at the client origin would have broken it the other way. With no client
+origin configured it explains itself instead of looping, same as its siblings.
+
+Single-host installs — where one hostname fronts both stacks — never saw this,
+which is exactly why it stayed hidden.
+
+Also: `GET /api/assistant/thread` takes `?withMessages=0`, returning the agent
+picker list and the resolved active agent without the 100-message thread. The
+mobile companion needs both at launch — it holds no agent cookie, so the
+server's resolution *is* its default, and that resolution is what now respects
+`agents.assigned_user_id` — but it pages its own history from the local cache,
+so the thread was fetched and dropped on every cold start. Opt-out, so every
+existing caller is untouched.
+
+## 0.230.14: Four fonts, one library, every face variable (branch claude/variable-font-refactor)
 
 **A typeface library is not a list of decorations.** The old one had grown into
 two registries with different rules: twenty-two display faces for the wordmark,
@@ -3070,7 +3099,7 @@ Bricolage Grotesque, and Mantle's own mark in the footer follows it.
 Only one monospace family survives the two-axis floor (Inconsolata). More can be
 added at any time: that is now one command and one pasted row.
 
-## Unreleased — The models you pinned, and whether they still exist (branch feat/model-drift)
+## 0.224.0: The models you pinned, and whether they still exist (branch feat/model-drift)
 
 **A pinned model is a decision, not a subscription.** It was right the day it
 was chosen and nothing ages it. Nothing in the product ever checked whether the
@@ -3113,36 +3142,7 @@ One judgement is stated wherever the output is read rather than buried in the
 source: version segments compare as integers, so `4.20` is newer than `4.5`,
 matching how these vendors number releases rather than how decimals sort.
 
-## Unreleased — Links that survive the split (branch feat/companion-split-fix)
-
-**A stored link is permanent, so it has to be right on the day it is written.**
-`nodeUrl()` mints `${MANTLE_PUBLIC_URL}/n/<id>` and hands it to the assistant on
-every tool result; the assistant writes those links into chat replies, pages,
-forum answers and outbound email, and nothing ever re-resolves them. But
-`MANTLE_PUBLIC_URL` has to be the **server** origin — `/s/<token>` share links
-and the Microsoft OAuth callback are served there — while `/n/[id]` itself moved
-to `client/web` in the v0.200.0 split. On a deployment that gives the owner app
-its own vhost, every one of those links was a 404, and each one was written into
-the brain to stay.
-
-`/n/*` now forwards to `MANTLE_CLIENT_ORIGIN`, joining the `/login`, `/hub` and
-`/team` stubs. Keeping the minted link canonical and redirecting at the edge is
-what makes one stored URL correct under either topology; rewriting the minter to
-point at the client origin would have broken it the other way. With no client
-origin configured it explains itself instead of looping, same as its siblings.
-
-Single-host installs — where one hostname fronts both stacks — never saw this,
-which is exactly why it stayed hidden.
-
-Also: `GET /api/assistant/thread` takes `?withMessages=0`, returning the agent
-picker list and the resolved active agent without the 100-message thread. The
-mobile companion needs both at launch — it holds no agent cookie, so the
-server's resolution *is* its default, and that resolution is what now respects
-`agents.assigned_user_id` — but it pages its own history from the local cache,
-so the thread was fetched and dropped on every cold start. Opt-out, so every
-existing caller is untouched.
-
-## Unreleased — An assistant that answers to its own name (branch feat/agent-name-token)
+## 0.223.3: An assistant that answers to its own name (branch feat/agent-name-token)
 
 **A copied assistant introduced itself as the one it was copied from.** Give a
 login its own assistant called Tommy and his prompt still opened *"You are Mira
@@ -3186,7 +3186,7 @@ the HTTP tool dispatcher, and are never matched: their syntax appears verbatim
 in the toolsmith skill's own instructions, and a greedy matcher would have eaten
 the example it teaches from.
 
-## Unreleased — Your own assistant, not everyone else's thread (branch claude/per-user-agent-duplication-60eb10)
+## 0.220.0: Your own assistant, not everyone else's thread (branch claude/per-user-agent-duplication-60eb10)
 
 **Two people signed into the same brain were talking to one assistant, in one
 conversation.** Extra logins have always been co-admins on the anchor account's
@@ -3230,7 +3230,7 @@ stay, as an ordinary shared agent — deleting one remains a deliberate act on
 Settings → Agents, same reasoning as the earlier fix that stopped agent deletion
 destroying chat history.
 
-## Unreleased — A picture where the sentence needs it (branch claude/vibrant-elion-4dda88)
+## 0.219.0: A picture where the sentence needs it (branch claude/vibrant-elion-4dda88)
 
 **A chat reply could not put a picture mid-answer.** Every image a turn produced
 was collected and rendered as a strip below the whole reply, in the order the
@@ -3274,7 +3274,7 @@ the attachment strip already use. It answers unauthenticated with 401 and scopes
 every read by owner id, so an invented or someone else's file id is a broken
 image, never a leak.
 
-## Unreleased — One implementation per tool, one verifier per credential (branch feat/arch-cleanup)
+## 0.217.5: One implementation per tool, one verifier per credential (branch feat/arch-cleanup)
 
 **24 MCP tools had two implementations, and the spare had gone stale.** Notes,
 tasks, events, journal entries, peers and the email reads were each written
@@ -3386,7 +3386,7 @@ a bundle has none and Postgres answers `3D000 invalid_catalog_name`. A
 provisioned cluster served by a read-only role says 42501 instead, which is why
 the workstation passed and the deployed demo failed.
 
-## Unreleased — Adding a Microsoft scope quietly killed every older account (branch claude/sharepoint-auth-directory-listing-d78be4)
+## 0.216.7: Adding a Microsoft scope quietly killed every older account (branch claude/sharepoint-auth-directory-listing-d78be4)
 
 **A connected Microsoft account had a shelf life measured from the last time we
 edited a constant.** Every token refresh asked Azure for the app's *current*
@@ -3414,7 +3414,7 @@ Try again* — advice that could never work. `invalid_grant` now carries a 401,
 which is the branch that tells the truth, and the browse route logs the
 underlying Graph error instead of swallowing it.
 
-## Unreleased — The pictures inside your documents (branch claude/mantle-image-extraction)
+## 0.216.0: The pictures inside your documents (branch claude/mantle-image-extraction)
 
 **Every parser in the stack was text-only, so a diagram in a Word file or a
 screenshot in a PDF manual was dropped on the floor** — invisible to recall and
@@ -3484,7 +3484,7 @@ work re-runs.
 Fixed while here: `upsertFile` reset a file's title to its filename on *every*
 upsert, so any deliberately-titled file silently reverted on re-ingest.
 
-## Unreleased — The rest of the "all good" over a dead brain (branches feat/healthcheck, feat/sanity-services, feat/test-timeouts)
+## 0.213.1: The rest of the "all good" over a dead brain (branches feat/healthcheck, feat/sanity-services, feat/test-timeouts)
 
 **Four layers now have to agree before an install calls itself healthy.** The
 installer work closed the reporting side; this closes the two places that were
@@ -3524,7 +3524,7 @@ core, so on a 24-core box under real load a `require('mathjs')` costing 411ms
 idle sails past five seconds. `testTimeout` is now 15s, and mathjs moved to a
 module-scope import so 18MB leaves the per-test budget entirely.
 
-## Unreleased — An uninstaller, and a project-name bug it exposed (branch feat/uninstall)
+## 0.213.1: An uninstaller, and a project-name bug it exposed (branch feat/uninstall)
 
 **`scripts/uninstall.sh`** — there was no supported way to remove Mantle, so
 everyone improvised, and the improvised version is the one that eats a
@@ -3555,7 +3555,7 @@ Also fixed in both scripts: probing for a controlling terminal leaked
 redirections apply left to right, so the failure printed before `2>/dev/null`
 took effect.
 
-## Unreleased — Onboarding: orientation before the first message (branch feat/onboarding-tutorial)
+## 0.213.1: Onboarding: orientation before the first message (branch feat/onboarding-tutorial)
 
 **The last screen said "you're all set" and handed you to the assistant.** It
 now says what to do with it, in four lines total.
@@ -3574,7 +3574,7 @@ contacts means nothing inbound is ingested, which is indistinguishable from a
 broken mail setup unless you're told it's deliberate — with the real carve-out,
 that your own mail always comes in. And everything else happens by asking.
 
-## Unreleased — Installer: guided setup, honest health checks (branch feat/install-probe)
+## 0.213.1: Installer: guided setup, honest health checks (branch feat/install-probe)
 
 **An install can no longer report itself healthy when it isn't.** A host port
 already holding `:3000` made Docker abandon the web container's entire network
@@ -3619,7 +3619,7 @@ back to HTTP instead of proceeding into a doomed request. Prompts read from
 all from an empty stdin. Disk, memory and ports 80/443 are checked before the
 ~2 GB pull.
 
-## Unreleased — CLI Sandboxes (branch feat/cli-sandboxes)
+## 0.206.1: CLI Sandboxes (branch feat/cli-sandboxes)
 
 **The coder agent gets a computer that isn't the brain's.** Persistent
 isolated Ubuntu sandboxes managed by a new `sandboxd` supervisor (the third
