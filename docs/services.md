@@ -1,7 +1,8 @@
-# Optional services: start and stop from the dashboard
+# Optional services: start and stop from Settings
 
 Two parts of a box are optional, and an admin can switch each one on or off
-from the dashboard (the **Services** card under System vitals):
+from **Settings > Services** (`/settings/services`, admins only). The System
+vitals pills on the dashboard show each one's state and link there:
 
 | service       | what it does                                                                                                                | download                                                                                        | memory                                                         |
 | ------------- | --------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
@@ -79,7 +80,7 @@ every app container ─reads (mounted read-only)─▶ /signal/services.json
    for the container to report healthy.
 
 Any failure in steps 3 to 7 puts `.env` back from the backup and stops the
-container again. The dashboard shows the reason and the log.
+container again. Settings > Services shows the reason and the log.
 
 ### Switching off
 
@@ -90,7 +91,7 @@ container again. The dashboard shows the reason and the log.
    data: neither service keeps data in its container).
 4. The profile is dropped from `COMPOSE_PROFILES`.
 
-If a stop fails, `.env` is left as it was and the dashboard says so.
+If a stop fails, `.env` is left as it was and Settings > Services says so.
 
 ## Tokens are provisioned in advance
 
@@ -109,7 +110,7 @@ shows the off services as red ("not answering") pills; nothing else changes.
 ## Small boxes
 
 On a box with 6 GB of memory or less, or the 4 GB core shape
-(`docker-compose.core.yml`), the switch stays available and the dashboard
+(`docker-compose.core.yml`), the switch stays available and Settings > Services
 shows a clear memory warning first. The admin decides.
 
 ## Files

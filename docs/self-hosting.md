@@ -217,7 +217,7 @@ gate), or return to the full shape with `scripts/install.sh --no-core`.
 
 ### Sandboxes and the media sidecar
 
-Both can be switched on and off from the dashboard (**Services**, admins
+Both can be switched on and off in **Settings > Services** (admins
 only) once the box runs an updater that supports it; off stops the service
 and keeps all its data. See [`services.md`](./services.md). The steps below
 are the same change by hand.

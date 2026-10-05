@@ -78,8 +78,8 @@ policy, both scoped to this one container:
    (`assertFetchableUrl`) before the sidecar sees it, and the sidecar's
    isolation bounds what a hostile page could reach.
 
-**From the dashboard:** an admin switches Media on or off in the **Services**
-card on the dashboard; the box's updater writes the token, adds the profile,
+**From Settings:** an admin switches Media on or off in **Settings >
+Services**; the box's updater writes the token, adds the profile,
 pulls and starts only this container ([services.md](services.md)). Off stops
 it and keeps everything already ingested. By hand, the same change:
 

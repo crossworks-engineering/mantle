@@ -16,7 +16,7 @@ export const MAX_TIMEOUT_S = 1800;
 
 const NOT_ENABLED =
   'sandboxes are not enabled on this box (the `sandboxes` service is switched off). ' +
-  'An admin can switch Sandboxes on in the dashboard under Services; every sandbox and its ' +
+  'An admin can switch Sandboxes on in Settings > Services; every sandbox and its ' +
   'files are kept while it is off. For server-side commands use `run_terminal`.';
 
 export async function sandboxd(

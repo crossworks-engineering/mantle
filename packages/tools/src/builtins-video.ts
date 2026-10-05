@@ -153,7 +153,7 @@ const video_ingest: BuiltinToolDef = {
       return {
         ok: false,
         error:
-          'Media ingestion is not enabled on this box (the `media` service is switched off). An admin can switch Media on in the dashboard under Services (see docs/video-ingest.md).',
+          'Media ingestion is not enabled on this box (the `media` service is switched off). An admin can switch Media on in Settings > Services (see docs/video-ingest.md).',
       };
     }
     const url = str(input.url).trim();

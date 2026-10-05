@@ -31,8 +31,8 @@ that one skips extraction cost without giving up storage or search by name.
 
 The whole feature sits behind the `sandboxes` compose profile.
 
-**From the dashboard (any box with a current updater).** An admin switches
-Sandboxes on or off in the **Services** card on the dashboard. Off stops the
+**From Settings (any box with a current updater).** An admin switches
+Sandboxes on or off in **Settings > Services**. Off stops the
 running sandboxes and sandboxd and keeps every sandbox, its `/files` and its
 apps; on brings them back. How it works, and what it writes to `.env`:
 [services.md](services.md). The steps below are the same change by hand.
@@ -188,7 +188,7 @@ change, never silent drift. Bump the tag on every content change.
 ## Surface
 
 `/sandboxes` in the owner UI (visible always; when the service is switched off
-it says so and points at the switch on the dashboard): master-detail list with live status and disk usage,
+it says so and points at Settings > Services): master-detail list with live status and disk usage,
 per-sandbox command history read from the `sandbox_exec` trace steps, Stop,
 and a Remove dialog that states plainly that `/files` is preserved, purging
 is a separate destructive checkbox. API routes are owner-scoped and refuse to
