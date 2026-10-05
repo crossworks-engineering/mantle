@@ -70,7 +70,7 @@ import { env } from '@mantle/config';
 import { UUID_RE } from '@mantle/std';
 import { withViewer, type ViewerLevel } from '@mantle/db/viewer';
 
-const DEFAULT_MAX_ITERATIONS = 6;
+export const DEFAULT_MAX_ITERATIONS = 6;
 
 /** Min thinking budget the reasoning providers accept (Anthropic's
  *  `thinking.budget_tokens` floor; OpenRouter forwards ours there). Below this a
@@ -487,6 +487,16 @@ export async function resolveAgentTools(ownerId: string, slugs: string[]): Promi
   return resolveTools(ownerId, slugs);
 }
 
+/** The loop's tool rows: the agent's allowlist plus `read_result`, which is
+ *  always offered when the agent has any tools (see runToolLoopAtLevel). Shared
+ *  with `describeResponderTurnInput`, so the tool list it reports is the list
+ *  the model is sent. */
+export async function withReadResultTool(ownerId: string, tools: Tool[]): Promise<Tool[]> {
+  if (tools.length === 0 || tools.some((t) => t.slug === 'read_result')) return tools;
+  const rr = await resolveReadResultTool(ownerId);
+  return rr ? [...tools, rr] : tools;
+}
+
 /**
  * Convert resolved tools to the chat-adapter `tools` parameter shape.
  * The slug becomes the function name (no remapping at runtime —
@@ -560,11 +570,7 @@ async function runToolLoopAtLevel(args: ToolLoopArgs): Promise<ToolLoopResult> {
   // Always offer `read_result` when the agent has any tools, so a spilled
   // (oversized) result is never a dead end — even if the operator didn't add
   // it to the agent's allowlist. It's a read-only system capability.
-  let loopTools = args.tools;
-  if (loopTools.length > 0 && !loopTools.some((t) => t.slug === 'read_result')) {
-    const rr = await resolveReadResultTool(args.ownerId);
-    if (rr) loopTools = [...loopTools, rr];
-  }
+  const loopTools = await withReadResultTool(args.ownerId, args.tools);
   const toolsByName = new Map(loopTools.map((t) => [t.slug, t]));
   const toolsForModel = await buildToolsForModel(loopTools, {
     ownerId: args.ownerId,

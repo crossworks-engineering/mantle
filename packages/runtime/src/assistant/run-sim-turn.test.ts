@@ -28,6 +28,7 @@ const h = vi.hoisted(() => ({
   outcome: null as any,
   recordTurn: vi.fn(),
   updateOutcome: vi.fn(),
+  loadArgs: null as any,
   // A stored-history window that DIFFERS from the caller's history, so a test
   // can prove the built prompt used the caller's, not the store's.
   storedHistory: [{ role: 'user' as const, text: 'STORED — must not appear' }],
@@ -58,17 +59,20 @@ vi.mock('@mantle/tracing', () => ({
 }));
 
 vi.mock('../agent', () => ({
-  loadConversationContext: vi.fn(async () => ({
-    personaNotes: [],
-    facts: [],
-    digests: [],
-    corpusMap: { entries: [] },
-    contentHits: [],
-    chunkHits: [],
-    relations: [],
-    history: h.storedHistory,
-    snapshot: {},
-  })),
+  loadConversationContext: vi.fn(
+    async (args: unknown) =>
+      (h.loadArgs = args) && {
+        personaNotes: [],
+        facts: [],
+        digests: [],
+        corpusMap: { entries: [] },
+        contentHits: [],
+        chunkHits: [],
+        relations: [],
+        history: h.storedHistory,
+        snapshot: {},
+      },
+  ),
   // Echo the two fields the tests care about so the built prompt is inspectable.
   buildChatMessages: vi.fn((args: { history: unknown; newUserText: string }) => [
     { role: 'system', content: 'S' },
@@ -202,6 +206,34 @@ describe('runSimulatedResponderTurn', () => {
     // A sane value passes through, floored.
     await runSimulatedResponderTurn('owner-1', { message: 'hi', maxIterations: 8.9 });
     expect(h.loopOpts.assembled.loopOverrides.maxIterations).toBe(8);
+  });
+
+  it('cuts caller history to the agent history window and enriches retrieval from it', async () => {
+    h.agent = { ...AGENT, memoryConfig: { history_limit: 2 } } as unknown as Agent;
+    await runSimulatedResponderTurn('owner-1', {
+      message: 'and that?',
+      history: [
+        { role: 'user', content: 'one' },
+        { role: 'assistant', content: 'two' },
+        { role: 'user', content: 'three' },
+      ],
+    });
+    const userMsg = (h.builtMessages as Array<{ role: string; content: string }>)[1]!;
+    const parsed = JSON.parse(userMsg.content) as { history: Array<{ text: string }> };
+    // The newest two turns only, as a real turn loads its window.
+    expect(parsed.history.map((t) => t.text)).toEqual(['two', 'three']);
+    // Query enrichment reads the caller's turns, never the owner's stored chat.
+    expect(h.loadArgs.recentTurnTexts).toEqual(['two', 'three']);
+  });
+
+  it('sends no history when the agent window is 0', async () => {
+    h.agent = { ...AGENT, memoryConfig: { history_limit: 0 } } as unknown as Agent;
+    await runSimulatedResponderTurn('owner-1', {
+      message: 'hi',
+      history: [{ role: 'user', content: 'one' }],
+    });
+    const userMsg = (h.builtMessages as Array<{ role: string; content: string }>)[1]!;
+    expect(JSON.parse(userMsg.content).history).toEqual([]);
   });
 
   it('surfaces the empty-reply substitution flag', async () => {

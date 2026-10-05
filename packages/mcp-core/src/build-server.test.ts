@@ -16,12 +16,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const h = vi.hoisted(() => ({
   simResult: null as any,
   simCalls: [] as any[],
+  inputResult: null as any,
+  inputCalls: [] as any[],
 }));
 
 vi.mock('@mantle/runtime/assistant', () => ({
   runSimulatedResponderTurn: vi.fn(async (_owner: string, opts: unknown) => {
     h.simCalls.push(opts);
     return h.simResult;
+  }),
+  describeResponderTurnInput: vi.fn(async (_owner: string, opts: unknown) => {
+    h.inputCalls.push(opts);
+    return h.inputResult;
   }),
 }));
 
@@ -50,6 +56,26 @@ function parseReply(res: { content: Array<{ text: string }> }) {
 }
 
 beforeEach(() => {
+  h.inputCalls = [];
+  h.inputResult = {
+    agent: { slug: 'saskia', name: 'Saskia', model: 'm', provider: 'openrouter' },
+    readOnly: false,
+    messages: [
+      { role: 'system', content: 'PERSONA', cached: true },
+      { role: 'system', content: 'MAP', cached: true },
+      { role: 'system', content: 'TIME', cached: false },
+      { role: 'system', content: 'FACTS', cached: false },
+      { role: 'user', content: 'hello', cached: false },
+    ],
+    tools: [
+      { name: 'search_nodes', description: 'd', parameters: { type: 'object' } },
+      { name: 'read_result', description: 'r', parameters: { type: 'object' } },
+    ],
+    loop: { maxIterations: 6 },
+    context: { facts: 1 },
+    traceId: 'trace-in',
+    differences: ['x'],
+  };
   h.simCalls = [];
   h.simResult = {
     reply: 'hi there!',
@@ -162,5 +188,78 @@ describe('ask_responder MCP tool', () => {
     const res = await handler({ message: 'hi' });
     expect(res.isError).toBe(true);
     expect(res.content[0]!.text).toMatch(/No enabled assistant agent/);
+  });
+});
+
+describe('responder_turn_input MCP tool', () => {
+  it('passes the message, history and narrowing to the engine', async () => {
+    const res = await handlerFor('responder_turn_input')({
+      message: 'hello',
+      agent_slug: 'saskia',
+      history: [{ role: 'user', content: 'prior' }],
+      exclude_tools: ['email_send'],
+      read_only: true,
+    });
+    expect(res.isError).toBeUndefined();
+    expect(h.inputCalls[0]).toEqual({
+      message: 'hello',
+      agentSlug: 'saskia',
+      history: [{ role: 'user', content: 'prior' }],
+      excludeToolSlugs: ['email_send'],
+      readOnly: true,
+    });
+    const body = parseReply(res);
+    expect(body.messages).toHaveLength(5);
+    expect(body.tools.map((t: { name: string }) => t.name)).toEqual([
+      'search_nodes',
+      'read_result',
+    ]);
+    expect(body.trace_id).toBe('trace-in');
+    expect(body.differences).toEqual(['x']);
+  });
+
+  it('omit_cached drops the cached prefix blocks and says how many', async () => {
+    const body = parseReply(
+      await handlerFor('responder_turn_input')({ message: 'hello', omit_cached: true }),
+    );
+    expect(body.messages.map((m: { content: string }) => m.content)).toEqual([
+      'TIME',
+      'FACTS',
+      'hello',
+    ]);
+    expect(body.omitted_cached_blocks).toBe(2);
+  });
+
+  it('tools "names" and "none" shrink the tool part', async () => {
+    const names = parseReply(
+      await handlerFor('responder_turn_input')({ message: 'hello', tools: 'names' }),
+    );
+    expect(names.tools).toBeUndefined();
+    expect(names.tool_names).toEqual(['search_nodes', 'read_result']);
+    const none = parseReply(
+      await handlerFor('responder_turn_input')({ message: 'hello', tools: 'none' }),
+    );
+    expect(none.tools).toBeUndefined();
+    expect(none.tool_count).toBe(2);
+  });
+
+  it('rejects an over-cap transcript before the engine runs', async () => {
+    const res = await handlerFor('responder_turn_input')({
+      message: 'hello',
+      history: Array.from({ length: 41 }, () => ({ role: 'user', content: 'x' })),
+    });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]!.text).toMatch(/max 40/);
+    expect(h.inputCalls).toHaveLength(0);
+  });
+
+  it('surfaces an engine error as an isError reply', async () => {
+    const { describeResponderTurnInput } = await import('@mantle/runtime/assistant');
+    (describeResponderTurnInput as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error('answers team or client logins'),
+    );
+    const res = await handlerFor('responder_turn_input')({ message: 'hi' });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]!.text).toMatch(/responder_turn_input failed: answers team/);
   });
 });

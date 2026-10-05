@@ -19,6 +19,8 @@ export {
   runToolLoop,
   resolveAgentTools,
   buildToolsForModel,
+  withReadResultTool,
+  DEFAULT_MAX_ITERATIONS,
   summarizeToolOutcomes,
   resolveToolValidationMode,
   type ToolValidationMode,

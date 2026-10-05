@@ -187,6 +187,7 @@ const HTTP_SURFACE = [
   'generate_image',
   'ask_responder',
   'ask_as_responder',
+  'responder_turn_input',
   'export_node',
   'access_get',
   'access_set',

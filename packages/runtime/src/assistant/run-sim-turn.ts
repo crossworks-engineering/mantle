@@ -33,14 +33,27 @@
  * original.
  */
 
+import type { Agent } from '@mantle/db';
 import { delegationHintTraceData } from '@mantle/decisions';
 import { getApiKeyById } from '@mantle/api-keys';
-import { buildChatMessages, loadConversationContext } from '../agent';
+import {
+  buildChatMessages,
+  loadConversationContext,
+  type ChatMessage,
+  type ConversationContext,
+  type HistoryTurn,
+} from '../agent';
 import { getChatAdapter } from '@mantle/voice';
-import { loadProfilePreferences } from '@mantle/content';
-import { startTrace, currentTrace, createTracePrelude, withTracePrelude } from '@mantle/tracing';
+import { loadProfilePreferences, type ProfilePreferences } from '@mantle/content';
+import {
+  startTrace,
+  currentTrace,
+  createTracePrelude,
+  withTracePrelude,
+  type TracePrelude,
+} from '@mantle/tracing';
 import { resolveAssistantAgent } from './run-turn';
-import { assembleResponderTurn } from './assemble-turn';
+import { assembleResponderTurn, type AssembledResponderTurn } from './assemble-turn';
 import { runResponderLoop } from './responder-loop';
 
 /** One caller-supplied prior turn. Shape matches an MCP client's chat log — the
@@ -115,12 +128,7 @@ export async function runSimulatedResponderTurn(
   const message = opts.message.trim();
   if (!message) throw new Error('runSimulatedResponderTurn: empty message');
 
-  const agent = await resolveAssistantAgent(ownerId, opts.agentSlug);
-  if (!agent) {
-    throw new Error(
-      'No enabled assistant agent. Create one at /settings/agents (role=assistant or fallback responder).',
-    );
-  }
+  const agent = await resolveSimAgent(ownerId, opts.agentSlug);
   if (!agent.apiKeyId) {
     throw new Error(`Agent '${agent.slug}' has no api_key_id set — edit at /settings/agents.`);
   }
@@ -138,41 +146,14 @@ export async function runSimulatedResponderTurn(
     );
   }
 
-  const prefs = await loadProfilePreferences(ownerId);
-
-  // Real retrieval — facts, chunks, digests, persona notes, corpus map — exactly
-  // as a live turn loads it. We keep everything EXCEPT the loaded history: the
-  // sim's conversation history is caller-held, so we build the prompt from
-  // `opts.history` and never touch the stored assistant_messages window.
-  // Steps before the trace opens (the decider's pruning + hint calls, the
-  // query embed) are held here and written into the trace below.
-  const prelude = createTracePrelude();
-  const ctx = await withTracePrelude(prelude, () =>
-    loadConversationContext({ ownerId, agent, inboundText: message }),
-  );
-  const history = (opts.history ?? []).map((t) => ({
-    role: t.role === 'assistant' ? ('assistant' as const) : ('user' as const),
-    text: t.content,
-  }));
-
-  // Shared responder-turn assembly (identity + skills prompt, volatile context,
-  // group-resolved tool allowlist, thinking budget, loop overrides). No
-  // heartbeatSurface — the sim isn't a live web/telegram surface, so it skips
-  // the open-heartbeat awareness block + continuity-tool affordance.
-  const assembled = await withTracePrelude(prelude, () =>
-    assembleResponderTurn({
-      ownerId,
-      agent,
-      prefs,
-      logPrefix: '[mcp-sim]',
-      // Decider delegation hint, same as the web turn, so an ask_responder
-      // canary exercises it: the message plus the caller-held previous user turn.
-      inboundText: message,
-      previousUserText: [...history].reverse().find((h) => h.role === 'user')?.text ?? null,
-      ...(opts.excludeToolSlugs?.length ? { excludeToolSlugs: opts.excludeToolSlugs } : {}),
-      ...(opts.readOnly ? { readOnly: true } : {}),
-    }),
-  );
+  const prepared = await prepareSimulatedTurn(ownerId, agent, {
+    message,
+    history: opts.history,
+    excludeToolSlugs: opts.excludeToolSlugs,
+    readOnly: opts.readOnly,
+    logPrefix: '[mcp-sim]',
+  });
+  const { prefs, prelude, ctx, assembled } = prepared;
 
   // Apply the caller's iteration cap by overriding the assembly's loop
   // overrides. Clamp to a positive int ≤ 30, matching assemble-turn's own
@@ -223,25 +204,7 @@ export async function runSimulatedResponderTurn(
         // Context was loaded before the trace opened; the core's load_context
         // step just records the snapshot for /debug/context.
         loadContext: async () => ctx,
-        buildMessages: (c) =>
-          buildChatMessages({
-            model: agent.model,
-            provider: agent.provider,
-            systemPrompt: assembled.effectiveSystemPrompt,
-            volatileContext: assembled.volatileContext,
-            personaNotes: c.personaNotes,
-            journalBlock: assembled.journalBlock,
-            journalRelevant: c.journalRelevant,
-            facts: c.facts,
-            digests: c.digests,
-            corpusMap: c.corpusMap,
-            contentHits: c.contentHits,
-            chunkHits: c.chunkHits,
-            relations: c.relations,
-            // Caller-held history — NOT c.history (the store window).
-            history,
-            newUserText: message,
-          }),
+        buildMessages: (c) => buildSimulatedMessages(prepared, c),
         surface: { kind: 'web' },
         abortSignal: AbortSignal.timeout(timeoutMs),
         // Caller-held history, not the owner's conversation: it neither
@@ -260,4 +223,128 @@ export async function runSimulatedResponderTurn(
     traceId,
     emptyReplySubstituted: outcome.emptyReplySubstituted,
   };
+}
+
+/** Resolve the responder a simulated turn runs as. Same pick and the same
+ *  error as the real turn. */
+export async function resolveSimAgent(ownerId: string, agentSlug?: string): Promise<Agent> {
+  const agent = await resolveAssistantAgent(ownerId, agentSlug);
+  if (!agent) {
+    throw new Error(
+      'No enabled assistant agent. Create one at /settings/agents (role=assistant or fallback responder).',
+    );
+  }
+  return agent;
+}
+
+/** Everything a simulated turn reads before the model call: the shared read
+ *  path of `runSimulatedResponderTurn` and `describeResponderTurnInput`, so the
+ *  turn a caller inspects is the turn `ask_responder` would run. */
+export type PreparedSimTurn = {
+  agent: Agent;
+  message: string;
+  prefs: ProfilePreferences;
+  /** Steps taken before the trace opened (decider calls, the query embed). */
+  prelude: TracePrelude;
+  ctx: ConversationContext;
+  /** The caller-held history as the prompt gets it: mapped, and cut to the
+   *  agent's own history window (memory_config.history_limit). */
+  history: HistoryTurn[];
+  assembled: AssembledResponderTurn;
+};
+
+/** The history window a real turn loads (conversation.ts uses the same
+ *  default). The caller-held history is cut to it, so a long transcript does
+ *  not reach the model longer than a real conversation would. */
+const DEFAULT_HISTORY_LIMIT = 20;
+
+export async function prepareSimulatedTurn(
+  ownerId: string,
+  agent: Agent,
+  opts: {
+    message: string;
+    history?: SimHistoryTurn[];
+    excludeToolSlugs?: string[];
+    readOnly?: boolean;
+    logPrefix: string;
+  },
+): Promise<PreparedSimTurn> {
+  const message = opts.message;
+  const prefs = await loadProfilePreferences(ownerId);
+
+  const historyLimit =
+    (agent.memoryConfig as { history_limit?: number } | null)?.history_limit ??
+    DEFAULT_HISTORY_LIMIT;
+  const history: HistoryTurn[] =
+    historyLimit > 0
+      ? (opts.history ?? []).slice(-historyLimit).map((t) => ({
+          role: t.role === 'assistant' ? ('assistant' as const) : ('user' as const),
+          text: t.content,
+        }))
+      : [];
+
+  // Real retrieval — facts, chunks, digests, persona notes, corpus map — exactly
+  // as a live turn loads it. We keep everything EXCEPT the loaded history: the
+  // sim's conversation history is caller-held, so we build the prompt from
+  // `history` and never touch the stored assistant_messages window. A short
+  // follow-up's query enrichment reads the caller's turns too, not the owner's
+  // stored chat. Steps before the trace opens (the decider's pruning + hint
+  // calls, the query embed) are held in the prelude and written into the
+  // caller's trace.
+  const prelude = createTracePrelude();
+  const ctx = await withTracePrelude(prelude, () =>
+    loadConversationContext({
+      ownerId,
+      agent,
+      inboundText: message,
+      recentTurnTexts: history.map((h) => h.text),
+    }),
+  );
+
+  // Shared responder-turn assembly (identity + skills prompt, volatile context,
+  // group-resolved tool allowlist, thinking budget, loop overrides). No
+  // heartbeatSurface — the sim isn't a live web/telegram surface, so it skips
+  // the open-heartbeat awareness block + continuity-tool affordance.
+  const assembled = await withTracePrelude(prelude, () =>
+    assembleResponderTurn({
+      ownerId,
+      agent,
+      prefs,
+      logPrefix: opts.logPrefix,
+      // Decider delegation hint, same as the web turn, so an ask_responder
+      // canary exercises it: the message plus the caller-held previous user turn.
+      inboundText: message,
+      previousUserText: [...history].reverse().find((h) => h.role === 'user')?.text ?? null,
+      ...(opts.excludeToolSlugs?.length ? { excludeToolSlugs: opts.excludeToolSlugs } : {}),
+      ...(opts.readOnly ? { readOnly: true } : {}),
+    }),
+  );
+
+  return { agent, message, prefs, prelude, ctx, history, assembled };
+}
+
+/** The prompt messages of a simulated turn: the web turn's exact shape, with
+ *  the caller-held history in place of the stored window. */
+export function buildSimulatedMessages(
+  p: PreparedSimTurn,
+  c: ConversationContext = p.ctx,
+): ChatMessage[] {
+  return buildChatMessages({
+    model: p.agent.model,
+    provider: p.agent.provider,
+    systemPrompt: p.assembled.effectiveSystemPrompt,
+    volatileContext: p.assembled.volatileContext,
+    personaNotes: c.personaNotes,
+    journalBlock: p.assembled.journalBlock,
+    journalRelevant: c.journalRelevant,
+    facts: c.facts,
+    digests: c.digests,
+    corpusMap: c.corpusMap,
+    contentHits: c.contentHits,
+    chunkHits: c.chunkHits,
+    relations: c.relations,
+    // Caller-held history — NOT c.history (the store window).
+    history: p.history,
+    newUserText: p.message,
+  });
 }

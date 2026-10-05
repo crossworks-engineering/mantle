@@ -89,6 +89,7 @@ export const PEER_RISKY_TOOL_SLUGS: ReadonlySet<string> = new Set([
   'invoke_agent',
   'ask_responder',
   'ask_as_responder',
+  'responder_turn_input',
   'access_set',
   'pending_approve',
   'pending_reject',

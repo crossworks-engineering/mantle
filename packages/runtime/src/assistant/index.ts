@@ -44,6 +44,14 @@ export {
   type SimToolCall,
 } from './run-sim-turn';
 export {
+  describeResponderTurnInput,
+  TURN_INPUT_DIFFERENCES,
+  type DescribeResponderTurnInputOptions,
+  type ResponderTurnInput,
+  type TurnInputMessage,
+  type TurnInputTool,
+} from './turn-input';
+export {
   describeResponderPersona,
   type DescribeResponderPersonaOptions,
   type ResponderPersonaDescription,
