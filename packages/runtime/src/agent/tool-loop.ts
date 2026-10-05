@@ -555,6 +555,28 @@ export async function buildToolsForModel(
 }
 
 /**
+ * Deferred loading: the catalog joins the FIRST system block (the persona
+ * block, which carries the first cache breakpoint), so it is cached with it and
+ * only changes when the grant does. Without a system message it becomes one.
+ */
+export function withCatalogBlock(initial: readonly ChatMessage[], block: string): ChatMessage[] {
+  const out = [...initial];
+  const i = out.findIndex((m) => m.role === 'system');
+  if (i < 0) return [{ role: 'system', content: block }, ...out];
+  const first = out[i] as Extract<ChatMessage, { role: 'system' }>;
+  if (typeof first.content === 'string') {
+    out[i] = { ...first, content: `${first.content}\n\n${block}` };
+  } else {
+    const parts = [...first.content];
+    const last = parts[parts.length - 1];
+    if (last) parts[parts.length - 1] = { ...last, text: `${last.text}\n\n${block}` };
+    else parts.push({ type: 'text', text: block });
+    out[i] = { ...first, content: parts };
+  }
+  return out;
+}
+
+/**
  * The tool loop, at the agent's level (member logins Phase 0b). A loop run for
  * an agent MUST say the agent's level: a missing one throws rather than
  * silently running at admin. The level only ever goes down.
@@ -594,7 +616,9 @@ async function runToolLoopAtLevel(args: ToolLoopArgs): Promise<ToolLoopResult> {
       : null;
   const toolsForModel = deferred ? deferred.sent : allToolDefs;
 
-  const messages: ChatMessage[] = [...args.initialMessages];
+  const messages: ChatMessage[] = deferred
+    ? withCatalogBlock(args.initialMessages, deferred.systemBlock)
+    : [...args.initialMessages];
   // The turn's latest USER message — threaded to handlers via ctx.agent so
   // invoke_agent can attach the user's verbatim ask to a delegation (the
   // child sees only the packed prompt; this closes the under-packing gap).

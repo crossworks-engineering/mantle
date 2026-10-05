@@ -90,6 +90,7 @@ function tool(
     inputSchema: { type: 'object', properties, required, additionalProperties: false },
     handler: { kind: 'builtin', slug } as never,
     requiresConfirm: false,
+    externalAccess: null,
     enabled: true,
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -143,7 +144,10 @@ function run(adapter: ChatDispatcher, tool_loading?: 'full' | 'deferred') {
     model: 'm',
     params: tool_loading ? { tool_loading } : {},
     ownerId: 'owner-1',
-    initialMessages: [{ role: 'user', content: 'email Bob that the meeting moved' }],
+    initialMessages: [
+      { role: 'system', content: 'You are the assistant.' },
+      { role: 'user', content: 'email Bob that the meeting moved' },
+    ],
     tools: TOOLS,
   });
 }
@@ -168,10 +172,12 @@ describe('runToolLoop with deferred tool loading', () => {
     expect(sentNames(calls[0]!)).toEqual(['search_nodes', 'tool_search', 'use_tool']);
     expect(JSON.stringify(calls[1]!.tools)).toBe(JSON.stringify(calls[0]!.tools));
     expect(JSON.stringify(calls[2]!.tools)).toBe(JSON.stringify(calls[0]!.tools));
-    // The catalog names every deferred tool; the core tool is not repeated.
-    const searchDef = calls[0]!.tools!.find((t) => t.function.name === 'tool_search')!;
-    expect(searchDef.function.description).toContain('email_send');
-    expect(searchDef.function.description).toContain('contact_find');
+    // The catalog joins the first system block, the same bytes every round.
+    const system = (o: ChatOptions) =>
+      JSON.stringify(o.messages.filter((m) => m.role === 'system'));
+    expect(system(calls[0]!)).toContain('email_send');
+    expect(system(calls[0]!)).toContain('contact_find');
+    expect(system(calls[2]!)).toBe(system(calls[0]!));
     expect(groupsLoaded).toEqual(['owner-1']);
   });
 
@@ -249,6 +255,7 @@ describe('runToolLoop with deferred tool loading', () => {
       const { adapter, calls } = adapterWith(['hi']);
       await run(adapter, mode);
       expect(sentNames(calls[0]!)).toEqual(['search_nodes', 'email_send', 'contact_find']);
+      expect(JSON.stringify(calls[0]!.messages)).not.toContain('Tool catalog');
     }
     expect(groupsLoaded).toEqual([]);
   });

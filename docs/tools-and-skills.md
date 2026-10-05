@@ -517,12 +517,17 @@ call. `'deferred'` sends:
 
 - the granted tools in `CORE_TOOL_SLUGS` (20 tools that carry most turns on
   the fleet) plus any `heartbeat_*` affordance, in grant order, in full;
-- `tool_search`, whose DESCRIPTION carries the catalog: every other granted
-  tool by NAME, one line per flow (`packages/tools/src/selection/flows.ts`:
-  find, pages, files, tables, plan, people, web, places, delegate, apps,
-  admin; custom and connector groups land in `other`);
+- `tool_search` (load tools by describing the action);
 - `use_tool {name, arguments}`, a wrapper for models that will not call a
   name they were not sent.
+
+The loop appends a catalog block to the FIRST system block (the persona
+block, with the first cache breakpoint): one rule line, then every other
+granted tool by NAME, one line per flow (`packages/tools/src/selection/flows.ts`:
+find, pages, files, tables, plan, people, web, places, delegate, apps, admin;
+custom and connector groups land in `other`). On the bench the catalog in the
+system prompt made models search more often than the same text inside
+`tool_search`'s description.
 
 The model calls `tool_search {query, flow?}`; the loop ranks the deferred
 tools (BM25 over tool cards + a small synonym table + a fleet usage prior, no
@@ -533,9 +538,9 @@ whole grant, the central validator checks the real schema, the guards count
 the real slug, and the trace step is `tool: <real slug>`. A name outside the
 grant is still refused ("not in this agent's allowlist").
 
-**Why it keeps the cache.** The sent array is a pure function of the grant:
-it never changes inside a turn, and not between turns while the grant is the
-same. Loaded schemas arrive in the conversation tail, after the last cache
+**Why it keeps the cache.** The sent array and the catalog block are pure
+functions of the grant: they never change inside a turn, and not between turns
+while the grant is the same. Loaded schemas arrive in the conversation tail, after the last cache
 breakpoint. Never change the `tools` array or `tool_choice` per turn to
 restrict tools: on Anthropic the tools come first in the prefix, so that
 rewrites the whole cached prompt (Spike 8 measured a loss).

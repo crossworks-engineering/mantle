@@ -2,12 +2,14 @@
  * Deferred tool loading: a cache-safe way to give an agent many tools.
  *
  * The model is sent a small, STABLE core of full tool definitions plus two
- * meta tools. Every other granted tool is listed by NAME in the catalog that
- * `tool_search` carries in its own description, grouped by flow. When the
+ * meta tools. Every other granted tool is listed by NAME in a catalog block
+ * the loop appends to the first (cached) system block, grouped by flow. When the
  * model needs one, it calls `tool_search`; the full schemas come back as an
- * ordinary tool RESULT in the conversation tail. The `tools` array therefore
- * never changes inside a turn or between turns (for one grant), so the cached
- * prompt prefix survives. The model then calls the tool by its own name or
+ * ordinary tool RESULT in the conversation tail. The `tools` array and the
+ * catalog text never change inside a turn or between turns (for one grant), so
+ * the cached prompt prefix survives. The catalog sits in the system prompt, not
+ * in tool_search's description: on the bench that placement made models search
+ * more often (Claude 89 vs 86 right first tool). The model then calls the tool by its own name or
  * through `use_tool`; the tool loop dispatches either against the real schema.
  *
  * Measured 2026-10-05 (dev-brain plan page dab162c0): 143 tools = 58.5k Claude
@@ -63,60 +65,37 @@ export const CORE_TOOL_SLUGS: readonly string[] = [
  *  present when a heartbeat is active, and the model must see them. */
 const ALWAYS_FULL_PREFIXES = ['heartbeat_'];
 
-/** Fleet call frequency order (90 days to 2026-10-05, four brains), used only
- *  as a tie-break prior in the ranker. Pseudo-usage = 1000 / (rank + 1). */
-const USAGE_PRIOR_ORDER: readonly string[] = [
-  'search_chunks',
-  'search_nodes',
-  'read_result',
-  'page_block_get',
-  'table_row_add',
-  'read_section',
-  'table_sql',
-  'page_get',
-  'page_blocks_list',
-  'page_block_update',
-  'file_read',
-  'invoke_agent',
-  'model_pool_set',
-  'web_search',
-  'table_schema',
-  'page_list',
-  'run_terminal',
-  'node_read',
-  'table_list',
-  'page_block_insert_after',
-  'app_file_write',
-  'model_catalog',
-  'app_db_query',
-  'table_query',
-  'app_get',
-  'table_cell_set',
-  'file_list',
-  'app_db_list',
-  'note_get',
-  'page_create',
-  'web_fetch',
-  'event_list',
-  'table_get',
-  'folder_list',
-  'show_image',
-  'file_get',
-  'page_blocks_apply',
-  'table_rows_list',
-  'recall_match',
-  'table_from_file',
-  'entity_search',
-  'tool_catalog',
-  'app_build',
-  'tree_list',
-  'team_request_create',
-  'table_row_update',
-  'page_block_append',
-  'page_update_draft',
+/** Fleet call frequency, coarse: tier = round(log2(calls)) over 90 days to
+ *  2026-10-05 on four brains. A tie-break prior only (pseudo-usage 2^tier);
+ *  tools not listed get none. Refresh from traces when the tool set moves. */
+const USAGE_TIERS: readonly (readonly [number, string])[] = [
+  [10, 'search_chunks search_nodes'],
+  [9, 'read_result page_block_get table_row_add read_section table_sql'],
+  [8, 'page_get page_blocks_list page_block_update'],
+  [7, 'file_read invoke_agent model_pool_set web_search table_schema page_list'],
+  [
+    6,
+    'run_terminal node_read table_list page_block_insert_after app_file_write model_catalog app_db_query table_query app_get table_cell_set file_list app_db_list',
+  ],
+  [
+    5,
+    'note_get page_create web_fetch event_list table_get folder_list show_image file_get page_blocks_apply table_rows_list recall_match table_from_file entity_search tool_catalog app_build tree_list',
+  ],
+  [
+    4,
+    'team_request_create table_row_update journal_create page_block_append page_update_draft table_aggregate folder_get_by_path note_list peer_query task_create calculate table_rows_add file_create page_delete recall_window recipe_tool_test table_row_get',
+  ],
+  [
+    3,
+    'app_db_seed email_get email_list task_list journal_list model_pool_list note_create recipe_tool_create api_tool_create app_publish extract_from_image peer_list table_column_add api_tool_delete app_db_schema_set contact_find page_block_insert_before sandbox_exec api_key_refs generate_image note_update page_move peer_search_chunks',
+  ],
+  [
+    2,
+    'entity_facts openrouter_rankings recall_index task_get tree_folder_create tree_item_move web_search_pro table_from_text table_row_delete team_chat_list tool_group_list agent_list api_tool_list api_tool_test export_node my_item_open my_items_list openrouter_benchmarks openrouter_task_classes peer_node_get table_column_update table_create table_tab_add team_access_list tool_group_ensure video_ingest',
+  ],
 ];
 const USAGE_PRIOR: Readonly<Record<string, number>> = Object.fromEntries(
-  USAGE_PRIOR_ORDER.map((s, i) => [s, 1000 / (i + 1)]),
+  USAGE_TIERS.flatMap(([tier, names]) => names.split(' ').map((s) => [s, 2 ** tier] as const)),
 );
 
 /** How many tools one search returns. */
@@ -134,6 +113,9 @@ export type DeferredToolset = {
   sent: DeferredToolDef[];
   /** Granted tools that are NOT sent in full (reachable by search). */
   deferred: ReadonlySet<string>;
+  /** Text the loop appends to the first (cached) system block: the rule and
+   *  the names-only catalog. Stable for a given grant. */
+  systemBlock: string;
   /** Rank the deferred tools for a query; returns the tool_search result. */
   search: (query: string, flow?: string) => ToolSearchResult;
 };
@@ -154,35 +136,33 @@ const SEARCH_RULE =
   'or places, look at the catalog first: if a listed tool does that action, load it with ' +
   'tool_search before you act.';
 
-function toolSearchDef(catalog: string, flows: readonly string[]): DeferredToolDef {
-  return {
-    type: 'function',
-    function: {
-      name: TOOL_SEARCH_SLUG,
-      description:
-        'Load granted tools that are listed in the catalog below but not yet loaded. Describe the ' +
-        `action you need in plain words; returns up to ${TOOL_SEARCH_LIMIT} matching tools with ` +
-        'their full input schemas. Then call the tool by its name, or through `use_tool`. The ' +
-        `tools you already hold in full are not in the catalog.\n${SEARCH_RULE}\n\n` +
-        `Tool catalog (by flow):\n${catalog}`,
-      parameters: {
-        type: 'object',
-        properties: {
-          query: {
-            type: 'string',
-            description: 'The action you need, e.g. "send an email" or "move a file to a folder".',
-          },
-          flow: {
-            type: 'string',
-            enum: [...flows],
-            description: 'Optional flow from the catalog to search within.',
-          },
-        },
-        required: ['query'],
-        additionalProperties: false,
+const TOOL_SEARCH_DEF: DeferredToolDef = {
+  type: 'function',
+  function: {
+    name: TOOL_SEARCH_SLUG,
+    description:
+      'Load tools that are listed in the tool catalog but not yet loaded. Describe the action you ' +
+      `need in plain words (and optionally the flow). Returns up to ${TOOL_SEARCH_LIMIT} matching ` +
+      'tools with their full input schemas. Then call the tool through use_tool.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'The action you need, e.g. "send an email".' },
+        flow: { type: 'string', description: 'Optional flow slug from the catalog.' },
       },
+      required: ['query'],
+      additionalProperties: false,
     },
-  };
+  },
+};
+
+/** The catalog block for the cached system prompt (stable per grant). */
+function catalogBlock(catalog: string): string {
+  return (
+    '## Tool catalog\nYou hold the core tools directly. Every other tool you are granted is listed ' +
+    'below by name, grouped by flow. To use one, call tool_search with what you need, then call ' +
+    `it with use_tool.\nRule: ${SEARCH_RULE}\n${catalog}`
+  );
 }
 
 const USE_TOOL_DEF: DeferredToolDef = {
@@ -190,8 +170,8 @@ const USE_TOOL_DEF: DeferredToolDef = {
   function: {
     name: USE_TOOL_SLUG,
     description:
-      'Call a catalog tool whose schema you loaded with `tool_search`. `name` is the tool name; ' +
-      '`arguments` must match its input schema. Calling the tool directly by its name works too.',
+      'Call a catalog tool whose schema you loaded with tool_search. `name` is the tool name; ' +
+      '`arguments` must match its input schema.',
     parameters: {
       type: 'object',
       properties: {
@@ -225,11 +205,6 @@ export function buildDeferredToolset(
     sortedGroups,
   );
   const index: CardIndex = indexCards(cards);
-  const flows = [
-    ...new Set(
-      [...TOOL_FLOWS.map((f) => f.slug), 'other'].filter((f) => cards.some((c) => c.flow === f)),
-    ),
-  ];
   const catalog = renderCatalog(cards, TOOL_FLOWS);
   const search = (query: string, flow?: string): ToolSearchResult => {
     let hits = rankTools(index, query, {
@@ -251,12 +226,13 @@ export function buildDeferredToolset(
     return {
       tools,
       note: tools.length
-        ? 'Call one by its name, or through use_tool.'
+        ? 'Call one with use_tool.'
         : 'No match. Try other words, or name a flow from the catalog.',
     };
   };
   return {
-    sent: [...core, toolSearchDef(catalog, flows), USE_TOOL_DEF],
+    sent: [...core, TOOL_SEARCH_DEF, USE_TOOL_DEF],
+    systemBlock: catalogBlock(catalog),
     deferred: new Set(rest.map((d) => d.function.name)),
     search,
   };

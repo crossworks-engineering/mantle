@@ -40,19 +40,24 @@ describe('buildDeferredToolset', () => {
   });
 
   it('is byte-stable for the same grant, whatever order the groups arrive in', () => {
-    const a = JSON.stringify(buildDeferredToolset(DEFS, GROUPS)!.sent);
-    const b = JSON.stringify(buildDeferredToolset(DEFS, [...GROUPS].reverse())!.sent);
+    const pick = (g: typeof GROUPS) => {
+      const set = buildDeferredToolset(DEFS, g)!;
+      return JSON.stringify([set.sent, set.systemBlock]);
+    };
+    const a = pick(GROUPS);
+    const b = pick([...GROUPS].reverse());
     expect(a).toBe(b);
   });
 
-  it('lists each deferred tool by name under its flow in the catalog', () => {
-    const search = buildDeferredToolset(DEFS, GROUPS)!.sent.find(
-      (d) => d.function.name === TOOL_SEARCH_SLUG,
-    )!;
-    expect(search.function.description).toMatch(/- people \(.*\): email_send/);
-    expect(search.function.description).toMatch(/- plan \(.*\): event_create/);
-    const catalog = search.function.description.split('Tool catalog')[1]!;
+  it('lists each deferred tool by name under its flow in the system block', () => {
+    const set = buildDeferredToolset(DEFS, GROUPS)!;
+    expect(set.systemBlock).toMatch(/- people \(.*\): email_send/);
+    expect(set.systemBlock).toMatch(/- plan \(.*\): event_create/);
+    const catalog = set.systemBlock.split('\n- ').slice(1).join('\n');
     expect(catalog).not.toContain('search_nodes');
+    // The tool definitions stay short: the catalog is not in tool_search.
+    const search = set.sent.find((d) => d.function.name === TOOL_SEARCH_SLUG)!;
+    expect(search.function.description).not.toContain('email_send');
   });
 
   it('returns the full schema of the best match', () => {
