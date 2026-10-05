@@ -39,6 +39,7 @@ import {
   isNotNull,
   isNull,
   lt,
+  lte,
   not,
   or,
   sql,
@@ -89,6 +90,15 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
 const ADDRESS_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Codes created in the `ms` before `now`, and not after it. */
+function createdWithin(ms: number, now: Date): SQL {
+  return and(
+    gt(clientSigninCodes.createdAt, new Date(now.getTime() - ms)),
+    lte(clientSigninCodes.createdAt, now),
+  )!;
+}
+
 /** An id no row has: the no-match branches of the redeem run the same
  *  statements against it. */
 const NO_ID = '00000000-0000-0000-0000-000000000000';
@@ -210,7 +220,9 @@ export async function createClientEmailCode(
 
     const counted = async (where: SQL | undefined) =>
       (await tx.select({ n: count() }).from(clientSigninCodes).where(where))[0]?.n ?? 0;
-    const since = (ms: number) => gt(clientSigninCodes.createdAt, new Date(now.getTime() - ms));
+    // The window ends at `now` too: a row stamped later (a test writing at
+    // a far-off time) is no code of this window, and must not use it up.
+    const since = (ms: number) => createdWithin(ms, now);
     const ofLogin = and(
       eq(clientSigninCodes.loginId, login.id),
       eq(clientSigninCodes.kind, 'email'),
@@ -317,12 +329,7 @@ export async function clientCodesSentLast24h(now = new Date()): Promise<number> 
   const [row] = await db
     .select({ n: count() })
     .from(clientSigninCodes)
-    .where(
-      and(
-        eq(clientSigninCodes.kind, 'email'),
-        gt(clientSigninCodes.createdAt, new Date(now.getTime() - DAY_MS)),
-      ),
-    );
+    .where(and(eq(clientSigninCodes.kind, 'email'), createdWithin(DAY_MS, now)));
   return row?.n ?? 0;
 }
 
