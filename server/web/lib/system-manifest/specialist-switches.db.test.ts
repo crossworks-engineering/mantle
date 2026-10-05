@@ -31,7 +31,7 @@ describe.skipIf(!URL)('owner param switches on a specialist', () => {
     (await admin<Row[]>`select params from agents where owner_id = ${owner} and slug = ${slug}`)[0]!
       .params as Record<string, unknown>;
   const setParams = (slug: string, params: Record<string, unknown>) =>
-    admin`update agents set params = ${admin.json(params as never)}
+    admin`update agents set params = ${JSON.stringify(params)}::jsonb
           where owner_id = ${owner} and slug = ${slug}`;
 
   beforeAll(async () => {
