@@ -148,7 +148,7 @@ describe.skipIf(!URL)('take over a submitted member item', () => {
       select id, login_id from spaces where kind = 'personal'
         and login_id in (${adminA}, ${adminB}, ${member}, ${member2})`);
     for (const r of rows) spaceOf[r.login_id] = r.id;
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await unlisten();

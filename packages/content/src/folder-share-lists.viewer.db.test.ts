@@ -129,7 +129,7 @@ describe.skipIf(!URL)('folder-shared items in the Library and for clients', () =
     await share(ids.appsTeamF, 'team');
     await share(ids.appsClientF, 'client');
     await share(ids.filesClientF, 'client');
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await m.systemDb.execute(sqlTag`

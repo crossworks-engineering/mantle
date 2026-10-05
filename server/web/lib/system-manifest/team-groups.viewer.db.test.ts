@@ -75,7 +75,7 @@ describe.skipIf(!URL)('team-level tool groups on the team viewer role', () => {
     const all = Object.values(ids);
     await admin`update nodes set audience = 'team', embedding = ${vec}::vector
       where id in ${admin(all)}`;
-  });
+  }, 60_000);
 
   afterAll(async () => {
     if (admin && Object.keys(ids).length) {

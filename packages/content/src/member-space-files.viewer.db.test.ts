@@ -79,7 +79,7 @@ describe.skipIf(!URL)('member personal space: tables and files', () => {
     }[];
     spaceA = rows.find((r) => r.login_id === loginA)!.id;
     spaceB = rows.find((r) => r.login_id === loginB)!.id;
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await unlisten();

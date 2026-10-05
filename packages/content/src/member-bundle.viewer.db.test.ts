@@ -155,7 +155,7 @@ describe.skipIf(!URL)('the submitted bundle, the purge and the review deletes', 
       );
       spaceOf[id] = s!.id;
     }
-  });
+  }, 60_000);
 
   afterAll(async () => {
     for (const id of moved) await m.systemDb.execute(sqlTag`delete from nodes where id = ${id}`);

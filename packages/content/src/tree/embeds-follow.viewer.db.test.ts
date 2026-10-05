@@ -147,7 +147,7 @@ describe.skipIf(!URL)('embeds follow their embedder', () => {
       `![d](draw:${D})\n\n![i2](media:${I2})\n\n![i3](media:${I3})\n\n![i4](media:${I4})`,
     );
     N2 = await note(folderG.path, 'n2', `![i2](media:${I2})`);
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await m.systemDb.execute(sqlTag`

@@ -83,7 +83,7 @@ describe.skipIf(!URL)('sharing a folder', () => {
       id: string;
     }>;
     space = row!.id;
-  });
+  }, 60_000);
 
   afterAll(async () => {
     if (space) await m.systemDb.execute(sqlTag`delete from nodes where owner_id = ${space}`);
