@@ -1117,9 +1117,19 @@ svc_compose() {
 }
 
 # backup_env: copy .env (mode and owner kept) to backups/env/, newest 5 kept.
+# The dirs this root sidecar creates go to the stack's owner, as the pre-roll
+# backup's do: the operator must be able to read their own backups (found by
+# the end-to-end run: a root-owned 0700 dir hid them).
 backup_env() {
   be_dir="$STACK/backups/env"
+  be_own=$(file_owner "$STACK")
+  be_new_parent=""
+  [ -d "$STACK/backups" ] || be_new_parent=1
   ( umask 077; mkdir -p "$be_dir" ) || return 1
+  if [ -n "$be_own" ]; then
+    [ -z "$be_new_parent" ] || chown "$be_own" "$STACK/backups" 2>/dev/null
+    chown "$be_own" "$be_dir" 2>/dev/null
+  fi
   SVC_ENV_BAK="$be_dir/.env-$(date -u +%Y%m%d-%H%M%S)"
   cp -p "$STACK/.env" "$SVC_ENV_BAK" || return 1
   keep_newest "$be_dir/.env-" 5

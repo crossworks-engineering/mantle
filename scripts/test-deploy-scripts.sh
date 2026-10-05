@@ -1287,6 +1287,9 @@ check "on: status done, ok true" grep -q '"phase":"done","service":"media","enab
 check "on: the profile is added, the others kept" grep -qx 'COMPOSE_PROFILES=local-embedder,media' "$T/stack/.env"
 check "on: tokens kept as they were" sh -c "grep -qx 'MEDIA_SIDECAR_TOKEN=bbbb' '$T/stack/.env' && grep -qx 'SANDBOXD_TOKEN=aaaa' '$T/stack/.env'"
 check "on: .env backed up, mode 600" sh -c "ls '$T/stack/backups/env/'.env-* >/dev/null && test \"\$(stat -c %a '$T'/stack/backups/env/.env-* 2>/dev/null || stat -f %Lp '$T'/stack/backups/env/.env-*)\" = 600"
+check "on: the backup dir is private (0700) and the stack owner's" sh -c "
+  test \"\$(stat -c %a '$T/stack/backups/env' 2>/dev/null || stat -f %Lp '$T/stack/backups/env')\" = 700 &&
+  test \"\$(stat -c %u '$T/stack/backups/env' 2>/dev/null || stat -f %u '$T/stack/backups/env')\" = \"\$(stat -c %u '$T/stack' 2>/dev/null || stat -f %u '$T/stack')\""
 check "on: the backup is the .env from before" sh -c "cmp -s '$T/env.before' '$T'/stack/backups/env/.env-*"
 check "on: pulls only that service" grep -qE 'compose .*--profile media pull media$' "$T/calls"
 check "on: starts only that container (--no-deps)" grep -qE 'compose .*--profile media up -d --no-deps media$' "$T/calls"
