@@ -195,6 +195,7 @@ describe('responder_turn_input MCP tool', () => {
   it('passes the message, history and narrowing to the engine', async () => {
     const res = await handlerFor('responder_turn_input')({
       message: 'hello',
+      tools: 'full',
       agent_slug: 'saskia',
       history: [{ role: 'user', content: 'prior' }],
       exclude_tools: ['email_send'],
@@ -230,6 +231,19 @@ describe('responder_turn_input MCP tool', () => {
     expect(body.omitted_cached_blocks).toBe(2);
   });
 
+  it('tools default to brief, and schemas_for fetches chosen full schemas', async () => {
+    const body = parseReply(
+      await handlerFor('responder_turn_input')({ message: 'hello', schemas_for: ['read_result'] }),
+    );
+    expect(body.tools).toEqual([
+      { name: 'search_nodes', about: 'd' },
+      { name: 'read_result', about: 'r' },
+    ]);
+    expect(body.schemas).toEqual([
+      { name: 'read_result', description: 'r', parameters: { type: 'object' } },
+    ]);
+  });
+
   it('tools "names" and "none" shrink the tool part', async () => {
     const names = parseReply(
       await handlerFor('responder_turn_input')({ message: 'hello', tools: 'names' }),
@@ -261,5 +275,17 @@ describe('responder_turn_input MCP tool', () => {
     const res = await handlerFor('responder_turn_input')({ message: 'hi' });
     expect(res.isError).toBe(true);
     expect(res.content[0]!.text).toMatch(/responder_turn_input failed: answers team/);
+  });
+});
+
+describe('firstSentence', () => {
+  it('keeps the first sentence and flattens whitespace', async () => {
+    const { firstSentence } = await import('./register/responder');
+    expect(firstSentence('Search the brain for nodes.\n  Returns ids. More text.')).toBe(
+      'Search the brain for nodes.',
+    );
+    // A short lead ("e.g.") is not a sentence end.
+    expect(firstSentence('Run it, e.g. on a table. Then more.')).toBe('Run it, e.g. on a table.');
+    expect(firstSentence('x'.repeat(300))).toHaveLength(200);
   });
 });

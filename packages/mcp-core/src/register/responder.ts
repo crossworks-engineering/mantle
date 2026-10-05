@@ -211,7 +211,9 @@ export function registerResponderTools(ctx: McpRegisterContext): void {
       'path as `ask_responder`, so the two see the same turn. Multi-turn is caller-held: resend ' +
       'your transcript in `history`. To skip resending what does not change per message, pass ' +
       '`omit_cached` (drops the cached prefix blocks) and `tools: "names"` or `"none"` after the ' +
-      'first call. **Input, not enforcement:** your tools run on this MCP surface, not in the ' +
+      'first call. Tools default to `brief` (name + first sentence): a big responder holds 140+ ' +
+      'tools and their full schemas run past 150k characters, so fetch the full schema of only the ' +
+      'tools you mean to call with `schemas_for`, or pass `tools: "full"`. **Input, not enforcement:** your tools run on this MCP surface, not in the ' +
       'agent loop, so its guards and confirm gates do not apply. `differences` lists what else ' +
       'differs. Use `ask_responder` when the agent itself must answer.',
     {
@@ -222,7 +224,8 @@ export function registerResponderTools(ctx: McpRegisterContext): void {
         .optional(),
       exclude_tools: z.array(z.string()).optional(),
       read_only: z.boolean().optional(),
-      tools: z.enum(['full', 'names', 'none']).optional(),
+      tools: z.enum(['full', 'brief', 'names', 'none']).optional(),
+      schemas_for: z.array(z.string()).optional(),
       omit_cached: z.boolean().optional(),
     },
     async (a) => {
@@ -236,8 +239,9 @@ export function registerResponderTools(ctx: McpRegisterContext): void {
           ...(a.exclude_tools ? { excludeToolSlugs: a.exclude_tools } : {}),
           ...(a.read_only ? { readOnly: true } : {}),
         });
-        const toolDetail = a.tools ?? 'full';
+        const toolDetail = a.tools ?? 'brief';
         const messages = a.omit_cached ? res.messages.filter((m) => !m.cached) : res.messages;
+        const wanted = new Set(a.schemas_for ?? []);
         return jsonReply({
           agent: res.agent,
           read_only: res.readOnly,
@@ -247,9 +251,17 @@ export function registerResponderTools(ctx: McpRegisterContext): void {
           messages,
           ...(toolDetail === 'full'
             ? { tools: res.tools }
-            : toolDetail === 'names'
-              ? { tool_names: res.tools.map((t) => t.name) }
-              : { tool_count: res.tools.length }),
+            : toolDetail === 'brief'
+              ? {
+                  tools: res.tools.map((t) => ({
+                    name: t.name,
+                    about: firstSentence(t.description),
+                  })),
+                }
+              : toolDetail === 'names'
+                ? { tool_names: res.tools.map((t) => t.name) }
+                : { tool_count: res.tools.length }),
+          ...(wanted.size > 0 ? { schemas: res.tools.filter((t) => wanted.has(t.name)) } : {}),
           loop: res.loop,
           context: res.context,
           trace_id: res.traceId,
@@ -264,4 +276,12 @@ export function registerResponderTools(ctx: McpRegisterContext): void {
       }
     },
   );
+}
+
+/** The first sentence of a tool description: the gist, for the brief list. */
+export function firstSentence(text: string): string {
+  const flat = text.replace(/\s+/g, ' ').trim();
+  const m = /^(.{20,}?[.!?])(\s|$)/.exec(flat);
+  const s = m ? m[1]! : flat;
+  return s.length > 200 ? `${s.slice(0, 199)}…` : s;
 }

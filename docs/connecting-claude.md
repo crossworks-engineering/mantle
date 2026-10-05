@@ -168,7 +168,7 @@ inside the box. Two exceptions, both named below.
 | Federation             | `peer_list`, `peer_query`, `peer_search_chunks`, `peer_node_get`                                                                                                                                                                                                                       |
 | Owner state            | `update_persona`, `set_timezone`, `secret_create`, `node_share`, `node_unshare`, `process_extraction`, `brain_capacity`                                                                                                                                                                |
 | Models                 | `model_catalog`, `model_pool_*`, `openrouter_*`, `recall_eval`                                                                                                                                                                                                                         |
-| Responder              | `ask_responder`, `ask_as_responder`, `invoke_agent`                                                                                                                                                                                                                                    |
+| Responder              | `ask_responder`, `ask_as_responder`, `responder_turn_input`, `invoke_agent`                                                                                                                                                                                                            |
 | Location               | `location_save`, `location_nearby`, `location_distance`, `route_map`                                                                                                                                                                                                                   |
 
 ### The two that are not on it
@@ -192,7 +192,7 @@ memory: …"_, _"approve the pending tool calls if they look sane"_.
 
 ### Talking to a responder agent
 
-Everything above is _persona-less_ raw data access. Two tools are the
+Everything above is _persona-less_ raw data access. Three tools are the
 exception, and the difference between them matters.
 
 #### `ask_responder` — the brain answers, and the rules are enforced
@@ -257,7 +257,63 @@ own work, with your own model, without a server round trip per turn.
 > the loop guards all stay on the server. When the rules must actually hold,
 > use `ask_responder` and let the brain run the turn.
 
-Contrast both with the in-app Agent Studio sandbox
+#### `responder_turn_input`: you answer, with what the agent would see
+
+`ask_as_responder` gives you the persona only. A built-in agent gets much more
+per message: retrieval for that message (facts, passages, content hits,
+relations, Journal entries), the conversation digests, the corpus map, the
+history window, and its tool schemas. `responder_turn_input` returns all of it,
+for one message, so your own model (a Claude Code subagent on Sonnet or Haiku,
+on your own subscription) can answer as the agent and be tested on the same
+input. No model call, no tool run, nothing written to the conversation. One
+trace holds the retrieval snapshot (`trace_id`, see `/debug/context`).
+
+It runs the same read path as `ask_responder` (shared code, not a copy), so the
+two see the same turn. Multi-turn is caller-held, as for `ask_responder`: resend
+your transcript in `history`. It is cut to the agent's own history window
+(`memory_config.history_limit`, default 20), as a real turn's is.
+
+What comes back:
+
+| Field         | What it is                                                                                            |
+| ------------- | ----------------------------------------------------------------------------------------------------- |
+| `messages`    | The prompt in order: system blocks, history, the new message. `cached: true` marks the stable prefix. |
+| `tools`       | The agent's tools (`read_result` included). `brief` by default: name and first sentence.              |
+| `schemas`     | Full schemas for the tools named in `schemas_for`.                                                    |
+| `loop`        | Iteration limit, tool-call caps, thinking budget, delegation list, model params. Reported only.       |
+| `context`     | Counts: facts, passages, content hits, digests, map entries, relations, and the delegation hint.      |
+| `differences` | What still differs from a real turn (below).                                                          |
+
+Sizes on a big responder (dev, 2026-10-05, 143 tools): the messages are about
+90k characters (the persona prompt about 40k, the corpus map about 24k), and
+the full tool schemas about 165k. That is why `tools` defaults to `brief`.
+After the first call, pass `omit_cached: true` to drop the prefix blocks that
+did not change, and `tools: "names"` or `"none"`.
+
+What still differs, and why it cannot be closed from the brain side:
+
+- Your client adds its own system prompt and its own tools around these
+  messages. The agent gets neither.
+- Your model answers, not the agent's. The thinking budget and params are
+  reported, not applied.
+- Your tool calls run on the MCP surface, not in the agent loop. Most names
+  and arguments match (on dev: 138 of 143 tools exist by name, 130 with the
+  same arguments). The agent's `search_nodes` is `search` here, and the page,
+  table and file reads return other shapes. Confirm gates, `/pending` parking,
+  the loop guards, the tool-call caps, result spill and the delegation
+  allowlist do not apply.
+- The loop's mid-turn nudges (budget spent, iteration limit, guard blocks) are
+  not sent.
+- As for `ask_responder`: no open-heartbeat block, no device-location line,
+  and the digests and history recall come from the stored conversation.
+
+Who can call it: the owner's connector only. A peer bound to the owner gets it
+only when the owner names it (it is in the peer risky list). Member and client
+logins do not get it, and the team and client responders are refused: their
+turn is assembled differently (no owner identity, no thinking, the
+private-reads gate), so this tool would describe a turn that never runs.
+
+Contrast all three with the in-app Agent Studio sandbox
 ([`agent-studio.md`](./agent-studio.md)), which composes the same prompt but
 makes a plain model call with tools and memory OFF.
 
