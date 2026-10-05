@@ -81,6 +81,10 @@ export type AgentMemoryConfig = {
    *  tokens each) and the block rides its own prompt-cache breakpoint, so it
    *  re-bills only when corpus content actually changes. */
   corpus_map_limit?: number;
+  /** Responder-only: character budget of the rendered corpus map. Default
+   *  6,500 (about 2k tokens); the budget is shared across branches, newest
+   *  items first. */
+  corpus_map_chars?: number;
   /** Responder/assistant-only: inject the always-on "who you are" identity
    *  block distilled from the user's Journal (see
    *  @mantle/content buildIdentityContext) into the cached system prompt.

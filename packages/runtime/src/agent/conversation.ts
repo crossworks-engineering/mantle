@@ -90,7 +90,7 @@ import {
 import type {
   ChunkContextHit,
   ContentHit,
-  CorpusMapEntry,
+  CorpusMapBlock,
   Digest,
   FactSnippet,
   HistoryTurn,
@@ -117,7 +117,7 @@ type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 export type ConversationContext = {
   personaNotes: PersonaNote[];
   facts: FactSnippet[];
-  corpusMap: { entries: CorpusMapEntry[]; truncated: boolean };
+  corpusMap: CorpusMapBlock;
   contentHits: ContentHit[];
   chunkHits: ChunkContextHit[];
   relations: RelationLine[];
@@ -621,6 +621,7 @@ async function loadConversationContextAtLevel(args: {
   const contentHitLimit = memoryConfig.content_hit_limit ?? 5;
   const chunkLimit = memoryConfig.chunk_limit ?? CHUNK_LIMIT_DEFAULT;
   const corpusMapLimit = memoryConfig.corpus_map_limit ?? CORPUS_MAP_LIMIT_DEFAULT;
+  const corpusMapChars = memoryConfig.corpus_map_chars;
 
   // memory_config.notes_target = 'journal': the notes moved to the Journal
   // (persona-notes-to-journal) and arrive through its tiers instead, which
@@ -1518,31 +1519,42 @@ async function loadConversationContextAtLevel(args: {
   // no embedding involved. Ordering here is updated_at DESC purely for cap
   // SELECTION; presentation sorts by branch/title in the renderer so the
   // block's bytes stay cache-stable.
-  let corpusMap: { entries: CorpusMapEntry[]; truncated: boolean } = {
+  let corpusMap: CorpusMapBlock = {
     entries: [],
     truncated: false,
   };
   if (corpusMapLimit > 0) {
     trace.lap();
-    const rows = await db
-      .select({
-        id: nodes.id,
-        type: nodes.type,
-        title: nodes.title,
-        path: nodes.path,
-        data: nodes.data,
-      })
-      .from(nodes)
-      .where(
-        and(
-          eq(nodes.ownerId, ownerId),
-          sql`${nodes.type}::text = any(${pgArrayLiteral(CORPUS_MAP_TYPES)}::text[])`,
-          sql`(${nodes.data}->>'origin') is distinct from 'system'`,
-          sql`not (${nodes.tags} @> ARRAY['conversation-digest']::text[])`,
-        ),
-      )
-      .orderBy(desc(nodes.updatedAt))
-      .limit(corpusMapLimit + 1);
+    const mapWhere = and(
+      eq(nodes.ownerId, ownerId),
+      sql`${nodes.type}::text = any(${pgArrayLiteral(CORPUS_MAP_TYPES)}::text[])`,
+      sql`(${nodes.data}->>'origin') is distinct from 'system'`,
+      sql`not (${nodes.tags} @> ARRAY['conversation-digest']::text[])`,
+    );
+    // The branch an item sits under, as buildCorpusMap derives it from the path.
+    const branchExpr = sql<string>`coalesce(nullif(split_part(${nodes.path}::text, '.', 1), ''), 'content')`;
+    const [rows, totalRows] = await Promise.all([
+      db
+        .select({
+          id: nodes.id,
+          type: nodes.type,
+          title: nodes.title,
+          path: nodes.path,
+          data: nodes.data,
+        })
+        .from(nodes)
+        .where(mapWhere)
+        .orderBy(desc(nodes.updatedAt))
+        .limit(corpusMapLimit + 1),
+      // Per-branch totals, so the map can say how much exists beyond what it
+      // lists. Counts only, no titles, so the client-sourced filter below does
+      // not apply to them.
+      db
+        .select({ branch: branchExpr, n: sql<number>`count(*)::int` })
+        .from(nodes)
+        .where(mapWhere)
+        .groupBy(branchExpr),
+    ]);
     // Client-written titles stay out of the map (client logins C5 audit fix
     // L4): a client request, an item a client wrote, a copy a marked turn
     // made. The map is in every owner prompt and is never scanned for the
@@ -1552,6 +1564,8 @@ async function loadConversationContextAtLevel(args: {
     corpusMap = {
       ...buildCorpusMap(mapped, corpusMapLimit),
       truncated: rows.length > corpusMapLimit,
+      totals: Object.fromEntries(totalRows.map((r) => [r.branch, Number(r.n)])),
+      ...(corpusMapChars ? { maxChars: corpusMapChars } : {}),
     };
     trace.stage(
       'map',

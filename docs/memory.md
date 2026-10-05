@@ -984,6 +984,16 @@ Visual map of who writes what, who reads what:
 > ranking factors below. The old version of this section ranked everything by raw
 > cosine and assembled only persona / facts / content / turns.
 
+> **Corpus map budget (2026-10-05).** The "what exists" block renders inside
+> about 6,500 characters (about 2k tokens; per agent `memory_config.corpus_map_chars`).
+> Each branch header carries the corpus-wide count; the budget is shared
+> round-robin across branches, newest items first, so `tables` and `tasks` are
+> never starved by a long `pages` branch; three or more near-identical titles
+> fold into one line; page summaries are left out and tables keep their schema
+> digest. The block says it is complete only when it is. The old 24k-character
+> block cost about 7.6k tokens a turn with no measured answer-quality gain
+> (dev-brain audit page e3c5d926).
+
 ```
 [tool definitions]                            ← front of every cached prefix (grant order)
 [persona prompt + skills + data rule]         ← cache_control (changes on a config edit)

@@ -33,6 +33,7 @@ const MemoryConfig = z
     content_hit_limit: z.number().int().min(0).max(20).optional(),
     chunk_limit: z.number().int().min(0).max(50).optional(),
     corpus_map_limit: z.number().int().min(0).max(2_000).optional(),
+    corpus_map_chars: z.number().int().min(1_000).max(50_000).optional(),
     // Journal context (docs/journal.md §4a/§4b). notes_target = 'journal'
     // implies journal_tiers = 'live' at runtime.
     inject_journal: z.boolean().optional(),
