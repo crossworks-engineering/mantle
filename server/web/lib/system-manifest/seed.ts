@@ -51,7 +51,7 @@ import {
   type ManifestSkill,
   type ManifestToolGroup,
 } from './manifest';
-import { convergeManifestSkills } from './reconcile-util';
+import { convergeManifestSkills, specialistParamsTarget } from './reconcile-util';
 import { adoptWorkerParams, resolveWorkerRoute } from './worker-route';
 import { resolveEffectivePersona } from './persona';
 import { seedCuratedModelPools } from '../model-pools-seed';
@@ -613,7 +613,8 @@ export async function applyManifest(
 // writes the boot reconcile makes on a version bump, but for a single item the
 // operator picked. Semantics match reconcile exactly (see ./CLAUDE.md):
 //   - skill / tool-group: overwrite the body / membership to the manifest.
-//   - specialist agent: MERGE — overwrite prompt/model/params, UNION groups,
+//   - specialist agent: MERGE — overwrite prompt/model/params (the owner's
+//     param switches tool_loading / suggest_follow_up / top_p kept), UNION groups,
 //     CONVERGE skills (add manifest skills + drop a retired one; operator skills
 //     survive); a missing one is created + wired.
 //   - persona: STRUCTURE only — union default groups + delegation, CONVERGE skills
@@ -626,7 +627,12 @@ export async function applyManifest(
  *  (syncSpecialistDefs + grantSpecialistCapabilities) for one agent. */
 async function adoptSpecialist(ownerId: string, def: ManifestAgent): Promise<void> {
   const [row] = await db
-    .select({ id: agents.id, skills: agents.skillSlugs, groups: agents.toolGroupSlugs })
+    .select({
+      id: agents.id,
+      skills: agents.skillSlugs,
+      groups: agents.toolGroupSlugs,
+      params: agents.params,
+    })
     .from(agents)
     .where(and(eq(agents.ownerId, ownerId), eq(agents.slug, def.slug)))
     .limit(1);
@@ -640,7 +646,11 @@ async function adoptSpecialist(ownerId: string, def: ManifestAgent): Promise<voi
     .set({
       systemPrompt: def.systemPrompt ?? '',
       model,
-      params: def.params as AgentParams,
+      // The owner's param switches stay, as in the boot reconcile.
+      params: specialistParamsTarget(
+        def.params,
+        row.params as Record<string, unknown> | null,
+      ) as AgentParams,
       // Skills converge (drop a retired manifest skill); groups stay additive.
       skillSlugs: convergeManifestSkills(row.skills, def.skillSlugs, MANIFEST_SKILL_SLUGS),
       toolGroupSlugs: union(row.groups ?? [], def.toolGroupSlugs ?? []),

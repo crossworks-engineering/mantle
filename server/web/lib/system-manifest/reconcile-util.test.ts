@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
 import {
+  OWNER_PARAM_KEYS,
   convergeManifestSkills,
   groupsWithinLevel,
   missingPersonaGroups,
+  sameTopLevel,
   shippedPromptUpgrade,
+  specialistParamsTarget,
 } from './reconcile-util';
 
 describe('missingPersonaGroups', () => {
@@ -145,5 +148,41 @@ describe('shippedPromptUpgrade', () => {
     expect(shippedPromptUpgrade(OLD, NEW, [])).toBeNull();
     expect(shippedPromptUpgrade(null, NEW, [sha(OLD)])).toBeNull();
     expect(shippedPromptUpgrade(OLD, undefined, [sha(OLD)])).toBeNull();
+  });
+});
+
+describe('specialistParamsTarget', () => {
+  it('keeps the owner switches from the live row, the manifest owns the rest', () => {
+    expect(
+      specialistParamsTarget(
+        { temperature: 0.3, max_tokens: 16000 },
+        { temperature: 1.9, tool_loading: 'deferred', suggest_follow_up: true, top_p: 0.8 },
+      ),
+    ).toEqual({
+      temperature: 0.3,
+      max_tokens: 16000,
+      tool_loading: 'deferred',
+      suggest_follow_up: true,
+      top_p: 0.8,
+    });
+  });
+
+  it('drops tuning the manifest does not carry, and works with nothing stored', () => {
+    expect(specialistParamsTarget({ temperature: 0.2 }, { max_tokens: 5 })).toEqual({
+      temperature: 0.2,
+    });
+    expect(specialistParamsTarget({ temperature: 0.2 }, null)).toEqual({ temperature: 0.2 });
+  });
+
+  it('names exactly the three switches', () => {
+    expect([...OWNER_PARAM_KEYS]).toEqual(['tool_loading', 'suggest_follow_up', 'top_p']);
+  });
+});
+
+describe('sameTopLevel', () => {
+  it('ignores key order, not values', () => {
+    expect(sameTopLevel({ a: 1, b: 2 }, { b: 2, a: 1 })).toBe(true);
+    expect(sameTopLevel({ a: 1 }, { a: 2 })).toBe(false);
+    expect(sameTopLevel(null, {})).toBe(true);
   });
 });
