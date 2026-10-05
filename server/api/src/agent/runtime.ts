@@ -36,6 +36,7 @@ import {
   telegramChats,
   telegramAccounts,
   unextractedNodeConds,
+  noExtractSinceWriteSql,
   waitForOwner,
   type Agent,
 } from '@mantle/db';
@@ -417,8 +418,8 @@ async function drainPending(
  * durable (pg-boss), so a crash no longer loses queued work — but a node
  * inserted while the agent (and its boss) was DOWN fired `pg_notify` into the
  * void with no listener, so no job was ever enqueued. This catches that case by
- * scanning for recently-inserted nodes of an extractable type that still have
- * no embedding, and enqueueing them through the same `enqueueExtract` path as a
+ * scanning for recently-written nodes (inserted or changed, `updated_at`) of an
+ * extractable type that still have no embedding, and enqueueing them through the same `enqueueExtract` path as a
  * fresh `pg_notify('node_ingested')`.
  *
  * Window + cap are configurable (MANTLE_EXTRACT_DRAIN_WINDOW_HOURS, default 7d;
@@ -474,14 +475,18 @@ async function drainUnextractedNodes(ownerId: string): Promise<void> {
  * the node is then never extracted with no retry until a *restart's* boot-drain.
  * This closes that gap on a timer, with no restart needed.
  *
- * Predicate is a strict SUBSET of the boot-drain (`embedding IS NULL`) PLUS
- * "has NO extractor_run at all" — i.e. genuinely never processed (the missed-
- * event signature). That extra clause makes it **loop-safe**: a node that was
- * processed-and-skipped (an SVG, a telegram message, a conversation digest) HAS
- * a terminal run, so it's excluded; the boot-drain's bare `embedding IS NULL`
- * would re-churn those every sweep. Once a swept node is processed it gains a
- * run and drops out for good. Capped so a large miss catches up over a few
- * sweeps rather than a burst. Quiet unless it actually re-queues something.
+ * Predicate is a strict SUBSET of the boot-drain (`embedding IS NULL`, written
+ * in the window) PLUS "no extractor_run finished since the node's last write"
+ * (`noExtractSinceWriteSql`), i.e. the current version was never processed
+ * (the missed-event signature). That covers a brand-new node AND an old node
+ * whose content changed (a docs sync on a roll, while the agent was down).
+ * The extra clause makes it **loop-safe**: a node that was processed-and-
+ * skipped (an SVG, a telegram message, a conversation digest) HAS a run that
+ * finished after its last write, so it's excluded; the boot-drain's bare
+ * `embedding IS NULL` would re-churn those every sweep. Once a swept node is
+ * processed it drops out until its next write. Capped so a large miss catches
+ * up over a few sweeps rather than a burst. Quiet unless it actually re-queues
+ * something.
  */
 async function sweepMissedExtractions(ownerId: string): Promise<void> {
   const windowHours = Number(env('MANTLE_EXTRACT_DRAIN_WINDOW_HOURS')) || 168;
@@ -490,12 +495,7 @@ async function sweepMissedExtractions(ownerId: string): Promise<void> {
   const rows = await db
     .select({ id: nodes.id })
     .from(nodes)
-    .where(
-      and(
-        unextractedNodeConds(ownerId, since),
-        sql`NOT EXISTS (SELECT 1 FROM public.traces t WHERE t.subject_id = ${nodes.id} AND t.kind = 'extractor_run')`,
-      ),
-    )
+    .where(and(unextractedNodeConds(ownerId, since), noExtractSinceWriteSql()))
     .orderBy(asc(nodes.createdAt))
     .limit(limit);
   if (rows.length === 0) return;

@@ -353,6 +353,22 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       'Spends on --apply: the OCR pass (native PDF on the document worker, page OCR on the vision worker if that reads nothing) plus summary and embedding per file. Needs the agent (server/api) running. Start with --apply --limit=3. A batch that does not finish in time stops the run; nothing is sent twice.',
   },
   {
+    slug: 'doc-reindex',
+    title: 'Re-index documentation nodes with no summary or embedding',
+    description:
+      "Documentation nodes a docs sync changed while the agent was not listening (a roll), from before the safety nets windowed on updated_at: chunks present, but no summary and no node embedding, so search and the corpus map miss them. Dry run (default) prints the count, the extractor model, its price and an estimated USD (from this box's own extractor run costs, else the model price). --apply re-queues each node through the normal extract queue, a batch at a time, waiting for each batch to finish. Prints ids and counts only.",
+    kind: 'remedy',
+    status: 'live',
+    cost: 'llm',
+    schedulable: false,
+    script: 'scripts/doc-reindex.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    extraFlags: ['--limit=<n>', '--batch=<n>', '--batch-timeout=<minutes>'],
+    notes:
+      'Spends on --apply: one extractor call per doc (retrieval depth: summary only, no facts) plus the node and chunk embeddings. Dev, 2026-10-05: 365 docs at about $0.0016 each, about $0.60. Needs the agent (server/api) running. Start with --apply --limit=5. A batch that does not finish in time stops the run; nothing is sent twice.',
+  },
+  {
     slug: 'extract-backfill',
     title: 'Re-fire extraction for unindexed nodes',
     description:

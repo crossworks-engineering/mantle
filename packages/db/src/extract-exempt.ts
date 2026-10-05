@@ -114,17 +114,40 @@ export function extractSkippedSql(): SQL {
 
 /**
  * The nodes the extractor's safety nets re-queue: the owner's non-folder
- * nodes created since `since` that still have no embedding, less the exempt
+ * nodes WRITTEN since `since` that still have no embedding, less the exempt
  * ones and less those with a current terminal skip. The boot drain uses it as
- * is; the periodic sweep adds "never processed" on top.
+ * is; the periodic sweep adds `noExtractSinceWriteSql` on top.
+ *
+ * The window is on `updated_at`, not `created_at`. A content change nulls the
+ * embedding and fires a notify; when that notify is lost (the agent was down,
+ * e.g. the docs sync at web boot during a roll), an OLD node must still be
+ * picked up. On `created_at` it never was: dev, 2026-10-05, 365 documentation
+ * nodes created in July/August sat without a summary or an embedding.
  */
 export function unextractedNodeConds(ownerId: string, since: Date): SQL {
   return and(
     eq(nodes.ownerId, ownerId),
     ne(nodes.type, 'branch'),
-    gte(nodes.createdAt, since),
+    gte(nodes.updatedAt, since),
     isNull(nodes.embedding),
     not(extractExemptSql()),
     not(extractSkippedSql()),
   )!;
+}
+
+/**
+ * True on `nodes` when no extractor run has finished since the node's last
+ * write: the missed-event signature. The periodic sweep's extra clause.
+ *
+ * Loop-safe: every run (success, skip or failure) writes its trace's
+ * `finished_at` AFTER any write it made to the node, so once a run has
+ * processed the current version the node drops out, embedding or not. Only a
+ * new write (which normally fires its own notify) brings it back. The old
+ * clause, "no extractor_run at all", missed every node that had been
+ * extracted once and then changed.
+ */
+export function noExtractSinceWriteSql(): SQL {
+  return sql`NOT EXISTS (SELECT 1 FROM public.traces t WHERE t.subject_id = ${nodes.id}
+    AND t.kind = 'extractor_run'
+    AND coalesce(t.finished_at, t.created_at) >= ${nodes.updatedAt})`;
 }

@@ -272,12 +272,20 @@ export type BatchOutcome = { done: string[]; timedOut: string[] };
  */
 export async function runBatch(
   ids: string[],
-  opts: { timeoutMs: number; pollMs?: number; sleep?: (ms: number) => Promise<void> },
+  opts: {
+    timeoutMs: number;
+    pollMs?: number;
+    sleep?: (ms: number) => Promise<void>;
+    /** What to do to each node before its notify. Default: `clearForRescan`.
+     *  doc-reindex passes a no-op (its nodes have nothing stale to clear). */
+    prepare?: (id: string) => Promise<void>;
+  },
 ): Promise<BatchOutcome> {
   const sleep = opts.sleep ?? stdSleep;
+  const prepare = opts.prepare ?? clearForRescan;
   const started = new Date();
   for (const id of ids) {
-    await clearForRescan(id);
+    await prepare(id);
     await notifyNodeIngested(id);
   }
   const deadline = Date.now() + opts.timeoutMs;

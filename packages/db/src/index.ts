@@ -76,6 +76,7 @@ export {
   isExtractExempt,
   extractExemptSql,
   unextractedNodeConds,
+  noExtractSinceWriteSql,
   EXTRACT_SKIPPED_KEY,
   TERMINAL_EXTRACT_SKIPS,
   extractSkippedStamp,
