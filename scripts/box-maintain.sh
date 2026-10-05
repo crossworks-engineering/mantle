@@ -13,6 +13,9 @@
 #   - the box's own image (the one mantle_web runs), mantle_web's working dir,
 #     and mantle_web's network namespace (`--network container:mantle_web`),
 #     so it reaches Postgres and the providers exactly as the web tier does;
+#   - mantle_web's volumes READ-ONLY (`--volumes-from mantle_web:ro`), so a
+#     task can read file bytes from /data/files like the web tier (ocr-rescan
+#     counted every PDF as unreadable without it) but cannot write there;
 #   - mantle_web's env, handed over through a pipe (`--env-file /dev/fd/N`),
 #     never written to disk;
 #   - its own `--memory` (default 2g, no swap) and a Node heap cap at 75% of
@@ -209,6 +212,7 @@ exit \$rc"
 docker run -d --rm --init --name "$NAME" --label mantle.maint=1 \
   --memory "$MEM" --memory-swap "$MEM" \
   --network "container:$WEB" \
+  --volumes-from "$WEB:ro" \
   --env-file <(web_env) \
   -e ALLOWED_USER_ID="$OWNER" \
   -e NODE_OPTIONS="--max-old-space-size=$HEAP" \
