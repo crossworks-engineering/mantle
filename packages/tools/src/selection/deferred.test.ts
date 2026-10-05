@@ -27,12 +27,13 @@ const GROUPS = [
 ];
 
 describe('buildDeferredToolset', () => {
-  it('sends core tools in grant order, then tool_search and use_tool', () => {
-    const set = buildDeferredToolset(DEFS, GROUPS)!;
+  it('sends core tools in core-list order, then heartbeat tools, tool_search and use_tool', () => {
+    const set = buildDeferredToolset([def('calculate', 'Maths.'), ...DEFS], GROUPS)!;
     expect(set.sent.map((d) => d.function.name)).toEqual([
       'search_nodes',
-      'heartbeat_complete',
       'page_get',
+      'calculate',
+      'heartbeat_complete',
       TOOL_SEARCH_SLUG,
       USE_TOOL_SLUG,
     ]);

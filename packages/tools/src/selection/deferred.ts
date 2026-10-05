@@ -36,8 +36,10 @@ export const USE_TOOL_SLUG = 'use_tool';
 
 /** Granted tools that are always sent in full: the tools that carry most
  *  turns on the fleet (a 20-tool core covered 54 to 86% of turns). A tool is
- *  core only if the agent is granted it; the list never adds a grant. Order
- *  is the grant's order, not this list's, so the prefix stays byte-stable. */
+ *  core only if the agent is granted it; the list never adds a grant. The
+ *  core is sent in THIS list's order (search and read first), not the grant's:
+ *  on the bench a grant that put `calculate` first drew `calculate` calls.
+ *  A fixed order is also byte-stable, which the prompt cache needs. */
 export const CORE_TOOL_SLUGS: readonly string[] = [
   'search_chunks',
   'search_nodes',
@@ -195,7 +197,15 @@ export function buildDeferredToolset(
   defs: readonly DeferredToolDef[],
   groups: readonly GroupSource[],
 ): DeferredToolset | null {
-  const core = defs.filter((d) => isAlwaysFull(d.function.name));
+  const rank = (name: string) => {
+    const i = CORE_TOOL_SLUGS.indexOf(name);
+    return i < 0 ? CORE_TOOL_SLUGS.length : i;
+  };
+  // Core first in list order; heartbeat affordances after, in grant order
+  // (Array.prototype.sort is stable).
+  const core = defs
+    .filter((d) => isAlwaysFull(d.function.name))
+    .sort((a, b) => rank(a.function.name) - rank(b.function.name));
   const rest = defs.filter((d) => !isAlwaysFull(d.function.name));
   if (rest.length === 0) return null;
   const defBy = new Map(rest.map((d) => [d.function.name, d]));
