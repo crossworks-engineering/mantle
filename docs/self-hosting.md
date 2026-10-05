@@ -217,6 +217,11 @@ gate), or return to the full shape with `scripts/install.sh --no-core`.
 
 ### Sandboxes and the media sidecar
 
+Both can be switched on and off from the dashboard (**Services**, admins
+only) once the box runs an updater that supports it; off stops the service
+and keeps all its data. See [`services.md`](./services.md). The steps below
+are the same change by hand.
+
 **CLI sandboxes are on by default on a fresh full install** (off on a core
 box): the `sandboxes` profile adds the `sandboxd` service, and the installer
 generates `SANDBOXD_TOKEN`, sets `MANTLE_SANDBOXES_HOST_DIR` and pre-pulls the
@@ -226,9 +231,10 @@ sandbox base image. Nothing is installed on the host. Turn them off with
 
 **Video ingest and CAD drawing ingest are off until you enable the `media`
 profile.** It runs the `titanwest/mantle-media` sidecar (yt-dlp, ffmpeg and
-the DWG tools) behind `MEDIA_SIDECAR_TOKEN`; the installer sets neither. Add
-`media` to `COMPOSE_PROFILES` in `.env`, set the token
-(`openssl rand -hex 32`), then `docker compose --profile media up -d --wait`.
+the DWG tools) behind `MEDIA_SIDECAR_TOKEN`; the installer writes the token
+and leaves the profile off. Add `media` to `COMPOSE_PROFILES` in `.env` (and
+set the token with `openssl rand -hex 32` on a box installed before tokens
+were provisioned), then `docker compose --profile media up -d --wait`.
 The image exists from v0.232.34, so update first on an older box. Guide:
 [`video-ingest.md`](./video-ingest.md).
 

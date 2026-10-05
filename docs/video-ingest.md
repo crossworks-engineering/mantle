@@ -78,6 +78,11 @@ policy, both scoped to this one container:
    (`assertFetchableUrl`) before the sidecar sees it, and the sidecar's
    isolation bounds what a hostile page could reach.
 
+**From the dashboard:** an admin switches Media on or off in the **Services**
+card on the dashboard; the box's updater writes the token, adds the profile,
+pulls and starts only this container ([services.md](services.md)). Off stops
+it and keeps everything already ingested. By hand, the same change:
+
 Enable it per box — **after updating the stack to a release that ships the
 `mantle-media` image (v0.232.34 or later)**. Enabling the profile on an older
 tag makes `docker compose pull` look for an image tag that was never
@@ -90,7 +95,9 @@ COMPOSE_PROFILES=media            # or append to the existing list
 MEDIA_SIDECAR_TOKEN=<openssl rand -hex 32>
 ```
 
-Without the profile the tool refuses cleanly with "not enabled on this box".
+Without the profile the tool refuses cleanly with "not enabled on this box"
+and says where to switch it on; in-app agents do not get `video_ingest` at all
+while the service is off.
 With the profile but no token, the container comes up degraded — it serves
 `/healthz` with the reason and nothing else, so the dashboard pill shows it
 down instead of a crash loop hiding the misconfiguration. Dev:
