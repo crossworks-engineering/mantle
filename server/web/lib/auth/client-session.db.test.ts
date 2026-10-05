@@ -23,7 +23,9 @@
 import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { ClientReport, ClientReportAckResponse } from '@mantle/client-types';
 import { ensureTestAnchor } from '@mantle/db/test-support';
+import { sleep } from '@mantle/std';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -69,21 +71,33 @@ describe.skipIf(!URL)('a client login, end to end', () => {
     call('/api/client/shared/not-a-uuid', auth).then((r) => r.status);
 
   /** Acknowledge the report as it is now, then run `act`; again when an
-   *  item went to client in between (other test files share the anchor). */
+   *  item went to client in between. Other test files add client items to
+   *  the shared anchor at any time, and on a busy box the steps are slow, so
+   *  any of them can lose that race: acknowledge by the fingerprint (it
+   *  covers every item), act only once the ack says it covers them all, and
+   *  pause a little before the next try. */
   const acknowledged = async (act: () => Promise<Response>): Promise<Response> => {
-    for (let i = 0; ; i += 1) {
-      const report = await (await call('/api/access/client-report', { cookie: asAdmin() })).json();
-      const itemIds = (report.items as Array<{ id: string }>).map((it) => it.id);
+    const tries = 12;
+    for (let i = 1; ; i += 1) {
+      const report = await call('/api/access/client-report', { cookie: asAdmin() });
+      expect(report.status).toBe(200);
+      const { fingerprint } = (await report.json()) as ClientReport;
       const ack = await call('/api/access/client-report/ack', {
         method: 'POST',
         cookie: asAdmin(),
-        body: { itemIds },
+        body: { fingerprint },
       });
-      expect(ack.status).toBe(200);
-      const res = await act();
-      if (res.status !== 409 || i === 3) return res;
-      const body = (await res.clone().json()) as { reason?: string };
-      if (body.reason !== 'report-not-acknowledged') return res;
+      // 409 report-changed: an item went to client after the report was read.
+      expect([200, 409]).toContain(ack.status);
+      const covered =
+        ack.status === 200 && ((await ack.json()) as ClientReportAckResponse).acknowledged;
+      if (covered || i === tries) {
+        const res = await act();
+        if (res.status !== 409 || i === tries) return res;
+        const body = (await res.clone().json()) as { reason?: string };
+        if (body.reason !== 'report-not-acknowledged') return res;
+      }
+      await sleep(50 + Math.random() * 200);
     }
   };
   const addClient = async (name: string): Promise<string> => {
@@ -243,10 +257,12 @@ describe.skipIf(!URL)('a client login, end to end', () => {
     expect(off.status).toBe(200);
     expect(await probe({ cookie })).toBe(401);
     expect((await signIn(code, emailOf('ed'))).status).toBe(401);
-    const link = await call(`/api/team-admin/clients/${id}/signin-link`, {
-      method: 'POST',
-      cookie: asAdmin(),
-    });
+    // The report check runs before the client check, and other files add
+    // client items to the shared anchor at any time: acknowledge first, or
+    // a busy run answers 409 report-not-acknowledged instead of the 404.
+    const link = await acknowledged(() =>
+      call(`/api/team-admin/clients/${id}/signin-link`, { method: 'POST', cookie: asAdmin() }),
+    );
     expect(link.status).toBe(404);
     const on = await call(`/api/users/${id}`, {
       method: 'PATCH',
