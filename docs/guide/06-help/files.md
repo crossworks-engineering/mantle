@@ -5,55 +5,27 @@ toolGroups: [files, memory-core]
 
 ## Files
 
-A real folder tree of your documents, contracts, invoices, photos, manuals,
-spreadsheets, and everything in it is read into the brain.
+Files is a folder tree for your documents, scans, photos and spreadsheets. Everything in it is read into the brain unless you say otherwise.
 
-The tree is **mirrored to actual folders on disk** on the server. A file you
-upload here exists as a genuine file; a file dropped on disk turns up here.
-That matters more than it sounds: your documents aren't locked inside an app
-database, and anything you already have on that machine can be brought in by
-moving it, not by importing it.
-
-Folders are yours to organise. A folder can carry a description, which the
-assistant reads, so "invoices from suppliers, one PDF per month" tells it
-something a folder name can't.
+- Click **Upload**, or drag files in. Upload a whole folder with its sub-folders the same way.
+- Use **New** to make a folder or a markdown, text or JSON file.
+- Give a folder a description, for example "supplier invoices, one PDF per month". The assistant reads it.
+- Set a folder to index content, or name only if you want to store files without making them searchable.
+- Switch between details, thumbnail and two-pane views. Search from the box at the top.
 
 ## Assistant
 
 - "What's the warranty period in the compressor manual?"
-- "Find the invoice where we paid for the roof repair."
-- "Summarise the lease agreement in the contracts folder."
-- "Save this as a file under manuals/."
+- "Find the invoice for the roof repair."
+- "Summarise the lease in the contracts folder."
+- "Save this as a file under manuals."
 
-Ask about *content*, not filenames; the useful question is "what did we agree
-about penalties?", not "open contract-v3-final.pdf". Retrieval works on the text
-inside the documents, so a half-remembered phrase is usually enough to find the
-right one.
-
-Scanned documents and photographs work too: images and PDFs are read on the way
-in, so a photographed page of handwriting is searchable text afterwards.
-
-Deleting files is not something the assistant can do.
+Ask about what is inside a document, not its file name. The assistant cannot delete files.
 
 ## Technical
 
-Disk is the source of truth, and it's written **first**: the database row
-follows, so a file is never half-saved with a record pointing at nothing. A
-watcher notices external changes and re-reads them, which is what makes the
-round-trip work in both directions.
-
-On ingest each file is text-extracted according to type: PDFs and office
-documents through a document pipeline, images and scans through a vision model,
-plain text directly. Spreadsheets take a different route; they're imported as
-typed Tables, so a register arrives as queryable data rather than a wall of
-text.
-
-The extracted text is then treated like any other content: summarised, mined for
-facts and entities by a local model, chunked, embedded, and indexed. A large
-document becomes many passages, which is why the assistant can answer from one
-clause of a long contract instead of having to hold the whole thing.
-
-Large results don't get truncated on the way to the model. Past a size threshold
-a tool result is stored and handed over as a handle the assistant reads through
- (by page, by grep, or by semantic query) so a big file read stays useful
-without flooding the context window.
+- Files are real files on the server's disk under `MANTLE_FILES_ROOT`. The file is written first, then its record. A file dropped into that folder on disk shows up here.
+- Each file is read by type: PDFs and office documents as text, images and scans through a vision model. Spreadsheets also become Tables.
+- The text is summarised, mined for facts and entities, split into passages and embedded, so the assistant can answer from one clause of a long document.
+- A large tool result is handed to the assistant as a handle it reads in parts.
+- Tools: `file_list`, `file_get`, `file_read`, `file_create`, `file_rename`, `file_move`, `file_copy`, `folder_describe`, `file_set_indexing`, `folder_set_indexing`, `show_image` and other folder tools.

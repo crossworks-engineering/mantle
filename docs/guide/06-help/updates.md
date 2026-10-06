@@ -4,47 +4,37 @@ title: Updates
 
 ## Updates
 
-Checks whether a newer Mantle release exists and, if you ask it to, installs it.
+This screen checks for a newer Mantle release and installs it.
 
-The screen itself doesn't do the installing. It **detects**: comparing
-published releases against the build you're running, and it **requests**. A
-separate updater component pulls the new images and restarts the stack, then
-reports back. That separation is why the app can update itself without needing
-the ability to restart itself from inside.
+1. Take a backup first: [Backups and restore](../05-admin/02-backups.md).
+2. Press **Check now** under **Latest release**.
+3. If a release is newer than **This install**, press **Update to** the new
+   version and confirm with **Update now**.
+4. Wait. The screen shows each phase, then reloads onto the new version.
 
-An update replaces application code. Your database, files and configuration are
-untouched.
+Expect about a minute of downtime while the services restart. Work in progress,
+such as a long reply or an ingest, is interrupted; background work resumes on
+its own. The Jackdaw interface has its own release line and can be updated
+from its own section on this screen.
 
-## Before you change anything
+An update replaces the application. Your database, files and settings stay.
+Read the release notes when the version jumps by more than a patch.
 
-Take a backup first. Not because updates routinely break things, but because
-the cost of the habit is thirty seconds and the cost of skipping it once is
-whatever you'd lose.
+## Assistant
 
-Expect a short outage. The stack stops and starts, so anything mid-flight,
-a long assistant turn, an in-progress ingest, is interrupted. Background work
-resumes; a conversation in a browser tab needs a reload.
+The assistant cannot update the brain. Use this screen. You can ask about
+updating:
 
-Read the release notes when a version jumps more than a patch. Migrations run
-automatically on start, and the ones worth knowing about are called out there
-rather than here.
+- "How do I update Mantle?"
+- "What happens to my data during an update?"
 
 ## Technical
 
-Version detection compares the running build against published releases, so it
-reflects what actually started, not what a configuration file claims. A stack
-that failed to come up on a new image and is still serving the old one will say
-so.
-
-The request is passed to the updater over a shared signal volume rather than by
-giving the app permission to drive the container runtime. The app can ask for an
-update; it cannot execute arbitrary container operations, which keeps that
-capability outside the process most exposed to the outside world.
-
-Migrations run at startup, each in its own transaction, replaying from the first
-to the newest. A failed migration stops the sequence with the earlier ones
-committed, so a failure leaves a diagnosable state rather than a half-applied
-one.
-
-If an update leaves something behaving oddly, the Config screen is the next
-stop: it shows whether the release's new defaults actually reached your brain.
+The screen does not install anything itself. It asks a separate updater
+container, which pulls the new images and restarts the stack, then reports
+back. The app never gets control of the container runtime. Database
+migrations run automatically before the app starts. If the screen says the
+updater is not available, set `MANTLE_STACK_DIR` in `.env`, or update from the
+stack directory with `docker compose pull && docker compose up -d --wait`.
+After the update, **Last update log** shows what happened. More detail:
+[Update Mantle](../05-admin/01-update.md).

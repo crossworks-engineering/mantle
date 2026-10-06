@@ -204,9 +204,9 @@ brings up both stacks: the brain and the owner UI ([Jackdaw](https://github.com/
 a separate container). `MANTLE_YES=1` skips the questions. Open the
 address it prints, create your account, and the onboarding wizard takes
 it from there: model keys, your assistant's personality, who you are.
-Updating is one click in Settings → Updates. The one install page
-(prompts and flags, sandboxes, media, requirements, manual path):
-**[docs/guide/01-installation.md](./docs/guide/01-installation.md)**;
+Updating is one click in Settings → Updates. The install pages
+(prompts and flags, sandboxes, media, requirements, manual path) start at
+**[docs/guide/01-install/01-choose.md](./docs/guide/01-install/01-choose.md)**;
 updating, pinning and rollback: **[docs/self-hosting.md](./docs/self-hosting.md)**
 
 Letting an AI agent install it for you? Point it at the machine-oriented

@@ -4,109 +4,44 @@ title: Services
 
 ## Services
 
-Some parts of this box are optional, and you switch them on and off here. The
-screen gives each one a line on what it enables and a switch. The details are
-below. Helpers show only on a small core box; on a full box they always run.
+This screen switches the optional parts of the box on and off. Only admins see
+it.
 
-### Sandboxes
+| Service | What it does | Download | Memory |
+| --- | --- | --- | --- |
+| **Sandboxes** | Containers where the coder and app agents run code and build apps | about 430 MB | 512 MB, plus up to 1 GB per running sandbox |
+| **Media** | Transcripts from video and audio; reads CAD drawings (DWF, DWG, DXF) | about 300 MB | up to 1 GB (3 GB for large DWF sets) |
+| **Local embedder** | Makes search vectors on this box, so indexed text never leaves it | about 3.9 GB | up to 2 GB |
+| **Helpers** | Reads rare file types (ODT, PPTX, DOC, RTF) and makes PDF exports | about 1.2 GB | up to 3 GB |
 
-Isolated workspaces where the coder and app agents run code, build apps and
-test packages. Each sandbox is its own Linux container with no route to your
-data.
+**Helpers** show only on a small core box; a full box always runs them.
 
-- **Used by:** the coder agent and the sandbox tools, and services or MCP
-  servers an agent runs inside a sandbox.
-- **While it is off:** agents cannot create or use sandboxes. Running sandboxes
-  stop, and services published from a sandbox stop answering. Their tools drop
-  out of each agent's list and come back when you switch it on.
-- **Kept while it is off:** every sandbox, its files and the apps and services
-  in it.
-- **Cost:** about 430 MB to download. 512 MB of memory, plus up to 1 GB for
-  each running sandbox (three at a time).
+Switching a service **on** downloads it the first time and starts it, in one
+to three minutes. Switching it **off** stops it and keeps everything, including
+your sandboxes and what was already ingested. Mini apps keep running either
+way.
 
-Mini apps do not need sandboxes. They keep running whichever way this switch
-is set.
+Turning off the local embedder stops new content being indexed on a brain that
+embeds with it. The confirm dialog warns you when that applies.
 
-### Media
+On a box with 6 GB of memory or less, or the core shape, the screen warns you
+first: a busy service can slow the brain or make it restart. A switch needs at
+least 4 GB of free disk. One switch runs at a time, and never during an
+update. If a switch fails, the screen says why, can show the log, and puts the
+settings back.
 
-Transcripts from video and audio (a web link or an uploaded file), and CAD
-drawings: DWF, DWG and DXF.
+## Assistant
 
-- **Used by:** the video ingest tool, and file ingest for CAD drawings.
-- **While it is off:** video and audio get no transcript. DWG files are not
-  read, and DWF files show only their small preview pictures.
-- **Kept while it is off:** everything already ingested. Media stores nothing
-  of its own.
-- **Cost:** about 300 MB to download. Up to 1 GB of memory; 3 GB is advised for
-  large DWF drawing sets.
+Agents have no tool for this screen, so an agent cannot give itself a
+sandbox. The assistant can explain the services:
 
-Media runs a downloader that updates itself every day and fetches pages from
-the open web. It holds no keys and cannot reach your data.
-
-### Local embedder
-
-Turns text into search vectors on this box, so the text you index never leaves
-it. It is the bundled EmbeddingGemma model.
-
-- **Used by:** search and ingest, when Settings > Embedding uses the local
-  provider on the bundled address. A brain that embeds online does not use it.
-- **While it is off:** a brain that embeds with it cannot index new content.
-  New files, notes and pages are not searchable until you switch it on again.
-  The confirm dialog warns you when this brain uses it.
-- **Kept while it is off:** the downloaded model and everything already
-  indexed.
-- **Cost:** about 3.9 GB to download the first time (the server and the
-  model). Up to 2 GB of memory.
-
-It runs on the processor, not a graphics card. It does not fit a small core
-box well; use online embedding there.
-
-### Helpers
-
-Two small helpers for a core box. Tika reads rare file types, and a headless
-browser makes PDF exports.
-
-- **Used by:** file ingest for formats the brain cannot read itself (ODT,
-  PPTX, DOC, RTF and others), PDF export, and drawing pictures in exports.
-- **While it is off:** those rare file types are not read, and PDF export
-  stops. PDF, Word, text and Markdown files are still read.
-- **Kept while it is off:** everything already ingested. The helpers store
-  nothing.
-- **Cost:** about 1.2 GB to download. Up to 3 GB of memory (1.5 GB each).
-
-### Switching
-
-Switching a service **on** downloads it (the first time only) and starts it.
-That takes one to three minutes. The rest of the brain keeps running.
-
-Switching a service **off** stops it and **keeps everything**. Switch it on
-again and it all comes back.
-
-Only admins see this screen. One switch runs at a time, and not during an
-update.
-
-## Before you change anything
-
-On a small box (about 4 GB of memory, or the small core setup) the screen
-warns you first. The brain and its workers share that memory, so a busy service
-can slow them down or make them restart. If that happens, switch the service
-off again. The warning never blocks you; you decide.
-
-The box also needs at least 4 GB of free disk to switch a service on. With less
-than that, the switch is refused and nothing changes.
-
-If a switch fails, the screen says why and can show the log. The box puts its
-settings back as they were.
+- "What stops working if I switch Media off?"
+- "What does the Helpers service do?"
 
 ## Technical
 
-The switch asks the box's updater to change the service's compose profile and
-start or stop that one container. It backs up `.env` first and puts it back if
-the start fails. A box can switch services one update after it gets this
-screen, because the updater learns the new request then. Each switch writes a
-`service.toggle` row to the audit log. Agents have no tool for it, so an agent
-cannot give itself a sandbox. Each service name is also its compose profile:
-`sandboxes`, `media`, `local-embedder` and `helpers`. The local embedder also
-runs its one-shot model download when it comes on. The helpers have a profile
-only on the core shape, so the screen and the updater offer them only there.
-The full story is in the Services documentation (`docs/services.md`).
+The switch asks the box's updater to turn that service's compose profile on or
+off and start or stop its container. The profiles are `sandboxes`, `media`,
+`local-embedder` and `helpers`. The updater backs up `.env` first and restores
+it if the start fails. Each switch writes a `service.toggle` row to the audit
+log. More detail: [Optional services](../05-admin/04-services.md).

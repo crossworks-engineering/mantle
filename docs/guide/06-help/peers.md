@@ -5,42 +5,42 @@ toolGroups: [federation]
 
 ## Peers
 
-Other people's Mantles, and exactly what each of them may read from yours.
+Peers are other people's Mantles, and this screen sets what each one may read
+from yours. Each brain stays separate; a peer can only ask yours questions
+about what you shared with it. A new peer sees nothing.
 
-This is **not** multi-user access to your brain. Each Mantle stays a separate,
-sovereign brain with one owner; peering lets two of them ask each other
-questions at the border. Your partner's Mantle can ask yours "do you hold the
-passports?" and yours answers only from what you've explicitly shared with that
-peer.
+To connect one:
 
-Sharing is per peer and always explicit. A new peer starts able to see nothing.
+1. Under **Connect a Mantle**, enter a **Display name** and the peer's
+   **Base URL**, then press **Add peer**.
+2. Copy **Your token for them**. It is shown once. Send it to the other owner.
+3. Paste the token they give you to finish pairing.
+
+Then choose what they see. **Share whole categories** shares every item of a
+type (Pages, Notes, Files, Contacts, Tables, Drawings, Events, Tasks),
+including ones you add later. Below that you can share single items.
+
+**MCP access** is separate: with **Acts as** set, the peer can use its token on
+your MCP endpoint with that login's rights. **Write** stays off unless you turn
+it on.
 
 ## Assistant
 
 - "Does her Mantle have the insurance renewal date?"
-- "Ask my accountant's brain for the last filing."
+- "Ask the accountant's brain for last year's filing."
 
-Answers come back attributed to the peer they came from, and they reflect that
-peer's data as it is now rather than a copy you took earlier. If a peer removes
-a grant, the next question returns nothing; there's no local cache to go stale.
+Answers come from the peer's data as it is now, and say which peer they came
+from. If the peer removes a share, the next question returns nothing.
 
 ## Technical
 
-Every relationship has **two tokens, one per direction**. The token they issued
-you is replayed when you call them; the one you issued them is what they present
-to you. Both are sealed with the brain's master key, bound to their row, and
-either side can rotate independently, so revoking your access to them and their
-access to you are genuinely separate acts.
+Each peer has two tokens, one per direction. The token they gave you is sealed
+with your master key; for the token you gave them, only a hash is kept.
+Removing a peer stops both tokens and drops every share. A question inside
+what you shared is answered without asking you, so the share list is the
+whole boundary. Every request from a peer is written as a `federation_request`
+trace.
 
-Grants come in two shapes. A **node** grant shares one specific thing. A
-**category** grant is a standing subscription resolved at query time, enable
-Pages for a peer and every page becomes readable, including ones you create
-later. The second is powerful and worth being deliberate about, because its
-scope grows without you revisiting this screen.
-
-Within a granted scope, queries are auto-answered rather than prompting you.
-That's what makes federation useful in practice, and it's why the grant list is
-the whole security boundary. Every cross-Mantle read is written to the trace log,
-so what a peer actually asked for is auditable after the fact.
-
-Deleting a peer revokes both directions at once.
+The assistant uses `peer_list`, `peer_query`, `peer_search_chunks`,
+`peer_node_get` and `peer_tools`. More detail: [Sharing and
+federation](../04-concepts/04-sharing-and-federation.md).

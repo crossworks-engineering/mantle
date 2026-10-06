@@ -5,42 +5,27 @@ toolGroups: [files]
 
 ## Microsoft
 
-Connects Microsoft 365 (SharePoint, OneDrive and Outlook) so documents kept
-there are reachable without downloading them by hand.
+Microsoft connects Microsoft 365 accounts, so OneDrive and SharePoint files and Outlook mail come into the brain without manual downloads.
 
-This is the one connection with a genuine prerequisite: it needs an **Azure app
-registration** of your own. Mantle doesn't ship a shared client id, because a
-shared one would mean every install's access flowed through somebody else's
-application. You register an app, paste its details here, and then connect
-accounts against it.
+It needs an app registration of your own in Azure AD. Mantle ships no shared one.
 
-Once connected, each account exposes its drives, and you choose which to sync.
+1. Under **Microsoft app (Azure AD)**, enter the **Application (client) ID**, **Client secret** and **Directory (tenant)**. Add the **Redirect URI** shown here to your app. Click **Save Microsoft app**.
+2. Click **Connect** and sign in to Microsoft.
+3. Click **Refresh drives**, then turn on sync for the drives you want. Use **Choose content** to pick folders.
+4. Turn on **Outlook mail** to bring in mail. Only mail from your contacts is taken in.
+
+**Disconnect** removes an account.
 
 ## Assistant
 
-- "Find the signed contract from the SharePoint drive."
+- "Find the signed contract on the SharePoint drive."
 - "What's in the tender folder?"
 
-Documents pulled in become ordinary files in your brain, searchable, citable,
-readable by the assistant like anything else you uploaded. The point of the
-connection is that they arrive without a manual download step, not that they
-behave differently once here.
+Synced files are ordinary files in the brain, so ask about them like any upload.
 
 ## Technical
 
-Authentication is OAuth, so Mantle holds a refresh token rather than your
-password, and access can be revoked from the Microsoft side independently of
-anything here. The token is sealed with the brain's master key like every other
-credential.
-
-The OAuth start and callback are plain server routes that redirect to Microsoft
-, which is why this screen briefly leaves the app during connection, and why the
-result comes back as a banner rather than an inline response.
-
-Drives are selected per account rather than per connection. A user with access
-to a dozen SharePoint sites doesn't index a dozen sites by default; nothing syncs
-until you pick it. Files then flow through the same ingest pipeline as an
-upload: extracted, summarised, embedded, indexed.
-
-Mail through this connection is subject to the same contacts allowlist as IMAP.
-Connecting Outlook doesn't widen what gets stored.
+- Sign-in uses OAuth. Mantle keeps an encrypted refresh token, never your password. You can revoke access from Microsoft's side.
+- Nothing syncs until you turn a drive on. Synced files go through the same reading and indexing as an upload, and their bytes are kept in the object store.
+- Outlook mail passes the same contacts gate as IMAP mail.
+- The app details can also come from environment variables. **Reset to environment** returns to them.

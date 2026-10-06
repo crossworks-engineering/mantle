@@ -4,50 +4,35 @@ title: Studio
 
 ## Studio
 
-The overview editor for the whole agent graph, who delegates to whom, which
-skills hang off which agent, which tool groups grant what, and how it all
-composes into the prompt a model actually receives.
+Studio shows how one agent is wired: its skills, the agents it hands work to,
+and the exact prompt its model receives. Use it when an agent behaves oddly and
+no single settings screen explains why.
 
-The settings screens let you dive into one thing and edit it deeply. Studio
-lets you stand back and see the **wiring**. It's the same underlying rows, read
-the other way round.
+- Pick an agent in the header selector. The canvas shows its skills and
+  delegates; click a delegate to move to it. **Health** and **Workers** are
+  views in the same selector.
+- The inspector lists the agent's model, role, tools and delegates, and the
+  **Composed prompt**: its own prompt plus each attached skill, in order.
+- Edit the prompt or a skill's text in place. Each save is a new version;
+  **History** shows a diff and reverts in one click.
+- Change the model, settings, skills and delegates. **Reset to default** puts
+  a built-in agent back to how it shipped.
+- The sandbox runs a test conversation against the composed prompt. It saves
+  nothing and runs no tools, so you can try a prompt change safely.
 
-Its governing rule is worth stating outright: **no hidden prompts.** Wherever an
-instruction is given as human-written prose, it must be visible here, including
-its composition. The composed-prompt preview shows the assembled text, the
-agent's own prompt plus each attached skill, in order, which is the only place
-in the system that answers "what did the model literally read?"
+## Assistant
 
-## When to use this
+The assistant has no tools for Studio. Ask it how Studio works, then make the
+change here:
 
-Come here when behaviour is wrong and you can't see why from any single screen.
-The usual answer is in the composition rather than in any one part: a skill
-teaching something that contradicts the prompt, a delegate that was never wired,
-a group granted to the wrong agent.
-
-Use the sandbox before saving. It runs a real multi-turn conversation against
-the composed prompt and **persists nothing**: no messages, no memory, no
-extraction. It's the way to find out whether a prompt edit helped without
-putting the result into your brain.
-
-Prompt edits are versioned with a history, a diff and a revert. Edit freely;
-going back is one click.
+- "How is an agent's composed prompt put together?"
+- "What does Reset to default change on an agent?"
 
 ## Technical
 
-The canvas is drawn from the live database rows, not from the manifest, so it
-shows your brain as it is, including everything you've changed. The manifest is
-the factory default, and the integrity check is the linter that lights each node
-and edge against it.
-
-Tool groups appear as their own nodes with grant edges into agents, which makes
-the capability question visual: every path from a tool to an agent is a drawn
-line. Skill nodes read as teaching and have no such edges, because skills carry
-no tools.
-
-Structure editing here writes the same rows the settings screens write, model,
-parameters, attached skills, delegates, with a reset-to-default that pulls the
-manifest's version of that one item.
-
-Prompt versions are stored per agent, so history survives model changes,
-re-grants and anything else you do around them.
+The canvas is drawn from the live database rows, not from the shipped
+defaults, so it shows your brain as it is now. The **Health** view runs the
+config-integrity checks against the system manifest and flags what differs.
+Studio writes the same agent rows as Settings > Agents. Text versions are kept
+in `prompt_versions`, one history per agent prompt or skill, so the history
+survives model changes and regrants.

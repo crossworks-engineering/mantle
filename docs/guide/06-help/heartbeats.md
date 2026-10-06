@@ -4,47 +4,26 @@ title: Heartbeats
 
 ## Heartbeats
 
-How the assistant acts **without being asked**. A heartbeat is a standing
-instruction with a schedule, a memory, and a stop condition.
+A heartbeat makes the assistant act without being asked. It is a standing job with a schedule, a memory and a stop condition.
 
-The memory is the part that makes it more than a cron job. A heartbeat carries
-state across firings, so "get to know the user" can ask one question today,
-remember the answer, and ask a different one next week, rather than repeating
-itself forever. It stops when its own goal is met, not when a counter runs out.
+1. Click **New** and give it a **Name**.
+2. Pick the **Agent** (whose voice) and the **Skill** (what to do).
+3. Set the schedule: every so many minutes, once at a set time, or manual only.
+4. Choose the surface, where the reply goes: Telegram or the web.
+5. Set the gates, when it may fire. New heartbeats start with sensible defaults: **Min idle** 15 minutes, quiet hours 22:00 to 07:00, **Cooldown** 30 minutes.
+6. Save.
 
-Each heartbeat names an agent (whose voice), a skill (what to do), a schedule
-(when) and a surface (where the message lands, a chat, or the web inbox).
+Use **Fire** to run it now, **Pause** or **Resume** to stop and start it, and the fire history link to see each attempt.
 
-## Before you change anything
+## Assistant
 
-The gates matter more than the schedule. **Quiet hours** stop it messaging you
-at night. **Minimum idle** skips a firing if you've just been talking anyway.
-**Cooldown** sets the floor between two firings of this particular heartbeat.
-All three are per-heartbeat and default to nothing; a null gate means no check
-of that kind, so a heartbeat with no gates configured will fire exactly on
-schedule whatever else is happening.
-
-There are no system-wide defaults. If you want quiet hours, you set them on each
-heartbeat that should respect them.
-
-A firing costs a model call whether or not it produces a message. A frequent
-heartbeat on an expensive agent is a real line on the spend graph.
+The assistant does not create heartbeats. Set them up here. While a heartbeat runs, its agent can save state, snooze or mark the job complete.
 
 ## Technical
 
-Every fire attempt is recorded, including the ones that were gated and never
-ran, so "why didn't it message me?" has an answer that distinguishes "the
-schedule didn't come up", "quiet hours blocked it" and "it ran and decided not
-to say anything".
-
-The fire count only advances on successful runs, while the last-fired timestamp
-updates on every attempt including errors. That pairing is what lets a
-max-fires limit mean "do this five times" rather than "try this five times".
-
-Agent and skill are resolved by slug at fire time, not stored as ids. Rename or
-replace either and the heartbeat follows the new one; delete it and the firing
-soft-fails and is logged rather than taking the scheduler down.
-
-The control tools a heartbeat skill uses to mark itself complete are granted by
-the fire path itself, not through a tool group, which is why you won't find
-them in a bundle on the tool-groups screen.
+- A heartbeat carries state between firings, so it can ask a different question each time and stop when its goal is met.
+- Every attempt is recorded, including ones a gate skipped. The history shows whether a gate such as quiet hours blocked it, or it ran and chose not to message.
+- The fire count only goes up on a completed run. **Max fires** counts completed runs.
+- Agent and skill are looked up by slug at fire time. If either is deleted, the heartbeat pauses itself until you fix it.
+- A run that passes the gates costs a model call even if it sends nothing.
+- Its control tools (`heartbeat_complete`, `heartbeat_snooze`, `heartbeat_update_state` and others) come with the run itself, not from a tool group.

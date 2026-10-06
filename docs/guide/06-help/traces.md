@@ -4,48 +4,41 @@ title: Traces
 
 ## Traces
 
-Every turn the system has taken, step by step; what was asked, which tools ran
-with what arguments, what came back, how long it took and what it cost.
+A trace is the full record of one piece of work: what was asked, which tools
+ran with which arguments, what came back, how long it took and what it cost.
+Open one when the assistant does something you did not expect.
 
-A trace is the whole story of one turn rather than a log line from it. When the
-assistant does something surprising, this is the only place that shows the
-actual sequence: the prompt, the tool calls in order, each result as the model
-received it, and the reply that followed.
+Filter the list by:
 
-Filters cover kind, status, time window, and sorting by cost or duration,
-which makes this the practical way to find your expensive turns as well as your
-broken ones.
+- **Kind**: Responder, Heartbeat, Extractor, Summarizer, Reflector, Ingest,
+  Photo, Federation or Run item.
+- **Status**: Success, Error, Running or Skipped.
+- **Time**: the last 1h, 6h, 24h, 7d or 30d.
+- **Sort**: Newest, Oldest, Costliest, Cheapest, Slowest or Fastest.
 
-## When to use this
+To find out why the assistant did something, read the tool calls in order. To
+find out why something cost a lot, sort by Costliest. Sort by Slowest to find
+slow tools.
 
-Two questions bring people here. *Why did it do that?*, read the tool calls in
-order and the answer is almost always visible, usually a tool returning
-something other than what its name implies. And *why did that cost so much?*,
-sort by cost and the outliers are typically one turn that pulled far more
-context than it needed.
+Other screens link here by trace id, for example a card in Pending approvals,
+so you can follow one action back to the turn that caused it.
 
-Sorting by duration finds a different problem: slow tools rather than expensive
-models.
+## Assistant
 
-Trace ids appear on other screens (a pending approval carries one) so you can
-follow a single action back into the full turn that produced it.
+The assistant cannot read traces. Open a trace yourself, or ask about how
+tracing works:
+
+- "What does a Skipped extractor trace mean?"
+- "How is a trace's cost worked out?"
 
 ## Technical
 
-Tracing wraps the tool dispatcher and the model calls, so a trace is produced by
-the same code path that does the work rather than by a parallel logging layer.
-There's no configuration to enable it and no sampling to miss the turn you care
-about.
+Traces and their steps are stored in the `traces` and `trace_steps` tables.
+Tracing wraps the tool calls and model calls themselves, so nothing needs
+switching on and no turn is sampled out. Each model call's cost comes from the
+provider's reported usage, or from a price table when the provider reports
+none, and adds up to the trace total.
 
-Costs are computed from the provider's reported token usage at the model's
-price, per call, and rolled up, so a trace's cost is the sum of its real calls
-rather than an estimate. That's what makes the debug spend figures reconcilable
-against a provider invoice.
-
-Tool arguments and results are stored as they were passed, which is what lets
-you see the exact input a model produced. It also means a trace can contain
-content from your brain, so treat the trace log with the same care as the data
-it touched.
-
-Federated reads and team turns are traced too, under their own kinds, a peer's
-query and a team member's question are both fully visible here.
+Tool arguments and results are stored as they were passed (a secret's value is
+hidden), so a trace can hold content from your brain. Treat the trace log with the same care as your data.
+Requests from peers are traced too, as the Federation kind.

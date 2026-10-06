@@ -25,6 +25,10 @@ data
 README.md
 *.dump
 
+# The public docs site (docs.mantle-ai.tech) builds and deploys on its own;
+# the image only needs docs/ itself.
+docs-site
+
 # Generated at image build (pnpm build) — never ship a dev checkout copy
 server/web/public/share-runtime/
 server/web/public/app-runtime/

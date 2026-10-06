@@ -38,7 +38,7 @@ keeps its own config block at the top of `main.ts`.
 The variables that decide what a box *is* are written into `.env` by
 `scripts/install.sh` and read by compose, the updater sidecar and the sanity
 check. The canonical explanation of each is the
-[install page](./guide/01-installation.md); this is the checklist for a
+[install options page](./guide/01-install/05-options.md); this is the checklist for a
 hand-written `.env`:
 
 | Variable | Set by | What it decides |

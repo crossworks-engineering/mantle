@@ -5,35 +5,36 @@ toolGroups: [secrets]
 
 ## Secrets
 
-An encrypted vault for passwords, codes, licence keys and account numbers,
-the things you need to look up occasionally and shouldn't keep in a note.
+Secrets is an encrypted vault for passwords, PINs, licence keys, card details
+and other values you should not keep in a note.
 
-Each secret has a name and description you can search, and a value that stays
-sealed. The description is the part that makes it findable: "the gate remote's
-pairing code" is worth writing even though the code itself is hidden.
+1. Press **New secret**.
+2. Give it a **Title**, a **Kind** (password, token, server, card, note or
+   other), and optional **Tags** and a **Description**.
+3. Add the values under **Fields (encrypted)**, each with a label such as
+   "username", and an optional **Note (encrypted)**.
+4. Press **Save secret**.
+
+Open a secret and press **Reveal** to see its values. Write a good description:
+it is what makes a secret findable, because the values are never searched.
 
 ## Assistant
 
-- "What's the wifi password for the office?"
-- "Save this as a secret: alarm panel code, 4417."
-- "Do I have anything saved for the insurance portal?"
+- "Save this as a secret: alarm panel PIN, 4417."
+- "Do I have a secret saved for the insurance portal?"
 
-The assistant can search names and descriptions and tell you a secret *exists*,
-but it never sees the value, so it can point you at the right entry and cannot
-read it out. That is deliberate, and it is the reason secrets are safe to keep
-in a system that talks to language models.
+The assistant can save a one-value secret and can find a secret by its title,
+description and tags. It cannot read the value back to you; open the secret
+here for that. Use this screen for secrets with several fields.
 
 ## Technical
 
-Values are sealed with AES-256-GCM using the brain's master key, with the row id
-as additional authenticated data, so a value cannot be moved between rows, and
-a wrong or missing `MANTLE_MASTER_KEY` fails loudly rather than returning
-plausible rubbish.
+Values are sealed with AES-256-GCM under the brain's master key
+(`MANTLE_MASTER_KEY`), bound to their row so they cannot be moved between rows.
+Only the title, description and tags are indexed for search; sealed values are
+left out of extraction, embedding and search. A value the assistant saves with
+`secret_create` is hidden in trace logs.
 
-Only the name, description and tags are indexed into the brain; the sealed value
-is excluded from extraction, embedding and search. That is why the assistant can
-reason about which secret you want without ever holding the secret.
-
-The practical consequence: restoring a brain to another machine without carrying
-the same master key leaves every secret undecryptable. The data is intact, but
-unreadable; the key is not stored alongside it.
+Restore a brain without the same master key and every secret stays sealed and
+unreadable. Keep a safe copy of the key; see [Backups and
+restore](../05-admin/02-backups.md).

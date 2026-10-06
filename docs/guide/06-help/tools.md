@@ -5,51 +5,42 @@ toolGroups: [toolsmith]
 
 ## Tools
 
-The registry of atomic capabilities. Every single thing any agent can do is a
-row here, reading a note, querying a table, sending mail, calling an external
-API.
+This is the list of every action an agent can take: reading a note, querying a
+table, sending mail, calling an outside API. A tool here is granted to nobody.
+Agents get tools only through [tool groups](tool-groups.md).
 
-A tool on this screen is **not granted to anyone**. This is the catalogue, not
-the permission system: agents receive capability through tool groups, and a tool
-nobody has bundled into a group is inert no matter what its row says.
+Two switches matter on each tool:
 
-Two switches on a row matter. **Enabled** takes a tool out of circulation
-everywhere at once, the emergency brake. **Requires confirmation** routes every
-call through the pending-approvals queue, so the tool still works but never runs
-unseen.
+- **Enabled**: off takes the tool away from every agent at once.
+- **Requires operator confirm**: every call waits in [Pending
+  approvals](pending.md) until you approve it.
+
+**New** adds an HTTP tool (a request template) or a shell tool (a command
+template). Built-in, recipe and connector tools are read-only here apart from
+those two switches.
+
+Two policy switches sit on the same screen. **Require my approval for
+agent-built tools** holds each call of a tool an agent wrote. **Approve email &
+web during unattended heartbeats** holds sends and web fetches when a
+heartbeat fires while you are away.
 
 ## Assistant
 
-- "What tools can you actually use right now?"
 - "Build me a tool that calls the weather API."
 - "Test the invoicing tool with order 4471."
+- "Which tools are in the email group?"
 
-Authoring new HTTP tools is real work the toolsmith specialist does: it reads
-the API's documentation, writes the request template, tests it against the live
-endpoint, and can put it in a group. What it hands back is a capability that
-didn't exist before.
-
-Built-in tools can't be rewritten this way, only their enabled and confirmation
-flags are editable, and shell tools are off-limits to agents entirely.
+These requests go to the Toolsmith specialist. It reads the API's
+documentation, writes the request template, tests it against the live API and
+can put the tool in a group. Agents can author HTTP tools only; shell tools are
+yours alone.
 
 ## Technical
 
-Three kinds share the registry. **Builtins** are compiled into the app.
-**HTTP** tools are data: a URL, method, header/query/body templates with
-placeholder substitution, stored on the row. **Shell** tools run commands and
-are deliberately not agent-editable.
-
-An HTTP tool's credentials are never stored on the tool. The templates carry a
-placeholder that resolves against the sealed key vault at call time, so the tool
-definition is safe to read, copy and share while the secret stays sealed. That
-separation is why an agent can be trusted to author a tool at all.
-
-The confirmation flag is enforced in the tool loop, upstream of dispatch: a
-gated tool writes a pending row and the turn continues without a result. There's
-no path where an agent reasons its way past it, because the check happens before
-the code that would run the tool.
-
-Slug squatting is blocked, an agent cannot mint a tool whose name shadows a
-builtin, which would otherwise be a way to intercept calls meant for the real
-one. And an approval requirement set by you outranks the agent's own preference
-when it creates a tool.
+Tool kinds are builtin, http, shell, recipe (a chain of other tools) and mcp
+(mirrored from a connector). An HTTP tool stores no credentials: its templates
+hold a `{{secret:service/label}}` reference that is filled from the encrypted
+key vault at call time, so the tool can be read and shared while the key stays
+sealed. The confirm check runs in the tool loop before the tool
+executes, so no agent can talk its way past it. The Toolsmith uses
+`api_tool_create`, `api_tool_update`, `api_tool_test` and related tools.

@@ -1,0 +1,133 @@
+/*
+ * The Mantle finish for Starlight: the instrument front panel from
+ * mantle-site (DESIGN.md). Two finishes only: black anodised by night
+ * (Starlight's default :root) and painted instrument grey by day.
+ *
+ * Accents mean one thing each. Blue-grey is a link, amber is state
+ * (current page, focus, selection), phosphor lives only in code blocks.
+ */
+
+:root {
+  /* Night: black anodised. */
+  --sl-color-accent-low: #1f2a36;
+  --sl-color-accent: #44698d;
+  --sl-color-accent-high: #8faacb;
+  --sl-color-white: #fde7bc;
+  --sl-color-gray-1: #f0dcb4;
+  --sl-color-gray-2: #c4ae85;
+  --sl-color-gray-3: #9b8a69;
+  --sl-color-gray-4: #625d52;
+  --sl-color-gray-5: #34322d;
+  --sl-color-gray-6: #23221e;
+  --sl-color-black: #1a1917;
+
+  --mantle-lamp: #eb9f13;
+  --mantle-keyline: #625d52;
+  --mantle-panel-hi: #292824;
+  --mantle-panel-lo: #0c0c0b;
+
+  --sl-font: 'Archivo Variable', Archivo, system-ui, sans-serif;
+  --sl-font-mono: 'Fragment Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --mantle-font-silk: 'Michroma', 'Archivo Variable', sans-serif;
+}
+
+:root[data-theme='light'] {
+  /* Day: painted instrument grey. */
+  --sl-color-accent-low: #c9d4df;
+  --sl-color-accent: #44698d;
+  --sl-color-accent-high: #304c67;
+  --sl-color-white: #1c1d1b;
+  --sl-color-gray-1: #2b2c29;
+  --sl-color-gray-2: #40423e;
+  --sl-color-gray-3: #5c5e59;
+  --sl-color-gray-4: #82847f;
+  --sl-color-gray-5: #c0c2be;
+  --sl-color-gray-6: #dadcd8;
+  --sl-color-gray-7: #e1e3df;
+  --sl-color-black: #cfd1cd;
+
+  --mantle-keyline: #82847f;
+  --mantle-panel-hi: #e1e3df;
+  --mantle-panel-lo: #a9aba7;
+}
+
+/* Reading text: Archivo at full width. */
+body {
+  font-variation-settings: 'wdth' 100;
+}
+
+/* The page title: condensed poster lettering, Archivo at width 62. */
+.content-panel h1#_top {
+  font-weight: 800;
+  font-variation-settings: 'wdth' 62;
+  text-transform: uppercase;
+  letter-spacing: -0.005em;
+  line-height: 0.95;
+  font-size: clamp(2.2rem, 5vw, 3.2rem);
+}
+
+.sl-markdown-content :is(h2, h3, h4) {
+  font-weight: 700;
+  font-variation-settings: 'wdth' 85;
+}
+
+/* Sidebar group names are silkscreen labels. */
+.sidebar-content summary .group-label,
+.sidebar-content .large {
+  font-family: var(--mantle-font-silk);
+  font-size: 0.6875rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 400;
+}
+
+/* The current page: amber means "you are here". */
+.sidebar-content a[aria-current='page'] {
+  background: transparent;
+  color: var(--sl-color-white);
+  font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--mantle-lamp);
+  border-radius: 0;
+}
+
+/* Links in prose: blue-grey, keyline underline that turns amber on hover. */
+.sl-markdown-content a:not(:where(.not-content *)) {
+  color: var(--sl-color-text-accent);
+  text-decoration-color: var(--mantle-keyline);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.22em;
+}
+.sl-markdown-content a:not(:where(.not-content *)):hover {
+  text-decoration-color: var(--mantle-lamp);
+}
+
+/* Focus and selection are amber. */
+:focus-visible {
+  outline: 2px solid var(--mantle-lamp);
+  outline-offset: 3px;
+}
+::selection {
+  background: var(--mantle-lamp);
+  color: #2d1500;
+}
+
+/* Inline code reads as a small chip, not phosphor (phosphor is for blocks). */
+.sl-markdown-content :not(pre) > code {
+  background: var(--sl-color-gray-6);
+  border: 1px solid var(--sl-color-gray-5);
+  border-radius: 3px;
+  padding: 0.05em 0.35em;
+}
+
+/* Tables: keylined rows, plate header. */
+.sl-markdown-content table {
+  font-size: 0.9375rem;
+}
+.sl-markdown-content th {
+  background: var(--sl-color-gray-6);
+}
+
+/* Machined corners, not soft ones. */
+:root {
+  --sl-border-radius: 3px;
+}

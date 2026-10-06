@@ -5,8 +5,8 @@ command, configure everything else in the interface, and update by pulling.
 No checkout, no build, no hand-edited env.
 
 This is the **standard way to run Mantle**. The install itself (prompts, env
-vars, requirements, sandboxes, media, the manual path) is on the one canonical
-install page, [`guide/01-installation.md`](./guide/01-installation.md); this
+vars, requirements, sandboxes, media, the manual path) is in the install
+pages, [`guide/01-install/`](./guide/01-install/01-choose.md); this
 page carries the operational detail. The companion docs serve other
 audiences: [`getting-started.md`](./getting-started.md) is the developer
 checkout, [`deploy.md`](./deploy.md) is the operator reference for building

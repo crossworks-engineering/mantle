@@ -5,54 +5,30 @@ toolGroups: [toolsmith]
 
 ## Agents
 
-The reasoners. An agent has a persona, a model, a set of tool groups, skills,
-and (if you let it) other agents it can delegate to. Everything that holds a
-conversation is here.
+Agents are the AI helpers that hold conversations. Each one has a prompt, a model, tool groups, skills and other agents it can hand work to.
 
-The one to know is your **persona**: the assistant you actually talk to. The
-others are specialists it hands work to, a researcher for web search, a
-mathematician for calculations, a toolsmith for building new capabilities. You
-don't converse with a specialist; the persona calls it and folds the answer back
-into its own reply.
+Your main assistant is the persona. The others are specialists, such as the researcher for web search or the toolsmith for new tools. The persona calls them and folds their answer into its reply.
 
-Two routes are configured per agent, not one. The **primary** is what it uses;
-the **backup** is what it falls back to when the primary is unreachable. That's
-what makes a local model viable as a primary, the cloud backup covers the
-outage.
+- Click **New**, or open an agent to edit it. Use **Duplicate** to copy one.
+- **General**: name, slug, description, avatar and role.
+- **Model & routing**: provider, API key, model, thinking effort and a **Backup route**. Turn on **Enable failover** so the backup takes over when the primary fails. **Make backup primary** swaps the two.
+- **Behaviour**: **System prompt**, **Tool groups**, **Skills** and **Delegates to**.
+- **Memory**: how many past turns, digests, facts and content hits each turn carries.
+
+The **Models** tab changes the model of several agents at once.
 
 ## Assistant
 
 - "What agents do I have?"
 - "Give the researcher access to my files."
+- "Use more thinking effort for the researcher."
 
-The assistant can list agents and grant a tool group to one. It deliberately
-cannot rewrite an agent's prompt or change its model from a conversation,
-those are the settings that decide what the assistant *is*, and letting it edit
-them mid-turn would make its behaviour unauditable.
-
-For editing prompts with history and a diff, use Studio rather than this screen.
+The persona passes these to the toolsmith specialist. No agent can change a prompt or a model from chat. Edit prompts here or in Studio.
 
 ## Technical
 
-An agent's capability is **exactly the union of its granted tool groups**.
-There is no second channel: skills carry no tools, and the old direct
-per-agent tool list was dropped. That single rule is what makes "why can this
-agent delete pages?" a question with one answer rather than two places to check.
-
-Skills are pure teaching, prose that shapes *how* an agent uses what it
-already holds. Attaching a skill can never widen what an agent can reach. If a
-capability is missing, the fix is always a group.
-
-The primary/backup split lives in two sets of columns, and the active columns
-are always the primary. "Make backup primary" swaps the values rather than
-flipping a precedence flag, so the runtime has no ordering logic to get wrong,
-it always tries the first set. A backup only counts as live when it is both
-enabled and fully configured.
-
-Deleting an API key doesn't delete the agents using it; the reference is
-nulled, and the agent falls back to whatever resolution the provider allows.
-
-The default agent graph, which specialists exist, what they're granted, who
-delegates to whom, comes from the system manifest, so a fresh brain and an
-upgraded one converge on the same shape. Changes you make here are yours and
-survive; the manifest fills gaps rather than overwriting decisions.
+- An agent can use exactly the tools in its tool groups. Skills teach behaviour and add no tools.
+- The backup route takes over when the primary is down, rate-limited or returns a server error.
+- Deleting an API key leaves its agents in place with no key set.
+- Tools: `agent_list`, `agent_grant_tool_group`, `agent_set_thinking_effort`, `tool_group_list`.
+- More: [Agents and AI workers](../03-using-jackdaw/13-agents.md).

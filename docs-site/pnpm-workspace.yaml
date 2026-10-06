@@ -1,0 +1,8 @@
+# Its own workspace root, on purpose: the docs site is not part of the mantle
+# pnpm workspace, so its Astro tree never touches the root lockfile, the image
+# or `pnpm verify`.
+packages: []
+
+allowBuilds:
+  esbuild: true
+  sharp: true

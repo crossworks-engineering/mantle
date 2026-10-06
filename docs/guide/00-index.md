@@ -1,92 +1,27 @@
-# Mantle: your own AI brain
+# Overview
 
-Mantle is a **self-hosted AI brain**: one private place that remembers your whole
-life (emails, files, notes, documents, photos, conversations) and an assistant
-that can actually *use* what it remembers. You talk to it like a person; it
-answers from everything you've ever given it, and it can cite exactly where each
-answer came from.
+Mantle is a self-hosted AI brain: it keeps your email, files, notes and chats on your own server, and an assistant answers from them with sources. Jackdaw is the app you open it in, in a browser or on the desktop.
 
-It runs on **your** machine. No SaaS in the loop, no third party holding your
-data, no monthly seat. The database on your server is the single source of truth,
-and you own every byte.
+## Start here
 
----
+1. [Choose how to install](01-install/01-choose.md).
+2. [Install on a server](01-install/02-server.md).
+3. [Create your account](02-first-steps/01-create-account.md).
+4. [Talk to the assistant](02-first-steps/02-first-chat.md).
 
-## Why Mantle is different
+## The sections
 
-Most "AI assistants" forget you the moment a chat ends. Mantle is built the
-opposite way: **memory is the product.**
+| Section | What it covers |
+|---|---|
+| [Install](01-install/01-choose.md) | Every way to run Mantle, from one command on a server to a developer checkout. |
+| [First steps](02-first-steps/01-create-account.md) | Your account, the first chat, your first knowledge, email and Telegram. |
+| [Using Jackdaw](03-using-jackdaw/01-menu.md) | Each part of the app: assistant, email, files, pages, tables, apps, team and more. |
+| [Concepts](04-concepts/01-memory.md) | How Mantle remembers, what agents, skills and tools are, and how the parts fit. |
+| [Admin and self-hosting](05-admin/01-update.md) | Updates, backups, settings, models, logins, security and troubleshooting. |
+| [API reference](07-api/01-connect-claude.md) | Connect Claude and other MCP clients, the HTTP API and the tool list. |
 
-- **It remembers everything, and never makes you repeat yourself.** There are no
-  sessions to start or threads to manage. You mention your "Lister gantry rebuild"
-  once; weeks later you say "that printer project" and it knows. Conversations are
-  continuous; you pick up wherever you left off.
+Each screen in Jackdaw also has its own help page, under **Using Jackdaw > Screen help**. The **?** button in the app opens the same text.
 
-- **It cites its receipts.** Every fact it tells you traces back to the email,
-  note, or file it came from. The assistant doesn't hallucinate your life; it
-  reads it. When it says "your passport expires in June," it can show you the
-  document that says so.
+## Get the source
 
-- **It has a real memory architecture, not a bigger prompt.** Under the hood,
-  everything you add is distilled into layered memory, short-term conversation,
-  long-term facts, a searchable index of every document, and a **knowledge graph**
-  of the people, places, and projects in your life and how they connect. See
-  [The brain](02-concepts/01-the-brain.md).
-
-- **It comes to you.** Talk to it in the web app, or over **Telegram** from your
-  phone, by text *or voice note*. It transcribes what you say and can reply out
-  loud. Same assistant, same memory, wherever you are.
-
-- **It's proactive when you want it to be.** Standing instructions called
-  *heartbeats* let it check in, follow up, and run recurring routines on its own,
-  then stop when the job's done.
-
-- **It reads what you throw at it.** Forward an email, drop a PDF invoice, snap a
-  photo of a whiteboard, Mantle ingests it, extracts the text (OCR included), and
-  files it into memory so you can ask about it later.
-
-- **You choose the models, local or cloud.** Run everything on a local model on
-  your own hardware for total privacy and zero per-token cost, or use a frontier
-  cloud model, or mix the two with automatic failover. Embeddings default to an
-  online model on your provider key; a local embedder is an opt-in for big boxes.
-
-- **It can learn any API.** Point the built-in **Toolsmith** agent at a service's
-  API documentation (maps, weather, your accounting system) and it builds,
-  tests, and grants your assistant a new tool for it. From then on it's just
-  conversation: "how long will I drive to the airport?" gets a live answer. See
-  [API Console & Toolsmith](04-configuring/07-api-console-and-toolsmith.md).
-
----
-
-## What you can do with it
-
-- "What did the plumber quote me last month?" → finds the email, gives you the number.
-- "Summarise everything I know about the church renovation." → pulls notes, emails, and people involved.
-- "Remind me to call Don on Friday at 3pm." → creates the event, pings you on Telegram when it's due.
-- "Take last week's meeting note and turn it into a polished page." → drafts a rich, formatted document.
-- "Draft a reply to this and send it." → composes and sends from your own mailbox.
-- Drop in a scanned invoice → "What's the total and due date?" → reads the PDF and tells you.
-
----
-
-## Who it's for
-
-Mantle is a **single-owner** system, built for one person who wants a private,
-durable, queryable record of their life and work, and an assistant that treats
-that record as its memory. It's self-hosted by design: if you can run a small
-server (or even a spare box at home), you can own your own brain.
-
-One brain can still serve a team: you can mark trusted contacts as **team
-members**, who get a read-only chat with the brain and access to apps you share
-with them, identified, audited, and revocable, while you remain the only
-owner. See [Team Chat](03-using/07-team-chat.md).
-
----
-
-## Where to go next
-
-- **Setting it up?** See [Installation](01-installation.md), run it locally or on a server.
-- **New here?** Start with [Getting started](01-getting-started.md).
-- **Want to understand the magic?** Read [The brain](02-concepts/01-the-brain.md).
-- **Configuring the assistant?** See [Agents, skills & tools](02-concepts/02-agents-skills-tools.md).
-- **Looking for a specific screen?** The [Menu reference](03-using/00-menu-reference.md) explains every item.
+Mantle is open source on [GitHub](https://github.com/crossworks-engineering/mantle). Jackdaw is in its own [repository](https://github.com/crossworks-engineering/jackdaw).

@@ -4,46 +4,26 @@ title: Models
 
 ## Models
 
-A live catalogue of every model your providers currently offer, id, context
-window, pricing, modality, searchable and sortable, one provider at a time.
+Models is a live catalogue of the models each provider offers, with context window, prices and modality. Use it to choose a model, then set that model on an agent, a worker or the embedding setup.
 
-This is a **reference screen, not a settings screen**. Nothing you do here
-changes what your brain uses. It exists because choosing a model means comparing
-real numbers that change weekly, and the alternative is a provider's marketing
-page. Find the model you want, copy its id, then set it where it actually
-applies: on an agent, a worker, or the embedding config.
+- Pick a provider, then search, filter by type and sort by name, context, input price, output price or newest.
+- Open a model to see its context, max output, modality, price per million tokens and any other charges.
+- Copy its id with the copy button. Paste the id where you set the model.
+- Click **Refresh model list** if a provider has just added a model.
+- **Add to pool** saves a model to a curated pool. **Pools** and **Combos** are the other two views.
 
-The list is filtered by provider, free-text search and kind, and sorted by name,
-context size or price. A refresh button re-pulls the provider's catalogue when
-you suspect it's moved on.
+Compare three things: the context window (can a long document fit in one call), the input and output prices, and the modality (can it read images).
 
-## When to use this
+## Assistant
 
-Come here before changing a model anywhere else, and in particular before
-changing one on a **worker**, where a wrong context window turns into truncated
-summaries rather than an error you'd notice.
+The assistant cannot change which model an agent uses. Specialists that hold the model curation tools can answer:
 
-Three things are worth comparing every time. **Context** decides whether a long
-document survives a single call. **Price** is quoted per million tokens for
-prompt and completion separately, and the ratio between them matters more than
-either number for a chatty workload. **Modality** tells you whether the model
-can take an image at all, which is the usual reason an extraction worker
-silently does nothing useful with a scanned PDF.
+- "Which models have the largest context window?"
+- "Add this model to the cheap chat pool."
 
 ## Technical
 
-The catalogue is fetched from each provider's own model endpoint and cached, so
-the default view is fast and the refresh button is the escape hatch when a
-provider has just published something. Providers that need a key show as
-unavailable until one is set.
-
-Pricing is normalised across providers into the same per-token shape, which is
-what makes the sort meaningful, providers publish in different units, and some
-carry extra line items (image input, cached reads, web search) that appear
-separately on the detail pane rather than being folded into a single misleading
-figure.
-
-Model ids are copied verbatim because that is what the rest of the system stores.
-An agent, a worker and the embedding config each hold a provider plus a model id
-string; none of them validate it against this catalogue at save time, so a typo
-surfaces as a failed call at run time. Copying beats retyping.
+- The list is fetched from each provider and cached on the server for 5 minutes. **Refresh model list** skips the cache.
+- A provider with no API key shows no list until you add one on the API keys screen.
+- Agents and workers store a provider and a model id as text. Copy the id rather than retyping it, since a typo only shows up as a failed call.
+- Tools: `model_catalog`, `model_pool_list`, `model_pool_set`, `model_pool_remove`.
