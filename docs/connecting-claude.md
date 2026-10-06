@@ -1,13 +1,16 @@
 # Connecting Claude to your Mantle (MCP)
 
-How to wire Claude Desktop or Claude Code onto your Mantle so Claude can
-search your brain, read mail, manage tasks/notes/events, walk the entity
-graph, and answer Telegram, using the bundled MCP server. One-time setup
-per client machine; after that the tools are simply present every launch.
+How to wire claude.ai, Claude Desktop or Claude Code onto your Mantle so
+Claude can search your brain, read mail, manage tasks/notes/events, walk the
+entity graph, and answer Telegram, using the bundled MCP server. The user-facing
+steps are in [`guide/07-api/01-connect-claude.md`](./guide/07-api/01-connect-claude.md);
+this page is the developer detail.
 
-**What this is (and isn't).** [`server/mcp`](../server/mcp/src/server.ts) is a
-**tool surface**, not a chat channel: ~70 tools of raw, persona-less access to
-your data, including the full Toolsmith set (`api_tool_*`, `web_fetch`,
+**What this is (and isn't).** The MCP server is a **tool surface**, not a
+chat channel: raw, persona-less access to your data, the same tools an agent
+can be granted (the list is built by `registerMantleTools` in
+[`packages/mcp-core/src/build-server.ts`](../packages/mcp-core/src/build-server.ts)),
+including the full Toolsmith set (`api_tool_*`, `web_fetch`,
 groups + grants), so a Claude Code session can read a service's API docs and
 author/test/deploy new agent tools on your own subscription instead of
 Mantle's metered key. See [`toolsmith.md`](./toolsmith.md). A conversation you have in Claude Desktop does _not_ enter the
@@ -18,23 +21,44 @@ extractor ingests, embeds, and indexes it like any other content. Logging a
 `journal` from Claude Desktop literally teaches your in-app assistant who you
 are.
 
-## The security model: read this first
+## Two transports
 
-The server is **stdio-only, on purpose**. There is no port, no token, no
-login: _whoever can spawn the process gets the owner's full data access._
-That makes the setup below trivially simple and safe on machines you control
-, and means you must **never** wrap it in a network listener "to make it
-easier". The remote shape below uses SSH precisely so your existing SSH key
-remains the entire auth layer. (An HTTP transport with a real auth layer is
-the documented future path for phones / one-click connectors; it is
-intentionally not wired today.)
+Both register the same tools from `@mantle/mcp-core`, so they cannot drift.
 
-Owner resolution: with a single `auth.users` row (the normal self-hosted
-state) the server scopes to it automatically. Multiple rows → set
+| | Remote connector (HTTP) | Local process (stdio) |
+|---|---|---|
+| Entry | `https://<your host>/api/mcp` ([`route.ts`](../server/web/app/api/mcp/route.ts)) | [`server/mcp`](../server/mcp/src/server.ts), spawned by the client |
+| Turned on by | **Settings > MCP > Remote MCP connector**. Off by default; while off the endpoint answers 404. | Nothing. The client spawns the process. |
+| Auth | OAuth sign-in and consent. A missing or bad token gets a 401 that points the client at the authorization server. | None. Whoever can spawn the process has the owner's full data access. |
+| Who it acts as | The login that signed in. An admin gets the owner's tools; a member or client gets their own role's tools at their level ([`mcp-as-a-login.md`](./mcp-as-a-login.md)). | The owner. |
+| Reach | claude.ai, Claude Desktop, Claude Code, phones | Claude Desktop and Claude Code, local or over SSH |
+| Limits | Rate limited per IP and per login. `run_terminal` off unless `MANTLE_MCP_TERMINAL=1`. | `run_terminal` on unless `MANTLE_MCP_TERMINAL=0`. |
+
+Use the remote connector unless you need a client with no network path to the
+box. Never wrap the stdio server in your own network listener: it has no auth
+layer of its own. The SSH shape below keeps your SSH key as the whole auth layer.
+
+Owner resolution for stdio: with a single `auth.users` row (the normal
+self-hosted state) the server scopes to it automatically. Multiple rows → set
 `ALLOWED_USER_ID` in the env the server reads; it validates the UUID exists
 at boot.
 
 ## Pick your shape
+
+### Remote connector (the usual shape)
+
+Needs the box on a domain with HTTPS and `MANTLE_PUBLIC_URL` set to it.
+
+1. In Jackdaw, **Settings > MCP**: turn on **Remote MCP connector**, copy the
+   **Connector URL**, press **Check endpoint**.
+2. claude.ai or Claude Desktop: **Settings > Connectors > Add custom
+   connector**, paste the URL, sign in and approve.
+3. Claude Code: `claude mcp add --transport http --scope user mantle https://mantle.example.com/api/mcp`,
+   then `/mcp` inside Claude Code to sign in.
+
+Connected clients are listed under **Settings > MCP**, each with **Disconnect**.
+
+### Local process (stdio)
 
 The command Claude spawns depends on where your Mantle runs. Three shapes:
 
@@ -120,7 +144,7 @@ Merge the `mcpServers` key into the existing file (don't clobber other
 keys), then fully restart Claude Desktop. The server appears as `mantle`
 in the tools menu.
 
-- **Claude Code:** one command, no file editing:
+- **Claude Code (stdio over SSH):** one command, no file editing:
 
 ```bash
 claude mcp add mantle -- ssh my-mantle docker exec -i mantle_web pnpm -C server/mcp start
@@ -143,9 +167,11 @@ If instead you see `No account yet`, sign up in the web app first. If
 ## What you get
 
 **Full parity with the in-brain agents.** Every tool a Mantle agent can be
-granted is on this surface. The client IS the owner, authenticated, driving
-their own brain, so it is not given a smaller catalog than an agent running
-inside the box. Two exceptions, both named below.
+granted is on this surface. An admin client IS the owner, authenticated,
+driving their own brain, so it is not given a smaller catalog than an agent
+running inside the box. Two exceptions, both named below. (A member or client
+login over the remote connector gets its role's tools instead; see
+[`mcp-as-a-login.md`](./mcp-as-a-login.md).)
 
 | Area                   | Tools                                                                                                                                                                                                                                                                                  |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -359,6 +385,6 @@ makes a plain model call with tools and memory OFF.
   Desktop is the same row the web app shows, and the extractor will index
   whatever Claude writes. For a responder probe that cannot write, use
   `ask_responder` with `read_only: true`.
-- **One config per client machine.** stdio means there's nothing to
-  centrally provision; each device that should reach the Mantle needs SSH
-  access and the config blob once.
+- **stdio is one config per client machine.** Each device needs SSH access
+  and the config once. The remote connector needs only its URL and a sign-in,
+  and **Settings > MCP** can disconnect a client at any time.
