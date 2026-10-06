@@ -27,6 +27,8 @@
 #            network exists before joining it
 #   setup:   install.sh writes the first-run setup code once, keeps it on a
 #            re-run, and --setup-code prints it again (or says "claimed")
+#   access:  a re-run with only a component flag keeps the access mode .env
+#            already has (domain, localhost, proxy, lan); an access flag wins
 #   onboard: onboard.sh pipes secrets from files on stdin, never in argv
 #   sanity:  Caddy's own HTTP->HTTPS redirect is not reported as "not Mantle"
 
@@ -464,6 +466,61 @@ check "--setup-code still prints it when the brain cannot be asked" sh -c "grep 
 rm -f "$T/stack/.env"
 if install_run --setup-code; then fail "--setup-code without a .env should fail"; else ok "--setup-code without a .env fails and says why"; fi
 check "  (it names the fix)" grep -q 'Run scripts/install.sh to create one' "$T/out"
+
+# ═════════════════════════════════════════════════════════════════════════════
+echo "install.sh: a re-run keeps the access mode already in .env"
+# Re-running the configurator with only a component flag (--core, --helpers,
+# --no-sandboxes) used to ask the access question again, and under -y fall
+# back to plain HTTP on the network: a domain box silently lost HTTPS. Same
+# stubbed --skip-up run as above, plus DNS and interface stubs, so a domain
+# resolves NOWHERE: the kept mode must survive even that.
+T="$WORK/access"; mkdir -p "$T/bin" "$T/stack/scripts"
+cp "$ROOT/docker-compose.yml" "$ROOT/docker-compose.core.yml" "$T/stack/"
+cp "$ROOT/scripts/install.sh" "$T/stack/scripts/install.sh"
+cp "$WORK/setup/bin/"* "$T/bin/"
+for c in getent dig host; do printf '#!/bin/sh\nexit 0\n' > "$T/bin/$c"; done
+printf '#!/bin/sh\necho 10.0.0.5\n' > "$T/bin/hostname"
+chmod +x "$T/bin/"*
+acc_run() { # <args...>
+  PATH="$T/bin:$PATH" NO_COLOR=1 bash "$T/stack/scripts/install.sh" -y --skip-up --data-dir "$T/stack/data" "$@" < /dev/null > "$T/out" 2>&1
+}
+acc_env() { grep -E "^$1=" "$T/stack/.env" | head -1 | cut -d= -f2-; }
+acc_seed() { # <site> <bind> <origin>: a box an earlier install configured
+  rm -rf "$T/stack/.env" "$T/stack/data"; mkdir -p "$T/stack/data/postgres"
+  printf 'MANTLE_SITE_ADDRESS=%s\nMANTLE_BIND_ADDR=%s\nMANTLE_SERVER_ORIGIN=%s\n' "$1" "$2" "$3" > "$T/stack/.env"
+}
+
+acc_seed brain.example.com 0.0.0.0 https://brain.example.com
+acc_run --core || { fail "a --core re-run on a domain box exited non-zero"; sed 's/^/    /' "$T/out"; }
+check "domain: --core -y keeps the hostname as the site address" test "$(acc_env MANTLE_SITE_ADDRESS)" = brain.example.com
+check "domain: the origin stays https" test "$(acc_env MANTLE_SERVER_ORIGIN)" = https://brain.example.com
+check "domain: no fallback to plain HTTP, though the DNS check found nothing" sh -c "! grep -q 'Falling back to plain HTTP' '$T/out'"
+check "domain: it says the mode was kept, and how to change it" grep -q 'Keeping the current access: a domain with HTTPS (brain.example.com)' "$T/out"
+check "domain: --core still applied" sh -c "grep -q '^COMPOSE_FILE=.*docker-compose.core.yml' '$T/stack/.env'"
+
+acc_seed :80 127.0.0.1 http://localhost
+acc_run --helpers || true
+check "localhost: --helpers -y keeps the loopback bind" test "$(acc_env MANTLE_BIND_ADDR)" = 127.0.0.1
+check "localhost: the origin stays http://localhost" test "$(acc_env MANTLE_SERVER_ORIGIN)" = http://localhost
+
+acc_seed :80 127.0.0.1 https://brain.example.com
+acc_run --no-sandboxes || true
+check "behind-proxy: stays on loopback" test "$(acc_env MANTLE_BIND_ADDR)" = 127.0.0.1
+check "behind-proxy: stays off port 80" test "$(acc_env MANTLE_HTTP_PORT)" = 8080
+check "behind-proxy: the public domain is kept" sh -c "test \"\$(grep '^MANTLE_PUBLIC_URL=' '$T/stack/.env' | cut -d= -f2-)\" = https://brain.example.com && test \"\$(grep '^MANTLE_SERVER_ORIGIN=' '$T/stack/.env' | cut -d= -f2-)\" = https://brain.example.com"
+
+acc_seed :80 0.0.0.0 http://10.0.0.5
+acc_run --core || true
+check "lan: stays on the network, plain HTTP" sh -c "test \"\$(grep '^MANTLE_BIND_ADDR=' '$T/stack/.env' | cut -d= -f2-)\" = 0.0.0.0 && test \"\$(grep '^MANTLE_SERVER_ORIGIN=' '$T/stack/.env' | cut -d= -f2-)\" = http://10.0.0.5"
+
+acc_seed brain.example.com 0.0.0.0 https://brain.example.com
+acc_run --localhost || true
+check "an access flag still wins over .env" sh -c "test \"\$(grep '^MANTLE_SITE_ADDRESS=' '$T/stack/.env' | cut -d= -f2-)\" = :80 && test \"\$(grep '^MANTLE_BIND_ADDR=' '$T/stack/.env' | cut -d= -f2-)\" = 127.0.0.1"
+check "  (and nothing claims the old mode was kept)" sh -c "! grep -q 'Keeping the current access' '$T/out'"
+
+rm -rf "$T/stack/.env" "$T/stack/data"
+acc_run || true
+check "a fresh -y install with no .env still defaults to the network (lan)" sh -c "test \"\$(grep '^MANTLE_SITE_ADDRESS=' '$T/stack/.env' | cut -d= -f2-)\" = :80 && test \"\$(grep '^MANTLE_BIND_ADDR=' '$T/stack/.env' | cut -d= -f2-)\" = 0.0.0.0"
 
 # ═════════════════════════════════════════════════════════════════════════════
 echo "onboard.sh: secrets reach the container on stdin, never in argv"

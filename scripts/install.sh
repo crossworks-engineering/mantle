@@ -212,6 +212,9 @@ ${B}Mantle installer${RS}
 
 ${B}Options${RS}
   --domain <host>        Use this domain (enables HTTPS via Caddy/Let's Encrypt)
+                         On a re-run, the access mode already in .env is kept
+                         unless one of --domain/--localhost/--lan/--behind-proxy
+                         is given.
   --localhost            This machine only — HTTP on 127.0.0.1:80, not on the network
   --lan                  HTTP on :80, reachable on this machine's network (no TLS)
   --no-domain            Alias for --lan (kept for existing scripts)
@@ -283,8 +286,9 @@ ${B}Examples${RS}
   scripts/install.sh --check                       # health check an existing install
 EOF
 }
-# Kept for the "re-run the installer" hint: nothing below re-reads the access
-# mode from .env, so the exact command line is what makes a re-run identical.
+# Kept for the "re-run the installer" hint. The access mode is read back from
+# .env on a re-run (see Access); the rest of the command line is what makes a
+# re-run identical.
 ORIG_ARGS=("$@")
 while [[ $# -gt 0 ]]; do case "$1" in
   # --domain names the host; it only IMPLIES the mode. An explicit
@@ -327,6 +331,9 @@ ENV_FILE="$STACK_DIR/.env"
 # `mantle` project. Deriving from the directory alone was wrong everywhere the
 # stack dir isn't literally called "mantle", which would make port ownership
 # detection silently fail and relocate a working front door on every re-run.
+# Read side of .env, for the steps that run before the writers (getval proper
+# is defined with them, in step 3).
+envval() { [[ -f "$ENV_FILE" ]] && grep -E "^$1=" "$ENV_FILE" | head -1 | cut -d= -f2- || true; }
 COMPOSE_PROJECT="${COMPOSE_PROJECT_NAME:-}"
 if [[ -z "$COMPOSE_PROJECT" ]]; then
   COMPOSE_PROJECT="$(awk '/^name:[[:space:]]/{print $2; exit}' "$STACK_DIR/docker-compose.yml" 2>/dev/null || true)"
@@ -498,6 +505,46 @@ if [[ -z "$LAN_IP" ]]; then
 fi
 if [[ -n "$PUBLIC_IP" ]]; then inf "This server looks like ${B}$PUBLIC_IP${RS} from the internet"; fi
 
+# A re-run keeps the access mode the box already has. The installer used to
+# ask again, or under -y fall back to plain HTTP on the network, so re-running
+# it only to add --core or --helpers quietly took HTTPS off a domain box. The
+# mode is read back from what step 3 wrote:
+#   MANTLE_SITE_ADDRESS a hostname       → domain
+#   :80, MANTLE_BIND_ADDR=127.0.0.1      → localhost when the origin is
+#                                          http://localhost, else behind-proxy
+#   :80, any other bind                  → lan
+#   anything else                        → kept verbatim, as --site-address
+# An access flag, or MANTLE_SITE_ADDRESS / MANTLE_DOMAIN in the environment,
+# still decides, so changing the mode stays one flag away.
+ACCESS_KEPT=0
+if [[ -z "$SITE_ADDRESS" && -z "$ACCESS_MODE" && -z "$DOMAIN" ]]; then
+  prev_site="$(envval MANTLE_SITE_ADDRESS)"
+  prev_origin="$(envval MANTLE_SERVER_ORIGIN)"
+  if [[ "$prev_site" == :80 ]]; then
+    if [[ "$(envval MANTLE_BIND_ADDR)" != 127.0.0.1 ]]; then ACCESS_MODE=lan
+    elif [[ "$prev_origin" == http://localhost* ]]; then ACCESS_MODE=localhost
+    else
+      ACCESS_MODE=proxy
+      if [[ "$prev_origin" == https://* ]]; then DOMAIN="$(normalize_host "$prev_origin")"; fi
+    fi
+  elif [[ -n "$prev_site" ]] && valid_host "$prev_site"; then
+    ACCESS_MODE=domain; DOMAIN="$prev_site"
+  elif [[ -n "$prev_site" ]]; then
+    SITE_ADDRESS="$prev_site"
+  fi
+  if [[ -n "$ACCESS_MODE$SITE_ADDRESS" ]]; then
+    ACCESS_KEPT=1
+    case "$ACCESS_MODE" in
+      domain)    kept="a domain with HTTPS ($DOMAIN)" ;;
+      localhost) kept="this machine only" ;;
+      lan)       kept="this machine's network, plain HTTP" ;;
+      proxy)     kept="behind your own proxy${DOMAIN:+ ($DOMAIN)}" ;;
+      *)         kept="site address $SITE_ADDRESS" ;;
+    esac
+    ok "Keeping the current access: ${B}$kept${RS} ${DIM}(from .env; pass --domain, --localhost, --lan or --behind-proxy to change it)${RS}"
+  fi
+fi
+
 # Pick the shape. Passing --site-address skips all of this deliberately.
 if [[ -z "$SITE_ADDRESS" && -z "$ACCESS_MODE" ]]; then
   if [[ $INTERACTIVE -eq 1 ]]; then
@@ -552,6 +599,12 @@ if [[ "$ACCESS_MODE" == domain && -z "$SITE_ADDRESS" ]]; then
     fi
     inf "   ${DIM}A certificate cannot be issued until it points here, and failed attempts count against Let's Encrypt's limit for this name.${RS}"
 
+    # A domain kept from .env is what this box serves now. Dropping it to
+    # plain HTTP would change the front door, which a re-run must not do.
+    if [[ $ACCESS_KEPT -eq 1 ]]; then
+      warn "Keeping $DOMAIN: it is this box's current address. Fix the DNS, or re-run with --lan / --localhost to move off it."
+      SITE_ADDRESS="$DOMAIN"; break
+    fi
     # Never proceed into a doomed certificate request unattended. The old
     # behaviour warned and then used the domain anyway.
     if [[ $INTERACTIVE -eq 0 ]]; then
@@ -696,9 +749,7 @@ if [[ ! -d "$DATA_DIR/postgres" && ! -d "$STACK_DIR/data/postgres" ]]; then FRES
 # An aborted first run may have left an .env full of answers with no database
 # behind it yet — default each question to what was chosen last time, so
 # hitting enter through the re-run keeps the earlier answers instead of
-# silently reverting them. (getval proper is defined with the .env writers
-# below; questions only need this read-side.)
-envval() { [[ -f "$ENV_FILE" ]] && grep -E "^$1=" "$ENV_FILE" | head -1 | cut -d= -f2- || true; }
+# silently reverting them. (envval is the read side, defined up top.)
 if [[ $INTERACTIVE -eq 1 && $FRESH_BOX -eq 1 ]]; then
   hd "What to install"
   # The shape first — it changes the right default for everything after it.
