@@ -71,12 +71,20 @@ const KEYS = [
 const saved: Record<string, string | undefined> = {};
 let sig: string;
 
+/** What an updater that knows all four services reports. */
+const ALL_SERVICES = {
+  sandboxes: { profile: false },
+  media: { profile: false },
+  'local-embedder': { profile: false },
+  helpers: { profile: false },
+};
+
 function servicesJson(over: Record<string, unknown> = {}): void {
   writeFileSync(
     join(sig, 'services.json'),
     JSON.stringify({
       profiles: '',
-      services: {},
+      services: ALL_SERVICES,
       mem_total_kb: 16 * 1024 * 1024,
       mem_available_kb: 8 * 1024 * 1024,
       disk_free_kb: 50 * 1024 * 1024,
@@ -187,11 +195,21 @@ describe('requestServiceSwitch', () => {
   it('refuses the helpers on a full box, where nothing would stop them', async () => {
     expect(await requestServiceSwitch('helpers', false)).toMatchObject({ ok: false });
     expect(existsSync(join(sig, 'service-request.json'))).toBe(false);
-    servicesJson({ core: true, profiles: 'helpers' });
+    servicesJson({ core: true, profiles: 'helpers', services: { helpers: { profile: true } } });
     expect(await requestServiceSwitch('helpers', false)).toEqual({ ok: true });
   });
 
+  it('refuses a newer service the box updater does not report yet', async () => {
+    servicesJson({ services: { sandboxes: {}, media: {} } });
+    expect(await requestServiceSwitch('local-embedder', true)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('does not know this service yet'),
+    });
+    expect(existsSync(join(sig, 'service-request.json'))).toBe(false);
+  });
+
   it('switches the local embedder like any other service', async () => {
+    servicesJson({ services: { 'local-embedder': { profile: false } } });
     expect(await requestServiceSwitch('local-embedder', true)).toEqual({ ok: true });
     expect(JSON.parse(readFileSync(join(sig, 'service-request.json'), 'utf8'))).toMatchObject({
       service: 'local-embedder',
@@ -237,6 +255,14 @@ describe('getServicesView', () => {
     });
     servicesJson({ core: true });
     expect((await getServicesView('owner-1')).box.smallBox).toBe(true);
+  });
+
+  it('an older updater (no newer services reported): only the first two are offered', async () => {
+    servicesJson({ core: true, services: { sandboxes: {}, media: {} } });
+    expect((await getServicesView('owner-1')).services.map((s) => s.name)).toEqual([
+      'sandboxes',
+      'media',
+    ]);
   });
 
   it('lists the helpers only on a core box without the full profile', async () => {

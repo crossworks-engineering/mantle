@@ -23,6 +23,10 @@ the helpers); the rest of the brain keeps running.
   one-shot again. Off keeps the model volume (`data/ollama`). The confirm
   dialog warns that new content stops being searchable, but only when this
   brain's embedding route is the local provider on the bundled address.
+- **The newer two need the newer updater.** An updater from before them
+  whitelists only sandboxes and media, so the brain offers either row only
+  once the box's updater reports it in `services.json`: one roll after the
+  brain that knows them.
 - **Helpers** have a profile only on the core shape
   (`docker-compose.core.yml`, profiles `["full", "helpers"]`). On the full
   shape they always run, so neither the screen nor the updater offers the

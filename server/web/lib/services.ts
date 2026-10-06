@@ -224,6 +224,21 @@ export async function serviceRunBusy(): Promise<boolean> {
   return run !== null && BUSY.includes(run.phase);
 }
 
+/** The two services every updater with the `service` verb knows. The newer
+ *  two need an updater that knows them too; it reports them in
+ *  services.json, so until a roll brings that updater the row is not
+ *  offered (an older updater would refuse it as an unknown service). */
+const FIRST_SERVICES: readonly OptionalService[] = ['sandboxes', 'media'];
+
+/** Is this service offered on this box? Switchable here (the helpers only
+ *  on a core box), and known to the box's updater when there is one. */
+export function serviceOffered(name: OptionalService): boolean {
+  if (!serviceSwitchable(name)) return false;
+  if (FIRST_SERVICES.includes(name)) return true;
+  const f = readServicesFile();
+  return !f || f.services[name] !== undefined;
+}
+
 /** Why this box cannot switch services from the UI, or null when it can. */
 async function switchBlocker(): Promise<string | null> {
   if (!(await updaterAvailable())) {
@@ -239,7 +254,7 @@ async function switchBlocker(): Promise<string | null> {
 /** `ownerId` reads the embedding config, for the embedder's off warning. */
 export async function getServicesView(ownerId: string): Promise<ServicesView> {
   const f = readServicesFile();
-  const names = OPTIONAL_SERVICES.filter(serviceSwitchable);
+  const names = OPTIONAL_SERVICES.filter(serviceOffered);
   const helpers = names.includes('helpers');
   const [blocker, run, sbx, media, embedUp, tika, browser, embedCfg] = await Promise.all([
     switchBlocker(),
@@ -301,6 +316,13 @@ export async function requestServiceSwitch(
     return {
       ok: false,
       error: 'The helpers always run on this box, so there is nothing to switch.',
+    };
+  }
+  if (!serviceOffered(name)) {
+    return {
+      ok: false,
+      error:
+        'The updater on this box does not know this service yet. Update the box once, then try again.',
     };
   }
   const blocker = await switchBlocker();
