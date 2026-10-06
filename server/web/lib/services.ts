@@ -89,7 +89,7 @@ export const SERVICE_DESCRIPTIONS: Record<OptionalService, ServiceDescription> =
     usedBy:
       'File ingest for formats the brain cannot read itself (ODT, PPTX, DOC, RTF and others), PDF export, and drawing pictures in exports.',
     whenOff:
-      'Those rare file types are not read, and PDF export stops. PDF, Word, text and Markdown files are still read.',
+      'PDF, Word, text and Markdown files are still read, and everything else keeps working.',
     keeps: 'Everything already ingested. The helpers store nothing.',
     downloadMb: 1200,
     memory: 'up to 3 GB (1.5 GB each)',
