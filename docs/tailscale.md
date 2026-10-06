@@ -32,7 +32,7 @@ cloud box reach the model running in my house."
 
 | Piece | Where | Note |
 |---|---|---|
-| `tailscale` compose service | [`docker-compose.yml`](../docker-compose.yml) | userspace, **HTTP** forward-proxy on `:1055`. **Always-up, unauthenticated** (no `tailnet` profile anymore) so the app can log it in from the UI. Image pinned `v1.98.4`, `TS_AUTH_ONCE=true`, socket-exists healthcheck. |
+| `tailscale` compose service | [`docker-compose.yml`](../docker-compose.yml) | userspace, **HTTP** forward-proxy on `:1055`. **Always-up, unauthenticated** (no `tailnet` profile anymore) so the app can log it in from the UI. Runs `tailscaled` directly (not the image's `containerboot`), image pinned in compose (override with `TS_IMAGE_TAG`), socket-exists healthcheck. |
 | Auth-key vault + UI activation | migration `0064` `tailscale_config` (singleton, sealed key) · [`lib/tailscale-config.ts`](../server/web/lib/tailscale-config.ts) · [`/settings/network`](../jackdaw/app/(app)/settings/network/network-client.tsx) **Activate** card | **Paste the auth key once → Activate/Deactivate from the UI** (see §UI-activation). The app drives tailscaled login over the socket. |
 | Activation transport | [`lib/tailscale.ts`](../server/web/lib/tailscale.ts) `tailnetUp`/`tailnetDown` | POST `/localapi/v0/start` (ipn.Options `AuthKey`+`WantRunning`+`Hostname`) / `/localapi/v0/logout`. Needs the socket mounted **RW** into web. |
 | `local` chat adapter | [`local-chat.ts`](../packages/voice/src/adapters/local-chat.ts) | OpenAI-compat; honours per-route `baseUrl` + `viaTailnet`. `getChatAdapter('local')`. |

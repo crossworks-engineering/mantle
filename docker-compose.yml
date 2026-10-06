@@ -238,9 +238,9 @@ x-app-env: &app-env
   # the slow case is legitimate CPU inference, not a hung socket; raise on very
   # slow hardware so a sub-batch isn't aborted prematurely.
   MANTLE_LOCAL_EMBED_TIMEOUT_MS: ${MANTLE_LOCAL_EMBED_TIMEOUT_MS:-120000}
-  # HTTP forward-proxy for reaching models on your tailnet (the optional
-  # `tailnet` profile). Only used for routes the operator flags "via tailnet";
-  # harmless otherwise. Points at the bundled tailscale service.
+  # HTTP forward-proxy for reaching models on your tailnet (the always-on
+  # tailscale sidecar, activated from /settings/network). Only used for routes
+  # the operator flags "via tailnet"; harmless otherwise.
   MANTLE_TAILNET_PROXY_URL: ${MANTLE_TAILNET_PROXY_URL:-http://tailscale:1055}
   # Path to the tailscaled LocalAPI socket (shared from the tailscale sidecar).
   # The /settings/network status tile + peer dropdown read `status` over it.
