@@ -1,41 +1,26 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
-<svg width="100%" height="100%" viewBox="0 0 2001 2000" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:affinity="https://www.affinity.studio/" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:1.5;">
-    <g transform="matrix(1,0,0,1,0.5,0)">
-        <rect id="Mantle-Logo-Icon" affinity:id="Mantle Logo Icon" x="0" y="0" width="2000" height="2000" style="fill:none;"/>
-        <clipPath id="_clip1">
-            <rect id="Mantle-Logo-Icon1" affinity:id="Mantle Logo Icon" x="0" y="0" width="2000" height="2000"/>
-        </clipPath>
-        <g clip-path="url(#_clip1)">
-            <g>
-                <path d="M31.559,750C142.687,318.896 534.397,-0 1000,-0C1465.603,-0 1857.313,318.896 1968.441,750L31.559,750Z" style="fill:rgb(235,159,19);"/>
-                <path d="M1968.441,750C1989.041,829.916 2000,913.688 2000,1000C2000,1086.312 1989.041,1170.084 1968.441,1250L31.559,1250C10.959,1170.084 0,1086.312 0,1000C0,913.688 10.959,829.916 31.559,750L1968.441,750Z" style="fill:rgb(92,30,2);stroke:rgb(52,26,0);stroke-width:1px;"/>
-                <path d="M738,482L1000,1000" style="fill:none;stroke:rgb(230,97,26);stroke-width:62.5px;"/>
-                <g transform="matrix(1,0,0,1.136364,0,-80.681818)">
-                    <path d="M292.745,731C395.798,474.763 673.705,291 1000,291C1326.295,291 1604.202,474.763 1707.255,731L292.745,731Z" style="fill:rgb(200,60,4);"/>
-                </g>
-                <g transform="matrix(1,0,0,1.136364,0,419.318182)">
-                    <path d="M1707.255,291C1734.935,359.824 1750,433.876 1750,511C1750,588.124 1734.935,662.176 1707.255,731L292.745,731C265.065,662.176 250,588.124 250,511C250,433.876 265.065,359.824 292.745,291L1707.255,291Z" style="fill:rgb(228,110,8);"/>
-                </g>
-                <path d="M31.559,1250L1968.441,1250C1857.313,1681.104 1465.603,2000 1000,2000C534.397,2000 142.687,1681.104 31.559,1250Z" style="fill:rgb(200,60,4);"/>
-                <g transform="matrix(1,0,0,1.136364,0,919.318182)">
-                    <path d="M1707.255,291C1604.202,547.237 1326.295,731 1000,731C673.705,731 395.798,547.237 292.745,291L1707.255,291Z" style="fill:rgb(235,159,19);"/>
-                </g>
-                <g transform="matrix(1.311111,0,0,1.333333,-429.111111,215.333333)">
-                    <ellipse cx="1090" cy="588.5" rx="90" ry="88.5" style="fill:rgb(228,110,8);stroke:rgb(92,30,2);stroke-width:47.27px;"/>
-                </g>
-                <g transform="matrix(1.311111,0,0,1.333333,-429.111111,215.333333)">
-                    <ellipse cx="1090" cy="588.5" rx="90" ry="88.5" style="fill:rgb(92,30,2);stroke:rgb(92,30,2);stroke-width:47.27px;"/>
-                </g>
-                <g transform="matrix(1.311111,0,0,1.333333,-429.111111,715.333333)">
-                    <ellipse cx="1090" cy="588.5" rx="90" ry="88.5" style="fill:rgb(92,30,2);stroke:rgb(200,60,4);stroke-width:47.27px;"/>
-                </g>
-                <g transform="matrix(1.311111,0,0,1.333333,-429.111111,-284.666667)">
-                    <ellipse cx="1090" cy="588.5" rx="90" ry="88.5" style="fill:rgb(92,30,2);stroke:rgb(235,159,19);stroke-width:47.27px;"/>
-                </g>
-                <g transform="matrix(0.945946,0,0,1,19.054054,0)">
-                    <rect x="1000" y="500" width="74" height="1041" style="fill:rgb(92,30,2);"/>
-                </g>
+<svg width="100%" height="100%" viewBox="0 0 2000 2000" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:affinity="https://www.affinity.studio/" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;">
+    <rect id="Mantle-Logo-Icon" affinity:id="Mantle Logo Icon" x="0" y="0" width="2000" height="2000" style="fill:none;"/>
+    <g id="Mantle-Logo-Icon1" affinity:id="Mantle Logo Icon">
+        <g>
+            <g transform="matrix(1.342282,0,0,1.234568,-11691.275168,-469.135802)">
+                <path d="M9488.584,1999.19C9477.45,1999.728 9466.254,2000 9455,2000C9443.746,2000 9432.55,1999.728 9421.416,1999.19L9488.584,1999.19Z" style="fill:rgb(200,60,4);"/>
+            </g>
+            <g transform="matrix(1.342282,0,0,1.234568,-11691.275168,-469.135802)">
+                <path d="M8710,1190C8710,742.949 9043.823,380 9455,380C9866.177,380 10200,742.949 10200,1190L8710,1190Z" style="fill:rgb(92,30,2);"/>
+            </g>
+            <g transform="matrix(1,0,0,1,-8438,-113)">
+                <circle cx="9438" cy="1113" r="675" style="fill:rgb(200,60,4);"/>
+            </g>
+            <g transform="matrix(1.013171,0,0,1,-8334.346505,0)">
+                <path d="M8226,1000L10200,1000C10200,1116.73 10180.217,1228.816 10143.865,1333L8282.135,1333C8245.783,1228.816 8226,1116.73 8226,1000Z" style="fill:rgb(235,159,19);"/>
+            </g>
+            <g transform="matrix(1.013171,0,0,1,-8334.346505,333)">
+                <path d="M10143.865,1000C10100.588,1124.03 10033.829,1236.862 9949.011,1333L8476.989,1333C8392.171,1236.862 8325.412,1124.03 8282.135,1000L10143.865,1000Z" style="fill:rgb(228,110,8);"/>
+            </g>
+            <g transform="matrix(1.013171,0,0,1,-8334.346505,666)">
+                <path d="M9949.011,1000C9777.435,1194.475 9531.963,1320.638 9257.493,1333L9168.507,1333C8894.037,1320.638 8648.565,1194.475 8476.989,1000L9949.011,1000Z" style="fill:rgb(200,60,4);"/>
             </g>
         </g>
     </g>

@@ -7,25 +7,24 @@ copy you found elsewhere in the tree.
 
 ## The mark
 
-A round badge with three horizontal bands, crossed by one vertical line with
-three nodes on it, beside the `mantle` name in custom script lettering. Drawn
-2026-10-06.
+A round badge with a setting sun: a half sun in a deep rust ring, over three
+bands of amber, orange and rust. Beside it, the `mantle` name in custom
+script lettering. Redrawn 2026-10-06.
 
 | file | what it is |
 |---|---|
-| `mantle-logo-icon.svg` / `.png` | The badge alone. PNG at 2002x2000. |
-| `mantle-logo-full.svg` / `.png` | Badge and name side by side. PNG at 1718x476. |
-| `mantle-logo-full-topdown.svg` | Badge above the name (stacked). |
-| `mantle-text-design.svg` | The name alone. |
+| `mantle-logo-icon.svg` | The badge alone (2000x2000). |
+| `mantle-logo-full.svg` | Badge and name side by side (1657x395). |
+| `mantle-logo-full-stacked.svg` | Badge above the name, stacked (1420x1175). |
+| `mantle-text-design.svg` | The name alone (1420x396). |
 | `mantle-logo-design.af` | The Affinity design source for all of the above. |
 
 - **SVG is the master.** All four are true vectors with no embedded bitmaps and
-  no external references, so they render standalone anywhere. Scale them, or
-  export a new raster size from them.
+  no external references, so they render standalone anywhere. Each file is cut
+  tight to its artwork, with no empty space round it. For a raster (a PNG for
+  a place that can't take SVG), export it from the SVG at the size you need.
 - **`mantle-logo-design.af` is the design source.** Edit the mark there, then
   re-export the files above.
-- **PNG is a convenience export** for places that can't take SVG. Both are RGBA
-  with a transparent background.
 
 ## Which one to use
 
@@ -65,8 +64,9 @@ every token; this is the short version.
 | Install key | `#BC390C` | The install key and nothing else. |
 | Phosphor | `#A8F291` on `#0F1A13` | Displays only: commands behind scope glass. |
 
-The logo itself is drawn in the warm badge colours: amber `#EB9F13`, orange
-`#E46E08`, rust `#C83C04` (also the name) and deep rust `#5C1E02`. Jackdaw's
+The logo itself is drawn in four warm colours: amber `#EB9F13`, orange
+`#E46E08`, rust `#C83C04` (the sun, the lowest band and the name) and deep
+rust `#5C1E02` (the ring). Jackdaw's
 lead is sunset orange `#E46E08`. In the Mantle UI, orange is never a text
 colour.
 
@@ -83,7 +83,9 @@ colour.
 The first logo files left this repo in the jackdaw split (`bf372a311`,
 2026-08-13), were deleted from jackdaw as well (`b6395514`, 2026-08-22), and
 were restored here from git history. That mark was an `m` in a circle, in black
-and in a blue-to-purple gradient. The round three-band badge replaced it on
-2026-10-06, and the gradient colour variants were removed. The old files are
-still in git history. The Jackdaw marks are a different brand and live in the
+and in a blue-to-purple gradient. On 2026-10-06 a round three-band badge (a
+vertical line with three nodes over the bands) replaced it, and the same day
+the setting-sun badge replaced that. The PNG exports and the old
+`mantle-logo-full-topdown.svg` were dropped with it. The old files are still
+in git history. The Jackdaw marks are a different brand and live in the
 jackdaw repo's `brand/`.
