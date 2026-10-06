@@ -973,7 +973,8 @@ topup_scripts() {
 }
 
 # ── optional services: the brain's live capability source ────────────────────
-# Sandboxes and media are compose PROFILES. Whether one is on is a fact about
+# Sandboxes, media, the local embedder and (on a core box) the doc helpers are
+# compose PROFILES; each service name IS its profile. Whether one is on is a fact about
 # THIS box's .env, and the app containers cannot see .env: their env is what
 # compose resolved when it created them, and a dashboard switch starts or
 # stops ONE container without touching theirs. So this sidecar, which can see
@@ -981,16 +982,35 @@ topup_scripts() {
 # /signal read-only) on boot, every ~5 min, after a roll and after a switch.
 # @mantle/config services is the reader. The file carries key NAMES' presence
 # only, never a value.
-SERVICE_PROFILES="sandboxes media"
+SERVICE_PROFILES="sandboxes media local-embedder helpers"
 # Request kinds this updater understands; the UI offers a switch only when
 # 'service' is listed.
 UPDATER_VERBS='"roll","service"'
 
+# service_container <name>: the container whose state services.json reports.
 service_container() {
-  case "$1" in sandboxes) echo mantle_sandboxd ;; media) echo mantle_media ;; esac
+  case "$1" in
+    sandboxes) echo mantle_sandboxd ;;
+    media) echo mantle_media ;;
+    local-embedder) echo mantle_ollama ;;
+    helpers) echo mantle_tika ;;
+  esac
 }
+# service_containers <name>: every container an "on" waits on to be healthy.
+service_containers() {
+  case "$1" in helpers) echo "mantle_tika mantle_browser" ;; *) service_container "$1" ;; esac
+}
+# service_token_var <name>: the bearer token's .env key; nothing for the
+# local embedder and the helpers, which the app reaches without one.
 service_token_var() {
   case "$1" in sandboxes) echo SANDBOXD_TOKEN ;; media) echo MEDIA_SIDECAR_TOKEN ;; esac
+}
+
+# core_shape: docker-compose.core.yml is loaded (the 4 GB brain-core shape).
+# Only there do the helpers have a profile; on the full shape they always run.
+core_shape() {
+  case "$(env_val COMPOSE_FILE)" in *docker-compose.core.yml*) return 0 ;; esac
+  return 1
 }
 
 # profiles_csv: the box's COMPOSE_PROFILES, whitespace and empty items dropped.
@@ -1007,7 +1027,8 @@ write_services_info() {
   ws_body=""
   for ws_s in $SERVICE_PROFILES; do
     ws_p=false; profile_active "$ws_s" && ws_p=true
-    ws_t=false; [ -z "$(env_val "$(service_token_var "$ws_s")")" ] || ws_t=true
+    ws_tv=$(service_token_var "$ws_s")
+    ws_t=false; [ -z "$ws_tv" ] || [ -z "$(env_val "$ws_tv")" ] || ws_t=true
     ws_state=$(docker inspect -f '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \
       "$(service_container "$ws_s")" 2>/dev/null | head -1)
     ws_c=$(printf '%s' "${ws_state%% *}" | tr -cd 'a-z')
@@ -1021,7 +1042,7 @@ write_services_info() {
   ws_ma=$(awk '/^MemAvailable:/ { print $2; exit }' /proc/meminfo 2>/dev/null)
   ws_df=$(free_kb "$STACK")
   ws_core=false
-  case "$(env_val COMPOSE_FILE)" in *docker-compose.core.yml*) ws_core=true ;; esac
+  core_shape && ws_core=true
   printf '{"profiles":"%s","services":{%s},"mem_total_kb":%s,"mem_available_kb":%s,"disk_free_kb":%s,"core":%s,"verbs":[%s],"checked_at":"%s"}\n' \
     "$ws_profiles" "$ws_body" "$(num_or "$ws_mt" null)" "$(num_or "$ws_ma" null)" "$(num_or "$ws_df" null)" \
     "$ws_core" "$UPDATER_VERBS" "$(now)" > "$SIG/services.json.tmp" \
@@ -1056,6 +1077,7 @@ ensure_service_tokens() {
   fi
   for est_s in $SERVICE_PROFILES; do
     est_v=$(service_token_var "$est_s")
+    [ -n "$est_v" ] || continue
     [ -z "$(env_val "$est_v")" ] || continue
     if est_tok=$(gen_token) && persist_env "$est_v" "$est_tok"; then
       echo "[updater] $est_v provisioned (the $est_s service stays as it is: the profile decides)" | tee -a "$SIG/update.log"
@@ -1070,8 +1092,9 @@ ensure_service_tokens() {
 # The dashboard's service switch writes /signal/service-request.json, a file
 # of its OWN: an updater older than this never reads it, where the same body
 # in request.json would read as "roll to latest". One fixed operation per
-# request, inputs whitelisted: the service is `sandboxes` or `media`, the
-# switch true or false. Nothing else in the request reaches a command.
+# request, inputs whitelisted: the service is `sandboxes`, `media`,
+# `local-embedder` or `helpers` (a core box only), the switch true or false.
+# Nothing else in the request reaches a command.
 #
 # On:  free-disk check; back up .env; give the service its token (and, for
 #      sandboxes, the host-absolute sandboxes dir) when missing; add the
@@ -1095,8 +1118,15 @@ SVC_ENV_BAK=""
 SVC_ERR=""
 SVC_TOKEN_NEW=""
 
+# compose_service <name>: the compose service(s) a switch pulls, starts and
+# stops. Space-separated: the helpers are two.
 compose_service() {
-  case "$1" in sandboxes) echo sandboxd ;; media) echo media ;; esac
+  case "$1" in
+    sandboxes) echo sandboxd ;;
+    media) echo media ;;
+    local-embedder) echo ollama ;;
+    helpers) echo "tika browser" ;;
+  esac
 }
 
 # write_service_status <phase> <service> <enable> <started> <finished> <ok|""> <error>
@@ -1190,8 +1220,10 @@ wait_healthy() {
 service_on_failed() {
   svc_log "switching $1 on FAILED: $2. Restoring .env and stopping the container."
   restore_env || svc_log "⚠ could not restore .env from $SVC_ENV_BAK"
-  svc_compose "$1" stop "$(compose_service "$1")" || true
-  svc_compose "$1" rm -f "$(compose_service "$1")" || true
+  # shellcheck disable=SC2046  # one argument per compose service
+  svc_compose "$1" stop $(compose_service "$1") || true
+  # shellcheck disable=SC2046
+  svc_compose "$1" rm -f $(compose_service "$1") || true
   SVC_ERR="$2; it was switched off again and the settings were restored (see service.log)"
   return 1
 }
@@ -1210,7 +1242,7 @@ service_on() {
 
   so_tv=$(service_token_var "$1")
   SVC_TOKEN_NEW=""
-  if [ -z "$(env_val "$so_tv")" ]; then
+  if [ -n "$so_tv" ] && [ -z "$(env_val "$so_tv")" ]; then
     so_tok=$(gen_token) || { service_on_failed "$1" "could not generate $so_tv"; return 1; }
     persist_env "$so_tv" "$so_tok" || { service_on_failed "$1" "could not write $so_tv"; return 1; }
     SVC_TOKEN_NEW=1
@@ -1231,7 +1263,8 @@ service_on() {
 
   write_service_status pulling "$1" true "$SVC_STARTED" "" null ""
   svc_log "downloading $so_svc"
-  svc_compose "$1" pull "$so_svc" || { service_on_failed "$1" "the download failed"; return 1; }
+  # shellcheck disable=SC2086  # one argument per compose service
+  svc_compose "$1" pull $so_svc || { service_on_failed "$1" "the download failed"; return 1; }
   if [ "$1" = sandboxes ]; then
     if so_img=$(sandbox_base_image); then
       svc_log "downloading the sandbox base image $so_img"
@@ -1249,10 +1282,41 @@ service_on() {
     # shellcheck disable=SC2086  # word-splitting the service list is intended
     svc_compose "$1" up -d $so_list || { service_on_failed "$1" "the containers did not start"; return 1; }
   else
-    svc_compose "$1" up -d --no-deps "$so_svc" || { service_on_failed "$1" "the container did not start"; return 1; }
+    # shellcheck disable=SC2086  # one argument per compose service
+    svc_compose "$1" up -d --no-deps $so_svc || { service_on_failed "$1" "the container did not start"; return 1; }
   fi
-  svc_log "waiting for $(service_container "$1") to report healthy"
-  wait_healthy "$(service_container "$1")" || { service_on_failed "$1" "it did not become healthy: $WH_ERR"; return 1; }
+  for so_c in $(service_containers "$1"); do
+    svc_log "waiting for $so_c to report healthy"
+    wait_healthy "$so_c" || { service_on_failed "$1" "it did not become healthy: $WH_ERR"; return 1; }
+  done
+  if [ "$1" = local-embedder ]; then
+    pull_embed_model
+  fi
+  return 0
+}
+
+# pull_embed_model: run the ollama_pull one-shot (a no-op once the model is in
+# the volume) and wait for it a while. Never fatal: ollama itself is up, the
+# one-shot keeps downloading in the background past the wait, and the next
+# roll runs it again.
+pull_embed_model() {
+  svc_log "downloading the embedding model (ollama_pull)"
+  svc_compose local-embedder up -d --no-deps ollama_pull \
+    || { svc_log "⚠ the model download did not start; the next update runs it again"; return 0; }
+  pem_t=$(num_or "$(env_val MANTLE_SERVICE_MODEL_TIMEOUT_S)" 600)
+  pem_n=$(( (pem_t + 2) / 3 ))
+  while [ "$pem_n" -gt 0 ]; do
+    pem_s=$(docker inspect -f '{{.State.Status}} {{.State.ExitCode}}' mantle_ollama_pull 2>/dev/null | head -1)
+    case "$pem_s" in
+      'exited 0') svc_log "the embedding model is ready"; return 0 ;;
+      exited*) svc_log "⚠ the model download failed (${pem_s}); the next update runs it again"; return 0 ;;
+      running* | created* | restarting*) : ;;
+      *) svc_log "⚠ the model download container is ${pem_s:-missing}; the next update runs it again"; return 0 ;;
+    esac
+    sleep 3
+    pem_n=$((pem_n - 1))
+  done
+  svc_log "the embedding model is still downloading in the background"
   return 0
 }
 
@@ -1274,8 +1338,10 @@ service_off() {
     fi
   fi
   svc_log "stopping $so_svc"
-  svc_compose "$1" stop "$so_svc" || { SVC_ERR="could not stop $so_svc; nothing changed in .env"; return 1; }
-  svc_compose "$1" rm -f "$so_svc" || { SVC_ERR="could not remove the $so_svc container; nothing changed in .env"; return 1; }
+  # shellcheck disable=SC2086  # one argument per compose service
+  svc_compose "$1" stop $so_svc || { SVC_ERR="could not stop $so_svc; nothing changed in .env"; return 1; }
+  # shellcheck disable=SC2086
+  svc_compose "$1" rm -f $so_svc || { SVC_ERR="could not remove the $so_svc container; nothing changed in .env"; return 1; }
   persist_env COMPOSE_PROFILES "$(profiles_without "$1")" \
     || { SVC_ERR="$so_svc is stopped but COMPOSE_PROFILES could not be written; the next roll would start it again"; return 1; }
   return 0
@@ -1290,7 +1356,7 @@ handle_service_request() {
   SVC_STARTED=$(now)
   # The whitelist: the only request input that reaches a command.
   case "$hs_svc" in
-    sandboxes | media) : ;;
+    sandboxes | media | local-embedder | helpers) : ;;
     *) write_service_status error "" null "$SVC_STARTED" "$(now)" false "unknown service"; return 0 ;;
   esac
   case "$hs_en" in
@@ -1300,6 +1366,13 @@ handle_service_request() {
   hs_cfg=$(config_error)
   if [ -n "$hs_cfg" ]; then
     write_service_status error "$hs_svc" "$hs_en" "$SVC_STARTED" "$(now)" false "updater not configured: $hs_cfg"
+    return 0
+  fi
+  # The helpers have a profile only on a core box, and the `full` profile
+  # runs them whatever theirs says: anywhere else a switch could not stop them.
+  if [ "$hs_svc" = helpers ] && { ! core_shape || profile_active full; }; then
+    write_service_status error "$hs_svc" "$hs_en" "$SVC_STARTED" "$(now)" false \
+      "the helpers always run on this box, so there is nothing to switch"
     return 0
   fi
   : > "$SIG/service.log"

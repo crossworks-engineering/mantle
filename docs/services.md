@@ -1,17 +1,36 @@
 # Optional services: start and stop from Settings
 
-Two parts of a box are optional, and an admin can switch each one on or off
+Four parts of a box are optional, and an admin can switch each one on or off
 from **Settings > Services** (`/settings/services`, admins only). The System
 vitals pills on the dashboard show each one's state and link there:
 
-| service       | what it does                                                                                                                | download                                                                                        | memory                                                         |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| **Sandboxes** | Isolated workspaces where the coder and app agents run code, build apps and test packages ([sandboxes.md](sandboxes.md)).   | about 430 MB (the sandbox base image; the supervisor uses the server image the box already has) | 512 MB, plus up to 1 GB for each running sandbox (3 at a time) |
-| **Media**     | Transcripts from video and audio (links or files), and CAD drawings: DWF, DWG and DXF ([video-ingest.md](video-ingest.md)). | about 300 MB                                                                                    | up to 1 GB (3 GB is advised for large DWF sets)                |
+| service            | what it does                                                                                                                | download                                                                                        | memory                                                         |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| **Sandboxes**      | Isolated workspaces where the coder and app agents run code, build apps and test packages ([sandboxes.md](sandboxes.md)).   | about 430 MB (the sandbox base image; the supervisor uses the server image the box already has) | 512 MB, plus up to 1 GB for each running sandbox (3 at a time) |
+| **Media**          | Transcripts from video and audio (links or files), and CAD drawings: DWF, DWG and DXF ([video-ingest.md](video-ingest.md)). | about 300 MB                                                                                    | up to 1 GB (3 GB is advised for large DWF sets)                |
+| **Local embedder** | The bundled EmbeddingGemma embedder (ollama), so indexed text never leaves the box ([embeddings.md](embeddings.md)).        | about 3.9 GB (the ollama image plus the model)                                                  | up to 2 GB                                                     |
+| **Helpers**        | Core boxes only: Tika (rare file types) and the headless browser (PDF export, drawing pictures in exports).                 | about 1.2 GB                                                                                    | up to 3 GB (1.5 GB each)                                       |
 
-Both are compose **profiles** (`sandboxes`, `media`). A switch changes the
-box's `.env` and starts or stops ONE container; the rest of the brain keeps
-running.
+All four are compose **profiles**, and each service name is its profile
+(`sandboxes`, `media`, `local-embedder`, `helpers`). A switch changes the
+box's `.env` and starts or stops that service's containers (one, or two for
+the helpers); the rest of the brain keeps running.
+
+- **Local embedder** has no token. "On" is its profile alone. Switching it on
+  also runs the `ollama_pull` one-shot and waits up to
+  `MANTLE_SERVICE_MODEL_TIMEOUT_S` (default 600) for the model; a slow or
+  failed model download is logged, never fatal, and the next roll runs the
+  one-shot again. Off keeps the model volume (`data/ollama`). The confirm
+  dialog warns that new content stops being searchable, but only when this
+  brain's embedding route is the local provider on the bundled address.
+- **Helpers** have a profile only on the core shape
+  (`docker-compose.core.yml`, profiles `["full", "helpers"]`). On the full
+  shape they always run, so neither the screen nor the updater offers the
+  switch there; nor on a core box with the `full` profile active, which runs
+  them whatever their own profile says. This replaces
+  `scripts/install.sh --helpers` for a running box. `lib/compose-shape.ts`
+  reads the live profile from `services.json`, so the Tika onboarding check
+  follows a switch without a web restart.
 
 **Off never removes anything.** Switching sandboxes off stops the running
 sandbox containers (stop, not remove) and the supervisor. Every sandbox, its

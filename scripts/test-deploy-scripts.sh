@@ -1198,6 +1198,10 @@ check "sandboxes: profile on, token present, running + healthy" \
   test "$(svc_field 'JSON.stringify(j.services.sandboxes)')" = '{"profile":true,"token":true,"container":"running","health":"healthy"}'
 check "media: profile off, empty token is no token, no container" \
   test "$(svc_field 'JSON.stringify(j.services.media)')" = '{"profile":false,"token":false,"container":"absent","health":"none"}'
+check "local embedder: profile on, no token key at all, no container" \
+  test "$(svc_field 'JSON.stringify(j.services["local-embedder"])')" = '{"profile":true,"token":false,"container":"absent","health":"none"}'
+check "helpers: reported (profile off on this core box)" \
+  test "$(svc_field 'j.services.helpers.profile')" = false
 check "core shape read from COMPOSE_FILE" test "$(svc_field 'j.core')" = true
 check "verbs advertise the roll and the service switch" test "$(svc_field 'j.verbs.join()')" = roll,service
 check "no token VALUE in the file" sh -c "! grep -q sekrit '$SJ'"
@@ -1232,7 +1236,12 @@ SVC_STUB='
 docker() {
   echo "docker $*" >> "$CALLS"
   case "$1" in
-    inspect) echo "${FAKE_HEALTH:-running healthy}"; return 0 ;;
+    inspect)
+      case "$*" in
+        *mantle_ollama_pull*) echo "${FAKE_MODEL_PULL:-exited 0}" ;;
+        *) echo "${FAKE_HEALTH:-running healthy}" ;;
+      esac
+      return 0 ;;
     ps) for i in ${FAKE_SANDBOX_IDS:-}; do echo "$i"; done; return 0 ;;
     stop) [ -z "${FAKE_SBX_STOP_FAIL:-}" ] || return 1; return 0 ;;
     pull) [ -z "${FAKE_BASE_PULL_FAIL:-}" ] || return 1; return 0 ;;
@@ -1390,6 +1399,62 @@ cp "$T/stack/.env" "$T/env.before"
 FAKE_SANDBOX_IDS='c1' FAKE_SBX_STOP_FAIL=1 svc_run
 check "off, a sandbox will not stop: sandboxd left running, .env unchanged" sh -c "
   grep -q 'could not stop the running sandboxes' '$T/sig/service-status.json' && cmp -s '$T/stack/.env' '$T/env.before' && ! grep -q 'stop sandboxd' '$T/calls'"
+
+# ── the local embedder: no token, and the model pull after it is healthy ──
+svc_case emb '{"service":"local-embedder","enable":true}'
+sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=media/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
+svc_run
+check "embedder on: status done" grep -q '"phase":"done","service":"local-embedder","enable":true.*"ok":true' "$T/sig/service-status.json"
+check "embedder on: the profile is added" grep -qx 'COMPOSE_PROFILES=media,local-embedder' "$T/stack/.env"
+check "embedder on: pulls and starts ollama only" sh -c "
+  grep -qE 'compose .*--profile local-embedder pull ollama$' '$T/calls' && grep -qE 'compose .*--profile local-embedder up -d --no-deps ollama$' '$T/calls'"
+check "embedder on: waits on mantle_ollama, then runs the model pull" sh -c "
+  grep -q 'inspect .*mantle_ollama\$' '$T/calls' && grep -qE 'up -d --no-deps ollama_pull$' '$T/calls'"
+check "embedder on: no token is written" sh -c "! grep -q 'TOKEN=' '$T/stack/.env' || test \"\$(grep -c 'TOKEN=' '$T/stack/.env')\" = 2"
+check "embedder on: the model is ready" grep -q 'the embedding model is ready' "$T/sig/service.log"
+check "embedder on: services.json says on" grep -q '"local-embedder":{"profile":true,"token":false' "$T/sig/services.json"
+svc_case embpull '{"service":"local-embedder","enable":true}'
+sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
+FAKE_MODEL_PULL='exited 1' svc_run
+check "embedder on, the model pull fails: still done (ollama is up), and says so" sh -c "
+  grep -q '\"phase\":\"done\".*\"ok\":true' '$T/sig/service-status.json' && grep -q 'the model download failed' '$T/sig/service.log'"
+svc_case embslow '{"service":"local-embedder","enable":true}'
+sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
+FAKE_MODEL_PULL='running 0' svc_run
+check "embedder on, a slow model pull: done, the download goes on" sh -c "
+  grep -q '\"phase\":\"done\"' '$T/sig/service-status.json' && grep -q 'still downloading in the background' '$T/sig/service.log'"
+svc_case emboff '{"service":"local-embedder","enable":false}'
+svc_run
+check "embedder off: profile dropped, ollama stopped and removed, the model volume untouched" sh -c "
+  grep -qx 'COMPOSE_PROFILES=' '$T/stack/.env' && grep -qE 'profile local-embedder stop ollama$' '$T/calls' && grep -qE 'profile local-embedder rm -f ollama$' '$T/calls' && ! grep -q 'volume' '$T/calls'"
+
+# ── the helpers: a core box only, two containers ──
+svc_case helpfull '{"service":"helpers","enable":false}'
+svc_run
+check "helpers on a full box: refused, nothing to switch" grep -q 'the helpers always run on this box' "$T/sig/service-status.json"
+check "helpers on a full box: .env untouched, nothing pulled, started or stopped" sh -c "
+  cmp -s '$T/stack/.env' '$T/env.before' && ! grep -qE ' (pull|up|stop|rm) ' '$T/calls'"
+svc_case helpon '{"service":"helpers","enable":true}'
+printf 'COMPOSE_FILE=docker-compose.yml:docker-compose.core.yml\n' >> "$T/stack/.env"
+svc_run
+check "helpers on a core box: status done" grep -q '"phase":"done","service":"helpers","enable":true.*"ok":true' "$T/sig/service-status.json"
+check "helpers on: the profile is added" grep -qx 'COMPOSE_PROFILES=local-embedder,helpers' "$T/stack/.env"
+check "helpers on: pulls and starts both, as two arguments" sh -c "
+  grep -qE 'profile helpers pull tika browser$' '$T/calls' && grep -qE 'profile helpers up -d --no-deps tika browser$' '$T/calls'"
+check "helpers on: waits on both containers" sh -c "grep -q 'inspect .*mantle_tika\$' '$T/calls' && grep -q 'inspect .*mantle_browser\$' '$T/calls'"
+svc_case helpoff '{"service":"helpers","enable":false}'
+printf 'COMPOSE_FILE=docker-compose.yml:docker-compose.core.yml\n' >> "$T/stack/.env"
+sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=helpers/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
+svc_run
+check "helpers off: both stopped and removed, profile dropped" sh -c "
+  grep -qE 'profile helpers stop tika browser$' '$T/calls' && grep -qE 'profile helpers rm -f tika browser$' '$T/calls' && grep -qx 'COMPOSE_PROFILES=' '$T/stack/.env'"
+svc_case helpfullprof '{"service":"helpers","enable":false}'
+printf 'COMPOSE_FILE=docker-compose.yml:docker-compose.core.yml\n' >> "$T/stack/.env"
+sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=full,helpers/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
+cp "$T/stack/.env" "$T/env.before"
+svc_run
+check "helpers with the full profile on: refused, .env untouched" sh -c "
+  grep -q 'the helpers always run on this box' '$T/sig/service-status.json' && cmp -s '$T/stack/.env' '$T/env.before'"
 
 # ── unconfigured, and the real poll loop ──
 svc_case unconf '{"service":"media","enable":true}'

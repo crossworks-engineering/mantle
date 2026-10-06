@@ -1,6 +1,7 @@
 /**
- * Optional services (sandboxes, media) for the dashboard switches: what each
- * one is, whether it is on, and asking the updater sidecar to switch one.
+ * Optional services (sandboxes, media, the local embedder and, on a core box,
+ * the doc helpers) for the dashboard switches: what each one is, whether it
+ * is on, and asking the updater sidecar to switch one.
  *
  * "On" is @mantle/config `serviceEnabled` (the profile, live from the
  * updater's services.json). Switching writes /signal/service-request.json,
@@ -12,13 +13,16 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {
+  env,
   OPTIONAL_SERVICES,
   readServicesFile,
   serviceEnabled,
+  serviceSwitchable,
   signalDir,
   type OptionalService,
 } from '@mantle/config';
-import { mediaSidecarHealth } from '@mantle/files';
+import { resolveEmbeddingConfig } from '@mantle/embeddings';
+import { mediaSidecarHealth, tikaVersion } from '@mantle/files';
 import type {
   ServiceDescription,
   ServiceInfo,
@@ -27,6 +31,7 @@ import type {
   ServicesView,
   ServiceSwitchResult,
 } from '@mantle/client-types';
+import { browserHealth } from './render-pdf';
 import { sandboxdHealth } from './sandboxd';
 import { readUpdaterStatus, updaterAvailable } from './updates';
 
@@ -35,7 +40,8 @@ export function isOptionalService(v: unknown): v is OptionalService {
 }
 
 /** What the UI says about each service. Sizes: the compressed images on the
- *  registry (mantle-media, mantle-sandbox base); memory: the compose caps. */
+ *  registry (mantle-media, mantle-sandbox base, ollama plus its model, tika
+ *  plus browserless); memory: the compose caps. */
 export const SERVICE_DESCRIPTIONS: Record<OptionalService, ServiceDescription> = {
   sandboxes: {
     title: 'Sandboxes',
@@ -63,7 +69,77 @@ export const SERVICE_DESCRIPTIONS: Record<OptionalService, ServiceDescription> =
     memoryMaxMb: 3072,
     note: 'It runs a downloader (yt-dlp) that updates itself every day and fetches pages from the open web. It holds no keys and cannot reach your data.',
   },
+  'local-embedder': {
+    title: 'Local embedder',
+    what: 'Turns text into search vectors on this box (EmbeddingGemma), so the text you index never leaves it.',
+    usedBy:
+      'Search and ingest, when Settings > Embedding uses the local provider on the bundled address.',
+    whenOff:
+      'A brain that embeds with it cannot index new content: new files, notes and pages are not searchable until it is on again. A brain that embeds online is not affected.',
+    keeps: 'The downloaded model and everything already indexed.',
+    downloadMb: 3900,
+    memory: 'up to 2 GB',
+    memoryMaxMb: 2048,
+    note: null,
+    offWarning: null,
+  },
+  helpers: {
+    title: 'Helpers',
+    what: 'Two small helpers for a core box: Tika reads rare file types, and a headless browser makes PDF exports.',
+    usedBy:
+      'File ingest for formats the brain cannot read itself (ODT, PPTX, DOC, RTF and others), PDF export, and drawing pictures in exports.',
+    whenOff:
+      'Those rare file types are not read, and PDF export stops. PDF, Word, text and Markdown files are still read.',
+    keeps: 'Everything already ingested. The helpers store nothing.',
+    downloadMb: 1200,
+    memory: 'up to 3 GB (1.5 GB each)',
+    memoryMaxMb: 3072,
+    note: null,
+    offWarning:
+      'Rare file types (ODT, PPTX, DOC, RTF) are not read and PDF export stops until you switch it on again.',
+  },
 };
+
+/** The embedder default compose gives the app: the bundled ollama service. */
+const BUNDLED_EMBED_URL = 'http://ollama:11434/v1';
+
+function bundledEmbedUrl(): string {
+  return (env('MANTLE_LOCAL_EMBEDDING_URL') || BUNDLED_EMBED_URL).replace(/\/+$/, '');
+}
+
+/** Pure, for tests: does this embedding route use the BUNDLED embedder? The
+ *  local provider with no base URL (or one on the bundled host) does; a local
+ *  server elsewhere (LM Studio on your own machine) and any online provider
+ *  do not, so switching the bundled one off costs them nothing. */
+export function usesBundledEmbedder(
+  route: { provider: string; baseUrl?: string | null },
+  bundledUrl: string = bundledEmbedUrl(),
+): boolean {
+  if (route.provider !== 'local') return false;
+  const base = (route.baseUrl || bundledUrl).replace(/\/+$/, '');
+  try {
+    return new URL(base).host === new URL(bundledUrl).host;
+  } catch {
+    return false;
+  }
+}
+
+/** The bundled embedder answers its OpenAI-compatible model list. */
+async function bundledEmbedderUp(timeoutMs = 1_500): Promise<boolean> {
+  try {
+    const res = await fetch(`${bundledEmbedUrl()}/models`, {
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** The warning before the embedder goes off: only when this brain embeds with
+ *  it, because only then does new content stop being searchable. */
+const EMBEDDER_IN_USE_WARNING =
+  'This brain embeds with the local embedder. New content is not searchable until you switch it on again.';
 
 /** At or below this much memory a box gets the warning before a switch. */
 const SMALL_BOX_BYTES = 6 * 1024 ** 3;
@@ -160,27 +236,41 @@ async function switchBlocker(): Promise<string | null> {
   return null;
 }
 
-export async function getServicesView(): Promise<ServicesView> {
+/** `ownerId` reads the embedding config, for the embedder's off warning. */
+export async function getServicesView(ownerId: string): Promise<ServicesView> {
   const f = readServicesFile();
-  const [blocker, run, sbx, media] = await Promise.all([
+  const names = OPTIONAL_SERVICES.filter(serviceSwitchable);
+  const helpers = names.includes('helpers');
+  const [blocker, run, sbx, media, embedUp, tika, browser, embedCfg] = await Promise.all([
     switchBlocker(),
     readServiceRun(),
     sandboxdHealth().catch(() => null),
     mediaSidecarHealth(1_500).catch(() => null),
+    serviceEnabled('local-embedder') ? bundledEmbedderUp() : Promise.resolve(false),
+    helpers ? tikaVersion(1_500).catch(() => null) : Promise.resolve(null),
+    helpers ? browserHealth(1_500).catch(() => null) : Promise.resolve(null),
+    resolveEmbeddingConfig(ownerId).catch(() => null),
   ]);
   const probe: Record<OptionalService, boolean | null | undefined> = {
     sandboxes: sbx?.up,
     media: media?.up,
+    'local-embedder': embedUp,
+    helpers: Boolean(tika) && browser?.up !== false,
   };
-  const services: ServiceInfo[] = OPTIONAL_SERVICES.map((name) => {
+  const embedderInUse = embedCfg !== null && usesBundledEmbedder(embedCfg.primary);
+  const services: ServiceInfo[] = names.map((name) => {
     const entry = f?.services[name];
     const on = serviceEnabled(name);
+    const description =
+      name === 'local-embedder' && embedderInUse
+        ? { ...SERVICE_DESCRIPTIONS[name], offWarning: EMBEDDER_IN_USE_WARNING }
+        : SERVICE_DESCRIPTIONS[name];
     return {
       name,
       state: !on ? 'off' : probe[name] === true ? 'up' : 'down',
       container: entry?.container ?? null,
       health: entry?.health ?? null,
-      description: SERVICE_DESCRIPTIONS[name],
+      description,
     };
   });
   const kb = (v: number | null | undefined) => (typeof v === 'number' ? v * 1024 : null);
@@ -207,6 +297,12 @@ export async function requestServiceSwitch(
 ): Promise<ServiceSwitchResult> {
   if (!isOptionalService(name)) return { ok: false, error: `unknown service '${String(name)}'` };
   if (typeof enable !== 'boolean') return { ok: false, error: 'enable must be true or false' };
+  if (!serviceSwitchable(name)) {
+    return {
+      ok: false,
+      error: 'The helpers always run on this box, so there is nothing to switch.',
+    };
+  }
   const blocker = await switchBlocker();
   if (blocker) return { ok: false, error: blocker };
   const roll = await readUpdaterStatus();

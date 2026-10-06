@@ -3,10 +3,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  coreShape,
+  helpersRun,
   parseServicesFile,
   resetServicesFileCache,
   serviceEnabled,
   serviceProfileOn,
+  serviceSwitchable,
   toolService,
   toolServiceAvailable,
 } from './services';
@@ -18,6 +21,7 @@ const KEYS = [
   'SANDBOXD_TOKEN',
   'MEDIA_SIDECAR_URL',
   'MEDIA_SIDECAR_TOKEN',
+  'MANTLE_COMPOSE_FILE',
 ] as const;
 
 let dir: string;
@@ -48,13 +52,14 @@ function wire(): void {
   process.env.MEDIA_SIDECAR_TOKEN = 't2';
 }
 
-function servicesJson(profiles: string): void {
+function servicesJson(profiles: string, core = false): void {
   writeFileSync(
     join(dir, 'services.json'),
     JSON.stringify({
       profiles,
       services: { sandboxes: { profile: profiles.includes('sandboxes'), token: true } },
       mem_total_kb: 8_000_000,
+      core,
       verbs: ['roll'],
     }),
   );
@@ -130,6 +135,50 @@ describe('serviceEnabled', () => {
   it('with no way to know the profile, the token alone decides (pre-switch behaviour)', () => {
     wire();
     expect(serviceEnabled('sandboxes')).toBe(true);
+  });
+});
+
+describe('the token-less services: local embedder and helpers', () => {
+  it('the embedder is on only when its profile is known to be on', () => {
+    expect(serviceEnabled('local-embedder')).toBe(false);
+    process.env.MANTLE_COMPOSE_PROFILES = 'local-embedder';
+    expect(serviceEnabled('local-embedder')).toBe(true);
+    servicesJson('sandboxes');
+    expect(serviceEnabled('local-embedder')).toBe(false);
+  });
+
+  it('the core shape: live file first, then the compose file env', () => {
+    expect(coreShape()).toBe(false);
+    process.env.MANTLE_COMPOSE_FILE = 'docker-compose.yml:docker-compose.core.yml';
+    expect(coreShape()).toBe(true);
+    servicesJson('', false);
+    expect(coreShape()).toBe(false);
+  });
+
+  it('the helpers always run on the full shape, and are not switchable there', () => {
+    servicesJson('');
+    expect(helpersRun()).toBe(true);
+    expect(serviceEnabled('helpers')).toBe(true);
+    expect(serviceSwitchable('helpers')).toBe(false);
+    expect(serviceSwitchable('local-embedder')).toBe(true);
+  });
+
+  it('on a core box the helpers follow their profile', () => {
+    servicesJson('', true);
+    expect(helpersRun()).toBe(false);
+    expect(serviceSwitchable('helpers')).toBe(true);
+    servicesJson('helpers', true);
+    expect(helpersRun()).toBe(true);
+  });
+
+  it('a core box with the full profile runs them whatever the switch says', () => {
+    servicesJson('full', true);
+    expect(helpersRun()).toBe(true);
+    expect(serviceSwitchable('helpers')).toBe(false);
+  });
+
+  it('no tool needs either of them', () => {
+    expect(toolService('embed')).toBeNull();
   });
 });
 

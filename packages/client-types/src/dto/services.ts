@@ -1,11 +1,13 @@
 /**
  * Optional services: the box services an admin can switch on and off from
- * the dashboard (sandboxes, media). GET /api/services returns a
+ * the dashboard (sandboxes, media, the local embedder and, on a core box,
+ * the doc helpers). GET /api/services returns a
  * {@link ServicesView}; POST /api/services/:name {enable} asks the updater
  * sidecar to switch one; GET /api/services/status is the progress poll.
  */
 
-export type OptionalServiceName = 'sandboxes' | 'media';
+/** Each name is also the service's compose profile. */
+export type OptionalServiceName = 'sandboxes' | 'media' | 'local-embedder' | 'helpers';
 
 /**
  * - `off`: the compose profile is not active (the resting state).
@@ -34,6 +36,10 @@ export type ServiceDescription = {
   memoryMaxMb: number;
   /** A security note, when the service carries one. */
   note: string | null;
+  /** One line the confirm dialog shows as a warning before the service goes
+   *  off, when switching it off has a cost the admin must see (new content
+   *  not searchable, files not read). Absent from older brains. */
+  offWarning?: string | null;
 };
 
 export type ServiceInfo = {

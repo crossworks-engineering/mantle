@@ -24,7 +24,8 @@
 #   ["full"]             off on a core box, no way back short of --no-core
 #   ["full", "helpers"]  the doc helpers: stateless parse/render sidecars a
 #                        core can re-enable with `scripts/install.sh --helpers`
-#                        (adds `helpers` to COMPOSE_PROFILES in .env)
+#                        or the Helpers switch in Settings > Services (both
+#                        add `helpers` to COMPOSE_PROFILES in .env)
 #
 # What a core keeps and why (see docker-compose.yml for each service's role):
 #   postgres, objectstore, migrate            the data spine

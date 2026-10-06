@@ -7,7 +7,7 @@
  * installer re-run with -y, `--helpers`, or a hand edit of COMPOSE_FILE all
  * change it the next time web starts, and nothing can go stale.
  */
-import { env } from '@mantle/config';
+import { env, readServicesFile } from '@mantle/config';
 
 export type ComposeShape = {
   /** docker-compose.core.yml is loaded: the brain-core shape. */
@@ -29,7 +29,12 @@ export function composeShapeFrom(
   return { core, helpers };
 }
 
+/** Live from the updater's services.json when there is one: Settings >
+ *  Services can switch the helpers without recreating web, so web's own env
+ *  goes stale. Else the values compose gave this container. */
 export function composeShape(): ComposeShape {
+  const file = readServicesFile();
+  if (file) return { core: file.core, helpers: file.profiles.includes('helpers') };
   return composeShapeFrom(env('MANTLE_COMPOSE_FILE'), env('MANTLE_COMPOSE_PROFILES'));
 }
 

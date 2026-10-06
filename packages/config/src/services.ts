@@ -2,8 +2,12 @@
  * Optional services: is the sandboxes or media service switched on for this
  * box? The ONE answer every caller reads (the dashboard pills, /api/sandboxes,
  * the sandbox tools, video_ingest, the CAD render path, the agent tool list).
+ * Two more services carry no token and gate no tool, but are switched the
+ * same way from Settings > Services: the bundled local embedder (profile
+ * `local-embedder`) and, on a core box only, the doc helpers (Tika and the
+ * PDF browser, profile `helpers`). See the end of this module.
  *
- * Both services are compose PROFILES. Before this module, "on" meant "the
+ * Sandboxes and media are compose PROFILES. Before this module, "on" meant "the
  * bearer token is in this container's env", which is wrong twice over: a
  * disable keeps the token (the pill turned red, "unreachable", instead of
  * grey), and a token pre-provisioned on every box would make every box look
@@ -27,15 +31,19 @@
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { env } from './index';
+import { env, type KnownEnvName } from './index';
 
-export const OPTIONAL_SERVICES = ['sandboxes', 'media'] as const;
+/** Every service Settings > Services can switch. Each name is also its
+ *  compose profile. */
+export const OPTIONAL_SERVICES = ['sandboxes', 'media', 'local-embedder', 'helpers'] as const;
 export type OptionalService = (typeof OPTIONAL_SERVICES)[number];
 
-const WIRING = {
+/** The services the app talks to with a bearer token. "On" needs the token
+ *  too; the other two are on when their profile is. */
+const WIRING: Partial<Record<OptionalService, { url: KnownEnvName; token: KnownEnvName }>> = {
   sandboxes: { url: 'SANDBOXD_URL', token: 'SANDBOXD_TOKEN' },
   media: { url: 'MEDIA_SIDECAR_URL', token: 'MEDIA_SIDECAR_TOKEN' },
-} as const;
+};
 
 /** One service as the updater saw it. `container` is docker's State.Status
  *  ('running', 'exited', ...) or 'absent'; `health` is the healthcheck status
@@ -154,10 +162,11 @@ export function serviceProfileOn(name: OptionalService): boolean | null {
   return null;
 }
 
-/** URL and token are both set: the app side is wired to talk to it. */
+/** URL and token are both set: the app side is wired to talk to it. A
+ *  service with no token is wired whenever compose runs it. */
 export function serviceConfigured(name: OptionalService): boolean {
   const w = WIRING[name];
-  return Boolean(env(w.url) && env(w.token));
+  return !w || Boolean(env(w.url) && env(w.token));
 }
 
 /** The service is switched on for this box: wired AND its profile active (or
@@ -165,7 +174,43 @@ export function serviceConfigured(name: OptionalService): boolean {
  *  every caller; a running-but-unhealthy service is still "on" and its calls
  *  fail with their own error. */
 export function serviceEnabled(name: OptionalService): boolean {
+  if (name === 'local-embedder') return serviceProfileOn(name) === true;
+  if (name === 'helpers') return helpersRun();
   return serviceConfigured(name) && serviceProfileOn(name) !== false;
+}
+
+/** docker-compose.core.yml is loaded: the 4 GB core shape. Live from
+ *  services.json, else what compose gave this container. */
+export function coreShape(): boolean {
+  const file = readServicesFile();
+  if (file) return file.core;
+  return (env('MANTLE_COMPOSE_FILE') ?? '').includes('docker-compose.core.yml');
+}
+
+/** The profiles active on this box: live from services.json, else what
+ *  compose gave this container, else null (a dev process). */
+function activeProfiles(): string[] | null {
+  const file = readServicesFile();
+  if (file) return file.profiles;
+  const fromCompose = env('MANTLE_COMPOSE_PROFILES');
+  return fromCompose === undefined ? null : splitProfiles(fromCompose);
+}
+
+/** Do the doc helpers (Tika, the PDF browser) run? Always on the full shape:
+ *  they have no profile there. On a core box only with the `helpers` profile
+ *  (or `full`, which a core is not meant to use). */
+export function helpersRun(): boolean {
+  if (!coreShape()) return true;
+  const profiles = activeProfiles() ?? [];
+  return profiles.includes('helpers') || profiles.includes('full');
+}
+
+/** Can Settings > Services switch this service on THIS box? The helpers only
+ *  on a core box without the `full` profile: anywhere else nothing would
+ *  stop them, so the screen does not offer the row. */
+export function serviceSwitchable(name: OptionalService): boolean {
+  if (name !== 'helpers') return true;
+  return coreShape() && !(activeProfiles() ?? []).includes('full');
 }
 
 /** Tools that need an optional service, by slug. The sandbox verbs share one

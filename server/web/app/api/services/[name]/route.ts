@@ -9,7 +9,7 @@ const Body = z.object({ enable: z.boolean() }).strict();
 
 /**
  * POST /api/services/:name {enable} — switch an optional service (sandboxes,
- * media) on or off. Admin logins only (the roll's gate); members, clients
+ * media, local-embedder, helpers) on or off. Admin logins only (the roll's gate); members, clients
  * and agents have no path here. Writes its own `service.toggle` audit row
  * (the path is in AUDIT_SELF_LOGGED_PATHS) with the outcome of the request.
  * A refusal (no updater, a roll running) is a 200 `{ok:false,error}` so the

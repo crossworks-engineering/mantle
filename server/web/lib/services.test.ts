@@ -10,6 +10,9 @@
  *    while another switch runs.
  *  - The view says off (grey) for a service whose profile is off even with a
  *    token set, up/down from the probe when on, and warns a small box.
+ *  - The helpers row exists only on a core box (anywhere else nothing would
+ *    stop them), and the embedder carries its off warning only when this
+ *    brain embeds with it.
  */
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -27,12 +30,22 @@ vi.mock('./updates', () => ({
 const probes = vi.hoisted(() => ({
   sandboxes: null as boolean | null,
   media: null as boolean | null,
+  tika: null as string | null,
+  browser: null as boolean | null,
+  embedding: { provider: 'openrouter', baseUrl: null as string | null },
 }));
 vi.mock('./sandboxd', () => ({
   sandboxdHealth: async () => ({ up: probes.sandboxes }),
 }));
+vi.mock('./render-pdf', () => ({
+  browserHealth: async () => ({ up: probes.browser, version: null }),
+}));
 vi.mock('@mantle/files', () => ({
   mediaSidecarHealth: async () => ({ up: probes.media }),
+  tikaVersion: async () => probes.tika,
+}));
+vi.mock('@mantle/embeddings', () => ({
+  resolveEmbeddingConfig: async () => ({ model: 'm', primary: probes.embedding }),
 }));
 
 import { resetServicesFileCache } from '@mantle/config';
@@ -42,6 +55,7 @@ import {
   readServiceRun,
   requestServiceSwitch,
   SERVICE_DESCRIPTIONS,
+  usesBundledEmbedder,
 } from './services';
 
 const KEYS = [
@@ -51,6 +65,8 @@ const KEYS = [
   'SANDBOXD_TOKEN',
   'MEDIA_SIDECAR_URL',
   'MEDIA_SIDECAR_TOKEN',
+  'MANTLE_COMPOSE_FILE',
+  'MANTLE_LOCAL_EMBEDDING_URL',
 ] as const;
 const saved: Record<string, string | undefined> = {};
 let sig: string;
@@ -86,6 +102,12 @@ beforeEach(() => {
   updater.status = null;
   probes.sandboxes = null;
   probes.media = null;
+  probes.tika = null;
+  probes.browser = null;
+  probes.embedding = { provider: 'openrouter', baseUrl: null };
+  delete process.env.MANTLE_COMPOSE_FILE;
+  delete process.env.MANTLE_LOCAL_EMBEDDING_URL;
+  vi.stubGlobal('fetch', async () => new Response('{}', { status: 200 }));
   servicesJson();
 });
 
@@ -96,6 +118,7 @@ afterEach(() => {
   }
   rmSync(sig, { recursive: true, force: true });
   resetServicesFileCache();
+  vi.unstubAllGlobals();
 });
 
 describe('requestServiceSwitch', () => {
@@ -161,6 +184,21 @@ describe('requestServiceSwitch', () => {
     expect(await requestServiceSwitch('media', true)).toEqual({ ok: true });
   });
 
+  it('refuses the helpers on a full box, where nothing would stop them', async () => {
+    expect(await requestServiceSwitch('helpers', false)).toMatchObject({ ok: false });
+    expect(existsSync(join(sig, 'service-request.json'))).toBe(false);
+    servicesJson({ core: true, profiles: 'helpers' });
+    expect(await requestServiceSwitch('helpers', false)).toEqual({ ok: true });
+  });
+
+  it('switches the local embedder like any other service', async () => {
+    expect(await requestServiceSwitch('local-embedder', true)).toEqual({ ok: true });
+    expect(JSON.parse(readFileSync(join(sig, 'service-request.json'), 'utf8'))).toMatchObject({
+      service: 'local-embedder',
+      enable: true,
+    });
+  });
+
   it('refuses a name or a switch outside the whitelist', async () => {
     expect(await requestServiceSwitch('postgres' as never, true)).toMatchObject({ ok: false });
     expect(await requestServiceSwitch('media', 'yes' as never)).toMatchObject({ ok: false });
@@ -175,40 +213,94 @@ describe('getServicesView', () => {
       services: { media: { profile: true, container: 'running', health: 'healthy' } },
     });
     probes.media = true;
-    const v = await getServicesView();
+    const v = await getServicesView('owner-1');
     const by = Object.fromEntries(v.services.map((s) => [s.name, s]));
     expect(by.sandboxes?.state).toBe('off');
     expect(by.media).toMatchObject({ state: 'up', container: 'running', health: 'healthy' });
     probes.media = false;
-    const down = await getServicesView();
+    const down = await getServicesView('owner-1');
     expect(down.services.find((s) => s.name === 'media')?.state).toBe('down');
   });
 
   it('switching is available only with the verb, and says why not', async () => {
-    expect((await getServicesView()).switching).toEqual({ available: true, reason: null });
+    expect((await getServicesView('owner-1')).switching).toEqual({ available: true, reason: null });
     servicesJson({ verbs: ['roll'] });
-    expect((await getServicesView()).switching.available).toBe(false);
+    expect((await getServicesView('owner-1')).switching.available).toBe(false);
   });
 
   it('warns a small box, and a core box whatever its memory', async () => {
-    expect((await getServicesView()).box.smallBox).toBe(false);
+    expect((await getServicesView('owner-1')).box.smallBox).toBe(false);
     servicesJson({ mem_total_kb: 4 * 1024 * 1024 });
-    expect((await getServicesView()).box).toMatchObject({
+    expect((await getServicesView('owner-1')).box).toMatchObject({
       smallBox: true,
       memTotalBytes: 4 * 1024 ** 3,
     });
     servicesJson({ core: true });
-    expect((await getServicesView()).box.smallBox).toBe(true);
+    expect((await getServicesView('owner-1')).box.smallBox).toBe(true);
+  });
+
+  it('lists the helpers only on a core box without the full profile', async () => {
+    const names = async () => (await getServicesView('owner-1')).services.map((s) => s.name);
+    expect(await names()).toEqual(['sandboxes', 'media', 'local-embedder']);
+    servicesJson({ core: true });
+    expect(await names()).toEqual(['sandboxes', 'media', 'local-embedder', 'helpers']);
+    servicesJson({ core: true, profiles: 'full' });
+    expect(await names()).not.toContain('helpers');
+  });
+
+  it('the helpers are off without their profile, up when both answer', async () => {
+    servicesJson({ core: true });
+    const helpers = async () =>
+      (await getServicesView('owner-1')).services.find((s) => s.name === 'helpers');
+    expect((await helpers())?.state).toBe('off');
+    servicesJson({ core: true, profiles: 'helpers' });
+    probes.tika = '3.3.1';
+    probes.browser = true;
+    expect((await helpers())?.state).toBe('up');
+    probes.tika = null;
+    expect((await helpers())?.state).toBe('down');
+    expect((await helpers())?.description.offWarning).toMatch(/PDF export stops/);
+  });
+
+  it('the embedder is on with its profile, and warns only when it is in use', async () => {
+    const embedder = async () =>
+      (await getServicesView('owner-1')).services.find((s) => s.name === 'local-embedder');
+    expect((await embedder())?.state).toBe('off');
+    servicesJson({ profiles: 'local-embedder' });
+    expect((await embedder())?.state).toBe('up');
+    expect((await embedder())?.description.offWarning).toBeNull();
+    probes.embedding = { provider: 'local', baseUrl: null };
+    expect((await embedder())?.description.offWarning).toMatch(/not searchable/);
+    vi.stubGlobal('fetch', async () => {
+      throw new Error('ECONNREFUSED');
+    });
+    expect((await embedder())?.state).toBe('down');
   });
 
   it('every service carries the plain-language description', async () => {
-    for (const s of (await getServicesView()).services) {
+    for (const s of (await getServicesView('owner-1')).services) {
       expect(s.description).toBe(SERVICE_DESCRIPTIONS[s.name]);
       for (const text of [s.description.what, s.description.whenOff, s.description.keeps]) {
         expect(text.length).toBeGreaterThan(10);
         expect(text).not.toMatch(/[–—]/); // house style: no en or em dashes
       }
     }
+  });
+});
+
+describe('usesBundledEmbedder', () => {
+  const bundled = 'http://ollama:11434/v1';
+  it('the local provider on the bundled host, or with no address', () => {
+    expect(usesBundledEmbedder({ provider: 'local', baseUrl: null }, bundled)).toBe(true);
+    expect(
+      usesBundledEmbedder({ provider: 'local', baseUrl: 'http://ollama:11434/v1/' }, bundled),
+    ).toBe(true);
+  });
+  it('not a local server elsewhere, nor an online provider', () => {
+    expect(
+      usesBundledEmbedder({ provider: 'local', baseUrl: 'http://my-gpu-box:1234/v1' }, bundled),
+    ).toBe(false);
+    expect(usesBundledEmbedder({ provider: 'openrouter', baseUrl: null }, bundled)).toBe(false);
   });
 });
 
