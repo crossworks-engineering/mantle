@@ -3608,15 +3608,20 @@ export const THEME_SEEDS = [
     // and secondary/accent collapse into the same button.
     //
     // ORANGE WEARS DARK TEXT. White on #E46E08 is 3.2:1 and fails AA; the
-    // brand brown on it is 5.0:1 — and matches how the badge itself is drawn.
+    // brand brown on it is 5.4:1, and matches how the badge itself is drawn.
+    //
+    // SHARED BASE. Cream #FDE7BC, brown #2D1500 and amber #EB9F13 are one set
+    // with the Mantle site (mantle-ai.tech); each brand keeps its own lead
+    // (Jackdaw orange, Mantle grey plus blue-grey). Text is the brand brown
+    // itself, not a near-twin.
     light: {
       background: '#fde7bc',
-      foreground: '#341a00',
+      foreground: '#2d1500',
       card: '#fff9ec',
       primary: '#e46e08',
-      'primary-foreground': '#341a00',
+      'primary-foreground': '#2d1500',
       secondary: '#e3b575',
-      'secondary-foreground': '#341a00',
+      'secondary-foreground': '#2d1500',
       muted: '#f5d9a4',
       'muted-foreground': '#57504a',
       accent: '#f0c88c',

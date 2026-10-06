@@ -25,6 +25,27 @@ Two lockups, each in a mono and a colour variant, each as SVG and PNG:
 - **PNG is a convenience export** for places that can't take SVG. Both are RGBA
   with a transparent background: icon at 2000x2000, wordmark at 1400x400.
 
+## Colours
+
+Mantle (the engine) and Jackdaw (the product) share one colour base and
+each keeps its own lead colour, so they read as one family but you can tell
+them apart. The site's `app/globals.css` and `DESIGN.md` (mantle-site repo)
+hold every token; this is the short version.
+
+| role | hex | used for |
+|---|---|---|
+| Shared cream | `#FDE7BC` | Cream keys, key legends, night text, the nameplate wordmark. Jackdaw's background and wordmark. |
+| Shared brown | `#2D1500` | Ink on cream. Jackdaw's text and badge ring. |
+| Shared amber | `#EB9F13` | State: the lit lamp, the focus ring, the current page. |
+| Mantle lead: panel grey | `#CFD1CD` day, `#1A1917` night | The panel face, the whole page. |
+| Mantle lead: blue-grey | `#44698D` key, `#304C67` / `#8FAACB` text | Keys that leave the site; links by day / night. |
+| Install key | `#BC390C` | The install key and nothing else. |
+| Phosphor | `#A8F291` on `#0F1A13` | Displays only: commands behind scope glass. |
+
+Jackdaw's lead is sunset orange `#E46E08`. Orange is never a Mantle text
+colour. The logo files above predate this palette; a new mark is being
+drawn separately and will take these colours.
+
 ## Which one to use
 
 - **Icon** where the mark has to work small or square: favicons, app icons,
