@@ -131,13 +131,16 @@ RUN maturin build --release --interpreter python3.12 --out /wheels
 # BINARY invoked via subprocess only — the process boundary is the licence
 # boundary; never link or bind it into anything. --disable-werror because
 # newer GCCs flag warnings 0.13.3 predates; the python base satisfies
-# configure's interpreter check.
+# configure's interpreter check. The tarball comes from the kernel.org GNU
+# mirror, not ftp.gnu.org: the primary timed out for whole release runs
+# (v0.239.15). The checksum pins the exact bytes, so the mirror cannot
+# change what we build.
 FROM python:3.12-slim AS libredwg-build
 RUN apt-get update \
   && apt-get install -y --no-install-recommends gcc make libc6-dev xz-utils \
   && rm -rf /var/lib/apt/lists/*
 ADD --checksum=sha256:83f1f6e78a744777a481ff4520e4cef3f8ac4b2c1c25671077ca12fe81e8816e \
-  https://ftp.gnu.org/gnu/libredwg/libredwg-0.13.3.tar.xz /tmp/libredwg.tar.xz
+  https://mirrors.kernel.org/gnu/libredwg/libredwg-0.13.3.tar.xz /tmp/libredwg.tar.xz
 RUN mkdir /tmp/libredwg \
   && tar -xJf /tmp/libredwg.tar.xz -C /tmp/libredwg --strip-components=1
 WORKDIR /tmp/libredwg
