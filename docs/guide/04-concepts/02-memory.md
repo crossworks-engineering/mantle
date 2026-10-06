@@ -38,5 +38,5 @@ You forward an email: "Your flight to Lisbon on 14 May leaves at 09:40." Weeks l
 ## Next
 
 - [Add knowledge and ask for it](../02-first-steps/03-add-knowledge.md)
-- [Agents, skills and tools](02-agents-skills-tools.md)
+- [Agents, skills and tools](03-agents-skills-tools.md)
 - Deep developer reference: [memory.md](../../memory.md)

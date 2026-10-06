@@ -44,4 +44,4 @@ an agent reads one card in one query. Limits: 6,000 characters per card body
 and 100 cards per map. Prompts are embedded for `recall_match`, which returns
 only confirmed prompts on published maps above a score floor. The last 50
 changes per map are kept for restore. Changing a map's slug keeps the old slug
-working. More detail: [Recall maps](../04-concepts/03-recall-maps.md).
+working. More detail: [Recall maps](../04-concepts/04-recall-maps.md).

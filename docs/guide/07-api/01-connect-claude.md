@@ -9,7 +9,7 @@ There are two ways in:
 
 ## Before you start
 
-- Mantle runs on a domain with HTTPS ([Add a domain and HTTPS](../01-install/03-domain-https.md)).
+- Mantle runs on a domain with HTTPS ([Add a domain and HTTPS](../01-install/05-domain-https.md)).
 - `MANTLE_PUBLIC_URL` is set to that address ([Environment variables](../05-admin/03-env-vars.md)).
 - You sign in as an admin.
 

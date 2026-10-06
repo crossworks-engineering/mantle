@@ -4,11 +4,23 @@ One command installs Mantle on a Linux server and starts it.
 
 ## Before you start
 
-- A Linux server with Docker Engine and the Compose plugin (`docker compose version` works), plus `openssl` and `curl`.
-- 8 GB of RAM or more for the full stack. With less than 6 GB, use the [small server](04-small-server.md) shape.
+- A Linux server with Docker Engine and the Compose plugin (`docker compose version` works), plus `openssl` and `curl`. No server yet: see [Get a server](02-get-a-server.md).
+- 8 GB of RAM or more for the full stack. With less than 6 GB, use the [small server](06-small-server.md) shape.
 - 20 GB of free disk or more. The installer stops below 5 GB.
 - An [OpenRouter](https://openrouter.ai/keys) key. You paste it into the setup wizard after the install, not into a file.
-- For HTTPS: a domain that points at the server. See [Add a domain and HTTPS](03-domain-https.md).
+- For HTTPS: a domain that points at the server. See [Add a domain and HTTPS](05-domain-https.md).
+
+:::note[What OpenRouter is for]
+OpenRouter is one account and one key that reach many AI models. Mantle uses it by default for the agents' chat, the background work that summarises new items and pulls out facts, reading images and PDFs, web research, speech and image generation.
+
+Search embeddings use an online model on your OpenRouter or OpenAI key, picked in the setup wizard. You can move them to the bundled local embedder, and point any agent or worker at a model on your own machine. See [Use local models](../05-admin/06-local-models.md).
+
+Set a credit limit on the key at [openrouter.ai/keys](https://openrouter.ai/keys). Spend then stops at that amount.
+:::
+
+:::tip[What the domain is for]
+A domain, for example `brain.example.com`, is the address of your brain. It points at the server that runs Mantle, and you open Jackdaw there. It also gives the brain HTTPS, which the remote MCP connector needs. See [Add a domain and HTTPS](05-domain-https.md).
+:::
 
 ## Install
 
@@ -47,9 +59,9 @@ cd mantle && bash scripts/install.sh --check
 
 - **Installation incomplete**: run the check above and `docker compose logs --tail 50 web caddy` in `mantle`, fix what is flagged, then run the installer again.
 - **Image pull failed**: usually a network blip. Run the installer again.
-- **Port 80 already in use**: without a domain the installer moves to port 8080 and prints that address. With a domain, see [Add a domain and HTTPS](03-domain-https.md).
+- **Port 80 already in use**: without a domain the installer moves to port 8080 and prints that address. With a domain, see [Add a domain and HTTPS](05-domain-https.md).
 
 ## Next
 
 - [Create your account](../02-first-steps/01-create-account.md)
-- [Install options](05-options.md): silent installs, sandboxes, the local embedder, media, no UI.
+- [Install options](07-options.md): silent installs, sandboxes, the local embedder, media, no UI.

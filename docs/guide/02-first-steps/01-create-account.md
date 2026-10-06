@@ -39,7 +39,7 @@ You can change anything the wizard set later, under **Settings**.
 
 - **System status shows red**: some services are not running. On the server, run `bash scripts/install.sh --check`, fix what it flags, then click **Re-check**.
 - **The setup code is refused**: print it again with `bash scripts/install.sh --setup-code` and copy it exactly.
-- **There is no sign-up screen**: the brain was installed without the web UI. Set it up from the [desktop app](../01-install/07-desktop-app.md) or with `bash scripts/onboard.sh` on the server.
+- **There is no sign-up screen**: the brain was installed without the web UI. Set it up from the [desktop app](../01-install/09-desktop-app.md) or with `bash scripts/onboard.sh` on the server.
 
 ## Next
 

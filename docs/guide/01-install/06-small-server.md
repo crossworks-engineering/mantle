@@ -13,11 +13,11 @@ PDF, Word, text and Markdown files still read without the doc helpers. A core bo
 ## Before you start
 
 - 2 vCPU, 4 GB of RAM, 40 GB of disk. Add 2 GB of swap as a safety margin.
-- Everything in [Install on a server](02-server.md#before-you-start) except the RAM.
+- Everything in [Install on a server](03-server.md#before-you-start) except the RAM.
 
 ## Install
 
-1. Run the [server install](02-server.md) one-liner.
+1. Run the [server install](03-server.md) one-liner.
 2. When it asks **Install the SMALL core shape instead of the full stack?**, answer yes. On a box with less than 6 GB of RAM, yes is the default.
 3. Answer **Add the doc helpers to the core?** with no, unless you need rare file formats or PDF export.
 

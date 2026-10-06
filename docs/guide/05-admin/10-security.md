@@ -7,7 +7,7 @@ A Mantle box exposes one front door, and its secrets live in `.env`. This page l
 - Only the front door (Caddy) listens on the network, on ports 80 and 443.
 - The debug port (3000) listens on `127.0.0.1` only.
 - Docker's published ports bypass the host firewall. To keep a brain off the network, install with `--localhost`, which sets `MANTLE_BIND_ADDR=127.0.0.1`. A firewall rule alone does not do it.
-- Use a domain with HTTPS for any box reachable from the internet. See [Add a domain and HTTPS](../01-install/03-domain-https.md).
+- Use a domain with HTTPS for any box reachable from the internet. See [Add a domain and HTTPS](../01-install/05-domain-https.md).
 
 ## What leaves the box
 

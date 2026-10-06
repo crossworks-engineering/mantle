@@ -4,7 +4,7 @@ Give your assistant a Telegram bot, so you can message it from your phone by tex
 
 ## Before you start
 
-- A brain on the full shape. The [small core shape](../01-install/04-small-server.md) does not run the Telegram worker.
+- A brain on the full shape. The [small core shape](../01-install/06-small-server.md) does not run the Telegram worker.
 - The setup wizard's **Set up** step is done, so the assistant exists.
 - Telegram on your phone.
 

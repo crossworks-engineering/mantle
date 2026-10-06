@@ -1,11 +1,12 @@
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { defineCollection } from 'astro:content';
 import type { Loader } from 'astro/loaders';
 import { docsSchema } from '@astrojs/starlight/schema';
 // @ts-expect-error plain JS module shared with astro.config.mjs
 import { CHANGELOG_FILE, GUIDE_ROOT, changelogPages, guidePages, mcpToolsPage } from './lib/guide.mjs';
 
-type Page = { id: string; title: string; description?: string; body: string };
+type Page = { id: string; title: string; description?: string; body: string; file?: string };
 
 /**
  * Loads the pages from ../docs/guide and ../CHANGELOG.md at build time. In dev
@@ -28,7 +29,9 @@ const mantleDocs: Loader = {
           data,
           body: page.body,
           digest: generateDigest(page.body + page.title),
-          rendered: await renderMarkdown(page.body),
+          // The file URL lets Starlight's plugins (asides) claim the page:
+          // they only touch files under `markdown.processedDirs`.
+          rendered: await renderMarkdown(page.body, page.file ? { fileURL: pathToFileURL(page.file) } : undefined),
         });
       }
       logger.info(`${pages.length} pages from docs/guide and CHANGELOG.md`);

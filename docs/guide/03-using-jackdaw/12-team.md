@@ -57,5 +57,6 @@ Members can write their own items and submit them. **Review** lists what waits f
 
 ## Next
 
+- [Who can use a brain](../04-concepts/05-access-tiers.md)
 - [Agents and AI workers](13-agents.md)
 - Screen help: [Team](../06-help/team-admin.md)

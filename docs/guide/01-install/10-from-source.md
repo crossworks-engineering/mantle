@@ -2,7 +2,7 @@
 
 Run the brain from a git checkout and the owner UI from the jackdaw repo, for working on Mantle itself.
 
-This repo is the brain only: it serves the API on `http://localhost:3000` and has no screens. For everyday use, install on a [server](02-server.md) instead. A laptop sleeps, so email sync and reminders stop with it.
+This repo is the brain only: it serves the API on `http://localhost:3000` and has no screens. For everyday use, install on a [server](03-server.md) instead. A laptop sleeps, so email sync and reminders stop with it.
 
 ## Before you start
 
@@ -69,4 +69,4 @@ Run these in the mantle checkout:
 ## Next
 
 - [Create your account](../02-first-steps/01-create-account.md)
-- [Architecture](../04-concepts/05-architecture.md)
+- [Architecture](../04-concepts/07-architecture.md)

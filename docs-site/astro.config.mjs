@@ -42,6 +42,10 @@ export default defineConfig({
           },
         },
       },
+      // The guide lives outside src/content, so name it here for Starlight's
+      // Markdown plugins: `:::note` / `:::tip` asides. Heading links stay off,
+      // as on the rest of the site.
+      markdown: { processedDirs: ['../docs/guide'], headingLinks: false },
       sidebar: sidebar(),
       lastUpdated: false,
       pagination: true,

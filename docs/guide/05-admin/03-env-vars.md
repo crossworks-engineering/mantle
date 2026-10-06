@@ -27,7 +27,7 @@ These are the `.env` settings an operator sets or changes. The installer writes 
 | `MANTLE_TRUSTED_PROXIES` | Proxy hops in front of Mantle, for correct client addresses. Default 1. Raise it if you add a proxy before Caddy. |
 | `MANTLE_API_CORS_ORIGINS` | Extra origins allowed to call the API, comma separated. Empty means same origin only. |
 
-To change the domain, run `scripts/install.sh --domain <host>` instead of editing these by hand. See [Add a domain and HTTPS](../01-install/03-domain-https.md).
+To change the domain, run `scripts/install.sh --domain <host>` instead of editing these by hand. See [Add a domain and HTTPS](../01-install/05-domain-https.md).
 
 ## Stack
 

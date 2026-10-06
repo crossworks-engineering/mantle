@@ -136,14 +136,16 @@ function listGuideFiles() {
   return out;
 }
 
-/** Every published guide page: { id, rel, title, description, body }. */
+/** Every published guide page: { id, rel, file, title, description, body }. */
 export function guidePages() {
   return listGuideFiles().map((rel) => {
-    const raw = fs.readFileSync(path.join(GUIDE_ROOT, rel), 'utf8');
+    const file = path.join(GUIDE_ROOT, rel);
+    const raw = fs.readFileSync(file, 'utf8');
     const { title, body } = titleAndBody(raw);
     return {
       id: slugFor(rel),
       rel,
+      file,
       title,
       description: descriptionOf(body),
       body: rewriteLinks(body, `docs/guide/${rel}`),
@@ -222,14 +224,14 @@ export function mcpToolsPage() {
   };
 }
 
-/** Sidebar for astro.config: sections from the guide, then the changelog. */
+/** Sidebar for astro.config: the overview, sections from the guide, then the changelog. */
 export function sidebar() {
   const pages = guidePages();
   const itemsFor = (dir) =>
     pages
       .filter((p) => p.rel.startsWith(`${dir}/`))
       .map((p) => ({ label: p.title, link: hrefFor(p.id) }));
-  const groups = [];
+  const groups = [{ label: 'Overview', link: '/' }];
   for (const s of SECTIONS) {
     if (s.parent) continue;
     const items = itemsFor(s.dir);

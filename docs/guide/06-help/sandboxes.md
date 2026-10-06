@@ -39,4 +39,4 @@ the next command starts it again. The command history comes from the traces of
 
 Agent tools include `sandbox_create`, `sandbox_exec`, `sandbox_list`,
 `sandbox_stop`, `sandbox_rm`, `sandbox_export`, `sandbox_import` and
-`sandbox_ls`. More detail: [Install options](../01-install/05-options.md).
+`sandbox_ls`. More detail: [Install options](../01-install/07-options.md).

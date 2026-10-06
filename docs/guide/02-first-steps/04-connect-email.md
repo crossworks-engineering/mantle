@@ -6,7 +6,7 @@ Only mail from people on your **Contacts** list comes in, plus mail from your ow
 
 ## Before you start
 
-- A brain on the full shape. The [small core shape](../01-install/04-small-server.md) does not run the email worker.
+- A brain on the full shape. The [small core shape](../01-install/06-small-server.md) does not run the email worker.
 - An app password from your mail provider. Turn on 2-step verification first, then create one in the provider's security settings (for Gmail: [App passwords](https://myaccount.google.com/apppasswords)).
 - A Microsoft 365 or Outlook.com mailbox connects through **Settings > Microsoft** instead. See [Microsoft](../06-help/microsoft.md).
 

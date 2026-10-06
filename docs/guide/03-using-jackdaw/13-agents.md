@@ -2,7 +2,7 @@
 
 Change how your assistant thinks and sounds on **Settings > Agents**, and the background jobs on **Settings > AI workers**.
 
-For what agents, skills and tools are, see [Agents, skills and tools](../04-concepts/02-agents-skills-tools.md).
+For what agents, skills and tools are, see [Agents, skills and tools](../04-concepts/03-agents-skills-tools.md).
 
 ## Agents
 

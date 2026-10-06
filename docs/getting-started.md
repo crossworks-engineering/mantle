@@ -3,7 +3,7 @@
 The operator's setup guide: the developer checkout of the **brain**, first run,
 connecting email and Telegram, API keys, and the agent basics. (Moved here from
 the README, which is now the product front door.) Installing on a server is
-[`guide/01-install/02-server.md`](./guide/01-install/02-server.md), the canonical
+[`guide/01-install/03-server.md`](./guide/01-install/03-server.md), the canonical
 install page; production sizing is in [`deploy.md`](./deploy.md) §0a; updating
 a running box is [`update-prod.md`](./update-prod.md).
 
@@ -88,7 +88,7 @@ pnpm start
 > infra in Docker + the brain hot-reloading on the host). **Production runs on
 > Linux** from the published images via `docker-compose.yml` plus
 > `docker-compose.client.yml`; see the
-> [install options page](./guide/01-install/05-options.md). The bundled local embedder is
+> [install options page](./guide/01-install/07-options.md). The bundled local embedder is
 > opt-in there too, behind the `local-embedder` compose profile.
 
 `pnpm start` runs `scripts/up.sh`, which:

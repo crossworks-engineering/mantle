@@ -28,4 +28,4 @@ It searches by meaning, so you do not need the exact title or words. It answers 
 ## Next
 
 - [Connect email](04-connect-email.md)
-- [How Mantle remembers](../04-concepts/01-memory.md)
+- [How Mantle remembers](../04-concepts/02-memory.md)

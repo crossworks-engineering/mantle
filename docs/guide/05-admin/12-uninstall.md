@@ -47,4 +47,4 @@ No Mantle containers are listed.
 
 ## Next
 
-- [Install on a server](../01-install/02-server.md)
+- [Install on a server](../01-install/03-server.md)

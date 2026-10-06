@@ -4,7 +4,7 @@ Fill in `.env` yourself and start Mantle with Docker Compose.
 
 ## Before you start
 
-- Everything in [Install on a server](02-server.md#before-you-start).
+- Everything in [Install on a server](03-server.md#before-you-start).
 - The deploy bundle: download `mantle-deploy-<version>.tar.gz` from the [releases page](https://github.com/crossworks-engineering/mantle/releases) and unpack it on the server.
 
 The bundle also contains the configurator. `bash scripts/install.sh` in the unpacked directory does all of the steps below for you, without the download.

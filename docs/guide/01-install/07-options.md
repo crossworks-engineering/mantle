@@ -26,7 +26,7 @@ Other variables the one-liner reads:
 
 | Variable | Effect |
 |---|---|
-| `MANTLE_DOMAIN` | Serve this domain with HTTPS ([details](03-domain-https.md)) |
+| `MANTLE_DOMAIN` | Serve this domain with HTTPS ([details](05-domain-https.md)) |
 | `MANTLE_HOME` | Install directory (default `./mantle`) |
 | `MANTLE_CHANNEL` | Release tag to install (default: the latest release) |
 | `MANTLE_SKIP_START=1` | Write the files and `.env`, but do not start anything |
@@ -55,7 +55,7 @@ Turns on transcripts from video and audio links, and CAD drawings (DWF, DWG, DXF
 
 `--no-client` runs the API, MCP and share pages only. There is no sign-up screen on the server, so finish setup in one of two ways:
 
-- In the [desktop app](07-desktop-app.md): connect it to the brain's address and sign up with the setup code.
+- In the [desktop app](09-desktop-app.md): connect it to the brain's address and sign up with the setup code.
 - On the server: run `bash scripts/onboard.sh` in the install directory and answer its prompts.
 
 ## Other flags
@@ -72,5 +72,5 @@ Turns on transcripts from video and audio links, and CAD drawings (DWF, DWG, DXF
 
 ## Next
 
-- [Install without the script](06-manual.md)
+- [Install without the script](08-manual.md)
 - [Environment variables](../05-admin/03-env-vars.md)

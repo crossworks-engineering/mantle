@@ -32,11 +32,11 @@ Optional services add media conversion, a local embedder and code sandboxes ([Op
 
 ## Everything is a node
 
-An email, a file, a note, a page, a table, a contact or an event is one row in one `nodes` table, arranged in a tree. One table gives one search, one access rule and one place where memory grows. When a node is added or changed, the database signals the runner, which reads it and updates the memory ([How Mantle remembers](01-memory.md)).
+An email, a file, a note, a page, a table, a contact or an event is one row in one `nodes` table, arranged in a tree. One table gives one search, one access rule and one place where memory grows. When a node is added or changed, the database signals the runner, which reads it and updates the memory ([How Mantle remembers](02-memory.md)).
 
 ## One brain, one owner
 
-Each server is one brain with one owner. Team members and clients get their own logins with limited rights; Postgres row rules decide what each one reads. Two brains talk only through federation ([Sharing and federation](04-sharing-and-federation.md)).
+Each server is one brain with one owner. Team members and clients get their own logins with limited rights; Postgres row rules decide what each one reads. Two brains talk only through federation ([Sharing and federation](06-sharing-and-federation.md)).
 
 ## Example: one question
 

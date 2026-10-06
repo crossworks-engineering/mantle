@@ -58,5 +58,5 @@ In the member's client, the Mantle tool list holds their role's tools only. A cl
 
 ## Next
 
-- [Sharing and federation](../04-concepts/04-sharing-and-federation.md)
+- [Sharing and federation](../04-concepts/06-sharing-and-federation.md)
 - [Team and members](../03-using-jackdaw/12-team.md)

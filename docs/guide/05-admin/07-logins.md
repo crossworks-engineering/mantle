@@ -2,11 +2,7 @@
 
 Give other people their own login to the brain, each limited to what its role may see. You need an admin login.
 
-| Role | Who it is for | What they see |
-|---|---|---|
-| **Admin** | A co-owner | The whole brain and every setting. |
-| **Member** | Your team | Items set to Team (or Client), their own personal space, and a chat with the team agent. No admin screens. |
-| **Client** | People at your one client company | Items set to Client, their own drafts and requests, and a chat with the client assistant. No password. |
+There are three login roles: **Admin** (a co-owner), **Member** (your team) and **Client** (people at your client company). What each one sees is on [Who can use a brain](../04-concepts/05-access-tiers.md).
 
 Each item has a level. A login sees an item only when the item's level allows it, so set levels before you let anyone in. See [Team and members](../03-using-jackdaw/12-team.md).
 

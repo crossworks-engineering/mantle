@@ -43,4 +43,4 @@ trace.
 
 The assistant uses `peer_list`, `peer_query`, `peer_search_chunks`,
 `peer_node_get` and `peer_tools`. More detail: [Sharing and
-federation](../04-concepts/04-sharing-and-federation.md).
+federation](../04-concepts/06-sharing-and-federation.md).

@@ -2,6 +2,25 @@
 
 Point a domain at your server and Mantle gets a free Let's Encrypt certificate by itself.
 
+## Get a domain
+
+Buy a domain from a registrar. Its DNS service then points a name at your server.
+
+| Registrar and DNS | Notes |
+|---|---|
+| [Contabo](https://contabo.com/en/domains/) | Our recommendation when your server is at Contabo: domain, DNS and server in one panel. |
+| [Cloudflare](https://www.cloudflare.com/products/registrar/) | Registrar and DNS. Set the record to **DNS only** (grey cloud), so the installer sees your server's IP. |
+| [Namecheap](https://www.namecheap.com/) | Registrar with built-in DNS. |
+| [Porkbun](https://porkbun.com/) | Registrar with built-in DNS. |
+
+Create one record in the DNS settings:
+
+| Type | Name | Value |
+|---|---|---|
+| A | `brain` (for `brain.example.com`), or `@` for `example.com` itself | Your server's IP address |
+
+A new record can take a few minutes to reach everyone. `ping brain.example.com` shows the server's IP when it has.
+
 ## Before you start
 
 - A DNS A record (or AAAA) for your domain, for example `brain.example.com`, pointing at the server's public address.
@@ -9,7 +28,7 @@ Point a domain at your server and Mantle gets a free Let's Encrypt certificate b
 
 ## At install
 
-Run the [server install](02-server.md), choose **1, a domain with HTTPS**, and type the domain.
+Run the [server install](03-server.md), choose **1, a domain with HTTPS**, and type the domain.
 
 For a silent install, pass the domain as a variable. Use the `bash -c` form: in `curl ... | bash` the variable never reaches the installer.
 
