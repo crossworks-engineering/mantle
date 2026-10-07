@@ -31,7 +31,11 @@ vi.mock('@mantle/db', () => {
 });
 vi.mock('@/lib/pair-code', () => ({ claimPairCode: async () => h.claimed }));
 vi.mock('@/lib/audit', () => ({ auditFireAndForget: vi.fn(), requestMetaFrom: () => ({}) }));
-vi.mock('@/lib/rate-limit', () => ({ clientIp: () => '1.1.1.1', rateLimit: () => ({ ok: true }) }));
+vi.mock('@/lib/rate-limit', () => ({
+  clientIp: () => '1.1.1.1',
+  clientIpKey: () => '1.1.1.1',
+  rateLimit: () => ({ ok: true }),
+}));
 vi.mock('@/lib/brain-identity', () => ({
   brainIdField: async () => ({ brainId: '0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f' }),
 }));
