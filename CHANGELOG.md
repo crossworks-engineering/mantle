@@ -21,10 +21,23 @@ and write, all areas or some. Nobody can make a key for another login.
   time; the key is shown once. Admins and members re-type their password
   to make one; member keys last at most 90 days, client keys 30. A password
   change, Sign out everywhere, or an admin's End sessions, disable or role
-  change revokes the login's keys. A key never confirms a visibility change
-  and cannot make a page public. Every write a key makes is audited with
+  change revokes the login's keys. A key never confirms a visibility change,
+  cannot make a page public, and cannot change the content of an item others
+  can read. Every write a key makes is audited with
   the key id and its maker (`key.created`, `key.revoked`, `key.refused`,
   `api.write`).
+- **Told when a key is made:** the login gets a notice (members and
+  clients in their own thread, pushed to their phone; admins a push to
+  their own devices). It names the key, its access and expiry, never the
+  secret.
+- **OAuth connectors now end with the login's security actions:** a password
+  change, Sign out everywhere, an admin's End sessions, disable or role
+  change, and a reused device token revoke the login's OAuth grants, an
+  admin's included (they used to survive). Reconnect the connector after a
+  password change. Admins and members now type their password at the
+  connector's consent page.
+- **Client keys** end when the client signs out (a client has no password to
+  re-type).
 - **Limits:** 120 requests a minute per key on v1 and 300 on MCP, 600 and
   1200 per login across its keys, search 30 a minute per key, 50 live keys
   per login, 20 failed tries a minute per address and key prefix and 100
