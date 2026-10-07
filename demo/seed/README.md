@@ -22,20 +22,22 @@ which is how v1 died.
 | extraction | **server/api** — the `node_ingested` listener, not this script |
 | assertions | `verify.ts` — waits for the queue, then checks the minimums |
 
-## Seeding one kind at a time
+## The order, and seeding one kind at a time
+
+`seed.ts` creates in the generator's `CREATE_ORDER`: contacts, files, tables,
+drawings, secrets and formulas, apps, pages, notes, then journal, tasks and
+events. A page or note may refer to anything created before it (an image in
+Files, a table, a drawing), and the generator checks that no reference
+points forward. Then the folder shares, then the public links.
 
 ```sh
-DEMO_SEED_ONLY=tables,draws demo/scripts/seed.sh --keep
+DEMO_SEED_ONLY=recall,heartbeats demo/scripts/seed.sh --keep
 ```
 
-`DEMO_SEED_ONLY` names the kinds to seed into an EXISTING brain
-(`contacts`, `simple`, `pages`, `recall` = the Recall map alone, `tables`,
-`oddments`, `heartbeats`, `draws`, `docs`, `files`, `emails`). It exists for
-iterating on one content type without a wipe-and-refill; it does not
-reconcile, so running it twice adds the kind twice. Two things do reconcile:
-folders (a folder with the same name in the same place is reused) and the
-Recall map (`recall` replaces a map of the same slug). The full seed is still
-one command.
+`DEMO_SEED_ONLY` seeds into an EXISTING brain, and only the kinds nothing else
+refers to: `recall` (replaces a map of the same slug), `heartbeats`, `docs`,
+`emails`. Everything else comes with the full seed, because pages and notes
+point at the files, tables and drawings made before them.
 
 ## Folders, and pages that do not nest
 
@@ -86,16 +88,19 @@ once, before the POST. Until 2026-09-17 the grid was posted as-is and
 map — eleven tables with columns and no data, on the public demo. A date
 cell is a day offset like every other date here; the seeder resolves it.
 
-## The team is logins, and the forum is the member chat
+## The team is logins, and the chats come after the drain
 
 Main retired the contact team token, the team portal cookie, team links and
 the Team Forum (member logins, migrations 0162 to 0178; `docs/member-logins.md`).
-What the seed does now, in `seed.sh` order:
 
-| script | what it makes |
-|---|---|
-| `enable-team.ts` | a member login for each of the owner's colleagues (`POST /api/users`, role `member`); two tables at team level (`PATCH /api/access/nodes/:id`); the member chat opened (the `team-responder` agent at team level); one client login for the person who approves the procedures in the client-shared folder |
-| `seed-member-chat.ts` | a member signs in and asks four questions; the brain answers each with a real turn |
+| script | when | what it makes |
+|---|---|---|
+| `enable-team.ts` | `seed.sh` | a member login for each of the owner's colleagues (`POST /api/users`, role `member`); the member chat opened (the `team-responder` agent at team level); one client login for Gordon Bekker |
+| `turns.ts` | `turns.sh`, after `drain.sh` | the owner's four real chats |
+| `seed-member-chat.ts` | `turns.sh`, after the owner chats | a member (Tessa) asks one question; the brain answers with a real turn |
+
+What the team and the client read is decided by the FOLDER an item sits in:
+each workspace's Team and Client folders are shared by `seed.ts`.
 
 Three brain rules shaped it, and the seed follows each one:
 
@@ -106,8 +111,8 @@ Three brain rules shaped it, and the seed follows each one:
 - A client login is refused until an admin has acknowledged the list of
   everything clients can read. The script reads the report and acknowledges
   exactly it, by its fingerprint.
-- Tasks and events are admin-only kinds. The old seed shared five tasks and
-  three events with the team; a member can no longer see either.
+- Tasks, events, contacts and secrets are admin-only kinds. They sit in
+  project folders, never in a shared one.
 
 A member signs in with the same `mantle_session` cookie as the owner, so one
 visitor is one of them, never both. The public demo injects the OWNER's

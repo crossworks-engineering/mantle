@@ -1,61 +1,58 @@
-# The world bible — single source of truth for all demo content
+# The world bible: single source of truth for all demo content
 
-Every artifact the generator (P2) emits — every note, email, SOP revision,
-table row, journal entry, scripted chat turn — references THIS world and no
-other. That referential closure is a **tested invariant** (layer-1 unit
-tests): a person, company, project or domain that appears in generated
-content but not in `world.json` is a build failure.
+Every artifact the generator emits (every page, note, email, table row,
+journal entry, chat question) references THIS world and no other. That
+referential closure is a tested invariant (layer-1 tests in
+`demo/generator/test`): an email address that appears in generated content
+but not in `world.json` fails the build.
 
-## Provenance — statistics in, bytes never
+## The world in one paragraph (v2, 2026-10-07)
 
-Volume targets and structural shapes in `targets.json` are blended from
-surveys of three real brains (2026-07-30): a documentation-heavy dev brain,
-an email-bearing personal brain, and a production client brain with heavy
-assistant usage (~8k traces averaging 9.4 steps, deep sub-page nesting,
-revision-controlled document families). **Only numbers and genre
-abstractions travelled** — counts, averages, maxima, and "this kind of
-document exists". No text, no titles, no names, no tags from any real brain
-appear here or may ever appear in generated content. That rule is
-load-bearing: embeddings of real text cannot be scrubbed, and this content
-lands on a public URL.
+**Alex Carter** runs **Harbour Labs**, a three-person engineering studio,
+with **Tessa Okafor** (controls and telemetry) and **Rowan Mercer**
+(mechanical and energy). Their one client is **Meridian Waterworks**:
+**Gordon Bekker**, the plant superintendent who approves every procedure
+revision, and **Lena Marsh**, the SCADA technician who witnesses the loop
+checks. Two projects run at the same station, Pump Station 3 (PS3):
+**PUMPHOUSE**, the telemetry retrofit (a changeover procedure issued as
+rev A, then rev B, loop checks, a commissioning window a week after seed
+time), and **ISLAND**, the standby power study that started the night the
+PS3 diesel failed to start (can the station ride through a four-hour outage
+on solar and a battery?). Five people, two projects, one story: every item
+in the demo belongs to it.
 
-## The world in one paragraph
-
-**Alex Carter** runs **Harbour Labs**, a five-person engineering-design
-studio. Three client engagements drive the work: a pump-station telemetry
-retrofit for a municipal water utility (**PUMPHOUSE** — the revision-heavy,
-procedure-driven engagement), a retail fit-out programme (**STOREFRONT** —
-pipeline tables, budgets, schedules), and a microgrid feasibility study
-(**ISLAND** — research pages, load-profile data). Internally the studio
-keeps a handbook (**HANDBOOK** — nested sub-pages). Alex's personal life
-threads through the same brain: restoring a workshop lathe (**LATHE**) and
-training for a trail half-marathon (**TRAILRUN**) — because Mantle is a
-whole-life brain, and the demo should show that.
+Main allows one client company per brain (client logins), which is why both
+projects are Meridian's.
 
 ## Design rules
 
-- **RFC 2606 domains only.** Company mail lives on subdomains of the
-  documentation domains (`@harbourlabs.example.com`,
-  `@meridianww.example.org`, …); personal contacts on `example.net`. The
-  publish guard (P6) enforces this by shape.
-- **Shared vocabulary is the point.** `vocabulary` entries in `world.json`
-  are seeded across *types* deliberately — "commissioning" must appear in an
-  SOP page, a task, an email thread, a journal entry and a chat turn, so
-  search demonstrably returns genuine cross-type hits. Each entry lists its
-  intended type-spread; layer-2 tests assert the spread materialised.
-- **Dates are offsets, never absolute.** Every timeline anchor is
-  `days_from_seed` (negative = past). A fresh seed always looks current.
-- **Revision families are first-class.** PUMPHOUSE procedures exist in
-  rev A → rev B → rev C chains so the demo exercises supersession /
-  content-currency — a real brain's most distinctive retrieval behaviour.
-- **Pronouns are stated per person** in `world.json` and generated prose
-  must use them consistently.
+- **Small and polished.** Three to six items per workspace, each one worth
+  opening, each one pointing at the others. `targets.json` pins the numbers.
+- **The four sharing levels, the same way everywhere.** Every workspace that
+  can share has a Private, a Team and a Client folder, and one item at the
+  top level with an open link (public). The look of the three folders is
+  `access.folders` in `world.json`; `generator/content/folders.mjs` builds
+  them.
+- **Embeds stay in their tier.** A page or note embeds images from the Files
+  folder of its own level, so a share never reaches through an embed into
+  another folder. Mentions may point at anything the item's readers can read.
+- **RFC 2606 domains only.** The studio on `harbourlabs.example.com`, the
+  client on `meridianww.example.org`. The publish guard enforces this by
+  shape.
+- **Shared vocabulary is the point.** `vocabulary` entries are spread across
+  node types on purpose ("loop check" is in a page, a note, a task, a table
+  and an event), so search returns real cross-type hits.
+- **Dates are offsets, never absolute.** Every anchor is `days_from_seed`, so
+  a fresh seed always looks current.
+- **Pronouns are stated per person** and generated prose uses them.
+- **House style.** No em dashes, and no en dash as a sentence break.
 
 ## Files
 
 | file | role |
 |---|---|
-| `world.json` | the bible: cast, companies, projects, vocabulary, genres, timeline anchors |
-| `targets.json` | per-type volume targets + derived-data minimums; layer-2 tests assert against these |
+| `world.json` | the bible: cast, companies, projects, vocabulary, timeline, folder look |
+| `targets.json` | per-type volume targets; `verify.ts` asserts against these |
+| `art/` | the twenty illustrations (JPEG), `art.json` (title, level, date) and `prompts.md` (how they were made) |
 
-The generator consumes both; nothing else may define world facts.
+The generator consumes these; nothing else may define world facts.
