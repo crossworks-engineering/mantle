@@ -12,7 +12,30 @@ Download the installer for your system from the [Jackdaw releases page](https://
 | macOS (Apple Silicon) | `.dmg` or `.zip` |
 | Windows | `Setup.exe` |
 
-The macOS build is unsigned. The first time, right-click the app and choose **Open**.
+On macOS, drag **Jackdaw** to **Applications**. Then do the steps in [Open it the first time on a Mac](#open-it-the-first-time-on-a-mac).
+
+On Windows, the installer is not signed. If SmartScreen says **Windows protected your PC**, click **More info**, then **Run anyway**.
+
+## Open it the first time on a Mac
+
+The macOS build is not yet signed with an Apple Developer ID. macOS blocks the first launch. You allow it one time.
+
+1. Open **Jackdaw**. macOS says it could not verify the app. Click **Done**.
+2. Open **System Settings > Privacy & Security**.
+3. Scroll down to **Security**. Find the line about Jackdaw and click **Open Anyway**.
+4. Type your Mac password. Click **Open**.
+
+After this, Jackdaw opens normally.
+
+:::caution[macOS says the app is damaged]
+Builds up to 0.6.251 show "Jackdaw is damaged and can't be opened", with no **Open Anyway**. The file is not damaged. Remove the download flag in Terminal, then open the app:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Jackdaw.app
+```
+
+A newer build does not need this.
+:::
 
 ## Connect to your brain
 
@@ -33,6 +56,7 @@ On Linux and Windows the app checks for a new version at launch and every 4 hour
 ## If it fails
 
 - **Couldn't reach a Mantle server at …**: open the same address in a browser. If that fails too, the server is down or the address is wrong.
+- **macOS blocks the app**: see [Open it the first time on a Mac](#open-it-the-first-time-on-a-mac).
 
 ## Next
 
