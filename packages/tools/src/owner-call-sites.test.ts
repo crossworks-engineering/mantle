@@ -103,6 +103,12 @@ const SITES: Record<string, Site> = {
     scope: 'call',
     why: "the owner's run resuming on its origin channel",
   },
+  'server/web/lib/api-v1-builtin.ts': {
+    calls: 1,
+    surface: OWNER('api'),
+    scope: 'call',
+    why: 'the public API v1 (table rows): the route checked an admin first (getOwnerOr401)',
+  },
   'server/web/app/api/dev-tools/execute-tool/route.ts': {
     calls: 1,
     surface: /surface: \{ kind: 'web' \}/,
