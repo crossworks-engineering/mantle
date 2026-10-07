@@ -21,6 +21,7 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getLoginOr401: vi.fn(async () => h.login),
   verifyPassword: vi.fn(async (_id: string, password: string) => password === PASSWORD),
+  loginSessionEpoch: vi.fn(async () => 0),
 }));
 
 vi.mock('@/lib/mcp-auth', () => ({

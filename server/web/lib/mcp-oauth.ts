@@ -155,13 +155,46 @@ export async function mintAuthCode(input: {
   /** A member's or client's session epoch at consent (0227); null for an
    *  admin. The grant dies when the login's epoch moves on. */
   sessionEpoch?: number | null;
+  /** The login's session epoch when its session was checked for this
+   *  consent (any role). The code is minted only if it still is: a session
+   *  ended meanwhile (verification audit N2) mints nothing. */
+  consentEpoch: number;
   codeChallenge: string;
   codeChallengeMethod: string;
   redirectUri: string;
   scope: string;
-}): Promise<string> {
+}): Promise<string | null> {
   const code = randomToken(CODE_PREFIX);
-  await db.insert(oauthAuthCodes).values({
+  // Under the login's OAuth lock, the one endLoginSessions takes before it
+  // deletes codes: a code minted here is either deleted by it or refused.
+  return db.transaction(async (tx) => {
+    await lockOauthActor(tx, input.actorId);
+    const [login] = await tx
+      .select({ epoch: authUsers.sessionEpoch })
+      .from(authUsers)
+      .where(eq(authUsers.id, input.actorId))
+      .limit(1);
+    if (!login || login.epoch !== input.consentEpoch) return null;
+    await mintCodeRow(tx, code, input);
+    return code;
+  });
+}
+
+async function mintCodeRow(
+  tx: Exec,
+  code: string,
+  input: {
+    clientId: string;
+    ownerId: string;
+    actorId: string;
+    sessionEpoch?: number | null;
+    codeChallenge: string;
+    codeChallengeMethod: string;
+    redirectUri: string;
+    scope: string;
+  },
+): Promise<void> {
+  await tx.insert(oauthAuthCodes).values({
     codeHash: sha256Hex(code),
     clientId: input.clientId,
     ownerId: input.ownerId,
@@ -173,7 +206,6 @@ export async function mintAuthCode(input: {
     scope: input.scope,
     expiresAt: new Date(Date.now() + CODE_TTL_SEC * 1000),
   });
-  return code;
 }
 
 export type TokenResponse = {
@@ -201,8 +233,11 @@ type GrantResult = { ok: true; tokens: TokenResponse } | { ok: false; error: str
 export async function actorMayConnect(
   actorId: string,
   sessionEpoch: number | null,
+  /** Under the OAuth lock: the transaction, never a second connection
+   *  (verification audit N1). */
+  exec: Exec = db,
 ): Promise<boolean> {
-  const [row] = await db
+  const [row] = await exec
     .select({
       role: authUsers.role,
       disabledAt: authUsers.disabledAt,
@@ -270,7 +305,7 @@ export async function exchangeAuthCode(input: {
   const [peek] = await db
     .select({ actorId: oauthAuthCodes.actorId })
     .from(oauthAuthCodes)
-    .where(eq(oauthAuthCodes.codeHash, codeHash))
+    .where(and(eq(oauthAuthCodes.codeHash, codeHash), gt(oauthAuthCodes.expiresAt, new Date())))
     .limit(1);
   if (!peek) return { ok: false, error: 'invalid_grant' };
   return db.transaction(async (tx) => {
@@ -303,7 +338,7 @@ async function exchangeClaimed(
   }
 
   // The login may have been demoted or disabled between consent and exchange.
-  if (!(await actorMayConnect(row.actorId, row.sessionEpoch ?? null))) {
+  if (!(await actorMayConnect(row.actorId, row.sessionEpoch ?? null, tx))) {
     return { ok: false, error: 'invalid_grant' };
   }
 
@@ -351,7 +386,13 @@ export async function refreshAccessToken(input: {
   const [peek] = await db
     .select({ actorId: oauthAccessTokens.actorId })
     .from(oauthAccessTokens)
-    .where(eq(oauthAccessTokens.refreshTokenHash, refreshHash))
+    .where(
+      and(
+        eq(oauthAccessTokens.refreshTokenHash, refreshHash),
+        isNull(oauthAccessTokens.revokedAt),
+        gt(oauthAccessTokens.refreshExpiresAt, new Date()),
+      ),
+    )
     .limit(1);
   if (!peek) return fail('unknown or rotated-out refresh token');
   // Under the login's lock (final audit F3): a revoke that ran first is seen
@@ -401,7 +442,7 @@ async function refreshLocked(
   }
   // Refresh forks new rows, so without this a locked-out login's connector
   // would outlive every revoke that ran before the fork.
-  if (!(await actorMayConnect(row.actorId, row.sessionEpoch ?? null))) {
+  if (!(await actorMayConnect(row.actorId, row.sessionEpoch ?? null, tx))) {
     return fail('login may no longer connect');
   }
 

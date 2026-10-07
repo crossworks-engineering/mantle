@@ -27,7 +27,7 @@ import {
 } from '@mantle/mcp-core';
 import { isRemoteMcpEnabled, wwwAuthenticateHeader } from '@/lib/mcp-oauth';
 import { auditMcpKeyCall, resolveMcpCaller } from '@/lib/mcp-auth';
-import { JSON_BODY_CEILING_BYTES } from '@/lib/body-limit';
+import { JSON_BODY_CEILING_BYTES, readBodyCapped } from '@/lib/body-limit';
 import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 import { rateLimitAccessKey } from '@/lib/access-keys';
 
@@ -92,6 +92,12 @@ async function handler(req: Request): Promise<Response> {
         JSON.stringify({ error: 'request body too large', reason: 'body-too-large' }),
         { status: 413, headers: { 'content-type': 'application/json' } },
       );
+    }
+    // A chunked body declares no length (verification audit N4): read it
+    // under the same ceiling (413 over it), and hand the transport that copy.
+    if (req.method === 'POST' && req.body) {
+      const body = await readBodyCapped(req, JSON_BODY_CEILING_BYTES);
+      req = new Request(req.url, { method: req.method, headers: req.headers, body });
     }
   }
   // A member's or client's tools are resolved from their responder's groups

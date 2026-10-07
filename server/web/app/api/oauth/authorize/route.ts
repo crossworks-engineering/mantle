@@ -27,7 +27,7 @@
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { NextResponse } from '@/server/http-compat';
-import { getLoginOr401, verifyPassword, type SessionUser } from '@/lib/auth';
+import { getLoginOr401, loginSessionEpoch, verifyPassword, type SessionUser } from '@/lib/auth';
 import { rateLimitLogin, rateLimitLoginRefund } from '@/lib/rate-limit';
 import { requestOrigin } from '@/lib/auth-constants';
 import { getClient, isRemoteMcpEnabled, mintAuthCode, DEFAULT_SCOPE } from '@/lib/mcp-oauth';
@@ -207,6 +207,9 @@ export async function POST(req: Request) {
   if (user === 'member') return htmlError(MEMBER_REFUSED, 403);
   if (user === 'client') return htmlError(CLIENT_REFUSED, 403);
   if (!user) return htmlError('your session expired — start the connection again', 401);
+  // The epoch the session was just checked at: the code is minted only if
+  // it still is the login's then (mintAuthCode, verification audit N2).
+  const consentEpoch = await loginSessionEpoch(user.loginId);
 
   if (!consentTokenValid(get('consent_token'), consentToken(user.loginId, p))) {
     return htmlError('consent could not be verified — start the connection again', 400);
@@ -252,11 +255,16 @@ export async function POST(req: Request) {
     ownerId: user.ownerId,
     actorId: user.loginId,
     sessionEpoch: user.sessionEpoch,
+    consentEpoch,
     codeChallenge: p.codeChallenge,
     codeChallengeMethod: p.codeChallengeMethod,
     redirectUri: p.redirectUri,
     scope: p.scope,
   });
+
+  if (!code) {
+    return htmlError('your session ended — sign in and start the connection again', 401);
+  }
 
   const dest = new URL(p.redirectUri);
   dest.searchParams.set('code', code);

@@ -80,15 +80,19 @@ describe.skipIf(!URL)('credential races', () => {
     const { mintAuthCode, exchangeAuthCode } = await import('../mcp-oauth');
     const verifier = 'v'.repeat(64);
     const challenge = createHash('sha256').update(verifier).digest('base64url');
-    const code = await mintAuthCode({
+    const [me] = await sql<Array<{ session_epoch: number }>>`
+      select session_epoch from auth.users where id = ${admin}`;
+    const code = (await mintAuthCode({
       clientId: client,
       ownerId: admin,
       actorId: admin,
+      consentEpoch: Number(me!.session_epoch),
       codeChallenge: challenge,
       codeChallengeMethod: 'S256',
       redirectUri: 'https://client.example.com/cb',
       scope: 'mcp',
-    });
+    }))!;
+    expect(code).toBeTruthy();
     const exchange = () =>
       exchangeAuthCode({
         code,

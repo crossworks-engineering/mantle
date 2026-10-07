@@ -13,5 +13,12 @@ export type OauthExec = Pick<typeof db, 'select' | 'insert' | 'update' | 'delete
  * Hold it inside a transaction (it ends with the transaction).
  */
 export async function lockOauthActor(tx: OauthExec, actorId: string): Promise<void> {
+  // Bounded waits (verification audit N1): a queue on one login's lock, or a
+  // slow statement, fails this transaction in seconds and frees its pooled
+  // connection, never holds it forever. Every query under the lock must run
+  // on `tx` itself: a second connection taken while holding one is how a
+  // full pool deadlocks.
+  await tx.execute(sql`set local lock_timeout = '5s'`);
+  await tx.execute(sql`set local statement_timeout = '15s'`);
   await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`oauth-actor:${actorId}`}))`);
 }
