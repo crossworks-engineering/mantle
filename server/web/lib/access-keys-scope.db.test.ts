@@ -315,7 +315,7 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
     expect(padded.content[0]!.text).toContain('this item is shared');
     const odd = (await update!({ id: 'not-an-id', title: 'x' })) as typeof out;
     expect(odd.isError).toBe(true);
-    expect(odd.content[0]!.text).toContain('must be an item id');
+    expect(odd.content[0]!.text).toContain('UUID');
     const replace = handlers.get('page_replace_from_file');
     if (replace) {
       const viaFile = (await replace({ page_id: sharedPage, file_id: randomUUID() })) as typeof out;
