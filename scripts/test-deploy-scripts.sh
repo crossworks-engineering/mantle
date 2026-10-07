@@ -29,6 +29,8 @@
 #            re-run, and --setup-code prints it again (or says "claimed")
 #   access:  a re-run with only a component flag keeps the access mode .env
 #            already has (domain, localhost, proxy, lan); an access flag wins
+#   proxy:   --behind-proxy needs a domain: -y without one stops before
+#            .env is written; a re-run never keeps a host-less https://
 #   onboard: onboard.sh pipes secrets from files on stdin, never in argv
 #   sanity:  Caddy's own HTTP->HTTPS redirect is not reported as "not Mantle"
 
@@ -521,6 +523,45 @@ check "  (and nothing claims the old mode was kept)" sh -c "! grep -q 'Keeping t
 rm -rf "$T/stack/.env" "$T/stack/data"
 acc_run || true
 check "a fresh -y install with no .env still defaults to the network (lan)" sh -c "test \"\$(grep '^MANTLE_SITE_ADDRESS=' '$T/stack/.env' | cut -d= -f2-)\" = :80 && test \"\$(grep '^MANTLE_BIND_ADDR=' '$T/stack/.env' | cut -d= -f2-)\" = 0.0.0.0"
+
+# ═════════════════════════════════════════════════════════════════════════════
+echo "install.sh: --behind-proxy needs the domain the proxy serves"
+# --behind-proxy without --domain wrote MANTLE_PUBLIC_URL=https:// (no host),
+# and every share and email link broke. Same stubbed run as the access tests.
+pub_url() { grep -E '^MANTLE_PUBLIC_URL=' "$T/stack/.env" 2>/dev/null | head -1 | cut -d= -f2-; }
+
+rm -rf "$T/stack/.env" "$T/stack/data"
+if acc_run --behind-proxy; then fail "a fresh --behind-proxy -y without --domain should stop"
+else ok "a fresh --behind-proxy -y without --domain stops"; fi
+check "  (it names the fix)" grep -q -- '--behind-proxy --domain' "$T/out"
+check "  (no host-less public URL is written)" sh -c "! grep -q '^MANTLE_PUBLIC_URL=' '$T/stack/.env' 2>/dev/null"
+
+rm -rf "$T/stack/.env" "$T/stack/data"
+if acc_run --behind-proxy --domain "https://"; then fail "--behind-proxy with an empty host should stop"
+else ok "--behind-proxy with a host-less --domain stops too"; fi
+
+rm -rf "$T/stack/.env" "$T/stack/data"
+acc_run --behind-proxy --domain https://Brain.Example.com/ || { fail "--behind-proxy --domain exited non-zero"; sed 's/^/    /' "$T/out"; }
+check "with --domain: the public URL is the bare host" test "$(pub_url)" = https://brain.example.com
+check "with --domain: the origin is the same host" test "$(acc_env MANTLE_SERVER_ORIGIN)" = https://brain.example.com
+check "with --domain: Caddy stays on loopback, off port 80" sh -c "test \"\$(grep '^MANTLE_BIND_ADDR=' '$T/stack/.env' | cut -d= -f2-)\" = 127.0.0.1 && test \"\$(grep '^MANTLE_HTTP_PORT=' '$T/stack/.env' | cut -d= -f2-)\" = 8080"
+
+rm -rf "$T/stack/.env" "$T/stack/data"
+acc_run --domain brain.example.com --behind-proxy || true
+check "--domain before --behind-proxy works the same" sh -c "test \"\$(grep '^MANTLE_PUBLIC_URL=' '$T/stack/.env' | cut -d= -f2-)\" = https://brain.example.com && test \"\$(grep '^MANTLE_BIND_ADDR=' '$T/stack/.env' | cut -d= -f2-)\" = 127.0.0.1"
+
+acc_seed :80 127.0.0.1 http://127.0.0.1:8080
+printf 'MANTLE_PUBLIC_URL=https://\n' >> "$T/stack/.env"
+if acc_run --core; then ok "a re-run of a proxy box with no domain still completes"
+else fail "a re-run of a proxy box with no domain exited non-zero"; sed 's/^/    /' "$T/out"; fi
+check "  (the host-less https:// is removed)" sh -c "! grep -q '^MANTLE_PUBLIC_URL=' '$T/stack/.env'"
+check "  (it says how to set the domain)" grep -q -- '--behind-proxy --domain' "$T/out"
+check "  (the proxy mode is kept)" test "$(acc_env MANTLE_BIND_ADDR)" = 127.0.0.1
+
+acc_seed :80 127.0.0.1 http://127.0.0.1:8080
+printf 'MANTLE_PUBLIC_URL=https://brain.example.com\n' >> "$T/stack/.env"
+acc_run --core || true
+check "a kept proxy box reads its domain from the public URL" test "$(pub_url)" = https://brain.example.com
 
 # ═════════════════════════════════════════════════════════════════════════════
 echo "onboard.sh: secrets reach the container on stdin, never in argv"

@@ -84,8 +84,8 @@ cd mantle && bash scripts/install.sh
 ```
 
 Same three choices as flags: `--domain <host>`, `--localhost`, `--lan`
-(`--no-domain` remains an alias for the last), plus `--behind-proxy` for a box
-that already runs a web server. **`--localhost` binds the front door to
+(`--no-domain` remains an alias for the last), plus `--behind-proxy --domain <host>`
+for a box that already runs a web server (the domain is required: links use it). **`--localhost` binds the front door to
 `127.0.0.1`** via `MANTLE_BIND_ADDR`; worth knowing that this is the only
 thing that actually keeps a brain off the network, because a published Docker
 port bypasses the host firewall (Docker installs its own DNAT rules ahead of

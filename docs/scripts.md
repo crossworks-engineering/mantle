@@ -414,7 +414,7 @@ Key flags (`--help` for the full list):
 | `--domain <host>`                            | HTTPS via Caddy/Let's Encrypt                                                                         |
 | `--localhost`                                | loopback only, HTTP on `127.0.0.1:80`                                                                 |
 | `--lan` (`--no-domain`)                      | HTTP on `:80`, reachable on the network                                                               |
-| `--behind-proxy`                             | Caddy on `127.0.0.1:8080`; your nginx/apache terminates TLS                                           |
+| `--behind-proxy`                             | Caddy on `127.0.0.1:8080`; your nginx/apache terminates TLS. Needs `--domain`                         |
 | `--data-dir` / `--stack-dir` / `--image-tag` | `MANTLE_DATA_DIR`, `MANTLE_STACK_DIR`, `MANTLE_IMAGE_TAG`                                             |
 | `--local-embedder` / `--no-local-embedder`   | bundled Ollama + EmbeddingGemma (persists via `COMPOSE_PROFILES`; needs a large box)                  |
 | `--sandboxes` / `--no-sandboxes`             | CLI sandboxes for the coder agent ([sandboxes.md](./sandboxes.md)); on by default for a fresh install |

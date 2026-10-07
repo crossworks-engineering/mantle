@@ -220,7 +220,9 @@ ${B}Options${RS}
   --no-domain            Alias for --lan (kept for existing scripts)
   --behind-proxy         You already run nginx/apache on 80/443. Caddy serves plain
                          HTTP on 127.0.0.1:8080 (or the next free port) and your
-                         proxy terminates TLS. Combine with --domain for links.
+                         proxy terminates TLS. Give the host your proxy serves
+                         with --domain (asked for when interactive; -y without
+                         it stops). Share and email links use it.
   --site-address <addr>  Set MANTLE_SITE_ADDRESS verbatim (advanced; overrides above).
                          A hostname here means auto-HTTPS just as --domain does, so
                          ports 80 and 443 must be free for the certificate to issue.
@@ -283,6 +285,7 @@ ${B}Examples${RS}
   scripts/install.sh --domain brain.acme.com -y   # scripted, HTTPS
   scripts/install.sh --localhost -y               # scripted, laptop / loopback only
   scripts/install.sh --lan -y                     # scripted, HTTP on the network
+  scripts/install.sh --behind-proxy --domain brain.acme.com -y   # your nginx/apache in front
   scripts/install.sh --check                       # health check an existing install
 EOF
 }
@@ -697,6 +700,35 @@ if port_taken 80 || port_taken 443; then
   fi
 fi
 
+# Behind a proxy the brain still needs the public hostname that proxy serves:
+# share and email links are built from it. --behind-proxy without --domain
+# used to write MANTLE_PUBLIC_URL=https:// (no host), so every link broke.
+# Take the host from what we already know, ask for it, or stop and say why.
+if [[ "$ACCESS_MODE" == proxy ]]; then
+  DOMAIN="$(normalize_host "$DOMAIN")"
+  # A hostname --site-address that moved here from the busy-port menu.
+  if [[ -z "$DOMAIN" && -n "$CERT_HOST" ]]; then DOMAIN="$(normalize_host "$CERT_HOST")"; fi
+  # A kept proxy box whose origin is the loopback port: read the link host.
+  if [[ -z "$DOMAIN" && $ACCESS_KEPT -eq 1 ]]; then DOMAIN="$(normalize_host "$(envval MANTLE_PUBLIC_URL)")"; fi
+  while [[ -z "$DOMAIN" ]] || ! valid_host "$DOMAIN"; do
+    if [[ $INTERACTIVE -eq 1 ]]; then
+      if [[ -n "$DOMAIN" ]]; then warn "That doesn't look like a hostname."; fi
+      inf "${DIM}Your proxy serves the brain on a public hostname. Share and email links use it.${RS}"
+      ask DOMAIN "Domain your proxy serves (e.g. brain.example.com):" ""
+      DOMAIN="$(normalize_host "$DOMAIN")"
+      continue
+    fi
+    # A re-run must not stop a box that already runs. Leave the links unset
+    # and say how to set them.
+    if [[ $ACCESS_KEPT -eq 1 ]]; then
+      warn "No public domain is recorded for this proxy install, so share and email links stay off."
+      inf "   ${DIM}Set it with: scripts/install.sh --behind-proxy --domain brain.example.com${RS}"
+      DOMAIN=""; break
+    fi
+    die "--behind-proxy needs the domain your proxy serves: scripts/install.sh --behind-proxy --domain brain.example.com (or use --lan / --localhost)."
+  done
+fi
+
 # Settle the three derived values every later step reads.
 # Behind an existing proxy, :80 is the one port we must NOT take — that proxy
 # owns it (or is about to). Move off it even when it happens to be free now.
@@ -880,10 +912,16 @@ upsert MANTLE_HTTPS_PORT "$HTTPS_PORT"
 # Public origin for share/email links + the onboarding Domain check. Only
 # meaningful when a real hostname is set; without one, links would embed an
 # address that may change, so it stays unset until a domain is added.
-if [[ "$ACCESS_MODE" == domain || "$ACCESS_MODE" == proxy ]]; then
+if [[ ( "$ACCESS_MODE" == domain || "$ACCESS_MODE" == proxy ) && -n "$DOMAIN" ]]; then
   upsert MANTLE_PUBLIC_URL "https://$DOMAIN"
 elif [[ "$SITE_ADDRESS" != :* ]]; then
   upsert MANTLE_PUBLIC_URL "https://$SITE_ADDRESS"
+fi
+# An older installer wrote a host-less "https://" for --behind-proxy without
+# --domain. No link can be built from it, so remove it.
+if [[ "$(getval MANTLE_PUBLIC_URL)" == "https://" ]]; then
+  tmp="$(mktemp)"; grep -vE '^MANTLE_PUBLIC_URL=' "$ENV_FILE" > "$tmp" || true; mv "$tmp" "$ENV_FILE"
+  warn "Removed MANTLE_PUBLIC_URL=https:// (no host) from .env."
 fi
 # The owner UI is its OWN app since the v0.200 split, and it reaches the API
 # over HTTP — so it needs an absolute origin even in the same-origin shape we

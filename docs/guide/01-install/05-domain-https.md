@@ -63,7 +63,7 @@ Open `https://brain.example.com`. The certificate is issued on the first request
   bash scripts/install.sh --behind-proxy --domain brain.example.com
   ```
 
-  Mantle then serves plain HTTP on `127.0.0.1:8080` (or the next free port). Point your web server at that address, forward the `Host` header, and let it handle HTTPS.
+  Mantle then serves plain HTTP on `127.0.0.1:8080` (or the next free port). Point your web server at that address, forward the `Host` header, and let it handle HTTPS. `--behind-proxy` needs `--domain`: share and email links use that name. Without it the installer asks for the domain, and a `-y` install stops.
 - **You want to drop the domain**: run `bash scripts/install.sh --lan -y` for HTTP on the network, or `--localhost` for this machine only.
 
 ## Next
