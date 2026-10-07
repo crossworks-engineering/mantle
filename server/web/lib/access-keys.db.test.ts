@@ -35,7 +35,8 @@ describe.skipIf(!URL)('inbound API keys', () => {
   const admin2 = randomUUID();
   const member = randomUUID();
   const client = randomUUID();
-  const all = [admin, admin2, member, client];
+  const member2 = randomUUID();
+  const all = [admin, admin2, member, client, member2];
   const emailOf = (s: string) => `${tag}-${s}@example.com`;
   let ip = 0;
 
@@ -110,7 +111,8 @@ describe.skipIf(!URL)('inbound API keys', () => {
       (${admin}, ${emailOf('admin')}, 'x', 'admin', 'Ada Admin'),
       (${admin2}, ${emailOf('admin2')}, 'x', 'admin', 'Abe Admin'),
       (${member}, ${emailOf('member')}, 'x', 'member', 'Mia Member'),
-      (${client}, ${emailOf('client')}, 'x', 'client', 'Cal Client')`;
+      (${client}, ${emailOf('client')}, 'x', 'client', 'Cal Client'),
+      (${member2}, ${emailOf('member2')}, 'x', 'member', 'Max Member')`;
     const { createApp } = await import('../server/app');
     app = await createApp();
   }, 120_000);
@@ -329,11 +331,14 @@ describe.skipIf(!URL)('inbound API keys', () => {
     await sql`update auth.users set disabled_at = null where id = ${client}`;
     expect((await whoami(disabled.secret)).status).toBe(200);
 
-    // A role change that (wrongly) kept the epoch still ends the key.
-    const promoted = await makeKey({ loginId: client });
-    await sql`update auth.users set role = 'member' where id = ${client}`;
+    // A role change ends the key, even one that (wrongly) kept the epoch.
+    // A client's role never changes (a database rule), so a member's here.
+    const promoted = await makeKey({ loginId: member2 });
+    const [before] = await sql<Row[]>`select session_epoch from auth.users where id = ${member2}`;
+    await sql`update auth.users set role = 'admin' where id = ${member2}`;
+    await sql`update auth.users set session_epoch = ${Number(before!.session_epoch)}
+              where id = ${member2}`;
     expect((await whoami(promoted.secret)).status).toBe(401);
-    await sql`update auth.users set role = 'client' where id = ${client}`;
   });
 
   // ── Budgets ───────────────────────────────────────────────────────────────
