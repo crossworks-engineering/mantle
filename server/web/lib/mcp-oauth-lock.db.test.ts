@@ -41,7 +41,7 @@ describe.skipIf(!URL)('the OAuth lock', () => {
          expires_at, refresh_expires_at, revoked_at, session_epoch)
       values (${id}, ${sha(`at-${id}`)}, ${sha(refresh)}, ${anchor}, ${actor}, ${client},
               now() + interval '1 hour', now() + interval '30 days',
-              ${revoked ? new Date() : null}, null)`;
+              ${revoked ? new Date().toISOString() : null}, null)`;
     return { id, refresh };
   };
 
