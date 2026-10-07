@@ -127,6 +127,21 @@ export type {
   LoginRefusedReason,
   PasswordResetRefused,
 } from './dto/logins';
+// Inbound API keys (0232). Types at the root; the runtime ACCESS_KEY_AREAS
+// is the `@mantle/client-types/dto/access-keys` subpath.
+export type {
+  AccessKeyAccess,
+  AccessKeyArea,
+  AccessKeyCreateInput,
+  AccessKeyCreated,
+  AccessKeyList,
+  AccessKeyLoginOption,
+  AccessKeyRole,
+  AccessKeyScopeRefusal,
+  AccessKeyStatus,
+  AccessKeyView,
+  ApiV1Whoami,
+} from './dto/access-keys';
 export type {
   ClientAdminRefusedReason,
   ClientChatMessage,

@@ -26,6 +26,7 @@ import {
 import { accessKeyLoginOptions, listAccessKeys } from '@/lib/access-keys-admin';
 import { auditFireAndForget, requestMeta } from '@/lib/audit';
 import { firstIssue } from '@/lib/zod-issue';
+import type { AccessKeyCreated, AccessKeyList } from '@mantle/client-types';
 
 const NO_STORE = { 'Cache-Control': 'no-store' };
 
@@ -52,9 +53,9 @@ export async function GET() {
     {
       keys,
       logins,
-      areas: ACCESS_KEY_AREAS,
+      areas: [...ACCESS_KEY_AREAS],
       defaultExpiryDays: DEFAULT_ACCESS_KEY_EXPIRY_DAYS,
-    },
+    } satisfies AccessKeyList,
     { headers: NO_STORE },
   );
 }
@@ -120,7 +121,12 @@ export async function POST(req: Request) {
   });
 
   return NextResponse.json(
-    { id, prefix: `mtlk_${prefix}`, secret: key, expiresAt: expiresAt?.toISOString() ?? null },
+    {
+      id,
+      prefix: `mtlk_${prefix}`,
+      secret: key,
+      expiresAt: expiresAt?.toISOString() ?? null,
+    } satisfies AccessKeyCreated,
     { status: 201, headers: NO_STORE },
   );
 }

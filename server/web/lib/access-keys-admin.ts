@@ -5,28 +5,15 @@
  */
 import { desc, inArray } from 'drizzle-orm';
 import { accessKeys, authUsers, db, type AccessKey } from '@mantle/db';
+import type {
+  AccessKeyLoginOption,
+  AccessKeyStatus,
+  AccessKeyView,
+} from '@mantle/client-types';
 import type { AccessKeyAccess, AccessKeyArea, AccessKeyRole } from './access-keys';
 
-export type AccessKeyStatus = 'active' | 'expired' | 'revoked';
-
-export type AccessKeyView = {
-  id: string;
-  name: string;
-  /** `mtlk_<prefix>`: enough to tell keys apart, useless without the rest. */
-  prefix: string;
-  login: { id: string; email: string | null; displayName: string | null; role: AccessKeyRole };
-  access: AccessKeyAccess;
-  /** null = every area. */
-  areas: AccessKeyArea[] | null;
-  riskyTools: string[];
-  status: AccessKeyStatus;
-  expiresAt: string | null;
-  createdAt: string;
-  createdBy: { id: string; email: string | null } | null;
-  lastUsedAt: string | null;
-  lastUsedIp: string | null;
-  revokedAt: string | null;
-};
+// The wire shapes are the contract package's (@crossworks/client-types).
+export type { AccessKeyLoginOption, AccessKeyStatus, AccessKeyView };
 
 export function accessKeyStatus(
   row: Pick<AccessKey, 'revokedAt' | 'expiresAt'>,
@@ -91,13 +78,6 @@ export function accessKeyView(
     revokedAt: r.revokedAt?.toISOString() ?? null,
   };
 }
-
-export type AccessKeyLoginOption = {
-  id: string;
-  email: string;
-  displayName: string | null;
-  role: AccessKeyRole;
-};
 
 /**
  * The logins the calling admin may make a key for: their own login, and

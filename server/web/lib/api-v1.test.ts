@@ -6,6 +6,7 @@ import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { ACCESS_KEY_AREAS as CONTRACT_AREAS } from '@mantle/client-types/dto/access-keys';
 import { ACCESS_KEY_AREAS } from './access-keys';
 import { API_V1_ROUTES, keyMayCall, matchApiV1Route } from './api-v1';
 
@@ -26,6 +27,10 @@ describe('public API v1 table', () => {
       expect(table).toEqual(files);
     },
   );
+
+  it('the contract package lists the same areas as the brain', () => {
+    expect([...CONTRACT_AREAS]).toEqual([...ACCESS_KEY_AREAS]);
+  });
 
   it('names only known areas, and a read for every GET', () => {
     for (const r of API_V1_ROUTES) {

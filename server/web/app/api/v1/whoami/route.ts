@@ -1,6 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { getLoginOr401 } from '@/lib/auth';
 import { getRequestContext } from '@/server/request-context';
+import type { ApiV1Whoami } from '@mantle/client-types';
 
 /**
  * GET /api/v1/whoami (public API v1): who the credential acts as, and, for
@@ -29,10 +30,10 @@ export async function GET() {
             prefix: `mtlk_${key.prefix}`,
             name: key.name,
             access: key.access,
-            areas: key.areas,
+            areas: key.areas ? [...key.areas] : null,
           }
         : null,
-    },
+    } satisfies ApiV1Whoami,
     { headers: { 'Cache-Control': 'no-store' } },
   );
 }
