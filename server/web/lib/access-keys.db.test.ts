@@ -358,12 +358,13 @@ describe.skipIf(!URL)('inbound API keys', () => {
     ).toBe(404);
     const [row] = await sql<Row[]>`select revoked_by from access_keys where id = ${made.id}`;
     expect(row!.revoked_by).toBe(admin);
-    // A member cannot revoke a key.
+    // A member cannot revoke another login's key: as if it did not exist.
     const other = await makeKey();
     expect(
       (await call(`/api/access-keys/${other.id}`, { method: 'DELETE', cookie: cookieOf(member) }))
         .status,
-    ).toBe(403);
+    ).toBe(404);
+    expect((await whoami(other.secret)).status).toBe(200);
     expect(await audited('key.revoked', made.id)).toHaveLength(1);
     const refused = await audited('key.refused', made.id);
     expect((refused[0]!.detail as Json).reason).toBe('revoked');
