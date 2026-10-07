@@ -380,8 +380,10 @@ describe.skipIf(!hasManifest)('role sweep: three roles, fail closed', () => {
         // The client routes answer a client (client-sweep.test.ts proves it).
         const [method, pattern] = key.split(' ') as [string, string];
         if (isClientRoute(method, pattern)) return true;
-        // About the login itself, any role (lib/auth/any-login-routes.ts).
-        if (isAnyLoginRoute(method, pattern)) return status === 200;
+        // About the login itself, any role (lib/auth/any-login-routes.ts):
+        // proved per role against a database (access-keys.db.test.ts), as
+        // the client routes are in client-sweep.test.ts.
+        if (isAnyLoginRoute(method, pattern)) return true;
         return (
           (status === 403 && body?.reason === 'client-login') ||
           (status === 401 && body?.error === 'unauthorized') ||

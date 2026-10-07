@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { index, integer, pgTable, text, timestamp, uuid, uniqueIndex } from 'drizzle-orm/pg-core';
+import { index, pgTable, text, timestamp, uuid, uniqueIndex } from 'drizzle-orm/pg-core';
 
 /**
  * Inbound API keys (migration 0232, plan page 1e62e204). An admin makes a
@@ -10,9 +10,9 @@ import { index, integer, pgTable, text, timestamp, uuid, uniqueIndex } from 'dri
  *
  * Only the SHA-256 of the secret is kept. `key_prefix` is the public part of
  * the secret (`mtlk_<prefix>_<secret>`): the lookup key and what the UI
- * shows. `session_epoch` and `login_role` are the login's at mint: a sign
- * out everywhere, a password change, a disable or a role change ends the
- * key. The FKs into `auth.users` are declared in the SQL migration (Drizzle
+ * shows. `login_role` is the login's role at mint: a role change or a
+ * disable ends the key. A sign out or a password change does not: a key is
+ * its own credential, ended by revoke or expiry. The FKs into `auth.users` are declared in the SQL migration (Drizzle
  * manages public.* only; see schema/auth-users.ts).
  */
 export const accessKeys = pgTable(
@@ -24,7 +24,6 @@ export const accessKeys = pgTable(
     name: text('name').notNull(),
     loginId: uuid('login_id').notNull(),
     loginRole: text('login_role').notNull(),
-    sessionEpoch: integer('session_epoch').notNull(),
     keyPrefix: text('key_prefix').notNull(),
     keyHash: text('key_hash').notNull(),
     access: text('access').notNull(),

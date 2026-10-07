@@ -2,16 +2,21 @@
  * Inbound API keys end to end on a real migrated Postgres, through the real
  * app (createApp): make, list, use, refuse, revoke.
  *
- *  - an admin makes a key for itself or for a member or client login, never
- *    for another admin; a member cannot reach the key routes at all;
+ *  - every login (admin, member, client) makes keys for its OWN login only,
+ *    never for another login; a member or client lists and revokes only its
+ *    own keys; an admin sees and may revoke every key; a login holds at most
+ *    50 live keys;
  *  - the secret is answered once; the row keeps only its SHA-256 and the
  *    list never shows either;
  *  - a key works on /api/v1/* and nowhere else under /api, even with a
  *    cookie riding along, and not on the public /api/auth prefix;
  *  - a wrong secret, a revoked key, an expired key, and a key whose login
- *    was signed out everywhere, disabled or changed role are all a 401;
+ *    was disabled or changed role are all a 401; a sign out does not end it;
+ *  - any admin may revoke any key; a member may not;
+ *  - an image-shaped /api/v1 path gets the same checks;
  *  - the key's rate budget (120 a minute) and the failed-try budget per
- *    address (20 a minute) answer 429;
+ *    address and prefix (20 a minute) answer 429; a valid key with another
+ *    prefix from the same address is not locked out;
  *  - key.created, key.revoked and key.refused land in the audit log.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/access-keys.db.test.ts
@@ -65,8 +70,9 @@ describe.skipIf(!URL)('inbound API keys', () => {
     });
   };
   const json = async (res: Response) => (await res.json()) as Json;
+  // 29 days: a client cookie may not claim more than the client session's 30.
   const cookieOf = (id: string, epoch = 0) =>
-    `mantle_session=${tokens.buildSessionCookie(id, { epoch }).value}`;
+    `mantle_session=${tokens.buildSessionCookie(id, { epoch, ttlSeconds: 29 * 24 * 3600 }).value}`;
   const epochOf = async (id: string) =>
     Number(
       (await sql<Row[]>`select session_epoch from auth.users where id = ${id}`)[0]!.session_epoch,
@@ -74,14 +80,16 @@ describe.skipIf(!URL)('inbound API keys', () => {
 
   const make = async (body: Json, as = admin) =>
     call('/api/access-keys', { method: 'POST', cookie: cookieOf(as, await epochOf(as)), body });
-  const makeKey = async (body: Partial<Json> = {}) => {
-    const res = await make({
-      name: 'Script',
-      loginId: admin,
-      access: 'read',
-      areas: null,
-      ...body,
-    });
+  const makeKey = async (body: Partial<Json> = {}, as = admin) => {
+    const res = await make(
+      {
+        name: 'Script',
+        access: 'read',
+        areas: null,
+        ...body,
+      },
+      as,
+    );
     expect(res.status).toBe(201);
     return (await json(res)) as { id: string; prefix: string; secret: string };
   };
@@ -134,7 +142,6 @@ describe.skipIf(!URL)('inbound API keys', () => {
   it('answers the secret once and keeps only its hash', async () => {
     const res = await make({
       name: 'Backup script',
-      loginId: admin,
       access: 'read_write',
       areas: ['pages', 'tables'],
       expiresInDays: 30,
@@ -157,7 +164,8 @@ describe.skipIf(!URL)('inbound API keys', () => {
     const text = await list.text();
     expect(text).not.toContain(made.secret.slice(14));
     expect(text).not.toContain(String(row!.key_hash));
-    const body = JSON.parse(text) as { keys: Json[]; logins: Json[]; areas: string[] };
+    const body = JSON.parse(text) as { keys: Json[]; role: string; areas: string[] };
+    expect(body.role).toBe('admin');
     const listed = body.keys.find((k) => k.id === made.id)!;
     expect(listed).toMatchObject({
       name: 'Backup script',
@@ -167,13 +175,8 @@ describe.skipIf(!URL)('inbound API keys', () => {
       status: 'active',
       lastUsedAt: null,
     });
-    expect((listed.login as Json).role).toBe('admin');
-    // The picker: the caller, members and clients; never another admin.
-    const pick = body.logins.map((l) => l.id);
-    expect(pick[0]).toBe(admin);
-    expect(pick).toContain(member);
-    expect(pick).toContain(client);
-    expect(pick).not.toContain(admin2);
+    expect(listed.login as Json).toMatchObject({ id: admin, role: 'admin' });
+    expect((listed.createdBy as Json).id).toBe(admin);
 
     const created = await audited('key.created', made.id);
     expect(created).toHaveLength(1);
@@ -181,46 +184,70 @@ describe.skipIf(!URL)('inbound API keys', () => {
     expect(JSON.stringify(created[0]!.detail)).not.toContain(made.secret.slice(14));
   });
 
-  it('never makes a key that acts as another admin', async () => {
-    const res = await make({ name: 'x', loginId: admin2, access: 'read', areas: null });
-    expect(res.status).toBe(403);
-  });
-
-  it('keeps risky tools for admin keys, and checks the body', async () => {
-    const risky = await make({
-      name: 'x',
-      loginId: member,
-      access: 'read',
-      areas: null,
-      riskyTools: ['email_send'],
-    });
-    expect(risky.status).toBe(400);
-    for (const bad of [
-      { name: '', loginId: admin, access: 'read', areas: null },
-      { name: 'x', loginId: admin, access: 'write', areas: null },
-      { name: 'x', loginId: admin, access: 'read', areas: [] },
-      { name: 'x', loginId: admin, access: 'read', areas: ['admin'] },
-      { name: 'x', loginId: admin, access: 'read', areas: null, expiresInDays: 0 },
-      { name: 'x', loginId: randomUUID(), access: 'read', areas: null },
-    ]) {
-      expect([400, 404]).toContain((await make(bad)).status);
+  it('never makes a key for another login: a body that names one is refused', async () => {
+    for (const other of [admin2, member, client, admin]) {
+      const res = await make({ name: 'x', loginId: other, access: 'read', areas: null });
+      expect(res.status).toBe(400);
     }
   });
 
-  it('refuses the key routes to a member and to a key', async () => {
-    const memberCookie = cookieOf(member);
-    expect((await call('/api/access-keys', { cookie: memberCookie })).status).toBe(403);
-    expect(
-      (
-        await call('/api/access-keys', {
-          method: 'POST',
-          cookie: memberCookie,
-          body: { name: 'x', loginId: member, access: 'read', areas: null },
-        })
-      ).status,
-    ).toBe(403);
-    const { secret } = await makeKey();
-    expect((await call('/api/access-keys', { bearer: secret })).status).toBe(401);
+  it('keeps risky tools for admin keys, and checks the body', async () => {
+    const risky = await make(
+      { name: 'x', access: 'read', areas: null, riskyTools: ['email_send'] },
+      member,
+    );
+    expect(risky.status).toBe(400);
+    for (const bad of [
+      { name: '', access: 'read', areas: null },
+      { name: 'x', access: 'write', areas: null },
+      { name: 'x', access: 'read', areas: [] },
+      { name: 'x', access: 'read', areas: ['admin'] },
+      { name: 'x', access: 'read', areas: null, expiresInDays: 0 },
+    ]) {
+      expect((await make(bad)).status).toBe(400);
+    }
+  });
+
+  it('a member and a client make, list and revoke their own keys only', async () => {
+    const adminKey = await makeKey();
+    for (const who of [member, client]) {
+      const own = await makeKey({}, who);
+      const res = await call('/api/access-keys', { cookie: cookieOf(who, await epochOf(who)) });
+      expect(res.status).toBe(200);
+      const body = (await json(res)) as { keys: Json[]; role: string };
+      expect(body.role).toBe(who === member ? 'member' : 'client');
+      expect(body.keys.length).toBeGreaterThan(0);
+      for (const k of body.keys) expect((k.login as Json).id).toBe(who);
+      // Another login's key is not theirs to revoke: as if it did not exist.
+      const cookie = cookieOf(who, await epochOf(who));
+      expect(
+        (await call(`/api/access-keys/${adminKey.id}`, { method: 'DELETE', cookie })).status,
+      ).toBe(404);
+      expect((await call(`/api/access-keys/${own.id}`, { method: 'DELETE', cookie })).status).toBe(
+        200,
+      );
+    }
+    expect((await whoami(adminKey.secret)).status).toBe(200);
+    // A key never reaches the key routes.
+    expect((await call('/api/access-keys', { bearer: adminKey.secret })).status).toBe(401);
+  });
+
+  it('holds a login to 50 live keys', async () => {
+    const rows = Array.from({ length: 50 }, (_, i) => ({
+      name: `filler ${i}`,
+      login_id: member2,
+      login_role: 'member',
+      key_prefix: randomUUID().replace(/-/g, '').slice(0, 8),
+      key_hash: createHash('sha256').update(randomUUID()).digest('hex'),
+      access: 'read',
+    }));
+    await sql`insert into access_keys ${sql(rows)}`;
+    const res = await make({ name: 'one too many', access: 'read', areas: null }, member2);
+    expect(res.status).toBe(409);
+    await sql`update access_keys set revoked_at = now() where login_id = ${member2}`;
+    expect((await make({ name: 'room again', access: 'read', areas: null }, member2)).status).toBe(
+      201,
+    );
   });
 
   // ── Use ───────────────────────────────────────────────────────────────────
@@ -246,12 +273,12 @@ describe.skipIf(!URL)('inbound API keys', () => {
   });
 
   it('acts as a member or a client login at that role', async () => {
-    const forMember = await makeKey({ loginId: member });
+    const forMember = await makeKey({}, member);
     expect(await json(await whoami(forMember.secret))).toMatchObject({
       role: 'member',
       loginId: member,
     });
-    const forClient = await makeKey({ loginId: client });
+    const forClient = await makeKey({}, client);
     expect(await json(await whoami(forClient.secret))).toMatchObject({
       role: 'client',
       loginId: client,
@@ -265,11 +292,44 @@ describe.skipIf(!URL)('inbound API keys', () => {
       expect((await call(path, { bearer: secret, cookie: cookieOf(admin) })).status).toBe(401);
     }
     // A public prefix lets the request through the gate; the route's login
-    // lookup still refuses the key.
+    // lookup still refuses the key, and does not fall back to a valid
+    // cookie riding along.
     expect((await call('/api/auth/whoami', { bearer: secret })).status).toBe(401);
+    expect(
+      (await call('/api/auth/whoami', { bearer: secret, cookie: cookieOf(admin) })).status,
+    ).toBe(401);
     // The key is judged on itself: a cookie of another login does not mix in.
     const res = await whoami(secret, { cookie: cookieOf(member) });
     expect((await json(res)).loginId).toBe(admin);
+  });
+
+  it('records a known key used off /api/v1', async () => {
+    const made = await makeKey();
+    expect((await call('/api/pages', { bearer: made.secret })).status).toBe(401);
+    const refused = await audited('key.refused', made.id);
+    expect((refused[0]!.detail as Json).reason).toBe('not-v1');
+  });
+
+  it('gives an image-shaped /api/v1 path no way around the key checks', async () => {
+    const tasksOnly = await makeKey({ areas: ['tasks'] });
+    const res = await call('/api/v1/files/picture.png', { bearer: tasksOnly.secret });
+    expect(res.status).toBe(403);
+    expect(await json(res)).toMatchObject({ reason: 'key-area' });
+    await call(`/api/access-keys/${tasksOnly.id}`, { method: 'DELETE', cookie: cookieOf(admin) });
+    expect((await call('/api/v1/files/picture.png', { bearer: tasksOnly.secret })).status).toBe(
+      401,
+    );
+  });
+
+  it('refuses a write to a read key', async () => {
+    const { secret } = await makeKey({ access: 'read' });
+    const res = await call('/api/v1/notes', {
+      method: 'POST',
+      bearer: secret,
+      body: { title: 'x', body: 'x' },
+    });
+    expect(res.status).toBe(403);
+    expect(await json(res)).toMatchObject({ reason: 'key-read-only' });
   });
 
   it('refuses a wrong secret and a malformed key', async () => {
@@ -298,6 +358,12 @@ describe.skipIf(!URL)('inbound API keys', () => {
     ).toBe(404);
     const [row] = await sql<Row[]>`select revoked_by from access_keys where id = ${made.id}`;
     expect(row!.revoked_by).toBe(admin);
+    // A member cannot revoke a key.
+    const other = await makeKey();
+    expect(
+      (await call(`/api/access-keys/${other.id}`, { method: 'DELETE', cookie: cookieOf(member) }))
+        .status,
+    ).toBe(403);
     expect(await audited('key.revoked', made.id)).toHaveLength(1);
     const refused = await audited('key.refused', made.id);
     expect((refused[0]!.detail as Json).reason).toBe('revoked');
@@ -320,24 +386,33 @@ describe.skipIf(!URL)('inbound API keys', () => {
     expect((await whoami(made.secret)).status).toBe(200);
   });
 
-  it("ends with its login's sessions, a disable and a role change", async () => {
-    const signedOut = await makeKey({ loginId: member });
-    await sql`update auth.users set session_epoch = session_epoch + 1 where id = ${member}`;
-    expect((await whoami(signedOut.secret)).status).toBe(401);
+  it("any admin may revoke any key, another admin's own included", async () => {
+    const theirs = await makeKey({}, admin2);
+    const res = await call(`/api/access-keys/${theirs.id}`, {
+      method: 'DELETE',
+      cookie: cookieOf(admin),
+    });
+    expect(res.status).toBe(200);
+    expect((await whoami(theirs.secret)).status).toBe(401);
+  });
 
-    const disabled = await makeKey({ loginId: client });
+  it('outlives a sign out, and ends with a disable and a role change', async () => {
+    // A sign out everywhere (or a client's plain sign out) moves the
+    // session epoch; a key is its own credential and lives on.
+    const signedOut = await makeKey({}, client);
+    await sql`update auth.users set session_epoch = session_epoch + 1 where id = ${client}`;
+    expect((await whoami(signedOut.secret)).status).toBe(200);
+
+    const disabled = await makeKey({}, client);
     await sql`update auth.users set disabled_at = now() where id = ${client}`;
     expect((await whoami(disabled.secret)).status).toBe(401);
     await sql`update auth.users set disabled_at = null where id = ${client}`;
     expect((await whoami(disabled.secret)).status).toBe(200);
 
-    // A role change ends the key, even one that (wrongly) kept the epoch.
-    // A client's role never changes (a database rule), so a member's here.
-    const promoted = await makeKey({ loginId: member2 });
-    const [before] = await sql<Row[]>`select session_epoch from auth.users where id = ${member2}`;
+    // A role change ends the key. A client's role never changes (a database
+    // rule), so a member's here.
+    const promoted = await makeKey({}, member2);
     await sql`update auth.users set role = 'admin' where id = ${member2}`;
-    await sql`update auth.users set session_epoch = ${Number(before!.session_epoch)}
-              where id = ${member2}`;
     expect((await whoami(promoted.secret)).status).toBe(401);
   });
 
@@ -350,14 +425,23 @@ describe.skipIf(!URL)('inbound API keys', () => {
     expect(last).toBe(429);
   });
 
-  it('holds an address to 20 failed keys a minute', async () => {
+  it('holds one address to 20 failed tries of one prefix a minute', async () => {
     const at = '192.0.2.77';
     const { secret, prefix } = await makeKey();
+    const other = await makeKey();
     for (let i = 0; i < 20; i += 1) {
       expect((await whoami(`${prefix}_${'B'.repeat(43)}`, { ip: at })).status).toBe(401);
+      // Junk from the same address (a shared NAT) costs nobody else.
+      expect((await whoami(`mtlk_${'Z'.repeat(8)}_${'C'.repeat(43)}`, { ip: at })).status).toBe(
+        401,
+      );
     }
     const res = await whoami(secret, { ip: at });
     expect(res.status).toBe(429);
     expect(res.headers.get('retry-after')).not.toBeNull();
+    // Another valid key from that address is not locked out (audit item 2),
+    // nor is this key from another address.
+    expect((await whoami(other.secret, { ip: at })).status).toBe(200);
+    expect((await whoami(secret, { ip: '192.0.2.78' })).status).toBe(200);
   });
 });

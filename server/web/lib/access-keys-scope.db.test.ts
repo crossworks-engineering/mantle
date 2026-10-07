@@ -57,12 +57,14 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
     });
   };
   const json = async (res: Response) => (await res.json()) as Json;
-  const adminCookie = () => `mantle_session=${tokens.buildSessionCookie(admin).value}`;
-  const makeKey = async (body: Json): Promise<{ id: string; secret: string }> => {
+  const cookieOf = (id: string) => `mantle_session=${tokens.buildSessionCookie(id).value}`;
+  const adminCookie = () => cookieOf(admin);
+  /** A key made by `as` for its own login (nobody makes one for another). */
+  const makeKey = async (body: Json, as = admin): Promise<{ id: string; secret: string }> => {
     const res = await call('/api/access-keys', {
       method: 'POST',
-      cookie: adminCookie(),
-      body: { name: 'Scope test', loginId: admin, access: 'read', areas: null, ...body },
+      cookie: cookieOf(as),
+      body: { name: 'Scope test', access: 'read', areas: null, ...body },
     });
     expect(res.status).toBe(201);
     return (await json(res)) as { id: string; secret: string };
@@ -162,6 +164,8 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
     // The write names the key in the audit log, attributed to its login.
     const writes = await audited('api.write', key.id);
     expect(writes.map((w) => w.path)).toContain('/api/v1/tasks');
+    // It names the key's maker too (audit item 8).
+    expect((writes[0]!.detail as Json).keyCreatedBy).toBe(admin);
   });
 
   it('a task comment through v1 is held to tasks', async () => {
@@ -241,7 +245,7 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
   });
 
   it('a key that acts as a member reaches whoami and no admin route', async () => {
-    const key = await makeKey({ loginId: member, access: 'read_write' });
+    const key = await makeKey({ access: 'read_write' }, member);
     expect((await call('/api/v1/whoami', { bearer: key.secret })).status).toBe(200);
     const res = await call('/api/v1/pages', { bearer: key.secret });
     expect(res.status).toBe(403);
@@ -272,7 +276,7 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
   });
 
   it("a member key on MCP needs the login's switch, and both write switches", async () => {
-    const key = await makeKey({ loginId: member, access: 'read_write' });
+    const key = await makeKey({ access: 'read_write' }, member);
     expect(await mcpCaller(key.secret)).toBeNull();
 
     await sql`insert into mcp_login_access (login_id, enabled, write_enabled)
@@ -290,7 +294,7 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
     await sql`update mcp_login_access set write_enabled = true where login_id = ${member}`;
     expect((await mcpCaller(key.secret))?.write).toBe(true);
 
-    const reader = await makeKey({ loginId: member, access: 'read' });
+    const reader = await makeKey({ access: 'read' }, member);
     expect((await mcpCaller(reader.secret))?.write).toBe(false);
   });
 });

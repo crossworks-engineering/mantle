@@ -38,7 +38,8 @@ import {
   secureCookies,
 } from '../auth-constants';
 import { auditFireAndForget, requestMeta } from '../audit';
-import { isAccessKey, isApiV1Path, verifyAccessKey } from '../access-keys';
+import { isAccessKey, isApiV1Path } from '../access-keys';
+import { keyMayCall, matchApiV1Route } from '../api-v1';
 import { getRequestContext } from '../../server/request-context';
 import { bearerFromHeader } from './request';
 import {
@@ -433,21 +434,30 @@ async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved 
 
 /**
  * The login an inbound API key (`mtlk_`) acts as. `undefined` when the
- * request carries no key; null when it carries one that is refused: on any
- * path but /api/v1/* (the gate has already refused those under /api, this
- * holds the public prefixes too), or a key that fails its checks. The gate
- * verified the key for this request and left it in the request context;
- * without that (a direct call, a test) it is verified here.
+ * request carries no key; null when it carries one that is not let in.
+ *
+ * A key is taken ONLY from the request context, where the gate leaves it
+ * after every check passed (server/middleware/access-key-gate.ts: the
+ * failed-try budget, the key itself, its rate budget, its scope). It is
+ * never verified again here (audit item 3): a request that reached a route
+ * without the gate's grant (a public prefix such as /api/auth, or a path
+ * shape the gate lets through) has no key login at all.
+ *
+ * The scope guard runs again here (audit item 1), so a `source: 'api'`
+ * login exists only for a /api/v1 route the key may call: the route's
+ * area, and a write only for a read_write key. Every gate below
+ * (getOwnerOr401, getMemberOr401, getClientOr401, getLoginOr401) resolves
+ * through this, so none can hand a read key a write route.
  */
 async function accessKeyLogin(): Promise<Resolved | null | undefined> {
   const h = await headers();
   const token = bearerFromHeader(h.get('authorization'));
   if (!isAccessKey(token)) return undefined;
-  if (!isApiV1Path(h.get(MANTLE_PATH_HEADER) ?? '')) return null;
-  const grant =
-    getRequestContext()?.accessKey ??
-    (await verifyAccessKey(token).then((c) => (c.ok ? c.grant : null)));
-  if (!grant) return null;
+  const ctx = getRequestContext();
+  const grant = ctx?.accessKey;
+  if (!ctx || !grant) return null;
+  if (!isApiV1Path(ctx.path)) return null;
+  if (!keyMayCall(grant, matchApiV1Route(ctx.method, ctx.path)).ok) return null;
   return resolvedFor(grant.login, 'api');
 }
 
@@ -584,7 +594,11 @@ async function auditMutation(user: SessionUser, skip?: (path: string) => boolean
     path,
     // The proxy-appended address, not the caller's leftmost (audit B16).
     ...(await requestMeta()),
-    ...(key ? { detail: { keyId: key.id, keyPrefix: key.prefix } } : {}),
+    // The key's maker too: a key that acts as a member or client logs its
+    // writes under that login, and the maker is who to ask (audit item 8).
+    ...(key
+      ? { detail: { keyId: key.id, keyPrefix: key.prefix, keyCreatedBy: key.createdBy } }
+      : {}),
   });
 }
 
@@ -710,6 +724,17 @@ export async function getMemberOr401(): Promise<MemberCaller | NextResponse> {
   // A member and nothing else: an admin gets admin-login, a client
   // client-login (client routes are their own list, never a member route).
   if (res.kind !== 'member') return loginRefused(res.kind);
+  // A write made with an API key is always on the trail, whoever the key
+  // acts as (audit item 5); a member's own session writes are not audited
+  // here, as before.
+  if (res.source === 'api') {
+    const m = res.member;
+    await auditMutation({
+      id: m.anchorId,
+      email: m.email,
+      actor: { id: m.loginId, email: m.email, displayName: m.displayName, isOwner: false },
+    });
+  }
   return res.member;
 }
 

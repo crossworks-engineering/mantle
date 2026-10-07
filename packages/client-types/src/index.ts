@@ -135,7 +135,6 @@ export type {
   AccessKeyCreateInput,
   AccessKeyCreated,
   AccessKeyList,
-  AccessKeyLoginOption,
   AccessKeyRole,
   AccessKeyScopeRefusal,
   AccessKeyStatus,

@@ -1,8 +1,9 @@
 /**
  * Inbound API keys (migration 0232, plan page 1e62e204).
  *
- * A key acts as ONE login (an admin, a member or a client) and can only
- * narrow what that login may do: `access` is read or read_write, `areas`
+ * A key acts as the ONE login that made it (an admin, a member or a
+ * client; nobody makes a key for another login) and can only narrow what
+ * that login may do: `access` is read or read_write, `areas`
  * names the parts of the brain it may touch (null = all). It is accepted as
  * a Bearer on /api/v1/* (the gate, server/middleware/gate.ts) and on
  * /api/mcp (lib/mcp-auth.ts), and nowhere else.
@@ -13,9 +14,11 @@
  * bcrypt) is enough because the secret part is 32 random bytes.
  *
  * Every rule is read from the rows on every request: the key row (revoked,
- * expired) and the login row (disabled, role, session epoch). A key never
- * outlives its login's sessions: sign out everywhere, a password change, a
- * disable or a role change ends it.
+ * expired) and the login row (disabled, role). A disable or a role change
+ * ends every key of the login. A sign out or a password change does not: a
+ * key is its own credential, ended by revoke or expiry (audit item 9: a
+ * client's every sign out moves the session epoch, which would end its keys
+ * without a word).
  *
  * The secret is never logged and never returned after create.
  */
@@ -44,13 +47,27 @@ export type AccessKeyRole = 'admin' | 'member' | 'client';
 export const DEFAULT_ACCESS_KEY_EXPIRY_DAYS = 90;
 /** The longest expiry a caller may name (in days). "Never" is null. */
 export const MAX_ACCESS_KEY_EXPIRY_DAYS = 3650;
+/** Live (not revoked, not expired) keys one login may hold. */
+export const MAX_LIVE_KEYS_PER_LOGIN = 50;
 
-/** Requests a minute per key: the public HTTP API, and /api/mcp. */
+/** Requests a minute per key: the public HTTP API, and /api/mcp.
+ *
+ *  The per-address budgets below key on `clientIp`: the address the
+ *  reverse proxy appends to X-Forwarded-For (audit item 10). A brain served
+ *  WITHOUT its proxy (Caddy in the release) takes that address from the
+ *  caller, who can then claim a fresh one per request. Run behind the
+ *  proxy; the docs say so (docs/guide/07-api). */
 export const ACCESS_KEY_RATE = {
   v1: { max: 120, windowMs: 60_000 },
   mcp: { max: 300, windowMs: 60_000 },
 } as const;
-/** Failed key presentations a minute per client address. */
+/** Failed presentations a minute of one key prefix from one address. Keyed
+ *  on the pair, not the address alone (audit item 2): bad keys from a shared
+ *  address (NAT, a proxy) must not lock every valid key out from it. Only a
+ *  caller who tries wrong secrets for THIS prefix from THIS address meets
+ *  it. The peek before the check and the count after it can race by the
+ *  number of requests in flight (audit item 7): accepted, the secret is 256
+ *  random bits. */
 const FAILED_KEY_RATE = { max: 20, windowMs: 60_000 };
 
 const PREFIX_LEN = 8;
@@ -70,6 +87,9 @@ export type AccessKeyGrant = {
   /** null = every area. */
   areas: readonly AccessKeyArea[] | null;
   riskyTools: readonly string[];
+  /** The admin who made the key (null once that login is deleted). Every
+   *  write made with the key names it in the audit trail. */
+  createdBy: string | null;
   /** The login row the key was checked against on this request. */
   login: LoginRow;
 };
@@ -115,7 +135,7 @@ function loginUsable(row: LoginRow): boolean {
 /**
  * Check a presented key: its shape, the row its prefix names, the hash (in
  * constant time), revoke and expiry, and the login it acts as (usable, the
- * same role, the same session epoch). No side effects: the caller touches,
+ * same role). No side effects: the caller touches,
  * rate-limits and audits.
  */
 export async function verifyAccessKey(token: string): Promise<AccessKeyCheck> {
@@ -133,13 +153,7 @@ export async function verifyAccessKey(token: string): Promise<AccessKeyCheck> {
     return { ok: false, reason: 'expired', keyId: row.id };
   }
   const login = await loadLoginRow(row.loginId);
-  if (
-    !login ||
-    !loginUsable(login) ||
-    !isRole(row.loginRole) ||
-    login.role !== row.loginRole ||
-    login.sessionEpoch !== row.sessionEpoch
-  ) {
+  if (!login || !loginUsable(login) || !isRole(row.loginRole) || login.role !== row.loginRole) {
     return { ok: false, reason: 'login', keyId: row.id };
   }
   return {
@@ -153,6 +167,7 @@ export async function verifyAccessKey(token: string): Promise<AccessKeyCheck> {
       access: row.access === 'read_write' ? 'read_write' : 'read',
       areas: row.areas ? row.areas.filter(isArea) : null,
       riskyTools: row.loginRole === 'admin' ? row.riskyTools : [],
+      createdBy: row.createdBy,
       login,
     },
   };
@@ -165,14 +180,20 @@ export function rateLimitAccessKey(keyId: string, surface: 'v1' | 'mcp'): RateLi
   return rateLimit(`akey:${surface}:${keyId}`, ACCESS_KEY_RATE[surface]);
 }
 
-/** Whether `ip` may present another key now (failed tries are counted). */
-export function failedKeyBudget(ip: string): RateLimitResult {
-  return rateLimitPeek(`akey-fail:${ip}`, FAILED_KEY_RATE);
+/** The failed-try bucket of a presented key: its address and its prefix
+ *  (a malformed key shares one bucket per address). */
+function failKey(ip: string, token: string): string {
+  return `akey-fail:${ip}:${KEY_RE.exec(token)?.[1] ?? '-'}`;
 }
 
-/** Count one failed key presentation from `ip`. */
-export function countFailedKey(ip: string): void {
-  rateLimit(`akey-fail:${ip}`, FAILED_KEY_RATE);
+/** Whether `ip` may present this key's prefix again (failures counted). */
+export function failedKeyBudget(ip: string, token: string): RateLimitResult {
+  return rateLimitPeek(failKey(ip, token), FAILED_KEY_RATE);
+}
+
+/** Count one failed presentation of this key's prefix from `ip`. */
+export function countFailedKey(ip: string, token: string): void {
+  rateLimit(failKey(ip, token), FAILED_KEY_RATE);
 }
 
 const TOUCH_EVERY_MS = 60_000;
@@ -234,7 +255,6 @@ export type MintAccessKeyInput = {
   name: string;
   loginId: string;
   loginRole: AccessKeyRole;
-  sessionEpoch: number;
   access: AccessKeyAccess;
   areas: readonly AccessKeyArea[] | null;
   riskyTools: readonly string[];
@@ -259,7 +279,6 @@ export async function mintAccessKey(
           name: input.name,
           loginId: input.loginId,
           loginRole: input.loginRole,
-          sessionEpoch: input.sessionEpoch,
           keyPrefix: prefix,
           keyHash: sha256(key).toString('hex'),
           access: input.access,

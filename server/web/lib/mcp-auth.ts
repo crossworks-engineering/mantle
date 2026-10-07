@@ -153,10 +153,10 @@ async function callerFromLoginToken(token: string): Promise<McpCaller | null> {
  */
 async function callerFromAccessKey(req: Request, token: string): Promise<McpCaller | null> {
   const ip = clientIp(req);
-  if (!failedKeyBudget(ip).ok) return null;
+  if (!failedKeyBudget(ip, token).ok) return null;
   const check = await verifyAccessKey(token);
   if (!check.ok) {
-    countFailedKey(ip);
+    countFailedKey(ip, token);
     if (check.keyId) {
       auditKeyRefusal({
         keyId: check.keyId,

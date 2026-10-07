@@ -1,19 +1,14 @@
 /**
- * The admin side of inbound API keys (plan page 1e62e204): the list the
- * Settings > API access screen shows, and the logins a key may act as.
- * Never the secret, never its hash.
+ * The list side of inbound API keys (plan page 1e62e204): what the
+ * Settings > API access screen shows. Never the secret, never its hash.
  */
-import { desc, inArray } from 'drizzle-orm';
+import { and, count, desc, eq, gt, inArray, isNull, or } from 'drizzle-orm';
 import { accessKeys, authUsers, db, type AccessKey } from '@mantle/db';
-import type {
-  AccessKeyLoginOption,
-  AccessKeyStatus,
-  AccessKeyView,
-} from '@mantle/client-types';
+import type { AccessKeyStatus, AccessKeyView } from '@mantle/client-types';
 import type { AccessKeyAccess, AccessKeyArea, AccessKeyRole } from './access-keys';
 
 // The wire shapes are the contract package's (@crossworks/client-types).
-export type { AccessKeyLoginOption, AccessKeyStatus, AccessKeyView };
+export type { AccessKeyStatus, AccessKeyView };
 
 export function accessKeyStatus(
   row: Pick<AccessKey, 'revokedAt' | 'expiresAt'>,
@@ -26,11 +21,13 @@ export function accessKeyStatus(
 
 const LIST_LIMIT = 500;
 
-/** Every key, newest first, with its login and maker. */
-export async function listAccessKeys(): Promise<AccessKeyView[]> {
+/** Keys newest first, with their login and maker: one login's (`loginId`),
+ *  or every key (null, an admin's view). */
+export async function listAccessKeys(loginId: string | null): Promise<AccessKeyView[]> {
   const rows = await db
     .select()
     .from(accessKeys)
+    .where(loginId ? eq(accessKeys.loginId, loginId) : undefined)
     .orderBy(desc(accessKeys.createdAt))
     .limit(LIST_LIMIT);
   const ids = [...new Set(rows.flatMap((r) => [r.loginId, ...(r.createdBy ? [r.createdBy] : [])]))];
@@ -47,6 +44,21 @@ export async function listAccessKeys(): Promise<AccessKeyView[]> {
   const byId = new Map(logins.map((l) => [l.id, l]));
   const now = Date.now();
   return rows.map((r) => accessKeyView(r, byId, now));
+}
+
+/** A login's live keys: not revoked, not expired. */
+export async function countLiveAccessKeys(loginId: string): Promise<number> {
+  const [row] = await db
+    .select({ n: count() })
+    .from(accessKeys)
+    .where(
+      and(
+        eq(accessKeys.loginId, loginId),
+        isNull(accessKeys.revokedAt),
+        or(isNull(accessKeys.expiresAt), gt(accessKeys.expiresAt, new Date())),
+      ),
+    );
+  return Number(row?.n ?? 0);
 }
 
 export function accessKeyView(
@@ -77,36 +89,4 @@ export function accessKeyView(
     lastUsedIp: r.lastUsedIp,
     revokedAt: r.revokedAt?.toISOString() ?? null,
   };
-}
-
-/**
- * The logins the calling admin may make a key for: their own login, and
- * every usable member and client login. Never another admin: a key that
- * acts as an admin is made by that admin.
- */
-export async function accessKeyLoginOptions(actorId: string): Promise<AccessKeyLoginOption[]> {
-  const rows = await db
-    .select({
-      id: authUsers.id,
-      email: authUsers.email,
-      displayName: authUsers.displayName,
-      role: authUsers.role,
-      disabledAt: authUsers.disabledAt,
-    })
-    .from(authUsers)
-    .where(inArray(authUsers.role, ['admin', 'member', 'client']));
-  return rows
-    .filter(
-      (r): r is typeof r & { email: string } =>
-        !!r.email && !r.disabledAt && (r.role !== 'admin' || r.id === actorId),
-    )
-    .map((r) => ({
-      id: r.id,
-      email: r.email,
-      displayName: r.displayName,
-      role: r.role as AccessKeyRole,
-    }))
-    .sort((a, b) =>
-      a.id === actorId ? -1 : b.id === actorId ? 1 : a.email.localeCompare(b.email),
-    );
 }

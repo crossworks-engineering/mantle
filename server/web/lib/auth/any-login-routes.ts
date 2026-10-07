@@ -8,6 +8,12 @@
 export const ANY_LOGIN_ROUTES: readonly string[] = [
   // Public API v1: who the credential (or API key) acts as.
   'GET /api/v1/whoami',
+  // Inbound API keys: each login makes, lists and revokes its own keys
+  // (an admin also sees and revokes every key). Proved per role in
+  // lib/access-keys.db.test.ts.
+  'GET /api/access-keys',
+  'POST /api/access-keys',
+  'DELETE /api/access-keys/:id',
 ];
 
 export function isAnyLoginRoute(method: string, pattern: string): boolean {

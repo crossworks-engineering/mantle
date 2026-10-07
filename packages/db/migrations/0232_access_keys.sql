@@ -7,8 +7,13 @@
 --   risky_tools  for an admin key on /api/mcp: risky tools allowed by name
 -- The secret is shown once. Only its SHA-256 is kept; `key_prefix` is the
 -- public part of the secret, the lookup key and what the UI shows.
--- `session_epoch` and `login_role` are the login's at mint: a sign out
--- everywhere, a password change, a disable or a role change ends the key.
+-- `login_role` is the login's role at mint: a role change ends the key, as
+-- does a disable. A sign out (any kind) and a password change do NOT end a
+-- key: a key is its own credential, ended by revoke or expiry (audit item 9:
+-- a client's every sign out moves the session epoch).
+--
+-- The unique index on key_hash is kept on purpose: it does no lookup work
+-- (lookups go by key_prefix), it guarantees no two rows hold one secret.
 --
 -- Text with CHECK constraints, no enum. Plain DDL, no trigger, no job.
 -- Idempotent.
@@ -17,7 +22,6 @@ CREATE TABLE IF NOT EXISTS "public"."access_keys" (
   "name"          text NOT NULL,
   "login_id"      uuid NOT NULL,
   "login_role"    text NOT NULL,
-  "session_epoch" integer NOT NULL,
   "key_prefix"    text NOT NULL,
   "key_hash"      text NOT NULL,
   "access"        text NOT NULL,
@@ -38,7 +42,13 @@ CREATE TABLE IF NOT EXISTS "public"."access_keys" (
     FOREIGN KEY ("revoked_by") REFERENCES "auth"."users"("id") ON DELETE SET NULL,
   CONSTRAINT "access_keys_access_ck" CHECK ("access" IN ('read', 'read_write')),
   CONSTRAINT "access_keys_role_ck" CHECK ("login_role" IN ('admin', 'member', 'client')),
-  CONSTRAINT "access_keys_name_ck" CHECK (length("name") BETWEEN 1 AND 100)
+  CONSTRAINT "access_keys_name_ck" CHECK (length("name") BETWEEN 1 AND 100),
+  CONSTRAINT "access_keys_prefix_ck" CHECK ("key_prefix" ~ '^[A-Za-z0-9]{8}$'),
+  CONSTRAINT "access_keys_hash_ck" CHECK ("key_hash" ~ '^[0-9a-f]{64}$'),
+  CONSTRAINT "access_keys_risky_ck"
+    CHECK ("login_role" = 'admin' OR cardinality("risky_tools") = 0),
+  CONSTRAINT "access_keys_areas_ck"
+    CHECK ("areas" IS NULL OR cardinality("areas") > 0)
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "access_keys_prefix_uq"

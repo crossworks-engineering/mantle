@@ -2,8 +2,8 @@
  * Inbound API keys on the wire (migration 0232, plan page 1e62e204): the
  * Settings > API access screen, and the public API v1 answers about keys.
  *
- * A key acts as ONE login (admin, member or client) and can only narrow
- * it: `access` (read or read_write) and `areas` (null = every area). It is
+ * A key acts as the ONE login that made it (admin, member or client) and
+ * can only narrow it: `access` (read or read_write) and `areas` (null = every area). It is
  * a Bearer on /api/v1/* and /api/mcp, nowhere else. The secret is in the
  * create answer once; no other answer carries it or its hash.
  *
@@ -56,34 +56,27 @@ export type AccessKeyView = {
   revokedAt: string | null;
 };
 
-/** A login the caller may make a key for: their own, or a member or a
- *  client. Never another admin. */
-export type AccessKeyLoginOption = {
-  id: string;
-  email: string;
-  displayName: string | null;
-  role: AccessKeyRole;
-};
-
-/** GET /api/access-keys (owner or admin only). */
+/** GET /api/access-keys. A member or client gets their own keys; an
+ *  admin gets every key on the brain. */
 export type AccessKeyList = {
   keys: AccessKeyView[];
-  logins: AccessKeyLoginOption[];
+  /** The caller's role: an admin may name risky tools, and sees every key. */
+  role: AccessKeyRole;
   areas: AccessKeyArea[];
   /** The expiry a key gets when the create names none. */
   defaultExpiryDays: number;
 };
 
-/** POST /api/access-keys body. */
+/** POST /api/access-keys body. The key acts as the caller's own login:
+ *  nobody can make a key that acts as another login. */
 export type AccessKeyCreateInput = {
   name: string;
-  loginId: string;
   access: AccessKeyAccess;
   /** null = every area; else at least one. */
   areas: AccessKeyArea[] | null;
   /** Omitted = the default (90); null = never; else 1 to 3650 days. */
   expiresInDays?: number | null;
-  /** Only for a key that acts as an admin. */
+  /** Only for an admin's own key. */
   riskyTools?: string[];
 };
 
