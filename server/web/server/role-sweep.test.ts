@@ -119,6 +119,7 @@ vi.mock('@mantle/content', async (importOriginal) => ({
 
 import { PUBLIC_PATHS, SESSION_COOKIE_NAME } from '../lib/auth-constants';
 import { CLIENT_ROUTES, isClientRoute } from '../lib/auth/client-routes';
+import { isAnyLoginRoute } from '../lib/auth/any-login-routes';
 import {
   PUBLIC_SESSION_ROUTES,
   RENDER_PAGES,
@@ -379,6 +380,8 @@ describe.skipIf(!hasManifest)('role sweep: three roles, fail closed', () => {
         // The client routes answer a client (client-sweep.test.ts proves it).
         const [method, pattern] = key.split(' ') as [string, string];
         if (isClientRoute(method, pattern)) return true;
+        // About the login itself, any role (lib/auth/any-login-routes.ts).
+        if (isAnyLoginRoute(method, pattern)) return status === 200;
         return (
           (status === 403 && body?.reason === 'client-login') ||
           (status === 401 && body?.error === 'unauthorized') ||

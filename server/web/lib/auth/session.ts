@@ -38,6 +38,8 @@ import {
   secureCookies,
 } from '../auth-constants';
 import { auditFireAndForget, requestMeta } from '../audit';
+import { isAccessKey, isApiV1Path, verifyAccessKey } from '../access-keys';
+import { getRequestContext } from '../../server/request-context';
 import { bearerFromHeader } from './request';
 import {
   SESSION_COOKIE_NAME,
@@ -88,8 +90,9 @@ export type SessionUser = { id: string; email: string; actor: Actor };
 /** How a request authenticated: a session cookie is the web browser; a mobile
  *  bearer token is the phone app (any role) or the split web client. Maps 1:1 onto the inbound
  *  ConversationChannel for web/mobile turns, so a reply/reminder can follow the
- *  surface the user is actually on. See docs/reminder-delivery-routing.md. */
-export type AuthSource = 'web' | 'mobile';
+ *  surface the user is actually on. See docs/reminder-delivery-routing.md.
+ *  'api' is an inbound API key on /api/v1 (no conversation route is there). */
+export type AuthSource = 'web' | 'mobile' | 'api';
 
 /**
  * A MEMBER login (member logins, Phase 1). Deliberately has no `id`: the 280+
@@ -428,6 +431,26 @@ async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved 
   }
 }
 
+/**
+ * The login an inbound API key (`mtlk_`) acts as. `undefined` when the
+ * request carries no key; null when it carries one that is refused: on any
+ * path but /api/v1/* (the gate has already refused those under /api, this
+ * holds the public prefixes too), or a key that fails its checks. The gate
+ * verified the key for this request and left it in the request context;
+ * without that (a direct call, a test) it is verified here.
+ */
+async function accessKeyLogin(): Promise<Resolved | null | undefined> {
+  const h = await headers();
+  const token = bearerFromHeader(h.get('authorization'));
+  if (!isAccessKey(token)) return undefined;
+  if (!isApiV1Path(h.get(MANTLE_PATH_HEADER) ?? '')) return null;
+  const grant =
+    getRequestContext()?.accessKey ??
+    (await verifyAccessKey(token).then((c) => (c.ok ? c.grant : null)));
+  if (!grant) return null;
+  return resolvedFor(grant.login, 'api');
+}
+
 /** Resolve the calling login, admin or member, cookie first then bearer. */
 async function resolveLogin(): Promise<Resolved | null> {
   // DB-less dev: a detached frontend has no local Postgres, so the configured
@@ -435,6 +458,11 @@ async function resolveLogin(): Promise<Resolved | null> {
   // admin. No-op in prod.
   const dev = detachedDevUser();
   if (dev) return { kind: 'admin', user: dev, source: 'web' };
+
+  // An API key is judged on itself, never with the cookie: a key presented
+  // where keys are not accepted is no login at all.
+  const key = await accessKeyLogin();
+  if (key !== undefined) return key;
 
   const c = (await cookies()).get(SESSION_COOKIE_NAME);
   if (c) {
@@ -546,6 +574,8 @@ async function auditMutation(user: SessionUser, skip?: (path: string) => boolean
   const path = h.get(MANTLE_PATH_HEADER) ?? '';
   const mutating = method !== '' && method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS';
   if (!mutating || isAuditSelfLogged(path) || skip?.(path)) return;
+  // A write made with an API key names the key (never its secret).
+  const key = getRequestContext()?.accessKey;
   auditFireAndForget({
     actorId: user.actor.id,
     actorEmail: user.actor.email,
@@ -554,6 +584,7 @@ async function auditMutation(user: SessionUser, skip?: (path: string) => boolean
     path,
     // The proxy-appended address, not the caller's leftmost (audit B16).
     ...(await requestMeta()),
+    ...(key ? { detail: { keyId: key.id, keyPrefix: key.prefix } } : {}),
   });
 }
 

@@ -82,7 +82,13 @@ export const PUBLIC_PATHS = [
  * Paths whose routes emit their own richer audit events (`user.*`) — the
  * choke point skips its generic `api.write` row for these to avoid doubles.
  */
-export const AUDIT_SELF_LOGGED_PATHS = ['/api/users', '/api/team-admin/clients', '/api/services'];
+export const AUDIT_SELF_LOGGED_PATHS = [
+  '/api/users',
+  '/api/team-admin/clients',
+  '/api/services',
+  // Inbound API keys write key.created / key.revoked.
+  '/api/access-keys',
+];
 
 /** "External access" on a tool: setToolExternalAccess writes its own
  *  `tool.external_access.on` / `.off` row with the actor and the tool. */

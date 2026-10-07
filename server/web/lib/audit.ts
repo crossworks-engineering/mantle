@@ -80,6 +80,12 @@ export type AuditEntry = {
     // An admin switched an optional service (sandboxes, media) on or off
     // from the dashboard; detail says which, and whether the updater took it.
     | 'service.toggle'
+    // Inbound API keys (0232): an admin made or revoked a key; a known key
+    // was refused (revoked, expired, its login ended, out of scope; at most
+    // one row a minute per key). detail.keyId names it, never the secret.
+    | 'key.created'
+    | 'key.revoked'
+    | 'key.refused'
     | 'api.write';
   method?: string | null;
   path?: string | null;

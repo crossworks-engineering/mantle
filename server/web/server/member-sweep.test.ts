@@ -129,6 +129,7 @@ vi.mock('../lib/mcp-oauth', async (importOriginal) => {
 
 import { PUBLIC_PATHS, SESSION_COOKIE_NAME } from '../lib/auth-constants';
 import { MEMBER_ROUTES, isMemberRoute } from '../lib/auth/member-routes';
+import { isAnyLoginRoute } from '../lib/auth/any-login-routes';
 import { PUBLIC_SESSION_ROUTES, RENDER_PAGES, drivePublic } from './public-session-routes';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -227,7 +228,13 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
         if (isPublic(path) || IMAGE_EXT_RE.test(path)) continue;
         const isApi = path === '/api' || path.startsWith('/api/');
         for (const method of entry.methods) {
-          if (method === 'OPTIONS' || isMemberRoute(method, entry.pattern)) continue;
+          if (
+            method === 'OPTIONS' ||
+            isMemberRoute(method, entry.pattern) ||
+            isAnyLoginRoute(method, entry.pattern)
+          ) {
+            continue;
+          }
           checked += 1;
           visited.add(`${method} ${entry.pattern}`);
           const res = await app.request(path, {

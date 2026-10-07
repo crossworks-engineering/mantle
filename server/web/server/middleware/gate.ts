@@ -7,8 +7,10 @@ import {
   isRenderPath,
   requestOrigin,
 } from '../../lib/auth-constants';
+import { isAccessKey, type AccessKeyGrant } from '../../lib/access-keys';
 import { bodyCeilingFor, bodyTooLargeResponse, declaredOver } from '../../lib/body-limit';
 import { runWithRequestContext } from '../request-context';
+import { gateAccessKey } from './access-key-gate';
 import { tokenKind, verifySignedToken } from './token-verify';
 import { env } from '@mantle/config';
 
@@ -165,9 +167,13 @@ export function gate(): MiddlewareHandler {
     };
 
     // Run the downstream handler inside the ambient request context, then
-    // apply CORS to whatever it produced.
-    const proceed = async () => {
-      await runWithRequestContext({ req, path, method: req.method }, () => next());
+    // apply CORS to whatever it produced. `accessKey` is set only when the
+    // request was let in by an API key (below).
+    const proceed = async (accessKey?: AccessKeyGrant) => {
+      await runWithRequestContext(
+        { req, path, method: req.method, ...(accessKey ? { accessKey } : {}) },
+        () => next(),
+      );
       if (origin) applyCors(c.res.headers, origin);
     };
 
@@ -208,6 +214,16 @@ export function gate(): MiddlewareHandler {
           headers: { 'Cache-Control': 'no-store' },
         }),
       );
+    }
+
+    // An inbound API key (`mtlk_`): judged on itself, before any cookie, so
+    // a cookie riding along can never widen what the key may do. Accepted
+    // on /api/v1/* only; anywhere else it is a 401 (access-key-gate.ts).
+    const presented = bearerToken(req);
+    if (isAccessKey(presented)) {
+      const res = await gateAccessKey(req, path, presented);
+      if ('response' in res) return withCors(res.response);
+      return proceed(res.grant);
     }
 
     // A session cookie must be a real cookie, not a kinded token reused as one —
