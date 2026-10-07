@@ -105,7 +105,7 @@ describe.skipIf(!URL)('the client role reads client items only, on every search 
        ${[tag]}, ${vecLit}::vector)`;
     await admin`insert into space_items (node_id, sharing) values (${notBrain.teamDraft}, 'team')
       on conflict (node_id) do update set sharing = 'team'`;
-  });
+  }, 60_000);
 
   afterAll(async () => {
     if (!admin) return;

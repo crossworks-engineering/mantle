@@ -118,6 +118,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   // ── Brain content: readable at the viewer's level ─────────────────────────
   { table: 'public.nodes', read: 'all', rule: 'brain-level', writer: 'content', space: 'write' },
   { table: 'public.content_chunks', read: 'all', rule: 'follows-node', writer: 'content' },
+  { table: 'public.content_chunk_windows', read: 'all', rule: 'follows-node', writer: 'content' },
   { table: 'public.facts', read: 'all', rule: 'source-node', writer: 'content' },
   {
     table: 'public.pages',
@@ -291,6 +292,9 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
 
   // ── Infrastructure: written through systemDb, never read by a viewer ─────
   none('public.traces', 'system'),
+  // Embedding / extraction outages (0230): written by the embedder and the
+  // extract queue on the admin pool, read by admin routes only.
+  none('public.provider_alerts', 'system'),
   none('public.trace_steps', 'system'),
   none('public.tool_results', 'system'),
   none('public.tool_result_chunks', 'system'),
@@ -304,6 +308,9 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.team_messages', 'system'),
   none('public.team_notifications', 'system'),
   none('public.team_read_cursors', 'system'),
+  // A member's or a client's own chat read cursor (mobile_roles_push): its own routes
+  // read and write it on the admin pool, by the session's login.
+  none('public.login_chat_read_cursors', 'system'),
   none('public.assistant_read_cursors', 'system'),
   // Per-login pins and opens of the item tree (docs/folder-tree.md). Owner
   // paths only for now; members get their own when the tree reaches them.
@@ -313,10 +320,18 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.heartbeat_fires', 'system'),
   none('public.runs', 'system'),
   none('public.run_items', 'system'),
+  // This brain's own id (0226): written once by its migration, read by
+  // whoami and the push worker on the admin pool.
+  none('public.brain_identity', 'system'),
   none('public.push_instance', 'system'),
   none('public.push_prefs', 'system'),
   none('public.push_subscriptions', 'system'),
+  none('public.push_login_prefs', 'system'),
   none('public.shares', 'system'),
+  // Contact shares (0214): the /s layer reads and writes these on the admin
+  // pool, for the brain. No viewer role ever does.
+  none('public.contact_share_codes', 'system'),
+  none('public.share_access_log', 'system'),
 
   // ── Admin only: the private corpus, credentials, the owner's own memory ───
   none('public.api_keys'),
@@ -339,6 +354,11 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.oauth_auth_codes'),
   none('public.oauth_access_tokens'),
   none('public.mobile_tokens'),
+  // MCP as a login (0227): the per-login switch and static token hashes.
+  none('public.mcp_login_access'),
+  none('public.mcp_login_tokens'),
+  // Inbound API keys (0232): hashes of live secrets, admin pool only.
+  none('public.access_keys'),
   none('public.pairing_codes'),
   none('public.member_invites'),
   // "What clients see" acknowledgements (0187): an admin's record.
@@ -357,6 +377,8 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.peer_shares'),
   none('public.peer_share_scopes'),
   none('public.assistant_messages'),
+  // Chat archive threads (0231): time ranges over assistant_messages, admin pool.
+  none('public.chat_threads'),
   none('public.entities', 'content'),
   none('public.entity_edges', 'content'),
   none('public.entity_merge_dismissals'),
@@ -386,6 +408,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.channels'),
   none('public.curated_models'),
   none('public.prompt_versions'),
+  none('public.node_snapshots'),
   none('public.doc_collections'),
   none('public.ingest_rules'),
   none('public.saved_filters'),

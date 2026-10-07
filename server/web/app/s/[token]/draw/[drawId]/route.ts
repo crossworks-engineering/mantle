@@ -1,6 +1,7 @@
-import { isDrawServable, linkLevels, resolveActiveShareByToken } from '@/lib/shares';
+import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
+import { isDrawServable, shareLevels } from '@/lib/shares';
 import { getDrawSvg, getPage, referencedDrawIds } from '@mantle/content';
-import { rateLimit, clientIp } from '@/lib/rate-limit';
+import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 
 /**
  * A drawing EMBEDDED in a shared page, as an image.
@@ -29,7 +30,7 @@ export async function GET(
 ) {
   const { token, drawId } = await params;
 
-  const { ok, retryAfterSec } = rateLimit(`share-draw-embed:${clientIp(req)}`, {
+  const { ok, retryAfterSec } = rateLimit(`share-draw-embed:${clientIpKey(req)}`, {
     max: 240,
     windowMs: 60_000,
   });
@@ -40,12 +41,18 @@ export async function GET(
     });
   }
 
-  const share = await resolveActiveShareByToken(token);
+  const gate = await gateShare(req, token);
+  if (gate.kind === 'code') return contactCodeRequired(gate.share);
+  const share = gate.kind === 'ok' ? gate.share : null;
   if (!share || share.nodeType !== 'page') return notFound();
 
   const page = await getPage(share.ownerId, share.nodeId);
   if (!page || !referencedDrawIds(page.doc).includes(drawId)) return notFound();
-  if (!(await isDrawServable(share.ownerId, drawId, linkLevels(page.audience), { self: true }))) {
+  if (
+    !(await isDrawServable(share.ownerId, drawId, shareLevels(share, page.audience), {
+      self: true,
+    }))
+  ) {
     return notFound();
   }
 

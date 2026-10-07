@@ -8,7 +8,14 @@
  */
 
 import { and, asc, eq, sql } from 'drizzle-orm';
-import { db, toolGroups, agents, type ToolGroup, type ToolGroupIntegration } from '@mantle/db';
+import {
+  db,
+  toolGroups,
+  agents,
+  asViewerLevel,
+  type ToolGroup,
+  type ToolGroupIntegration,
+} from '@mantle/db';
 import { deleteMcpConnector, deleteOpenapiConnector } from '@mantle/tools';
 import type { ToolGroupDTO } from '@mantle/client-types';
 
@@ -25,6 +32,7 @@ function toSummary(g: ToolGroup): ToolGroupSummary {
     toolSlugs: g.toolSlugs ?? [],
     integration: g.integration ?? null,
     enabled: g.enabled,
+    audience: asViewerLevel(g.audience),
     createdAt: g.createdAt.toISOString(),
     updatedAt: g.updatedAt.toISOString(),
   };

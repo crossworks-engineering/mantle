@@ -21,6 +21,9 @@
  *    (`raiseClosure`). Lowering never raises and raising never lowers.
  *  - An agent may hold only tool groups at or below its level, checked when
  *    either level changes (and at grant time, see agentGrantProblems).
+ *    Lowering an agent that holds a group above the new level is refused,
+ *    unless the caller asks for those groups to leave it with the change
+ *    (`dropGroupsAbove`).
  */
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
@@ -366,12 +369,15 @@ export type UnshareItemResult = {
  */
 export async function unshareItem(ownerId: string, shareId: string): Promise<UnshareItemResult> {
   const [row] = await db
-    .select({ nodeId: shares.nodeId })
+    .select({ nodeId: shares.nodeId, contactId: shares.contactId })
     .from(shares)
     .where(and(eq(shares.id, shareId), eq(shares.ownerId, ownerId), isNull(shares.revokedAt)))
     .limit(1);
   const revoked = await revokeShareTree(ownerId, shareId);
   if (!row) return { revoked, stillBelow: [] };
+  // A contact share (0214) never set a level, so removing one changes none:
+  // the item stays where the admin put it.
+  if (row.contactId) return { revoked, stillBelow: [] };
   // A client item keeps its level (client logins C1): its old link is gone,
   // and client means signed-in clients, which no link decides.
   const [node] = await db
@@ -405,6 +411,9 @@ async function groupsAbove(
   );
 }
 
+const grantProblem = (g: { slug: string; audience: ViewerLevel }, level: ViewerLevel) =>
+  `tool group '${g.slug}' is ${g.audience}-level; a ${level}-level agent cannot hold it`;
+
 /**
  * Why an agent at `level` may not hold `groupSlugs` (empty = fine). Used when
  * an agent's level is lowered and when a group is granted to it.
@@ -414,19 +423,28 @@ export async function agentGrantProblems(
   level: ViewerLevel,
   groupSlugs: readonly string[],
 ): Promise<string[]> {
-  const above = await groupsAbove(ownerId, groupSlugs, level);
-  return above.map(
-    (g) => `tool group '${g.slug}' is ${g.audience}-level; a ${level}-level agent cannot hold it`,
-  );
+  return (await groupsAbove(ownerId, groupSlugs, level)).map((g) => grantProblem(g, level));
 }
 
-/** Set an agent's level. Refuses when it holds a tool group above the new
- *  level: remove the group first (plan 2c). */
+/** How the caller asks for `dropGroupsAbove`, named in the refusal so the
+ *  admin reads the exact fix (the API body field, then the tool input). */
+const DROP_GROUPS_HINT = '`dropGroupsAbove: true` (access_set: `drop_groups_above: true`)';
+
+/**
+ * Set an agent's level. Refuses when it holds a tool group above the new
+ * level (plan 2c), and the refusal names the fix. `dropGroupsAbove` is that
+ * fix in the same call: the groups above the new level leave the agent with
+ * the change and come back in `removedGroups` (team-responder going to team
+ * leaves `team-read-admin` behind). It is opt-in, never the default: a wrong
+ * slug must not strip an agent of its groups (the persona holds only admin
+ * groups), and raising the level again does not bring them back.
+ */
 export async function setAgentAudience(
   ownerId: string,
   agentId: string,
   audience: string,
-): Promise<{ id: string; slug: string; audience: ViewerLevel }> {
+  opts: { dropGroupsAbove?: boolean } = {},
+): Promise<{ id: string; slug: string; audience: ViewerLevel; removedGroups: string[] }> {
   if (!isViewerLevel(audience)) {
     throw new AccessError(
       `'${audience}' is not a level: use admin, team, client or public`,
@@ -439,15 +457,49 @@ export async function setAgentAudience(
     .where(and(eq(agents.id, agentId), eq(agents.ownerId, ownerId)))
     .limit(1);
   if (!agent) throw new AccessError(`agent ${agentId} not found`, 'not_found');
-  const problems = await agentGrantProblems(ownerId, audience, agent.groups ?? []);
-  if (problems.length > 0) {
-    throw new AccessError(problems.join('; '), 'group_above_agent');
+  const held = agent.groups ?? [];
+  const aboveRows = await groupsAbove(ownerId, held, audience);
+  const above = new Set(aboveRows.map((g) => g.slug));
+  if (above.size > 0 && !opts.dropGroupsAbove) {
+    const names = [...above].map((s) => `'${s}'`).join(', ');
+    throw new AccessError(
+      `${aboveRows.map((g) => grantProblem(g, audience)).join('; ')}. ` +
+        `Remove ${names} from agent '${agent.slug}' first, ` +
+        `or repeat with ${DROP_GROUPS_HINT} to remove ${above.size === 1 ? 'it' : 'them'} with the change`,
+      'group_above_agent',
+    );
   }
+  // In grant order, as held: the order is the front of the cached prompt.
+  const removedGroups = held.filter((g) => above.has(g));
   await db
     .update(agents)
-    .set({ audience })
+    .set({
+      audience,
+      ...(removedGroups.length > 0 ? { toolGroupSlugs: held.filter((g) => !above.has(g)) } : {}),
+    })
     .where(and(eq(agents.id, agentId), eq(agents.ownerId, ownerId)));
-  return { id: agent.id, slug: agent.slug, audience };
+  return { id: agent.id, slug: agent.slug, audience, removedGroups };
+}
+
+/**
+ * An agent's level by slug, for the screen that changes it (the team agent
+ * card on Team > Settings). null when the agent does not exist.
+ */
+export async function getAgentAccess(
+  ownerId: string,
+  slug: string,
+): Promise<{ slug: string; name: string; audience: ViewerLevel; enabled: boolean } | null> {
+  const [agent] = await db
+    .select({
+      slug: agents.slug,
+      name: agents.name,
+      audience: agents.audience,
+      enabled: agents.enabled,
+    })
+    .from(agents)
+    .where(and(eq(agents.ownerId, ownerId), eq(agents.slug, slug)))
+    .limit(1);
+  return agent ? { ...agent, audience: asLevel(agent.audience) } : null;
 }
 
 /** Set a tool group's level. Refuses to RAISE it above an agent that holds

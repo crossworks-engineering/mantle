@@ -19,7 +19,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq, gt, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, ne, sql } from 'drizzle-orm';
 import {
   db,
   agents,
@@ -32,6 +32,7 @@ import {
   MAX_PERSONA_NOTES,
   type Agent,
   type AiWorker,
+  type ConversationChannel,
   type PersonaNote,
   type ReflectorParams,
 } from '@mantle/db';
@@ -82,6 +83,13 @@ Rules:
 - Return an EMPTY new_notes array if nothing notable surfaces.
 - Don't include trivia about content (those belong in facts, not persona).`;
 
+/** Turns the reflector never reads, and which never wake it: channel 'mcp'
+ *  is a turn an MCP client answered AS the agent and wrote back
+ *  (responder_turn_record). Its reply came from a test model, not the agent,
+ *  so persona notes must not learn from it (Jason, 2026-10-05). The summarizer
+ *  still reads these turns into digests. */
+export const REFLECTOR_SKIPPED_CHANNEL: ConversationChannel = 'mcp';
+
 /** Find this owner's reflector worker (kind='reflector'). Returns
  *  null if none is configured — `reflect()` short-circuits cleanly. */
 async function resolveReflector(ownerId: string): Promise<AiWorker | null> {
@@ -93,9 +101,9 @@ async function resolveReflector(ownerId: string): Promise<AiWorker | null> {
  * the unified `assistant_messages` stream (which carries web + Telegram + any
  * future channel — docs/conversation.md). Most-active-first. This is the
  * cost-safety gate: an agent only earns an LLM reflection if the user actually
- * conversed with it since the last run.
+ * conversed with it since the last run. A recorded MCP turn is not activity.
  */
-async function qualifyingAgents(ownerId: string, since: Date): Promise<Agent[]> {
+export async function qualifyingAgents(ownerId: string, since: Date): Promise<Agent[]> {
   const candidates = await db
     .select()
     .from(agents)
@@ -115,6 +123,7 @@ async function qualifyingAgents(ownerId: string, since: Date): Promise<Agent[]> 
       and(
         eq(assistantMessages.ownerId, ownerId),
         eq(assistantMessages.direction, 'outbound'),
+        ne(assistantMessages.channel, REFLECTOR_SKIPPED_CHANNEL),
         gt(assistantMessages.createdAt, since),
         inArray(
           assistantMessages.agentId,
@@ -256,6 +265,30 @@ export async function reflect(ownerId: string): Promise<void> {
   await bumpWorkerUsage(reflector.id);
 }
 
+/** The agent's recent turns, newest first, as the reflector reads them: every
+ *  channel but 'mcp' (REFLECTOR_SKIPPED_CHANNEL), both directions. */
+export async function loadReflectionTurns(
+  ownerId: string,
+  agentId: string,
+): Promise<Array<{ direction: string; text: string; sentAt: Date }>> {
+  return db
+    .select({
+      direction: assistantMessages.direction,
+      text: assistantMessages.text,
+      sentAt: assistantMessages.createdAt,
+    })
+    .from(assistantMessages)
+    .where(
+      and(
+        eq(assistantMessages.ownerId, ownerId),
+        eq(assistantMessages.agentId, agentId),
+        ne(assistantMessages.channel, REFLECTOR_SKIPPED_CHANNEL),
+      ),
+    )
+    .orderBy(desc(assistantMessages.createdAt))
+    .limit(REFLECTION_WINDOW);
+}
+
 /** Reflect over a single agent's recent transcript and append any fresh
  *  persona notes to ITS `persona_notes`. One trace per agent. */
 async function reflectOnAgent(
@@ -286,18 +319,7 @@ async function reflectOnAgent(
       const turns = await step(
         { name: 'load_recent_turns', kind: 'db_read', input: { limit: REFLECTION_WINDOW } },
         async (h) => {
-          const rows = await db
-            .select({
-              direction: assistantMessages.direction,
-              text: assistantMessages.text,
-              sentAt: assistantMessages.createdAt,
-            })
-            .from(assistantMessages)
-            .where(
-              and(eq(assistantMessages.ownerId, ownerId), eq(assistantMessages.agentId, agent.id)),
-            )
-            .orderBy(desc(assistantMessages.createdAt))
-            .limit(REFLECTION_WINDOW);
+          const rows = await loadReflectionTurns(ownerId, agent.id);
           h.setOutput({ count: rows.length });
           return rows;
         },

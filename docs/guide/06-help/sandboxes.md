@@ -5,43 +5,38 @@ toolGroups: [sandboxes]
 
 ## Sandboxes
 
-Persistent containers the assistant can run commands in, and the history of
-every command it ran.
+Sandboxes are Linux containers where agents run commands, convert files, test
+code and build apps, away from the brain's own host. A sandbox keeps its files
+between commands, so a job can install something and then use it.
 
-A sandbox exists so the assistant can do work that needs a real machine,
-converting a file, running a script, trying a command, without that work
-touching your brain's host. It's a container: things installed inside it stay
-inside it, and destroying it destroys everything it accumulated.
+The left side lists your sandboxes. Select one to see its details and the
+recent commands run in it, with their output.
 
-Persistent is the operative word. A sandbox keeps its filesystem between
-commands, so a multi-step job that installs something and then uses it works.
-That also means a sandbox left running accumulates state indefinitely.
+- **Stop** stops a running sandbox.
+- **Remove** deletes the container. Its `/files` work directory is kept unless
+  you also tick the box to delete it, which cannot be undone.
+
+If the screen says sandboxes are switched off, turn them on in
+[Services](services.md).
 
 ## Assistant
 
 - "Convert these files to CSV in a sandbox."
-- "What did you run in there?"
+- "What did you run in the sandbox?"
+- "Stop the sandboxes you are not using."
 
-Every command and its output is recorded here, which is the point: shell access
-is the most consequential thing the assistant can hold, and the trade is that
-none of it is invisible. Reading the history is how you audit it.
+By default only the coder agent holds the Sandboxes group. Shell access widens
+what a mistake can cost, so grant it to other agents with care.
 
 ## Technical
 
-Isolation is the container boundary. A sandbox has its own filesystem and
-process space, and it does not have your database credentials or your master
-key, so a command run inside one cannot read your sealed data, whatever it
-does.
+Each sandbox is a container with no route to your data, and it holds no
+database password or master key. A brain allows three sandboxes by default
+(`SANDBOX_MAX_COUNT`). A sandbox idle for an hour is stopped
+(`SANDBOX_IDLE_STOP_MINUTES`); its files and installed packages survive, and
+the next command starts it again. The command history comes from the traces of
+`sandbox_exec` calls, so it outlives the container.
 
-Command history is stored per sandbox with its output, so the record survives
-the container. Destroying a sandbox removes the environment, not the log of
-what happened in it.
-
-Sandbox access is its own tool group, deliberately separate from everything
-else. It's excluded from the team responder's grant entirely, and the same
-reasoning applies to any agent you're not confident about: shell access widens
-what a mistake can cost more than any other capability.
-
-Containers left idle consume resources on the host, so treat them as workspaces
-to be finished with rather than long-lived machines. Nothing on this screen
-expires them for you.
+Agent tools include `sandbox_create`, `sandbox_exec`, `sandbox_list`,
+`sandbox_stop`, `sandbox_rm`, `sandbox_export`, `sandbox_import` and
+`sandbox_ls`. More detail: [Install options](../01-install/07-options.md).

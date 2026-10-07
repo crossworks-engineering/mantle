@@ -1,20 +1,23 @@
 // The "needs you" phone push: only an ARRIVAL pushes (the same NOTIFY fires
 // when something leaves a queue), each arrival once, to ACTIVE ADMIN devices
-// only (listAdminSubscriptions, never the brain-wide list), with the item's
+// only (listAdminSubscriptions; the store has no brain-wide list), with the item's
 // title and author and never its content. All I/O is mocked.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { NeedsYou } from '@mantle/client-types';
+import type { NeedsYou, ProviderAlert } from '@mantle/client-types';
 
 vi.mock('@mantle/db', () => ({ db: {}, agents: {}, assistantMessages: {} }));
 vi.mock('@mantle/tools', () => ({ countPending: vi.fn(), listPendingCalls: vi.fn() }));
 vi.mock('@mantle/content', () => ({ loadProfilePreferences: vi.fn(), loadNeedsYou: vi.fn() }));
-vi.mock('./seal', () => ({ sealToDevice: vi.fn() }));
+vi.mock('./seal', () => ({ sealToDevice: vi.fn(), publicKeyValid: () => true }));
+vi.mock('../auth/tokens', () => ({ derivedSecret: () => Buffer.from('test-secret') }));
 vi.mock('./relay-client', () => ({ relayNotify: vi.fn() }));
+vi.mock('../brain-identity', () => ({
+  brainIdOrNull: async () => '0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f',
+}));
 vi.mock('./store', () => ({
   getPushInstance: vi.fn(),
   getPushPrefs: vi.fn(),
-  listSubscriptions: vi.fn(),
   listAdminSubscriptions: vi.fn(),
   markPushed: vi.fn(),
   deleteSubscriptionByRoutingToken: vi.fn(),
@@ -31,7 +34,7 @@ import {
 import { loadNeedsYou } from '@mantle/content';
 import { sealToDevice } from './seal';
 import { relayNotify } from './relay-client';
-import { getPushInstance, getPushPrefs, listAdminSubscriptions, listSubscriptions } from './store';
+import { getPushInstance, getPushPrefs, listAdminSubscriptions } from './store';
 
 const NOW = Date.parse('2026-09-28T18:00:00Z');
 const ago = (ms: number) => new Date(NOW - ms).toISOString();
@@ -127,9 +130,81 @@ describe('needsYouMessage', () => {
   });
 });
 
+describe('provider outages (no credits, 2026-10-04)', () => {
+  const outage = (over: Partial<ProviderAlert> = {}): ProviderAlert => ({
+    subject: 'embedding',
+    code: 'quota',
+    permanent: true,
+    reason: 'The provider account has no credits or quota left.',
+    provider: 'openai',
+    model: 'text-embedding-3-large',
+    since: ago(30_000),
+    paused: true,
+    nextProbeAt: null,
+    waiting: 30,
+    ...over,
+  });
+  const quiet = needsYou({
+    review: { submitted: 0, leftBehind: 0, newest: null },
+    total: 1,
+  });
+
+  it('a new outage is an arrival, pushed once', () => {
+    const n = { ...quiet, providers: [outage()] };
+    const seen = new Set<string>();
+    const a = needsYouArrivals(n, seen, NOW);
+    expect(a.map((x) => x.kind)).toEqual(['provider']);
+    rememberArrivals(seen, a);
+    expect(needsYouArrivals(n, seen, NOW)).toEqual([]);
+  });
+
+  it('a transient outage that shows after 10 min still pushes; an hour-old one does not', () => {
+    expect(
+      needsYouArrivals(
+        { ...quiet, providers: [outage({ since: ago(11 * 60_000) })] },
+        new Set(),
+        NOW,
+      ),
+    ).toHaveLength(1);
+    expect(
+      needsYouArrivals(
+        { ...quiet, providers: [outage({ since: ago(60 * 60_000) })] },
+        new Set(),
+        NOW,
+      ),
+    ).toEqual([]);
+  });
+
+  it('the message is the fixed reason and the count waiting, and links to the fix', () => {
+    const [a] = needsYouArrivals({ ...quiet, providers: [outage()] }, new Set(), NOW);
+    expect(needsYouMessage(a!, 1)).toEqual({
+      title: 'Embeddings are failing',
+      body: 'The provider account has no credits or quota left. 30 items wait.',
+      deepLink: '/settings/embedding',
+    });
+    const [b] = needsYouArrivals(
+      { ...quiet, providers: [outage({ subject: 'extraction', waiting: 1 })] },
+      new Set(),
+      NOW,
+    );
+    expect(needsYouMessage(b!, 1)).toMatchObject({
+      title: 'Extraction is failing',
+      body: 'The provider account has no credits or quota left. 1 item waits.',
+      deepLink: '/settings/ai-workers',
+    });
+  });
+});
+
 describe('pushNeedsYou', () => {
   const admins = [
-    { id: 'd1', routingToken: 'r1', publicKey: 'pk1', platform: 'ios' as const, label: null },
+    {
+      id: 'd1',
+      routingToken: 'r1',
+      publicKey: 'pk1',
+      platform: 'ios' as const,
+      label: null,
+      loginId: 'admin-1',
+    },
   ];
   beforeEach(() => {
     vi.clearAllMocks();
@@ -140,16 +215,6 @@ describe('pushNeedsYou', () => {
     });
     vi.mocked(getPushPrefs).mockResolvedValue({ assistantMessages: true, approvals: true });
     vi.mocked(listAdminSubscriptions).mockResolvedValue(admins);
-    vi.mocked(listSubscriptions).mockResolvedValue([
-      ...admins,
-      {
-        id: 'dm',
-        routingToken: 'rm',
-        publicKey: 'pkm',
-        platform: 'android',
-        label: 'member phone',
-      },
-    ]);
     vi.mocked(sealToDevice).mockResolvedValue('ciphertext');
     vi.mocked(relayNotify).mockResolvedValue({ ok: true, status: 200 });
     vi.mocked(loadNeedsYou).mockResolvedValue(needsYou());
@@ -158,7 +223,7 @@ describe('pushNeedsYou', () => {
   it('pushes an arrival to admin devices only, title and author, never content', async () => {
     const res = await pushNeedsYou('owner', new Set(), NOW);
     expect(res).toEqual({ attempted: 1, delivered: 1, dropped: 0 });
-    expect(listSubscriptions).not.toHaveBeenCalled();
+    expect(listAdminSubscriptions).toHaveBeenCalledWith('owner');
     expect(vi.mocked(sealToDevice).mock.calls.map((c) => c[0])).toEqual(['pk1']);
     const sent = JSON.parse(vi.mocked(sealToDevice).mock.calls[0]![1]) as Record<string, unknown>;
     expect(sent).toEqual({
@@ -167,6 +232,9 @@ describe('pushNeedsYou', () => {
       b: '"Pump spec" from Mia Member',
       deepLink: '/team-admin?view=review',
       ts: NOW,
+      // Multi-login routing: this brain, and the admin the device is for.
+      brainId: '0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f',
+      loginId: 'admin-1',
     });
     expect(vi.mocked(relayNotify).mock.calls[0]![2]).toMatchObject({ collapseKey: 'needs-you' });
   });

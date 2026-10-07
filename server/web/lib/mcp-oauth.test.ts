@@ -9,7 +9,8 @@
 // concurrent refresher forks too instead of dying.
 //
 // All I/O is mocked with the chainable-db-stub pattern (see push/notify.test.ts);
-// no DB is touched.
+// no DB is touched. A refresh first reads the grant's login (to take its
+// lock), so each refresh case leads with that row ({ actorId }).
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
@@ -20,6 +21,7 @@ vi.mock('drizzle-orm', () => ({
   gt: (...a: unknown[]) => ({ __gt: a }),
   lt: (...a: unknown[]) => ({ __lt: a }),
   isNull: (x: unknown) => ({ __isNull: x }),
+  sql: (...a: unknown[]) => ({ __sql: a }),
 }));
 
 const dbState = vi.hoisted(() => ({
@@ -35,7 +37,7 @@ const dbState = vi.hoisted(() => ({
 vi.mock('@mantle/db', () => {
   const selectChain = () => {
     const chain: Record<string, unknown> = {};
-    for (const m of ['from', 'innerJoin', 'limit']) chain[m] = () => chain;
+    for (const m of ['from', 'innerJoin', 'leftJoin', 'limit']) chain[m] = () => chain;
     chain['where'] = (w: unknown) => {
       dbState.selectWheres.push(w);
       return chain;
@@ -84,6 +86,14 @@ vi.mock('@mantle/db', () => {
       insert: () => insertChain(),
       update: () => updateChain(),
       delete: () => deleteChain(),
+      // The refresh runs under the login's OAuth lock (final audit F3): the
+      // first select finds the row's login, the transaction runs on this
+      // same stub, and the lock is a no-op here.
+      execute: async () => [],
+      transaction: async (fn: (tx: unknown) => Promise<unknown>) => {
+        const self = (await import('@mantle/db')).db;
+        return fn(self);
+      },
     },
     oauthAccessTokens: cols([
       'id',
@@ -100,7 +110,8 @@ vi.mock('@mantle/db', () => {
       'createdAt',
     ]),
     oauthAuthCodes: cols(['id', 'codeHash', 'clientId', 'actorId', 'expiresAt']),
-    authUsers: cols(['id', 'role', 'disabledAt', 'email']),
+    authUsers: cols(['id', 'role', 'disabledAt', 'email', 'sessionEpoch']),
+    mcpLoginAccess: cols(['loginId', 'enabled', 'writeEnabled']),
     oauthClients: cols(['id', 'clientName', 'redirectUris']),
     resolveSingleOwnerId: vi.fn(),
   };
@@ -179,7 +190,7 @@ describe('getClient', () => {
 
 describe('refreshAccessToken — concurrency-safe rotation', () => {
   it('forks a new row instead of rotating tokens in place', async () => {
-    dbState.selectResults = [[tokenRow()], [ADMIN]];
+    dbState.selectResults = [[{ actorId: ACTOR }], [tokenRow()], [ADMIN]];
     const res = await refreshAccessToken({ refreshToken: 'mtlmcp_rt_old', clientId: CLIENT });
 
     expect(res.ok).toBe(true);
@@ -202,7 +213,7 @@ describe('refreshAccessToken — concurrency-safe rotation', () => {
   });
 
   it('puts the used refresh token on the grace fuse (never extends it)', async () => {
-    dbState.selectResults = [[tokenRow()], [ADMIN]];
+    dbState.selectResults = [[{ actorId: ACTOR }], [tokenRow()], [ADMIN]];
     const before = Date.now();
     await refreshAccessToken({ refreshToken: 'mtlmcp_rt_old', clientId: CLIENT });
 
@@ -214,7 +225,7 @@ describe('refreshAccessToken — concurrency-safe rotation', () => {
 
   it('keeps a shorter remaining life instead of extending to the grace window', async () => {
     const soon = new Date(Date.now() + 30_000); // 30 s left < 120 s grace
-    dbState.selectResults = [[tokenRow({ refreshExpiresAt: soon })], [ADMIN]];
+    dbState.selectResults = [[{ actorId: ACTOR }], [tokenRow({ refreshExpiresAt: soon })], [ADMIN]];
     await refreshAccessToken({ refreshToken: 'mtlmcp_rt_old', clientId: CLIENT });
 
     expect(dbState.updates[0]!['refreshExpiresAt']).toBe(soon);
@@ -226,7 +237,7 @@ describe('refreshAccessToken — concurrency-safe rotation', () => {
       refreshExpiresAt: new Date(Date.now() + (REFRESH_GRACE_SEC - 1) * 1000),
       lastUsedAt: new Date(),
     });
-    dbState.selectResults = [[inGrace], [ADMIN]];
+    dbState.selectResults = [[{ actorId: ACTOR }], [inGrace], [ADMIN]];
     const res = await refreshAccessToken({ refreshToken: 'mtlmcp_rt_old', clientId: CLIENT });
 
     expect(res.ok).toBe(true);
@@ -234,7 +245,10 @@ describe('refreshAccessToken — concurrency-safe rotation', () => {
   });
 
   it('rejects the refresh token after the grace window (and logs it)', async () => {
-    dbState.selectResults = [[tokenRow({ refreshExpiresAt: new Date(Date.now() - 1000) })]];
+    dbState.selectResults = [
+      [{ actorId: ACTOR }],
+      [tokenRow({ refreshExpiresAt: new Date(Date.now() - 1000) })],
+    ];
     const res = await refreshAccessToken({ refreshToken: 'mtlmcp_rt_old', clientId: CLIENT });
 
     expect(res).toEqual({ ok: false, error: 'invalid_grant' });
@@ -252,7 +266,7 @@ describe('refreshAccessToken — concurrency-safe rotation', () => {
   });
 
   it('rejects a client mismatch', async () => {
-    dbState.selectResults = [[tokenRow({ clientId: 'someone-else' })]];
+    dbState.selectResults = [[{ actorId: ACTOR }], [tokenRow({ clientId: 'someone-else' })]];
     const res = await refreshAccessToken({ refreshToken: 'mtlmcp_rt_old', clientId: CLIENT });
 
     expect(res).toEqual({ ok: false, error: 'invalid_grant' });
@@ -260,11 +274,11 @@ describe('refreshAccessToken — concurrency-safe rotation', () => {
   });
 
   it('sweeps fully-dead rows, and a failed sweep does not fail the grant', async () => {
-    dbState.selectResults = [[tokenRow()], [ADMIN]];
+    dbState.selectResults = [[{ actorId: ACTOR }], [tokenRow()], [ADMIN]];
     await refreshAccessToken({ refreshToken: 'mtlmcp_rt_old', clientId: CLIENT });
     expect(dbState.deletes).toBe(1);
 
-    dbState.selectResults = [[tokenRow()], [ADMIN]];
+    dbState.selectResults = [[{ actorId: ACTOR }], [tokenRow()], [ADMIN]];
     dbState.deleteThrows = true;
     const res = await refreshAccessToken({ refreshToken: 'mtlmcp_rt_old', clientId: CLIENT });
     expect(res.ok).toBe(true);
@@ -279,7 +293,7 @@ describe('a grant lives only as long as its login is a usable admin', () => {
   ];
   for (const [why, actorRows] of locked) {
     it(`refuses a refresh when the login was ${why}`, async () => {
-      dbState.selectResults = [[tokenRow()], actorRows];
+      dbState.selectResults = [[{ actorId: ACTOR }], [tokenRow()], actorRows];
       const res = await refreshAccessToken({ refreshToken: 'mtlmcp_rt_old', clientId: CLIENT });
 
       expect(res).toEqual({ ok: false, error: 'invalid_grant' });

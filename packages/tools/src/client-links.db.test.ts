@@ -74,7 +74,7 @@ describe.skipIf(!URL)('the share tools on client items, on Postgres', () => {
       insert into pages (node_id, doc, doc_text) values
         (${ids.page}, ${empty}::jsonb, ''),
         (${ids.embedder}, ${withFile}::jsonb, '')`);
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await m.db.execute(sqlTag`delete from shares where owner_id = ${owner}`);

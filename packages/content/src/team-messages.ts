@@ -344,3 +344,90 @@ export async function listMemberChatActivity(ownerId: string): Promise<MemberCha
     messageCount: r.messageCount,
   }));
 }
+
+// ── A login's own unread count (the phone app's badge, migration mobile_roles_push) ──────
+
+/** What a member or a client has not read in its own thread. */
+export type LoginChatUnread = { unread: number; lastReadAt: string };
+
+/**
+ * Where a read cursor may go: `at` (never the future), else now, on the
+ * DATABASE's clock (the rows it is compared with are stamped there). A reply
+ * still being written was made BEFORE this moment and finishes after it, so
+ * the cursor stops just short of the oldest such row: that reply counts as
+ * unread when it lands. A bubble older than an hour is a turn that crashed;
+ * it holds nothing back.
+ */
+function cursorTarget(ownerId: string, loginId: string, at?: Date) {
+  // `at` is a message's createdAt as the chat route sent it: milliseconds.
+  // The row holds microseconds, so the cursor goes to the END of that
+  // millisecond; else it would land just under the very message it names
+  // and that message would stay unread.
+  const asked = at
+    ? dsql`least(${at.toISOString()}::timestamptz + interval '999 microseconds', now())`
+    : dsql`now()`;
+  return dsql`least(${asked}, coalesce(
+    (select min(tm.created_at) - interval '1 microsecond'
+       from team_messages tm
+      where tm.owner_id = ${ownerId}
+        and tm.login_id = ${loginId}
+        and tm.direction = 'outbound'
+        and tm.status = 'pending'
+        and tm.created_at > now() - interval '1 hour'),
+    'infinity'::timestamptz))`;
+}
+
+/** The count against the stored cursor, compared in the database (a cursor
+ *  read into JS loses its microseconds, and a reply made in the same
+ *  millisecond would count as unread again). */
+async function readLoginChatUnread(ownerId: string, loginId: string): Promise<LoginChatUnread> {
+  const rows = (await systemDb.execute(dsql`
+    select c.last_read_at as "lastReadAt",
+           (select count(*)::int
+              from team_messages tm
+             where tm.owner_id = ${ownerId}
+               and tm.login_id = ${loginId}
+               and tm.direction = 'outbound'
+               and tm.status = 'complete'
+               and tm.created_at > c.last_read_at) as unread
+      from login_chat_read_cursors c
+     where c.login_id = ${loginId}`)) as unknown as Array<{
+    lastReadAt: string | Date;
+    unread: number;
+  }>;
+  const row = rows[0];
+  return {
+    unread: Number(row?.unread ?? 0),
+    lastReadAt: new Date(row?.lastReadAt ?? Date.now()).toISOString(),
+  };
+}
+
+/**
+ * The login's unread count: finished replies in its own thread newer than
+ * its read cursor. A login starts with nothing unread: the first call makes
+ * the cursor (so a long history never shows as a badge of 50).
+ */
+export async function loginChatUnread(ownerId: string, loginId: string): Promise<LoginChatUnread> {
+  await systemDb.execute(dsql`
+    insert into login_chat_read_cursors (login_id, last_read_at)
+    values (${loginId}, ${cursorTarget(ownerId, loginId)})
+    on conflict (login_id) do nothing`);
+  return readLoginChatUnread(ownerId, loginId);
+}
+
+/**
+ * Move the login's read cursor to `at` (never the future), or to now. It
+ * never moves backwards.
+ */
+export async function markLoginChatRead(
+  ownerId: string,
+  loginId: string,
+  at?: Date,
+): Promise<LoginChatUnread> {
+  await systemDb.execute(dsql`
+    insert into login_chat_read_cursors (login_id, last_read_at)
+    values (${loginId}, ${cursorTarget(ownerId, loginId, at)})
+    on conflict (login_id) do update
+      set last_read_at = greatest(login_chat_read_cursors.last_read_at, excluded.last_read_at)`);
+  return readLoginChatUnread(ownerId, loginId);
+}

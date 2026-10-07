@@ -25,6 +25,7 @@ import {
   XAI_IMAGE_DEPRECATED_MODELS,
   XAI_IMAGE_MODELS,
 } from '../catalogs/xai';
+import { providerFetch } from './provider-fetch';
 
 type XaiImageResponse = {
   data?: Array<{
@@ -56,7 +57,7 @@ export const xaiImageAdapter: ImageGenDispatcher = {
       ...(opts.aspectRatio ? { aspect_ratio: opts.aspectRatio } : {}),
     };
 
-    const res = await fetch(`${XAI_BASE_URL}/images/generations`, {
+    const res = await providerFetch(`${XAI_BASE_URL}/images/generations`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${opts.apiKey}`,
@@ -88,7 +89,7 @@ export const xaiImageAdapter: ImageGenDispatcher = {
     const first = parsed.data?.[0];
     if (!first?.b64_json) {
       if (first?.url) {
-        const imgRes = await fetch(first.url);
+        const imgRes = await providerFetch(first.url);
         if (!imgRes.ok) {
           throw new Error(`xai-image: failed to fetch returned URL (${imgRes.status})`);
         }

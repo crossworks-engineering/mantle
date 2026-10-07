@@ -4,46 +4,24 @@ title: MCP connector
 
 ## MCP connector
 
-Lets an outside AI client, Claude Desktop, Claude Code, or anything else
-speaking MCP, connect **to** your brain and use it as a tool.
+The MCP connector lets an outside AI client, such as Claude, connect to this brain and use its tools. It is off until you turn it on.
 
-This is the reverse of everything else in Settings. Elsewhere you're giving
-Mantle access to your things; here you're giving something else access to
-Mantle. The connector URL on this screen is the credential that does it, and the
-list below shows every client currently holding one.
+1. Switch on **Enable remote MCP**.
+2. Copy the **Connector URL**.
+3. In claude.ai, open Settings, then Connectors, then Add custom connector, and paste the URL.
+4. Sign in to this Mantle and approve access when asked.
 
-It's off by default. Turning it on is a deliberate act, and the disconnect
-button next to a client revokes that client specifically.
+Click **Check endpoint** to test that the connector answers. **Connected clients** lists every client that has signed in. Disconnect one to cut its access at once.
 
-## When to use this
+Under **Team and client access**, let a member or client use Claude on this brain with their own rights only. They are read-only unless you turn on Write, which lets them make drafts in their own space. A member or client whose client cannot sign in makes their own key under **API access**. Tokens you made before still work and can be revoked here.
 
-Turn it on when you want to work in another AI tool but keep one brain. The
-common shape is drafting or research in a desktop client while everything worth
-keeping is written back here, so your memory doesn't fragment across
-applications.
+## Assistant
 
-Treat the connector URL as a password. Anyone with it reaches your brain with
-the tools you've granted, from anywhere, so paste it into a client's
-configuration, not into a message, a document, or a shared repository.
-
-Review the connected-clients list occasionally. A client you set up on a machine
-you no longer use is still connected until you disconnect it here.
+This screen has no assistant tools. Set it up here, then talk to your brain from the outside client.
 
 ## Technical
 
-The connector exposes the same tool surface the assistant uses, subject to the
-same tool groups; an external client is not a privileged path around the
-permission model. Tools requiring confirmation still queue for approval, and the
-approval happens here rather than in the connecting client.
-
-Every call arrives with the connecting client's identity, so the audit log
-distinguishes "the assistant did this" from "a desktop client did this". That
-distinction is the reason connections are individually revocable rather than
-governed by a single on/off switch.
-
-The health check makes a real round trip, which is worth using when a client
-reports a connection it can't actually use; it separates "the connector is
-down" from "the client is misconfigured".
-
-Because the URL is the whole credential, rotating it invalidates every connected
-client at once. That's the blunt instrument if you suspect it has leaked.
+- Clients sign in with OAuth. The URL alone grants nothing.
+- As the owner, a client gets every tool an agent can be granted. Members and clients get only what their own rights allow.
+- The shell tool `run_terminal` is off over the network unless the server sets `MANTLE_MCP_TERMINAL=1`.
+- A client running on the server itself can use the local stdio transport instead. See [Connect Claude over MCP](../07-api/01-connect-claude.md).

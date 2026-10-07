@@ -8,7 +8,11 @@
  *  - a client `?at=` token opens the client byte routes only for a live
  *    client of this brain's anchor, at the login's current session epoch;
  *  - a client cookie ends with the login's epoch, and one that claims to
- *    last longer than 30 days is refused.
+ *    last longer than 30 days is refused;
+ *  - a client DEVICE TOKEN (the phone app's bearer) gets past the gate on
+ *    the same routes under the same rules: it must carry the login's current
+ *    session epoch, last at most 30 days, and have a live row of its own
+ *    login; an admin's or a member's bearer is refused on every client route.
  *
  * The other half, "every route NOT in CLIENT_ROUTES refuses a client", is
  * the client sweep in role-sweep.test.ts (every manifest route, member
@@ -18,6 +22,7 @@
  * (lib/auth/login-row is mocked). A handler that touches the database BEFORE
  * its gate would fail here with a 500, which is also a finding: gate first.
  */
+import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -48,7 +53,14 @@ const row = (
   sessionEpoch: extra.sessionEpoch ?? 0,
 });
 
+/** The device token rows (mobile_tokens) the bearer tests stand in. */
+const bearers = vi.hoisted(() => ({
+  rows: new Map<string, { userId: string; revokedAt: Date | null; expiresAt: Date }>(),
+}));
+
 vi.mock('../lib/auth/login-row', () => ({
+  loadBearerToken: async (jti: string) => bearers.rows.get(jti) ?? null,
+  touchBearerToken: async () => undefined,
   loadLoginRow: async (id: string) =>
     ({
       [CLIENT_ID]: row(CLIENT_ID, 'client'),
@@ -374,6 +386,130 @@ describe.skipIf(!hasManifest)('client sweep: client routes serve clients only', 
         headers: { cookie: `${SESSION_COOKIE_NAME}=${tokens.buildSessionCookie(MEMBER_ID).value}` },
       });
       expect(member.status).toBe(400);
+    });
+  });
+  describe('client device tokens (the phone app bearer)', () => {
+    const PAST = '/api/client/shared/not-a-uuid';
+    const DAY = 24 * 60 * 60;
+    /** A bearer for `id` with its mobile_tokens row. Defaults: what the
+     *  client code sign-in mints (30 days, the given epoch). */
+    const bearerFor = (
+      id: string,
+      opts: {
+        epoch?: number | null;
+        ttlSeconds?: number;
+        revoked?: boolean;
+        rowUser?: string;
+        rowExpiresAt?: Date;
+        noRow?: boolean;
+      } = {},
+    ): Record<string, string> => {
+      const jti = randomUUID();
+      const t = tokens.buildMobileToken(
+        id,
+        jti,
+        opts.ttlSeconds ?? CLIENT_SESSION_TTL_SECONDS,
+        opts.epoch === null ? undefined : (opts.epoch ?? 0),
+      );
+      if (!opts.noRow) {
+        bearers.rows.set(jti, {
+          userId: opts.rowUser ?? id,
+          revokedAt: opts.revoked ? new Date() : null,
+          expiresAt: opts.rowExpiresAt ?? t.expiresAt,
+        });
+      }
+      return { authorization: `Bearer ${t.value}` };
+    };
+    const statusWith = async (headers: Record<string, string>, path = PAST) =>
+      (await app.request(path, { headers })).status;
+
+    it('gets past the gate on client routes, bytes included (no ?at= needed)', async () => {
+      const headers = bearerFor(CLIENT_ID);
+      for (const path of PAST_THE_GATE) expect(await statusWith(headers, path), path).toBe(400);
+    });
+
+    it('is refused without the session epoch, or at any epoch but the current one', async () => {
+      expect(await statusWith(bearerFor(CLIENT_ID, { epoch: null }))).toBe(401);
+      expect(await statusWith(bearerFor(CLIENT_ID, { epoch: 1 }))).toBe(401);
+      for (const epoch of [0, 1, 3]) {
+        expect(await statusWith(bearerFor(BUMPED_CLIENT_ID, { epoch })), `epoch ${epoch}`).toBe(
+          401,
+        );
+      }
+      expect(await statusWith(bearerFor(BUMPED_CLIENT_ID, { epoch: 2 }))).toBe(400);
+    });
+
+    it('is refused when it claims to last longer than 30 days', async () => {
+      expect(await statusWith(bearerFor(CLIENT_ID, { ttlSeconds: 31 * DAY }))).toBe(401);
+      expect(await statusWith(bearerFor(CLIENT_ID, { ttlSeconds: 365 * DAY }))).toBe(401);
+      // The signed token says 30 days but its row says a year: refused too.
+      const longRow = new Date(Date.now() + 365 * DAY * 1000);
+      expect(await statusWith(bearerFor(CLIENT_ID, { rowExpiresAt: longRow }))).toBe(401);
+    });
+
+    it("is refused when its row is revoked, expired, missing or another login's", async () => {
+      expect(await statusWith(bearerFor(CLIENT_ID, { revoked: true }))).toBe(401);
+      expect(
+        await statusWith(bearerFor(CLIENT_ID, { rowExpiresAt: new Date(Date.now() - 1000) })),
+      ).toBe(401);
+      expect(await statusWith(bearerFor(CLIENT_ID, { noRow: true }))).toBe(401);
+      expect(await statusWith(bearerFor(CLIENT_ID, { rowUser: MEMBER_ID }))).toBe(401);
+      expect(await statusWith(bearerFor(DISABLED_CLIENT_ID))).toBe(401);
+    });
+
+    it('reaches no admin route and no member route', async () => {
+      const headers = bearerFor(CLIENT_ID);
+      for (const path of ['/api/shell', '/api/member/shell', '/api/push/subscriptions']) {
+        const res = await app.request(path, { headers });
+        const body = (await res.json().catch(() => null)) as { reason?: string } | null;
+        expect(res.status, path).toBe(403);
+        expect(body?.reason, path).toBe('client-login');
+      }
+      // Member and admin bytes: a plain 401 (no session of that role).
+      for (const path of ['/api/member/files/not-a-uuid', '/api/files/files/not-a-uuid?raw=1']) {
+        expect(await statusWith(headers, path), path).toBe(401);
+      }
+    });
+
+    it('refuses an ADMIN bearer and a MEMBER bearer on every client route', async () => {
+      for (const [id, reason] of [
+        [ADMIN_ID, 'admin-login'],
+        [MEMBER_ID, 'member-login'],
+      ] as const) {
+        // A password login's bearer: no epoch, as device-login mints it.
+        const headers = bearerFor(id, { epoch: null });
+        for (const route of CLIENT_ROUTES) {
+          const [method, pattern] = route.split(' ') as [string, string];
+          const res = await app.request(concretePath(pattern), { method, headers });
+          const body = (await res.json().catch(() => null)) as { reason?: string } | null;
+          const refused = (res.status === 403 && body?.reason === reason) || res.status === 401;
+          expect(refused, `${route} as ${reason} → ${res.status}`).toBe(true);
+        }
+      }
+    });
+
+    it('the push enrol step needs the bearer; a cookie session is told so', async () => {
+      const body = JSON.stringify({ routingToken: 'r', publicKey: 'k', platform: 'ios' });
+      const res = await app.request('/api/client/push/subscriptions', {
+        method: 'POST',
+        headers: { cookie: cookieFor(CLIENT_ID), 'content-type': 'application/json' },
+        body,
+      });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: 'bearer_required' });
+      // A cookie of one login with another login's bearer in the header: the
+      // bearer is not this login's, so it enrols nothing.
+      const mixed = await app.request('/api/client/push/subscriptions', {
+        method: 'POST',
+        headers: {
+          cookie: cookieFor(CLIENT_ID),
+          ...bearerFor(BUMPED_CLIENT_ID, { epoch: 2 }),
+          'content-type': 'application/json',
+        },
+        body,
+      });
+      expect(mixed.status).toBe(400);
+      expect(await mixed.json()).toEqual({ error: 'bearer_required' });
     });
   });
 });

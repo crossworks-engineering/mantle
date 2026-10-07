@@ -5,8 +5,8 @@ command, configure everything else in the interface, and update by pulling.
 No checkout, no build, no hand-edited env.
 
 This is the **standard way to run Mantle**. The install itself (prompts, env
-vars, requirements, sandboxes, media, the manual path) is on the one canonical
-install page, [`guide/01-installation.md`](./guide/01-installation.md); this
+vars, requirements, sandboxes, media, the manual path) is in the install
+pages, [`guide/01-install/`](./guide/01-install/01-choose.md); this
 page carries the operational detail. The companion docs serve other
 audiences: [`getting-started.md`](./getting-started.md) is the developer
 checkout, [`deploy.md`](./deploy.md) is the operator reference for building
@@ -84,8 +84,8 @@ cd mantle && bash scripts/install.sh
 ```
 
 Same three choices as flags: `--domain <host>`, `--localhost`, `--lan`
-(`--no-domain` remains an alias for the last), plus `--behind-proxy` for a box
-that already runs a web server. **`--localhost` binds the front door to
+(`--no-domain` remains an alias for the last), plus `--behind-proxy --domain <host>`
+for a box that already runs a web server (the domain is required: links use it). **`--localhost` binds the front door to
 `127.0.0.1`** via `MANTLE_BIND_ADDR`; worth knowing that this is the only
 thing that actually keeps a brain off the network, because a published Docker
 port bypasses the host firewall (Docker installs its own DNAT rules ahead of
@@ -126,6 +126,10 @@ check, then walks you through your API key, model choices, voice, and
 memory-search (embeddings) setup. Everything is configured in the
 interface, not in files.
 
+Signup asks for the **setup code** the installer printed next to that URL:
+until the first account exists, only someone who can read the box's `.env`
+can claim it. Lost it? `scripts/install.sh --setup-code` prints it again.
+
 > **Embeddings:** semantic search uses an online embedder by default
 > (`text-embedding-3-large`, chosen in the wizard's Memory step; it can
 > reuse the same OpenRouter key as chat). The fully-local embedder
@@ -154,6 +158,20 @@ interface, not in files.
 > object store, files) and the `.env` file (`MANTLE_MASTER_KEY` decrypts
 > your stored API keys; lose it and the vault is unrecoverable).
 > Scheduled DB backups are built in: `/settings/backups`.
+
+### Headless: no owner UI on the box
+
+`scripts/install.sh --no-client` (or "no" to "Run the owner web UI?") runs
+the API, MCP and share pages only. Create the owner and finish setup in one
+of two ways:
+
+- **The Jackdaw desktop app**: connect it to the brain's address, sign up with
+  the setup code, and walk the wizard there.
+- **The terminal**, on the box: `scripts/onboard.sh` (every prompt has a
+  default; `--yes` with `--password-file` and `--key-file` for unattended
+  runs).
+
+Details: [`onboarding.md`](./onboarding.md) section 8.
 
 ### Brain-core shape (small headless memory core)
 
@@ -199,6 +217,11 @@ gate), or return to the full shape with `scripts/install.sh --no-core`.
 
 ### Sandboxes and the media sidecar
 
+Both can be switched on and off in **Settings > Services** (admins
+only) once the box runs an updater that supports it; off stops the service
+and keeps all its data. See [`services.md`](./services.md). The steps below
+are the same change by hand.
+
 **CLI sandboxes are on by default on a fresh full install** (off on a core
 box): the `sandboxes` profile adds the `sandboxd` service, and the installer
 generates `SANDBOXD_TOKEN`, sets `MANTLE_SANDBOXES_HOST_DIR` and pre-pulls the
@@ -208,9 +231,10 @@ sandbox base image. Nothing is installed on the host. Turn them off with
 
 **Video ingest and CAD drawing ingest are off until you enable the `media`
 profile.** It runs the `titanwest/mantle-media` sidecar (yt-dlp, ffmpeg and
-the DWG tools) behind `MEDIA_SIDECAR_TOKEN`; the installer sets neither. Add
-`media` to `COMPOSE_PROFILES` in `.env`, set the token
-(`openssl rand -hex 32`), then `docker compose --profile media up -d --wait`.
+the DWG tools) behind `MEDIA_SIDECAR_TOKEN`; the installer writes the token
+and leaves the profile off. Add `media` to `COMPOSE_PROFILES` in `.env` (and
+set the token with `openssl rand -hex 32` on a box installed before tokens
+were provisioned), then `docker compose --profile media up -d --wait`.
 The image exists from v0.232.34, so update first on an older box. Guide:
 [`video-ingest.md`](./video-ingest.md).
 

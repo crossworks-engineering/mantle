@@ -23,9 +23,13 @@ const h = vi.hoisted(() => ({
   displayName: 'Pat' as string | null,
   lookups: [] as string[],
   reads: [] as Array<{ fn: string; level: string }>,
+  launcherReads: [] as Array<{ level: string; reader: string }>,
   homeAppId: undefined as string | undefined,
   loginActive: true,
   verdict: { ok: true } as { ok: boolean; status?: number; reason?: string },
+  // The handler kind of the tool an allowed verdict hands back: 'mcp' stands
+  // for an outside tool an admin opened to team apps.
+  toolKind: 'builtin' as 'builtin' | 'mcp',
   toolSlugs: ['note_list'] as string[],
   levels: [] as string[],
   dispatched: [] as Array<{ level: string; ctx: Record<string, unknown> }>,
@@ -35,6 +39,7 @@ const h = vi.hoisted(() => ({
   callers: [] as unknown[],
   synced: 0,
   rendered: [] as string[],
+  frameViewers: [] as unknown[],
 }));
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
@@ -92,6 +97,15 @@ vi.mock('@mantle/content', async (importOriginal) => {
     listMemberApps: vi.fn(async () =>
       read('listMemberApps', [card(APP, 'Polls'), card(OTHER_APP, 'Budget')]),
     ),
+    appLauncher: vi.fn(async (_anchor: string, reader: string) => {
+      h.launcherReads.push({ level: currentViewerLevel(), reader });
+      return {
+        apps: [card(APP, 'Polls'), card(OTHER_APP, 'Budget')],
+        folders: [
+          { id: 'f1', name: 'Tools', icon: null, color: 'teal', parentId: null, appIds: [APP] },
+        ],
+      };
+    }),
     listLibrary: vi.fn(async () =>
       read('listLibrary', {
         items: [
@@ -131,7 +145,11 @@ vi.mock('@mantle/tools', async (importOriginal) => {
           const real = await importOriginal<typeof import('@mantle/tools')>();
           return real.appToolVerdict(level, owner, declared, slug);
         }
-        return h.verdict.ok ? { ok: true, tool: { slug } } : h.verdict;
+        const handler =
+          h.toolKind === 'builtin'
+            ? { kind: 'builtin', ref: slug }
+            : { kind: 'mcp', group: 'mcp-site', toolName: 'query' };
+        return h.verdict.ok ? { ok: true, tool: { slug, handler } } : h.verdict;
       },
     ),
     dispatchTool: vi.fn(async (_tool: unknown, _input: unknown, ctx: Record<string, unknown>) => {
@@ -141,7 +159,7 @@ vi.mock('@mantle/tools', async (importOriginal) => {
   };
 });
 vi.mock('@mantle/content/app-broker', async (importOriginal) => {
-  const { AppSqlError, AppSqlBusyError } =
+  const { AppSqlError, AppSqlBusyError, AppDbMissingError } =
     await importOriginal<typeof import('@mantle/content/app-broker')>();
   const { currentViewerLevel } = await import('@mantle/db');
   // The SQLite work must run on the admin pool: it writes registry rows.
@@ -150,6 +168,7 @@ vi.mock('@mantle/content/app-broker', async (importOriginal) => {
   return {
     AppSqlError,
     AppSqlBusyError,
+    AppDbMissingError,
     appDbQuery: vi.fn(async (owner: string, app: string, ...rest: unknown[]) => {
       h.callers.push(rest[3]);
       if (h.dbError) throw h.dbError;
@@ -166,10 +185,13 @@ vi.mock('@mantle/content/app-table-exports', () => ({
   scheduleAppTableExportSync: vi.fn(() => (h.synced += 1)),
 }));
 vi.mock('@/lib/app-frame', () => ({
-  renderAppFrame: vi.fn(async (_req: Request, build: { storageKey: string }) => {
-    h.rendered.push(build.storageKey);
-    return new Response('<!doctype html>', { status: 200 });
-  }),
+  renderAppFrame: vi.fn(
+    async (_req: Request, build: { storageKey: string }, opts?: { viewer?: unknown }) => {
+      h.rendered.push(build.storageKey);
+      h.frameViewers.push(opts?.viewer);
+      return new Response('<!doctype html>', { status: 200 });
+    },
+  ),
 }));
 
 type Handler = (req: Request, ctx: { params: Promise<{ id: string }> }) => Promise<Response>;
@@ -207,10 +229,12 @@ beforeEach(() => {
   h.displayName = 'Pat';
   h.lookups.length = 0;
   h.reads.length = 0;
+  h.launcherReads.length = 0;
   h.homeAppId = undefined;
   verdictMock?.mockClear();
   h.loginActive = true;
   h.verdict = { ok: true };
+  h.toolKind = 'builtin';
   h.toolSlugs = ['note_list'];
   h.levels.length = 0;
   h.dispatched.length = 0;
@@ -220,9 +244,43 @@ beforeEach(() => {
   h.callers.length = 0;
   h.synced = 0;
   h.rendered.length = 0;
+  h.frameViewers.length = 0;
 });
 
 describe('member tool broker', () => {
+  it('an outside tool an admin opened to team apps runs on the team role, and the log names the member and the kind', async () => {
+    h.toolKind = 'mcp';
+    h.toolSlugs = ['site_query'];
+    const res = await toolBroker(post({ slug: 'site_query', input: { q: 'x' } }), params());
+    expect(res.status).toBe(200);
+    expect(h.dispatched).toHaveLength(1);
+    expect(h.dispatched[0]!.level).toBe('team');
+    expect(h.dispatched[0]!.ctx).toMatchObject({
+      surface: { kind: 'team', loginId: LOGIN, privateReads: false },
+    });
+    expect(h.logged[0]).toMatchObject({
+      actorId: LOGIN,
+      kind: 'tool',
+      detail: { via: 'member', slug: 'site_query', handler: 'mcp' },
+    });
+  });
+
+  it('a refused outside tool is logged with the member and the reason, and never dispatched', async () => {
+    h.toolSlugs = ['site_query'];
+    h.verdict = {
+      ok: false,
+      status: 403,
+      reason: "The tool 'site_query' can't be used from a team app",
+    };
+    const res = await toolBroker(post({ slug: 'site_query', input: {} }), params());
+    expect(res.status).toBe(403);
+    expect(h.dispatched).toHaveLength(0);
+    expect(h.logged[0]).toMatchObject({
+      actorId: LOGIN,
+      detail: { via: 'member', slug: 'site_query', refused: expect.stringMatching(/team app/) },
+    });
+  });
+
   it('dispatches on the team role with a team surface that names the login', async () => {
     const res = await toolBroker(post({ slug: 'note_list', input: {} }), params());
     expect(res.status).toBe(200);
@@ -270,7 +328,7 @@ describe('member tool broker', () => {
     verdictMock.mockImplementationOnce(
       async (level: string, _o: string, _d: string[], slug: string) => {
         h.levels.push(level);
-        return { ok: true, tool: { slug } };
+        return { ok: true, tool: { slug, handler: { kind: 'builtin', ref: slug } } };
       },
     );
     const res = await toolBroker(post({ slug: 'client_shared_list', input: {} }), params());
@@ -329,7 +387,10 @@ describe('member tool broker', () => {
 describe('member db broker', () => {
   it('runs under the login as its caller key and hides a server error (audit I1, L4)', async () => {
     await dbBroker(post({ op: 'query', sql: 'select 1' }), params());
-    expect(h.callers).toEqual([{ callerKey: `member:${LOGIN}` }]);
+    // App identity: the member fills the :host_me_* parameters.
+    expect(h.callers).toEqual([
+      { callerKey: `member:${LOGIN}`, viewer: { kind: 'member', loginId: LOGIN, name: 'Pat' } },
+    ]);
     const err = console.error;
     console.error = () => {};
     let res: Response;
@@ -435,6 +496,10 @@ describe('member frame', () => {
     const res = await frame(frameReq(t), params());
     expect(res.status).toBe(200);
     expect(h.rendered).toEqual([PUBLISHED.storageKey]);
+    // host.me(): the member the ticket names (app identity).
+    expect(h.frameViewers).toEqual([
+      { ownerId: ANCHOR, appId: APP, subject: { kind: 'member', loginId: LOGIN } },
+    ]);
   });
 
   it('refuses an owner ticket, a share ticket and a ticket for another app', async () => {
@@ -461,6 +526,20 @@ describe('member frame', () => {
     const t = tokens.buildAppFrameTicket({ ownerId: ANCHOR, appId: APP, loginId: LOGIN });
     expect((await frame(frameReq(t), params())).status).toBe(401);
     expect(h.rendered).toEqual([]);
+  });
+
+  // Contact shares plan P0 (2026-10-01): a public app is in no member list
+  // (proven on Postgres in packages/content/src/member-apps.viewer.db.test.ts),
+  // but a member who has its link still runs it, read only.
+  it('still opens a public app the member reaches by its link, read only', async () => {
+    h.audience = 'public';
+    const res = await ticketRoute(post({}), params());
+    expect(res.status).toBe(200);
+    const { ticket } = (await res.json()) as { ticket: string };
+    expect((await frame(frameReq(ticket), params())).status).toBe(200);
+    expect(h.rendered).toEqual([PUBLISHED.storageKey]);
+    const write = await dbBroker(post({ op: 'exec', sql: 'insert into t values (1)' }), params());
+    expect(write.status).toBe(403);
   });
 
   it('answers 404 once the app is no longer one the member may run', async () => {
@@ -511,6 +590,20 @@ describe('member app list and home', () => {
     expect(h.reads.every((r) => r.level === 'team')).toBe(true);
     h.runnable = false;
     expect(((await (await listRoute()).json()) as { homeAppId: unknown }).homeAppId).toBeNull();
+  });
+
+  it('adds the folders of those apps, from the launcher read as a member', async () => {
+    const body = (await (await listRoute()).json()) as Record<string, unknown>;
+    // The fields an older client reads are still there, unchanged.
+    expect(Object.keys(body).sort()).toEqual(['apps', 'folders', 'homeAppId']);
+    expect(body.apps).toHaveLength(2);
+    expect(body.folders).toEqual([
+      { id: 'f1', name: 'Tools', icon: null, color: 'teal', parentId: null, appIds: [APP] },
+    ]);
+    // The route hands no path to anything: the launcher is asked for the
+    // team reader, on the admin pool (it scopes its own reads; the rule is
+    // proven on Postgres in packages/content/src/app-folders.viewer.db.test.ts).
+    expect(h.launcherReads).toEqual([{ level: 'admin', reader: 'team' }]);
   });
 
   it('gives no hub data when nothing is pinned, and skips the hub reads', async () => {

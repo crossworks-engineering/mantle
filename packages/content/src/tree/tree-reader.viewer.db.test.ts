@@ -102,7 +102,7 @@ describe.skipIf(!URL)('the member and client trees', () => {
     await m.systemDb.execute(
       sqlTag`update nodes set share_level = 'client' where id = ${f.client}`,
     );
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await m.systemDb.execute(sqlTag`

@@ -73,6 +73,17 @@ async function callPeer(
   }
 }
 
+/** A peer resolved by id or name with the token we call it with, or an
+ *  error that says what to do. Exported for the peer MCP tools (peer_tools,
+ *  peer_call, peer_file_copy in @mantle/tools), which call the peer's
+ *  /api/mcp instead of its federation routes. */
+export async function peerCallTarget(
+  ownerId: string,
+  ref: string,
+): Promise<{ peer: PeerRow; token: string } | { error: string }> {
+  return withToken(ownerId, ref);
+}
+
 async function withToken(
   ownerId: string,
   ref: string,

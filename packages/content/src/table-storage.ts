@@ -16,7 +16,7 @@ import {
   readDocClipped,
   relativeStoragePath,
   resolveStoragePath,
-  snapshotFile,
+  tableDbRoot,
   writeDocFile,
   type WorkbookStats,
   type WorkbookTabRef,
@@ -25,6 +25,7 @@ import {
 import { ensureTableDoc, type TableDoc } from '@mantle/content-core/table-model';
 import { tableToText } from './table-to-text';
 import { errorMessage } from '@mantle/std';
+import { copySqliteFile, linkHistoryTree } from './history-files';
 
 /**
  * File-side plumbing for sqlite-native tables (Tables v2 P1) — the pieces
@@ -416,6 +417,17 @@ export async function snapshotAllTableDatabases(destDir: string): Promise<TableD
   ];
 
   const report: TableDbSnapshotReport = { snapshotted: [], missing: [], failed: [] };
+  // The tables' own history (apps plan Phase 4, table-snapshots.ts) rides
+  // along: immutable files, hard-linked (no disk, no copy; apps audit
+  // 2026-10-02, item 5).
+  const history = path.join(tableDbRoot(), '_snapshots');
+  if (existsSync(history)) {
+    try {
+      await linkHistoryTree(history, path.join(destDir, '_snapshots'));
+    } catch (err) {
+      report.failed.push({ nodeId: '_snapshots', error: errorMessage(err) });
+    }
+  }
   for (const r of all) {
     const storagePath = r.storagePath!;
     let abs: string;
@@ -440,7 +452,8 @@ export async function snapshotAllTableDatabases(destDir: string): Promise<TableD
       if (draft && !existsSync(file)) continue;
       try {
         const dest = path.join(destDir, r.ownerId, path.basename(file));
-        snapshotFile(file, dest);
+        // In a SQL child, off the event loop (apps audit 2026-10-02, item 14).
+        await copySqliteFile(file, dest);
         report.snapshotted.push({
           ownerId: r.ownerId,
           nodeId: r.nodeId,

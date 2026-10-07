@@ -405,6 +405,11 @@ migration `0137`) that turns it from a grant bundle into a whole API integration
 }
 ```
 
+An API that issues OAuth2 tokens from a client id and secret carries `oauth2`
+instead of `secretRef`, and its auth template places `{{oauth:<group-slug>}}`;
+the token is fetched, cached in memory and refreshed at call time (see
+[toolsmith.md](toolsmith.md#oauth2-client-credentials)).
+
 Two things about this are worth stating plainly against the capability-only rule:
 
 1. **Configuration is not behaviour.** A base URL, a vault pointer and an auth
@@ -451,6 +456,15 @@ approval like any agent-initiated grant). Every result comes back
 give them to a no-write specialist (researcher pattern). Full detail:
 [`mcp-connectors.md`](./mcp-connectors.md).
 
+### Connector tools in shared apps (External access)
+
+Below admin, an app's run may call only read-only built-ins, and a link
+none, unless an admin switches "External access" on for an MCP or http tool
+and confirms it only reads. Then everyone the app is shared with (members,
+clients, contacts on a contact link) may call it, if the app declares it.
+Rules, surfaces and how the switch is voided: docs/member-logins.md,
+"External access: outside tools in shared apps".
+
 ## OpenAPI connector groups: a group compiled from a service's spec
 
 The third binding: `integration.openapi` marks a group as an **OpenAPI
@@ -491,13 +505,90 @@ Rules, in `packages/tools/src/delegate-roster.ts`:
 - **Stoplist + caps.** Ubiquitous groups (`memory-core`, `tool-results`,
   `delegation`, `persona`) are skipped; per-group chunk ~90 chars, per-line
   ~220 chars with a `+N more` marker, whole roster ~1,200 chars; newlines
-  stripped.
+  stripped. Over the whole-roster budget every delegate stays: lines shrink,
+  lowest rank (`delegate_to` order) first, to one group chunk and then to the
+  bare name. Only if all-names still overflows is the tail elided
+  (`+N more delegates`). Dropping the tail used to hide whole specialists, so
+  put the delegates that matter most first in `delegate_to`.
 - **Best-effort.** A roster failure degrades to the enum-only patch; the
   delegate-slug enum (the v0.82.2 hallucinated-slug guard) never regresses.
 
 The routing skill body now points at the roster as authoritative for WHAT a
 delegate carries; the skill stays the policy for WHEN to delegate and how to
 pack the hand-off.
+
+## Deferred tool loading: many tools, one stable prefix
+
+An agent's grant decides WHICH tools it may call. `params.tool_loading`
+decides HOW their definitions reach the model. Absent (or `'full'`) is the
+behaviour before this existed: every granted tool's full definition on every
+call. `'deferred'` sends:
+
+- the granted tools in `CORE_TOOL_SLUGS` (the 20 tools that carry most turns
+  on the fleet, plus `update_persona`, whose trigger never reads as a task) in
+  that list's fixed order, then any `heartbeat_*` affordance, in full;
+- `tool_search` (load tools by describing the action);
+- `use_tool {name, arguments}`, a wrapper for models that will not call a
+  name they were not sent.
+
+The loop appends a catalog block to the FIRST system block (the persona
+block, with the first cache breakpoint): one rule ("check the catalog before
+you say you cannot, and before a general tool stands in for a specific one"),
+then every other granted tool under its flow
+(`packages/tools/src/selection/flows.ts`: find, pages, files, tables, plan,
+people, web, places, delegate, apps, admin). A group no flow holds (an owner's
+API integration, an MCP or OpenAPI connector) gets its own line under its
+display name, and `tool_search` takes that group slug as its `flow`.
+
+Each tool shows the first sentence of its description, clipped to 90
+characters, when that text is brain-authored: builtins, and `http` tools the
+owner wrote on this brain (`toolSourceOf`). Tools whose text a remote party
+wrote (`mcp` connector tools, `http` tools compiled from an OpenAPI spec, which
+carry `handler.openapi`) and recipes are listed by NAME only, so that text
+stays out of the system prompt. On the bench the catalog in the system prompt
+beat the same text in `tool_search`'s description, a fixed core order beat
+grant order (grant order put `calculate` first and drew `calculate` calls), and
+the short lines beat names alone for Claude. Known cost of the rule: on a dev
+probe Grok searched in 24 of 30 turns, often for information it then fetched
+with `search_nodes`. Two softer wordings ("`tool_search` only for an ACTION; for
+INFORMATION use `search_nodes`") cut Claude's bench score by 2 to 3 cases of
+101 and did not help Grok, so the rule stays as it is.
+
+**Writing a tool so `tool_search` finds it.** Start the description with one
+sentence: action + object + what it returns, in the user's words (the ranker
+reads the first 600 characters, the catalog shows 90). Name it verb_noun with
+the system's name (`partsdb_part_list`); slug words count double. Give the group a
+display name and a one-line description naming the system and its data. Put the
+user's synonyms early (quote/estimate, invoice/bill). One action per tool.
+
+The model calls `tool_search {query, flow?}`; the loop ranks the deferred
+tools (BM25 over tool cards + a small synonym table + a fleet usage prior, no
+model call) and returns up to 6 with their full input schemas as an ordinary
+tool RESULT. The model then calls the tool by its own name or through
+`use_tool`. Both dispatch exactly as a sent tool: `toolsByName` holds the
+whole grant, the central validator checks the real schema, the guards count
+the real slug, and the trace step is `tool: <real slug>`. A name outside the
+grant is still refused ("not in this agent's allowlist").
+
+**Why it keeps the cache.** The sent array and the catalog block are pure
+functions of the grant: they never change inside a turn, and not between turns
+while the grant is the same. Loaded schemas arrive in the conversation tail, after the last cache
+breakpoint. Never change the `tools` array or `tool_choice` per turn to
+restrict tools: on Anthropic the tools come first in the prefix, so that
+rewrites the whole cached prompt (Spike 8 measured a loss).
+
+**Measured (2026-10-05, dev-brain plan page dab162c0).** 143 tools = 58.5k
+Claude tokens per call; the deferred set = about 11k. On a 101-case
+right-first-tool bench: Claude Sonnet 5 89 vs 91 (full), Grok 4.7 90 vs 81.
+When the model searched, the right tool was in the results every time; the
+misses were the model using a general core tool instead of searching, which
+the rule line in `tool_search` reduces. Real turns that need a search:
+14 to 46% depending on the brain; each adds one model round.
+
+**Turning it on.** Per agent: `PATCH /api/agents/<id>` with
+`params.tool_loading: 'deferred'` (params are replaced as a whole, so send
+the agent's other params too). Delegated specialists use their own setting.
+The MCP surface is unaffected (MCP clients do their own deferral).
 
 ## House style: the owner's prose layer (v0.214.0)
 

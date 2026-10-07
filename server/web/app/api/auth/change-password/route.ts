@@ -79,7 +79,7 @@ export async function POST(req: Request) {
     login.source === 'mobile'
       ? mobileTokenJti(bearerFromHeader(req.headers.get('authorization')) ?? '')
       : null;
-  const epoch = await endLoginSessions(actorId, { keepJti });
+  const epoch = await endLoginSessions(actorId, { keepJti, endKeys: true });
   auditFireAndForget({
     actorId,
     actorEmail: login.email,

@@ -984,6 +984,29 @@ Visual map of who writes what, who reads what:
 > ranking factors below. The old version of this section ranked everything by raw
 > cosine and assembled only persona / facts / content / turns.
 
+> **Corpus map budget (2026-10-05).** The "what exists" block renders inside
+> about 6,500 characters (about 2k tokens; per agent `memory_config.corpus_map_chars`).
+> Each branch header carries the corpus-wide count; the budget is shared
+> round-robin across branches, newest items first, so `tables` and `tasks` are
+> never starved by a long `pages` branch; three or more near-identical titles
+> fold into one line; page summaries are left out and tables keep their schema
+> digest. The block says it is complete only when it is. The old 24k-character
+> block cost about 7.6k tokens a turn with no measured answer-quality gain
+> (dev-brain audit page e3c5d926).
+>
+> **Setting it.** `/settings/agents` → Memory → **Corpus map size**
+> (characters, 1,000 to 50,000; empty = the 6,500 default). The field shows an
+> estimate next to the value: characters ÷ **3.3** = tokens. The map is ids,
+> counts and short titles, which tokenize denser than prose (about 3.9
+> characters per token on dev). Measured on the dev assistant (Grok tokenizer,
+> round 0 of the same probe questions): the old 23,904-character map against
+> the new 6,463-character one moved round 0 by 5,288 tokens, 3.30 characters
+> per token; the whole old map was 7.6k tokens for 24,170 characters, 3.18. It
+> is an estimate: the provider's tokenizer decides the real count, and a
+> Claude or Gemini tokenizer can differ by 10 to 20%. Saving the form merges
+> `memory_config` (an omitted key keeps its stored value; a cleared field
+> sends `null`, which removes the key), see `updateAgent`.
+
 ```
 [tool definitions]                            ← front of every cached prefix (grant order)
 [persona prompt + skills + data rule]         ← cache_control (changes on a config edit)
@@ -1068,7 +1091,8 @@ Up to three Anthropic cache breakpoints emitted here (persona prompt, persona
 notes, digests + corpus map); the tool-loop adds one on the latest tail
 message, four of four total.
 Knobs: `memory_config.{fact_limit, content_hit_limit, chunk_limit,
-digest_limit}`; env `MANTLE_{SALIENCE_LAMBDA,RECENCY_*,QUERY_ENRICH}`.
+digest_limit, corpus_map_limit, corpus_map_chars}`; env
+`MANTLE_{SALIENCE_LAMBDA,RECENCY_*,QUERY_ENRICH}`.
 `chunk_limit` defaults to 8 (the runtime `CHUNK_LIMIT_DEFAULT`, ~22k chars),
 enough section passages to cover a long procedure/standard without forcing a
 full file read every turn; a per-agent override still wins.
@@ -1164,11 +1188,13 @@ Roughly a weekend per remaining step.
 ## 8a. Capacity & the split policy
 
 Retrieval quality is protected by never letting any single index get large.
-The policy (from the scaling whitepaper, grounded in the published
-degradation literature): per brain, **watch** at 10k documents / 50k passage
-vectors, **split** at 20k / 100k; a breakout brain is created via federation
-before any index reaches the corpus sizes where flat-RAG degradation has been
-measured (~10⁵–10⁶ passages; the 768-dim geometric ceiling is ~1.7M vectors).
+The policy: per brain, **watch** at 10k documents / 100k passage vectors,
+**split** at 20k / 250k; a breakout brain is created via federation before
+the loss a split would recover gets large. The document numbers come from the
+scaling whitepaper; the passage numbers were measured on a 224k-chunk
+single-topic corpus (recall@10 loses about 6 points per doubling, no cliff;
+[`recall-eval.md`](./recall-eval.md), "Scale curve"). The dial also shows the
+latest measured retrieval score, so size and quality read side by side.
 
 Mechanics: `CAPACITY_POLICY` + `corpusCapacity` in
 `packages/content/src/capacity.ts` (documents = non-branch nodes; passage

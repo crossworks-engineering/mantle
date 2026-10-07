@@ -40,6 +40,7 @@ import {
 } from './openai-compat';
 import { scrubThinkBlocks } from './think-scrubber';
 import { errorMessage } from '@mantle/std';
+import { providerFetch } from './provider-fetch';
 
 /** xAI's chat response shape — the shared OpenAI-compat envelope plus
  *  one xAI-specific quirk: some routes return `choices[].text` as a
@@ -72,7 +73,7 @@ async function xaiChat(opts: ChatOptions): Promise<ChatResult> {
     ...(opts.extra ?? {}),
   };
 
-  const res = await fetch(`${XAI_BASE_URL}/chat/completions`, {
+  const res = await providerFetch(`${XAI_BASE_URL}/chat/completions`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${opts.apiKey}`,
@@ -113,7 +114,7 @@ async function xaiChat(opts: ChatOptions): Promise<ChatResult> {
 
 async function xaiDiscover(apiKey: string): Promise<DiscoveryResult<ChatModelInfo>> {
   try {
-    const res = await fetch(`${XAI_BASE_URL}/models`, {
+    const res = await providerFetch(`${XAI_BASE_URL}/models`, {
       headers: { Authorization: `Bearer ${apiKey}` },
       signal: AbortSignal.timeout(15_000),
     });

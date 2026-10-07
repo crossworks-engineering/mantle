@@ -2,7 +2,10 @@
  * Retrieval-quality self-check — the automated half of docs/recall-eval.md.
  * A golden-case note (tag `recall-eval-cases`) pairs natural-language queries
  * with the nodes that should come back; `recall_eval` runs each query through
- * the shipped retrievers (hybrid `search_nodes` + passage `search_chunks`),
+ * the shipped retrievers (hybrid `search_nodes` + passage `search_chunks`,
+ * HYBRID as agents call it, plus the Jev-scored passage path when the
+ * decider's passage_scoring has a `pool` set; vector-only passages stay as a
+ * secondary line),
  * scores recall@k / MRR with the pure helpers in @mantle/search, persists the
  * run as a note (tag `recall-eval-run`), and reports drift vs the previous
  * run. Built to be fired from a scheduled heartbeat: the agent calls the tool,
@@ -20,6 +23,13 @@ import {
   type RecallScores,
 } from '@mantle/search';
 import { createNote } from '@mantle/content';
+import {
+  MAX_PASSAGES_PER_REQUEST,
+  applyPassageScores,
+  decisionUseEnabled,
+  passageScoringPool,
+  scorePassages,
+} from '@mantle/decisions';
 import type { BuiltinToolDef } from './types';
 import { errorMessage } from '@mantle/std';
 
@@ -30,12 +40,34 @@ const RANK_K = 10;
 const MRR_ALERT_DROP = 0.05;
 const R5_ALERT_DROP = 0.1;
 
+/** Passages fetched per case: collapsed to their nodes, the first RANK_K count. */
+const PASSAGE_K = RANK_K * 3;
+/** Jev's list price per request of up to 25 passages (docs/recall-eval.md:
+ *  USD 0.00138 for 2 requests), for the run's cost line. */
+const JEV_USD_PER_REQUEST = 0.0007;
+
 type RunSummary = {
   at: string;
   casesUsed: number;
   casesSkipped: number;
   search: RecallScores;
+  /** Passages through the HYBRID search agents use (vector + keyword arm). */
   chunks: RecallScores;
+  /** What `chunks` measured. Runs before 2026-10-03 have no field: their
+   *  `chunks` was vector-only, so no chunks drift is read against them. */
+  chunksPath?: 'hybrid';
+  /** Secondary line: the vector arm alone (the old `chunks` number). */
+  chunksVector?: RecallScores;
+  /** The Jev-scored passage path, when passage_scoring has a `pool` set:
+   *  the hybrid pool scored and ordered as `live` would order it (whatever
+   *  the use's mode). */
+  chunksScored?: RecallScores & {
+    mode: 'shadow' | 'live';
+    pool: number;
+    requests: number;
+    failed: number;
+    usd: number;
+  };
   /** Case ids that no retriever ranked at all (null in BOTH arms). */
   unmatchedCases: string[];
 };
@@ -76,11 +108,28 @@ async function latestTaggedNoteJson(
   }
 }
 
+/** Passage hits collapse to their parent node, first appearance keeps rank. */
+function toNodeHits(
+  passages: ReadonlyArray<{ nodeId: string; nodeTitle: string }>,
+): Array<{ id: string; title: string }> {
+  const seen = new Set<string>();
+  const nodeHits: Array<{ id: string; title: string }> = [];
+  for (const p of passages) {
+    if (seen.has(p.nodeId)) continue;
+    seen.add(p.nodeId);
+    nodeHits.push({ id: p.nodeId, title: p.nodeTitle });
+    if (nodeHits.length >= RANK_K) break;
+  }
+  return nodeHits;
+}
+
 const recall_eval: BuiltinToolDef = {
   slug: 'recall_eval',
   name: 'Run the retrieval-quality eval',
   description:
-    "Run the brain's retrieval self-check: every golden case (a note tagged `recall-eval-cases` holding a JSON array of {id, query, expectNodeIds?|expectTitleIncludes?}) is searched via the shipped hybrid + passage retrievers, scored (recall@k, MRR), saved as a run note, and compared to the previous run. Returns scores, drift, and `alert: true` when quality dropped enough to tell the user (`reason: 'quality_dropped'`), or when EVERY case missed in both retrievers (`reason: 'gold_set_unmatched'`: the gold set no longer describes this brain and needs repairing, see `unmatchedCases`). Writes one summary note per run. Returns `skipped: true, alert: false` when no gold set exists yet — unmeasured, not degraded, so say nothing. For a point-in-time capacity check use `brain_capacity`; this measures retrieval QUALITY.",
+    "Run the brain's retrieval self-check: every golden case (a note tagged `recall-eval-cases`, a JSON array of {id, query, expectNodeIds?|expectTitleIncludes?}) runs through the retrievers agents use (hybrid node and passage search; with passage_scoring's pool set, also the Jev-scored path, about USD 0.0007 per 25 passages per case), is scored (recall@k, MRR), saved as one run note and compared to the previous run. `alert: true` with `reason: 'quality_dropped'` when quality fell, or `reason: 'gold_set_unmatched'` when EVERY case missed both retrievers (repair the gold set, see `unmatchedCases`). `skipped: true, alert: false` when no gold set exists: unmeasured, not degraded, say nothing. Capacity is `brain_capacity`; this measures QUALITY.",
+  // The Jev-scored passage path calls the decider (when a pool is set).
+  spends: true,
   inputSchema: { type: 'object', properties: {} },
   handler: async (_input, ctx) => {
     const casesNote = await latestTaggedNoteJson(ctx.ownerId, CASES_TAG);
@@ -116,6 +165,18 @@ const recall_eval: BuiltinToolDef = {
 
     const searchRanks: Array<number | null> = [];
     const chunkRanks: Array<number | null> = [];
+    const vectorRanks: Array<number | null> = [];
+    const scoredRanks: Array<number | null> = [];
+    // The scored path costs one Jev fan-out per case (manual run or the
+    // weekly heartbeat; bounded by the gold set): only when the owner set a
+    // pool, which is the switch for "judge the deeper pool".
+    const scoringUse = await decisionUseEnabled(ctx.ownerId, 'passage_scoring');
+    const scoredPool =
+      scoringUse && scoringUse.pool !== undefined
+        ? passageScoringPool(scoringUse, PASSAGE_K)
+        : null;
+    let scoredRequests = 0;
+    let scoredFailed = 0;
     const scoredIds: string[] = [];
     let skipped = 0;
     for (const c of cases) {
@@ -139,21 +200,39 @@ const recall_eval: BuiltinToolDef = {
           found.map((n) => ({ id: n.id, title: n.title })),
         ),
       );
+      // Hybrid: the query text feeds the keyword arm, as in search_chunks.
       const passages = await searchChunks({
         ownerId: ctx.ownerId,
         embedding: queryEmbedding,
-        limit: RANK_K * 3,
+        q: c.query,
+        limit: Math.max(PASSAGE_K, scoredPool ?? 0),
       });
-      // Passage hits collapse to their parent node, first appearance keeps rank.
-      const seen = new Set<string>();
-      const nodeHits: Array<{ id: string; title: string }> = [];
-      for (const p of passages) {
-        if (seen.has(p.nodeId)) continue;
-        seen.add(p.nodeId);
-        nodeHits.push({ id: p.nodeId, title: p.nodeTitle });
-        if (nodeHits.length >= RANK_K) break;
+      chunkRanks.push(goldRank(c, toNodeHits(passages.slice(0, PASSAGE_K))));
+      const vectorOnly = await searchChunks({
+        ownerId: ctx.ownerId,
+        embedding: queryEmbedding,
+        limit: PASSAGE_K,
+      });
+      vectorRanks.push(goldRank(c, toNodeHits(vectorOnly)));
+      if (scoredPool !== null) {
+        const pool = passages.slice(0, scoredPool);
+        const key = (p: { nodeId: string; ordinal: number }) => `${p.nodeId}:${p.ordinal}`;
+        const scoring = await scorePassages(
+          ctx.ownerId,
+          c.query,
+          pool.map((p) => ({
+            id: key(p),
+            title: p.nodeTitle,
+            heading: p.headingPath,
+            text: p.text,
+          })),
+        );
+        scoredRequests += Math.ceil(pool.length / MAX_PASSAGES_PER_REQUEST);
+        if (!scoring) scoredFailed++;
+        // Ordered as live would order it; no answer = the search order.
+        const ordered = scoring ? applyPassageScores(pool, key, scoring).kept : pool;
+        scoredRanks.push(goldRank(c, toNodeHits(ordered)));
       }
-      chunkRanks.push(goldRank(c, nodeHits));
     }
     if (searchRanks.length === 0) {
       return {
@@ -181,6 +260,20 @@ const recall_eval: BuiltinToolDef = {
       casesSkipped: skipped,
       search: scoreRanks(searchRanks),
       chunks: scoreRanks(chunkRanks),
+      chunksPath: 'hybrid',
+      chunksVector: scoreRanks(vectorRanks),
+      ...(scoredPool !== null && scoringUse
+        ? {
+            chunksScored: {
+              ...scoreRanks(scoredRanks),
+              mode: scoringUse.mode,
+              pool: scoredPool,
+              requests: scoredRequests,
+              failed: scoredFailed,
+              usd: Math.round(scoredRequests * JEV_USD_PER_REQUEST * 10_000) / 10_000,
+            },
+          }
+        : {}),
       unmatchedCases,
     };
 
@@ -191,7 +284,12 @@ const recall_eval: BuiltinToolDef = {
         ? {
             searchMrr: Math.round((run.search.mrr - prev.search.mrr) * 1000) / 1000,
             searchR5: Math.round((run.search.recallAt5 - prev.search.recallAt5) * 1000) / 1000,
-            chunksMrr: Math.round((run.chunks.mrr - prev.chunks.mrr) * 1000) / 1000,
+            // Only like against like: a run from before the hybrid switch
+            // measured vector-only passages.
+            chunksMrr:
+              prev.chunksPath === 'hybrid'
+                ? Math.round((run.chunks.mrr - prev.chunks.mrr) * 1000) / 1000
+                : null,
             previousAt: prev.at,
           }
         : null;

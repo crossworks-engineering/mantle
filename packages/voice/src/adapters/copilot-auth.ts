@@ -15,6 +15,7 @@
  */
 
 import { ChatHttpError } from './retry';
+import { providerFetch } from './provider-fetch';
 
 /** Editor identity Copilot expects on every request. Kept in one place so the
  *  exchange and the chat call send a consistent fingerprint. */
@@ -49,7 +50,7 @@ const tokenCache = new Map<string, CachedToken>();
 const inflight = new Map<string, Promise<string>>();
 
 async function exchange(oauthToken: string): Promise<string> {
-  const res = await fetch(TOKEN_URL, {
+  const res = await providerFetch(TOKEN_URL, {
     method: 'GET',
     headers: {
       Authorization: `token ${oauthToken}`,

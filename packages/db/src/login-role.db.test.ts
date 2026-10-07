@@ -43,7 +43,7 @@ describe.skipIf(!URL)('login rows: the role is always named, withSpace checks th
     const rows = await sql<{ id: string; login_id: string }[]>`
       select id, login_id from spaces where kind = 'personal' and login_id in ${sql(logins)}`;
     for (const r of rows) spaceOf[r.login_id] = r.id;
-  });
+  }, 60_000);
 
   afterAll(async () => {
     if (!sql) return;

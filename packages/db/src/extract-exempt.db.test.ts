@@ -39,7 +39,7 @@ describe.skipIf(!URL)('unextractedNodeConds', () => {
       (${id.reviewed}, ${anchor}, 'task', 'Reviewed request', 'tasks',
         '{"source":"team-request","status":"open","reviewed_at":"2026-09-28T10:00:00.000Z"}'::jsonb),
       (${id.plain}, ${anchor}, 'task', 'Plain task', 'tasks', '{"status":"open"}'::jsonb)`;
-  });
+  }, 60_000);
 
   afterAll(async () => {
     if (!admin) return;

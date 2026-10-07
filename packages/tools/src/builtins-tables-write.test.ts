@@ -227,11 +227,15 @@ describe('table_commit (draft to published)', () => {
   });
 
   it('promotes the SERVER draft: owner + id only, never a doc of its own', async () => {
-    await commit.handler({ id: TABLE_ID }, ctx);
-    // Exactly two arguments. Passing a doc here would publish the clipped
-    // materialize window over the full table.
-    expect(commitTable).toHaveBeenCalledWith('o1', TABLE_ID);
-    expect(vi.mocked(commitTable).mock.calls[0]).toHaveLength(2);
+    await commit.handler({ id: TABLE_ID, note: 'March prices' }, ctx);
+    // No doc of its own (the third argument stays undefined): passing one
+    // would publish the clipped materialize window over the full table. The
+    // fourth names who committed and why, for the table's history.
+    expect(commitTable).toHaveBeenCalledWith('o1', TABLE_ID, undefined, {
+      actor: 'agent',
+      note: 'March prices',
+    });
+    expect(vi.mocked(commitTable).mock.calls[0]![2]).toBeUndefined();
   });
 
   it('reports the published shape', async () => {

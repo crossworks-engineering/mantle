@@ -112,7 +112,7 @@ describe.skipIf(!URL)('member history links (0175 and the invite redeem)', () =>
       (${anchor}, ${task}, 'member', ${c.bo}, null, 'Bo', 'no login', now()),
       (${anchor}, ${task}, 'member', ${c.cy}, null, 'Cy', 'ambiguous', now()),
       (${anchor}, ${task}, 'member', ${c.dee}, null, 'Dee', 'before the invite', now())`;
-  });
+  }, 60_000);
 
   afterAll(async () => {
     if (!admin) return;

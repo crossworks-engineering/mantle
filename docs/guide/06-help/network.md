@@ -4,47 +4,26 @@ title: Local network
 
 ## Local network
 
-Connects your Mantle to a machine you own that isn't on the public internet,
-a GPU box at home, a server on the office LAN, so it can be used for
-inference.
+Local network joins this Mantle to your Tailscale network, so it can use a machine you own that is not on the public internet, such as a GPU box at home running a local model.
 
-The problem this solves is ordinary and annoying: the useful hardware is behind
-NAT with no fixed address, and the brain is on a VPS. Rather than opening ports
-or renting a static IP, both ends join a private mesh network and reach each
-other by name.
+1. Under **Activate Tailscale**, paste an **Auth key** from your Tailscale admin console and set a **Device name**.
+2. Click **Save key**, then **Activate**.
+3. The **Connection** card shows the state. **Reachable devices** lists machines it can see.
+4. On an agent or worker, set the route's base URL to the device name and port (for example port 11434 for Ollama or 1234 for LM Studio), and turn on **Reach via Tailscale**.
 
-Once connected, that machine becomes selectable as a provider for agents and
-workers, the same as any cloud provider.
+**Connect a device** walks you through setting up the other machine.
 
-## When to use this
+Use it for high-volume work such as extraction, which runs on everything that arrives. Keep a cloud backup route, because a home machine is sometimes offline.
 
-The reason to bother is cost and privacy on the **high-volume** work. Chat is
-occasional; extraction and summarisation run on every piece of content that
-arrives, forever. Moving those onto hardware you already own is where the saving
-is, and it means the bulk of your corpus is never sent anywhere.
+## Assistant
 
-Pair it with a cloud backup route rather than replacing cloud entirely. A home
-machine will be offline sometimes, that's not a failure worth designing around
-when a backup route covers it silently.
-
-The auth key is a credential for your whole mesh. It's stored sealed here, but
-generate one scoped to this purpose rather than reusing an admin key.
+The assistant cannot change network settings. Set them here.
 
 ## Technical
 
-Connectivity runs as a userspace sidecar rather than requiring kernel-level
-networking privileges on the host, which is what lets it work inside a container
-without special capabilities. Traffic to the remote machine goes through a local
-proxy that the rest of the app treats as an ordinary HTTP endpoint.
-
-Activation is deliberately a UI action rather than something that happens at
-boot from an environment variable. The key is sealed with the brain's master key
-and is loaded when you activate, so a stolen disk image doesn't come with a live
-mesh membership attached.
-
-Names resolve through the mesh's own DNS, so the remote box is addressed by a
-stable name rather than an address that changes with its ISP.
-
-Deactivating drops the connection without discarding the stored key; clearing
-removes the key entirely. Use clear if the key may have leaked, since deactivate
-alone leaves it ready to reuse.
+- Tailscale runs in userspace inside the stack, so it needs no special host privileges. Traffic goes through a local proxy.
+- The auth key is encrypted with `MANTLE_MASTER_KEY`. You switch Tailscale on here with **Activate**, not with a setting at boot.
+- Devices are reached by name through Tailscale's DNS.
+- **Deactivate** disconnects and keeps the key. **Remove** forgets the key but does not disconnect.
+- If the key leaks: **Deactivate**, then **Remove**, then revoke it in the Tailscale admin console.
+- See [Local models](../05-admin/06-local-models.md).

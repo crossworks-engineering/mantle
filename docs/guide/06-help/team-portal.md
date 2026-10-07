@@ -5,50 +5,31 @@ toolGroups: [team-admin]
 
 ## Team Portal
 
-The front door to the portal your team actually uses. The portal itself lives
-outside this app, behind a member's token, so there is no way to reach it, or
-even to know it exists, from inside your own session. This screen is that
-missing signpost.
+The team portal and its team codes are retired. Old codes no longer work, and
+Jackdaw no longer shows this screen in the menu.
 
-The rule that explains everything else: **only a contact can get in, using a
-token you mint for them.** There is no sign-up, no password, no invitation
-email. The token *is* the credential, it's shown once, and you send it to them
-yourself.
+Your team now signs in with its own logins:
 
-The roster shows who holds one. "Never signed in" against a name is worth
-noticing; it means the token was minted and never redeemed, which is almost
-always the real story behind "the link you sent me doesn't work".
+1. Open **Team** and go to the **Invites** tab.
+2. Make an invite link for a contact or an email address.
+3. Send the link. The person sets a password and signs in as a member.
+
+Members chat with the team agent from their own space. Old portal chats are
+kept in the **Chat archive** tab, and each contact there can be invited as a
+member. See [Team](team-admin.md) and [Member and client
+logins](../05-admin/07-logins.md).
 
 ## Assistant
 
-- "Who's on the team portal?"
-- "What has anyone asked this week?"
+- "What has the team been asking about this week?"
+- "What did members ask in the old portal chats?"
 
-The assistant can read the team surface, the roster, the threads, the access
-log, because you hold the admin group. The responder that answers your team is
-a different agent with a much smaller grant, and it cannot see this view.
+The assistant reads member chats, the old portal threads and the access log
+through the team admin tools.
 
 ## Technical
 
-Membership is a **role a contact holds**, not a separate account. A live token
-row is the role, so there is no user list running in parallel with your
-contacts, and deleting the contact revokes access as a side effect rather than
-leaving an orphan.
-
-Revocation takes effect mid-session, not at the next sign-in, because every
-request re-checks that the membership is still live. That's the property that
-makes handing out a token safe: you can take it back and know it's gone.
-
-What a member can reach is the team responder's grant, and the brain is the
-trust boundary; they can read broadly and write almost nothing. Their single
-write is filing a request into your review queue, stamped with who asked.
-Delegation, sending, the terminal and bulk export are all excluded by design;
-bulk export specifically because it turns exfiltration into one call.
-
-Your email and journal are a further step in: those tools are granted to the
-responder but gated behind a switch that is **off** by default, so they exist
-and refuse until you decide otherwise.
-
-Opening the portal from here uses a new tab on purpose. It expects a member
-credential rather than your owner session, and it has no app shell to navigate
-back from.
+Member logins replaced the portal. A member is an ordinary login with the
+member role, so disabling or deleting it ends its access at once. The old
+portal threads stay readable as history; nothing new is written to them. The
+assistant uses `team_chat_list`, `team_chat_read` and `team_access_list`.

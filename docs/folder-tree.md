@@ -78,6 +78,27 @@ open).
 first (at most 40), leaving out the tag every item of the kind carries by
 default (every file is tagged `file`).
 
+**Tree reads never require write rights.** A read first makes sure the kind's
+root row exists and moves in what older brains kept elsewhere
+(`ensureTreeRoot` in `server/web/lib/tree-route.ts`: `ensureKindRoot`,
+`ensureFilesRootBranch`, `reconcileNotesAutoFiled`, `reconcileAppNav`,
+`reconcileAppMarks`; `GET /api/app-nav` runs the last two as well). Each of
+these looks first and writes only what is missing, and when the database
+refuses the write (a read-only replica, or a role with SELECT only such as the
+public demo's reader) it skips it and the read is served from the rows that
+exist: a kind whose root was never made reads as an empty tree, and a move
+still to do waits for a database that takes it. Looking first is not enough by
+itself, because Postgres checks a table's privilege when a statement starts,
+before it looks at a row, so even `INSERT ... ON CONFLICT DO NOTHING` of a row
+that exists is refused; the refusal is caught with `isWriteRefused`
+(`packages/content/src/tree/refused-write.ts`, over `bestEffortWrite` in
+`@mantle/db`), which catches nothing else, so a broken query still fails
+loudly. After a refusal the tree tries no write for five minutes, so a
+read-only brain does not fill its database log with one refused statement per
+read. Any new step a read makes for itself must follow
+the same rule; `tree-readonly.db.test.ts` and `tree-readonly-routes.db.test.ts`
+run the reads as such a role and check that nothing was written.
+
 ## Pins, Recent and Most used
 
 `item_marks` holds one login's marks per item: a pin and an open counter.
@@ -85,6 +106,11 @@ default (every file is tagged `file`).
 pins or unpins (at most 12 per kind); `GET /api/tree/:kind/marks?view=` lists
 pinned, recent or most used items with their crumbs. Per login, so two admins
 of one brain keep their own.
+
+The app opens every tree on Folders, every time its screen is opened
+(Jason, 2026-10-01). Recent, Most used and A to Z are one click away and
+hold for that visit only: the chosen view is never stored. The sort and the
+open folders are still remembered per browser.
 
 ## Writing
 
@@ -151,6 +177,31 @@ app; `PUT /api/app-nav/pins` and the open counter keep working through
 `item_marks`. Tree writes to apps also notify `app_nav_changed`, so an older
 client refetches.
 
+### Apps for members and clients
+
+Apps are not a reader tree kind (`READER_TREE_KINDS`): a member or a client
+RUNS an app, and that rule is not the Library's read rule (a green published
+build, never through an embed, and for a client the client level exactly).
+So their launcher gets its folders from the list that already holds the
+rule: `GET /api/member/apps` and `GET /api/client/apps` answer `folders`
+next to `apps` (`AppLauncherFolder`: id, name, icon, colour, `parentId`,
+`appIds`; `packages/content/src/app-folders.ts`).
+
+- **One rule.** `appLauncher(anchor, reader)` reads the apps the reader may
+  run, as the reader, then reads the folder rows on the way to those apps,
+  as the brain, and nothing else. It takes no paths from its caller. A
+  folder is answered only when it holds, at any depth, an app of the same
+  answer. A folder of admin apps, a folder of drafts and an empty folder are
+  absent, name and id, whatever their share says. When the folder read
+  fails the apps still list, with no folders, and the failure is logged.
+- **Names are organisational.** A team app in a folder nobody shared still
+  shows in its folder: the folder's name, icon and colour come with it.
+- **Read only.** No level, share or system flag on a folder, no path on a
+  card, and no write route. Siblings come in the admin's order.
+- **Older clients** read `apps` (and `homeAppId`) as before and ignore
+  `folders`; an older brain sends none, and the launcher shows one flat
+  list.
+
 ## Sharing a folder (phase 4)
 
 A folder of a shareable kind (files, notes, pages, draw, tables, formulas,
@@ -177,6 +228,10 @@ contacts, secrets) cannot be shared.
   Accept) takes it shared first. Both wait at most 10 seconds; a write that
   meets another on the same rows answers "busy, try again" (409), never SQL.
   A nightly `share-drift` sweep repairs anything that slips through.
+- **Restores** (migration 0212). A brain restored from a dump taken at
+  migration 0204 up to 0210 came back without the refresh trigger; 0212
+  repairs the stale levels and puts it back (docs/access-levels.md,
+  section 6).
 - **Who reads it.** `nodes_viewer_read` reads a brain row at its own level
   OR its inherited share OR its embedded level (below); still a same-row
   check. Chunks, facts, pages and the rest follow their node as before.
@@ -345,7 +400,10 @@ A member files its drafts in the brain's tree and keeps private folders there.
   folder it does not see, its own row shows (its name and id), never the
   brain's; its rows below a folder it no longer sees show at the deepest
   folder above them it does. A folder's pages run through its drafts first,
-  then the brain's items, at most `limit` per page.
+  then the brain's items, at most `limit` per page. By name (a search and
+  the A to Z view, `GET /api/member/tree/:kind/search`) drafts and brain
+  items are one list in one order, paged together by one cursor, so every
+  draft is reached however many there are.
 - **The member's writes** (`member-tree-write.ts`, `POST /api/member/tree/:kind/folders`,
   `PATCH|DELETE .../folders/:id`, `POST .../move`): create, rename, restyle,
   move and delete its own folders, file its own drafts. A place must be a
@@ -475,6 +533,37 @@ path of `pages.<id>.<id>`) is gone:
   folder): it lists the folder's pages live, title only, as the reader sees
   them (the owner, member or client tree read), never stored. An open link
   renders it as an inert label.
+- **A member's draft has the block too.** The member's own draft read
+  (`GET /api/member/space/:id`) carries `folderId` on the page body, as
+  every page detail does (`MemberSpaceItemBody`, pinned by
+  `member-space.viewer.db.test.ts`): the member's own folder, the brain
+  folder the draft was filed in, or null at the member's top level. The
+  member draft editor hands it to the block, so `folder:here` lists the
+  draft's own folder through `GET /api/member/tree/pages` (the member's
+  drafts first, then what it reads of the brain's); a draft at the top level
+  lists the member's top level, and a draft moved while its editor is open
+  lists the folder it is in now. The slash menu offers the block to a member
+  only when the member shell names `pages` in `treeKinds` and the folder is
+  known; a body with no `folderId` (an older brain) shows the block's label
+  alone, never the root; so does a brain that sends it while its member
+  tree does not serve pages. In the block a member's drafts come first
+  (newest first), then what it reads of the brain's, by name. A folder the
+  member cannot open says "This folder is not shared with you"; that
+  includes the member's own draft under a brain folder an admin has since
+  unshared (the body still names that folder).
+- **Before and after Accept.** A reviewer reads the submitted draft through
+  the owner tree: a draft in a brain folder lists that folder's brain pages
+  (not the draft itself, which is not in the brain yet), a draft at the
+  member's top level lists the brain's top level, and a draft in the
+  member's OWN folder shows the block's label alone, because the owner tree
+  does not hold that folder. A teammate reading a shared draft gets the same
+  label-alone face for the author's own folder. After Accept the page sits
+  in a brain folder (accept claims in place: the author's own folder becomes
+  a brain folder; a top-level draft lands at the top level), and
+  `folder:here` means that place for every reader. An admin's private item,
+  a client's own page and a client's submitted page are in no folder a tree
+  lists: the slash menu offers no block there, and a block that arrives
+  another way (a paste) shows its label alone.
 - **Where a page sits.** `PageDetail.folderId` names the folder (null at
   the top level); `PageRow.parentId` is always null and stays on the wire
   for older clients, as do `childCount` and `parentTitle` (absent),

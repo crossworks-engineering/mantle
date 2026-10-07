@@ -37,6 +37,7 @@ import {
   audioTagsForXaiTtsModel,
 } from '../catalogs/xai';
 import { stripAudioTags } from '../audio-tags';
+import { providerFetch } from './provider-fetch';
 
 /** Map our `format` option to xAI's `output_format.codec`. xAI doesn't
  *  offer opus, so opus → mp3 with a hint. Other formats map directly. */
@@ -118,7 +119,7 @@ async function xaiTtsSynthesize(opts: SynthesizeOptions): Promise<SynthesizeResu
     // text_normalization is on by default (numbers/abbreviations); left alone.
   };
 
-  const res = await fetch(`${XAI_BASE_URL}/tts`, {
+  const res = await providerFetch(`${XAI_BASE_URL}/tts`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${opts.apiKey}`,

@@ -30,6 +30,7 @@ import type { SttDispatcher } from './types';
 import type { TranscribeOptions, TranscribeResult } from '../types';
 import { filenameForMime } from '../transcribe';
 import { ELEVENLABS_BASE_URL } from '../catalogs/elevenlabs';
+import { providerFetch } from './provider-fetch';
 
 const DEFAULT_MODEL = 'scribe_v1';
 
@@ -58,7 +59,7 @@ export const elevenLabsSttAdapter: SttDispatcher = {
     const blob = new Blob([new Uint8Array(audio)], { type: opts.mimeType });
     form.append('file', blob, filename);
 
-    const res = await fetch(`${ELEVENLABS_BASE_URL}/v1/speech-to-text`, {
+    const res = await providerFetch(`${ELEVENLABS_BASE_URL}/v1/speech-to-text`, {
       method: 'POST',
       headers: { 'xi-api-key': opts.apiKey },
       body: form,

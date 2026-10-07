@@ -16,9 +16,11 @@ export {
 export {
   MAX_PASSAGES_PER_REQUEST,
   MAX_PASSAGE_CHARS,
+  MAX_PASSAGE_POOL,
   PASSAGE_LEVELS,
   PASSAGE_THRESHOLD_DEFAULT,
   applyPassageScores,
+  passageScoringPool,
   scorePassages,
   type PassageScore,
   type PassageScoring,

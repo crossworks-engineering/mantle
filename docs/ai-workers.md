@@ -203,6 +203,7 @@ in the UI dropdown.
 | Anthropic (direct) | ✅ anthropic-chat¹ |, *(provider defers to Voyage AI)* |, |, | ✅ anthropic-vision |, |
 | Google (Gemini) | ✅ google-chat | ✅ google-embedding | ✅ google-tts | ✅ google-stt | ✅ google-vision | ✅ google-image (Imagen 3 / 4) |
 | DeepSeek | ✅ deepseek-chat |, |, |, |, |, |
+| Mammouth (aggregator) | ✅ mammouth-chat (cost from catalog rates) |, |, |, |, |, |
 | Mistral |, | ✅ mistral-embedding |, |, |, |, |
 | Cohere |, | ✅ cohere-embedding |, |, |, |, |
 | ElevenLabs |, |, | ✅ elevenlabs-tts | ✅ elevenlabs-stt (Scribe v1) |, |, |

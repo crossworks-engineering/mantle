@@ -16,7 +16,7 @@
  * supersede annotation stays in charge of that.
  */
 import type { DecisionAnswer, DecisionQuestion } from '@mantle/voice';
-import { decide, type DecideOutcome } from './decide';
+import { DecideBatch, decide, type DecideOutcome } from './decide';
 
 /** The rubric. Index 0 = useless, 3 = states the answer. Ordered, so the
  *  model's `score` is a probability-weighted position on it. */
@@ -33,8 +33,37 @@ export const PASSAGE_LEVELS: readonly string[] = [
 export const PASSAGE_THRESHOLD_DEFAULT = 1.5;
 
 /** One request holds at most this many passages: 20 passages ≈ 14k input
- *  tokens on a 32k window. Passages past the cap are left unscored (kept). */
+ *  tokens on a 32k window. A larger list goes out as parallel requests of
+ *  this size (see `pool`). */
 export const MAX_PASSAGES_PER_REQUEST = 25;
+
+/** Ceiling on the use's `pool` setting: eight requests per search. The
+ *  hybrid search fetches at most 200 vector candidates, so a deeper pool
+ *  would add only keyword rows. */
+export const MAX_PASSAGE_POOL = 200;
+
+/**
+ * How many passages a search fetches for scoring (pure). The use's `pool`
+ * setting when set, else the original `max(2 x limit, 16)` capped at one
+ * request; twice that with passage windows on; capped at
+ * `MAX_PASSAGE_POOL`. Never below `limit`.
+ * Measured on a 122k-chunk corpus (docs/recall-eval.md): scoring the top 50
+ * instead of the top 20 lifted exact-passage R@10 from 44% to 53%; the top
+ * 200 lifted paraphrased questions (T6) from 40% to 60% (2026-10-04).
+ */
+export function passageScoringPool(
+  use: { pool?: number } | null,
+  limit: number,
+  opts: { windows?: boolean } = {},
+): number {
+  const base = use?.pool ? use.pool : Math.min(Math.max(limit * 2, 16), MAX_PASSAGES_PER_REQUEST);
+  // Passage windows add a second vector arm; each arm brings `base`, so the
+  // judge sees the head of both (the merge takes them by turns). Measured:
+  // judging today's top 50 plus the window top 50 passed the per-type gate
+  // where a merged 50 lost rank-1 cases (docs/recall-eval.md).
+  const pool = Math.min(opts.windows ? base * 2 : base, MAX_PASSAGE_POOL);
+  return Math.max(pool, limit);
+}
 
 /** Per-passage text cap sent to the model. Chunks are ~2.75k chars; the head
  *  carries the topic, and a hard cap keeps the request under the window. */
@@ -58,16 +87,54 @@ export type PassageScoring = {
   ms: number;
 };
 
-/** Ask the decider to score `passages` against `question`. Returns null when
- *  the decider is off or the call failed — the caller keeps its list as is. */
+/** Ask the decider to score `passages` against `question`, in parallel
+ *  requests of `MAX_PASSAGES_PER_REQUEST` (one request for a short list).
+ *  Returns null when the decider is off or every request failed: the caller
+ *  keeps its list as is. A failed request leaves its passages unscored. */
 export async function scorePassages(
   ownerId: string,
   question: string,
   passages: readonly ScorablePassage[],
 ): Promise<PassageScoring | null> {
-  const batch = passages.slice(0, MAX_PASSAGES_PER_REQUEST);
-  if (batch.length === 0 || !question.trim()) return null;
+  const list = passages.slice(0, MAX_PASSAGE_POOL);
+  if (list.length === 0 || !question.trim()) return null;
+  const groups: ScorablePassage[][] = [];
+  for (let i = 0; i < list.length; i += MAX_PASSAGES_PER_REQUEST) {
+    groups.push(list.slice(i, i + MAX_PASSAGES_PER_REQUEST));
+  }
+  // A fan-out is one decision to the breaker (see DecideBatch). Its requests
+  // run side by side (the adapter's own connection pool; Node's global fetch
+  // sent them one at a time), but eight at once still queue a little at the
+  // provider, so each request may wait the worker timeout once per group
+  // (capped at 5 s).
+  const batch = groups.length > 1 ? new DecideBatch() : undefined;
+  const t0 = Date.now();
+  const results = await Promise.all(
+    groups.map((g) => scoreGroup(ownerId, question, g, batch, groups.length)),
+  );
+  batch?.settle();
+  const answered = results.filter((r): r is PassageScoring => r !== null);
+  const first = answered[0];
+  if (!first) return null;
+  const scores = new Map<string, PassageScore>();
+  for (const r of answered) for (const [id, sc] of r.scores) scores.set(id, sc);
+  return {
+    scores,
+    mode: first.mode,
+    threshold: first.threshold,
+    cached: answered.every((r) => r.cached),
+    ms: groups.length > 1 ? Date.now() - t0 : first.ms,
+  };
+}
 
+/** One request: the passages of one group. */
+async function scoreGroup(
+  ownerId: string,
+  question: string,
+  batch: readonly ScorablePassage[],
+  fanOut: DecideBatch | undefined,
+  requests: number,
+): Promise<PassageScoring | null> {
   const state: Record<string, unknown> = { question, passages: {} as Record<string, unknown> };
   const questions: Record<string, DecisionQuestion> = {};
   const keyById = new Map<string, string>();
@@ -97,6 +164,7 @@ export async function scorePassages(
       would_drop: countBelow(answers, threshold),
       threshold,
     }),
+    ...(fanOut ? { batch: fanOut, timeoutFactor: requests } : {}),
   });
   if (!outcome) return null;
   threshold = outcome.use.threshold ?? PASSAGE_THRESHOLD_DEFAULT;

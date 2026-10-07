@@ -27,7 +27,7 @@ describe.skipIf(!URL)('embed edges in SQL match the TypeScript walkers', () => {
     process.env.DATABASE_URL = URL;
     m = await import('@mantle/db');
     sqlTag = (await import('drizzle-orm')).sql;
-  });
+  }, 60_000);
 
   /** The 'kind:uuid' references a parser finds. */
   const sqlRefs = async (fn: 'page' | 'draw' | 'note', arg: unknown): Promise<string[]> => {

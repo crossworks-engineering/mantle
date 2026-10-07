@@ -4,6 +4,1081 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: needle scrollbars everywhere
+
+Every scrollbar in the share surfaces, the mini-app frame and the Jackdaw
+client is now one global needle (share-ui `app.css`): a 4px thumb in the
+theme's primary colour, 6px under the pointer, on a transparent track. No
+class is needed; `scrollbar-hidden` (or Tailwind's `scrollbar-none`) still
+hides a bar. The fat grey bar came from Tailwind 4's own `scrollbar-thin`
+utility: it sets `scrollbar-width: thin`, which in Chromium switches the
+styled bar off, so Chrome drew its 11px platform bar on every
+`.scrollbar-thin` pane. Measured: 11px and 15px before, 6px after, in Chrome
+and Safari. Firefox draws its own thin bar in the theme colour.
+
+## Unreleased: API keys and the public HTTP API v1
+
+Scripts and MCP clients get real API keys (migration 0232, plan page
+1e62e204). Each login makes its own keys in **Settings > API access**
+(members from their menu, clients under **API keys** in the portal). A key
+acts as the login that made it and can only narrow it: read only or read
+and write, all areas or some. Nobody can make a key for another login.
+
+- **Where a key works:** `Authorization: Bearer mtlk_...` on `/api/mcp` and
+  on the new versioned `/api/v1` (31 routes: whoami, search, pages, notes,
+  tasks, tables, files, events, contacts, journal). Every other route
+  refuses a key. Breaking changes go to `/api/v2`; v1 stays six months
+  after.
+- **Safety:** only a SHA-256 of the key is stored, compared in constant
+  time; the key is shown once. Admins and members re-type their password
+  to make one; member keys last at most 90 days, client keys 30. A password
+  change, Sign out everywhere, or an admin's End sessions, disable or role
+  change revokes the login's keys. A key never confirms a visibility change,
+  cannot make a page public, and cannot change the content of an item others
+  can read. Every write a key makes is audited with
+  the key id and its maker (`key.created`, `key.revoked`, `key.refused`,
+  `api.write`).
+- **Told when a key is made:** the login gets a notice (members and
+  clients in their own thread, pushed to their phone; admins a push to
+  their own devices). It names the key, its access and expiry, never the
+  secret.
+- **OAuth connectors now end with the login's security actions:** a password
+  change, Sign out everywhere, an admin's End sessions, disable or role
+  change, and a reused device token revoke the login's OAuth grants, an
+  admin's included (they used to survive). Reconnect the connector after a
+  password change. Admins and members now type their password at the
+  connector's consent page.
+- **Client keys** end when the client signs out (a client has no password to
+  re-type).
+- **Limits:** 120 requests a minute per key on v1 and 300 on MCP, 600 and
+  1200 per login across its keys, search 30 a minute per key, 50 live keys
+  per login, 20 failed tries a minute per address and key prefix and 100
+  per address.
+- **MCP tokens retired:** an admin no longer makes `mtlmcpk_` tokens for a
+  member or client (`POST /api/mcp-logins/:id/tokens` answers 410). Tokens
+  made before keep working until revoked, and Settings > MCP still lists
+  and revokes them. Members and clients make their own key instead.
+- Docs: docs/guide/07-api/08-api-keys.md (new), 03-http-api.md
+  (rewritten), 02-mcp-login.md.
+
+## 0.239.13: the Mantle logo files are back in brand/
+
+The Mantle marks left this repo with the jackdaw split and were later
+deleted from jackdaw too, so no repo held a canonical copy. `brand/` holds
+them again, restored unchanged from git history, with the Affinity design
+source (`brand/mantle-logo-design.af`) they were exported from.
+`brand/README.md` names the source and records where the files went.
+
+## 0.239.10: the service switches live at Settings > Services
+
+The sandbox and media switches moved off the dashboard to their own screen,
+`/settings/services` (shared nav, Power icon, a help topic). The sandbox and
+media refusals and the docs point there. docs/services.md.
+
+## 0.239.9: app builds accept type-only imports
+
+`lintRuntimeImports` read `import type { ReactNode } from 'react'` as a value
+import (and `{ type X }` as a name `type X`), so an app with type-only
+imports failed to build. Type-only clauses and specifiers are skipped now; a
+mixed import still checks its value names.
+
+## 0.239.4: a service switch's .env backups belong to the stack owner
+
+`backups/env` was made by the root sidecar with umask 077, so the box owner
+could not read their own `.env` backups without sudo. The directories now
+go to the stack directory's owner, as the pre-roll backup's do.
+
+## 0.239.3: switch sandboxes or media on and off through the updater
+
+- **The updater** takes one new request kind, in its own file
+  (`/signal/service-request.json`, so an older updater never takes it for a
+  roll): a service (`sandboxes` or `media`) and on or off.
+- **On:** a free-disk check, `.env` backed up to `backups/env` (newest 5),
+  the token and sandboxes directory written when missing, the profile
+  added, only that service pulled and started (`--no-deps`), then a health
+  wait. Any failure restores `.env` and stops the container again.
+- **Off:** running sandbox containers are stopped (never removed), the
+  service container is stopped and removed, the profile dropped. Tokens,
+  the sandboxes directory, every sandbox's files, app data and images stay.
+- **Routes** (admin logins): `GET /api/services` (state, plain descriptions
+  with download size and memory, the small-box warning, the current run),
+  `GET /api/services/status` (progress), `POST /api/services/:name
+  { enable }`, audited as `service.toggle`. A switch is refused while a roll
+  runs, and a roll while a switch runs. The brain offers the switch only
+  when the updater advertises the verb.
+- docs/services.md (new); sandboxes.md, video-ingest.md and self-hosting.md
+  point at it.
+
+## 0.239.2: outside Claude learns how a mini app knows who runs it
+
+An MCP client building an app had no way to learn about `host.me()`; only
+the in-brain `app_authoring` skill taught it.
+
+- **`app_create`** carries a short runtime hint: `host.me()`, the
+  `:host_me_*` parameters with a SQL example, `host.db`, `host.tools.call`
+  with `app_tools_set`, and the level rules. `app_file_write` and
+  `app_source_set` point at it; `app_tools_set`, `app_db_schema_set` and
+  `app_db_query` say the rules that touch them.
+- **`app_authoring_guide`** (new, MCP only, read only) serves
+  docs/app-authoring-guide.md whole or one section. The admin server
+  instructions point at it.
+- **Docs drift fixed:** the guide said a team app cannot learn the member,
+  and that share links and members never call outside tools (External
+  access says otherwise). The Appsmith skill states the current levels.
+
+## 0.239.1: the boot reconcile keeps the owner's param switches
+
+`syncSpecialistDefs` wrote the manifest `params` whole onto every enabled
+specialist, so a `tool_loading`, `suggest_follow_up` or `top_p` the owner
+set went back to the manifest on the next boot. Those three keys
+(`OWNER_PARAM_KEYS`) now keep their stored value; the manifest still owns
+`temperature` and `max_tokens`. Adopt from template follows the same rule.
+The compare ignores jsonb key order, so a row is no longer rewritten on
+order alone. The propagation table in
+`server/web/lib/system-manifest/CLAUDE.md` names the kept keys.
+
+## 0.239.0: one live source for whether sandboxes and media are on
+
+- **`serviceEnabled()`** (@mantle/config) answers for the dashboard pills,
+  `/api/sandboxes`, the sandbox tools, `video_ingest`, the CAD render path
+  and the agent tool list, instead of a check for a bearer token. On means
+  the compose profile is active (the updater's live
+  `/signal/services.json`, else the container's `COMPOSE_PROFILES`) and the
+  URL and token are set.
+- **A service that is off shows a grey pill**, not red.
+- **An agent is not offered** `sandbox_*` or `video_ingest` where the
+  service is off (`effectiveToolSlugs` drops them; the grant stays).
+- **The updater** writes `/signal/services.json` (profiles, token presence,
+  container state, host memory, disk, core shape, verbs) with `stack.json`.
+  Every app service mounts `/signal` read only.
+- **Both service tokens** are made on a roll and on install, so a later
+  switch starts one container instead of restarting the brain. Never
+  rotated.
+
+## 0.238.18: memory_config saves, and the oauth2 binding survives the editor
+
+- **One `memory_config` schema.** The agent POST and PATCH routes held two
+  copies that had drifted (a create with `chunk_limit`, `corpus_map_*` or
+  the Journal keys was a 400). Both use
+  `lib/agent-memory-config-schema.ts`. A key sent as `null` is now removed,
+  so a field cleared in the form goes back to its default.
+  `AgentMemoryConfigDTO` gains `corpus_map_limit`, `corpus_map_chars`,
+  `max_tool_calls` and `max_calls_per_tool`.
+- **The tool-group editor** has no `oauth2` field, and a save from it
+  dropped the stored client-credentials binding. An absent `oauth2` now
+  keeps the stored one; `oauth2: null` still clears it.
+
+## 0.238.17: the corpus map in about 2k tokens, every branch shown
+
+The "what exists" block rendered up to 24k characters (about 7.6k tokens a
+turn) and filled its budget alphabetically, so on a big brain `tables` and
+`tasks` never appeared. The prompt-block audit of 2026-10-05 found no
+answer-quality gain from the block at that size.
+
+- Budget 6,500 characters by default (`memory_config.corpus_map_chars` per
+  agent), shared round robin across branches, newest items first.
+- Branch headers carry the corpus-wide count. Three or more file titles
+  that differ only in digits fold into one line; other types fold only on
+  an exact duplicate, so dated titles keep their own line.
+- Page summaries are left out; tables keep their schema digest. The block
+  claims to be complete only when it is. docs/memory.md.
+
+## 0.238.16: the deferred tool catalog lists groups no flow holds
+
+Under `params.tool_loading = 'deferred'`, a group no flow holds (an owner's
+API integration, an MCP or OpenAPI connector) gets its own catalog line,
+and `tool_search` takes that group slug as its flow. A tool's first
+description sentence reaches the catalog only when the brain wrote it
+(builtins and owner-written http tools); MCP tools, OpenAPI-compiled tools
+and recipes stay names only. The search rule wording is unchanged (a
+stricter one lost on the bench). docs/tools-and-skills.md.
+
+## 0.238.15: the delegate roster shrinks lines instead of dropping delegates
+
+Over its 1,200-character budget the roster dropped delegates from the end of
+`delegate_to`, so a parent with many specialists never delegated to the
+hidden ones. Every delegate now stays: lines shrink lowest rank first, to one
+group chunk and then to the bare name. The tail is cut (and the cut said)
+only when even the bare names overflow.
+
+## 0.238.14: http tools fill omitted inputs from their schema defaults
+
+An optional `{param}` the caller left out dropped its query pair, so a
+paging field with `default: 50` sent an unpaged request. The dispatcher now
+fills absent top-level fields from the tool's `input_schema` defaults before
+templating. A field that is present (even `null`) is left alone.
+
+## 0.238.13: OAuth2 client credentials for integration groups
+
+- An integration group can carry `oauth2`: a token URL and vault refs for
+  the client id and secret. Tool templates place the token with
+  `{{oauth:<group-slug>}}`; `tool_group_ensure` defaults the placement to a
+  Bearer `Authorization` header.
+- At call time the dispatcher trades the credentials for a token through
+  `safeFetch` (the same egress rules as every api-tool call), keeps it in
+  process memory until shortly before it expires, fetches one at a time per
+  group, and on a 401 replaces the token once and retries once. The token
+  goes only to the group's `base_url` origin; the token, client id and
+  secret are scrubbed from every result and error.
+- **Fix:** `tool_group_ensure` no longer drops a re-declared `base_url`,
+  `secret_ref` or `auth_template` on an existing group.
+
+## 0.238.12: client code caps end at now
+
+The client code send caps counted codes created after "now minus the
+window" with no upper end, so codes stamped in the future (a test fixture)
+counted against every real request. The caps and
+`clientCodesSentLast24h` count only the window before now. No change on a
+live box.
+
+## 0.238.9: New chat, Previous chats
+
+"New chat" (web) and `/new` (Telegram) close the agent's open chat and start
+a fresh one. The old chat stays saved and searchable under Previous chats.
+docs/conversation.md section 6c.
+
+- **Migration 0231** (`0231_chat_threads`): `chat_threads`, one row per
+  thread, a time range over the agent's `assistant_messages`. Messages never
+  move. No row means the old single thread.
+- **What a turn reads:** the history window, digests, history recall and the
+  follow-up enrichment read only the open thread.
+- **The archive summary:** one summarizer call per archive writes one note
+  (`data.kind: chat_archive`, embedded, never extracted). It comes back by
+  relevance and in `find_window` (kind `thread`). No trigger or timer runs
+  it; a failed call leaves a plain title and a retry route. A closed range
+  is digested alone, so no digest spans the cut.
+- **Continue from this** seeds the new chat with the archived thread's
+  summary, writing the summary first when it is missing.
+- **Routes:** `GET/POST /api/assistant/threads`, `GET
+  /api/assistant/threads/:id`, `POST …/:id/continue` and `…/:id/summarize`.
+  `/thread` and `/messages` answer the open thread only
+  (`messages?thread=<id>` pages an archived one).
+- Deleting an agent removes its archive notes with the digests.
+
+## 0.238.8: the reflector skips MCP-answered turns
+
+A turn an MCP client answered as the agent (`responder_turn_record`, channel
+`mcp`) neither wakes the reflector nor reaches what it reads, so persona
+notes never learn from a test model. The summarizer still reads these turns
+into digests. docs/connecting-claude.md.
+
+## 0.238.7: deferred tool loading (opt in per agent)
+
+An agent with `params.tool_loading = 'deferred'` is sent a fixed core of its
+granted tools plus `tool_search` and `use_tool`. Every other granted tool is
+listed by name in a catalog in the first (cached) system block.
+`tool_search` ranks the deferred tools in code (BM25 over tool cards,
+synonyms, a usage prior) and returns their full schemas; the model calls a
+loaded tool by name or through `use_tool`, and both dispatch, validate,
+guard and trace as the real tool. An ungranted name is still refused. The
+tools sent depend only on the grant, so the cached prefix does not move.
+Absent or `'full'` keeps the old behaviour.
+
+- The core goes out in a fixed list order (search and read first).
+  `update_persona` is in the core.
+- A deferred tool called by name with bad arguments gets its real input
+  schema back, once per turn.
+- Bench (101 cases, right first tool): about 11k instead of 58.5k tool
+  tokens per call; Claude scored 88 to 90 against 91 with the full list.
+- docs/tools-and-skills.md, "Deferred tool loading".
+
+## 0.238.6: responder_turn_record
+
+Opt-in write after `responder_turn_input`: the user's message and the MCP
+client's reply land in the agent's conversation (channel `mcp`), so the
+Assistant window, the history window, digests and replay see them. The
+reply's model is the client's; `data.authored_by` names the client and
+model, and a trace (`mcp_turn_record`) names who answered. Owner connector
+only; team and client responders are refused. A channel `mcp` reply sends no
+push. `replay_window`'s app arm now reads web, mobile and mcp turns (it read
+web only, so mobile turns were missing too). No new trigger or cron.
+docs/connecting-claude.md, docs/conversation.md.
+
+## 0.238.5: box-maintain containers see the file bytes
+
+`box-maintain.sh` containers now mount the `mantle_web` volumes read only.
+Without `/data/files`, `ocr-rescan` counted every PDF as unreadable.
+
+## 0.238.4: responder_turn_input
+
+`responder_turn_input` (MCP, owner surface) returns one responder turn's
+exact input up to the model call, with no model call: the composed prompt,
+the retrieval for the message, the history and the tool list. An MCP client
+can answer as the agent with its own model and see what the agent saw. It
+shares the sim's read path. Tools default to name and first sentence;
+`schemas_for` fetches full schemas. A peer needs it named; team and client
+responders are refused. The sim's caller history is now cut to the agent's
+history window and drives the follow-up enrichment. docs/connecting-claude.md.
+
+## 0.238.3: ocr-rescan for scans indexed wrong
+
+Before 0.238.2 a scanned PDF of two or more pages was indexed as its own
+page markers, and a one-page scan stuck at `body_too_short`. `pnpm maintain
+ocr-rescan` (dry run by default) prints counts, pages, the models that will
+run and an estimated cost from the live catalog. `--apply` clears the bad
+text, summary, embedding and chunks and re-queues each file through the
+normal extract queue in batches; `--limit=N` to start small. Ids and counts
+only.
+
+## 0.238.2: extract skips are stamped, and scans OCR again
+
+- **A node the extractor reads and finds nothing in** (no parser, body too
+  short, media, encrypted PDF, missing bytes, a digest, an empty Telegram
+  turn) kept no embedding, so the boot drain and every provider recovery
+  queued it again. Such skips now stamp `data.extract_skipped = { reason, at
+  }`, and the drain leaves the node alone while the stamp is newer than its
+  `updated_at`. An edit makes the stamp stale; a successful pass removes
+  it. `pnpm maintain extract-skip-stamp` (dry run; `--apply`) stamps the old
+  loops in plain SQL.
+- **`parsePdf`** returned pdf-parse's `-- N of M --` page markers for a PDF
+  with no text layer. Markers alone now parse to an empty string, and the
+  scan takes the OCR path.
+
+## 0.238.0: provider outages are visible and recover without a restart
+
+An embedding account with no credits answered 429, every extract job
+dead-lettered for days, chat turns lost their context, and nobody was told.
+Fixing the account did not move the backlog until a restart.
+
+- **Error classes** (`provider-error.ts`): account errors (no credits,
+  refused key, no key, unknown model) apart from transient ones. A
+  no-credits 429 no longer waits through the rate-limit backoff. Embedding
+  and chat failover also fail over on an account error.
+- **Migration 0230** (`0230_provider_alerts`): `provider_alerts`, one row per
+  brain and subject, fixed reasons only. Every embed and extractor chat call
+  reports its outcome; a call that works closes the alert. Admins see it in
+  Needs you, the live stream and one phone push.
+- **The circuit** (`provider-circuit.ts`): a confirmed account error pauses
+  the extract queue and probes at 5, 10, 20, 40 minutes, then hourly. When a
+  probe works the queue resumes, dead letters are re-driven and unextracted
+  nodes swept, with no restart. A settings save or **Try again** (`POST
+  /api/embedding/recover`) probes at once. The boot line says PAUSED while
+  the circuit holds the queue.
+- **Same-model backup:** Settings suggests OpenRouter for OpenAI direct and
+  the reverse; onboarding sets it when the key is saved. The OpenAI adapter
+  drops an `openai/` prefix, so one slug serves both routes.
+
+## 0.237.13: box-maintain.sh, and a bounded chunk-windows backfill
+
+- **`scripts/box-maintain.sh <box> <task> [args]`** runs a long `pnpm
+  maintain` task in a throwaway sibling of `mantle_web` (same image and
+  network, the web env through a pipe, its own memory limit, `--rm`, a
+  mode-600 log file). It refuses a second run on the box. `--status`,
+  `--logs`, `--follow`, `--stop`. `pnpm maintain` now always ends with one
+  line: finished, FAILED with the exit code, or killed by a signal.
+  docs/maintenance-runner.md, update-prod.md.
+- **The chunk-windows backfill** held a page of 500 chunks as JS arrays and
+  one big JSON parameter, and was killed at `--parallel=16`. It now reads
+  chunks as text, copies a one-window chunk in SQL, and writes the others in
+  batches of about 100 windows. Measured peak memory at `--parallel=16`:
+  1,047 MB down to 486 MB.
+
+## 0.237.11: one shared connection pool for every provider call
+
+Node 26.5's built-in fetch sends POSTs one at a time on a warm HTTP/2
+session, so N parallel provider calls took N request times. `providerFetch`
+(`packages/voice/src/adapters/provider-fetch.ts`) is the built-in fetch with
+one shared undici Agent (HTTP/1.1 keep-alive, 32 connections per origin).
+Every voice adapter, the OpenRouter client and the decisions judge use it;
+32 parallel POSTs went from 9.9 s to 0.24 s. The tailnet proxy loads undici
+the same way (its bare `require` threw under ESM). Embed calls back off on a
+429 (2, 4, 8, 16 s). The windows backfill takes `--parallel=N`.
+docs/provider-http.md (new).
+
+## 0.237.10: passage windows, a deeper judge pool, a parallel judge
+
+- **Passage windows** (opt in): each chunk also gets about 800-character
+  sentence windows with their own vectors, and passage search adds a window
+  arm that returns the window's chunk, so the prompt budget does not change.
+  **Migration 0229** (`0229_chunk_windows`): `embedding_config.chunk_windows`
+  (default false) and `content_chunk_windows` (no text, HNSW halfvec, RLS
+  follows the node). `pnpm maintain chunk-windows` (dry run, `--apply`,
+  `--off`, `--clear`) and `eval:route --windows`. On the library test
+  corpus, paraphrased questions R@10 rose from 40% to 63%.
+  docs/embeddings.md.
+- **`passage_scoring.pool`** goes up to 200 (was 100); with windows on the
+  pool doubles.
+- **The judge fan-out runs side by side** (it ran one request after another
+  under the built-in fetch). Pool 50: p50 1.39 s to 0.91 s.
+- docs/recall-eval.md, docs/decisions.md.
+
+## 0.237.7: a keyword-found passage skips the cosine cutoff
+
+The 0.65 cosine cutoff threw away literal matches that embed poorly (a code,
+a reference, a coined word) even when the keyword arm ranked them first.
+Under `KEYWORD_PASSAGE_RULE = 'exempt'` a passage with a keyword-arm rank is
+not held to the cutoff; its place and the `chunk_limit` cut are unchanged.
+The trace says `exempt:keyword`. Gated with `eval:route`.
+docs/recall-eval.md.
+
+## 0.237.6: the context decision trace, and eval:route
+
+- **Decision trace v1:** every turn's `load_context` snapshot carries
+  `trace` (`ContextTrace` in @mantle/client-types): per stage the candidates
+  in, kept, dropped and milliseconds; per candidate the block, key, the
+  stage and reason code, which arm found it with its ranks, the distances
+  and the judge score. The `search_chunks` step output carries the same
+  trace. Observation only: the prompt is unchanged. Ids and codes, no text,
+  150 rows at most. docs/observability.md.
+- **`pnpm -C server/web eval:route`** runs a typed case set through named
+  rulesets and reports R@1, R@10, MRR, latency and cost per question type,
+  with a paired gate against the reference. Manual only; prints its cost.
+- **Fix:** `recall_eval`'s `chunks` line measured the vector arm alone; it
+  is now the hybrid path agents use (`chunksVector` keeps the old number).
+  docs/recall-eval.md.
+
+## 0.237.4: an optional deeper pool for passage_scoring
+
+`uses.passage_scoring.pool` (per brain; unset keeps the old pool) sets how
+many passages to fetch and score, up to 100, fanned out in requests of 25.
+With a pool set, auto-context scores before its budget cut even when
+`context_pruning` is on. `eval:recall` gains `passage-scored`. On the
+library test set, a pool of 50 lifted `search_chunks` R@10 from 43% to 53%
+at about three times the judge cost. docs/decisions.md.
+
+## 0.237.3: the keyword arm speaks only on rare literals
+
+On a large single-topic corpus the hybrid passage search scored below
+vector only: a question's frame words outvoted its one rare word. The k-th
+rarest term now weighs `idf * 0.5^k`, question-frame words are dropped like
+chat filler, and the passage keyword arm returns rows only when they hold a
+rare term (`gateRareTerms`). Passage search p50 went from 150 ms to 14 ms.
+Node search is unchanged.
+
+## 0.237.1: per-agent thinking effort
+
+- **Migration 0228** (`0228_agent_thinking_effort`): `agents.thinking_effort`,
+  nullable. NULL inherits the person's profile setting, as before; `off`
+  never reasons; a tier is that effort whatever the profile says.
+- One rule (`resolveAgentThinking` in content-core) for every turn path:
+  web, Telegram, sim and resumed runs, team and client turns, delegated
+  agents, heartbeats and run workers.
+- Read and set through `GET/POST/PATCH /api/agents`, Agent Studio, and
+  `agent_set_thinking_effort` (new; no self-change, an agent asking waits
+  at /pending). Shipped agents stay on inherit. docs/thinking.md.
+
+## 0.237.0: passage-level recall eval, and the measured capacity policy
+
+- **`eval:recall`** gains passage retrievers scored on the exact chunk and
+  on the document (`passage`, `passage-vector`, `passage-keyword`). Cases may
+  name `expectChunks` and a group; `--retrievers` picks a subset.
+- **`corpusCapacity`** (the dashboard dial and `brain_capacity`) also
+  returns `retrieval`: the passage recall@10 and MRR of the newest
+  `recall_eval` run, or null. Optional on `BrainCapacity`.
+- **Passage-vector policy:** watch at 100k and split at 250k (was 50k and
+  100k), from a measured scale curve: recall@10 falls about 6 points per
+  doubling, with no cliff. docs/recall-eval.md, "Scale curve".
+
+## 0.236.1: foldable headings in pages
+
+A heading can fold: `## Title {fold}` (open) or `{fold=closed}`. Fold state
+is the reader's own, kept in localStorage per heading block; print shows
+every section. The share reader, the page renderer and `page_blocks_list`
+(`meta.fold`) know it. Docs without the marker are unchanged.
+docs/pages.md, docs/rich-writing.md.
+
+## 0.236.0: MCP as a login
+
+`/api/mcp` now serves any login. docs/mcp-as-a-login.md.
+
+- An admin's OAuth grant keeps the full owner surface. A member's or
+  client's grant (or a static login token) gets that role's responder tools
+  at the login's level, read only unless an admin turns write on, and then
+  only the draft tools of the login's own space. A login with no tools gets
+  a plain 403.
+- A peer token can act as one login (owner, member or client) with its own
+  write switch. Bound to the owner it gets the owner surface without the
+  risky tools (runs, mail, the contacts allowlist, confirm-gated tools, live
+  app code, model routing, third-brain egress) unless they are named.
+  Rebinding a peer starts closed. Each peer has its own rate budget.
+- **Migration 0227** (`0227_mcp_login`): `mcp_login_access`,
+  `mcp_login_tokens`, `session_epoch` on OAuth codes and tokens, acts-as and
+  write columns on `mantle_peers`.
+- **Tools:** `my_note_create`, `my_page_create`, `my_file_upload`,
+  `my_item_submit`, `peer_tools`, `peer_call`, `peer_file_copy`. **Admin
+  API:** `/api/mcp-logins`. Switching a login's MCP off revokes its grants
+  and tokens.
+
+## 0.235.3: new brains start with the house style and Medium thinking
+
+`DEFAULT_PREFERENCES` seeds the no-dash house style and a Medium (4096)
+thinking budget when a profile row is first made. Existing rows keep their
+values.
+
+## 0.235.2: no document titles as entities; initials join full names
+
+- A project or event mention on a file node is dropped when it is the
+  node's own title, or a bare numbered-work label. The prompt says the same.
+- `reconcileEntity` matches a person's initials to a full given name on the
+  same surname (unique match only); the dedup review gains initials groups.
+  `entities-title-cleanup` is a dry-run-first SQL cleanup with a JSON
+  backup.
+- **Fix:** entity dedup always saw 0 edges per entity (a drizzle column
+  binding), so `pickCanonical` never used real counts.
+
+## 0.235.0: up to 16 extractors, and the count is live
+
+The extractor cap is 16 (was 8). The extractor re-reads the saved count
+every 30 s and grows or shrinks its pool (a removed worker finishes its job
+first); the time budget is live too. No restart after a change. `GET/PATCH
+/api/embedding/extraction` shows the queue (working, waiting, retrying, done
+in 10 minutes, dead-lettered) and sets the count.
+
+## 0.234.13: new file bytes leave no old version to find
+
+- A file whose bytes change (editor save, upload replace, the disk watcher)
+  drops everything made from the old bytes at write time: summary,
+  entities, text, schema digest, extract markers, embedding and chunks.
+  The "migrated" supersede mark goes too, so search no longer sends agents
+  to a page made from the old bytes.
+- **Fix:** `upsertFile` rebuilt the node's data, so every editor save
+  dropped the per-file `indexing: 'metadata'` flag and an excluded file went
+  to full indexing. It merges now.
+- A re-extract that finds no facts retires the node's live facts.
+- The upload route takes `replace=true` to write new bytes over a taken name
+  in place: same node, so links and history hold.
+
+## 0.234.12: Mammouth as a chat provider
+
+`mammouth-chat` is an OpenAI-compatible adapter for the Mammouth aggregator
+(one key, many model families), chat only. A static catalog carries the
+published models and per-1M rates, and the adapter reports cost from it;
+uncatalogued ids stay unpriced. Live discovery appends new chat ids and
+feeds `models:drift`. docs/ai-workers.md.
+
+## 0.234.7: headless onboarding, the setup code and the terminal wizard
+
+While no account existed, signup made its caller the owner, so a box on a
+public address belonged to whoever reached it first.
+
+- **The setup code.** `scripts/install.sh` makes `MANTLE_SETUP_CODE` (four
+  groups of five, about 99 bits, never rotated), prints it while the brain
+  is unclaimed, and `--setup-code` prints it again. Signup needs it while no
+  account exists and a code is set (403 `reason: 'setup-code'`, audited).
+  Unset changes nothing. `bootstrap-state` answers `{ firstRun,
+  setupCodeRequired }`. Contract: `BootstrapStateDTO`, `SignupBody`,
+  `SignupRefusedReason`.
+- **The terminal wizard.** `scripts/onboard.sh` (box wrapper) and `pnpm -C
+  server/web onboard` walk the wizard's own steps (`lib/onboarding-steps.ts`,
+  now shared with the onboarding route) with a default for every prompt,
+  resumable either way with a GUI client. Secrets come hidden or on stdin,
+  never in argv. `onboard.sh` ships with the release scripts, and the
+  updater installs a script the box lacks at start.
+- **Core shape** is derived on every start from the box's compose files and
+  profiles (`lib/compose-shape.ts`); Tika is optional only on a core box
+  without helpers.
+- **Fix:** a short follow-up on the member chat failed with "That did not
+  go through": the query enrichment read the owner's messages, which a team
+  turn may not. The team turn now passes the member's own thread.
+- **Fix:** `publish-contract` fails unless every published version is
+  visible on npm (it polls for up to 40 minutes).
+- Client pair: jackdaw v0.6.214 (the Setup code field).
+- docs/onboarding.md section 8, self-hosting.md, security.md, scripts.md,
+  configuration.md.
+
+## 0.234.6: the app inspect-to-focus overlay is gone
+
+The Select element mode reacted only to `[data-app-region]` elements, which
+apps never reliably carried. share-ui drops the inspect and select bridge
+messages, the `AppSandbox` inspect props and the overlay script. Appsmith is
+no longer told to mark regions.
+
+## 0.234.5: a stable brain id
+
+- **Migration 0226** (`0226_brain_identity`): one row, a random uuid made by
+  the migration and never changed. Not a secret.
+- `GET /api/auth/whoami` answers it as `brainId`, and so do device-login,
+  the client code verify (device mode), token refresh and pair claim (the
+  last two also gain `loginId`).
+- **Every push payload** carries `brainId` and the `loginId` the device was
+  enrolled for, so a phone with several logins opens the right one. `v`
+  stays 1.
+- **`db-restore.sh --new-brain`** gives a brain made from another brain's
+  dump its own id. A plain restore keeps the dump's id and says so.
+- docs/mobile-companion-backend.md (contract v1.1), deploy.md, scripts.md,
+  backups.md.
+
+## 0.234.3: "Team apps may use" becomes External access
+
+The switch on one outside tool (mcp or http) now follows the app's sharing:
+a member running a team or public app, anyone running a client-level app,
+and a contact on a contact-share link past the code gate. An open link
+still runs no tool, and no built-in ever runs on a link. The app must still
+declare the tool; the confirmation and clearing rules are unchanged. A
+contact's call lands in the share's trail as `tool`. **Migration 0225**
+(`0225_tool_external_access`) renames `tools.team_apps` to
+`external_access`; `PUT /api/tools/:id/external-access`,
+`ToolDTO.externalAccess`, `api_tool_update external_access`. No alias.
+
+## 0.234.1: reopen puts a task back where it was
+
+When a task moves into done, its old status is kept in
+`data.status_before_done`. `reopen: true` on `PATCH /api/tasks/:id` and
+`task_update` takes it back there (or to open). Contract, additive:
+`TaskRow.statusBeforeDone`, `TreeItemMeta.reopensTo`.
+
+## 0.234.0: the apps audit fixes
+
+The rest of the apps audit of 2026-10-02, on top of Phases 0 to 4.
+
+- **An imported package gets no tools.** A `.mantleapp` is a file from
+  anywhere, and its declared tools used to be granted at once. Import now
+  installs with an empty allowlist and answers `requestedToolSlugs` (this
+  brain has them) and `droppedToolSlugs` (it does not), for the owner to
+  grant with `app_tools_set`. `app_import` always waits for the owner in a
+  client turn.
+- **History pruning** runs in one statement under the lock, so a row added
+  meanwhile (a `pre_delete`) is never pruned with its file. It also keeps a
+  byte budget: `APP_SNAPSHOT_AUTO_MAX_MB` per app (default 1024) and
+  `TABLE_HISTORY_MAX_MB` per table (default 512), the newest always kept.
+- **Restores.** A data restore works when the live file is lost (the undo
+  snapshot keeps the code only). A code restore no longer changes the live
+  tools; it names the restored code's tools as `declaredTools` when they
+  differ. A full restore and an undelete keep the snapshot's draft. A seed
+  batch holds the registry row lock, so a restore waits for it.
+- **Schema versions** declared by `app_db_schema_set`, the import route and
+  `apps:push` start past the database's own version (after a data restore
+  or an undelete a new schema used to be skipped).
+- **Export dirty marks.** Every app write also stamps `last_write_at`, and a
+  sync clears the mark only when no write came after its read. **Migration
+  0223** (`0223_app_table_exports_last_write`).
+- **Builds.** A build of source that changed meanwhile is not staged; the
+  build step builds again (twice at most).
+- **The error log** is bounded per caller (10 rows a minute each, 30 for all
+  non-owner callers together, 2000 a day per app), the reaper drops error
+  rows after 14 days and past the newest 2000, and `app_errors` fences its
+  rows as untrusted visitor data. **Migration 0224**
+  (`0224_app_access_log_error_idx`): a partial index for the error rows.
+- **Imports** stream the upload to a spool file, check the size before
+  reading, and take a turn from one per-process limit (two at a time). A zip
+  with more than 16 entries is refused before parsing. A step that fails
+  after the install drops the half-made app.
+- **Backups** hard-link the two history trees instead of copying them; the
+  table history copies run in a SQL child, off the event loop.
+- **Lows.** Entry checks use `Object.hasOwn`. The Recently deleted and
+  History lists read from the row, not the code JSON (**migration 0224**,
+  `0224_apps_audit_lows`, adds the file count, source size and draft flag).
+  A tool confirmation ticket is used once. The nightly `app-trash-purge`
+  also sweeps work files a crash left behind after an hour.
+- **share-ui:** `AppSandbox` refuses a second tool confirmation while one is
+  open, and the browser-dialog fallback shows the start and the end of a
+  long input.
+
+## 0.234.0: app_export and app_import, the package as a brain file
+
+- **`app_export` / `app_import`** (owner only, group apps, also on MCP): an
+  agent saves an app as a `.mantleapp` file under /files (folder exports)
+  and makes a new app from one; the Appsmith prompt teaches them with
+  `app_duplicate` and `app_errors`.
+
+## 0.234.0: table history (apps first-class, Phase 4)
+
+- **Every table commit keeps the version it replaces** (a hard link, no
+  copy) on the table's history; the newest 20 per table, plus the owner's
+  own snapshots (never pruned, within `APP_SNAPSHOT_MAX_MB`). **Migration
+  0222** (`0222_node_snapshots_table_commit`) adds the `commit` trigger.
+- **Restore** puts a version into the table's draft; review, then commit
+  (or `commit: true`). The commit keeps what it replaced, so a restore is
+  undone the same way.
+- **Tools** (owner only, group `tables`, also on MCP): `table_history`,
+  `table_snapshot_create`, `table_snapshot_restore` and
+  `table_snapshot_delete` (both confirm-gated). `table_commit` and
+  `POST /api/tables/:id/commit` take a `note`.
+- **Routes:** `GET/POST /api/tables/:id/history`, `DELETE …/history/:sid`,
+  `POST …/history/:sid/restore`, `GET …/history/:sid/download`.
+- The table backup copies the history; `app-trash-purge` also clears a
+  deleted table's history after 30 days. The Ledger agent and the
+  `table_authoring` skill teach the history. docs/tables.md section 4.
+
+## 0.233.2: app export, import and duplicate; the app error log (apps first-class, Phase 3)
+
+- **`.mantleapp` export and import.** `GET /api/apps/:id/export` downloads a
+  zip of the code and a copy of the data (`?data=0` without).
+  `POST /api/apps/import-package` (the file as the raw body) makes a new app
+  from one: the package, schema and database (SQLite quick_check, then a
+  clean copy in the SQL child) are checked before anything is made; the code
+  is built here and published when it was published; unknown tools are left
+  out and reported. docs/app-authoring-guide.md, "Export, import and
+  duplicate".
+- **Duplicate.** `app_duplicate` / `POST /api/apps/:id/duplicate` copies an
+  app with its builds (live at once), draft, tools, schema and data
+  (`with_data: false` for code only). Admin-only, unshared, no history but a
+  "copied from" version, no table exports.
+- **App error log (G4).** Every broker (owner, member, client, share) logs
+  the errors it answers a running app with: kind `error` in
+  `app_access_log`, with the message, the SQL or the tool slug, who ran it
+  and the status. Capped at 30 rows per app per minute; busy waits are not
+  logged; a server fault keeps the generic text. Read with `app_errors`
+  (owner only, group apps) or `GET /api/apps/:id/access-log?kind=error`
+  (`kind` and `limit` are new). An access-log write that throws before it is
+  sent no longer reaches the caller.
+- **App table exports survive a restart (D8).** The first app write of a
+  burst stamps the app's exports `dirty_since` (**migration 0221**,
+  `0221_app_table_exports_dirty`); the sync that reads the rows clears it.
+  The web process resumes the dirty ones at boot. The maintenance task
+  `app-export-catch-up` (`pnpm -C server/web app-export:catch-up`, dry run
+  unless `--apply`) syncs any dirty for 20 minutes; by hand only, since a
+  changed table is re-indexed (not on the nightly cron).
+
+## 0.233.1: recently deleted apps, app_update, an import that checks first (apps first-class, Phase 3)
+
+- **Recently deleted.** Deleting an app keeps a `pre_delete` snapshot (code,
+  name, look and data) and its history for 30 days; it comes back with the
+  same id (`app_undelete`, `POST /api/apps/deleted/:id/restore`), admin-only
+  and unshared. `app_deleted_list` / `GET /api/apps/deleted` list them;
+  `DELETE /api/apps/deleted/:id` purges one now; the nightly
+  `app-trash-purge` sweep (`pnpm -C server/web app-trash:purge`) after 30
+  days. A delete whose snapshot cannot be taken does not happen.
+- **Migration 0220** (`0220_node_snapshots_outlive_node`): drops the
+  node_snapshots foreign key so the history outlives the app.
+- **`app_update`**: rename an app, change its description, icon, colour or
+  tags. `PATCH /api/apps/:id` takes `description`.
+- **Import checks first.** `POST /api/apps/import` validates the tool slugs
+  and tries the schema before it writes anything (a bad one used to leave a
+  half-made app), follows the create route's field rules, and snapshots an
+  existing app before it overwrites it.
+- **One build step** (`buildAndStageApp` in @mantle/tools) behind `app_build`,
+  Preview, Commit, import and `apps:push`.
+
+## 0.233.0: app history, versions and snapshots (apps first-class, Phase 2)
+
+An app's code AND its data can now be put back
+(docs/app-authoring-guide.md, "History: versions and snapshots").
+
+- **Versions.** Every publish records the code that went live, with an
+  optional note (`app_publish` takes `note`).
+- **Snapshots.** The code and a copy of the app's database
+  (`app_snapshot_create`, or the History tab). One is taken automatically
+  before every restore and before `app_db_schema_set` changes the schema of
+  an app with data. The newest 20 automatic ones are kept per app; the
+  owner's own count against `APP_SNAPSHOT_MAX_MB` (default 2048).
+- **Restore** in three modes (`app_snapshot_restore`, confirm-gated, or
+  `POST /api/apps/:id/snapshots/:sid/restore`): `code` into the draft,
+  `data` back as the live database, `full` both live. A data restore puts a
+  marker beside the file: every broker and the SQL child answer busy (429)
+  for the few seconds the swap takes.
+- **Routes:** `GET/POST /api/apps/:id/snapshots`, `GET/PATCH/DELETE
+  …/snapshots/:sid`, `…/restore`, `…/download` (the `.sqlite` copy).
+- **Tools:** `app_snapshot_create`, `app_snapshot_list` (group `apps`);
+  `app_snapshot_restore`, `app_snapshot_delete` (group `app-admin`, both
+  confirm-gated).
+- Contract: `@crossworks/client-types` gains `AppSnapshot` and
+  `AppRestoreMode`. Additive.
+- The backup copies each app's snapshots with its database; deleting an app
+  removes them.
+- **Migration 0219** (`0219_node_snapshots`): the `node_snapshots` table (one
+  numbered line per item, apps now, tables later), `apps.restored_from_seq`,
+  and v1 for every published app (pure SQL).
+
+## 0.232.387: apps speed (apps first-class, Phase 1)
+
+- **Running an app reads less.** The db and tool brokers and the frame
+  routes (owner and `/s`) load the app through `getAppRuntime`: its level,
+  manifest and builds. They used to load the whole app (published and draft
+  source, up to 50 × 256 KB each, the share, the owner's preferences) on
+  every `host.db.query` and tool call.
+- **The app list** reads only the columns a row shows: no draft source tree
+  (it asks `draft_source IS NOT NULL`) and no node embedding.
+- **Opening an app** serves its bundle and CSS from a 32 MB in-process cache
+  keyed by content hash, instead of reading object storage on every load.
+- **Off the main thread:** the authoring-time seed (`app_db_seed`, now one
+  transaction in a SQL child via `runAppSqlBatch`), the schema read behind
+  `app_db_list`, and the backup's per-app copy (`copyAppDbFile`).
+- `app_db_list` reports an app whose database is missing on its own line
+  instead of failing the whole list.
+- **Migration 0218** (`0218_app_access_log_created_idx`): an index on
+  `app_access_log.created_at` for the retention reaper. Additive.
+
+## 0.232.386: apps safety (apps first-class, Phase 0)
+
+The first slice of the apps audit of 2026-10-02: the fixes the snapshot and
+restore work depends on (docs/app-authoring-guide.md, "Per-app SQLite").
+
+- **A lost app database is an error, not an empty app.** An app that stored
+  something and lost its file used to get a new empty file, with its schema
+  not re-run, so every statement failed with "no such table" and nothing
+  said why. Now every read and write refuses (`AppDbMissingError`; the
+  brokers answer 503 `reason: 'missing'`), the agent's `app_db_query` and
+  `app_db_list` say so instead of returning no rows, and the log names the
+  path.
+- **A bad schema can no longer stop a live app.** `app_db_schema_set`, the
+  import route and `apps-push` try the script on a copy of the app's live
+  database first (`checkAppSchemaScript`, a VACUUM INTO copy in a SQL
+  child, off the event loop) and refuse one that fails there.
+- **Schema versions apply once.** The applier takes a row lock, so web and
+  api cannot both run a version, and the script stamps its version into the
+  file (`user_version`, in the same transaction): a crash between the
+  SQLite commit and the registry update is skipped on the next run instead
+  of failing on "already exists".
+- **The owner's db-broker** answers errors like the other brokers (429 when
+  busy, the server's own errors not shown) and runs one statement at a time
+  per admin login.
+- **A tool that needs confirmation asks the owner first.** An owner's app
+  could run a tool flagged "needs confirmation" with no confirmation. Now
+  the owner tool broker answers 409 `reason: 'confirm'` with a five-minute
+  ticket for that exact call (tool, input, app, login); the host page shows
+  the owner what will run and sends the call again with the ticket on Yes.
+  The app never sees the ticket. `AppSandbox` (share-ui) takes
+  `confirmTool`; without it the browser's own confirm dialog asks.
+  `app_tools_set` warns when it declares such a tool. Member, client and
+  share runs refuse these tools as before.
+- **Edits in flight no longer overwrite each other.** The editor's autosave,
+  the assistant's file writes (`app_file_write` / delete), the manifest
+  setters and publish now take the app row's lock: two writes in flight keep
+  both changes, and a publish cannot clear a draft saved while it ran. The
+  draft PUT takes `baseDraftUpdatedAt` and answers 409 `reason: 'conflict'`
+  when the draft changed since the editor read it (the assistant wrote a
+  file); `AppDetail.draftUpdatedAt` carries the stamp. Without the field a
+  save goes through as before.
+- **Delete removes the app before its database file**, so a delete that
+  fails no longer leaves an app whose data is gone.
+- **`scripts/app-dbs-restore.sh`** removes each restored file's old `-wal`
+  / `-shm` first, so SQLite cannot replay a stale WAL into the restored
+  database.
+- **The public share routes cap the request body** (1 MB, `/s/**`): the
+  gate refuses a declared length over it, and the app db-broker and the
+  formula `evaluate` route stop a chunked body while reading. The share
+  db-broker used to buffer any body an anonymous caller sent.
+
+## 0.232.384: app identity, an app knows who runs it
+
+A mini app can show who runs it and record who did what, and the record
+cannot be faked from the browser (docs/app-authoring-guide.md, "Who is
+running the app").
+
+- **`host.me()`** answers `{ id, name, kind }` on every surface (the
+  editor, member and client shells, a Contact share, an open link). `kind`
+  is `admin`, `member`, `client`, `contact` or `public`. No email. The frame
+  route bakes it into the frame document from its verified ticket, so the
+  bridge protocol and the hosts do not change; the owner frame ticket now
+  names the admin login (`act`).
+- **Server-filled SQL parameters** `:host_me_id`, `:host_me_name`,
+  `:host_me_kind` in `host.db.query` / `host.db.exec`, filled by every
+  broker (owner, member, client, /s). A browser value under any `host_me_`
+  name is refused (400), and so is an unknown one (`:host_me_email`). SQL
+  without them is unchanged. A caller that names no person (the assistant's
+  `app_db_query`) cannot use them. The access log is unchanged.
+- **Per-app pseudonymous id**: HMAC of the login or contact id, keyed with
+  a random per-app salt. **Migration 0217** (`0217_app_viewer_salt`):
+  `app_databases.viewer_salt`, nullable, filled on first use.
+- Contract: `@crossworks/client-types` gains `AppViewer` / `AppViewerKind`
+  (and the `app-viewer` subpath); `@crossworks/share-ui` re-exports the type
+  and its frame builder takes an optional `viewer`. Additive.
+
+## 0.232.383: a tool group answers its level
+
+`ToolGroupDTO.audience` (optional in the contract) is set from the row, so
+`GET /api/tool-groups` and `GET /api/tool-groups/:id` carry the group's
+level. The owner UI shows and sets it with it. No migration.
+
+## 0.232.382: an item deleted during a save drops out of its embeds
+
+`mantle_sync_embeds` checked that an embedded item exists, then inserted the
+edge. An item deleted in between failed the foreign key, and with it the
+user's save of the page, drawing or note. **Migration 0216**
+(`0216_embed_sync_skips_deleted`) replaces the function: the insert joins
+the target and locks it for key share, so a delete in flight is waited for
+and the row skipped.
+
+## 0.232.380: "Team apps may use", an admin switch on one outside tool
+
+A member's run of a team app could call only read-only built-in tools, so a
+site's own connectors were refused in every team app. (Renamed External
+access in 0.234.3.)
+
+- **Migration 0215** (`0215_tool_team_apps`): `tools.team_apps`, set when an
+  admin confirms the tool only reads, with who and a signature of the
+  handler. It counts only while that signature matches, so any handler
+  change voids it; tool edits clear it.
+- mcp and http tools only (no PUT, PATCH or DELETE); never recipe or shell;
+  never a tool that needs confirmation. The app must still declare the tool.
+- `PUT /api/tools/:id/team-apps` (admin logins); `api_tool_update` takes
+  `team_apps` and `read_only_confirmed` (on only from the owner's MCP client
+  or tool console); `ToolDTO.teamApps`. Each switch writes an audit row.
+
+## 0.232.379: contact shares, one item for one contact
+
+An admin shares ONE workspace item with ONE outsider, without showing it to
+the team (docs/sharing.md section 4b). The item's level never changes.
+
+- **Migration 0214** (`0214_contact_shares`): `contact_share_codes` (one row
+  per contact that ever had sharing: an HMAC of the code keyed from
+  `MANTLE_MASTER_KEY`, an epoch that only goes up, the failure counters and
+  the lock), `shares.contact_id` and `shares.can_write` (apps only, a
+  CHECK), a trigger (a contact of the same owner, a workspace item, never a
+  folder), the open-link unique index split from a per-contact one, and
+  `share_access_log`. A lock change raises `needs_you_changed`.
+- **The contact.** "Enable sharing" makes an 8-character code, shown once.
+  Regenerate, switch off (revokes every share), a "Locked" state after 30
+  wrong codes in a day (24 hours, a "Needs you" notice). The contact DTO
+  carries `sharing`. Deleting the contact removes its code and shares.
+- **The gate.** A contact share's `/s/<token>` opens only with the
+  contact's `mantle_contact` cookie (path `/s/`, 30 days), set by
+  `POST /s/<token>/code`. Without it: the code prompt (401, no title) and
+  401 on every other route. Same 401 and same work for every failed code;
+  limits per address, per share (10 an hour) and per contact (30 a day).
+- **What a contact may do.** Read the item and what it embeds, at any
+  level. An app with "Can write": write its SQLite (export sync scheduled,
+  `client_written_at` marked). Never brain tools. A "Shared with you" menu
+  on the view links the contact's other live shares.
+- **Owner API.** `POST /api/contacts/:id/sharing`, `GET` and `DELETE
+  /api/contacts/:id/shares` (the "Shared" tab, Revoke all),
+  `POST /api/shares/contacts`, `PATCH /api/shares/:id { canWrite }`;
+  `DELETE /api/shares/:id` on a contact share changes no level.
+  `contactShares` on the access view and `access_get`; Shared links name
+  the contact.
+- **Levels.** Every level path reads open links only: a level change never
+  touches a contact share, and the other open-link queries (client report,
+  old client links, comments visibility, app share mode) skip them.
+- **Contract** (`@mantle/client-types`): `dto/contact-shares.ts`,
+  `AccessNodeView.contactShares`, `SharedLinkRow.contactId/contactName/
+  canWrite`, `NeedsYou.sharing`; `ContactRow.sharing` in content-core.
+- **Races and the trail (audit fix round).** A share create locks the
+  contact's code row before its sharing-on check, so a switch off running
+  at the same time cannot leave a live share; Enable from off revokes any
+  live share too. A double click on Enable or on Share answers one code or
+  one share, not a 500. `share_access_log` keeps its rows when a share or a
+  contact is deleted (both ids SET NULL). A try the per-share limit refused
+  no longer counts toward the contact lock. The tool broker and the gate
+  401 write `refused` trail rows (the 401 sampled, one a minute per share);
+  `contact.share_created` and `contact.share_can_write` audit rows.
+- **Fix.** The code alphabet of the retired team codes is 54 characters, not
+  56; the new generator rejects bytes from the real length, so every
+  character is equally likely.
+- **Docs.** sharing.md 4 and 4b, access-levels.md 7, contacts.md 2a and 2b,
+  security.md 3, app-authoring-guide.md "Sharing an app",
+  maintenance-runner.md.
+
+## 0.232.379: public apps leave the member launcher
+
+Public now means "anyone with the link" for an app, as it does for every
+other kind (contact shares plan P0, decided 2026-10-01).
+
+- **Member launcher.** `GET /api/member/apps` (and its folders) and the
+  member home's `apps` list team and client apps only, never a public one
+  (`MEMBER_LISTED_APP_LEVELS` in `packages/content/src/member-apps.ts`).
+  A public app inside a folder shared with the team is still listed: the
+  team reads it through the folder.
+- **Running is unchanged.** A member who has a public app's link still runs
+  it, read only. The pinned home app is unchanged. The contract is
+  unchanged (`MemberAppLevel` still names public).
+- **Docs.** `docs/member-logins.md` section 7, `docs/access-levels.md`
+  section 7, `docs/team-hub-app-sdk.md` section 2.
+
+## 0.232.378: a row deleted during the share-drift repair no longer fails the sweep
+
+`repairShareDrift` wrote every expected embed edge in one statement, so a
+node deleted meanwhile failed the foreign key and the whole nightly sweep.
+It now writes only the missing edges and locks both ends for key share.
+
+## 0.232.374: the phone app for members and clients
+
+Members and clients can use the phone app; a push reaches one login.
+docs/mobile-companion-backend.md, member-logins.md, client-logins.md.
+
+- **Sign-in:** `POST /api/auth/device-login` (admin or member, the answer
+  names the role), the emailed client code in device mode (a bearer, no
+  cookie), refresh for all three roles, `GET /api/auth/whoami`. A client's
+  device refreshes for at most 90 days from the code that signed it in. A
+  rotated token presented after its successor was used ends the login's
+  sessions once (`auth.token_reuse`). Device mode refuses a browser page.
+  Dead device tokens are reaped nightly.
+- **Push:** the owner's teasers, approvals and Needs you go to active admin
+  devices only. A member or client enrols its own phone
+  (`/api/member/push`, `/api/client/push`); a device is pushed to only while
+  the token that enrolled it is live. Ten devices a login, the oldest goes.
+  The `login_notice` channel tells one login about a reply in its chat, a
+  review result or a comment. Teasers are plain words, not markdown.
+- **Unread:** a per-login read cursor for the member and client chat thread.
+- **Migration 0213** (`0213_mobile_roles_push`): one row per routing token,
+  the login binding, and old rows bound where the login holds exactly one
+  live phone token.
+- **Fix:** an unpair or a sign-out no longer answers 500 when the relay
+  identity cannot be read.
+
+## 0.232.373: a restored brain keeps its folder share refresh
+
+Every `pg_restore` of a dump taken at migration 0204 or later gave one
+error (`operator does not exist: public.ltree = public.ltree`) and the
+restored brain had no `nodes_share_refresh_after` trigger: 0204 compared the
+ltree `path` column with `IS DISTINCT FROM` in the trigger's WHEN clause, a
+form pg_dump cannot write so that a restore can run it. On such a brain a
+folder share, unshare, move or rename no longer reached the rows below the
+folder (an unshare failed open). `scripts/db-restore.sh` went on and said
+"Restore complete, WITH 1 pg_restore error(s)". A brain migrated in place
+never lost the trigger.
+
+- **Migration 0212** (`0212_restorable_share_refresh_trigger.sql`,
+  idempotent) locks `nodes`, sets every stale `inherited_level` right (a
+  brain that never lost the trigger is not written) and makes the trigger
+  again on the text of the path, which a dump can carry. A brain restored
+  without the trigger is repaired on its next migrate. Where the
+  maintenance worker runs, the nightly `share-drift` sweep had already
+  bounded a stale level to about a day; its run history shows whether a box
+  was hit. To check a box: `select count(*) from pg_trigger where tgname =
+  'nodes_share_refresh_after'` (1 is right). A "lock timeout" on 0212 in a
+  roll means a long transaction held `nodes`: run the roll again.
+- **`scripts/db-restore.sh`** checks every trigger the dump lists
+  (`pg_restore --list`) and exits 2, without "Restore complete", when one is
+  missing. After a dump from before 0212 it makes the one trigger such a
+  dump cannot carry, as 0212 does, and from 0204 on it fails the restore
+  when that trigger is not there. It exits 3, after its last step, when
+  `pg_restore` reported an error it cannot explain; it never says "Restore
+  complete" over one. On exit 2 and 3 the full `pg_restore` output is kept.
+- **Tests.** `packages/db/src/dump-restore.db.test.ts` dumps a migrated
+  brain with a few rows (`pg_dump -Fc`), restores it into an empty database
+  and asks for no `pg_restore` error and the same triggers, policies,
+  functions, constraints, indexes and rows on both sides; it also proves
+  that 0204's own trigger is lost that way. `share-refresh-restored.db.test.ts`
+  proves the repair, and `db-restore-run.db.test.ts` runs the restore script
+  against six dumps (exit 0, 2 and 3). No other stored expression in the
+  schema has the pattern.
+
+docs/access-levels.md, section 6.
+
+## 0.232.372: tree reads never need write rights
+
+`GET /api/tree/:kind`, `/api/tree/:kind/marks` and `/api/app-nav` answered
+500 on a database that refuses writes (a read-only replica, a SELECT-only
+role): each read began with an unconditional insert of the kind's root row.
+Every step a tree read makes for itself now looks first, writes only what is
+missing, and skips a refused write (`bestEffortWrite` in @mantle/db, with a
+five-minute pause per call site). The same guard covers the onboarded stamp
+(`GET /api/onboarding`), a peer's last-seen stamp and the share view
+counter.
+
+## 0.232.371: the team responder opens in one step on a fresh install
+
+`team-read` and `formulas-eval` are team level in the manifest, but a brain
+installed after migration 0159 seeded both at admin, so lowering the team
+responder to team answered 400 `group_above_agent`. A fresh install seeds
+them at team, and the boot reconcile fixes brains installed with the wrong
+levels (no migration). `setAgentAudience` takes `dropGroupsAbove` (API
+`dropGroupsAbove`, `access_set drop_groups_above`): the groups above the new
+level leave the agent in the same call and come back in `removedGroups`. The
+plain call is still refused, and the refusal names each group and the fix.
+
+## 0.232.368: the team and client Apps launchers get the folders
+
+`GET /api/member/apps` and `GET /api/client/apps` answer `folders` next to
+`apps`: where the apps a reader may run sit in the admin's Apps folders,
+read only (`AppLauncherFolder`: id, name, icon, colour, `parentId`,
+`appIds`). A folder is answered only when it holds, at any depth, an app of
+the same answer, so a folder of admin apps, of drafts, or of nothing is
+never named, whatever its share. The existing fields are unchanged; an
+older client ignores `folders`. Apps stay out of the reader tree kinds: the
+rule to run an app (published build, no embed, client level exactly for a
+client) is the list's own. A failed folder read never hides the apps: the
+answer then carries no folders. docs/folder-tree.md, "Apps for members and
+clients".
+
+- **Fixed: a member's tree by name.** In a search and in the A to Z view
+  (`GET /api/member/tree/:kind/search`) a member's drafts were put first in
+  the order they were last changed (Beta before Alpha), and only the first
+  page carried any, so a member with more drafts than a page never saw the
+  rest. Drafts and the brain's items are now one list by name, paged by one
+  cursor; a page holds at most `limit` items.
+
 ## 0.232.365: folder system phase 7, pages in folders
 
 Pages join the item tree like notes, and a page is never the parent of
@@ -386,6 +1461,7 @@ UI 7 of 10; no Blockers). Migrations 0195, 0196, 0197.
 - **An item accepted from a client counts as client-written** for the
   lowering guard, even after the client login is deleted.
 - Migration 0194. See docs/client-logins.md section 9.
+
 ## 0.232.341: memory benchmark experiments
 
 - **Benchmark runs can change retrieval limits.** `bench:memory
@@ -568,6 +1644,7 @@ docs/client-logins.md.
 - **Tests (B6, B7, B8, B18, B28).** Real byte routes driven with a client
   token, the thumbnail branch, row-lock races, the code queue end to end,
   and two flaky or order-dependent tests fixed.
+
 ## 0.232.332: memory dates from the document, and faster extraction
 
 - **Facts start on their document's date.** A fact that is not an event
@@ -655,6 +1732,7 @@ now (C2, C2b), so the old links retire (decision 4 A).
 - From C2b: `GET /api/auth/client-code` fails closed (codes off, never a
   500) when the sender cannot be read; the code routes join the public
   session sweep.
+
 ## 0.232.327: keyword search finds the rare words in a chat question
 
 - **The keyword half of hybrid search works on real questions.** It used to
@@ -899,6 +1977,7 @@ with an open link.
   client items. Accept of a client-authored item defaults to team; client
   or public needs `lowerConfirmed` (409 `confirm-level`). Give back after
   Take over checks the item at the author's level.
+
 ## 0.232.317: client v0.6.169
 
 - Pairs the client at jackdaw v0.6.169, the client half of 0.232.316: a live
@@ -1314,7 +2393,7 @@ updater, which takes no backup). Never roll back below this release once
   lower (before: apps with an active team-mode share; the same set on every
   box checked).
 
-## Unreleased: the object store is RustFS; boxes copy their MinIO data over once (branch feat/objectstore-rustfs)
+## 0.232.249: the object store is RustFS; boxes copy their MinIO data over once (branch feat/objectstore-rustfs)
 
 MinIO left open source (repo archived, public images deleted, only the licensed
 AIStor build left), so the bundled object store is now RustFS (Apache-2.0,
@@ -1359,50 +2438,7 @@ otherwise). After the roll: `docker logs mantle_objectstore_init`, then
 `docker exec mantle_web pnpm -C packages/storage objectstore:verify`. Delete
 `data/minio` only after a couple of weeks green.
 
-## Unreleased: the object store goes backend-neutral; `createbuckets` is gone (branch feat/objectstore-neutral)
-
-Step 1 of moving off MinIO (to RustFS, planned): nothing outside the storage
-package may depend on which S3 server answers. The bucket is now created by the
-`migrate` one-shot with a plain S3 CreateBucket
-(`pnpm -C packages/storage objectstore:ensure`), so the `createbuckets` service
-and its dependency on MinIO's `mc` are gone; `scripts/up.sh` runs the same step
-in dev. The S3 client sends flexible checksums only when an operation requires
-them (the SDK default breaks on servers that do not implement them), and
-`S3_FORCE_PATH_STYLE`, which compose always set, is now actually read.
-`S3_ENDPOINT` / `S3_REGION` / `S3_BUCKET` / `S3_FORCE_PATH_STYLE` can be
-overridden from `.env`. New: `objectstore:verify` re-hashes every stored object
-against its sha256 key, the check for any backend swap or data restore
-(docs/backups.md). The dead presigned-URL helper went with its package.
-
-Contract: `SystemHealth.storage.objectStoreUp` is added; `minioUp` stays as a
-deprecated alias with the same value. Labels read "Object storage", the health
-probe is `storage.objectstore`, and the sanity check's bucket fix is
-`docker exec mantle_web pnpm -C packages/storage objectstore:ensure`.
-
-Deploy note: removing `createbuckets` changes the default service set. The
-updater's `up --remove-orphans` removes the old exited container; boxes
-brought up by hand keep it harmlessly until their next `up --remove-orphans`.
-
-## Unreleased: our own MinIO image, so rolls and fresh installs pull again (branch fix/minio-own-image)
-
-The v0.232.243 roll failed on every box at `compose pull`: the quay.io MinIO
-images now answer 401, two weeks after MinIO deleted its Docker Hub repos. MinIO
-has left open source (the repo is archived); the only image it still publishes,
-`quay.io/minio/aistor/minio`, is the commercial AIStor build, and without a
-licence it denies every S3 call. So we now build MinIO ourselves:
-`infra/minio/Dockerfile` compiles the same pinned releases (minio
-`RELEASE.2025-09-07T16-13-09Z`, mc `RELEASE.2025-08-13T08-35-41Z`) from
-upstream's AGPL source, on the same ubi9-micro base, for amd64 and arm64, and
-the new `minio-image` workflow publishes it as `titanwest/mantle-minio`. The
-commit ids and `--version` output match the official binaries, and on a copy of
-a real box's data every object came back with the same key, size and ETag.
-
-The minio image already carries mc, so `createbuckets` and `scripts/up.sh` now
-use it too: one image to host instead of two, and `MC_IMAGE_TAG` is gone
-(`MINIO_IMAGE_TAG` still overrides the tag). Boxes recreate the minio container
-once on their next update; the data is a bind mount and stays put. This is a
-stopgap: replacing MinIO with a maintained S3-compatible store is planned.
-## Unreleased: a mini app appears when it's ready, behind the host's loader (branch feat/app-nav-folders)
+## 0.232.246: a mini app appears when it's ready, behind the host's loader (branch feat/app-nav-folders)
 
 An app used to announce `ready` in the same tick as `root.render()`, before
 React had drawn anything, and the frame sat `display:none` until then: the
@@ -1428,7 +2464,7 @@ own spinners.
   green published or draft build (the frame-ticket test), and building,
   discarding a draft or publishing notify `app_nav_changed`.
 
-## Unreleased: apps get folders, pins, icons and colours in the sidebar, synced everywhere (branch feat/app-nav-folders)
+## 0.232.246: apps get folders, pins, icons and colours in the sidebar, synced everywhere (branch feat/app-nav-folders)
 
 The server half of the sidebar apps tree. A brain with a dozen or more mini
 apps had no way to organise them: the sidebar showed one "Apps" row and the
@@ -1461,7 +2497,51 @@ the flattening the sidebar renders its guide lines from) lives in
 `@mantle/content-core/app-nav`, so a move the client offers is one the server
 accepts. Types and limits are in `@mantle/client-types/app-nav`.
 
-## Unreleased: MCP connectors sign in with pre-registered OAuth apps, so Power BI works (branch feat/mcp-entra-oauth)
+## 0.232.245: the object store goes backend-neutral; `createbuckets` is gone (branch feat/objectstore-neutral)
+
+Step 1 of moving off MinIO (to RustFS, planned): nothing outside the storage
+package may depend on which S3 server answers. The bucket is now created by the
+`migrate` one-shot with a plain S3 CreateBucket
+(`pnpm -C packages/storage objectstore:ensure`), so the `createbuckets` service
+and its dependency on MinIO's `mc` are gone; `scripts/up.sh` runs the same step
+in dev. The S3 client sends flexible checksums only when an operation requires
+them (the SDK default breaks on servers that do not implement them), and
+`S3_FORCE_PATH_STYLE`, which compose always set, is now actually read.
+`S3_ENDPOINT` / `S3_REGION` / `S3_BUCKET` / `S3_FORCE_PATH_STYLE` can be
+overridden from `.env`. New: `objectstore:verify` re-hashes every stored object
+against its sha256 key, the check for any backend swap or data restore
+(docs/backups.md). The dead presigned-URL helper went with its package.
+
+Contract: `SystemHealth.storage.objectStoreUp` is added; `minioUp` stays as a
+deprecated alias with the same value. Labels read "Object storage", the health
+probe is `storage.objectstore`, and the sanity check's bucket fix is
+`docker exec mantle_web pnpm -C packages/storage objectstore:ensure`.
+
+Deploy note: removing `createbuckets` changes the default service set. The
+updater's `up --remove-orphans` removes the old exited container; boxes
+brought up by hand keep it harmlessly until their next `up --remove-orphans`.
+
+## 0.232.244: our own MinIO image, so rolls and fresh installs pull again (branch fix/minio-own-image)
+
+The v0.232.243 roll failed on every box at `compose pull`: the quay.io MinIO
+images now answer 401, two weeks after MinIO deleted its Docker Hub repos. MinIO
+has left open source (the repo is archived); the only image it still publishes,
+`quay.io/minio/aistor/minio`, is the commercial AIStor build, and without a
+licence it denies every S3 call. So we now build MinIO ourselves:
+`infra/minio/Dockerfile` compiles the same pinned releases (minio
+`RELEASE.2025-09-07T16-13-09Z`, mc `RELEASE.2025-08-13T08-35-41Z`) from
+upstream's AGPL source, on the same ubi9-micro base, for amd64 and arm64, and
+the new `minio-image` workflow publishes it as `titanwest/mantle-minio`. The
+commit ids and `--version` output match the official binaries, and on a copy of
+a real box's data every object came back with the same key, size and ETag.
+
+The minio image already carries mc, so `createbuckets` and `scripts/up.sh` now
+use it too: one image to host instead of two, and `MC_IMAGE_TAG` is gone
+(`MINIO_IMAGE_TAG` still overrides the tag). Boxes recreate the minio container
+once on their next update; the data is a bind mount and stays put. This is a
+stopgap: replacing MinIO with a maintained S3-compatible store is planned.
+
+## 0.232.187: MCP connectors sign in with pre-registered OAuth apps, so Power BI works (branch feat/mcp-entra-oauth)
 
 Connecting Microsoft's Power BI MCP server failed silently: the connector sat
 on "authorization pending" with no reason. Power BI signs in through Microsoft
@@ -1492,7 +2572,7 @@ optional `oauth.client` and `oauth.scope` on the MCP binding. 11 new tests
 against an in-process Entra-shaped authorization server, plus 5 parser cases.
 docs/mcp-connectors.md; help page extended.
 
-## Unreleased — MinIO images from quay.io: fresh installs pull again (branch feat/minio-quay)
+## 0.232.184: MinIO images from quay.io: fresh installs pull again (branch feat/minio-quay)
 
 On 2026-09-14 MinIO removed `minio/minio` and `minio/mc` from Docker Hub, so
 every fresh install failed at `docker compose up` with "pull access denied for
@@ -1503,7 +2583,7 @@ all moved. Existing boxes recreate the minio container once on their next
 update (the image reference changed); the data is a bind mount and stays put.
 `MINIO_IMAGE_TAG` / `MC_IMAGE_TAG` still override the tag only.
 
-## Unreleased — OpenAPI connectors: a service's spec as an http tool group (branch claude/zealous-leakey-73c34c)
+## 0.232.78: OpenAPI connectors: a service's spec as an http tool group (branch claude/zealous-leakey-73c34c)
 
 The raw-API twin of MCP connectors, per docs/plans/openapi-connector.md.
 Point the brain at an OpenAPI 3.x spec URL (JSON or YAML) and the selected
@@ -1522,7 +2602,7 @@ now dropped instead of shipping the literal brace string. API at
 docs/openapi-connectors.md; help page extended; 45 new tests including an
 in-process spec-server end to end.
 
-## Unreleased — YouTube ingests from a VPS: the cookies-file escape hatch (branch claude/media-cookies)
+## 0.232.39: YouTube ingests from a VPS: the cookies-file escape hatch (branch claude/media-cookies)
 
 Live testing surfaced the expected wall: YouTube blocks datacenter IPs
 outright ("Sign in to confirm you're not a bot"), captions included, while
@@ -1537,8 +2617,7 @@ browser-session export, some account-flag risk, goes stale on YouTube's
 schedule. docs/video-ingest.md ("YouTube and the bot check") carries the
 export recipe and the trade-offs.
 
-
-## Unreleased — client pair moves to jackdaw v0.6.5 (branch claude/client-pair-v0.6.5)
+## 0.232.37: client pair moves to jackdaw v0.6.5 (branch claude/client-pair-v0.6.5)
 
 Interface-only roll: the paired jackdaw client moves to v0.6.5, which adds
 the Media pill to the dashboard's system vitals (the yt-dlp/ffmpeg sidecar's
@@ -1546,8 +2625,7 @@ health + running versions, beside Tika/Chromium/Sandboxes) and ships the
 files workspace's two-pane view series. No server-side changes beyond the
 pair record.
 
-
-## Unreleased — video ingest hardened: the audit pass (branch claude/video-ingest-audit-fixes)
+## 0.232.36: video ingest hardened: the audit pass (branch claude/video-ingest-audit-fixes)
 
 A three-way adversarial audit of the v0.232.32 video-ingestion release, with
 every confirmed finding fixed. The two showstoppers were on the happy path:
@@ -1605,8 +2683,7 @@ pull` for the whole stack), `docs/deploy.md` and the disposition catalogues
 cover the new skips, and forks can build the `mantle-media` image via
 `scripts/docker-build-push.sh`.
 
-
-## Unreleased — video ingestion: paste a link, get a searchable transcript (branch claude/mantle-video-extraction-650157)
+## 0.232.32: video ingestion: paste a link, get a searchable transcript (branch claude/mantle-video-extraction-650157)
 
 The brain can now ingest a video. `video_ingest` takes a link (or a video
 file already in Files), pulls the captions when the video has them — free and
@@ -1714,53 +2791,18 @@ prod and a client brain there is not a single `.xls` or `.xlsb` — and
 - The `parse_document` trace's `parser` field gains `exceljs` and
   `legacy-sheet` in place of `sheetjs`.
 
-## Unreleased — a table exports as the workbook it actually is (branch feat/xlsx-export-polish)
+## 0.232.7: sheet_build reaches MCP clients too (branch feat/sheet-build-mcp)
 
-Downloading a table gave you one worksheet. Since Tables v2.1 a table has been
-a WORKBOOK — every sheet of an imported spreadsheet becomes a tab of the same
-table — so a six-tab table downloaded as its first tab, silently. Nothing said
-so. `renderXlsxWorkbook` now writes one worksheet per tab, in tab order.
+`sheet_build` shipped to the in-app agents but was never registered on the MCP
+surface, so a Claude Desktop or Claude Code session could not call it. That is
+the surface most likely to want it: the client is often the one holding the
+numbers, working through a costing, and wanting a file back at the end.
 
-Markdown and CSV still export the open tab alone, on purpose: they are
-single-grid formats, and flattening six tabs into one CSV would interleave
-unrelated grids under one header.
+One line next to `export_node`, which is on that surface for exactly the same
+reason. Both transports (stdio and the HTTP route) build from the same builder,
+so both get it.
 
-Tabs whose names collide after sanitising get a numeric suffix rather than
-throwing. Excel refuses duplicate sheet names, and `Q1/Q2` and `Q1?Q2` sanitise
-to the same thing, so the alternative was a download that never happened.
-
-### The file should be readable the moment it opens
-
-That is the only reason to prefer .xlsx over CSV, so the export now applies a
-house style instead of shipping bare data:
-
-- A frozen, filterable header on a slate band, white and bold.
-- Columns sized from their contents, floor 10 and ceiling 60 characters.
-- Alternate rows banded with a hairline tint.
-- Numbers right, checkboxes centred, text left.
-- Dates as real date cells formatted `yyyy-mm-dd`, so a shared export cannot be
-  read as 3 April in one office and 4 March in another.
-- `url` columns become real hyperlinks, when the value is actually navigable.
-- The totals row banded and ruled off from the data.
-
-Two constraints shaped the palette. It has to survive greyscale printing, and
-it cannot fight the reader's own dark mode, since a fill we write is fixed
-forever. So nothing carries meaning by colour, and the great majority of cells
-are left unfilled.
-
-### Three bugs the polish surfaced
-
-- **A money column showed `#######`.** Widths were measured from the STORED
-  value, so `12500` was sized as 5 characters when it displays as
-  `USD 12,500.00`, 13. Totals are wider still than any row they sum, so they
-  are computed before the widths are set now.
-- **A leading total was replaced by the word "Totals".** The label was written
-  on a falsy check, so a first column whose sum came to 0 lost it. The label
-  now goes to the first column that has no aggregate of its own.
-- **A row COUNT inherited its column's money format**, so `count` on a currency
-  column rendered the count as an amount.
-
-## Unreleased — an agent can build a spreadsheet, not just a table (branch feat/sheet-build)
+## 0.232.6: an agent can build a spreadsheet, not just a table (branch feat/sheet-build)
 
 An agent could already produce a styled `.xlsx` in two steps: `table_create`
 then `export_node`. That is right when the thing being made is DATA. It is
@@ -1813,60 +2855,53 @@ client holding two files from the same brain that did not look related.
 Ships as a `spreadsheets` tool group granted to the persona and to Ledger, plus
 a `spreadsheet_authoring` skill on Ledger covering the sheet-versus-table call.
 
-## Unreleased — sheet_build reaches MCP clients too (branch feat/sheet-build-mcp)
+## 0.232.5: a table exports as the workbook it actually is (branch feat/xlsx-export-polish)
 
-`sheet_build` shipped to the in-app agents but was never registered on the MCP
-surface, so a Claude Desktop or Claude Code session could not call it. That is
-the surface most likely to want it: the client is often the one holding the
-numbers, working through a costing, and wanting a file back at the end.
+Downloading a table gave you one worksheet. Since Tables v2.1 a table has been
+a WORKBOOK — every sheet of an imported spreadsheet becomes a tab of the same
+table — so a six-tab table downloaded as its first tab, silently. Nothing said
+so. `renderXlsxWorkbook` now writes one worksheet per tab, in tab order.
 
-One line next to `export_node`, which is on that surface for exactly the same
-reason. Both transports (stdio and the HTTP route) build from the same builder,
-so both get it.
+Markdown and CSV still export the open tab alone, on purpose: they are
+single-grid formats, and flattening six tabs into one CSV would interleave
+unrelated grids under one header.
 
-## Unreleased — the share presenters learn which shell they are in (branch feat/team-presenter-chrome)
+Tabs whose names collide after sanitising get a numeric suffix rather than
+throwing. Excel refuses duplicate sheet names, and `Q1/Q2` and `Q1?Q2` sanitise
+to the same thing, so the alternative was a download that never happened.
 
-Every presenter in `@mantle/share-ui` was written for one surface: the
-anonymous public `/s` page, where the presenter *is* the page. `/team` then
-reused them inside a master-detail pane, and two of those choices became wrong
-at once.
+### The file should be readable the moment it opens
 
-The pane draws the item's title in its own header, so the presenter's hero
-title was the second of three on screen. And the centred `max-w` cap meant
-dragging the pane divider only grew the empty margins while the content stayed
-a fixed narrow column — members read that as "the drag is broken". The handle
-was fine; the content was ignoring it. A non-previewable file was the worst of
-it: a `max-w-md` card, phone-width, marooned in the middle of a 2000px pane.
+That is the only reason to prefer .xlsx over CSV, so the export now applies a
+house style instead of shipping bare data:
 
-### `chrome`, an optional prop on six presenters
+- A frozen, filterable header on a slate band, white and bold.
+- Columns sized from their contents, floor 10 and ceiling 60 characters.
+- Alternate rows banded with a hairline tint.
+- Numbers right, checkboxes centred, text left.
+- Dates as real date cells formatted `yyyy-mm-dd`, so a shared export cannot be
+  read as 3 April in one office and 4 March in another.
+- `url` columns become real hyperlinks, when the value is actually navigable.
+- The totals row banded and ruled off from the data.
 
-`chrome?: 'share' | 'embedded'` — Note, Event, Task, File, Table and Draw.
+Two constraints shaped the palette. It has to survive greyscale printing, and
+it cannot fight the reader's own dark mode, since a fill we write is fixed
+forever. So nothing carries meaning by colour, and the great majority of cells
+are left unfilled.
 
-`'share'` is the default and is byte-for-byte what shipped before, deliberately:
-the public page must not change because an embedder forgot a prop. `'embedded'`
-means the surrounding shell already owns the title and the padding, so the
-presenter drops its hero title, tightens the vertical rhythm, and stops
-centring.
+### Three bugs the polish surfaced
 
-⚠ `'embedded'` is **not** a synonym for full-bleed. It means *the shell owns
-the chrome*; what to do with the width is still the content's call. A table, a
-media viewer and a file row all get better as they get wider, so they span the
-pane. A note does not — a 2000px line is unreadable in anyone's pane — so prose
-keeps its measure and simply stops being centred under a title it no longer
-draws. The bug was a floating box, not a reading measure.
+- **A money column showed `#######`.** Widths were measured from the STORED
+  value, so `12500` was sized as 5 characters when it displays as
+  `USD 12,500.00`, 13. Totals are wider still than any row they sum, so they
+  are computed before the widths are set now.
+- **A leading total was replaced by the word "Totals".** The label was written
+  on a falsy check, so a first column whose sum came to 0 lost it. The label
+  now goes to the first column that has no aggregate of its own.
+- **A row COUNT inherited its column's money format**, so `count` on a currency
+  column rendered the count as an amount.
 
-Event and Task also drop their card frame when embedded. On an empty page that
-border is what tells a reader where the item begins; inside a pane that already
-has a header rule and a border of its own, it is the box.
-
-### The folder listing can carry a Modified column
-
-`ShareFolderListing.files[]` gains an optional `updatedAt`, populated by
-`GET /s/[token]/view`. `FileRow` already carried it — it was simply not being
-passed on, so no consumer could show when a file last changed. Optional, so a
-client pinned to an older server still parses the payload.
-
-## Unreleased — a member can see the drawing the reply is talking about (branch feat/team-forum-drawings)
+## 0.232.0: a member can see the drawing the reply is talking about (branch feat/team-forum-drawings)
 
 `![alt](draw:<node-id>)` in a reply now resolves, on both member surfaces.
 Pictures have worked since v0.4.1; drawings were the marker in the Forum plan's
@@ -1892,7 +2927,8 @@ the `sandbox` CSP is what makes that case inert. Copied from
 Both surfaces get it, deliberately. A marker that rendered in the Forum and
 broke in Team Chat would be worse than not having one: the reply text does not
 know which surface it will be read on.
-## Unreleased — a shared table gets the owner's totals, and they are RIGHT (branch feat/team-tables-grid)
+
+## 0.232.0: a shared table gets the owner's totals, and they are RIGHT (branch feat/team-tables-grid)
 
 `/team` tables were a centred `max-w-6xl` reader: a plain table, a "Load more"
 button every 200 rows, and no totals at all. The owner grid has had per-column
@@ -1935,7 +2971,8 @@ The footer row renders even when nothing is set, because the row IS the
 affordance: a member who wants a total needs somewhere to ask for one.
 
 The standalone `/s` page keeps its centred, growing, non-sticky layout.
-## Unreleased — an event listing that says when, not when it was edited (branch feat/team-list-event-time)
+
+## 0.232.0: an event listing that says when, not when it was edited (branch feat/team-list-event-time)
 
 `TeamVisibleShare` gains an optional `startsAt`, read from `nodes.data.starts_at`
 and null for every non-event type.
@@ -1951,7 +2988,49 @@ The row query already selected `nodes.data`; the mapper simply read `icon` and
 `summary` out of it and dropped the rest, so no query changed. Optional on the
 type, so a client pinned to an older server still parses the payload.
 
-## Unreleased — Tasks grows up: a board, a lifecycle, and somewhere to put finished work (branch claude/handover-tasks-kanban-04d026)
+## 0.231.0: the share presenters learn which shell they are in (branch feat/team-presenter-chrome)
+
+Every presenter in `@mantle/share-ui` was written for one surface: the
+anonymous public `/s` page, where the presenter *is* the page. `/team` then
+reused them inside a master-detail pane, and two of those choices became wrong
+at once.
+
+The pane draws the item's title in its own header, so the presenter's hero
+title was the second of three on screen. And the centred `max-w` cap meant
+dragging the pane divider only grew the empty margins while the content stayed
+a fixed narrow column — members read that as "the drag is broken". The handle
+was fine; the content was ignoring it. A non-previewable file was the worst of
+it: a `max-w-md` card, phone-width, marooned in the middle of a 2000px pane.
+
+### `chrome`, an optional prop on six presenters
+
+`chrome?: 'share' | 'embedded'` — Note, Event, Task, File, Table and Draw.
+
+`'share'` is the default and is byte-for-byte what shipped before, deliberately:
+the public page must not change because an embedder forgot a prop. `'embedded'`
+means the surrounding shell already owns the title and the padding, so the
+presenter drops its hero title, tightens the vertical rhythm, and stops
+centring.
+
+⚠ `'embedded'` is **not** a synonym for full-bleed. It means *the shell owns
+the chrome*; what to do with the width is still the content's call. A table, a
+media viewer and a file row all get better as they get wider, so they span the
+pane. A note does not — a 2000px line is unreadable in anyone's pane — so prose
+keeps its measure and simply stops being centred under a title it no longer
+draws. The bug was a floating box, not a reading measure.
+
+Event and Task also drop their card frame when embedded. On an empty page that
+border is what tells a reader where the item begins; inside a pane that already
+has a header rule and a border of its own, it is the box.
+
+### The folder listing can carry a Modified column
+
+`ShareFolderListing.files[]` gains an optional `updatedAt`, populated by
+`GET /s/[token]/view`. `FileRow` already carried it — it was simply not being
+passed on, so no consumer could show when a file last changed. Optional, so a
+client pinned to an older server still parses the payload.
+
+## 0.230.67: Tasks grows up: a board, a lifecycle, and somewhere to put finished work (branch claude/handover-tasks-kanban-04d026)
 
 `/tasks` was a checklist. It is now a project surface: a Kanban board, four
 states instead of two, a checklist inside each task, and comments from logins,
@@ -1989,7 +3068,36 @@ and zero LLM calls.
 - The task form, the detail view, the task list, the nav rail and the activity
   column are all resizable, and each remembers its width.
 
-## Unreleased: Four fonts, one library, every face variable (branch claude/variable-font-refactor)
+## 0.230.58: Links that survive the split (branch feat/companion-split-fix)
+
+**A stored link is permanent, so it has to be right on the day it is written.**
+`nodeUrl()` mints `${MANTLE_PUBLIC_URL}/n/<id>` and hands it to the assistant on
+every tool result; the assistant writes those links into chat replies, pages,
+forum answers and outbound email, and nothing ever re-resolves them. But
+`MANTLE_PUBLIC_URL` has to be the **server** origin — `/s/<token>` share links
+and the Microsoft OAuth callback are served there — while `/n/[id]` itself moved
+to `client/web` in the v0.200.0 split. On a deployment that gives the owner app
+its own vhost, every one of those links was a 404, and each one was written into
+the brain to stay.
+
+`/n/*` now forwards to `MANTLE_CLIENT_ORIGIN`, joining the `/login`, `/hub` and
+`/team` stubs. Keeping the minted link canonical and redirecting at the edge is
+what makes one stored URL correct under either topology; rewriting the minter to
+point at the client origin would have broken it the other way. With no client
+origin configured it explains itself instead of looping, same as its siblings.
+
+Single-host installs — where one hostname fronts both stacks — never saw this,
+which is exactly why it stayed hidden.
+
+Also: `GET /api/assistant/thread` takes `?withMessages=0`, returning the agent
+picker list and the resolved active agent without the 100-message thread. The
+mobile companion needs both at launch — it holds no agent cookie, so the
+server's resolution *is* its default, and that resolution is what now respects
+`agents.assigned_user_id` — but it pages its own history from the local cache,
+so the thread was fetched and dropped on every cold start. Opt-out, so every
+existing caller is untouched.
+
+## 0.230.14: Four fonts, one library, every face variable (branch claude/variable-font-refactor)
 
 **A typeface library is not a list of decorations.** The old one had grown into
 two registries with different rules: twenty-two display faces for the wordmark,
@@ -2048,7 +3156,7 @@ Bricolage Grotesque, and Mantle's own mark in the footer follows it.
 Only one monospace family survives the two-axis floor (Inconsolata). More can be
 added at any time: that is now one command and one pasted row.
 
-## Unreleased — The models you pinned, and whether they still exist (branch feat/model-drift)
+## 0.224.0: The models you pinned, and whether they still exist (branch feat/model-drift)
 
 **A pinned model is a decision, not a subscription.** It was right the day it
 was chosen and nothing ages it. Nothing in the product ever checked whether the
@@ -2091,36 +3199,7 @@ One judgement is stated wherever the output is read rather than buried in the
 source: version segments compare as integers, so `4.20` is newer than `4.5`,
 matching how these vendors number releases rather than how decimals sort.
 
-## Unreleased — Links that survive the split (branch feat/companion-split-fix)
-
-**A stored link is permanent, so it has to be right on the day it is written.**
-`nodeUrl()` mints `${MANTLE_PUBLIC_URL}/n/<id>` and hands it to the assistant on
-every tool result; the assistant writes those links into chat replies, pages,
-forum answers and outbound email, and nothing ever re-resolves them. But
-`MANTLE_PUBLIC_URL` has to be the **server** origin — `/s/<token>` share links
-and the Microsoft OAuth callback are served there — while `/n/[id]` itself moved
-to `client/web` in the v0.200.0 split. On a deployment that gives the owner app
-its own vhost, every one of those links was a 404, and each one was written into
-the brain to stay.
-
-`/n/*` now forwards to `MANTLE_CLIENT_ORIGIN`, joining the `/login`, `/hub` and
-`/team` stubs. Keeping the minted link canonical and redirecting at the edge is
-what makes one stored URL correct under either topology; rewriting the minter to
-point at the client origin would have broken it the other way. With no client
-origin configured it explains itself instead of looping, same as its siblings.
-
-Single-host installs — where one hostname fronts both stacks — never saw this,
-which is exactly why it stayed hidden.
-
-Also: `GET /api/assistant/thread` takes `?withMessages=0`, returning the agent
-picker list and the resolved active agent without the 100-message thread. The
-mobile companion needs both at launch — it holds no agent cookie, so the
-server's resolution *is* its default, and that resolution is what now respects
-`agents.assigned_user_id` — but it pages its own history from the local cache,
-so the thread was fetched and dropped on every cold start. Opt-out, so every
-existing caller is untouched.
-
-## Unreleased — An assistant that answers to its own name (branch feat/agent-name-token)
+## 0.223.3: An assistant that answers to its own name (branch feat/agent-name-token)
 
 **A copied assistant introduced itself as the one it was copied from.** Give a
 login its own assistant called Tommy and his prompt still opened *"You are Mira
@@ -2164,7 +3243,7 @@ the HTTP tool dispatcher, and are never matched: their syntax appears verbatim
 in the toolsmith skill's own instructions, and a greedy matcher would have eaten
 the example it teaches from.
 
-## Unreleased — Your own assistant, not everyone else's thread (branch claude/per-user-agent-duplication-60eb10)
+## 0.220.0: Your own assistant, not everyone else's thread (branch claude/per-user-agent-duplication-60eb10)
 
 **Two people signed into the same brain were talking to one assistant, in one
 conversation.** Extra logins have always been co-admins on the anchor account's
@@ -2208,7 +3287,7 @@ stay, as an ordinary shared agent — deleting one remains a deliberate act on
 Settings → Agents, same reasoning as the earlier fix that stopped agent deletion
 destroying chat history.
 
-## Unreleased — A picture where the sentence needs it (branch claude/vibrant-elion-4dda88)
+## 0.219.0: A picture where the sentence needs it (branch claude/vibrant-elion-4dda88)
 
 **A chat reply could not put a picture mid-answer.** Every image a turn produced
 was collected and rendered as a strip below the whole reply, in the order the
@@ -2252,7 +3331,7 @@ the attachment strip already use. It answers unauthenticated with 401 and scopes
 every read by owner id, so an invented or someone else's file id is a broken
 image, never a leak.
 
-## Unreleased — One implementation per tool, one verifier per credential (branch feat/arch-cleanup)
+## 0.217.5: One implementation per tool, one verifier per credential (branch feat/arch-cleanup)
 
 **24 MCP tools had two implementations, and the spare had gone stale.** Notes,
 tasks, events, journal entries, peers and the email reads were each written
@@ -2364,7 +3443,7 @@ a bundle has none and Postgres answers `3D000 invalid_catalog_name`. A
 provisioned cluster served by a read-only role says 42501 instead, which is why
 the workstation passed and the deployed demo failed.
 
-## Unreleased — Adding a Microsoft scope quietly killed every older account (branch claude/sharepoint-auth-directory-listing-d78be4)
+## 0.216.7: Adding a Microsoft scope quietly killed every older account (branch claude/sharepoint-auth-directory-listing-d78be4)
 
 **A connected Microsoft account had a shelf life measured from the last time we
 edited a constant.** Every token refresh asked Azure for the app's *current*
@@ -2392,7 +3471,7 @@ Try again* — advice that could never work. `invalid_grant` now carries a 401,
 which is the branch that tells the truth, and the browse route logs the
 underlying Graph error instead of swallowing it.
 
-## Unreleased — The pictures inside your documents (branch claude/mantle-image-extraction)
+## 0.216.0: The pictures inside your documents (branch claude/mantle-image-extraction)
 
 **Every parser in the stack was text-only, so a diagram in a Word file or a
 screenshot in a PDF manual was dropped on the floor** — invisible to recall and
@@ -2462,7 +3541,7 @@ work re-runs.
 Fixed while here: `upsertFile` reset a file's title to its filename on *every*
 upsert, so any deliberately-titled file silently reverted on re-ingest.
 
-## Unreleased — The rest of the "all good" over a dead brain (branches feat/healthcheck, feat/sanity-services, feat/test-timeouts)
+## 0.213.1: The rest of the "all good" over a dead brain (branches feat/healthcheck, feat/sanity-services, feat/test-timeouts)
 
 **Four layers now have to agree before an install calls itself healthy.** The
 installer work closed the reporting side; this closes the two places that were
@@ -2502,7 +3581,7 @@ core, so on a 24-core box under real load a `require('mathjs')` costing 411ms
 idle sails past five seconds. `testTimeout` is now 15s, and mathjs moved to a
 module-scope import so 18MB leaves the per-test budget entirely.
 
-## Unreleased — An uninstaller, and a project-name bug it exposed (branch feat/uninstall)
+## 0.213.1: An uninstaller, and a project-name bug it exposed (branch feat/uninstall)
 
 **`scripts/uninstall.sh`** — there was no supported way to remove Mantle, so
 everyone improvised, and the improvised version is the one that eats a
@@ -2533,7 +3612,7 @@ Also fixed in both scripts: probing for a controlling terminal leaked
 redirections apply left to right, so the failure printed before `2>/dev/null`
 took effect.
 
-## Unreleased — Onboarding: orientation before the first message (branch feat/onboarding-tutorial)
+## 0.213.1: Onboarding: orientation before the first message (branch feat/onboarding-tutorial)
 
 **The last screen said "you're all set" and handed you to the assistant.** It
 now says what to do with it, in four lines total.
@@ -2552,7 +3631,7 @@ contacts means nothing inbound is ingested, which is indistinguishable from a
 broken mail setup unless you're told it's deliberate — with the real carve-out,
 that your own mail always comes in. And everything else happens by asking.
 
-## Unreleased — Installer: guided setup, honest health checks (branch feat/install-probe)
+## 0.213.1: Installer: guided setup, honest health checks (branch feat/install-probe)
 
 **An install can no longer report itself healthy when it isn't.** A host port
 already holding `:3000` made Docker abandon the web container's entire network
@@ -2597,7 +3676,7 @@ back to HTTP instead of proceeding into a doomed request. Prompts read from
 all from an empty stdin. Disk, memory and ports 80/443 are checked before the
 ~2 GB pull.
 
-## Unreleased — CLI Sandboxes (branch feat/cli-sandboxes)
+## 0.206.1: CLI Sandboxes (branch feat/cli-sandboxes)
 
 **The coder agent gets a computer that isn't the brain's.** Persistent
 isolated Ubuntu sandboxes managed by a new `sandboxd` supervisor (the third

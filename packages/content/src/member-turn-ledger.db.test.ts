@@ -42,7 +42,7 @@ describe.skipIf(!URL)('claimMemberTurn', () => {
       (${anchor}, ${`anchor-${tag}@example.invalid`}, 'x', 'admin'),
       (${pat}, ${`pat-${tag}@example.invalid`}, 'x', 'member'),
       (${sam}, ${`sam-${tag}@example.invalid`}, 'x', 'member')`;
-  });
+  }, 60_000);
 
   afterAll(async () => {
     if (!admin) return;

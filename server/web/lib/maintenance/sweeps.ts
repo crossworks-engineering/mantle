@@ -15,6 +15,7 @@
  * schedulable, passed the registry assertion, and was dropped here on every
  * single run. It never fired once. One rule, one definition.
  */
+import { reapDeviceTokens } from '../auth/device-token-reap';
 import { sql } from 'drizzle-orm';
 import { db } from '@mantle/db';
 import {
@@ -22,6 +23,7 @@ import {
   mergeEntities,
   purgeDeactivatedSpaces,
   reapAppAccessLog,
+  reapShareAccessLog,
   reapClientSigninCodes,
   type MergeCandidate,
 } from '@mantle/content';
@@ -36,6 +38,8 @@ import { summarisePoolFit } from './pool-fit';
 import { runPoolFit } from './pool-fit-run';
 import { reapAbandonedTracesAllOwners } from '../journey';
 import { repairShareDrift } from '@mantle/content/tree';
+import { purgeExpiredDeletedApps, sweepAppFileLeftovers } from '@mantle/content/app-trash';
+import { purgeOrphanTableHistory } from '@mantle/content/table-snapshots';
 import { reapStalePendingTurns, summariseTurnsReap } from './turns-reap';
 import { errorMessage } from '@mantle/std';
 
@@ -144,6 +148,11 @@ export const SWEEPS: Record<string, (ownerId: string) => Promise<string>> = {
       ? 'nothing to reap'
       : `deleted ${r.deleted} code row(s) and ${r.skipsDeleted} skip row(s); cleared ${r.ipsCleared} address(es)`;
   },
+  // Dead device tokens (revoked or expired more than 30 days ago).
+  'device-tokens-reap': async () => {
+    const r = await reapDeviceTokens();
+    return r.deleted === 0 ? 'nothing to reap' : `deleted ${r.deleted} device token row(s)`;
+  },
   // Folder audit Y1: rows read at a share their folders no longer give;
   // S5 (0208): embed edges and the level embeds are read at.
   'share-drift': async () => {
@@ -164,9 +173,22 @@ export const SWEEPS: Record<string, (ownerId: string) => Promise<string>> = {
     return parts.length ? parts.join('; ') : 'no drift';
   },
   // Client tier audit I4: app access log rows older than 90 days.
+  // Contact shares (0214): the contact share trail, same 90 days.
   'app-access-log-reap': async () => {
     const r = await reapAppAccessLog();
-    return r.deleted === 0 ? 'nothing to reap' : `deleted ${r.deleted} access log row(s)`;
+    const s = await reapShareAccessLog();
+    if (r.deleted === 0 && s.deleted === 0) return 'nothing to reap';
+    return `deleted ${r.deleted} access log row(s), ${s.deleted} contact share row(s)`;
+  },
+  // Apps first-class plan, Phase 3: deleted apps past their 30 days.
+  // Apps plan Phase 4: the history of deleted tables, too.
+  'app-trash-purge': async () => {
+    const r = await purgeExpiredDeletedApps();
+    const t = await purgeOrphanTableHistory();
+    const left = await sweepAppFileLeftovers();
+    return r.apps === 0 && t.tables === 0 && left === 0
+      ? 'nothing to purge'
+      : `purged ${r.apps} deleted app(s), the history of ${t.tables} deleted table(s), ${left} leftover work file(s)`;
   },
   // Member logins plan 6.4: a deactivated login's private items, after 30 days.
   'space-purge': async () => {

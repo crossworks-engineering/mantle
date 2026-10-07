@@ -13,6 +13,7 @@ import { db, toolGroups, type ToolGroup, type ToolGroupMcpBinding } from '@mantl
 import { listApiKeys } from '@mantle/api-keys';
 import { getConfigStatus } from '@mantle/microsoft';
 import {
+  clearConnectorExternalAccess,
   closeMcpClient,
   dbMcpOAuthStore,
   KNOWN_MCP_SERVERS,
@@ -229,6 +230,13 @@ export async function updateMcpConnector(
       return { error: errorMessage(err), status: 400 };
     }
     [updated] = await db.select().from(toolGroups).where(eq(toolGroups.id, row.id)).limit(1);
+  }
+  // "External access" was confirmed for THIS server reached with THIS
+  // credential: another server, or another key (which may write), is not
+  // what the admin looked at, so the switch goes off on every tool of the
+  // connector until an admin confirms again (packages/tools/src/external-access.ts).
+  if (nextMcp.url !== mcp.url || nextMcp.secretRef !== mcp.secretRef) {
+    await clearConnectorExternalAccess(ownerId, groupSlug);
   }
   if (bindingTouched || oauthTouched) await closeMcpClient(ownerId, groupSlug);
   const [backrefs, tokenServices] = await Promise.all([

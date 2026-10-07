@@ -10,7 +10,7 @@
  * `MantlePeer` is not.
  */
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
-import { db, mantlePeers, nodes, type MantlePeer } from '@mantle/db';
+import { bestEffortWrite, db, mantlePeers, nodes, type MantlePeer } from '@mantle/db';
 import { open, seal } from '@mantle/crypto';
 import { hashToken, mintInboundToken, tokenMatchesHash } from '../peers-crypto';
 
@@ -28,6 +28,14 @@ export type PeerRow = {
   hasOutboundToken: boolean;
   lastContactedAt: string | null;
   lastSeenAt: string | null;
+  /** The login this peer's token acts as on /api/mcp (0227); null = a
+   *  share-only peer. */
+  actsAsLoginId: string | null;
+  actsAsRole: 'admin' | 'member' | 'client' | null;
+  /** Whether the peer may call its login's write tools. */
+  writeEnabled: boolean;
+  /** Risky owner tools allowed for this peer by name. */
+  allowedRiskyTools: string[];
   createdAt: string;
   updatedAt: string;
 };
@@ -43,6 +51,13 @@ function rowOf(p: MantlePeer): PeerRow {
     hasOutboundToken: !!p.outboundTokenEnc,
     lastContactedAt: p.lastContactedAt ? p.lastContactedAt.toISOString() : null,
     lastSeenAt: p.lastSeenAt ? p.lastSeenAt.toISOString() : null,
+    actsAsLoginId: p.actsAsLoginId ?? null,
+    actsAsRole:
+      p.actsAsRole === 'admin' || p.actsAsRole === 'member' || p.actsAsRole === 'client'
+        ? p.actsAsRole
+        : null,
+    writeEnabled: p.writeEnabled,
+    allowedRiskyTools: p.allowedRiskyTools ?? [],
     createdAt: p.createdAt.toISOString(),
     updatedAt: p.updatedAt.toISOString(),
   };
@@ -227,6 +242,48 @@ export async function setPeerEnabled(
   return !!row;
 }
 
+/**
+ * What a peer's token may do on /api/mcp (0227, plan page e5b854dd): act as
+ * one login (the caller checked it exists and passes its current role), or
+ * nobody (`null`: a share-only peer); the write switch; the risky owner tools
+ * allowed by name. Only the fields given change, with one rule: binding or
+ * rebinding the login starts CLOSED (write off, no risky tools) unless the
+ * same call sets them, so a member peer with write on that is switched to
+ * the owner does not get owner write by accident. An unbound peer keeps
+ * write off whatever is sent.
+ */
+export async function setPeerAccess(
+  ownerId: string,
+  id: string,
+  access: {
+    actsAs?: { loginId: string; role: 'admin' | 'member' | 'client' } | null;
+    writeEnabled?: boolean;
+    allowedRiskyTools?: string[];
+  },
+): Promise<PeerRow | null> {
+  const set: Partial<typeof mantlePeers.$inferInsert> = { updatedAt: new Date() };
+  const risky = access.allowedRiskyTools ? [...new Set(access.allowedRiskyTools)] : undefined;
+  if (access.actsAs !== undefined) {
+    set.actsAsLoginId = access.actsAs?.loginId ?? null;
+    set.actsAsRole = access.actsAs?.role ?? null;
+    set.writeEnabled = access.actsAs ? (access.writeEnabled ?? false) : false;
+    set.allowedRiskyTools = access.actsAs ? (risky ?? []) : [];
+  } else {
+    if (access.writeEnabled !== undefined) {
+      // Never on for a peer bound to nobody.
+      set.writeEnabled =
+        sql`(${access.writeEnabled} and ${mantlePeers.actsAsLoginId} is not null)` as unknown as boolean;
+    }
+    if (risky !== undefined) set.allowedRiskyTools = risky;
+  }
+  const [row] = await db
+    .update(mantlePeers)
+    .set(set)
+    .where(and(eq(mantlePeers.id, id), eq(mantlePeers.ownerId, ownerId)))
+    .returning();
+  return row ? rowOf(row) : null;
+}
+
 /** Hard-delete a peer: drops the sidecar + its node (cascades peer_shares). */
 export async function deletePeer(ownerId: string, id: string): Promise<boolean> {
   const [row] = await db
@@ -267,7 +324,11 @@ export async function verifyInboundToken(token: string): Promise<MantlePeer | nu
   // Defence-in-depth: confirm in constant time (the unique-hash lookup already
   // matched, but never trust a single equality on an auth path).
   if (!tokenMatchesHash(token, row.inboundTokenHash)) return null;
-  await db.update(mantlePeers).set({ lastSeenAt: new Date() }).where(eq(mantlePeers.id, row.id));
+  // The token is verified by now; last-seen is a note for the peers screen.
+  // On a database that refuses writes it is skipped, never a failed peer call.
+  await bestEffortWrite("a peer's last-seen stamp", () =>
+    db.update(mantlePeers).set({ lastSeenAt: new Date() }).where(eq(mantlePeers.id, row.id)),
+  );
   return row;
 }
 

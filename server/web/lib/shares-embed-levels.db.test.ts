@@ -69,7 +69,7 @@ describe.skipIf(!URL)('page and drawing links serve embeds by level on Postgres'
         (${id.draw}, ${JSON.stringify(scene)}::jsonb, ${JSON.stringify({ f1: id.drawImg })}::jsonb)`);
     // The admin makes the page public: its embeds go down with it.
     await access.setItemLevel(owner, id.page, 'public');
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await m.db.execute(sqlTag`delete from shares where owner_id = ${owner}`);

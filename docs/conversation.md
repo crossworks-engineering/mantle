@@ -10,6 +10,7 @@ adopts it → unified summarizer → Telegram cutover + trigger swap `0072` → 
 UI.
 
 Companion docs:
+
 - [`architecture.md`](./architecture.md) §9b (Telegram responder), §9g (web
   `/assistant`), §9b' (digests), the per-surface detail, now pointing here for the
   unified model.
@@ -26,25 +27,25 @@ Companion docs:
 Before unification, every chat channel forked the entire stack. The two channels
 duplicated four things each:
 
-| Concern | Telegram | Web `/assistant` |
-|---|---|---|
-| Conversation store | `telegram_messages` (keyed per **chat**) | `assistant_messages` (keyed per **owner+agent**) |
-| History load | `loadContext` reads `telegram_messages` by `chat_id` ([main.ts:327](../server/api/src/main.ts)) | `loadContext` reads `assistant_messages` by `agent_id` ([assistant.ts:218](../server/web/lib/assistant.ts)) |
-| Digests | `summarizeChat(chatPk)` → notes keyed `data.chat_id` | `summarizeWebConversation(ownerId)` → notes `source:web` |
-| Summarize trigger | `summarize_due` on `telegram_messages` INSERT, payload `chat_id` ([0013](../packages/db/migrations/0013_conversation_digests.sql)) | `summarize_web_due` on `assistant_messages` INSERT, payload `owner_id` ([0044](../packages/db/migrations/0044_web_summarize_due.sql)) |
-| Brain node per message | yes (`type=telegram_message`) | no |
-| Attachments | `telegram_messages.attachments` (file_ids) | ephemeral artifacts only, not persisted |
+| Concern                | Telegram                                                                                                                           | Web `/assistant`                                                                                                                      |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Conversation store     | `telegram_messages` (keyed per **chat**)                                                                                           | `assistant_messages` (keyed per **owner+agent**)                                                                                      |
+| History load           | `loadContext` reads `telegram_messages` by `chat_id` ([main.ts:327](../server/api/src/main.ts))                                    | `loadContext` reads `assistant_messages` by `agent_id` ([assistant.ts:218](../server/web/lib/assistant.ts))                           |
+| Digests                | `summarizeChat(chatPk)` → notes keyed `data.chat_id`                                                                               | `summarizeWebConversation(ownerId)` → notes `source:web`                                                                              |
+| Summarize trigger      | `summarize_due` on `telegram_messages` INSERT, payload `chat_id` ([0013](../packages/db/migrations/0013_conversation_digests.sql)) | `summarize_web_due` on `assistant_messages` INSERT, payload `owner_id` ([0044](../packages/db/migrations/0044_web_summarize_due.sql)) |
+| Brain node per message | yes (`type=telegram_message`)                                                                                                      | no                                                                                                                                    |
+| Attachments            | `telegram_messages.attachments` (file_ids)                                                                                         | ephemeral artifacts only, not persisted                                                                                               |
 
-Adding WhatsApp means a *fifth* copy of all of that. Three things make this worse
+Adding WhatsApp means a _fifth_ copy of all of that. Three things make this worse
 than it looks:
 
 1. **Every channel re-implements memory.** History loading, digest production, the
    summarize trigger, and the prompt-build context are copy-pasted per channel and
    drift independently.
-2. **The web summarizer is already per-*owner*, not per-*agent***, a latent
+2. **The web summarizer is already per-_owner_, not per-_agent_**, a latent
    inconsistency with the "one stream per agent" goal, and the web responder passes
    `digests: []` so it never even reads its own digests back.
-3. **There is no single place to *see* a conversation.** A turn sent on Telegram
+3. **There is no single place to _see_ a conversation.** A turn sent on Telegram
    never appears on `/assistant` and vice-versa, even though both are "the same
    assistant."
 
@@ -94,7 +95,7 @@ Because it does jobs the conversation stream shouldn't: Telegram-specific dedup,
 delivery retries, the `file_id`s needed to download a voice clip, and the per-message
 brain node that makes an individual Telegram line findable by search. Per the design
 decision (2026-06-03), raw-message **node-backing stays as-is**: the brain axis is
-unchanged. The conversation stream is a *separate, additional* write, not a
+unchanged. The conversation stream is a _separate, additional_ write, not a
 replacement. This is a deliberate dual-write (see §7 Risks).
 
 ## 3. Schema change
@@ -115,9 +116,13 @@ CREATE INDEX assistant_messages_owner_agent_channel_created_idx
 ```
 
 - **`channel`**: drives the UI badge and which transport sends an outbound reply.
+  Today: `web`, `mobile`, `telegram`, `whatsapp`, and `mcp` (a turn an MCP
+  client answered as the agent and wrote back with `responder_turn_record`; its
+  `model` is the client's model, `data.authored_by` names the client, and no
+  phone push goes out for it; see [connecting-claude.md](./connecting-claude.md)).
 - **`attachments`**: what makes voice/images render in `/assistant`. Shape maps onto
   the existing `Artifact` type the chat already renders
-  ([assistant-client.tsx `ArtifactView`](../jackdaw/app/(app)/assistant/assistant-client.tsx)).
+  ([assistant-client.tsx `ArtifactView`](<../jackdaw/app/(app)/assistant/assistant-client.tsx>)).
 - **`external_ref`**: lets the Telegram sender thread replies and lets us
   dedup/back-link to the transport row without a join table.
 
@@ -133,7 +138,7 @@ payload, which the current `main.ts` LISTEN handlers don't understand. So it shi
 a **separate cutover migration** (`0072_unified_conversation_triggers.sql`) landed
 together with Phases 3 + 4 (Telegram writing `assistant_messages` + the unified
 summarizer). A single trigger on the unified table then replaces both existing ones;
-because *every* channel now writes `assistant_messages`, one trigger covers them all,
+because _every_ channel now writes `assistant_messages`, one trigger covers them all,
 keyed on the stream identity (`agent_id`):
 
 ```sql
@@ -201,16 +206,18 @@ The "per-agent, cross-channel" semantics live here. The digest filter changes fr
 ## 5. Per-surface changes
 
 ### 5a. Web (`server/web/lib/assistant.ts`)
+
 - `loadContext` → call `loadConversationContext` (it now also returns real digests,
   closing the current `digests: []` gap for free).
 - Inbound/outbound inserts → `recordTurn(channel='web', attachments=[image artifact])`.
 - Pass real `digests` into `buildChatMessages`. Lowest-risk surface (same table).
 
 ### 5b. Telegram (`server/api/src/main.ts`): as built
+
 - **Keep** the `telegram_messages` insert (node, dedup, file_ids, delivery), the
   transport/brain record.
 - **Add** `recordTurn(channel='telegram', externalRef={accountId,chatId,messageId},
-  attachments=[…])` for both inbound and outbound.
+attachments=[…])` for both inbound and outbound.
 - **Where inbound is recorded:** in `handleMessage`, NOT the poll worker, the
   responder agent is only resolved at handle time (`resolveResponderAgent`), and the
   stream is per-agent. It runs right after the agent is resolved + voice is
@@ -228,6 +235,7 @@ The "per-agent, cross-channel" semantics live here. The digest filter changes fr
   bytes stored, just `file_id` + (for ingested photos/docs) the file node id.
 
 ### 5c. Summarizer (`server/api/src/agent/summarizer.ts`)
+
 - Collapse `summarizeChat(chatPk)` + `summarizeWebConversation(ownerId)` into one
   **`summarizeAgentConversation(ownerId, agentId)`** reading
   `assistant_messages WHERE owner+agent AND digest_node_id IS NULL`.
@@ -239,9 +247,10 @@ The "per-agent, cross-channel" semantics live here. The digest filter changes fr
   `summarize_web_due` + `scheduleSummarizeWeb`.
 
 ### 5d. `/assistant` UI
+
 - `recentAssistantMessages` / `assistantMessagesBefore` + the messages API return
   `channel` + `attachments`.
-- [assistant-client.tsx](../jackdaw/app/(app)/assistant/assistant-client.tsx): map
+- [assistant-client.tsx](<../jackdaw/app/(app)/assistant/assistant-client.tsx>): map
   `attachments` → the existing `Artifact` shape (already renders `<audio controls>` +
   image preview); add a small channel badge on non-web turns.
 - Telegram voice notes need a playable URL, served via the existing
@@ -251,6 +260,7 @@ The "per-agent, cross-channel" semantics live here. The digest filter changes fr
 
 `server/web/scripts/backfill-conversation.ts`, dry-run by default (same convention as
 `dedupe:edges`):
+
 - For each `telegram_messages` row, insert a matching `assistant_messages` row
   (`channel='telegram'`, `agent_id` resolved from `chat.responder_agent_id` → the
   inbound channel's `agent_id` → highest-priority conversational agent (the
@@ -288,7 +298,7 @@ an agent to one login. Moving parts:
   clone become the brain-wide default for headless callers (reminders,
   heartbeats).
 - **Identity, the `{{name}}` token.** A copied prompt named its SOURCE: an
-  assistant called Tommy opened with *"You are Mira, an RBI specialist"*
+  assistant called Tommy opened with _"You are Mira, an RBI specialist"_
   (observed live at v0.220.0). `name` and `system_prompt` are separate columns
   and nothing kept them in step, the same reason renaming any agent in
   `/settings/agents` left it introducing its old name. So the name is now a
@@ -343,6 +353,87 @@ gone no UI can open its thread; the owner decides what happens to it.
 - The response is `{ ok, conversation, deletedMessages, deletedDigests }`. An
   unknown `conversation` value is a 400 and deletes nothing.
 - Pinned by `server/web/app/api/agents/[id]/agent-delete.db.test.ts`.
+
+## 6c. New chat: archived threads (migration 0231)
+
+"New chat" in the UI (and `/new` on Telegram) archives the open chat and starts
+a fresh one. The old chat stays saved and searchable under **Previous chats**.
+The code and API say "archive"; the UI says "New chat" and "Previous chats".
+
+**Data model: time ranges.** `chat_threads` holds one row per thread of an
+agent's chat: `[started_at, archived_at)` over that agent's
+`assistant_messages`. The open thread has no end, and there is at most one per
+agent chat (`chat_threads_one_open_uq`). Messages never move and have no thread
+column: a turn belongs to the thread whose range holds its `created_at`. An
+agent with no row keeps its forever-thread (no lower bound), so nothing changes
+until someone presses New chat.
+
+**What the fresh chat reads** (`loadConversationContext`, lower bound = the open
+thread's `started_at`):
+
+| Path | Archived turns |
+|---|---|
+| History window (`history_limit`, default 20) | out |
+| Digests (3 newest) | out (`period_start >= started_at`) |
+| `history_recall` (Jev over older rows) | out |
+| Follow-up query enrich | out |
+| Content hits | the archive summary note comes back **by relevance**, like any note |
+| Journal, pages, tasks, notes the agent wrote | in, as before |
+| `find_window` | in: digests plus one result per archived thread (`kind: 'thread'`, `thread_id`) |
+| `replay_window`, search | in |
+
+`snapshot.history.since` (and `continuedFrom`) on the context trace show the
+bound.
+
+**The summary note.** The archive request makes ONE model call on the
+summarizer worker: the thread's digests plus its undigested tail (capped: 60
+digests, 40 turns, 1,200 chars a turn), returning a title and a summary. It
+writes a `note` (`data.kind = 'chat_archive'`, tag `chat-archive`, embedded with
+`digestEmbedText`, path Notes / Auto-filed / Assistant) and stores its id and
+the title on the thread. The extractor refuses it (terminal skip
+`chat_archive`): no facts and no entities, because it blends the user's words
+with the brain's own answers. Cost: about 0.002 to 0.005 USD per archive on a
+flash-lite summarizer. No trigger, no timer and no retry loop run it: if the
+call fails (or there is no summarizer worker), the thread keeps a plain title
+(its first user line) and `POST /api/assistant/threads/<id>/summarize` retries
+on a person's click. A thread that has a summary is never summarised again.
+
+**The summarizer and cuts.** A digest must never hold turns from both sides of
+a cut. `summarizeAgentConversation` finds the oldest undigested turn; when it
+sits in a closed range, the run digests that range alone, up to its end, even
+below the threshold (a closed range never grows, so this is ceil(turns / batch)
+runs, then never again). It rides the same `summarize_due` notify; nothing new
+starts model work.
+
+**Continue from this.** `POST /api/assistant/threads/<id>/continue` archives the
+current chat (an empty one is only re-seeded) and opens a thread with
+`seed_thread_id`. While that thread is open, the archived thread's summary leads
+the digests ("Continued from the archived chat ..."), not its raw turns. A
+previous chat with no summary (its call failed at archive time) is summarised
+first, on that click only. An
+archived thread is read-only: there is no route that writes into it.
+
+**API** (owner-scoped, agent resolved like `/api/assistant/thread`):
+
+- `GET /api/assistant/threads?agent=` lists threads, newest first, open on top.
+- `POST /api/assistant/threads {agent?}` = New chat. `{archived, open}`;
+  `archived: null` for an empty chat; 409 while a reply is still pending.
+- `GET /api/assistant/threads/<id>` = one thread, its summary and its latest
+  100 messages; older pages via `/api/assistant/messages?thread=<id>&before=`.
+- `/api/assistant/thread` and `/api/assistant/messages` (no `thread`) return
+  the OPEN thread only, plus `thread` (the open thread row, null if never
+  archived) on the first.
+- Telegram: `/new` (also `/newchat`, `/archive`) inside the per-chat lock; the
+  command is not recorded and never reaches the model.
+
+**Deleting an agent** with `conversation=delete` also removes its archive
+summary notes; `chat_threads` rows CASCADE with the agent.
+
+**Not yet** (later phases): member and client chats (`team_messages`, per
+login: their summary stays on the thread row, never a brain node, because
+private chats are never indexed), the mobile app, auto New chat after idle
+time (Jason: off), and the Forum v2 thread list (section 10a of the forum plan:
+archived threads list under "your agent").
 
 ## 7. Risks & call-outs
 

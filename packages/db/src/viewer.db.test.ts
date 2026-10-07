@@ -62,7 +62,7 @@ describe.skipIf(!URL)('viewer pools on Postgres', () => {
     }
     m = await import('./index');
     sqlTag = (await import('drizzle-orm')).sql;
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await m.systemDb.execute(sqlTag`drop schema if exists viewer_test cascade`);

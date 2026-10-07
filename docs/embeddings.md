@@ -195,6 +195,8 @@ pnpm -C server/web re-embed --repopulate --model=embeddinggemma:latest
 
 During rebuild, the UI shows progress per layer. Until it completes, retrieval quality on older items is inconsistent, vectors written under the old model won't cosine-match against queries embedded under the new one.
 
+A rebuild that walks `content_chunks` also deletes the brain's passage windows (below): they were embedded in the old space. Run `pnpm maintain chunk-windows --apply` after it to rebuild them.
+
 ---
 
 ## The local provider (EmbeddingGemma via Ollama)
@@ -220,11 +222,20 @@ EmbeddingGemma on a GPU is instant; on a **shared-vCPU VPS with no GPU** it's se
 
 **The adapter already sub-batches**: [`local-embedding.ts`](../packages/voice/src/adapters/local-embedding.ts) splits the caller's batch into sequential sub-requests (default 16 texts each) so a retry resumes from the completed sub-batches via the embedding cache. Three env knobs tune it for slow/fast hardware (all passed through the compose `x-app-env` anchor):
 
-| Env var                         | Default  | What it does                            | When to change                                                                                     |
-| ------------------------------- | -------- | --------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `EXTRACT_CONCURRENCY`           | `2`      | In-flight extractor jobs (clamped 1–8). | **Drop to `1`** on a CPU-only embedder so jobs don't contend for cores.                            |
-| `MANTLE_LOCAL_EMBED_BATCH`      | `16`     | Texts per local-embedder HTTP request.  | **Lower (e.g. `8`)** on an especially slow box so each request clears the timeout; raise on a GPU. |
-| `MANTLE_LOCAL_EMBED_TIMEOUT_MS` | `120000` | Per-request timeout (ms).               | Raise for very slow hardware so a legitimate sub-batch isn't aborted early.                        |
+| Env var                         | Default  | What it does                                                                     | When to change                                                                                     |
+| ------------------------------- | -------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `EXTRACT_CONCURRENCY`           | `2`      | In-flight extractor jobs (clamped 1–16). The UI value wins over this; see below. | **Drop to `1`** on a CPU-only embedder so jobs don't contend for cores.                            |
+| `MANTLE_LOCAL_EMBED_BATCH`      | `16`     | Texts per local-embedder HTTP request.                                           | **Lower (e.g. `8`)** on an especially slow box so each request clears the timeout; raise on a GPU. |
+| `MANTLE_LOCAL_EMBED_TIMEOUT_MS` | `120000` | Per-request timeout (ms).                                                        | Raise for very slow hardware so a legitimate sub-batch isn't aborted early.                        |
+
+**Set it from the UI, live.** Settings → AI workers → Extractor (and Settings →
+Embedding → Performance & throughput) set the extractor count, 1 to 16. The
+extractor re-reads it every 30s and adds or removes workers with no restart; a
+removed worker finishes the job it holds first. The time budget is live the same
+way. The panel also shows the queue: working now, waiting, retrying, done in the
+last 10 minutes, dead-lettered (`GET/PATCH /api/embedding/extraction`). A host
+that sends extraction to a hosted model (no local CPU embedder) can run 8 or
+more; a CPU-only box should stay at 1 or 2.
 
 ```bash
 # .env on a small CPU-only box:
@@ -234,7 +245,39 @@ MANTLE_LOCAL_EMBED_BATCH=8
 
 **The real fix is hardware.** These knobs trade latency for reliability; they stop the timeouts, but a CPU embedder is still the throughput ceiling for both bulk ingest and live `search_chunks`. If you regularly ingest bulky documents, give the box more/faster vCPU, or point the embedding route at a **GPU or remote EmbeddingGemma** (`/settings/embedding`, same model, see failover below); then you can raise `MANTLE_LOCAL_EMBED_BATCH` back up. Re-ingest anything that landed thin while the box was timing out (clear its `data.summary`/`extract_completed_at` and re-fire `node_ingested`, or use the `process_extraction` tool).
 
+**Hosted embedders run in parallel.** Every embed call goes through the shared provider pool (docs/provider-http.md). Before v0.237.11, Node 26's built-in fetch sent parallel POSTs to one provider one at a time, so 8 extractors embedding at once waited in line. Now they run side by side. A 429 from the provider backs off (2, 4, 8, 16 s) and retries; after that the error stands. If a provider keeps answering 429, lower the extractor count.
+
 ---
+
+## Passage windows (optional, per brain)
+
+A retrieval chunk is about 1.6k characters with one vector. A question about one sentence of it matches that vector weakly, so on a large single-topic corpus the right passage often never reaches the search pool. Passage windows give the inside of each chunk its own vectors: the chunk is cut into sentence windows of about 800 characters, each window is embedded, and passage search (`search_chunks`, the responder's auto-context) adds a window arm that returns the window's chunk. The model still sees the same chunk text, so the context budget does not change.
+
+**Off by default.** It costs money and space, so a brain opts in:
+
+```
+pnpm maintain chunk-windows            # dry run: chunks, windows, tokens, estimated USD
+pnpm maintain chunk-windows --apply    # switch on, then embed every chunk's windows
+pnpm maintain chunk-windows --off      # switch off (rows kept)
+pnpm maintain chunk-windows --clear    # switch off and delete the rows
+```
+
+`--parallel=N` (1 to 32, default 4) sets how many embed calls are in flight; each call is about 100 windows (whole chunks only, so a few over). `--apply` sets `embedding_config.chunk_windows` first, so the extractor writes windows for every chunk it (re)builds from then on; it is resumable. A one-window chunk reuses its chunk vector (no embed). The vectors are `halfvec` (half the bytes; the measured set ranked identically) in `content_chunk_windows`, which cascades with the chunk and has no text column. Window embeds skip `embedding_cache` (they are written once; the cache would only grow).
+
+**Memory and speed.** The backfill holds at most `2 x parallel x 100` window vectors in Node (`parallel` embed calls and `parallel` inserts in flight, an embed call never waiting for an insert), whatever the corpus size: chunks are read as text only, a one-window chunk is copied inside Postgres (its vector never reaches Node), and each batch's vectors are dropped when its insert returns. Up to v0.237.12 a "page" was 500 chunks (about 1,300 windows), held as JS arrays, strings and one page-sized JSON parameter at once; `--parallel=16` inside mantle_web pushed the web container past its 3 GB limit and the kernel killed the task (2026-10-04).
+
+Measured 2026-10-04 on a workstation copy shaped like the library brain (122,000 chunks of about 1,350 characters, 239,639 windows, 196,065 embedded) with a fake embedder that answers each 100-window call in 1 s (no spend). Peak RSS of the task process (it includes about 280 MB for tsx and the workspace) and wall time:
+
+| Code                        | `--parallel=4`   | `--parallel=16`   |
+| --------------------------- | ---------------- | ----------------- |
+| v0.237.12 (500-chunk pages) | 555 MB, 15.0 min | 1,047 MB, 5.6 min |
+| now (100-window batches)    | 458 MB, 13.7 min | 486 MB, 5.3 min   |
+
+Run end to end through `scripts/box-maintain.sh` with `--memory=1g --parallel=16`, the whole container (pnpm, the runner and the task) stayed at 500 to 530 MiB and finished in 5.2 min (46k windows/min). A real provider is slower per call, so on a box the windows per minute scale with `--parallel` until the provider answers 429. `--parallel=16` in a 1g container is a safe default for a brain this size.
+
+**On a box, run it in its own container**, not inside mantle_web and not with `nohup` over ssh: `scripts/box-maintain.sh <box> chunk-windows --apply --yes --parallel=16` ([maintenance-runner.md](./maintenance-runner.md), "Long runs on a box"). One maintenance run per box at a time.
+
+What it costs, measured on a 122k-chunk library brain (docs/recall-eval.md, "Paraphrased questions"): 314,004 windows, about 43M tokens, about USD 6 once with `openai/text-embedding-3-large`; about 1.1 GB of table and index; ingest embeds about twice the tokens; a judged search scores twice the pool (about USD 0.0013 more with the decider's `passage_scoring`). What it bought there: paraphrased questions found their passage in the top 10 for 63% of cases instead of 40% with the judge, 50% instead of 28% without it; all question types 75% instead of 53%. One trade: four "named verse, answer in a sermon" questions moved from rank 1 to rank 2 or 3. On a small brain with short documents it changes nothing (each document is one window).
 
 ## Primary + backup routes (failover)
 
@@ -244,12 +287,50 @@ How it behaves at runtime ([`doEmbed`](../packages/embeddings/src/index.ts)):
 
 - The primary route runs first.
 - On a **route-down** error, connection refused, DNS failure, request timeout, or a 5xx (classified by `isRouteDownError`); it retries the misses on the backup route and stamps `last_failover_at` (surfaced on the page).
-- On a **bad-input** error (4xx, unsupported input) it rethrows, a second route wouldn't help.
+- On an **account** error (no credits, a refused key, no key, a model the provider does not offer; `isAccountError` in [`provider-error.ts`](../packages/embeddings/src/provider-error.ts)) it fails over too: the backup is another provider or key, which gets round exactly that. Added 2026-10-04, see "Provider outages" below.
+- On a **bad-input** error (any other 4xx, unsupported input) it rethrows, a second route wouldn't help.
 - The cache is keyed on **model only**, so both routes share entries and a failover never pollutes the cache.
 
 **Why same-model only.** Unlike chat (where a different backup model is fine), a different _embedding_ model produces vectors in a different coordinate system. If the backup embedded the query with another model, it wouldn't cosine-match the corpus the primary built; retrieval would silently return garbage, and anything ingested during the outage would be permanently off-space until re-embedded. So a safe embedding backup is the _same_ model on a different host: e.g. primary `local` Ollama on the Mac → backup a second Ollama / a hosted EmbeddingGemma. (Cloud models that aren't EmbeddingGemma make sense as a _primary_ you commit to, not as a failover target.)
 
 **Why EmbeddingGemma and not jina-embeddings-v5?** jina-v5 was evaluated and rejected for the LM Studio path; it loads as `type=llm` there (Qwen3 base) and LM Studio silently falls back to another embedder. EmbeddingGemma loads as a real embedder (768-dim, proper pooling). If jina-v5 is ever wanted, serve it via llama.cpp `--pooling last` / TEI / vLLM, not LM Studio.
+
+---
+
+## Provider outages (alerts and automatic recovery)
+
+**What happened (2026-10-04).** Two brains embedded through OpenAI direct while the account had no credits. OpenAI answered `429 insufficient_quota`, which looks like a rate limit. Every extract job retried five times and went to the dead-letter queue, new files were not indexed, and some chat turns had no retrieved context. No backup route was set. Nobody was told: the only traces were log lines and the /debug/integrity dead-letter check. When the admin switched to OpenRouter, new embeds worked, but the backlog did not move until a restart.
+
+**1. Error classes** ([`provider-error.ts`](../packages/embeddings/src/provider-error.ts)). `classifyProviderError(err)` sorts a provider error:
+
+| Class               | Codes                                                                                                               | What the brain does                                                                               |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Permanent (account) | `quota` (402, a 429 or 403 that says no credits), `auth` (401, 403), `no_key`, `model` (404, a 400 about the model) | Fails over to the backup route. Pauses the extract queue once confirmed. Shows the alert at once. |
+| Transient           | `rate_limit` (a plain 429), `server` (5xx), `network`, `timeout`                                                    | Retries with backoff, as before. Shows the alert only after 10 min.                               |
+| None                | a bad input, a 403 for flagged input, a parse error                                                                 | Nothing new: it says nothing about the provider.                                                  |
+
+A no-credits 429 no longer waits through the rate-limit backoff (2, 4, 8, 16 s): no wait fixes an empty account. Chat failover uses the same rule ([`chat-failover.md`](./chat-failover.md) §4).
+
+**2. The alert** (migration `0230`, table `provider_alerts`, store in [`provider-alerts.ts`](../packages/db/src/provider-alerts.ts)). One row per brain and subject (`embedding`, `extraction`). Every embed call reports its outcome ([`provider-outage.ts`](../packages/embeddings/src/provider-outage.ts)): a failure opens or extends the row (one write per subject per minute per process), and a call that reaches a provider and works closes it. The extractor's chat calls report the same way for `extraction`. The `reason` is fixed text per code, never the provider's body, so a key or an account id never reaches a banner or a phone.
+
+What admins (owner and admin logins) see, and members and clients never see:
+
+- the app-shell banner and the Settings, Embedding page: "Embeddings are failing since 08:14: The provider account has no credits or quota left. New files are not indexed and search has less context. 30 items wait." with the fix (add credits, check the key, switch provider, add a backup route) and a **Try again** button;
+- the "Needs you" feed (`GET /api/team-admin/needs-you`, field `providers`), which the live stream refreshes: the table's trigger raises `needs_you_changed` when what an admin sees changes;
+- one phone push per outage to admin devices ("Embeddings are failing"), on the same toggle as other "things waiting for you".
+
+`GET /api/embedding/recover` returns the shown alerts; `GET /api/embedding` returns them with the config.
+
+**3. The circuit and automatic recovery** ([`provider-circuit.ts`](../server/api/src/agent/provider-circuit.ts), wired in [`extract-queue.ts`](../server/api/src/agent/extract-queue.ts)).
+
+- **Open.** A job fails with a permanent class. One tiny probe call confirms it is the account and not that one document. Then the queue pauses (no worker takes a job, so nothing burns its retries) and the alert is marked paused.
+- **Probe.** While an alert is shown, the agent makes ONE tiny call at 5 min, then 10, 20, 40, then every 60 min. One probe in flight at a time; none while all works.
+- **Recover.** When a probe works, or the alert closes elsewhere (any embed that works closes it), the agent resumes the queue, re-drives the dead-letter queue and runs the unextracted-node sweep. These are the same bounded code paths as at boot (1000 jobs, 1000 nodes, `MANTLE_EXTRACT_DRAIN_LIMIT`). No restart.
+- **Admin actions probe at once.** A save on Settings, Embedding (and `PATCH /api/embedding/extraction`) and the **Try again** button (`POST /api/embedding/recover`) raise `provider_recover`. The agent probes the open alert now, and with no alert open it still recovers a waiting dead-letter backlog after one probe works. The 30 s config poll catches a lost notify. A restart probes a paused alert at once and holds the queue paused until it works.
+
+**Worst-case cost.** A probe is one request of a few tokens: at most 26 a day per subject while an outage lasts (4 in the first 75 min, then one an hour), plus one per admin action, and none while all works. A recovery enqueues at most 1000 dead letters and 1000 unextracted nodes; they run through the queue's own worker count and retry policy, so they cost what the backlog would have cost anyway. Recovery runs at most once per 30 min on its own (a probe that works, an alert closing) and at most once per 2 min on an admin action. A job that fails for its own reason gets one more round of 6 attempts per recovery, as it does per restart. No cron, no trigger starts LLM work: the table's trigger only notifies.
+
+**4. Backup route guidance.** With no backup set, Settings, Embedding suggests a same-model one when the other provider's key is saved ([`embedding-backup.ts`](../server/web/lib/embedding-backup.ts)): OpenAI direct with `text-embedding-3-*` gets OpenRouter, and the reverse. Both serve the same vectors, and both adapters take the same slug (OpenRouter takes `text-embedding-3-large` and `openai/text-embedding-3-large`; the OpenAI adapter drops an `openai/` prefix), so the backup needs no second model field. Onboarding sets that backup by default when the key is there, after a probe at 768 dims.
 
 ---
 
@@ -265,7 +346,8 @@ How it behaves at runtime ([`doEmbed`](../packages/embeddings/src/index.ts)):
 
 - `text-embedding-3-large` (the shipped default) and `text-embedding-3-small` (the budget pick) both honour the `dimensions` parameter for MRL truncation → coerced to 768.
 - The dispatcher sends `dimensions: 768` for MRL-capable models.
-- Route via **OpenRouter** (default, the same key as chat, slug `openai/text-embedding-3-large`) or an OpenAI key direct.
+- Route via **OpenRouter** (default, the same key as chat, slug `openai/text-embedding-3-large`) or an OpenAI key direct. The OpenAI adapter drops an `openai/` prefix, so one slug serves both routes: set the other one as the backup.
+- A `429` with `insufficient_quota` means **no credits**, not a rate limit. The brain treats it as an account error (see "Provider outages").
 
 ### Google (Gemini)
 

@@ -255,12 +255,14 @@ describe.skipIf(!URL)('client apps, end to end', () => {
     let rows: Awaited<ReturnType<typeof log.listAppAccess>> = [];
     for (let i = 0; i < 250; i++) {
       rows = (await log.listAppAccess(brain, ids.client)).filter((r) => r.actorId === clientLogin);
-      if (new Set(rows.map((r) => r.kind)).size === 3) break;
+      if (new Set(rows.map((r) => r.kind)).size === 4) break;
       await new Promise((r) => setTimeout(r, 20));
     }
-    expect(new Set(rows.map((r) => r.kind))).toEqual(new Set(['auth', 'db', 'tool']));
+    // A refused tool call also lands an error row (apps plan G4).
+    expect(new Set(rows.map((r) => r.kind))).toEqual(new Set(['auth', 'db', 'tool', 'error']));
     expect(rows.every((r) => r.detail.via === 'client')).toBe(true);
     expect(rows.some((r) => r.detail.refused)).toBe(true);
+    expect(rows.some((r) => r.kind === 'error' && r.detail.source === 'tool')).toBe(true);
   });
 
   it('the frame refuses a ticket after End sessions', async () => {

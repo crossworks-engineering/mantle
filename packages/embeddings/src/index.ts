@@ -46,6 +46,42 @@ export {
   type ReembedResult,
   type ReembedProgressEvent,
 } from './reembed';
+export {
+  EXTRACTION_CONCURRENCY_DEFAULT,
+  EXTRACTION_CONCURRENCY_MAX,
+  resolveExtractionConcurrency,
+} from './extraction-concurrency';
+import { withRateLimitBackoff } from './rate-limit';
+import { isAccountError } from './provider-error';
+import { noteProviderFailure, noteProviderSuccess, tagProviderSubject } from './provider-outage';
+export {
+  PROVIDER_ERROR_REASONS,
+  classifyProviderError,
+  isAccountError,
+  providerErrorStatus,
+  type ProviderErrorClass,
+  type ProviderErrorCode,
+} from './provider-error';
+export {
+  noteProviderFailure,
+  noteProviderSuccess,
+  providerSubjectOf,
+  resetProviderOutageCache,
+  tagProviderSubject,
+  type ProviderSubject,
+} from './provider-outage';
+export {
+  CHUNK_WINDOW_CHARS,
+  chunkWindows,
+  chunkWindowsEnabled,
+  chunkWindowRows,
+  planChunkWindows,
+  runChunkWindows,
+  setChunkWindows,
+  type ChunkWindowsReport,
+  type WindowRow,
+  type WindowSource,
+} from './chunk-windows';
 
 /** Models that accept non-text inputs. Kept here for callers (the
  *  extractor's attachment path) that need to know in advance which
@@ -151,6 +187,9 @@ export interface EmbeddingConfig {
   localEmbedBatchSize?: number | null;
   /** Local-embedder per-request timeout in ms (threaded per call). */
   localEmbedRequestTimeoutMs?: number | null;
+  /** Passage windows on (content_chunk_windows): the extractor writes them
+   *  and passage search adds the window arm. Off when absent. */
+  chunkWindows?: boolean;
 }
 
 /** Used when the owner has no `embedding_config` row (fresh install, or the
@@ -229,6 +268,7 @@ export async function resolveEmbeddingConfig(ownerId: string): Promise<Embedding
         extractionTimeBudgetMinutes: row.extractionTimeBudgetMinutes,
         localEmbedBatchSize: row.localEmbedBatchSize,
         localEmbedRequestTimeoutMs: row.localEmbedRequestTimeoutMs,
+        chunkWindows: row.chunkWindows,
       };
     }
   } catch (err) {
@@ -291,6 +331,19 @@ export async function probeEmbeddingRoute(
   return vec.length;
 }
 
+/**
+ * One tiny embed through the CONFIGURED routes (primary, then the backup on
+ * failover), with no cache, so it always reaches a provider. Used by the
+ * extract queue's outage probe (docs/embeddings.md "Provider outages"): a
+ * success closes the embedding alert like any embed that works, a failure
+ * throws the provider's error for the caller to classify. Costs one request
+ * of two tokens.
+ */
+export async function probeConfiguredEmbedding(ownerId: string): Promise<void> {
+  clearEmbeddingModelCache(ownerId);
+  await embedBatch(ownerId, ['provider health probe'], { cache: false });
+}
+
 /** OpenRouter caps batch size; 100 is well inside provider limits. */
 const MAX_BATCH = 100;
 
@@ -337,7 +390,13 @@ export async function embed(
 export async function embedBatch(
   ownerId: string,
   texts: string[],
-  opts?: { model?: string },
+  opts?: {
+    model?: string;
+    /** false = skip the embedding cache (no read, no write): for derived
+     *  vectors that are stored once and never re-embedded from the same text,
+     *  like passage windows, where the cache would only grow. */
+    cache?: boolean;
+  },
 ): Promise<number[][]> {
   return embedMultimodal(ownerId, texts, opts);
 }
@@ -352,7 +411,7 @@ export async function embedBatch(
 export async function embedMultimodal(
   ownerId: string,
   inputs: EmbedInput[],
-  opts?: { model?: string; provider?: string; apiKeyId?: string | null },
+  opts?: { model?: string; provider?: string; apiKeyId?: string | null; cache?: boolean },
 ): Promise<number[][]> {
   // Resolve once up front so the trace step opens with the actual model
   // and doEmbed doesn't have to re-resolve. Explicit `opts.model` (and
@@ -376,8 +435,9 @@ export async function embedMultimodal(
     localEmbedRequestTimeoutMs: baseConfig.localEmbedRequestTimeoutMs,
   };
   // No trace → fast path with no instrumentation overhead.
+  const useCache = opts?.cache !== false;
   if (!currentTrace()) {
-    return doEmbed(ownerId, inputs, config);
+    return doEmbed(ownerId, inputs, config, undefined, useCache);
   }
   return step(
     {
@@ -397,7 +457,7 @@ export async function embedMultimodal(
         preview: inputs.map(previewOfInput),
       },
     },
-    async (handle) => doEmbed(ownerId, inputs, config, handle),
+    async (handle) => doEmbed(ownerId, inputs, config, handle, useCache),
   );
 }
 
@@ -431,6 +491,7 @@ async function doEmbed(
   inputs: EmbedInput[],
   config: EmbeddingConfig,
   stepHandle?: EmbedStepHandle,
+  useCache = true,
 ): Promise<number[][]> {
   if (inputs.length === 0) return [];
   const { model, dimensions } = config;
@@ -440,10 +501,12 @@ async function doEmbed(
   //    vectors); a failover never pollutes the cache.
   const hashes = inputs.map((i) => hashKey(model, i));
   const out: (number[] | null)[] = inputs.map(() => null);
-  const cachedRows = await systemDb
-    .select({ contentHash: embeddingCache.contentHash, embedding: embeddingCache.embedding })
-    .from(embeddingCache)
-    .where(inArray(embeddingCache.contentHash, hashes));
+  const cachedRows = useCache
+    ? await systemDb
+        .select({ contentHash: embeddingCache.contentHash, embedding: embeddingCache.embedding })
+        .from(embeddingCache)
+        .where(inArray(embeddingCache.contentHash, hashes))
+    : [];
   const cacheMap = new Map<string, number[]>();
   for (const row of cachedRows) cacheMap.set(row.contentHash, row.embedding);
   for (let i = 0; i < inputs.length; i++) {
@@ -515,20 +578,22 @@ async function doEmbed(
         }
       }
       if (slice.length === 0) continue;
-      const result = await adapter.embed({
-        apiKey,
-        model,
-        input: slice,
-        // MRL truncation where supported (OpenAI's text-embedding-3-*, Google's
-        // gemini-embedding-*); ignored elsewhere. The column is `dimensions`
-        // (768) so requesting it everywhere keeps inserts compatible.
-        dimensions,
-        baseUrl: r.baseUrl ?? undefined,
-        // Per-call throughput overrides for the local adapter (null → adapter's
-        // own env/const fallback). Ignored by cloud adapters.
-        localEmbedBatchSize: config.localEmbedBatchSize ?? undefined,
-        localEmbedTimeoutMs: config.localEmbedRequestTimeoutMs ?? undefined,
-      });
+      const result = await withRateLimitBackoff(() =>
+        adapter.embed({
+          apiKey: apiKey!,
+          model,
+          input: slice,
+          // MRL truncation where supported (OpenAI's text-embedding-3-*, Google's
+          // gemini-embedding-*); ignored elsewhere. The column is `dimensions`
+          // (768) so requesting it everywhere keeps inserts compatible.
+          dimensions,
+          baseUrl: r.baseUrl ?? undefined,
+          // Per-call throughput overrides for the local adapter (null → adapter's
+          // own env/const fallback). Ignored by cloud adapters.
+          localEmbedBatchSize: config.localEmbedBatchSize ?? undefined,
+          localEmbedTimeoutMs: config.localEmbedRequestTimeoutMs ?? undefined,
+        }),
+      );
       apiCalls++;
       if (result.vectors.length !== slice.length) {
         throw new Error(
@@ -556,7 +621,7 @@ async function doEmbed(
       // checks the table ACL when the executor starts, before matching a row, so
       // even ON CONFLICT DO NOTHING is refused. The statement has to not run.
       try {
-        await systemDb.insert(embeddingCache).values(cacheRows).onConflictDoNothing();
+        if (useCache) await systemDb.insert(embeddingCache).values(cacheRows).onConflictDoNothing();
       } catch (err) {
         // Narrow on purpose — anything that is not "the database refused to
         // write" is a real failure and must stay loud.
@@ -566,29 +631,42 @@ async function doEmbed(
     }
   }
 
-  // 3a. Run primary, fail over to the same-model backup only when the route
-  //     is DOWN (connection refused / timeout / 5xx). Bad-input errors (4xx,
-  //     unsupported input) rethrow — failover wouldn't help.
+  // 3a. Run primary, fail over to the same-model backup when the route is
+  //     DOWN (connection refused / timeout / 5xx) or its ACCOUNT is the
+  //     problem (no credits, a refused key, no key, a model the provider does
+  //     not offer): another provider or key gets round both. Bad-input errors
+  //     (other 4xx, unsupported input) rethrow: failover wouldn't help.
+  //
+  //     The outcome goes to the provider-alert store (provider-outage.ts): a
+  //     failure an admin must see opens or extends the alert, a call that
+  //     reached a provider and worked closes it. Cache hits say nothing.
   let usedProvider = config.primary.provider;
   let failedOver = false;
   if (missInputs.length > 0) {
     try {
-      await fillMisses(config.primary);
-    } catch (err) {
-      if (config.backup && isRouteDownError(err)) {
-        console.warn(
-          `[embeddings] primary route '${config.primary.provider}' unavailable — failing over to ` +
-            `backup '${config.backup.provider}' (same model '${model}'): ` +
-            errorMessage(err),
-        );
-        usedProvider = config.backup.provider;
-        failedOver = true;
-        await fillMisses(config.backup);
-        void stampFailover(ownerId);
-      } else {
-        throw err;
+      try {
+        await fillMisses(config.primary);
+      } catch (err) {
+        if (config.backup && (isRouteDownError(err) || isAccountError(err))) {
+          console.warn(
+            `[embeddings] primary route '${config.primary.provider}' unavailable — failing over to ` +
+              `backup '${config.backup.provider}' (same model '${model}'): ` +
+              errorMessage(err),
+          );
+          usedProvider = config.backup.provider;
+          failedOver = true;
+          await fillMisses(config.backup);
+          void stampFailover(ownerId);
+        } else {
+          throw err;
+        }
       }
+    } catch (err) {
+      tagProviderSubject(err, 'embedding', usedProvider);
+      noteProviderFailure(ownerId, 'embedding', err, { provider: usedProvider, model });
+      throw err;
     }
+    if (apiCalls > 0) noteProviderSuccess(ownerId, 'embedding');
   }
 
   // 4. Sanity check.

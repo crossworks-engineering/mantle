@@ -173,7 +173,7 @@ const find_window: BuiltinToolDef = {
   readOnly: true,
   name: 'Find a conversation window',
   description:
-    "Locate WHEN a past topic was discussed. Semantic search over conversation digests (the rolled-up summaries of older chats), returning candidate time windows each with a topic, summary, and period_start/period_end. Use this first when the user vaguely remembers discussing something ('last week we talked about a Bible topic') but not exactly when — then call `replay_window` with the best window's dates to read the actual turns. Optional `from`/`to` (YYYY-MM-DD or ISO) narrow to a rough date range; omit them to search all of time.",
+    "Locate WHEN a past topic was discussed. Semantic search over conversation digests (the rolled-up summaries of older chats) and archived chat threads (one summary per chat the user closed with New chat; kind 'thread', with its thread_id), returning candidate time windows each with a topic, summary, and period_start/period_end. Use this first when the user vaguely remembers discussing something ('last week we talked about a Bible topic') but not exactly when, then call `replay_window` with the best window's dates to read the actual turns. Optional `from`/`to` (YYYY-MM-DD or ISO) narrow to a rough date range; omit them to search all of time.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -219,7 +219,8 @@ const find_window: BuiltinToolDef = {
     const conds = [
       eq(nodes.ownerId, ctx.ownerId),
       eq(nodes.type, 'note'),
-      sql`${nodes.tags} @> ARRAY['conversation-digest']::text[]`,
+      // Digests, and the one summary note per archived chat thread (0231).
+      sql`(${nodes.tags} @> ARRAY['conversation-digest']::text[] or ${nodes.data}->>'kind' = 'chat_archive')`,
       sql`${nodes.embedding} is not null`,
     ];
     // Keep digests whose [period_start, period_end] overlaps the rough range.
@@ -248,8 +249,11 @@ const find_window: BuiltinToolDef = {
 
     const windows = rows.map((r) => {
       const d = (r.data ?? {}) as Record<string, unknown>;
+      const isThread = d.kind === 'chat_archive';
       return {
         node_id: r.nodeId,
+        kind: isThread ? 'thread' : 'digest',
+        ...(isThread && typeof d.thread_id === 'string' ? { thread_id: d.thread_id } : {}),
         topic: typeof d.topic === 'string' ? d.topic : r.title,
         summary: typeof d.summary === 'string' ? d.summary : null,
         period_start: typeof d.period_start === 'string' ? d.period_start : null,
@@ -357,10 +361,13 @@ const replay_window: BuiltinToolDef = {
     }
 
     if (surface === 'all' || surface === 'web') {
-      // channel='web' ONLY. Post-unification (docs/conversation.md) Telegram
-      // turns ALSO live in assistant_messages (channel='telegram'); those are
-      // replayed from telegram_messages above, so excluding them here is what
-      // keeps surface='all' from double-counting every Telegram turn.
+      // The app's own channels only. Post-unification (docs/conversation.md)
+      // Telegram turns ALSO live in assistant_messages (channel='telegram');
+      // those are replayed from telegram_messages above, so excluding them
+      // here is what keeps surface='all' from double-counting every Telegram
+      // turn. 'mobile' is the companion app on the same HTTP surface, and
+      // 'mcp' a turn an MCP client answered as the agent and wrote back
+      // (responder_turn_record); both are part of the app conversation.
       const web = await db
         .select({
           text: assistantMessages.text,
@@ -371,7 +378,7 @@ const replay_window: BuiltinToolDef = {
         .where(
           and(
             eq(assistantMessages.ownerId, ctx.ownerId),
-            eq(assistantMessages.channel, 'web'),
+            inArray(assistantMessages.channel, ['web', 'mobile', 'mcp']),
             gte(assistantMessages.createdAt, from),
             lte(assistantMessages.createdAt, to),
           ),

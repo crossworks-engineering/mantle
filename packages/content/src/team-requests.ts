@@ -274,10 +274,17 @@ export async function notifyTeamRequester(
   const mergedTeamRequest = { ...tr, notifiedAt: nowIso };
   const dataPatch: Record<string, unknown> = { teamRequest: mergedTeamRequest };
   if (opts.markDone) dataPatch.status = 'done';
+  // Resolving marks the task done the way updateTask does: remember the status
+  // it had, so a later reopen restores it (tasks.ts, status_before_done).
+  const keepBefore = opts.markDone
+    ? sql`case when coalesce(${nodes.data}->>'status', 'open') <> 'done'
+        then jsonb_build_object('status_before_done', coalesce(${nodes.data}->>'status', 'open'))
+        else '{}'::jsonb end`
+    : sql`'{}'::jsonb`;
   await db
     .update(nodes)
     .set({
-      data: sql`coalesce(${nodes.data}, '{}'::jsonb) || ${JSON.stringify(dataPatch)}::jsonb`,
+      data: sql`coalesce(${nodes.data}, '{}'::jsonb) || ${keepBefore} || ${JSON.stringify(dataPatch)}::jsonb`,
       updatedAt: new Date(),
     })
     .where(and(eq(nodes.id, taskId), eq(nodes.ownerId, ownerId)));

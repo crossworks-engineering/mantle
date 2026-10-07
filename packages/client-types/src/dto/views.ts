@@ -49,6 +49,20 @@ export type BrainCapacity = {
   zone: CapacityZone;
   /** Worst-axis fill as an integer percentage of the split budget (may exceed 100). */
   pctOfSplit: number;
+  /** The latest `recall_eval` passage score (the `search_chunks` arm), or
+   *  null when the brain has never run one. Size says when to look; this
+   *  says whether quality actually moved. Absent on older servers. */
+  retrieval?: RetrievalScore | null;
+};
+
+export type RetrievalScore = {
+  /** When the eval ran (ISO). */
+  at: string;
+  /** Gold cases scored. */
+  cases: number;
+  /** Fraction of cases whose gold node was in the top 10 passages, 0..1. */
+  recallAt10: number;
+  mrr: number;
 };
 
 export type AgentContext = {
@@ -436,6 +450,39 @@ export type AssistantAgentOption = {
   name: string;
   role: string;
   model: string;
+};
+
+/**
+ * One thread of an agent's chat (chat archive, migration 0231,
+ * docs/conversation.md §6c). A thread is a time range over the agent's
+ * messages: the open thread is the live chat, an archived one is read-only
+ * and can seed a new chat ("Continue from this").
+ */
+export type ChatThreadRow = {
+  id: string;
+  agentId: string;
+  status: 'open' | 'archived';
+  /** Model-written title (or the first user line when the summary failed);
+   *  null on an open thread. */
+  title: string | null;
+  startedAt: string;
+  /** Null on the open thread. */
+  archivedAt: string | null;
+  /** Complete turns in the thread when it was archived (0 while open). */
+  turnCount: number;
+  /** The archive summary, null until written (or when the model call failed). */
+  summary: string | null;
+  summaryNodeId: string | null;
+  /** The archived thread this one was started from with "Continue from this". */
+  continuedFrom: { id: string; title: string | null } | null;
+};
+
+/** POST /api/assistant/threads (New chat) and .../continue. */
+export type ChatArchiveResponse = {
+  /** The thread just archived; null when the chat was empty. */
+  archived: ChatThreadRow | null;
+  /** The open thread now. */
+  open: ChatThreadRow | null;
 };
 
 export type AssistantTimelineRow = {
@@ -906,6 +953,9 @@ export type StudioAgentDetail = {
   missingToolGroupSlugs: string[];
   toolCount: number;
   params: { temperature?: number; max_tokens?: number };
+  /** Per-agent thinking effort (migration 0228); null = inherit the profile.
+   *  Optional so an older brain's graph reads as inherit. */
+  thinkingEffort?: 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
   maxIterations?: number;
   /** Whether this is a manifest agent that can be reset to its canonical default. */
   resettable: boolean;

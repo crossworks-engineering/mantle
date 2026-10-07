@@ -23,6 +23,7 @@ import {
   acceptedAuthors,
   accessClosure,
   canShareNode,
+  contactSharesForNode,
   EMBEDDING_KINDS,
   getActiveShareForNode,
   isWorkspaceKind,
@@ -75,8 +76,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     .where(and(eq(nodes.id, idParsed.data.id), eq(nodes.ownerId, user.id)))
     .limit(1);
   if (!item) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
-  const [closure, share, childCount, authors, oldLinks, sharedVia, readThrough] = await Promise.all(
-    [
+  const [closure, share, childCount, authors, oldLinks, sharedVia, readThrough, contactShares] =
+    await Promise.all([
       accessClosure(user.id, item.id),
       getActiveShareForNode(user.id, item.id),
       // Always 0 since folder phase 7 (pages do not nest); kept on the wire.
@@ -89,8 +90,9 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       sharedViaFolder(user.id, item.id),
       // What embeds it and carries a share (0208): a floor too.
       readThroughEmbeds(user.id, item.id),
-    ],
-  );
+      // The contacts it is shared with (contact shares, 0214): no level.
+      contactSharesForNode(user.id, item.id),
+    ]);
   const { path, ...rest } = item;
   const body: AccessNodeView = {
     item: { ...rest, audience: isViewerLevel(rest.audience) ? rest.audience : 'admin' },
@@ -111,6 +113,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     ...(item.audience === 'client' ? { oldLinksAbove: oldLinks } : {}),
     sharedVia,
     readThrough,
+    contactShares,
   };
   return NextResponse.json(body);
 }

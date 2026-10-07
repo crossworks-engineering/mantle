@@ -9,6 +9,7 @@ import {
   AccessError,
   accessClosure,
   accessShadowReport,
+  contactSharesForNode,
   setAgentAudience,
   setItemLevel,
   setToolGroupAudience,
@@ -99,10 +100,11 @@ export const access_get: BuiltinToolDef = {
           .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ctx.ownerId)))
           .limit(1);
         if (!row) return { ok: false, error: 'item not found: find its id with search_nodes' };
-        const [closure, sharedVia, readThrough] = await Promise.all([
+        const [closure, sharedVia, readThrough, contactShares] = await Promise.all([
           accessClosure(ctx.ownerId, nodeId),
           sharedViaFolder(ctx.ownerId, nodeId),
           readThroughEmbeds(ctx.ownerId, nodeId),
+          contactSharesForNode(ctx.ownerId, nodeId),
         ]);
         // In a shared folder it is read at least at the folder's share, and
         // through what embeds it at least at theirs (0208).
@@ -113,6 +115,18 @@ export const access_get: BuiltinToolDef = {
             closure,
             ...(sharedVia ? { sharedVia } : {}),
             ...(readThrough ? { readThrough } : {}),
+            // Contact shares (0214), read only: who it is shared with, by
+            // name and right. They change no level; no tool makes one (v1).
+            ...(contactShares.length
+              ? {
+                  contactShares: contactShares.map((c) => ({
+                    contactId: c.contactId,
+                    name: c.name,
+                    canWrite: c.canWrite,
+                    lastOpenedAt: c.lastOpenedAt,
+                  })),
+                }
+              : {}),
           },
         };
       }
@@ -172,6 +186,12 @@ export const access_set: BuiltinToolDef = {
         description:
           "items only: also raise the item's embeds / folder contents that sit below the new level",
       },
+      drop_groups_above: {
+        type: 'boolean',
+        default: false,
+        description:
+          "agents only: also take off the agent the tool groups above the new level (listed in `removedGroups`); without it such an agent is refused. Opening the team responder: agent_slug 'team-responder', level 'team', drop_groups_above true",
+      },
     },
     required: ['level'],
   },
@@ -218,8 +238,10 @@ export const access_set: BuiltinToolDef = {
           .limit(1);
         if (!row)
           return { ok: false, error: `agent '${agentSlug}' not found: list them with agent_list` };
-        const res = await setAgentAudience(ctx.ownerId, row.id, level);
-        ctx.step?.setOutput({ agent: agentSlug, level });
+        const res = await setAgentAudience(ctx.ownerId, row.id, level, {
+          dropGroupsAbove: input.drop_groups_above === true,
+        });
+        ctx.step?.setOutput({ agent: agentSlug, level, removedGroups: res.removedGroups });
         return { ok: true, output: { agent: res } };
       }
       if (groupSlug) {

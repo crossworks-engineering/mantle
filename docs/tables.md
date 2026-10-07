@@ -280,6 +280,27 @@ teaches the workbook model (tabs, reference columns), formulas, totals, views,
 and the draft discipline: `table_rows_list` before editing, edits write to
 draft, report `/tables/<id>`, only `table_commit` when the user says publish.
 
+**History (apps first-class plan, Phase 4).** Every commit keeps the
+published workbook it replaces on the table's history line (`node_snapshots`,
+node_kind `table`, trigger `commit`): a hard link to the file the commit is
+about to replace, under `TABLE_DB_DIR/_snapshots/<owner>/<table>/`, so it
+costs no copy. Each kept entry is a whole workbook, so the newest 20 commit
+entries stay per table, and only as many as fit in `TABLE_HISTORY_MAX_MB`
+(default 512; the newest always stays); the owner's own
+(`manual`) are never pruned and count against `APP_SNAPSHOT_MAX_MB` (shared
+with the apps). Not kept: an app-bound table's sync (the app is the master),
+and commits in a personal space or under a limited viewer (the history is
+admin data). Tools (owner only, group `tables`, and on MCP):
+`table_history`, `table_snapshot_create`, `table_snapshot_restore`
+(`requiresConfirm`; puts the version into the DRAFT, `commit: true`
+publishes it, `discard_draft` drops a draft in the way) and
+`table_snapshot_delete` (`requiresConfirm`). `table_commit` takes a `note`.
+REST: `GET/POST /api/tables/:id/history`, `DELETE …/history/:sid`,
+`POST …/history/:sid/restore` (`{ discardDraft?, commit? }`, 409
+`reason: 'draft'`), `GET …/history/:sid/download` (the `.sqlite` workbook).
+The table backup copies `_snapshots`; the nightly `app-trash-purge` removes a
+deleted table's history 30 days after its newest entry.
+
 The `/tables/<id>` editor wires the global assistant overlay to the open grid
 (`useSurfaceAssist`): Ledger edits the draft server-side and the grid reloads
 it live; the header Commit/Discard publish or revert.

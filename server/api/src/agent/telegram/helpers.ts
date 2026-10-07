@@ -92,3 +92,19 @@ export async function sendApology(row: InboundRow, text: string): Promise<void> 
     replyTo: row.telegramMessageId ?? undefined,
   }).catch(() => {});
 }
+
+/** `/new` (also `/newchat`, `/archive`): start a new chat (chat archive,
+ *  docs/conversation.md §6c). Bare command only, with or without the bot's
+ *  `@name` suffix Telegram adds in groups; any other text is a normal turn. */
+export function isNewChatCommand(text: string | null | undefined): boolean {
+  return /^\/(new|newchat|archive)(@[a-z0-9_]+)?\s*$/i.test((text ?? '').trim());
+}
+
+/** The reply to `/new`: the same words as the web "New chat" (the old chat is
+ *  kept under "Previous chats"). `title` is the archived thread's title. */
+export function newChatReply(title: string | null, archived: boolean): string {
+  if (!archived) return 'This is already a new chat.';
+  return title
+    ? `New chat started. The previous chat "${title}" is saved in Previous chats and can still be searched.`
+    : 'New chat started. The previous chat is saved in Previous chats and can still be searched.';
+}

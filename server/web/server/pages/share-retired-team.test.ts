@@ -19,6 +19,12 @@ vi.mock('@/lib/shares', () => ({
       ? { id: 'share-1', ownerId: 'owner-1', nodeId: 'node-1', nodeType: 'note', settings: {} }
       : null,
   ),
+  // The /s gate (contact shares, 0214) resolves through this one.
+  resolveActiveShareRowByToken: vi.fn(async (token: string) =>
+    h.live.has(token)
+      ? { id: 'share-1', ownerId: 'owner-1', nodeId: 'node-1', nodeType: 'note', settings: {} }
+      : null,
+  ),
   loadShareView: vi.fn(async () => ({ kind: 'note', title: 'Minutes', content: 'hello' })),
   recordShareView: vi.fn(async () => {}),
 }));

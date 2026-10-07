@@ -36,6 +36,7 @@ import {
   telegramChats,
   telegramAccounts,
   unextractedNodeConds,
+  noExtractSinceWriteSql,
   waitForOwner,
   type Agent,
 } from '@mantle/db';
@@ -45,7 +46,12 @@ import { sweepLegacyTables } from '@mantle/content/table-storage';
 
 import { resolveEmbeddingConfig } from '@mantle/embeddings';
 import { runDurableStep, startTrace } from '@mantle/tracing';
-import { invokeAgent, resolveChatKey } from '@mantle/runtime/agent';
+import {
+  ChatArchiveBusyError,
+  archiveAgentChat,
+  invokeAgent,
+  resolveChatKey,
+} from '@mantle/runtime/agent';
 import { registerAgentInvoker, seedBuiltinTools } from '@mantle/tools';
 import { startTicker } from './ticker';
 import { log } from '@mantle/tracing';
@@ -68,12 +74,17 @@ registerAgentInvoker(invokeAgent);
 // from the in-memory registry. Idempotent.
 registerHeartbeatTools();
 import { summarizeAgentConversation } from './summarizer.js';
-import { enqueueExtract, startExtractQueue, stopExtractQueue } from './extract-queue.js';
+import {
+  enqueueExtract,
+  requestProviderRecovery,
+  startExtractQueue,
+  stopExtractQueue,
+} from './extract-queue.js';
 import { reflect } from './reflector.js';
 import { CONVERSATIONAL_ROLES, pickFallbackResponder } from './agent-select.js';
 import { computeFloorGroupAdditions } from './core-tools.js';
 import { ingestTelegramAttachment } from './telegram/ingest-attachment';
-import { sendApology, startTyping } from './telegram/helpers';
+import { isNewChatCommand, newChatReply, sendApology, startTyping } from './telegram/helpers';
 import type { AttachmentContext, FileAttachment, InboundRow } from './telegram/types';
 import { runTelegramTurn } from './telegram/turn';
 import { env } from '@mantle/config';
@@ -297,6 +308,26 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
   let stopTyping: () => void = () => {};
 
   try {
+    // `/new`: start a new chat (chat archive, docs/conversation.md §6c).
+    // Inside the per-chat lock, so a reply still running for this chat lands
+    // in the old thread first. The command is not a turn: it is never
+    // recorded and never reaches the model. The archive writes the old
+    // thread's one summary note right here.
+    if (!voiceFileId && !fileAttachment && isNewChatCommand(row.text)) {
+      try {
+        const r = await archiveAgentChat({ ownerId, agentId: agent.id });
+        await sendApology(row, newChatReply(r.archived?.title ?? null, !!r.archived));
+      } catch (err) {
+        if (!(err instanceof ChatArchiveBusyError)) logger.error('/new failed:', errorMessage(err));
+        await sendApology(
+          row,
+          err instanceof ChatArchiveBusyError
+            ? err.message
+            : 'Sorry, I could not start a new chat. Please try again.',
+        );
+      }
+      return;
+    }
     const typingAccount = await accountById(row.accountId).catch(() => null);
     if (typingAccount) stopTyping = startTyping(typingAccount, row.telegramChatId);
     await startTrace(
@@ -382,12 +413,13 @@ async function drainPending(
 }
 
 /**
- * Boot-time recovery for the extractor queue. The extract jobs themselves are
+ * Boot-time recovery for the extractor queue (also run by the provider
+ * circuit when a provider works again, provider-circuit.ts). The extract jobs themselves are
  * durable (pg-boss), so a crash no longer loses queued work — but a node
  * inserted while the agent (and its boss) was DOWN fired `pg_notify` into the
  * void with no listener, so no job was ever enqueued. This catches that case by
- * scanning for recently-inserted nodes of an extractable type that still have
- * no embedding, and enqueueing them through the same `enqueueExtract` path as a
+ * scanning for recently-written nodes (inserted or changed, `updated_at`) of an
+ * extractable type that still have no embedding, and enqueueing them through the same `enqueueExtract` path as a
  * fresh `pg_notify('node_ingested')`.
  *
  * Window + cap are configurable (MANTLE_EXTRACT_DRAIN_WINDOW_HOURS, default 7d;
@@ -404,7 +436,10 @@ async function drainUnextractedNodes(ownerId: string): Promise<void> {
   const limit = Number(env('MANTLE_EXTRACT_DRAIN_LIMIT')) || 1000;
   const since = new Date(Date.now() - windowHours * 60 * 60 * 1000);
   // Exempt nodes (the Forum archive, @mantle/db extract-exempt.ts) are left
-  // out: they have no embedding by design and must never be queued.
+  // out: they have no embedding by design and must never be queued. So are
+  // nodes with a current terminal skip (`data.extract_skipped`: nothing to
+  // read in them); without that, a file no parser reads was re-queued on
+  // every restart and every provider recovery, forever.
   const conds = unextractedNodeConds(ownerId, since);
   const countRows = await db
     .select({ total: sql<number>`count(*)::int` })
@@ -440,14 +475,18 @@ async function drainUnextractedNodes(ownerId: string): Promise<void> {
  * the node is then never extracted with no retry until a *restart's* boot-drain.
  * This closes that gap on a timer, with no restart needed.
  *
- * Predicate is a strict SUBSET of the boot-drain (`embedding IS NULL`) PLUS
- * "has NO extractor_run at all" — i.e. genuinely never processed (the missed-
- * event signature). That extra clause makes it **loop-safe**: a node that was
- * processed-and-skipped (an SVG, a telegram message, a conversation digest) HAS
- * a terminal run, so it's excluded; the boot-drain's bare `embedding IS NULL`
- * would re-churn those every sweep. Once a swept node is processed it gains a
- * run and drops out for good. Capped so a large miss catches up over a few
- * sweeps rather than a burst. Quiet unless it actually re-queues something.
+ * Predicate is a strict SUBSET of the boot-drain (`embedding IS NULL`, written
+ * in the window) PLUS "no extractor_run finished since the node's last write"
+ * (`noExtractSinceWriteSql`), i.e. the current version was never processed
+ * (the missed-event signature). That covers a brand-new node AND an old node
+ * whose content changed (a docs sync on a roll, while the agent was down).
+ * The extra clause makes it **loop-safe**: a node that was processed-and-
+ * skipped (an SVG, a telegram message, a conversation digest) HAS a run that
+ * finished after its last write, so it's excluded; the boot-drain's bare
+ * `embedding IS NULL` would re-churn those every sweep. Once a swept node is
+ * processed it drops out until its next write. Capped so a large miss catches
+ * up over a few sweeps rather than a burst. Quiet unless it actually re-queues
+ * something.
  */
 async function sweepMissedExtractions(ownerId: string): Promise<void> {
   const windowHours = Number(env('MANTLE_EXTRACT_DRAIN_WINDOW_HOURS')) || 168;
@@ -456,12 +495,7 @@ async function sweepMissedExtractions(ownerId: string): Promise<void> {
   const rows = await db
     .select({ id: nodes.id })
     .from(nodes)
-    .where(
-      and(
-        unextractedNodeConds(ownerId, since),
-        sql`NOT EXISTS (SELECT 1 FROM public.traces t WHERE t.subject_id = ${nodes.id} AND t.kind = 'extractor_run')`,
-      ),
-    )
+    .where(and(unextractedNodeConds(ownerId, since), noExtractSinceWriteSql()))
     .orderBy(asc(nodes.createdAt))
     .limit(limit);
   if (rows.length === 0) return;
@@ -647,7 +681,19 @@ export async function startAgentRuntime(opts: AgentRuntimeOptions) {
 
   // Durable, concurrency-capped extractor queue. Must start BEFORE the
   // node_ingested listener (so enqueues land) and before the boot drain below.
-  await startExtractQueue(DATABASE_URL!, owner);
+  await startExtractQueue(DATABASE_URL!, owner, {
+    sweepUnextracted: () => drainUnextractedNodes(owner),
+  });
+
+  // An admin saved provider settings or pressed "Try again" (web raises
+  // provider_recover with the owner id): probe and recover now, no restart.
+  // Bounded by the circuit (provider-circuit.ts): one tiny probe call, and a
+  // recovery at most once per 2 min on these.
+  await pg.listen('provider_recover', (payload: string) => {
+    if (payload !== owner) return;
+    requestProviderRecovery('admin');
+  });
+  logger.info('LISTENing on provider_recover');
 
   await pg.listen('node_ingested', (payload: string) => {
     if (!payload) return;

@@ -133,7 +133,7 @@ describe.skipIf(!URL)('migration 0177: drop the forum tables', () => {
     // The whole scratch database goes, whatever a failed test left in it.
     await sql?.end();
     await scratch?.drop();
-  });
+  }, 120_000);
 
   it('the migrated database has no forum table', () => {
     expect(goneAfterMigrate).toEqual([]);

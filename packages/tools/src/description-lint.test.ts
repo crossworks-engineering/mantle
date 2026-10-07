@@ -34,6 +34,7 @@ const SANCTIONED_ESSAYS = new Set<string>([
   'search_nodes', // the retrieval entry point — carries the whole tool-ladder map
   'search_chunks', // read_section/file_read ladder + spill semantics
   'page_from_file', // boundary vs page_create + conversion caveats
+  'app_create', // the one place an MCP author learns the app runtime: host.me(), :host_me_*, the bridge, the levels
 ]);
 
 /**
@@ -68,6 +69,14 @@ const PRECONDITION_EXEMPT = new Set<string>([
   // peer_node_get.nodeId names a node on a REMOTE peer — a local node_exists
   // check would reject every valid id.
   'peer_node_get.nodeId',
+  // app_undelete.id names a DELETED app: its node is gone by definition, so
+  // a node_exists check would reject every valid id.
+  'app_undelete.id',
+  // A folder of the calling login's OWN space tree (MCP as a login): it is
+  // owned by that space, not the brain, and memberFilingPath checks it.
+  'my_note_create.folder_id',
+  'my_page_create.folder_id',
+  'my_file_upload.folder_id',
 ]);
 
 /** Walk every {path, schema} pair under `properties` (nested objects and

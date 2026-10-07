@@ -56,6 +56,7 @@ import { mapOpenAICompatFinishReason } from './openai-compat';
 import { StreamingThinkScrubber } from './think-scrubber';
 import { ReasoningDetailsAccumulator, normalizeReasoningDetails } from './reasoning-accum';
 import { errorMessage } from '@mantle/std';
+import { providerFetch } from './provider-fetch';
 
 // Backoff for the empty-body retry below — mirrors retry.ts's full-jitter shape.
 const RETRY_BASE_DELAY_MS = 500;
@@ -660,7 +661,7 @@ async function openrouterDiscover(apiKey: string): Promise<DiscoveryResult<ChatM
   // 401/403 does, so catalog browsing keeps working offline-ish.
   if (apiKey) {
     try {
-      const auth = await fetch(`${OPENROUTER_BASE_URL}/key`, {
+      const auth = await providerFetch(`${OPENROUTER_BASE_URL}/key`, {
         headers: { Authorization: `Bearer ${apiKey}` },
         signal: AbortSignal.timeout(10_000),
       });
@@ -676,7 +677,7 @@ async function openrouterDiscover(apiKey: string): Promise<DiscoveryResult<ChatM
     }
   }
   try {
-    const res = await fetch(`${OPENROUTER_BASE_URL}/models`, {
+    const res = await providerFetch(`${OPENROUTER_BASE_URL}/models`, {
       headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
       signal: AbortSignal.timeout(15_000),
     });

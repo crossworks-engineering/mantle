@@ -19,7 +19,7 @@ import {
   revokeOpenClientSignins,
   settleSpaceOnPromotion,
 } from '@mantle/content';
-import { endLoginSessions, getOwnerOr401 } from '@/lib/auth';
+import { auditKeysEnded, endLoginSessions, getOwnerOr401 } from '@/lib/auth';
 import { releaseAssignedAgent } from '@/lib/agents';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { deleteLoginSubscriptions, forgetRelayDevices } from '@/lib/push/store';
@@ -134,7 +134,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     body.disabled !== undefined ||
     (body.role !== undefined && body.role !== target.role);
 
-  let pushTokens: string[] = [];
+  const pushTokens: string[] = [];
+  const endedKeyIds: string[] = [];
   let releasedAgentId: string | null = null;
   try {
     await db.transaction(async (tx) => {
@@ -142,7 +143,15 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
         await tx.update(authUsers).set(changes).where(eq(authUsers.id, targetId));
       }
       if (endSessions) {
-        await endLoginSessions(targetId, { tx });
+        // The login's push devices go with its sessions; the relay is told
+        // after the commit (pushTokens).
+        await endLoginSessions(targetId, {
+          tx,
+          removedRoutingTokens: pushTokens,
+          endKeys: true,
+          actorId: user.actor.id,
+          revokedKeyIds: endedKeyIds,
+        });
         // A client's open sign-in links and emailed codes die with its
         // sessions (audit B14): a link issued before a disable must not
         // work after the enable, and "End sessions" must leave no way back
@@ -161,7 +170,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       // pushing to its phone. Its personal assistant is released (kept, never
       // deleted): a member chats only with team-level agents.
       if (lockingOut) {
-        pushTokens = await deleteLoginSubscriptions(targetId, tx);
+        pushTokens.push(...(await deleteLoginSubscriptions(targetId, tx)));
         releasedAgentId = (await releaseAssignedAgent(user.id, targetId, tx))?.id ?? null;
         const now = new Date();
         await tx
@@ -191,6 +200,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   }
   // After the commit, as the single unpair route does: tell the relay.
   await forgetRelayDevices(pushTokens);
+  // And record the API keys the end revoked (one row), now that it held.
+  auditKeysEnded(targetId, user.actor.id, endedKeyIds);
 
   auditFireAndForget({
     actorId: user.actor.id,

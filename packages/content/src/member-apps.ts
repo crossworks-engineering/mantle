@@ -25,6 +25,7 @@ import {
 } from '@mantle/db';
 import { projectAppIcon, projectAppTint } from '@mantle/content-core/app-nav';
 import type { AppTint, MemberAppCard, MemberAppLevel, MemberHomeApp } from '@mantle/client-types';
+import type { AppPlace } from './app-folders';
 import { isReadAt, itemLevel, readAtSql } from './item-level';
 
 /** An app is used, not only read (run, tools, its database): an embed in a
@@ -38,6 +39,19 @@ export const MEMBER_APP_LEVELS = [
   'team',
   'client',
   'public',
+] as const satisfies readonly MemberAppLevel[];
+
+/**
+ * The app levels a member's LAUNCHER lists (the member apps list and the
+ * member home's `apps`): team and client, never public (contact shares plan
+ * P0, decided 2026-10-01). Public means "anyone with the link" for an app as
+ * for every other kind, so a public app is in no member list. A member still
+ * runs a public app from its link, and `getMemberRunnableApp` still answers
+ * one (`MEMBER_APP_LEVELS`): only the list leaves it out.
+ */
+export const MEMBER_LISTED_APP_LEVELS = [
+  'team',
+  'client',
 ] as const satisfies readonly MemberAppLevel[];
 
 export function isMemberAppLevel(level: unknown): level is MemberAppLevel {
@@ -76,22 +90,32 @@ export function memberMayWriteAppData(app: {
 
 const publishedGreen = sql`(${apps.publishedBuild}->>'ok')::boolean is true`;
 
-function runnableWhere(anchorId: string) {
+function runnableWhere(anchorId: string, levels: readonly MemberAppLevel[] = MEMBER_APP_LEVELS) {
   return and(
     eq(nodes.ownerId, anchorId),
     eq(nodes.type, 'app'),
     // Its own level or the share of a folder holding it.
-    readAtSql(MEMBER_APP_LEVELS, APP_READ),
+    readAtSql(levels, APP_READ),
     publishedGreen,
   );
 }
 
-/** The apps a member may run, by title. */
+/** The apps a member's launcher lists, by title: team or client, never
+ *  public (`MEMBER_LISTED_APP_LEVELS`). */
 export async function listMemberApps(anchorId: string): Promise<MemberAppCard[]> {
+  return (await listMemberAppsPlaced(anchorId)).apps;
+}
+
+/** The same list, with the folder path of each app: what the launcher's
+ *  folders are built from (./app-folders.ts). The paths stay on the brain. */
+export async function listMemberAppsPlaced(
+  anchorId: string,
+): Promise<{ apps: MemberAppCard[]; places: AppPlace[] }> {
   const rows = await db
     .select({
       id: nodes.id,
       title: nodes.title,
+      path: sql<string>`${nodes.path}::text`,
       data: nodes.data,
       audience: nodes.audience,
       inheritedLevel: nodes.inheritedLevel,
@@ -101,13 +125,15 @@ export async function listMemberApps(anchorId: string): Promise<MemberAppCard[]>
     })
     .from(nodes)
     .innerJoin(apps, eq(apps.nodeId, nodes.id))
-    .where(runnableWhere(anchorId))
+    .where(runnableWhere(anchorId, MEMBER_LISTED_APP_LEVELS))
     .orderBy(asc(nodes.title))
     .limit(500);
-  return rows.flatMap((r): MemberAppCard[] => {
+  const places: AppPlace[] = [];
+  const cards = rows.flatMap((r): MemberAppCard[] => {
     // The query already keeps to these levels; a row outside them is never
     // a card, whatever the column holds.
-    if (!isReadAt(r.audience, r.inheritedLevel, MEMBER_APP_LEVELS)) return [];
+    if (!isReadAt(r.audience, r.inheritedLevel, MEMBER_LISTED_APP_LEVELS)) return [];
+    places.push({ id: r.id, path: r.path });
     // The level it is read at: its own, or its folder's share when that is
     // more open (an admin app in a team folder runs, and writes, as team).
     const audience = itemLevel(r.audience, r.inheritedLevel) as MemberAppLevel;
@@ -129,6 +155,7 @@ export async function listMemberApps(anchorId: string): Promise<MemberAppCard[]>
       },
     ];
   });
+  return { apps: cards, places };
 }
 
 /** One app a member may run, or null: not an app, above team, no green

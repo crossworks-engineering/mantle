@@ -13,7 +13,13 @@ import { dispatchViaBridge as dispatchTool } from '../dispatch-bridge';
 import { type HttpHandler } from '../http-template';
 import { describeInheritance, type InheritedPieces } from '../integration';
 import { isMcpManagedSecretService } from '../mcp-oauth';
-import { type BuiltinToolDef, type ToolHandlerResult } from '../types';
+import { type BuiltinToolDef, type ToolHandlerContext, type ToolHandlerResult } from '../types';
+import {
+  setToolExternalAccess,
+  externalAccessSummary,
+  type ExternalAccessActor,
+  type ExternalAccessOffActor,
+} from '../external-access';
 import { str } from '../coerce';
 import { errorMessage } from '@mantle/std';
 import {
@@ -65,6 +71,7 @@ export const api_tool_list: BuiltinToolDef = {
         kind: t.handler.kind,
         enabled: t.enabled,
         requires_confirm: t.requiresConfirm,
+        ...(t.externalAccess?.on ? { external_access: true } : {}),
         description: t.description.length > 200 ? `${t.description.slice(0, 200)}…` : t.description,
       }));
     ctx.step?.setMeta({ count: out.length });
@@ -99,6 +106,7 @@ export const api_tool_get: BuiltinToolDef = {
         handler: summarizeHandler(row.handler as ToolHandler),
         requires_confirm: row.requiresConfirm,
         enabled: row.enabled,
+        external_access: externalAccessSummary(row),
       },
     };
   },
@@ -238,11 +246,27 @@ export const api_tool_create: BuiltinToolDef = {
   },
 };
 
+const EXTERNAL_ACCESS_ADMIN_ONLY =
+  'Only an admin can switch "External access" on: in Settings → Tools on the tool, or from the owner\'s own MCP client. Ask the owner to do it there; you may switch it off (external_access: false).';
+
+/** Who may switch "External access" ON through this tool: the owner's own
+ *  MCP client or dev tool console, never an in-brain agent turn. */
+function externalAccessOnActor(ctx: ToolHandlerContext): ExternalAccessActor | null {
+  const s = ctx.surface;
+  if (s?.kind === 'owner' && (s.via === 'mcp' || s.via === 'dev-tools')) return { via: s.via };
+  return null;
+}
+
+/** Who an OFF is recorded as: the owner path, or an in-brain agent. */
+function externalAccessOffActor(ctx: ToolHandlerContext): ExternalAccessOffActor {
+  return externalAccessOnActor(ctx) ?? { via: 'agent' };
+}
+
 export const api_tool_update: BuiltinToolDef = {
   slug: 'api_tool_update',
   name: 'Update an HTTP API tool',
   description:
-    'Update a user-defined HTTP tool by slug. Provide only the fields to change; headers/query replace the whole map when given; body: null clears the template. Pass group_slug to (re)join an integration group — the tool is added to it and re-inherits its base URL + auth placement into the stored templates. Built-in tools only allow enabled/requires_confirm changes; shell tools cannot be edited by agents.',
+    "Update a user-defined HTTP tool by slug. Provide only the fields to change; headers/query replace the whole map when given; body: null clears the template. Pass group_slug to (re)join an integration group — the tool is added to it and re-inherits its base URL + auth placement into the stored templates. Built-in tools only allow enabled/requires_confirm changes; shell tools cannot be edited by agents. `external_access` opens an mcp or http tool to everyone a shared app reaches (members, clients, contact links; any input, by hand too); only the owner's MCP client may switch it on, any caller may switch it off.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -304,6 +328,16 @@ export const api_tool_update: BuiltinToolDef = {
         type: 'boolean',
         description: 'set false to disable the tool without deleting it; true re-enables',
       },
+      external_access: {
+        type: 'boolean',
+        description:
+          '"External access": true lets everyone an app that declares this mcp or http tool is shared with (members, clients, contacts on a contact link) call it, by hand too, with any input; false closes it. Never for recipe or shell tools.',
+      },
+      read_only_confirmed: {
+        type: 'boolean',
+        description:
+          'with external_access: true, the admin confirms the tool only reads data (the brain cannot check an outside tool). Required to switch on.',
+      },
     },
     required: ['slug'],
   },
@@ -312,6 +346,14 @@ export const api_tool_update: BuiltinToolDef = {
     const row = await toolRowBySlug(ctx.ownerId, slug);
     if (!row) return { ok: false, error: `tool '${slug}' not found` };
     const existing = row.handler as ToolHandler;
+
+    // "External access" on: an admin's decision, refused before ANY field
+    // is applied when the caller is not the owner's own MCP client or tool
+    // console (an in-brain agent can be steered by what it reads).
+    const externalAccessActor = input.external_access === true ? externalAccessOnActor(ctx) : null;
+    if (input.external_access === true && !externalAccessActor) {
+      return { ok: false, error: EXTERNAL_ACCESS_ADMIN_ONLY };
+    }
 
     // Shell tools are human-only end to end: refuse before applying ANY field.
     // Flipping enabled/requires_confirm here would let an agent strip the
@@ -413,12 +455,23 @@ export const api_tool_update: BuiltinToolDef = {
           warnings.push(...(await integrationWarnings(ctx.ownerId, group.integration)));
         }
       }
+      let externalAccess = updated.externalAccess ?? null;
+      if (input.external_access === true || input.external_access === false) {
+        const set = await setToolExternalAccess(ctx.ownerId, row.id, {
+          allow: input.external_access === true,
+          readOnlyConfirmed: input.read_only_confirmed === true,
+          by: externalAccessActor ?? externalAccessOffActor(ctx),
+        });
+        if (!set.ok) return { ok: false, error: set.error };
+        externalAccess = externalAccessSummary(set.tool);
+      }
       ctx.step?.setOutput({ slug, warnings });
       return {
         ok: true,
         output: {
           slug,
           updated: true,
+          ...(input.external_access !== undefined ? { external_access: externalAccess } : {}),
           warnings,
           ...(group
             ? {

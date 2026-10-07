@@ -1,8 +1,9 @@
-import { isDrawServable, linkLevels, resolveActiveShareByToken } from '@/lib/shares';
+import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
+import { isDrawServable, shareLevels } from '@/lib/shares';
 import { db, nodes } from '@mantle/db';
 import { and, eq } from 'drizzle-orm';
 import { getDrawSvg } from '@mantle/content';
-import { rateLimit, clientIp } from '@/lib/rate-limit';
+import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 
 /**
  * The committed SVG snapshot of a shared drawing, as its own image response.
@@ -30,7 +31,7 @@ function notFound() {
 export async function GET(req: Request, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
 
-  const { ok, retryAfterSec } = rateLimit(`share-draw:${clientIp(req)}`, {
+  const { ok, retryAfterSec } = rateLimit(`share-draw:${clientIpKey(req)}`, {
     max: 240,
     windowMs: 60_000,
   });
@@ -41,7 +42,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     });
   }
 
-  const share = await resolveActiveShareByToken(token);
+  const gate = await gateShare(req, token);
+  if (gate.kind === 'code') return contactCodeRequired(gate.share);
+  const share = gate.kind === 'ok' ? gate.share : null;
   if (!share) return notFound();
   const [node] = await db
     .select({ audience: nodes.audience })
@@ -50,7 +53,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     .limit(1);
   if (!node) return notFound();
   if (
-    !(await isDrawServable(share.ownerId, share.nodeId, linkLevels(node.audience), {
+    !(await isDrawServable(share.ownerId, share.nodeId, shareLevels(share, node.audience), {
       self: false,
     }))
   ) {

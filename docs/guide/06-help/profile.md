@@ -5,43 +5,37 @@ toolGroups: [profile]
 
 ## Profile
 
-Your own preferences, timezone, locale, and which agents are allowed to send
-you reminders.
+Your own settings for this brain. Change what you need and press **Save
+profile**.
 
-Timezone is the one that quietly matters most. It decides what "tomorrow
-morning" means when you ask for a reminder, when a heartbeat's quiet hours
-start, and how every date in the app is rendered. Get it wrong and nothing
-errors; things just happen at odd times.
-
-The sample below the setting is computed live from your choices, so you can
-confirm the format is what you expected rather than discovering it later in a
-reminder.
+- **Photo** and **Avatar**: the picture shown for you.
+- **Site name** and **Peer name**: the names shown in the header, so you can
+  tell brains apart.
+- **Speciality** and **What this brain is for**: the brain's purpose. The
+  second is added at the top of every conversation.
+- **House style**: your writing rules, added to every agent's prompt.
+- **Timezone (IANA)**, for example `Europe/London`. **Detect from browser**
+  fills it in. It decides what "tomorrow morning" means, when reminders fire
+  and how times are shown.
+- **Locale (BCP-47)**, for example `en-GB`: how dates are written.
+- **Reminder delivery** (Telegram or Mobile app) and **Event reminders from**
+  (which assistant's Telegram bot sends them).
+- **Live thinking & streaming** and **Thinking effort**: how replies appear
+  while they are written, and how hard agents set to Inherit think before
+  answering.
 
 ## Assistant
 
-- "I'm in Cape Town this month, update my timezone."
-- "Remind me on Friday morning to send the invoice."
+- "I'm in Singapore this week, update my timezone."
+- "Set my timezone back to Africa/Johannesburg."
 
-Changing timezone in conversation is deliberately possible, because the moment
-you most need it changed is while travelling, and a wrong clock silently
-mis-times every reminder you set from that point on. It's the only profile
-setting the assistant can adjust.
+The timezone is the only profile setting the assistant can change. It tells
+you what it changed.
 
 ## Technical
 
-Times are stored as absolute instants and rendered in your zone, so changing the
-zone re-renders history rather than rewriting it. An event you created at 09:00
-in one zone still refers to the same moment after you move; it just displays
-differently.
-
-Reminder permission is per agent, not a global switch. An agent not on the list
-can compute that something is due and cannot notify you about it, which is how
-a specialist stays useful without acquiring the ability to interrupt you.
-
-The zone also feeds heartbeat gating. A heartbeat with quiet hours and no zone
-of its own inherits this one, so setting your profile correctly is what makes
-"don't message me at night" mean your night.
-
-Locale affects formatting only, date order, number separators, first day of the
-week. It doesn't change the language the assistant replies in; that follows the
-language you write in.
+Settings are stored on your row in the `profiles` table. Times are stored as
+absolute instants and shown in your zone, so changing the zone changes how
+history is displayed, not the history itself. Heartbeat quiet hours without a
+zone of their own use this one. The assistant changes the zone with
+`set_timezone`.

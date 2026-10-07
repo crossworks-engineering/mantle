@@ -17,4 +17,7 @@
 export const UNTRUSTED_CONTENT_TOOL_SLUGS: ReadonlySet<string> = new Set([
   'web_fetch',
   'web_search',
+  // A mini app's error log: the SQL and the messages can come from a public
+  // visitor of the app (apps audit 2026-10-02, item 12).
+  'app_errors',
 ]);

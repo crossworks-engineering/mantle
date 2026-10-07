@@ -140,6 +140,44 @@ member login ([member-logins.md](./member-logins.md) section 9). A
 contact's old portal chat stays readable as its Chat archive on
 `/team-admin`.
 
+To share ONE item with an outsider, there is a different, per-item tool:
+contact sharing (section 2b). It is not team membership: a contact's code
+opens only the links made for that contact.
+
+## 2b. Sharing: contact shares (migration 0214)
+
+An admin can share single items with a contact without showing them to the
+team (docs/sharing.md section 4b has the full rules).
+
+- **Enable sharing.** The "Sharing" block on the contact has a switch.
+  Turning it on makes the contact's code: 8 characters, shown ONCE in a
+  dialog with Copy and the line "Shown once. Send it apart from the links."
+  Only an HMAC of the code is stored (keyed from `MANTLE_MASTER_KEY`).
+  `POST /api/contacts/:id/sharing { action: 'enable' }`.
+- **Regenerate.** A new code, shown once; the old code, and every browser
+  the contact opened links in, stops at once. It also clears a lock.
+- **Locked.** 30 wrong codes in a day lock the contact for 24 hours: a
+  "Locked" badge on the contact and an admin notice in "Needs you".
+  Regenerate unlocks.
+- **Switch off.** Asks first and names how many shares end: every live
+  share of the contact is revoked with the code. Enable again later gives a
+  new code and starts with no shares.
+- **The "Shared" tab.** Everything shared with the contact, newest first:
+  kind icon, title, a "Can write" badge for an app, when it was shared and
+  last opened, and Revoke per row (the same call as Remove in the item's
+  share dialog). "Revoke all" beside the switch ends every share of the
+  contact and keeps sharing on (the code still works for new shares).
+  `GET` and `DELETE /api/contacts/:id/shares`.
+- **The contact DTO** carries `sharing: { enabledAt, lastUsedAt, locked,
+  shareCount } | null` (null: sharing off).
+- **Deleting a contact** removes its code row and every share made for it
+  (`ON DELETE CASCADE`), so its links stop at once. No item's level
+  changes. Its trail rows in `share_access_log` stay, with the share and
+  contact ids set NULL.
+
+Items are shared from the item: Share, "Share with contact", a searchable
+pick of contacts (one or more), "Can write" for an app.
+
 ---
 
 ## 3. Activity tracking: per-method counters

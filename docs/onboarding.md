@@ -11,7 +11,9 @@
 Shipped 2026-06. Route `/onboarding`; signup at `/login` (first-run mode). Both
 screens live in the jackdaw repo (`app/onboarding`, `app/login`) since the
 2026-08-13 split; this repo keeps the API side (`/api/auth/signup`, the
-provisioning and the onboarding-state helpers).
+provisioning and the onboarding-state helpers). A brain with no owner UI of its
+own (a headless box) is onboarded from the Jackdaw desktop app or with the
+terminal wizard: see section 8.
 
 ---
 
@@ -33,7 +35,9 @@ Three pieces make a clean boot possible (`docs/architecture.md §7` for auth):
   creates the first `auth.users` row (bcrypt cost 12) and signs you in. It is
   open **only while `auth.users` is empty**: single-user, so the door closes
   after the first account (403 thereafter). `/login` renders **Create your
-  account** when `countUsers() === 0`, otherwise the normal sign-in.
+  account** when `countUsers() === 0`, otherwise the normal sign-in. On a box
+  the installer set up, signup also asks for the **setup code** (section 8),
+  so the first stranger to reach a fresh box cannot claim it.
 - **Zero-config owner resolution.** `ALLOWED_USER_ID` is now optional. The
   agent, the workers (`files-watch`, `docs-sync`), and the MCP server resolve
   the owner via `resolveSingleOwnerId()` / `waitForOwner()`
@@ -58,8 +62,10 @@ so the gate can't loop. `preferences.onboardingStep` is a resume marker.
 
 Resumable steps. Each persists immediately through existing primitives, so a
 refresh resumes from `onboardingStep`. Server work is in
-`server/web/app/api/onboarding/route.ts` (a single action-dispatch route; it
-replaced the older `actions.ts`); the stepper is `onboarding-client.tsx`.
+`server/web/lib/onboarding-steps.ts` (one plain function per step), which
+`server/web/app/api/onboarding/route.ts` dispatches to by `action` and the
+terminal wizard calls directly, so the two cannot drift; the stepper is
+`onboarding-client.tsx`.
 
 | # | Step | What it does |
 |---|------|--------------|
@@ -221,6 +227,8 @@ on the Welcome step (`preferences.displayName`).
 ## 7. Files
 
 - **New:** `server/web/app/api/auth/signup/route.ts`, `server/web/lib/onboarding.ts`,
+  `server/web/lib/onboarding-steps.ts`, `server/web/lib/auth/{setup-code,first-owner}.ts`,
+  `server/web/scripts/onboard.ts`, `scripts/onboard.sh`,
   `server/web/lib/onboarding-provision.ts`, the wizard UI (jackdaw `app/onboarding/*`),
   `packages/db/src/resolve-owner.ts`, `packages/content-core/src/persona-bank.ts`,
   `packages/content-core/src/onboarding-questions.ts` (+ tests).
@@ -230,3 +238,104 @@ on the Welcome step (`preferences.displayName`).
   `server/web/workers/{files-watch,docs-sync}.ts` + `server/mcp/src/server.ts`
   (wait-for-owner), `packages/content/src/profile-preferences.ts`
   (displayName/purpose/onboardedAt/onboardingStep), env examples.
+
+---
+
+## 8. Headless brains
+
+A box installed with `scripts/install.sh --no-client` (or "no" to "Run the
+owner web UI?") runs the API, MCP and share pages only. Signup and the wizard
+are client screens, so such a box is onboarded from elsewhere. Two ways, and
+either can finish what the other started (progress is
+`preferences.onboardingStep`).
+
+### The setup code
+
+While `auth.users` is empty, signup makes its caller the owner, and a native
+caller (curl) passes the cross-site guard. On a public address that would be
+"first caller becomes owner", and the same race exists on a full install
+between `docker compose up` and the operator opening the browser. So:
+
+- `scripts/install.sh` generates `MANTLE_SETUP_CODE` into `.env` (4 groups of
+  5 from an alphabet with no look-alikes, about 99 bits; never rotated, like
+  the other secrets) and prints it at the end while the brain has no account.
+  `scripts/install.sh --setup-code` prints it again, or says the brain is
+  already claimed. Every install the installer makes gets one, not only
+  headless ones.
+- Compose passes it to the `web` service only.
+- `POST /api/auth/signup` then requires `setupCode` while no account exists:
+  normalized (trim, uppercase, dashes and spaces ignored), compared
+  timing-safe, a wrong or missing code answers 403 `reason: 'setup-code'` and
+  is audited as `auth.signup_failed`. The per-address rate limit (5 a minute)
+  runs before the compare. Once an account exists the code changes nothing.
+- `GET /api/auth/bootstrap-state` returns `{ firstRun, setupCodeRequired }`;
+  the login screen shows a **Setup code** field when the second is true.
+- Unset (local dev, tests, a box installed before the code existed): no code
+  is asked for, the behaviour before it.
+
+### From the Jackdaw desktop app
+
+The desktop app embeds the whole owner UI, so connect it to the brain's
+address, sign up with the setup code, and the wizard runs as it does in a
+browser. The shell drops `Origin` and `Sec-Fetch-*` on requests to the
+configured brain (`client/desktop/src/main/brain-fence.ts` in jackdaw): its
+renderer runs on a loopback origin, and a `Sec-Fetch-Site: cross-site` signup
+was refused by the login-CSRF guard. The guard itself is unchanged for
+browsers.
+
+### From the terminal: `scripts/onboard.sh`
+
+For a box driven only over MCP, with no GUI anywhere. On the box, from the
+stack directory:
+
+```bash
+scripts/onboard.sh                                    # interactive
+scripts/onboard.sh --yes --email you@example.com \
+    --password-file ./pw --key-file ./openrouter-key     # unattended
+```
+
+It runs `server/web/scripts/onboard.ts` in the web container
+(`docker compose exec web ...`). If `scripts/onboard.sh` is not on the box
+yet (the updater installs it when the release that ships it starts), run the
+same wizard directly from the stack directory:
+
+```bash
+docker compose exec -it web pnpm -C server/web exec tsx scripts/onboard.ts
+```
+ Shell access proves ownership, so it does not
+ask for the setup code. It creates the owner (`createFirstOwner`, the same
+function signup uses), then walks the wizard's own steps in its order:
+profile, OpenRouter key (saved and tested), models, memory search, set up,
+check, purpose, personality, finish. Every prompt has a default; Voice and
+Telegram are left for a client. A run stops cleanly at any point and the next
+run resumes.
+
+Secrets are typed hidden, or read from files that the wrapper pipes to the
+container on stdin as `password=...` and `openrouter_key=...` lines
+(`--secrets-stdin` in the script). Never as arguments: a secret-carrying flag
+(`--password`, `--key`, ...) is refused by name. Under `--yes` a missing or
+failing key stops the run with exit 1 instead of finishing half way. Inside a
+checkout the same wizard is `pnpm -C server/web onboard`.
+
+A brain-core box sheds Tika on purpose. Compose passes the box's
+`COMPOSE_FILE` and `COMPOSE_PROFILES` to web (as `MANTLE_COMPOSE_FILE` and
+`MANTLE_COMPOSE_PROFILES`), and web derives the shape from them on every
+start (`server/web/lib/compose-shape.ts`): on a core box WITHOUT the
+`helpers` profile, the wizard's stack check (both wizards) reports a missing
+Tika as optional instead of blocking. Everywhere else a missing Tika still
+fails the check.
+
+Not covered: the mobile app has no wizard screens; a lost headless owner
+password has no terminal reset yet.
+
+### Release order
+
+The installer writes the setup code on every install, and signup refuses
+without it, so the owner UI a fresh install runs must have the Setup code
+field. **jackdaw ships first** (its first release with the field); then the
+SAME mantle release that carries the setup code bumps `client-pair.tag` to
+that jackdaw release or later. `server/web/lib/client-pair-setup-code.test.ts`
+enforces it: it fails (and with it `pnpm verify` and the pre-push gate) until
+its `FIRST_CLIENT_WITH_SETUP_CODE_FIELD` names that jackdaw tag and
+`client-pair.tag` is at least that.
+

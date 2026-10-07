@@ -175,3 +175,16 @@ describe('ipRateKey / clientIpKey (client logins audit B2, B11)', () => {
     expect(clientIpKey(req('2001:db8:9:9::1, 203.0.113.4'))).toBe('203.0.113.4');
   });
 });
+
+describe('the per-login pool (final audit F2)', () => {
+  it('keeps a spent password budget through a flood of other keys', async () => {
+    const { rateLimit, rateLimitLogin } = await import('./rate-limit');
+    const opts = { max: 3, windowMs: 60_000 };
+    const key = `akey-pw:${crypto.randomUUID()}`;
+    for (let i = 0; i < 3; i += 1) expect(rateLimitLogin(key, opts).ok).toBe(true);
+    expect(rateLimitLogin(key, opts).ok).toBe(false);
+    // 25,000 fresh keys in the main pool: past its hard cap, its oldest go.
+    for (let i = 0; i < 25_000; i += 1) rateLimit(`flood:${i}:${key}`, opts);
+    expect(rateLimitLogin(key, opts).ok).toBe(false);
+  });
+});

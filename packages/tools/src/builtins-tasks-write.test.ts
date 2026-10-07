@@ -184,6 +184,16 @@ describe('task_update', () => {
       expect.objectContaining({ archivedAt: null }),
     );
   });
+
+  it('passes reopen:true to the store (which restores the old status); never anything else', async () => {
+    await update.handler({ id: ID, reopen: true }, ctx);
+    expect(updateTask).toHaveBeenCalledWith('o1', ID, expect.objectContaining({ reopen: true }));
+
+    vi.mocked(updateTask).mockClear();
+    await update.handler({ id: ID, reopen: 'yes' }, ctx);
+    const patch = vi.mocked(updateTask).mock.calls[0]![2] as { reopen?: unknown };
+    expect(patch.reopen).toBeUndefined();
+  });
 });
 
 describe('task_comment_add', () => {

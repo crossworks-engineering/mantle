@@ -6,7 +6,7 @@
  *
  * - badges: `{ openRequestCount }` (no `openRequests`, no `pendingUploadCount`)
  * - GET requests: `{ badges, requests }` (no `uploads`, no `moreUploads`)
- * - GET settings: no `dashboardTags`
+ * - GET settings: no `dashboardTags`; `teamAgent` is the team-responder's level
  * - GET members: rows with no `forum`, `selected` with no posts, authored
  *   topics or activity paging
  */
@@ -48,6 +48,11 @@ vi.mock('@mantle/content', async (importOriginal) => ({
   loadProfilePreferences: vi.fn(async () => ({ teamHubAppId: APP, teamHubTags: ['faq'] })),
   isTeamPrivateReadsEnabled: vi.fn(() => false),
   listApps: vi.fn(async () => [{ id: APP, title: 'Home', hasBuild: true }]),
+  getAgentAccess: vi.fn(async (_owner: string, slug: string) =>
+    slug === 'team-responder'
+      ? { slug, name: 'Team Responder', audience: 'admin', enabled: true }
+      : null,
+  ),
 }));
 
 beforeEach(() => {
@@ -80,8 +85,20 @@ describe('GET /api/team-admin/settings', () => {
     const res = await GET();
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, unknown>;
-    expect(keys(body)).toEqual(['badges', 'hubAppId', 'hubCandidates', 'privateReads']);
+    expect(keys(body)).toEqual([
+      'badges',
+      'hubAppId',
+      'hubCandidates',
+      'privateReads',
+      'teamAgent',
+    ]);
     expect(body.hubAppId).toBe(APP);
+    expect(body.teamAgent).toEqual({
+      slug: 'team-responder',
+      name: 'Team Responder',
+      audience: 'admin',
+      enabled: true,
+    });
   });
 });
 

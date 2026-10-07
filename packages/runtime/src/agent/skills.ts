@@ -6,6 +6,7 @@
  */
 
 import { and, eq, inArray } from 'drizzle-orm';
+import { toolServiceAvailable } from '@mantle/config';
 import { db, skills, toolGroups, type Skill } from '@mantle/db';
 import {
   currentViewerLevel,
@@ -171,6 +172,38 @@ export async function resolveAgentToolGroups(
 }
 
 /**
+ * The owner's enabled tool groups as catalog sources for deferred tool
+ * loading (flows + cards). Brain-authored text only: group names and
+ * descriptions. One small indexed query; only called when an agent runs with
+ * `params.tool_loading = 'deferred'`. A failure returns [] so the catalog
+ * still lists every tool (under "other") rather than breaking the turn.
+ */
+export async function loadToolGroupsForCatalog(
+  ownerId: string,
+): Promise<{ slug: string; name: string; description: string; tools: string[] }[]> {
+  try {
+    const rows = await db
+      .select({
+        slug: toolGroups.slug,
+        name: toolGroups.name,
+        description: toolGroups.description,
+        toolSlugs: toolGroups.toolSlugs,
+      })
+      .from(toolGroups)
+      .where(and(eq(toolGroups.ownerId, ownerId), eq(toolGroups.enabled, true)));
+    return rows.map((r) => ({
+      slug: r.slug,
+      name: r.name,
+      description: r.description,
+      tools: r.toolSlugs,
+    }));
+  } catch (err) {
+    console.warn('[skills] tool groups for the deferred catalog failed to load:', err);
+    return [];
+  }
+}
+
+/**
  * Append every skill's instructions to a base system prompt as
  * `## Skill: <name>` blocks. Keeps each skill's voice fenced so the
  * model can tell which guidance belongs to which skill.
@@ -259,9 +292,14 @@ const MAX_EFFECTIVE_TOOL_SLUGS = 512;
  * granted tool groups (pre-resolved via resolveAgentToolGroups). P6: tool groups
  * are the SOLE grant — the `agents.tool_slugs` column is gone, and skills are
  * pure teaching (P4). Deduped + capped.
+ *
+ * Tools whose optional service is switched off on this box (the sandbox verbs
+ * without the `sandboxes` profile, video_ingest without `media`) are left
+ * out: the grant stays, the tool comes back the moment the service is on, and
+ * meanwhile the model is never offered a tool that can only refuse.
  */
 export function effectiveToolSlugs(groupToolSlugs: string[]): string[] {
-  const all = Array.from(new Set<string>(groupToolSlugs));
+  const all = Array.from(new Set<string>(groupToolSlugs)).filter(toolServiceAvailable);
   if (all.length > MAX_EFFECTIVE_TOOL_SLUGS) {
     const dropped = all.slice(MAX_EFFECTIVE_TOOL_SLUGS);
     // Not silent — log exactly which slugs were cut so a misconfiguration is

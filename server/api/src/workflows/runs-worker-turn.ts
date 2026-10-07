@@ -69,6 +69,7 @@ import { spillToolResult } from '@mantle/tools';
 import { currentTrace, runDurableStep, startTrace, withDurableSteps } from '@mantle/tracing';
 import { getChatAdapter } from '@mantle/voice';
 import { errorMessage } from '@mantle/std';
+import { applyAgentThinking, NO_THINKING } from '@mantle/content-core/profile-projections';
 import { agentLevel } from '@mantle/runtime/agent';
 
 const PROPOSAL_CAP_CHARS = 2_000;
@@ -367,6 +368,9 @@ export async function runsWorkerTurnImpl(
               // propose-don't-mutate is enforced structurally, not by prompt.
               agentDepth: 2,
               delegateTo: [],
+              // Run workers never had the profile's thinking: inherit stays
+              // off. Only an effort set on the worker row itself applies.
+              ...workerThinking(worker),
               initialMessages,
               tools: allowedTools,
               // The owner's own run (client logins C4): a missing surface is
@@ -458,3 +462,9 @@ export async function runsWorkerTurnImpl(
 export const runsWorkerTurnWorkflow = DBOS.registerWorkflow(runsWorkerTurnImpl, {
   name: RUNS_WORKER_TURN_WORKFLOW,
 });
+
+/** A run worker's thinking loop args: its own effort, else none. */
+function workerThinking(worker: Pick<Agent, 'thinkingEffort'>) {
+  const own = applyAgentThinking(worker, NO_THINKING);
+  return own.budget > 0 ? { thinkingBudget: own.budget, thinkingEffort: own.effort } : {};
+}

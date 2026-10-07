@@ -4,7 +4,7 @@
  * `@mantle/embeddings` reads the same row at runtime; writing here clears its
  * cache so a change takes effect immediately.
  */
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { db, embeddingConfig, type EmbeddingConfigRow } from '@mantle/db';
 import { clearEmbeddingModelCache, EMBEDDING_DIMS } from '@mantle/embeddings';
 
@@ -54,4 +54,20 @@ export async function upsertEmbeddingConfig(
     .values({ ownerId, ...row })
     .onConflictDoUpdate({ target: embeddingConfig.ownerId, set: row });
   clearEmbeddingModelCache(ownerId);
+  await notifyProviderRecover(ownerId);
+}
+
+/**
+ * Tell the agent the provider settings changed (docs/embeddings.md "Provider
+ * outages"): it probes an open alert at once and, when the provider works,
+ * re-drives the dead letters and sweeps unextracted nodes, with no restart.
+ * The agent bounds it (one tiny probe call; a recovery at most once per
+ * 2 min). Best-effort: the agent's 30 s config poll catches a lost notify.
+ */
+export async function notifyProviderRecover(ownerId: string): Promise<void> {
+  try {
+    await db.execute(sql`SELECT pg_notify('provider_recover', ${ownerId}::text)`);
+  } catch {
+    /* best-effort */
+  }
 }

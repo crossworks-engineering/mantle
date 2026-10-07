@@ -53,6 +53,11 @@ prefs.teamHubAppId  →  app exists under this owner
                     →  app at a level members may run (team, client, public)
 ```
 
+The home app may be a public app (members may run one), but the OTHER apps
+that `host.hub.get()` answers are the launcher's list: team and client apps
+only, never a public one (contact shares plan P0, 2026-10-01). Public means
+"anyone with the link", so a public app is in no member list.
+
 Designation (the Team-admin picker, or `PUT /api/team-admin/hub-app`) puts an
 app still at admin at team level, then sets the pref, and answers
 `{ appId, levelChanged }`; it makes no share link (team links were retired in
@@ -77,6 +82,9 @@ iframe.
 ```ts
 import { host } from '@host';
 
+host.me(): Promise<AppViewer>       // who runs the app, on EVERY surface
+                                    // (docs/app-authoring-guide.md,
+                                    // "Who is running the app")
 host.hub.get(): Promise<HubData>    // REJECTS off the /team surface
 host.hub.openChat(): void           // shell opens the team Forum
 host.hub.openBriefing(token): void  // shell opens the in-hub reader
@@ -155,7 +163,7 @@ Conventions:
 - **One component per section**, taking `(hub, content)` as props, so a
   restyle touches one file and a content edit touches none of the markup.
 - **`data-app-region` on each section** (`hero`, `whats-new`, `briefings`,
-  `stats`), the editor's inspect mode and agent annotations key off these.
+  `stats`), agent annotations key off these.
 - **Off-hub preview is mandatory** (SDK rule R2): `hub.get` rejects in the
   `/apps` editor, catch it and render labelled placeholder data. Never gate
   the whole render on `hub.get`.
@@ -234,12 +242,15 @@ Read-acknowledgements, polls, per-section feedback: declare a schema with
 `app_db_schema_set` (idempotent DDL, bump `schemaVersion` on change) and use
 `host.db.query/exec`. Team members' writes are allowed and access-logged.
 
-**The attribution caveat (do not skip):** the app runs in the member's
-browser, so a `memberName` you write into SQLite is _advisory_, display it,
-but never build permission or integrity logic on it. The host's per-member
-access log is the tamper-proof trail. Server-stamped writes (a reserved
-`$member_contact_id` binding substituted by the team db-broker) are the
-planned upgrade; until then treat member-attributed rows as honest-majority.
+**Attribution: let the server stamp it.** The app runs in the member's
+browser, so a name the app sends as an ordinary parameter (`memberName`,
+or `(await host.me()).name`) is _advisory_: display it, but never build
+permission or integrity logic on it. To record who did something, write the
+reserved parameters `:host_me_id`, `:host_me_name` and `:host_me_kind` in
+the SQL itself; the broker fills them from the signed-in login and refuses
+any value the browser sends for them (app identity, 2026-10-02; see
+docs/app-authoring-guide.md, "Who is running the app"). The host's
+per-member access log stays the full trail of every open, read and write.
 
 ## 6. The manifest, today and next
 

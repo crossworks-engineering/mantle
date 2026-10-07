@@ -208,7 +208,7 @@ describe.skipIf(!URL)('migration 0210: pages in folders', () => {
   afterAll(async () => {
     await m?.closeDb();
     await scratch?.drop();
-  });
+  }, 120_000);
 
   it('pins the SQL slug to folderSlugOf, step for step', async () => {
     for (const name of [

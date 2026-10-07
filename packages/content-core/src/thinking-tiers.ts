@@ -54,3 +54,43 @@ export function thinkingEffortForBudget(budget: number | undefined): ThinkingEff
   );
   return nearest.effort ?? undefined;
 }
+
+/** The values an AGENT's own thinking effort may hold (`agents.thinking_effort`,
+ *  migration 0228): 'off' plus every tier. NULL (not in this list) means
+ *  "inherit the person's profile setting". Wider than THINKING_TIERS on
+ *  purpose: the profile dropdown stops at High, but an agent may ask for the
+ *  upper rungs; the provider adapters downgrade a rung a model lacks (see
+ *  anthropicEffort in @mantle/voice). The migration's CHECK holds this list. */
+export const AGENT_THINKING_EFFORTS = ['off', ...THINKING_EFFORTS] as const;
+export type AgentThinkingEffort = (typeof AGENT_THINKING_EFFORTS)[number];
+
+/** Labels for the agent select, in order. */
+export const AGENT_THINKING_EFFORT_LABELS: Record<AgentThinkingEffort, string> = {
+  off: 'Off',
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+  xhigh: 'Extra high',
+  max: 'Max',
+};
+
+/** Narrow an unknown value to an agent effort. Anything else (null, '',
+ *  'inherit', a typo) is null = inherit, so a bad value can never turn
+ *  reasoning ON. */
+export function parseAgentThinkingEffort(raw: unknown): AgentThinkingEffort | null {
+  return typeof raw === 'string' && (AGENT_THINKING_EFFORTS as readonly string[]).includes(raw)
+    ? (raw as AgentThinkingEffort)
+    : null;
+}
+
+/** The budget (tier id) that backs an effort. The runtime still gates on a
+ *  positive budget and sizes the max_tokens headroom from it (see
+ *  clampThinkingBudget / resolveMaxTokens in @mantle/runtime), so an agent's
+ *  effort needs one. The profile tiers keep their ids; the two upper rungs
+ *  have no profile tier, so they get a larger headroom of their own (24000 is
+ *  the profile route's ceiling). */
+export function thinkingBudgetForEffort(effort: ThinkingEffort): number {
+  const tier = THINKING_TIERS.find((t) => t.effort === effort);
+  if (tier) return tier.budget;
+  return effort === 'xhigh' ? 16000 : 24000;
+}

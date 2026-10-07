@@ -17,7 +17,9 @@ import {
   AppSqlError,
   appSqlChildPids,
   appSqlMaxDbBytes,
+  copyAppDbFile,
   runAppSql,
+  runAppSqlBatch,
 } from './app-sql-runner';
 
 describe('runAppSql', () => {
@@ -186,6 +188,72 @@ describe("runAppSql mode 'script' (schema DDL)", () => {
     await expect(
       runAppSql(file, { sql: 'CREATE TABLE ro (x)', mode: 'script', readOnly: true }),
     ).rejects.toThrow(/writable/);
+  });
+
+  // Apps audit D3: the version a script brings the file to is stamped into
+  // the file in the same transaction, so a lost registry update cannot make
+  // the next run fail on "already exists".
+  it('stamps its version into the file, and skips a file already at it', async () => {
+    const stamped = path.join(dir, 'stamped.sqlite');
+    const run = (sql: string, userVersion: number) =>
+      runAppSql(stamped, { sql, mode: 'script', readOnly: false, userVersion });
+    expect(await run('CREATE TABLE once (x);', 3)).toEqual({ skipped: false, userVersion: 3 });
+    // The same plain CREATE again would fail; at version 3 it is skipped.
+    expect(await run('CREATE TABLE once (x);', 3)).toEqual({ skipped: true, userVersion: 3 });
+    expect(await run('CREATE TABLE once (x);', 2)).toEqual({ skipped: true, userVersion: 3 });
+    // A newer version runs, and a failing one leaves the stamp where it was.
+    await expect(run('CREATE TABLE once (x);', 4)).rejects.toThrow(/already exists/);
+    expect(await run('CREATE TABLE IF NOT EXISTS once (x); CREATE TABLE twice (y);', 4)).toEqual({
+      skipped: false,
+      userVersion: 4,
+    });
+  });
+
+  it('keeps PRAGMA user_version away from the app itself', async () => {
+    await expect(script('PRAGMA user_version = 99;')).rejects.toThrow(/authoriz/i);
+  });
+
+  it("copyAppDbFile: the server's consistent copy, in a child, never over an existing file", async () => {
+    const copy = path.join(dir, 'copy-of-app.sqlite');
+    await copyAppDbFile(file, copy);
+    const read = (f: string) =>
+      runAppSql(f, {
+        sql: "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name",
+        mode: 'all',
+        readOnly: true,
+      });
+    expect(await read(copy)).toEqual(await read(file));
+    await expect(copyAppDbFile(file, copy)).rejects.toThrow(/exists|output file/i);
+    // The destination is a SQL literal inside the child: a quote in it stays a quote.
+    const quoted = path.join(dir, "it's a copy.sqlite");
+    await copyAppDbFile(file, quoted);
+    expect(existsSync(quoted)).toBe(true);
+  });
+
+  it('runAppSqlBatch: the server write batch is all or nothing, under the authorizer', async () => {
+    const batchFile = path.join(dir, 'batch.sqlite');
+    await runAppSql(batchFile, { sql: 'CREATE TABLE b (x);', mode: 'script', readOnly: false });
+    expect(
+      await runAppSqlBatch(batchFile, [
+        { sql: 'INSERT INTO b VALUES (?)', params: [1] },
+        { sql: 'INSERT INTO b VALUES (?)', params: [2] },
+      ]),
+    ).toEqual([1, 1]);
+    await expect(
+      runAppSqlBatch(batchFile, [
+        { sql: 'DELETE FROM b', params: [] },
+        { sql: 'INSERT INTO nope VALUES (?)', params: [3] },
+      ]),
+    ).rejects.toThrow(/no such table/);
+    const count = await runAppSql(batchFile, {
+      sql: 'SELECT count(*) AS n FROM b',
+      mode: 'all',
+      readOnly: true,
+    });
+    expect(count).toEqual([{ n: 2 }]);
+    await expect(
+      runAppSqlBatch(batchFile, [{ sql: `ATTACH DATABASE '${dir}/x.db' AS x`, params: [] }]),
+    ).rejects.toThrow(/authoriz/i);
   });
 });
 

@@ -13,6 +13,7 @@
 import { sql } from 'drizzle-orm';
 import { db, nodes, takeShareReadLock } from '@mantle/db';
 import { ensureKindRoot } from './node-ops';
+import { unlessWriteRefused } from './refused-write';
 
 export const NOTES_AUTO_FILED_PATH = 'notes.auto_filed';
 export const NOTES_ASSISTANT_PATH = 'notes.auto_filed.assistant';
@@ -58,21 +59,25 @@ export async function ensureNotesAssistantFolder(ownerId: string): Promise<strin
 }
 
 /** Move digests still at the old `assistant` path into Notes / Auto-filed /
- *  Assistant. Returns how many moved (0, after the first run). */
-export async function reconcileNotesAutoFiled(ownerId: string): Promise<number> {
+ *  Assistant. Returns how many moved (0, after the first run); null when
+ *  digests wait but the database refuses writes (refused-write.ts): they stay
+ *  where they were, and the notes tree is read without them. */
+export async function reconcileNotesAutoFiled(ownerId: string): Promise<number | null> {
   const waiting = (await db.execute(sql`
     select 1 from nodes
      where owner_id = ${ownerId} and type = 'note' and path <@ ${LEGACY_DIGEST_PATH}::ltree
      limit 1`)) as unknown as unknown[];
   if (!waiting.length) return 0;
-  await ensureNotesAssistantFolder(ownerId);
-  // The share lock (shared) before the rows: see takeShareReadLock.
-  const moved = await db.transaction(async (tx) => {
-    await takeShareReadLock(tx, ownerId);
-    return (await tx.execute(sql`
-      update nodes set path = ${NOTES_ASSISTANT_PATH}::ltree
-       where owner_id = ${ownerId} and type = 'note' and path <@ ${LEGACY_DIGEST_PATH}::ltree
-       returning id`)) as unknown as unknown[];
+  return unlessWriteRefused(async () => {
+    await ensureNotesAssistantFolder(ownerId);
+    // The share lock (shared) before the rows: see takeShareReadLock.
+    const moved = await db.transaction(async (tx) => {
+      await takeShareReadLock(tx, ownerId);
+      return (await tx.execute(sql`
+        update nodes set path = ${NOTES_ASSISTANT_PATH}::ltree
+         where owner_id = ${ownerId} and type = 'note' and path <@ ${LEGACY_DIGEST_PATH}::ltree
+         returning id`)) as unknown as unknown[];
+    });
+    return moved.length;
   });
-  return moved.length;
 }

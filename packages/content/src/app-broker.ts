@@ -12,24 +12,54 @@
  * NOT re-exported from the package index — import via '@mantle/content/app-broker'
  * so it stays out of client/edge bundles.
  */
-import { mkdir, rm, stat } from 'node:fs/promises';
+import { copyFile, mkdir, open, rename, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, lt } from 'drizzle-orm';
 import { db, nodes, appDatabases } from '@mantle/db';
 import { env } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 import { stripLiterals } from '@mantle/tabledb';
+import { linkHistoryTree } from './history-files';
 import {
+  APP_DB_RESTORE_MARKER_TTL_MS,
   APP_SCHEMA_TIMEOUT_MS,
   APP_SQL_JOURNAL_LIMIT_BYTES,
+  APP_SQL_TIMEOUT_MS,
+  AppDbRestoringError,
   AppSqlError,
   appSqlMaxDbBytes,
+  copyAppDbFile,
   runAppSql,
+  runAppSqlBatch,
 } from './app-sql-runner';
+import {
+  appViewerSalt,
+  bindViewerParams,
+  resolveAppViewer,
+  type AppViewer,
+  type AppViewerSubject,
+} from './app-viewer';
 
-export { AppSqlBusyError, AppSqlError } from './app-sql-runner';
+export { AppDbRestoringError, AppSqlBusyError, AppSqlError } from './app-sql-runner';
+
+/**
+ * An app's database file is gone although the app had stored something in it
+ * (a schema applied, or a write recorded). It is never recreated empty: an
+ * empty file would hide the loss, and every later statement would fail with
+ * "no such table" while nothing said why (apps audit 2026-10-02, D1). The
+ * file has to come back from a backup or a snapshot.
+ */
+export class AppDbMissingError extends Error {
+  constructor(appNodeId: string) {
+    super(
+      `the database file of app ${appNodeId} is missing on the server. The app had data, so it is not recreated empty: restore the file from a backup (scripts/app-dbs-restore.sh)`,
+    );
+    this.name = 'AppDbMissingError';
+  }
+}
+export type { AppViewer, AppViewerSubject } from './app-viewer';
 
 /** Root dir for per-app SQLite files. A dedicated volume in prod (see compose);
  *  one file per app: <root>/<owner>/<app>.sqlite. When APP_DB_DIR is unset
@@ -38,7 +68,9 @@ export { AppSqlBusyError, AppSqlError } from './app-sql-runner';
  *  splits web (cwd server/web) and api (cwd server/api) into two roots, the same
  *  split-brain that hit table-dbs (see packages/tabledb/src/paths.ts). */
 let cachedRoot: string | undefined;
-function appDbRoot(): string {
+/** The root of the per-app SQLite files (APP_DB_DIR); snapshots live under
+ *  its `_snapshots/` (app-snapshots.ts). */
+export function appDbRoot(): string {
   if (cachedRoot) return cachedRoot;
   const configured = env('APP_DB_DIR');
   if (configured) return (cachedRoot = configured);
@@ -65,8 +97,10 @@ export type AppDbSchema = { schemaSql: string; schemaVersion: number };
 export type DbRows = Record<string, unknown>[];
 export type DbExecResult = { changes: number; lastInsertRowid: number };
 /** Who runs a broker statement: one statement at a time per key (a client
- *  login, a member login, a share link; client tier audit I1). */
-export type AppDbCaller = { callerKey?: string };
+ *  login, a member login, a share link; client tier audit I1). `viewer` is
+ *  the authenticated person (app identity): it fills the reserved
+ *  `:host_me_*` parameters. Without it, SQL that uses one is refused. */
+export type AppDbCaller = { callerKey?: string; viewer?: AppViewerSubject };
 
 /** Minimal structural type for the bits of node:sqlite we use (keeps us
  *  independent of whether @types/node ships the declarations yet). */
@@ -87,12 +121,9 @@ async function sqliteCtor(): Promise<SqliteCtor> {
 
 async function openSqlite(file: string): Promise<SqliteDb> {
   const DatabaseSync = await sqliteCtor();
-  // Ensure the parent dir exists on EVERY open, not just first-provision. The
-  // registry row persists the absolute storagePath in Postgres, but the file
-  // lives on APP_DB_DIR — if that dir goes missing (a fresh/rotated volume, or
-  // an ephemeral APP_DB_DIR wiped by a container recreate), `new DatabaseSync`
-  // throws "unable to open database file" and the app hangs forever on its
-  // initial load. mkdir-ing here self-heals to a fresh empty DB instead.
+  // The parent dir may not exist yet for an app that never stored anything
+  // (first provision). An app that DID store something and lost its file
+  // never gets here: ensureAppDatabase refuses it first (AppDbMissingError).
   await mkdir(path.dirname(file), { recursive: true });
   const handle = new DatabaseSync(file);
   // Server-side PRAGMAs (not app-supplied SQL, so they bypass assertSafe by
@@ -105,7 +136,7 @@ async function openSqlite(file: string): Promise<SqliteDb> {
   //     (several members) and the responder's read-only queries running while
   //     the app writes. In the old rollback-journal mode those blocked each
   //     other and could hit SQLITE_BUSY; under WAL a reader just sees a
-  //     consistent snapshot. Read-only opens (openSqliteReadOnly) read a WAL db
+  //     consistent snapshot. Read-only opens (the SQL child's) read a WAL db
   //     fine — verified on the deployed runtime.
   //   synchronous=NORMAL — the safe+fast pairing WITH WAL: fsync at checkpoints
   //     rather than every commit. Durable across an app/process crash; only a
@@ -123,24 +154,6 @@ async function openSqlite(file: string): Promise<SqliteDb> {
   const [ps] = handle.prepare('PRAGMA page_size').all() as { page_size: number }[];
   const pageSize = Number(ps?.page_size) || 4096;
   handle.exec(`PRAGMA max_page_count = ${Math.max(1, Math.floor(appSqlMaxDbBytes() / pageSize))}`);
-  return handle;
-}
-
-/** Open an app's SQLite file READ-ONLY. Any write throws at the ENGINE level
- *  ("attempt to write a readonly database"), so an agent-facing query tool
- *  cannot mutate app data no matter what SQL it sends — no SELECT-only regex to
- *  outsmart (SQLite allows DML inside CTEs; a regex guard would leak). Assumes
- *  the file exists (callers check) — read-only open never creates it. */
-async function openSqliteReadOnly(file: string): Promise<SqliteDb> {
-  const DatabaseSync = await sqliteCtor();
-  const handle = new DatabaseSync(file, { readOnly: true });
-  // busy_timeout is a connection setting (no file write), fine on a read-only
-  // handle; wrap defensively in case a driver quirk rejects it.
-  try {
-    handle.exec('PRAGMA busy_timeout = 5000');
-  } catch {
-    /* readers rarely block; non-fatal */
-  }
   return handle;
 }
 
@@ -187,15 +200,15 @@ export function assertSafeScript(sql: string): void {
 /** Find or create the registry row + on-disk file for an app's database.
  *  Verifies the app node exists + is owned (defense in depth — the route also
  *  checks ownership before calling). */
-async function ensureRegistry(
-  ownerId: string,
-  appNodeId: string,
-): Promise<{ id: string; storagePath: string; schemaVersion: number }> {
+type AppDbRegistry = { id: string; storagePath: string; schemaVersion: number; sizeBytes: number };
+
+async function ensureRegistry(ownerId: string, appNodeId: string): Promise<AppDbRegistry> {
   const [existing] = await db
     .select({
       id: appDatabases.id,
       storagePath: appDatabases.storagePath,
       schemaVersion: appDatabases.schemaVersion,
+      sizeBytes: appDatabases.sizeBytes,
     })
     .from(appDatabases)
     .where(eq(appDatabases.appNodeId, appNodeId))
@@ -221,6 +234,7 @@ async function ensureRegistry(
       id: appDatabases.id,
       storagePath: appDatabases.storagePath,
       schemaVersion: appDatabases.schemaVersion,
+      sizeBytes: appDatabases.sizeBytes,
     })
     .from(appDatabases)
     .where(eq(appDatabases.appNodeId, appNodeId))
@@ -229,41 +243,207 @@ async function ensureRegistry(
   return row;
 }
 
+async function fileExists(file: string): Promise<boolean> {
+  try {
+    await stat(file);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Whether the registry says this app stored something: a schema applied or
+ *  a write recorded. Such a file must exist. */
+function heldData(reg: { schemaVersion: number; sizeBytes: number }): boolean {
+  return reg.schemaVersion > 0 || reg.sizeBytes > 0;
+}
+
+/** Refuse, loudly, an app whose file is gone although it held data. */
+async function assertNotLost(
+  appNodeId: string,
+  reg: { storagePath: string; schemaVersion: number; sizeBytes: number },
+): Promise<void> {
+  if (!heldData(reg) || (await fileExists(reg.storagePath))) return;
+  console.error(
+    `[app-broker] app ${appNodeId}: database file missing at ${reg.storagePath} (schema v${reg.schemaVersion}, ${reg.sizeBytes} bytes recorded); refusing to recreate it empty`,
+  );
+  throw new AppDbMissingError(appNodeId);
+}
+
+/** The marker a restore writes beside the live file while it swaps it. */
+function restoreMarker(storagePath: string): string {
+  return `${storagePath}.restoring`;
+}
+
+/** Whether a restore is swapping this file now. A marker past its TTL is a
+ *  crashed restore's leftover: removed, and the app runs again. */
+async function isRestoring(storagePath: string): Promise<boolean> {
+  try {
+    const { mtimeMs } = await stat(restoreMarker(storagePath));
+    if (Date.now() - mtimeMs < APP_DB_RESTORE_MARKER_TTL_MS) return true;
+    await rm(restoreMarker(storagePath), { force: true });
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 /** Ensure the app's DB exists and its declared DDL has been applied (idempotent;
- *  applies only when the manifest schema version is newer than what's recorded). */
+ *  applies only when the manifest schema version is newer than what's recorded).
+ *  Refuses an app whose file is gone although it held data (AppDbMissingError),
+ *  and one being restored from a snapshot right now (AppDbRestoringError, a
+ *  busy error: the brokers answer 429 and the app retries). */
 export async function ensureAppDatabase(
   ownerId: string,
   appNodeId: string,
   schema?: AppDbSchema,
-): Promise<{ id: string; storagePath: string; schemaVersion: number }> {
+): Promise<AppDbRegistry> {
   const reg = await ensureRegistry(ownerId, appNodeId);
+  if (await isRestoring(reg.storagePath)) throw new AppDbRestoringError();
+  await assertNotLost(appNodeId, reg);
   if (schema && schema.schemaSql.trim() && schema.schemaVersion > reg.schemaVersion) {
     // Defense in depth: the schema DDL is agent-authored, so it must clear the
     // same file-escape guard as the runtime broker, and then runs in the
-    // worker runner like every other app statement: the engine authorizer
-    // refuses ATTACH, VACUUM and PRAGMA whatever the text looks like, and a
-    // time limit stops an endless statement without freezing this process
-    // (it used to run here, on the main thread, with no timeout).
+    // child-process runner like every other app statement: the engine
+    // authorizer refuses ATTACH, VACUUM and PRAGMA whatever the text looks
+    // like, and a time limit stops an endless statement without freezing
+    // this process (it used to run here, on the main thread, with no timeout).
     assertSafeScript(schema.schemaSql);
+    await applySchema(reg, schema);
+  }
+  return reg;
+}
+
+/**
+ * Apply one schema version, once, across processes (apps audit D3). The web
+ * and api processes can both reach a new version at the same moment; the row
+ * lock makes the second wait and then see the version already applied. The
+ * script stamps its version into the file in the same SQLite transaction
+ * (user_version), so a crash between that commit and the registry update
+ * leaves a file the next run recognises and skips, instead of a script that
+ * fails on "already exists" for ever.
+ *
+ * Applied atomically ('script' mode wraps it in one transaction): SQLite
+ * autocommits each statement, so a bare multi-statement exec failing on
+ * statement 3 would leave 1-2 committed while the version stays old.
+ */
+async function applySchema(reg: AppDbRegistry, schema: AppDbSchema): Promise<void> {
+  await db.transaction(async (tx) => {
+    const [locked] = await tx
+      .select({ schemaVersion: appDatabases.schemaVersion })
+      .from(appDatabases)
+      .where(eq(appDatabases.id, reg.id))
+      .for('update');
+    if (!locked) throw new Error('the app database registry row is gone');
+    if (locked.schemaVersion >= schema.schemaVersion) {
+      reg.schemaVersion = locked.schemaVersion;
+      return;
+    }
     await mkdir(path.dirname(reg.storagePath), { recursive: true });
-    // Applied atomically ('script' mode wraps it in one transaction). SQLite
-    // autocommits each statement, so a bare multi-statement exec that fails
-    // on statement 3 would leave 1-2 committed while schemaVersion stays old;
-    // the next open re-runs the full script, trips on the already-created
-    // table, and bricks the app until someone hand-writes guarded DDL.
     await runAppSql(reg.storagePath, {
       sql: schema.schemaSql,
       mode: 'script',
       readOnly: false,
       timeoutMs: APP_SCHEMA_TIMEOUT_MS,
+      userVersion: schema.schemaVersion,
     });
-    await db
+    await tx
       .update(appDatabases)
       .set({ schemaVersion: schema.schemaVersion, updatedAt: new Date() })
-      .where(eq(appDatabases.id, reg.id));
+      .where(
+        and(eq(appDatabases.id, reg.id), lt(appDatabases.schemaVersion, schema.schemaVersion)),
+      );
     reg.schemaVersion = schema.schemaVersion;
+  });
+}
+
+/**
+ * Try a new schema script against a COPY of the app's live database before it
+ * is declared (apps audit D2). A declared schema runs in full against the live
+ * file on the app's next statement, so a script that fails there (a plain
+ * CREATE TABLE over a table that exists, a syntax error) stops every read and
+ * write of the app until someone fixes it. Here it fails on the copy, and the
+ * author hears why while nothing changed. The copy is a VACUUM INTO in a SQL
+ * child (consistent under WAL, off the event loop) and is removed after. An
+ * app with no file yet is tried on an empty database.
+ */
+export async function checkAppSchemaScript(
+  ownerId: string,
+  appNodeId: string,
+  schemaSql: string,
+): Promise<void> {
+  assertSafeScript(schemaSql);
+  const reg = await lookupAppDatabase(ownerId, appNodeId);
+  if (reg) await assertNotLost(appNodeId, reg);
+  const dir = reg ? path.dirname(reg.storagePath) : path.join(appDbRoot(), ownerId);
+  const src = reg && (await fileExists(reg.storagePath)) ? reg.storagePath : null;
+  await trySchemaScript(src, dir, appNodeId, schemaSql);
+}
+
+/** The same check against a database file that is not an app's yet (an
+ *  imported package's data, apps audit 2026-10-02, low): the schema the
+ *  package declares must run over the data it brings. */
+export async function checkAppSchemaScriptOnFile(file: string, schemaSql: string): Promise<void> {
+  assertSafeScript(schemaSql);
+  await trySchemaScript(file, path.dirname(file), 'file', schemaSql);
+}
+
+/** Run `schemaSql` on a copy of `src` (or on an empty database), in `dir`. */
+async function trySchemaScript(
+  src: string | null,
+  dir: string,
+  label: string,
+  schemaSql: string,
+): Promise<void> {
+  await mkdir(dir, { recursive: true });
+  const trial = path.join(dir, `.schema-check-${label}-${process.pid}-${Date.now()}.sqlite`);
+  try {
+    if (src) await copyAppDbFile(src, trial);
+    await runAppSql(trial, {
+      sql: schemaSql,
+      mode: 'script',
+      readOnly: false,
+      timeoutMs: APP_SCHEMA_TIMEOUT_MS,
+    });
+  } catch (err) {
+    if (err instanceof AppSqlError) {
+      throw new AppSqlError(
+        `the schema fails against the app's current database, so it was not declared: ${err.message}. The whole script runs again on every new version: write it so it can run over the existing tables (CREATE TABLE IF NOT EXISTS, CREATE INDEX IF NOT EXISTS)`,
+      );
+    }
+    throw err;
+  } finally {
+    await Promise.all(appDbFiles(trial).map((f) => rm(f, { force: true })));
   }
-  return reg;
+}
+
+/** The viewer resolver for a broker statement, or null when the caller
+ *  named no person (bindViewerParams then refuses the reserved names). */
+function viewerThunk(
+  ownerId: string,
+  appNodeId: string,
+  registryId: string,
+  opts: AppDbCaller,
+): (() => Promise<AppViewer>) | null {
+  const subject = opts.viewer;
+  if (!subject) return null;
+  return () => resolveAppViewer(ownerId, subject, () => appViewerSalt(registryId, appNodeId));
+}
+
+/**
+ * What `host.me()` answers for this person in this app (app identity): the
+ * frame routes bake it into the frame document. Provisions the app's
+ * registry row (cheap, idempotent) when the id needs the app's salt.
+ */
+export async function appViewerFor(
+  ownerId: string,
+  appNodeId: string,
+  subject: AppViewerSubject,
+): Promise<AppViewer> {
+  return resolveAppViewer(ownerId, subject, async () => {
+    const reg = await ensureRegistry(ownerId, appNodeId);
+    return appViewerSalt(reg.id, appNodeId);
+  });
 }
 
 /** Run a read query against the app's own database. Returns row objects.
@@ -274,7 +454,7 @@ export async function ensureAppDatabase(
  *  rejected with a "shared apps are read-only" promise. A read-write open would
  *  let `{op:'query', sql:'DELETE FROM t'}` mutate the owner's app database
  *  anyway. Engine-level read-only closes that for any SQL (same rationale as
- *  openSqliteReadOnly: no SELECT-only regex to outsmart). Writes go through
+ *  the child's read-only open: no SELECT-only regex to outsmart). Writes go through
  *  appDbExec (op:'exec'), which the routes gate. */
 export async function appDbQuery(
   ownerId: string,
@@ -286,17 +466,14 @@ export async function appDbQuery(
 ): Promise<DbRows> {
   assertSafe(sql);
   const reg = await ensureAppDatabase(ownerId, appNodeId, schema);
+  const bound = await bindViewerParams(sql, params, viewerThunk(ownerId, appNodeId, reg.id, opts));
   // A read-only open never creates the file. On an app's very first query
   // (no declared DDL applied, nothing written yet) provision the empty DB
   // with a normal open first, so the read-only open has a file to attach.
-  try {
-    await stat(reg.storagePath);
-  } catch {
-    (await openSqlite(reg.storagePath)).close();
-  }
+  if (!(await fileExists(reg.storagePath))) (await openSqlite(reg.storagePath)).close();
   return (await runAppSql(reg.storagePath, {
     sql,
-    params,
+    params: bound,
     mode: 'all',
     readOnly: true,
     ...(opts.callerKey ? { callerKey: opts.callerKey } : {}),
@@ -314,10 +491,11 @@ export async function appDbExec(
 ): Promise<DbExecResult> {
   assertSafe(sql);
   const reg = await ensureAppDatabase(ownerId, appNodeId, schema);
+  const bound = await bindViewerParams(sql, params, viewerThunk(ownerId, appNodeId, reg.id, opts));
   await mkdir(path.dirname(reg.storagePath), { recursive: true });
   const res = (await runAppSql(reg.storagePath, {
     sql,
-    params,
+    params: bound,
     mode: 'run',
     readOnly: false,
     ...(opts.callerKey ? { callerKey: opts.callerKey } : {}),
@@ -368,93 +546,74 @@ export type AppDbSeedResult = {
 /** SQLite identifier we accept for a seed target table (no quoting tricks). */
 const TABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
-/**
- * The seed core, against an already-open handle — separated from the registry
- * and file plumbing so it is directly testable on an in-memory database.
- * Validates the table name against the live schema and every row against the
- * live columns, then inserts all-or-nothing in one transaction. `replace`
- * empties the table first (same transaction). Values must be
- * string/number/boolean/null (booleans stored as 1/0).
- */
-export function seedRowsIntoHandle(
-  handle: SqliteDb,
-  table: string,
-  rows: Record<string, unknown>[],
-  opts: { replace?: boolean } = {},
-): AppDbSeedResult {
-  if (!TABLE_NAME.test(table) || table.toLowerCase().startsWith('sqlite_')) {
-    throw new Error(
+/** Why a seed's target table is refused: a bad name, or not in the app's
+ *  database (with the tables that are). */
+function seedTableError(table: string, knownTables: string[] | null): Error {
+  if (knownTables === null) {
+    return new Error(
       `table '${table}' is not a valid table name — use the exact name from the declared schema (app_db_schema_set)`,
     );
   }
-  const cols = handle.prepare(`PRAGMA table_info("${table}")`).all() as { name: string }[];
-  if (!cols.length) {
-    const known = (
-      handle
-        .prepare(
-          "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
-        )
-        .all() as { name: string }[]
-    ).map((t) => t.name);
-    throw new Error(
-      `table '${table}' does not exist in this app's database — declare it via app_db_schema_set first` +
-        (known.length ? ` (existing tables: ${known.join(', ')})` : ''),
-    );
-  }
-  const colSet = new Set(cols.map((c) => c.name));
+  return new Error(
+    `table '${table}' does not exist in this app's database — declare it via app_db_schema_set first` +
+      (knownTables.length ? ` (existing tables: ${knownTables.join(', ')})` : ''),
+  );
+}
 
-  handle.exec('BEGIN IMMEDIATE');
-  try {
-    let deleted = 0;
-    if (opts.replace) {
-      deleted = Number(handle.prepare(`DELETE FROM "${table}"`).run().changes);
-    }
-    // Rows may carry differing key subsets; cache one prepared INSERT per
-    // distinct key signature.
-    const stmts = new Map<string, ReturnType<SqliteDb['prepare']>>();
-    let inserted = 0;
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i] ?? {};
-      const keys = Object.keys(row);
-      if (!keys.length) throw new Error(`row ${i} is empty — every row needs at least one column`);
-      const values: unknown[] = [];
-      for (const k of keys) {
-        if (!colSet.has(k)) {
-          throw new Error(
-            `row ${i} has unknown column '${k}' — this table's columns are: ${[...colSet].join(', ')}`,
-          );
-        }
-        const v = row[k];
-        if (v === null || v === undefined) values.push(null);
-        else if (typeof v === 'boolean') values.push(v ? 1 : 0);
-        else if (typeof v === 'string' || typeof v === 'number') values.push(v);
-        else {
-          throw new Error(
-            `row ${i} column '${k}' has a ${Array.isArray(v) ? 'array' : typeof v} value — seed values must be string, number, boolean, or null (JSON-encode nested data yourself if the column stores it)`,
-          );
-        }
+/** Whether `table` may be a seed target at all (no quoting tricks, no
+ *  SQLite internals). */
+export function isSeedTableName(table: string): boolean {
+  return TABLE_NAME.test(table) && !table.toLowerCase().startsWith('sqlite_');
+}
+
+/**
+ * The seed plan: every row checked against the LIVE `columns`, then one
+ * INSERT per row (an empty `DELETE` first with `replace`). Pure, so the rules
+ * are testable without a file; the statements run in one transaction in a
+ * SQL child (apps audit P5: the seed used to run on the main thread, where a
+ * writer holding the file's lock could stall the whole process for up to
+ * busy_timeout). Values must be string/number/boolean/null (booleans stored
+ * as 1/0).
+ */
+export function planSeedStatements(
+  table: string,
+  columns: string[],
+  rows: Record<string, unknown>[],
+  opts: { replace?: boolean } = {},
+): { sql: string; params: unknown[] }[] {
+  if (!isSeedTableName(table)) throw seedTableError(table, null);
+  const colSet = new Set(columns);
+  const statements: { sql: string; params: unknown[] }[] = [];
+  if (opts.replace) statements.push({ sql: `DELETE FROM "${table}"`, params: [] });
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i] ?? {};
+    const keys = Object.keys(row);
+    if (!keys.length) throw new Error(`row ${i} is empty — every row needs at least one column`);
+    const values: unknown[] = [];
+    for (const k of keys) {
+      if (!colSet.has(k)) {
+        throw new Error(
+          `row ${i} has unknown column '${k}' — this table's columns are: ${columns.join(', ')}`,
+        );
       }
-      const sig = keys.join(' ');
-      let stmt = stmts.get(sig);
-      if (!stmt) {
-        const colList = keys.map((k) => `"${k}"`).join(', ');
-        const placeholders = keys.map(() => '?').join(', ');
-        stmt = handle.prepare(`INSERT INTO "${table}" (${colList}) VALUES (${placeholders})`);
-        stmts.set(sig, stmt);
+      const v = row[k];
+      if (v === null || v === undefined) values.push(null);
+      else if (typeof v === 'boolean') values.push(v ? 1 : 0);
+      else if (typeof v === 'string' || typeof v === 'number') values.push(v);
+      else {
+        throw new Error(
+          `row ${i} column '${k}' has a ${Array.isArray(v) ? 'array' : typeof v} value — seed values must be string, number, boolean, or null (JSON-encode nested data yourself if the column stores it)`,
+        );
       }
-      stmt.run(...values);
-      inserted++;
     }
-    handle.exec('COMMIT');
-    return { inserted, deleted, table, columns: [...colSet] };
-  } catch (err) {
-    try {
-      handle.exec('ROLLBACK');
-    } catch {
-      /* already rolled back */
-    }
-    throw err;
+    const colList = keys.map((k) => `"${k}"`).join(', ');
+    const placeholders = keys.map(() => '?').join(', ');
+    statements.push({
+      sql: `INSERT INTO "${table}" (${colList}) VALUES (${placeholders})`,
+      params: values,
+    });
   }
+  return statements;
 }
 
 /**
@@ -472,14 +631,35 @@ export async function appDbSeedRows(
   opts: { replace?: boolean } = {},
   schema?: AppDbSchema,
 ): Promise<AppDbSeedResult> {
+  if (!isSeedTableName(table)) throw seedTableError(table, null);
   const reg = await ensureAppDatabase(ownerId, appNodeId, schema);
-  const handle = await openSqlite(reg.storagePath);
-  let result: AppDbSeedResult;
-  try {
-    result = seedRowsIntoHandle(handle, table, rows, opts);
-  } finally {
-    handle.close();
+  if (!(await fileExists(reg.storagePath))) (await openSqlite(reg.storagePath)).close();
+  const read = (sql: string) =>
+    runAppSql(reg.storagePath, { sql, mode: 'all', readOnly: true }) as Promise<DbRows>;
+  const columns = (await read(`PRAGMA table_info("${table}")`)).map((c) => String(c.name));
+  if (!columns.length) {
+    const known = (
+      await read(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+      )
+    ).map((t) => String(t.name));
+    throw seedTableError(table, known);
   }
+  // Under the registry row lock (apps audit 2026-10-02, item 2). A seed may
+  // run for APP_SCHEMA_TIMEOUT_MS, far past a restore's drain: without the
+  // lock it could commit into the old file's WAL, and its close could remove
+  // the restored file's sidecars. A restore takes the same lock for its swap,
+  // so it waits for the seed; a seed that waited on a restore sees the marker
+  // and is refused as busy.
+  const changes = await db.transaction(async (tx) => {
+    await tx
+      .select({ id: appDatabases.id })
+      .from(appDatabases)
+      .where(eq(appDatabases.id, reg.id))
+      .for('update');
+    if (await isRestoring(reg.storagePath)) throw new AppDbRestoringError();
+    return runAppSqlBatch(reg.storagePath, planSeedStatements(table, columns, rows, opts));
+  });
   // Same best-effort size tracking as appDbExec.
   try {
     const { size } = await stat(reg.storagePath);
@@ -490,7 +670,12 @@ export async function appDbSeedRows(
   } catch {
     /* size tracking is best-effort */
   }
-  return result;
+  return {
+    inserted: rows.length,
+    deleted: opts.replace ? (changes[0] ?? 0) : 0,
+    table,
+    columns,
+  };
 }
 
 // ── Read-only access (agent tools) ──────────────────────────────────────────
@@ -508,9 +693,13 @@ export type AppDbSummary = {
 async function lookupAppDatabase(
   ownerId: string,
   appNodeId: string,
-): Promise<{ storagePath: string } | null> {
+): Promise<{ storagePath: string; schemaVersion: number; sizeBytes: number } | null> {
   const [row] = await db
-    .select({ storagePath: appDatabases.storagePath })
+    .select({
+      storagePath: appDatabases.storagePath,
+      schemaVersion: appDatabases.schemaVersion,
+      sizeBytes: appDatabases.sizeBytes,
+    })
     .from(appDatabases)
     .where(and(eq(appDatabases.appNodeId, appNodeId), eq(appDatabases.ownerId, ownerId)))
     .limit(1);
@@ -523,7 +712,8 @@ async function lookupAppDatabase(
  * blocks ATTACH/DETACH/PRAGMA/VACUUM INTO (a read-only ATTACH would still let
  * the query read ANOTHER file). An app with no database yet (no registry row,
  * or the file never materialized because nothing was written) returns empty —
- * NOT an error, and never creates the file.
+ * NOT an error, and never creates the file. An app whose file is gone although
+ * it held data throws AppDbMissingError: "no rows" would be a lie.
  */
 export async function appDbReadQuery(
   ownerId: string,
@@ -532,16 +722,17 @@ export async function appDbReadQuery(
   params: unknown[] = [],
 ): Promise<{ rows: DbRows; empty: boolean }> {
   assertSafe(sql);
+  // No person runs the app here: SQL that uses a :host_me_* parameter is
+  // refused, and so is a caller-sent value for one.
+  const bound = await bindViewerParams(sql, params, null);
   const reg = await lookupAppDatabase(ownerId, appNodeId);
   if (!reg) return { rows: [], empty: true };
-  try {
-    await stat(reg.storagePath);
-  } catch {
-    return { rows: [], empty: true };
-  }
+  if (await isRestoring(reg.storagePath)) throw new AppDbRestoringError();
+  await assertNotLost(appNodeId, reg);
+  if (!(await fileExists(reg.storagePath))) return { rows: [], empty: true };
   const rows = (await runAppSql(reg.storagePath, {
     sql,
-    params,
+    params: bound,
     mode: 'all',
     readOnly: true,
   })) as DbRows;
@@ -554,22 +745,15 @@ export async function appDbReadQuery(
 export async function appDbSchema(ownerId: string, appNodeId: string): Promise<AppDbSchemaTable[]> {
   const reg = await lookupAppDatabase(ownerId, appNodeId);
   if (!reg) return [];
-  try {
-    await stat(reg.storagePath);
-  } catch {
-    return [];
-  }
-  const handle = await openSqliteReadOnly(reg.storagePath);
-  try {
-    const rows = handle
-      .prepare(
-        "SELECT name, sql FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' AND sql IS NOT NULL ORDER BY name",
-      )
-      .all() as { name: string; sql: string }[];
-    return rows.map((r) => ({ name: r.name, sql: r.sql }));
-  } finally {
-    handle.close();
-  }
+  await assertNotLost(appNodeId, reg);
+  if (!(await fileExists(reg.storagePath))) return [];
+  // In a SQL child, read-only (apps audit P5): not on the main thread.
+  const rows = (await runAppSql(reg.storagePath, {
+    sql: "SELECT name, sql FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' AND sql IS NOT NULL ORDER BY name",
+    mode: 'all',
+    readOnly: true,
+  })) as { name: string; sql: string }[];
+  return rows.map((r) => ({ name: r.name, sql: r.sql }));
 }
 
 /** Every app of this owner that has a registered database, with its title +
@@ -604,13 +788,6 @@ export type AppDbSnapshotReport = {
   failed: { ownerId: string; appNodeId: string; error: string }[];
 };
 
-/** Build the `VACUUM INTO '<file>'` statement with the destination path safely
- *  single-quote-escaped. The path is server-derived (never app input), but we
- *  escape defensively so a stray quote can't break out of the literal. */
-export function vacuumIntoStatement(destFile: string): string {
-  return `VACUUM INTO '${destFile.replace(/'/g, "''")}'`;
-}
-
 /** Where an app's snapshot lands under destDir — mirrors the live layout
  *  (<destDir>/<owner>/<app>.sqlite) so a restore drops straight back into
  *  APP_DB_DIR without any path rewriting. */
@@ -640,6 +817,17 @@ export async function snapshotAllAppDatabases(destDir: string): Promise<AppDbSna
     })
     .from(appDatabases);
   const report: AppDbSnapshotReport = { snapshotted: [], missing: [], failed: [] };
+  // The apps' own snapshots (History tab) ride along: immutable files, so a
+  // hard link is as good as a copy and costs no disk (apps audit 2026-10-02,
+  // item 5). A restored box keeps every app's history.
+  const snapshots = path.join(appDbRoot(), '_snapshots');
+  if (await fileExists(snapshots)) {
+    try {
+      await linkHistoryTree(snapshots, path.join(destDir, '_snapshots'));
+    } catch (err) {
+      report.failed.push({ ownerId: '-', appNodeId: '_snapshots', error: errorMessage(err) });
+    }
+  }
   for (const r of rows) {
     try {
       await stat(r.storagePath);
@@ -655,12 +843,9 @@ export async function snapshotAllAppDatabases(destDir: string): Promise<AppDbSna
     try {
       await mkdir(path.dirname(destFile), { recursive: true });
       await rm(destFile, { force: true }); // VACUUM INTO refuses an existing target
-      const handle = await openSqlite(r.storagePath);
-      try {
-        handle.exec(vacuumIntoStatement(destFile));
-      } finally {
-        handle.close();
-      }
+      // In a SQL child (apps audit P5): a 256 MB VACUUM INTO on the main
+      // thread froze the process that runs the backup.
+      await copyAppDbFile(r.storagePath, destFile);
       const { size } = await stat(destFile);
       report.snapshotted.push({ ownerId: r.ownerId, appNodeId: r.appNodeId, bytes: size });
     } catch (err) {
@@ -680,18 +865,119 @@ export function appDbFiles(storagePath: string): string[] {
   return ['', '-journal', '-wal', '-shm'].map((suffix) => `${storagePath}${suffix}`);
 }
 
+// ── Snapshots (the file half; app-snapshots.ts keeps the rows) ─────────────
+
 /**
- * Remove an app's on-disk SQLite file(s). Called when the app node is deleted —
- * the `app_databases` registry row cascades away with the node, but the file on
- * the volume would otherwise leak. Best-effort + idempotent (`force` ignores a
- * missing file); no-op if the app never opened a database.
+ * Copy an app's live database to `destAbs` (which must not exist): a VACUUM
+ * INTO in a SQL child, consistent while the app writes, off the event loop.
+ * Null when the app has no file yet (nothing stored, nothing to keep);
+ * AppDbMissingError when it had data and lost it.
  */
-export async function deleteAppDatabaseFile(ownerId: string, appNodeId: string): Promise<void> {
-  const [row] = await db
-    .select({ storagePath: appDatabases.storagePath })
-    .from(appDatabases)
-    .where(and(eq(appDatabases.appNodeId, appNodeId), eq(appDatabases.ownerId, ownerId)))
-    .limit(1);
-  if (!row) return;
-  await Promise.all(appDbFiles(row.storagePath).map((f) => rm(f, { force: true })));
+export async function snapshotAppDatabase(
+  ownerId: string,
+  appNodeId: string,
+  destAbs: string,
+): Promise<{ bytes: number; schemaVersion: number } | null> {
+  const reg = await lookupAppDatabase(ownerId, appNodeId);
+  if (!reg) return null;
+  await assertNotLost(appNodeId, reg);
+  if (!(await fileExists(reg.storagePath))) return null;
+  await mkdir(path.dirname(destAbs), { recursive: true });
+  const tmp = `${destAbs}.tmp-${process.pid}-${Date.now()}`;
+  try {
+    await copyAppDbFile(reg.storagePath, tmp);
+    await rename(tmp, destAbs);
+  } catch (err) {
+    await rm(tmp, { force: true });
+    throw err;
+  }
+  const { size } = await stat(destAbs);
+  return { bytes: size, schemaVersion: reg.schemaVersion };
+}
+
+/** How long a restore waits, after its marker is down, for statements that
+ *  had already opened the file: the longest a statement may run, plus a
+ *  margin. A statement past it is killed with its process (app-sql-runner).
+ *  The server's longer writes (a schema script, a seed batch) hold the
+ *  registry row lock instead, which the swap takes too. */
+export const APP_DB_RESTORE_DRAIN_MS = APP_SQL_TIMEOUT_MS + 750;
+
+/**
+ * Put a snapshot's database back as the app's live file (apps snapshots,
+ * Phase 2). The marker beside the live file stops new statements in every
+ * process (the brokers and the SQL child both check it) and the drain waits
+ * out the ones already running; the registry row lock waits out a schema
+ * applier. Then the snapshot is copied next to the live file, the live
+ * file's WAL and shared-memory sidecars go (they belong to the old file and
+ * SQLite would replay them into the new one), and the copy is renamed over.
+ * The registry takes the snapshot's schema version, so the declared schema
+ * re-applies only when the restored manifest is newer than it.
+ */
+export async function restoreAppDatabaseFile(
+  ownerId: string,
+  appNodeId: string,
+  snapshotAbs: string,
+  schemaVersion: number,
+  opts: { drainMs?: number } = {},
+): Promise<{ bytes: number }> {
+  const reg = await ensureRegistry(ownerId, appNodeId);
+  const marker = restoreMarker(reg.storagePath);
+  await mkdir(path.dirname(reg.storagePath), { recursive: true });
+  await writeFile(marker, String(Date.now()));
+  try {
+    await new Promise((r) => setTimeout(r, opts.drainMs ?? APP_DB_RESTORE_DRAIN_MS));
+    return await db.transaction(async (tx) => {
+      await tx
+        .select({ id: appDatabases.id })
+        .from(appDatabases)
+        .where(eq(appDatabases.id, reg.id))
+        .for('update');
+      // Fresh marker for the swap itself (a slow drain must not age it out).
+      const now = new Date();
+      await utimes(marker, now, now);
+      const tmp = `${reg.storagePath}.restore-${process.pid}-${Date.now()}`;
+      try {
+        await copyFile(snapshotAbs, tmp);
+        const fh = await open(tmp, 'r+');
+        try {
+          await fh.sync();
+        } finally {
+          await fh.close();
+        }
+        await Promise.all(
+          appDbFiles(reg.storagePath)
+            .slice(1)
+            .map((f) => rm(f, { force: true })),
+        );
+        await rename(tmp, reg.storagePath);
+      } catch (err) {
+        await rm(tmp, { force: true });
+        throw err;
+      }
+      const { size } = await stat(reg.storagePath);
+      await tx
+        .update(appDatabases)
+        .set({ schemaVersion, sizeBytes: size, updatedAt: new Date() })
+        .where(eq(appDatabases.id, reg.id));
+      return { bytes: size };
+    });
+  } finally {
+    await rm(marker, { force: true });
+  }
+}
+
+/** Where an app's database file lives, or null when it never had one. Read
+ *  BEFORE the app is deleted: the registry row cascades away with the node. */
+export async function appDatabasePath(ownerId: string, appNodeId: string): Promise<string | null> {
+  return (await lookupAppDatabase(ownerId, appNodeId))?.storagePath ?? null;
+}
+
+/**
+ * Remove an app's on-disk SQLite file(s), given the path read before the app
+ * was deleted (apps audit D6: the files go AFTER the node, so a delete that
+ * fails leaves the app with its data, never an app with none). Idempotent
+ * (`force` ignores a missing file).
+ */
+export async function removeAppDatabaseFiles(storagePath: string): Promise<void> {
+  await Promise.all(appDbFiles(storagePath).map((f) => rm(f, { force: true })));
 }

@@ -35,6 +35,7 @@ import {
   tool_group_ensure,
   agent_list,
   agent_grant_tool_group,
+  agent_set_thinking_effort,
 } from './toolsmith/groups';
 
 export const TOOLSMITH_TOOLS: BuiltinToolDef[] = [
@@ -56,6 +57,7 @@ export const TOOLSMITH_TOOLS: BuiltinToolDef[] = [
   tool_group_ensure,
   agent_list,
   agent_grant_tool_group,
+  agent_set_thinking_effort,
 ];
 
 /** The full set, granted to the Toolsmith specialist via its tool group. */

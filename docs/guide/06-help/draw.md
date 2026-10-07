@@ -5,46 +5,26 @@ toolGroups: [draw-read]
 
 ## Draw
 
-A whiteboard per item: sketch an architecture, map out an idea, plan a
-project visually. The canvas is Excalidraw, so everything you know from it
-applies: shapes, arrows, frames, freehand, keyboard shortcuts.
+Draw is a whiteboard for sketches, diagrams and plans. The canvas is Excalidraw, so its shapes, arrows, frames and shortcuts all work.
 
-Your strokes autosave into a **private draft** continuously; nothing is
-shared or indexed until you **Commit** (the button, or Ctrl/Cmd+S).
-**Revert** throws the draft away and returns to the last commit. The list's
-preview shows the last committed snapshot; an uncommitted draft is only
-visible in the editor itself.
+- Click **New** to start a drawing. Name it and add a description and tags in the header.
+- Your strokes save to a private draft as you work.
+- Click **Commit** (or press Ctrl/Cmd+S) to publish the draft. Only committed drawings are shared and searchable.
+- **Revert** throws the draft away and goes back to the last commit.
+- To show a drawing in a page, type `/` in the page editor and pick **Drawing**. The page shows the latest commit.
 
-The header row holds the drawing's icon, name, a one-line **description**
-and tags; all save as you type. A drawing can be **embedded in a page**
-(type `/drawing` in the page editor and pick it): the page shows the live
-committed snapshot, so editing the drawing updates every page that embeds
-it. Shared drawings appear in the team workspace, and a drawing can be
-shared as a read-only public link like a page.
-
-Pasted images live in Files (uploaded once, read once like any other file),
-so deleting a drawing never deletes its images.
+Share a drawing or export it from the header.
 
 ## Assistant
 
 - "Find my sketch about the ingest pipeline."
-- "What did I plan on the architecture whiteboard last week?"
-- "Embed the deployment sketch in the runbook page."
+- "What did I plan on the architecture whiteboard?"
 
-Committed drawings are searchable like any other content: the assistant
-reads a drawing's text, not its pixels, so label your shapes and name your
-frames and it will find them. A page that embeds a drawing is also findable
-by the drawing's own labels.
+The assistant reads a drawing's text, not its pixels. Label your shapes and name your frames so it can find them. It cannot draw or edit.
 
 ## Technical
 
-A drawing is a `nodes` row (`type='draw'`) plus a `draws` sidecar holding
-the Excalidraw scene JSON. Autosave writes a private `draft_scene`; Commit
-promotes it, derives `scene_text` (frame names as headings, shape labels,
-and labelled arrows as `A -> B: label` relations), captures an SVG snapshot
-for previews, and fires the extractor — one index per commit, not one per
-stroke. Concurrent edits are guarded by a draft etag: a stale writer gets a
-conflict instead of silently overwriting. Scene images are `file` nodes
-referenced by id, never bytes in the scene. Every non-editor surface (list,
-page embeds, shares, exports) renders the snapshot as an image; when it is
-missing or stale, a server-side browser re-renders it from the scene.
+- A drawing is a `draw` node with a sidecar holding the scene, the draft and a text version of it.
+- On commit, frame names, shape labels and labelled arrows become searchable text, and a preview image is saved.
+- Pasted images are stored in Files. Deleting a drawing keeps them.
+- Tools: `draw_list`, `draw_get`. They read committed drawings only.

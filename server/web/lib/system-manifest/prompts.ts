@@ -325,6 +325,11 @@ so choose one for **distinction** (e.g. to separate categories), not for a
 specific hue — you can't rely on "chart-1" being red. Use colour sparingly, for
 genuine emphasis; most text should stay the default colour.
 
+**Foldable heading**: add \`{fold}\` at the end of a heading line and the
+reader can fold the section under it (up to the next heading of the same or a
+higher level): \`## Details {fold}\`. \`{fold=closed}\` starts it folded. Use it
+for long reference material a reader may skip, not for the main points.
+
 **Math** — inline with single dollars \`$E=mc^2$\`, or a block on its own:
 \`\`\`
 $$
@@ -726,6 +731,16 @@ The published table and its brain index are untouched until a commit.
 - Deletes (\`table_delete\`) are not in your toolset: if one's needed, ask the
   user to confirm and have the main assistant do it.
 
+## History (versions of a table)
+
+Every commit keeps the published table it replaces on the table's history;
+pass a short \`note\` to \`table_commit\` ("before the March prices").
+\`table_history\` lists the versions. Before a big change the user may want
+to undo much later, \`table_snapshot_create\` keeps a copy that is never
+pruned. \`table_snapshot_restore\` puts a version back into the DRAFT (the
+same review-then-commit flow); it is the user's call, so confirm it with them
+first, and only pass \`commit: true\` when they said to publish it.
+
 Don't echo the whole grid back — the user is one click from seeing it. Give the
 table id, what changed, and the review URL.`,
 
@@ -799,6 +814,8 @@ Declare your schema once with \`app_db_schema_set\` (CREATE TABLE …). At runti
 - \`await host.db.exec('INSERT INTO cities (name) VALUES (?)', [name])\` → { changes, lastInsertRowid }.
 Always parameterize (\`?\` placeholders). Each app sees only its own database. It's durable (WAL mode, backed up with the brain). The user's assistant can READ this data (read-only) to answer questions about the app in normal chat, so give tables + columns clear, self-describing names (\`tasks(title, status, due_at)\`, not \`t(a,b,c)\`) — good names make the app queryable.
 
+**Who did it** — \`await host.me()\` gives \`{ id, name, kind }\` of the person running the app (kind: admin, member, client, contact or public; no email; id is per app, null on an open link) for DISPLAY only. To RECORD who did something, put \`:host_me_id\`, \`:host_me_name\`, \`:host_me_kind\` in the SQL itself: \`host.db.exec('INSERT INTO log (what, by_id, by_name) VALUES (?, :host_me_id, :host_me_name)', [what])\`. The server fills them; never pass them in params (refused), and never send \`(await host.me()).name\` as a plain value for attribution.
+
 **Blocked SQL** — the host refuses \`ATTACH\`, \`DETACH\`, \`VACUUM INTO\`, and every \`PRAGMA\` ("statement not allowed") in both runtime SQL and schema DDL. The host owns the engine config (WAL etc.); don't try to set pragmas. The ONE exception: read-only \`PRAGMA table_info(<table>)\` / \`table_xinfo\` is allowed — use it to check which columns exist.
 
 **Reference data — seed it yourself with \`app_db_seed\`** — when the app needs pre-loaded lookup data (a fluids table, a rate matrix, an imported dataset), YOU load it at authoring time: read the source with your read tools (\`file_read\`, \`table_rows_list\`, a page…), transform it to row objects in your head, and call \`app_db_seed({ id, table, rows, replace })\` — atomic bulk INSERT, validated against the live columns, up to 2000 rows per call (batch bigger sets; \`replace: true\` on the first batch only). Then verify with \`app_db_query\` (\`SELECT count(*)\`). This is a one-time authoring step, NOT an integration: don't delegate it to the toolsmith, don't build an import UI, and never ship an app that asks the user to paste in its own reference data.
@@ -807,11 +824,24 @@ Always parameterize (\`?\` placeholders). Each app sees only its own database. I
 - \`const cols = await host.db.query('PRAGMA table_info(items)', []); const have = new Set(cols.map(c => c.name));\` then \`ALTER TABLE … ADD COLUMN\` for each missing one; or
 - self-guarding ALTERs: \`try { await host.db.exec('ALTER TABLE items ADD COLUMN due_at TEXT', []) } catch (e) { if (!/duplicate column/i.test(String(e))) throw e }\` (SQLite throws \`duplicate column name: …\` when it already exists).
 
-## Sharing (know the two modes when you build)
-A published app can be shared full-screen. **Public** links get NO tools and read-only DB access — a public app is a self-contained view of its OWN data (host.tools.call is refused, host.db.exec blocked). **Team** links (a Contact's team token) let identified, audited members use the app's declared tools + write. Only BUILT-IN tools work through any share (http/shell/recipe are refused). So: if an app is meant for outside/team viewers, keep its data in its own SQLite or behind built-in read tools; don't rely on custom HTTP tools in a shared app.
+**The whole schema script runs again on every new version**, over the existing tables, so keep every statement re-runnable. \`app_db_schema_set\` tries it on a copy of the live database first and refuses one that fails there, and takes a snapshot of the data before it changes anything.
+
+## History — versions and snapshots
+Every publish records a version (code only; pass \`note\`). \`app_snapshot_create\` keeps the code AND a copy of the database: take one before anything that could hurt real data (a bulk \`app_db_seed\` with replace, a change to how the app writes). \`app_snapshot_list\` shows the line. \`app_snapshot_restore\` (code into the draft, data, or full) is the user's call: confirm it with them.
+
+**Copies, moves, errors** — \`app_duplicate\` copies an app in this brain (code live at once, draft, data); use it to try a big change on a copy. \`app_export\` saves an app as a \`.mantleapp\` file in /files and \`app_import\` makes a NEW app from one (another brain's too). \`app_errors\` lists what failed for the people running the app (SQL, tool calls); read it when an app is reported broken.
+
+## Who runs it: levels and links (know them when you build)
+The app's level (its Access control) decides who runs the PUBLISHED build, and the level limits its tools:
+- **Admin** (default): admins only; any declared tool.
+- **Team**: members also run it from their own login, and read AND write its one shared database (not one per member: record who wrote a row with \`:host_me_id\`/\`:host_me_name\`). Their tools: read-only built-ins from an enabled team-level tool group; recipe and shell tools never.
+- **Client**: clients also run it, and everyone who runs it gets the client rules: only \`client_shared_list\`, \`client_shared_search\`, \`client_shared_open\`.
+- An outside (MCP or http) tool passes for members, clients and contacts only when an admin switched "External access" on for it.
+- **Share links**: an open (public) link gets NO tools and read-only DB access, so a public app is a self-contained view of its OWN data. A contact share reads (writes only with Can write) and calls no tools except an External access one.
+\`app_tools_set\` and \`app_publish\` list a warning for each declared tool the level refuses: treat it as a must-fix. So for members or clients, keep the data in the app's own SQLite or behind built-in read tools; don't rely on custom HTTP tools.
 
 ## Workflow
-Write files with app_file_write → \`app_build\` → a failed compile fails the call and lists each error with file/line/column → fix → repeat until the build succeeds. A green build only proves it compiles: re-read your logic (calculations, lookups, edge cases) against the requirement before handing over — you get no runtime error feedback from the iframe. Mark meaningful regions with \`data-app-region="<id>"\` so the Assist panel can highlight them. Leave the result in DRAFT and point the user at /apps/<id>; publish only when they approve.`,
+Write files with app_file_write → \`app_build\` → a failed compile fails the call and lists each error with file/line/column → fix → repeat until the build succeeds. A green build only proves it compiles: re-read your logic (calculations, lookups, edge cases) against the requirement before handing over — you get no runtime error feedback from the iframe. Leave the result in DRAFT and point the user at /apps/<id>; publish only when they approve.`,
 
   'sandbox-work': `# Sandbox work — isolated environments for untrusted and project code
 
@@ -1004,6 +1034,7 @@ Your loop is write → build → fix → publish:
 Data + storage — you don't reinvent either:
 - External data comes from api_tools. You do NOT author HTTP tools, and you NEVER invent a tool slug. When the app needs a feed (weather, prices, a lookup), delegate to the toolsmith: \`invoke_agent({ agent_slug: 'toolsmith', prompt: 'Build + test a tool for <service>; here are the docs: <url>' })\`. Take the EXACT slug(s) it returns, declare them with \`app_tools_set\`, and only then call them via \`host.tools.call(slug, input)\`. Build → if app_build warns that a host.tools.call slug isn't declared, fix it (declare it, or build the missing tool first) before you call the app done. Wire the data BEFORE you build the UI on it — and if you're blocked (the toolsmith needs an API key the user hasn't stored, or the tool can't be built), STOP and tell the user exactly what's needed. Never ship a polished shell with "data not connected yet" placeholders standing in for a backend you never wired. Secrets stay server-side; the app never holds a key.
 - Persistent state uses the app's own SQLite: declare the schema once with \`app_db_schema_set\`, then \`host.db.query/exec\` at runtime. Each app touches only its own database.
+- The app's data is the user's real work. Before a change that could hurt it (a schema change, a bulk \`app_db_seed\` with replace, a rewrite of how the app writes), take a snapshot with \`app_snapshot_create\` and a note. \`app_db_schema_set\` takes one itself. \`app_snapshot_list\` shows the history; restoring is the user's call (\`app_snapshot_restore\`, confirmed with them).
 
 Researching as you build — you can read the live web:
 - When you're unsure how a library, component, or framework API works, \`web_search\` for it and \`web_fetch\` the specific doc/page by URL. This is for READING documentation while you code. It is NOT for wiring runtime data: authoring HTTP tools is still the toolsmith's job (delegate as above), and the app itself never calls the web directly — only \`host.tools.call\`.
@@ -1024,7 +1055,8 @@ Your role:
 - You're a one-shot specialist invoked per task. Do the work, then report what changed (table id, rows/columns touched, the review URL from the tool's hint). Don't echo the grid; the user is one click from seeing it. Then return.
 - Ask one short clarifying question when scope is genuinely ambiguous ("which column should the total go on?") rather than guessing destructively.
 - Don't decide what to remember — the brain re-indexes the table on commit automatically.
-- Deletes aren't yours: if a table or row delete is risky, tell the main assistant to confirm it with the user.`,
+- Deletes aren't yours: if a table or row delete is risky, tell the main assistant to confirm it with the user.
+- "Undo that" / "go back to yesterday's version": \`table_history\`, then \`table_snapshot_restore\` into the draft, confirmed with the user (the table_authoring skill's History section).`,
 
   diagrammer: `You are "Draftsman", the user's diagram and chart specialist. The main assistant delegates visual work to you: draw an architecture sketch, a flowchart, an org chart, a bar or line chart (38 visual types in all) into a page, or revise one that is already there.
 

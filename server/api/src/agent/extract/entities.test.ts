@@ -82,6 +82,7 @@ vi.mock('@mantle/tracing', async (importOriginal) => {
   };
 });
 
+import { db } from '@mantle/db';
 import { embedBatch } from '@mantle/embeddings';
 import { reconcileEntities } from './entities';
 
@@ -199,6 +200,40 @@ describe('reconcileEntities', () => {
     await reconcileEntities(NODE, 'o1', [{ name: 'A', kind: 'person' }] as never);
     expect(h.deletes).toHaveLength(2);
     expect(h.inserted).toEqual([]);
+  });
+
+  it('resolves initials to the one same-surname person and records the alias', async () => {
+    // exact/alias miss, then the same-surname candidates
+    h.selectQueue.push(
+      [],
+      [
+        { id: 'charles', name: 'Charles Spurgeon', aliases: [], kind: 'person' },
+        { id: 'thomas', name: 'Thomas Spurgeon', aliases: [], kind: 'person' },
+        { id: 'mrs', name: 'Mrs. Spurgeon', aliases: [], kind: 'person' },
+      ],
+    );
+    const map = await reconcileEntities(NODE, 'o1', [
+      { name: 'C.H. Spurgeon', kind: 'person' },
+    ] as never);
+    expect(map.get('c.h. spurgeon')).toBe('charles');
+    expect(db.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not resolve an ambiguous initial on the initials step', async () => {
+    // exact miss; John and James both agree with "J."; the trigram step then
+    // decides (here it finds its own row).
+    h.selectQueue.push(
+      [],
+      [
+        { id: 'john', name: 'John Spurgeon', aliases: [], kind: 'person' },
+        { id: 'james', name: 'James Spurgeon', aliases: [], kind: 'person' },
+      ],
+      [{ row: { id: 'jsp', name: 'J. Spurgeon', aliases: [], kind: 'person' }, sim: 1 }],
+    );
+    const map = await reconcileEntities(NODE, 'o1', [
+      { name: 'J. Spurgeon', kind: 'person' },
+    ] as never);
+    expect(map.get('j. spurgeon')).toBe('jsp');
   });
 
   it('rebuilds even for a node with no mentions at all', async () => {

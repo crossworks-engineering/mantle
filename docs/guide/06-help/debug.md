@@ -4,48 +4,26 @@ title: Debug
 
 ## Debug
 
-The instrument panel. A dozen tabs, each answering a different "is this actually
-working?" question about the brain.
+Debug is the operator's view of the brain. Each tab answers one "is this working?" question.
 
-The ones people use most: **Spend** breaks costs down far enough to attribute
-them. **Facts** and **Topics** show what extraction has actually made of your
-content, which is the difference between "it stored the document" and "it
-understood it". **Context** shows what an agent receives before it answers.
-**Integrity** compares real content against its brain footprint and audits the
-corpus for orphans and inconsistencies.
+- **Spend**: model cost for the last 7 days, by model and by agent.
+- **Topics**, **Digests** and **Facts**: topics found in your chats, the summaries written of them, and the facts pulled from your content.
+- **Context**: for a turn, the question, the context the agent was given and the reply.
+- **Agents** and **Telegram**: your agents and their activity, and paired Telegram chats and their traffic.
+- **Journey**: each action and what the brain did in reaction to it.
+- **Integrity**: a live view, a **Corpus audit** for orphans and mismatches, the system config, and **Maintenance** tasks.
+- **Tool validation**: tool calls whose arguments the validator flagged.
+- **Sanity check**: read-only checks of config and setup. Each failure shows a fix.
 
-Nothing here is required reading. It's the screen for when something is off and
-the ordinary surfaces all look fine.
+Use it when search misses something you know is there. The tabs show whether the content was never extracted, extracted into facts that do not match your question, or never embedded.
 
-## When to use this
+## Assistant
 
-When retrieval disappoints. Search failing to find something you know exists is
-usually one of three things, and these tabs separate them: the content was never
-extracted, it was extracted into facts that don't match how you asked, or it was
-never embedded at all.
-
-When spend jumps. Ordinary use doesn't change cost much; a worker pointed at a
-new model does, and Spend attributes it.
-
-Before any cleanup, **sample first**. The audit tools can identify a large set of
-rows to remove, and a count is not evidence that the set contains what you think
-it does. Look at rows, then act.
+The assistant has no tools for this screen. Open it here.
 
 ## Technical
 
-The figures come from the same tables the features use, not from a separate
-metrics store, so a number here disagreeing with a feature screen is a real
-inconsistency worth chasing rather than a reporting lag.
-
-Costs are rolled up from individual traced calls at the model's price, so any
-figure on the spend tab can be followed down to the specific turns that produced
-it on the traces screen.
-
-The integrity view is deliberately **passive**: it reads and reports, and the
-destructive operations are separate, explicit maintenance actions. The corpus
-audit finding a problem is information, not an instruction, a node with no
-embedding may be waiting for a worker rather than broken.
-
-Sanity check and tool validation exercise real paths rather than inspecting
-configuration, which is why they can catch a tool whose definition is valid and
-whose endpoint has quietly moved.
+- Figures come from the same tables the features use, so a number that disagrees with another screen is a real problem.
+- Spend is summed from each traced model call. Follow it down to single turns on the Traces screen.
+- Maintenance tasks can change data. Preview first, look at sample rows, then apply.
+- See [Traces, debug and integrity](../05-admin/09-observability.md).

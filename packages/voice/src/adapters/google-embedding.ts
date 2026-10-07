@@ -25,6 +25,7 @@ import type {
 } from './types';
 import type { DiscoveryResult } from '../discover';
 import { errorMessage } from '@mantle/std';
+import { providerFetch } from './provider-fetch';
 
 const BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
@@ -98,7 +99,7 @@ export const googleEmbedding: EmbeddingDispatcher = {
       }),
     };
 
-    const res = await fetch(url, {
+    const res = await providerFetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
@@ -132,7 +133,7 @@ export const googleEmbedding: EmbeddingDispatcher = {
 
   async discoverModels(apiKey: string): Promise<DiscoveryResult<EmbeddingModelInfo>> {
     try {
-      const res = await fetch(`${BASE}/models?key=${encodeURIComponent(apiKey)}`, {
+      const res = await providerFetch(`${BASE}/models?key=${encodeURIComponent(apiKey)}`, {
         signal: AbortSignal.timeout(8_000),
         headers: { accept: 'application/json' },
       });

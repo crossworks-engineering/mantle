@@ -63,6 +63,33 @@ describe('effectiveToolSlugs', () => {
     warn.mockRestore();
   });
 
+  it('leaves out the tools of an optional service that is off on this box', () => {
+    const keys = [
+      'MANTLE_UPDATE_SIGNAL_DIR',
+      'MANTLE_COMPOSE_PROFILES',
+      'SANDBOXD_URL',
+      'SANDBOXD_TOKEN',
+    ];
+    const saved = keys.map((k) => process.env[k]);
+    process.env.MANTLE_UPDATE_SIGNAL_DIR = '/nonexistent-signal-dir';
+    process.env.SANDBOXD_URL = 'http://sandboxd:8090';
+    process.env.SANDBOXD_TOKEN = 't';
+    try {
+      process.env.MANTLE_COMPOSE_PROFILES = '';
+      expect(effectiveToolSlugs(['note_create', 'sandbox_exec'])).toEqual(['note_create']);
+      process.env.MANTLE_COMPOSE_PROFILES = 'sandboxes';
+      expect(effectiveToolSlugs(['note_create', 'sandbox_exec'])).toEqual([
+        'note_create',
+        'sandbox_exec',
+      ]);
+    } finally {
+      keys.forEach((k, i) => {
+        if (saved[i] === undefined) delete process.env[k];
+        else process.env[k] = saved[i];
+      });
+    }
+  });
+
   it('leaves a normal-sized list untouched', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const out = effectiveToolSlugs(['x', 'y']);

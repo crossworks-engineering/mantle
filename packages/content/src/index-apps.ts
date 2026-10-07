@@ -62,9 +62,18 @@ export {
   createApp,
   updateAppMeta,
   saveDraftSource,
+  AppDraftConflictError,
+  getAppRuntime,
+  type AppRuntime,
+  type PublishAppOpts,
+  type AppHistoryActor,
+  AppRestoreDraftError,
+  restoreAppDraft,
+  restoreAppLive,
   writeDraftFile,
   deleteDraftFile,
   setManifest,
+  declareAppSchema,
   setDraftBuild,
   discardDraft as discardAppDraft,
   publishApp,
@@ -85,6 +94,7 @@ export {
 
 export {
   MEMBER_APP_LEVELS,
+  MEMBER_LISTED_APP_LEVELS,
   isMemberAppLevel,
   listMemberApps,
   getMemberRunnableApp,
@@ -94,6 +104,14 @@ export {
   type MemberAppCard,
   type MemberRunnableApp,
 } from './member-apps';
+
+export {
+  appLauncher,
+  buildAppLauncherFolders,
+  type AppFolderRow,
+  type AppLauncherReader,
+  type AppPlace,
+} from './app-folders';
 
 export {
   CLIENT_APP_LEVELS,
@@ -125,11 +143,14 @@ export {
 } from './sandboxes';
 export {
   recordAppAccess,
+  recordAppError,
   listAppAccess,
   reapAppAccessLog,
   APP_ACCESS_LOG_RETENTION_DAYS,
   APP_ACCESS_QUERY_SAMPLE_MS,
+  APP_ERROR_LOG_PER_MINUTE,
   type AppAccessKind,
+  type AppErrorEntry,
   type AppAccessEntry,
   type AppAccessRow,
 } from './app-access-log';

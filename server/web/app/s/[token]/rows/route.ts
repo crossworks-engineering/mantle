@@ -1,9 +1,9 @@
+import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
 import { NextResponse } from '@/server/http-compat';
 import { and, eq } from 'drizzle-orm';
 import { db, nodes, tables } from '@mantle/db';
 import { queryRowsWindow, resolveStoragePath } from '@mantle/tabledb';
-import { resolveActiveShareByToken } from '@/lib/shares';
-import { rateLimit, clientIp } from '@/lib/rate-limit';
+import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 
 /**
  * Row window for a SHARED table — the public counterpart of
@@ -23,7 +23,7 @@ function notFound() {
 export async function GET(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
 
-  const { ok, retryAfterSec } = rateLimit(`share-rows:${clientIp(req)}`, {
+  const { ok, retryAfterSec } = rateLimit(`share-rows:${clientIpKey(req)}`, {
     max: 120,
     windowMs: 60_000,
   });
@@ -37,7 +37,9 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
     );
   }
 
-  const share = await resolveActiveShareByToken(token);
+  const gate = await gateShare(req, token);
+  if (gate.kind === 'code') return contactCodeRequired(gate.share);
+  const share = gate.kind === 'ok' ? gate.share : null;
   if (!share || share.nodeType !== 'table') return notFound();
 
   const [row] = await db

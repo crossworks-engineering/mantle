@@ -17,6 +17,7 @@ import { PROFILE_TOOLS } from './builtins-profile';
 import { TASK_TOOLS } from './builtins-tasks';
 import { TEAM_TOOLS } from './builtins-team';
 import { MY_SPACE_TOOLS } from './builtins-my-space';
+import { MY_SPACE_WRITE_TOOLS } from './builtins-my-space-write';
 import { CLIENT_TOOLS } from './builtins-client';
 import { PERSONA_TOOLS } from './builtins-persona';
 import { TERMINAL_TOOLS } from './builtins-terminal';
@@ -35,6 +36,7 @@ import { PAGE_TOOLS } from './builtins-pages';
 import { DRAW_TOOLS } from './builtins-draws';
 import { SHARE_TOOLS } from './builtins-share';
 import { APP_TOOLS, APP_DATA_TOOLS } from './builtins-apps';
+import { APP_GUIDE_TOOLS } from './builtins-app-guide';
 import { TABLE_TOOLS } from './builtins-tables';
 import { TOOL_RESULT_TOOLS } from './builtins-tool-results';
 import { CONTACT_TOOLS } from './builtins-contacts';
@@ -140,6 +142,7 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // The member's own personal items, read on behalf of the member a team
   // turn serves (member logins Phase 2). Fail closed on any other surface.
   ...MY_SPACE_TOOLS,
+  ...MY_SPACE_WRITE_TOOLS,
   ...CLIENT_TOOLS,
   // Persona self-edit — lets Saskia adjust her own style/relationship
   // notes when the user explicitly asks ("be more professional").
@@ -252,6 +255,9 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   ...FILE_OPERATOR_TOOLS,
   ...NOTE_OPERATOR_TOOLS,
   ...TREE_OPERATOR_TOOLS,
+  // The mini-app authoring guide for an MCP client (in-app agents carry the
+  // app_authoring skill instead).
+  ...APP_GUIDE_TOOLS,
 ];
 
 // P6: there is no flat "default assistant grant" anymore. A generalist persona's

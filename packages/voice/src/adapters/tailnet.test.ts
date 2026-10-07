@@ -1,3 +1,8 @@
+import { once } from 'node:events';
+import { readdirSync, readFileSync } from 'node:fs';
+import http from 'node:http';
+import net from 'node:net';
+import type { AddressInfo } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { tailnetFetch, tailnetProxyConfigured, _resetTailnetProxy } from './tailnet';
 
@@ -5,8 +10,8 @@ import { tailnetFetch, tailnetProxyConfigured, _resetTailnetProxy } from './tail
  * Selection-logic coverage. The end-to-end NAT traversal needs a live tailnet
  * to verify — here we only assert WHICH path tailnetFetch takes:
  *   - no proxy configured  → a normal direct fetch (degrade, never crash)
- *   - proxy configured     → does NOT use the direct global fetch (it dispatches
- *                            through undici's ProxyAgent toward the proxy)
+ *   - proxy configured     → the request goes through the proxy (a local
+ *                            CONNECT proxy stands in for the Tailscale one)
  */
 
 const realFetch = globalThis.fetch;
@@ -41,18 +46,81 @@ describe('tailnetFetch', () => {
     expect(calledWith!.url).toBe('http://gpu-box:11434/v1/x');
   });
 
-  it('does NOT use the direct global fetch when a proxy IS configured', async () => {
+  it('fails loudly, not direct, when a configured proxy is down', async () => {
     process.env.MANTLE_TAILNET_PROXY_URL = 'http://127.0.0.1:1'; // nothing listening
     _resetTailnetProxy();
-    let directCalled = false;
-    globalThis.fetch = (async () => {
-      directCalled = true;
-      return { ok: true, json: async () => ({}) } as unknown as Response;
-    }) as typeof fetch;
-
     // Routed through undici's ProxyAgent → tries to reach the proxy, which isn't
-    // listening, so it rejects. The point: the DIRECT fetch was bypassed.
+    // listening, so it rejects instead of quietly going direct.
     await expect(tailnetFetch('http://gpu-box:11434/v1/x', { method: 'POST' })).rejects.toThrow();
-    expect(directCalled).toBe(false);
+  });
+
+  it('sends the request through the configured proxy (ESM, no bare require)', async () => {
+    // The model host the proxy reaches.
+    const target = http.createServer((req, res) => {
+      req.resume();
+      req.on('end', () => res.end(JSON.stringify({ path: req.url, method: req.method })));
+    });
+    target.listen(0, '127.0.0.1');
+    await once(target, 'listening');
+    const targetPort = (target.address() as AddressInfo).port;
+
+    // A forward proxy, like Tailscale's outbound HTTP proxy: plain requests
+    // with an absolute URL, and CONNECT tunnels.
+    const seen: string[] = [];
+    const proxy = http.createServer((req, res) => {
+      seen.push(`${req.method} ${req.url}`);
+      const up = http.request(req.url!, { method: req.method, headers: req.headers }, (r) => {
+        res.writeHead(r.statusCode ?? 502, r.headers);
+        r.pipe(res);
+      });
+      up.on('error', () => res.writeHead(502).end());
+      req.pipe(up);
+    });
+    proxy.on('connect', (req, client, head) => {
+      seen.push(`CONNECT ${req.url}`);
+      const upstream = net.connect(targetPort, '127.0.0.1', () => {
+        client.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+        upstream.write(head);
+        upstream.pipe(client);
+        client.pipe(upstream);
+      });
+      upstream.on('error', () => client.destroy());
+      client.on('error', () => upstream.destroy());
+    });
+    proxy.listen(0, '127.0.0.1');
+    await once(proxy, 'listening');
+
+    try {
+      process.env.MANTLE_TAILNET_PROXY_URL = `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`;
+      _resetTailnetProxy();
+      const res = await tailnetFetch(`http://127.0.0.1:${targetPort}/v1/chat/completions`, {
+        method: 'POST',
+        body: '{}',
+      });
+      expect(res.ok).toBe(true);
+      expect(await res.json()).toEqual({ path: '/v1/chat/completions', method: 'POST' });
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toContain(`127.0.0.1:${targetPort}`);
+    } finally {
+      _resetTailnetProxy();
+      proxy.closeAllConnections();
+      target.closeAllConnections();
+      proxy.close();
+      target.close();
+    }
+  });
+});
+
+describe('no bare require in the voice adapters', () => {
+  // The server runs as ESM, where `require` does not exist, but vitest supplies
+  // one, so a bare `require('undici')` passed every test here and still threw
+  // "require is not defined" in the brain the moment a tailnet proxy was set.
+  // Node-only modules load through provider-fetch.ts's loadUndici() instead.
+  it('has no require( call outside tests', () => {
+    const dir = new URL('.', import.meta.url);
+    const offenders = readdirSync(dir)
+      .filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'))
+      .filter((f) => /(^|[^.\w])require\(/m.test(readFileSync(new URL(f, dir), 'utf8')));
+    expect(offenders).toEqual([]);
   });
 });

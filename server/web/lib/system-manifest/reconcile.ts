@@ -65,6 +65,8 @@ import {
   groupsWithinLevel,
   missingPersonaGroups,
   shippedPromptUpgrade,
+  sameTopLevel,
+  specialistParamsTarget,
 } from './reconcile-util';
 import { saveProse } from '../studio/prompt-versions';
 import { env } from '@mantle/config';
@@ -234,7 +236,9 @@ async function grantSpecialistCapabilities(ownerId: string): Promise<string[]> {
  * Sync each EXISTING manifest specialist's TUNING — params + memoryConfig — to
  * the manifest. The `delegate_to` key is excepted: the additive delegation
  * grants own it (operator-added delegates must survive), so the live
- * delegate_to is always preserved verbatim.
+ * delegate_to is always preserved verbatim. The owner's param SWITCHES
+ * (tool_loading, suggest_follow_up, top_p; OWNER_PARAM_KEYS) are kept the same
+ * way (decision 2026-10-05).
  *
  * ⚠ Deliberately NOT synced (decision 2026-07-29): **systemPrompt, model,
  * provider, apiKeyId**. The route and the prompt/persona are OPERATOR-OWNED on
@@ -272,7 +276,11 @@ async function syncSpecialistDefs(ownerId: string): Promise<string[]> {
     if (a.isPersona || !a.systemPrompt) continue;
     const row = bySlug.get(a.slug);
     if (!row || !row.enabled) continue;
-    const paramsChanged = JSON.stringify(row.params ?? {}) !== JSON.stringify(a.params);
+    // Owner switches (tool_loading, suggest_follow_up, top_p) stay as stored;
+    // the manifest owns the rest of params (OWNER_PARAM_KEYS).
+    const liveParams = (row.params ?? {}) as Record<string, unknown>;
+    const targetParams = specialistParamsTarget(a.params, liveParams);
+    const paramsChanged = !sameTopLevel(liveParams, targetParams);
     const mcChanged =
       JSON.stringify(mcForCompare(row.memoryConfig)) !==
       JSON.stringify(mcForCompare(a.memoryConfig));
@@ -281,7 +289,7 @@ async function syncSpecialistDefs(ownerId: string): Promise<string[]> {
     await db
       .update(agents)
       .set({
-        params: a.params as AgentParams,
+        params: targetParams as AgentParams,
         memoryConfig: {
           ...((a.memoryConfig ?? {}) as Record<string, unknown>),
           ...(liveDelegateTo !== undefined ? { delegate_to: liveDelegateTo } : {}),

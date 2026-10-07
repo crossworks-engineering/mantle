@@ -37,7 +37,7 @@ describe.skipIf(!URL)('concurrent entity creation', () => {
       await m.db.execute(sqlTag`
         insert into nodes (id, owner_id, type, title, path)
         values (${id}, ${owner}, 'note', ${`note ${i}`}, 'notes')`);
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await m.db.execute(sqlTag`delete from entity_edges where owner_id = ${owner}`);

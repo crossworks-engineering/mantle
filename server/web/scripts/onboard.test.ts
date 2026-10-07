@@ -1,0 +1,329 @@
+/**
+ * The terminal onboarding wizard (headless onboarding Phase 3): secrets never
+ * ride argv, stdin secrets parse strictly, a run resumes at the saved step,
+ * and a defaults-only run with a key reaches "onboarded" through the same
+ * step functions the HTTP wizard calls. The steps are stood in; their own
+ * behaviour is the route's, tested there.
+ */
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const h = vi.hoisted(() => ({
+  users: 0,
+  calls: [] as string[],
+  state: {
+    onboarded: false,
+    step: 'profile',
+    timezone: 'UTC',
+    locale: 'en-GB',
+    savedServices: [] as string[],
+    assistantAgentId: null as string | null,
+  },
+  keyOk: true,
+  testKeyOk: true,
+}));
+
+vi.mock('@mantle/db', () => ({
+  countUsers: async () => h.users,
+  db: { execute: async () => [{ id: 'owner-1', email: 'owner@example.invalid' }] },
+  sql: () => ({}),
+}));
+vi.mock('../lib/auth/first-owner', () => ({
+  createFirstOwner: async (email: string) => {
+    h.calls.push(`createFirstOwner:${email}`);
+    return { ok: true, id: 'owner-1', email };
+  },
+}));
+vi.mock('../lib/onboarding-steps', () => {
+  const step =
+    (name: string, result: unknown = { ok: true }) =>
+    async (...args: unknown[]) => {
+      h.calls.push(`${name}${args[1] !== undefined ? `:${JSON.stringify(args[1])}` : ''}`);
+      return typeof result === 'function' ? (result as () => unknown)() : result;
+    };
+  return {
+    runInfraChecks: async () => [{ label: 'Database', ok: true, detail: 'answering' }],
+    runSanityChecks: async () => [{ label: 'Your assistant', ok: true, detail: 'ready' }],
+    onboardingState: async () => h.state,
+    saveStep: async (_u: string, s: string) => {
+      h.calls.push(`step:${s}`);
+      return { ok: true };
+    },
+    saveProfile: step('profile'),
+    saveKey: step('saveKey', () => ({
+      saved: true,
+      test: { ok: h.keyOk, message: h.keyOk ? 'key works' : 'key refused' },
+    })),
+    testKey: step('testKey', () => ({
+      ok: h.testKeyOk,
+      message: h.testKeyOk ? 'key works' : 'key refused',
+    })),
+    saveModels: step('models', { ok: true, assistantModel: 'a', workerModel: 'w' }),
+    saveEmbedding: step('embedding', {
+      configured: true,
+      test: { message: 'Memory search enabled.' },
+    }),
+    provision: step('provision', { assistantAgentId: 'agent-1' }),
+    savePurpose: step('purpose'),
+    savePersona: step('persona'),
+    finishOnboarding: step('finish'),
+  };
+});
+
+import {
+  feedKeys,
+  parseArgs,
+  parseSecrets,
+  resumeIndex,
+  run,
+  type KeyState,
+  type Options,
+} from './onboard';
+
+/** Every question takes its default; secrets come from the given map. */
+function io(secrets: { password?: string; key?: string } = {}) {
+  return {
+    ask: async (_l: string, def: string) => def,
+    secret: async (l: string) =>
+      /password/i.test(l) ? (secrets.password ?? '') : (secrets.key ?? ''),
+    confirm: async (_l: string, def: boolean) => def,
+  };
+}
+
+beforeEach(() => {
+  h.users = 0;
+  h.calls = [];
+  h.keyOk = true;
+  h.testKeyOk = true;
+  h.state = { ...h.state, onboarded: false, step: 'profile', savedServices: [] };
+  vi.spyOn(console, 'log').mockImplementation(() => {});
+});
+
+describe('parseArgs', () => {
+  it('refuses every secret-carrying flag, with or without =', () => {
+    for (const a of [
+      ['--password', 'x'],
+      ['--password=x'],
+      ['--openrouter-key', 'k'],
+      ['--key=k'],
+      ['--setup-code', 'c'],
+    ]) {
+      expect(() => parseArgs(a)).toThrow(/never go on the command line/);
+    }
+  });
+
+  it('takes the non-secret values, both spellings', () => {
+    const o = parseArgs([
+      '--email',
+      'a@b.example',
+      '--persona=concise',
+      '--embedding-model',
+      'small',
+      '-y',
+    ]);
+    expect(o).toMatchObject({
+      email: 'a@b.example',
+      persona: 'concise',
+      embeddingModel: 'small',
+      yes: true,
+    });
+  });
+
+  it('--secrets-stdin implies --yes (stdin cannot answer prompts too)', () => {
+    expect(parseArgs(['--secrets-stdin'])).toMatchObject({ secretsStdin: true, yes: true });
+  });
+
+  it('refuses unknown flags and bad enum values', () => {
+    expect(() => parseArgs(['--bogus'])).toThrow(/Unknown argument/);
+    expect(() => parseArgs(['--persona', 'grumpy'])).toThrow(/--persona/);
+    expect(() => parseArgs(['--gender', 'x'])).toThrow(/--gender/);
+    expect(() => parseArgs(['--email'])).toThrow(/needs a value/);
+  });
+});
+
+describe('parseSecrets', () => {
+  it('reads password= and openrouter_key= verbatim, CRLF tolerated', () => {
+    expect(parseSecrets('password=p=ss word\r\nopenrouter_key=sk-or-1\n\n')).toEqual({
+      password: 'p=ss word',
+      openrouterKey: 'sk-or-1',
+    });
+  });
+  it('refuses an unknown name rather than dropping a secret', () => {
+    expect(() => parseSecrets('passwrd=x')).toThrow(/line 1: unknown name "passwrd"/);
+  });
+
+  // A bare key piped without its name must never reach a terminal or CI log.
+  const throwsWithout = (input: string, secret: string) => {
+    let message = '';
+    try {
+      parseSecrets(input);
+    } catch (err) {
+      message = (err as Error).message;
+    }
+    expect(message).not.toBe('');
+    expect(message).not.toContain(secret);
+    return message;
+  };
+
+  it('a line with no "=" names only its line number, never its content', () => {
+    const key = 'sk-or-v1-0123456789abcdef0123456789abcdef';
+    expect(throwsWithout(`password=fine\n${key}\n`, key)).toMatch(/stdin line 2 has no "="/);
+  });
+
+  it('a value that only looks like a name (a password with "=") is not quoted either', () => {
+    const pw = 'Tr0ub4dor&3=correct horse';
+    const msg = throwsWithout(`${pw}\n`, 'Tr0ub4dor');
+    expect(msg).toMatch(/line 1: unknown name \(/);
+  });
+});
+
+describe('feedKeys (the raw-mode prompt)', () => {
+  const fresh = (): KeyState => ({ buf: '', esc: 0 });
+
+  it('keeps type-ahead after Enter for the next prompt', () => {
+    const r = feedKeys(fresh(), 'first\rsecond\r', false);
+    expect(r).toMatchObject({ kind: 'line', value: 'first', rest: 'second\r' });
+    const s = fresh();
+    expect(feedKeys(s, 'a\r\nb', true)).toMatchObject({ kind: 'line', value: 'a', rest: 'b' });
+  });
+
+  it('drops escape sequences whole (arrows, function keys, Alt+key)', () => {
+    const s = fresh();
+    expect(feedKeys(s, 'ab\u001b[Dc\u001bOPd\u001b[1;5Ce\u001bxf', false)).toMatchObject({
+      kind: 'more',
+    });
+    expect(s.buf).toBe('abcdef');
+    // A sequence split across chunks is still dropped.
+    const t = fresh();
+    feedKeys(t, 'x\u001b', false);
+    feedKeys(t, '[A', false);
+    expect(feedKeys(t, 'y\r', false)).toMatchObject({ kind: 'line', value: 'xy' });
+  });
+
+  it('hidden input echoes nothing; visible input echoes and erases', () => {
+    expect(feedKeys(fresh(), 'secret', true)).toEqual({ kind: 'more', echo: '' });
+    expect(feedKeys(fresh(), 'ab\u007f', false)).toEqual({ kind: 'more', echo: 'ab\b \b' });
+  });
+
+  it('Ctrl-C interrupts; Ctrl-D on an empty line is end of input, otherwise ignored', () => {
+    expect(feedKeys(fresh(), 'ab\u0003', false)).toEqual({ kind: 'interrupt' });
+    expect(feedKeys(fresh(), '\u0004', false)).toEqual({ kind: 'eof' });
+    const s = fresh();
+    expect(feedKeys(s, 'ab\u0004\r', false)).toMatchObject({ kind: 'line', value: 'ab' });
+  });
+});
+
+describe('resumeIndex', () => {
+  it('resumes at a known step, from the start otherwise', () => {
+    expect(resumeIndex('embedding')).toBe(4);
+    expect(resumeIndex(undefined)).toBe(0);
+    expect(resumeIndex('nonsense')).toBe(0);
+  });
+});
+
+describe('run', () => {
+  const yes = (extra: Partial<Options> = {}): Options => ({ ...parseArgs(['--yes']), ...extra });
+
+  it('fresh brain, defaults plus a key: owner, every step in wizard order, onboarded', async () => {
+    const code = await run(
+      yes({ email: 'owner@example.invalid' }),
+      io({ password: 'long-enough', key: 'sk-or-x' }),
+    );
+    expect(code).toBe(0);
+    const names = h.calls.map((c) => c.split(':')[0]);
+    expect(names).toEqual([
+      'createFirstOwner',
+      'profile',
+      'step',
+      'saveKey',
+      'step',
+      'models',
+      'step',
+      'embedding',
+      'step',
+      'provision',
+      'step',
+      'step',
+      'purpose',
+      'step',
+      'persona',
+      'step',
+      'step',
+      'finish',
+    ]);
+    expect(h.calls.filter((c) => c.startsWith('step:'))).toEqual([
+      'step:openrouter',
+      'step:models',
+      'step:embedding',
+      'step:provision',
+      'step:sanity',
+      'step:purpose',
+      'step:personality',
+      'step:telegram',
+      'step:done',
+    ]);
+    // The OpenRouter route and the default embedding model.
+    expect(h.calls).toContain(
+      'embedding:{"provider":"openrouter","model":"text-embedding-3-large"}',
+    );
+  });
+
+  it('never creates an owner without an email or a long enough password', async () => {
+    await expect(run(yes(), io({ password: 'long-enough' }))).rejects.toThrow(/--email/);
+    await expect(
+      run(yes({ email: 'o@example.invalid' }), io({ password: 'short' })),
+    ).rejects.toThrow(/8\+/);
+    expect(h.calls).toEqual([]);
+  });
+
+  it('resumes at the saved step, and keeps a saved key when none is typed', async () => {
+    h.users = 1;
+    h.state = { ...h.state, step: 'openrouter', savedServices: ['openrouter'] };
+    expect(await run(yes(), io())).toBe(0);
+    expect(h.calls[0]).toBe('testKey:"openrouter"');
+    expect(h.calls.some((c) => c.startsWith('profile') || c.startsWith('createFirstOwner'))).toBe(
+      false,
+    );
+  });
+
+  it('warns when --email differs from the existing owner, and carries on', async () => {
+    h.users = 1;
+    h.state = { ...h.state, onboarded: true };
+    const lines: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((m: string) => lines.push(m));
+    expect(await run(yes({ email: 'someone-else@example.invalid' }), io())).toBe(0);
+    expect(lines.some((l) => /--email someone-else@example.invalid is ignored/.test(l))).toBe(true);
+    lines.length = 0;
+    await run(yes({ email: 'OWNER@example.invalid' }), io());
+    expect(lines.some((l) => /is ignored/.test(l))).toBe(false);
+  });
+
+  it('an onboarded brain is left alone', async () => {
+    h.users = 1;
+    h.state = { ...h.state, onboarded: true };
+    expect(await run(yes(), io())).toBe(0);
+    expect(h.calls).toEqual([]);
+  });
+
+  it('--yes with no key fails loudly instead of stopping half way with exit 0', async () => {
+    h.users = 1;
+    h.state = { ...h.state, step: 'openrouter' };
+    expect(await run(yes(), io())).toBe(1);
+    expect(h.calls.some((c) => c.startsWith('finish'))).toBe(false);
+  });
+
+  it('a saved key that no longer works stops a --yes run too', async () => {
+    h.users = 1;
+    h.state = { ...h.state, step: 'openrouter', savedServices: ['openrouter'] };
+    h.testKeyOk = false;
+    expect(await run(yes(), io())).toBe(1);
+    expect(h.calls.some((c) => c.startsWith('models'))).toBe(false);
+  });
+
+  it('a refused key under --yes stops before provisioning', async () => {
+    h.users = 1;
+    h.keyOk = false;
+    h.state = { ...h.state, step: 'openrouter' };
+    expect(await run(yes(), io({ key: 'sk-bad' }))).toBe(1);
+    expect(h.calls.some((c) => c.startsWith('provision'))).toBe(false);
+  });
+});

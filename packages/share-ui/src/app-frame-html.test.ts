@@ -6,7 +6,7 @@
  * exactly what a wrong `@host` import cost in the field.
  */
 import { describe, expect, it } from 'vitest';
-import { buildAppFrameHtml } from './app-frame-html';
+import { buildAppFrameHtml, viewerScript } from './app-frame-html';
 
 const frame = (bundleCode: string) =>
   buildAppFrameHtml({
@@ -103,5 +103,62 @@ describe('buildAppFrameHtml — the Neat backdrop', () => {
     expect(html).toContain('--card-on-neat:color-mix(in oklab,var(--card) 70%,transparent)');
     expect(html).toContain('body{--card:var(--card-on-neat)}');
     expect(frame('console.log(1)')).not.toContain('--card-on-neat');
+  });
+});
+
+describe('buildAppFrameHtml: host.me() (app identity)', () => {
+  const withViewer = (viewer: Parameters<typeof viewerScript>[0]) =>
+    buildAppFrameHtml({
+      bundleCode: 'console.log(1)',
+      appCss: '',
+      importMapJson: '{"imports":{}}',
+      cls: '',
+      colorTheme: null,
+      viewport: true,
+      viewer,
+    });
+
+  it('bakes the viewer in BEFORE the app module, read-only', () => {
+    const html = withViewer({ id: 'u_abc', name: 'Pat', kind: 'member' });
+    const at = html.indexOf('__mantleHostMe');
+    expect(at).toBeGreaterThan(-1);
+    expect(at).toBeLessThan(html.indexOf('<script type="module">'));
+    expect(html).toContain('Object.freeze({"id":"u_abc","name":"Pat","kind":"member"})');
+  });
+
+  it('bakes nothing without a viewer (host.me() then rejects)', () => {
+    expect(withViewer(null)).not.toContain('__mantleHostMe');
+    expect(frame('x')).not.toContain('__mantleHostMe');
+  });
+
+  it('a display name cannot close the script tag', () => {
+    const html = withViewer({
+      id: 'u_x',
+      name: '</script><script>alert(1)</script>\u2028',
+      kind: 'client',
+    });
+    const script = viewerScript({ id: 'u_x', name: '</script>', kind: 'client' });
+    expect(script).not.toContain('</script><');
+    expect(script).toContain('\\u003c/script>');
+    expect(html.match(/<\/script>/g)?.length).toBe(
+      withViewer({ id: 'u', name: 'n', kind: 'client' }).match(/<\/script>/g)?.length,
+    );
+  });
+
+  it('carries only id, name and kind, whatever else the object holds', () => {
+    const script = viewerScript({
+      id: 'u_x',
+      name: 'Pat',
+      kind: 'member',
+      email: 'pat@example.invalid',
+    } as never);
+    expect(script).not.toContain('email');
+    expect(script).not.toContain('example.invalid');
+  });
+
+  it('an open link bakes the anonymous viewer', () => {
+    expect(viewerScript({ id: null, name: null, kind: 'public' })).toContain(
+      '{"id":null,"name":null,"kind":"public"}',
+    );
   });
 });

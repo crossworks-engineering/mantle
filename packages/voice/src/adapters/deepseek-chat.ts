@@ -44,6 +44,7 @@ import {
 } from './openai-compat';
 import { scrubThinkBlocks } from './think-scrubber';
 import { errorMessage } from '@mantle/std';
+import { providerFetch } from './provider-fetch';
 
 /** DeepSeek's chat response shape — the shared OpenAI-compat envelope
  *  with the cache-hit fields hung off `usage` as top-level keys
@@ -81,7 +82,7 @@ async function deepseekChat(opts: ChatOptions): Promise<ChatResult> {
     ...(opts.extra ?? {}),
   };
 
-  const res = await fetch(`${DEEPSEEK_BASE_URL}/chat/completions`, {
+  const res = await providerFetch(`${DEEPSEEK_BASE_URL}/chat/completions`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${opts.apiKey}`,
@@ -127,7 +128,7 @@ async function deepseekChat(opts: ChatOptions): Promise<ChatResult> {
 
 async function deepseekDiscover(apiKey: string): Promise<DiscoveryResult<ChatModelInfo>> {
   try {
-    const res = await fetch(`${DEEPSEEK_BASE_URL}/models`, {
+    const res = await providerFetch(`${DEEPSEEK_BASE_URL}/models`, {
       headers: { Authorization: `Bearer ${apiKey}` },
       signal: AbortSignal.timeout(15_000),
     });

@@ -3,21 +3,35 @@
  *
  * GET renders the consent page ("Allow Claude to access your Mantle brain") once
  * the owner is signed in; if they're not, it bounces to /login?next=… and comes
- * back. A member login gets a plain refusal page (403): only admins connect. POST is the Allow/Deny decision: Allow mints a single-use PKCE-bound code
- * and 302s back to the client's registered redirect_uri with code+state.
+ * back. A member or client login connects too (MCP as a login, plan page
+ * e5b854dd) once an admin has turned MCP on for that login; until then it
+ * gets a plain refusal page (403). Their grant carries the login's session
+ * epoch, and runs only their own role's tools. POST is the Allow/Deny
+ * decision: Allow mints a single-use PKCE-bound code and 302s back to the
+ * client's registered redirect_uri with code+state.
  *
  * This endpoint USES the Mantle session (unlike the other OAuth routes, which
  * self-authenticate) — it's the human-in-the-loop step. The consent form carries
  * a session-bound HMAC token so a forged cross-site POST can't auto-approve.
+ *
+ * An admin or member re-types their password to Allow (M2 audit N4): a
+ * stolen session cookie alone must not approve a connector, whose refresh
+ * tokens outlive the session. 10 tries a minute per login, counted before
+ * the check. A client signs in by link or code and has no password; its
+ * grant is bound to its session epoch and ends when it signs out. A
+ * password change, "sign out everywhere" and an admin's End sessions end
+ * every grant of the login (endLoginSessions `endKeys`).
  *
  * Security: if client_id or redirect_uri is invalid we render an error and do
  * NOT redirect (never bounce a code to an unvalidated URI).
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { NextResponse } from '@/server/http-compat';
-import { getLoginOr401, type SessionUser } from '@/lib/auth';
+import { getLoginOr401, verifyPassword, type SessionUser } from '@/lib/auth';
+import { rateLimitLogin, rateLimitLoginRefund } from '@/lib/rate-limit';
 import { requestOrigin } from '@/lib/auth-constants';
 import { getClient, isRemoteMcpEnabled, mintAuthCode, DEFAULT_SCOPE } from '@/lib/mcp-oauth';
+import { mcpLoginEnabled, mcpTargetLogin } from '@/lib/mcp-auth';
 import { env } from '@mantle/config';
 
 type AuthorizeParams = {
@@ -61,25 +75,60 @@ function htmlError(message: string, status = 400): Response {
   );
 }
 
-/** Who is signed in: an admin, a member or client (who cannot connect a
- *  client), or nobody. A member used to read as nobody here and was sent to
- *  /login, where they were already signed in: a loop with no way out. */
-async function signedIn(): Promise<SessionUser | 'member' | 'client' | null> {
+/** Who consents: the brain (anchor) the grant is for, the login, and for a
+ *  member or client the session epoch the grant is bound to. */
+type Consenter = {
+  ownerId: string;
+  loginId: string;
+  email: string;
+  role: 'admin' | 'member' | 'client';
+  sessionEpoch: number | null;
+  /** The epoch the session check verified (any role): the code is minted
+   *  only if it is still the login's then (mintAuthCode). */
+  consentEpoch: number;
+};
+
+/** Who is signed in: a login that may connect, a member or client whose MCP
+ *  access is off (refused with a page, not sent to /login: they are signed
+ *  in, and a bounce would loop), or nobody. */
+async function signedIn(): Promise<Consenter | 'member' | 'client' | null> {
   const login = await getLoginOr401();
   if (login instanceof Response) return null;
   switch (login.kind) {
     case 'admin':
-      return login.user;
+      return adminConsenter(login.user, login.sessionEpoch);
     case 'member':
-      return 'member';
-    case 'client':
-      return 'client';
+    case 'client': {
+      if (!(await mcpLoginEnabled(login.loginId))) return login.kind;
+      const target = await mcpTargetLogin(login.loginId);
+      if (!target) return login.kind;
+      const anchorId = login.kind === 'member' ? login.member.anchorId : login.client.anchorId;
+      return {
+        ownerId: anchorId,
+        loginId: login.loginId,
+        email: login.email,
+        role: login.kind,
+        sessionEpoch: target.sessionEpoch,
+        consentEpoch: login.sessionEpoch,
+      };
+    }
   }
 }
 
+function adminConsenter(user: SessionUser, consentEpoch: number): Consenter {
+  return {
+    ownerId: user.id,
+    loginId: user.actor.id,
+    email: user.email,
+    role: 'admin',
+    sessionEpoch: null,
+    consentEpoch,
+  };
+}
+
 const MEMBER_REFUSED =
-  'Member logins cannot connect MCP clients to this brain. Ask an admin of this brain.';
-const CLIENT_REFUSED = 'Client logins cannot connect MCP clients to this brain.';
+  'MCP is not turned on for your login. Ask an admin of this brain to turn it on in Settings, MCP.';
+const CLIENT_REFUSED = MEMBER_REFUSED;
 
 /** Bind the consent form to (user, client, redirect, challenge) so only a POST
  *  originating from the page we rendered to THIS signed-in user is honoured. */
@@ -128,11 +177,14 @@ export async function GET(req: Request) {
     return NextResponse.redirect(new URL(`/login?next=${next}`, requestOrigin(req)));
   }
 
-  const token = consentToken(user.id, p);
-  return new Response(consentPage(validated.clientName, p, token, user.email), {
+  const token = consentToken(user.loginId, p);
+  return new Response(consentPage(validated.clientName, p, token, user.email, user.role), {
     headers: { 'content-type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
   });
 }
+
+/** Wrong (or missing) passwords at consent, per login, per minute. */
+const CONSENT_PASSWORD_RATE = { max: 10, windowMs: 60_000 };
 
 export async function POST(req: Request) {
   if (!(await isRemoteMcpEnabled()))
@@ -161,7 +213,7 @@ export async function POST(req: Request) {
   if (user === 'client') return htmlError(CLIENT_REFUSED, 403);
   if (!user) return htmlError('your session expired — start the connection again', 401);
 
-  if (!consentTokenValid(get('consent_token'), consentToken(user.id, p))) {
+  if (!consentTokenValid(get('consent_token'), consentToken(user.loginId, p))) {
     return htmlError('consent could not be verified — start the connection again', 400);
   }
 
@@ -173,15 +225,50 @@ export async function POST(req: Request) {
     return NextResponse.redirect(dest, { status: 302 });
   }
 
+  // An admin or member re-types their password to Allow (see the header).
+  if (user.role !== 'client') {
+    const bucket = `oauth-consent-pw:${user.loginId}`;
+    const tries = rateLimitLogin(bucket, CONSENT_PASSWORD_RATE);
+    const again = (message: string, status: number) =>
+      new Response(
+        consentPage(
+          validated.clientName,
+          p,
+          consentToken(user.loginId, p),
+          user.email,
+          user.role,
+          message,
+        ),
+        {
+          status,
+          headers: { 'content-type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+        },
+      );
+    if (!tries.ok) return again('Too many tries. Wait a minute, then try again.', 429);
+    const password = get('password');
+    if (!password || !(await verifyPassword(user.loginId, password))) {
+      return again('That password is not right. Type your Mantle password to allow.', 403);
+    }
+    rateLimitLoginRefund(bucket);
+  }
+
   const code = await mintAuthCode({
     clientId: p.clientId,
-    ownerId: user.id,
-    actorId: user.actor.id,
+    ownerId: user.ownerId,
+    actorId: user.loginId,
+    sessionEpoch: user.sessionEpoch,
+    // The epoch the session check verified (last check F5): the code is
+    // minted only if it is still the login's (verification audit N2).
+    consentEpoch: user.consentEpoch,
     codeChallenge: p.codeChallenge,
     codeChallengeMethod: p.codeChallengeMethod,
     redirectUri: p.redirectUri,
     scope: p.scope,
   });
+
+  if (!code) {
+    return htmlError('your session ended — sign in and start the connection again', 401);
+  }
 
   const dest = new URL(p.redirectUri);
   dest.searchParams.set('code', code);
@@ -212,20 +299,35 @@ function consentShell(inner: string): string {
   .allow { background:#6d6df0; color:#fff; }
   .deny { background:transparent; color:#c4c4cc; border-color:#33333b; }
   .foot { margin-top:16px; color:#74747d; font-size:12px; }
+  .pw { box-sizing:border-box; width:100%; margin:0 0 14px; padding:10px 12px; border-radius:10px;
+    border:1px solid #33333b; background:#0f0f13; color:#e7e7ea; font-size:14px; }
+  .err { margin:-6px 0 14px; color:#f08a8a; font-size:13px; }
 </style></head><body><div class="card">${inner}</div></body></html>`;
 }
 
-function consentPage(clientName: string, p: AuthorizeParams, token: string, email: string): string {
+function consentPage(
+  clientName: string,
+  p: AuthorizeParams,
+  token: string,
+  email: string,
+  role: Consenter['role'],
+  error?: string,
+): string {
   const safeName = escapeHtml(clientName);
   const h = (v: string) => escapeHtml(v);
+  const scopes =
+    role === 'admin'
+      ? `<li>Read and write your notes, pages, tables, tasks, files, contacts and more</li>
+    <li>Search your knowledge and act through your Mantle tools</li>`
+      : `<li>Read what your login may read in this brain, nothing more</li>
+    <li>Create drafts in your own space, only if an admin allowed writing</li>`;
   const inner = `
   <h1>Connect ${safeName} to Mantle</h1>
   <p class="muted">${safeName} is requesting access to your Mantle brain.</p>
   <div class="who">Signed in as <b>${h(email)}</b></div>
   <p class="muted" style="margin-bottom:6px;">This will allow it to:</p>
   <ul class="scopes">
-    <li>Read and write your notes, pages, tables, tasks, files, contacts and more</li>
-    <li>Search your knowledge and act through your Mantle tools</li>
+    ${scopes}
   </ul>
   <form method="post" action="/api/oauth/authorize">
     <input type="hidden" name="client_id" value="${h(p.clientId)}" />
@@ -235,6 +337,14 @@ function consentPage(clientName: string, p: AuthorizeParams, token: string, emai
     <input type="hidden" name="code_challenge_method" value="${h(p.codeChallengeMethod)}" />
     <input type="hidden" name="scope" value="${h(p.scope)}" />
     <input type="hidden" name="consent_token" value="${h(token)}" />
+    ${
+      role === 'client'
+        ? ''
+        : `<input type="text" name="username" value="${h(email)}" autocomplete="username" hidden />
+    <label class="muted" for="consent-password" style="display:block;margin-bottom:6px;">Type your Mantle password to allow</label>
+    <input id="consent-password" class="pw" type="password" name="password" autocomplete="current-password" />
+    ${error ? `<p class="err" role="alert">${h(error)}</p>` : ''}`
+    }
     <div class="row">
       <button class="deny" type="submit" name="decision" value="deny">Deny</button>
       <button class="allow" type="submit" name="decision" value="allow">Allow</button>

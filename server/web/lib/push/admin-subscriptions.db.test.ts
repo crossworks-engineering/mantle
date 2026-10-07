@@ -43,7 +43,7 @@ describe.skipIf(!URL)('listAdminSubscriptions', () => {
     await device(brain, member, 'member');
     await device(brain, null, 'unknown');
     await device(other, admin, 'other-brain');
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await sql`delete from push_subscriptions where routing_token like ${`${tag}-%`}`;

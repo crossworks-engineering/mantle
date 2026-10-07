@@ -26,17 +26,20 @@ const h = vi.hoisted(() => ({
   displayName: 'Casey' as string | null,
   lookups: [] as Array<{ id: string; level: string }>,
   reads: [] as Array<{ fn: string; level: string }>,
+  launcherReads: [] as Array<{ level: string; reader: string }>,
   active: [] as Array<{ loginId: string; epoch: number }>,
   loginActive: true,
   verdict: { ok: true } as { ok: boolean; status?: number; reason?: string },
   dispatched: [] as Array<{ level: string; ctx: Record<string, unknown> }>,
   logged: [] as Array<Record<string, unknown>>,
+  errors: [] as Array<Record<string, unknown>>,
   dbCalls: [] as string[],
   dbError: null as Error | null,
   callers: [] as unknown[],
   marked: [] as string[],
   synced: [] as string[],
   rendered: [] as string[],
+  frameViewers: [] as unknown[],
 }));
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
@@ -73,21 +76,27 @@ vi.mock('@mantle/content', async (importOriginal) => {
           }
         : null;
     }),
-    listClientApps: vi.fn(async () => {
-      h.reads.push({ fn: 'listClientApps', level: currentViewerLevel() });
-      return [
-        {
-          id: APP,
-          title: 'Orders',
-          icon: null,
-          color: null,
-          description: null,
-          updatedAt: '2026-09-30T00:00:00.000Z',
-          dataReadOnly: false,
-        },
-      ];
+    appLauncher: vi.fn(async (_anchor: string, reader: string) => {
+      h.launcherReads.push({ level: currentViewerLevel(), reader });
+      return {
+        apps: [
+          {
+            id: APP,
+            title: 'Orders',
+            icon: null,
+            color: null,
+            description: null,
+            updatedAt: '2026-09-30T00:00:00.000Z',
+            dataReadOnly: false,
+          },
+        ],
+        folders: [
+          { id: 'f1', name: 'Orders', icon: null, color: null, parentId: null, appIds: [APP] },
+        ],
+      };
     }),
     recordAppAccess: vi.fn((e: Record<string, unknown>) => h.logged.push(e)),
+    recordAppError: vi.fn((e: Record<string, unknown>) => h.errors.push(e)),
   };
 });
 vi.mock('@mantle/tools', async (importOriginal) => {
@@ -104,7 +113,7 @@ vi.mock('@mantle/tools', async (importOriginal) => {
   };
 });
 vi.mock('@mantle/content/app-broker', async (importOriginal) => {
-  const { AppSqlError, AppSqlBusyError } =
+  const { AppSqlError, AppSqlBusyError, AppDbMissingError } =
     await importOriginal<typeof import('@mantle/content/app-broker')>();
   const { currentViewerLevel } = await import('@mantle/db');
   // The SQLite work runs on the admin pool: it writes registry rows.
@@ -113,6 +122,7 @@ vi.mock('@mantle/content/app-broker', async (importOriginal) => {
   return {
     AppSqlError,
     AppSqlBusyError,
+    AppDbMissingError,
     markAppClientWritten: vi.fn(async (owner: string, app: string) => {
       h.marked.push(`${owner}:${app}`);
     }),
@@ -134,10 +144,13 @@ vi.mock('@mantle/content/app-table-exports', () => ({
   ),
 }));
 vi.mock('@/lib/app-frame', () => ({
-  renderAppFrame: vi.fn(async (_req: Request, build: { storageKey: string }) => {
-    h.rendered.push(build.storageKey);
-    return new Response('<!doctype html>', { status: 200 });
-  }),
+  renderAppFrame: vi.fn(
+    async (_req: Request, build: { storageKey: string }, opts?: { viewer?: unknown }) => {
+      h.rendered.push(build.storageKey);
+      h.frameViewers.push(opts?.viewer);
+      return new Response('<!doctype html>', { status: 200 });
+    },
+  ),
 }));
 
 type Handler = (req: Request, ctx: { params: Promise<{ id: string }> }) => Promise<Response>;
@@ -178,25 +191,39 @@ beforeEach(() => {
   h.displayName = 'Casey';
   h.lookups.length = 0;
   h.reads.length = 0;
+  h.launcherReads.length = 0;
   h.active.length = 0;
   h.loginActive = true;
   h.verdict = { ok: true };
   h.dispatched.length = 0;
   h.logged.length = 0;
+  h.errors.length = 0;
   h.dbCalls.length = 0;
   h.dbError = null;
   h.callers.length = 0;
   h.marked.length = 0;
   h.synced.length = 0;
   h.rendered.length = 0;
+  h.frameViewers.length = 0;
   verdictMock?.mockClear();
 });
 
 describe('client app list', () => {
-  it('lists on the client role', async () => {
+  it('lists through the launcher, read as a client', async () => {
     const body = (await (await listRoute()).json()) as { apps: Array<{ id: string }> };
     expect(body.apps.map((a) => a.id)).toEqual([APP]);
-    expect(h.reads).toEqual([{ fn: 'listClientApps', level: 'client' }]);
+    // The launcher scopes its own reads (the apps on the client role): the
+    // route asks for the client reader and hands it no path.
+    expect(h.launcherReads).toEqual([{ level: 'admin', reader: 'client' }]);
+  });
+
+  it('adds the folders of those apps', async () => {
+    const body = (await (await listRoute()).json()) as Record<string, unknown>;
+    // The field an older client reads is still there, unchanged.
+    expect(Object.keys(body).sort()).toEqual(['apps', 'folders']);
+    expect(body.folders).toEqual([
+      { id: 'f1', name: 'Orders', icon: null, color: null, parentId: null, appIds: [APP] },
+    ]);
   });
 });
 
@@ -286,7 +313,12 @@ describe('client db broker', () => {
     // A read marks nothing (audit I3: only a client's write does).
     expect(h.marked).toEqual([]);
     await dbBroker(post({ op: 'exec', sql: 'insert into t values (1)' }), params());
-    expect(h.callers).toEqual([{ callerKey: `client:${LOGIN}` }, { callerKey: `client:${LOGIN}` }]);
+    // App identity: the client fills the :host_me_* parameters.
+    const caller = {
+      callerKey: `client:${LOGIN}`,
+      viewer: { kind: 'client', loginId: LOGIN, name: 'Casey' },
+    };
+    expect(h.callers).toEqual([caller, caller]);
   });
 
   it("shows the app's own SQL error, but never a server error's text (audit L4)", async () => {
@@ -313,6 +345,21 @@ describe('client db broker', () => {
     expect(text).not.toContain('/data/app-dbs');
     expect(text).not.toContain(ANCHOR);
     expect(h.synced).toEqual([]);
+
+    // The owner's error log (G4) holds what the app was told, never the
+    // server's own text; a busy wait is not an error.
+    expect(h.errors).toEqual([
+      expect.objectContaining({
+        appNodeId: APP,
+        source: 'db',
+        via: 'client',
+        message: 'no such table: nope',
+        sql: 'select * from nope',
+        status: 400,
+      }),
+      expect.objectContaining({ op: 'exec', status: 500 }),
+    ]);
+    expect(JSON.stringify(h.errors)).not.toContain('/data/app-dbs');
   });
 
   it('writes the app database, schedules the export sync, and logs the login', async () => {
@@ -383,6 +430,10 @@ describe('client frame', () => {
     expect(res.status).toBe(200);
     expect(h.rendered).toEqual([PUBLISHED.storageKey]);
     expect(h.active).toEqual([{ loginId: LOGIN, epoch: EPOCH }]);
+    // host.me(): the client the ticket names (app identity).
+    expect(h.frameViewers).toEqual([
+      { ownerId: ANCHOR, appId: APP, subject: { kind: 'client', loginId: LOGIN } },
+    ]);
   });
 
   it('refuses once the client signed out, its sessions were ended or it was disabled', async () => {

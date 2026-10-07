@@ -83,9 +83,12 @@ COPY packages/voice-client/package.json packages/voice-client/package.json
 RUN apt-get update \
     && apt-get install -y --no-install-recommends python3 build-essential ca-certificates \
     && npm install -g pnpm@11.1.2 \
-    # ELECTRON_SKIP_BINARY_DOWNLOAD: client/desktop is a workspace member, so
-    # its electron dep installs here too — skip the ~100MB binary download the
-    # images never run (the desktop app is built by desktop.yml, not here).
+    # ELECTRON_SKIP_BINARY_DOWNLOAD is vestigial: it existed because
+    # client/desktop was a workspace member and dragged electron's ~100MB
+    # binary into this image. The desktop app moved to the jackdaw repo on
+    # 2026-08-13 and this workspace is server/* + packages/* only, so nothing
+    # depends on electron any more. Kept as a cheap guard in case a transitive
+    # dep ever reintroduces it.
     && ELECTRON_SKIP_BINARY_DOWNLOAD=1 pnpm install --frozen-lockfile \
     && apt-get purge -y python3 build-essential && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/* /root/.npm /root/.local/share/pnpm/store /root/.cache
@@ -131,13 +134,16 @@ RUN maturin build --release --interpreter python3.12 --out /wheels
 # BINARY invoked via subprocess only — the process boundary is the licence
 # boundary; never link or bind it into anything. --disable-werror because
 # newer GCCs flag warnings 0.13.3 predates; the python base satisfies
-# configure's interpreter check.
+# configure's interpreter check. The tarball comes from the kernel.org GNU
+# mirror, not ftp.gnu.org: the primary timed out for whole release runs
+# (v0.239.15). The checksum pins the exact bytes, so the mirror cannot
+# change what we build.
 FROM python:3.12-slim AS libredwg-build
 RUN apt-get update \
   && apt-get install -y --no-install-recommends gcc make libc6-dev xz-utils \
   && rm -rf /var/lib/apt/lists/*
 ADD --checksum=sha256:83f1f6e78a744777a481ff4520e4cef3f8ac4b2c1c25671077ca12fe81e8816e \
-  https://ftp.gnu.org/gnu/libredwg/libredwg-0.13.3.tar.xz /tmp/libredwg.tar.xz
+  https://mirrors.kernel.org/gnu/libredwg/libredwg-0.13.3.tar.xz /tmp/libredwg.tar.xz
 RUN mkdir /tmp/libredwg \
   && tar -xJf /tmp/libredwg.tar.xz -C /tmp/libredwg --strip-components=1
 WORKDIR /tmp/libredwg
@@ -258,6 +264,7 @@ COPY scripts/install.sh /app/release/scripts/install.sh
 COPY scripts/sanity.sh /app/release/scripts/sanity.sh
 COPY scripts/compose-adopt.sh /app/release/scripts/compose-adopt.sh
 COPY scripts/uninstall.sh /app/release/scripts/uninstall.sh
+COPY scripts/onboard.sh /app/release/scripts/onboard.sh
 # The jackdaw client tag this server release was tested against (the "release
 # pair"). The updater reads it from the TARGET image during a roll and moves
 # the client stack to it — the client image versions on its own stream since

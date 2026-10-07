@@ -42,6 +42,7 @@ const PUBLIC_VALUE_EXPORTS = [
   'rotateInboundToken',
   'searchChunksForPeer',
   'setOutboundToken',
+  'setPeerAccess',
   'setPeerEnabled',
   'tokenMatchesHash',
   'verifyInboundToken',

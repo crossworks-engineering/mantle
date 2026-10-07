@@ -11,14 +11,18 @@ import {
   noteRef,
   type Agent,
   type AgentAvatar,
-  type AgentMemoryConfig,
   type AgentParams,
   type PersonaNote,
 } from '@mantle/db';
 import { CHATTABLE_ROLES } from '@mantle/runtime/assistant';
+import {
+  parseAgentThinkingEffort,
+  type AgentThinkingEffort,
+} from '@mantle/content-core/thinking-tiers';
 import { computeAgentExperience, zeroExperience } from './agent-experience';
 import { MANIFEST_AGENTS } from './system-manifest/manifest';
 import { cloneAgentFields, slugifyAgentName, uniqueAgentSlug } from './agent-clone';
+import { splitMemoryConfigPatch, type AgentMemoryConfigPatch } from './agent-memory-config-schema';
 
 /**
  * Server-side CRUD wrapper for the `agents` table. Every call is owner-scoped
@@ -66,6 +70,7 @@ function toSummary(a: Agent): AgentSummary {
     toolGroupSlugs: a.toolGroupSlugs ?? [],
     memoryConfig: a.memoryConfig ?? {},
     params: a.params ?? {},
+    thinkingEffort: parseAgentThinkingEffort(a.thinkingEffort),
     avatar: a.avatar ?? null,
     personaNotes: (a.personaNotes ?? []) as PersonaNote[],
     assignedUserId: a.assignedUserId ?? null,
@@ -202,8 +207,11 @@ export type CreateAgentInput = {
   systemPrompt: string;
   skillSlugs?: string[];
   toolGroupSlugs?: string[];
-  memoryConfig?: AgentMemoryConfig;
+  /** A null value means "key absent" (see agent-memory-config-schema.ts). */
+  memoryConfig?: AgentMemoryConfigPatch;
   params?: AgentParams;
+  /** Per-agent thinking effort (migration 0228). null/omitted = inherit. */
+  thinkingEffort?: AgentThinkingEffort | null;
   avatar?: AgentAvatar | null;
   priority?: number;
   enabled?: boolean;
@@ -250,8 +258,9 @@ export async function createAgent(
       systemPrompt: input.systemPrompt,
       skillSlugs: input.skillSlugs ?? [],
       toolGroupSlugs: input.toolGroupSlugs ?? [],
-      memoryConfig: input.memoryConfig ?? {},
+      memoryConfig: splitMemoryConfigPatch(input.memoryConfig ?? {}).set,
       params: input.params ?? {},
+      thinkingEffort: input.thinkingEffort ?? null,
       avatar: normalizeAvatar(input.avatar ?? null),
       priority: input.priority ?? 100,
       enabled: input.enabled ?? true,
@@ -289,17 +298,25 @@ export async function updateAgent(
   if (patch.toolGroupSlugs !== undefined) next.toolGroupSlugs = patch.toolGroupSlugs;
   // Shallow-merge memory_config instead of overwriting it. The agents form
   // only round-trips the keys it renders, so a wholesale replace silently
-  // drops any key the form doesn't send — most importantly `delegate_to`
-  // (the agent-delegation allowlist, set by the seed scripts and the
-  // Delegates-to picker). jsonb `||` is a top-level merge with the patch
-  // winning, so managed keys update while unmanaged keys survive. Clearing a
-  // key still works because the form sends it explicitly (e.g. delegate_to: []).
+  // drops any key the form doesn't send: `delegate_to` (set by the seed
+  // scripts and the Delegates-to picker), the corpus map and Journal keys, the
+  // manifest's tool caps, anything set by SQL. jsonb `||` is a top-level merge
+  // with the patch winning, so managed keys update while unmanaged keys
+  // survive. A key sent as null is REMOVED (`- text[]`), which is how a field
+  // cleared in the form goes back to the runtime default; an array or object
+  // value (delegate_to: [], result_handling: {}) still replaces as a whole.
   if (patch.memoryConfig !== undefined) {
-    next.memoryConfig = sql`coalesce(${agents.memoryConfig}, '{}'::jsonb) || ${JSON.stringify(
-      patch.memoryConfig,
-    )}::jsonb`;
+    const { set, clear } = splitMemoryConfigPatch(patch.memoryConfig);
+    const merged = sql`(coalesce(${agents.memoryConfig}, '{}'::jsonb) || ${JSON.stringify(set)}::jsonb)`;
+    // The key list goes in as one jsonb param: drizzle expands a JS array
+    // into a parenthesised value list, not a Postgres array.
+    next.memoryConfig =
+      clear.length === 0
+        ? merged
+        : sql`${merged} - array(select jsonb_array_elements_text(${JSON.stringify(clear)}::jsonb))`;
   }
   if (patch.params !== undefined) next.params = patch.params;
+  if (patch.thinkingEffort !== undefined) next.thinkingEffort = patch.thinkingEffort;
   // Avatar writes must not let a parts-unaware client wipe builder pins: a
   // pre-builder jackdaw (or any wire type predating `parts`) rebuilds the
   // avatar as {style, seed}, and a wholesale replace would silently drop the
@@ -501,7 +518,8 @@ export async function renameAssignedAgent(
  *    `assistant_messages` stay with `agent_id` NULL (still replayable) and its
  *    digests stay (still in find_window and search).
  *  - `delete`: the stream goes with the agent. Its `assistant_messages` rows
- *    and its `conversation-digest` notes are removed in the same transaction.
+ *    and its `conversation-digest` notes (and chat archive summaries) are
+ *    removed in the same transaction. Its chat_threads rows CASCADE.
  *    Read cursors and channels CASCADE either way. Telegram transport rows
  *    (`telegram_messages` + their `telegram_message` nodes) are ingested brain
  *    content like emails and are left alone. */
@@ -546,7 +564,9 @@ export async function deleteAgent(
           and(
             eq(nodes.ownerId, userId),
             eq(nodes.type, 'note'),
-            sql`${nodes.tags} @> ARRAY['conversation-digest']::text[]`,
+            // The chat archive summaries (0231) go with them: they are the
+            // same agent's conversation, one note per archived thread.
+            sql`(${nodes.tags} @> ARRAY['conversation-digest']::text[] or ${nodes.data}->>'kind' = 'chat_archive')`,
             sql`${nodes.data}->>'agent_id' = ${id}`,
           ),
         )

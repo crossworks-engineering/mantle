@@ -53,6 +53,7 @@
 | **Client login** + session cookie (30 days)                   | a person at the brain's client company (role client) | the client routes only (`CLIENT_ROUTES`): "Shared with you", their own space and requests, comment threads, their chat, client apps; read at the client level | sign out (ends every session of the login), End sessions, disable or delete the login                      |
 | **Client sign-in link** (16 chars, SHA-256 at rest, 72 hours) | the client an admin issued it to                     | one sign-in as that client login, with the login's email typed as a check                                                                                     | revoke it, issue a new one, End sessions or disable the login; it expires                                  |
 | **Client email code** (8 digits, HMAC at rest, 10 minutes)    | the client who asked, in that browser                | one sign-in as that client login, from the browser that asked; 5 wrong tries                                                                                  | End sessions or disable the login; it expires                                                              |
+| **Setup code** (`MANTLE_SETUP_CODE`, about 99 bits)            | whoever can read the box's `.env`                    | one first-run signup, while no account exists                                                                                                                 | it stops working once the first account exists                                                             |
 | Share token (~128-bit CSPRNG in the URL)                      | anyone with the link                                 | exactly one shared item (or one public app)                                                                                                                   | turn the share off                                                                                         |
 
 Notes that matter to a reviewer:
@@ -100,6 +101,17 @@ Notes that matter to a reviewer:
   brain-wide failure lockout. A client's plain sign-out ends all its
   sessions. Disabling a client, or ending its sessions, revokes its open
   links and codes in the same transaction.
+- **The setup code closes the first-run claim race.** While no account
+  exists, signup makes its caller the owner, and a native caller passes the
+  CSRF guard below; a fresh box on a public address would belong to whoever
+  reached it first. The installer generates `MANTLE_SETUP_CODE` (never
+  rotated) and prints it; signup requires it until the first account exists
+  (timing-safe compare after the per-address rate limit, 403 `setup-code`,
+  audited as `auth.signup_failed`). Only the web container receives it, and
+  `/api/auth/bootstrap-state` reveals only whether one is required. The
+  terminal wizard (`scripts/onboard.sh`) does not ask for it: shell access to
+  the box is the stronger proof. See [onboarding.md](./onboarding.md)
+  section 8.
 - **Login CSRF guard on the auth POSTs** (client logins audit B15). The
   JSON `/api/auth` POSTs that set or use the session cookie (login, signup,
   invite/accept, change-password, client-link, client-code,
@@ -152,6 +164,7 @@ complete list of ways that surface can change the brain.
 | --------------------------------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
 | `/s/<token>` shared page/note/task/event/file | link token                                                       | that one item + its own embedded assets only                                                                                                                                                                                                                                     | none                                                                                                                                                                                                                                                                                                 | view count                        |
 | `/s/<token>` **public app**                   | link token                                                       | the app's own SQLite, read-only                                                                                                                                                                                                                                                  | none (no brain tools, no DB writes)                                                                                                                                                                                                                                                                  | app access log                    |
+| `/s/<token>` **contact share** (0214)         | link token + the contact's code (an HMAC-stored 8-character code; a signed cookie per contact, re-checked every call) | that one item + what it embeds, for the one contact the share names; a "Shared with you" list of that contact's live shares | an app with "Can write": the app's own SQLite; nothing else (no brain tools, no other writes) | share access log + app access log by contact + audit rows for codes |
 | **Member routes** (`/api/member/*`)           | member login                                                     | team-level items (row security on the team role), their own personal space, member apps; the team agent via their own chat thread                                                                                                                                                | their own personal space (items, files, comments on shared items), submit / recall for review, team-level apps (the app's SQLite + its declared built-in tools), one wrapped tool that files a task for human review                                                                                 | access log + full per-turn traces |
 | **Client routes** (`/api/client/*`)           | client login (a link or an emailed code)                         | client-level items only (row security on the client role), with every reference to an item it cannot read hidden; no summary; their own items, and what an admin accepted of them as accepted; the client agent via their own chat thread, reading exactly what the portal shows | their own space (pages, notes, uploads; private until submitted, capped), submit / recall for review, comments (review talk on their submitted items, the thread on client-level items; capped), client apps (§5a), one wrapped tool that files a request for human review (3 per message, 10 a day) | access log + full per-turn traces |
 | Telegram                                      | explicit bot pairing                                             | owner-level assistant (this is _your_ channel, not a team one)                                                                                                                                                                                                                   | assistant tools per its grants                                                                                                                                                                                                                                                                       | traces                            |
@@ -168,7 +181,13 @@ Two structural points:
   member login, and every action is logged against that name. (Team-mode
   shares, where a team token named the visitor, are retired: a shared app's
   tool broker refuses every call, and members use an app's tools from their
-  own login.)
+  own login.) A contact share is the one identified outsider: one item, one
+  contact, the contact's code, never tools; only an app with "Can write"
+  takes a write, into its own SQLite (docs/sharing.md section 4b). Its
+  honest limit: the code proves "holds the code", not "owns the mailbox".
+  If the link and the code travel in the same message, whoever has that
+  message gets in, so they are sent apart; revoke and regenerate are one
+  click.
 
 ## 4. The assistant's guard rails
 

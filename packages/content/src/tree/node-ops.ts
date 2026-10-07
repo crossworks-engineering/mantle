@@ -18,6 +18,7 @@ import {
   type TreeKind,
 } from '@mantle/client-types/tree';
 import { treeParentPath } from '@mantle/content-core/tree';
+import { unlessWriteRefused } from './refused-write';
 
 /** A refusal written for people; the write module turns it into a TreeError. */
 export class NodeOpRefusal extends Error {
@@ -46,24 +47,34 @@ const ROOT_TITLE: Record<TreeKind, string> = {
 };
 
 /** Make sure the kind's root row exists (every kind's own create does this
- *  lazily; the tree may be asked for a folder before anything was made). */
-export async function ensureKindRoot(ownerId: string, kind: TreeKind): Promise<void> {
+ *  lazily; the tree may be asked for a folder before anything was made).
+ *
+ *  Reads call this too, so it looks first and writes only a missing root: a
+ *  database that refuses writes (refused-write.ts) refuses the insert even
+ *  when the row is there. True when the root exists; false when it is missing
+ *  and the database refused to make it (the read then finds an empty kind,
+ *  and a write that follows fails by itself). */
+export async function ensureKindRoot(ownerId: string, kind: TreeKind): Promise<boolean> {
   const root = TREE_KIND_SPECS[kind].root;
-  await db
-    .insert(nodes)
-    .values({
-      ownerId,
-      type: 'branch',
-      title: ROOT_TITLE[kind],
-      slug: root,
-      path: root,
-      data: {},
-      tags: [],
-    })
-    .onConflictDoNothing({
-      target: [nodes.ownerId, nodes.path],
-      where: sql`${nodes.type} = 'branch'`,
-    });
+  if (await branchAt(ownerId, root)) return true;
+  const made = await unlessWriteRefused(() =>
+    db
+      .insert(nodes)
+      .values({
+        ownerId,
+        type: 'branch',
+        title: ROOT_TITLE[kind],
+        slug: root,
+        path: root,
+        data: {},
+        tags: [],
+      })
+      .onConflictDoNothing({
+        target: [nodes.ownerId, nodes.path],
+        where: sql`${nodes.type} = 'branch'`,
+      }),
+  );
+  return made !== null;
 }
 
 function slugOf(name: string): string {

@@ -60,7 +60,7 @@ describe('publishApp promotes a build-only rebuild', () => {
   it('does not bail out on a missing draft alone', () => {
     // The early return must require BOTH: nothing staged AND nothing rebuilt.
     expect(
-      /if \(!app\.draft && !app\.draftBuild\) return app;/.test(body),
+      /if \(!app\.draft && !app\.draftBuild\) return (app|false);/.test(body),
       'publishApp returns early on `!app.draft` alone — a rebuilt bundle for ' +
         'unchanged source can then never be published, which is the v0.230.57 ' +
         'CSS-sidecar trap',

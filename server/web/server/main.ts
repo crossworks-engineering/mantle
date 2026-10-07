@@ -66,6 +66,15 @@ void import('../lib/access/embed-reconcile')
   .then(({ reconcileEmbedClosuresOnBoot }) => reconcileEmbedClosuresOnBoot())
   .catch((err) => console.error('[boot] embed reconcile failed:', err));
 
+// App table exports a restart left unsynced (apps plan D8): their debounce
+// timers died with the old process. The usual hash-gated sync, once.
+void import('@mantle/content/app-table-exports')
+  .then(({ resumeDirtyAppTableExports }) => resumeDirtyAppTableExports())
+  .then((n) => {
+    if (n > 0) console.log(`[boot] resumed the table export sync of ${n} app(s)`);
+  })
+  .catch((err) => console.error('[boot] app table export resume failed:', err));
+
 const app = await createApp();
 const port = Number(process.env.PORT || 3000);
 const hostname = process.env.HOST || '0.0.0.0';

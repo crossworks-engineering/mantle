@@ -1,6 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { requestUpdate } from '@/lib/updates';
+import { serviceRunBusy } from '@/lib/services';
 import { getOwnerOr401 } from '@/lib/auth';
 import { firstIssue } from '@/lib/zod-issue';
 
@@ -22,6 +23,13 @@ export async function POST(req: Request) {
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
+  }
+  // One change to the box at a time: a service switch recreates containers too.
+  if (await serviceRunBusy()) {
+    return NextResponse.json({
+      ok: false,
+      error: 'A service is being switched on or off. Try again when it has finished.',
+    });
   }
   return NextResponse.json(
     await requestUpdate(parsed.data.target ?? null, parsed.data.clientTarget ?? null),

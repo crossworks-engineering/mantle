@@ -1,10 +1,12 @@
+import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
 import { NextResponse } from '@/server/http-compat';
 import { buildPageToc } from '@mantle/content-core/page-toc';
 import type { ShareViewPayload } from '@mantle/share-ui/view-payload';
-import { resolveActiveShareByToken, loadShareView, recordShareView } from '@/lib/shares';
+import { loadShareView, recordShareView } from '@/lib/shares';
 import { renderPageDoc } from '@/lib/render-page-doc';
+import { recordShareAccess } from '@mantle/content';
 import { loadFolderListing } from '@/components/share/folder-presenter';
-import { rateLimit, clientIp } from '@/lib/rate-limit';
+import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 
 /**
  * The share view as JSON, for a client that renders the presenter itself (no
@@ -31,7 +33,7 @@ function notFound() {
 export async function GET(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
 
-  const { ok, retryAfterSec } = rateLimit(`share-view:${clientIp(req)}`, {
+  const { ok, retryAfterSec } = rateLimit(`share-view:${clientIpKey(req)}`, {
     max: 120,
     windowMs: 60_000,
   });
@@ -45,13 +47,24 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
     );
   }
 
-  const share = await resolveActiveShareByToken(token);
+  const gate = await gateShare(req, token);
+  if (gate.kind === 'code') return contactCodeRequired(gate.share);
+  const share = gate.kind === 'ok' ? gate.share : null;
   if (!share) return notFound();
 
   const view = await loadShareView(share);
   if (!view) return notFound();
 
   void recordShareView(share.id); // fire-and-forget, same as the HTML page
+  if (share.contactId) {
+    recordShareAccess({
+      ownerId: share.ownerId,
+      shareId: share.id,
+      contactId: share.contactId,
+      kind: 'open',
+      detail: { via: 'view' },
+    });
+  }
 
   const assetUrl = (fileId: string) => `/s/${token}/a/${fileId}`;
   const drawUrl = (drawId: string) => `/s/${token}/draw/${encodeURIComponent(drawId)}`;

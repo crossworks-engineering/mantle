@@ -38,6 +38,11 @@ export type TaskRow = {
    *  it is what keeps a Done column from growing without bound. Orthogonal to
    *  `status`: an archived task keeps the status it had. */
   archivedAt: string | null;
+  /** On a done task: the status it had before it was marked done, which a
+   *  reopen (`PATCH {reopen: true}`) restores. Null when the brain does not
+   *  know it (the reopen then lands on 'open') and on every task that is not
+   *  done. Optional: brains before this field do not send it. */
+  statusBeforeDone?: TaskStatus | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -196,6 +201,61 @@ export type AppDetail = AppRow & {
   manifest: AppManifest;
   draftBuild: BuildRef | null;
   publishedBuild: BuildRef | null;
+  /** When the draft last changed (ISO), null with no draft. The editor sends
+   *  it back as `baseDraftUpdatedAt` on save, and the save answers 409 when
+   *  the draft changed since (an agent or another window). Optional: absent
+   *  from an older brain. */
+  draftUpdatedAt?: string | null;
+};
+
+/**
+ * One entry on an app's History line (apps snapshots, Phase 2). A VERSION
+ * (`trigger` 'publish') is the code a publish made live; a SNAPSHOT (the
+ * owner's, or one taken automatically before a restore or a schema change)
+ * also holds a copy of the app's database. `seq` is the number the owner sees
+ * (v1, v2 …).
+ */
+export type AppSnapshot = {
+  id: string;
+  seq: number;
+  trigger:
+    'publish' | 'manual' | 'pre_restore' | 'pre_schema' | 'pre_delete' | 'pre_import' | 'nightly';
+  kind: 'version' | 'snapshot';
+  note: string | null;
+  actor: 'owner' | 'agent' | 'mcp' | 'system';
+  createdAt: string;
+  /** The seq this one's content was restored from, when it was. */
+  restoredFrom: number | null;
+  /** Whether it holds a copy of the database (a snapshot), and its size. */
+  hasData: boolean;
+  dbBytes: number | null;
+  /** The code it holds: files and their total size. */
+  fileCount: number;
+  sourceBytes: number;
+  /** Whether an unpublished draft was saved with it. */
+  hasDraft: boolean;
+};
+
+/** What a restore puts back: code into the draft, the data, or both live. */
+export type AppRestoreMode = 'code' | 'data' | 'full';
+
+/**
+ * One entry on a table's History line (apps first-class plan, Phase 4). A
+ * `commit` entry is the published table a commit replaced (kept by
+ * itself, the newest 20); a `manual` one the owner took. Each holds a copy
+ * of the whole workbook. `seq` is the number the owner sees (v1, v2 …).
+ */
+export type TableSnapshot = {
+  id: string;
+  seq: number;
+  trigger: 'commit' | 'manual';
+  note: string | null;
+  actor: 'owner' | 'agent' | 'mcp' | 'system';
+  createdAt: string;
+  /** The table's version the copy holds (it counts commits). */
+  tableVersion: number | null;
+  /** The copy's size in bytes. */
+  bytes: number | null;
 };
 
 export type ProfilePreferences = {
@@ -609,8 +669,46 @@ export type NeedsYou = {
     open: number;
     newest: NeedsYouItem | null;
   };
-  /** review.submitted + review.leftBehind + requests.open. */
+  /** Contacts whose sharing locked after 30 wrong codes in a day (contact
+   *  shares, migration 0214): the code opens nothing until the lock lapses
+   *  or an admin regenerates it. `newest.from` is empty. Absent from brains
+   *  before 0214. */
+  sharing?: {
+    locked: number;
+    newest: NeedsYouItem | null;
+  };
+  /** Embedding or extraction provider failures an admin must act on
+   *  (migration 0230, docs/embeddings.md "Provider outages"). Absent from
+   *  brains before 0230; empty while all works. */
+  providers?: ProviderAlert[];
+  /** review.submitted + review.leftBehind + requests.open (+ sharing.locked)
+   *  (+ providers.length). */
   total: number;
+};
+
+/**
+ * One open provider outage, as an admin sees it. `reason` is fixed text
+ * chosen by `code`, never provider text: it is safe on a banner and a phone.
+ */
+export type ProviderAlert = {
+  subject: 'embedding' | 'extraction';
+  /** quota | auth | no_key | model (permanent); rate_limit | server |
+   *  network | timeout (transient, shown after 10 min). */
+  code: string;
+  permanent: boolean;
+  reason: string;
+  /** Provider id (e.g. `openai`) and model slug. Never a key. */
+  provider: string | null;
+  model: string | null;
+  /** When it started failing (ISO). */
+  since: string;
+  /** The extract queue stopped taking jobs until it works again. */
+  paused: boolean;
+  /** When the brain tries one tiny call again (ISO), or null. */
+  nextProbeAt: string | null;
+  /** Extract jobs that wait: queued, retrying, running and dead-lettered.
+   *  Null when the queue has not started yet. */
+  waiting: number | null;
 };
 
 export type AccountFoldersResult =
@@ -670,6 +768,96 @@ export type SnapshotItem = {
   heading?: string | null;
 };
 
+/** A context stage the decision trace names (ContextTrace). */
+export type ContextTraceStage =
+  | 'embed'
+  | 'facts'
+  | 'prefs'
+  | 'hits'
+  | 'search'
+  | 'scoring'
+  | 'select'
+  | 'supersede'
+  | 'pruning'
+  | 'versions'
+  | 'journal'
+  | 'map'
+  | 'relations'
+  | 'digests'
+  | 'history';
+
+/** What found a candidate: the vector arm, the keyword arm, both, the
+ *  source note of a matching fact (promoted), always-on (preferences), the
+ *  Journal tiers. */
+export type ContextTraceArm = 'vector' | 'keyword' | 'both' | 'fact-source' | 'always' | 'journal';
+
+/**
+ * One candidate a context stage touched (decision trace v1). Compact on
+ * purpose: ids, rounded numbers and reason codes, no text (the text is in the
+ * snapshot's sent/dropped lists, and on the node).
+ */
+export type ContextTraceRow = {
+  /** Block: fact, pref (preference), hit (content hit), chunk (passage), journal. */
+  b: 'fact' | 'pref' | 'hit' | 'chunk' | 'journal';
+  /** Item key: fact id, node id, or `nodeId:ordinal` for a passage. */
+  k: string;
+  /** The outcome for this turn's prompt. */
+  out: 'kept' | 'dropped';
+  /** The stage that decided the outcome. */
+  at: ContextTraceStage;
+  /** Reason code. Kept: `sent`, `promote:fact-source`, `always`. Dropped:
+   *  `guard:0.85` and `cut:<d>` (distance cutoffs), `limit:<n>` (the block's
+   *  budget cap), `room:promote` (gave its slot to a promoted passage),
+   *  `judge:<t>` (a Jev score under the threshold), `dedupe:journal`,
+   *  `dedupe:fact`, `superseded`, `version`, `type:<t>`, `shadow` (a Journal
+   *  pick in shadow mode). */
+  why: string;
+  arm?: ContextTraceArm;
+  /** 1-based rank in the order the stage received it (search order). */
+  rank?: number;
+  /** Passages: 1-based rank in the vector arm / the keyword arm. */
+  vr?: number;
+  kr?: number;
+  /** Passages: 1-based rank in the window arm (passage windows on). */
+  wr?: number;
+  /** Passages: forced into the tail by the keyword rescue floor. */
+  rescued?: true;
+  /** Raw cosine distance (Journal: 1 - similarity). */
+  d?: number | null;
+  /** The distance it was RANKED by (salience, recency), when it differs from `d`. */
+  rd?: number;
+  /** Jev score 0-3 (passage_scoring, context_pruning, journal_recall). */
+  s?: number;
+  /** A shadow use's verdict: what WOULD have happened. `out` is unchanged. */
+  would?: string;
+};
+
+/** Decision trace v1: per stage, what was considered, kept and dropped, and
+ *  why. Recorded in the load_context snapshot and the search_chunks step.
+ *  Observation only: it never changes what the model sees. */
+export type ContextTrace = {
+  v: 1;
+  /** Stages in run order: candidates in, kept out, wall time. */
+  stages: Array<{ name: ContextTraceStage; in: number; out: number; ms: number; note?: string }>;
+  /** Passage search: pool size of each arm, and the keyword arm's gate. */
+  search?: {
+    mode: 'vector' | 'hybrid' | 'keyword';
+    vectorPool: number;
+    keywordPool: number;
+    /** Passages the window arm found (passage windows on), else absent. */
+    windowPool?: number;
+    /** `off` = no query text; `silent` = no rare term passed the gate;
+     *  `and` = no rare term, every word ANDed; `rare` = the rare-term arm ran. */
+    keyword: 'off' | 'silent' | 'and' | 'rare';
+    /** The stemmed rare terms the keyword arm matched on (at most 8). */
+    terms?: string[];
+  };
+  rows: ContextTraceRow[];
+  /** Rows left out past the row cap (kept rows go first). */
+  more?: number;
+  ms: number;
+};
+
 export type ContextSnapshot = {
   query: {
     /** The inbound text as given to retrieval (snipped). */
@@ -690,9 +878,18 @@ export type ContextSnapshot = {
     toolRecords: number;
     /** How many turns carried a [media record: …] read-back suffix. */
     mediaRecords: number;
+    /** Start of the open chat thread (ISO) when the chat was ever archived
+     *  ("New chat", docs/conversation.md §6c): older turns and digests are
+     *  out of the prompt. Absent on a never-archived chat. */
+    since?: string;
+    /** Title of the archived thread this chat continues from, when the open
+     *  thread was started with "Continue from this". */
+    continuedFrom?: string;
   };
   personaNotes: { count: number };
   corpusMap: { count: number; truncated: boolean };
+  /** Decision trace v1 (absent on turns recorded before it). */
+  trace?: ContextTrace;
   /** The decider's `context_pruning` use, when it ran on this turn. In
    *  `shadow` the counts say what WOULD have been dropped; in `live` they were.
    *  Absent when the use is off or the call failed (nothing changed). */

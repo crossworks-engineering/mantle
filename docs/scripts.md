@@ -314,15 +314,29 @@ The standard way to move a brain to a new machine. Order matters:
 
 ```bash
 docker compose pull
-docker compose up -d postgres --wait     # init creates extensions + auth schema
+docker compose up -d postgres --wait
 scripts/db-restore.sh backups/mantle-<ts>.dump
 docker compose up -d --wait              # migrate is now a no-op
 ```
 
-Because the init scripts pre-create `auth`, `auth.users` and the extensions,
-`pg_restore` prints benign "already exists" notices for those, expected. The
-script doesn't trust the exit code; it verifies by counting `public.nodes`
-afterwards. It **refuses to restore over a populated brain**. It then puts the
+The brain id (migration 0226) comes back with the dump: a plain restore is the
+SAME brain (its own backup, a roll back, a move that replaces the old box)
+and keeps it. A NEW brain made from another brain's dump, one that will run
+beside it (dev data seeded into a new prod box, one generated dump seeded
+onto several boxes), takes `--new-brain`:
+`scripts/db-restore.sh --new-brain <dump>` gives it an id of its own, so a
+phone holding logins on both can tell them apart
+(docs/mobile-companion-backend.md, "Push routing on a device with several
+logins").
+
+The script drops the init-made `postgres` database and restores into a
+pristine one, so `pg_restore` should print no error (a dump from before
+migration 0212 prints one, for a trigger the script then makes itself). It
+does not trust the exit code alone: it checks the logins, the role CHECK, the viewer policies
+and every trigger the dump lists (exit 2 when one is missing), and exits 3
+at its end when `pg_restore` reported an error it cannot explain
+([`backups.md`](./backups.md)). It **refuses to restore over a populated
+brain**. It then puts the
 members' personal-space files back: when `mantle-spaces-<ts>.tgz` with the
 dump's timestamp sits next to the dump, it is untarred into
 `$MANTLE_DATA_DIR/spaces` (read from the environment or `.env`, default
@@ -400,11 +414,13 @@ Key flags (`--help` for the full list):
 | `--domain <host>`                            | HTTPS via Caddy/Let's Encrypt                                                                         |
 | `--localhost`                                | loopback only, HTTP on `127.0.0.1:80`                                                                 |
 | `--lan` (`--no-domain`)                      | HTTP on `:80`, reachable on the network                                                               |
-| `--behind-proxy`                             | Caddy on `127.0.0.1:8080`; your nginx/apache terminates TLS                                           |
+| `--behind-proxy`                             | Caddy on `127.0.0.1:8080`; your nginx/apache terminates TLS. Needs `--domain`                         |
 | `--data-dir` / `--stack-dir` / `--image-tag` | `MANTLE_DATA_DIR`, `MANTLE_STACK_DIR`, `MANTLE_IMAGE_TAG`                                             |
 | `--local-embedder` / `--no-local-embedder`   | bundled Ollama + EmbeddingGemma (persists via `COMPOSE_PROFILES`; needs a large box)                  |
 | `--sandboxes` / `--no-sandboxes`             | CLI sandboxes for the coder agent ([sandboxes.md](./sandboxes.md)); on by default for a fresh install |
 | `-y`, `--skip-up`, `--sanity`/`--check`      | scripted run, write-`.env`-only, health-check-only                                                    |
+| `--no-client`                                | headless: API + MCP + share pages, no owner UI; onboard with the desktop app or `scripts/onboard.sh`  |
+| `--setup-code`                               | print the first-run setup code again (signup asks for it until the first account exists)              |
 
 ### `scripts/sanity.sh`: "is it actually serving?"
 
@@ -433,6 +449,18 @@ Two deliberately separated operations:
 
 Also `--images` (frees ~4 GB), `--stack-dir`, `--data-dir`, `--dry-run`, `-y`.
 Never touches the `mantle-dev` project.
+
+### `scripts/onboard.sh`
+
+Creates the owner and finishes first-run setup from the terminal, for a brain
+installed with `--no-client`. Runs `server/web/scripts/onboard.ts` in the web
+container (`docker compose exec web ...`, from the stack dir), the wizard's own
+steps in its order, resumable. Every prompt has a default. `--yes` takes them
+all; `--password-file` / `--key-file` pipe the owner password and the
+OpenRouter key on stdin (never argv). Other flags pass through (`--email`,
+`--purpose`, `--persona`, ... see `--help`). In a checkout:
+`pnpm -C server/web onboard`. Details: [`onboarding.md`](./onboarding.md)
+section 8.
 
 ### `scripts/compose-adopt.sh [--apply]`
 
@@ -544,7 +572,8 @@ spawns. Full detail (including the nightly cron and the `/settings` UI tab) in
 
 Registry kinds: **recurring hygiene** (`entities-dedupe`, `backup-app-dbs`,
 `backup-table-dbs`, `traces-reap`, `turns-reap`, `space-purge`,
-`client-codes-reap`, `app-access-log-reap`) · **remedies** (`dedupe-edges`) · **ops**
+`client-codes-reap`, `device-tokens-reap`, `app-access-log-reap`, `app-trash-purge`,
+`app-export-catch-up`) · **remedies** (`dedupe-edges`) · **ops**
 (`re-embed`, `extract-backfill`, `rotate-master-key`, `sync-now`,
 `imap-folders`, `pgboss-init`) · **retired backfills** (the rest).
 

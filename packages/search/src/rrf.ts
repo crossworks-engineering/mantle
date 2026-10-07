@@ -57,3 +57,47 @@ export function applyRescueFloor(
   if (rescue.length === 0) return head;
   return [...head.slice(0, Math.max(0, cap - rescue.length)), ...rescue];
 }
+
+/**
+ * Merge two ranked lists, the first list first (passage windows: the hybrid
+ * order, then the window arm). An id already taken is skipped.
+ *
+ *  - `turns`: a1, b1, a2, b2, ... up to `limit`. For a list that is cut
+ *    straight into the prompt: both heads reach the cut.
+ *  - `union`: the top `limit / 2` of the first list, then the top
+ *    `limit / 2` of the second that are not in it (so it can come back
+ *    shorter than `limit`). For a pool a judge scores in requests of 25: the
+ *    first list's head stays together in the first requests.
+ *
+ * Measured on the library corpus (docs/recall-eval.md, "Passage windows"):
+ * with the judge, `union` kept rank-1 answers that a `turns` pool of the
+ * same depth lost; without the judge, `turns` put more answers in the top 8.
+ */
+export type MergeOrder = 'turns' | 'union';
+
+export function mergeIds(
+  first: string[],
+  second: string[],
+  limit: number,
+  order: MergeOrder = 'turns',
+): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const cap = Math.max(0, limit);
+  const take = (id: string | undefined) => {
+    if (id === undefined || seen.has(id) || out.length >= cap) return;
+    seen.add(id);
+    out.push(id);
+  };
+  if (order === 'union') {
+    const half = Math.ceil(cap / 2);
+    first.slice(0, half).forEach(take);
+    second.slice(0, half).forEach(take);
+    return out;
+  }
+  for (let i = 0; out.length < cap && (i < first.length || i < second.length); i++) {
+    take(first[i]);
+    take(second[i]);
+  }
+  return out;
+}

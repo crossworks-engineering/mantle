@@ -20,14 +20,15 @@
  * change, disable, role change, sign out everywhere) ends them all. A value
  * without `ep` is epoch 0: what every login starts at.
  */
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { RENDER_COOKIE_NAME, SESSION_COOKIE_NAME } from '../auth-constants';
 import { env } from '@mantle/config';
 
-/** The `k` claim: mobile bearer, asset token, app frame, render cookie. 'c'
- *  (the retired team-chat credential) and 't' (the retired team-visitor
- *  cookie) are reserved: no verifier takes them. */
-type TokenKind = 'm' | 'a' | 'f' | 'r';
+/** The `k` claim: mobile bearer, asset token, app frame, render cookie,
+ *  contact visitor (contact shares), app tool confirmation. 'c' (the retired
+ *  team-chat credential) and 't' (the retired team-visitor cookie) are
+ *  reserved: no verifier takes them. */
+type TokenKind = 'm' | 'a' | 'f' | 'r' | 'v' | 'q';
 
 /**
  * Claims whose signature, kind and expiry have already been checked. Every
@@ -44,6 +45,15 @@ function secret(): Buffer {
     throw new Error('SESSION_SECRET must be set (>=32 chars). Run `openssl rand -base64 48`.');
   }
   return Buffer.from(s);
+}
+
+/**
+ * A key for one purpose, derived from SESSION_SECRET (HMAC with the purpose
+ * as the message): local to this brain, never sent anywhere, and never the
+ * signing key itself. Rotating SESSION_SECRET rotates it.
+ */
+export function derivedSecret(purpose: string): Buffer {
+  return createHmac('sha256', secret()).update(`mantle-derived:${purpose}`).digest();
 }
 
 function b64urlEncode(buf: Buffer): string {
@@ -224,24 +234,36 @@ export const WEB_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30;
 
 /** Mint a per-device mobile bearer token. Caller inserts the matching
  *  mobile_tokens row keyed by `jti`. `ttlSeconds` defaults to the mobile
- *  year; the web client passes WEB_TOKEN_TTL_SECONDS. */
+ *  year; the web client passes WEB_TOKEN_TTL_SECONDS. `epoch` binds the token
+ *  to the login's session epoch (a CLIENT's device token always carries it:
+ *  the session layer refuses the token once the row's epoch moves on, as it
+ *  refuses the client's cookie). */
 export function buildMobileToken(
   userId: string,
   jti: string,
   ttlSeconds: number = MOBILE_TOKEN_TTL_SECONDS,
+  epoch?: number,
 ): { value: string; expiresInSec: number; expiresAt: Date } {
-  const { value, exp } = signClaims({ uid: userId, jti, k: 'm' }, ttlSeconds);
+  const { value, exp } = signClaims(
+    { uid: userId, jti, k: 'm', ...(epoch !== undefined ? { ep: epoch } : {}) },
+    ttlSeconds,
+  );
   return { value, expiresInSec: ttlSeconds, expiresAt: new Date(exp * 1000) };
 }
 
-export type MobileClaims = { uid: string; jti: string; exp: number };
+/** `ep` is set only on a token minted with an epoch (a client's). */
+export type MobileClaims = { uid: string; jti: string; exp: number; ep?: number };
 
 /** Verify a mobile token's signature, expiry and kind. No DB — the caller must
- *  still confirm the mobile_tokens row is present and unrevoked. */
+ *  still confirm the mobile_tokens row is present and unrevoked, and compare
+ *  `ep` (when the token carries one) with the login row. */
 export function verifyMobileToken(token: string): MobileClaims | null {
   const claims = verifySigned(token, 'm');
   if (!claims || typeof claims.uid !== 'string' || typeof claims.jti !== 'string') return null;
-  return { uid: claims.uid, jti: claims.jti, exp: claims.exp };
+  if (claims.ep === undefined) return { uid: claims.uid, jti: claims.jti, exp: claims.exp };
+  const ep = epochClaim(claims);
+  if (ep === null) return null;
+  return { uid: claims.uid, jti: claims.jti, exp: claims.exp, ep };
 }
 
 /** Extract the `jti` from a (valid) mobile token — used by logout to revoke. */
@@ -319,6 +341,70 @@ export function verifyAssetToken(token: string): { uid: string; act?: string; ep
 // logins Phase 6. Nothing mints or accepts kind 'c' any more; the kind stays
 // reserved so an old value can never be read as something else.
 
+// ── Contact visitor values (`k:'v'`) ─────────────────────────────────────────
+// Set after a contact types their code at a contact share's prompt (contact
+// shares, migration 0214; POST /s/<token>/code). The value names the CONTACT
+// (`cid`), the brain (`oid`, its owner id) and the contact's code epoch
+// (`ce`) when it was minted. It opens nothing by itself: the gate
+// (lib/contact-share-gate.ts) admits it only on a live share for THAT
+// contact, while the contact's sharing is on, not locked, and still at that
+// epoch. Regenerate and switch off move the epoch, so every value of the
+// contact dies on its next request. The cookie (`mantle_contact`, path
+// /s/) may carry values for several contacts, joined by '~'; the gate tries
+// each. Every other verifier rejects kind 'v'.
+
+export const CONTACT_VISITOR_COOKIE = 'mantle_contact';
+export const CONTACT_VISITOR_TTL_SECONDS = 30 * 24 * 60 * 60;
+
+export type ContactVisitorClaims = {
+  contactId: string;
+  ownerId: string;
+  codeEpoch: number;
+  /** Seconds since the epoch at mint time. */
+  issuedAt: number;
+};
+
+/** Mint a contact visitor value. */
+export function buildContactVisitorValue(opts: {
+  contactId: string;
+  ownerId: string;
+  codeEpoch: number;
+}): { value: string; maxAgeSec: number } {
+  const { value } = signClaims(
+    {
+      cid: opts.contactId,
+      oid: opts.ownerId,
+      ce: opts.codeEpoch,
+      iat: Math.floor(Date.now() / 1000),
+      k: 'v',
+    },
+    CONTACT_VISITOR_TTL_SECONDS,
+  );
+  return { value, maxAgeSec: CONTACT_VISITOR_TTL_SECONDS };
+}
+
+/** Verify a contact visitor value: signature, expiry, kind. No DB: the gate
+ *  still checks the share, the contact's sharing and the epoch. */
+export function verifyContactVisitorValue(value: string): ContactVisitorClaims | null {
+  const claims = verifySigned(value, 'v');
+  if (
+    !claims ||
+    typeof claims.cid !== 'string' ||
+    typeof claims.oid !== 'string' ||
+    typeof claims.ce !== 'number' ||
+    !Number.isSafeInteger(claims.ce) ||
+    claims.ce < 1
+  ) {
+    return null;
+  }
+  return {
+    contactId: claims.cid,
+    ownerId: claims.oid,
+    codeEpoch: claims.ce,
+    issuedAt: typeof claims.iat === 'number' ? claims.iat : 0,
+  };
+}
+
 // ── App-frame tickets (`k:'f'`) ──────────────────────────────────────────────
 // The mini-app sandbox iframe navigates to a real URL (/api/apps/[id]/frame or
 // /s/[token]/frame) instead of an inlined srcdoc. That navigation can carry NO
@@ -345,26 +431,40 @@ const APP_FRAME_TICKET_TTL_SECONDS = 120;
  *  session epoch at mint time: Sign out, End sessions and Disable bump it,
  *  and the client frame refuses a ticket of an older epoch. A client ticket
  *  still carries `mem`, so every frame that refuses a login ticket (owner,
- *  share) refuses a client's too. */
+ *  share) refuses a client's too. `actorId` (owner surface only) names the
+ *  admin login that opened the frame, so the frame can answer host.me()
+ *  (app identity); the owner frame route is the only one that reads it. */
 export function buildAppFrameTicket(opts: {
   ownerId: string;
   appId: string;
+  actorId?: string;
   shareId?: string;
   loginId?: string;
   clientEpoch?: number;
+  /** A contact share's contact and code epoch (contact shares): the share
+   *  frame re-checks both, since the frame navigation carries no cookie. */
+  contact?: { contactId: string; codeEpoch: number };
 }): string {
   const claims: Record<string, unknown> = { uid: opts.ownerId, app: opts.appId, k: 'f' };
   if (opts.shareId) claims.sh = opts.shareId;
+  if (opts.shareId && opts.contact) {
+    claims.cid = opts.contact.contactId;
+    claims.ce = opts.contact.codeEpoch;
+  }
   if (opts.loginId) claims.mem = opts.loginId;
   if (opts.loginId && opts.clientEpoch !== undefined) claims.cep = opts.clientEpoch;
+  // Only an owner ticket names an admin actor: a share, member or client
+  // ticket already says who runs the app.
+  if (opts.actorId && !opts.shareId && !opts.loginId) claims.act = opts.actorId;
   return signClaims(claims, APP_FRAME_TICKET_TTL_SECONDS).value;
 }
 
 /** Verify an app-frame ticket: signature, expiry, kind (`k:'f'`). No DB —
  *  callers must still confirm the app (and share, when `shareId` is set)
  *  matches the route being served, and re-check a member login's liveness
- *  via `loginId`. A `cid` claim (a team visitor's contact, retired with team
- *  links) is ignored. */
+ *  via `loginId`. A `cid` claim counts only on a share ticket, with its `ce`
+ *  (a contact share's contact and code epoch); the share frame re-checks
+ *  both. A `cid` alone (a retired team visitor's) is ignored. */
 export type AppFrameTicket = {
   ownerId: string;
   appId: string;
@@ -376,6 +476,12 @@ export type AppFrameTicket = {
    *  at mint time. Only the client frame route accepts it; the member frame
    *  refuses a ticket that carries it. */
   clientEpoch?: number;
+  /** A contact share's ticket: the contact and its code epoch at mint time
+   *  (only with `shareId`). */
+  contactId?: string;
+  codeEpoch?: number;
+  /** An owner ticket's admin login (app identity: host.me()). */
+  actorId?: string;
 };
 
 export function verifyAppFrameTicket(value: string): AppFrameTicket | null {
@@ -384,6 +490,18 @@ export function verifyAppFrameTicket(value: string): AppFrameTicket | null {
   const out: AppFrameTicket = { ownerId: claims.uid, appId: claims.app };
   if (typeof claims.sh === 'string') out.shareId = claims.sh;
   if (typeof claims.mem === 'string') out.loginId = claims.mem;
+  if (typeof claims.act === 'string' && !out.shareId && !out.loginId) out.actorId = claims.act;
+  // A contact share's ticket carries both `cid` and `ce`. A `cid` alone (a
+  // team visitor's, retired with team links) is ignored, as before.
+  if (
+    out.shareId &&
+    typeof claims.cid === 'string' &&
+    typeof claims.ce === 'number' &&
+    Number.isSafeInteger(claims.ce)
+  ) {
+    out.contactId = claims.cid;
+    out.codeEpoch = claims.ce;
+  }
   if (
     typeof claims.cep === 'number' &&
     Number.isSafeInteger(claims.cep) &&
@@ -395,6 +513,75 @@ export function verifyAppFrameTicket(value: string): AppFrameTicket | null {
     return null;
   }
   return out;
+}
+
+// ── App tool confirmations ───────────────────────────────────────────────────
+//
+// An owner's app may call a tool that needs the owner's confirmation (apps
+// audit S1, Jason 2026-10-02: ask in the app, do not refuse). The owner tool
+// broker answers such a call with this ticket instead of running it; the
+// HOST page (never the sandboxed app, which only sees the final answer)
+// shows the owner what will run and, on Yes, sends the same call again with
+// the ticket. It names the owner, the admin login, the app, the tool and a
+// hash of the exact input, and lives five minutes: it confirms one call, as
+// the owner saw it, and nothing else. It is used ONCE (apps audit 2026-10-02,
+// low): each carries a random id, and a verified one is spent in this
+// process. The host page alone ever holds it, and it asks again for the
+// next call.
+
+const APP_TOOL_CONFIRM_TTL_SECONDS = 300;
+
+/** Spent confirmation ids, with their expiry (ms), in this process. */
+const spentConfirms = new Map<string, number>();
+
+function spendConfirm(jti: string, expMs: number): boolean {
+  const now = Date.now();
+  if (spentConfirms.size >= 10_000) {
+    for (const [k, exp] of spentConfirms) if (exp < now) spentConfirms.delete(k);
+  }
+  if (spentConfirms.has(jti)) return false;
+  spentConfirms.set(jti, expMs);
+  return true;
+}
+
+export type AppToolConfirmClaims = {
+  ownerId: string;
+  actorId: string;
+  appId: string;
+  slug: string;
+  /** sha256 hex of the call's input as JSON. */
+  inputHash: string;
+};
+
+export function buildAppToolConfirmToken(c: AppToolConfirmClaims): string {
+  return signClaims(
+    {
+      k: 'q',
+      uid: c.ownerId,
+      act: c.actorId,
+      app: c.appId,
+      slug: c.slug,
+      ih: c.inputHash,
+      jti: randomUUID(),
+    },
+    APP_TOOL_CONFIRM_TTL_SECONDS,
+  ).value;
+}
+
+/** Whether `value` confirms exactly this call: signature, kind, expiry,
+ *  every claim equal to `expected`, and not used before (a true answer
+ *  spends it). */
+export function verifyAppToolConfirmToken(value: string, expected: AppToolConfirmClaims): boolean {
+  const claims = verifySigned(value, 'q');
+  if (!claims) return false;
+  const match =
+    claims.uid === expected.ownerId &&
+    claims.act === expected.actorId &&
+    claims.app === expected.appId &&
+    claims.slug === expected.slug &&
+    claims.ih === expected.inputHash &&
+    typeof claims.jti === 'string';
+  return match && spendConfirm(claims.jti as string, claims.exp * 1000);
 }
 
 /**

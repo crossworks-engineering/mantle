@@ -35,6 +35,7 @@ import type {
 import type { DiscoveryResult } from '../discover';
 import { GOOGLE_BASE_URL, GOOGLE_VISION_MODELS } from '../catalogs/google';
 import { errorMessage } from '@mantle/std';
+import { providerFetch } from './provider-fetch';
 
 const DEFAULT_MODEL = 'gemini-2.5-flash';
 const ALLOWED_MIMES = new Set([
@@ -103,7 +104,7 @@ export const googleVisionAdapter: VisionDispatcher = {
     }
 
     const url = `${GOOGLE_BASE_URL}/models/${encodeURIComponent(model)}:generateContent`;
-    const res = await fetch(url, {
+    const res = await providerFetch(url, {
       method: 'POST',
       headers: {
         'x-goog-api-key': opts.apiKey,
@@ -131,9 +132,12 @@ export const googleVisionAdapter: VisionDispatcher = {
 
   async discoverModels(apiKey: string): Promise<DiscoveryResult<VisionModelInfo>> {
     try {
-      const res = await fetch(`${GOOGLE_BASE_URL}/models?key=${encodeURIComponent(apiKey)}`, {
-        signal: AbortSignal.timeout(15_000),
-      });
+      const res = await providerFetch(
+        `${GOOGLE_BASE_URL}/models?key=${encodeURIComponent(apiKey)}`,
+        {
+          signal: AbortSignal.timeout(15_000),
+        },
+      );
       if (!res.ok) {
         const body = await res.text().catch(() => '');
         throw new Error(`google list-models ${res.status}: ${body.slice(0, 300)}`);

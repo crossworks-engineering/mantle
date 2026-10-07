@@ -22,12 +22,37 @@
 # auth.users" (already exists), its COPY then failed, and the restore ended
 # "complete" with NO logins and no role CHECK (docs/postgres-18-upgrade.md).
 # So the script refuses a target that holds any item or any login, and after
-# the restore it checks the logins, the role CHECK and the viewer policies,
-# and exits non-zero when one is missing.
+# the restore it checks the logins, the role CHECK, the viewer policies and
+# every trigger the dump lists, and exits 2 when one is missing. It exits 3,
+# after its last step, when pg_restore reported an error it cannot explain:
+# the brain passed the checks, but something in the dump did not restore.
+#
+# The brain id (migration 0226, docs/mobile-companion-backend.md "Push
+# routing on a device with several logins"). Phones and desktops tell brains
+# apart by it. A plain restore KEEPS the dump's id: this is the same brain
+# (its own backup, the way back from a roll, or a move to a new machine that
+# replaces the old one). When the restored database is a NEW brain made from
+# another brain's dump, one that will run BESIDE the brain the dump came
+# from (dev data seeded into a new prod box, one generated dump seeded onto
+# several boxes), pass --new-brain: the restored brain gets an id of its own,
+# so a device holding logins on both can still tell them apart.
+#
+#   scripts/db-restore.sh [--new-brain] <path-to.dump>
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-DUMP="${1:?usage: scripts/db-restore.sh <path-to.dump>}"
+NEW_BRAIN=0
+DUMP=""
+for arg in "$@"; do
+  case "$arg" in
+    --new-brain) NEW_BRAIN=1 ;;
+    -*) echo "✗ unknown option: $arg (usage: scripts/db-restore.sh [--new-brain] <path-to.dump>)" >&2; exit 1 ;;
+    *)
+      [ -z "$DUMP" ] || { echo "✗ one dump at a time (usage: scripts/db-restore.sh [--new-brain] <path-to.dump>)" >&2; exit 1; }
+      DUMP="$arg" ;;
+  esac
+done
+[ -n "$DUMP" ] || { echo "usage: scripts/db-restore.sh [--new-brain] <path-to.dump>" >&2; exit 1; }
 # Same container autodetect as db-dump.sh: dev machines run `mantle_dev_pg`,
 # deployed boxes run `mantle_pg`. Explicit MANTLE_PG_CONTAINER wins; refuse to
 # guess when both are running (restoring into the wrong brain is the one
@@ -86,10 +111,12 @@ docker exec "$CONTAINER" psql -U postgres -d template1 -v ON_ERROR_STOP=1 -q \
 
 echo "▶ Restoring $DUMP → '$CONTAINER'"
 # pg_restore goes on past an error and exits non-zero at the end. Into a
-# pristine database there should be none: every one is printed, and the
-# checks below decide whether the restore is usable.
+# pristine database there should be none: every one is printed, the checks
+# below decide whether the restore is usable, and an error left unexplained
+# makes the script exit 3 at its end.
 RESTORE_LOG="$(mktemp)"
-trap 'rm -f "$RESTORE_LOG"' EXIT
+KEEP_LOG=""   # set on exit 2 and 3: the full pg_restore output stays to be read
+trap '[ -n "$KEEP_LOG" ] || rm -f "$RESTORE_LOG"' EXIT
 RESTORE_RC=0
 docker exec -i "$CONTAINER" pg_restore -U postgres -d postgres --no-owner < "$DUMP" \
   > "$RESTORE_LOG" 2>&1 || RESTORE_RC=$?
@@ -110,6 +137,8 @@ WHEN_0159=1789843200000   # 0159_viewer_access: nodes_viewer_read
 WHEN_0162=1790016000000   # 0162_member_logins: users_role_ck
 WHEN_0187=1790017500000   # 0187_client_level: agents and tool_groups rules
 WHEN_0188=1790017560000   # 0188_client_signin_codes: client sign-in links and codes
+WHEN_0204=1790018520000   # 0204_folder_sharing: nodes_share_refresh_after, in a form no dump can carry
+WHEN_0212=1790019000000   # 0212_restorable_share_refresh_trigger: the same trigger, in a form a dump can carry
 FAILED=""
 fail() { FAILED="${FAILED}  - $1"$'\n'; }
 
@@ -135,17 +164,109 @@ for pt in $REQUIRED_POLICIES; do
   has_policy "${pt%%:*}" "${pt#*:}" || fail "the row policy ${pt%%:*} on ${pt#*:} is missing"
 done
 
+# Every trigger the dump lists must be in the restored database. pg_restore
+# goes on past a CREATE TRIGGER it cannot run, and nothing in the app notices
+# a missing trigger: the rule it kept just stops being kept. The dump's table
+# of contents names each one as "TRIGGER <schema> <table> <trigger>".
+restored_triggers() {
+  q "SELECT n.nspname || '.' || c.relname || '.' || t.tgname
+       FROM pg_trigger t
+       JOIN pg_class c ON c.oid = t.tgrelid
+       JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE NOT t.tgisinternal"
+}
+DUMP_TRIGGERS=""
+if TOC=$(docker exec -i "$CONTAINER" pg_restore --list < "$DUMP" 2>/dev/null); then
+  DUMP_TRIGGERS=$(printf '%s\n' "$TOC" | awk '$4 == "TRIGGER" { print $5 "." $6 "." $7 }' | sort -u)
+else
+  fail "could not read the dump's table of contents (pg_restore --list): its triggers are not checked"
+fi
+HAVE_TRIGGERS=$(restored_triggers || echo "")
+
+# One trigger no dump taken before migration 0212 can carry: 0204 made
+# nodes_share_refresh_after with IS DISTINCT FROM on the ltree path, which
+# pg_restore cannot run ("operator does not exist: public.ltree =
+# public.ltree"). Without it a folder share, unshare, move or rename no
+# longer reaches the rows below the folder. A brain at 0204 or later must
+# have it, whether or not the dump lists it (a dump of a brain that was
+# itself restored without it does not). For a dump from before 0212 it is
+# made here as 0212 makes it, so a pre-roll dump restores whole under the
+# release that took it. A dump of a brain that had already lost the trigger
+# can carry stale levels: migration 0212 repairs them at the next migrate,
+# and under a release before 0212 the nightly share-drift sweep does.
+SHARE_REFRESH=public.nodes.nodes_share_refresh_after
+SHARE_REFRESH_TRIGGER=$(cat <<'SQL'
+CREATE TRIGGER "nodes_share_refresh_after"
+  AFTER UPDATE OF "path", "share_level" ON "public"."nodes"
+  FOR EACH ROW
+  WHEN (NEW."type" = 'branch'
+        AND (OLD."path"::text IS DISTINCT FROM NEW."path"::text
+             OR OLD."share_level" IS DISTINCT FROM NEW."share_level"))
+  EXECUTE FUNCTION "public"."mantle_nodes_refresh_trg"();
+SQL
+)
+# A whole-line match with no pipe (under pipefail a grep -q that ends early
+# can fail the pipe) and no pattern: the name is compared as it is.
+has_trigger() {
+  case $'\n'"$HAVE_TRIGGERS"$'\n' in
+    *$'\n'"$1"$'\n'*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+EXPLAINED_ERRORS=0
+if [ "$LEDGER" -ge "$WHEN_0204" ] && [ "$LEDGER" -lt "$WHEN_0212" ] && ! has_trigger "$SHARE_REFRESH"; then
+  if MADE=$(docker exec "$CONTAINER" psql -U postgres -d postgres -q -v ON_ERROR_STOP=1 \
+              -c "$SHARE_REFRESH_TRIGGER" 2>&1); then
+    echo "▷ The dump is from before migration 0212: it cannot carry the trigger"
+    echo "  nodes_share_refresh_after (the ltree error, if one is listed above). Made it, as 0212 does."
+    HAVE_TRIGGERS=$(restored_triggers || echo "")
+    # The one error such a dump gives is the failed CREATE of this trigger
+    # (pg_restore prints the statement after the error): explained, not
+    # counted.
+    EXPLAINED_ERRORS=$(grep -c '^Command was: CREATE TRIGGER nodes_share_refresh_after ' "$RESTORE_LOG" || true)
+    [ "$EXPLAINED_ERRORS" -le 1 ] || EXPLAINED_ERRORS=1
+  else
+    echo "⚠ could not make the trigger nodes_share_refresh_after:" >&2
+    printf '%s\n' "$MADE" | sed 's/^/    /' >&2
+  fi
+fi
+# From 0204 on the trigger must be there, listed by the dump or not.
+if [ "$LEDGER" -ge "$WHEN_0204" ] && ! has_trigger "$SHARE_REFRESH"; then
+  fail "the trigger nodes_share_refresh_after on public.nodes is missing (folder shares no longer reach the rows below a folder)"
+fi
+# Read line by line: a name is never split or matched against file names.
+while IFS= read -r t; do
+  [ -n "$t" ] || continue
+  [ "$t" = "$SHARE_REFRESH" ] && continue   # judged above
+  has_trigger "$t" || fail "the trigger ${t##*.} on ${t%.*} is missing"
+done <<EOF_TRIGGERS
+$DUMP_TRIGGERS
+EOF_TRIGGERS
+
 if [ -n "$FAILED" ]; then
   echo "✗ Restore FAILED: the database is not a usable brain." >&2
   printf '%s' "$FAILED" >&2
   echo "  Row policies name the viewer roles: a missing one reads as an empty brain to" >&2
-  echo "  team and client logins (migrations 0159, 0187). Do not start the app on this" >&2
+  echo "  team and client logins (migrations 0159, 0187). A missing trigger is a rule the" >&2
+  echo "  database no longer keeps, with no error anywhere. Do not start the app on this" >&2
   echo "  database. Read any pg_restore errors above, fix the cause, and run this again" >&2
   echo "  (drop the database first: the script refuses a target that holds logins)." >&2
+  KEEP_LOG=1
+  echo "  The full pg_restore output is kept in $RESTORE_LOG" >&2
   exit 2
 fi
-if [ "$RESTORE_ERRORS" -gt 0 ] || [ "$RESTORE_RC" -ne 0 ]; then
-  echo "✔ Restore complete, WITH $RESTORE_ERRORS pg_restore error(s) listed above: read them. public.nodes has $N rows, auth.users $USERS."
+# An error pg_restore reported that nothing above explains (or a non-zero
+# exit with no error line at all): the checks passed, so the steps below
+# still run, but the script ends non-zero and never says "Restore complete".
+UNEXPLAINED=$((RESTORE_ERRORS - EXPLAINED_ERRORS))
+if [ "$UNEXPLAINED" -eq 0 ] && [ "$RESTORE_ERRORS" -eq 0 ] && [ "$RESTORE_RC" -ne 0 ]; then
+  UNEXPLAINED=1
+fi
+if [ "$UNEXPLAINED" -gt 0 ]; then
+  echo "⚠ Restored, but pg_restore reported $UNEXPLAINED error(s) this script cannot explain (listed above)." >&2
+  echo "  public.nodes has $N rows, auth.users $USERS. The last steps run now; the script then exits 3." >&2
+elif [ "$EXPLAINED_ERRORS" -gt 0 ]; then
+  echo "✔ Restore complete: public.nodes has $N rows, auth.users $USERS (the one pg_restore error above is explained and repaired)."
 else
   echo "✔ Restore complete: public.nodes has $N rows, auth.users $USERS."
 fi
@@ -176,6 +297,37 @@ if [ "$LEDGER" -ge "$WHEN_0188" ]; then
   fi
 fi
 
+# The brain id (migration 0226). A dump from before 0226 has no table: the
+# migrate that runs next makes one with a fresh id, whichever way this ran.
+HAS_BRAIN_ID=$(q "SELECT to_regclass('public.brain_identity') IS NOT NULL" || echo "")
+DUMP_BRAIN_ID=""
+[ "$HAS_BRAIN_ID" = "t" ] && DUMP_BRAIN_ID=$(q "SELECT brain_id FROM public.brain_identity" || echo "")
+if [ "$NEW_BRAIN" = 1 ]; then
+  if [ "$HAS_BRAIN_ID" != "t" ]; then
+    echo "▷ New brain: the dump is from before migration 0226 (no brain id); migrate gives this brain its own."
+  elif [ -z "$DUMP_BRAIN_ID" ]; then
+    echo "▷ New brain: the dump holds no brain id row; the app makes one of its own on first use."
+  else
+    # A CTE, so psql prints the id and not the command tag after it.
+    NEW_ID=$(q "WITH u AS (UPDATE public.brain_identity SET brain_id = gen_random_uuid() RETURNING brain_id)
+                SELECT brain_id FROM u" || echo "")
+    if [ -z "$NEW_ID" ] || [ "$NEW_ID" = "$DUMP_BRAIN_ID" ]; then
+      echo "✗ --new-brain: could not give the restored brain an id of its own. Do not start the app:" >&2
+      echo "  it would share the id of the brain the dump came from. Run by hand, then start it:" >&2
+      echo "    UPDATE brain_identity SET brain_id = gen_random_uuid();" >&2
+      KEEP_LOG=1
+      echo "  The full pg_restore output is kept in $RESTORE_LOG" >&2
+      exit 2
+    fi
+    echo "▷ New brain: brain id $NEW_ID (the dump's brain keeps ${DUMP_BRAIN_ID:-its own})."
+  fi
+elif [ -n "$DUMP_BRAIN_ID" ]; then
+  echo "▷ Brain id $DUMP_BRAIN_ID kept: this is the same brain as the dump's (its backup, a roll back, a move)."
+  echo "  If this database is a NEW brain that will run beside the dump's, give it its own id before"
+  echo "  the app starts (phones would otherwise mix the two up):"
+  echo "    UPDATE brain_identity SET brain_id = gen_random_uuid();   (or restore again with --new-brain)"
+fi
+
 # Personal-space file bytes (member logins). The rows restored above point at
 # them; without them every member file answers "gone".
 DATA_DIR="${MANTLE_DATA_DIR:-}"
@@ -197,6 +349,16 @@ else
   echo "✔ Restored personal-space files → $SPACES_DIR"
 fi
 
+if [ "$UNEXPLAINED" -gt 0 ]; then
+  echo "✗ pg_restore reported $UNEXPLAINED error(s) this script cannot explain: something in the dump" >&2
+  echo "  did not restore, and nothing in the app will say so. The logins, the role CHECK, the" >&2
+  echo "  viewer policies and the triggers are there. Read the errors above and find what is" >&2
+  echo "  missing before you start the app (docker compose up -d --wait). The file bytes still" >&2
+  echo "  need to come across: \$MANTLE_DATA_DIR/{files,rustfs}, table-dbs, and the app databases." >&2
+  KEEP_LOG=1
+  echo "  The full pg_restore output is kept in $RESTORE_LOG" >&2
+  exit 3
+fi
 echo "  Next:  docker compose up -d --wait    (migrate will be a no-op)"
 echo "  Don't forget the file bytes:  rsync your \$MANTLE_DATA_DIR/{files,rustfs} across too."
 echo "  Table workbooks: untar mantle-table-dbs-<ts>.tgz into \$MANTLE_DATA_DIR/table-dbs;"

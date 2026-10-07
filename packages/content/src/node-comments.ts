@@ -253,6 +253,8 @@ export async function isNodeTeamVisible(ownerId: string, nodeId: string): Promis
         eq(shares.ownerId, ownerId),
         eq(shares.nodeId, nodeId),
         isNull(shares.revokedAt),
+        // A contact share (0214) shows the item to one contact, never the team.
+        isNull(shares.contactId),
         or(isNull(shares.expiresAt), gt(shares.expiresAt, new Date())),
       ),
     )

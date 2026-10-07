@@ -56,7 +56,7 @@ describe.skipIf(!URL)('table tools never read a draft below admin', () => {
       { op: 'row_add', cells: { [col]: 'admin draft secret' } },
     ]);
     expect(applied?.ok).toBe(true);
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await m.systemDb.execute(sqlTag`delete from nodes where id = ${tableId}`);

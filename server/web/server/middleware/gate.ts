@@ -7,8 +7,10 @@ import {
   isRenderPath,
   requestOrigin,
 } from '../../lib/auth-constants';
+import { isAccessKey, type AccessKeyGrant } from '../../lib/access-keys';
 import { bodyCeilingFor, bodyTooLargeResponse, declaredOver } from '../../lib/body-limit';
 import { runWithRequestContext } from '../request-context';
+import { gateAccessKey } from './access-key-gate';
 import { tokenKind, verifySignedToken } from './token-verify';
 import { env } from '@mantle/config';
 
@@ -165,9 +167,13 @@ export function gate(): MiddlewareHandler {
     };
 
     // Run the downstream handler inside the ambient request context, then
-    // apply CORS to whatever it produced.
-    const proceed = async () => {
-      await runWithRequestContext({ req, path, method: req.method }, () => next());
+    // apply CORS to whatever it produced. `accessKey` is set only when the
+    // request was let in by an API key (below).
+    const proceed = async (accessKey?: AccessKeyGrant) => {
+      await runWithRequestContext(
+        { req, path, method: req.method, ...(accessKey ? { accessKey } : {}) },
+        () => next(),
+      );
       if (origin) applyCors(c.res.headers, origin);
     };
 
@@ -181,18 +187,35 @@ export function gate(): MiddlewareHandler {
     // the route's ceiling is refused before any handler buffers it, public
     // routes included. Uploads stream under their own caps (null here); a
     // chunked body is capped while it is read (readJsonNoNul).
-    if (isApi && req.method !== 'GET' && req.method !== 'HEAD') {
+    // The public share routes too (apps audit S2): their db-broker read any
+    // body an anonymous caller sent.
+    if ((isApi || path.startsWith('/s/')) && req.method !== 'GET' && req.method !== 'HEAD') {
       const ceiling = bodyCeilingFor(path);
       if (ceiling !== null && declaredOver(req.headers, ceiling)) {
         return withCors(bodyTooLargeResponse(ceiling));
       }
     }
 
+    const isPublic = PUBLIC_PATHS.some((p) => path === p || path.startsWith(p + '/'));
+
+    // An inbound API key (`mtlk_`): judged on itself, before any cookie, so
+    // a cookie riding along can never widen what the key may do, and before
+    // the image-suffix bypass below, so no path shape skips its checks
+    // (audit item 3). Accepted on /api/v1/* only; anywhere else under /api
+    // it is a 401 (access-key-gate.ts). A public path keeps its own rules:
+    // /api/mcp checks keys itself (lib/mcp-auth.ts), and on the others the
+    // route's login lookup takes no key (lib/auth/session.ts).
+    const presented = bearerToken(req);
+    if (isAccessKey(presented) && !isPublic) {
+      const res = await gateAccessKey(req, path, presented);
+      if ('response' in res) return withCors(res.response);
+      return proceed(res.grant);
+    }
+
     // Old matcher exclusion: image-suffixed paths bypass the gate entirely
     // (static already had its chance; this just falls through to the 404).
     if (IMAGE_EXT_RE.test(path)) return proceed();
 
-    const isPublic = PUBLIC_PATHS.some((p) => path === p || path.startsWith(p + '/'));
     if (isPublic) return proceed();
 
     const secret = env('SESSION_SECRET');

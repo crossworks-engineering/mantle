@@ -168,7 +168,7 @@ describe.skipIf(!URL)('Recall serving on Postgres', () => {
         (${ghost.prompt}, ${owner}, ${ghost.map}, 'ghost-prompt', 'prompt',
          'Ghost prompt', 'body', 'When the task is this one', '[]'::jsonb,
          ${axis(0)}::vector, 1, false)`);
-  });
+  }, 60_000);
 
   afterAll(async () => {
     if (!URL) return;

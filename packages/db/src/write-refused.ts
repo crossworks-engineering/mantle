@@ -28,3 +28,54 @@ export function isWriteRefused(err: unknown): boolean {
   }
   return false;
 }
+
+/**
+ * After a refusal, how long a site goes without trying its write again. A
+ * database that refused one write refuses the next (a reader role stays a
+ * reader), and each try is a failed statement in its log, on every read. One
+ * that takes writes again (a replica promoted in place) is asked again after
+ * this.
+ */
+export const WRITE_RETRY_AFTER_MS = 5 * 60_000;
+
+type Site = { refusedAt: number | null; warned: boolean };
+const sites = new Map<string, Site>();
+
+/**
+ * Run a write a READ makes for itself (a root row, a once-only move, a
+ * last-seen stamp, a counter). On a database that refuses writes the write is
+ * skipped and null is answered, so the read can be served. Narrow on purpose
+ * (isWriteRefused): any other failure is a real one and still throws.
+ *
+ * `site` names what is skipped, one per call site. Each site remembers its own
+ * last refusal (the write is then not tried for WRITE_RETRY_AFTER_MS) and
+ * warns once per process, so a refused view counter never pauses another
+ * site's writes on a database that takes those.
+ */
+export async function bestEffortWrite<T>(site: string, write: () => Promise<T>): Promise<T | null> {
+  let state = sites.get(site);
+  if (!state) sites.set(site, (state = { refusedAt: null, warned: false }));
+  if (state.refusedAt !== null && Date.now() - state.refusedAt < WRITE_RETRY_AFTER_MS) return null;
+  try {
+    const result = await write();
+    state.refusedAt = null;
+    return result;
+  } catch (err) {
+    if (!isWriteRefused(err)) throw err;
+    state.refusedAt = Date.now();
+    if (!state.warned) {
+      state.warned = true;
+      console.warn(
+        `[db] ${site}: the database refuses writes (a read-only database or a role ` +
+          'without INSERT or UPDATE). The write is skipped and the read is served. ' +
+          'Logged once per process.',
+      );
+    }
+    return null;
+  }
+}
+
+/** Forget every site's last refusal, so the next write is tried (tests). */
+export function forgetWriteRefusals(): void {
+  for (const state of sites.values()) state.refusedAt = null;
+}

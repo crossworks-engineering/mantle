@@ -364,6 +364,13 @@ async function runTeamTurnSteps(
     const prefs = await loadProfilePreferences(ownerId);
     // The owner's private-reads switch is for team turns only.
     const privateReads = role === 'member' && isTeamPrivateReadsEnabled(prefs);
+    const memoryConfig = (agent.memoryConfig ?? {}) as { history_limit?: number };
+    const loadedHistoryRows = await recentTeamMessages(
+      ownerId,
+      '', // a login's thread is read by login
+      memoryConfig.history_limit ?? 20,
+      loginId,
+    );
     const ctx =
       role === 'client'
         ? emptyLoginContext(trimmed)
@@ -374,15 +381,12 @@ async function runTeamTurnSteps(
               inboundText: trimmed,
               includeJournal: false,
               excludeNodeTypes: teamHiddenNodeTypes(privateReads),
+              // A short follow-up ("what about in pages?") is enriched from
+              // the member's own thread: the owner's chat is not readable at
+              // team.
+              recentTurnTexts: teamThreadToHistory(loadedHistoryRows).map((t) => t.text),
             }),
           );
-    const memoryConfig = (agent.memoryConfig ?? {}) as { history_limit?: number };
-    const loadedHistoryRows = await recentTeamMessages(
-      ownerId,
-      '', // a login's thread is read by login
-      memoryConfig.history_limit ?? 20,
-      loginId,
-    );
 
     const inbound = await runDurableStep('record_team_inbound', () =>
       appendTeamMessage({
@@ -443,7 +447,8 @@ async function runTeamTurnSteps(
 
     // Shared responder-turn assembly (audit #5c), configured for the team
     // surface's HARD isolation: no identity/journal block, no heartbeats, no
-    // owner thinking budget, no delegation (fail closed). The private-reads
+    // owner thinking budget (an effort set on the responder agent itself
+    // still applies), no delegation (fail closed). The private-reads
     // switch (default OFF) is enforced HERE, at tool resolution — independent
     // of the `team-read` group grant, so it can't be bypassed by a manifest
     // change that re-adds the slugs.

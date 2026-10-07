@@ -66,7 +66,7 @@ going away breaks nothing.
 | The one adapter                                                                                                                               | `packages/voice/src/adapters/openrouter-decision.ts` (+ wire-shape test)                  |
 | **`decide()`**, `resolveUse`, per-owner resolution cache, in-process answer cache                                                             | `packages/decisions/src/decide.ts`, `cache.ts`                                            |
 | Use: passage scoring                                                                                                                          | `packages/decisions/src/passage-scoring.ts`                                               |
-| Manifest entry (optional, `enabled: true`, built uses `live`)                                                                                                   | `server/web/lib/system-manifest/manifest.ts`                                              |
+| Manifest entry (optional, `enabled: true`, built uses `live`)                                                                                 | `server/web/lib/system-manifest/manifest.ts`                                              |
 | Test button RPC + route                                                                                                                       | `server/web/lib/ai-worker-rpc.ts` `testDecision`, `app/api/ai-workers/[id]/test/decision` |
 | Model pool `decider` (output modality `decisions`; a chat model is rejected here and Jev is rejected in every text pool) + one template entry | `packages/client-types/src/model-pools.ts`, `model-pools-data.json`                       |
 | Pricing fallback rows                                                                                                                         | `packages/tracing/src/pricing.ts`                                                         |
@@ -127,8 +127,28 @@ what the answers were, how many were under the floor, what it cost.
 After hybrid search returns its passages, one request scores each 0-3 on
 "how well does this passage answer the question" (rubric in
 `PASSAGE_LEVELS`). Code drops passages under `threshold` (1.5) and orders the
-rest by score, ties in search order; passages past the per-request cap (25)
-stay, unscored, at the end.
+rest by score, ties in search order. A request holds at most 25 passages; a
+longer list goes out as parallel requests of 25 (one `DecideBatch`, so the
+breaker hears one decision), and a request that fails leaves its passages
+unscored, at the end.
+
+**`pool` (optional, per brain).** `uses.passage_scoring.pool` sets how many
+passages a search fetches and scores (`passageScoringPool`, up to 200).
+Unset keeps the original pool, `max(2×limit, 16)` capped at 25. With
+passage windows on (`embedding_config.chunk_windows`, docs/embeddings.md)
+the pool doubles: each vector arm brings it. The requests of a fan-out run
+side by side: the adapter uses the shared provider pool (docs/provider-http.md),
+because Node 26's built-in fetch sent them one after another (8 requests 4.2 s
+instead of about 1 s, measured 2026-10-04). Each request may still wait the
+worker `timeout_ms` times the number of requests (`timeoutFactor`, capped at
+5 s). Measured on a 122k-chunk corpus (docs/recall-eval.md, "Rerankers"):
+`pool: 50` lifted the `search_chunks` result from exact-passage R@10 43% to
+53% (R@1 31% to 36%, MRR 0.35 to 0.41) for about $0.0014 per search instead
+of $0.0005; with the parallel fetch its p50 is 0.9 s. A pool of 100 or 200
+lifts paraphrased questions further but loses some rank-1 answers; passage
+windows do more for less (docs/recall-eval.md, "Paraphrased questions"). Set it in the worker's params
+(`PATCH /api/ai-workers/<id>`); the settings form has no field for it yet,
+and saving that form drops it (back to the default, never worse).
 
 Wired at both passage sites:
 
@@ -139,7 +159,11 @@ Wired at both passage sites:
   and writes `passage_scoring*` meta on the tool step.
 - Responder auto-context (`packages/runtime/src/agent/conversation.ts`): same
   pool rule; `live` prunes + reorders before the existing `selectChunkHits`
-  budget cut; `shadow` leaves the list as it was.
+  budget cut; `shadow` leaves the list as it was. With `context_pruning` on,
+  this call is skipped (see below) UNLESS `pool` is set: pruning only drops
+  among the passages that survived the budget cut, taken in search order,
+  so it cannot bring up a passage search ranked far down. A set `pool` means
+  one more decision per turn.
 
 Spike (dev brain, 2026-09-21, 40 synthetic questions × 20 passages): right
 passage at rank 1 30% → 57%, MRR 0.41 → 0.63; dropping scores under 2.0 kept
@@ -208,6 +232,7 @@ wired in `loadConversationContext`). Code drops items under `threshold`
 corpus map, digests and relations are never touched. When this use is on,
 the auto-context's separate `passage_scoring` call is skipped — the one
 request covers the passages too (the `search_chunks` tool keeps its own).
+A set `passage_scoring.pool` still runs it (see above).
 
 - `shadow`: the `/debug/context` snapshot gains `pruning: { mode, threshold,
 wouldDrop: {facts, contentHits, chunkHits}, charsSaved, ms, cached }`.
@@ -299,10 +324,10 @@ retrieval instead of adding to the turn. Threshold default **1.0**.
 - `shadow`: the `/debug/context` snapshot gains `historyRecall: { mode,
 threshold, exchanges: [{back, score, chars}], wouldAdd, chars, calls, failed,
 skipped, ms, cached }` (`ms` is the fan-out's wall time, timeouts included;
-`skipped` counts groups the open breaker held back). History unchanged.
+  `skipped` counts groups the open breaker held back). History unchanged.
 - `live`: exchanges at the threshold rejoin the history before the recent
   part, in time order; the first turn of each carries `[Recalled from earlier
-  in this conversation, N messages back, …]` so the model knows the messages
+in this conversation, N messages back, …]` so the model knows the messages
   between are not shown. A failed group leaves its exchanges out (today's
   behaviour). The recent part is cut by row count, so it can open on a reply
   whose question is older: that question then comes along, unmarked, right
@@ -380,7 +405,7 @@ touched. The wiring is `ruleReconcilerFor` (`packages/tools/src/rule-reconciler.
 
 - `shadow`: nothing is retired. The reflector's `append_journal` step and the
   `update_persona` tool step carry `rule_reconcile` meta with `would_retire:
-  [{older, newer, same, replaces}]`.
+[{older, newer, same, replaces}]`.
 - `live`: the older rules are superseded (reversible; hidden from turns,
   kept for audit), listed as `retired` in the same meta; `update_persona`
   also tells the model which rules it retired. A reflector note the decider
@@ -389,7 +414,7 @@ touched. The wiring is `ruleReconcilerFor` (`packages/tools/src/rule-reconciler.
 - Cleanup of what is already there: the maintenance task
   `journal-rules-reconcile` asks the same about every close pair of the
   agent's existing rules and writes the plan to a review page; `--apply
-  --page=<id>` applies it (journal.md §4c). It needs the use enabled in
+--page=<id>` applies it (journal.md §4c). It needs the use enabled in
   either mode: there the review page is the gate.
 
 Spike 14 (two work brains, 2026-09-24, 387 real pairs of learned rules at
@@ -438,7 +463,7 @@ Full write-ups: dev-brain pages `cdf6a97c-5b84-485e-8698-9c266614318c`
    `null` → old path, honour `outcome.mode`.
 4. Add the use to the manifest `params.uses` (`{ enabled: false, mode:
 'shadow' }` while it is measured, `live` once the fleet runs it), and to the
-jackdaw worker form under "Experimental".
+   jackdaw worker form under "Experimental".
 5. Check the question against the weak-spot list (rule 6) and make sure no
    answer alone can retire, merge or overwrite anything.
 6. Document it here.

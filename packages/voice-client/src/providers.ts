@@ -33,6 +33,7 @@ export type ProviderId =
   | 'xai'
   | 'huggingface'
   | 'deepseek'
+  | 'mammouth'
   | 'copilot'
   | 'mistral'
   | 'cohere'
@@ -150,6 +151,16 @@ export const SUPPORTED_PROVIDERS: readonly Provider[] = [
     capabilities: ['chat'],
     signupUrl: 'https://platform.deepseek.com',
     docsUrl: 'https://api-docs.deepseek.com',
+  },
+  {
+    id: 'mammouth',
+    label: 'Mammouth',
+    description:
+      'Aggregator like OpenRouter: Claude, GPT, Gemini, Grok, DeepSeek, GLM, Kimi, Qwen, Mistral, and more behind one key, through an OpenAI-compatible API. Chat only in Mantle; keep OpenRouter (or another provider) for voice, images, and vision.',
+    capabilities: ['chat'],
+    signupUrl: 'https://mammouth.ai/app/account/settings/api',
+    docsUrl: 'https://info.mammouth.ai/docs/api-quick-start/',
+    isAggregator: true,
   },
   {
     id: 'copilot',

@@ -12,6 +12,7 @@
  * `@mantle/client-types/tree` subpath.
  */
 import type { AccessLevel } from './dto/access';
+import type { TaskStatus } from './dto/rows';
 import type { AppTint } from './app-nav';
 
 /** The kinds the tree serves, in navigation order. */
@@ -208,6 +209,9 @@ export type TreeItemState = 'private' | 'draft' | 'submitted' | 'returned' | 'wi
 export type TreeItemMeta = {
   /** A task marked done. */
   done?: boolean;
+  /** A done task: the status a reopen restores, when the brain knows it.
+   *  Absent otherwise (a reopen then lands on 'open'). */
+  reopensTo?: TaskStatus;
   /** A task's due instant (ISO), when it has one. */
   due?: string | null;
   /** An event's start (ISO). */

@@ -16,6 +16,17 @@
  *      mails it (lib/client-codes.ts). So neither the answer, the cookie nor
  *      the timing tells whether an email is a client. Rate limited per
  *      address, an IPv6 caller by its /64 (429), which says nothing either.
+ *
+ *      Device mode, for the phone app (docs/mobile-companion-backend.md):
+ *      `{ email, device: true, requestId? }` answers `{ ok: true, requestId }`
+ *      and sets no cookie. The app holds the request id as a browser holds
+ *      the cookie, and sends it back with the code. The id is random and is
+ *      returned for every email alike; an app that asks again passes the id
+ *      it has, so the code already mailed keeps working. The code is stored
+ *      under an id DERIVED from the app's (deviceRequestId), so a browser's
+ *      id and a device's id never open each other's code. A request that
+ *      carries `Origin` or a `Sec-Fetch-*` header is a page, not the app:
+ *      403 `device-only`.
  */
 import { randomUUID } from 'node:crypto';
 import { NextResponse } from '@/server/http-compat';
@@ -28,7 +39,10 @@ import {
 } from '@/lib/client-codes';
 import {
   clientCodeRequestLimited,
+  deviceRequestId,
   existingRequestId,
+  refuseBrowserDeviceMode,
+  requestIdFrom,
   setClientCodeCookie,
 } from '@/lib/client-logins';
 import { refuseCrossSiteAuthPost } from '@/lib/auth/preflight';
@@ -51,9 +65,20 @@ export async function POST(req: Request) {
   const limited = clientCodeRequestLimited(req);
   if (limited) return limited;
 
-  const raw = (await readJsonCapped(req, AUTH_BODY_CEILING_BYTES)) as { email?: unknown } | null;
+  const raw = (await readJsonCapped(req, AUTH_BODY_CEILING_BYTES)) as {
+    email?: unknown;
+    device?: unknown;
+    requestId?: unknown;
+  } | null;
   const email = typeof raw?.email === 'string' ? raw.email.trim().slice(0, 320) : '';
-  const requestId = existingRequestId(req) ?? randomUUID();
+  // Device mode never reads or sets the cookie: the app holds the id.
+  const device = raw?.device === true;
+  if (device) {
+    const notTheApp = refuseBrowserDeviceMode(req);
+    if (notTheApp) return notTheApp;
+  }
+  const requestId =
+    (device ? requestIdFrom(raw?.requestId) : existingRequestId(req)) ?? randomUUID();
   try {
     // Codes off (no sender): nothing to queue, and nothing of an email or
     // an address kept in the queue. The same for every email.
@@ -61,7 +86,7 @@ export async function POST(req: Request) {
     if (sender) {
       await enqueueClientCode({
         email,
-        requestId,
+        requestId: device ? deviceRequestId(requestId) : requestId,
         ip: clientIpKey(req),
         requestedAt: new Date().toISOString(),
       });
@@ -72,6 +97,7 @@ export async function POST(req: Request) {
     console.error('[client-code] enqueue failed', err instanceof Error ? err.message : err);
   }
   const body: ClientCodeRequested = { ok: true };
+  if (device) return NextResponse.json({ ...body, requestId });
   const res = NextResponse.json(body);
   setClientCodeCookie(res, req, requestId);
   return res;

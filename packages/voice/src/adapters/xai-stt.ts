@@ -30,6 +30,7 @@ import type { SttDispatcher } from './types';
 import type { TranscribeOptions, TranscribeResult } from '../types';
 import { filenameForMime } from '../transcribe';
 import { XAI_BASE_URL } from '../catalogs/xai';
+import { providerFetch } from './provider-fetch';
 
 export const xaiSttAdapter: SttDispatcher = {
   providerId: 'xai',
@@ -59,7 +60,7 @@ export const xaiSttAdapter: SttDispatcher = {
     const blob = new Blob([new Uint8Array(audio)], { type: opts.mimeType });
     form.append('file', blob, filename);
 
-    const res = await fetch(`${XAI_BASE_URL}/stt`, {
+    const res = await providerFetch(`${XAI_BASE_URL}/stt`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${opts.apiKey}` },
       body: form,

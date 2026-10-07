@@ -164,6 +164,12 @@ describe('every in-app tool reaches the MCP surface', () => {
     client_shared_search: 'serves the client of a client turn; MCP has none',
     client_shared_open: 'serves the client of a client turn; MCP has none',
     client_request_create: 'files for the client of a client turn; MCP has none',
+    // Draft writes into a member's or client's own space (MCP as a login):
+    // the LOGIN surface offers them (login-surface.ts), never the owner's.
+    my_note_create: "writes a login's own space; the owner surface has no login",
+    my_page_create: "writes a login's own space; the owner surface has no login",
+    my_file_upload: "writes a login's own space; the owner surface has no login",
+    my_item_submit: "submits a login's own item; the owner surface has no login",
   };
 
   it('exposes every builtin slug over stdio, except the documented ones', () => {

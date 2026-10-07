@@ -1,9 +1,10 @@
+import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
 import { NextResponse } from '@/server/http-compat';
 import { evaluateSpec, parseFormulaSpec, type FormulaValue } from '@mantle/content';
 import { and, eq } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
-import { resolveActiveShareByToken } from '@/lib/shares';
-import { rateLimit, clientIp } from '@/lib/rate-limit';
+import { clientIpKey, rateLimit } from '@/lib/rate-limit';
+import { readJsonCapped } from '@/lib/body-limit';
 
 /**
  * Evaluate one target of a SHARED formula — the public counterpart of
@@ -28,8 +29,8 @@ import { rateLimit, clientIp } from '@/lib/rate-limit';
 const MAX_INPUT_KEYS = 200;
 const MAX_VALUE_LENGTH = 1000;
 /** The legit ceiling is ~MAX_INPUT_KEYS × MAX_VALUE_LENGTH plus JSON overhead
- *  (~250KB). Anything past double that is not a calculation — refuse it before
- *  `req.json()` buffers it, since there is no server-wide body limit. */
+ *  (~250KB). Anything past double that is not a calculation: a declared
+ *  length is refused up front, and a chunked body stops at it while read. */
 const MAX_BODY_BYTES = 512_000;
 
 function notFound() {
@@ -42,7 +43,7 @@ function notFound() {
 export async function POST(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
 
-  const { ok: allowed, retryAfterSec } = rateLimit(`share-evaluate:${clientIp(req)}`, {
+  const { ok: allowed, retryAfterSec } = rateLimit(`share-evaluate:${clientIpKey(req)}`, {
     max: 60,
     windowMs: 60_000,
   });
@@ -56,7 +57,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     );
   }
 
-  const share = await resolveActiveShareByToken(token);
+  const gate = await gateShare(req, token);
+  if (gate.kind === 'code') return contactCodeRequired(gate.share);
+  const share = gate.kind === 'ok' ? gate.share : null;
   if (!share || share.nodeType !== 'formula') return notFound();
 
   const declaredLength = Number(req.headers.get('content-length') ?? 0);
@@ -67,7 +70,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     );
   }
 
-  const raw = (await req.json().catch(() => null)) as {
+  const raw = (await readJsonCapped(req, MAX_BODY_BYTES)) as {
     target?: unknown;
     inputs?: unknown;
   } | null;

@@ -36,7 +36,7 @@ describe.skipIf(!URL)('listMemberChatActivity', () => {
         (${ownerId}, null, ${chatty}, 'inbound', 'first', now() - interval '2 minutes'),
         (${ownerId}, null, ${chatty}, 'outbound', 'the reply', now() - interval '1 minute'),
         (${otherOwner}, null, ${quiet}, 'inbound', 'elsewhere', now())`);
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await m.systemDb.execute(

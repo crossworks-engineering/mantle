@@ -5,7 +5,7 @@ times" into a deployed capability in one prompt. It's a manifest
 specialist (like Pages and Ledger) whose trade is the tool registry:
 it reads a service's API documentation, authors templated HTTP tools
 against it, proves them against the live API, and grants them to an
-agent, at which point chat turns *and* heartbeat routines can call
+agent, at which point chat turns _and_ heartbeat routines can call
 them.
 
 **Safety switch.** A single-owner brain trusts itself, so by default an
@@ -38,7 +38,7 @@ user prompt ("read <docs url>, build me routing tools")
 ## 0. The integration lives on the group
 
 The binding layer (`tool_groups.integration`, migration `0137`) is what makes an
-integration a *thing* rather than a pile of tools that happen to hit the same
+integration a _thing_ rather than a pile of tools that happen to hit the same
 host. One group carries the service, its base URL, which vault entry
 authenticates it, WHERE that credential goes, the API's documentation, and a
 short usage skill. Two payoffs:
@@ -56,7 +56,7 @@ short usage skill. Two payoffs:
   summarises, embeds, and FTS-indexes like any upload, every agent's
   `search_nodes` can find it. Adding endpoint #2 next month starts with
   `api_docs_get`, not a re-fetch of a page that may have moved or gone behind
-  auth. `api_skill_set` then holds the *judgment* (which call answers which
+  auth. `api_skill_set` then holds the _judgment_ (which call answers which
   question, unit conventions, chaining) and travels with the grant: an agent
   granted the group gets that skill in its context automatically
   ([tools-and-skills.md](tools-and-skills.md#integration-groups--a-group-that-is-an-api)).
@@ -66,6 +66,55 @@ hold the same `{{secret:…}}` refs the templates always used, resolved once in 
 dispatcher. A credential-shaped literal in an auth template earns a warning
 rather than being quietly stored in the clear, and neither a stored docs file nor
 a usage skill may contain a key.
+
+### OAuth2 client credentials
+
+Some APIs do not take a fixed key. They hand out short-lived bearer tokens in
+exchange for a client id and a client secret (OAuth2 client credentials, RFC
+6749 section 4.4). A group declares that with `oauth2`:
+
+```jsonc
+// tool_group_ensure input
+{
+  "slug": "acme-tools",
+  "service": "acme",
+  "base_url": "https://api.example.com/v1",
+  "oauth2": {
+    "token_url": "https://auth.example.com/oauth/token", // https only
+    "client_id_ref": "acme/client-id", // vault refs, never plaintext
+    "client_secret_ref": "acme/client-secret",
+    "scope": "read write", // optional
+    "audience": "api://acme", // optional
+    "client_auth": "basic", // or "body"; default basic
+  },
+}
+```
+
+When `auth_template` is unset it defaults to
+`{ "headers": { "Authorization": "Bearer {{oauth:acme-tools}}" } }`, so tools
+authored into the group (and OpenAPI connector tools) inherit the token
+placement like any other credential. `{{oauth:<group-slug>}}` is a template ref
+like `{{secret:…}}`: it resolves only in the author's templates, never from
+model input. `oauth2: null` removes the config.
+
+At call time the dispatcher (`packages/tools/src/oauth2-client-credentials.ts`):
+
+- reads both credentials from the vault and posts
+  `grant_type=client_credentials` to `token_url` through `safeFetch`, so the
+  token URL meets the same egress rules as every api-tool call;
+- keeps the token **in process memory only**, never in the DB, a log or a
+  trace, until a safety margin before `expires_in` (a tenth of the lifetime,
+  at most a minute; five minutes when the provider sends no expiry). The cache
+  key hashes the config and the secret, so a rotated secret gets a new token;
+- runs **one fetch at a time per group** (single-flight), so parallel calls
+  share one token request;
+- on a **401** from the API, replaces the token once and retries once;
+- sends the token **only to the `base_url` origin**: a request to any other
+  origin is refused before anything is sent, which is why `oauth2` needs
+  `base_url`;
+- scrubs the token, the client id and the secret from every result and error,
+  and passes on only the RFC `error` / `error_description` fields of a failed
+  token response, never the raw body.
 
 The owner sees and can correct all of it at **Settings → Tool groups**: service,
 base URL, credential, stored docs (view/replace), and a link to the usage skill.
@@ -79,10 +128,10 @@ definition; the edit is stamped and survives re-sync.
 
 ## 1. The two ways in
 
-| Surface | Path | Who pays for the LLM |
-|---|---|---|
-| Main assistant delegation | "add a weather API" (anywhere, incl. the /dev-tools Assist button) → invoke_agent | the agent's OpenRouter key |
-| **Claude Code / Desktop over MCP** | the same tool set registered on server/mcp | **the user's Claude subscription** |
+| Surface                            | Path                                                                              | Who pays for the LLM               |
+| ---------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------- |
+| Main assistant delegation          | "add a weather API" (anywhere, incl. the /dev-tools Assist button) → invoke_agent | the agent's OpenRouter key         |
+| **Claude Code / Desktop over MCP** | the same tool set registered on server/mcp                                        | **the user's Claude subscription** |
 
 (The old third way, the API Console's own docked panel invoking Toolsmith
 directly, was removed in v0.206: no surface pre-selects a specialist anymore;
@@ -101,7 +150,8 @@ read-docs → author → test → grant loop with no Mantle-side LLM spend.
 `api_key_refs` / `api_docs_get` / `web_fetch`) are always exposed. The mutating
 set, authoring (`api_tool_create` / `_update` / `_delete`), grouping
 (`tool_group_ensure`), the integration writes (`api_docs_set` /
-`api_skill_set`), and granting (`agent_grant_tool_group`), is
+`api_skill_set`), granting (`agent_grant_tool_group`) and an agent's
+thinking effort (`agent_set_thinking_effort`), is
 gated on **`MANTLE_MCP_TOOLSMITH_WRITE`**, which defaults **on**. Set it
 to `0` / `false` / `off` on a shared or headless deployment to keep tool
 authoring + granting to the in-app agent while still letting an MCP
@@ -117,7 +167,10 @@ client browse and test the registry.
   (shell tools stay human-authored; agents can never mint arbitrary
   command execution). Returns `warnings` when a `{param}` isn't
   declared in the input schema or a `{{secret:…}}` ref has no vault
-  entry, so the agent self-corrects in the same turn.
+  entry, so the agent self-corrects in the same turn. At call time an
+  input field the caller left out is filled from its input-schema
+  `default` before templating, so an optional `{param}` with a default
+  (a page size, say) never silently drops off the request.
 - `api_tool_delete`, user-defined tools only (built-ins refuse).
 - `api_tool_test(slug, input)`, executes through the real
   `dispatchTool` (templating + vault secrets + timeouts). Refuses
@@ -145,6 +198,10 @@ client browse and test the registry.
 - `agent_list / agent_grant_tool_group`, read the agent roster, add a
   group to an agent's grants. The prompt instructs Toolsmith to ask
   the user which agent gets new capabilities rather than guessing.
+- `agent_set_thinking_effort`, set one agent's thinking effort (`inherit`,
+  `off`, `low` to `max`; see [thinking.md](thinking.md)). Same guards as a
+  grant: no change to the calling agent itself, and an agent asking waits at
+  /pending for the operator.
 
 ## 3. Seeding + configuration
 

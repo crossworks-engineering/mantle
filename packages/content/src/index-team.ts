@@ -24,6 +24,7 @@ export {
   createShare,
   revokeShare,
   resolveActiveShareByToken,
+  resolveActiveShareRowByToken,
   isRetiredTeamLinkToken,
   isRetiredClientLinkToken,
   listRetiredClientLinks,
@@ -47,6 +48,51 @@ export {
 } from './shares';
 
 export {
+  CONTACT_CODE_LENGTH,
+  CONTACT_CODE_DAILY_FAILURES,
+  CONTACT_CODE_LOCK_MS,
+  CONTACT_CODE_SHARE_HOURLY_FAILURES,
+  generateContactCode,
+  normalizeContactCode,
+  hashContactCode,
+  contactSharingByContact,
+  contactSharingFor,
+  enableContactSharing,
+  regenerateContactCode,
+  disableContactSharing,
+  contactShareGateRow,
+  checkContactShareCode,
+  lockedContactSharing,
+  type ContactSharingStatus,
+  type ContactShareGateRow,
+  type EnableContactSharingResult,
+} from './contact-share-codes';
+
+export {
+  ContactShareRefusedError,
+  CONTACT_SHAREABLE_TYPES,
+  CONTACT_MENU_LIMIT,
+  CONTACT_SHARES_PAGE,
+  createContactShares,
+  setContactShareCanWrite,
+  revokeAllContactShares,
+  listContactShares,
+  listContactSharesForAdmin,
+  contactSharesForNode,
+  getContactShare,
+  type ContactMenuItem,
+} from './contact-shares';
+
+export {
+  recordShareAccess,
+  listShareAccess,
+  reapShareAccessLog,
+  SHARE_ACCESS_LOG_RETENTION_DAYS,
+  type ShareAccessEntry,
+  type ShareAccessRow,
+} from './share-access-log';
+
+export {
   appendTeamMessage,
   updateTeamMessageOutcome,
   listLoginPortalThread,
@@ -56,6 +102,9 @@ export {
   recentTeamMessages,
   listTeamMemberActivity,
   listMemberChatActivity,
+  loginChatUnread,
+  markLoginChatRead,
+  type LoginChatUnread,
   type AppendTeamMessageInput,
   type UpdateTeamMessageOutcomeInput,
   type TeamMemberActivity,
@@ -93,6 +142,7 @@ export {
   NEEDS_YOU_CHANGED_CHANNEL,
   NEEDS_YOU_REALTIME_TYPE,
   loadNeedsYou,
+  loadProviderAlerts,
   type NeedsYou,
 } from './needs-you';
 
@@ -129,6 +179,7 @@ export {
   AccessError,
   accessClosure,
   agentGrantProblems,
+  getAgentAccess,
   isWorkspaceKind,
   setAgentAudience,
   setItemAudience,
@@ -403,6 +454,20 @@ export {
   type ClientRequestRow,
   type ListClientRequestsOpts,
 } from './client-requests';
+export {
+  LOGIN_NOTICE_CHANNEL,
+  LOGIN_NOTICE_FRESH_MS,
+  MAX_CLIENTS_PER_NOTICE,
+  MAX_LOGINS_PER_NOTICE,
+  chatReplyNotice,
+  chatTeaser,
+  commentNotices,
+  parseLoginNotice,
+  reviewResultNotice,
+  type LoginNotice,
+  type LoginNoticeMessage,
+  type LoginNoticeRole,
+} from './login-notices';
 export {
   addClientThreadComment,
   deleteClientThreadComment,

@@ -39,9 +39,19 @@ const SITES: Record<string, Site> = {
   // ── owner paths: an explicit owner surface ──
   'packages/mcp-core/src/register/context.ts': {
     calls: 1,
-    surface: /surface: MCP_OWNER_SURFACE/,
+    // `surface` is MCP_OWNER_SURFACE (owner/mcp), or owner/federation for a
+    // peer bound to the owner (MCP as a login): built before the call.
+    surface:
+      /const surface: ToolSurface = via === 'mcp' \? MCP_OWNER_SURFACE : \{ kind: 'owner', via \}/,
+    scope: 'file',
+    why: 'MCP holds the owner credential (owner/mcp, or owner/federation for a peer)',
+  },
+  // ── a member's or client's own MCP login ──
+  'packages/mcp-core/src/login-surface.ts': {
+    calls: 1,
+    surface: /surface: loginSurface\(caller, privateReads\)/,
     scope: 'call',
-    why: 'MCP holds the owner credential (owner/mcp)',
+    why: "a member's or client's MCP call runs as that login (team / client surface)",
   },
   'packages/tools/src/pending.ts': {
     calls: 1,
@@ -93,6 +103,12 @@ const SITES: Record<string, Site> = {
     scope: 'call',
     why: "the owner's run resuming on its origin channel",
   },
+  'server/web/lib/api-v1-builtin.ts': {
+    calls: 1,
+    surface: OWNER('api'),
+    scope: 'call',
+    why: 'the public API v1 (table rows): the route checked an admin first (getOwnerOr401)',
+  },
   'server/web/app/api/dev-tools/execute-tool/route.ts': {
     calls: 1,
     surface: /surface: \{ kind: 'web' \}/,
@@ -124,6 +140,12 @@ const SITES: Record<string, Site> = {
     surface: /surface: scope\.surface/,
     scope: 'call',
     why: "a client's app call: appToolScope at client level (client logins C6), never the owner",
+  },
+  'server/web/app/s/[token]/tool-broker/route.ts': {
+    calls: 1,
+    surface: /surface: \{ kind: 'contact', contactId, shareId: share\.id \}/,
+    scope: 'call',
+    why: "a contact link's call of an External access tool: the contact surface, never the owner",
   },
   // ── pass-through: the caller's surface, unchanged ──
   'packages/tools/src/dispatch.ts': {

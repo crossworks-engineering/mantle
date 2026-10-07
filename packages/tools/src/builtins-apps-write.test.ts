@@ -31,6 +31,8 @@ vi.mock('@mantle/content', async (importOriginal) => {
     writeDraftFile: vi.fn(),
     saveDraftSource: vi.fn(),
     setManifest: vi.fn(),
+    updateAppMeta: vi.fn(),
+    notifyAppNavChanged: vi.fn(),
     // app_tools_set reads the app's level to decide on member warnings; an
     // admin-level app gets none (proven on Postgres in
     // member-app-tools.viewer.db.test.ts).
@@ -49,6 +51,7 @@ import {
   writeDraftFile,
   saveDraftSource,
   setManifest,
+  updateAppMeta,
   AppSourceLimitError,
 } from '@mantle/content';
 import { createAppTableExport } from '@mantle/content/app-table-exports';
@@ -62,6 +65,7 @@ const fileWrite = APP_TOOLS.find((t) => t.slug === 'app_file_write')!;
 const sourceSet = APP_TOOLS.find((t) => t.slug === 'app_source_set')!;
 const toolsSet = APP_TOOLS.find((t) => t.slug === 'app_tools_set')!;
 const exportSet = APP_TOOLS.find((t) => t.slug === 'app_table_export_set')!;
+const update = APP_TOOLS.find((t) => t.slug === 'app_update')!;
 
 // The owner's chat: the app write tools run only for the owner (audit I8).
 const ctx: ToolHandlerContext = { ownerId: 'o1', surface: { kind: 'web' } };
@@ -285,6 +289,16 @@ describe('app_tools_set', () => {
     expect(outputOf(res)).toEqual({ id: APP_ID, tool_slugs: ['geocode', 'weather'] });
   });
 
+  it('warns that a confirm-gated tool asks the owner on every call (apps audit S1)', async () => {
+    vi.mocked(resolveTool).mockImplementation(async (_owner, slug) =>
+      slug === 'node_share' ? ({ slug, requiresConfirm: true } as never) : ({ slug } as never),
+    );
+    const res = await toolsSet.handler({ id: APP_ID, tool_slugs: ['geocode', 'node_share'] }, ctx);
+    const { warnings } = outputOf(res) as { warnings?: string[] };
+    expect(warnings).toHaveLength(1);
+    expect(warnings?.[0]).toMatch(/'node_share' needs the owner's confirmation/);
+  });
+
   it('accepts an empty list, which clears the allowlist', async () => {
     await toolsSet.handler({ id: APP_ID, tool_slugs: [] }, ctx);
     expect(resolveTool).not.toHaveBeenCalled();
@@ -340,5 +354,33 @@ describe('app_table_export_set', () => {
     expect(errorOf(await exportSet.handler({ id: APP_ID, table: 'tasks' }, ctx))).toBe(
       'app not found',
     );
+  });
+});
+
+describe('app_update (apps audit G5)', () => {
+  it('passes only what changes, the name as the title', async () => {
+    vi.mocked(updateAppMeta).mockResolvedValue({
+      title: 'Prices',
+      description: 'Our price list',
+      icon: null,
+      color: null,
+      tags: ['work'],
+    } as never);
+    const res = await update.handler(
+      { id: APP_ID, name: 'Prices', description: 'Our price list', tags: ['work'] },
+      ctx,
+    );
+    expect(updateAppMeta).toHaveBeenCalledWith('o1', APP_ID, {
+      title: 'Prices',
+      description: 'Our price list',
+      tags: ['work'],
+    });
+    expect(outputOf(res)).toMatchObject({ name: 'Prices', description: 'Our price list' });
+  });
+
+  it('refuses an empty change and reports a missing app', async () => {
+    expect(errorOf(await update.handler({ id: APP_ID }, ctx))).toMatch(/nothing to change/);
+    vi.mocked(updateAppMeta).mockResolvedValue(null);
+    expect(errorOf(await update.handler({ id: APP_ID, name: 'X' }, ctx))).toMatch(/not found/);
   });
 });

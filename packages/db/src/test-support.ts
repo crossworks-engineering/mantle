@@ -18,19 +18,31 @@
  *  - setLoginRoleUnguarded: a login's role never changes to or from client
  *    (0200). A test that pins what the code does for a login that is no
  *    longer a client (or turned client) makes that state around the guard.
+ *  - createReadOnlyRole: a read path must be served by a database that
+ *    refuses writes (a read-only replica, the public demo's reader role). A
+ *    test proves it by running the read as a login that can SELECT
+ *    everything and write nothing.
  *  - createMigratedScratchDatabase: a test that DROPs or re-creates tables
  *    takes locks on `nodes` that deadlock with other test files deleting
  *    nodes. Such a test runs on a database of its own, migrated from scratch
  *    and dropped after, so it shares no table with anything running in
  *    parallel.
+ *  - createEmptyScratchDatabase: the same database before anything is put in
+ *    it (no init scripts, no migration): what a dump is restored into
+ *    (dump-restore.db.test.ts).
+ *  - findPgTools: pg_dump and pg_restore must be at least as new as the
+ *    server. CI and the workstation run Postgres in a local Docker
+ *    container, so the tests that dump and restore use the tools inside
+ *    that container, and a host install only when there is none.
  */
+import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
 import postgres from 'postgres';
-import { POOL_ROLES, ensureViewerRoles } from './viewer-roles';
+import { POOL_ROLES, ensureViewerRoles, withRoleRetry } from './viewer-roles';
 import { applyViewerGrants } from './access-matrix';
 import { viewerRoleName } from './viewer';
 
@@ -72,6 +84,50 @@ export async function setLoginRoleUnguarded(
     await tx`update auth.users set role = ${role} where id = ${loginId}`;
     await tx`alter table auth.users enable trigger users_client_role_guard`;
   });
+}
+
+/**
+ * A LOGIN role that reads everything and writes nothing, as the public demo's
+ * reader does: SELECT on every table of the app's schemas, BYPASSRLS, and no
+ * INSERT, UPDATE or DELETE anywhere. Returns its name and the database URL
+ * that logs in as it; `dropReadOnlyRole` removes it.
+ *
+ * `sql` must be a superuser connection to the database `adminUrl` names
+ * (BYPASSRLS is a superuser's to give). Grants touch the catalog rows other
+ * test files grant on at the same time, hence the retries.
+ */
+export async function createReadOnlyRole(
+  sql: Sql,
+  adminUrl: string,
+): Promise<{ name: string; url: string }> {
+  const name = `mantle_test_reader_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
+  const password = randomUUID().replace(/-/g, '');
+  await sql.unsafe(
+    `create role "${name}" with login bypassrls nosuperuser nocreatedb nocreaterole noinherit password '${password}'`,
+  );
+  const schemas = await sql<{ nspname: string }[]>`
+    select nspname from pg_namespace
+     where nspname !~ '^pg_' and nspname <> 'information_schema'`;
+  for (const { nspname } of schemas) {
+    await withRoleRetry(() => sql.unsafe(`grant usage on schema "${nspname}" to "${name}"`));
+    await withRoleRetry(() =>
+      sql.unsafe(`grant select on all tables in schema "${nspname}" to "${name}"`),
+    );
+  }
+  const url = new URL(adminUrl);
+  url.username = name;
+  url.password = password;
+  return { name, url: url.toString() };
+}
+
+/** Remove a role `createReadOnlyRole` made. Close every connection made with
+ *  its URL first: a role that is logged in cannot be dropped. */
+export async function dropReadOnlyRole(sql: Sql, name: string): Promise<void> {
+  if (!/^mantle_test_reader_[0-9a-f]+$/.test(name)) {
+    throw new Error('dropReadOnlyRole: not a test reader role');
+  }
+  await withRoleRetry(() => sql.unsafe(`drop owned by "${name}"`));
+  await sql.unsafe(`drop role if exists "${name}"`);
 }
 
 /** Poll `check` until it holds, or fail after `timeoutMs`. */
@@ -145,17 +201,11 @@ async function createDatabase(adminUrl: string, name: string): Promise<void> {
 }
 
 /**
- * A new database on the same server as `adminUrl`, prepared the way CI's
- * throwaway database is (infra/postgres/init, then every migration, each in
- * its own transaction, then the access matrix's grants, as migrate.ts runs
- * them). Returns its URL and a
- * `drop()` that removes it, open connections included.
- *
- * The viewer roles are cluster-wide and already exist wherever the shared
- * test database was migrated; a missing one is created without a login
- * (never altered: other test files hold live connections on them).
+ * A new, empty database on the same server as `adminUrl` (a copy of
+ * template1: no init script, no migration). Returns its URL and a `drop()`
+ * that removes it, open connections included.
  */
-export async function createMigratedScratchDatabase(
+export async function createEmptyScratchDatabase(
   adminUrl: string,
 ): Promise<{ url: string; name: string; drop: () => Promise<void> }> {
   const name = `mantle_scratch_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
@@ -169,6 +219,24 @@ export async function createMigratedScratchDatabase(
       await sql.end();
     }
   };
+  return { url, name, drop };
+}
+
+/**
+ * A new database on the same server as `adminUrl`, prepared the way CI's
+ * throwaway database is (infra/postgres/init, then every migration, each in
+ * its own transaction, then the access matrix's grants, as migrate.ts runs
+ * them). Returns its URL and a
+ * `drop()` that removes it, open connections included.
+ *
+ * The viewer roles are cluster-wide and already exist wherever the shared
+ * test database was migrated; a missing one is created without a login
+ * (never altered: other test files hold live connections on them).
+ */
+export async function createMigratedScratchDatabase(
+  adminUrl: string,
+): Promise<{ url: string; name: string; drop: () => Promise<void> }> {
+  const { url, name, drop } = await createEmptyScratchDatabase(adminUrl);
   const sql = postgres(url, { max: 1, prepare: false, onnotice: () => {} });
   try {
     const initFiles = readdirSync(INIT_DIR)
@@ -232,12 +300,99 @@ export async function ensureTestViewerRoles(url: string, masterKey: string): Pro
  * audit T3). A session lock on its own connection, released at the end.
  */
 export async function withTestLock<T>(url: string, name: string, fn: () => Promise<T>): Promise<T> {
+  const release = await holdTestLock(url, name);
+  try {
+    return await fn();
+  } finally {
+    await release();
+  }
+}
+
+/**
+ * Take the cluster-wide test lock `name` and return its release: for a file
+ * that holds it from its first fixture to the end of its cleanup (a
+ * beforeAll takes it, the afterAll releases it), when a single test's
+ * withTestLock would leave its other tests and its cleanup outside. A
+ * session lock on its own connection; the release also closes it.
+ */
+export async function holdTestLock(url: string, name: string): Promise<() => Promise<void>> {
   const sql = postgres(url, { max: 1 });
   try {
     await sql`select pg_advisory_lock(hashtextextended(${`mantle-test:${name}`}, 0))`;
-    return await fn();
-  } finally {
+  } catch (err) {
+    await sql.end();
+    throw err;
+  }
+  return async () => {
     await sql`select pg_advisory_unlock_all()`.catch(() => {});
     await sql.end();
+  };
+}
+
+export type PgToolRun = { status: number | null; stdout: Buffer; stderr: string };
+export type PgTools = {
+  /** The local Docker container the tools run in; null for a host install. */
+  container: string | null;
+  /** Run pg_dump or pg_restore against database `db` of the test server. */
+  run(tool: 'pg_dump' | 'pg_restore', db: string, args: string[], input?: Buffer): PgToolRun;
+};
+
+/** Run a command to its end; a command that is not there gives status null. */
+export function runCommand(
+  cmd: string,
+  args: string[],
+  opts: { env?: NodeJS.ProcessEnv; input?: Buffer; cwd?: string } = {},
+): PgToolRun {
+  const r = spawnSync(cmd, args, { ...opts, maxBuffer: 256 * 1024 * 1024 });
+  return { status: r.status, stdout: r.stdout ?? Buffer.alloc(0), stderr: String(r.stderr ?? '') };
+}
+
+/**
+ * pg_dump and pg_restore for the server at `url`: the ones inside the local
+ * Docker container that publishes the URL's port (`containerName` names
+ * another one: the tests pass MANTLE_TEST_PG_CONTAINER), else a host install
+ * (one older than the server refuses to dump, and says so), else null.
+ */
+export function findPgTools(url: string, containerName?: string): PgTools | null {
+  const u = new URL(url);
+  const user = decodeURIComponent(u.username) || 'postgres';
+  const port = u.port || '5432';
+  const env = { ...process.env, PGPASSWORD: decodeURIComponent(u.password) };
+
+  const local = ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname);
+  const publishing = local
+    ? runCommand('docker', ['ps', '--format', '{{.Names}}\t{{.Ports}}'], { env })
+        .stdout.toString()
+        .split('\n')
+        .filter((l) => new RegExp(`:${port}->\\d+/tcp`).test(l))
+        .map((l) => l.split('\t')[0]!)
+    : [];
+  const container = containerName ?? (publishing.length === 1 ? publishing[0]! : null);
+  if (
+    container &&
+    runCommand('docker', ['exec', container, 'pg_dump', '--version'], { env }).status === 0
+  ) {
+    // Its own tools match its server, and the local socket needs no host or
+    // port.
+    return {
+      container,
+      run: (tool, db, args, input) =>
+        runCommand(
+          'docker',
+          ['exec', '-i', '-e', 'PGPASSWORD', container, tool, '-U', user, '-d', db, ...args],
+          { env, input },
+        ),
+    };
   }
+  if (runCommand('pg_dump', ['--version'], { env }).status === 0) {
+    return {
+      container: null,
+      run: (tool, db, args, input) =>
+        runCommand(tool, ['-h', u.hostname, '-p', port, '-U', user, '-d', db, ...args], {
+          env,
+          input,
+        }),
+    };
+  }
+  return null;
 }

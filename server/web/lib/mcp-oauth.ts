@@ -13,10 +13,12 @@
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { and, eq, gt, isNull, lt } from 'drizzle-orm';
+import { lockOauthActor, type OauthExec as Exec } from './oauth-lock';
 import { bearerFrom } from './auth/request';
 import {
   authUsers,
   db,
+  mcpLoginAccess,
   oauthAccessTokens,
   oauthAuthCodes,
   oauthClients,
@@ -150,24 +152,60 @@ export async function mintAuthCode(input: {
   ownerId: string;
   /** The consenting login (`SessionUser.actor.id`), not the anchor. */
   actorId: string;
+  /** A member's or client's session epoch at consent (0227); null for an
+   *  admin. The grant dies when the login's epoch moves on. */
+  sessionEpoch?: number | null;
+  /** The login's session epoch when its session was checked for this
+   *  consent (any role). The code is minted only if it still is: a session
+   *  ended meanwhile (verification audit N2) mints nothing. */
+  consentEpoch: number;
   codeChallenge: string;
   codeChallengeMethod: string;
   redirectUri: string;
   scope: string;
-}): Promise<string> {
+}): Promise<string | null> {
   const code = randomToken(CODE_PREFIX);
-  await db.insert(oauthAuthCodes).values({
+  // Under the login's OAuth lock, the one endLoginSessions takes before it
+  // deletes codes: a code minted here is either deleted by it or refused.
+  return db.transaction(async (tx) => {
+    await lockOauthActor(tx, input.actorId);
+    const [login] = await tx
+      .select({ epoch: authUsers.sessionEpoch })
+      .from(authUsers)
+      .where(eq(authUsers.id, input.actorId))
+      .limit(1);
+    if (!login || login.epoch !== input.consentEpoch) return null;
+    await mintCodeRow(tx, code, input);
+    return code;
+  });
+}
+
+async function mintCodeRow(
+  tx: Exec,
+  code: string,
+  input: {
+    clientId: string;
+    ownerId: string;
+    actorId: string;
+    sessionEpoch?: number | null;
+    codeChallenge: string;
+    codeChallengeMethod: string;
+    redirectUri: string;
+    scope: string;
+  },
+): Promise<void> {
+  await tx.insert(oauthAuthCodes).values({
     codeHash: sha256Hex(code),
     clientId: input.clientId,
     ownerId: input.ownerId,
     actorId: input.actorId,
+    sessionEpoch: input.sessionEpoch ?? null,
     codeChallenge: input.codeChallenge,
     codeChallengeMethod: input.codeChallengeMethod,
     redirectUri: input.redirectUri,
     scope: input.scope,
     expiresAt: new Date(Date.now() + CODE_TTL_SEC * 1000),
   });
-  return code;
 }
 
 export type TokenResponse = {
@@ -181,18 +219,43 @@ export type TokenResponse = {
 type GrantResult = { ok: true; tokens: TokenResponse } | { ok: false; error: string };
 
 /**
- * May this login hold (or keep using) a connector grant? An admin that is not
- * disabled. A member, a disabled login or a deleted one may not: a grant lives
- * only as long as the login that made it. Read from the row on every use,
- * never from the token, like the session and bearer paths.
+ * May this login hold (or keep using) a connector grant? Read from the row on
+ * every use, never from the token, like the session and bearer paths. A
+ * disabled or deleted login may not: a grant lives only as long as the login
+ * that made it.
+ *
+ *  - An ADMIN grant (no epoch on it): the login is still an admin.
+ *  - A MEMBER's or CLIENT's grant (0227, MCP as a login): the login still has
+ *    that kind of role, its session epoch is the one the grant was made
+ *    under (sign out everywhere, a password change, a disable or a role
+ *    change ends it), and an admin still has its MCP switch on.
  */
-async function actorMayConnect(actorId: string): Promise<boolean> {
-  const [row] = await db
-    .select({ role: authUsers.role, disabledAt: authUsers.disabledAt, email: authUsers.email })
+export async function actorMayConnect(
+  actorId: string,
+  sessionEpoch: number | null,
+  /** Under the OAuth lock: the transaction, never a second connection
+   *  (verification audit N1). */
+  exec: Exec = db,
+): Promise<boolean> {
+  const [row] = await exec
+    .select({
+      role: authUsers.role,
+      disabledAt: authUsers.disabledAt,
+      email: authUsers.email,
+      sessionEpoch: authUsers.sessionEpoch,
+      mcpEnabled: mcpLoginAccess.enabled,
+    })
     .from(authUsers)
+    .leftJoin(mcpLoginAccess, eq(mcpLoginAccess.loginId, authUsers.id))
     .where(eq(authUsers.id, actorId))
     .limit(1);
-  return !!row && row.role === 'admin' && !row.disabledAt && !!row.email;
+  if (!row || row.disabledAt || !row.email) return false;
+  if (sessionEpoch === null) return row.role === 'admin';
+  return (
+    (row.role === 'member' || row.role === 'client') &&
+    row.sessionEpoch === sessionEpoch &&
+    row.mcpEnabled === true
+  );
 }
 
 async function issueTokens(
@@ -200,17 +263,20 @@ async function issueTokens(
   ownerId: string,
   actorId: string,
   scope: string,
+  sessionEpoch: number | null,
+  exec: Exec = db,
 ): Promise<TokenResponse> {
   const accessToken = randomToken(ACCESS_PREFIX);
   const refreshToken = randomToken(REFRESH_PREFIX);
   const now = Date.now();
-  await db.insert(oauthAccessTokens).values({
+  await exec.insert(oauthAccessTokens).values({
     tokenHash: sha256Hex(accessToken),
     refreshTokenHash: sha256Hex(refreshToken),
     ownerId,
     actorId,
     clientId,
     scope,
+    sessionEpoch,
     expiresAt: new Date(now + ACCESS_TTL_SEC * 1000),
     refreshExpiresAt: new Date(now + REFRESH_TTL_SEC * 1000),
   });
@@ -231,13 +297,35 @@ export async function exchangeAuthCode(input: {
   redirectUri: string;
   codeVerifier: string;
 }): Promise<GrantResult> {
+  const codeHash = sha256Hex(input.code);
+  // The code's login first, to take its lock (final audit F3): the claim and
+  // the new grant then happen inside it, so a session end (which takes the
+  // same lock, deletes the codes and revokes the grants) either runs first
+  // and leaves no code to claim, or runs after and revokes the new grant.
+  const [peek] = await db
+    .select({ actorId: oauthAuthCodes.actorId })
+    .from(oauthAuthCodes)
+    .where(and(eq(oauthAuthCodes.codeHash, codeHash), gt(oauthAuthCodes.expiresAt, new Date())))
+    .limit(1);
+  if (!peek) return { ok: false, error: 'invalid_grant' };
+  return db.transaction(async (tx) => {
+    await lockOauthActor(tx, peek.actorId);
+    return exchangeClaimed(tx, codeHash, input);
+  });
+}
+
+async function exchangeClaimed(
+  tx: Exec,
+  codeHash: string,
+  input: { clientId: string; redirectUri: string; codeVerifier: string },
+): Promise<GrantResult> {
   // Single-use: the code is claimed and burned in ONE statement, before any
   // further branching, so it can never be replayed regardless of the
   // validation outcome below. Two exchanges of one code at once: only one
   // DELETE returns the row (F31; a SELECT then DELETE let both through).
-  const [row] = await db
+  const [row] = await tx
     .delete(oauthAuthCodes)
-    .where(eq(oauthAuthCodes.codeHash, sha256Hex(input.code)))
+    .where(eq(oauthAuthCodes.codeHash, codeHash))
     .returning();
   if (!row) return { ok: false, error: 'invalid_grant' };
 
@@ -250,9 +338,18 @@ export async function exchangeAuthCode(input: {
   }
 
   // The login may have been demoted or disabled between consent and exchange.
-  if (!(await actorMayConnect(row.actorId))) return { ok: false, error: 'invalid_grant' };
+  if (!(await actorMayConnect(row.actorId, row.sessionEpoch ?? null, tx))) {
+    return { ok: false, error: 'invalid_grant' };
+  }
 
-  const tokens = await issueTokens(row.clientId, row.ownerId, row.actorId, row.scope);
+  const tokens = await issueTokens(
+    row.clientId,
+    row.ownerId,
+    row.actorId,
+    row.scope,
+    row.sessionEpoch ?? null,
+    tx,
+  );
   return { ok: true, tokens };
 }
 
@@ -285,32 +382,84 @@ export async function refreshAccessToken(input: {
     console.warn(`[mcp-oauth] refresh rejected (${why}) client=${input.clientId}`);
     return { ok: false, error: 'invalid_grant' };
   };
-  const [row] = await db
-    .select()
+  const refreshHash = sha256Hex(input.refreshToken);
+  const [peek] = await db
+    .select({ actorId: oauthAccessTokens.actorId })
     .from(oauthAccessTokens)
     .where(
       and(
-        eq(oauthAccessTokens.refreshTokenHash, sha256Hex(input.refreshToken)),
+        eq(oauthAccessTokens.refreshTokenHash, refreshHash),
         isNull(oauthAccessTokens.revokedAt),
+        gt(oauthAccessTokens.refreshExpiresAt, new Date()),
       ),
     )
     .limit(1);
+  if (!peek) return fail('unknown or rotated-out refresh token');
+  // Under the login's lock (final audit F3): a revoke that ran first is seen
+  // here (the row is revoked), and one that waits for us revokes the new row.
+  const result = await db.transaction(async (tx) => {
+    await lockOauthActor(tx, peek.actorId);
+    return refreshLocked(tx, refreshHash, input.clientId, fail);
+  });
+  if (!result.ok) return result;
+
+  // Sweep this client's fully-dead rows (both tokens past expiry). Best-effort:
+  // a failed sweep must not fail the grant.
+  try {
+    const now = new Date();
+    await db
+      .delete(oauthAccessTokens)
+      .where(
+        and(
+          eq(oauthAccessTokens.clientId, input.clientId),
+          lt(oauthAccessTokens.expiresAt, now),
+          lt(oauthAccessTokens.refreshExpiresAt, now),
+        ),
+      );
+  } catch {
+    // swept next time
+  }
+  return result;
+}
+
+async function refreshLocked(
+  tx: Exec,
+  refreshHash: string,
+  clientId: string,
+  fail: (why: string) => GrantResult,
+): Promise<GrantResult> {
+  const [row] = await tx
+    .select()
+    .from(oauthAccessTokens)
+    .where(
+      and(eq(oauthAccessTokens.refreshTokenHash, refreshHash), isNull(oauthAccessTokens.revokedAt)),
+    )
+    .limit(1);
   if (!row) return fail('unknown or rotated-out refresh token');
-  if (row.clientId !== input.clientId) return fail('client mismatch');
+  if (row.clientId !== clientId) return fail('client mismatch');
   if (!row.refreshExpiresAt || row.refreshExpiresAt.getTime() < Date.now()) {
     return fail('refresh token expired');
   }
   // Refresh forks new rows, so without this a locked-out login's connector
   // would outlive every revoke that ran before the fork.
-  if (!(await actorMayConnect(row.actorId))) return fail('login is no longer an active admin');
+  if (!(await actorMayConnect(row.actorId, row.sessionEpoch ?? null, tx))) {
+    return fail('login may no longer connect');
+  }
 
-  const tokens = await issueTokens(row.clientId, row.ownerId, row.actorId, row.scope);
+  const tokens = await issueTokens(
+    row.clientId,
+    row.ownerId,
+    row.actorId,
+    row.scope,
+    row.sessionEpoch ?? null,
+    tx,
+  );
 
   // Shorten (never extend) the presented refresh token's remaining life to the
   // grace window, and stamp the use. The old access token is left untouched.
   const now = Date.now();
   const graceEnd = new Date(now + REFRESH_GRACE_SEC * 1000);
-  await db
+  await tx
     .update(oauthAccessTokens)
     .set({
       refreshExpiresAt:
@@ -318,23 +467,6 @@ export async function refreshAccessToken(input: {
       lastUsedAt: new Date(now),
     })
     .where(eq(oauthAccessTokens.id, row.id));
-
-  // Sweep this client's fully-dead rows (both tokens past expiry). Best-effort:
-  // a failed sweep must not fail the grant.
-  try {
-    await db
-      .delete(oauthAccessTokens)
-      .where(
-        and(
-          eq(oauthAccessTokens.clientId, row.clientId),
-          lt(oauthAccessTokens.expiresAt, new Date(now)),
-          lt(oauthAccessTokens.refreshExpiresAt, new Date(now)),
-        ),
-      );
-  } catch {
-    // swept next time
-  }
-
   return { ok: true, tokens };
 }
 
@@ -369,4 +501,38 @@ export async function ownerFromBearer(req: Request): Promise<string | null> {
     .where(eq(oauthAccessTokens.id, row.id))
     .catch(() => {});
   return row.ownerId;
+}
+
+/**
+ * The grant behind an access token, for any login (0227, MCP as a login):
+ * the anchor, the login and the epoch it was made under, or null for an
+ * unknown, expired or revoked token. Whether the login may still use it is
+ * `actorMayConnect`; server/web/lib/mcp-auth.ts runs both.
+ */
+export async function grantFromAccessToken(
+  token: string,
+): Promise<{ id: string; ownerId: string; actorId: string; sessionEpoch: number | null } | null> {
+  const [row] = await db
+    .select({
+      id: oauthAccessTokens.id,
+      ownerId: oauthAccessTokens.ownerId,
+      actorId: oauthAccessTokens.actorId,
+      sessionEpoch: oauthAccessTokens.sessionEpoch,
+    })
+    .from(oauthAccessTokens)
+    .where(
+      and(
+        eq(oauthAccessTokens.tokenHash, sha256Hex(token)),
+        isNull(oauthAccessTokens.revokedAt),
+        gt(oauthAccessTokens.expiresAt, new Date()),
+      ),
+    )
+    .limit(1);
+  if (!row) return null;
+  void db
+    .update(oauthAccessTokens)
+    .set({ lastUsedAt: new Date() })
+    .where(eq(oauthAccessTokens.id, row.id))
+    .catch(() => {});
+  return { ...row, sessionEpoch: row.sessionEpoch ?? null };
 }

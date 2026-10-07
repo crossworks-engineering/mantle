@@ -261,6 +261,8 @@ export async function clientReport(
           eq(shares.ownerId, ownerId),
           inArray(shares.nodeId, ids),
           isNull(shares.revokedAt),
+          // Open links only: a contact share (0214) is not an open link.
+          isNull(shares.contactId),
           sql`(${shares.expiresAt} is null or ${shares.expiresAt} > now())`,
         ),
       );

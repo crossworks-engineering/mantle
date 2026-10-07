@@ -60,6 +60,8 @@ vi.mock('@mantle/config', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/config')>();
   return {
     ...actual,
+    // The profile is on: these tests are about what the tools do with sandboxd.
+    serviceEnabled: () => true,
     env: ((name: string) =>
       name === 'SANDBOXD_URL'
         ? 'http://sandboxd.test'

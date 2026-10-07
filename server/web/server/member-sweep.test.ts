@@ -5,11 +5,16 @@
  * MEMBER_ROUTES refuses it: 403 from the admin gates (reason member-login),
  * 401 from the admin-only session reads, or the /login redirect for pages.
  *
- * No database: the login row and the anchor come from a stand-in
- * (lib/auth/login-row is mocked). A handler that touches the database BEFORE
- * its gate would fail here with a 500, which is also a finding: gate first.
+ * The sweep runs twice: with the session cookie, and with a member's device
+ * token (the phone app's or the web client's bearer). A member bearer
+ * reaches the member routes and nothing else.
+ *
+ * No database: the login row, the anchor and the device token rows come from
+ * a stand-in (lib/auth/login-row is mocked). A handler that touches the
+ * database BEFORE its gate would fail here with a 500, which is also a
+ * finding: gate first.
  */
-import { createHmac } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -25,7 +30,21 @@ const OTHER_ANCHOR_ID = '88888888-8888-4888-8888-888888888888';
 /** A member whose sessions were ended twice (session_epoch 2, 0181). */
 const BUMPED_MEMBER_ID = '99999999-9999-4999-8999-999999999999';
 
+/** The device token rows (mobile_tokens) the bearer passes stand in. */
+const bearers = vi.hoisted(() => ({
+  rows: new Map<string, { userId: string; revokedAt: Date | null; expiresAt: Date }>(),
+}));
+
+// This brain's id (migration 0226): a stand-in, as the login rows are.
+vi.mock('../lib/brain-identity', () => ({
+  brainIdOrNull: async () => '0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f',
+  getBrainId: async () => '0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f',
+  brainIdField: async () => ({ brainId: '0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f' }),
+}));
+
 vi.mock('../lib/auth/login-row', () => ({
+  loadBearerToken: async (jti: string) => bearers.rows.get(jti) ?? null,
+  touchBearerToken: async () => undefined,
   loadLoginRow: async (id: string) =>
     id === MEMBER_ID
       ? {
@@ -87,6 +106,13 @@ vi.mock('../lib/auth/login-row', () => ({
   loadPersonalSpaceId: async () => SPACE_ID,
 }));
 
+// MCP as a login: a member's or client's MCP access is off here (the
+// default), so the consent page refuses them as it always did.
+vi.mock('../lib/mcp-auth', () => ({
+  mcpLoginEnabled: async () => false,
+  mcpTargetLogin: async () => null,
+}));
+
 // The MCP consent page checks that remote MCP is on and the client is
 // registered before it reads the login: both stood in (see role-sweep).
 vi.mock('../lib/mcp-oauth', async (importOriginal) => {
@@ -103,6 +129,7 @@ vi.mock('../lib/mcp-oauth', async (importOriginal) => {
 
 import { PUBLIC_PATHS, SESSION_COOKIE_NAME } from '../lib/auth-constants';
 import { MEMBER_ROUTES, isMemberRoute } from '../lib/auth/member-routes';
+import { isAnyLoginRoute } from '../lib/auth/any-login-routes';
 import { PUBLIC_SESSION_ROUTES, RENDER_PAGES, drivePublic } from './public-session-routes';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -139,13 +166,25 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
   let app: import('hono').Hono;
   let manifest: Array<{ pattern: string; methods: string[] }>;
   let cookie: string;
+  /** A device token for `id` (no epoch, as a password sign-in mints it). */
+  let bearerFor: (id: string, opts?: { revoked?: boolean }) => Record<string, string>;
 
   beforeAll(async () => {
     process.env.SESSION_SECRET = 'member-sweep-secret-that-is-at-least-32-chars';
     delete process.env.MANTLE_API_CORS_ORIGINS;
     delete process.env.MANTLE_DETACHED_DEV;
-    const { buildSessionCookie } = await import('../lib/auth/tokens');
+    const { buildSessionCookie, buildMobileToken } = await import('../lib/auth/tokens');
     cookie = `${SESSION_COOKIE_NAME}=${buildSessionCookie(MEMBER_ID).value}`;
+    bearerFor = (id, opts = {}) => {
+      const jti = randomUUID();
+      const t = buildMobileToken(id, jti, 30 * 24 * 60 * 60);
+      bearers.rows.set(jti, {
+        userId: id,
+        revokedAt: opts.revoked ? new Date() : null,
+        expiresAt: t.expiresAt,
+      });
+      return { authorization: `Bearer ${t.value}` };
+    };
     const { createApp } = await import('./app');
     app = await createApp();
     manifest = (await import('./route-manifest.gen')).routeManifest;
@@ -169,50 +208,114 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
     for (const route of [...PUBLIC_SESSION_ROUTES, ...RENDER_PAGES]) {
       const failure = await drivePublic(app, route, 'member', cookie);
       if (failure) failures.push(failure);
+      if (route.cookieOnly) continue;
+      // The same member with its device token: the same answer, never more.
+      const asBearer = await drivePublic(app, route, 'member', bearerFor(MEMBER_ID));
+      if (asBearer) failures.push(asBearer);
     }
     expect(failures).toEqual([]);
   });
 
-  it('refuses a member on every route not in MEMBER_ROUTES', async () => {
-    const failures: string[] = [];
-    const visited = new Set<string>();
-    let checked = 0;
-    for (const entry of manifest) {
-      const path = concretePath(entry.pattern);
-      if (isPublic(path) || IMAGE_EXT_RE.test(path)) continue;
-      const isApi = path === '/api' || path.startsWith('/api/');
-      for (const method of entry.methods) {
-        if (method === 'OPTIONS' || isMemberRoute(method, entry.pattern)) continue;
-        checked += 1;
-        visited.add(`${method} ${entry.pattern}`);
-        const res = await app.request(path, {
-          method,
-          headers: { cookie, 'content-type': 'application/json' },
-          body: method === 'GET' || method === 'HEAD' ? undefined : '{}',
-        });
-        if (isApi) {
-          const body = (await res.json().catch(() => null)) as {
-            error?: string;
-            reason?: string;
-          } | null;
-          const refused =
-            (res.status === 403 && body?.reason === 'member-login') ||
-            (res.status === 401 && body?.error === 'unauthorized') ||
-            (res.status === 401 && TICKET_GATED.has(`${method} ${entry.pattern}`));
-          if (!refused) failures.push(`${method} ${entry.pattern} → ${res.status}`);
-        } else {
-          const to = res.headers.get('location') ?? '';
-          if (res.status !== 307 || !to.startsWith('/login')) {
-            failures.push(`${method} ${entry.pattern} → ${res.status} ${to}`);
+  it.each(['cookie', 'bearer'] as const)(
+    'refuses a member (%s) on every route not in MEMBER_ROUTES',
+    async (how) => {
+      const auth: Record<string, string> = how === 'cookie' ? { cookie } : bearerFor(MEMBER_ID);
+      const failures: string[] = [];
+      const visited = new Set<string>();
+      let checked = 0;
+      for (const entry of manifest) {
+        const path = concretePath(entry.pattern);
+        if (isPublic(path) || IMAGE_EXT_RE.test(path)) continue;
+        const isApi = path === '/api' || path.startsWith('/api/');
+        for (const method of entry.methods) {
+          if (
+            method === 'OPTIONS' ||
+            isMemberRoute(method, entry.pattern) ||
+            isAnyLoginRoute(method, entry.pattern)
+          ) {
+            continue;
+          }
+          checked += 1;
+          visited.add(`${method} ${entry.pattern}`);
+          const res = await app.request(path, {
+            method,
+            headers: { ...auth, 'content-type': 'application/json' },
+            body: method === 'GET' || method === 'HEAD' ? undefined : '{}',
+          });
+          if (isApi) {
+            const body = (await res.json().catch(() => null)) as {
+              error?: string;
+              reason?: string;
+            } | null;
+            const refused =
+              (res.status === 403 && body?.reason === 'member-login') ||
+              (res.status === 401 && body?.error === 'unauthorized') ||
+              (res.status === 401 && TICKET_GATED.has(`${method} ${entry.pattern}`));
+            if (!refused) failures.push(`${method} ${entry.pattern} → ${res.status}`);
+          } else {
+            const to = res.headers.get('location') ?? '';
+            if (res.status !== 307 || !to.startsWith('/login')) {
+              failures.push(`${method} ${entry.pattern} → ${res.status} ${to}`);
+            }
           }
         }
       }
+      expect(checked).toBeGreaterThan(300);
+      expect(failures).toEqual([]);
+      // The allow-list the check consults was reached (it is not dead).
+      expect([...TICKET_GATED].filter((k) => !visited.has(k))).toEqual([]);
+    },
+    300_000,
+  );
+
+  it('a member device token reaches member routes, and a revoked one nothing', async () => {
+    const headers = bearerFor(MEMBER_ID);
+    for (const path of PAST_THE_GATE) {
+      const res = await app.request(path, { headers });
+      expect(res.status, path).toBe(400);
     }
-    expect(checked).toBeGreaterThan(300);
-    expect(failures).toEqual([]);
-    // The allow-list the check consults was reached (it is not dead).
-    expect([...TICKET_GATED].filter((k) => !visited.has(k))).toEqual([]);
-  }, 300_000);
+    const who = await app.request('/api/auth/whoami', { headers });
+    expect(who.status).toBe(200);
+    expect(await who.json()).toMatchObject({
+      role: 'member',
+      loginId: MEMBER_ID,
+      shell: '/api/member/shell',
+      pushBase: '/api/member/push',
+      // The pair a device files this session under, and every push names.
+      brainId: '0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f',
+    });
+    const dead = bearerFor(MEMBER_ID, { revoked: true });
+    expect((await app.request(PAST_THE_GATE[0]!, { headers: dead })).status).toBe(401);
+    expect((await app.request('/api/auth/whoami', { headers: dead })).status).toBe(401);
+    expect(
+      (await app.request(PAST_THE_GATE[0]!, { headers: bearerFor(DISABLED_MEMBER_ID) })).status,
+    ).toBe(401);
+  });
+
+  it('a member device token is refused by the admin and the client gates', async () => {
+    const headers = bearerFor(MEMBER_ID);
+    for (const path of ['/api/shell', '/api/client/shell', '/api/push/subscriptions']) {
+      const res = await app.request(path, { headers });
+      const body = (await res.json().catch(() => null)) as { reason?: string } | null;
+      expect(res.status, path).toBe(403);
+      expect(body?.reason, path).toBe('member-login');
+    }
+    // Admin and client bytes: a plain 401 (no session of that role).
+    for (const path of ['/api/files/files/not-a-uuid?raw=1', '/api/client/files/not-a-uuid']) {
+      expect((await app.request(path, { headers })).status, path).toBe(401);
+    }
+  });
+
+  it('refuses an ADMIN device token on every member route', async () => {
+    const headers = bearerFor(ADMIN_ID);
+    for (const route of MEMBER_ROUTES) {
+      const [method, pattern] = route.split(' ') as [string, string];
+      const res = await app.request(concretePath(pattern), { method, headers });
+      const body = (await res.json().catch(() => null)) as { reason?: string } | null;
+      const refused = (res.status === 403 && body?.reason === 'admin-login') || res.status === 401;
+      expect(refused, `${route} → ${res.status}`).toBe(true);
+    }
+  });
 
   it('lists only routes that exist', () => {
     const known = new Set(manifest.flatMap((e) => e.methods.map((mt) => `${mt} ${e.pattern}`)));

@@ -9,6 +9,8 @@
  * public surface is byte-identical — only the file a symbol lives in moved.
  */
 
+import type { AccessLevel } from './access';
+
 // ── Skills ────────────────────────────────────────────────────────────────────
 
 /** A skill as returned by `GET /api/skills`. */
@@ -79,8 +81,31 @@ export interface ToolDTO {
   handler: ToolHandler;
   requiresConfirm: boolean;
   enabled: boolean;
+  /** "External access" on an outside tool (mcp or http): everyone a shared
+   *  app that declares it reaches (members, clients, contacts on a contact
+   *  link) may call it. Null when off. Set it with
+   *  `PUT /api/tools/:id/external-access`. */
+  externalAccess?: ToolExternalAccessDTO | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/** The "External access" switch of one tool, as the server reports it. */
+export interface ToolExternalAccessDTO {
+  /** False when the handler changed after the admin confirmed it: the switch
+   *  no longer counts and must be switched on again. */
+  on: boolean;
+  /** When the admin confirmed the tool only reads (ISO time). */
+  confirmedReadOnlyAt: string;
+  /** Who switched it on. */
+  by: { via: 'web' | 'mcp' | 'dev-tools'; actorId?: string; actorEmail?: string };
+}
+
+/** `PUT /api/tools/:id/external-access` body. Switching on needs
+ *  `readOnlyConfirmed: true` (the admin confirms the tool only reads). */
+export interface ToolExternalAccessBody {
+  allow: boolean;
+  readOnlyConfirmed?: boolean;
 }
 
 /** `GET/PUT /api/tools/settings` — the two owner-level tool policy toggles. */
@@ -169,6 +194,11 @@ export interface ToolGroupDTO {
   /** Set when the group is an API integration; null for capability-only bundles. */
   integration: ToolGroupIntegrationDTO | null;
   enabled: boolean;
+  /** The group's level: an agent or a team app may hold it only at or above
+   *  it, and team apps call only built-in tools in an enabled group at team
+   *  level or below (outside tools follow External access instead). Absent from servers before it shipped. Set it with
+   *  `PATCH /api/access/tool-groups/:slug { audience }`. */
+  audience?: AccessLevel;
   createdAt: string;
   updatedAt: string;
 }

@@ -39,6 +39,7 @@ import {
   isNotNull,
   isNull,
   lt,
+  lte,
   not,
   or,
   sql,
@@ -49,6 +50,7 @@ import {
   clientSigninCodeSkips,
   clientSigninCodes,
   db,
+  mobileTokens,
   resolveSingleOwnerId,
 } from '@mantle/db';
 import { env } from '@mantle/config';
@@ -88,6 +90,15 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
 const ADDRESS_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Codes created in the `ms` before `now`, and not after it. */
+function createdWithin(ms: number, now: Date): SQL {
+  return and(
+    gt(clientSigninCodes.createdAt, new Date(now.getTime() - ms)),
+    lte(clientSigninCodes.createdAt, now),
+  )!;
+}
+
 /** An id no row has: the no-match branches of the redeem run the same
  *  statements against it. */
 const NO_ID = '00000000-0000-0000-0000-000000000000';
@@ -209,7 +220,9 @@ export async function createClientEmailCode(
 
     const counted = async (where: SQL | undefined) =>
       (await tx.select({ n: count() }).from(clientSigninCodes).where(where))[0]?.n ?? 0;
-    const since = (ms: number) => gt(clientSigninCodes.createdAt, new Date(now.getTime() - ms));
+    // The window ends at `now` too: a row stamped later (a test writing at
+    // a far-off time) is no code of this window, and must not use it up.
+    const since = (ms: number) => createdWithin(ms, now);
     const ofLogin = and(
       eq(clientSigninCodes.loginId, login.id),
       eq(clientSigninCodes.kind, 'email'),
@@ -316,12 +329,7 @@ export async function clientCodesSentLast24h(now = new Date()): Promise<number> 
   const [row] = await db
     .select({ n: count() })
     .from(clientSigninCodes)
-    .where(
-      and(
-        eq(clientSigninCodes.kind, 'email'),
-        gt(clientSigninCodes.createdAt, new Date(now.getTime() - DAY_MS)),
-      ),
-    );
+    .where(and(eq(clientSigninCodes.kind, 'email'), createdWithin(DAY_MS, now)));
   return row?.n ?? 0;
 }
 
@@ -533,6 +541,11 @@ export const redeemSteps = {
 export async function redeemClientEmailCode(
   input: { requestId: string; email: string; code: string },
   now = new Date(),
+  /** Device mode (the phone app): the device token's row is written in the
+   *  SAME transaction as the redeem, so a code is never burned without its
+   *  token, and no token row exists for a redeem that did not commit. The
+   *  caller signs the token for `id` with the epoch this returns. */
+  opts: { device?: { id: string; label: string; ttlSeconds: number } } = {},
 ): Promise<RedeemedClientEmailCode | null> {
   const email = input.email.trim().toLowerCase();
   const code = input.code.replace(/\s+/g, '');
@@ -554,6 +567,15 @@ export async function redeemClientEmailCode(
       return null;
     }
     await steps.finish(tx, row, login, now);
+    if (opts.device) {
+      await tx.insert(mobileTokens).values({
+        id: opts.device.id,
+        userId: login.id,
+        label: opts.device.label,
+        expiresAt: new Date(now.getTime() + opts.device.ttlSeconds * 1000),
+        signedInAt: now,
+      });
+    }
     return {
       loginId: login.id,
       email: login.email,

@@ -9,10 +9,29 @@
 import { cookies, headers } from '../../server/http-compat/headers';
 import { NextResponse } from '../../server/http-compat';
 import { RedirectError } from '../../server/http-compat/redirect-error';
-import { and, eq, isNull, ne, sql } from 'drizzle-orm';
+import { and, eq, isNull, ne, or, sql } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
-import { db, authUsers, mobileTokens, countUsers } from '@mantle/db';
-import { loadAnchorId, loadLoginRow, loadPersonalSpaceId, type LoginRow } from './login-row';
+import {
+  db,
+  accessKeys,
+  authUsers,
+  mobileTokens,
+  oauthAccessTokens,
+  oauthAuthCodes,
+  pushSubscriptions,
+  countUsers,
+  isBusy,
+  isWriteRefused,
+  pgErrorCode,
+} from '@mantle/db';
+import {
+  loadAnchorId,
+  loadBearerToken,
+  loadLoginRow,
+  loadPersonalSpaceId,
+  touchBearerToken,
+  type LoginRow,
+} from './login-row';
 import {
   isDetachedDev,
   isAuditSelfLogged,
@@ -24,6 +43,10 @@ import {
   secureCookies,
 } from '../auth-constants';
 import { auditFireAndForget, requestMeta } from '../audit';
+import { lockOauthActor } from '../oauth-lock';
+import { isAccessKey, isApiV1Path } from '../access-keys';
+import { keyMayCall, matchApiV1Route } from '../api-v1';
+import { getRequestContext } from '../../server/request-context';
 import { bearerFromHeader } from './request';
 import {
   SESSION_COOKIE_NAME,
@@ -72,10 +95,11 @@ export type Actor = {
 export type SessionUser = { id: string; email: string; actor: Actor };
 
 /** How a request authenticated: a session cookie is the web browser; a mobile
- *  bearer token is the companion app. Maps 1:1 onto the inbound
+ *  bearer token is the phone app (any role) or the split web client. Maps 1:1 onto the inbound
  *  ConversationChannel for web/mobile turns, so a reply/reminder can follow the
- *  surface the user is actually on. See docs/reminder-delivery-routing.md. */
-export type AuthSource = 'web' | 'mobile';
+ *  surface the user is actually on. See docs/reminder-delivery-routing.md.
+ *  'api' is an inbound API key on /api/v1 (no conversation route is there). */
+export type AuthSource = 'web' | 'mobile' | 'api';
 
 /**
  * A MEMBER login (member logins, Phase 1). Deliberately has no `id`: the 280+
@@ -123,6 +147,15 @@ export type ClientCaller = {
  *  The cookie is minted with it, and a client cookie that claims to last
  *  longer is refused, whoever signed it. */
 export const CLIENT_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
+/** How long a client's DEVICE token may be kept alive by refresh, counted
+ *  from the emailed code that signed the phone in: 90 days. After it the
+ *  person asks for a new code. (A browser session does not refresh: it ends
+ *  at 30 days.) */
+export const CLIENT_DEVICE_MAX_AGE_SECONDS = 90 * 24 * 60 * 60;
+/** POST /api/auth/token/refresh rotates a token only when less than this is
+ *  left (23 of a 30-day token's days); before that it answers the same
+ *  token, so a caller that loops on refresh writes no rows. */
+export const ROTATE_WHEN_UNDER_SECONDS = 23 * 24 * 60 * 60;
 
 /** Whether a login row may hold a session at all: not disabled, and it has
  *  an email. Admin and member alike (member logins are always on since
@@ -132,11 +165,12 @@ export function loginUsable(row: Pick<LoginRow, 'disabledAt' | 'email'>): boolea
 }
 
 /** Who is calling, resolved from the login row: an admin (today's
- *  SessionUser), a member or a client. */
+ *  SessionUser), a member or a client. `epoch`: the login's session epoch
+ *  on the row the credential was just checked against. */
 type Resolved =
-  | { kind: 'admin'; user: SessionUser; source: AuthSource }
-  | { kind: 'member'; member: MemberCaller; source: AuthSource }
-  | { kind: 'client'; client: ClientCaller; source: AuthSource };
+  | { kind: 'admin'; user: SessionUser; source: AuthSource; epoch: number }
+  | { kind: 'member'; member: MemberCaller; source: AuthSource; epoch: number }
+  | { kind: 'client'; client: ClientCaller; source: AuthSource; epoch: number };
 
 /**
  * Owner gate for the byte-serving asset routes only. Resolves the session
@@ -225,9 +259,16 @@ export async function getMemberForAsset(req: Request): Promise<MemberCaller | Ne
 }
 
 /**
- * Resolve the owner from an `Authorization: Bearer <mobile-token>` header:
- * verify the signature, confirm the row is present/unrevoked/unexpired, bump
- * last_used_at. Returns null on any failure.
+ * Resolve the login from an `Authorization: Bearer <mobile-token>` header:
+ * verify the signature, confirm the row is present/unrevoked/unexpired and
+ * names the same login, bump last_used_at. Returns null on any failure.
+ *
+ * A token that carries a session epoch (`ep`: a CLIENT's device token always
+ * does) is also held to it: once the login's epoch moves on (sign out, End
+ * sessions, disable, a role change) the token is dead, as the client's
+ * cookie is. A client token WITHOUT an epoch, or one that claims to last
+ * longer than a client session, was not minted by the client sign-in and is
+ * refused.
  */
 async function getBearerLogin(): Promise<Resolved | null> {
   const token = bearerFromHeader((await headers()).get('authorization'));
@@ -235,21 +276,37 @@ async function getBearerLogin(): Promise<Resolved | null> {
   const claims = verifyMobileToken(token);
   if (!claims) return null;
 
-  const [tok] = await db
-    .select({ revokedAt: mobileTokens.revokedAt, expiresAt: mobileTokens.expiresAt })
-    .from(mobileTokens)
-    .where(eq(mobileTokens.id, claims.jti))
-    .limit(1);
-  if (!tok || tok.revokedAt) return null;
+  const tok = await loadBearerToken(claims.jti);
+  if (!tok || tok.userId !== claims.uid) return null;
+  if (tok.revokedAt) {
+    // A token a refresh replaced, presented on an ordinary route: when its
+    // successor has been used, this is the stolen-from copy (the app holds
+    // only the newest), on whatever route it shows up.
+    if (tok.rotatedTo) {
+      const h = await headers();
+      await presentRotatedToken(
+        { jti: claims.jti, userId: tok.userId, rotatedTo: tok.rotatedTo },
+        {
+          method: (h.get(MANTLE_METHOD_HEADER) ?? '').toUpperCase(),
+          path: h.get(MANTLE_PATH_HEADER) ?? '',
+          meta: await requestMeta(),
+        },
+      );
+    }
+    return null;
+  }
   if (tok.expiresAt.getTime() <= Date.now()) return null;
 
   const row = await loadLoginRow(claims.uid);
   if (!row || !loginUsable(row)) return null;
+  if (claims.ep !== undefined && claims.ep !== row.sessionEpoch) return null;
+  if (row.role === 'client') {
+    const latest = Date.now() + (CLIENT_SESSION_TTL_SECONDS + 60) * 1000;
+    if (claims.ep === undefined) return null;
+    if (claims.exp * 1000 > latest || tok.expiresAt.getTime() > latest) return null;
+  }
 
-  await db
-    .update(mobileTokens)
-    .set({ lastUsedAt: new Date() })
-    .where(eq(mobileTokens.id, claims.jti));
+  await touchBearerToken(claims.jti);
 
   return resolvedFor(row, 'mobile');
 }
@@ -334,7 +391,7 @@ async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved 
   switch (role) {
     case 'admin': {
       const user = await sessionUserFor(row);
-      return user ? { kind: 'admin', user, source } : null;
+      return user ? { kind: 'admin', user, source, epoch: row.sessionEpoch } : null;
     }
     case 'member': {
       const anchorId = await getAnchorId();
@@ -344,6 +401,7 @@ async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved 
       return {
         kind: 'member',
         source,
+        epoch: row.sessionEpoch,
         member: {
           role: 'member',
           loginId: row.id,
@@ -356,9 +414,9 @@ async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved 
       };
     }
     case 'client': {
-      // Browser sessions only: a client never holds a bearer (no password
-      // login, no mobile app, no pairing), so one presented is refused.
-      if (source !== 'web') return null;
+      // A browser session, or the phone app's device token (minted only by
+      // the emailed code in device mode; getBearerLogin holds it to the
+      // login's session epoch and to the 30 days).
       const anchorId = await getAnchorId();
       if (!anchorId) return null;
       const spaceId = await loadPersonalSpaceId(row.id);
@@ -366,6 +424,7 @@ async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved 
       return {
         kind: 'client',
         source,
+        epoch: row.sessionEpoch,
         client: {
           role: 'client',
           loginId: row.id,
@@ -382,13 +441,47 @@ async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved 
   }
 }
 
+/**
+ * The login an inbound API key (`mtlk_`) acts as. `undefined` when the
+ * request carries no key; null when it carries one that is not let in.
+ *
+ * A key is taken ONLY from the request context, where the gate leaves it
+ * after every check passed (server/middleware/access-key-gate.ts: the
+ * failed-try budget, the key itself, its rate budget, its scope). It is
+ * never verified again here (audit item 3): a request that reached a route
+ * without the gate's grant (a public prefix such as /api/auth, or a path
+ * shape the gate lets through) has no key login at all.
+ *
+ * The scope guard runs again here (audit item 1), so a `source: 'api'`
+ * login exists only for a /api/v1 route the key may call: the route's
+ * area, and a write only for a read_write key. Every gate below
+ * (getOwnerOr401, getMemberOr401, getClientOr401, getLoginOr401) resolves
+ * through this, so none can hand a read key a write route.
+ */
+async function accessKeyLogin(): Promise<Resolved | null | undefined> {
+  const h = await headers();
+  const token = bearerFromHeader(h.get('authorization'));
+  if (!isAccessKey(token)) return undefined;
+  const ctx = getRequestContext();
+  const grant = ctx?.accessKey;
+  if (!ctx || !grant) return null;
+  if (!isApiV1Path(ctx.path)) return null;
+  if (!keyMayCall(grant, matchApiV1Route(ctx.method, ctx.path)).ok) return null;
+  return resolvedFor(grant.login, 'api');
+}
+
 /** Resolve the calling login, admin or member, cookie first then bearer. */
 async function resolveLogin(): Promise<Resolved | null> {
   // DB-less dev: a detached frontend has no local Postgres, so the configured
   // remote identity stands in for the cookie→authUsers lookup. Always an
   // admin. No-op in prod.
   const dev = detachedDevUser();
-  if (dev) return { kind: 'admin', user: dev, source: 'web' };
+  if (dev) return { kind: 'admin', user: dev, source: 'web', epoch: 0 };
+
+  // An API key is judged on itself, never with the cookie: a key presented
+  // where keys are not accepted is no login at all.
+  const key = await accessKeyLogin();
+  if (key !== undefined) return key;
 
   const c = (await cookies()).get(SESSION_COOKIE_NAME);
   if (c) {
@@ -500,6 +593,8 @@ async function auditMutation(user: SessionUser, skip?: (path: string) => boolean
   const path = h.get(MANTLE_PATH_HEADER) ?? '';
   const mutating = method !== '' && method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS';
   if (!mutating || isAuditSelfLogged(path) || skip?.(path)) return;
+  // A write made with an API key names the key (never its secret).
+  const key = getRequestContext()?.accessKey;
   auditFireAndForget({
     actorId: user.actor.id,
     actorEmail: user.actor.email,
@@ -508,6 +603,11 @@ async function auditMutation(user: SessionUser, skip?: (path: string) => boolean
     path,
     // The proxy-appended address, not the caller's leftmost (audit B16).
     ...(await requestMeta()),
+    // The key's maker too: a key that acts as a member or client logs its
+    // writes under that login, and the maker is who to ask (audit item 8).
+    ...(key
+      ? { detail: { keyId: key.id, keyPrefix: key.prefix, keyCreatedBy: key.createdBy } }
+      : {}),
   });
 }
 
@@ -633,6 +733,17 @@ export async function getMemberOr401(): Promise<MemberCaller | NextResponse> {
   // A member and nothing else: an admin gets admin-login, a client
   // client-login (client routes are their own list, never a member route).
   if (res.kind !== 'member') return loginRefused(res.kind);
+  // A write made with an API key is always on the trail, whoever the key
+  // acts as (audit item 5); a member's own session writes are not audited
+  // here, as before.
+  if (res.source === 'api') {
+    const m = res.member;
+    await auditMutation({
+      id: m.anchorId,
+      email: m.email,
+      actor: { id: m.loginId, email: m.email, displayName: m.displayName, isOwner: false },
+    });
+  }
   return res.member;
 }
 
@@ -657,11 +768,34 @@ export async function sessionCookieExpiryMs(): Promise<number | null> {
 
 /** The calling login's own row, whatever its role: for the few routes about
  *  the login itself (change its password, sign out, who am I). Never for
- *  brain data. Each caller decides per role; a client is its own kind. */
+ *  brain data. Each caller decides per role; a client is its own kind.
+ *  `sessionEpoch` is the epoch the credential was verified at, for work that
+ *  must still be that session's when it lands (OAuth consent). */
 export async function getLoginOr401(): Promise<
-  | { kind: 'admin'; loginId: string; email: string; source: AuthSource; user: SessionUser }
-  | { kind: 'member'; loginId: string; email: string; source: AuthSource; member: MemberCaller }
-  | { kind: 'client'; loginId: string; email: string; source: AuthSource; client: ClientCaller }
+  | {
+      kind: 'admin';
+      loginId: string;
+      email: string;
+      source: AuthSource;
+      sessionEpoch: number;
+      user: SessionUser;
+    }
+  | {
+      kind: 'member';
+      loginId: string;
+      email: string;
+      source: AuthSource;
+      sessionEpoch: number;
+      member: MemberCaller;
+    }
+  | {
+      kind: 'client';
+      loginId: string;
+      email: string;
+      source: AuthSource;
+      sessionEpoch: number;
+      client: ClientCaller;
+    }
   | NextResponse
 > {
   const res = await resolveLogin();
@@ -673,6 +807,7 @@ export async function getLoginOr401(): Promise<
         loginId: res.user.actor.id,
         email: res.user.actor.email,
         source: res.source,
+        sessionEpoch: res.epoch,
         user: res.user,
       };
     case 'member':
@@ -681,6 +816,7 @@ export async function getLoginOr401(): Promise<
         loginId: res.member.loginId,
         email: res.member.email,
         source: res.source,
+        sessionEpoch: res.epoch,
         member: res.member,
       };
     case 'client':
@@ -689,6 +825,7 @@ export async function getLoginOr401(): Promise<
         loginId: res.client.loginId,
         email: res.client.email,
         source: res.source,
+        sessionEpoch: res.epoch,
         client: res.client,
       };
   }
@@ -742,8 +879,8 @@ export async function authenticatePassword(
     : null;
 }
 
-/** authenticatePassword, the login id only (the bearer logins: a bearer is
- *  a mobile_tokens row, so it carries no epoch). */
+/** authenticatePassword, the login id only (the password bearer logins: an
+ *  admin's or a member's bearer is a mobile_tokens row and carries no epoch). */
 export async function loginWithPassword(email: string, password: string): Promise<string | null> {
   return (await authenticatePassword(email, password))?.id ?? null;
 }
@@ -818,16 +955,37 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 /**
  * End every session the login holds: bump auth.users.session_epoch, which
  * kills each cookie and `?at=` asset token signed with the old epoch on its
- * next request, and revoke the login's bearers (mobile_tokens rows: the
- * mobile app and the web client). `keepJti` spares one bearer: the device
+ * next request, revoke the login's bearers (mobile_tokens rows: the
+ * mobile app and the web client), and delete its push devices. `keepJti` spares one bearer: the device
  * that asked (a password change made from the web client stays signed in).
  * Returns the new epoch, for a caller that re-issues its own cookie. Run it
  * inside the caller's transaction when there is one.
  */
 export async function endLoginSessions(
   loginId: string,
-  opts: { keepJti?: string | null; tx?: Tx } = {},
+  opts: {
+    keepJti?: string | null;
+    tx?: Tx;
+    /** Filled with the routing tokens of the push devices this removed, for
+     *  a caller that tells the relay after its transaction commits
+     *  (forgetRelayDevices). */
+    removedRoutingTokens?: string[];
+    /** Also revoke every inbound API key of the login (migration 0232)
+     *  and every OAuth grant it holds (its MCP connectors, admin ones
+     *  included: M2 audit N4). For the deliberate security actions: a
+     *  password change or reset, "sign out everywhere", an admin's End
+     *  sessions, disable or role change (M2 audit F4), and a stolen device
+     *  token presented again (N5). NOT a client's plain sign-out, which ends
+     *  its sessions every time (M1 audit item 9). */
+    endKeys?: boolean;
+    /** Who ended them, for the keys' revoked_by (default: the login). */
+    actorId?: string;
+    /** With `tx`: filled with the ids of the keys this revoked, for the
+     *  caller to audit (auditKeysEnded) once ITS transaction commits. */
+    revokedKeyIds?: string[];
+  } = {},
 ): Promise<number | null> {
+  const ended: string[] = [];
   const run = async (tx: Tx | typeof db) => {
     const [row] = await tx
       .update(authUsers)
@@ -845,9 +1003,175 @@ export async function endLoginSessions(
           ...(opts.keepJti ? [ne(mobileTokens.id, opts.keepJti)] : []),
         ),
       );
+    // The login's push devices go with its tokens: a signed out phone gets
+    // no more teasers. The devices a revoked token enrolled, and the ones
+    // from before tokens were recorded (no token on the row: nothing says
+    // which phone each is, so all go and the phone connects again). Only
+    // the device of the token that is kept stays. A caller that passes
+    // `removedRoutingTokens` tells the relay; else the relay keeps a device
+    // nobody can address (the routing token lived only here).
+    const removed = await tx
+      .delete(pushSubscriptions)
+      .where(
+        and(
+          eq(pushSubscriptions.loginId, loginId),
+          opts.keepJti
+            ? or(isNull(pushSubscriptions.tokenId), ne(pushSubscriptions.tokenId, opts.keepJti))
+            : undefined,
+        ),
+      )
+      .returning({ routingToken: pushSubscriptions.routingToken });
+    opts.removedRoutingTokens?.push(...removed.map((r) => r.routingToken));
+    if (opts.endKeys) {
+      const now = new Date();
+      const keys = await tx
+        .update(accessKeys)
+        .set({ revokedAt: now, revokedBy: opts.actorId ?? loginId })
+        .where(and(eq(accessKeys.loginId, loginId), isNull(accessKeys.revokedAt)))
+        .returning({ id: accessKeys.id });
+      // The login's MCP connectors: every live OAuth grant and every code
+      // not yet exchanged. An admin's grant has no session epoch, so only
+      // this ends it (M2 audit N4). Under the login's OAuth lock, the one a
+      // refresh and a code exchange take (final audit F3), so a grant minted
+      // at the same moment is either seen here or refused there.
+      await lockOauthActor(tx, loginId);
+      await tx
+        .update(oauthAccessTokens)
+        .set({ revokedAt: now })
+        .where(and(eq(oauthAccessTokens.actorId, loginId), isNull(oauthAccessTokens.revokedAt)));
+      await tx.delete(oauthAuthCodes).where(eq(oauthAuthCodes.actorId, loginId));
+      ended.push(...keys.map((k) => k.id));
+    }
     return row.epoch;
   };
-  return opts.tx ? run(opts.tx) : db.transaction((tx) => run(tx));
+  if (opts.tx) {
+    const epoch = await run(opts.tx);
+    opts.revokedKeyIds?.push(...ended);
+    return epoch;
+  }
+  // Once more if it met a busy lock (last check F3): the caller has often
+  // committed its first step already (a new password), and leaving the old
+  // sessions alive after it must not happen silently. A second failure is
+  // thrown: the request fails loudly (409 busy), never a quiet success.
+  let epoch: number | null;
+  try {
+    epoch = await db.transaction((tx) => run(tx));
+  } catch (err) {
+    if (!isBusy(err) && pgErrorCode(err) !== '57014') throw err;
+    ended.length = 0;
+    epoch = await db.transaction((tx) => run(tx));
+  }
+  // After the commit, so a rolled-back end leaves no row (final audit).
+  auditKeysEnded(loginId, opts.actorId ?? loginId, ended);
+  return epoch;
+}
+
+/** One key.revoked row for the keys a session end revoked (M2 audit N7):
+ *  which login, how many, which. Call it after the revoking transaction
+ *  commits. No row when there were none. */
+export function auditKeysEnded(loginId: string, actorId: string, keyIds: readonly string[]): void {
+  if (keyIds.length === 0) return;
+  auditFireAndForget({
+    actorId,
+    actorEmail: 'session-end',
+    action: 'key.revoked',
+    detail: { loginId, count: keyIds.length, keyIds: [...keyIds], reason: 'sessions-ended' },
+  });
+}
+
+// ── A rotated device token presented again (reuse detection) ────────────────
+
+/** The successor a lost refresh answer may be answered with again. */
+export type UnusedSuccessor = { id: string; userId: string; expiresAt: Date };
+
+/**
+ * A device token that a refresh replaced (`rotated_to` set) is presented
+ * again. The app keeps only the newest token, so there are two cases, told
+ * apart by the successor row:
+ *
+ *  - The successor has NEVER been used (no `last_used_at`, not rotated on,
+ *    still live): the refresh answer was lost and the caller retries. Not a
+ *    theft. `retry` hands the successor back, so the refresh route answers
+ *    it again (the same jti, re-signed). Every other route answers 401.
+ *  - The successor HAS been used: the presented token is a copy in other
+ *    hands (or the holder kept a copy). That is the theft signal: end every
+ *    session of the login, once, write `auth.token_reuse`, and mark the
+ *    rotated row handled (`rotated_to` cleared), so every later presentation
+ *    of it is a plain 401 and cannot end the login's sessions again.
+ *
+ * Anything else (the successor is gone, revoked unused, expired) is `dead`.
+ * The claim on `rotated_to` is one statement, so two presentations at once
+ * end the sessions once.
+ */
+export async function presentRotatedToken(
+  tok: { jti: string; userId: string; rotatedTo: string },
+  ctx: { method?: string; path: string; meta: { ip: string | null; userAgent: string | null } },
+): Promise<{ kind: 'retry'; successor: UnusedSuccessor } | { kind: 'reuse' } | { kind: 'dead' }> {
+  const [next] = await db
+    .select({
+      id: mobileTokens.id,
+      userId: mobileTokens.userId,
+      revokedAt: mobileTokens.revokedAt,
+      rotatedTo: mobileTokens.rotatedTo,
+      lastUsedAt: mobileTokens.lastUsedAt,
+      expiresAt: mobileTokens.expiresAt,
+    })
+    .from(mobileTokens)
+    .where(eq(mobileTokens.id, tok.rotatedTo))
+    .limit(1);
+  if (!next || next.userId !== tok.userId) return { kind: 'dead' };
+  const used = next.lastUsedAt !== null || next.rotatedTo !== null;
+  if (!used) {
+    return !next.revokedAt && next.expiresAt.getTime() > Date.now()
+      ? {
+          kind: 'retry',
+          successor: { id: next.id, userId: next.userId, expiresAt: next.expiresAt },
+        }
+      : { kind: 'dead' };
+  }
+
+  // A brain that refuses writes (a read-only database) cannot end anything:
+  // the presentation is a plain 401 there, never a 500.
+  let claimed: Array<{ id: string }>;
+  try {
+    claimed = await db
+      .update(mobileTokens)
+      .set({ rotatedTo: null })
+      .where(and(eq(mobileTokens.id, tok.jti), eq(mobileTokens.rotatedTo, tok.rotatedTo)))
+      .returning({ id: mobileTokens.id });
+  } catch (err) {
+    if (isWriteRefused(err)) return { kind: 'dead' };
+    throw err;
+  }
+  if (claimed.length === 0) return { kind: 'dead' };
+
+  const removedRoutingTokens: string[] = [];
+  // A stolen token is the strongest theft signal there is: the login's API
+  // keys and MCP connectors end with its sessions (M2 audit N5).
+  await endLoginSessions(tok.userId, { removedRoutingTokens, endKeys: true });
+  // Loaded here, not at the top: the session layer must not load the push
+  // store (and its table columns) on every import.
+  const { forgetRelayDevices } = await import('../push/store');
+  await forgetRelayDevices(removedRoutingTokens);
+  const [login] = await db
+    .select({ email: authUsers.email })
+    .from(authUsers)
+    .where(eq(authUsers.id, tok.userId))
+    .limit(1);
+  auditFireAndForget({
+    actorId: tok.userId,
+    actorEmail: login?.email ?? '',
+    action: 'auth.token_reuse',
+    method: ctx.method || 'POST',
+    path: ctx.path || '/api/auth/token/refresh',
+    detail: {
+      deviceId: tok.jti,
+      successor: tok.rotatedTo,
+      reason: 'rotated-token-presented-again',
+    },
+    ...ctx.meta,
+  });
+  return { kind: 'reuse' };
 }
 
 /** The login's session epoch now (0 for an unknown login: whatever is minted

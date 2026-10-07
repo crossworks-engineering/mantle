@@ -32,6 +32,12 @@ import {
   resolveResultHandling,
   validateToolArgs,
   getDynamicSchema,
+  buildDeferredToolset,
+  toolSourceOf,
+  unwrapUseTool,
+  TOOL_SEARCH_SLUG,
+  USE_TOOL_SLUG,
+  type DeferredToolset,
   type ValidateArgsResult,
   type ResultHandlingConfig,
   type ToolCallRecord,
@@ -66,11 +72,12 @@ import {
 } from './tool-loop/guards';
 import { createModelCaller } from './tool-loop/model-caller';
 import { executeToolCall, toolResultPayload } from './tool-loop/execute-call';
+import { loadToolGroupsForCatalog } from './skills';
 import { env } from '@mantle/config';
 import { UUID_RE } from '@mantle/std';
 import { withViewer, type ViewerLevel } from '@mantle/db/viewer';
 
-const DEFAULT_MAX_ITERATIONS = 6;
+export const DEFAULT_MAX_ITERATIONS = 6;
 
 /** Min thinking budget the reasoning providers accept (Anthropic's
  *  `thinking.budget_tokens` floor; OpenRouter forwards ours there). Below this a
@@ -436,6 +443,12 @@ export type ToolLoopArgs = {
    *  signal, while this is what OpenRouter puts on the wire. Undefined ⇒ no
    *  reasoning requested. */
   thinkingEffort?: ThinkingEffort;
+  /** The budget handed to a delegated agent that has no thinking effort of
+   *  its own: the person's profile budget, so "inherit" on a specialist means
+   *  the profile and not the calling agent's own effort. Unset ⇒ forward
+   *  `thinkingBudget` (the behaviour before per-agent effort existed). Only
+   *  the budget travels, never the effort, exactly as before. */
+  inheritThinkingBudget?: number;
   /** Initial messages: system + any history + the new user turn. */
   initialMessages: ChatMessage[];
   /** Tool rows the agent is permitted to use. Empty array → no tools sent. */
@@ -479,6 +492,16 @@ export type ToolLoopArgs = {
 export async function resolveAgentTools(ownerId: string, slugs: string[]): Promise<Tool[]> {
   if (slugs.length === 0) return [];
   return resolveTools(ownerId, slugs);
+}
+
+/** The loop's tool rows: the agent's allowlist plus `read_result`, which is
+ *  always offered when the agent has any tools (see runToolLoopAtLevel). Shared
+ *  with `describeResponderTurnInput`, so the tool list it reports is the list
+ *  the model is sent. */
+export async function withReadResultTool(ownerId: string, tools: Tool[]): Promise<Tool[]> {
+  if (tools.length === 0 || tools.some((t) => t.slug === 'read_result')) return tools;
+  const rr = await resolveReadResultTool(ownerId);
+  return rr ? [...tools, rr] : tools;
 }
 
 /**
@@ -533,6 +556,28 @@ export async function buildToolsForModel(
 }
 
 /**
+ * Deferred loading: the catalog joins the FIRST system block (the persona
+ * block, which carries the first cache breakpoint), so it is cached with it and
+ * only changes when the grant does. Without a system message it becomes one.
+ */
+export function withCatalogBlock(initial: readonly ChatMessage[], block: string): ChatMessage[] {
+  const out = [...initial];
+  const i = out.findIndex((m) => m.role === 'system');
+  if (i < 0) return [{ role: 'system', content: block }, ...out];
+  const first = out[i] as Extract<ChatMessage, { role: 'system' }>;
+  if (typeof first.content === 'string') {
+    out[i] = { ...first, content: `${first.content}\n\n${block}` };
+  } else {
+    const parts = [...first.content];
+    const last = parts[parts.length - 1];
+    if (last) parts[parts.length - 1] = { ...last, text: `${last.text}\n\n${block}` };
+    else parts.push({ type: 'text', text: block });
+    out[i] = { ...first, content: parts };
+  }
+  return out;
+}
+
+/**
  * The tool loop, at the agent's level (member logins Phase 0b). A loop run for
  * an agent MUST say the agent's level: a missing one throws rather than
  * silently running at admin. The level only ever goes down.
@@ -554,18 +599,33 @@ async function runToolLoopAtLevel(args: ToolLoopArgs): Promise<ToolLoopResult> {
   // Always offer `read_result` when the agent has any tools, so a spilled
   // (oversized) result is never a dead end — even if the operator didn't add
   // it to the agent's allowlist. It's a read-only system capability.
-  let loopTools = args.tools;
-  if (loopTools.length > 0 && !loopTools.some((t) => t.slug === 'read_result')) {
-    const rr = await resolveReadResultTool(args.ownerId);
-    if (rr) loopTools = [...loopTools, rr];
-  }
+  const loopTools = await withReadResultTool(args.ownerId, args.tools);
   const toolsByName = new Map(loopTools.map((t) => [t.slug, t]));
-  const toolsForModel = await buildToolsForModel(loopTools, {
+  const allToolDefs = await buildToolsForModel(loopTools, {
     ownerId: args.ownerId,
     ...(args.delegateTo ? { delegateTo: args.delegateTo } : {}),
   });
+  // Deferred tool loading (params.tool_loading = 'deferred'): send a stable
+  // core + tool_search + use_tool, list the rest by name in tool_search's
+  // catalog. `toolsByName` keeps the WHOLE grant, so a deferred tool called by
+  // its own name (or through use_tool) dispatches and validates exactly as a
+  // sent one; an ungranted name is still refused. The sent array is fixed for
+  // the turn (and for the grant), so the cached prefix does not move.
+  const deferred: DeferredToolset | null =
+    args.params.tool_loading === 'deferred' && allToolDefs.length > 0
+      ? buildDeferredToolset(
+          allToolDefs,
+          await loadToolGroupsForCatalog(args.ownerId),
+          new Map(loopTools.map((t) => [t.slug, toolSourceOf(t.handler)])),
+        )
+      : null;
+  const toolsForModel = deferred ? deferred.sent : allToolDefs;
+  /** Deferred tools whose schema an argument error already handed back. */
+  const schemaShown = new Set<string>();
 
-  const messages: ChatMessage[] = [...args.initialMessages];
+  const messages: ChatMessage[] = deferred
+    ? withCatalogBlock(args.initialMessages, deferred.systemBlock)
+    : [...args.initialMessages];
   // The turn's latest USER message — threaded to handlers via ctx.agent so
   // invoke_agent can attach the user's verbatim ask to a delegation (the
   // child sees only the packed prompt; this closes the under-packing gap).
@@ -763,7 +823,7 @@ async function runToolLoopAtLevel(args: ToolLoopArgs): Promise<ToolLoopResult> {
     // order, which calls run (see TurnGuards); every skipped call still gets
     // its paired synthetic result.
     guards.beginBatch();
-    for (const call of calls) {
+    for (let call of calls) {
       // Stop mid-batch: nothing new starts. Each remaining call still gets a
       // paired synthetic result (providers reject an unpaired tool_use on any
       // later request); the post-batch check below finalizes the turn.
@@ -776,11 +836,67 @@ async function runToolLoopAtLevel(args: ToolLoopArgs): Promise<ToolLoopResult> {
         continue;
       }
       const startedAt = Date.now();
+      // Deferred loading: `use_tool {name, arguments}` IS the inner call from
+      // here on (guards, validation, step name, ledger), so it is capped and
+      // traced as the real tool. A malformed wrapper becomes a parse error.
+      let useToolError: string | null = null;
+      if (deferred && call.function.name === USE_TOOL_SLUG) {
+        const unwrapped = unwrapUseTool(call.function.arguments ?? '{}');
+        if (unwrapped.ok) {
+          call = {
+            ...call,
+            function: { name: unwrapped.slug, arguments: unwrapped.argumentsRaw },
+          };
+        } else {
+          useToolError = unwrapped.error;
+        }
+      }
       const slug = call.function.name;
       const argsRaw = call.function.arguments ?? '{}';
       const pre = guards.preParse({ id: call.id, slug, argsRaw });
       if (pre) {
         await skipToolCall(call, pre.reason, pre.note, pre.firstCallId);
+        continue;
+      }
+      if (deferred && slug === TOOL_SEARCH_SLUG) {
+        const parsedSearch = parseToolArgs(call.function.arguments);
+        const q = parsedSearch.ok ? parsedSearch.input : {};
+        const query = typeof q.query === 'string' ? q.query : '';
+        const flow = typeof q.flow === 'string' && q.flow ? q.flow : undefined;
+        const searchSig = `${slug}::${canonicalJson({ query, flow: flow ?? null })}`;
+        const postSearch = guards.postParse(slug, searchSig);
+        if (postSearch) {
+          await skipToolCall(call, postSearch.reason, postSearch.note);
+          continue;
+        }
+        guards.admit(slug);
+        const found = await step(
+          { name: `tool: ${slug}`, kind: 'compute', input: { slug, args: { query, flow } } },
+          async (handle) => {
+            const r = query.trim()
+              ? deferred.search(query, flow)
+              : {
+                  tools: [],
+                  note: 'tool_search needs `query`: the action you need, in plain words.',
+                };
+            handle.setOutput({ hits: r.tools.map((t) => t.name) });
+            if (!query.trim()) handle.setError('tool_search called without a query');
+            return r;
+          },
+        );
+        toolCalls.push({
+          slug,
+          argsJson: call.function.arguments ?? '{}',
+          durationMs: Date.now() - startedAt,
+          status: query.trim() ? 'success' : 'error',
+          ...(query.trim() ? {} : { error: 'tool_search called without a query' }),
+        });
+        messages.push({
+          role: 'tool',
+          toolCallId: call.id,
+          content: JSON.stringify(found),
+          ...(query.trim() ? {} : { isError: true as const }),
+        });
         continue;
       }
       const tool = toolsByName.get(slug);
@@ -791,7 +907,8 @@ async function runToolLoopAtLevel(args: ToolLoopArgs): Promise<ToolLoopResult> {
       // canonical (post-repair, sorted keys) — pure work, no side effects.
       const parsedArgs = parseToolArgs(call.function.arguments);
       let input: Record<string, unknown> = parsedArgs.ok ? parsedArgs.input : {};
-      const argParseError: string | null = parsedArgs.ok ? null : parsedArgs.error;
+      const argParseError: string | null =
+        useToolError ?? (parsedArgs.ok ? null : parsedArgs.error);
 
       // Central coerce-then-validate against the tool's own inputSchema.
       // Safe repairs (string→number, "true"→true, scalar→array-wrap, …) are
@@ -820,7 +937,7 @@ async function runToolLoopAtLevel(args: ToolLoopArgs): Promise<ToolLoopResult> {
       }
       guards.admit(slug);
 
-      const outcome = await executeToolCall({
+      let outcome = await executeToolCall({
         args,
         slug,
         call,
@@ -833,6 +950,24 @@ async function runToolLoopAtLevel(args: ToolLoopArgs): Promise<ToolLoopResult> {
         pendingIds,
         taint,
       });
+      // Deferred loading: a model may call a catalog tool by name without
+      // loading it first, and then guess its arguments. When such a call fails
+      // on its arguments, hand back the real schema once per tool per turn so
+      // the retry is right (the schema is what tool_search would have shown).
+      if (
+        deferred &&
+        tool &&
+        !outcome.ok &&
+        deferred.deferred.has(slug) &&
+        (argParseError || argValidation?.error) &&
+        !schemaShown.has(slug)
+      ) {
+        schemaShown.add(slug);
+        outcome = {
+          ...outcome,
+          error: `${outcome.error}\nInput schema of ${slug}: ${JSON.stringify(tool.inputSchema ?? {})}`,
+        };
+      }
       // Did this call bring client-written text into the turn? Its input
       // (a client login's id) or its output (a client request's id) says so.
       await taintFromText(

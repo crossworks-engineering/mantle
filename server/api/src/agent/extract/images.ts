@@ -331,10 +331,18 @@ export function composeImageBody(data: Record<string, unknown>, visionText: stri
 export async function visionIngestImageNode(
   node: typeof nodes.$inferSelect,
   ownerId: string,
-): Promise<{ text: string | null; failure: string | null }> {
+): Promise<{
+  text: string | null;
+  failure: string | null;
+  /** The vision worker really read the image. False when the bytes were
+   *  missing or the worker did not run (none wired, a provider error): the
+   *  caller then must not stamp the node terminal. */
+  ran: boolean;
+}> {
   // Bytes from disk (uploads) or object storage (email image attachments).
   const loaded = await loadFileBytes(node);
-  if (!loaded) return { text: null, failure: 'file bytes could not be read from disk or storage' };
+  if (!loaded)
+    return { text: null, failure: 'file bytes could not be read from disk or storage', ran: false };
   const filename = loaded.filename;
 
   return await startTrace(
@@ -383,7 +391,11 @@ export async function visionIngestImageNode(
       if (!result.text) {
         // Nothing to index — hand the WHY up so the terminal skip names it
         // (a wrong model id fails here silently otherwise; 2026-08-31).
-        return { text: null, failure: result.note ?? 'vision worker returned no text' };
+        return {
+          text: null,
+          failure: result.note ?? 'vision worker returned no text',
+          ran: result.ran,
+        };
       }
       const text = cleanText(result.text); // strip NULs the model/OCR may emit
 
@@ -399,7 +411,7 @@ export async function visionIngestImageNode(
           .where(and(eq(nodes.id, node.id), eq(nodes.ownerId, ownerId)));
         h.setMeta({ chars: text.length });
       });
-      return { text, failure: null };
+      return { text, failure: null, ran: true };
     },
   );
 }
@@ -433,6 +445,9 @@ export async function ocrIngestPdfNode(
    *  the document is what went wrong. Null when rasterize wasn't reached or
    *  didn't throw. */
   rasterizeError: string | null;
+  /** A document or vision worker really read the PDF (native or any page).
+   *  With no text, that is a blank scan: a verdict on the content. */
+  ran: boolean;
 }> {
   // Bytes from disk (uploads) or object storage (email PDF attachments).
   const loaded = await loadFileBytes(node);
@@ -441,7 +456,8 @@ export async function ocrIngestPdfNode(
   // whose body was never persisted). Distinct from "we have it but it's an
   // unreadable scan": the caller records `bytes_unavailable`, not the
   // misleading `no_text_layer`, so the operator knows to RE-FETCH not re-OCR.
-  if (!loaded) return { text: null, encrypted: false, bytesMissing: true, rasterizeError: null };
+  if (!loaded)
+    return { text: null, encrypted: false, bytesMissing: true, rasterizeError: null, ran: false };
   const filename = loaded.filename;
 
   return await startTrace(
@@ -507,8 +523,9 @@ export async function ocrIngestPdfNode(
             .where(and(eq(nodes.id, node.id), eq(nodes.ownerId, ownerId)));
           h.setMeta({ chars: text.length, native: true });
         });
-        return { text, encrypted: false, bytesMissing: false, rasterizeError: null };
+        return { text, encrypted: false, bytesMissing: false, rasterizeError: null, ran: true };
       }
+      let ran = native.ran;
 
       // 2) Fall back to rasterize → per-page image OCR.
       //
@@ -537,7 +554,8 @@ export async function ocrIngestPdfNode(
           }
         },
       );
-      if (pages.length === 0) return { text: null, encrypted, bytesMissing: false, rasterizeError };
+      if (pages.length === 0)
+        return { text: null, encrypted, bytesMissing: false, rasterizeError, ran };
 
       const parts: string[] = [];
       let model: string | null = null;
@@ -565,6 +583,7 @@ export async function ocrIngestPdfNode(
             return r;
           },
         );
+        if (res.ran) ran = true;
         if (res.model) model = res.model;
         if (res.text.trim()) {
           parts.push(
@@ -574,7 +593,7 @@ export async function ocrIngestPdfNode(
       }
 
       const text = cleanText(parts.join('\n\n').trim());
-      if (!text) return { text: null, encrypted, bytesMissing: false, rasterizeError: null }; // worker unavailable / blank scan / encrypted
+      if (!text) return { text: null, encrypted, bytesMissing: false, rasterizeError: null, ran }; // worker unavailable / blank scan / encrypted
 
       await step({ name: 'persist_vision_text', kind: 'db_write' }, async (h) => {
         await db
@@ -586,7 +605,7 @@ export async function ocrIngestPdfNode(
           .where(and(eq(nodes.id, node.id), eq(nodes.ownerId, ownerId)));
         h.setMeta({ chars: text.length, pages: pages.length });
       });
-      return { text, encrypted: false, bytesMissing: false, rasterizeError: null };
+      return { text, encrypted: false, bytesMissing: false, rasterizeError: null, ran: true };
     },
   );
 }

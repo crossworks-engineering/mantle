@@ -174,8 +174,9 @@ describe('runTeamTurn runs at the agent level', () => {
     expect(h.levels).toEqual([
       'agent:admin',
       'prefs:team',
-      'context:team',
+      // The thread first: a short follow-up is enriched from it.
       'thread:team',
+      'context:team',
       'assemble:team',
       'loop:team',
     ]);

@@ -1,6 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
+import { callerMayConfirm } from '@/lib/api-v1';
 import { allPrivateRows, listStateOf, pageWithPrivate } from '@/lib/admin-private-rows';
 import {
   countPages,
@@ -132,7 +133,11 @@ export async function POST(req: Request) {
   }
   let row;
   try {
-    row = await createPage(user.id, parsed.data);
+    // An API key never confirms a visibility change (lib/api-v1.ts).
+    row = await createPage(user.id, {
+      ...parsed.data,
+      confirm: parsed.data.confirm === true && callerMayConfirm(),
+    });
   } catch (err) {
     if (err instanceof PageFolderNotFoundError) {
       return NextResponse.json({ error: 'folder not found' }, { status: 400 });

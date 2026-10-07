@@ -175,6 +175,34 @@ export type RunResponderLoopOptions = {
   conversationTaint?: false;
 };
 
+/** The turn's 'load_context' trace step: runs `load` and records the
+ *  retrieval snapshot as the step output, which /debug/context renders. Shared
+ *  with `describeResponderTurnInput`, so an inspected turn leaves the same
+ *  record a real one does. */
+export function loadContextStep(
+  load: () => Promise<ConversationContext>,
+  input: Record<string, unknown>,
+  extra?: Record<string, unknown>,
+): Promise<ConversationContext> {
+  return step({ name: 'load_context', kind: 'compute', input }, async (h) => {
+    const c = await load();
+    h.setOutput({
+      turnCount: c.history.length,
+      digestCount: c.digests.length,
+      factCount: c.facts.length,
+      contentHitCount: c.contentHits.length,
+      chunkHitCount: c.chunkHits.length,
+      corpusMapCount: c.corpusMap.entries.length,
+      relationCount: c.relations.length,
+      personaNoteCount: c.personaNotes.length,
+      // Full retrieval audit record (items + distances + near-misses).
+      snapshot: c.snapshot,
+      ...(extra ?? {}),
+    });
+    return c;
+  });
+}
+
 /**
  * Run the shared middle of one responder turn inside the caller's trace.
  * Everything before (inbound persistence, transcription, attachment ingest)
@@ -196,29 +224,10 @@ async function runResponderLoopAtLevel(
   // /debug/context renders per turn (items, distances, near-misses). Callers
   // that pre-loaded the context pass a thunk returning it; the step then just
   // records the snapshot.
-  const ctx = await step(
-    {
-      name: 'load_context',
-      kind: 'compute',
-      input: opts.contextStepInput ?? { agentId: agent.id },
-    },
-    async (h) => {
-      const c = await opts.loadContext();
-      h.setOutput({
-        turnCount: c.history.length,
-        digestCount: c.digests.length,
-        factCount: c.facts.length,
-        contentHitCount: c.contentHits.length,
-        chunkHitCount: c.chunkHits.length,
-        corpusMapCount: c.corpusMap.entries.length,
-        relationCount: c.relations.length,
-        personaNoteCount: c.personaNotes.length,
-        // Full retrieval audit record (items + distances + near-misses).
-        snapshot: c.snapshot,
-        ...(opts.contextStepExtra ?? {}),
-      });
-      return c;
-    },
+  const ctx = await loadContextStep(
+    opts.loadContext,
+    opts.contextStepInput ?? { agentId: agent.id },
+    opts.contextStepExtra,
   );
 
   // The conversation's mark (I9): a turn of a conversation that read
@@ -258,6 +267,7 @@ async function runResponderLoopAtLevel(
     resultHandling: assembled.resultHandling,
     thinkingBudget: assembled.thinkingBudget,
     thinkingEffort: assembled.thinkingEffort,
+    inheritThinkingBudget: assembled.inheritThinkingBudget,
     ...assembled.loopOverrides,
     initialMessages: await opts.buildMessages(ctx),
     tools: assembled.allowedTools,

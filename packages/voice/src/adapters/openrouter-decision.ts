@@ -18,6 +18,7 @@
 
 import type { DecisionAnswer, DecisionDispatcher, DecisionOptions, DecisionResult } from './types';
 import { OPENROUTER_BASE_URL } from '../catalogs/openrouter';
+import { providerFetch } from './provider-fetch';
 
 /** `${OPENROUTER_BASE_URL}` is `…/api/v1`; decisions live one level up. */
 const DECISIONS_URL = OPENROUTER_BASE_URL.replace(/\/v1\/?$/, '') + '/alpha/decisions';
@@ -36,6 +37,11 @@ type WireResponse = {
   usage?: { input_tokens?: number; output_tokens?: number; cost?: number };
   error?: { code?: number; message?: string };
 };
+
+// The requests of one passage-scoring fan-out are sent together, and the
+// endpoint answers them side by side (4 requests: 0.7 s). Node 26's built-in
+// fetch sent them one after another (4 requests: 2.1 s, 8: 4.2 s; measured
+// 2026-10-04), so they go through the shared provider pool (provider-fetch.ts).
 
 function headers(apiKey: string): Record<string, string> {
   return {
@@ -98,7 +104,7 @@ export const openrouterDecisionAdapter: DecisionDispatcher = {
   adapterName: 'openrouter-decision',
 
   async decide(opts: DecisionOptions): Promise<DecisionResult> {
-    const res = await fetch(DECISIONS_URL, {
+    const res = await providerFetch(DECISIONS_URL, {
       method: 'POST',
       headers: headers(opts.apiKey),
       body: JSON.stringify(buildDecisionBody(opts)),

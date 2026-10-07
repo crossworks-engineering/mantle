@@ -27,6 +27,7 @@ import type {
 import type { DiscoveryResult } from '../discover';
 import { OPENROUTER_BASE_URL, OPENROUTER_VISION_MODELS } from '../catalogs/openrouter';
 import { errorMessage } from '@mantle/std';
+import { providerFetch } from './provider-fetch';
 
 const DEFAULT_MODEL = 'anthropic/claude-sonnet-5';
 
@@ -68,7 +69,7 @@ async function post(
   body: Record<string, unknown>,
   timeoutMs: number,
 ): Promise<VisionExtractResult & { _model: string }> {
-  const res = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
+  const res = await providerFetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
     method: 'POST',
     headers: headers(apiKey),
     body: JSON.stringify(body),
@@ -189,7 +190,7 @@ export const openrouterVisionAdapter: VisionDispatcher = {
 
   async discoverModels(apiKey: string): Promise<DiscoveryResult<VisionModelInfo>> {
     try {
-      const res = await fetch(`${OPENROUTER_BASE_URL}/models`, {
+      const res = await providerFetch(`${OPENROUTER_BASE_URL}/models`, {
         headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
         signal: AbortSignal.timeout(15_000),
       });

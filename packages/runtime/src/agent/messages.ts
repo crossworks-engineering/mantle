@@ -122,6 +122,17 @@ export type CorpusMapEntry = {
   schema?: string | null;
 };
 
+/** The map as retrieval hands it to the prompt builder. `totals` and
+ *  `maxChars` are optional so older callers and fixtures still compile. */
+export type CorpusMapBlock = {
+  entries: CorpusMapEntry[];
+  truncated: boolean;
+  /** Item count per branch over the whole corpus (not only the entries). */
+  totals?: Record<string, number>;
+  /** Render budget (memory_config.corpus_map_chars); default CORPUS_MAP_MAX_CHARS. */
+  maxChars?: number;
+};
+
 /** A knowledge-graph relationship as a readable triple — the graph axis in the
  *  prompt. Vector search finds relevant facts; this surfaces how their entities
  *  relate ("Cross Works Engineering banks_with Nedbank"), which vectors can't. */
@@ -308,23 +319,71 @@ export function fenceRetrieved(body: string): string {
   return `${FENCE_OPEN}\n${defanged}\n${FENCE_CLOSE}`;
 }
 
-/** Character budget for the rendered corpus map — ~6k tokens. Beyond it the
- *  map truncates with an honest marker; entry SELECTION happens upstream
- *  (most-recently-updated first), this is only the final belt. */
-const CORPUS_MAP_MAX_CHARS = 24_000;
+/** Character budget for the rendered corpus map: about 2k tokens. The
+ *  2026-10-05 block audit (dev page e3c5d926) measured the old 24k budget at
+ *  7.6k tokens a turn with no measurable answer-quality gain, and found it
+ *  clipping whole branches: branches rendered alphabetically, so on a big
+ *  brain `tables` and `tasks` never appeared. memory_config.corpus_map_chars
+ *  overrides per agent. */
+export const CORPUS_MAP_MAX_CHARS = 6_500;
+
+/** A fold group needs this many near-identical titles (a generated image
+ *  series, a run of screenshots) before it collapses to one line. */
+const FOLD_MIN = 3;
+/** Titles longer than this are snipped; some file titles are whole prompts. */
+const TITLE_MAX = 90;
+
+/** Near-duplicate key for FILES: case, digits, punctuation and the extension
+ *  do not count, and only the head of the title does, so a screenshot run or
+ *  a generated image series shares one key. "Spike 15: Claude cache" and
+ *  "Spike 16: Rea prefix" do not. */
+export function corpusTitleKey(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/\.[a-z0-9]{2,5}$/, '')
+    .replace(/\d+/g, '#')
+    .replace(/[^a-z#]+/g, ' ')
+    .trim()
+    .slice(0, 24);
+}
+
+/** The fold key of one entry. Only files fold across digits (screenshots,
+ *  generated images: the number carries nothing). Every other type folds on
+ *  an exact duplicate title only, because there the number or date IS the
+ *  meaning: "Conversation 3, Monday 1 May 2023", a meeting, an invoice. */
+function foldKey(e: CorpusMapEntry): string {
+  if (e.type === 'file') {
+    const k = corpusTitleKey(e.title);
+    return k.length >= 8 ? `file|${k}` : `file=${e.title}`;
+  }
+  return `${e.type}=${e.title.toLowerCase().replace(/\s+/g, ' ').trim()}`;
+}
+
+type MapLine = { title: string; text: string; folded: boolean };
 
 /**
- * Render the corpus map as one system block. Grouping is by branch and lines
- * sort by title — byte-stable across turns (and thus prompt-cache-friendly):
- * the bytes change only when a title/summary/cap-membership actually changes,
- * never because retrieval reordered.
+ * Render the corpus map as one system block, inside a fixed character budget.
+ *
+ * `entries` come most recently updated first (the upstream select orders by
+ * updated_at for cap selection). Per branch, near-identical titles fold into
+ * one line that names the newest member (see foldKey). The budget is then shared round-robin
+ * across branches, newest first, so every branch gets lines before any branch
+ * gets many. Within a branch the chosen lines render sorted by title, so the
+ * bytes change only when a title, a branch total or the chosen set changes,
+ * never because retrieval reordered (prompt-cache friendly).
+ *
+ * `totals` (per-branch item counts over the whole corpus) let a header say
+ * how much exists beyond what is listed. Page summaries are not rendered: they
+ * were over half the old block, and the title plus a search covers them.
+ * Tables keep their schema digest.
  */
 export function renderCorpusMapBlock(
   entries: CorpusMapEntry[],
-  opts: { truncated?: boolean; maxChars?: number } = {},
+  opts: { truncated?: boolean; maxChars?: number; totals?: Record<string, number> } = {},
 ): string | null {
   if (entries.length === 0) return null;
   const maxChars = opts.maxChars ?? CORPUS_MAP_MAX_CHARS;
+
   const byBranch = new Map<string, CorpusMapEntry[]>();
   for (const e of entries) {
     const list = byBranch.get(e.branch) ?? [];
@@ -332,39 +391,85 @@ export function renderCorpusMapBlock(
     byBranch.set(e.branch, list);
   }
   const branches = [...byBranch.keys()].sort();
-  const parts: string[] = [];
-  let used = 0;
-  let clipped = false;
-  outer: for (const branch of branches) {
+
+  // Per branch, newest first: one line per item, or one per fold group.
+  const candidates = new Map<string, MapLine[]>();
+  for (const branch of branches) {
     const group = byBranch.get(branch)!;
-    group.sort((a, b) => a.title.localeCompare(b.title));
-    const header = `${branch} (${group.length}):`;
-    parts.push(header);
-    used += header.length + 1;
+    const byKey = new Map<string, CorpusMapEntry[]>();
     for (const e of group) {
-      const summary = e.summary ? ` — ${snipLine(e.summary, 100)}` : '';
-      const schema = e.schema ? ` [${snipLine(e.schema, 120)}]` : '';
-      const line = `• "${e.title}" (${e.type}#${e.nodeId.slice(0, 8)})${summary}${schema}`;
-      if (used + line.length > maxChars) {
-        clipped = true;
-        break outer;
+      const k = foldKey(e);
+      byKey.set(k, [...(byKey.get(k) ?? []), e]);
+    }
+    const seen = new Set<string>();
+    const lines: MapLine[] = [];
+    for (const e of group) {
+      const k = foldKey(e);
+      const members = byKey.get(k)!;
+      const fold = members.length >= FOLD_MIN;
+      if (fold && seen.has(k)) continue;
+      seen.add(k);
+      const title = snipLine(e.title, TITLE_MAX);
+      const schema = e.schema ? ` [${snipLine(e.schema, 80)}]` : '';
+      const more = fold ? ` +${members.length - 1} more like it` : '';
+      lines.push({
+        title,
+        text: `• "${title}" (${e.type}#${e.nodeId.slice(0, 8)})${schema}${more}`,
+        folded: fold,
+      });
+    }
+    candidates.set(branch, lines);
+  }
+
+  // Share the budget round-robin, newest first. A branch whose next line does
+  // not fit is done; the others keep going.
+  // The budget covers the whole block: the intro (longest form) and every
+  // branch header count against it, not only the item lines.
+  const headerCost = (b: string) => b.length + 24;
+  let used = MAP_INTRO_MAX + branches.reduce((s, b) => s + headerCost(b), 0);
+  const chosen = new Map<string, MapLine[]>(branches.map((b) => [b, []]));
+  const open = new Set(branches);
+  for (let round = 0; open.size > 0; round++) {
+    for (const branch of branches) {
+      if (!open.has(branch)) continue;
+      const next = candidates.get(branch)![round];
+      if (!next || used + next.text.length + 1 > maxChars) {
+        open.delete(branch);
+        continue;
       }
-      parts.push(line);
-      used += line.length + 1;
+      chosen.get(branch)!.push(next);
+      used += next.text.length + 1;
     }
   }
-  const note =
-    opts.truncated || clipped
-      ? '\n[map truncated — more content exists; use search/search_chunks to find anything not listed]'
-      : '';
-  return (
-    "Map of the user's content corpus — what exists, by branch. Read one with " +
-    'read_section/node_read (the #id), find passages with search_chunks; anything ' +
-    'not listed here does not exist as a page/table/file/note/task:\n' +
-    parts.join('\n') +
-    note
-  );
+
+  let partial = opts.truncated === true;
+  const parts: string[] = [];
+  for (const branch of branches) {
+    const lines = chosen.get(branch)!;
+    const listedItems = byBranch.get(branch)!.length;
+    const total = Math.max(opts.totals?.[branch] ?? listedItems, listedItems);
+    const shownAll =
+      lines.length === candidates.get(branch)!.length &&
+      total === listedItems &&
+      !lines.some((l) => l.folded);
+    if (!shownAll) partial = true;
+    parts.push(shownAll ? `${branch} (${total}):` : `${branch} (${total} items, newest shown):`);
+    lines.sort((a, b) => a.title.localeCompare(b.title));
+    parts.push(...lines.map((l) => l.text));
+  }
+
+  return `${MAP_INTRO} ${partial ? MAP_TAIL_PARTIAL : MAP_TAIL_COMPLETE}\n${parts.join('\n')}`;
 }
+
+const MAP_INTRO =
+  "Map of the user's content corpus: what exists, by branch. Read an item with " +
+  'read_section/node_read (the #id), find passages with search_chunks.';
+const MAP_TAIL_PARTIAL =
+  'Each branch lists its most recently updated items under its total count. ' +
+  'Anything not listed may still exist: find it with search or search_chunks.';
+const MAP_TAIL_COMPLETE = 'Anything not listed here does not exist as a page/table/file/note/task.';
+const MAP_INTRO_MAX =
+  MAP_INTRO.length + 2 + Math.max(MAP_TAIL_PARTIAL.length, MAP_TAIL_COMPLETE.length);
 
 const snipLine = (s: string, n: number): string => {
   const t = s.replace(/\s+/g, ' ').trim();
@@ -398,7 +503,7 @@ export function buildChatMessages(args: {
    *  callers still compile; rendered AFTER the digests, sharing their cache
    *  breakpoint: map churn re-writes the small digest too, never the
    *  persona prompt or the notes. */
-  corpusMap?: { entries: CorpusMapEntry[]; truncated: boolean };
+  corpusMap?: CorpusMapBlock;
   contentHits: ContentHit[];
   /** Section-level passages (auto-retrieved from content_chunks). The fine
    *  complement to contentHits. Optional so older callers still compile. */
@@ -480,7 +585,11 @@ export function buildChatMessages(args: {
   }
   const mapText =
     corpusMap && corpusMap.entries.length > 0
-      ? renderCorpusMapBlock(corpusMap.entries, { truncated: corpusMap.truncated })
+      ? renderCorpusMapBlock(corpusMap.entries, {
+          truncated: corpusMap.truncated,
+          ...(corpusMap.totals ? { totals: corpusMap.totals } : {}),
+          ...(corpusMap.maxChars ? { maxChars: corpusMap.maxChars } : {}),
+        })
       : '';
   if (digestText) messages.push(systemBlock(digestText, !mapText));
   if (mapText) messages.push(systemBlock(mapText, true));

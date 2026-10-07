@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CAPACITY_POLICY, capacityZone, computeCapacity } from './capacity';
+import { CAPACITY_POLICY, capacityZone, computeCapacity, retrievalFromRunNote } from './capacity';
 
 describe('capacityZone', () => {
   const limits = { watch: 10, split: 20 };
@@ -19,10 +19,10 @@ describe('capacityZone', () => {
 
 describe('computeCapacity', () => {
   it('reports both axes against the published policy', () => {
-    const c = computeCapacity(3_000, 15_000);
+    const c = computeCapacity(3_000, 37_500);
     expect(c.docs).toMatchObject({ count: 3_000, ...CAPACITY_POLICY.docs, zone: 'green' });
     expect(c.chunkVectors).toMatchObject({
-      count: 15_000,
+      count: 37_500,
       ...CAPACITY_POLICY.chunkVectors,
       zone: 'green',
     });
@@ -31,7 +31,7 @@ describe('computeCapacity', () => {
   });
 
   it('headline zone is the WORST axis (chunk-heavy corpora hit vectors first)', () => {
-    const c = computeCapacity(4_000, 60_000); // docs green, chunks watch
+    const c = computeCapacity(4_000, 150_000); // docs green, chunks watch
     expect(c.docs.zone).toBe('green');
     expect(c.chunkVectors.zone).toBe('watch');
     expect(c.zone).toBe('watch');
@@ -39,12 +39,12 @@ describe('computeCapacity', () => {
   });
 
   it('worst axis drives pctOfSplit even when zones agree', () => {
-    const c = computeCapacity(5_000, 30_000); // 25% vs 30%
+    const c = computeCapacity(5_000, 75_000); // 25% vs 30%
     expect(c.pctOfSplit).toBe(30);
   });
 
   it('split zone and >100% when the split point is passed', () => {
-    const c = computeCapacity(25_000, 10_000);
+    const c = computeCapacity(25_000, 25_000);
     expect(c.docs.zone).toBe('split');
     expect(c.zone).toBe('split');
     expect(c.pctOfSplit).toBe(125);
@@ -54,5 +54,27 @@ describe('computeCapacity', () => {
     const c = computeCapacity(0, 0);
     expect(c.zone).toBe('green');
     expect(c.pctOfSplit).toBe(0);
+  });
+});
+
+describe('retrievalFromRunNote', () => {
+  const at = new Date('2026-10-03T12:00:00Z');
+  it('reads the passage (chunks) arm of a recall_eval run note', () => {
+    const content = JSON.stringify({
+      casesUsed: 12,
+      search: { recallAt10: 0.9, mrr: 0.8 },
+      chunks: { recallAt10: 0.75, mrr: 0.5 },
+    });
+    expect(retrievalFromRunNote(content, at)).toEqual({
+      at: '2026-10-03T12:00:00.000Z',
+      cases: 12,
+      recallAt10: 0.75,
+      mrr: 0.5,
+    });
+  });
+  it('is null for missing, hand-edited or foreign content', () => {
+    expect(retrievalFromRunNote(undefined, at)).toBeNull();
+    expect(retrievalFromRunNote('not json', at)).toBeNull();
+    expect(retrievalFromRunNote(JSON.stringify({ chunks: {} }), at)).toBeNull();
   });
 });

@@ -25,6 +25,7 @@
 import { and, eq, isNotNull, isNull, not, sql, type SQL } from 'drizzle-orm';
 import {
   contentChunks,
+  contentChunkWindows,
   db,
   recallNodes,
   entities,
@@ -98,17 +99,21 @@ const DEFAULT_BATCH_SIZE = 50;
 // multi-tab races so we don't double-spend on API calls.
 const _inflight = new Map<string, Promise<ReembedResult>>();
 
-/** Same per-1M-token estimates the CLI uses. Worst case (no cache hits). */
-function estimateUsd(totalChars: number, model: string): number {
+/** Same per-1M-token estimates the CLI uses. Worst case (no cache hits).
+ *  text-embedding-3-large measured 2026-10-04: about $0.13 per 1M tokens
+ *  (47M tokens of passage windows). */
+export function estimateEmbeddingUsd(totalChars: number, model: string): number {
   const tokens = totalChars / 4;
   const perMillion =
     model === 'openai/text-embedding-3-small'
       ? 0.02
-      : model === 'google/gemini-embedding-001'
-        ? 0.15
-        : model === 'google/gemini-embedding-2-preview'
-          ? 0.2
-          : 0.05;
+      : model === 'openai/text-embedding-3-large'
+        ? 0.13
+        : model === 'google/gemini-embedding-001'
+          ? 0.15
+          : model === 'google/gemini-embedding-2-preview'
+            ? 0.2
+            : 0.05;
   return (tokens / 1_000_000) * perMillion;
 }
 
@@ -130,6 +135,8 @@ function textForNode(row: Node): string {
   const data = (row.data ?? {}) as Record<string, unknown>;
   const isDigest =
     data.kind === 'conversation_digest' ||
+    // Chat archive summaries share the digest shape (topic = title).
+    data.kind === 'chat_archive' ||
     ((row.tags ?? []) as string[]).includes('conversation-digest');
   if (isDigest) {
     const topic = typeof data.topic === 'string' ? data.topic.trim() : '';
@@ -372,6 +379,16 @@ async function _runReembedInner(ownerId: string, opts: ReembedOpts): Promise<Ree
     });
   }
 
+  // Passage windows carry vectors of the same space as the chunks, and no
+  // record of which model made them. A walk over content_chunks is a model
+  // switch or a repair, so they are dropped rather than left in a space the
+  // queries no longer use (they only exist where the owner switched them
+  // on). `pnpm maintain chunk-windows --apply` rebuilds them, and the
+  // extractor writes them again for every node it re-indexes.
+  if (!dryRun && tables.has('content_chunks')) {
+    await db.delete(contentChunkWindows).where(eq(contentChunkWindows.ownerId, ownerId));
+  }
+
   // Recall prompts carry a vector too (recall_nodes, kind 'prompt'). After a
   // model swap an old-space vector scores under recall_match's floor, so
   // every prompt would quietly stop matching. They are few, so rather than a
@@ -402,7 +419,7 @@ async function _runReembedInner(ownerId: string, opts: ReembedOpts): Promise<Ree
     totalRows,
     totalChars,
     totalWritten,
-    estimatedUsdMax: estimateUsd(totalChars, opts.model),
+    estimatedUsdMax: estimateEmbeddingUsd(totalChars, opts.model),
     durationMs: Date.now() - start,
     dryRun,
   };

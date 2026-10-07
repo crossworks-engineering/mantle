@@ -29,6 +29,7 @@
 import type { SttDispatcher } from './types';
 import type { TranscribeOptions, TranscribeResult } from '../types';
 import { ASSEMBLYAI_BASE_URL, ASSEMBLYAI_POLL_TIMEOUT_SECONDS } from '../catalogs/assemblyai';
+import { providerFetch } from './provider-fetch';
 
 const DEFAULT_MODEL = 'universal';
 /** Poll cadence — AssemblyAI's docs suggest 3s minimum to avoid being
@@ -51,7 +52,7 @@ type PollResponse = {
 };
 
 async function uploadAudio(apiKey: string, audio: Buffer, mime: string): Promise<string> {
-  const res = await fetch(`${ASSEMBLYAI_BASE_URL}/v2/upload`, {
+  const res = await providerFetch(`${ASSEMBLYAI_BASE_URL}/v2/upload`, {
     method: 'POST',
     headers: {
       // AssemblyAI's `Authorization` is the bare key — no `Bearer ` prefix.
@@ -82,7 +83,7 @@ async function createTranscript(
   if (language) body.language_code = language;
   else body.language_detection = true;
 
-  const res = await fetch(`${ASSEMBLYAI_BASE_URL}/v2/transcript`, {
+  const res = await providerFetch(`${ASSEMBLYAI_BASE_URL}/v2/transcript`, {
     method: 'POST',
     headers: {
       Authorization: apiKey,
@@ -109,7 +110,7 @@ async function pollUntilDone(apiKey: string, transcriptId: string): Promise<Poll
   // immediately just burns a request quota slot.
   await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
   while (Date.now() < deadline) {
-    const res = await fetch(`${ASSEMBLYAI_BASE_URL}/v2/transcript/${transcriptId}`, {
+    const res = await providerFetch(`${ASSEMBLYAI_BASE_URL}/v2/transcript/${transcriptId}`, {
       headers: { Authorization: apiKey },
     });
     if (!res.ok) {

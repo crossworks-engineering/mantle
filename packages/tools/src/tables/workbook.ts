@@ -22,6 +22,7 @@ import { str, strArr } from '../coerce';
 import { notFound } from '../errors';
 import { errorMessage } from '@mantle/std';
 import { FILE_ID_PRE, TABLE_NODE_ID_PRE, colSummary } from './common';
+import { tableHistoryActor } from './history';
 
 export const table_create: BuiltinToolDef = {
   slug: 'table_create',
@@ -349,11 +350,17 @@ export const table_commit: BuiltinToolDef = {
   preconditions: TABLE_NODE_ID_PRE,
   name: 'Commit a table draft',
   description:
-    "Publish a table's pending draft as canonical and re-index it into the brain. Use after a batch of row/column edits when the user has confirmed they want the changes live (or asked you to 'save'/'publish'). No-op error if there's no draft. Usually you LEAVE the draft for the user to review + commit in the UI — only commit yourself when explicitly asked.",
+    "Publish a table's pending draft as canonical and re-index it into the brain; the version it replaces is kept on the table's history (`table_history`). Use after a batch of row/column edits when the user has confirmed they want the changes live (or asked you to 'save'/'publish'). No-op error if there's no draft. Usually you LEAVE the draft for the user to review + commit in the UI — only commit yourself when explicitly asked.",
   inputSchema: {
     type: 'object',
     properties: {
       id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
+      note: {
+        type: 'string',
+        maxLength: 500,
+        description:
+          "Why, kept on the history entry of the version this commit replaces, e.g. 'before the March prices'.",
+      },
     },
     required: ['id'],
   },
@@ -362,8 +369,12 @@ export const table_commit: BuiltinToolDef = {
     if (!id) return { ok: false, error: 'id is required' };
     try {
       // Promote the SERVER draft (no doc round-trip): works at any size and
-      // can never truncate — the §4 commit semantics.
-      const published = await commitTable(ctx.ownerId, id);
+      // can never truncate — the §4 commit semantics. The version it replaces
+      // goes on the table's history (`table_history`).
+      const published = await commitTable(ctx.ownerId, id, undefined, {
+        actor: tableHistoryActor(ctx),
+        note: str(input.note) || null,
+      });
       if (!published) return notFound('table', id, 'table_list');
       ctx.step?.setOutput({ id, committed: true });
       return {

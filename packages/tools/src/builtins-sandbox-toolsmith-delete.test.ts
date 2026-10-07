@@ -48,6 +48,8 @@ vi.mock('@mantle/config', async (importOriginal) => {
   // sandboxd() short-circuits to "not enabled" without both of these.
   return {
     ...actual,
+    // The profile is on: these tests are about what the tools do with sandboxd.
+    serviceEnabled: () => true,
     env: ((name: string) =>
       name === 'SANDBOXD_URL'
         ? 'http://sandboxd.test'

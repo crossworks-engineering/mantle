@@ -6,53 +6,24 @@
 
 import { type NextRequest, NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
-import { generateInstanceToken } from '@/lib/push/tokens';
-import { mintTicket } from '@/lib/push/ticket';
-import { registerInstance } from '@/lib/push/relay-client';
-import { getPushInstance, savePushInstance } from '@/lib/push/store';
-import { env } from '@mantle/config';
-
-const DEFAULT_RELAY_URL = 'https://push.crossworks.network';
+import { connectDevice, parseConnectBody } from '@/lib/push/connect';
+import { pushEnrolLimited } from '@/lib/push/login-routes';
 
 export async function POST(req: NextRequest) {
   const owner = await getOwnerOr401();
   if (owner instanceof NextResponse) return owner;
+  const limited = pushEnrolLimited(owner.actor.id);
+  if (limited) return limited;
 
-  const body = (await req.json().catch(() => null)) as {
-    platform?: unknown;
-    osPushToken?: unknown;
-  } | null;
-  const platform = body?.platform;
-  const osPushToken = body?.osPushToken;
-  if (
-    (platform !== 'ios' && platform !== 'android') ||
-    typeof osPushToken !== 'string' ||
-    !osPushToken
-  ) {
-    return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
+  const body = parseConnectBody(await req.json().catch(() => null));
+  if (!body) return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
+
+  const res = await connectDevice(body.osPushToken, { mayRegister: true });
+  if (!res.ok) {
+    return NextResponse.json(
+      { error: 'relay_unreachable', reason: res.error === 'relay_unreachable' ? res.reason : '' },
+      { status: 502 },
+    );
   }
-
-  // Lazily register this install with the relay (TOFU) the first time.
-  let instance = await getPushInstance();
-  if (!instance) {
-    const relayUrl = env('MANTLE_PUSH_RELAY_URL') ?? DEFAULT_RELAY_URL;
-    const instanceToken = generateInstanceToken();
-    try {
-      const { instanceId } = await registerInstance(relayUrl, instanceToken);
-      await savePushInstance({ instanceToken, relayInstanceId: instanceId, relayUrl });
-      instance = { instanceToken, relayInstanceId: instanceId, relayUrl };
-    } catch (err) {
-      return NextResponse.json(
-        { error: 'relay_unreachable', reason: (err as Error).message },
-        { status: 502 },
-      );
-    }
-  }
-
-  const ticket = mintTicket({
-    iid: instance.relayInstanceId,
-    osPushToken,
-    instanceToken: instance.instanceToken,
-  });
-  return NextResponse.json({ ticket, relayUrl: instance.relayUrl });
+  return NextResponse.json({ ticket: res.ticket, relayUrl: res.relayUrl });
 }

@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CHUNK_CUTOFF,
   buildCorpusMap,
   buildDigests,
   buildHistory,
+  explainChunkSelection,
+  keywordPassages,
   mergePreferences,
   patchSuperseded,
   promotePassages,
@@ -439,5 +442,97 @@ describe('promotePassages', () => {
     expect(promotePassages(selected, [{ nodeIds: ['h1'], max: 0 }], [hit('h1')], 3)).toEqual(
       selected,
     );
+  });
+});
+
+describe('explainChunkSelection (decision trace)', () => {
+  const hit = (n: string, distance: number, nodeType = 'page'): ChunkSearchHit => ({
+    nodeId: n,
+    nodeTitle: n,
+    nodeType,
+    ordinal: 0,
+    headingPath: null,
+    text: n,
+    distance,
+  });
+
+  it('names the reason each pool passage missed the cut', () => {
+    const pool = [
+      hit('a', 0.2),
+      hit('t', 0.2, 'telegram_message'),
+      hit('b', 0.3),
+      hit('far', 0.7),
+      hit('c', 0.4),
+    ];
+    const selected = selectChunkHits(pool, 2).hits;
+    const why = explainChunkSelection(pool, 2, selected);
+    expect([...why.dropped]).toEqual([
+      ['t:0', 'type:telegram_message'],
+      ['far:0', `cut:${CHUNK_CUTOFF}`],
+      ['c:0', 'limit:2'],
+    ]);
+    expect(why.promoted.size).toBe(0);
+  });
+
+  it('a promoted passage is named, and the one it pushed out says so', () => {
+    const pool = [hit('a', 0.2), hit('b', 0.3)];
+    const best = [hit('src', 0.5)];
+    const selected = selectChunkHits(pool, 2, {
+      sources: [{ nodeIds: ['src'], max: 3 }],
+      best,
+    }).hits;
+    const why = explainChunkSelection(pool, 2, selected);
+    expect([...why.promoted]).toEqual(['src:0']);
+    expect([...why.dropped]).toEqual([['b:0', 'room:promote']]);
+  });
+});
+
+describe('the T2 keyword rule (KeywordPassageRule)', () => {
+  const hit = (n: string, distance: number, kr?: number): ChunkSearchHit => ({
+    nodeId: n,
+    nodeTitle: n,
+    nodeType: 'page',
+    ordinal: 0,
+    headingPath: null,
+    text: n,
+    distance,
+    ...(kr !== undefined ? { arms: { kr } } : {}),
+  });
+  const keys = (hs: Array<{ nodeId: string }>) => hs.map((h) => h.nodeId);
+
+  it('off: the cutoff applies to a keyword passage too', () => {
+    const pool = [hit('a', 0.3), hit('kw', 0.8, 1), hit('b', 0.4)];
+    expect(keys(selectChunkHits(pool, 8, undefined, keywordPassages('off')).hits)).toEqual([
+      'a',
+      'b',
+    ]);
+  });
+
+  it('exempt: a keyword passage skips the cutoff, in its search place; others do not', () => {
+    const pool = [hit('a', 0.3), hit('kw', 0.8, 1), hit('far', 0.8), hit('b', 0.4)];
+    const kw = keywordPassages('exempt');
+    const sel = selectChunkHits(pool, 8, undefined, kw).hits;
+    expect(keys(sel)).toEqual(['a', 'kw', 'b']);
+    const why = explainChunkSelection(pool, 8, sel, kw);
+    expect([...why.kept]).toEqual([['kw:0', 'exempt:keyword']]);
+    expect([...why.dropped]).toEqual([['far:0', `cut:${CHUNK_CUTOFF}`]]);
+  });
+
+  it('exempt keeps the budget: a keyword passage past the cut stays out', () => {
+    const pool = [hit('a', 0.3), hit('b', 0.3), hit('kw', 0.8, 1)];
+    expect(keys(selectChunkHits(pool, 2, undefined, keywordPassages('exempt')).hits)).toEqual([
+      'a',
+      'b',
+    ]);
+  });
+
+  it('slots: a keyword passage past the cut takes the weakest tail slot', () => {
+    const pool = [hit('a', 0.3), hit('kw1', 0.5, 2), hit('b', 0.4), hit('kw2', 0.7, 1)];
+    const kw = keywordPassages('slots');
+    const sel = selectChunkHits(pool, 3, undefined, kw).hits;
+    expect(keys(sel)).toEqual(['a', 'kw1', 'kw2']);
+    const why = explainChunkSelection(pool, 3, sel, kw);
+    expect(why.kept.get('kw2:0')).toBe('slot:keyword');
+    expect(why.dropped.get('b:0')).toBe('room:keyword');
   });
 });

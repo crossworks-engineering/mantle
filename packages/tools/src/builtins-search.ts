@@ -7,9 +7,22 @@
 
 import { and, desc, eq, notInArray, sql } from 'drizzle-orm';
 import { db, nodes, type Node } from '@mantle/db';
-import { searchNodes, searchChunks, readSection, resolveSupersededTargets } from '@mantle/search';
-import { embed } from '@mantle/embeddings';
-import { applyPassageScores, decisionUseEnabled, scorePassages } from '@mantle/decisions';
+import {
+  ContextTraceBuilder,
+  armFields,
+  judgeWhy,
+  searchNodes,
+  searchChunksExplained,
+  readSection,
+  resolveSupersededTargets,
+} from '@mantle/search';
+import { chunkWindowsEnabled, embed } from '@mantle/embeddings';
+import {
+  applyPassageScores,
+  decisionUseEnabled,
+  passageScoringPool,
+  scorePassages,
+} from '@mantle/decisions';
 import { nodeUrl } from '@mantle/content';
 import { type BuiltinToolDef } from './types';
 import { str, strOpt, numOpt as num } from './coerce';
@@ -189,11 +202,19 @@ export const search_chunks: BuiltinToolDef = {
       const limit = num(input.limit, 10) ?? 10;
       const embedding = await embed(ctx.ownerId, q);
       // Decider, use `passage_scoring` (experimental, owner-switched): when it
-      // is on, fetch a wider pool so the scorer has something to choose from.
-      // Off = the exact pool it always fetched.
+      // is on, fetch a wider pool so the scorer has something to choose from
+      // (the use's `pool` setting, see passageScoringPool). Off = the exact
+      // pool it always fetched.
       const scoringUse = await decisionUseEnabled(ctx.ownerId, 'passage_scoring');
-      const pool = scoringUse ? Math.min(Math.max(limit * 2, 16), 25) : limit;
-      const found = await searchChunks({
+      // Passage windows (embedding_config.chunk_windows, default off): a
+      // window arm joins the hybrid search, and the judged pool doubles so
+      // the judge sees the head of both arms.
+      const windows = await chunkWindowsEnabled(ctx.ownerId);
+      const pool = scoringUse ? passageScoringPool(scoringUse, limit, { windows }) : limit;
+      // Decision trace v1 in this step's output: each passage of the pool,
+      // which arm found it, its score, kept or dropped and why.
+      const trace = new ContextTraceBuilder();
+      const { hits: found, search } = await searchChunksExplained({
         ownerId: ctx.ownerId,
         embedding,
         // Hybrid: the query text feeds the FTS booster arm, so exact rare
@@ -202,7 +223,24 @@ export const search_chunks: BuiltinToolDef = {
         branch: strOpt(input.branch),
         limit: pool,
         excludeTypes: surfaceHiddenNodeTypes(ctx.surface) ?? undefined,
+        windows,
+        // A live judge scores the whole pool: hybrid head, then window head.
+        windowMerge: scoringUse?.mode === 'live' ? 'union' : 'turns',
       });
+      trace.setSearch(search);
+      found.forEach((h, i) =>
+        trace.add({
+          b: 'chunk',
+          k: chunkKey(h),
+          out: 'kept',
+          at: 'search',
+          why: 'sent',
+          ...armFields(h.arms),
+          rank: i + 1,
+          d: h.distance,
+        }),
+      );
+      trace.stage('search', found.length, found.length);
       // Score every passage 0-3 for "does it answer q" in one decision call.
       // `live`: drop the weak ones, order by score, return the top `limit`.
       // `shadow`: the answer lands in the trace only; the reply is what it
@@ -222,6 +260,15 @@ export const search_chunks: BuiltinToolDef = {
         );
         if (scoring) {
           const { kept, dropped } = applyPassageScores(found, chunkKey, scoring);
+          for (const [k, sc] of scoring.scores) trace.score('chunk', k, sc.score);
+          for (const h of dropped) {
+            trace.drop('chunk', chunkKey(h), 'scoring', judgeWhy(scoring.threshold), scoring.mode);
+          }
+          trace.stage(
+            'scoring',
+            found.length,
+            scoring.mode === 'live' ? kept.length : found.length,
+          );
           ctx.step?.setMeta({
             passage_scoring: scoring.mode,
             passage_scoring_pool: found.length,
@@ -235,7 +282,13 @@ export const search_chunks: BuiltinToolDef = {
           }
         }
       }
-      ctx.step?.setOutput({ count: hits.length });
+      const returned = new Set(hits.map(chunkKey));
+      for (const h of found) {
+        if (returned.has(chunkKey(h))) trace.set('chunk', chunkKey(h), { at: 'select' });
+        else trace.drop('chunk', chunkKey(h), 'select', `limit:${limit}`);
+      }
+      trace.stage('select', found.length, hits.length, undefined, `limit ${limit}`);
+      ctx.step?.setOutput({ count: hits.length, trace: trace.toJSON() });
       // Content-currency annotation: passages from a superseded node carry
       // their living successor so the model quotes the current copy instead.
       const successors = await resolveSupersededTargets(

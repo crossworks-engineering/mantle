@@ -108,6 +108,7 @@ export const WRITE_RULES: Readonly<Record<string, WriteRule>> = {
 
   // ── Agents, tool groups, tools, persona ──────────────────────────────────
   agent_grant_tool_group: { kind: 'write', agents: ['agent_slug'], groups: ['group_slug'] },
+  agent_set_thinking_effort: { kind: 'write', agents: ['agent_slug'] },
   tool_group_ensure: { kind: 'write', groups: ['slug'] },
   api_docs_set: { kind: 'write', groups: ['group_slug'] },
   api_skill_set: { kind: 'write', groups: ['group_slug'] },
@@ -161,6 +162,9 @@ export const WRITE_RULES: Readonly<Record<string, WriteRule>> = {
   table_update: onNodes('id'),
   table_commit: onNodes('id'),
   table_delete: onNodes('id'),
+  table_snapshot_create: onNodes('id'),
+  table_snapshot_restore: onNodes('id'),
+  table_snapshot_delete: onNodes('id'),
   table_cell_set: onNodes('table_id'),
   table_column_add: onNodes('table_id'),
   table_column_update: onNodes('table_id'),
@@ -210,6 +214,7 @@ export const WRITE_RULES: Readonly<Record<string, WriteRule>> = {
 
   // ── Apps ─────────────────────────────────────────────────────────────────
   app_create: creates(),
+  app_update: onApp,
   app_build: onApp,
   app_db_schema_set: onApp,
   app_db_seed: onApp,
@@ -221,6 +226,16 @@ export const WRITE_RULES: Readonly<Record<string, WriteRule>> = {
   app_tools_set: onApp,
   app_table_export_set: { ...onApp, creates: true },
   app_table_export_remove: onApp,
+  app_snapshot_create: onApp,
+  app_snapshot_restore: onApp,
+  app_snapshot_delete: onApp,
+  app_undelete: creates(),
+  app_duplicate: onApp,
+  app_export: onApp,
+  // A package from anywhere: its code is built and can be published. It is
+  // granted no tools (app-package-import.ts), but what the code does is
+  // still not in the input, so a client-sourced import always waits.
+  app_import: always(UNSEEN),
 
   // ── Records (tasks, events, contacts, journal, formulas, secrets) ────────
   task_create: creates(),
@@ -305,6 +320,15 @@ export const WRITE_RULES: Readonly<Record<string, WriteRule>> = {
   recall_map_set_slug: always(RECALL_GUIDANCE),
   recall_card_set_slug: always(RECALL_GUIDANCE),
   my_items_list: free(OWN_SPACE),
+  // Own-space drafts (MCP as a login): the caller's own space, a draft an
+  // admin reviews before anything reaches the brain.
+  my_note_create: free("a draft in the caller's own space"),
+  my_page_create: free("a draft in the caller's own space"),
+  my_file_upload: free("a draft in the caller's own space"),
+  my_item_submit: free("sends the caller's own draft to review"),
+  // Calls on a federated peer as the login it binds us to.
+  peer_call: always(OUTWARD),
+  peer_file_copy: always(OUTWARD),
   my_item_open: free(OWN_SPACE),
 };
 

@@ -23,6 +23,7 @@ import {
   db,
   nodes,
   apps,
+  appDatabases,
   shares,
   notifyNodeIngested,
   type Node,
@@ -32,6 +33,7 @@ import {
 } from '@mantle/db';
 import { loadProfilePreferences } from './profile-preferences';
 import { notifyAppNavChanged } from './app-nav';
+import { codeHash, insertNodeSnapshot } from './node-snapshot-rows';
 import type { AppRow, AppDetail, AppTint } from '@mantle/client-types';
 import { projectAppIcon, projectAppTint } from '@mantle/content-core/app-nav';
 export type { AppRow, AppDetail };
@@ -90,6 +92,9 @@ export function assertSourceWithinLimits(source: AppSource): void {
 type SidecarCols = {
   source: AppSource;
   draftSource: AppSource | null;
+  /** Set by listApps, which reads `draft_source IS NOT NULL` rather than the
+   *  draft itself; wins over `draftSource` for `hasDraft`. */
+  hasDraft?: boolean;
   manifest: AppManifest;
   draftBuild: BuildRef | null;
   publishedBuild: BuildRef | null;
@@ -99,9 +104,25 @@ type SidecarCols = {
   hubAppId: string | null;
   /** apps.data_read_only: informational (client logins C6). */
   dataReadOnly: boolean;
+  /** apps.draft_updated_at: detail only (the editor's save check). */
+  draftUpdatedAt?: Date | null;
 };
 
-function rowOf(n: Node, s: Partial<SidecarCols> = {}): AppRow {
+/** The node columns an app row shows (listApps reads only these). */
+type RowNode = Pick<
+  Node,
+  | 'id'
+  | 'title'
+  | 'data'
+  | 'tags'
+  | 'audience'
+  | 'inheritedLevel'
+  | 'embeddedLevel'
+  | 'createdAt'
+  | 'updatedAt'
+>;
+
+function rowOf(n: RowNode, s: Partial<SidecarCols> = {}): AppRow {
   const d = (n.data ?? {}) as Record<string, unknown>;
   const manifest = (s.manifest ?? {}) as AppManifest;
   return {
@@ -116,7 +137,7 @@ function rowOf(n: Node, s: Partial<SidecarCols> = {}): AppRow {
     description: typeof manifest.description === 'string' ? manifest.description : null,
     toolCount: manifest.toolSlugs?.length ?? 0,
     hasBuild: !!s.publishedBuild?.ok,
-    hasDraft: s.draftSource != null,
+    hasDraft: s.hasDraft ?? s.draftSource != null,
     // Every live link is open: team links are retired (migration 0176).
     shareMode: s.shareSettings ? 'public' : null,
     isHub: s.hubAppId != null && s.hubAppId === n.id,
@@ -138,6 +159,7 @@ function detailOf(n: Node, s: SidecarCols): AppDetail {
     manifest: s.manifest,
     draftBuild: s.draftBuild,
     publishedBuild: s.publishedBuild,
+    draftUpdatedAt: s.draftUpdatedAt?.toISOString() ?? null,
   };
 }
 
@@ -203,19 +225,37 @@ export async function listApps(
 ): Promise<AppRow[]> {
   // The active share (unique per node) + the hub designation give each row its
   // exposure badge: Hub ⊃ Team ⊃ Public ⊃ owner-only.
+  //
+  // Only the columns a row shows (apps audit P2): the whole node row carried
+  // the embedding, and the draft column the whole draft source tree (up to
+  // 50 × 256 KB per app, up to 500 apps), to answer "is there a draft".
   const [rows, prefs] = await Promise.all([
     db
       .select({
-        node: nodes,
+        node: {
+          id: nodes.id,
+          title: nodes.title,
+          data: nodes.data,
+          tags: nodes.tags,
+          audience: nodes.audience,
+          inheritedLevel: nodes.inheritedLevel,
+          embeddedLevel: nodes.embeddedLevel,
+          createdAt: nodes.createdAt,
+          updatedAt: nodes.updatedAt,
+        },
         manifest: apps.manifest,
-        draftSource: apps.draftSource,
+        hasDraft: sql<boolean>`${apps.draftSource} is not null`,
         publishedBuild: apps.publishedBuild,
         dataReadOnly: apps.dataReadOnly,
         shareSettings: shares.settings,
       })
       .from(nodes)
       .leftJoin(apps, eq(apps.nodeId, nodes.id))
-      .leftJoin(shares, and(eq(shares.nodeId, nodes.id), isNull(shares.revokedAt)))
+      .leftJoin(
+        shares,
+        // The open link only: an app may carry many contact shares (0214).
+        and(eq(shares.nodeId, nodes.id), isNull(shares.revokedAt), isNull(shares.contactId)),
+      )
       .where(and(...appConds(ownerId, opts)))
       .orderBy(appOrderBy(opts.sort))
       .limit(opts.limit ?? 500)
@@ -226,7 +266,7 @@ export async function listApps(
   return rows.map((r) =>
     rowOf(r.node, {
       manifest: r.manifest ?? {},
-      draftSource: r.draftSource ?? null,
+      hasDraft: r.hasDraft === true,
       publishedBuild: r.publishedBuild ?? null,
       shareSettings: r.shareSettings ?? null,
       hubAppId,
@@ -267,11 +307,16 @@ async function loadDetail(ownerId: string, id: string): Promise<AppDetail | null
         draftBuild: apps.draftBuild,
         publishedBuild: apps.publishedBuild,
         dataReadOnly: apps.dataReadOnly,
+        draftUpdatedAt: apps.draftUpdatedAt,
         shareSettings: shares.settings,
       })
       .from(nodes)
       .leftJoin(apps, eq(apps.nodeId, nodes.id))
-      .leftJoin(shares, and(eq(shares.nodeId, nodes.id), isNull(shares.revokedAt)))
+      .leftJoin(
+        shares,
+        // The open link only: an app may carry many contact shares (0214).
+        and(eq(shares.nodeId, nodes.id), isNull(shares.revokedAt), isNull(shares.contactId)),
+      )
       .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'app')))
       .limit(1),
     loadProfilePreferences(ownerId),
@@ -286,11 +331,56 @@ async function loadDetail(ownerId: string, id: string): Promise<AppDetail | null
     shareSettings: row.shareSettings ?? null,
     hubAppId: prefs.teamHubAppId ?? null,
     dataReadOnly: row.dataReadOnly === true,
+    draftUpdatedAt: row.draftUpdatedAt ?? null,
   });
 }
 
 export async function getApp(ownerId: string, id: string): Promise<AppDetail | null> {
   return loadDetail(ownerId, id);
+}
+
+/** What RUNNING an app needs: its level, manifest and builds. */
+export type AppRuntime = {
+  id: string;
+  title: string;
+  audience: AppDetail['audience'];
+  manifest: AppManifest;
+  draftBuild: BuildRef | null;
+  publishedBuild: BuildRef | null;
+  dataReadOnly: boolean;
+};
+
+/**
+ * The slim read for the brokers and frames (apps audit P1). Every
+ * `host.db.query` and tool call used to load the whole app through getApp:
+ * the published AND draft source (up to 50 × 256 KB each), the open share and
+ * the owner's preferences, to read the manifest. One row, the columns that
+ * running the app needs, nothing else.
+ */
+export async function getAppRuntime(ownerId: string, id: string): Promise<AppRuntime | null> {
+  const [row] = await db
+    .select({
+      title: nodes.title,
+      audience: nodes.audience,
+      manifest: apps.manifest,
+      draftBuild: apps.draftBuild,
+      publishedBuild: apps.publishedBuild,
+      dataReadOnly: apps.dataReadOnly,
+    })
+    .from(nodes)
+    .innerJoin(apps, eq(apps.nodeId, nodes.id))
+    .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'app')))
+    .limit(1);
+  if (!row) return null;
+  return {
+    id,
+    title: row.title,
+    audience: asViewerLevel(row.audience),
+    manifest: row.manifest ?? {},
+    draftBuild: row.draftBuild ?? null,
+    publishedBuild: row.publishedBuild ?? null,
+    dataReadOnly: row.dataReadOnly === true,
+  };
 }
 
 /** The working tree the editor + build operate on: draft if present, else published. */
@@ -299,6 +389,8 @@ export function workingSource(app: AppDetail): AppSource {
 }
 
 export type CreateAppInput = {
+  /** Only to bring a deleted app back with its old id (app-trash.ts). */
+  id?: string;
   title: string;
   icon?: string;
   color?: AppTint;
@@ -311,7 +403,7 @@ export async function createApp(ownerId: string, input: CreateAppInput): Promise
   await ensureRoot(ownerId);
   const source = input.source ?? emptySource();
   const manifest: AppManifest = input.description ? { description: input.description } : {};
-  const id = randomUUID();
+  const id = input.id ?? randomUUID();
 
   return db.transaction(async (tx) => {
     const [node] = await tx
@@ -354,6 +446,8 @@ export type UpdateAppInput = Partial<{
   /** null clears back to the neutral tint. */
   color: AppTint | null;
   tags: string[];
+  /** The description (kept on the manifest); '' clears it. */
+  description: string;
   /** Informational (client logins C6): members and clients only read the
    *  app's data. The owner's app update route is its one writer. */
   dataReadOnly: boolean;
@@ -398,6 +492,18 @@ export async function updateAppMeta(
       .set({ dataReadOnly: input.dataReadOnly, updatedAt: new Date() })
       .where(eq(apps.nodeId, id));
   }
+  if (input.description !== undefined) {
+    // On the manifest, under the row lock like every manifest write.
+    const description = input.description.trim().slice(0, 2000);
+    await db.transaction(async (tx) => {
+      const app = await lockAppRow(tx, ownerId, id);
+      if (!app) return;
+      const manifest: AppManifest = { ...app.manifest };
+      if (description) manifest.description = description;
+      else delete manifest.description;
+      await tx.update(apps).set({ manifest, updatedAt: new Date() }).where(eq(apps.nodeId, id));
+    });
+  }
   return loadDetail(ownerId, id);
 }
 
@@ -409,19 +515,84 @@ export async function updateAppMeta(
 // did nothing": the source is correct, the served bundle is not, and no cache
 // clear or rebuild-less republish can converge them.
 
-/** Replace the entire draft source tree (autosave). Returns false if missing. */
+// CONCURRENCY (apps audit D4, D5, U1): the editor's autosave, the agent's
+// file writes, the manifest setters and publish all read-modify-write one
+// `apps` row, from two processes. Each takes the row lock first (lockAppRow),
+// so two writes in flight cannot each keep only their own change, and a
+// publish cannot clear a draft that changed after it read it.
+
+type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** The app's sidecar row, locked FOR UPDATE until the transaction ends;
+ *  null when the app is missing or not this owner's. */
+async function lockAppRow(tx: DbTx, ownerId: string, id: string) {
+  const [row] = await tx
+    .select({
+      source: apps.source,
+      draft: apps.draftSource,
+      manifest: apps.manifest,
+      draftBuild: apps.draftBuild,
+      draftUpdatedAt: apps.draftUpdatedAt,
+      publishedBuild: apps.publishedBuild,
+      restoredFromSeq: apps.restoredFromSeq,
+    })
+    .from(apps)
+    .innerJoin(nodes, eq(nodes.id, apps.nodeId))
+    .where(and(eq(apps.nodeId, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'app')))
+    .for('update', { of: apps });
+  if (!row) return null;
+  return {
+    source: row.source ?? emptySource(),
+    draft: row.draft ?? null,
+    manifest: row.manifest ?? {},
+    draftBuild: row.draftBuild ?? null,
+    draftUpdatedAt: row.draftUpdatedAt ?? null,
+    publishedBuild: row.publishedBuild ?? null,
+    restoredFromSeq: row.restoredFromSeq ?? null,
+  };
+}
+
+/** The draft changed since the editor last read it (apps audit U1): an
+ *  agent or another tab wrote it. Saving would silently drop that work. */
+export class AppDraftConflictError extends Error {
+  constructor() {
+    super(
+      'the draft changed since you opened it (the assistant or another window edited it). Reload to see the latest, then make your change again.',
+    );
+    this.name = 'AppDraftConflictError';
+  }
+}
+
+/**
+ * Replace the entire draft source tree (autosave). Returns false if missing,
+ * else the draft's new `draftUpdatedAt`. With `baseDraftUpdatedAt` (the
+ * value the editor last read, null for "no draft"), a draft changed since
+ * then throws AppDraftConflictError and nothing is written. Without it the
+ * write goes through as before (an older editor).
+ */
 export async function saveDraftSource(
   ownerId: string,
   id: string,
   source: AppSource,
-): Promise<boolean> {
-  if (!(await ownsApp(ownerId, id))) return false;
+  opts: { baseDraftUpdatedAt?: string | null } = {},
+): Promise<false | { draftUpdatedAt: string }> {
   assertSourceWithinLimits(source);
-  await db
-    .update(apps)
-    .set({ draftSource: source, draftUpdatedAt: new Date(), draftBuild: null })
-    .where(eq(apps.nodeId, id));
-  return true;
+  return db.transaction(async (tx) => {
+    const app = await lockAppRow(tx, ownerId, id);
+    if (!app) return false;
+    if (
+      opts.baseDraftUpdatedAt !== undefined &&
+      (app.draftUpdatedAt?.toISOString() ?? null) !== opts.baseDraftUpdatedAt
+    ) {
+      throw new AppDraftConflictError();
+    }
+    const draftUpdatedAt = new Date();
+    await tx
+      .update(apps)
+      .set({ draftSource: source, draftUpdatedAt, draftBuild: null })
+      .where(eq(apps.nodeId, id));
+    return { draftUpdatedAt: draftUpdatedAt.toISOString() };
+  });
 }
 
 /** Write/replace one file in the draft (creating the draft from published if
@@ -432,16 +603,18 @@ export async function writeDraftFile(
   path: string,
   content: string,
 ): Promise<AppSource | null> {
-  const app = await loadDetail(ownerId, id);
-  if (!app) return null;
-  const base = workingSource(app);
-  const next: AppSource = { entry: base.entry, files: { ...base.files, [path]: content } };
-  assertSourceWithinLimits(next);
-  await db
-    .update(apps)
-    .set({ draftSource: next, draftUpdatedAt: new Date(), draftBuild: null })
-    .where(eq(apps.nodeId, id));
-  return next;
+  return db.transaction(async (tx) => {
+    const app = await lockAppRow(tx, ownerId, id);
+    if (!app) return null;
+    const base = app.draft ?? app.source;
+    const next: AppSource = { entry: base.entry, files: { ...base.files, [path]: content } };
+    assertSourceWithinLimits(next);
+    await tx
+      .update(apps)
+      .set({ draftSource: next, draftUpdatedAt: new Date(), draftBuild: null })
+      .where(eq(apps.nodeId, id));
+    return next;
+  });
 }
 
 export class CannotDeleteEntryError extends Error {
@@ -456,18 +629,20 @@ export async function deleteDraftFile(
   id: string,
   path: string,
 ): Promise<AppSource | null> {
-  const app = await loadDetail(ownerId, id);
-  if (!app) return null;
-  const base = workingSource(app);
-  if (path === base.entry) throw new CannotDeleteEntryError();
-  const files = { ...base.files };
-  delete files[path];
-  const next: AppSource = { entry: base.entry, files };
-  await db
-    .update(apps)
-    .set({ draftSource: next, draftUpdatedAt: new Date(), draftBuild: null })
-    .where(eq(apps.nodeId, id));
-  return next;
+  return db.transaction(async (tx) => {
+    const app = await lockAppRow(tx, ownerId, id);
+    if (!app) return null;
+    const base = app.draft ?? app.source;
+    if (path === base.entry) throw new CannotDeleteEntryError();
+    const files = { ...base.files };
+    delete files[path];
+    const next: AppSource = { entry: base.entry, files };
+    await tx
+      .update(apps)
+      .set({ draftSource: next, draftUpdatedAt: new Date(), draftBuild: null })
+      .where(eq(apps.nodeId, id));
+    return next;
+  });
 }
 
 /** Shallow-merge a manifest patch (e.g. toolSlugs, sqlite, description). */
@@ -476,36 +651,85 @@ export async function setManifest(
   id: string,
   patch: Partial<AppManifest>,
 ): Promise<AppManifest | null> {
-  const app = await loadDetail(ownerId, id);
-  if (!app) return null;
-  const next: AppManifest = { ...app.manifest, ...patch };
-  await db.update(apps).set({ manifest: next, updatedAt: new Date() }).where(eq(apps.nodeId, id));
-  return next;
+  return db.transaction(async (tx) => {
+    const app = await lockAppRow(tx, ownerId, id);
+    if (!app) return null;
+    const next: AppManifest = { ...app.manifest, ...patch };
+    await tx.update(apps).set({ manifest: next, updatedAt: new Date() }).where(eq(apps.nodeId, id));
+    return next;
+  });
+}
+
+/**
+ * Declare a new schema for an app's database: the script and the next
+ * version. Returns that version, or null when the app is not this owner's.
+ *
+ * The next version is one past BOTH the manifest's and the database's own
+ * (apps audit 2026-10-02, item 8). They drift apart: a data restore puts
+ * the snapshot's version on the database, an undelete of a never-published
+ * app keeps the old one. A schema at manifest + 1 that is not above the
+ * database's was skipped without a word, since a version applies only when
+ * it is newer than the database's. Under the app row lock, so two declares
+ * at once take two versions.
+ */
+export async function declareAppSchema(
+  ownerId: string,
+  id: string,
+  schemaSql: string,
+): Promise<number | null> {
+  return db.transaction(async (tx) => {
+    const app = await lockAppRow(tx, ownerId, id);
+    if (!app) return null;
+    const [reg] = await tx
+      .select({ schemaVersion: appDatabases.schemaVersion })
+      .from(appDatabases)
+      .where(eq(appDatabases.appNodeId, id))
+      .limit(1);
+    const schemaVersion =
+      Math.max(app.manifest.sqlite?.schemaVersion ?? 0, reg?.schemaVersion ?? 0) + 1;
+    const next: AppManifest = { ...app.manifest, sqlite: { schemaSql, schemaVersion } };
+    await tx.update(apps).set({ manifest: next, updatedAt: new Date() }).where(eq(apps.nodeId, id));
+    return schemaVersion;
+  });
 }
 
 /** Record a build of the draft (preview). A failed build still updates the ref
  *  so the agent sees the errors, but callers should keep the last green ref for
- *  rendering — they pass the ref to render; this only persists the latest. */
+ *  rendering — they pass the ref to render; this only persists the latest.
+ *
+ *  `builtFrom`: the source the build compiled. Under the app row lock, a
+ *  build of source that is no longer the working source is NOT recorded
+ *  ('stale'): an autosave during the build cleared the build, and recording
+ *  the old one after it paired new source with an old bundle, which the next
+ *  publish would ship (apps audit 2026-10-02, item 10). */
 export async function setDraftBuild(
   ownerId: string,
   id: string,
   build: BuildRef,
-): Promise<boolean> {
-  if (!(await ownsApp(ownerId, id))) return false;
-  await db
-    .update(apps)
-    .set({ draftBuild: build, updatedAt: new Date() })
-    .where(eq(apps.nodeId, id));
+  opts: { builtFrom?: AppSource } = {},
+): Promise<boolean | 'stale'> {
+  const done = await db.transaction(async (tx) => {
+    const app = await lockAppRow(tx, ownerId, id);
+    if (!app) return false;
+    if (opts.builtFrom && codeHash(app.draft ?? app.source) !== codeHash(opts.builtFrom)) {
+      return 'stale' as const;
+    }
+    await tx
+      .update(apps)
+      .set({ draftBuild: build, updatedAt: new Date() })
+      .where(eq(apps.nodeId, id));
+    return true;
+  });
   // The app list shows whether each app can be previewed.
-  void notifyAppNavChanged(ownerId);
-  return true;
+  if (done === true) void notifyAppNavChanged(ownerId);
+  return done;
 }
 
 export async function discardDraft(ownerId: string, id: string): Promise<boolean> {
   if (!(await ownsApp(ownerId, id))) return false;
   await db
     .update(apps)
-    .set({ draftSource: null, draftUpdatedAt: null, draftBuild: null })
+    .set({ draftSource: null, draftUpdatedAt: null, draftBuild: null, restoredFromSeq: null })
     .where(eq(apps.nodeId, id));
   void notifyAppNavChanged(ownerId);
   return true;
@@ -524,11 +748,11 @@ export class NoGreenBuildError extends Error {
 /**
  * Publish: promote `draft_source` → `source`, `draft_build` → `published_build`,
  * recompute `source_text`, clear the draft, bump version, fire the extractor.
- * Refuses if the draft hasn't been built green. Returns the published detail, or
- * null if the app doesn't exist (or has nothing to publish).
- */
-/**
- * Ship the staged draft — or, when nothing is staged, a REBUILD of what is
+ * Refuses if the draft hasn't been built green (NoGreenBuildError). Returns
+ * the app's detail (unchanged when there was nothing to publish), or null if
+ * the app doesn't exist.
+ *
+ * It ships the staged draft — or, when nothing is staged, a REBUILD of what is
  * already published.
  *
  * That second case is not a nicety. `app_build` compiles `draft ?? source`, so
@@ -551,53 +775,288 @@ export class NoGreenBuildError extends Error {
  * pairing invariant that `apps-build-staleness.test.ts` guards — never ship new
  * source beside an old bundle — is untouched in both.
  */
-export async function publishApp(ownerId: string, id: string): Promise<AppDetail | null> {
-  const app = await loadDetail(ownerId, id);
-  if (!app) return null;
-  // Nothing staged and no rebuild waiting — already published.
-  if (!app.draft && !app.draftBuild) return app;
-  if (!app.draftBuild?.ok) throw new NoGreenBuildError();
+/** Who published, and why (the version row's actor and note). */
+export type PublishAppOpts = { note?: string | null; actor?: AppHistoryActor };
 
-  const published = app.draft;
-  const build = app.draftBuild;
+/** Who wrote a version or snapshot row. */
+export type AppHistoryActor = 'owner' | 'agent' | 'mcp' | 'system';
+
+export async function publishApp(
+  ownerId: string,
+  id: string,
+  opts: PublishAppOpts = {},
+): Promise<AppDetail | null> {
+  // Under the row lock (apps audit D4): an autosave that lands while this
+  // runs waits for it and becomes the next draft, and one that landed before
+  // is what is read here (and it cleared the build, so the publish refuses
+  // rather than shipping the old build as the new source).
+  const published = await db.transaction(async (tx) => {
+    const app = await lockAppRow(tx, ownerId, id);
+    if (!app) return null;
+    // Nothing staged and no rebuild waiting — already published.
+    if (!app.draft && !app.draftBuild) return false;
+    if (!app.draftBuild?.ok) throw new NoGreenBuildError();
+    await promote(tx, id, app.draft, app.draftBuild);
+    // The version this publish makes (apps snapshots, Phase 2): the code
+    // that just went live, appended in the same transaction.
+    const code = {
+      source: app.draft ?? app.source,
+      draft: null,
+      manifest: app.manifest,
+      publishedBuild: app.draftBuild,
+    };
+    await insertNodeSnapshot(tx, {
+      ownerId,
+      nodeId: id,
+      nodeKind: 'app',
+      trigger: 'publish',
+      note: opts.note?.trim().slice(0, 500) || null,
+      actor: opts.actor ?? 'owner',
+      code,
+      sourceHash: codeHash(code.source),
+      restoredFrom: app.restoredFromSeq,
+    });
+    return true;
+  });
+  if (published === null) return null;
+  if (published) {
+    await notifyNodeIngested(id);
+    void notifyAppNavChanged(ownerId);
+  }
+  return loadDetail(ownerId, id);
+}
+
+/** The publish write itself: the staged draft (when there is one) and the
+ *  build validated from it, promoted together. */
+async function promote(
+  tx: DbTx,
+  id: string,
+  published: AppSource | null,
+  build: BuildRef,
+): Promise<void> {
   // Only when a draft is actually staged. A build-only publish must not touch
   // the source — it was built from what is already there. Hoisted out of the
   // `.set({…})` rather than spread inline: the staleness tripwire parses those
   // payloads with a non-greedy match, and a nested `})` truncates what it sees.
   const sourceFields = published ? { source: published, sourceText: sourceToText(published) } : {};
-  await db.transaction(async (tx) => {
+  await tx
+    .update(apps)
+    .set({
+      ...sourceFields,
+      publishedBuild: build,
+      draftSource: null,
+      draftUpdatedAt: null,
+      draftBuild: null,
+      restoredFromSeq: null,
+      version: sql`${apps.version} + 1`,
+      updatedAt: new Date(),
+    })
+    .where(eq(apps.nodeId, id));
+  await tx.update(nodes).set({ embedding: null, updatedAt: new Date() }).where(eq(nodes.id, id));
+}
+
+/** The draft holds unpublished work, and a restore into it would drop that
+ *  work: the caller must say to discard it. */
+export class AppRestoreDraftError extends Error {
+  constructor() {
+    super(
+      'the app has an unpublished draft, and restoring code replaces it: pass discard_draft (or confirm in the editor) to drop the draft, or commit it first',
+    );
+    this.name = 'AppRestoreDraftError';
+  }
+}
+
+/** A snapshot's code, as restore takes it. */
+type RestorableCode = {
+  source: AppSource;
+  draft: AppSource | null;
+  manifest: AppManifest;
+  publishedBuild: BuildRef | null;
+};
+
+/**
+ * Code-only restore (apps snapshots, Phase 2): the snapshot's code goes into
+ * the DRAFT, never straight to live. The editor then previews and commits it
+ * as usual, and that publish becomes a new version "restored from v{seq}".
+ * The manifest does not change: the app has ONE allowlist, the live app's,
+ * so restoring the old tools with the draft granted them to the live app at
+ * once (apps audit 2026-10-02, item 9). The caller names them instead; the
+ * owner grants them with app_tools_set. The declared SQLite schema stays too
+ * (it belongs to the live data).
+ */
+export async function restoreAppDraft(
+  ownerId: string,
+  id: string,
+  code: RestorableCode,
+  seq: number,
+  opts: { discardDraft?: boolean } = {},
+): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const app = await lockAppRow(tx, ownerId, id);
+    if (!app) return false;
+    if (app.draft && !opts.discardDraft) throw new AppRestoreDraftError();
     await tx
       .update(apps)
       .set({
-        ...sourceFields,
-        publishedBuild: build,
-        draftSource: null,
-        draftUpdatedAt: null,
+        draftSource: code.draft ?? code.source,
+        draftUpdatedAt: new Date(),
         draftBuild: null,
+        restoredFromSeq: seq,
+        updatedAt: new Date(),
+      })
+      .where(eq(apps.nodeId, id));
+    return true;
+  });
+}
+
+/**
+ * Full rollback (apps snapshots, Phase 2): the snapshot's code goes LIVE with
+ * the build it ran on, together with its declared schema, because that code
+ * and the data restored beside it were known to work together. A draft the
+ * snapshot held comes back as the draft (no build: build it to preview).
+ * Appends the version "restored from v{seq}". The data half is
+ * restoreAppDatabaseFile's.
+ */
+export async function restoreAppLive(
+  ownerId: string,
+  id: string,
+  code: RestorableCode & { publishedBuild: BuildRef },
+  seq: number,
+  opts: { discardDraft?: boolean; actor?: AppHistoryActor } = {},
+): Promise<boolean> {
+  const done = await db.transaction(async (tx) => {
+    const app = await lockAppRow(tx, ownerId, id);
+    if (!app) return false;
+    if (app.draft && !opts.discardDraft) throw new AppRestoreDraftError();
+    await tx
+      .update(apps)
+      .set({
+        source: code.source,
+        sourceText: sourceToText(code.source),
+        publishedBuild: code.publishedBuild,
+        manifest: code.manifest,
+        draftSource: code.draft,
+        draftUpdatedAt: code.draft ? new Date() : null,
+        draftBuild: null,
+        restoredFromSeq: null,
         version: sql`${apps.version} + 1`,
         updatedAt: new Date(),
       })
       .where(eq(apps.nodeId, id));
     await tx.update(nodes).set({ embedding: null, updatedAt: new Date() }).where(eq(nodes.id, id));
+    const live = {
+      source: code.source,
+      draft: null,
+      manifest: code.manifest,
+      publishedBuild: code.publishedBuild,
+    };
+    await insertNodeSnapshot(tx, {
+      ownerId,
+      nodeId: id,
+      nodeKind: 'app',
+      trigger: 'publish',
+      note: `restored v${seq}`,
+      actor: opts.actor ?? 'owner',
+      code: live,
+      sourceHash: codeHash(code.source),
+      restoredFrom: seq,
+    });
+    return true;
   });
-  await notifyNodeIngested(id);
-  void notifyAppNavChanged(ownerId);
-  return loadDetail(ownerId, id);
+  if (done) {
+    await notifyNodeIngested(id);
+    void notifyAppNavChanged(ownerId);
+  }
+  return done;
 }
 
-export async function deleteApp(ownerId: string, id: string): Promise<boolean> {
+/** The code a duplicate carries over: both trees, each with its build. */
+export type InstallableAppCode = RestorableCode & { draftBuild: BuildRef | null };
+
+/**
+ * Give a just-created app another app's code (a duplicate, app-package.ts):
+ * the published source with the build it runs on, the draft with its preview
+ * build, and the manifest. Builds are content-addressed objects in this
+ * brain's store, so a pair that was valid there is valid here. A published
+ * build becomes the copy's first version, noted `opts.note`.
+ */
+export async function installAppCode(
+  ownerId: string,
+  id: string,
+  code: InstallableAppCode,
+  opts: { note: string; actor?: AppHistoryActor },
+): Promise<boolean> {
+  const live = code.publishedBuild?.ok ? code.publishedBuild : null;
+  const done = await db.transaction(async (tx) => {
+    const app = await lockAppRow(tx, ownerId, id);
+    if (!app) return false;
+    await tx
+      .update(apps)
+      .set({
+        source: code.source,
+        sourceText: sourceToText(code.source),
+        publishedBuild: live,
+        manifest: code.manifest,
+        draftSource: code.draft,
+        draftUpdatedAt: code.draft ? new Date() : null,
+        draftBuild: code.draftBuild,
+        updatedAt: new Date(),
+      })
+      .where(eq(apps.nodeId, id));
+    if (live) {
+      await insertNodeSnapshot(tx, {
+        ownerId,
+        nodeId: id,
+        nodeKind: 'app',
+        trigger: 'publish',
+        note: opts.note.slice(0, 500),
+        actor: opts.actor ?? 'owner',
+        code: { source: code.source, draft: null, manifest: code.manifest, publishedBuild: live },
+        sourceHash: codeHash(code.source),
+      });
+    }
+    return true;
+  });
+  if (done && live) await notifyNodeIngested(id);
+  return done;
+}
+
+/**
+ * Delete an app. A `pre_delete` snapshot comes first (the code, the name and
+ * look, and a copy of the database), and the app's history outlives it, so
+ * for 30 days the app can come back from Recently deleted (app-trash.ts).
+ * When that snapshot cannot be taken the app is NOT deleted. An app whose
+ * database file was already lost keeps a code-only snapshot.
+ */
+export async function deleteApp(
+  ownerId: string,
+  id: string,
+  opts: { actor?: AppHistoryActor } = {},
+): Promise<boolean> {
   if (!(await ownsApp(ownerId, id))) return false;
-  // Remove the per-app SQLite file BEFORE the node delete cascades the
-  // `app_databases` row away (we resolve the path from that row). Best-effort:
-  // a stray file must not block the delete. Dynamic import keeps the server-only
-  // broker (node:fs/sqlite) out of the content index / edge bundles.
-  try {
-    const { deleteAppDatabaseFile } = await import('./app-broker');
-    await deleteAppDatabaseFile(ownerId, id);
-  } catch {
-    /* best-effort file cleanup; the DB rows still cascade below */
-  }
+  // Dynamic imports keep the server-only modules (node:fs, sqlite) out of the
+  // content index / edge bundles.
+  const broker = await import('./app-broker');
+  const { createAppSnapshot } = await import('./app-snapshots');
+  const keep = {
+    trigger: 'pre_delete' as const,
+    actor: opts.actor ?? 'owner',
+    note: 'before delete',
+  };
+  await createAppSnapshot(ownerId, id, { ...keep, codeOnlyWhenLost: true });
+  // The node goes first, then the live database file (apps audit D6). Its
+  // path is read now: the `app_databases` row cascades away with the node.
+  // The snapshot files stay, with the history rows, for the trash.
+  const dbPath = await broker.appDatabasePath(ownerId, id);
   await db.delete(nodes).where(eq(nodes.id, id)); // `apps` + `app_databases` cascade.
+  if (dbPath) {
+    try {
+      await broker.removeAppDatabaseFiles(dbPath);
+    } catch (err) {
+      // The app is gone either way; a stray file is only disk.
+      console.error(`[apps] app ${id} deleted, but its database file stayed:`, err);
+    }
+  }
   return true;
 }
 

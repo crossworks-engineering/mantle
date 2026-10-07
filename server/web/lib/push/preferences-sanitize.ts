@@ -3,12 +3,24 @@
 // survive. Unknown/invalid fields are dropped, never trusted. Kept pure (no
 // DB/auth) so it's unit-testable.
 
-import type { PushPreferences } from './store';
+import type { LoginPushPreferences, PushPreferences } from './store';
 
 export function sanitizePushPrefs(body: Record<string, unknown>): Partial<PushPreferences> {
   const patch: Partial<PushPreferences> = {};
   if (typeof body['assistantMessages'] === 'boolean')
     patch.assistantMessages = body['assistantMessages'];
   if (typeof body['approvals'] === 'boolean') patch.approvals = body['approvals'];
+  return patch;
+}
+
+/** The same, for a member's or a client's own toggles
+ *  (PUT /api/member/push/preferences, /api/client/push/preferences). */
+export function sanitizeLoginPushPrefs(
+  body: Record<string, unknown>,
+): Partial<LoginPushPreferences> {
+  const patch: Partial<LoginPushPreferences> = {};
+  for (const key of ['chatReplies', 'reviewResults', 'comments'] as const) {
+    if (typeof body[key] === 'boolean') patch[key] = body[key];
+  }
   return patch;
 }

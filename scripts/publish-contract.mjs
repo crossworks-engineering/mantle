@@ -28,7 +28,12 @@
  * the version is immutable. Needs network; leaves the tree clean.
  * publish-contract.yml runs it right before the publish step.
  *
- * The pure pieces (stageManifest, findPrivateDeps, assertPublishable) are
+ * A real publish then waits for every package to resolve with `npm view`
+ * (waitForVisible) and exits non-zero if one never does: npm accepting the
+ * upload is not the same as the version being installable.
+ *
+ * The pure pieces (stageManifest, findPrivateDeps, assertPublishable,
+ * waitForVisible) are
  * exported for server/web/lib/publish-contract.test.ts; importing this file
  * runs nothing.
  */
@@ -159,6 +164,98 @@ export function assertPublishable(manifest, opts = {}) {
       `dependenc${bad.length === 1 ? 'y' : 'ies'} would not resolve on npm\n${lines.join('\n')}\n` +
       '  Drop the import, or move the code into a contract package. Nothing was published.',
   );
+}
+
+/**
+ * Poll the registry until every `name@version` resolves, or give up. `pnpm
+ * publish` printing "✅ Published" only means npm ACCEPTED the upload; the
+ * version reaches the packument (what `npm view` and every install read)
+ * later. Usually two to five minutes, but the v0.232.354 uploads (accepted
+ * 13:35Z) only appeared at 14:01-14:03Z, and for that whole window the run
+ * was green while the registry still said 0.232.351 was the newest. This
+ * turns "accepted" into "installable", and a never-appearing version into a
+ * red run instead of a silent one.
+ *
+ * All names are polled together, so the wait is the slowest package's lag,
+ * not the sum. `view(name, version)` returns true once the version resolves;
+ * `sleep`, `now` and `log` are injected so the test drives it without a
+ * registry or a clock. Resolves to the names still missing ([] = all live).
+ *
+ * @param {{ names: string[], version: string, view: (name: string, version: string) => boolean,
+ *   sleep: (ms: number) => Promise<void>, now?: () => number, log?: (msg: string) => void,
+ *   timeoutMs: number, intervalMs: number }} opts
+ * @returns {Promise<string[]>}
+ */
+export async function waitForVisible({
+  names,
+  version,
+  view,
+  sleep,
+  now = Date.now,
+  log = () => {},
+  timeoutMs,
+  intervalMs,
+}) {
+  const deadline = now() + timeoutMs;
+  let pending = [...names];
+  for (;;) {
+    pending = pending.filter((name) => {
+      if (!view(name, version)) return true;
+      log(`✓ ${name}@${version} is live on the registry`);
+      return false;
+    });
+    if (pending.length === 0 || now() >= deadline) return pending;
+    log(`… not visible yet: ${pending.join(', ')}; checking again in ${intervalMs / 1000}s`);
+    await sleep(intervalMs);
+  }
+}
+
+/** True when the registry resolves name@version. --prefer-online skips npm's local cache. */
+function registryHas(name, version) {
+  try {
+    const out = execFileSync(
+      'npm',
+      ['view', `${name}@${version}`, 'version', '--prefer-online', '--loglevel=error'],
+      { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' },
+    );
+    return out.trim() === version;
+  } catch {
+    // E404 (not there yet) or a transient network error: both mean "poll again".
+    return false;
+  }
+}
+
+/**
+ * Seconds to wait for the registry after a publish. The default covers the
+ * slowest lag seen so far (about 28 minutes on v0.232.354) with room to spare;
+ * PUBLISH_VERIFY_TIMEOUT_S overrides it.
+ */
+const VERIFY_TIMEOUT_S = Number(process.env.PUBLISH_VERIFY_TIMEOUT_S ?? 40 * 60);
+const VERIFY_INTERVAL_S = 20;
+
+async function verifyPublished(staged, version) {
+  const names = PACKAGES.map((pkg) => staged.get(pkg).name);
+  console.log(
+    `Waiting up to ${VERIFY_TIMEOUT_S / 60} min for ${names.length} packages to appear on the registry`,
+  );
+  const missing = await waitForVisible({
+    names,
+    version,
+    view: registryHas,
+    sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+    log: (msg) => console.log(msg),
+    timeoutMs: VERIFY_TIMEOUT_S * 1000,
+    intervalMs: VERIFY_INTERVAL_S * 1000,
+  });
+  if (missing.length) {
+    throw new Error(
+      `npm accepted the upload, but after ${VERIFY_TIMEOUT_S / 60} min the registry still does not ` +
+        `resolve: ${missing.map((n) => `${n}@${version}`).join(', ')}.\n` +
+        `  Check by hand: npm view ${missing[0]}@${version} version --prefer-online\n` +
+        '  If it shows up later, nothing needs doing; re-run this workflow (it skips published ' +
+        'versions and re-verifies). If it never shows up, the upload was lost: publish again.',
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -306,7 +403,7 @@ function smokeInstall(staged, version) {
   fs.rmSync(tmp, { recursive: true, force: true });
 }
 
-function main(argv) {
+async function main(argv) {
   const check = argv.includes('--check');
   const dryRun = argv.includes('--dry-run');
   const positional = argv.filter((a) => !a.startsWith('--'));
@@ -336,9 +433,10 @@ function main(argv) {
   }
 
   const backups = new Map();
+  let staged;
   let failed = false;
   try {
-    const staged = stageAll(version, backups);
+    staged = stageAll(version, backups);
     if (check) smokeInstall(staged, version);
     else publishAll(staged, version, dryRun);
   } catch (err) {
@@ -347,10 +445,24 @@ function main(argv) {
   } finally {
     for (const [p, original] of backups) fs.writeFileSync(p, original);
   }
+  // After the tree is restored: the wait can be long, and nothing here needs
+  // the staged manifests on disk. Runs for "already on npm, skipping" too, so
+  // a re-run of a lagging publish checks the registry instead of trusting npm.
+  if (!failed && !check && !dryRun) {
+    try {
+      await verifyPublished(staged, version);
+    } catch (err) {
+      failed = true;
+      console.error(`✗ ${err.message ?? err}`);
+    }
+  }
   if (check && !failed) {
     console.log(
       `✓ all ${PACKAGES.length} contract packages stage, pack and install; tree restored`,
     );
+  }
+  if (!check && !dryRun && !failed) {
+    console.log(`✓ all ${PACKAGES.length} contract packages are live at ${version}`);
   }
   process.exit(failed ? 1 : 0);
 }

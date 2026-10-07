@@ -31,6 +31,12 @@ that one skips extraction cost without giving up storage or search by name.
 
 The whole feature sits behind the `sandboxes` compose profile.
 
+**From Settings (any box with a current updater).** An admin switches
+Sandboxes on or off in **Settings > Services**. Off stops the
+running sandboxes and sandboxd and keeps every sandbox, its `/files` and its
+apps; on brings them back. How it works, and what it writes to `.env`:
+[services.md](services.md). The steps below are the same change by hand.
+
 **Fresh installs: ON by default.** `scripts/install.sh` treats sandboxes as
 part of the system on a genuinely fresh box (same freshness rule as the
 generated DB secrets): it adds the profile to `COMPOSE_PROFILES`, generates
@@ -122,9 +128,11 @@ Code or Claude Desktop can work in a sandbox directly instead of asking the
 brain to delegate. That is the one command-execution path an MCP client gets:
 `run_terminal` (the brain's own shell) is deliberately NOT bridged, while
 `sandbox_exec` runs inside a container with no route to postgres, the object
-store or the web tier. On a box without the `sandboxes` profile the tools are still
-listed and answer "sandboxes are not enabled on this box", so the client can
-say why rather than appear to lack the capability.
+store or the web tier. On a box where the `sandboxes` service is switched off the
+tools are still listed on MCP and answer "sandboxes are not enabled on this
+box" with how to switch them on, so the client can say why rather than appear
+to lack the capability. In-app agents do not get them at all while the
+service is off (`effectiveToolSlugs`, [services.md](services.md)).
 
 | tool | what it does |
 | --- | --- |
@@ -179,8 +187,8 @@ change, never silent drift. Bump the tag on every content change.
 
 ## Surface
 
-`/sandboxes` in the owner UI (visible always; an explanatory empty state when
-the profile is off): master-detail list with live status and disk usage,
+`/sandboxes` in the owner UI (visible always; when the service is switched off
+it says so and points at Settings > Services): master-detail list with live status and disk usage,
 per-sandbox command history read from the `sandbox_exec` trace steps, Stop,
 and a Remove dialog that states plainly that `/files` is preserved, purging
 is a separate destructive checkbox. API routes are owner-scoped and refuse to

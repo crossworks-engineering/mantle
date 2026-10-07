@@ -29,6 +29,7 @@ import {
   agents,
   assistantMessages,
   notSuperseded,
+  chatThreads,
   entities,
   facts,
   nodes,
@@ -51,7 +52,7 @@ import {
   renderRelevantJournalBlock,
   type Tier1Plan,
 } from '@mantle/content';
-import { embed } from '@mantle/embeddings';
+import { chunkWindowsEnabled, embed } from '@mantle/embeddings';
 import {
   CONTEXT_FLOORS,
   HISTORY_RECALL_WINDOW,
@@ -62,6 +63,7 @@ import {
   decisionUseEnabled,
   dropSupersededInPool,
   groupVersions,
+  passageScoringPool,
   pruneContextItems,
   recallExchanges,
   scoreContextItems,
@@ -73,7 +75,10 @@ import {
   type HistoryRecallScoring,
 } from '@mantle/decisions';
 import {
-  searchChunks,
+  ContextTraceBuilder,
+  armFields,
+  judgeWhy,
+  searchChunksExplained,
   bestChunkPerNode,
   chunkPairSimilarities,
   entityRelationsFor,
@@ -85,7 +90,7 @@ import {
 import type {
   ChunkContextHit,
   ContentHit,
-  CorpusMapEntry,
+  CorpusMapBlock,
   Digest,
   FactSnippet,
   HistoryTurn,
@@ -112,7 +117,7 @@ type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 export type ConversationContext = {
   personaNotes: PersonaNote[];
   facts: FactSnippet[];
-  corpusMap: { entries: CorpusMapEntry[]; truncated: boolean };
+  corpusMap: CorpusMapBlock;
   contentHits: ContentHit[];
   chunkHits: ChunkContextHit[];
   relations: RelationLine[];
@@ -176,6 +181,9 @@ import {
   groupExchanges,
   mergePreferences,
   patchSuperseded,
+  chunkTraceKey,
+  explainChunkSelection,
+  keywordPassages,
   selectChunkHits,
   selectContentHits,
   selectFacts,
@@ -396,6 +404,61 @@ export async function markTurnSuperseded(args: {
  * it (by time). The web path loads context BEFORE inserting the inbound, so it
  * omits both — the new turn simply isn't in the table yet.
  */
+/** The open chat thread of this agent (null = never archived). Read here on
+ *  the loader's own `db`, like every other arm, so it runs in the turn's
+ *  viewer scope. */
+async function loadOpenThread(
+  ownerId: string,
+  agentId: string,
+): Promise<{ startedAt: Date; seedThreadId: string | null } | null> {
+  const [row] = await db
+    .select({ startedAt: chatThreads.startedAt, seedThreadId: chatThreads.seedThreadId })
+    .from(chatThreads)
+    .where(
+      and(
+        eq(chatThreads.ownerId, ownerId),
+        eq(chatThreads.agentId, agentId),
+        eq(chatThreads.status, 'open'),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
+/**
+ * The summary of the archived thread an open thread continues from ("Continue
+ * from this"), as a digest entry. Null when the thread or its summary is gone
+ * (the summary is best effort; a thread archived during a provider outage has
+ * none), so the fresh chat simply starts without it.
+ */
+async function loadThreadSeed(
+  ownerId: string,
+  seedThreadId: string,
+): Promise<{ title: string; digest: Digest } | null> {
+  const [row] = await db
+    .select({
+      title: chatThreads.title,
+      startedAt: chatThreads.startedAt,
+      archivedAt: chatThreads.archivedAt,
+      summary: sql<string | null>`${nodes.data}->>'summary'`,
+    })
+    .from(chatThreads)
+    .leftJoin(nodes, eq(nodes.id, chatThreads.summaryNodeId))
+    .where(and(eq(chatThreads.ownerId, ownerId), eq(chatThreads.id, seedThreadId)))
+    .limit(1);
+  if (!row?.summary?.trim()) return null;
+  const title = row.title?.trim() || 'an archived chat';
+  return {
+    title,
+    digest: {
+      summary: row.summary.trim(),
+      periodStart: row.startedAt.toISOString(),
+      periodEnd: (row.archivedAt ?? row.startedAt).toISOString(),
+      topic: `Continued from the archived chat "${title}"`,
+    },
+  };
+}
+
 /** An older exchange scored by `history_recall`: its turns, and how many
  *  messages back from the newest its first message sits. */
 type RecallExchange = HistoryExchange & { turns: HistoryTurn[]; back: number };
@@ -413,6 +476,9 @@ async function loadHistoryRows(o: {
   windowHours: number | null;
   excludeMessageId?: string;
   before?: Date;
+  /** Start of the open chat thread: turns before it were archived with
+   *  "New chat" and never reach the prompt (docs/conversation.md §6c). */
+  since?: Date | null;
   recall: boolean;
 }): Promise<{ recentRows: HistoryRow[]; olderRows: HistoryRow[] }> {
   // Only 'complete' turns are real conversation: the durable runner writes the
@@ -432,6 +498,7 @@ async function loadHistoryRows(o: {
   ];
   if (o.excludeMessageId) histConds.push(ne(assistantMessages.id, o.excludeMessageId));
   if (o.before) histConds.push(lt(assistantMessages.createdAt, o.before));
+  if (o.since) histConds.push(gte(assistantMessages.createdAt, o.since));
   if (o.windowHours != null && o.windowHours > 0) {
     const base = o.before ?? new Date();
     histConds.push(
@@ -521,8 +588,17 @@ async function loadConversationContextAtLevel(args: {
    *  types are left out, and so are facts with no source node (they come
    *  from the owner's own chats). Unset = owner turn, no filter. */
   excludeNodeTypes?: readonly string[];
+  /** The surface's own recent turn texts, oldest first, for a short
+   *  follow-up's query enrichment. A surface with its own thread (team)
+   *  passes it: below admin the owner's assistant_messages is not readable,
+   *  and a team turn without it enriches nothing. */
+  recentTurnTexts?: readonly string[];
 }): Promise<ConversationContext> {
   const { ownerId, agent, inboundText } = args;
+  // Decision trace v1 (snapshot.trace): what each stage considered, kept and
+  // dropped, and why. Read-only bookkeeping beside the lists below; it never
+  // changes what the prompt gets.
+  const trace = new ContextTraceBuilder();
   const hiddenTypes = args.excludeNodeTypes;
   const factVisible = hiddenTypes ? visibleFactSource(hiddenTypes) : undefined;
   // Inside a viewer scope (a below-admin agent, member logins Phase 0b) the
@@ -545,6 +621,7 @@ async function loadConversationContextAtLevel(args: {
   const contentHitLimit = memoryConfig.content_hit_limit ?? 5;
   const chunkLimit = memoryConfig.chunk_limit ?? CHUNK_LIMIT_DEFAULT;
   const corpusMapLimit = memoryConfig.corpus_map_limit ?? CORPUS_MAP_LIMIT_DEFAULT;
+  const corpusMapChars = memoryConfig.corpus_map_chars;
 
   // memory_config.notes_target = 'journal': the notes moved to the Journal
   // (persona-notes-to-journal) and arrive through its tiers instead, which
@@ -555,10 +632,17 @@ async function loadConversationContextAtLevel(args: {
   // History rows, started now: with the decider's `history_recall` use on, the
   // older rows are scored while the embedding and retrieval below run, so the
   // ~0.5 s never adds to the turn. Awaited where the history is built.
-  const recallUse =
+  // The open chat thread ("New chat", docs/conversation.md §6c): its start is
+  // the lower bound of the history window, history recall, the follow-up
+  // enrich and the digests, so a fresh chat starts clean. Null = never
+  // archived = no bound. Below admin the owner's chat is not read at all.
+  const [recallUse, openThread] = await Promise.all([
     historyLimit > 0 && !belowAdmin && !isSmallTalk(inboundText)
-      ? await decisionUseEnabled(ownerId, 'history_recall')
-      : null;
+      ? decisionUseEnabled(ownerId, 'history_recall')
+      : Promise.resolve(null),
+    belowAdmin ? Promise.resolve(null) : loadOpenThread(ownerId, agent.id),
+  ]);
+  const threadSince = openThread?.startedAt ?? null;
   const rowsLoad = belowAdmin
     ? Promise.resolve({ recentRows: [] as HistoryRow[], olderRows: [] as HistoryRow[] })
     : loadHistoryRows({
@@ -568,6 +652,7 @@ async function loadConversationContextAtLevel(args: {
         windowHours,
         excludeMessageId: args.excludeMessageId,
         before: args.before,
+        since: threadSince,
         recall: recallUse != null,
       });
   const historyLoad = rowsLoad.then(async ({ recentRows, olderRows }) => ({
@@ -636,25 +721,29 @@ async function loadConversationContextAtLevel(args: {
     // embedding resolves the referent instead of embedding "tell me more" alone.
     let embedInput = inboundText;
     if (QUERY_ENRICH && looksAnaphoricFollowup(inboundText) && historyLimit > 0) {
-      const conds = [
-        eq(assistantMessages.ownerId, ownerId),
-        eq(assistantMessages.agentId, agent.id),
-      ];
-      if (args.excludeMessageId) conds.push(ne(assistantMessages.id, args.excludeMessageId));
-      if (args.before) conds.push(lt(assistantMessages.createdAt, args.before));
-      const recent = await db
-        .select({ text: assistantMessages.text })
-        .from(assistantMessages)
-        .where(and(...conds))
-        .orderBy(desc(assistantMessages.createdAt))
-        .limit(2);
-      const ctx = recent
-        .map((r) => r.text)
-        .reverse()
-        .join(' ')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 400);
+      // Oldest first. Below admin the owner's chat is not readable (the
+      // team role has no grant on assistant_messages): reading it anyway
+      // failed every short follow-up on the member chat.
+      let recentTexts: readonly string[] = [];
+      if (args.recentTurnTexts) {
+        recentTexts = args.recentTurnTexts.slice(-2);
+      } else if (!belowAdmin) {
+        const conds = [
+          eq(assistantMessages.ownerId, ownerId),
+          eq(assistantMessages.agentId, agent.id),
+        ];
+        if (args.excludeMessageId) conds.push(ne(assistantMessages.id, args.excludeMessageId));
+        if (args.before) conds.push(lt(assistantMessages.createdAt, args.before));
+        if (threadSince) conds.push(gte(assistantMessages.createdAt, threadSince));
+        const recent = await db
+          .select({ text: assistantMessages.text })
+          .from(assistantMessages)
+          .where(and(...conds))
+          .orderBy(desc(assistantMessages.createdAt))
+          .limit(2);
+        recentTexts = recent.map((r) => r.text).reverse();
+      }
+      const ctx = recentTexts.join(' ').replace(/\s+/g, ' ').trim().slice(0, 400);
       if (ctx) {
         embedInput = `${ctx}\n${inboundText}`;
         enrichedQuery = embedInput;
@@ -666,6 +755,7 @@ async function loadConversationContextAtLevel(args: {
       console.error('[conversation] query embed failed:', err instanceof Error ? err.message : err);
     }
   }
+  trace.stage('embed', 1, queryVec ? 1 : 0, undefined, enrichedQuery ? 'enriched' : undefined);
 
   // ─── Profile facts (top-K by vector distance, currently-valid) ──────────
   let factRows: FactSnippet[] = [];
@@ -673,12 +763,18 @@ async function loadConversationContextAtLevel(args: {
   let factsDroppedSnap: SnapshotItem[] = [];
   // The entities whose facts matched this turn — anchors for graph expansion.
   let anchorEntityIds: string[] = [];
+  // Fact content -> fact id, so later stages (pruning, Journal dedupe) can
+  // name the trace row of a fact they only know by its text.
+  const factIdByContent = new Map<string, string>();
   if (queryVec && factLimit > 0) {
     // Pool → re-rank, in one transaction: the recency-adjusted ORDER BY below is
     // not an HNSW-eligible shape (any arithmetic on the distance forces a full
     // scan + sort at scale), so first pull a bare-distance candidate pool through
     // the index, then apply the adjustment within it (see @mantle/search hnsw.ts).
     const factPool = Math.min(Math.max(factLimit * 5, 50), 200);
+    // The recency-adjusted ranking distance, also selected for the trace.
+    const factRankDist = sql<number>`(${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector) + (case ${facts.kind} when 'episodic' then ${RECENCY_EPISODIC}::float8 when 'factual' then ${RECENCY_FACTUAL}::float8 else 0::float8 end) * (1 - exp(- extract(epoch from (now() - coalesce(${facts.validFrom}, ${facts.createdAt}))) / ${RECENCY_TAU_SEC}::float8))`;
+    let factPooled = 0;
     const rows = await withHnswPool(factPool, async (tx) => {
       const factConds = and(
         eq(facts.ownerId, ownerId),
@@ -702,15 +798,18 @@ async function loadConversationContextAtLevel(args: {
               order by ${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector
               limit ${factPool}`,
       )) as unknown as { id: string }[];
+      factPooled = pooled.length;
       if (pooled.length === 0) return [];
       const hydrate = tx
         .select({
+          id: facts.id,
           content: facts.content,
           kind: facts.kind,
           entityId: facts.entityId,
           entityName: entityNameCol,
           sourceNodeId: facts.sourceNodeId,
           dist: sql<number>`${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector`,
+          rankDist: factRankDist,
         })
         .from(facts)
         .$dynamic();
@@ -727,13 +826,27 @@ async function loadConversationContextAtLevel(args: {
           // identity). Anchor on valid_from (when the fact became true) → created_at.
           // The mismatch guard below still filters on raw cosine, so recency reorders
           // but never surfaces a garbage-space row.
-          .orderBy(
-            sql`(${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector) + (case ${facts.kind} when 'episodic' then ${RECENCY_EPISODIC}::float8 when 'factual' then ${RECENCY_FACTUAL}::float8 else 0::float8 end) * (1 - exp(- extract(epoch from (now() - coalesce(${facts.validFrom}, ${facts.createdAt}))) / ${RECENCY_TAU_SEC}::float8))`,
-          )
+          .orderBy(factRankDist)
           .limit(factLimit)
       );
     });
     const selection = selectFacts(rows);
+    rows.forEach((r, i) => {
+      const kept = (r.dist ?? 1) < 0.85;
+      if (kept) factIdByContent.set(r.content, r.id);
+      trace.add({
+        b: 'fact',
+        k: r.id,
+        out: kept ? 'kept' : 'dropped',
+        at: 'facts',
+        why: kept ? 'sent' : 'guard:0.85',
+        arm: 'vector',
+        rank: i + 1,
+        d: r.dist,
+        rd: r.rankDist,
+      });
+    });
+    trace.stage('facts', factPooled, selection.facts.length, undefined, `top ${factLimit}`);
     factRows = selection.facts;
     factsSentSnap = selection.sent;
     factsDroppedSnap = selection.dropped;
@@ -749,6 +862,7 @@ async function loadConversationContextAtLevel(args: {
   if (factLimit > 0) {
     const prefQuery = db
       .select({
+        id: facts.id,
         content: facts.content,
         kind: facts.kind,
         entityName: entityNameCol,
@@ -769,7 +883,21 @@ async function loadConversationContextAtLevel(args: {
       )
       .orderBy(desc(facts.updatedAt))
       .limit(PREFERENCE_INJECT_LIMIT);
+    const vectorFacts = new Set(factRows.map((f) => f.content));
+    prefRows.forEach((p, i) => {
+      const dupe = vectorFacts.has(p.content);
+      trace.add({
+        b: 'pref',
+        k: p.id,
+        out: dupe ? 'dropped' : 'kept',
+        at: 'prefs',
+        why: dupe ? 'dedupe:fact' : 'always',
+        arm: 'always',
+        rank: i + 1,
+      });
+    });
     const merged = mergePreferences(factRows, factsSentSnap, prefRows);
+    trace.stage('prefs', prefRows.length, merged.facts.length - factRows.length);
     factRows = merged.facts;
     factsSentSnap = merged.sent;
   }
@@ -796,6 +924,9 @@ async function loadConversationContextAtLevel(args: {
       sql`(${nodes.data}->>'origin') is distinct from 'system'`,
       hiddenTypes?.length ? notInArray(nodes.type, hiddenTypes as NodeRow['type'][]) : undefined,
     );
+    // The salience + recency ranking distance, also selected for the trace.
+    const hitRankDist = sql<number>`(${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector) + ${SALIENCE_LAMBDA}::float8 * (1 - ${nodes.salience}) + ${RECENCY_CONTENT}::float8 * (1 - exp(- extract(epoch from (now() - coalesce((${nodes.data}->>'internalDate')::timestamptz, ${nodes.createdAt}))) / ${RECENCY_TAU_SEC}::float8))`;
+    let hitPooled = 0;
     const rows = await withHnswPool(contentPool, async (tx) => {
       const pooled = (await tx.execute(
         sql`select id from ${nodes}
@@ -803,6 +934,7 @@ async function loadConversationContextAtLevel(args: {
             order by ${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector
             limit ${contentPool}`,
       )) as unknown as { id: string }[];
+      hitPooled = pooled.length;
       if (pooled.length === 0) return [];
       return (
         tx
@@ -816,6 +948,8 @@ async function loadConversationContextAtLevel(args: {
             // pushed back so it can't crowd out real content. Non-email nodes have
             // salience 1.0 → no change.
             dist: sql<number>`(${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector) + ${SALIENCE_LAMBDA} * (1 - ${nodes.salience})`,
+            rawDist: sql<number>`${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector`,
+            rankDist: hitRankDist,
           })
           .from(nodes)
           .where(
@@ -829,13 +963,26 @@ async function loadConversationContextAtLevel(args: {
           // so an old email synced last month reads as old, not fresh), else
           // created_at. Recency only reorders here; the 0.6 cutoff below stays on the
           // salience distance, so a relevant-but-old doc is never dropped for age.
-          .orderBy(
-            sql`(${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector) + ${SALIENCE_LAMBDA}::float8 * (1 - ${nodes.salience}) + ${RECENCY_CONTENT}::float8 * (1 - exp(- extract(epoch from (now() - coalesce((${nodes.data}->>'internalDate')::timestamptz, ${nodes.createdAt}))) / ${RECENCY_TAU_SEC}::float8))`,
-          )
+          .orderBy(hitRankDist)
           .limit(contentHitLimit)
       );
     });
     const selection = selectContentHits(rows);
+    rows.forEach((r, i) => {
+      const kept = (r.dist ?? 1) < 0.6;
+      trace.add({
+        b: 'hit',
+        k: r.nodeId,
+        out: kept ? 'kept' : 'dropped',
+        at: 'hits',
+        why: kept ? 'sent' : 'cut:0.6',
+        arm: 'vector',
+        rank: i + 1,
+        d: r.rawDist,
+        rd: r.rankDist,
+      });
+    });
+    trace.stage('hits', hitPooled, selection.hits.length, undefined, `top ${contentHitLimit}`);
     contentHits = selection.hits;
     contentSentSnap = selection.sent;
     contentDroppedSnap = selection.dropped;
@@ -862,25 +1009,57 @@ async function loadConversationContextAtLevel(args: {
     const chunkQuery = enrichedQuery ?? inboundText;
     // Decider, use `passage_scoring` (experimental, owner-switched): with it
     // on, pull a wider pool so the scorer can promote a passage search ranked
-    // 12th. Off = the same small pool as always.
+    // 12th. Off = the same small pool as always. With the use's `pool` set,
+    // it scores that deeper pool and runs even when context_pruning is on:
+    // pruning only drops among the passages that survived the budget cut,
+    // which is taken in search order, so a passage search ranked 30th would
+    // never reach it (docs/recall-eval.md).
     const scoringUse = await decisionUseEnabled(ownerId, 'passage_scoring');
-    let hits = await searchChunks({
+    const scoreFirst = scoringUse !== null && (!pruningUse || scoringUse.pool !== undefined);
+    // Passage windows (embedding_config.chunk_windows, default off): a
+    // window arm joins the search and the judged pool doubles. The cut below
+    // keeps chunk_limit, so the prompt does not grow.
+    const windows = await chunkWindowsEnabled(ownerId);
+    trace.lap();
+    const searched = await searchChunksExplained({
       ownerId,
       embedding: retrievalVec,
       // Hybrid arm: the same text the embedding was computed from, so an
       // exact-term question is rescued by keyword when it embeds poorly.
       q: chunkQuery,
       // small pool so the cutoff can trim without starving
-      limit: scoringUse || pruningUse ? Math.min(Math.max(chunkLimit * 2, 16), 25) : chunkLimit + 4,
+      limit: scoringUse
+        ? passageScoringPool(scoringUse, chunkLimit, { windows })
+        : pruningUse
+          ? Math.min(Math.max(chunkLimit * 2, 16), 25)
+          : chunkLimit + 4,
       excludeSystemOrigin: true,
       excludeTypes: hiddenTypes,
+      windows,
+      // A live judge scores the whole pool: hybrid head, then window head.
+      windowMerge: scoreFirst && scoringUse?.mode === 'live' ? 'union' : 'turns',
     });
+    let hits = searched.hits;
+    trace.setSearch(searched.search);
+    hits.forEach((h, i) =>
+      trace.add({
+        b: 'chunk',
+        k: chunkTraceKey(h),
+        out: 'kept',
+        at: 'search',
+        why: 'sent',
+        ...armFields(h.arms),
+        rank: i + 1,
+        d: h.distance,
+      }),
+    );
+    trace.stage('search', hits.length, hits.length);
     // One decision call scores each passage 0-3 for "does it answer the
     // question". `live`: weak passages drop and the rest order by score
     // before the budget cut below. `shadow`: traced only, list unchanged.
     // Null (off / failed / slow) = the list search returned. Freshness is
     // NOT the scorer's job — the supersede pass further down stays in charge.
-    if (scoringUse && !pruningUse) {
+    if (scoreFirst) {
       const scoring = await scorePassages(
         ownerId,
         chunkQuery,
@@ -891,9 +1070,31 @@ async function loadConversationContextAtLevel(args: {
           text: h.text,
         })),
       );
-      if (scoring && scoring.mode === 'live') {
-        hits = applyPassageScores(hits, (h) => `${h.nodeId}:${h.ordinal}`, scoring).kept;
+      const pool = hits.length;
+      if (scoring) {
+        const applied = applyPassageScores(hits, (h) => `${h.nodeId}:${h.ordinal}`, scoring);
+        for (const h of hits) {
+          const sc = scoring.scores.get(`${h.nodeId}:${h.ordinal}`);
+          if (sc) trace.score('chunk', chunkTraceKey(h), sc.score);
+        }
+        for (const h of applied.dropped) {
+          trace.drop(
+            'chunk',
+            chunkTraceKey(h),
+            'scoring',
+            judgeWhy(scoring.threshold),
+            scoring.mode,
+          );
+        }
+        if (scoring.mode === 'live') hits = applied.kept;
       }
+      trace.stage(
+        'scoring',
+        pool,
+        hits.length,
+        undefined,
+        scoring ? `${scoring.mode} ${scoring.scores.size} scored` : 'no answer',
+      );
     }
     // Same exclusions as content hits: a raw telegram turn isn't a "passage"
     // (it's the conversation), and a weak match isn't worth the tokens.
@@ -918,10 +1119,48 @@ async function loadConversationContextAtLevel(args: {
             excludeSystemOrigin: true,
           })
         : [];
-    const selection = selectChunkHits(hits, chunkLimit, {
-      sources: [{ nodeIds: factNodeIds, max: FACT_PASSAGES }],
-      best,
-    });
+    // The T2 rule: a passage the keyword arm found is not held to the
+    // cosine cutoff (select.ts, KEYWORD_PASSAGE_RULE).
+    const keyword = keywordPassages();
+    const selection = selectChunkHits(
+      hits,
+      chunkLimit,
+      { sources: [{ nodeIds: factNodeIds, max: FACT_PASSAGES }], best },
+      keyword,
+    );
+    {
+      const why = explainChunkSelection(hits, chunkLimit, selection.hits, keyword);
+      for (const [k, reason] of why.dropped) trace.drop('chunk', k, 'select', reason);
+      for (const h of selection.hits) {
+        const k = chunkTraceKey(h);
+        if (!why.promoted.has(k)) {
+          trace.set('chunk', k, { at: 'select', why: why.kept.get(k) ?? 'sent' });
+        }
+      }
+      for (const k of why.promoted) {
+        const b = best.find((x) => chunkTraceKey(x) === k);
+        if (trace.has('chunk', k)) {
+          trace.set('chunk', k, { out: 'kept', at: 'select', why: 'promote:fact-source' });
+        } else if (b) {
+          trace.add({
+            b: 'chunk',
+            k,
+            out: 'kept',
+            at: 'select',
+            why: 'promote:fact-source',
+            arm: 'fact-source',
+            d: b.distance,
+          });
+        }
+      }
+      trace.stage(
+        'select',
+        hits.length + why.promoted.size,
+        selection.hits.length,
+        undefined,
+        `limit ${chunkLimit}, cut ${CHUNK_CUTOFF}, keyword ${keyword.rule}${why.kept.size ? ` (${why.kept.size} kept by it)` : ''}${why.promoted.size ? `, ${why.promoted.size} promoted` : ''}`,
+      );
+    }
     chunkHits = selection.hits;
     chunkSentSnap = selection.sent;
     chunkDroppedSnap = selection.dropped;
@@ -939,6 +1178,7 @@ async function loadConversationContextAtLevel(args: {
       contentHits = patchSuperseded(contentHits, successors);
       chunkHits = patchSuperseded(chunkHits, successors);
     }
+    if (staleIds.length > 0) trace.stage('supersede', staleIds.length, staleIds.length);
   }
 
   // ─── Context pruning: one decision over everything retrieval admitted ────
@@ -975,8 +1215,21 @@ async function loadConversationContextAtLevel(args: {
         text: `${c.title}${c.heading ? ` > ${c.heading}` : ''}: ${c.text}`,
       })),
     ];
+    // Pruning key -> trace row, for the scores and the drops below.
+    const traceOf = new Map<string, { b: 'fact' | 'hit' | 'chunk'; k: string }>();
+    for (const f of factRows) {
+      const id = factIdByContent.get(f.content);
+      if (id && !isPref(f)) traceOf.set(factKey(f), { b: 'fact', k: id });
+    }
+    for (const h of contentHits) traceOf.set(hitKey(h), { b: 'hit', k: h.nodeId });
+    for (const c of chunkHits) traceOf.set(chunkKey(c), { b: 'chunk', k: chunkTraceKey(c) });
+    trace.lap();
     try {
       const scoring = await scoreContextItems(ownerId, enrichedQuery ?? inboundText, items);
+      for (const [key, sc] of scoring?.scores ?? []) {
+        const t = traceOf.get(key);
+        if (t) trace.score(t.b, t.k, sc.score);
+      }
       if (scoring) {
         const f = pruneContextItems(factRows, factKey, scoring, {
           exempt: isPref,
@@ -984,6 +1237,22 @@ async function loadConversationContextAtLevel(args: {
         });
         const h = pruneContextItems(contentHits, hitKey, scoring, { floor: CONTEXT_FLOORS.hit });
         const c = pruneContextItems(chunkHits, chunkKey, scoring, { floor: CONTEXT_FLOORS.chunk });
+        for (const key of [
+          ...f.dropped.map(factKey),
+          ...h.dropped.map(hitKey),
+          ...c.dropped.map(chunkKey),
+        ]) {
+          const t = traceOf.get(key);
+          if (t) trace.drop(t.b, t.k, 'pruning', judgeWhy(scoring.threshold), scoring.mode);
+        }
+        trace.stage(
+          'pruning',
+          items.length,
+          items.length -
+            (scoring.mode === 'live' ? f.dropped.length + h.dropped.length + c.dropped.length : 0),
+          undefined,
+          `${scoring.mode} ${scoring.scores.size} scored`,
+        );
         const charsSaved =
           f.dropped.reduce((n, x) => n + x.content.length, 0) +
           h.dropped.reduce((n, x) => n + (x.summary?.length ?? 0), 0) +
@@ -1084,6 +1353,23 @@ async function loadConversationContextAtLevel(args: {
       const versions = grouping
         ? applyVersionGroups(staleChunks.kept, chunkId, grouping)
         : { kept: staleChunks.kept, dropped: [] as ChunkContextHit[] };
+      for (const x of staleHits.dropped)
+        trace.drop('hit', x.nodeId, 'versions', 'superseded', versionUse.mode);
+      for (const x of staleChunks.dropped) {
+        trace.drop('chunk', chunkTraceKey(x), 'versions', 'superseded', versionUse.mode);
+      }
+      for (const x of versions.dropped) {
+        trace.drop('chunk', chunkTraceKey(x), 'versions', 'version', versionUse.mode);
+      }
+      const versionDrops =
+        staleHits.dropped.length + staleChunks.dropped.length + versions.dropped.length;
+      trace.stage(
+        'versions',
+        contentHits.length + chunkHits.length,
+        contentHits.length + chunkHits.length - (versionUse.mode === 'live' ? versionDrops : 0),
+        undefined,
+        `${versionUse.mode} ${pairs.length} pairs`,
+      );
       versionSnap = {
         mode: versionUse.mode,
         threshold: grouping?.threshold ?? versionUse.threshold ?? VERSION_THRESHOLD_DEFAULT,
@@ -1136,6 +1422,7 @@ async function loadConversationContextAtLevel(args: {
   const journalRecall = await journalRecallLoad.catch(() => null);
   const tier1 = await tier1Load.catch(() => null);
   if (queryVec && journalMode !== 'off' && (userLane || agentLane)) {
+    trace.lap();
     try {
       const turn = await journalTiersForTurn({
         ownerId,
@@ -1165,6 +1452,38 @@ async function loadConversationContextAtLevel(args: {
           contentHits: contentHits.filter(redundantHit).length,
         },
       });
+      {
+        const mode = live ? 'live' : 'shadow';
+        for (const p of journalSnap.picked) {
+          trace.add({
+            b: 'journal',
+            k: p.nodeId,
+            out: live ? 'kept' : 'dropped',
+            at: 'journal',
+            why: live ? 'sent' : 'shadow',
+            arm: 'journal',
+            d: 1 - p.similarity,
+            ...(p.score !== undefined ? { s: p.score } : {}),
+          });
+        }
+        for (const f of factRows.filter(redundantFact)) {
+          const id = factIdByContent.get(f.content);
+          if (id) trace.drop('fact', id, 'journal', 'dedupe:journal', mode);
+        }
+        for (const c of chunkHits.filter(redundantChunk)) {
+          trace.drop('chunk', chunkTraceKey(c), 'journal', 'dedupe:journal', mode);
+        }
+        for (const h of contentHits.filter(redundantHit)) {
+          trace.drop('hit', h.nodeId, 'journal', 'dedupe:journal', mode);
+        }
+        trace.stage(
+          'journal',
+          journalSnap.picked.length + journalSnap.nearMisses.length,
+          live ? journalSnap.picked.length : 0,
+          undefined,
+          mode,
+        );
+      }
       if (live) {
         journalRelevant = renderRelevantJournalBlock(turn.relevance, agent.slug);
         const goneFacts = new Set(factRows.filter(redundantFact).map((f) => snip(f.content)));
@@ -1200,30 +1519,42 @@ async function loadConversationContextAtLevel(args: {
   // no embedding involved. Ordering here is updated_at DESC purely for cap
   // SELECTION; presentation sorts by branch/title in the renderer so the
   // block's bytes stay cache-stable.
-  let corpusMap: { entries: CorpusMapEntry[]; truncated: boolean } = {
+  let corpusMap: CorpusMapBlock = {
     entries: [],
     truncated: false,
   };
   if (corpusMapLimit > 0) {
-    const rows = await db
-      .select({
-        id: nodes.id,
-        type: nodes.type,
-        title: nodes.title,
-        path: nodes.path,
-        data: nodes.data,
-      })
-      .from(nodes)
-      .where(
-        and(
-          eq(nodes.ownerId, ownerId),
-          sql`${nodes.type}::text = any(${pgArrayLiteral(CORPUS_MAP_TYPES)}::text[])`,
-          sql`(${nodes.data}->>'origin') is distinct from 'system'`,
-          sql`not (${nodes.tags} @> ARRAY['conversation-digest']::text[])`,
-        ),
-      )
-      .orderBy(desc(nodes.updatedAt))
-      .limit(corpusMapLimit + 1);
+    trace.lap();
+    const mapWhere = and(
+      eq(nodes.ownerId, ownerId),
+      sql`${nodes.type}::text = any(${pgArrayLiteral(CORPUS_MAP_TYPES)}::text[])`,
+      sql`(${nodes.data}->>'origin') is distinct from 'system'`,
+      sql`not (${nodes.tags} @> ARRAY['conversation-digest']::text[])`,
+    );
+    // The branch an item sits under, as buildCorpusMap derives it from the path.
+    const branchExpr = sql<string>`coalesce(nullif(split_part(${nodes.path}::text, '.', 1), ''), 'content')`;
+    const [rows, totalRows] = await Promise.all([
+      db
+        .select({
+          id: nodes.id,
+          type: nodes.type,
+          title: nodes.title,
+          path: nodes.path,
+          data: nodes.data,
+        })
+        .from(nodes)
+        .where(mapWhere)
+        .orderBy(desc(nodes.updatedAt))
+        .limit(corpusMapLimit + 1),
+      // Per-branch totals, so the map can say how much exists beyond what it
+      // lists. Counts only, no titles, so the client-sourced filter below does
+      // not apply to them.
+      db
+        .select({ branch: branchExpr, n: sql<number>`count(*)::int` })
+        .from(nodes)
+        .where(mapWhere)
+        .groupBy(branchExpr),
+    ]);
     // Client-written titles stay out of the map (client logins C5 audit fix
     // L4): a client request, an item a client wrote, a copy a marked turn
     // made. The map is in every owner prompt and is never scanned for the
@@ -1233,7 +1564,16 @@ async function loadConversationContextAtLevel(args: {
     corpusMap = {
       ...buildCorpusMap(mapped, corpusMapLimit),
       truncated: rows.length > corpusMapLimit,
+      totals: Object.fromEntries(totalRows.map((r) => [r.branch, Number(r.n)])),
+      ...(corpusMapChars ? { maxChars: corpusMapChars } : {}),
     };
+    trace.stage(
+      'map',
+      rows.length,
+      corpusMap.entries.length,
+      undefined,
+      corpusMap.truncated ? 'clipped' : undefined,
+    );
   }
 
   // ─── Entity-anchored expansion: the graph axis ──────────────────────────
@@ -1242,12 +1582,14 @@ async function loadConversationContextAtLevel(args: {
   // query can return (memory.md §4.3, "expand each result's neighbourhood").
   let relations: RelationLine[] = [];
   if (!belowAdmin && anchorEntityIds.length > 0) {
+    trace.lap();
     const triples = await entityRelationsFor(ownerId, anchorEntityIds, { limit: RELATION_LIMIT });
     relations = triples.map((t) => ({
       subject: t.subject,
       relation: t.relation,
       object: t.object,
     }));
+    trace.stage('relations', anchorEntityIds.length, relations.length, undefined, 'in = anchors');
   }
 
   // ─── Conversation digests for THIS agent (per-agent, cross-channel) ─────
@@ -1266,6 +1608,13 @@ async function loadConversationContextAtLevel(args: {
               eq(nodes.type, 'note'),
               sql`${nodes.tags} @> ARRAY['conversation-digest']::text[]`,
               sql`${nodes.data}->>'agent_id' = ${agent.id}`,
+              // A digest of an archived thread stays out of a fresh chat. The
+              // summarizer never lets one digest span a "New chat" cut.
+              ...(threadSince
+                ? [
+                    sql`(${nodes.data}->>'period_start')::timestamptz >= ${threadSince.toISOString()}::timestamptz`,
+                  ]
+                : []),
             ),
           )
           .orderBy(desc(nodes.createdAt))
@@ -1273,6 +1622,13 @@ async function loadConversationContextAtLevel(args: {
       : [];
 
   const digests: Digest[] = buildDigests(digestRows);
+  // "Continue from this": the archived thread's summary leads the digests,
+  // so the fresh chat knows where it picks up without its raw turns.
+  const seed = openThread?.seedThreadId
+    ? await loadThreadSeed(ownerId, openThread.seedThreadId)
+    : null;
+  if (seed) digests.unshift(seed.digest);
+  if (digestLimit > 0) trace.stage('digests', digestRows.length, digests.length);
 
   // ─── Raw recent turns (all channels, per agent) ─────────────────────────
   // Filters and the early start: loadHistoryRows above.
@@ -1322,6 +1678,13 @@ async function loadConversationContextAtLevel(args: {
       history = withRecalledExchanges(history, picked.kept, bridge);
     }
   }
+  trace.stage(
+    'history',
+    recentRows.length + (recall?.exchanges.length ?? 0),
+    history.length,
+    undefined,
+    recallSnap ? `recall ${recallSnap.mode}, ${recallSnap.wouldAdd} back` : undefined,
+  );
 
   const snapshot: ContextSnapshot = {
     query: {
@@ -1341,6 +1704,8 @@ async function loadConversationContextAtLevel(args: {
       count: history.length,
       toolRecords: historyToolRecords,
       mediaRecords: historyMediaRecords,
+      ...(threadSince ? { since: threadSince.toISOString() } : {}),
+      ...(seed ? { continuedFrom: seed.title } : {}),
     },
     personaNotes: { count: personaNotes.length },
     corpusMap: { count: corpusMap.entries.length, truncated: corpusMap.truncated },
@@ -1348,6 +1713,7 @@ async function loadConversationContextAtLevel(args: {
     ...(versionSnap ? { versionGrouping: versionSnap } : {}),
     ...(journalSnap ? { journal: journalSnap } : {}),
     ...(recallSnap ? { historyRecall: recallSnap } : {}),
+    trace: trace.toJSON(),
   };
 
   return {

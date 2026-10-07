@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import type { AccessKeyGrant } from '../lib/access-keys';
 
 /**
  * Per-request ambient context for the Hono server.
@@ -20,6 +21,10 @@ export type RequestContext = {
   /** Decoded pathname (new URL(req.url).pathname). */
   path: string;
   method: string;
+  /** The API key the gate verified for this request (an /api/v1 call with
+   *  an `mtlk_` bearer), so the route's login lookup does not check it a
+   *  second time. Absent on every other request. */
+  accessKey?: AccessKeyGrant;
 };
 
 const store = new AsyncLocalStorage<RequestContext>();

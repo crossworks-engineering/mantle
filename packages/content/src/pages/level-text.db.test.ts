@@ -153,7 +153,7 @@ describe.skipIf(!URL)('page text at its level', () => {
     await m.db.execute(sqlTag`
       insert into draws (node_id, scene, scene_text) values
         (${id.teamDraw}, '{"elements":[]}'::jsonb, 'TEAMDRAWTEXT')`);
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await unlisten();

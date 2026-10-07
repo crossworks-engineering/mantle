@@ -294,6 +294,23 @@ Then smoke-test the surface the release actually changed in the browser (and
 - **migrations are forward-only**: the pre-roll `db-dump` is the only way back.
   See the rollback floors below.
 
+## Long maintenance jobs on a box
+
+Run a long `pnpm maintain` task (`chunk-windows --apply`, `re-embed`,
+`extract-backfill`) with `scripts/box-maintain.sh`, never with
+`docker exec ... mantle_web` and never with `nohup` over ssh:
+
+```sh
+scripts/box-maintain.sh <box> chunk-windows --apply --yes --parallel=16
+scripts/box-maintain.sh <box> --follow
+```
+
+It starts a throwaway `maint-<task>` container from mantle_web's own image,
+env and network, with its own memory limit, outside mantle_web's process
+tree, and refuses a second run on the same box. The log stays on the box in
+`~/maint-logs/` after the container removes itself. Why and how:
+[maintenance-runner.md](./maintenance-runner.md), "Long runs on a box".
+
 ## Rolling a box from v0.232.315 to the client logins releases
 
 The first roll past v0.232.315 brings client logins (v0.232.318 on). It is
@@ -573,8 +590,9 @@ migration is forward-only, so to undo one, restore the pre-update dump into a
 fresh DB (deploy.md §3b–c). The updater's dumps are in `backups/pre-roll/`
 (newest three), restored with `scripts/db-restore.sh` like any other. It
 restores into a pristine database and exits 2, without "Restore complete",
-when the result has no logins, no role CHECK or a missing viewer policy:
-do not start the app then.
+when the result has no logins, no role CHECK, a missing viewer policy or a
+missing trigger: do not start the app then. It exits 3 when the checks pass
+but `pg_restore` reported an error it cannot explain (docs/backups.md).
 
 **Rollback floors.** Pinning an older tag is safe only while that code still
 matches the schema. Never roll back below:
@@ -585,11 +603,11 @@ matches the schema. Never roll back below:
 - **v0.232.255 once personal items exist** (migration 0165; the extractor's
   owner check, docs/member-logins.md).
 - **v0.232.318 once any client login exists** (`auth.users.role =
-  'client'`): older images treat every login that is not a member as an
+'client'`): older images treat every login that is not a member as an
   admin, so each client would sign in as an admin. The updater refuses such
   a roll (above); pinning the tag by hand does not ask. Check first:
   `docker exec mantle_pg psql -U postgres -d postgres -Atc "select count(*)
-  from auth.users where role = 'client'"`.
+from auth.users where role = 'client'"`.
 
 Below a floor, restore the pre-roll backup taken before the migration instead
 of pinning the tag.

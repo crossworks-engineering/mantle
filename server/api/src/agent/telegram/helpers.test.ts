@@ -6,7 +6,13 @@ vi.mock('@mantle/telegram', () => ({
   sendMessage: vi.fn(async () => [1]),
 }));
 
-import { parseVoiceMarker, telegramCaption, toConversationAttachments } from './helpers';
+import {
+  isNewChatCommand,
+  newChatReply,
+  parseVoiceMarker,
+  telegramCaption,
+  toConversationAttachments,
+} from './helpers';
 
 describe('telegramCaption', () => {
   it('drops Telegram media placeholders, keeps real captions', () => {
@@ -58,5 +64,29 @@ describe('toConversationAttachments', () => {
   });
   it('is empty for no attachments', () => {
     expect(toConversationAttachments(null)).toEqual([]);
+  });
+});
+
+describe('isNewChatCommand', () => {
+  it('matches the bare commands, with or without the bot suffix', () => {
+    expect(isNewChatCommand('/new')).toBe(true);
+    expect(isNewChatCommand('  /NEW  ')).toBe(true);
+    expect(isNewChatCommand('/newchat')).toBe(true);
+    expect(isNewChatCommand('/archive')).toBe(true);
+    expect(isNewChatCommand('/new@my_bot')).toBe(true);
+  });
+  it('leaves normal text and longer commands to the model', () => {
+    expect(isNewChatCommand('new')).toBe(false);
+    expect(isNewChatCommand('/new plan for today')).toBe(false);
+    expect(isNewChatCommand('/news')).toBe(false);
+    expect(isNewChatCommand(null)).toBe(false);
+  });
+});
+
+describe('newChatReply', () => {
+  it('names the saved chat, or says nothing changed', () => {
+    expect(newChatReply('Trip Plan', true)).toContain('"Trip Plan" is saved in Previous chats');
+    expect(newChatReply(null, true)).toContain('saved in Previous chats');
+    expect(newChatReply(null, false)).toBe('This is already a new chat.');
   });
 });

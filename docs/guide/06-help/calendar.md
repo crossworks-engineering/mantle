@@ -5,17 +5,15 @@ toolGroups: [events]
 
 ## Calendars
 
-Subscriptions to external calendars by ICS link, a work calendar, a shared
-family one, a booking system's feed.
+Calendars subscribes to outside calendars by their iCal (.ics) link, so their events show up in Events.
 
-These are **read-only**. A subscribed calendar's events appear alongside your
-own and the assistant can reason about them, but nothing Mantle does writes back
-to the source. If you need to change one of those events, you change it where it
-lives.
+1. Under **Subscribe to a calendar**, enter a **Name**, for example "Work calendar".
+2. Paste the **iCal URL**. In Google Calendar it is the "Secret address in iCal format". In Outlook, publish the calendar and copy the ICS link.
+3. Click **Subscribe**. The first sync runs within two minutes.
 
-That's a deliberate boundary rather than a missing feature: an ICS subscription
-URL is a publishing endpoint, not an editing API, and pretending otherwise would
-produce edits that silently vanish at the next sync.
+Each row shows the event count and the last sync time. Use the sync button to pull now.
+
+Subscriptions are read-only. Nothing is written back to the source, and an edit made in Mantle is overwritten at the next sync. Change those events where they live.
 
 ## Assistant
 
@@ -23,26 +21,12 @@ produce edits that silently vanish at the next sync.
 - "Am I free Thursday afternoon?"
 - "Book the site visit for Tuesday at nine."
 
-Worth knowing which calendar a new event lands in. The assistant creates events
-in *your* calendar, never in a subscribed one, so "move the dentist appointment"
-works if you made it and doesn't if it arrived from a feed.
+New events the assistant makes go into your own calendar in Events, not into a subscribed one.
 
 ## Technical
 
-Each feed is polled on a schedule and reconciled: events that changed are
-updated, events that vanished from the feed are removed. Because the feed is the
-source of truth, local edits to a subscribed event would be overwritten, which is
-the mechanical reason they're not allowed.
-
-Subscribed events are stored as ordinary event nodes tagged with their source
-feed, so they're searchable and embeddable like your own. The distinction lives
-on the node rather than in a separate table, which is what lets a single "what's
-on this week" query span both.
-
-A feed that stops responding leaves the last successfully synced events in place
-rather than deleting them. A dead link is far more often a temporary outage than
-a cancelled year, and silently emptying your calendar would be the worse failure.
-
-The URL is stored as given. Most providers' "secret address in iCal format" links
-are credentials in their own right (anyone with the URL can read the calendar)
-so treat one like a password when copying it around.
+- Every enabled calendar syncs every two minutes.
+- Synced events are normal event nodes, tagged with the calendar's name. Events removed from the feed are removed here.
+- If a sync fails, the last good events stay and the row shows the error.
+- Synced events get no Mantle reminder. The source calendar sends its own.
+- A secret iCal link lets anyone who has it read the calendar. Treat it like a password.

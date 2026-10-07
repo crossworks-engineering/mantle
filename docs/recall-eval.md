@@ -173,7 +173,8 @@ The newsletters (Earth Day Sale, Prusameters, PiShop) leave the prompt entirely;
 The responder's context used only the coarse per-node summary; the section-level
 `content_chunks` index (~1.5k-char passages, own embeddings) was reachable only
 via the explicit `search_chunks` tool. Now `loadConversationContext` also pulls
-the top passages (`chunk_limit`, default 8 today; cutoff 0.65; salience-aware,
+the top passages (`chunk_limit`, default 8 today; cutoff 0.65, keyword-found
+passages exempt since 2026-10-04; salience-aware,
 system-docs + telegram excluded) and `buildChatMessages` renders them as a
 "Relevant passages" block. Both surfaces inherit it.
 
@@ -296,6 +297,625 @@ on the server for the longest message (136 lexemes): 25 ms execution, 11 ms
 planning. The FTS-only legacy path of `searchNodes` (no query embedding) is
 unchanged.
 
+## Scale curve on a single-topic corpus (2026-10-03)
+
+The capacity policy (watch 50k / split 100k passage vectors) came from the
+literature, not from a measurement. This section measures it on the hardest
+corpus we have: a brain of about 3,600 public-domain sermons by one preacher,
+five whole Bibles, and a few commentaries (122,224 embedded chunks). Passages
+in it are very alike: one author, one subject, the same Bible texts preached
+again and again, the same verse in five translations.
+
+### Method
+
+1. **Gold set, passage level.** 98 questions, each with one target chunk
+   (node + ordinal; any chunk of that node that holds the answer counts, so
+   overlapping chunks are fair). Three groups:
+   - `paraphrase` (40): a question about the specific point of one sermon
+     passage, in modern words, no 4-word run copied from it.
+   - `verse` (28): a question that names a verse and a translation ("What
+     does Proverbs 23:13 say in the WEB about ..."). The target is that
+     translation's chunk.
+   - `trap` (30): two sermons on the same Bible text; the question has to
+     be answered from one of them, and names the text.
+
+   Generated once with a cheap model (`google/gemini-3.1-flash-lite`, 159k
+   tokens in, 7k out, **$0.05**), then read by hand: 2 dropped (their
+   "evidence" was the ESV cross-reference apparatus, not verse text), 12
+   rewritten (too vague, or the verse was not named). The set names pages of
+   one brain, so it lives outside the repo like every gold set here.
+
+2. **Retrievers.** `eval:recall` gained three passage retrievers (see the
+   header of [`eval-recall.ts`](../server/web/scripts/eval-recall.ts)):
+   `passage` is `searchChunks()` with the query text, the exact call
+   `search_chunks` and the responder's auto-context make; `passage-vector`
+   is the same call without text; `passage-keyword` is the keyword arm on
+   its own (`arms: 'keyword'`, a diagnostic option on `searchChunks`). Each
+   is scored on the exact passage and on the document. `--retrievers=` skips
+   `prod`, so it runs against a bare corpus copy with no agents.
+3. **Nested sub-corpora.** A copy of the brain in a throwaway Postgres (the
+   brain itself was only read). The gold documents and the trap partners
+   (105 documents, 22,013 chunks) are always kept; every other document
+   gets a fixed random rank and the corpus is cut at 100k, 75k, 50k and 25k
+   chunks, whole documents at a time. Each cut is VACUUMed, the HNSW index
+   rebuilt and ANALYZEd (the keyword arm reads `pg_stats`).
+4. **Past today's size.** About 2,000 English religious books from Project
+   Gutenberg (public domain; Spurgeon and King James texts left out, so no
+   gold passage gets an exact twin) were chunked with the extractor's own
+   `clampPieces(chunkDocText(...))` and embedded with the brain's own model
+   (a stored chunk re-embedded to cosine distance 0.0003). Added in a fixed
+   order, cut at 171,797 and 224,050 chunks (the load stopped at 224k).
+   Embedding cost: **about $5.60** (101,826 chunks, about 43M tokens).
+
+### Result
+
+Exact passage in the top 10 (recall@10), and MRR, per corpus size:
+
+| chunks  | hybrid R@10 | hybrid MRR | vector R@10 | keyword R@10 | doc R@10 (hybrid) |
+| ------- | ----------- | ---------- | ----------- | ------------ | ----------------- |
+| 25,000  | 50%         | 0.27       | 56%         | 8%           | 74%               |
+| 50,000  | 40%         | 0.17       | 43%         | 4%           | 59%               |
+| 75,000  | 37%         | 0.14       | 41%         | 3%           | 56%               |
+| 100,000 | 35%         | 0.13       | 40%         | 3%           | 53%               |
+| 122,224 | 33%         | 0.11       | 37%         | 2%           | 51%               |
+| 171,797 | 31%         | 0.11       | 32%         | 2%           | 47%               |
+| 224,050 | 27%         | 0.11       | 30%         | 2%           | 43%               |
+
+The 122k row was measured twice (two HNSW builds); the second gave 34% /
+38% / 52%. One case moves between parallel index builds.
+
+With 98 cases one point carries about ±9 points of noise (bootstrap 95%),
+but the cuts are nested, so the loss is paired: from 25k to 122k, 18 cases
+stopped finding their passage and 1 started.
+
+What it says:
+
+1. **There is no cliff.** Recall falls about 5 to 8 points per doubling
+   of the corpus and the slope flattens with size. Nothing in the curve
+   marks 100k as special. Past today's size the slope holds: 122k to 224k
+   (1.8x) costs 7 points (hybrid 34% to 27%), even though those added
+   books are less alike than the brain's own sermons. Search time grows
+   mildly: p50 147 ms at 122k, 200 ms at 224k (p90 236 to 393 ms, over a
+   LAN).
+2. **The absolute level is the problem, not the size.** Even at 25k only
+   half of the questions find their passage. The misses are not junk: on
+   the full corpus, most paraphrase and trap misses rank other sermons on
+   the same theme, and 11 of 16 verse misses find the right Bible but the
+   wrong chunk. Chunks are embedded as raw text, so a verse chunk knows
+   neither its book nor its translation, and a sermon chunk does not know
+   its title or text.
+3. **Hybrid costs quality on this corpus.** At every size vector-only beats
+   hybrid (R@10 by 3 to 6 points, R@1 8% vs 1% at 122k). The keyword arm
+   alone finds 2% of passages: its rarity score sums the IDF of every term,
+   so the question's frame ("author", "describe", "commentary") outvotes
+   the one rare word that matters ("nautilus"). This is the
+   user-message-shaped query the responder's auto-context sends.
+   Fixed: see "Keyword arm on a single-topic corpus" below.
+4. **A split would buy one halving.** Cutting the brain in two moves it one
+   step left on the curve: about 5 points of R@10. A single-topic corpus
+   cannot be split away from its own near-duplicates (both sermons on
+   John 6:37 land in the same half), so the split remedy fits a mixed
+   brain, where a category can leave, better than this one.
+
+### What changed in the policy
+
+`CAPACITY_POLICY.chunkVectors` moves from watch 50k / split 100k to
+**watch 100k / split 250k**. The rule: a split is worth its cost (a
+federated breakout brain, routing, a second index) when it recovers at least
+**10 points of R@10**. On this curve one halving recovers about 6 points, so
+splitting at 100k bought little; 250k is where the measured loss from 100k
+reaches about 10 points (35% at 100k, 27% at 224k, the slope projects 25% to
+26% at 250k). Watch at 100k is where the eval starts to matter, and the
+dashboard dial now shows it (below). The document axis (10k / 20k) is
+unchanged: this corpus has about 3,700 documents, so it says nothing about
+that axis. A 250k index is about 0.8 GB of HNSW, well inside a small box.
+
+The policy is one number for every brain, but corpus character changes what
+to do at the line. A mixed brain (mail, projects, a church archive) can move
+a category out and gain the halving. A single-topic brain like this one
+cannot: its distractors are its own content. For it the lever is retrieval,
+not a split: the hybrid fusion and the keyword arm's term weighting (point 3
+above), and context in the chunk itself (a verse chunk that carries its book
+and translation). The heartbeat already watches the measured score, which
+catches both kinds.
+
+The dial: `corpusCapacity` also returns `retrieval`, the passage score
+(`chunks` arm, recall@10 and MRR) of the newest `recall_eval` run note, or
+null when a brain has never run one. Size says when to look; the score says
+whether quality moved.
+
+Re-run: build the copy, then
+
+```bash
+ALLOWED_USER_ID=<uuid> pnpm -C server/web eval:recall --cases=<gold.json> \
+  --retrievers=search,passage,passage-vector,passage-keyword
+```
+
+## Keyword arm on a single-topic corpus (2026-10-03)
+
+Point 3 above, fixed. Same gold set, a fresh copy of the same brain
+(122,256 chunks), current code against the fix.
+
+### Why hybrid lost
+
+Two causes, measured one at a time in an offline lab (cached vector pool,
+keyword variants fused with the shipped RRF):
+
+1. **Term weighting.** Rows ranked by the plain IDF sum of the terms they
+   hold, so four ordinary question words outvoted the one rare word. Worse,
+   most query words in this corpus sit between 0.4% and 2% of rows: below
+   the `pg_stats` floor (2%) but above the count cap (500 rows), so they all
+   got the same df and the order among them was alphabetical.
+2. **The arm fires on every question.** The gold passages are paraphrased,
+   so they rarely hold the question's words: only about 10 of 98 hold the
+   rarest one (a name, "nautilus", "Portland vase"). On the rest the arm
+   still filled its pool with rows that shared ordinary words. The rescue
+   floor then pushed two of them into the top 10 (that alone cost 4 points
+   of R@10), and RRF lifted any row both arms knew above the vector's first
+   hit (that cost R@1: 8% to 1%).
+
+Better weighting alone (rank weights, a frame stoplist, exact counts,
+saturation, fewer terms) moved hybrid R@10 by at most 2 points: there is
+little for a better ranking to find. The lever is to let the arm speak
+only when it has a literal.
+
+### What changed (`packages/search/src/keyword-query.ts`)
+
+- **Rank weights.** The k-th rarest kept term weighs `idf * 0.5^k`, so the
+  rarest term outweighs all the others together; the rest only order rows
+  that tie on it.
+- **Question-frame words** ("describe", "according", "author", "speaker",
+  "perspective", "specific" ...) are dropped like chat filler. In an old
+  corpus "perspective" is as rare as a name (16 rows here).
+- **A rare-term gate on the passage arm** (`gateRareTerms`, used by
+  `searchChunks` only): the arm returns only rows holding a term that no
+  more rows hold than its pool (50 for a 10-hit search). A query without
+  such a literal leaves the arm silent, so the vector order stands. The AND
+  fallback is not gated. Node search (`searchNodes`) gets the weights and
+  the stoplist, not the gate.
+
+### Result (exact passage, 98 cases)
+
+| retriever      | R@1 | R@10 | MRR  |
+| -------------- | --- | ---- | ---- |
+| hybrid, before | 1%  | 34%  | 0.11 |
+| hybrid, after  | 8%  | 38%  | 0.17 |
+| vector only    | 8%  | 38%  | 0.16 |
+
+Hybrid now ranks the gold passage where vector-only does in 95 of 98
+cases. One is a literal win: the "Portland vase" passage, which vector
+misses, ranks first. Two are losses to rare-word rows: one gold passage
+drops from first to second, one from ninth out of the top 10. Node search
+is unchanged (document R@10 18%). Search time fell from p50 150 ms to
+14 ms: the ungated OR query ranked match sets of tens of thousands of rows.
+
+### Contextual chunk headers: tested, not adopted
+
+The other lever named in point 2: embed each chunk with a header. This
+corpus has no `heading_path` on any chunk, and Bible titles are file names
+("engwebu.epub"), so the only context at hand is the document's title and
+its summary (which names the translation: "...the World English Bible
+Updated (WEB)..."). Every chunk of a second copy was re-embedded as
+`title + summary (cut near 400 chars) + blank line + chunk text`, same
+model; queries unchanged. Cost: 56.5M tokens, **$7.37** for 122,256 chunks.
+
+| exact passage, 98 cases | R@1 | R@10 | MRR  | paraphrase | verse | trap |
+| ----------------------- | --- | ---- | ---- | ---------- | ----- | ---- |
+| hybrid, no header       | 8%  | 38%  | 0.17 | 30%        | 50%   | 37%  |
+| hybrid, title + summary | 10% | 30%  | 0.17 | 23%        | 25%   | 43%  |
+| vector, title + summary | 10% | 30%  | 0.16 | 23%        | 25%   | 43%  |
+
+(group columns are R@10). Document R@10 fell too, 54% to 44%.
+
+A header shared by every chunk of a document pulls those chunks together.
+The right document wins more often at the top (trap R@1 10% to 23%), but
+when a document wins, its chunks crowd the top 10: distinct documents in
+the vector top 10 fell from 8.0 to 5.5 (paraphrase), 5.8 to 4.1 (verse)
+and 7.4 to 4.9 (trap). A verse question names its translation, so all
+3,856 chunks of that Bible move closer to it at once and the one verse
+drowns among them.
+
+So a document-level header is not a passage-level fix. What could still
+help, untested: a header that differs per chunk (the book and chapter a
+verse chunk sits in, the section a passage is under), which needs the
+chunker to carry structure it does not have for these files, or a cap on
+chunks per document in the top 10, which would keep the trap gain without
+the crowding.
+
+## Diversity cap and rerankers (2026-10-03)
+
+The next step after the keyword fix: the same 98 cases, a fresh copy of the
+same corpus. Base = hybrid `searchChunks`, top 10. All rows: exact passage.
+The gold passage is in the hybrid top 50 for 54 of 98 cases (55%) and the
+top 100 for 59: that is the ceiling any reranker of that pool can reach.
+
+### A per-document cap: no win, not built
+
+At most N chunks of one document in the top 10, the rest backfilled.
+
+| cap  | R@1 | R@10 | MRR  | distinct documents |
+| ---- | --- | ---- | ---- | ------------------ |
+| none | 9%  | 39%  | 0.18 | 7.2                |
+| 3    | 9%  | 38%  | 0.18 | 7.6                |
+| 2    | 9%  | 38%  | 0.18 | 8.0                |
+
+Without headers the top 10 is not crowded, so a cap has little to fix. It
+would matter for document-level headers (above), which are not adopted.
+
+### Rerankers on the hybrid top 50
+
+Hosted rerank models through OpenRouter (`POST /api/v1/rerank`; the model
+catalog lists them with output modality `rerank` and a price of 0, so the
+cost below is the `usage.cost` each response reports), two small chat models
+asked to pick the 10 best, and the decider's `passage_scoring` (Jev). Each
+document is the node title, a blank line and the chunk text. Latency is one
+search at a time, from the Mac.
+
+| reranker                            | R@1 | R@10 | MRR  | p50    | $ per search |
+| ----------------------------------- | --- | ---- | ---- | ------ | ------------ |
+| none (hybrid)                       | 9%  | 39%  | 0.18 | 0.02 s | 0            |
+| voyageai/rerank-2.5-lite            | 32% | 54%  | 0.39 | 1.6 s  | 0.00055      |
+| voyageai/rerank-2.5                 | 32% | 55%  | 0.39 | 1.7 s  | 0.00136      |
+| cohere/rerank-4-fast                | 17% | 52%  | 0.30 | 1.7 s  | 0.00202      |
+| cohere/rerank-4-pro                 | 34% | 54%  | 0.41 | 2.7 s  | 0.00253      |
+| qwen/qwen3-reranker-8b              | 34% | 55%  | 0.42 | 3.5 s  | 0.00621      |
+| google/gemini-2.5-flash-lite (chat) | 16% | 37%  | 0.22 | 3.5 s  | 0.00133      |
+| google/gemini-3.1-flash-lite (chat) | 27% | 39%  | 0.30 | 4.4 s  | 0.00323      |
+| Jev, top 20 (today's pool)          | 34% | 44%  | 0.37 | 0.55 s | 0.00056      |
+| Jev, top 50 (two requests)          | 36% | 53%  | 0.41 | 1.26 s | 0.00138      |
+
+The rerankers nearly reach the ceiling: almost every gold passage in the top
+50 lands in their top 10. A 100-deep pool (Voyage lite) gave 56% for twice
+the cost. The chat models do not help. Jev on the top 20 is where a brain
+with `passage_scoring` on stands today; the gap to the rerankers is the
+pool, not the model: Jev on the top 50 matches them.
+
+### What was built
+
+No new worker kind and no new model. The decider's `passage_scoring` use
+gained an optional `pool` (docs/decisions.md): unset keeps today's pool,
+`pool: 50` scores the top 50 in two requests. The `search_chunks` tool path,
+measured with the new `passage-scored` retriever (the tool's own sequence:
+search, score, drop, cut):
+
+| `search_chunks` with Jev | R@1 | R@10 | MRR  | p50 / p90       |
+| ------------------------ | --- | ---- | ---- | --------------- |
+| pool unset (20)          | 31% | 43%  | 0.35 | 0.56 s / 0.81 s |
+| `pool: 50`               | 36% | 53%  | 0.41 | 1.24 s / 1.44 s |
+
+The two requests of a fan-out are not served side by side, so its requests
+may wait the worker timeout times the request count (without that, 14 of 98
+searches ran past the 1.5 s timeout). With the pool set, the responder's
+auto-context also scores before its budget cut when `context_pruning` is on:
+before, pruning only saw the 8 passages search order had already chosen.
+
+## eval:route: retrieval per question type (2026-10-03)
+
+One fixed ruleset serves every question today, and a rule that wins on one
+kind of question can lose on another (document headers: trap questions up,
+verse questions down). `eval:route` scores passage retrieval PER QUESTION
+TYPE so every routing rule is gated per type, not on one blended number.
+Script: [`server/web/scripts/eval-route.ts`](../server/web/scripts/eval-route.ts);
+the pure scoring and gate: `server/web/scripts/eval/route-score.ts` (tested).
+
+```bash
+pnpm -C server/web eval:route --cases=<file> --rulesets=hybrid,vector,scored \
+  --vectors=<cache.json> --pool=50 --out=<run.json>
+pnpm -C server/web eval:route --cases=<file> --rulesets=auto,auto-scored --vectors=<cache.json>
+pnpm -C server/web eval:route --cases=<file> --rulesets=auto --baseline=<run.json> --target=T3
+```
+
+**Cases** are typed: `{id, query, type, flags?, profile?, expectChunks? |
+expectNodeIds? | expectNodeTitleIncludes?}`. Types are the routing plan's
+list: T0 small talk, T1 follow-up, T2 locate / quote (a rare literal, a code,
+a reference), T3 scoped lookup (names a source), T4 fact lookup, T5 personal
+history, T6 synthesis / explain, T7 data query, T8 action, `default`. One
+primary `type`; `flags` hold the others that apply. Gold sets name one
+brain's nodes, so they live outside the repo.
+
+**Rulesets** (the first named is the reference; every other one is compared
+to it, paired by case): `vector` (vector arm alone), `hybrid`
+(`search_chunks` with the decider off), `auto` (the responder's
+auto-context: hybrid pool of chunk_limit + 4, the 0.65 cutoff, the
+chunk_limit cut), `scored` (`search_chunks` with Jev over the pool, ordered
+as `live`), `auto-scored` (auto-context with Jev before the cut, v0.237.4).
+A new routing rule is a new entry in `RULESETS`.
+
+**Report**, per ruleset and type: n, R@1, R@10 (for `auto` rulesets, "in the
+prompt"), MRR, p50/p90 latency of the ruleset's own work, and model cost.
+Then, per type, cases won and lost against the reference at R@10 and R@1,
+and the gate: **a change passes when no type loses more than 2 cases at R@10
+or R@1 and a type (or the `--target` type) gains at either.** R@1 counts
+because on a small corpus R@10 sits at the ceiling. At n = 98 one point is
+about ±9 points of noise, so the gate reads case counts, not percentages.
+
+**Cost.** Each query is embedded once and cached in `--vectors` (a repeat
+run embeds nothing). The scored rulesets cost one Jev fan-out per case
+(about USD 0.0007 per 25 passages); the run prints its total. Manual only:
+never wire it to a cron or a trigger.
+
+**A throwaway copy.** Run it against a copy, never a live box: restore a
+dump into a throwaway Postgres (rebuild the HNSW index if the restore ran
+out of shared memory), then re-seal the copy's provider key with your own
+key and a throwaway master key (the source box's key stays on the box) and
+check embedding parity on one stored chunk (0.0003 here). Both sets below
+ran that way on the Linux workstation.
+
+### Sets
+
+| set      | profile  | n   | types (n)                                | corpus                                                 |
+| -------- | -------- | --- | ---------------------------------------- | ------------------------------------------------------ |
+| library  | library  | 98  | T2 (30), T3 (28), T6 (40)                | the sermons corpus above, 122,256 chunks               |
+| business | business | 27  | T2 6, T3 5, T4 3, T5 3, T6 4, T7 3, T8 3 | a made-up engineering firm, 24 documents, no real data |
+
+Library labels: `verse` → T3 (names a translation) with flag T2 (names a
+reference); `trap` → T2 (names a reference, but the answer is in a sermon
+ON it, the case a scope route must not misfire on) with flag T3;
+`paraphrase` → T6.
+
+### First numbers (v0.237.4 + this change, pool 50)
+
+Library, exact passage:
+
+| ruleset     | T2 R@1 / R@10 | T3 R@1 / R@10 | T6 R@1 / R@10 | all R@1 / R@10 / MRR | p50    |
+| ----------- | ------------- | ------------- | ------------- | -------------------- | ------ |
+| vector      | 7% / 37%      | 11% / 50%     | 8% / 28%      | 8% / 37% / 0.162     | 3 ms   |
+| hybrid      | 10% / 37%     | 11% / 50%     | 5% / 28%      | 8% / 37% / 0.166     | 9 ms   |
+| scored      | 43% / 57%     | 61% / 68%     | 13% / 40%     | 36% / 53% / 0.415    | 1.32 s |
+| auto        | 10% / 37%     | 11% / 46%     | 8% / 28%      | 9% / 36% / 0.170     | 17 ms  |
+| auto-scored | 50% / 57%     | 57% / 68%     | 15% / 40%     | 38% / 53% / 0.425    | 1.39 s |
+
+`auto-scored` vs `auto`: T2 +6/-0, T3 +6/-0, T6 +5/-0 at R@10 (+17/-0 all);
+R@1 +29/-1. Gate: pass. Cost: USD 0.137 per 98 searches (196 requests).
+The `scored` numbers repeat the earlier lab (36% / 53% / 0.41), so the
+harness measures what the lab measured. T6 (paraphrase) is the weak type:
+40% at R@10 even with the judge; its gold is often past the pool (embedding
+reach), not misranked.
+
+Business (24 documents, so R@10 is at the ceiling; read R@1 and MRR):
+
+| ruleset     | all R@1 / R@10 / MRR | note                                                    |
+| ----------- | -------------------- | ------------------------------------------------------- |
+| vector      | 67% / 96% / 0.809    | loses a T2 code question the keyword arm finds          |
+| hybrid      | 67% / 100% / 0.827   | T3 R@1 40%, T4 33%, T5 33%                              |
+| scored      | 100% / 100% / 1.000  | +9/-0 at R@1, every type at 100%; p50 0.48 s; USD 0.019 |
+| auto        | 63% / 96% / 0.790    | misses T2 "valve V-118": see below                      |
+| auto-scored | 96% / 96% / 0.963    | same T2 miss                                            |
+
+The T2 miss, read off the decision trace: the keyword arm found the
+commissioning plan (keyword rank 1, vector rank 17, fused rank 1), Jev scored
+it 2.77, and the fixed 0.65 cosine cutoff then dropped it (distance 0.765).
+The routing plan's "rescue fights the cut" weak point, now measured. The
+next section builds and gates the rule.
+
+### The T2 keyword rule (2026-10-04)
+
+A passage the keyword arm found (a rare literal: a code, a reference, a
+coined word) no longer has to clear the 0.65 cosine cutoff
+(`KEYWORD_PASSAGE_RULE = 'exempt'` in
+`packages/runtime/src/agent/conversation/select.ts`). Its place in the
+search order and the chunk_limit cut do not change, so the budget does not
+grow. The trace names it: `why: 'exempt:keyword'`. No setting: rulesets are
+code until the router lands; `eval:route --rulesets=auto:off,auto:exempt`
+re-runs the gate.
+
+Two variants were gated (fresh corpus copy, so the library baseline moved a
+little from the run above; the comparison is paired inside one run):
+
+- `exempt`: as above.
+- `slots`: `exempt`, plus up to 2 keyword passages past the cut take the
+  tail of it from the weakest other passages (the plan's "rescue enters the
+  cut").
+
+The business set gained 5 more T2 cases (codes) before any run, so T2 has 11.
+
+| set, ruleset                 | T2 R@1 / R@10 | won / lost vs `off` (R@10; R@1)     | gate                    |
+| ---------------------------- | ------------- | ----------------------------------- | ----------------------- |
+| business, auto:off           | 82% / 91%     |                                     |                         |
+| business, auto:exempt        | 91% / 100%    | T2 +1/-0; +1/-0. Others 0/0         | pass                    |
+| business, auto:slots         | 91% / 100%    | same as exempt                      | pass                    |
+| business, auto-scored:off    | 91% / 91%     |                                     |                         |
+| business, auto-scored:exempt | 100% / 100%   | T2 +1/-0; +1/-0. Others 0/0         | pass                    |
+| library, auto:exempt         | 13% / 40%     | all types 0/0 at R@10; T6 -1 at R@1 | no gain, no loss over 2 |
+| library, auto:slots          | 13% / 40%     | T3 -2 at R@10; T6 -1 at R@1         | no gain                 |
+| library, auto-scored:exempt  | 43% / 57%     | 0/0 everywhere                      | no gain                 |
+
+On the library corpus the cutoff almost never fires (gold median distance
+0.42), so the rule has nearly nothing to do there. Its one change: a T6
+question with a rare word ("auditory") let a keyword passage in above the
+gold, which went from rank 1 to rank 2, still in the prompt. `slots` pushed
+two verse passages out of the prompt (ranks 7 and 8) and won nothing over
+`exempt`: kept as an eval variant, not adopted. `exempt` passes the plan's gate (the target type gains,
+no type loses more than 2 cases on any set) and is the default. Cost of the
+gate: USD 0.16 (one Jev pass per set; the other variants hit the decider's
+cache).
+
+## Paraphrased questions (T6): passage windows (2026-10-04)
+
+T6 was the weak type: with the judge on a pool of 50, R@1 15% and R@10
+40%, against 50% to 68% for the other types. The cause was reach, not
+ranking: the gold passage was in the 50-passage pool for only 17 of 40 T6
+cases, and 13 of 40 were not in the vector top 200 at all. When a gold
+passage is in the pool, the judge almost always puts it in the top 10.
+
+Same library corpus (122,256 chunks), a fresh copy, the 98 typed cases.
+Every idea was measured on the gold-in-pool rate first (free, from cached
+vectors), then with the judge where it moved. Paired counts are cases won /
+lost against the judged pool of 50 (`auto-scored` at `--pool=50`).
+
+### 1. Query rewriting: no gain on T6
+
+A cheap chat model wrote three rephrasings and a hypothetical answer passage
+(HyDE) per question; each was embedded and searched, and the lists were
+fused (RRF), averaged, or used alone. Four models: gemini-2.5-flash-lite,
+gpt-4.1-nano, gemini-3.5-flash-lite, llama-3.1-8b (the last broke its JSON
+on 10 of 98).
+
+| T6, gold in pool (of 40)           | top 10 | top 50 | top 200 |
+| ---------------------------------- | ------ | ------ | ------- |
+| hybrid (today)                     | 11     | 17     | 26      |
+| best rewrite (flash-lite, any mix) | 11-13  | 16-19  | 24-27   |
+
+With the judge: HyDE fused with hybrid, pool 50, T6 R@10 40% to 40% (+1/-1);
+three rephrasings, 40% to 40% (+2/-2). HyDE did help the other types (T2
+R@10 57% to 67%, T3 68% to 75%), but it costs a chat call before every
+search: USD 0.0001 and 1.4 s p50 (2.4 s p90) for flash-lite. Not built. The
+rewrite cannot fix T6 here because the question and the passage already
+mean the same thing; what fails is the passage vector (below).
+
+### 2. A bigger pool for the judge: helps, at a price
+
+Gold in the hybrid pool for T6: 17 of 40 at 50, 21 at 100, 26 at 200. The
+judge over that pool (`eval:route`, the product path):
+
+| pool | T6 R@1 / R@10 | all R@1 / R@10 | won/lost R@10; R@1   | USD/search | p50    |
+| ---- | ------------- | -------------- | -------------------- | ---------- | ------ |
+| 50   | 15% / 40%     | 39% / 53%      |                      | 0.0014     | 0.91 s |
+| 100  | 18% / 50%     | 37% / 58%      | +5/-0; +3/-1 (lab)   | 0.0028     | 0.84 s |
+| 200  | 18% / 53%     | 37% / 62%      | +11/-2; +4/-6 (fail) | 0.0056     | 1.11 s |
+
+Pool 200 fails the gate: T2 lost 4 cases at R@1 (more look-alike passages
+in front of the judge). The pool setting now goes up to 200
+(`MAX_PASSAGE_POOL`); unset is unchanged.
+
+**The judge's requests now run side by side.** A pool over 25 goes out as
+several requests at once, but Node 26's built-in fetch sent them one after
+another (8 requests: 4.2 to 4.6 s, completion times stepping by about
+0.55 s), while the endpoint serves them in parallel (Python, or the `undici`
+package's own pool: 0.9 to 1.6 s). The decider adapter now uses its own
+`undici` pool (`decisionFetch` in
+`packages/voice/src/adapters/openrouter-decision.ts`). Pool 50 went from
+p50 1.39 s to 0.91 s; pool 100 from 2.5 s to 0.84 s. This touches every
+brain with the decider on, at no cost.
+
+### 3. Passage windows: the lever
+
+A chunk is about 1.6k chars; a T6 question asks about one sentence of it
+("the anecdote about a Scottish lady and her breakfast"), and the chunk's
+one vector carries that sentence weakly. Windows give the inside of a
+chunk its own vectors: each chunk is cut into sentence windows of about
+800 chars (`chunkWindows` in `packages/embeddings/src/chunk-windows.ts`),
+each window is embedded with the brain's model, and a window search returns
+its chunk. The text the model sees is the same chunk text, so the context
+size does not change.
+
+Gold in pool, vector order only, no judge:
+
+| list           | T6 top 10 / 50 / 200 | all top 10 / 50 / 200 |
+| -------------- | -------------------- | --------------------- |
+| hybrid (today) | 11 / 17 / 26         | 39 / 54 / 68          |
+| windows of 800 | 18 / 29 / 33         | 51 / 77 / 90          |
+
+At a 25k-chunk cut, 400-char windows found no more than 800-char ones (top
+50: 90 vs 91 of 98) with 1.7 times the vectors, so 800 it is. Half-precision
+vectors (`halfvec`) ranked the 98 cases exactly as full precision did, at
+half the size.
+
+How the window list joins the hybrid list matters. RRF of the two lost rank-1
+cases; plain turns (hybrid 1, window 1, hybrid 2, ...) put the most answers
+in the top 8 when no judge runs; for a judged pool, the hybrid head first and
+then the window head (`union`) kept the most rank-1 answers, because the
+judge scores in requests of 25 and the mix inside a request changes its
+scores. `mergeIds` in `packages/search/src/rrf.ts` does both.
+
+Product path, `eval:route --windows` (the judged pool doubles: 50 from each
+arm):
+
+| ruleset                   | windows | T2 R@1 / R@10 | T3 R@1 / R@10 | T6 R@1 / R@10 | all R@1 / R@10 | USD/search |
+| ------------------------- | ------- | ------------- | ------------- | ------------- | -------------- | ---------- |
+| `auto` (no judge)         | off     | 13% / 40%     | 11% / 46%     | 5% / 28%      | 9% / 37%       | 0          |
+| `auto` (no judge)         | on      | 13% / 33%     | 11% / 71%     | 5% / 50%      | 9% / 51%       | 0          |
+| `scored` (judge, pool 50) | off     | 50% / 57%     | 61% / 68%     | 15% / 40%     | 39% / 53%      | 0.0014     |
+| `scored` (judge, pool 50) | on      | 43% / 70%     | 75% / 96%     | 28% / 63%     | 46% / 75%      | 0.0027     |
+
+Paired, `scored`: T6 +11/-2 at R@10 and +5/-0 at R@1; T3
++8/-0 and +5/-1; T2 +5/-1 at R@10 but +2/-4 at R@1. So the strict gate
+fails on T2 R@1 by two cases: four trap questions (a verse named, the answer
+in a sermon on it) moved from rank 1 to rank 2 or 3, still in the prompt.
+`auto` passes the gate (T2 -2 at R@10). An A/A rerun of the baseline moved
+at most one case per type, so these counts are not judge noise. The
+business set (24 short documents, one window each) did not move: +0/-0 on
+every type.
+
+### What was built
+
+- **Passage windows**, optional per brain, **off by default**
+  (`embedding_config.chunk_windows`, migration 0229, table
+  `content_chunk_windows`, halfvec, RLS follows the node). Switch and backfill
+  with `pnpm maintain chunk-windows` (dry run prints the count and the cost;
+  `--apply` switches it on and embeds; `--off`; `--clear`). Once on, the
+  extractor writes windows with every chunk it rebuilds. Search: the
+  `windows` option of `searchChunks`, read from the switch by `search_chunks`
+  and the responder's auto-context. Cost on this brain: 314,004 windows,
+  256,864 embedded (a one-window chunk reuses its chunk vector), about
+  43M tokens, about USD 5.6 to 6.1 once; about 1.1 GB of table and index;
+  new ingest embeds about twice the tokens it did; per judged search about
+  USD 0.0013 more (the pool doubles); window search about 15 to 30 ms.
+- **The parallel judge fetch**, on for every brain (free).
+- **Pool up to 200**, still opt-in (`uses.passage_scoring.pool`).
+- `eval:route --windows`.
+
+Not built: query rewriting (no T6 gain), a per-type pool (pool 200 loses
+rank-1 cases on T2 and T3, and windows beat it on every type at half the
+cost).
+
+Literature check: HyDE (Gao et al., ACL 2023) and RAG-Fusion-style
+multi-query report gains mostly against weaker dense retrievers; ARAGOG
+(arXiv 2404.01037, 2024) found HyDE and LLM reranking raised precision,
+multi-query underperformed, and sentence-window retrieval scored best on
+retrieval precision. Our numbers agree: the rerank (the judge) and small
+windows are the gains, rewriting is not.
+
+## Real questions on a client brain (2026-10-04)
+
+The sets above are a library corpus and a made-up firm. This run built
+typed `eval:route` sets from two client business brains' OWN past
+questions, without any client text leaving the box.
+
+### Method (on the box only)
+
+- Every step runs in a throwaway sibling container (`docker run --rm
+  --network container:mantle_web --memory 1.5g`, the web container's env
+  file written mode 600 and deleted right after start, a 700 folder mounted
+  at `/eval`). One container per box at a time. The folder is deleted at
+  the end; only counts, rates, timings and costs leave the box.
+- Source: owner chat turns that have a responder trace. For each turn the
+  candidates are what the agent had: the `load_context` snapshot's sent
+  passages and hits, plus every node id its tools opened (`page_get`,
+  `read_section`, `file_read`, `node_read`, `table_sql`, ...), delegated
+  child traces included.
+- One cheap-model call per turn (the box's own summarizer model, so no new
+  provider sees the text) labels: information request or not,
+  self-contained or not, the type (T0 to T8), the answer source (document
+  text, table rows, external database, web, chat history), and the gold
+  among the candidates. A second call per gold checks that the gold item's
+  three best chunks answer the question.
+- A follow-up that is not self-contained is kept as T1 with the text the
+  brain really embedded on that turn.
+- Thin types are topped up with a few synthetic questions written from the
+  box's own chunks (codes, history, table rows); their gold is the source
+  chunk.
+- Cost: about USD 0.0005 per labelled turn.
+
+**Bias.** A real case's gold is an item the agent saw on that turn, mostly
+from today's auto-context (about 75 to 90% of them). Real cases therefore
+favour the `auto` ruleset, and a rule that reorders is penalised. Read the
+synthetic cases (no such bias) beside them, and do not judge follow-up
+enrichment on real T1 labels.
+
+### What it showed (two business brains, 111 and 70 cases)
+
+- `auto:slots` (keyword passages take tail slots of the cut) passed the gate
+  on both (codes +4/-0 on one), where it lost 2 T3 cases on the library
+  set: a profile rule, not a global one.
+- The judge's 1.5 drop hurts here: follow-up questions and table rows score
+  low (table-row gold median 1.04 on one brain). With a pool of 16 and a
+  1.0 drop, one brain gained +10/-4 passages in the 8 sent; the other
+  passed the gate only when table-row passages keep their search slot.
+- Today's follow-up enrichment (8 words or fewer plus a pronoun) fired on
+  none of the real follow-ups: they are longer.
+- Full numbers: the routing plan page, section 11 (dev brain).
+
 ## Automated eval: `recall_eval` + the brain-health heartbeat (2026-07-13)
 
 The harness above is manual (`pnpm -C server/web eval:recall`). The automated
@@ -307,12 +927,25 @@ half runs the same idea inside the brain, on a schedule:
   unchanged). Editable in the UI like any note, add a case the moment a recall
   miss annoys you.
 - **`recall_eval` (builtin tool)** runs every case through the shipped
-  retrievers (hybrid `search_nodes` + passage `search_chunks`), scores
+  retrievers as agents call them (hybrid `search_nodes` + hybrid passage
+  `search_chunks`), scores
   recall@1/3/5/10 + MRR (pure helpers in `packages/search/src/eval.ts`),
   persists the run as a note tagged `recall-eval-run`, and reports drift vs
   the previous run, `alert: true` on MRR −0.05 or R@5 −0.10
   (`reason: 'quality_dropped'`). Run notes are ordinary nodes, so the
   history is searchable and chartable later.
+- **Passages are scored on the hybrid path (since 2026-10-03).** Before,
+  the `chunks` line called `searchChunks` with no query text, so it measured
+  the vector arm alone while agents ran hybrid; the keyword-arm bug (above)
+  hid for weeks behind that. Now `chunks` is the hybrid path (`chunksPath:
+'hybrid'`), `chunksVector` keeps the vector-only number as a secondary
+  line, and when the decider's `passage_scoring` has a `pool` set,
+  `chunksScored` scores that pool with Jev and orders it as `live` would
+  (whatever the use's mode), with its `requests` and `usd` (about USD 0.0007
+  per 25 passages per case; the gold set bounds it). Chunks drift is read
+  only against a run that also measured hybrid, so the switch raises no false
+  alert. The capacity dial's `retrieval` number (the `chunks` R@10) now reads
+  the arm agents use.
 - **A gold set that matches nothing alerts on its own.** When EVERY case
   misses in both retrievers the run scores exactly 0/0, which drift reads as
   "no change" — that state sat silent for nine weekly runs on the dev brain
@@ -336,8 +969,9 @@ half runs the same idea inside the brain, on a schedule:
   touches an existing one, so a heartbeat you paused stays paused and your
   schedule edits survive an upgrade.
 
-The capacity half (zones vs the split policy: watch 10k docs / 50k passage
-vectors, split 20k / 100k) is `corpusCapacity` in
+The capacity half (zones vs the split policy: watch 10k docs / 100k passage
+vectors, split 20k / 250k; the passage numbers are measured, see "Scale
+curve" above) is `corpusCapacity` in
 `packages/content/src/capacity.ts`, surfaced as the dashboard's **Brain
 capacity** dial and the `brain_capacity` tool, one source, so the UI and the
 alerts can never disagree.

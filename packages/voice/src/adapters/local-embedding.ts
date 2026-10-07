@@ -26,6 +26,7 @@ import type { DiscoveryResult } from '../discover';
 import { tailnetFetch } from './tailnet';
 import { env } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
+import { providerFetch } from './provider-fetch';
 
 const DEFAULT_BASE_URL = 'http://localhost:11434/v1';
 
@@ -85,7 +86,7 @@ async function embedOnce(
   // actually lands in the column, so the caller must size accordingly.
   if (req.dimensions) body.dimensions = req.dimensions;
 
-  const doFetch = req.viaTailnet ? tailnetFetch : fetch;
+  const doFetch = req.viaTailnet ? tailnetFetch : providerFetch;
   const res = await doFetch(`${baseUrl(req.baseUrl)}/embeddings`, {
     method: 'POST',
     headers: {
@@ -163,7 +164,9 @@ export const localEmbedding: EmbeddingDispatcher = {
     // report dimensions, so the form's Test button verifies the live dim
     // (which is the only number that matters for the column).
     try {
-      const res = await fetch(`${baseUrl()}/models`, { signal: AbortSignal.timeout(8_000) });
+      const res = await providerFetch(`${baseUrl()}/models`, {
+        signal: AbortSignal.timeout(8_000),
+      });
       if (!res.ok) {
         return { available: [], filtered: false, error: `local /v1/models: HTTP ${res.status}` };
       }

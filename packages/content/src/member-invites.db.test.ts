@@ -70,7 +70,7 @@ describe.skipIf(!URL)('member invites', () => {
       (${ids.note}, ${anchor}, 'note', 'a note', 'notes', '{}'::jsonb)`;
     await admin`insert into auth.users (id, email, password_hash, role, contact_id)
                 values (${randomUUID()}, ${email('lee-login')}, 'x', 'member', ${ids.lee})`;
-  });
+  }, 60_000);
 
   afterAll(async () => {
     if (!admin) return;

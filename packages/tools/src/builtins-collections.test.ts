@@ -56,6 +56,10 @@ const TABLE_TOOLS_SLUGS = [
   'table_tab_delete',
   'table_set_aggregate',
   'table_set_view',
+  'table_history',
+  'table_snapshot_create',
+  'table_snapshot_restore',
+  'table_snapshot_delete',
 ] as const;
 const PAGE_TOOLS_SLUGS = [
   'page_create',

@@ -19,6 +19,8 @@ export {
   runToolLoop,
   resolveAgentTools,
   buildToolsForModel,
+  withReadResultTool,
+  DEFAULT_MAX_ITERATIONS,
   summarizeToolOutcomes,
   resolveToolValidationMode,
   type ToolValidationMode,
@@ -56,6 +58,14 @@ export {
   type ComposePromptOptions,
 } from './skills';
 
+export {
+  ARCHIVE_SUMMARY_PROMPT,
+  ChatArchiveBusyError,
+  ChatThreadNotFoundError,
+  archiveAgentChat,
+  summarizeChatThread,
+  type ChatArchiveResult,
+} from './chat-archive';
 export { invokeAgent } from './invoke-agent';
 export { agentLevel, withAgentViewer } from './agent-viewer';
 
@@ -69,6 +79,14 @@ export {
   type ContextSnapshot,
   type SnapshotItem,
 } from './conversation';
+// The passage cut, for the eval harnesses (scripts/eval-route.ts).
+export {
+  CHUNK_CUTOFF,
+  KEYWORD_PASSAGE_RULE,
+  keywordPassages,
+  selectChunkHits,
+  type KeywordPassageRule,
+} from './conversation/select';
 
 export {
   runVisionWorker,

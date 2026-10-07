@@ -279,6 +279,94 @@ describe('system manifest integrity', () => {
     }
   });
 
+  it('only the member-facing and client-facing groups sit below admin, with a pinned tool list', () => {
+    // A group's level says who may hold it: lowering one makes its tools
+    // grantable to ANY agent at that level. So the list of groups below admin,
+    // and what the team-level ones hold, changes only on purpose, here.
+    const levels = Object.fromEntries(
+      MANIFEST_TOOL_GROUPS.filter((g) => g.level).map((g) => [g.slug, g.level]),
+    );
+    expect(levels).toEqual({
+      'formulas-eval': 'team',
+      'team-read': 'team',
+      'client-read': 'client',
+    });
+    expect(groupTools.get('formulas-eval')).toEqual([
+      'formula_list',
+      'formula_get',
+      'formula_evaluate',
+    ]);
+    expect(groupTools.get('team-read')).toEqual([
+      'search_nodes',
+      'search_chunks',
+      'read_section',
+      'tree_list',
+      'node_read',
+      'folder_list',
+      'folder_get_by_path',
+      'file_list',
+      'file_get',
+      'file_read',
+      'show_image',
+      'note_list',
+      'note_get',
+      'page_list',
+      'page_get',
+      'page_blocks_list',
+      'page_block_get',
+      'table_list',
+      'table_get',
+      'table_schema',
+      'table_query',
+      'table_sql',
+      'table_rows_list',
+      'table_row_get',
+      'table_aggregate',
+      'app_db_list',
+      'app_db_query',
+      'summarize_text',
+      'read_result',
+      'team_request_create',
+      'my_items_list',
+      'my_item_open',
+    ]);
+    // The reads a team-level role may never make stay in the admin group.
+    const teamLevel = new Set([
+      ...groupTools.get('team-read')!,
+      ...groupTools.get('formulas-eval')!,
+    ]);
+    for (const slug of groupTools.get('team-read-admin')!) {
+      expect(teamLevel.has(slug), `${slug} must not be in a team-level group`).toBe(false);
+    }
+  });
+
+  it('team-responder ships closed (admin), and one step opens it at team', () => {
+    // Its level is the admin's switch: no manifest level, so it seeds at admin
+    // and no reconcile moves it. Lowering it to team must leave it with its
+    // team-level groups only: every other group it ships with is the admin
+    // companion that `dropGroupsAbove` takes off (setAgentAudience).
+    const team = MANIFEST_AGENTS.find((a) => a.slug === 'team-responder')!;
+    expect(team.level).toBeUndefined();
+    const levelOf = (slug: string) =>
+      MANIFEST_TOOL_GROUPS.find((g) => g.slug === slug)!.level ?? 'admin';
+    const groups = team.toolGroupSlugs ?? [];
+    expect(groups.filter((g) => levelOf(g) === 'team')).toEqual(['team-read', 'formulas-eval']);
+    expect(groups.filter((g) => levelOf(g) !== 'team')).toEqual(['team-read-admin']);
+  });
+
+  it('an agent that ships below admin holds only groups its level reads', () => {
+    const rank: Record<string, number> = { public: 0, client: 1, team: 2, admin: 3 };
+    for (const agent of MANIFEST_AGENTS.filter((a) => a.level)) {
+      for (const slug of agent.toolGroupSlugs ?? []) {
+        const level = MANIFEST_TOOL_GROUPS.find((g) => g.slug === slug)!.level ?? 'admin';
+        expect(
+          rank[level]! <= rank[agent.level!]! && !(agent.level === 'client' && level === 'public'),
+          `${agent.slug} (${agent.level}) holds ${slug} (${level})`,
+        ).toBe(true);
+      }
+    }
+  });
+
   it('the client responder holds only the client tools the client turn allows in code (audit L3)', () => {
     // The client turn intersects its tools with CLIENT_TURN_TOOL_SLUGS
     // (run-team-turn.ts). A client tool shipped in client-read but missing

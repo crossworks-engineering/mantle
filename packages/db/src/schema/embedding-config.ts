@@ -55,10 +55,10 @@ export const embeddingConfig = pgTable('embedding_config', {
   //     code default; see /settings/embedding "Performance & throughput") ───
   /** Max concurrent extraction jobs (pg-boss workers). Null → EXTRACT_CONCURRENCY
    *  env → 2. Drop to 1 on a CPU-only embedder so jobs don't contend for cores.
-   *  Boot-time: applies after the agent restarts. */
+   *  Live: the extractor re-reads it every 30s, no restart. */
   extractionConcurrency: integer('extraction_concurrency'),
   /** Minutes a single extraction may run before pg-boss expires + retries the
-   *  job. Null → MANTLE_EXTRACT_EXPIRE_MIN env → 60. Boot-time. */
+   *  job. Null → MANTLE_EXTRACT_EXPIRE_MIN env → 60. Live, like concurrency. */
   extractionTimeBudgetMinutes: integer('extraction_time_budget_minutes'),
   /** Texts per local-embedder HTTP request. Null → MANTLE_LOCAL_EMBED_BATCH env
    *  → 16. Smaller (8) clears the timeout on a slow vCPU. Applies live. */
@@ -66,6 +66,12 @@ export const embeddingConfig = pgTable('embedding_config', {
   /** Per-request timeout (ms) for the local embedder. Null →
    *  MANTLE_LOCAL_EMBED_TIMEOUT_MS env → 120000. Applies live. */
   localEmbedRequestTimeoutMs: integer('local_embed_request_timeout_ms'),
+  /** Passage windows (content_chunk_windows): when on, the extractor embeds
+   *  ~800-char windows inside every chunk it writes and passage search adds a
+   *  window arm. Off by default: it about doubles the embedding tokens of
+   *  ingest and adds an index of ~2.6 vectors per chunk. Old chunks get
+   *  windows only from the manual `chunk-windows` maintenance task. */
+  chunkWindows: boolean('chunk_windows').notNull().default(false),
 
   /** Stamped when a primary→backup failover last fired. Surfaced in the UI. */
   lastFailoverAt: timestamp('last_failover_at', { withTimezone: true }),

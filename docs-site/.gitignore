@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.astro/
+# Copied from ../brand by scripts/sync-brand.mjs; brand/ is the source of truth.
+src/assets/brand/
+public/favicon.svg
+src/data/mcp-tools.json

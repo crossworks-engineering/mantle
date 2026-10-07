@@ -46,6 +46,8 @@ export type KnownEnvName =
   | 'APP_DB_DIR'
   | 'APP_RUNTIME_OUT'
   | 'APP_SQL_MAX_DB_MB'
+  | 'APP_SNAPSHOT_MAX_MB'
+  | 'APP_SNAPSHOT_AUTO_MAX_MB'
   | 'ATTACH_AGENT'
   | 'BROWSER_WS_ENDPOINT'
   | 'CRASH_MARKER'
@@ -66,6 +68,8 @@ export type KnownEnvName =
   | 'MANTLE_BACKUP_DIR'
   | 'MANTLE_BUILD_TIME'
   | 'MANTLE_CLIENT_ORIGIN'
+  | 'MANTLE_COMPOSE_FILE'
+  | 'MANTLE_COMPOSE_PROFILES'
   | 'MANTLE_CORRECTED_SALIENCE'
   | 'MANTLE_CRASH_TEST'
   | 'MANTLE_DETACHED_DEV'
@@ -120,6 +124,7 @@ export type KnownEnvName =
   | 'MANTLE_CLIENT_SPACES_TOTAL_BYTES'
   | 'MANTLE_RUNS_WORKER_CONCURRENCY'
   | 'MANTLE_SALIENCE_LAMBDA'
+  | 'MANTLE_SETUP_CODE'
   | 'MANTLE_SHEET_PROFILE_ROWS'
   | 'MANTLE_SUPERSEDED_FILE_SALIENCE'
   | 'MANTLE_SUPERSEDED_SALIENCE'
@@ -173,6 +178,7 @@ export type KnownEnvName =
   | 'SANDBOX_PIDS_LIMIT'
   | 'SESSION_SECRET'
   | 'TABLE_DB_DIR'
+  | 'TABLE_HISTORY_MAX_MB'
   | 'TABLE_IMPORT_MAX_ROWS'
   | 'TABLE_SQL_TIMEOUT_MS'
   | 'TEAM_CHAT_DAILY_TURNS'
@@ -218,6 +224,9 @@ export const INTERNAL_ENV: Partial<Record<KnownEnvName, string>> = {
   MANTLE_HEARTBEAT_FILE: 'platform: per-container heartbeat path for the healthcheck',
   MANTLE_UPDATE_SIGNAL_DIR: 'platform: the /signal mount the updater watches',
   MANTLE_PRINT_ORIGIN: 'platform: how the print sidecar reaches the web tier, set by compose',
+  MANTLE_COMPOSE_FILE: "platform: compose passes the box's COMPOSE_FILE to web",
+  MANTLE_COMPOSE_PROFILES:
+    "platform: compose passes the box's COMPOSE_PROFILES to the app services",
   DBOS_SYSTEM_DATABASE_URL: 'platform: defaults to DATABASE_URL; split only by the runner image',
   APP_RUNTIME_OUT: 'platform: output path for the app-runtime build script',
   MANTLE_APP_RUNTIME_MANIFEST: 'platform: override for the generated app-runtime manifest',
@@ -328,3 +337,5 @@ export function assertEnvShape(): void {
     throw new Error(`[config] environment is malformed:\n  - ${problems.join('\n  - ')}`);
   }
 }
+
+export * from './services';

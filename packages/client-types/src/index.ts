@@ -25,6 +25,7 @@
  */
 
 export * from './dto/agent-graph';
+export * from './dto/auth';
 export * from './dto/agents';
 export * from './dto/comms';
 export * from './dto/heartbeats';
@@ -32,6 +33,8 @@ export * from './dto/turns';
 export * from './dto/rows';
 export * from './dto/views';
 export * from './dto/recall';
+export * from './dto/contact-shares';
+export * from './dto/services';
 // Types only; ACCESS_LEVELS (runtime) is the `@mantle/client-types/dto/access` subpath.
 export type {
   AccessItemView,
@@ -96,6 +99,7 @@ export type {
   MemberSpaceSharing,
 } from './dto/member';
 export type {
+  AppLauncherFolder,
   ClientAppCard,
   ClientAppList,
   MemberAppCard,
@@ -123,6 +127,20 @@ export type {
   LoginRefusedReason,
   PasswordResetRefused,
 } from './dto/logins';
+// Inbound API keys (0232). Types at the root; the runtime ACCESS_KEY_AREAS
+// is the `@mantle/client-types/dto/access-keys` subpath.
+export type {
+  AccessKeyAccess,
+  AccessKeyArea,
+  AccessKeyCreateInput,
+  AccessKeyCreated,
+  AccessKeyList,
+  AccessKeyRole,
+  AccessKeyScopeRefusal,
+  AccessKeyStatus,
+  AccessKeyView,
+  ApiV1Whoami,
+} from './dto/access-keys';
 export type {
   ClientAdminRefusedReason,
   ClientChatMessage,
@@ -175,6 +193,10 @@ export type {
   AppOpenStat,
   AppTint,
 } from './app-nav';
+
+// Types only at the root; the runtime constants (the reserved parameter names)
+// are the `@mantle/client-types/app-viewer` subpath.
+export type { AppViewer, AppViewerKind } from './app-viewer';
 
 // Types only at the root; the runtime constants (kinds, specs, limits) are the
 // `@mantle/client-types/tree` subpath.

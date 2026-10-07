@@ -212,6 +212,7 @@ export async function buildStudioGraph(ownerId: string): Promise<StudioGraph> {
       missingToolGroupSlugs: (a.toolGroupSlugs ?? []).filter((g) => !enabledToolGroupSlugs.has(g)),
       toolCount: effectiveToolCount(a),
       params: { temperature: a.params?.temperature, max_tokens: a.params?.max_tokens },
+      thinkingEffort: a.thinkingEffort ?? null,
       maxIterations: a.memoryConfig?.max_iterations,
       resettable: MANIFEST_AGENT_SLUGS.has(a.slug),
       systemPrompt: a.systemPrompt,

@@ -41,6 +41,19 @@ describe('resolveUse', () => {
     });
   });
 
+  it('pool reads through as a whole positive number; anything else is unset', () => {
+    const pool = (v: unknown) =>
+      resolveUse(
+        { uses: { passage_scoring: { enabled: true, pool: v as number } } },
+        'passage_scoring',
+      ).pool;
+    expect(pool(50)).toBe(50);
+    expect(pool(37.9)).toBe(37);
+    expect(pool(0)).toBeUndefined();
+    expect(pool(Number.NaN)).toBeUndefined();
+    expect(pool('50')).toBeUndefined();
+  });
+
   it('act_alone_at can never sit below defer_below', () => {
     const u = resolveUse(
       { defer_below: 0.8, act_alone_at: 0.5, uses: { model_routing: { enabled: true } } },

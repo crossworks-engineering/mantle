@@ -7,6 +7,7 @@ import {
   NPM_SCOPE,
   PACKAGES,
   stageManifest,
+  waitForVisible,
 } from '../../../scripts/publish-contract.mjs';
 
 /**
@@ -140,4 +141,69 @@ describe('the real contract manifests', () => {
       expect(() => assertPublishable(stage(pkg, manifest))).not.toThrow();
     });
   }
+});
+
+/**
+ * The post-publish registry check. "✅ Published" from pnpm only means npm
+ * accepted the upload; the v0.232.354 uploads took about 27 minutes to reach
+ * the packument, and the run was green the whole time. A fake clock and a
+ * scripted registry pin the three outcomes: live at once, live after a lag,
+ * and never live (the names come back so the run can fail on them).
+ */
+describe('waitForVisible', () => {
+  const clock = () => {
+    let t = 0;
+    return {
+      now: () => t,
+      sleep: async (ms: number) => {
+        t += ms;
+      },
+    };
+  };
+  const opts = { version: VERSION, timeoutMs: 60_000, intervalMs: 20_000 };
+
+  it('returns at once when every version already resolves', async () => {
+    const c = clock();
+    const seen: string[] = [];
+    const missing = await waitForVisible({
+      ...opts,
+      ...c,
+      names: ['@x/a', '@x/b'],
+      view: (name: string) => (seen.push(name), true),
+    });
+    expect(missing).toEqual([]);
+    expect(seen).toEqual(['@x/a', '@x/b']);
+    expect(c.now()).toBe(0);
+  });
+
+  it('keeps polling only the lagging packages until they appear', async () => {
+    const c = clock();
+    const calls: string[] = [];
+    const missing = await waitForVisible({
+      ...opts,
+      ...c,
+      names: ['@x/a', '@x/b'],
+      view: (name: string, version: string) => {
+        expect(version).toBe(VERSION);
+        calls.push(name);
+        return name === '@x/a' || c.now() >= 40_000;
+      },
+    });
+    expect(missing).toEqual([]);
+    // a resolves on the first pass and is never asked again; b takes three.
+    expect(calls).toEqual(['@x/a', '@x/b', '@x/b', '@x/b']);
+    expect(c.now()).toBe(40_000);
+  });
+
+  it('gives up at the deadline and names what never appeared', async () => {
+    const c = clock();
+    const missing = await waitForVisible({
+      ...opts,
+      ...c,
+      names: ['@x/a', '@x/b'],
+      view: (name: string) => name === '@x/a',
+    });
+    expect(missing).toEqual(['@x/b']);
+    expect(c.now()).toBe(60_000);
+  });
 });

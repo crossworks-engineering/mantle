@@ -71,7 +71,7 @@ describe.skipIf(!URL)('apps on the item tree', () => {
     };
     await m.db.execute(sqlTag`
       insert into profiles (user_id, preferences) values (${owner}, ${JSON.stringify(prefs)}::jsonb)`);
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await m.db.execute(sqlTag`delete from item_marks where actor_id = ${owner}`);

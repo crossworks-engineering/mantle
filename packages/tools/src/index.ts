@@ -19,6 +19,8 @@ export {
   listSeedableBuiltins,
   getBuiltinRedactFields,
   isBuiltinReadOnly,
+  isBuiltinSpending,
+  isBuiltinOwnerOnly,
   listReadOnlyBuiltinSlugs,
   redactArgsForLogging,
 } from './registry';
@@ -34,6 +36,8 @@ export {
 
 export { notFound, sanitizeToolError, type NotFoundResult } from './errors';
 export { UNTRUSTED_CONTENT_TOOL_SLUGS } from './untrusted';
+export { buildAndStageApp, type AppBuildOutcome } from './app-build-stage';
+export { importAppPackage, type AppPackageImportResult } from './app-package-import';
 export { PRIVATE_OUTPUT_TOOL_SLUGS } from './private-output';
 export {
   registerDynamicSchema,
@@ -43,6 +47,21 @@ export {
   type DynamicSchemaPatch,
   type DynamicSchemaFn,
 } from './dynamic-schema';
+export {
+  buildDeferredToolset,
+  toolSourceOf,
+  unwrapUseTool,
+  isAlwaysFull,
+  CORE_TOOL_SLUGS,
+  TOOL_SEARCH_SLUG,
+  USE_TOOL_SLUG,
+  TOOL_SEARCH_LIMIT,
+  type DeferredToolDef,
+  type DeferredToolset,
+  type ToolSearchResult,
+  type ToolSource,
+} from './selection/deferred';
+export { type GroupSource as ToolGroupSource } from './selection/rank';
 export {
   renderDelegateRoster,
   buildDelegateRoster,
@@ -75,6 +94,7 @@ export {
 export { PAGE_TOOLS, PAGE_TOOL_SLUGS } from './builtins-pages';
 export { DRAW_TOOLS, DRAW_TOOL_SLUGS } from './builtins-draws';
 export { APP_TOOLS, APP_TOOL_SLUGS, APP_DATA_TOOLS, APP_DATA_TOOL_SLUGS } from './builtins-apps';
+export { APP_GUIDE_TOOLS } from './builtins-app-guide';
 export { TABLE_TOOLS, TABLE_TOOL_SLUGS } from './builtins-tables';
 export { TOOL_RESULT_TOOLS, TOOL_RESULT_TOOL_SLUGS } from './builtins-tool-results';
 export {
@@ -122,6 +142,7 @@ export { REPLAY_TOOLS } from './builtins-replay';
 export { IMAGE_TOOLS } from './builtins-images';
 export { TEAM_TOOLS } from './builtins-team';
 export { MY_SPACE_TOOLS } from './builtins-my-space';
+export { MY_SPACE_WRITE_TOOLS, MY_SPACE_WRITE_TOOL_SLUGS } from './builtins-my-space-write';
 export { CLIENT_TOOLS } from './builtins-client';
 export { CLIENT_TURN_TOOL_SLUGS } from './client-turn-tools';
 export { RESEARCH_TOOLS, resolveOpenRouterKey } from './builtins-research';
@@ -140,6 +161,20 @@ export {
   MEMBER_APP_REFUSED_SLUGS,
   type MemberAppToolVerdict,
 } from './member-app-tools';
+export {
+  setToolExternalAccess,
+  externalToolVerdict,
+  contactAppToolVerdict,
+  clearConnectorExternalAccess,
+  externalAccessActive,
+  externalAccessHandlerSig,
+  externalAccessIneligible,
+  externalAccessSummary,
+  EXTERNAL_ACCESS_KINDS,
+  type SetExternalAccessResult,
+  type ExternalAccessActor,
+  type ExternalAccessOffActor,
+} from './external-access';
 export {
   clientAppToolVerdict,
   CLIENT_APP_TOOL_SLUGS,
@@ -171,9 +206,12 @@ export {
   type UpdateToolInput,
 } from './crud';
 export {
+  applyInputDefaults,
   buildHttpRequest,
+  collectOauthRefs,
   collectParamNames,
   collectSecretRefs,
+  oauthKey,
   refKey,
   scrubSecrets,
   templateStrings,
@@ -317,6 +355,7 @@ export {
   type OpenapiSyncRowState,
 } from './openapi-sync';
 export { parseOpenapiBinding, type ToolGroupOpenapiBinding } from './integration-meta';
+export { parseOauth2Binding, type ToolGroupOauth2 } from './integration-meta';
 export { reconcileMeta, ruleReconcilerFor } from './rule-reconciler';
 export {
   newTurnTaint,

@@ -39,6 +39,7 @@ import {
 } from '../catalogs/elevenlabs';
 import { stripAudioTags } from '../audio-tags';
 import { errorMessage } from '@mantle/std';
+import { providerFetch } from './provider-fetch';
 
 type ElevenLabsVoicesResponse = {
   voices?: Array<{
@@ -135,7 +136,7 @@ async function elevenLabsSynthesize(opts: SynthesizeOptions): Promise<Synthesize
   const url = new URL(`${ELEVENLABS_BASE_URL}/v1/text-to-speech/${voiceId}`);
   url.searchParams.set('output_format', outputFormat);
 
-  const res = await fetch(url.toString(), {
+  const res = await providerFetch(url.toString(), {
     method: 'POST',
     headers: {
       'xi-api-key': opts.apiKey,
@@ -179,7 +180,7 @@ async function elevenLabsVoicesForModel(
     return ELEVENLABS_PREMADE_VOICES.map((v) => ({ id: v.id, description: v.description }));
   }
   try {
-    const res = await fetch(`${ELEVENLABS_BASE_URL}/v1/voices`, {
+    const res = await providerFetch(`${ELEVENLABS_BASE_URL}/v1/voices`, {
       headers: { 'xi-api-key': apiKey },
       signal: AbortSignal.timeout(15_000),
     });
@@ -215,7 +216,7 @@ async function elevenLabsVoicesForModel(
  */
 async function elevenLabsDiscoverModels(apiKey: string): Promise<DiscoveryResult<TtsModelInfo>> {
   try {
-    const res = await fetch(`${ELEVENLABS_BASE_URL}/v1/models`, {
+    const res = await providerFetch(`${ELEVENLABS_BASE_URL}/v1/models`, {
       headers: { 'xi-api-key': apiKey },
       signal: AbortSignal.timeout(15_000),
     });

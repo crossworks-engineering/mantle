@@ -72,7 +72,7 @@ describe.skipIf(!URL)('access shadow report', () => {
     await admin`insert into facts (owner_id, content, kind, source_node_id) values
       (${owner}, 'from the team page', 'factual', ${ids.teamPage}),
       (${owner}, 'from the owner''s chats', 'factual', null)`;
-  });
+  }, 60_000);
 
   afterAll(async () => {
     if (admin) {

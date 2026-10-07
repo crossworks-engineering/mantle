@@ -5,51 +5,27 @@ toolGroups: [apps, app-admin, app-data]
 
 ## Apps
 
-Small single-purpose interfaces built on top of your own data, a job sheet, a
-stock count, a booking form, a dashboard for one thing you check every morning.
+Apps are small tools built on your own data: a job sheet, a stock count, a booking form or a one-page dashboard.
 
-An app is **real code**, not a configured widget. It's written as TSX, compiled
-on the server, and rendered inside a sandbox. What makes it useful rather than
-merely possible is that it can reach your actual brain: the same tables, files
-and notes you use everywhere else, through tools you grant it one by one.
-
-Every app has a **draft** and a **published** version. Edits land in the draft
-and the live app is untouched until you publish, and a build that fails to
-compile never replaces the last one that worked.
+- Click **New app**, give it a **Name** and a **Description**, then **Create app**.
+- Edit it in **Builder** or **Code**. **History** and **Activity** show past versions and use.
+- Click **Preview** to compile the draft and try it. Nothing goes live.
+- Click **Commit** to compile and publish. A build that fails never replaces the last working one. **Discard** drops the draft.
+- Use the access control to choose who can open the app.
 
 ## Assistant
 
 - "Build me an app for logging generator hours."
-- "What apps do I have?"
 - "Add a filter by month to the stock app."
+- "How many entries are in the stock app this week?"
 
-Authoring is the interesting case. The assistant writes the source files,
-compiles, and hands back errors with the exact file and line when it doesn't
-build, so "it won't compile, fix it" is a normal part of the loop rather than a
-dead end. It can also grant the app its data access and give it a small database
-of its own for reference data.
-
-Ask to review before publishing. The preview at an app's own page renders the
-draft, which is the whole point of having one.
+Building and changing apps is handed to the app specialist. It writes the code, compiles it and fixes errors by file and line. Ask it to show you the preview before it publishes.
 
 ## Technical
 
-Source is a virtual file tree stored on the app row, up to 50 files, 256 KB
-each, bundled server-side by esbuild. The entry file must default-export an
-`App()` component.
-
-It runs in a **sandboxed, opaque-origin iframe**: no credentials, no
-same-origin access. That is the security boundary, and it means an app cannot
-reach your session, your cookies, or any data you didn't hand it. Data flows
-only through a runtime allowlist of tool slugs set per app; the host refuses any
-slug not on that list. An app may also declare its own SQLite database for
-reference data it owns.
-
-The bundler's import allowlist is deliberately short, React, a handful of UI
-primitives, Lucide icons, the host bridge, and relative files within the app.
-Any other bare import is rejected at build time rather than fetched. No
-arbitrary npm, so an app's dependency surface is a fact you can read off this
-list rather than a tree you have to audit.
-
-Apps are also shareable, and a shared app runs under the same sandbox and the
-same grant list as it does here.
+- An app is real code: TSX files (up to 50, 256 KB each) compiled on the server. The entry file default-exports an `App` component.
+- It runs in a sandboxed iframe with no access to your session or cookies. It reaches your data only through the tools you allow for that app.
+- Imports are limited to React, the built-in UI kit, Lucide icons, the host bridge and the app's own files.
+- An app can have its own SQLite database. `app_db_list` and `app_db_query` let the assistant read it.
+- Building uses `app_create`, `app_file_write`, `app_build`, `app_tools_set` and others. Delete and publish (`app_delete`, `app_publish`) are in a separate admin group.
+- More: [Apps](../03-using-jackdaw/10-apps.md).

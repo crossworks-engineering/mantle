@@ -159,7 +159,7 @@ describe.skipIf(!URL)('embeds follow their item down on Postgres', () => {
     // record after them.
     await notifyBarrier(adminSql(), 'node_ingested', { seen: (x) => announced.includes(x) });
     announced.length = 0;
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await unlisten();

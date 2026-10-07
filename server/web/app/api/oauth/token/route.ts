@@ -5,14 +5,32 @@
  * application/x-www-form-urlencoded request. Public endpoint; rate-limited later.
  */
 import { NextResponse } from '@/server/http-compat';
+import { isBusy, pgErrorCode } from '@mantle/db';
 import { exchangeAuthCode, refreshAccessToken, type TokenResponse } from '@/lib/mcp-oauth';
-import { clientIp, rateLimit } from '@/lib/rate-limit';
+import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 
 function oauthError(error: string, description?: string, status = 400) {
   return NextResponse.json(
     { error, ...(description ? { error_description: description } : {}) },
     { status, headers: { 'Cache-Control': 'no-store', Pragma: 'no-cache' } },
   );
+}
+
+/**
+ * A grant that met the login's OAuth lock busy (a lock timeout), or a slow
+ * statement under it (a statement timeout), answers 503 with an OAuth error
+ * body (RFC 6749 `temporarily_unavailable`), so the client retries rather
+ * than dropping the connector (last check F2). Never the app's 409.
+ */
+async function whenNotBusy<T>(run: () => Promise<T>): Promise<T | Response> {
+  try {
+    return await run();
+  } catch (err) {
+    if (isBusy(err) || pgErrorCode(err) === '57014') {
+      return oauthError('temporarily_unavailable', 'Try again in a moment.', 503);
+    }
+    throw err;
+  }
 }
 
 function tokenOk(tokens: TokenResponse) {
@@ -22,7 +40,7 @@ function tokenOk(tokens: TokenResponse) {
 }
 
 export async function POST(req: Request) {
-  const limit = rateLimit(`oauth:token:${clientIp(req)}`, { max: 30, windowMs: 60_000 });
+  const limit = rateLimit(`oauth:token:${clientIpKey(req)}`, { max: 30, windowMs: 60_000 });
   if (!limit.ok) return oauthError('rate_limited', undefined, 429);
 
   let form: FormData;
@@ -49,7 +67,10 @@ export async function POST(req: Request) {
         'code, redirect_uri, client_id, code_verifier are required',
       );
     }
-    const res = await exchangeAuthCode({ code, redirectUri, clientId, codeVerifier });
+    const res = await whenNotBusy(() =>
+      exchangeAuthCode({ code, redirectUri, clientId, codeVerifier }),
+    );
+    if (res instanceof Response) return res;
     return res.ok ? tokenOk(res.tokens) : oauthError(res.error);
   }
 
@@ -59,7 +80,8 @@ export async function POST(req: Request) {
     if (!refreshToken || !clientId) {
       return oauthError('invalid_request', 'refresh_token and client_id are required');
     }
-    const res = await refreshAccessToken({ refreshToken, clientId });
+    const res = await whenNotBusy(() => refreshAccessToken({ refreshToken, clientId }));
+    if (res instanceof Response) return res;
     return res.ok ? tokenOk(res.tokens) : oauthError(res.error);
   }
 

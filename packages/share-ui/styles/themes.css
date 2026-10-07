@@ -5913,16 +5913,16 @@
 
 [data-color-theme="jackdaw"], [data-color-theme="jackdaw"] .light {
   --background: #fde7bc;
-  --foreground: #341a00;
+  --foreground: #2d1500;
   --card: #fff9ec;
-  --card-foreground: #341a00;
+  --card-foreground: #2d1500;
   --popover: #fff9ec;
-  --popover-foreground: #341a00;
+  --popover-foreground: #2d1500;
   --primary: #e46e08;
-  --primary-foreground: #341a00;
+  --primary-foreground: #2d1500;
   --primary-ink: #ad3b00;
   --secondary: #e3b575;
-  --secondary-foreground: #341a00;
+  --secondary-foreground: #2d1500;
   --muted: #f5d9a4;
   --muted-foreground: #57504a;
   --accent: #f0c88c;
@@ -5953,9 +5953,9 @@
   --chart-4: #4a6bc8;
   --chart-5: #a7498e;
   --sidebar: #f5d9a4;
-  --sidebar-foreground: #341a00;
+  --sidebar-foreground: #2d1500;
   --sidebar-primary: #e46e08;
-  --sidebar-primary-foreground: #341a00;
+  --sidebar-primary-foreground: #2d1500;
   --sidebar-accent: #f0c88c;
   --sidebar-accent-foreground: #5c1e02;
   --sidebar-border: #baae94;

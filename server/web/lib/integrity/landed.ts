@@ -78,8 +78,8 @@ export type ListLandedOpts = {
 };
 
 /** The row filter shared by `listLanded` and `countLanded` so the page and its
- *  total can never drift apart. Conversation digests are Saskia-authored notes,
- *  not content the user added. */
+ *  total can never drift apart. Conversation digests and chat archive
+ *  summaries are authored notes, not content the user added. */
 function landedWhere(ownerId: string, types: readonly string[]) {
   const typeArr = sql`ARRAY[${sql.join(
     types.map((t) => sql`${t}`),
@@ -88,7 +88,8 @@ function landedWhere(ownerId: string, types: readonly string[]) {
   return sql`
     n.owner_id = ${ownerId}
     AND n.type::text = ANY(${typeArr})
-    AND NOT (n.type = 'note' AND 'conversation-digest' = ANY(n.tags))`;
+    AND NOT (n.type = 'note' AND 'conversation-digest' = ANY(n.tags))
+    AND NOT (n.type = 'note' AND n.data->>'kind' = 'chat_archive')`;
 }
 
 /** Total nodes matching the (optional) type filter, ignoring limit/offset — the

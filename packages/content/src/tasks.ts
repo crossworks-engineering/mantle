@@ -8,6 +8,8 @@
  *   nodes.data.due_at ISO timestamp (optional)
  *   nodes.data.todos  checklist items [{id, text, done}] (optional)
  *   nodes.data.rank   fractional board-order key (optional; see rank.ts)
+ *   nodes.data.status_before_done  the status a done task had before it was
+ *                     marked done (optional; reopen restores it)
  *
  * Under the `tasks` ltree root. Lazy-created on first write. The
  * extractor's special case in server/api/src/agent/extractor.ts:readNodeBodyRaw
@@ -19,20 +21,16 @@ import { and, desc, eq, ilike, or, sql } from 'drizzle-orm';
 import { TEAM_REQUEST_SOURCE, db, nodes, notifyNodeIngested, type Node } from '@mantle/db';
 import type { TaskRow, TaskStatus, TaskPriority, TaskTodo } from '@mantle/client-types';
 import { isValidRank } from './rank';
+import { TASK_STATUSES, statusBeforeDoneOf } from './task-status';
 export type { TaskRow, TaskStatus, TaskPriority, TaskTodo };
 
 // ltree root label for the Tasks branch. Existing brains were re-pathed to it by
 // migration 0108; queries filter by `type='task'` (below),
 // so this label is purely organizational.
 export const TASKS_ROOT_LABEL = 'tasks';
-// `satisfies` pins these consts to the wire unions in @mantle/client-types, so
-// adding a status here without updating the contract is a compile error.
-export const TASK_STATUSES = [
-  'open',
-  'in_progress',
-  'blocked',
-  'done',
-] as const satisfies readonly TaskStatus[];
+// The status vocabulary lives in task-status.ts (no database import) so the
+// item tree can share it. `satisfies` pins the priorities to the wire union.
+export { TASK_STATUSES, statusBeforeDoneOf };
 export const TASK_PRIORITIES = ['low', 'normal', 'high'] as const satisfies readonly TaskPriority[];
 
 export const TASK_TODOS_MAX = 100;
@@ -94,6 +92,7 @@ function rowOf(n: Node, commentCount = 0): TaskRow {
     commentCount,
     summary: typeof d.summary === 'string' ? d.summary : null,
     archivedAt: typeof d.archived_at === 'string' ? d.archived_at : null,
+    statusBeforeDone: status === 'done' ? statusBeforeDoneOf(d) : null,
     createdAt: n.createdAt.toISOString(),
     updatedAt: n.updatedAt.toISOString(),
   };
@@ -263,6 +262,14 @@ export type UpdateTaskInput = Partial<CreateTaskInput> & {
    * thousand finished tasks away must not cost a thousand LLM calls.
    */
   archivedAt?: string | null;
+  /**
+   * Take a done task back to the status it had before it was marked done
+   * (`open` when the brain does not know it). An explicit `status` in the
+   * same input wins, and a task that is not done is left as it is. The brain
+   * keeps the old status, not the client, so a reopen after a reload, from
+   * the board, an agent or the phone restores it the same way.
+   */
+  reopen?: boolean;
 };
 
 export async function updateTask(
@@ -280,7 +287,18 @@ export async function updateTask(
   const oldData = (node.data ?? {}) as Record<string, unknown>;
   const newData: Record<string, unknown> = { ...oldData };
   if (input.body !== undefined) newData.body = input.body;
-  if (input.status !== undefined) newData.status = input.status;
+  const oldStatus = typeof oldData.status === 'string' ? oldData.status : 'open';
+  let status = input.status;
+  if (status === undefined && input.reopen && oldStatus === 'done') {
+    status = statusBeforeDoneOf(oldData) ?? 'open';
+  }
+  if (status !== undefined) {
+    newData.status = status;
+    // Remember where a task came from when it moves INTO done; forget it when
+    // it leaves. Done to done keeps what was remembered.
+    if (status === 'done' && oldStatus !== 'done') newData.status_before_done = oldStatus;
+    else if (status !== 'done') delete newData.status_before_done;
+  }
   if (input.priority !== undefined) newData.priority = input.priority;
   if (input.archivedAt !== undefined) {
     if (input.archivedAt) newData.archived_at = input.archivedAt;
@@ -311,7 +329,7 @@ export async function updateTask(
   const contentChanged =
     newTitle !== node.title ||
     (input.body !== undefined && input.body !== (oldData.body ?? '')) ||
-    (input.status !== undefined && input.status !== (oldData.status ?? 'open')) ||
+    (status !== undefined && status !== oldStatus) ||
     (input.priority !== undefined && input.priority !== (oldData.priority ?? 'normal')) ||
     (input.dueAt !== undefined && (input.dueAt || null) !== (oldData.due_at ?? null)) ||
     (input.todos !== undefined &&

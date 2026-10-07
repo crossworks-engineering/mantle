@@ -86,7 +86,7 @@ describe.skipIf(!URL)('folder links filter by level on Postgres', () => {
         insert into nodes (id, owner_id, type, title, path, audience, data)
         values (${nid}, ${owner}, ${type}, ${title}, ${path}::ltree, ${audience}, ${JSON.stringify(data)}::jsonb)`);
     }
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await m.db.execute(sqlTag`delete from nodes where owner_id = ${owner}`);

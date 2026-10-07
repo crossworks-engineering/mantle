@@ -30,6 +30,7 @@ import type {
 } from './types';
 import type { DiscoveryResult } from '../discover';
 import { errorMessage } from '@mantle/std';
+import { providerFetch } from './provider-fetch';
 
 const ENDPOINT = 'https://api.cohere.com/v2/embed';
 const MODELS_URL = 'https://api.cohere.com/v1/models';
@@ -84,7 +85,7 @@ export const cohereEmbedding: EmbeddingDispatcher = {
 
   async embed(req: EmbedRequest): Promise<EmbedResult> {
     assertTextOnly(req.input);
-    const res = await fetch(ENDPOINT, {
+    const res = await providerFetch(ENDPOINT, {
       method: 'POST',
       headers: {
         authorization: `Bearer ${req.apiKey}`,
@@ -132,7 +133,7 @@ export const cohereEmbedding: EmbeddingDispatcher = {
 
   async discoverModels(apiKey: string): Promise<DiscoveryResult<EmbeddingModelInfo>> {
     try {
-      const res = await fetch(MODELS_URL, {
+      const res = await providerFetch(MODELS_URL, {
         headers: { authorization: `Bearer ${apiKey}` },
         signal: AbortSignal.timeout(8_000),
       });

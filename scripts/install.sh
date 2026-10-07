@@ -184,7 +184,7 @@ confirm() { # $1 = prompt, $2 = default y|n → 0 when yes
 DOMAIN="${MANTLE_DOMAIN:-}"; SITE_ADDRESS="${MANTLE_SITE_ADDRESS:-}"
 ACCESS_MODE=""   # domain | localhost | lan — resolved interactively when unset
 DATA_DIR="${MANTLE_DATA_DIR:-./data}"; STACK_DIR="${MANTLE_STACK_DIR:-$STACK_DIR_DEFAULT}"
-IMAGE_TAG="${MANTLE_IMAGE_TAG:-latest}"; ASSUME_YES=0; SKIP_UP=0; SANITY_ONLY=0
+IMAGE_TAG="${MANTLE_IMAGE_TAG:-latest}"; ASSUME_YES=0; SKIP_UP=0; SANITY_ONLY=0; SETUP_CODE_ONLY=0
 # Local embedder (bundled Ollama): 1=enable, 0=disable, empty=keep .env as-is.
 LOCAL_EMBEDDER="${MANTLE_LOCAL_EMBEDDER:-}"
 # CLI sandboxes (sandboxd): 1=enable, 0=disable, empty=default (ON for a FRESH
@@ -212,12 +212,17 @@ ${B}Mantle installer${RS}
 
 ${B}Options${RS}
   --domain <host>        Use this domain (enables HTTPS via Caddy/Let's Encrypt)
+                         On a re-run, the access mode already in .env is kept
+                         unless one of --domain/--localhost/--lan/--behind-proxy
+                         is given.
   --localhost            This machine only — HTTP on 127.0.0.1:80, not on the network
   --lan                  HTTP on :80, reachable on this machine's network (no TLS)
   --no-domain            Alias for --lan (kept for existing scripts)
   --behind-proxy         You already run nginx/apache on 80/443. Caddy serves plain
                          HTTP on 127.0.0.1:8080 (or the next free port) and your
-                         proxy terminates TLS. Combine with --domain for links.
+                         proxy terminates TLS. Give the host your proxy serves
+                         with --domain (asked for when interactive; -y without
+                         it stops). Share and email links use it.
   --site-address <addr>  Set MANTLE_SITE_ADDRESS verbatim (advanced; overrides above).
                          A hostname here means auto-HTTPS just as --domain does, so
                          ports 80 and 443 must be free for the certificate to issue.
@@ -259,8 +264,10 @@ ${B}Options${RS}
   --client               Run the owner web UI (the default; a separate small
                          container on its own version stream)
   --no-client            Headless box: API + MCP + share pages only. No owner
-                         UI means no signup and no owner screens — pair a
-                         headless brain from another brain or over MCP.
+                         UI on this box. Create the owner and finish setup
+                         from the Jackdaw desktop app (connect it to this
+                         brain's address and enter the setup code), or on
+                         this box with scripts/onboard.sh.
                          Persists as MANTLE_CLIENT_ENABLED in .env; the
                          updater and the sanity check honour it.
   --client-image-tag <t> Pin the owner UI image tag (MANTLE_CLIENT_IMAGE_TAG,
@@ -269,6 +276,8 @@ ${B}Options${RS}
   -y, --yes              Non-interactive: accept defaults, never prompt
   --skip-up              Write .env only; don't bring the stack up
   --sanity, --check      Only run the post-install sanity check, then exit
+  --setup-code           Print the setup code again (signup asks for it until
+                         the first account exists), then exit
   -h, --help             This help
 
 ${B}Examples${RS}
@@ -276,11 +285,13 @@ ${B}Examples${RS}
   scripts/install.sh --domain brain.acme.com -y   # scripted, HTTPS
   scripts/install.sh --localhost -y               # scripted, laptop / loopback only
   scripts/install.sh --lan -y                     # scripted, HTTP on the network
+  scripts/install.sh --behind-proxy --domain brain.acme.com -y   # your nginx/apache in front
   scripts/install.sh --check                       # health check an existing install
 EOF
 }
-# Kept for the "re-run the installer" hint: nothing below re-reads the access
-# mode from .env, so the exact command line is what makes a re-run identical.
+# Kept for the "re-run the installer" hint. The access mode is read back from
+# .env on a re-run (see Access); the rest of the command line is what makes a
+# re-run identical.
 ORIG_ARGS=("$@")
 while [[ $# -gt 0 ]]; do case "$1" in
   # --domain names the host; it only IMPLIES the mode. An explicit
@@ -307,6 +318,7 @@ while [[ $# -gt 0 ]]; do case "$1" in
   -y|--yes|--non-interactive) ASSUME_YES=1; shift ;;
   --skip-up) SKIP_UP=1; shift ;;
   --sanity|--check) SANITY_ONLY=1; shift ;;
+  --setup-code) SETUP_CODE_ONLY=1; shift ;;
   -h|--help) usage; exit 0 ;;
   *) die "unknown argument: $1  (try --help)" ;;
 esac; done
@@ -322,6 +334,9 @@ ENV_FILE="$STACK_DIR/.env"
 # `mantle` project. Deriving from the directory alone was wrong everywhere the
 # stack dir isn't literally called "mantle", which would make port ownership
 # detection silently fail and relocate a working front door on every re-run.
+# Read side of .env, for the steps that run before the writers (getval proper
+# is defined with them, in step 3).
+envval() { [[ -f "$ENV_FILE" ]] && grep -E "^$1=" "$ENV_FILE" | head -1 | cut -d= -f2- || true; }
 COMPOSE_PROJECT="${COMPOSE_PROJECT_NAME:-}"
 if [[ -z "$COMPOSE_PROJECT" ]]; then
   COMPOSE_PROJECT="$(awk '/^name:[[:space:]]/{print $2; exit}' "$STACK_DIR/docker-compose.yml" 2>/dev/null || true)"
@@ -333,6 +348,38 @@ if [[ $ASSUME_YES -eq 0 && $TTY_IN -eq 1 ]]; then INTERACTIVE=1; fi
 
 # ── sanity-only shortcut ─────────────────────────────────────────────────────
 if [[ $SANITY_ONLY -eq 1 ]]; then MANTLE_ENV_FILE="$ENV_FILE" MANTLE_STACK_DIR="$STACK_DIR" MANTLE_COMPOSE_PROJECT="$COMPOSE_PROJECT" exec bash "$(dirname "$0")/sanity.sh"; fi
+
+# ── setup code ───────────────────────────────────────────────────────────────
+# While the brain has no account, signup asks for MANTLE_SETUP_CODE, so only
+# whoever can read this box's .env can claim it. Without it a fresh box on a
+# public address belongs to the first caller to reach it.
+setup_code_from_env() { [[ -f "$ENV_FILE" ]] && grep -E '^MANTLE_SETUP_CODE=' "$ENV_FILE" | head -1 | cut -d= -f2- || true; }
+# Is the brain still unclaimed? Asks the running web container over its
+# loopback debug port (published on 127.0.0.1 only). Prints yes, no, or
+# unknown (not running, or an image from before the field existed).
+brain_unclaimed() {
+  local port body
+  port="$( { [[ -f "$ENV_FILE" ]] && grep -E '^MANTLE_WEB_DEBUG_PORT=' "$ENV_FILE" | head -1 | cut -d= -f2-; } || true)"
+  body="$(curl -fsS --max-time 5 "http://127.0.0.1:${port:-3000}/api/auth/bootstrap-state" 2>/dev/null || true)"
+  if [[ "$body" == *'"firstRun":true'* ]]; then printf yes
+  elif [[ "$body" == *'"firstRun":false'* ]]; then printf no
+  else printf unknown; fi
+}
+print_setup_code() { # $1 = code
+  inf "Setup code: ${B}$1${RS}"
+  inf "${DIM}Signup asks for it until the first account exists. Print it again with: scripts/install.sh --setup-code${RS}"
+}
+if [[ $SETUP_CODE_ONLY -eq 1 ]]; then
+  code="$(setup_code_from_env)"
+  [[ -n "$code" ]] || die "No setup code in $ENV_FILE yet. Run scripts/install.sh to create one."
+  case "$(brain_unclaimed)" in
+    no)  ok "This brain is already claimed: an account exists, so signup asks for no code. Sign in instead." ;;
+    yes) print_setup_code "$code" ;;
+    *)   print_setup_code "$code"
+         inf "${DIM}(Could not ask the brain whether an account exists yet. Is the stack up?)${RS}" ;;
+  esac
+  exit 0
+fi
 
 banner
 
@@ -461,6 +508,46 @@ if [[ -z "$LAN_IP" ]]; then
 fi
 if [[ -n "$PUBLIC_IP" ]]; then inf "This server looks like ${B}$PUBLIC_IP${RS} from the internet"; fi
 
+# A re-run keeps the access mode the box already has. The installer used to
+# ask again, or under -y fall back to plain HTTP on the network, so re-running
+# it only to add --core or --helpers quietly took HTTPS off a domain box. The
+# mode is read back from what step 3 wrote:
+#   MANTLE_SITE_ADDRESS a hostname       → domain
+#   :80, MANTLE_BIND_ADDR=127.0.0.1      → localhost when the origin is
+#                                          http://localhost, else behind-proxy
+#   :80, any other bind                  → lan
+#   anything else                        → kept verbatim, as --site-address
+# An access flag, or MANTLE_SITE_ADDRESS / MANTLE_DOMAIN in the environment,
+# still decides, so changing the mode stays one flag away.
+ACCESS_KEPT=0
+if [[ -z "$SITE_ADDRESS" && -z "$ACCESS_MODE" && -z "$DOMAIN" ]]; then
+  prev_site="$(envval MANTLE_SITE_ADDRESS)"
+  prev_origin="$(envval MANTLE_SERVER_ORIGIN)"
+  if [[ "$prev_site" == :80 ]]; then
+    if [[ "$(envval MANTLE_BIND_ADDR)" != 127.0.0.1 ]]; then ACCESS_MODE=lan
+    elif [[ "$prev_origin" == http://localhost* ]]; then ACCESS_MODE=localhost
+    else
+      ACCESS_MODE=proxy
+      if [[ "$prev_origin" == https://* ]]; then DOMAIN="$(normalize_host "$prev_origin")"; fi
+    fi
+  elif [[ -n "$prev_site" ]] && valid_host "$prev_site"; then
+    ACCESS_MODE=domain; DOMAIN="$prev_site"
+  elif [[ -n "$prev_site" ]]; then
+    SITE_ADDRESS="$prev_site"
+  fi
+  if [[ -n "$ACCESS_MODE$SITE_ADDRESS" ]]; then
+    ACCESS_KEPT=1
+    case "$ACCESS_MODE" in
+      domain)    kept="a domain with HTTPS ($DOMAIN)" ;;
+      localhost) kept="this machine only" ;;
+      lan)       kept="this machine's network, plain HTTP" ;;
+      proxy)     kept="behind your own proxy${DOMAIN:+ ($DOMAIN)}" ;;
+      *)         kept="site address $SITE_ADDRESS" ;;
+    esac
+    ok "Keeping the current access: ${B}$kept${RS} ${DIM}(from .env; pass --domain, --localhost, --lan or --behind-proxy to change it)${RS}"
+  fi
+fi
+
 # Pick the shape. Passing --site-address skips all of this deliberately.
 if [[ -z "$SITE_ADDRESS" && -z "$ACCESS_MODE" ]]; then
   if [[ $INTERACTIVE -eq 1 ]]; then
@@ -515,6 +602,12 @@ if [[ "$ACCESS_MODE" == domain && -z "$SITE_ADDRESS" ]]; then
     fi
     inf "   ${DIM}A certificate cannot be issued until it points here, and failed attempts count against Let's Encrypt's limit for this name.${RS}"
 
+    # A domain kept from .env is what this box serves now. Dropping it to
+    # plain HTTP would change the front door, which a re-run must not do.
+    if [[ $ACCESS_KEPT -eq 1 ]]; then
+      warn "Keeping $DOMAIN: it is this box's current address. Fix the DNS, or re-run with --lan / --localhost to move off it."
+      SITE_ADDRESS="$DOMAIN"; break
+    fi
     # Never proceed into a doomed certificate request unattended. The old
     # behaviour warned and then used the domain anyway.
     if [[ $INTERACTIVE -eq 0 ]]; then
@@ -607,6 +700,35 @@ if port_taken 80 || port_taken 443; then
   fi
 fi
 
+# Behind a proxy the brain still needs the public hostname that proxy serves:
+# share and email links are built from it. --behind-proxy without --domain
+# used to write MANTLE_PUBLIC_URL=https:// (no host), so every link broke.
+# Take the host from what we already know, ask for it, or stop and say why.
+if [[ "$ACCESS_MODE" == proxy ]]; then
+  DOMAIN="$(normalize_host "$DOMAIN")"
+  # A hostname --site-address that moved here from the busy-port menu.
+  if [[ -z "$DOMAIN" && -n "$CERT_HOST" ]]; then DOMAIN="$(normalize_host "$CERT_HOST")"; fi
+  # A kept proxy box whose origin is the loopback port: read the link host.
+  if [[ -z "$DOMAIN" && $ACCESS_KEPT -eq 1 ]]; then DOMAIN="$(normalize_host "$(envval MANTLE_PUBLIC_URL)")"; fi
+  while [[ -z "$DOMAIN" ]] || ! valid_host "$DOMAIN"; do
+    if [[ $INTERACTIVE -eq 1 ]]; then
+      if [[ -n "$DOMAIN" ]]; then warn "That doesn't look like a hostname."; fi
+      inf "${DIM}Your proxy serves the brain on a public hostname. Share and email links use it.${RS}"
+      ask DOMAIN "Domain your proxy serves (e.g. brain.example.com):" ""
+      DOMAIN="$(normalize_host "$DOMAIN")"
+      continue
+    fi
+    # A re-run must not stop a box that already runs. Leave the links unset
+    # and say how to set them.
+    if [[ $ACCESS_KEPT -eq 1 ]]; then
+      warn "No public domain is recorded for this proxy install, so share and email links stay off."
+      inf "   ${DIM}Set it with: scripts/install.sh --behind-proxy --domain brain.example.com${RS}"
+      DOMAIN=""; break
+    fi
+    die "--behind-proxy needs the domain your proxy serves: scripts/install.sh --behind-proxy --domain brain.example.com (or use --lan / --localhost)."
+  done
+fi
+
 # Settle the three derived values every later step reads.
 # Behind an existing proxy, :80 is the one port we must NOT take — that proxy
 # owns it (or is about to). Move off it even when it happens to be free now.
@@ -659,9 +781,7 @@ if [[ ! -d "$DATA_DIR/postgres" && ! -d "$STACK_DIR/data/postgres" ]]; then FRES
 # An aborted first run may have left an .env full of answers with no database
 # behind it yet — default each question to what was chosen last time, so
 # hitting enter through the re-run keeps the earlier answers instead of
-# silently reverting them. (getval proper is defined with the .env writers
-# below; questions only need this read-side.)
-envval() { [[ -f "$ENV_FILE" ]] && grep -E "^$1=" "$ENV_FILE" | head -1 | cut -d= -f2- || true; }
+# silently reverting them. (envval is the read side, defined up top.)
 if [[ $INTERACTIVE -eq 1 && $FRESH_BOX -eq 1 ]]; then
   hd "What to install"
   # The shape first — it changes the right default for everything after it.
@@ -719,12 +839,34 @@ upsert() { # KEY VALUE — replace-in-place or append; preserves other lines
 }
 gen_key()    { openssl rand -base64 32 | tr '+/' '-_' | tr -d '='; }  # 43-char base64url
 gen_hex()    { openssl rand -hex "${1:-32}"; }
+# Setup code: 4 groups of 5 from an alphabet with no look-alikes (no 0/O, 1/I/L),
+# 31 symbols, so about 99 bits. Rejection sampling keeps every symbol equally
+# likely: bytes 248-255 would favour the first 8 symbols, so they are skipped.
+gen_setup_code() {
+  local alpha='23456789ABCDEFGHJKMNPQRSTUVWXYZ' out='' b
+  while [[ ${#out} -lt 20 ]]; do
+    for b in $(openssl rand 64 | od -An -tu1); do
+      if (( b >= 248 )); then continue; fi
+      out+="${alpha:b%31:1}"
+      if [[ ${#out} -ge 20 ]]; then break; fi
+    done
+  done
+  printf '%s-%s-%s-%s' "${out:0:5}" "${out:5:5}" "${out:10:5}" "${out:15:5}"
+}
 ensure() {  # KEY GENERATOR-CMD — keep existing (never regenerate), else generate
   local k="$1" g="$2" cur; cur="$(getval "$k")"
   if [[ -n "$cur" ]]; then upsert "$k" "$cur"; inf "$k kept (already set)"; else upsert "$k" "$($g)"; ok "$k generated"; fi
 }
 ensure MANTLE_MASTER_KEY gen_key          # NEVER rotated on re-run (would orphan secrets)
 ensure SESSION_SECRET    "gen_hex 48"
+ensure MANTLE_SETUP_CODE gen_setup_code   # first-run signup gate; never rotated (harmless once claimed)
+# Optional-service bearer tokens, whether or not the service is on: the
+# compose profile decides what runs and the brain reads the profile, so a token
+# alone is inert. Having it in the app containers' env from the start is what
+# lets a dashboard switch start ONE container later instead of restarting the
+# brain. Never rotated on re-run. (The updater does the same on a roll.)
+ensure SANDBOXD_TOKEN      "gen_hex 32"
+ensure MEDIA_SIDECAR_TOKEN "gen_hex 32"
 # POSTGRES_PASSWORD: generate ONLY for a genuinely fresh database. An older
 # install may have no POSTGRES_PASSWORD line yet an initialized data dir
 # (password baked in at initdb) — generating one there would break DB auth.
@@ -770,10 +912,16 @@ upsert MANTLE_HTTPS_PORT "$HTTPS_PORT"
 # Public origin for share/email links + the onboarding Domain check. Only
 # meaningful when a real hostname is set; without one, links would embed an
 # address that may change, so it stays unset until a domain is added.
-if [[ "$ACCESS_MODE" == domain || "$ACCESS_MODE" == proxy ]]; then
+if [[ ( "$ACCESS_MODE" == domain || "$ACCESS_MODE" == proxy ) && -n "$DOMAIN" ]]; then
   upsert MANTLE_PUBLIC_URL "https://$DOMAIN"
 elif [[ "$SITE_ADDRESS" != :* ]]; then
   upsert MANTLE_PUBLIC_URL "https://$SITE_ADDRESS"
+fi
+# An older installer wrote a host-less "https://" for --behind-proxy without
+# --domain. No link can be built from it, so remove it.
+if [[ "$(getval MANTLE_PUBLIC_URL)" == "https://" ]]; then
+  tmp="$(mktemp)"; grep -vE '^MANTLE_PUBLIC_URL=' "$ENV_FILE" > "$tmp" || true; mv "$tmp" "$ENV_FILE"
+  warn "Removed MANTLE_PUBLIC_URL=https:// (no host) from .env."
 fi
 # The owner UI is its OWN app since the v0.200 split, and it reaches the API
 # over HTTP — so it needs an absolute origin even in the same-origin shape we
@@ -967,7 +1115,12 @@ fi
 chmod 600 "$ENV_FILE" 2>/dev/null || true
 ok "Wrote ${B}$ENV_FILE${RS} ${DIM}(chmod 600)${RS}"
 
-if [[ $SKIP_UP -eq 1 ]]; then hd "Done (--skip-up)"; inf "Config written; stack not started. Bring it up with: ${B}docker compose up -d --wait${RS}"; exit 0; fi
+if [[ $SKIP_UP -eq 1 ]]; then
+  hd "Done (--skip-up)"
+  inf "Config written; stack not started. Bring it up with: ${B}docker compose up -d --wait${RS}"
+  inf "Signup will ask for the setup code. Print it with: ${B}scripts/install.sh --setup-code${RS}"
+  exit 0
+fi
 
 # 80 and 443 were both settled with the access mode above, where the advice can
 # be specific and the port can still be changed.
@@ -1133,7 +1286,17 @@ if [[ $SANITY_RC -ne 0 ]]; then
 fi
 
 hd "Installation complete"
-inf "Open ${B}$OPEN_URL${RS} and create your account — onboarding starts there."
+UNCLAIMED="$(brain_unclaimed)"
+if [[ "$(getval MANTLE_CLIENT_ENABLED)" == 0 ]]; then
+  inf "Headless brain: no owner web UI on this box. Create your account and finish setup in one of two ways:"
+  inf "  the Jackdaw desktop app: connect it to ${B}$OPEN_URL${RS}, then sign up with the setup code"
+  inf "  on this box: ${B}scripts/onboard.sh${RS}"
+else
+  inf "Open ${B}$OPEN_URL${RS} and create your account: onboarding starts there."
+fi
+if [[ "$UNCLAIMED" != no && -n "$(getval MANTLE_SETUP_CODE)" ]]; then
+  print_setup_code "$(getval MANTLE_SETUP_CODE)"
+fi
 if [[ "$ACCESS_MODE" == domain ]]; then
   inf "${DIM}The certificate is issued on the first request; the first load can take a few seconds.${RS}"
 elif [[ "$ACCESS_MODE" == localhost ]]; then

@@ -111,7 +111,7 @@ describe('renderDelegateRoster', () => {
     expect(beforeMarker.length).toBeLessThanOrEqual(ROSTER_LINE_MAX);
   });
 
-  it('caps the whole roster and self-announces elided delegates', () => {
+  it('over budget, keeps every delegate and shrinks the lowest-ranked lines first', () => {
     const delegates: RosterDelegate[] = Array.from({ length: 20 }, (_, i) => ({
       slug: `agent-${i}`,
       name: `agent-${i}`,
@@ -121,11 +121,48 @@ describe('renderDelegateRoster', () => {
       ],
     }));
     const out = renderDelegateRoster(delegates);
+    expect(out.length).toBeLessThanOrEqual(ROSTER_TOTAL_MAX);
+    expect(out).not.toMatch(/more delegates/);
+    const lines = out.split('\n');
+    expect(lines).toHaveLength(20);
+    // Rank order kept, and detail only ever decreases down the list.
+    lines.forEach((line, i) => expect(line.startsWith(`- agent-${i}`)).toBe(true));
+    const detail = (line: string) =>
+      line.includes('Beta tools') ? 2 : line.includes('Alpha tools') ? 1 : 0;
+    for (let i = 1; i < lines.length; i++) {
+      expect(detail(lines[i]!)).toBeLessThanOrEqual(detail(lines[i - 1]!));
+    }
+    // The top delegate still carries a capability; the last is a bare name.
+    expect(detail(lines[0]!)).toBeGreaterThan(0);
+    expect(lines[19]).toBe('- agent-19');
+  });
+
+  it('shrinks only as much as needed: a small overflow trims just the tail', () => {
+    const long = 'Does a very specific thing with a fairly long and descriptive sentence here.';
+    const delegates: RosterDelegate[] = Array.from({ length: 7 }, (_, i) => ({
+      slug: `d${i}`,
+      name: `d${i}`,
+      groups: [group('a', 'Alpha tools', long), group('b', 'Beta tools', long)],
+    }));
+    const out = renderDelegateRoster(delegates);
+    const lines = out.split('\n');
+    expect(lines).toHaveLength(7);
+    expect(out.length).toBeLessThanOrEqual(ROSTER_TOTAL_MAX);
+    expect(lines[0]).toContain('Beta tools'); // the top keeps its full line
+    expect(lines[6]).not.toContain('Beta tools'); // the tail gave detail up
+  });
+
+  it('elides the tail only when even bare names overflow, and says so', () => {
+    const delegates: RosterDelegate[] = Array.from({ length: 200 }, (_, i) => ({
+      slug: `specialist-number-${i}`,
+      name: `specialist-number-${i}`,
+      groups: [group('a', 'Alpha tools', 'Does the first thing.')],
+    }));
+    const out = renderDelegateRoster(delegates);
     expect(out).toMatch(/\n- \+\d+ more delegates$/);
     const body = out.replace(/\n- \+\d+ more delegates$/, '');
     expect(body.length).toBeLessThanOrEqual(ROSTER_TOTAL_MAX);
-    // Input order preserved for what survives.
-    expect(out.indexOf('agent-0')).toBeLessThan(out.indexOf('agent-1'));
+    expect(body.split('\n').every((l) => /^- specialist-number-\d+$/.test(l))).toBe(true);
   });
 
   it('returns an empty string for no delegates', () => {

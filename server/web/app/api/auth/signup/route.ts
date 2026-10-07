@@ -1,14 +1,13 @@
 import { NextResponse } from '@/server/http-compat';
-import { randomUUID } from 'node:crypto';
-import { sql } from 'drizzle-orm';
 import { z } from 'zod';
-import bcrypt from 'bcryptjs';
-import { db, countUsers } from '@mantle/db';
+import { countUsers } from '@mantle/db';
 import { buildSessionCookie, SESSION_COOKIE_NAME } from '@/lib/auth';
 import { secureCookies } from '@/lib/auth-constants';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
-import { clientIp, rateLimit } from '@/lib/rate-limit';
+import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 import { refuseCrossSiteAuthPost } from '@/lib/auth/preflight';
+import { createFirstOwner } from '@/lib/auth/first-owner';
+import { setupCodeConfigured, setupCodeMatches } from '@/lib/auth/setup-code';
 import { AUTH_BODY_CEILING_BYTES, readJsonCapped } from '@/lib/body-limit';
 
 /**
@@ -17,18 +16,26 @@ import { AUTH_BODY_CEILING_BYTES, readJsonCapped } from '@/lib/body-limit';
  * open ONLY while `auth.users` is empty; once the first account exists it 403s
  * (the door closes). Mirrors the login route: same session cookie, same IP
  * rate-limit before bcrypt.
+ *
+ * When the box has a setup code (MANTLE_SETUP_CODE, written by the installer),
+ * the body must carry it as `setupCode`: without it, whoever reaches a fresh
+ * box first would own it. A wrong or missing code is a 403 with
+ * `reason: 'setup-code'`. The rate limit runs BEFORE the compare, so the code
+ * cannot be guessed faster than five tries a minute per address.
  */
 
 const SignupBody = z.object({
   email: z.string().email().max(320),
   password: z.string().min(8).max(1024),
+  setupCode: z.string().max(200).optional(),
 });
 
 export async function POST(req: Request) {
   const refused = refuseCrossSiteAuthPost(req);
   if (refused) return refused;
-  // Rate limit before the (intentionally slow) bcrypt hash.
-  const ip = clientIp(req);
+  // Rate limit before the setup-code compare and the (intentionally slow)
+  // bcrypt hash.
+  const ip = clientIpKey(req);
   const limit = rateLimit(`auth:signup:${ip}`, { max: 5, windowMs: 60_000 });
   if (!limit.ok) {
     return NextResponse.json(
@@ -54,38 +61,34 @@ export async function POST(req: Request) {
     );
   }
 
-  // Store the email lowercased so it matches the case-insensitive login lookup.
-  const email = parsed.data.email.trim().toLowerCase();
-  const passwordHash = await bcrypt.hash(parsed.data.password, 12);
-  const id = randomUUID();
+  if (setupCodeConfigured() && !setupCodeMatches(parsed.data.setupCode)) {
+    auditFireAndForget({
+      actorEmail: parsed.data.email.trim().toLowerCase(),
+      action: 'auth.signup_failed',
+      method: 'POST',
+      path: '/api/auth/signup',
+      detail: { reason: parsed.data.setupCode ? 'setup-code-wrong' : 'setup-code-missing' },
+      ...requestMetaFrom(req),
+    });
+    return NextResponse.json(
+      {
+        error: parsed.data.setupCode
+          ? 'That setup code is not right. Check it and try again.'
+          : 'Enter the setup code the installer printed.',
+        reason: 'setup-code',
+      },
+      { status: 403 },
+    );
+  }
 
-  // Insert ONLY if auth.users is still empty — closes the TOCTOU window between
-  // the countUsers() gate above and this insert (two concurrent first-run
-  // signups with different emails could otherwise both land, breaking the
-  // single-user invariant). The conditional INSERT…SELECT is atomic.
-  try {
-    // is_owner: the first-run account is the ANCHOR — the identity all brain
-    // content is keyed to. Later co-admin logins (Settings → Logins) are not.
-    // The role is named: the column has no default (0190), and the anchor is
-    // always an admin (CHECK).
-    const inserted = await db.execute(sql`
-      INSERT INTO auth.users (id, email, password_hash, is_owner, role)
-      SELECT ${id}, ${email}, ${passwordHash}, true, 'admin'
-      WHERE NOT EXISTS (SELECT 1 FROM auth.users)
-      RETURNING id
-    `);
-    if (inserted.length === 0) {
-      return NextResponse.json(
-        { error: 'An account already exists. Sign in instead.' },
-        { status: 403 },
-      );
-    }
-  } catch {
+  const created = await createFirstOwner(parsed.data.email, parsed.data.password);
+  if (!created.ok) {
     return NextResponse.json(
       { error: 'An account already exists. Sign in instead.' },
       { status: 403 },
     );
   }
+  const { id, email } = created;
 
   auditFireAndForget({
     actorId: id,

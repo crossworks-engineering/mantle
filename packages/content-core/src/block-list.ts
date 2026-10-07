@@ -144,7 +144,11 @@ function blockMeta(kind: string, node: AnyNode): Record<string, unknown> | null 
   const attrs = node.attrs ?? {};
   switch (kind) {
     case 'heading':
-      return typeof attrs.level === 'number' ? { level: attrs.level } : null;
+      if (typeof attrs.level !== 'number') return null;
+      // A foldable heading says so (and how it starts), so an agent can see it.
+      return attrs.fold === 'open' || attrs.fold === 'closed'
+        ? { level: attrs.level, fold: attrs.fold }
+        : { level: attrs.level };
     case 'codeBlock':
       return typeof attrs.language === 'string' && attrs.language
         ? { language: attrs.language }

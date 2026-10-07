@@ -11,10 +11,18 @@ import { getContent } from '@mantle/storage';
 import { buildAppFrameCsp, buildAppFrameHtml } from '@mantle/share-ui/app-frame-html';
 import { decodeNeatSpec, encodeNeatSpec } from '@mantle/share-ui/neat-background';
 import { loadProfilePreferences } from '@mantle/content';
+import { appViewerFor, type AppViewer, type AppViewerSubject } from '@mantle/content/app-broker';
 import { resolveSingleOwnerId } from '@mantle/db';
 import { requestOrigin } from '@/lib/auth-constants';
 import type { Readable } from 'node:stream';
 import { env } from '@mantle/config';
+import { BundleTextCache } from './bundle-text-cache';
+
+/** Bundle and CSS text by content-addressed key (apps audit P3): one read
+ *  from object storage per build per process, not one per frame load. */
+const bundleText = new BundleTextCache();
+const loadText = (key: string) =>
+  bundleText.get(key, () => getContent(key).then(({ body }) => streamToString(body)));
 
 /** The shared-runtime import map, read once from the generated public/ asset
  *  (cwd is server/web in dev and in the image — same relative convention as
@@ -64,29 +72,42 @@ async function resolveFrameNeat(shared: boolean): Promise<string | null> {
   }
 }
 
+/** Who runs the app, as the frame route's ticket says (app identity). */
+export type FrameViewer = { ownerId: string; appId: string; subject: AppViewerSubject };
+
+/** What host.me() answers in this frame. Fail-soft: an unreadable viewer
+ *  bakes nothing, and host.me() rejects, rather than failing the frame. */
+async function resolveFrameViewer(viewer: FrameViewer | undefined): Promise<AppViewer | null> {
+  if (!viewer) return null;
+  try {
+    return await appViewerFor(viewer.ownerId, viewer.appId, viewer.subject);
+  } catch (err) {
+    console.error('[app-frame] could not resolve the app viewer:', err);
+    return null;
+  }
+}
+
 /**
  * Render the frame document for an already-authorized build. Query params
  * carry PRESENTATION only (theme class/attr + frame mode) — they are baked
  * into the document but grant nothing, so they ride the URL unverified. The
  * Neat backdrop is deliberately NOT a param: it resolves server-side from the
  * prefs, so a hand-edited frame URL can change how the page looks but never
- * what the brain has chosen to show.
+ * what the brain has chosen to show. `viewer` is who runs the app (from the
+ * verified ticket, never the URL): host.me() answers it inside the frame.
  */
 export async function renderAppFrame(
   req: Request,
   build: FrameBuild,
-  opts: { shared?: boolean } = {},
+  opts: { shared?: boolean; viewer?: FrameViewer } = {},
 ): Promise<Response> {
   const url = new URL(req.url);
-  const [bundleCode, appCss, importMapJson, neatSpec] = await Promise.all([
-    getContent(build.storageKey).then(({ body }) => streamToString(body)),
-    build.css
-      ? getContent(build.css.storageKey)
-          .then(({ body }) => streamToString(body))
-          .catch(() => '')
-      : Promise.resolve(''),
+  const [bundleCode, appCss, importMapJson, neatSpec, viewer] = await Promise.all([
+    loadText(build.storageKey),
+    build.css ? loadText(build.css.storageKey).catch(() => '') : Promise.resolve(''),
     loadImportMapJson(),
     resolveFrameNeat(opts.shared === true),
+    resolveFrameViewer(opts.viewer),
   ]);
   const html = buildAppFrameHtml({
     bundleCode,
@@ -97,6 +118,7 @@ export async function renderAppFrame(
     viewport: url.searchParams.get('vp') === '1',
     neatSpec,
     neatLicense: env('MANTLE_NEAT_LICENSE_KEY') ?? null,
+    viewer,
   });
   return new NextResponse(html, {
     status: 200,

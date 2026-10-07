@@ -71,6 +71,79 @@ describe('lintRuntimeImports', () => {
   });
 });
 
+describe('lintRuntimeImports: type-only imports', () => {
+  // The compiler erases these, so they never reach the runtime and cannot
+  // fail to link. The field case: an admin app's `import type { ReactNode }`.
+  const lint = (text: string) => lintRuntimeImports(src({ 'a.tsx': text }), RT);
+
+  it.each([
+    "import type { ReactNode } from 'react';\n",
+    "import type { ReactNode, FC as F } from 'react';\n",
+    "import type React from 'react';\n",
+    "import type * as R from 'react';\n",
+    "import type{ReactNode}from 'react';\n",
+    "import { type ReactNode } from 'react';\n",
+    "import { type ReactNode, type FC as F } from 'react';\n",
+    "import React, { type ReactNode } from 'react';\n",
+    "export type { ReactNode } from 'react';\n",
+  ])('skips %s', (text) => {
+    expect(lint(text)).toEqual([]);
+  });
+
+  it('still checks the value part of a mixed import', () => {
+    expect(lint("import { type ReactNode, useState } from 'react';\n")).toEqual([]);
+    const msgs = lint("import { type ReactNode, nope } from 'react';\n");
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]!.text).toContain("'react' does not export 'nope'");
+  });
+
+  it('treats a binding NAMED `type` as a value import', () => {
+    // `import type from` / `import type, {…}` = default import called `type`.
+    expect(lint("import type from '@host';\n")[0]!.text).toContain("'@host' has no default export");
+    expect(lint("import type, { host } from '@host';\n")).toHaveLength(1);
+    // `{ type }` / `{ type as t }` = named import of an export called `type`.
+    expect(lint("import { type } from '@host';\n")[0]!.text).toContain(
+      "'@host' does not export 'type'",
+    );
+    expect(lint("import { type as t } from '@host';\n")).toHaveLength(1);
+  });
+});
+
+describe('buildApp: type-only imports', () => {
+  const app = (head: string) =>
+    src({ 'App.tsx': `${head}\nexport default function App(){return <div/>;}\n` });
+
+  it.each([
+    "import type { ReactNode } from 'react';",
+    "import { type ReactNode } from 'react';",
+    "import { type ReactNode, useState } from 'react'; console.log(useState);",
+    "export type { ReactNode } from 'react';",
+  ])('builds with %s', async (head) => {
+    const res = await buildApp(app(head), { runtimeExports: RT });
+    expect(res.errors).toEqual([]);
+    expect(res.ok).toBe(true);
+  });
+
+  it.each([
+    "import type { ZodType } from 'zod';",
+    "import { type ZodType } from 'zod';",
+    "export type { ZodType } from 'zod';",
+  ])('allows a disallowed package imported type-only: %s', async (head) => {
+    const res = await buildApp(app(head), { runtimeExports: RT });
+    expect(res.errors).toEqual([]);
+    expect(res.ok).toBe(true);
+  });
+
+  it.each([
+    "import { z } from 'zod'; console.log(z);",
+    "import { type ZodType, z } from 'zod'; console.log(z);",
+  ])('refuses the same package imported as a value: %s', async (head) => {
+    const res = await buildApp(app(head), { runtimeExports: RT });
+    expect(res.ok).toBe(false);
+    expect(res.errors[0]!.text).toContain("Import 'zod' is not allowed in a mini app");
+  });
+});
+
 describe('buildApp — runtime import check', () => {
   it('FAILS the build rather than publishing an app that cannot link', async () => {
     const res = await buildApp(

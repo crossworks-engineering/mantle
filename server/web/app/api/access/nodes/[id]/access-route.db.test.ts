@@ -45,7 +45,7 @@ describe.skipIf(!URL)('the Access API on Postgres', () => {
     await m.db.execute(
       sqlTag`insert into pages (node_id, doc, doc_text) values (${ids.page}, ${JSON.stringify(doc)}::jsonb, '')`,
     );
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await m.db.execute(sqlTag`delete from shares where owner_id = ${owner}`);

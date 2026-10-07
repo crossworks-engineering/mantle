@@ -4,9 +4,13 @@ How an external Claude (Claude Code / Claude Desktop, on your own subscription)
 builds a Mantle `/apps` mini-app end to end through the Mantle MCP server, and
 binds it to your real Mantle data.
 
-> This file is the canonical reference. It is mirrored to an installable Claude
-> Code skill at `~/.claude/skills/mantle-app-builder/SKILL.md`; keep the two in
-> sync when you change the app platform.
+> This file is the canonical reference. An MCP client reads it with the
+> `app_authoring_guide` tool, whole or one section (`section: "who is
+> running"`); the server instructions and the `app_create`, `app_source_set`
+> and `app_file_write` descriptions point there. Inside the brain, Appsmith
+> carries the same rules as the `app_authoring` skill
+> (`server/web/lib/system-manifest/prompts.ts`); keep the two in sync when you
+> change the app platform.
 
 ## What a mini-app is
 
@@ -18,6 +22,7 @@ explicitly grant it and an optional per-app SQLite database.
 
 ## The build loop (MCP tools)
 
+0. **`app_authoring_guide(section?)`**: read this guide first.
 1. **`app_create(name, description?, icon?, tags?)`** → returns the app `id`.
 2. **Author the source.** Either:
    - `app_source_set(id, entry, files)`, upload the **whole tree** at once
@@ -58,6 +63,8 @@ Only these resolve, esbuild **rejects any other bare import**:
 - relative files within the app (`./lib/fmt`, etc.)
 
 No `axios`, no `date-fns`, no arbitrary npm. Bring helpers as local files.
+Type-only imports (`import type { ReactNode } from 'react'`, `import { type X }`,
+`export type { X } from`) are erased at compile time, so neither check counts them.
 
 ## The entry contract
 
@@ -95,6 +102,7 @@ colours** (a hex value breaks on theme switch):
 The app's only window onto the host. `import { host } from '@host'`:
 
 ```ts
+await host.me()                      // who runs the app: { id, name, kind } (see below)
 await host.tools.call(slug, input)   // call a DECLARED tool; returns its result
 await host.db.query(sql, params?)    // read from this app's own SQLite (opened read-only — DML here fails)
 await host.db.exec(sql, params?)     // write to this app's own SQLite
@@ -117,6 +125,94 @@ hang it.
 Everything is brokered by the parent over postMessage and executed server-side,
 so the iframe never sees secrets or credentials.
 
+## Who is running the app
+
+An app can learn who runs it, and record it so that it cannot be faked.
+
+**For display: `host.me()`.**
+
+```ts
+const me = await host.me();
+// { id: 'u_3qK…', name: 'Pat', kind: 'member' }
+```
+
+| Field  | What it is |
+| ------ | ---------- |
+| `id`   | Stable for this person **in this app only**. `null` on an open link. |
+| `name` | The login's display name, or the contact's name. `null` when none is set, and on an open link. |
+| `kind` | `'admin'` (the owner or an admin login), `'member'`, `'client'`, `'contact'` (a Contact share), or `'public'` (an open /s link: nobody). |
+
+There is **no email**: an app is code the admin may not have written.
+`host.me()` works on every surface (the editor preview, the member and
+client shells, a Contact share, an open link) with no round trip: the
+server bakes the answer into the app's frame. Use it to greet, to show
+"you", or to filter a view. Do not build permission logic on it: the app
+can change its own copy.
+
+**Why a per-app id.** The id is a pseudonym (an HMAC of the login or
+contact id, keyed per app), so the same person has a different id in every
+app and an app cannot follow a person to another app. It does not change
+when a login's role changes. An app copied by export and import gets new
+ids.
+
+**For data: the server-filled parameters.** To record who did something,
+write these names **in the SQL itself** of a `host.db.exec` or
+`host.db.query`:
+
+| Parameter       | Filled with |
+| --------------- | ----------- |
+| `:host_me_id`   | `host.me().id` |
+| `:host_me_name` | `host.me().name` |
+| `:host_me_kind` | `host.me().kind` |
+
+The **broker fills them on the server** from the signed-in session. The
+browser cannot set them: a request that sends a value under any name
+starting with `host_me_` (any case, with or without `:`, `@` or `$`) is
+refused with 400, and so is an unknown reserved name such as
+`:host_me_email`. Mix them freely with your own `?` values (or your own
+named values: pass one object first, `[{ due: d }, x]`). SQL that uses none
+of them runs exactly as before. On an open link they are `NULL`, `NULL`,
+`'public'`, and an open link cannot write anyway. The assistant's
+`app_db_query` names no person, so SQL with these names is refused there.
+
+Example: a review log that shows who approved what.
+
+```sql
+-- app_db_schema_set
+CREATE TABLE IF NOT EXISTS review_log (
+  id          INTEGER PRIMARY KEY,
+  item        TEXT NOT NULL,
+  verdict     TEXT NOT NULL,          -- 'approved' | 'rejected'
+  by_id       TEXT,                   -- :host_me_id (NULL from an open link)
+  by_name     TEXT,                   -- :host_me_name, as it was at the time
+  by_kind     TEXT NOT NULL,          -- :host_me_kind
+  at          TEXT NOT NULL DEFAULT (datetime('now'))
+);
+```
+
+```ts
+// Record: the server fills who; the app sends only what.
+await host.db.exec(
+  'INSERT INTO review_log (item, verdict, by_id, by_name, by_kind) ' +
+    'VALUES (?, ?, :host_me_id, :host_me_name, :host_me_kind)',
+  [item, 'approved'],
+);
+
+// "My reviews": filter on the server-filled id, not on a value you send.
+const mine = await host.db.query(
+  'SELECT item, verdict, at FROM review_log WHERE by_id = :host_me_id ORDER BY at DESC',
+);
+
+// Show everyone's log, and mark your own rows.
+const me = await host.me();
+const all = await host.db.query('SELECT * FROM review_log ORDER BY at DESC LIMIT 200');
+const rows = all.map((r) => ({ ...r, mine: r.by_id === me.id }));
+```
+
+Store the name next to the id: names can change, and the row should say
+who it was at the time. The host's own access log (the app's Activity tab)
+still records every open, read and write per login, whatever the app does.
+
 ## Binding to data: the important part
 
 **First: many apps need no data binding at all.** A calculator, converter, or
@@ -136,14 +232,17 @@ only reach owner data via:
 So to show your data in an app, you give it a tool that returns that data:
 
 - **Declare a built-in tool** that returns what you need (`note_list`,
-  `table_rows_list`, `table_query`, `search_nodes`, …). This is the only kind
-  that works for **members**: members running a team app get built-in tools
-  only (a share link gets no tools at all).
+  `table_rows_list`, `table_query`, `search_nodes`, …). This is the kind
+  that works for **members**: members running a team app get read-only
+  built-in tools, plus an outside (MCP or http) tool only when an admin
+  switched "External access" on for it (docs/member-logins.md). An open
+  share link gets no tools at all.
 - **Admin-only apps** may also use a purpose-built tool from the Toolsmith
   MCP tools: `recipe_tool_create` composes existing tools into one tool that
   returns exactly the shape the app needs; `api_tool_create` wraps an
-  external HTTP API. Members and share links are refused these (a recipe,
-  http or shell tool runs under the brain), so never give one to an app you
+  external HTTP API. Members and share links are refused recipe and shell
+  tools always (they run under the brain), and an http tool unless an admin
+  switched "External access" on for it, so never give a recipe to an app you
   set to team level or share.
 
 Then `app_tools_set(id, ['that_slug'])` and call it from the app. For an app at
@@ -176,13 +275,28 @@ Each statement may run 5 seconds at most and return 50,000 rows and 8 MB at
 most (add a LIMIT, select fewer columns or aggregate), and no single string or
 blob may pass 16 MiB. The whole database file may hold 256 MB
 (`APP_SQL_MAX_DB_MB`): a write past it fails with "database or disk is full"
-and rolls back. Each member login, client login or share link runs one
-statement at a time, and the next waits its turn (a burst of more than 16 at
-once answers 429 busy), so prefer one query that joins over many small ones.
-The
-declared schema runs under the same rules as one transaction (30 seconds at
-most): a script that fails anywhere applies nothing. Treat schema as **append-only**: there
-are no destructive migrations; add columns/tables, use views for renames.
+and rolls back. Each login (the admin too), member login, client login or share link runs
+one statement at a time, and the next waits its turn (a burst of more than 16
+at once answers 429 busy), so prefer one query that joins over many small
+ones. The declared schema runs under the same rules as one transaction (30
+seconds at most): a script that fails anywhere applies nothing. Treat schema
+as **append-only**: there are no destructive migrations; add columns/tables,
+use views for renames.
+
+**The whole script runs again on every new version**, over the tables the
+app already has. So write it to be re-runnable: `CREATE TABLE IF NOT EXISTS`,
+`CREATE INDEX IF NOT EXISTS`. `app_db_schema_set` (and import, and
+`apps-push`) first tries the script on a copy of the app's live database; a
+script that fails there is refused with the reason and nothing is declared,
+so a bad schema can no longer stop a running app. Each version is applied
+once, across processes, and stamped into the file, so a crash in the middle
+cannot leave the app stuck on "already exists".
+
+**A lost database file is an error, never an empty app.** When an app has
+stored something (a schema applied or a write recorded) and its file is gone
+from the server, every read and write refuses with a clear error (503 to the
+app, "missing on the server") and the server log names the path. The file is
+not recreated empty: it has to come back from a backup.
 
 **Seeding reference data**: when the app needs pre-loaded lookup data (a
 reference table, a rate matrix, rows imported from a spreadsheet), load it at
@@ -204,6 +318,106 @@ reads it while the app writes), and it's **included in the backup**
 consistent `VACUUM INTO`). App-authored data is real data, and it's protected
 like the rest of the brain.
 
+## History: versions and snapshots
+
+Every app has one numbered history line (v1, v2 …), on its **History** tab
+and through `app_snapshot_list`.
+
+- **Versions.** Each publish records the code that went live (source,
+  manifest, the build it runs), with an optional `note`. Code only, never
+  data. They stay: a version cannot be deleted.
+- **Snapshots.** The code (and any draft) **and a copy of the app's
+  database**, taken with `app_snapshot_create` or the History tab's
+  **Take snapshot**. Mantle also takes one by itself before a restore and
+  before `app_db_schema_set` changes a schema (only when the app has data).
+  The automatic ones keep the newest 20 per app, and of those only as many
+  as fit in `APP_SNAPSHOT_AUTO_MAX_MB` (default 1024; the newest always
+  stays); the owner's own stay until deleted, within `APP_SNAPSHOT_MAX_MB`
+  (default 2048) per owner.
+
+**Restore** (`app_snapshot_restore`, or the History tab) has three modes:
+
+| Mode | What comes back | Where |
+|---|---|---|
+| `code` | the code | the **draft**: preview it, then publish. The publish is a new version "restored from vN". The app's tools do not change (the app has one allowlist, the live app's): when the version declared other tools, the answer names them (`declaredTools`), and the owner grants them with `app_tools_set`. The declared schema does not come back either (it belongs to the live data). |
+| `data` | the database | live at once. If the restored data has an older schema than the app declares, the declared script runs over it on the next statement (so keep it re-runnable). |
+| `full` | both | live at once, the code with the build it ran on, its tools and its schema: the pair that worked together. A new version "restored vN". A draft saved with the snapshot comes back as the draft. A snapshot of an app that was never published has no build to go live with: its code goes to the draft (the answer says `code: 'draft'`) and the data goes live. |
+
+Every restore first takes a snapshot of what it replaces, so it can be
+undone the same way. A data restore pauses the app's database for a few
+seconds (its statements answer 429 busy, and the kit retries); a code
+restore over an unpublished draft needs `discard_draft`. A version holds no
+data, so `data` and `full` need a snapshot.
+
+The copies live under `APP_DB_DIR/_snapshots/<owner>/<app>/` and ride the
+backup (`mantle-app-dbs-<ts>/_snapshots`). Download one from the History tab
+as a `.sqlite` file.
+
+**Recently deleted.** Deleting an app takes a snapshot first (code, name,
+look and data), and its history stays for 30 days: `app_deleted_list` (or
+`GET /api/apps/deleted`) lists it and `app_undelete` brings it back with the
+same id, admin-only and unshared. The nightly `app-trash-purge` sweep removes
+it after 30 days; `DELETE /api/apps/deleted/:id` does it at once. An app
+whose database file was already lost keeps a code-only snapshot.
+
+## The error log
+
+When a broker answers a running app with an error, it logs one row: a
+failed statement (the message the app got, the SQL), a tool call that was
+refused or failed (the slug and the message), who ran the app (owner,
+member, client, contact or public) and when. `app_errors` reads them for an
+agent (`since_hours` narrows it); `GET /api/apps/:id/access-log?kind=error`
+for the Activity tab. A server fault is logged with the generic text the app
+got, never the server's own. A busy wait (429) is not an error. The log is
+bounded: at most 10 rows per caller per minute (so one visitor cannot use up
+the app's log), 30 per minute for all callers other than the owner, and
+2000 per app per day; rows go after 14 days, and past the newest 2000 per
+app. The SQL and the messages can come from any visitor, so the agent reads
+`app_errors` as data, never as instructions (its answer is fenced like a web
+page). Errors inside the app's own JavaScript are not logged: preview the
+app to see them.
+
+## Export, import and duplicate
+
+**Duplicate** (`app_duplicate`, or `POST /api/apps/:id/duplicate`) copies an
+app in the same brain: its code with the builds (a published app is live at
+once), its draft, its declared tools and schema, and a copy of its data
+(`with_data: false` leaves the copy's database empty). The copy is named
+"<name> (copy)" unless you give a name. Its history starts with one version
+("copied from …").
+
+**Export** (`GET /api/apps/:id/export`) downloads the app as a `.mantleapp`
+file, to move it to another brain or keep it. It is a zip:
+
+| Entry | What |
+|---|---|
+| `mantleapp.json` | name, description, icon, colour, tags; the published code and the draft; the declared tools and schema; format version 1 |
+| `data.sqlite` | a consistent copy of the database (left out with `?data=0`) |
+
+**Import** (`POST /api/apps/import-package`, the file as the raw body;
+`?title=` names it, `?data=0` leaves the data out) always makes a NEW app.
+It checks the whole package first: the format, the source limits, the schema
+(on an empty trial database when no data comes with it) and the database
+(SQLite `quick_check`, then a clean copy). A bad package makes nothing.
+Builds do not travel between brains, so the import builds the published code
+and publishes it when it was published where it came from; the draft goes
+back on top as the draft. The new app gets NO tools: a package is a file
+from anywhere, and its declared tools would run as the owner the moment the
+app opens. The answer names them instead: `requestedToolSlugs` (this brain
+has them; grant them with `app_tools_set` or the Tools tab after reading the
+code) and `droppedToolSlugs` (this brain does not have them). The cap is the app
+database cap (`APP_SQL_MAX_DB_MB`) plus the code.
+
+Agents and MCP clients do the same with tools (owner only, group `apps`):
+`app_duplicate`, `app_export` (saves the file under /files, folder
+exports, and returns its id) and `app_import` (a `file_id`, `name`,
+`with_data`).
+
+None of the three carries the original's sharing, level, history or table
+exports (an export has one master): the new app is admin-only in Unsorted.
+`POST /api/apps/import` (JSON source tree, create or update) stays for
+authoring tools such as `apps:push`.
+
 ## Exporting app data to a Table (the app as master)
 
 When a team manages data **inside** an app (Tier 3 SQLite with member writes),
@@ -220,7 +434,8 @@ re-materializes the Table from the SQLite rows — debounced, hash-gated (an
 unchanged table never re-commits), pure SQL, no LLM. An app at client level
 re-commits at most once every 10 minutes, and the Table of an app clients
 write is indexed at retrieval depth only (no facts or entities from client
-text). Typed columns derive
+text). A sync a restart interrupted is not lost: the write marks the export
+dirty in Postgres, and the server resumes it at boot. Typed columns derive
 from the SQLite declared types (INTEGER/REAL → number, BOOLEAN → checkbox,
 DATE/DATETIME → date/datetime, else text).
 
@@ -330,6 +545,25 @@ view over data it already holds (or data baked into its bundle).
 > If your app needs brain data, it is for **members**: set the app to team
 > level and they run it from their own login.
 
+A public app is **not listed** for members (contact shares plan P0,
+2026-10-01): Public means "anyone with the link" for an app as for every
+other kind, so it is in no member launcher and not in the member home's
+app list. A member who has the link still runs it, read only.
+
+### Shared with a contact (one outsider)
+
+Share, "Share with contact": pick one or more contacts whose sharing is on
+(docs/contacts.md section 2b). Each gets their own link, opened with their
+own code; the app's level does not change, so an admin app stays admin and
+the team never sees it. The contact reads the app's SQLite
+(`host.db.query`). With **Can write** on (per contact, off by default) the
+contact also writes it (`host.db.exec`): the write schedules the app-table
+export sync like a member's. Never brain tools: `host.tools.call` is
+refused, except for an outside (MCP or http) tool the app declares that an
+admin switched "External access" on for (docs/member-logins.md). An open
+link never calls a tool. The app's Activity tab names the contact. See
+docs/sharing.md section 4b.
+
 ### Team links (retired)
 
 A team link used to ask the visitor for a **team token** (a Contact's code),
@@ -353,17 +587,19 @@ PUBLISHED build only and never edit it.
 - **Tools:** a declared **read-only built-in** tool that an enabled tool
   group at team level or lower holds (usually `team-read`), with no
   confirmation. It runs at the team level: it reads team-, client- and
-  public-level items, never admin ones. Recipe, http, shell and MCP tools are
-  refused, so are built-ins that write, and so are `my_items_list`,
+  public-level items, never admin ones. Recipe and shell tools are refused,
+  so are http and MCP tools unless an admin switched "External access" on
+  for them, so are built-ins that write, and so are `my_items_list`,
   `my_item_open`, `summarize_text`, `search_chunks`, `team_request_create`
   and `read_result`. `app_tools_set`, `app_publish` and `access_set` list a
   warning for each declared tool members would be refused.
 - **Data:** `host.db.query` and `host.db.exec` both work on a team- or
   client-level app (unless an admin marked it informational); on a
   public-level app members only read. The database is shared
-  by the whole team (not one per member): design for that (put who wrote a
-  row in the row if it matters; the app cannot learn the member from the
-  host yet).
+  by the whole team (not one per member): design for that. To record which
+  member wrote a row, fill its columns with `:host_me_id` and
+  `:host_me_name` in the SQL (see "Who is running the app"); `host.me()`
+  shows the member their own name.
 - **Home app:** the app pinned as the hub (Team admin > Settings) is also the
   members' home page while it is at team level or lower with a green
   published build. `host.hub.get()` answers there too: sections are the

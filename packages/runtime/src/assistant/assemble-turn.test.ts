@@ -62,25 +62,39 @@ vi.mock('../agent', () => ({
   }),
 }));
 
-vi.mock('@mantle/content', () => ({
-  buildIdentityContext: vi.fn(async () => {
-    if (h.identityError) throw h.identityError;
-    return h.identity;
-  }),
-  buildJournalTier1: vi.fn(async () => 'TIER1'),
-  journalTiersOf: (m?: { journal_tiers?: string; notes_target?: string }) =>
-    m?.notes_target !== 'persona'
-      ? 'live'
-      : m?.journal_tiers === 'off' || m?.journal_tiers === 'live'
-        ? m.journal_tiers
-        : 'shadow',
-  buildTimeContextLine: () => 'TIME-LINE',
-  resolveThinkingBudget: () => h.thinkingBudget,
-  // Mirrors the real tier mapping (1024→low, 4096→medium, 8000→high) closely
-  // enough for the gate assertions below; the mapping itself is unit-tested in
-  // @mantle/content, not here.
-  resolveThinkingEffort: () => (h.thinkingBudget > 0 ? 'medium' : undefined),
-}));
+vi.mock('@mantle/content', async () => {
+  // The precedence rule itself is the real one (content-core); only the
+  // profile half is stubbed from the hoisted budget.
+  const real = await vi.importActual<typeof import('@mantle/content-core/profile-projections')>(
+    '@mantle/content-core/profile-projections',
+  );
+  const profileThinking = (prefs: unknown) =>
+    prefs && h.thinkingBudget > 0
+      ? { budget: h.thinkingBudget, effort: 'medium' as const }
+      : { budget: 0, effort: undefined };
+  return {
+    profileThinking,
+    resolveAgentThinking: (agent: { thinkingEffort?: string | null }, prefs: unknown) =>
+      real.applyAgentThinking(agent, profileThinking(prefs)),
+    buildIdentityContext: vi.fn(async () => {
+      if (h.identityError) throw h.identityError;
+      return h.identity;
+    }),
+    buildJournalTier1: vi.fn(async () => 'TIER1'),
+    journalTiersOf: (m?: { journal_tiers?: string; notes_target?: string }) =>
+      m?.notes_target !== 'persona'
+        ? 'live'
+        : m?.journal_tiers === 'off' || m?.journal_tiers === 'live'
+          ? m.journal_tiers
+          : 'shadow',
+    buildTimeContextLine: () => 'TIME-LINE',
+    resolveThinkingBudget: () => h.thinkingBudget,
+    // Mirrors the real tier mapping (1024→low, 4096→medium, 8000→high) closely
+    // enough for the gate assertions below; the mapping itself is unit-tested in
+    // @mantle/content, not here.
+    resolveThinkingEffort: () => (h.thinkingBudget > 0 ? 'medium' : undefined),
+  };
+});
 
 vi.mock('../heartbeats', () => ({
   buildOpenHeartbeatContext: (open: Array<{ slug: string }>) =>
@@ -355,6 +369,62 @@ describe('assembleResponderTurn — budgets, delegation, loop overrides', () => 
     const off = await assembleResponderTurn({ ...BASE, agent: agent(), withThinking: false });
     expect(on.thinkingBudget).toBe(2048);
     expect(off.thinkingBudget).toBeUndefined();
+  });
+
+  describe('per-agent thinking effort', () => {
+    it('inherit (null) keeps the profile budget + effort exactly', async () => {
+      const a = await assembleResponderTurn({ ...BASE, agent: agent({ thinkingEffort: null }) });
+      expect(a.thinkingBudget).toBe(2048);
+      expect(a.thinkingEffort).toBe('medium');
+      expect(a.inheritThinkingBudget).toBe(2048);
+    });
+
+    it('inherit with the profile at Off sends no reasoning', async () => {
+      h.thinkingBudget = 0;
+      const a = await assembleResponderTurn({ ...BASE, agent: agent() });
+      expect(a.thinkingBudget).toBe(0);
+      expect(a.thinkingEffort).toBeUndefined();
+    });
+
+    it('an own tier wins over the profile, and the profile still goes to delegates', async () => {
+      const a = await assembleResponderTurn({ ...BASE, agent: agent({ thinkingEffort: 'high' }) });
+      expect(a.thinkingBudget).toBe(8000);
+      expect(a.thinkingEffort).toBe('high');
+      expect(a.inheritThinkingBudget).toBe(2048);
+    });
+
+    it('an own tier applies even when the profile is at Off', async () => {
+      h.thinkingBudget = 0;
+      const a = await assembleResponderTurn({ ...BASE, agent: agent({ thinkingEffort: 'low' }) });
+      expect(a.thinkingBudget).toBe(1024);
+      expect(a.thinkingEffort).toBe('low');
+      expect(a.inheritThinkingBudget).toBe(0);
+    });
+
+    it("own 'off' turns reasoning off over a profile that has it on", async () => {
+      const a = await assembleResponderTurn({ ...BASE, agent: agent({ thinkingEffort: 'off' }) });
+      expect(a.thinkingBudget).toBe(0);
+      expect(a.thinkingEffort).toBeUndefined();
+    });
+
+    it('team (withThinking=false): inherit stays off, an own tier applies', async () => {
+      const inherit = await assembleResponderTurn({
+        ...BASE,
+        agent: agent(),
+        withThinking: false,
+      });
+      expect(inherit.thinkingBudget).toBeUndefined();
+      expect(inherit.thinkingEffort).toBeUndefined();
+      expect(inherit.inheritThinkingBudget).toBeUndefined();
+      const own = await assembleResponderTurn({
+        ...BASE,
+        agent: agent({ thinkingEffort: 'medium' }),
+        withThinking: false,
+      });
+      expect(own.thinkingBudget).toBe(4096);
+      expect(own.thinkingEffort).toBe('medium');
+      expect(own.inheritThinkingBudget).toBeUndefined();
+    });
   });
 
   it('allowDelegation=false (team fail-closed) empties delegate_to', async () => {

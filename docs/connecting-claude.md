@@ -1,13 +1,16 @@
 # Connecting Claude to your Mantle (MCP)
 
-How to wire Claude Desktop or Claude Code onto your Mantle so Claude can
-search your brain, read mail, manage tasks/notes/events, walk the entity
-graph, and answer Telegram, using the bundled MCP server. One-time setup
-per client machine; after that the tools are simply present every launch.
+How to wire claude.ai, Claude Desktop or Claude Code onto your Mantle so
+Claude can search your brain, read mail, manage tasks/notes/events, walk the
+entity graph, and answer Telegram, using the bundled MCP server. The user-facing
+steps are in [`guide/07-api/01-connect-claude.md`](./guide/07-api/01-connect-claude.md);
+this page is the developer detail.
 
-**What this is (and isn't).** [`server/mcp`](../server/mcp/src/server.ts) is a
-**tool surface**, not a chat channel: ~70 tools of raw, persona-less access to
-your data, including the full Toolsmith set (`api_tool_*`, `web_fetch`,
+**What this is (and isn't).** The MCP server is a **tool surface**, not a
+chat channel: raw, persona-less access to your data, the same tools an agent
+can be granted (the list is built by `registerMantleTools` in
+[`packages/mcp-core/src/build-server.ts`](../packages/mcp-core/src/build-server.ts)),
+including the full Toolsmith set (`api_tool_*`, `web_fetch`,
 groups + grants), so a Claude Code session can read a service's API docs and
 author/test/deploy new agent tools on your own subscription instead of
 Mantle's metered key. See [`toolsmith.md`](./toolsmith.md). A conversation you have in Claude Desktop does _not_ enter the
@@ -18,23 +21,44 @@ extractor ingests, embeds, and indexes it like any other content. Logging a
 `journal` from Claude Desktop literally teaches your in-app assistant who you
 are.
 
-## The security model: read this first
+## Two transports
 
-The server is **stdio-only, on purpose**. There is no port, no token, no
-login: _whoever can spawn the process gets the owner's full data access._
-That makes the setup below trivially simple and safe on machines you control
-, and means you must **never** wrap it in a network listener "to make it
-easier". The remote shape below uses SSH precisely so your existing SSH key
-remains the entire auth layer. (An HTTP transport with a real auth layer is
-the documented future path for phones / one-click connectors; it is
-intentionally not wired today.)
+Both register the same tools from `@mantle/mcp-core`, so they cannot drift.
 
-Owner resolution: with a single `auth.users` row (the normal self-hosted
-state) the server scopes to it automatically. Multiple rows → set
+| | Remote connector (HTTP) | Local process (stdio) |
+|---|---|---|
+| Entry | `https://<your host>/api/mcp` ([`route.ts`](../server/web/app/api/mcp/route.ts)) | [`server/mcp`](../server/mcp/src/server.ts), spawned by the client |
+| Turned on by | **Settings > MCP > Remote MCP connector**. Off by default; while off the endpoint answers 404. | Nothing. The client spawns the process. |
+| Auth | OAuth sign-in and consent. A missing or bad token gets a 401 that points the client at the authorization server. | None. Whoever can spawn the process has the owner's full data access. |
+| Who it acts as | The login that signed in. An admin gets the owner's tools; a member or client gets their own role's tools at their level ([`mcp-as-a-login.md`](./mcp-as-a-login.md)). | The owner. |
+| Reach | claude.ai, Claude Desktop, Claude Code, phones | Claude Desktop and Claude Code, local or over SSH |
+| Limits | Rate limited per IP and per login. `run_terminal` off unless `MANTLE_MCP_TERMINAL=1`. | `run_terminal` on unless `MANTLE_MCP_TERMINAL=0`. |
+
+Use the remote connector unless you need a client with no network path to the
+box. Never wrap the stdio server in your own network listener: it has no auth
+layer of its own. The SSH shape below keeps your SSH key as the whole auth layer.
+
+Owner resolution for stdio: with a single `auth.users` row (the normal
+self-hosted state) the server scopes to it automatically. Multiple rows → set
 `ALLOWED_USER_ID` in the env the server reads; it validates the UUID exists
 at boot.
 
 ## Pick your shape
+
+### Remote connector (the usual shape)
+
+Needs the box on a domain with HTTPS and `MANTLE_PUBLIC_URL` set to it.
+
+1. In Jackdaw, **Settings > MCP**: turn on **Remote MCP connector**, copy the
+   **Connector URL**, press **Check endpoint**.
+2. claude.ai or Claude Desktop: **Settings > Connectors > Add custom
+   connector**, paste the URL, sign in and approve.
+3. Claude Code: `claude mcp add --transport http --scope user mantle https://mantle.example.com/api/mcp`,
+   then `/mcp` inside Claude Code to sign in.
+
+Connected clients are listed under **Settings > MCP**, each with **Disconnect**.
+
+### Local process (stdio)
 
 The command Claude spawns depends on where your Mantle runs. Three shapes:
 
@@ -120,7 +144,7 @@ Merge the `mcpServers` key into the existing file (don't clobber other
 keys), then fully restart Claude Desktop. The server appears as `mantle`
 in the tools menu.
 
-- **Claude Code:** one command, no file editing:
+- **Claude Code (stdio over SSH):** one command, no file editing:
 
 ```bash
 claude mcp add mantle -- ssh my-mantle docker exec -i mantle_web pnpm -C server/mcp start
@@ -143,9 +167,11 @@ If instead you see `No account yet`, sign up in the web app first. If
 ## What you get
 
 **Full parity with the in-brain agents.** Every tool a Mantle agent can be
-granted is on this surface. The client IS the owner, authenticated, driving
-their own brain, so it is not given a smaller catalog than an agent running
-inside the box. Two exceptions, both named below.
+granted is on this surface. An admin client IS the owner, authenticated,
+driving their own brain, so it is not given a smaller catalog than an agent
+running inside the box. Two exceptions, both named below. (A member or client
+login over the remote connector gets its role's tools instead; see
+[`mcp-as-a-login.md`](./mcp-as-a-login.md).)
 
 | Area                   | Tools                                                                                                                                                                                                                                                                                  |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -158,7 +184,7 @@ inside the box. Two exceptions, both named below.
 | Sandboxes              | `sandbox_create` / `sandbox_exec` / `sandbox_list` / `sandbox_stop` / `sandbox_rm` / `sandbox_export` / `sandbox_publish` / `sandbox_mcp_*` — isolated Ubuntu containers to run code in (docs/sandboxes.md); needs the `sandboxes` compose profile, and says so plainly when it is off |
 | Research               | `web_search`, `web_search_pro`, `web_fetch`, `web_map`, `web_crawl`, `video_ingest` — these reach the open internet and bill your keys                                                                                                                                                 |
 | Compute                | `calculate`, `formula_*`                                                                                                                                                                                                                                                               |
-| Apps                   | `app_*` (author, build, publish), `app_db_list`, `app_db_query`                                                                                                                                                                                                                        |
+| Apps                   | `app_authoring_guide` (read first: `host.me()`, `:host_me_*`, host.db, host.tools.call, level rules), `app_*` (author, build, publish), `app_db_list`, `app_db_query`                                                                                                                  |
 | Toolsmith              | `api_tool_*`, `tool_group_*`, `agent_*`, `recipe_tool_*` (writes gated by `MANTLE_MCP_TOOLSMITH_WRITE`)                                                                                                                                                                                |
 | Runs                   | `run_plan`, `run_append`, `run_state`, `run_cancel`, `run_audit` (creation also needs `MANTLE_RUNS=1` on the box)                                                                                                                                                                      |
 | Team chat (owner side) | `team_chat_list`, `team_chat_read`, `team_access_list`                                                                                                                                                                                                                                 |
@@ -168,7 +194,7 @@ inside the box. Two exceptions, both named below.
 | Federation             | `peer_list`, `peer_query`, `peer_search_chunks`, `peer_node_get`                                                                                                                                                                                                                       |
 | Owner state            | `update_persona`, `set_timezone`, `secret_create`, `node_share`, `node_unshare`, `process_extraction`, `brain_capacity`                                                                                                                                                                |
 | Models                 | `model_catalog`, `model_pool_*`, `openrouter_*`, `recall_eval`                                                                                                                                                                                                                         |
-| Responder              | `ask_responder`, `ask_as_responder`, `invoke_agent`                                                                                                                                                                                                                                    |
+| Responder              | `ask_responder`, `ask_as_responder`, `responder_turn_input`, `responder_turn_record`, `invoke_agent`                                                                                                                                                                                   |
 | Location               | `location_save`, `location_nearby`, `location_distance`, `route_map`                                                                                                                                                                                                                   |
 
 ### The two that are not on it
@@ -192,7 +218,7 @@ memory: …"_, _"approve the pending tool calls if they look sane"_.
 
 ### Talking to a responder agent
 
-Everything above is _persona-less_ raw data access. Two tools are the
+Everything above is _persona-less_ raw data access. Three tools are the
 exception, and the difference between them matters.
 
 #### `ask_responder` — the brain answers, and the rules are enforced
@@ -257,7 +283,97 @@ own work, with your own model, without a server round trip per turn.
 > the loop guards all stay on the server. When the rules must actually hold,
 > use `ask_responder` and let the brain run the turn.
 
-Contrast both with the in-app Agent Studio sandbox
+#### `responder_turn_input`: you answer, with what the agent would see
+
+`ask_as_responder` gives you the persona only. A built-in agent gets much more
+per message: retrieval for that message (facts, passages, content hits,
+relations, Journal entries), the conversation digests, the corpus map, the
+history window, and its tool schemas. `responder_turn_input` returns all of it,
+for one message, so your own model (a Claude Code subagent on Sonnet or Haiku,
+on your own subscription) can answer as the agent and be tested on the same
+input. No model call, no tool run, nothing written to the conversation. One
+trace holds the retrieval snapshot (`trace_id`, see `/debug/context`).
+
+It runs the same read path as `ask_responder` (shared code, not a copy), so the
+two see the same turn. Multi-turn is caller-held, as for `ask_responder`: resend
+your transcript in `history`. It is cut to the agent's own history window
+(`memory_config.history_limit`, default 20), as a real turn's is.
+
+What comes back:
+
+| Field         | What it is                                                                                            |
+| ------------- | ----------------------------------------------------------------------------------------------------- |
+| `messages`    | The prompt in order: system blocks, history, the new message. `cached: true` marks the stable prefix. |
+| `tools`       | The agent's tools (`read_result` included). `brief` by default: name and first sentence.              |
+| `schemas`     | Full schemas for the tools named in `schemas_for`.                                                    |
+| `loop`        | Iteration limit, tool-call caps, thinking budget, delegation list, model params. Reported only.       |
+| `context`     | Counts: facts, passages, content hits, digests, map entries, relations, and the delegation hint.      |
+| `differences` | What still differs from a real turn (below).                                                          |
+
+Sizes on a big responder (dev, 2026-10-05, 143 tools): the messages are about
+90k characters (the persona prompt about 40k, the corpus map about 24k), and
+the full tool schemas about 165k. That was measured before 0.238.17, which
+cut the corpus map's default budget to 6,500 characters. That is why `tools`
+defaults to `brief`.
+After the first call, pass `omit_cached: true` to drop the prefix blocks that
+did not change, and `tools: "names"` or `"none"`.
+
+What still differs, and why it cannot be closed from the brain side:
+
+- Your client adds its own system prompt and its own tools around these
+  messages. The agent gets neither.
+- Your model answers, not the agent's. The thinking budget and params are
+  reported, not applied.
+- Your tool calls run on the MCP surface, not in the agent loop. Most names
+  and arguments match (on dev: 138 of 143 tools exist by name, 130 with the
+  same arguments). The agent's `search_nodes` is `search` here, and the page,
+  table and file reads return other shapes. Confirm gates, `/pending` parking,
+  the loop guards, the tool-call caps, result spill and the delegation
+  allowlist do not apply.
+- The loop's mid-turn nudges (budget spent, iteration limit, guard blocks) are
+  not sent.
+- As for `ask_responder`: no open-heartbeat block, no device-location line,
+  and the digests and history recall come from the stored conversation.
+
+Who can call it: the owner's connector only. A peer bound to the owner gets it
+only when the owner names it (it is in the peer risky list). Member and client
+logins do not get it, and the team and client responders are refused: their
+turn is assembled differently (no owner identity, no thinking, the
+private-reads gate), so this tool would describe a turn that never runs.
+
+##### `responder_turn_record`: keep the turn you answered
+
+By default nothing you answer as the agent is kept. When the exchange should
+stay, call `responder_turn_record` with the user's `message`, your `reply`
+and the `model` that wrote it (required). It writes the two turns into the
+agent's conversation through the same writer a web turn uses, so the
+Assistant window shows them, and the history window, the digests and
+`replay_window` read them from then on. Pass `input_trace_id` from
+`responder_turn_input` to link the two, `client` to name your client, and
+`tools_used` to list the tools you called (kept as your claim, not as the
+agent's tool ledger).
+
+The rows are marked: channel `mcp` (a badge in the Assistant window), your
+model in the reply's `model`, and `data.authored_by` with the model and the
+client. A trace per recorded turn (surface `mcp_turn_record`, subject the
+user's turn) names who answered.
+
+What fires, and what does not:
+
+- No model call, no tool run, no phone push (the push worker skips channel
+  `mcp`), no reminder-channel change, no follow-up suggestion.
+- No persona notes: the reflector neither wakes for nor reads `mcp` turns, so
+  the agent never learns its style from a test model's replies.
+- The triggers every conversation turn fires still fire: the live window
+  refresh and the summarizer (it rolls the turns into digests; digests are
+  never read into facts). Conversation turns are not nodes, so nothing
+  reaches fact extraction.
+
+Same access as `responder_turn_input`: the owner's connector only (a peer
+needs it named), and the team and client responders are refused.
+`ask_responder` still writes nothing.
+
+Contrast all three with the in-app Agent Studio sandbox
 ([`agent-studio.md`](./agent-studio.md)), which composes the same prompt but
 makes a plain model call with tools and memory OFF.
 
@@ -269,6 +385,6 @@ makes a plain model call with tools and memory OFF.
   Desktop is the same row the web app shows, and the extractor will index
   whatever Claude writes. For a responder probe that cannot write, use
   `ask_responder` with `read_only: true`.
-- **One config per client machine.** stdio means there's nothing to
-  centrally provision; each device that should reach the Mantle needs SSH
-  access and the config blob once.
+- **stdio is one config per client machine.** Each device needs SSH access
+  and the config once. The remote connector needs only its URL and a sign-in,
+  and **Settings > MCP** can disconnect a client at any time.

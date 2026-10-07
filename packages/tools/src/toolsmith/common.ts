@@ -8,7 +8,13 @@
 import { and, eq } from 'drizzle-orm';
 import { db, toolGroups, tools, type ToolHandler } from '@mantle/db';
 import { listApiKeys } from '@mantle/api-keys';
-import { collectParamNames, collectSecretRefs, refKey, type HttpHandler } from '../http-template';
+import {
+  collectOauthRefs,
+  collectParamNames,
+  collectSecretRefs,
+  refKey,
+  type HttpHandler,
+} from '../http-template';
 import {
   applyIntegrationInheritance,
   getGroupIntegration,
@@ -99,6 +105,18 @@ export async function handlerWarnings(
           `secret ref {{secret:${refKey(ref)}}} has no matching vault entry — ask the user to add it under Settings → API keys (service '${ref.service}', label '${ref.label}')`,
         );
       }
+    }
+  }
+  for (const slug of collectOauthRefs(handler)) {
+    const [group] = await db
+      .select({ integration: toolGroups.integration })
+      .from(toolGroups)
+      .where(and(eq(toolGroups.ownerId, ownerId), eq(toolGroups.slug, slug)))
+      .limit(1);
+    if (!group?.integration?.oauth2) {
+      warnings.push(
+        `oauth ref {{oauth:${slug}}} names no group with oauth2 configured. Set oauth2 on group '${slug}' with tool_group_ensure, or every call fails`,
+      );
     }
   }
   return warnings;
@@ -233,14 +251,21 @@ export async function integrationWarnings(
   ownerId: string,
   meta: ToolGroupIntegration,
 ): Promise<string[]> {
-  if (!meta.secretRef) return [];
+  const refs: Array<[string, string]> = [];
+  if (meta.secretRef) refs.push(['secret_ref', meta.secretRef]);
+  if (meta.oauth2) {
+    refs.push(['oauth2.client_id_ref', meta.oauth2.clientIdRef]);
+    refs.push(['oauth2.client_secret_ref', meta.oauth2.clientSecretRef]);
+  }
+  if (refs.length === 0) return [];
   const vault = await listApiKeys(ownerId);
   const have = new Set(vault.map((k) => `${k.service}/${k.label}`));
-  if (have.has(meta.secretRef)) return [];
-  const [service, label] = meta.secretRef.split('/');
-  return [
-    `secret_ref '${meta.secretRef}' has no matching vault entry — ask the owner to add it under Settings → API keys (service '${service}', label '${label}'); until then every tool in this group will fail at call time`,
-  ];
+  return refs
+    .filter(([, ref]) => !have.has(ref))
+    .map(([field, ref]) => {
+      const [service, label] = ref.split('/');
+      return `${field} '${ref}' has no matching vault entry — ask the owner to add it under Settings → API keys (service '${service}', label '${label}'); until then every tool in this group will fail at call time`;
+    });
 }
 
 export function summarizeHandler(h: ToolHandler): Record<string, unknown> {

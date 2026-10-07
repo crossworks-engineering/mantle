@@ -432,6 +432,9 @@ describe.skipIf(!URL)('client email sign-in codes', () => {
       select ${login.fill}, ${login.fill}, 'email', ${tag} || '-' || g, ${at(t).toISOString()}::timestamptz, ${at(t - 60 * MIN).toISOString()}::timestamptz
         from generate_series(1, ${cap - 1}) g`);
     expect(await c.clientCodesSentLast24h(at(t))).toBe(cap - 1);
+    // Codes stamped after `now` are no part of its window: these future rows
+    // never cap another file's codes made at the real time.
+    expect(await c.clientCodesSentLast24h(at(t - 2 * HOUR))).toBe(0);
     expect((await ask('ada', { ip: '198.51.100.6', t })).kind).toBe('send');
     expect(await ask('bea', { ip: '198.51.100.6', t })).toMatchObject({
       kind: 'skip',

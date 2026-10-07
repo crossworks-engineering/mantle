@@ -29,12 +29,18 @@ export const OWNER_DOCUMENT_CEILING_BYTES = 128 * MB;
  *  fields each, so a much lower ceiling. */
 export const AUTH_BODY_CEILING_BYTES = 64 * 1024;
 
+/** The public share routes (/s/<token>/**): anyone with a link can post
+ *  there, so a small ceiling. The app db-broker's largest honest body is a
+ *  20 KB statement with up to 999 parameters (apps audit S2). */
+export const SHARE_BODY_CEILING_BYTES = 1 * MB;
+
 /** Routes that stream an upload (multipart or raw) under their own cap. */
 const UPLOAD_PATHS: readonly RegExp[] = [
   /^\/api\/files\/files$/,
   /^\/api\/assistant\/turn$/,
   /^\/api\/assistant\/transcribe$/,
   /^\/api\/tables\/[^/]+\/import$/,
+  /^\/api\/apps\/import-package$/,
   /^\/api\/profile\/(photo|logo)$/,
   /^\/api\/member\/space-files$/,
   /^\/api\/admin\/space-files$/,
@@ -59,6 +65,7 @@ const OWNER_DOCUMENT_PREFIXES: readonly string[] = [
 export function bodyCeilingFor(path: string): number | null {
   if (UPLOAD_PATHS.some((re) => re.test(path))) return null;
   if (path === '/api/auth' || path.startsWith('/api/auth/')) return AUTH_BODY_CEILING_BYTES;
+  if (path.startsWith('/s/')) return SHARE_BODY_CEILING_BYTES;
   if (OWNER_DOCUMENT_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`))) {
     return OWNER_DOCUMENT_CEILING_BYTES;
   }
@@ -99,8 +106,14 @@ export function declaredOver(headers: Headers, maxBytes: number): boolean {
  * ceiling. Throws BodyTooLargeError.
  */
 export async function readBodyCapped(req: Request, maxBytes: number): Promise<string> {
+  return (await readBytesCapped(req, maxBytes)).toString('utf8');
+}
+
+/** The body's bytes, read under the same rule as `readBodyCapped` (a raw
+ *  upload route reads its own cap this way). Throws BodyTooLargeError. */
+export async function readBytesCapped(req: Request, maxBytes: number): Promise<Buffer> {
   if (declaredOver(req.headers, maxBytes)) throw new BodyTooLargeError(maxBytes);
-  if (!req.body) return '';
+  if (!req.body) return Buffer.alloc(0);
   const reader = req.body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
@@ -114,7 +127,7 @@ export async function readBodyCapped(req: Request, maxBytes: number): Promise<st
     }
     chunks.push(value);
   }
-  return Buffer.concat(chunks).toString('utf8');
+  return Buffer.concat(chunks);
 }
 
 /** A request's JSON body read under `maxBytes` (the route's ceiling), or

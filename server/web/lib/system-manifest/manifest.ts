@@ -84,7 +84,11 @@ export type ManifestToolGroup = {
   /** The group's level (tool_groups.audience). Omitted = admin, the column
    *  default. A group with a level is PRODUCT-owned at that level: seeded at
    *  it and converged back to it by the boot reconcile, because the level is
-   *  what the group is for (client-read exists to be held by a client agent). */
+   *  what the group is for (client-read exists to be held by a client agent,
+   *  team-read and formulas-eval by the team responder once an admin opens
+   *  it). A level here only says who MAY hold the group; granting it to an
+   *  agent stays an admin's act. Giving a group a level widens who can use
+   *  its tools: manifest.test.ts pins the list. */
   level?: ViewerLevel;
 };
 
@@ -144,7 +148,8 @@ export type ManifestAgent = {
   priority: number;
   /** The agent's level (agents.audience). Omitted = admin, the column
    *  default, and the level is then operator-owned (team-responder ships at
-   *  admin and an admin lowers it). Set = product-owned: seeded at it, so the
+   *  admin, closed to members, and an admin lowers it in one step:
+   *  docs/access-levels.md section 5). Set = product-owned: seeded at it, so the
    *  agent works on every brain with no manual step (client-responder at
    *  client, client logins C4). */
   level?: ViewerLevel;
@@ -221,12 +226,18 @@ const PAGE_AUTHORING_TOOL_SLUGS = PAGE_TOOL_SLUGS.filter(
 /** Table authoring set: every table tool except the whole-table delete (that
  *  rides `table-admin`). Row/column deletes stay — they're routine grid editing. */
 const TABLE_AUTHORING_TOOL_SLUGS = TABLE_TOOL_SLUGS.filter((s) => s !== 'table_delete');
-/** App authoring set for the `apps` group: every app tool except whole-app
- *  delete + publish (those ride the `app-admin` group, the Appsmith specialist
- *  only). No overlap between `apps` and `app-admin`. */
-const APP_AUTHORING_TOOL_SLUGS = APP_TOOL_SLUGS.filter(
-  (s) => !['app_delete', 'app_publish'].includes(s),
-);
+/** The app tools that change what is live or destroy history: whole-app
+ *  delete, publish, and the snapshot restore and delete. They ride the
+ *  `app-admin` group (the Appsmith specialist only). */
+const APP_ADMIN_TOOL_SLUGS = [
+  'app_delete',
+  'app_publish',
+  'app_snapshot_restore',
+  'app_snapshot_delete',
+];
+/** App authoring set for the `apps` group: every other app tool (taking and
+ *  listing snapshots included). No overlap between `apps` and `app-admin`. */
+const APP_AUTHORING_TOOL_SLUGS = APP_TOOL_SLUGS.filter((s) => !APP_ADMIN_TOOL_SLUGS.includes(s));
 
 // ── Skills ───────────────────────────────────────────────────────────────────
 
@@ -682,8 +693,9 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
   {
     slug: 'app-admin',
     name: 'App admin',
-    description: 'Destructive + go-live app ops (delete, publish) — the Appsmith specialist only.',
-    toolSlugs: ['app_delete', 'app_publish'],
+    description:
+      'Destructive + go-live app ops (delete, publish, restore from a snapshot, delete a snapshot) — the Appsmith specialist only.',
+    toolSlugs: APP_ADMIN_TOOL_SLUGS,
   },
   {
     slug: 'app-data',
@@ -846,6 +858,10 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     // Authoring is a different responsibility from asking. A team member should
     // be able to get a computed release rate with its derivation; writing a new
     // calculation model into the owner's brain is the mathematician's job.
+    // TEAM level on every brain: migration 0159 set it by UPDATE, which only
+    // reached brains that existed then; the manifest is what a fresh install
+    // (and the boot reconcile) reads.
+    level: 'team',
     toolSlugs: ['formula_list', 'formula_get', 'formula_evaluate'],
   },
   {
@@ -1061,7 +1077,14 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'federation',
     name: 'Federation',
     description: "Query other people's Mantles for data they've shared (docs/federation.md).",
-    toolSlugs: ['peer_list', 'peer_query', 'peer_search_chunks', 'peer_node_get'],
+    toolSlugs: ['peer_list', 'peer_query', 'peer_search_chunks', 'peer_node_get', 'peer_tools'],
+  },
+  {
+    slug: 'federation-write',
+    name: 'Federation (call and write)',
+    description:
+      "Call a peer's tools and copy files to it, as the login the peer binds this brain to (peer_call, peer_file_copy). It can WRITE on the peer when the peer's owner turned write on. Attached to no agent: the owner uses it over MCP, or grants it by hand.",
+    toolSlugs: ['peer_call', 'peer_file_copy'],
   },
   {
     slug: 'location',
@@ -1091,7 +1114,12 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'team-read',
     name: 'Team reads (member-facing)',
     description:
-      "The team responder's entire tool surface: read-only access across the brain (search, files, notes, pages, tables, events, tasks, contacts, app data) — including `show_image`, which renders a file the member could already read — plus its ONE write action — filing a team change request into the specialist review queue. email_*/journal_* are ALSO granted here but gated at runtime by the owner's `teamPrivateReads` switch (default OFF — see run-team-turn.ts / TEAM_PRIVATE_READ_SLUGS), so the owner's private corpus is off-limits unless explicitly opted in. Deliberately excludes export_node (bulk exfiltration ease), replay_window (replays the OWNER's private conversations), all other writes, delegation, terminal, http, and send tools. Non-private reads are brain-wide BY DESIGN (brain = the trust boundary).",
+      "The team responder's entire tool surface: read-only access across the brain (search, files, notes, pages, tables, app data), including `show_image`, which renders a file the member could already read, plus its ONE write action: filing a team change request into the specialist review queue. TEAM level. The reads a team-level role may never make (the knowledge graph, events, tasks, contacts, email_*/journal_*) are not here: they sit in `team-read-admin`. Deliberately excludes export_node (bulk exfiltration ease), replay_window (replays the OWNER's private conversations), all other writes, delegation, terminal, http, and send tools. The reads are bounded by the level of the agent that holds the group: a team-level responder reads only items at team level or below. They are brain-wide only while the responder runs at admin.",
+    // TEAM level on every brain (see formulas-eval): without it a fresh
+    // install could not lower team-responder to team in one step, the group
+    // sat above it. Every tool here runs on the team viewer role
+    // (team-groups.viewer.db.test.ts).
+    level: 'team',
     toolSlugs: [
       // memory-core reads
       'search_nodes',
@@ -1142,10 +1170,17 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     ],
   },
   {
+    slug: 'my-space-write',
+    name: 'Own-space drafts (write)',
+    description:
+      'Create notes, pages and files as DRAFTS in the personal space of the member or client a turn serves, and submit one for review. Nothing reaches the brain until an admin accepts it. Offered by the login MCP surface when an admin turned write on for that login (or its peer). Attached to no agent (admin level: the login surface adds these tools itself, never through a group).',
+    toolSlugs: ['my_note_create', 'my_page_create', 'my_file_upload', 'my_item_submit'],
+  },
+  {
     slug: 'team-read-admin',
     name: 'Team reads that need admin level',
     description:
-      "The team responder's reads that touch what a team-level role may never read: the knowledge graph (entity names are learned from every source, email included), events, tasks, contacts, and the private corpus (email_* / journal_*, still gated by `teamPrivateReads`). ADMIN level (member logins Phase 0b): the responder holds it while it runs at admin; lowering the responder to team first means removing this group, and the run-time level cap drops it regardless.",
+      "The team responder's reads that touch what a team-level role may never read: the knowledge graph (entity names are learned from every source, email included), events, tasks, contacts, and the private corpus (email_* / journal_*, still gated by `teamPrivateReads`). ADMIN level (member logins Phase 0b): the responder holds it while it is at admin; lowering the responder to team takes this group off it (access_set with drop_groups_above, or remove it by hand first), and the run-time level cap drops it regardless.",
     toolSlugs: [
       // A folder-description WRITE: a team-level role never writes.
       'folder_describe',

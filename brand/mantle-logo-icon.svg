@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg width="100%" height="100%" viewBox="0 0 2000 2000" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:affinity="https://www.affinity.studio/" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;">
+    <rect id="Mantle-Logo-Icon" affinity:id="Mantle Logo Icon" x="0" y="0" width="2000" height="2000" style="fill:none;"/>
+    <g id="Mantle-Logo-Icon1" affinity:id="Mantle Logo Icon">
+        <g>
+            <g transform="matrix(1.342282,0,0,1.234568,-11691.275168,-469.135802)">
+                <path d="M9488.584,1999.19C9477.45,1999.728 9466.254,2000 9455,2000C9443.746,2000 9432.55,1999.728 9421.416,1999.19L9488.584,1999.19Z" style="fill:rgb(200,60,4);"/>
+            </g>
+            <g transform="matrix(1.342282,0,0,1.234568,-11691.275168,-469.135802)">
+                <path d="M8710,1190C8710,742.949 9043.823,380 9455,380C9866.177,380 10200,742.949 10200,1190L8710,1190Z" style="fill:rgb(92,30,2);"/>
+            </g>
+            <g transform="matrix(1,0,0,1,-8438,-113)">
+                <circle cx="9438" cy="1113" r="675" style="fill:rgb(200,60,4);"/>
+            </g>
+            <g transform="matrix(1.013171,0,0,1,-8334.346505,0)">
+                <path d="M8226,1000L10200,1000C10200,1116.73 10180.217,1228.816 10143.865,1333L8282.135,1333C8245.783,1228.816 8226,1116.73 8226,1000Z" style="fill:rgb(235,159,19);"/>
+            </g>
+            <g transform="matrix(1.013171,0,0,1,-8334.346505,333)">
+                <path d="M10143.865,1000C10100.588,1124.03 10033.829,1236.862 9949.011,1333L8476.989,1333C8392.171,1236.862 8325.412,1124.03 8282.135,1000L10143.865,1000Z" style="fill:rgb(228,110,8);"/>
+            </g>
+            <g transform="matrix(1.013171,0,0,1,-8334.346505,666)">
+                <path d="M9949.011,1000C9777.435,1194.475 9531.963,1320.638 9257.493,1333L9168.507,1333C8894.037,1320.638 8648.565,1194.475 8476.989,1000L9949.011,1000Z" style="fill:rgb(200,60,4);"/>
+            </g>
+        </g>
+    </g>
+</svg>

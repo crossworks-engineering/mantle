@@ -32,6 +32,7 @@ import type {
 import { ChatHttpError, parseRetryAfterMs } from './retry';
 import { STREAM_IDLE_TIMEOUT_MS, readSSE, safeDelta, streamAbort } from './sse';
 import { StreamingThinkScrubber } from './think-scrubber';
+import { providerFetch } from './provider-fetch';
 
 // ─── Wire types ──────────────────────────────────────────────────────────────
 
@@ -333,7 +334,7 @@ export async function streamOpenAICompatChat(
   if (opts.signal?.aborted) return { text: '', model: opts.model };
 
   const abort = streamAbort(opts.signal, cfg.connectMs);
-  const doFetch = cfg.fetchImpl ?? fetch;
+  const doFetch = cfg.fetchImpl ?? providerFetch;
   const res = await doFetch(cfg.url, {
     method: 'POST',
     headers: cfg.headers,

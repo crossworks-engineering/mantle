@@ -30,7 +30,9 @@ export async function POST(req: Request) {
   const login = await getLoginOr401();
   if (!(login instanceof NextResponse)) {
     const ending = everywhere || login.kind === 'client';
-    if (ending) await endLoginSessions(login.loginId);
+    // Only "everywhere" ends the login's API keys too: a client's plain
+    // sign-out ends its sessions every time, and keys outlive that.
+    if (ending) await endLoginSessions(login.loginId, { endKeys: everywhere });
     auditFireAndForget({
       actorId: login.loginId,
       actorEmail: login.email,

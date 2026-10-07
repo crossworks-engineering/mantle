@@ -17,7 +17,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { getApp, publishApp, NoGreenBuildError } from '@mantle/content';
-import { runAppBuild } from '@/lib/app-build-run';
+import { buildAndStageApp } from '@mantle/tools';
 
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
@@ -30,7 +30,7 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
   // stray artifact behind for a draft that doesn't exist.
   if (!existing.draft) return NextResponse.json({ app: existing });
 
-  const outcome = await runAppBuild(user.id, id);
+  const outcome = await buildAndStageApp(user.id, id);
   if (!outcome) return NextResponse.json({ error: 'app not found' }, { status: 404 });
   if (!outcome.buildOk) {
     return NextResponse.json(

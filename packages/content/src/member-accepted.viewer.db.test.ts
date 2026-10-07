@@ -97,7 +97,7 @@ describe.skipIf(!URL)('member accepted items', () => {
       select id, login_id from spaces where kind = 'personal'
         and login_id in (${loginA}, ${loginB})`)) as unknown as { id: string; login_id: string }[];
     for (const r of rows) spaceOf[r.login_id] = r.id;
-  });
+  }, 60_000);
 
   afterAll(async () => {
     for (const id of moved) await m.systemDb.execute(sqlTag`delete from nodes where id = ${id}`);

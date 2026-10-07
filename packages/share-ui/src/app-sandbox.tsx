@@ -32,21 +32,58 @@ import {
 
 type Status = 'loading' | 'ready' | 'nobuild' | 'error';
 
+/** A tool call the owner must confirm before it runs (apps audit S1): what
+ *  the owner tool broker named in its 409 `reason: 'confirm'` answer, and the
+ *  input the app sent. */
+export type AppToolConfirmRequest = {
+  appId: string;
+  slug: string;
+  name: string;
+  description: string;
+  input: Record<string, unknown>;
+};
+
+/** The most input the browser's own dialog shows. */
+const DEFAULT_CONFIRM_SHOWN = 1200;
+
+/** A tool input as the browser's dialog shows it: whole when it fits, else
+ *  its start and end and a line that says how much is left out. */
+export function confirmInputText(input: unknown, max = DEFAULT_CONFIRM_SHOWN): string {
+  const full = JSON.stringify(input, null, 2) ?? 'null';
+  if (full.length <= max) return full;
+  const half = Math.floor(max / 2);
+  return `${full.slice(0, half)}\n… ${full.length - half * 2} characters not shown …\n${full.slice(-half)}\n\n(The input is ${full.length} characters; only its start and end are shown. Say no if you are not sure what it does.)`;
+}
+
+/** Ask with the browser's own dialog when the host passes no `confirmTool`.
+ *  Plain, but the app keeps working on a host that predates the prop. An
+ *  input too long for the dialog is never cut in silence (apps audit
+ *  2026-10-02, low: the tail was hidden): the start and the end show, and
+ *  the dialog says how much is left out. */
+function defaultConfirmTool(req: AppToolConfirmRequest): Promise<boolean> {
+  if (typeof window === 'undefined' || typeof window.confirm !== 'function') {
+    return Promise.resolve(false);
+  }
+  const shown = confirmInputText(req.input);
+  return Promise.resolve(
+    window.confirm(
+      `This app wants to run "${req.name}" (${req.slug}).\n\n${req.description}\n\nWith:\n${shown}\n\nRun it?`,
+    ),
+  );
+}
+
 export function AppSandbox({
   appId,
   shareToken,
   frame = 'card',
   reloadKey = 0,
   onError,
-  inspect = false,
-  selectedRegionId = null,
-  onSelect,
-  onInspectChange,
   hub,
   apiBase: apiBaseOverride,
   fetcher,
   onLoadFailure,
   loader,
+  confirmTool,
 }: {
   appId: string;
   /** When set, render in share mode: the bundle + tool/db brokers are
@@ -63,16 +100,6 @@ export function AppSandbox({
   /** Bump to force a re-fetch + re-render (e.g. after a build/publish). */
   reloadKey?: number;
   onError?: (message: string) => void;
-  /** When true, hovering the preview outlines [data-app-region]s and clicking
-   *  one locks it (inspect mode). */
-  inspect?: boolean;
-  /** The host-held locked selection — pushed down to keep the iframe's outline
-   *  in sync (e.g. cleared when the user dismisses the focus chip). */
-  selectedRegionId?: string | null;
-  /** The user locked or cleared a region in the preview (null = cleared). */
-  onSelect?: (regionId: string | null) => void;
-  /** The iframe changed inspect state itself (e.g. Esc to exit). */
-  onInspectChange?: (on: boolean) => void;
   /** Team-hub host API — passed ONLY by the /team shell. `getData` answers the
    *  app's `hub.get` locally from the payload the shell already fetched (no new
    *  server surface); `onNav` handles the app's validated `hub.nav` intents
@@ -101,6 +128,12 @@ export function AppSandbox({
    *  plain "Loading…" line. Kept a slot so this package needs no animation
    *  dependency. */
   loader?: ReactNode;
+  /** Ask the owner whether a confirm-gated tool may run (apps audit S1);
+   *  resolve true to run it. Only the owner surface ever gets asked (member,
+   *  client and share brokers refuse such tools). Absent ⇒ the browser's
+   *  own confirm dialog. The app never sees the ticket: this host sends the
+   *  second call itself. */
+  confirmTool?: (req: AppToolConfirmRequest) => Promise<boolean>;
 }) {
   // Public share mode swaps the session-authed API base for the token-authed
   // public one; the route suffixes (bundle / tool-broker / db-broker) match.
@@ -143,8 +176,10 @@ export function AppSandbox({
   // re-ran the bundle-fetch effect below and reloaded the iframe (white flash).
   // `fetcher` rides along for the same reason (the split hub passes an inline
   // bearer-attaching wrapper); the default stays a plain window-bound fetch.
-  const cbRef = useRef({ onError, onSelect, onInspectChange, hub, onLoadFailure });
-  cbRef.current = { onError, onSelect, onInspectChange, hub, onLoadFailure };
+  const cbRef = useRef({ onError, hub, onLoadFailure, confirmTool });
+  /** A tool confirmation is open (one at a time). */
+  const confirmOpenRef = useRef(false);
+  cbRef.current = { onError, hub, onLoadFailure, confirmTool };
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
   const doFetch = useCallback(
@@ -152,17 +187,6 @@ export function AppSandbox({
       fetcherRef.current ? fetcherRef.current(input, init) : fetch(input, init),
     [],
   );
-
-  // Push inspect-mode + the locked selection down whenever they change or the
-  // app (re)becomes ready, so a fresh iframe inherits the current state.
-  useEffect(() => {
-    if (status !== 'ready') return;
-    postToFrame({ v: 1, kind: 'inspect', on: inspect });
-  }, [inspect, status, postToFrame]);
-  useEffect(() => {
-    if (status !== 'ready') return;
-    postToFrame({ v: 1, kind: 'select', regionId: selectedRegionId });
-  }, [selectedRegionId, status, postToFrame]);
 
   // Mirror the host's live theme (the <html> class + data-color-theme) into the
   // iframe so a dark/light or colour-theme switch restyles a RUNNING app without
@@ -206,12 +230,52 @@ export function AppSandbox({
         }
         if (req.kind === 'tool.call') {
           gateRef.current?.requestStart();
-          const r = await doFetch(`${apiBase}/tool-broker`, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ slug: req.slug, input: req.input }),
-          });
-          const data = await r.json();
+          // The body is built here from the slug and input only: nothing the
+          // app sends can carry a confirmation ticket.
+          const send = (confirmToken?: string) =>
+            doFetch(`${apiBase}/tool-broker`, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({
+                slug: req.slug,
+                input: req.input,
+                ...(confirmToken ? { confirmToken } : {}),
+              }),
+            });
+          let r = await send();
+          let data = await r.json();
+          if (r.status === 409 && data?.reason === 'confirm' && data.confirm?.token) {
+            // One question at a time (apps audit 2026-10-02, item 6): a
+            // second request while the owner reads the first is refused, so
+            // an app cannot swap what sits under the open Run button.
+            if (confirmOpenRef.current) {
+              reply({
+                ok: false,
+                error: `Another tool is waiting for your confirmation; “${req.slug}” was not run.`,
+              });
+              return;
+            }
+            const ask = cbRef.current.confirmTool ?? defaultConfirmTool;
+            confirmOpenRef.current = true;
+            let yes = false;
+            try {
+              yes = await ask({
+                appId,
+                slug: String(data.confirm.slug ?? req.slug),
+                name: String(data.confirm.name ?? req.slug),
+                description: String(data.confirm.description ?? ''),
+                input: (req.input ?? {}) as Record<string, unknown>,
+              });
+            } finally {
+              confirmOpenRef.current = false;
+            }
+            if (!yes) {
+              reply({ ok: false, error: `You declined to run the tool “${req.slug}”.` });
+              return;
+            }
+            r = await send(String(data.confirm.token));
+            data = await r.json();
+          }
           // 403 == the slug isn't in the app's declared tools. That's a wiring
           // bug, not a transient failure — surface it plainly to the builder
           // even if the app's own code swallows the rejection.
@@ -240,7 +304,7 @@ export function AppSandbox({
         if (req.kind !== 'hub.get') gateRef.current?.requestEnd();
       }
     },
-    [apiBase, doFetch],
+    [apiBase, appId, doFetch],
   );
 
   // Listen for messages from THIS iframe only.
@@ -284,14 +348,6 @@ export function AppSandbox({
           setStatus('error');
           cbRef.current.onLoadFailure?.();
         }
-        return;
-      }
-      if (m.kind === 'select') {
-        cbRef.current.onSelect?.(m.regionId);
-        return;
-      }
-      if (m.kind === 'inspect') {
-        cbRef.current.onInspectChange?.(m.on);
         return;
       }
       if (m.kind === 'hub.nav') {

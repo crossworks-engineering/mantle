@@ -218,7 +218,7 @@ the object store (RustFS) from docker-compose. That's it.
 | `tg`               | `server/web/workers/telegram-poll.ts`. Long-polls Telegram for new DMs.         |
 | `files`            | `server/web/workers/files-watch.ts`. chokidar on `MANTLE_FILES_ROOT`; mirrors external edits (vim, Syncthing, host `cp`) back into the DB. Loop-safe via `syncFileFromDisk`, which never re-writes bytes. |
 | `events`           | `server/web/workers/events-reminders.ts`. Polls every 30s for events whose `remind_at` has passed and `reminder_sent_at` is null; sends a Telegram DM via `@mantle/telegram`. A **recurring** event (`data.recur` = daily/weekly/monthly/yearly, optional `data.recur_until`) rolls its single row forward to the next occurrence and re-arms instead of marking sent, `rollForwardRecurrence` in `@mantle/content/events`. The tick also hosts two piggybacked housekeeping jobs: the tool-result spill sweep (`maybeSweep`, §9m) and the **scheduled-backup check** (`maybeRunScheduledBackups`, [`backups.md`](./backups.md), configured at /settings/backups). |
-| `docs`             | `server/web/workers/docs-sync.ts`. Mirrors the `docs/` collection into the brain as `documentation` nodes (the disk-watcher counterpart for docs). |
+| `docs`             | `server/web/workers/docs-sync.ts`. Mirrors the `docs/` collection into the brain as `documentation` nodes (the disk-watcher counterpart for docs). A changed file nulls the node's embedding and fires `node_ingested`; if the agent is down at that moment (a roll), the extract sweep re-queues it, because it windows on `updated_at` (`@mantle/db` extract-exempt.ts). |
 
 > The Telegram responder loop is **no longer a `pnpm dev` lane of its own**: it
 > moved into the `api` runner (above). It still LISTENs on
@@ -826,7 +826,8 @@ Four guardrails ([`packages/tools/src/invoke-agent-guards.ts`](../packages/tools
    even when present in the list, the closest thing to a recursion
    footgun we have. Editable via the **"Delegates to"** picker at
    `/settings/agents`; `updateAgent` jsonb-**merges** `memory_config`
-   (`||`) so a form save never silently drops the allowlist. (An earlier
+   (`||`) so a form save never silently drops the allowlist, and removes
+   a key only when the body sends it as `null` (a cleared field). (An earlier
    wholesale overwrite *did* drop it; the form doesn't render
    `delegate_to`, so saving any agent wiped the grant. That's why
    delegation looked broken until re-seeded.)

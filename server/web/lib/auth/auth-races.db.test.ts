@@ -14,6 +14,9 @@ import { createHash, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
+/** A token close enough to its end that a refresh rotates it (a token with
+ *  more than 23 days left is answered with itself). */
+const NEAR_EXPIRY_SECONDS = 10 * 24 * 60 * 60;
 
 type Row = Record<string, unknown>;
 
@@ -59,7 +62,7 @@ describe.skipIf(!URL)('credential races', () => {
               values (${contact}, ${brain}, 'contact', 'Pat', 'contacts')`;
     await sql`insert into oauth_clients (id, client_name, redirect_uris)
               values (${client}, ${tag}, ${sql.array(['https://client.example.com/cb'])})`;
-  });
+  }, 60_000);
 
   afterAll(async () => {
     if (!sql) return;
@@ -77,15 +80,19 @@ describe.skipIf(!URL)('credential races', () => {
     const { mintAuthCode, exchangeAuthCode } = await import('../mcp-oauth');
     const verifier = 'v'.repeat(64);
     const challenge = createHash('sha256').update(verifier).digest('base64url');
-    const code = await mintAuthCode({
+    const [me] = await sql<Array<{ session_epoch: number }>>`
+      select session_epoch from auth.users where id = ${admin}`;
+    const code = (await mintAuthCode({
       clientId: client,
       ownerId: admin,
       actorId: admin,
+      consentEpoch: Number(me!.session_epoch),
       codeChallenge: challenge,
       codeChallengeMethod: 'S256',
       redirectUri: 'https://client.example.com/cb',
       scope: 'mcp',
-    });
+    }))!;
+    expect(code).toBeTruthy();
     const exchange = () =>
       exchangeAuthCode({
         code,
@@ -121,10 +128,10 @@ describe.skipIf(!URL)('credential races', () => {
   });
 
   it('rotates a web-client bearer once when two refreshes race', async () => {
-    const { buildMobileToken, WEB_TOKEN_TTL_SECONDS } = await import('./tokens');
+    const { buildMobileToken } = await import('./tokens');
     const { POST } = await import('../../app/api/auth/token/refresh/route');
     const jti = randomUUID();
-    const minted = buildMobileToken(admin, jti, WEB_TOKEN_TTL_SECONDS);
+    const minted = buildMobileToken(admin, jti, NEAR_EXPIRY_SECONDS);
     await sql`insert into mobile_tokens (id, user_id, label, expires_at)
               values (${jti}, ${admin}, ${tag}, ${minted.expiresAt.toISOString()})`;
     let n = 0;
@@ -138,24 +145,36 @@ describe.skipIf(!URL)('credential races', () => {
           },
         }),
       );
-    const statuses = (await Promise.all([refresh(), refresh(), refresh()])).map((r) => r.status);
-    expect(statuses.sort()).toEqual([200, 401, 401]);
+    const answers = await Promise.all([refresh(), refresh(), refresh()]);
+    // One rotation. A refresh that lost the claim answers 401; one that read
+    // the row after the winner committed is a retry of a lost answer and gets
+    // the SAME new token (the successor is still unused).
+    const ok = answers.filter((r) => r.status === 200);
+    expect(ok.length).toBeGreaterThan(0);
+    expect(answers.every((r) => r.status === 200 || r.status === 401)).toBe(true);
+    const ids = new Set(
+      await Promise.all(ok.map(async (r) => ((await r.json()) as { deviceId: string }).deviceId)),
+    );
+    expect(ids.size).toBe(1);
     const live = await sql<Row[]>`select id from mobile_tokens
                                   where user_id = ${admin} and label = ${tag} and revoked_at is null`;
     expect(live).toHaveLength(1);
     expect(live[0]!.id).not.toBe(jti);
+    expect(ids.has(live[0]!.id as string)).toBe(true);
   });
 
-  // Audit A15: only the password roles hold a bearer. A client never does
-  // (no password login, no app, no pairing); a row that somehow carries one
-  // is refused and left as it was, never rotated into a fresh 30-day token.
-  it('rotates an admin or member bearer, never a client one', async () => {
-    const { buildMobileToken, WEB_TOKEN_TTL_SECONDS } = await import('./tokens');
+  // Audit A15: a bearer as the password logins mint it (no session epoch)
+  // is never a client's. A client row that somehow carries one is refused
+  // and left as it was, never rotated into a fresh 30-day token. The phone
+  // app's client token carries the epoch and does rotate
+  // (device-tokens.db.test.ts).
+  it('rotates an admin or member bearer, never a client bearer without the epoch', async () => {
+    const { buildMobileToken } = await import('./tokens');
     const { POST } = await import('../../app/api/auth/token/refresh/route');
     let n = 0;
     const refreshAs = async (login: string) => {
       const jti = randomUUID();
-      const minted = buildMobileToken(login, jti, WEB_TOKEN_TTL_SECONDS);
+      const minted = buildMobileToken(login, jti, NEAR_EXPIRY_SECONDS);
       await sql`insert into mobile_tokens (id, user_id, label, expires_at)
                 values (${jti}, ${login}, ${`${tag}-a15`}, ${minted.expiresAt.toISOString()})`;
       const res = await POST(

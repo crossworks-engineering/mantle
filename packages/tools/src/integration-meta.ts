@@ -18,11 +18,12 @@
 import type {
   ToolGroupIntegration,
   ToolGroupMcpBinding,
+  ToolGroupOauth2,
   ToolGroupOpenapiBinding,
 } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
 
-export type { ToolGroupIntegration, ToolGroupMcpBinding, ToolGroupOpenapiBinding };
+export type { ToolGroupIntegration, ToolGroupMcpBinding, ToolGroupOauth2, ToolGroupOpenapiBinding };
 
 /** `service/label`, matching the api_keys column charset + the ref pattern in
  *  http-template.ts (kept in sync by `integration-meta.test.ts`). */
@@ -34,6 +35,9 @@ const SKILL_SLUG_RE = /^[a-z0-9_-]{1,120}$/;
  *  no `{{secret:…}}` ref (mirrors the API Console's baked-credential warning). */
 const CREDENTIAL_KEY_RE = /(authorization|api[-_]?key|token|secret|password|cookie|bearer|appid)/i;
 const HAS_SECRET_REF = /\{\{\s*secret:/i;
+/** A credential value is vault-backed when it carries a secret OR an oauth ref. */
+const HAS_CREDENTIAL_REF = /\{\{\s*(secret|oauth):/i;
+const HAS_OAUTH_REF = /\{\{\s*oauth:/i;
 
 const MAX_AUTH_KEYS = 20;
 const MAX_AUTH_VALUE_CHARS = 500;
@@ -212,6 +216,20 @@ export function parseIntegrationMeta(raw: unknown): ParsedIntegration | Integrat
     value.openapi = parsedOpenapi.value;
   }
 
+  const oauth2Raw = r.oauth2;
+  if (oauth2Raw !== undefined && oauth2Raw !== null) {
+    const parsedOauth2 = parseOauth2Binding(oauth2Raw);
+    if (!parsedOauth2.ok) return parsedOauth2;
+    if (!value.baseUrl) {
+      return {
+        ok: false,
+        error:
+          'integration.oauth2 needs integration.base_url. The token is only ever sent to the base_url origin, so set the API base URL too',
+      };
+    }
+    value.oauth2 = parsedOauth2.value;
+  }
+
   const sourceUrlRaw = pick('docsSourceUrl', 'docs_source_url');
   if (sourceUrlRaw !== undefined && sourceUrlRaw !== null && String(sourceUrlRaw).trim() !== '') {
     value.docsSourceUrl = String(sourceUrlRaw).trim().slice(0, 2000);
@@ -226,11 +244,23 @@ export function parseIntegrationMeta(raw: unknown): ParsedIntegration | Integrat
   // may legitimately place a non-secret header) rather than refuse.
   for (const part of ['headers', 'query'] as const) {
     for (const [k, v] of Object.entries(value.authTemplate?.[part] ?? {})) {
-      if (v && CREDENTIAL_KEY_RE.test(k) && !HAS_SECRET_REF.test(v)) {
+      if (v && CREDENTIAL_KEY_RE.test(k) && !HAS_CREDENTIAL_REF.test(v)) {
         warnings.push(
           `auth_template.${part}.${k} holds a literal value, not a {{secret:service/label}} vault ref — the credential would be stored in the clear; ask the owner to add the key under Settings → API keys and reference it instead`,
         );
       }
+    }
+  }
+  if (value.oauth2) {
+    const placed = ['headers', 'query'].some((part) =>
+      Object.values(value.authTemplate?.[part as 'headers' | 'query'] ?? {}).some((v) =>
+        HAS_OAUTH_REF.test(v),
+      ),
+    );
+    if (!placed) {
+      warnings.push(
+        'oauth2 is configured but no auth_template value carries an {{oauth:<group-slug>}} ref. Tools authored into this group inherit no token; set auth_template to { "headers": { "Authorization": "Bearer {{oauth:<group-slug>}}" } }',
+      );
     }
   }
   if (value.secretRef && !value.authTemplate) {
@@ -578,6 +608,123 @@ export function parseOpenapiBinding(
   if (toolCountRaw !== undefined && toolCountRaw !== null) {
     const n = Number(toolCountRaw);
     if (Number.isInteger(n) && n >= 0) value.toolCount = n;
+  }
+  return { ok: true, value };
+}
+
+/** Longest OAuth2 audience string a group may carry. */
+const MAX_OAUTH_AUDIENCE_CHARS = 500;
+const HTTPS_URL_RE = /^https:\/\/\S+$/i;
+
+/** Unwrap `{{secret:svc/label}}` to the bare pointer and check it. */
+function parseVaultRef(
+  raw: unknown,
+  label: string,
+): { ok: true; value: string } | IntegrationParseError {
+  const ref = String(raw ?? '')
+    .trim()
+    .replace(/^\{\{\s*secret:/i, '')
+    .replace(/\s*\}\}$/, '')
+    .trim();
+  if (!SECRET_REF_RE.test(ref)) {
+    return {
+      ok: false,
+      error: `${label} '${ref}' must be 'service/label' (list the real ones with api_key_refs; the key itself is added by the owner under Settings → API keys)`,
+    };
+  }
+  if (isMcpManagedSecretService(ref)) {
+    return {
+      ok: false,
+      error: `${label} '${ref}' points into the reserved 'mcp-' namespace (connector-sealed OAuth state). Reference a key the owner added under Settings → API keys instead`,
+    };
+  }
+  return { ok: true, value: ref };
+}
+
+/**
+ * Validate + normalise `integration.oauth2` (client credentials). Accepts camel
+ * and snake case. Both credentials are vault refs; a plaintext is refused by
+ * the ref shape, so it can never land in the row.
+ */
+export function parseOauth2Binding(
+  raw: unknown,
+): { ok: true; value: ToolGroupOauth2 } | IntegrationParseError {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    return {
+      ok: false,
+      error:
+        'integration.oauth2 must be an object like { token_url, client_id_ref, client_secret_ref, scope?, audience?, client_auth? }',
+    };
+  }
+  const r = raw as Record<string, unknown>;
+  const pick = (camel: string, snake: string): unknown => r[camel] ?? r[snake];
+
+  const grant = String(r.grant ?? 'client_credentials').trim();
+  if (grant !== 'client_credentials') {
+    return {
+      ok: false,
+      error: `integration.oauth2.grant '${grant}' is not supported. Only 'client_credentials' (machine-to-machine) is`,
+    };
+  }
+  const tokenUrl = String(pick('tokenUrl', 'token_url') ?? '').trim();
+  if (!HTTPS_URL_RE.test(tokenUrl)) {
+    return {
+      ok: false,
+      error: `integration.oauth2.token_url '${tokenUrl}' must be the provider's https:// token endpoint (the client secret is sent to it, so plain http is refused)`,
+    };
+  }
+  const clientId = parseVaultRef(
+    pick('clientIdRef', 'client_id_ref'),
+    'integration.oauth2.client_id_ref',
+  );
+  if (!clientId.ok) return clientId;
+  const clientSecret = parseVaultRef(
+    pick('clientSecretRef', 'client_secret_ref'),
+    'integration.oauth2.client_secret_ref',
+  );
+  if (!clientSecret.ok) return clientSecret;
+
+  const value: ToolGroupOauth2 = {
+    grant: 'client_credentials',
+    tokenUrl,
+    clientIdRef: clientId.value,
+    clientSecretRef: clientSecret.value,
+  };
+
+  const scopeRaw = r.scope;
+  if (scopeRaw !== undefined && scopeRaw !== null && String(scopeRaw).trim() !== '') {
+    const scope = String(scopeRaw).trim();
+    if (scope.length > MAX_OAUTH_SCOPE_CHARS || HAS_CREDENTIAL_REF.test(scope)) {
+      return {
+        ok: false,
+        error:
+          'integration.oauth2.scope must be a short space-separated scope list, not a credential',
+      };
+    }
+    value.scope = scope;
+  }
+  const audienceRaw = r.audience;
+  if (audienceRaw !== undefined && audienceRaw !== null && String(audienceRaw).trim() !== '') {
+    const audience = String(audienceRaw).trim();
+    if (audience.length > MAX_OAUTH_AUDIENCE_CHARS || HAS_CREDENTIAL_REF.test(audience)) {
+      return {
+        ok: false,
+        error:
+          'integration.oauth2.audience must be the provider audience or resource id, not a credential',
+      };
+    }
+    value.audience = audience;
+  }
+  const clientAuthRaw = pick('clientAuth', 'client_auth');
+  if (clientAuthRaw !== undefined && clientAuthRaw !== null && String(clientAuthRaw) !== '') {
+    const clientAuth = String(clientAuthRaw).trim();
+    if (clientAuth !== 'basic' && clientAuth !== 'body') {
+      return {
+        ok: false,
+        error: `integration.oauth2.client_auth '${clientAuth}' must be 'basic' (HTTP Basic, the default) or 'body' (client_id + client_secret in the form)`,
+      };
+    }
+    value.clientAuth = clientAuth;
   }
   return { ok: true, value };
 }

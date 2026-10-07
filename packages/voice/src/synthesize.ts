@@ -19,6 +19,7 @@
 
 import type { SynthesizeOptions, SynthesizeResult, TtsVoice, TtsWarning } from './types';
 import { TTS_VOICES } from './types';
+import { providerFetch } from './adapters/provider-fetch';
 
 const OPENAI_TTS_URL = 'https://api.openai.com/v1/audio/speech';
 const DEFAULT_MODEL = 'gpt-4o-mini-tts';
@@ -74,7 +75,7 @@ export async function synthesizeSpeech(opts: SynthesizeOptions): Promise<Synthes
   // Clamp speed to OpenAI's documented range.
   const speed = Math.min(Math.max(opts.speed ?? DEFAULT_SPEED, 0.25), 4.0);
 
-  const res = await fetch(OPENAI_TTS_URL, {
+  const res = await providerFetch(OPENAI_TTS_URL, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${opts.apiKey}`,

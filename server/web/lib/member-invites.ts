@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { MemberInviteError } from '@mantle/content';
-import { clientIp, rateLimit, rateLimitPeek } from '@/lib/rate-limit';
+import { clientIpKey, rateLimit, rateLimitPeek } from '@/lib/rate-limit';
 
 /**
  * Shared bits of the member invite routes (member logins, Phase 6): the
@@ -42,7 +42,7 @@ function tooMany(retryAfterSec: number): Response {
  *  too many failed codes this minute; else null. Call before any work. */
 export function inviteRateLimited(req: Request, kind: keyof typeof INVITE_LIMITS): Response | null {
   const caps = INVITE_LIMITS[kind];
-  const ip = rateLimit(`auth:invite-${kind}:${clientIp(req)}`, {
+  const ip = rateLimit(`auth:invite-${kind}:${clientIpKey(req)}`, {
     max: caps.perIp,
     windowMs: WINDOW_MS,
   });

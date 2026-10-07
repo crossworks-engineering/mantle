@@ -4,52 +4,26 @@ title: AI workers
 
 ## AI workers
 
-The jobs that run without a conversation. A new document arrives and the
-**extractor** pulls out its facts and entities; chat history gets long and the
-**summarizer** compresses it; a timer fires and the **reflector** runs. Voice,
-vision and image generation live here too.
+AI workers are the background jobs that run without a conversation. The extractor pulls facts and entities from new content, the summarizer folds long chats into digests, and others handle voice, vision, documents, images, search and embeddings.
 
-A worker is not a small agent. It has no persona, no memory of previous runs, no
-tool loop and no turns; it's a one-shot transformation triggered by an event.
-That's why it's a separate screen: an agent and a worker share about five
-settings and disagree about the rest.
+- Workers are grouped by kind. Open one to edit it, or add another.
+- Set the **Provider**, **API key** and **Model**, and optionally a backup route.
+- Turn on **Default** for the one worker of each kind that is actually used.
+- Use the test panel on each worker to try it before relying on it.
 
-Each kind has exactly **one default** at a time. The others can exist, enabled
-or not, but the default is what actually gets called.
+The extractor runs on every piece of content that arrives, so workers are where steady cost comes from. Check a model's price and context window on the Models screen before you switch a worker to it.
 
-## Before you change anything
+## Assistant
 
-Workers are where your ongoing cost lives. Agents cost money when you talk to
-them; workers cost money every time content arrives, forever. A worker pointed
-at an expensive model is the usual explanation for a spend graph that climbs
-while you weren't using the app.
+The assistant cannot change workers. Set them here. Agents that hold the Media workers tool group can call some workers directly:
 
-The failure mode to watch for is silence, not errors. A worker with too small a
-context window truncates rather than fails; you get a summary of the first
-third of a document and no warning. Check the model's context on the Models
-screen before switching a worker to it, especially the extractor.
-
-Workers can hold skills, which teach them how to do their job well. They can
-never hold tools. If you're looking for the setting that lets the extractor
-write to a table, it doesn't exist by design.
+- "Read the text in this photo."
+- "Make an image of a red barn at sunset."
 
 ## Technical
 
-Workers are their own table, keyed by kind, reflector, extractor, summarizer,
-TTS, STT, vision, image generation, embedding. Each row carries a provider, a
-model id, an optional key reference, an optional system prompt and a bag of
-kind-specific parameters. One default per kind is enforced in the database with
-a partial unique index rather than by convention.
-
-The chat-shaped kinds get the same primary/backup failover the agents do, so a
-local extractor can fall back to a cloud model without dropping the ingest.
-
-Media kinds don't call chat models at all; they call dedicated provider
-endpoints, which is why their provider list differs from the one you see on an
-agent. A provider that's excellent for chat may not appear as an option for
-speech at all.
-
-Extraction runs on a fixed set of node types and skips work it has already done:
-content is hashed, and unchanged material re-uses its cached result. Re-saving
-something unchanged is therefore close to free, which is what makes the whole
-eager-extraction design affordable.
+- Workers live in their own table. Each kind has exactly one default, enforced by the database.
+- A worker has no persona, memory or tools. It is a one-shot job started by an event.
+- The extractor has extra settings: which node types it reads and a cost cap per node.
+- Chat-type workers can fail over to their backup route. Voice, transcription, vision and embedding workers ignore it.
+- Tools: `synthesize_speech`, `extract_from_image`, `summarize_text`, `generate_image`.

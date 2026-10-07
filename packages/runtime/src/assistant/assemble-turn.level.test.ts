@@ -46,6 +46,8 @@ vi.mock('@mantle/content', () => ({
   buildTimeContextLine: () => 'TIME-LINE',
   resolveThinkingBudget: () => 0,
   resolveThinkingEffort: () => undefined,
+  profileThinking: () => ({ budget: 0, effort: undefined }),
+  resolveAgentThinking: () => ({ budget: 0, effort: undefined }),
 }));
 
 vi.mock('../heartbeats', () => ({

@@ -55,6 +55,8 @@ export const FACT_PASSAGES = 3;
 export const PROMOTED_PASSAGE_CUTOFF = 0.75;
 
 export type FactRow = {
+  /** The fact's id (decision trace key). */
+  id?: string;
   content: string;
   kind: string;
   entityId: string | null;
@@ -62,6 +64,8 @@ export type FactRow = {
   /** The node the fact was extracted from (a Journal entry, a page, …). */
   sourceNodeId?: string | null;
   dist: number | null;
+  /** The distance the row was ranked by (cosine + kind-aware age penalty). */
+  rankDist?: number | null;
 };
 
 export type ContentRow = {
@@ -70,10 +74,18 @@ export type ContentRow = {
   type: string;
   data: unknown;
   supersededBy: string | null;
+  /** Salience-adjusted distance: the 0.6 cutoff applies to this. */
   dist: number | null;
+  /** Raw cosine distance (decision trace). */
+  rawDist?: number | null;
+  /** The distance the row was ranked by (salience + mild recency). */
+  rankDist?: number | null;
 };
 
 export type ChunkSearchHit = {
+  /** The search arms' 1-based ranks (searchChunksExplained); `kr` set =
+   *  the keyword arm found it. */
+  arms?: { vr?: number; kr?: number; rescued?: boolean };
   nodeId: string;
   nodeTitle: string;
   nodeType: string;
@@ -225,9 +237,98 @@ export function selectContentHits(rows: ContentRow[]): {
   return { hits: contentHits, sent: contentSentSnap, dropped: contentDroppedSnap };
 }
 
+/**
+ * The T2 rule for passages the keyword arm found (a rare literal: a code, a
+ * reference, a coined word). The 0.65 cosine cutoff is corpus-blind, and a
+ * literal match that embeds poorly sits past it: the keyword arm (and the
+ * rescue floor) found it, then the cutoff threw it away (docs/recall-eval.md,
+ * "eval:route"). Gated by `eval:route` before it became the default.
+ *  - `off`: the cutoff applies to every passage (before 2026-10-04).
+ *  - `exempt`: a keyword-found passage skips the cosine cutoff; the order
+ *    and the chunk_limit cut are unchanged.
+ *  - `slots`: `exempt`, plus up to KEYWORD_SLOTS keyword-found passages past
+ *    the cut take the tail of it from the weakest other passages.
+ */
+export type KeywordPassageRule = 'off' | 'exempt' | 'slots';
+export const KEYWORD_PASSAGE_RULE: KeywordPassageRule = 'exempt';
+export const KEYWORD_SLOTS = 2;
+
+/** How selectChunkHits treats keyword-found passages: the rule, and how to
+ *  tell one (the search's per-hit keyword rank). */
+export type KeywordPassages = {
+  rule: KeywordPassageRule;
+  isKeyword: (h: ChunkSearchHit) => boolean;
+};
+
+/** The rule as the responder runs it: a passage with a keyword-arm rank is
+ *  keyword-found. */
+export const keywordPassages = (
+  rule: KeywordPassageRule = KEYWORD_PASSAGE_RULE,
+): KeywordPassages => ({
+  rule,
+  isKeyword: (h) => h.arms?.kr !== undefined,
+});
+
+/** A passage's decision-trace key. */
+export const chunkTraceKey = (h: { nodeId: string; ordinal?: number }): string =>
+  `${h.nodeId}:${h.ordinal ?? ''}`;
+
+/**
+ * The budget cut before promotion (pure): telegram turns are filtered,
+ * passages at or past CHUNK_CUTOFF too (unless the keyword rule exempts
+ * them), the first `chunkLimit` of the rest are the cut, and under `slots`
+ * keyword passages past the cut take its tail. `why` names each pool
+ * passage's reason: a drop code, or for a kept passage the rule that kept it.
+ */
+function cutChunks(
+  hits: readonly ChunkSearchHit[],
+  chunkLimit: number,
+  keyword?: KeywordPassages,
+): { cut: ChunkSearchHit[]; why: Map<string, string> } {
+  const why = new Map<string, string>();
+  const rule = keyword?.rule ?? 'off';
+  const isKw = (h: ChunkSearchHit) => rule !== 'off' && keyword!.isKeyword(h);
+  const passed: ChunkSearchHit[] = [];
+  for (const h of hits) {
+    const key = chunkTraceKey(h);
+    if (why.has(key)) continue;
+    if (h.nodeType === 'telegram_message') why.set(key, `type:${h.nodeType}`);
+    else if (h.distance >= CHUNK_CUTOFF && !isKw(h)) why.set(key, `cut:${CHUNK_CUTOFF}`);
+    else passed.push(h);
+  }
+  let cut = passed.slice(0, chunkLimit);
+  if (rule === 'slots') {
+    const late = passed
+      .slice(chunkLimit)
+      .filter(isKw)
+      .slice(0, Math.min(KEYWORD_SLOTS, chunkLimit));
+    if (late.length > 0) {
+      // Give up the weakest non-keyword passages at the tail, never a
+      // keyword one: the head order stays as search ranked it.
+      const out = new Set<ChunkSearchHit>();
+      for (let i = cut.length - 1; i >= 0 && out.size < late.length; i--) {
+        if (!isKw(cut[i]!)) out.add(cut[i]!);
+      }
+      const room = Math.max(0, chunkLimit - (cut.length - out.size));
+      const take = late.slice(0, room);
+      for (const h of out) why.set(chunkTraceKey(h), 'room:keyword');
+      for (const h of take) why.set(chunkTraceKey(h), 'slot:keyword');
+      cut = [...cut.filter((h) => !out.has(h)), ...take];
+    }
+  }
+  const inCut = new Set(cut);
+  for (const h of passed) {
+    const key = chunkTraceKey(h);
+    if (why.has(key)) continue;
+    if (!inCut.has(h)) why.set(key, `limit:${chunkLimit}`);
+    else if (h.distance >= CHUNK_CUTOFF) why.set(key, 'exempt:keyword');
+  }
+  return { cut, why };
+}
+
 /** Section-level passages worth their tokens, plus the snapshot split.
  *  `promote` (see promotePassages) gives trusted notes their text inside the
- *  same chunk_limit. */
+ *  same chunk_limit; `keyword` applies the T2 rule (KeywordPassageRule). */
 export function selectChunkHits(
   hits: ChunkSearchHit[],
   chunkLimit: number,
@@ -235,10 +336,9 @@ export function selectChunkHits(
     sources: ReadonlyArray<{ nodeIds: readonly string[]; max: number }>;
     best: readonly ChunkSearchHit[];
   },
+  keyword?: KeywordPassages,
 ): { hits: ChunkContextHit[]; sent: SnapshotItem[]; dropped: SnapshotItem[] } {
-  const cut = hits
-    .filter((h) => h.distance < CHUNK_CUTOFF && h.nodeType !== 'telegram_message')
-    .slice(0, chunkLimit);
+  const { cut } = cutChunks(hits, chunkLimit, keyword);
   const selected = promote ? promotePassages(cut, promote.sources, promote.best, chunkLimit) : cut;
   const chunkHits = selected.map((h) => ({
     nodeId: h.nodeId,
@@ -262,6 +362,38 @@ export function selectChunkHits(
     .map(toSnapItem);
 
   return { hits: chunkHits, sent: chunkSentSnap, dropped: chunkDroppedSnap };
+}
+
+/**
+ * Why each passage in the pool did or did not reach the prompt (decision
+ * trace). Runs the same cut as selectChunkHits (cutChunks); promotePassages
+ * may then give a cut passage's slot to a fact's source note (`room:promote`).
+ * `selected` is what selectChunkHits returned. `kept` holds the reason a kept
+ * passage needed a rule (`exempt:keyword`, `slot:keyword`). Pure.
+ */
+export function explainChunkSelection(
+  pool: readonly ChunkSearchHit[],
+  chunkLimit: number,
+  selected: ReadonlyArray<{ nodeId: string; ordinal?: number }>,
+  keyword?: KeywordPassages,
+): { dropped: Map<string, string>; kept: Map<string, string>; promoted: Set<string> } {
+  const chosen = new Set(selected.map(chunkTraceKey));
+  const { cut, why } = cutChunks(pool, chunkLimit, keyword);
+  const cutKeys = new Set(cut.map(chunkTraceKey));
+  const dropped = new Map<string, string>();
+  const kept = new Map<string, string>();
+  for (const h of pool) {
+    const key = chunkTraceKey(h);
+    if (dropped.has(key) || kept.has(key)) continue;
+    const reason = why.get(key);
+    if (chosen.has(key)) {
+      if (reason === 'exempt:keyword' || reason === 'slot:keyword') kept.set(key, reason);
+    } else {
+      dropped.set(key, cutKeys.has(key) ? 'room:promote' : (reason ?? `limit:${chunkLimit}`));
+    }
+  }
+  const promoted = new Set([...chosen].filter((k) => !cutKeys.has(k)));
+  return { dropped, kept, promoted };
 }
 
 /**

@@ -19,6 +19,7 @@
  *   Columns:  :::columns … +++ … :::   (2+ parts split by a lone +++)
  *   Highlight: ==text==
  *   Colour:    [text]{color=chart-2}  /  [text]{highlight=chart-3}  (chart-1..5)
+ *   Foldable heading: ## Title {fold}  /  ## Title {fold=closed}  (heading-fold.ts)
  *
  * Pure (only `marked`) and DB-free, so it's safe to call from the tool
  * runtime. Defensive: anything it can't map degrades to a paragraph rather
@@ -37,6 +38,7 @@ import {
   FOLDER_HREF,
   FOLDER_HERE,
 } from './markdown-refs';
+import { splitFoldMarker } from './heading-fold';
 
 type PMMark = { type: string; attrs?: Record<string, unknown> };
 type PMNode = {
@@ -375,13 +377,18 @@ function blocks(tokens: Tok[] | undefined): PMNode[] {
       case 'space':
       case 'def':
         break;
-      case 'heading':
+      case 'heading': {
+        const { tokens, fold } = splitFoldMarker(t.tokens);
+        const level = Math.min(Math.max(t.depth ?? 1, 1), 3);
         out.push({
           type: 'heading',
-          attrs: { level: Math.min(Math.max(t.depth ?? 1, 1), 3) },
-          content: inline(t.tokens),
+          // `fold` only on a foldable heading, so every other heading's JSON
+          // is exactly what it was before foldable headings existed.
+          attrs: fold ? { level, fold } : { level },
+          content: inline(tokens),
         });
         break;
+      }
       case 'paragraph': {
         const ref = blockRefNode(t.tokens);
         if (ref) {

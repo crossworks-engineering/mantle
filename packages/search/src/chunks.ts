@@ -13,11 +13,13 @@
  *  - **vector-only** (no `q`): the original behaviour, unchanged.
  */
 import { and, asc, eq, isNotNull, sql, type SQL } from 'drizzle-orm';
-import { contentChunks, db, nodes } from '@mantle/db';
+import { contentChunks, contentChunkWindows, db, nodes } from '@mantle/db';
 import { withHnswPool } from './hnsw';
 import { grantUnionFilter, pgArrayLiteral } from './pg';
-import { keywordSql, resolveKeywordQuery } from './keyword-query';
-import { applyRescueFloor, fuseRrf } from './rrf';
+import { gateRareTerms, keywordSql, resolveKeywordQuery } from './keyword-query';
+import { applyRescueFloor, fuseRrf, mergeIds, type MergeOrder } from './rrf';
+import type { ChunkArms } from './trace';
+import type { ContextTrace } from '@mantle/client-types';
 import { env } from '@mantle/config';
 
 /** Salience down-weight strength (see @mantle/search index). Tunable via env. */
@@ -76,9 +78,52 @@ export type ChunkSearchOptions = {
    * arrays empty ⇒ matches nothing (safe default).
    */
   nodeIdsOrTypes?: { ids: string[]; types: string[] };
+  /**
+   * Which ranking arms run when `q` is set. `both` (default) is the hybrid
+   * every caller uses. `keyword` returns the FTS arm alone, in its own order:
+   * a diagnostic for the recall eval (docs/recall-eval.md), so the hybrid
+   * score can be read against each arm on its own. Vector alone = omit `q`.
+   */
+  arms?: 'both' | 'keyword';
+  /**
+   * Passage windows (content_chunk_windows; the brain's
+   * `embedding_config.chunk_windows`). When set and `q` is set, a window arm
+   * searches the vectors INSIDE each chunk and returns their chunks; the
+   * result takes the hybrid order and the window order by turns, hybrid
+   * first, so each list's head is kept. The caller reads the switch (this
+   * package has no embeddings dependency). A brain with no window rows gets
+   * the hybrid list unchanged.
+   */
+  windows?: boolean;
+  /** How the window arm merges in (see `mergeIds`): `turns` (default) for a
+   *  list cut straight into the prompt, `union` for a pool a judge scores. */
+  windowMerge?: MergeOrder;
 };
 
 export async function searchChunks(opts: ChunkSearchOptions): Promise<ChunkHit[]> {
+  return (await runChunkSearch(opts, false)).hits;
+}
+
+/** A passage with the ranks each arm gave it (decision trace). */
+export type ExplainedChunkHit = ChunkHit & { arms: ChunkArms };
+
+/**
+ * searchChunks plus what the decision trace needs: each hit's rank in the
+ * vector and keyword arms (and whether the rescue floor placed it), the pool
+ * size of each arm, and the keyword arm's gate. Same queries, same order,
+ * same hits: the ranking code is shared, only the bookkeeping is extra.
+ */
+export async function searchChunksExplained(
+  opts: ChunkSearchOptions,
+): Promise<{ hits: ExplainedChunkHit[]; search: NonNullable<ContextTrace['search']> }> {
+  const r = await runChunkSearch(opts, true);
+  return { hits: r.hits as ExplainedChunkHit[], search: r.search };
+}
+
+async function runChunkSearch(
+  opts: ChunkSearchOptions,
+  explain: boolean,
+): Promise<{ hits: ChunkHit[]; search: NonNullable<ContextTrace['search']> }> {
   const vec = JSON.stringify(opts.embedding);
   const limit = opts.limit ?? 10;
   // Candidate pool for the salience re-rank, same sizing as searchNodes.
@@ -126,7 +171,12 @@ export async function searchChunks(opts: ChunkSearchOptions): Promise<ChunkHit[]
         limit ${limit}
       `),
     )) as unknown as RawChunkRow[];
-    return rows.map(toChunkHit);
+    return {
+      hits: rows.map((r, i) =>
+        explain ? { ...toChunkHit(r), arms: { vr: i + 1 } } : toChunkHit(r),
+      ),
+      search: { mode: 'vector', vectorPool: rows.length, keywordPool: 0, keyword: 'off' },
+    };
   }
 
   // ── Hybrid path: fuse the vector pool with an FTS pool via weighted RRF. ──
@@ -135,8 +185,11 @@ export async function searchChunks(opts: ChunkSearchOptions): Promise<ChunkHit[]
   const wVec = opts.semanticWeight ?? 0.7;
   const wFts = 1 - wVec;
 
-  const vectorRows = (await withHnswPool(pool, (tx) =>
-    tx.execute(sql`
+  const vectorRows =
+    opts.arms === 'keyword'
+      ? []
+      : ((await withHnswPool(pool, (tx) =>
+          tx.execute(sql`
       select id from (
         select ${contentChunks.id} as id, ${nodes.salience} as salience,
                ${contentChunks.embedding} <=> ${vec}::vector as dist
@@ -149,11 +202,15 @@ export async function searchChunks(opts: ChunkSearchOptions): Promise<ChunkHit[]
       order by dist + ${SALIENCE_LAMBDA} * (1 - salience)
       limit ${pool}
     `),
-  )) as unknown as Array<{ id: string }>;
+        )) as unknown as Array<{ id: string }>);
 
   // Rarest terms ORed, not every stem ANDed: a whole chat message ANDed
-  // matched nothing, so this arm (and the rescue floor) never fired.
-  const kq = await resolveKeywordQuery(q, 'content_chunks');
+  // matched nothing, so this arm (and the rescue floor) never fired. Gated to
+  // rows holding a term no more rows than the pool hold: a question with no
+  // rare literal leaves the arm silent instead of fusing in rows that merely
+  // share ordinary words (they cost vector-only quality, docs/recall-eval.md).
+  const resolved = await resolveKeywordQuery(q, 'content_chunks');
+  const kq = resolved ? gateRareTerms(resolved, pool) : null;
   const kw = kq ? keywordSql(contentChunks.searchTsv, kq) : null;
   const ftsRows = kw
     ? await db
@@ -165,19 +222,61 @@ export async function searchChunks(opts: ChunkSearchOptions): Promise<ChunkHit[]
         .limit(pool)
     : [];
 
+  // Window arm (passage windows): the vectors inside each chunk, best window
+  // per chunk, in the same scope. The salience re-rank matches the vector
+  // arm's. A chunk keeps its best (lowest) window distance for the cutoffs.
+  const windowRows =
+    opts.windows && opts.arms !== 'keyword'
+      ? ((await withHnswPool(Math.min(pool * 2, 1000), (tx) =>
+          tx.execute(sql`
+      select chunk_id as id, min(dist) as dist from (
+        select ${contentChunkWindows.chunkId} as chunk_id, ${nodes.salience} as salience,
+               ${contentChunkWindows.embedding} <=> ${vec}::halfvec as dist
+        from ${contentChunkWindows}
+        inner join ${contentChunks} on ${contentChunks.id} = ${contentChunkWindows.chunkId}
+        inner join ${nodes} on ${nodes.id} = ${contentChunks.nodeId}
+        where ${and(eq(contentChunkWindows.ownerId, opts.ownerId), ...scope)}
+        order by ${contentChunkWindows.embedding} <=> ${vec}::halfvec
+        limit ${Math.min(pool * 2, 1000)}
+      ) w
+      group by chunk_id
+      order by min(dist + ${SALIENCE_LAMBDA} * (1 - salience))
+      limit ${pool}
+    `),
+        )) as unknown as Array<{ id: string; dist: number | string }>)
+      : [];
+  const windowIds = windowRows.map((r) => r.id);
+  const windowDist = new Map(windowRows.map((r) => [r.id, Number(r.dist)]));
+
   const ftsIds = ftsRows.map((r) => r.id);
-  const fused = fuseRrf(
-    [
-      { ids: vectorRows.map((r) => r.id), weight: wVec },
-      { ids: ftsIds, weight: wFts },
-    ],
-    limit,
-  );
+  const fused =
+    opts.arms === 'keyword'
+      ? ftsIds.slice(0, limit)
+      : fuseRrf(
+          [
+            { ids: vectorRows.map((r) => r.id), weight: wVec },
+            { ids: ftsIds, weight: wFts },
+          ],
+          limit,
+        );
+  // With windows, the hybrid order comes first and the window order joins it
+  // (docs/recall-eval.md, "Passage windows"): by turns for a list that is
+  // cut into the prompt, as two halves for a pool a judge scores.
+  const merged =
+    windowIds.length > 0 ? mergeIds(fused, windowIds, limit, opts.windowMerge ?? 'turns') : fused;
   // Down-weighted RRF can't lift an FTS-only hit into a small cut when the
   // vector pool is full (see applyRescueFloor) — guarantee the top keyword
   // matches a tail slot so the exact-term rescue actually happens.
-  const topIds = applyRescueFloor(fused, ftsIds, limit);
-  if (topIds.length === 0) return [];
+  const topIds = opts.arms === 'keyword' ? merged : applyRescueFloor(merged, ftsIds, limit);
+  const search: NonNullable<ContextTrace['search']> = {
+    mode: opts.arms === 'keyword' ? 'keyword' : 'hybrid',
+    vectorPool: vectorRows.length,
+    keywordPool: ftsIds.length,
+    ...(opts.windows && opts.arms !== 'keyword' ? { windowPool: windowIds.length } : {}),
+    keyword: !kq ? 'silent' : kq.mode === 'and' ? 'and' : 'rare',
+    ...(kq?.mode === 'or' && kq.match ? { terms: kq.match.slice(0, 8) } : {}),
+  };
+  if (topIds.length === 0) return { hits: [], search };
 
   // Hydrate the winners. `distance` stays raw cosine; an FTS-only rescue whose
   // embedding is missing reports 1.0 (the "no vector signal" ceiling) so
@@ -194,10 +293,36 @@ export async function searchChunks(opts: ChunkSearchOptions): Promise<ChunkHit[]
     where ${contentChunks.id} = any(${pgArrayLiteral(topIds)}::uuid[])
   `)) as unknown as Array<RawChunkRow & { id: string }>;
   const byId = new Map(hydrated.map((r) => [r.id, r]));
-  return topIds
+  const rows = topIds
     .map((id) => byId.get(id))
     .filter((r): r is RawChunkRow & { id: string } => Boolean(r))
-    .map(toChunkHit);
+    // A chunk a window found reports its closest window when that is closer:
+    // the cutoffs downstream read `distance`, and a chunk whose one sentence
+    // matches must not be cut for the rest of its text.
+    .map((r) => {
+      const w = windowDist.get(r.id);
+      return w !== undefined && w < Number(r.dist) ? { ...r, dist: w } : r;
+    });
+  if (!explain) return { hits: rows.map(toChunkHit), search };
+  const rankIn = (ids: readonly string[]) => new Map(ids.map((id, i) => [id, i + 1]));
+  const vRank = rankIn(vectorRows.map((r) => r.id));
+  const kRank = rankIn(ftsIds);
+  const wRank = rankIn(windowIds);
+  const fusedSet = new Set(merged);
+  return {
+    hits: rows.map((r) => {
+      const arms: ChunkArms = {};
+      const v = vRank.get(r.id);
+      const k = kRank.get(r.id);
+      const w = wRank.get(r.id);
+      if (v !== undefined) arms.vr = v;
+      if (k !== undefined) arms.kr = k;
+      if (w !== undefined) arms.wr = w;
+      if (!fusedSet.has(r.id)) arms.rescued = true;
+      return { ...toChunkHit(r), arms };
+    }),
+    search,
+  };
 }
 
 /**

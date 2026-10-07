@@ -66,6 +66,7 @@ const h = vi.hoisted(() => {
     extractResult: { kind: 'image', text: 'a cat', note: null } as any,
     account: { id: 'acct-1', branchPath: '/telegram/saskia' } as any,
     sendMessage: vi.fn(),
+    archiveAgentChat: vi.fn(),
     sendVoice: vi.fn(),
     sendChatAction: vi.fn(),
     downloadTelegramFile: vi.fn(),
@@ -186,6 +187,8 @@ vi.mock('@mantle/runtime/agent', () => ({
   effectiveToolSlugs: () => [] as string[],
   extractAttachmentForTurn: vi.fn(async () => h.extractResult),
   invokeAgent: vi.fn(),
+  archiveAgentChat: (...a: unknown[]) => h.archiveAgentChat(...a),
+  ChatArchiveBusyError: class ChatArchiveBusyError extends Error {},
   loadConversationContext: vi.fn(async () => ({
     personaNotes: [],
     facts: [],
@@ -277,6 +280,8 @@ vi.mock('@mantle/content', () => ({
   resolveThinkingBudget: () => 0,
   // Thinking off for these fixtures, so no effort either.
   resolveThinkingEffort: () => undefined,
+  profileThinking: () => ({ budget: 0, effort: undefined }),
+  resolveAgentThinking: () => ({ budget: 0, effort: undefined }),
   noteInboundChannel: (...a: unknown[]) => (h.noteInboundChannel(...a), Promise.resolve()),
   isStreamThoughtsEnabled: () => h.thoughtsOn,
   isPersistThoughtsEnabled: () => h.thoughtsOn,
@@ -436,6 +441,39 @@ beforeEach(() => {
   h.recordIngest.mockReset().mockResolvedValue(undefined);
   h.upsertFile.mockReset().mockResolvedValue({ id: 'file-node-1', sizeBytes: 8 });
   h.noteInboundChannel.mockReset();
+});
+
+describe('handleTelegramMessage: /new starts a new chat', () => {
+  it('archives the chat, replies with the saved title, and runs no turn', async () => {
+    h.archiveAgentChat.mockReset().mockResolvedValue({
+      archived: { id: 't-1', title: 'Garden Plans' },
+      open: { id: 't-2' },
+    });
+    await runTurn(makeMsgRow({ text: '/new' }));
+    expect(h.archiveAgentChat).toHaveBeenCalledWith({ ownerId: 'owner-1', agentId: 'agent-1' });
+    expect(h.sendMessage).toHaveBeenCalledTimes(1);
+    const reply = h.sendMessage.mock.calls[0]![2] as string;
+    expect(reply).toContain('New chat started');
+    expect(reply).toContain('"Garden Plans" is saved in Previous chats');
+    // The command is not a turn: nothing recorded, no model loop, no trace.
+    expect(h.recordTurnCalls).toHaveLength(0);
+    expect(h.loopCalls).toHaveLength(0);
+    expect(h.traces).toHaveLength(0);
+  });
+
+  it('an empty chat says so and still runs no turn', async () => {
+    h.archiveAgentChat.mockReset().mockResolvedValue({ archived: null, open: null });
+    await runTurn(makeMsgRow({ text: '/new@saskia_bot' }));
+    expect(h.sendMessage.mock.calls[0]![2]).toBe('This is already a new chat.');
+    expect(h.recordTurnCalls).toHaveLength(0);
+  });
+
+  it('a normal message that starts with the word is a normal turn', async () => {
+    h.archiveAgentChat.mockReset();
+    await runTurn(makeMsgRow({ text: '/new idea: plant tomatoes' }));
+    expect(h.archiveAgentChat).not.toHaveBeenCalled();
+    expect(h.loopCalls).toHaveLength(1);
+  });
 });
 
 describe('handleTelegramMessage — text turn', () => {

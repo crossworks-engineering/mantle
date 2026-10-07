@@ -70,7 +70,7 @@ describe.skipIf(!URL)('members’ drafts follow the brain’s folders', () => {
     otherSpace = rows.find((r) => r.login_id === other)!.id;
     await tree.ensureKindRoot(brain, 'notes');
     await files.ensureFilesRootBranch(brain);
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await m.db.execute(

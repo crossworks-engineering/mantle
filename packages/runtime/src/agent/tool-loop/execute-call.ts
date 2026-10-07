@@ -203,9 +203,11 @@ export async function executeToolCall(p: {
                 depth: args.agentDepth ?? 1,
                 delegateTo: args.delegateTo ?? [],
                 parentTraceId: args.parentTraceId ?? null,
-                // Forward the parent's resolved (pre-clamp) budget so a
-                // delegated specialist inherits the per-user thinking pref.
-                ...(args.thinkingBudget ? { thinkingBudget: args.thinkingBudget } : {}),
+                // Forward the budget a delegated specialist on inherit gets:
+                // the profile's (pre-clamp), not this agent's own effort.
+                ...((args.inheritThinkingBudget ?? args.thinkingBudget)
+                  ? { thinkingBudget: args.inheritThinkingBudget ?? args.thinkingBudget }
+                  : {}),
                 ...(p.lastUserMessage ? { lastUserMessage: p.lastUserMessage } : {}),
                 // Shared with a delegated child (plan N18).
                 ...(p.taint ? { taint: p.taint } : {}),

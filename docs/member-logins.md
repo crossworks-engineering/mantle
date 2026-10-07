@@ -77,9 +77,35 @@
   exchange and every refresh re-read that login: a grant works only while it
   is an admin that is not disabled. Grants made before 0164 are attributed to
   the anchor.
-- **Web only.** The mobile companion calls admin routes only, so its login
-  (`/api/auth/mobile-login`) refuses a member (403 `member-login`) and mints
-  no token, and QR pairing is admin-only. A member signs in from a browser.
+- **The web, and the three-role phone app.** The first mobile companion
+  calls admin routes only, so its login (`/api/auth/mobile-login`, frozen for
+  shipped builds) refuses a member (403 `member-login`) and mints no token,
+  and QR pairing is admin-only. The three-role phone app signs a member in
+  with `POST /api/auth/device-login` (the answer names the role; 30 days,
+  rotated by `/api/auth/token/refresh`). That token reaches only
+  `MEMBER_ROUTES` (`member-sweep.test.ts` drives every manifest route with
+  one). See mobile-companion-backend.md, "Three roles on the phone".
+  - `device-login` shares the token-login limit: 10 a minute per address
+    (an IPv6 caller by its /64), one bucket with `mobile-login` and
+    `/api/auth/token`. There is no per-account lockout yet (a follow-up).
+    The device name is trimmed and cut to 80 characters and never fails a
+    sign-in.
+  - Refresh answers the SAME token while more than 23 days remain. A retry
+    with a rotated token whose successor was never used (a lost answer)
+    gets that same successor again. A rotated token presented after its
+    successor WAS used, on a refresh or on any route, ends every session of
+    the login once (`presentRotatedToken`, then `endLoginSessions`) and
+    writes the audit row `auth.token_reuse`; later it is a plain 401. The
+    refresh locks the login row, so a refresh that races End sessions or a
+    password change cannot outlive it.
+  - A member's push devices are its own (`/api/member/push/*`): at most 10
+    a login (the oldest goes), connect and enrol 10 a minute per login (429
+    `too_many_requests`). Every way a device token ends removes the devices that token enrolled.
+    End sessions, a password change, a disable and a device revoke also
+    remove the login's devices with no token on record; a sign-out does not
+    (the web client signs out on the same route). A member's first Connect may register the
+    brain with the push relay; that writes the audit row
+    `push.relay_registered`.
 - **No personal assistant.** A member chats only with team-level agents, so
   `PUT /api/users/:id/agent` refuses a member login (400), and demoting a
   login releases the assistant it had.
@@ -126,8 +152,11 @@
   not know, answers 400 with `reason: 'not-a-password-login'`; a member's
   reset still works (it is a member's only way back in), and jackdaw hides
   Reset password on client rows. Token refresh
-  (`POST /api/auth/token/refresh`) rotates admin and member bearers only: a
-  client never holds a bearer. `server/web/server/role-sweep.test.ts` drives every
+  (`POST /api/auth/token/refresh`) rotates the bearers of the three named
+  roles; a client's bearer exists only as the phone app's device token (the
+  emailed code in device mode, client-logins.md section 4) and is held to
+  the login's session epoch, to 30 days a token, and to 90 days from the
+  emailed code (then 401 `sign-in-expired`). `server/web/server/role-sweep.test.ts` drives every
   manifest route, member routes included, with a client login (each
   refuses it) and with an unknown role (each answers as to a stranger).
   Public routes that read a session themselves (password change, sign
@@ -208,7 +237,9 @@ it to Team (or Client, when clients should read it too).
 Member logins are always on; there is nothing to switch on (Phase 6 removed
 the `MANTLE_MEMBERS` flag).
 
-1. Set item levels and lower `team-responder` to team (access-levels.md §5).
+1. Set item levels and lower `team-responder` to team (access-levels.md §5:
+   one call, `access_set` with `drop_groups_above: true`, on a fresh install
+   too).
    Its shipped prompt speaks to a member login in their own chat; a brain
    whose team-responder prompt was never edited gets it on upgrade (section
    9, "The team portal is retired").
@@ -643,15 +674,30 @@ with a green **published** build, never a draft
 and the routes read on the team role as well, so both locks hold. Set an
 app's level in its Access control; nothing else lists it to members.
 
-| Route                                    | What                                               |
-| ---------------------------------------- | -------------------------------------------------- |
-| `GET /api/member/apps`                   | The apps the member may run, and the home app id   |
-| `POST /api/member/apps/:id/frame-ticket` | A seconds-lived frame ticket that names the login  |
-| `GET /api/member/apps/:id/frame?t=`      | The frame document: the PUBLISHED build            |
-| `POST /api/member/apps/:id/tool-broker`  | `host.tools.call()` (rules below)                  |
-| `POST /api/member/apps/:id/db-broker`    | `host.db.query` / `host.db.exec` on the app SQLite |
-| `GET /api/member/home`                   | The home app and what its `host.hub.get()` answers |
+The launcher LISTS fewer apps than a member may run: team and client apps
+only, never a public one (`MEMBER_LISTED_APP_LEVELS`; contact shares plan
+P0, decided 2026-10-01). Public means "anyone with the link" for an app as
+for every other kind, so a public app is in no member list: not
+`GET /api/member/apps`, not its folders, not the home app's `apps`. A
+member who has a public app's link still runs it, read only. A public app
+inside a folder shared with the team is read at team through the folder,
+so it is listed like any team app there.
 
+| Route                                    | What                                                |
+| ---------------------------------------- | --------------------------------------------------- |
+| `GET /api/member/apps`                   | Team and client apps to run, their folders, home id |
+| `POST /api/member/apps/:id/frame-ticket` | A seconds-lived frame ticket that names the login   |
+| `GET /api/member/apps/:id/frame?t=`      | The frame document: the PUBLISHED build             |
+| `POST /api/member/apps/:id/tool-broker`  | `host.tools.call()` (rules below)                   |
+| `POST /api/member/apps/:id/db-broker`    | `host.db.query` / `host.db.exec` on the app SQLite  |
+| `GET /api/member/home`                   | The home app and what its `host.hub.get()` answers  |
+
+- **Folders.** `GET /api/member/apps` also answers `folders`: where those
+  apps sit in the admin's Apps folders, read only (`AppLauncherFolder`: id,
+  name, icon, colour, `parentId`, `appIds`). A folder is answered only when
+  it leads to an app of the same list, so a folder with nothing the member
+  may run is never named (docs/folder-tree.md, "Apps for members and
+  clients"). `apps` and `homeAppId` are unchanged, for older clients.
 - **The frame.** A sandboxed iframe sends no cookie, so the member mints a
   ticket (`mem` = the login) and the frame URL carries it. Only the member
   frame route accepts a member ticket, and it re-checks that the login is
@@ -675,8 +721,11 @@ app's level in its Access control; nothing else lists it to members.
   model, or delegates to an agent, carries the flag. The call runs on the team role, on a
   team surface that names the login, with the private corpus off: row
   security decides what it reads (team, client and public items), and team
-  refusals apply. `app_tools_set`, `app_publish` and `access_set` on an app
-  return `warnings` for every declared tool its members would be refused.
+  refusals apply. An outside tool (MCP or http) passes only when an admin
+  switched "External access" on for it (next section). `app_tools_set`,
+  `app_publish` and `access_set` on an app return `warnings` for every
+  declared tool its members would be refused, so the warnings follow the
+  switch.
 - **Data.** Row security does not reach SQLite, so the db broker checks the
   app itself (team level or lower, published) before it opens the database.
   Members read every app they may run, and write to an app at TEAM or
@@ -731,7 +780,8 @@ app's level in its Access control; nothing else lists it to members.
   built-in view, and `/api/member/home` answers `{ homeApp: null, hub: null }`.
   With a home app, `host.hub.get()` answers from that route: the site name,
   the member's name, the newest team pages as sections (a section's `token`
-  is the page id), Library counts and the other apps members may run.
+  is the page id), Library counts and the other apps the launcher lists
+  (team and client, never public).
 - **Contract.** The response shapes are published in
   `@crossworks/client-types` (`packages/client-types/src/dto/member-apps.ts`):
   `MemberAppCard`, `MemberAppList`, `MemberHomeApp`, `MemberHomeData<THub>`
@@ -739,6 +789,73 @@ app's level in its Access control; nothing else lists it to members.
   `share-ui/app-bridge-protocol`) and the admin's `MemberChatsResponse`. A
   card's `audience` is `MemberAppLevel` (team, client or public). The routes
   check their bodies with `satisfies`.
+
+### External access: outside tools in shared apps (2026-10-02)
+
+A site adds its own connectors: an MCP server or an http API, for example a
+read-only SQL bridge to a site database. None ship with Mantle, and the
+brain cannot judge what an outside tool does. So an admin decides, per tool,
+in the brain's data: the switch "External access" on the tool row
+(`packages/tools/src/external-access.ts`). It shipped on 2026-10-01 as
+"Team apps may use", for members only; on 2026-10-02 it became "External
+access": whoever an app is shared with may need the site service it calls
+(for example one app, given to a contact, that reads a site database).
+
+- **Which tools.** MCP and http tools only. An http tool must not send PUT,
+  PATCH or DELETE. Never a recipe (its steps can call tools that write, and
+  they change when a step tool changes) and never a shell tool. Built-ins
+  need no switch: their `readOnly` flag and the level rules decide. A tool
+  that requires confirmation cannot get it (nobody is there to confirm in an
+  app loop).
+- **Who switches it.** Only an admin switches it on: Settings > Tools on the
+  tool (`PUT /api/tools/:id/external-access` `{ allow, readOnlyConfirmed }`,
+  admin logins only), or the owner's own MCP client or dev tool console
+  (`api_tool_update` with `external_access: true, read_only_confirmed:
+true`). An in-brain agent may switch it off, never on.
+- **Who may call it.** The app's sharing decides, nothing else (no tool
+  group level gates it): a member running a team or public app (the member
+  tool broker), anyone running a client-level app (the client rules, for
+  every runner), and a contact on a CONTACT-share link who passed the code
+  (the `/s` tool broker). Never an open link (no contact): anyone with the
+  URL would be the caller. The app must declare the tool. The UI warns:
+  everyone the app reaches can call the tool BY HAND (a request to the tool
+  broker from the browser, with their own login or the contact's link) with
+  ANY input, not only what the app's screens send. For a tool that takes
+  free SQL, that means they can read anything the connector can read.
+- **The read-only confirmation** is required to switch on. It is stored on
+  the row (`tools.external_access`, migration 0215, renamed from
+  `team_apps` by 0225): when, which admin (their login, or the owner's MCP
+  client), and a sha256 signature of the handler the admin looked at. Each
+  switch also writes an `audit_log` row (`tool.external_access.on` /
+  `tool.external_access.off`) with the actor.
+- **Every call.** The app declares the tool; it is enabled and needs no
+  confirmation; the switch holds for the current handler. An MCP tool's
+  connector must be enabled (the dispatch reads it every call). Spending
+  built-ins stay refused; the brain cannot know whether an outside tool
+  spends, so the admin's confirmation covers that too. A member's call runs
+  on the team role and a team surface, a client app's on the client role
+  and a client surface, a contact's on the public role and a contact
+  surface. The connector lookup and the remote MCP call run on the admin
+  pool (`asSystem`): a client role sees tool groups at client level only, so
+  a connector group at another level would look missing, and an OAuth
+  connector may refresh its own token. Neither reads brain content. On a
+  link, no built-in ever runs.
+- **Off.** Switching off refuses the next call (the brokers read the row
+  every call). The switch counts only while the handler's signature equals
+  the stored one, so a changed handler voids it whoever changed it (an
+  edit, a connector sync, SQL by hand); bookkeeping a sync writes
+  (`vanishedAt`, an OpenAPI mirror's `editedAt`) is left out. An edit
+  through the tool API also clears the column. A connector moved to another
+  server or another credential clears the switch on all its tools. Deleting
+  the tool deletes the switch with the row.
+- **Audit.** Every call, allowed or refused, lands in the app's access log
+  with the member or client login, or the contact and the share; an allowed
+  outside call adds `handler: 'mcp' | 'http'` to the detail. A contact's
+  call also lands in the share's trail (`share_access_log` kind `tool`, or
+  `refused`).
+- **Later, not now.** An optional per-app list of fixed queries in the app
+  manifest, where the brokers run only those (with parameters) for anyone
+  below admin. Not built.
 
 ## 8. The member's own chrome (Phase 5)
 
@@ -1396,7 +1513,11 @@ it used to stop at 100.
 **The phone.** The push worker pushes an ARRIVAL only (the newest item of a
 queue, started waiting in the last two minutes, not pushed before), to
 devices of active admin logins only (`listAdminSubscriptions`: a member's,
-a deactivated admin's or an unattributed device is never listed). The
+a client's, a deactivated admin's or an unattributed device is never
+listed). Since mobile_roles_push every owner push follows that rule (assistant messages
+and approvals too), and a member or a client gets pushes of its own: a
+reply in its chat, a review result, a comment
+(mobile-companion-backend.md, "Three roles on the phone"). The
 lock screen shows the title and the member's name. It follows the
 approvals toggle in the push preferences. The mobile companion has no Team
 admin screen yet, so a tap opens the app.

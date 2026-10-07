@@ -163,3 +163,9 @@ across the border semantically, Saskia (or Claude) on one side, the scoped
 HTTP API on the other, every read traced. Remaining nice-to-haves: full
 page-body federation (Phase 3 note; passage search now covers the common case),
 a handshake/pairing flow to auto-exchange tokens, and per-peer rate limiting.
+
+## Peers that act as a login
+
+Since 0227 a peer can also be bound to a login and call this brain's MCP
+endpoint as that login, read-only unless its Write switch is on. See
+[mcp-as-a-login.md](mcp-as-a-login.md).

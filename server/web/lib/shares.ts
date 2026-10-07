@@ -37,6 +37,7 @@ export {
   applyShareMode,
   getActiveShareForNode,
   resolveActiveShareByToken,
+  resolveActiveShareRowByToken,
   recordShareView,
   isShareable,
   type ShareSummary,
@@ -147,6 +148,22 @@ export type ShareView =
  */
 export function linkLevels(_folderAudience: string): ViewerLevel[] {
   return ['public'];
+}
+
+/** Every level: what a CONTACT share's embeds may sit at. */
+const ANY_LEVEL: ViewerLevel[] = ['admin', 'team', 'client', 'public'];
+
+/**
+ * The levels a share serves its embeds at. An open link: `linkLevels`
+ * (public only). A CONTACT share (migration 0214) lowers nothing, so an
+ * admin page's images stay admin; it serves what the shared item itself
+ * embeds whatever its level, read only, and only while the share lives
+ * (the same idea as "embeds follow their embedder" for folder shares,
+ * migration 0208, with no column). Every caller still checks the embed is
+ * named by the shared item's own content (its embed closure).
+ */
+export function shareLevels(share: Pick<Share, 'contactId'>, audience: string): ViewerLevel[] {
+  return share.contactId ? ANY_LEVEL : linkLevels(audience);
 }
 
 /** Whether every one of `ids` (the owner's items that still exist) sits at
@@ -478,13 +495,14 @@ export async function isAssetAllowed(share: Share, fileId: string): Promise<bool
         and(
           eq(nodes.id, fileId),
           eq(nodes.ownerId, share.ownerId),
-          inArray(nodes.audience, linkLevels(page.audience)),
+          inArray(nodes.audience, shareLevels(share, page.audience)),
         ),
       )
       .limit(1);
     return !!hit;
   }
-  if (share.nodeType === 'branch') {
+  // A folder is never a contact share (v1, decision 2): refuse outright.
+  if (share.nodeType === 'branch' && !share.contactId) {
     // Hot path (one call per file/download under a folder share): fetch only
     // the folder's path — folderById would also run two folderCounts queries
     // whose results this check never reads.

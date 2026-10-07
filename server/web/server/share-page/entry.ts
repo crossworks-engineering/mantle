@@ -4,7 +4,7 @@
  * of that should ride along on a fully static shared page just to draw a
  * toggle button. This bundle is vanilla DOM + (lazily) the Neat WebGL lib.
  *
- * Two jobs:
+ * Three jobs:
  *  - The visitor's light/dark toggle. The owner's default arrives stamped on
  *    `<html>` (class + data-share-mode-default, applied before paint by the
  *    inline script in template.ts); the toggle overlays the visitor's own
@@ -16,6 +16,8 @@
  *    @firecms/neat, so the chunk is only fetched on brains that actually
  *    saved one). Rebuilt on every mode flip — the theme tokens it derives
  *    colours from change with the `.dark` class.
+ *  - Foldable headings on a shared page (share-ui heading-fold-dom.ts): the
+ *    arrows, the folding, and the visitor's remembered choices.
  *
  * Bundled by scripts/build-share-runtime.ts (esbuild, `splitting: true`) into
  * public/share-runtime/share-page.js + a lazy chunk for the Neat lib.
@@ -23,6 +25,7 @@
 import { SHARE_MODE_STORAGE_KEY } from '@mantle/share-ui/share-mode';
 import { decodeNeatSpec } from '@mantle/share-ui/neat-background';
 import { mountNeat, type NeatMountHandle } from '@mantle/share-ui/neat-mount';
+import { wireHeadingFolds } from '@mantle/share-ui/heading-fold-dom';
 
 const root = document.documentElement;
 
@@ -158,3 +161,6 @@ if (root.dataset.shareModeDefault === 'system' && !storedMode()) {
 // attribute, so no toggle ever floats over an app's own UI.
 if (root.dataset.shareModeDefault !== undefined) mountToggle();
 repaintNeat();
+
+// A shared page's foldable headings (the page presenter's `.ProseMirror`).
+for (const doc of document.querySelectorAll<HTMLElement>('.ProseMirror')) wireHeadingFolds(doc);

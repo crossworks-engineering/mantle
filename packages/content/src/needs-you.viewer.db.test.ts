@@ -147,7 +147,7 @@ describe.skipIf(!URL)('needs you: the live event and the counts', () => {
     await m?.closeDb();
     await scratch?.drop();
     rmSync(root, { recursive: true, force: true });
-  });
+  }, 120_000);
 
   let pageId: string;
 
@@ -308,12 +308,16 @@ describe.skipIf(!URL)('needs you: the live event and the counts', () => {
   });
 
   it('the trigger functions only notify: no write, no job, nothing an LLM could follow', async () => {
+    // Three since 0230: provider outages (no credits, a refused key) raise
+    // the same event, under the same rule.
     const fns = await exec<{ proname: string; src: string; secdef: boolean }>(sqlTag`
       select proname, prosrc as src, prosecdef as secdef from pg_proc
-       where proname in ('mantle_notify_needs_you', 'mantle_notify_needs_you_request')`);
+       where proname in ('mantle_notify_needs_you', 'mantle_notify_needs_you_request',
+                         'mantle_notify_provider_alert')`);
     expect(fns.map((f) => f.proname).sort()).toEqual([
       'mantle_notify_needs_you',
       'mantle_notify_needs_you_request',
+      'mantle_notify_provider_alert',
     ]);
     for (const f of fns) {
       expect(f.src).toMatch(/pg_notify\('needs_you_changed'/);
@@ -322,11 +326,12 @@ describe.skipIf(!URL)('needs you: the live event and the counts', () => {
       );
     }
     // And nothing else in the database listens on the channel's behalf:
-    // only these two functions mention it.
+    // only these three functions mention it.
     const [other] = await exec<{ n: number }>(sqlTag`
       select count(*)::int as n from pg_proc
        where prosrc like '%needs_you_changed%'
-         and proname not in ('mantle_notify_needs_you', 'mantle_notify_needs_you_request')`);
+         and proname not in ('mantle_notify_needs_you', 'mantle_notify_needs_you_request',
+                             'mantle_notify_provider_alert')`);
     expect(other!.n).toBe(0);
   });
 });

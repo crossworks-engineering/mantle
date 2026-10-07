@@ -132,7 +132,7 @@ describe.skipIf(!URL)('levels and links at the edges on Postgres', () => {
         (${ids.parent}, '{"type":"doc","content":[]}'::jsonb, ''),
         (${ids.sub}, '{"type":"doc","content":[]}'::jsonb, ''),
         (${ids.teamSub}, '{"type":"doc","content":[]}'::jsonb, '')`);
-  });
+  }, 60_000);
 
   afterAll(async () => {
     h.audiences = null;

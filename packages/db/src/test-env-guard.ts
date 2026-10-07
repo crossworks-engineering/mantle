@@ -8,7 +8,8 @@
  */
 export const DB_TEST_ENV_VARS = ['MANTLE_TEST_DATABASE_URL', 'RUNS_TEST_DATABASE_URL'] as const;
 
-function isCi(env: Record<string, string | undefined>): boolean {
+/** True on a CI run (the CI variable set to anything but false or 0). */
+export function isCi(env: Record<string, string | undefined> = process.env): boolean {
   const ci = env.CI?.trim().toLowerCase();
   return !!ci && ci !== 'false' && ci !== '0';
 }

@@ -7,8 +7,14 @@
 
 import { getDefaultWorker, nodes, type AiWorker, type ExtractorParams } from '@mantle/db';
 import { step } from '@mantle/tracing';
-import { chatWithFailover, recordChatUsage, type ChatRoutes } from '@mantle/runtime/agent';
+import {
+  chatWithFailover,
+  recordChatUsage,
+  resolveChatRoutes,
+  type ChatRoutes,
+} from '@mantle/runtime/agent';
 import { type ChatResult } from '@mantle/voice';
+import { noteProviderFailure, noteProviderSuccess, tagProviderSubject } from '@mantle/embeddings';
 import { parseExtractorOutput, type ExtractorOutput } from '../extractor-parse';
 import { DEFAULT_EXTRACTOR_PROMPT } from './prompts';
 
@@ -57,9 +63,39 @@ export async function chatComplete(
       ...(typeof params.top_p === 'number' ? { topP: params.top_p } : {}),
     },
     (m) => console.warn(`[extractor] ${m}`),
-  );
+  ).catch((err: unknown) => {
+    // The provider-alert store (docs/embeddings.md "Provider outages"): an
+    // account or outage error is recorded for admins, and tagged so the
+    // extract queue's circuit knows it came from the extraction model.
+    tagProviderSubject(err, 'extraction', routes.primary.provider);
+    noteProviderFailure(ownerId, 'extraction', err, {
+      provider: routes.primary.provider,
+      model: routes.primary.model,
+    });
+    throw err;
+  });
+  noteProviderSuccess(ownerId, 'extraction');
   if (failedOver) console.warn(`[extractor] completed via backup route (${usedProvider})`);
   return result;
+}
+
+/**
+ * The outage probe for the extraction model (server/api provider-circuit.ts):
+ * ONE tiny chat call through the extractor worker's routes (primary, then the
+ * backup on failover). A few tokens. Throws the provider's error on failure;
+ * a success closes the extraction alert. No extractor worker = nothing to
+ * probe, which counts as working (extraction skips with its own trace).
+ */
+export async function probeExtractionModel(ownerId: string): Promise<void> {
+  const worker = await resolveExtractor(ownerId);
+  if (!worker) return;
+  await chatComplete(
+    ownerId,
+    resolveChatRoutes(worker),
+    'You are a health check.',
+    'Reply with the word OK.',
+    { max_tokens: 16 },
+  );
 }
 
 // ─── Entity reconciliation ──────────────────────────────────────────────────
@@ -120,6 +156,7 @@ export async function runExtractorModel(
             facts: [],
             entities,
             relations: [],
+            reused: true,
           } as ReturnType<typeof parseExtractorOutput>;
         },
       )

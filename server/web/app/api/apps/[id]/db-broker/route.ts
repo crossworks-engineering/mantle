@@ -8,14 +8,16 @@
  * op:'query' runs on a READ-ONLY open (appDbQuery) — writes must go through
  * op:'exec'. Same semantics as the share broker, where public links depend on
  * query being unable to mutate.
+ *
+ * App identity: the admin login fills the reserved `:host_me_*` parameters
+ * (kind 'admin'); a value the browser sends for one is refused.
  */
 import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
-import { getApp } from '@mantle/content';
+import { getAppRuntime } from '@mantle/content';
 import { appDbQuery, appDbExec } from '@mantle/content/app-broker';
 import { scheduleAppTableExportSync } from '@mantle/content/app-table-exports';
-import { AppDbBody, appDbBodyError } from '@/lib/app-db-broker-body';
-import { errorMessage } from '@mantle/std';
+import { AppDbBody, appDbBodyError, appDbErrorResponse } from '@/lib/app-db-broker-body';
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
@@ -25,20 +27,40 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!parsed.success)
     return NextResponse.json({ ok: false, error: appDbBodyError(parsed.error) }, { status: 400 });
 
-  const app = await getApp(user.id, id);
+  const app = await getAppRuntime(user.id, id);
   if (!app) return NextResponse.json({ ok: false, error: 'app not found' }, { status: 404 });
   const schema = app.manifest.sqlite;
+  // One statement at a time per login, like every other broker: an app
+  // cannot hold every SQL process while other callers wait.
+  const caller = {
+    callerKey: `admin:${user.actor.id}`,
+    viewer: { kind: 'admin' as const, loginId: user.actor.id, name: user.actor.displayName },
+  };
 
   try {
     if (parsed.data.op === 'query') {
-      const rows = await appDbQuery(user.id, id, parsed.data.sql, parsed.data.params, schema);
+      const rows = await appDbQuery(
+        user.id,
+        id,
+        parsed.data.sql,
+        parsed.data.params,
+        schema,
+        caller,
+      );
       return NextResponse.json({ ok: true, output: rows });
     }
-    const res = await appDbExec(user.id, id, parsed.data.sql, parsed.data.params, schema);
+    const res = await appDbExec(user.id, id, parsed.data.sql, parsed.data.params, schema, caller);
     // A write may feed a linked app-table export — debounced, hash-gated.
     scheduleAppTableExportSync(user.id, id);
     return NextResponse.json({ ok: true, output: res });
   } catch (err) {
-    return NextResponse.json({ ok: false, error: errorMessage(err) }, { status: 400 });
+    return appDbErrorResponse(err, 'apps/db-broker', {
+      ownerId: user.id,
+      appNodeId: id,
+      actorId: user.actor.id,
+      via: 'owner',
+      op: parsed.data.op,
+      sql: parsed.data.sql,
+    });
   }
 }

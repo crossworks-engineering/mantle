@@ -103,13 +103,31 @@ from, to}]`: the Access control and `PATCH /api/access/nodes/:id`,
   `invoke_agent` refuses before any trace or LLM work, and one that
   reaches the HTTP layer answers 403 with `reason: 'level-conflict'`
   (`server/web/server/level-conflict.ts`). `team-responder` ships at
-  admin; an admin lowers it once the shadow report is clean (section 5).
+  admin, closed to members, on every brain; an admin lowers it once the
+  shadow report is clean (section 5).
 - **Tool groups.** An agent may hold a tool group only at a level it
   reads: a team agent may hold client and public groups, but a client agent
   holds no public group and a public agent no client group. Refused at grant
   time (`PATCH /api/agents/:id`, `agent_grant_tool_group`) and when an
   agent's or a group's level changes, left out at run time
-  (`resolveAgentToolGroups`).
+  (`resolveAgentToolGroups`). Lowering an agent that holds a group above the
+  new level is refused (400, code `group_above_agent`); the message names
+  each group and the fix. The fix in the same call: `dropGroupsAbove: true`
+  on the API (`drop_groups_above: true` on `access_set`) takes those groups
+  off the agent with the change and lists them in `removedGroups`. It is
+  never the default: a wrong slug must not strip an agent of its groups, and
+  raising the level again does not put them back.
+- **Which groups ship below admin.** Three, set in the system manifest
+  (`level` on the group, `server/web/lib/system-manifest/manifest.ts`):
+  `team-read` and `formulas-eval` at team, `client-read` at client. A group
+  with a manifest level is product-owned at that level: a fresh install
+  seeds it there, and the boot reconcile sets it back there once per
+  version, on every brain, also when an admin moved it (the level is what
+  the group is for). Every other group is admin by default and its level is
+  the admin's to set; the reconcile never touches it. A group's level only
+  says who MAY hold it: giving the group to an agent stays an admin's act.
+  `manifest.test.ts` pins the three groups and the tool list of the two
+  team-level ones, so a change that widens them is made on purpose.
 
 ## 2. How it is enforced
 
@@ -201,9 +219,17 @@ removing any one wrap fails a test.
 - API (owner only): `GET|PATCH /api/access/nodes/:id`,
   `PATCH /api/access/agents/:slug`, `PATCH /api/access/tool-groups/:slug`,
   `GET /api/access/shadow?days=30`.
+  The agent PATCH takes `{ audience, dropGroupsAbove? }` and answers
+  `{ agent: { id, slug, audience, removedGroups } }`.
 - Migration 0159 carried today's sharing over: active team shares went to
-  team, public links to public, a shared folder's contents with it. The
-  member-facing groups `team-read` and `formulas-eval` are team level.
+  team, public links to public, a shared folder's contents with it.
+- The member-facing groups `team-read` and `formulas-eval` are team level
+  on every brain, from the manifest (section 1, "Which groups ship below
+  admin"). Migration 0159 also set them, by UPDATE, but that reached only
+  the brains that existed when it ran: a brain installed after it seeded
+  both at admin until the manifest carried the level (October 2026). Such
+  a brain gets the right levels from the boot reconcile of its next update,
+  with no manual step and no migration.
 
 ## 5. Turning it on for the team responder
 
@@ -215,8 +241,22 @@ removing any one wrap fails a test.
    purpose), and how many facts stay usable.
 2. Set the levels of what the team should keep reading (a page's embeds go
    with it; a folder's contents with "Lower them too").
-3. `access_set(agent_slug: 'team-responder', level: 'team')`. From the next
-   turn it reads only team-level items. Undo: set it back to admin.
+3. Open the responder: in Jackdaw, **Team > Settings > Member chat > Let
+   members chat** (it reads the level from `teamAgent` on
+   `GET /api/team-admin/settings` and makes the call below). Or one call:
+   `access_set(agent_slug: 'team-responder', level: 'team', drop_groups_above: true)`,
+   or `PATCH /api/access/agents/team-responder` with
+   `{ "audience": "team", "dropGroupsAbove": true }`. The responder ships
+   with three groups: `team-read` and `formulas-eval` (team level) and
+   `team-read-admin` (admin level: the knowledge graph, events, tasks,
+   contacts, email and Journal reads, which a team-level role may never
+   make). The call takes `team-read-admin` off it (`removedGroups`) and sets
+   the level. Without `drop_groups_above` the call is refused and the
+   message names the group and this fix. From the next turn the responder
+   reads only team-level items and members can chat with it.
+   Undo: set it back to admin (members can no longer chat). The next
+   update's reconcile gives an admin-level responder `team-read-admin`
+   back; a team-level one never gets it.
 
 ## 6. Operations
 
@@ -232,7 +272,34 @@ removing any one wrap fails a test.
   from migration 0187 on `agents_viewer_read`, `agents_client_read`,
   `tool_groups_viewer_read` and `tool_groups_client_read`. Each check applies
   once the dump's own migration ledger shows the migration that made it, so
-  an older pre-roll dump is judged by what its release had.
+  an older pre-roll dump is judged by what its release had. It also exits 2
+  when a trigger the dump lists (`pg_restore --list`) is not in the restored
+  database. When the checks pass but `pg_restore` reported an error the
+  script cannot explain, it finishes its steps and exits 3, and never says
+  "Restore complete": something in the dump did not restore.
+- **Restores made from migration 0204 up to 0210 lost one trigger.** 0204
+  made `nodes_share_refresh_after` with `IS DISTINCT FROM` on the ltree
+  `path` column. pg_dump cannot write that form so that pg_restore can run
+  it (`operator does not exist: public.ltree = public.ltree`), and the
+  script went on and said "Restore complete, WITH 1 pg_restore error(s)". A
+  brain restored that way no longer refreshed `inherited_level` below a
+  folder that was shared, unshared, moved or renamed: the rows below kept
+  the share they had, so an unshared folder's contents stayed readable at
+  the old share (docs/folder-tree.md, "Sharing a folder"). Nothing else was
+  lost, and a brain migrated in place never lost it. On a box whose
+  maintenance worker runs, the nightly `share-drift` sweep set those levels
+  right, so a stale level lived for about a day at most; the sweep's run
+  history shows whether a box was hit ("repaired n of n drifted row(s)").
+  Migration 0212 sets every stale level right once more and makes the
+  trigger again in a form a dump can carry (it compares the text of the
+  path), so such a brain is whole again on its next migrate. To see whether
+  a box has the trigger: `select count(*) from pg_trigger where tgname =
+  'nodes_share_refresh_after'` (1 is right). A dump from before 0212 still
+  gives the one error; the script now makes the trigger itself after such a
+  restore and does not count that error. From 0204 on it fails the restore
+  (exit 2) when the trigger is not there. `packages/db/src/dump-restore.db.test.ts`
+  dumps and restores a migrated brain and fails on any statement a restore
+  cannot run; `db-restore-run.db.test.ts` runs the script itself.
 - **Backups before a roll.** The updater takes a strict four-part backup
   (Postgres, app-dbs, table-dbs, spaces) into `backups/pre-roll/` before
   every server roll and refuses the roll when it fails (docs/update-prod.md).
@@ -256,6 +323,16 @@ The level is the truth; an item's share link (docs/sharing.md) follows it.
 | team   | none (revoked): member logins list and open it in their Library, by level |
 | client | none: signed-in clients read it (client logins C1)                        |
 | public | open (anyone with the link), shown to the owner                           |
+
+| Share         | What it does to the level                                                                                                                                                                                       |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| contact share | none: one item, one contact, opened with the item's link plus that contact's code; read only, an app may let the contact write ("Can write"); never tools (migration 0214, docs/sharing.md section 4b) |
+
+A contact share is beside the level, never part of it: every level path
+reads open links only, so a level change (any of the four) leaves contact
+shares alone, and removing one changes no level. An item at any level,
+client included, may carry contact shares; a contact-shared admin item is
+in no member or client list.
 
 Team links are retired (member logins Phase 6 stage 6, migration 0176; see
 docs/member-logins.md section 9): a link is always open, and there is no
@@ -372,7 +449,11 @@ outside a login reaches a team item.
   client items only. Public items are in nobody's Library list: 0161 made
   every link-shared item public. A member still opens a public item by id
   (anyone with its link can read it), and a client never does
-  (docs/member-logins.md section 3).
+  (docs/member-logins.md section 3). Apps too, since contact shares plan
+  P0 (2026-10-01): the member launcher lists team and client apps, never a
+  public one, so Public means "anyone with the link" for every kind. A
+  member still runs a public app from its link, read only
+  (docs/member-logins.md section 7).
 - **Admin-only kinds** (tasks, events, …) stay admin whatever link they
   carry. Setting one to admin removes an old link.
 - Migration 0161 re-derived every level from the links once, for the window

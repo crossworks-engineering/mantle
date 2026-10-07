@@ -3,6 +3,11 @@ import { z } from 'zod';
 import { db, mobileTokens, authUsers, and, eq } from '@mantle/db';
 import { getOwnerOr401 } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
+import {
+  deleteLegacySubscriptions,
+  deleteTokenSubscriptions,
+  forgetRelayDevices,
+} from '@/lib/push/store';
 
 const IdParams = z.object({ id: z.string().uuid(), jti: z.string().min(1) });
 
@@ -11,6 +16,11 @@ const IdParams = z.object({ id: z.string().uuid(), jti: z.string().min(1) });
  * request from that device fails the mobile_tokens liveness check in
  * getBearerUser(). Scoped to the named login's rows; idempotent on ids that
  * are already revoked (they simply no longer match).
+ *
+ * The push devices that token enrolled go with it. So do the login's devices
+ * from before tokens were recorded (no token on the row): nothing says which
+ * phone each is, and a revoked (lost) phone must get no more teasers, so
+ * they all go and a phone still in use connects again.
  */
 export async function DELETE(req: Request, ctx: { params: Promise<{ id: string; jti: string }> }) {
   const user = await getOwnerOr401();
@@ -35,6 +45,10 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string; 
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
 
   await db.update(mobileTokens).set({ revokedAt: new Date() }).where(eq(mobileTokens.id, jti));
+  await forgetRelayDevices([
+    ...(await deleteTokenSubscriptions(jti)),
+    ...(await deleteLegacySubscriptions(targetId)),
+  ]);
   auditFireAndForget({
     actorId: user.actor.id,
     actorEmail: user.actor.email,

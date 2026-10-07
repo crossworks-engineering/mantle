@@ -21,6 +21,13 @@
  * `size_bytes` / ledger rows written by the admin pool, never real bytes.
  * Every fixture a leak test hides is written with the same scope as an
  * allowed one, so only the rule under test hides it.
+ *
+ * The file holds the 'client-total' test lock from its first fixture to the
+ * end of its cleanup: it writes and removes hundreds of fake client MB, and
+ * its total test reads the brain-wide client bytes, which another file that
+ * does the same (client-abuse) must not move half-way. A per-test lock left
+ * that file's unlocked 200 MB fixtures free to land between this test's
+ * reads (expected 0 to be >= 10 MB, 2026-10-02).
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/client-space-c5.viewer.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -29,7 +36,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { notifyBarrier, withTestLock } from '@mantle/db/test-support';
+import { holdTestLock, notifyBarrier } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const MB = 1024 * 1024;
@@ -72,6 +79,7 @@ describe.skipIf(!URL)('a client’s own space: limits, caps, review talk, cost-s
   const logins = [adminA, member, ...clients];
   const spaceOf: Record<string, string> = {};
   const root = mkdtempSync(path.join(tmpdir(), 'mantle-c5space-'));
+  let releaseTotal: () => Promise<void> = async () => {};
 
   const as = <T>(login: string, fn: () => Promise<T>) =>
     m.withSpace({ spaceId: spaceOf[login]!, loginId: login }, fn);
@@ -120,6 +128,11 @@ describe.skipIf(!URL)('a client’s own space: limits, caps, review talk, cost-s
       { seen: (s) => announced.includes(s) },
     );
 
+  // Its own hook and timeout: the other file may hold the lock for its run.
+  beforeAll(async () => {
+    releaseTotal = await holdTestLock(URL!, 'client-total');
+  }, 300_000);
+
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
@@ -161,19 +174,24 @@ describe.skipIf(!URL)('a client’s own space: limits, caps, review talk, cost-s
   }, 60_000);
 
   afterAll(async () => {
-    await unlisten();
-    const spaces = Object.values(spaceOf);
-    for (const s of [...spaces, anchor]) {
-      await m.systemDb.execute(sqlTag`delete from nodes where owner_id = ${s}`);
+    try {
+      await unlisten();
+      const spaces = Object.values(spaceOf);
+      for (const s of [...spaces, anchor]) {
+        await m.systemDb.execute(sqlTag`delete from nodes where owner_id = ${s}`);
+      }
+      await m.systemDb.execute(
+        sqlTag`delete from spaces where login_id = any(${`{${[...logins, anchor].join(',')}}`}::uuid[])`,
+      );
+      await m.systemDb.execute(
+        sqlTag`delete from auth.users where id = any(${`{${[...logins, anchor].join(',')}}`}::uuid[])`,
+      );
+      await m.closeDb();
+      rmSync(root, { recursive: true, force: true });
+    } finally {
+      // Released only once this file's client bytes are gone.
+      await releaseTotal();
     }
-    await m.systemDb.execute(
-      sqlTag`delete from spaces where login_id = any(${`{${[...logins, anchor].join(',')}}`}::uuid[])`,
-    );
-    await m.systemDb.execute(
-      sqlTag`delete from auth.users where id = any(${`{${[...logins, anchor].join(',')}}`}::uuid[])`,
-    );
-    await m.closeDb();
-    rmSync(root, { recursive: true, force: true });
   });
 
   it('every login got its personal space; a client’s runs at client with the client limits', async () => {
@@ -236,40 +254,38 @@ describe.skipIf(!URL)('a client’s own space: limits, caps, review talk, cost-s
     expect(await page(member, `${tag} member 501st`)).toBeTruthy();
   });
 
-  it('holds all client spaces to one total; other clients’ rows count, a member’s do not', () =>
+  it('holds all client spaces to one total; other clients’ rows count, a member’s do not', async () => {
     // The total is set from what client spaces hold now, and ANOTHER client
-    // holds 30 MB of it. Another file (client-abuse) uploads megabytes of
-    // client files against the same total: both hold the 'client-total'
-    // test lock. Page text other files write moves it a few KB, so headroom
-    // is checked within 1 MB; the 30 MB of the other client is what the
-    // test proves.
-    withTestLock(URL!, 'client-total', async () => {
-      const usedNow = async () =>
-        Number(
-          (await exec<{ n: string }>(sqlTag`select mantle_client_space_bytes()::text as n`))[0]!.n,
-        );
-      const big = await fakeFile(c.other, 30 * MB);
-      process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES = String((await usedNow()) + 5 * MB);
-      const headroom = () => as(c.total, () => sf.spaceUploadHeadroom(spaceOf[c.total]!));
-      try {
-        const h = await headroom();
-        expect(h).toBeGreaterThan(4 * MB);
-        expect(h).toBeLessThanOrEqual(6 * MB);
-        await expect(upload(c.total, 10 * MB)).rejects.toMatchObject({
-          reason: 'quota',
-          message: expect.stringMatching(/storage for client uploads is full/),
-        });
-        // A member's space is not a client's: the total never holds it.
-        expect(await upload(member, 10 * MB)).toBeTruthy();
-        // The other client's 30 MB counted: without it there is room again.
-        await m.systemDb.execute(sqlTag`delete from nodes where id = ${big}`);
-        expect(await headroom()).toBeGreaterThanOrEqual(10 * MB);
-        expect(await upload(c.total, 10 * MB)).toBeTruthy();
-      } finally {
-        delete process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES;
-        await m.systemDb.execute(sqlTag`delete from nodes where id = ${big}`);
-      }
-    }));
+    // holds 30 MB of it. The other file that writes megabytes of client rows
+    // (client-abuse) waits on the file's 'client-total' lock. Page text other
+    // files write moves it a few KB, so headroom is checked within 1 MB; the
+    // 30 MB of the other client is what the test proves.
+    const usedNow = async () =>
+      Number(
+        (await exec<{ n: string }>(sqlTag`select mantle_client_space_bytes()::text as n`))[0]!.n,
+      );
+    const big = await fakeFile(c.other, 30 * MB);
+    process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES = String((await usedNow()) + 5 * MB);
+    const headroom = () => as(c.total, () => sf.spaceUploadHeadroom(spaceOf[c.total]!));
+    try {
+      const h = await headroom();
+      expect(h).toBeGreaterThan(4 * MB);
+      expect(h).toBeLessThanOrEqual(6 * MB);
+      await expect(upload(c.total, 10 * MB)).rejects.toMatchObject({
+        reason: 'quota',
+        message: expect.stringMatching(/storage for client uploads is full/),
+      });
+      // A member's space is not a client's: the total never holds it.
+      expect(await upload(member, 10 * MB)).toBeTruthy();
+      // The other client's 30 MB counted: without it there is room again.
+      await m.systemDb.execute(sqlTag`delete from nodes where id = ${big}`);
+      expect(await headroom()).toBeGreaterThanOrEqual(10 * MB);
+      expect(await upload(c.total, 10 * MB)).toBeTruthy();
+    } finally {
+      delete process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES;
+      await m.systemDb.execute(sqlTag`delete from nodes where id = ${big}`);
+    }
+  });
 
   // ── Submit caps ─────────────────────────────────────────────────────────
 

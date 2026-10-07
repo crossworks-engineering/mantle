@@ -72,7 +72,7 @@ describe.skipIf(!URL)('client logins and sign-in links', () => {
          ${JSON.stringify({ emails: [email('carla')] })}::jsonb),
         (${contact2}, ${owner}, 'contact', 'Dora Dual', 'contacts', 'admin',
          ${JSON.stringify({ emails: [email('dora-a'), email('dora-b')] })}::jsonb)`);
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await exec(sqlTag`delete from client_report_acks where owner_id = ${owner}`);

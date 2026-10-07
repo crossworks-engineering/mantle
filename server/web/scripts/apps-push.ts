@@ -13,7 +13,7 @@
  * Optional <dir>/mantle-app.json supplies metadata + bindings:
  *   { "name", "entry", "description", "icon", "tags": [],
  *     "toolSlugs": ["app_recent_notes"], "schemaSql": "CREATE TABLE …" }
- * CLI flags override the manifest. Build + publish reuse runAppBuild() and
+ * CLI flags override the manifest. Build + publish reuse buildAndStageApp() and
  * publishApp() — the same path the web Build/Publish buttons and the app_*
  * builtins use, so this produces identical artifacts.
  */
@@ -23,15 +23,14 @@ import { resolveSingleOwnerId } from '@mantle/db';
 import {
   createApp,
   saveDraftSource,
-  getApp,
+  declareAppSchema,
   setManifest,
   publishApp,
   AppSourceLimitError,
   NoGreenBuildError,
 } from '@mantle/content';
-import { assertSafeScript } from '@mantle/content/app-broker';
-import { resolveTool } from '@mantle/tools';
-import { runAppBuild } from '../lib/app-build-run';
+import { checkAppSchemaScript } from '@mantle/content/app-broker';
+import { buildAndStageApp, resolveTool } from '@mantle/tools';
 import { errorMessage } from '@mantle/std';
 
 function die(msg: string): never {
@@ -112,7 +111,7 @@ if (!entry)
   die(
     'could not determine the entry file — pass --entry, add an App.tsx, or set it in mantle-app.json',
   );
-if (!(entry in files)) die(`entry '${entry}' is not among the collected files`);
+if (!Object.hasOwn(files, entry)) die(`entry '${entry}' is not among the collected files`);
 
 const wantPublish = flags.publish === true;
 const wantBuild = flags['no-build'] !== true || wantPublish;
@@ -159,20 +158,16 @@ if (manifest.toolSlugs?.length) {
 
 if (manifest.schemaSql?.trim()) {
   try {
-    assertSafeScript(manifest.schemaSql);
+    await checkAppSchemaScript(ownerId, id, manifest.schemaSql);
   } catch (err) {
     die(errorMessage(err));
   }
-  const app = await getApp(ownerId, id);
-  const nextVersion = (app?.manifest.sqlite?.schemaVersion ?? 0) + 1;
-  await setManifest(ownerId, id, {
-    sqlite: { schemaSql: manifest.schemaSql, schemaVersion: nextVersion },
-  });
+  const nextVersion = await declareAppSchema(ownerId, id, manifest.schemaSql);
   console.log(`set sqlite schema (v${nextVersion})`);
 }
 
 if (wantBuild) {
-  const outcome = await runAppBuild(ownerId, id);
+  const outcome = await buildAndStageApp(ownerId, id);
   if (!outcome) die(`app ${id} not found`);
   for (const w of outcome.warnings) console.warn(`  warning: ${w.text}`);
   if (!outcome.buildOk) {

@@ -63,6 +63,21 @@ export const mantlePeers = pgTable(
     lastContactedAt: timestamp('last_contacted_at', { withTimezone: true }),
     /** When the peer last successfully called us. */
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+    /**
+     * The login this peer's token acts as on /api/mcp (0227): the owner, a
+     * member or a client. Null = a share-only peer (the federation read
+     * routes only), as before 0227.
+     */
+    actsAsLoginId: uuid('acts_as_login_id'),
+    /** That login's role when it was bound; a role change fails closed. */
+    actsAsRole: text('acts_as_role'),
+    /** Whether the peer may call the write tools of its login (default off). */
+    writeEnabled: boolean('write_enabled').notNull().default(false),
+    /** Risky owner tools the owner allowed for this peer by name (0227). */
+    allowedRiskyTools: text('allowed_risky_tools')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },

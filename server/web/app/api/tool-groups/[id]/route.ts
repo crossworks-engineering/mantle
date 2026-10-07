@@ -88,7 +88,17 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     if (integration === null) {
       integrationPatch = null;
     } else {
-      const meta = parseIntegrationMeta(integration);
+      // The owner's editor has no oauth2 field (Toolsmith sets it), and the
+      // binding is stored whole, so a save from that screen would drop the
+      // token config and break every {{oauth:…}} tool. An ABSENT oauth2 keeps
+      // the stored one; `oauth2: null` still clears it.
+      // (The summary carries the stored binding raw; its DTO does not type oauth2.)
+      const storedOauth2 = (current.integration as { oauth2?: unknown } | null)?.oauth2;
+      const withOauth2 =
+        !('oauth2' in integration) && storedOauth2
+          ? { ...integration, oauth2: storedOauth2 }
+          : integration;
+      const meta = parseIntegrationMeta(withOauth2);
       if (!meta.ok) return NextResponse.json({ error: meta.error }, { status: 400 });
       integrationPatch = meta.value;
       warnings.push(...meta.warnings);

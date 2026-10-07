@@ -258,7 +258,7 @@ const task_update: BuiltinToolDef = {
   slug: 'task_update',
   name: 'Update a task',
   description:
-    "Update an existing task. Any field omitted stays unchanged. Set `status: 'done'` to complete it, 'in_progress'/'blocked' to track work. `dueAt` is a UTC ISO 8601 instant; pass '' to clear it (same for `body`, and `tags: []` empties the list). `todos` replaces the WHOLE checklist — read the task first, then send the edited list. Use this to mark tasks done, reprioritise, tick checklist steps, or edit details.",
+    "Update an existing task. Any field omitted stays unchanged. Set `status: 'done'` to complete it, 'in_progress'/'blocked' to track work. To undo a completion, send `reopen: true` with no status: the task goes back to the status it had before it was marked done. `dueAt` is a UTC ISO 8601 instant; pass '' to clear it (same for `body`, and `tags: []` empties the list). `todos` replaces the WHOLE checklist — read the task first, then send the edited list. Use this to mark tasks done, reprioritise, tick checklist steps, or edit details.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -306,6 +306,11 @@ const task_update: BuiltinToolDef = {
         description:
           'true files the task away (hidden from lists and the board without deleting it); false restores it. Archiving does not change the status. Prefer this over deleting finished work.',
       },
+      reopen: {
+        type: 'boolean',
+        description:
+          "true takes a done task back to the status it had before it was marked done ('open' when unknown). An explicit `status` wins over it.",
+      },
     },
     required: ['id'],
   },
@@ -330,6 +335,7 @@ const task_update: BuiltinToolDef = {
         ...(typeof input.archived === 'boolean'
           ? { archivedAt: input.archived ? new Date().toISOString() : null }
           : {}),
+        ...(input.reopen === true ? { reopen: true } : {}),
       });
       if (!row) return notFound('task', id, 'task_list');
       ctx.step?.setMeta({ taskId: id, status: row.status });

@@ -102,6 +102,7 @@ import type { BuiltinToolDef, ToolHandlerContext } from './types';
 const ensure = TOOLSMITH_TOOLS.find((t) => t.slug === 'tool_group_ensure')!;
 const grant = TOOLSMITH_TOOLS.find((t) => t.slug === 'agent_grant_tool_group')!;
 const skillSet = TOOLSMITH_TOOLS.find((t) => t.slug === 'api_skill_set')!;
+const setEffort = TOOLSMITH_TOOLS.find((t) => t.slug === 'agent_set_thinking_effort')!;
 
 const ctx: ToolHandlerContext = { ownerId: 'o1' };
 /** The same owner, but the call comes from an agent rather than the operator. */
@@ -354,6 +355,138 @@ describe('tool_group_ensure', () => {
     expect(h.updateSet).toHaveBeenCalledWith(
       expect.objectContaining({
         integration: { service: 'owm', secretRef: 'owm/default', docsNodeId: DOCS },
+      }),
+    );
+  });
+
+  it('a re-declared base_url, secret_ref or auth_template replaces the stored one', async () => {
+    h.selectQueue.push([
+      {
+        ...EXISTING_GROUP,
+        integration: {
+          service: 'owm',
+          baseUrl: 'https://old.example.com',
+          secretRef: 'owm/old',
+          authTemplate: { query: { appid: '{{secret:owm/old}}' } },
+        },
+      },
+    ]);
+    vi.mocked(listApiKeys).mockResolvedValue([{ service: 'owm', label: 'new' }] as never);
+    await ensure.handler(
+      {
+        slug: 'geo-tools',
+        tool_slugs: [],
+        base_url: 'https://new.example.com',
+        secret_ref: 'owm/new',
+        auth_template: { query: { appid: '{{secret:owm/new}}' } },
+      },
+      ctx,
+    );
+    expect(h.updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        integration: {
+          service: 'owm',
+          baseUrl: 'https://new.example.com',
+          secretRef: 'owm/new',
+          authTemplate: { query: { appid: '{{secret:owm/new}}' } },
+        },
+      }),
+    );
+  });
+
+  it('binds oauth2 client credentials and defaults the bearer placement', async () => {
+    vi.mocked(listApiKeys).mockResolvedValue([{ service: 'acme', label: 'client-id' }] as never);
+    const res = await ensure.handler(
+      {
+        slug: 'acme-tools',
+        name: 'Acme',
+        tool_slugs: [],
+        service: 'acme',
+        base_url: 'https://api.example.com',
+        oauth2: {
+          token_url: 'https://auth.example.com/oauth/token',
+          client_id_ref: 'acme/client-id',
+          client_secret_ref: '{{secret:acme/client-secret}}',
+          scope: 'read',
+        },
+      },
+      ctx,
+    );
+    expect(h.insertValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        integration: {
+          service: 'acme',
+          baseUrl: 'https://api.example.com',
+          authTemplate: { headers: { Authorization: 'Bearer {{oauth:acme-tools}}' } },
+          oauth2: {
+            grant: 'client_credentials',
+            tokenUrl: 'https://auth.example.com/oauth/token',
+            clientIdRef: 'acme/client-id',
+            clientSecretRef: 'acme/client-secret',
+            scope: 'read',
+          },
+        },
+      }),
+    );
+    expect(outputOf(res).integration).toMatchObject({
+      oauth2: {
+        client_id_ref: 'acme/client-id',
+        client_secret_ref: 'acme/client-secret',
+        client_auth: 'basic',
+      },
+    });
+    // Only the secret is missing from the vault.
+    expect(outputOf(res).warnings).toEqual([
+      expect.stringMatching(
+        /oauth2\.client_secret_ref 'acme\/client-secret' has no matching vault entry/,
+      ),
+    ]);
+  });
+
+  it('refuses oauth2 without a base_url, writing nothing', async () => {
+    const res = await ensure.handler(
+      {
+        slug: 'acme-tools',
+        name: 'Acme',
+        tool_slugs: [],
+        service: 'acme',
+        oauth2: {
+          token_url: 'https://auth.example.com/oauth/token',
+          client_id_ref: 'acme/client-id',
+          client_secret_ref: 'acme/client-secret',
+        },
+      },
+      ctx,
+    );
+    expect(errorOf(res)).toMatch(/oauth2 needs integration\.base_url/);
+    expect(h.insert).not.toHaveBeenCalled();
+  });
+
+  it('oauth2: null removes the OAuth2 config', async () => {
+    h.selectQueue.push([
+      {
+        ...EXISTING_GROUP,
+        integration: {
+          service: 'acme',
+          baseUrl: 'https://api.example.com',
+          authTemplate: { headers: { 'X-Key': '{{secret:acme/key}}' } },
+          oauth2: {
+            grant: 'client_credentials',
+            tokenUrl: 'https://auth.example.com/oauth/token',
+            clientIdRef: 'acme/client-id',
+            clientSecretRef: 'acme/client-secret',
+          },
+        },
+      },
+    ]);
+    await ensure.handler({ slug: 'geo-tools', tool_slugs: [], oauth2: null }, ctx);
+    expect(h.updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        integration: {
+          service: 'acme',
+          baseUrl: 'https://api.example.com',
+          authTemplate: { headers: { 'X-Key': '{{secret:acme/key}}' } },
+        },
       }),
     );
   });
@@ -687,5 +820,70 @@ describe('api_skill_set', () => {
     ]);
     // Warnings do not block the write.
     expect(h.insert).toHaveBeenCalled();
+  });
+});
+
+describe('agent_set_thinking_effort', () => {
+  // A higher tier raises an agent's spend on every turn, so the guards match
+  // the grant: no self-change, and an agent asking waits for the operator.
+  it('refuses an unknown effort before any lookup', async () => {
+    const res = await setEffort.handler({ agent_slug: 'responder', effort: 'extreme' }, ctx);
+    expect(errorOf(res)).toMatch(/effort must be one of: inherit, off, low/);
+    expect(h.select).not.toHaveBeenCalled();
+  });
+
+  it('refuses an agent changing its own effort BEFORE any lookup', async () => {
+    const res = await setEffort.handler({ agent_slug: 'toolsmith', effort: 'max' }, agentCtx);
+    expect(errorOf(res)).toMatch(/cannot change its own thinking effort/);
+    expect(h.select).not.toHaveBeenCalled();
+    expect(h.update).not.toHaveBeenCalled();
+    expect(h.insert).not.toHaveBeenCalled();
+  });
+
+  it('an operator call writes the tier, owner-scoped, to the found row', async () => {
+    h.selectQueue.push([{ id: 'a1', thinkingEffort: null }]);
+    const res = await setEffort.handler({ agent_slug: 'responder', effort: 'high' }, ctx);
+    expect(outputOf(res)).toEqual({ agent_slug: 'responder', thinking_effort: 'high' });
+    expect(paramsOf(h.selectWheres[0])).toEqual(expect.arrayContaining(['o1', 'responder']));
+    expect(h.updateSet).toHaveBeenCalledWith(expect.objectContaining({ thinkingEffort: 'high' }));
+    expect(paramsOf(h.updateWheres[0])).toContain('a1');
+  });
+
+  it("'inherit' clears the column to null", async () => {
+    h.selectQueue.push([{ id: 'a1', thinkingEffort: 'low' }]);
+    const res = await setEffort.handler({ agent_slug: 'responder', effort: 'inherit' }, ctx);
+    expect(outputOf(res)).toEqual({ agent_slug: 'responder', thinking_effort: null });
+    expect(h.updateSet).toHaveBeenCalledWith(expect.objectContaining({ thinkingEffort: null }));
+  });
+
+  it('an unchanged value writes nothing', async () => {
+    h.selectQueue.push([{ id: 'a1', thinkingEffort: 'off' }]);
+    const res = await setEffort.handler({ agent_slug: 'responder', effort: 'off' }, ctx);
+    expect(outputOf(res)).toMatchObject({ unchanged: true });
+    expect(h.update).not.toHaveBeenCalled();
+  });
+
+  it('reports an unknown agent without writing', async () => {
+    h.selectQueue.push([]);
+    const res = await setEffort.handler({ agent_slug: 'ghost', effort: 'low' }, ctx);
+    expect(errorOf(res)).toMatch(/agent 'ghost' not found/);
+    expect(h.update).not.toHaveBeenCalled();
+  });
+
+  it('parks an agent-initiated change at /pending instead of applying it', async () => {
+    h.selectQueue.push([{ id: 'a1', thinkingEffort: null }], [{ id: 'req1' }]);
+    h.insertReturning.mockResolvedValue([{ id: 'p1' }]);
+    const res = await setEffort.handler({ agent_slug: 'responder', effort: 'max' }, agentCtx);
+    expect(outputOf(res)).toMatchObject({ status: 'queued_for_approval', pending_id: 'p1' });
+    expect(h.insert).toHaveBeenCalledWith(pendingToolCalls);
+    expect(h.insertValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolSlug: 'agent_set_thinking_effort',
+        args: { agent_slug: 'responder', effort: 'max' },
+        agentId: 'req1',
+      }),
+    );
+    expect(notifyPendingCreated).toHaveBeenCalled();
+    expect(h.update).not.toHaveBeenCalled();
   });
 });

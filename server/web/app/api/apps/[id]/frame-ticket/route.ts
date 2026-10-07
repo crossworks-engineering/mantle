@@ -8,13 +8,13 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401, buildAppFrameTicket } from '@/lib/auth';
-import { getApp } from '@mantle/content';
+import { getAppRuntime } from '@mantle/content';
 
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const { id } = await ctx.params;
-  const app = await getApp(user.id, id);
+  const app = await getAppRuntime(user.id, id);
   if (!app) return new NextResponse('not found', { status: 404 });
 
   const build = app.draftBuild?.ok
@@ -24,5 +24,8 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
       : null;
   if (!build) return new NextResponse('no build', { status: 404 });
 
-  return NextResponse.json({ ticket: buildAppFrameTicket({ ownerId: user.id, appId: id }) });
+  // The ticket names the admin login, so the frame can answer host.me().
+  return NextResponse.json({
+    ticket: buildAppFrameTicket({ ownerId: user.id, appId: id, actorId: user.actor.id }),
+  });
 }

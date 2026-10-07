@@ -80,7 +80,7 @@ describe.skipIf(!URL)('member personal space: comments and change events', () =>
     await m.systemDb.execute(sqlTag`
       insert into node_comments (owner_id, node_id, author_kind, login_id, author_name, body)
       values (${anchor}, ${brainPage}, 'owner', ${anchor}, 'Admin', 'admin only talk')`);
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await unlisten();

@@ -32,6 +32,10 @@ Output STRICT JSON, no markdown, no commentary outside the JSON:
   ]
 }
 
+Entities:
+- "project" is work that someone in the user's world is doing; "event" is something that happens at a time and place that people take part in.
+- The document's own title is NOT a project or an event, and neither is the title of a book, sermon, article, song, chapter or other work the content names. Leave such titles out of "entities" and name the work in the fact text instead.
+
 Relations:
 - subject and object MUST be names that appear in your "entities" list above. Never relate an entity to itself.
 - "relation" is a short lowercase snake_case verb (1-3 words) naming the connection. Direction matters: subject → relation → object reads as a sentence ("Sarah employed_by Lister").

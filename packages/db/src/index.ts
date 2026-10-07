@@ -37,6 +37,28 @@ export {
   type TableAccess,
 } from './access-matrix';
 export { getDefaultWorker, getAgentTtsWorker, bumpWorkerUsage } from './ai-workers-resolve';
+export {
+  PROVIDER_ALERT_VISIBLE_AFTER_MS,
+  PROVIDER_SUBJECTS,
+  countDeadLetteredExtracts,
+  countExtractBacklog,
+  isAlertShown,
+  listOpenProviderAlerts,
+  listProviderAlerts,
+  recordProviderFailure,
+  recordProviderProbeFailure,
+  requestProviderProbeNow,
+  resolveProviderAlert,
+  setProviderAlertPaused,
+  type ProviderFailure,
+  type ProviderSubject,
+} from './provider-alerts';
+export {
+  closedRangeEndAfter,
+  getChatThread,
+  listChatThreads,
+  openChatThread,
+} from './chat-threads';
 export { bumpAgentUsage } from './agents-resolve';
 export {
   resolveContextRef,
@@ -54,8 +76,19 @@ export {
   isExtractExempt,
   extractExemptSql,
   unextractedNodeConds,
+  noExtractSinceWriteSql,
+  EXTRACT_SKIPPED_KEY,
+  TERMINAL_EXTRACT_SKIPS,
+  extractSkippedStamp,
+  extractSkippedSql,
 } from './extract-exempt';
-export { isWriteRefused } from './write-refused';
+export { backfillTerminalSkips, type TerminalSkipBackfill } from './extract-skip-backfill';
+export {
+  WRITE_RETRY_AFTER_MS,
+  bestEffortWrite,
+  forgetWriteRefusals,
+  isWriteRefused,
+} from './write-refused';
 export {
   BUSY_MESSAGE,
   BusyError,

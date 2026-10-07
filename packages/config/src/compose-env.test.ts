@@ -28,3 +28,34 @@ describe('compose passes the box flags to the app services', () => {
     });
   }
 });
+
+/**
+ * Optional services (@mantle/config services): a dashboard switch starts or
+ * stops ONE container, so the app containers' env does not change with it.
+ * Each one learns the live state from the updater's services.json, which it
+ * can only read when the signal dir is mounted. Web mounts it read-write (it
+ * writes update requests); every other app service read-only.
+ */
+describe('every app service can read the live optional-service state', () => {
+  const services = compose.slice(compose.indexOf('\nservices:\n'));
+  const blocks = services.split(/\n(?= {2}[a-z_]+:\n)/).slice(1);
+  const appServices = blocks.filter((b) => b.includes('<<: *app-env'));
+  const name = (b: string) => b.slice(2, b.indexOf(':'));
+
+  it('the anchor passes the box profiles', () => {
+    expect(anchor).toMatch(/^\s+MANTLE_COMPOSE_PROFILES: \$\{COMPOSE_PROFILES:-\}$/m);
+  });
+
+  it('finds the app services', () => {
+    expect(appServices.map(name)).toEqual(expect.arrayContaining(['web', 'api', 'worker_files']));
+  });
+
+  for (const b of appServices) {
+    const n = name(b);
+    if (n === 'migrate') continue; // a one-shot gate: it calls no optional service
+    it(n, () => {
+      const mount = n === 'web' ? /update-signal:\/signal$/m : /update-signal:\/signal:ro$/m;
+      expect(b).toMatch(mount);
+    });
+  }
+});

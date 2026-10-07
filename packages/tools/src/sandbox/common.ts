@@ -6,7 +6,7 @@
  */
 
 import { autoFiledSourcePath, ensureAutoFiledFolder } from '@mantle/files';
-import { env } from '@mantle/config';
+import { env, serviceEnabled } from '@mantle/config';
 
 export const DEFAULT_TIMEOUT_S = 120;
 
@@ -15,8 +15,9 @@ export const MAX_TIMEOUT_S = 1800;
 /* ── sandboxd client ──────────────────────────────────────────────────── */
 
 const NOT_ENABLED =
-  'sandboxes are not enabled on this box — the sandboxd service runs behind the `sandboxes` ' +
-  'compose profile. Ask the owner to enable it; for server-side commands use `run_terminal`.';
+  'sandboxes are not enabled on this box (the `sandboxes` service is switched off). ' +
+  'An admin can switch Sandboxes on in Settings > Services; every sandbox and its ' +
+  'files are kept while it is off. For server-side commands use `run_terminal`.';
 
 export async function sandboxd(
   method: string,
@@ -25,7 +26,7 @@ export async function sandboxd(
 ): Promise<{ ok: true; data: Record<string, unknown> } | { ok: false; error: string }> {
   const base = env('SANDBOXD_URL');
   const token = env('SANDBOXD_TOKEN');
-  if (!base || !token) return { ok: false, error: NOT_ENABLED };
+  if (!base || !token || !serviceEnabled('sandboxes')) return { ok: false, error: NOT_ENABLED };
   let res: Response;
   try {
     res = await fetch(`${base}${path}`, {
@@ -56,7 +57,7 @@ export async function sandboxdUpload(
 ): Promise<{ ok: true; data: Record<string, unknown> } | { ok: false; error: string }> {
   const base = env('SANDBOXD_URL');
   const token = env('SANDBOXD_TOKEN');
-  if (!base || !token) return { ok: false, error: NOT_ENABLED };
+  if (!base || !token || !serviceEnabled('sandboxes')) return { ok: false, error: NOT_ENABLED };
   let res: Response;
   try {
     res = await fetch(`${base}${path}`, {
@@ -84,7 +85,7 @@ export async function sandboxdBinary(
 ): Promise<{ ok: true; bytes: Buffer } | { ok: false; error: string }> {
   const base = env('SANDBOXD_URL');
   const token = env('SANDBOXD_TOKEN');
-  if (!base || !token) return { ok: false, error: NOT_ENABLED };
+  if (!base || !token || !serviceEnabled('sandboxes')) return { ok: false, error: NOT_ENABLED };
   let res: Response;
   try {
     res = await fetch(`${base}${path}`, {

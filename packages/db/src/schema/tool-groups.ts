@@ -107,6 +107,31 @@ export type ToolGroupMcpBinding = {
 };
 
 /**
+ * OAuth2 client-credentials auth for an integration group (RFC 6749 §4.4).
+ * The dispatcher trades the vault-held client id + secret for a bearer token
+ * at call time and fills `{{oauth:<group-slug>}}` in the tool templates with
+ * it. Only config lives here: both credentials are `service/label` vault
+ * pointers, and the token itself is held in process memory only, never
+ * stored. The token is only ever sent to the group's `baseUrl` origin.
+ */
+export type ToolGroupOauth2 = {
+  grant: 'client_credentials';
+  /** The token endpoint. https only. */
+  tokenUrl: string;
+  /** `service/label` vault pointer to the client id. */
+  clientIdRef: string;
+  /** `service/label` vault pointer to the client secret. */
+  clientSecretRef: string;
+  /** Space-separated scopes, when the provider wants them. */
+  scope?: string;
+  /** Audience / resource parameter, for providers that require one. */
+  audience?: string;
+  /** How the client authenticates to the token endpoint: HTTP Basic (the
+   *  RFC default) or client_id + client_secret in the form body. Default basic. */
+  clientAuth?: 'basic' | 'body';
+};
+
+/**
  * The binding that makes a group an OPENAPI CONNECTOR: a service's
  * OpenAPI/Swagger spec URL whose operations are compiled into ordinary
  * `handler.kind === 'http'` rows (provenance on `handler.openapi`) by the
@@ -164,6 +189,8 @@ export type ToolGroupIntegration = {
   mcp?: ToolGroupMcpBinding;
   /** Set when this group is an OpenAPI connector; absent on every other group. */
   openapi?: ToolGroupOpenapiBinding;
+  /** Set when the API authenticates with OAuth2 client credentials. */
+  oauth2?: ToolGroupOauth2;
 };
 
 /**

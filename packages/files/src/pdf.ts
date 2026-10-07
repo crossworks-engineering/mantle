@@ -17,13 +17,40 @@
 import { PDFParse } from 'pdf-parse';
 import { describeImageBytes, type EmbeddedImage } from './embedded-images';
 
+/** pdf-parse (v2) ends every page with a `-- N of M --` marker line, text or
+ *  no text. */
+const PAGE_MARKER_LINE = /^[ \t]*-- \d+ of \d+ --[ \t]*$/gm;
+
 export async function parsePdf(buf: Buffer): Promise<string> {
   const parser = new PDFParse({ data: new Uint8Array(buf) });
   try {
     const result = await parser.getText();
-    return (result.text ?? '').trim();
+    const text = (result.text ?? '').trim();
+    // A scan has no text layer, but its markers are still there: a 1-page
+    // scan came back as `-- 1 of 1 --` (12 chars, so `body_too_short` and no
+    // OCR), and a longer one cleared the 20-char minimum and was indexed as
+    // its own page markers. Markers and nothing else is no text layer: return
+    // '' so the extractor takes the OCR path, as the header above promises.
+    // A PDF with real text keeps its markers (page boundaries) unchanged.
+    return text.replace(PAGE_MARKER_LINE, '').trim() ? text : '';
   } finally {
     await parser.destroy().catch(() => {});
+  }
+}
+
+/** Page count of a PDF, or null when pdfjs cannot open it (corrupt,
+ *  encrypted). Reads the page tree only: no text, no rendering. Used to price
+ *  an OCR pass before it runs (maintain `ocr-rescan`). */
+export async function pdfPageCount(bytes: Buffer): Promise<number | null> {
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const task = pdfjs.getDocument({ data: new Uint8Array(bytes), useSystemFonts: true });
+  try {
+    const doc = await task.promise;
+    return doc.numPages;
+  } catch {
+    return null;
+  } finally {
+    await task.destroy().catch(() => {});
   }
 }
 

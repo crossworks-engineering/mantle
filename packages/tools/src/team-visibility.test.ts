@@ -30,13 +30,19 @@ const h = vi.hoisted(() => {
 vi.mock('@mantle/search', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   searchNodes: h.record('searchNodes', []),
-  searchChunks: h.record('searchChunks', []),
+  searchChunksExplained: h.record('searchChunksExplained', {
+    hits: [],
+    search: { mode: 'hybrid', vectorPool: 0, keywordPool: 0, keyword: 'silent' },
+  }),
   readSection: h.record('readSection', { error: 'node not found' }),
   entityFacts: h.record('entityFacts', []),
   entityMentions: h.record('entityMentions', []),
   resolveSupersededTargets: vi.fn(async () => new Map()),
 }));
-vi.mock('@mantle/embeddings', () => ({ embed: vi.fn(async () => [0.1, 0.2]) }));
+vi.mock('@mantle/embeddings', () => ({
+  embed: vi.fn(async () => [0.1, 0.2]),
+  chunkWindowsEnabled: vi.fn(async () => false),
+}));
 vi.mock('@mantle/decisions', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   decisionUseEnabled: vi.fn(async () => null),
@@ -146,7 +152,7 @@ describe('read tools on a team surface', () => {
 
   it('search_chunks leaves hidden types out', async () => {
     await tool('search_chunks').handler({ q: 'contract' }, TEAM_OFF);
-    expect(h.calls.searchChunks![0]!.excludeTypes).toContain('journal');
+    expect(h.calls.searchChunksExplained![0]!.excludeTypes).toContain('journal');
   });
 
   it('read_section leaves hidden types out', async () => {

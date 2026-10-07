@@ -8,7 +8,7 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { verifyAppFrameTicket } from '@/lib/auth';
-import { getApp } from '@mantle/content';
+import { getAppRuntime } from '@mantle/content';
 import { renderAppFrame } from '@/lib/app-frame';
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -22,7 +22,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     return new NextResponse('frame ticket required', { status: 401 });
   }
 
-  const app = await getApp(ticket.ownerId, id);
+  const app = await getAppRuntime(ticket.ownerId, id);
   if (!app) return new NextResponse('not found', { status: 404 });
   const build = app.draftBuild?.ok
     ? app.draftBuild
@@ -31,5 +31,10 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       : null;
   if (!build) return new NextResponse('no build', { status: 404 });
 
-  return renderAppFrame(req, build);
+  // host.me(): the admin login the ticket names (app identity).
+  return renderAppFrame(req, build, {
+    viewer: ticket.actorId
+      ? { ownerId: ticket.ownerId, appId: id, subject: { kind: 'admin', loginId: ticket.actorId } }
+      : undefined,
+  });
 }

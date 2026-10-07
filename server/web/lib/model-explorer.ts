@@ -371,6 +371,17 @@ const FETCHERS: Partial<Record<ProviderId, Fetcher>> = {
       return parseOpenAiLike(asArray(body.data));
     },
   },
+  mammouth: {
+    needsKey: true,
+    fetch: async (key) => {
+      const body = rec(
+        await getJson('https://api.mammouth.ai/v1/models', {
+          headers: { authorization: `Bearer ${key}` },
+        }),
+      );
+      return parseOpenAiLike(asArray(body.data));
+    },
+  },
   huggingface: {
     needsKey: true,
     fetch: async (key) => {

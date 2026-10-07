@@ -1,8 +1,17 @@
 import type { Context, Hono } from 'hono';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { isRetiredClientLinkToken, isRetiredTeamLinkToken } from '@mantle/content';
+import {
+  CONTACT_MENU_LIMIT,
+  isRetiredClientLinkToken,
+  isRetiredTeamLinkToken,
+  listContactShares,
+  loadProfilePreferences,
+  recordShareAccess,
+} from '@mantle/content';
 import { loadShareAppearance } from './appearance';
-import { resolveActiveShareByToken, recordShareView, loadShareView } from '@/lib/shares';
+import { recordShareView, loadShareView } from '@/lib/shares';
+import { gateShareCookie } from '@/lib/contact-share-gate';
+import { ContactSharesMenu } from '@/components/share/contact-shares-menu';
 import { PagePresenter } from '@/components/share/page-presenter';
 import { NotePresenter } from '@mantle/share-ui/note-presenter';
 import { FilePresenter } from '@mantle/share-ui/file-presenter';
@@ -27,6 +36,11 @@ import { env } from '@mantle/config';
  * "sign in as a member" page instead of the not-found, pointing at /login.
  * Old client links were retired in client logins C3 (migration 0192): one
  * answers "sign in as a client", pointing at /client-signin.
+ *
+ * A CONTACT share (migration 0214) runs behind the contact gate: without a
+ * cookie that admits the share's contact, the page is the code prompt (401,
+ * no item title, no contact name, no menu). With one, the item renders with
+ * the "Shared with you" menu of that contact's live shares.
  */
 
 /** The page an old team link shows (410): members sign in with their own
@@ -68,6 +82,33 @@ function retiredClientLinkPage(): string {
   );
 }
 
+/** The code prompt of a contact share (401): an island, nothing about the
+ *  item or the contact. The owner's appearance only. */
+async function contactCodePage(ownerId: string, token: string): Promise<string> {
+  const { attrs: appearance, defaultMode } = await loadShareAppearance(ownerId);
+  return htmlPage(
+    {
+      title: 'Shared',
+      noindex: true,
+      og: { title: 'Shared', description: 'Shared via Mantle' },
+      appearance,
+      islands: true,
+      share: { defaultMode, readerChrome: false },
+    },
+    `${islandDiv('contact-code', { shareToken: token }, 'h-dvh bg-background text-foreground')}
+<noscript><p class="p-6 text-center text-sm">Turn on JavaScript to enter your code.</p></noscript>`,
+  );
+}
+
+/** The brain's site name for the contact menu strip (null on a read error). */
+async function siteNameOf(ownerId: string): Promise<string | null> {
+  try {
+    return (await loadProfilePreferences(ownerId)).siteName ?? null;
+  } catch {
+    return null;
+  }
+}
+
 async function renderShare(c: Context): Promise<Response> {
   const token = c.req.param('token') ?? '';
   const url = new URL(c.req.url);
@@ -76,12 +117,17 @@ async function renderShare(c: Context): Promise<Response> {
   // Invalid / revoked / expired all 404 — never reveal that a token existed.
   // The exceptions are retired team and client links: their visitors were
   // members or clients, and are told where to go now (no item title).
-  const share = await resolveActiveShareByToken(token);
-  if (!share) {
+  const gate = await gateShareCookie(c.req.raw.headers.get('cookie'), token);
+  if (gate.kind === 'missing') {
     if (await isRetiredTeamLinkToken(token)) return c.html(retiredTeamLinkPage(), 410);
     if (await isRetiredClientLinkToken(token)) return c.html(retiredClientLinkPage(), 410);
     return c.notFound();
   }
+  if (gate.kind === 'code') {
+    c.header('cache-control', 'no-store');
+    return c.html(await contactCodePage(gate.share.ownerId, token), 401);
+  }
+  const { share, contact } = gate;
   const view = await loadShareView(share);
   if (!view) return c.notFound();
 
@@ -112,6 +158,32 @@ async function renderShare(c: Context): Promise<Response> {
   };
 
   void recordShareView(share.id); // fire-and-forget view counter
+
+  // A contact share: its contact's other live shares, one bounded read, for
+  // the contact named by THIS share (never one taken from the request).
+  let menu = '';
+  if (contact) {
+    recordShareAccess({
+      ownerId: share.ownerId,
+      shareId: share.id,
+      contactId: contact.contactId,
+      kind: 'open',
+    });
+    const [listed, siteName] = await Promise.all([
+      listContactShares(share.ownerId, contact.contactId, { limit: CONTACT_MENU_LIMIT }),
+      siteNameOf(share.ownerId),
+    ]);
+    menu = renderToStaticMarkup(
+      <ContactSharesMenu
+        items={listed.items}
+        more={listed.more}
+        currentToken={token}
+        siteName={siteName}
+        shape={view.kind === 'app' ? 'pill' : 'strip'}
+      />,
+    );
+    c.header('cache-control', 'no-store');
+  }
 
   const assetUrl = (fileId: string) => `/s/${token}/a/${fileId}`;
   const drawUrl = (drawId: string) => `/s/${token}/draw/${encodeURIComponent(drawId)}`;
@@ -193,10 +265,10 @@ async function renderShare(c: Context): Promise<Response> {
   // + footer) and the full reader chrome.
   return c.html(
     view.kind === 'app'
-      ? htmlPage({ ...meta, islands, share: { defaultMode, readerChrome: false } }, body)
+      ? htmlPage({ ...meta, islands, share: { defaultMode, readerChrome: false } }, body + menu)
       : htmlPage(
           { ...meta, islands, share: shareMeta },
-          shareShell(body, { neat: neatBackground !== null }),
+          shareShell(menu + body, { neat: neatBackground !== null }),
         ),
   );
 }

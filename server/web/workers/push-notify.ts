@@ -2,9 +2,14 @@
  * Push-notify worker. LISTENs on `conversation_changed` (the trigger from
  * migration 0091, also driving the SSE live stream), `pending_changed`
  * (approvals) and `needs_you_changed` (migration 0186: a member submitted for
- * review or filed a request; admin devices only) and, for every **outbound**
- * turn, seals a teaser to the owner's enrolled devices and hands it to Mantle
- * Push (push-notifications.md §8/§10). Its own dedicated LISTEN connection — a
+ * review or filed a request) and, for every **outbound** turn, seals a teaser
+ * to the ADMIN devices and hands it to Mantle Push (push-notifications.md
+ * §8/§10). Those three are the owner's side: admin devices only.
+ *
+ * `login_notice` (migration mobile_roles_push) is the member's and the client's side: a
+ * reply in a login's own chat thread, a review result on its item, a new
+ * comment. Each goes to the devices of the ONE login it concerns
+ * (lib/push/login-notify.ts). Sends only: nothing here starts LLM work. Its own dedicated LISTEN connection — a
  * separate process from the web app, so it doesn't share the web's in-process
  * realtime bridge.
  *
@@ -22,8 +27,9 @@
  */
 import postgres from 'postgres';
 import { PENDING_CHANGED_CHANNEL } from '@mantle/tools';
-import { NEEDS_YOU_CHANGED_CHANNEL } from '@mantle/content';
+import { LOGIN_NOTICE_CHANNEL, NEEDS_YOU_CHANGED_CHANNEL } from '@mantle/content';
 import { pushApproval, pushNeedsYou, pushOutbound, wantsOutboundPush } from '../lib/push/notify';
+import { createLoginNoticeHandler, warnIfSchemaBehind } from '../lib/push/login-notice-handler';
 import { runWorker } from './_runner';
 import { env } from '@mantle/config';
 
@@ -53,7 +59,9 @@ async function handleConversation(payload: string): Promise<void> {
       );
     }
   } catch (err) {
-    console.error('[push-notify] send failed:', (err as Error).message);
+    if (!warnIfSchemaBehind(err)) {
+      console.error('[push-notify] send failed:', (err as Error).message);
+    }
   }
 }
 
@@ -66,7 +74,9 @@ async function handlePending(ownerId: string): Promise<void> {
       console.log(`[push-notify] approvals: delivered ${r.delivered}/${r.attempted}`);
     }
   } catch (err) {
-    console.error('[push-notify] approval send failed:', (err as Error).message);
+    if (!warnIfSchemaBehind(err)) {
+      console.error('[push-notify] approval send failed:', (err as Error).message);
+    }
   }
 }
 
@@ -84,9 +94,27 @@ function handleNeedsYou(ownerId: string): void {
         console.log(`[push-notify] needs-you: delivered ${r.delivered}/${r.attempted}`);
       }
     } catch (err) {
-      console.error('[push-notify] needs-you send failed:', (err as Error).message);
+      if (!warnIfSchemaBehind(err)) {
+        console.error('[push-notify] needs-you send failed:', (err as Error).message);
+      }
     }
   });
+}
+
+// Member and client notices: lib/push/login-notice-handler.ts.
+const loginNotices = createLoginNoticeHandler();
+
+/** Before listening: is the schema this code needs there? A skipped
+ *  migration would make every send fail; say so at boot, loudly, instead of
+ *  one quiet line per event. The worker keeps running (a later migrate and
+ *  restart fixes it; the supervisor would only loop on a crash). */
+async function checkSchema(sql: postgres.Sql): Promise<void> {
+  try {
+    await sql`select token_id from push_subscriptions limit 0`;
+    await sql`select login_id from push_login_prefs limit 0`;
+  } catch (err) {
+    if (!warnIfSchemaBehind(err)) throw err;
+  }
 }
 
 // This worker is a pure LISTEN loop with no business tick, so the runner's
@@ -97,9 +125,10 @@ runWorker('push-notify', async () => {
   if (!env('MANTLE_MASTER_KEY')) throw new Error('MANTLE_MASTER_KEY must be set');
 
   console.log(
-    '[push-notify] listening on conversation_changed + pending_changed + needs_you_changed',
+    '[push-notify] listening on conversation_changed + pending_changed + needs_you_changed + login_notice',
   );
   const sql = postgres(url, { max: 1, prepare: false });
+  await checkSchema(sql);
   const subConversation = await sql.listen('conversation_changed', (payload) => {
     void handleConversation(payload);
   });
@@ -108,12 +137,16 @@ runWorker('push-notify', async () => {
   });
 
   const subNeedsYou = await sql.listen(NEEDS_YOU_CHANGED_CHANNEL, handleNeedsYou);
+  const subLogin = await sql.listen(LOGIN_NOTICE_CHANNEL, (payload) =>
+    loginNotices.handle(payload),
+  );
 
   return async () => {
     try {
       await subConversation.unlisten();
       await subPending.unlisten();
       await subNeedsYou.unlisten();
+      await subLogin.unlisten();
       await sql.end({ timeout: 5 });
     } catch {
       /* ignore */

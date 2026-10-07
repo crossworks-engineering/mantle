@@ -14,9 +14,11 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { checkToolPreconditions } from '@mantle/tools';
-import type { BuiltinToolDef, ToolSurface } from '@mantle/tools';
+import type { BuiltinToolDef, OwnerSurfaceVia, ToolSurface } from '@mantle/tools';
 import { env } from '@mantle/config';
 import { zodShapeFromJsonSchema } from './zod-schema';
+import { KEY_SHARED_CONTENT_TOOLS, contentToolTarget } from '../key-scope';
+import { othersCanRead } from '../shared-item';
 import type { MantleMcpTransport } from '../build-server';
 
 /** The surface every bridged builtin runs under on the MCP server. */
@@ -26,7 +28,11 @@ export function makeRegisterContext(
   server: McpServer,
   ownerId: string,
   transport: MantleMcpTransport,
+  /** The owner path the builtins name: 'mcp', or 'federation' for a peer
+   *  that acts as the owner (plan page e5b854dd). */
+  via: OwnerSurfaceVia = 'mcp',
 ) {
+  const surface: ToolSurface = via === 'mcp' ? MCP_OWNER_SURFACE : { kind: 'owner', via };
   // Explicit env wins in both directions: =1 opts a network surface in, =0 opts
   // a local one out. Unset means stdio yes, HTTP no.
   const terminalEnv = env('MANTLE_MCP_TERMINAL') ?? '';
@@ -91,7 +97,7 @@ export function makeRegisterContext(
    *  the name mismatch is exactly why a hand-written fork of it survived every
    *  duplicate check we had. */
   async function callBuiltin(def: BuiltinToolDef, args: Record<string, unknown>) {
-    const input = args ?? {};
+    const input = { ...(args ?? {}) };
     // Declared referential preconditions run first, exactly as
     // dispatch.ts does for the in-app agent. Without this the MCP surface
     // is the only one where an id pointing at a missing — or wrong-type —
@@ -108,7 +114,43 @@ export function makeRegisterContext(
     }
     // The MCP caller holds the owner's credential: it names itself as the
     // owner (client logins C4), since a missing surface is not the owner.
-    const result = await def.handler(input, { ownerId: ownerId, surface: MCP_OWNER_SURFACE });
+    // A peer acting as the owner never confirms for the owner: a level
+    // change it would cause (a move into a shared folder, a page filed in
+    // one) is refused instead of confirmed by the caller's own flag.
+    // An API key acting as the owner (via 'api') holds the same rule.
+    if ((via === 'federation' || via === 'api') && 'confirm' in input) delete input.confirm;
+    // And a key never changes the content of an item others can read: what
+    // it embeds would become readable to them with no confirm (M2 audit N3).
+    if (via === 'api' && KEY_SHARED_CONTENT_TOOLS.has(def.slug)) {
+      const target = contentToolTarget(input);
+      // The handler gets the very id that was checked (trimmed): a padded id
+      // must not pass the check as "not found" and then reach the item
+      // (final audit F1). A field that is not a UUID is refused outright.
+      if (target?.id) input[target.field] = target.id;
+      if (target && !target.id) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Error: ${target.field} must be an item id (a UUID), as page_list or search_nodes give it.`,
+            },
+          ],
+          isError: true,
+        };
+      }
+      if (target?.id && (await othersCanRead(ownerId, target.id))) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: 'Error: this item is shared, so an API key cannot change its content (what it embeds would become readable to others). Change it in the app.',
+            },
+          ],
+          isError: true,
+        };
+      }
+    }
+    const result = await def.handler(input, { ownerId: ownerId, surface });
     if (!result.ok) {
       return {
         content: [{ type: 'text' as const, text: `Error: ${result.error}` }],

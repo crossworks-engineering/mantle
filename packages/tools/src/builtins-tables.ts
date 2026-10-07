@@ -46,6 +46,7 @@ import {
   table_set_view,
 } from './tables/columns';
 import { table_tab_add, table_tab_rename, table_tab_delete } from './tables/tabs';
+import { TABLE_HISTORY_TOOLS } from './tables/history';
 
 export const TABLE_TOOLS: BuiltinToolDef[] = [
   table_create,
@@ -76,6 +77,8 @@ export const TABLE_TOOLS: BuiltinToolDef[] = [
   table_tab_delete,
   table_set_aggregate,
   table_set_view,
+  // History (apps first-class plan, Phase 4).
+  ...TABLE_HISTORY_TOOLS,
 ];
 
 export const TABLE_TOOL_SLUGS: string[] = TABLE_TOOLS.map((t) => t.slug);

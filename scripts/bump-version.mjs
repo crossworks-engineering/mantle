@@ -28,9 +28,9 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-// client/desktop rides too: its version is what the packaged app reports
-// (app.getVersion) and what electron-updater compares against releases — a
-// drift there would stall or loop desktop auto-updates.
+// client/desktop used to ride along here. It left with the 2026-08-13 split
+// and now versions with the jackdaw repo, which is also where its releases and
+// electron-updater feed live. Nothing to bump from this side any more.
 const targets = ['package.json', 'server/web/package.json'].map((p) => join(root, p));
 
 const args = process.argv.slice(2);

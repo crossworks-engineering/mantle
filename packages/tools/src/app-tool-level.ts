@@ -139,11 +139,11 @@ export async function appToolWarnings(ownerId: string, appId: string): Promise<s
       if (verdict.ok) continue;
       if (level === 'client') {
         warnings.push(
-          `${verdict.reason} Everyone running this app (admins and members too) gets an error: a client-level app uses the client rules, so it can call only the client tools (${CLIENT_APP_TOOL_SLUGS.join(', ')}) from an enabled client-level group. Raise the app to team level to use other tools.`,
+          `${verdict.reason} Everyone running this app (admins and members too) gets an error: a client-level app uses the client rules, so it can call only the client tools (${CLIENT_APP_TOOL_SLUGS.join(', ')}) from an enabled client-level group, or an outside (MCP or http) tool an admin switched External access on for. Raise the app to team level to use other built-in tools.`,
         );
       } else {
         warnings.push(
-          `${verdict.reason} Members running this app get an error: declare a read-only built-in tool from an enabled team-level group instead (\`tool_group_list\` shows levels), or keep the app at admin level.`,
+          `${verdict.reason} Members running this app get an error: declare a read-only built-in tool from an enabled team-level group instead (\`tool_group_list\` shows levels), have an admin switch External access on for an outside (MCP or http) tool that only reads, or keep the app at admin level.`,
         );
       }
     }

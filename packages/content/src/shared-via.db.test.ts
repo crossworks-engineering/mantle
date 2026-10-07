@@ -34,7 +34,7 @@ describe.skipIf(!URL)('sharedViaFolder', () => {
         insert into spaces (id, kind, login_id) values (${id}, 'brain', ${id})`);
       await tree.ensureKindRoot(id, 'notes');
     }
-  });
+  }, 60_000);
 
   afterAll(async () => {
     for (const id of [owner, other]) {

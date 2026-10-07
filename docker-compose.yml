@@ -196,6 +196,14 @@ x-app-env: &app-env
   # refuses instead of guessing.
   MEDIA_SIDECAR_URL: ${MEDIA_SIDECAR_URL:-http://media:8095}
   MEDIA_SIDECAR_TOKEN: ${MEDIA_SIDECAR_TOKEN:-}
+  # Which optional services (compose profiles: sandboxes, media) this box
+  # runs, as compose resolved COMPOSE_PROFILES when it created THIS container.
+  # @mantle/config `serviceEnabled` reads the updater's LIVE
+  # /signal/services.json first (every app service mounts the signal dir
+  # read-only for it: a dashboard switch starts or stops ONE container and
+  # leaves this env as it was) and falls back to this. Web also derives the
+  # deploy shape from it (lib/compose-shape.ts).
+  MANTLE_COMPOSE_PROFILES: ${COMPOSE_PROFILES:-}
   # DWF sheet-render resolution (50-600, default 300) — pair 600 with a
   # tile-reading vision worker on drawing-heavy boxes; see packages/files/src/dwf.ts.
   DWF_RENDER_DPI: ${DWF_RENDER_DPI:-}
@@ -230,9 +238,9 @@ x-app-env: &app-env
   # the slow case is legitimate CPU inference, not a hung socket; raise on very
   # slow hardware so a sub-batch isn't aborted prematurely.
   MANTLE_LOCAL_EMBED_TIMEOUT_MS: ${MANTLE_LOCAL_EMBED_TIMEOUT_MS:-120000}
-  # HTTP forward-proxy for reaching models on your tailnet (the optional
-  # `tailnet` profile). Only used for routes the operator flags "via tailnet";
-  # harmless otherwise. Points at the bundled tailscale service.
+  # HTTP forward-proxy for reaching models on your tailnet (the always-on
+  # tailscale sidecar, activated from /settings/network). Only used for routes
+  # the operator flags "via tailnet"; harmless otherwise.
   MANTLE_TAILNET_PROXY_URL: ${MANTLE_TAILNET_PROXY_URL:-http://tailscale:1055}
   # Path to the tailscaled LocalAPI socket (shared from the tailscale sidecar).
   # The /settings/network status tile + peer dropdown read `status` over it.
@@ -281,6 +289,12 @@ x-app-env: &app-env
   # The largest one app's database file may grow, in MB (default 256, set in
   # code when empty). A write past it fails and rolls back.
   APP_SQL_MAX_DB_MB: ${APP_SQL_MAX_DB_MB:-}
+  # History budgets in MB (defaults in code when empty): one owner's own
+  # snapshots (2048), one app's automatic snapshots (1024), one table's
+  # commit history (512). .env.example explains each.
+  APP_SNAPSHOT_MAX_MB: ${APP_SNAPSHOT_MAX_MB:-}
+  APP_SNAPSHOT_AUTO_MAX_MB: ${APP_SNAPSHOT_AUTO_MAX_MB:-}
+  TABLE_HISTORY_MAX_MB: ${TABLE_HISTORY_MAX_MB:-}
   # Per-table SQLite files for sqlite-native Tables (Tables v2). One workbook
   # file per table node (<root>/<owner>/<node>.sqlite + .draft.sqlite, see
   # packages/tabledb). Tool handlers run in BOTH web and api, so BOTH services
@@ -711,6 +725,16 @@ services:
       # Its own bind mount (below), deliberately OUTSIDE /data/files so the
       # files watcher never sees a member's private file.
       MANTLE_SPACES_ROOT: /data/spaces
+      # First-run setup code (scripts/install.sh writes it): signup asks for it
+      # while no account exists. Web only, NOT the shared anchor: no other
+      # service needs it. Empty = no code asked for (a box installed before it).
+      MANTLE_SETUP_CODE: ${MANTLE_SETUP_CODE:-}
+      # The box's own COMPOSE_FILE, as compose resolved it for THIS `up` (from
+      # .env, the updater's rolls included). Web derives the deploy shape from
+      # it and MANTLE_COMPOSE_PROFILES (in the app-env anchor;
+      # lib/compose-shape.ts): on a core box without the helpers profile the
+      # onboarding check treats the shed Tika as optional.
+      MANTLE_COMPOSE_FILE: ${COMPOSE_FILE:-}
     volumes:
       - ${MANTLE_DATA_DIR:-./data}/files:/data/files
       - ${MANTLE_DATA_DIR:-./data}/backups:/data/backups
@@ -1015,6 +1039,10 @@ services:
       <<: *app-env
       MANTLE_SPACES_ROOT: /data/spaces
     volumes:
+      # Live optional-service state, READ-ONLY (only web writes requests):
+      # services.json tells this process whether sandboxes/media are on
+      # right now (@mantle/config services). Every app service mounts it.
+      - ${MANTLE_DATA_DIR:-./data}/update-signal:/signal:ro
       - ${MANTLE_DATA_DIR:-./data}/files:/data/files
       # Per-app SQLite (APP_DB_DIR=/data/app-dbs) — the api also serves /apps
       # (agent app_build + runtime), so it shares the same persistent mount.
@@ -1042,6 +1070,9 @@ services:
       postgres: { condition: service_healthy }
       objectstore: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
+    volumes:
+      # Live optional-service state, read-only (see api).
+      - ${MANTLE_DATA_DIR:-./data}/update-signal:/signal:ro
     environment:
       <<: *app-env
 
@@ -1061,6 +1092,9 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
+    volumes:
+      # Live optional-service state, read-only (see api).
+      - ${MANTLE_DATA_DIR:-./data}/update-signal:/signal:ro
     environment:
       <<: *app-env
 
@@ -1084,6 +1118,9 @@ services:
       postgres: { condition: service_healthy }
       objectstore: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
+    volumes:
+      # Live optional-service state, read-only (see api).
+      - ${MANTLE_DATA_DIR:-./data}/update-signal:/signal:ro
     environment:
       <<: *app-env
 
@@ -1109,6 +1146,8 @@ services:
     environment:
       <<: *app-env
     volumes:
+      # Live optional-service state, read-only (see api).
+      - ${MANTLE_DATA_DIR:-./data}/update-signal:/signal:ro
       - ${MANTLE_DATA_DIR:-./data}/files:/data/files
 
   # Documentation sync: reconciles + watches the docs/ baked into the image and
@@ -1132,6 +1171,9 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
+    volumes:
+      # Live optional-service state, read-only (see api).
+      - ${MANTLE_DATA_DIR:-./data}/update-signal:/signal:ro
     environment:
       <<: *app-env
 
@@ -1157,6 +1199,8 @@ services:
       <<: *app-env
       MANTLE_SPACES_ROOT: /data/spaces
     volumes:
+      # Live optional-service state, read-only (see api).
+      - ${MANTLE_DATA_DIR:-./data}/update-signal:/signal:ro
       # Scheduled backups land here (see MANTLE_BACKUP_DIR in x-app-env).
       - ${MANTLE_DATA_DIR:-./data}/backups:/data/backups
       # This worker also runs the scheduled-backup tick, which snapshots the
@@ -1188,6 +1232,9 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
+    volumes:
+      # Live optional-service state, read-only (see api).
+      - ${MANTLE_DATA_DIR:-./data}/update-signal:/signal:ro
     environment:
       <<: *app-env
 
@@ -1215,6 +1262,8 @@ services:
       <<: *app-env
       MANTLE_SPACES_ROOT: /data/spaces
     volumes:
+      # Live optional-service state, read-only (see api).
+      - ${MANTLE_DATA_DIR:-./data}/update-signal:/signal:ro
       # The nightly space-purge (member logins plan 6.4) deletes a deactivated
       # login's private items after 30 days: the rows AND their bytes, so it
       # writes both personal file bytes and personal table workbooks.
@@ -1239,6 +1288,9 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
+    volumes:
+      # Live optional-service state, read-only (see api).
+      - ${MANTLE_DATA_DIR:-./data}/update-signal:/signal:ro
     environment:
       <<: *app-env
 
@@ -1261,5 +1313,8 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
+    volumes:
+      # Live optional-service state, read-only (see api).
+      - ${MANTLE_DATA_DIR:-./data}/update-signal:/signal:ro
     environment:
       <<: *app-env

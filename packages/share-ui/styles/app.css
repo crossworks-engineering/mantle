@@ -186,8 +186,41 @@
 }
 
 /* ============================================================================
-   Scrollbar utilities — used by <Scrollable> and fixed shell regions.
+   Scrollbars: ONE global needle default. No exceptions.
    ========================================================================== */
+
+/* Every scroller in the app gets the same bar: a needle thumb in the theme's
+   primary colour on a transparent track. No buttons, no corner, no grey
+   gutter. The only opt-out is hiding the bar: `.scrollbar-hidden`, or
+   Tailwind's own `scrollbar-none` utility.
+
+   It is global because an opt-in class failed twice. First, anything that
+   scrolled without the class fell back to the platform bar. Then the class
+   itself broke: Tailwind 4 ships a `scrollbar-thin` utility of its own
+   (`scrollbar-width: thin`), so every `.scrollbar-thin` element carried a
+   standard scrollbar property again. Since Chromium 121, a standard property
+   (`scrollbar-width` OR `scrollbar-color`, the latter INHERITED) switches the
+   `::-webkit-scrollbar` pseudo elements off for that element. Chrome then drew
+   its own 11px grey bar with a grey track (measured on the live web app in
+   Chrome 154, 2026-10-07), the bar this section exists to stop.
+
+   So in engines WITH the pseudo elements (Chromium, Safari, Electron) the
+   standard properties are reset to `auto` on every element, unlayered, which
+   beats Tailwind's layered utility whatever its specificity. The pseudo
+   elements then give the exact pixels. Engines WITHOUT them (Firefox) get the
+   standard properties: `thin` is its narrowest visible value, in the same
+   colours. Firefox has no pixel control; that is the floor, not a bug.
+
+   `.scrollbar-thin` and `.scrollbar-hair` stay valid as markup and are plain
+   aliases of this default. Touch devices draw overlay bars and ignore it.
+
+   Colour: the theme's primary with a third of the foreground mixed in. Pure
+   primary is too pale on some light themes (a contrast of 1.2 against the
+   background); the mix keeps every one of the 86 theme and mode pairs at 2.1
+   or better idle while the hue still reads as the theme's own.
+
+   Shape: a 6px gutter holds a 4px thumb (1px clear border each side), so it
+   reads as a needle and grows to 6px under the pointer with no layout shift. */
 .scrollbar-hidden {
   -ms-overflow-style: none;
   scrollbar-width: none;
@@ -196,24 +229,57 @@
   display: none;
 }
 
-.scrollbar-thin {
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in oklab, var(--muted-foreground) 30%, transparent) transparent;
+@supports selector(::-webkit-scrollbar) {
+  /* `.scrollbar-none` is Tailwind's own hide utility; leave it hiding. */
+  *:not(.scrollbar-hidden, .scrollbar-none) {
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+  }
 }
-.scrollbar-thin::-webkit-scrollbar {
+@supports not selector(::-webkit-scrollbar) {
+  *:not(.scrollbar-hidden, .scrollbar-none) {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(
+        in oklab,
+        color-mix(in oklab, var(--primary) 65%, var(--foreground)) 80%,
+        transparent
+      )
+      transparent;
+  }
+}
+
+::-webkit-scrollbar {
   width: 6px;
   height: 6px;
-}
-.scrollbar-thin::-webkit-scrollbar-track {
   background: transparent;
 }
-.scrollbar-thin::-webkit-scrollbar-thumb {
-  background-color: color-mix(in oklab, var(--muted-foreground) 30%, transparent);
-  border-radius: 3px;
-  transition: background-color 0.2s ease;
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-track-piece,
+::-webkit-scrollbar-corner {
+  background: transparent;
+  border: 0;
 }
-.scrollbar-thin::-webkit-scrollbar-thumb:hover {
-  background-color: color-mix(in oklab, var(--muted-foreground) 50%, transparent);
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+::-webkit-scrollbar-thumb {
+  background-color: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--primary) 65%, var(--foreground)) 80%,
+    transparent
+  );
+  background-clip: padding-box;
+  border: 1px solid transparent;
+  border-radius: 9999px;
+  min-height: 24px;
+  min-width: 24px;
+}
+::-webkit-scrollbar-thumb:hover,
+::-webkit-scrollbar-thumb:active {
+  background-color: color-mix(in oklab, var(--primary) 65%, var(--foreground));
+  border-width: 0;
 }
 
 /* React Flow controls (trace step graph). The library's default control
@@ -571,6 +637,66 @@
   border-radius: 0.2rem;
 }
 
+/* Foldable headings (content-core heading-fold.ts). One look on every
+   surface: the editor draws the arrow as a widget, the static renders
+   (share reader, read views) add it with heading-fold-dom.ts; both use
+   `.fold-toggle` and mark a folded heading `data-folded`. The arrow sits in
+   front of the heading text, sideways when folded and down when open. Hidden
+   blocks carry `data-fold-hidden`, hidden on SCREEN only: print shows the
+   whole page unfolded and drops the arrows. */
+.ProseMirror .fold-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1em;
+  height: 1em;
+  margin-right: 0.3em;
+  padding: 0;
+  border: 0;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: var(--muted-foreground);
+  vertical-align: -0.1em;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background-color 120ms,
+    color 120ms;
+}
+.ProseMirror .fold-toggle:hover {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
+}
+.ProseMirror .fold-toggle:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+.ProseMirror .fold-toggle svg {
+  width: 0.7em;
+  height: 0.7em;
+  transform: rotate(90deg);
+  transition: transform 150ms;
+}
+.ProseMirror [data-folded] > .fold-toggle svg {
+  transform: rotate(0deg);
+}
+/* A folded heading opens on a click anywhere on it; a static render folds
+   and opens on a click on the row too. */
+.ProseMirror [data-fold][data-folded],
+.ProseMirror[data-folds-wired] [data-fold] {
+  cursor: pointer;
+}
+@media screen {
+  .ProseMirror [data-fold-hidden] {
+    display: none !important;
+  }
+}
+@media print {
+  .ProseMirror .fold-toggle {
+    display: none !important;
+  }
+}
+
 /* Callouts on the raw/public render. In-app callouts use a React NodeView; the
    public page surface (server-rendered HTML) emits raw [data-callout] divs, so
    these rules style only that path — a tinted panel + left accent, themed per
@@ -832,9 +958,15 @@
 /* Folder index block (folder phase 7) on the raw/public render: a live list
    of a folder's pages for a signed-in reader; an open link has no reader to
    list for, so the public surface emits an inert label. In-app the block is
-   filled after rendering (StaticDoc) or drawn by a NodeView. */
+   filled after rendering (StaticDoc) or drawn by a NodeView.
+   The label's chrome is only for the unfilled block (empty, or holding the
+   public render's `.folder-index-label`): a block the client filled with its
+   own card must not get a second border and capitals around it. */
 .ProseMirror [data-folder-index] {
   margin-block: 0.5rem;
+}
+.ProseMirror [data-folder-index]:empty,
+.ProseMirror [data-folder-index]:has(> .folder-index-label) {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background-color: var(--card);

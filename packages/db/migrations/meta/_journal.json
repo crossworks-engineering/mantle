@@ -1478,6 +1478,153 @@
       "when": 1790018880000,
       "tag": "0210_pages_in_folders",
       "breakpoints": true
+    },
+    {
+      "idx": 212,
+      "version": "7",
+      "when": 1790019000000,
+      "tag": "0212_restorable_share_refresh_trigger",
+      "breakpoints": true
+    },
+    {
+      "idx": 213,
+      "version": "7",
+      "when": 1790019060000,
+      "tag": "0213_mobile_roles_push",
+      "breakpoints": true
+    },
+    {
+      "idx": 214,
+      "version": "7",
+      "when": 1790019120000,
+      "tag": "0214_contact_shares",
+      "breakpoints": true
+    },
+    {
+      "idx": 215,
+      "version": "7",
+      "when": 1790019180000,
+      "tag": "0215_tool_team_apps",
+      "breakpoints": true
+    },
+    {
+      "idx": 216,
+      "version": "7",
+      "when": 1790019240000,
+      "tag": "0216_embed_sync_skips_deleted",
+      "breakpoints": true
+    },
+    {
+      "idx": 217,
+      "version": "7",
+      "when": 1790019300000,
+      "tag": "0217_app_viewer_salt",
+      "breakpoints": true
+    },
+    {
+      "idx": 218,
+      "version": "7",
+      "when": 1790019360000,
+      "tag": "0218_app_access_log_created_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 219,
+      "version": "7",
+      "when": 1790019420000,
+      "tag": "0219_node_snapshots",
+      "breakpoints": true
+    },
+    {
+      "idx": 220,
+      "version": "7",
+      "when": 1790019480000,
+      "tag": "0220_node_snapshots_outlive_node",
+      "breakpoints": true
+    },
+    {
+      "idx": 221,
+      "version": "7",
+      "when": 1790019540000,
+      "tag": "0221_app_table_exports_dirty",
+      "breakpoints": true
+    },
+    {
+      "idx": 222,
+      "version": "7",
+      "when": 1790019600000,
+      "tag": "0222_node_snapshots_table_commit",
+      "breakpoints": true
+    },
+    {
+      "idx": 223,
+      "version": "7",
+      "when": 1790019660000,
+      "tag": "0223_app_table_exports_last_write",
+      "breakpoints": true
+    },
+    {
+      "idx": 224,
+      "version": "7",
+      "when": 1790019720000,
+      "tag": "0224_apps_audit_lows",
+      "breakpoints": true
+    },
+    {
+      "idx": 225,
+      "version": "7",
+      "when": 1790019780000,
+      "tag": "0225_tool_external_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 226,
+      "version": "7",
+      "when": 1790019840000,
+      "tag": "0226_brain_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 227,
+      "version": "7",
+      "when": 1790019900000,
+      "tag": "0227_mcp_login",
+      "breakpoints": true
+    },
+    {
+      "idx": 228,
+      "version": "7",
+      "when": 1790019960000,
+      "tag": "0228_agent_thinking_effort",
+      "breakpoints": true
+    },
+    {
+      "idx": 229,
+      "version": "7",
+      "when": 1790020020000,
+      "tag": "0229_chunk_windows",
+      "breakpoints": true
+    },
+    {
+      "idx": 230,
+      "version": "7",
+      "when": 1790020080000,
+      "tag": "0230_provider_alerts",
+      "breakpoints": true
+    },
+    {
+      "idx": 231,
+      "version": "7",
+      "when": 1790106480000,
+      "tag": "0231_chat_threads",
+      "breakpoints": true
+    },
+    {
+      "idx": 232,
+      "version": "7",
+      "when": 1790106540000,
+      "tag": "0232_access_keys",
+      "breakpoints": true
     }
   ]
 }

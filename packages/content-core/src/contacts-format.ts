@@ -12,6 +12,8 @@
  *  (the jsonb just stores keys), but typed here for the call sites we wire
  *  ourselves so a typo becomes a compile error. Add new entries as we add
  *  surfaces. */
+import type { ContactSharing } from '@mantle/client-types';
+
 export type ContactMethod = 'email' | 'sms';
 
 export type ContactCounts = Partial<Record<string, number>>;
@@ -50,6 +52,9 @@ export type ContactRow = {
   lastContactedAt: ContactLastAt;
   createdAt: string;
   updatedAt: string;
+  /** Contact shares (migration 0214): null when sharing is off. Absent
+   *  from brains before 0214. */
+  sharing?: ContactSharing | null;
 };
 
 export type CreateContactInput = {

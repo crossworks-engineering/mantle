@@ -26,8 +26,19 @@ export type AuditEntry = {
     | 'auth.login_failed'
     | 'auth.logout'
     | 'auth.token_refreshed'
+    // A refresh that was refused (detail.reason), and a rotated token
+    // presented again: a copy in other hands, which ended the login's
+    // sessions.
+    | 'auth.token_refresh_failed'
+    | 'auth.token_reuse'
+    // A member's Connect was the first on this brain: it registered the
+    // brain with the push relay.
+    | 'push.relay_registered'
     | 'auth.device_revoked'
     | 'auth.password_change'
+    // A first-run signup refused for a wrong or missing setup code
+    // (detail.reason). The signup that lands is a user.create.
+    | 'auth.signup_failed'
     // A member invite redeemed (member logins Phase 6), or a failed try.
     | 'auth.invite_accepted'
     | 'auth.invite_failed'
@@ -38,6 +49,19 @@ export type AuditEntry = {
     // The same for an emailed code (C2b); an admin chose the sign-in sender.
     | 'auth.client_code_signin'
     | 'auth.client_code_failed'
+    // A contact typed their code at a contact share's prompt (contact
+    // shares, 0214), or a failed try; 30 failures in a day locked the
+    // contact; an admin switched a contact's sharing or revoked its shares.
+    | 'auth.contact_code_signin'
+    | 'auth.contact_code_failed'
+    | 'contact.sharing_locked'
+    | 'contact.sharing_enabled'
+    | 'contact.sharing_regenerated'
+    | 'contact.sharing_disabled'
+    | 'contact.shares_revoked_all'
+    // An admin shared an item with contacts, or set "Can write" on one.
+    | 'contact.share_created'
+    | 'contact.share_can_write'
     | 'client.signin_sender_set'
     | 'client.signin_link_issued'
     | 'client.signin_link_revoked'
@@ -53,6 +77,15 @@ export type AuditEntry = {
     | 'user.agent.assign'
     | 'user.agent.rename'
     | 'user.agent.release'
+    // An admin switched an optional service (sandboxes, media) on or off
+    // from the dashboard; detail says which, and whether the updater took it.
+    | 'service.toggle'
+    // Inbound API keys (0232): an admin made or revoked a key; a known key
+    // was refused (revoked, expired, its login ended, out of scope; at most
+    // one row a minute per key). detail.keyId names it, never the secret.
+    | 'key.created'
+    | 'key.revoked'
+    | 'key.refused'
     | 'api.write';
   method?: string | null;
   path?: string | null;

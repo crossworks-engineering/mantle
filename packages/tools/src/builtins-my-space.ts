@@ -37,7 +37,7 @@ const NO_MEMBER =
 
 /** The login this turn works for (a member on the team surface, or a client
  *  on the client surface), and their personal space; null = nobody. */
-async function onBehalfOf(
+export async function onBehalfOf(
   ctx: ToolHandlerContext,
 ): Promise<{ loginId: string; spaceId: string } | null> {
   const s = ctx.surface;

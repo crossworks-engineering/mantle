@@ -13,9 +13,12 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  applyInputDefaults,
   buildHttpRequest,
+  collectOauthRefs,
   collectParamNames,
   collectSecretRefs,
+  oauthKey,
   scrubSecrets,
   type HttpHandler,
 } from './http-template';
@@ -204,5 +207,82 @@ describe('scrubSecrets', () => {
     const s = new Map([['svc/key', plaintext]]);
     const b64 = Buffer.from(plaintext, 'utf8').toString('base64');
     expect(scrubSecrets(`echo: ${b64}`, s)).toBe('echo: [secret:svc/key]');
+  });
+});
+
+describe('{{oauth:…}} refs', () => {
+  const h: HttpHandler = {
+    kind: 'http',
+    url: 'https://api.example.com/items',
+    method: 'GET',
+    headers: { Authorization: 'Bearer {{oauth:acme-tools}}', 'x-q': '{q}' },
+  };
+  const withToken = new Map([[oauthKey('acme-tools'), 'tok-LIVE']]);
+
+  it('collects the group slug and is never mistaken for a {param}', () => {
+    expect(collectOauthRefs(h)).toEqual(['acme-tools']);
+    expect(collectParamNames(h)).toEqual(['q']);
+    expect(collectSecretRefs(h)).toEqual([]);
+  });
+
+  it('fills the token from the secrets map', () => {
+    const req = buildHttpRequest(h, { q: 'x' }, withToken);
+    expect(req.headers.Authorization).toBe('Bearer tok-LIVE');
+  });
+
+  it('does not resolve a ref passed in as model input', () => {
+    const req = buildHttpRequest(h, { q: '{{oauth:acme-tools}}' }, withToken);
+    expect(req.headers['x-q']).toBe('{{oauth:acme-tools}}');
+  });
+
+  it('leaves the ref literal when no token was resolved', () => {
+    const req = buildHttpRequest(h, { q: 'x' }, new Map());
+    expect(req.headers.Authorization).toBe('Bearer {{oauth:acme-tools}}');
+  });
+
+  it('is scrubbed like a secret', () => {
+    expect(scrubSecrets('echo tok-LIVE', withToken)).toBe('echo [secret:oauth:acme-tools]');
+  });
+});
+
+describe('applyInputDefaults', () => {
+  const schema = {
+    type: 'object',
+    properties: {
+      page: { type: 'integer', default: 1 },
+      page_size: { type: 'integer', default: 50 },
+      tags: { type: 'array', default: ['a'] },
+      q: { type: 'string' },
+    },
+  };
+
+  it('fills only absent fields, and an omitted optional param stays on the wire', () => {
+    const input = applyInputDefaults(schema, { page: 3, q: 'x' });
+    expect(input).toEqual({ page: 3, page_size: 50, tags: ['a'], q: 'x' });
+    const h: HttpHandler = {
+      kind: 'http',
+      url: 'https://api.example.com/items',
+      method: 'GET',
+      query: { page: '{page}', pageSize: '{page_size}' },
+    };
+    const url = buildHttpRequest(h, input, new Map()).url;
+    expect(url).toMatch(/^https:\/\/api\.example\.com\/items\?page=3&pageSize=50&/);
+  });
+
+  it('leaves a field that is present, even null, alone', () => {
+    expect(applyInputDefaults(schema, { page_size: null })).toMatchObject({ page_size: null });
+  });
+
+  it('clones defaults so the stored schema is never mutated through the input', () => {
+    const input = applyInputDefaults(schema, {});
+    (input.tags as string[]).push('b');
+    expect(schema.properties.tags.default).toEqual(['a']);
+  });
+
+  it('returns the same object when nothing applies, and tolerates junk schemas', () => {
+    const input = { page: 1, page_size: 5, tags: [] };
+    expect(applyInputDefaults(schema, input)).toBe(input);
+    expect(applyInputDefaults(null, input)).toBe(input);
+    expect(applyInputDefaults({ properties: [] }, input)).toBe(input);
   });
 });

@@ -11,8 +11,9 @@
 
 **Contents.**
 
-1. **What a client login is**: role client, no password, browser only, deny
-   by default, one client company per brain.
+1. **What a client login is**: role client, no password, a browser session
+   or the phone app's device token, deny by default, one client company per
+   brain.
 2. **Team admin > Clients**: acknowledge "What clients see", add a client,
    issue a sign-in link, end sessions, disable, delete.
 3. **Email sign-in codes**: the sign-in sender, the email worker, the card,
@@ -42,8 +43,12 @@
   consent all refuse a client. An admin password reset on a client answers
   400 `not-a-password-login`. A client signs in with a link an admin issues
   (section 2), or with a code the brain emails (section 3).
-- **Browser only.** A client never holds a bearer. Its session is a cookie
-  on the brain's origin (section 6).
+- **A browser, or the phone app.** In a browser the session is a cookie on
+  the brain's origin (section 6). The phone app holds a device token (a
+  bearer): the emailed code in device mode answers one instead of a cookie
+  (section 4, and mobile-companion-backend.md "Three roles on the phone").
+  Nothing else mints a client bearer: no password sign-in, no web-client
+  token login, no QR pairing.
 - **Deny by default.** A client reaches only the routes in `CLIENT_ROUTES`
   (`server/web/lib/auth/client-routes.ts`): its shell, "Shared with you"
   (list, item and the item's comment thread), the bytes of client files and
@@ -231,6 +236,47 @@ rule is `reapClientSigninCodes` in `packages/content/src/client-codes.ts`.
   a shared computer, and a download URL left in its history must stop
   working. It does not revoke a sign-in link or an emailed code the client
   has not used yet: End sessions and Disable do (section 2).
+- **The phone app's device token** (migration mobile_roles_push). `POST
+/api/auth/client-code/verify` with the request id in the body (device
+  mode) answers a bearer and sets no cookie. It is a `mobile_tokens` row
+  under the client login (listed and revoked in Team admin like every
+  device), lasts 30 days, and carries the login's session epoch: the session
+  layer refuses it once the epoch moves on, exactly as it refuses the
+  cookie, and refuses a client token with no epoch or one that claims more
+  than 30 days. `POST /api/auth/token/refresh` rotates it (each new token at
+  most 30 days, at the same epoch). The client's sign-out, in the browser or
+  on the phone (`POST /api/auth/mobile-logout`), ends every session and
+  token of the login; End sessions and Disable do too. A client token
+  reaches only `CLIENT_ROUTES`: `role-sweep.test.ts` drives every manifest
+  route with one.
+- **90 days from the code, then a new code.** Refresh keeps a client's
+  device token alive for at most 90 days from the emailed code that signed
+  the phone in (`mobile_tokens.signed_in_at`, copied through every
+  rotation). After that, refresh answers 401 with
+  `reason: "sign-in-expired"` and the app asks for a new code. A browser
+  session has no refresh: it ends after 30 days.
+- **Refresh rules (every role).** While more than 23 days remain, refresh
+  answers the SAME token and writes nothing. A retry with a rotated token
+  whose successor was never used (the answer was lost) gets that same
+  successor again. A rotated token presented again after its successor WAS
+  used is a copy in someone else's hands: on a refresh or on any route, the
+  brain ends every session of the login once, removes its push devices and
+  writes the audit row `auth.token_reuse`; the same old token later is a
+  plain 401. The refresh locks the login row, so it cannot outlive End
+  sessions.
+- **Device mode is for the app only.** `POST /api/auth/client-code` and
+  `/verify` in device mode answer 403 `reason: "device-only"` when the
+  request carries an `Origin` or any `Sec-Fetch-*` header: a page must not
+  mint a bearer its script can read (the browser flow's session is an
+  httpOnly cookie). A device code is stored under an id derived from the
+  app's request id, so a browser code and a device code cannot be crossed.
+  The device name is trimmed and cut to 80 characters; it never fails a
+  sign-in.
+- **Dead token rows are reaped.** The nightly sweep `device-tokens-reap`
+  deletes a token row 30 days after it was revoked or expired (see
+  [maintenance-runner.md](./maintenance-runner.md)).
+- The full phone contract is mobile-companion-backend.md, "Three roles on
+  the phone".
 - **Asset tokens live 10 minutes.** The `?at=` token a client's image and
   file sources carry lives 10 minutes (a member's lives 2 hours). The client
   byte routes accept it; the admin and member byte routes refuse it.
@@ -267,8 +313,8 @@ text of client and public pages ([pages.md](./pages.md) section 3).
 
 ## 6. One origin
 
-The client session is a cookie on the brain's origin, and a client never
-holds a bearer. So the client pages must be served on the same origin as
+The client's browser session is a cookie on the brain's origin (only the
+phone app holds a bearer). So the client pages must be served on the same origin as
 the brain: the same-origin Caddy shape (`MANTLE_CADDY_SHAPE=same-origin`,
 the default). On a split-origin box (the owner UI on its own hostname) the
 sign-in page says client sign-in is not available, shows no form and posts
@@ -568,7 +614,11 @@ write tools are `ownerOnly`: refused on a team, client or missing surface).
   nothing else: never a team, admin or public app (a public app is for
   visitors on its link), never a draft. `GET /api/client/apps` lists them by
   title (no level, no author). Any other id, a team app's included, is the
-  same plain 404 as an id that does not exist, on every route.
+  same plain 404 as an id that does not exist, on every route. It also
+  answers `folders`: the admin's Apps folders that lead to one of those
+  apps, read only, with no level and no share (docs/folder-tree.md, "Apps
+  for members and clients"); a folder with nothing the client may run is
+  never named.
 - **A shared workspace.** An app at team or client level is a shared
   workspace: everyone who runs it reads AND writes its one database. Members
   write team and client apps; clients write client apps. A public app stays
@@ -615,7 +665,11 @@ write tools are `ownerOnly`: refused on a team, client or missing surface).
   above client level. `my_items_list` and `my_item_open` are refused as well:
   they read the client's private drafts, and an app could copy them into its
   shared database (`clientAppToolVerdict`,
-  `packages/tools/src/client-app-tools.ts`).
+  `packages/tools/src/client-app-tools.ts`). One more kind passes: an
+  outside (MCP or http) tool the app declares that an admin switched
+  "External access" on for (it reads no brain text; docs/member-logins.md,
+  "External access: outside tools in shared apps"). A built-in's slug
+  off the list is still refused before any lookup.
 - **The same rules for every runner.** A client-level app's tools run by
   the client rules whoever runs it (`appToolLevel`,
   `packages/tools/src/app-tool-level.ts`, client tier audit L1), in the

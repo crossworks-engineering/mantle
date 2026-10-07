@@ -37,6 +37,13 @@ export type PublicSessionRoute = {
   path: string;
   init?: RequestInit;
   expect: Record<SweepRole, Expected>;
+  /** Driven with the session cookie only. Every other route is ALSO driven
+   *  with the role's device token (a bearer) and must answer the same: a
+   *  bearer is a session of the same login. Set for the routes that take
+   *  the bearer itself as their subject and read its row from the database
+   *  (rotation, phone sign-out): their bearer behaviour is proven on
+   *  Postgres (lib/auth/device-tokens.db.test.ts). */
+  cookieOnly?: true;
 };
 
 const UUID = '11111111-1111-4111-8111-111111111111';
@@ -74,6 +81,13 @@ export const PUBLIC_SESSION_ROUTES: PublicSessionRoute[] = [
     path: '/api/auth/change-password',
     init: json({}),
     expect: { member: { status: 400 }, client: refused('client-login'), unknown: stranger },
+  },
+  {
+    // Who am I, for any credential: the role and the routes that differ per
+    // role (the phone app, three roles). About the login only.
+    key: 'GET /api/auth/whoami',
+    path: '/api/auth/whoami',
+    expect: { member: { status: 200 }, client: { status: 200 }, unknown: stranger },
   },
   {
     // Every role signs out; a client's sign-out also ends its sessions (audit
@@ -176,7 +190,25 @@ export const PUBLIC_SESSION_ROUTES: PublicSessionRoute[] = [
     path: '/api/auth/token/refresh',
     init: { method: 'POST' },
     expect: { member: { status: 401 }, client: { status: 401 }, unknown: { status: 401 } },
+    cookieOnly: true,
   },
+  {
+    // The phone's sign-out: by the Authorization header only, always 200, so
+    // a cookie of any role ends nothing.
+    key: 'POST /api/auth/mobile-logout',
+    path: '/api/auth/mobile-logout',
+    init: { method: 'POST' },
+    expect: { member: { status: 200 }, client: { status: 200 }, unknown: { status: 200 } },
+    cookieOnly: true,
+  },
+  // The password token logins read no session: a cookie or a bearer of any
+  // role buys nothing, and a bad body is the same 401 for everyone.
+  ...(['mobile-login', 'token', 'device-login'] as const).map((name): PublicSessionRoute => ({
+    key: `POST /api/auth/${name}`,
+    path: `/api/auth/${name}`,
+    init: json({}),
+    expect: { member: { status: 401 }, client: { status: 401 }, unknown: { status: 401 } },
+  })),
 ];
 
 /** The render surfaces (server/pages/print.ts, outside the manifest): an
@@ -194,21 +226,31 @@ export const RENDER_PAGES: PublicSessionRoute[] = [
 /** A call in a route's source that reads the caller's session or login. A
  *  public route whose source matches must be in PUBLIC_SESSION_ROUTES. */
 export const SESSION_READER_RE =
-  /\b(getLoginOr401|getOwnerOr401\w*|getSessionUser\w*|getMemberOr401|getClientOr401|resolveLogin|requireOwner\w*|handleOwnerSso|getOwnerForAsset|getMemberForAsset|getClientForAsset|renderCaller)\b/;
+  /\b(getLoginOr401|getOwnerOr401\w*|getSessionUser\w*|getMemberOr401|getClientOr401|resolveLogin|requireOwner\w*|handleOwnerSso|getOwnerForAsset|getMemberForAsset|getClientForAsset|renderCaller|verifyMobileToken|mobileTokenJti|handleTokenLogin)\b/;
 
-/** Drive `route` with `cookie`; the failure line, or null when it answered
- *  what `role` must get. */
+let driven = 0;
+
+/** Drive `route` with `auth` (a session cookie string, or headers: a
+ *  bearer); the failure line, or null when it answered what `role` must get. */
 export async function drivePublic(
   app: Hono,
   route: PublicSessionRoute,
   role: SweepRole,
-  cookie: string,
+  auth: string | Record<string, string>,
 ): Promise<string | null> {
   const init = route.init ?? {};
+  const authHeaders = typeof auth === 'string' ? { cookie: auth } : auth;
+  // A fresh address per call: the auth routes limit per address, and the
+  // sweeps drive each of them many times (the limiters have their own tests).
+  driven += 1;
   const res = await app.request(route.path, {
     ...init,
     method: init.method ?? 'GET',
-    headers: { ...(init.headers as Record<string, string> | undefined), cookie },
+    headers: {
+      ...(init.headers as Record<string, string> | undefined),
+      ...authHeaders,
+      'x-forwarded-for': `198.51.100.${driven % 250}`,
+    },
   });
   const want = route.expect[role];
   const got: string[] = [];
@@ -221,5 +263,6 @@ export async function drivePublic(
     const to = res.headers.get('location') ?? '';
     if (!want.location.test(to)) got.push(`location ${to || '(none)'}`);
   }
-  return got.length ? `${route.key} as ${role}: ${got.join('; ')}` : null;
+  const how = typeof auth === 'string' ? 'cookie' : 'bearer';
+  return got.length ? `${route.key} as ${role} (${how}): ${got.join('; ')}` : null;
 }

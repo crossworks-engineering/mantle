@@ -54,6 +54,9 @@ export default tseslint.config(
       // (v0.206.3 had to be pushed from a worktree). Deleted 2026-07-27; this
       // stays so a stale checkout can never re-break the gate.
       'apps/**',
+      // The docs site (Astro + Starlight) is its own pnpm workspace with its
+      // own toolchain; the root config has no parser setup for it.
+      'docs-site/**',
       // Agent-tooling trees (.agents/, .codex/, .github/{agents,hooks,skills}).
       // Same wolf-cry as apps/** above: these carry minified vendor bundles that
       // `eslint .` parses as source — 2,428 errors on main, 2026-08-04, entirely

@@ -87,3 +87,37 @@ export function convergeManifestSkills(
   const added = addable.filter((s) => wantedSet.has(s) && !have.has(s));
   return [...kept, ...added];
 }
+
+/**
+ * Agent params the OWNER sets per agent: switches, not tuning. The boot
+ * reconcile and the per-item Adopt keep the stored value of these keys; the
+ * manifest owns the rest (temperature, max_tokens). Decided 2026-10-05 ("keep
+ * switches"): before, a tool_loading 'deferred' set on a specialist went back
+ * to the manifest params on the next version's reconcile.
+ */
+export const OWNER_PARAM_KEYS = ['tool_loading', 'suggest_follow_up', 'top_p'] as const;
+
+/** The params a specialist should hold after reconcile: the manifest's, with
+ *  each OWNER_PARAM_KEYS value the live row carries laid on top. */
+export function specialistParamsTarget(
+  manifest: Record<string, unknown> | null | undefined,
+  live: Record<string, unknown> | null | undefined,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...(manifest ?? {}) };
+  for (const k of OWNER_PARAM_KEYS) {
+    if (live?.[k] !== undefined) out[k] = live[k];
+  }
+  return out;
+}
+
+/** Equal as stored jsonb: top-level key order does not count (Postgres jsonb
+ *  re-orders keys, so a plain JSON.stringify compare of a row against a
+ *  literal can differ on order alone). */
+export function sameTopLevel(
+  a: Record<string, unknown> | null | undefined,
+  b: Record<string, unknown> | null | undefined,
+): boolean {
+  const norm = (o: Record<string, unknown> | null | undefined) =>
+    JSON.stringify(Object.entries(o ?? {}).sort(([x], [y]) => x.localeCompare(y)));
+  return norm(a) === norm(b);
+}

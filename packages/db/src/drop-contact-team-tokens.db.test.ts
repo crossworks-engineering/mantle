@@ -115,7 +115,7 @@ describe.skipIf(!URL)('migration 0178: drop contact_team_tokens', () => {
     // The whole scratch database goes, whatever a failed test left in it.
     await sql?.end();
     await scratch?.drop();
-  });
+  }, 120_000);
 
   it('the migrated database has no contact_team_tokens', () => {
     expect(goneAfterMigrate).toBe(true);

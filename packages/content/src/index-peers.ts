@@ -23,6 +23,7 @@ export {
   rotateInboundToken,
   setOutboundToken,
   setPeerEnabled,
+  setPeerAccess,
   deletePeer,
   verifyInboundToken,
   grantPeerShare,
@@ -56,6 +57,7 @@ export {
 export {
   queryPeer,
   getPeerNode,
+  peerCallTarget,
   searchPeerChunks,
   type PeerClientResult,
   type PeerQueryResult,

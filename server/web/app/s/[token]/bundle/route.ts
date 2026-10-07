@@ -4,19 +4,19 @@
  * 'app' share, and we serve only the app's PUBLISHED build (never a draft).
  * Mirrors /api/apps/[id]/bundle but owner comes from the share row, not a session.
  */
+import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
 import { NextResponse } from '@/server/http-compat';
 import { Readable } from 'node:stream';
 import { ReadableStream as NodeReadableStream } from 'node:stream/web';
-import { resolveActiveShareByToken } from '@/lib/shares';
 import { getApp } from '@mantle/content';
 import { getContent } from '@mantle/storage';
-import { rateLimit, clientIp } from '@/lib/rate-limit';
+import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 
 export async function GET(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
 
   // The bundle streams from storage; cap fetches like the other share assets.
-  const { ok, retryAfterSec } = rateLimit(`share-bundle:${clientIp(req)}`, {
+  const { ok, retryAfterSec } = rateLimit(`share-bundle:${clientIpKey(req)}`, {
     max: 30,
     windowMs: 60_000,
   });
@@ -27,7 +27,9 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
     });
   }
 
-  const share = await resolveActiveShareByToken(token);
+  const gate = await gateShare(req, token);
+  if (gate.kind === 'code') return contactCodeRequired(gate.share);
+  const share = gate.kind === 'ok' ? gate.share : null;
   if (!share || share.nodeType !== 'app') return new NextResponse('not found', { status: 404 });
 
   const app = await getApp(share.ownerId, share.nodeId);

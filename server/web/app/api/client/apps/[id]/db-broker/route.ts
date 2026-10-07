@@ -18,6 +18,10 @@ import { rateLimit } from '@/lib/rate-limit';
  * marked it informational (`dataReadOnly`), and then a write answers 403
  * `reason: 'read-only'`.
  *
+ * App identity: the client fills the reserved `:host_me_*` parameters
+ * (kind 'client', the login's display name, a per-app id); a value the
+ * browser sends for one is refused.
+ *
  * The SQLite work runs on the admin pool: it writes the app's database
  * registry rows, which the client role cannot.
  */
@@ -60,7 +64,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   });
   // One statement at a time per login (client tier audit I1): a second
   // waits its turn, so one login never holds every SQL process.
-  const caller = { callerKey: `client:${client.loginId}` };
+  const caller = {
+    callerKey: `client:${client.loginId}`,
+    viewer: { kind: 'client' as const, loginId: client.loginId, name: client.displayName },
+  };
   try {
     const output =
       op === 'query'
@@ -80,6 +87,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     }
     return NextResponse.json({ ok: true, output });
   } catch (err) {
-    return appDbErrorResponse(err, 'client-db-broker');
+    return appDbErrorResponse(err, 'client-db-broker', {
+      ownerId: client.anchorId,
+      appNodeId: app.id,
+      actorId: client.loginId,
+      via: 'client',
+      op,
+      sql,
+    });
   }
 }

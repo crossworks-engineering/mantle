@@ -359,7 +359,9 @@ async function runTurn(req: Request, idempotencyKey: string | null): Promise<Tur
 
     const options: RunAssistantTurnOptions = {
       agentSlug,
-      channel: source,
+      // An API key ('api') never reaches this route (keys work on /api/v1
+      // only); the type still names it, so it maps to no channel.
+      channel: source === 'api' ? undefined : source,
       // The client mints one uuid per submit and sends it as the Idempotency-Key
       // (it's also the workflow id). Reuse it as the live-stream correlation id
       // so the producer publishes this turn's status on the same id the client

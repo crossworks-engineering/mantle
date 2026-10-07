@@ -20,10 +20,18 @@
 #            refuses the swap, keeps the old file, and names the variables
 #   caddy:   shapes are installed before the Caddyfile; a shape change forces
 #            the caddy recreate even when the Caddyfile itself is modified
-#   scripts: .pre-adopt backups are pruned to the newest three per script
+#   scripts: .pre-adopt backups are pruned to the newest three per script;
+#            a script the release adds is installed at the updater's startup
 #   pull:    install.sh retries a failed image pull with backoff, and never
 #            runs `up` on a partial pull; the client step checks the server
 #            network exists before joining it
+#   setup:   install.sh writes the first-run setup code once, keeps it on a
+#            re-run, and --setup-code prints it again (or says "claimed")
+#   access:  a re-run with only a component flag keeps the access mode .env
+#            already has (domain, localhost, proxy, lan); an access flag wins
+#   proxy:   --behind-proxy needs a domain: -y without one stops before
+#            .env is written; a re-run never keeps a host-less https://
+#   onboard: onboard.sh pipes secrets from files on stdin, never in argv
 #   sanity:  Caddy's own HTTP->HTTPS redirect is not reported as "not Mantle"
 
 #   dump:    db-dump.sh strict mode exits non-zero when any of the four parts
@@ -37,6 +45,9 @@
 #   roll:    scripts/roll.sh backs up first (its own exit status), requests
 #            only the target, and stops loudly on a lost app, sandbox or
 #            app-db file
+#   maint:   scripts/box-maintain.sh starts a --rm sibling of mantle_web with
+#            its own memory, hands the env over a pipe (never argv or disk),
+#            and refuses a second maintenance run on the box
 
 # Test code: single-quoted shell bodies are expanded by the shell they are
 # handed to (SC2016), and ls over fixture dirs whose names we chose is fine
@@ -127,7 +138,7 @@ echo "install.sh: baselines on both fetch paths"
 # unpack, seed) is what gets tested, hermetically.
 mkdir -p "$WORK/bin"
 printf '#!/bin/sh\nexit 0\n' > "$WORK/bin/docker"; chmod +x "$WORK/bin/docker"
-SCRIPTS='db-dump.sh db-restore.sh install.sh sanity.sh compose-adopt.sh uninstall.sh'
+SCRIPTS='db-dump.sh db-restore.sh install.sh sanity.sh compose-adopt.sh uninstall.sh onboard.sh'
 RELEASE_FILES='docker-compose.yml docker-compose.client.yml docker-compose.core.yml infra/caddy/Caddyfile infra/caddy/shapes/same-origin.caddy infra/caddy/shapes/split.caddy'
 
 # The tree both paths serve: the worktree's real files, one stub.
@@ -320,6 +331,25 @@ check "the fresh backup holds the previous copy" sh -c "grep -l 'echo old instal
 check "other scripts got no backup (they were absent)" sh -c "! ls '$T/stack/scripts'/sanity.sh.pre-adopt.* >/dev/null 2>&1"
 
 # ═════════════════════════════════════════════════════════════════════════════
+echo "updater.sh: a script the release adds is installed at startup, not a roll late"
+# refresh_scripts runs in the OLD updater with the OLD SCRIPT_NAMES; the copy
+# it swaps in re-execs and must fetch what that list missed (onboard.sh).
+T="$WORK/topup"; fake_stack "$T"
+for s in $SCRIPTS; do printf '#!/bin/sh\necho %s\n' "$s" > "$T/img/scripts/$s"; done
+for s in $SCRIPTS; do [ "$s" = onboard.sh ] || { cp "$T/img/scripts/$s" "$T/stack/scripts/$s"; cp "$T/img/scripts/$s" "$T/stack/scripts/$s.release"; }; done
+out=$(updater_run "$T/stack" "$T/sig" "$T/img" 'container_image() { echo sha256:running; }; topup_scripts >/dev/null; echo "SCRIPTS_REFRESH=$SCRIPTS_REFRESH IMG=$IMG"')
+check "the missing script is installed from the running web image" sh -c "test '$out' = 'SCRIPTS_REFRESH=refreshed IMG=sha256:running' && cmp -s '$T/stack/scripts/onboard.sh' '$T/img/scripts/onboard.sh'"
+check "it is executable and has its baseline" sh -c "test -x '$T/stack/scripts/onboard.sh' && test -f '$T/stack/scripts/onboard.sh.release'"
+out=$(updater_run "$T/stack" "$T/sig" "$T/img" 'container_image() { echo sha256:running; }; docker() { echo "docker $*" >> "'"$T"'/dockercalls"; }; topup_scripts; echo "SCRIPTS_REFRESH=$SCRIPTS_REFRESH"')
+check "nothing missing: a no-op, docker never called" sh -c "test '$out' = 'SCRIPTS_REFRESH=none' && test ! -e '$T/dockercalls'"
+rm -f "$T/stack/scripts/onboard.sh" "$T/stack/scripts/onboard.sh.release"
+out=$(updater_run "$T/stack" "$T/sig" "$T/img" 'container_image() { :; }; topup_scripts; echo "SCRIPTS_REFRESH=$SCRIPTS_REFRESH"')
+check "web not running: nothing to read from, nothing done" sh -c "test '$out' = 'SCRIPTS_REFRESH=none' && test ! -e '$T/stack/scripts/onboard.sh'"
+startup=$(grep -n '^  topup_scripts$' "$ROOT/infra/updater/updater.sh" | cut -d: -f1)
+loop=$(grep -n '^while true; do$' "$ROOT/infra/updater/updater.sh" | cut -d: -f1)
+check "startup calls it before the poll loop" test -n "$startup" -a -n "$loop" -a "${startup:-0}" -lt "${loop:-0}"
+
+# ═════════════════════════════════════════════════════════════════════════════
 echo "install.sh: image pull retries, and no 'up' without every image"
 # A fresh install (2026-09-28) lost one layer to a reset connection; the pull
 # aborted, `up` created 5 of 24 services, and the client step died on a network
@@ -384,6 +414,195 @@ mkdir -p "$T/net"
 printf 'services:\n  client-web:\n    networks: [x]\nnetworks:\n  x:\n    external: true\n    name: "brain_default"\nvolumes:\n  v:\n    name: not_this\n' > "$T/net/docker-compose.client.yml"
 check "follows a renamed network, quotes stripped" test "$(net_run "$T/net" brain_default)" = "ready brain_default"
 check "falls back to mantle_default without a client compose" test "$(net_run "$T/nowhere" mantle_default)" = "ready mantle_default"
+
+# ═════════════════════════════════════════════════════════════════════════════
+echo "install.sh: the setup code is generated once, kept, and printed again"
+# While auth.users is empty, signup makes its caller the owner; the setup code
+# is what stops the first stranger to reach a fresh box from claiming it. A
+# whole --skip-up run, with docker, curl and the port probes stubbed on PATH.
+T="$WORK/setup"; mkdir -p "$T/bin" "$T/stack/scripts"
+cp "$ROOT/docker-compose.yml" "$T/stack/"
+cp "$ROOT/scripts/install.sh" "$T/stack/scripts/install.sh"
+cat > "$T/bin/docker" <<'STUB'
+#!/bin/sh
+case "$1 $2" in
+  "compose version") echo v2.30.0 ;;
+esac
+exit 0
+STUB
+# curl: only the bootstrap-state probe matters here; $CURL_BOOT is its body,
+# unset means the brain is not reachable.
+cat > "$T/bin/curl" <<'STUB'
+#!/bin/sh
+[ -n "${CURL_BOOT:-}" ] || exit 7
+printf '%s' "$CURL_BOOT"
+STUB
+printf '#!/bin/sh\nexit 0\n' > "$T/bin/ss"     # nothing listening
+# A small /tmp must not fail the installer's disk preflight: report 100 GB free.
+printf '#!/bin/sh\necho "Filesystem 1024-blocks Used Available Capacity Mounted"\necho "fake 209715200 0 104857600 0%% /"\n' > "$T/bin/df"
+printf '#!/bin/sh\nexit 1\n' > "$T/bin/lsof"
+chmod +x "$T/bin/"*
+install_run() { # <args...>: run the configurator in the fake stack
+  PATH="$T/bin:$PATH" NO_COLOR=1 bash "$T/stack/scripts/install.sh" "$@" < /dev/null > "$T/out" 2>&1
+}
+code_line() { grep -E '^MANTLE_SETUP_CODE=' "$T/stack/.env" | cut -d= -f2-; }
+
+if install_run --localhost -y --skip-up --data-dir "$T/stack/data"; then ok "a --skip-up install runs to completion"
+else fail "a --skip-up install exited non-zero (see below)"; sed 's/^/    /' "$T/out"; fi
+first="$(code_line)"
+check "the setup code is written to .env" test -n "$first"
+check "4 groups of 5 from the no-look-alikes alphabet" sh -c "echo '$first' | grep -Eqx '[2-9A-HJKMNP-Z]{5}(-[2-9A-HJKMNP-Z]{5}){3}'"
+check "--skip-up says how to print it" grep -q 'install.sh --setup-code' "$T/out"
+install_run --localhost -y --skip-up --data-dir "$T/stack/data" || true
+check "a re-run keeps the same code" test "$(code_line)" = "$first"
+check "and writes it once" test "$(grep -c '^MANTLE_SETUP_CODE=' "$T/stack/.env")" = 1
+check "a re-run says it was kept" grep -q 'MANTLE_SETUP_CODE kept' "$T/out"
+check "two installs do not share a code" sh -c "test \"\$(env PATH='$T/bin':\"\$PATH\" bash -c \"\$(awk 'index(\$0, \"gen_setup_code() {\") == 1 { p = 1 } p { print } p && /^}\$/ { exit }' '$ROOT/scripts/install.sh'); gen_setup_code\")\" != '$first'"
+
+CURL_BOOT='{"firstRun":true,"setupCodeRequired":true}' install_run --setup-code || true
+check "--setup-code prints the code while the brain is unclaimed" grep -q "Setup code: $first" "$T/out"
+CURL_BOOT='{"firstRun":false,"setupCodeRequired":false}' install_run --setup-code || true
+check "--setup-code says 'already claimed' once an account exists" sh -c "grep -q 'already claimed' '$T/out' && ! grep -q '$first' '$T/out'"
+install_run --setup-code || true
+check "--setup-code still prints it when the brain cannot be asked" sh -c "grep -q 'Setup code: $first' '$T/out' && grep -q 'Could not ask the brain' '$T/out'"
+rm -f "$T/stack/.env"
+if install_run --setup-code; then fail "--setup-code without a .env should fail"; else ok "--setup-code without a .env fails and says why"; fi
+check "  (it names the fix)" grep -q 'Run scripts/install.sh to create one' "$T/out"
+
+# ═════════════════════════════════════════════════════════════════════════════
+echo "install.sh: a re-run keeps the access mode already in .env"
+# Re-running the configurator with only a component flag (--core, --helpers,
+# --no-sandboxes) used to ask the access question again, and under -y fall
+# back to plain HTTP on the network: a domain box silently lost HTTPS. Same
+# stubbed --skip-up run as above, plus DNS and interface stubs, so a domain
+# resolves NOWHERE: the kept mode must survive even that.
+T="$WORK/access"; mkdir -p "$T/bin" "$T/stack/scripts"
+cp "$ROOT/docker-compose.yml" "$ROOT/docker-compose.core.yml" "$T/stack/"
+cp "$ROOT/scripts/install.sh" "$T/stack/scripts/install.sh"
+cp "$WORK/setup/bin/"* "$T/bin/"
+for c in getent dig host; do printf '#!/bin/sh\nexit 0\n' > "$T/bin/$c"; done
+printf '#!/bin/sh\necho 10.0.0.5\n' > "$T/bin/hostname"
+chmod +x "$T/bin/"*
+acc_run() { # <args...>
+  PATH="$T/bin:$PATH" NO_COLOR=1 bash "$T/stack/scripts/install.sh" -y --skip-up --data-dir "$T/stack/data" "$@" < /dev/null > "$T/out" 2>&1
+}
+acc_env() { grep -E "^$1=" "$T/stack/.env" | head -1 | cut -d= -f2-; }
+acc_seed() { # <site> <bind> <origin>: a box an earlier install configured
+  rm -rf "$T/stack/.env" "$T/stack/data"; mkdir -p "$T/stack/data/postgres"
+  printf 'MANTLE_SITE_ADDRESS=%s\nMANTLE_BIND_ADDR=%s\nMANTLE_SERVER_ORIGIN=%s\n' "$1" "$2" "$3" > "$T/stack/.env"
+}
+
+acc_seed brain.example.com 0.0.0.0 https://brain.example.com
+acc_run --core || { fail "a --core re-run on a domain box exited non-zero"; sed 's/^/    /' "$T/out"; }
+check "domain: --core -y keeps the hostname as the site address" test "$(acc_env MANTLE_SITE_ADDRESS)" = brain.example.com
+check "domain: the origin stays https" test "$(acc_env MANTLE_SERVER_ORIGIN)" = https://brain.example.com
+check "domain: no fallback to plain HTTP, though the DNS check found nothing" sh -c "! grep -q 'Falling back to plain HTTP' '$T/out'"
+check "domain: it says the mode was kept, and how to change it" grep -q 'Keeping the current access: a domain with HTTPS (brain.example.com)' "$T/out"
+check "domain: --core still applied" sh -c "grep -q '^COMPOSE_FILE=.*docker-compose.core.yml' '$T/stack/.env'"
+
+acc_seed :80 127.0.0.1 http://localhost
+acc_run --helpers || true
+check "localhost: --helpers -y keeps the loopback bind" test "$(acc_env MANTLE_BIND_ADDR)" = 127.0.0.1
+check "localhost: the origin stays http://localhost" test "$(acc_env MANTLE_SERVER_ORIGIN)" = http://localhost
+
+acc_seed :80 127.0.0.1 https://brain.example.com
+acc_run --no-sandboxes || true
+check "behind-proxy: stays on loopback" test "$(acc_env MANTLE_BIND_ADDR)" = 127.0.0.1
+check "behind-proxy: stays off port 80" test "$(acc_env MANTLE_HTTP_PORT)" = 8080
+check "behind-proxy: the public domain is kept" sh -c "test \"\$(grep '^MANTLE_PUBLIC_URL=' '$T/stack/.env' | cut -d= -f2-)\" = https://brain.example.com && test \"\$(grep '^MANTLE_SERVER_ORIGIN=' '$T/stack/.env' | cut -d= -f2-)\" = https://brain.example.com"
+
+acc_seed :80 0.0.0.0 http://10.0.0.5
+acc_run --core || true
+check "lan: stays on the network, plain HTTP" sh -c "test \"\$(grep '^MANTLE_BIND_ADDR=' '$T/stack/.env' | cut -d= -f2-)\" = 0.0.0.0 && test \"\$(grep '^MANTLE_SERVER_ORIGIN=' '$T/stack/.env' | cut -d= -f2-)\" = http://10.0.0.5"
+
+acc_seed brain.example.com 0.0.0.0 https://brain.example.com
+acc_run --localhost || true
+check "an access flag still wins over .env" sh -c "test \"\$(grep '^MANTLE_SITE_ADDRESS=' '$T/stack/.env' | cut -d= -f2-)\" = :80 && test \"\$(grep '^MANTLE_BIND_ADDR=' '$T/stack/.env' | cut -d= -f2-)\" = 127.0.0.1"
+check "  (and nothing claims the old mode was kept)" sh -c "! grep -q 'Keeping the current access' '$T/out'"
+
+rm -rf "$T/stack/.env" "$T/stack/data"
+acc_run || true
+check "a fresh -y install with no .env still defaults to the network (lan)" sh -c "test \"\$(grep '^MANTLE_SITE_ADDRESS=' '$T/stack/.env' | cut -d= -f2-)\" = :80 && test \"\$(grep '^MANTLE_BIND_ADDR=' '$T/stack/.env' | cut -d= -f2-)\" = 0.0.0.0"
+
+# ═════════════════════════════════════════════════════════════════════════════
+echo "install.sh: --behind-proxy needs the domain the proxy serves"
+# --behind-proxy without --domain wrote MANTLE_PUBLIC_URL=https:// (no host),
+# and every share and email link broke. Same stubbed run as the access tests.
+pub_url() { grep -E '^MANTLE_PUBLIC_URL=' "$T/stack/.env" 2>/dev/null | head -1 | cut -d= -f2-; }
+
+rm -rf "$T/stack/.env" "$T/stack/data"
+if acc_run --behind-proxy; then fail "a fresh --behind-proxy -y without --domain should stop"
+else ok "a fresh --behind-proxy -y without --domain stops"; fi
+check "  (it names the fix)" grep -q -- '--behind-proxy --domain' "$T/out"
+check "  (no host-less public URL is written)" sh -c "! grep -q '^MANTLE_PUBLIC_URL=' '$T/stack/.env' 2>/dev/null"
+
+rm -rf "$T/stack/.env" "$T/stack/data"
+if acc_run --behind-proxy --domain "https://"; then fail "--behind-proxy with an empty host should stop"
+else ok "--behind-proxy with a host-less --domain stops too"; fi
+
+rm -rf "$T/stack/.env" "$T/stack/data"
+acc_run --behind-proxy --domain https://Brain.Example.com/ || { fail "--behind-proxy --domain exited non-zero"; sed 's/^/    /' "$T/out"; }
+check "with --domain: the public URL is the bare host" test "$(pub_url)" = https://brain.example.com
+check "with --domain: the origin is the same host" test "$(acc_env MANTLE_SERVER_ORIGIN)" = https://brain.example.com
+check "with --domain: Caddy stays on loopback, off port 80" sh -c "test \"\$(grep '^MANTLE_BIND_ADDR=' '$T/stack/.env' | cut -d= -f2-)\" = 127.0.0.1 && test \"\$(grep '^MANTLE_HTTP_PORT=' '$T/stack/.env' | cut -d= -f2-)\" = 8080"
+
+rm -rf "$T/stack/.env" "$T/stack/data"
+acc_run --domain brain.example.com --behind-proxy || true
+check "--domain before --behind-proxy works the same" sh -c "test \"\$(grep '^MANTLE_PUBLIC_URL=' '$T/stack/.env' | cut -d= -f2-)\" = https://brain.example.com && test \"\$(grep '^MANTLE_BIND_ADDR=' '$T/stack/.env' | cut -d= -f2-)\" = 127.0.0.1"
+
+acc_seed :80 127.0.0.1 http://127.0.0.1:8080
+printf 'MANTLE_PUBLIC_URL=https://\n' >> "$T/stack/.env"
+if acc_run --core; then ok "a re-run of a proxy box with no domain still completes"
+else fail "a re-run of a proxy box with no domain exited non-zero"; sed 's/^/    /' "$T/out"; fi
+check "  (the host-less https:// is removed)" sh -c "! grep -q '^MANTLE_PUBLIC_URL=' '$T/stack/.env'"
+check "  (it says how to set the domain)" grep -q -- '--behind-proxy --domain' "$T/out"
+check "  (the proxy mode is kept)" test "$(acc_env MANTLE_BIND_ADDR)" = 127.0.0.1
+
+acc_seed :80 127.0.0.1 http://127.0.0.1:8080
+printf 'MANTLE_PUBLIC_URL=https://brain.example.com\n' >> "$T/stack/.env"
+acc_run --core || true
+check "a kept proxy box reads its domain from the public URL" test "$(pub_url)" = https://brain.example.com
+
+# ═════════════════════════════════════════════════════════════════════════════
+echo "onboard.sh: secrets reach the container on stdin, never in argv"
+# The terminal wizard takes the owner password and the OpenRouter key from
+# files and pipes them in; argv lands in shell history and in `ps`. docker is
+# stubbed: it records every argv and whatever arrives on stdin for `exec -T`.
+T="$WORK/onboard"; mkdir -p "$T/bin" "$T/stack/scripts"
+cp "$ROOT/docker-compose.yml" "$T/stack/"
+cp "$ROOT/scripts/onboard.sh" "$T/stack/scripts/onboard.sh"
+cat > "$T/bin/docker" <<'STUB'
+#!/bin/sh
+echo "argv: $*" >> "$T/calls"
+case "$*" in
+  "compose ps --status running --services") [ -n "${WEB_DOWN:-}" ] || echo web ;;
+  *"exec -T web"*) cat > "$T/stdin" ;;
+esac
+exit 0
+STUB
+chmod +x "$T/bin/docker"
+printf 'pw-%s\n' "s3cret-value" > "$T/pw"; printf 'sk-or-v1-%s\n' "keyvalue" > "$T/key"
+onboard_run() { rm -f "$T/calls" "$T/stdin"; T="$T" PATH="$T/bin:$PATH" bash "$T/stack/scripts/onboard.sh" "$@" < /dev/null > "$T/out" 2>&1; }
+onboard_run --yes --email o@example.invalid --password-file "$T/pw" --key-file "$T/key"
+check "the wizard runs in the web container with --secrets-stdin" grep -q 'exec -T web pnpm -C server/web exec tsx scripts/onboard.ts --secrets-stdin --yes --email o@example.invalid' "$T/calls"
+check "stdin carries both secrets as key=value lines" sh -c "grep -qx 'password=pw-s3cret-value' '$T/stdin' && grep -qx 'openrouter_key=sk-or-v1-keyvalue' '$T/stdin'"
+check "no argv ever holds a secret" sh -c "! grep -q -e s3cret-value -e keyvalue '$T/calls'"
+WEB_DOWN=1 onboard_run --yes || true
+check "a stopped web service is named, and nothing is exec'd" sh -c "grep -q \"web service isn't running\" '$T/out' && ! grep -q 'exec' '$T/calls'"
+onboard_run --password-file "$T/nope" || true
+check "an unreadable secret file stops before docker exec" sh -c "grep -q \"Can't read the password file\" '$T/out' && ! grep -q 'exec' '$T/calls'"
+onboard_run --yes || true
+check "without a terminal or files it still uses exec -T (no -it)" sh -c "grep -q 'exec -T web' '$T/calls' && ! grep -q 'exec -it' '$T/calls'"
+# Relative secret paths mean relative to where the operator ran it, not the
+# stack dir the script cd's into; --flag=path works too.
+mkdir -p "$T/elsewhere"; printf 'rel-pass\n' > "$T/elsewhere/pw"; printf 'rel-key\n' > "$T/elsewhere/key"
+rm -f "$T/calls" "$T/stdin"
+(cd "$T/elsewhere" && T="$T" PATH="$T/bin:$PATH" bash "$T/stack/scripts/onboard.sh" --yes --password-file=pw --key-file ./key < /dev/null > "$T/out" 2>&1) || true
+check "relative paths resolve from the caller's directory, --flag=path form included" sh -c "grep -qx 'password=rel-pass' '$T/stdin' && grep -qx 'openrouter_key=rel-key' '$T/stdin'"
+onboard_run --yes --key-file || true
+check "a path flag given last is a clear error, and nothing is exec'd" sh -c "grep -q -- '--key-file needs a path' '$T/out' && ! grep -q 'exec' '$T/calls' 2>/dev/null"
+onboard_run --password-file= || true
+check "an empty --flag= is the same clear error" grep -q -- '--password-file needs a path' "$T/out"
 
 # ═════════════════════════════════════════════════════════════════════════════
 echo "sanity.sh: our own HTTP->HTTPS redirect is not 'not Mantle'"
@@ -638,6 +857,9 @@ sleep() { exit 0; }
 }
 roll_case() { # <name>: a stack with a request for v8, images and containers
   T="$WORK/roll-$1"; fake_stack "$T"; fake_dump "$T"
+  # A configured box has its operator scripts, so the updater's startup
+  # top-up (topup_scripts) has nothing to fetch before the roll begins.
+  for s in $SCRIPTS; do [ -f "$T/stack/scripts/$s" ] || printf '#!/bin/sh\n' > "$T/stack/scripts/$s"; done
   printf 'services: {client_web: {image: c}}\n' > "$T/stack/docker-compose.client.yml"
   printf 'MANTLE_PRE_ROLL_MIN_FREE_MB=0\n' >> "$T/stack/.env"
   printf '{"target":"v8"}\n' > "$T/sig/request.json"
@@ -700,6 +922,21 @@ rm "$T/state/mantle_web"
 FAKE_TS=20260105-000000 roll_loop "$T"
 check "no running server before the roll: server images left alone" sh -c "! grep -q mantle-server '$T/state/removed' 2>/dev/null"
 check "no running server before the roll: says so" grep -q 'image prune: test/mantle-server skipped' "$T/sig/update.log"
+
+roll_case tokens
+# A compose whose app services read the live service state: the roll may now
+# provision the optional-service tokens (the refused case above already pins
+# that a refused roll writes nothing to .env, these included).
+printf 'services:\n  api:\n    volumes:\n      - ./data/update-signal:/signal:ro\n' > "$T/stack/docker-compose.yml"
+cp "$T/stack/docker-compose.yml" "$T/stack/docker-compose.yml.release"
+FAKE_TS=20260105-000000 roll_loop "$T"
+check "OK roll on a live-state compose: status done" grep -q '"phase":"done","target":"v8".*"ok":true' "$T/sig/status.json"
+check "OK roll: both optional-service tokens provisioned" sh -c "
+  grep -qE '^SANDBOXD_TOKEN=[0-9a-f]{64}\$' '$T/stack/.env' && grep -qE '^MEDIA_SIDECAR_TOKEN=[0-9a-f]{64}\$' '$T/stack/.env'"
+check "OK roll: tokens written before the pull that recreates the app containers" sh -c "
+  test \"\$(grep -nE 'SANDBOXD_TOKEN provisioned' '$T/sig/update.log' | head -1 | cut -d: -f1)\" -lt \"\$(grep -n 'done → v8' '$T/sig/update.log' | head -1 | cut -d: -f1)\""
+check "OK roll: services.json refreshed, no profile switched on" sh -c "
+  grep -q '\"sandboxes\":{\"profile\":false,\"token\":true' '$T/sig/services.json'"
 
 # ═════════════════════════════════════════════════════════════════════════════
 echo "updater.sh: the client logins rollback floor (v0.232.318)"
@@ -933,6 +1170,404 @@ roll_box fleetnostack
 printf '{"boxes":[{"label":"box-b","url":"https://brain.example.com","ssh":"fakebox"}]}\n' > "$RS/fleet.json"
 MANTLE_FLEET_FILE="$RS/fleet.json" roll_sh box-b v8
 check "a fleet box with a url and no stack: the stack comes from the updater, not the url" sh -c "test '$rc' = 0 && ! grep -q 'not an absolute path' '$RS/out'"
+
+# ═════════════════════════════════════════════════════════════════════════════
+echo "box-maintain.sh: a sibling container, the env through a pipe, one run per box"
+# A docker stub plays the box: `ps` lists $BM/running, `top` prints $BM/top,
+# `inspect` answers for mantle_web (its env holds a secret and $BM/webowner),
+# psql answers $BM/pgowner, and `run` records its argv and the env file it
+# was handed (read through the path docker got, as the real CLI does).
+BB="$WORK/bmbin"; mkdir -p "$BB"
+cat > "$BB/docker" <<'STUB'
+#!/bin/bash
+echo "docker $*" >> "$BM/calls"
+case "$1" in
+  ps) cat "$BM/running" 2>/dev/null ;;
+  top) cat "$BM/top" 2>/dev/null ;;
+  inspect)
+    [ "$2" = mantle_web ] || [ "$3" = mantle_web ] || [ "$4" = mantle_web ] || exit 1
+    case "$*" in
+      *'{{.Image}}'*) echo sha256:0123456789abcdef0123 ;;
+      *WorkingDir*) echo /app ;;
+      *Config.Env*) printf 'PATH=/usr/bin\nSECRET_KEY=topsecret\nALLOWED_USER_ID=%s\n' "$(cat "$BM/webowner" 2>/dev/null)" ;;
+    esac ;;
+  exec) cat "$BM/pgowner" 2>/dev/null ;;
+  run)
+    printf '%s\n' "$@" > "$BM/run-argv"
+    while [ $# -gt 0 ]; do
+      if [ "$1" = --env-file ]; then cat "$2" > "$BM/run-env"; fi
+      shift
+    done ;;
+  logs) echo "maintain: chunk-windows (dry-run) started" ;;
+esac
+exit 0
+STUB
+printf '#!/bin/sh\nexit 0\n' > "$BB/sleep"
+chmod +x "$BB/docker" "$BB/sleep"
+OWNER_ID=11111111-2222-3333-4444-555555555555
+bm_box() { # <name>: a fresh fake box
+  BM="$WORK/bm-$1"; mkdir -p "$BM/home"; : > "$BM/calls"
+}
+bm_sh() { # <args...>: run box-maintain.sh on the fake box; exit code in $rc, output in $BM/out
+  rc=0
+  PATH="$BB:$RB:$PATH" HOME="$BM/home" BM="$BM" RS="$BM" \
+    bash "$ROOT/scripts/box-maintain.sh" "$@" > "$BM/out" 2>&1 || rc=$?
+}
+
+bm_box happy
+echo "$OWNER_ID" > "$BM/webowner"
+bm_sh --here chunk-windows --apply --yes --parallel=16
+check "happy: exit 0" test "$rc" = 0
+check "happy: a --rm container named maint-<task> with its own memory, no swap" sh -c "
+  grep -qx -- --rm '$BM/run-argv' && grep -qx maint-chunk-windows '$BM/run-argv' &&
+  grep -A1 -x -- --memory '$BM/run-argv' | grep -qx 2g && grep -A1 -x -- --memory-swap '$BM/run-argv' | grep -qx 2g"
+check "happy: mantle_web's network, image and working dir" sh -c "
+  grep -qx container:mantle_web '$BM/run-argv' && grep -qx sha256:0123456789abcdef0123 '$BM/run-argv' &&
+  grep -A1 -x -- --workdir '$BM/run-argv' | grep -qx /app"
+check "happy: the web env reached docker through a pipe, never in argv" sh -c "
+  grep -qx SECRET_KEY=topsecret '$BM/run-env' && ! grep -q topsecret '$BM/run-argv' &&
+  grep -A1 -x -- --env-file '$BM/run-argv' | tail -1 | grep -q '^/dev/fd/'"
+check "happy: the heap cap is 75% of the memory" grep -qx -- 'NODE_OPTIONS=--max-old-space-size=1536' "$BM/run-argv"
+check "happy: the owner comes from the web env" grep -qx "ALLOWED_USER_ID=$OWNER_ID" "$BM/run-argv"
+check "happy: the task and its flags pass through unchanged" sh -c "
+  tail -4 '$BM/run-argv' | tr '\n' ' ' | grep -q '^chunk-windows --apply --yes --parallel=16 \$'"
+check "happy: the log dir on the box is private" test "$(stat -c %a "$BM/home/maint-logs" 2>/dev/null || stat -f %Lp "$BM/home/maint-logs")" = 700
+
+bm_box busy
+echo maint-re-embed > "$BM/running"; echo "$OWNER_ID" > "$BM/webowner"
+bm_sh --here chunk-windows --apply --yes
+check "a maint container already runs: refused, nothing started" sh -c "
+  test '$rc' = 1 && grep -q 'already going: maint-re-embed' '$BM/out' && test ! -e '$BM/run-argv'"
+
+bm_box inweb
+printf 'PID ARGS\n42 node tsx scripts/maintain.ts chunk-windows --apply\n' > "$BM/top"; echo "$OWNER_ID" > "$BM/webowner"
+bm_sh --here chunk-windows
+check "a pnpm maintain inside mantle_web: refused" sh -c "
+  test '$rc' = 1 && grep -q 'running inside mantle_web' '$BM/out' && test ! -e '$BM/run-argv'"
+
+bm_box pgowner
+echo "$OWNER_ID" > "$BM/pgowner"
+bm_sh --here --memory=3g chunk-windows
+check "no owner in the web env: read from Postgres; --memory sets the heap" sh -c "
+  test '$rc' = 0 && grep -qx 'ALLOWED_USER_ID=$OWNER_ID' '$BM/run-argv' &&
+  grep -qx -- 'NODE_OPTIONS=--max-old-space-size=2304' '$BM/run-argv'"
+
+bm_box noowner
+bm_sh --here chunk-windows
+check "no owner anywhere: refused, asks for --owner" sh -c "test '$rc' = 1 && grep -q 'pass --owner' '$BM/out'"
+
+bm_box badslug
+bm_sh --here 'chunk-windows;rm'
+check "a task slug outside [a-z0-9-]: refused" test "$rc" = 1
+
+bm_box overssh
+echo "$OWNER_ID" > "$BM/webowner"
+bm_sh --ssh fakebox re-embed --model='a b' --yes
+check "over ssh: an argument with a space arrives as one argument" sh -c "
+  test '$rc' = 0 && grep -qx -- '--model=a b' '$BM/run-argv'"
+
+bm_box status
+echo maint-chunk-windows > "$BM/running"
+bm_sh --here --status
+check "--status names the running container" sh -c "test '$rc' = 0 && grep -q 'maint-chunk-windows' '$BM/out'"
+
+# ═════════════════════════════════════════════════════════════════════════════
+echo "updater.sh: services.json, the live optional-service state"
+# The brain reads it as the truth for "is sandboxes/media on" (@mantle/config
+# services). It must be valid JSON, carry the profile (not the token) as the
+# switch, the container state from docker, and never a secret value.
+SV="$WORK/services"; fake_stack "$SV"
+printf 'COMPOSE_PROFILES= local-embedder, sandboxes ,\nCOMPOSE_FILE=docker-compose.yml:docker-compose.core.yml\nSANDBOXD_TOKEN=sekrit-sandbox\nMEDIA_SIDECAR_TOKEN=\n' >> "$SV/stack/.env"
+INSPECT_STUB='docker() {
+  case "$1 $4" in
+    "inspect mantle_sandboxd") echo "running healthy" ;;
+    "inspect mantle_media") echo "Error: No such object: mantle_media" >&2; return 1 ;;
+    *) return 0 ;;
+  esac
+}'
+updater_run "$SV/stack" "$SV/sig" "$SV/img" "$INSPECT_STUB
+write_services_info"
+SJ="$SV/sig/services.json"
+check "services.json written (temp file renamed away)" sh -c "test -f '$SJ' && test ! -e '$SJ.tmp'"
+check "services.json is valid JSON" node -e "JSON.parse(require('fs').readFileSync('$SJ','utf8'))"
+svc_field() { node -e "const j=JSON.parse(require('fs').readFileSync('$SJ','utf8'));process.stdout.write(String($1))"; }
+check "profiles: trimmed, empty items dropped" test "$(svc_field 'j.profiles')" = "local-embedder,sandboxes"
+check "sandboxes: profile on, token present, running + healthy" \
+  test "$(svc_field 'JSON.stringify(j.services.sandboxes)')" = '{"profile":true,"token":true,"container":"running","health":"healthy"}'
+check "media: profile off, empty token is no token, no container" \
+  test "$(svc_field 'JSON.stringify(j.services.media)')" = '{"profile":false,"token":false,"container":"absent","health":"none"}'
+check "local embedder: profile on, no token key at all, no container" \
+  test "$(svc_field 'JSON.stringify(j.services["local-embedder"])')" = '{"profile":true,"token":false,"container":"absent","health":"none"}'
+check "helpers: reported (profile off on this core box)" \
+  test "$(svc_field 'j.services.helpers.profile')" = false
+check "core shape read from COMPOSE_FILE" test "$(svc_field 'j.core')" = true
+check "verbs advertise the roll and the service switch" test "$(svc_field 'j.verbs.join()')" = roll,service
+check "no token VALUE in the file" sh -c "! grep -q sekrit '$SJ'"
+
+echo "updater.sh: optional-service tokens provisioned on a roll"
+TK="$WORK/tokens"; fake_stack "$TK"
+printf 'SANDBOXD_TOKEN=keepme\nMEDIA_SIDECAR_TOKEN=\n' >> "$TK/stack/.env"
+# A compose WITHOUT the read-only signal mount: its brain reads "token set" as
+# "on", so nothing may be provisioned.
+updater_run "$TK/stack" "$TK/sig" "$TK/img" 'ensure_service_tokens' > /dev/null
+check "old compose: no token written" grep -qx 'MEDIA_SIDECAR_TOKEN=' "$TK/stack/.env"
+check "old compose: the reason is logged" grep -q 'predates the live service state' "$TK/sig/update.log"
+printf 'services:\n  api:\n    volumes:\n      - ./data/update-signal:/signal:ro\n' > "$TK/stack/docker-compose.yml"
+updater_run "$TK/stack" "$TK/sig" "$TK/img" 'ensure_service_tokens' > /dev/null
+check "an existing token is never rotated" grep -qx 'SANDBOXD_TOKEN=keepme' "$TK/stack/.env"
+check "a missing token gets 64 hex chars" grep -qE '^MEDIA_SIDECAR_TOKEN=[0-9a-f]{64}$' "$TK/stack/.env"
+check "one line per token" test "$(grep -c '^MEDIA_SIDECAR_TOKEN=' "$TK/stack/.env")" = 1
+check ".env keeps mode 600" test "$(mode_of "$TK/stack/.env")" = 600
+tok1=$(sed -n 's/^MEDIA_SIDECAR_TOKEN=//p' "$TK/stack/.env")
+updater_run "$TK/stack" "$TK/sig" "$TK/img" 'ensure_service_tokens' > /dev/null
+check "a second roll keeps the provisioned token" grep -qx "MEDIA_SIDECAR_TOKEN=$tok1" "$TK/stack/.env"
+check "gen_token: 64 hex, two calls differ" sh -c "
+  a=\$(MANTLE_STACK_DIR='$TK/stack' MANTLE_SIGNAL_DIR='$TK/sig' MANTLE_UPDATER_LIB=1 $SH -c \". '$ROOT/infra/updater/updater.sh'; gen_token\")
+  b=\$(MANTLE_STACK_DIR='$TK/stack' MANTLE_SIGNAL_DIR='$TK/sig' MANTLE_UPDATER_LIB=1 $SH -c \". '$ROOT/infra/updater/updater.sh'; gen_token\")
+  printf '%s' \"\$a\" | grep -qE '^[0-9a-f]{64}\$' && test \"\$a\" != \"\$b\""
+
+# ═════════════════════════════════════════════════════════════════════════════
+echo "updater.sh: the service switch (service-request.json)"
+# The one new input surface on the Docker-socket holder. Every path: the
+# whitelist, on, off, and each failure, with .env and the calls checked.
+SVC_STUB='
+docker() {
+  echo "docker $*" >> "$CALLS"
+  case "$1" in
+    inspect)
+      case "$*" in
+        *mantle_ollama_pull*) echo "${FAKE_MODEL_PULL:-exited 0}" ;;
+        *) echo "${FAKE_HEALTH:-running healthy}" ;;
+      esac
+      return 0 ;;
+    ps) for i in ${FAKE_SANDBOX_IDS:-}; do echo "$i"; done; return 0 ;;
+    stop) [ -z "${FAKE_SBX_STOP_FAIL:-}" ] || return 1; return 0 ;;
+    pull) [ -z "${FAKE_BASE_PULL_FAIL:-}" ] || return 1; return 0 ;;
+    compose)
+      case "$*" in
+        *" pull "*) [ -z "${FAKE_PULL_FAIL:-}" ] || return 1 ;;
+        *" up "*) [ -z "${FAKE_UP_FAIL:-}" ] || return 1 ;;
+        *" stop "*) [ -z "${FAKE_STOP_FAIL:-}" ] || return 1 ;;
+        *"config --services"*) printf "web\napi\ncaddy\nupdater\nworker_files\n" ;;
+      esac
+      return 0 ;;
+  esac
+  return 0
+}
+sleep() { :; }
+'
+svc_case() { # <name> <request-body>: a stack with tokens provisioned, no profiles
+  T="$WORK/svc-$1"; fake_stack "$T"; mkdir -p "$T/state"; : > "$T/calls"
+  printf 'COMPOSE_PROFILES=local-embedder\nSANDBOXD_TOKEN=%s\nMEDIA_SIDECAR_TOKEN=%s\nMANTLE_DATA_DIR=./data\n' \
+    aaaa bbbb >> "$T/stack/.env"
+  printf '%s\n' "$2" > "$T/sig/service-request.json"
+  cp "$T/stack/.env" "$T/env.before"
+}
+svc_run() { # [env...] — handle the queued request under the stub
+  MANTLE_STACK_DIR="$T/stack" MANTLE_SIGNAL_DIR="$T/sig" CALLS="$T/calls" MANTLE_UPDATER_LIB=1 \
+    "$SH" -c "$SVC_STUB
+. '$ROOT/infra/updater/updater.sh'
+${SVC_PRE:-}
+handle_service_request" > "$T/out" 2>&1
+}
+st() { cat "$T/sig/service-status.json" 2>/dev/null; }
+
+for bad in '{"service":"postgres","enable":true}' '{"service":"media; rm -rf /","enable":true}' \
+           '{"service":"","enable":true}' 'not json at all'; do
+  svc_case badsvc "$bad"; svc_run
+  check "whitelist: refuses service in $bad" grep -q '"phase":"error".*"ok":false,"error":"unknown service"' "$T/sig/service-status.json"
+  check "whitelist: .env untouched for $bad" same "$T/stack/.env" "$T/env.before"
+  check "whitelist: no docker call for $bad" sh -c "! grep -qE 'compose|stop|pull' '$T/calls'"
+done
+for bad in '{"service":"media","enable":"true"}' '{"service":"media","enable":1}' '{"service":"media"}' \
+           '{"service":"media","enable":yes}'; do
+  svc_case badenable "$bad"; svc_run
+  check "whitelist: refuses the switch value in $bad" grep -q 'the switch must be true or false' "$T/sig/service-status.json"
+  check "whitelist: .env untouched for $bad" same "$T/stack/.env" "$T/env.before"
+done
+svc_case consumed '{"service":"media","enable":true}'; svc_run
+check "the request is consumed" test ! -e "$T/sig/service-request.json"
+
+# ── on, the normal path: tokens already provisioned by a roll ──
+svc_case on '{"service":"media","enable":true}'; svc_run
+check "on: status done, ok true" grep -q '"phase":"done","service":"media","enable":true.*"ok":true' "$T/sig/service-status.json"
+check "on: the profile is added, the others kept" grep -qx 'COMPOSE_PROFILES=local-embedder,media' "$T/stack/.env"
+check "on: tokens kept as they were" sh -c "grep -qx 'MEDIA_SIDECAR_TOKEN=bbbb' '$T/stack/.env' && grep -qx 'SANDBOXD_TOKEN=aaaa' '$T/stack/.env'"
+check "on: .env backed up, mode 600" sh -c "ls '$T/stack/backups/env/'.env-* >/dev/null && test \"\$(stat -c %a '$T'/stack/backups/env/.env-* 2>/dev/null || stat -f %Lp '$T'/stack/backups/env/.env-*)\" = 600"
+check "on: the backup dir is private (0700) and the stack owner's" sh -c "
+  test \"\$(stat -c %a '$T/stack/backups/env' 2>/dev/null || stat -f %Lp '$T/stack/backups/env')\" = 700 &&
+  test \"\$(stat -c %u '$T/stack/backups/env' 2>/dev/null || stat -f %u '$T/stack/backups/env')\" = \"\$(stat -c %u '$T/stack' 2>/dev/null || stat -f %u '$T/stack')\""
+check "on: the backup is the .env from before" sh -c "cmp -s '$T/env.before' '$T'/stack/backups/env/.env-*"
+check "on: pulls only that service" grep -qE 'compose .*--profile media pull media$' "$T/calls"
+check "on: starts only that container (--no-deps)" grep -qE 'compose .*--profile media up -d --no-deps media$' "$T/calls"
+check "on: no other container recreated" sh -c "! grep -qE ' up -d [^-]' '$T/calls'"
+check "on: waited on the container's health" grep -q 'inspect .*mantle_media' "$T/calls"
+check "on: services.json says media is on" grep -q '"media":{"profile":true,"token":true' "$T/sig/services.json"
+check "on: .env keeps mode 600" test "$(mode_of "$T/stack/.env")" = 600
+
+svc_case onagain '{"service":"media","enable":true}'
+sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=media/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
+svc_run
+check "on when already on: profile not doubled" grep -qx 'COMPOSE_PROFILES=media' "$T/stack/.env"
+
+# ── on, first time on a box whose roll did not provision the token ──
+svc_case newtoken '{"service":"media","enable":true}'
+sed -i.bak 's/^MEDIA_SIDECAR_TOKEN=.*/MEDIA_SIDECAR_TOKEN=/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
+svc_run
+check "new token: generated, 64 hex" grep -qE '^MEDIA_SIDECAR_TOKEN=[0-9a-f]{64}$' "$T/stack/.env"
+check "new token: the app containers are recreated to carry it" grep -qE 'compose .*--profile media up -d web api worker_files$' "$T/calls"
+check "new token: never the updater or caddy" sh -c "! grep -E ' up -d ' '$T/calls' | grep -qE 'updater|caddy'"
+check "new token: status done" grep -q '"phase":"done".*"ok":true' "$T/sig/service-status.json"
+
+# ── on, sandboxes: host dir + base image ──
+svc_case sbx '{"service":"sandboxes","enable":true}'
+printf 'services:\n  sandboxd:\n    environment:\n      SANDBOX_DEFAULT_IMAGE: ${SANDBOX_DEFAULT_IMAGE:-test/mantle-sandbox:24.04-v9}\n' > "$T/stack/docker-compose.yml"
+svc_run
+check "sandboxes on: the host dir is host-absolute under the data dir" grep -qx "MANTLE_SANDBOXES_HOST_DIR=$T/stack/data/sandboxes" "$T/stack/.env"
+check "sandboxes on: pulls sandboxd" grep -qE 'compose .*--profile sandboxes pull sandboxd$' "$T/calls"
+check "sandboxes on: pre-pulls the base image from the compose default" grep -qx 'docker pull test/mantle-sandbox:24.04-v9' "$T/calls"
+check "sandboxes on: status done" grep -q '"phase":"done","service":"sandboxes"' "$T/sig/service-status.json"
+svc_case sbxbase '{"service":"sandboxes","enable":true}'
+printf 'SANDBOX_DEFAULT_IMAGE=test/pinned:1\nMANTLE_SANDBOXES_HOST_DIR=/srv/sbx\n' >> "$T/stack/.env"
+FAKE_BASE_PULL_FAIL=1 svc_run
+check "sandboxes on: an .env image pin wins" grep -qx 'docker pull test/pinned:1' "$T/calls"
+check "sandboxes on: an existing host dir is kept" grep -qx 'MANTLE_SANDBOXES_HOST_DIR=/srv/sbx' "$T/stack/.env"
+check "sandboxes on: a failed base-image pull is not fatal" grep -q '"phase":"done".*"ok":true' "$T/sig/service-status.json"
+svc_case sbxspace '{"service":"sandboxes","enable":true}'
+sed -i.bak 's|^MANTLE_DATA_DIR=.*|MANTLE_DATA_DIR=/srv/my data|' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
+cp "$T/stack/.env" "$T/env.before"
+svc_run
+check "sandboxes on: a data dir with a space is refused, .env restored" sh -c "
+  grep -q 'characters a bind mount cannot take' '$T/sig/service-status.json' && cmp -s '$T/stack/.env' '$T/env.before'"
+
+# ── on, every failure puts .env back and stops the container ──
+for f in PULL UP; do
+  svc_case "fail$f" '{"service":"media","enable":true}'
+  if [ "$f" = PULL ]; then FAKE_PULL_FAIL=1 svc_run; else FAKE_UP_FAIL=1 svc_run; fi
+  check "on, $f fails: status error says it was switched off again" grep -q '"phase":"error".*switched off again and the settings were restored' "$T/sig/service-status.json"
+  check "on, $f fails: .env restored byte for byte" same "$T/stack/.env" "$T/env.before"
+  check "on, $f fails: the container is stopped and removed" sh -c "grep -qE 'profile media stop media$' '$T/calls' && grep -qE 'profile media rm -f media$' '$T/calls'"
+done
+svc_case unhealthy '{"service":"media","enable":true}'
+FAKE_HEALTH='running unhealthy' svc_run
+check "on, unhealthy: refused with the reason, .env restored" sh -c "
+  grep -q 'it did not become healthy: it reports unhealthy' '$T/sig/service-status.json' && cmp -s '$T/stack/.env' '$T/env.before'"
+svc_case exited '{"service":"media","enable":true}'
+FAKE_HEALTH='exited none' svc_run
+check "on, the container exits: refused, names the state" grep -q 'the container is exited none' "$T/sig/service-status.json"
+svc_case slow '{"service":"media","enable":true}'
+printf 'MANTLE_SERVICE_HEALTH_TIMEOUT_S=6\n' >> "$T/stack/.env"; cp "$T/stack/.env" "$T/env.before"
+FAKE_HEALTH='running starting' svc_run
+check "on, never healthy: times out after the .env knob, .env restored" sh -c "
+  grep -q 'not healthy after 6s' '$T/sig/service-status.json' && cmp -s '$T/stack/.env' '$T/env.before'"
+check "on, never healthy: polled about every 3 s (2 checks for 6 s)" test "$(grep -c 'inspect .*mantle_media' "$T/calls")" -le 4
+svc_case disk '{"service":"media","enable":true}'
+SVC_PRE='free_kb() { echo 1024; }' svc_run
+check "on, low disk: refused, says how much, nothing changed" sh -c "
+  grep -q 'not enough disk: 1 MB free, need 4096 MB' '$T/sig/service-status.json' && cmp -s '$T/stack/.env' '$T/env.before' && ! grep -qE ' (pull|up|stop|rm) ' '$T/calls' && test ! -d '$T/stack/backups/env'"
+
+# ── off: stop, never remove; keep every piece of data ──
+svc_case off '{"service":"sandboxes","enable":false}'
+sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=local-embedder,sandboxes,media/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
+printf 'MANTLE_SANDBOXES_HOST_DIR=/srv/sbx\n' >> "$T/stack/.env"
+FAKE_SANDBOX_IDS='c1 c2' svc_run
+check "off: status done" grep -q '"phase":"done","service":"sandboxes","enable":false.*"ok":true' "$T/sig/service-status.json"
+check "off: only that profile dropped" grep -qx 'COMPOSE_PROFILES=local-embedder,media' "$T/stack/.env"
+check "off: token and host dir kept" sh -c "grep -qx 'SANDBOXD_TOKEN=aaaa' '$T/stack/.env' && grep -qx 'MANTLE_SANDBOXES_HOST_DIR=/srv/sbx' '$T/stack/.env'"
+check "off: running sandboxes are STOPPED" grep -qx 'docker stop -t 20 c1 c2' "$T/calls"
+check "off: only labelled sandbox containers are listed" grep -q 'ps -q --filter label=mantle.sandbox=true' "$T/calls"
+check "off: no sandbox container is removed" sh -c "! grep -E 'docker (rm|container rm)' '$T/calls' | grep -q ."
+check "off: the only rm is the sandboxd service container" sh -c "test \"\$(grep -c ' rm ' '$T/calls')\" = 1 && grep -qE 'profile sandboxes rm -f sandboxd$' '$T/calls'"
+check "off: nothing is pulled or started" sh -c "! grep -qE ' pull | up ' '$T/calls'"
+check "off: services.json says off" grep -q '"sandboxes":{"profile":false,"token":true' "$T/sig/services.json"
+svc_case offlast '{"service":"media","enable":false}'
+sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=media/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
+svc_run
+check "off, the last profile: COMPOSE_PROFILES empties" grep -qx 'COMPOSE_PROFILES=' "$T/stack/.env"
+check "off, media: no sandbox is touched" sh -c "! grep -qF 'label=mantle.sandbox' '$T/calls'"
+svc_case offfail '{"service":"media","enable":false}'
+sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=media/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
+cp "$T/stack/.env" "$T/env.before"
+FAKE_STOP_FAIL=1 svc_run
+check "off, stop fails: status error, .env unchanged" sh -c "
+  grep -q 'could not stop media; nothing changed in .env' '$T/sig/service-status.json' && cmp -s '$T/stack/.env' '$T/env.before'"
+svc_case sbxstopfail '{"service":"sandboxes","enable":false}'
+sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=sandboxes/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
+cp "$T/stack/.env" "$T/env.before"
+FAKE_SANDBOX_IDS='c1' FAKE_SBX_STOP_FAIL=1 svc_run
+check "off, a sandbox will not stop: sandboxd left running, .env unchanged" sh -c "
+  grep -q 'could not stop the running sandboxes' '$T/sig/service-status.json' && cmp -s '$T/stack/.env' '$T/env.before' && ! grep -q 'stop sandboxd' '$T/calls'"
+
+# ── the local embedder: no token, and the model pull after it is healthy ──
+svc_case emb '{"service":"local-embedder","enable":true}'
+sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=media/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
+svc_run
+check "embedder on: status done" grep -q '"phase":"done","service":"local-embedder","enable":true.*"ok":true' "$T/sig/service-status.json"
+check "embedder on: the profile is added" grep -qx 'COMPOSE_PROFILES=media,local-embedder' "$T/stack/.env"
+check "embedder on: pulls and starts ollama only" sh -c "
+  grep -qE 'compose .*--profile local-embedder pull ollama$' '$T/calls' && grep -qE 'compose .*--profile local-embedder up -d --no-deps ollama$' '$T/calls'"
+check "embedder on: waits on mantle_ollama, then runs the model pull" sh -c "
+  grep -q 'inspect .*mantle_ollama\$' '$T/calls' && grep -qE 'up -d --no-deps ollama_pull$' '$T/calls'"
+check "embedder on: no token is written" sh -c "! grep -q 'TOKEN=' '$T/stack/.env' || test \"\$(grep -c 'TOKEN=' '$T/stack/.env')\" = 2"
+check "embedder on: the model is ready" grep -q 'the embedding model is ready' "$T/sig/service.log"
+check "embedder on: services.json says on" grep -q '"local-embedder":{"profile":true,"token":false' "$T/sig/services.json"
+svc_case embpull '{"service":"local-embedder","enable":true}'
+sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
+FAKE_MODEL_PULL='exited 1' svc_run
+check "embedder on, the model pull fails: still done (ollama is up), and says so" sh -c "
+  grep -q '\"phase\":\"done\".*\"ok\":true' '$T/sig/service-status.json' && grep -q 'the model download failed' '$T/sig/service.log'"
+svc_case embslow '{"service":"local-embedder","enable":true}'
+sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
+FAKE_MODEL_PULL='running 0' svc_run
+check "embedder on, a slow model pull: done, the download goes on" sh -c "
+  grep -q '\"phase\":\"done\"' '$T/sig/service-status.json' && grep -q 'still downloading in the background' '$T/sig/service.log'"
+svc_case emboff '{"service":"local-embedder","enable":false}'
+svc_run
+check "embedder off: profile dropped, ollama stopped and removed, the model volume untouched" sh -c "
+  grep -qx 'COMPOSE_PROFILES=' '$T/stack/.env' && grep -qE 'profile local-embedder stop ollama$' '$T/calls' && grep -qE 'profile local-embedder rm -f ollama$' '$T/calls' && ! grep -q 'volume' '$T/calls'"
+
+# ── the helpers: a core box only, two containers ──
+svc_case helpfull '{"service":"helpers","enable":false}'
+svc_run
+check "helpers on a full box: refused, nothing to switch" grep -q 'the helpers always run on this box' "$T/sig/service-status.json"
+check "helpers on a full box: .env untouched, nothing pulled, started or stopped" sh -c "
+  cmp -s '$T/stack/.env' '$T/env.before' && ! grep -qE ' (pull|up|stop|rm) ' '$T/calls'"
+svc_case helpon '{"service":"helpers","enable":true}'
+printf 'COMPOSE_FILE=docker-compose.yml:docker-compose.core.yml\n' >> "$T/stack/.env"
+svc_run
+check "helpers on a core box: status done" grep -q '"phase":"done","service":"helpers","enable":true.*"ok":true' "$T/sig/service-status.json"
+check "helpers on: the profile is added" grep -qx 'COMPOSE_PROFILES=local-embedder,helpers' "$T/stack/.env"
+check "helpers on: pulls and starts both, as two arguments" sh -c "
+  grep -qE 'profile helpers pull tika browser$' '$T/calls' && grep -qE 'profile helpers up -d --no-deps tika browser$' '$T/calls'"
+check "helpers on: waits on both containers" sh -c "grep -q 'inspect .*mantle_tika\$' '$T/calls' && grep -q 'inspect .*mantle_browser\$' '$T/calls'"
+svc_case helpoff '{"service":"helpers","enable":false}'
+printf 'COMPOSE_FILE=docker-compose.yml:docker-compose.core.yml\n' >> "$T/stack/.env"
+sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=helpers/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
+svc_run
+check "helpers off: both stopped and removed, profile dropped" sh -c "
+  grep -qE 'profile helpers stop tika browser$' '$T/calls' && grep -qE 'profile helpers rm -f tika browser$' '$T/calls' && grep -qx 'COMPOSE_PROFILES=' '$T/stack/.env'"
+svc_case helpfullprof '{"service":"helpers","enable":false}'
+printf 'COMPOSE_FILE=docker-compose.yml:docker-compose.core.yml\n' >> "$T/stack/.env"
+sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=full,helpers/' "$T/stack/.env"; rm -f "$T/stack/.env.bak"
+cp "$T/stack/.env" "$T/env.before"
+svc_run
+check "helpers with the full profile on: refused, .env untouched" sh -c "
+  grep -q 'the helpers always run on this box' '$T/sig/service-status.json' && cmp -s '$T/stack/.env' '$T/env.before'"
+
+# ── unconfigured, and the real poll loop ──
+svc_case unconf '{"service":"media","enable":true}'
+rm "$T/stack/docker-compose.yml"
+svc_run
+check "unconfigured updater: refused with the reason" grep -q 'updater not configured' "$T/sig/service-status.json"
+svc_case loop '{"service":"media","enable":true}'
+for s in $SCRIPTS; do printf '#!/bin/sh\n' > "$T/stack/scripts/$s"; done
+MANTLE_STACK_DIR="$T/stack" MANTLE_SIGNAL_DIR="$T/sig" CALLS="$T/calls" "$SH" -c "$SVC_STUB
+sleep() { exit 0; }
+. '$ROOT/infra/updater/updater.sh'" > "$T/loop.out" 2>&1
+check "poll loop: a service request is handled" grep -q '"phase":"done","service":"media"' "$T/sig/service-status.json"
+check "poll loop: the request is consumed" test ! -e "$T/sig/service-request.json"
+check "poll loop: the update status is untouched by a switch" sh -c "! grep -q media '$T/sig/status.json'"
+check "the updater advertises the service verb" grep -q '"verbs":\["roll","service"\]' "$T/sig/services.json"
 
 # ═════════════════════════════════════════════════════════════════════════════
 echo

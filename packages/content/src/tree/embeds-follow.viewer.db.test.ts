@@ -20,6 +20,8 @@ describe.skipIf(!URL)('embeds follow their embedder', () => {
   let m: Db;
   let tree: typeof import('./index');
   let sqlTag: typeof import('drizzle-orm').sql;
+  let admin: Parameters<Db['ensureViewerRoles']>[0];
+  let support: typeof import('@mantle/db/test-support');
   let brain = '';
   const label = `emb_${randomUUID().slice(0, 8)}`;
   const folderF = { id: randomUUID(), path: `notes.${label}_f` };
@@ -82,6 +84,19 @@ describe.skipIf(!URL)('embeds follow their embedder', () => {
       return rows.map((r) => r.id).sort();
     });
   const sorted = (...ids: string[]) => [...ids].sort();
+  /** Lose a row's edges, as a bypassed trigger would. The triggers go off and
+   *  on again in one transaction, so no other session ever writes without
+   *  them (theirs wait for the lock meanwhile). */
+  const loseEdges = (from: string) =>
+    admin.begin(async (tx) => {
+      await tx`alter table node_embeds disable trigger user`;
+      await tx`delete from node_embeds where from_id = ${from}`;
+      await tx`alter table node_embeds enable trigger user`;
+    });
+  /** The repair is brain-wide: a file that forges drift and one that repairs
+   *  it would undo each other's forgery mid-test, so both take this lock
+   *  (tree-share.viewer.db.test.ts too). */
+  const driftLock = <T>(fn: () => Promise<T>) => support.withTestLock(URL!, 'share-drift', fn);
   const own = async (id: string) => {
     const [row] = (await m.systemDb.execute(sqlTag`
       select audience, embedded_level from nodes where id = ${id}`)) as unknown as Array<{
@@ -108,11 +123,10 @@ describe.skipIf(!URL)('embeds follow their embedder', () => {
     m = await import('@mantle/db');
     tree = await import('./index');
     sqlTag = (await import('drizzle-orm')).sql;
-    const { ensureTestAnchor } = await import('@mantle/db/test-support');
-    const admin = (m.systemDb as unknown as { $client: Parameters<Db['ensureViewerRoles']>[0] })
-      .$client;
+    support = await import('@mantle/db/test-support');
+    admin = (m.systemDb as unknown as { $client: Parameters<Db['ensureViewerRoles']>[0] }).$client;
     await m.ensureViewerRoles(admin, process.env.MANTLE_MASTER_KEY);
-    brain = await ensureTestAnchor(admin);
+    brain = await support.ensureTestAnchor(admin);
     for (const kind of ['notes', 'files', 'draw', 'pages'] as const) {
       await tree.ensureKindRoot(brain, kind);
     }
@@ -133,7 +147,7 @@ describe.skipIf(!URL)('embeds follow their embedder', () => {
       `![d](draw:${D})\n\n![i2](media:${I2})\n\n![i3](media:${I3})\n\n![i4](media:${I4})`,
     );
     N2 = await note(folderG.path, 'n2', `![i2](media:${I2})`);
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await m.systemDb.execute(sqlTag`
@@ -446,21 +460,108 @@ describe.skipIf(!URL)('embeds follow their embedder', () => {
     const img = await node('file', 'files', 'drift.png');
     const n = await note(folderF.path, 'drift note', `![x](media:${img})`);
     expect(await reads('client', [img])).toEqual([img]);
-    // An edge lost and a level left behind, as a bypassed trigger would.
-    await m.systemDb.execute(sqlTag`alter table node_embeds disable trigger user`);
-    await m.systemDb.execute(sqlTag`delete from node_embeds where from_id = ${n}`);
-    await m.systemDb.execute(sqlTag`alter table node_embeds enable trigger user`);
-    await m.systemDb.execute(sqlTag`update nodes set embedded_level = 'client' where id = ${I1}`);
-    const dry = await tree.repairShareDrift({ dryRun: true });
-    expect(dry.edgesDrifted).toBeGreaterThanOrEqual(1);
-    expect(dry.embeddedDrifted).toBeGreaterThanOrEqual(1);
-    const fixed = await tree.repairShareDrift();
-    expect(fixed.edgesDrifted).toBeGreaterThanOrEqual(1);
-    expect(await reads('client', [img])).toEqual([img]);
-    expect((await own(I1))!.embedded_level).toBeNull();
-    const again = await tree.repairShareDrift({ dryRun: true });
-    expect(again).toMatchObject({ edgesDrifted: 0, embeddedDrifted: 0 });
+    await driftLock(async () => {
+      // An edge lost and a level left behind, as a bypassed trigger would.
+      await loseEdges(n);
+      await m.systemDb.execute(sqlTag`update nodes set embedded_level = 'client' where id = ${I1}`);
+      const dry = await tree.repairShareDrift({ dryRun: true });
+      expect(dry.edgesDrifted).toBeGreaterThanOrEqual(1);
+      expect(dry.embeddedDrifted).toBeGreaterThanOrEqual(1);
+      const fixed = await tree.repairShareDrift();
+      expect(fixed.edgesDrifted).toBeGreaterThanOrEqual(1);
+      expect(await reads('client', [img])).toEqual([img]);
+      expect((await own(I1))!.embedded_level).toBeNull();
+      const again = await tree.repairShareDrift({ dryRun: true });
+      expect(again).toMatchObject({ edgesDrifted: 0, embeddedDrifted: 0 });
+    });
   });
+
+  it('a row deleted while the repair writes its edges drops out, the sweep goes on', async () => {
+    // The nightly sweep runs against a live brain: a delete can commit
+    // between the repair reading an edge and writing it. The delete here
+    // holds both ends until the repair waits on them, then commits.
+    const img = await node('file', 'files', 'gone.png');
+    const n = await note(folderF.path, 'gone note', `![x](media:${img})`);
+    await driftLock(async () => {
+      await loseEdges(n);
+      let repair: Promise<unknown> | undefined;
+      await admin.begin(async (tx) => {
+        const [me] = await tx<{ pid: number }[]>`select pg_backend_pid() as pid`;
+        await tx`delete from nodes where id in (${n}, ${img})`;
+        repair = tree.repairShareDrift().catch((err: unknown) => err);
+        await support.pollUntil(
+          async () => {
+            const [w] = await admin<{ n: number }[]>`
+              select count(*)::int as n from pg_stat_activity
+               where ${me!.pid}::int = any (pg_blocking_pids(pid))
+                 and query ilike '%insert into node_embeds%'`;
+            return (w?.n ?? 0) > 0;
+          },
+          { what: 'the repair to wait on the deleted rows' },
+        );
+      });
+      const out = await repair;
+      // The database's own error (drizzle wraps it as the cause), not the SQL.
+      const cause = out instanceof Error ? ((out.cause as Error | undefined) ?? out) : null;
+      expect(cause?.message ?? null).toBeNull();
+      expect(out).toMatchObject({ edgesDrifted: expect.any(Number) });
+    });
+    const left = await admin`select 1 from node_embeds where from_id = ${n} or to_id = ${img}`;
+    expect(left).toHaveLength(0);
+  });
+
+  // The save path (mantle_sync_embeds, 0216): a save reads the item it embeds,
+  // then writes the edge. A delete of that item can commit in between. The
+  // delete here holds the item until the save waits on it, then commits.
+  it.each([
+    {
+      kind: 'note',
+      make: async () => note(folderF.path, 'race note', 'nothing yet'),
+      save: (id: string, img: string) => sqlTag`
+        update nodes /* embed-save-race */
+           set data = jsonb_set(data, '{content}', to_jsonb(${`![x](media:${img})`}::text))
+         where id = ${id}`,
+    },
+    {
+      kind: 'page',
+      make: async () => page(folderF.path, 'race page', { type: 'doc', content: [] }),
+      save: (id: string, img: string) => sqlTag`
+        update pages /* embed-save-race */
+           set doc = ${JSON.stringify({
+             type: 'doc',
+             content: [{ type: 'image', attrs: { nodeId: img } }],
+           })}::jsonb
+         where node_id = ${id}`,
+    },
+  ])(
+    'an item deleted while a $kind save writes its embeds drops out, the save goes on',
+    async ({ make, save }) => {
+      const img = await node('file', 'files', 'race.png');
+      const item = await make();
+      let saved: Promise<unknown> | undefined;
+      await admin.begin(async (tx) => {
+        const [me] = await tx<{ pid: number }[]>`select pg_backend_pid() as pid`;
+        await tx`delete from nodes where id = ${img}`;
+        saved = m.systemDb.execute(save(item, img)).catch((err: unknown) => err);
+        await support.pollUntil(
+          async () => {
+            const [w] = await admin<{ n: number }[]>`
+              select count(*)::int as n from pg_stat_activity
+               where ${me!.pid}::int = any (pg_blocking_pids(pid))
+                 and query like '%embed-save-race%'`;
+            return (w?.n ?? 0) > 0;
+          },
+          { what: 'the save to wait on the deleted item' },
+        );
+      });
+      const out = await saved;
+      // The database's own error (drizzle wraps it as the cause), not the SQL.
+      const cause = out instanceof Error ? ((out.cause as Error | undefined) ?? out) : null;
+      expect(cause?.message ?? null).toBeNull();
+      const left = await admin`select 1 from node_embeds where from_id = ${item} or to_id = ${img}`;
+      expect(left).toHaveLength(0);
+    },
+  );
 
   it('keeps a same-row policy: no sub-query in nodes_viewer_read', async () => {
     const [p] = (await m.systemDb.execute(sqlTag`

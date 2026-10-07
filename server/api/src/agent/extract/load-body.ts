@@ -24,6 +24,7 @@ import { isHollowFilenameBody } from '../extractor-parse';
 import { cleanText } from './text';
 import { loadFileBytes, tryUnlockPdf } from './file-bytes';
 import { composeImageBody, ocrIngestPdfNode, visionIngestImageNode } from './images';
+import { recordTerminalSkip } from './terminal';
 
 async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string> {
   // ─── Secrets — metadata only ─────────────────────────────────────────
@@ -317,7 +318,7 @@ export async function loadExtractableBody(
   // export is the whole point.
   const exportHint = node.type === 'file' ? exportHintForExt(fileExt) : undefined;
   if (exportHint) {
-    await recordSkippedTrace({
+    await recordTerminalSkip({
       kind: 'extractor_run',
       ownerId,
       subjectId: node.id,
@@ -353,7 +354,7 @@ export async function loadExtractableBody(
     fileMime.startsWith('audio/') ||
     fileMime.startsWith('video/');
   if (node.type === 'file' && !existingData.text && !existingData.content && isMediaFile) {
-    await recordSkippedTrace({
+    await recordTerminalSkip({
       kind: 'extractor_run',
       ownerId,
       subjectId: node.id,
@@ -394,7 +395,10 @@ export async function loadExtractableBody(
       // trace and no `extractor_run`, so the periodic extract sweep — whose
       // loop-safety keys on the presence of an extractor_run — re-queues it
       // every cycle forever (the icon.svg "indexed every minute" bug).
-      await recordSkippedTrace({
+      // Terminal only when the worker really read the image and found
+      // nothing: a worker that did not run (none wired, a provider error) is
+      // left for the drain to retry once it is back.
+      await (vision.ran ? recordTerminalSkip : recordSkippedTrace)({
         kind: 'extractor_run',
         ownerId,
         subjectId: node.id,
@@ -460,7 +464,7 @@ export async function loadExtractableBody(
       } else {
         // No stored password opened it. Honest, distinct skip (not the
         // misleading no_text_layer) so the operator knows it's LOCKED, not blank.
-        await recordSkippedTrace({
+        await recordTerminalSkip({
           kind: 'extractor_run',
           ownerId,
           subjectId: node.id,
@@ -481,7 +485,7 @@ export async function loadExtractableBody(
       // e.g. an email attachment indexed by metadata whose body was never
       // fetched). Distinct from a bad scan: the fix is to RE-FETCH the file,
       // not to OCR it. Honest disposition so the operator can tell the two apart.
-      await recordSkippedTrace({
+      await recordTerminalSkip({
         kind: 'extractor_run',
         ownerId,
         subjectId: node.id,
@@ -526,7 +530,9 @@ export async function loadExtractableBody(
       // No text layer AND OCR produced nothing (no/unwired vision worker, or a
       // blank scan — an unrenderable PDF is `pdf_unreadable` above). Record an
       // honest skip instead of a filename-only false success.
-      await recordSkippedTrace({
+      // Terminal only when a worker really read the pages (a blank scan); no
+      // worker, or one that failed, is left for the drain to retry.
+      await (ocr.ran ? recordTerminalSkip : recordSkippedTrace)({
         kind: 'extractor_run',
         ownerId,
         subjectId: node.id,
@@ -566,7 +572,7 @@ export async function loadExtractableBody(
       title: node.title,
     })
   ) {
-    await recordSkippedTrace({
+    await recordTerminalSkip({
       kind: 'extractor_run',
       ownerId,
       subjectId: node.id,
@@ -593,7 +599,7 @@ export async function loadExtractableBody(
 
   if (!rawBody || rawBody.trim().length < 20) {
     // Not enough content to extract meaningfully.
-    await recordSkippedTrace({
+    await recordTerminalSkip({
       kind: 'extractor_run',
       ownerId,
       subjectId: node.id,

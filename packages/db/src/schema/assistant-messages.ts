@@ -13,8 +13,13 @@ import { nodes } from './nodes';
  *  bearer token is 'mobile' (the companion app). The split lets proactive
  *  delivery (reminders) follow the last channel the user actually used; a
  *  browser can't receive an out-of-band push, the app can. See
- *  docs/reminder-delivery-routing.md. */
-export type ConversationChannel = 'web' | 'telegram' | 'whatsapp' | 'mobile';
+ *  docs/reminder-delivery-routing.md.
+ *
+ *  'mcp': a turn an MCP client answered AS the agent and wrote back with
+ *  `responder_turn_record` (the owner's connector only). The agent's model did
+ *  not write the reply: `model` names the client's model. Not a reminder
+ *  channel, and no phone push for it (the owner is at the client). */
+export type ConversationChannel = 'web' | 'telegram' | 'whatsapp' | 'mobile' | 'mcp';
 
 /** A media payload attached to a turn. Maps onto the `/assistant`
  *  ArtifactView render shape (audio → player, image → preview). `nodeId`

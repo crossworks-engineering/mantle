@@ -112,6 +112,12 @@ const CONFIRM_WITHOUT_DESTRUCTIVE_SLUG: Record<string, string> = {
   telegram_send: 'message leaves the brain',
   node_share: 'publishes brain content outward',
   page_share: 'publishes brain content outward',
+  // Replaces an app's live data; a snapshot of what it replaces is taken
+  // first, so it is undoable, but the owner should still say yes.
+  app_snapshot_restore: "replaces the app's live data or code (undo snapshot first)",
+  // Replaces the table's draft (and its live data with commit: true); the
+  // commit keeps the version it replaces, so it is undoable.
+  table_snapshot_restore: "replaces the table's draft, or its live data with commit",
 };
 
 /** Every tool the floor applies to: destructive OR confirm-gated. */

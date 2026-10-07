@@ -17,13 +17,13 @@ describe('client turn queue', () => {
     vi.stubEnv('MANTLE_CLIENT_TURN_CONCURRENCY', '');
     const { clientTurnQueueParams } = await import('./config');
     expect(clientTurnQueueParams()).toEqual({ globalConcurrency: 2, partitionConcurrency: 1 });
-  });
+  }, 60_000); // imports ./config (the DBOS SDK): slow while the whole suite runs in parallel
 
   it('the global cap follows MANTLE_CLIENT_TURN_CONCURRENCY; the per-login cap does not', async () => {
     vi.stubEnv('MANTLE_CLIENT_TURN_CONCURRENCY', '5');
     const { clientTurnQueueParams } = await import('./config');
     expect(clientTurnQueueParams()).toEqual({ globalConcurrency: 5, partitionConcurrency: 1 });
-  });
+  }, 60_000); // imports ./config (the DBOS SDK): slow while the whole suite runs in parallel
 
   it('the api registers the client queue with those parameters and the client workflow', () => {
     const main = readFileSync(new URL('./main.ts', import.meta.url), 'utf8');

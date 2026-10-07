@@ -24,7 +24,12 @@ import type {
   ThoughtTrailMode,
 } from '@mantle/client-types';
 
-import { thinkingEffortForBudget, type ThinkingEffort } from './thinking-tiers';
+import {
+  parseAgentThinkingEffort,
+  thinkingBudgetForEffort,
+  thinkingEffortForBudget,
+  type ThinkingEffort,
+} from './thinking-tiers';
 import {
   APP_OPENS_MAX,
   APP_PINS_MAX,
@@ -347,9 +352,14 @@ export function resolveThinkingBudget(
 // can use the values without pulling @mantle/db into the browser bundle.
 // Re-exported here so server-side callers keep importing from one place.
 export {
+  AGENT_THINKING_EFFORTS,
+  AGENT_THINKING_EFFORT_LABELS,
   THINKING_EFFORTS,
   THINKING_TIERS,
+  parseAgentThinkingEffort,
+  thinkingBudgetForEffort,
   thinkingEffortForBudget,
+  type AgentThinkingEffort,
   type ThinkingEffort,
 } from './thinking-tiers';
 
@@ -361,6 +371,56 @@ export function resolveThinkingEffort(
   prefs: Pick<ProfilePreferences, 'streamThoughts' | 'thinkingBudget'>,
 ): ThinkingEffort | undefined {
   return thinkingEffortForBudget(resolveThinkingBudget(prefs));
+}
+
+/** The thinking a turn asks for: `budget` > 0 turns reasoning on (and sizes
+ *  the max_tokens headroom), `effort` is the tier the providers honour.
+ *  `{ budget: 0, effort: undefined }` = no reasoning. */
+export type ResolvedThinking = { budget: number; effort: ThinkingEffort | undefined };
+
+export const NO_THINKING: ResolvedThinking = Object.freeze({ budget: 0, effort: undefined });
+
+/** Apply an agent's own effort over what it would otherwise inherit. The one
+ *  precedence rule, shared by every turn path:
+ *
+ *    agent effort set   → that effort ('off' = none), whatever was inherited
+ *    agent effort NULL  → `inherited`, unchanged (the behaviour before 0228)
+ *
+ *  An agent's own effort is NOT gated by the person's live-thinking switch:
+ *  that switch is about what a person likes to watch, while the effort is a
+ *  property of the agent (an owner who sets High on a research agent wants it
+ *  to reason, whether or not they watch the trail). The switch still gates
+ *  the INHERITED profile budget, so an agent on inherit behaves exactly as
+ *  before, and a profile at Off still sends no reasoning for it. */
+export function applyAgentThinking(
+  agent: { thinkingEffort?: string | null } | null | undefined,
+  inherited: ResolvedThinking,
+): ResolvedThinking {
+  const own = parseAgentThinkingEffort(agent?.thinkingEffort);
+  if (own === null) return inherited;
+  if (own === 'off') return NO_THINKING;
+  return { budget: thinkingBudgetForEffort(own), effort: own };
+}
+
+/** Resolve a top-level turn's thinking: the agent's own effort when set, else
+ *  the person's profile (gated by the live-thinking switch AND a positive
+ *  budget, see {@link resolveThinkingEffort}). `prefs: null` means the profile
+ *  does not apply on this path (a team or client turn, where the profile is the
+ *  owner's and not the caller's): inherit is then off. */
+export function resolveAgentThinking(
+  agent: { thinkingEffort?: string | null } | null | undefined,
+  prefs: Pick<ProfilePreferences, 'streamThoughts' | 'thinkingBudget'> | null,
+): ResolvedThinking {
+  return applyAgentThinking(agent, profileThinking(prefs));
+}
+
+/** The person's profile thinking alone (what an agent on inherit gets). */
+export function profileThinking(
+  prefs: Pick<ProfilePreferences, 'streamThoughts' | 'thinkingBudget'> | null,
+): ResolvedThinking {
+  if (!prefs) return NO_THINKING;
+  const budget = resolveThinkingBudget(prefs);
+  return budget > 0 ? { budget, effort: resolveThinkingEffort(prefs) } : NO_THINKING;
 }
 
 /** Whitelist projection for {@link OnboardingModelChoices} — same contract as
@@ -467,9 +527,24 @@ export function projectAppOpens(raw: unknown): Record<string, AppOpenStat> | und
   return Object.fromEntries(rows.slice(0, APP_OPENS_MAX));
 }
 
+/** The house style a NEW brain starts with (Settings, Profile). Seeded only when
+ *  a profile row is first created, so an owner who edits or clears it keeps
+ *  their choice. The dash characters are escapes so the source holds none. */
+export const DEFAULT_HOUSE_STYLE =
+  'Never use em dashes (\u2014). Rewrite instead: a comma, a colon, parentheses, or two ' +
+  'sentences all carry the same break, so use whichever reads best. The character should ' +
+  'not appear in your output at all.\n\n' +
+  'The same goes for an en dash (\u2013) used as a sentence break. En dashes inside numeric ' +
+  'ranges (2020\u20132024, pages 10\u201314) are correct and stay, and hyphens in compound ' +
+  'words (self-hosted, read-only) are unaffected.';
+
 export const DEFAULT_PREFERENCES: ProfilePreferences = {
   timezone: 'UTC',
   locale: 'en-GB',
+  houseStyle: DEFAULT_HOUSE_STYLE,
+  // Live thinking on (streamThoughts defaults on) at Medium: the 4096 tier of
+  // THINKING_TIERS. Unset would mean no thinking at all.
+  thinkingBudget: 4096,
 };
 
 /** IANA tz validation via Intl.DateTimeFormat — the runtime throws

@@ -5,12 +5,11 @@ toolGroups: [events]
 
 ## Events
 
-Calendar entries (one-off or recurring) with optional reminders that reach you
-on Telegram.
+Events is your calendar: one-off or repeating entries, with an optional reminder.
 
-Two kinds live here. Events you create in Mantle, which it owns and can change;
-and events from subscribed calendars (Settings → Calendars), which are read-only
-copies of a feed someone else controls.
+- Click **New** and fill in **Title**, **Starts** and, if you like, an end, a location and notes.
+- Set **Repeat** for a recurring event and **Remind** to get a message before it starts.
+- Switch between **Upcoming**, **Past** and **All**, or search.
 
 ## Assistant
 
@@ -18,20 +17,11 @@ copies of a feed someone else controls.
 - "What's on this week?"
 - "Move Thursday's meeting to Friday."
 
-Ask about your week in plain language rather than by date; it resolves
-"tomorrow", "next Tuesday" and "the week after" against your profile timezone.
+Say "tomorrow" or "next Tuesday". The assistant reads dates in your profile timezone.
 
 ## Technical
 
-Events are nodes with start/end timestamps, recurrence, and a reminder offset.
-Reminders are delivered by a worker that wakes on schedule and sends through your
-configured channel, so a reminder only arrives if that worker is running, which
-is worth remembering on a local stack.
-
-Subscribed calendars sync over iCal on a timer. That direction is strictly
-read-only: nothing Mantle does is written back to the upstream calendar, so
-editing a synced event locally would be overwritten on the next sync.
-
-Times are stored with timezone information and rendered in your profile
-timezone, which is why a mismatch there shows up as everything being off by a
-fixed number of hours.
+- Events are nodes with a start, an end, a repeat rule and a reminder time.
+- A background worker checks for due reminders every 30 seconds. It sends them on Telegram or in the mobile app, following whichever you last used to message the assistant. If no Telegram chat is paired, the reminder waits until one is.
+- Times show in your profile timezone. If every event is off by the same few hours, check the timezone on the Profile screen.
+- Tools: `event_list`, `event_get`, `event_create`, `event_update`, `event_delete`.

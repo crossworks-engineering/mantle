@@ -17,6 +17,9 @@ Non-negotiables when touching this directory:
 - **OpenAI-compat providers share translation.** xAI + HuggingFace both go through
   [`openai-compat.ts`](src/adapters/openai-compat.ts) (`toOpenAICompatMessages` +
   `extractOpenAICompatToolCalls`). Don't recreate per-adapter copies, that was the audit-#6 retirement.
+- **Provider HTTP goes through [`providerFetch`](src/adapters/provider-fetch.ts)**, not the bare
+  built-in fetch: on a warm HTTP/2 session Node 26's fetch sends POSTs one at a time
+  ([`docs/provider-http.md`](../../docs/provider-http.md)).
 - **Cache markers (`opts.cacheControl`) are provider-neutral.** Providers without prompt caching ignore
   the field; never throw or warn. Providers WITH caching must attach markers to the right wire-shape
   block (see [`anthropic-chat.ts`](src/adapters/anthropic-chat.ts) `markLastBlockForCache` for the

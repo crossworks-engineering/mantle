@@ -31,7 +31,7 @@ import {
 } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import { currentTrace, recordSkippedTrace, startTrace, step } from '@mantle/tracing';
-import { getChatAdapter } from '@mantle/voice';
+import { getChatAdapter, type ThinkingEffort } from '@mantle/voice';
 import { accountForChat, sendMessage } from '@mantle/telegram';
 import {
   composeSystemPromptWithSkills,
@@ -46,6 +46,7 @@ import {
 import {
   loadProfilePreferences,
   buildTimeContextLine,
+  applyAgentThinking,
   resolveThinkingBudget,
 } from '@mantle/content';
 import { checkGates } from './gates';
@@ -298,10 +299,11 @@ async function fireInner(hb: Heartbeat, opts: { skipGates: boolean }): Promise<F
               agentLevel: agentLevel(agent),
               agentDepth: 1,
               delegateTo: [],
-              // Per-user adaptive thinking on unattended heartbeat runs too (same
-              // profile gate; prefs already loaded above). Clamped vs max_tokens
-              // inside runToolLoop.
-              thinkingBudget: resolveThinkingBudget(prefs),
+              // The agent's own thinking effort when set; on inherit, the
+              // profile budget alone (same gate; prefs already loaded above),
+              // with no effort, exactly as before per-agent effort existed.
+              // Clamped vs max_tokens inside runToolLoop.
+              ...heartbeatThinking(agent, resolveThinkingBudget(prefs)),
               initialMessages,
               tools,
               surface:
@@ -543,4 +545,14 @@ function humanizeAgo(ms: number): string {
   if (hr < 48) return `${hr}h ago`;
   const days = Math.floor(hr / 24);
   return `${days}d ago`;
+}
+
+/** A heartbeat fire's thinking loop args. Inherit keeps the old shape: the
+ *  profile budget, no effort. Exported for the precedence tests. */
+export function heartbeatThinking(
+  agent: { thinkingEffort?: string | null },
+  profileBudget: number,
+): { thinkingBudget: number; thinkingEffort?: ThinkingEffort } {
+  const own = applyAgentThinking(agent, { budget: profileBudget, effort: undefined });
+  return { thinkingBudget: own.budget, ...(own.effort ? { thinkingEffort: own.effort } : {}) };
 }

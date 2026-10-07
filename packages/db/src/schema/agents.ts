@@ -55,6 +55,11 @@ export type AgentAvatar = {
   parts?: Record<string, string | null>;
 };
 
+/** The stored values of `agents.thinking_effort` (NULL aside). Mirrors
+ *  AGENT_THINKING_EFFORTS in @mantle/content-core (which this package must not
+ *  import); the migration's CHECK holds the same list. */
+export type AgentThinkingEffortValue = 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
 export type AgentMemoryConfig = {
   /** Max prior turns to replay into prompt. Default 20. */
   history_limit?: number;
@@ -76,6 +81,10 @@ export type AgentMemoryConfig = {
    *  tokens each) and the block rides its own prompt-cache breakpoint, so it
    *  re-bills only when corpus content actually changes. */
   corpus_map_limit?: number;
+  /** Responder-only: character budget of the rendered corpus map. Default
+   *  6,500 (about 2k tokens); the budget is shared across branches, newest
+   *  items first. */
+  corpus_map_chars?: number;
   /** Responder/assistant-only: inject the always-on "who you are" identity
    *  block distilled from the user's Journal (see
    *  @mantle/content buildIdentityContext) into the cached system prompt.
@@ -202,6 +211,12 @@ export type AgentParams = {
    *  worker; the accept-with-Enter chip above the chat composer). One extra
    *  cheap LLM call per turn, so OFF unless explicitly true. */
   suggest_follow_up?: boolean;
+  /** How the agent's granted tools reach the model (docs/tools-and-skills.md
+   *  "Deferred tool loading"). 'full' (the default when absent) sends every
+   *  granted tool's definition on every call. 'deferred' sends a small stable
+   *  core in full and lists the rest by name for `tool_search`; every granted
+   *  tool stays callable and the cached prefix stays the same. */
+  tool_loading?: 'full' | 'deferred';
 };
 
 /**
@@ -313,6 +328,12 @@ export const agents = pgTable(
       .$type<AgentParams>()
       .default(sql`'{}'::jsonb`)
       .notNull(),
+    /** Per-agent thinking effort (migration 0228). NULL = inherit the person's
+     *  profile setting, the behaviour before the column existed. 'off' = never
+     *  ask for reasoning; a tier = ask for that effort whatever the profile
+     *  says. A CHECK pins the values; resolve with `resolveAgentThinking`
+     *  (@mantle/content), never by reading the column directly. */
+    thinkingEffort: text('thinking_effort').$type<AgentThinkingEffortValue | null>(),
     /** Reflector appends notes here. */
     personaNotes: jsonb('persona_notes')
       .$type<PersonaNote[]>()

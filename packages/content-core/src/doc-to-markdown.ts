@@ -27,6 +27,7 @@
  */
 
 import { FOLDER_HERE } from './markdown-refs';
+import { foldMarker, normalizeFold } from './heading-fold';
 
 type PMMark = { type?: string; attrs?: Record<string, unknown> };
 type PMNode = {
@@ -220,7 +221,14 @@ function blockToMd(node: PMNode): string {
       return escapeLeading(inlineNodes(node.content));
     case 'heading': {
       const level = Math.min(Math.max(Number(node.attrs?.level) || 1, 1), 6);
-      return `${'#'.repeat(level)} ${inlineNodes(node.content)}`;
+      // A heading whose own words END in a fold marker escapes its `{`, so it
+      // re-parses as that text and not as a foldable heading.
+      const text = inlineNodes(node.content).replace(
+        /\{(fold(?:=(?:open|closed))?\}\s*)$/,
+        '\\{$1',
+      );
+      const fold = normalizeFold(node.attrs?.fold);
+      return `${'#'.repeat(level)} ${text}${fold ? ` ${foldMarker(fold)}` : ''}`;
     }
     case 'horizontalRule':
       return '---';

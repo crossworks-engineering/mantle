@@ -14,6 +14,8 @@
  * server-side.
  */
 
+import type { AppViewer } from '@mantle/client-types/app-viewer';
+
 /** The strict sandbox CSP, served as a Content-Security-Policy HEADER on the
  *  frame response. The app may only render — NO network of its own.
  *  `connect-src 'none'` blocks fetch/XHR/WebSocket, and img/font loads are
@@ -48,80 +50,17 @@ export function buildAppFrameCsp(origin: string): string {
   );
 }
 
-// Host-injected "inspect mode" overlay. Lives in the iframe but is NOT part of
-// the app bundle, so it works on every app with no rebuild and stays a host
-// concern. When the parent posts {kind:'inspect',on:true}, hovering outlines the
-// nearest [data-app-region] ancestor and clicking locks it (clicking the same
-// one clears it). The locked region is posted back as {kind:'select'}; the
-// parent feeds it to Appsmith as focusRegionIds. Esc exits. Pure DOM, defensive.
-// It also applies parent-posted {kind:'theme'} updates so a live theme switch
-// restyles a running app without a reload.
-const INSPECTOR = `
+// Host-injected live-theme sync. Lives in the iframe but is NOT part of the
+// app bundle, so it works on every app with no rebuild. It applies
+// parent-posted {kind:'theme'} updates so a live theme switch restyles a
+// running app without a reload. Pure DOM, defensive.
+const THEME_SYNC = `
 (function(){
-  var on=false, locked=null, hovered=null, lbl=null;
-  function regionOf(el){
-    while(el && el.nodeType===1 && el!==document.body){
-      if(el.getAttribute && el.hasAttribute('data-app-region')) return el;
-      el=el.parentElement;
-    }
-    return null;
-  }
-  function q(id){ try{ return id ? document.querySelector('[data-app-region="'+(window.CSS&&CSS.escape?CSS.escape(id):id)+'"]') : null; }catch(e){ return null; } }
-  function label(){
-    if(!lbl){
-      lbl=document.createElement('div');
-      lbl.style.cssText='position:fixed;z-index:2147483647;pointer-events:none;display:none;font:500 11px/1.4 ui-sans-serif,system-ui,sans-serif;padding:2px 6px;border-radius:4px;background:var(--ring,#3b82f6);color:#fff;box-shadow:0 1px 4px rgba(0,0,0,.35);white-space:nowrap;';
-      document.body.appendChild(lbl);
-    }
-    return lbl;
-  }
-  function paintLocked(){
-    var prev=document.querySelectorAll('[data-app-locked]');
-    for(var i=0;i<prev.length;i++){ prev[i].removeAttribute('data-app-locked'); prev[i].style.outline=''; prev[i].style.outlineOffset=''; }
-    var el=q(locked);
-    if(el){ el.setAttribute('data-app-locked','1'); el.style.outline='2px solid var(--ring,#3b82f6)'; el.style.outlineOffset='1px'; }
-  }
-  function clearHover(){
-    if(hovered && !hovered.hasAttribute('data-app-locked')){ hovered.style.outline=''; hovered.style.outlineOffset=''; }
-    hovered=null;
-    if(lbl) lbl.style.display='none';
-  }
-  function onMove(e){
-    if(!on) return;
-    var el=regionOf(e.target);
-    if(el===hovered) return;
-    clearHover();
-    if(!el) return;
-    hovered=el;
-    if(!el.hasAttribute('data-app-locked')){ el.style.outline='2px dashed var(--ring,#3b82f6)'; el.style.outlineOffset='1px'; }
-    var r=el.getBoundingClientRect(), L=label();
-    L.textContent=el.getAttribute('data-app-region');
-    L.style.display='block';
-    L.style.left=Math.max(2,r.left)+'px';
-    L.style.top=Math.max(2,r.top-20)+'px';
-  }
-  function onClick(e){
-    if(!on) return;
-    var el=regionOf(e.target);
-    if(!el) return;
-    e.preventDefault(); e.stopPropagation(); if(e.stopImmediatePropagation) e.stopImmediatePropagation();
-    var id=el.getAttribute('data-app-region');
-    locked=(locked===id)?null:id;
-    clearHover(); paintLocked();
-    window.parent.postMessage({ v:1, kind:'select', regionId:locked, label:locked }, '*');
-    onMove(e);
-  }
-  function setOn(v){ on=v; document.body.style.cursor=v?'crosshair':''; if(!v) clearHover(); }
   window.addEventListener('message', function(e){
     if(e.source!==window.parent) return;
     var m=e.data; if(!m||m.v!==1) return;
-    if(m.kind==='inspect'){ setOn(!!m.on); return; }
-    if(m.kind==='select'){ locked=m.regionId||null; clearHover(); paintLocked(); return; }
     if(m.kind==='theme'){ var h=document.documentElement; h.className=m.cls||''; if(m.colorTheme){ h.setAttribute('data-color-theme', m.colorTheme); } else { h.removeAttribute('data-color-theme'); } return; }
   });
-  document.addEventListener('mousemove', onMove, true);
-  document.addEventListener('click', onClick, true);
-  document.addEventListener('keydown', function(e){ if(on && e.key==='Escape'){ setOn(false); window.parent.postMessage({v:1,kind:'inspect',on:false},'*'); } });
 })();
 `;
 
@@ -174,6 +113,29 @@ const ERROR_REPORTER = `(function(){
   });
 })();`;
 
+/**
+ * host.me() (app identity): who runs the app, resolved by the frame route
+ * from its verified ticket and baked in BEFORE the app module, where the
+ * `@host` kit reads it. Read-only so the app cannot overwrite it by
+ * accident; the app could still lie to itself, which is why it is for
+ * display only and the SQL `:host_me_*` values are filled by the broker.
+ * JSON in a script: `<` and the two JS line separators are escaped, so a
+ * display name cannot close the tag.
+ */
+export function viewerScript(viewer: AppViewer | null | undefined): string {
+  if (!viewer) return '';
+  const safe = {
+    id: typeof viewer.id === 'string' ? viewer.id : null,
+    name: typeof viewer.name === 'string' ? viewer.name : null,
+    kind: viewer.kind,
+  };
+  const json = JSON.stringify(safe)
+    .replace(/</g, '\\u003c')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+  return `<script>Object.defineProperty(window,'__mantleHostMe',{value:Object.freeze(${json})});</script>\n`;
+}
+
 export function buildAppFrameHtml(opts: {
   /** The app's built module bundle (esbuild output; esbuild escapes any
    *  `</script` inside string literals, so inlining it is safe). */
@@ -196,6 +158,9 @@ export function buildAppFrameHtml(opts: {
   /** Neat licence key for watermark removal — same env-sourced value the
    *  other surfaces ride. */
   neatLicense?: string | null;
+  /** Who runs the app (host.me()); null/absent bakes nothing and host.me()
+   *  rejects. Never email: the type has no such field. */
+  viewer?: AppViewer | null;
 }): string {
   const colorThemeAttr = opts.colorTheme ? ` data-color-theme="${attr(opts.colorTheme)}"` : '';
   return `<!doctype html>
@@ -224,17 +189,10 @@ export function buildAppFrameHtml(opts: {
    non-propagating body background) paints in the normal layers, above the
    backdrop, and hides it. */
 html,body{margin:0}body{background:var(--background)}#root{padding:0}
-/* Themed scrollbars for the WHOLE app. The host only styles scrollbars behind an
-   opt-in .scrollbar-thin class, so an app's own scroll containers otherwise fall
-   back to the default wide OS scrollbar with a white/grey track that clashes with
-   the theme. Apply the thin, theme-token look to every scroller inside the iframe
-   (scoped here, so the host is untouched). Vars resolve from the linked theme. */
-*{scrollbar-width:thin;scrollbar-color:color-mix(in oklab,var(--muted-foreground) 30%,transparent) transparent}
-::-webkit-scrollbar{width:10px;height:10px}
-::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background-color:color-mix(in oklab,var(--muted-foreground) 30%,transparent);border-radius:6px;border:2px solid transparent;background-clip:padding-box}
-::-webkit-scrollbar-thumb:hover{background-color:color-mix(in oklab,var(--muted-foreground) 50%,transparent);background-clip:padding-box}
-::-webkit-scrollbar-corner{background:transparent}
+/* Scrollbars: no rules here. The linked /share-runtime/styles.css carries
+   share-ui's global needle default, the same bar as the host. This block used
+   to set scrollbar-width on every element, which in Chromium switches the
+   ::-webkit-scrollbar rules off and drew the platform's 11px grey bar. */
 ${
   opts.viewport
     ? `/* Viewport frame: the iframe IS the viewport, so viewport-height utilities
@@ -286,8 +244,8 @@ ${
     : ''
 }<div id="root"></div>
 <script>${ERROR_REPORTER}</script>
-<script type="module">${opts.bundleCode}</script>
-<script>${INSPECTOR}</script>
+${viewerScript(opts.viewer)}<script type="module">${opts.bundleCode}</script>
+<script>${THEME_SYNC}</script>
 ${opts.neatSpec ? `<script type="module" src="/share-runtime/share-page.js"></script>\n` : ''}</body>
 </html>`;
 }

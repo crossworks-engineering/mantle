@@ -10,7 +10,11 @@ import { recordIngest } from '@mantle/tracing';
 // only commit shape that works past the materialize window, and the §4
 // truncation-guard fix (a windowed doc committed whole would BE published
 // truncation).
-const Body = z.object({ data: z.record(z.string(), z.unknown()).optional() });
+const Body = z.object({
+  data: z.record(z.string(), z.unknown()).optional(),
+  /** Kept on the history entry of the version this commit replaces. */
+  note: z.string().max(500).optional(),
+});
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
@@ -22,7 +26,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   }
   let table;
   try {
-    table = await commitTable(user.id, id, parsed.data.data as TableDoc | undefined);
+    table = await commitTable(user.id, id, parsed.data.data as TableDoc | undefined, {
+      actor: 'owner',
+      note: parsed.data.note ?? null,
+    });
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'commit failed' },

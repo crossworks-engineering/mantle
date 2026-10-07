@@ -94,13 +94,20 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
       await admin<Row[]>`select routing_token from push_subscriptions where login_id = ${loginId}
                          order by routing_token`
     ).map((r) => r.routing_token as string);
+  /** Enrol a device as `loginId`'s phone does: with that login's bearer (a
+   *  device is bound to the token that enrolled it). */
   const enroll = async (loginId: string, token: string) => {
     h.caller = as(loginId);
+    const { buildMobileToken } = await import('@/lib/auth');
+    const jti = randomUUID();
+    const bearer = buildMobileToken(loginId, jti, 3600);
+    await admin`insert into mobile_tokens (id, user_id, label, expires_at)
+                values (${jti}, ${loginId}, ${tag}, ${bearer.expiresAt.toISOString()})`;
     const { POST } = await import('../../push/subscriptions/route');
     const res = await POST(
       new Request('http://x/api/push/subscriptions', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${bearer.value}` },
         body: JSON.stringify({ routingToken: token, publicKey: 'pk', platform: 'ios' }),
       }) as never,
     );
@@ -118,6 +125,7 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
+    process.env.SESSION_SECRET ??= 'users-lockout-db-test-secret-at-least-32-chars';
     m = await import('@mantle/db');
     admin = (m.systemDb as unknown as { $client: typeof admin }).$client;
     for (const id of logins) {
@@ -146,7 +154,7 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
       });
       createdInstance = true;
     }
-  });
+  }, 60_000);
 
   afterAll(async () => {
     if (!admin) return;

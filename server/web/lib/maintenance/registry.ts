@@ -81,6 +81,22 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       'Interactive equivalent: the /settings/entities review UI. --go applies only the high-confidence auto tier.',
   },
   {
+    slug: 'entities-title-cleanup',
+    title: 'Remove title-like entities, merge initials',
+    description:
+      'For document corpora: removes project/event entities whose name is a document title (or a bare "Sermon #12" label) with their edges, merges person entities whose names agree by initials ("C.H. Smith" = "Charles Smith"), and drops person aliases that name someone else. Writes a JSON backup before applying.',
+    kind: 'remedy',
+    status: 'live',
+    cost: 'sql',
+    schedulable: false,
+    script: 'scripts/entities-title-cleanup.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    extraFlags: ['--types=file,documentation,sermon', '--backup-dir=<dir>', '--owner=<uuid>'],
+    notes:
+      'Title matching uses only nodes of --types, so a note or page named like a real project never removes it. Review the dry-run list before --apply.',
+  },
+  {
     slug: 'backup-app-dbs',
     title: 'Snapshot per-app SQLite DBs',
     description:
@@ -155,6 +171,21 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       'Plain SQL, no model, idempotent; a no-op once clean. The rule lives in @mantle/content client-codes.ts (reapClientSigninCodes), shared by the cron and the script.',
   },
   {
+    slug: 'device-tokens-reap',
+    title: 'Reap dead device tokens',
+    description:
+      'Deletes device token rows (the phone app and the web client) 30 days after they were revoked or expired. The row is what says a token is revoked, and a rotated row is what detects an old token presented again; neither is needed past the lifetime of the token. The push devices a deleted row enrolled go with it.',
+    kind: 'recurring',
+    status: 'live',
+    cost: 'sql',
+    schedulable: true,
+    script: 'scripts/device-tokens-reap.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    notes:
+      'Plain SQL, no model, idempotent; a no-op once clean. The rule lives in server/web/lib/auth/device-token-reap.ts (reapDeviceTokens), shared by the cron and the script.',
+  },
+  {
     slug: 'share-drift',
     title: 'Repair folder-share drift',
     description:
@@ -173,7 +204,7 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     slug: 'app-access-log-reap',
     title: 'Trim the app access log',
     description:
-      "Deletes app access log rows older than 90 days (client tier audit I4): every app ticket, tool call and write by a member, a client or a share link, and each caller's reads at most once a minute, land a row, and nothing else removes them. The owner's access log view shows the newest 100 rows of an app.",
+      "Deletes app access log rows older than 90 days (client tier audit I4): every app ticket, tool call and write by a member, a client or a share link, and each caller's reads at most once a minute, land a row, and nothing else removes them. The owner's access log view shows the newest 100 rows of an app. Error rows (an app's failed SQL and tool calls) go after 14 days, and past the newest 2000 per app (apps audit 2026-10-02). Since contact shares (0214) it trims the contact share trail (share_access_log) by the same 90 days.",
     kind: 'recurring',
     status: 'live',
     cost: 'sql',
@@ -182,7 +213,38 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     cwd: 'server/web',
     applyFlag: '--apply',
     notes:
-      'Plain SQL in batches, no model, idempotent; a no-op once clean. The rule lives in @mantle/content app-access-log.ts (reapAppAccessLog), shared by the cron and the script.',
+      'Plain SQL in batches, no model, idempotent; a no-op once clean. The rules live in @mantle/content app-access-log.ts (reapAppAccessLog) and share-access-log.ts (reapShareAccessLog), shared by the cron and the script.',
+  },
+  {
+    slug: 'app-trash-purge',
+    title: 'Purge deleted apps',
+    description:
+      "Removes deleted apps past their 30 days in Recently deleted: the app's history rows and its snapshot files (APP_DB_DIR/_snapshots). Until then the app can be restored with its id, code and data. Also clears the history of apps deleted before the trash existed, and of deleted tables (TABLE_DB_DIR/_snapshots), 30 days after its newest row, and the work files a crash left in APP_DB_DIR and TABLE_DB_DIR (schema trial copies, restore and snapshot temp files) after an hour.",
+    kind: 'recurring',
+    status: 'live',
+    cost: 'sql',
+    schedulable: true,
+    script: 'scripts/app-trash-purge.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    notes:
+      'Plain SQL and file removal, no model, idempotent; a no-op once clean. The rule lives in @mantle/content/app-trash (purgeExpiredDeletedApps), shared by the cron and the script.',
+  },
+  {
+    slug: 'app-export-catch-up',
+    title: 'Sync app table exports a restart left behind',
+    description:
+      'Syncs every app table export still marked dirty 20 minutes after an app write: a sync whose timer was lost (a restart, a crash) or that failed. The web process already resumes the dirty ones at boot; this catches the rest. Hash-gated: a table whose rows did not change commits nothing.',
+    kind: 'recurring',
+    status: 'live',
+    // A changed table is committed, and the commit re-indexes it (extractor).
+    cost: 'llm',
+    schedulable: false,
+    script: 'scripts/app-export-catch-up.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    notes:
+      'One commit per export whose rows changed, the same commit the lost timer would have made; never on the nightly cron (it spends). The rule lives in @mantle/content/app-table-exports (syncDirtyAppTableExports).',
   },
   {
     slug: 'traces-reap',
@@ -239,7 +301,72 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       '--repopulate',
     ],
     requiresEnv: ['ALLOWED_USER_ID'],
-    notes: 'Heavy — full walk of up to four tables. Prints an estimated USD cost. Run off-hours.',
+    notes:
+      'Heavy: full walk of up to four tables. Prints an estimated USD cost. Run off-hours. On a box, run it in its own container: scripts/box-maintain.sh <box> re-embed ... (docs/maintenance-runner.md).',
+  },
+  {
+    slug: 'chunk-windows',
+    title: 'Passage windows (build, switch off, clear)',
+    description:
+      'Builds the vectors INSIDE each passage (~800-char sentence windows) so a question about one sentence of a long passage can find it; switches embedding_config.chunk_windows on first, so the extractor keeps new passages covered. Dry run prints the chunks without windows, the windows to embed and the estimated cost. Measured on a 122k-chunk library brain: paraphrased questions found their passage far more often (docs/recall-eval.md, "Passage windows"); about USD 6 and 314k windows there.',
+    kind: 'ops',
+    status: 'live',
+    cost: 'embedding',
+    schedulable: false,
+    script: 'scripts/chunk-windows.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    extraFlags: ['--off', '--clear', '--parallel=N'],
+    requiresEnv: ['ALLOWED_USER_ID'],
+    notes:
+      'Optional per brain, default off. Resumable. --off switches the window arm off (rows kept); --clear also deletes the rows. A re-embed of content_chunks drops the windows (old space): run this again after one. --parallel=N (1 to 32, default 4) sets the embed calls in flight (about 100 windows each; memory stays under 2 x parallel x 100 vectors); a 429 backs off and retries. On a box, run it in its own container: scripts/box-maintain.sh <box> chunk-windows --apply --yes (docs/maintenance-runner.md).',
+  },
+  {
+    slug: 'extract-skip-stamp',
+    title: 'Stop extractor loops on nodes with nothing to read',
+    description:
+      'Stamps data.extract_skipped on brain nodes with no embedding whose last extractor run was a content verdict (no parser, body too short, unsupported media, needs export, encrypted PDF, bytes missing, type not extracted, conversation digest; a telegram turn under 2 chars). Without the stamp the boot drain and every provider recovery re-queued them. Prints counts by type and reason, and up to 10 ids.',
+    kind: 'remedy',
+    status: 'live',
+    cost: 'sql',
+    schedulable: false,
+    script: 'scripts/extract-skip-stamp.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    notes:
+      'Plain SQL, no model, idempotent. Run once per box after the release that added the stamp; the extractor stamps new cases itself. A stamp holds only until the node next changes, and an explicit re-extract always runs.',
+  },
+  {
+    slug: 'ocr-rescan',
+    title: 'Re-OCR scans indexed as page markers',
+    description:
+      'Scanned PDFs the page-marker bug indexed wrong before v0.238.2: a scan of 2+ pages indexed as its own "-- N of M --" markers, a 1-page scan stuck at body_too_short. Dry run (default) prints counts, total pages, the document and vision models that will run, their price (live provider catalog, else the fallback table) and an estimated USD. --apply clears the bad text, summary, embedding and chunks and re-queues each file through the normal extract queue, a batch at a time, waiting for each batch to finish. Prints ids and counts only.',
+    kind: 'remedy',
+    status: 'live',
+    cost: 'llm',
+    schedulable: false,
+    script: 'scripts/ocr-rescan.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    extraFlags: ['--limit=<n>', '--batch=<n>', '--batch-timeout=<minutes>'],
+    notes:
+      'Spends on --apply: the OCR pass (native PDF on the document worker, page OCR on the vision worker if that reads nothing) plus summary and embedding per file. Needs the agent (server/api) running. Start with --apply --limit=3. A batch that does not finish in time stops the run; nothing is sent twice.',
+  },
+  {
+    slug: 'doc-reindex',
+    title: 'Re-index documentation nodes with no summary or embedding',
+    description:
+      "Documentation nodes a docs sync changed while the agent was not listening (a roll), from before the safety nets windowed on updated_at: chunks present, but no summary and no node embedding, so search and the corpus map miss them. Dry run (default) prints the count, the extractor model, its price and an estimated USD (from this box's own extractor run costs, else the model price). --apply re-queues each node through the normal extract queue, a batch at a time, waiting for each batch to finish. Prints ids and counts only.",
+    kind: 'remedy',
+    status: 'live',
+    cost: 'llm',
+    schedulable: false,
+    script: 'scripts/doc-reindex.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    extraFlags: ['--limit=<n>', '--batch=<n>', '--batch-timeout=<minutes>'],
+    notes:
+      'Spends on --apply: one extractor call per doc (retrieval depth: summary only, no facts) plus the node and chunk embeddings. Dev, 2026-10-05: 365 docs at about $0.0016 each, about $0.60. Needs the agent (server/api) running. Start with --apply --limit=5. A batch that does not finish in time stops the run; nothing is sent twice.',
   },
   {
     slug: 'extract-backfill',

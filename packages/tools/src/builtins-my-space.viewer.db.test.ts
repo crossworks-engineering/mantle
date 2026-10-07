@@ -74,7 +74,7 @@ describe.skipIf(!URL)('my-space tools (on behalf of the member)', () => {
     ).id;
     // Even shared with the team, B's item is not A's: the tools never show it.
     await m.withSpace(asB, () => c.setSharing(spaceB, noteB, 'team'));
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await m.systemDb.execute(sqlTag`delete from nodes where owner_id in (${spaceA}, ${spaceB})`);

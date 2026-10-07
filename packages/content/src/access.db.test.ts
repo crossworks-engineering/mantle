@@ -69,7 +69,7 @@ describe.skipIf(!URL)('setting levels on Postgres', () => {
       insert into agents (id, owner_id, slug, name, model, system_prompt, tool_group_slugs)
       values (${ids.agent}, ${owner}, ${`${tag}-agent`}, 'A', 'm', 'p',
               ${`{${tag}-admin,${tag}-team}`}::text[])`);
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await m.db.execute(sqlTag`delete from agents where owner_id = ${owner}`);
@@ -154,6 +154,14 @@ describe.skipIf(!URL)('setting levels on Postgres', () => {
     await expect(a.setAgentAudience(owner, ids.agent, 'team')).resolves.toMatchObject({
       audience: 'team',
     });
+    // The Team settings card reads the new level back by slug.
+    await expect(a.getAgentAccess(owner, `${tag}-agent`)).resolves.toEqual({
+      slug: `${tag}-agent`,
+      name: 'A',
+      audience: 'team',
+      enabled: true,
+    });
+    await expect(a.getAgentAccess(owner, `${tag}-missing`)).resolves.toBeNull();
   });
 
   it('a tool group cannot be raised above an agent that holds it', async () => {
@@ -192,5 +200,44 @@ describe.skipIf(!URL)('setting levels on Postgres', () => {
     await expect(a.setToolGroupAudience(owner, `${tag}-team`, 'public')).rejects.toMatchObject({
       code: 'group_above_agent',
     });
+  });
+
+  it('dropGroupsAbove lowers the agent and takes the groups above the new level off it', async () => {
+    // State from the tests above: `-admin` at admin, `-team` at client,
+    // `-public` at public. A new agent at admin holds all three.
+    const id = randomUUID();
+    const held = [`${tag}-admin`, `${tag}-team`, `${tag}-public`];
+    await m.db.execute(sqlTag`
+      insert into agents (id, owner_id, slug, name, model, system_prompt, tool_group_slugs)
+      values (${id}, ${owner}, ${`${tag}-agent2`}, 'B', 'm', 'p', ${`{${held.join(',')}}`}::text[])`);
+    const groupsOf = async () =>
+      (
+        (await m.db.execute(
+          sqlTag`select audience, tool_group_slugs from agents where id = ${id}`,
+        )) as unknown as { audience: string; tool_group_slugs: string[] }[]
+      )[0]!;
+
+    // Without it: refused, nothing changes, and the refusal names the fix.
+    const refusal = await a.setAgentAudience(owner, id, 'client').catch((e: Error) => e);
+    expect(refusal).toMatchObject({ code: 'group_above_agent' });
+    expect((refusal as Error).message).toContain(`'${tag}-admin' is admin-level`);
+    expect((refusal as Error).message).toContain(`agent '${tag}-agent2'`);
+    expect((refusal as Error).message).toContain('dropGroupsAbove: true');
+    expect(await groupsOf()).toEqual({ audience: 'admin', tool_group_slugs: held });
+
+    // With it: one call. A client agent reads neither admin nor public.
+    await expect(
+      a.setAgentAudience(owner, id, 'client', { dropGroupsAbove: true }),
+    ).resolves.toMatchObject({
+      audience: 'client',
+      removedGroups: [`${tag}-admin`, `${tag}-public`],
+    });
+    expect(await groupsOf()).toEqual({ audience: 'client', tool_group_slugs: [`${tag}-team`] });
+
+    // Raising never touches the groups, with or without the option.
+    await expect(
+      a.setAgentAudience(owner, id, 'admin', { dropGroupsAbove: true }),
+    ).resolves.toMatchObject({ audience: 'admin', removedGroups: [] });
+    expect(await groupsOf()).toEqual({ audience: 'admin', tool_group_slugs: [`${tag}-team`] });
   });
 });

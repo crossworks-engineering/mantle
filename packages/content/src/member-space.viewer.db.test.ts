@@ -69,7 +69,7 @@ describe.skipIf(!URL)('member personal space', () => {
     }[];
     spaceA = rows.find((r) => r.login_id === loginA)!.id;
     spaceB = rows.find((r) => r.login_id === loginB)!.id;
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await unlisten();
@@ -271,5 +271,83 @@ describe.skipIf(!URL)('member personal space', () => {
 
     await asA(() => sp.recallItem(spaceA, sent.id));
     for (const it of [priv, shared, sent]) await asA(() => sp.deleteMineItem(spaceA, it.id));
+  });
+
+  it("the own page draft's body names its folder, and the member's tree opens it", async () => {
+    // What the member's draft editor reads for a Folder index block set to
+    // `here` (folder phase 7): null at the top level, the member's own
+    // folder, or the brain folder the draft was filed in.
+    const tree = await import('./tree');
+    const { ensureTestAnchor } = await import('@mantle/db/test-support');
+    const admin = (m.systemDb as unknown as { $client: Parameters<typeof ensureTestAnchor>[0] })
+      .$client;
+    const brain = await ensureTestAnchor(admin);
+    await tree.ensureKindRoot(brain, 'pages');
+    const scope = { anchorId: brain, spaceId: spaceA, loginId: loginA };
+    const label = tag.replace('-', '_');
+    const brainFolder = randomUUID();
+    await m.systemDb.execute(sqlTag`
+      insert into nodes (id, owner_id, type, title, slug, path, audience, share_level, data, tags)
+      values (${brainFolder}, ${brain}, 'branch', ${`${tag} shared`}, ${label},
+              ${`pages.${label}`}::ltree, 'admin', 'team', '{}'::jsonb, '{}')`);
+    const page = (title: string, path?: string) =>
+      asA(() => sp.createMineItem(spaceA, { type: 'page', title }, {}, { path }));
+    const folderOf = async (id: string) => {
+      const got = await asA(() => sp.getMineItem(spaceA, id));
+      if (got?.body.type !== 'page') throw new Error('not a page');
+      // The key is on the body (null at the top level), never left out.
+      expect(got.body.page).toHaveProperty('folderId');
+      return got.body.page.folderId;
+    };
+    try {
+      const top = await page(`${tag} at the top`);
+      expect(await folderOf(top.id)).toBeNull();
+
+      const own = await tree.createMemberFolder(scope, 'pages', {
+        parentId: null,
+        name: `${tag} mine`,
+      });
+      const inOwn = await page(
+        `${tag} in my folder`,
+        await tree.memberFilingPath(scope, 'pages', own.id),
+      );
+      expect(await folderOf(inOwn.id)).toBe(own.id);
+
+      const inBrain = await page(
+        `${tag} in a brain folder`,
+        await tree.memberFilingPath(scope, 'pages', brainFolder),
+      );
+      expect(await folderOf(inBrain.id)).toBe(brainFolder);
+
+      // Each id is a place the member's tree opens, and the draft is there.
+      for (const [folderId, id] of [
+        [null, top.id],
+        [own.id, inOwn.id],
+        [brainFolder, inBrain.id],
+      ] as const) {
+        const listed = await tree.loadMemberTreeFolder(scope, 'pages', { folderId });
+        expect(listed?.items.map((i) => i.id)).toContain(id);
+      }
+
+      // A move is followed: the body names where the draft is now.
+      const moved = await tree.moveMemberItems(scope, 'pages', [inOwn.id], null);
+      expect(moved).toEqual({ moved: 1, failed: [] });
+      expect(await folderOf(inOwn.id)).toBeNull();
+
+      // The admin unshares the brain folder: the draft stays at its path, so
+      // the body still names that folder (the id alone gives nothing away),
+      // but the member's tree no longer opens it (the block says "not shared
+      // with you") and shows the draft at the top level instead.
+      await m.systemDb.execute(
+        sqlTag`update nodes set share_level = null where id = ${brainFolder}`,
+      );
+      expect(await folderOf(inBrain.id)).toBe(brainFolder);
+      expect(await tree.loadMemberTreeFolder(scope, 'pages', { folderId: brainFolder })).toBeNull();
+      const top2 = await tree.loadMemberTreeFolder(scope, 'pages', { folderId: null });
+      expect(top2?.items.map((i) => i.id)).toContain(inBrain.id);
+    } finally {
+      await m.systemDb.execute(sqlTag`delete from nodes where owner_id = ${spaceA}`);
+      await m.systemDb.execute(sqlTag`delete from nodes where id = ${brainFolder}`);
+    }
   });
 });

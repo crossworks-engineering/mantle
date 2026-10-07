@@ -28,8 +28,10 @@ import {
   LayoutDashboard,
   ListTree,
   Key,
+  KeyRound,
   Map,
   Plug,
+  Power,
   Lock,
   Network,
   NotebookPen,
@@ -135,7 +137,7 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: 'Settings',
-    // Twenty-four screens, and the owner returns to a handful. Folded to a head
+    // Twenty-six screens, and the owner returns to a handful. Folded to a head
     // of five; the cold-start list is the setup path a new brain walks.
     collapsible: true,
     headSize: 5,
@@ -154,6 +156,9 @@ export const NAV_GROUPS: NavGroup[] = [
       { name: 'Profile', href: '/settings/profile', icon: User },
       { name: 'API keys', href: '/settings/keys', icon: Key },
       { name: 'MCP', href: '/settings/mcp', icon: Plug },
+      // API keys for scripts and MCP clients (0232); not the outbound
+      // "API keys" vault above.
+      { name: 'API access', href: '/settings/api-access', icon: KeyRound },
       { name: 'Connectors', href: '/settings/connectors', icon: Cable },
       { name: 'Agents', href: '/settings/agents', icon: Bot },
       { name: 'AI workers', href: '/settings/ai-workers', icon: Cpu },
@@ -170,6 +175,8 @@ export const NAV_GROUPS: NavGroup[] = [
       { name: 'PDF passwords', href: '/settings/pdf-passwords', icon: Lock },
       { name: 'Backups', href: '/settings/backups', icon: DatabaseBackup },
       { name: 'Updates', href: '/settings/updates', icon: ArrowUpCircle },
+      // Start and stop the optional services (sandboxes, media); admins only.
+      { name: 'Services', href: '/settings/services', icon: Power },
       // Security was folded into Logins: its password change duplicated the
       // per-login reset, and its device list now reads per login on that screen.
       { name: 'Logins', href: '/settings/users', icon: Users },

@@ -73,6 +73,15 @@ export const APP_SQL_DEFAULT_MAX_DB_MB = 256;
  *  query fails with an "add a LIMIT" error. The rows cross into the web
  *  process and are JSON-encoded there, so this bounds its memory. */
 export const APP_SQL_MAX_REPLY_BYTES = 8 * 1024 * 1024;
+/** How long the server's copy of one app file may take (a 256 MB file
+ *  copies in a few seconds; this leaves room for a slow disk). */
+export const APP_DB_COPY_TIMEOUT_MS = 120_000;
+/** A restore marker (`<file>.restoring`) older than this is a crash's
+ *  leftover and is ignored (apps snapshots, Phase 2). */
+export const APP_DB_RESTORE_MARKER_TTL_MS = 5 * 60_000;
+/** The reply a child gives for a file under restore; the parent turns it
+ *  into AppDbRestoringError. */
+const RESTORING_REPLY = 'mantle:app-db-restoring';
 /** The WAL an app database keeps after a checkpoint (journal_size_limit). */
 export const APP_SQL_JOURNAL_LIMIT_BYTES = 64 * 1024 * 1024;
 /** Statements one caller may have waiting behind its running one; beyond it
@@ -107,10 +116,28 @@ export class AppSqlBusyError extends AppSqlError {
   }
 }
 
+/** The app's database is being restored from a snapshot (a few seconds):
+ *  try again. A busy error, so every broker answers 429 with retry-after. */
+export class AppDbRestoringError extends AppSqlBusyError {
+  constructor() {
+    super("the app's data is being restored from a snapshot; try again in a few seconds");
+    this.name = 'AppDbRestoringError';
+  }
+}
+
 /** The child: a plain CommonJS script passed with `-e`, so it needs no file
  *  on disk and runs the same under tsx in dev, in tests and in the image. */
 const CHILD_SOURCE = `
 const { DatabaseSync, constants: C } = require('node:sqlite');
+const fs = require('node:fs');
+// A restore is swapping this file (its marker is fresh): open nothing.
+function restoring(file) {
+  try {
+    return Date.now() - fs.statSync(file + '.restoring').mtimeMs < ${APP_DB_RESTORE_MARKER_TTL_MS};
+  } catch {
+    return false;
+  }
+}
 process.title = 'mantle-app-sql';
 // The parent is gone (exited or crashed): so is the reason to live.
 process.on('disconnect', () => process.exit(0));
@@ -127,7 +154,43 @@ function rowBytes(row) {
   return n;
 }
 function run(job) {
-  const { file, sql, params, mode, readOnly, maxRows, maxLength, maxReplyBytes, maxDbBytes, journalLimit } = job;
+  const { file, sql, params, mode, readOnly, maxRows, maxLength, maxReplyBytes, maxDbBytes, journalLimit, userVersion, dest } = job;
+  if (mode !== 'copy' && mode !== 'adopt' && restoring(file)) throw new Error('${RESTORING_REPLY}');
+  if (mode === 'copy') {
+    // The server's own copy of an app's file (a schema trial run, a
+    // snapshot): VACUUM INTO from a read-only open, a consistent copy under
+    // WAL. Never reachable from app SQL: the parent alone picks the mode and
+    // the destination, and no authorizer is set because no app text runs.
+    const src = new DatabaseSync(file, { readOnly: true });
+    try {
+      src.exec('PRAGMA busy_timeout = 5000');
+      src.exec("VACUUM INTO '" + String(dest).replace(/'/g, "''") + "'");
+    } finally {
+      src.close();
+    }
+    return null;
+  }
+  if (mode === 'adopt') {
+    // A database file from outside (an app package import, app-package.ts):
+    // checked whole, then copied clean to dest. None of the file's own SQL is
+    // run: the checks read pages, VACUUM INTO copies the schema as text, and
+    // trusted_schema off keeps its views and triggers from calling functions
+    // while it is read. The parent picks the file (its own temp copy).
+    const src = new DatabaseSync(file);
+    try {
+      src.exec('PRAGMA trusted_schema = OFF');
+      const check = src.prepare('PRAGMA quick_check').all();
+      const first = check[0] ? String(Object.values(check[0])[0]) : 'no answer';
+      if (check.length !== 1 || first !== 'ok') {
+        throw new Error('the database file is damaged (' + first.slice(0, 200) + ')');
+      }
+      const userVersion = Number(src.prepare('PRAGMA user_version').get().user_version);
+      src.exec("VACUUM INTO '" + String(dest).replace(/'/g, "''") + "'");
+      return { userVersion };
+    } finally {
+      src.close();
+    }
+  }
   const db = new DatabaseSync(file, { readOnly, limits: { length: maxLength } });
   try {
     // Connection settings first: the authorizer below refuses app PRAGMAs.
@@ -140,6 +203,14 @@ function run(job) {
       // SQLITE_FULL and rolls back. (A file already past it keeps its size.)
       const pageSize = Number(db.prepare('PRAGMA page_size').get().page_size);
       db.exec('PRAGMA max_page_count = ' + Math.max(1, Math.floor(maxDbBytes / pageSize)));
+    }
+    // A schema script stamps its version into the file (user_version, which
+    // the authorizer keeps apps from touching). A file already at or past it
+    // got this script before, and only the registry update was lost (a crash
+    // between the two): running it again would fail on "already exists".
+    if (mode === 'script' && userVersion > 0) {
+      const have = Number(db.prepare('PRAGMA user_version').get().user_version);
+      if (have >= userVersion) return { skipped: true, userVersion: have };
     }
     db.setAuthorizer((action, arg1) => {
       if (action === C.SQLITE_ATTACH || action === C.SQLITE_DETACH) return C.SQLITE_DENY;
@@ -155,6 +226,11 @@ function run(job) {
       db.exec('BEGIN IMMEDIATE');
       try {
         db.exec(sql);
+        if (userVersion > 0) {
+          // The app's statements have run; the stamp is the server's own.
+          db.setAuthorizer(null);
+          db.exec('PRAGMA user_version = ' + Math.floor(Number(userVersion)));
+        }
         db.exec('COMMIT');
       } catch (err) {
         try {
@@ -164,7 +240,33 @@ function run(job) {
         }
         throw err;
       }
-      return null;
+      return { skipped: false, userVersion: userVersion > 0 ? userVersion : 0 };
+    }
+    if (mode === 'batch') {
+      // The server's own write batch (an authoring-time seed): its statements
+      // run all or nothing, under the same authorizer and caps.
+      const stmts = new Map();
+      const changes = [];
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        for (const st of job.statements) {
+          let prepared = stmts.get(st.sql);
+          if (!prepared) {
+            prepared = db.prepare(st.sql);
+            stmts.set(st.sql, prepared);
+          }
+          changes.push(Number(prepared.run(...st.params).changes));
+        }
+        db.exec('COMMIT');
+      } catch (err) {
+        try {
+          db.exec('ROLLBACK');
+        } catch {
+          // already rolled back by the failing statement
+        }
+        throw err;
+      }
+      return { changes };
     }
     if (mode === 'run') {
       const r = db.prepare(sql).run(...params);
@@ -367,7 +469,9 @@ function takeTurn(key: string, waitMs: number): Promise<() => void> {
 
 /** Run `sql` with `params`: mode 'all' returns rows, 'run' returns
  *  `{ changes, lastInsertRowid }`, 'script' runs several statements (no
- *  params) in one transaction and returns null. Rejects with an AppSqlError
+ *  params) in one transaction and returns `{ skipped, userVersion }`: with
+ *  `userVersion`, the script stamps it into the file, and a file already at
+ *  or past it skips the script. Rejects with an AppSqlError
  *  on SQL error, a refused statement, a row, size or file cap, the time
  *  limit, or a busy pool or caller (AppSqlBusyError). With `callerKey`, the
  *  statement waits for that caller's earlier ones (at most twice its time
@@ -384,6 +488,8 @@ export async function runAppSql(
     callerKey?: string;
     /** The file cap in bytes; default appSqlMaxDbBytes(). */
     maxDbBytes?: number;
+    /** 'script' only: the schema version the script brings the file to. */
+    userVersion?: number;
   },
 ): Promise<unknown> {
   const timeoutMs = opts.timeoutMs ?? APP_SQL_TIMEOUT_MS;
@@ -398,11 +504,70 @@ export async function runAppSql(
   }
 }
 
-async function runOnChild(
+/** One statement of a server write batch. */
+export type AppSqlBatchStatement = { sql: string; params: unknown[] };
+
+/** A job for a child: an app statement, or the server's own file copy or
+ *  write batch. */
+type ChildJob = Omit<Parameters<typeof runAppSql>[1], 'mode'> & {
+  mode: 'all' | 'run' | 'script' | 'copy' | 'batch' | 'adopt';
+  /** 'copy' and 'adopt' only: the file to write (must not exist). */
+  dest?: string;
+  /** 'batch' only: the statements, run in one transaction. */
+  statements?: AppSqlBatchStatement[];
+};
+
+/**
+ * Run the server's own statements against an app's file in ONE transaction,
+ * in a SQL child, under the same authorizer, caps and time limit as app SQL
+ * (apps audit P5: the authoring-time seed used to run on the main thread).
+ * Returns each statement's change count. Nothing stays when one fails.
+ */
+export async function runAppSqlBatch(
   file: string,
-  opts: Parameters<typeof runAppSql>[1],
-  timeoutMs: number,
-): Promise<unknown> {
+  statements: AppSqlBatchStatement[],
+  timeoutMs = APP_SCHEMA_TIMEOUT_MS,
+): Promise<number[]> {
+  const res = (await runOnChild(
+    file,
+    { sql: '', mode: 'batch', readOnly: false, statements },
+    timeoutMs,
+  )) as { changes: number[] };
+  return res.changes;
+}
+
+/**
+ * Copy an app's database file to `dest` (which must not exist) in a SQL child,
+ * off the event loop: `VACUUM INTO` from a read-only open, a consistent and
+ * compacted copy even while the app writes. The server's own step (schema
+ * trial runs, snapshots); app SQL can never reach it.
+ */
+export async function copyAppDbFile(
+  file: string,
+  dest: string,
+  timeoutMs = APP_DB_COPY_TIMEOUT_MS,
+): Promise<void> {
+  await runOnChild(file, { sql: '', mode: 'copy', readOnly: true, dest }, timeoutMs);
+}
+
+/**
+ * Check a database file that came from outside (an app package import) and
+ * copy it clean to `dest` (which must not exist), in a SQL child: the file
+ * must pass SQLite's quick_check, and `VACUUM INTO` writes a fresh,
+ * compacted copy. Throws AppSqlError when the file is not a sound SQLite
+ * database. Returns the file's user_version (the schema stamp).
+ */
+export async function adoptAppDbFile(
+  file: string,
+  dest: string,
+  timeoutMs = APP_DB_COPY_TIMEOUT_MS,
+): Promise<{ userVersion: number }> {
+  return (await runOnChild(file, { sql: '', mode: 'adopt', readOnly: false, dest }, timeoutMs)) as {
+    userVersion: number;
+  };
+}
+
+async function runOnChild(file: string, opts: ChildJob, timeoutMs: number): Promise<unknown> {
   const child = await acquire(timeoutMs);
   const id = ++nextId;
   const reply = await new Promise<Reply>((resolve) => {
@@ -443,10 +608,16 @@ async function runOnChild(
       maxReplyBytes: APP_SQL_MAX_REPLY_BYTES,
       maxDbBytes: opts.maxDbBytes ?? appSqlMaxDbBytes(),
       journalLimit: APP_SQL_JOURNAL_LIMIT_BYTES,
+      userVersion: opts.mode === 'script' ? Math.max(0, Math.floor(opts.userVersion ?? 0)) : 0,
+      dest: opts.mode === 'copy' || opts.mode === 'adopt' ? opts.dest : undefined,
+      statements: opts.mode === 'batch' ? opts.statements : undefined,
     });
   });
   release(child);
-  if (!reply.ok) throw new AppSqlError(reply.error);
+  if (!reply.ok) {
+    if (reply.error === RESTORING_REPLY) throw new AppDbRestoringError();
+    throw new AppSqlError(reply.error);
+  }
   return reply.result;
 }
 

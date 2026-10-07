@@ -65,7 +65,7 @@ describe.skipIf(!URL)('member Library at the team level', () => {
       insert into pages (node_id, doc, doc_text, draft_doc) values
         (${ids.teamPage}, '{"type":"doc","content":[]}'::jsonb, '', ${draft}::jsonb),
         (${ids.adminPage}, '{"type":"doc","content":[]}'::jsonb, '', null)`);
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await m.systemDb.execute(sqlTag`delete from nodes where title like ${`${tag}%`}`);

@@ -35,6 +35,7 @@ import { db, bumpWorkerUsage, nodes } from '@mantle/db';
 import { recordSkippedTrace, startTrace } from '@mantle/tracing';
 import { resolveChatRoutes } from '@mantle/runtime/agent';
 import { getChatAdapter } from '@mantle/voice';
+import { isDocumentTitleMention } from '@mantle/content';
 import { TEXT_STORE_MAX_CHARS, truncateForPrompt } from './extract/text';
 import { runExtractorModel } from './extract/model';
 import { admitForExtraction } from './extract/gates';
@@ -46,7 +47,8 @@ import {
 } from './extract/index-writes';
 import { supersedeFileVersions } from './extract/supersede';
 import { processRelations, reconcileEntities } from './extract/entities';
-import { processFacts } from './extract/facts';
+import { processFacts, retireUnassertedFacts } from './extract/facts';
+import { retiresOnNoFacts } from './extract/rules';
 
 export async function extractNode(nodeId: string, ownerId: string): Promise<void> {
   // Everything that decides WHETHER to run — worker + node resolution, the
@@ -167,6 +169,10 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
       ];
       const seenNames = new Set<string>();
       const uniqueMentions = allEntityMentions.filter((m) => {
+        // A document's own title (or a bare "Sermon #12" label) is not a
+        // project or event; on a corpus of documents those were most of the
+        // entity layer. See isDocumentTitleMention.
+        if (isDocumentTitleMention(m, node)) return false;
         const key = m.name.trim().toLowerCase();
         if (seenNames.has(key)) return false;
         seenNames.add(key);
@@ -215,6 +221,20 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
       // ─── fact extraction pass ────────────────────────────────────────
       // Retrieval-only docs never persist facts (L4 skip).
       if (params.extract_facts === false || retrievalOnly || parsed.facts.length === 0) {
+        // A real answer with no facts: the document no longer states any of
+        // the ones it did, so they retire like any fact a re-extract does not
+        // re-assert (see retiresOnNoFacts for when it is NOT a real answer).
+        if (
+          retiresOnNoFacts({
+            extractFacts: params.extract_facts,
+            retrievalOnly,
+            facts: parsed.facts.length,
+            reused: parsed.reused,
+            summary: parsed.summary,
+          })
+        ) {
+          await retireUnassertedFacts(ownerId, node.id);
+        }
         await stampExtractCompleted(node.id);
         void bumpWorkerUsage(worker.id);
         return;
@@ -240,12 +260,13 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
  *  the recovery signal for that case. Deliberately a plain jsonb merge with
  *  no version condition: a user edit clears summary/embedding, and the guard
  *  is a conjunction, so a stale stamp can never suppress the edit's
- *  re-extract. */
+ *  re-extract. Drops a terminal-skip stamp left by an earlier pass that found
+ *  nothing to read (@mantle/db extract-exempt.ts). */
 async function stampExtractCompleted(nodeId: string): Promise<void> {
   await db
     .update(nodes)
     .set({
-      data: sql`${nodes.data} || ${JSON.stringify({ extract_completed_at: new Date().toISOString() })}::jsonb`,
+      data: sql`(${nodes.data} - 'extract_skipped') || ${JSON.stringify({ extract_completed_at: new Date().toISOString() })}::jsonb`,
     })
     .where(eq(nodes.id, nodeId));
 }

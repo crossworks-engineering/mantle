@@ -14,7 +14,11 @@ const h = vi.hoisted(() => ({
     configRow: null as Record<string, unknown> | null,
     primaryError: undefined as string | undefined,
     embedCalls: [] as Array<string | undefined>,
+    /** Open alert subjects, as listOpenProviderAlerts sees them. */
+    openAlerts: [] as string[],
   },
+  recordProviderFailure: vi.fn(async () => null),
+  resolveProviderAlert: vi.fn(async () => true),
 }));
 
 vi.mock('@mantle/db', () => ({
@@ -40,6 +44,10 @@ vi.mock('@mantle/db', () => ({
   },
   embeddingConfig: h.embeddingConfigTable,
   embeddingCache: h.embeddingCacheTable,
+  // The provider-alert store (provider-outage.ts).
+  recordProviderFailure: h.recordProviderFailure,
+  resolveProviderAlert: h.resolveProviderAlert,
+  listOpenProviderAlerts: async () => h.state.openAlerts.map((subject) => ({ subject })),
 }));
 
 vi.mock('@mantle/api-keys', () => ({
@@ -70,6 +78,7 @@ import {
   clearEmbeddingModelCache,
   embedBatch,
   isRouteDownError,
+  resetProviderOutageCache,
   resolveEmbeddingConfig,
 } from './index';
 
@@ -120,6 +129,85 @@ describe('embedding failover', () => {
     h.state.configRow = configRow({ backupEnabled: false });
     await expect(embedBatch('owner-1', ['hi'])).rejects.toThrow(/fetch failed/);
     expect(h.state.embedCalls).toEqual(['http://primary']);
+  });
+
+  it('fails over on an account error: no credits on the primary (2026-10-04)', async () => {
+    h.state.configRow = configRow();
+    h.state.primaryError =
+      'OpenAI embeddings failed: 429 Too Many Requests — {"error":{"code":"insufficient_quota"}}';
+    const out = await embedBatch('owner-1', ['hi']);
+    expect(out).toEqual([[1, 2, 3]]);
+    expect(h.state.embedCalls).toEqual(['http://primary', 'http://backup']);
+  });
+});
+
+describe('embedding outcomes reach the provider-alert store', () => {
+  beforeEach(() => {
+    h.state.configRow = null;
+    h.state.primaryError = undefined;
+    h.state.embedCalls = [];
+    h.state.openAlerts = [];
+    h.recordProviderFailure.mockClear();
+    h.resolveProviderAlert.mockClear();
+    clearEmbeddingModelCache();
+    resetProviderOutageCache();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  it('records a failure with the fixed reason, the provider and the model, never the body', async () => {
+    h.state.configRow = configRow({ backupEnabled: false });
+    h.state.primaryError =
+      'OpenAI embeddings failed: 429 Too Many Requests — {"error":{"code":"insufficient_quota","org":"org-SECRET"}}';
+    const err = await embedBatch('owner-1', ['hi']).catch((e: unknown) => e);
+    expect((err as { providerSubject?: string }).providerSubject).toBe('embedding');
+    expect(h.recordProviderFailure).toHaveBeenCalledTimes(1);
+    const [owner, subject, failure] = h.recordProviderFailure.mock.calls[0] as unknown as [
+      string,
+      string,
+      Record<string, unknown>,
+    ];
+    expect(owner).toBe('owner-1');
+    expect(subject).toBe('embedding');
+    expect(failure).toMatchObject({
+      code: 'quota',
+      permanent: true,
+      provider: 'local',
+      model: 'm',
+    });
+    expect(JSON.stringify(failure)).not.toMatch(/SECRET/);
+  });
+
+  it('writes at most one failure per minute for a burst', async () => {
+    h.state.configRow = configRow({ backupEnabled: false });
+    for (let i = 0; i < 5; i++) await embedBatch('owner-1', [`x${i}`]).catch(() => {});
+    expect(h.recordProviderFailure).toHaveBeenCalledTimes(1);
+  });
+
+  it('a bad input is not recorded', async () => {
+    h.state.configRow = configRow({ backupEnabled: false });
+    h.state.primaryError = 'embeddings failed: 400 Bad Request — input too long';
+    await embedBatch('owner-1', ['hi']).catch(() => {});
+    expect(h.recordProviderFailure).not.toHaveBeenCalled();
+  });
+
+  it('a call that works closes an open alert', async () => {
+    h.state.configRow = configRow({ primaryBaseUrl: 'http://ok', backupEnabled: false });
+    h.state.openAlerts = ['embedding'];
+    await embedBatch('owner-1', ['fresh text']);
+    await flush();
+    await flush();
+    expect(h.resolveProviderAlert).toHaveBeenCalledWith('owner-1', 'embedding');
+  });
+
+  it('a call that works with no open alert writes nothing', async () => {
+    h.state.configRow = configRow({ primaryBaseUrl: 'http://ok', backupEnabled: false });
+    await embedBatch('owner-1', ['fresh text']);
+    await flush();
+    await flush();
+    expect(h.resolveProviderAlert).not.toHaveBeenCalled();
   });
 });
 

@@ -32,5 +32,11 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   }
   const app = await clientAppOr404(ticket.ownerId, id);
   if (app instanceof Response) return new NextResponse('not found', { status: 404 });
-  return renderAppFrame(req, app.publishedBuild);
+  return renderAppFrame(req, app.publishedBuild, {
+    viewer: {
+      ownerId: ticket.ownerId,
+      appId: app.id,
+      subject: { kind: 'client', loginId: ticket.loginId },
+    },
+  });
 }

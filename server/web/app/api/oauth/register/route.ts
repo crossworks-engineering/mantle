@@ -6,7 +6,7 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { isAllowedRedirectUri, isRemoteMcpEnabled, registerClient } from '@/lib/mcp-oauth';
-import { clientIp, rateLimit } from '@/lib/rate-limit';
+import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 
 function error(status: number, error: string, description?: string) {
   return NextResponse.json(
@@ -16,7 +16,7 @@ function error(status: number, error: string, description?: string) {
 }
 
 export async function POST(req: Request) {
-  const limit = rateLimit(`oauth:register:${clientIp(req)}`, { max: 10, windowMs: 60_000 });
+  const limit = rateLimit(`oauth:register:${clientIpKey(req)}`, { max: 10, windowMs: 60_000 });
   if (!limit.ok) return error(429, 'rate_limited');
   // Don't let clients register against a box that hasn't opted in.
   if (!(await isRemoteMcpEnabled())) return error(404, 'not_found');

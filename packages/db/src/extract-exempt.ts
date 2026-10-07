@@ -59,17 +59,95 @@ export function extractExemptSql(): SQL {
 }
 
 /**
+ * A TERMINAL skip: the extractor read the node and found nothing it can index
+ * (no parser for the format, a body under the minimum, a blank scan, a type
+ * the worker does not extract). `data.extract_skipped = { reason, at }`.
+ *
+ * Without it such a node has no embedding forever, so the boot drain (and the
+ * provider circuit's recovery drain, which is the same query) re-queued it on
+ * every restart and every recovery: a job and a trace each time, and a vision
+ * or OCR call each time for an image or a scan. NATREF, 2026-10-04: one .exe
+ * file, 16 jobs in 3 days; in September 75 short files had 24,605 runs.
+ *
+ * The stamp holds only while the node is unchanged: a write that bumps
+ * `updated_at` (an edit, new bytes, a rename) makes it stale, and the drain
+ * picks the node up once more, so a missed notify on a content change still
+ * self-heals. The gate never reads the stamp: an explicit notify (an edit, a
+ * manual re-extract, a stored PDF password) always runs. A successful pass
+ * removes it.
+ *
+ * A machinery failure (a vision worker that did not run, a rasterizer that
+ * threw, a failed embed) is NOT terminal: the drain must retry it once the
+ * provider is back.
+ */
+export const EXTRACT_SKIPPED_KEY = 'extract_skipped';
+
+/** Skip dispositions that are always a verdict on the CONTENT, never on the
+ *  machinery. The cleanup script (scripts/extract-skip-stamp.ts) stamps old
+ *  looping nodes by these; the extractor stamps them as it records them. The
+ *  vision and OCR verdicts (`no_vision_text`, `no_text_layer`) are terminal
+ *  only when the worker really ran, which an old trace cannot always show, so
+ *  they are not in this list. */
+export const TERMINAL_EXTRACT_SKIPS: readonly string[] = [
+  'needs_export',
+  'unsupported_media',
+  'no_parser',
+  'body_too_short',
+  'encrypted_pdf',
+  'bytes_unavailable',
+  'type_not_in_allowlist',
+  'conversation_digest',
+  'chat_archive',
+];
+
+/** The jsonb to merge onto `nodes.data` for a terminal skip. `at` is the
+ *  database clock, the same clock the drain compares with `updated_at`. */
+export function extractSkippedStamp(reason: string): SQL {
+  return sql`jsonb_build_object(${EXTRACT_SKIPPED_KEY}::text, jsonb_build_object('reason', ${reason}::text, 'at', now()))`;
+}
+
+/** True on `nodes` when a terminal skip stamp is current: stamped at or after
+ *  the node's last write. */
+export function extractSkippedSql(): SQL {
+  return sql`coalesce((${nodes.data}->${EXTRACT_SKIPPED_KEY}->>'at')::timestamptz >= ${nodes.updatedAt}, false)`;
+}
+
+/**
  * The nodes the extractor's safety nets re-queue: the owner's non-folder
- * nodes created since `since` that still have no embedding, less the exempt
- * ones. The boot drain uses it as is; the periodic sweep adds "never
- * processed" on top.
+ * nodes WRITTEN since `since` that still have no embedding, less the exempt
+ * ones and less those with a current terminal skip. The boot drain uses it as
+ * is; the periodic sweep adds `noExtractSinceWriteSql` on top.
+ *
+ * The window is on `updated_at`, not `created_at`. A content change nulls the
+ * embedding and fires a notify; when that notify is lost (the agent was down,
+ * e.g. the docs sync at web boot during a roll), an OLD node must still be
+ * picked up. On `created_at` it never was: dev, 2026-10-05, 365 documentation
+ * nodes created in July/August sat without a summary or an embedding.
  */
 export function unextractedNodeConds(ownerId: string, since: Date): SQL {
   return and(
     eq(nodes.ownerId, ownerId),
     ne(nodes.type, 'branch'),
-    gte(nodes.createdAt, since),
+    gte(nodes.updatedAt, since),
     isNull(nodes.embedding),
     not(extractExemptSql()),
+    not(extractSkippedSql()),
   )!;
+}
+
+/**
+ * True on `nodes` when no extractor run has finished since the node's last
+ * write: the missed-event signature. The periodic sweep's extra clause.
+ *
+ * Loop-safe: every run (success, skip or failure) writes its trace's
+ * `finished_at` AFTER any write it made to the node, so once a run has
+ * processed the current version the node drops out, embedding or not. Only a
+ * new write (which normally fires its own notify) brings it back. The old
+ * clause, "no extractor_run at all", missed every node that had been
+ * extracted once and then changed.
+ */
+export function noExtractSinceWriteSql(): SQL {
+  return sql`NOT EXISTS (SELECT 1 FROM public.traces t WHERE t.subject_id = ${nodes.id}
+    AND t.kind = 'extractor_run'
+    AND coalesce(t.finished_at, t.created_at) >= ${nodes.updatedAt})`;
 }

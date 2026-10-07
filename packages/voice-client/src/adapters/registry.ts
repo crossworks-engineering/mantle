@@ -56,6 +56,7 @@ export const WIRED_PROVIDERS: Record<WiredCapability, ReadonlySet<ProviderId>> =
     'xai',
     'huggingface',
     'deepseek',
+    'mammouth',
     'copilot',
     'custom',
     'local',

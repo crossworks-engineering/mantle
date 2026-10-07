@@ -5,47 +5,38 @@ toolGroups: [toolsmith]
 
 ## Tool groups
 
-Named bundles of tools that you grant to an agent in one move, rather than
-picking capabilities one at a time.
+A tool group is a named bundle of tools you grant to an agent in one step. An
+agent can use exactly the tools in the groups it holds, and nothing else. To
+know what an agent can do, read its groups.
 
-This screen is the whole permission system. An agent's capability is **exactly**
-the union of the groups it holds; there is no other way for a tool to reach an
-agent. If you want to know what something can do, you read its groups, and
-you're done.
+The built-in groups are cut where the risk changes. Reading tables, writing
+rows, building grids and deleting a table are four separate groups, so an
+agent can answer questions about your data all day and never change a cell.
 
-The bundles are cut where the risk changes, not where the feature boundary is.
-Reading tables is one group, writing rows is another, authoring the grid is a
-third, and deleting a table is a fourth. That looks fussy until you want an
-agent that can answer questions about your data all day and physically cannot
-change a cell, which is a normal thing to want.
+- **New** creates a group: a **Name**, a **Slug** (fixed once created) and the
+  **Tools in this group**.
+- Each group has a level (Admin, Team, Client or Public). An agent may hold a
+  group only at a level it can read. Setting a group to Client or Public lets
+  every tool in it run for clients or the public, so the screen asks first.
+- An integration group stands for one outside API. It holds the base URL and
+  the credential reference, and every tool added to it uses them.
+
+Grant groups to agents in Settings > Agents.
 
 ## Assistant
 
-- "What can the researcher do?"
-- "Make a group with just the calendar read tools and give it to the team
-  responder."
+- "Which tool groups does the researcher have?"
+- "Make a group with the weather tools and give it to the assistant."
 
-Granting is a real action with real consequences, so it's worth saying the
-agent and the group explicitly rather than "give it what it needs".
+Name the agent and the group when you ask for a grant. These requests go to
+the Toolsmith specialist.
 
 ## Technical
 
-Groups are flat; a group is a list of tool slugs, and groups do not contain
-groups. Nesting was rejected because the question this screen exists to answer
-("what can this agent reach?") should never require walking a tree.
-
-Skills carry no tools. That was true from the moment groups became the sole
-grant, and it closed a real hole: previously a skill's bundled tool list was
-silently unioned into the agent's, which could override a deny that had been set
-deliberately. Now attaching a skill can only ever change *how* an agent works,
-never *what it can touch*.
-
-The default groups come from the system manifest, which is also what a
-drift test in CI checks, so a group whose contents changed in code is caught
-before it ships rather than discovered by an agent losing a capability. Your own
-groups sit alongside them untouched.
-
-Integration groups are a variant: a group that represents one external API,
-carrying its base URL and auth placement so every tool added to it inherits
-them, and optionally referencing a single skill that teaches its use. That's the
-one case where a group carries configuration, still no behaviour of its own.
+Groups are flat: a list of tool slugs, never groups inside groups. Skills carry
+no tools, so attaching a skill changes how an agent works, never what it can
+reach. The default groups come from the system manifest; your own groups sit
+beside them. When an agent changes the tools of a group below Admin level, the
+change waits for your approval in [Pending approvals](pending.md). The Toolsmith uses
+`tool_group_list`, `tool_group_ensure`, `agent_list` and
+`agent_grant_tool_group`; an agent cannot grant a group to itself.

@@ -38,6 +38,10 @@ export const apps = pgTable('apps', {
   draftBuild: jsonb('draft_build').$type<BuildRef>(),
   publishedBuild: jsonb('published_build').$type<BuildRef>(),
   version: integer('version').default(1).notNull(),
+  /** The snapshot seq a code-only restore put in the draft (migration 0219):
+   *  the next publish records it as its version's `restored_from`, then
+   *  clears it. */
+  restoredFromSeq: integer('restored_from_seq'),
   // Informational (client logins C6, 0198): members and clients only READ the
   // app's database. Off, an app at team or client level is a shared workspace
   // everyone who runs it writes. Set only by the owner's app update route.

@@ -9,10 +9,14 @@
  * UI swap — which just swaps the column values, so the primary cols are always
  * the active route and the runtime needs no precedence logic).
  *
- * Failover policy (locked): try the primary; on a route-DOWN / 429 / 5xx error
- * fail over to the backup. Bad-input / auth / context-length 4xx rethrow — the
- * backup would fail identically. Switch-back is optimistic and stateless: every
- * fresh call / turn tries the primary first again (no circuit breaker).
+ * Failover policy: try the primary; on a route-DOWN / 429 / 5xx error fail
+ * over to the backup. Since 2026-10-04 an ACCOUNT error fails over too (no
+ * credits, a refused key, no key, a model the provider does not offer:
+ * @mantle/embeddings provider-error.ts): the backup is another provider or
+ * key, so it gets round exactly that. Bad-input / context-length 4xx rethrow,
+ * as the backup would fail identically. Switch-back is optimistic and
+ * stateless: every fresh call / turn tries the primary first again (no
+ * circuit breaker).
  */
 import { getApiKey, getApiKeyById } from '@mantle/api-keys';
 import {
@@ -23,6 +27,7 @@ import {
   type ChatResult,
 } from '@mantle/voice';
 import { errorMessage } from '@mantle/std';
+import { isAccountError } from '@mantle/embeddings/provider-error';
 
 /** A configured chat route — which provider/model, which key, and where. */
 export interface ChatRoute {
@@ -88,10 +93,11 @@ export function resolveChatRoutes(row: ChatRouteRow): ChatRoutes {
  * voice`'s `classifyChatError`): route-down (network/timeout), 429, and 5xx →
  * yes; 4xx bad-input / auth / context-length → no (the backup would fail the
  * same way). The primary's own internal retries run first; this only fires once
- * those are exhausted.
+ * those are exhausted. An account error (no credits, refused key, unknown
+ * model) fails over as well: the backup's own provider or key may not share it.
  */
 export function isChatFailover(err: unknown): boolean {
-  return classifyChatError(err).retry;
+  return classifyChatError(err).retry || isAccountError(err);
 }
 
 /** A route resolved to a live adapter + key, ready to `.chat()`. */

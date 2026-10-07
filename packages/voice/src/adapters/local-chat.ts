@@ -38,6 +38,7 @@ import { scrubThinkBlocks } from './think-scrubber';
 import { tailnetFetch } from './tailnet';
 import { env } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
+import { providerFetch } from './provider-fetch';
 
 const DEFAULT_BASE_URL = 'http://localhost:11434/v1';
 
@@ -78,7 +79,7 @@ async function localChat(opts: ChatOptions): Promise<ChatResult> {
   // Local generation can be slow on CPU; allow a generous ceiling. A box that's
   // OFF refuses fast (fed to the failover layer); a hang hits this timeout.
   // `viaTailnet` routes through the Tailscale proxy to reach a NAT'd host.
-  const doFetch = opts.viaTailnet ? tailnetFetch : fetch;
+  const doFetch = opts.viaTailnet ? tailnetFetch : providerFetch;
   const res = await doFetch(`${baseUrl(opts.baseUrl)}/chat/completions`, {
     method: 'POST',
     headers: {
@@ -118,7 +119,7 @@ async function localChatDiscover(_apiKey: string): Promise<DiscoveryResult<ChatM
   // verifies a specific route live with Test chat). `/v1/models` doesn't report
   // context windows, so we list ids only.
   try {
-    const res = await fetch(`${baseUrl()}/models`, { signal: AbortSignal.timeout(8_000) });
+    const res = await providerFetch(`${baseUrl()}/models`, { signal: AbortSignal.timeout(8_000) });
     if (!res.ok) {
       return { available: [], filtered: false, error: `local /v1/models: HTTP ${res.status}` };
     }

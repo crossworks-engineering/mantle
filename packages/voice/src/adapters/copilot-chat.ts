@@ -42,6 +42,7 @@ import {
 import { scrubThinkBlocks } from './think-scrubber';
 import { copilotHeaders, resolveCopilotToken } from './copilot-auth';
 import { errorMessage } from '@mantle/std';
+import { providerFetch } from './provider-fetch';
 
 /** Map our token-budget hint to Copilot's `reasoning_effort` tier. Any positive
  *  budget turns reasoning on; the magnitude picks the tier. Returns undefined
@@ -96,7 +97,7 @@ async function copilotChat(opts: ChatOptions): Promise<ChatResult> {
   };
 
   return withCopilotAuth(opts.apiKey, async (token) => {
-    const res = await fetch(`${COPILOT_BASE_URL}/chat/completions`, {
+    const res = await providerFetch(`${COPILOT_BASE_URL}/chat/completions`, {
       method: 'POST',
       headers: copilotHeaders({
         Authorization: `Bearer ${token}`,
@@ -157,7 +158,7 @@ function copilotChatStream(opts: ChatOptions, onDelta: ChatStreamSink): Promise<
 async function copilotDiscover(apiKey: string): Promise<DiscoveryResult<ChatModelInfo>> {
   try {
     const token = await resolveCopilotToken(apiKey);
-    const res = await fetch(`${COPILOT_BASE_URL}/models`, {
+    const res = await providerFetch(`${COPILOT_BASE_URL}/models`, {
       headers: copilotHeaders({ Authorization: `Bearer ${token}` }),
       signal: AbortSignal.timeout(15_000),
     });

@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { index, integer, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
 /**
  * OAuth 2.1 authorization-server state for the remote MCP connector.
@@ -68,6 +68,9 @@ export const oauthAuthCodes = pgTable(
     redirectUri: text('redirect_uri').notNull(),
     scope: text('scope').notNull().default(''),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    /** The consenting login's session epoch, for a member or client grant
+     *  (0227); null for an admin's. Carried onto the access token. */
+    sessionEpoch: integer('session_epoch'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [index('oauth_auth_codes_client_idx').on(t.clientId)],
@@ -105,6 +108,10 @@ export const oauthAccessTokens = pgTable(
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
     /** Set on Disconnect / revoke; null while active. */
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    /** A member's or client's grant (0227): the login's session epoch at
+     *  consent. The grant dies when the login's epoch moves on. Null for an
+     *  admin's grant, which keeps the pre-0227 rules. */
+    sessionEpoch: integer('session_epoch'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [

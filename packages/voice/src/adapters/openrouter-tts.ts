@@ -28,6 +28,7 @@ import { mimeForFormat } from '../synthesize';
 import type { TtsModelInfo } from '../catalog';
 import type { DiscoveryResult } from '../discover';
 import { OPENROUTER_BASE_URL } from '../catalogs/openrouter';
+import { providerFetch } from './provider-fetch';
 
 /** Default OpenRouter TTS route — xAI Grok voice (voices ara/rex…). OpenRouter
  *  does not proxy OpenAI TTS, so we default to a real speech route on it. */
@@ -66,7 +67,7 @@ type OrSpeechModel = {
 
 /** Keyless fetch of the speech-capable models (id, name, supported_voices). */
 async function fetchSpeechModels(): Promise<OrSpeechModel[]> {
-  const res = await fetch(SPEECH_MODELS_URL, {
+  const res = await providerFetch(SPEECH_MODELS_URL, {
     headers: { accept: 'application/json' },
     signal: AbortSignal.timeout(8_000),
   });
@@ -98,7 +99,7 @@ export const openrouterTtsAdapter: TtsDispatcher = {
     const format = clampFormat(opts.format);
     const speed = Math.min(Math.max(opts.speed ?? 1.0, 0.25), 4.0);
 
-    const res = await fetch(`${OPENROUTER_BASE_URL}/audio/speech`, {
+    const res = await providerFetch(`${OPENROUTER_BASE_URL}/audio/speech`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${opts.apiKey}`,
