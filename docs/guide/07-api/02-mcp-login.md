@@ -22,6 +22,8 @@ The connector URL is the same one the owner uses. Who connects decides which too
 3. Turn on **Write** only if they should make drafts in their own space. An admin still accepts each draft before it reaches the brain.
 4. They add the connector URL to Claude and sign in with their own login.
 
+A member or client can also make their own API key in **Settings > API access** and send it as a header. The key needs this **MCP** switch on, and writes only while **Write** is on too ([API keys](08-api-keys.md)).
+
 ## Give them a token instead
 
 Use a token when their MCP client cannot sign in.

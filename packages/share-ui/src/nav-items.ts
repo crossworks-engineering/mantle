@@ -28,6 +28,7 @@ import {
   LayoutDashboard,
   ListTree,
   Key,
+  KeyRound,
   Map,
   Plug,
   Power,
@@ -155,6 +156,9 @@ export const NAV_GROUPS: NavGroup[] = [
       { name: 'Profile', href: '/settings/profile', icon: User },
       { name: 'API keys', href: '/settings/keys', icon: Key },
       { name: 'MCP', href: '/settings/mcp', icon: Plug },
+      // API keys for scripts and MCP clients (0232); not the outbound
+      // "API keys" vault above.
+      { name: 'API access', href: '/settings/api-access', icon: KeyRound },
       { name: 'Connectors', href: '/settings/connectors', icon: Cable },
       { name: 'Agents', href: '/settings/agents', icon: Bot },
       { name: 'AI workers', href: '/settings/ai-workers', icon: Cpu },
