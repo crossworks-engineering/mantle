@@ -130,11 +130,7 @@ function loginUsable(row: LoginRow): boolean {
 export async function verifyAccessKey(token: string): Promise<AccessKeyCheck> {
   const m = KEY_RE.exec(token);
   if (!m) return { ok: false, reason: 'malformed' };
-  const [row] = await db
-    .select()
-    .from(accessKeys)
-    .where(eq(accessKeys.keyPrefix, m[1]!))
-    .limit(1);
+  const [row] = await db.select().from(accessKeys).where(eq(accessKeys.keyPrefix, m[1]!)).limit(1);
   const presented = sha256(token);
   if (!row) return { ok: false, reason: 'unknown' };
   const stored = Buffer.from(row.keyHash, 'hex');
