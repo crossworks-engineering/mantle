@@ -9,13 +9,11 @@
  * 'team' }` is refused. What replaced them, and what this script does:
  *
  *   1. A team member IS a login with role `member` (`POST /api/users`). The
- *      studio is five people besides the owner, so all five get one: the
- *      Team screen then shows a team, not a row.
- *   2. An item is shown to the team by its LEVEL. Folders carry most of it
- *      (the seeder shares the Studio Handbook with the team). Tables have no
- *      shared folder here, so the ones the generator marks are set to team
- *      level one by one (`PATCH /api/access/nodes/:id`). Tasks and events can no longer be
- *      shown to a member at all: they are admin-only kinds on main.
+ *      studio is two engineers besides the owner, and both get one.
+ *   2. An item is shown to the team or to clients by the FOLDER it sits in:
+ *      the seeder shares each workspace's Team and Client folders
+ *      (generator/content/folders.mjs). Tasks, events, contacts and secrets
+ *      can never be shown to a member: they are admin-only kinds on main.
  *   3. The member chat opens when the `team-responder` agent is at team
  *      level, and the brain refuses that while the agent holds a tool group
  *      above team level (`group_above_agent`). On a FRESH brain all three of
@@ -25,14 +23,15 @@
  *      comes off the agent, the two member-facing groups go to team level,
  *      then the agent does. The seed
  *      changes; the brain's rule does not.
- *   4. One client login, for the person who approves the PUMPHOUSE procedure
- *      revisions, which sit in the folder the seeder shares with clients. The
+ *   4. One client login, for Gordon Bekker at Meridian, who approves the
+ *      procedure revisions in the Client folders. The
  *      brain refuses a client login until an admin has acknowledged the list
  *      of everything clients can read, so this reads that list and
  *      acknowledges exactly it (by its fingerprint), as the dialog does.
  *
  * Membership alone would be an empty room, so the script signs in AS a member
- * at the end and fails when that member's Library is empty.
+ * at the end and fails when that member's Library is not exactly what the
+ * generator shared.
  *
  * Everything goes through the real endpoints, so the brain ends up in a state
  * an owner could have reached from the UI. Safe to run again: a login that is
@@ -97,18 +96,28 @@ type Contact = { id: string; title: string; emails?: string[] };
 
 async function main() {
   // WHAT may be shown to whom comes from the generator, never from this
-  // script and never from "whatever the brain reports": the tables the team
-  // reads, and how many items each shared folder reaches. Every count below
-  // is compared with these, and a difference stops the script before it
-  // acknowledges or confirms anything.
+  // script and never from "whatever the brain reports": how many items each
+  // shared folder reaches. Every count below is compared with these, and a
+  // difference stops the script before it acknowledges or confirms anything.
   const manifest = JSON.parse(readFileSync(MANIFEST, 'utf8')) as Manifest;
-  const teamTables = manifest.tables.filter((t) => t.level === 'team').map((t) => t.title);
-  const reach = (share: 'team' | 'client') =>
-    (manifest.folders ?? []).filter((f) => f.share === share).reduce((n, f) => n + (f.expect?.items ?? 0), 0);
-  const expectTeamItems = reach('team');
-  const expectClientItems = reach('client');
-  if (!teamTables.length || !expectTeamItems || !expectClientItems) {
-    throw new Error('the manifest names no team tables or no shared folders: regenerate (node demo/generator/gen.mjs)');
+  const folders = manifest.folders ?? [];
+  const sharedWith = (share: 'team' | 'client') => new Set(folders.filter((f) => f.share === share).map((f) => f.id));
+  // Every item that can sit in a tree, with its node type and folder.
+  const placedItems: Array<{ type: string; folder: string | null }> = [
+    ...manifest.nodes.map((n) => ({ type: n.kind, folder: n.meta.folder ?? null })),
+    ...manifest.tables.map((t) => ({ type: 'table', folder: t.folder ?? null })),
+    ...manifest.files.map((f) => ({ type: 'file', folder: f.folder ?? null })),
+    ...(manifest.draws ?? []).map((d) => ({ type: 'draw', folder: d.folder ?? null })),
+    ...(manifest.apps ?? []).map((a) => ({ type: 'app', folder: a.folder ?? null })),
+  ];
+  const countIn = (ids: Set<string>, types?: string[]) =>
+    placedItems.filter((x) => x.folder && ids.has(x.folder) && (!types || types.includes(x.type))).length;
+  const expectClientItems = countIn(sharedWith('client'));
+  // The Library lists these kinds only (MEMBER_ITEM_KINDS on main).
+  const LIBRARY_KINDS = ['page', 'note', 'draw', 'table', 'file'];
+  const expectLibrary = countIn(sharedWith('team'), LIBRARY_KINDS) + countIn(sharedWith('client'), LIBRARY_KINDS);
+  if (!expectClientItems || !expectLibrary) {
+    throw new Error('the manifest shares no folders: regenerate (node demo/generator/gen.mjs)');
   }
 
   await login(owner, OWNER_EMAIL, OWNER_PASSWORD);
@@ -140,17 +149,7 @@ async function main() {
     console.log(`· member: ${c.title}${res.status === 409 ? ' (already a login)' : ''}`);
   }
 
-  // ── 2. Team-level tables ──────────────────────────────────────────────────
-  const tables = (await json<{ tables?: Array<{ id: string; title: string }> }>(owner, '/api/tables?limit=100')).tables ?? [];
-  for (const title of teamTables) {
-    const t = tables.find((x) => x.title === title);
-    if (!t) throw new Error(`table "${title}" is not on this brain (the generator renamed it?)`);
-    const res = await call(owner, 'PATCH', `/api/access/nodes/${t.id}`, { audience: 'team' });
-    if (!res.ok) throw new Error(`table "${title}" → team: ${res.status} ${(await res.text()).slice(0, 200)}`);
-    console.log(`· team level: table "${title}"`);
-  }
-
-  // ── 3. The member chat ────────────────────────────────────────────────────
+  // ── 2. The member chat ────────────────────────────────────────────────────
   // An agent may hold only tool groups at or below its own level. So the
   // admin-only group comes off, the groups it keeps go to team level, and
   // only then does the agent. Any other order is refused
@@ -170,7 +169,7 @@ async function main() {
   if (!res.ok) throw new Error(`${TEAM_RESPONDER} → team: ${res.status} ${(await res.text()).slice(0, 200)}`);
   console.log(`· member chat open: ${TEAM_RESPONDER} at team level, tool groups ${keep.join(', ') || '(none)'}`);
 
-  // ── 4. One client login ───────────────────────────────────────────────────
+  // ── 3. One client login ───────────────────────────────────────────────────
   const clientContact = contacts.find((c) => emailOf(c) === CLIENT_EMAIL.toLowerCase());
   if (!clientContact) throw new Error(`no contact with ${CLIENT_EMAIL}: nobody to make a client login for`);
   const report = await json<{ total: number; acknowledged: boolean; fingerprint?: string }>(owner, '/api/access/client-report');
@@ -198,21 +197,17 @@ async function main() {
     `· client login: ${clientContact.title}${res.status === 409 ? ' (already there)' : ''}, ${report.total} item(s) at client level, list acknowledged`,
   );
 
-  // ── 5. Prove it from the member's side ────────────────────────────────────
+  // ── 4. Prove it from the member's side ────────────────────────────────────
   const first = colleagues[0]!;
   const member: Jar = { cookie: '' };
   await login(member, emailOf(first), MEMBER_PASSWORD);
   const library = await json<{ total: number }>(member, '/api/member/library');
   const chat = await json<{ agent: { slug: string } | null }>(member, '/api/member/chat');
-  // A member's Library holds the team items and the client items. Exactly
-  // what was intended: zero is a working-but-empty portal, and more is an item
-  // a colleague can read that nobody meant to share.
-  const expectLibrary = expectTeamItems + teamTables.length + expectClientItems;
+  // A member's Library holds the team items and the client items of the
+  // Library kinds. Exactly what was intended: zero is a working-but-empty
+  // portal, and more is an item a colleague can read that nobody meant to share.
   if (library.total !== expectLibrary) {
-    throw new Error(
-      `${first.title}'s Library holds ${library.total} item(s); intended ${expectLibrary} ` +
-        `(${expectTeamItems} in team-shared folders + ${teamTables.length} table(s) + ${expectClientItems} shared with clients)`,
-    );
+    throw new Error(`${first.title}'s Library holds ${library.total} item(s); intended ${expectLibrary} (pages, notes, drawings, tables and files in the team and client folders)`);
   }
   if (!chat.agent) throw new Error(`${first.title} signs in, but the member chat is not open`);
   // A member must NOT reach an owner route: the same cookie name carries both.

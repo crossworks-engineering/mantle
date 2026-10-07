@@ -23,25 +23,23 @@
 import { memberPassword } from './lib/secrets.ts';
 
 const SERVER = process.env.DEMO_SERVER_URL ?? 'http://127.0.0.1:3902';
-// The member who asks: the design lead, one of the logins enable-team.ts makes
-// (demo/world/world.json). Fictional, on a documentation domain.
-const MEMBER_EMAIL = process.env.DEMO_CHAT_MEMBER_EMAIL ?? 'dana@harbourlabs.example.com';
+// The member who asks: the controls engineer, one of the logins enable-team.ts
+// makes (demo/world/world.json). Fictional, on a documentation domain.
+const MEMBER_EMAIL = process.env.DEMO_CHAT_MEMBER_EMAIL ?? 'tessa@harbourlabs.example.com';
 const MEMBER_PASSWORD = memberPassword();
 /** Seconds to wait for each answer before giving up on it. */
 const REPLY_WAIT_S = Number(process.env.DEMO_CHAT_REPLY_WAIT ?? 180);
 
 /**
- * Questions a member of THIS studio would actually ask, each answerable from
- * what the team can read (the shared Studio Handbook and the team-level
- * tables), so the answers show retrieval at the member's level and not the
- * model's general knowledge. Deterministic and ordered: the thread should
- * look the same after every re-seed.
+ * The one member question: the fifth of the demo's five real chats (the
+ * other four are the owner's, demo/scripts/turns.sh). Answerable from what
+ * the team can read (the Team and Client folders), so the answer shows
+ * retrieval at the member's level and not the model's general knowledge.
+ * It runs AFTER the drain, like every real turn: on an undrained brain an
+ * agent loops and burns tokens for nothing.
  */
 const QUESTIONS = [
-  'What does the handbook say I must confirm before a site day, and what is in the standard site kit?',
-  'Why do we have review gates, and who has to go through them?',
-  'I am new on the PS3 work. Which snags are still open on the snag list, and who owns them?',
-  'What are the rules for booking leave and handing over my open snags?',
+  'I am on the PS3 commissioning window next week. What do I need to bring, and which open snags could stop us?',
 ];
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

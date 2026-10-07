@@ -1,0 +1,25 @@
+{
+  "$comment": "The demo's illustrations. Generated 2026-10-07 with OpenRouter google/gemini-3.1-flash-image, using one jackdaw.run print as a STYLE reference only (prompt base and subjects in prompts.md). Fictional subjects, no people, no text, no brands. The JPEG bytes in this folder ARE the content: image generation is not deterministic, so the generator ships these files rather than regenerating them. tier = the Files folder the image sits in; offset = days from seed time.",
+  "images": [
+    { "id": "ps3-station",              "tier": "client",  "offset": -84, "title": "PS3 from the access road" },
+    { "id": "ps3-radio-mast",           "tier": "client",  "offset": -70, "title": "PS3 radio mast, after the extension" },
+    { "id": "ps3-valve-chamber",        "tier": "client",  "offset": -28, "title": "Delivery valve chamber" },
+    { "id": "ps3-control-room",         "tier": "client",  "offset": -40, "title": "Meridian control room desk" },
+    { "id": "reservoir-tower",          "tier": "client",  "offset": -82, "title": "Hilltop reservoir fed by PS3" },
+    { "id": "ps3-pump-hall",            "tier": "team",    "offset": -83, "title": "PS3 pump hall" },
+    { "id": "ps3-rtu-cabinet",          "tier": "team",    "offset": -15, "title": "New RTU cabinet, as delivered" },
+    { "id": "loop-check-kit",           "tier": "team",    "offset": -13, "title": "Loop check kit, packed" },
+    { "id": "site-visit-boots",         "tier": "team",    "offset": -12, "title": "Site office bench, day 1" },
+    { "id": "commissioning-tags",       "tier": "team",    "offset": -12, "title": "Tagged cores in the marshalling box" },
+    { "id": "pressure-transmitter",     "tier": "team",    "offset": -12, "title": "Delivery pressure transmitter PT-301" },
+    { "id": "flow-meter",               "tier": "team",    "offset": -31, "title": "Delivery flow meter FT-201" },
+    { "id": "calibrator-hands",         "tier": "team",    "offset": -12, "title": "Injecting 12 mA at the terminal strip" },
+    { "id": "ps3-standby-generator",    "tier": "team",    "offset": -48, "title": "The diesel that did not start" },
+    { "id": "island-solar-canopy",      "tier": "team",    "offset": -20, "title": "Option B: solar canopy on the yard" },
+    { "id": "island-battery-container", "tier": "team",    "offset": -19, "title": "Option B: battery container and transformer" },
+    { "id": "island-switchboard",       "tier": "team",    "offset": -18, "title": "Main board with the transfer switch" },
+    { "id": "island-storm-night",       "tier": "private", "offset": -50, "title": "Storm night at PS3" },
+    { "id": "harbour-labs-studio",      "tier": "public",  "offset": -88, "title": "The Harbour Labs studio" },
+    { "id": "jackdaw-letter",           "tier": "public",  "offset": -88, "title": "A letter for the control room" }
+  ]
+}

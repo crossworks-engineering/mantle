@@ -27,11 +27,11 @@
  *   pnpm -C server/web exec tsx ../../demo/seed/seed.ts
  */
 import { randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import postgres from '../../server/web/node_modules/postgres/src/index.js';
-import type { GenFolder, GenNode, GenRecallMap, GenRecallOption, Manifest, Sql } from './lib/types.ts';
+import type { GenFolder, GenRecallMap, GenRecallOption, Manifest, Sql, TreeKind } from './lib/types.ts';
 import { ownerPassword } from './lib/secrets.ts';
 // The app's own markdown dialect — imported by relative path because the demo
 // tree is not a workspace member (joining it would edit a main-owned file);
@@ -150,79 +150,23 @@ async function bootstrap() {
 // ── Content creation ────────────────────────────────────────────────────────
 const created = new Map<string, string>(); // manifest id → node id
 
-async function seedContacts(m: Manifest) {
-  for (const n of m.nodes.filter((x) => x.kind === 'contact')) {
-    const [firstName, ...rest] = n.title.split(' ');
-    const r = (await post('/api/contacts', {
-      first_name: firstName,
-      last_name: rest.join(' '),
-      company: n.meta.company ?? undefined,
-      emails: n.meta.emails,
-      description: n.meta.role,
-      tags: n.tags,
-    })) as { contact?: { id?: string }; id?: string };
-    const id = r.contact?.id ?? r.id;
-    if (id) created.set(n.id, id);
-  }
-}
-
-async function seedSimple(m: Manifest) {
-  for (const n of m.nodes.filter((x) => x.kind === 'note')) {
-    const r = (await post('/api/notes', {
-      title: n.title, content: n.body, tags: n.tags,
-    })) as { note?: { id?: string } };
-    // A note with no id cannot be filed or backdated: stop, do not skip.
-    if (!r.note?.id) throw new Error(`note ${n.id}: no id came back`);
-    created.set(n.id, r.note.id);
-  }
-  // `POST /api/notes` takes no folder, so notes are filed afterwards with the
-  // tree's own move, which is what dragging them in the UI does.
-  await seedFolders(m, 'notes');
-  await fileItems(m, 'notes', 'note');
-  for (const n of m.nodes.filter((x) => x.kind === 'journal')) {
-    const r = (await post('/api/journal', {
-      title: n.title,
-      body: n.body,
-      mood: n.meta.mood,
-      category: n.meta.category,
-      entryDate: iso(n.offset).slice(0, 10),
-      tags: n.tags,
-    })) as { entry?: { id?: string }; journal?: { id?: string } };
-    const jid = r.entry?.id ?? r.journal?.id;
-    if (jid) created.set(n.id, jid);
-  }
-  for (const n of m.nodes.filter((x) => x.kind === 'task')) {
-    const r = (await post('/api/tasks', {
-      title: n.title,
-      body: n.body,
-      status: n.meta.status,
-      priority: n.meta.priority,
-      dueAt: n.meta.due_offset != null ? iso(n.meta.due_offset) : null,
-      tags: n.tags,
-    })) as { task?: { id?: string } };
-    if (r.task?.id) created.set(n.id, r.task.id);
-  }
-  for (const n of m.nodes.filter((x) => x.kind === 'event')) {
-    const start = n.meta.start_offset ?? n.offset;
-    const r = (await post('/api/events', {
-      title: n.title,
-      body: n.body,
-      startsAt: iso(start),
-      endsAt: n.meta.duration_min ? new Date(at(start).getTime() + n.meta.duration_min * 60_000).toISOString() : null,
-      location: n.meta.location || null,
-      tags: n.tags,
-    })) as { event?: { id?: string } };
-    if (r.event?.id) created.set(n.id, r.event.id);
-  }
+/** Swap every `gen:<id>` reference in a body for the real id. The generator
+ *  checked that each one names an item created earlier; a miss here means
+ *  that item failed to seed, so stop rather than write a dead link. */
+function resolveRefs(owner: string, body: string): string {
+  return body.replace(/\((media|page|folder|draw|mention:node):gen:([A-Za-z0-9._-]+)\)/g, (_all, scheme: string, gen: string) => {
+    const id = created.get(gen);
+    if (!id) throw new Error(`${owner}: refers to ${gen}, which was not created`);
+    return `(${scheme}:${id})`;
+  });
 }
 
 // ── Folders (the item tree) ──────────────────────────────────────────────────
 // One tree per kind, folders at most three deep, and an item is never a parent
-// (docs/folder-tree.md). Folders are created parents first. A folder that is
-// already there (same name, same parent) is reused, so `seed.sh --keep` with
-// DEMO_SEED_ONLY can run again without a name clash.
+// (docs/folder-tree.md). A folder that is already there (same name, same
+// parent) is reused, so `seed.sh --keep` can run again without a name clash.
 type TreeFolderRow = { id: string; name: string; share: string | null };
-async function seedFolders(m: Manifest, kind: GenFolder['kind']) {
+async function seedFolders(m: Manifest, kind: TreeKind) {
   const folders = (m.folders ?? []).filter((f) => f.kind === kind);
   const byId = new Map(folders.map((f) => [f.id, f]));
   const emit = async (f: GenFolder): Promise<string> => {
@@ -251,54 +195,236 @@ async function seedFolders(m: Manifest, kind: GenFolder['kind']) {
   return folders.length;
 }
 
-/** The real folder id for a node, or null for the top level. */
-function folderIdOf(n: GenNode): string | null {
-  const gen = n.meta?.folder;
-  if (!gen) return null;
-  const id = created.get(gen);
-  if (!id) throw new Error(`${n.id}: folder ${gen} was not created`);
-  return id;
-}
-
-/** File already-created items into their folders: one move per folder. */
-async function fileItems(m: Manifest, kind: GenFolder['kind'], nodeKind: string) {
+/** File created items into their folders with the tree's own move, which is
+ *  what dragging them in the UI does. `items` are [generator id, generator
+ *  folder id or null]. One move per folder. */
+async function fileInto(kind: TreeKind, items: Array<[string, string | null | undefined]>) {
   const byFolder = new Map<string, string[]>();
-  for (const n of m.nodes.filter((x) => x.kind === nodeKind)) {
-    const folderId = folderIdOf(n);
-    const id = created.get(n.id);
-    if (!folderId || !id) continue;
+  for (const [gen, folderGen] of items) {
+    if (!folderGen) continue;
+    const folderId = created.get(folderGen);
+    const id = created.get(gen);
+    if (!folderId) throw new Error(`${gen}: folder ${folderGen} was not created`);
+    if (!id) throw new Error(`${gen}: not created, so it cannot be filed`);
     byFolder.set(folderId, [...(byFolder.get(folderId) ?? []), id]);
   }
   for (const [folderId, ids] of byFolder) {
-    // The route takes at most 200 ids a call.
-    for (let i = 0; i < ids.length; i += 200) {
-      const batch = ids.slice(i, i + 200);
-      const r = (await post(`/api/tree/${kind}/move`, { ids: batch, folderId })) as {
-        moved?: number;
-        failed?: unknown[];
-      };
-      if (r.failed?.length) throw new Error(`filing ${kind}: ${JSON.stringify(r.failed).slice(0, 300)}`);
-      // The route counts what it moved; anything less than what was sent is
-      // an item left at the top level with no error.
-      if (r.moved !== batch.length) throw new Error(`filing ${kind}: sent ${batch.length} item(s), the brain moved ${r.moved}`);
+    const r = (await post(`/api/tree/${kind}/move`, { ids, folderId })) as { moved?: number; failed?: unknown[] };
+    if (r.failed?.length) throw new Error(`filing ${kind}: ${JSON.stringify(r.failed).slice(0, 300)}`);
+    // The route counts what it moved; anything less is an item left at the
+    // top level with no error.
+    if (r.moved !== ids.length) throw new Error(`filing ${kind}: sent ${ids.length} item(s), the brain moved ${r.moved}`);
+  }
+}
+const nodesOf = (m: Manifest, kind: string) => m.nodes.filter((x) => x.kind === kind);
+const placed = (list: Array<{ id: string; folder?: string | null; meta?: { folder?: string | null } }>) =>
+  list.map((x): [string, string | null | undefined] => [x.id, x.meta?.folder ?? x.folder]);
+
+async function seedContacts(m: Manifest) {
+  await seedFolders(m, 'contacts');
+  for (const n of nodesOf(m, 'contact')) {
+    const [firstName, ...rest] = n.title.split(' ');
+    const r = (await post('/api/contacts', {
+      first_name: firstName,
+      last_name: rest.join(' '),
+      company: n.meta.company ?? undefined,
+      emails: n.meta.emails,
+      description: n.meta.role,
+      tags: n.tags,
+    })) as { contact?: { id?: string }; id?: string };
+    const id = r.contact?.id ?? r.id;
+    if (!id) throw new Error(`contact ${n.id}: no id came back`);
+    created.set(n.id, id);
+  }
+  await fileInto('contacts', placed(nodesOf(m, 'contact')));
+}
+
+// Files go up as real multipart uploads, the same path the UI uses, so Tika
+// and the image handling run for real.
+async function seedFiles(m: Manifest) {
+  await seedFolders(m, 'files');
+  const dir = join(here, '..', 'generator', 'out', 'files');
+  for (const f of m.files) {
+    const form = new FormData();
+    form.set('parentPath', 'files');
+    form.set('file', new Blob([readFileSync(join(dir, f.name))]), f.name);
+    const res = await fetch(`${SERVER}/api/files/files`, { method: 'POST', headers: cookie ? { cookie } : {}, body: form });
+    if (!res.ok) throw new Error(`file upload ${f.name} → ${res.status} ${(await res.text()).slice(0, 200)}`);
+    const body = (await res.json().catch(() => ({}))) as { file?: { id?: string }; id?: string };
+    const id = body.file?.id ?? body.id;
+    if (!id) throw new Error(`file ${f.name}: no id came back`);
+    created.set(f.id, id);
+  }
+  await fileInto('files', placed(m.files));
+  return m.files.length;
+}
+
+async function seedTables(m: Manifest) {
+  await seedFolders(m, 'tables');
+  for (const t of m.tables) {
+    const r = (await post('/api/tables', {
+      title: t.title,
+      tags: ['demo'],
+      ...(t.icon ? { icon: t.icon } : {}),
+      data: tableDocFromGen(t),
+    })) as { table?: { id?: string }; id?: string };
+    const id = r.table?.id ?? r.id;
+    if (!id) throw new Error(`table ${t.id}: no id came back`);
+    created.set(t.id, id);
+  }
+  await fileInto('tables', placed(m.tables));
+}
+
+// Draws: Excalidraw scenes. Create takes the scene; COMMIT gives the list its
+// preview and the share page its picture, from the SVG an editor would export.
+async function seedDraws(m: Manifest) {
+  await seedFolders(m, 'draw');
+  for (const d of m.draws ?? []) {
+    const r = (await post('/api/draws', { title: d.title, scene: d.scene, tags: d.tags ?? ['demo'] })) as { draw?: { id?: string }; id?: string };
+    const id = r.draw?.id ?? r.id;
+    if (!id) throw new Error(`draw ${d.id}: no id came back`);
+    created.set(d.id, id);
+    const res = await api(`/api/draws/${id}/commit`, { method: 'POST', body: JSON.stringify({ scene: d.scene, svg: sceneToSvg(d.scene) }) });
+    if (!res.ok) throw new Error(`draw ${d.id}: commit → ${res.status} ${(await res.text()).slice(0, 200)}`);
+  }
+  await fileInto('draw', placed(m.draws ?? []));
+  return (m.draws ?? []).length;
+}
+
+// Secrets and formulas: what make /secrets and /formulas a used brain.
+async function seedOddments(m: Manifest) {
+  await seedFolders(m, 'secrets');
+  for (const n of nodesOf(m, 'secret')) {
+    const r = (await post('/api/secrets', {
+      title: n.title, description: n.body, kind: 'password', tags: n.tags,
+      fields: [{ label: 'value', value: String(n.meta.value ?? 'demo-placeholder'), secret: true }],
+    })) as { secret?: { id?: string }; id?: string };
+    const id = r.secret?.id ?? r.id;
+    if (!id) throw new Error(`secret ${n.id}: no id came back`);
+    created.set(n.id, id);
+  }
+  await fileInto('secrets', placed(nodesOf(m, 'secret')));
+  await seedFolders(m, 'formulas');
+  for (const n of nodesOf(m, 'formula')) {
+    const r = (await post('/api/formulas', { title: n.title, tags: n.tags, spec: n.meta.spec })) as { formula?: { id?: string }; id?: string };
+    const id = r.formula?.id ?? r.id;
+    if (!id) throw new Error(`formula ${n.id}: no id came back`);
+    created.set(n.id, id);
+  }
+  await fileInto('formulas', placed(nodesOf(m, 'formula')));
+}
+
+// ── Apps: create, draft, build, publish, as an owner's Studio does ──────────
+// The build type-checks and bundles the source, so a broken app fails HERE
+// with the compiler's error rather than as an error card in front of a
+// visitor. A re-run reuses an app of the same name.
+function readSources(root: string, dir = root, acc: Record<string, string> = {}): Record<string, string> {
+  for (const name of readdirSync(dir)) {
+    const p = join(dir, name);
+    if (statSync(p).isDirectory()) readSources(root, p, acc);
+    else if (/\.(tsx?|css)$/.test(name)) acc[relative(root, p)] = readFileSync(p, 'utf8');
+  }
+  return acc;
+}
+async function seedApps(m: Manifest) {
+  await seedFolders(m, 'apps');
+  const list = (await get('/api/apps?limit=100')) as { apps?: Array<{ id: string; name: string }> };
+  for (const a of m.apps ?? []) {
+    const files = readSources(join(here, '..', 'apps', a.dir));
+    if (!files[a.entry]) throw new Error(`app ${a.id}: entry ${a.entry} not found in demo/apps/${a.dir}`);
+    let id = list.apps?.find((x) => x.name === a.name)?.id;
+    if (!id) {
+      const r = (await post('/api/apps', { name: a.name, description: a.description, icon: a.icon, tags: a.tags })) as { app?: { id?: string }; id?: string };
+      id = r.app?.id ?? r.id;
     }
+    if (!id) throw new Error(`app ${a.id}: no id came back`);
+    created.set(a.id, id);
+    await send('PUT', `/api/apps/${id}/draft`, { entry: a.entry, files });
+    const build = await api(`/api/apps/${id}/build`, { method: 'POST' });
+    const outcome = (await build.json().catch(() => ({}))) as { ok?: boolean; errors?: unknown[] };
+    if (!build.ok || outcome.ok === false || (outcome.errors ?? []).length) {
+      throw new Error(`app ${a.name}: build failed ${JSON.stringify(outcome.errors ?? outcome).slice(0, 400)}`);
+    }
+    const pub = await api(`/api/apps/${id}/publish`, { method: 'POST' });
+    if (!pub.ok) throw new Error(`app ${a.name}: publish → ${pub.status} ${(await pub.text()).slice(0, 200)}`);
+  }
+  await fileInto('apps', placed(m.apps ?? []));
+  return (m.apps ?? []).length;
+}
+
+// Pages: born in their folder (`POST /api/pages` takes `folderId`). A page's
+// references are resolved first, so its images, cards and mentions point at
+// real items from the start.
+async function seedPages(m: Manifest) {
+  await seedFolders(m, 'pages');
+  for (const p of nodesOf(m, 'page')) {
+    const folderGen = p.meta.folder;
+    const r = (await post('/api/pages', {
+      title: p.title,
+      doc: markdownToDoc(resolveRefs(p.id, p.body)),
+      tags: p.tags,
+      folderId: folderGen ? created.get(folderGen) ?? null : null,
+    })) as { page?: { id?: string }; id?: string };
+    const id = r.page?.id ?? r.id;
+    if (!id) throw new Error(`page ${p.id}: no id came back`);
+    created.set(p.id, id);
   }
 }
 
+async function seedNotes(m: Manifest) {
+  await seedFolders(m, 'notes');
+  for (const n of nodesOf(m, 'note')) {
+    const r = (await post('/api/notes', { title: n.title, content: resolveRefs(n.id, n.body), tags: n.tags })) as { note?: { id?: string } };
+    if (!r.note?.id) throw new Error(`note ${n.id}: no id came back`);
+    created.set(n.id, r.note.id);
+  }
+  await fileInto('notes', placed(nodesOf(m, 'note')));
+}
+
+async function seedDiary(m: Manifest) {
+  for (const n of nodesOf(m, 'journal')) {
+    const r = (await post('/api/journal', {
+      title: n.title, body: n.body, mood: n.meta.mood, category: n.meta.category,
+      entryDate: iso(n.offset).slice(0, 10), tags: n.tags,
+    })) as { entry?: { id?: string }; journal?: { id?: string } };
+    const id = r.entry?.id ?? r.journal?.id;
+    if (!id) throw new Error(`journal ${n.id}: no id came back`);
+    created.set(n.id, id);
+  }
+  await seedFolders(m, 'tasks');
+  for (const n of nodesOf(m, 'task')) {
+    const r = (await post('/api/tasks', {
+      title: n.title, body: n.body, status: n.meta.status, priority: n.meta.priority,
+      dueAt: n.meta.due_offset != null ? iso(n.meta.due_offset) : null, tags: n.tags,
+    })) as { task?: { id?: string } };
+    if (!r.task?.id) throw new Error(`task ${n.id}: no id came back`);
+    created.set(n.id, r.task.id);
+  }
+  await fileInto('tasks', placed(nodesOf(m, 'task')));
+  await seedFolders(m, 'events');
+  for (const n of nodesOf(m, 'event')) {
+    const start = n.meta.start_offset ?? n.offset;
+    const r = (await post('/api/events', {
+      title: n.title, body: n.body, startsAt: iso(start),
+      endsAt: n.meta.duration_min ? new Date(at(start).getTime() + n.meta.duration_min * 60_000).toISOString() : null,
+      location: n.meta.location || null, tags: n.tags,
+    })) as { event?: { id?: string } };
+    if (!r.event?.id) throw new Error(`event ${n.id}: no id came back`);
+    created.set(n.id, r.event.id);
+  }
+  await fileInto('events', placed(nodesOf(m, 'event')));
+}
+
 /**
- * Share the folders the manifest marks, AFTER their items are filed.
+ * Share the folders the manifest marks, AFTER their items are filed, in the
+ * manifest's order (Files first, so a page's images are already at the
+ * page's level when the page folder is shared).
  *
  * A share that changes who can see items is refused first (409 `visibility`,
- * with the list) and goes ahead only when the same call is repeated with
- * `confirm: true` and the count that was shown. The seeder does what the
- * dialog does: read the refusal, then confirm exactly that count. Sharing
- * first and filing afterwards would need a confirm on every single create.
- *
- * A person reads that list before they confirm. The seeder cannot read, so it
- * COUNTS: the generator wrote on each shared folder how many rows the share
- * must reach (`expect`), and a refusal that shows any other number is not
- * confirmed. Without that, a `share` put on the wrong folder would publish
- * its whole subtree and every step would report success.
+ * with the count) and goes ahead only when repeated with `confirm: true` and
+ * the count that was shown. A person reads that list before confirming; the
+ * seeder cannot read, so it COUNTS: the generator wrote on each shared folder
+ * how many items the share must reach, and any other number is not confirmed.
  */
 async function shareFolders(m: Manifest) {
   let n = 0;
@@ -315,43 +441,41 @@ async function shareFolders(m: Manifest) {
       const seen = (refusal.total ?? 0) + (refusal.embedsTotal ?? 0);
       if (seen !== expected) {
         throw new Error(
-          `share ${f.id} ("${f.name}" with ${f.share}): the brain says ${seen} row(s) would change ` +
-            `(${refusal.total ?? 0} + ${refusal.embedsTotal ?? 0} through embeds), the generator expects ${expected} ` +
-            `(${f.expect.items} item(s) + ${f.expect.folders} folder(s)). NOT confirmed: something else would be published.`,
+          `share ${f.id} ("${f.name}" in ${f.kind} with ${f.share}): the brain says ${seen} row(s) would change ` +
+            `(${refusal.total ?? 0} + ${refusal.embedsTotal ?? 0} through embeds), the generator expects ${expected}. ` +
+            'NOT confirmed: something else would be published.',
         );
       }
       res = await api(path, { method: 'PATCH', body: JSON.stringify({ share: f.share, confirm: true, seen }) });
-      if (res.ok) console.log(`  "${f.name}" shared with ${f.share === 'team' ? 'the team' : 'clients'}: ${seen} item(s) now read at that level`);
     }
     if (!res.ok) throw new Error(`share ${f.id}: ${res.status} ${(await res.text()).slice(0, 200)}`);
+    console.log(`  ${f.kind} "${f.name}" shared with ${f.share === 'team' ? 'the team' : 'clients'}: ${expected} item(s)`);
     n++;
   }
   return n;
 }
 
-// Pages live in folders, like notes: `POST /api/pages` takes `folderId`, so a
-// page is born in its place. A Folder index block names its folder by
-// GENERATOR id (`folder:gen:<id>`); the real id goes in before the markdown
-// becomes a document. `folder:here` needs nothing: it is the page's own folder.
-async function seedPages(m: Manifest) {
-  await seedFolders(m, 'pages');
-  const withFolderIds = (p: GenNode) =>
-    p.body.replace(/\(folder:gen:([^)\s]+)\)/g, (_all, gen: string) => {
-      const id = created.get(gen);
-      if (!id) throw new Error(`${p.id}: Folder index names folder ${gen}, which was not created`);
-      return `(folder:${id})`;
-    });
-  for (const p of m.nodes.filter((x) => x.kind === 'page')) {
-    const r = (await post('/api/pages', {
-      title: p.title,
-      doc: markdownToDoc(withFolderIds(p)),
-      tags: p.tags,
-      folderId: folderIdOf(p),
-    })) as { page?: { id?: string }; id?: string };
-    const id = r.page?.id ?? r.id;
-    if (!id) throw new Error(`page ${p.id}: no id came back`);
-    created.set(p.id, id);
+/** The public level: an open link on each item the generator marks public.
+ *  A page's embeds go public with it (embedding means sharing); the brain
+ *  lists them in `alsoLowered`, and they must be exactly the page's images. */
+async function publicLinks(m: Manifest) {
+  const items = [...m.nodes, ...m.tables, ...(m.draws ?? []), ...m.files, ...(m.apps ?? [])].filter((x) => x.public);
+  const embedsOf = (body: string) => [...body.matchAll(/\(media:gen:([A-Za-z0-9._-]+)\)/g)].map((x) => x[1]!);
+  let n = 0;
+  for (const item of items) {
+    const id = created.get(item.id);
+    if (!id) continue;
+    const r = (await post('/api/shares', { nodeId: id })) as { share?: { path?: string }; alsoLowered?: Array<{ id: string; title: string }> };
+    if (!r.share?.path) throw new Error(`public link ${item.id}: no share came back`);
+    const body = 'body' in item && typeof item.body === 'string' ? item.body : '';
+    const want = embedsOf(body).map((g) => created.get(g)).filter((x): x is string => !!x);
+    const got = (r.alsoLowered ?? []).map((x) => x.id);
+    const stray = got.filter((g) => !want.includes(g));
+    if (stray.length) throw new Error(`public link ${item.id}: the brain also lowered ${stray.length} item(s) the generator did not embed`);
+    console.log(`  public link: ${'title' in item ? item.title : item.id}${got.length ? ` (+${got.length} embedded)` : ''}`);
+    n++;
   }
+  return n;
 }
 
 // ── Recall: a native map through the owner API ───────────────────────────────
@@ -543,26 +667,6 @@ function sceneToSvg(scene: { elements: unknown[] }): string {
   );
 }
 
-async function seedDraws(m: Manifest) {
-  let n = 0;
-  for (const d of m.draws ?? []) {
-    const r = (await post('/api/draws', { title: d.title, scene: d.scene, tags: d.tags ?? ['demo'] })) as {
-      draw?: { id?: string };
-      id?: string;
-    };
-    const id = r.draw?.id ?? r.id;
-    if (!id) throw new Error(`draw ${d.id}: no id came back`);
-    created.set(d.id, id);
-    const res = await api(`/api/draws/${id}/commit`, {
-      method: 'POST',
-      body: JSON.stringify({ scene: d.scene, svg: sceneToSvg(d.scene) }),
-    });
-    if (!res.ok) throw new Error(`draw ${d.id}: commit → ${res.status} ${(await res.text()).slice(0, 200)}`);
-    n++;
-  }
-  return n;
-}
-
 /** The option id the app itself would mint for a select label
  *  (`addSelectOption` in packages/content-core/src/table-model.ts). */
 const optionId = (label: string) =>
@@ -637,71 +741,6 @@ function tableDocFromGen(t: Manifest['tables'][number]) {
   return { columns, rows, aggregates, views };
 }
 
-async function seedTables(m: Manifest) {
-  for (const t of m.tables) {
-    const r = (await post('/api/tables', {
-      title: t.title,
-      tags: ['demo'],
-      ...(t.icon ? { icon: t.icon } : {}),
-      data: tableDocFromGen(t),
-    })) as { table?: { id?: string }; id?: string };
-    const id = r.table?.id ?? r.id;
-    if (id) created.set(t.id, id);
-  }
-}
-
-// Secrets and formulas: small, but they are what make /secrets and /formulas
-// render as a used brain rather than an empty state.
-async function seedOddments(m: Manifest) {
-  for (const n of m.nodes.filter((x) => x.kind === 'secret')) {
-    const r = (await post('/api/secrets', {
-      title: n.title,
-      description: n.body,
-      kind: 'password',
-      tags: n.tags,
-      fields: [{ label: 'value', value: String(n.meta.value ?? 'demo-placeholder'), secret: true }],
-    })) as { secret?: { id?: string }; id?: string };
-    const id = r.secret?.id ?? r.id;
-    if (id) created.set(n.id, id);
-  }
-  for (const n of m.nodes.filter((x) => x.kind === 'formula')) {
-    const r = (await post('/api/formulas', {
-      title: n.title,
-      tags: n.tags,
-      spec: n.meta.spec,
-    })) as { formula?: { id?: string }; id?: string };
-    const id = r.formula?.id ?? r.id;
-    if (id) created.set(n.id, id);
-  }
-}
-
-// Files go up as real multipart uploads — the same path the UI uses — so Tika
-// and the image handling run for real. The bytes come from the generator, not
-// from stubs, which is why that mattered.
-async function seedFiles(m: Manifest) {
-  const dir = join(here, '..', 'generator', 'out', 'files');
-  let ok = 0;
-  for (const f of m.files) {
-    const form = new FormData();
-    form.set('parentPath', 'files');
-    form.set('file', new Blob([readFileSync(join(dir, f.name))]), f.name);
-    const res = await fetch(`${SERVER}/api/files/files`, {
-      method: 'POST',
-      headers: cookie ? { cookie } : {},
-      body: form,
-    });
-    if (!res.ok) {
-      if (ok === 0) throw new Error(`file upload ${f.name} → ${res.status} ${(await res.text()).slice(0, 160)}`);
-      continue; // a later straggler shouldn't discard a good run
-    }
-    const body = (await res.json().catch(() => ({}))) as { file?: { id?: string }; id?: string };
-    const id = body.file?.id ?? body.id;
-    if (id) created.set(f.id, id);
-    ok++;
-  }
-  return ok;
-}
-
 // Documentation is disk-backed, not a create endpoint: the generator already
 // wrote the markdown under MANTLE_DOCS_ROOT, so this just registers the
 // collection and lets the app index it in place. 'retrieval' depth is the
@@ -769,16 +808,14 @@ async function seedEmails(sql: Sql, m: Manifest, ownerId: string) {
 async function backdate(sql: Sql, m: Manifest) {
   const rows: Array<[string, string]> = [];
   // A Recall map's tree item is a node too (its id is the map's id).
-  for (const n of [...m.nodes, ...m.tables, ...m.files, ...(m.recall_maps ?? [])]) {
+  for (const n of [...m.nodes, ...m.tables, ...m.files, ...(m.draws ?? []), ...(m.apps ?? []), ...(m.recall_maps ?? [])]) {
     const id = created.get(n.id);
     if (id) rows.push([id, at(n.offset).toISOString()]);
   }
-  let n = 0;
   for (const [id, ts] of rows) {
     await sql`update nodes set created_at = ${ts}, updated_at = ${ts} where id = ${id}::uuid`;
-    n++;
   }
-  return n;
+  return rows.length;
 }
 
 // ── Main ────────────────────────────────────────────────────────────────────
@@ -786,7 +823,7 @@ async function main() {
   const manifest: Manifest = JSON.parse(readFileSync(MANIFEST, 'utf8'));
   const sql = postgres(DB, { onnotice: () => {} }) as unknown as Sql;
 
-  console.log(`\ndemo seeder — manifest seed ${manifest.seed}\n  server ${SERVER}\n  db     ${DB.replace(/:[^:@/]*@/, ':***@')}\n`);
+  console.log(`\ndemo seeder: manifest seed ${manifest.seed}\n  server ${SERVER}\n  db     ${DB.replace(/:[^:@/]*@/, ':***@')}\n`);
   await assertDemoDatabase(sql);
 
   console.log('· bootstrap');
@@ -796,37 +833,43 @@ async function main() {
   const ownerId = ownerRows[0]?.id;
   if (!ownerId) throw new Error('seed: owner row not found after bootstrap');
 
-  // DEMO_SEED_ONLY=tables,recall,heartbeats,draws: seed just those kinds into
-  // an EXISTING brain (`seed.sh --keep`), for iterating on one content type
-  // without a fifteen-minute wipe-and-refill. Unset = everything. `recall`
-  // is the Recall map alone; it replaces a map of the same slug, so it can
-  // run again and again.
+  // DEMO_SEED_ONLY=recall,heartbeats: seed just those kinds into an EXISTING
+  // brain (`seed.sh --keep`). Only the kinds nothing else refers to can be
+  // seeded alone; pages and notes need the files, tables and drawings they
+  // point at, so they come with the full seed.
+  const ALONE = ['recall', 'heartbeats', 'docs', 'emails'];
   const only = new Set((process.env.DEMO_SEED_ONLY ?? '').split(',').map((s) => s.trim()).filter(Boolean));
-  const want = (kind: string) => only.size === 0 || only.has(kind);
-  if (only.size) console.log(`· DEMO_SEED_ONLY: ${[...only].join(', ')}`);
+  for (const k of only) if (!ALONE.includes(k)) throw new Error(`DEMO_SEED_ONLY: '${k}' cannot be seeded alone (only ${ALONE.join(', ')})`);
+  const all = only.size === 0;
+  const want = (kind: string) => all || only.has(kind);
+  if (!all) console.log(`· DEMO_SEED_ONLY: ${[...only].join(', ')}`);
 
-  if (want('contacts')) { console.log('· contacts');   await seedContacts(manifest); }
-  if (want('simple')) { console.log('· notes (filed in folders), journals, tasks, events'); await seedSimple(manifest); }
-  if (want('pages')) { console.log('· pages (folders first, then pages in them)'); await seedPages(manifest); }
-  if (want('simple') || want('pages')) console.log(`· folder shares: ${await shareFolders(manifest)}`);
-  if (want('recall')) { console.log('· Recall: the native map, through the owner API'); await seedRecall(manifest); }
-  if (want('tables')) { console.log('· tables');     await seedTables(manifest); }
-  if (want('oddments')) { console.log('· secrets, formulas'); await seedOddments(manifest); }
+  if (all) {
+    // The order is the generator's CREATE_ORDER: a page or note may refer to
+    // anything created before it, never after.
+    console.log('· contacts');                        await seedContacts(manifest);
+    console.log(`· files: ${await seedFiles(manifest)} uploaded (real multipart, Tika runs for real)`);
+    console.log('· tables');                          await seedTables(manifest);
+    console.log(`· draws: ${await seedDraws(manifest)}`);
+    console.log('· secrets, formulas');               await seedOddments(manifest);
+    console.log(`· apps: ${await seedApps(manifest)} built and published`);
+    console.log('· pages (in their folders, references resolved)'); await seedPages(manifest);
+    console.log('· notes');                           await seedNotes(manifest);
+    console.log('· journal, tasks, events');          await seedDiary(manifest);
+    console.log('· folder shares (team and client)');
+    console.log(`  ${await shareFolders(manifest)} shared`);
+    console.log('· public links');
+    console.log(`  ${await publicLinks(manifest)} made`);
+  }
+  if (want('recall')) { console.log('· Recall: the native maps, through the owner API'); await seedRecall(manifest); }
   if (want('heartbeats')) console.log(`· heartbeats: ${await seedHeartbeats(manifest)}`);
-  if (want('draws')) console.log(`· draws: ${await seedDraws(manifest)}`);
   if (want('docs')) {
     console.log('· documentation collections (disk-backed, indexed in place)');
-    const cols = await seedDocCollections(manifest);
-    console.log(`  ${cols} registered`);
-  }
-  if (want('files')) {
-    console.log('· files (real multipart uploads → Tika runs for real)');
-    const files = await seedFiles(manifest);
-    console.log(`  ${files}/${manifest.files.length} uploaded`);
+    console.log(`  ${await seedDocCollections(manifest)} registered`);
   }
   let mails = 0;
   if (want('emails')) {
-    console.log('· emails (no API — written as the sync worker would)');
+    console.log('· emails (no API: written as the sync worker would)');
     mails = await seedEmails(sql, manifest, String(ownerId));
   }
   console.log('· backdating the timeline');
@@ -838,8 +881,8 @@ async function main() {
   const counts = await sql`select type, count(*)::int as n from nodes group by type order by n desc`;
   console.log('\nnodes in the brain:');
   for (const r of counts) console.log(`  ${String(r.type).padEnd(16)}${r.n}`);
-  console.log(`\n✓ seeded — ${dated} nodes backdated, ${mails} emails, seed time ${new Date(SEED_TIME).toISOString()}`);
-  console.log('  extraction runs asynchronously in server/api; use demo/seed/verify.ts to wait and assert.\n');
+  console.log(`\n✓ seeded: ${dated} nodes backdated, ${mails} emails, seed time ${new Date(SEED_TIME).toISOString()}`);
+  console.log('  extraction runs asynchronously in server/api; drain.sh waits for it and asserts.\n');
   await sql.end();
 }
 

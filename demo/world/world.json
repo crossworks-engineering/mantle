@@ -1,14 +1,14 @@
 {
-  "$comment": "The world bible. Every generated artifact references only what is defined here — see README.md. All domains RFC 2606. All people, companies and projects are fictional.",
-  "version": 1,
+  "$comment": "The world bible, v2 (2026-10-07): one small firm, five people, two projects, so every item in the demo belongs to the same story. Every generated artifact references only what is defined here (see README.md). All domains RFC 2606. All people, companies and projects are fictional.",
+  "version": 2,
 
   "owner": {
     "id": "alex-carter",
     "name": "Alex Carter",
     "pronouns": "they/them",
     "email": "alex@harbourlabs.example.com",
-    "role": "Principal engineer & founder, Harbour Labs",
-    "voice": "practical, dry humour, writes tight bullet-point notes, long-form only in journals"
+    "role": "Founder and principal engineer, Harbour Labs",
+    "voice": "practical, dry humour, writes tight bullet-point notes, long-form only in the journal"
   },
 
   "companies": [
@@ -17,54 +17,29 @@
       "name": "Harbour Labs",
       "domain": "harbourlabs.example.com",
       "kind": "own-studio",
-      "blurb": "Five-person engineering-design studio: controls, mechanical, and interior-technical fit-out work."
+      "blurb": "A three-person engineering studio: controls, telemetry and mechanical work for water utilities."
     },
     {
       "id": "meridian",
       "name": "Meridian Waterworks",
       "domain": "meridianww.example.org",
       "kind": "client",
-      "blurb": "Municipal water utility. Procedure-driven, revision-controlled documentation culture."
-    },
-    {
-      "id": "vantage",
-      "name": "Vantage Retail",
-      "domain": "vantageretail.example.net",
-      "kind": "client",
-      "blurb": "Regional retail chain running a multi-store fit-out programme."
-    },
-    {
-      "id": "copperline",
-      "name": "Copperline Energy",
-      "domain": "copperline.example.org",
-      "kind": "client",
-      "blurb": "Renewables developer exploring an island-able campus microgrid."
+      "blurb": "Municipal water utility, and the studio's one client in this story. Procedure-driven: every revision is approved in writing."
     },
     {
       "id": "brightpath",
       "name": "Brightpath Components",
       "domain": "brightpath.example.net",
       "kind": "supplier",
-      "blurb": "Panel-builder and instrumentation supplier; long lead times are a running theme."
+      "blurb": "Panel builder for the new RTU cabinet. Named in the story, never a correspondent."
     }
   ],
 
   "people": [
-    { "id": "rowan-mercer",    "name": "Rowan Mercer",    "pronouns": "he/him",   "email": "rowan@harbourlabs.example.com",   "company": "harbour-labs", "role": "Senior mechanical engineer; authors the PUMPHOUSE procedure revisions" },
-    { "id": "tessa-okafor",    "name": "Tessa Okafor",    "pronouns": "she/her",  "email": "tessa@harbourlabs.example.com",   "company": "harbour-labs", "role": "Controls & telemetry engineer; owns the SCADA changeover" },
-    { "id": "dana-whitfield",  "name": "Dana Whitfield",  "pronouns": "they/them","email": "dana@harbourlabs.example.com",    "company": "harbour-labs", "role": "Design lead; STOREFRONT drawings and finishes schedules" },
-    { "id": "felix-arendse",   "name": "Felix Arendse",   "pronouns": "he/him",   "email": "felix@harbourlabs.example.com",   "company": "harbour-labs", "role": "Operations & finance; keeper of the budget tables" },
-    { "id": "june-castellanos","name": "June Castellanos","pronouns": "she/her",  "email": "june@harbourlabs.example.com",    "company": "harbour-labs", "role": "Project coordinator; minutes, snag lists, chasing actions" },
-    { "id": "gordon-bekker",   "name": "Gordon Bekker",   "pronouns": "he/him",   "email": "g.bekker@meridianww.example.org", "company": "meridian",     "role": "Plant superintendent, Pump Station 3; approves every procedure revision" },
-    { "id": "lena-marsh",      "name": "Lena Marsh",      "pronouns": "she/her",  "email": "l.marsh@meridianww.example.org",  "company": "meridian",     "role": "SCADA technician; raises most of the technical queries" },
-    { "id": "harold-venn",     "name": "Harold Venn",     "pronouns": "he/him",   "email": "h.venn@meridianww.example.org",   "company": "meridian",     "role": "Procurement officer; purchase orders and delivery disputes" },
-    { "id": "nadia-flores",    "name": "Nadia Flores",    "pronouns": "she/her",  "email": "nflores@vantageretail.example.net","company": "vantage",     "role": "Fit-out programme manager; owns the store pipeline" },
-    { "id": "marcus-bell",     "name": "Marcus Bell",     "pronouns": "he/him",   "email": "mbell@vantageretail.example.net", "company": "vantage",      "role": "Regional facilities lead; site-access arrangements" },
-    { "id": "ingrid-solberg",  "name": "Ingrid Solberg",  "pronouns": "she/her",  "email": "ingrid@copperline.example.org",   "company": "copperline",   "role": "Development director; commissioned the ISLAND study" },
-    { "id": "theo-mokoena",    "name": "Theo Mokoena",    "pronouns": "he/him",   "email": "theo@copperline.example.org",     "company": "copperline",   "role": "Site engineer; source of the load-profile data" },
-    { "id": "sam-pruitt",      "name": "Sam Pruitt",      "pronouns": "they/them","email": "s.pruitt@brightpath.example.net", "company": "brightpath",   "role": "Account manager; bearer of lead-time news" },
-    { "id": "jamie-carter",    "name": "Jamie Carter",    "pronouns": "she/her",  "email": "jamie.carter@example.net",        "company": null,           "role": "Alex's partner; appears in personal events, journals, and the lathe project" },
-    { "id": "wren-adler",      "name": "Wren Adler",      "pronouns": "they/them","email": "wren.adler@example.net",          "company": null,           "role": "Running-club friend; TRAILRUN training partner and book-club instigator" }
+    { "id": "tessa-okafor",  "name": "Tessa Okafor",  "pronouns": "she/her", "email": "tessa@harbourlabs.example.com",  "company": "harbour-labs", "role": "Controls and telemetry engineer; owns the RTU, the radio link and the loop checks" },
+    { "id": "rowan-mercer",  "name": "Rowan Mercer",  "pronouns": "he/him",  "email": "rowan@harbourlabs.example.com",  "company": "harbour-labs", "role": "Mechanical and energy engineer; pumps, and lead on the standby power study" },
+    { "id": "gordon-bekker", "name": "Gordon Bekker", "pronouns": "he/him",  "email": "g.bekker@meridianww.example.org", "company": "meridian",     "role": "Plant superintendent, Pump Station 3; approves every procedure revision" },
+    { "id": "lena-marsh",    "name": "Lena Marsh",    "pronouns": "she/her", "email": "l.marsh@meridianww.example.org",  "company": "meridian",     "role": "SCADA technician at Meridian; witnesses the loop checks and raised TQ-004" }
   ],
 
   "projects": [
@@ -74,123 +49,59 @@
       "title": "Pump Station 3 telemetry retrofit",
       "client": "meridian",
       "kind": "work",
-      "summary": "Replace the failing PS3 telemetry with a modern SCADA changeover: new RTU, instrument loop checks, commissioning, and revision-controlled procedures throughout.",
-      "vocabulary": ["telemetry", "commissioning", "changeover", "RTU", "loop check", "PS3", "snag list", "rev B"],
-      "genres": ["procedure-family", "commissioning-plan", "site-visit-report", "technical-query", "snag-table", "minutes"],
-      "arc": "kickoff at -150d; procedure rev A -120d, rev B -45d, rev C -10d; commissioning window opens +7d; the demo catches the project at its busiest."
-    },
-    {
-      "id": "storefront",
-      "codename": "STOREFRONT",
-      "title": "Vantage fit-out programme, tranche 2",
-      "client": "vantage",
-      "kind": "work",
-      "summary": "Eight-store fit-out pipeline: surveys, drawings, procurement, install. Lives in tables — pipeline with currency and status columns, budget with a sum aggregate.",
-      "vocabulary": ["fit-out", "pipeline", "tranche", "finishes schedule", "practical completion", "store 214"],
-      "genres": ["pipeline-table", "budget-file", "drawing-file", "minutes", "schedule-events"],
-      "arc": "tranche 2 running -90d to +60d; two stores at practical completion, one in a snag dispute, five mid-flight."
+      "summary": "Replace the failing telemetry at Pump Station 3 (PS3): a new RTU cabinet, an extended radio link to the Meridian control room, loop checks on every signal, and a changeover procedure issued as revisions (rev A, then rev B).",
+      "vocabulary": ["telemetry", "RTU", "changeover", "loop check", "commissioning", "rev B", "TQ-004", "snag list"],
+      "arc": "kickoff -84d; rev A issued -60d; TQ-004 raised -28d; rev B supersedes rev A -21d; loop checks day 1 -12d; day 2 witnessed +3d; commissioning window opens +7d."
     },
     {
       "id": "island",
       "codename": "ISLAND",
-      "title": "Copperline campus microgrid feasibility",
-      "client": "copperline",
+      "title": "PS3 standby power study",
+      "client": "meridian",
       "kind": "work",
-      "summary": "Desk study: can the campus island for four hours? Load profiles, storage sizing, islanding scheme options, and a final report due shortly after seed time.",
-      "vocabulary": ["microgrid", "islanding", "load profile", "storage sizing", "feasibility", "peak shaving"],
-      "genres": ["research-page", "data-table-with-formulas", "reference-file", "technical-query"],
-      "arc": "started -60d; draft findings page in review now; final report due +14d — a live deadline the demo's tasks and chat turns can point at."
-    },
-    {
-      "id": "handbook",
-      "codename": "HANDBOOK",
-      "title": "Harbour Labs studio handbook",
-      "client": "harbour-labs",
-      "kind": "internal",
-      "summary": "The studio's operating manual as nested pages: how projects run, review gates, templates, leave, kit lists. The sub-page tree the pages UI shows off.",
-      "vocabulary": ["review gate", "handbook", "template", "onboarding"],
-      "genres": ["nested-pages", "documentation"],
-      "arc": "long-lived; edited in small commits across the whole timeline."
-    },
-    {
-      "id": "lathe",
-      "codename": "LATHE",
-      "title": "Workshop lathe restoration",
-      "client": null,
-      "kind": "personal",
-      "summary": "Restoring a 1968 bench lathe with Jamie: teardown notes, parts hunt, before/after photos, a parts-and-costs table.",
-      "vocabulary": ["lathe", "headstock", "spindle", "ways", "backgear", "parts hunt"],
-      "genres": ["journal", "note", "photo-file", "parts-table"],
-      "arc": "weekend cadence across the timeline; headstock bearing saga resolves around -20d."
-    },
-    {
-      "id": "trailrun",
-      "codename": "TRAILRUN",
-      "title": "Coastal Trail Half training",
-      "client": null,
-      "kind": "personal",
-      "summary": "Twelve-week block with Wren toward the Coastal Trail Half at +21d: training events, journal entries with mood, one rolled ankle scare.",
-      "vocabulary": ["long run", "taper", "trail half", "splits", "ankle"],
-      "genres": ["schedule-events", "journal", "note"],
-      "arc": "3 runs/week; ankle scare -30d; taper begins +7d; race day +21d — a future event the dashboard can show."
+      "summary": "After the storm night when the PS3 diesel generator failed to start, Meridian asked whether the station can ride through a four-hour grid outage on solar and a battery instead. Load profile, storage sizing, three options, findings due shortly after seed time.",
+      "vocabulary": ["islanding", "standby power", "battery autonomy", "load profile", "storage sizing", "transfer switch"],
+      "arc": "storm outage -50d; study commissioned -45d; logger data from Lena -30d; draft findings -6d; findings review with Gordon +14d."
     }
   ],
 
   "vocabulary": [
-    { "$comment": "spread lists NODE TYPES (what search filters by). Minutes, site reports and technical queries are all notes — the genre lives in tags, the type is what makes a cross-type hit.",
-      "term": "commissioning",  "spread": ["page", "task", "email", "journal", "chat"], "project": "pumphouse" },
-    { "term": "telemetry",      "spread": ["page", "note", "email", "chat"],            "project": "pumphouse" },
-    { "term": "snag list",      "spread": ["table", "task", "email", "note"],           "project": "pumphouse" },
-    { "term": "changeover",     "spread": ["page", "event", "email", "journal"],        "project": "pumphouse" },
-    { "term": "loop check",     "spread": ["page", "task", "note"],                     "project": "pumphouse" },
-    { "term": "fit-out",        "spread": ["table", "email", "event", "chat"],          "project": "storefront" },
-    { "term": "practical completion", "spread": ["table", "email", "task"],             "project": "storefront" },
-    { "term": "islanding",      "spread": ["page", "table", "note", "chat"],            "project": "island" },
-    { "term": "load profile",   "spread": ["table", "page", "email"],                   "project": "island" },
-    { "term": "feasibility",    "spread": ["page", "task", "journal", "chat"],          "project": "island" },
-    { "term": "review gate",    "spread": ["page", "task", "note"],                     "project": "handbook" },
-    { "term": "headstock",      "spread": ["journal", "note", "table", "chat"],         "project": "lathe" },
-    { "term": "taper",          "spread": ["event", "journal", "note"],                 "project": "trailrun" },
-    { "term": "lead time",      "spread": ["email", "task", "table", "note"],           "project": "pumphouse" }
-  ],
-
-  "genres": [
-    { "id": "procedure-family",  "node": "page",  "features": ["supersession chain rev A→B→C", "content-currency annotation"], "note": "The signature genre: procedures exist as revision families so retrieval demonstrably prefers the living revision." },
-    { "id": "nested-pages",      "node": "page",  "features": ["sub-page tree ≥3 deep"] },
-    { "id": "commissioning-plan","node": "page",  "features": ["long doc → many chunks"] },
-    { "id": "research-page",     "node": "page",  "features": ["cross-references", "mermaid diagram"] },
-    { "id": "site-visit-report", "node": "note",  "features": ["dated series"] },
-    { "id": "technical-query",   "node": "note",  "features": ["question→answer pairs", "email follow-ups"] },
-    { "id": "minutes",           "node": "note",  "features": ["recurring series", "action items feeding tasks"] },
-    { "id": "pipeline-table",    "node": "table", "features": ["currency column", "select column", "sum aggregate"] },
-    { "id": "parts-table",       "node": "table", "features": ["formula column"] },
-    { "id": "data-table-with-formulas", "node": "table", "features": ["formula columns", "aggregate"] },
-    { "id": "budget-file",       "node": "file",  "features": ["xlsx → table import path"] },
-    { "id": "drawing-file",      "node": "file",  "features": ["pdf"] },
-    { "id": "reference-file",    "node": "file",  "features": ["pdf", "docx"] },
-    { "id": "photo-file",        "node": "file",  "features": ["png/jpg"] },
-    { "id": "schedule-events",   "node": "event", "features": ["recurring", "future events past seed time"] },
-    { "id": "journal",           "node": "journal", "features": ["mood", "first-person"] },
-    { "id": "documentation",     "node": "documentation", "features": ["on-disk collection, retrieval-only"] }
+    { "$comment": "spread lists NODE TYPES (what search filters by), so search shows real cross-type hits.",
+      "term": "changeover",      "spread": ["page", "email", "journal", "draw"],          "project": "pumphouse" },
+    { "term": "loop check",      "spread": ["page", "note", "task", "table", "event"],    "project": "pumphouse" },
+    { "term": "TQ-004",          "spread": ["note", "email", "page"],                     "project": "pumphouse" },
+    { "term": "commissioning",   "spread": ["page", "task", "event", "email", "journal"], "project": "pumphouse" },
+    { "term": "snag list",       "spread": ["table", "note", "page"],                     "project": "pumphouse" },
+    { "term": "battery autonomy","spread": ["formula", "page", "table", "app"],           "project": "island" },
+    { "term": "load profile",    "spread": ["table", "note", "email", "page"],            "project": "island" },
+    { "term": "standby generator","spread": ["journal", "page", "draw", "note"],          "project": "island" }
   ],
 
   "timeline": {
     "unit": "days_from_seed",
-    "span": [-180, 21],
+    "span": [-90, 21],
     "anchors": [
-      { "at": -150, "what": "PUMPHOUSE kickoff meeting" },
-      { "at": -120, "what": "PS3 changeover procedure rev A issued" },
-      { "at": -90,  "what": "STOREFRONT tranche 2 starts" },
-      { "at": -60,  "what": "ISLAND study commissioned" },
-      { "at": -45,  "what": "procedure rev B supersedes rev A (scope change after Bekker review)" },
-      { "at": -30,  "what": "TRAILRUN ankle scare" },
-      { "at": -20,  "what": "LATHE headstock bearing finally sourced via Brightpath" },
-      { "at": -10,  "what": "procedure rev C supersedes rev B (loop-check order corrected per Marsh)" },
-      { "at": -3,   "what": "STOREFRONT store 214 snag dispute flares" },
-      { "at": 7,    "what": "PUMPHOUSE commissioning window opens; TRAILRUN taper begins" },
-      { "at": 14,   "what": "ISLAND final report due" },
-      { "at": 21,   "what": "Coastal Trail Half race day" }
-    ],
-    "density": "activity ramps toward seed time: ~40% of dated artifacts in the last 30 days"
+      { "at": -84, "what": "PUMPHOUSE kickoff at PS3 with Gordon Bekker" },
+      { "at": -60, "what": "Changeover procedure rev A issued" },
+      { "at": -50, "what": "Storm night: grid down, the PS3 diesel fails to start, the station is dry for three hours" },
+      { "at": -45, "what": "Gordon commissions the standby power study (ISLAND)" },
+      { "at": -30, "what": "Lena sends the winter logger data" },
+      { "at": -28, "what": "Lena raises TQ-004: what does the delivery valve do on comms loss?" },
+      { "at": -21, "what": "Rev B supersedes rev A: loop check order corrected, TQ-004 answer written in" },
+      { "at": -12, "what": "Loop checks day 1 at PS3" },
+      { "at": -6,  "what": "Standby power draft findings ready for internal review" },
+      { "at": 3,   "what": "Loop checks day 2, witnessed by Lena Marsh" },
+      { "at": 7,   "what": "PS3 commissioning window opens (five days)" },
+      { "at": 14,  "what": "Standby power findings review with Gordon" }
+    ]
+  },
+
+  "access": {
+    "$comment": "The four sharing levels, shown the same way in every workspace that can share: a Private folder (admin), a Team folder (shared with the team), a Client folder (shared with clients, here Meridian) and one item at the top level with an open link (public). Embeds only ever point at the same folder tier, so a share never publishes anything the generator did not count.",
+    "folders": {
+      "private": { "name": "Private",          "icon": "lucide:lock",      "color": "slate" },
+      "team":    { "name": "Team",             "icon": "lucide:users",     "color": "blue",  "share": "team" },
+      "client":  { "name": "Client: Meridian", "icon": "lucide:handshake", "color": "amber", "share": "client" }
+    }
   }
 }

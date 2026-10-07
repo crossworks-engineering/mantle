@@ -1,35 +1,41 @@
-// Generate the demo brain's content. Deterministic: same --seed → identical
+// Generate the demo brain's content. Deterministic: same --seed, identical
 // bytes, everywhere. Emits an intermediate representation (manifest.json)
-// plus REAL file bytes — the P3 seeder consumes both and drives the app's
-// own APIs, so nothing here writes to a database.
+// plus REAL file bytes; the seeder consumes both and drives the app's own
+// APIs, so nothing here writes to a database.
 //
 // Dates stay OFFSETS in the IR and are resolved to absolute timestamps at
-// SEED time, which is what keeps a freshly seeded demo always looking
-// current.
+// SEED time, which keeps a freshly seeded demo always looking current.
+//
+// v2 (2026-10-07): one firm, five people, two projects, a handful of
+// polished items per workspace, and the four sharing levels shown the same
+// way in every workspace that can share (content/folders.mjs).
 //
 //   node gen.mjs [--seed 1] [--out out]
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { makeRng } from './lib/rng.mjs';
-import { targets, SPAN } from './lib/world.mjs';
-import { pdf, png, xlsx, docx } from './lib/binfmt.mjs';
+import { targets, SPAN, worldDir } from './lib/world.mjs';
+import { pdf, xlsx, docx } from './lib/binfmt.mjs';
 
-import * as pumphouse from './content/pumphouse.mjs';
-import * as storefront from './content/storefront.mjs';
-import * as island from './content/island.mjs';
-import * as handbook from './content/handbook.mjs';
-import * as personal from './content/personal.mjs';
-import * as studio from './content/studio.mjs';
-import * as traffic from './content/traffic.mjs';
-import * as turns from './content/turns.mjs';
-import * as showcase from './content/showcase.mjs';
-import * as automation from './content/automation.mjs';
 import * as folders from './content/folders.mjs';
-import { folderFor, INDEX_HERE, TEAM_TABLE_IDS } from './content/folders.mjs';
+import * as files from './content/files.mjs';
+import * as tables from './content/tables.mjs';
+import * as draws from './content/draws.mjs';
+import * as formulas from './content/formulas.mjs';
+import * as apps from './content/apps.mjs';
+import * as pages from './content/pages.mjs';
+import * as notes from './content/notes.mjs';
+import * as work from './content/work.mjs';
+import * as email from './content/email.mjs';
+import * as recall from './content/recall.mjs';
+import * as automation from './content/automation.mjs';
+import * as docs from './content/docs.mjs';
+import * as turns from './content/turns.mjs';
+import { tierFolder, TREE_OF } from './content/folders.mjs';
 
-const MODULES = { studio, pumphouse, storefront, island, handbook, personal, traffic, turns, showcase, automation, folders };
+const MODULES = { folders, files, tables, draws, formulas, apps, pages, notes, work, email, recall, automation, docs, turns };
 
 const args = process.argv.slice(2);
 const argVal = (flag, dflt) => { const i = args.indexOf(flag); return i === -1 ? dflt : args[i + 1]; };
@@ -37,104 +43,134 @@ const SEED = Number(argVal('--seed', 1));
 const here = dirname(fileURLToPath(import.meta.url));
 const OUT = join(here, argVal('--out', 'out'));
 
+const KEYS = ['nodes', 'tables', 'emails', 'files', 'docs', 'turns', 'heartbeats', 'draws', 'folders', 'recall_maps', 'apps'];
+
+/** The order the seeder creates things in. A `gen:` reference may only point
+ *  at something created earlier, because the real id must exist by then. */
+export const CREATE_ORDER = ['contact', 'file', 'table', 'draw', 'formula', 'app', 'page', 'note', 'journal', 'task', 'event', 'secret'];
+
+/** Every item that can live in a tree, with its node type. */
+export function treeItems(all) {
+  return [
+    ...all.nodes.map((n) => ({ item: n, type: n.kind })),
+    ...all.tables.map((t) => ({ item: t, type: 'table' })),
+    ...all.files.map((f) => ({ item: f, type: 'file' })),
+    ...all.draws.map((d) => ({ item: d, type: 'draw' })),
+    ...all.apps.map((a) => ({ item: a, type: 'app' })),
+  ];
+}
+/** The folder an item sits in (generator id), or null for the top level. */
+export const folderOf = (item) => item.meta?.folder ?? item.folder ?? null;
+
 export function generateAll(seed = 1) {
   const rng = makeRng(seed);
-  const all = { nodes: [], tables: [], emails: [], files: [], docs: [], turns: [], heartbeats: [], draws: [], folders: [], recall_maps: [] };
+  const all = Object.fromEntries(KEYS.map((k) => [k, []]));
   for (const [name, mod] of Object.entries(MODULES)) {
-    const r = mod.generate(rng);
-    for (const key of Object.keys(all)) for (const item of r[key] ?? []) all[key].push({ ...item, _module: name });
+    const r = mod.generate(rng.fork(name));
+    for (const key of KEYS) for (const item of r[key] ?? []) all[key].push({ ...item, _module: name });
   }
-  // File pages and notes in their project's folder (content/folders.mjs). A
-  // node that names its own folder keeps it; null is the top level.
-  all.nodes = all.nodes.map((n) => {
-    if (n.kind !== 'page' && n.kind !== 'note') return n;
-    const folder = n.meta?.folder !== undefined ? n.meta.folder : folderFor(n);
-    const here = INDEX_HERE[n.id];
-    return {
-      ...n,
-      ...(here ? { body: `${n.body}\n\n## In this folder\n\n${here}\n\n[Folder index](folder:here)` } : {}),
-      meta: { ...n.meta, folder },
-    };
-  });
-  // What each share must reach: the items in the folder and below it, and the
-  // folders below it. The seeder confirms a share only for exactly this many
-  // changed rows, and verify.ts asserts the totals (content/folders.mjs).
-  const below = (id) => all.folders.filter((f) => f.parent === id).flatMap((f) => [f.id, ...below(f.id)]);
+  // A tier becomes a folder (or, for public, the top level and a link).
+  const place = (item, type) => {
+    if (!item.tier) return item;
+    const folder = tierFolder(type, item.tier);
+    const pub = item.tier === 'public' ? { public: true } : {};
+    return item.meta !== undefined && type !== 'table' && type !== 'file' && type !== 'draw' && type !== 'app'
+      ? { ...item, ...pub, meta: { ...item.meta, folder } }
+      : { ...item, ...pub, folder };
+  };
+  all.nodes = all.nodes.map((n) => place(n, n.kind));
+  all.tables = all.tables.map((t) => place(t, 'table'));
+  all.files = all.files.map((f) => place(f, 'file'));
+  all.draws = all.draws.map((d) => place(d, 'draw'));
+  all.apps = all.apps.map((a) => place(a, 'app'));
+  // What each share must reach: the items in the folder (no subfolders here).
+  const items = treeItems(all);
   all.folders = all.folders.map((f) => {
     if (!f.share) return f;
-    const subtree = below(f.id);
-    const inside = new Set([f.id, ...subtree]);
-    return { ...f, expect: { items: all.nodes.filter((n) => inside.has(n.meta?.folder)).length, folders: subtree.length } };
+    const inside = items.filter(({ item }) => folderOf(item) === f.id).length;
+    return { ...f, expect: { items: inside, folders: 0 } };
   });
-  // Tables shown to the team by their own level.
-  all.tables = all.tables.map((t) => (TEAM_TABLE_IDS.includes(t.id) ? { ...t, level: 'team' } : t));
   return all;
 }
 
 /** The brain's limit: a folder sits one to three levels below its kind's root. */
 export const MAX_FOLDER_DEPTH = 3;
 
-/** Structural problems in the folders and the Recall maps, as messages. The
- *  brain refuses each of these on the write, so finding them here turns a
- *  failed seed (minutes in) into a failed generate (at once). */
+// ── References inside page and note bodies ──────────────────────────────────
+// `media:gen:<id>` (an image or a file), `page:gen:<id>` (a page link card)
+// embed; `mention:node:gen:<id>` links. An embed must stay in its own tier
+// (a share must never reach through it); a mention may point at anything the
+// item's readers can also read.
+const REF_RE = /\((media|page|mention:node|draw):gen:([A-Za-z0-9._-]+)\)/g;
+export function refsOf(body) {
+  return [...(body ?? '').matchAll(REF_RE)].map((m) => ({ scheme: m[1], id: m[2], embed: m[1] !== 'mention:node' }));
+}
+/** Which tiers a reader of `from` can also read. */
+const READABLE = {
+  private: ['private', 'team', 'client', 'public'],
+  team: ['team', 'client', 'public'],
+  client: ['client'],
+  public: ['public'],
+};
+
 export function structuralProblems(all) {
   const problems = [];
   const folderById = new Map(all.folders.map((f) => [f.id, f]));
-  const depthOf = (f, seen = new Set()) => {
-    if (!f.parent) return 1;
-    if (seen.has(f.id)) return Infinity;
-    seen.add(f.id);
-    const parent = folderById.get(f.parent);
-    return parent ? 1 + depthOf(parent, seen) : Infinity;
-  };
   for (const f of all.folders) {
     if (f.parent && !folderById.has(f.parent)) problems.push(`folder ${f.id}: parent ${f.parent} does not exist`);
-    else if (f.parent && folderById.get(f.parent).kind !== f.kind) problems.push(`folder ${f.id}: parent ${f.parent} is in another tree`);
-    else if (depthOf(f) > MAX_FOLDER_DEPTH) problems.push(`folder ${f.id}: deeper than ${MAX_FOLDER_DEPTH} levels`);
+    if (f.share && !['files', 'notes', 'pages', 'tables', 'draw', 'formulas', 'apps'].includes(f.kind)) problems.push(`folder ${f.id}: a ${f.kind} folder cannot be shared`);
+    if (f.share && !f.expect?.items) problems.push(`folder ${f.id}: shared, but nothing is in it`);
   }
-  const treeOf = { page: 'pages', note: 'notes' };
-  for (const n of all.nodes) {
-    // These two hold for every node, a top-level page included.
-    if (n.meta?.parent_id) problems.push(`${n.id}: pages do not nest, use meta.folder`);
-    for (const m of (n.body ?? '').matchAll(/\(folder:gen:([^)\s]+)\)/g)) {
-      if (!folderById.has(m[1])) problems.push(`${n.id}: Folder index names unknown folder ${m[1]}`);
+  const treeKindOf = { ...TREE_OF, task: 'tasks', event: 'events', contact: 'contacts', secret: 'secrets' };
+  const items = treeItems(all);
+  const byId = new Map(items.map(({ item, type }) => [item.id, { item, type }]));
+  const rank = (type) => CREATE_ORDER.indexOf(type);
+  const position = new Map(items.map(({ item }, i) => [item.id, i]));
+  for (const { item, type } of items) {
+    const folder = folderOf(item);
+    if (folder != null) {
+      const f = folderById.get(folder);
+      if (!f) problems.push(`${item.id}: folder ${folder} does not exist`);
+      else if (f.kind !== treeKindOf[type]) problems.push(`${item.id}: a ${type} cannot sit in a ${f.kind} folder`);
     }
-    const folder = n.meta?.folder;
-    if (folder == null) {
-      if (/\(folder:here\)/.test(n.body ?? '')) problems.push(`${n.id}: lists "this folder" but sits at the top level`);
-      continue;
+    if (item.public && folder != null) problems.push(`${item.id}: a public item sits at the top level`);
+    const fromTier = item.tier ?? 'private';
+    for (const ref of refsOf(item.body)) {
+      const target = byId.get(ref.id);
+      if (!target) { problems.push(`${item.id}: ${ref.scheme}:gen:${ref.id} names nothing`); continue; }
+      const before = rank(target.type) < rank(type) || (target.type === type && position.get(ref.id) < position.get(item.id));
+      if (!before) problems.push(`${item.id}: refers to ${ref.id}, which the seeder creates later`);
+      const toTier = target.item.tier ?? 'private';
+      if (ref.embed && fromTier !== 'private' && toTier !== fromTier) problems.push(`${item.id} (${fromTier}) embeds ${ref.id} (${toTier}): embeds stay in their tier`);
+      if (!ref.embed && !READABLE[fromTier].includes(toTier)) problems.push(`${item.id} (${fromTier}) mentions ${ref.id} (${toTier}), which its readers cannot read`);
     }
-    const f = folderById.get(folder);
-    if (!f) problems.push(`${n.id}: folder ${folder} does not exist`);
-    else if (f.kind !== treeOf[n.kind]) problems.push(`${n.id}: a ${n.kind} cannot sit in a ${f.kind} folder`);
-  }
-  for (const id of TEAM_TABLE_IDS) {
-    if (!all.tables.some((t) => t.id === id)) problems.push(`team table ${id} does not exist`);
   }
   for (const map of all.recall_maps) {
     const slugs = new Set(['start', ...map.cards.map((c) => c.slug)]);
-    if (slugs.size !== map.cards.length + 1) problems.push(`recall ${map.slug}: duplicate card slug (or a card named 'start', the entry card's slug)`);
+    if (slugs.size !== map.cards.length + 1) problems.push(`recall ${map.slug}: duplicate card slug (or a card named 'start')`);
     if (!map.enter_when?.trim()) problems.push(`recall ${map.slug}: no enter_when line`);
+    const reached = new Set();
     for (const card of [{ slug: 'start', ...map.entry }, ...map.cards]) {
       if (card.kind === 'prompt' && !card.use_when?.trim()) problems.push(`recall ${map.slug}/${card.slug}: a prompt needs a use_when line`);
       for (const o of card.options ?? []) {
+        reached.add(o.target);
         if (!slugs.has(o.target)) problems.push(`recall ${map.slug}/${card.slug}: option "${o.label}" leads to unknown card ${o.target}`);
         if (!o.use_when?.trim()) problems.push(`recall ${map.slug}/${card.slug}: option "${o.label}" has no use_when line`);
       }
     }
+    for (const c of map.cards) if (!reached.has(c.slug)) problems.push(`recall ${map.slug}: nothing leads to card ${c.slug}`);
   }
   return problems;
 }
 
-// Render a file spec to real bytes. The P3 ingest runs Tika and the image
+// Render a file spec to real bytes. The seed's ingest runs Tika and the image
 // path over these, so wrong magic bytes would fail there, not here.
 export function renderFile(f) {
   switch (f.kind) {
+    case 'image': return readFileSync(join(worldDir, 'art', f.name));
     case 'pdf':  return pdf(f.title, f.text);
-    case 'png':  return png(320, 200, f.pngSeed ?? 1);
     case 'xlsx': return xlsx(f.sheet ?? 'Sheet1', f.rows);
     case 'docx': return docx(f.blocks);
-    case 'md':   return Buffer.from(f.text.join('\n\n'), 'utf8');
     default: throw new Error(`unknown file kind '${f.kind}' (${f.id})`);
   }
 }
@@ -142,10 +178,9 @@ export function renderFile(f) {
 function main() {
   const all = generateAll(SEED);
 
-  // Fail loudly on anything structurally wrong before writing a byte.
   const problems = [];
   const ids = new Set();
-  for (const key of ['nodes', 'tables', 'emails', 'files', 'folders', 'recall_maps']) {
+  for (const key of ['nodes', 'tables', 'emails', 'files', 'folders', 'recall_maps', 'draws', 'apps']) {
     for (const item of all[key]) {
       if (ids.has(item.id)) problems.push(`duplicate id: ${item.id}`);
       ids.add(item.id);
@@ -160,19 +195,17 @@ function main() {
   mkdirSync(join(OUT, 'files'), { recursive: true });
   mkdirSync(join(OUT, 'docs'), { recursive: true });
 
-  // File bytes + content hashes (hashes make the determinism test cheap).
   const fileIndex = all.files.map((f) => {
     const bytes = renderFile(f);
     writeFileSync(join(OUT, 'files', f.name), bytes);
     return {
-      id: f.id, name: f.name, title: f.title, branch: f.branch, kind: f.kind,
-      offset: f.offset, bytes: bytes.length,
+      id: f.id, name: f.name, title: f.title, kind: f.kind, tier: f.tier, folder: f.folder ?? null,
+      public: f.public ?? false, offset: f.offset, bytes: bytes.length,
       sha256: createHash('sha256').update(bytes).digest('hex'),
       text: f.text ?? null, _module: f._module,
     };
   });
 
-  // Documentation collection: on-disk markdown, indexed retrieval-only.
   for (const d of all.docs) {
     const p = join(OUT, 'docs', d.collection, d.relpath);
     mkdirSync(dirname(p), { recursive: true });
@@ -183,17 +216,15 @@ function main() {
     seed: SEED,
     span: SPAN,
     generated_by: 'demo/generator/gen.mjs',
-    note: 'Offsets are days relative to SEED TIME and are resolved by the P3 seeder. All content is fictional; see demo/world/.',
+    note: 'Offsets are days relative to SEED TIME and are resolved by the seeder. All content is fictional; see demo/world/.',
     counts: {
-      // files / tables / documentation are node TYPES in Mantle but travel in
-      // their own IR arrays — fold them in so the target report counts what
-      // the brain will actually hold.
       nodes_by_kind: {
         ...all.nodes.reduce((a, n) => ((a[n.kind] = (a[n.kind] ?? 0) + 1), a), {}),
         file: all.files.length,
         table: all.tables.length,
         documentation: all.docs.length,
         draw: all.draws.length,
+        app: all.apps.length,
       },
       emails: all.emails.length, turns: all.turns.length, heartbeats: all.heartbeats.length,
       folders: all.folders.length, recall_maps: all.recall_maps.length,
@@ -201,13 +232,12 @@ function main() {
     nodes: all.nodes, tables: all.tables, emails: all.emails,
     files: fileIndex, docs: all.docs.map(({ collection, relpath, title }) => ({ collection, relpath, title })),
     turns: all.turns, heartbeats: all.heartbeats, draws: all.draws,
-    folders: all.folders, recall_maps: all.recall_maps,
+    folders: all.folders, recall_maps: all.recall_maps, apps: all.apps,
   };
   writeFileSync(join(OUT, 'manifest.json'), JSON.stringify(manifest, null, 2));
 
-  // Report against targets — under-production is the v1 failure, so say so.
-  const counts = manifest.counts.nodes_by_kind;
-  console.log(`\ndemo generator — seed ${SEED} → ${OUT}\n`);
+  const counts = { ...manifest.counts.nodes_by_kind, recall: all.recall_maps.length };
+  console.log(`\ndemo generator: seed ${SEED} → ${OUT}\n`);
   const rows = [];
   for (const [kind, spec] of Object.entries(targets.nodes)) {
     const n = counts[kind] ?? 0;
@@ -217,7 +247,7 @@ function main() {
   const pad = (s, n) => String(s).padEnd(n);
   console.log(`${pad('type', 16)}${pad('got', 7)}${pad('target', 8)}${pad('min', 7)}status`);
   for (const r of rows) console.log(`${pad(r[0], 16)}${pad(r[1], 7)}${pad(r[2], 8)}${pad(r[3], 7)}${r[4]}`);
-  console.log(`\nfiles ${all.files.length} · docs ${all.docs.length} · scripted turns ${all.turns.length} · folders ${all.folders.length} · recall maps ${all.recall_maps.length}`);
+  console.log(`\nfolders ${all.folders.length} · shared ${all.folders.filter((f) => f.share).length} · public items ${treeItems(all).filter(({ item }) => item.public).length} · docs ${all.docs.length} · owner chats ${all.turns.length}`);
   const under = rows.filter((r) => r[4] === 'UNDER');
   if (under.length) {
     console.error(`\n✗ ${under.length} type(s) under the minimum: ${under.map((r) => r[0]).join(', ')}`);

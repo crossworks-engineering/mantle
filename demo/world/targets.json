@@ -1,51 +1,46 @@
 {
-  "$comment": "Volume targets for the generated demo brain. Derived 2026-07-30 from shape surveys of three real brains (numbers only — see README.md provenance). 'target' guides the generator (P2); 'min' is asserted by the layer-2 seed-integration tests — a seed run below a min is a FAILED run, which is exactly the v1 failure mode (37 nodes, silently).",
-  "version": 1,
-
-  "survey": {
-    "$comment": "What the donors actually looked like, for calibration honesty. dev = documentation-heavy dev brain; client = production client brain (heavy assistant usage); personal = email-bearing personal brain.",
-    "dev":      { "nodes": 730,  "chunks": 1686, "chunks_per_node": 2.41, "facts": 1901, "entities": 630, "entity_edges": 1842, "traces": 5428, "steps_per_trace": 7.9,  "assistant_messages": 40,  "span_days": 28 },
-    "client":   { "nodes": 503,  "chunks": 1792, "chunks_per_node": 5.38, "facts": 1036, "entities": 720, "entity_edges": 2317, "traces": 8108, "steps_per_trace": 9.4,  "assistant_messages": 627, "nested_pages": 32, "span_days": 37 },
-    "personal": { "emails": 235, "events": 10, "runs": 2 }
-  },
+  "$comment": "Volume targets for the demo brain, v2 (2026-10-07, Jason's decisions on the demo refresh task): quality over quantity, 3 to 5 polished items per workspace, all in one story (world.json). 'target' is what the generator writes; 'min' is what verify.ts asserts after the seed. A seed below a min is a FAILED seed. The v1 volumes (about 760 nodes, 320 emails, 250 traces) are gone on purpose: they were filler, and filler is what made the old demo noisy.",
+  "version": 2,
 
   "nodes": {
-    "note":          { "target": 130, "min": 90,  "notes": "site-visit series, technical queries, minutes, personal notes" },
-    "journal":       { "target": 100, "min": 70,  "notes": "work + LATHE + TRAILRUN with mood; first-person" },
-    "task":          { "target": 90,  "min": 60,  "notes": "≥15 open at seed time, ≥5 due in the future window" },
-    "page":          { "target": 70,  "min": 50,  "notes": "filed in folders at least two levels deep (pages do not nest on main since v0.232.365); ≥3 procedure revision families (supersession)" },
-    "file":          { "target": 110, "min": 70,  "notes": "mix: pdf drawings/references, docx, xlsx budgets, png site/lathe photos" },
-    "event":         { "target": 45,  "min": 30,  "notes": "recurring standups + runs; ≥6 AFTER seed time so the dashboard shows a future" },
-    "contact":       { "target": 16,  "min": 15,  "notes": "exactly the world.json cast (16 incl. owner); the email allowlist" },
-    "table":         { "target": 8,   "min": 6,   "notes": "RECALIBRATED 2026-09-17: fewer, richer. Every table populated (until then the seed posted positional rows the model silently discarded, and eleven tables rendered EMPTY on the public demo for seven weeks); ≥3 with formula columns, ≥4 with aggregates, ≥4 with a saved view, one currency+select+percent+date+checkbox pipeline" },
-    "documentation": { "target": 40,  "min": 25,  "notes": "HANDBOOK collection as on-disk markdown" },
-    "formula":       { "target": 1,   "min": 1,   "notes": "ONE, deliberately. The five one-liners this replaced (`{amount} * {rate}` and friends) proved formulas exist while hiding everything that makes them worth having. The single pump-station spec exercises typed variables with units, cited equations, a piecewise branch, a lookup with a declared domain, and a rating scale — and passes dimensional analysis. Volume was the wrong target here." },
-    "secret":        { "target": 3,   "min": 2,   "notes": "obviously-fake values; proves the screen renders" },
-    "branch":        { "target": 12,  "min": 8,   "notes": "RECALIBRATED 2026-07-30: branches are ltree roots the APP creates per content type, not something the seeder authors. The original 16 assumed seeded branches and could never be met; a real seed lands ~11." }
+    "page":          { "target": 6,  "min": 6,  "notes": "two team pages, the client revision family (rev A superseded by rev B), one private, one public; images from Files, link cards, mentions" },
+    "note":          { "target": 5,  "min": 5,  "notes": "site visit report, data note, TQ-004, progress minutes, one private thought" },
+    "file":          { "target": 23, "min": 23, "notes": "20 illustrations (demo/world/art) + the issued procedure PDF, the I/O schedule XLSX and a private draft DOCX" },
+    "table":         { "target": 5,  "min": 5,  "notes": "I/O schedule and load profile (team), snag list (client), budget (private), battery options (public); formulas, aggregates and saved views" },
+    "draw":          { "target": 4,  "min": 4,  "notes": "one per level" },
+    "formula":       { "target": 3,  "min": 3,  "notes": "pump specific energy (team), battery autonomy (client), pipe velocity (private)" },
+    "app":           { "target": 3,  "min": 3,  "notes": "control room (client), loop check tracker (team), autonomy calculator (private); each built and published by the seed" },
+    "task":          { "target": 5,  "min": 5,  "notes": "four open, one done; four due in the next ten days" },
+    "event":         { "target": 4,  "min": 4,  "notes": "one past, three after seed time so the dashboard shows a future" },
+    "journal":       { "target": 4,  "min": 4,  "notes": "Alex, first person, with mood" },
+    "contact":       { "target": 5,  "min": 5,  "notes": "exactly the world.json cast, owner included" },
+    "secret":        { "target": 3,  "min": 3,  "notes": "obviously fake values" },
+    "documentation": { "target": 3,  "min": 3,  "notes": "field guides, on disk, retrieval depth" },
+    "recall":        { "target": 3,  "min": 3,  "notes": "three small native maps; two prompt cards in one of them" }
   },
 
-  "emails": { "target": 320, "min": 200, "notes": "threaded; every sender in the contact cast; PUMPHOUSE lead-time saga + STOREFRONT snag dispute + ISLAND data requests" },
+  "emails": { "target": 11, "min": 11, "notes": "five threads, every sender in the cast" },
+
+  "access": {
+    "$comment": "The four levels, asserted by verify.ts. Shared folders and their item counts are pinned by the generator (folders.mjs + gen.mjs expect); public items are the ones with an open link.",
+    "shared_folders": { "min": 14, "notes": "a Team and a Client folder in each of the seven workspaces that can share" },
+    "public_items":   { "min": 4,  "notes": "a page (its two images go public with it), a table and a drawing, plus the two images" }
+  },
 
   "derived": {
-    "$comment": "Produced by the real ingest pipeline (P3), never inserted directly. Mins prove ingest actually ran — the 'generator ran fine, produced zero facts' tripwire.",
-    "$chunks_note": "A RAW chunk count turned out to be the wrong assertion, and this is the reasoning rather than a quietly-lowered number. 1500 came from the client donor's chunks-per-node ratio; that donor is few-and-long (177 files, multi-page procedures) while this corpus is many-and-short. 576 of ~760 nodes (emails, notes, tasks, journals, events, contacts) are inherently ONE chunk no matter how the generator is written, so the total is governed by corpus COMPOSITION, not by whether the seed is any good. Lengthening the long-form genres was still the right fix and moved pages 1.00 -> 1.35 chunks, but pages are 7% of the corpus. So the count is replaced by two behavioural checks that actually test what the count was standing in for: every extracted node yields at least one chunk (extraction ran), and long-form genres split into more than one (passage retrieval has something to retrieve).",
-    "content_chunks": { "min": 650, "notes": "Floor only — measured 726. Catches a real regression without pretending to be a quality bar." },
-    "chunks_per_longform_node": { "min": 1.25, "notes": "pages + tables: the genres that MUST split, or chunk retrieval has nothing to work with. Measured: pages 1.35, tables 3.00." },
-    "facts":          { "min": 700, "notes": "Measured 784 over 686 extracted nodes (1.14/node). The donors ran 2.0-2.6/node on longer documents; 800 was taken from them without adjusting for this corpus's shorter items." },
-    "entities":       { "min": 250, "notes": "cast + companies + projects + recurring terms" },
-    "entity_edges":   { "min": 900 }
+    "$comment": "Produced by the real ingest pipeline, never inserted. Floors only: they prove extraction ran on a small corpus, not a quality bar.",
+    "content_chunks": { "min": 60, "notes": "every extracted node yields at least one chunk; pages and tables split" },
+    "chunks_per_longform_node": { "min": 1.2, "notes": "pages + tables must split, or passage retrieval has nothing to work with" },
+    "facts":          { "min": 60 },
+    "entities":       { "min": 20, "notes": "the cast, the companies, PS3, the tags" },
+    "entity_edges":   { "min": 40 }
   },
 
   "behavioural": {
-    "$comment": "Produced by REAL scripted turns and worker runs (P4), never hand-written rows.",
-    "traces":             { "min": 250, "notes": "donor avg 8-9 steps/trace; script turns that exercise search, delegation, table queries, page edits (rejected as read-only in serve mode, fine at seed time)" },
-    "trace_steps_avg":    { "min": 6 },
-    "assistant_messages": { "min": 300, "notes": "across ≥3 agents so Studio + per-agent threads look alive" },
-    "runs":               { "min": 12, "notes": "mix of finished/failed so /runs shows texture" },
-    "maintenance_runs":   { "min": 3 },
-    "heartbeats":         { "min": 2 },
-    "audit_log":          { "min": 200 }
+    "$comment": "Produced only by the REAL chats run after the drain (turns.sh: four owner chats; seed-member-chat.ts: one member chat). Nothing else may generate traces, runs or audit rows: no filler.",
+    "chat_turns":         { "min": 4, "notes": "owner chats that completed" },
+    "member_answers":     { "min": 1 }
   },
 
-  "span_days": { "target": 180, "notes": "offsets -180..+21; ~40% of dated artifacts in the last 30 days" }
+  "span_days": { "target": 111, "notes": "offsets -90..+21" }
 }

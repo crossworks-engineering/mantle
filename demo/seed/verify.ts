@@ -120,9 +120,9 @@ async function structure() {
     clientFolders: await one(sql`select count(*)::int n from nodes where type = 'branch' and share_level = 'client'`),
     readAtTeam: await one(sql`select count(*)::int n from nodes where type <> 'branch' and inherited_level = 'team'`),
     readAtClient: await one(sql`select count(*)::int n from nodes where type <> 'branch' and inherited_level = 'client'`),
-    // Items lowered by their OWN level (not through a folder). The seed sets
-    // only the team tables; anything at client or public level by its own
-    // level is something nobody meant to publish.
+    // Items lowered by their OWN level (not through a folder). Only the
+    // public items carry one (their open link); anything else at its own
+    // team, client or public level is something nobody meant to publish.
     ownTeam: await one(sql`select count(*)::int n from nodes where type <> 'branch' and audience = 'team'`),
     ownBelowTeam: await one(sql`select count(*)::int n from nodes where type <> 'branch' and audience in ('client', 'public')`),
     openLinks: await one(sql`select count(*)::int n from shares where revoked_at is null`).catch(() => 0),
@@ -152,7 +152,7 @@ async function waitForDrain() {
     last = done;
     await new Promise((r) => setTimeout(r, 5000));
   }
-  process.stdout.write(`  (gave up waiting after ${WAIT_S}s — asserting on what landed)\n`);
+  process.stdout.write(`  (gave up waiting after ${WAIT_S}s so asserting on what landed)\n`);
   return snapshot();
 }
 
@@ -176,36 +176,30 @@ async function main() {
     checks.unshift([`nodes.${kind}`, counts[kind] ?? 0, spec.min]);
   }
   checks.unshift(['emails', counts.email ?? 0, targets.emails.min]);
-  // Behavioural data — produced by real turns and real worker runs (P4),
-  // never written as rows.
-  const b = targets.behavioural;
-  checks.push(
-    ['traces', s.traces, b.traces.min],
-    ['assistant_messages', s.messages, b.assistant_messages.min],
-    ['runs', s.runs, b.runs.min],
-    ['maintenance_runs', s.maintenanceRuns, b.maintenance_runs.min],
-  );
+  // Behavioural data comes ONLY from the five real chats, which run after
+  // this drain (turns.sh). So at drain time there is nothing to assert here;
+  // `--chats` (turns.sh passes it) checks the owner chats landed.
+  if (process.argv.includes('--chats')) {
+    checks.push(['assistant_messages', s.messages, targets.behavioural.chat_turns.min * 2]);
+  }
 
   const t = await structure();
+  const recallCards = (manifest.recall_maps ?? []).reduce((n, m) => n + m.cards.length + 1, 0);
+  const recallPrompts = (manifest.recall_maps ?? []).reduce((n, m) => n + m.cards.filter((c) => c.kind === 'prompt').length, 0);
   checks.push(
-    ['recall: native maps', t.recallMaps, 1],
-    ['recall: cards', t.recallCards, 5],
-    ['recall: prompts', t.recallPrompts, 1],
-    ['recall: entry options', t.recallEntryOptions, 1],
-    ['pages: folders', t.pageFolders, 4],
-    ['pages: folder depth', t.pageFolderDepth, 2],
-    ['pages: in a folder', t.pagesInFolders, 30],
-    ['pages: Folder index', t.folderIndexBlocks, 4],
-    ['notes: folders', t.noteFolders, 4],
-    ['notes: in a folder', t.notesInFolders, 60],
-    ['folders: icon+colour', t.styledFolders, 8],
+    ['recall: native maps', t.recallMaps, (manifest.recall_maps ?? []).length],
+    ['recall: cards', t.recallCards, recallCards],
+    ['recall: prompts', t.recallPrompts, recallPrompts],
+    ['recall: entry options', t.recallEntryOptions, 2],
+    ['folders: icon+colour', t.styledFolders, (manifest.folders ?? []).length],
   );
   // What must be an EXACT number: [name, got, want]. Zero for the shapes main
   // no longer serves, and for sharing the numbers the generator intended. A
   // minimum cannot do this job: "at least five items at client level" is
-  // still true when a whole project folder was published by mistake.
+  // still true when a whole folder was published by mistake.
   const shared = (share: 'team' | 'client') => (manifest.folders ?? []).filter((f) => f.share === share);
   const reach = (share: 'team' | 'client') => shared(share).reduce((n, f) => n + (f.expect?.items ?? 0), 0);
+  const publicItems = [...manifest.nodes, ...manifest.tables, ...manifest.files, ...(manifest.draws ?? []), ...(manifest.apps ?? [])].filter((x) => x.public).length;
   const mustEqual: Array<[string, number, number]> = [
     ['recall: page-built maps', t.recallPageBuilt, 0],
     ['recall: prompts waiting', t.recallPromptsWaiting, 0],
@@ -215,9 +209,9 @@ async function main() {
     ['folders shared w. clients', t.clientFolders, shared('client').length],
     ['items read at team', t.readAtTeam, reach('team')],
     ['items read at client', t.readAtClient, reach('client')],
-    ['own level team (tables)', t.ownTeam, manifest.tables.filter((x) => x.level === 'team').length],
-    ['own level client/public', t.ownBelowTeam, 0],
-    ['open share links', t.openLinks, 0],
+    ['own level team', t.ownTeam, 0],
+    ['own level client/public', t.ownBelowTeam, publicItems],
+    ['open share links', t.openLinks, publicItems],
   ];
 
   console.log('\nlayer-2 assertions (min = a seed below this is a FAILED seed)\n');
@@ -245,13 +239,13 @@ async function main() {
         '  Derived data is zero: content was created but EXTRACTION NEVER RAN.\n' +
           '  server/api must be running against this database, and it needs a working\n' +
           '  chat model (summaries + facts) and embedder. This is the exact shape of\n' +
-          '  the v1 failure — content present, brain absent.',
+          '  the v1 failure: content present, brain absent.',
       );
     }
     await sql.end();
     process.exit(1);
   }
-  console.log('\n✓ all layer-2 assertions pass — the brain is real, not just populated.\n');
+  console.log('\n✓ all layer-2 assertions pass: the brain is real, not just populated.\n');
   await sql.end();
 }
 

@@ -1,17 +1,13 @@
 /**
- * P4 — behavioural data. Runs the scripted turns against the REAL assistant.
+ * The owner's real chats: four of the demo's five (the fifth is the member
+ * question, seed-member-chat.ts). Runs each turn against the REAL assistant
+ * on a drained brain.
  *
  * Nothing here writes a trace, a message or a tool result: every one is a
- * by-product of a real turn. That is the whole point — a hand-authored trace
- * has the wrong shape in ways you only discover on the /traces screen, which
- * is exactly where the demo would be caught out.
+ * by-product of a real turn, so the context trace a visitor opens is the one
+ * the brain really built. Nothing else in the demo makes traces either.
  *
- * P3's extraction already produced ~1100 traces and ~6900 trace steps as a
- * side effect of summarising and fact-extracting every node. What it could
- * NOT produce is conversation: assistant_messages, tool_results, and the
- * per-turn traces that make /debug/journey worth opening. That is this file.
- *
- *   pnpm -C server/web exec tsx ../../demo/seed/turns.ts [--limit N] [--concurrency N]
+ *   pnpm -C server/web exec tsx ../../demo/seed/turns.ts [--limit N]
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -32,13 +28,9 @@ const argOf = (flag: string, dflt: number) => {
   return i === -1 ? dflt : Number(process.argv[i + 1]);
 };
 const LIMIT = argOf('--limit', Infinity);
-// Re-running the whole set costs real time and real spend, so allow targeting
-// the subset a phase actually needs (e.g. only the run-seeking turns once the
-// conversation is already seeded).
-const ONLY_RUNS = process.argv.includes('--only-runs');
 // Kept low on purpose: a burst of concurrent turns is exactly the storm the
 // extractor queue was built to avoid, and the provider rate-limits it.
-const CONCURRENCY = argOf('--concurrency', 2);
+const CONCURRENCY = argOf('--concurrency', 1);
 
 const DAY = 86_400_000;
 const SEED_TIME = Date.now();
@@ -54,7 +46,7 @@ async function login() {
   cookie = (res.headers.getSetCookie?.() ?? []).map((c) => c.split(';')[0]).join('; ');
 }
 
-/** Run one turn and drain its SSE stream. Returns ok/failed, never throws —
+/** Run one turn and drain its SSE stream. Returns ok/failed, never throws:
  *  one refused turn must not abandon a 40-minute run. */
 async function runTurn(text: string, agentSlug: string): Promise<'ok' | 'failed'> {
   try {
@@ -85,10 +77,9 @@ async function main() {
     process.exit(1);
   }
 
-  const pool = ONLY_RUNS ? manifest.turns.filter((t) => t.wantsRun) : manifest.turns;
+  const pool = manifest.turns;
   const turns = pool.slice(0, LIMIT === Infinity ? undefined : LIMIT);
-  if (ONLY_RUNS) console.log(`  (--only-runs: ${turns.length} of ${manifest.turns.length} turns)`);
-  console.log(`\ndemo turns — ${turns.length} scripted turns, concurrency ${CONCURRENCY}\n  server ${SERVER}\n`);
+  console.log(`\ndemo turns: ${turns.length} scripted turns, concurrency ${CONCURRENCY}\n  server ${SERVER}\n`);
   await login();
 
   let ok = 0, failed = 0, i = 0;
@@ -129,7 +120,7 @@ async function main() {
 
   const stat = async (t: string) => Number((await sql`select count(*)::int n from ${sql(t)}`)[0]?.n ?? 0);
   console.log(
-    `\n✓ turns complete — ok ${ok}, failed ${failed}, ${moved} messages backdated\n` +
+    `\n✓ turns complete: ok ${ok}, failed ${failed}, ${moved} messages backdated\n` +
       `  assistant_messages ${await stat('assistant_messages')} · traces ${await stat('traces')} · ` +
       `trace_steps ${await stat('trace_steps')} · tool_results ${await stat('tool_results')}\n`,
   );

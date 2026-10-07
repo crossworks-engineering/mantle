@@ -1,5 +1,5 @@
 /**
- * Shared types for the seeder. The repo bans `any` (and demo/ cannot opt out —
+ * Shared types for the seeder. The repo bans `any` (and demo/ cannot opt out:
  * eslint.config.mjs is main-owned), so the manifest shape and the slice of the
  * postgres client we use are both declared explicitly. That is a good trade:
  * the manifest contract is exactly what the generator promises, written down.
@@ -8,18 +8,33 @@
 export type Json = Record<string, unknown>;
 export type Row = Record<string, unknown>;
 
+/** The four sharing levels. Private items sit in the Private folder, team and
+ *  client items in the shared folders, public items at the top level with an
+ *  open link (generator/content/folders.mjs). */
+export type Tier = 'private' | 'team' | 'client' | 'public';
+
+/** Where an item sits: the GENERATOR id of its folder (null = top level), and
+ *  whether it gets an open link after the folder shares. */
+interface Placed {
+  tier?: Tier;
+  folder?: string | null;
+  public?: boolean;
+}
+
 export interface GenNode {
   id: string;
   kind: string;
   title: string;
+  /** Pages and notes carry `media:gen:`, `page:gen:` and `mention:node:gen:`
+   *  references; the seeder swaps each for the real id before the write. */
   body: string;
   offset: number;
   tags: string[];
-  branch?: string;
+  tier?: Tier;
+  public?: boolean;
   meta: {
-    /** Pages and notes: the GENERATOR id of the folder the item sits in;
-     *  null or absent is the top level. Pages do not nest on main (folder
-     *  phase 7), so there is no parent page. */
+    /** The GENERATOR id of the folder the item sits in; null or absent is the
+     *  top level. Pages do not nest on main (folder phase 7). */
     folder?: string | null;
     status?: string;
     priority?: string;
@@ -29,24 +44,22 @@ export interface GenNode {
     location?: string;
     mood?: string;
     category?: string;
-    family?: string;
-    rev?: string;
-    supersedes?: string | null;
     emails?: string[];
     company?: string | null;
     role?: string;
     value?: string;
     spec?: Record<string, unknown>;
-    path?: string;
   };
 }
 
+/** The item trees the seeder writes folders into (docs/folder-tree.md). */
+export type TreeKind = 'files' | 'notes' | 'pages' | 'tables' | 'draw' | 'formulas' | 'apps' | 'tasks' | 'events' | 'contacts' | 'secrets';
+
 /** A folder of one kind's item tree, as `POST /api/tree/:kind/folders` takes
- *  it. `parent` is a GENERATOR folder id (the seeder creates parents first);
- *  folders nest at most three deep. `share` is set after the items are filed. */
+ *  it. `share` is set after the items are filed. */
 export interface GenFolder {
   id: string;
-  kind: 'pages' | 'notes';
+  kind: TreeKind;
   parent: string | null;
   name: string;
   /** An emoji or `lucide:<name>`. */
@@ -55,9 +68,7 @@ export interface GenFolder {
   color?: string;
   share?: 'team' | 'client';
   /** On a shared folder: what the share must reach, counted by the
-   *  generator. `items` are the pages or notes in the folder and below it,
-   *  `folders` the folders below it. The seeder confirms a share only for
-   *  exactly `items + folders` changed rows. */
+   *  generator. The seeder confirms a share only for exactly that count. */
   expect?: { items: number; folders: number };
 }
 
@@ -106,10 +117,9 @@ export interface GenView {
   filters?: Array<{ column: string; op: string; value?: string | number | boolean | null }>;
 }
 
-export interface GenTable {
+export interface GenTable extends Placed {
   id: string;
   title: string;
-  branch: string;
   icon?: string;
   columns: GenColumn[];
   /** Positional rows aligned to `columns`; formula columns carry null. */
@@ -117,8 +127,6 @@ export interface GenTable {
   /** Footer aggregates keyed by column NAME. */
   aggregates?: Record<string, string>;
   views?: GenView[];
-  /** Set by the generator on the tables the team reads (by their own level). */
-  level?: 'team';
   offset: number;
 }
 
@@ -133,11 +141,10 @@ export interface GenEmail {
   body: string;
 }
 
-export interface GenFile {
+export interface GenFile extends Placed {
   id: string;
   name: string;
   title: string;
-  branch: string;
   kind: string;
   offset: number;
   bytes: number;
@@ -167,13 +174,25 @@ export interface GenHeartbeat {
 }
 
 /** An Excalidraw scene, as `POST /api/draws` takes it. */
-export interface GenDraw {
+export interface GenDraw extends Placed {
   id: string;
   title: string;
-  branch: string;
   icon?: string;
   tags?: string[];
   scene: { elements: unknown[]; appState?: Record<string, unknown> };
+  offset: number;
+}
+
+/** A mini app: its source is demo/apps/<dir>/, pushed through create, draft,
+ *  build and publish exactly as an owner's Studio does. */
+export interface GenApp extends Placed {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  tags: string[];
+  dir: string;
+  entry: string;
   offset: number;
 }
 
@@ -185,11 +204,12 @@ export interface Manifest {
   emails: GenEmail[];
   files: GenFile[];
   docs: Array<{ collection: string; relpath: string; title: string }>;
-  turns: Array<{ id: string; agent: string; offset: number; prompt: string; wantsRun?: boolean; followUp?: boolean }>;
+  turns: Array<{ id: string; agent: string; offset: number; prompt: string }>;
   heartbeats?: GenHeartbeat[];
   draws?: GenDraw[];
   folders?: GenFolder[];
   recall_maps?: GenRecallMap[];
+  apps?: GenApp[];
 }
 
 /** The slice of the `postgres` tagged-template client this seeder touches. */

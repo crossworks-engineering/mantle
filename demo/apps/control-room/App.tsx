@@ -1,5 +1,5 @@
 /**
- * PS3 Control Room — the demo's showcase mini-app.
+ * PS3 Control Room: the station overview, in the Client folder.
  *
  * A SHELL, deliberately: every number here is a constant. It exists to show
  * what a mini-app can look like when someone has bothered, not to be a working
@@ -30,7 +30,7 @@ import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 
-/** 24 hourly flow readings (m³/h) — a plausible diurnal curve, not random. */
+/** 24 hourly flow readings (m³/h): a plausible daily curve, not random. */
 const FLOW = [
   262, 241, 228, 224, 231, 268, 330, 392, 428, 441, 436, 424, 418, 421, 430, 447,
   468, 486, 472, 430, 388, 344, 306, 281,
@@ -47,14 +47,13 @@ const KPIS = [
 const PUMPS = [
   { id: 'P-101', role: 'Duty', running: true, hours: 18432, speed: 82, temp: 41 },
   { id: 'P-102', role: 'Standby', running: false, hours: 17980, speed: 0, temp: 24 },
-  { id: 'P-103', role: 'Assist', running: true, hours: 9120, speed: 64, temp: 38 },
 ];
 
 const EVENTS = [
-  { at: '04:12', severity: 'info', text: 'P-103 ramped in on rising wet-well level' },
-  { at: '03:58', severity: 'warn', text: 'Discharge pressure 2.1 bar below setpoint for 4 min' },
+  { at: '04:12', severity: 'info', text: 'P-101 ramped up on rising wet well level' },
+  { at: '03:58', severity: 'warn', text: 'Delivery pressure PT-301 0.4 bar below setpoint for 4 min' },
   { at: '02:30', severity: 'info', text: 'Tariff period changed to off-peak' },
-  { at: '01:07', severity: 'crit', text: 'P-102 failed to start on test — motor protection tripped' },
+  { at: '01:07', severity: 'crit', text: 'GEN.RUN flickered for two seconds on the generator test start (snag S-06)' },
   { at: '00:15', severity: 'info', text: 'Daily volume rolled over: 9 842 m³' },
 ];
 
@@ -107,7 +106,7 @@ export default function App() {
           </div>
           <div>
             <h1 className="text-lg font-semibold leading-tight">PS3 Control Room</h1>
-            <p className="text-xs text-muted-foreground">Pumphouse · telemetry mirror · 30 s refresh</p>
+            <p className="text-xs text-muted-foreground">Pump Station 3 · telemetry mirror · 10 s radio poll</p>
           </div>
         </div>
         <div className="flex items-center gap-2">

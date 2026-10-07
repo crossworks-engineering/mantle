@@ -204,35 +204,16 @@ DEMO_SERVER_URL="http://127.0.0.1:$WEB_PORT" \
 
 # Needs the WRITABLE api that is still up at this point — the serve-time reader
 # could not do this, which is the whole reason it belongs to seeding.
-echo "→ team: member logins, team-level items, the member chat, one client login"
+echo "→ team: member logins, the member chat opened, one client login"
 DEMO_SERVER_URL="http://127.0.0.1:$WEB_PORT" \
   pnpm -C server/web exec tsx ../../demo/seed/enable-team.ts
 
-# Real agent turns, so server/api must still be up; it is, until cleanup. The
-# member signs in with its own login (enable-team.ts made it), so this needs
-# no minted cookie and no database credentials.
-echo "→ member chat (the brain answers these for real)"
-# Non-fatal on purpose (2026-09-17, then for the forum this replaced): the
-# turn is a real agent turn, and on a busy bench its chat stream can time out
-# while the extractor is still working through eight hundred nodes. That is a
-# missing ANSWER, not a broken brain; the app seed and verify below are worth
-# more than aborting here. The failure is re-raised at the very end, after
-# everything else has run.
-chat_failed=0
-DEMO_SERVER_URL="http://127.0.0.1:$WEB_PORT" \
-  pnpm -C server/web exec tsx ../../demo/seed/seed-member-chat.ts || chat_failed=1
-
-# Create → draft → build → publish, through the same endpoints an owner uses.
-# A broken app fails HERE with a compiler error rather than as an error card in
-# front of an audience.
-echo "→ showcase app"
-DEMO_SERVER_URL="http://127.0.0.1:$WEB_PORT" \
-  pnpm -C server/web exec tsx ../../demo/seed/seed-app.ts
+# NO agent turns here. The member chat and the owner chats are real turns,
+# and a real turn on an undrained brain loops and burns tokens for nothing
+# (seen on the bench: 450k to 600k input tokens a turn). They run in
+# turns.sh, after drain.sh.
+# The apps are built and published inside seed.ts now (create, draft, build,
+# publish), so they can be filed into their folders with everything else.
 
 echo "→ verify (waits for extraction to drain)"
 pnpm -C server/web exec tsx ../../demo/seed/verify.ts --wait "${DEMO_VERIFY_WAIT:-900}"
-if [ "$chat_failed" = "1" ]; then
-  echo "✗ the member chat questions were asked but not all were answered. Run seed-member-chat.ts again once the extractor is quiet (it skips what is already asked):" >&2
-  echo "    DEMO_SERVER_URL=http://127.0.0.1:$WEB_PORT pnpm -C server/web exec tsx ../../demo/seed/seed-member-chat.ts" >&2
-  exit 1
-fi

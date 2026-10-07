@@ -1,11 +1,11 @@
 // Loads the world bible + targets. The bible is the ONLY source of names,
-// companies, projects and domains — content modules must draw from here.
+// companies, projects and domains: content modules must draw from here.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const worldDir = join(here, '..', '..', 'world');
+export const worldDir = join(here, '..', '..', 'world');
 
 export const world = JSON.parse(readFileSync(join(worldDir, 'world.json'), 'utf8'));
 export const targets = JSON.parse(readFileSync(join(worldDir, 'targets.json'), 'utf8'));
@@ -22,10 +22,12 @@ export const person = (id) => {
   return p;
 };
 export const first = (id) => person(id).name.split(' ')[0];
+export const nameOf = (id) => person(id).name;
+export const emailOf = (id) => person(id).email;
 export const staff = world.people.filter((p) => p.company === 'harbour-labs');
 export const clientsOf = (companyId) => world.people.filter((p) => p.company === companyId);
 export const timeline = world.timeline;
-export const SPAN = world.timeline.span; // [-180, 21]
+export const SPAN = world.timeline.span;
 
 export function assertOffset(off) {
   if (off < SPAN[0] || off > SPAN[1]) throw new Error(`offset ${off} outside span ${SPAN}`);
