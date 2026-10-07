@@ -22,7 +22,7 @@
  *      login.
  *
  *      A stolen session must not be able to mint a long-lived key (M2 audit
- *      F4): an admin or a member re-types their password (10 tries a minute
+ *      F4): an admin or a member re-types their password (10 wrong tries a minute
  *      per login), a member's key ends within 90 days, and a client (who
  *      has no password) gets at most 30 days. A password change, "sign out
  *      everywhere" and an admin's End sessions revoke every key the login
@@ -43,13 +43,13 @@ import {
   mintAccessKey,
 } from '@/lib/access-keys';
 import { listAccessKeys } from '@/lib/access-keys-admin';
-import { rateLimit } from '@/lib/rate-limit';
+import { rateLimit, rateLimitPeek } from '@/lib/rate-limit';
 import { auditFireAndForget, requestMeta } from '@/lib/audit';
 import { firstIssue } from '@/lib/zod-issue';
 import type { AccessKeyCreated, AccessKeyList } from '@mantle/client-types';
 
 const NO_STORE = { 'Cache-Control': 'no-store' };
-/** Password tries a minute per login when making a key. */
+/** Wrong passwords a minute per login when making a key. */
 const PASSWORD_RATE = { max: 10, windowMs: 60_000 };
 
 const Body = z
@@ -110,7 +110,8 @@ export async function POST(req: Request) {
     }
   }
   if (keyNeedsPassword(login.kind)) {
-    const tries = rateLimit(`akey-pw:${login.loginId}`, PASSWORD_RATE);
+    // Only wrong passwords count: making several keys is not guessing.
+    const tries = rateLimitPeek(`akey-pw:${login.loginId}`, PASSWORD_RATE);
     if (!tries.ok) {
       return NextResponse.json(
         { error: 'Too many tries. Wait a minute, then try again.' },
@@ -118,6 +119,7 @@ export async function POST(req: Request) {
       );
     }
     if (!body.password || !(await verifyPassword(login.loginId, body.password))) {
+      rateLimit(`akey-pw:${login.loginId}`, PASSWORD_RATE);
       return NextResponse.json(
         { error: 'Type your password to make a key.', reason: 'password' },
         { status: 403 },
