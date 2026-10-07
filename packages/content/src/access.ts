@@ -481,6 +481,27 @@ export async function setAgentAudience(
   return { id: agent.id, slug: agent.slug, audience, removedGroups };
 }
 
+/**
+ * An agent's level by slug, for the screen that changes it (the team agent
+ * card on Team > Settings). null when the agent does not exist.
+ */
+export async function getAgentAccess(
+  ownerId: string,
+  slug: string,
+): Promise<{ slug: string; name: string; audience: ViewerLevel; enabled: boolean } | null> {
+  const [agent] = await db
+    .select({
+      slug: agents.slug,
+      name: agents.name,
+      audience: agents.audience,
+      enabled: agents.enabled,
+    })
+    .from(agents)
+    .where(and(eq(agents.ownerId, ownerId), eq(agents.slug, slug)))
+    .limit(1);
+  return agent ? { ...agent, audience: asLevel(agent.audience) } : null;
+}
+
 /** Set a tool group's level. Refuses to RAISE it above an agent that holds
  *  it (that agent would then hold a group above its level). */
 export async function setToolGroupAudience(

@@ -8,10 +8,13 @@ The **Team** screen (under Review) holds all of this.
 
 ## Before you start
 
-Members can chat only once the team agent is set to **Team** level, on a new install too. There is no button for it yet. Do it once, either way:
+Members can chat only once the team agent is at **Team** level. It starts at **Admin** level, on a new install too. Do this once:
 
-- From an MCP client connected to your brain, run `access_set` with `agent_slug: team-responder`, `level: team` and `drop_groups_above: true`. See [Connect Claude over MCP](../07-api/01-connect-claude.md).
-- In **API Console**, send `PATCH /api/access/agents/team-responder` with `{ "audience": "team", "dropGroupsAbove": true }`.
+1. Open **Team > Settings**.
+2. Under **Member chat**, click **Let members chat**.
+3. Read what members will then reach, and click **Let members chat** again.
+
+The card then says **On**. Tool groups above Team level leave the team agent with this step. To close member chat again, click **Stop member chat**. While member chat is off, the **Invites** tab says so.
 
 ## Invite a member
 

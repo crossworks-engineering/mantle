@@ -179,6 +179,7 @@ export {
   AccessError,
   accessClosure,
   agentGrantProblems,
+  getAgentAccess,
   isWorkspaceKind,
   setAgentAudience,
   setItemAudience,

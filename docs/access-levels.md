@@ -241,7 +241,9 @@ removing any one wrap fails a test.
    purpose), and how many facts stay usable.
 2. Set the levels of what the team should keep reading (a page's embeds go
    with it; a folder's contents with "Lower them too").
-3. Open the responder, one call:
+3. Open the responder: in Jackdaw, **Team > Settings > Member chat > Let
+   members chat** (it reads the level from `teamAgent` on
+   `GET /api/team-admin/settings` and makes the call below). Or one call:
    `access_set(agent_slug: 'team-responder', level: 'team', drop_groups_above: true)`,
    or `PATCH /api/access/agents/team-responder` with
    `{ "audience": "team", "dropGroupsAbove": true }`. The responder ships

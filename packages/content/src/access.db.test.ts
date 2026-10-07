@@ -154,6 +154,14 @@ describe.skipIf(!URL)('setting levels on Postgres', () => {
     await expect(a.setAgentAudience(owner, ids.agent, 'team')).resolves.toMatchObject({
       audience: 'team',
     });
+    // The Team settings card reads the new level back by slug.
+    await expect(a.getAgentAccess(owner, `${tag}-agent`)).resolves.toEqual({
+      slug: `${tag}-agent`,
+      name: 'A',
+      audience: 'team',
+      enabled: true,
+    });
+    await expect(a.getAgentAccess(owner, `${tag}-missing`)).resolves.toBeNull();
   });
 
   it('a tool group cannot be raised above an agent that holds it', async () => {

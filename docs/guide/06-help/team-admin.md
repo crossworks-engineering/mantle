@@ -20,7 +20,9 @@ The tabs:
 - **Clients**: client logins and their sign-in links.
 - **What clients see**: every item at Client level.
 - **Chat archive**: old portal chats, kept as read-only history.
-- **Settings**: includes **Expose email & journal**, off by default.
+- **Settings**: **Member chat** (members can chat only after you click **Let
+  members chat**: it moves the team agent to Team level), and **Expose email &
+  journal**, off by default.
 
 Disable, demote or delete a login in [Logins](users.md) and its access ends at
 once. How-to: [Member and client logins](../05-admin/07-logins.md).

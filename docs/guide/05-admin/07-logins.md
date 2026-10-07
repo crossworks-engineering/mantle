@@ -17,7 +17,7 @@ The person opens the link, sets a password and is signed in. The link works once
 
 You can also make a member directly: **Settings > Logins > Add login**, set **Role** to Member, and give them the email and starting password yourself.
 
-Members can chat only after you set the team agent to **Team** level once. See [Team and members](../03-using-jackdaw/12-team.md) for the one command.
+Members can chat only after you click **Let members chat** once, in **Team > Settings**. See [Team and members](../03-using-jackdaw/12-team.md).
 
 ## Add a client
 
