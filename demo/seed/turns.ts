@@ -113,7 +113,9 @@ async function main() {
   let moved = 0;
   for (let k = 0; k < rows.length; k++) {
     const t = turns[Math.min(Math.floor(k / 2), turns.length - 1)];
-    const ts = new Date(SEED_TIME + (t?.offset ?? -1) * DAY).toISOString();
+    // A question and its answer share the turn's day; the answer lands 45 s
+    // after, so the two never swap places in the thread.
+    const ts = new Date(SEED_TIME + (t?.offset ?? -1) * DAY + (k % 2) * 45_000).toISOString();
     await sql`update assistant_messages set created_at = ${ts} where id = ${rows[k].id as string}::uuid`;
     moved++;
   }
