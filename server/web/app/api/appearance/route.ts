@@ -1,6 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { resolveSingleOwnerId } from '@mantle/db';
 import { loadProfilePreferences, logoVersion } from '@mantle/content';
+import { FRESH_APPEARANCE } from '@mantle/content-core/profile-projections';
 
 /**
  * GET /api/appearance — the brain's SYSTEM-WIDE appearance: colour theme, the
@@ -34,13 +35,15 @@ import { loadProfilePreferences, logoVersion } from '@mantle/content';
 export async function GET() {
   // Same SHAPE as the populated branch, always: a fresh install differs in its
   // values, never in its keys, so a client cannot come to depend on a field
-  // that only appears once the brain is provisioned.
+  // that only appears once the brain is provisioned. The look is the
+  // fresh-install one (FRESH_APPEARANCE), so the sign-up screen already wears
+  // what the new brain will.
   const empty = {
     siteName: null,
     peerName: null,
     logoVersion: null,
     logoDarkVersion: null,
-    colorTheme: null,
+    colorTheme: FRESH_APPEARANCE.colorTheme,
     fontLogo: null,
     fontTitle: null,
     fontUi: null,
@@ -49,10 +52,10 @@ export async function GET() {
     fontLogoSize: null,
     fontTitleSize: null,
     fontProseSize: null,
-    avatarStyle: null,
+    avatarStyle: FRESH_APPEARANCE.avatarStyle,
     avatarTint: null,
     backgrounds: null,
-    neatBackground: null,
+    neatBackground: FRESH_APPEARANCE.neatBackground,
     defaultMode: null,
     shareNeat: true,
   };

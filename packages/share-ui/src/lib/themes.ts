@@ -2,7 +2,7 @@
  * Color-theme registry. The theme LIST is generated — `themes/seeds.mjs` is
  * the authored source, `pnpm themes:build` regenerates both the CSS and
  * `theme-registry.gen.ts`, and the drift test keeps them in lockstep. This
- * module owns the TYPE, the default, and the random-theme behaviour toggles.
+ * module owns the TYPE, the baseline and the default, and the random-theme behaviour toggles.
  *
  * Swatches ([primary, accent, background], per mode) drive the picker preview
  * only. Both modes ship because the picker sits inside the app it is theming:
@@ -17,11 +17,24 @@ export type ColorTheme = {
   swatches: { light: ThemeSwatches; dark: ThemeSwatches };
 };
 
+import { FRESH_APPEARANCE } from '@mantle/client-types/fresh-appearance';
 import { GENERATED_COLOR_THEMES } from './theme-registry.gen';
 
 export const COLOR_THEMES: ColorTheme[] = GENERATED_COLOR_THEMES;
 
-export const DEFAULT_COLOR_THEME = 'clean-slate';
+/** The CSS BASELINE: the theme `:root` paints, so it is what an `<html>` with
+ *  NO data-color-theme attribute shows. Every renderer omits the attribute for
+ *  this id and only this id. It is not what an unset brain wears: that is
+ *  {@link FRESH_COLOR_THEME}, which travels as a real attribute value. */
+export const BASE_COLOR_THEME = 'clean-slate';
+
+/** @deprecated The CSS baseline under its pre-2026-10 name; use
+ *  {@link BASE_COLOR_THEME}. Kept at the same value so a client still on it
+ *  keeps painting correctly. It is NOT the default theme any more. */
+export const DEFAULT_COLOR_THEME = BASE_COLOR_THEME;
+
+/** The theme a brain that never chose one wears (fresh installs). */
+export const FRESH_COLOR_THEME: string = FRESH_APPEARANCE.colorTheme;
 
 /** The human label for a theme id — one spelling of a theme's name across the
  *  whole product. Falls back to the id so an unknown/retired id still reads. */

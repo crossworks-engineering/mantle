@@ -297,8 +297,9 @@ export type ProfilePreferences = {
    *  as a compact JSON spec `{v,seed,tone,speed}` — colours are DERIVED from
    *  the live theme tokens client-side, never stored, so the background
    *  follows every colour theme and mode. Brain-level for the same reason as
-   *  backgrounds: it is the look of the product. Unset ⇒ the plain themed
-   *  fill. Read via projectNeatBackground, never raw. */
+   *  backgrounds: it is the look of the product. Never set ⇒ the
+   *  fresh-install spec (FRESH_APPEARANCE); '' ⇒ off, the plain themed fill.
+   *  Read via readNeatBackground, never raw. */
   neatBackground?: string;
   /** The brain's default light/dark mode for surfaces where the visitor has
    *  not chosen one themselves — today the public /s share reader, which stamps

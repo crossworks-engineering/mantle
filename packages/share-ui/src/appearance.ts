@@ -1,4 +1,4 @@
-import { DEFAULT_COLOR_THEME } from './lib/themes';
+import { BASE_COLOR_THEME, COLOR_THEMES, FRESH_COLOR_THEME } from './lib/themes';
 import {
   DEFAULT_AVATAR_STYLE,
   DEFAULT_AVATAR_TINT,
@@ -40,7 +40,10 @@ import {
  *
  * `resolveAppearanceAttrs` is that projection: defaults and unknown keys
  * resolve to NOTHING (attribute absent, var unset) so the CSS fallbacks win —
- * "default" is the absence of the attribute, never a value.
+ * "default" is the absence of the attribute, never a value. The one exception
+ * is the colour theme: its absence paints the CSS baseline (clean-slate), and
+ * the default (FRESH_COLOR_THEME, jackdaw) is a different theme, so the
+ * default travels as a value and only the baseline is absent.
  */
 export type BrainAppearance = {
   colorTheme: string | null;
@@ -102,7 +105,8 @@ export type BrainAppearance = {
 };
 
 export type AppearanceAttrs = {
-  /** Non-default colour theme id, or undefined (attribute omitted). */
+  /** The colour theme id, or undefined (attribute omitted) for the CSS
+   *  baseline. Unset and unknown themes resolve to the fresh-install default. */
   colorTheme?: string;
   /** Non-default, registry-known font keys — the client provider's initial
    *  state, one per slot. */
@@ -194,8 +198,20 @@ export function appearanceFontVars(a: AppearanceAttrs): Record<string, string> {
 
 export function resolveAppearanceAttrs(a: BrainAppearance | null | undefined): AppearanceAttrs {
   const out: AppearanceAttrs = { fontVars: {} };
+  // The colour theme is the one field whose absence is NOT the default: no
+  // attribute paints the CSS baseline (clean-slate), while a brain that never
+  // chose wears the fresh-install theme. So an unset or missing theme
+  // resolves to that default here and travels as a real value. A stored id
+  // this registry does not know (a retired theme) has always painted the
+  // baseline, and still does: the attribute is omitted, as for the baseline.
+  const stored = a?.colorTheme;
+  const theme = !stored
+    ? FRESH_COLOR_THEME
+    : COLOR_THEMES.some((t) => t.id === stored)
+      ? stored
+      : BASE_COLOR_THEME;
+  if (theme !== BASE_COLOR_THEME) out.colorTheme = theme;
   if (!a) return out;
-  if (a.colorTheme && a.colorTheme !== DEFAULT_COLOR_THEME) out.colorTheme = a.colorTheme;
 
   out.fontVars = resolveFontVars(a.fontLogo, a.fontTitle, a.fontUi, a.fontProse);
   for (const [field, varName, defaultKey] of FONT_SLOTS) {

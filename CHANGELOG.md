@@ -4,6 +4,30 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: the fresh-install look
+
+A FRESH install now wears the Jackdaw colour theme, Lorelei avatars and the
+Neat background (switched on, seed 55361, tone auto, speed 2). One source,
+`FRESH_APPEARANCE` in client-types (zero dependencies, so the brain and the
+clients read the same object): a new profile row stores it, the brain's
+read fills it in for a row that never set a value, `/api/appearance` serves
+it before the first account exists, and share-ui's client fallbacks
+(`resolveAppearanceAttrs`, `DEFAULT_AVATAR_STYLE`) use it.
+
+An EXISTING brain keeps the look it shows today. Migration
+`keep_existing_look` writes the old effective values into every existing
+profile row that has none of its own: `colorTheme` `clean-slate`,
+`avatarStyle` `thumbs`, `neatBackground` `''` (off). Absent, JSON null and
+(theme and style only) blank values are filled; a present value is never
+touched. A fresh install has no profile rows when migrations run, so it is
+untouched. A stored theme the registry no longer knows still paints the
+baseline, as before.
+
+share-ui now names the CSS baseline `BASE_COLOR_THEME` (still `clean-slate`,
+the theme painted with no `data-color-theme` attribute);
+`DEFAULT_COLOR_THEME` is a deprecated alias of it with the same value, and
+`FRESH_COLOR_THEME` is the new default.
+
 ## Unreleased: needle scrollbars everywhere
 
 Every scrollbar in the share surfaces, the mini-app frame and the Jackdaw

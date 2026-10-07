@@ -1,4 +1,5 @@
 import { loadProfilePreferences, projectDefaultMode } from '@mantle/content';
+import { FRESH_APPEARANCE } from '@mantle/content-core/profile-projections';
 import { resolveAppearanceAttrs, type AppearanceAttrs } from '@mantle/share-ui/appearance';
 import { decodeNeatSpec, encodeNeatSpec } from '@mantle/share-ui/neat-background';
 
@@ -18,7 +19,7 @@ import { decodeNeatSpec, encodeNeatSpec } from '@mantle/share-ui/neat-background
  * @mantle/web-ui/appearance).
  *
  * Fails soft: if prefs can't be read the surface renders in the defaults
- * (undefined ⇒ htmlPage omits the attributes) rather than failing the page.
+ * (the fresh-install look) rather than failing the page.
  */
 export async function loadAppearanceAttrs(ownerId: string): Promise<AppearanceAttrs | undefined> {
   try {
@@ -38,8 +39,9 @@ export async function loadAppearanceAttrs(ownerId: string): Promise<AppearanceAt
       backgrounds: prefs.backgrounds ?? null,
     });
   } catch {
-    // prefs unavailable — fall back to the defaults rather than failing
-    return undefined;
+    // prefs unavailable: fall back to the defaults rather than failing,
+    // the fresh-install look, the same one an unset brain reads as.
+    return resolveAppearanceAttrs(null);
   }
 }
 
@@ -89,7 +91,12 @@ export async function loadShareAppearance(ownerId: string): Promise<ShareAppeara
       neatBackground: spec && prefs.shareNeat !== false ? encodeNeatSpec(spec) : null,
     };
   } catch {
-    // prefs unavailable — fall back to the defaults rather than failing
-    return { attrs: undefined, defaultMode: 'light', neatBackground: null };
+    // prefs unavailable: fall back to the defaults rather than failing,
+    // the fresh-install look, the same one an unset brain reads as.
+    return {
+      attrs: resolveAppearanceAttrs(null),
+      defaultMode: 'light',
+      neatBackground: FRESH_APPEARANCE.neatBackground,
+    };
   }
 }

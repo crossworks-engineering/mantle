@@ -30,6 +30,7 @@ import {
   thinkingEffortForBudget,
   type ThinkingEffort,
 } from './thinking-tiers';
+import { FRESH_APPEARANCE } from '@mantle/client-types/fresh-appearance';
 import {
   APP_OPENS_MAX,
   APP_PINS_MAX,
@@ -538,10 +539,39 @@ export const DEFAULT_HOUSE_STYLE =
   'ranges (2020\u20132024, pages 10\u201314) are correct and stay, and hyphens in compound ' +
   'words (self-hosted, read-only) are unaffected.';
 
+/** The fresh-install look (Jackdaw theme, Lorelei avatars, Neat on), shared
+ *  with the clients from @mantle/client-types. Re-exported so brain code reads
+ *  it from here like every other preference default. */
+export { FRESH_APPEARANCE };
+
+/** Read a stored `colorTheme` with the fresh-install default: any value that
+ *  does not project (unset, empty, garbage) reads as the default theme. */
+export function readColorTheme(raw: unknown): string {
+  return projectColorTheme(raw) ?? FRESH_APPEARANCE.colorTheme;
+}
+
+/** Read a stored `avatarStyle` with the fresh-install default, the
+ *  readColorTheme contract. */
+export function readAvatarStyle(raw: unknown): string {
+  return projectAvatarStyle(raw) ?? FRESH_APPEARANCE.avatarStyle;
+}
+
+/** Read a stored `neatBackground` with the fresh-install default. Only an
+ *  ABSENT key takes it: '' is the deliberate "off" the neat-background route
+ *  writes, so it must keep reading as off (undefined), never flip back on. */
+export function readNeatBackground(raw: unknown): string | undefined {
+  if (raw === undefined || raw === null) return FRESH_APPEARANCE.neatBackground;
+  return projectNeatBackground(raw);
+}
+
 export const DEFAULT_PREFERENCES: ProfilePreferences = {
   timezone: 'UTC',
   locale: 'en-GB',
   houseStyle: DEFAULT_HOUSE_STYLE,
+  // The fresh-install look, seeded so a new brain stores what it shows.
+  colorTheme: FRESH_APPEARANCE.colorTheme,
+  avatarStyle: FRESH_APPEARANCE.avatarStyle,
+  neatBackground: FRESH_APPEARANCE.neatBackground,
   // Live thinking on (streamThoughts defaults on) at Medium: the 4096 tier of
   // THINKING_TIERS. Unset would mean no thinking at all.
   thinkingBudget: 4096,

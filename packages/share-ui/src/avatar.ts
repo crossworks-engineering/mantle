@@ -42,6 +42,7 @@
  */
 
 import { Avatar, Style } from '@dicebear/core';
+import { FRESH_APPEARANCE } from '@mantle/client-types/fresh-appearance';
 
 /**
  * What a style is FOR.
@@ -502,13 +503,14 @@ export const BACKGROUND_STYLES: AvatarStyleMeta[] = AVATAR_STYLES.filter(
 );
 
 /**
- * Was `shapes`, which is now a background. Nothing was migrated: a brain that
+ * The style a brain that never chose one draws in: the fresh-install look
+ * (FRESH_APPEARANCE in @mantle/client-types), so the brain's read projection
+ * and this client fallback cannot disagree. Was `thumbs` until 2026-10, and
+ * `shapes` before that. Nothing was migrated either time: a brain that
  * explicitly saved a style keeps it, and `resolveAvatarStyle` still resolves
- * every id in the registry regardless of category, rendering never cared about
- * the split. Only a brain that never chose one moves, and it moves to a style
- * that is actually an avatar.
+ * every id in the registry. Only a brain that never chose one moves.
  */
-export const DEFAULT_AVATAR_STYLE = 'thumbs';
+export const DEFAULT_AVATAR_STYLE: string = FRESH_APPEARANCE.avatarStyle;
 
 /**
  * How much of the theme an avatar takes on.
