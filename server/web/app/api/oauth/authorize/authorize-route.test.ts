@@ -12,6 +12,8 @@ const h = vi.hoisted(() => ({
   login: null as unknown,
   minted: 0,
   mcpOn: false,
+  /** mintAuthCode answers null: the session ended after the check. */
+  sessionEnded: false,
 }));
 
 /** The admin's password in this file (stood in, never hashed). */
@@ -21,7 +23,6 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getLoginOr401: vi.fn(async () => h.login),
   verifyPassword: vi.fn(async (_id: string, password: string) => password === PASSWORD),
-  loginSessionEpoch: vi.fn(async () => 0),
 }));
 
 vi.mock('@/lib/mcp-auth', () => ({
@@ -34,6 +35,7 @@ vi.mock('@/lib/mcp-oauth', () => ({
   isRemoteMcpEnabled: async () => true,
   getClient: async () => ({ clientName: 'Test Client', redirectUris: ['https://c.example/cb'] }),
   mintAuthCode: async () => {
+    if (h.sessionEnded) return null;
     h.minted += 1;
     return 'code-1';
   },
@@ -75,6 +77,7 @@ beforeEach(() => {
   h.login = null;
   h.minted = 0;
   h.mcpOn = false;
+  h.sessionEnded = false;
 });
 
 describe('GET /api/oauth/authorize', () => {
@@ -143,6 +146,15 @@ describe('POST /api/oauth/authorize', () => {
     expect(right.status).toBe(302);
     expect(right.headers.get('location')).toContain('code=code-1');
     expect(h.minted).toBe(1);
+  });
+
+  it('says the session ended when no code could be minted (N2)', async () => {
+    h.sessionEnded = true;
+    const res = await allowAsAdmin(PASSWORD);
+    expect(res.status).toBe(401);
+    expect(res.headers.get('location')).toBeNull();
+    expect(await res.text()).toContain('your session ended');
+    expect(h.minted).toBe(0);
   });
 
   it('refuses a member and mints no code', async () => {

@@ -27,7 +27,7 @@
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { NextResponse } from '@/server/http-compat';
-import { getLoginOr401, loginSessionEpoch, verifyPassword, type SessionUser } from '@/lib/auth';
+import { getLoginOr401, verifyPassword, type SessionUser } from '@/lib/auth';
 import { rateLimitLogin, rateLimitLoginRefund } from '@/lib/rate-limit';
 import { requestOrigin } from '@/lib/auth-constants';
 import { getClient, isRemoteMcpEnabled, mintAuthCode, DEFAULT_SCOPE } from '@/lib/mcp-oauth';
@@ -83,6 +83,9 @@ type Consenter = {
   email: string;
   role: 'admin' | 'member' | 'client';
   sessionEpoch: number | null;
+  /** The epoch the session check verified (any role): the code is minted
+   *  only if it is still the login's then (mintAuthCode). */
+  consentEpoch: number;
 };
 
 /** Who is signed in: a login that may connect, a member or client whose MCP
@@ -93,7 +96,7 @@ async function signedIn(): Promise<Consenter | 'member' | 'client' | null> {
   if (login instanceof Response) return null;
   switch (login.kind) {
     case 'admin':
-      return adminConsenter(login.user);
+      return adminConsenter(login.user, login.sessionEpoch);
     case 'member':
     case 'client': {
       if (!(await mcpLoginEnabled(login.loginId))) return login.kind;
@@ -106,18 +109,20 @@ async function signedIn(): Promise<Consenter | 'member' | 'client' | null> {
         email: login.email,
         role: login.kind,
         sessionEpoch: target.sessionEpoch,
+        consentEpoch: login.sessionEpoch,
       };
     }
   }
 }
 
-function adminConsenter(user: SessionUser): Consenter {
+function adminConsenter(user: SessionUser, consentEpoch: number): Consenter {
   return {
     ownerId: user.id,
     loginId: user.actor.id,
     email: user.email,
     role: 'admin',
     sessionEpoch: null,
+    consentEpoch,
   };
 }
 
@@ -207,9 +212,6 @@ export async function POST(req: Request) {
   if (user === 'member') return htmlError(MEMBER_REFUSED, 403);
   if (user === 'client') return htmlError(CLIENT_REFUSED, 403);
   if (!user) return htmlError('your session expired — start the connection again', 401);
-  // The epoch the session was just checked at: the code is minted only if
-  // it still is the login's then (mintAuthCode, verification audit N2).
-  const consentEpoch = await loginSessionEpoch(user.loginId);
 
   if (!consentTokenValid(get('consent_token'), consentToken(user.loginId, p))) {
     return htmlError('consent could not be verified — start the connection again', 400);
@@ -255,7 +257,9 @@ export async function POST(req: Request) {
     ownerId: user.ownerId,
     actorId: user.loginId,
     sessionEpoch: user.sessionEpoch,
-    consentEpoch,
+    // The epoch the session check verified (last check F5): the code is
+    // minted only if it is still the login's (verification audit N2).
+    consentEpoch: user.consentEpoch,
     codeChallenge: p.codeChallenge,
     codeChallengeMethod: p.codeChallengeMethod,
     redirectUri: p.redirectUri,

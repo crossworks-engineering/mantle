@@ -97,7 +97,13 @@ async function handler(req: Request): Promise<Response> {
     // under the same ceiling (413 over it), and hand the transport that copy.
     if (req.method === 'POST' && req.body) {
       const body = await readBodyCapped(req, JSON_BODY_CEILING_BYTES);
-      req = new Request(req.url, { method: req.method, headers: req.headers, body });
+      req = new Request(req.url, {
+        method: req.method,
+        headers: req.headers,
+        body,
+        // A client that goes away still stops the tool calls (last check F4).
+        signal: req.signal,
+      });
     }
   }
   // A member's or client's tools are resolved from their responder's groups

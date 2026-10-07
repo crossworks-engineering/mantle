@@ -20,7 +20,9 @@ import {
   oauthAuthCodes,
   pushSubscriptions,
   countUsers,
+  isBusy,
   isWriteRefused,
+  pgErrorCode,
 } from '@mantle/db';
 import {
   loadAnchorId,
@@ -163,11 +165,12 @@ export function loginUsable(row: Pick<LoginRow, 'disabledAt' | 'email'>): boolea
 }
 
 /** Who is calling, resolved from the login row: an admin (today's
- *  SessionUser), a member or a client. */
+ *  SessionUser), a member or a client. `epoch`: the login's session epoch
+ *  on the row the credential was just checked against. */
 type Resolved =
-  | { kind: 'admin'; user: SessionUser; source: AuthSource }
-  | { kind: 'member'; member: MemberCaller; source: AuthSource }
-  | { kind: 'client'; client: ClientCaller; source: AuthSource };
+  | { kind: 'admin'; user: SessionUser; source: AuthSource; epoch: number }
+  | { kind: 'member'; member: MemberCaller; source: AuthSource; epoch: number }
+  | { kind: 'client'; client: ClientCaller; source: AuthSource; epoch: number };
 
 /**
  * Owner gate for the byte-serving asset routes only. Resolves the session
@@ -388,7 +391,7 @@ async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved 
   switch (role) {
     case 'admin': {
       const user = await sessionUserFor(row);
-      return user ? { kind: 'admin', user, source } : null;
+      return user ? { kind: 'admin', user, source, epoch: row.sessionEpoch } : null;
     }
     case 'member': {
       const anchorId = await getAnchorId();
@@ -398,6 +401,7 @@ async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved 
       return {
         kind: 'member',
         source,
+        epoch: row.sessionEpoch,
         member: {
           role: 'member',
           loginId: row.id,
@@ -420,6 +424,7 @@ async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved 
       return {
         kind: 'client',
         source,
+        epoch: row.sessionEpoch,
         client: {
           role: 'client',
           loginId: row.id,
@@ -471,7 +476,7 @@ async function resolveLogin(): Promise<Resolved | null> {
   // remote identity stands in for the cookie→authUsers lookup. Always an
   // admin. No-op in prod.
   const dev = detachedDevUser();
-  if (dev) return { kind: 'admin', user: dev, source: 'web' };
+  if (dev) return { kind: 'admin', user: dev, source: 'web', epoch: 0 };
 
   // An API key is judged on itself, never with the cookie: a key presented
   // where keys are not accepted is no login at all.
@@ -763,11 +768,34 @@ export async function sessionCookieExpiryMs(): Promise<number | null> {
 
 /** The calling login's own row, whatever its role: for the few routes about
  *  the login itself (change its password, sign out, who am I). Never for
- *  brain data. Each caller decides per role; a client is its own kind. */
+ *  brain data. Each caller decides per role; a client is its own kind.
+ *  `sessionEpoch` is the epoch the credential was verified at, for work that
+ *  must still be that session's when it lands (OAuth consent). */
 export async function getLoginOr401(): Promise<
-  | { kind: 'admin'; loginId: string; email: string; source: AuthSource; user: SessionUser }
-  | { kind: 'member'; loginId: string; email: string; source: AuthSource; member: MemberCaller }
-  | { kind: 'client'; loginId: string; email: string; source: AuthSource; client: ClientCaller }
+  | {
+      kind: 'admin';
+      loginId: string;
+      email: string;
+      source: AuthSource;
+      sessionEpoch: number;
+      user: SessionUser;
+    }
+  | {
+      kind: 'member';
+      loginId: string;
+      email: string;
+      source: AuthSource;
+      sessionEpoch: number;
+      member: MemberCaller;
+    }
+  | {
+      kind: 'client';
+      loginId: string;
+      email: string;
+      source: AuthSource;
+      sessionEpoch: number;
+      client: ClientCaller;
+    }
   | NextResponse
 > {
   const res = await resolveLogin();
@@ -779,6 +807,7 @@ export async function getLoginOr401(): Promise<
         loginId: res.user.actor.id,
         email: res.user.actor.email,
         source: res.source,
+        sessionEpoch: res.epoch,
         user: res.user,
       };
     case 'member':
@@ -787,6 +816,7 @@ export async function getLoginOr401(): Promise<
         loginId: res.member.loginId,
         email: res.member.email,
         source: res.source,
+        sessionEpoch: res.epoch,
         member: res.member,
       };
     case 'client':
@@ -795,6 +825,7 @@ export async function getLoginOr401(): Promise<
         loginId: res.client.loginId,
         email: res.client.email,
         source: res.source,
+        sessionEpoch: res.epoch,
         client: res.client,
       };
   }
@@ -1018,7 +1049,18 @@ export async function endLoginSessions(
     opts.revokedKeyIds?.push(...ended);
     return epoch;
   }
-  const epoch = await db.transaction((tx) => run(tx));
+  // Once more if it met a busy lock (last check F3): the caller has often
+  // committed its first step already (a new password), and leaving the old
+  // sessions alive after it must not happen silently. A second failure is
+  // thrown: the request fails loudly (409 busy), never a quiet success.
+  let epoch: number | null;
+  try {
+    epoch = await db.transaction((tx) => run(tx));
+  } catch (err) {
+    if (!isBusy(err) && pgErrorCode(err) !== '57014') throw err;
+    ended.length = 0;
+    epoch = await db.transaction((tx) => run(tx));
+  }
   // After the commit, so a rolled-back end leaves no row (final audit).
   auditKeysEnded(loginId, opts.actorId ?? loginId, ended);
   return epoch;

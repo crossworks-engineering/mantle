@@ -21,4 +21,9 @@ export async function lockOauthActor(tx: OauthExec, actorId: string): Promise<vo
   await tx.execute(sql`set local lock_timeout = '5s'`);
   await tx.execute(sql`set local statement_timeout = '15s'`);
   await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`oauth-actor:${actorId}`}))`);
+  // Back to the defaults once held (last check F3): the bound is on the
+  // wait, and a caller's own transaction (an admin's End sessions, with its
+  // row locks after this) must not inherit it.
+  await tx.execute(sql`set local lock_timeout to default`);
+  await tx.execute(sql`set local statement_timeout to default`);
 }

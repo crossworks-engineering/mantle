@@ -11,10 +11,24 @@
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/mcp-oauth-lock.db.test.ts
  */
 import { createHash, randomUUID } from 'node:crypto';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ensureTestAnchor } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
+
+/** Every lockOauthActor call, counted, then passed to the real one: a test
+ *  can then prove a path takes the lock, or does not. */
+const locks = vi.hoisted(() => ({ calls: 0 }));
+vi.mock('./oauth-lock', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./oauth-lock')>();
+  return {
+    ...real,
+    lockOauthActor: async (...args: Parameters<typeof real.lockOauthActor>) => {
+      locks.calls += 1;
+      return real.lockOauthActor(...args);
+    },
+  };
+});
 
 type Row = Record<string, unknown>;
 
@@ -91,12 +105,22 @@ describe.skipIf(!URL)('the OAuth lock', () => {
 
   it('takes no lock for a revoked refresh token (N1)', async () => {
     const { refresh } = await grant(admin, true);
+    // A live token does take it: the count is a real signal.
+    const live = await grant(admin);
+    const before = locks.calls;
+    expect(
+      (await oauth.refreshAccessToken({ refreshToken: live.refresh, clientId: client })).ok,
+    ).toBe(true);
+    expect(locks.calls).toBe(before + 1);
+
     const results = await Promise.all(
       Array.from({ length: 25 }, () =>
         oauth.refreshAccessToken({ refreshToken: refresh, clientId: client }),
       ),
     );
     expect(results.every((r) => !r.ok)).toBe(true);
+    // Not one of the 25 took the lock (or a transaction).
+    expect(locks.calls).toBe(before + 1);
   }, 30_000);
 
   it('mints no code for a session that ended after consent (N2)', async () => {

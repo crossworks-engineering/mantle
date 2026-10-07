@@ -36,20 +36,21 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     ...(parsed.data.writeEnabled !== undefined ? { writeEnabled: parsed.data.writeEnabled } : {}),
     updatedAt: new Date(),
   };
-  const [row] = await db
-    .insert(mcpLoginAccess)
-    .values({ loginId: login.id, ...set })
-    .onConflictDoUpdate({ target: mcpLoginAccess.loginId, set })
-    .returning();
   // Off means off: the login's grants and tokens are revoked, so turning
-  // MCP on again later does not bring the old ones back.
-  // Under the login's OAuth lock (verification audit N3), the one a code
-  // exchange and a refresh take: a grant minted alongside is revoked here or
-  // refused there, and open codes go too, so nothing comes back on.
-  if (parsed.data.enabled === false) {
-    const now = new Date();
-    await db.transaction(async (tx) => {
-      await lockOauthActor(tx, login.id);
+  // MCP on again later does not bring the old ones back. The switch and the
+  // revokes commit together (last check F1), under the login's OAuth lock
+  // (verification audit N3), the one a code exchange and a refresh take: a
+  // grant minted alongside is revoked here or refused there, and open codes
+  // go too, so nothing comes back on. A lock timeout changes nothing.
+  const row = await db.transaction(async (tx) => {
+    if (parsed.data.enabled === false) await lockOauthActor(tx, login.id);
+    const [saved] = await tx
+      .insert(mcpLoginAccess)
+      .values({ loginId: login.id, ...set })
+      .onConflictDoUpdate({ target: mcpLoginAccess.loginId, set })
+      .returning();
+    if (parsed.data.enabled === false) {
+      const now = new Date();
       await tx
         .update(oauthAccessTokens)
         .set({ revokedAt: now })
@@ -59,7 +60,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
         .update(mcpLoginTokens)
         .set({ revokedAt: now })
         .where(and(eq(mcpLoginTokens.loginId, login.id), isNull(mcpLoginTokens.revokedAt)));
-    });
-  }
+    }
+    return saved;
+  });
   return NextResponse.json({ enabled: row!.enabled, writeEnabled: row!.writeEnabled });
 }
