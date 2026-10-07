@@ -49,7 +49,7 @@ trap cleanup EXIT
 if [ -d /proc ]; then
   for pid in $(pgrep -f 'next dev' 2>/dev/null || true); do
     case "$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)" in
-      */server/web) echo "✗ a 'next dev' already holds server/web (PID $pid) — stop it yourself." >&2; exit 1 ;;
+      */server/web) echo "✗ a 'next dev' already holds server/web (PID $pid): stop it yourself." >&2; exit 1 ;;
     esac
   done
 fi
@@ -63,7 +63,7 @@ for i in $(seq 1 120); do
   sleep 1; [ "$i" = 120 ] && { echo "✗ web not ready"; tail -20 "$web_log"; exit 1; }
 done
 echo "  ready"
-echo "→ server/api — the extractor (log: $api_log)"
+echo "→ server/api: the extractor (log: $api_log)"
 ( setsid pnpm -C server/api start >"$api_log" 2>&1 & echo $! >"$api_pid_file" )
 sleep 8
 echo "→ switch the embedder and re-embed"

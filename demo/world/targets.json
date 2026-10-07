@@ -1,5 +1,5 @@
 {
-  "$comment": "Volume targets for the demo brain, v2 (2026-10-07, Jason's decisions on the demo refresh task): quality over quantity, 3 to 5 polished items per workspace, all in one story (world.json). 'target' is what the generator writes; 'min' is what verify.ts asserts after the seed. A seed below a min is a FAILED seed. The v1 volumes (about 760 nodes, 320 emails, 250 traces) are gone on purpose: they were filler, and filler is what made the old demo noisy.",
+  "$comment": "Volume targets for the demo brain, v2 (2026-10-07, the owner's decisions on the demo refresh task): quality over quantity, 3 to 5 polished items per workspace, all in one story (world.json). 'target' is what the generator writes; 'min' is what verify.ts asserts after the seed. A seed below a min is a FAILED seed. The v1 volumes (about 760 nodes, 320 emails, 250 traces) are gone on purpose: they were filler, and filler is what made the old demo noisy.",
   "version": 2,
 
   "nodes": {
