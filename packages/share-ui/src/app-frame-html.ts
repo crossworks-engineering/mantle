@@ -189,17 +189,10 @@ export function buildAppFrameHtml(opts: {
    non-propagating body background) paints in the normal layers, above the
    backdrop, and hides it. */
 html,body{margin:0}body{background:var(--background)}#root{padding:0}
-/* Themed scrollbars for the WHOLE app. The host only styles scrollbars behind an
-   opt-in .scrollbar-thin class, so an app's own scroll containers otherwise fall
-   back to the default wide OS scrollbar with a white/grey track that clashes with
-   the theme. Apply the thin, theme-token look to every scroller inside the iframe
-   (scoped here, so the host is untouched). Vars resolve from the linked theme. */
-*{scrollbar-width:thin;scrollbar-color:color-mix(in oklab,var(--muted-foreground) 30%,transparent) transparent}
-::-webkit-scrollbar{width:10px;height:10px}
-::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background-color:color-mix(in oklab,var(--muted-foreground) 30%,transparent);border-radius:6px;border:2px solid transparent;background-clip:padding-box}
-::-webkit-scrollbar-thumb:hover{background-color:color-mix(in oklab,var(--muted-foreground) 50%,transparent);background-clip:padding-box}
-::-webkit-scrollbar-corner{background:transparent}
+/* Scrollbars: no rules here. The linked /share-runtime/styles.css carries
+   share-ui's global needle default, the same bar as the host. This block used
+   to set scrollbar-width on every element, which in Chromium switches the
+   ::-webkit-scrollbar rules off and drew the platform's 11px grey bar. */
 ${
   opts.viewport
     ? `/* Viewport frame: the iframe IS the viewport, so viewport-height utilities

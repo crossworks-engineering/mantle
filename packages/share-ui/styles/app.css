@@ -186,8 +186,41 @@
 }
 
 /* ============================================================================
-   Scrollbar utilities — used by <Scrollable> and fixed shell regions.
+   Scrollbars: ONE global needle default. No exceptions.
    ========================================================================== */
+
+/* Every scroller in the app gets the same bar: a needle thumb in the theme's
+   primary colour on a transparent track. No buttons, no corner, no grey
+   gutter. The only opt-out is hiding the bar: `.scrollbar-hidden`, or
+   Tailwind's own `scrollbar-none` utility.
+
+   It is global because an opt-in class failed twice. First, anything that
+   scrolled without the class fell back to the platform bar. Then the class
+   itself broke: Tailwind 4 ships a `scrollbar-thin` utility of its own
+   (`scrollbar-width: thin`), so every `.scrollbar-thin` element carried a
+   standard scrollbar property again. Since Chromium 121, a standard property
+   (`scrollbar-width` OR `scrollbar-color`, the latter INHERITED) switches the
+   `::-webkit-scrollbar` pseudo elements off for that element. Chrome then drew
+   its own 11px grey bar with a grey track (measured on the live web app in
+   Chrome 154, 2026-10-07), the bar this section exists to stop.
+
+   So in engines WITH the pseudo elements (Chromium, Safari, Electron) the
+   standard properties are reset to `auto` on every element, unlayered, which
+   beats Tailwind's layered utility whatever its specificity. The pseudo
+   elements then give the exact pixels. Engines WITHOUT them (Firefox) get the
+   standard properties: `thin` is its narrowest visible value, in the same
+   colours. Firefox has no pixel control; that is the floor, not a bug.
+
+   `.scrollbar-thin` and `.scrollbar-hair` stay valid as markup and are plain
+   aliases of this default. Touch devices draw overlay bars and ignore it.
+
+   Colour: the theme's primary with a third of the foreground mixed in. Pure
+   primary is too pale on some light themes (a contrast of 1.2 against the
+   background); the mix keeps every one of the 86 theme and mode pairs at 2.1
+   or better idle while the hue still reads as the theme's own.
+
+   Shape: a 6px gutter holds a 4px thumb (1px clear border each side), so it
+   reads as a needle and grows to 6px under the pointer with no layout shift. */
 .scrollbar-hidden {
   -ms-overflow-style: none;
   scrollbar-width: none;
@@ -196,67 +229,57 @@
   display: none;
 }
 
-/* HOW THE TWO VISIBLE UTILITIES ARE BUILT, and why it is not the obvious way.
+@supports selector(::-webkit-scrollbar) {
+  /* `.scrollbar-none` is Tailwind's own hide utility; leave it hiding. */
+  *:not(.scrollbar-hidden, .scrollbar-none) {
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+  }
+}
+@supports not selector(::-webkit-scrollbar) {
+  *:not(.scrollbar-hidden, .scrollbar-none) {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(
+        in oklab,
+        color-mix(in oklab, var(--primary) 65%, var(--foreground)) 80%,
+        transparent
+      )
+      transparent;
+  }
+}
 
-   There are two ways to style a scrollbar: the standard properties
-   (`scrollbar-width`, `scrollbar-color`) and the `::-webkit-scrollbar` pseudo
-   elements. Only the pseudo elements take a pixel width. And since Chromium
-   121, setting EITHER standard property on an element switches the pseudo
-   elements off for it. Setting both, as `.scrollbar-thin` used to, meant
-   Chrome drew the platform's "thin" bar (11px with classic scrollbars) and the
-   6px rule below it was dead code. Measured in Chrome 152: 11px, not 6.
-
-   So the standard properties are gated to engines WITHOUT the pseudo elements
-   (Firefox). Chromium and Safari get the exact pixel width; Firefox gets
-   `thin`, its narrowest visible value, in the same colours. Firefox has no
-   pixel control at all, so there `.scrollbar-hair` and `.scrollbar-thin` look
-   the same; that is the floor, not a bug to chase.
-
-   Touch devices draw overlay scrollbars and ignore all of this. */
-.scrollbar-thin::-webkit-scrollbar {
+::-webkit-scrollbar {
   width: 6px;
   height: 6px;
-}
-.scrollbar-thin::-webkit-scrollbar-thumb {
-  border-radius: 3px;
-}
-
-/* The hairline: for SMALL POPOVERS only (a slash menu, a select, a dropdown),
-   where a 6px bar is a visible share of a narrow list. Leave page-level panes,
-   tables, code blocks and textareas on `.scrollbar-thin`: 3px is a poor drag
-   target on a long document. */
-.scrollbar-hair::-webkit-scrollbar {
-  width: 3px;
-  height: 3px;
-}
-.scrollbar-hair::-webkit-scrollbar-thumb {
-  border-radius: 2px;
-}
-
-.scrollbar-thin::-webkit-scrollbar-track,
-.scrollbar-hair::-webkit-scrollbar-track {
   background: transparent;
 }
-.scrollbar-thin::-webkit-scrollbar-thumb,
-.scrollbar-hair::-webkit-scrollbar-thumb {
-  background-color: color-mix(in oklab, var(--muted-foreground) 30%, transparent);
-  transition: background-color 0.2s ease;
-}
-.scrollbar-thin::-webkit-scrollbar-thumb:hover,
-.scrollbar-hair::-webkit-scrollbar-thumb:hover {
-  background-color: color-mix(in oklab, var(--muted-foreground) 50%, transparent);
-}
-.scrollbar-thin::-webkit-scrollbar-corner,
-.scrollbar-hair::-webkit-scrollbar-corner {
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-track-piece,
+::-webkit-scrollbar-corner {
   background: transparent;
+  border: 0;
 }
-
-@supports not selector(::-webkit-scrollbar) {
-  .scrollbar-thin,
-  .scrollbar-hair {
-    scrollbar-width: thin;
-    scrollbar-color: color-mix(in oklab, var(--muted-foreground) 30%, transparent) transparent;
-  }
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+::-webkit-scrollbar-thumb {
+  background-color: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--primary) 65%, var(--foreground)) 80%,
+    transparent
+  );
+  background-clip: padding-box;
+  border: 1px solid transparent;
+  border-radius: 9999px;
+  min-height: 24px;
+  min-width: 24px;
+}
+::-webkit-scrollbar-thumb:hover,
+::-webkit-scrollbar-thumb:active {
+  background-color: color-mix(in oklab, var(--primary) 65%, var(--foreground));
+  border-width: 0;
 }
 
 /* React Flow controls (trace step graph). The library's default control

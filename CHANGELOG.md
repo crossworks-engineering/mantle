@@ -4,6 +4,18 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: needle scrollbars everywhere
+
+Every scrollbar in the share surfaces, the mini-app frame and the Jackdaw
+client is now one global needle (share-ui `app.css`): a 4px thumb in the
+theme's primary colour, 6px under the pointer, on a transparent track. No
+class is needed; `scrollbar-hidden` (or Tailwind's `scrollbar-none`) still
+hides a bar. The fat grey bar came from Tailwind 4's own `scrollbar-thin`
+utility: it sets `scrollbar-width: thin`, which in Chromium switches the
+styled bar off, so Chrome drew its 11px platform bar on every
+`.scrollbar-thin` pane. Measured: 11px and 15px before, 6px after, in Chrome
+and Safari. Firefox draws its own thin bar in the theme colour.
+
 ## Unreleased: API keys and the public HTTP API v1
 
 Scripts and MCP clients get real API keys (migration 0232, plan page
