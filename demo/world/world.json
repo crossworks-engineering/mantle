@@ -100,7 +100,7 @@
     "$comment": "How the demo brain looks when it opens (brain-level preferences, set by seed/set-appearance.ts): the jackdaw colour theme, lorelei avatars and the Neat animated background. A saved Neat spec is what turns Neat on. The seed value is the product default chosen with the release that ships it.",
     "colorTheme": "jackdaw",
     "avatarStyle": "lorelei",
-    "neatBackground": { "v": 1, "seed": 1, "tone": "auto", "speed": 2 }
+    "neatBackground": { "v": 1, "seed": 55361, "tone": "auto", "speed": 2 }
   },
 
   "access": {
