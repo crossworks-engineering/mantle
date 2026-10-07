@@ -17,7 +17,7 @@ On macOS, drag **Jackdaw** to **Applications**, then open it. The Mac app is sig
 On Windows, the installer is not signed. If SmartScreen says **Windows protected your PC**, click **More info**, then **Run anyway**.
 
 :::caution[macOS says the app is damaged]
-Mac builds up to 0.6.251 were not signed. macOS shows "Jackdaw is damaged and can't be opened". The file is not damaged. Download the newest release instead. To keep an old build, remove the download flag in Terminal, then open the app:
+Mac builds up to 0.6.252 were not signed. macOS shows "Jackdaw is damaged and can't be opened". The file is not damaged. Download the newest release instead. To keep an old build, remove the download flag in Terminal, then open the app:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/Jackdaw.app
@@ -38,12 +38,12 @@ Use **Brain > Add or Remove a Brain…** (Ctrl+Shift+B, or Cmd+Shift+B on a Mac)
 
 ## Updates
 
-The app checks for a new version at launch and every 4 hours, downloads it in the background, and installs it when you quit. On a Mac, this needs a signed build: if you have 0.6.251 or earlier, download the next release by hand one time.
+The app checks for a new version at launch and every 4 hours, downloads it in the background, and installs it when you quit. On a Mac, this needs a signed build: if you have 0.6.252 or earlier, download 0.6.253 or later by hand one time.
 
 ## If it fails
 
 - **Couldn't reach a Mantle server at …**: open the same address in a browser. If that fails too, the server is down or the address is wrong.
-- **macOS says the app is damaged**: you have a build up to 0.6.251. Download the newest release.
+- **macOS says the app is damaged**: you have a build up to 0.6.252. Download the newest release.
 
 ## Next
 
