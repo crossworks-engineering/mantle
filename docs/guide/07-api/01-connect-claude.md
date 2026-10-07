@@ -28,7 +28,7 @@ In claude.ai or Claude Desktop:
 
 1. Open **Settings > Connectors > Add custom connector**.
 2. Paste the connector URL.
-3. Sign in to your Mantle and approve access.
+3. Sign in to your Mantle, type your password and approve access.
 
 In Claude Code:
 
@@ -37,6 +37,8 @@ claude mcp add --transport http --scope user mantle https://example.com/api/mcp
 ```
 
 Then run `/mcp` inside Claude Code, pick `mantle` and sign in.
+
+A password change, **Sign out everywhere** or an admin's **End sessions** disconnects the connector. Connect it again after.
 
 ## Over SSH instead
 

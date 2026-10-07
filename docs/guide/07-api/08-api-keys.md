@@ -65,7 +65,9 @@ claude mcp add --transport http mantle https://example.com/api/mcp \
 - The login changes its password, or uses **Sign out everywhere**.
 - An admin ends the login's sessions, disables it, or changes its role.
 
-A plain sign-out does not end a key.
+A plain sign-out does not end an admin's or member's key. A client's key ends when the client signs out, because a client has no password to type when making one.
+
+Each time a key is made on your login, you get a notice that names the key. If it was not you, revoke the key and change your password.
 
 An admin sees every key on the brain and may revoke any of them. Members and clients see and revoke their own.
 
