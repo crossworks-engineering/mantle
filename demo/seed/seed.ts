@@ -374,7 +374,14 @@ async function seedPages(m: Manifest) {
 async function seedNotes(m: Manifest) {
   await seedFolders(m, 'notes');
   for (const n of nodesOf(m, 'note')) {
-    const r = (await post('/api/notes', { title: n.title, content: resolveRefs(n.id, n.body), tags: n.tags })) as { note?: { id?: string } };
+    // The note reader (jackdaw) renders note markdown with a plain renderer
+    // that drops a `media:` image, so a note's pictures go in as the file's
+    // own serve path. Pages keep `media:`: the page editor resolves it.
+    const content = resolveRefs(n.id, n.body).replace(
+      /!\[([^\]]*)\]\(media:([0-9a-f-]{36})\)/g,
+      (_all, alt: string, id: string) => `![${alt}](/api/files/files/${id}?raw=1)`,
+    );
+    const r = (await post('/api/notes', { title: n.title, content, tags: n.tags })) as { note?: { id?: string } };
     if (!r.note?.id) throw new Error(`note ${n.id}: no id came back`);
     created.set(n.id, r.note.id);
   }

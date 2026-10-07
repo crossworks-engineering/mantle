@@ -11,7 +11,6 @@
  */
 import { useState } from 'react';
 import { BatteryCharging, Sun, Zap, Clock } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -90,11 +89,11 @@ export default function App() {
           </div>
         </Card>
 
-        <Card className="flex flex-col justify-between p-4 lg:col-span-2">
+        <Card className="p-4 lg:col-span-2">
           <div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">Autonomy</span>
-              <Badge className={cn('hover:bg-transparent', tone)}>{rating}</Badge>
+              <span className={cn('rounded-md px-2 py-0.5 text-xs font-semibold', tone)}>{rating}</span>
             </div>
             <div className="mt-2 flex items-baseline gap-1.5">
               <span className="text-5xl font-semibold tabular-nums tracking-tight">{hours.toFixed(1)}</span>
@@ -105,20 +104,14 @@ export default function App() {
               {margin.toFixed(2)} h against the {TARGET_H} h target
             </p>
           </div>
-          <div className="mt-6 space-y-2 text-sm">
-            <div className="flex items-center justify-between">
-              <span className="inline-flex items-center gap-1.5 text-muted-foreground"><Zap className="size-3.5" />Usable energy</span>
-              <span className="tabular-nums">{usable.toFixed(0)} kWh</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="inline-flex items-center gap-1.5 text-muted-foreground"><Sun className="size-3.5" />Net load</span>
-              <span className="tabular-nums">{net.toFixed(0)} kW</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="inline-flex items-center gap-1.5 text-muted-foreground"><Clock className="size-3.5" />Target</span>
-              <span className="tabular-nums">{TARGET_H} h</span>
-            </div>
-          </div>
+          <dl className="mt-6 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+            <dt className="inline-flex items-center gap-1.5 text-muted-foreground"><Zap className="size-3.5" />Usable energy</dt>
+            <dd className="font-medium tabular-nums">{usable.toFixed(0)} kWh</dd>
+            <dt className="inline-flex items-center gap-1.5 text-muted-foreground"><Sun className="size-3.5" />Net load</dt>
+            <dd className="font-medium tabular-nums">{net.toFixed(0)} kW</dd>
+            <dt className="inline-flex items-center gap-1.5 text-muted-foreground"><Clock className="size-3.5" />Target</dt>
+            <dd className="font-medium tabular-nums">{TARGET_H} h</dd>
+          </dl>
         </Card>
       </div>
 
