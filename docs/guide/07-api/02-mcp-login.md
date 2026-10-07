@@ -7,7 +7,7 @@ The connector URL is the same one the owner uses. Who connects decides which too
 | Who connects | How they prove it | What they get |
 | --- | --- | --- |
 | An admin | Signs in at the connector URL | All owner tools |
-| A member or client | Signs in at the connector URL, or a token you make | Their role's tools, read only unless you allow Write |
+| A member or client | Signs in at the connector URL, or sends their own API key | Their role's tools, read only unless you allow Write |
 | A peer Mantle | Its peer token, with **Acts as** set | The tools of the login it acts as |
 
 ## Before you start
@@ -22,22 +22,18 @@ The connector URL is the same one the owner uses. Who connects decides which too
 3. Turn on **Write** only if they should make drafts in their own space. An admin still accepts each draft before it reaches the brain.
 4. They add the connector URL to Claude and sign in with their own login.
 
-A member or client can also make their own API key in **Settings > API access** and send it as a header. The key needs this **MCP** switch on, and writes only while **Write** is on too ([API keys](08-api-keys.md)).
+## When their MCP client cannot sign in
 
-## Give them a token instead
-
-Use a token when their MCP client cannot sign in.
-
-1. Under the login, type a label (for example "Claude Code on laptop") and press **Make token**.
-2. Copy the token. It is shown once.
-3. They send it as a header. In Claude Code:
+The member or client makes their own API key in **Settings > API access** and sends it as a header ([API keys](08-api-keys.md)). In Claude Code:
 
 ```sh
 claude mcp add --transport http mantle https://example.com/api/mcp \
-  --header "Authorization: Bearer mtlmcpk_..."
+  --header "Authorization: Bearer mtlk_..."
 ```
 
-Press the bin icon next to a token to revoke it.
+The key works only while their **MCP** switch is on, and writes only while both the key and **Write** allow it.
+
+Admins no longer make tokens for other logins. Tokens made before (`mtlmcpk_...`) keep working. They are listed under the login in **Settings > MCP**; press the bin icon to revoke one.
 
 ## Let a peer act as a login
 

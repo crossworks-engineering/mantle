@@ -10,7 +10,9 @@
  *     the login's session epoch (actorMayConnect).
  *  2. A static login token (`mtlmcpk_`): minted by an admin for one member
  *     or client login, for an MCP client without OAuth. Same switch, same
- *     epoch rule.
+ *     epoch rule. Minting is RETIRED (2026-10-07: nobody makes a credential
+ *     for another login; each login makes its own API key); tokens made
+ *     before keep working until revoked.
  *  3. A peer token (`mtlpeer_`) whose peer is bound to a login: the peer
  *     acts as that login (owner, member or client) with the peer's own write
  *     switch. The login must still be usable and still hold the role it had
@@ -18,7 +20,7 @@
  *
  * Every rule is read from the rows on every request, never from the token.
  */
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { and, eq, isNull } from 'drizzle-orm';
 import { authUsers, db, mcpLoginAccess, mcpLoginTokens, resolveSingleOwnerId } from '@mantle/db';
 import { PEER_TOKEN_PREFIX, verifyInboundToken } from '@mantle/content';
@@ -211,7 +213,7 @@ async function callerFromPeerToken(token: string): Promise<McpCaller | null> {
   };
 }
 
-// ── Admin side: the per-login switch and static tokens ───────────────────────
+// ── Admin side: the per-login switch ─────────────────────────────────────────
 
 /** Whether this member or client login may connect an MCP client now. */
 export async function mcpLoginEnabled(loginId: string): Promise<boolean> {
@@ -233,24 +235,3 @@ export async function mcpTargetLogin(
   return { id: row.id, role: row.role, sessionEpoch: row.sessionEpoch };
 }
 
-/** Mint a static token for a member or client login. The plaintext is
- *  returned once; only its hash is kept. */
-export async function mintMcpLoginToken(input: {
-  loginId: string;
-  sessionEpoch: number;
-  label: string;
-  createdBy: string;
-}): Promise<{ id: string; token: string }> {
-  const token = MCP_LOGIN_TOKEN_PREFIX + randomBytes(32).toString('base64url');
-  const [row] = await db
-    .insert(mcpLoginTokens)
-    .values({
-      loginId: input.loginId,
-      label: input.label,
-      tokenHash: sha256Hex(token),
-      sessionEpoch: input.sessionEpoch,
-      createdBy: input.createdBy,
-    })
-    .returning({ id: mcpLoginTokens.id });
-  return { id: row!.id, token };
-}

@@ -13,7 +13,7 @@ The MCP connector lets an outside AI client, such as Claude, connect to this bra
 
 Click **Check endpoint** to test that the connector answers. **Connected clients** lists every client that has signed in. Disconnect one to cut its access at once.
 
-Under **Team and client access**, let a member or client use Claude on this brain with their own rights only. They are read-only unless you turn on Write, which lets them make drafts in their own space. You can also make a token for a client that cannot sign in.
+Under **Team and client access**, let a member or client use Claude on this brain with their own rights only. They are read-only unless you turn on Write, which lets them make drafts in their own space. A member or client whose client cannot sign in makes their own key under **API access**. Tokens you made before still work and can be revoked here.
 
 ## Assistant
 
