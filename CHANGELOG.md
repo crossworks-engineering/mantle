@@ -4,6 +4,38 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: API keys and the public HTTP API v1
+
+Scripts and MCP clients get real API keys (migration 0232, plan page
+1e62e204). Each login makes its own keys in **Settings > API access**
+(members from their menu, clients under **API keys** in the portal). A key
+acts as the login that made it and can only narrow it: read only or read
+and write, all areas or some. Nobody can make a key for another login.
+
+- **Where a key works:** `Authorization: Bearer mtlk_...` on `/api/mcp` and
+  on the new versioned `/api/v1` (31 routes: whoami, search, pages, notes,
+  tasks, tables, files, events, contacts, journal). Every other route
+  refuses a key. Breaking changes go to `/api/v2`; v1 stays six months
+  after.
+- **Safety:** only a SHA-256 of the key is stored, compared in constant
+  time; the key is shown once. Admins and members re-type their password
+  to make one; member keys last at most 90 days, client keys 30. A password
+  change, Sign out everywhere, or an admin's End sessions, disable or role
+  change revokes the login's keys. A key never confirms a visibility change
+  and cannot make a page public. Every write a key makes is audited with
+  the key id and its maker (`key.created`, `key.revoked`, `key.refused`,
+  `api.write`).
+- **Limits:** 120 requests a minute per key on v1 and 300 on MCP, 600 and
+  1200 per login across its keys, search 30 a minute per key, 50 live keys
+  per login, 20 failed tries a minute per address and key prefix and 100
+  per address.
+- **MCP tokens retired:** an admin no longer makes `mtlmcpk_` tokens for a
+  member or client (`POST /api/mcp-logins/:id/tokens` answers 410). Tokens
+  made before keep working until revoked, and Settings > MCP still lists
+  and revokes them. Members and clients make their own key instead.
+- Docs: docs/guide/07-api/08-api-keys.md (new), 03-http-api.md
+  (rewritten), 02-mcp-login.md.
+
 ## 0.239.13: the Mantle logo files are back in brand/
 
 The Mantle marks left this repo with the jackdaw split and were later
