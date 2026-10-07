@@ -19,11 +19,16 @@
  * statelessly (no Redis / session store).
  */
 import { createMcpHandler } from 'mcp-handler';
-import { mcpInstructionsFor, prepareCallerTools, registerPreparedTools } from '@mantle/mcp-core';
+import {
+  mcpInstructionsFor,
+  preparedAllows,
+  prepareCallerTools,
+  registerPreparedTools,
+} from '@mantle/mcp-core';
 import { isRemoteMcpEnabled, wwwAuthenticateHeader } from '@/lib/mcp-oauth';
 import { auditMcpKeyCall, resolveMcpCaller } from '@/lib/mcp-auth';
 import { JSON_BODY_CEILING_BYTES } from '@/lib/body-limit';
-import { clientIp, rateLimit } from '@/lib/rate-limit';
+import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 import { rateLimitAccessKey } from '@/lib/access-keys';
 
 // Generous — the MCP client makes one HTTP request per tool call, so this must
@@ -50,7 +55,9 @@ function notFound(): Response {
 }
 
 async function handler(req: Request): Promise<Response> {
-  const limit = rateLimit(`mcp:${clientIp(req)}`, RATE);
+  // Keyed on the /64 for IPv6 (M2 audit N1): rotating addresses inside
+  // one /64 buys no fresh budget.
+  const limit = rateLimit(`mcp:${clientIpKey(req)}`, RATE);
   if (!limit.ok) {
     return new Response(JSON.stringify({ error: 'rate_limited' }), {
       status: 429,
@@ -87,11 +94,12 @@ async function handler(req: Request): Promise<Response> {
       );
     }
   }
-  // A write tool an API key calls leaves an audit row (lib/mcp-auth.ts).
-  if (caller.keyId) await auditMcpKeyCall(req, caller);
   // A member's or client's tools are resolved from their responder's groups
   // here, before the adapter registers synchronously.
   const prepared = await prepareCallerTools(caller);
+  // A write tool an API key calls leaves an audit row (lib/mcp-auth.ts),
+  // once the call is one this caller was given.
+  if (caller.keyId) await auditMcpKeyCall(req, caller, (slug) => preparedAllows(prepared, slug));
   // No tools at all (the role's responder is closed, or missing): say so,
   // rather than serve an MCP server with nothing on it.
   if (prepared.kind === 'login' && prepared.rows.length === 0) {

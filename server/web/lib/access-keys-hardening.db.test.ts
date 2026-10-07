@@ -35,7 +35,11 @@ describe.skipIf(!URL)('inbound API keys: hardening', () => {
   const client = randomUUID();
   const capped = randomUUID();
   const busy = randomUUID();
-  const all = [admin, member, client, capped, busy];
+  const guesser = randomUUID();
+  const noted = randomUUID();
+  const all = [admin, member, client, capped, busy, guesser, noted];
+  const oauthClientsMade: string[] = [];
+  let anchor = '';
   const emailOf = (s: string) => `${tag}-${s}@example.com`;
   let ip = 0;
 
@@ -87,14 +91,16 @@ describe.skipIf(!URL)('inbound API keys: hardening', () => {
     m = await import('@mantle/db');
     sql = (m.systemDb as unknown as { $client: typeof sql }).$client;
     tokens = await import('./auth/tokens');
-    await ensureTestAnchor(sql);
+    anchor = await ensureTestAnchor(sql);
     const hash = bcrypt.hashSync(PASSWORD, 4);
     await sql`insert into auth.users (id, email, password_hash, role, display_name) values
       (${admin}, ${emailOf('admin')}, ${hash}, 'admin', 'Ada Admin'),
       (${member}, ${emailOf('member')}, ${hash}, 'member', 'Mia Member'),
       (${client}, ${emailOf('client')}, ${hash}, 'client', 'Cal Client'),
       (${capped}, ${emailOf('capped')}, ${hash}, 'member', 'Cap Member'),
-      (${busy}, ${emailOf('busy')}, ${hash}, 'admin', 'Bea Busy')`;
+      (${busy}, ${emailOf('busy')}, ${hash}, 'admin', 'Bea Busy'),
+      (${guesser}, ${emailOf('guesser')}, ${hash}, 'member', 'Gus Guesser'),
+      (${noted}, ${emailOf('noted')}, ${hash}, 'member', 'Nia Noted')`;
     const { createApp } = await import('../server/app');
     app = await createApp();
   }, 120_000);
@@ -108,6 +114,12 @@ describe.skipIf(!URL)('inbound API keys: hardening', () => {
     if (ids.length) await sql`delete from audit_log where detail->>'keyId' in ${sql(ids)}`;
     await sql`delete from access_keys where login_id in ${sql(all)}`;
     await sql`delete from mobile_tokens where user_id in ${sql(all)}`;
+    await sql`delete from team_messages where login_id in ${sql(all)}`;
+    await sql`delete from audit_log where detail->>'loginId' in ${sql(all)}`;
+    await sql`delete from oauth_access_tokens where actor_id in ${sql(all)}`;
+    if (oauthClientsMade.length) {
+      await sql`delete from oauth_clients where id in ${sql(oauthClientsMade)}`;
+    }
     await sql`delete from spaces where login_id in ${sql(all)}`;
     await sql`delete from auth.users where id in ${sql(all)}`;
   });
@@ -164,14 +176,80 @@ describe.skipIf(!URL)('inbound API keys: hardening', () => {
     expect((await whoami(again.secret)).status).toBe(401);
   });
 
-  it("a client's plain sign-out leaves its keys alive", async () => {
+  it("a client's key ends with the session it was made in (N5)", async () => {
     const key = await makeKey(client);
+    expect((await whoami(key.secret)).status).toBe(200);
     const out = await call('/api/auth/logout', { method: 'POST', cookie: await cookieOf(client) });
     expect([200, 204]).toContain(out.status);
-    expect((await whoami(key.secret)).status).toBe(200);
+    expect((await whoami(key.secret)).status).toBe(401);
+  });
+
+  it('sign out everywhere also ends OAuth grants, and audits the revoked keys (N4, N7)', async () => {
+    const clientId = randomUUID();
+    await sql`insert into oauth_clients (id, client_name, redirect_uris)
+              values (${clientId}, ${`${tag} client`}, ${['https://c.example/cb']})`;
+    oauthClientsMade.push(clientId);
+    const grant = randomUUID();
+    await sql`insert into oauth_access_tokens
+                (id, token_hash, refresh_token_hash, owner_id, actor_id, client_id, expires_at, refresh_expires_at)
+              values (${grant}, ${createHash('sha256').update(grant).digest('hex')}, null,
+                      ${anchor}, ${busy}, ${clientId}, now() + interval '1 hour', now() + interval '30 days')`;
+    const key = await makeKey(busy);
+    const out = await call('/api/auth/logout', {
+      method: 'POST',
+      cookie: await cookieOf(busy),
+      body: { everywhere: true },
+    });
+    expect([200, 204]).toContain(out.status);
+    const [row] = await sql<Row[]>`select revoked_at from oauth_access_tokens where id = ${grant}`;
+    expect(row!.revoked_at).not.toBeNull();
+    const [k] = await sql<Row[]>`select revoked_by from access_keys where id = ${key.id}`;
+    expect(k!.revoked_by).toBe(busy);
+    let audited: Row[] = [];
+    for (let i = 0; i < 100 && audited.length === 0; i += 1) {
+      audited = await sql<Row[]>`select detail from audit_log
+        where action = 'key.revoked' and detail->>'loginId' = ${busy}
+          and detail->>'reason' = 'sessions-ended'`;
+      if (audited.length === 0) await new Promise((r) => setTimeout(r, 20));
+    }
+    expect(Number((audited[0]!.detail as Json).count)).toBeGreaterThan(0);
+  });
+
+  it('counts parallel password guesses before they are checked (N2)', async () => {
+    const results = await Promise.all(
+      Array.from({ length: 15 }, () => make(guesser, { password: 'a wrong password' })),
+    );
+    const statuses = results.map((r) => r.status);
+    expect(statuses.filter((s) => s === 403).length).toBeLessThanOrEqual(10);
+    expect(statuses.filter((s) => s === 429).length).toBeGreaterThanOrEqual(5);
+  });
+
+  it('tells a member in their own thread when a key is made, never the secret', async () => {
+    const key = await makeKey(noted, { name: `${tag} notice key`, access: 'read_write' });
+    let rows: Row[] = [];
+    for (let i = 0; i < 100 && rows.length === 0; i += 1) {
+      rows = await sql<Row[]>`select text from team_messages
+        where login_id = ${noted} and text like ${'A new API key was made on your login%'}`;
+      if (rows.length === 0) await new Promise((r) => setTimeout(r, 20));
+    }
+    const text = String(rows[0]!.text);
+    expect(text).toContain(`${tag} notice key, read and write, expires`);
+    expect(text).not.toContain(key.secret.slice(5, 13));
+    expect(text).not.toContain('mtlk_');
   });
 
   // ── F3 ────────────────────────────────────────────────────────────────────
+
+  it('counts an IPv6 /64 as one address (N1)', async () => {
+    const good = await makeKey(admin);
+    for (let i = 0; i < 100; i += 1) {
+      const prefix = randomUUID().replace(/-/g, '').slice(0, 8);
+      const at = `2001:db8:77:1::${(i + 1).toString(16)}`;
+      expect((await whoami(`mtlk_${prefix}_${'E'.repeat(43)}`, at)).status).toBe(401);
+    }
+    expect((await whoami(good.secret, '2001:db8:77:1::ffff')).status).toBe(429);
+    expect((await whoami(good.secret, '2001:db8:77:2::1')).status).toBe(200);
+  });
 
   it('caps one address at 100 failed keys a minute, any prefix', async () => {
     const at = '192.0.2.200';

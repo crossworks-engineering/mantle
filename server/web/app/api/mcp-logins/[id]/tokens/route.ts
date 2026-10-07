@@ -17,10 +17,10 @@ export async function POST() {
   if (user instanceof Response) return user;
   return NextResponse.json(
     {
-      error: 'gone',
+      // A readable `error` too (M3 audit item 10): an older client shows it.
+      error:
+        'Admins no longer make MCP tokens for other logins. Each member or client makes their own API key in API access.',
       reason: 'mcp-login-tokens-retired',
-      message:
-        'Admins no longer make MCP tokens for other logins. Each member or client makes their own API key in Settings > API access.',
     },
     { status: 410 },
   );

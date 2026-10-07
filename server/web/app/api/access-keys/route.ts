@@ -43,7 +43,8 @@ import {
   mintAccessKey,
 } from '@/lib/access-keys';
 import { listAccessKeys } from '@/lib/access-keys-admin';
-import { rateLimit, rateLimitPeek } from '@/lib/rate-limit';
+import { notifyKeyMade } from '@/lib/access-keys-notify';
+import { rateLimit, rateLimitRefund } from '@/lib/rate-limit';
 import { auditFireAndForget, requestMeta } from '@/lib/audit';
 import { firstIssue } from '@/lib/zod-issue';
 import type { AccessKeyCreated, AccessKeyList } from '@mantle/client-types';
@@ -110,8 +111,11 @@ export async function POST(req: Request) {
     }
   }
   if (keyNeedsPassword(login.kind)) {
-    // Only wrong passwords count: making several keys is not guessing.
-    const tries = rateLimitPeek(`akey-pw:${login.loginId}`, PASSWORD_RATE);
+    // Every try is counted BEFORE the password is checked, so parallel
+    // guesses cannot all pass a peek (M2 audit N2); a right password gives
+    // its token back, so making several keys is not guessing.
+    const bucket = `akey-pw:${login.loginId}`;
+    const tries = rateLimit(bucket, PASSWORD_RATE);
     if (!tries.ok) {
       return NextResponse.json(
         { error: 'Too many tries. Wait a minute, then try again.' },
@@ -119,12 +123,12 @@ export async function POST(req: Request) {
       );
     }
     if (!body.password || !(await verifyPassword(login.loginId, body.password))) {
-      rateLimit(`akey-pw:${login.loginId}`, PASSWORD_RATE);
       return NextResponse.json(
         { error: 'Type your password to make a key.', reason: 'password' },
         { status: 403 },
       );
     }
+    rateLimitRefund(bucket);
   }
 
   const expiresAt = expiryFromDays(
@@ -141,6 +145,8 @@ export async function POST(req: Request) {
     riskyTools,
     expiresAt,
     createdBy: login.loginId,
+    // A client's key ends when the client signs out (M2 audit N5).
+    sessionEpoch: login.kind === 'client' ? login.client.sessionEpoch : null,
     maxLive: MAX_LIVE_KEYS_PER_LOGIN,
   });
   if (!minted) {
@@ -152,6 +158,23 @@ export async function POST(req: Request) {
     );
   }
   const { id, prefix, key } = minted;
+
+  // Tell the login a key was made on it (in-app, and a sealed push): a
+  // stolen session must not make a key unseen. Not awaited: a slow push
+  // relay must not hold the answer. Never the secret or the prefix.
+  void notifyKeyMade({
+    ownerId:
+      login.kind === 'admin'
+        ? login.user.id
+        : login.kind === 'member'
+          ? login.member.anchorId
+          : login.client.anchorId,
+    loginId: login.loginId,
+    role: login.kind,
+    name: body.name,
+    access: body.access,
+    expiresAt,
+  });
 
   auditFireAndForget({
     actorId: login.loginId,

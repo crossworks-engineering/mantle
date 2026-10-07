@@ -14,9 +14,13 @@ const h = vi.hoisted(() => ({
   mcpOn: false,
 }));
 
+/** The admin's password in this file (stood in, never hashed). */
+const PASSWORD = 'the right password';
+
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getLoginOr401: vi.fn(async () => h.login),
+  verifyPassword: vi.fn(async (_id: string, password: string) => password === PASSWORD),
 }));
 
 vi.mock('@/lib/mcp-auth', () => ({
@@ -106,7 +110,40 @@ describe('GET /api/oauth/authorize', () => {
   });
 });
 
+/** Allow on the consent page an admin was shown, with `password`. */
+const allowAsAdmin = async (password: string | null) => {
+  h.login = admin;
+  const page = await (await get()).text();
+  const token = /name="consent_token" value="([^"]+)"/.exec(page)![1]!;
+  const { POST } = await import('./route');
+  const form = new FormData();
+  for (const [k, v] of QUERY) form.set(k, v);
+  form.set('decision', 'allow');
+  form.set('consent_token', token);
+  if (password !== null) form.set('password', password);
+  return POST(
+    new Request('http://brain.example/api/oauth/authorize', { method: 'POST', body: form }),
+  );
+};
+
 describe('POST /api/oauth/authorize', () => {
+  it('asks an admin for the password before a code is minted (M2 audit N4)', async () => {
+    h.login = admin;
+    expect(await (await get()).text()).toContain('name="password"');
+
+    const none = await allowAsAdmin(null);
+    expect(none.status).toBe(403);
+    expect(await none.text()).toContain('That password is not right');
+    const wrong = await allowAsAdmin('a wrong password');
+    expect(wrong.status).toBe(403);
+    expect(h.minted).toBe(0);
+
+    const right = await allowAsAdmin(PASSWORD);
+    expect(right.status).toBe(302);
+    expect(right.headers.get('location')).toContain('code=code-1');
+    expect(h.minted).toBe(1);
+  });
+
   it('refuses a member and mints no code', async () => {
     h.login = member;
     const { POST } = await import('./route');

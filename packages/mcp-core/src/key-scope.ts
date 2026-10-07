@@ -61,6 +61,34 @@ export function toolKeyArea(slug: string): KeyArea | null {
   return null;
 }
 
+/**
+ * Tools that change the CONTENT of an existing page or note (M2 audit N3).
+ * Content can embed other items (a file, a drawing, another page), and an
+ * item embedded in a page others can read becomes readable to them too
+ * (migration 0208), with no confirm. A key cannot confirm, so on an item
+ * others can read these tools refuse a key (register/context.ts).
+ */
+export const KEY_SHARED_CONTENT_TOOLS: ReadonlySet<string> = new Set([
+  'page_update',
+  'page_update_draft',
+  'page_commit',
+  'page_block_update',
+  'page_block_insert_after',
+  'page_block_insert_before',
+  'page_block_append',
+  'page_blocks_apply',
+  'page_mention',
+  'page_split',
+  'page_extract_section',
+  'note_update',
+]);
+
+/** The item a content tool names: `page_id`, else `id`. */
+export function contentToolTarget(input: Record<string, unknown>): string | null {
+  const v = input.page_id ?? input.id;
+  return typeof v === 'string' && v ? v : null;
+}
+
 /** Whether a key limited to `areas` (null = all) may have this tool. */
 export function keyAreasAllowTool(slug: string, areas: readonly string[] | null): boolean {
   if (areas === null) return true;

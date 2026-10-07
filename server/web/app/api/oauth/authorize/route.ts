@@ -14,12 +14,21 @@
  * self-authenticate) — it's the human-in-the-loop step. The consent form carries
  * a session-bound HMAC token so a forged cross-site POST can't auto-approve.
  *
+ * An admin or member re-types their password to Allow (M2 audit N4): a
+ * stolen session cookie alone must not approve a connector, whose refresh
+ * tokens outlive the session. 10 tries a minute per login, counted before
+ * the check. A client signs in by link or code and has no password; its
+ * grant is bound to its session epoch and ends when it signs out. A
+ * password change, "sign out everywhere" and an admin's End sessions end
+ * every grant of the login (endLoginSessions `endKeys`).
+ *
  * Security: if client_id or redirect_uri is invalid we render an error and do
  * NOT redirect (never bounce a code to an unvalidated URI).
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { NextResponse } from '@/server/http-compat';
-import { getLoginOr401, type SessionUser } from '@/lib/auth';
+import { getLoginOr401, verifyPassword, type SessionUser } from '@/lib/auth';
+import { rateLimit, rateLimitRefund } from '@/lib/rate-limit';
 import { requestOrigin } from '@/lib/auth-constants';
 import { getClient, isRemoteMcpEnabled, mintAuthCode, DEFAULT_SCOPE } from '@/lib/mcp-oauth';
 import { mcpLoginEnabled, mcpTargetLogin } from '@/lib/mcp-auth';
@@ -169,6 +178,9 @@ export async function GET(req: Request) {
   });
 }
 
+/** Wrong (or missing) passwords at consent, per login, per minute. */
+const CONSENT_PASSWORD_RATE = { max: 10, windowMs: 60_000 };
+
 export async function POST(req: Request) {
   if (!(await isRemoteMcpEnabled()))
     return htmlError('Remote MCP is not enabled on this Mantle.', 404);
@@ -206,6 +218,33 @@ export async function POST(req: Request) {
     dest.searchParams.set('error', 'access_denied');
     if (p.state) dest.searchParams.set('state', p.state);
     return NextResponse.redirect(dest, { status: 302 });
+  }
+
+  // An admin or member re-types their password to Allow (see the header).
+  if (user.role !== 'client') {
+    const bucket = `oauth-consent-pw:${user.loginId}`;
+    const tries = rateLimit(bucket, CONSENT_PASSWORD_RATE);
+    const again = (message: string, status: number) =>
+      new Response(
+        consentPage(
+          validated.clientName,
+          p,
+          consentToken(user.loginId, p),
+          user.email,
+          user.role,
+          message,
+        ),
+        {
+          status,
+          headers: { 'content-type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+        },
+      );
+    if (!tries.ok) return again('Too many tries. Wait a minute, then try again.', 429);
+    const password = get('password');
+    if (!password || !(await verifyPassword(user.loginId, password))) {
+      return again('That password is not right. Type your Mantle password to allow.', 403);
+    }
+    rateLimitRefund(bucket);
   }
 
   const code = await mintAuthCode({
@@ -248,6 +287,9 @@ function consentShell(inner: string): string {
   .allow { background:#6d6df0; color:#fff; }
   .deny { background:transparent; color:#c4c4cc; border-color:#33333b; }
   .foot { margin-top:16px; color:#74747d; font-size:12px; }
+  .pw { box-sizing:border-box; width:100%; margin:0 0 14px; padding:10px 12px; border-radius:10px;
+    border:1px solid #33333b; background:#0f0f13; color:#e7e7ea; font-size:14px; }
+  .err { margin:-6px 0 14px; color:#f08a8a; font-size:13px; }
 </style></head><body><div class="card">${inner}</div></body></html>`;
 }
 
@@ -257,6 +299,7 @@ function consentPage(
   token: string,
   email: string,
   role: Consenter['role'],
+  error?: string,
 ): string {
   const safeName = escapeHtml(clientName);
   const h = (v: string) => escapeHtml(v);
@@ -282,6 +325,14 @@ function consentPage(
     <input type="hidden" name="code_challenge_method" value="${h(p.codeChallengeMethod)}" />
     <input type="hidden" name="scope" value="${h(p.scope)}" />
     <input type="hidden" name="consent_token" value="${h(token)}" />
+    ${
+      role === 'client'
+        ? ''
+        : `<input type="text" name="username" value="${h(email)}" autocomplete="username" hidden />
+    <label class="muted" for="consent-password" style="display:block;margin-bottom:6px;">Type your Mantle password to allow</label>
+    <input id="consent-password" class="pw" type="password" name="password" autocomplete="current-password" />
+    ${error ? `<p class="err" role="alert">${h(error)}</p>` : ''}`
+    }
     <div class="row">
       <button class="deny" type="submit" name="decision" value="deny">Deny</button>
       <button class="allow" type="submit" name="decision" value="allow">Allow</button>

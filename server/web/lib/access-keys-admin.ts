@@ -2,7 +2,7 @@
  * The list side of inbound API keys (plan page 1e62e204): what the
  * Settings > API access screen shows. Never the secret, never its hash.
  */
-import { desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
 import { accessKeys, authUsers, db, type AccessKey } from '@mantle/db';
 import type { AccessKeyStatus, AccessKeyView } from '@mantle/client-types';
 import type { AccessKeyAccess, AccessKeyArea, AccessKeyRole } from './access-keys';
@@ -19,17 +19,29 @@ export function accessKeyStatus(
   return 'active';
 }
 
-const LIST_LIMIT = 500;
+/** Revoked keys shown, newest first; every key not revoked is always
+ *  shown (M3 audit item 9: an old live key must never drop off the list). */
+const REVOKED_LIST_LIMIT = 200;
 
 /** Keys newest first, with their login and maker: one login's (`loginId`),
- *  or every key (null, an admin's view). */
+ *  or every key (null, an admin's view). Every key not revoked, then the
+ *  newest revoked ones. */
 export async function listAccessKeys(loginId: string | null): Promise<AccessKeyView[]> {
-  const rows = await db
-    .select()
-    .from(accessKeys)
-    .where(loginId ? eq(accessKeys.loginId, loginId) : undefined)
-    .orderBy(desc(accessKeys.createdAt))
-    .limit(LIST_LIMIT);
+  const mine = loginId ? eq(accessKeys.loginId, loginId) : undefined;
+  const [live, revoked] = await Promise.all([
+    db
+      .select()
+      .from(accessKeys)
+      .where(and(mine, isNull(accessKeys.revokedAt)))
+      .orderBy(desc(accessKeys.createdAt)),
+    db
+      .select()
+      .from(accessKeys)
+      .where(and(mine, isNotNull(accessKeys.revokedAt)))
+      .orderBy(desc(accessKeys.createdAt))
+      .limit(REVOKED_LIST_LIMIT),
+  ]);
+  const rows = [...live, ...revoked];
   const ids = [...new Set(rows.flatMap((r) => [r.loginId, ...(r.createdBy ? [r.createdBy] : [])]))];
   const logins = ids.length
     ? await db

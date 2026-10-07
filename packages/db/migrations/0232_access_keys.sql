@@ -8,9 +8,13 @@
 -- The secret is shown once. Only its SHA-256 is kept; `key_prefix` is the
 -- public part of the secret, the lookup key and what the UI shows.
 -- `login_role` is the login's role at mint: a role change ends the key, as
--- does a disable. A sign out (any kind) and a password change do NOT end a
--- key: a key is its own credential, ended by revoke or expiry (audit item 9:
--- a client's every sign out moves the session epoch).
+-- does a disable. An admin's or member's key is its own credential: a plain
+-- sign-out leaves it; a password change, "sign out everywhere" and an
+-- admin's End sessions revoke it (the code does, endLoginSessions).
+--
+-- `session_epoch` is set for a CLIENT key only (M2 audit N5): a client has
+-- no password to re-type, so its key is bound to the session it was made
+-- in and ends when the client signs out. Admin and member keys hold NULL.
 --
 -- The unique index on key_hash is kept on purpose: it does no lookup work
 -- (lookups go by key_prefix), it guarantees no two rows hold one secret.
@@ -24,6 +28,7 @@ CREATE TABLE IF NOT EXISTS "public"."access_keys" (
   "login_role"    text NOT NULL,
   "key_prefix"    text NOT NULL,
   "key_hash"      text NOT NULL,
+  "session_epoch" integer,
   "access"        text NOT NULL,
   "areas"         text[],
   "risky_tools"   text[] NOT NULL DEFAULT '{}'::text[],
@@ -48,7 +53,9 @@ CREATE TABLE IF NOT EXISTS "public"."access_keys" (
   CONSTRAINT "access_keys_risky_ck"
     CHECK ("login_role" = 'admin' OR cardinality("risky_tools") = 0),
   CONSTRAINT "access_keys_areas_ck"
-    CHECK ("areas" IS NULL OR cardinality("areas") > 0)
+    CHECK ("areas" IS NULL OR cardinality("areas") > 0),
+  CONSTRAINT "access_keys_client_epoch_ck"
+    CHECK (("login_role" = 'client') = ("session_epoch" IS NOT NULL))
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "access_keys_prefix_uq"

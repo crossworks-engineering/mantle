@@ -406,12 +406,16 @@ describe.skipIf(!URL)('inbound API keys', () => {
     expect((await whoami(theirs.secret)).status).toBe(401);
   });
 
-  it('outlives a sign out, and ends with a disable and a role change', async () => {
-    // A sign out everywhere (or a client's plain sign out) moves the
-    // session epoch; a key is its own credential and lives on.
-    const signedOut = await makeKey({}, client);
+  it('a member key outlives a plain sign-out; a client key does not; both end with a disable or role change', async () => {
+    // A plain sign-out moves no key of a member's: a key is its own
+    // credential. A client's key is bound to the session it was made in
+    // (M2 audit N5): the client's sign-out moves the epoch and ends it.
+    const memberKey = await makeKey({}, member);
+    await sql`update auth.users set session_epoch = session_epoch + 1 where id = ${member}`;
+    expect((await whoami(memberKey.secret)).status).toBe(200);
+    const clientKey = await makeKey({}, client);
     await sql`update auth.users set session_epoch = session_epoch + 1 where id = ${client}`;
-    expect((await whoami(signedOut.secret)).status).toBe(200);
+    expect((await whoami(clientKey.secret)).status).toBe(401);
 
     const disabled = await makeKey({}, client);
     await sql`update auth.users set disabled_at = now() where id = ${client}`;

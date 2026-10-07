@@ -16,6 +16,7 @@ export {
   mcpInstructionsFor,
   ownerPeerAllows,
   prepareCallerTools,
+  preparedAllows,
   registerLoginRows,
   registerPreparedTools,
   resolveLoginToolRows,

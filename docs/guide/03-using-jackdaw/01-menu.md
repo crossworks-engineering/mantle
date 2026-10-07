@@ -49,8 +49,9 @@ Every item in the Jackdaw menu and what it is for. Each item links to its screen
 | [Microsoft](../06-help/microsoft.md) | SharePoint, OneDrive and Outlook. |
 | [Calendars](../06-help/calendar.md) | Read-only calendar feeds. |
 | [Profile](../06-help/profile.md) | Timezone, locale, house style, reminders. |
-| [API keys](../06-help/keys.md) | Provider keys. |
+| [API keys](../06-help/keys.md) | Provider keys: keys this brain uses to call other services. |
 | [MCP](../06-help/mcp.md) | Let an outside AI client use your brain. |
+| [API access](../06-help/api-access.md) | Your own keys for scripts and MCP clients that use this brain. |
 | [Connectors](../06-help/connectors.md) | Use outside MCP servers and web APIs. |
 | [Agents](../06-help/agents.md) | The assistants and specialists. |
 | [AI workers](../06-help/ai-workers.md) | Background jobs: extract, summarise, voice, vision. |

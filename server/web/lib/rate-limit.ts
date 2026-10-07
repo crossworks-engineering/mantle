@@ -16,7 +16,18 @@ type Bucket = {
   windowStartMs: number;
 };
 
-const buckets = new Map<string, Bucket>();
+/** One map of buckets with its own sweep clock. */
+type Store = { buckets: Map<string, Bucket>; lastSweepMs: number };
+
+/** The buckets every limiter here uses. */
+const main: Store = { buckets: new Map(), lastSweepMs: 0 };
+/**
+ * The buckets a stranger can mint at will: one per presented API key prefix
+ * (the failed-key budgets). They live apart from `main` (M2 audit N1): a
+ * flood of them fills and evicts only its own pool, never a live sign-in,
+ * password or per-key budget.
+ */
+const flood: Store = { buckets: new Map(), lastSweepMs: 0 };
 
 /**
  * Test-stack escape hatch: multiply every window cap by a factor ≥ 1.
@@ -34,24 +45,25 @@ const SCALE = (() => {
 
 /** Cap the map size so a flood of unique keys can't OOM the process. */
 const MAX_BUCKETS = 10_000;
-/** The hard cap: past it the OLDEST buckets go, live or not. */
+/** The hard cap: past it the OLDEST buckets of that pool go, live or not. */
 const HARD_MAX_BUCKETS = 2 * MAX_BUCKETS;
 /** At most one full sweep a second (M2 audit F3): when the map is full of
  *  live buckets, a sweep on every new key scanned the whole map each time,
  *  so a flood of unique keys cost a full scan per request. */
 const SWEEP_EVERY_MS = 1_000;
-let lastSweepMs = 0;
 
 /**
  * Drop expired buckets (at most once a second), and past the hard cap the
  * oldest buckets in insertion order. Losing a live bucket resets its
  * window early: the price of a bounded map under a flood of 20,000 unique
- * keys in one window, which the per-address limits in front of the
- * floodable callers (failed API keys, sign-in) make costly.
+ * keys in one window. The floodable keys have their own pool (`flood`), and
+ * every per-address key here goes through `clientIpKey` (an IPv6 /64 is one
+ * address), so reaching the cap of `main` takes that many real callers.
  */
-function sweep(now: number, windowMs: number): void {
-  if (now - lastSweepMs >= SWEEP_EVERY_MS) {
-    lastSweepMs = now;
+function sweep(store: Store, now: number, windowMs: number): void {
+  const { buckets } = store;
+  if (now - store.lastSweepMs >= SWEEP_EVERY_MS) {
+    store.lastSweepMs = now;
     for (const [k, b] of buckets) {
       if (now - b.windowStartMs >= windowMs) buckets.delete(k);
       if (buckets.size < MAX_BUCKETS / 2) break;
@@ -72,6 +84,38 @@ export type RateLimitResult = {
   remaining: number;
 };
 
+function take(store: Store, key: string, opts: { max: number; windowMs: number }): RateLimitResult {
+  const now = Date.now();
+  let bucket = store.buckets.get(key);
+  if (!bucket || now - bucket.windowStartMs >= opts.windowMs) {
+    // Fresh window. Also gc expired buckets if the map is getting large, so
+    // the limiter stays bounded on a long-running process.
+    if (store.buckets.size >= MAX_BUCKETS) sweep(store, now, opts.windowMs);
+    bucket = { count: 0, windowStartMs: now };
+    store.buckets.set(key, bucket);
+  }
+  bucket.count += 1;
+  const max = opts.max * SCALE;
+  const retryAfterSec = Math.max(1, Math.ceil((bucket.windowStartMs + opts.windowMs - now) / 1000));
+  if (bucket.count > max) {
+    return { ok: false, retryAfterSec, remaining: 0 };
+  }
+  return { ok: true, retryAfterSec, remaining: max - bucket.count };
+}
+
+function peek(store: Store, key: string, opts: { max: number; windowMs: number }): RateLimitResult {
+  const now = Date.now();
+  const bucket = store.buckets.get(key);
+  const max = opts.max * SCALE;
+  if (!bucket || now - bucket.windowStartMs >= opts.windowMs) {
+    return { ok: true, retryAfterSec: 0, remaining: max };
+  }
+  const retryAfterSec = Math.max(1, Math.ceil((bucket.windowStartMs + opts.windowMs - now) / 1000));
+  return bucket.count >= max
+    ? { ok: false, retryAfterSec, remaining: 0 }
+    : { ok: true, retryAfterSec, remaining: max - bucket.count };
+}
+
 /**
  * Take one token from `key`'s bucket. Returns `{ok: false}` when the
  * window cap is exceeded.
@@ -81,23 +125,7 @@ export type RateLimitResult = {
  * Keys are namespaced by the caller — we don't enforce a format.
  */
 export function rateLimit(key: string, opts: { max: number; windowMs: number }): RateLimitResult {
-  const now = Date.now();
-  let bucket = buckets.get(key);
-  if (!bucket || now - bucket.windowStartMs >= opts.windowMs) {
-    // Fresh window. Also opportunistically gc expired buckets if the
-    // map is getting large, so the limiter stays bounded on a long-
-    // running process.
-    if (buckets.size >= MAX_BUCKETS) sweep(now, opts.windowMs);
-    bucket = { count: 0, windowStartMs: now };
-    buckets.set(key, bucket);
-  }
-  bucket.count += 1;
-  const max = opts.max * SCALE;
-  const retryAfterSec = Math.max(1, Math.ceil((bucket.windowStartMs + opts.windowMs - now) / 1000));
-  if (bucket.count > max) {
-    return { ok: false, retryAfterSec, remaining: 0 };
-  }
-  return { ok: true, retryAfterSec, remaining: max - bucket.count };
+  return take(main, key, opts);
 }
 
 /**
@@ -110,16 +138,34 @@ export function rateLimitPeek(
   key: string,
   opts: { max: number; windowMs: number },
 ): RateLimitResult {
-  const now = Date.now();
-  const bucket = buckets.get(key);
-  const max = opts.max * SCALE;
-  if (!bucket || now - bucket.windowStartMs >= opts.windowMs) {
-    return { ok: true, retryAfterSec: 0, remaining: max };
-  }
-  const retryAfterSec = Math.max(1, Math.ceil((bucket.windowStartMs + opts.windowMs - now) / 1000));
-  return bucket.count >= max
-    ? { ok: false, retryAfterSec, remaining: 0 }
-    : { ok: true, retryAfterSec, remaining: max - bucket.count };
+  return peek(main, key, opts);
+}
+
+/**
+ * Give back one token taken from `key` in its current window. For a bucket
+ * that must count an attempt BEFORE slow work (so parallel attempts cannot
+ * all pass a peek: M2 audit N2) but should charge only the failures: take,
+ * do the work, refund on success.
+ */
+export function rateLimitRefund(key: string): void {
+  const bucket = main.buckets.get(key);
+  if (bucket && bucket.count > 0) bucket.count -= 1;
+}
+
+/** `rateLimit` on the pool of floodable keys (see `flood`). */
+export function rateLimitFlood(
+  key: string,
+  opts: { max: number; windowMs: number },
+): RateLimitResult {
+  return take(flood, key, opts);
+}
+
+/** `rateLimitPeek` on the pool of floodable keys (see `flood`). */
+export function rateLimitFloodPeek(
+  key: string,
+  opts: { max: number; windowMs: number },
+): RateLimitResult {
+  return peek(flood, key, opts);
 }
 
 /**

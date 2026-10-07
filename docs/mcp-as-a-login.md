@@ -11,8 +11,15 @@ bearer (`server/web/lib/mcp-auth.ts`), and gets that caller's tools only.
 | --- | --- | --- |
 | OAuth token of an admin | the owner | the full owner surface, as before |
 | OAuth token of a member or client | that login | its role's responder tools |
-| Static token `mtlmcpk_...` | one member or client login | its role's responder tools |
+| API key `mtlk_...` (migration 0232) | the login that made it | that login's tools, narrowed by the key (docs/guide/07-api/08-api-keys.md) |
+| Static token `mtlmcpk_...` (RETIRED, still honoured) | one member or client login | its role's responder tools |
 | Peer token `mtlpeer_...` with "Acts as" | the bound login | as that login, with the peer's write switch |
+
+Since 2026-10-07 an admin no longer mints static tokens for a member or
+client (`POST /api/mcp-logins/:id/tokens` answers 410): nobody makes a
+credential for another login. Each login makes its own API key in
+Settings > API access. Tokens minted before keep working until revoked, and
+Settings > MCP still lists and revokes them.
 
 A member or client reaches `/api/mcp` only while an admin turned MCP on for
 that login (Settings, MCP; table `mcp_login_access`). Their OAuth grants and
@@ -63,13 +70,15 @@ The calling brain uses `peer_tools`, `peer_call` and `peer_file_copy`
 
 Turning a login's MCP off revokes its grants and static tokens. A client's
 sign-out ends all its sessions by design, so it also ends that client's MCP
-grants and static tokens: an admin mints a new token after it. A member or
+grants and static tokens. A password change, "sign out everywhere" and an
+admin's End sessions also end an ADMIN's OAuth grants and every API key of
+the login (endLoginSessions `endKeys`, 2026-10-07). A member or
 client MCP request body is held to the plain JSON ceiling (8 MB), so a draft
 file over MCP is at most about 6 MB.
 
 ## Not done, and why
 
-- Static tokens for admin logins: admins have OAuth and peers.
+- Static tokens for admin logins: admins have OAuth, peers and API keys.
 - Folder and event create for members and clients: members have no event
   rights, and own-space folders are a tree feature with its own routes.
 - Non-builtin tools (http, recipe, connector) on the member and client

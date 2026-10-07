@@ -36,7 +36,7 @@ import {
 } from './access-keys';
 import { auditFireAndForget, requestMetaFrom } from './audit';
 import { actorMayConnect, grantFromAccessToken } from './mcp-oauth';
-import { clientIp } from './rate-limit';
+import { clientIp, clientIpKey } from './rate-limit';
 
 /** The static login token's prefix. */
 export const MCP_LOGIN_TOKEN_PREFIX = 'mtlmcpk_';
@@ -155,10 +155,11 @@ async function callerFromLoginToken(token: string): Promise<McpCaller | null> {
  */
 async function callerFromAccessKey(req: Request, token: string): Promise<McpCaller | null> {
   const ip = clientIp(req);
-  if (!failedKeyBudget(ip, token).ok) return null;
+  const ipKey = clientIpKey(req);
+  if (!failedKeyBudget(ipKey, token).ok) return null;
   const check = await verifyAccessKey(token);
   if (!check.ok) {
-    countFailedKey(ip, token);
+    countFailedKey(ipKey, token);
     if (check.keyId) {
       auditKeyRefusal({
         keyId: check.keyId,
@@ -197,35 +198,27 @@ async function callerFromAccessKey(req: Request, token: string): Promise<McpCall
   return out;
 }
 
-/** Bodies up to this size are read to name the tool in the audit row. */
-const AUDIT_PARSE_MAX_BYTES = 1024 * 1024;
-
 /** Who a key caller is, for its audit rows (the caller type stays lean). */
 const keyCallers = new WeakMap<McpCaller, { email: string; createdBy: string | null }>();
 
 /**
  * One `api.write` row per write tool call an API key makes on /api/mcp (M2
  * audit F6), as /api/v1 writes leave one: the tool, the key and its maker.
- * Read-only tools leave none. Reads a clone of the JSON-RPC body (a single
- * message or a batch); a body that is not JSON is the transport's to
- * refuse. Never blocks the call.
+ * Read-only tools leave none, and so does a call the key may not make
+ * (`allows`: the tools this caller was given; M2 audit N6), which the MCP
+ * server refuses as an unknown tool. Reads a clone of the whole JSON-RPC
+ * body (a single message or a batch; the route's body limit bounds it), so
+ * padding cannot hide the tool name. A body that is not JSON is the
+ * transport's to refuse. Never blocks the call.
  */
-export async function auditMcpKeyCall(req: Request, caller: McpCaller): Promise<void> {
+export async function auditMcpKeyCall(
+  req: Request,
+  caller: McpCaller,
+  allows: (slug: string) => boolean,
+): Promise<void> {
   const who = keyCallers.get(caller);
   if (!caller.keyId || !who || req.method !== 'POST') return;
   const meta = { ...requestMetaFrom(req), method: 'MCP', path: '/api/mcp' };
-  // A large body (a file upload) is not read twice: it is recorded as a
-  // write without its tool name.
-  if ((Number(req.headers.get('content-length')) || 0) > AUDIT_PARSE_MAX_BYTES) {
-    auditFireAndForget({
-      actorId: caller.loginId,
-      actorEmail: who.email,
-      action: 'api.write',
-      ...meta,
-      detail: { keyId: caller.keyId, keyCreatedBy: who.createdBy, tool: null, large: true },
-    });
-    return;
-  }
   let body: unknown;
   try {
     body = await req.clone().json();
@@ -237,7 +230,7 @@ export async function auditMcpKeyCall(req: Request, caller: McpCaller): Promise<
     if (!m || typeof m !== 'object') continue;
     const msg = m as { method?: unknown; params?: { name?: unknown } };
     const tool = typeof msg.params?.name === 'string' ? msg.params.name : null;
-    if (msg.method !== 'tools/call' || !tool || isMcpToolReadOnly(tool)) continue;
+    if (msg.method !== 'tools/call' || !tool || isMcpToolReadOnly(tool) || !allows(tool)) continue;
     auditFireAndForget({
       actorId: caller.loginId,
       actorEmail: who.email,

@@ -17,6 +17,8 @@ import { checkToolPreconditions } from '@mantle/tools';
 import type { BuiltinToolDef, OwnerSurfaceVia, ToolSurface } from '@mantle/tools';
 import { env } from '@mantle/config';
 import { zodShapeFromJsonSchema } from './zod-schema';
+import { KEY_SHARED_CONTENT_TOOLS, contentToolTarget } from '../key-scope';
+import { othersCanRead } from '../shared-item';
 import type { MantleMcpTransport } from '../build-server';
 
 /** The surface every bridged builtin runs under on the MCP server. */
@@ -117,6 +119,22 @@ export function makeRegisterContext(
     // one) is refused instead of confirmed by the caller's own flag.
     // An API key acting as the owner (via 'api') holds the same rule.
     if ((via === 'federation' || via === 'api') && 'confirm' in input) delete input.confirm;
+    // And a key never changes the content of an item others can read: what
+    // it embeds would become readable to them with no confirm (M2 audit N3).
+    if (via === 'api' && KEY_SHARED_CONTENT_TOOLS.has(def.slug)) {
+      const target = contentToolTarget(input);
+      if (target && (await othersCanRead(ownerId, target))) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: 'Error: this item is shared, so an API key cannot change its content (what it embeds would become readable to others). Change it in the app.',
+            },
+          ],
+          isError: true,
+        };
+      }
+    }
     const result = await def.handler(input, { ownerId: ownerId, surface });
     if (!result.ok) {
       return {

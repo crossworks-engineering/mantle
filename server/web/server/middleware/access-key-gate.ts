@@ -11,7 +11,7 @@ import {
 } from '../../lib/access-keys';
 import { keyMayCall, matchApiV1Route } from '../../lib/api-v1';
 import { requestMetaFrom } from '../../lib/audit';
-import { clientIp } from '../../lib/rate-limit';
+import { clientIp, clientIpKey } from '../../lib/rate-limit';
 
 /**
  * The gate's answer to an `mtlk_` bearer (inbound API keys, plan page
@@ -39,14 +39,17 @@ export async function gateAccessKey(
   token: string,
 ): Promise<{ grant: AccessKeyGrant } | { response: Response }> {
   const ip = clientIp(req);
+  // The budgets key on the /64 for IPv6 (M2 audit N1); the last-use stamp
+  // keeps the real address.
+  const ipKey = clientIpKey(req);
   const meta = () => ({ method: req.method, path, ...requestMetaFrom(req) });
 
-  const budget = failedKeyBudget(ip, token);
+  const budget = failedKeyBudget(ipKey, token);
   if (!budget.ok) return { response: tooMany(budget.retryAfterSec) };
 
   const check = await verifyAccessKey(token);
   if (!check.ok) {
-    countFailedKey(ip, token);
+    countFailedKey(ipKey, token);
     if (check.keyId) auditKeyRefusal({ keyId: check.keyId, reason: check.reason, ...meta() });
     return { response: unauthorized() };
   }

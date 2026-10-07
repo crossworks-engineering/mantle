@@ -16,6 +16,8 @@ import {
   accessKeys,
   authUsers,
   mobileTokens,
+  oauthAccessTokens,
+  oauthAuthCodes,
   pushSubscriptions,
   countUsers,
   isWriteRefused,
@@ -936,12 +938,16 @@ export async function endLoginSessions(
      *  a caller that tells the relay after its transaction commits
      *  (forgetRelayDevices). */
     removedRoutingTokens?: string[];
-    /** Also revoke every inbound API key of the login (migration 0232).
-     *  For the deliberate security actions: a password change or reset,
-     *  "sign out everywhere", an admin's End sessions, disable or role
-     *  change (M2 audit F4). NOT a client's plain sign-out, which ends its
-     *  sessions every time (M1 audit item 9). */
+    /** Also revoke every inbound API key of the login (migration 0232)
+     *  and every OAuth grant it holds (its MCP connectors, admin ones
+     *  included: M2 audit N4). For the deliberate security actions: a
+     *  password change or reset, "sign out everywhere", an admin's End
+     *  sessions, disable or role change (M2 audit F4), and a stolen device
+     *  token presented again (N5). NOT a client's plain sign-out, which ends
+     *  its sessions every time (M1 audit item 9). */
     endKeys?: boolean;
+    /** Who ended them, for the keys' revoked_by (default: the login). */
+    actorId?: string;
   } = {},
 ): Promise<number | null> {
   const run = async (tx: Tx | typeof db) => {
@@ -981,10 +987,34 @@ export async function endLoginSessions(
       .returning({ routingToken: pushSubscriptions.routingToken });
     opts.removedRoutingTokens?.push(...removed.map((r) => r.routingToken));
     if (opts.endKeys) {
-      await tx
+      const now = new Date();
+      const keys = await tx
         .update(accessKeys)
-        .set({ revokedAt: new Date() })
-        .where(and(eq(accessKeys.loginId, loginId), isNull(accessKeys.revokedAt)));
+        .set({ revokedAt: now, revokedBy: opts.actorId ?? loginId })
+        .where(and(eq(accessKeys.loginId, loginId), isNull(accessKeys.revokedAt)))
+        .returning({ id: accessKeys.id });
+      // The login's MCP connectors: every live OAuth grant and every code
+      // not yet exchanged. An admin's grant has no session epoch, so only
+      // this ends it (M2 audit N4).
+      await tx
+        .update(oauthAccessTokens)
+        .set({ revokedAt: now })
+        .where(and(eq(oauthAccessTokens.actorId, loginId), isNull(oauthAccessTokens.revokedAt)));
+      await tx.delete(oauthAuthCodes).where(eq(oauthAuthCodes.actorId, loginId));
+      if (keys.length > 0) {
+        // One row for the batch (M2 audit N7): which login, how many keys.
+        auditFireAndForget({
+          actorId: opts.actorId ?? loginId,
+          actorEmail: 'session-end',
+          action: 'key.revoked',
+          detail: {
+            loginId,
+            count: keys.length,
+            keyIds: keys.map((k) => k.id),
+            reason: 'sessions-ended',
+          },
+        });
+      }
     }
     return row.epoch;
   };
@@ -1058,7 +1088,9 @@ export async function presentRotatedToken(
   if (claimed.length === 0) return { kind: 'dead' };
 
   const removedRoutingTokens: string[] = [];
-  await endLoginSessions(tok.userId, { removedRoutingTokens });
+  // A stolen token is the strongest theft signal there is: the login's API
+  // keys and MCP connectors end with its sessions (M2 audit N5).
+  await endLoginSessions(tok.userId, { removedRoutingTokens, endKeys: true });
   // Loaded here, not at the top: the session layer must not load the push
   // store (and its table columns) on every import.
   const { forgetRelayDevices } = await import('../push/store');

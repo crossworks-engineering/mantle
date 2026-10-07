@@ -268,7 +268,45 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
       body: { title: `${tag} into shared`, folderId, confirm: true },
     });
     expect(byPerson.status).toBe(201);
-    nodesMade.push(((await json(byPerson)) as { page: { id: string } }).page.id);
+    const sharedPage = ((await json(byPerson)) as { page: { id: string } }).page.id;
+    nodesMade.push(sharedPage);
+
+    // N3: the doc of a page others can read is not a key's to change (what
+    // it embeds would become readable to them); its title still is.
+    const doc = await call(`/api/v1/pages/${sharedPage}`, {
+      method: 'PATCH',
+      bearer: key.secret,
+      body: { doc: { type: 'doc', content: [] } },
+    });
+    expect(doc.status).toBe(403);
+    expect(await json(doc)).toMatchObject({ reason: 'key-shared-item' });
+    const title = await call(`/api/v1/pages/${sharedPage}`, {
+      method: 'PATCH',
+      bearer: key.secret,
+      body: { title: `${tag} retitled` },
+    });
+    expect(title.status).toBe(200);
+
+    // The same rule on MCP: an admin key's page_update on that page is refused.
+    const caller = await mcpCaller(key.secret);
+    const handlers = new Map<string, (args: Record<string, unknown>) => Promise<unknown>>();
+    const fakeServer = {
+      tool: (name: string, ...rest: unknown[]) =>
+        void handlers.set(
+          name,
+          rest[rest.length - 1] as (a: Record<string, unknown>) => Promise<unknown>,
+        ),
+    };
+    const core = await import('@mantle/mcp-core');
+    core.registerPreparedTools(fakeServer as never, { kind: 'owner', caller: caller! });
+    const update = handlers.get('page_update');
+    expect(update).toBeDefined();
+    const out = (await update!({ id: sharedPage, title: `${tag} via mcp` })) as {
+      isError?: boolean;
+      content: Array<{ text: string }>;
+    };
+    expect(out.isError).toBe(true);
+    expect(out.content[0]!.text).toContain('this item is shared');
   });
 
   it('a key cannot change who can see a page (suspected item 1)', async () => {
@@ -335,8 +373,10 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name } }),
       });
-    await mcpAuth.auditMcpKeyCall(rpc('note_create'), caller!);
-    await mcpAuth.auditMcpKeyCall(rpc('search'), caller!);
+    await mcpAuth.auditMcpKeyCall(rpc('note_create'), caller!, () => true);
+    await mcpAuth.auditMcpKeyCall(rpc('search'), caller!, () => true);
+    // A call the key was not given (out of its scope) leaves no row.
+    await mcpAuth.auditMcpKeyCall(rpc('email_send'), caller!, (s) => s !== 'email_send');
     const rows = await audited('api.write', key.id);
     expect(rows.map((r) => (r.detail as Json).tool)).toEqual(['note_create']);
     expect((rows[0]!.detail as Json).keyCreatedBy).toBe(admin);

@@ -144,7 +144,12 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       if (endSessions) {
         // The login's push devices go with its sessions; the relay is told
         // after the commit (pushTokens).
-        await endLoginSessions(targetId, { tx, removedRoutingTokens: pushTokens, endKeys: true });
+        await endLoginSessions(targetId, {
+          tx,
+          removedRoutingTokens: pushTokens,
+          endKeys: true,
+          actorId: user.actor.id,
+        });
         // A client's open sign-in links and emailed codes die with its
         // sessions (audit B14): a link issued before a disable must not
         // work after the enable, and "End sessions" must leave no way back

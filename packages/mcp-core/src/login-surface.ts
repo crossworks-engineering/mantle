@@ -361,6 +361,16 @@ export async function prepareCallerTools(caller: McpCaller): Promise<PreparedCal
   return { kind: 'login', caller: login, rows, level, privateReads };
 }
 
+/** Whether the prepared surface gives this caller `slug`: a login's rows,
+ *  or the owner surface through the same filter registerPreparedTools uses
+ *  (owner OAuth: every tool). */
+export function preparedAllows(prepared: PreparedCallerTools, slug: string): boolean {
+  if (prepared.kind === 'login') return prepared.rows.some((r) => r.slug === slug);
+  const { caller } = prepared;
+  if (caller.via === 'oauth') return true;
+  return ownerPeerAllows(slug, caller) && callerAreasAllow(slug, caller);
+}
+
 export function registerPreparedTools(
   server: McpServer,
   prepared: PreparedCallerTools,

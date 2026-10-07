@@ -14,11 +14,13 @@
  * bcrypt) is enough because the secret part is 32 random bytes.
  *
  * Every rule is read from the rows on every request: the key row (revoked,
- * expired) and the login row (disabled, role). A disable or a role change
- * ends every key of the login. A sign out or a password change does not: a
- * key is its own credential, ended by revoke or expiry (audit item 9: a
- * client's every sign out moves the session epoch, which would end its keys
- * without a word).
+ * expired) and the login row (disabled, role, and for a client key the
+ * session epoch). A disable or a role change ends every key of the login.
+ * An admin's or member's key outlives a plain sign-out (audit item 9); a
+ * password change, "sign out everywhere", an admin's End sessions and a
+ * reused device token revoke every key of the login (endLoginSessions
+ * `endKeys`). A client has no password to re-type, so a client key ends
+ * with the session it was made in (M2 audit N5).
  *
  * The secret is never logged and never returned after create.
  */
@@ -28,7 +30,7 @@ import { accessKeys, db, isUniqueViolation, isWriteRefused } from '@mantle/db';
 import { KEY_AREAS, type KeyArea } from '@mantle/mcp-core/key-scope';
 import { loadLoginRow, type LoginRow } from './auth/login-row';
 import { auditFireAndForget } from './audit';
-import { rateLimit, rateLimitPeek, type RateLimitResult } from './rate-limit';
+import { rateLimit, rateLimitFlood, rateLimitFloodPeek, type RateLimitResult } from './rate-limit';
 
 export const ACCESS_KEY_PREFIX = 'mtlk_';
 
@@ -181,7 +183,14 @@ export async function verifyAccessKey(token: string): Promise<AccessKeyCheck> {
     return { ok: false, reason: 'expired', keyId: row.id };
   }
   const login = await loadLoginRow(row.loginId);
-  if (!login || !loginUsable(login) || !isRole(row.loginRole) || login.role !== row.loginRole) {
+  if (
+    !login ||
+    !loginUsable(login) ||
+    !isRole(row.loginRole) ||
+    login.role !== row.loginRole ||
+    // A client key lives as long as the session it was made in (N5).
+    (row.loginRole === 'client' && row.sessionEpoch !== login.sessionEpoch)
+  ) {
     return { ok: false, reason: 'login', keyId: row.id };
   }
   return {
@@ -221,23 +230,25 @@ export function rateLimitKeySearch(keyId: string): RateLimitResult {
 
 /** The failed-try bucket of a presented key: its address and its prefix
  *  (a malformed key shares one bucket per address). */
-function failKey(ip: string, token: string): string {
-  return `akey-fail:${ip}:${KEY_RE.exec(token)?.[1] ?? '-'}`;
+function failKey(ipKey: string, token: string): string {
+  return `akey-fail:${ipKey}:${KEY_RE.exec(token)?.[1] ?? '-'}`;
 }
 
-/** Whether `ip` may present this key again: its failures across every
- *  prefix (F3), then for this prefix (item 2). Peeked only: a failure is
- *  counted by countFailedKey. */
-export function failedKeyBudget(ip: string, token: string): RateLimitResult {
-  const address = rateLimitPeek(`akey-fail-addr:${ip}`, FAILED_KEY_ADDRESS_RATE);
+/** Whether the address may present this key again: its failures across
+ *  every prefix (F3), then for this prefix (item 2). Peeked only: a failure
+ *  is counted by countFailedKey. `ipKey` is `clientIpKey(req)`: an IPv6
+ *  /64 is one address (M2 audit N1), so rotating addresses inside it buys
+ *  nothing. The buckets live in the flood pool (lib/rate-limit.ts). */
+export function failedKeyBudget(ipKey: string, token: string): RateLimitResult {
+  const address = rateLimitFloodPeek(`akey-fail-addr:${ipKey}`, FAILED_KEY_ADDRESS_RATE);
   if (!address.ok) return address;
-  return rateLimitPeek(failKey(ip, token), FAILED_KEY_RATE);
+  return rateLimitFloodPeek(failKey(ipKey, token), FAILED_KEY_RATE);
 }
 
-/** Count one failed presentation of this key's prefix from `ip`. */
-export function countFailedKey(ip: string, token: string): void {
-  rateLimit(`akey-fail-addr:${ip}`, FAILED_KEY_ADDRESS_RATE);
-  rateLimit(failKey(ip, token), FAILED_KEY_RATE);
+/** Count one failed presentation of this key's prefix from the address. */
+export function countFailedKey(ipKey: string, token: string): void {
+  rateLimitFlood(`akey-fail-addr:${ipKey}`, FAILED_KEY_ADDRESS_RATE);
+  rateLimitFlood(failKey(ipKey, token), FAILED_KEY_RATE);
 }
 
 const TOUCH_EVERY_MS = 60_000;
@@ -304,6 +315,8 @@ export type MintAccessKeyInput = {
   riskyTools: readonly string[];
   expiresAt: Date | null;
   createdBy: string;
+  /** A client's session epoch now; null for an admin or member key. */
+  sessionEpoch: number | null;
   /** Refuse (null) when the login already holds this many live keys. */
   maxLive: number;
 };
@@ -350,6 +363,7 @@ export async function mintAccessKey(
             riskyTools,
             expiresAt: input.expiresAt,
             createdBy: input.createdBy,
+            sessionEpoch: input.loginRole === 'client' ? input.sessionEpoch : null,
           })
           .returning({ id: accessKeys.id });
         return inserted!;
