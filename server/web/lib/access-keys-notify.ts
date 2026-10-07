@@ -28,9 +28,16 @@ export type KeyMadeNotice = {
   expiresAt: Date | null;
 };
 
-/** The notice text: plain, short, and never the secret or its prefix. */
+/**
+ * The notice text: plain, short, and never the secret or its prefix.
+ * `withName`: the key's name is the caller's own text, so it is left out of
+ * a message that lands in a thread the login's assistant reads (final audit
+ * F5: no caller-chosen text in a model-facing context). An admin's push
+ * never reaches a model and keeps it.
+ */
 export function keyMadeText(
   n: Pick<KeyMadeNotice, 'role' | 'name' | 'access' | 'expiresAt'>,
+  opts: { withName: boolean } = { withName: true },
 ): string {
   const access = n.access === 'read_write' ? 'read and write' : 'read only';
   const expires = n.expiresAt ? n.expiresAt.toISOString().slice(0, 10) : 'never';
@@ -38,17 +45,18 @@ export function keyMadeText(
     n.role === 'client'
       ? 'revoke it in API keys and sign out'
       : 'revoke it in API access and change your password';
-  return `A new API key was made on your login: ${n.name.slice(0, 100)}, ${access}, expires ${expires}. If this was not you, ${fix}.`;
+  const what = opts.withName ? `${n.name.slice(0, 100)}, ${access}` : access;
+  return `A new API key was made on your login: ${what}, expires ${expires}. If this was not you, ${fix}.`;
 }
 
 /** Send the notice. Never throws. */
 export async function notifyKeyMade(n: KeyMadeNotice): Promise<void> {
-  const text = keyMadeText(n);
   try {
     if (n.role === 'admin') {
-      await pushToAdmin(n.ownerId, n.loginId, text);
+      await pushToAdmin(n.ownerId, n.loginId, keyMadeText(n, { withName: true }));
       return;
     }
+    const text = keyMadeText(n, { withName: false });
     await appendTeamMessage({
       ownerId: n.ownerId,
       loginId: n.loginId,

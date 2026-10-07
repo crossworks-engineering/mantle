@@ -35,6 +35,12 @@ import {
   verifyAccessKey,
 } from './access-keys';
 import { auditFireAndForget, requestMetaFrom } from './audit';
+import {
+  BodyTooLargeError,
+  JSON_BODY_CEILING_BYTES,
+  OWNER_DOCUMENT_CEILING_BYTES,
+  readBodyCapped,
+} from './body-limit';
 import { actorMayConnect, grantFromAccessToken } from './mcp-oauth';
 import { clientIp, clientIpKey } from './rate-limit';
 
@@ -219,10 +225,18 @@ export async function auditMcpKeyCall(
   const who = keyCallers.get(caller);
   if (!caller.keyId || !who || req.method !== 'POST') return;
   const meta = { ...requestMetaFrom(req), method: 'MCP', path: '/api/mcp' };
+  // A capped read (final audit F4): a chunked body carries no length, so the
+  // route's ceiling bounds what is buffered here. Over it, the call is
+  // refused anyway (413 from the route), so there is nothing to audit.
   let body: unknown;
   try {
-    body = await req.clone().json();
-  } catch {
+    // The route's own rule: an admin's body may be an owner document (a file
+    // upload), a member's or client's is held to the plain JSON ceiling.
+    const ceiling =
+      caller.role === 'admin' ? OWNER_DOCUMENT_CEILING_BYTES : JSON_BODY_CEILING_BYTES;
+    body = JSON.parse(await readBodyCapped(req.clone(), ceiling));
+  } catch (err) {
+    if (err instanceof BodyTooLargeError) throw err;
     return;
   }
   const messages = Array.isArray(body) ? body : [body];

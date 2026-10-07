@@ -123,7 +123,22 @@ export function makeRegisterContext(
     // it embeds would become readable to them with no confirm (M2 audit N3).
     if (via === 'api' && KEY_SHARED_CONTENT_TOOLS.has(def.slug)) {
       const target = contentToolTarget(input);
-      if (target && (await othersCanRead(ownerId, target))) {
+      // The handler gets the very id that was checked (trimmed): a padded id
+      // must not pass the check as "not found" and then reach the item
+      // (final audit F1). A field that is not a UUID is refused outright.
+      if (target?.id) input[target.field] = target.id;
+      if (target && !target.id) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Error: ${target.field} must be an item id (a UUID), as page_list or search_nodes give it.`,
+            },
+          ],
+          isError: true,
+        };
+      }
+      if (target?.id && (await othersCanRead(ownerId, target.id))) {
         return {
           content: [
             {

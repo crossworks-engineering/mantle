@@ -21,7 +21,7 @@
 import { z } from 'zod';
 import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
 import { NextResponse } from '@/server/http-compat';
-import { rateLimit, clientIp } from '@/lib/rate-limit';
+import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 import { SHARE_BODY_CEILING_BYTES, readJsonCapped } from '@/lib/body-limit';
 import { withViewer } from '@mantle/db';
 import { getAppRuntime, recordAppAccess, recordShareAccess } from '@mantle/content';
@@ -35,7 +35,7 @@ const Body = z.object({
 export async function POST(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
 
-  const { ok, retryAfterSec } = rateLimit(`share-tool-broker:${clientIp(req)}`, {
+  const { ok, retryAfterSec } = rateLimit(`share-tool-broker:${clientIpKey(req)}`, {
     max: 60,
     windowMs: 60_000,
   });

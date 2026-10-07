@@ -37,7 +37,8 @@ describe.skipIf(!URL)('inbound API keys: hardening', () => {
   const busy = randomUUID();
   const guesser = randomUUID();
   const noted = randomUUID();
-  const all = [admin, member, client, capped, busy, guesser, noted];
+  const maker = randomUUID();
+  const all = [admin, member, client, capped, busy, guesser, noted, maker];
   const oauthClientsMade: string[] = [];
   let anchor = '';
   const emailOf = (s: string) => `${tag}-${s}@example.com`;
@@ -100,7 +101,8 @@ describe.skipIf(!URL)('inbound API keys: hardening', () => {
       (${capped}, ${emailOf('capped')}, ${hash}, 'member', 'Cap Member'),
       (${busy}, ${emailOf('busy')}, ${hash}, 'admin', 'Bea Busy'),
       (${guesser}, ${emailOf('guesser')}, ${hash}, 'member', 'Gus Guesser'),
-      (${noted}, ${emailOf('noted')}, ${hash}, 'member', 'Nia Noted')`;
+      (${noted}, ${emailOf('noted')}, ${hash}, 'member', 'Nia Noted'),
+      (${maker}, ${emailOf('maker')}, ${hash}, 'member', 'Max Maker')`;
     const { createApp } = await import('../server/app');
     app = await createApp();
   }, 120_000);
@@ -233,9 +235,23 @@ describe.skipIf(!URL)('inbound API keys: hardening', () => {
       if (rows.length === 0) await new Promise((r) => setTimeout(r, 20));
     }
     const text = String(rows[0]!.text);
-    expect(text).toContain(`${tag} notice key, read and write, expires`);
+    // The thread is model-facing: the caller-chosen name stays out (F5).
+    expect(text).toContain('A new API key was made on your login: read and write, expires');
+    expect(text).not.toContain(`${tag} notice key`);
     expect(text).not.toContain(key.secret.slice(5, 13));
     expect(text).not.toContain('mtlk_');
+  });
+
+  it('holds a login to 30 keys made an hour, revoked or not (final audit F6)', async () => {
+    for (let i = 0; i < 30; i += 1) {
+      const made = await makeKey(maker);
+      await call(`/api/access-keys/${made.id}`, {
+        method: 'DELETE',
+        cookie: await cookieOf(maker),
+      });
+    }
+    const res = await make(maker, { password: PASSWORD });
+    expect(res.status).toBe(429);
   });
 
   // ── F3 ────────────────────────────────────────────────────────────────────

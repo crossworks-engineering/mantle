@@ -1,7 +1,7 @@
 import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
 import { isDrawServable, shareLevels } from '@/lib/shares';
 import { getDrawSvg, getPage, referencedDrawIds } from '@mantle/content';
-import { rateLimit, clientIp } from '@/lib/rate-limit';
+import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 
 /**
  * A drawing EMBEDDED in a shared page, as an image.
@@ -30,7 +30,7 @@ export async function GET(
 ) {
   const { token, drawId } = await params;
 
-  const { ok, retryAfterSec } = rateLimit(`share-draw-embed:${clientIp(req)}`, {
+  const { ok, retryAfterSec } = rateLimit(`share-draw-embed:${clientIpKey(req)}`, {
     max: 240,
     windowMs: 60_000,
   });

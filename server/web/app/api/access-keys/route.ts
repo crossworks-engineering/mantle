@@ -19,7 +19,7 @@
  *      secret is in this answer ONCE. `areas` null = every area;
  *      `expiresInDays` omitted = the default, null = never. `riskyTools`
  *      only for an admin. At most MAX_LIVE_KEYS_PER_LOGIN live keys per
- *      login.
+ *      login, and 30 keys made per login an hour.
  *
  *      A stolen session must not be able to mint a long-lived key (M2 audit
  *      F4): an admin or a member re-types their password (10 wrong tries a minute
@@ -44,12 +44,15 @@ import {
 } from '@/lib/access-keys';
 import { listAccessKeys } from '@/lib/access-keys-admin';
 import { notifyKeyMade } from '@/lib/access-keys-notify';
-import { rateLimit, rateLimitRefund } from '@/lib/rate-limit';
+import { rateLimitLogin, rateLimitLoginRefund } from '@/lib/rate-limit';
 import { auditFireAndForget, requestMeta } from '@/lib/audit';
 import { firstIssue } from '@/lib/zod-issue';
 import type { AccessKeyCreated, AccessKeyList } from '@mantle/client-types';
 
 const NO_STORE = { 'Cache-Control': 'no-store' };
+/** Keys a login may make an hour (final audit F6): a make-and-revoke loop
+ *  must not spam the login's notices and pushes. */
+const CREATE_RATE = { max: 30, windowMs: 60 * 60_000 };
 /** Wrong passwords a minute per login when making a key. */
 const PASSWORD_RATE = { max: 10, windowMs: 60_000 };
 
@@ -115,7 +118,7 @@ export async function POST(req: Request) {
     // guesses cannot all pass a peek (M2 audit N2); a right password gives
     // its token back, so making several keys is not guessing.
     const bucket = `akey-pw:${login.loginId}`;
-    const tries = rateLimit(bucket, PASSWORD_RATE);
+    const tries = rateLimitLogin(bucket, PASSWORD_RATE);
     if (!tries.ok) {
       return NextResponse.json(
         { error: 'Too many tries. Wait a minute, then try again.' },
@@ -128,7 +131,15 @@ export async function POST(req: Request) {
         { status: 403 },
       );
     }
-    rateLimitRefund(bucket);
+    rateLimitLoginRefund(bucket);
+  }
+
+  const made = rateLimitLogin(`akey-create:${login.loginId}`, CREATE_RATE);
+  if (!made.ok) {
+    return NextResponse.json(
+      { error: 'You made many keys this hour. Wait, then try again.' },
+      { status: 429, headers: { 'Retry-After': String(made.retryAfterSec) } },
+    );
   }
 
   const expiresAt = expiryFromDays(

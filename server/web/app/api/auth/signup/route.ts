@@ -4,7 +4,7 @@ import { countUsers } from '@mantle/db';
 import { buildSessionCookie, SESSION_COOKIE_NAME } from '@/lib/auth';
 import { secureCookies } from '@/lib/auth-constants';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
-import { clientIp, rateLimit } from '@/lib/rate-limit';
+import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 import { refuseCrossSiteAuthPost } from '@/lib/auth/preflight';
 import { createFirstOwner } from '@/lib/auth/first-owner';
 import { setupCodeConfigured, setupCodeMatches } from '@/lib/auth/setup-code';
@@ -35,7 +35,7 @@ export async function POST(req: Request) {
   if (refused) return refused;
   // Rate limit before the setup-code compare and the (intentionally slow)
   // bcrypt hash.
-  const ip = clientIp(req);
+  const ip = clientIpKey(req);
   const limit = rateLimit(`auth:signup:${ip}`, { max: 5, windowMs: 60_000 });
   if (!limit.ok) {
     return NextResponse.json(

@@ -6,7 +6,7 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { exchangeAuthCode, refreshAccessToken, type TokenResponse } from '@/lib/mcp-oauth';
-import { clientIp, rateLimit } from '@/lib/rate-limit';
+import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 
 function oauthError(error: string, description?: string, status = 400) {
   return NextResponse.json(
@@ -22,7 +22,7 @@ function tokenOk(tokens: TokenResponse) {
 }
 
 export async function POST(req: Request) {
-  const limit = rateLimit(`oauth:token:${clientIp(req)}`, { max: 30, windowMs: 60_000 });
+  const limit = rateLimit(`oauth:token:${clientIpKey(req)}`, { max: 30, windowMs: 60_000 });
   if (!limit.ok) return oauthError('rate_limited', undefined, 429);
 
   let form: FormData;

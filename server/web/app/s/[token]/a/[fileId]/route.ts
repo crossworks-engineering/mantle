@@ -2,7 +2,7 @@ import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
 import { isAssetAllowed } from '@/lib/shares';
 import { recordShareAccess } from '@mantle/content';
 import { readFileById } from '@/lib/files';
-import { rateLimit, clientIp } from '@/lib/rate-limit';
+import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
 
 /**
@@ -23,7 +23,7 @@ export async function GET(
 ) {
   const { token, fileId } = await params;
 
-  const { ok, retryAfterSec } = rateLimit(`share-asset:${clientIp(req)}`, {
+  const { ok, retryAfterSec } = rateLimit(`share-asset:${clientIpKey(req)}`, {
     max: 240,
     windowMs: 60_000,
   });

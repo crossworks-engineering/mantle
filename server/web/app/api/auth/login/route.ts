@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { db, authUsers, eq, sql } from '@mantle/db';
 import { authenticatePassword, setSessionCookie } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
-import { clientIp, rateLimit } from '@/lib/rate-limit';
+import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 import { refuseCrossSiteAuthPost } from '@/lib/auth/preflight';
 import { AUTH_BODY_CEILING_BYTES, readJsonCapped } from '@/lib/body-limit';
 
@@ -23,7 +23,7 @@ export async function POST(req: Request) {
   // Rate limit by client IP before bcrypt so a flood doesn't pin CPU.
   // 10/min comfortably fits a user mistyping a password a few times;
   // it's brutal for credential stuffing.
-  const ip = clientIp(req);
+  const ip = clientIpKey(req);
   const limit = rateLimit(`auth:login:${ip}`, { max: 10, windowMs: 60_000 });
   if (!limit.ok) {
     return NextResponse.json(

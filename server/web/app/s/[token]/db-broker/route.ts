@@ -25,7 +25,7 @@ import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
 import { getAppRuntime, recordAppAccess, recordShareAccess } from '@mantle/content';
 import { appDbExec, appDbQuery, markAppClientWritten } from '@mantle/content/app-broker';
 import { scheduleAppTableExportSync } from '@mantle/content/app-table-exports';
-import { rateLimit, clientIp } from '@/lib/rate-limit';
+import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 
 import { AppDbBody, appDbBodyError, appDbErrorResponse } from '@/lib/app-db-broker-body';
 import { SHARE_BODY_CEILING_BYTES, readJsonCapped } from '@/lib/body-limit';
@@ -35,7 +35,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
 
   // Generous — a running app is query-chatty — but bounded, like the other
   // /s/[token] surfaces: this endpoint executes SQL for strangers.
-  const { ok, retryAfterSec } = rateLimit(`share-db-broker:${clientIp(req)}`, {
+  const { ok, retryAfterSec } = rateLimit(`share-db-broker:${clientIpKey(req)}`, {
     max: 300,
     windowMs: 60_000,
   });

@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { db, authUsers, eq, sql } from '@mantle/db';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
-import { clientIp, rateLimit } from '@/lib/rate-limit';
+import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 import { claimPairCode } from '@/lib/pair-code';
 import { AUTH_BODY_CEILING_BYTES, readJsonCapped } from '@/lib/body-limit';
 import { brainIdField } from '@/lib/brain-identity';
@@ -24,7 +24,7 @@ const CLAIM_FAILED_MESSAGE =
   "That code didn't work. Show a fresh one on the web app and scan again.";
 
 export async function POST(req: Request) {
-  const ip = clientIp(req);
+  const ip = clientIpKey(req);
   const limit = rateLimit(`auth:pair-claim:${ip}`, { max: 10, windowMs: 60_000 });
   if (!limit.ok) {
     return NextResponse.json(

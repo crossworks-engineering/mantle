@@ -16,8 +16,9 @@ type Bucket = {
   windowStartMs: number;
 };
 
-/** One map of buckets with its own sweep clock. */
-type Store = { buckets: Map<string, Bucket>; lastSweepMs: number };
+/** One map of buckets with its own sweep clock. `keep`: never evict a
+ *  live bucket at the hard cap (only expired ones go). */
+type Store = { buckets: Map<string, Bucket>; lastSweepMs: number; keep?: true };
 
 /** The buckets every limiter here uses. */
 const main: Store = { buckets: new Map(), lastSweepMs: 0 };
@@ -28,6 +29,13 @@ const main: Store = { buckets: new Map(), lastSweepMs: 0 };
  * password or per-key budget.
  */
 const flood: Store = { buckets: new Map(), lastSweepMs: 0 };
+/**
+ * Per-LOGIN budgets that must hold under any flood (final audit F2): the
+ * password re-entry budgets (making a key, OAuth consent). Their keys are
+ * login ids, so the pool is bounded by the number of logins and needs no
+ * eviction; a live bucket here is never dropped early.
+ */
+const logins: Store = { buckets: new Map(), lastSweepMs: 0, keep: true };
 
 /**
  * Test-stack escape hatch: multiply every window cap by a factor ≥ 1.
@@ -69,7 +77,7 @@ function sweep(store: Store, now: number, windowMs: number): void {
       if (buckets.size < MAX_BUCKETS / 2) break;
     }
   }
-  if (buckets.size >= HARD_MAX_BUCKETS) {
+  if (buckets.size >= HARD_MAX_BUCKETS && !store.keep) {
     for (const k of buckets.keys()) {
       buckets.delete(k);
       if (buckets.size < MAX_BUCKETS) break;
@@ -149,6 +157,21 @@ export function rateLimitPeek(
  */
 export function rateLimitRefund(key: string): void {
   const bucket = main.buckets.get(key);
+  if (bucket && bucket.count > 0) bucket.count -= 1;
+}
+
+/** `rateLimit` on the per-login pool that is never evicted (see `logins`).
+ *  Key it by login id only. */
+export function rateLimitLogin(
+  key: string,
+  opts: { max: number; windowMs: number },
+): RateLimitResult {
+  return take(logins, key, opts);
+}
+
+/** `rateLimitRefund` on the per-login pool (see `logins`). */
+export function rateLimitLoginRefund(key: string): void {
+  const bucket = logins.buckets.get(key);
   if (bucket && bucket.count > 0) bucket.count -= 1;
 }
 

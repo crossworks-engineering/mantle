@@ -307,6 +307,20 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
     };
     expect(out.isError).toBe(true);
     expect(out.content[0]!.text).toContain('this item is shared');
+
+    // Final audit F1: a padded id is trimmed BEFORE the check (the handler
+    // would trim it too), and a field that is not a UUID is refused.
+    const padded = (await update!({ id: `  ${sharedPage}\n`, title: 'x' })) as typeof out;
+    expect(padded.isError).toBe(true);
+    expect(padded.content[0]!.text).toContain('this item is shared');
+    const odd = (await update!({ id: 'not-an-id', title: 'x' })) as typeof out;
+    expect(odd.isError).toBe(true);
+    expect(odd.content[0]!.text).toContain('must be an item id');
+    const replace = handlers.get('page_replace_from_file');
+    if (replace) {
+      const viaFile = (await replace({ page_id: sharedPage, file_id: randomUUID() })) as typeof out;
+      expect(viaFile.isError).toBe(true);
+    }
   });
 
   it('a key cannot change who can see a page (suspected item 1)', async () => {

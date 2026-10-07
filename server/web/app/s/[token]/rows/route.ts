@@ -3,7 +3,7 @@ import { NextResponse } from '@/server/http-compat';
 import { and, eq } from 'drizzle-orm';
 import { db, nodes, tables } from '@mantle/db';
 import { queryRowsWindow, resolveStoragePath } from '@mantle/tabledb';
-import { rateLimit, clientIp } from '@/lib/rate-limit';
+import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 
 /**
  * Row window for a SHARED table — the public counterpart of
@@ -23,7 +23,7 @@ function notFound() {
 export async function GET(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
 
-  const { ok, retryAfterSec } = rateLimit(`share-rows:${clientIp(req)}`, {
+  const { ok, retryAfterSec } = rateLimit(`share-rows:${clientIpKey(req)}`, {
     max: 120,
     windowMs: 60_000,
   });

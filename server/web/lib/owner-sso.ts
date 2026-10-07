@@ -30,14 +30,14 @@ import { NextResponse } from '../server/http-compat';
 import { buildSessionCookie, getOwnerOr401, loginSessionEpoch, SESSION_COOKIE_NAME } from './auth';
 import { isTrustedOrigin, rateLimited } from './auth/preflight';
 import { secureCookies } from './auth-constants';
-import { rateLimit, clientIp } from './rate-limit';
+import { clientIpKey, rateLimit } from './rate-limit';
 
 /** See the mint below for why this is days, not the password login's year. */
 export const OWNER_SSO_COOKIE_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 export async function handleOwnerSso(req: Request): Promise<NextResponse> {
   const denied = rateLimited(
-    rateLimit(`owner-sso:ip:${clientIp(req)}`, { max: 30, windowMs: 60_000 }),
+    rateLimit(`owner-sso:ip:${clientIpKey(req)}`, { max: 30, windowMs: 60_000 }),
   );
   if (denied) return denied;
 

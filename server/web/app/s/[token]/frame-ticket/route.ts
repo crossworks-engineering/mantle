@@ -10,13 +10,13 @@ import { NextResponse } from '@/server/http-compat';
 import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
 import { buildAppFrameTicket } from '@/lib/auth';
 import { getAppRuntime } from '@mantle/content';
-import { rateLimit, clientIp } from '@/lib/rate-limit';
+import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 
 export async function POST(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
 
   // One ticket per frame load; a burst beyond this is a token-mint loop.
-  const { ok, retryAfterSec } = rateLimit(`share-frame-ticket:${clientIp(req)}`, {
+  const { ok, retryAfterSec } = rateLimit(`share-frame-ticket:${clientIpKey(req)}`, {
     max: 30,
     windowMs: 60_000,
   });

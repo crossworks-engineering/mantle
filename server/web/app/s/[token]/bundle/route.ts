@@ -10,13 +10,13 @@ import { Readable } from 'node:stream';
 import { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { getApp } from '@mantle/content';
 import { getContent } from '@mantle/storage';
-import { rateLimit, clientIp } from '@/lib/rate-limit';
+import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 
 export async function GET(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
 
   // The bundle streams from storage; cap fetches like the other share assets.
-  const { ok, retryAfterSec } = rateLimit(`share-bundle:${clientIp(req)}`, {
+  const { ok, retryAfterSec } = rateLimit(`share-bundle:${clientIpKey(req)}`, {
     max: 30,
     windowMs: 60_000,
   });

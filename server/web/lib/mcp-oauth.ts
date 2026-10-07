@@ -13,6 +13,7 @@
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { and, eq, gt, isNull, lt } from 'drizzle-orm';
+import { lockOauthActor, type OauthExec as Exec } from './oauth-lock';
 import { bearerFrom } from './auth/request';
 import {
   authUsers,
@@ -228,11 +229,12 @@ async function issueTokens(
   actorId: string,
   scope: string,
   sessionEpoch: number | null,
+  exec: Exec = db,
 ): Promise<TokenResponse> {
   const accessToken = randomToken(ACCESS_PREFIX);
   const refreshToken = randomToken(REFRESH_PREFIX);
   const now = Date.now();
-  await db.insert(oauthAccessTokens).values({
+  await exec.insert(oauthAccessTokens).values({
     tokenHash: sha256Hex(accessToken),
     refreshTokenHash: sha256Hex(refreshToken),
     ownerId,
@@ -260,13 +262,35 @@ export async function exchangeAuthCode(input: {
   redirectUri: string;
   codeVerifier: string;
 }): Promise<GrantResult> {
+  const codeHash = sha256Hex(input.code);
+  // The code's login first, to take its lock (final audit F3): the claim and
+  // the new grant then happen inside it, so a session end (which takes the
+  // same lock, deletes the codes and revokes the grants) either runs first
+  // and leaves no code to claim, or runs after and revokes the new grant.
+  const [peek] = await db
+    .select({ actorId: oauthAuthCodes.actorId })
+    .from(oauthAuthCodes)
+    .where(eq(oauthAuthCodes.codeHash, codeHash))
+    .limit(1);
+  if (!peek) return { ok: false, error: 'invalid_grant' };
+  return db.transaction(async (tx) => {
+    await lockOauthActor(tx, peek.actorId);
+    return exchangeClaimed(tx, codeHash, input);
+  });
+}
+
+async function exchangeClaimed(
+  tx: Exec,
+  codeHash: string,
+  input: { clientId: string; redirectUri: string; codeVerifier: string },
+): Promise<GrantResult> {
   // Single-use: the code is claimed and burned in ONE statement, before any
   // further branching, so it can never be replayed regardless of the
   // validation outcome below. Two exchanges of one code at once: only one
   // DELETE returns the row (F31; a SELECT then DELETE let both through).
-  const [row] = await db
+  const [row] = await tx
     .delete(oauthAuthCodes)
-    .where(eq(oauthAuthCodes.codeHash, sha256Hex(input.code)))
+    .where(eq(oauthAuthCodes.codeHash, codeHash))
     .returning();
   if (!row) return { ok: false, error: 'invalid_grant' };
 
@@ -289,6 +313,7 @@ export async function exchangeAuthCode(input: {
     row.actorId,
     row.scope,
     row.sessionEpoch ?? null,
+    tx,
   );
   return { ok: true, tokens };
 }
@@ -322,18 +347,55 @@ export async function refreshAccessToken(input: {
     console.warn(`[mcp-oauth] refresh rejected (${why}) client=${input.clientId}`);
     return { ok: false, error: 'invalid_grant' };
   };
-  const [row] = await db
+  const refreshHash = sha256Hex(input.refreshToken);
+  const [peek] = await db
+    .select({ actorId: oauthAccessTokens.actorId })
+    .from(oauthAccessTokens)
+    .where(eq(oauthAccessTokens.refreshTokenHash, refreshHash))
+    .limit(1);
+  if (!peek) return fail('unknown or rotated-out refresh token');
+  // Under the login's lock (final audit F3): a revoke that ran first is seen
+  // here (the row is revoked), and one that waits for us revokes the new row.
+  const result = await db.transaction(async (tx) => {
+    await lockOauthActor(tx, peek.actorId);
+    return refreshLocked(tx, refreshHash, input.clientId, fail);
+  });
+  if (!result.ok) return result;
+
+  // Sweep this client's fully-dead rows (both tokens past expiry). Best-effort:
+  // a failed sweep must not fail the grant.
+  try {
+    const now = new Date();
+    await db
+      .delete(oauthAccessTokens)
+      .where(
+        and(
+          eq(oauthAccessTokens.clientId, input.clientId),
+          lt(oauthAccessTokens.expiresAt, now),
+          lt(oauthAccessTokens.refreshExpiresAt, now),
+        ),
+      );
+  } catch {
+    // swept next time
+  }
+  return result;
+}
+
+async function refreshLocked(
+  tx: Exec,
+  refreshHash: string,
+  clientId: string,
+  fail: (why: string) => GrantResult,
+): Promise<GrantResult> {
+  const [row] = await tx
     .select()
     .from(oauthAccessTokens)
     .where(
-      and(
-        eq(oauthAccessTokens.refreshTokenHash, sha256Hex(input.refreshToken)),
-        isNull(oauthAccessTokens.revokedAt),
-      ),
+      and(eq(oauthAccessTokens.refreshTokenHash, refreshHash), isNull(oauthAccessTokens.revokedAt)),
     )
     .limit(1);
   if (!row) return fail('unknown or rotated-out refresh token');
-  if (row.clientId !== input.clientId) return fail('client mismatch');
+  if (row.clientId !== clientId) return fail('client mismatch');
   if (!row.refreshExpiresAt || row.refreshExpiresAt.getTime() < Date.now()) {
     return fail('refresh token expired');
   }
@@ -349,13 +411,14 @@ export async function refreshAccessToken(input: {
     row.actorId,
     row.scope,
     row.sessionEpoch ?? null,
+    tx,
   );
 
   // Shorten (never extend) the presented refresh token's remaining life to the
   // grace window, and stamp the use. The old access token is left untouched.
   const now = Date.now();
   const graceEnd = new Date(now + REFRESH_GRACE_SEC * 1000);
-  await db
+  await tx
     .update(oauthAccessTokens)
     .set({
       refreshExpiresAt:
@@ -363,23 +426,6 @@ export async function refreshAccessToken(input: {
       lastUsedAt: new Date(now),
     })
     .where(eq(oauthAccessTokens.id, row.id));
-
-  // Sweep this client's fully-dead rows (both tokens past expiry). Best-effort:
-  // a failed sweep must not fail the grant.
-  try {
-    await db
-      .delete(oauthAccessTokens)
-      .where(
-        and(
-          eq(oauthAccessTokens.clientId, row.clientId),
-          lt(oauthAccessTokens.expiresAt, new Date(now)),
-          lt(oauthAccessTokens.refreshExpiresAt, new Date(now)),
-        ),
-      );
-  } catch {
-    // swept next time
-  }
-
   return { ok: true, tokens };
 }
 

@@ -80,13 +80,27 @@ export const KEY_SHARED_CONTENT_TOOLS: ReadonlySet<string> = new Set([
   'page_mention',
   'page_split',
   'page_extract_section',
+  'page_replace_from_file',
   'note_update',
 ]);
 
-/** The item a content tool names: `page_id`, else `id`. */
-export function contentToolTarget(input: Record<string, unknown>): string | null {
-  const v = input.page_id ?? input.id;
-  return typeof v === 'string' && v ? v : null;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The item a content tool names (`page_id`, else `id`), trimmed, and the
+ * field it came from; `id: null` when the field is there but is not a
+ * UUID (the guard refuses that: a padded or odd id must never slip past
+ * the check and then be trimmed by the handler, final audit F1). Null when
+ * neither field is given (the tool answers its own error).
+ */
+export function contentToolTarget(
+  input: Record<string, unknown>,
+): { field: 'page_id' | 'id'; id: string | null } | null {
+  const field = input.page_id !== undefined ? 'page_id' : input.id !== undefined ? 'id' : null;
+  if (!field) return null;
+  const raw = input[field];
+  const id = typeof raw === 'string' ? raw.trim() : '';
+  return { field, id: UUID_RE.test(id) ? id : null };
 }
 
 /** Whether a key limited to `areas` (null = all) may have this tool. */

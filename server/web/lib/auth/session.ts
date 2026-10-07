@@ -41,6 +41,7 @@ import {
   secureCookies,
 } from '../auth-constants';
 import { auditFireAndForget, requestMeta } from '../audit';
+import { lockOauthActor } from '../oauth-lock';
 import { isAccessKey, isApiV1Path } from '../access-keys';
 import { keyMayCall, matchApiV1Route } from '../api-v1';
 import { getRequestContext } from '../../server/request-context';
@@ -948,8 +949,12 @@ export async function endLoginSessions(
     endKeys?: boolean;
     /** Who ended them, for the keys' revoked_by (default: the login). */
     actorId?: string;
+    /** With `tx`: filled with the ids of the keys this revoked, for the
+     *  caller to audit (auditKeysEnded) once ITS transaction commits. */
+    revokedKeyIds?: string[];
   } = {},
 ): Promise<number | null> {
+  const ended: string[] = [];
   const run = async (tx: Tx | typeof db) => {
     const [row] = await tx
       .update(authUsers)
@@ -995,30 +1000,41 @@ export async function endLoginSessions(
         .returning({ id: accessKeys.id });
       // The login's MCP connectors: every live OAuth grant and every code
       // not yet exchanged. An admin's grant has no session epoch, so only
-      // this ends it (M2 audit N4).
+      // this ends it (M2 audit N4). Under the login's OAuth lock, the one a
+      // refresh and a code exchange take (final audit F3), so a grant minted
+      // at the same moment is either seen here or refused there.
+      await lockOauthActor(tx, loginId);
       await tx
         .update(oauthAccessTokens)
         .set({ revokedAt: now })
         .where(and(eq(oauthAccessTokens.actorId, loginId), isNull(oauthAccessTokens.revokedAt)));
       await tx.delete(oauthAuthCodes).where(eq(oauthAuthCodes.actorId, loginId));
-      if (keys.length > 0) {
-        // One row for the batch (M2 audit N7): which login, how many keys.
-        auditFireAndForget({
-          actorId: opts.actorId ?? loginId,
-          actorEmail: 'session-end',
-          action: 'key.revoked',
-          detail: {
-            loginId,
-            count: keys.length,
-            keyIds: keys.map((k) => k.id),
-            reason: 'sessions-ended',
-          },
-        });
-      }
+      ended.push(...keys.map((k) => k.id));
     }
     return row.epoch;
   };
-  return opts.tx ? run(opts.tx) : db.transaction((tx) => run(tx));
+  if (opts.tx) {
+    const epoch = await run(opts.tx);
+    opts.revokedKeyIds?.push(...ended);
+    return epoch;
+  }
+  const epoch = await db.transaction((tx) => run(tx));
+  // After the commit, so a rolled-back end leaves no row (final audit).
+  auditKeysEnded(loginId, opts.actorId ?? loginId, ended);
+  return epoch;
+}
+
+/** One key.revoked row for the keys a session end revoked (M2 audit N7):
+ *  which login, how many, which. Call it after the revoking transaction
+ *  commits. No row when there were none. */
+export function auditKeysEnded(loginId: string, actorId: string, keyIds: readonly string[]): void {
+  if (keyIds.length === 0) return;
+  auditFireAndForget({
+    actorId,
+    actorEmail: 'session-end',
+    action: 'key.revoked',
+    detail: { loginId, count: keyIds.length, keyIds: [...keyIds], reason: 'sessions-ended' },
+  });
 }
 
 // ── A rotated device token presented again (reuse detection) ────────────────

@@ -28,7 +28,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { NextResponse } from '@/server/http-compat';
 import { getLoginOr401, verifyPassword, type SessionUser } from '@/lib/auth';
-import { rateLimit, rateLimitRefund } from '@/lib/rate-limit';
+import { rateLimitLogin, rateLimitLoginRefund } from '@/lib/rate-limit';
 import { requestOrigin } from '@/lib/auth-constants';
 import { getClient, isRemoteMcpEnabled, mintAuthCode, DEFAULT_SCOPE } from '@/lib/mcp-oauth';
 import { mcpLoginEnabled, mcpTargetLogin } from '@/lib/mcp-auth';
@@ -223,7 +223,7 @@ export async function POST(req: Request) {
   // An admin or member re-types their password to Allow (see the header).
   if (user.role !== 'client') {
     const bucket = `oauth-consent-pw:${user.loginId}`;
-    const tries = rateLimit(bucket, CONSENT_PASSWORD_RATE);
+    const tries = rateLimitLogin(bucket, CONSENT_PASSWORD_RATE);
     const again = (message: string, status: number) =>
       new Response(
         consentPage(
@@ -244,7 +244,7 @@ export async function POST(req: Request) {
     if (!password || !(await verifyPassword(user.loginId, password))) {
       return again('That password is not right. Type your Mantle password to allow.', 403);
     }
-    rateLimitRefund(bucket);
+    rateLimitLoginRefund(bucket);
   }
 
   const code = await mintAuthCode({

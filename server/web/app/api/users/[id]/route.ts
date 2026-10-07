@@ -19,7 +19,7 @@ import {
   revokeOpenClientSignins,
   settleSpaceOnPromotion,
 } from '@mantle/content';
-import { endLoginSessions, getOwnerOr401 } from '@/lib/auth';
+import { auditKeysEnded, endLoginSessions, getOwnerOr401 } from '@/lib/auth';
 import { releaseAssignedAgent } from '@/lib/agents';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { deleteLoginSubscriptions, forgetRelayDevices } from '@/lib/push/store';
@@ -135,6 +135,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     (body.role !== undefined && body.role !== target.role);
 
   const pushTokens: string[] = [];
+  const endedKeyIds: string[] = [];
   let releasedAgentId: string | null = null;
   try {
     await db.transaction(async (tx) => {
@@ -149,6 +150,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
           removedRoutingTokens: pushTokens,
           endKeys: true,
           actorId: user.actor.id,
+          revokedKeyIds: endedKeyIds,
         });
         // A client's open sign-in links and emailed codes die with its
         // sessions (audit B14): a link issued before a disable must not
@@ -198,6 +200,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   }
   // After the commit, as the single unpair route does: tell the relay.
   await forgetRelayDevices(pushTokens);
+  // And record the API keys the end revoked (one row), now that it held.
+  auditKeysEnded(targetId, user.actor.id, endedKeyIds);
 
   auditFireAndForget({
     actorId: user.actor.id,
