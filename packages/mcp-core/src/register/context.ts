@@ -115,7 +115,8 @@ export function makeRegisterContext(
     // A peer acting as the owner never confirms for the owner: a level
     // change it would cause (a move into a shared folder, a page filed in
     // one) is refused instead of confirmed by the caller's own flag.
-    if (via === 'federation' && 'confirm' in input) delete input.confirm;
+    // An API key acting as the owner (via 'api') holds the same rule.
+    if ((via === 'federation' || via === 'api') && 'confirm' in input) delete input.confirm;
     const result = await def.handler(input, { ownerId: ownerId, surface });
     if (!result.ok) {
       return {

@@ -24,6 +24,7 @@ import { isRemoteMcpEnabled, wwwAuthenticateHeader } from '@/lib/mcp-oauth';
 import { resolveMcpCaller } from '@/lib/mcp-auth';
 import { JSON_BODY_CEILING_BYTES } from '@/lib/body-limit';
 import { clientIp, rateLimit } from '@/lib/rate-limit';
+import { rateLimitAccessKey } from '@/lib/access-keys';
 
 // Generous — the MCP client makes one HTTP request per tool call, so this must
 // clear normal bursty tool traffic while still capping a flood.
@@ -61,9 +62,11 @@ async function handler(req: Request): Promise<Response> {
 
   const caller = await resolveMcpCaller(req);
   if (!caller) return unauthorized();
-  // Each peer has its own budget, so a busy peer cannot starve the owner's
-  // own connector.
-  const perLogin = rateLimit(`mcp-login:${caller.peerId ?? caller.loginId}`, LOGIN_RATE);
+  // Each peer and each API key has its own budget, so a busy peer or script
+  // cannot starve the owner's own connector.
+  const perLogin = caller.keyId
+    ? rateLimitAccessKey(caller.keyId, 'mcp')
+    : rateLimit(`mcp-login:${caller.peerId ?? caller.loginId}`, LOGIN_RATE);
   if (!perLogin.ok) {
     return new Response(JSON.stringify({ error: 'rate_limited' }), {
       status: 429,

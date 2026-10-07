@@ -22,27 +22,18 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { accessKeys, db, isUniqueViolation, isWriteRefused } from '@mantle/db';
+import { KEY_AREAS, type KeyArea } from '@mantle/mcp-core/key-scope';
 import { loadLoginRow, type LoginRow } from './auth/login-row';
 import { auditFireAndForget } from './audit';
 import { rateLimit, rateLimitPeek, type RateLimitResult } from './rate-limit';
 
 export const ACCESS_KEY_PREFIX = 'mtlk_';
 
-/** The parts of the brain a key can be limited to. Each /api/v1 route and
- *  each MCP tool maps to at most one of them. */
-export const ACCESS_KEY_AREAS = [
-  'search',
-  'pages',
-  'notes',
-  'tasks',
-  'tables',
-  'files',
-  'calendar',
-  'contacts',
-  'journal',
-  'apps',
-] as const;
-export type AccessKeyArea = (typeof ACCESS_KEY_AREAS)[number];
+/** The parts of the brain a key can be limited to. Each /api/v1 route
+ *  (lib/api-v1.ts) and each MCP tool (@mantle/mcp-core/key-scope) maps to
+ *  at most one of them. One list for both surfaces. */
+export const ACCESS_KEY_AREAS = KEY_AREAS;
+export type AccessKeyArea = KeyArea;
 
 export const ACCESS_KEY_ACCESS = ['read', 'read_write'] as const;
 export type AccessKeyAccess = (typeof ACCESS_KEY_ACCESS)[number];

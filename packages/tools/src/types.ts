@@ -147,7 +147,10 @@ export type OwnerSurfaceVia =
   | 'app'
   | 'recipe-test'
   | 'federation'
-  | 'heartbeat';
+  | 'heartbeat'
+  // The public API (inbound API keys, 0232): a /api/v1 route that runs a
+  // builtin, or an API key acting as the owner on /api/mcp.
+  | 'api';
 
 /** A sidecar artifact a tool produces alongside its JSON output —
  *  audio bytes from synthesize_speech, an image from generate_image,

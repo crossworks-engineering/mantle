@@ -47,6 +47,7 @@ import {
   registerMantleTools,
 } from './build-server';
 import { zodShapeFromJsonSchema } from './register/zod-schema';
+import { keyAreasAllowTool } from './key-scope';
 
 export type McpLoginRole = 'admin' | 'member' | 'client';
 
@@ -61,14 +62,26 @@ export type McpCaller = {
   loginId: string;
   displayName?: string | null;
   /** How the bearer was issued. */
-  via: 'oauth' | 'token' | 'peer';
+  via: 'oauth' | 'token' | 'peer' | 'key';
   /** Whether write tools are offered (admin OAuth: always). */
   write: boolean;
-  /** A peer bound to the owner: the risky tools the owner allowed by name. */
+  /** A peer or an API key bound to the owner: the risky tools the owner
+   *  allowed by name. */
   riskyAllowed?: readonly string[];
   /** The peer whose token this is (its own rate budget). */
   peerId?: string;
+  /** The inbound API key this is (migration 0232): its own rate budget. */
+  keyId?: string;
+  /** An API key's areas (`@mantle/mcp-core/key-scope`); null or absent =
+   *  every area. Only a key sets it. */
+  areas?: readonly string[] | null;
 };
+
+/** Whether a caller's areas (an API key's; null or absent = all) allow
+ *  this tool. */
+export function callerAreasAllow(slug: string, caller: Pick<McpCaller, 'areas'>): boolean {
+  return keyAreasAllowTool(slug, caller.areas ?? null);
+}
 
 // ── The owner surface for a peer ─────────────────────────────────────────────
 
@@ -258,7 +271,11 @@ export async function resolveLoginToolRows(
     if (slugs.length === 0) return [];
     return resolveTools(caller.anchorId, slugs);
   });
-  return { rows: rows.filter((r) => loginMayHaveTool(r, caller.write)), level, privateReads };
+  return {
+    rows: rows.filter((r) => loginMayHaveTool(r, caller.write) && callerAreasAllow(r.slug, caller)),
+    level,
+    privateReads,
+  };
 }
 
 /** The surface a member's or client's MCP call runs on: the login, stamped
@@ -355,10 +372,12 @@ export function registerPreparedTools(
       registerMantleTools(server, caller.anchorId, { transport: opts.transport ?? 'http' });
       return;
     }
+    // A peer or an API key acting as the owner: the risky-tool rule and
+    // the write switch, and for a key its areas too.
     registerMantleTools(server, caller.anchorId, {
       transport: opts.transport ?? 'http',
-      via: 'federation',
-      allow: (slug) => ownerPeerAllows(slug, caller),
+      via: caller.via === 'key' ? 'api' : 'federation',
+      allow: (slug) => ownerPeerAllows(slug, caller) && callerAreasAllow(slug, caller),
     });
     return;
   }

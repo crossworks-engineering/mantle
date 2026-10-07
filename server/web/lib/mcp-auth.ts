@@ -1,7 +1,8 @@
 /**
  * Who is calling /api/mcp (MCP as a login, plan page e5b854dd).
  *
- * Three bearers resolve to one `McpCaller` (@mantle/mcp-core):
+ * Four bearers resolve to one `McpCaller` (@mantle/mcp-core). The fourth,
+ * an inbound API key (`mtlk_`), is `callerFromAccessKey` below. The others:
  *
  *  1. An OAuth access token (`mtlmcp_at_`): the login that consented. An
  *     admin's grant is the owner's connector, unchanged. A member's or
@@ -23,7 +24,17 @@ import { authUsers, db, mcpLoginAccess, mcpLoginTokens, resolveSingleOwnerId } f
 import { PEER_TOKEN_PREFIX, verifyInboundToken } from '@mantle/content';
 import type { McpCaller, McpLoginRole } from '@mantle/mcp-core';
 import { bearerFrom } from './auth/request';
+import {
+  auditKeyRefusal,
+  countFailedKey,
+  failedKeyBudget,
+  isAccessKey,
+  touchAccessKey,
+  verifyAccessKey,
+} from './access-keys';
+import { requestMetaFrom } from './audit';
 import { actorMayConnect, grantFromAccessToken } from './mcp-oauth';
+import { clientIp } from './rate-limit';
 
 /** The static login token's prefix. */
 export const MCP_LOGIN_TOKEN_PREFIX = 'mtlmcpk_';
@@ -87,6 +98,7 @@ export async function resolveMcpCaller(req: Request): Promise<McpCaller | null> 
 
   if (token.startsWith(PEER_TOKEN_PREFIX)) return callerFromPeerToken(token);
   if (token.startsWith(MCP_LOGIN_TOKEN_PREFIX)) return callerFromLoginToken(token);
+  if (isAccessKey(token)) return callerFromAccessKey(req, token);
 
   const grant = await grantFromAccessToken(token);
   if (!grant) return null;
@@ -128,6 +140,57 @@ async function callerFromLoginToken(token: string): Promise<McpCaller | null> {
     .where(eq(mcpLoginTokens.id, tok.id))
     .catch(() => {});
   return caller;
+}
+
+/**
+ * An inbound API key (`mtlk_`, migration 0232): it acts as its login and
+ * only narrows it. An admin key gets the owner tools held to the key's
+ * write switch, its risky tools and its areas (as a peer bound to the
+ * owner). A member or client key also needs the login's MCP switch on, and
+ * writes only while both the key and the login's Write switch allow it.
+ * A refused key is a 401 like any bad bearer; the failed try counts
+ * against the caller's address, as on /api/v1.
+ */
+async function callerFromAccessKey(req: Request, token: string): Promise<McpCaller | null> {
+  const ip = clientIp(req);
+  if (!failedKeyBudget(ip).ok) return null;
+  const check = await verifyAccessKey(token);
+  if (!check.ok) {
+    countFailedKey(ip);
+    if (check.keyId) {
+      auditKeyRefusal({
+        keyId: check.keyId,
+        reason: check.reason,
+        method: req.method,
+        path: '/api/mcp',
+        ...requestMetaFrom(req),
+      });
+    }
+    return null;
+  }
+  const key = check.grant;
+  const anchorId = await resolveSingleOwnerId();
+  if (!anchorId) return null;
+  const keyWrite = key.access === 'read_write';
+  let caller: McpCaller | null;
+  if (key.role === 'admin') {
+    caller = {
+      role: 'admin',
+      anchorId,
+      loginId: key.loginId,
+      displayName: key.login.displayName,
+      via: 'key',
+      write: keyWrite,
+      riskyAllowed: key.riskyTools,
+    };
+  } else {
+    const row = await loadLogin(key.loginId);
+    const login = row ? loginCaller(row, anchorId, 'token') : null;
+    caller = login ? { ...login, via: 'key', write: login.write && keyWrite } : null;
+  }
+  if (!caller) return null;
+  touchAccessKey(key.id, ip);
+  return { ...caller, keyId: key.id, areas: key.areas };
 }
 
 async function callerFromPeerToken(token: string): Promise<McpCaller | null> {
