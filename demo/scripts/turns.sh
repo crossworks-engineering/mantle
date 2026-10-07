@@ -59,7 +59,7 @@ echo "→ demo stack"
 
 echo "→ is the brain drained?"
 outstanding=$(docker exec "$PG" psql -U postgres -d postgres -At -c \
-  "select count(*) from nodes where type not in ('branch') and not (data ? 'extract_completed_at') and not (data ? 'extract_skipped')" 2>/dev/null || echo "?")
+  "select count(*) from nodes where type not in ('branch', 'app', 'recall') and not (data ? 'extract_completed_at') and not (data ? 'extract_skipped')" 2>/dev/null || echo "?")
 queued=$(docker exec "$PG" psql -U postgres -d postgres -At -c \
   "select count(*) from pgboss.job where name like '%extract%' and state in ('created','active','retry')" 2>/dev/null || echo "?")
 echo "  unextracted nodes: $outstanding · extractor queue: $queued"

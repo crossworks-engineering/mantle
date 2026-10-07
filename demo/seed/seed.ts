@@ -804,6 +804,31 @@ async function seedEmails(sql: Sql, m: Manifest, ownerId: string) {
   return n;
 }
 
+/** A spreadsheet upload makes a table of its own (the xlsx import path), after
+ *  extraction, with the file name as its title, at the top of Tables. That
+ *  is a real feature worth showing, so the import is kept: it gets a readable
+ *  title and goes into the Private folder. Waits for it, at most two minutes. */
+async function tidyImports(sql: Sql, m: Manifest) {
+  const xlsx = m.files.filter((f) => f.kind === 'xlsx');
+  const folder = created.get('fld-tables-private');
+  if (!xlsx.length || !folder) return 0;
+  const deadline = Date.now() + 120_000;
+  let rows: Array<{ id: unknown; source: unknown }> = [];
+  while (Date.now() < deadline) {
+    rows = (await sql`select id, data->>'sourceFileId' as source from nodes where type = 'table' and data ? 'sourceFileId'`) as Array<{ id: unknown; source: unknown }>;
+    if (rows.length >= xlsx.length) break;
+    await new Promise((r) => setTimeout(r, 5000));
+  }
+  for (const row of rows) {
+    const file = xlsx.find((f) => created.get(f.id) === String(row.source));
+    if (!file) continue;
+    await send('PATCH', `/api/tables/${String(row.id)}`, { title: `${file.title} (imported from the xlsx)` });
+    const r = (await post('/api/tree/tables/move', { ids: [String(row.id)], folderId: folder })) as { moved?: number };
+    if (r.moved !== 1) throw new Error(`imported table ${String(row.id)}: not filed`);
+  }
+  return rows.length;
+}
+
 // ── Backdating: the manifest's offsets become the brain's history ───────────
 async function backdate(sql: Sql, m: Manifest) {
   const rows: Array<[string, string]> = [];
@@ -872,6 +897,7 @@ async function main() {
     console.log('· emails (no API: written as the sync worker would)');
     mails = await seedEmails(sql, manifest, String(ownerId));
   }
+  if (all) console.log(`· imported tables tidied: ${await tidyImports(sql, manifest)}`);
   console.log('· backdating the timeline');
   const dated = await backdate(sql, manifest);
 
