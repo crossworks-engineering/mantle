@@ -4,6 +4,7 @@
  * registration path against a capturing fake server; no database.
  */
 import { describe, expect, it } from 'vitest';
+import { BUILTIN_TOOLS } from '@mantle/tools';
 import { KEY_AREAS, keyAreasAllowTool, toolKeyArea } from './key-scope';
 import {
   isMcpToolReadOnly,
@@ -44,6 +45,18 @@ describe('API key areas for MCP tools', () => {
     expect(toolKeyArea('search')).toBe('search');
     expect(toolKeyArea('entity_search')).toBe('search');
     expect(toolKeyArea('my_page_create')).toBe('pages');
+  });
+
+  it('gives every conversion tool no area: it reads one kind to write another', () => {
+    const slugs = new Set([
+      ...BUILTIN_TOOLS.map((t) => t.slug),
+      ...registeredFor({ areas: null, write: true, riskyAllowed: [] }),
+    ]);
+    const conversions = [...slugs].filter((s) => s.includes('_from_'));
+    expect(conversions).toEqual(expect.arrayContaining(['page_from_journal', 'note_from_page']));
+    for (const slug of conversions) expect(toolKeyArea(slug), slug).toBeNull();
+    const pagesKey = registeredFor({ areas: ['pages', 'notes', 'files', 'tables'], write: true });
+    for (const slug of conversions) expect(pagesKey, slug).not.toContain(slug);
   });
 
   it('leaves everything else to an all-areas key', () => {

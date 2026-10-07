@@ -48,8 +48,13 @@ const AREA_TOOLS: ReadonlyMap<string, KeyArea> = new Map<string, KeyArea>([
   ['my_file_upload', 'files'],
 ]);
 
-/** The area a tool belongs to, or null (open only to an all-areas key). */
+/** The area a tool belongs to, or null (open only to an all-areas key).
+ *  A conversion tool (`page_from_journal`, `note_from_file`, any slug with
+ *  `_from_`) reads one kind and writes another, so it belongs to NO area
+ *  (M2 audit F2): in the target's area it would let a pages key read the
+ *  journal through `page_from_journal`. */
 export function toolKeyArea(slug: string): KeyArea | null {
+  if (slug.includes('_from_')) return null;
   const exact = AREA_TOOLS.get(slug);
   if (exact) return exact;
   for (const [prefix, area] of AREA_PREFIXES) if (slug.startsWith(prefix)) return area;

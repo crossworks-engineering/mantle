@@ -4,6 +4,7 @@ import {
   failedKeyBudget,
   isApiV1Path,
   rateLimitAccessKey,
+  rateLimitKeySearch,
   touchAccessKey,
   verifyAccessKey,
   type AccessKeyGrant,
@@ -56,16 +57,22 @@ export async function gateAccessKey(
     return { response: unauthorized() };
   }
 
-  const limit = rateLimitAccessKey(grant.id, 'v1');
+  const limit = rateLimitAccessKey(grant, 'v1');
   if (!limit.ok) return { response: tooMany(limit.retryAfterSec) };
 
   // The key's scope against the v1 table. A path that is not in the table
   // is a 404: it is not part of the API a key can call.
-  const scope = keyMayCall(grant, matchApiV1Route(req.method, path));
+  const route = matchApiV1Route(req.method, path);
+  const scope = keyMayCall(grant, route);
   if (!scope.ok) {
     if (scope.reason === 'not-in-api') return { response: notFound() };
     auditKeyRefusal({ keyId: grant.id, reason: scope.reason, ...meta() });
     return { response: outOfScope(scope.reason) };
+  }
+  // Search embeds the query on every call: a smaller budget of its own.
+  if (route?.pattern === '/api/v1/search') {
+    const search = rateLimitKeySearch(grant.id);
+    if (!search.ok) return { response: tooMany(search.retryAfterSec) };
   }
 
   touchAccessKey(grant.id, ip);

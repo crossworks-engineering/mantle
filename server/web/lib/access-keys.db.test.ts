@@ -22,6 +22,7 @@
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/access-keys.db.test.ts
  */
 import { createHash, randomUUID } from 'node:crypto';
+import bcrypt from 'bcryptjs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ensureTestAnchor } from '@mantle/db/test-support';
 
@@ -43,6 +44,7 @@ describe.skipIf(!URL)('inbound API keys', () => {
   const member2 = randomUUID();
   const all = [admin, admin2, member, client, member2];
   const emailOf = (s: string) => `${tag}-${s}@example.com`;
+  const PASSWORD = 'a long enough password';
   let ip = 0;
 
   const call = async (
@@ -78,8 +80,14 @@ describe.skipIf(!URL)('inbound API keys', () => {
       (await sql<Row[]>`select session_epoch from auth.users where id = ${id}`)[0]!.session_epoch,
     );
 
+  // Admins and members re-type their password to make a key; a body that
+  // names its own `password` (or a client's, which needs none) is sent as is.
   const make = async (body: Json, as = admin) =>
-    call('/api/access-keys', { method: 'POST', cookie: cookieOf(as, await epochOf(as)), body });
+    call('/api/access-keys', {
+      method: 'POST',
+      cookie: cookieOf(as, await epochOf(as)),
+      body: 'password' in body || as === client ? body : { ...body, password: PASSWORD },
+    });
   const makeKey = async (body: Partial<Json> = {}, as = admin) => {
     const res = await make(
       {
@@ -115,12 +123,13 @@ describe.skipIf(!URL)('inbound API keys', () => {
     sql = (m.systemDb as unknown as { $client: typeof sql }).$client;
     tokens = await import('./auth/tokens');
     await ensureTestAnchor(sql);
+    const hash = bcrypt.hashSync(PASSWORD, 4);
     await sql`insert into auth.users (id, email, password_hash, role, display_name) values
-      (${admin}, ${emailOf('admin')}, 'x', 'admin', 'Ada Admin'),
-      (${admin2}, ${emailOf('admin2')}, 'x', 'admin', 'Abe Admin'),
-      (${member}, ${emailOf('member')}, 'x', 'member', 'Mia Member'),
-      (${client}, ${emailOf('client')}, 'x', 'client', 'Cal Client'),
-      (${member2}, ${emailOf('member2')}, 'x', 'member', 'Max Member')`;
+      (${admin}, ${emailOf('admin')}, ${hash}, 'admin', 'Ada Admin'),
+      (${admin2}, ${emailOf('admin2')}, ${hash}, 'admin', 'Abe Admin'),
+      (${member}, ${emailOf('member')}, ${hash}, 'member', 'Mia Member'),
+      (${client}, ${emailOf('client')}, ${hash}, 'client', 'Cal Client'),
+      (${member2}, ${emailOf('member2')}, ${hash}, 'member', 'Max Member')`;
     const { createApp } = await import('../server/app');
     app = await createApp();
   }, 120_000);

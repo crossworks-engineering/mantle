@@ -34,6 +34,36 @@ const SCALE = (() => {
 
 /** Cap the map size so a flood of unique keys can't OOM the process. */
 const MAX_BUCKETS = 10_000;
+/** The hard cap: past it the OLDEST buckets go, live or not. */
+const HARD_MAX_BUCKETS = 2 * MAX_BUCKETS;
+/** At most one full sweep a second (M2 audit F3): when the map is full of
+ *  live buckets, a sweep on every new key scanned the whole map each time,
+ *  so a flood of unique keys cost a full scan per request. */
+const SWEEP_EVERY_MS = 1_000;
+let lastSweepMs = 0;
+
+/**
+ * Drop expired buckets (at most once a second), and past the hard cap the
+ * oldest buckets in insertion order. Losing a live bucket resets its
+ * window early: the price of a bounded map under a flood of 20,000 unique
+ * keys in one window, which the per-address limits in front of the
+ * floodable callers (failed API keys, sign-in) make costly.
+ */
+function sweep(now: number, windowMs: number): void {
+  if (now - lastSweepMs >= SWEEP_EVERY_MS) {
+    lastSweepMs = now;
+    for (const [k, b] of buckets) {
+      if (now - b.windowStartMs >= windowMs) buckets.delete(k);
+      if (buckets.size < MAX_BUCKETS / 2) break;
+    }
+  }
+  if (buckets.size >= HARD_MAX_BUCKETS) {
+    for (const k of buckets.keys()) {
+      buckets.delete(k);
+      if (buckets.size < MAX_BUCKETS) break;
+    }
+  }
+}
 
 export type RateLimitResult = {
   ok: boolean;
@@ -57,12 +87,7 @@ export function rateLimit(key: string, opts: { max: number; windowMs: number }):
     // Fresh window. Also opportunistically gc expired buckets if the
     // map is getting large, so the limiter stays bounded on a long-
     // running process.
-    if (buckets.size >= MAX_BUCKETS) {
-      for (const [k, b] of buckets) {
-        if (now - b.windowStartMs >= opts.windowMs) buckets.delete(k);
-        if (buckets.size < MAX_BUCKETS / 2) break;
-      }
-    }
+    if (buckets.size >= MAX_BUCKETS) sweep(now, opts.windowMs);
     bucket = { count: 0, windowStartMs: now };
     buckets.set(key, bucket);
   }

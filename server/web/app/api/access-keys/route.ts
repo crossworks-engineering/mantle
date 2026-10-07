@@ -15,29 +15,42 @@
  *      reads the audit log, addresses included, and must be able to find
  *      and revoke any key.
  * POST /api/access-keys { name, access, areas, expiresInDays?,
- *      riskyTools? } : make a key for the caller's own login. The secret is
- *      in this answer ONCE. `areas` null = every area; `expiresInDays`
- *      omitted = the default, null = never. `riskyTools` only for an admin.
- *      At most MAX_LIVE_KEYS_PER_LOGIN live keys per login.
+ *      riskyTools?, password? } : make a key for the caller's own login. The
+ *      secret is in this answer ONCE. `areas` null = every area;
+ *      `expiresInDays` omitted = the default, null = never. `riskyTools`
+ *      only for an admin. At most MAX_LIVE_KEYS_PER_LOGIN live keys per
+ *      login.
+ *
+ *      A stolen session must not be able to mint a long-lived key (M2 audit
+ *      F4): an admin or a member re-types their password (10 tries a minute
+ *      per login), a member's key ends within 90 days, and a client (who
+ *      has no password) gets at most 30 days. A password change, "sign out
+ *      everywhere" and an admin's End sessions revoke every key the login
+ *      holds (endLoginSessions `endKeys`).
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getLoginOr401 } from '@/lib/auth';
+import { getLoginOr401, verifyPassword } from '@/lib/auth';
 import {
   ACCESS_KEY_ACCESS,
   ACCESS_KEY_AREAS,
   DEFAULT_ACCESS_KEY_EXPIRY_DAYS,
   MAX_ACCESS_KEY_EXPIRY_DAYS,
+  MAX_KEY_DAYS_BY_ROLE,
   MAX_LIVE_KEYS_PER_LOGIN,
   expiryFromDays,
+  keyNeedsPassword,
   mintAccessKey,
 } from '@/lib/access-keys';
-import { countLiveAccessKeys, listAccessKeys } from '@/lib/access-keys-admin';
+import { listAccessKeys } from '@/lib/access-keys-admin';
+import { rateLimit } from '@/lib/rate-limit';
 import { auditFireAndForget, requestMeta } from '@/lib/audit';
 import { firstIssue } from '@/lib/zod-issue';
 import type { AccessKeyCreated, AccessKeyList } from '@mantle/client-types';
 
 const NO_STORE = { 'Cache-Control': 'no-store' };
+/** Password tries a minute per login when making a key. */
+const PASSWORD_RATE = { max: 10, windowMs: 60_000 };
 
 const Body = z
   .object({
@@ -49,6 +62,7 @@ const Body = z
       .array(z.string().regex(/^[a-z0-9_]{1,64}$/, 'A tool slug.'))
       .max(50)
       .optional(),
+    password: z.string().max(1000).optional(),
   })
   // A key is always the caller's own: a body that names a login is refused
   // rather than quietly ignored.
@@ -63,7 +77,12 @@ export async function GET() {
       keys,
       role: login.kind,
       areas: [...ACCESS_KEY_AREAS],
-      defaultExpiryDays: DEFAULT_ACCESS_KEY_EXPIRY_DAYS,
+      defaultExpiryDays: Math.min(
+        DEFAULT_ACCESS_KEY_EXPIRY_DAYS,
+        MAX_KEY_DAYS_BY_ROLE[login.kind] ?? DEFAULT_ACCESS_KEY_EXPIRY_DAYS,
+      ),
+      maxExpiryDays: MAX_KEY_DAYS_BY_ROLE[login.kind],
+      needsPassword: keyNeedsPassword(login.kind),
     } satisfies AccessKeyList,
     { headers: NO_STORE },
   );
@@ -81,17 +100,37 @@ export async function POST(req: Request) {
   if (riskyTools.length > 0 && login.kind !== 'admin') {
     return NextResponse.json({ error: 'Risky tools are for an admin key.' }, { status: 400 });
   }
-  if ((await countLiveAccessKeys(login.loginId)) >= MAX_LIVE_KEYS_PER_LOGIN) {
-    return NextResponse.json(
-      {
-        error: `You have ${MAX_LIVE_KEYS_PER_LOGIN} keys. Revoke one you no longer use, then make a new one.`,
-      },
-      { status: 409 },
-    );
+  const maxDays = MAX_KEY_DAYS_BY_ROLE[login.kind];
+  if (maxDays !== null) {
+    if (body.expiresInDays === null || (body.expiresInDays ?? 0) > maxDays) {
+      return NextResponse.json(
+        { error: `Your keys can last at most ${maxDays} days.`, reason: 'expiry-too-long' },
+        { status: 400 },
+      );
+    }
+  }
+  if (keyNeedsPassword(login.kind)) {
+    const tries = rateLimit(`akey-pw:${login.loginId}`, PASSWORD_RATE);
+    if (!tries.ok) {
+      return NextResponse.json(
+        { error: 'Too many tries. Wait a minute, then try again.' },
+        { status: 429, headers: { 'Retry-After': String(tries.retryAfterSec) } },
+      );
+    }
+    if (!body.password || !(await verifyPassword(login.loginId, body.password))) {
+      return NextResponse.json(
+        { error: 'Type your password to make a key.', reason: 'password' },
+        { status: 403 },
+      );
+    }
   }
 
-  const expiresAt = expiryFromDays(body.expiresInDays);
-  const { id, prefix, key } = await mintAccessKey({
+  const expiresAt = expiryFromDays(
+    body.expiresInDays === undefined && maxDays !== null
+      ? Math.min(DEFAULT_ACCESS_KEY_EXPIRY_DAYS, maxDays)
+      : body.expiresInDays,
+  );
+  const minted = await mintAccessKey({
     name: body.name,
     loginId: login.loginId,
     loginRole: login.kind,
@@ -100,7 +139,17 @@ export async function POST(req: Request) {
     riskyTools,
     expiresAt,
     createdBy: login.loginId,
+    maxLive: MAX_LIVE_KEYS_PER_LOGIN,
   });
+  if (!minted) {
+    return NextResponse.json(
+      {
+        error: `You have ${MAX_LIVE_KEYS_PER_LOGIN} keys. Revoke one you no longer use, then make a new one.`,
+      },
+      { status: 409 },
+    );
+  }
+  const { id, prefix, key } = minted;
 
   auditFireAndForget({
     actorId: login.loginId,

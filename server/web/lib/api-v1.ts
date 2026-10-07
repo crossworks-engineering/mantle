@@ -20,6 +20,23 @@
  * alias. Those logins use /api/mcp.
  */
 import type { AccessKeyArea, AccessKeyGrant } from './access-keys';
+import { getRequestContext } from '../server/request-context';
+
+/**
+ * Whether this request may confirm a change of who can see an item (the
+ * tree's "Confirm first", a 409 `visibility` answered with `confirm: true`).
+ * An API key may not (M2 audit F1): the confirm is for a person who saw the
+ * list, and MCP drops it for a key too (register/context.ts). A key's write
+ * that would widen who sees an item stays a 409.
+ */
+export function callerMayConfirm(): boolean {
+  return !isApiKeyRequest();
+}
+
+/** Whether the gate let this request in with an API key. */
+export function isApiKeyRequest(): boolean {
+  return !!getRequestContext()?.accessKey;
+}
 
 export type ApiV1Route = {
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';

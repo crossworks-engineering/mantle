@@ -23,7 +23,7 @@
  * The secret is never logged and never returned after create.
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { eq } from 'drizzle-orm';
+import { and, count, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import { accessKeys, db, isUniqueViolation, isWriteRefused } from '@mantle/db';
 import { KEY_AREAS, type KeyArea } from '@mantle/mcp-core/key-scope';
 import { loadLoginRow, type LoginRow } from './auth/login-row';
@@ -47,6 +47,20 @@ export type AccessKeyRole = 'admin' | 'member' | 'client';
 export const DEFAULT_ACCESS_KEY_EXPIRY_DAYS = 90;
 /** The longest expiry a caller may name (in days). "Never" is null. */
 export const MAX_ACCESS_KEY_EXPIRY_DAYS = 3650;
+/** The longest a member's or client's key may live, in days (M2 audit F4).
+ *  An admin re-types their password to make a key and may pick "never". A
+ *  member re-types theirs too, but a member key ends within 90 days. A
+ *  client signs in with a link or a code and has no password to re-type, so
+ *  a client key ends within 30 days, as a client session does. */
+export const MAX_KEY_DAYS_BY_ROLE: Record<AccessKeyRole, number | null> = {
+  admin: null,
+  member: 90,
+  client: 30,
+};
+/** Whether a role re-types its password to make a key (a client has none). */
+export function keyNeedsPassword(role: AccessKeyRole): boolean {
+  return role !== 'client';
+}
 /** Live (not revoked, not expired) keys one login may hold. */
 export const MAX_LIVE_KEYS_PER_LOGIN = 50;
 
@@ -61,6 +75,20 @@ export const ACCESS_KEY_RATE = {
   v1: { max: 120, windowMs: 60_000 },
   mcp: { max: 300, windowMs: 60_000 },
 } as const;
+/** Requests a minute per LOGIN across all its keys (M2 audit F7): 50 keys
+ *  must not buy 50 times the budget. */
+const LOGIN_KEY_RATE = {
+  v1: { max: 600, windowMs: 60_000 },
+  mcp: { max: 1200, windowMs: 60_000 },
+} as const;
+/** GET /api/v1/search embeds the query on every call: its own smaller
+ *  budget per key (M2 audit, suspected item 2). */
+const SEARCH_KEY_RATE = { max: 30, windowMs: 60_000 };
+/** Failed key presentations a minute from one address, any prefix (M2
+ *  audit F3), checked before the database is asked: random prefixes cost
+ *  a lookup each. High enough that a shared address (NAT) with one broken
+ *  script does not lock its neighbours out, low enough to cap the cost. */
+const FAILED_KEY_ADDRESS_RATE = { max: 100, windowMs: 60_000 };
 /** Failed presentations a minute of one key prefix from one address. Keyed
  *  on the pair, not the address alone (audit item 2): bad keys from a shared
  *  address (NAT, a proxy) must not lock every valid key out from it. Only a
@@ -175,9 +203,20 @@ export async function verifyAccessKey(token: string): Promise<AccessKeyCheck> {
 
 // ── Use: rate limits, last use, refusals ─────────────────────────────────────
 
-/** Take one request from the key's budget on `surface`. */
-export function rateLimitAccessKey(keyId: string, surface: 'v1' | 'mcp'): RateLimitResult {
-  return rateLimit(`akey:${surface}:${keyId}`, ACCESS_KEY_RATE[surface]);
+/** Take one request from the key's budget on `surface`, and from its
+ *  login's budget across every key (F7). Both must allow it. */
+export function rateLimitAccessKey(
+  grant: Pick<AccessKeyGrant, 'id' | 'loginId'>,
+  surface: 'v1' | 'mcp',
+): RateLimitResult {
+  const key = rateLimit(`akey:${surface}:${grant.id}`, ACCESS_KEY_RATE[surface]);
+  if (!key.ok) return key;
+  return rateLimit(`akey-login:${surface}:${grant.loginId}`, LOGIN_KEY_RATE[surface]);
+}
+
+/** The extra budget of GET /api/v1/search for one key. */
+export function rateLimitKeySearch(keyId: string): RateLimitResult {
+  return rateLimit(`akey-search:${keyId}`, SEARCH_KEY_RATE);
 }
 
 /** The failed-try bucket of a presented key: its address and its prefix
@@ -186,13 +225,18 @@ function failKey(ip: string, token: string): string {
   return `akey-fail:${ip}:${KEY_RE.exec(token)?.[1] ?? '-'}`;
 }
 
-/** Whether `ip` may present this key's prefix again (failures counted). */
+/** Whether `ip` may present this key again: its failures across every
+ *  prefix (F3), then for this prefix (item 2). Peeked only: a failure is
+ *  counted by countFailedKey. */
 export function failedKeyBudget(ip: string, token: string): RateLimitResult {
+  const address = rateLimitPeek(`akey-fail-addr:${ip}`, FAILED_KEY_ADDRESS_RATE);
+  if (!address.ok) return address;
   return rateLimitPeek(failKey(ip, token), FAILED_KEY_RATE);
 }
 
 /** Count one failed presentation of this key's prefix from `ip`. */
 export function countFailedKey(ip: string, token: string): void {
+  rateLimit(`akey-fail-addr:${ip}`, FAILED_KEY_ADDRESS_RATE);
   rateLimit(failKey(ip, token), FAILED_KEY_RATE);
 }
 
@@ -260,12 +304,17 @@ export type MintAccessKeyInput = {
   riskyTools: readonly string[];
   expiresAt: Date | null;
   createdBy: string;
+  /** Refuse (null) when the login already holds this many live keys. */
+  maxLive: number;
 };
 
-/** Mint a key. The plaintext is returned ONCE; only its hash is kept. */
+/** Mint a key. The plaintext is returned ONCE; only its hash is kept. Null
+ *  when the login already holds `maxLive` live keys: the count and the
+ *  insert run in one transaction under a per-login lock, so two creates at
+ *  once cannot both pass the cap (M2 audit F7). */
 export async function mintAccessKey(
   input: MintAccessKeyInput,
-): Promise<{ id: string; prefix: string; key: string }> {
+): Promise<{ id: string; prefix: string; key: string } | null> {
   const areas = input.areas ? [...new Set(input.areas)].sort() : null;
   const riskyTools = input.loginRole === 'admin' ? [...new Set(input.riskyTools)].sort() : [];
   // A prefix clash is about 1 in 10^14; try again rather than fail.
@@ -273,22 +322,39 @@ export async function mintAccessKey(
     const prefix = randomPrefix();
     const key = `${ACCESS_KEY_PREFIX}${prefix}_${randomBytes(SECRET_BYTES).toString('base64url')}`;
     try {
-      const [row] = await db
-        .insert(accessKeys)
-        .values({
-          name: input.name,
-          loginId: input.loginId,
-          loginRole: input.loginRole,
-          keyPrefix: prefix,
-          keyHash: sha256(key).toString('hex'),
-          access: input.access,
-          areas,
-          riskyTools,
-          expiresAt: input.expiresAt,
-          createdBy: input.createdBy,
-        })
-        .returning({ id: accessKeys.id });
-      return { id: row!.id, prefix, key };
+      const row = await db.transaction(async (tx) => {
+        await tx.execute(
+          sql`select pg_advisory_xact_lock(hashtext(${`access-keys:${input.loginId}`}))`,
+        );
+        const [live] = await tx
+          .select({ n: count() })
+          .from(accessKeys)
+          .where(
+            and(
+              eq(accessKeys.loginId, input.loginId),
+              isNull(accessKeys.revokedAt),
+              or(isNull(accessKeys.expiresAt), gt(accessKeys.expiresAt, new Date())),
+            ),
+          );
+        if (Number(live?.n ?? 0) >= input.maxLive) return null;
+        const [inserted] = await tx
+          .insert(accessKeys)
+          .values({
+            name: input.name,
+            loginId: input.loginId,
+            loginRole: input.loginRole,
+            keyPrefix: prefix,
+            keyHash: sha256(key).toString('hex'),
+            access: input.access,
+            areas,
+            riskyTools,
+            expiresAt: input.expiresAt,
+            createdBy: input.createdBy,
+          })
+          .returning({ id: accessKeys.id });
+        return inserted!;
+      });
+      return row ? { id: row.id, prefix, key } : null;
     } catch (err) {
       if (attempt < 3 && isUniqueViolation(err)) continue;
       throw err;

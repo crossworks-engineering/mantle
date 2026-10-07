@@ -2,7 +2,7 @@
  * The list side of inbound API keys (plan page 1e62e204): what the
  * Settings > API access screen shows. Never the secret, never its hash.
  */
-import { and, count, desc, eq, gt, inArray, isNull, or } from 'drizzle-orm';
+import { desc, eq, inArray } from 'drizzle-orm';
 import { accessKeys, authUsers, db, type AccessKey } from '@mantle/db';
 import type { AccessKeyStatus, AccessKeyView } from '@mantle/client-types';
 import type { AccessKeyAccess, AccessKeyArea, AccessKeyRole } from './access-keys';
@@ -44,21 +44,6 @@ export async function listAccessKeys(loginId: string | null): Promise<AccessKeyV
   const byId = new Map(logins.map((l) => [l.id, l]));
   const now = Date.now();
   return rows.map((r) => accessKeyView(r, byId, now));
-}
-
-/** A login's live keys: not revoked, not expired. */
-export async function countLiveAccessKeys(loginId: string): Promise<number> {
-  const [row] = await db
-    .select({ n: count() })
-    .from(accessKeys)
-    .where(
-      and(
-        eq(accessKeys.loginId, loginId),
-        isNull(accessKeys.revokedAt),
-        or(isNull(accessKeys.expiresAt), gt(accessKeys.expiresAt, new Date())),
-      ),
-    );
-  return Number(row?.n ?? 0);
 }
 
 export function accessKeyView(

@@ -21,7 +21,7 @@
 import { createMcpHandler } from 'mcp-handler';
 import { mcpInstructionsFor, prepareCallerTools, registerPreparedTools } from '@mantle/mcp-core';
 import { isRemoteMcpEnabled, wwwAuthenticateHeader } from '@/lib/mcp-oauth';
-import { resolveMcpCaller } from '@/lib/mcp-auth';
+import { auditMcpKeyCall, resolveMcpCaller } from '@/lib/mcp-auth';
 import { JSON_BODY_CEILING_BYTES } from '@/lib/body-limit';
 import { clientIp, rateLimit } from '@/lib/rate-limit';
 import { rateLimitAccessKey } from '@/lib/access-keys';
@@ -65,7 +65,7 @@ async function handler(req: Request): Promise<Response> {
   // Each peer and each API key has its own budget, so a busy peer or script
   // cannot starve the owner's own connector.
   const perLogin = caller.keyId
-    ? rateLimitAccessKey(caller.keyId, 'mcp')
+    ? rateLimitAccessKey({ id: caller.keyId, loginId: caller.loginId }, 'mcp')
     : rateLimit(`mcp-login:${caller.peerId ?? caller.loginId}`, LOGIN_RATE);
   if (!perLogin.ok) {
     return new Response(JSON.stringify({ error: 'rate_limited' }), {
@@ -87,6 +87,8 @@ async function handler(req: Request): Promise<Response> {
       );
     }
   }
+  // A write tool an API key calls leaves an audit row (lib/mcp-auth.ts).
+  if (caller.keyId) await auditMcpKeyCall(req, caller);
   // A member's or client's tools are resolved from their responder's groups
   // here, before the adapter registers synchronously.
   const prepared = await prepareCallerTools(caller);

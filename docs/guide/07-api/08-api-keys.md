@@ -11,14 +11,16 @@ Every other route refuses a key, so a key can never change settings, logins or o
 
 ## Make a key
 
-1. Open **Settings > API access** and press **Make key**.
+1. Open **Settings > API access** and press **Make key**. Members find it in their menu, clients under **API keys**.
 2. Name it after what will use it, for example "Nightly backup".
 3. Pick the **Access**:
    - **Read only**: the key reads and never writes.
    - **Read and write**: the key also creates and changes items.
 4. Pick when it **Expires**: 30 days, 90 days (the default), 1 year or never.
 5. Leave **All areas** on, or turn it off and tick only the areas the key needs.
-6. Press **Make key** and copy the key. It is shown once. Mantle keeps only a hash of it.
+6. Type your password (admins and members), press **Make key** and copy the key. It is shown once. Mantle keeps only a hash of it.
+
+A member's key lasts at most 90 days and a client's at most 30. Only an admin's key may never expire.
 
 Each login makes keys for itself. An admin's key acts as that admin, a member's as that member, a client's as that client. Nobody can make a key that acts as another login.
 
@@ -26,14 +28,14 @@ Each login makes keys for itself. An admin's key acts as that admin, a member's 
 
 | Area | What it opens |
 | --- | --- |
-| Search | Search, and the entity tools on MCP |
+| Search | Search across EVERY kind of item, email and journal included, and the entity tools on MCP. Give it only to a key that may read everything |
 | Pages, Notes, Tasks, Tables, Files | That kind of item |
 | Calendar | Events |
 | Contacts | Contacts |
 | Journal | Journal entries |
 | Apps | Mini apps (MCP) |
 
-A route or tool that belongs to no area, such as reading any item by id or the Recall tools, needs **All areas**.
+A route or tool that belongs to no area, such as reading any item by id, the Recall tools or a tool that turns one kind into another (`page_from_journal`), needs **All areas**.
 
 ## Use a key
 
@@ -60,16 +62,18 @@ claude mcp add --transport http mantle https://example.com/api/mcp \
 
 - You revoke it in **Settings > API access**.
 - It reaches its expiry.
-- The login is disabled, or its role changes.
+- The login changes its password, or uses **Sign out everywhere**.
+- An admin ends the login's sessions, disables it, or changes its role.
 
-Signing out, even everywhere, does not end a key. A password change does not end it either. Revoke the key instead.
+A plain sign-out does not end a key.
 
 An admin sees every key on the brain and may revoke any of them. Members and clients see and revoke their own.
 
 ## Limits
 
-- 120 requests a minute per key on `/api/v1`, and 300 on `/api/mcp`. Past that the answer is `429` with `Retry-After`.
-- 20 failed tries a minute for one key prefix from one address.
+- 120 requests a minute per key on `/api/v1`, and 300 on `/api/mcp`. All the keys of one login share 600 and 1200. Search has its own 30 a minute per key. Past a limit the answer is `429` with `Retry-After`.
+- 20 failed tries a minute for one key prefix from one address, and 100 for any prefix.
+- A key cannot confirm a change of who can see an item, and cannot make a page public. Do that in the app.
 - 50 live keys per login.
 
 The per-address limits rely on the reverse proxy that ships with Mantle. Do not serve the brain to the internet without it.

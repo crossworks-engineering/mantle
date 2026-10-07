@@ -1,5 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
+import { callerMayConfirm } from '@/lib/api-v1';
 import { getOwnerOr401 } from '@/lib/auth';
 import { allPrivateRows, listStateOf } from '@/lib/admin-private-rows';
 import { ensureFilesRootBranch, listFiles, listRecentFiles, upsertFile } from '@/lib/files';
@@ -125,7 +126,8 @@ export async function POST(req: Request) {
       let row;
       try {
         await guardNewFileIn(user.id, parentPath, upload.filename, {
-          confirm: parsed.fields.confirm === 'true',
+          // An API key never confirms a visibility change (lib/api-v1.ts).
+          confirm: parsed.fields.confirm === 'true' && callerMayConfirm(),
         });
         row = await upsertFile({
           ownerId: user.id,
@@ -173,7 +175,7 @@ export async function POST(req: Request) {
     }
     const buf = Buffer.from(parsed.data.content, 'utf8');
     await guardNewFileIn(user.id, parsed.data.parentPath, parsed.data.filename, {
-      confirm: parsed.data.confirm === true,
+      confirm: parsed.data.confirm === true && callerMayConfirm(),
     });
     const row = await upsertFile({
       ownerId: user.id,

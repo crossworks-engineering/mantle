@@ -10,11 +10,13 @@ An API key lets a script or an MCP client use this brain as you. You can give it
 2. Type a name, for example "Backup script".
 3. Pick **Read only** or **Read and write**, and when the key expires.
 4. Leave **All areas** on, or turn it off and tick the areas the key needs.
-5. Press **Make key**, then copy the key. It is shown once.
+5. Type your password and press **Make key**, then copy the key. It is shown once.
+
+The **Search** area searches every kind of item, email and journal included. Tick it only for a key that may read everything.
 
 The list shows each key's rights, when it was last used and when it expires. Press the bin icon to revoke a key. A revoked key stops on its next request.
 
-Signing out does not end a key. Revoke it here. Disabling your login, or a change of your role, ends all your keys.
+A plain sign-out does not end a key. A password change, **Sign out everywhere**, a disable or a role change ends all your keys.
 
 This is not **API keys**. That screen holds the keys this brain uses to call other services.
 

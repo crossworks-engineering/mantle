@@ -16,6 +16,7 @@
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/access-keys-scope.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
+import bcrypt from 'bcryptjs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ensureTestAnchor } from '@mantle/db/test-support';
 
@@ -32,6 +33,7 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
   let mcpAuth: typeof import('./mcp-auth');
   let anchor = '';
   const tag = `akscope-${randomUUID().slice(0, 8)}`;
+  const PASSWORD = 'a long enough password';
   const admin = randomUUID();
   const member = randomUUID();
   const all = [admin, member];
@@ -64,7 +66,7 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
     const res = await call('/api/access-keys', {
       method: 'POST',
       cookie: cookieOf(as),
-      body: { name: 'Scope test', access: 'read', areas: null, ...body },
+      body: { name: 'Scope test', access: 'read', areas: null, password: PASSWORD, ...body },
     });
     expect(res.status).toBe(201);
     return (await json(res)) as { id: string; secret: string };
@@ -97,9 +99,10 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
     tokens = await import('./auth/tokens');
     mcpAuth = await import('./mcp-auth');
     anchor = await ensureTestAnchor(sql);
+    const hash = bcrypt.hashSync(PASSWORD, 4);
     await sql`insert into auth.users (id, email, password_hash, role, display_name) values
-      (${admin}, ${emailOf('admin')}, 'x', 'admin', 'Ada Admin'),
-      (${member}, ${emailOf('member')}, 'x', 'member', 'Mia Member')`;
+      (${admin}, ${emailOf('admin')}, ${hash}, 'admin', 'Ada Admin'),
+      (${member}, ${emailOf('member')}, ${hash}, 'member', 'Mia Member')`;
     const { createApp } = await import('../server/app');
     app = await createApp();
   }, 120_000);
@@ -235,6 +238,74 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
     expect(await rows.text()).toContain(`${tag}-alpha`);
   });
 
+  it('a key never confirms a change of who can see an item (F1)', async () => {
+    const folderRes = await call('/api/tree/pages/folders', {
+      method: 'POST',
+      cookie: adminCookie(),
+      body: { parentId: null, name: `${tag} shared` },
+    });
+    expect(folderRes.status).toBe(201);
+    const folderId = ((await json(folderRes)) as { folder: { id: string } }).folder.id;
+    nodesMade.push(folderId);
+    const share = await call(`/api/tree/pages/folders/${folderId}`, {
+      method: 'PATCH',
+      cookie: adminCookie(),
+      body: { share: 'team', confirm: true },
+    });
+    expect(share.status).toBe(200);
+
+    const key = await makeKey({ access: 'read_write', areas: ['pages'] });
+    const res = await call('/api/v1/pages', {
+      method: 'POST',
+      bearer: key.secret,
+      body: { title: `${tag} into shared`, folderId, confirm: true },
+    });
+    expect(res.status).toBe(409);
+    // A person with a session may still confirm.
+    const byPerson = await call('/api/pages', {
+      method: 'POST',
+      cookie: adminCookie(),
+      body: { title: `${tag} into shared`, folderId, confirm: true },
+    });
+    expect(byPerson.status).toBe(201);
+    nodesMade.push(((await json(byPerson)) as { page: { id: string } }).page.id);
+  });
+
+  it('a key cannot change who can see a page (suspected item 1)', async () => {
+    const made = await call('/api/pages', {
+      method: 'POST',
+      cookie: adminCookie(),
+      body: { title: `${tag} private page` },
+    });
+    const pageId = ((await json(made)) as { page: { id: string } }).page.id;
+    nodesMade.push(pageId);
+    const key = await makeKey({ access: 'read_write', areas: ['pages'] });
+    const publish = await call(`/api/v1/pages/${pageId}`, {
+      method: 'PATCH',
+      bearer: key.secret,
+      body: { visibility: 'public' },
+    });
+    expect(publish.status).toBe(403);
+    expect(await json(publish)).toMatchObject({ reason: 'key-publish' });
+    const rename = await call(`/api/v1/pages/${pageId}`, {
+      method: 'PATCH',
+      bearer: key.secret,
+      body: { title: `${tag} renamed` },
+    });
+    expect(rename.status).toBe(200);
+  });
+
+  it('HEAD is a read, and an encoded path cannot leave /api/v1', async () => {
+    const key = await makeKey({ access: 'read', areas: ['pages'] });
+    expect((await call('/api/v1/pages', { method: 'HEAD', bearer: key.secret })).status).toBe(200);
+    // %2e%2e is a dot segment: the URL becomes /api/pages, where a key is
+    // no credential.
+    expect((await call('/api/v1/%2e%2e/pages', { bearer: key.secret })).status).toBe(401);
+    expect((await call('/api/v1/pages/..%2f..%2fusers', { bearer: key.secret })).status).not.toBe(
+      200,
+    );
+  });
+
   it('a path outside the v1 table is a 404 for a key', async () => {
     const key = await makeKey({});
     expect((await call('/api/v1/settings', { bearer: key.secret })).status).toBe(404);
@@ -253,6 +324,23 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
   });
 
   // ── /api/mcp ──────────────────────────────────────────────────────────────
+
+  it('a write tool call made with a key leaves an audit row; a read leaves none (F6)', async () => {
+    const key = await makeKey({ access: 'read_write' });
+    const caller = await mcpCaller(key.secret);
+    expect(caller).not.toBeNull();
+    const rpc = (name: string) =>
+      new Request('http://localhost/api/mcp', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name } }),
+      });
+    await mcpAuth.auditMcpKeyCall(rpc('note_create'), caller!);
+    await mcpAuth.auditMcpKeyCall(rpc('search'), caller!);
+    const rows = await audited('api.write', key.id);
+    expect(rows.map((r) => (r.detail as Json).tool)).toEqual(['note_create']);
+    expect((rows[0]!.detail as Json).keyCreatedBy).toBe(admin);
+  });
 
   it('an admin key on MCP carries its access, risky tools and areas', async () => {
     const key = await makeKey({

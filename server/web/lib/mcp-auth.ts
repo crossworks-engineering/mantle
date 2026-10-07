@@ -24,7 +24,7 @@ import { createHash } from 'node:crypto';
 import { and, eq, isNull } from 'drizzle-orm';
 import { authUsers, db, mcpLoginAccess, mcpLoginTokens, resolveSingleOwnerId } from '@mantle/db';
 import { PEER_TOKEN_PREFIX, verifyInboundToken } from '@mantle/content';
-import type { McpCaller, McpLoginRole } from '@mantle/mcp-core';
+import { isMcpToolReadOnly, type McpCaller, type McpLoginRole } from '@mantle/mcp-core';
 import { bearerFrom } from './auth/request';
 import {
   auditKeyRefusal,
@@ -34,7 +34,7 @@ import {
   touchAccessKey,
   verifyAccessKey,
 } from './access-keys';
-import { requestMetaFrom } from './audit';
+import { auditFireAndForget, requestMetaFrom } from './audit';
 import { actorMayConnect, grantFromAccessToken } from './mcp-oauth';
 import { clientIp } from './rate-limit';
 
@@ -192,7 +192,60 @@ async function callerFromAccessKey(req: Request, token: string): Promise<McpCall
   }
   if (!caller) return null;
   touchAccessKey(key.id, ip);
-  return { ...caller, keyId: key.id, areas: key.areas };
+  const out: McpCaller = { ...caller, keyId: key.id, areas: key.areas };
+  keyCallers.set(out, { email: key.login.email, createdBy: key.createdBy });
+  return out;
+}
+
+/** Bodies up to this size are read to name the tool in the audit row. */
+const AUDIT_PARSE_MAX_BYTES = 1024 * 1024;
+
+/** Who a key caller is, for its audit rows (the caller type stays lean). */
+const keyCallers = new WeakMap<McpCaller, { email: string; createdBy: string | null }>();
+
+/**
+ * One `api.write` row per write tool call an API key makes on /api/mcp (M2
+ * audit F6), as /api/v1 writes leave one: the tool, the key and its maker.
+ * Read-only tools leave none. Reads a clone of the JSON-RPC body (a single
+ * message or a batch); a body that is not JSON is the transport's to
+ * refuse. Never blocks the call.
+ */
+export async function auditMcpKeyCall(req: Request, caller: McpCaller): Promise<void> {
+  const who = keyCallers.get(caller);
+  if (!caller.keyId || !who || req.method !== 'POST') return;
+  const meta = { ...requestMetaFrom(req), method: 'MCP', path: '/api/mcp' };
+  // A large body (a file upload) is not read twice: it is recorded as a
+  // write without its tool name.
+  if ((Number(req.headers.get('content-length')) || 0) > AUDIT_PARSE_MAX_BYTES) {
+    auditFireAndForget({
+      actorId: caller.loginId,
+      actorEmail: who.email,
+      action: 'api.write',
+      ...meta,
+      detail: { keyId: caller.keyId, keyCreatedBy: who.createdBy, tool: null, large: true },
+    });
+    return;
+  }
+  let body: unknown;
+  try {
+    body = await req.clone().json();
+  } catch {
+    return;
+  }
+  const messages = Array.isArray(body) ? body : [body];
+  for (const m of messages) {
+    if (!m || typeof m !== 'object') continue;
+    const msg = m as { method?: unknown; params?: { name?: unknown } };
+    const tool = typeof msg.params?.name === 'string' ? msg.params.name : null;
+    if (msg.method !== 'tools/call' || !tool || isMcpToolReadOnly(tool)) continue;
+    auditFireAndForget({
+      actorId: caller.loginId,
+      actorEmail: who.email,
+      action: 'api.write',
+      ...meta,
+      detail: { keyId: caller.keyId, keyCreatedBy: who.createdBy, tool: tool.slice(0, 100) },
+    });
+  }
 }
 
 async function callerFromPeerToken(token: string): Promise<McpCaller | null> {
@@ -234,4 +287,3 @@ export async function mcpTargetLogin(
   if (!row || (row.role !== 'member' && row.role !== 'client')) return null;
   return { id: row.id, role: row.role, sessionEpoch: row.sessionEpoch };
 }
-

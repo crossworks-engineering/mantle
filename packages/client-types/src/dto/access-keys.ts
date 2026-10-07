@@ -65,6 +65,13 @@ export type AccessKeyList = {
   areas: AccessKeyArea[];
   /** The expiry a key gets when the create names none. */
   defaultExpiryDays: number;
+  /** The longest expiry the caller may pick, in days; null = any, "never"
+   *  included (an admin). A member's keys last at most 90 days, a client's
+   *  30. */
+  maxExpiryDays: number | null;
+  /** Whether the create needs the caller's password (an admin or member;
+   *  a client has none). */
+  needsPassword: boolean;
 };
 
 /** POST /api/access-keys body. The key acts as the caller's own login:
@@ -78,6 +85,9 @@ export type AccessKeyCreateInput = {
   expiresInDays?: number | null;
   /** Only for an admin's own key. */
   riskyTools?: string[];
+  /** The caller's password, when `needsPassword` (never stored, never
+   *  logged). */
+  password?: string;
 };
 
 /** POST /api/access-keys answer (201). `secret` is shown ONCE. */

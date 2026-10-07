@@ -13,6 +13,7 @@ import { and, eq, isNull, ne, or, sql } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import {
   db,
+  accessKeys,
   authUsers,
   mobileTokens,
   pushSubscriptions,
@@ -935,6 +936,12 @@ export async function endLoginSessions(
      *  a caller that tells the relay after its transaction commits
      *  (forgetRelayDevices). */
     removedRoutingTokens?: string[];
+    /** Also revoke every inbound API key of the login (migration 0232).
+     *  For the deliberate security actions: a password change or reset,
+     *  "sign out everywhere", an admin's End sessions, disable or role
+     *  change (M2 audit F4). NOT a client's plain sign-out, which ends its
+     *  sessions every time (M1 audit item 9). */
+    endKeys?: boolean;
   } = {},
 ): Promise<number | null> {
   const run = async (tx: Tx | typeof db) => {
@@ -973,6 +980,12 @@ export async function endLoginSessions(
       )
       .returning({ routingToken: pushSubscriptions.routingToken });
     opts.removedRoutingTokens?.push(...removed.map((r) => r.routingToken));
+    if (opts.endKeys) {
+      await tx
+        .update(accessKeys)
+        .set({ revokedAt: new Date() })
+        .where(and(eq(accessKeys.loginId, loginId), isNull(accessKeys.revokedAt)));
+    }
     return row.epoch;
   };
   return opts.tx ? run(opts.tx) : db.transaction((tx) => run(tx));
