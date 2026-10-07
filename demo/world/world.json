@@ -96,6 +96,13 @@
     ]
   },
 
+  "appearance": {
+    "$comment": "How the demo brain looks when it opens (brain-level preferences, set by seed/set-appearance.ts): the jackdaw colour theme, lorelei avatars and the Neat animated background. A saved Neat spec is what turns Neat on. The seed value is the product default chosen with the release that ships it.",
+    "colorTheme": "jackdaw",
+    "avatarStyle": "lorelei",
+    "neatBackground": { "v": 1, "seed": 1, "tone": "auto", "speed": 2 }
+  },
+
   "access": {
     "$comment": "The four sharing levels, shown the same way in every workspace that can share: a Private folder (admin), a Team folder (shared with the team), a Client folder (shared with clients, here Meridian) and one item at the top level with an open link (public). Embeds only ever point at the same folder tier, so a share never publishes anything the generator did not count.",
     "folders": {

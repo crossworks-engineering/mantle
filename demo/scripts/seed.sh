@@ -208,6 +208,10 @@ echo "→ team: member logins, the member chat opened, one client login"
 DEMO_SERVER_URL="http://127.0.0.1:$WEB_PORT" \
   pnpm -C server/web exec tsx ../../demo/seed/enable-team.ts
 
+echo "→ the look: theme, avatars, Neat background"
+DEMO_SERVER_URL="http://127.0.0.1:$WEB_PORT" \
+  pnpm -C server/web exec tsx ../../demo/seed/set-appearance.ts
+
 # NO agent turns here. The member chat and the owner chats are real turns,
 # and a real turn on an undrained brain loops and burns tokens for nothing
 # (seen on the bench: 450k to 600k input tokens a turn). They run in
