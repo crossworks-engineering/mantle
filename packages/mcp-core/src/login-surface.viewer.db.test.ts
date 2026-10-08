@@ -328,9 +328,12 @@ describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
       expect(text(refused)).toMatch(/writes, and your MCP connection is read-only/);
       // A read call is logged with the login (the far side is not reached
       // here: the URL does not resolve).
+      const { resolveTool } = await import('@mantle/tools');
+      const readRow = await resolveTool(anchor, 'mcp_src_read');
+      expect(readRow?.externalAccess).toBeTruthy();
       await ls.callLoginTool(
         asMember(false) as McpCaller & { role: 'member' },
-        { ...row!, slug: 'mcp_src_read', handler: handler('read') } as never,
+        readRow!,
         {},
         'team',
         false,

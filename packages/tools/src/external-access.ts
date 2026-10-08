@@ -349,8 +349,8 @@ export function outsideCallLogDetail(
   verdict: { tool: Tool; write?: boolean },
   input: unknown,
 ): Record<string, unknown> {
-  const kind = (verdict.tool.handler as ToolHandler).kind;
-  if (kind === 'builtin') return {};
+  const kind = (verdict.tool?.handler as ToolHandler | undefined)?.kind;
+  if (!kind || kind === 'builtin') return {};
   if (!verdict.write) return { handler: kind };
   let text: string;
   try {

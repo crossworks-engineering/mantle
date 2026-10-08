@@ -34,6 +34,9 @@ describe.skipIf(!URL)('the connector level report', () => {
     sqlTag = (await import('drizzle-orm')).sql;
     await exec(sqlTag`insert into auth.users (id, email, password_hash, role)
       values (${anchor}, ${`${tag}@example.invalid`}, 'x', 'admin')`);
+    await exec(
+      sqlTag`insert into spaces (id, kind, login_id) values (${anchor}, 'brain', ${anchor})`,
+    );
     const h = (group: string, toolName: string) => ({ kind: 'mcp', group, toolName });
     const mark = (handler: object) =>
       JSON.stringify({
@@ -68,6 +71,7 @@ describe.skipIf(!URL)('the connector level report', () => {
     await exec(sqlTag`delete from nodes where owner_id = ${anchor}`);
     await exec(sqlTag`delete from tool_groups where owner_id = ${anchor}`);
     await exec(sqlTag`delete from tools where owner_id = ${anchor}`);
+    await exec(sqlTag`delete from spaces where login_id = ${anchor}`);
     await exec(sqlTag`delete from auth.users where id = ${anchor}`);
     await m.closeDb();
   }, 60_000);
