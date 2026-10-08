@@ -118,7 +118,9 @@ describe.skipIf(!URL)('needs you: the live event and the counts', () => {
     sqlTag = (await import('drizzle-orm')).sql;
     const admin = (m.systemDb as unknown as { $client: Parameters<Db['ensureViewerRoles']>[0] })
       .$client;
-    await m.ensureViewerRoles(admin, process.env.MANTLE_MASTER_KEY);
+    // The shared viewer roles belong to the test database (the global setup
+    // migrated it): set them from there, never from this scratch database.
+    await ts.ensureTestViewerRoles(URL!, process.env.MANTLE_MASTER_KEY);
     const sub = await admin.listen(CHANNEL, (p: string) => events.push(p));
     unlisten = () => sub.unlisten();
 
