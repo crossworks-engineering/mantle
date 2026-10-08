@@ -354,6 +354,32 @@ describe.skipIf(!URL)('member-built apps on Postgres', () => {
     expect(await level(id)).toBe('team');
   });
 
+  // Team apps follow-up: a restore never lands on an app that moved (an
+  // Accept moves it under the same history lock); its undo row still stays.
+  it('a restore refuses an app that moved to another owner meanwhile', async () => {
+    const id = await publishedSpaceApp('moved');
+    const snap = await m.asSystem(() =>
+      snaps.createAppSnapshot(authorSpace, id, { actor: 'member', actorLoginId: author }),
+    );
+    // The node moves; its history rows have not yet (the window an Accept
+    // closes with the lock).
+    await admin`update nodes set owner_id = ${brain} where id = ${id}`;
+    try {
+      await expect(
+        m.asSystem(() =>
+          snaps.restoreAppSnapshot(authorSpace, id, snap!.id, { mode: 'data', drainMs: 0 }),
+        ),
+      ).rejects.toThrow(/moved/);
+    } finally {
+      await admin`update nodes set owner_id = ${authorSpace} where id = ${id}`;
+    }
+    // Nothing was restored: the row the author wrote is still the only one.
+    const rows = await m.asSystem(() =>
+      broker.appDbQuery(authorSpace, id, 'SELECT name FROM items', [], schema),
+    );
+    expect(rows.map((r) => r.name)).toEqual(['a']);
+  });
+
   it('the author restores their own app from its history', async () => {
     const id = await publishedSpaceApp('restore');
     const snap = await m.asSystem(() =>

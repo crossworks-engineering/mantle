@@ -47,6 +47,7 @@ import {
 } from '@mantle/db';
 import { APPS_ROOT_LABEL, createApp, ensureAppsRoot, getApp, type AppDetail } from './apps';
 import { notifyAppNavChanged } from './app-nav';
+import { lockAppHistory } from './app-history-lock';
 import { projectAppIcon, projectAppTint } from '@mantle/content-core/app-nav';
 import type { AppTint } from '@mantle/client-types';
 import { dataAccessOf, type AppDataAccess } from './app-data-access';
@@ -646,6 +647,11 @@ export async function acceptSpaceApp(
         )
         .for('update', { of: spaceItems })
         .limit(1);
+      // Then the app's history lock (team apps follow-up), in the order a
+      // member's change takes them (state row, then history): a member's
+      // restore holds it while it works and re-checks the owner under it,
+      // so it never lands on the app after this moves it to the brain.
+      await lockAppHistory(tx, appId);
       if (!row) throw new SpaceAppError('not-found', 'No such member app.');
       if (row.reviewState !== 'submitted') {
         throw new SpaceAppError('not-submitted', 'This app is not waiting for review.');
