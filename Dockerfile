@@ -96,29 +96,12 @@ RUN apt-get update \
 # Now copy sources.
 COPY . .
 
-# ── 1a½. ezdwf-build: patched CAD-parser wheel for the media stage ──────────
-# Stock ezdwf 0.0.3 peaks ~1.27 GB RSS reading a 630 KB DWF (eager Python
-# materialization of the whole drawing). Until our lazy-read fix lands
-# upstream, we build the wheel ourselves: pinned upstream source + the three
-# patched files vendored in infra/media-sidecar/ezdwf-patch/ (see its README;
-# the sha there and here move together). maturin's official image carries the
-# Rust toolchain + manylinux Pythons for both amd64 and arm64.
-FROM ghcr.io/pyo3/maturin:v1.15.0 AS ezdwf-build
-ADD https://github.com/monozukuri-ai/ezdwf/archive/d134278004f527f3062bf49d7db7a8df3887fedc.tar.gz /tmp/ezdwf.tar.gz
-RUN mkdir /tmp/ezdwf \
-  && tar -xzf /tmp/ezdwf.tar.gz -C /tmp/ezdwf --strip-components=1
-COPY infra/media-sidecar/ezdwf-patch/lib.rs /tmp/ezdwf/crates/ezdwf-python/src/lib.rs
-COPY infra/media-sidecar/ezdwf-patch/document.py /tmp/ezdwf/src/ezdwf/document.py
-COPY infra/media-sidecar/ezdwf-patch/raw.py /tmp/ezdwf/src/ezdwf/raw.py
-WORKDIR /tmp/ezdwf
-RUN maturin build --release --interpreter python3.12 --out /wheels
-
 # ── 1a⅞. ezdwg-build: the DWG fallback converter's wheel, both arches ───────
 # PyPI ships ezdwg wheels for x86_64 only; on arm64 pip falls back to the
 # sdist and tries to compile Rust inside the media stage, which has no
 # toolchain ("linker `cc` not found" — the v0.232.100 release failure). Build
-# the wheel here instead, in the same maturin image the ezdwf stage already
-# uses: pinned PyPI sdist (unpatched — unlike ezdwf there is no local fix),
+# the wheel here instead, in maturin's official image (Rust toolchain plus
+# manylinux Pythons for both amd64 and arm64): pinned PyPI sdist,
 # checksum-locked like the LibreDWG tarball.
 FROM ghcr.io/pyo3/maturin:v1.15.0 AS ezdwg-build
 ADD --checksum=sha256:9466ef859824b372410a8f0866b07e3063cf9b37d8fe1b40519bf90b131a83d7 \
@@ -173,18 +156,18 @@ RUN pip install --no-cache-dir yt-dlp
 # CAD tier: ezdwf (MIT, Rust wheel) renders Autodesk DWF plot-set sheets to
 # PNG for the /dwf/render route; matplotlib is its raster backend. Pinned —
 # unlike yt-dlp, nothing here needs "always latest", and ezdwf is pre-alpha
-# so an unreviewed bump could change render output under us. The wheel comes
-# from the ezdwf-build stage above (0.0.3 + our lazy-read memory fix) instead
-# of PyPI; revert to the plain PyPI pin once upstream ships the fix.
+# so an unreviewed bump could change render output under us. From PyPI since
+# 0.0.7: our lazy-read memory fix (peak RSS ~1.27 GB -> ~0.54 GB on a 630 KB
+# plot set) merged upstream in 0.0.5, which retired the patched-wheel stage.
+# PyPI ships abi3 manylinux wheels for both amd64 and arm64.
 ENV MPLBACKEND=Agg
-COPY --from=ezdwf-build /wheels /tmp/ezdwf-wheels
 # DWG tier (v0.232.99): ezdxf parses + renders the converted DXF (the one
 # code path downstream of conversion); ezdwg is the MIT fallback converter
 # for files dwg2dxf mangles. Both pinned like ezdwf and for the same reason.
 # ezdwg installs from the ezdwg-build stage's wheel, never PyPI: PyPI has no
 # arm64 wheel and this stage has no compiler (the v0.232.100 arm64 failure).
 COPY --from=ezdwg-build /wheels /tmp/ezdwg-wheels
-RUN pip install --no-cache-dir /tmp/ezdwf-wheels/ezdwf-*.whl /tmp/ezdwg-wheels/ezdwg-*.whl \
+RUN pip install --no-cache-dir --only-binary ezdwf "ezdwf==0.0.7" /tmp/ezdwg-wheels/ezdwg-*.whl \
     "matplotlib>=3.9,<4" "ezdxf==1.4.4"
 COPY --from=libredwg-build /opt/libredwg/bin/dwg2dxf /usr/local/bin/dwg2dxf
 COPY infra/media-sidecar/app.py /srv/app.py
