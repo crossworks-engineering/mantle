@@ -24,7 +24,13 @@
 import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import { asViewerLevel, db, levelCovers, nodes, pages, type ViewerLevel } from '@mantle/db';
 import { docToText } from '../doc-to-text';
-import { clientOwnUrl, docRefIds, redactClientDoc } from '../client-redact';
+import {
+  clientOwnUrl,
+  docRefIds,
+  noteRefIds,
+  redactClientDoc,
+  redactClientNote,
+} from '../client-redact';
 import { clientRedactOrigins } from '../client-origins';
 import { embeddedAssetText } from './embed';
 import { itemLevel } from '../item-level';
@@ -95,6 +101,21 @@ export async function levelFilteredDoc(
     titles,
     hiddenChildPage: 'label',
   });
+}
+
+/** A note's markdown as a reader at `level` reads it: the same rule as a
+ *  page's doc (an item the level cannot read is "Private item", a picture
+ *  of one is left out). A team or admin note comes back as it is. */
+export async function levelFilteredNote(
+  ownerId: string,
+  level: ViewerLevel,
+  markdown: string,
+  q: LevelTextDb = db,
+): Promise<string> {
+  if (!filtersPageText(level)) return markdown;
+  const ownUrl = clientOwnUrl(clientRedactOrigins());
+  const titles = await readableAt(ownerId, level, noteRefIds(markdown, { ownUrl }), q);
+  return redactClientNote(markdown, new Set(titles.keys()), { ownUrl, titles });
 }
 
 /**

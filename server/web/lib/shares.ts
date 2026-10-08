@@ -31,6 +31,7 @@ import {
 import { aggregateWindow, describeWorkbook, resolveStoragePath } from '@mantle/tabledb';
 import { markdownToDoc } from '@mantle/content-core/markdown';
 import { isUuid } from '@mantle/std';
+import { levelFilteredDoc, levelFilteredNote } from '@mantle/content/pages';
 import { fileById, folderById } from '@/lib/files';
 
 export {
@@ -296,19 +297,29 @@ async function loadNode(ownerId: string, nodeId: string) {
 export async function loadShareView(share: Share): Promise<ShareView | null> {
   const { ownerId, nodeId, nodeType } = share;
   switch (nodeType) {
+    // An open link is read by anyone: a page or note shows only what the
+    // public may read of it. A mention, a link or a child page card of an
+    // item it may not read says "Private item", and a hidden embed is left
+    // out, as for a client (access matrix M7; the asset routes already
+    // refuse those bytes). A contact share serves what the item embeds at
+    // any level (shareLevels), so it reads the item as it is.
     case 'page': {
       const page = await getPage(ownerId, nodeId);
       if (!page) return null;
-      return { kind: 'page', title: page.title, icon: page.icon, width: page.width, doc: page.doc };
+      const doc = share.contactId
+        ? page.doc
+        : ((await levelFilteredDoc(ownerId, 'public', page.doc)) as typeof page.doc);
+      return { kind: 'page', title: page.title, icon: page.icon, width: page.width, doc };
     }
     case 'note': {
       const n = await loadNode(ownerId, nodeId);
       if (!n) return null;
       const d = (n.data ?? {}) as Record<string, unknown>;
+      const content = typeof d.content === 'string' ? d.content : '';
       return {
         kind: 'note',
         title: n.title,
-        content: typeof d.content === 'string' ? d.content : '',
+        content: share.contactId ? content : await levelFilteredNote(ownerId, 'public', content),
       };
     }
     case 'task': {

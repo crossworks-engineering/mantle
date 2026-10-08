@@ -364,6 +364,15 @@ NodeViews), then post-processes:
 4. **Images**: rewrite `src` → `/s/[token]/a/[fileId]`.
 5. **Sanitize**: escape text/attrs; restrict link protocols.
 
+Before rendering, an **open link** reads the page as the public does
+(`loadShareView` → `levelFilteredDoc(owner, 'public', doc)`, the rule a
+client page and the indexed text use): a mention, a link or a child page
+card of an item the public may not read says "Private item", and an embed of
+one is left out, since its bytes are refused anyway. A shared note's
+markdown goes through the same rule (`levelFilteredNote`). A contact share
+reads the item as it is. (Access matrix M7: the titles and file names of
+hidden items showed on public links.)
+
 > This is a **third** representation of the page schema (the TipTap editor,
 > `markdownToDoc`, and now JSON→HTML). They're kept in sync by the shared schema
 >
