@@ -5,9 +5,8 @@
  * Split out of builtins-toolsmith.ts; bodies moved verbatim.
  */
 
-import { and, eq } from 'drizzle-orm';
-import { agents, db, isUniqueViolation, pendingToolCalls, type ToolHandler } from '@mantle/db';
-import { notifyPendingCreated } from '../pending-notify';
+import { isUniqueViolation, type ToolHandler } from '@mantle/db';
+import { queueAgentCallForApproval } from '../pending-queue';
 import { listApiKeys } from '@mantle/api-keys';
 import { loadProfilePreferences } from '@mantle/content';
 import { createTool, deleteTool, listToolsForOwner, updateTool } from '../crud';
@@ -370,40 +369,12 @@ export const api_tool_update: BuiltinToolDef = {
         (input.requires_confirm === false && row.requiresConfirm);
       const group = opens ? await connectorGroupOf(ctx.ownerId, row) : null;
       if (opens && group && group.level !== 'admin') {
-        const args = { ...input };
-        const [requester] = await db
-          .select({ id: agents.id })
-          .from(agents)
-          .where(and(eq(agents.ownerId, ctx.ownerId), eq(agents.slug, ctx.agent.slug)))
-          .limit(1);
-        const [pending] = await db
-          .insert(pendingToolCalls)
-          .values({
-            ownerId: ctx.ownerId,
-            agentId: requester?.id ?? null,
-            toolSlug: 'api_tool_update',
-            args,
-          })
-          .returning({ id: pendingToolCalls.id });
-        if (pending?.id) {
-          void notifyPendingCreated({
-            ownerId: ctx.ownerId,
-            pendingId: pending.id,
-            toolSlug: 'api_tool_update',
-            args,
-            via: `agent ${ctx.agent.slug}`,
-          });
-        }
-        return {
-          ok: true,
-          output: {
-            status: 'queued_for_approval',
-            pending_id: pending?.id ?? null,
-            message:
-              `'${slug}' belongs to a connector at ${group.level} level: turning it on or removing its confirm opens it below admin, so it needs the owner's approval. ` +
-              'Queued at /pending; it applies once approved. Do not retry this turn.',
-          },
-        };
+        return queueAgentCallForApproval(
+          { ...ctx, agent: ctx.agent },
+          'api_tool_update',
+          { ...input },
+          `'${slug}' belongs to a connector at ${group.level} level: turning it on or removing its confirm opens it below admin, so it needs the owner's approval.`,
+        );
       }
     }
 

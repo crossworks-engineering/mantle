@@ -14,6 +14,7 @@ import { db, tools, type Tool, type ToolHandler } from '@mantle/db';
 import type { ToolDTO } from '@mantle/client-types';
 import {
   VOIDED_MARK_SIG,
+  canonical,
   externalAccessHandlerSig,
   externalAccessSummary,
 } from './external-access';
@@ -200,15 +201,24 @@ export async function updateTool(
   }
   // A connector tool whose description or input schema changed is not the
   // tool the admin marked either (access matrix N4): its mark is voided.
+  // Schemas by content (jsonb reorders keys); the mark from the stored row,
+  // as `existing` is the summary, which drops the signature.
   if (
     next.externalAccess === undefined &&
     existing.handler.kind === 'mcp' &&
     existing.externalAccess &&
     ((patch.description !== undefined && patch.description !== existing.description) ||
       (patch.inputSchema !== undefined &&
-        JSON.stringify(patch.inputSchema) !== JSON.stringify(existing.inputSchema)))
+        canonical(patch.inputSchema) !== canonical(existing.inputSchema)))
   ) {
-    next.externalAccess = { ...existing.externalAccess, handlerSig: VOIDED_MARK_SIG };
+    const [stored] = await db
+      .select({ externalAccess: tools.externalAccess })
+      .from(tools)
+      .where(and(eq(tools.id, id), eq(tools.ownerId, ownerId)))
+      .limit(1);
+    if (stored?.externalAccess) {
+      next.externalAccess = { ...stored.externalAccess, handlerSig: VOIDED_MARK_SIG };
+    }
   }
   if (patch.requiresConfirm !== undefined) next.requiresConfirm = patch.requiresConfirm;
   if (patch.enabled !== undefined) next.enabled = patch.enabled;

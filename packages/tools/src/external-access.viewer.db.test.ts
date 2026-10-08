@@ -570,6 +570,56 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     }
   });
 
+  // M4 audit, medium 1: an agent lowering a whole connector waits for the
+  // owner too; raising it (the safe way) and the owner's own change apply.
+  it('access_set: an agent lowering a connector goes to Pending; raising and the owner apply', async () => {
+    const def = toolDef('access_set');
+    const agentCtx = {
+      ownerId: anchor,
+      surface: { kind: 'web' as const },
+      agent: { slug: 'some-agent', name: 'Some agent' },
+    } as never;
+    const level = async () => {
+      const [g] = (await exec(sqlTag`
+        select audience from tool_groups where owner_id = ${anchor} and slug = 'mcp-site'`)) as unknown as {
+        audience: string;
+      }[];
+      return g?.audience;
+    };
+    await setConnectorLevel('admin');
+    try {
+      const queued = await def.handler({ tool_group_slug: 'mcp-site', level: 'team' }, agentCtx);
+      expect(queued).toMatchObject({ ok: true, output: { status: 'queued_for_approval' } });
+      expect(await level()).toBe('admin');
+      const [row] = (await exec(sqlTag`
+        select tool_slug, args from pending_tool_calls where owner_id = ${anchor}
+        order by created_at desc limit 1`)) as unknown as {
+        tool_slug: string;
+        args: Record<string, unknown>;
+      }[];
+      expect(row).toMatchObject({
+        tool_slug: 'access_set',
+        args: { tool_group_slug: 'mcp-site', level: 'team' },
+      });
+      // The owner (no agent): applied at once.
+      const owner = await def.handler(
+        { tool_group_slug: 'mcp-site', level: 'team' },
+        { ownerId: anchor, surface: { kind: 'web' } },
+      );
+      expect(owner.ok).toBe(true);
+      expect(await level()).toBe('team');
+      // Raising is the safe way: an agent may.
+      const raised = await def.handler({ tool_group_slug: 'mcp-site', level: 'admin' }, agentCtx);
+      expect(raised.ok && (raised.output as { status?: string }).status).not.toBe(
+        'queued_for_approval',
+      );
+      expect(await level()).toBe('admin');
+    } finally {
+      await setConnectorLevel('team');
+      await exec(sqlTag`delete from pending_tool_calls where owner_id = ${anchor}`);
+    }
+  });
+
   it('api_tool_update: only the owner MCP client switches on; an agent may switch off', async () => {
     const def = toolDef('api_tool_update');
     await switchOff('site_query');

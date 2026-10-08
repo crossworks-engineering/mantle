@@ -23,6 +23,7 @@ import { NODE_ID_PRE } from './builtins-common';
 import { clientLeftWarning } from './builtins-share';
 import { appToolWarnings } from './app-tool-level';
 import { isOwnerSurface } from './surface';
+import { queueAgentCallForApproval } from './pending-queue';
 
 const LEVELS = ['admin', 'team', 'client', 'public'];
 const RANK: Record<string, number> = { public: 0, client: 1, team: 2, admin: 3 };
@@ -245,6 +246,27 @@ export const access_set: BuiltinToolDef = {
         return { ok: true, output: { agent: res } };
       }
       if (groupSlug) {
+        // Lowering a connector opens every tool in it (and the outside data
+        // behind them) to members, clients or links at once: an in-brain
+        // agent never does that on its own say-so, it waits for the owner
+        // (M4 audit, medium 1; the same rule as one tool's switch, N5). On
+        // approval the call runs again with no agent context.
+        if (ctx.agent) {
+          const [g] = await db
+            .select({ audience: toolGroups.audience, integration: toolGroups.integration })
+            .from(toolGroups)
+            .where(and(eq(toolGroups.ownerId, ctx.ownerId), eq(toolGroups.slug, groupSlug)))
+            .limit(1);
+          const from = g?.audience ?? 'admin';
+          if (g?.integration?.mcp && (RANK[level] ?? 0) < (RANK[from] ?? 3)) {
+            return queueAgentCallForApproval(
+              { ...ctx, agent: ctx.agent },
+              'access_set',
+              { tool_group_slug: groupSlug, level },
+              `'${groupSlug}' is a connector: lowering it from ${from} to ${level} opens all its tools below admin, so it needs the owner's approval.`,
+            );
+          }
+        }
         const res = await setToolGroupAudience(ctx.ownerId, groupSlug, level);
         ctx.step?.setOutput({ tool_group: groupSlug, level });
         return { ok: true, output: { tool_group: res } };
