@@ -19,6 +19,7 @@
  * 403 `member-login` / `client-login` from them, as on the routes they
  * alias. Those logins use /api/mcp.
  */
+import { keyAreasReachEmail } from '@mantle/mcp-core/key-scope';
 import type { AccessKeyArea, AccessKeyGrant } from './access-keys';
 import { getRequestContext } from '../server/request-context';
 
@@ -31,6 +32,17 @@ import { getRequestContext } from '../server/request-context';
  */
 export function callerMayConfirm(): boolean {
   return !isApiKeyRequest();
+}
+
+/**
+ * Whether this request may reach email. A key reaches it only with the
+ * Search area (or every area); the attachments of synced mail are file
+ * nodes, so the Files routes leave them out for any other key (access
+ * matrix M4). Sessions and device tokens are not limited by areas.
+ */
+export function callerMayReadEmail(): boolean {
+  const key = getRequestContext()?.accessKey;
+  return !key || keyAreasReachEmail(key.areas);
 }
 
 /** Whether the gate let this request in with an API key. */

@@ -9,7 +9,7 @@ import {
   setIndexingMode,
   upsertFile,
 } from '@/lib/files';
-import { copyFileById, moveFileById } from '@mantle/files';
+import { copyFileById, emailAttachmentIds, moveFileById } from '@mantle/files';
 import { thumbnailFor } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
@@ -18,6 +18,7 @@ import { firstIssue } from '@/lib/zod-issue';
 import { TreeVisibilityError, guardFileCopyTo, guardFileTo } from '@mantle/content/tree';
 import { treeErrorResponse } from '@/lib/tree-route';
 import { isBusy } from '@mantle/db';
+import { callerMayReadEmail } from '@/lib/api-v1';
 
 const IdParams = z.object({ id: z.string().uuid() });
 const PatchBody = z.union([
@@ -43,6 +44,14 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) {
     return NextResponse.json({ error: 'invalid id' }, { status: 400 });
+  }
+  // An API key without the Search area does not reach an email attachment
+  // (access matrix M4): not found, its metadata and its bytes alike.
+  if (
+    !callerMayReadEmail() &&
+    (await emailAttachmentIds(user.id, [idParsed.data.id])).has(idParsed.data.id)
+  ) {
+    return NextResponse.json({ error: 'not found' }, { status: 404 });
   }
   const url = new URL(_req.url);
   if (url.searchParams.get('thumb') === '1') {

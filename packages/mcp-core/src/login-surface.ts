@@ -62,7 +62,8 @@ import {
 } from './build-server';
 import { zodShapeFromJsonSchema } from './register/zod-schema';
 import { addTool } from './register/tool-input';
-import { keyAreasAllowTool } from './key-scope';
+import { keyAreasAllowTool, keyAreasReachEmail } from './key-scope';
+import { keyEmailGuard } from './key-email-guard';
 
 export type McpLoginRole = 'admin' | 'member' | 'client';
 
@@ -523,6 +524,10 @@ export function registerPreparedTools(
       transport: opts.transport ?? 'http',
       via: caller.via === 'key' ? 'api' : 'federation',
       allow: (slug) => ownerPeerAllows(slug, caller) && callerAreasAllow(slug, caller),
+      // A key without Search does not reach email through Files (M4).
+      ...(caller.via === 'key' && !keyAreasReachEmail(caller.areas ?? null)
+        ? { guard: keyEmailGuard(caller.anchorId) }
+        : {}),
     });
     return;
   }

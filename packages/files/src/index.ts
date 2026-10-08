@@ -43,6 +43,8 @@ export {
 
 export { MAX_UPLOAD_BYTES, maxStreamedUploadBytes } from './limits';
 
+export { emailAttachmentIds, reachesEmailAttachment } from './email-attachments';
+
 export {
   filesRoot,
   isFilesPath,

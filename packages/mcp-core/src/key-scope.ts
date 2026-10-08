@@ -119,3 +119,11 @@ export function keyAreasAllowTool(slug: string, areas: readonly string[] | null)
   const area = toolKeyArea(slug);
   return area !== null && areas.includes(area);
 }
+
+/** Whether a key limited to `areas` (null = all) reaches email. Only the
+ *  Search area does (docs/guide/07-api/08-api-keys.md), so a key without it
+ *  must not reach email through the Files area either: the attachments of
+ *  synced mail are file nodes (access matrix M4). */
+export function keyAreasReachEmail(areas: readonly string[] | null): boolean {
+  return areas === null || areas.includes('search');
+}

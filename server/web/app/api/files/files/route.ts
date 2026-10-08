@@ -1,10 +1,11 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { callerMayConfirm } from '@/lib/api-v1';
+import { callerMayConfirm, callerMayReadEmail } from '@/lib/api-v1';
 import { getOwnerOr401 } from '@/lib/auth';
 import { allPrivateRows, listStateOf } from '@/lib/admin-private-rows';
 import { ensureFilesRootBranch, listFiles, listRecentFiles, upsertFile } from '@/lib/files';
 import {
+  emailAttachmentIds,
   MEDIA_EXTS,
   UploadTooLargeError,
   diskPathForFile,
@@ -43,10 +44,20 @@ export async function GET(req: Request) {
   // the caller's own private files join the ROOT folder (by name) and Recent
   // (by time); no other folder holds any. Default brain, as before.
   const state = listStateOf(url.searchParams);
+  // An API key without the Search area does not see email attachments
+  // (access matrix M4): they are file nodes, so Files would list them.
+  const withoutMail = async <T extends { id: string }>(rows: T[]): Promise<T[]> => {
+    if (callerMayReadEmail() || rows.length === 0) return rows;
+    const mail = await emailAttachmentIds(
+      user.id,
+      rows.map((r) => r.id),
+    );
+    return rows.filter((r) => !mail.has(r.id));
+  };
   if ('recent' in parsed.data) {
     const limit = parsed.data.limit;
     const [brain, own] = await Promise.all([
-      state === 'private' ? [] : listRecentFiles({ ownerId: user.id, limit }),
+      state === 'private' ? [] : listRecentFiles({ ownerId: user.id, limit }).then(withoutMail),
       state === 'brain' ? [] : allPrivateRows(user, 'file', { cap: limit ?? 50 }),
     ]);
     const files = [...brain, ...own]
@@ -56,7 +67,9 @@ export async function GET(req: Request) {
   }
   const atRoot = parsed.data.parent === FILES_ROOT_LABEL;
   const [brain, own] = await Promise.all([
-    state === 'private' ? [] : listFiles({ ownerId: user.id, parentPath: parsed.data.parent }),
+    state === 'private'
+      ? []
+      : listFiles({ ownerId: user.id, parentPath: parsed.data.parent }).then(withoutMail),
     state === 'brain' || !atRoot ? [] : allPrivateRows(user, 'file', { sort: 'title' }),
   ]);
   const files = [...brain, ...own].sort((a, b) =>

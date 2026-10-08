@@ -128,19 +128,40 @@ if (!toolsmithWriteEnabled) {
  * `server`, so this one wrapper covers the bridged builtins and the
  * hand-written tools alike.
  */
-export function filteredServer(server: McpServer, allow: (slug: string) => boolean): McpServer {
+export function filteredServer(
+  server: McpServer,
+  allow: (slug: string) => boolean,
+  guard?: ToolCallGuard,
+): McpServer {
   return new Proxy(server, {
     get(target, prop) {
       if (prop === 'registerTool') {
         const fn = Reflect.get(target, prop, target) as (...a: unknown[]) => unknown;
-        return (name: unknown, ...rest: unknown[]) =>
-          typeof name === 'string' && allow(name) ? fn.call(target, name, ...rest) : undefined;
+        return (name: unknown, config: unknown, cb: unknown) => {
+          if (typeof name !== 'string' || !allow(name)) return undefined;
+          if (!guard || typeof cb !== 'function') return fn.call(target, name, config, cb);
+          const handler = cb as (args: unknown, extra: unknown) => unknown;
+          return fn.call(target, name, config, async (args: unknown, extra: unknown) => {
+            const refusal = await guard(name, (args ?? {}) as Record<string, unknown>);
+            if (refusal) {
+              return {
+                content: [{ type: 'text' as const, text: `Error: ${refusal}` }],
+                isError: true,
+              };
+            }
+            return handler(args, extra);
+          });
+        };
       }
       const v = Reflect.get(target, prop, target) as unknown;
       return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(target) : v;
     },
   });
 }
+
+/** A check run before a registered tool's handler: a string refuses the
+ *  call with that message, null lets it run. */
+export type ToolCallGuard = (slug: string, args: Record<string, unknown>) => Promise<string | null>;
 
 /** Which transport is registering. Only `run_terminal` reads it (see the file
  *  header); everything else is identical on both. */
@@ -160,10 +181,13 @@ export function registerMantleTools(
     allow?: (slug: string) => boolean;
     /** Which owner path the bridged builtins name (default 'mcp'). */
     via?: OwnerSurfaceVia;
+    /** Checked before every call (an API key without the Search area,
+     *  key-email-guard.ts). Needs `allow`. */
+    guard?: ToolCallGuard;
   } = {},
 ): void {
   const transport = opts.transport ?? 'http';
-  const target = opts.allow ? filteredServer(server, opts.allow) : server;
+  const target = opts.allow ? filteredServer(server, opts.allow, opts.guard) : server;
   const ctx = makeRegisterContext(target, ownerId, transport, opts.via);
   const { exposeTerminal, registerBuiltinTools } = ctx;
 
