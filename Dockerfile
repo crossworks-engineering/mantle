@@ -109,7 +109,7 @@ ADD --checksum=sha256:9466ef859824b372410a8f0866b07e3063cf9b37d8fe1b40519bf90b13
 RUN mkdir /tmp/ezdwg \
   && tar -xzf /tmp/ezdwg-sdist.tar.gz -C /tmp/ezdwg --strip-components=1
 WORKDIR /tmp/ezdwg
-RUN maturin build --release --interpreter python3.12 --out /wheels
+RUN maturin build --release --interpreter python3.13 --out /wheels
 
 # ── 1a¾. libredwg-build: static dwg2dxf for the DWG tier ────────────────────
 # Debian ships no libredwg package, so the converter is built from the pinned
@@ -122,7 +122,7 @@ RUN maturin build --release --interpreter python3.12 --out /wheels
 # ftp.gnu.org: the primary timed out for whole release runs (v0.239.15).
 # The checksum pins the exact bytes, so the mirror cannot change what we
 # build.
-FROM python:3.12-slim AS libredwg-build
+FROM python:3.13-slim AS libredwg-build
 RUN apt-get update \
   && apt-get install -y --no-install-recommends gcc make libc6-dev pkg-config xz-utils \
   && rm -rf /var/lib/apt/lists/*
@@ -144,7 +144,7 @@ RUN ./configure --disable-shared --disable-bindings --disable-docs --disable-wer
 # yt-dlp is baked in for offline boots, then refreshed from PyPI at start and
 # daily by the entrypoint (see entrypoint.sh for why "always latest" is a hard
 # requirement for this one dependency).
-FROM python:3.12-slim AS media
+FROM python:3.13-slim AS media
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ffmpeg \
   && rm -rf /var/lib/apt/lists/*
