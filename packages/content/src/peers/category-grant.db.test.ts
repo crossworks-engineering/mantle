@@ -2,7 +2,9 @@
  * A peer's standing category grant on a real Postgres (access matrix H1). A
  * Notes grant covers the owner's notes, never the conversation digests and
  * chat archives Mantle writes about the owner's own chats; a Files grant
- * covers the owner's files, never email attachments. A per-node grant still
+ * covers the owner's files, never email attachments (a file in the
+ * attachments folder under a mail; a Files document that came by mail too
+ * stays an ordinary file). A per-node grant still
  * reaches one of them when the owner picks it. Every peer read is checked:
  * the list, the ranked search and the single-node read.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/peers/category-grant.db.test.ts
@@ -30,6 +32,9 @@ describe.skipIf(!URL)('peer category grants on Postgres', () => {
     legacyDigest: randomUUID(),
     archive: randomUUID(),
     file: randomUUID(),
+    taggedDigest: randomUUID(),
+    oldPathNote: randomUUID(),
+    emailedDoc: randomUUID(),
     emailNode: randomUUID(),
     attachment: randomUUID(),
     email: randomUUID(),
@@ -59,8 +64,14 @@ describe.skipIf(!URL)('peer category grants on Postgres', () => {
         (${ids.archive}, ${owner}, 'note', ${`Chat ${word}`}, 'notes.auto_filed.assistant',
           '{"kind":"chat_archive","summary":"private chat"}'::jsonb),
         (${ids.file}, ${owner}, 'file', ${`plan-${word}.pdf`}, 'files', '{}'::jsonb),
+        (${ids.emailedDoc}, ${owner}, 'file', ${`contract-${word}.pdf`}, 'files', '{}'::jsonb),
+        (${ids.oldPathNote}, ${owner}, 'note', ${`Old ${word}`}, 'assistant', '{}'::jsonb),
         (${ids.emailNode}, ${owner}, 'email', 'A mail', ${inbox}, '{}'::jsonb),
         (${ids.attachment}, ${owner}, 'file', ${`invoice-${word}.pdf`}, ${`${inbox}.attachments`}, '{}'::jsonb)`);
+    await m.db.execute(sqlTag`
+      insert into nodes (id, owner_id, type, title, path, tags) values
+        (${ids.taggedDigest}, ${owner}, 'note', ${`Tagged ${word}`}, 'notes',
+         ARRAY['conversation-digest']::text[])`);
     await m.db.execute(sqlTag`
       insert into email_accounts (id, user_id, provider, address, branch_path)
       values (${account}, ${owner}, 'imap', ${`${tag}-mail@example.invalid`}, ${inbox})`);
@@ -69,7 +80,8 @@ describe.skipIf(!URL)('peer category grants on Postgres', () => {
       values (${ids.email}, ${ids.emailNode}, ${account}, ${`${tag}-1`}, 'a@example.invalid', now())`);
     await m.db.execute(sqlTag`
       insert into email_attachments (email_id, file_node_id, filename, sha256, storage_key)
-      values (${ids.email}, ${ids.attachment}, 'invoice.pdf', 'abc', 'k')`);
+      values (${ids.email}, ${ids.attachment}, 'invoice.pdf', 'abc', 'k'),
+             (${ids.email}, ${ids.emailedDoc}, 'contract.pdf', 'def', 'k2')`);
     await m.db.execute(sqlTag`
       insert into mantle_peers (id, owner_id, node_id, display_name, base_url, inbound_token_hash)
       values (${peer}, ${owner}, ${ids.peerNode}, 'Peer', 'https://peer.example.invalid', ${`${tag}-hash`})`);
@@ -89,11 +101,20 @@ describe.skipIf(!URL)('peer category grants on Postgres', () => {
     await m.db.execute(sqlTag`delete from auth.users where id = ${owner}`);
   });
 
-  const hidden = [ids.digest, ids.legacyDigest, ids.archive, ids.attachment];
+  const hidden = [
+    ids.digest,
+    ids.legacyDigest,
+    ids.archive,
+    ids.attachment,
+    ids.taggedDigest,
+    ids.oldPathNote,
+  ];
 
   it('the list gives the notes and files, not digests, archives or attachments', async () => {
     const got = (await q.queryForPeer(peer, { limit: 100 })).map((h) => h.id);
-    expect(got).toEqual(expect.arrayContaining([ids.note, ids.file]));
+    // A Files document that also came by mail (sync reuses the node by its
+    // bytes) is still an ordinary file.
+    expect(got).toEqual(expect.arrayContaining([ids.note, ids.file, ids.emailedDoc]));
     for (const id of hidden) expect(got).not.toContain(id);
   });
 

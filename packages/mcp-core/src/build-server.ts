@@ -142,14 +142,16 @@ export function filteredServer(
           if (!guard || typeof cb !== 'function') return fn.call(target, name, config, cb);
           const handler = cb as (args: unknown, extra: unknown) => unknown;
           return fn.call(target, name, config, async (args: unknown, extra: unknown) => {
-            const refusal = await guard(name, (args ?? {}) as Record<string, unknown>);
+            const input = (args ?? {}) as Record<string, unknown>;
+            const refusal = await guard.before?.(name, input);
             if (refusal) {
               return {
                 content: [{ type: 'text' as const, text: `Error: ${refusal}` }],
                 isError: true,
               };
             }
-            return handler(args, extra);
+            const result = (await handler(args, extra)) as ToolCallResult;
+            return guard.after ? guard.after(name, input, result) : result;
           });
         };
       }
@@ -159,9 +161,24 @@ export function filteredServer(
   });
 }
 
-/** A check run before a registered tool's handler: a string refuses the
- *  call with that message, null lets it run. */
-export type ToolCallGuard = (slug: string, args: Record<string, unknown>) => Promise<string | null>;
+/** What a registered tool's handler answers (the parts a guard reads). */
+export type ToolCallResult = {
+  content?: Array<{ type: string; text?: string }>;
+  isError?: boolean;
+  [k: string]: unknown;
+};
+
+/** Checks around a registered tool's handler. `before`: a string refuses
+ *  the call with that message, null lets it run. `after`: what the caller
+ *  gets back instead of the handler's answer (a list with rows dropped). */
+export type ToolCallGuard = {
+  before?: (slug: string, args: Record<string, unknown>) => Promise<string | null>;
+  after?: (
+    slug: string,
+    args: Record<string, unknown>,
+    result: ToolCallResult,
+  ) => Promise<ToolCallResult>;
+};
 
 /** Which transport is registering. Only `run_terminal` reads it (see the file
  *  header); everything else is identical on both. */

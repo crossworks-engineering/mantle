@@ -1,8 +1,10 @@
 /**
  * Which files are email attachments, on a real Postgres (access matrix M4):
- * the lookups the API key paths filter Files by. A file linked by
- * email_attachments is one; a folder that holds one, by id or by path, holds
- * one; a plain file, another owner's attachment and a malformed ref are not.
+ * the lookups the API key paths filter Files by. A file in the attachments
+ * folder under a mail is one; a folder that is, is inside or holds one, by
+ * id or by path, reaches one; a malformed path is refused. A Files document
+ * that also came by mail (sync links it by its bytes) is not one, nor is a
+ * plain file or another owner's attachment.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/files/src/email-attachments.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -27,6 +29,7 @@ describe.skipIf(!URL)('email attachment lookups on Postgres', () => {
     folder: randomUUID(),
     attachment: randomUUID(),
     plain: randomUUID(),
+    emailed: randomUUID(),
     filesFolder: randomUUID(),
   };
 
@@ -49,7 +52,8 @@ describe.skipIf(!URL)('email attachment lookups on Postgres', () => {
         (${ids.folder}, ${owner}, 'branch', 'attachments', ${`${inbox}.attachments`}),
         (${ids.attachment}, ${owner}, 'file', 'invoice.pdf', ${`${inbox}.attachments`}),
         (${ids.filesFolder}, ${owner}, 'branch', 'work', ${`files.${tag.replace(/-/g, '_')}`}),
-        (${ids.plain}, ${owner}, 'file', 'plan.pdf', ${`files.${tag.replace(/-/g, '_')}`})`);
+        (${ids.plain}, ${owner}, 'file', 'plan.pdf', ${`files.${tag.replace(/-/g, '_')}`}),
+        (${ids.emailed}, ${owner}, 'file', 'contract.pdf', ${`files.${tag.replace(/-/g, '_')}`})`);
     await m.db.execute(sqlTag`
       insert into email_accounts (id, user_id, provider, address, branch_path)
       values (${account}, ${owner}, 'imap', ${`${tag}@example.invalid`}, ${inbox})`);
@@ -58,7 +62,8 @@ describe.skipIf(!URL)('email attachment lookups on Postgres', () => {
       values (${ids.email}, ${ids.emailNode}, ${account}, ${`${tag}-1`}, 'a@example.invalid', now())`);
     await m.db.execute(sqlTag`
       insert into email_attachments (email_id, file_node_id, filename, sha256, storage_key)
-      values (${ids.email}, ${ids.attachment}, 'invoice.pdf', 'abc', 'k')`);
+      values (${ids.email}, ${ids.attachment}, 'invoice.pdf', 'abc', 'k'),
+             (${ids.email}, ${ids.emailed}, 'contract.pdf', 'def', 'k2')`);
   }, 60_000);
 
   afterAll(async () => {
@@ -73,7 +78,12 @@ describe.skipIf(!URL)('email attachment lookups on Postgres', () => {
   });
 
   it('picks the attachments out of a list of ids', async () => {
-    const got = await e.emailAttachmentIds(owner, [ids.attachment, ids.plain, 'not-a-uuid']);
+    const got = await e.emailAttachmentIds(owner, [
+      ids.attachment,
+      ids.plain,
+      ids.emailed,
+      'not-a-uuid',
+    ]);
     expect([...got]).toEqual([ids.attachment]);
     expect((await e.emailAttachmentIds(other, [ids.attachment])).size).toBe(0);
     expect((await e.emailAttachmentIds(owner, [])).size).toBe(0);
@@ -86,12 +96,27 @@ describe.skipIf(!URL)('email attachment lookups on Postgres', () => {
     expect(await e.reachesEmailAttachment(owner, { path: 'inbox' })).toBe(true);
   });
 
-  it('leaves plain files, other owners and odd refs alone', async () => {
+  it('names the attachments folders among folder paths', async () => {
+    const got = await e.emailAttachmentFolders(owner, [
+      `${inbox}.attachments`,
+      inbox,
+      'files.attachments',
+      `files.${tag.replace(/-/g, '_')}`,
+    ]);
+    expect([...got]).toEqual([`${inbox}.attachments`]);
+  });
+
+  it('refuses a path it cannot read', async () => {
+    expect(await e.reachesEmailAttachment(owner, { path: "files'; drop" })).toBe(true);
+    expect(await e.reachesEmailAttachment(owner, { path: '' })).toBe(true);
+  });
+
+  it('leaves plain files, emailed Files documents, other owners and odd ids alone', async () => {
     expect(await e.reachesEmailAttachment(owner, { id: ids.plain })).toBe(false);
+    expect(await e.reachesEmailAttachment(owner, { id: ids.emailed })).toBe(false);
     expect(await e.reachesEmailAttachment(owner, { id: ids.filesFolder })).toBe(false);
     expect(await e.reachesEmailAttachment(owner, { path: 'files' })).toBe(false);
     expect(await e.reachesEmailAttachment(other, { id: ids.attachment })).toBe(false);
     expect(await e.reachesEmailAttachment(owner, { id: 'nope' })).toBe(false);
-    expect(await e.reachesEmailAttachment(owner, { path: "files'; drop" })).toBe(false);
   });
 });

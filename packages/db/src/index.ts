@@ -31,6 +31,7 @@ export {
   type ViewerLevel,
 } from './viewer';
 export { ensureViewerRoles, LIMITED_LEVELS } from './viewer-roles';
+export { EMAIL_ATTACHMENTS_LABEL, emailAttachmentSql } from './email-attachment';
 export {
   ACCESS_MATRIX,
   WORKSPACE_NODE_TYPES,

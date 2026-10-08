@@ -6,6 +6,7 @@ import { allPrivateRows, listStateOf } from '@/lib/admin-private-rows';
 import { ensureFilesRootBranch, listFiles, listRecentFiles, upsertFile } from '@/lib/files';
 import {
   emailAttachmentIds,
+  reachesEmailAttachment,
   MEDIA_EXTS,
   UploadTooLargeError,
   diskPathForFile,
@@ -79,6 +80,21 @@ export async function GET(req: Request) {
 }
 
 /**
+ * An API key without the Search area does not write into a mail's
+ * attachments folder (access matrix M4, audit LOW-3): with `replace=true` it
+ * would overwrite an attachment, and a 409 on a taken name would tell it
+ * which attachments exist. MCP refuses the same (key-email-guard.ts).
+ */
+async function mailFolderRefusal(ownerId: string, parentPath: string): Promise<Response | null> {
+  if (callerMayReadEmail()) return null;
+  if (!(await reachesEmailAttachment(ownerId, { path: parentPath }))) return null;
+  return NextResponse.json(
+    { error: 'This key reaches email only with the Search area.' },
+    { status: 403 },
+  );
+}
+
+/**
  * Accepts either:
  *   1. multipart/form-data with fields `parentPath`, `file` (binary):
  *      STREAMED to disk, capped by MANTLE_MAX_UPLOAD_MB (default 512)
@@ -136,6 +152,11 @@ export async function POST(req: Request) {
         await discardSpooled(upload.spooled);
         return NextResponse.json({ error: 'empty file' }, { status: 400 });
       }
+      const mail = await mailFolderRefusal(user.id, parentPath);
+      if (mail) {
+        await discardSpooled(upload.spooled);
+        return mail;
+      }
       let row;
       try {
         await guardNewFileIn(user.id, parentPath, upload.filename, {
@@ -186,6 +207,8 @@ export async function POST(req: Request) {
     if (!parsed.success) {
       return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
     }
+    const mail = await mailFolderRefusal(user.id, parsed.data.parentPath);
+    if (mail) return mail;
     const buf = Buffer.from(parsed.data.content, 'utf8');
     await guardNewFileIn(user.id, parsed.data.parentPath, parsed.data.filename, {
       confirm: parsed.data.confirm === true && callerMayConfirm(),

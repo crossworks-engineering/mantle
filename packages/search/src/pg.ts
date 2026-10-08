@@ -1,5 +1,5 @@
 import { sql, type AnyColumn, type SQL } from 'drizzle-orm';
-import { nodes } from '@mantle/db';
+import { emailAttachmentSql, nodes } from '@mantle/db';
 
 /**
  * Serialize a JS string array for a `$n::uuid[]` / `$n::text[]` bind param.
@@ -24,11 +24,15 @@ export function pgArrayLiteral(values: string[]): string {
  */
 export function peerCategoryExcluded(): SQL {
   // coalesce: a node with no `kind` gives NULL here, and `not NULL` would
-  // hide every node of the category.
+  // hide every node of the category. The digest is known three ways, as the
+  // extractor's gate knows it (extract/gates.ts): its kind, its tag, and
+  // where the summarizer writes it (Notes / Auto-filed, or `assistant`
+  // before that folder existed).
   return sql`coalesce(${nodes.path} <@ 'notes.auto_filed'::ltree
+    or (${nodes.type}::text = 'note' and ${nodes.path} <@ 'assistant'::ltree)
     or (${nodes.data}->>'kind') in ('conversation_digest', 'chat_archive')
-    or (${nodes.type}::text = 'file'
-        and exists (select 1 from email_attachments ea where ea.file_node_id = ${nodes.id})), false)`;
+    or ${nodes.tags} && ARRAY['conversation-digest', 'chat-archive']::text[]
+    or ${emailAttachmentSql()}, false)`;
 }
 
 /**

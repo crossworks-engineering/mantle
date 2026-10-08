@@ -25,14 +25,23 @@ const row = (id: string) => ({ id, filename: `${id.slice(0, 4)}.pdf`, updatedAt:
 
 vi.mock('@mantle/files', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
+  reachesEmailAttachment: vi.fn(
+    async (_o: string, ref: { path?: string }) => ref.path === 'inbox.a.attachments',
+  ),
   emailAttachmentIds: vi.fn(
     async (_o: string, ids: string[]) => new Set(ids.filter((i) => i === MAIL)),
   ),
 }));
 
+vi.mock('@mantle/content/tree', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  guardNewFileIn: vi.fn(async () => ({ changes: [], total: 0 })),
+}));
+
 vi.mock('@/lib/files', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   ensureFilesRootBranch: vi.fn(async () => {}),
+  upsertFile: vi.fn(async () => ({ id: PLAIN, filename: 'a.md', mimeType: 'text/markdown' })),
   listRecentFiles: vi.fn(async () => [row(PLAIN), row(MAIL)]),
   listFiles: vi.fn(async () => [row(PLAIN), row(MAIL)]),
   fileById: vi.fn(async ({ fileId }: { fileId: string }) => row(fileId)),
@@ -100,5 +109,25 @@ describe('Files routes and a key without the Search area', () => {
       );
       expect(res.status).toBe(200);
     }
+  });
+
+  it('refuse an upload into an attachments folder for a Files-only key', async () => {
+    const { POST } = await import('./files/route');
+    const post = (grant: AccessKeyGrant | undefined, parentPath: string) => {
+      const url = 'http://x/api/v1/files';
+      const req = new Request(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ parentPath, filename: 'a.md', content: 'x' }),
+      });
+      return runWithRequestContext(
+        { req, path: '/api/v1/files', method: 'POST', ...(grant ? { accessKey: grant } : {}) },
+        () => POST(req),
+      );
+    };
+    expect((await post(key(['files']), 'inbox.a.attachments')).status).toBe(403);
+    expect((await post(key(['files']), 'files.work')).status).toBe(200);
+    expect((await post(undefined, 'inbox.a.attachments')).status).toBe(200);
+    expect((await post(key(['files', 'search']), 'inbox.a.attachments')).status).toBe(200);
   });
 });
