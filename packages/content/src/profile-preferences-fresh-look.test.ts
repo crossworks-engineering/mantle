@@ -16,15 +16,18 @@ vi.mock('@mantle/db', () => {
     where: () => chain,
     limit: async () => (state.row ? [state.row] : []),
   };
+  const db = {
+    select: () => chain,
+    insert: () => ({
+      values: (v: unknown) => {
+        state.inserted.push(v);
+        return { onConflictDoNothing: async () => undefined };
+      },
+    }),
+    transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(db),
+  };
   return {
-    db: {
-      select: () => chain,
-      insert: () => ({
-        values: async (v: unknown) => {
-          state.inserted.push(v);
-        },
-      }),
-    },
+    db,
     profiles: { preferences: 'preferences', userId: 'user_id' },
     resolveSingleOwnerId: async () => null,
   };
