@@ -2,7 +2,7 @@ import { sql as sqlTag } from 'drizzle-orm';
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import * as schema from './schema/index';
-import { env } from '@mantle/config';
+import { env, envFlag } from '@mantle/config';
 import {
   currentScopeTx,
   currentSpaceScope,
@@ -68,7 +68,8 @@ function getViewerDb(level: PoolRole): PostgresJsDatabase<typeof schema> {
   const url = env('DATABASE_URL');
   if (!url) throw new Error('DATABASE_URL must be set');
   const password = viewerRolePassword(env('MANTLE_MASTER_KEY') ?? '', level);
-  const sql = postgres(viewerDatabaseUrl(url, level, password), {
+  const perDatabase = envFlag('MANTLE_VIEWER_ROLES_PER_DATABASE');
+  const sql = postgres(viewerDatabaseUrl(url, level, password, perDatabase), {
     max: VIEWER_POOL_MAX,
     prepare: false,
   });

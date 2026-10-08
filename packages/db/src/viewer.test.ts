@@ -17,11 +17,12 @@ import {
   readsDrafts,
   runInTxScope,
   viewerDatabaseUrl,
+  viewerLoginRoleName,
   viewerRoleName,
   viewerRolePassword,
   withViewer,
 } from './viewer';
-import { viewerRoleStatements } from './viewer-roles';
+import { noteOwner, ownerNote, viewerRolePlan, viewerRoleStatements } from './viewer-roles';
 
 describe('personal-space scope (Phase 2)', () => {
   const space = { spaceId: 'space-a', loginId: 'login-a' };
@@ -232,5 +233,119 @@ describe('viewerRoleStatements', () => {
     expect(stmt).toContain('NOLOGIN');
     expect(stmt).toContain('PASSWORD NULL');
     expect(stmt).not.toMatch(/\bLOGIN\b/);
+  });
+});
+
+describe('brains sharing one Postgres cluster (viewerRolePlan)', () => {
+  const shared = [
+    'mantle_view_team',
+    'mantle_view_client',
+    'mantle_view_public',
+    'mantle_view_space',
+  ];
+  const cluster = (
+    database: string,
+    owner: string | null,
+    databases: string[] = ['brain_a', 'brain_b'],
+    extra: Record<string, string | null> = {},
+  ) => ({
+    database,
+    roles: new Map<string, string | null>([
+      ...shared.map(
+        (r) => [r, owner === null ? null : ownerNote(owner)] as [string, string | null],
+      ),
+      ...Object.entries(extra),
+    ]),
+    databases: new Set(databases),
+  });
+
+  it('the owner note round-trips, and a foreign comment names no owner', () => {
+    expect(noteOwner(ownerNote('brain_a'))).toBe('brain_a');
+    expect(noteOwner('someone else wrote this')).toBeNull();
+    expect(noteOwner(null)).toBeNull();
+  });
+
+  it('a box upgrading (roles with no note) resets the passwords as before and claims them', () => {
+    const plan = viewerRolePlan(cluster('brain_a', null), 'key-a', false);
+    for (const role of shared) {
+      expect(plan).toContain(
+        `ALTER ROLE "${role}" WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION CONNECTION LIMIT 30 PASSWORD '${viewerRolePassword('key-a', role.replace('mantle_view_', '') as 'team')}'`,
+      );
+      expect(plan).toContain(`COMMENT ON ROLE "${role}" IS '${ownerNote('brain_a')}'`);
+    }
+  });
+
+  it('the owner migrating again resets the passwords (a key change) and writes no note', () => {
+    const plan = viewerRolePlan(cluster('brain_a', 'brain_a'), 'key-a2', false);
+    expect(plan.filter((s) => s.startsWith('ALTER ROLE'))).toHaveLength(4);
+    expect(plan.some((s) => s.startsWith('COMMENT'))).toBe(false);
+  });
+
+  it('a second brain on the cluster is refused before any change (the incident)', () => {
+    expect(() => viewerRolePlan(cluster('brain_b', 'brain_a'), 'key-b', false)).toThrow(
+      /belong to the brain in database "brain_a".*MANTLE_VIEWER_ROLES_PER_DATABASE=1/s,
+    );
+    // With no key it would have taken the logins away: refused too.
+    expect(() => viewerRolePlan(cluster('brain_b', 'brain_a'), null, false)).toThrow(/brain_a/);
+  });
+
+  it('an owner database that is gone (a restore, a rename) hands the roles over', () => {
+    const plan = viewerRolePlan(cluster('brain_b', 'old_brain'), 'key-b', false);
+    expect(plan).toContain(`COMMENT ON ROLE "mantle_view_space" IS '${ownerNote('brain_b')}'`);
+  });
+
+  it('per-database never alters a shared role, and logs in as its own role that may only SET it', () => {
+    const plan = viewerRolePlan(cluster('brain_b', 'brain_a'), 'key-b', true);
+    expect(plan.some((s) => shared.some((r) => s.startsWith(`ALTER ROLE "${r}" `)))).toBe(false);
+    expect(plan.some((s) => s.startsWith('COMMENT'))).toBe(false);
+    for (const role of shared) {
+      const login = `${role}_brain_b`;
+      expect(plan).toContain(
+        `CREATE ROLE "${login}" WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION CONNECTION LIMIT 30 PASSWORD '${viewerRolePassword('key-b', role.replace('mantle_view_', '') as 'team')}'`,
+      );
+      expect(plan).toContain(
+        `GRANT "${role}" TO "${login}" WITH INHERIT FALSE, SET TRUE, ADMIN FALSE`,
+      );
+      expect(plan).toContain(`ALTER ROLE "${login}" IN DATABASE "brain_b" SET role = '${role}'`);
+    }
+  });
+
+  it('per-database on an empty cluster creates the shared roles without a login', () => {
+    const plan = viewerRolePlan(
+      { database: 'brain_b', roles: new Map(), databases: new Set(['brain_b']) },
+      'key-b',
+      true,
+    );
+    expect(plan).toContain(
+      'CREATE ROLE "mantle_view_team" WITH NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION PASSWORD NULL',
+    );
+  });
+
+  it('per-database alters its own existing login role', () => {
+    const plan = viewerRolePlan(
+      cluster('brain_b', 'brain_a', undefined, { mantle_view_space_brain_b: null }),
+      'key-b',
+      true,
+    );
+    expect(
+      plan.some((s) => s.startsWith('ALTER ROLE "mantle_view_space_brain_b" WITH LOGIN')),
+    ).toBe(true);
+  });
+
+  it('the pool logs in as the per-database role only when asked', () => {
+    const admin = 'postgres://postgres:pw@db:5432/brain_b?sslmode=disable';
+    expect(new URL(viewerDatabaseUrl(admin, 'space', 'p')).username).toBe('mantle_view_space');
+    const u = new URL(viewerDatabaseUrl(admin, 'space', 'p', true));
+    expect([u.username, u.pathname, u.search]).toEqual([
+      'mantle_view_space_brain_b',
+      '/brain_b',
+      '?sslmode=disable',
+    ]);
+  });
+
+  it('a database name that would need mangling fails loudly', () => {
+    expect(() => viewerLoginRoleName('team', 'Brain-B')).toThrow(/\[a-z0-9_\]/);
+    expect(() => viewerLoginRoleName('team', '')).toThrow();
+    expect(() => viewerLoginRoleName('team', 'x'.repeat(41))).toThrow();
   });
 });

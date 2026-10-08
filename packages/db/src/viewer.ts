@@ -293,11 +293,52 @@ export function viewerRolePassword(masterKey: string, level: PoolRole): string {
   return Buffer.from(key).toString('base64url');
 }
 
+/**
+ * Per-database viewer logins (MANTLE_VIEWER_ROLES_PER_DATABASE=1), for a
+ * brain on a Postgres cluster that other brains share (throwaway and e2e
+ * brains on the workstation). The four shared roles are cluster objects with
+ * ONE password each, derived from one brain's master key: a second brain that
+ * reset them broke the first ("password authentication failed for user
+ * mantle_view_space"). In this mode the brain logs in as its own role,
+ * `mantle_view_<level>_<database>`, whose only power is to become the shared
+ * role in its own database (`SET role` at login, viewer-roles.ts). So
+ * `current_user`, the grants and the row policies are the shared role's, as
+ * on a box with one brain. Off (the default) = the shared names, unchanged.
+ *
+ * The database name such a role carries: anything else fails loudly, since a
+ * name that had to be mangled could collide with another brain's.
+ */
+export function viewerRoleDatabase(database: string): string {
+  if (!/^[a-z0-9_]{1,40}$/.test(database)) {
+    throw new Error(
+      `per-database viewer roles need a database name of 1 to 40 characters from [a-z0-9_]; got "${database}"`,
+    );
+  }
+  return database;
+}
+
+/** The role a limited pool logs in as: the shared role, or with `database`
+ *  the brain's own per-database role (MANTLE_VIEWER_ROLES_PER_DATABASE). */
+export function viewerLoginRoleName(level: PoolRole, database: string | null): string {
+  return database === null
+    ? viewerRoleName(level)
+    : `${viewerRoleName(level)}_${viewerRoleDatabase(database)}`;
+}
+
 /** The connection URL for a limited level: the admin URL with the user and
- *  password swapped. Host, port, database and options stay. */
-export function viewerDatabaseUrl(adminUrl: string, level: PoolRole, password: string): string {
+ *  password swapped. Host, port, database and options stay. `perDatabase`
+ *  logs in as the brain's own role for the URL's database. */
+export function viewerDatabaseUrl(
+  adminUrl: string,
+  level: PoolRole,
+  password: string,
+  perDatabase = false,
+): string {
   const u = new URL(adminUrl);
-  u.username = viewerRoleName(level);
+  u.username = viewerLoginRoleName(
+    level,
+    perDatabase ? decodeURIComponent(u.pathname.replace(/^\//, '')) : null,
+  );
   u.password = password; // base64url: nothing to escape
   return u.toString();
 }
