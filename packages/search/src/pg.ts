@@ -23,10 +23,12 @@ export function pgArrayLiteral(values: string[]): string {
  * them when the owner picks it.
  */
 export function peerCategoryExcluded(): SQL {
-  return sql`(${nodes.path} <@ 'notes.auto_filed'::ltree
+  // coalesce: a node with no `kind` gives NULL here, and `not NULL` would
+  // hide every node of the category.
+  return sql`coalesce(${nodes.path} <@ 'notes.auto_filed'::ltree
     or (${nodes.data}->>'kind') in ('conversation_digest', 'chat_archive')
     or (${nodes.type}::text = 'file'
-        and exists (select 1 from email_attachments ea where ea.file_node_id = ${nodes.id})))`;
+        and exists (select 1 from email_attachments ea where ea.file_node_id = ${nodes.id})), false)`;
 }
 
 /**
