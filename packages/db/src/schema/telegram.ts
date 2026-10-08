@@ -89,10 +89,10 @@ export const telegramChats = pgTable(
     pairingCode: text('pairing_code'),
     pairingExpiresAt: timestamp('pairing_expires_at', { withTimezone: true }),
     pairingReplies: integer('pairing_replies').default(0).notNull(),
-    /** Per-chat override of which agent handles this chat. NULL = fall back to
-     *  the inbound channel's agent, then global priority resolution (highest-
-     *  priority enabled conversational agent — docs/comms-channels.md §6).
-     *  Cleared automatically if the referenced agent is deleted. */
+    /** Per-chat override of which agent handles this chat. NULL = the
+     *  inbound channel's agent (docs/comms-channels.md §6); no other agent
+     *  ever answers (access matrix M8). Deleting the agent denies the chat
+     *  first (deleteAgent), then this clears. */
     responderAgentId: uuid('responder_agent_id').references(() => agents.id, {
       onDelete: 'set null',
     }),

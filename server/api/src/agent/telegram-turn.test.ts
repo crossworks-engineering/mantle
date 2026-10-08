@@ -486,7 +486,9 @@ describe('handleTelegramMessage: a pinned agent that is off (access matrix M8)',
     expect(h.loopCalls).toHaveLength(0);
     expect(h.traces).toHaveLength(0);
     expect(h.sendMessage).toHaveBeenCalledTimes(1);
-    expect(h.sendMessage.mock.calls[0]![2]).toBe('This chat is turned off for now.');
+    expect(h.sendMessage.mock.calls[0]![2]).toBe(
+      'This chat is turned off for now. Ask the owner to turn it on.',
+    );
     // The fallback was never asked for.
     expect(h.selectQueue).toEqual([[ownerPersona]]);
   });
@@ -519,9 +521,30 @@ describe('handleTelegramMessage: a pinned agent that is off (access matrix M8)',
     expect(h.loopCalls).toHaveLength(0);
   });
 
-  it('a legacy chat with no pin still gets the fallback', async () => {
-    h.selectQueue = [[makeMsgRow({ channelAgentId: null })], [makeAgent()]];
+  it('a chat with no pin left (its agent and channel deleted) is refused', async () => {
+    const ownerPersona = makeAgent({ id: 'agent-owner', slug: 'owner-persona', priority: 999 });
+    h.selectQueue = [
+      [makeMsgRow({ responderAgentId: null, channelAgentId: null })],
+      [ownerPersona],
+    ];
     await handleTelegramMessage('msg-1');
+    expect(h.loopCalls).toHaveLength(0);
+    expect(h.sendMessage.mock.calls[0]![2]).toMatch(/turned off/);
+    // No agent lookup ran at all: the fallback list was never read.
+    expect(h.selectQueue).toEqual([[ownerPersona]]);
+  });
+
+  it('a queued message of a chat turned off since gets no reply at all', async () => {
+    h.selectQueue = [[makeMsgRow({ allowlistStatus: 'denied' })], [makeAgent()]];
+    await handleTelegramMessage('msg-1');
+    expect(h.loopCalls).toHaveLength(0);
+    expect(h.sendMessage).not.toHaveBeenCalled();
+    const processed = updatesOf('telegramMessages').find((u) => u.payload?.processed === true);
+    expect(processed).toBeDefined();
+  });
+
+  it('an allowed chat with its pinned agent on still answers', async () => {
+    await runTurn(makeMsgRow({ allowlistStatus: 'allowed' }));
     expect(h.loopCalls).toHaveLength(1);
   });
 });

@@ -18,6 +18,9 @@ export interface InboundRow {
   accountId: string;
   responderAgentId: string | null;
   channelAgentId: string | null | undefined;
+  /** The chat's allowlist state now: a chat turned off after its message
+   *  was queued (deleting its pinned agent does that) gets no reply. */
+  allowlistStatus?: string;
   attachments: TelegramAttachment[] | null;
 }
 

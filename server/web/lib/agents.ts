@@ -7,6 +7,7 @@ import {
   assistantMessages,
   channels,
   nodes,
+  telegramChats,
   applyPersonaUpdate,
   noteRef,
   type Agent,
@@ -573,6 +574,15 @@ export async function deleteAgent(
         .returning({ id: nodes.id });
       deletedDigests = digests.length;
     }
+
+    // A Telegram chat pinned to this agent is turned off (denied), not left
+    // to the SET NULL: with its override gone it would fall to the bot's own
+    // agent, often the owner's persona (access matrix M8). The owner allows
+    // it again, and picks its agent, in the chat list.
+    await tx
+      .update(telegramChats)
+      .set({ allowlistStatus: 'denied', updatedAt: new Date() })
+      .where(and(eq(telegramChats.responderAgentId, id), eq(telegramChats.userId, userId)));
 
     await tx.delete(agents).where(and(eq(agents.id, id), eq(agents.ownerId, userId)));
     return { conversation, deletedMessages, deletedDigests };

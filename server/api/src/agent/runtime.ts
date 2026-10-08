@@ -81,7 +81,6 @@ import {
   stopExtractQueue,
 } from './extract-queue.js';
 import { reflect } from './reflector.js';
-import { CONVERSATIONAL_ROLES, pickFallbackResponder } from './agent-select.js';
 import { computeFloorGroupAdditions } from './core-tools.js';
 import { ingestTelegramAttachment } from './telegram/ingest-attachment';
 import { isNewChatCommand, newChatReply, sendApology, startTyping } from './telegram/helpers';
@@ -113,48 +112,29 @@ if (!DATABASE_URL) {
 /** Per-chat in-flight tracker. Prevents two replies racing for the same chat. */
 const inflight = new Map<string, Promise<void>>();
 
-/** Fetch the active agent for an inbound chat message.
- *
- *  Resolution order (channel-based, role-decoupled — docs/comms-channels.md §6):
- *    1. Per-chat override (`telegram_chats.responder_agent_id`) — most specific.
- *    2. The inbound **channel's** `agent_id` — the agent this transport is
- *       attached to. The normal path: an enabled channel always carries an agent.
- *    3. Last resort (`pickFallbackResponder`, unit-tested): highest-priority
- *       enabled conversational agent — covers a channel-less/legacy account so
- *       an inbound is never silently dropped, and never a background worker. No
- *       `role='responder'` privileging (that gate is gone).
- *
- *  The first pin that is set decides. When that agent is disabled or gone the
- *  chat gets no agent, never the next pin or the fallback (access matrix M8):
- *  the fallback is normally the owner's own persona, so a bot an admin
- *  attached to a team agent would hand a teammate the owner's context and
- *  tools once that agent was turned off.
- */
+/** Fetch the agent for an inbound chat message: the chat's pinned agent,
+ *  the per-chat override (`telegram_chats.responder_agent_id`), else the
+ *  inbound channel's `agent_id` (docs/comms-channels.md §6). Only that agent
+ *  answers (access matrix M8). When it is disabled or gone, or the chat has
+ *  no pin left (a deleted override is SET NULL, a deleted channel agent takes
+ *  the channel with it), the chat gets no agent: never the next pin and never
+ *  a priority fallback, which is normally the owner's own persona and would
+ *  hand a teammate owner context and tools. Every enabled account has a
+ *  channel since migration 0078, so a chat with no pin is one whose agent
+ *  was deleted. */
 async function resolveResponderAgent(
   ownerId: string,
   overrideAgentId: string | null,
   channelAgentId?: string | null,
 ): Promise<Agent | null> {
   const pinnedId = overrideAgentId ?? channelAgentId ?? null;
-  if (pinnedId) {
-    const [pinned] = await db
-      .select()
-      .from(agents)
-      .where(and(eq(agents.id, pinnedId), eq(agents.ownerId, ownerId), eq(agents.enabled, true)))
-      .limit(1);
-    return pinned ?? null;
-  }
-  const candidates = await db
+  if (!pinnedId) return null;
+  const [pinned] = await db
     .select()
     .from(agents)
-    .where(
-      and(
-        eq(agents.ownerId, ownerId),
-        eq(agents.enabled, true),
-        inArray(agents.role, [...CONVERSATIONAL_ROLES]),
-      ),
-    );
-  return pickFallbackResponder(candidates);
+    .where(and(eq(agents.id, pinnedId), eq(agents.ownerId, ownerId), eq(agents.enabled, true)))
+    .limit(1);
+  return pinned ?? null;
 }
 
 /**
@@ -182,13 +162,14 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
       accountId: telegramMessages.accountId,
       responderAgentId: telegramChats.responderAgentId,
       channelAgentId: channels.agentId,
+      allowlistStatus: telegramChats.allowlistStatus,
       attachments: telegramMessages.attachments,
     })
     .from(telegramMessages)
     .innerJoin(telegramChats, eq(telegramMessages.chatId, telegramChats.id))
     .innerJoin(telegramAccounts, eq(telegramMessages.accountId, telegramAccounts.id))
-    // Left join — a legacy account may not have a channel yet during the
-    // dual-read transition; resolveResponderAgent falls back accordingly.
+    // Left join: an account whose channel was deleted (with its agent) keeps
+    // its queued messages; resolveResponderAgent refuses them.
     .leftJoin(channels, eq(telegramAccounts.channelId, channels.id))
     .where(eq(telegramMessages.id, messageId))
     .limit(1);
@@ -199,6 +180,16 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
   // Defensive — the trigger only fires for inbound but a manual INSERT could
   // get past it. We never reply to our own outbound row.
   if (row.direction !== 'inbound') return;
+  // A chat turned off after this message was queued (the owner denied it,
+  // or deleted the agent it was pinned to: access matrix M8) gets no reply,
+  // as the gate drops its new messages. Marked processed so it is not retried.
+  if (row.allowlistStatus !== undefined && row.allowlistStatus !== 'allowed') {
+    await db
+      .update(telegramMessages)
+      .set({ processed: true, processedAt: new Date() })
+      .where(eq(telegramMessages.id, row.id));
+    return;
+  }
 
   // Find a voice attachment if any. Telegram syncs voice notes with a
   // placeholder `text='(voice message)'` and the file_id on attachments.
@@ -272,7 +263,7 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
     );
     // The message is claimed, so it is not retried: say so instead of going
     // silent. No model runs.
-    await sendApology(row, 'This chat is turned off for now.');
+    await sendApology(row, 'This chat is turned off for now. Ask the owner to turn it on.');
     return;
   }
   // Resolve the responder's chat key via the shared resolver (keyless `local`

@@ -92,6 +92,7 @@ describe.skipIf(!URL)('DELETE /api/agents/:id conversation handling on Postgres'
   }, 60_000);
 
   afterAll(async () => {
+    await m.db.execute(sqlTag`delete from telegram_accounts where user_id = ${owner}`);
     await m.db.execute(sqlTag`delete from assistant_messages where owner_id = ${owner}`);
     await m.db.execute(sqlTag`delete from agents where owner_id = ${owner}`);
     await m.db.execute(sqlTag`delete from nodes where owner_id = ${owner}`);
@@ -168,5 +169,33 @@ describe.skipIf(!URL)('DELETE /api/agents/:id conversation handling on Postgres'
   it('404s an agent that is not this owner’s, and deletes nothing', async () => {
     const res = await del(randomUUID(), '?conversation=delete');
     expect(res.status).toBe(404);
+  });
+
+  it('turns off the Telegram chats pinned to the agent, and only those (access matrix M8)', async () => {
+    const pinned = await seedAgent(`${tag}-tg-pinned`);
+    const other = await seedAgent(`${tag}-tg-other`);
+    const account = randomUUID();
+    await m.db.execute(sqlTag`
+      insert into telegram_accounts (id, user_id, bot_username, branch_path)
+      values (${account}, ${owner}, ${`${tag}_bot`}, 'telegram')`);
+    const chat = (pin: string | null, n: string) => sqlTag`
+      insert into telegram_chats (account_id, user_id, telegram_chat_id, chat_type, allowlist_status, responder_agent_id)
+      values (${account}, ${owner}, ${n}, 'private', 'allowed', ${pin})`;
+    await m.db.execute(chat(pinned, '1001'));
+    await m.db.execute(chat(other, '1002'));
+    await m.db.execute(chat(null, '1003'));
+    expect((await del(pinned)).status).toBe(200);
+    const rows = (await m.db.execute(sqlTag`
+      select telegram_chat_id as id, allowlist_status as status, responder_agent_id as pin
+        from telegram_chats where account_id = ${account} order by telegram_chat_id`)) as unknown as {
+      id: string;
+      status: string;
+      pin: string | null;
+    }[];
+    expect(rows).toEqual([
+      { id: '1001', status: 'denied', pin: null },
+      { id: '1002', status: 'allowed', pin: other },
+      { id: '1003', status: 'allowed', pin: null },
+    ]);
   });
 });
