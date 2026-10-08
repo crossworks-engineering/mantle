@@ -19,6 +19,29 @@ import type { McpCaller } from './login-surface';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
+const MY_APP_READS = [
+  'my_app_errors',
+  'my_app_get',
+  'my_app_guide',
+  'my_app_list',
+  'my_app_snapshot_list',
+];
+const MY_APP_SLUGS = [
+  ...MY_APP_READS,
+  'my_app_create',
+  'my_app_file_write',
+  'my_app_file_delete',
+  'my_app_build',
+  'my_app_publish',
+  'my_app_schema_set',
+  'my_app_tools_set',
+  'my_app_snapshot_create',
+  'my_app_snapshot_restore',
+  'my_app_share',
+  'my_app_submit',
+  'my_app_recall',
+];
+
 describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
   type Db = typeof import('@mantle/db');
   let m: Db;
@@ -104,6 +127,8 @@ describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
       'app_data_schema',
       'app_data_query',
       'app_data_write',
+      // A member's own apps (team apps Phase 3).
+      ...MY_APP_SLUGS,
     ];
     for (const slug of tools) {
       await exec(sqlTag`
@@ -177,13 +202,18 @@ describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
     const list = await names(c);
     // app_db_query is in the member's group, yet a login's MCP gets the
     // app_data reads instead (team apps Phase 1), and no app_data_write.
-    expect(list).toEqual([
-      'app_data_list',
-      'app_data_query',
-      'app_data_schema',
-      'my_items_list',
-      'note_list',
-    ]);
+    // A member reads their own apps (my_app_*) without write; building
+    // them needs it (team apps Phase 3).
+    expect(list).toEqual(
+      [
+        'app_data_list',
+        'app_data_query',
+        'app_data_schema',
+        ...MY_APP_READS,
+        'my_items_list',
+        'note_list',
+      ].sort(),
+    );
     // SDK 2.x answers an unknown tool with a protocol error (-32602), where
     // 1.x returned an isError result.
     await expect(c.callTool({ name: 'note_create', arguments: { title: 'x' } })).rejects.toThrow(
@@ -243,6 +273,44 @@ describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
     const [leak] = (await exec(sqlTag`
       select id from nodes where title = ${`${tag} library write`}`)) as unknown as unknown[];
     expect(leak).toBeUndefined();
+  });
+
+  it('write on: a member builds an app in their own space, private, at the team ceiling', async () => {
+    const c = await connect(asMember(true));
+    const list = await names(c);
+    for (const s of MY_APP_SLUGS) expect(list, s).toContain(s);
+    const made = await c.callTool({ name: 'my_app_create', arguments: { name: `${tag} app` } });
+    expect(made.isError ?? false, text(made)).toBe(false);
+    const id = (JSON.parse(text(made)) as { id: string }).id;
+    const [row] = (await exec(sqlTag`
+      select n.owner_id, a.author_level, si.sharing from nodes n
+      join apps a on a.node_id = n.id join space_items si on si.node_id = n.id
+      where n.id = ${id}`)) as unknown as {
+      owner_id: string;
+      author_level: string;
+      sharing: string;
+    }[];
+    expect(row).toEqual({ owner_id: memberSpace, author_level: 'team', sharing: 'private' });
+    const listed = await c.callTool({ name: 'my_app_list', arguments: {} });
+    expect(JSON.parse(text(listed)).apps.map((a: { id: string }) => a.id)).toContain(id);
+    // Written by its author only: an app of the brain is not one of theirs.
+    const [brainApp] = (await exec(sqlTag`
+      insert into nodes (owner_id, type, title, path, audience)
+      values (${anchor}, 'app', ${`${tag} brain app`}, 'apps', 'team') returning id`)) as unknown as {
+      id: string;
+    }[];
+    const refused = await c.callTool({
+      name: 'my_app_file_write',
+      arguments: { id: brainApp!.id, path: 'App.tsx', content: 'x' },
+    });
+    expect(text(refused)).toMatch(/No such app of yours/);
+  });
+
+  it('a client never gets the my_app tools, write on or off', async () => {
+    for (const write of [false, true]) {
+      const list = await names(await connect(asClient(write)));
+      expect(list.filter((s) => s.startsWith('my_app_'))).toEqual([]);
+    }
   });
 
   it('a responder left above the role level closes MCP to that role, as chat', async () => {

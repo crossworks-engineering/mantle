@@ -35,6 +35,8 @@ import {
   APP_DATA_READ_TOOL_SLUGS,
   APP_DATA_WRITE_TOOL_SLUGS,
   CLIENT_TURN_TOOL_SLUGS,
+  MY_APP_READ_TOOL_SLUGS,
+  MY_APP_WRITE_TOOL_SLUGS,
   MY_SPACE_WRITE_TOOL_SLUGS,
   dispatchTool,
   connectorMarkState,
@@ -238,6 +240,7 @@ export const LOGIN_REPLACED_APP_DB_SLUGS: readonly string[] = ['app_db_list', 'a
 const LOGIN_WRITE_TOOL_SLUGS: ReadonlySet<string> = new Set([
   ...MY_SPACE_WRITE_TOOL_SLUGS,
   ...APP_DATA_WRITE_TOOL_SLUGS,
+  ...MY_APP_WRITE_TOOL_SLUGS,
   'team_request_create',
   'client_request_create',
 ]);
@@ -293,9 +296,17 @@ export async function resolveLoginToolRows(
     const hiddenAppDb = new Set(LOGIN_REPLACED_APP_DB_SLUGS);
     slugs = slugs.filter((s) => !hiddenAppDb.has(s));
     if (slugs.length > 0) {
+      // A member builds their own mini apps (team apps Phase 3): the
+      // my_app_* tools, reads always, changes with write on. Never a
+      // client's: a client builds no apps.
+      const memberApps =
+        caller.role === 'member'
+          ? [...MY_APP_READ_TOOL_SLUGS, ...(caller.write ? MY_APP_WRITE_TOOL_SLUGS : [])]
+          : [];
       const extra = [
         ...APP_DATA_READ_TOOL_SLUGS,
         ...(caller.write ? [...MY_SPACE_WRITE_TOOL_SLUGS, ...APP_DATA_WRITE_TOOL_SLUGS] : []),
+        ...memberApps,
       ];
       slugs = [...slugs, ...extra.filter((s) => !slugs.includes(s))];
     }
@@ -551,5 +562,11 @@ export function mcpInstructionsFor(caller: McpCaller): string {
     : ' This connection is read-only.';
   const apps =
     ' Mini app data: app_data_list shows the apps an admin opened to MCP, then app_data_schema and app_data_query. Tools named mcp_* reach outside data sources (connectors) an admin opened at your level.';
-  return `This connection acts as ${who} of this brain, with exactly that login's rights: you see what they may see, nothing more.${write}${apps}`;
+  const build =
+    caller.role !== 'member'
+      ? ''
+      : caller.write
+        ? ' The member builds their own mini apps with the my_app_* tools (read my_app_guide first): private until shared with the team (my_app_share) or submitted to an admin (my_app_submit). Their apps run tools at team rules at most.'
+        : " my_app_list and my_app_get read the member's own mini apps; building them needs the Write switch.";
+  return `This connection acts as ${who} of this brain, with exactly that login's rights: you see what they may see, nothing more.${write}${apps}${build}`;
 }

@@ -26,6 +26,7 @@ import {
 import { projectAppIcon, projectAppTint } from '@mantle/content-core/app-nav';
 import type { AppTint, MemberAppCard, MemberAppLevel, MemberHomeApp } from '@mantle/client-types';
 import type { AppPlace } from './app-folders';
+import { dataAccessOf } from './app-data-access';
 import { isReadAt, itemLevel, readAtSql } from './item-level';
 
 /** An app is used, not only read (run, tools, its database): an embed in a
@@ -137,6 +138,8 @@ export async function listMemberAppsPlaced(
     // The level it is read at: its own, or its folder's share when that is
     // more open (an admin app in a team folder runs, and writes, as team).
     const audience = itemLevel(r.audience, r.inheritedLevel) as MemberAppLevel;
+    // The member broker's own rule (db-broker: memberMayWriteAppData).
+    const mayWrite = memberMayWriteAppData({ audience, dataReadOnly: r.dataReadOnly === true });
     const d = (r.data ?? {}) as Record<string, unknown>;
     const description = (r.manifest as AppManifest | null)?.description;
     return [
@@ -148,10 +151,8 @@ export async function listMemberAppsPlaced(
         description: typeof description === 'string' && description.trim() ? description : null,
         audience,
         updatedAt: r.updatedAt.toISOString(),
-        dataReadOnly: !memberMayWriteAppData({
-          audience,
-          dataReadOnly: r.dataReadOnly === true,
-        }),
+        dataReadOnly: !mayWrite,
+        dataAccess: dataAccessOf(mayWrite),
       },
     ];
   });

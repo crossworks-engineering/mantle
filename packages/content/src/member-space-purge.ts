@@ -70,7 +70,10 @@ async function dueSpaces(cutoff: Date): Promise<string[]> {
 /** The private items of one space: no state row (an old item), or private
  *  and neither submitted, accepted nor TAKEN. A taken item is a member's work
  *  in an admin's space (audit F07): the purge of that admin's space never
- *  deletes it; the Review queue offers it again once its admin is gone. */
+ *  deletes it; the Review queue offers it again once its admin is gone.
+ *  A member-built app (team apps Phase 3) is not a SPACE_ITEM_KIND, so the
+ *  purge never deletes one, and a space that still holds one is never
+ *  emptied: apps are only ever removed by an admin. */
 function privateItems(spaceId: string) {
   return and(
     eq(nodes.ownerId, spaceId),

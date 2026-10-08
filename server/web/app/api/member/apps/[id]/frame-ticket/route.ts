@@ -23,10 +23,10 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
     );
   }
   const { id } = await ctx.params;
-  const app = await memberAppOr404(member.anchorId, id);
+  const app = await memberAppOr404(member.anchorId, id, member.loginId);
   if (app instanceof Response) return app;
   recordAppAccess({
-    ownerId: member.anchorId,
+    ownerId: app.ownerId,
     appNodeId: app.id,
     actorId: member.loginId,
     kind: 'auth',

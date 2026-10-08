@@ -1184,6 +1184,31 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     toolSlugs: ['app_data_list', 'app_data_schema', 'app_data_query', 'app_data_write'],
   },
   {
+    slug: 'my-apps-mcp',
+    name: 'Member-built apps over MCP',
+    description:
+      "Build a team member's OWN mini apps on their own MCP connection: create, write files, build, publish, set the schema and tools, snapshots, share with the team, submit for review. The apps live in the member's personal space and run tools at team rules at most (the author ceiling). Reads always; changes with the login's Write switch. Attached to no agent (admin level: the login MCP surface adds these tools itself, for members only, never through a group).",
+    toolSlugs: [
+      'my_app_guide',
+      'my_app_list',
+      'my_app_get',
+      'my_app_errors',
+      'my_app_snapshot_list',
+      'my_app_create',
+      'my_app_file_write',
+      'my_app_file_delete',
+      'my_app_build',
+      'my_app_publish',
+      'my_app_schema_set',
+      'my_app_tools_set',
+      'my_app_snapshot_create',
+      'my_app_snapshot_restore',
+      'my_app_share',
+      'my_app_submit',
+      'my_app_recall',
+    ],
+  },
+  {
     slug: 'team-read-admin',
     name: 'Team reads that need admin level',
     description:

@@ -130,12 +130,15 @@ export {
   type McpDataRole,
 } from './mcp-app-data';
 
+export { dataAccessOf, type AppDataAccess } from './app-data-access';
+
 export {
   SpaceAppError,
   acceptSpaceApp,
   authorSpaceApp,
   createSpaceApp,
   getRunnableSpaceApp,
+  getSpaceAppSubmission,
   listSpaceAppSubmissions,
   listSpaceApps,
   recallSpaceApp,

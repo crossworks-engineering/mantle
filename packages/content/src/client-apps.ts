@@ -21,6 +21,7 @@ import { projectAppIcon, projectAppTint } from '@mantle/content-core/app-nav';
 import type { AppTint, ClientAppCard } from '@mantle/client-types';
 import type { AppPlace } from './app-folders';
 import { isReadAt, readAtSql } from './item-level';
+import { dataAccessOf } from './app-data-access';
 
 /** An app is used, not only read (run, tools, its database): an embed in a
  *  shared item opens READING only, so an app named by an embed stays at its
@@ -105,6 +106,9 @@ export async function listClientAppsPlaced(
         description: typeof description === 'string' && description.trim() ? description : null,
         updatedAt: r.updatedAt.toISOString(),
         dataReadOnly: r.dataReadOnly === true,
+        // The client broker's rule: a client app is written unless
+        // informational.
+        dataAccess: dataAccessOf(r.dataReadOnly !== true),
       },
     ];
   });

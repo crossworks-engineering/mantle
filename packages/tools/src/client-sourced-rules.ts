@@ -87,6 +87,7 @@ const supersedes = (field: string) => (input: Input) =>
 const READS = 'reads only';
 const OUTWARD = 'sends outside the brain (confirm-gated as well)';
 const WEB = 'reads the web';
+const OWN_APP = "the caller's own app in their own space";
 const OWN_SPACE = "reads the caller's own space";
 const UNSEEN = 'it runs code or actions whose target its input does not name';
 const LATER = "a run's workers act later, outside this turn";
@@ -330,6 +331,21 @@ export const WRITE_RULES: Readonly<Record<string, WriteRule>> = {
   // it, but if one ever did, it writes the app's data and the brain tables
   // the app exports.
   app_data_write: { kind: 'write', apps: ['app_id'] },
+  // A member's own mini apps (team apps Phase 3): the caller's own app in
+  // their own space, private until they share or submit it; no agent turn
+  // holds them (the login MCP surface adds them for a member).
+  my_app_create: free(OWN_APP),
+  my_app_file_write: free(OWN_APP),
+  my_app_file_delete: free(OWN_APP),
+  my_app_build: free(OWN_APP),
+  my_app_publish: free(OWN_APP),
+  my_app_schema_set: free(OWN_APP),
+  my_app_tools_set: free(OWN_APP),
+  my_app_snapshot_create: free(OWN_APP),
+  my_app_snapshot_restore: free(OWN_APP),
+  my_app_share: free(OWN_APP),
+  my_app_submit: free(OWN_APP),
+  my_app_recall: free(OWN_APP),
   // Calls on a federated peer as the login it binds us to.
   peer_call: always(OUTWARD),
   peer_file_copy: always(OUTWARD),

@@ -183,6 +183,24 @@ describe('every in-app tool reaches the MCP surface', () => {
     app_data_schema: "a login's own MCP only; the owner surface has app_db_list",
     app_data_query: "a login's own MCP only; the owner surface has app_db_query",
     app_data_write: "a login's own MCP only; the owner surface has the app tools",
+    // A member's own apps (team apps Phase 3): the owner has the app_* tools.
+    my_app_guide: "a member's own MCP only; the owner surface has the app tools",
+    my_app_list: "a member's own MCP only; the owner surface has the app tools",
+    my_app_get: "a member's own MCP only; the owner surface has the app tools",
+    my_app_errors: "a member's own MCP only; the owner surface has the app tools",
+    my_app_snapshot_list: "a member's own MCP only; the owner surface has the app tools",
+    my_app_create: "a member's own MCP only; the owner surface has the app tools",
+    my_app_file_write: "a member's own MCP only; the owner surface has the app tools",
+    my_app_file_delete: "a member's own MCP only; the owner surface has the app tools",
+    my_app_build: "a member's own MCP only; the owner surface has the app tools",
+    my_app_publish: "a member's own MCP only; the owner surface has the app tools",
+    my_app_schema_set: "a member's own MCP only; the owner surface has the app tools",
+    my_app_tools_set: "a member's own MCP only; the owner surface has the app tools",
+    my_app_snapshot_create: "a member's own MCP only; the owner surface has the app tools",
+    my_app_snapshot_restore: "a member's own MCP only; the owner surface has the app tools",
+    my_app_share: "a member's own MCP only; the owner surface has the app tools",
+    my_app_submit: "a member's own MCP only; the owner surface has the app tools",
+    my_app_recall: "a member's own MCP only; the owner surface has the app tools",
   };
 
   it('exposes every builtin slug over stdio, except the documented ones', () => {

@@ -6,7 +6,7 @@
  * shares one. A CLIENT login runs apps at client level only (client logins
  * C6, /api/client/apps).
  */
-import type { AppTint } from '../app-nav';
+import type { AppDataAccess, AppTint } from '../app-nav';
 import type { AccessLevel } from './access';
 
 /** The app levels a member may run: team and below (never admin). */
@@ -27,6 +27,9 @@ export type MemberAppCard = {
    *  app answers 403 `{ ok: false, error, reason: 'read-only' }`. Absent from
    *  an older brain: read as `audience !== 'team'`. */
   dataReadOnly?: boolean;
+  /** The same, as the R and R/W pill shows it (team apps Phase 3). Absent
+   *  from an older brain: show no pill. */
+  dataAccess?: AppDataAccess;
 };
 
 /**
@@ -71,6 +74,9 @@ export type ClientAppCard = {
   description: string | null;
   updatedAt: string;
   dataReadOnly: boolean;
+  /** What the client may do with the app's data, as the R and R/W pill
+   *  shows it (team apps Phase 3). Absent from an older brain. */
+  dataAccess?: AppDataAccess;
 };
 
 /** GET /api/client/apps: the apps a client may run, by title. The run routes

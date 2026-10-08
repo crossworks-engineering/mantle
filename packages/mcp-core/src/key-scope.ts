@@ -37,6 +37,8 @@ const AREA_PREFIXES: ReadonlyArray<readonly [string, KeyArea]> = [
   ['contact_', 'contacts'],
   ['journal_', 'journal'],
   ['app_', 'apps'],
+  // A member's own mini apps (team apps Phase 3): the authoring area.
+  ['my_app_', 'apps'],
   ['entity_', 'search'],
 ];
 

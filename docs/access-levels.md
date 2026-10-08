@@ -486,6 +486,26 @@ outside a login reaches a team item.
   only) is a later release. What they serve beyond the item is already
   filtered by level (above).
 
+## 7b. Member-built apps and the author ceiling (team apps Phase 3)
+
+A member's app lives in their personal space (admin audience, as every
+space item). Its author and its sharing decide who runs it, not its level:
+the author while private, every member once shared with the team. The
+member routes find it with `getRunnableSpaceApp` on the admin pool, the
+rule written in the query (the team role cannot read a space).
+
+`apps.author_level` (migration 0235) is the AUTHOR CEILING: 'team' for a
+member's app, so `appToolLevel` never gives it admin rules, whoever runs
+it. It stays 'team' after an admin's accept unless the admin reviewed the
+declared tools ("trust its tools"). The level an app is accepted at is
+admin or team; client and public stay an admin's later choice.
+
+Every app list carries `dataAccess` ('read' or 'read_write'): what the
+viewer may do with the app's data, worked out with the rule its db broker
+applies (an admin always writes; a member by `memberMayWriteAppData`; a
+client a client app unless informational; a member-built app unless under
+review). The client shows it as the R and R/W pill and never derives it.
+
 ## 8. Clients in the database (client logins C1 to C5)
 
 What row security and the schema hold for the client tier, beyond the level

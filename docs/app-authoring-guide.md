@@ -629,6 +629,38 @@ PUBLISHED build only and never edit it.
   published build. `host.hub.get()` answers there too: sections are the
   newest team pages, and a section's `token` is the page id.
 
+## Members build apps (team apps Phase 3)
+
+A team member builds their own apps over their own MCP connection, with
+the `my_app_*` tools (Jason, 2026-10-08: apps work like Pages). The tools
+mirror the admin's `app_*` tools; read `my_app_guide` (this guide) first.
+
+- **Where it lives:** in the member's personal space, private. Only the
+  author runs it. No admin list shows a member's draft.
+- **The loop:** `my_app_create`, `my_app_file_write`, `my_app_build`,
+  `my_app_publish`. `my_app_schema_set` and `my_app_tools_set` declare the
+  database and the tools. `my_app_snapshot_*` and `my_app_errors` work as
+  for an admin, on the member's own app only.
+- **Share with the team:** `my_app_share` with `team`. Every member then
+  runs its published version from Mine > Apps and writes its data. No
+  approval, and the level does not change: the app stays in the space.
+- **Submit:** `my_app_submit` sends the PUBLISHED version to an admin. It is
+  frozen and its data is read only until the admin accepts or returns it.
+  `my_app_recall` takes it back.
+- **Accept (an admin):** Team admin > Review > Apps. The app moves into the
+  brain's Apps at admin or team level, with the same id, its data and its
+  history. Client and public are set later, by an admin, as for any app.
+- **The author ceiling:** a member-built app runs its tools at TEAM rules
+  at most, for every runner, an admin included (`apps.author_level`
+  'team'; every tool broker applies it through `appToolLevel`). So declare
+  read-only built-ins from an enabled team-level group, or connector tools
+  at team level or lower. `my_app_tools_set` warns for each tool those
+  rules refuse. An admin who reviewed the declared tools may accept with
+  "trust its tools", which lifts the ceiling.
+- **Writes need the Write switch** on the member's MCP. Reads
+  (`my_app_list`, `my_app_get`, `my_app_errors`, `my_app_snapshot_list`,
+  `my_app_guide`) do not. A client never gets these tools.
+
 ## Team Hub apps (a designated app as the members' home)
 
 A brain can designate one published app as its **home app**: member logins

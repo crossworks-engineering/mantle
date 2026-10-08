@@ -30,6 +30,7 @@ import { projectAppIcon, projectAppTint } from '@mantle/content-core/app-nav';
 import { reconcileAppMarks, reconcileAppNav } from './tree/apps-nav';
 import { recordItemOpened } from './tree/marks';
 import { listTreeFolders } from './tree/read';
+import { dataAccessOf } from './app-data-access';
 
 /** NOTIFY channel for any app-nav write (payload: anchor owner id). Consumed
  *  by server/web/lib/realtime.ts, which broadcasts it as type 'app-nav'. */
@@ -45,6 +46,10 @@ export async function notifyAppNavChanged(ownerId: string): Promise<void> {
   }
 }
 
+/** What an admin may do with an app's data: the owner db broker never
+ *  refuses an admin's write. */
+const ADMIN_DATA_ACCESS = dataAccessOf(true);
+
 /** Every app the owner has, slim, for navigation. Unpaginated on purpose: the
  *  sidebar needs the whole set to place and search it. */
 export async function listAppNavItems(ownerId: string): Promise<AppNavItem[]> {
@@ -58,6 +63,7 @@ export async function listAppNavItems(ownerId: string): Promise<AppNavItem[]> {
       manifest: apps.manifest,
       publishedBuild: apps.publishedBuild,
       draftBuild: apps.draftBuild,
+      mcpAccess: apps.mcpAccess,
     })
     .from(nodes)
     .leftJoin(apps, eq(apps.nodeId, nodes.id))
@@ -79,6 +85,11 @@ export async function listAppNavItems(ownerId: string): Promise<AppNavItem[]> {
       // frame-ticket route applies before it will render the app.
       hasBuild: r.publishedBuild?.ok === true || r.draftBuild?.ok === true,
       updatedAt: r.updatedAt.toISOString(),
+      // The R and R/W pill (team apps Phase 3): the admin's own broker
+      // writes every app, informational ones too (that flag binds members
+      // and clients), so an admin's sidebar reads and writes.
+      dataAccess: ADMIN_DATA_ACCESS,
+      mcpAccess: r.mcpAccess === true,
     };
   });
 }

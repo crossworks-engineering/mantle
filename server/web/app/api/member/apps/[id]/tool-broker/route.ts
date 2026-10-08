@@ -50,14 +50,17 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ ok: false, error: 'invalid input' }, { status: 400 });
   }
   const { id } = await ctx.params;
-  const app = await memberAppOr404(member.anchorId, id);
+  const app = await memberAppOr404(member.anchorId, id, member.loginId);
   if (app instanceof Response) return app;
 
   const { slug, input } = parsed.data;
-  const level = appToolLevel('team', app.audience);
+  // A member-built app (team apps Phase 3) comes back at team level: the
+  // author ceiling holds here too. The tools are the brain's, so the verdict
+  // and the dispatch keep the brain as owner.
+  const level = appToolLevel('team', app.audience, app.spaceApp ? 'team' : 'admin');
   const verdict = await appToolVerdict(level, member.anchorId, app.manifest.toolSlugs ?? [], slug);
   recordAppAccess({
-    ownerId: member.anchorId,
+    ownerId: app.ownerId,
     appNodeId: app.id,
     actorId: member.loginId,
     kind: 'tool',
@@ -70,7 +73,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   });
   const logError = (message: string, status: number) =>
     recordAppError({
-      ownerId: member.anchorId,
+      ownerId: app.ownerId,
       appNodeId: app.id,
       actorId: member.loginId,
       source: 'tool',

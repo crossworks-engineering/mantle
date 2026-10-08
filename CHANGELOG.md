@@ -4,6 +4,30 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: team apps Phase 3, members build apps
+
+A team member builds mini apps like Pages (plan page b6dd688e, section A).
+
+- `my_app_*` tools on a member's own MCP: create, write files, build,
+  publish, schema, tools, snapshots, errors, share, submit, recall. Reads
+  always; changes with the Write switch. Never a client's.
+- The app lives in the member's personal space: private, then shared with
+  the team (every member runs and writes it), then submitted (frozen) for
+  an admin to accept into the brain at admin or team level, or return.
+- The author ceiling (migration 0235, `apps.author_level`): a member's app
+  runs its tools at team rules at most, an admin's run included, unless an
+  admin accepts it with its tools reviewed.
+- Member routes: `GET /api/member/my-apps`, `POST .../:id/share`,
+  `.../submit`, `.../recall`, `GET .../:id/history`. The member run routes
+  (frame, db and tool brokers) run a member's own or team-shared app, keyed
+  to the author's space.
+- Admin routes: `GET /api/team-admin/app-submissions`, `GET .../:id` (the
+  published source), `POST .../:id/accept { level, trustTools }`,
+  `POST .../:id/return { note }`.
+- The space purge never deletes a member's app.
+- Every app list carries `dataAccess` ('read' or 'read_write') for the R
+  and R/W pill, and the sidebar carries `mcpAccess`.
+
 ## Unreleased: team apps Phase 2, connectors by level
 
 An MCP connector's level now decides who may use its tools, as the level on

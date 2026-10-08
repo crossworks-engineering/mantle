@@ -46,13 +46,16 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ ok: false, error: appDbBodyError(parsed.error) }, { status: 400 });
   }
   const { id } = await ctx.params;
-  const app = await memberAppOr404(member.anchorId, id);
+  const app = await memberAppOr404(member.anchorId, id, member.loginId);
   if (app instanceof Response) return app;
+  // A member-built app (team apps Phase 3) runs at team level: every member
+  // who may run it writes it, unless it is under review (read only). Its
+  // database is keyed to the author's space (`app.ownerId`).
 
   const { op, sql, params } = parsed.data;
   if (op === 'exec' && !memberMayWriteAppData(app)) {
     recordAppAccess({
-      ownerId: member.anchorId,
+      ownerId: app.ownerId,
       appNodeId: app.id,
       actorId: member.loginId,
       kind: 'db',
@@ -61,7 +64,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return readOnlyAppResponse('This app is read-only for team members.');
   }
   recordAppAccess({
-    ownerId: member.anchorId,
+    ownerId: app.ownerId,
     appNodeId: app.id,
     actorId: member.loginId,
     kind: 'db',
@@ -76,16 +79,16 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   try {
     const output =
       op === 'query'
-        ? await appDbQuery(member.anchorId, app.id, sql, params, app.manifest.sqlite, caller)
-        : await appDbExec(member.anchorId, app.id, sql, params, app.manifest.sqlite, caller);
+        ? await appDbQuery(app.ownerId, app.id, sql, params, app.manifest.sqlite, caller)
+        : await appDbExec(app.ownerId, app.id, sql, params, app.manifest.sqlite, caller);
     // A write may feed a linked app-table export: debounced, hash-gated, and
     // run for the brain (the sync is not a member act). Cost is bounded, not
     // zero (decided 2026-09-26); exported tables stay admin level.
-    if (op === 'exec') scheduleAppTableExportSync(member.anchorId, app.id);
+    if (op === 'exec' && !app.spaceApp) scheduleAppTableExportSync(member.anchorId, app.id);
     return NextResponse.json({ ok: true, output });
   } catch (err) {
     return appDbErrorResponse(err, 'member-db-broker', {
-      ownerId: member.anchorId,
+      ownerId: app.ownerId,
       appNodeId: app.id,
       actorId: member.loginId,
       via: 'member',

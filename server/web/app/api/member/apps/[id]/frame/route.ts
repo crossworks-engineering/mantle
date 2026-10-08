@@ -30,11 +30,13 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   if (!(await memberLoginActive(ticket.loginId))) {
     return new NextResponse('member session required', { status: 401 });
   }
-  const app = await memberAppOr404(ticket.ownerId, id);
+  const app = await memberAppOr404(ticket.ownerId, id, ticket.loginId);
   if (app instanceof Response) return new NextResponse('not found', { status: 404 });
   return renderAppFrame(req, app.publishedBuild, {
     viewer: {
-      ownerId: ticket.ownerId,
+      // The owner the app's rows are keyed to: the author's space for a
+      // member-built app (team apps Phase 3).
+      ownerId: app.ownerId,
       appId: app.id,
       subject: { kind: 'member', loginId: ticket.loginId },
     },

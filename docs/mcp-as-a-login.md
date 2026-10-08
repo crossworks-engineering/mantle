@@ -106,6 +106,17 @@ system (`dispatchMcp`), so the credential stays in the vault. Members see
 the connectors open to them in their own Settings > MCP
 (`GET /api/member/mcp` `connectors`).
 
+## A member's own apps (team apps Phase 3)
+
+A member's MCP also lists the `my_app_*` tools
+(`packages/tools/src/builtins-my-apps.ts`): the reads always, the changes
+with the Write switch. A client never gets them. They act only on the
+member's own apps, found by the author's row in the member's own space
+(`authorSpaceApp`), and run as the system with the space as owner, so they
+never reach a brain app. Key area: `apps` (prefix `my_app_`). The app rules
+(private, shared, submitted, accepted, the author ceiling) are in
+[app-authoring-guide.md](app-authoring-guide.md), "Members build apps".
+
 ## A member's own MCP screen
 
 `GET /api/member/mcp` answers a member's view of Settings > MCP: the box

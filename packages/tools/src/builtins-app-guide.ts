@@ -15,7 +15,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { docsRoot } from '@mantle/files';
-import type { BuiltinToolDef } from './types';
+import type { BuiltinToolDef, ToolHandlerResult } from './types';
 import { str } from './coerce';
 
 export const APP_GUIDE_FILE = 'app-authoring-guide.md';
@@ -79,6 +79,32 @@ export function findGuideSections(sections: GuideSection[], query: string): Guid
   return sections.filter((s) => norm(s.heading).includes(q));
 }
 
+/** The guide, whole or one section: shared with `my_app_guide` (a member's
+ *  own MCP, team apps Phase 3). */
+export async function appGuideHandler(input: Record<string, unknown>): Promise<ToolHandlerResult> {
+  const md = await readGuide();
+  if (md === null) {
+    return {
+      ok: false,
+      error: `The app authoring guide (${APP_GUIDE_FILE}) is not on this server. Check MANTLE_DOCS_ROOT.`,
+    };
+  }
+  const section = str(input.section).trim();
+  if (!section) return { ok: true, output: { guide: md } };
+  const sections = splitGuideSections(md);
+  const hits = findGuideSections(sections, section);
+  if (hits.length === 0) {
+    return {
+      ok: false,
+      error: `No section matches '${section}'. Sections: ${sections.map((s) => s.heading).join('; ')}.`,
+    };
+  }
+  return {
+    ok: true,
+    output: { section: hits.map((s) => s.heading), text: hits.map((s) => s.text).join('\n\n') },
+  };
+}
+
 const app_authoring_guide: BuiltinToolDef = {
   slug: 'app_authoring_guide',
   readOnly: true,
@@ -96,29 +122,7 @@ const app_authoring_guide: BuiltinToolDef = {
       },
     },
   },
-  handler: async (input) => {
-    const md = await readGuide();
-    if (md === null) {
-      return {
-        ok: false,
-        error: `The app authoring guide (${APP_GUIDE_FILE}) is not on this server. Check MANTLE_DOCS_ROOT.`,
-      };
-    }
-    const section = str(input.section).trim();
-    if (!section) return { ok: true, output: { guide: md } };
-    const sections = splitGuideSections(md);
-    const hits = findGuideSections(sections, section);
-    if (hits.length === 0) {
-      return {
-        ok: false,
-        error: `No section matches '${section}'. Sections: ${sections.map((s) => s.heading).join('; ')}.`,
-      };
-    }
-    return {
-      ok: true,
-      output: { section: hits.map((s) => s.heading), text: hits.map((s) => s.text).join('\n\n') },
-    };
-  },
+  handler: (input) => appGuideHandler(input),
 };
 
 export const APP_GUIDE_TOOLS: BuiltinToolDef[] = [app_authoring_guide];

@@ -148,6 +148,12 @@ export {
   APP_DATA_READ_TOOL_SLUGS,
   APP_DATA_WRITE_TOOL_SLUGS,
 } from './builtins-app-data';
+export {
+  MY_APP_TOOLS,
+  MY_APP_READ_TOOL_SLUGS,
+  MY_APP_WRITE_TOOL_SLUGS,
+  MY_APPS_MAX,
+} from './builtins-my-apps';
 export { CLIENT_TOOLS } from './builtins-client';
 export { CLIENT_TURN_TOOL_SLUGS } from './client-turn-tools';
 export { RESEARCH_TOOLS, resolveOpenRouterKey } from './builtins-research';

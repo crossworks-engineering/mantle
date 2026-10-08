@@ -100,6 +100,13 @@ export type AppOpenStat = { n: number; at: string };
 
 /** Slim app row for navigation surfaces: everything the tree needs to render
  *  and search, nothing it doesn't. */
+/**
+ * What the VIEWER may do with an app's data (team apps Phase 3): read only,
+ * or read and change. The brain works it out per viewer with the same rule
+ * its database brokers apply; a client only shows it (the R and R/W pill).
+ */
+export type AppDataAccess = 'read' | 'read_write';
+
 export type AppNavItem = {
   id: string;
   title: string;
@@ -111,6 +118,13 @@ export type AppNavItem = {
    *  Differs from AppRow.hasBuild, which is published-only. */
   hasBuild: boolean;
   updatedAt: string;
+  /** What the admin viewing the sidebar may do with the app's data: the
+   *  owner broker always writes, so 'read_write'. Absent from an older brain
+   *  (show no pill). */
+  dataAccess?: AppDataAccess;
+  /** The app's MCP access switch (team apps Phase 1): members' and clients'
+   *  MCP may reach its data. Absent from an older brain. */
+  mcpAccess?: boolean;
 };
 
 /** GET /api/app-nav — the whole sidebar in one round-trip. `nav` is already

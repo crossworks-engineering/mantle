@@ -43,8 +43,11 @@ import {
   type BuildRef,
   type ViewerLevel,
 } from '@mantle/db';
-import { APPS_ROOT_LABEL, createApp, ensureAppsRoot, type AppDetail } from './apps';
+import { APPS_ROOT_LABEL, createApp, ensureAppsRoot, getApp, type AppDetail } from './apps';
 import { notifyAppNavChanged } from './app-nav';
+import { projectAppIcon, projectAppTint } from '@mantle/content-core/app-nav';
+import type { AppTint } from '@mantle/client-types';
+import { dataAccessOf, type AppDataAccess } from './app-data-access';
 
 /** The member a call acts for: their login and their own personal space,
  *  both derived by the server. */
@@ -156,6 +159,9 @@ export type SpaceAppCard = {
   returnedNote: string | null;
   /** A green published build: it runs. */
   runnable: boolean;
+  /** What the viewer may do with its data (the R and R/W pill): its
+   *  runners change it unless it is under review. */
+  dataAccess: AppDataAccess;
   /** Unpublished changes (a draft or a build not yet published). */
   hasDraft: boolean;
   version: number;
@@ -216,6 +222,7 @@ export async function listSpaceApps(author: SpaceAppAuthor): Promise<SpaceAppCar
       reviewState: r.reviewState,
       returnedNote: mine ? r.returnedNote : null,
       runnable: !!(r.publishedBuild as BuildRef | null)?.ok,
+      dataAccess: dataAccessOf(r.reviewState !== 'submitted'),
       hasDraft: mine ? r.hasDraft === true : false,
       version: r.version,
       updatedAt: r.updatedAt.toISOString(),
@@ -341,6 +348,8 @@ export async function recallSpaceApp(
 export type RunnableSpaceApp = {
   id: string;
   title: string;
+  icon: string | null;
+  color: AppTint | null;
   /** The app's owner: the author's personal space (its database is keyed
    *  to it). */
   ownerId: string;
@@ -367,6 +376,7 @@ export async function getRunnableSpaceApp(
       .select({
         id: nodes.id,
         title: nodes.title,
+        data: nodes.data,
         ownerId: nodes.ownerId,
         manifest: apps.manifest,
         publishedBuild: apps.publishedBuild,
@@ -391,9 +401,12 @@ export async function getRunnableSpaceApp(
       .limit(1),
   );
   if (!row?.publishedBuild?.ok) return null;
+  const d = (row.data ?? {}) as Record<string, unknown>;
   return {
     id: row.id,
     title: row.title,
+    icon: projectAppIcon(d.icon) ?? null,
+    color: projectAppTint(d.color) ?? null,
     ownerId: row.ownerId,
     manifest: row.manifest ?? {},
     publishedBuild: row.publishedBuild,
@@ -459,6 +472,29 @@ export async function listSpaceAppSubmissions(): Promise<SpaceAppSubmission[]> {
       declaredTools: m.toolSlugs ?? [],
     };
   });
+}
+
+/**
+ * One submitted member app with its PUBLISHED source, for the admin's review
+ * (what will run once accepted), or null when it is not waiting for review.
+ */
+export async function getSpaceAppSubmission(
+  appId: string,
+): Promise<(SpaceAppSubmission & { entry: string; files: Record<string, string> }) | null> {
+  const queue = await listSpaceAppSubmissions();
+  const item = queue.find((s) => s.id === appId);
+  if (!item) return null;
+  const [row] = await asSystem(() =>
+    db
+      .select({ ownerId: nodes.ownerId })
+      .from(nodes)
+      .where(and(eq(nodes.id, appId), eq(nodes.type, 'app')))
+      .limit(1),
+  );
+  if (!row) return null;
+  const app = await asSystem(() => getApp(row.ownerId, appId));
+  if (!app) return null;
+  return { ...item, entry: app.source.entry, files: app.source.files };
 }
 
 /** The levels an admin may accept a member's app at. Client and public come

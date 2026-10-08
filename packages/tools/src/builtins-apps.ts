@@ -534,7 +534,7 @@ const app_tools_set: BuiltinToolDef = {
   preconditions: APP_ID_PRE,
   name: "Declare a mini app's data tools",
   description:
-    'Set the list of api_tool slugs this app may call through the host bridge (host.tools.call). This IS the runtime allowlist — the host refuses any slug not declared here. Each slug must be an existing tool you own (build it first with the `toolsmith` agent or the API Console). Replaces the current list. Members running a team-level app get read-only built-ins from an enabled team-level group; a client-level app gets only the client_shared_* tools. Outside tools: a connector tool by its connector level, an http tool by External access. An open share link calls no tools. The result warns for each declared tool the app level refuses.',
+    'Set the list of api_tool slugs this app may call through the host bridge (host.tools.call). This IS the runtime allowlist — the host refuses any slug not declared here. Each slug must be an existing tool you own (build it first with the `toolsmith` agent or the API Console). Replaces the current list. Members running a team-level app get read-only built-ins from an enabled team-level group; a client-level app gets only the client tools, such as `client_shared_list`. Outside tools: a connector tool by its connector level, an http tool by External access. An open share link calls no tools. The result warns for each declared tool the app level refuses.',
   inputSchema: {
     type: 'object',
     properties: {
