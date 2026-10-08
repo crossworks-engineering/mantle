@@ -282,7 +282,8 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
     // The log is written best effort, after the answer: give it a moment.
     await new Promise((r) => setTimeout(r, 300));
     const logs = await admin`select actor_id, detail from app_access_log
-      where app_node_id = ${id} and detail->>'via' = 'mcp' and detail->>'op' = 'exec'
+      where app_node_id = ${id} and kind = 'db' and detail->>'via' = 'mcp'
+        and detail->>'op' = 'exec' and detail->>'refused' is null
       order by created_at`;
     expect(logs.length).toBeGreaterThanOrEqual(2);
     expect(logs[0]?.actor_id).toBe(member);
