@@ -390,7 +390,7 @@ services:
   # move or hardlink: RustFS rewrites its data dir on first start
   # (.minio.sys -> .rustfs.sys), which would break the rollback.
   objectstore_init:
-    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-rustfs:${RUSTFS_IMAGE_TAG:-1.0.0}
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-rustfs:${RUSTFS_IMAGE_TAG:-1.0.1}
     container_name: mantle_objectstore_init
     restart: 'no'
     user: '0:0'
@@ -429,7 +429,7 @@ services:
     # would land mid-update. Our mirror of rustfs/rustfs, by digest
     # (infra/rustfs/IMAGE, .github/workflows/rustfs-image.yml), so an upstream
     # repo vanishing (the MinIO lesson) cannot break a pull. Override via env.
-    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-rustfs:${RUSTFS_IMAGE_TAG:-1.0.0}
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-rustfs:${RUSTFS_IMAGE_TAG:-1.0.1}
     container_name: mantle_objectstore
     restart: unless-stopped
     logging: *default-logging

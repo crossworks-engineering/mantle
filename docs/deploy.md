@@ -489,8 +489,8 @@ the only image still published is the licensed AIStor build).
   prepares `${MANTLE_DATA_DIR}/rustfs` (see the copy below) and hands it to UID
   10001, the user RustFS runs as.
 - `objectstore` (container `mantle_objectstore`), image
-  `titanwest/mantle-rustfs:1.0.0`: our digest-pinned mirror of
-  `rustfs/rustfs:1.0.0` (`infra/rustfs/IMAGE`, built by
+  `titanwest/mantle-rustfs:1.0.1`: our digest-pinned mirror of
+  `rustfs/rustfs:1.0.1` (`infra/rustfs/IMAGE`, built by
   `.github/workflows/rustfs-image.yml`), so an upstream repo vanishing cannot
   break a pull. S3 on `:9000` inside the compose network only, the web console
   off, `mem_limit: 1g`. Override the tag with `RUSTFS_IMAGE_TAG`.

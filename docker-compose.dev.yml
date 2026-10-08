@@ -56,7 +56,7 @@ services:
   # move or hardlink: RustFS rewrites its data dir on first start
   # (.minio.sys -> .rustfs.sys), which would break the rollback.
   objectstore_init:
-    image: titanwest/mantle-rustfs:1.0.0
+    image: titanwest/mantle-rustfs:1.0.1
     container_name: mantle_dev_objectstore_init
     restart: "no"
     user: "0:0"
@@ -92,7 +92,7 @@ services:
 
   objectstore:
     # Same pinned mirror as docker-compose.yml.
-    image: titanwest/mantle-rustfs:1.0.0
+    image: titanwest/mantle-rustfs:1.0.1
     container_name: mantle_dev_objectstore
     restart: unless-stopped
     # RustFS disables its file-descriptor cache below this limit (it warns).
