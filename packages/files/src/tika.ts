@@ -9,7 +9,7 @@ import { env } from '@mantle/config';
  * `.odt` / `.ods` / `.odp` (LibreOffice), `.pptx` / `.ppt` (PowerPoint),
  * `.doc` (legacy Word), `.rtf`, `.epub`, and whatever else Tika knows about.
  *
- * Self-hosted (`apache/tika:3.3.0.0` in docker-compose), so bytes never leave
+ * Self-hosted (`apache/tika:4.1.0-1` in docker-compose), so bytes never leave
  * the VPS — same privacy property as the rest of the stack. Stateless: a
  * crash/restart loses no state.
  *
@@ -46,11 +46,73 @@ function tikaUrl(): string {
   return (configured && configured.length > 0 ? configured : DEFAULT_TIKA_URL).replace(/\/$/, '');
 }
 
+/** Tika 4 names the output format in the path; the bare `/tika` now answers
+ *  Markdown and ignores `Accept`. */
+const TIKA4_PATH = { 'text/plain': '/tika/text', 'text/html': '/tika/html' } as const;
+type TikaAccept = keyof typeof TIKA4_PATH;
+
+/** Longest single pause we take on a 429 before asking again. */
+const MAX_BACKOFF_MS = 5_000;
+
+/**
+ * PUT with Tika 4's backpressure honoured. Tika 4 parses in a fixed pool of
+ * forked JVMs (`pipes.numClients`, 1 in our compose), so a second document
+ * that arrives while the pool is busy is NOT a failure: the server answers
+ * 429 with `Retry-After`. We wait and ask again until the caller's deadline.
+ * Without this, two uploads landing together would turn the second one into
+ * a silent `no_text_layer` skip. Every other status goes back to the caller.
+ */
+async function putUntilServed(
+  url: string,
+  bytes: Buffer,
+  headers: Record<string, string>,
+  signal: AbortSignal,
+  deadline: number,
+): Promise<Response> {
+  for (;;) {
+    // TS 5.9 made Uint8Array generic in `ArrayBufferLike`, which doesn't
+    // structurally match the DOM lib's `BodyInit` (it expects
+    // `Uint8Array<ArrayBuffer>` specifically). The runtime accepts Buffer
+    // directly (Node's undici fetch handles it natively), so the safest
+    // fix is the type-only escape hatch through `unknown`. No copy, no
+    // wrapping in Blob.
+    const res = await fetch(url, {
+      method: 'PUT',
+      body: bytes as unknown as BodyInit,
+      headers,
+      signal,
+    });
+    if (res.status !== 429) return res;
+    await res.body?.cancel();
+    const retryAfterS = Number(res.headers.get('retry-after'));
+    const waitMs = Math.min(
+      Number.isFinite(retryAfterS) && retryAfterS > 0 ? retryAfterS * 1000 : 1_000,
+      MAX_BACKOFF_MS,
+    );
+    if (Date.now() + waitMs >= deadline) return res;
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
+  }
+}
+
+/** Did a Tika 4 raw endpoint answer? Those always carry a `text/*` type. A
+ *  Tika 3 server also has `/tika/text` and `/tika/html`, but there they mean
+ *  "metadata + content as JSON", and its 422 has no body type at all. */
+function isTika4RawAnswer(res: Response): boolean {
+  return (res.headers.get('content-type') ?? '').toLowerCase().startsWith('text/');
+}
+
 /**
  * Send bytes to Tika and get plain text back. Returns `''` on any failure —
  * Tika down, timeout, non-2xx response (with the exception below), network
  * blip, unsupported bytes — so the caller (parseDocumentBytes) can fall
  * through to the standard "no extractable text" path.
+ *
+ * **Tika 4 first, Tika 3 as the fallback.** The 4.x call is `PUT /tika/text`
+ * (or `/tika/html`): 4.x routes on the path and ignores `Accept`, so the old
+ * `PUT /tika` + `Accept: text/plain` would now come back as Markdown. When the
+ * server turns out to be a 3.x one (see `isTika4RawAnswer`) the same bytes go
+ * again the 3.x way, `PUT /tika` with `Accept`. That keeps a box whose Tika
+ * container has not rolled yet working, at the cost of one wasted parse.
  *
  * **HTTP 422 with body** is treated as PARTIAL SUCCESS. Tika's
  * SecureContentHandler raises on inputs that expand past its built-in
@@ -60,12 +122,15 @@ function tikaUrl(): string {
  * 1 MB body is mostly repeated Lorem ipsum trips the ratio and silently
  * indexed as just its filename. We now ACCEPT the partial body when it's
  * under MAX_PARTIAL_BODY_BYTES — large enough for any genuine document,
- * small enough that a true zip bomb can't flood the LLM/embedder.
+ * small enough that a true zip bomb can't flood the LLM/embedder. Tika 4
+ * keeps this contract on its raw endpoints (its other errors are JSON
+ * bodies on 400/413/429/503, none of which we salvage).
  *
  * `mimeType` is a hint passed as the request's `Content-Type`. Tika
  * auto-detects from magic bytes when omitted, but supplying the type when we
  * know it (from the file extension) helps disambiguation on tricky formats
- * like .doc vs .docx.
+ * like .doc vs .docx. Tika 4 treats it as a soft hint: it is kept only when
+ * it agrees with (or refines) what the bytes say.
  *
  * `accept` picks Tika's rendering. The default `text/plain` is what every
  * text-extraction caller wants. `text/html` asks for Tika's XHTML instead,
@@ -75,26 +140,33 @@ function tikaUrl(): string {
  */
 export async function parseTikaBytes(
   bytes: Buffer,
-  opts?: { mimeType?: string; timeoutMs?: number; accept?: 'text/plain' | 'text/html' },
+  opts?: { mimeType?: string; timeoutMs?: number; accept?: TikaAccept },
 ): Promise<string> {
-  const url = `${tikaUrl()}/tika`;
+  const accept = opts?.accept ?? 'text/plain';
+  const timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const deadline = Date.now() + timeoutMs;
   const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
   try {
-    const headers: Record<string, string> = { Accept: opts?.accept ?? 'text/plain' };
-    if (opts?.mimeType) headers['Content-Type'] = opts.mimeType;
-    // TS 5.9 made Uint8Array generic in `ArrayBufferLike`, which doesn't
-    // structurally match the DOM lib's `BodyInit` (it expects
-    // `Uint8Array<ArrayBuffer>` specifically). The runtime accepts Buffer
-    // directly — Node's undici fetch handles it natively — so the safest
-    // fix is the type-only escape hatch through `unknown`. No copy, no
-    // wrapping in Blob.
-    const res = await fetch(url, {
-      method: 'PUT',
-      body: bytes as unknown as BodyInit,
-      headers,
-      signal: ac.signal,
-    });
+    const contentHeaders: Record<string, string> = {};
+    if (opts?.mimeType) contentHeaders['Content-Type'] = opts.mimeType;
+    let res = await putUntilServed(
+      `${tikaUrl()}${TIKA4_PATH[accept]}`,
+      bytes,
+      contentHeaders,
+      ac.signal,
+      deadline,
+    );
+    if ((res.ok || res.status === 422) && !isTika4RawAnswer(res)) {
+      await res.body?.cancel();
+      res = await putUntilServed(
+        `${tikaUrl()}/tika`,
+        bytes,
+        { ...contentHeaders, Accept: accept },
+        ac.signal,
+        deadline,
+      );
+    }
     if (res.ok) return (await res.text()).trim();
     // Status 422 with a non-empty body = Tika hit a safety guard mid-parse
     // (zip-bomb ratio, max-output-chars, …) but managed to stream useful
@@ -120,10 +192,18 @@ export async function parseTikaBytes(
  * reaches tier 2.
  *
  * Tika's `/unpack/all` endpoint returns a ZIP of the document's embedded
- * resources: the picture parts plus two synthetic entries, `__TEXT__` (the
- * extracted text) and `__METADATA__`, which we drop. This capability has been
- * sitting in the stack unused since Tika was introduced — same self-hosted
- * container, same never-leaves-the-box property as the text path.
+ * resources. The two major versions lay that ZIP out differently:
+ *
+ *   - Tika 3: the parts under their own names (`docProps/thumbnail.jpeg`),
+ *     plus two synthetic entries, `__TEXT__` and `__METADATA__`.
+ *   - Tika 4: numbered entries (`1.jpg`, `2.png`), each with a
+ *     `<name>.metadata.json` sidecar, and the container itself as entry
+ *     `0.<ext>`. The real part name only survives in the sidecar.
+ *
+ * `unpackedImageEntries` reads both, so a box whose Tika has not rolled yet
+ * still gets its images. This capability has been sitting in the stack
+ * unused since Tika was introduced: same self-hosted container, same
+ * never-leaves-the-box property as the text path.
  *
  * **No document order.** The endpoint hands back a bag of parts with no
  * indication of where each appeared, so ordinals here are archive order,
@@ -140,21 +220,18 @@ export async function unpackTikaImages(
   opts?: { timeoutMs?: number },
 ): Promise<import('./embedded-images').EmbeddedImage[]> {
   const url = `${tikaUrl()}/unpack/all`;
+  const timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
   try {
     const { mimeForExt } = await import('./slug');
-    const res = await fetch(url, {
-      method: 'PUT',
-      body: bytes as unknown as BodyInit,
-      headers: {
-        'Content-Type': mimeForExt(ext),
-        // Off by default in PDFBox, and harmless for every other format.
-        'X-Tika-PDFextractInlineImages': 'true',
-        'X-Tika-PDFextractUniqueInlineImagesOnly': 'true',
-      },
-      signal: ac.signal,
-    });
+    const res = await putUntilServed(
+      url,
+      bytes,
+      { 'Content-Type': mimeForExt(ext) },
+      ac.signal,
+      Date.now() + timeoutMs,
+    );
     if (!res.ok) return [];
     const archive = Buffer.from(await res.arrayBuffer());
     if (archive.length === 0) return [];
@@ -163,11 +240,10 @@ export async function unpackTikaImages(
     const JSZip = (await import('jszip')).default;
     const zip = await JSZip.loadAsync(archive);
     const out: import('./embedded-images').EmbeddedImage[] = [];
-    for (const name of Object.keys(zip.files).sort()) {
-      // Tika's synthetic entries, and the Office-generated preview thumbnail
-      // that is never part of the document's content.
-      if (name.startsWith('__')) continue;
-      if (/(^|\/)thumbnail\.\w+$/i.test(name)) continue;
+    for (const { name, partName } of await unpackedImageEntries(zip)) {
+      // The Office-generated preview thumbnail is never part of the
+      // document's content.
+      if (/(^|\/)thumbnail\.\w+$/i.test(partName)) continue;
       const entry = zip.files[name];
       if (!entry || entry.dir) continue;
       const imgBytes = Buffer.from(await entry.async('uint8array'));
@@ -185,6 +261,54 @@ export async function unpackTikaImages(
   } finally {
     clearTimeout(timer);
   }
+}
+
+type UnpackZip = Awaited<ReturnType<typeof import('jszip').loadAsync>>;
+
+/**
+ * The embedded parts in an `/unpack/all` ZIP, in archive order, each with the
+ * part name the document gave it (what the thumbnail filter looks at).
+ *
+ * A Tika 4 archive is recognised by its `.metadata.json` sidecars. In it the
+ * container is the one entry whose sidecar has no `tk:embedded-id`, and is
+ * dropped; an entry without a readable sidecar keeps its numbered name. In a
+ * Tika 3 archive the entry name IS the part name, and the synthetic `__…`
+ * entries are dropped.
+ */
+async function unpackedImageEntries(
+  zip: UnpackZip,
+): Promise<Array<{ name: string; partName: string }>> {
+  const names = Object.keys(zip.files).sort((a, b) => {
+    // Tika 4 numbers entries `1.jpg … 10.png`; keep them in numeric order.
+    const na = Number(/^(\d+)\./.exec(a)?.[1]);
+    const nb = Number(/^(\d+)\./.exec(b)?.[1]);
+    return Number.isFinite(na) && Number.isFinite(nb) && na !== nb ? na - nb : a.localeCompare(b);
+  });
+  const SIDECAR = '.metadata.json';
+  if (!names.some((n) => n.endsWith(SIDECAR))) {
+    return names.filter((n) => !n.startsWith('__')).map((n) => ({ name: n, partName: n }));
+  }
+  const out: Array<{ name: string; partName: string }> = [];
+  for (const name of names) {
+    if (name.endsWith(SIDECAR)) continue;
+    let meta: Record<string, unknown> | null = null;
+    try {
+      const sidecar = await zip.file(name + SIDECAR)?.async('string');
+      meta = sidecar ? (JSON.parse(sidecar) as Record<string, unknown>) : null;
+    } catch {
+      // Unreadable sidecar: keep the part, judged by its numbered name only.
+    }
+    // The container itself (Tika 4 always includes it): no embedded id.
+    if (meta && meta['tk:embedded-id'] == null) continue;
+    const partName =
+      [
+        meta?.['tk:embedded-relationship-id'],
+        meta?.['tk:embedded-resource-path'],
+        meta?.['tk:resource-name'],
+      ].find((v): v is string => typeof v === 'string' && v.length > 0) ?? name;
+    out.push({ name, partName });
+  }
+  return out;
 }
 
 /**
@@ -208,7 +332,7 @@ export async function tikaIsUp(timeoutMs = 2_000): Promise<boolean> {
 
 /**
  * Health probe variant that also returns Tika's reported version string
- * ("Apache Tika 3.3.0"). Useful for the operator dashboard — at-a-glance
+ * ("Apache Tika 4.1.0"). Useful for the operator dashboard: at-a-glance
  * "up and on the expected version" without a second round-trip. Returns
  * null on any failure (down, timeout, non-2xx, empty body) — same
  * never-throws contract as the rest of this module.

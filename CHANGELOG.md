@@ -4,6 +4,31 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: Apache Tika 4
+
+The document helper moves from `apache/tika:3.3.1.0` to `apache/tika:4.1.0-1`
+(Java 17+, process-isolated parsing). The roll needs nothing by hand: the
+compose file carries the new image and an inline JSON config.
+
+- Text comes from `PUT /tika/text` (and `/tika/html` for the legacy `.xls`
+  conversion). Tika 4 ignores `Accept`, and its bare `/tika` returns
+  Markdown. Against a Tika 3 server the client asks again the 3.x way, so a
+  box whose Tika container has not rolled keeps parsing.
+- Tika 4 parses in a fixed pool of forked JVMs. The config sets one fork with
+  a 1 GB heap, a 60 s parse timeout (the 4.x default is one hour) and only the
+  endpoints Mantle calls. A document that arrives while the fork is busy gets
+  a 429, which the client now waits out instead of indexing nothing.
+- `/unpack/all` has a new ZIP layout (numbered entries with metadata
+  sidecars, plus the container itself). Embedded images from legacy formats
+  read both layouts.
+- The container cap rises from 1.5 GB to 2 GB. Measured: idle about 250 MB
+  (3.x about 230 MB), peak about 1.2 GB on a 43 MB HTML file (3.x about
+  0.5 GB). The image is 190 MB compressed (3.x 178 MB).
+- PowerPoint text is now read in-process (`parsePptx`, parse route `pptx`).
+  Tika 4 orders slides by relationship id as a string, so any deck past nine
+  slides came back shuffled (4.0.0, 4.1.0 and the 4.2.0 snapshot alike).
+  Tika stays the fallback for a deck the reader cannot open.
+
 ## Unreleased: the fresh-install look
 
 A FRESH install now wears the Jackdaw colour theme, Lorelei avatars and the

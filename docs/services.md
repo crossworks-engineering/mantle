@@ -9,7 +9,7 @@ vitals pills on the dashboard show each one's state and link there:
 | **Sandboxes**      | Isolated workspaces where the coder and app agents run code, build apps and test packages ([sandboxes.md](sandboxes.md)).   | about 430 MB (the sandbox base image; the supervisor uses the server image the box already has) | 512 MB, plus up to 1 GB for each running sandbox (3 at a time) |
 | **Media**          | Transcripts from video and audio (links or files), and CAD drawings: DWF, DWG and DXF ([video-ingest.md](video-ingest.md)). | about 300 MB                                                                                    | up to 1 GB (3 GB is advised for large DWF sets)                |
 | **Local embedder** | The bundled EmbeddingGemma embedder (ollama), so indexed text never leaves the box ([embeddings.md](embeddings.md)).        | about 3.9 GB (the ollama image plus the model)                                                  | up to 2 GB                                                     |
-| **Helpers**        | Core boxes only: Tika (rare file types) and the headless browser (PDF export, drawing pictures in exports).                 | about 1.2 GB                                                                                    | up to 3 GB (1.5 GB each)                                       |
+| **Helpers**        | Core boxes only: Tika (rare file types) and the headless browser (PDF export, drawing pictures in exports).                 | about 1.2 GB                                                                                    | up to 3.5 GB (Tika 2 GB, the browser 1.5 GB)                   |
 
 All four are compose **profiles**, and each service name is its profile
 (`sandboxes`, `media`, `local-embedder`, `helpers`). A switch changes the

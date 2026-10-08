@@ -264,10 +264,11 @@ describe('parserRouteForExt', () => {
     }
   });
 
-  it('routes every TIKA_EXTS extension to tika (tier 2)', () => {
+  it('routes every TIKA_EXTS extension to tika (tier 2), except pptx', () => {
     // Whatever Tika handles today — ensures no entry sneaks in without a route.
+    // pptx stays in TIKA_EXTS as the fallback, but reads in-process first.
     for (const ext of TIKA_EXTS) {
-      expect(parserRouteForExt(ext)).toBe('tika');
+      expect(parserRouteForExt(ext)).toBe(ext === 'pptx' ? 'pptx' : 'tika');
     }
   });
 
@@ -275,8 +276,13 @@ describe('parserRouteForExt', () => {
     // Belt-and-braces: the exact set from the file-ingestion.md changelog.
     // If someone narrows TIKA_EXTS in the future, this fails loudly.
     for (const ext of ['odt', 'ods', 'odp', 'pptx', 'ppt', 'doc', 'rtf', 'epub', 'vsdx', 'vsd']) {
-      expect(parserRouteForExt(ext)).toBe('tika');
+      expect(TIKA_EXTS.has(ext)).toBe(true);
+      if (ext !== 'pptx') expect(parserRouteForExt(ext)).toBe('tika');
     }
+  });
+
+  it('routes pptx to the in-process reader (Tika 4 shuffles slide order)', () => {
+    expect(parserRouteForExt('pptx')).toBe('pptx');
   });
 
   it('routes .xml to tika rather than leaving it unreadable', () => {

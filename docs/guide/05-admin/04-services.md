@@ -7,7 +7,7 @@ Switch the optional parts of a box on and off in **Settings > Services**. Switch
 | **Sandboxes** | Isolated workspaces where agents run code, build apps and test packages. | about 430 MB | 512 MB, plus up to 1 GB per running sandbox |
 | **Media** | Transcripts from video and audio, and reading CAD drawings (DWF, DWG, DXF). | about 300 MB | up to 1 GB |
 | **Local embedder** | Search vectors made on the box, so indexed text never leaves it. | about 3.9 GB | up to 2 GB |
-| **Helpers** | Rare file types and PDF export. Shown only on a small core box; a full box always runs them. | about 1.2 GB | up to 3 GB |
+| **Helpers** | Rare file types and PDF export. Shown only on a small core box; a full box always runs them. | about 1.2 GB | up to 3.5 GB |
 
 ## Before you start
 

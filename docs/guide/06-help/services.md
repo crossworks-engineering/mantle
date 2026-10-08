@@ -12,7 +12,7 @@ it.
 | **Sandboxes** | Containers where the coder and app agents run code and build apps | about 430 MB | 512 MB, plus up to 1 GB per running sandbox |
 | **Media** | Transcripts from video and audio; reads CAD drawings (DWF, DWG, DXF) | about 300 MB | up to 1 GB (3 GB for large DWF sets) |
 | **Local embedder** | Makes search vectors on this box, so indexed text never leaves it | about 3.9 GB | up to 2 GB |
-| **Helpers** | Reads rare file types (ODT, PPTX, DOC, RTF) and makes PDF exports | about 1.2 GB | up to 3 GB |
+| **Helpers** | Reads rare file types (ODT, DOC, RTF, EPUB) and makes PDF exports | about 1.2 GB | up to 3.5 GB |
 
 **Helpers** show only on a small core box; a full box always runs them.
 

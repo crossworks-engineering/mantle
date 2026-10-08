@@ -92,7 +92,7 @@ export const SERVICE_DESCRIPTIONS: Record<OptionalService, ServiceDescription> =
       'PDF, Word, text and Markdown files are still read, and everything else keeps working.',
     keeps: 'Everything already ingested. The helpers store nothing.',
     downloadMb: 1200,
-    memory: 'up to 3 GB (1.5 GB each)',
+    memory: 'up to 3.5 GB (Tika 2 GB, the browser 1.5 GB)',
     memoryMaxMb: 3072,
     note: null,
     offWarning:

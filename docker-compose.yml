@@ -109,6 +109,33 @@ networks:
     driver: bridge
     internal: true
 
+# Tika 4 reads its settings from a JSON file. Shipped inline (compose 2.23.1+;
+# every box's updater runs 2.40) so the release owns it with no extra file to
+# copy onto a box. Tika 4 parses every document in a forked JVM from a fixed
+# pool; these keys size that pool for Mantle:
+#   endpoints        only what Mantle calls (/tika/*, /unpack, /version).
+#   numClients 1     one fork, so one parse at a time. Mantle's ingest is
+#                    near serial, and a document that arrives while the fork is
+#                    busy gets a 429 the client waits out (packages/files
+#                    tika.ts). Each extra fork needs about 1.2 GB more mem_limit.
+#   forkedJvmArgs    the fork's heap. Same 1g ceiling the 3.x JVM had (512m
+#                    OOM'd big Office files). JAVA_TOOL_OPTIONS on the service
+#                    sizes the parent, which only relays bytes.
+#   timeouts 60000   matches the client's 60 s timeout: a parse the client has
+#                    given up on is killed instead of holding the only fork (the
+#                    4.x default is one hour). Equal values switch the stall
+#                    detector off on purpose.
+configs:
+  tika_config:
+    content: |
+      {
+        "server": { "endpoints": ["tika", "unpack", "version"] },
+        "pipes": { "numClients": 1, "forkedJvmArgs": ["-Xmx1g", "-Xms128m"] },
+        "parse-context": {
+          "timeout-limits": { "totalTaskTimeoutMillis": 60000, "progressTimeoutMillis": 60000 }
+        }
+      }
+
 # Log rotation for every service — Docker's default json-file driver grows
 # unbounded, so a crash-looping worker or chatty extract run can fill the disk
 # and take Postgres (and the whole brain) down with it. Cap each container's
@@ -320,7 +347,7 @@ x-app-env: &app-env
   # the non-auth data API). OFF by default — same-origin clients need no CORS.
   # Set on a box that serves a detached dev frontend (docs/db-less-dev.md).
   MANTLE_API_CORS_ORIGINS: ${MANTLE_API_CORS_ORIGINS:-}
-  # Tika document-parser fallback (.odt / .pptx / .doc / .rtf / …). Reached
+  # Tika document-parser fallback (.odt / .doc / .rtf / .epub / …). Reached
   # by service name on the internal docker network. See docs/file-ingestion.md.
   TIKA_URL: http://tika:9998
   # Browser sidecar (PDF export) — same pattern as Tika: reached by service
@@ -466,27 +493,31 @@ services:
       start_period: 10s
 
   # Apache Tika — document-parser fallback for formats our in-process parsers
-  # don't cover (.odt / .ods / .odp / .pptx / .ppt / .doc / .rtf / .epub / …).
+  # don't cover (.odt / .ods / .odp / .ppt / .doc / .rtf / .epub / …, and the
+  # fallback for a .pptx the in-process reader cannot open).
   # Self-hosted; bytes stay on the VPS. Stateless — no volume.
   tika:
-    image: apache/tika:3.3.1.0
+    image: apache/tika:4.1.0-1
     container_name: mantle_tika
     restart: unless-stopped
     logging: *default-logging
-    # JVM already capped (-Xmx1g + non-heap overhead); this is the outer guardrail.
-    mem_limit: 1.5g
+    command: ['-c', '/tika-config.json']
+    configs:
+      - source: tika_config
+        target: /tika-config.json
+    # Outer guardrail for BOTH JVMs: the parse fork (-Xmx1g, tika_config) and
+    # the parent (-Xmx256m below), each plus its non-heap. Measured on 4.1.0:
+    # idle ~250 MB, a 43 MB HTML or 2 MB / 20M-char ODT peaks ~1.2 GB, and the
+    # heap stays claimed afterwards (1.42 GB after two big parses), so the
+    # 3.x 1.5g cap was too tight. The fork exits after 60 s idle.
+    mem_limit: 2g
     environment:
-      # Cap JVM heap so Tika can't balloon on a malicious or pathological
-      # document, while leaving headroom for legitimately large Office files.
-      # 512m was too tight: a ~24 MB .pptx / text-heavy .docx unzips to many
-      # times its size as XML, and Tika holds that in heap — big real decks
-      # OOM'd to an empty parse (no_text_layer). 1g roughly doubles the budget
-      # and still fits the 4 GB minimum box (stack idles ~2.5 GB; -Xms stays
-      # low at 128m so idle Tika is ~40 MB — only a big parse climbs toward the
-      # ceiling). On an 8 GB+ box with heavy deck/Office workloads, -Xmx2g is
-      # safe. JAVA_TOOL_OPTIONS not JAVA_OPTS — Tika's launcher doesn't
-      # propagate JAVA_OPTS to the forked TikaServerProcess (verified live).
-      JAVA_TOOL_OPTIONS: '-Xmx1g -Xms128m'
+      # The PARENT JVM. Tika 4 parses in a forked JVM whose heap comes from
+      # forkedJvmArgs in tika_config (the fork inherits this variable, but its
+      # own -Xmx wins). The parent only relays request and result, so it is
+      # kept small. JAVA_TOOL_OPTIONS not JAVA_OPTS: the launcher does not
+      # pass JAVA_OPTS on.
+      JAVA_TOOL_OPTIONS: '-Xmx256m -Xms64m'
     healthcheck:
       # apache/tika image has only bash (no curl/wget/nc), so probe via
       # bash's built-in /dev/tcp + a minimal HTTP/1.0 GET against /version.

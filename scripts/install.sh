@@ -256,7 +256,7 @@ ${B}Options${RS}
   --no-core              Back to the full shape (the shed services start on
                          the next 'docker compose up -d')
   --helpers              Doc helpers on a core box: tika (parse fallback for
-                         .odt/.pptx/.doc/.rtf — common formats parse in-process
+                         .odt/.doc/.rtf/.epub; common formats parse in-process
                          without it) + the PDF-export browser (~2 GB image).
                          Persists via COMPOSE_PROFILES in .env. No effect on
                          the full shape, which always runs both.
@@ -798,7 +798,7 @@ if [[ $INTERACTIVE -eq 1 && $FRESH_BOX -eq 1 ]]; then
   fi
   if [[ "$CORE" == 1 && -z "$HELPERS" ]]; then
     hlp_d=n; if [[ "$(envval COMPOSE_PROFILES)" == *helpers* ]]; then hlp_d=y; fi
-    inf "${DIM}Doc helpers = tika (parses .odt/.pptx/.doc/.rtf — common formats parse without it) + the PDF-export browser (~2 GB image).${RS}"
+    inf "${DIM}Doc helpers = tika (parses .odt/.doc/.rtf/.epub; common formats parse without it) + the PDF-export browser (~2 GB image).${RS}"
     if confirm "Add the doc helpers to the core?" "$hlp_d"; then HELPERS=1; else HELPERS=0; fi
   fi
   if [[ -z "$SANDBOXES" ]]; then

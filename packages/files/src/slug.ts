@@ -235,6 +235,8 @@ export function exportHintForExt(ext: string): string | undefined {
 export type ParserRoute =
   | 'pdf-parse'
   | 'mammoth'
+  /** PowerPoint, read in-process (./pptx.ts); Tika is its fallback. */
+  | 'pptx'
   | 'exceljs'
   /** Legacy .xls/.xlsb: converted to .xlsx via Tika, then read by exceljs. */
   | 'legacy-sheet'
@@ -250,6 +252,7 @@ export type ParserRoute =
 export function parserRouteForExt(ext: string): ParserRoute {
   if (ext === 'pdf') return 'pdf-parse';
   if (ext === 'docx') return 'mammoth';
+  if (ext === 'pptx') return 'pptx';
   if (ext === 'xls' || ext === 'xlsb') return 'legacy-sheet';
   if (ext === 'xlsx' || ext === 'xlsm') return 'exceljs';
   if (ext === 'dwf') return 'dwf';

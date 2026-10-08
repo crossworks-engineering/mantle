@@ -26,6 +26,13 @@ import { TEXT_EXTS, TIKA_EXTS, mimeForExt } from './slug';
 export async function parseDocumentBytes(bytes: Buffer, ext: string): Promise<string> {
   if (ext === 'pdf') return (await import('./pdf')).parsePdf(bytes);
   if (ext === 'docx') return (await import('./docx')).parseDocx(bytes);
+  // PowerPoint: in-process, because Tika 4 shuffles slide order (see
+  // ./pptx.ts). A deck the reader cannot open, or one it reads as empty,
+  // still gets Tika's attempt below; `pptx` stays in TIKA_EXTS for that.
+  if (ext === 'pptx') {
+    const text = await (await import('./pptx')).parsePptx(bytes).catch(() => '');
+    if (text) return text;
+  }
   // Spreadsheets. exceljs reads OOXML only, so the legacy binaries are
   // CONVERTED to .xlsx at the door (via Tika — see ./legacy-sheet.ts) and then
   // take the identical path as a modern workbook. One reader, one set of caps,

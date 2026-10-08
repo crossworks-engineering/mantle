@@ -44,8 +44,8 @@
 # The doc helpers (back on with --helpers, or ad hoc: naming a service on the
 # command line overrides its profile gate, `docker compose up -d tika browser`):
 #   tika               document-parse fallback for formats the in-process
-#                      parsers don't cover (.odt/.pptx/.doc/.rtf/...). Common
-#                      formats (pdf, docx, txt, md) parse in-process, so a
+#                      parsers don't cover (.odt/.doc/.rtf/.epub/...). Common
+#                      formats (pdf, docx, pptx, txt, md) parse in-process, so a
 #                      helper-less core still ingests them fine.
 #   browser            PDF export only; share pages still serve HTML
 #

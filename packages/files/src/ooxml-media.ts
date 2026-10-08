@@ -37,9 +37,9 @@ import {
   type EmbeddedImageLocation,
 } from './embedded-images';
 
-type Zip = Awaited<ReturnType<typeof loadZip>>;
+export type Zip = Awaited<ReturnType<typeof loadZip>>;
 
-async function loadZip(bytes: Buffer) {
+export async function loadZip(bytes: Buffer) {
   const JSZip = (await import('jszip')).default;
   return JSZip.loadAsync(bytes);
 }
@@ -64,11 +64,11 @@ function relsPathFor(partPath: string): string {
 }
 
 const RELATIONSHIP_RE = /<Relationship\b[^>]*>/g;
-const ATTR = (tag: string, name: string): string | undefined =>
+export const ATTR = (tag: string, name: string): string | undefined =>
   new RegExp(`\\b${name}="([^"]*)"`).exec(tag)?.[1];
 
 /** rId → absolute part path, for one part's relationship file. */
-async function relationshipsFor(zip: Zip, partPath: string): Promise<Map<string, string>> {
+export async function relationshipsFor(zip: Zip, partPath: string): Promise<Map<string, string>> {
   const out = new Map<string, string>();
   const file = zip.file(relsPathFor(partPath));
   if (!file) return out;
@@ -162,7 +162,7 @@ async function collect(
 
 /** Sort `slide2.xml` before `slide10.xml` — lexical order gets this wrong,
  *  and slide order IS the document order for a deck. */
-function numericSuffix(path: string): number {
+export function numericSuffix(path: string): number {
   return Number(/(\d+)\.xml$/.exec(path)?.[1] ?? 0);
 }
 

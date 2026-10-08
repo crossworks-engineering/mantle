@@ -9,6 +9,7 @@
     ".": "./src/index.ts",
     "./pdf": "./src/pdf.ts",
     "./docx": "./src/docx.ts",
+    "./pptx": "./src/pptx.ts",
     "./xlsx": "./src/xlsx.ts",
     "./sheet-to-grid": "./src/sheet-to-grid.ts",
     "./rasterize": "./src/rasterize.ts",

@@ -190,7 +190,7 @@ contract: the HTTP API + MCP + share pages, the owner UI (sign-up and
 settings live there), the ingest pipeline (`api` + the file/docs workers),
 reminders + scheduled backups, and nightly maintenance. It sheds the
 channel workers (email, telegram, microsoft, calendar, push, runs) and the
-**doc helpers**: `tika` (parse fallback for .odt/.pptx/.doc/.rtf — common
+**doc helpers**: `tika` (parse fallback for .odt/.doc/.rtf/.epub; common
 formats like pdf/docx/txt/md parse in-process without it) and the
 PDF-export `browser` (~2 GB chromium image; share pages still serve HTML).
 The exact split, and the reasoning per service, is the header of
