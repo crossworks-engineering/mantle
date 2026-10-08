@@ -31,7 +31,7 @@
     "@mantle/db": "workspace:*",
     "@mantle/std": "workspace:*",
     "@mantle/storage": "workspace:*",
-    "@napi-rs/canvas": "1.0.2",
+    "@napi-rs/canvas": "1.0.10",
     "drizzle-orm": "^0.45.3",
     "exceljs": "^4.4.0",
     "heic-convert": "^2.1.0",
@@ -39,7 +39,7 @@
     "mammoth": "^1.13.0",
     "pdf-parse": "^2.4.5",
     "pdf-to-png-converter": "^4.2.1",
-    "pdfjs-dist": "6.2.108",
+    "pdfjs-dist": "6.4.299",
     "saxes": "^6.0.0"
   },
   "devDependencies": {

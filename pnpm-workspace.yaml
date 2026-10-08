@@ -18,10 +18,10 @@ allowBuilds:
 # Single pdfjs-dist across the tree. pdfjs compares API and Worker version
 # strings EXACTLY and fails the load on any mismatch, and its worker config is
 # process-global — so two copies in one process break whichever loads second.
-# pdf-to-png-converter pins its own (6.0.227); this pulls it onto ours.
+# pdf-to-png-converter pins its own (~6.2.108); this pulls it onto ours.
 overrides:
-  pdfjs-dist: 6.2.108
-  '@napi-rs/canvas': 1.0.2
+  pdfjs-dist: 6.4.299
+  '@napi-rs/canvas': 1.0.10
 
   # Single `pg`. drizzle-orm peers on pg, so two pg versions make pnpm build two
   # peer-resolved drizzle instances whose SQL<> types are nominally incompatible —
