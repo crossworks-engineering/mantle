@@ -592,7 +592,7 @@ services:
   ollama:
     # Pinned (was :latest) — the update path re-pulls; override via env. Same var
     # for both ollama services so they never drift to different builds.
-    image: ollama/ollama:${OLLAMA_IMAGE_TAG:-0.32.2}
+    image: ollama/ollama:${OLLAMA_IMAGE_TAG:-0.40.1}
     container_name: mantle_ollama
     restart: unless-stopped
     logging: *default-logging
@@ -617,7 +617,7 @@ services:
   # One-shot: pull the shipped embedder into the model volume, then exit.
   # Idempotent — a no-op once the model is already in the volume.
   ollama_pull:
-    image: ollama/ollama:${OLLAMA_IMAGE_TAG:-0.32.2}
+    image: ollama/ollama:${OLLAMA_IMAGE_TAG:-0.40.1}
     container_name: mantle_ollama_pull
     restart: 'no'
     profiles: ['local-embedder']
