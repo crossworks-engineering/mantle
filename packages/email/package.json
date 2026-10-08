@@ -24,7 +24,7 @@
     "@mantle/std": "workspace:*",
     "@mantle/storage": "workspace:*",
     "drizzle-orm": "^0.45.3",
-    "imapflow": "^1.7.8",
+    "imapflow": "^2.2.6",
     "mailparser": "^3.9.36",
     "nodemailer": "^10.0.15",
     "pg-boss": "^12.37.0",

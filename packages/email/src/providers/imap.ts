@@ -678,7 +678,8 @@ export async function probeImapConnection(opts: {
       (client.capabilities as Map<string, unknown> | undefined)?.keys() ?? [],
     );
     return {
-      serverGreeting: client.serverInfo?.name ?? undefined,
+      // imapflow 2 types an absent server name as `false`, not undefined.
+      serverGreeting: client.serverInfo?.name || undefined,
       folders,
       sentFolders,
       capabilities: caps,
