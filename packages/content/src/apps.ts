@@ -104,6 +104,8 @@ type SidecarCols = {
   hubAppId: string | null;
   /** apps.data_read_only: informational (client logins C6). */
   dataReadOnly: boolean;
+  /** apps.mcp_access: MCP may reach the app's data (0234). */
+  mcpAccess?: boolean;
   /** apps.draft_updated_at: detail only (the editor's save check). */
   draftUpdatedAt?: Date | null;
 };
@@ -146,6 +148,7 @@ function rowOf(n: RowNode, s: Partial<SidecarCols> = {}): AppRow {
       n.inheritedLevel === 'team' || n.inheritedLevel === 'client' ? n.inheritedLevel : null,
     embedded: n.embeddedLevel === 'team' || n.embeddedLevel === 'client' ? n.embeddedLevel : null,
     dataReadOnly: s.dataReadOnly === true,
+    mcpAccess: s.mcpAccess === true,
     createdAt: n.createdAt.toISOString(),
     updatedAt: n.updatedAt.toISOString(),
   };
@@ -247,6 +250,7 @@ export async function listApps(
         hasDraft: sql<boolean>`${apps.draftSource} is not null`,
         publishedBuild: apps.publishedBuild,
         dataReadOnly: apps.dataReadOnly,
+        mcpAccess: apps.mcpAccess,
         shareSettings: shares.settings,
       })
       .from(nodes)
@@ -271,6 +275,7 @@ export async function listApps(
       shareSettings: r.shareSettings ?? null,
       hubAppId,
       dataReadOnly: r.dataReadOnly === true,
+      mcpAccess: r.mcpAccess === true,
     }),
   );
 }
@@ -307,6 +312,7 @@ async function loadDetail(ownerId: string, id: string): Promise<AppDetail | null
         draftBuild: apps.draftBuild,
         publishedBuild: apps.publishedBuild,
         dataReadOnly: apps.dataReadOnly,
+        mcpAccess: apps.mcpAccess,
         draftUpdatedAt: apps.draftUpdatedAt,
         shareSettings: shares.settings,
       })
@@ -331,6 +337,7 @@ async function loadDetail(ownerId: string, id: string): Promise<AppDetail | null
     shareSettings: row.shareSettings ?? null,
     hubAppId: prefs.teamHubAppId ?? null,
     dataReadOnly: row.dataReadOnly === true,
+    mcpAccess: row.mcpAccess === true,
     draftUpdatedAt: row.draftUpdatedAt ?? null,
   });
 }
@@ -451,6 +458,9 @@ export type UpdateAppInput = Partial<{
   /** Informational (client logins C6): members and clients only read the
    *  app's data. The owner's app update route is its one writer. */
   dataReadOnly: boolean;
+  /** MCP access (0234): a member's or client's MCP connection reaches the
+   *  app's data. The owner's app update route is its one writer. */
+  mcpAccess: boolean;
 }>;
 
 export async function updateAppMeta(
@@ -486,10 +496,14 @@ export async function updateAppMeta(
       updatedAt: new Date(),
     })
     .where(eq(nodes.id, id));
-  if (input.dataReadOnly !== undefined) {
+  if (input.dataReadOnly !== undefined || input.mcpAccess !== undefined) {
     await db
       .update(apps)
-      .set({ dataReadOnly: input.dataReadOnly, updatedAt: new Date() })
+      .set({
+        ...(input.dataReadOnly !== undefined ? { dataReadOnly: input.dataReadOnly } : {}),
+        ...(input.mcpAccess !== undefined ? { mcpAccess: input.mcpAccess } : {}),
+        updatedAt: new Date(),
+      })
       .where(eq(apps.nodeId, id));
   }
   if (input.description !== undefined) {

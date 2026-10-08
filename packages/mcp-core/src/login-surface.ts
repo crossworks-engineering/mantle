@@ -24,6 +24,8 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { and, eq } from 'drizzle-orm';
 import { agents, db, withViewer, type Tool, type ViewerLevel } from '@mantle/db';
 import {
+  APP_DATA_READ_TOOL_SLUGS,
+  APP_DATA_WRITE_TOOL_SLUGS,
   CLIENT_TURN_TOOL_SLUGS,
   MY_SPACE_WRITE_TOOL_SLUGS,
   dispatchTool,
@@ -73,6 +75,8 @@ export type McpCaller = {
   peerId?: string;
   /** The inbound API key this is (migration 0232): its own rate budget. */
   keyId?: string;
+  /** The OAuth client of an OAuth grant: the app data audit names it. */
+  oauthClientId?: string;
   /** An API key's areas (`@mantle/mcp-core/key-scope`); null or absent =
    *  every area. Only a key sets it. */
   areas?: readonly string[] | null;
@@ -216,9 +220,14 @@ export function loginMayHaveTool(
  *  (they act for a login, not over the owner's data), but they only read. */
 const LOGIN_OWN_READ_TOOL_SLUGS: ReadonlySet<string> = new Set(['my_items_list', 'my_item_open']);
 
+/** The agent's app database reads, which a login's MCP never gets: the
+ *  app_data_* tools replace them there (team apps Phase 1). */
+export const LOGIN_REPLACED_APP_DB_SLUGS: readonly string[] = ['app_db_list', 'app_db_query'];
+
 /** The only non-read tools a member or client gets, with write on. */
 const LOGIN_WRITE_TOOL_SLUGS: ReadonlySet<string> = new Set([
   ...MY_SPACE_WRITE_TOOL_SLUGS,
+  ...APP_DATA_WRITE_TOOL_SLUGS,
   'team_request_create',
   'client_request_create',
 ]);
@@ -267,8 +276,19 @@ export async function resolveLoginToolRows(
       const allowed = new Set(CLIENT_TURN_TOOL_SLUGS);
       slugs = slugs.filter((s) => allowed.has(s));
     }
-    if (slugs.length > 0 && caller.write)
-      slugs = [...slugs, ...MY_SPACE_WRITE_TOOL_SLUGS.filter((s) => !slugs.includes(s))];
+    // App data (team apps Phase 1): the app_data_* tools, never the agent's
+    // app_db_* reads, which reach every app at the level with no per-app
+    // switch. The app_data tools hold the app's MCP access switch and the
+    // browser's read or write rule.
+    const hiddenAppDb = new Set(LOGIN_REPLACED_APP_DB_SLUGS);
+    slugs = slugs.filter((s) => !hiddenAppDb.has(s));
+    if (slugs.length > 0) {
+      const extra = [
+        ...APP_DATA_READ_TOOL_SLUGS,
+        ...(caller.write ? [...MY_SPACE_WRITE_TOOL_SLUGS, ...APP_DATA_WRITE_TOOL_SLUGS] : []),
+      ];
+      slugs = [...slugs, ...extra.filter((s) => !slugs.includes(s))];
+    }
     if (slugs.length === 0) return [];
     return resolveTools(caller.anchorId, slugs);
   });
@@ -286,9 +306,19 @@ export function loginSurface(
   privateReads: boolean,
 ): NonNullable<ToolHandlerContext['surface']> {
   const contactName = caller.displayName ?? undefined;
+  // The connection, for the tools that act only on the login's own MCP
+  // (app_data_*): how it connected, its Write switch, and what the audit
+  // names it by.
+  const mcp = {
+    via: caller.via,
+    write: caller.write,
+    ...(caller.keyId ? { keyId: caller.keyId } : {}),
+    ...(caller.peerId ? { peerId: caller.peerId } : {}),
+    ...(caller.oauthClientId ? { oauthClientId: caller.oauthClientId } : {}),
+  };
   return caller.role === 'client'
-    ? { kind: 'client', loginId: caller.loginId, contactName }
-    : { kind: 'team', loginId: caller.loginId, contactName, privateReads };
+    ? { kind: 'client', loginId: caller.loginId, contactName, mcp }
+    : { kind: 'team', loginId: caller.loginId, contactName, privateReads, mcp };
 }
 
 /** Run one login tool: at the login's level, through dispatchTool. */
@@ -424,7 +454,9 @@ export function mcpInstructionsFor(caller: McpCaller): string {
   if (caller.role === 'admin') return MANTLE_MCP_INSTRUCTIONS;
   const who = caller.role === 'member' ? 'a team member' : 'a client';
   const write = caller.write
-    ? ' You may also create drafts in their own personal space (my_note_create, my_page_create, my_file_upload) and submit them for review (my_item_submit). Drafts reach the brain only when an admin accepts them.'
+    ? ' You may also create drafts in their own personal space (my_note_create, my_page_create, my_file_upload) and submit them for review (my_item_submit). Drafts reach the brain only when an admin accepts them. On mini apps an admin opened to MCP you may also change rows (app_data_write), never the schema.'
     : ' This connection is read-only.';
-  return `This connection acts as ${who} of this brain, with exactly that login's rights: you see what they may see, nothing more.${write}`;
+  const apps =
+    ' Mini app data: app_data_list shows the apps an admin opened to MCP, then app_data_schema and app_data_query.';
+  return `This connection acts as ${who} of this brain, with exactly that login's rights: you see what they may see, nothing more.${write}${apps}`;
 }

@@ -1,6 +1,7 @@
 /**
  * /api/apps/[id] — get (GET), update metadata (PATCH), delete (DELETE).
- * PATCH also sets the informational flag (`dataReadOnly`, client logins C6).
+ * PATCH also sets the informational flag (`dataReadOnly`, client logins C6)
+ * and MCP access (`mcpAccess`, team apps Phase 1).
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
@@ -31,6 +32,10 @@ const PatchBody = z.object({
   // Informational (client logins C6): members and clients only read the
   // app's data. This route (admin only) is its one writer.
   dataReadOnly: z.boolean().optional(),
+  // MCP access (team apps Phase 1, 0234): a member's or client's MCP
+  // connection reaches the app's data. This route (admin only) is its one
+  // writer: no agent tool and no API key sets it (a key never reaches it).
+  mcpAccess: z.boolean().optional(),
 });
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {

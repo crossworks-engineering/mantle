@@ -509,14 +509,19 @@ export async function ownerFromBearer(req: Request): Promise<string | null> {
  * unknown, expired or revoked token. Whether the login may still use it is
  * `actorMayConnect`; server/web/lib/mcp-auth.ts runs both.
  */
-export async function grantFromAccessToken(
-  token: string,
-): Promise<{ id: string; ownerId: string; actorId: string; sessionEpoch: number | null } | null> {
+export async function grantFromAccessToken(token: string): Promise<{
+  id: string;
+  ownerId: string;
+  actorId: string;
+  clientId: string;
+  sessionEpoch: number | null;
+} | null> {
   const [row] = await db
     .select({
       id: oauthAccessTokens.id,
       ownerId: oauthAccessTokens.ownerId,
       actorId: oauthAccessTokens.actorId,
+      clientId: oauthAccessTokens.clientId,
       sessionEpoch: oauthAccessTokens.sessionEpoch,
     })
     .from(oauthAccessTokens)

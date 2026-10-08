@@ -86,7 +86,12 @@ function isRole(v: string): v is McpLoginRole {
 }
 
 /** A member's or client's caller from its login row, or null. */
-function loginCaller(row: LoginRow, anchorId: string, via: 'oauth' | 'token'): McpCaller | null {
+function loginCaller(
+  row: LoginRow,
+  anchorId: string,
+  via: 'oauth' | 'token',
+  oauthClientId?: string,
+): McpCaller | null {
   if (row.role !== 'member' && row.role !== 'client') return null;
   if (row.disabledAt || !row.email || row.mcpEnabled !== true) return null;
   return {
@@ -96,6 +101,7 @@ function loginCaller(row: LoginRow, anchorId: string, via: 'oauth' | 'token'): M
     displayName: row.displayName,
     via,
     write: row.mcpWrite === true,
+    ...(oauthClientId ? { oauthClientId } : {}),
   };
 }
 
@@ -122,7 +128,7 @@ export async function resolveMcpCaller(req: Request): Promise<McpCaller | null> 
     };
   }
   const row = await loadLogin(grant.actorId);
-  return row ? loginCaller(row, grant.ownerId, 'oauth') : null;
+  return row ? loginCaller(row, grant.ownerId, 'oauth', grant.clientId) : null;
 }
 
 async function callerFromLoginToken(token: string): Promise<McpCaller | null> {

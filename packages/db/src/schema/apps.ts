@@ -46,6 +46,10 @@ export const apps = pgTable('apps', {
   // app's database. Off, an app at team or client level is a shared workspace
   // everyone who runs it writes. Set only by the owner's app update route.
   dataReadOnly: boolean('data_read_only').default(false).notNull(),
+  // MCP access (team apps Phase 1, 0234): a member's or client's MCP
+  // connection reaches this app's data (the app_data_* tools) only while
+  // this is on. Off by default. Set only by the owner's app update route.
+  mcpAccess: boolean('mcp_access').default(false).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });

@@ -59,6 +59,17 @@ describe('API key areas for MCP tools', () => {
     for (const slug of conversions) expect(pagesKey, slug).not.toContain(slug);
   });
 
+  it('puts the app data tools in their own area, apart from app authoring', () => {
+    for (const slug of ['app_data_list', 'app_data_schema', 'app_data_query', 'app_data_write']) {
+      expect(toolKeyArea(slug), slug).toBe('app_data');
+      expect(keyAreasAllowTool(slug, ['app_data']), slug).toBe(true);
+      expect(keyAreasAllowTool(slug, ['apps']), slug).toBe(false);
+    }
+    expect(keyAreasAllowTool('app_db_query', ['app_data'])).toBe(false);
+    expect(keyAreasAllowTool('app_file_write', ['app_data'])).toBe(false);
+    expect(KEY_AREAS).toContain('app_data');
+  });
+
   it('leaves everything else to an all-areas key', () => {
     for (const slug of ['recall_open', 'agent_list', 'peer_call', 'email_send', 'tree_list']) {
       expect(toolKeyArea(slug), slug).toBeNull();

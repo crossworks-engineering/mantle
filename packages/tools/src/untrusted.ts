@@ -20,4 +20,7 @@ export const UNTRUSTED_CONTENT_TOOL_SLUGS: ReadonlySet<string> = new Set([
   // A mini app's error log: the SQL and the messages can come from a public
   // visitor of the app (apps audit 2026-10-02, item 12).
   'app_errors',
+  // A mini app's rows over MCP (team apps Phase 1): written by the app's
+  // users (members, clients), not by the reader.
+  'app_data_query',
 ]);

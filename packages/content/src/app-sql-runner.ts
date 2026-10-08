@@ -154,7 +154,7 @@ function rowBytes(row) {
   return n;
 }
 function run(job) {
-  const { file, sql, params, mode, readOnly, maxRows, maxLength, maxReplyBytes, maxDbBytes, journalLimit, userVersion, dest } = job;
+  const { file, sql, params, mode, readOnly, dataOnly, maxRows, maxLength, maxReplyBytes, maxDbBytes, journalLimit, userVersion, dest } = job;
   if (mode !== 'copy' && mode !== 'adopt' && restoring(file)) throw new Error('${RESTORING_REPLY}');
   if (mode === 'copy') {
     // The server's own copy of an app's file (a schema trial run, a
@@ -213,6 +213,25 @@ function run(job) {
       if (have >= userVersion) return { skipped: true, userVersion: have };
     }
     db.setAuthorizer((action, arg1) => {
+      // Data only (an MCP write, team apps Phase 1): rows, never the
+      // schema. An allowlist: reading, selecting, functions, a recursive
+      // CTE and the three row writes. Every CREATE, DROP, ALTER, trigger,
+      // view, index, transaction, savepoint, ANALYZE and REINDEX is refused,
+      // and so is a row write into the schema table itself (SQLite refuses
+      // that too, without writable_schema; this does not lean on it).
+      if (dataOnly) {
+        if (action === C.SQLITE_INSERT || action === C.SQLITE_UPDATE || action === C.SQLITE_DELETE) {
+          return /^sqlite_(temp_)?(master|schema)$/i.test(String(arg1 || ''))
+            ? C.SQLITE_DENY
+            : C.SQLITE_OK;
+        }
+        return action === C.SQLITE_READ ||
+          action === C.SQLITE_SELECT ||
+          action === C.SQLITE_FUNCTION ||
+          action === C.SQLITE_RECURSIVE
+          ? C.SQLITE_OK
+          : C.SQLITE_DENY;
+      }
       if (action === C.SQLITE_ATTACH || action === C.SQLITE_DETACH) return C.SQLITE_DENY;
       if (action === C.SQLITE_PRAGMA) {
         const name = String(arg1 || '').toLowerCase();
@@ -490,11 +509,16 @@ export async function runAppSql(
     maxDbBytes?: number;
     /** 'script' only: the schema version the script brings the file to. */
     userVersion?: number;
+    /** Rows only, never the schema (an MCP write): the engine authorizer
+     *  allows reads and INSERT, UPDATE and DELETE, and refuses the rest. */
+    dataOnly?: boolean;
   },
 ): Promise<unknown> {
   const timeoutMs = opts.timeoutMs ?? APP_SQL_TIMEOUT_MS;
   if (opts.mode === 'script' && opts.readOnly)
     throw new Error('a schema script needs a writable open');
+  if (opts.mode === 'script' && opts.dataOnly)
+    throw new Error('a schema script cannot be data only');
   if (!opts.callerKey) return runOnChild(file, opts, timeoutMs);
   const endTurn = await takeTurn(opts.callerKey, timeoutMs * 2);
   try {
@@ -603,6 +627,7 @@ async function runOnChild(file: string, opts: ChildJob, timeoutMs: number): Prom
       params: opts.params ?? [],
       mode: opts.mode,
       readOnly: opts.readOnly,
+      dataOnly: opts.dataOnly === true,
       maxRows: APP_SQL_MAX_ROWS,
       maxLength: APP_SQL_MAX_LENGTH,
       maxReplyBytes: APP_SQL_MAX_REPLY_BYTES,

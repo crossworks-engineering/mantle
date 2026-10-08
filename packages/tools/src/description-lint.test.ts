@@ -72,6 +72,13 @@ const PRECONDITION_EXEMPT = new Set<string>([
   // app_undelete.id names a DELETED app: its node is gone by definition, so
   // a node_exists check would reject every valid id.
   'app_undelete.id',
+  // The app data tools (team apps Phase 1) answer ONE not-found for every
+  // app the login cannot reach (none, another level, MCP access off), so no
+  // answer tells them apart; the handler checks reach itself
+  // (getMcpDataApp).
+  'app_data_schema.app_id',
+  'app_data_query.app_id',
+  'app_data_write.app_id',
   // A folder of the calling login's OWN space tree (MCP as a login): it is
   // owned by that space, not the brain, and memberFilingPath checks it.
   'my_note_create.folder_id',

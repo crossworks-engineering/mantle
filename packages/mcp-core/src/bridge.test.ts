@@ -177,6 +177,12 @@ describe('every in-app tool reaches the MCP surface', () => {
     my_page_create: "writes a login's own space; the owner surface has no login",
     my_file_upload: "writes a login's own space; the owner surface has no login",
     my_item_submit: "submits a login's own item; the owner surface has no login",
+    // App data on a login's own MCP (team apps Phase 1): the owner has
+    // app_db_* and app_* instead.
+    app_data_list: "a login's own MCP only; the owner surface has app_db_list",
+    app_data_schema: "a login's own MCP only; the owner surface has app_db_list",
+    app_data_query: "a login's own MCP only; the owner surface has app_db_query",
+    app_data_write: "a login's own MCP only; the owner surface has the app tools",
   };
 
   it('exposes every builtin slug over stdio, except the documented ones', () => {

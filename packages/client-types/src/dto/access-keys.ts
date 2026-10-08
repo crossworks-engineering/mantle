@@ -24,6 +24,8 @@ export const ACCESS_KEY_AREAS = [
   'contacts',
   'journal',
   'apps',
+  // The data of mini apps opened to MCP (team apps Phase 1, app_data_*).
+  'app_data',
 ] as const;
 export type AccessKeyArea = (typeof ACCESS_KEY_AREAS)[number];
 

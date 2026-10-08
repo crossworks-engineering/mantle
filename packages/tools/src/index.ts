@@ -143,6 +143,11 @@ export { IMAGE_TOOLS } from './builtins-images';
 export { TEAM_TOOLS } from './builtins-team';
 export { MY_SPACE_TOOLS } from './builtins-my-space';
 export { MY_SPACE_WRITE_TOOLS, MY_SPACE_WRITE_TOOL_SLUGS } from './builtins-my-space-write';
+export {
+  LOGIN_APP_DATA_TOOLS,
+  APP_DATA_READ_TOOL_SLUGS,
+  APP_DATA_WRITE_TOOL_SLUGS,
+} from './builtins-app-data';
 export { CLIENT_TOOLS } from './builtins-client';
 export { CLIENT_TURN_TOOL_SLUGS } from './client-turn-tools';
 export { RESEARCH_TOOLS, resolveOpenRouterKey } from './builtins-research';
@@ -192,7 +197,7 @@ export {
 } from './app-tool-level';
 export { surfaceHiddenNodeTypes, HIDDEN_NODE_ERROR } from './team-visibility';
 export { isOwnerSurface, OWNER_ONLY_ERROR, type ToolSurface } from './surface';
-export type { OwnerSurfaceVia } from './types';
+export type { LoginMcpChannel, OwnerSurfaceVia } from './types';
 export { safeFetch } from './safe-fetch';
 export { guardedFetch, assertFetchableUrl, isBlockedIp } from './ssrf-guard';
 export {

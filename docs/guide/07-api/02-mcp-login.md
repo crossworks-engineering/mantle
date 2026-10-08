@@ -19,8 +19,29 @@ The connector URL is the same one the owner uses. Who connects decides which too
 
 1. Open **Settings > MCP**.
 2. Under **Team and client access**, find the login and turn on **MCP**.
-3. Turn on **Write** only if they should make drafts in their own space. An admin still accepts each draft before it reaches the brain.
+3. Turn on **Write** only if they should make drafts in their own space, or change rows in the mini apps you open to MCP. An admin still accepts each draft before it reaches the brain.
 4. They add the connector URL to Claude and sign in with their own login.
+
+A member finds the connector URL, how to connect, their own access and their connected clients in their own **Settings > MCP**. They can disconnect a client there. They cannot change their access: you set it here.
+
+## Open a mini app's data to MCP
+
+A member's or client's MCP sees no app data until you open an app to it.
+
+1. Open the app and find **MCP access**, beside **Informational**.
+2. Turn it on.
+
+Who reaches the app is the same as in the browser: members for a team, client or public app; clients for a client app. They need the app to be published.
+
+| The login's **Write** | The app's **Informational** | What their MCP may do |
+| --- | --- | --- |
+| Off | Any | Read the rows |
+| On | Off | Read, and insert, update or delete rows |
+| On | On | Read the rows |
+
+A public app stays read only for members. MCP never changes an app's tables or columns: the schema belongs to the app's author.
+
+Before the first MCP write to an app in an hour, the brain saves a snapshot of the app (**Before an MCP write** in the app's History). Restore it to undo. Each MCP read and write shows in the app's Activity, and a write keeps its SQL.
 
 ## When their MCP client cannot sign in
 
@@ -47,12 +68,14 @@ Changing **Acts as** turns **Write** off again.
 ## What ends access
 
 - Turning the login's **MCP** switch off. Its sign-ins and tokens stop working.
+- The member disconnecting that client in their own **Settings > MCP**.
+- Turning an app's **MCP access** off ends MCP on that app, for everyone.
 - A password change, a disable, a role change or "sign out everywhere" for that login.
 - Turning the whole connector off in **Settings > MCP**.
 
 ## Check it worked
 
-In the member's client, the Mantle tool list holds their role's tools only. A client that signed in also shows under **Connected clients** in **Settings > MCP**.
+In the member's client, the Mantle tool list holds their role's tools only, plus `app_data_list`, `app_data_schema` and `app_data_query` (and `app_data_write` with **Write** on). A client that signed in also shows under **Connected clients** in **Settings > MCP**.
 
 ## Next
 

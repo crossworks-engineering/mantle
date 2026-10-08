@@ -100,7 +100,13 @@ export type DbExecResult = { changes: number; lastInsertRowid: number };
  *  login, a member login, a share link; client tier audit I1). `viewer` is
  *  the authenticated person (app identity): it fills the reserved
  *  `:host_me_*` parameters. Without it, SQL that uses one is refused. */
-export type AppDbCaller = { callerKey?: string; viewer?: AppViewerSubject };
+export type AppDbCaller = {
+  callerKey?: string;
+  viewer?: AppViewerSubject;
+  /** A write that may change rows only, never the schema (an MCP write,
+   *  team apps Phase 1): the SQL child's data-only authorizer. */
+  dataOnly?: boolean;
+};
 
 /** Minimal structural type for the bits of node:sqlite we use (keeps us
  *  independent of whether @types/node ships the declarations yet). */
@@ -499,6 +505,7 @@ export async function appDbExec(
     mode: 'run',
     readOnly: false,
     ...(opts.callerKey ? { callerKey: opts.callerKey } : {}),
+    ...(opts.dataOnly ? { dataOnly: true } : {}),
   })) as DbExecResult;
   // Best-effort: keep the registry's size_bytes truthful after a write (a write
   // is the only thing that grows the file). Never fail the exec over this.
@@ -754,6 +761,83 @@ export async function appDbSchema(ownerId: string, appNodeId: string): Promise<A
     readOnly: true,
   })) as { name: string; sql: string }[];
   return rows.map((r) => ({ name: r.name, sql: r.sql }));
+}
+
+export type AppDbColumn = { name: string; type: string; notNull: boolean; pk: boolean };
+export type AppDbTableDetail = {
+  name: string;
+  kind: 'table' | 'view';
+  columns: AppDbColumn[];
+  /** Rows in a table; null for a view, and for a table past the count
+   *  budget (APP_DB_COUNT_TABLES_MAX). */
+  rowCount: number | null;
+};
+/** Tables whose rows `appDbTableDetails` counts; past it, null. */
+export const APP_DB_COUNT_TABLES_MAX = 50;
+
+/** A SQLite identifier quoted for SQL text: the name comes from
+ *  sqlite_master, never from a caller. */
+function quoteIdent(name: string): string {
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
+/**
+ * The tables and views of an app's database with their columns and row
+ * counts, and the schema version on record (the MCP `app_data_schema`).
+ * Read-only in a SQL child. Empty when the app has no database yet; an
+ * app whose file is gone although it held data throws AppDbMissingError.
+ */
+export async function appDbTableDetails(
+  ownerId: string,
+  appNodeId: string,
+  opts: { callerKey?: string } = {},
+): Promise<{ schemaVersion: number; tables: AppDbTableDetail[] }> {
+  const reg = await lookupAppDatabase(ownerId, appNodeId);
+  if (!reg) return { schemaVersion: 0, tables: [] };
+  if (await isRestoring(reg.storagePath)) throw new AppDbRestoringError();
+  await assertNotLost(appNodeId, reg);
+  if (!(await fileExists(reg.storagePath))) return { schemaVersion: reg.schemaVersion, tables: [] };
+  const read = async (sql: string) =>
+    (await runAppSql(reg.storagePath, {
+      sql,
+      mode: 'all',
+      readOnly: true,
+      ...(opts.callerKey ? { callerKey: opts.callerKey } : {}),
+    })) as Record<string, unknown>[];
+  const objects = (await read(
+    "SELECT name, type FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' ORDER BY name",
+  )) as { name: string; type: string }[];
+  const tables: AppDbTableDetail[] = [];
+  let counted = 0;
+  for (const o of objects) {
+    const cols = (await read(`PRAGMA table_info(${quoteIdent(o.name)})`)) as {
+      name: string;
+      type: string;
+      notnull: number;
+      pk: number;
+    }[];
+    const kind = o.type === 'view' ? 'view' : 'table';
+    let rowCount: number | null = null;
+    if (kind === 'table' && counted < APP_DB_COUNT_TABLES_MAX) {
+      counted += 1;
+      const [row] = (await read(`SELECT count(*) AS n FROM ${quoteIdent(o.name)}`)) as {
+        n: number;
+      }[];
+      rowCount = Number(row?.n ?? 0);
+    }
+    tables.push({
+      name: o.name,
+      kind,
+      columns: cols.map((c) => ({
+        name: c.name,
+        type: c.type || '',
+        notNull: Number(c.notnull) === 1,
+        pk: Number(c.pk) > 0,
+      })),
+      rowCount,
+    });
+  }
+  return { schemaVersion: reg.schemaVersion, tables };
 }
 
 /** Every app of this owner that has a registered database, with its title +

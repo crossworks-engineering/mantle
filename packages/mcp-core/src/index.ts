@@ -5,6 +5,7 @@ export {
   registerMantleTools,
 } from './build-server';
 export {
+  LOGIN_REPLACED_APP_DB_SLUGS,
   MCP_HANDWRITTEN_READ_ONLY,
   PEER_RISKY_TOOL_PREFIXES,
   PEER_RISKY_TOOL_SLUGS,

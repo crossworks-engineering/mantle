@@ -1632,6 +1632,13 @@
       "when": 1790106600000,
       "tag": "0233_keep_existing_look",
       "breakpoints": true
+    },
+    {
+      "idx": 234,
+      "version": "7",
+      "when": 1790106660000,
+      "tag": "0234_app_mcp_access",
+      "breakpoints": true
     }
   ]
 }

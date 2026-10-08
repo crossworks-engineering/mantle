@@ -34,6 +34,7 @@ Each login makes keys for itself. An admin's key acts as that admin, a member's 
 | Contacts | Contacts |
 | Journal | Journal entries |
 | Apps | Mini apps (MCP) |
+| App data | The data of the mini apps an admin opened to MCP (`app_data_list`, `app_data_schema`, `app_data_query`, `app_data_write`). A member's or client's key only |
 
 A route or tool that belongs to no area, such as reading any item by id, the Recall tools or a tool that turns one kind into another (`page_from_journal`), needs **All areas**.
 

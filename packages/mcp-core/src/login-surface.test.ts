@@ -123,6 +123,14 @@ describe('member and client tool filter', () => {
     expect(loginMayHaveTool(row('file_upload'), true)).toBe(false);
   });
 
+  it('app data: the reads always, the write only with write on', () => {
+    for (const slug of ['app_data_list', 'app_data_schema', 'app_data_query']) {
+      expect(loginMayHaveTool(row(slug), false), slug).toBe(true);
+    }
+    expect(loginMayHaveTool(row('app_data_write'), false)).toBe(false);
+    expect(loginMayHaveTool(row('app_data_write'), true)).toBe(true);
+  });
+
   it('never a non-builtin, a renamed builtin, a confirm-gated, spending or owner-only tool', () => {
     expect(loginMayHaveTool({ slug: 'x', handler: { kind: 'http' } } as never, true)).toBe(false);
     expect(

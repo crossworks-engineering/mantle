@@ -21,7 +21,7 @@
 import { randomUUID } from 'node:crypto';
 import { rm } from 'node:fs/promises';
 import * as path from 'node:path';
-import { and, desc, eq, isNotNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, isNotNull, sql } from 'drizzle-orm';
 import { apps, db, nodeSnapshots, nodes, type AppSnapshotCode } from '@mantle/db';
 import type { AppRestoreMode, AppSnapshot } from '@mantle/client-types';
 import {
@@ -78,6 +78,7 @@ const AUTO_TRIGGERS: AppSnapshotTrigger[] = [
   'pre_delete',
   'pre_import',
   'nightly',
+  'pre_mcp_write',
 ];
 
 function maxSnapshotBytes(): number {
@@ -327,11 +328,30 @@ export async function createAppSnapshot(
      *  snapshot must not block the restore that brings the data back),
      *  instead of failing with AppDbMissingError. */
     codeOnlyWhenLost?: boolean;
+    /** Skip (null) when a snapshot with the same trigger was taken at or
+     *  after this time. Checked under the app's history lock, so two
+     *  callers at once take one snapshot, not two (the hourly
+     *  `pre_mcp_write`). */
+    onlyIfNoneSince?: Date;
   } = {},
 ): Promise<AppSnapshot | null> {
   const trigger = opts.trigger ?? 'manual';
   const snap = await db.transaction(async (tx) => {
     await lockAppHistory(tx, appId);
+    if (opts.onlyIfNoneSince) {
+      const [recent] = await tx
+        .select({ id: nodeSnapshots.id })
+        .from(nodeSnapshots)
+        .where(
+          and(
+            eq(nodeSnapshots.nodeId, appId),
+            eq(nodeSnapshots.trigger, trigger),
+            gte(nodeSnapshots.createdAt, opts.onlyIfNoneSince),
+          ),
+        )
+        .limit(1);
+      if (recent) return null;
+    }
     return snapshotLocked(ownerId, appId, {
       trigger,
       actor: opts.actor ?? 'owner',

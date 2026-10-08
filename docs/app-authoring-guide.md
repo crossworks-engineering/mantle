@@ -474,6 +474,27 @@ status, due_at)` is far more useful to it than `t(a, b, c)`.
 This is on by default for all the user's apps, the brain/team is the trust
 boundary, so there's no per-app "make readable" switch.
 
+## App data over a member's or client's own MCP
+
+Members and clients can reach an app's data from their own MCP client
+(Claude Code, Claude Desktop) with `app_data_list`, `app_data_schema`,
+`app_data_query` and `app_data_write`, but only on an app whose **MCP
+access** switch is on (beside **Informational**; off by default, an admin
+sets it). They reach it exactly as they run it in the browser: the same
+levels, the same published build, the same read or write rule, and their
+login's **Write** switch on top. `:host_me_*` is filled for them, so a row
+they write records who wrote it the same way the app does.
+
+What follows for your app:
+
+- **The schema is yours.** MCP changes rows only, never tables or columns
+  (a data-only engine lock refuses every CREATE, DROP and ALTER). Keep your
+  `sqlite.schemaSql` the one place the schema is made.
+- **Name things plainly** (as above): an outside model reads your tables and
+  columns with `app_data_schema` before it writes.
+- **Undo is a snapshot.** The first MCP write to the app in an hour saves a
+  `pre_mcp_write` snapshot on its History line; an admin restores it.
+
 ## Worked example: "My Notes" app
 
 1. Mint the data tool (Toolsmith):

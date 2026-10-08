@@ -106,6 +106,92 @@ describe('runAppSql', () => {
  * on the main thread with only the regex guard; now it runs here, under the
  * same authorizer and time limit, in one transaction.
  */
+describe('runAppSql dataOnly (an MCP write, team apps Phase 1)', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'app-sql-data-only-'));
+  const file = path.join(dir, 'app.sqlite');
+  const write = (sql: string, params: unknown[] = []) =>
+    runAppSql(file, { sql, params, mode: 'run', readOnly: false, dataOnly: true });
+
+  beforeAll(async () => {
+    await runAppSql(file, {
+      sql: `CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT, x TEXT);
+        CREATE TABLE log (what TEXT);
+        CREATE INDEX t_x_idx ON t (x);
+        CREATE TRIGGER t_log AFTER INSERT ON t BEGIN INSERT INTO log VALUES (new.x); END;`,
+      mode: 'script',
+      readOnly: false,
+    });
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it('runs INSERT, UPDATE, DELETE, REPLACE, an upsert and a CTE before a write', async () => {
+    await expect(write('INSERT INTO t (x) VALUES (?)', ['a'])).resolves.toMatchObject({
+      changes: 1,
+    });
+    await expect(write("UPDATE t SET x = 'b' WHERE x = 'a'")).resolves.toMatchObject({
+      changes: 1,
+    });
+    await expect(write("REPLACE INTO t (id, x) VALUES (1, 'c')")).resolves.toMatchObject({
+      changes: 1,
+    });
+    await expect(
+      write("INSERT INTO t (id, x) VALUES (1, 'd') ON CONFLICT(id) DO UPDATE SET x = excluded.x"),
+    ).resolves.toMatchObject({ changes: 1 });
+    await expect(
+      write("WITH n(v) AS (SELECT 'e') INSERT INTO t (x) SELECT v FROM n"),
+    ).resolves.toMatchObject({ changes: 1 });
+    // The app's own trigger still fires (its body is rows only).
+    const log = (await runAppSql(file, {
+      sql: 'SELECT count(*) AS n FROM log',
+      mode: 'all',
+      readOnly: true,
+    })) as { n: number }[];
+    expect(log[0]!.n).toBeGreaterThan(0);
+    await expect(write("DELETE FROM t WHERE x = 'e'")).resolves.toMatchObject({ changes: 1 });
+  });
+
+  it('refuses every schema change at the engine', async () => {
+    for (const sql of [
+      'CREATE TABLE u (x)',
+      'DROP TABLE log',
+      'ALTER TABLE t ADD COLUMN y TEXT',
+      'CREATE INDEX t_x ON t (x)',
+      'CREATE VIEW v AS SELECT * FROM t',
+      'CREATE TRIGGER t2 AFTER DELETE ON t BEGIN DELETE FROM log; END',
+      'DROP TRIGGER t_log',
+      'CREATE TEMP TABLE tt (x)',
+      'BEGIN',
+      'SAVEPOINT s',
+      'ANALYZE',
+      'REINDEX',
+      'PRAGMA table_info(t)',
+      'PRAGMA user_version = 9',
+      "INSERT INTO sqlite_master (type, name, tbl_name, rootpage, sql) VALUES ('table', 'z', 'z', 0, 'CREATE TABLE z (x)')",
+      "UPDATE sqlite_master SET sql = 'x' WHERE name = 't'",
+      "DELETE FROM sqlite_schema WHERE name = 't_log'",
+    ]) {
+      await expect(write(sql), sql).rejects.toThrow(/authoriz|may not be modified/i);
+    }
+    const objects = (await runAppSql(file, {
+      sql: "SELECT name FROM sqlite_master WHERE type IN ('table','view','index','trigger') ORDER BY name",
+      mode: 'all',
+      readOnly: true,
+    })) as { name: string }[];
+    expect(objects.map((r) => r.name)).toEqual(['log', 'sqlite_sequence', 't', 't_log', 't_x_idx']);
+  });
+
+  it('never runs a schema script data only', async () => {
+    await expect(
+      runAppSql(file, {
+        sql: 'CREATE TABLE z (x)',
+        mode: 'script',
+        readOnly: false,
+        dataOnly: true,
+      }),
+    ).rejects.toThrow(/data only/);
+  });
+});
+
 describe("runAppSql mode 'script' (schema DDL)", () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'app-sql-script-'));
   const file = path.join(dir, 'app.sqlite');

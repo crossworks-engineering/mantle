@@ -4,6 +4,26 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: team apps Phase 1, MCP on app data
+
+Members and clients reach the data of mini apps from their own MCP client
+(plan page b6dd688e). Migration 0234.
+
+- New per-app switch **MCP access** (`apps.mcp_access`, off by default),
+  set only by an admin with `PATCH /api/apps/:id { mcpAccess }`.
+- New login MCP tools `app_data_list`, `app_data_schema`, `app_data_query`
+  and `app_data_write`. They replace `app_db_list` / `app_db_query` on a
+  member's or client's MCP. Reach and the read or write rule are the
+  browser's; the login's Write switch adds `app_data_write`.
+- Rows only: a data-only engine authorizer in the SQL child refuses every
+  schema change on an MCP write.
+- The first MCP write to an app in an hour takes a `pre_mcp_write` snapshot
+  first; no snapshot, no write. Every MCP call lands an access log row;
+  a write keeps its SQL and the rows it changed.
+- New API key area `app_data`.
+- Members get their own view of Settings > MCP: `GET /api/member/mcp` and
+  `DELETE /api/member/mcp/clients/:id` (their own grants only).
+
 ## Unreleased: Apache Tika 4
 
 The document helper moves from `apache/tika:3.3.1.0` to `apache/tika:4.1.0-1`

@@ -1177,6 +1177,13 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     toolSlugs: ['my_note_create', 'my_page_create', 'my_file_upload', 'my_item_submit'],
   },
   {
+    slug: 'app-data-mcp',
+    name: 'App data over MCP',
+    description:
+      "Read and change the data of the mini apps an admin opened to MCP, on a member's or client's own MCP connection: list them, read tables and columns, query rows, and (with the login's Write switch) insert, update or delete rows. Never the schema. Attached to no agent (admin level: the login MCP surface adds these tools itself, never through a group).",
+    toolSlugs: ['app_data_list', 'app_data_schema', 'app_data_query', 'app_data_write'],
+  },
+  {
     slug: 'team-read-admin',
     name: 'Team reads that need admin level',
     description:

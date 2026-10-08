@@ -103,6 +103,8 @@ export type ToolHandlerContext = {
         /** The inbound team_messages row that started this turn — stamped
          *  into a request task so the specialist can jump to the ask. */
         inboundMessageId?: string;
+        /** The member's own MCP connection (team apps Phase 1). */
+        mcp?: LoginMcpChannel;
       }
     | {
         /** A CONTACT on a contact-share link (/s, past the code gate) runs a
@@ -124,6 +126,8 @@ export type ToolHandlerContext = {
         contactName?: string;
         /** The inbound team_messages row that started this turn. */
         inboundMessageId?: string;
+        /** The client's own MCP connection (team apps Phase 1). */
+        mcp?: LoginMcpChannel;
       }
     | {
         /** The OWNER, on a path that is not a chat channel (client logins
@@ -135,6 +139,25 @@ export type ToolHandlerContext = {
         /** Which owner path (telemetry and the owner-regression sweep). */
         via: OwnerSurfaceVia;
       };
+};
+
+/**
+ * A member's or client's own MCP connection (team apps Phase 1): stamped by
+ * the login MCP surface (packages/mcp-core/src/login-surface.ts) from the
+ * caller the route resolved, never from model arguments. Absent on every
+ * other path (a chat turn, an app run), so a tool that needs it (the
+ * app_data_* tools) runs only on MCP.
+ */
+export type LoginMcpChannel = {
+  /** How the bearer was issued. */
+  via: 'oauth' | 'token' | 'peer' | 'key';
+  /** The login's Write switch (and for a key or a peer, theirs too). */
+  write: boolean;
+  /** The API key, the peer, or the OAuth client of this connection: the
+   *  audit trail names it. */
+  keyId?: string;
+  peerId?: string;
+  oauthClientId?: string;
 };
 
 /** The owner paths that carry an explicit owner surface (client logins C4). */

@@ -19,6 +19,9 @@ export const KEY_AREAS = [
   'contacts',
   'journal',
   'apps',
+  // The data of mini apps opened to MCP (team apps Phase 1): the app_data_*
+  // tools. The apps area stays the authoring tools.
+  'app_data',
 ] as const;
 export type KeyArea = (typeof KEY_AREAS)[number];
 
@@ -46,6 +49,11 @@ const AREA_TOOLS: ReadonlyMap<string, KeyArea> = new Map<string, KeyArea>([
   ['my_page_create', 'pages'],
   ['my_note_create', 'notes'],
   ['my_file_upload', 'files'],
+  // Before the `app_` prefix rule: app data is its own area.
+  ['app_data_list', 'app_data'],
+  ['app_data_schema', 'app_data'],
+  ['app_data_query', 'app_data'],
+  ['app_data_write', 'app_data'],
 ]);
 
 /** The area a tool belongs to, or null (open only to an all-areas key).

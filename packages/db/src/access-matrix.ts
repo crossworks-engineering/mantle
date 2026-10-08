@@ -175,6 +175,9 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
       // The informational flag (0198): the member and client app lookups
       // read it on their roles.
       'data_read_only',
+      // MCP access (0234): the member and client MCP app lookups read it on
+      // their roles.
+      'mcp_access',
       'created_at',
       'updated_at',
     ],

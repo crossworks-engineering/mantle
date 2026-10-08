@@ -120,6 +120,7 @@ export type {
   MemberInviteRow,
   MemberInviteState,
 } from './dto/member-invites';
+export type { MemberMcpClient, MemberMcpView } from './dto/member-mcp';
 export type { MemberItemKind, ClientItemKind, ClientItemFilter } from './member-kinds';
 export type {
   LoginKind,

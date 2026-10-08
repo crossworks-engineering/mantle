@@ -191,6 +191,13 @@ export type AppRow = {
    *  everyone who runs it writes. Set with PATCH /api/apps/:id
    *  `{ dataReadOnly }`. Absent from an older brain: read as false. */
   dataReadOnly?: boolean;
+  /** MCP access (team apps Phase 1, migration 0234): a member's or client's
+   *  MCP connection may reach this app's data (the app_data_* tools), at
+   *  the app's level, read or write by the login's Write switch and
+   *  `dataReadOnly`. Off by default. Set with PATCH /api/apps/:id
+   *  `{ mcpAccess }`. Absent from an older brain: read as false (and the
+   *  switch is not shown). */
+  mcpAccess?: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -218,8 +225,17 @@ export type AppDetail = AppRow & {
 export type AppSnapshot = {
   id: string;
   seq: number;
+  /** `pre_mcp_write` (0234): taken before the first MCP write to the app
+   *  in an hour. */
   trigger:
-    'publish' | 'manual' | 'pre_restore' | 'pre_schema' | 'pre_delete' | 'pre_import' | 'nightly';
+    | 'publish'
+    | 'manual'
+    | 'pre_restore'
+    | 'pre_schema'
+    | 'pre_delete'
+    | 'pre_import'
+    | 'nightly'
+    | 'pre_mcp_write';
   kind: 'version' | 'snapshot';
   note: string | null;
   actor: 'owner' | 'agent' | 'mcp' | 'system';

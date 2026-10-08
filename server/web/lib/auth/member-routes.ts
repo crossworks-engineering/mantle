@@ -93,6 +93,11 @@ export const MEMBER_ROUTES: readonly string[] = [
   'GET /api/member/library/:id/comments',
   'POST /api/member/library/:id/comments',
   'DELETE /api/member/library/:id/comments/:commentId',
+  // The member's own MCP screen (team apps Phase 1): the connector URL, their
+  // own MCP and Write switches (read only), and their OWN connected clients,
+  // one of which they may disconnect (lib/mcp-clients.ts, actor-scoped).
+  'GET /api/member/mcp',
+  'DELETE /api/member/mcp/clients/:id',
 ];
 
 export function isMemberRoute(method: string, pattern: string): boolean {

@@ -27,5 +27,6 @@ Building and changing apps is handed to the app specialist. It writes the code, 
 - It runs in a sandboxed iframe with no access to your session or cookies. It reaches your data only through the tools you allow for that app.
 - Imports are limited to React, the built-in UI kit, Lucide icons, the host bridge and the app's own files.
 - An app can have its own SQLite database. `app_db_list` and `app_db_query` let the assistant read it.
+- **MCP access** (beside **Informational** on the app) lets members and clients reach the app's data from their own MCP client: they read it, and with their **Write** switch on they change rows (never the schema), unless the app is informational. Off by default. See [MCP as a login](../07-api/02-mcp-login.md).
 - Building uses `app_create`, `app_file_write`, `app_build`, `app_tools_set` and others. Delete and publish (`app_delete`, `app_publish`) are in a separate admin group.
 - More: [Apps](../03-using-jackdaw/10-apps.md).

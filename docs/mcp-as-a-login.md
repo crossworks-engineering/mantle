@@ -37,11 +37,58 @@ for a confirm, is `ownerOnly` or `mcpOnly`. Every call runs through
 `dispatchTool` inside `withViewer('team' | 'client')`, so row level security
 decides what is read.
 
-Read-only by default. With write on, the login also gets the draft tools of
-its own space (`packages/tools/src/builtins-my-space-write.ts`:
-`my_note_create`, `my_page_create`, `my_file_upload`, `my_item_submit`) and
-its request tool. Never a library write: a draft reaches the brain only when
-an admin accepts it.
+Read-only by default (plus the app data reads below). With write on, the
+login also gets the draft tools of its own space
+(`packages/tools/src/builtins-my-space-write.ts`: `my_note_create`,
+`my_page_create`, `my_file_upload`, `my_item_submit`), its request tool and
+`app_data_write` (below). Never a library write: a draft reaches the brain
+only when an admin accepts it.
+
+## App data (team apps Phase 1, migration 0234)
+
+A member's or client's MCP gets four tools for the data of mini apps
+(`packages/tools/src/builtins-app-data.ts`): `app_data_list`,
+`app_data_schema`, `app_data_query` and, with write on, `app_data_write`.
+They are in no agent's tool group (the `app-data-mcp` group only seeds
+their rows); the login surface adds them itself, and replaces the agent's
+`app_db_list` / `app_db_query` there, which reach every app at the level
+with no per-app switch.
+
+- **Reach** (`packages/content/src/mcp-app-data.ts`): an app the login may
+  run in the browser (a member: team, client or public level; a client:
+  client level; a green published build) whose `apps.mcp_access` is on.
+  Off by default; only `PATCH /api/apps/:id { mcpAccess }` (admin) sets it.
+  Every other app answers one plain "no such app".
+- **Write**: the login's Write switch (on the key or peer too) and the
+  browser's rule: a member writes a team or client app, a client a client
+  app, and neither an informational one. A public app reads only.
+- **Rows only**: `app_data_write` takes one INSERT, UPDATE, DELETE or
+  REPLACE. The SQL child runs it under a data-only engine authorizer (reads,
+  the three row writes, functions, a recursive CTE; every CREATE, DROP,
+  ALTER, trigger, view, index, transaction and schema-table write refused).
+- **Undo**: the first MCP write to an app in an hour takes a
+  `pre_mcp_write` snapshot under the app's history lock. If it cannot be
+  taken, the write is refused.
+- **Trail**: every call lands `app_access_log` rows with `via: 'mcp'`, the
+  role, the connection (`key`, `oauth`, `token`, `peer`) and its key id,
+  OAuth client or peer. A write keeps its SQL (2 KB), the rows it changed
+  and the person's per-app id (`host.me`).
+- **Keys**: the area `app_data` holds the four tools. The `apps` area stays
+  the authoring tools.
+
+The tools act only for a login whose surface the MCP route stamped
+(`surface.mcp`, `LoginMcpChannel`): a chat turn, an app run or the owner's
+surface finds no one to act for and is refused.
+
+## A member's own MCP screen
+
+`GET /api/member/mcp` answers a member's view of Settings > MCP: the box
+switch, the connector URL, their own MCP and Write switches (read only),
+and the clients THEY connected (`listLoginClients`, their live grants).
+`DELETE /api/member/mcp/clients/:id` ends only that member's grants on that
+client and their open codes, under the login's OAuth lock, every query on
+the lock's own transaction (`disconnectLoginClient`). The client
+registration and other logins' grants on it stay.
 
 ## Peers
 
@@ -86,5 +133,7 @@ file over MCP is at most about 6 MB.
 - A peer bound to a member or client does not need that login's own MCP
   switch: the admin bound it on purpose. Pending peers verify, as for the
   federation routes.
-- The connected-clients list in Settings, MCP shows every login's grants
-  without naming the login.
+- The admin's connected-clients list in Settings, MCP shows every login's
+  grants without naming the login. A member sees only their own (above).
+- A client login has no MCP screen yet; it reaches app data over MCP the
+  same way.

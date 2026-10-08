@@ -123,6 +123,14 @@ export {
 } from './client-apps';
 
 export {
+  MCP_DATA_APPS_MAX,
+  getMcpDataApp,
+  listMcpDataApps,
+  type McpDataApp,
+  type McpDataRole,
+} from './mcp-app-data';
+
+export {
   APP_NAV_CHANGED_CHANNEL,
   APP_NAV_LAYOUT_RETIRED,
   listAppNavItems,

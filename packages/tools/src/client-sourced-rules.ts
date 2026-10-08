@@ -326,6 +326,10 @@ export const WRITE_RULES: Readonly<Record<string, WriteRule>> = {
   my_page_create: free("a draft in the caller's own space"),
   my_file_upload: free("a draft in the caller's own space"),
   my_item_submit: free("sends the caller's own draft to review"),
+  // App rows on a login's own MCP (team apps Phase 1): no agent turn holds
+  // it, but if one ever did, it writes the app's data and the brain tables
+  // the app exports.
+  app_data_write: { kind: 'write', apps: ['app_id'] },
   // Calls on a federated peer as the login it binds us to.
   peer_call: always(OUTWARD),
   peer_file_copy: always(OUTWARD),

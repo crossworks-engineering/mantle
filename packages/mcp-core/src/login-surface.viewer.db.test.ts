@@ -99,6 +99,11 @@ describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
       'client_shared_list',
       'my_note_create',
       'my_item_submit',
+      'app_db_query',
+      'app_data_list',
+      'app_data_schema',
+      'app_data_query',
+      'app_data_write',
     ];
     for (const slug of tools) {
       await exec(sqlTag`
@@ -108,7 +113,7 @@ describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
     }
     await exec(sqlTag`
       insert into tool_groups (owner_id, slug, name, tool_slugs, audience, enabled) values
-        (${anchor}, 'g-team', 'g', ARRAY['note_list','note_create','my_items_list'], 'team', true),
+        (${anchor}, 'g-team', 'g', ARRAY['note_list','note_create','my_items_list','app_db_query'], 'team', true),
         (${anchor}, 'g-admin', 'g', ARRAY['event_list'], 'admin', true),
         (${anchor}, 'g-client', 'g', ARRAY['client_shared_list','note_list','my_items_list'], 'client', true)`);
     await exec(sqlTag`
@@ -170,7 +175,15 @@ describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
   it('write off: only read-only tools are listed, and a write tool is unknown', async () => {
     const c = await connect(asMember(false));
     const list = await names(c);
-    expect(list).toEqual(['my_items_list', 'note_list']);
+    // app_db_query is in the member's group, yet a login's MCP gets the
+    // app_data reads instead (team apps Phase 1), and no app_data_write.
+    expect(list).toEqual([
+      'app_data_list',
+      'app_data_query',
+      'app_data_schema',
+      'my_items_list',
+      'note_list',
+    ]);
     // SDK 2.x answers an unknown tool with a protocol error (-32602), where
     // 1.x returned an isError result.
     await expect(c.callTool({ name: 'note_create', arguments: { title: 'x' } })).rejects.toThrow(
@@ -178,9 +191,22 @@ describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
     );
   });
 
+  it('the app data tools run on the login MCP: the surface stamps the connection', async () => {
+    const c = await connect(asMember());
+    const res = await c.callTool({ name: 'app_data_list', arguments: {} });
+    expect(res.isError ?? false, text(res)).toBe(false);
+    expect(JSON.parse(text(res))).toEqual({ apps: [] });
+  });
+
   it('a client gets the client list only, whatever its groups hold', async () => {
     const c = await connect(asClient());
-    expect(await names(c)).toEqual(['client_shared_list', 'my_items_list']);
+    expect(await names(c)).toEqual([
+      'app_data_list',
+      'app_data_query',
+      'app_data_schema',
+      'client_shared_list',
+      'my_items_list',
+    ]);
   });
 
   it('write on: a member draft lands in their own space; a library write is refused', async () => {
@@ -188,6 +214,8 @@ describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
     const list = await names(c);
     expect(list).toContain('my_note_create');
     expect(list).toContain('my_item_submit');
+    expect(list).toContain('app_data_write');
+    expect(list).not.toContain('app_db_query');
     expect(list).not.toContain('event_list');
     expect(list).not.toContain('note_create');
 
