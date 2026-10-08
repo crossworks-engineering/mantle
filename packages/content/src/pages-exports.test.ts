@@ -39,6 +39,9 @@ const PUBLIC_VALUE_EXPORTS = [
   'extractSectionToPage',
   'foldEmbeddedText',
   'getPage',
+  // The level rule an open link renders by (access matrix M7).
+  'levelFilteredDoc',
+  'levelFilteredNote',
   'listBacklinks',
   'listPageTags',
   'listPages',
