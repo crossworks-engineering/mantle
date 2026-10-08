@@ -18,9 +18,9 @@
  * `runtime = 'nodejs'`: the tool handlers use node-only deps (pg, drizzle,
  * file/storage). The handler serves 2025-era clients statelessly (a fresh
  * server per request, GET and DELETE answered 405, no Redis / session store),
- * and 2026-07-28 clients per request on the same endpoint.
+ * and 2026-07-28 clients per request on the same endpoint, except for
+ * `subscriptions/listen` (405, lib/mcp-http.ts).
  */
-import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
 import {
   mcpInstructionsFor,
   preparedAllows,
@@ -29,11 +29,8 @@ import {
 } from '@mantle/mcp-core';
 import { isRemoteMcpEnabled, wwwAuthenticateHeader } from '@/lib/mcp-oauth';
 import { auditMcpKeyCall, resolveMcpCaller } from '@/lib/mcp-auth';
-import {
-  JSON_BODY_CEILING_BYTES,
-  OWNER_DOCUMENT_CEILING_BYTES,
-  readBodyCapped,
-} from '@/lib/body-limit';
+import { JSON_BODY_CEILING_BYTES, readBodyCapped } from '@/lib/body-limit';
+import { isSubscriptionListen, mcpHttpHandler } from '@/lib/mcp-http';
 import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 import { rateLimitAccessKey } from '@/lib/access-keys';
 
@@ -72,6 +69,14 @@ async function handler(req: Request): Promise<Response> {
   }
 
   if (!(await isRemoteMcpEnabled())) return notFound();
+
+  // An endless SSE stream per request, uncapped (lib/mcp-http.ts): refused.
+  if (isSubscriptionListen(req)) {
+    return new Response(JSON.stringify({ error: 'method_not_allowed' }), {
+      status: 405,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
 
   const caller = await resolveMcpCaller(req);
   if (!caller) return unauthorized();
@@ -130,23 +135,14 @@ async function handler(req: Request): Promise<Response> {
     );
   }
 
-  const instructions = mcpInstructionsFor(caller);
-  const mcpHandler = createMcpHandler(
-    () => {
-      // Recall's tier-1 hook rides the owner's server instructions, the one
-      // surface a client auto-loads besides the tool list (docs/recall.md); a
-      // login is told who it acts as.
-      const server = new McpServer({ name: 'mantle', version: '0.0.1' }, { instructions });
-      // Network transport: `run_terminal` stays off unless the operator sets
-      // MANTLE_MCP_TERMINAL=1 on the box (see packages/mcp-core/src/build-server.ts).
-      registerPreparedTools(server, prepared, { transport: 'http' });
-      return server;
-    },
-    // The SDK reads the body itself and caps it at 4 MiB by default. The
-    // ceiling here is the one bodyCeilingFor('/api/mcp') already holds this
-    // route to (a member's or client's body was capped lower above): an
-    // owner's file_upload carries the whole file as base64.
-    { maxRequestBodySize: OWNER_DOCUMENT_CEILING_BYTES },
+  // Recall's tier-1 hook rides the owner's server instructions, the one
+  // surface a client auto-loads besides the tool list (docs/recall.md); a
+  // login is told who it acts as. Network transport: `run_terminal` stays off
+  // unless the operator sets MANTLE_MCP_TERMINAL=1 on the box (see
+  // packages/mcp-core/src/build-server.ts).
+  const mcpHandler = mcpHttpHandler(
+    (server) => registerPreparedTools(server, prepared, { transport: 'http' }),
+    mcpInstructionsFor(caller),
   );
   return mcpHandler.fetch(req);
 }

@@ -247,10 +247,12 @@ function makeProvider(store: McpOAuthStore, opts: ProviderOpts): OAuthClientProv
   // The authorization server a pre-registered app signs in at. The owner
   // typed it (or Settings → Microsoft did); it is not discovered, so the
   // mix-up defence the SDK's issuer checks give (RFC 8414 §3.3, the callback
-  // leg's issuer binding) has nothing to defend. Entra needs them off: its
-  // metadata names the tenant GUID (or a literal `{tenantid}` on `common`),
-  // so a tenant given by domain would fail them. The metadata is fetched here
-  // and handed back as discovery state, which the SDK then uses as is.
+  // leg's issuer binding, RFC 9207 `iss`) has nothing to defend. Entra needs
+  // them off: its metadata names the tenant GUID (or a literal `{tenantid}` on
+  // `common`), so a tenant given by domain would fail them. The metadata is
+  // fetched here and handed back as discovery state, which the SDK then uses
+  // as is; it never claims `iss` support, because completeMcpOAuth does not
+  // pass `iss` for such a server.
   let preregistered: Promise<OAuthDiscoveryState | undefined> | null = null;
   const preregisteredDiscovery = () =>
     (preregistered ??= (async () => {
@@ -265,10 +267,9 @@ function makeProvider(store: McpOAuthStore, opts: ProviderOpts): OAuthClientProv
         fetchFn: mcpOAuthFetch,
         skipIssuerValidation: true,
       }).catch(() => undefined);
-      return {
-        authorizationServerUrl: url,
-        ...(metadata ? { authorizationServerMetadata: metadata } : {}),
-      };
+      if (!metadata) return { authorizationServerUrl: url };
+      const { authorization_response_iss_parameter_supported: _, ...rest } = metadata;
+      return { authorizationServerUrl: url, authorizationServerMetadata: rest };
     })());
 
   return {
@@ -286,6 +287,11 @@ function makeProvider(store: McpOAuthStore, opts: ProviderOpts): OAuthClientProv
         // spares the secret the Basic-auth encoding rules. Stamped with the
         // issuer the SDK asks for: the app is resolved fresh every time, so an
         // unstamped copy would make the SDK store one in this connector's vault.
+        // The stamp binds credentials to the server that issued them (SEP-2352);
+        // there is nothing to bind here, because this app only ever signs in at
+        // the tenant authority Settings → Microsoft names (discoveryState above),
+        // which is set by configuration and never discovered. Whatever issuer
+        // the SDK asks about, it is that server.
         return {
           client_id: app.clientId,
           client_secret: app.clientSecret,
@@ -415,6 +421,15 @@ const isMicrosoftAuthority = (url: string): boolean => {
     return false;
   }
 };
+
+/** Whether a connector's app signs in at a server the owner configured (the
+ *  Microsoft app, or a manual app with its own server), not one discovered
+ *  from the MCP server. */
+function hasConfiguredServer(client: ToolGroupMcpOAuthClient | undefined): boolean {
+  return (
+    client?.source === 'microsoft' || (client?.source === 'manual' && !!client.authorizationServer)
+  );
+}
 
 /** Turn a failed start into something the owner can act on. The SDK's own
  *  words for a server without dynamic registration ("Incompatible auth
@@ -550,7 +565,10 @@ export async function completeMcpOAuth(
     const result = await auth(provider, {
       serverUrl: mcp.url,
       authorizationCode: args.code,
-      ...(args.iss ? { iss: args.iss } : {}),
+      // `iss` defends a discovered server (RFC 9207). A configured one has no
+      // mix-up to catch, and Entra's `common` metadata names a literal
+      // `{tenantid}` issuer that no real `iss` could match.
+      ...(args.iss && !hasConfiguredServer(mcp.oauth.client) ? { iss: args.iss } : {}),
       fetchFn,
     });
     if (result !== 'AUTHORIZED') throw new Error('token exchange did not complete');

@@ -142,6 +142,15 @@ beforeAll(async () => {
       if (url.pathname === '/contoso.example/v2.0/.well-known/openid-configuration') {
         return json(tenantMeta('tenant-1'));
       }
+      // `common`, as Entra serves it: a literal `{tenantid}` issuer. (Real
+      // Entra does not claim iss support; this one does, the harder case.)
+      if (url.pathname === '/common/v2.0/.well-known/openid-configuration') {
+        return json({
+          ...tenantMeta('tenant-1'),
+          issuer: `${origin}/{tenantid}/v2.0`,
+          authorization_response_iss_parameter_supported: true,
+        });
+      }
       if (url.pathname === '/register') {
         as.registerHits++;
         return json({ error: 'not supported' }, 404);
@@ -314,6 +323,15 @@ describe('the Microsoft app', () => {
     await completeMcpOAuth(store, { code: AUTH_CODE });
     expect(binding.oauth?.status).toBe('connected');
     expect(store.secrets.has('oauth-client')).toBe(false);
+  });
+
+  it('`common`: a literal {tenantid} issuer, and an iss on the callback, still sign in', async () => {
+    fresh({ client: { source: 'microsoft' } });
+    msApp = { ...msApp!, authorizationServer: `${origin}/common/v2.0` };
+    const flow = await startMcpOAuth(store, { redirectUri: REDIRECT });
+    if (!('authorizeUrl' in flow)) throw new Error('expected a redirect flow');
+    await completeMcpOAuth(store, { code: AUTH_CODE, iss: `${origin}/tenant-1/v2.0` });
+    expect(binding.oauth?.status).toBe('connected');
   });
 
   it('with no Microsoft app configured: teaching error, no silent pending', async () => {

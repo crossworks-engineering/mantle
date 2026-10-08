@@ -632,6 +632,11 @@ assistant sees. `mcp-handler` stays at ^1.1.0.
 >   descriptions and input schemas byte-identical. The only change is that
 >   `execution: { taskSupport: 'forbidden' }` is no longer sent (SDK 2 removed
 >   tasks; an absent value means "forbidden"). `tools-list.test.ts` pins this.
+> - **No `subscriptions/listen`.** SDK 2 also serves the 2026-07-28 protocol,
+>   whose `subscriptions/listen` is an SSE stream with no end. The SDK caps
+>   open listens per handler, and the route builds one per request, so that
+>   is no cap. The server says `tools.listChanged: false` (nothing to listen
+>   for) and the route answers a listen 405 (`server/web/lib/mcp-http.ts`).
 > - **`createMcpHandler` caps a body at 4 MiB by default.** The route sets
 >   `maxRequestBodySize` to the 128 MB ceiling `/api/mcp` already had, or an
 >   owner's `file_upload` over MCP would 413.
@@ -639,8 +644,12 @@ assistant sees. `mcp-handler` stays at ^1.1.0.
 >   pre-registered app (the Microsoft app, a manual app) names its server
 >   itself, and Entra's metadata names the tenant GUID, so the provider now
 >   hands the SDK that server's metadata as discovery state. The callback route
->   passes `iss` on (RFC 9207). An unknown tool call now answers a protocol
->   error (-32602) instead of an `isError` result.
+>   passes `iss` on (RFC 9207), except to such a configured server: Entra's
+>   `common` metadata names a literal `{tenantid}` issuer. An unknown tool
+>   call now answers a protocol error (-32602) instead of an `isError` result.
+> - **Follow-up.** Persist discovery state (`saveDiscoveryState`), so the
+>   SEP-2352 same-server check also runs for discovered connectors. Until
+>   then the SDK logs one warning per OAuth callback.
 
 **`pdfjs-dist` 6.2.108 → 6.3.289 and `@napi-rs/canvas` 1.0.2 → 1.0.8 stay
 pinned.** These are the exact-pinned singletons from wave 2, so `deps:drift`
