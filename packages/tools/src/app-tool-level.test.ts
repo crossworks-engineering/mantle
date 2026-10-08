@@ -9,7 +9,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
-  app: null as null | { audience: string; manifest: { toolSlugs?: string[] } },
+  app: null as null | {
+    audience: string;
+    manifest: { toolSlugs?: string[] };
+    authorLevel?: 'admin' | 'team';
+  },
 }));
 
 vi.mock('./resolve', () => ({
@@ -38,7 +42,7 @@ vi.mock('./resolve', () => ({
 }));
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  getApp: vi.fn(async () => h.app),
+  getAppRuntime: vi.fn(async () => (h.app ? { authorLevel: 'admin', ...h.app } : null)),
 }));
 
 import { resolveTool } from './resolve';
@@ -74,6 +78,18 @@ describe('appToolLevel: a client app runs client rules for everyone', () => {
   it('reads an unknown stored level as admin: the runner keeps its rules, a client gets none', () => {
     expect(appToolLevel('team', 'weird')).toBe('team');
     expect(appToolLevel('client', undefined)).toBe('none');
+  });
+
+  // Team apps Phase 3, plan A.4: a member-built app never runs admin rules.
+  it('the author ceiling: a member-built app runs at most team rules, an admin run included', () => {
+    for (const app of ['admin', 'team', 'public']) {
+      expect(appToolLevel('admin', app, 'team'), app).toBe('team');
+      expect(appToolLevel('admin', app, 'admin'), app).toBe('admin');
+      expect(appToolLevel('team', app, 'team'), app).toBe('team');
+    }
+    // Lower rules stay as they are.
+    expect(appToolLevel('admin', 'client', 'team')).toBe('client');
+    expect(appToolLevel('client', 'team', 'team')).toBe('none');
   });
 });
 
@@ -159,6 +175,11 @@ describe('appToolWarnings follows the app level', () => {
   });
 
   it('says nothing for an admin-level app or a missing one', async () => {
+    h.app = { audience: 'admin', manifest: { toolSlugs: ['contact_list'] } };
+    expect(await appToolWarnings('brain', 'app')).toEqual([]);
+    // A member-built app at admin level still warns: it runs team rules.
+    h.app = { audience: 'admin', manifest: { toolSlugs: ['weather'] }, authorLevel: 'team' };
+    expect((await appToolWarnings('brain', 'app')).length).toBe(1);
     h.app = { audience: 'admin', manifest: { toolSlugs: ['contact_list'] } };
     expect(await appToolWarnings('brain', 'app')).toEqual([]);
     h.app = null;

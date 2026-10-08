@@ -18,12 +18,19 @@
  *   member         (never)  team     client   team
  *   client         (never)  (never)  client   (never)
  *
+ * AUTHOR CEILING (team apps Phase 3, plan A.4): an app a member built
+ * (`apps.author_level` 'team') runs its tools at most at team rules, for
+ * every runner: an admin who opens it gets `team`, never `admin`, so a
+ * member cannot ship an app that fires an admin tool the first time an
+ * admin runs it. Only an admin's accept with the declared tools reviewed
+ * lifts it.
+ *
  * `admin` is the owner broker's rule as it always was (declared, exists);
  * `team` is memberAppToolVerdict; `client` is clientAppToolVerdict; `none`
  * refuses every tool.
  */
-import { asViewerLevel, type Tool, type ViewerLevel } from '@mantle/db';
-import { getApp } from '@mantle/content';
+import { asViewerLevel, type AppAuthorLevel, type Tool, type ViewerLevel } from '@mantle/db';
+import { getAppRuntime } from '@mantle/content';
 import { resolveTool } from './resolve';
 import { memberAppToolVerdict } from './member-app-tools';
 import { CLIENT_APP_TOOL_SLUGS, clientAppToolVerdict } from './client-app-tools';
@@ -42,16 +49,22 @@ export type AppToolVerdict =
 
 /** A client-level app runs the client rules for every runner; any other app
  *  runs the runner's own rules. A client never runs a non-client app (its
- *  broker 404s first), so that pair runs no tools. */
-export function appToolLevel(runner: AppToolRunner, appLevel: unknown): AppToolLevel {
+ *  broker 404s first), so that pair runs no tools. Then the author ceiling:
+ *  a member-built app (`authorLevel` 'team') never runs at admin rules. */
+export function appToolLevel(
+  runner: AppToolRunner,
+  appLevel: unknown,
+  authorLevel: AppAuthorLevel = 'admin',
+): AppToolLevel {
   let level: ViewerLevel;
   try {
     level = asViewerLevel(appLevel);
   } catch {
     return 'none';
   }
-  if (level === 'client') return 'client';
-  return runner === 'client' ? 'none' : runner;
+  const byRunner: AppToolLevel =
+    level === 'client' ? 'client' : runner === 'client' ? 'none' : runner;
+  return byRunner === 'admin' && authorLevel === 'team' ? 'team' : byRunner;
 }
 
 const notDeclared = (slug: string) =>
@@ -130,10 +143,13 @@ export function appToolScope(
  */
 export async function appToolWarnings(ownerId: string, appId: string): Promise<string[]> {
   try {
-    const app = await getApp(ownerId, appId);
+    const app = await getAppRuntime(ownerId, appId);
     if (!app) return [];
     const level = appToolLevel('team', app.audience);
-    if (app.audience === 'admin' || level === 'none') return [];
+    // An admin-level app warns only when a member built it: the author
+    // ceiling runs it at team rules for its admins too (Phase 3).
+    const capped = app.audience === 'admin' && app.authorLevel === 'team';
+    if ((app.audience === 'admin' && !capped) || level === 'none') return [];
     const declared = [...new Set(app.manifest.toolSlugs ?? [])];
     const warnings: string[] = [];
     for (const slug of declared) {
@@ -141,11 +157,11 @@ export async function appToolWarnings(ownerId: string, appId: string): Promise<s
       if (verdict.ok) continue;
       if (level === 'client') {
         warnings.push(
-          `${verdict.reason} Everyone running this app (admins and members too) gets an error: a client-level app uses the client rules, so it can call only the client tools (${CLIENT_APP_TOOL_SLUGS.join(', ')}) from an enabled client-level group, or an outside (MCP or http) tool an admin switched External access on for. Raise the app to team level to use other built-in tools.`,
+          `${verdict.reason} Everyone running this app (admins and members too) gets an error: a client-level app uses the client rules, so it can call only the client tools (${CLIENT_APP_TOOL_SLUGS.join(', ')}) from an enabled client-level group, a connector tool whose connector is at client level, or an http tool an admin switched External access on for. Raise the app to team level to use other built-in tools.`,
         );
       } else {
         warnings.push(
-          `${verdict.reason} Members running this app get an error: declare a read-only built-in tool from an enabled team-level group instead (\`tool_group_list\` shows levels), have an admin switch External access on for an outside (MCP or http) tool that only reads, or keep the app at admin level.`,
+          `${verdict.reason} Members running this app get an error: declare a read-only built-in tool from an enabled team-level group instead (\`tool_group_list\` shows levels), have an admin set a connector's level to team or lower for its tools, switch External access on for an http tool that only reads, or keep the app at admin level.`,
         );
       }
     }

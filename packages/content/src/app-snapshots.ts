@@ -419,7 +419,8 @@ export async function createAppSnapshot(
       );
     })
     .catch(async (err: unknown) => {
-      if (copied) await rm(copied, { force: true });
+      // Never mask the original error with a failed clean-up (M2, low 7).
+      if (copied) await rm(copied, { force: true }).catch(() => undefined);
       throw err;
     });
   if (snap && trigger !== 'manual') await pruneAutoSnapshots(appId, trigger);

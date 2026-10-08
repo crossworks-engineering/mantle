@@ -5,7 +5,9 @@
 #
 #   1. preflight: the updater is idle, no request is pending
 #   2. count apps, sandboxes (Postgres) and app-db files (mantle_web) BEFORE;
-#      refuse a box that still has a page-built (v1) Recall map (2b)
+#      refuse a box that still has a page-built (v1) Recall map (2b), and one
+#      where the roll would open connector write tools to members, clients or
+#      apps (2c, team apps Phase 2) unless --ack-connector-writes
 #   3. backup: scripts/db-dump.sh on the box, strict, its OWN exit status
 #      (no pipe in front of it). Skipped only when the box's updater takes
 #      its own strict pre-roll backup (see pre_roll_backup in
@@ -20,8 +22,8 @@
 #   8. print /api/version
 #
 # Usage:
-#   scripts/roll.sh [--dry-run] <box-label> <tag>
-#   scripts/roll.sh [--dry-run] --ssh <alias> [--stack <dir>] [--url <origin>] <tag>
+#   scripts/roll.sh [--dry-run] [--ack-connector-writes] <box-label> <tag>
+#   scripts/roll.sh [--dry-run] [--ack-connector-writes] --ssh <alias> [--stack <dir>] [--url <origin>] <tag>
 #
 # <box-label> is looked up in .mantle-fleet.json at the repo root (untracked,
 # see .mantle-fleet.example.json; MANTLE_FLEET_FILE points elsewhere), the same
@@ -49,10 +51,11 @@ HEALTH_TIMEOUT=${ROLL_HEALTH_TIMEOUT_SECS:-900}
 die() { printf '\n✗ %s\n' "$*" >&2; exit 1; }
 usage() { sed -n '/^# Usage:/,/^# --dry-run/p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 
-DRY=""; SSH_ALIAS=""; STACK=""; URL=""; LABEL=""; TAG=""
+DRY=""; ACK_CONNECTOR_WRITES=""; SSH_ALIAS=""; STACK=""; URL=""; LABEL=""; TAG=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY=1; shift ;;
+    --ack-connector-writes) ACK_CONNECTOR_WRITES=1; shift ;;
     --ssh) SSH_ALIAS=${2:-}; shift 2 ;;
     --stack) STACK=${2:-}; shift 2 ;;
     --url) URL=${2:-}; shift 2 ;;
@@ -181,6 +184,47 @@ if [ -n "$V1" ]; then
   fi
 else
   echo "recall: no page-built maps"
+fi
+
+# ── 2c. connectors by level: what the roll opens ────────────────────────────
+# From team apps Phase 2 a connector's level decides who may use its tools,
+# and a tool without the admin's read-only mark can change data: on a
+# connector already below admin (set for the team assistant in chat) every
+# unmarked tool becomes callable as a write by members' apps and MCP the
+# moment the box rolls. Counted here in plain SQL (the box's current image
+# may not have the connector-levels script yet), numbers only, read only.
+# The roll stops while any such write would open, unless the operator passed
+# --ack-connector-writes after an admin looked (mark the tools read-only,
+# disable them, or raise the connector to admin level first).
+CW=$(rsh 'sh -s' <<'EOF'
+set -e
+q() { docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -At -F ' ' -c "$1"; }
+if [ "$(q "select count(*) from information_schema.columns where table_schema = 'public' and table_name = 'tools' and column_name = 'external_access'")" != 1 ]; then
+  echo "0 0 0"; exit 0
+fi
+q "with g as (
+     select slug from tool_groups
+      where integration ? 'mcp' and enabled and audience <> 'admin'),
+   w as (
+     select t.slug from tools t join g on g.slug = t.handler->>'group'
+      where t.handler->>'kind' = 'mcp' and t.enabled and not t.requires_confirm
+        and t.external_access is null)
+   select (select count(*) from g), (select count(*) from w),
+          (select count(*) from apps a join nodes n on n.id = a.node_id
+            where (n.audience <> 'admin' or n.inherited_level is not null)
+              and exists (select 1 from w where a.manifest->'toolSlugs' ? w.slug))"
+EOF
+) || die "could not count the connectors below admin"
+CW=$(printf '%s' "$CW" | tr -d '\r' | tr -s ' ')
+case "$CW" in *[!0-9\ ]* | '') die "unexpected connector count: $CW" ;; esac
+read -r OPEN_GROUPS OPEN_WRITES APPS_OPENING <<< "$CW"
+echo "connectors below admin: $OPEN_GROUPS, unmarked (write) tools in them: $OPEN_WRITES, apps below admin declaring one: $APPS_OPENING"
+if [ "$OPEN_WRITES" -gt 0 ] || [ "$APPS_OPENING" -gt 0 ]; then
+  if [ -n "$ACK_CONNECTOR_WRITES" ]; then
+    echo "connectors: write tools open after this roll, acknowledged by --ack-connector-writes"
+  else
+    die "this roll opens $OPEN_WRITES connector write tool(s) to members, clients or apps ($APPS_OPENING app(s) below admin declare one). Have an admin mark them read-only, disable them, or raise their connector to admin level; or pass --ack-connector-writes if Jason agreed."
+  fi
 fi
 
 if [ -n "$DRY" ]; then

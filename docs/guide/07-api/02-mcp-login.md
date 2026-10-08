@@ -52,9 +52,11 @@ An MCP connector (Settings > MCP connectors) starts at admin level: only admins 
 | Admin | Admins only |
 | Team | Members: their own MCP and the apps they run |
 | Client | Clients and members: their own MCP and client apps |
-| Public | Also contacts on a contact-share link of an app |
+| Public | Also contacts on a contact-share link of an app, and public agents: read-only tools only |
 
-Everyone at that level may use every tool of the connector, so keep a source with secret parts at admin level. A tool you marked read-only (**I confirm this tool only reads data**) is a read. A tool without the mark changes data: apps may call it, and a member's or client's MCP only with their **Write** switch on. Every call is logged with the login.
+Everyone at that level may use every tool of the connector, so keep a source with secret parts at admin level. A tool you marked read-only (**I confirm this tool only reads data**) is a read. A tool without the mark changes data: apps of members and clients may call it, and a member's or client's MCP only with their **Write** switch on. Contacts and public agents never get a tool without the mark. Every call is logged with the login.
+
+Removing the mark never closes a tool: it makes it a tool that changes data. To close one, raise the connector's level or switch the tool off. If a connector's tool changes, or the connector moves to another server, its mark stops counting: members and clients cannot use the tool until you mark it again. A tool the server adds later arrives switched off on a connector below admin.
 
 ## When their MCP client cannot sign in
 

@@ -228,6 +228,11 @@ export async function syncMcpConnector(ownerId: string, groupSlug: string): Prom
   });
 
   const now = new Date();
+  // A connector below admin gives its tools to members, clients or links
+  // (team apps Phase 2): a tool the remote server adds later arrives
+  // DISABLED there, unmarked, until an admin looks at it and enables it
+  // (M2 audit, low 5). At admin level it arrives enabled, as before.
+  const openBelowAdmin = group.audience !== 'admin';
   for (const ins of plan.inserts) {
     await db.insert(tools).values({
       ownerId,
@@ -237,7 +242,7 @@ export async function syncMcpConnector(ownerId: string, groupSlug: string): Prom
       inputSchema: ins.inputSchema,
       handler: ins.handler,
       requiresConfirm: false,
-      enabled: true,
+      enabled: !openBelowAdmin,
     });
   }
   for (const upd of plan.updates) {

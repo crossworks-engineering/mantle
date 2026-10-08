@@ -25,6 +25,17 @@ an item does (plan page b6dd688e, section C).
   of the apps that lose or gain a connector tool and the connectors below
   admin (ids and numbers only). Nothing raises a level by itself.
 - An undo snapshot whose row fails to commit no longer leaves its file.
+- Contacts read only (Jason): a public run (contact link, public agent)
+  only calls connector tools marked read-only.
+- `dispatchMcp` holds the connector level and the public read-only rule on
+  every non-owner call, whatever group listed the tool.
+- A changed or moved connector voids the mark (refused below the owner
+  until marked again); a connector moved while below admin disables its
+  unmarked tools, and new remote tools arrive disabled there.
+- `scripts/roll.sh` stops a roll that would open connector write tools
+  (numbers only) unless `--ack-connector-writes`.
+- Admin texts (api_tool_update, app_tools_set, app warnings) say that
+  unmarking makes a connector tool a write, never closes it.
 
 ## Unreleased: team apps Phase 1, MCP on app data
 

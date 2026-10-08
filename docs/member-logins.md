@@ -803,6 +803,26 @@ so it is listed like any team app there.
 > opens the tools on a member's or client's own MCP (docs/mcp-as-a-login.md).
 > Everything below still holds for http tools, and for the mark itself
 > (who sets it, the signature that voids it).
+>
+> Safety rules on connector tools (M2 audit and Jason, 2026-10-08):
+>
+> - **Contacts read only.** A public run (a contact-share link, a public
+>   agent) only ever calls a MARKED tool, even on a public-level connector.
+>   Writes through a connector stay with signed-in members and clients.
+> - **The gate is in the dispatch too.** `dispatchMcp` refuses a non-owner
+>   call (a team, client or contact surface, or a viewer scope below admin)
+>   whose level does not read the connector's level, whatever group listed
+>   the tool to the agent, and a public run of an unmarked tool.
+> - **A change never turns a read into a write.** A changed handler or a
+>   connector moved to another server VOIDS the mark (kept, signature
+>   `voided`): the tool is refused below the owner until an admin marks it
+>   again. A connector moved while below admin also disables its unmarked
+>   tools, and a tool the remote server adds later arrives disabled there.
+> - **Unmarking never closes a connector tool**; it makes it a write. To
+>   close one, raise the connector's level or disable the tool.
+> - **Rolls stop on new writes.** `scripts/roll.sh` counts, in plain SQL,
+>   the connectors below admin and their unmarked tools, and stops while
+>   any would open unless the operator passes `--ack-connector-writes`.
 
 A site adds its own connectors: an MCP server or an http API, for example a
 read-only SQL bridge to a site database. None ship with Mantle, and the

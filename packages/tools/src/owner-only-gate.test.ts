@@ -265,6 +265,8 @@ const TEAM_KIND_ALLOWED: Record<string, string[]> = {
   // App data on a login's own MCP (team apps Phase 1): a member on a team
   // surface, only with the MCP connection stamped.
   'builtins-app-data.ts': ["if (s?.kind === 'team' && s.loginId && s.mcp) {"],
+  // A connector call below the owner runs at the level its surface names.
+  'dispatch.ts': ["s?.kind === 'team'"],
   // Own-space drafts: a folder is for a member's space only (clients have none).
   'builtins-my-space-write.ts': ["if (ctx.surface?.kind !== 'team') {"],
   // read_result binds a client's or member's turn to its own spills.

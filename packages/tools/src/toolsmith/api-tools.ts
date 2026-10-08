@@ -266,7 +266,7 @@ export const api_tool_update: BuiltinToolDef = {
   slug: 'api_tool_update',
   name: 'Update an HTTP API tool',
   description:
-    "Update a user-defined HTTP tool by slug. Provide only the fields to change; headers/query replace the whole map when given; body: null clears the template. Pass group_slug to (re)join an integration group — the tool is added to it and re-inherits its base URL + auth placement into the stored templates. Built-in tools only allow enabled/requires_confirm changes; shell tools cannot be edited by agents. `external_access` opens an mcp or http tool to everyone a shared app reaches (members, clients, contact links; any input, by hand too); only the owner's MCP client may switch it on, any caller may switch it off.",
+    "Update a user-defined HTTP tool by slug. Provide only the fields to change; headers/query replace the whole map when given; body: null clears the template. Pass group_slug to (re)join an integration group — the tool is added to it and re-inherits its base URL + auth placement into the stored templates. Built-in tools only allow enabled/requires_confirm changes; shell tools cannot be edited by agents. `external_access` (see its param) opens an http tool to shared apps; on an mcp connector tool it is only the read-only mark, so close one by raising its connector's level or disabling it. Only the owner's MCP client switches it on.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -331,7 +331,7 @@ export const api_tool_update: BuiltinToolDef = {
       external_access: {
         type: 'boolean',
         description:
-          '"External access": true lets everyone an app that declares this mcp or http tool is shared with (members, clients, contacts on a contact link) call it, by hand too, with any input; false closes it. Never for recipe or shell tools.',
+          '"External access". On an http tool: true lets everyone an app that declares it is shared with (members, clients, contacts on a contact link) call it, by hand too, with any input; false closes it. On an mcp connector tool: the read-only mark only (true = reads, false = can change data); it never closes the tool, the connector\'s level does. Never for recipe or shell tools.',
       },
       read_only_confirmed: {
         type: 'boolean',

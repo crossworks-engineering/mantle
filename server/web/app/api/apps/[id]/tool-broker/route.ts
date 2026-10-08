@@ -33,8 +33,14 @@ import {
   verifyAppToolConfirmToken,
   type AppToolConfirmClaims,
 } from '@/lib/auth';
-import { getAppRuntime, recordAppError } from '@mantle/content';
-import { appToolLevel, appToolScope, appToolVerdict, dispatchTool } from '@mantle/tools';
+import { getAppRuntime, recordAppAccess, recordAppError } from '@mantle/content';
+import {
+  appToolLevel,
+  appToolScope,
+  appToolVerdict,
+  dispatchTool,
+  outsideCallLogDetail,
+} from '@mantle/tools';
 
 const Body = z.object({
   slug: z.string().min(1).max(120),
@@ -54,7 +60,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const app = await getAppRuntime(user.id, id);
   if (!app) return NextResponse.json({ ok: false, error: 'app not found' }, { status: 404 });
 
-  const level = appToolLevel('admin', app.audience);
+  // The author ceiling (team apps Phase 3): a member-built app runs its
+  // tools at team rules, an admin's run included.
+  const level = appToolLevel('admin', app.audience, app.authorLevel);
   const verdict = await appToolVerdict(
     level,
     user.id,
@@ -75,6 +83,22 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!verdict.ok) {
     logError(verdict.reason, verdict.status);
     return NextResponse.json({ ok: false, error: verdict.reason }, { status: verdict.status });
+  }
+  // Below admin rules (a client-level app, or a member-built one), an
+  // outside call is logged like a member's: its kind, and a write's input
+  // (M2 audit, low 4).
+  if (level !== 'admin') {
+    recordAppAccess({
+      ownerId: user.id,
+      appNodeId: id,
+      actorId: user.actor.id,
+      kind: 'tool',
+      detail: {
+        via: 'owner',
+        slug: parsed.data.slug,
+        ...outsideCallLogDetail(verdict, parsed.data.input),
+      },
+    });
   }
 
   if (level === 'admin' && verdict.tool.requiresConfirm) {

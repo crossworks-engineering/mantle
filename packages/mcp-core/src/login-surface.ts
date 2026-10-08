@@ -37,7 +37,7 @@ import {
   CLIENT_TURN_TOOL_SLUGS,
   MY_SPACE_WRITE_TOOL_SLUGS,
   dispatchTool,
-  externalAccessActive,
+  connectorMarkState,
   getBuiltin,
   isBuiltinReadOnly,
   listLoginConnectorTools,
@@ -406,7 +406,9 @@ export async function callLoginTool(
     // A connector tool (team apps Phase 2): a write needs write on (the
     // surface lists none without it; this is the call's own check), and
     // every call is logged with the login.
-    const write = !externalAccessActive(row);
+    // A stale (voided) mark counts as a write here: dispatchMcp refuses it below
+    // the owner anyway (connectorMarkState).
+    const write = connectorMarkState(row) !== 'read';
     if (write && !caller.write) {
       return {
         content: [

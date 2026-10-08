@@ -172,6 +172,8 @@ export {
   outsideToolVerdict,
   connectorToolVerdict,
   connectorGroupOf,
+  connectorMarkState,
+  VOIDED_MARK_SIG,
   listLoginConnectorTools,
   connectorLevelAllows,
   outsideCallLogDetail,

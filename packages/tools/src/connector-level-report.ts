@@ -29,6 +29,7 @@ import {
   type ToolHandler,
   type ViewerLevel,
 } from '@mantle/db';
+import { effectiveLevel } from '@mantle/content-core/tree';
 import { connectorLevelAllows, externalAccessActive } from './external-access';
 
 /** One app run below admin, and what Phase 2 changes for it. */
@@ -139,12 +140,13 @@ export async function connectorLevelReport(ownerId: string): Promise<ConnectorLe
   for (const app of appRows) {
     const declared = (app.manifest?.toolSlugs ?? []).filter((s) => toolBySlug.has(s));
     if (!declared.length) continue;
-    const own = asViewerLevel(app.audience);
-    const shared = app.inherited ? asViewerLevel(app.inherited) : null;
-    const levels = new Set([own, ...(shared ? [shared] : [])]);
+    // The level the brokers run it at: its own, or its folder's share when
+    // that is more open (member-apps.ts itemLevel), never an embed's.
+    const shared = app.inherited === 'team' || app.inherited === 'client' ? app.inherited : null;
+    const level = effectiveLevel(asViewerLevel(app.audience), shared, null);
     const runners: ConnectorLevelAppRow['runner'][] = [];
-    if (levels.has('client')) runners.push('client');
-    else if (levels.has('team') || levels.has('public')) runners.push('member');
+    if (level === 'client') runners.push('client');
+    else if (level === 'team' || level === 'public') runners.push('member');
     if (contactShared.has(app.id)) runners.push('contact');
     for (const runner of runners) {
       const loses = new Map<string, number>();

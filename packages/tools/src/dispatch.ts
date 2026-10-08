@@ -10,7 +10,19 @@
  */
 
 import { and, eq } from 'drizzle-orm';
-import { asSystem, db, toolGroups, type Tool, type ToolHandler } from '@mantle/db';
+import {
+  asSystem,
+  asViewerLevel,
+  db,
+  levelCovers,
+  lowerLevel,
+  toolGroups,
+  type Tool,
+  type ToolHandler,
+  type ViewerLevel,
+} from '@mantle/db';
+import { currentViewerLevel } from '@mantle/db/viewer';
+import { connectorMarkState } from './external-access';
 import { getApiKey } from '@mantle/api-keys';
 import { getBuiltin, getBuiltinHandler } from './registry';
 import { checkToolPreconditions } from './preconditions';
@@ -94,7 +106,7 @@ export async function dispatchTool(
     return dispatchRecipe(h, input, ctx, depth);
   }
   if (h.kind === 'mcp') {
-    return dispatchMcp(h, input, ctx);
+    return dispatchMcp(h, input, ctx, tool);
   }
   return { ok: false, error: `unknown handler kind` };
 }
@@ -102,6 +114,50 @@ export async function dispatchTool(
 /** Text cap on an MCP result before the normal inline/spill machinery —
  *  matches web_fetch's MAX_TEXT_CAP; the same class of egress. */
 const MCP_RESULT_TEXT_CAP = 80_000;
+
+/** The level a non-owner call runs at: the viewer scope, lowered to what its
+ *  surface names (an admin-level agent serving a member is still a member's
+ *  call). Null for the owner's own paths. */
+function nonOwnerRunLevel(ctx: ToolHandlerContext): ViewerLevel | null {
+  const s = ctx.surface;
+  const bySurface: ViewerLevel | null =
+    s?.kind === 'team'
+      ? 'team'
+      : s?.kind === 'client'
+        ? 'client'
+        : s?.kind === 'contact'
+          ? 'public'
+          : null;
+  const viewer = currentViewerLevel();
+  if (!bySurface) return viewer === 'admin' ? null : viewer;
+  try {
+    return lowerLevel(viewer, bySurface);
+  } catch {
+    // client with public: no common level, nothing passes.
+    return 'public';
+  }
+}
+
+/** Why a connector call is refused for a non-owner run, or null. */
+function connectorCallRefused(
+  ctx: ToolHandlerContext,
+  connectorLevel: ViewerLevel,
+  tool: Tool,
+): string | null {
+  const run = nonOwnerRunLevel(ctx);
+  if (!run) return null;
+  if (!levelCovers(run, connectorLevel)) {
+    return `This connector's tools are not open at your level (the connector is at ${connectorLevel} level).`;
+  }
+  const mark = connectorMarkState(tool);
+  if (mark === 'stale') {
+    return 'This connector tool changed after an admin marked it read-only; it runs again once an admin marks it again.';
+  }
+  if (run === 'public' && mark === 'write') {
+    return 'On a shared link only connector tools an admin marked read-only run; this one can change data.';
+  }
+  return null;
+}
 
 /**
  * Run a connector tool against its external MCP server. The connector config
@@ -113,6 +169,7 @@ async function dispatchMcp(
   h: Extract<ToolHandler, { kind: 'mcp' }>,
   input: Record<string, unknown>,
   ctx: ToolHandlerContext,
+  tool: Tool,
 ): Promise<ToolHandlerResult> {
   // asSystem: the connector's binding is infrastructure, like its keys. A
   // client-level call (an External access tool in a client app) reads tool
@@ -138,6 +195,14 @@ async function dispatchMcp(
       error: `MCP connector '${h.group}' is disabled — ask the owner to enable it under Settings → Tool groups`,
     };
   }
+  // The connector's level and the read-only mark hold on EVERY path below
+  // the owner (team apps M2 audit, low 6): a chat turn whose agent holds the
+  // tool through another group, an app run, a login's MCP. The level a
+  // non-owner call runs at must read the connector's level; a public run
+  // (a contact link, a public agent) only ever reads (Jason, 2026-10-08:
+  // contacts read only), so an unmarked tool is refused there.
+  const refused = connectorCallRefused(ctx, asViewerLevel(group.audience), tool);
+  if (refused) return { ok: false, error: refused };
   try {
     // asSystem: the remote call reads and, for an OAuth connector, refreshes
     // the connector's OWN credentials (api_keys), which a limited role may

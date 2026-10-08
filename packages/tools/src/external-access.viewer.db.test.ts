@@ -285,7 +285,17 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     });
     await setConnectorLevel('public');
     const v = await ta.contactAppToolVerdict(anchor, DECLARED, 'site_query');
+    // Contacts read only (Jason, 2026-10-08): an unmarked tool on a public
+    // connector is refused on a link.
+    await switchOff('site_query');
+    const unmarked = await ta.contactAppToolVerdict(anchor, DECLARED, 'site_query');
+    await switchOn('site_query');
     await setConnectorLevel('team');
+    expect(unmarked).toMatchObject({
+      ok: false,
+      status: 403,
+      reason: expect.stringMatching(/marked read-only/),
+    });
     if (!v.ok) throw new Error(v.reason);
     fake.calls.length = 0;
     const out = await m.withViewer('public', () =>
@@ -371,6 +381,55 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     expect(await verdict('quick_sum')).toMatchObject({ ok: false, status: 403 });
   });
 
+  it('dispatch itself holds the level and the public read-only rule on every non-owner call', async () => {
+    const [row] = (await exec(
+      sqlTag`select id from tools where id = ${ids.site_query!}`,
+    )) as unknown as { id: string }[];
+    expect(row).toBeTruthy();
+    const tool = await (await import('./resolve')).resolveTool(anchor, 'site_query');
+    if (!tool) throw new Error('no tool');
+    // A member's chat turn through some other group: the connector's own
+    // level decides (M2 audit, low 6).
+    await setConnectorLevel('admin');
+    try {
+      fake.calls.length = 0;
+      const chat = await m.withViewer('team', () =>
+        dispatch.dispatchTool(tool, {}, { ownerId: anchor, surface: { kind: 'team' } }),
+      );
+      expect(chat).toMatchObject({
+        ok: false,
+        error: expect.stringMatching(/not open at your level/),
+      });
+      // The owner's own path is never gated.
+      const owner = await dispatch.dispatchTool(
+        tool,
+        {},
+        {
+          ownerId: anchor,
+          surface: { kind: 'owner', via: 'mcp' },
+        },
+      );
+      expect(owner.ok).toBe(true);
+    } finally {
+      await setConnectorLevel('team');
+    }
+    // A public run (a public agent, a contact link) only reads.
+    await setConnectorLevel('public');
+    await switchOff('site_query');
+    try {
+      const unmarked = await crud.getToolById(anchor, ids.site_query!);
+      expect(unmarked).toBeTruthy();
+      const fresh = await (await import('./resolve')).resolveTool(anchor, 'site_query');
+      const pub = await m.withViewer('public', () =>
+        dispatch.dispatchTool(fresh!, {}, { ownerId: anchor, surface: { kind: 'web' } }),
+      );
+      expect(pub).toMatchObject({ ok: false, error: expect.stringMatching(/marked read-only/) });
+    } finally {
+      await switchOn('site_query');
+      await setConnectorLevel('team');
+    }
+  });
+
   it("switching a connector tool's mark off turns its next call into a write", async () => {
     expect(await verdict('site_query')).toMatchObject({ ok: true, write: false });
     expect((await switchOff('site_query')).ok).toBe(true);
@@ -400,11 +459,14 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     });
   });
 
-  it('a handler changed by another writer (a sync, SQL) voids the mark without a clear', async () => {
+  it('a handler changed by another writer (a sync, SQL) voids the mark: refused, never a write', async () => {
     expect(await verdict('site_query')).toMatchObject({ ok: true, write: false });
     const moved = JSON.stringify({ kind: 'mcp', group: 'mcp-site', toolName: 'execute' });
     await exec(sqlTag`update tools set handler = ${moved}::jsonb where id = ${ids.site_query!}`);
-    expect(await verdict('site_query')).toMatchObject({ ok: true, write: true });
+    expect(await verdict('site_query')).toMatchObject({
+      ok: false,
+      reason: expect.stringMatching(/changed after an admin marked it/),
+    });
     expect((await crud.getToolById(anchor, ids.site_query!))?.externalAccess).toMatchObject({
       on: false,
     });
@@ -413,11 +475,22 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     expect(await verdict('site_query')).toMatchObject({ ok: true, write: false });
   });
 
-  it('a connector moved to another server clears every mark on its tools', async () => {
+  it('a connector moved to another server voids every mark (refused, never a write) and disables its write tools below admin', async () => {
     expect(await verdict('site_query')).toMatchObject({ ok: true, write: false });
     await ta.clearConnectorExternalAccess(anchor, 'mcp-site');
-    expect(await verdict('site_query')).toMatchObject({ ok: true, write: true });
-    expect((await crud.getToolById(anchor, ids.site_query!))?.externalAccess).toBeNull();
+    expect(await verdict('site_query')).toMatchObject({
+      ok: false,
+      reason: expect.stringMatching(/changed after an admin marked it/),
+    });
+    expect((await crud.getToolById(anchor, ids.site_query!))?.externalAccess).toMatchObject({
+      on: false,
+    });
+    // site_confirm was never marked: on a team-level connector it is now off.
+    const [confirmRow] = (await exec(
+      sqlTag`select enabled from tools where id = ${ids.site_confirm!}`,
+    )) as unknown as { enabled: boolean }[];
+    expect(confirmRow?.enabled).toBe(false);
+    await exec(sqlTag`update tools set enabled = true where id = ${ids.site_confirm!}`);
     expect((await switchOn('site_query')).ok).toBe(true);
   });
 

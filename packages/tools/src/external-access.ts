@@ -132,6 +132,23 @@ export function externalAccessActive(
   return t.handlerSig === externalAccessHandlerSig(tool.handler as ToolHandler);
 }
 
+/** The signature a voided read-only mark carries: never a handler's. */
+export const VOIDED_MARK_SIG = 'voided';
+
+/**
+ * A connector tool's mark (team apps Phase 2): `read` (marked, on the
+ * handler the admin looked at), `write` (never marked), or `stale` (marked
+ * once, but the handler or the connector changed since). A stale tool is
+ * refused below the owner until an admin marks it again: a change never
+ * turns a read into a write by itself (M2 audit, low 5).
+ */
+export function connectorMarkState(
+  tool: Pick<Tool, 'slug' | 'handler' | 'requiresConfirm' | 'externalAccess'>,
+): 'read' | 'write' | 'stale' {
+  if (!tool.externalAccess) return 'write';
+  return externalAccessActive(tool) ? 'read' : 'stale';
+}
+
 /** Who runs a shared app, for the refusal's words. */
 export type ExternalAccessRunner = 'member' | 'client' | 'contact';
 
@@ -230,8 +247,11 @@ export function connectorLevelAllows(run: ViewerLevel, connector: ViewerLevel): 
  *    itself, and no code ever raises a level;
  *  - a tool that needs a confirmation is refused (nobody is there);
  *  - marked read-only (the admin's confirm, on the handler they looked at)
- *    = a read; unmarked = a WRITE, which an app may make too (Jason's
- *    decision 1). The brokers log every write call with its input.
+ *    = a read; unmarked = a WRITE, which an app run by a member or a client
+ *    may make too (Jason's decision 1). A contact link only reads (Jason,
+ *    2026-10-08): an unmarked tool is refused there. The brokers log every
+ *    write call with its input. dispatchMcp holds the same level and
+ *    public-read rule on every call (connectorCallRefused).
  */
 export async function connectorToolVerdict(
   ownerId: string,
@@ -264,7 +284,25 @@ export async function connectorToolVerdict(
       reason: `The tool '${slug}' belongs to a connector at ${group.level} level, so ${who} can't use it. An admin can set the connector's level (Settings → Tool groups).`,
     };
   }
-  return { ok: true, tool, write: !externalAccessActive(tool) };
+  const mark = connectorMarkState(tool);
+  if (mark === 'stale') {
+    return {
+      ok: false,
+      status: 403,
+      reason: `The tool '${slug}' changed after an admin marked it read-only, so ${who} can't use it until an admin marks it again.`,
+    };
+  }
+  const write = mark === 'write';
+  // Contacts read only (Jason, 2026-10-08): writes through a connector stay
+  // with signed-in members and clients, whatever the connector's level.
+  if (write && runner === 'contact') {
+    return {
+      ok: false,
+      status: 403,
+      reason: `The tool '${slug}' can change data, and a shared link uses only connector tools an admin marked read-only.`,
+    };
+  }
+  return { ok: true, tool, write };
 }
 
 /**
@@ -311,6 +349,8 @@ export async function listLoginConnectorTools(
   return rows.flatMap((r) => {
     const groupLevel = asViewerLevel(r.groupLevel);
     if (!connectorLevelAllows(level, groupLevel)) return [];
+    // A voided mark is refused below the owner (connectorMarkState).
+    if (connectorMarkState(r.tool) === 'stale') return [];
     return [
       {
         tool: r.tool,
@@ -489,22 +529,37 @@ export async function setToolExternalAccess(
 
 /**
  * A connector moved to another server or credential: its tools now reach
- * something the admin never confirmed, so every switch on them goes off.
- * Called by the connector binding update.
+ * something the admin never confirmed. Every read-only mark on them is
+ * VOIDED (kept, never a handler's signature), so a marked tool is refused
+ * below the owner until an admin marks it again, never turned into a write
+ * (M2 audit, low 5); and on a connector below admin its unmarked (write)
+ * tools are disabled until an admin enables them again. Called by the
+ * connector binding update.
  */
 export async function clearConnectorExternalAccess(
   ownerId: string,
   groupSlug: string,
 ): Promise<void> {
+  const ofConnector = and(
+    eq(tools.ownerId, ownerId),
+    sql`${tools.handler}->>'kind' = 'mcp'`,
+    sql`${tools.handler}->>'group' = ${groupSlug}`,
+  );
   await db
     .update(tools)
-    .set({ externalAccess: null })
-    .where(
-      and(
-        eq(tools.ownerId, ownerId),
-        sql`${tools.externalAccess} is not null`,
-        sql`${tools.handler}->>'kind' = 'mcp'`,
-        sql`${tools.handler}->>'group' = ${groupSlug}`,
-      ),
-    );
+    .set({
+      externalAccess: sql`jsonb_set(${tools.externalAccess}, '{handlerSig}', to_jsonb(${VOIDED_MARK_SIG}::text))`,
+    })
+    .where(and(ofConnector, sql`${tools.externalAccess} is not null`));
+  const [group] = await db
+    .select({ audience: toolGroups.audience })
+    .from(toolGroups)
+    .where(and(eq(toolGroups.ownerId, ownerId), eq(toolGroups.slug, groupSlug)))
+    .limit(1);
+  if (group && group.audience !== 'admin') {
+    await db
+      .update(tools)
+      .set({ enabled: false, updatedAt: new Date() })
+      .where(and(ofConnector, sql`${tools.externalAccess} is null`));
+  }
 }

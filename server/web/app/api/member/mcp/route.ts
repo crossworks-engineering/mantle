@@ -16,8 +16,9 @@
  * (./clients/[id]/route.ts).
  */
 import { NextResponse } from '@/server/http-compat';
-import { eq } from 'drizzle-orm';
-import { db, mcpLoginAccess } from '@mantle/db';
+import { and, eq } from 'drizzle-orm';
+import { agents, db, mcpLoginAccess } from '@mantle/db';
+import { TEAM_RESPONDER_SLUG } from '@mantle/runtime/assistant';
 import { loadProfilePreferences } from '@mantle/content';
 import { listLoginConnectorTools } from '@mantle/tools';
 import type { MemberMcpConnector, MemberMcpView } from '@mantle/client-types';
@@ -38,9 +39,22 @@ export async function GET() {
     listLoginClients(member.anchorId, member.loginId),
     listLoginConnectorTools(member.anchorId, 'team'),
   ]);
-  // The connectors open at team level (team apps Phase 2), by connector.
+  // The connectors open at team level (team apps Phase 2), by connector:
+  // none while MCP is closed to the member (the box or their own switch) or
+  // the team surface is closed (its responder not at team level), as their
+  // MCP then lists no connector tool either (M2 audit, low 7).
+  const [responder] = await db
+    .select({ audience: agents.audience, enabled: agents.enabled })
+    .from(agents)
+    .where(and(eq(agents.ownerId, member.anchorId), eq(agents.slug, TEAM_RESPONDER_SLUG)))
+    .limit(1);
+  const open =
+    prefs.remoteMcpEnabled === true &&
+    access?.enabled === true &&
+    responder?.enabled === true &&
+    responder.audience === 'team';
   const byGroup = new Map<string, MemberMcpConnector>();
-  for (const t of tools) {
+  for (const t of open ? tools : []) {
     const c = byGroup.get(t.groupId) ?? {
       id: t.groupId,
       name: t.groupName,

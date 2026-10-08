@@ -12,7 +12,11 @@
 import { and, asc, eq } from 'drizzle-orm';
 import { db, tools, type Tool, type ToolHandler } from '@mantle/db';
 import type { ToolDTO } from '@mantle/client-types';
-import { externalAccessHandlerSig, externalAccessSummary } from './external-access';
+import {
+  VOIDED_MARK_SIG,
+  externalAccessHandlerSig,
+  externalAccessSummary,
+} from './external-access';
 
 /** The API/wire shape (see @mantle/client-types). Aliased here so `toSummary`'s
  *  output is checked against the client contract — drift is a type error. */
@@ -184,7 +188,14 @@ export async function updateTool(
     // a new one goes off until an admin confirms again (external-access.ts; the
     // broker would refuse it anyway, as the signature no longer matches).
     if (externalAccessHandlerSig(patch.handler) !== externalAccessHandlerSig(existing.handler)) {
-      next.externalAccess = null;
+      // A connector tool's switch is its read-only mark (team apps Phase 2):
+      // clearing it would turn a read into a write. Its mark is VOIDED
+      // instead (kept, signature 'voided'): a voided mark refuses every call
+      // below the owner until an admin marks it again (M2 audit, low 5).
+      next.externalAccess =
+        patch.handler.kind === 'mcp' && existing.externalAccess
+          ? { ...existing.externalAccess, handlerSig: VOIDED_MARK_SIG }
+          : null;
     }
   }
   if (patch.requiresConfirm !== undefined) next.requiresConfirm = patch.requiresConfirm;
