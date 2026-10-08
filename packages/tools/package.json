@@ -36,14 +36,14 @@
     "@mantle/tracing": "workspace:*",
     "@mantle/voice": "workspace:*",
     "@mantle/voice-client": "workspace:*",
-    "@modelcontextprotocol/sdk": "^1.30.0",
-    "@openrouter/sdk": "^1.2.107",
-    "drizzle-orm": "^0.45.2",
-    "firecrawl": "^4.38.0",
-    "yaml": "^2.9.0"
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@openrouter/sdk": "^1.4.25",
+    "drizzle-orm": "^0.45.3",
+    "firecrawl": "^4.45.0",
+    "yaml": "^2.9.1"
   },
   "devDependencies": {
-    "@types/node": "^26.4.1",
+    "@types/node": "^26.6.4",
     "typescript": "^5.9.3"
   }
 }

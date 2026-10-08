@@ -26,17 +26,17 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@fast-csv/parse": "^5.0.7",
+    "@fast-csv/parse": "^5.0.8",
     "@mantle/config": "workspace:*",
     "@mantle/db": "workspace:*",
     "@mantle/std": "workspace:*",
     "@mantle/storage": "workspace:*",
     "@napi-rs/canvas": "1.0.2",
-    "drizzle-orm": "^0.45.2",
+    "drizzle-orm": "^0.45.3",
     "exceljs": "^4.4.0",
     "heic-convert": "^2.1.0",
-    "jszip": "^3.10.1",
-    "mammoth": "^1.12.2",
+    "jszip": "^3.10.2",
+    "mammoth": "^1.13.0",
     "pdf-parse": "^2.4.5",
     "pdf-to-png-converter": "^4.2.1",
     "pdfjs-dist": "6.2.108",
@@ -44,7 +44,7 @@
   },
   "devDependencies": {
     "@types/heic-convert": "^2.1.1",
-    "@types/node": "^26.4.1",
+    "@types/node": "^26.6.4",
     "typescript": "^5.9.3"
   }
 }

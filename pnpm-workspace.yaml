@@ -38,19 +38,23 @@ overrides:
   'exceljs>uuid': 11.1.1 # pins ^8.3.0 (GHSA-w5hq); uuid 11 still ships CJS, exceljs only uses v4
   'html-to-text>deepmerge-ts': 8.0.0 # pins ^7.1.5 (GHSA-ggr8); v8 still ships CJS
   'lodash-es@4.17.21': 4.18.1 # chevrotain pins exactly (GHSA-r5fr _.template injection)
+  # 2026-10 refresh additions:
+  'concurrently>shell-quote': ^1.11.0 # pins 1.9.0 exactly (GHSA-pqg4, critical); dev-only, 1.11/1.12 are parser fixes and additions
+  '@tailwindcss/typography>postcss-selector-parser': ^7.1.6 # pins 6.0.10 (GHSA-rj75); 7.0's one break is safe insert-during-walk, generated CSS checked byte-identical
 
   # Patch-level floors for transitively-resolved vulnerable versions the
   # parents' own ranges already allow (pnpm update can't reach transitives;
   # this is the same shape `pnpm audit --fix` emits). Each is a no-op once
   # the tree naturally resolves past it — then delete the line.
   'body-parser@<2.3.0': '^2.3.0'
-  'brace-expansion@<1.1.18': '^1.1.18'
-  'brace-expansion@>=2.0.0 <2.1.4': '^2.1.4'
-  'dompurify@<3.4.13': '^3.4.13'
-  'fast-uri@>=3.0.0 <3.1.5': '^3.1.5'
+  'brace-expansion@<1.1.21': '^1.1.21'
+  'brace-expansion@>=2.0.0 <2.1.7': '^2.1.7'
+  'brace-expansion@>=4.0.0 <5.0.12': '^5.0.12'
+  'dompurify@<3.4.16': '^3.4.16'
+  'fast-uri@>=3.0.0 <3.1.8': '^3.1.8'
   'hono@<4.12.34': '^4.12.34'
   '@hono/node-server@<1.19.15': '^1.19.15'
-  'ip-address@<10.3.1': '^10.3.1'
+  'ip-address@<10.7.1': '^10.7.1'
   'mermaid@>=11.0.0 <11.16.1': '^11.16.1'
   'nanoid@<3.3.18': '^3.3.18'
   'nanoid@>=5.0.0 <5.1.16': '^5.1.16'

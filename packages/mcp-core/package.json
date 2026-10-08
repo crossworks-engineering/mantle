@@ -24,12 +24,12 @@
     "@mantle/std": "workspace:*",
     "@mantle/telegram": "workspace:*",
     "@mantle/tools": "workspace:*",
-    "@modelcontextprotocol/sdk": "^1.30.0",
-    "drizzle-orm": "^0.45.2",
-    "zod": "^4.5.4"
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "drizzle-orm": "^0.45.3",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@types/node": "^26.4.1",
+    "@types/node": "^26.6.4",
     "typescript": "^5.9.3"
   }
 }
