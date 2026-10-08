@@ -95,6 +95,30 @@ describe('planMcpSync', () => {
     expect(plan.updates).toHaveLength(0);
   });
 
+  // A jsonb round trip reorders keys: the same schema in another key order
+  // is no change (else every sync would void the tool's read-only mark).
+  it('emits no update for the same schema in another key order', () => {
+    const existing = [
+      row({
+        toolName: 'scrape',
+        inputSchema: { type: 'object', properties: { url: { type: 'string' } } },
+      }),
+    ];
+    const plan = planMcpSync({
+      groupSlug: GROUP,
+      remote: [
+        {
+          name: 'scrape',
+          description: 'd',
+          inputSchema: { properties: { url: { type: 'string' } }, type: 'object' },
+        },
+      ],
+      existing,
+      ownerSlugs: existing.map((r) => r.slug),
+    });
+    expect(plan.updates).toHaveLength(0);
+  });
+
   it('disables vanished tools with a marker (never deletes) and drops them from membership', () => {
     const existing = [row({ toolName: 'scrape' }), row({ toolName: 'extract' })];
     const plan = planMcpSync({

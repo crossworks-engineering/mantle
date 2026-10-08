@@ -23,7 +23,7 @@ import {
   type ToolHandler,
 } from '@mantle/db';
 import { parseMcpBinding } from './integration-meta';
-import { VOIDED_MARK_SIG } from './external-access';
+import { VOIDED_MARK_SIG, canonical } from './external-access';
 import { closeMcpClient, mcpListRemoteTools, type McpRemoteTool } from './mcp-client';
 import {
   clearMcpOAuthSecrets,
@@ -133,7 +133,10 @@ export function planMcpSync(args: {
       const ownerDisabled = !row.enabled && !row.handler.vanishedAt;
       const patch: (typeof plan.updates)[number] = { slug: row.slug };
       if (row.description !== description) patch.description = description;
-      if (JSON.stringify(row.inputSchema) !== JSON.stringify(inputSchema)) {
+      // By content, not key order: Postgres hands jsonb back with its keys
+      // reordered, and a schema that only looks different must not count as
+      // a change (it would void the tool's read-only mark on every sync).
+      if (canonical(row.inputSchema) !== canonical(inputSchema)) {
         patch.inputSchema = inputSchema;
       }
       if (syncDisabled) {

@@ -66,8 +66,9 @@ export const EXTERNAL_ACCESS_KINDS: readonly ToolHandler['kind'][] = ['mcp', 'ht
 /** http methods that write by name: never opened to external access. */
 const WRITE_METHODS = new Set(['PUT', 'PATCH', 'DELETE']);
 
-/** JSON with sorted keys, so the same handler always hashes the same. */
-function canonical(v: unknown): string {
+/** JSON with sorted keys, so the same handler always hashes the same (and
+ *  a jsonb round trip, which reorders keys, compares equal). */
+export function canonical(v: unknown): string {
   if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`;
   if (v && typeof v === 'object') {
     const entries = Object.entries(v as Record<string, unknown>)
