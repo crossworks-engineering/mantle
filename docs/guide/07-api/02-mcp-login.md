@@ -41,7 +41,7 @@ Who reaches the app is the same as in the browser: members for a team, client or
 
 A public app stays read only for members. MCP never changes an app's tables or columns: the schema belongs to the app's author.
 
-Before the first MCP write to an app in an hour, the brain saves a snapshot of the app (**Before an MCP write** in the app's History). Restore it to undo. Each MCP read and write shows in the app's Activity, and a write keeps its SQL.
+Before the first MCP write to an app in an hour, the brain saves a snapshot of the app (**Before an MCP write** in the app's History). Restore it to undo. These snapshots keep a day of hours (24) on their own, so they never push out the app's other snapshots. Each MCP read and write shows in the app's Activity, and a write keeps its SQL. The SQL can hold what the member typed, personal data included: only admins see the Activity tab.
 
 ## When their MCP client cannot sign in
 
@@ -61,6 +61,7 @@ Admins no longer make tokens for other logins. Tokens made before (`mtlmcpk_...`
 1. Open **Settings > Peers** and pick the peer.
 2. Set **Acts as** to the owner, a member or a client.
 3. Leave **Write** off unless the peer must change things.
+   A peer acting as a member or client also needs that login's own **MCP** switch on, and writes only while the login's **Write** is on too.
 4. For a peer acting as the owner, list any extra tools under **Risky tools allowed**, for example `web_search`. Tools that spend, send or publish stay blocked until you name them.
 
 Changing **Acts as** turns **Write** off again.

@@ -256,6 +256,35 @@ describe.skipIf(!URL)('app history on Postgres', () => {
     expect(readdirSync(path.join(dir, '_snapshots', owner, id))).toHaveLength(auto.length);
   });
 
+  it('pre_mcp_write snapshots are their own line: they never push out the others (M1 audit, medium 2)', async () => {
+    const id = await publishedApp('mcp line');
+    const nightly = await snaps.createAppSnapshot(owner, id, {
+      trigger: 'nightly',
+      actor: 'system',
+    });
+    const schemaOne = await snaps.createAppSnapshot(owner, id, {
+      trigger: 'pre_schema',
+      actor: 'agent',
+    });
+    for (let i = 0; i < snaps.APP_SNAPSHOT_MCP_KEEP + 6; i++) {
+      await snaps.createAppSnapshot(owner, id, { trigger: 'pre_mcp_write', actor: 'mcp' });
+    }
+    const list = await snaps.listAppSnapshots(owner, id, { limit: 500 });
+    expect(list.filter((e) => e.trigger === 'pre_mcp_write')).toHaveLength(
+      snaps.APP_SNAPSHOT_MCP_KEEP,
+    );
+    expect(list.some((e) => e.id === nightly!.id)).toBe(true);
+    expect(list.some((e) => e.id === schemaOne!.id)).toBe(true);
+    // And the hourly rule: one per window, checked under the lock.
+    const since = new Date(Date.now() - 60_000);
+    const again = await snaps.createAppSnapshot(owner, id, {
+      trigger: 'pre_mcp_write',
+      actor: 'mcp',
+      onlyIfNoneSince: since,
+    });
+    expect(again).toBeNull();
+  });
+
   it('automatic snapshots stay within APP_SNAPSHOT_AUTO_MAX_MB; the newest always stays (audit item 11)', async () => {
     const id = await publishedApp('budget');
     await broker.appDbExec(

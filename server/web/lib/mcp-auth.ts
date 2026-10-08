@@ -267,6 +267,14 @@ async function callerFromPeerToken(token: string): Promise<McpCaller | null> {
   const row = await loadLogin(peer.actsAsLoginId);
   if (!row || row.disabledAt || !row.email) return null;
   if (!isRole(row.role) || row.role !== peer.actsAsRole) return null;
+  // A peer bound to a member or client acts as that login, under that
+  // login's switches too (team apps M1 audit, medium 1): the login's MCP
+  // switch off ends the peer, and it writes only while both the peer's and
+  // the login's Write switches are on. Before, an admin who turned a
+  // member's MCP or Write off left a bound peer reading and writing app
+  // rows. A peer bound to the owner keeps its own rules.
+  const login = row.role === 'member' || row.role === 'client';
+  if (login && row.mcpEnabled !== true) return null;
   return {
     role: row.role,
     anchorId: peer.ownerId,
@@ -274,7 +282,7 @@ async function callerFromPeerToken(token: string): Promise<McpCaller | null> {
     displayName: row.displayName,
     via: 'peer',
     peerId: peer.id,
-    write: peer.writeEnabled,
+    write: login ? peer.writeEnabled && row.mcpWrite === true : peer.writeEnabled,
     riskyAllowed: row.role === 'admin' ? (peer.allowedRiskyTools ?? []) : [],
   };
 }

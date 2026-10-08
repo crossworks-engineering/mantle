@@ -165,8 +165,11 @@ export function firstSqlWord(sql: string): string {
   return (/^[A-Za-z]+/.exec(text)?.[0] ?? '').toLowerCase();
 }
 
-/** The statements app_data_write takes. The SQL child's data-only
- *  authorizer is the real lock; this is the plain answer. */
+/** The statements app_data_write takes: the plain answer for a model.
+ *  The locks are assertSafe's text check and the SQL child's data-only
+ *  authorizer (no schema change, no transaction, no PRAGMA, no ATTACH;
+ *  SQLite reports VACUUM and VACUUM INTO to it as ATTACH, so both are
+ *  refused there too, app-sql-runner.test.ts). */
 const WRITE_WORDS = new Set(['insert', 'update', 'delete', 'replace', 'with']);
 
 /** A failure as the tool's answer: an app's own SQL error says why, and so
@@ -217,6 +220,15 @@ export const app_data_list: BuiltinToolDef = {
         // One app's trouble (a lost file) is that app's line, not the end
         // of the list.
         try {
+          // One row per app reached (M1 audit, low 1): a list is a read,
+          // sampled like a query (app-access-log.ts).
+          recordAppAccess({
+            ownerId: ctx.ownerId,
+            appNodeId: app.id,
+            actorId: who.loginId,
+            kind: 'db',
+            detail: { ...logDetail(who), op: 'list' },
+          });
           const tables = await asSystem(() => appDbSchema(ctx.ownerId, app.id));
           out.push({
             app_id: app.id,
@@ -437,6 +449,24 @@ export const app_data_write: BuiltinToolDef = {
           ok: false,
           error:
             'The write was not run: the undo snapshot that comes first could not be taken. Try again later, or ask an admin.',
+        };
+      }
+      // Reach and the write rule again, right before the write (M1 audit,
+      // low 2): the snapshot can take a while, and an admin may have turned
+      // MCP access off, marked the app Informational or lowered its level
+      // meanwhile.
+      const still = await reach(ctx, who, appId);
+      if (!still?.writable) {
+        recordAppAccess({
+          ...base,
+          kind: 'db',
+          detail: { ...logDetail(who), op: 'exec', refused: still ? 'read-only' : 'gone' },
+        });
+        return {
+          ok: false,
+          error: still
+            ? 'This app is read-only for you (an admin marked it Informational, or its level).'
+            : NOT_FOUND,
         };
       }
       let res;

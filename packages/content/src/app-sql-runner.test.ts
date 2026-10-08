@@ -180,6 +180,14 @@ describe('runAppSql dataOnly (an MCP write, team apps Phase 1)', () => {
     expect(objects.map((r) => r.name)).toEqual(['log', 'sqlite_sequence', 't', 't_log', 't_x_idx']);
   });
 
+  it('refuses VACUUM and VACUUM INTO at the engine (SQLite reports them as ATTACH)', async () => {
+    const out = path.join(dir, 'copy.sqlite');
+    for (const sql of ['VACUUM', `VACUUM INTO '${out}'`, `/**/ VACUUM INTO '${out}'`]) {
+      await expect(write(sql), sql).rejects.toThrow(/authoriz/i);
+    }
+    expect(existsSync(out)).toBe(false);
+  });
+
   it('never runs a schema script data only', async () => {
     await expect(
       runAppSql(file, {

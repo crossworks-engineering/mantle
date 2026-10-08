@@ -700,8 +700,9 @@ export type AppDbSummary = {
 async function lookupAppDatabase(
   ownerId: string,
   appNodeId: string,
+  q: Pick<typeof db, 'select'> = db,
 ): Promise<{ storagePath: string; schemaVersion: number; sizeBytes: number } | null> {
-  const [row] = await db
+  const [row] = await q
     .select({
       storagePath: appDatabases.storagePath,
       schemaVersion: appDatabases.schemaVersion,
@@ -966,8 +967,11 @@ export async function snapshotAppDatabase(
   ownerId: string,
   appNodeId: string,
   destAbs: string,
+  /** The caller's transaction (a snapshot under the app's history lock):
+   *  the registry read runs on it, never on a second connection. */
+  q: Pick<typeof db, 'select'> = db,
 ): Promise<{ bytes: number; schemaVersion: number } | null> {
-  const reg = await lookupAppDatabase(ownerId, appNodeId);
+  const reg = await lookupAppDatabase(ownerId, appNodeId, q);
   if (!reg) return null;
   await assertNotLost(appNodeId, reg);
   if (!(await fileExists(reg.storagePath))) return null;

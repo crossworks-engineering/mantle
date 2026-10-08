@@ -254,6 +254,7 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
       'DROP TABLE items',
       'ALTER TABLE items ADD COLUMN y',
       'SELECT 1',
+      "VACUUM INTO '/tmp/app-data-escape.sqlite'",
     ]) {
       const r = await call('app_data_write', { app_id: ids['a team'], sql }, asMember());
       expect(!r.ok && r.error, sql).toMatch(/INSERT, UPDATE, DELETE or REPLACE/);
@@ -265,6 +266,20 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
       asMember(),
     );
     expect(hidden.ok).toBe(false);
+    // Past the first-word check, the broker and the engine still refuse a
+    // VACUUM INTO on the data-only path (M1 audit, low 3).
+    await expect(
+      broker.appDbExec(
+        anchor,
+        ids['a team']!,
+        "VACUUM INTO '/tmp/app-data-escape.sqlite'",
+        [],
+        schema,
+        {
+          dataOnly: true,
+        },
+      ),
+    ).rejects.toThrow(/not allowed|authoriz/i);
     const tables = await broker.appDbSchema(anchor, ids['a team']!);
     expect(tables.map((t) => t.name)).toEqual(['items']);
   });

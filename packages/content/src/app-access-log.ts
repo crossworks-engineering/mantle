@@ -57,9 +57,12 @@ const lastQueryLogged = new Map<string, number>();
  *  calls and writes are always logged. */
 function readAlreadyLogged(entry: AppAccessEntry, now: number): boolean {
   const detail = entry.detail ?? {};
-  if (entry.kind !== 'db' || detail.op !== 'query' || detail.refused) return false;
+  const read = detail.op === 'query' || detail.op === 'list';
+  if (entry.kind !== 'db' || !read || detail.refused) return false;
   const who = entry.actorId ?? (entry.shareId ? `share:${entry.shareId}` : (entry.contactId ?? ''));
-  const key = `${entry.appNodeId}:${who}`;
+  // A list (app_data_list over MCP) is sampled apart from the queries, so
+  // one never hides the other.
+  const key = `${entry.appNodeId}:${who}${detail.op === 'list' ? ':list' : ''}`;
   const last = lastQueryLogged.get(key);
   if (last !== undefined && now - last < APP_ACCESS_QUERY_SAMPLE_MS) return true;
   if (lastQueryLogged.size >= 10_000) {

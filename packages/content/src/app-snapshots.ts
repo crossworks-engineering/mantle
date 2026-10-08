@@ -51,6 +51,14 @@ export const APP_SNAPSHOT_DEFAULT_MAX_MB = 2048;
  *  256 MB database cap. */
 export const APP_SNAPSHOT_AUTO_DEFAULT_MAX_MB = 1024;
 
+/** The `pre_mcp_write` snapshots kept per app: a day of hourly ones. They
+ *  are pruned on their own line (M1 audit, medium 2), so writes over MCP can
+ *  never push out a nightly, pre-schema, pre-restore or pre-import one. */
+export const APP_SNAPSHOT_MCP_KEEP = 24;
+/** The default budget for one app's `pre_mcp_write` copies, in MB
+ *  (APP_SNAPSHOT_MCP_MAX_MB), apart from the other automatic ones. */
+export const APP_SNAPSHOT_MCP_DEFAULT_MAX_MB = 512;
+
 /** The owner's snapshots would pass APP_SNAPSHOT_MAX_MB. */
 export class AppSnapshotBudgetError extends Error {
   constructor(usedMb: number, maxMb: number) {
@@ -71,15 +79,20 @@ export class AppSnapshotRefusedError extends Error {
 }
 
 type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+/** Where a read runs: the pool, or the transaction that holds the app's
+ *  history lock (never a second connection under it). */
+type Q = Pick<typeof db, 'select' | 'execute'>;
 
+/** The automatic snapshots pruned together (APP_SNAPSHOT_AUTO_KEEP,
+ *  APP_SNAPSHOT_AUTO_MAX_MB). `pre_mcp_write` is pruned on its own line. */
 const AUTO_TRIGGERS: AppSnapshotTrigger[] = [
   'pre_restore',
   'pre_schema',
   'pre_delete',
   'pre_import',
   'nightly',
-  'pre_mcp_write',
 ];
+const MCP_TRIGGERS: AppSnapshotTrigger[] = ['pre_mcp_write'];
 
 function maxSnapshotBytes(): number {
   return envMbBytes('APP_SNAPSHOT_MAX_MB', APP_SNAPSHOT_DEFAULT_MAX_MB);
@@ -87,6 +100,10 @@ function maxSnapshotBytes(): number {
 
 function maxAutoSnapshotBytes(): number {
   return envMbBytes('APP_SNAPSHOT_AUTO_MAX_MB', APP_SNAPSHOT_AUTO_DEFAULT_MAX_MB);
+}
+
+function maxMcpSnapshotBytes(): number {
+  return envMbBytes('APP_SNAPSHOT_MCP_MAX_MB', APP_SNAPSHOT_MCP_DEFAULT_MAX_MB);
 }
 
 /** A snapshot file's place, relative to APP_DB_DIR (what the row keeps). */
@@ -165,8 +182,12 @@ function toSummary(r: SummaryRow): AppSnapshot {
 }
 
 /** The app's code as it stands now, or null when it is not this owner's. */
-async function currentCode(ownerId: string, appId: string): Promise<AppSnapshotCode | null> {
-  const [row] = await db
+async function currentCode(
+  ownerId: string,
+  appId: string,
+  q: Q = db,
+): Promise<AppSnapshotCode | null> {
+  const [row] = await q
     .select({
       title: nodes.title,
       data: nodes.data,
@@ -197,16 +218,21 @@ async function currentCode(ownerId: string, appId: string): Promise<AppSnapshotC
 }
 
 /** The bytes the owner's snapshot copies take now. */
-async function usedSnapshotBytes(ownerId: string): Promise<number> {
-  const [row] = await db
+async function usedSnapshotBytes(ownerId: string, q: Q = db): Promise<number> {
+  const [row] = await q
     .select({ n: sql<string>`coalesce(sum(${nodeSnapshots.dbBytes}), 0)::bigint` })
     .from(nodeSnapshots)
     .where(eq(nodeSnapshots.ownerId, ownerId));
   return Number(row?.n ?? 0);
 }
 
-/** Take a snapshot while the caller holds the app's history lock. Its row
- *  commits at once, in its own transaction. */
+/** Take a snapshot while the caller holds the app's history lock. Without
+ *  `lockTx` its row commits at once, in its own transaction (a restore's
+ *  undo snapshot must outlive a restore that fails after it). With
+ *  `lockTx`, every read and the row's insert run on the lock's own
+ *  transaction and the row commits with it: nothing under the lock takes a
+ *  second connection (M1 audit, low 4; the pool rule of the API keys audit,
+ *  N1), which matters now that a member's MCP write can take a snapshot. */
 async function snapshotLocked(
   ownerId: string,
   appId: string,
@@ -218,11 +244,13 @@ async function snapshotLocked(
     withData?: boolean;
     codeOnlyWhenLost?: boolean;
   },
+  lockTx?: DbTx,
 ): Promise<AppSnapshot | null> {
-  const code = await currentCode(ownerId, appId);
+  const q: Q = lockTx ?? db;
+  const code = await currentCode(ownerId, appId, q);
   if (!code) return null;
   if (opts.trigger === 'manual') {
-    const used = await usedSnapshotBytes(ownerId);
+    const used = await usedSnapshotBytes(ownerId, q);
     const max = maxSnapshotBytes();
     if (used >= max) {
       throw new AppSnapshotBudgetError(Math.round(used / 1048576), Math.round(max / 1048576));
@@ -235,7 +263,7 @@ async function snapshotLocked(
   let lost = false;
   if (opts.withData !== false) {
     try {
-      data = await snapshotAppDatabase(ownerId, appId, abs);
+      data = await snapshotAppDatabase(ownerId, appId, abs, q);
     } catch (err) {
       if (!(err instanceof AppDbMissingError) || !opts.codeOnlyWhenLost) throw err;
       lost = true;
@@ -248,23 +276,23 @@ async function snapshotLocked(
   ]
     .filter(Boolean)
     .join(' ');
+  const insert = (tx: DbTx) =>
+    insertNodeSnapshot(tx, {
+      id,
+      ownerId,
+      nodeId: appId,
+      nodeKind: 'app',
+      trigger: opts.trigger,
+      note: note || null,
+      actor: opts.actor,
+      code,
+      sourceHash: codeHash(code.source),
+      dbPath: data ? rel : null,
+      dbBytes: data?.bytes ?? null,
+      schemaVersion: data?.schemaVersion ?? null,
+    });
   try {
-    const row = await db.transaction((tx) =>
-      insertNodeSnapshot(tx, {
-        id,
-        ownerId,
-        nodeId: appId,
-        nodeKind: 'app',
-        trigger: opts.trigger,
-        note: note || null,
-        actor: opts.actor,
-        code,
-        sourceHash: codeHash(code.source),
-        dbPath: data ? rel : null,
-        dbBytes: data?.bytes ?? null,
-        schemaVersion: data?.schemaVersion ?? null,
-      }),
-    );
+    const row = lockTx ? await insert(lockTx) : await db.transaction(insert);
     return {
       ...toSummary({
         ...row,
@@ -285,12 +313,19 @@ async function snapshotLocked(
 /** Drop this app's automatic snapshots past the newest APP_SNAPSHOT_AUTO_KEEP,
  *  and past APP_SNAPSHOT_AUTO_MAX_MB of copies (the newest stays whatever
  *  its size; the owner's own and the versions are never pruned), files after
- *  the rows. One statement under the app's history lock: nothing taken
- *  meanwhile is removed, and no restore is reading a file it removes. */
-async function pruneAutoSnapshots(appId: string): Promise<void> {
+ *  the rows. The `pre_mcp_write` ones are their own line
+ *  (APP_SNAPSHOT_MCP_KEEP, APP_SNAPSHOT_MCP_MAX_MB): an MCP write prunes
+ *  only them, and never counts against the others (M1 audit, medium 2).
+ *  One statement under the app's history lock, on the lock's transaction:
+ *  nothing taken meanwhile is removed, and no restore is reading a file it
+ *  removes. */
+async function pruneAutoSnapshots(appId: string, trigger: AppSnapshotTrigger): Promise<void> {
+  const mcp = MCP_TRIGGERS.includes(trigger);
   const gone = await db.transaction(async (tx) => {
     await lockAppHistory(tx, appId);
-    return pruneHistoryRows(appId, AUTO_TRIGGERS, APP_SNAPSHOT_AUTO_KEEP, maxAutoSnapshotBytes());
+    return mcp
+      ? pruneHistoryRows(appId, MCP_TRIGGERS, APP_SNAPSHOT_MCP_KEEP, maxMcpSnapshotBytes(), tx)
+      : pruneHistoryRows(appId, AUTO_TRIGGERS, APP_SNAPSHOT_AUTO_KEEP, maxAutoSnapshotBytes(), tx);
   });
   await removeSnapshotFiles(gone);
 }
@@ -352,16 +387,21 @@ export async function createAppSnapshot(
         .limit(1);
       if (recent) return null;
     }
-    return snapshotLocked(ownerId, appId, {
-      trigger,
-      actor: opts.actor ?? 'owner',
-      note: opts.note,
-      requireData: opts.requireData === true,
-      withData: opts.withData !== false,
-      codeOnlyWhenLost: opts.codeOnlyWhenLost === true,
-    });
+    return snapshotLocked(
+      ownerId,
+      appId,
+      {
+        trigger,
+        actor: opts.actor ?? 'owner',
+        note: opts.note,
+        requireData: opts.requireData === true,
+        withData: opts.withData !== false,
+        codeOnlyWhenLost: opts.codeOnlyWhenLost === true,
+      },
+      tx,
+    );
   });
-  if (snap && trigger !== 'manual') await pruneAutoSnapshots(appId);
+  if (snap && trigger !== 'manual') await pruneAutoSnapshots(appId, trigger);
   return snap;
 }
 
@@ -577,7 +617,7 @@ export async function restoreAppSnapshot(
     return { mode, restored: snap, undo, code, declaredTools };
   });
   if (wantsData) scheduleAppTableExportSync(ownerId, appId);
-  await pruneAutoSnapshots(appId);
+  await pruneAutoSnapshots(appId, 'pre_restore');
   const { code: _code, schemaVersion: _sv, ...restored } = result.restored;
   return { ...result, restored };
 }

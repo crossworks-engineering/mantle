@@ -13,7 +13,7 @@ bearer (`server/web/lib/mcp-auth.ts`), and gets that caller's tools only.
 | OAuth token of a member or client | that login | its role's responder tools |
 | API key `mtlk_...` (migration 0232) | the login that made it | that login's tools, narrowed by the key (docs/guide/07-api/08-api-keys.md) |
 | Static token `mtlmcpk_...` (RETIRED, still honoured) | one member or client login | its role's responder tools |
-| Peer token `mtlpeer_...` with "Acts as" | the bound login | as that login, with the peer's write switch |
+| Peer token `mtlpeer_...` with "Acts as" | the bound login | as that login, with the peer's write switch (and, bound to a member or client, the login's MCP and Write switches too) |
 
 Since 2026-10-07 an admin no longer mints static tokens for a member or
 client (`POST /api/mcp-logins/:id/tokens` answers 410): nobody makes a
@@ -67,12 +67,21 @@ with no per-app switch.
   the three row writes, functions, a recursive CTE; every CREATE, DROP,
   ALTER, trigger, view, index, transaction and schema-table write refused).
 - **Undo**: the first MCP write to an app in an hour takes a
-  `pre_mcp_write` snapshot under the app's history lock. If it cannot be
-  taken, the write is refused.
+  `pre_mcp_write` snapshot under the app's history lock, on the lock's own
+  transaction. If it cannot be taken, the write is refused. Reach and the
+  write rule are checked again right before the write. These snapshots
+  are pruned on a line of their own (the newest 24 of an app, within
+  `APP_SNAPSHOT_MCP_MAX_MB`, default 512), so MCP writes never push out a
+  nightly, pre-schema, pre-restore or pre-import snapshot.
 - **Trail**: every call lands `app_access_log` rows with `via: 'mcp'`, the
   role, the connection (`key`, `oauth`, `token`, `peer`) and its key id,
   OAuth client or peer. A write keeps its SQL (2 KB), the rows it changed
-  and the person's per-app id (`host.me`).
+  and the person's per-app id (`host.me`); a failed statement lands an
+  error row with its SQL (500 characters). SQL literals can hold personal
+  data the member typed: these rows are for admins only (the app's
+  Activity tab, `app_errors`), and the reaper keeps them 90 days (errors
+  14). A list is logged as a read: at most one row per app and login a
+  minute.
 - **Keys**: the area `app_data` holds the four tools. The `apps` area stays
   the authoring tools.
 
@@ -107,6 +116,11 @@ hands out privilege, or waits for the owner's confirm in the app (deletes,
 restores). A peer never confirms a level change for the owner: its
 `confirm` argument is dropped, so a move into a shared folder is refused.
 
+Bound to a member or client, the peer acts under that login's switches
+too (team apps M1 audit, 2026-10-08): with the login's MCP switch off the
+peer is refused, and it writes only while both the peer's Write and the
+login's Write are on. Before, a bound peer ignored the login's switches.
+
 Rebinding a peer to another login starts closed: write off, no risky tools,
 unless the same request sets them. Each peer has its own rate budget.
 
@@ -130,9 +144,7 @@ file over MCP is at most about 6 MB.
   rights, and own-space folders are a tree feature with its own routes.
 - Non-builtin tools (http, recipe, connector) on the member and client
   surface: their egress is not classified.
-- A peer bound to a member or client does not need that login's own MCP
-  switch: the admin bound it on purpose. Pending peers verify, as for the
-  federation routes.
+- Pending peers verify, as for the federation routes.
 - The admin's connected-clients list in Settings, MCP shows every login's
   grants without naming the login. A member sees only their own (above).
 - A client login has no MCP screen yet; it reaches app data over MCP the

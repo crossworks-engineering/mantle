@@ -20,6 +20,12 @@ Members and clients reach the data of mini apps from their own MCP client
 - The first MCP write to an app in an hour takes a `pre_mcp_write` snapshot
   first; no snapshot, no write. Every MCP call lands an access log row;
   a write keeps its SQL and the rows it changed.
+- `pre_mcp_write` snapshots are pruned on their own line: the newest 24 per
+  app within `APP_SNAPSHOT_MCP_MAX_MB` (default 512), so they never push out
+  the other automatic snapshots.
+- A peer bound to a member or client now acts under that login's switches:
+  the login's MCP switch off refuses the peer, and it writes only while the
+  login's Write is on too.
 - New API key area `app_data`.
 - Members get their own view of Settings > MCP: `GET /api/member/mcp` and
   `DELETE /api/member/mcp/clients/:id` (their own grants only).
