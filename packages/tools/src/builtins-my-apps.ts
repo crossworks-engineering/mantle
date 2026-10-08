@@ -633,13 +633,13 @@ const my_app_snapshot_restore: BuiltinToolDef = {
   slug: 'my_app_snapshot_restore',
   name: 'Restore my mini app from its history',
   description:
-    "Restore your own app from an entry on its history (`my_app_snapshot_list`). `mode`: 'code' puts that code in the draft (build, then publish); 'data' replaces the app's data with the snapshot's copy; 'full' does both and the code runs at once. A snapshot of the current state is taken first, so a restore can be undone. Ask the member first: the data is replaced.",
+    "Restore your own app from an entry on its history (`my_app_snapshot_list`). `mode`: 'code' puts that code in the draft (build, then publish); 'data' replaces the app's data with the snapshot's copy. For both, restore 'data', then 'code'. A snapshot of the current state is taken first, so a restore can be undone. Ask the member first: the data is replaced.",
   inputSchema: {
     type: 'object',
     properties: {
       ...ID_PROP,
       snapshot_id: { type: 'string', description: 'The entry id from `my_app_snapshot_list`.' },
-      mode: { type: 'string', enum: ['code', 'data', 'full'], description: 'What to put back.' },
+      mode: { type: 'string', enum: ['code', 'data'], description: 'What to put back.' },
       discard_draft: {
         type: 'boolean',
         description: 'Drop an unpublished draft the restored code would replace.',
@@ -651,21 +651,32 @@ const my_app_snapshot_restore: BuiltinToolDef = {
     const p = await prepare(input, ctx, { write: true });
     if (!isPrepared(p)) return p;
     const snapshotId = str(input.snapshot_id).trim();
-    const mode = str(input.mode) as 'code' | 'data' | 'full';
+    const mode = str(input.mode);
     if (!UUID_RE.test(snapshotId)) {
       return { ok: false, error: 'snapshot_id must be an entry id from my_app_snapshot_list.' };
     }
-    if (!['code', 'data', 'full'].includes(mode)) {
-      return { ok: false, error: "mode must be 'code', 'data' or 'full'." };
+    if (mode !== 'code' && mode !== 'data') {
+      return {
+        ok: false,
+        error: "mode must be 'code' or 'data'. For both, restore 'data', then 'code'.",
+      };
     }
     try {
-      const res = await withAuthorWrite(p.author, p.id, () =>
+      const run = () =>
         restoreAppSnapshot(p.author.spaceId, p.id, snapshotId, {
           mode,
           discardDraft: input.discard_draft === true,
           ...actorOf(p.author),
-        }),
-      );
+        });
+      // A code restore writes rows only: it runs under the app's state row
+      // like every change. A data restore swaps the database file, which no
+      // transaction can take back, so it never runs inside one: it runs on
+      // its own, as an admin's does (its restore marker, drain and registry
+      // lock), once `prepare` saw the app editable (team apps follow-up).
+      // The data is not what an admin reviews, so a Submit meanwhile changes
+      // nothing an Accept relies on.
+      const res =
+        mode === 'code' ? await withAuthorWrite(p.author, p.id, run) : await asSystem(run);
       if (!res) {
         return {
           ok: false,

@@ -22,15 +22,7 @@ import { randomUUID } from 'node:crypto';
 import { rm } from 'node:fs/promises';
 import * as path from 'node:path';
 import { and, desc, eq, gte, isNotNull, sql } from 'drizzle-orm';
-import {
-  afterCommit,
-  afterRollback,
-  apps,
-  db,
-  nodeSnapshots,
-  nodes,
-  type AppSnapshotCode,
-} from '@mantle/db';
+import { afterRollback, apps, db, nodeSnapshots, nodes, type AppSnapshotCode } from '@mantle/db';
 import type { AppRestoreMode, AppSnapshot } from '@mantle/client-types';
 import {
   AppRestoreDraftError,
@@ -43,7 +35,6 @@ import {
   appDbRoot,
   restoreAppDatabaseFile,
   snapshotAppDatabase,
-  type AppDbSwap,
 } from './app-broker';
 import { scheduleAppTableExportSync } from './app-table-exports';
 import { codeHash, envMbBytes, insertNodeSnapshot, pruneHistoryRows } from './node-snapshot-rows';
@@ -610,11 +601,14 @@ export async function restoreAppSnapshot(
     throw new AppSnapshotRefusedError(`v${snap.seq} holds no code to restore`);
   }
 
-  // The data swap keeps the files it replaces until this restore is final
-  // (team apps follow-up): if anything after the swap fails, or the
-  // caller's own transaction rolls back, they go back, so the live data
-  // never disagrees with the history rows that rolled back.
-  let swap: AppDbSwap | undefined;
+  // The pre_restore copy, and whether the live file was swapped: a copy is
+  // removed when its row rolls back, but NEVER once the swap happened, when
+  // that copy is the way back (team apps follow-up, re-audit). A data
+  // restore never runs inside a member's change transaction (the my_app
+  // tools run it on its own), so a rollback after a swap is this
+  // function's own failure only.
+  let copied: string | null = null;
+  let swapped = false;
   const result = await db
     .transaction(async (tx) => {
       await lockAppHistory(tx, appId);
@@ -626,27 +620,28 @@ export async function restoreAppSnapshot(
       // A lost live file is what a data restore is for: the undo snapshot
       // keeps the code then, and the restore goes on (apps audit 2026-10-02,
       // item 4).
-      const undo = await snapshotLocked(ownerId, appId, {
-        trigger: 'pre_restore',
-        actor,
-        actorLoginId: opts.actorLoginId ?? null,
-        note: `before restoring v${snap.seq} (${mode})`,
-        codeOnlyWhenLost: true,
-      });
+      const undo = await snapshotLocked(
+        ownerId,
+        appId,
+        {
+          trigger: 'pre_restore',
+          actor,
+          actorLoginId: opts.actorLoginId ?? null,
+          note: `before restoring v${snap.seq} (${mode})`,
+          codeOnlyWhenLost: true,
+        },
+        undefined,
+        (abs) => {
+          copied = abs;
+        },
+      );
       if (wantsData) {
         const file = await appSnapshotFile(ownerId, appId, snapshotId);
         if (!file) throw new AppSnapshotRefusedError(`v${snap.seq} holds no data`);
-        const swapped = await restoreAppDatabaseFile(
-          ownerId,
-          appId,
-          file.path,
-          snap.schemaVersion ?? 0,
-          {
-            ...(opts.drainMs !== undefined ? { drainMs: opts.drainMs } : {}),
-            keepPrevious: true,
-          },
-        );
-        swap = swapped.swap;
+        await restoreAppDatabaseFile(ownerId, appId, file.path, snap.schemaVersion ?? 0, {
+          ...(opts.drainMs !== undefined ? { drainMs: opts.drainMs } : {}),
+        });
+        swapped = true;
       }
       let code: AppRestoreResult['code'] = null;
       let declaredTools: string[] | null = null;
@@ -686,17 +681,18 @@ export async function restoreAppSnapshot(
       return { mode, restored: snap, undo, code, declaredTools };
     })
     .catch(async (err: unknown) => {
-      // This restore's rows rolled back: so does its data swap.
-      if (swap) await swap.undo().catch(() => undefined);
+      // The pre_restore row rolled back: its copy goes too, unless the live
+      // file was already swapped (then the copy is the way back).
+      const orphan = copied as string | null;
+      if (orphan && !swapped) await rm(orphan, { force: true }).catch(() => undefined);
       throw err;
     });
-  if (swap) {
-    const done = swap;
-    // Inside a caller's transaction these wait for it to end; outside one,
-    // the restore is final now and the replaced files go at once.
-    afterRollback(() => done.undo());
-    await afterCommit(() => done.drop());
-  }
+  // Inside a caller's transaction (a member's CODE restore, withSystemTx)
+  // the row only reached a savepoint: if that transaction rolls back, the
+  // copy goes with it. Only when no file was swapped; outside such a
+  // transaction this does nothing.
+  const kept = copied as string | null;
+  if (kept && !swapped) afterRollback(() => rm(kept, { force: true }));
   if (wantsData) scheduleAppTableExportSync(ownerId, appId);
   await pruneAutoSnapshots(appId, 'pre_restore');
   const { code: _code, schemaVersion: _sv, ...restored } = result.restored;

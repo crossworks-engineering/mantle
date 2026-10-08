@@ -150,25 +150,27 @@ describe.skipIf(!URL)('app history on Postgres', () => {
     expect(seen).toEqual(['rollback']);
   });
 
-  it('a data restore that rolls back puts the replaced files back; a final one leaves none', async () => {
+  it('a code restore that rolls back with its transaction leaves no pre_restore copy', async () => {
     const { readdirSync } = await import('node:fs');
-    const id = await publishedApp('swap-undo');
-    const before = await snaps.createAppSnapshot(owner, id);
-    await broker.appDbExec(owner, id, "INSERT INTO items (name) VALUES ('b')", [], schema);
+    const id = await publishedApp('restore-undo');
+    const v1 = (await snaps.listAppSnapshots(owner, id)).find((e) => e.trigger === 'publish');
+    const dirOf = path.join(dir, '_snapshots', owner, id);
+    const before = existsSync(dirOf) ? readdirSync(dirOf).length : 0;
     await expect(
       m.withSystemTx(async () => {
-        await snaps.restoreAppSnapshot(owner, id, before!.id, { mode: 'data', drainMs: 0 });
-        throw new Error('the caller failed after the swap');
+        await snaps.restoreAppSnapshot(owner, id, v1!.id, { mode: 'code', discardDraft: true });
+        throw new Error('the caller failed after the restore');
       }),
-    ).rejects.toThrow(/after the swap/);
-    // The rows rolled back, and so did the file.
-    expect(await names(id)).toEqual(['a', 'b']);
-    // A restore that stands leaves no kept files behind.
-    await snaps.restoreAppSnapshot(owner, id, before!.id, { mode: 'data', drainMs: 0 });
-    expect(await names(id)).toEqual(['a']);
-    const live = (await broker.appDatabasePath(owner, id))!;
-    const left = readdirSync(path.dirname(live)).filter((f) => f.includes('.prev-'));
-    expect(left).toEqual([]);
+    ).rejects.toThrow(/after the restore/);
+    // The pre_restore row rolled back, and its database copy with it.
+    expect(existsSync(dirOf) ? readdirSync(dirOf).length : 0).toBe(before);
+    // Outside a transaction the copy stays: it is the way back.
+    const res = await snaps.restoreAppSnapshot(owner, id, v1!.id, {
+      mode: 'code',
+      discardDraft: true,
+    });
+    expect(res?.undo?.hasData).toBe(true);
+    expect(readdirSync(dirOf).length).toBe(before + 1);
   });
 
   it('a snapshot taken in a transaction that rolls back leaves no copy', async () => {
