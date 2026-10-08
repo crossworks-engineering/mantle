@@ -1660,6 +1660,13 @@
       "when": 1790193180000,
       "tag": "0237_email_attachments_file_node_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 238,
+      "version": "7",
+      "when": 1790193240000,
+      "tag": "0238_peer_ended_binding",
+      "breakpoints": true
     }
   ]
 }

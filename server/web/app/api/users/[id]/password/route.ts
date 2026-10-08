@@ -74,10 +74,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     self && source === 'mobile'
       ? mobileTokenJti(bearerFromHeader(req.headers.get('authorization')) ?? '')
       : null;
+  const unboundPeerIds: string[] = [];
   const epoch = await endLoginSessions(targetId, {
     keepJti,
     endKeys: true,
     actorId: user.actor.id,
+    unboundPeerIds,
   });
 
   auditFireAndForget({
@@ -90,7 +92,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     ...requestMetaFrom(req),
   });
 
-  const res = NextResponse.json({ ok: true });
+  // How many linked brains (peers acting as the login) were unbound: binding
+  // one to the same login again restores it (access matrix L12).
+  const res = NextResponse.json({ ok: true, peersUnbound: unboundPeerIds.length });
   if (self && source === 'web' && epoch !== null) setSessionCookie(res, req, targetId, epoch);
   return res;
 }

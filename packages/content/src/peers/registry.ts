@@ -56,7 +56,8 @@ function rowOf(p: MantlePeer): PeerRow {
       p.actsAsRole === 'admin' || p.actsAsRole === 'member' || p.actsAsRole === 'client'
         ? p.actsAsRole
         : null,
-    writeEnabled: p.writeEnabled,
+    // An unbound peer writes nothing, whatever it kept for a rebind (0238).
+    writeEnabled: p.actsAsLoginId ? p.writeEnabled : false,
     allowedRiskyTools: p.allowedRiskyTools ?? [],
     createdAt: p.createdAt.toISOString(),
     updatedAt: p.updatedAt.toISOString(),
@@ -250,7 +251,8 @@ export async function setPeerEnabled(
  * rebinding the login starts CLOSED (write off, no risky tools) unless the
  * same call sets them, so a member peer with write on that is switched to
  * the owner does not get owner write by accident. An unbound peer keeps
- * write off whatever is sent.
+ * write off whatever is sent. The one exception: binding a peer again to
+ * the login a session end unbound it from (0238) restores what it had.
  */
 export async function setPeerAccess(
   ownerId: string,
@@ -266,8 +268,23 @@ export async function setPeerAccess(
   if (access.actsAs !== undefined) {
     set.actsAsLoginId = access.actsAs?.loginId ?? null;
     set.actsAsRole = access.actsAs?.role ?? null;
-    set.writeEnabled = access.actsAs ? (access.writeEnabled ?? false) : false;
-    set.allowedRiskyTools = access.actsAs ? (risky ?? []) : [];
+    // Binding it again to the login whose session end unbound it (0238,
+    // lib/peer-unbind.ts) restores the Write switch and risky tools it kept;
+    // any other binding starts closed, as before.
+    const same = access.actsAs
+      ? sql`(${mantlePeers.endedActsAsLoginId} = ${access.actsAs.loginId}::uuid
+             and ${mantlePeers.endedActsAsRole} = ${access.actsAs.role})`
+      : null;
+    set.writeEnabled = !access.actsAs
+      ? false
+      : (access.writeEnabled ??
+        (sql`(case when ${same} then ${mantlePeers.writeEnabled} else false end)` as unknown as boolean));
+    set.allowedRiskyTools = !access.actsAs
+      ? []
+      : (risky ??
+        (sql`(case when ${same} then ${mantlePeers.allowedRiskyTools} else '{}'::text[] end)` as unknown as string[]));
+    set.endedActsAsLoginId = null;
+    set.endedActsAsRole = null;
   } else {
     if (access.writeEnabled !== undefined) {
       // Never on for a peer bound to nobody.

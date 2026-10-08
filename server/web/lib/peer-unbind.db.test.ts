@@ -28,6 +28,7 @@ type Peer = {
   acts_as_login_id: string | null;
   acts_as_role: string | null;
   write_enabled: boolean;
+  ended_acts_as_login_id: string | null;
 };
 
 describe.skipIf(!URL)('peer bindings end with the login', () => {
@@ -42,7 +43,7 @@ describe.skipIf(!URL)('peer bindings end with the login', () => {
 
   const peer = async (id: string) =>
     (
-      (await sql`select acts_as_login_id, acts_as_role, write_enabled
+      (await sql`select acts_as_login_id, acts_as_role, write_enabled, ended_acts_as_login_id
                    from mantle_peers where id = ${id}`) as unknown as Peer[]
     )[0]!;
 
@@ -90,14 +91,27 @@ describe.skipIf(!URL)('peer bindings end with the login', () => {
     await m.closeDb();
   });
 
+  const unboundAudits = async (peerId: string) =>
+    (await sql`select detail->>'reason' as reason from audit_log
+                where action = 'peer.unbound' and detail->>'peerId' = ${peerId}`) as unknown as {
+      reason: string;
+    }[];
+
   it('End sessions unbinds the peers that act as the login, and only those', async () => {
     const { endLoginSessions } = await import('./auth/session');
-    await endLoginSessions(member, { endKeys: true, actorId: who.admin });
+    const unboundPeerIds: string[] = [];
+    await endLoginSessions(member, { endKeys: true, actorId: who.admin, unboundPeerIds });
+    expect(unboundPeerIds).toEqual([peers.member]);
+    // Unbound; Write kept and the binding remembered, for a one-step rebind.
     expect(await peer(peers.member)).toEqual({
       acts_as_login_id: null,
       acts_as_role: null,
-      write_enabled: false,
+      write_enabled: true,
+      ended_acts_as_login_id: member,
     });
+    await vi.waitFor(async () =>
+      expect(await unboundAudits(peers.member)).toEqual([{ reason: 'sessions-ended' }]),
+    );
     expect((await peer(peers.client)).acts_as_login_id).toBe(client);
     expect((await peer(peers.other)).acts_as_login_id).toBe(who.anchor);
   });
@@ -113,7 +127,12 @@ describe.skipIf(!URL)('peer bindings end with the login', () => {
         }),
         { params: Promise.resolve({ id: client }) },
       );
-    expect((await patch(false)).status).toBe(200);
+    const off = await patch(false);
+    expect(off.status).toBe(200);
+    expect(await off.json()).toMatchObject({ enabled: false, peersUnbound: 1 });
+    await vi.waitFor(async () =>
+      expect(await unboundAudits(peers.client)).toEqual([{ reason: 'mcp-off' }]),
+    );
     const [k] =
       (await sql`select revoked_at, revoked_by from access_keys where id = ${key}`) as unknown as {
         revoked_at: Date | null;
@@ -131,5 +150,20 @@ describe.skipIf(!URL)('peer bindings end with the login', () => {
     expect(again!.revoked_at).not.toBeNull();
     expect((await peer(peers.client)).acts_as_login_id).toBeNull();
     expect((await peer(peers.other)).acts_as_login_id).toBe(who.anchor);
+  });
+
+  it('binding a peer again to the same login restores Write; another login starts closed', async () => {
+    const { setPeerAccess } = await import('@mantle/content');
+    const back = await setPeerAccess(who.anchor, peers.member, {
+      actsAs: { loginId: member, role: 'member' },
+    });
+    expect(back).toMatchObject({ actsAsLoginId: member, writeEnabled: true });
+    expect((await peer(peers.member)).ended_acts_as_login_id).toBeNull();
+    // The client peer was unbound by MCP off; bound to a different login,
+    // it starts closed as before.
+    const moved = await setPeerAccess(who.anchor, peers.client, {
+      actsAs: { loginId: member, role: 'member' },
+    });
+    expect(moved).toMatchObject({ actsAsLoginId: member, writeEnabled: false });
   });
 });

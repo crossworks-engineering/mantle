@@ -19,7 +19,8 @@ import {
 import { lockOauthActor } from '@/lib/oauth-lock';
 import { auditKeysEnded, getOwnerOr401 } from '@/lib/auth';
 import { mcpTargetLogin } from '@/lib/mcp-auth';
-import { unbindPeersActingAs } from '@/lib/peer-unbind';
+import { auditPeersUnbound, unbindPeersActingAs } from '@/lib/peer-unbind';
+import { lockLoginKeys } from '@/lib/access-keys';
 import { firstIssue } from '@/lib/zod-issue';
 
 const Params = z.object({ id: z.string().uuid() });
@@ -54,8 +55,14 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   // API keys and its bound peers end too (access matrix L13): a key was
   // refused while MCP was off but worked again the moment it came back on.
   const endedKeyIds: string[] = [];
+  const unboundPeerIds: string[] = [];
   const row = await db.transaction(async (tx) => {
-    if (parsed.data.enabled === false) await lockOauthActor(tx, login.id);
+    if (parsed.data.enabled === false) {
+      await lockOauthActor(tx, login.id);
+      // And the lock a key mint takes (audit LOW-6): a key made at this
+      // moment is revoked below, or made after the switch is off.
+      await lockLoginKeys(tx, login.id);
+    }
     const [saved] = await tx
       .insert(mcpLoginAccess)
       .values({ loginId: login.id, ...set })
@@ -78,12 +85,17 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
         .where(and(eq(accessKeys.loginId, login.id), isNull(accessKeys.revokedAt)))
         .returning({ id: accessKeys.id });
       endedKeyIds.push(...keys.map((k) => k.id));
-      await unbindPeersActingAs(login.id, tx);
+      unboundPeerIds.push(...(await unbindPeersActingAs(login.id, tx)));
     }
     return saved;
   });
   // After the commit, as endLoginSessions does: a rolled-back switch leaves
   // no row.
   auditKeysEnded(login.id, user.actor.id, endedKeyIds);
-  return NextResponse.json({ enabled: row!.enabled, writeEnabled: row!.writeEnabled });
+  auditPeersUnbound(login.id, user.actor.id, unboundPeerIds, 'mcp-off');
+  return NextResponse.json({
+    enabled: row!.enabled,
+    writeEnabled: row!.writeEnabled,
+    ...(parsed.data.enabled === false ? { peersUnbound: unboundPeerIds.length } : {}),
+  });
 }

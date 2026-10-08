@@ -73,7 +73,8 @@ describe('POST /api/users/:id/password by target role', () => {
 
   it.each(['admin', 'member'])('resets a %s password', async (role) => {
     h.role = role;
-    expect(await reset()).toEqual({ status: 200, body: { ok: true } });
+    // peersUnbound: the linked brains the reset unbound (access matrix L12).
+    expect(await reset()).toEqual({ status: 200, body: { ok: true, peersUnbound: 0 } });
     expect(h.updated).toEqual([TARGET]);
   });
 

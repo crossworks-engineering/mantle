@@ -79,7 +79,8 @@ export async function POST(req: Request) {
     login.source === 'mobile'
       ? mobileTokenJti(bearerFromHeader(req.headers.get('authorization')) ?? '')
       : null;
-  const epoch = await endLoginSessions(actorId, { keepJti, endKeys: true });
+  const unboundPeerIds: string[] = [];
+  const epoch = await endLoginSessions(actorId, { keepJti, endKeys: true, unboundPeerIds });
   auditFireAndForget({
     actorId,
     actorEmail: login.email,
@@ -88,7 +89,9 @@ export async function POST(req: Request) {
     path: '/api/auth/change-password',
     ...requestMetaFrom(req),
   });
-  const res = NextResponse.json({ ok: true });
+  // How many linked brains (peers acting as the login) were unbound: binding
+  // one to the same login again restores it (access matrix L12).
+  const res = NextResponse.json({ ok: true, peersUnbound: unboundPeerIds.length });
   if (login.source === 'web' && epoch !== null) setSessionCookie(res, req, actorId, epoch);
   return res;
 }

@@ -44,8 +44,8 @@ import {
 } from '../auth-constants';
 import { auditFireAndForget, requestMeta } from '../audit';
 import { lockOauthActor } from '../oauth-lock';
-import { unbindPeersActingAs } from '../peer-unbind';
-import { isAccessKey, isApiV1Path } from '../access-keys';
+import { auditPeersUnbound, unbindPeersActingAs } from '../peer-unbind';
+import { isAccessKey, isApiV1Path, lockLoginKeys } from '../access-keys';
 import { keyMayCall, matchApiV1Route } from '../api-v1';
 import { getRequestContext } from '../../server/request-context';
 import { bearerFromHeader } from './request';
@@ -984,9 +984,15 @@ export async function endLoginSessions(
     /** With `tx`: filled with the ids of the keys this revoked, for the
      *  caller to audit (auditKeysEnded) once ITS transaction commits. */
     revokedKeyIds?: string[];
+    /** Filled with the ids of the peers this unbound (access matrix L12),
+     *  for the caller's answer. With `tx` the caller also audits them
+     *  (auditPeersUnbound) once ITS transaction commits; without, this
+     *  audits them after its own commit. */
+    unboundPeerIds?: string[];
   } = {},
 ): Promise<number | null> {
   const ended: string[] = [];
+  const unbound: string[] = [];
   const run = async (tx: Tx | typeof db) => {
     const [row] = await tx
       .update(authUsers)
@@ -1025,24 +1031,26 @@ export async function endLoginSessions(
     opts.removedRoutingTokens?.push(...removed.map((r) => r.routingToken));
     if (opts.endKeys) {
       const now = new Date();
+      // The login's MCP connectors: every live OAuth grant and every code
+      // not yet exchanged. An admin's grant has no session epoch, so only
+      // this ends it (M2 audit N4). Under the login's OAuth lock, the one a
+      // refresh and a code exchange take (final audit F3), so a grant minted
+      // at the same moment is either seen here or refused there. The keys
+      // under the lock a mint takes (audit LOW-6), for the same reason.
+      await lockOauthActor(tx, loginId);
+      await lockLoginKeys(tx, loginId);
       const keys = await tx
         .update(accessKeys)
         .set({ revokedAt: now, revokedBy: opts.actorId ?? loginId })
         .where(and(eq(accessKeys.loginId, loginId), isNull(accessKeys.revokedAt)))
         .returning({ id: accessKeys.id });
-      // The login's MCP connectors: every live OAuth grant and every code
-      // not yet exchanged. An admin's grant has no session epoch, so only
-      // this ends it (M2 audit N4). Under the login's OAuth lock, the one a
-      // refresh and a code exchange take (final audit F3), so a grant minted
-      // at the same moment is either seen here or refused there.
-      await lockOauthActor(tx, loginId);
       await tx
         .update(oauthAccessTokens)
         .set({ revokedAt: now })
         .where(and(eq(oauthAccessTokens.actorId, loginId), isNull(oauthAccessTokens.revokedAt)));
       await tx.delete(oauthAuthCodes).where(eq(oauthAuthCodes.actorId, loginId));
       // And the peers that act as the login on /api/mcp (access matrix L12).
-      await unbindPeersActingAs(loginId, tx);
+      unbound.push(...(await unbindPeersActingAs(loginId, tx)));
       ended.push(...keys.map((k) => k.id));
     }
     return row.epoch;
@@ -1050,6 +1058,7 @@ export async function endLoginSessions(
   if (opts.tx) {
     const epoch = await run(opts.tx);
     opts.revokedKeyIds?.push(...ended);
+    opts.unboundPeerIds?.push(...unbound);
     return epoch;
   }
   // Once more if it met a busy lock (last check F3): the caller has often
@@ -1062,10 +1071,13 @@ export async function endLoginSessions(
   } catch (err) {
     if (!isBusy(err) && pgErrorCode(err) !== '57014') throw err;
     ended.length = 0;
+    unbound.length = 0;
     epoch = await db.transaction((tx) => run(tx));
   }
   // After the commit, so a rolled-back end leaves no row (final audit).
   auditKeysEnded(loginId, opts.actorId ?? loginId, ended);
+  auditPeersUnbound(loginId, opts.actorId ?? loginId, unbound, 'sessions-ended');
+  opts.unboundPeerIds?.push(...unbound);
   return epoch;
 }
 

@@ -71,6 +71,11 @@ export const mantlePeers = pgTable(
     actsAsLoginId: uuid('acts_as_login_id'),
     /** That login's role when it was bound; a role change fails closed. */
     actsAsRole: text('acts_as_role'),
+    /** The binding a session end or the MCP switch ended (0238): binding the
+     *  peer to the same login again restores its Write switch and risky
+     *  tools (lib/peer-unbind.ts). Never read to grant anything. */
+    endedActsAsLoginId: uuid('ended_acts_as_login_id'),
+    endedActsAsRole: text('ended_acts_as_role'),
     /** Whether the peer may call the write tools of its login (default off). */
     writeEnabled: boolean('write_enabled').notNull().default(false),
     /** Risky owner tools the owner allowed for this peer by name (0227). */

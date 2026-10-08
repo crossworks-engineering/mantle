@@ -325,6 +325,22 @@ export type MintAccessKeyInput = {
  *  when the login already holds `maxLive` live keys: the count and the
  *  insert run in one transaction under a per-login lock, so two creates at
  *  once cannot both pass the cap (M2 audit F7). */
+/**
+ * Serialize what mints or ends one login's keys: a mint (its live-key cap),
+ * and a bulk revoke (endLoginSessions with endKeys, the MCP switch turned
+ * off). Whichever runs second sees what the first did, so a key minted at
+ * the moment its login's MCP is switched off is revoked with the rest, not
+ * left to work again when MCP comes back on (access matrix L13, audit
+ * LOW-6). Hold it inside a transaction (it ends with the transaction); take
+ * it after lockOauthActor where both are held.
+ */
+export async function lockLoginKeys(
+  tx: Pick<typeof db, 'execute'>,
+  loginId: string,
+): Promise<void> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`access-keys:${loginId}`}))`);
+}
+
 export async function mintAccessKey(
   input: MintAccessKeyInput,
 ): Promise<{ id: string; prefix: string; key: string } | null> {
@@ -336,9 +352,7 @@ export async function mintAccessKey(
     const key = `${ACCESS_KEY_PREFIX}${prefix}_${randomBytes(SECRET_BYTES).toString('base64url')}`;
     try {
       const row = await db.transaction(async (tx) => {
-        await tx.execute(
-          sql`select pg_advisory_xact_lock(hashtext(${`access-keys:${input.loginId}`}))`,
-        );
+        await lockLoginKeys(tx, input.loginId);
         const [live] = await tx
           .select({ n: count() })
           .from(accessKeys)

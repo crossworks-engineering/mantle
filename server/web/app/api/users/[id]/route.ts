@@ -20,6 +20,7 @@ import {
   settleSpaceOnPromotion,
 } from '@mantle/content';
 import { auditKeysEnded, endLoginSessions, getOwnerOr401 } from '@/lib/auth';
+import { auditPeersUnbound } from '@/lib/peer-unbind';
 import { releaseAssignedAgent } from '@/lib/agents';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { deleteLoginSubscriptions, forgetRelayDevices } from '@/lib/push/store';
@@ -136,6 +137,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 
   const pushTokens: string[] = [];
   const endedKeyIds: string[] = [];
+  const unboundPeerIds: string[] = [];
   let releasedAgentId: string | null = null;
   try {
     await db.transaction(async (tx) => {
@@ -151,6 +153,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
           endKeys: true,
           actorId: user.actor.id,
           revokedKeyIds: endedKeyIds,
+          unboundPeerIds,
         });
         // A client's open sign-in links and emailed codes die with its
         // sessions (audit B14): a link issued before a disable must not
@@ -202,6 +205,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   await forgetRelayDevices(pushTokens);
   // And record the API keys the end revoked (one row), now that it held.
   auditKeysEnded(targetId, user.actor.id, endedKeyIds);
+  // And each peer that acted as the login (access matrix L12, audit LOW-5).
+  auditPeersUnbound(targetId, user.actor.id, unboundPeerIds, 'sessions-ended');
 
   auditFireAndForget({
     actorId: user.actor.id,
@@ -219,7 +224,12 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     ...requestMetaFrom(req),
   });
 
-  return NextResponse.json({ ok: true });
+  // How many linked brains (peers acting as the login) were unbound, so the
+  // admin sees it; binding one to the same login again restores it.
+  return NextResponse.json({
+    ok: true,
+    ...(endSessions ? { peersUnbound: unboundPeerIds.length } : {}),
+  });
 }
 
 export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
