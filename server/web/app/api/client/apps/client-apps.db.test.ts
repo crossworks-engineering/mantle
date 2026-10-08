@@ -133,7 +133,15 @@ describe.skipIf(!URL)('client apps, end to end', () => {
       bytes: 1,
       ok: true,
     };
-    const manifest = { toolSlugs: ['client_shared_list', 'search_chunks'] };
+    // The schema is the author's, declared on the app: below admin a write
+    // changes rows only (access matrix audit, M1).
+    const manifest = {
+      toolSlugs: ['client_shared_list', 'search_chunks'],
+      sqlite: {
+        schemaSql: 'create table if not exists orders (id integer primary key, item text);',
+        schemaVersion: 1,
+      },
+    };
     for (const id of Object.values(ids)) {
       await sql`insert into apps (node_id, manifest, published_build, data_read_only)
                 values (${id}, ${JSON.stringify(manifest)}::jsonb, ${JSON.stringify(green)}::jsonb,
@@ -167,11 +175,12 @@ describe.skipIf(!URL)('client apps, end to end', () => {
     const cookie = await clientCookie();
     expect((await frame(ids.client, await ticketFor(ids.client, cookie))).status).toBe(200);
     const base = '/api/client/apps';
+    // A client never changes the schema (access matrix audit, M1).
     const make = await db(base, ids.client, cookie, {
       op: 'exec',
-      sql: 'create table if not exists orders (id integer primary key, item text)',
+      sql: 'create table if not exists sneaky (id integer primary key)',
     });
-    expect(make.status).toBe(200);
+    expect(make.status).toBe(400);
     const put = await db(base, ids.client, cookie, {
       op: 'exec',
       sql: 'insert into orders (item) values (?)',
