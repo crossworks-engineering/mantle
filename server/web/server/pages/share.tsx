@@ -201,7 +201,7 @@ async function renderShare(c: Context): Promise<Response> {
     case 'note':
       // A note's `media:` and `draw:` pictures and file links resolve through
       // the share's own routes; isAssetAllowed / isEmbeddedDrawAllowed serve
-      // only what the note's markdown names.
+      // only what the note's markdown embeds.
       body = renderToStaticMarkup(
         <NotePresenter view={view} assetUrl={assetUrl} drawUrl={drawUrl} />,
       );

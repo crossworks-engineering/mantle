@@ -1,11 +1,12 @@
 /**
- * A shared note shows its own `media:` and `draw:` pictures and file links,
- * and nothing else, against a real, migrated Postgres. The note names one
- * picture, file links and one drawing; the share serves exactly those,
- * under the same level rule as a page (an embed an admin raised above the
- * link is not served). A file or drawing the note does NOT name stays
- * refused even at public, and an expired or revoked share refuses
- * everything, through the real /s routes. Only the file byte store is
+ * A shared note shows its own `media:` and `draw:` pictures and file embeds,
+ * and nothing else, against a real, migrated Postgres. The note embeds
+ * pictures, a file and a drawing; the share serves exactly those, read the
+ * way a page's doc is (a link inside a sentence, or an id quoted in code, is
+ * not an embed), under the same level rule as a page (an embed an admin
+ * raised above the link is not served). A file or drawing the note does NOT
+ * embed stays refused even at public, and an expired or revoked share
+ * refuses everything, through the real /s routes. Only the file byte store is
  * stubbed. Seeds its own owner and rows and removes them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run shares-note-media.db.test
  */
@@ -41,6 +42,10 @@ describe.skipIf(!URL)('a shared note serves the pictures and files it names', ()
     pic: randomUUID(),
     doc: randomUUID(),
     inlineDoc: randomUUID(),
+    titled: randomUUID(),
+    titledLink: randomUUID(),
+    fenced: randomUUID(),
+    inlineCode: randomUUID(),
     draw: randomUUID(),
     otherFile: randomUUID(),
     otherDraw: randomUUID(),
@@ -55,8 +60,14 @@ describe.skipIf(!URL)('a shared note serves the pictures and files it names', ()
     `![photo](media:${id.pic})`,
     // A file link alone on its line is a file embed: it follows the note.
     `[spec.pdf](media:${id.doc})`,
-    // One inside a sentence is a link, not an embed: it keeps its own level.
+    // One inside a sentence is a link, not an embed, as on a page.
     `Also see [notes.txt](media:${id.inlineDoc}) for more.`,
+    // A titled picture or file link is still an embed.
+    `![titled](media:${id.titled} "A title")`,
+    `[titled.pdf](media:${id.titledLink} "A title")`,
+    // An id quoted in code renders as text: not a picture.
+    ['```md', `![x](media:${id.fenced})`, '```'].join('\n'),
+    `Write it as \`![x](media:${id.inlineCode})\` in a note.`,
     `![sketch](draw:${id.draw})`,
     // A page link is not a file: never served by the asset route.
     `[a page](page:${id.page})`,
@@ -83,6 +94,10 @@ describe.skipIf(!URL)('a shared note serves the pictures and files it names', ()
       [id.pic, 'file', 'photo.png', 'files', {}],
       [id.doc, 'file', 'spec.pdf', 'files', {}],
       [id.inlineDoc, 'file', 'notes.txt', 'files', {}],
+      [id.titled, 'file', 'titled.png', 'files', {}],
+      [id.titledLink, 'file', 'titled.pdf', 'files', {}],
+      [id.fenced, 'file', 'fenced.png', 'files', {}],
+      [id.inlineCode, 'file', 'inline-code.png', 'files', {}],
       [id.draw, 'draw', 'Sketch', 'draw', {}],
       [id.otherFile, 'file', 'private.pdf', 'files', {}],
       [id.otherDraw, 'draw', 'Other sketch', 'draw', {}],
@@ -107,6 +122,9 @@ describe.skipIf(!URL)('a shared note serves the pictures and files it names', ()
     await access.setItemAudience(owner, id.otherFile, 'public');
     await access.setItemAudience(owner, id.otherDraw, 'public');
     await access.setItemAudience(owner, id.page, 'public');
+    await access.setItemAudience(owner, id.fenced, 'public');
+    await access.setItemAudience(owner, id.inlineCode, 'public');
+    await access.setItemAudience(owner, id.inlineDoc, 'public');
     // Making a note public opens its link: name those links' tokens, and
     // let the second one run out.
     await m.db.execute(sqlTag`
@@ -144,18 +162,26 @@ describe.skipIf(!URL)('a shared note serves the pictures and files it names', ()
   it('serves the pictures, file links and drawings the note names', async () => {
     expect(await shares.isAssetAllowed(noteLink(), id.pic)).toBe(true);
     expect(await shares.isAssetAllowed(noteLink(), id.doc)).toBe(true);
+    expect(await shares.isAssetAllowed(noteLink(), id.titled)).toBe(true);
+    expect(await shares.isAssetAllowed(noteLink(), id.titledLink)).toBe(true);
     expect(await shares.isEmbeddedDrawAllowed(noteLink(), id.draw)).toBe(true);
+    expect(await getAsset(token.live, id.titled)).toBe(200);
     expect(await getAsset(token.live, id.pic)).toBe(200);
     expect(await getAsset(token.live, id.doc)).toBe(200);
     expect(await getDraw(token.live, id.draw)).toBe(200);
   });
 
-  it('keeps the level rule: a named file still at admin is refused until lowered', async () => {
+  it('refuses an id the note only quotes in code, even at public', async () => {
+    expect(await shares.isAssetAllowed(noteLink(), id.fenced)).toBe(false);
+    expect(await shares.isAssetAllowed(noteLink(), id.inlineCode)).toBe(false);
+    expect(await getAsset(token.live, id.fenced)).toBe(404);
+    expect(await getAsset(token.live, id.inlineCode)).toBe(404);
+  });
+
+  it('refuses a file the note only links inside a sentence, even at public', async () => {
+    // A link, not an embed: a page share refuses the same.
     expect(await shares.isAssetAllowed(noteLink(), id.inlineDoc)).toBe(false);
     expect(await getAsset(token.live, id.inlineDoc)).toBe(404);
-    await access.setItemAudience(owner, id.inlineDoc, 'public');
-    expect(await shares.isAssetAllowed(noteLink(), id.inlineDoc)).toBe(true);
-    expect(await getAsset(token.live, id.inlineDoc)).toBe(200);
   });
 
   it('refuses a file or drawing the note does not name', async () => {

@@ -29,7 +29,7 @@ import {
   type DimensionIssue,
 } from '@mantle/content';
 import { aggregateWindow, describeWorkbook, resolveStoragePath } from '@mantle/tabledb';
-import { markdownRefs } from '@mantle/content-core/markdown-refs';
+import { markdownToDoc } from '@mantle/content-core/markdown';
 import { isUuid } from '@mantle/std';
 import { fileById, folderById } from '@/lib/files';
 
@@ -492,19 +492,23 @@ async function loadSharedNote(share: Share): Promise<{ content: string; audience
   return { content: typeof d.content === 'string' ? d.content : '', audience: row.audience };
 }
 
-/** The ids a note's own markdown names with `scheme` (`media:` files,
- *  `draw:` drawings), lower-cased. markdownRefs is the one parser for these
- *  schemes; an id that is not a uuid is dropped, so it never reaches a
- *  query (Postgres would answer 22P02, an opaque 500). */
-function noteRefIds(content: string, scheme: 'media' | 'draw'): string[] {
-  return markdownRefs(content)
-    .filter((r) => r.scheme === scheme && isUuid(r.id))
-    .map((r) => r.id.toLowerCase());
+/** The ids a note's markdown EMBEDS as `kind` (files: its pictures and
+ *  file embeds; draws: its drawings), lower-cased. Parsed into a document
+ *  first, as the embed closure does (noteEmbedIds) and as a page's doc is
+ *  read: only a rendered picture or embed counts, so an id quoted in a code
+ *  block or inline code is not one, and a titled `media:` link is. A link
+ *  inside a sentence is a link, not an embed, as on a page. */
+function noteEmbeds(content: string, kind: 'file' | 'draw'): string[] {
+  if (!content) return [];
+  const doc = markdownToDoc(content);
+  return (kind === 'file' ? referencedFileIds(doc) : referencedDrawIds(doc)).map((id) =>
+    id.toLowerCase(),
+  );
 }
 
 /** May this share serve the drawing `drawId` as an embed? Only a page or a
- *  note share, only a drawing its own content names (a page's doc, a note's
- *  `draw:` refs), and only when the drawing and every image its snapshot
+ *  note share, only a drawing its own content embeds (a page's doc, a note's
+ *  `draw:` pictures), and only when the drawing and every image its snapshot
  *  carries sit at the share's levels (shareLevels, as for files). So a share
  *  never becomes a way to read arbitrary drawings by id. The /s/:token/draw
  *  route serves a drawing that is itself the shared item; this is the
@@ -521,7 +525,7 @@ export async function isEmbeddedDrawAllowed(share: Share, drawId: string): Promi
   }
   if (share.nodeType === 'note') {
     const note = await loadSharedNote(share);
-    if (!note || !noteRefIds(note.content, 'draw').includes(id)) return false;
+    if (!note || !noteEmbeds(note.content, 'draw').includes(id)) return false;
     return isDrawServable(share.ownerId, id, shareLevels(share, note.audience), { self: true });
   }
   return false;
@@ -530,9 +534,9 @@ export async function isEmbeddedDrawAllowed(share: Share, drawId: string): Promi
 /** Is `fileId` allowed to be served under this share? A file share serves
  *  itself; a page share serves only the files its doc references that sit
  *  at the link's levels (an embed an admin raised above the page is not
- *  served; linkLevels); a note share serves only the files its own markdown
- *  names (`media:` pictures and file links, markdownRefs), under the same
- *  level rule (shareLevels); a folder
+ *  served; linkLevels); a note share serves only the files its markdown
+ *  embeds (`media:` pictures and file embeds, parsed as a page doc is,
+ *  noteEmbeds), under the same level rule (shareLevels); a folder
  *  share serves the files under the folder's subtree (recursive, evaluated
  *  per request: a file moved out is denied on its next fetch) that sit at
  *  the link's levels, under no folder above them (linkLevels, audit F19): a
@@ -560,7 +564,7 @@ export async function isAssetAllowed(share: Share, fileId: string): Promise<bool
   if (share.nodeType === 'note') {
     if (!isUuid(fileId)) return false;
     const note = await loadSharedNote(share);
-    if (!note || !noteRefIds(note.content, 'media').includes(fileId.toLowerCase())) return false;
+    if (!note || !noteEmbeds(note.content, 'file').includes(fileId.toLowerCase())) return false;
     const [hit] = await db
       .select({ id: nodes.id })
       .from(nodes)
