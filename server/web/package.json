@@ -122,7 +122,7 @@
     "esbuild": "^0.28.2",
     "hast-util-to-html": "^9.0.5",
     "hono": "^4.13.13",
-    "katex": "^0.18.7",
+    "katex": "^0.19.0",
     "libsodium-wrappers": "^0.8.4",
     "lowlight": "^3.3.0",
     "lucide-react": "^1.53.0",
