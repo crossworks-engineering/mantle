@@ -104,6 +104,17 @@ export async function listDeletedApps(ownerId: string): Promise<DeletedApp[]> {
     .sort((a, b) => b.deletedAt.localeCompare(a.deletedAt));
 }
 
+/** Whether a member ever wrote this app's code (a history row by a member,
+ *  team apps Phase 3). */
+async function memberEra(appId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: nodeSnapshots.id })
+    .from(nodeSnapshots)
+    .where(and(eq(nodeSnapshots.nodeId, appId), eq(nodeSnapshots.actor, 'member')))
+    .limit(1);
+  return !!row;
+}
+
 /**
  * Bring a deleted app back from its last snapshot, with the same id: its
  * code (live, with the build it ran, when it had been published), its name
@@ -139,6 +150,11 @@ export async function restoreDeletedApp(
     tags: meta?.tags ?? [],
     ...(code.manifest.description ? { description: code.manifest.description } : {}),
     source: code.source,
+    // The author ceiling comes back too (team apps Phase 3, M3 audit): a
+    // member-era app, or one that ran at team rules, stays at team rules.
+    ...((await memberEra(appId)) || meta?.authorLevel === 'team'
+      ? { authorLevel: 'team' as const }
+      : {}),
   });
   try {
     if (row.db_path) {

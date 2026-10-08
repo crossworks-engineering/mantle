@@ -1,14 +1,21 @@
 /**
  * /api/apps/[id] — get (GET), update metadata (PATCH), delete (DELETE).
  * PATCH also sets the informational flag (`dataReadOnly`, client logins C6)
- * and MCP access (`mcpAccess`, team apps Phase 1).
+ * and MCP access (`mcpAccess`, team apps Phase 1), and "trust its tools"
+ * (`trustTools`, team apps Phase 3): the author ceiling.
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { APP_ICON_MAX, APP_TINTS } from '@mantle/client-types/app-nav';
 import { getOwnerOr401 } from '@/lib/auth';
 import { APP_DESCRIPTION_MAX } from '@/lib/app-meta';
-import { getApp, updateAppMeta, deleteApp, notifyAppNavChanged } from '@mantle/content';
+import {
+  getApp,
+  updateAppMeta,
+  deleteApp,
+  notifyAppNavChanged,
+  setAppAuthorLevel,
+} from '@mantle/content';
 import { firstIssue } from '@/lib/zod-issue';
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -36,6 +43,12 @@ const PatchBody = z.object({
   // connection reaches the app's data. This route (admin only) is its one
   // writer: no agent tool and no API key sets it (a key never reaches it).
   mcpAccess: z.boolean().optional(),
+  // Trust its tools (team apps Phase 3, M3 audit): true lifts the author
+  // ceiling ('admin': the app runs its tools at the runner's own rules),
+  // false puts it back ('team'). An admin's own click after reading the
+  // declared tools: this route (admin session only) is its one writer, so
+  // no agent tool, API key or code edit ever lifts a ceiling.
+  trustTools: z.boolean().optional(),
 });
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -46,9 +59,13 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
-  const { name, ...rest } = parsed.data;
-  const app = await updateAppMeta(user.id, id, { ...(name ? { title: name } : {}), ...rest });
+  const { name, trustTools, ...rest } = parsed.data;
+  let app = await updateAppMeta(user.id, id, { ...(name ? { title: name } : {}), ...rest });
   if (!app) return NextResponse.json({ error: 'app not found' }, { status: 404 });
+  if (trustTools !== undefined) {
+    await setAppAuthorLevel(user.id, id, trustTools ? 'admin' : 'team');
+    app = (await getApp(user.id, id)) ?? app;
+  }
   // The sidebar tree shows name, icon and colour: refresh it everywhere.
   void notifyAppNavChanged(user.id);
   return NextResponse.json({ app });

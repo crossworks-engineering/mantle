@@ -61,6 +61,8 @@ vi.mock('@mantle/content', () => {
       return { id, title: 'A', sharing: 'private', reviewState: 'draft', returnedNote: null };
     }),
     createSpaceApp: vi.fn(),
+    // The lock is the content layer's (its DB test); here it runs the change.
+    withAuthorWrite: vi.fn(async (_a: unknown, _id: string, fn: () => Promise<unknown>) => fn()),
     declareAppSchema: vi.fn(),
     deleteDraftFile: vi.fn(async (owner: string, id: string, path: string) => {
       h.deleteCalls.push({ owner, id, path });

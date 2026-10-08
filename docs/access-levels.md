@@ -500,6 +500,24 @@ it. It stays 'team' after an admin's accept unless the admin reviewed the
 declared tools ("trust its tools"). The level an app is accepted at is
 admin or team; client and public stay an admin's later choice.
 
+The ceiling never lifts by itself (M3 audit):
+
+- Accept is pinned to what the admin read: the review answers the version
+  and a hash of the published source, manifest and build; Accept sends
+  both back, and the locked accept refuses (409 `changed`) when either
+  moved or a draft is pending.
+- A copy keeps its source's ceiling (`duplicateApp`), an import starts at
+  'team', an undelete of a member-era app (a history row by a member, or
+  one taken at 'team') comes back at 'team', and restoring the code of such
+  a row puts the ceiling back to 'team'.
+- An admin's own edits (app_update, app_source_set, a publish) keep it.
+- Only the owner's app route lifts it, from an admin's click:
+  `PATCH /api/apps/:id { trustTools: true }` (false puts it back). No tool,
+  agent or API key writes it.
+- A member's change to their own app runs holding the app's state row
+  (`withAuthorWrite`): a Submit, a Recall or an Accept waits for it, and no
+  change starts after a Submit.
+
 Every app list carries `dataAccess` ('read' or 'read_write'): what the
 viewer may do with the app's data, worked out with the rule its db broker
 applies (an admin always writes; a member by `memberMayWriteAppData`; a

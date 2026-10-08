@@ -656,7 +656,10 @@ mirror the admin's `app_*` tools; read `my_app_guide` (this guide) first.
   read-only built-ins from an enabled team-level group, or connector tools
   at team level or lower. `my_app_tools_set` warns for each tool those
   rules refuse. An admin who reviewed the declared tools may accept with
-  "trust its tools", which lifts the ceiling.
+  "trust its tools", which lifts the ceiling. The accept is pinned to the
+  version the admin read: if you change and resubmit meanwhile, the admin
+  must open it again. A copy, an import or a restore of your code keeps the
+  ceiling; only an admin's own "trust its tools" lifts it.
 - **Writes need the Write switch** on the member's MCP. Reads
   (`my_app_list`, `my_app_get`, `my_app_errors`, `my_app_snapshot_list`,
   `my_app_guide`) do not. A client never gets these tools.

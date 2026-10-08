@@ -198,6 +198,13 @@ export type AppRow = {
    *  `{ mcpAccess }`. Absent from an older brain: read as false (and the
    *  switch is not shown). */
   mcpAccess?: boolean;
+  /** The author ceiling (team apps Phase 3, migration 0235): 'team' = the
+   *  app runs its tools at team rules for every runner, admins too (a
+   *  member wrote it, or its code came from a copy, an import or a
+   *  member-era restore). An admin lifts it with PATCH /api/apps/:id
+   *  `{ trustTools: true }` after reading its tools. Absent from an older
+   *  brain: read as 'admin'. */
+  authorLevel?: 'admin' | 'team';
   createdAt: string;
   updatedAt: string;
 };

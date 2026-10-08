@@ -28,6 +28,7 @@
  * needs the author's own row in a writable state. Every function runs as
  * the system, so a caller inside a viewer scope cannot widen or narrow it.
  */
+import { createHash } from 'node:crypto';
 import { and, asc, desc, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import {
   appDatabases,
@@ -54,7 +55,7 @@ import { dataAccessOf, type AppDataAccess } from './app-data-access';
 export type SpaceAppAuthor = { loginId: string; spaceId: string };
 
 export type SpaceAppErrorCode =
-  'not-found' | 'frozen' | 'unpublished' | 'no-build' | 'not-submitted' | 'not-draft';
+  'not-found' | 'frozen' | 'unpublished' | 'no-build' | 'not-submitted' | 'not-draft' | 'changed';
 
 /** A refusal with words for the member or admin. */
 export class SpaceAppError extends Error {
@@ -70,10 +71,26 @@ export class SpaceAppError extends Error {
 const NOT_FOUND = () =>
   new SpaceAppError('not-found', 'No such app of yours. List your apps with my_app_list.');
 
+function frozenError(reviewState: string): SpaceAppError {
+  return new SpaceAppError(
+    'frozen',
+    reviewState === 'submitted'
+      ? 'This app is submitted for review, so it is frozen. Recall it to change it.'
+      : 'This app was accepted into the brain; it is no longer yours to change.',
+  );
+}
+
 /** The states a member may still edit in. */
 const EDITABLE: readonly string[] = ['draft', 'returned'];
 
 const publishedGreen = sql`(${apps.publishedBuild}->>'ok')::boolean is true`;
+
+/** Runners only read a member's app's data: it is informational, or it is
+ *  under review. One rule for the run lookup and the list's pill (M3 audit,
+ *  low 4). */
+export function spaceAppDataReadOnly(app: { dataReadOnly: boolean; reviewState: string }): boolean {
+  return app.dataReadOnly || app.reviewState === 'submitted';
+}
 
 /** Make a new app in the author's own space, private, at team ceiling. */
 export async function createSpaceApp(
@@ -135,15 +152,43 @@ export async function authorSpaceApp(
       .limit(1),
   );
   if (!row) throw NOT_FOUND();
-  if (opts.write && !EDITABLE.includes(row.reviewState)) {
-    throw new SpaceAppError(
-      'frozen',
-      row.reviewState === 'submitted'
-        ? 'This app is submitted for review, so it is frozen. Recall it to change it.'
-        : 'This app was accepted into the brain; it is no longer yours to change.',
-    );
-  }
+  if (opts.write && !EDITABLE.includes(row.reviewState)) throw frozenError(row.reviewState);
   return { ...row, sharing: row.sharing === 'team' ? 'team' : 'private' };
+}
+
+/**
+ * Run one change to the author's own app while holding its state row (M3
+ * audit, medium 3): the row is locked FOR UPDATE and must be draft or
+ * returned, and stays locked until `fn` is done, so a Submit, a Recall or an
+ * admin's Accept waits for the change to finish and never sees half of it,
+ * and a change never starts after a Submit. `fn` runs as the system.
+ */
+export async function withAuthorWrite<T>(
+  author: SpaceAppAuthor,
+  appId: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  return asSystem(() =>
+    db.transaction(async (tx) => {
+      const [row] = await tx
+        .select({ reviewState: spaceItems.reviewState })
+        .from(spaceItems)
+        .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))
+        .where(
+          and(
+            eq(spaceItems.nodeId, appId),
+            eq(nodes.ownerId, author.spaceId),
+            eq(nodes.type, 'app'),
+            eq(spaceItems.authorLoginId, author.loginId),
+          ),
+        )
+        .for('update', { of: spaceItems })
+        .limit(1);
+      if (!row) throw NOT_FOUND();
+      if (!EDITABLE.includes(row.reviewState)) throw frozenError(row.reviewState);
+      return fn();
+    }),
+  );
 }
 
 /** One app in a member's list: their own, or one a teammate shared. */
@@ -182,6 +227,7 @@ export async function listSpaceApps(author: SpaceAppAuthor): Promise<SpaceAppCar
         hasDraft: sql<boolean>`${apps.draftSource} is not null or ${apps.draftBuild} is not null`,
         version: apps.version,
         updatedAt: nodes.updatedAt,
+        dataReadOnly: apps.dataReadOnly,
         authorLoginId: spaceItems.authorLoginId,
         authorName: sql<
           string | null
@@ -222,7 +268,12 @@ export async function listSpaceApps(author: SpaceAppAuthor): Promise<SpaceAppCar
       reviewState: r.reviewState,
       returnedNote: mine ? r.returnedNote : null,
       runnable: !!(r.publishedBuild as BuildRef | null)?.ok,
-      dataAccess: dataAccessOf(r.reviewState !== 'submitted'),
+      dataAccess: dataAccessOf(
+        !spaceAppDataReadOnly({
+          dataReadOnly: r.dataReadOnly === true,
+          reviewState: r.reviewState,
+        }),
+      ),
       hasDraft: mine ? r.hasDraft === true : false,
       version: r.version,
       updatedAt: r.updatedAt.toISOString(),
@@ -410,7 +461,10 @@ export async function getRunnableSpaceApp(
     ownerId: row.ownerId,
     manifest: row.manifest ?? {},
     publishedBuild: row.publishedBuild,
-    dataReadOnly: row.dataReadOnly === true || row.reviewState === 'submitted',
+    dataReadOnly: spaceAppDataReadOnly({
+      dataReadOnly: row.dataReadOnly === true,
+      reviewState: row.reviewState,
+    }),
     mine: row.authorLoginId === loginId,
     reviewState: row.reviewState,
   };
@@ -475,12 +529,44 @@ export async function listSpaceAppSubmissions(): Promise<SpaceAppSubmission[]> {
 }
 
 /**
+ * What the admin reviews, pinned (M3 audit, high 1): a hash of the
+ * published source, the manifest (declared tools, schema) and the published
+ * build. Accept sends it back with the version; the locked accept refuses
+ * when either moved, so only the code the admin read can enter the brain.
+ */
+export function spaceAppReviewHash(app: {
+  source: unknown;
+  manifest: unknown;
+  publishedBuild: unknown;
+}): string {
+  return createHash('sha256')
+    .update(stableJson({ s: app.source, m: app.manifest, b: app.publishedBuild }))
+    .digest('hex');
+}
+
+/** JSON with object keys sorted, so the same value always hashes the same. */
+function stableJson(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(stableJson).join(',')}]`;
+  if (v && typeof v === 'object') {
+    const o = v as Record<string, unknown>;
+    return `{${Object.keys(o)
+      .filter((k) => o[k] !== undefined)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${stableJson(o[k])}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(v ?? null);
+}
+
+/**
  * One submitted member app with its PUBLISHED source, for the admin's review
  * (what will run once accepted), or null when it is not waiting for review.
  */
 export async function getSpaceAppSubmission(
   appId: string,
-): Promise<(SpaceAppSubmission & { entry: string; files: Record<string, string> }) | null> {
+): Promise<
+  (SpaceAppSubmission & { entry: string; files: Record<string, string>; reviewHash: string }) | null
+> {
   const queue = await listSpaceAppSubmissions();
   const item = queue.find((s) => s.id === appId);
   if (!item) return null;
@@ -494,7 +580,16 @@ export async function getSpaceAppSubmission(
   if (!row) return null;
   const app = await asSystem(() => getApp(row.ownerId, appId));
   if (!app) return null;
-  return { ...item, entry: app.source.entry, files: app.source.files };
+  return {
+    ...item,
+    entry: app.source.entry,
+    files: app.source.files,
+    reviewHash: spaceAppReviewHash({
+      source: app.source,
+      manifest: app.manifest,
+      publishedBuild: app.publishedBuild,
+    }),
+  };
 }
 
 /** The levels an admin may accept a member's app at. Client and public come
@@ -513,15 +608,32 @@ export async function acceptSpaceApp(
   brainId: string,
   appId: string,
   reviewer: { loginId: string },
-  opts: { level: SpaceAppAcceptLevel; trustTools: boolean },
+  opts: {
+    level: SpaceAppAcceptLevel;
+    trustTools: boolean;
+    /** The version and the review hash the admin was shown
+     *  (`getSpaceAppSubmission`). */
+    version: number;
+    reviewHash: string;
+  },
 ): Promise<{ id: string; level: SpaceAppAcceptLevel; authorLevel: 'admin' | 'team' }> {
   await asSystem(() => ensureAppsRoot(brainId));
   const done = await asSystem(() =>
     db.transaction(async (tx) => {
       const [row] = await tx
-        .select({ spaceId: nodes.ownerId, reviewState: spaceItems.reviewState })
+        .select({
+          spaceId: nodes.ownerId,
+          reviewState: spaceItems.reviewState,
+          submittedVersion: spaceItems.submittedVersion,
+          version: apps.version,
+          source: apps.source,
+          manifest: apps.manifest,
+          publishedBuild: apps.publishedBuild,
+          draft: sql<boolean>`${apps.draftSource} is not null or ${apps.draftBuild} is not null`,
+        })
         .from(spaceItems)
         .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))
+        .innerJoin(apps, eq(apps.nodeId, spaceItems.nodeId))
         .innerJoin(spaces, eq(spaces.id, nodes.ownerId))
         .where(
           and(eq(spaceItems.nodeId, appId), eq(nodes.type, 'app'), eq(spaces.kind, 'personal')),
@@ -531,6 +643,23 @@ export async function acceptSpaceApp(
       if (!row) throw new SpaceAppError('not-found', 'No such member app.');
       if (row.reviewState !== 'submitted') {
         throw new SpaceAppError('not-submitted', 'This app is not waiting for review.');
+      }
+      // Only the version the admin read (M3 audit, high 1): the version it
+      // was submitted at, the one the admin was shown, and the same code,
+      // tools and build. No pending change either (medium 3).
+      const shown =
+        row.version === opts.version &&
+        row.submittedVersion === opts.version &&
+        spaceAppReviewHash({
+          source: row.source,
+          manifest: row.manifest,
+          publishedBuild: row.publishedBuild,
+        }) === opts.reviewHash;
+      if (!shown || row.draft) {
+        throw new SpaceAppError(
+          'changed',
+          'This app changed since you opened it. Open it again, read it, then accept.',
+        );
       }
       const now = new Date();
       const authorLevel = opts.trustTools ? 'admin' : 'team';

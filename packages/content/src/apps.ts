@@ -17,7 +17,7 @@
  * promotes the draft (source + build) into the published columns.
  */
 import { randomUUID } from 'node:crypto';
-import { and, asc, desc, eq, ilike, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
   asViewerLevel,
   db,
@@ -107,6 +107,8 @@ type SidecarCols = {
   dataReadOnly: boolean;
   /** apps.mcp_access: MCP may reach the app's data (0234). */
   mcpAccess?: boolean;
+  /** apps.author_level: the author ceiling (0235). */
+  authorLevel?: AppAuthorLevel;
   /** apps.draft_updated_at: detail only (the editor's save check). */
   draftUpdatedAt?: Date | null;
 };
@@ -150,6 +152,7 @@ function rowOf(n: RowNode, s: Partial<SidecarCols> = {}): AppRow {
     embedded: n.embeddedLevel === 'team' || n.embeddedLevel === 'client' ? n.embeddedLevel : null,
     dataReadOnly: s.dataReadOnly === true,
     mcpAccess: s.mcpAccess === true,
+    authorLevel: s.authorLevel === 'team' ? 'team' : 'admin',
     createdAt: n.createdAt.toISOString(),
     updatedAt: n.updatedAt.toISOString(),
   };
@@ -258,6 +261,7 @@ export async function listApps(
         publishedBuild: apps.publishedBuild,
         dataReadOnly: apps.dataReadOnly,
         mcpAccess: apps.mcpAccess,
+        authorLevel: apps.authorLevel,
         shareSettings: shares.settings,
       })
       .from(nodes)
@@ -283,6 +287,7 @@ export async function listApps(
       hubAppId,
       dataReadOnly: r.dataReadOnly === true,
       mcpAccess: r.mcpAccess === true,
+      authorLevel: r.authorLevel === 'team' ? 'team' : 'admin',
     }),
   );
 }
@@ -320,6 +325,7 @@ async function loadDetail(ownerId: string, id: string): Promise<AppDetail | null
         publishedBuild: apps.publishedBuild,
         dataReadOnly: apps.dataReadOnly,
         mcpAccess: apps.mcpAccess,
+        authorLevel: apps.authorLevel,
         draftUpdatedAt: apps.draftUpdatedAt,
         shareSettings: shares.settings,
       })
@@ -345,6 +351,7 @@ async function loadDetail(ownerId: string, id: string): Promise<AppDetail | null
     hubAppId: prefs.teamHubAppId ?? null,
     dataReadOnly: row.dataReadOnly === true,
     mcpAccess: row.mcpAccess === true,
+    authorLevel: row.authorLevel === 'team' ? 'team' : 'admin',
     draftUpdatedAt: row.draftUpdatedAt ?? null,
   });
 }
@@ -420,6 +427,10 @@ export type CreateAppInput = {
    *  root branch is made there (a space holds workspace kinds only, and its
    *  tree shows none). */
   inSpace?: boolean;
+  /** The author ceiling to start at (team apps Phase 3): 'team' for code an
+   *  admin did not write here (an import, a copy of a member's app, an
+   *  undelete of a member-era app). Default 'admin'. */
+  authorLevel?: AppAuthorLevel;
 };
 
 export async function createApp(ownerId: string, input: CreateAppInput): Promise<AppDetail> {
@@ -445,9 +456,13 @@ export async function createApp(ownerId: string, input: CreateAppInput): Promise
       })
       .returning();
     if (!node) throw new Error('createApp: insert returned no row');
-    await tx
-      .insert(apps)
-      .values({ nodeId: node.id, source, sourceText: sourceToText(source), manifest });
+    await tx.insert(apps).values({
+      nodeId: node.id,
+      source,
+      sourceText: sourceToText(source),
+      manifest,
+      ...(input.authorLevel ? { authorLevel: input.authorLevel } : {}),
+    });
     return detailOf(node, {
       source,
       draftSource: null,
@@ -458,8 +473,46 @@ export async function createApp(ownerId: string, input: CreateAppInput): Promise
       shareSettings: null,
       hubAppId: null,
       dataReadOnly: false,
+      authorLevel: input.authorLevel ?? 'admin',
     });
   });
+}
+
+/**
+ * Set an app's author ceiling (team apps Phase 3): 'admin' = an admin read
+ * its declared tools and trusts them ("trust its tools"); 'team' = its
+ * tools run at team rules for every runner. Only the owner's app update
+ * route writes it, from an admin's own click: no tool and no agent lifts a
+ * ceiling. An admin's code edits (app_update, app_source_set, a publish)
+ * never lift it either.
+ */
+export async function setAppAuthorLevel(
+  ownerId: string,
+  id: string,
+  level: AppAuthorLevel,
+): Promise<boolean> {
+  const changed = await db
+    .update(apps)
+    .set({ authorLevel: level, updatedAt: new Date() })
+    .where(
+      and(
+        eq(apps.nodeId, id),
+        inArray(
+          apps.nodeId,
+          db
+            .select({ id: nodes.id })
+            .from(nodes)
+            .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'app'))),
+        ),
+      ),
+    )
+    .returning({ id: apps.nodeId });
+  return changed.length > 0;
+}
+
+/** The lower of two author ceilings: a copy never runs above its source. */
+export function lowerAuthorLevel(a: AppAuthorLevel, b: AppAuthorLevel): AppAuthorLevel {
+  return a === 'team' || b === 'team' ? 'team' : 'admin';
 }
 
 export type UpdateAppInput = Partial<{

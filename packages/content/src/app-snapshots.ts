@@ -196,6 +196,7 @@ async function currentCode(
       draft: apps.draftSource,
       manifest: apps.manifest,
       publishedBuild: apps.publishedBuild,
+      authorLevel: apps.authorLevel,
     })
     .from(apps)
     .innerJoin(nodes, eq(nodes.id, apps.nodeId))
@@ -209,6 +210,7 @@ async function currentCode(
       ...(typeof d.icon === 'string' ? { icon: d.icon } : {}),
       ...(typeof d.color === 'string' ? { color: d.color } : {}),
       tags: row.tags ?? [],
+      ...(row.authorLevel === 'team' ? { authorLevel: 'team' as const } : {}),
     },
     source: row.source,
     draft: row.draft ?? null,
@@ -639,6 +641,15 @@ export async function restoreAppSnapshot(
           declaredTools = snap.code.manifest.toolSlugs ?? [];
         }
       }
+    }
+    // The author ceiling (team apps Phase 3, M3 audit): code a member wrote,
+    // or code taken while the app ran at team rules, brings the ceiling back
+    // with it. Only an admin's own "trust its tools" lifts it again.
+    if (code && (snap.actor === 'member' || snap.code?.meta?.authorLevel === 'team')) {
+      await tx
+        .update(apps)
+        .set({ authorLevel: 'team', updatedAt: new Date() })
+        .where(eq(apps.nodeId, appId));
     }
     return { mode, restored: snap, undo, code, declaredTools };
   });

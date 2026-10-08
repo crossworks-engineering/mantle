@@ -97,6 +97,10 @@ export type AppSnapshotCode = {
 
 export type AppSnapshotMeta = {
   title: string;
+  /** The author ceiling when it was taken, only when 'team' (team apps
+   *  Phase 3): restoring this code, or bringing the app back from the
+   *  trash, keeps it at team rules. */
+  authorLevel?: 'team';
   icon?: string;
   color?: string;
   tags: string[];

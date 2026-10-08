@@ -196,11 +196,18 @@ fi
 # The roll stops while any such write would open, unless the operator passed
 # --ack-connector-writes after an admin looked (mark the tools read-only,
 # disable them, or raise the connector to admin level first).
+# Only the roll that CROSSES into connectors by level counts (M3 audit): a
+# box whose database already has apps.author_level (migration 0235, shipped
+# with connectors by level) is past it, so its later rolls open nothing new
+# and need no acknowledgement. SELECT only, digits only.
 CW=$(rsh 'sh -s' <<'EOF'
 set -e
 q() { docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -At -F ' ' -c "$1"; }
 if [ "$(q "select count(*) from information_schema.columns where table_schema = 'public' and table_name = 'tools' and column_name = 'external_access'")" != 1 ]; then
-  echo "0 0 0"; exit 0
+  echo "0 0 0 0"; exit 0
+fi
+if [ "$(q "select count(*) from information_schema.columns where table_schema = 'public' and table_name = 'apps' and column_name = 'author_level'")" = 1 ]; then
+  echo "1 0 0 0"; exit 0
 fi
 q "with g as (
      select slug from tool_groups
@@ -209,7 +216,7 @@ q "with g as (
      select t.slug from tools t join g on g.slug = t.handler->>'group'
       where t.handler->>'kind' = 'mcp' and t.enabled and not t.requires_confirm
         and t.external_access is null)
-   select (select count(*) from g), (select count(*) from w),
+   select 0, (select count(*) from g), (select count(*) from w),
           (select count(*) from apps a join nodes n on n.id = a.node_id
             where (n.audience <> 'admin' or n.inherited_level is not null)
               and exists (select 1 from w where a.manifest->'toolSlugs' ? w.slug))"
@@ -217,7 +224,8 @@ EOF
 ) || die "could not count the connectors below admin"
 CW=$(printf '%s' "$CW" | tr -d '\r' | tr -s ' ')
 case "$CW" in *[!0-9\ ]* | '') die "unexpected connector count: $CW" ;; esac
-read -r OPEN_GROUPS OPEN_WRITES APPS_OPENING <<< "$CW"
+read -r PAST OPEN_GROUPS OPEN_WRITES APPS_OPENING <<< "$CW"
+[ "$PAST" = 1 ] && echo "connectors: this box already has connectors by level; nothing new opens"
 echo "connectors below admin: $OPEN_GROUPS, unmarked (write) tools in them: $OPEN_WRITES, apps below admin declaring one: $APPS_OPENING"
 if [ "$OPEN_WRITES" -gt 0 ] || [ "$APPS_OPENING" -gt 0 ]; then
   if [ -n "$ACK_CONNECTOR_WRITES" ]; then

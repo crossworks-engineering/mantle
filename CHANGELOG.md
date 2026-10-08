@@ -25,6 +25,14 @@ A team member builds mini apps like Pages (plan page b6dd688e, section A).
   published source), `POST .../:id/accept { level, trustTools }`,
   `POST .../:id/return { note }`.
 - The space purge never deletes a member's app.
+- M3 audit: Accept is pinned to the reviewed version and a hash of its
+  source, manifest and build (409 `changed` otherwise, or with a draft
+  pending). A copy keeps the source's author ceiling, an import starts at
+  team, a member-era undelete or code restore comes back at team; only
+  `PATCH /api/apps/:id { trustTools }` lifts it. A member's change holds
+  the app's state row, so it never races a Submit or an Accept. The list
+  pill and the run lookup share one read-only rule. The roll's connector
+  check runs only on the roll that crosses into connectors by level.
 - Every app list carries `dataAccess` ('read' or 'read_write') for the R
   and R/W pill, and the sidebar carries `mcpAccess`.
 

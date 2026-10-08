@@ -28,7 +28,9 @@
  * app is refused for every change.
  *
  * The app work runs as the system (`asSystem`), as the brokers do: the
- * space role has no grant on the app tables. The owner the app's rows are
+ * space role has no grant on the app tables. Every change runs inside
+ * `withAuthorWrite`, which holds the app's state row locked and editable for
+ * the whole change, so a Submit or an Accept never races it (M3 audit). The owner the app's rows are
  * keyed to is the author's space, so nothing here reaches a brain app.
  */
 import { asSystem } from '@mantle/db';
@@ -50,6 +52,7 @@ import {
   setManifest,
   setSpaceAppSharing,
   submitSpaceApp,
+  withAuthorWrite,
   workingSource,
   writeDraftFile,
   type SpaceAppAuthor,
@@ -303,7 +306,9 @@ const my_app_file_write: BuiltinToolDef = {
     if (!path) return { ok: false, error: "path is required, e.g. 'App.tsx'." };
     const content = str(input.content);
     try {
-      const next = await asSystem(() => writeDraftFile(p.author.spaceId, p.id, path, content));
+      const next = await withAuthorWrite(p.author, p.id, () =>
+        writeDraftFile(p.author.spaceId, p.id, path, content),
+      );
       if (!next) return { ok: false, error: NOT_FOUND(p.id) };
       return {
         ok: true,
@@ -336,7 +341,9 @@ const my_app_file_delete: BuiltinToolDef = {
     const path = str(input.path).trim();
     if (!path) return { ok: false, error: 'path is required.' };
     try {
-      const next = await asSystem(() => deleteDraftFile(p.author.spaceId, p.id, path));
+      const next = await withAuthorWrite(p.author, p.id, () =>
+        deleteDraftFile(p.author.spaceId, p.id, path),
+      );
       if (!next) return { ok: false, error: NOT_FOUND(p.id) };
       return { ok: true, output: { id: p.id, path, deleted: true } };
     } catch (err) {
@@ -355,7 +362,9 @@ const my_app_build: BuiltinToolDef = {
     const p = await prepare(input, ctx, { write: true });
     if (!isPrepared(p)) return p;
     try {
-      const res = await asSystem(() => buildAndStageApp(p.author.spaceId, p.id));
+      const res = await withAuthorWrite(p.author, p.id, () =>
+        buildAndStageApp(p.author.spaceId, p.id),
+      );
       if (!res) return { ok: false, error: NOT_FOUND(p.id) };
       if (!res.buildOk) {
         const lines = res.errors
@@ -407,7 +416,7 @@ const my_app_publish: BuiltinToolDef = {
     const p = await prepare(input, ctx, { write: true });
     if (!isPrepared(p)) return p;
     try {
-      const app = await asSystem(() =>
+      const app = await withAuthorWrite(p.author, p.id, () =>
         publishApp(p.author.spaceId, p.id, {
           note: str(input.note).trim().slice(0, 500) || null,
           ...actorOf(p.author),
@@ -453,7 +462,7 @@ const my_app_schema_set: BuiltinToolDef = {
       return refusal(err);
     }
     try {
-      await asSystem(() =>
+      await withAuthorWrite(p.author, p.id, () =>
         createAppSnapshot(p.author.spaceId, p.id, {
           trigger: 'pre_schema',
           note: 'before a schema change',
@@ -467,7 +476,9 @@ const my_app_schema_set: BuiltinToolDef = {
         error: `could not take the safety snapshot before the schema change, so nothing changed: ${errorMessage(err)}`,
       };
     }
-    const version = await asSystem(() => declareAppSchema(p.author.spaceId, p.id, schemaSql));
+    const version = await withAuthorWrite(p.author, p.id, () =>
+      declareAppSchema(p.author.spaceId, p.id, schemaSql),
+    );
     if (version === null) return { ok: false, error: NOT_FOUND(p.id) };
     return { ok: true, output: { id: p.id, schema_version: version } };
   },
@@ -508,7 +519,7 @@ const my_app_tools_set: BuiltinToolDef = {
       const verdict = await memberAppToolVerdict(ctx.ownerId, slugs, slug);
       if (!verdict.ok) warnings.push(`${slug}: ${verdict.reason}`);
     }
-    const manifest = await asSystem(() =>
+    const manifest = await withAuthorWrite(p.author, p.id, () =>
       setManifest(p.author.spaceId, p.id, { toolSlugs: slugs }),
     );
     if (!manifest) return { ok: false, error: NOT_FOUND(p.id) };
@@ -604,7 +615,7 @@ const my_app_snapshot_create: BuiltinToolDef = {
     const p = await prepare(input, ctx, { write: true });
     if (!isPrepared(p)) return p;
     try {
-      const snap = await asSystem(() =>
+      const snap = await withAuthorWrite(p.author, p.id, () =>
         createAppSnapshot(p.author.spaceId, p.id, {
           note: str(input.note).trim().slice(0, 500) || null,
           ...actorOf(p.author),
@@ -648,7 +659,7 @@ const my_app_snapshot_restore: BuiltinToolDef = {
       return { ok: false, error: "mode must be 'code', 'data' or 'full'." };
     }
     try {
-      const res = await asSystem(() =>
+      const res = await withAuthorWrite(p.author, p.id, () =>
         restoreAppSnapshot(p.author.spaceId, p.id, snapshotId, {
           mode,
           discardDraft: input.discard_draft === true,

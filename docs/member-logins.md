@@ -823,6 +823,13 @@ so it is listed like any team app there.
 > - **Rolls stop on new writes.** `scripts/roll.sh` counts, in plain SQL,
 >   the connectors below admin and their unmarked tools, and stops while
 >   any would open unless the operator passes `--ack-connector-writes`.
+>   Only the roll that crosses into connectors by level counts: a box whose
+>   database already has `apps.author_level` is past it.
+> - **New tools reach a box at boot, once per version.** The boot
+>   reconcile seeds the builtin rows (the `my_app_*` tools and their
+>   group) when the version changes. A dev build that reuses the version
+>   does not: run `ALLOWED_USER_ID=<owner> pnpm -C server/web
+>   seed:tool-groups` there.
 
 A site adds its own connectors: an MCP server or an http API, for example a
 read-only SQL bridge to a site database. None ship with Mantle, and the

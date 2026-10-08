@@ -45,6 +45,12 @@ describe.skipIf(!URL)('member-built apps on Postgres', () => {
     schemaVersion: 1,
   };
   const me = () => ({ loginId: author, spaceId: authorSpace });
+  /** What the admin was shown: the version and the review hash. */
+  const shown = async (id: string) => {
+    const r = await sa.getSpaceAppSubmission(id);
+    if (!r) throw new Error('not waiting for review');
+    return { version: r.version, reviewHash: r.reviewHash };
+  };
   const them = () => ({ loginId: mate, spaceId: mateSpace });
 
   beforeAll(async () => {
@@ -177,7 +183,7 @@ describe.skipIf(!URL)('member-built apps on Postgres', () => {
       brain,
       id,
       { loginId: brain },
-      { level: 'team', trustTools: false },
+      { level: 'team', trustTools: false, ...(await shown(id)) },
     );
     expect(res).toEqual({ id, level: 'team', authorLevel: 'team' });
     const [row] = await admin<{ owner_id: string; audience: string; author_level: string }[]>`
@@ -210,7 +216,7 @@ describe.skipIf(!URL)('member-built apps on Postgres', () => {
         brain,
         trusted,
         { loginId: brain },
-        { level: 'admin', trustTools: true },
+        { level: 'admin', trustTools: true, ...(await shown(trusted)) },
       ),
     ).toMatchObject({ level: 'admin', authorLevel: 'admin' });
 
@@ -224,6 +230,115 @@ describe.skipIf(!URL)('member-built apps on Postgres', () => {
     await expect(sa.returnSpaceApp(back, { loginId: brain }, 'again')).rejects.toMatchObject({
       code: 'not-submitted',
     });
+  });
+
+  // M3 audit, high 1: only the version the admin read can enter the brain.
+  it('accept refuses a version the admin was not shown', async () => {
+    const id = await publishedSpaceApp('swapped');
+    await sa.submitSpaceApp(me(), id);
+    const old = await shown(id);
+    // The member recalls, changes the code and the tools, publishes, resubmits.
+    await sa.recallSpaceApp(me(), id);
+    await sa.withAuthorWrite(me(), id, async () => {
+      await apps.writeDraftFile(authorSpace, id, 'App.tsx', 'export default () => "two";');
+      await apps.setManifest(authorSpace, id, { toolSlugs: ['email_send'] });
+      await apps.setDraftBuild(authorSpace, id, { ...GREEN, sha256: 'two' });
+      await apps.publishApp(authorSpace, id, { actor: 'member', actorLoginId: author });
+    });
+    await sa.submitSpaceApp(me(), id);
+    await expect(
+      sa.acceptSpaceApp(
+        brain,
+        id,
+        { loginId: brain },
+        { level: 'admin', trustTools: true, ...old },
+      ),
+    ).rejects.toMatchObject({ code: 'changed' });
+    // A forged hash with the right version is refused too.
+    const now = await shown(id);
+    await expect(
+      sa.acceptSpaceApp(
+        brain,
+        id,
+        { loginId: brain },
+        { level: 'team', trustTools: false, version: now.version, reviewHash: '0'.repeat(64) },
+      ),
+    ).rejects.toMatchObject({ code: 'changed' });
+    // What it was shown now goes through, and the review shows the new tools.
+    expect((await sa.getSpaceAppSubmission(id))?.declaredTools).toEqual(['email_send']);
+    expect(
+      await sa.acceptSpaceApp(
+        brain,
+        id,
+        { loginId: brain },
+        { level: 'team', trustTools: false, ...now },
+      ),
+    ).toMatchObject({ authorLevel: 'team' });
+  });
+
+  // M3 audit, medium 3: a change holds the state row; none starts after Submit.
+  it('a change never runs on a submitted app', async () => {
+    const id = await publishedSpaceApp('locked');
+    await sa.submitSpaceApp(me(), id);
+    let ran = false;
+    await expect(
+      sa.withAuthorWrite(me(), id, async () => {
+        ran = true;
+      }),
+    ).rejects.toMatchObject({ code: 'frozen' });
+    expect(ran).toBe(false);
+    // Nor on a teammate's app.
+    await sa.recallSpaceApp(me(), id);
+    await expect(sa.withAuthorWrite(them(), id, async () => undefined)).rejects.toMatchObject({
+      code: 'not-found',
+    });
+  });
+
+  // M3 audit, high 2: a copy, a member-era restore and an undelete keep the
+  // ceiling; only the admin's own trust lifts it.
+  it('the ceiling survives a copy, a restore of member code and an undelete', async () => {
+    const pkg = await import('./app-package');
+    const trash = await import('./app-trash');
+    const id = await publishedSpaceApp('ceiling');
+    await sa.submitSpaceApp(me(), id);
+    await sa.acceptSpaceApp(
+      brain,
+      id,
+      { loginId: brain },
+      {
+        level: 'team',
+        trustTools: false,
+        ...(await shown(id)),
+      },
+    );
+    const level = async (appId: string) =>
+      (await m.asSystem(() => apps.getAppRuntime(brain, appId)))?.authorLevel;
+
+    const copy = await m.asSystem(() => pkg.duplicateApp(brain, id, { withData: false }));
+    expect(await level(copy!.id)).toBe('team');
+
+    // The admin trusts it, then restores the member's own code: back to team.
+    expect(await m.asSystem(() => apps.setAppAuthorLevel(brain, id, 'admin'))).toBe(true);
+    expect(await level(id)).toBe('admin');
+    const memberVersion = (await m.asSystem(() => snaps.listAppSnapshots(brain, id))).find(
+      (e) => e.trigger === 'publish',
+    );
+    await m.asSystem(() =>
+      snaps.restoreAppSnapshot(brain, id, memberVersion!.id, { mode: 'code', discardDraft: true }),
+    );
+    expect(await level(id)).toBe('team');
+
+    // A trusted copy of a trusted app stays trusted; an admin's own app too.
+    const own = await m.asSystem(() => apps.createApp(brain, { title: `${tag} own` }));
+    expect(own.authorLevel).toBe('admin');
+    const ownCopy = await m.asSystem(() => pkg.duplicateApp(brain, own.id, { withData: false }));
+    expect(await level(ownCopy!.id)).toBe('admin');
+
+    // Deleted and brought back: a member-era app comes back at team rules.
+    await m.asSystem(() => apps.setAppAuthorLevel(brain, id, 'admin'));
+    await m.asSystem(() => apps.deleteApp(brain, id, { actor: 'owner' }));
+    await m.asSystem(() => trash.restoreDeletedApp(brain, id));
+    expect(await level(id)).toBe('team');
   });
 
   it('the author restores their own app from its history', async () => {

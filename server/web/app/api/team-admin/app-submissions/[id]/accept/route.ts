@@ -1,6 +1,8 @@
 /**
  * POST /api/team-admin/app-submissions/:id/accept
- *   { level: 'admin' | 'team', trustTools?: boolean }
+ *   { level: 'admin' | 'team', trustTools?: boolean, version, reviewHash }
+ * `version` and `reviewHash` are what GET .../:id showed the admin: the
+ * accept refuses (409 `changed`) when the app moved since (M3 audit).
  * Accept a submitted member app into the brain (team apps Phase 3): it moves
  * into the brain's Apps at `level`, ids unchanged, its data and history with
  * it. Client and public are set later, as for any app. Without `trustTools`
@@ -18,6 +20,8 @@ import { spaceAppErrorResponse, spaceAppId, spaceAppNotFound } from '@/lib/space
 const Body = z.object({
   level: z.enum(['admin', 'team']),
   trustTools: z.boolean().optional().default(false),
+  version: z.number().int().min(1),
+  reviewHash: z.string().regex(/^[0-9a-f]{64}$/),
 });
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -28,7 +32,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const body = Body.safeParse(await req.json().catch(() => ({})));
   if (!body.success) {
     return NextResponse.json(
-      { ok: false, error: "level must be 'admin' or 'team'" },
+      {
+        ok: false,
+        error: "level must be 'admin' or 'team', with the version and reviewHash of the review",
+      },
       { status: 400 },
     );
   }
