@@ -2,15 +2,24 @@
  * PATCH /api/mcp-logins/:id { enabled?, writeEnabled? } : turn MCP on or off
  * for one member or client login, and its draft write tools (MCP as a login,
  * plan page e5b854dd). Owner only. Turning MCP off stops the login's OAuth
- * grants and static tokens on their next call (read on every use).
+ * grants and static tokens on their next call (read on every use), and
+ * revokes them, its API keys and its peer bindings (access matrix L13).
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { and, eq, isNull } from 'drizzle-orm';
-import { db, mcpLoginAccess, mcpLoginTokens, oauthAccessTokens, oauthAuthCodes } from '@mantle/db';
+import {
+  accessKeys,
+  db,
+  mcpLoginAccess,
+  mcpLoginTokens,
+  oauthAccessTokens,
+  oauthAuthCodes,
+} from '@mantle/db';
 import { lockOauthActor } from '@/lib/oauth-lock';
-import { getOwnerOr401 } from '@/lib/auth';
+import { auditKeysEnded, getOwnerOr401 } from '@/lib/auth';
 import { mcpTargetLogin } from '@/lib/mcp-auth';
+import { unbindPeersActingAs } from '@/lib/peer-unbind';
 import { firstIssue } from '@/lib/zod-issue';
 
 const Params = z.object({ id: z.string().uuid() });
@@ -41,7 +50,10 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   // revokes commit together (last check F1), under the login's OAuth lock
   // (verification audit N3), the one a code exchange and a refresh take: a
   // grant minted alongside is revoked here or refused there, and open codes
-  // go too, so nothing comes back on. A lock timeout changes nothing.
+  // go too, so nothing comes back on. A lock timeout changes nothing. Its
+  // API keys and its bound peers end too (access matrix L13): a key was
+  // refused while MCP was off but worked again the moment it came back on.
+  const endedKeyIds: string[] = [];
   const row = await db.transaction(async (tx) => {
     if (parsed.data.enabled === false) await lockOauthActor(tx, login.id);
     const [saved] = await tx
@@ -60,8 +72,18 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
         .update(mcpLoginTokens)
         .set({ revokedAt: now })
         .where(and(eq(mcpLoginTokens.loginId, login.id), isNull(mcpLoginTokens.revokedAt)));
+      const keys = await tx
+        .update(accessKeys)
+        .set({ revokedAt: now, revokedBy: user.actor.id })
+        .where(and(eq(accessKeys.loginId, login.id), isNull(accessKeys.revokedAt)))
+        .returning({ id: accessKeys.id });
+      endedKeyIds.push(...keys.map((k) => k.id));
+      await unbindPeersActingAs(login.id, tx);
     }
     return saved;
   });
+  // After the commit, as endLoginSessions does: a rolled-back switch leaves
+  // no row.
+  auditKeysEnded(login.id, user.actor.id, endedKeyIds);
   return NextResponse.json({ enabled: row!.enabled, writeEnabled: row!.writeEnabled });
 }

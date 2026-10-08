@@ -44,6 +44,7 @@ import {
 } from '../auth-constants';
 import { auditFireAndForget, requestMeta } from '../audit';
 import { lockOauthActor } from '../oauth-lock';
+import { unbindPeersActingAs } from '../peer-unbind';
 import { isAccessKey, isApiV1Path } from '../access-keys';
 import { keyMayCall, matchApiV1Route } from '../api-v1';
 import { getRequestContext } from '../../server/request-context';
@@ -1040,6 +1041,8 @@ export async function endLoginSessions(
         .set({ revokedAt: now })
         .where(and(eq(oauthAccessTokens.actorId, loginId), isNull(oauthAccessTokens.revokedAt)));
       await tx.delete(oauthAuthCodes).where(eq(oauthAuthCodes.actorId, loginId));
+      // And the peers that act as the login on /api/mcp (access matrix L12).
+      await unbindPeersActingAs(loginId, tx);
       ended.push(...keys.map((k) => k.id));
     }
     return row.epoch;
