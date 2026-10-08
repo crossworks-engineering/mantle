@@ -290,7 +290,6 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     await switchOff('site_query');
     const unmarked = await ta.contactAppToolVerdict(anchor, DECLARED, 'site_query');
     await switchOn('site_query');
-    await setConnectorLevel('team');
     expect(unmarked).toMatchObject({
       ok: false,
       status: 403,
@@ -298,16 +297,24 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     });
     if (!v.ok) throw new Error(v.reason);
     fake.calls.length = 0;
-    const out = await m.withViewer('public', () =>
-      dispatch.dispatchTool(
-        v.tool,
-        { q: 'l' },
-        {
-          ownerId: anchor,
-          surface: { kind: 'contact', contactId: randomUUID(), shareId: randomUUID() },
-        },
-      ),
-    );
+    // The dispatch holds the connector's level too (M2 audit, low 6): the
+    // call runs while the connector is still at public level.
+    const fresh = await (await import('./resolve')).resolveTool(anchor, 'site_query');
+    let out: Awaited<ReturnType<typeof dispatch.dispatchTool>>;
+    try {
+      out = await m.withViewer('public', () =>
+        dispatch.dispatchTool(
+          fresh ?? v.tool,
+          { q: 'l' },
+          {
+            ownerId: anchor,
+            surface: { kind: 'contact', contactId: randomUUID(), shareId: randomUUID() },
+          },
+        ),
+      );
+    } finally {
+      await setConnectorLevel('team');
+    }
     expect(out).toMatchObject({ ok: true, output: { rows: [{ n: 1 }] } });
     expect(fake.calls).toEqual([{ toolName: 'query', args: { q: 'l' } }]);
     expect(await ta.contactAppToolVerdict(anchor, ['site_http'], 'site_query')).toMatchObject({

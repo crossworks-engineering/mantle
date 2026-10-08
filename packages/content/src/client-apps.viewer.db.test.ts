@@ -128,8 +128,11 @@ describe.skipIf(!URL)('apps for clients', () => {
         description: 'Orders',
         updatedAt: expect.any(String),
         dataReadOnly: false,
+        dataAccess: 'read_write',
       });
       expect(apps.find((a) => a.id === ids.info)?.dataReadOnly).toBe(true);
+      // The R and R/W pill (team apps Phase 3): the client broker's rule.
+      expect(apps.find((a) => a.id === ids.info)?.dataAccess).toBe('read');
     }
   });
 

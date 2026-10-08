@@ -15,6 +15,8 @@ const LOGIN = '22222222-2222-4222-8222-222222222222';
 const APP = '77777777-7777-4777-8777-777777777777';
 const OTHER_APP = '88888888-8888-4888-8888-888888888888';
 const PUBLISHED = { storageKey: 'apps/published.js', ok: true };
+// The author's personal space a member-built app lives in (team apps Phase 3).
+const SPACE = '44444444-4444-4444-8444-444444444444';
 
 const h = vi.hoisted(() => ({
   runnable: true,
@@ -40,6 +42,9 @@ const h = vi.hoisted(() => ({
   synced: 0,
   rendered: [] as string[],
   frameViewers: [] as unknown[],
+  // A member-built app the member may run (theirs, or shared with the team);
+  // null = none. `frozen` = under review.
+  spaceApp: null as null | { frozen: boolean },
 }));
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
@@ -87,6 +92,22 @@ vi.mock('@mantle/content', async (importOriginal) => {
           }
         : null;
     }),
+    getRunnableSpaceApp: vi.fn(async (_login: string, id: string) =>
+      h.spaceApp
+        ? {
+            id,
+            title: 'Mine',
+            icon: null,
+            color: null,
+            ownerId: SPACE,
+            manifest: { toolSlugs: h.toolSlugs },
+            publishedBuild: PUBLISHED,
+            dataReadOnly: h.spaceApp.frozen,
+            mine: true,
+            reviewState: h.spaceApp.frozen ? 'submitted' : 'draft',
+          }
+        : null,
+    ),
     loadProfilePreferences: vi.fn(async () => ({ siteName: 'Brain', teamHubAppId: h.homeAppId })),
     resolveMemberHomeApp: vi.fn(async (_anchor: string, id: string | undefined) =>
       read(
@@ -245,6 +266,7 @@ beforeEach(() => {
   h.synced = 0;
   h.rendered.length = 0;
   h.frameViewers.length = 0;
+  h.spaceApp = null;
 });
 
 describe('member tool broker', () => {
@@ -381,6 +403,32 @@ describe('member tool broker', () => {
     const res = await toolBroker(post({ slug: 'note_list' }), params());
     expect(res.status).toBe(404);
     expect(h.dispatched).toHaveLength(0);
+  });
+});
+
+describe('a member-built app (team apps Phase 3)', () => {
+  it("runs its SQLite under the author's space, writes it, and feeds no export", async () => {
+    h.runnable = false;
+    h.spaceApp = { frozen: false };
+    const res = await dbBroker(post({ op: 'exec', sql: 'insert into t values (1)' }), params());
+    expect(res.status).toBe(200);
+    expect(h.dbCalls).toEqual([`exec:${SPACE}:${APP}:admin`]);
+    expect(h.synced).toBe(0);
+  });
+
+  it('reads only while under review', async () => {
+    h.runnable = false;
+    h.spaceApp = { frozen: true };
+    const res = await dbBroker(post({ op: 'exec', sql: 'insert into t values (1)' }), params());
+    expect(res.status).toBe(403);
+    expect(h.dbCalls).toEqual([]);
+  });
+
+  it('runs its tools at team rules, on the brain', async () => {
+    h.runnable = false;
+    h.spaceApp = { frozen: false };
+    await toolBroker(post({ slug: 'note_list' }), params());
+    expect(h.levels).toEqual(['team']);
   });
 });
 

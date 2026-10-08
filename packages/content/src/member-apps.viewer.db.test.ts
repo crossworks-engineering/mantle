@@ -107,6 +107,9 @@ describe.skipIf(!URL)('apps for members', () => {
     expect(apps.find((a) => a.id === ids.team)).toMatchObject({
       description: 'Polls',
       audience: 'team',
+      // The R and R/W pill (team apps Phase 3): the member broker's rule.
+      dataReadOnly: false,
+      dataAccess: 'read_write',
     });
   });
 

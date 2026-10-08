@@ -130,8 +130,10 @@ describe.skipIf(!URL)('member-built apps on Postgres', () => {
       dataReadOnly: false,
     });
     expect(await sa.getRunnableSpaceApp(mate, id)).toBeNull();
-    // The brain's own lookup never reaches a space app, private or shared.
-    expect(await m.withViewer('team', () => ma.getMemberRunnableApp(brain, id))).toBeNull();
+    // The brain's own lookup never reaches a space app, private or shared
+    // (its rule, written in the query; on the admin pool so row security
+    // is not what hides it).
+    expect(await m.asSystem(() => ma.getMemberRunnableApp(brain, id))).toBeNull();
 
     await sa.setSpaceAppSharing(me(), id, 'team');
     expect(await sa.getRunnableSpaceApp(mate, id)).toMatchObject({ id, mine: false });
@@ -192,7 +194,7 @@ describe.skipIf(!URL)('member-built apps on Postgres', () => {
     expect(history.map((e) => e.trigger)).toContain('publish');
     // It is the brain's now: members run it by its level, not as a space app.
     expect(await sa.getRunnableSpaceApp(author, id)).toBeNull();
-    expect(await m.withViewer('team', () => ma.getMemberRunnableApp(brain, id))).toMatchObject({
+    expect(await m.asSystem(() => ma.getMemberRunnableApp(brain, id))).toMatchObject({
       id,
     });
     const runtime = await m.asSystem(() => apps.getAppRuntime(brain, id));
