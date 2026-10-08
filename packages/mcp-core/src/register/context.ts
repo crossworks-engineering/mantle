@@ -120,9 +120,10 @@ export function makeRegisterContext(
     // one) is refused instead of confirmed by the caller's own flag.
     // An API key acting as the owner (via 'api') holds the same rule.
     if ((via === 'federation' || via === 'api') && 'confirm' in input) delete input.confirm;
-    // And a key never changes the content of an item others can read: what
-    // it embeds would become readable to them with no confirm (M2 audit N3).
-    if (via === 'api' && KEY_SHARED_CONTENT_TOOLS.has(def.slug)) {
+    // And a key or a peer never changes the content of an item others can
+    // read: what it embeds would become readable to them with no confirm
+    // (M2 audit N3; the peer path is access matrix M3).
+    if ((via === 'api' || via === 'federation') && KEY_SHARED_CONTENT_TOOLS.has(def.slug)) {
       const target = contentToolTarget(input);
       // The handler gets the very id that was checked (trimmed): a padded id
       // must not pass the check as "not found" and then reach the item
@@ -144,7 +145,7 @@ export function makeRegisterContext(
           content: [
             {
               type: 'text' as const,
-              text: 'Error: this item is shared, so an API key cannot change its content (what it embeds would become readable to others). Change it in the app.',
+              text: `Error: this item is shared, so ${via === 'api' ? 'an API key' : 'a peer'} cannot change its content (what it embeds would become readable to others). Change it in the app.`,
             },
           ],
           isError: true,
