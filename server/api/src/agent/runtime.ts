@@ -123,21 +123,26 @@ const inflight = new Map<string, Promise<void>>();
  *       enabled conversational agent — covers a channel-less/legacy account so
  *       an inbound is never silently dropped, and never a background worker. No
  *       `role='responder'` privileging (that gate is gone).
+ *
+ *  The first pin that is set decides. When that agent is disabled or gone the
+ *  chat gets no agent, never the next pin or the fallback (access matrix M8):
+ *  the fallback is normally the owner's own persona, so a bot an admin
+ *  attached to a team agent would hand a teammate the owner's context and
+ *  tools once that agent was turned off.
  */
 async function resolveResponderAgent(
   ownerId: string,
   overrideAgentId: string | null,
   channelAgentId?: string | null,
 ): Promise<Agent | null> {
-  for (const pinnedId of [overrideAgentId, channelAgentId]) {
-    if (!pinnedId) continue;
+  const pinnedId = overrideAgentId ?? channelAgentId ?? null;
+  if (pinnedId) {
     const [pinned] = await db
       .select()
       .from(agents)
       .where(and(eq(agents.id, pinnedId), eq(agents.ownerId, ownerId), eq(agents.enabled, true)))
       .limit(1);
-    if (pinned) return pinned;
-    // Pinned/bound agent disabled or missing → fall through to the next candidate.
+    return pinned ?? null;
   }
   const candidates = await db
     .select()
@@ -256,6 +261,32 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
     );
   }
 
+  // Resolve the responder + key BEFORE opening a trace, and before an
+  // attachment is ingested (its inline extraction can spend). Failure modes
+  // here (no agent, no key) don't generate traces: there's nothing useful
+  // to record about "the system was misconfigured."
+  const agent = await resolveResponderAgent(ownerId, row.responderAgentId, row.channelAgentId);
+  if (!agent) {
+    logger.error(
+      `no enabled responder agent for this chat, skipping ${messageId}. Turn its agent on, or attach the bot to another, at /settings/agents.`,
+    );
+    // The message is claimed, so it is not retried: say so instead of going
+    // silent. No model runs.
+    await sendApology(row, 'This chat is turned off for now.');
+    return;
+  }
+  // Resolve the responder's chat key via the shared resolver (keyless `local`
+  // → 'local' sentinel; cloud → pinned/service key, else skip). Same single
+  // source of truth the worker pre-flights + the dispatch path use.
+  const keyCheck = await resolveChatKey(ownerId, agent);
+  if (!keyCheck.ok) {
+    logger.error(
+      `responder agent '${agent.slug}' ${keyCheck.detail} — skipping. Edit it at /settings/agents.`,
+    );
+    return;
+  }
+  const apiKey = keyCheck.apiKey;
+
   // Ingest the attachment (if any) into a file node + inline extraction BEFORE
   // the responder runs. The save fires the extractor (durable metadata); this
   // inline pass is for the live reply only.
@@ -270,28 +301,6 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
       return;
     }
   }
-
-  // Resolve the responder + key BEFORE opening a trace. Failure modes here
-  // (no agent, no key) don't generate traces — there's nothing useful to
-  // record about "the system was misconfigured."
-  const agent = await resolveResponderAgent(ownerId, row.responderAgentId, row.channelAgentId);
-  if (!agent) {
-    logger.error(
-      `no enabled responder agent — skipping ${messageId}. Create one at /settings/agents.`,
-    );
-    return;
-  }
-  // Resolve the responder's chat key via the shared resolver (keyless `local`
-  // → 'local' sentinel; cloud → pinned/service key, else skip). Same single
-  // source of truth the worker pre-flights + the dispatch path use.
-  const keyCheck = await resolveChatKey(ownerId, agent);
-  if (!keyCheck.ok) {
-    logger.error(
-      `responder agent '${agent.slug}' ${keyCheck.detail} — skipping. Edit it at /settings/agents.`,
-    );
-    return;
-  }
-  const apiKey = keyCheck.apiKey;
 
   const lockKey = row.telegramChatId;
   const prev = inflight.get(lockKey);

@@ -476,6 +476,56 @@ describe('handleTelegramMessage: /new starts a new chat', () => {
   });
 });
 
+describe('handleTelegramMessage: a pinned agent that is off (access matrix M8)', () => {
+  it('a bot whose agent is disabled refuses, never the fallback persona', async () => {
+    // Message row, then the channel's agent (disabled: the lookup finds no
+    // enabled row). A third select would be the fallback candidates.
+    const ownerPersona = makeAgent({ id: 'agent-owner', slug: 'owner-persona', priority: 999 });
+    h.selectQueue = [[makeMsgRow({ channelAgentId: 'agent-team' })], [], [ownerPersona]];
+    await handleTelegramMessage('msg-1');
+    expect(h.loopCalls).toHaveLength(0);
+    expect(h.traces).toHaveLength(0);
+    expect(h.sendMessage).toHaveBeenCalledTimes(1);
+    expect(h.sendMessage.mock.calls[0]![2]).toBe('This chat is turned off for now.');
+    // The fallback was never asked for.
+    expect(h.selectQueue).toEqual([[ownerPersona]]);
+  });
+
+  it('a chat override that is disabled does not fall back to the channel agent', async () => {
+    const channelAgent = makeAgent({ id: 'agent-1' });
+    h.selectQueue = [
+      [makeMsgRow({ responderAgentId: 'agent-off', channelAgentId: 'agent-1' })],
+      [],
+      [channelAgent],
+    ];
+    await handleTelegramMessage('msg-1');
+    expect(h.loopCalls).toHaveLength(0);
+    expect(h.selectQueue).toEqual([[channelAgent]]);
+  });
+
+  it('a refused chat does not ingest its attachment', async () => {
+    h.selectQueue = [
+      [
+        makeMsgRow({
+          text: '(photo)',
+          attachments: [{ kind: 'photo', file_id: 'pf-1', mime: 'image/jpeg' }],
+        }),
+      ],
+      [],
+    ];
+    await handleTelegramMessage('msg-1');
+    expect(h.downloadTelegramFile).not.toHaveBeenCalled();
+    expect(h.upsertFile).not.toHaveBeenCalled();
+    expect(h.loopCalls).toHaveLength(0);
+  });
+
+  it('a legacy chat with no pin still gets the fallback', async () => {
+    h.selectQueue = [[makeMsgRow({ channelAgentId: null })], [makeAgent()]];
+    await handleTelegramMessage('msg-1');
+    expect(h.loopCalls).toHaveLength(1);
+  });
+});
+
 describe('handleTelegramMessage — text turn', () => {
   it('claims the row, sends the reply, and persists transport + mirror rows', async () => {
     await runTurn(makeMsgRow());
@@ -606,7 +656,9 @@ describe('handleTelegramMessage — text turn', () => {
   });
 
   it('skips a message with nothing actionable without opening a trace', async () => {
-    h.selectQueue = [[makeMsgRow({ text: '(sticker)', attachments: [{ kind: 'sticker' }] })]];
+    // A sticker carries no text. (A '(sticker)' text used to stand in here;
+    // it is not empty, so it only passed by finding no agent.)
+    h.selectQueue = [[makeMsgRow({ text: null, attachments: [{ kind: 'sticker' }] })]];
     await handleTelegramMessage('msg-1');
 
     const processed = updatesOf('telegramMessages').find((u) => u.payload?.processed === true);
