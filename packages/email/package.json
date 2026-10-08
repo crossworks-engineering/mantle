@@ -36,6 +36,6 @@
     "@types/sanitize-html": "^2.16.1",
     "postgres": "^3.4.9",
     "tsx": "^4.23.13",
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.3"
   }
 }
