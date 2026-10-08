@@ -129,6 +129,62 @@ describe.skipIf(!URL)('app history on Postgres', () => {
     expect(await names(id)).toEqual(['a']);
   });
 
+  // Team apps follow-up: file side effects follow the transaction they
+  // belong to (withSystemTx, a member's app change).
+  it('withSystemTx runs afterCommit after the commit and afterRollback on a rollback', async () => {
+    const seen: string[] = [];
+    await m.withSystemTx(async () => {
+      await m.afterCommit(() => seen.push('commit'));
+      m.afterRollback(() => seen.push('rollback'));
+      seen.push('inside');
+    });
+    expect(seen).toEqual(['inside', 'commit']);
+    seen.length = 0;
+    await expect(
+      m.withSystemTx(async () => {
+        await m.afterCommit(() => seen.push('commit'));
+        m.afterRollback(() => seen.push('rollback'));
+        throw new Error('boom');
+      }),
+    ).rejects.toThrow('boom');
+    expect(seen).toEqual(['rollback']);
+  });
+
+  it('a data restore that rolls back puts the replaced files back; a final one leaves none', async () => {
+    const { readdirSync } = await import('node:fs');
+    const id = await publishedApp('swap-undo');
+    const before = await snaps.createAppSnapshot(owner, id);
+    await broker.appDbExec(owner, id, "INSERT INTO items (name) VALUES ('b')", [], schema);
+    await expect(
+      m.withSystemTx(async () => {
+        await snaps.restoreAppSnapshot(owner, id, before!.id, { mode: 'data', drainMs: 0 });
+        throw new Error('the caller failed after the swap');
+      }),
+    ).rejects.toThrow(/after the swap/);
+    // The rows rolled back, and so did the file.
+    expect(await names(id)).toEqual(['a', 'b']);
+    // A restore that stands leaves no kept files behind.
+    await snaps.restoreAppSnapshot(owner, id, before!.id, { mode: 'data', drainMs: 0 });
+    expect(await names(id)).toEqual(['a']);
+    const live = (await broker.appDatabasePath(owner, id))!;
+    const left = readdirSync(path.dirname(live)).filter((f) => f.includes('.prev-'));
+    expect(left).toEqual([]);
+  });
+
+  it('a snapshot taken in a transaction that rolls back leaves no copy', async () => {
+    const id = await publishedApp('copy-undo');
+    let file: string | null = null;
+    await expect(
+      m.withSystemTx(async () => {
+        const snap = await snaps.createAppSnapshot(owner, id, { note: 'gone' });
+        file = (await snaps.appSnapshotFile(owner, id, snap!.id))!.path;
+        expect(existsSync(file)).toBe(true);
+        throw new Error('rolled back');
+      }),
+    ).rejects.toThrow('rolled back');
+    expect(file && existsSync(file)).toBe(false);
+  });
+
   it('a code restore goes to the draft, and the next publish says where it came from', async () => {
     const id = await publishedApp('code');
     await apps.writeDraftFile(owner, id, 'App.tsx', 'export default () => "two";');

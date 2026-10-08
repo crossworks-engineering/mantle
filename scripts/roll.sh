@@ -250,6 +250,10 @@ fi
 # members, clients or contacts run), with a live share link. Same boundary
 # rule as above: only the roll that crosses into it. SELECT only, digits
 # only; --app-ddl-ids prints the ids of those below admin for a follow-up.
+# A LOWER BOUND: it matches only a literal `host.db.exec(` with the SQL
+# written right there. An app that aliases the bridge (`const exec =
+# host.db.exec`), builds the SQL in a variable, or wraps it in its own
+# helper is not counted; read such an app's source when it matters.
 # Apps must declare their schema (app_db_schema_set) instead.
 # The remote script is read into a variable first: its regex holds an
 # unbalanced parenthesis, which a heredoc inside $( ) cannot carry on older

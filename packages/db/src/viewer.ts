@@ -224,14 +224,18 @@ export function runInTxScope<T>(
  * inside uses `tx`, so work that holds a row lock in `tx` never needs a
  * second connection from the pool (team apps M3 re-audit: a member's
  * parallel app writes each held one connection for the lock and took more
- * for the work, and could empty the pool). Only from outside any viewer
- * scope, with a transaction the caller opened on the admin pool.
+ * for the work, and could empty the pool). With the transaction's `hooks`:
+ * `afterCommit` and `afterRollback` inside wait for it to end (follow-up
+ * low 1), never run early. Only client.ts calls this (`withSystemTx`).
  */
-export function runInSystemTx<T>(tx: unknown, fn: () => Promise<T>): Promise<T> {
+export function runInSystemTx<T>(
+  scope: { tx: unknown; hooks: TxHooks },
+  fn: () => Promise<T>,
+): Promise<T> {
   if (store.getStore()) {
     return Promise.reject(new Error('runInSystemTx: only outside a viewer scope'));
   }
-  return store.run({ level: 'admin', tx }, fn);
+  return store.run({ level: 'admin', tx: scope.tx, hooks: scope.hooks }, fn);
 }
 
 /**

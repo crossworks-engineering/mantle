@@ -35,7 +35,7 @@ import {
   apps,
   asSystem,
   authUsers,
-  runInSystemTx,
+  withSystemTx,
   db,
   nodeSnapshots,
   nodes,
@@ -172,7 +172,10 @@ export async function withAuthorWrite<T>(
   fn: () => Promise<T>,
 ): Promise<T> {
   return asSystem(() =>
-    db.transaction(async (tx) => {
+    // One transaction on its own connection, with commit and rollback
+    // hooks: a file the change writes is cleaned up if the change rolls
+    // back (team apps follow-up).
+    withSystemTx(async (tx) => {
       const [row] = await tx
         .select({ reviewState: spaceItems.reviewState })
         .from(spaceItems)
@@ -189,9 +192,7 @@ export async function withAuthorWrite<T>(
         .limit(1);
       if (!row) throw NOT_FOUND();
       if (!EDITABLE.includes(row.reviewState)) throw frozenError(row.reviewState);
-      // On the lock's own connection (M3 re-audit, medium 1): the change
-      // never takes a second connection from the pool while it holds this one.
-      return runInSystemTx(tx, fn);
+      return fn();
     }),
   );
 }

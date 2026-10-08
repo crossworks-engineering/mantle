@@ -22,7 +22,15 @@ import { randomUUID } from 'node:crypto';
 import { rm } from 'node:fs/promises';
 import * as path from 'node:path';
 import { and, desc, eq, gte, isNotNull, sql } from 'drizzle-orm';
-import { apps, db, nodeSnapshots, nodes, type AppSnapshotCode } from '@mantle/db';
+import {
+  afterCommit,
+  afterRollback,
+  apps,
+  db,
+  nodeSnapshots,
+  nodes,
+  type AppSnapshotCode,
+} from '@mantle/db';
 import type { AppRestoreMode, AppSnapshot } from '@mantle/client-types';
 import {
   AppRestoreDraftError,
@@ -35,6 +43,7 @@ import {
   appDbRoot,
   restoreAppDatabaseFile,
   snapshotAppDatabase,
+  type AppDbSwap,
 } from './app-broker';
 import { scheduleAppTableExportSync } from './app-table-exports';
 import { codeHash, envMbBytes, insertNodeSnapshot, pruneHistoryRows } from './node-snapshot-rows';
@@ -425,6 +434,12 @@ export async function createAppSnapshot(
       if (copied) await rm(copied, { force: true }).catch(() => undefined);
       throw err;
     });
+  // Inside a caller's transaction (a member's app change, withSystemTx) the
+  // row above only reached a savepoint: if that transaction rolls back
+  // later, the copy goes with it (team apps follow-up). Outside one, this
+  // does nothing: the row has committed.
+  const kept = copied as string | null;
+  if (kept) afterRollback(() => rm(kept, { force: true }));
   if (snap && trigger !== 'manual') await pruneAutoSnapshots(appId, trigger);
   return snap;
 }
@@ -595,67 +610,93 @@ export async function restoreAppSnapshot(
     throw new AppSnapshotRefusedError(`v${snap.seq} holds no code to restore`);
   }
 
-  const result = await db.transaction(async (tx) => {
-    await lockAppHistory(tx, appId);
-    if (wantsCode && !opts.discardDraft) {
-      // Refuse before the undo snapshot and any swap: nothing changes.
-      const now = await currentCode(ownerId, appId);
-      if (now?.draft) throw new AppRestoreDraftError();
-    }
-    // A lost live file is what a data restore is for: the undo snapshot
-    // keeps the code then, and the restore goes on (apps audit 2026-10-02,
-    // item 4).
-    const undo = await snapshotLocked(ownerId, appId, {
-      trigger: 'pre_restore',
-      actor,
-      actorLoginId: opts.actorLoginId ?? null,
-      note: `before restoring v${snap.seq} (${mode})`,
-      codeOnlyWhenLost: true,
-    });
-    if (wantsData) {
-      const file = await appSnapshotFile(ownerId, appId, snapshotId);
-      if (!file) throw new AppSnapshotRefusedError(`v${snap.seq} holds no data`);
-      await restoreAppDatabaseFile(ownerId, appId, file.path, snap.schemaVersion ?? 0, {
-        ...(opts.drainMs !== undefined ? { drainMs: opts.drainMs } : {}),
+  // The data swap keeps the files it replaces until this restore is final
+  // (team apps follow-up): if anything after the swap fails, or the
+  // caller's own transaction rolls back, they go back, so the live data
+  // never disagrees with the history rows that rolled back.
+  let swap: AppDbSwap | undefined;
+  const result = await db
+    .transaction(async (tx) => {
+      await lockAppHistory(tx, appId);
+      if (wantsCode && !opts.discardDraft) {
+        // Refuse before the undo snapshot and any swap: nothing changes.
+        const now = await currentCode(ownerId, appId);
+        if (now?.draft) throw new AppRestoreDraftError();
+      }
+      // A lost live file is what a data restore is for: the undo snapshot
+      // keeps the code then, and the restore goes on (apps audit 2026-10-02,
+      // item 4).
+      const undo = await snapshotLocked(ownerId, appId, {
+        trigger: 'pre_restore',
+        actor,
+        actorLoginId: opts.actorLoginId ?? null,
+        note: `before restoring v${snap.seq} (${mode})`,
+        codeOnlyWhenLost: true,
       });
-    }
-    let code: AppRestoreResult['code'] = null;
-    let declaredTools: string[] | null = null;
-    // The author ceiling FIRST (team apps Phase 3; M3 re-audit, low 2):
-    // code a member wrote, or code taken while the app ran at team rules,
-    // brings the ceiling back before it can go live, so not one call runs it
-    // at admin rules, and a restore that fails after this leaves it at team
-    // (fail safe). On `db`, which is what the code restore below writes
-    // through. Only an admin's own "trust its tools" lifts it again.
-    if (wantsCode && (snap.actor === 'member' || snap.code?.meta?.authorLevel === 'team')) {
-      await db
-        .update(apps)
-        .set({ authorLevel: 'team', updatedAt: new Date() })
-        .where(eq(apps.nodeId, appId));
-    }
-    if (wantsCode && snap.code) {
-      const build = snap.code.publishedBuild;
-      if (mode === 'full' && build?.ok) {
-        await restoreAppLive(ownerId, appId, { ...snap.code, publishedBuild: build }, snap.seq, {
-          discardDraft: true,
-          actor,
-          actorLoginId: opts.actorLoginId ?? null,
-        });
-        code = 'live';
-      } else {
-        // A code restore, or a full one from an app that had never been
-        // published: the code goes to the draft.
-        await restoreAppDraft(ownerId, appId, snap.code, snap.seq, { discardDraft: true });
-        code = 'draft';
-        // The manifest did not change: it is the live app's.
-        const live = await currentCode(ownerId, appId);
-        if (!sameTools(snap.code.manifest.toolSlugs, live?.manifest.toolSlugs)) {
-          declaredTools = snap.code.manifest.toolSlugs ?? [];
+      if (wantsData) {
+        const file = await appSnapshotFile(ownerId, appId, snapshotId);
+        if (!file) throw new AppSnapshotRefusedError(`v${snap.seq} holds no data`);
+        const swapped = await restoreAppDatabaseFile(
+          ownerId,
+          appId,
+          file.path,
+          snap.schemaVersion ?? 0,
+          {
+            ...(opts.drainMs !== undefined ? { drainMs: opts.drainMs } : {}),
+            keepPrevious: true,
+          },
+        );
+        swap = swapped.swap;
+      }
+      let code: AppRestoreResult['code'] = null;
+      let declaredTools: string[] | null = null;
+      // The author ceiling FIRST (team apps Phase 3; M3 re-audit, low 2):
+      // code a member wrote, or code taken while the app ran at team rules,
+      // brings the ceiling back before it can go live, so not one call runs it
+      // at admin rules, and a restore that fails after this leaves it at team
+      // (fail safe). On `db`, which is what the code restore below writes
+      // through. Only an admin's own "trust its tools" lifts it again.
+      if (wantsCode && (snap.actor === 'member' || snap.code?.meta?.authorLevel === 'team')) {
+        await db
+          .update(apps)
+          .set({ authorLevel: 'team', updatedAt: new Date() })
+          .where(eq(apps.nodeId, appId));
+      }
+      if (wantsCode && snap.code) {
+        const build = snap.code.publishedBuild;
+        if (mode === 'full' && build?.ok) {
+          await restoreAppLive(ownerId, appId, { ...snap.code, publishedBuild: build }, snap.seq, {
+            discardDraft: true,
+            actor,
+            actorLoginId: opts.actorLoginId ?? null,
+          });
+          code = 'live';
+        } else {
+          // A code restore, or a full one from an app that had never been
+          // published: the code goes to the draft.
+          await restoreAppDraft(ownerId, appId, snap.code, snap.seq, { discardDraft: true });
+          code = 'draft';
+          // The manifest did not change: it is the live app's.
+          const live = await currentCode(ownerId, appId);
+          if (!sameTools(snap.code.manifest.toolSlugs, live?.manifest.toolSlugs)) {
+            declaredTools = snap.code.manifest.toolSlugs ?? [];
+          }
         }
       }
-    }
-    return { mode, restored: snap, undo, code, declaredTools };
-  });
+      return { mode, restored: snap, undo, code, declaredTools };
+    })
+    .catch(async (err: unknown) => {
+      // This restore's rows rolled back: so does its data swap.
+      if (swap) await swap.undo().catch(() => undefined);
+      throw err;
+    });
+  if (swap) {
+    const done = swap;
+    // Inside a caller's transaction these wait for it to end; outside one,
+    // the restore is final now and the replaced files go at once.
+    afterRollback(() => done.undo());
+    await afterCommit(() => done.drop());
+  }
   if (wantsData) scheduleAppTableExportSync(ownerId, appId);
   await pruneAutoSnapshots(appId, 'pre_restore');
   const { code: _code, schemaVersion: _sv, ...restored } = result.restored;

@@ -1011,8 +1011,14 @@ export async function restoreAppDatabaseFile(
   appNodeId: string,
   snapshotAbs: string,
   schemaVersion: number,
-  opts: { drainMs?: number } = {},
-): Promise<{ bytes: number }> {
+  opts: {
+    drainMs?: number;
+    /** Keep the files it replaces (team apps follow-up): the answer's
+     *  `swap.undo()` puts them back, `swap.drop()` removes them. For a
+     *  caller whose own transaction may still roll back after the swap. */
+    keepPrevious?: boolean;
+  } = {},
+): Promise<{ bytes: number; swap?: AppDbSwap }> {
   const reg = await ensureRegistry(ownerId, appNodeId);
   const marker = restoreMarker(reg.storagePath);
   await mkdir(path.dirname(reg.storagePath), { recursive: true });
@@ -1028,7 +1034,10 @@ export async function restoreAppDatabaseFile(
       // Fresh marker for the swap itself (a slow drain must not age it out).
       const now = new Date();
       await utimes(marker, now, now);
-      const tmp = `${reg.storagePath}.restore-${process.pid}-${Date.now()}`;
+      const stamp = `${process.pid}-${Date.now()}`;
+      const tmp = `${reg.storagePath}.restore-${stamp}`;
+      // The live files it replaces: kept beside it when asked, else removed.
+      const kept: { from: string; to: string }[] = [];
       try {
         await copyFile(snapshotAbs, tmp);
         const fh = await open(tmp, 'r+');
@@ -1037,14 +1046,28 @@ export async function restoreAppDatabaseFile(
         } finally {
           await fh.close();
         }
-        await Promise.all(
-          appDbFiles(reg.storagePath)
-            .slice(1)
-            .map((f) => rm(f, { force: true })),
-        );
+        if (opts.keepPrevious) {
+          for (const f of appDbFiles(reg.storagePath)) {
+            const to = `${f}.prev-${stamp}`;
+            try {
+              await rename(f, to);
+              kept.push({ from: f, to });
+            } catch (err) {
+              if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+            }
+          }
+        } else {
+          await Promise.all(
+            appDbFiles(reg.storagePath)
+              .slice(1)
+              .map((f) => rm(f, { force: true })),
+          );
+        }
         await rename(tmp, reg.storagePath);
       } catch (err) {
         await rm(tmp, { force: true });
+        // Nothing swapped: the kept files go back where they were.
+        for (const k of kept) await rename(k.to, k.from).catch(() => undefined);
         throw err;
       }
       const { size } = await stat(reg.storagePath);
@@ -1052,12 +1075,29 @@ export async function restoreAppDatabaseFile(
         .update(appDatabases)
         .set({ schemaVersion, sizeBytes: size, updatedAt: new Date() })
         .where(eq(appDatabases.id, reg.id));
-      return { bytes: size };
+      if (!opts.keepPrevious) return { bytes: size };
+      const live = reg.storagePath;
+      const swap: AppDbSwap = {
+        // Put the replaced files back: the restored ones go first.
+        undo: async () => {
+          for (const f of appDbFiles(live)) await rm(f, { force: true });
+          for (const k of kept) await rename(k.to, k.from);
+        },
+        drop: async () => {
+          for (const k of kept) await rm(k.to, { force: true });
+        },
+      };
+      return { bytes: size, swap };
     });
   } finally {
     await rm(marker, { force: true });
   }
 }
+
+/** A database file swap that can still be undone (`restoreAppDatabaseFile`
+ *  with `keepPrevious`): `undo` puts the replaced files back, `drop`
+ *  removes them once the swap is final. */
+export type AppDbSwap = { undo: () => Promise<void>; drop: () => Promise<void> };
 
 /** Where an app's database file lives, or null when it never had one. Read
  *  BEFORE the app is deleted: the registry row cascades away with the node. */

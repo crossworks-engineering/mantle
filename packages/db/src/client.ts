@@ -8,6 +8,7 @@ import {
   currentSpaceScope,
   currentViewerLevel,
   newTxHooks,
+  runInSystemTx,
   runInTxScope,
   runTxHooks,
   withViewer,
@@ -167,6 +168,31 @@ export async function withSpace<T>(
       );
       return runInTxScope({ level, space: { ...scope }, tx, hooks }, fn);
     });
+  } catch (err) {
+    await runTxHooks(hooks.rollback, 'rollback');
+    throw err;
+  }
+  await runTxHooks(hooks.commit, 'commit');
+  return result;
+}
+
+/**
+ * Run `fn` in ONE admin-pool transaction, on its own connection: every `db`
+ * query inside is that transaction (`fn` gets it too). `afterCommit` work
+ * inside runs once it commits, `afterRollback` work once it rolls back:
+ * file side effects follow the rows they belong to (team apps follow-up).
+ * Only from outside any viewer scope and outside another transaction scope.
+ */
+export async function withSystemTx<T>(
+  fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<T>,
+): Promise<T> {
+  if (currentViewerLevel() !== 'admin' || currentScopeTx()) {
+    throw new Error('withSystemTx: only outside a viewer scope and any other transaction');
+  }
+  const hooks = newTxHooks();
+  let result: T;
+  try {
+    result = await getAdminDb().transaction((tx) => runInSystemTx({ tx, hooks }, () => fn(tx)));
   } catch (err) {
     await runTxHooks(hooks.rollback, 'rollback');
     throw err;

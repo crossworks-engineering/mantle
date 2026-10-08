@@ -7,6 +7,13 @@
  *
  * A failed build never overwrites the last good preview: a BuildRef is
  * recorded on success only; the errors come back for the caller to show.
+ *
+ * Inside a caller's transaction (a member's app change, withSystemTx) the
+ * bundle is stored before the row: if that transaction rolls back, the
+ * stored bundle stays without a row pointing at it. That is left on
+ * purpose (team apps follow-up): bundles are content-addressed and shared
+ * by every app whose build is byte-identical, so removing one on rollback
+ * could break another app; an unreferenced bundle costs only its bytes.
  */
 import { getApp, setDraftBuild, workingSource } from '@mantle/content';
 import { buildApp, loadRuntimeExports, type BuildMessage } from '@mantle/app-build';
