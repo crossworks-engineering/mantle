@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@dbos-inc/dbos-sdk": "^4.27.6",
+    "@dbos-inc/dbos-sdk": "^5.2.11",
     "@mantle/api-keys": "workspace:*",
     "@mantle/client-types": "workspace:*",
     "@mantle/config": "workspace:*",

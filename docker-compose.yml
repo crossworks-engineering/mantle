@@ -1024,7 +1024,7 @@ services:
     # 'active'. The default is 3g since 2026-09-24 (every box has >= 8 GB);
     # a cap, not a reservation. API_MEM_LIMIT raises it per box.
     mem_limit: ${API_MEM_LIMIT:-3g}
-    # Heartbeat-based liveness (no HTTP port; DBOS admin server off by default).
+    # Heartbeat-based liveness (no HTTP port; DBOS 5 has no admin server).
     healthcheck: *worker-healthcheck
     # Flag this container for the autoheal sidecar: when the heartbeat probe
     # above flips it `unhealthy`, autoheal docker-restarts it (plain compose

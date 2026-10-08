@@ -79,8 +79,8 @@ process.on('unhandledRejection', (reason) => {
 });
 
 async function main(): Promise<void> {
-  // Liveness: the api runner exposes no HTTP port (the DBOS admin server is off
-  // by default — see config.ts), so its container healthcheck reads a heartbeat
+  // Liveness: the api runner exposes no HTTP port (DBOS 5 has no admin
+  // server), so its container healthcheck reads a heartbeat
   // file we touch on a timer. Catches a WEDGED process; a dead one is already
   // covered by the restart policy. Measures event-loop liveness, not workflow
   // progress — an idle runner with no queued turns is still healthy.

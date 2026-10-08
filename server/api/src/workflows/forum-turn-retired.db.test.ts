@@ -37,14 +37,13 @@ describe.skipIf(!URL_)('a leftover forum turn on a real DBOS', () => {
       systemDatabaseUrl: sysUrl,
       applicationVersion: 'mantle-runner-1',
       logLevel: 'error',
-      runAdminServer: false,
     });
     // What server/api/src/main.ts does: import the stub for its registration.
     await import('./forum-turn-retired');
     await DBOS.launch();
     // The queue row an older release left behind (it registered the forum
     // queue at every boot; this release does not).
-    await DBOS.registerQueue('mantle_forum', { concurrency: 1, partitionQueue: true });
+    await DBOS.registerQueue('mantle_forum', { globalConcurrency: 1, partitionConcurrency: 1 });
     client = await sdk.DBOSClient.create({ systemDatabaseUrl: sysUrl });
   }, 60_000);
 
