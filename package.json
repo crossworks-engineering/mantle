@@ -4,7 +4,7 @@
   "private": true,
   "description": "Mantle — an AI-queryable life tree.",
   "license": "SEE LICENSE IN LICENSE.md",
-  "packageManager": "pnpm@11.1.2",
+  "packageManager": "pnpm@11.28.5",
   "engines": {
     "node": ">=26"
   },

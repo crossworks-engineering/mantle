@@ -22,7 +22,7 @@
 # work. It is NOT yet LTS: 26 is an even-numbered line and promotes to Active
 # LTS around Oct 2026, at which point this pin simply becomes the LTS pin. Until
 # then we ride "current", so watch the release notes on minor bumps.
-# pnpm 11.1.2 (pinned in packageManager) imports a Node builtin not present in
+# pnpm 11.28.5 (pinned in packageManager) imports a Node builtin not present in
 # Node 20, so node:20-slim fails install with ERR_UNKNOWN_BUILTIN_MODULE; 26 is
 # safely above that. corepack is unbundled from Node 25+, so we install pnpm via
 # npm directly.
@@ -82,7 +82,7 @@ COPY packages/voice-client/package.json packages/voice-client/package.json
 # is kept (runtime HTTPS). Caches are cleaned to keep the layer lean.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends python3 build-essential ca-certificates \
-    && npm install -g pnpm@11.1.2 \
+    && npm install -g pnpm@11.28.5 \
     # ELECTRON_SKIP_BINARY_DOWNLOAD is vestigial: it existed because
     # client/desktop was a workspace member and dragged electron's ~100MB
     # binary into this image. The desktop app moved to the jackdaw repo on

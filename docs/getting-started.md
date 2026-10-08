@@ -37,14 +37,14 @@ mantle/
 
 ## First-time setup
 
-Prereqs: **Node.js 26+**, **pnpm 11.1.2** (the version pinned in
+Prereqs: **Node.js 26+**, **pnpm 11.28.5** (the version pinned in
 `package.json`'s `packageManager`, installed in step 1), and **Docker** (Desktop
 or engine) running; `pnpm start` boots Postgres, RustFS (the S3 object store)
 and Tika in containers.
 
 ```bash
 # 1. Install pnpm at the pinned version
-corepack enable && corepack prepare pnpm@11.1.2 --activate
+corepack enable && corepack prepare pnpm@11.28.5 --activate
 
 # 2. Install deps
 pnpm install

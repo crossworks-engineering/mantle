@@ -16,7 +16,7 @@ This repo is the brain only: it serves the API on `http://localhost:3000` and ha
 
    ```bash
    git clone https://github.com/crossworks-engineering/mantle && cd mantle
-   corepack enable && corepack prepare pnpm@11.1.2 --activate
+   corepack enable && corepack prepare pnpm@11.28.5 --activate
    pnpm install
    ```
 

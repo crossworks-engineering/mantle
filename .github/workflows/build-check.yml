@@ -60,10 +60,10 @@ jobs:
       - uses: actions/checkout@v4
 
       # pnpm first, so setup-node's pnpm cache has a binary to key on. Version
-      # matches package.json `packageManager` (pnpm@11.1.2).
+      # matches package.json `packageManager` (pnpm@11.28.5).
       - uses: pnpm/action-setup@v4
         with:
-          version: 11.1.2
+          version: 11.28.5
 
       - uses: actions/setup-node@v4
         with:

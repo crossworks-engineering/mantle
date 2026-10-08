@@ -26,7 +26,9 @@ const outPath = outIdx !== -1 ? argv[outIdx + 1] : join(repoRoot, 'THIRD-PARTY-N
 
 /** Run `pnpm licenses list` and parse its JSON, grouped by license id. */
 function collectLicenses() {
-  const args = ['licenses', 'list', '--json'];
+  // --recursive: since pnpm 11.28 a bare `licenses list` at the workspace root
+  // covers the root package only ("No licenses in packages found").
+  const args = ['licenses', 'list', '--json', '--recursive'];
   if (!includeDev) args.push('--prod');
   const raw = execFileSync('pnpm', args, {
     cwd: repoRoot,
