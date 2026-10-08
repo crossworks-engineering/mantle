@@ -187,6 +187,7 @@ export {
   type OutsideToolVerdict,
   contactAppToolVerdict,
   clearConnectorExternalAccess,
+  connectorMarkCount,
   externalAccessActive,
   externalAccessHandlerSig,
   externalAccessToolSig,
@@ -324,6 +325,8 @@ export { parseMcpBinding, type ToolGroupMcpBinding } from './integration-meta';
 export {
   clearMcpOAuthSecrets,
   completeMcpOAuth,
+  oauthAccountHash,
+  type McpOAuthAccountChange,
   dbMcpOAuthStore,
   findConnectorByOAuthState,
   loadMcpOAuthTokens,

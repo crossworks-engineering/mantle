@@ -3,6 +3,7 @@ import {
   abandonMcpOAuth,
   clearConnectorExternalAccess,
   completeMcpOAuth,
+  connectorMarkCount,
   dbMcpOAuthStore,
   findConnectorByOAuthState,
   syncMcpConnector,
@@ -56,12 +57,22 @@ export async function GET(req: Request) {
     return htmlPage(`Authorization failed for ${esc(groupSlug)}`, esc(msg), false);
   }
 
+  // Set when the sign-in could not say which account it is and the connector
+  // has read-only marks: they are kept, and the admin is asked to re-check.
+  let recheck = '';
   try {
     const iss = url.searchParams.get('iss') ?? undefined;
-    await completeMcpOAuth(store, { code, ...(iss ? { iss } : {}) });
-    // A new sign-in may be another account with other rights (access matrix
-    // N4): the read-only marks were for the one the admin looked at.
-    await clearConnectorExternalAccess(user.id, groupSlug);
+    const { account } = await completeMcpOAuth(store, { code, ...(iss ? { iss } : {}) });
+    // Another account may have other rights (access matrix N4): the
+    // read-only marks were for the one the admin looked at, so they go. A
+    // routine reconnect as the same account keeps them, or every re-auth
+    // would close the connector for everyone below admin (M4 audit, medium 3).
+    if (account === 'changed') {
+      await clearConnectorExternalAccess(user.id, groupSlug);
+    } else if (account === 'unknown' && (await connectorMarkCount(user.id, groupSlug)) > 0) {
+      recheck =
+        ' This server did not say which account signed in, so the read-only marks on its tools were kept. If you signed in as another account, check them again in Settings > Tools.';
+    }
   } catch (err) {
     const msg = errorMessage(err); // already carries its cure, when one is known
     console.error('[mcp-connectors] token exchange failed', groupSlug, msg);
@@ -72,14 +83,14 @@ export async function GET(req: Request) {
     const sync = await syncMcpConnector(user.id, groupSlug);
     return htmlPage(
       `${esc(groupSlug)} connected`,
-      `Authorized and synced ${sync.toolSlugs.length} tools. Grant the '${esc(groupSlug)}' tool group to an agent to use them.`,
+      `Authorized and synced ${sync.toolSlugs.length} tools. Grant the '${esc(groupSlug)}' tool group to an agent to use them.${recheck}`,
       true,
     );
   } catch (err) {
     const msg = errorMessage(err);
     return htmlPage(
       `${esc(groupSlug)} authorized, sync failed`,
-      `Tokens are stored, but listing the server's tools failed: ${esc(msg)}. Re-run sync via POST /api/mcp-connectors/${esc(groupSlug)}/sync.`,
+      `Tokens are stored, but listing the server's tools failed: ${esc(msg)}. Re-run sync via POST /api/mcp-connectors/${esc(groupSlug)}/sync.${recheck}`,
       false,
     );
   }

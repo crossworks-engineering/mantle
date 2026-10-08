@@ -36,7 +36,7 @@
  *   of redirecting — a tool call can't open a browser.
  */
 
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   auth,
   discoverAuthorizationServerMetadata,
@@ -184,6 +184,45 @@ async function loadJsonSecret<T>(
 export async function loadMcpOAuthTokens(store: McpOAuthStore): Promise<OAuthTokens | undefined> {
   return loadJsonSecret<OAuthTokens>(store, 'oauth-tokens');
 }
+
+/** The claims of a JWT, or null when `token` is not one (an opaque token). */
+function jwtClaims(token: unknown): Record<string, unknown> | null {
+  if (typeof token !== 'string') return null;
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  try {
+    const claims: unknown = JSON.parse(Buffer.from(parts[1]!, 'base64url').toString('utf8'));
+    return claims && typeof claims === 'object' ? (claims as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Which account `tokens` are for, as a hash of the issuer, tenant and
+ * subject (Entra's `oid` before `sub`, which differs per app), from the ID
+ * token, else from an access token that is a JWT. Null when the tokens name
+ * no account (opaque tokens): the caller cannot tell a reconnect as the same
+ * account from another one. The tokens came straight from the token
+ * endpoint, so their claims are read, not verified.
+ */
+export function oauthAccountHash(tokens: OAuthTokens | undefined): string | null {
+  if (!tokens) return null;
+  for (const token of [tokens.id_token, tokens.access_token]) {
+    const c = jwtClaims(token);
+    const subject = c && (typeof c.oid === 'string' ? c.oid : c.sub);
+    if (c && typeof subject === 'string' && subject) {
+      const iss = typeof c.iss === 'string' ? c.iss : '';
+      const tid = typeof c.tid === 'string' ? c.tid : '';
+      return createHash('sha256').update(`${iss}\n${tid}\n${subject}`).digest('hex');
+    }
+  }
+  return null;
+}
+
+/** Whether a completed sign-in was for the account signed in before:
+ *  `unknown` when either side names no account (or there was none). */
+export type McpOAuthAccountChange = 'same' | 'changed' | 'unknown';
 
 async function patchOAuthState(
   store: McpOAuthStore,
@@ -549,7 +588,7 @@ export async function startMcpOAuth(
 export async function completeMcpOAuth(
   store: McpOAuthStore,
   args: { code: string; iss?: string },
-): Promise<void> {
+): Promise<{ account: McpOAuthAccountChange }> {
   const mcp = await store.loadMcp();
   if (!mcp?.oauth?.pending) {
     throw new Error(
@@ -588,13 +627,19 @@ export async function completeMcpOAuth(
     throw new Error(msg, { cause: err });
   }
   await store.deleteSecret('oauth-verifier');
+  const prior = mcp.oauth.accountHash ?? null;
+  const now = oauthAccountHash(await loadMcpOAuthTokens(store));
   await patchOAuthState(store, {
     status: 'connected',
     pending: undefined,
     lastError: undefined,
     connectedAt: new Date().toISOString(),
     redirectUri: mcp.oauth.pending.redirectUri,
+    // Only a known account replaces the one on record: an unknown one
+    // leaves the last known account to compare the next sign-in with.
+    ...(now ? { accountHash: now } : {}),
   });
+  return { account: prior && now ? (prior === now ? 'same' : 'changed') : 'unknown' };
 }
 
 /**

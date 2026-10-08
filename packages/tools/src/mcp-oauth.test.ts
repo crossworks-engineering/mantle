@@ -21,7 +21,12 @@ import {
   mcpListRemoteTools,
   setMcpOAuthStoreFactoryForTests,
 } from './mcp-client';
-import { completeMcpOAuth, startMcpOAuth, type McpOAuthStore } from './mcp-oauth';
+import {
+  completeMcpOAuth,
+  oauthAccountHash,
+  startMcpOAuth,
+  type McpOAuthStore,
+} from './mcp-oauth';
 
 const OWNER = 'owner-1';
 const GROUP = 'mcp-oauthtest';
@@ -33,7 +38,15 @@ const authState = {
   refreshWorks: true,
   issued: [] as string[],
   seenBearer: [] as string[],
+  /** The account an ID token names; null = opaque tokens only. */
+  subject: null as string | null,
 };
+
+/** An unsigned JWT with these claims (the client reads, never verifies). */
+function jwt(claims: Record<string, unknown>): string {
+  const part = (v: unknown) => Buffer.from(JSON.stringify(v)).toString('base64url');
+  return `${part({ alg: 'none' })}.${part(claims)}.sig`;
+}
 
 function issueTokens(n: number) {
   const access = `access-${n}`;
@@ -45,6 +58,7 @@ function issueTokens(n: number) {
     token_type: 'Bearer',
     expires_in: 3600,
     refresh_token: refresh,
+    ...(authState.subject ? { id_token: jwt({ iss: origin, sub: authState.subject }) } : {}),
   };
 }
 
@@ -199,7 +213,9 @@ describe('MCP connector OAuth end to end', () => {
   });
 
   it('complete: exchanges the code, seals tokens, clears pending', async () => {
-    await completeMcpOAuth(store, { code: AUTH_CODE });
+    // Opaque tokens name no account: the caller cannot tell (M4 audit, medium 3).
+    expect(await completeMcpOAuth(store, { code: AUTH_CODE })).toEqual({ account: 'unknown' });
+    expect(binding.oauth?.accountHash).toBeUndefined();
     expect(binding.oauth?.status).toBe('connected');
     expect(binding.oauth?.pending).toBeUndefined();
     expect(store.secrets.has('oauth-verifier')).toBe(false);
@@ -234,5 +250,52 @@ describe('MCP connector OAuth end to end', () => {
       /re-authorize|reconnect|authorization/i,
     );
     expect(binding.oauth?.status).toBe('needs_reconnect');
+  });
+});
+
+// M4 audit, medium 3: a reconnect as the same account keeps the connector's
+// read-only marks; another account voids them. The flow says which.
+describe('MCP connector OAuth: which account signed in', () => {
+  const signIn = async (subject: string | null) => {
+    authState.subject = subject;
+    authState.refreshWorks = true;
+    // A full sign-in, as after the tokens died (live tokens skip it).
+    store.secrets.delete('oauth-tokens');
+    await startMcpOAuth(store, { redirectUri: 'http://127.0.0.1:9/cb' });
+    return (await completeMcpOAuth(store, { code: AUTH_CODE })).account;
+  };
+
+  it('same account, another account, and tokens that name none', async () => {
+    // The first known account has nothing to compare with.
+    expect(await signIn('alice')).toBe('unknown');
+    const alice = binding.oauth?.accountHash;
+    expect(alice).toMatch(/^[0-9a-f]{64}$/);
+    expect(await signIn('alice')).toBe('same');
+    expect(await signIn('bob')).toBe('changed');
+    expect(binding.oauth?.accountHash).not.toBe(alice);
+    // Opaque tokens: unknown, and the last known account is kept to compare.
+    const bob = binding.oauth?.accountHash;
+    expect(await signIn(null)).toBe('unknown');
+    expect(binding.oauth?.accountHash).toBe(bob);
+    expect(await signIn('bob')).toBe('same');
+  });
+
+  it('reads the account from the ID token, else a JWT access token; never the raw subject', () => {
+    const iss = 'https://login.example/tenant/v2.0';
+    const viaId = oauthAccountHash({
+      access_token: 'opaque',
+      token_type: 'Bearer',
+      id_token: jwt({ iss, sub: 'u1' }),
+    });
+    const viaAccess = oauthAccountHash({ access_token: jwt({ iss, sub: 'u1' }), token_type: 'Bearer' });
+    expect(viaId).toMatch(/^[0-9a-f]{64}$/);
+    expect(viaAccess).toBe(viaId);
+    expect(viaId).not.toContain('u1');
+    // Entra: the object id names the account across apps, before `sub`.
+    expect(
+      oauthAccountHash({ access_token: jwt({ iss, sub: 'per-app', oid: 'o1' }), token_type: 'Bearer' }),
+    ).toBe(oauthAccountHash({ access_token: jwt({ iss, sub: 'other-app', oid: 'o1' }), token_type: 'Bearer' }));
+    expect(oauthAccountHash({ access_token: 'opaque', token_type: 'Bearer' })).toBeNull();
+    expect(oauthAccountHash(undefined)).toBeNull();
   });
 });

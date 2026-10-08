@@ -67,6 +67,11 @@ export type ToolGroupMcpOAuth = {
    *  Microsoft app always adds `offline_access`, or Entra issues no refresh
    *  token and the connection dies at the first access-token expiry. */
   scope?: string;
+  /** A hash of the account the last sign-in was for (the token's issuer,
+   *  tenant and subject), when its tokens name one. A sign-in as the same
+   *  account keeps the connector's read-only marks; another account voids
+   *  them (M4 audit, medium 3). Never the raw subject. */
+  accountHash?: string;
 };
 
 /**

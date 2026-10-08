@@ -95,9 +95,11 @@ public agents, read-only tools only; never clients, who reach client-level
 connectors only). Granting the group to an agent never widens that. A tool's
 read-only mark decides read or write. The mark stops counting when the tool's
 description or inputs change, when it vanishes and returns, and when the
-connector's server or sign-in changes; below admin a new or returning tool
-arrives switched off, and an agent turning one on or clearing its
-confirmation waits in Pending. The full rules: docs/member-logins.md
+connector's server or sign-in changes (an OAuth reconnect as the same
+account keeps it; the account is a hash of the token's issuer and subject);
+below admin a new or returning tool arrives switched off, and an agent
+turning one on, clearing its confirmation, or lowering the connector's level
+waits in Pending. The full rules: docs/member-logins.md
 ("External access") and docs/mcp-as-a-login.md.
 
 ## API (owner-gated)

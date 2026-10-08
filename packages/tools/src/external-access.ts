@@ -579,6 +579,22 @@ export async function setToolExternalAccess(
  * tools are disabled until an admin enables them again. Called by the
  * connector binding update.
  */
+/** How many of a connector's tools carry a read-only mark (live or void). */
+export async function connectorMarkCount(ownerId: string, groupSlug: string): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(tools)
+    .where(
+      and(
+        eq(tools.ownerId, ownerId),
+        sql`${tools.handler}->>'kind' = 'mcp'`,
+        sql`${tools.handler}->>'group' = ${groupSlug}`,
+        sql`${tools.externalAccess} is not null`,
+      ),
+    );
+  return row?.n ?? 0;
+}
+
 export async function clearConnectorExternalAccess(
   ownerId: string,
   groupSlug: string,
