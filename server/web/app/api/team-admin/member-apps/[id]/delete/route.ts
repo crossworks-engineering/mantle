@@ -1,14 +1,14 @@
 /**
  * POST /api/team-admin/member-apps/:id/delete { confirm: true }: an admin
  * deletes a member's team-shared or submitted app (access matrix N2). Never
- * silently: the app's code and data are kept as a pre_delete snapshot, and
- * it waits in the trash like any deleted app. A private draft is never
- * reachable here.
+ * silently: the app moves to the brain, its code and data are kept as a
+ * pre_delete snapshot, and it waits in the brain's trash like any deleted
+ * app, for an admin to restore (M4 audit, medium 2). A private draft is
+ * never reachable here.
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { asSystem } from '@mantle/db';
-import { adminSpaceApp, deleteApp } from '@mantle/content';
+import { adminDeleteSpaceApp, adminSpaceApp } from '@mantle/content';
 import { getOwnerOr401 } from '@/lib/auth';
 import { spaceAppId, spaceAppNotFound } from '@/lib/space-apps';
 
@@ -27,8 +27,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       { status: 400 },
     );
   }
-  // deleteApp keeps a pre_delete snapshot (code and data) first.
-  const ok = await asSystem(() => deleteApp(app.spaceId, id, { actor: 'owner' }));
+  const ok = await adminDeleteSpaceApp(user.id, id);
   if (!ok) return spaceAppNotFound();
   return NextResponse.json({ ok: true });
 }

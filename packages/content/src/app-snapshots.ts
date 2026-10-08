@@ -330,7 +330,8 @@ async function pruneAutoSnapshots(appId: string, trigger: AppSnapshotTrigger): P
   await removeSnapshotFiles(gone);
 }
 
-async function removeSnapshotFiles(paths: (string | null)[]): Promise<void> {
+/** Remove snapshot database files by their row paths (best effort). */
+export async function removeSnapshotFiles(paths: (string | null)[]): Promise<void> {
   for (const rel of paths) {
     if (!rel) continue;
     try {

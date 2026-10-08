@@ -46,7 +46,14 @@ import {
   type BuildRef,
   type ViewerLevel,
 } from '@mantle/db';
-import { APPS_ROOT_LABEL, createApp, ensureAppsRoot, getApp, type AppDetail } from './apps';
+import {
+  APPS_ROOT_LABEL,
+  createApp,
+  deleteApp,
+  ensureAppsRoot,
+  getApp,
+  type AppDetail,
+} from './apps';
 import { notifyAppNavChanged } from './app-nav';
 import { lockAppHistory } from './app-history-lock';
 import { projectAppIcon, projectAppTint } from '@mantle/content-core/app-nav';
@@ -850,6 +857,63 @@ export async function adminSpaceApp(
       .limit(1),
   );
   return row ?? null;
+}
+
+/**
+ * An admin deletes a member's team-shared or submitted app (access matrix N2)
+ * so that it can come back (M4 audit, medium 2). The app, its database, its
+ * history and its activity move to the brain first, as an Accept moves them,
+ * at admin level; then the normal delete keeps a pre_delete snapshot and the
+ * app waits in the brain's trash for APP_TRASH_DAYS, where an admin restores
+ * it (as an admin-only app at team rules, as any member-era app comes back).
+ * False when the app is not one an admin may act on. Should the delete fail
+ * after the move, the app is the brain's, admin only: nothing is lost.
+ */
+export async function adminDeleteSpaceApp(brainId: string, appId: string): Promise<boolean> {
+  await asSystem(() => ensureAppsRoot(brainId));
+  const moved = await asSystem(() =>
+    db.transaction(async (tx) => {
+      // The state row, then the history lock: the order a member's change
+      // takes them (as Accept does), so no member write lands mid-move.
+      const [row] = await tx
+        .select({ id: spaceItems.nodeId })
+        .from(spaceItems)
+        .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))
+        .innerJoin(spaces, eq(spaces.id, nodes.ownerId))
+        .where(and(eq(spaceItems.nodeId, appId), adminVisible))
+        .for('update', { of: spaceItems })
+        .limit(1);
+      await lockAppHistory(tx, appId);
+      if (!row) return false;
+      const now = new Date();
+      await tx
+        .update(nodes)
+        .set({ ownerId: brainId, audience: 'admin', path: APPS_ROOT_LABEL, updatedAt: now })
+        .where(eq(nodes.id, appId));
+      // A member's app ran at team rules: so does it if it comes back.
+      await tx.update(apps).set({ authorLevel: 'team', updatedAt: now }).where(eq(apps.nodeId, appId));
+      await tx
+        .update(appDatabases)
+        .set({ ownerId: brainId, updatedAt: now })
+        .where(eq(appDatabases.appNodeId, appId));
+      await tx
+        .update(nodeSnapshots)
+        .set({ ownerId: brainId })
+        .where(eq(nodeSnapshots.nodeId, appId));
+      await tx
+        .update(appAccessLog)
+        .set({ ownerId: brainId })
+        .where(eq(appAccessLog.appNodeId, appId));
+      // Out of the member's space: the node delete below would cascade it,
+      // and until then it is no longer the member's.
+      await tx.delete(spaceItems).where(eq(spaceItems.nodeId, appId));
+      return true;
+    }),
+  );
+  if (!moved) return false;
+  const deleted = await asSystem(() => deleteApp(brainId, appId, { actor: 'owner' }));
+  void notifyAppNavChanged(brainId);
+  return deleted;
 }
 
 /** An admin stops a member's app reaching the team (access matrix N2): it

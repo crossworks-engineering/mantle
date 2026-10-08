@@ -651,6 +651,12 @@ mirror the admin's `app_*` tools; read `my_app_guide` (this guide) first.
   an app to the team; `my_app_unshare` makes it private again). Every member then
   runs its published version from Mine > Apps and writes its data. No
   approval, and the level does not change: the app stays in the space.
+- **Changes reach teammates at once:** sharing is for the app, not for one
+  version. While it is shared, every `my_app_publish` (over MCP too) is
+  what teammates run from their next open, with no new click and no
+  review. Test a change on a private copy first, or make the app private
+  (`my_app_unshare`) while you work. An admin sees what it did under
+  Team admin > Member apps > Activity, and can unshare or delete it.
 - **Submit:** `my_app_submit` sends the PUBLISHED version to an admin. It is
   frozen and its data is read only until the admin accepts or returns it.
   `my_app_recall` takes it back.

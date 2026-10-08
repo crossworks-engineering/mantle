@@ -23,6 +23,7 @@ import {
 import { tableDbRoot } from '@mantle/tabledb';
 import { appDbRoot, restoreAppDatabaseFile } from './app-broker';
 import { sweepCrashLeftovers } from './history-files';
+import { removeSnapshotFiles } from './app-snapshots';
 import { dropUnfinishedApp } from './app-package';
 import { notifyAppNavChanged } from './app-nav';
 
@@ -189,9 +190,13 @@ export async function restoreDeletedApp(
 
 /** Remove a deleted app's history rows and snapshot files. */
 async function purgeOne(ownerId: string, appId: string): Promise<void> {
-  await db
+  const gone = await db
     .delete(nodeSnapshots)
-    .where(and(eq(nodeSnapshots.ownerId, ownerId), eq(nodeSnapshots.nodeId, appId)));
+    .where(and(eq(nodeSnapshots.ownerId, ownerId), eq(nodeSnapshots.nodeId, appId)))
+    .returning({ dbPath: nodeSnapshots.dbPath });
+  // By each row's own path too: a member app moved to the brain (Accept, or
+  // an admin delete) keeps its member-era files under the member's space.
+  await removeSnapshotFiles(gone.map((g) => g.dbPath));
   await rm(path.join(appDbRoot(), '_snapshots', ownerId, appId), {
     recursive: true,
     force: true,

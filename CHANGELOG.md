@@ -8,8 +8,9 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
 - An admin sees and stops members' apps: Team admin > Member apps lists the
   team-shared and submitted ones (never a private draft), with their
-  activity, Unshare, and Delete (confirmed; the code and data are kept as a
-  snapshot in the trash). A member's app runs only while its author is an
+  activity, Unshare, and Delete (confirmed: the app moves to the brain and
+  waits in the brain's trash, with its code and data, so an admin restores
+  it for 30 days). A member's app runs only while its author is an
   active member: disabling, demoting or deleting the author stops it.
 - Accept moves the app's activity rows to the brain app, so its Activity
   tab shows what members did with it.
@@ -18,11 +19,15 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 - Sharing a member's app with the team is the member's own click in the app:
   `my_app_share` is gone from MCP; `my_app_unshare` makes an app private.
 - An in-brain agent that turns a connector tool on, or clears its
-  confirmation, below admin waits for the owner in Pending.
+  confirmation, below admin waits for the owner in Pending; so does an agent
+  lowering a whole connector's level (`access_set`).
 - A connector tool's read-only mark covers its description and input schema
   (`v2:` signature); a sync voids it when the remote tool changes or returns,
   a returning tool stays off below admin, and a change of sign-in (header,
-  scheme, OAuth app or scope, a new sign-in) voids the connector's marks.
+  scheme, OAuth app or scope, another account) voids the connector's marks.
+  An OAuth reconnect as the same account keeps them (the account is a hash
+  of the token's issuer and subject); one that names no account keeps them
+  and asks the admin to re-check.
 - Smaller: an audit row for member app changes over OAuth, token and peer
   connections; the sidebar says whether MCP access reaches anyone
   (`mcpReach`); the connector docs no longer say a public connector reaches

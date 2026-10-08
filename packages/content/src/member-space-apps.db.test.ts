@@ -414,6 +414,41 @@ describe.skipIf(!URL)('member-built apps on Postgres', () => {
     expect(await sa.adminUnshareSpaceApp(id)).toBe(false);
   });
 
+  // M4 audit, medium 2: an admin's delete can be undone from the brain's
+  // normal trash, with the app's data, history and activity.
+  it("an admin's delete of a member app lands in the brain's trash and comes back", async () => {
+    const trash = await import('./app-trash');
+    const id = await publishedSpaceApp('admin-delete');
+    await sa.setSpaceAppSharing(me(), id, 'team');
+    await admin`insert into app_access_log (owner_id, app_node_id, kind, detail)
+      values (${authorSpace}, ${id}, 'tool', ${JSON.stringify({ via: 'member', slug: 'x' })}::jsonb)`;
+
+    expect(await sa.adminDeleteSpaceApp(brain, id)).toBe(true);
+    expect(await sa.adminSpaceApp(id)).toBeNull();
+    expect(await sa.getRunnableSpaceApp(mate, id)).toBeNull();
+    const inTrash = (await m.asSystem(() => trash.listDeletedApps(brain))).find((d) => d.id === id);
+    expect(inTrash).toMatchObject({ id, hasData: true });
+    // Nothing of it stays under the member's space.
+    const [left] = await admin<{ snaps: number; log: number; items: number }[]>`
+      select (select count(*)::int from node_snapshots where node_id = ${id} and owner_id = ${authorSpace}) as snaps,
+             (select count(*)::int from app_access_log where app_node_id = ${id} and owner_id = ${authorSpace}) as log,
+             (select count(*)::int from space_items where node_id = ${id}) as items`;
+    expect(left).toEqual({ snaps: 0, log: 0, items: 0 });
+
+    // An admin restores it: the brain's, admin only, at team rules, with its data.
+    await m.asSystem(() => trash.restoreDeletedApp(brain, id));
+    const [node] = await admin<{ owner_id: string; audience: string }[]>`
+      select owner_id, audience from nodes where id = ${id}`;
+    expect(node).toEqual({ owner_id: brain, audience: 'admin' });
+    expect((await m.asSystem(() => apps.getAppRuntime(brain, id)))?.authorLevel).toBe('team');
+    const rows = await m.asSystem(() =>
+      broker.appDbQuery(brain, id, 'SELECT name FROM items', [], schema),
+    );
+    expect(rows.map((r) => r.name)).toEqual(['a']);
+    // It is the brain's now, no longer a member app an admin acts on here.
+    expect(await sa.adminDeleteSpaceApp(brain, id)).toBe(false);
+  });
+
   // Access matrix N3: what a member's app did shows on the brain app after
   // Accept.
   it("Accept moves the app's activity rows to the brain", async () => {
