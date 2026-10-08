@@ -50,6 +50,10 @@ export interface PushPayload {
   brainId?: string;
   /** The login the receiving device was enrolled for. */
   loginId?: string;
+  /** The item the push is about, as an app path (an event reminder:
+   *  `/events/<id>`). An app that knows the route opens it instead of
+   *  `deepLink`; an older app ignores it and follows `deepLink` as before. */
+  itemLink?: string;
 }
 
 /** What a caller hands {@link sendToDevices}: the routing pair is not its to set. */
@@ -91,6 +95,21 @@ function teaser(text: string, max = 140): string {
   return markdownPreview(text, max) || 'New message';
 }
 
+/** The item a recorded turn is about, as an app path, or null. The events
+ *  reminders worker marks its turns `data.reminder = { kind, id }`
+ *  (workers/events-reminders.ts); any other turn has none. An id that is not
+ *  a plain uuid-ish token is ignored, so the path can never carry a trick. */
+export function reminderItemLink(data: unknown): string | null {
+  if (!data || typeof data !== 'object') return null;
+  const reminder = (data as { reminder?: unknown }).reminder;
+  if (!reminder || typeof reminder !== 'object') return null;
+  const { kind, id } = reminder as { kind?: unknown; id?: unknown };
+  if (typeof id !== 'string' || !/^[A-Za-z0-9-]{1,64}$/.test(id)) return null;
+  if (kind === 'event') return `/events/${id}`;
+  if (kind === 'task') return `/tasks/${id}`;
+  return null;
+}
+
 async function latestOutbound(
   ownerId: string,
   agentSlug: string,
@@ -99,6 +118,7 @@ async function latestOutbound(
   text: string;
   channel: string | null;
   assignedUserId: string | null;
+  itemLink: string | null;
 } | null> {
   const [agent] = await db
     .select({ id: agents.id, name: agents.name, assignedUserId: agents.assignedUserId })
@@ -108,7 +128,11 @@ async function latestOutbound(
   if (!agent) return null;
 
   const [msg] = await db
-    .select({ text: assistantMessages.text, channel: assistantMessages.channel })
+    .select({
+      text: assistantMessages.text,
+      channel: assistantMessages.channel,
+      data: assistantMessages.data,
+    })
     .from(assistantMessages)
     .where(
       and(
@@ -128,6 +152,7 @@ async function latestOutbound(
     text: msg.text,
     channel: msg.channel ?? null,
     assignedUserId: agent.assignedUserId ?? null,
+    itemLink: reminderItemLink(msg.data),
   };
 }
 
@@ -254,6 +279,8 @@ export async function pushOutbound(ownerId: string, agentSlug: string): Promise<
     b: teaser(msg.text),
     agentSlug,
     deepLink: `/chat/${agentSlug}`,
+    // An event reminder opens the event on an app that knows the route.
+    ...(msg.itemLink ? { itemLink: msg.itemLink } : {}),
     ts: Date.now(),
   };
   const { delivered, dropped } = await sendToDevices(instance, devices, payload, agentSlug);

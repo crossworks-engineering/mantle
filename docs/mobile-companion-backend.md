@@ -581,7 +581,7 @@ skips the device for that push and is logged; the device stays.
 
 **Payload** (sealed to the device, as today). New fields are additive.
 
-    { v: 1, t, b, deepLink, ts, kind, itemId?, state?, brainId, loginId }
+    { v: 1, t, b, deepLink, ts, kind, itemId?, state?, brainId, loginId, itemLink? }
 
 `brainId` (v1.1) is this brain, the same value whoami answers. `loginId` (v1.1)
 is the login the receiving device was enrolled for (the login whose bearer
@@ -621,7 +621,14 @@ and nothing else.
 | `comment` | `New comment`                                                                   | on the author's own item: `<name> on "<title>": <comment>`; on a client thread: `<name> commented on "<title>"` | `/portal/items/<id>` (own item) or `/portal/shared/<id>` (a client-level item) | `itemId`                                           |
 
 Owner pushes keep their links (`/chat/<slug>`, `/pending`, `/team-admin?...`)
-and carry no `kind`. A teaser never holds text its reader cannot open: the
+and carry no `kind`.
+
+An event reminder delivered on the mobile channel is an owner assistant turn,
+so its push is an owner reply (`deepLink: "/chat/<slug>"`) that also names the
+event: `itemLink: "/events/<id>"`. An app that knows the route opens the
+event; an older app ignores the field and opens the chat as before. Only the
+reminders worker sets it (it marks its turn `data.reminder = { kind, id }`);
+`/tasks/<id>` is reserved for a task reminder, which no brain sends yet. A teaser never holds text its reader cannot open: the
 chat text is the reader's own thread as their chat route returns it, an item
 title is the author's own item, a client-thread comment goes out only while
 the item is at client level. A client-thread comment push carries no comment

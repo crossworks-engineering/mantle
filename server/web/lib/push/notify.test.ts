@@ -44,6 +44,7 @@ vi.mock('@mantle/db', () => {
       direction: 'am.direction',
       status: 'am.status',
       channel: 'am.channel',
+      data: 'am.data',
       createdAt: 'am.createdAt',
     },
   };
@@ -72,6 +73,7 @@ import {
   payloadForDevice,
   pushApproval,
   pushOutbound,
+  reminderItemLink,
   wantsOutboundPush,
 } from './notify';
 import { brainIdOrNull } from '../brain-identity';
@@ -337,6 +339,41 @@ describe('pushOutbound — delivery', () => {
     dbState.queue = [[{ id: 'a1', name: 'Ada' }], [{ text: 'hi' }]];
     await pushOutbound('owner', 'ada');
     expect(relayNotify).toHaveBeenCalledTimes(MAX_DEVICES_PER_SEND);
+  });
+});
+
+describe('pushOutbound: an event reminder names the event', () => {
+  it('adds itemLink for a turn the reminders worker recorded, keeping the chat deepLink', async () => {
+    dbState.queue = [
+      [{ id: 'a1', name: 'Ada' }],
+      [{ text: 'Reminder: dentist', data: { reminder: { kind: 'event', id: 'evt-123' } } }],
+    ];
+    await pushOutbound('owner', 'ada');
+    const sent = JSON.parse(vi.mocked(sealToDevice).mock.calls[0]![1]);
+    expect(sent).toMatchObject({ deepLink: '/chat/ada', itemLink: '/events/evt-123' });
+  });
+
+  it('an ordinary reply carries no itemLink', async () => {
+    dbState.queue = [[{ id: 'a1', name: 'Ada' }], [{ text: 'hi', data: { location: {} } }]];
+    await pushOutbound('owner', 'ada');
+    const sent = JSON.parse(vi.mocked(sealToDevice).mock.calls[0]![1]);
+    expect(sent).not.toHaveProperty('itemLink');
+  });
+});
+
+describe('reminderItemLink', () => {
+  it('maps an event or a task reminder to its app path', () => {
+    expect(reminderItemLink({ reminder: { kind: 'event', id: 'e-1' } })).toBe('/events/e-1');
+    expect(reminderItemLink({ reminder: { kind: 'task', id: 't-1' } })).toBe('/tasks/t-1');
+  });
+
+  it('is null for anything else, and for an id that is not a plain token', () => {
+    expect(reminderItemLink(null)).toBeNull();
+    expect(reminderItemLink({})).toBeNull();
+    expect(reminderItemLink({ reminder: { kind: 'note', id: 'n-1' } })).toBeNull();
+    expect(reminderItemLink({ reminder: { kind: 'event', id: '../pending' } })).toBeNull();
+    expect(reminderItemLink({ reminder: { kind: 'event', id: 42 } })).toBeNull();
+    expect(reminderItemLink({ reminder: { kind: 'event', id: '' } })).toBeNull();
   });
 });
 

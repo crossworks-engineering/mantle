@@ -221,6 +221,9 @@ async function tick(): Promise<void> {
             direction: 'outbound',
             text: formatReminder(evt),
             channel: 'mobile',
+            // Names the event, so the push opens it on the phone
+            // (lib/push/notify.ts reminderItemLink).
+            data: { reminder: { kind: 'event', id: evt.id } },
           });
           await markReminderDone(evt);
           console.log(
