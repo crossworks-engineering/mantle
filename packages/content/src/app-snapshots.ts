@@ -239,6 +239,7 @@ async function snapshotLocked(
   opts: {
     trigger: AppSnapshotTrigger;
     actor: AppHistoryActor;
+    actorLoginId?: string | null;
     note?: string | null;
     requireData?: boolean;
     withData?: boolean;
@@ -290,6 +291,7 @@ async function snapshotLocked(
       trigger: opts.trigger,
       note: note || null,
       actor: opts.actor,
+      actorLoginId: opts.actorLoginId ?? null,
       code,
       sourceHash: codeHash(code.source),
       dbPath: data ? rel : null,
@@ -358,6 +360,8 @@ export async function createAppSnapshot(
   opts: {
     trigger?: AppSnapshotTrigger;
     actor?: AppHistoryActor;
+    /** The member a 'member' row names (team apps Phase 3). */
+    actorLoginId?: string | null;
     note?: string | null;
     /** Skip (null) when the app has no database yet: an automatic snapshot
      *  before a schema change has nothing to protect then. */
@@ -402,6 +406,7 @@ export async function createAppSnapshot(
         {
           trigger,
           actor: opts.actor ?? 'owner',
+          actorLoginId: opts.actorLoginId ?? null,
           note: opts.note,
           requireData: opts.requireData === true,
           withData: opts.withData !== false,
@@ -566,6 +571,8 @@ export async function restoreAppSnapshot(
     mode: AppRestoreMode;
     discardDraft?: boolean;
     actor?: AppHistoryActor;
+    /** The member a 'member' row names (team apps Phase 3). */
+    actorLoginId?: string | null;
     /** Tests only: the drain before the file swap. */
     drainMs?: number;
   },
@@ -598,6 +605,7 @@ export async function restoreAppSnapshot(
     const undo = await snapshotLocked(ownerId, appId, {
       trigger: 'pre_restore',
       actor,
+      actorLoginId: opts.actorLoginId ?? null,
       note: `before restoring v${snap.seq} (${mode})`,
       codeOnlyWhenLost: true,
     });
@@ -616,6 +624,7 @@ export async function restoreAppSnapshot(
         await restoreAppLive(ownerId, appId, { ...snap.code, publishedBuild: build }, snap.seq, {
           discardDraft: true,
           actor,
+          actorLoginId: opts.actorLoginId ?? null,
         });
         code = 'live';
       } else {

@@ -131,6 +131,27 @@ export {
 } from './mcp-app-data';
 
 export {
+  SpaceAppError,
+  acceptSpaceApp,
+  authorSpaceApp,
+  createSpaceApp,
+  getRunnableSpaceApp,
+  listSpaceAppSubmissions,
+  listSpaceApps,
+  recallSpaceApp,
+  returnSpaceApp,
+  setSpaceAppSharing,
+  submitSpaceApp,
+  type RunnableSpaceApp,
+  type SpaceAppAcceptLevel,
+  type SpaceAppAuthor,
+  type SpaceAppCard,
+  type SpaceAppErrorCode,
+  type SpaceAppState,
+  type SpaceAppSubmission,
+} from './member-space-apps';
+
+export {
   APP_NAV_CHANGED_CHANNEL,
   APP_NAV_LAYOUT_RETIRED,
   listAppNavItems,

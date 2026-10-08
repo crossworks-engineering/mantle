@@ -29,6 +29,7 @@ import {
   type Node,
   type AppSource,
   type AppManifest,
+  type AppAuthorLevel,
   type BuildRef,
 } from '@mantle/db';
 import { loadProfilePreferences } from './profile-preferences';
@@ -170,6 +171,12 @@ function detailOf(n: Node, s: SidecarCols): AppDetail {
 export function sourceToText(src: AppSource): string {
   const paths = Object.keys(src.files).sort();
   return paths.map((p) => `// ${p}\n${src.files[p] ?? ''}`).join('\n\n');
+}
+
+/** The Apps root branch of a brain (idempotent). Exported for the accept of
+ *  a member's app (member-space-apps.ts). */
+export async function ensureAppsRoot(ownerId: string): Promise<void> {
+  return ensureRoot(ownerId);
 }
 
 async function ensureRoot(ownerId: string): Promise<void> {
@@ -355,6 +362,9 @@ export type AppRuntime = {
   draftBuild: BuildRef | null;
   publishedBuild: BuildRef | null;
   dataReadOnly: boolean;
+  /** The author ceiling (team apps Phase 3, 0235): the app's tools run at
+   *  most at this level, whoever runs it. */
+  authorLevel: AppAuthorLevel;
 };
 
 /**
@@ -373,6 +383,7 @@ export async function getAppRuntime(ownerId: string, id: string): Promise<AppRun
       draftBuild: apps.draftBuild,
       publishedBuild: apps.publishedBuild,
       dataReadOnly: apps.dataReadOnly,
+      authorLevel: apps.authorLevel,
     })
     .from(nodes)
     .innerJoin(apps, eq(apps.nodeId, nodes.id))
@@ -387,6 +398,7 @@ export async function getAppRuntime(ownerId: string, id: string): Promise<AppRun
     draftBuild: row.draftBuild ?? null,
     publishedBuild: row.publishedBuild ?? null,
     dataReadOnly: row.dataReadOnly === true,
+    authorLevel: row.authorLevel === 'team' ? 'team' : 'admin',
   };
 }
 
@@ -404,10 +416,14 @@ export type CreateAppInput = {
   description?: string;
   tags?: string[];
   source?: AppSource;
+  /** A member's app in their personal space (team apps Phase 3): no Apps
+   *  root branch is made there (a space holds workspace kinds only, and its
+   *  tree shows none). */
+  inSpace?: boolean;
 };
 
 export async function createApp(ownerId: string, input: CreateAppInput): Promise<AppDetail> {
-  await ensureRoot(ownerId);
+  if (!input.inSpace) await ensureRoot(ownerId);
   const source = input.source ?? emptySource();
   const manifest: AppManifest = input.description ? { description: input.description } : {};
   const id = input.id ?? randomUUID();
@@ -790,10 +806,17 @@ export class NoGreenBuildError extends Error {
  * source beside an old bundle — is untouched in both.
  */
 /** Who published, and why (the version row's actor and note). */
-export type PublishAppOpts = { note?: string | null; actor?: AppHistoryActor };
+export type PublishAppOpts = {
+  note?: string | null;
+  actor?: AppHistoryActor;
+  /** The member a 'member' row names (team apps Phase 3). */
+  actorLoginId?: string | null;
+};
 
 /** Who wrote a version or snapshot row. */
-export type AppHistoryActor = 'owner' | 'agent' | 'mcp' | 'system';
+/** Who a history row names: 'member' is a member author's own act (team apps
+ *  Phase 3); the row then names the login too. */
+export type AppHistoryActor = 'owner' | 'agent' | 'mcp' | 'system' | 'member';
 
 export async function publishApp(
   ownerId: string,
@@ -826,6 +849,7 @@ export async function publishApp(
       trigger: 'publish',
       note: opts.note?.trim().slice(0, 500) || null,
       actor: opts.actor ?? 'owner',
+      actorLoginId: opts.actorLoginId ?? null,
       code,
       sourceHash: codeHash(code.source),
       restoredFrom: app.restoredFromSeq,
@@ -936,7 +960,7 @@ export async function restoreAppLive(
   id: string,
   code: RestorableCode & { publishedBuild: BuildRef },
   seq: number,
-  opts: { discardDraft?: boolean; actor?: AppHistoryActor } = {},
+  opts: { discardDraft?: boolean; actor?: AppHistoryActor; actorLoginId?: string | null } = {},
 ): Promise<boolean> {
   const done = await db.transaction(async (tx) => {
     const app = await lockAppRow(tx, ownerId, id);
@@ -971,6 +995,7 @@ export async function restoreAppLive(
       trigger: 'publish',
       note: `restored v${seq}`,
       actor: opts.actor ?? 'owner',
+      actorLoginId: opts.actorLoginId ?? null,
       code: live,
       sourceHash: codeHash(code.source),
       restoredFrom: seq,

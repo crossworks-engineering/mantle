@@ -50,9 +50,19 @@ export const apps = pgTable('apps', {
   // connection reaches this app's data (the app_data_* tools) only while
   // this is on. Off by default. Set only by the owner's app update route.
   mcpAccess: boolean('mcp_access').default(false).notNull(),
+  // Team apps Phase 3 (0235): the login that built the app (null for an
+  // admin's), and the AUTHOR CEILING: its tools run at most at this level,
+  // for every runner. A member builds at 'team'; an admin raises it to
+  // 'admin' only when accepting the app, after seeing its declared tools.
+  authorLoginId: uuid('author_login_id'),
+  authorLevel: text('author_level').$type<AppAuthorLevel>().default('admin').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
+
+/** The author ceiling of an app (0235): 'team' for a member's app, until an
+ *  admin accepts it with its tools trusted. */
+export type AppAuthorLevel = 'admin' | 'team';
 
 /** A small virtual file tree: the entry file plus relative-imported siblings. */
 export type AppSource = {

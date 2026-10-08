@@ -238,7 +238,7 @@ export type AppSnapshot = {
     | 'pre_mcp_write';
   kind: 'version' | 'snapshot';
   note: string | null;
-  actor: 'owner' | 'agent' | 'mcp' | 'system';
+  actor: 'owner' | 'agent' | 'mcp' | 'system' | 'member';
   createdAt: string;
   /** The seq this one's content was restored from, when it was. */
   restoredFrom: number | null;
@@ -266,7 +266,7 @@ export type TableSnapshot = {
   seq: number;
   trigger: 'commit' | 'manual';
   note: string | null;
-  actor: 'owner' | 'agent' | 'mcp' | 'system';
+  actor: 'owner' | 'agent' | 'mcp' | 'system' | 'member';
   createdAt: string;
   /** The table's version the copy holds (it counts commits). */
   tableVersion: number | null;
