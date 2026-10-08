@@ -399,7 +399,9 @@ describe.skipIf(!URL)('member-built apps on Postgres', () => {
     } finally {
       await admin`update auth.users set disabled_at = null where id = ${author}`;
     }
-    await admin`update auth.users set role = 'client' where id = ${author}`;
+    // No longer a member (a login never turns client; an admin role is not a
+    // member's either): the app stops.
+    await admin`update auth.users set role = 'admin' where id = ${author}`;
     try {
       expect(await sa.getRunnableSpaceApp(mate, id)).toBeNull();
     } finally {

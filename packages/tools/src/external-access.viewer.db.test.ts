@@ -650,8 +650,11 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
       return r?.enabled;
     };
     try {
-      expect((await switchOn('site_query')).ok).toBe(true);
+      // A first sync settles the seeded rows to what the server lists (the
+      // sync's own schema shape); a mark is taken on that.
       fake.remote = same;
+      await syncMcpConnector(anchor, 'mcp-site');
+      expect((await switchOn('site_query')).ok).toBe(true);
       await syncMcpConnector(anchor, 'mcp-site');
       expect(await state()).toBe('read');
 
