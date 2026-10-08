@@ -121,8 +121,8 @@ RUN maturin build --release --interpreter python3.12 --out /wheels
 # uses: pinned PyPI sdist (unpatched — unlike ezdwf there is no local fix),
 # checksum-locked like the LibreDWG tarball.
 FROM ghcr.io/pyo3/maturin:v1.15.0 AS ezdwg-build
-ADD --checksum=sha256:c3a8109e3331dd52d1ecfff0533693899f114c184e687d42bcf0564dbb924218 \
-  https://files.pythonhosted.org/packages/4e/93/927fc4b727e0ba0ce5b15d893fa1686e93ee6d4b78c1425c56b4b084907e/ezdwg-0.12.6.tar.gz /tmp/ezdwg-sdist.tar.gz
+ADD --checksum=sha256:9466ef859824b372410a8f0866b07e3063cf9b37d8fe1b40519bf90b131a83d7 \
+  https://files.pythonhosted.org/packages/78/3f/ea21db9368bcb70aa009290cf59c227226d33a1b32de31acd4782edfa64d/ezdwg-0.12.12.tar.gz /tmp/ezdwg-sdist.tar.gz
 RUN mkdir /tmp/ezdwg \
   && tar -xzf /tmp/ezdwg-sdist.tar.gz -C /tmp/ezdwg --strip-components=1
 WORKDIR /tmp/ezdwg

@@ -173,7 +173,7 @@ services:
   # puppeteer-core over websocket and drives it to print the owner-authed
   # /print/pages/<id> surface. See server/web/lib/render-pdf.ts.
   browser:
-    image: ghcr.io/browserless/chromium:v2.55.0
+    image: ghcr.io/browserless/chromium:v2.57.0
     container_name: mantle_dev_browser
     restart: unless-stopped
     environment:

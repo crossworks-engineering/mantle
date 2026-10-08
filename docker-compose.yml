@@ -509,7 +509,7 @@ services:
   # reach it, and a crashed/pathological render dies here, never in web.
   # See server/web/lib/render-pdf.ts.
   browser:
-    image: ghcr.io/browserless/chromium:v2.55.0
+    image: ghcr.io/browserless/chromium:v2.57.0
     container_name: mantle_browser
     restart: unless-stopped
     logging: *default-logging
@@ -645,7 +645,7 @@ services:
   # outbound HTTP proxy on :1055). Image PINNED (tailscale/tailscale#16108);
   # override via TS_IMAGE_TAG.
   tailscale:
-    image: tailscale/tailscale:${TS_IMAGE_TAG:-v1.98.9}
+    image: tailscale/tailscale:${TS_IMAGE_TAG:-v1.102.5}
     container_name: mantle_tailscale
     restart: unless-stopped
     logging: *default-logging
