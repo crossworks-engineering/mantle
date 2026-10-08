@@ -641,8 +641,17 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
       description: t.description,
       inputSchema: t.input_schema,
     }));
-    const state = async () =>
-      ta.connectorMarkState((await crud.getToolById(anchor, ids.site_query!))! as never);
+    // From the raw row: getToolById hands back a summary, which drops the
+    // mark's signature.
+    const state = async () => {
+      const [r] = (await exec(sqlTag`
+        select slug, handler, requires_confirm as "requiresConfirm",
+          external_access as "externalAccess", description, input_schema as "inputSchema"
+        from tools where id = ${ids.site_query!}`)) as unknown as Parameters<
+        typeof ta.connectorMarkState
+      >[0][];
+      return ta.connectorMarkState(r!);
+    };
     const enabled = async () => {
       const [r] = (await exec(
         sqlTag`select enabled from tools where id = ${ids.site_query!}`,
