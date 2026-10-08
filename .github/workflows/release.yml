@@ -209,7 +209,7 @@ jobs:
     env:
       IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/mantle-${{ matrix.target }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: ${{ runner.temp }}/digests
           pattern: digests-${{ matrix.target }}-*
