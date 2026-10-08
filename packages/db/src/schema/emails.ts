@@ -228,6 +228,7 @@ export const emailAttachments = pgTable(
   (t) => [
     index('email_attachments_email_idx').on(t.emailId),
     index('email_attachments_sha256_idx').on(t.sha256),
+    index('email_attachments_file_node_idx').on(t.fileNodeId),
   ],
 );
 
