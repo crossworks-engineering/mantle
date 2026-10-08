@@ -21,12 +21,7 @@ import {
   mcpListRemoteTools,
   setMcpOAuthStoreFactoryForTests,
 } from './mcp-client';
-import {
-  completeMcpOAuth,
-  oauthAccountHash,
-  startMcpOAuth,
-  type McpOAuthStore,
-} from './mcp-oauth';
+import { completeMcpOAuth, oauthAccountHash, startMcpOAuth, type McpOAuthStore } from './mcp-oauth';
 
 const OWNER = 'owner-1';
 const GROUP = 'mcp-oauthtest';
@@ -287,14 +282,25 @@ describe('MCP connector OAuth: which account signed in', () => {
       token_type: 'Bearer',
       id_token: jwt({ iss, sub: 'u1' }),
     });
-    const viaAccess = oauthAccountHash({ access_token: jwt({ iss, sub: 'u1' }), token_type: 'Bearer' });
+    const viaAccess = oauthAccountHash({
+      access_token: jwt({ iss, sub: 'u1' }),
+      token_type: 'Bearer',
+    });
     expect(viaId).toMatch(/^[0-9a-f]{64}$/);
     expect(viaAccess).toBe(viaId);
     expect(viaId).not.toContain('u1');
     // Entra: the object id names the account across apps, before `sub`.
     expect(
-      oauthAccountHash({ access_token: jwt({ iss, sub: 'per-app', oid: 'o1' }), token_type: 'Bearer' }),
-    ).toBe(oauthAccountHash({ access_token: jwt({ iss, sub: 'other-app', oid: 'o1' }), token_type: 'Bearer' }));
+      oauthAccountHash({
+        access_token: jwt({ iss, sub: 'per-app', oid: 'o1' }),
+        token_type: 'Bearer',
+      }),
+    ).toBe(
+      oauthAccountHash({
+        access_token: jwt({ iss, sub: 'other-app', oid: 'o1' }),
+        token_type: 'Bearer',
+      }),
+    );
     expect(oauthAccountHash({ access_token: 'opaque', token_type: 'Bearer' })).toBeNull();
     expect(oauthAccountHash(undefined)).toBeNull();
   });

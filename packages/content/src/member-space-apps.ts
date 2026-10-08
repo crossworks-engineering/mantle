@@ -891,7 +891,10 @@ export async function adminDeleteSpaceApp(brainId: string, appId: string): Promi
         .set({ ownerId: brainId, audience: 'admin', path: APPS_ROOT_LABEL, updatedAt: now })
         .where(eq(nodes.id, appId));
       // A member's app ran at team rules: so does it if it comes back.
-      await tx.update(apps).set({ authorLevel: 'team', updatedAt: now }).where(eq(apps.nodeId, appId));
+      await tx
+        .update(apps)
+        .set({ authorLevel: 'team', updatedAt: now })
+        .where(eq(apps.nodeId, appId));
       await tx
         .update(appDatabases)
         .set({ ownerId: brainId, updatedAt: now })
