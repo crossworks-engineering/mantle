@@ -22,6 +22,7 @@ export {
   ViewerLevelConflictError,
   withViewer,
   asSystem,
+  runInSystemTx,
   afterCommit,
   afterRollback,
   viewerRoleName,

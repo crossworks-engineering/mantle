@@ -621,6 +621,18 @@ export async function restoreAppSnapshot(
     }
     let code: AppRestoreResult['code'] = null;
     let declaredTools: string[] | null = null;
+    // The author ceiling FIRST (team apps Phase 3; M3 re-audit, low 2):
+    // code a member wrote, or code taken while the app ran at team rules,
+    // brings the ceiling back before it can go live, so not one call runs it
+    // at admin rules, and a restore that fails after this leaves it at team
+    // (fail safe). On `db`, which is what the code restore below writes
+    // through. Only an admin's own "trust its tools" lifts it again.
+    if (wantsCode && (snap.actor === 'member' || snap.code?.meta?.authorLevel === 'team')) {
+      await db
+        .update(apps)
+        .set({ authorLevel: 'team', updatedAt: new Date() })
+        .where(eq(apps.nodeId, appId));
+    }
     if (wantsCode && snap.code) {
       const build = snap.code.publishedBuild;
       if (mode === 'full' && build?.ok) {
@@ -641,15 +653,6 @@ export async function restoreAppSnapshot(
           declaredTools = snap.code.manifest.toolSlugs ?? [];
         }
       }
-    }
-    // The author ceiling (team apps Phase 3, M3 audit): code a member wrote,
-    // or code taken while the app ran at team rules, brings the ceiling back
-    // with it. Only an admin's own "trust its tools" lifts it again.
-    if (code && (snap.actor === 'member' || snap.code?.meta?.authorLevel === 'team')) {
-      await tx
-        .update(apps)
-        .set({ authorLevel: 'team', updatedAt: new Date() })
-        .where(eq(apps.nodeId, appId));
     }
     return { mode, restored: snap, undo, code, declaredTools };
   });

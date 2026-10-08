@@ -269,6 +269,7 @@ const TEAM_KIND_ALLOWED: Record<string, string[]> = {
   'builtins-my-apps.ts': [
     "if (s?.kind !== 'team' || !s.loginId || !s.mcp) return null;",
     "return s?.kind === 'team' && s.mcp?.write === true;",
+    "const loginId = s?.kind === 'team' ? s.loginId : undefined;",
   ],
   // A connector call below the owner runs at the level its surface names.
   'dispatch.ts': ["s?.kind === 'team'"],

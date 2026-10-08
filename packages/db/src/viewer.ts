@@ -108,7 +108,7 @@ export type SpaceScope = {
 
 /** `tx`: a scope that must run in one transaction (its settings are
  *  transaction-local) carries it here; `db` returns it for every query. */
-type Scope = { level: LimitedLevel; space?: SpaceScope; tx?: unknown; hooks?: TxHooks };
+type Scope = { level: ViewerLevel; space?: SpaceScope; tx?: unknown; hooks?: TxHooks };
 
 /** Work a scope's transaction owes the world outside the database, run once
  *  it ends: `commit` after a commit, `rollback` after a rollback. */
@@ -217,6 +217,21 @@ export function runInTxScope<T>(
 ): Promise<T> {
   const level = lowerLevel(currentViewerLevel(), scope.level) as LimitedLevel;
   return store.run({ ...scope, level }, fn);
+}
+
+/**
+ * Run `fn` on an ADMIN-pool transaction's own connection: every `db` query
+ * inside uses `tx`, so work that holds a row lock in `tx` never needs a
+ * second connection from the pool (team apps M3 re-audit: a member's
+ * parallel app writes each held one connection for the lock and took more
+ * for the work, and could empty the pool). Only from outside any viewer
+ * scope, with a transaction the caller opened on the admin pool.
+ */
+export function runInSystemTx<T>(tx: unknown, fn: () => Promise<T>): Promise<T> {
+  if (store.getStore()) {
+    return Promise.reject(new Error('runInSystemTx: only outside a viewer scope'));
+  }
+  return store.run({ level: 'admin', tx }, fn);
 }
 
 /**

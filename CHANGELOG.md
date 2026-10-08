@@ -33,6 +33,19 @@ A team member builds mini apps like Pages (plan page b6dd688e, section A).
   the app's state row, so it never races a Submit or an Accept. The list
   pill and the run lookup share one read-only rule. The roll's connector
   check runs only on the roll that crosses into connectors by level.
+- Rows only below admin (access matrix M1): a member's, client's or
+  contact's write through an app changes rows, never the schema. CREATE
+  TABLE / CREATE INDEX IF NOT EXISTS on an object that already exists is a
+  no-op success; anything else (a new table, ALTER, DROP, PRAGMA,
+  transactions) is refused with an error the app can catch. **Apps must
+  declare their schema (`app_db_schema_set`); remove run-time CREATE TABLE
+  IF NOT EXISTS.** `scripts/roll.sh` counts the live apps that would still
+  break (numbers only) and stops unless `--ack-app-ddl`; `--app-ddl-ids`
+  lists those below admin.
+- A member's app change runs on its lock's own database connection, one at
+  a time per login (a burst waits, then answers busy). A restore of member
+  code lowers the ceiling before the code goes live. Migration 0236:
+  `apps.author_ceiling_seen` keeps the trust switch on a trusted app.
 - Every app list carries `dataAccess` ('read' or 'read_write') for the R
   and R/W pill, and the sidebar carries `mcpAccess`.
 

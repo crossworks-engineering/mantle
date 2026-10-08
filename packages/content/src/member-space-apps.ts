@@ -35,6 +35,7 @@ import {
   apps,
   asSystem,
   authUsers,
+  runInSystemTx,
   db,
   nodeSnapshots,
   nodes,
@@ -161,7 +162,9 @@ export async function authorSpaceApp(
  * audit, medium 3): the row is locked FOR UPDATE and must be draft or
  * returned, and stays locked until `fn` is done, so a Submit, a Recall or an
  * admin's Accept waits for the change to finish and never sees half of it,
- * and a change never starts after a Submit. `fn` runs as the system.
+ * and a change never starts after a Submit. `fn` runs as the system, inside
+ * the lock's own transaction (its `db` is that transaction): one connection
+ * per change, and the change commits or rolls back with the lock.
  */
 export async function withAuthorWrite<T>(
   author: SpaceAppAuthor,
@@ -186,7 +189,9 @@ export async function withAuthorWrite<T>(
         .limit(1);
       if (!row) throw NOT_FOUND();
       if (!EDITABLE.includes(row.reviewState)) throw frozenError(row.reviewState);
-      return fn();
+      // On the lock's own connection (M3 re-audit, medium 1): the change
+      // never takes a second connection from the pool while it holds this one.
+      return runInSystemTx(tx, fn);
     }),
   );
 }

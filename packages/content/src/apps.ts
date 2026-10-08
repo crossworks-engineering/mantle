@@ -110,6 +110,8 @@ type SidecarCols = {
   mcpAccess?: boolean;
   /** apps.author_level: the author ceiling (0235). */
   authorLevel?: AppAuthorLevel;
+  /** apps.author_ceiling_seen (0236): it ever ran at the ceiling. */
+  authorCeilingSeen?: boolean;
   /** apps.draft_updated_at: detail only (the editor's save check). */
   draftUpdatedAt?: Date | null;
 };
@@ -154,6 +156,7 @@ function rowOf(n: RowNode, s: Partial<SidecarCols> = {}): AppRow {
     dataReadOnly: s.dataReadOnly === true,
     mcpAccess: s.mcpAccess === true,
     authorLevel: s.authorLevel === 'team' ? 'team' : 'admin',
+    authorCeilingSeen: s.authorCeilingSeen === true || s.authorLevel === 'team',
     createdAt: n.createdAt.toISOString(),
     updatedAt: n.updatedAt.toISOString(),
   };
@@ -263,6 +266,7 @@ export async function listApps(
         dataReadOnly: apps.dataReadOnly,
         mcpAccess: apps.mcpAccess,
         authorLevel: apps.authorLevel,
+        authorCeilingSeen: apps.authorCeilingSeen,
         shareSettings: shares.settings,
       })
       .from(nodes)
@@ -289,6 +293,7 @@ export async function listApps(
       dataReadOnly: r.dataReadOnly === true,
       mcpAccess: r.mcpAccess === true,
       authorLevel: r.authorLevel === 'team' ? 'team' : 'admin',
+      authorCeilingSeen: r.authorCeilingSeen === true,
     }),
   );
 }
@@ -327,6 +332,7 @@ async function loadDetail(ownerId: string, id: string): Promise<AppDetail | null
         dataReadOnly: apps.dataReadOnly,
         mcpAccess: apps.mcpAccess,
         authorLevel: apps.authorLevel,
+        authorCeilingSeen: apps.authorCeilingSeen,
         draftUpdatedAt: apps.draftUpdatedAt,
         shareSettings: shares.settings,
       })
@@ -353,6 +359,7 @@ async function loadDetail(ownerId: string, id: string): Promise<AppDetail | null
     dataReadOnly: row.dataReadOnly === true,
     mcpAccess: row.mcpAccess === true,
     authorLevel: row.authorLevel === 'team' ? 'team' : 'admin',
+    authorCeilingSeen: row.authorCeilingSeen === true,
     draftUpdatedAt: row.draftUpdatedAt ?? null,
   });
 }

@@ -205,6 +205,11 @@ export type AppRow = {
    *  `{ trustTools: true }` after reading its tools. Absent from an older
    *  brain: read as 'admin'. */
   authorLevel?: 'admin' | 'team';
+  /** True once the app ever ran at the ceiling (a member built it, or a
+   *  copy, an import or a restore capped it): the admin's "Trust its tools"
+   *  switch shows on its page, on or off (migration 0236). Absent from an
+   *  older brain. */
+  authorCeilingSeen?: boolean;
   createdAt: string;
   updatedAt: string;
 };

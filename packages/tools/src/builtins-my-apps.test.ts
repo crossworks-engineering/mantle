@@ -12,6 +12,10 @@ const h = vi.hoisted(() => ({
   authorCalls: [] as { author: unknown; id: string; write?: boolean }[],
   frozen: false,
   deleteCalls: [] as { owner: string; id: string; path: string }[],
+  // In-flight deletes and the most seen at once (the write slot test).
+  running: 0,
+  maxRunning: 0,
+  deleteDelayMs: 0,
 }));
 
 vi.mock('@mantle/db', () => ({ asSystem: <T>(fn: () => T) => fn() }));
@@ -65,6 +69,10 @@ vi.mock('@mantle/content', () => {
     withAuthorWrite: vi.fn(async (_a: unknown, _id: string, fn: () => Promise<unknown>) => fn()),
     declareAppSchema: vi.fn(),
     deleteDraftFile: vi.fn(async (owner: string, id: string, path: string) => {
+      h.running += 1;
+      h.maxRunning = Math.max(h.maxRunning, h.running);
+      await new Promise((r) => setTimeout(r, h.deleteDelayMs));
+      h.running -= 1;
       h.deleteCalls.push({ owner, id, path });
       return { entry: 'App.tsx', files: { 'App.tsx': '' } };
     }),
@@ -81,7 +89,7 @@ vi.mock('@mantle/content', () => {
   };
 });
 
-const { MY_APP_TOOLS, MY_APP_READ_TOOL_SLUGS, MY_APP_WRITE_TOOL_SLUGS } =
+const { MY_APP_TOOLS, MY_APP_READ_TOOL_SLUGS, MY_APP_WRITE_TOOL_SLUGS, withLoginWriteSlot } =
   await import('./builtins-my-apps');
 
 const def = (slug: string) => {
@@ -102,6 +110,9 @@ beforeEach(() => {
   h.authorCalls.length = 0;
   h.deleteCalls.length = 0;
   h.frozen = false;
+  h.running = 0;
+  h.maxRunning = 0;
+  h.deleteDelayMs = 0;
 });
 
 describe('who may call the my_app tools', () => {
@@ -165,5 +176,34 @@ describe('my_app_file_delete', () => {
     const res = await def('my_app_file_delete').handler({ id: 'x', path: 'a.ts' }, member());
     expect(res.ok).toBe(false);
     expect(h.deleteCalls).toEqual([]);
+  });
+});
+
+// M3 re-audit, medium 1: a burst of parallel changes from one MCP client
+// runs one at a time per login, never all at once.
+describe('one change at a time per member', () => {
+  it('serializes parallel writes of one login', async () => {
+    h.deleteDelayMs = 20;
+    const calls = Array.from({ length: 5 }, (_, i) =>
+      def('my_app_file_delete').handler({ id: APP, path: `f${i}.ts` }, member()),
+    );
+    const out = await Promise.all(calls);
+    expect(out.every((r) => r.ok)).toBe(true);
+    expect(h.maxRunning).toBe(1);
+    expect(h.deleteCalls).toHaveLength(5);
+  });
+
+  it('answers busy after the wait, and frees the slot when a change ends', async () => {
+    let release!: () => void;
+    const first = withLoginWriteSlot(
+      'k',
+      () => new Promise<string>((r) => (release = () => r('a'))),
+    );
+    expect(await withLoginWriteSlot('k', async () => 'b', 10)).toEqual({ busy: true });
+    // Another login is never held up.
+    expect(await withLoginWriteSlot('other', async () => 'c', 10)).toBe('c');
+    release();
+    expect(await first).toBe('a');
+    expect(await withLoginWriteSlot('k', async () => 'd', 10)).toBe('d');
   });
 });

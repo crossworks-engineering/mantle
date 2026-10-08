@@ -619,7 +619,12 @@ PUBLISHED build only and never edit it.
   warning for each declared tool members would be refused.
 - **Data:** `host.db.query` and `host.db.exec` both work on a team- or
   client-level app (unless an admin marked it informational); on a
-  public-level app members only read. The database is shared
+  public-level app members only read. Below admin a write changes ROWS only:
+  declare every table and index with `app_db_schema_set`. A
+  `CREATE TABLE IF NOT EXISTS` (or `CREATE INDEX IF NOT EXISTS`) on an object
+  that already exists is answered as a no-op, but a new table, `ALTER`,
+  `DROP`, `PRAGMA` or a transaction from a member, client or contact is
+  refused with an error the app can catch. The database is shared
   by the whole team (not one per member): design for that. To record which
   member wrote a row, fill its columns with `:host_me_id` and
   `:host_me_name` in the SQL (see "Who is running the app"); `host.me()`

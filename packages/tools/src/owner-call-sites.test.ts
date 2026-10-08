@@ -160,6 +160,13 @@ const SITES: Record<string, Site> = {
     scope: 'call',
     why: 'recipe_tool_test runs for whoever asked for the test',
   },
+  'packages/tools/src/builtins-my-apps.ts': {
+    calls: 2,
+    // The same ctx object, untouched: the surface is the caller's.
+    surface: /def\.handler\(input, ctx\)/,
+    scope: 'call',
+    why: "the per-login write slot wraps a member's own my_app_* handler and passes its ctx on unchanged",
+  },
   'packages/tools/src/toolsmith/api-tools.ts': {
     calls: 1,
     surface: INHERIT_CTX,

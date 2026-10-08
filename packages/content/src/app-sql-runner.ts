@@ -153,6 +153,25 @@ function rowBytes(row) {
   for (const k in row) n += k.length + 4 + valueBytes(row[k]);
   return n;
 }
+/** The text starts (after blanks and comments) with CREATE TABLE IF NOT
+ *  EXISTS or CREATE [UNIQUE] INDEX IF NOT EXISTS: nothing else qualifies. */
+function ifNotExistsCreate(sql) {
+  let s = String(sql);
+  for (;;) {
+    const t = s.replace(/^\\s+/, '');
+    if (t.startsWith('--')) {
+      const nl = t.indexOf('\\n');
+      s = nl < 0 ? '' : t.slice(nl + 1);
+    } else if (t.startsWith('/*')) {
+      const end = t.indexOf('*/');
+      s = end < 0 ? '' : t.slice(end + 2);
+    } else {
+      s = t;
+      break;
+    }
+  }
+  return /^create\\s+(unique\\s+)?(table|index)\\s+if\\s+not\\s+exists\\b/i.test(s);
+}
 function run(job) {
   const { file, sql, params, mode, readOnly, dataOnly, maxRows, maxLength, maxReplyBytes, maxDbBytes, journalLimit, userVersion, dest } = job;
   if (mode !== 'copy' && mode !== 'adopt' && restoring(file)) throw new Error('${RESTORING_REPLY}');
@@ -211,6 +230,56 @@ function run(job) {
     if (mode === 'script' && userVersion > 0) {
       const have = Number(db.prepare('PRAGMA user_version').get().user_version);
       if (have >= userVersion) return { skipped: true, userVersion: have };
+    }
+    // Rows only, with one exception (team apps M3 re-audit, live apps on the
+    // fleet): CREATE TABLE / CREATE INDEX IF NOT EXISTS on an object that
+    // already EXISTS in main is answered as a no-op success and never run.
+    // SQLite asks the authorizer for a table before it looks for it, so the
+    // statement is prepared once with an authorizer that only records, and
+    // never stepped; the name it records is SQLite's own (unquoted), and the
+    // lookup is case-insensitive as SQLite's own. A missing object, a TEMP
+    // or other-schema create, a create without IF NOT EXISTS, or any other
+    // action falls through to the deny authorizer below.
+    if (dataOnly && mode === 'run' && ifNotExistsCreate(sql)) {
+      const seen = [];
+      db.setAuthorizer((action, arg1, arg2, dbName) => {
+        seen.push([action, arg1, arg2, dbName]);
+        return C.SQLITE_OK;
+      });
+      let prepared = false;
+      try {
+        db.prepare(sql);
+        prepared = true;
+      } catch {
+        prepared = false;
+      } finally {
+        db.setAuthorizer(null);
+      }
+      const creates = seen.filter(
+        (a) => a[0] === C.SQLITE_CREATE_TABLE || a[0] === C.SQLITE_CREATE_INDEX,
+      );
+      const others = seen.filter(
+        (a) =>
+          !(
+            a[0] === C.SQLITE_CREATE_TABLE ||
+            a[0] === C.SQLITE_CREATE_INDEX ||
+            a[0] === C.SQLITE_READ ||
+            a[0] === C.SQLITE_SELECT ||
+            a[0] === C.SQLITE_FUNCTION ||
+            (a[0] === C.SQLITE_INSERT && /^sqlite_(master|schema)$/i.test(String(a[1] || '')))
+          ),
+      );
+      if (prepared && creates.length === 1 && others.length === 0 && creates[0][3] === 'main') {
+        const isTable = creates[0][0] === C.SQLITE_CREATE_TABLE;
+        const found = db
+          .prepare(
+            isTable
+              ? "SELECT 1 AS one FROM main.sqlite_master WHERE type IN ('table', 'view') AND name = ? COLLATE NOCASE"
+              : "SELECT 1 AS one FROM main.sqlite_master WHERE type = 'index' AND name = ? COLLATE NOCASE",
+          )
+          .get(String(creates[0][1] || ''));
+        if (found) return { changes: 0, lastInsertRowid: 0 };
+      }
     }
     db.setAuthorizer((action, arg1) => {
       // Data only (an MCP write, team apps Phase 1): rows, never the

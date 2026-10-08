@@ -287,8 +287,18 @@ describe.skipIf(!URL)('member-built apps on Postgres', () => {
       }),
     ).rejects.toMatchObject({ code: 'frozen' });
     expect(ran).toBe(false);
-    // Nor on a teammate's app.
     await sa.recallSpaceApp(me(), id);
+    // The change runs on the lock's own connection (M3 re-audit, medium 1):
+    // a NOWAIT lock of the same row succeeds there, where any other
+    // connection would fail at once.
+    const { sql: sqlTag } = await import('drizzle-orm');
+    const same = await sa.withAuthorWrite(me(), id, async () =>
+      m.db.execute(
+        sqlTag`select 1 as one from space_items where node_id = ${id} for update nowait`,
+      ),
+    );
+    expect((same as unknown as { one: number }[])[0]?.one).toBe(1);
+    // Nor on a teammate's app.
     await expect(sa.withAuthorWrite(them(), id, async () => undefined)).rejects.toMatchObject({
       code: 'not-found',
     });
@@ -320,6 +330,8 @@ describe.skipIf(!URL)('member-built apps on Postgres', () => {
     // The admin trusts it, then restores the member's own code: back to team.
     expect(await m.asSystem(() => apps.setAppAuthorLevel(brain, id, 'admin'))).toBe(true);
     expect(await level(id)).toBe('admin');
+    // Trusted, it still shows the switch (0236): the admin can undo it.
+    expect((await m.asSystem(() => apps.getApp(brain, id)))?.authorCeilingSeen).toBe(true);
     const memberVersion = (await m.asSystem(() => snaps.listAppSnapshots(brain, id))).find(
       (e) => e.trigger === 'publish',
     );
@@ -331,6 +343,7 @@ describe.skipIf(!URL)('member-built apps on Postgres', () => {
     // A trusted copy of a trusted app stays trusted; an admin's own app too.
     const own = await m.asSystem(() => apps.createApp(brain, { title: `${tag} own` }));
     expect(own.authorLevel).toBe('admin');
+    expect((await m.asSystem(() => apps.getApp(brain, own.id)))?.authorCeilingSeen).toBe(false);
     const ownCopy = await m.asSystem(() => pkg.duplicateApp(brain, own.id, { withData: false }));
     expect(await level(ownCopy!.id)).toBe('admin');
 

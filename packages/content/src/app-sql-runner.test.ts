@@ -180,6 +180,52 @@ describe('runAppSql dataOnly (an MCP write, team apps Phase 1)', () => {
     expect(objects.map((r) => r.name)).toEqual(['log', 'sqlite_sequence', 't', 't_log', 't_x_idx']);
   });
 
+  // Team apps M3 re-audit (live apps on the fleet run their schema at
+  // start): IF NOT EXISTS on an object that already exists is a no-op
+  // success, never run; on a missing one it is refused like any create.
+  it('answers CREATE ... IF NOT EXISTS on an existing object as a no-op, and creates nothing', async () => {
+    const names = async () =>
+      (
+        (await runAppSql(file, {
+          sql: "SELECT name FROM sqlite_master WHERE type IN ('table','view','index','trigger') ORDER BY name",
+          mode: 'all',
+          readOnly: true,
+        })) as { name: string }[]
+      ).map((r) => r.name);
+    const before = await names();
+    for (const sql of [
+      'CREATE TABLE IF NOT EXISTS t (id INTEGER PRIMARY KEY, x TEXT)',
+      'create table if not exists T (whatever)',
+      'CREATE TABLE IF NOT EXISTS "t" (x)',
+      'CREATE TABLE IF NOT EXISTS main.t (x)',
+      '-- start\n/* schema */ CREATE TABLE IF NOT EXISTS log (what TEXT)',
+      'CREATE INDEX IF NOT EXISTS t_x_idx ON t (x)',
+      // An existing trigger: SQLite itself stops before the authorizer, so
+      // nothing runs and nothing changes (the names check below).
+      'CREATE TRIGGER IF NOT EXISTS t_log AFTER INSERT ON t BEGIN DELETE FROM log; END',
+    ]) {
+      await expect(write(sql), sql).resolves.toMatchObject({ changes: 0 });
+    }
+    for (const sql of [
+      // Missing objects: only the declared schema or an admin creates them.
+      'CREATE TABLE IF NOT EXISTS fresh (x)',
+      'CREATE TABLE IF NOT EXISTS "t " (x)',
+      'CREATE INDEX IF NOT EXISTS t_new_idx ON t (x)',
+      'CREATE UNIQUE INDEX IF NOT EXISTS t_u ON t (x)',
+      // No IF NOT EXISTS, TEMP, another schema, a view or a trigger.
+      'CREATE TABLE t (x)',
+      'CREATE TEMP TABLE IF NOT EXISTS t (x)',
+      'CREATE TABLE IF NOT EXISTS temp.t (x)',
+      'CREATE VIEW IF NOT EXISTS t AS SELECT 1',
+      'CREATE TRIGGER IF NOT EXISTS t_new AFTER INSERT ON t BEGIN DELETE FROM log; END',
+      'CREATE TABLE IF NOT EXISTS fresh AS SELECT * FROM t',
+      'ALTER TABLE t ADD COLUMN y TEXT',
+    ]) {
+      await expect(write(sql), sql).rejects.toThrow(/authoriz|already exists/i);
+    }
+    expect(await names()).toEqual(before);
+  });
+
   it('refuses VACUUM and VACUUM INTO at the engine (SQLite reports them as ATTACH)', async () => {
     const out = path.join(dir, 'copy.sqlite');
     for (const sql of ['VACUUM', `VACUUM INTO '${out}'`, `/**/ VACUUM INTO '${out}'`]) {

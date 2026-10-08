@@ -764,6 +764,67 @@ export const MY_APP_READ_TOOLS: BuiltinToolDef[] = [
   my_app_snapshot_list,
 ];
 
+/** How long a change waits for the member's previous change to finish. */
+export const MY_APP_WRITE_WAIT_MS = 15_000;
+
+const MY_APP_BUSY =
+  'Another change to your apps is still running. Wait for it to finish, then try again (one change at a time).';
+
+const writeSlots = new Map<string, Promise<void>>();
+
+/**
+ * One change to a member's apps at a time, per login, in this process (M3
+ * re-audit, medium 1): a burst of parallel calls from one MCP client queues
+ * here, each holding one database connection only while it runs, and a call
+ * that waits longer than `waitMs` gets a clear busy error instead.
+ */
+export async function withLoginWriteSlot<T>(
+  key: string,
+  fn: () => Promise<T>,
+  waitMs: number = MY_APP_WRITE_WAIT_MS,
+): Promise<T | { busy: true }> {
+  const deadline = Date.now() + waitMs;
+  for (let held = writeSlots.get(key); held; held = writeSlots.get(key)) {
+    const left = deadline - Date.now();
+    if (left <= 0) return { busy: true };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      held,
+      new Promise<void>((r) => {
+        timer = setTimeout(r, left);
+      }),
+    ]);
+    clearTimeout(timer);
+  }
+  let release!: () => void;
+  writeSlots.set(
+    key,
+    new Promise<void>((r) => {
+      release = r;
+    }),
+  );
+  try {
+    return await fn();
+  } finally {
+    writeSlots.delete(key);
+    release();
+  }
+}
+
+/** A write tool behind the member's write slot. */
+function oneAtATime(def: BuiltinToolDef): BuiltinToolDef {
+  return {
+    ...def,
+    handler: async (input, ctx) => {
+      const s = ctx.surface;
+      const loginId = s?.kind === 'team' ? s.loginId : undefined;
+      if (!loginId) return def.handler(input, ctx);
+      const out = await withLoginWriteSlot(`my-app:${loginId}`, () => def.handler(input, ctx));
+      return 'busy' in out ? { ok: false, error: MY_APP_BUSY } : out;
+    },
+  };
+}
+
 /** What changes a member's own apps (offered only with write on). */
 export const MY_APP_WRITE_TOOLS: BuiltinToolDef[] = [
   my_app_create,
@@ -778,7 +839,7 @@ export const MY_APP_WRITE_TOOLS: BuiltinToolDef[] = [
   my_app_share,
   my_app_submit,
   my_app_recall,
-];
+].map(oneAtATime);
 
 export const MY_APP_TOOLS: BuiltinToolDef[] = [...MY_APP_READ_TOOLS, ...MY_APP_WRITE_TOOLS];
 export const MY_APP_READ_TOOL_SLUGS: readonly string[] = MY_APP_READ_TOOLS.map((t) => t.slug);

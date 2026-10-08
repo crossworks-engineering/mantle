@@ -56,6 +56,9 @@ export const apps = pgTable('apps', {
   // 'admin' only when accepting the app, after seeing its declared tools.
   authorLoginId: uuid('author_login_id'),
   authorLevel: text('author_level').$type<AppAuthorLevel>().default('admin').notNull(),
+  // True once the app ever ran at the ceiling (0236, a trigger sets it): the
+  // admin's "Trust its tools" switch stays on its page after a trust.
+  authorCeilingSeen: boolean('author_ceiling_seen').default(false).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });

@@ -7,7 +7,9 @@
 #   2. count apps, sandboxes (Postgres) and app-db files (mantle_web) BEFORE;
 #      refuse a box that still has a page-built (v1) Recall map (2b), and one
 #      where the roll would open connector write tools to members, clients or
-#      apps (2c, team apps Phase 2) unless --ack-connector-writes
+#      apps (2c, team apps Phase 2) unless --ack-connector-writes, or
+#      breaks a live app's run-time schema SQL for members, clients or
+#      contacts (2c, rows only below admin) unless --ack-app-ddl
 #   3. backup: scripts/db-dump.sh on the box, strict, its OWN exit status
 #      (no pipe in front of it). Skipped only when the box's updater takes
 #      its own strict pre-roll backup (see pre_roll_backup in
@@ -22,8 +24,10 @@
 #   8. print /api/version
 #
 # Usage:
-#   scripts/roll.sh [--dry-run] [--ack-connector-writes] <box-label> <tag>
-#   scripts/roll.sh [--dry-run] [--ack-connector-writes] --ssh <alias> [--stack <dir>] [--url <origin>] <tag>
+#   scripts/roll.sh [--dry-run] [--ack-connector-writes] [--ack-app-ddl] [--app-ddl-ids] <box-label> <tag>
+#   scripts/roll.sh [--dry-run] [--ack-connector-writes] [--ack-app-ddl] [--app-ddl-ids] --ssh <alias> [--stack <dir>] [--url <origin>] <tag>
+# --app-ddl-ids: print the ids (only) of the live apps below admin whose
+# run-time SQL would break after the roll, then stop (read only).
 #
 # <box-label> is looked up in .mantle-fleet.json at the repo root (untracked,
 # see .mantle-fleet.example.json; MANTLE_FLEET_FILE points elsewhere), the same
@@ -51,11 +55,13 @@ HEALTH_TIMEOUT=${ROLL_HEALTH_TIMEOUT_SECS:-900}
 die() { printf '\n✗ %s\n' "$*" >&2; exit 1; }
 usage() { sed -n '/^# Usage:/,/^# --dry-run/p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 
-DRY=""; ACK_CONNECTOR_WRITES=""; SSH_ALIAS=""; STACK=""; URL=""; LABEL=""; TAG=""
+DRY=""; ACK_CONNECTOR_WRITES=""; ACK_APP_DDL=""; APP_DDL_IDS=""; SSH_ALIAS=""; STACK=""; URL=""; LABEL=""; TAG=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY=1; shift ;;
     --ack-connector-writes) ACK_CONNECTOR_WRITES=1; shift ;;
+    --ack-app-ddl) ACK_APP_DDL=1; shift ;;
+    --app-ddl-ids) APP_DDL_IDS=1; shift ;;
     --ssh) SSH_ALIAS=${2:-}; shift 2 ;;
     --stack) STACK=${2:-}; shift 2 ;;
     --url) URL=${2:-}; shift 2 ;;
@@ -232,6 +238,59 @@ if [ "$OPEN_WRITES" -gt 0 ] || [ "$APPS_OPENING" -gt 0 ]; then
     echo "connectors: write tools open after this roll, acknowledged by --ack-connector-writes"
   else
     die "this roll opens $OPEN_WRITES connector write tool(s) to members, clients or apps ($APPS_OPENING app(s) below admin declare one). Have an admin mark them read-only, disable them, or raise their connector to admin level; or pass --ack-connector-writes if Jason agreed."
+  fi
+fi
+
+# ── 2c (2). run-time schema SQL that rows-only breaks ─────────────────────
+# From team apps Phase 3 a member's, client's or contact's write runs rows
+# only: CREATE TABLE / CREATE INDEX IF NOT EXISTS on an object that exists is
+# a no-op, but any other create, ALTER, DROP, PRAGMA, transaction control,
+# VACUUM, REINDEX or ANALYZE run through host.db.exec is refused for them.
+# Counted on the live published apps' source text: total, below admin (what
+# members, clients or contacts run), with a live share link. Same boundary
+# rule as above: only the roll that crosses into it. SELECT only, digits
+# only; --app-ddl-ids prints the ids of those below admin for a follow-up.
+# Apps must declare their schema (app_db_schema_set) instead.
+# The remote script is read into a variable first: its regex holds an
+# unbalanced parenthesis, which a heredoc inside $( ) cannot carry on older
+# bash.
+IFS= read -r -d '' DDL_SCRIPT <<'EOF' || true
+set -e
+q() { docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -At -F ' ' -c "$1"; }
+if [ "$(q "select count(*) from information_schema.columns where table_schema = 'public' and table_name = 'apps' and column_name = 'author_level'")" = 1 ]; then
+  echo "1 0 0 0"; exit 0
+fi
+BREAKS="a.source_text ~* 'host\.db\.exec\s*\(\s*.\s*(alter|drop|pragma|begin|commit|end|rollback|savepoint|release|vacuum|reindex|analyze|create\s+(?!(unique\s+)?(table|index)\s+if\s+not\s+exists))'"
+LIVE="(a.published_build->>'ok')::boolean is true"
+BELOW="(n.audience <> 'admin' or n.inherited_level is not null)"
+if [ -n "$APP_DDL_IDS" ]; then
+  q "select n.id from apps a join nodes n on n.id = a.node_id where $LIVE and $BELOW and $BREAKS order by n.id"
+  exit 0
+fi
+q "select 0,
+     count(*),
+     count(*) filter (where $BELOW),
+     count(*) filter (where exists (select 1 from shares s where s.node_id = n.id and s.revoked_at is null))
+   from apps a join nodes n on n.id = a.node_id where $LIVE and $BREAKS"
+EOF
+DDL=$(printf '%s' "$DDL_SCRIPT" | rsh "APP_DDL_IDS='$APP_DDL_IDS' sh -s") ||
+  die "could not count the apps with run-time schema SQL"
+DDL=$(printf '%s' "$DDL" | tr -d '\r')
+if [ -n "$APP_DDL_IDS" ]; then
+  case "$DDL" in *[!0-9a-f$'\n'-]*) die "unexpected app id list" ;; esac
+  printf 'apps below admin whose run-time schema SQL breaks after this roll:\n%s\n' "${DDL:-(none)}"
+  exit 0
+fi
+DDL=$(printf '%s' "$DDL" | tr -s ' ')
+case "$DDL" in *[!0-9\ ]* | '') die "unexpected app DDL count: $DDL" ;; esac
+read -r DDL_PAST DDL_TOTAL DDL_BELOW DDL_SHARED <<< "$DDL"
+[ "$DDL_PAST" = 1 ] && echo "app schema SQL: this box already runs rows only below admin"
+echo "live apps with run-time schema SQL: $DDL_TOTAL, below admin: $DDL_BELOW, with a live share link: $DDL_SHARED"
+if [ "$DDL_BELOW" -gt 0 ] || [ "$DDL_SHARED" -gt 0 ]; then
+  if [ -n "$ACK_APP_DDL" ]; then
+    echo "app schema SQL: acknowledged by --ack-app-ddl"
+  else
+    die "$DDL_BELOW live app(s) below admin ($DDL_SHARED with a share link) run schema SQL through host.db.exec that members, clients and contacts can no longer run. Declare their schema (app_db_schema_set) first, list them with --app-ddl-ids, or pass --ack-app-ddl if Jason agreed."
   fi
 fi
 
