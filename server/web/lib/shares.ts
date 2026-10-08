@@ -12,6 +12,7 @@ import {
   getPage,
   getApp,
   getDrawSvg,
+  referencedDrawIds,
   referencedFileIds,
   ensureTableDoc,
   emptyTableDoc,
@@ -28,6 +29,8 @@ import {
   type DimensionIssue,
 } from '@mantle/content';
 import { aggregateWindow, describeWorkbook, resolveStoragePath } from '@mantle/tabledb';
+import { markdownRefs } from '@mantle/content-core/markdown-refs';
+import { isUuid } from '@mantle/std';
 import { fileById, folderById } from '@/lib/files';
 
 export {
@@ -473,10 +476,63 @@ export async function loadShareView(share: Share): Promise<ShareView | null> {
   }
 }
 
+/** The shared note's markdown and level, or null when the node is gone or
+ *  is not a note. Read per request, so an edit that drops a reference takes
+ *  the file off the link on its next fetch. */
+async function loadSharedNote(share: Share): Promise<{ content: string; audience: string } | null> {
+  const [row] = await db
+    .select({ data: nodes.data, audience: nodes.audience })
+    .from(nodes)
+    .where(
+      and(eq(nodes.id, share.nodeId), eq(nodes.ownerId, share.ownerId), eq(nodes.type, 'note')),
+    )
+    .limit(1);
+  if (!row) return null;
+  const d = (row.data ?? {}) as Record<string, unknown>;
+  return { content: typeof d.content === 'string' ? d.content : '', audience: row.audience };
+}
+
+/** The ids a note's own markdown names with `scheme` (`media:` files,
+ *  `draw:` drawings), lower-cased. markdownRefs is the one parser for these
+ *  schemes; an id that is not a uuid is dropped, so it never reaches a
+ *  query (Postgres would answer 22P02, an opaque 500). */
+function noteRefIds(content: string, scheme: 'media' | 'draw'): string[] {
+  return markdownRefs(content)
+    .filter((r) => r.scheme === scheme && isUuid(r.id))
+    .map((r) => r.id.toLowerCase());
+}
+
+/** May this share serve the drawing `drawId` as an embed? Only a page or a
+ *  note share, only a drawing its own content names (a page's doc, a note's
+ *  `draw:` refs), and only when the drawing and every image its snapshot
+ *  carries sit at the share's levels (shareLevels, as for files). So a share
+ *  never becomes a way to read arbitrary drawings by id. The /s/:token/draw
+ *  route serves a drawing that is itself the shared item; this is the
+ *  /s/:token/draw/:drawId route's authorization. */
+export async function isEmbeddedDrawAllowed(share: Share, drawId: string): Promise<boolean> {
+  if (!isUuid(drawId)) return false;
+  const id = drawId.toLowerCase();
+  if (share.nodeType === 'page') {
+    const page = await getPage(share.ownerId, share.nodeId);
+    if (!page || !referencedDrawIds(page.doc).includes(drawId)) return false;
+    return isDrawServable(share.ownerId, drawId, shareLevels(share, page.audience), {
+      self: true,
+    });
+  }
+  if (share.nodeType === 'note') {
+    const note = await loadSharedNote(share);
+    if (!note || !noteRefIds(note.content, 'draw').includes(id)) return false;
+    return isDrawServable(share.ownerId, id, shareLevels(share, note.audience), { self: true });
+  }
+  return false;
+}
+
 /** Is `fileId` allowed to be served under this share? A file share serves
  *  itself; a page share serves only the files its doc references that sit
  *  at the link's levels (an embed an admin raised above the page is not
- *  served; linkLevels); a folder
+ *  served; linkLevels); a note share serves only the files its own markdown
+ *  names (`media:` pictures and file links, markdownRefs), under the same
+ *  level rule (shareLevels); a folder
  *  share serves the files under the folder's subtree (recursive, evaluated
  *  per request: a file moved out is denied on its next fetch) that sit at
  *  the link's levels, under no folder above them (linkLevels, audit F19): a
@@ -496,6 +552,24 @@ export async function isAssetAllowed(share: Share, fileId: string): Promise<bool
           eq(nodes.id, fileId),
           eq(nodes.ownerId, share.ownerId),
           inArray(nodes.audience, shareLevels(share, page.audience)),
+        ),
+      )
+      .limit(1);
+    return !!hit;
+  }
+  if (share.nodeType === 'note') {
+    if (!isUuid(fileId)) return false;
+    const note = await loadSharedNote(share);
+    if (!note || !noteRefIds(note.content, 'media').includes(fileId.toLowerCase())) return false;
+    const [hit] = await db
+      .select({ id: nodes.id })
+      .from(nodes)
+      .where(
+        and(
+          eq(nodes.id, fileId),
+          eq(nodes.ownerId, share.ownerId),
+          eq(nodes.type, 'file'),
+          inArray(nodes.audience, shareLevels(share, note.audience)),
         ),
       )
       .limit(1);

@@ -185,7 +185,9 @@ async function renderShare(c: Context): Promise<Response> {
     c.header('cache-control', 'no-store');
   }
 
-  const assetUrl = (fileId: string) => `/s/${token}/a/${fileId}`;
+  // Encoded, as drawUrl is: a note's `media:` id is free text from its
+  // markdown, and a `/` or `?` in it must not reshape the path.
+  const assetUrl = (fileId: string) => `/s/${token}/a/${encodeURIComponent(fileId)}`;
   const drawUrl = (drawId: string) => `/s/${token}/draw/${encodeURIComponent(drawId)}`;
 
   let body: string | null;
@@ -197,7 +199,12 @@ async function renderShare(c: Context): Promise<Response> {
       );
       break;
     case 'note':
-      body = renderToStaticMarkup(<NotePresenter view={view} />);
+      // A note's `media:` and `draw:` pictures and file links resolve through
+      // the share's own routes; isAssetAllowed / isEmbeddedDrawAllowed serve
+      // only what the note's markdown names.
+      body = renderToStaticMarkup(
+        <NotePresenter view={view} assetUrl={assetUrl} drawUrl={drawUrl} />,
+      );
       break;
     case 'file':
       body = renderToStaticMarkup(<FilePresenter view={view} assetUrl={assetUrl} />);

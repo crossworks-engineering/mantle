@@ -1,18 +1,19 @@
 import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
-import { isDrawServable, shareLevels } from '@/lib/shares';
-import { getDrawSvg, getPage, referencedDrawIds } from '@mantle/content';
+import { isEmbeddedDrawAllowed } from '@/lib/shares';
+import { getDrawSvg } from '@mantle/content';
 import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 
 /**
- * A drawing EMBEDDED in a shared page, as an image.
+ * A drawing EMBEDDED in a shared page or note, as an image.
  *
  * The sibling `/s/:token/draw` serves a drawing that is itself the shared
- * node; this one serves a drawing a shared *page* places with
- * `![alt](draw:<id>)`. Authorization mirrors `/s/:token/a/:fileId` exactly:
- * the token must be active, and the id must appear in the shared page's own
- * doc, so a share never becomes a way to read arbitrary drawings by id. The
- * drawing and every image its snapshot carries must sit at the link's levels
- * (linkLevels): one an admin raised above the page on purpose is not served.
+ * node; this one serves a drawing a shared *page* or *note* places with
+ * `![alt](draw:<id>)`. Authorization mirrors `/s/:token/a/:fileId` exactly
+ * (isEmbeddedDrawAllowed): the token must be active, and the id must appear
+ * in the shared page's own doc or the shared note's own markdown, so a share
+ * never becomes a way to read arbitrary drawings by id. The drawing and every
+ * image its snapshot carries must sit at the link's levels (linkLevels): one
+ * an admin raised above the page or note on purpose is not served.
  *
  * Cache-only, deliberately. Rendering a missing snapshot spawns a browser, and
  * anonymous share traffic does not get to do that (see
@@ -44,17 +45,7 @@ export async function GET(
   const gate = await gateShare(req, token);
   if (gate.kind === 'code') return contactCodeRequired(gate.share);
   const share = gate.kind === 'ok' ? gate.share : null;
-  if (!share || share.nodeType !== 'page') return notFound();
-
-  const page = await getPage(share.ownerId, share.nodeId);
-  if (!page || !referencedDrawIds(page.doc).includes(drawId)) return notFound();
-  if (
-    !(await isDrawServable(share.ownerId, drawId, shareLevels(share, page.audience), {
-      self: true,
-    }))
-  ) {
-    return notFound();
-  }
+  if (!share || !(await isEmbeddedDrawAllowed(share, drawId))) return notFound();
 
   const svg = await getDrawSvg(share.ownerId, drawId);
   if (!svg) return notFound();

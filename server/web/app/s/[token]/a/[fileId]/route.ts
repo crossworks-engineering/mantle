@@ -8,7 +8,8 @@ import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
 /**
  * Public asset bytes for a shared node. Authorization = the token must be
  * active AND `fileId` must be in the share's allowed set (the file itself for
- * a file share; the files a page's doc references for a page share; any file
+ * a file share; the files a page's doc references for a page share; the
+ * files a note's markdown names (`media:`) for a note share; any file
  * under the folder's subtree — re-derived per request — for a folder share).
  * Everything else 404s. Supports Range requests so shared video/audio can seek.
  */
