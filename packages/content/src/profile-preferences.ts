@@ -71,13 +71,18 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
     // First time we've touched this user — insert with defaults so
     // future updates have a row to UPDATE. Best-effort; if another
     // request races us we'll just see the conflict and move on.
+    // Only for a real login, and a conflict does nothing: the insert never
+    // fails, so it is safe inside a caller's transaction (a member's app
+    // change runs in one, team apps M3 re-audit), where a caught error would
+    // still abort the whole transaction. A personal space's id is no login.
     try {
-      await db.insert(profiles).values({
-        userId,
-        preferences: DEFAULT_PREFERENCES as unknown as Record<string, unknown>,
-      });
+      await db.execute(sql`
+        insert into ${profiles} (user_id, preferences)
+        select ${userId}::uuid, ${JSON.stringify(DEFAULT_PREFERENCES)}::jsonb
+        where exists (select 1 from auth.users where id = ${userId}::uuid)
+        on conflict do nothing`);
     } catch {
-      // race — fine
+      // a role that cannot read logins: no row, defaults as before
     }
     return { ...DEFAULT_PREFERENCES };
   }
