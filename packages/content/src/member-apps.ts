@@ -197,16 +197,24 @@ export async function getMemberRunnableApp(
 /** Ids of the apps at team level or lower (published or not): the apps whose
  *  data a team surface may read (team-read app_db_list / app_db_query). */
 export async function listTeamLevelAppIds(anchorId: string): Promise<Set<string>> {
+  return listAppIdsUsedAt(anchorId, MEMBER_APP_LEVELS);
+}
+
+/**
+ * Ids of the apps USED at one of `levels`: their own level or a folder
+ * share above them, never an embed (an embed opens reading the embedding
+ * item, not the app's data: access matrix audit, M6). Row security alone
+ * would let an embed open the app's database to a lower role, so the app
+ * data reads below admin check this list too.
+ */
+export async function listAppIdsUsedAt(
+  anchorId: string,
+  levels: readonly MemberAppLevel[],
+): Promise<Set<string>> {
   const rows = await db
     .select({ id: nodes.id })
     .from(nodes)
-    .where(
-      and(
-        eq(nodes.ownerId, anchorId),
-        eq(nodes.type, 'app'),
-        readAtSql(MEMBER_APP_LEVELS, APP_READ),
-      ),
-    );
+    .where(and(eq(nodes.ownerId, anchorId), eq(nodes.type, 'app'), readAtSql(levels, APP_READ)));
   return new Set(rows.map((r) => r.id));
 }
 

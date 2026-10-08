@@ -14,6 +14,8 @@ const APP = '77777777-7777-4777-8777-777777777777';
 
 const h = vi.hoisted(() => ({
   audience: 'admin',
+  // A folder share above the app (null: none), access matrix audit M5.
+  inherited: null as string | null,
   toolSlugs: ['contact_list'] as string[],
   levels: [] as string[],
   dispatched: [] as Array<{ level: string; ctx: Record<string, unknown> }>,
@@ -30,7 +32,14 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getAppRuntime: vi.fn(async (_owner: string, id: string) =>
-    id === APP ? { id, audience: h.audience, manifest: { toolSlugs: h.toolSlugs } } : null,
+    id === APP
+      ? {
+          id,
+          audience: h.audience,
+          effectiveAudience: h.inherited === 'client' ? 'client' : h.audience,
+          manifest: { toolSlugs: h.toolSlugs },
+        }
+      : null,
   ),
 }));
 vi.mock('@mantle/tools', async (importOriginal) => {
@@ -76,6 +85,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   h.audience = 'admin';
+  h.inherited = null;
   h.toolSlugs = ['contact_list'];
   h.levels.length = 0;
   h.dispatched.length = 0;
@@ -101,6 +111,15 @@ describe('owner app tool broker: client rules on a client app, owner rules elsew
       expect(((await res.json()) as { error: string }).error).toMatch(/client apps/);
     }
     expect(h.levels).toEqual(['client', 'client']);
+    expect(h.dispatched).toHaveLength(0);
+  });
+
+  it('an admin app in a folder shared with clients runs the client rules (access matrix M5)', async () => {
+    h.inherited = 'client';
+    h.toolSlugs = ['contact_list'];
+    const res = await call('contact_list');
+    expect(res.status).toBe(403);
+    expect(h.levels).toEqual(['client']);
     expect(h.dispatched).toHaveLength(0);
   });
 

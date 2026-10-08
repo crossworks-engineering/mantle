@@ -317,6 +317,8 @@ describe('client db broker', () => {
     const caller = {
       callerKey: `client:${LOGIN}`,
       viewer: { kind: 'client', loginId: LOGIN, name: 'Casey' },
+      // Rows only below admin (access matrix audit, M1).
+      dataOnly: true,
     };
     expect(h.callers).toEqual([caller, caller]);
   });

@@ -29,6 +29,7 @@ import {
   AppRestoreDraftError,
   type AppDetail,
   listTeamLevelAppIds,
+  listAppIdsUsedAt,
   listAppAccess,
 } from '@mantle/content';
 import {
@@ -866,10 +867,15 @@ const app_delete: BuiltinToolDef = {
  *  or a missing surface reaches no app at all (client logins C4): no client
  *  app level exists yet, so fail closed. */
 async function teamReachableApps(ctx: Parameters<BuiltinToolDef['handler']>[1]) {
-  // Below admin, row level security already limits app databases to apps at
-  // the viewer's level (member logins Phase 0b); this lookup is for an
-  // admin-level agent serving a non-owner surface.
-  if (currentViewerLevel() !== 'admin') return null;
+  // Below admin, row level security limits app databases to apps the viewer
+  // can READ, and an embed in a shared item opens reading: the app's own
+  // database must not follow it (access matrix audit, M6). So the list holds
+  // only apps used at the viewer's level (own level or a folder share).
+  const level = currentViewerLevel();
+  if (level === 'team') return listAppIdsUsedAt(ctx.ownerId, ['team', 'client', 'public']);
+  if (level === 'client') return listAppIdsUsedAt(ctx.ownerId, ['client']);
+  if (level !== 'admin') return new Set<string>();
+  // An admin-level agent serving a non-owner surface.
   if (isOwnerSurface(ctx.surface)) return null;
   if (ctx.surface?.kind === 'team') return listTeamLevelAppIds(ctx.ownerId);
   return new Set<string>();

@@ -75,6 +75,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const caller = {
     callerKey: `member:${member.loginId}`,
     viewer: { kind: 'member' as const, loginId: member.loginId, name: member.displayName },
+    // Rows only (access matrix audit, M1): below admin a write changes rows,
+    // never the schema, a trigger or a view; the schema is the author's
+    // (app_db_schema_set). The same authorizer as the MCP app_data_write.
+    dataOnly: true,
   };
   try {
     const output =

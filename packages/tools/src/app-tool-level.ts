@@ -145,11 +145,13 @@ export async function appToolWarnings(ownerId: string, appId: string): Promise<s
   try {
     const app = await getAppRuntime(ownerId, appId);
     if (!app) return [];
-    const level = appToolLevel('team', app.audience);
+    // The level it is used at, folder shares included (access matrix M5).
+    const audience = app.effectiveAudience;
+    const level = appToolLevel('team', audience);
     // An admin-level app warns only when a member built it: the author
     // ceiling runs it at team rules for its admins too (Phase 3).
-    const capped = app.audience === 'admin' && app.authorLevel === 'team';
-    if ((app.audience === 'admin' && !capped) || level === 'none') return [];
+    const capped = audience === 'admin' && app.authorLevel === 'team';
+    if ((audience === 'admin' && !capped) || level === 'none') return [];
     const declared = [...new Set(app.manifest.toolSlugs ?? [])];
     const warnings: string[] = [];
     for (const slug of declared) {

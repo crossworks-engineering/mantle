@@ -15,7 +15,7 @@
  * Only granted columns are read (never `apps.draft_*`), so these work on the
  * client role.
  */
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, ne, sql } from 'drizzle-orm';
 import { apps, asViewerLevel, db, nodes, type AppManifest, type BuildRef } from '@mantle/db';
 import { projectAppIcon, projectAppTint } from '@mantle/content-core/app-nav';
 import type { AppTint, ClientAppCard } from '@mantle/client-types';
@@ -58,6 +58,10 @@ function runnableWhere(anchorId: string) {
     eq(nodes.type, 'app'),
     // At client by its own level or through a folder shared with clients.
     readAtSql(CLIENT_APP_LEVELS, APP_READ),
+    // Never a public app, even in a client-shared folder (access matrix
+    // audit, M2): it is read at public, anyone with its link, so a client's
+    // write would show to anonymous visitors. Clients run client apps only.
+    ne(nodes.audience, 'public'),
     publishedGreen,
   );
 }

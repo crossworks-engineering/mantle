@@ -42,7 +42,9 @@ vi.mock('./resolve', () => ({
 }));
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  getAppRuntime: vi.fn(async () => (h.app ? { authorLevel: 'admin', ...h.app } : null)),
+  getAppRuntime: vi.fn(async () =>
+    h.app ? { authorLevel: 'admin', effectiveAudience: h.app.audience, ...h.app } : null,
+  ),
 }));
 
 import { resolveTool } from './resolve';

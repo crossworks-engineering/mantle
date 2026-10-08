@@ -152,7 +152,10 @@ describe('/s/:token/db-broker', () => {
     expect(q.status).toBe(200);
     expect(h.queries).toBe(1);
     // App identity: an open link fills :host_me_* with the anonymous value.
-    expect(h.callers).toEqual([{ callerKey: 'share:share-1', viewer: { kind: 'public' } }]);
+    // Rows only below admin (access matrix audit, M1).
+    expect(h.callers).toEqual([
+      { callerKey: 'share:share-1', viewer: { kind: 'public' }, dataOnly: true },
+    ]);
     const w = await POST(
       post('/s/live/db-broker', { op: 'exec', sql: 'delete from t' }),
       params('live'),
@@ -269,7 +272,11 @@ describe('a contact share (0214)', () => {
     expect(h.execs).toBe(1);
     // App identity: the share's contact fills :host_me_* (never the body).
     expect(h.callers).toEqual([
-      { callerKey: 'share:share-3', viewer: { kind: 'contact', contactId: CONTACT } },
+      {
+        callerKey: 'share:share-3',
+        viewer: { kind: 'contact', contactId: CONTACT },
+        dataOnly: true,
+      },
     ]);
     const t = await ticket(withCookie('/s/contact/frame-ticket', {}, cookie), params('contact'));
     const { verifyAppFrameTicket } = await import('@/lib/auth');

@@ -101,6 +101,7 @@ export {
   listMemberApps,
   getMemberRunnableApp,
   listTeamLevelAppIds,
+  listAppIdsUsedAt,
   memberMayWriteAppData,
   resolveMemberHomeApp,
   type MemberAppCard,

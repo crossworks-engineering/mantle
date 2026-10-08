@@ -62,7 +62,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   // The author ceiling (team apps Phase 3): a member-built app runs its
   // tools at team rules, an admin's run included.
-  const level = appToolLevel('admin', app.audience, app.authorLevel);
+  // The level the app is used at (its own, or a folder share above it):
+  // an app clients run through a shared folder runs the client rules here
+  // too (access matrix audit, M5).
+  const level = appToolLevel('admin', app.effectiveAudience, app.authorLevel);
   const verdict = await appToolVerdict(
     level,
     user.id,

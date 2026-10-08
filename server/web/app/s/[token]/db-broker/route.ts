@@ -112,6 +112,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   const caller = {
     callerKey: `share:${share.id}`,
     viewer: contactId ? { kind: 'contact' as const, contactId } : { kind: 'public' as const },
+    // Rows only (access matrix audit, M1): below admin a write changes rows,
+    // never the schema, a trigger or a view; the schema is the author's
+    // (app_db_schema_set). The same authorizer as the MCP app_data_write.
+    dataOnly: true,
   };
   try {
     if (op === 'exec') {

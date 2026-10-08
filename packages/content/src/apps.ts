@@ -18,6 +18,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm';
+import { itemLevel } from './item-level';
 import {
   asViewerLevel,
   db,
@@ -365,6 +366,10 @@ export type AppRuntime = {
   id: string;
   title: string;
   audience: AppDetail['audience'];
+  /** The level it is USED at: its own, or a folder share above it when
+   *  that is more open (embeds never count for an app). What the tool
+   *  brokers decide by (access matrix audit, M5). */
+  effectiveAudience: AppDetail['audience'];
   manifest: AppManifest;
   draftBuild: BuildRef | null;
   publishedBuild: BuildRef | null;
@@ -386,6 +391,7 @@ export async function getAppRuntime(ownerId: string, id: string): Promise<AppRun
     .select({
       title: nodes.title,
       audience: nodes.audience,
+      inheritedLevel: nodes.inheritedLevel,
       manifest: apps.manifest,
       draftBuild: apps.draftBuild,
       publishedBuild: apps.publishedBuild,
@@ -401,6 +407,7 @@ export async function getAppRuntime(ownerId: string, id: string): Promise<AppRun
     id,
     title: row.title,
     audience: asViewerLevel(row.audience),
+    effectiveAudience: itemLevel(row.audience, row.inheritedLevel),
     manifest: row.manifest ?? {},
     draftBuild: row.draftBuild ?? null,
     publishedBuild: row.publishedBuild ?? null,

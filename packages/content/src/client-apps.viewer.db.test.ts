@@ -136,6 +136,27 @@ describe.skipIf(!URL)('apps for clients', () => {
     }
   });
 
+  // Access matrix audit, M2: a public app is read at public even inside a
+  // folder shared with clients; clients never run or write it.
+  it('never runs a public app that sits in a folder shared with clients', async () => {
+    await m.systemDb.execute(
+      sqlTag`update nodes set inherited_level = 'client' where id = ${ids.pub}`,
+    );
+    try {
+      expect(mine(await ca.listClientApps(brain)).map((a) => a.id)).not.toContain(ids.pub);
+      expect(await ca.getClientRunnableApp(brain, ids.pub)).toBeNull();
+      // An admin app in the same folder is a client app there.
+      await m.systemDb.execute(
+        sqlTag`update nodes set inherited_level = 'client' where id = ${ids.admin}`,
+      );
+      expect(await ca.getClientRunnableApp(brain, ids.admin)).toMatchObject({ id: ids.admin });
+    } finally {
+      await m.systemDb.execute(
+        sqlTag`update nodes set inherited_level = null where id in (${ids.pub}, ${ids.admin})`,
+      );
+    }
+  });
+
   it('opens the client app, never its team, admin or public twin', async () => {
     for (const run of [<T>(fn: () => Promise<T>) => fn(), asClient]) {
       const app = await run(() => ca.getClientRunnableApp(brain, ids.client));

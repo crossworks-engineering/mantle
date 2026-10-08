@@ -437,7 +437,12 @@ describe('member db broker', () => {
     await dbBroker(post({ op: 'query', sql: 'select 1' }), params());
     // App identity: the member fills the :host_me_* parameters.
     expect(h.callers).toEqual([
-      { callerKey: `member:${LOGIN}`, viewer: { kind: 'member', loginId: LOGIN, name: 'Pat' } },
+      {
+        callerKey: `member:${LOGIN}`,
+        viewer: { kind: 'member', loginId: LOGIN, name: 'Pat' },
+        // Rows only below admin (access matrix audit, M1).
+        dataOnly: true,
+      },
     ]);
     const err = console.error;
     console.error = () => {};
