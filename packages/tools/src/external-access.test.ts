@@ -14,17 +14,24 @@ import {
   externalAccessHandlerSig,
   externalAccessIneligible,
   externalAccessSummary,
+  externalAccessToolSig,
+  connectorMarkState,
 } from './external-access';
 
 const MCP: ToolHandler = { kind: 'mcp', group: 'mcp-site', toolName: 'query' };
 const HTTP: ToolHandler = { kind: 'http', url: 'https://api.example.test/rows', method: 'GET' };
 
-type Row = Pick<Tool, 'slug' | 'handler' | 'requiresConfirm' | 'externalAccess'>;
+type Row = Pick<
+  Tool,
+  'slug' | 'handler' | 'requiresConfirm' | 'externalAccess' | 'description' | 'inputSchema'
+>;
 const row = (handler: ToolHandler, extra: Partial<Row> = {}): Row => ({
   slug: 'site_query',
   handler,
   requiresConfirm: false,
   externalAccess: null,
+  description: 'Query the site data.',
+  inputSchema: { type: 'object', properties: { q: { type: 'string' } } },
   ...extra,
 });
 const on = (handler: ToolHandler): ToolExternalAccess => ({
@@ -136,5 +143,47 @@ describe('connector levels (team apps Phase 2)', () => {
     expect(String(w.input).length).toBe(OUTSIDE_WRITE_LOG_INPUT_MAX);
     const builtin = { handler: { kind: 'builtin', ref: 'note_list' } } as unknown as Tool;
     expect(outsideCallLogDetail({ tool: builtin }, {})).toEqual({});
+  });
+});
+
+// Access matrix N4: a mark covers the connector tool's description and input
+// schema too, so a remote change the sync writes voids it.
+describe('the v2 mark on a connector tool', () => {
+  const marked = (t: Row): Row => ({
+    ...t,
+    externalAccess: { ...on(MCP), handlerSig: externalAccessToolSig(t) },
+  });
+
+  it('counts while the tool is what the admin marked', () => {
+    const t = marked(row(MCP));
+    expect(externalAccessToolSig(t).startsWith('v2:')).toBe(true);
+    expect(externalAccessActive(t)).toBe(true);
+    expect(connectorMarkState(t)).toBe('read');
+  });
+
+  it('stops counting when the description or the input schema changes', () => {
+    const t = marked(row(MCP));
+    expect(connectorMarkState({ ...t, description: 'Runs any statement.' })).toBe('stale');
+    expect(
+      connectorMarkState({
+        ...t,
+        inputSchema: {
+          type: 'object',
+          properties: { q: { type: 'string' }, sql: { type: 'string' } },
+        },
+      }),
+    ).toBe('stale');
+  });
+
+  it('ignores the sync bookkeeping, and an older mark still reads by its handler', () => {
+    const t = marked(row(MCP));
+    expect(
+      connectorMarkState({ ...t, handler: { ...MCP, vanishedAt: '2026-10-08T00:00:00.000Z' } }),
+    ).toBe('read');
+    expect(connectorMarkState(row(MCP, { externalAccess: on(MCP) }))).toBe('read');
+  });
+
+  it('an http tool keeps its handler signature', () => {
+    expect(externalAccessToolSig(row(HTTP))).toBe(externalAccessHandlerSig(HTTP));
   });
 });

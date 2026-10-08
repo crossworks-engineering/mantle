@@ -173,6 +173,25 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
     }
   });
 
+  // Access matrix M2 on MCP: a public app in a folder shared with clients
+  // stays out of a client's reach, as in the browser.
+  it('a client never reaches a public app in a client-shared folder', async () => {
+    const pub = ids['f public']!;
+    await admin`update nodes set inherited_level = 'client' where id = ${pub}`;
+    try {
+      const list = out<ListOut>(await call('app_data_list', {}, asClient()));
+      expect(list.apps.map((a) => a.app_id)).not.toContain(pub);
+      for (const [slug, input] of [
+        ['app_data_query', { app_id: pub, sql: 'SELECT 1' }],
+        ['app_data_write', { app_id: pub, sql: 'INSERT INTO t (x) VALUES (1)' }],
+      ] as const) {
+        expect((await call(slug, input, asClient(true))).ok, slug).toBe(false);
+      }
+    } finally {
+      await admin`update nodes set inherited_level = null where id = ${pub}`;
+    }
+  });
+
   it('every unreachable app answers the same not found', async () => {
     for (const key of ['b team mcp off', 'd admin', 'g draft only', 'h other brain']) {
       for (const slug of ['app_data_schema', 'app_data_query', 'app_data_write']) {

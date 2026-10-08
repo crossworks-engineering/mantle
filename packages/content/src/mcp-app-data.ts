@@ -16,7 +16,7 @@
  * and the callers run it on the login's viewer role, so row security holds
  * as well. Only granted columns are read (never `apps.draft_*`).
  */
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, ne, sql } from 'drizzle-orm';
 import { apps, db, nodes, type AppManifest, type ViewerLevel } from '@mantle/db';
 import { CLIENT_APP_LEVELS } from './client-apps';
 import { MEMBER_APP_LEVELS, memberMayWriteAppData } from './member-apps';
@@ -51,6 +51,10 @@ function reachWhere(anchorId: string, role: McpDataRole) {
     eq(nodes.ownerId, anchorId),
     eq(nodes.type, 'app'),
     readAtSql(levelsFor(role), APP_READ),
+    // A client never reaches a public app, even in a folder shared with
+    // clients: the browser's client rule (client-apps.ts, access matrix M2),
+    // on MCP too.
+    role === 'client' ? ne(nodes.audience, 'public') : undefined,
     sql`(${apps.publishedBuild}->>'ok')::boolean is true`,
     eq(apps.mcpAccess, true),
   );
@@ -79,6 +83,8 @@ function toApp(role: McpDataRole, r: Row): McpDataApp | null {
   // reached, whatever the column holds.
   if (!isReadAt(r.audience, r.inheritedLevel, levelsFor(role))) return null;
   const level = itemLevel(r.audience, r.inheritedLevel);
+  // A client reaches client apps only (access matrix M2).
+  if (role === 'client' && level !== 'client') return null;
   const dataReadOnly = r.dataReadOnly === true;
   return {
     id: r.id,

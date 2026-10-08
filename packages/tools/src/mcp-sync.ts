@@ -23,6 +23,7 @@ import {
   type ToolHandler,
 } from '@mantle/db';
 import { parseMcpBinding } from './integration-meta';
+import { VOIDED_MARK_SIG } from './external-access';
 import { closeMcpClient, mcpListRemoteTools, type McpRemoteTool } from './mcp-client';
 import {
   clearMcpOAuthSecrets,
@@ -247,9 +248,25 @@ export async function syncMcpConnector(ownerId: string, groupSlug: string): Prom
   }
   for (const upd of plan.updates) {
     const { slug, ...fields } = upd;
+    // The remote tool changed (its description or input schema), or it came
+    // back after it vanished (access matrix N4): a read-only mark was for
+    // the tool the admin looked at, so it is voided (kept, refused below the
+    // owner until marked again). Below admin a returning tool also comes
+    // back DISABLED, as a new one arrives, until an admin looks at it.
+    const changed = fields.description !== undefined || fields.inputSchema !== undefined;
+    const returning = fields.enabled === true;
     await db
       .update(tools)
-      .set({ ...fields, updatedAt: now })
+      .set({
+        ...fields,
+        ...(returning && openBelowAdmin ? { enabled: false } : {}),
+        ...(changed || returning
+          ? {
+              externalAccess: sql`case when ${tools.externalAccess} is null then null else jsonb_set(${tools.externalAccess}, '{handlerSig}', to_jsonb(${VOIDED_MARK_SIG}::text)) end`,
+            }
+          : {}),
+        updatedAt: now,
+      })
       .where(and(eq(tools.ownerId, ownerId), eq(tools.slug, slug)));
   }
   for (const d of plan.disables) {

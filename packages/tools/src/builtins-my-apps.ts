@@ -6,7 +6,8 @@
  *
  *  - private while a draft: only the author runs it, and no admin surface
  *    lists it;
- *  - shared with the team (`my_app_share`): every member runs it, at team
+ *  - shared with the team (in the app, Apps > Your apps; never over MCP,
+ *    access matrix N1): every member runs it, at team
  *    rules;
  *  - submitted (`my_app_submit`): frozen until an admin accepts it into the
  *    brain or returns it (`my_app_recall` takes it back).
@@ -236,7 +237,7 @@ const my_app_create: BuiltinToolDef = {
   slug: 'my_app_create',
   name: 'Create a mini app of my own',
   description:
-    'Create a new mini app in your own space: PRIVATE, only you run it. It starts with a trivial entry file: write files with `my_app_file_write`, compile with `my_app_build`, go live for yourself with `my_app_publish`, then `my_app_share` with the team or `my_app_submit` for an admin. Read `my_app_guide` first. Your apps run tools at team rules at most.',
+    'Create a new mini app in your own space: PRIVATE, only you run it. It starts with a trivial entry file: write files with `my_app_file_write`, compile with `my_app_build`, go live for yourself with `my_app_publish`, then share it with the team in the app (Apps > Your apps) or `my_app_submit` for an admin. Read `my_app_guide` first. Your apps run tools at team rules at most.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -699,28 +700,25 @@ const my_app_snapshot_restore: BuiltinToolDef = {
   },
 };
 
-const my_app_share: BuiltinToolDef = {
-  slug: 'my_app_share',
-  name: 'Share my mini app with the team',
+/**
+ * Make an app private again. SHARING with the team is in the app only (Apps
+ * > Your apps, the member's own click; access matrix N1): a key, a peer or a
+ * model on MCP must not open an app to the whole team. Taking it back from
+ * the team stays here: it only narrows who runs it.
+ */
+const my_app_unshare: BuiltinToolDef = {
+  slug: 'my_app_unshare',
+  name: 'Make my mini app private',
   description:
-    "Share your own app with the team ('team': every member runs its published version and writes its data) or make it private again ('private': only you). No approval and no level change: it stays in your space. To put it in the brain, use `my_app_submit`.",
-  inputSchema: {
-    type: 'object',
-    properties: {
-      ...ID_PROP,
-      sharing: { type: 'string', enum: ['private', 'team'], description: 'Who runs it.' },
-    },
-    required: ['id', 'sharing'],
-  },
+    'Make your own app private again: only you run it, and teammates no longer see it. Sharing with the team is done by the member in the app (Apps > Your apps), not over MCP.',
+  inputSchema: { type: 'object', properties: { ...ID_PROP }, required: ['id'] },
   handler: async (input, ctx) => {
-    const p = await prepare(input, ctx, { write: true });
+    // Any state before Accept: unsharing a submitted app only narrows it.
+    const p = await prepare(input, ctx, { write: false });
     if (!isPrepared(p)) return p;
-    const sharing = str(input.sharing);
-    if (sharing !== 'private' && sharing !== 'team') {
-      return { ok: false, error: "sharing must be 'private' or 'team'." };
-    }
+    if (!writeOn(ctx)) return { ok: false, error: NO_WRITE };
     try {
-      const state = await setSpaceAppSharing(p.author, p.id, sharing);
+      const state = await setSpaceAppSharing(p.author, p.id, 'private');
       return { ok: true, output: { id: p.id, sharing: state.sharing } };
     } catch (err) {
       return refusal(err);
@@ -847,7 +845,7 @@ export const MY_APP_WRITE_TOOLS: BuiltinToolDef[] = [
   my_app_tools_set,
   my_app_snapshot_create,
   my_app_snapshot_restore,
-  my_app_share,
+  my_app_unshare,
   my_app_submit,
   my_app_recall,
 ].map(oneAtATime);

@@ -81,6 +81,9 @@ const DESTRUCTIVE_WITHOUT_CONFIRM: Record<string, { reason: string; mcpOnly?: tr
   my_app_file_delete: {
     reason: "the member's own app DRAFT; the published app runs on, and a publish is a version",
   },
+  my_app_unshare: {
+    reason: "only narrows who runs the member's own app (private again); nothing is deleted",
+  },
   // Routine editing inside an authoring kit whose whole-object delete IS gated
   // (table_delete, app_delete) and lives in a deliberate *-admin group.
   table_row_delete: { reason: 'grid editing; the gated whole is table_delete' },

@@ -125,6 +125,10 @@ export type AppNavItem = {
   /** The app's MCP access switch (team apps Phase 1): members' and clients'
    *  MCP may reach its data. Absent from an older brain. */
   mcpAccess?: boolean;
+  /** Whether that switch reaches anyone now: on, published and below
+   *  admin (members' and clients' MCP reach only such an app). Absent from
+   *  an older brain. */
+  mcpReach?: boolean;
 };
 
 /** GET /api/app-nav — the whole sidebar in one round-trip. `nav` is already

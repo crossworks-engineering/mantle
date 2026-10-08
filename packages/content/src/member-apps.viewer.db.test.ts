@@ -221,4 +221,47 @@ describe.skipIf(!URL)('apps for members', () => {
     const [after] = await log.listAppAccess(anchor, ids.pub);
     expect(after).toMatchObject({ actorId: null, contactId: null, contactName: 'Removed member' });
   });
+
+  // Access matrix M6 (N12): an embed opens reading the embedding item, never
+  // an app's data. The app data reads below admin keep to this list.
+  it('apps used at a level: own level or a folder share, never an embed', async () => {
+    await m.systemDb.execute(
+      sqlTag`update nodes set embedded_level = 'team' where id = ${ids.admin}`,
+    );
+    try {
+      const used = await ma.listAppIdsUsedAt(anchor, ['team', 'client', 'public']);
+      expect(used.has(ids.team!)).toBe(true);
+      expect(used.has(ids.admin!)).toBe(false);
+      // A folder share does count.
+      await m.systemDb.execute(
+        sqlTag`update nodes set inherited_level = 'team' where id = ${ids.admin}`,
+      );
+      expect((await ma.listAppIdsUsedAt(anchor, ['team'])).has(ids.admin!)).toBe(true);
+    } finally {
+      await m.systemDb.execute(
+        sqlTag`update nodes set embedded_level = null, inherited_level = null where id = ${ids.admin}`,
+      );
+    }
+  });
+
+  // Access matrix M5 (N12): the level an app is USED at, read for real (the
+  // broker test mocks it).
+  it("an app's effective level counts a folder share, never an embed", async () => {
+    const apps = await import('./apps');
+    expect((await apps.getAppRuntime(anchor, ids.admin!))?.effectiveAudience).toBe('admin');
+    await m.systemDb.execute(
+      sqlTag`update nodes set embedded_level = 'client' where id = ${ids.admin}`,
+    );
+    expect((await apps.getAppRuntime(anchor, ids.admin!))?.effectiveAudience).toBe('admin');
+    await m.systemDb.execute(
+      sqlTag`update nodes set embedded_level = null, inherited_level = 'client' where id = ${ids.admin}`,
+    );
+    try {
+      expect((await apps.getAppRuntime(anchor, ids.admin!))?.effectiveAudience).toBe('client');
+    } finally {
+      await m.systemDb.execute(
+        sqlTag`update nodes set inherited_level = null where id = ${ids.admin}`,
+      );
+    }
+  });
 });

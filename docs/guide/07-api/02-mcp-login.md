@@ -52,11 +52,11 @@ An MCP connector (Settings > MCP connectors) starts at admin level: only admins 
 | Admin | Admins only |
 | Team | Members: their own MCP and the apps they run |
 | Client | Clients and members: their own MCP and client apps |
-| Public | Also contacts on a contact-share link of an app, and public agents: read-only tools only |
+| Public | Members, plus contacts on a contact-share link of an app and public agents (read-only tools only). Not clients: a client reaches client-level connectors only |
 
-Everyone at that level may use every tool of the connector, so keep a source with secret parts at admin level. A tool you marked read-only (**I confirm this tool only reads data**) is a read. A tool without the mark changes data: apps of members and clients may call it, and a member's or client's MCP only with their **Write** switch on. Contacts and public agents never get a tool without the mark. Every call is logged with the login.
+Everyone at that level may use every tool of the connector, so keep a source with secret parts at admin level. The level is the only way in: granting a connector's group to the client agent gives clients nothing. A tool you marked read-only (**I confirm this tool only reads data**) is a read. A tool without the mark changes data: apps of members and clients may call it, and a member's or client's MCP only with their **Write** switch on. Contacts and public agents never get a tool without the mark. Every call is logged with the login.
 
-Removing the mark never closes a tool: it makes it a tool that changes data. To close one, raise the connector's level or switch the tool off. If a connector's tool changes, or the connector moves to another server, its mark stops counting: members and clients cannot use the tool until you mark it again. A tool the server adds later arrives switched off on a connector below admin.
+Removing the mark never closes a tool: it makes it a tool that changes data. To close one, raise the connector's level or switch the tool off. If a connector's tool changes (its description or its inputs), the connector moves to another server, or it signs in another way (a new key, header, OAuth app, scope or a new sign-in), its mark stops counting: members and clients cannot use the tool until you mark it again. On a connector below admin, a tool the server adds later, or one that disappears and comes back, arrives switched off. An agent that turns such a tool on, or removes its confirmation, waits for your approval in Pending.
 
 ## When their MCP client cannot sign in
 

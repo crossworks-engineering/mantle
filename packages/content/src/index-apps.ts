@@ -138,6 +138,10 @@ export { dataAccessOf, type AppDataAccess } from './app-data-access';
 export {
   SpaceAppError,
   acceptSpaceApp,
+  adminSpaceApp,
+  adminUnshareSpaceApp,
+  listSpaceAppsForAdmin,
+  type AdminSpaceAppRow,
   authorSpaceApp,
   createSpaceApp,
   getRunnableSpaceApp,

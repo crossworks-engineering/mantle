@@ -37,7 +37,7 @@ const MY_APP_SLUGS = [
   'my_app_tools_set',
   'my_app_snapshot_create',
   'my_app_snapshot_restore',
-  'my_app_share',
+  'my_app_unshare',
   'my_app_submit',
   'my_app_recall',
 ];
@@ -291,6 +291,16 @@ describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
       sharing: string;
     }[];
     expect(row).toEqual({ owner_id: memberSpace, author_level: 'team', sharing: 'private' });
+    // Every member app change over MCP leaves an audit row (access matrix
+    // N8), on any connection.
+    let audited: unknown[] = [];
+    for (let i = 0; i < 40 && audited.length === 0; i++) {
+      audited = (await exec(sqlTag`
+        select id from audit_log
+        where action = 'mcp.my_app_create' and actor_id = ${member}`)) as unknown as unknown[];
+      if (audited.length === 0) await new Promise((r) => setTimeout(r, 50));
+    }
+    expect(audited.length).toBeGreaterThan(0);
     const listed = await c.callTool({ name: 'my_app_list', arguments: {} });
     expect(JSON.parse(text(listed)).apps.map((a: { id: string }) => a.id)).toContain(id);
     // Written by its author only: an app of the brain is not one of theirs.

@@ -85,6 +85,21 @@ on a cron — cost-safety rule.
   queued tool call behind the dead request; timing it out degrades to
   "server doesn't push", which the spec allows.
 
+## Levels: who uses a connector's tools
+
+A connector's tool group LEVEL (Settings > Tool groups) decides who may use
+its tools, on their own MCP connection and in the apps they run (team apps
+Phase 2): admin (the default: admins only), team (members), client (clients
+and members) or public (members, plus contacts on an app's contact link and
+public agents, read-only tools only; never clients, who reach client-level
+connectors only). Granting the group to an agent never widens that. A tool's
+read-only mark decides read or write. The mark stops counting when the tool's
+description or inputs change, when it vanishes and returns, and when the
+connector's server or sign-in changes; below admin a new or returning tool
+arrives switched off, and an agent turning one on or clearing its
+confirmation waits in Pending. The full rules: docs/member-logins.md
+("External access") and docs/mcp-as-a-login.md.
+
 ## API (owner-gated)
 
 | Route                                         | Does                                                                                                                                                                                                                                                                                                 |

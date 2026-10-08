@@ -244,7 +244,15 @@ export async function updateMcpConnector(
   // credential: another server, or another key (which may write), is not
   // what the admin looked at, so the switch goes off on every tool of the
   // connector until an admin confirms again (packages/tools/src/external-access.ts).
-  if (nextMcp.url !== mcp.url || nextMcp.secretRef !== mcp.secretRef) {
+  // So does another way of signing in (access matrix N4): an auth header or
+  // scheme, an OAuth app or scope can reach another account or more rights.
+  if (
+    nextMcp.url !== mcp.url ||
+    nextMcp.secretRef !== mcp.secretRef ||
+    nextMcp.authHeader !== mcp.authHeader ||
+    nextMcp.authScheme !== mcp.authScheme ||
+    oauthTouched
+  ) {
     await clearConnectorExternalAccess(ownerId, groupSlug);
   }
   if (bindingTouched || oauthTouched) await closeMcpClient(ownerId, groupSlug);

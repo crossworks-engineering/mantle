@@ -95,6 +95,39 @@ export function externalAccessHandlerSig(handler: ToolHandler): string {
   return createHash('sha256').update(canonical(h)).digest('hex');
 }
 
+/**
+ * The signature a NEW mark carries (access matrix N4): for a connector tool
+ * it also covers the tool's description and input schema, which a sync
+ * rewrites when the remote tool changes (a new parameter that runs any
+ * statement must not keep the mark). Prefixed `v2:`; a mark from before
+ * carries the handler signature alone and is still read as one, while the
+ * sync voids it on any change of description or schema. Any other tool:
+ * the handler signature, as before.
+ */
+export function externalAccessToolSig(
+  tool: Pick<Tool, 'handler' | 'description' | 'inputSchema'>,
+): string {
+  const handler = tool.handler as ToolHandler;
+  if (handler.kind !== 'mcp') return externalAccessHandlerSig(handler);
+  const { vanishedAt: _v, ...h } = handler as Record<string, unknown>;
+  return (
+    'v2:' +
+    createHash('sha256')
+      .update(canonical({ h, d: tool.description ?? '', s: tool.inputSchema ?? null }))
+      .digest('hex')
+  );
+}
+
+/** Whether a stored mark signature still matches `tool`. */
+function markMatches(
+  sig: string,
+  tool: Pick<Tool, 'handler' | 'description' | 'inputSchema'>,
+): boolean {
+  return sig.startsWith('v2:')
+    ? sig === externalAccessToolSig(tool)
+    : sig === externalAccessHandlerSig(tool.handler as ToolHandler);
+}
+
 /** Why `tool` can never get external access as it stands, else null. */
 export function externalAccessIneligible(
   tool: Pick<Tool, 'slug' | 'handler' | 'requiresConfirm'>,
@@ -124,12 +157,15 @@ export function externalAccessIneligible(
 /** Whether the admin's switch counts on `tool` right now: set, still on the
  *  handler the admin confirmed, and the tool still eligible. */
 export function externalAccessActive(
-  tool: Pick<Tool, 'slug' | 'handler' | 'requiresConfirm' | 'externalAccess'>,
+  tool: Pick<
+    Tool,
+    'slug' | 'handler' | 'requiresConfirm' | 'externalAccess' | 'description' | 'inputSchema'
+  >,
 ): boolean {
   const t = tool.externalAccess;
   if (!t || typeof t !== 'object' || typeof t.handlerSig !== 'string') return false;
   if (externalAccessIneligible(tool) !== null) return false;
-  return t.handlerSig === externalAccessHandlerSig(tool.handler as ToolHandler);
+  return markMatches(t.handlerSig, tool);
 }
 
 /** The signature a voided read-only mark carries: never a handler's. */
@@ -143,7 +179,10 @@ export const VOIDED_MARK_SIG = 'voided';
  * turns a read into a write by itself (M2 audit, low 5).
  */
 export function connectorMarkState(
-  tool: Pick<Tool, 'slug' | 'handler' | 'requiresConfirm' | 'externalAccess'>,
+  tool: Pick<
+    Tool,
+    'slug' | 'handler' | 'requiresConfirm' | 'externalAccess' | 'description' | 'inputSchema'
+  >,
 ): 'read' | 'write' | 'stale' {
   if (!tool.externalAccess) return 'write';
   return externalAccessActive(tool) ? 'read' : 'stale';
@@ -437,7 +476,10 @@ export async function contactAppToolVerdict(
 
 /** The switch as the wire shows it (`ToolDTO.externalAccess`). */
 export function externalAccessSummary(
-  tool: Pick<Tool, 'slug' | 'handler' | 'requiresConfirm' | 'externalAccess'>,
+  tool: Pick<
+    Tool,
+    'slug' | 'handler' | 'requiresConfirm' | 'externalAccess' | 'description' | 'inputSchema'
+  >,
 ): ToolExternalAccessDTO | null {
   const t = tool.externalAccess;
   if (!t) return null;
@@ -498,7 +540,7 @@ export async function setToolExternalAccess(
     value = {
       confirmedReadOnlyAt: new Date().toISOString(),
       by,
-      handlerSig: externalAccessHandlerSig(row.handler as ToolHandler),
+      handlerSig: externalAccessToolSig(row),
     };
   }
   const [updated] = await db

@@ -31,6 +31,7 @@
 import { createHash } from 'node:crypto';
 import { and, asc, desc, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import {
+  appAccessLog,
   appDatabases,
   apps,
   asSystem,
@@ -86,6 +87,19 @@ function frozenError(reviewState: string): SpaceAppError {
 const EDITABLE: readonly string[] = ['draft', 'returned'];
 
 const publishedGreen = sql`(${apps.publishedBuild}->>'ok')::boolean is true`;
+
+/**
+ * The app's author is still an active MEMBER (team apps hardening, access
+ * matrix N2): disabling, demoting or deleting the author stops their apps
+ * for everyone, as it stops their team-shared pages (mantle_member_space).
+ * A hard delete leaves the author column null, which never matches.
+ */
+const authorActive = sql`exists (
+  select 1 from auth.users u
+  where u.id = ${spaceItems.authorLoginId}
+    and u.disabled_at is null
+    and u.role = 'member'
+)`;
 
 /** Runners only read a member's app's data: it is informational, or it is
  *  under review. One rule for the run lookup and the list's pill (M3 audit,
@@ -255,7 +269,7 @@ export async function listSpaceApps(author: SpaceAppAuthor): Promise<SpaceAppCar
           ne(spaceItems.reviewState, 'accepted'),
           or(
             and(eq(nodes.ownerId, author.spaceId), eq(spaceItems.authorLoginId, author.loginId)),
-            and(eq(spaceItems.sharing, 'team'), publishedGreen),
+            and(eq(spaceItems.sharing, 'team'), publishedGreen, authorActive),
           ),
         ),
       )
@@ -453,6 +467,7 @@ export async function getRunnableSpaceApp(
           eq(spaces.kind, 'personal'),
           ne(spaceItems.reviewState, 'accepted'),
           or(eq(spaceItems.authorLoginId, loginId), eq(spaceItems.sharing, 'team')),
+          authorActive,
           publishedGreen,
         ),
       )
@@ -688,6 +703,13 @@ export async function acceptSpaceApp(
         .update(nodeSnapshots)
         .set({ ownerId: brainId })
         .where(eq(nodeSnapshots.nodeId, appId));
+      // Its activity too (access matrix N3): every call made while it was a
+      // member's app, connector writes included, shows on the brain app's
+      // Activity tab.
+      await tx
+        .update(appAccessLog)
+        .set({ ownerId: brainId })
+        .where(eq(appAccessLog.appNodeId, appId));
       await tx
         .update(spaceItems)
         .set({
@@ -740,4 +762,119 @@ export async function returnSpaceApp(
   );
   if (!changed.length)
     throw new SpaceAppError('not-submitted', 'This app is not waiting for review.');
+}
+
+// ── The admin's view of members' apps (access matrix N2) ─────────────────────
+
+/** One member app an admin sees: shared with the team or submitted, never a
+ *  private draft (rule S3). */
+export type AdminSpaceAppRow = {
+  id: string;
+  title: string;
+  author: { loginId: string | null; name: string | null; active: boolean };
+  sharing: 'private' | 'team';
+  reviewState: string;
+  /** A green published build: teammates run it (while its author is an
+   *  active member). */
+  runnable: boolean;
+  declaredTools: string[];
+  updatedAt: string;
+};
+
+/** What an admin may reach of members' apps: team-shared or submitted, not
+ *  yet accepted. A private draft stays the author's alone. */
+const adminVisible = and(
+  eq(nodes.type, 'app'),
+  eq(spaces.kind, 'personal'),
+  ne(spaceItems.reviewState, 'accepted'),
+  or(eq(spaceItems.sharing, 'team'), eq(spaceItems.reviewState, 'submitted')),
+);
+
+/** The members' apps an admin sees, newest first, with whether each author
+ *  is still an active member (an app whose author is not runs for nobody). */
+export async function listSpaceAppsForAdmin(): Promise<AdminSpaceAppRow[]> {
+  const rows = await asSystem(() =>
+    db
+      .select({
+        id: nodes.id,
+        title: nodes.title,
+        manifest: apps.manifest,
+        publishedBuild: apps.publishedBuild,
+        updatedAt: nodes.updatedAt,
+        authorLoginId: spaceItems.authorLoginId,
+        authorName: sql<
+          string | null
+        >`coalesce(nullif(trim(${authUsers.displayName}), ''), split_part(${authUsers.email}, '@', 1))`,
+        active: sql<boolean>`${authorActive}`,
+        sharing: spaceItems.sharing,
+        reviewState: spaceItems.reviewState,
+      })
+      .from(nodes)
+      .innerJoin(apps, eq(apps.nodeId, nodes.id))
+      .innerJoin(spaceItems, eq(spaceItems.nodeId, nodes.id))
+      .innerJoin(spaces, eq(spaces.id, nodes.ownerId))
+      .leftJoin(authUsers, eq(authUsers.id, spaceItems.authorLoginId))
+      .where(adminVisible)
+      .orderBy(desc(nodes.updatedAt))
+      .limit(500),
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    title: r.title,
+    author: { loginId: r.authorLoginId, name: r.authorName, active: r.active === true },
+    sharing: r.sharing === 'team' ? 'team' : 'private',
+    reviewState: r.reviewState,
+    runnable: !!(r.publishedBuild as BuildRef | null)?.ok,
+    declaredTools: ((r.manifest ?? {}) as AppManifest).toolSlugs ?? [],
+    updatedAt: r.updatedAt.toISOString(),
+  }));
+}
+
+/** One member app an admin may act on (team-shared or submitted), with the
+ *  space it lives in, or null. */
+export async function adminSpaceApp(
+  appId: string,
+): Promise<{ id: string; spaceId: string; sharing: string; reviewState: string } | null> {
+  const [row] = await asSystem(() =>
+    db
+      .select({
+        id: nodes.id,
+        spaceId: nodes.ownerId,
+        sharing: spaceItems.sharing,
+        reviewState: spaceItems.reviewState,
+      })
+      .from(nodes)
+      .innerJoin(spaceItems, eq(spaceItems.nodeId, nodes.id))
+      .innerJoin(spaces, eq(spaces.id, nodes.ownerId))
+      .where(and(eq(nodes.id, appId), adminVisible))
+      .limit(1),
+  );
+  return row ?? null;
+}
+
+/** An admin stops a member's app reaching the team (access matrix N2): it
+ *  goes back to private, its author's alone. False when it was not shared. */
+export async function adminUnshareSpaceApp(appId: string): Promise<boolean> {
+  const changed = await asSystem(() =>
+    db
+      .update(spaceItems)
+      .set({ sharing: 'private', updatedAt: new Date() })
+      .where(
+        and(
+          eq(spaceItems.nodeId, appId),
+          eq(spaceItems.sharing, 'team'),
+          ne(spaceItems.reviewState, 'accepted'),
+          inArray(
+            spaceItems.nodeId,
+            db
+              .select({ id: nodes.id })
+              .from(nodes)
+              .innerJoin(spaces, eq(spaces.id, nodes.ownerId))
+              .where(and(eq(nodes.type, 'app'), eq(spaces.kind, 'personal'))),
+          ),
+        ),
+      )
+      .returning({ id: spaceItems.nodeId }),
+  );
+  return changed.length > 0;
 }

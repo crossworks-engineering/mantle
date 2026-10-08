@@ -189,6 +189,7 @@ export {
   clearConnectorExternalAccess,
   externalAccessActive,
   externalAccessHandlerSig,
+  externalAccessToolSig,
   externalAccessIneligible,
   externalAccessSummary,
   EXTERNAL_ACCESS_KINDS,

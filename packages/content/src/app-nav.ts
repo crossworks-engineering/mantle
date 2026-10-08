@@ -31,6 +31,7 @@ import { reconcileAppMarks, reconcileAppNav } from './tree/apps-nav';
 import { recordItemOpened } from './tree/marks';
 import { listTreeFolders } from './tree/read';
 import { dataAccessOf } from './app-data-access';
+import { itemLevel } from './item-level';
 
 /** NOTIFY channel for any app-nav write (payload: anchor owner id). Consumed
  *  by server/web/lib/realtime.ts, which broadcasts it as type 'app-nav'. */
@@ -64,6 +65,8 @@ export async function listAppNavItems(ownerId: string): Promise<AppNavItem[]> {
       publishedBuild: apps.publishedBuild,
       draftBuild: apps.draftBuild,
       mcpAccess: apps.mcpAccess,
+      audience: nodes.audience,
+      inheritedLevel: nodes.inheritedLevel,
     })
     .from(nodes)
     .leftJoin(apps, eq(apps.nodeId, nodes.id))
@@ -90,6 +93,12 @@ export async function listAppNavItems(ownerId: string): Promise<AppNavItem[]> {
       // and clients), so an admin's sidebar reads and writes.
       dataAccess: ADMIN_DATA_ACCESS,
       mcpAccess: r.mcpAccess === true,
+      // Whether that switch reaches anyone now (access matrix N9): the
+      // app_data tools reach a published app below admin only.
+      mcpReach:
+        r.mcpAccess === true &&
+        r.publishedBuild?.ok === true &&
+        itemLevel(r.audience, r.inheritedLevel) !== 'admin',
     };
   });
 }

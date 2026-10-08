@@ -5,7 +5,9 @@
  * Split out of builtins-toolsmith.ts; bodies moved verbatim.
  */
 
-import { isUniqueViolation, type ToolHandler } from '@mantle/db';
+import { and, eq } from 'drizzle-orm';
+import { agents, db, isUniqueViolation, pendingToolCalls, type ToolHandler } from '@mantle/db';
+import { notifyPendingCreated } from '../pending-notify';
 import { listApiKeys } from '@mantle/api-keys';
 import { loadProfilePreferences } from '@mantle/content';
 import { createTool, deleteTool, listToolsForOwner, updateTool } from '../crud';
@@ -15,6 +17,7 @@ import { describeInheritance, type InheritedPieces } from '../integration';
 import { isMcpManagedSecretService } from '../mcp-oauth';
 import { type BuiltinToolDef, type ToolHandlerContext, type ToolHandlerResult } from '../types';
 import {
+  connectorGroupOf,
   setToolExternalAccess,
   externalAccessSummary,
   type ExternalAccessActor,
@@ -353,6 +356,55 @@ export const api_tool_update: BuiltinToolDef = {
     const externalAccessActor = input.external_access === true ? externalAccessOnActor(ctx) : null;
     if (input.external_access === true && !externalAccessActor) {
       return { ok: false, error: EXTERNAL_ACCESS_ADMIN_ONLY };
+    }
+
+    // A connector tool below admin is open to members, clients or links: an
+    // in-brain agent turning it on, or clearing its confirm, would open it
+    // (or its writes) to all of them on the agent's say-so, and an agent can
+    // be steered by what it reads. That always waits for the owner, whatever
+    // "require approval" says (access matrix N5). On approval the call runs
+    // again with no agent context, so this branch is skipped.
+    if (ctx.agent && existing.kind === 'mcp') {
+      const opens =
+        (input.enabled === true && !row.enabled) ||
+        (input.requires_confirm === false && row.requiresConfirm);
+      const group = opens ? await connectorGroupOf(ctx.ownerId, row) : null;
+      if (opens && group && group.level !== 'admin') {
+        const args = { ...input };
+        const [requester] = await db
+          .select({ id: agents.id })
+          .from(agents)
+          .where(and(eq(agents.ownerId, ctx.ownerId), eq(agents.slug, ctx.agent.slug)))
+          .limit(1);
+        const [pending] = await db
+          .insert(pendingToolCalls)
+          .values({
+            ownerId: ctx.ownerId,
+            agentId: requester?.id ?? null,
+            toolSlug: 'api_tool_update',
+            args,
+          })
+          .returning({ id: pendingToolCalls.id });
+        if (pending?.id) {
+          void notifyPendingCreated({
+            ownerId: ctx.ownerId,
+            pendingId: pending.id,
+            toolSlug: 'api_tool_update',
+            args,
+            via: `agent ${ctx.agent.slug}`,
+          });
+        }
+        return {
+          ok: true,
+          output: {
+            status: 'queued_for_approval',
+            pending_id: pending?.id ?? null,
+            message:
+              `'${slug}' belongs to a connector at ${group.level} level: turning it on or removing its confirm opens it below admin, so it needs the owner's approval. ` +
+              'Queued at /pending; it applies once approved. Do not retry this turn.',
+          },
+        };
+      }
     }
 
     // Shell tools are human-only end to end: refuse before applying ANY field.

@@ -4,6 +4,30 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: team apps hardening (access matrix Part 2)
+
+- An admin sees and stops members' apps: Team admin > Member apps lists the
+  team-shared and submitted ones (never a private draft), with their
+  activity, Unshare, and Delete (confirmed; the code and data are kept as a
+  snapshot in the trash). A member's app runs only while its author is an
+  active member: disabling, demoting or deleting the author stops it.
+- Accept moves the app's activity rows to the brain app, so its Activity
+  tab shows what members did with it.
+- A client's MCP never reaches a public app, even in a client-shared folder
+  (the browser's rule).
+- Sharing a member's app with the team is the member's own click in the app:
+  `my_app_share` is gone from MCP; `my_app_unshare` makes an app private.
+- An in-brain agent that turns a connector tool on, or clears its
+  confirmation, below admin waits for the owner in Pending.
+- A connector tool's read-only mark covers its description and input schema
+  (`v2:` signature); a sync voids it when the remote tool changes or returns,
+  a returning tool stays off below admin, and a change of sign-in (header,
+  scheme, OAuth app or scope, a new sign-in) voids the connector's marks.
+- Smaller: an audit row for member app changes over OAuth, token and peer
+  connections; the sidebar says whether MCP access reaches anyone
+  (`mcpReach`); the connector docs no longer say a public connector reaches
+  clients; tests for the effective app level and the embed rule.
+
 ## Unreleased: team apps Phase 3, members build apps
 
 A team member builds mini apps like Pages (plan page b6dd688e, section A).

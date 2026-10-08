@@ -518,6 +518,12 @@ The ceiling never lifts by itself (M3 audit):
   (`withAuthorWrite`): a Submit, a Recall or an Accept waits for it, and no
   change starts after a Submit.
 
+A member's app runs only while its author is an active member (not
+disabled, still a member): the run and list queries say so (access matrix
+N2). An admin sees and stops the team-shared and submitted ones (Team admin
+> Member apps: activity, Unshare, Delete keeping a snapshot); a private draft
+stays the author's alone.
+
 Every app list carries `dataAccess` ('read' or 'read_write'): what the
 viewer may do with the app's data, worked out with the rule its db broker
 applies (an admin always writes; a member by `memberMayWriteAppData`; a

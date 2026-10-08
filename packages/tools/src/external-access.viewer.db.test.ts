@@ -21,6 +21,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 const fake = vi.hoisted(() => ({
   calls: [] as Array<{ toolName: string; args: Record<string, unknown> }>,
+  // What the remote server lists on a sync (access matrix N4 test).
+  remote: [] as Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>,
 }));
 
 vi.mock('./mcp-client', async (importOriginal) => ({
@@ -37,6 +39,7 @@ vi.mock('./mcp-client', async (importOriginal) => ({
       return { text: '{"rows":[{"n":1}]}', isError: false, secrets: new Map<string, string>() };
     },
   ),
+  mcpListRemoteTools: vi.fn(async () => ({ tools: fake.remote, serverInfo: undefined })),
 }));
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
@@ -529,6 +532,44 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     expect(await warn()).toEqual([]);
   });
 
+  // Access matrix N5: an agent turning a closed connector tool back on, or
+  // clearing its confirm, below admin waits for the owner.
+  it('api_tool_update: an agent re-opening a connector tool below admin goes to Pending', async () => {
+    const def = toolDef('api_tool_update');
+    const agentCtx = {
+      ownerId: anchor,
+      surface: { kind: 'web' as const },
+      agent: { slug: 'some-agent', name: 'Some agent' },
+    } as never;
+    await exec(sqlTag`update tools set enabled = false where id = ${ids.site_query!}`);
+    try {
+      const queued = await def.handler({ slug: 'site_query', enabled: true }, agentCtx);
+      expect(queued).toMatchObject({ ok: true, output: { status: 'queued_for_approval' } });
+      const [still] = (await exec(
+        sqlTag`select enabled from tools where id = ${ids.site_query!}`,
+      )) as unknown as { enabled: boolean }[];
+      expect(still?.enabled).toBe(false);
+      const unconfirm = await def.handler(
+        { slug: 'site_confirm', requires_confirm: false },
+        agentCtx,
+      );
+      expect(unconfirm).toMatchObject({ ok: true, output: { status: 'queued_for_approval' } });
+      // The owner (no agent): applied at once.
+      const owner = await def.handler(
+        { slug: 'site_query', enabled: true },
+        { ownerId: anchor, surface: { kind: 'web' } },
+      );
+      expect(owner.ok).toBe(true);
+      const [on] = (await exec(
+        sqlTag`select enabled from tools where id = ${ids.site_query!}`,
+      )) as unknown as { enabled: boolean }[];
+      expect(on?.enabled).toBe(true);
+    } finally {
+      await exec(sqlTag`update tools set enabled = true where id = ${ids.site_query!}`);
+      await exec(sqlTag`delete from pending_tool_calls where owner_id = ${anchor}`);
+    }
+  });
+
   it('api_tool_update: only the owner MCP client switches on; an agent may switch off', async () => {
     const def = toolDef('api_tool_update');
     await switchOff('site_query');
@@ -581,5 +622,65 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
       new Set(['tool.external_access.on', 'tool.external_access.off']),
     );
     expect(rows.every((r) => r.actor_id === anchor)).toBe(true);
+  });
+
+  // Access matrix N4: a read-only mark is for the tool the admin looked at.
+  it('a sync voids the mark when the remote tool changes, and a returning tool stays off below admin', async () => {
+    const { syncMcpConnector } = await import('./mcp-sync');
+    type Live = { slug: string; description: string; input_schema: Record<string, unknown> };
+    const live = (await exec(sqlTag`
+      select slug, description, input_schema from tools
+      where owner_id = ${anchor} and handler->>'group' = 'mcp-site'`)) as unknown as Live[];
+    const nameOf: Record<string, string> = {
+      site_query: 'query',
+      site_admin_only: 'other',
+      site_confirm: 'confirmed',
+    };
+    const same = live.map((t) => ({
+      name: nameOf[t.slug]!,
+      description: t.description,
+      inputSchema: t.input_schema,
+    }));
+    const state = async () =>
+      ta.connectorMarkState((await crud.getToolById(anchor, ids.site_query!))! as never);
+    const enabled = async () => {
+      const [r] = (await exec(
+        sqlTag`select enabled from tools where id = ${ids.site_query!}`,
+      )) as unknown as { enabled: boolean }[];
+      return r?.enabled;
+    };
+    try {
+      expect((await switchOn('site_query')).ok).toBe(true);
+      fake.remote = same;
+      await syncMcpConnector(anchor, 'mcp-site');
+      expect(await state()).toBe('read');
+
+      // The remote server adds a parameter: the mark stops counting.
+      fake.remote = same.map((t) =>
+        t.name === 'query'
+          ? { ...t, inputSchema: { type: 'object', properties: { sql: { type: 'string' } } } }
+          : t,
+      );
+      await syncMcpConnector(anchor, 'mcp-site');
+      expect(await state()).toBe('stale');
+
+      // Marked again, then the tool vanishes and comes back: off, mark void.
+      expect((await switchOn('site_query')).ok).toBe(true);
+      fake.remote = same.filter((t) => t.name !== 'query');
+      await syncMcpConnector(anchor, 'mcp-site');
+      expect(await enabled()).toBe(false);
+      fake.remote = same;
+      await syncMcpConnector(anchor, 'mcp-site');
+      expect(await enabled()).toBe(false);
+      expect(await state()).toBe('stale');
+    } finally {
+      fake.remote = same;
+      await exec(sqlTag`
+        update tools set enabled = true, description = ${live.find((t) => t.slug === 'site_query')!.description},
+          input_schema = ${JSON.stringify(live.find((t) => t.slug === 'site_query')!.input_schema)}::jsonb,
+          handler = ${JSON.stringify({ kind: 'mcp', group: 'mcp-site', toolName: 'query' })}::jsonb
+        where id = ${ids.site_query!}`);
+      await switchOn('site_query');
+    }
   });
 });

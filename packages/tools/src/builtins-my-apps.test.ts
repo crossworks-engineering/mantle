@@ -82,7 +82,13 @@ vi.mock('@mantle/content', () => {
     publishApp: vi.fn(),
     recallSpaceApp: vi.fn(),
     setManifest: vi.fn(),
-    setSpaceAppSharing: vi.fn(),
+    setSpaceAppSharing: vi.fn(async (_a: unknown, id: string, sharing: string) => ({
+      id,
+      title: 'A',
+      sharing,
+      reviewState: 'draft',
+      returnedNote: null,
+    })),
     submitSpaceApp: vi.fn(),
     workingSource: vi.fn(),
     writeDraftFile: vi.fn(),
@@ -205,5 +211,21 @@ describe('one change at a time per member', () => {
     release();
     expect(await first).toBe('a');
     expect(await withLoginWriteSlot('k', async () => 'd', 10)).toBe('d');
+  });
+});
+
+// Access matrix N1: sharing with the team is UI only; MCP only makes an app
+// private again.
+describe('my_app_unshare', () => {
+  it("makes the author's own app private, never shares it", async () => {
+    expect(MY_APP_TOOLS.map((t) => t.slug)).not.toContain('my_app_share');
+    const res = await def('my_app_unshare').handler({ id: APP }, member());
+    expect(res).toMatchObject({ ok: true, output: { id: APP, sharing: 'private' } });
+    expect(def('my_app_unshare').inputSchema).toMatchObject({ required: ['id'] });
+  });
+
+  it('needs the Write switch', async () => {
+    const res = await def('my_app_unshare').handler({ id: APP }, member(false));
+    expect(res).toMatchObject({ ok: false, error: expect.stringMatching(/read-only/) });
   });
 });

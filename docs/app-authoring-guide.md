@@ -646,7 +646,9 @@ mirror the admin's `app_*` tools; read `my_app_guide` (this guide) first.
   `my_app_publish`. `my_app_schema_set` and `my_app_tools_set` declare the
   database and the tools. `my_app_snapshot_*` and `my_app_errors` work as
   for an admin, on the member's own app only.
-- **Share with the team:** `my_app_share` with `team`. Every member then
+- **Share with the team:** in the app, Apps > Your apps > Share with team
+  (the member's own click; never over MCP, so no key, peer or model opens
+  an app to the team; `my_app_unshare` makes it private again). Every member then
   runs its published version from Mine > Apps and writes its data. No
   approval, and the level does not change: the app stays in the space.
 - **Submit:** `my_app_submit` sends the PUBLISHED version to an admin. It is

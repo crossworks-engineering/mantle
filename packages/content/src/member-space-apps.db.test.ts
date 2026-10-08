@@ -380,6 +380,60 @@ describe.skipIf(!URL)('member-built apps on Postgres', () => {
     expect(rows.map((r) => r.name)).toEqual(['a']);
   });
 
+  // Access matrix N2: the admin's kill switch, and the author's state.
+  it('a shared app stops when its author is disabled or demoted; an admin lists and unshares it', async () => {
+    const id = await publishedSpaceApp('kill');
+    await sa.setSpaceAppSharing(me(), id, 'team');
+    expect(await sa.getRunnableSpaceApp(mate, id)).toMatchObject({ id });
+    // A private draft never shows to an admin; a shared one does.
+    const listed = (await sa.listSpaceAppsForAdmin()).find((a) => a.id === id);
+    expect(listed).toMatchObject({ sharing: 'team', author: { loginId: author, active: true } });
+
+    await admin`update auth.users set disabled_at = now() where id = ${author}`;
+    try {
+      expect(await sa.getRunnableSpaceApp(mate, id)).toBeNull();
+      expect((await sa.listSpaceApps(them())).map((a) => a.id)).not.toContain(id);
+      expect((await sa.listSpaceAppsForAdmin()).find((a) => a.id === id)?.author.active).toBe(
+        false,
+      );
+    } finally {
+      await admin`update auth.users set disabled_at = null where id = ${author}`;
+    }
+    await admin`update auth.users set role = 'client' where id = ${author}`;
+    try {
+      expect(await sa.getRunnableSpaceApp(mate, id)).toBeNull();
+    } finally {
+      await admin`update auth.users set role = 'member' where id = ${author}`;
+    }
+
+    expect(await sa.adminUnshareSpaceApp(id)).toBe(true);
+    expect(await sa.getRunnableSpaceApp(mate, id)).toBeNull();
+    expect(await sa.adminSpaceApp(id)).toBeNull();
+    expect(await sa.adminUnshareSpaceApp(id)).toBe(false);
+  });
+
+  // Access matrix N3: what a member's app did shows on the brain app after
+  // Accept.
+  it("Accept moves the app's activity rows to the brain", async () => {
+    const id = await publishedSpaceApp('activity');
+    await admin`insert into app_access_log (owner_id, app_node_id, kind, detail)
+      values (${authorSpace}, ${id}, 'tool', ${JSON.stringify({ via: 'member', slug: 'x' })}::jsonb)`;
+    await sa.submitSpaceApp(me(), id);
+    await sa.acceptSpaceApp(
+      brain,
+      id,
+      { loginId: brain },
+      {
+        level: 'team',
+        trustTools: false,
+        ...(await shown(id)),
+      },
+    );
+    const [row] = await admin<{ owner_id: string }[]>`
+      select owner_id from app_access_log where app_node_id = ${id}`;
+    expect(row?.owner_id).toBe(brain);
+  });
+
   it('the author restores their own app from its history', async () => {
     const id = await publishedSpaceApp('restore');
     const snap = await m.asSystem(() =>

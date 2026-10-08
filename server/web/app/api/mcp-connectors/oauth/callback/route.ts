@@ -1,6 +1,7 @@
 import { getOwnerOr401 } from '@/lib/auth';
 import {
   abandonMcpOAuth,
+  clearConnectorExternalAccess,
   completeMcpOAuth,
   dbMcpOAuthStore,
   findConnectorByOAuthState,
@@ -58,6 +59,9 @@ export async function GET(req: Request) {
   try {
     const iss = url.searchParams.get('iss') ?? undefined;
     await completeMcpOAuth(store, { code, ...(iss ? { iss } : {}) });
+    // A new sign-in may be another account with other rights (access matrix
+    // N4): the read-only marks were for the one the admin looked at.
+    await clearConnectorExternalAccess(user.id, groupSlug);
   } catch (err) {
     const msg = errorMessage(err); // already carries its cure, when one is known
     console.error('[mcp-connectors] token exchange failed', groupSlug, msg);

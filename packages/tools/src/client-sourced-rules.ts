@@ -343,7 +343,7 @@ export const WRITE_RULES: Readonly<Record<string, WriteRule>> = {
   my_app_tools_set: free(OWN_APP),
   my_app_snapshot_create: free(OWN_APP),
   my_app_snapshot_restore: free(OWN_APP),
-  my_app_share: free(OWN_APP),
+  my_app_unshare: free(OWN_APP),
   my_app_submit: free(OWN_APP),
   my_app_recall: free(OWN_APP),
   // Calls on a federated peer as the login it binds us to.

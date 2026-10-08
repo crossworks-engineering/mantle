@@ -407,6 +407,36 @@ function logConnectorCall(
 }
 
 /** Run one login tool: at the login's level, through dispatchTool. */
+/** The audit row of a member's my_app_* change over MCP: the tool, the app
+ *  id and the connection, never the file contents. */
+function logMyAppCall(
+  caller: McpCaller & { role: 'member' | 'client' },
+  row: Tool,
+  args: Record<string, unknown>,
+): void {
+  const appId = typeof args?.id === 'string' ? args.id.slice(0, 64) : undefined;
+  void asSystem(() =>
+    db.insert(auditLog).values({
+      actorId: caller.loginId,
+      actorEmail: `${caller.role} (mcp)`,
+      action: `mcp.${row.slug}`,
+      method: 'MCP',
+      path: '/api/mcp',
+      detail: {
+        tool: row.slug,
+        ...(appId ? { appId } : {}),
+        role: caller.role,
+        connection: caller.via,
+        ...(caller.keyId ? { keyId: caller.keyId } : {}),
+        ...(caller.peerId ? { peerId: caller.peerId } : {}),
+        ...(caller.oauthClientId ? { oauthClientId: caller.oauthClientId } : {}),
+      },
+    }),
+  ).catch(() => {
+    /* best effort: never fail the call over its log */
+  });
+}
+
 export async function callLoginTool(
   caller: McpCaller & { role: 'member' | 'client' },
   row: Tool,
@@ -433,6 +463,13 @@ export async function callLoginTool(
       };
     }
     logConnectorCall(caller, row, args, write);
+  }
+  // A member's change to their own app over MCP (team apps; access matrix
+  // N8): an audit row naming the login, the tool and the app. A key's call
+  // already has one (auditMcpKeyCall, /api/mcp); OAuth, token and peer
+  // calls did not.
+  if (caller.via !== 'key' && MY_APP_WRITE_TOOL_SLUGS.includes(row.slug)) {
+    logMyAppCall(caller, row, args);
   }
   try {
     const result = await withViewer(level, () =>
@@ -571,7 +608,7 @@ export function mcpInstructionsFor(caller: McpCaller): string {
     caller.role !== 'member'
       ? ''
       : caller.write
-        ? ' The member builds their own mini apps with the my_app_* tools (read my_app_guide first): private until shared with the team (my_app_share) or submitted to an admin (my_app_submit). Their apps run tools at team rules at most.'
+        ? ' The member builds their own mini apps with the my_app_* tools (read my_app_guide first): private until the member shares it with the team in the app (never over MCP; my_app_unshare makes it private again) or submits it to an admin (my_app_submit). Their apps run tools at team rules at most.'
         : " my_app_list and my_app_get read the member's own mini apps; building them needs the Write switch.";
   return `This connection acts as ${who} of this brain, with exactly that login's rights: you see what they may see, nothing more.${write}${apps}${build}`;
 }

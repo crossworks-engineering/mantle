@@ -198,6 +198,18 @@ export async function updateTool(
           : null;
     }
   }
+  // A connector tool whose description or input schema changed is not the
+  // tool the admin marked either (access matrix N4): its mark is voided.
+  if (
+    next.externalAccess === undefined &&
+    existing.handler.kind === 'mcp' &&
+    existing.externalAccess &&
+    ((patch.description !== undefined && patch.description !== existing.description) ||
+      (patch.inputSchema !== undefined &&
+        JSON.stringify(patch.inputSchema) !== JSON.stringify(existing.inputSchema)))
+  ) {
+    next.externalAccess = { ...existing.externalAccess, handlerSig: VOIDED_MARK_SIG };
+  }
   if (patch.requiresConfirm !== undefined) next.requiresConfirm = patch.requiresConfirm;
   if (patch.enabled !== undefined) next.enabled = patch.enabled;
   const [row] = await db
