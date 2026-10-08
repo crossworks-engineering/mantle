@@ -138,6 +138,15 @@ from, to}]`: the Access control and `PATCH /api/access/nodes/:id`,
   `MANTLE_MASTER_KEY` with a fixed label: no new secret, no `.env` change.
   `ensureViewerRoles` creates or updates them at every migrate, before the
   migrations run; without a master key they exist but cannot log in.
+- **One brain per cluster owns the roles.** The roles are cluster objects with
+  one password each. Migrate notes its database on them (a role comment) and
+  refuses to reset roles that another existing database owns: that reset
+  locked every other brain on a shared dev Postgres out (2026-10-08). A brain
+  that must share a cluster sets `MANTLE_VIEWER_ROLES_PER_DATABASE=1` for its
+  migrate and its server: it then logs in as its own
+  `mantle_view_<level>_<database>` roles, which may only `SET` the shared role
+  and do so at login in their own database. `current_user`, the grants and
+  the row policies stay the shared role's. Boxes leave it unset.
 - **The viewer scope.** `withViewer(level, fn)` (`@mantle/db/viewer`) sets
   the level in AsyncLocalStorage; `db` picks that level's small pool (3
   connections) on every access. The level only goes down.
