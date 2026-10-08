@@ -20,7 +20,7 @@
 > deployment yet; prod will be stood up fresh from an empty DB, and `dev` has
 > already migrated through all four phases. On a fresh DB the migrations replay
 > `0001 → 0078` in order: `telegram_accounts` is empty, so `0078`'s self-guard
-> (abort if any _enabled_ account lacks a `channel_id`) finds zero rows and
+> (abort if any *enabled* account lacks a `channel_id`) finds zero rows and
 > passes trivially. There is no token to re-seal and no backfill to run,
 > channels are created going forward by the connect flow (`upsertTelegramChannel`
 > on `/settings/agents`). A from-scratch deploy is therefore a single clean
@@ -30,7 +30,7 @@
 > ⚠️ **Historical note (does not apply to a from-scratch deploy).** The
 > Phase-1→3 builds carried an app-code `backfillTelegramChannels` pass (re-seal
 > `bot_token_enc` → `channels.credentials_enc` under the new AAD) for migrating a
-> _pre-existing, populated_ `telegram_accounts` across the cutover. That path was
+> *pre-existing, populated* `telegram_accounts` across the cutover. That path was
 > only ever needed to migrate a live box without losing its bot token, and it
 > required deploying Phases 1–3 first (let the boot backfill run + verify) before
 > Phase 4 dropped `bot_token_enc`. **Phase 4 removed that backfill**: `main` no
@@ -44,7 +44,7 @@
 
 Today an agent can only be on Telegram if its `role = 'responder'`. That bakes
 **transport** into the **identity** column (`agents.role`). The fix: a generic
-**`channels`** table that _attaches_ a transport (Telegram, later Discord/Slack)
+**`channels`** table that *attaches* a transport (Telegram, later Discord/Slack)
 to **any** agent, plus removing the three hardcoded `role='responder'` gates. The
 Studio (docs/agent-studio.md) gains a "Channels" attach surface, channels become
 another attachable binding alongside skills + delegates.
@@ -60,18 +60,18 @@ dual-read, then cut over. Do **not** break the live prod Telegram poller (see §
 reflector | custom` ([packages/db/src/schema/agents.ts:25](../packages/db/src/schema/agents.ts)).
 For conversational agents only `assistant`, `responder`, `custom` matter, and
 `assistant` vs `responder` are **functional peers**: identical tool loop, memory
-config, persona notes. The _only_ real differences are three transport/learning
+config, persona notes. The *only* real differences are three transport/learning
 gates that privilege `responder`:
 
-| Gate                   | Location                                                                                                | Effect                                                                     |
-| ---------------------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| Telegram default agent | [`server/api/src/main.ts:174`](../server/api/src/main.ts), `eq(agents.role, 'responder')`               | only a `responder` is the global default for an inbound bot message        |
-| Persona learning       | [`server/api/src/agent/reflector.ts`](../server/api/src/agent/reflector.ts), `role='responder'`         | the reflector only learns on responders; an `assistant` never gets smarter |
-| Bot ownership          | `telegram_accounts.responder_agent_id` ([schema/telegram.ts:58](../packages/db/src/schema/telegram.ts)) | the token FK is named _responder_                                          |
+| Gate | Location | Effect |
+|---|---|---|
+| Telegram default agent | [`server/api/src/main.ts:174`](../server/api/src/main.ts), `eq(agents.role, 'responder')` | only a `responder` is the global default for an inbound bot message |
+| Persona learning | [`server/api/src/agent/reflector.ts`](../server/api/src/agent/reflector.ts), `role='responder'` | the reflector only learns on responders; an `assistant` never gets smarter |
+| Bot ownership | `telegram_accounts.responder_agent_id` ([schema/telegram.ts:58](../packages/db/src/schema/telegram.ts)) | the token FK is named *responder* |
 
 **The tell that this is wrong:** the system manifest's canonical persona is slug
 `assistant` but **`role: 'responder'`** ([manifest.ts:153](../server/web/lib/system-manifest/manifest.ts)).
-They made the "assistant" a responder _under the hood_ precisely because a true
+They made the "assistant" a responder *under the hood* precisely because a true
 `role:'assistant'` can't be on Telegram. The workaround is the evidence.
 
 **Consequence:** you cannot have one agent that is a `role:'assistant'` **and**
@@ -80,7 +80,7 @@ would mean inventing more roles or more special-casing. That's the smell.
 
 **Already half-decoupled (good news):** the **per-chat override**
 `telegram_chats.responder_agent_id` ([schema/telegram.ts:100](../packages/db/src/schema/telegram.ts))
-accepts **any** agent regardless of role, only the _global default_ is
+accepts **any** agent regardless of role, only the *global default* is
 responder-locked. The data model partly anticipates this.
 
 ---
@@ -88,7 +88,6 @@ responder-locked. The data model partly anticipates this.
 ## 2. Current-state map (what exists today)
 
 ### Schema (`packages/db/src/schema/telegram.ts`)
-
 - **`telegram_accounts`**: one row per bot: `bot_username`, `bot_token_enc`
   (AES-GCM, `MANTLE_MASTER_KEY`), `branch_path`, **`responder_agent_id`** (FK →
   agents, the binding), `last_update_offset`, `last_poll_at`, `last_poll_error`,
@@ -99,10 +98,9 @@ responder-locked. The data model partly anticipates this.
   in/out, outbound `agent_id` provenance.
 
 ### Runtime
-
 - **Poller:** [`server/web/workers/telegram-poll.ts`](../server/web/workers/telegram-poll.ts)
-  , a standalone Node process. `refreshAccounts()` loads `telegram_accounts WHERE
-enabled` every 60s and spawns one long-poll loop per account (`startLoop` →
+, a standalone Node process. `refreshAccounts()` loads `telegram_accounts WHERE
+  enabled` every 60s and spawns one long-poll loop per account (`startLoop` →
   `pollOnce(account, 25)` from `@mantle/telegram`). Single-instance assumed.
 - **Inbound dispatch:** `pollOnce` → `persist()` inserts `telegram_messages` +
   `nodes` and fires `pg_notify('telegram_message_inserted')`. The agent process
@@ -121,17 +119,15 @@ enabled` every 60s and spawns one long-poll loop per account (`startLoop` →
   binding ([schema/assistant-messages.ts](../packages/db/src/schema/assistant-messages.ts)).
 
 ### What's missing
-
 No transport-binding table, no Discord/Slack, no generic poller registry. Telegram
 is the sole, special-cased channel.
 
 ### Constraints the builder MUST respect
-
 - **Dev/prod poller split** ([[project_telegram_dev_prod_poller_conflict]]): prod
   polls `saskianewbot`, dev polls `saskiadevbot` (no 409). The **prod poller stays
   up on deploy.** Don't introduce a migration/refactor that stops or double-runs a
   live poller.
-- **Token encryption AAD:** tokens are sealed with the _row id_ as AAD. If rows
+- **Token encryption AAD:** tokens are sealed with the *row id* as AAD. If rows
   move to a new table with new ids, **re-seal** during migration (decrypt with old
   AAD, re-encrypt with new), a raw copy of `bot_token_enc` will fail to open.
 - **migrate.ts runner** ([[reference_migrate_runner]]): each migration commits in
@@ -170,8 +166,8 @@ agent ──< channels >── (telegram | discord | slack | …)
 
 ## 4. Schema (recommended)
 
-Additive. `channels` is the new generic binding; the Telegram-specific _state_
-and _data_ tables stay (they hold transport-specific columns) but re-point at
+Additive. `channels` is the new generic binding; the Telegram-specific *state*
+and *data* tables stay (they hold transport-specific columns) but re-point at
 `channels`.
 
 ```sql
@@ -193,17 +189,16 @@ CREATE INDEX channels_owner_idx ON channels(owner_id);
 CREATE INDEX channels_agent_idx ON channels(agent_id);
 ```
 
-**Telegram mapping.** Keep `telegram_accounts` for transport-specific _poll state_
+**Telegram mapping.** Keep `telegram_accounts` for transport-specific *poll state*
 (`last_update_offset`, `last_poll_at`, `last_poll_error`, `bot_username`,
 `branch_path`) but make it a **1:1 extension of a channel**: add
 `channel_id uuid REFERENCES channels(id) ON DELETE CASCADE` and drop the
 `responder_agent_id` semantics (the agent now lives on `channels.agent_id`). The
 `bot_token_enc` moves to `channels.credentials_enc` (re-sealed). `telegram_chats`
++ `telegram_messages` keep `account_id` (now 1:1 with a channel), no need to
+rename, just ensure each account has a `channel_id`.
 
-- `telegram_messages` keep `account_id` (now 1:1 with a channel), no need to
-  rename, just ensure each account has a `channel_id`.
-
-> **Decision for the builder:** fold `telegram_accounts` _entirely_ into `channels`
+> **Decision for the builder:** fold `telegram_accounts` *entirely* into `channels`
 > (poll-state columns onto `channels`, type-specific config in `config` jsonb) vs.
 > keep it as a thin extension table. Recommended: **keep it as an extension**
 > (`telegram_accounts.channel_id`), smaller migration, leaves the poll-state and
@@ -238,10 +233,8 @@ Sequence the prod deploy so the running poller is never both-old-and-new at once
 ## 6. Runtime changes
 
 ### Poller registry (`server/web/workers/`)
-
 Generalise [`telegram-poll.ts`](../server/web/workers/telegram-poll.ts) into a
 supervisor + per-type pollers:
-
 - A `ChannelPoller` interface: `{ type, startLoop(channel): {stop} }`.
 - Registry: `{ telegram: telegramPoller }` (Discord/Slack later).
 - Supervisor `refreshChannels()` loads `channels WHERE enabled` (join the type's
@@ -250,29 +243,26 @@ supervisor + per-type pollers:
   a channel + its `telegram_accounts` state row instead of a bare account.
 
 ### Inbound dispatch (`server/api/src/main.ts`)
-
 Replace `resolveResponderAgent`'s **`role='responder'` global fallback (line 174)**
 with channel-based resolution: the inbound message arrives on a known channel →
 **that channel's `agent_id`** handles it; the **per-chat override still wins**.
 No `role` lookup. Channels always carry `agent_id`, so there's always an answer.
 
-Since the access matrix fix M8 (2026-10-08): the first pin that is set (the
-per-chat override, else the channel's agent) decides. When that agent is
-disabled or gone the chat gets no agent and the bot answers "This chat is
-turned off for now"; it never falls through to the next pin or to the
-priority fallback, which is normally the owner's own persona. The fallback
-is for a chat with no pin at all. The check runs before an attachment is
-ingested, so a turned-off chat spends nothing.
+Since the access matrix fix M8 (2026-10-08): only the pinned agent answers (the
+per-chat override, else the channel's agent). When that agent is disabled or
+deleted, or the chat has no pin left, the chat gets no agent and the bot answers
+"This chat is turned off for now. Ask the owner to turn it on." It never falls
+through to the next pin or to a priority fallback, which is normally the owner's
+own persona. Deleting an agent turns off the chats it was pinned to. The check
+runs before an attachment is ingested, so a turned-off chat spends nothing.
 
 ### Reflector (`server/api/src/agent/reflector.ts`)
-
 Drop the `role='responder'` filter (line 86). Run persona-learning on any agent
 with **real conversation activity**: gate on "has an enabled channel OR has N
 recent `assistant_messages`", NOT "all agents" (cost-safety, §2). **Decision for
 builder:** exact gate.
 
 ### Web `/assistant` default (`server/web/lib/assistant.ts`)
-
 `resolveAssistantAgent` currently prefers `role='assistant'` then `role='responder'`
 ([lines 110/119](../server/web/lib/assistant.ts)). After decoupling, make the default
 **priority-based** among conversational agents (drop the role preference, keep
@@ -284,7 +274,6 @@ explicit-slug + priority). Keep back-compat: an explicit `?agent=` still wins.
 
 `assistant`/`responder` no longer mean anything for transport. Options
 (**decision for builder**, recommend **A**):
-
 - **A. Demote to a hint:** keep the column, stop gating on it; `role` becomes a
   loose label (default web pick by priority). Lowest churn, no enum migration.
 - **B. Collapse** `assistant`+`responder` → a single `conversational` role
@@ -302,7 +291,6 @@ user-facing channel" / highest-priority conversational, retiring the
 This is the "additional screen attached to an assistant"; it lives in **Agent
 Studio's structure layer** (docs/agent-studio.md, Phase 3). Per focused agent, a
 **Channels** section:
-
 - List attached channels (type, display name, enabled, health).
 - Attach a channel → pick type → enter credentials → for Telegram, reuse the
   existing **connect + pair** flow (`components/telegram/telegram-bot-section.tsx`,
@@ -320,12 +308,12 @@ the new table).
 - **Don't break the live prod poller.** Prod runs a standing Telegram poller for
   `saskianewbot` ([[project_telegram_dev_prod_poller_conflict]]). The poller
   refactor must deploy such that exactly one poller polls each bot across the
-  switch, backfill `channels` _before_ the new poller reads it, and don't run old
-  - new pollers against the same token simultaneously (Telegram 409).
+  switch, backfill `channels` *before* the new poller reads it, and don't run old
+  + new pollers against the same token simultaneously (Telegram 409).
 - **Re-seal tokens** on migration (§2), never raw-copy `bot_token_enc`.
 - **No new LLM triggers/crons** (cost-safety). The reflector gate must bound which
   agents learn.
-- **Scope:** ship Telegram-on-channels first (parity). Discord/Slack are _enabled_
+- **Scope:** ship Telegram-on-channels first (parity). Discord/Slack are *enabled*
   by this architecture but are separate follow-ups (each = a registered poller +
   a `channel_type` enum value + a credentials/config shape).
 
@@ -353,21 +341,21 @@ the UI; 6 is the payoff (new transports).
 
 ## 11. File-reference index (what to touch)
 
-| Concern                     | File                                                                                               |
-| --------------------------- | -------------------------------------------------------------------------------------------------- |
-| Agent role enum             | `packages/db/src/schema/agents.ts:25`                                                              |
-| Telegram schema (migrate)   | `packages/db/src/schema/telegram.ts`                                                               |
-| New `channels` schema       | `packages/db/src/schema/channels.ts` (new)                                                         |
-| Migrations                  | `packages/db/migrations/` (+ journal; see [[reference_migrate_runner]])                            |
-| Poller                      | `server/web/workers/telegram-poll.ts` → registry                                                   |
-| Poll logic                  | `packages/telegram/src/sync.ts` (`pollOnce`, `persist`)                                            |
-| Inbound dispatch / resolver | `server/api/src/main.ts:154-178`                                                                   |
-| Reflector gate              | `server/api/src/agent/reflector.ts`                                                                |
-| Web default pick            | `server/web/lib/assistant.ts:92-124`                                                               |
-| Token bind flow             | `server/web/lib/agent-telegram.ts` (`connectAgentTelegram`, `seal`)                                |
-| Bind UI                     | `jackdaw/components/telegram/telegram-bot-section.tsx`, `server/web/app/api/agents/[id]/telegram/` |
-| Studio attach surface       | `jackdaw/app/(app)/studio/` (docs/agent-studio.md Phase 3)                                         |
-| Canonical docs              | `docs/telegram.md`, `docs/architecture.md` §9/§9b, `docs/conversation.md`                          |
+| Concern | File |
+|---|---|
+| Agent role enum | `packages/db/src/schema/agents.ts:25` |
+| Telegram schema (migrate) | `packages/db/src/schema/telegram.ts` |
+| New `channels` schema | `packages/db/src/schema/channels.ts` (new) |
+| Migrations | `packages/db/migrations/` (+ journal; see [[reference_migrate_runner]]) |
+| Poller | `server/web/workers/telegram-poll.ts` → registry |
+| Poll logic | `packages/telegram/src/sync.ts` (`pollOnce`, `persist`) |
+| Inbound dispatch / resolver | `server/api/src/main.ts:154-178` |
+| Reflector gate | `server/api/src/agent/reflector.ts` |
+| Web default pick | `server/web/lib/assistant.ts:92-124` |
+| Token bind flow | `server/web/lib/agent-telegram.ts` (`connectAgentTelegram`, `seal`) |
+| Bind UI | `jackdaw/components/telegram/telegram-bot-section.tsx`, `server/web/app/api/agents/[id]/telegram/` |
+| Studio attach surface | `jackdaw/app/(app)/studio/` (docs/agent-studio.md Phase 3) |
+| Canonical docs | `docs/telegram.md`, `docs/architecture.md` §9/§9b, `docs/conversation.md` |
 
 ---
 

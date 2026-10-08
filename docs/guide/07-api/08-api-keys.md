@@ -26,17 +26,17 @@ Each login makes keys for itself. An admin's key acts as that admin, a member's 
 
 ## Areas
 
-| Area                               | What it opens                                                                                                                                              |
-| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Search                             | Search across EVERY kind of item, email and journal included, and the entity tools on MCP. Give it only to a key that may read everything                  |
-| Pages, Notes, Tasks, Tables, Files | That kind of item                                                                                                                                          |
-| Calendar                           | Events                                                                                                                                                     |
-| Contacts                           | Contacts                                                                                                                                                   |
-| Journal                            | Journal entries                                                                                                                                            |
-| Apps                               | Mini apps (MCP)                                                                                                                                            |
-| App data                           | The data of the mini apps an admin opened to MCP (`app_data_list`, `app_data_schema`, `app_data_query`, `app_data_write`). A member's or client's key only |
+| Area | What it opens |
+| --- | --- |
+| Search | Search across EVERY kind of item, email and journal included, and the entity tools on MCP. Give it only to a key that may read everything |
+| Pages, Notes, Tasks, Tables, Files | That kind of item |
+| Calendar | Events |
+| Contacts | Contacts |
+| Journal | Journal entries |
+| Apps | Mini apps (MCP) |
+| App data | The data of the mini apps an admin opened to MCP (`app_data_list`, `app_data_schema`, `app_data_query`, `app_data_write`). A member's or client's key only |
 
-Email reaches a key only through Search. The attachments of synced mail are files, but a key without Search does not see them in Files: they are left out of the lists, and one by id answers `404` (on MCP the Files tools refuse it).
+Email reaches a key only through Search. The attachments of synced mail are files, but a key without Search does not see them in Files: they are left out of the lists, one by id answers `404`, and an upload into their folder is refused (on MCP the Files tools refuse them).
 
 A route or tool that belongs to no area, such as reading any item by id, the Recall tools or a tool that turns one kind into another (`page_from_journal`), needs **All areas**.
 

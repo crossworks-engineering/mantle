@@ -4,11 +4,11 @@ Let a team member, a client or another Mantle use your brain from an MCP client,
 
 The connector URL is the same one the owner uses. Who connects decides which tools they get:
 
-| Who connects       | How they prove it                                         | What they get                                        |
-| ------------------ | --------------------------------------------------------- | ---------------------------------------------------- |
-| An admin           | Signs in at the connector URL                             | All owner tools                                      |
+| Who connects | How they prove it | What they get |
+| --- | --- | --- |
+| An admin | Signs in at the connector URL | All owner tools |
 | A member or client | Signs in at the connector URL, or sends their own API key | Their role's tools, read only unless you allow Write |
-| A peer Mantle      | Its peer token, with **Acts as** set                      | The tools of the login it acts as                    |
+| A peer Mantle | Its peer token, with **Acts as** set | The tools of the login it acts as |
 
 ## Before you start
 
@@ -33,11 +33,11 @@ A member's or client's MCP sees no app data until you open an app to it.
 
 Who reaches the app is the same as in the browser: members for a team, client or public app; clients for a client app. They need the app to be published.
 
-| The login's **Write** | The app's **Informational** | What their MCP may do                   |
-| --------------------- | --------------------------- | --------------------------------------- |
-| Off                   | Any                         | Read the rows                           |
-| On                    | Off                         | Read, and insert, update or delete rows |
-| On                    | On                          | Read the rows                           |
+| The login's **Write** | The app's **Informational** | What their MCP may do |
+| --- | --- | --- |
+| Off | Any | Read the rows |
+| On | Off | Read, and insert, update or delete rows |
+| On | On | Read the rows |
 
 A public app stays read only for members. MCP never changes an app's tables or columns: the schema belongs to the app's author.
 
@@ -86,7 +86,7 @@ Changing **Acts as** turns **Write** off again.
 - Turning the login's **MCP** switch off. Its sign-ins, tokens and API keys are revoked, and a peer that acts as it goes back to acting as nobody. Turning **MCP** on again brings none of them back.
 - The member disconnecting that client in their own **Settings > MCP**.
 - Turning an app's **MCP access** off ends MCP on that app, for everyone.
-- A password change, a disable, a role change or "sign out everywhere" for that login. A peer that acts as it goes back to acting as nobody; set **Acts as** again to bind it.
+- A password change, a disable, a role change or "sign out everywhere" for that login. A peer that acts as it goes back to acting as nobody. Its **Write** and risky tools are kept, so setting **Acts as** again restores it.
 - Turning the whole connector off in **Settings > MCP**.
 
 ## Check it worked
