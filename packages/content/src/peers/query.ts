@@ -216,11 +216,18 @@ export async function getNodeForPeer(
       updatedAt: nodes.updatedAt,
     })
     .from(nodes)
-    .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ownerId)))
+    // Effective grant = explicit node grant OR standing category grant, by
+    // the same predicate the searches use (a category never covers the
+    // owner's chat digests or email attachments, access matrix H1).
+    .where(
+      and(
+        eq(nodes.id, nodeId),
+        eq(nodes.ownerId, ownerId),
+        grantUnionFilter(nodes.id, { ids: nodeIds, types: nodeTypes }),
+      ),
+    )
     .limit(1);
   if (!row) return null;
-  // Effective grant = explicit node grant OR standing category grant.
-  if (!nodeIds.includes(row.id) && !nodeTypes.includes(row.type)) return null;
   const data = (row.data ?? {}) as Record<string, unknown>;
   const summary = typeof data.summary === 'string' ? data.summary : null;
   return {
