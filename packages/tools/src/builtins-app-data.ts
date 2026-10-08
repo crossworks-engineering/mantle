@@ -263,7 +263,10 @@ export const app_data_schema: BuiltinToolDef = {
       const app = await reach(ctx, who, appId);
       if (!app) return { ok: false, error: NOT_FOUND };
       const details = await asSystem(() =>
-        appDbTableDetails(ctx.ownerId, app.id, { callerKey: callerKey(who) }),
+        appDbTableDetails(ctx.ownerId, app.id, {
+          callerKey: callerKey(who),
+          schema: app.manifest.sqlite,
+        }),
       );
       recordAppAccess({
         ownerId: ctx.ownerId,

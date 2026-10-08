@@ -784,14 +784,19 @@ function quoteIdent(name: string): string {
 /**
  * The tables and views of an app's database with their columns and row
  * counts, and the schema version on record (the MCP `app_data_schema`).
- * Read-only in a SQL child. Empty when the app has no database yet; an
- * app whose file is gone although it held data throws AppDbMissingError.
+ * Read-only in a SQL child. With `schema` (the app's declared one), the
+ * database is first provisioned and brought to it, as the app's own run
+ * does (ensureAppDatabase): a caller reads the tables the app will have,
+ * not an empty list before its first use. Without it, empty when the app
+ * has no database yet. An app whose file is gone although it held data
+ * throws AppDbMissingError.
  */
 export async function appDbTableDetails(
   ownerId: string,
   appNodeId: string,
-  opts: { callerKey?: string } = {},
+  opts: { callerKey?: string; schema?: AppDbSchema } = {},
 ): Promise<{ schemaVersion: number; tables: AppDbTableDetail[] }> {
+  if (opts.schema) await ensureAppDatabase(ownerId, appNodeId, opts.schema);
   const reg = await lookupAppDatabase(ownerId, appNodeId);
   if (!reg) return { schemaVersion: 0, tables: [] };
   if (await isRestoring(reg.storagePath)) throw new AppDbRestoringError();

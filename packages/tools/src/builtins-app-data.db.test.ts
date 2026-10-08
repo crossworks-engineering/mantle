@@ -75,7 +75,7 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
     key: string,
     owner: string,
     level: string,
-    opts: { mcp?: boolean; informational?: boolean; publish?: boolean } = {},
+    opts: { mcp?: boolean; informational?: boolean; publish?: boolean; used?: boolean } = {},
   ) {
     const a = await content.createApp(owner, { title: `${tag} ${key}` });
     await content.writeDraftFile(owner, a.id, 'App.tsx', 'export default () => "x";');
@@ -84,7 +84,9 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
     if (opts.publish !== false) {
       await content.publishApp(owner, a.id, { note: 'v1', actor: 'owner' });
     }
-    await broker.appDbExec(owner, a.id, "INSERT INTO items (name) VALUES ('seed')", [], schema);
+    if (opts.used !== false) {
+      await broker.appDbExec(owner, a.id, "INSERT INTO items (name) VALUES ('seed')", [], schema);
+    }
     await admin`update nodes set audience = ${level} where id = ${a.id}`;
     await admin`update apps set mcp_access = ${opts.mcp !== false},
       data_read_only = ${opts.informational === true} where node_id = ${a.id}`;
@@ -116,6 +118,7 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
     await app('e client', anchor, 'client');
     await app('f public', anchor, 'public');
     await app('g draft only', anchor, 'team', { publish: false });
+    await app('i team never used', anchor, 'team', { used: false });
     await app('h other brain', other, 'team');
   }, 120_000);
 
@@ -144,7 +147,13 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
     const list = out<ListOut>(await call('app_data_list', {}, asMember()));
     const byId = new Map(list.apps.map((a) => [a.app_id, a]));
     expect([...byId.keys()].sort()).toEqual(
-      [ids['a team'], ids['c team informational'], ids['e client'], ids['f public']].sort(),
+      [
+        ids['a team'],
+        ids['c team informational'],
+        ids['e client'],
+        ids['f public'],
+        ids['i team never used'],
+      ].sort(),
     );
     expect(byId.get(ids['a team']!)).toMatchObject({ access: 'read_write', tables: ['items'] });
     expect(byId.get(ids['c team informational']!)?.access).toBe('read');
@@ -179,6 +188,14 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
     const [row] = await admin`select count(*)::int as n from node_snapshots
       where node_id = ${ids['b team mcp off']!} and trigger = 'pre_mcp_write'`;
     expect(row?.n).toBe(0);
+  });
+
+  it('schema: an app never used yet shows its declared tables, empty', async () => {
+    const res = out<{ schema_version: number; tables: { name: string; rows: number }[] }>(
+      await call('app_data_schema', { app_id: ids['i team never used'] }, asMember()),
+    );
+    expect(res.schema_version).toBe(1);
+    expect(res.tables).toEqual([expect.objectContaining({ name: 'items', rows: 0 })]);
   });
 
   it('schema: tables, columns and row counts', async () => {
