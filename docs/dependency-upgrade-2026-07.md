@@ -698,8 +698,8 @@ workstation:
   finished workflow and left one enqueued; then the 5.2.11 code migrated the
   schema (`provision`, now running `dbos schema` in the migrate gate), a 5.x
   `DBOSClient` read the 4.x result, the 5.x runner finished the 4.x-enqueued
-  workflow, and a fresh client enqueue ran. One-way: rolling a box back to a
-  4.x image needs `mantle_dbos_sys` restored. Roll one box first.
+  workflow, and a fresh client enqueue ran. Roll one box first; the
+  rollback recipe below was tested the same way.
 - **imapflow 2 and nodemailer 10.0.15** against a throwaway GreenMail server:
   SMTP send, `probeImapConnection`, fetch, `mailparser`, attachment intact.
 - **browserless v2.57.0 with puppeteer-core 25.12**: `browserHealth` and an
@@ -716,6 +716,39 @@ workstation:
 - **A throwaway brain** on the branch: web and runner boot, signup, page with
   math, share link, the public share view (server-rendered, KaTeX), search,
   table create.
+
+## Rolling a box back from DBOS 5
+
+Tested on the workstation with a 4.27.6 runner put back on a system database
+that 5.2.11 had migrated and used:
+
+- **4.x runs on the migrated schema.** It launches, runs new workflows and
+  reads results 4.x wrote. It reads a result 5.x wrote as `null` (wrong, but
+  silent), so `/runners` history from the 5.x period shows empty results.
+- **4.x cannot run a workflow 5.x queued** (the upgrade guide says so too). It
+  dequeues it, fails in dispatch, and leaves it `PENDING` for good. That is
+  the one real hazard: a turn queued or in flight under 5.x at rollback time.
+- **Restoring a pre-roll dump of `mantle_dbos_sys` also works, and is worse.**
+  Workflows that were queued at dump time come back `ENQUEUED`, although 5.x
+  already finished them, so 4.x runs them a second time (a duplicate reply).
+- **The roll's own backup does not cover it.** `scripts/db-dump.sh` (and so
+  the updater's pre-roll backup) dumps the `postgres` database only.
+
+So the rollback is an image rollback without a restore:
+
+1. Stop new work on the 5.x stack: stop `web` and `worker_runs`, the two
+   services that enqueue through the DBOS client. Keep `api` running so the
+   queue drains (it also starts Telegram turns itself; those finish within
+   one turn).
+2. Confirm the queue is empty in `mantle_dbos_sys`:
+   `select status, count(*) from dbos.workflow_status where status in ('ENQUEUED','PENDING') group by 1;`
+   Cancel anything left (`POST /api/runners/<id>` with `{"action":"cancel"}`,
+   which needs `web` up for that one call, or `DBOSClient.cancelWorkflow`).
+3. Roll the image back to the 4.x release. No database restore.
+
+Keep a dump of `mantle_dbos_sys` before the roll anyway
+(`docker exec mantle_pg pg_dump -U postgres -d mantle_dbos_sys -Fc`), but only
+for a damaged schema, never as the routine way back.
 
 ## Held, with reasons
 
