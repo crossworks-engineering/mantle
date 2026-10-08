@@ -671,3 +671,81 @@ process shows it.
   `^0.18.6`. An explicit `add pkg@version` forces the refetch. "Nothing to do"
   is not the same as current — which is the same lesson `deps:drift` exists to
   teach, one level down.
+
+---
+
+# Refresh: 2026-10-08
+
+Third pass, branch `feat/deps-refresh` off v0.239.37. One commit per major,
+the in-range moves together, image and tool pins alongside the npm tree.
+
+|                  |                                                                                                    |
+| ---------------- | -------------------------------------------------------------------------------------------------- |
+| `pnpm audit`     | 39 advisories (2 critical, 18 high) to 3, none of which has a fix to take                          |
+| in-range refresh | about 45 packages, plus `@firecms/neat` 1.0.2 to 1.1.0 and the two pinned singletons               |
+| majors taken     | `katex` 0.19, `imapflow` 2, `@dbos-inc/dbos-sdk` 5, LibreDWG 0.14, Python 3.13 (media), sharp 0.35 |
+| images           | browserless v2.57.0, tailscale v1.102.5, RustFS 1.0.1, ollama 0.40.1, ezdwf 0.0.7 from PyPI        |
+| tooling          | pnpm 11.1.2 to 11.28.5                                                                             |
+| held             | `typescript` 7, `mcp-handler` 2, Tika 4 (own task), `docker:29-cli`                                |
+
+## What the gates do not see, and what was run instead
+
+`pnpm verify` and the c2 gate (fresh Postgres, all 233 migrations, DB tests)
+passed, but the runtime-sensitive moves each got their own check on the
+workstation:
+
+- **DBOS 4 to 5** changes the system database schema. A 4.27.6 runner wrote a
+  finished workflow and left one enqueued; then the 5.2.11 code migrated the
+  schema (`provision`, now running `dbos schema` in the migrate gate), a 5.x
+  `DBOSClient` read the 4.x result, the 5.x runner finished the 4.x-enqueued
+  workflow, and a fresh client enqueue ran. One-way: rolling a box back to a
+  4.x image needs `mantle_dbos_sys` restored. Roll one box first.
+- **imapflow 2 and nodemailer 10.0.15** against a throwaway GreenMail server:
+  SMTP send, `probeImapConnection`, fetch, `mailparser`, attachment intact.
+- **browserless v2.57.0 with puppeteer-core 25.12**: `browserHealth` and an
+  A4 PDF.
+- **Media image** (ezdwf 0.0.7, ezdwg 0.12.12, dwg2dxf 0.14, Python 3.13):
+  built, and `/dwg/render` and `/dwf/render` render real DWGs and a
+  synthetic DWF.
+- **RustFS 1.0.1**: 1.0.0 wrote objects, 1.0.1 read and re-hashed them, 1.0.0
+  read them again. Rollback by tag works. The mirror tag must be published by
+  `rustfs-image.yml` before a roll.
+- **ollama 0.40.1**: same embeddinggemma blob on both versions, cosine 1.000000
+  on both embed APIs. Disk: 0.40 writes a converted copy of the model on first
+  use, so `data/ollama` roughly doubles (593 MB to 1.2 GB).
+- **A throwaway brain** on the branch: web and runner boot, signup, page with
+  math, share link, the public share view (server-rendered, KaTeX), search,
+  table create.
+
+## Held, with reasons
+
+- **TypeScript 7**: `typescript-eslint` 8.71.1 still peers
+  `typescript >=4.8.4 <6.1.0`. Revisit condition unchanged.
+- **mcp-handler 2.3**: still peers `@modelcontextprotocol/server` 2, the SDK
+  successor package. A migration of the MCP core, not a bump.
+- **Apache Tika 4**: a migration (Markdown by default on `/tika`, `X-Tika-PDF*`
+  headers gone, forked-JVM sizing against the container limit). Split out as
+  its own task. 3.3.1.0 is already the newest 3.x.
+- **`docker:29-cli`** for the updater: it bundles Compose v5 where today's image
+  runs v2.40, and the updater drives every roll. Needs its own updater test.
+- **No fix published**: `braces` >=3.0.4 and `sprintf-js` >=1.1.4 do not exist
+  (latest 3.0.3 and 1.1.3; lint and mammoth's CLI paths); the `katex` inside
+  `mermaid` needs mermaid off `^0.16` (mermaid 12 still declares it).
+- **Five packages one release back** (`nodemailer` 10.0.16, `imapflow` 2.2.10,
+  `firecrawl` 4.45.0, `lucide-react` 1.53.0, `@hono/node-server` 2.1.4): all
+  under a day old, which pnpm 11.28's default `minimumReleaseAge` refuses.
+  They will pass the next plain `pnpm update`.
+- **The sandbox image** (Node 22 on Ubuntu 24.04) and the retired MinIO build
+  were left alone: a sandbox move is a new published tag, and MinIO is kept
+  only for rollback.
+
+## Two things worth carrying
+
+- **pnpm 11.28 enforces `minimumReleaseAge` on the lockfile, not just on
+  resolution.** A lockfile with an entry under a day old fails
+  `--frozen-lockfile`. Forcing an `update pkg@x` to a fresh release now breaks
+  CI the same day, so stop one release short.
+- **pnpm 11.28 changed `licenses list` at the workspace root** to cover the
+  root package only. `scripts/generate-notices.mjs` now passes `--recursive`.
+  Generate the notices on Linux: a Mac run lists darwin-arm64 native
+  packages instead of the linux-x64 ones the image ships.
