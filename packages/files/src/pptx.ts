@@ -12,10 +12,11 @@
  *
  * Slide order is the presentation's own `sldIdLst`, resolved through
  * `ppt/_rels/presentation.xml.rels`, which is the order PowerPoint shows. Per
- * slide: each `<a:p>` paragraph on its own line (shapes, groups and table
- * cells alike, in source order), then the speaker notes. Field runs
- * (`<a:fld>`: slide number, date) are dropped; they are furniture, not
- * content.
+ * slide: each `<a:p>` paragraph on its own line (shapes and groups in source
+ * order, a table row as one tab-joined line), then one line per chart (its
+ * cached series names, categories and values, as Tika gives them), then
+ * SmartArt text, then the speaker notes. Field runs (`<a:fld>`: slide
+ * number, date) are dropped; they are furniture, not content.
  *
  * Same bounded regex reading as `./ooxml-media.ts`, for the same reasons: the
  * input is machine-written OOXML and we only collect text runs in source
@@ -26,6 +27,9 @@
 import { ATTR, loadZip, numericSuffix, relationshipsFor, type Zip } from './ooxml-media';
 
 const NOTES_REL = /\/relationships\/notesSlide$/;
+const CHART_REL = /\/relationships\/chart$/;
+/** SmartArt keeps its text in the data part; the drawing part repeats it. */
+const DIAGRAM_DATA_REL = /\/relationships\/diagramData$/;
 
 const XML_ENTITIES: Record<string, string> = {
   amp: '&',
@@ -46,19 +50,26 @@ function decodeXml(s: string): string {
   });
 }
 
-/** Paragraph opener, closer, text run, line break, tab, and field open/close,
- *  matched together so one ordered pass can build each paragraph. */
+/** Paragraph opener, closer, text run, line break, tab, field open/close, and
+ *  table row and cell boundaries, matched together so one ordered pass can
+ *  build each paragraph. */
 const RUN_SCAN_RE =
-  /<a:p\b[^>]*>|<\/a:p>|<a:t(?:\s[^>]*)?>([\s\S]*?)<\/a:t>|<a:br\b[^>]*\/?>|<a:tab\b[^>]*\/?>|<a:fld\b[^>]*?(\/?)>|<\/a:fld>/g;
+  /<a:p\b[^>]*>|<\/a:p>|<a:t(?:\s[^>]*)?>([\s\S]*?)<\/a:t>|<a:br\b[^>]*\/?>|<a:tab\b[^>]*\/?>|<a:fld\b[^>]*?(\/?)>|<\/a:fld>|<a:tr\b[^>]*>|<\/a:tc>|<\/a:tr>/g;
 
-/** Every non-empty `<a:p>` paragraph in one part, in source order. */
+/**
+ * Every non-empty `<a:p>` paragraph in one part, in source order. A table row
+ * is one line, its cells joined by tabs (a cell's own paragraphs by spaces),
+ * which is how Tika and our `.docx` path render a row.
+ */
 export function paragraphsOf(xml: string): string[] {
   const out: string[] = [];
   let line = '';
   let inField = false;
+  let row: string[] | null = null;
+  let cell: string[] = [];
   const flush = () => {
     const text = line.replace(/[ \t]+$/g, '').replace(/^\s+/, '');
-    if (text) out.push(text);
+    if (text) (row ? cell : out).push(text);
     line = '';
   };
   for (const m of xml.matchAll(RUN_SCAN_RE)) {
@@ -66,6 +77,25 @@ export function paragraphsOf(xml: string): string[] {
     // `<a:p>`, `<a:p/>` or `</a:p>`: a paragraph boundary either way.
     if (tag.startsWith('<a:p') || tag === '</a:p>') {
       flush();
+      continue;
+    }
+    if (tag.startsWith('<a:tr')) {
+      flush();
+      row = [];
+      cell = [];
+      continue;
+    }
+    if (tag === '</a:tc>') {
+      flush();
+      row?.push(cell.join(' '));
+      cell = [];
+      continue;
+    }
+    if (tag === '</a:tr>') {
+      flush();
+      const text = (row ?? []).join('\t').trimEnd();
+      if (text.trim()) out.push(text);
+      row = null;
       continue;
     }
     if (tag.startsWith('<a:fld')) {
@@ -104,18 +134,33 @@ async function slidesInOrder(zip: Zip): Promise<string[]> {
     .sort((a, b) => numericSuffix(a) - numericSuffix(b));
 }
 
-/** The notes part a slide links to, if any. */
-async function notesFor(zip: Zip, slidePath: string): Promise<string | undefined> {
+/** The parts a slide links to, as `{ type, path }` in relationship order. */
+async function relatedParts(
+  zip: Zip,
+  slidePath: string,
+): Promise<Array<{ type: string; path: string }>> {
   const relsPath = slidePath.replace(/([^/]+)$/, '_rels/$1.rels');
   const relsXml = await zip.file(relsPath)?.async('string');
-  if (!relsXml) return undefined;
-  const all = await relationshipsFor(zip, slidePath);
+  if (!relsXml) return [];
+  const paths = await relationshipsFor(zip, slidePath);
+  const out: Array<{ type: string; path: string }> = [];
   for (const tag of relsXml.match(/<Relationship\b[^>]*>/g) ?? []) {
-    const type = ATTR(tag, 'Type') ?? '';
     const id = ATTR(tag, 'Id');
-    if (id && NOTES_REL.test(type)) return all.get(id);
+    const path = id ? paths.get(id) : undefined;
+    if (path) out.push({ type: ATTR(tag, 'Type') ?? '', path });
   }
-  return undefined;
+  return out;
+}
+
+/** A chart's cached text and numbers (`<c:v>`) and its title runs, in
+ *  source order, as one tab-joined line. */
+export function chartLine(xml: string): string {
+  const values: string[] = [];
+  for (const m of xml.matchAll(/<c:v>([\s\S]*?)<\/c:v>|<a:t(?:\s[^>]*)?>([\s\S]*?)<\/a:t>/g)) {
+    const v = decodeXml(m[1] ?? m[2] ?? '').trim();
+    if (v) values.push(v);
+  }
+  return values.join('\t');
 }
 
 export async function parsePptx(bytes: Buffer): Promise<string> {
@@ -123,10 +168,22 @@ export async function parsePptx(bytes: Buffer): Promise<string> {
   const slides: string[] = [];
   for (const slidePath of await slidesInOrder(zip)) {
     const xml = (await zip.file(slidePath)?.async('string')) ?? '';
-    const parts = [paragraphsOf(xml).join('\n')];
-    const notesPath = await notesFor(zip, slidePath);
-    const notesXml = notesPath ? await zip.file(notesPath)?.async('string') : undefined;
-    if (notesXml) parts.push(paragraphsOf(notesXml).join('\n'));
+    const related = await relatedParts(zip, slidePath);
+    const read = async (rel: RegExp) => {
+      const out: string[] = [];
+      for (const { type, path } of related) {
+        if (!rel.test(type)) continue;
+        const partXml = await zip.file(path)?.async('string');
+        if (partXml) out.push(partXml);
+      }
+      return out;
+    };
+    const parts = [
+      paragraphsOf(xml).join('\n'),
+      (await read(CHART_REL)).map(chartLine).join('\n'),
+      (await read(DIAGRAM_DATA_REL)).map((d) => paragraphsOf(d).join('\n')).join('\n'),
+      (await read(NOTES_REL)).map((n) => paragraphsOf(n).join('\n')).join('\n'),
+    ];
     const text = parts.filter(Boolean).join('\n\n');
     if (text) slides.push(text);
   }

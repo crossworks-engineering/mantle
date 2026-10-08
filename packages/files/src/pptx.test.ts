@@ -1,10 +1,13 @@
 import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
 import { parseDocumentBytes } from './parse';
-import { paragraphsOf, parsePptx } from './pptx';
+import { chartLine, paragraphsOf, parsePptx } from './pptx';
 
 const SLIDE_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide';
 const NOTES_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide';
+const CHART_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart';
+const DIAGRAM_DATA_REL =
+  'http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramData';
 
 const rels = (entries: Array<[string, string, string?]>) =>
   `<?xml version="1.0"?><Relationships>${entries
@@ -75,6 +78,36 @@ describe('parsePptx', () => {
     expect(text).toBe('Turnaround plan\nCheck the flange & gasket\n\nSpeaker note: torque first');
   });
 
+  it('adds chart values and SmartArt text after the slide text', async () => {
+    const zip = new JSZip();
+    zip.file('ppt/slides/slide1.xml', `<p:sld>${shape('Wall loss by area')}</p:sld>`);
+    zip.file(
+      'ppt/slides/_rels/slide1.xml.rels',
+      rels([
+        ['rId2', '../charts/chart1.xml', CHART_REL],
+        ['rId3', '../diagrams/data1.xml', DIAGRAM_DATA_REL],
+        [
+          'rId4',
+          '../diagrams/drawing1.xml',
+          'http://schemas.microsoft.com/office/2007/relationships/diagramDrawing',
+        ],
+      ]),
+    );
+    zip.file(
+      'ppt/charts/chart1.xml',
+      '<c:chartSpace><c:chart><c:plotArea><c:barChart><c:ser><c:tx><c:strRef><c:strCache><c:pt idx="0"><c:v>Loss</c:v></c:pt></c:strCache></c:strRef></c:tx>' +
+        '<c:cat><c:strRef><c:strCache><c:pt idx="0"><c:v>North</c:v></c:pt><c:pt idx="1"><c:v>South</c:v></c:pt></c:strCache></c:strRef></c:cat>' +
+        '<c:val><c:numRef><c:numCache><c:pt idx="0"><c:v>12.5</c:v></c:pt><c:pt idx="1"><c:v>7</c:v></c:pt></c:numCache></c:numRef></c:val></c:ser></c:barChart></c:plotArea></c:chart></c:chartSpace>',
+    );
+    zip.file(
+      'ppt/diagrams/data1.xml',
+      '<dgm:dataModel><dgm:ptLst><dgm:pt><dgm:t><a:p><a:r><a:t>Plan</a:t></a:r></a:p></dgm:t></dgm:pt><dgm:pt><dgm:t><a:p><a:r><a:t>Inspect</a:t></a:r></a:p></dgm:t></dgm:pt></dgm:ptLst></dgm:dataModel>',
+    );
+    zip.file('ppt/diagrams/drawing1.xml', `<dsp:drawing>${shape('Plan', 'Inspect')}</dsp:drawing>`);
+    const text = await parsePptx(Buffer.from(await zip.generateAsync({ type: 'uint8array' })));
+    expect(text).toBe('Wall loss by area\n\nLoss\tNorth\tSouth\t12.5\t7\n\nPlan\nInspect');
+  });
+
   it('falls back to part numbering when the presentation lists no slides', async () => {
     const zip = new JSZip();
     zip.file('ppt/slides/slide10.xml', `<p:sld>${shape('ten')}</p:sld>`);
@@ -96,11 +129,32 @@ describe('paragraphsOf', () => {
     expect(paragraphsOf(xml)).toEqual(['Café €42 <net>\nline two', 'a\tb']);
   });
 
-  it('does not mistake table, tab or pPr tags for paragraphs or text', () => {
+  it('does not mistake table, tab or pPr tags for text', () => {
     const xml =
       '<a:tbl><a:tr><a:tc><a:txBody><a:p><a:r><a:t>R0C0</a:t></a:r></a:p></a:txBody><a:tcPr/></a:tc>' +
       '<a:tc><a:txBody><a:p><a:r><a:t>R0C1</a:t></a:r></a:p></a:txBody></a:tc></a:tr></a:tbl>';
-    expect(paragraphsOf(xml)).toEqual(['R0C0', 'R0C1']);
+    expect(paragraphsOf(xml)).toEqual(['R0C0\tR0C1']);
+  });
+
+  it('renders each table row as one tab-joined line, empty cells kept in place', () => {
+    const cellXml = (t: string) =>
+      `<a:tc><a:txBody>${t ? `<a:p><a:r><a:t>${t}</a:t></a:r></a:p>` : '<a:p/>'}</a:txBody></a:tc>`;
+    const xml =
+      '<a:p><a:r><a:t>Before</a:t></a:r></a:p><a:tbl>' +
+      `<a:tr h="1">${cellXml('Area')}${cellXml('')}${cellXml('Loss')}</a:tr>` +
+      `<a:tr h="1">${cellXml('North')}${cellXml('x')}${cellXml('12%')}</a:tr>` +
+      '</a:tbl><a:p><a:r><a:t>After</a:t></a:r></a:p>';
+    expect(paragraphsOf(xml)).toEqual(['Before', 'Area\t\tLoss', 'North\tx\t12%', 'After']);
+  });
+});
+
+describe('chartLine', () => {
+  it('keeps the chart title runs and skips empty cached values', () => {
+    expect(
+      chartLine(
+        '<c:title><a:p><a:r><a:t>Readings &amp; limits</a:t></a:r></a:p></c:title><c:v></c:v><c:v>3</c:v>',
+      ),
+    ).toBe('Readings & limits\t3');
   });
 });
 
