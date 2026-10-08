@@ -4,6 +4,28 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: team apps Phase 2, connectors by level
+
+An MCP connector's level now decides who may use its tools, as the level on
+an item does (plan page b6dd688e, section C).
+
+- Apps below admin: a member's run reaches a connector at team, client or
+  public level, a client app one at client level, a contact link one at
+  public level. This replaces External access for connector tools; single
+  http tools keep External access.
+- The admin's confirm on a connector tool is its read-only mark: marked =
+  read, unmarked = write. Apps may write through an unmarked tool (Jason's
+  decision); the member, client and contact brokers log every write call
+  with its input (2 KB).
+- Members' and clients' own MCP lists the connector tools at their level;
+  write tools only with the Write switch. Every call is in the audit log.
+  The member Settings > MCP lists the connectors open to them.
+- The connector list carries its level.
+- `pnpm -C server/web connector-levels`: a read-only count, before a roll,
+  of the apps that lose or gain a connector tool and the connectors below
+  admin (ids and numbers only). Nothing raises a level by itself.
+- An undo snapshot whose row fails to commit no longer leaves its file.
+
 ## Unreleased: team apps Phase 1, MCP on app data
 
 Members and clients reach the data of mini apps from their own MCP client

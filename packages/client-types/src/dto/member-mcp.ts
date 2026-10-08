@@ -27,4 +27,19 @@ export type MemberMcpView = {
   access: { enabled: boolean; writeEnabled: boolean };
   /** The clients this member connected, never another login's. */
   clients: MemberMcpClient[];
+  /** The connectors (outside data sources) open at the member's level (team
+   *  apps Phase 2): their MCP and their apps may use these tools. Read
+   *  tools carry the admin's read-only mark; write tools need Write on
+   *  over MCP. Absent from a brain before Phase 2. */
+  connectors?: MemberMcpConnector[];
+};
+
+/** One connector open to the member. */
+export type MemberMcpConnector = {
+  id: string;
+  name: string;
+  /** The connector's level: team, client or public. */
+  level: string;
+  readTools: number;
+  writeTools: number;
 };

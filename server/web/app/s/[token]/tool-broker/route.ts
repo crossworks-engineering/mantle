@@ -25,7 +25,7 @@ import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 import { SHARE_BODY_CEILING_BYTES, readJsonCapped } from '@/lib/body-limit';
 import { withViewer } from '@mantle/db';
 import { getAppRuntime, recordAppAccess, recordShareAccess } from '@mantle/content';
-import { contactAppToolVerdict, dispatchTool } from '@mantle/tools';
+import { contactAppToolVerdict, dispatchTool, outsideCallLogDetail } from '@mantle/tools';
 
 const Body = z.object({
   slug: z.string().min(1).max(120),
@@ -83,7 +83,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     contactId,
     kind: 'tool',
     detail: verdict.ok
-      ? { via: 'contact', contactId, slug, handler: verdict.tool.handler.kind }
+      ? { via: 'contact', contactId, slug, ...outsideCallLogDetail(verdict, input) }
       : { via: 'contact', contactId, slug, refused: verdict.reason },
   });
   recordShareAccess({

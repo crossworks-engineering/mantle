@@ -234,9 +234,10 @@ So to show your data in an app, you give it a tool that returns that data:
 - **Declare a built-in tool** that returns what you need (`note_list`,
   `table_rows_list`, `table_query`, `search_nodes`, …). This is the kind
   that works for **members**: members running a team app get read-only
-  built-in tools, plus an outside (MCP or http) tool only when an admin
-  switched "External access" on for it (docs/member-logins.md). An open
-  share link gets no tools at all.
+  built-in tools, plus an MCP connector's tools when the connector's level
+  is team or lower (a tool without the admin's read-only mark writes), and
+  an http tool only when an admin switched "External access" on for it
+  (docs/member-logins.md). An open share link gets no tools at all.
 - **Admin-only apps** may also use a purpose-built tool from the Toolsmith
   MCP tools: `recipe_tool_create` composes existing tools into one tool that
   returns exactly the shape the app needs; `api_tool_create` wraps an
@@ -580,8 +581,9 @@ the team never sees it. The contact reads the app's SQLite
 (`host.db.query`). With **Can write** on (per contact, off by default) the
 contact also writes it (`host.db.exec`): the write schedules the app-table
 export sync like a member's. Never brain tools: `host.tools.call` is
-refused, except for an outside (MCP or http) tool the app declares that an
-admin switched "External access" on for (docs/member-logins.md). An open
+refused, except for an outside tool the app declares: a connector's tool at
+public level, or an http tool an admin switched "External access" on for
+(docs/member-logins.md). An open
 link never calls a tool. The app's Activity tab names the contact. See
 docs/sharing.md section 4b.
 
@@ -609,8 +611,9 @@ PUBLISHED build only and never edit it.
   group at team level or lower holds (usually `team-read`), with no
   confirmation. It runs at the team level: it reads team-, client- and
   public-level items, never admin ones. Recipe and shell tools are refused,
-  so are http and MCP tools unless an admin switched "External access" on
-  for them, so are built-ins that write, and so are `my_items_list`,
+  so are http tools unless an admin switched "External access" on for them,
+  and MCP connector tools unless the connector's level is team or lower,
+  so are built-ins that write, and so are `my_items_list`,
   `my_item_open`, `summarize_text`, `search_chunks`, `team_request_create`
   and `read_result`. `app_tools_set`, `app_publish` and `access_set` list a
   warning for each declared tool members would be refused.

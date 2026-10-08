@@ -25,9 +25,13 @@
  * a team or public app, anyone running a client app (the client rules), and
  * a contact on a contact-share link who passed the code. Never an open link
  * (no contact). Each still needs the app to declare the tool, and the call
- * may come by hand with any input, not only from the app's screens. A tool
- * group's level does not gate an external tool (an mcp tool still needs its
- * connector enabled: dispatchMcp refuses a disabled one).
+ * may come by hand with any input, not only from the app's screens.
+ *
+ * CONNECTOR tools (mcp) follow another rule since team apps Phase 2
+ * (connectorToolVerdict below): the connector's level decides who may use
+ * them, and the confirm stored here is their READ-ONLY MARK (marked = a
+ * read, unmarked = a write). The switch's eligibility and signature rules
+ * hold for the mark as they did for the switch.
  *
  * The row stores WHEN the admin confirmed, WHO, and a signature of the
  * handler they looked at. The switch counts only while that signature equals
@@ -41,12 +45,17 @@
 import { createHash } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import {
+  asSystem,
+  asViewerLevel,
   auditLog,
   db,
+  levelCovers,
+  toolGroups,
   tools,
   type Tool,
   type ToolHandler,
   type ToolExternalAccess,
+  type ViewerLevel,
 } from '@mantle/db';
 import type { ToolExternalAccessDTO } from '@mantle/client-types';
 import { resolveTool } from './resolve';
@@ -151,10 +160,212 @@ export function externalToolVerdict(
   };
 }
 
+// ── Connector tools: the connector's level decides (team apps Phase 2) ──────
+
+/** The level a runner's app call runs at, for a connector's level: a
+ *  member's team rules, a client app's client rules, a contact link's
+ *  public scope. */
+const RUNNER_LEVEL: Record<ExternalAccessRunner, ViewerLevel> = {
+  member: 'team',
+  client: 'client',
+  contact: 'public',
+};
+
+/** An outside tool's verdict, and whether the call writes: a connector tool
+ *  without the admin's read-only mark is a write tool. */
+export type OutsideToolVerdict =
+  { ok: true; tool: Tool; write: boolean } | { ok: false; status: 403; reason: string };
+
+/** The connector group of a connector tool (its handler names it: the one
+ *  link a sync, a dispatch and the switch clearing all use), or null. */
+export async function connectorGroupOf(
+  ownerId: string,
+  tool: Pick<Tool, 'handler'>,
+): Promise<{ id: string; slug: string; level: ViewerLevel; usable: boolean } | null> {
+  const h = tool.handler as ToolHandler;
+  if (h.kind !== 'mcp') return null;
+  // As the system: a client-scope read sees client-level groups only, and
+  // the rule is in the code below, not in row security.
+  const [g] = await asSystem(() =>
+    db
+      .select({
+        id: toolGroups.id,
+        slug: toolGroups.slug,
+        audience: toolGroups.audience,
+        enabled: toolGroups.enabled,
+        integration: toolGroups.integration,
+      })
+      .from(toolGroups)
+      .where(and(eq(toolGroups.ownerId, ownerId), eq(toolGroups.slug, h.group)))
+      .limit(1),
+  );
+  if (!g) return null;
+  return {
+    id: g.id,
+    slug: g.slug,
+    level: asViewerLevel(g.audience),
+    usable: g.enabled === true && !!g.integration?.mcp,
+  };
+}
+
+/** Whether a runner at `run` may use a connector at `connector` level: the
+ *  connector's level must be one the runner's level reads (levelCovers),
+ *  as for an item. */
+export function connectorLevelAllows(run: ViewerLevel, connector: ViewerLevel): boolean {
+  return levelCovers(run, connector);
+}
+
+/**
+ * The ONE rule for a CONNECTOR tool (an mcp tool) in an app run below admin
+ * (team apps Phase 2, Jason 2026-10-08): the connector group's level decides
+ * who may use it, the same as the level on an item, and the admin's
+ * read-only mark decides read or write. It replaces External access for
+ * connector tools; a single http tool keeps External access
+ * (externalToolVerdict).
+ *
+ *  - the connector is enabled and bound (dispatchMcp refuses otherwise);
+ *  - its level is one the run's level reads: a member's team rules reach a
+ *    team, client or public connector; a client app a client one; a contact
+ *    link a public one. A new connector starts at admin: nothing opens by
+ *    itself, and no code ever raises a level;
+ *  - a tool that needs a confirmation is refused (nobody is there);
+ *  - marked read-only (the admin's confirm, on the handler they looked at)
+ *    = a read; unmarked = a WRITE, which an app may make too (Jason's
+ *    decision 1). The brokers log every write call with its input.
+ */
+export async function connectorToolVerdict(
+  ownerId: string,
+  tool: Tool,
+  slug: string,
+  runner: ExternalAccessRunner,
+): Promise<OutsideToolVerdict> {
+  const who =
+    runner === 'member' ? 'a team app' : runner === 'client' ? 'a client app' : 'a shared link';
+  if (tool.requiresConfirm) {
+    return {
+      ok: false,
+      status: 403,
+      reason: `The tool '${slug}' needs an admin's confirmation on every call, so ${who} can't use it.`,
+    };
+  }
+  const group = await connectorGroupOf(ownerId, tool);
+  if (!group?.usable) {
+    return {
+      ok: false,
+      status: 403,
+      reason: `The connector of the tool '${slug}' is off or not set up, so ${who} can't use it.`,
+    };
+  }
+  const run = RUNNER_LEVEL[runner];
+  if (!connectorLevelAllows(run, group.level)) {
+    return {
+      ok: false,
+      status: 403,
+      reason: `The tool '${slug}' belongs to a connector at ${group.level} level, so ${who} can't use it. An admin can set the connector's level (Settings → Tool groups).`,
+    };
+  }
+  return { ok: true, tool, write: !externalAccessActive(tool) };
+}
+
+/**
+ * The connector tools a login at `level` may use over its own MCP (team
+ * apps Phase 2): enabled mcp tools of an enabled, bound connector whose
+ * level `level` reads, each with whether it carries the admin's read-only
+ * mark. A tool that needs a confirmation is left out (nobody confirms on a
+ * login's MCP). The rule is in the query (as the system: a client scope's
+ * row security would hide the groups, and the level is checked here).
+ */
+export async function listLoginConnectorTools(
+  ownerId: string,
+  level: ViewerLevel,
+): Promise<
+  { tool: Tool; readOnly: boolean; groupId: string; groupName: string; groupLevel: ViewerLevel }[]
+> {
+  const rows = await asSystem(() =>
+    db
+      .select({
+        tool: tools,
+        groupId: toolGroups.id,
+        groupName: toolGroups.name,
+        groupLevel: toolGroups.audience,
+      })
+      .from(tools)
+      .innerJoin(
+        toolGroups,
+        and(
+          eq(toolGroups.ownerId, tools.ownerId),
+          sql`${toolGroups.slug} = ${tools.handler}->>'group'`,
+        ),
+      )
+      .where(
+        and(
+          eq(tools.ownerId, ownerId),
+          eq(tools.enabled, true),
+          eq(tools.requiresConfirm, false),
+          sql`${tools.handler}->>'kind' = 'mcp'`,
+          eq(toolGroups.enabled, true),
+          sql`${toolGroups.integration} ? 'mcp'`,
+        ),
+      ),
+  );
+  return rows.flatMap((r) => {
+    const groupLevel = asViewerLevel(r.groupLevel);
+    if (!connectorLevelAllows(level, groupLevel)) return [];
+    return [
+      {
+        tool: r.tool,
+        readOnly: externalAccessActive(r.tool),
+        groupId: r.groupId,
+        groupName: r.groupName,
+        groupLevel,
+      },
+    ];
+  });
+}
+
+/** An outside tool's verdict by its kind: a connector tool by its
+ *  connector's level and read-only mark, any other by External access
+ *  (which only a read-only tool gets, so it never writes). */
+export async function outsideToolVerdict(
+  ownerId: string,
+  tool: Tool,
+  slug: string,
+  runner: ExternalAccessRunner,
+): Promise<OutsideToolVerdict> {
+  if ((tool.handler as ToolHandler).kind === 'mcp') {
+    return connectorToolVerdict(ownerId, tool, slug, runner);
+  }
+  const v = externalToolVerdict(tool, slug, runner);
+  return v.ok ? { ...v, write: false } : v;
+}
+
+/** The longest input a write call's log row keeps. */
+export const OUTSIDE_WRITE_LOG_INPUT_MAX = 2048;
+
+/** What an app's tool-call log row adds for an allowed outside call: its
+ *  kind, and for a write, that it writes and its input (capped). The input
+ *  can hold what the runner typed: the log is for admins only. */
+export function outsideCallLogDetail(
+  verdict: { tool: Tool; write?: boolean },
+  input: unknown,
+): Record<string, unknown> {
+  const kind = (verdict.tool.handler as ToolHandler).kind;
+  if (kind === 'builtin') return {};
+  if (!verdict.write) return { handler: kind };
+  let text: string;
+  try {
+    text = JSON.stringify(input ?? {});
+  } catch {
+    text = '[input not serialisable]';
+  }
+  return { handler: kind, write: true, input: text.slice(0, OUTSIDE_WRITE_LOG_INPUT_MAX) };
+}
+
 /**
  * May a CONTACT on a contact-share link call `slug` from the shared app that
- * declares `declared`? Only an outside tool with External access: no built-in
- * ever runs on a link (a link has no login, and a brain read tool would reach
+ * declares `declared`? Only an outside tool: a connector tool at public
+ * level, or another outside tool with External access. No built-in ever
+ * runs on a link (a link has no login, and a brain read tool would reach
  * the owner's content). The /s broker has already refused an open link (no
  * contact) and checked the contact's code gate.
  */
@@ -162,7 +373,9 @@ export async function contactAppToolVerdict(
   ownerId: string,
   declared: readonly string[],
   slug: string,
-): Promise<{ ok: true; tool: Tool } | { ok: false; status: 403 | 404; reason: string }> {
+): Promise<
+  { ok: true; tool: Tool; write: boolean } | { ok: false; status: 403 | 404; reason: string }
+> {
   if (!declared.includes(slug)) {
     return {
       ok: false,
@@ -176,10 +389,10 @@ export async function contactAppToolVerdict(
     return {
       ok: false,
       status: 403,
-      reason: `The tool '${slug}' is built in, and a shared link runs no built-in tools (only outside tools with External access).`,
+      reason: `The tool '${slug}' is built in, and a shared link runs no built-in tools (only outside tools: a connector's at public level, or one with External access).`,
     };
   }
-  return externalToolVerdict(tool, slug, 'contact');
+  return outsideToolVerdict(ownerId, tool, slug, 'contact');
 }
 
 /** The switch as the wire shows it (`ToolDTO.externalAccess`). */

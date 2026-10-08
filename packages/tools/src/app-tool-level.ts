@@ -35,8 +35,10 @@ export type AppToolLevel = 'admin' | 'team' | 'client' | 'none';
 /** Who runs the app: the owner broker's admin, a member or a client. */
 export type AppToolRunner = 'admin' | 'team' | 'client';
 
+/** `write`: an outside call that writes (team apps Phase 2); the member
+ *  and client brokers log its input. */
 export type AppToolVerdict =
-  { ok: true; tool: Tool } | { ok: false; status: 403 | 404; reason: string };
+  { ok: true; tool: Tool; write?: boolean } | { ok: false; status: 403 | 404; reason: string };
 
 /** A client-level app runs the client rules for every runner; any other app
  *  runs the runner's own rules. A client never runs a non-client app (its

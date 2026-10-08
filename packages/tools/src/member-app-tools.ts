@@ -19,12 +19,13 @@
  *      chat must not become callable 60 times a minute (audit 2026-09-27;
  *      `spends` since audit F17, as a read can spend too);
  *   5. an ENABLED tool group at team level or lower holds it.
- * An OUTSIDE tool (mcp or http) takes another path after rule 2: an admin
- * switched on "External access" on it and confirmed it only reads
- * (external-access.ts; widened 2026-10-02). It needs no group level: the
- * app's sharing decides who runs it. The switch counts only while the
- * handler is the one the admin confirmed and the tool needs no confirmation.
- * Never for recipe or shell tools.
+ * An OUTSIDE tool takes another path after rule 2 (external-access.ts). A
+ * CONNECTOR tool (mcp): its connector's level must be team or lower, and the
+ * admin's read-only mark makes it a read, its absence a write (team apps
+ * Phase 2, Jason 2026-10-08). An http tool: an admin switched on "External
+ * access" on it and confirmed it only reads (widened 2026-10-02). Either
+ * counts only while the handler is the one the admin confirmed and the
+ * tool needs no confirmation. Never for recipe or shell tools.
  * The caller then dispatches inside `withViewer('team', …)` on a team surface
  * that carries the login, so row security still decides what the tool reads.
  *
@@ -35,7 +36,7 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db, toolGroups, type Tool } from '@mantle/db';
 import { resolveTool } from './resolve';
-import { externalToolVerdict } from './external-access';
+import { outsideToolVerdict } from './external-access';
 
 /** The group levels a member's app may draw tools from. */
 const MEMBER_GROUP_LEVELS = ['team', 'client', 'public'];
@@ -66,8 +67,10 @@ export const MEMBER_APP_REFUSED_SLUGS: readonly string[] = [
   'read_result',
 ];
 
+/** `write`: an outside call that writes (a connector tool without the
+ *  read-only mark, team apps Phase 2); the broker logs its input. */
 export type MemberAppToolVerdict =
-  { ok: true; tool: Tool } | { ok: false; status: 403 | 404; reason: string };
+  { ok: true; tool: Tool; write?: boolean } | { ok: false; status: 403 | 404; reason: string };
 
 /** Whether an enabled tool group at team level or lower holds `slug`. */
 async function inTeamLevelGroup(ownerId: string, slug: string): Promise<boolean> {
@@ -105,12 +108,13 @@ export async function memberAppToolVerdict(
   const tool = await resolveTool(ownerId, slug);
   if (!tool) return { ok: false, status: 404, reason: `tool '${slug}' not found` };
   if (tool.handler.kind !== 'builtin') {
-    // An outside tool with External access (external-access.ts): the admin's
-    // read-only confirmation stands in for the built-in flags below, and the
-    // app's sharing, not a group level, decides who calls it. It refuses
-    // recipe and shell tools, a write method, a tool that needs confirmation
-    // and a handler changed since.
-    return externalToolVerdict(tool, slug, 'member');
+    // An outside tool (external-access.ts): a connector tool by its
+    // connector's level (team, client or public for a member's run), read
+    // or write by the admin's read-only mark (team apps Phase 2); any other
+    // outside tool by External access, the admin's read-only confirmation.
+    // Recipe and shell tools, a write method, a tool that needs
+    // confirmation and a handler changed since are refused.
+    return outsideToolVerdict(ownerId, tool, slug, 'member');
   }
   if (MEMBER_APP_REFUSED_SLUGS.includes(tool.handler.ref)) {
     return { ok: false, status: 403, reason: `The tool '${slug}' is not available in team apps.` };

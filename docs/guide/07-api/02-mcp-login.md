@@ -43,6 +43,19 @@ A public app stays read only for members. MCP never changes an app's tables or c
 
 Before the first MCP write to an app in an hour, the brain saves a snapshot of the app (**Before an MCP write** in the app's History). Restore it to undo. These snapshots keep a day of hours (24) on their own, so they never push out the app's other snapshots. Each MCP read and write shows in the app's Activity, and a write keeps its SQL. The SQL can hold what the member typed, personal data included: only admins see the Activity tab.
 
+## Open an outside data source (a connector)
+
+An MCP connector (Settings > MCP connectors) starts at admin level: only admins use it. Set its level in **Settings > Tool groups** to open it:
+
+| Connector level | Who may use its tools |
+| --- | --- |
+| Admin | Admins only |
+| Team | Members: their own MCP and the apps they run |
+| Client | Clients and members: their own MCP and client apps |
+| Public | Also contacts on a contact-share link of an app |
+
+Everyone at that level may use every tool of the connector, so keep a source with secret parts at admin level. A tool you marked read-only (**I confirm this tool only reads data**) is a read. A tool without the mark changes data: apps may call it, and a member's or client's MCP only with their **Write** switch on. Every call is logged with the login.
+
 ## When their MCP client cannot sign in
 
 The member or client makes their own API key in **Settings > API access** and sends it as a header ([API keys](08-api-keys.md)). In Claude Code:

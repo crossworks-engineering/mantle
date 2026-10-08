@@ -9,7 +9,13 @@
 
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
-import { db, toolGroups, type ToolGroup, type ToolGroupMcpBinding } from '@mantle/db';
+import {
+  asViewerLevel,
+  db,
+  toolGroups,
+  type ToolGroup,
+  type ToolGroupMcpBinding,
+} from '@mantle/db';
 import { listApiKeys } from '@mantle/api-keys';
 import { getConfigStatus } from '@mantle/microsoft';
 import {
@@ -87,6 +93,9 @@ function toDTO(g: ToolGroup, grantedTo: string[], tokenServices: Set<string>): M
     toolSlugs: g.toolSlugs ?? [],
     integration,
     enabled: g.enabled,
+    // The connector's level decides who may use its tools (team apps
+    // Phase 2): the connectors screen says so.
+    audience: asViewerLevel(g.audience),
     createdAt: g.createdAt.toISOString(),
     updatedAt: g.updatedAt.toISOString(),
     grantedTo,

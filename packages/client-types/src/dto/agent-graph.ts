@@ -84,7 +84,10 @@ export interface ToolDTO {
   /** "External access" on an outside tool (mcp or http): everyone a shared
    *  app that declares it reaches (members, clients, contacts on a contact
    *  link) may call it. Null when off. Set it with
-   *  `PUT /api/tools/:id/external-access`. */
+   *  `PUT /api/tools/:id/external-access`. On a CONNECTOR tool (mcp) since
+   *  team apps Phase 2 it is the READ-ONLY MARK: the connector's level
+   *  decides who may use the tool, and on = a read, off = a write (apps
+   *  may write; a login's MCP needs its Write switch). */
   externalAccess?: ToolExternalAccessDTO | null;
   createdAt: string;
   updatedAt: string;
@@ -196,7 +199,11 @@ export interface ToolGroupDTO {
   enabled: boolean;
   /** The group's level: an agent or a team app may hold it only at or above
    *  it, and team apps call only built-in tools in an enabled group at team
-   *  level or below (outside tools follow External access instead). Absent from servers before it shipped. Set it with
+   *  level or below. A CONNECTOR group's level also decides who may use its
+   *  tools in apps and over their own MCP (team apps Phase 2): members at
+   *  team level or lower, clients at client level, contact links at
+   *  public; single http tools follow External access. Absent from servers
+   *  before it shipped. Set it with
    *  `PATCH /api/access/tool-groups/:slug { audience }`. */
   audience?: AccessLevel;
   createdAt: string;

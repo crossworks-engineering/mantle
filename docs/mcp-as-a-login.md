@@ -89,6 +89,23 @@ The tools act only for a login whose surface the MCP route stamped
 (`surface.mcp`, `LoginMcpChannel`): a chat turn, an app run or the owner's
 surface finds no one to act for and is refused.
 
+## Connector tools (team apps Phase 2)
+
+A member's or client's MCP also gets the tools of the MCP connectors whose
+level its login's level reads (`listLoginConnectorTools`): a member a
+connector at team, client or public level, a client one at client level.
+The connector's level is the grant, outside the responder's groups and the
+client cut. A tool with the admin's read-only mark is a read; one without
+is a write and is offered only with the login's Write switch on (on the key
+or peer too). A tool that needs a confirmation is never offered. A
+connector tool is in no key area, so only an all-areas key reaches it.
+Every call lands an `audit_log` row (`mcp.connector.read` /
+`mcp.connector.write`) with the login, the tool, its connector and the
+connection; a write keeps its input (2 KB). The remote call runs as the
+system (`dispatchMcp`), so the credential stays in the vault. Members see
+the connectors open to them in their own Settings > MCP
+(`GET /api/member/mcp` `connectors`).
+
 ## A member's own MCP screen
 
 `GET /api/member/mcp` answers a member's view of Settings > MCP: the box
@@ -142,8 +159,8 @@ file over MCP is at most about 6 MB.
 - Static tokens for admin logins: admins have OAuth, peers and API keys.
 - Folder and event create for members and clients: members have no event
   rights, and own-space folders are a tree feature with its own routes.
-- Non-builtin tools (http, recipe, connector) on the member and client
-  surface: their egress is not classified.
+- http and recipe tools on the member and client surface: their egress is
+  not classified. (Connector tools are on it since Phase 2, below.)
 - Pending peers verify, as for the federation routes.
 - The admin's connected-clients list in Settings, MCP shows every login's
   grants without naming the login. A member sees only their own (above).

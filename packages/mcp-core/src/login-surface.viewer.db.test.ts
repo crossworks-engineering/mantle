@@ -265,4 +265,88 @@ describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
     expect(list).not.toContain('note_list');
     expect(list).not.toContain('note_create');
   });
+
+  // Team apps Phase 2: a connector's level decides; its read-only mark
+  // decides read (any login with MCP on) or write (write on only).
+  it("connector tools by the connector's level, read or write by the mark", async () => {
+    const { externalAccessHandlerSig } = await import('@mantle/tools');
+    const handler = (toolName: string) => ({ kind: 'mcp', group: 'mcp-src', toolName });
+    const mark = JSON.stringify({
+      confirmedReadOnlyAt: new Date().toISOString(),
+      by: { via: 'web' },
+      handlerSig: externalAccessHandlerSig(handler('read') as never),
+    });
+    const binding = JSON.stringify({
+      service: 'mcp-src',
+      mcp: { url: 'https://mcp.example.invalid/mcp' },
+    });
+    await exec(sqlTag`
+      insert into tools (owner_id, slug, name, description, handler, input_schema, external_access) values
+        (${anchor}, 'mcp_src_read', 'r', 'reads', ${JSON.stringify(handler('read'))}::jsonb,
+          '{"type":"object","properties":{}}'::jsonb, ${mark}::jsonb),
+        (${anchor}, 'mcp_src_write', 'w', 'writes', ${JSON.stringify(handler('write'))}::jsonb,
+          '{"type":"object","properties":{}}'::jsonb, null)`);
+    await exec(sqlTag`
+      insert into tool_groups (owner_id, slug, name, tool_slugs, audience, enabled, integration)
+      values (${anchor}, 'mcp-src', 'src', ARRAY['mcp_src_read','mcp_src_write'], 'admin', true, ${binding}::jsonb)`);
+    const level = (l: string) =>
+      exec(
+        sqlTag`update tool_groups set audience = ${l} where owner_id = ${anchor} and slug = 'mcp-src'`,
+      );
+    const connectorNames = async (caller: McpCaller) =>
+      (await names(await connect(caller))).filter((n) => n.startsWith('mcp_src_'));
+    try {
+      // At admin: nobody below admin gets it.
+      expect(await connectorNames(asMember(true))).toEqual([]);
+      expect(await connectorNames(asClient(true))).toEqual([]);
+      // At team: members; the write tool only with write on. Clients: no.
+      await level('team');
+      expect(await connectorNames(asMember(false))).toEqual(['mcp_src_read']);
+      expect(await connectorNames(asMember(true))).toEqual(['mcp_src_read', 'mcp_src_write']);
+      expect(await connectorNames(asClient(true))).toEqual([]);
+      // At client: clients too (and members, whose level reads client).
+      await level('client');
+      expect(await connectorNames(asClient(false))).toEqual(['mcp_src_read']);
+      expect(await connectorNames(asMember(false))).toEqual(['mcp_src_read']);
+      // A key limited to areas never gets a connector tool.
+      expect(
+        await connectorNames({ ...asMember(true), via: 'key', keyId: 'k', areas: ['app_data'] }),
+      ).toEqual([]);
+      // Called anyway with write off, the write tool refuses before dispatch.
+      const prepared = await ls.prepareCallerTools(asMember(false));
+      if (prepared.kind !== 'login') throw new Error('expected a login surface');
+      const [row] = (await exec(
+        sqlTag`select * from tools where owner_id = ${anchor} and slug = 'mcp_src_write'`,
+      )) as unknown as import('@mantle/db').Tool[];
+      const refused = await ls.callLoginTool(
+        prepared.caller,
+        { ...row!, handler: handler('write') } as never,
+        {},
+        'team',
+        false,
+      );
+      expect(text(refused)).toMatch(/writes, and your MCP connection is read-only/);
+      // A read call is logged with the login (the far side is not reached
+      // here: the URL does not resolve).
+      await ls.callLoginTool(
+        asMember(false) as McpCaller & { role: 'member' },
+        { ...row!, slug: 'mcp_src_read', handler: handler('read') } as never,
+        {},
+        'team',
+        false,
+      );
+      let logged: unknown[] = [];
+      for (let i = 0; i < 40 && logged.length === 0; i++) {
+        logged = (await exec(sqlTag`
+          select 1 from audit_log where actor_id = ${member}
+            and action = 'mcp.connector.read' and detail->>'tool' = 'mcp_src_read'`)) as unknown as unknown[];
+        if (!logged.length) await new Promise((r) => setTimeout(r, 50));
+      }
+      expect(logged.length).toBeGreaterThan(0);
+    } finally {
+      await exec(sqlTag`delete from audit_log where actor_id = ${member}`);
+      await exec(sqlTag`delete from tool_groups where owner_id = ${anchor} and slug = 'mcp-src'`);
+      await exec(sqlTag`delete from tools where owner_id = ${anchor} and slug like 'mcp_src_%'`);
+    }
+  });
 });

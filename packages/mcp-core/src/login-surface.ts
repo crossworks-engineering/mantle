@@ -22,15 +22,25 @@
  */
 import type { McpServer } from '@modelcontextprotocol/server';
 import { and, eq } from 'drizzle-orm';
-import { agents, db, withViewer, type Tool, type ViewerLevel } from '@mantle/db';
+import {
+  agents,
+  auditLog,
+  db,
+  asSystem,
+  withViewer,
+  type Tool,
+  type ViewerLevel,
+} from '@mantle/db';
 import {
   APP_DATA_READ_TOOL_SLUGS,
   APP_DATA_WRITE_TOOL_SLUGS,
   CLIENT_TURN_TOOL_SLUGS,
   MY_SPACE_WRITE_TOOL_SLUGS,
   dispatchTool,
+  externalAccessActive,
   getBuiltin,
   isBuiltinReadOnly,
+  listLoginConnectorTools,
   isBuiltinSpending,
   resolveTools,
   type ToolHandlerContext,
@@ -292,11 +302,23 @@ export async function resolveLoginToolRows(
     if (slugs.length === 0) return [];
     return resolveTools(caller.anchorId, slugs);
   });
-  return {
-    rows: rows.filter((r) => loginMayHaveTool(r, caller.write) && callerAreasAllow(r.slug, caller)),
-    level,
-    privateReads,
-  };
+  const builtins = rows.filter(
+    (r) => loginMayHaveTool(r, caller.write) && callerAreasAllow(r.slug, caller),
+  );
+  // Connector tools (team apps Phase 2): those of a connector whose level
+  // the login's level reads, outside the responder's groups and the
+  // client cut (the connector's level is the grant). A tool with the
+  // admin's read-only mark reads; one without writes, so it needs write
+  // on. A connector tool is in no key area: only an all-areas key reaches
+  // it (a connector can read anything its far side holds). Only while the
+  // role's surface is open at all (its responder at the role's level).
+  const connectors =
+    builtins.length === 0
+      ? []
+      : (await listLoginConnectorTools(caller.anchorId, level))
+          .filter((c) => (c.readOnly || caller.write) && callerAreasAllow(c.tool.slug, caller))
+          .map((c) => c.tool);
+  return { rows: [...builtins, ...connectors], level, privateReads };
 }
 
 /** The surface a member's or client's MCP call runs on: the login, stamped
@@ -321,6 +343,57 @@ export function loginSurface(
     : { kind: 'team', loginId: caller.loginId, contactName, privateReads, mcp };
 }
 
+/** The longest input a connector write's audit row keeps. */
+const CONNECTOR_LOG_INPUT_MAX = 2048;
+
+/** One audit row per connector call a login makes over its own MCP (team
+ *  apps Phase 2): the login, the tool and its connector, read or write,
+ *  the connection, and for a write its input (capped; it can hold what
+ *  the login typed, and the audit log is admins only). Best effort. */
+function logConnectorCall(
+  caller: McpCaller & { role: 'member' | 'client' },
+  row: Tool,
+  args: Record<string, unknown>,
+  write: boolean,
+): void {
+  let input: string | undefined;
+  if (write) {
+    try {
+      input = JSON.stringify(args ?? {}).slice(0, CONNECTOR_LOG_INPUT_MAX);
+    } catch {
+      input = '[input not serialisable]';
+    }
+  }
+  const handler = row.handler as { kind: 'mcp'; group: string; toolName: string };
+  try {
+    // As the system: the audit log is an admin table, and the caller may
+    // already run in a viewer scope.
+    void asSystem(() =>
+      db.insert(auditLog).values({
+        actorId: caller.loginId,
+        actorEmail: `${caller.role} (mcp)`,
+        action: write ? 'mcp.connector.write' : 'mcp.connector.read',
+        method: 'MCP',
+        path: '/api/mcp',
+        detail: {
+          tool: row.slug,
+          group: handler.group,
+          role: caller.role,
+          connection: caller.via,
+          ...(caller.keyId ? { keyId: caller.keyId } : {}),
+          ...(caller.peerId ? { peerId: caller.peerId } : {}),
+          ...(caller.oauthClientId ? { oauthClientId: caller.oauthClientId } : {}),
+          ...(input !== undefined ? { input } : {}),
+        },
+      }),
+    ).catch(() => {
+      /* best effort: never fail the call over its log */
+    });
+  } catch {
+    /* best effort */
+  }
+}
+
 /** Run one login tool: at the login's level, through dispatchTool. */
 export async function callLoginTool(
   caller: McpCaller & { role: 'member' | 'client' },
@@ -329,6 +402,24 @@ export async function callLoginTool(
   level: ViewerLevel,
   privateReads: boolean,
 ) {
+  if (row.handler.kind === 'mcp') {
+    // A connector tool (team apps Phase 2): a write needs write on (the
+    // surface lists none without it; this is the call's own check), and
+    // every call is logged with the login.
+    const write = !externalAccessActive(row);
+    if (write && !caller.write) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: 'Error: This connector tool writes, and your MCP connection is read-only.',
+          },
+        ],
+        isError: true,
+      };
+    }
+    logConnectorCall(caller, row, args, write);
+  }
   try {
     const result = await withViewer(level, () =>
       dispatchTool(row, args ?? {}, {
@@ -457,6 +548,6 @@ export function mcpInstructionsFor(caller: McpCaller): string {
     ? ' You may also create drafts in their own personal space (my_note_create, my_page_create, my_file_upload) and submit them for review (my_item_submit). Drafts reach the brain only when an admin accepts them. On mini apps an admin opened to MCP you may also change rows (app_data_write), never the schema.'
     : ' This connection is read-only.';
   const apps =
-    ' Mini app data: app_data_list shows the apps an admin opened to MCP, then app_data_schema and app_data_query.';
+    ' Mini app data: app_data_list shows the apps an admin opened to MCP, then app_data_schema and app_data_query. Tools named mcp_* reach outside data sources (connectors) an admin opened at your level.';
   return `This connection acts as ${who} of this brain, with exactly that login's rights: you see what they may see, nothing more.${write}${apps}`;
 }

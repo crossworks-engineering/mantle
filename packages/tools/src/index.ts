@@ -169,6 +169,14 @@ export {
 export {
   setToolExternalAccess,
   externalToolVerdict,
+  outsideToolVerdict,
+  connectorToolVerdict,
+  connectorGroupOf,
+  listLoginConnectorTools,
+  connectorLevelAllows,
+  outsideCallLogDetail,
+  OUTSIDE_WRITE_LOG_INPUT_MAX,
+  type OutsideToolVerdict,
   contactAppToolVerdict,
   clearConnectorExternalAccess,
   externalAccessActive,
@@ -371,3 +379,9 @@ export {
   LOWERING_TOOL_SLUGS,
   type TurnTaint,
 } from './client-sourced';
+export {
+  connectorLevelReport,
+  type ConnectorLevelAppRow,
+  type ConnectorLevelGroupRow,
+  type ConnectorLevelReport,
+} from './connector-level-report';

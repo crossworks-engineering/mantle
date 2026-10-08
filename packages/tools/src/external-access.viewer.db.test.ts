@@ -2,15 +2,18 @@
  * "External access" on a real, migrated Postgres (external-access.ts,
  * docs/member-logins.md "External access: outside tools in shared apps").
  * The remote MCP server is a fake: `mcpCallRemoteTool` is stood in, so no
- * connector or site data is ever reached. Proves: an outside tool is refused
- * until an admin switches it on with the read-only confirmation; on, it needs
- * the app's declaration and nothing else (no group level), for a member, a
- * client app and a contact link alike; it runs under the caller's role; a
- * disabled connector still refuses the call; confirm-gated, shell and recipe
- * tools never get it, nor any built-in on a link; switching off, a changed
- * handler or a moved connector refuses the next call; the author warnings
- * follow the switch; only the owner's MCP client may switch it on through
- * `api_tool_update`; each switch writes an audit row with the actor.
+ * connector or site data is ever reached. Proves: an http tool is refused
+ * until an admin switches External access on with the read-only
+ * confirmation, then needs the app's declaration and nothing else. A
+ * CONNECTOR tool (team apps Phase 2) is allowed by its connector's level
+ * (the connector the handler names): team for a member's run, client for a
+ * client app, public for a contact link; the switch is its READ-ONLY MARK
+ * (on = a read, off = a write, which an app may make). It runs under the
+ * caller's role; a disabled connector refuses; confirm-gated, shell and
+ * recipe tools never pass, nor any built-in on a link; a changed handler or
+ * a moved connector voids the mark; the author warnings follow the level;
+ * only the owner's MCP client may switch it on through `api_tool_update`;
+ * each switch writes an audit row with the actor.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/tools/src/external-access.viewer.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -146,12 +149,12 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     await m.closeDb();
   }, 60_000);
 
-  it('refuses an MCP tool with the switch off, as before', async () => {
-    expect(await verdict('site_query')).toMatchObject({
-      ok: false,
-      status: 403,
-      reason: expect.stringMatching(/without External access/),
-    });
+  const setConnectorLevel = (lvl: string) =>
+    exec(sqlTag`update tool_groups set audience = ${lvl}
+      where owner_id = ${anchor} and slug = 'mcp-site'`);
+
+  it('a connector tool at team level without the mark: a member app may call it, as a write', async () => {
+    expect(await verdict('site_query')).toMatchObject({ ok: true, write: true });
   });
 
   it('will not switch on without the read-only confirmation', async () => {
@@ -161,7 +164,7 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
       status: 400,
       error: expect.stringMatching(/only reads/),
     });
-    expect((await verdict('site_query')).ok).toBe(false);
+    expect(await verdict('site_query')).toMatchObject({ ok: true, write: true });
   });
 
   it('on + declared: a member may call it, and it runs under the team role', async () => {
@@ -169,6 +172,7 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     expect(res.ok).toBe(true);
     const v = await verdict('site_query');
     if (!v.ok) throw new Error(v.reason);
+    expect(v.write).toBe(false);
     const scope = level.appToolScope('team', { loginId: randomUUID(), name: 'A member' });
     expect(scope).toMatchObject({ viewer: 'team', surface: { kind: 'team', privateReads: false } });
     fake.calls.length = 0;
@@ -183,9 +187,23 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     expect(await verdict('site_query', ['site_http'])).toMatchObject({ ok: false, status: 403 });
   });
 
-  it('on: a group level does not gate it (held only by an admin-level group)', async () => {
+  it('the connector the handler names decides, not a group that lists the tool; at admin it is refused, marked or not', async () => {
+    // site_admin_only is listed only in an admin-level group, but its
+    // handler names the team-level connector.
     expect((await switchOn('site_admin_only')).ok).toBe(true);
-    expect((await verdict('site_admin_only')).ok).toBe(true);
+    expect(await verdict('site_admin_only')).toMatchObject({ ok: true, write: false });
+    await setConnectorLevel('admin');
+    try {
+      for (const slug of ['site_query', 'site_admin_only']) {
+        expect(await verdict(slug), slug).toMatchObject({
+          ok: false,
+          status: 403,
+          reason: expect.stringMatching(/connector at admin level/),
+        });
+      }
+    } finally {
+      await setConnectorLevel('team');
+    }
   });
 
   it('its connector switched off: the call is refused (dispatch reads the connector each call)', async () => {
@@ -193,11 +211,26 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
       sqlTag`update tool_groups set enabled = false where owner_id = ${anchor} and slug = 'mcp-site'`,
     );
     try {
-      const v = await verdict('site_query');
-      if (!v.ok) throw new Error(v.reason);
+      expect(await verdict('site_query')).toMatchObject({
+        ok: false,
+        reason: expect.stringMatching(/is off or not set up/),
+      });
+      // And dispatch itself still reads the connector on each call.
+      const [row] = (await exec(
+        sqlTag`select * from tools where id = ${ids.site_query!}`,
+      )) as unknown as Array<Record<string, unknown>>;
       fake.calls.length = 0;
       const out = await m.withViewer('team', () =>
-        dispatch.dispatchTool(v.tool, {}, { ownerId: anchor, surface: { kind: 'team' } }),
+        dispatch.dispatchTool(
+          {
+            ...(row as unknown as import('@mantle/db').Tool),
+            slug: 'site_query',
+            requiresConfirm: false,
+            handler: { kind: 'mcp', group: 'mcp-site', toolName: 'query' },
+          },
+          {},
+          { ownerId: anchor, surface: { kind: 'team' } },
+        ),
       );
       expect(out).toMatchObject({ ok: false, error: expect.stringMatching(/disabled/) });
       expect(fake.calls).toEqual([]);
@@ -209,7 +242,12 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     expect((await verdict('site_query')).ok).toBe(true);
   });
 
-  it('a client-level app may call it while the switch is on, under the client role', async () => {
+  it('a client-level app: only a connector at client level, under the client role', async () => {
+    expect(await level.appToolVerdict('client', anchor, DECLARED, 'site_query')).toMatchObject({
+      ok: false,
+      reason: expect.stringMatching(/connector at team level/),
+    });
+    await setConnectorLevel('client');
     const v = await level.appToolVerdict('client', anchor, DECLARED, 'site_query');
     if (!v.ok) throw new Error(v.reason);
     const scope = level.appToolScope('client', { loginId: randomUUID(), name: 'A client' });
@@ -222,13 +260,13 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     // An admin's or a member's run of a client app gets the client rules too.
     expect(level.appToolLevel('team', 'client')).toBe('client');
     expect(level.appToolLevel('admin', 'client')).toBe('client');
-    // Off: refused, and a built-in off the client list stays refused.
+    // Mark off: still allowed, as a write; a built-in off the client list
+    // stays refused.
     await switchOff('site_query');
     try {
       expect(await level.appToolVerdict('client', anchor, DECLARED, 'site_query')).toMatchObject({
-        ok: false,
-        status: 403,
-        reason: expect.stringMatching(/client app/),
+        ok: true,
+        write: true,
       });
       expect(await level.appToolVerdict('client', anchor, DECLARED, 'quick_sum')).toMatchObject({
         ok: false,
@@ -236,11 +274,18 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
       });
     } finally {
       await switchOn('site_query');
+      await setConnectorLevel('team');
     }
   });
 
-  it('a contact link: only a declared outside tool with the switch on, never a built-in', async () => {
+  it('a contact link: a connector at public level, an http tool with the switch on, never a built-in', async () => {
+    expect(await ta.contactAppToolVerdict(anchor, DECLARED, 'site_query')).toMatchObject({
+      ok: false,
+      reason: expect.stringMatching(/connector at team level/),
+    });
+    await setConnectorLevel('public');
     const v = await ta.contactAppToolVerdict(anchor, DECLARED, 'site_query');
+    await setConnectorLevel('team');
     if (!v.ok) throw new Error(v.reason);
     fake.calls.length = 0;
     const out = await m.withViewer('public', () =>
@@ -326,12 +371,12 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     expect(await verdict('quick_sum')).toMatchObject({ ok: false, status: 403 });
   });
 
-  it('switching off refuses the next call', async () => {
-    expect((await verdict('site_query')).ok).toBe(true);
+  it("switching a connector tool's mark off turns its next call into a write", async () => {
+    expect(await verdict('site_query')).toMatchObject({ ok: true, write: false });
     expect((await switchOff('site_query')).ok).toBe(true);
-    expect((await verdict('site_query')).ok).toBe(false);
+    expect(await verdict('site_query')).toMatchObject({ ok: true, write: true });
     expect((await switchOn('site_query')).ok).toBe(true);
-    expect((await verdict('site_query')).ok).toBe(true);
+    expect(await verdict('site_query')).toMatchObject({ ok: true, write: false });
   });
 
   it('an http tool: on works; a changed handler clears it; a write method can never get it', async () => {
@@ -355,28 +400,28 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     });
   });
 
-  it('a handler changed by another writer (a sync, SQL) voids the switch without a clear', async () => {
-    expect((await verdict('site_query')).ok).toBe(true);
+  it('a handler changed by another writer (a sync, SQL) voids the mark without a clear', async () => {
+    expect(await verdict('site_query')).toMatchObject({ ok: true, write: false });
     const moved = JSON.stringify({ kind: 'mcp', group: 'mcp-site', toolName: 'execute' });
     await exec(sqlTag`update tools set handler = ${moved}::jsonb where id = ${ids.site_query!}`);
-    expect((await verdict('site_query')).ok).toBe(false);
+    expect(await verdict('site_query')).toMatchObject({ ok: true, write: true });
     expect((await crud.getToolById(anchor, ids.site_query!))?.externalAccess).toMatchObject({
       on: false,
     });
     const back = JSON.stringify({ kind: 'mcp', group: 'mcp-site', toolName: 'query' });
     await exec(sqlTag`update tools set handler = ${back}::jsonb where id = ${ids.site_query!}`);
-    expect((await verdict('site_query')).ok).toBe(true);
+    expect(await verdict('site_query')).toMatchObject({ ok: true, write: false });
   });
 
-  it('a connector moved to another server clears every switch on its tools', async () => {
-    expect((await verdict('site_query')).ok).toBe(true);
+  it('a connector moved to another server clears every mark on its tools', async () => {
+    expect(await verdict('site_query')).toMatchObject({ ok: true, write: false });
     await ta.clearConnectorExternalAccess(anchor, 'mcp-site');
-    expect((await verdict('site_query')).ok).toBe(false);
+    expect(await verdict('site_query')).toMatchObject({ ok: true, write: true });
     expect((await crud.getToolById(anchor, ids.site_query!))?.externalAccess).toBeNull();
     expect((await switchOn('site_query')).ok).toBe(true);
   });
 
-  it('the author warnings follow the switch (app_tools_set, access_set)', async () => {
+  it("the author warnings follow the connector's level (app_tools_set, access_set)", async () => {
     const def = toolDef('app_tools_set');
     const warn = async () => {
       const res = await def.handler(
@@ -387,17 +432,20 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
       return (res.ok ? (res.output as { warnings?: string[] }).warnings : []) ?? [];
     };
     expect(await warn()).toEqual([]);
-    await switchOff('site_query');
-    const warned = await warn();
-    expect(warned).toHaveLength(1);
-    expect(warned[0]).toContain("'site_query'");
-    expect(warned[0]).toContain('External access');
-    const access = await toolDef('access_set').handler(
-      { node_id: appId, level: 'team' },
-      { ownerId: anchor, surface: { kind: 'web' } },
-    );
-    expect(access.ok && (access.output as { warnings?: string[] }).warnings).toHaveLength(1);
-    await switchOn('site_query');
+    await setConnectorLevel('admin');
+    try {
+      const warned = await warn();
+      expect(warned).toHaveLength(1);
+      expect(warned[0]).toContain("'site_query'");
+      expect(warned[0]).toContain('connector at admin level');
+      const access = await toolDef('access_set').handler(
+        { node_id: appId, level: 'team' },
+        { ownerId: anchor, surface: { kind: 'web' } },
+      );
+      expect(access.ok && (access.output as { warnings?: string[] }).warnings).toHaveLength(1);
+    } finally {
+      await setConnectorLevel('team');
+    }
     expect(await warn()).toEqual([]);
   });
 
@@ -422,13 +470,13 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
       ok: true,
       output: { external_access: { on: true, by: { via: 'mcp' } } },
     });
-    expect((await verdict('site_query')).ok).toBe(true);
+    expect(await verdict('site_query')).toMatchObject({ ok: true, write: false });
     const off = await def.handler(
       { slug: 'site_query', external_access: false },
       { ownerId: anchor, surface: { kind: 'web' } },
     );
     expect(off).toMatchObject({ ok: true, output: { external_access: null } });
-    expect((await verdict('site_query')).ok).toBe(false);
+    expect(await verdict('site_query')).toMatchObject({ ok: true, write: true });
     const get = await toolDef('api_tool_get').handler(
       { slug: 'site_query' },
       { ownerId: anchor, surface: { kind: 'web' } },

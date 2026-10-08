@@ -456,14 +456,20 @@ approval like any agent-initiated grant). Every result comes back
 give them to a no-write specialist (researcher pattern). Full detail:
 [`mcp-connectors.md`](./mcp-connectors.md).
 
-### Connector tools in shared apps (External access)
+### Connector tools in shared apps and on logins' MCP (the connector's level)
 
 Below admin, an app's run may call only read-only built-ins, and a link
-none, unless an admin switches "External access" on for an MCP or http tool
-and confirms it only reads. Then everyone the app is shared with (members,
-clients, contacts on a contact link) may call it, if the app declares it.
-Rules, surfaces and how the switch is voided: docs/member-logins.md,
-"External access: outside tools in shared apps".
+none, besides outside tools. An MCP CONNECTOR tool follows its connector's
+level (team apps Phase 2, `connectorToolVerdict` in
+packages/tools/src/external-access.ts): a member's run and a member's own
+MCP reach a connector at team level or lower, a client app and a client's
+MCP one at client level, a contact link one at public level. The admin's
+read-only mark on the tool (the old "External access" confirm) makes a call
+a read; without it the call is a write, which an app may make and a
+login's MCP only with its Write switch. A single http tool still needs
+"External access" on, with the read-only confirmation. Rules, surfaces and
+how the mark is voided: docs/member-logins.md, "External access: outside
+tools in shared apps".
 
 ## OpenAPI connector groups: a group compiled from a service's spec
 

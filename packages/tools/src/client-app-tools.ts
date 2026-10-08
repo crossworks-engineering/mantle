@@ -31,7 +31,7 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db, toolGroups, type Tool } from '@mantle/db';
 import { resolveTool } from './resolve';
-import { externalToolVerdict } from './external-access';
+import { outsideToolVerdict } from './external-access';
 
 /**
  * The tools a client's app may call: the client chat's tools
@@ -58,8 +58,10 @@ export const CLIENT_APP_TOOL_SLUGS: readonly string[] = [
 /** The group levels a client's app may draw tools from. */
 const CLIENT_GROUP_LEVELS = ['client', 'public'];
 
+/** `write`: an outside call that writes (a connector tool without the
+ *  read-only mark, team apps Phase 2); the broker logs its input. */
 export type ClientAppToolVerdict =
-  { ok: true; tool: Tool } | { ok: false; status: 403 | 404; reason: string };
+  { ok: true; tool: Tool; write?: boolean } | { ok: false; status: 403 | 404; reason: string };
 
 /** Whether an enabled tool group at client level or lower holds `slug`. */
 async function inClientLevelGroup(ownerId: string, slug: string): Promise<boolean> {
@@ -95,16 +97,17 @@ export async function clientAppToolVerdict(
     };
   }
   if (!CLIENT_APP_TOOL_SLUGS.includes(slug)) {
-    // Off the list, only an outside tool with External access may pass
-    // (external-access.ts, 2026-10-02): it reads no brain text, so the C4
-    // reason for the narrow list does not apply, and the admin confirmed it
-    // only reads. A built-in's slug is refused before any lookup, as before;
-    // only another slug is looked up, for an outside tool.
+    // Off the list, only an outside tool may pass (external-access.ts): a
+    // connector tool at CLIENT level, read or write by the admin's read-only
+    // mark (team apps Phase 2), or another outside tool with External
+    // access. It reads no brain text, so the C4 reason for the narrow list
+    // does not apply. A built-in's slug is refused before any lookup, as
+    // before; only another slug is looked up, for an outside tool.
     const { getBuiltin } = await import('./registry');
     if (!getBuiltin(slug)) {
       const outside = await resolveTool(ownerId, slug);
       if (outside && outside.handler.kind !== 'builtin') {
-        return externalToolVerdict(outside, slug, 'client');
+        return outsideToolVerdict(ownerId, outside, slug, 'client');
       }
     }
     return { ok: false, status: 403, reason: notForClients(slug) };

@@ -792,6 +792,18 @@ so it is listed like any team app there.
 
 ### External access: outside tools in shared apps (2026-10-02)
 
+> **Connector tools changed in team apps Phase 2 (2026-10-08).** For an MCP
+> CONNECTOR tool the connector's level now decides who may use it, as the
+> level on an item does: a member's run reaches a connector at team, client
+> or public level, a client app one at client level, a contact link one at
+> public level. The confirmation below becomes the tool's READ-ONLY MARK:
+> marked, a call reads; unmarked, it WRITES, which an app may do (Jason's
+> decision; the brokers log every write call with its input). A connector
+> starts at admin level and nothing raises it by itself. The same level
+> opens the tools on a member's or client's own MCP (docs/mcp-as-a-login.md).
+> Everything below still holds for http tools, and for the mark itself
+> (who sets it, the signature that voids it).
+
 A site adds its own connectors: an MCP server or an http API, for example a
 read-only SQL bridge to a site database. None ship with Mantle, and the
 brain cannot judge what an outside tool does. So an admin decides, per tool,

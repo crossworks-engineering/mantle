@@ -30,6 +30,7 @@
     "models:pool-fit": "tsx --env-file-if-exists=./.env.local scripts/pool-fit.ts",
     "models:curate": "tsx --env-file-if-exists=./.env.local scripts/curate-pools.ts",
     "pgboss:init": "tsx --env-file-if-exists=./.env.local scripts/pgboss-init.ts",
+    "connector-levels": "tsx --env-file-if-exists=./.env.local scripts/connector-levels.ts",
     "predev": "pnpm run generate",
     "pretypecheck": "pnpm run route-manifest",
     "purge:noncontact": "tsx --env-file-if-exists=./.env.local scripts/purge-noncontact-emails.ts",

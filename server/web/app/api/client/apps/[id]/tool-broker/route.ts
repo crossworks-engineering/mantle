@@ -2,7 +2,13 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { withViewer } from '@mantle/db';
 import { recordAppAccess, recordAppError } from '@mantle/content';
-import { appToolLevel, appToolScope, appToolVerdict, dispatchTool } from '@mantle/tools';
+import {
+  appToolLevel,
+  appToolScope,
+  appToolVerdict,
+  dispatchTool,
+  outsideCallLogDetail,
+} from '@mantle/tools';
 import { getClientOr401 } from '@/lib/auth';
 import { clientAppOr404, clientName } from '@/lib/client-apps';
 import { readJsonCapped } from '@/lib/body-limit';
@@ -52,7 +58,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     appNodeId: app.id,
     actorId: client.loginId,
     kind: 'tool',
-    detail: verdict.ok ? { via: 'client', slug } : { via: 'client', slug, refused: verdict.reason },
+    // An outside call names its kind; a write keeps its input (team apps
+    // Phase 2).
+    detail: verdict.ok
+      ? { via: 'client', slug, ...outsideCallLogDetail(verdict, input) }
+      : { via: 'client', slug, refused: verdict.reason },
   });
   const logError = (message: string, status: number) =>
     recordAppError({

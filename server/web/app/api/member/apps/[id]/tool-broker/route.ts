@@ -2,7 +2,13 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { withViewer } from '@mantle/db';
 import { recordAppAccess, recordAppError } from '@mantle/content';
-import { appToolLevel, appToolScope, appToolVerdict, dispatchTool } from '@mantle/tools';
+import {
+  appToolLevel,
+  appToolScope,
+  appToolVerdict,
+  dispatchTool,
+  outsideCallLogDetail,
+} from '@mantle/tools';
 import { getMemberOr401 } from '@/lib/auth';
 import { memberAppOr404, memberName } from '@/lib/member-apps';
 import { readJsonCapped } from '@/lib/body-limit';
@@ -55,16 +61,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     appNodeId: app.id,
     actorId: member.loginId,
     kind: 'tool',
-    // An outside tool (one with External access) names its kind, so
-    // the log shows which member calls reached outside the brain.
+    // An outside tool names its kind, so the log shows which member calls
+    // reached outside the brain; a write (a connector tool without the
+    // read-only mark, team apps Phase 2) keeps its input too.
     detail: verdict.ok
-      ? {
-          via: 'member',
-          slug,
-          ...(verdict.tool.handler.kind !== 'builtin'
-            ? { handler: verdict.tool.handler.kind }
-            : {}),
-        }
+      ? { via: 'member', slug, ...outsideCallLogDetail(verdict, input) }
       : { via: 'member', slug, refused: verdict.reason },
   });
   const logError = (message: string, status: number) =>

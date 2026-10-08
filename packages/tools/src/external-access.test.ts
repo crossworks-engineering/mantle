@@ -7,6 +7,9 @@
 import { describe, expect, it } from 'vitest';
 import type { Tool, ToolHandler, ToolExternalAccess } from '@mantle/db';
 import {
+  OUTSIDE_WRITE_LOG_INPUT_MAX,
+  connectorLevelAllows,
+  outsideCallLogDetail,
   externalAccessActive,
   externalAccessHandlerSig,
   externalAccessIneligible,
@@ -109,5 +112,29 @@ describe('externalAccessActive', () => {
     expect(externalAccessActive(row(MCP, { externalAccess: on(MCP), requiresConfirm: true }))).toBe(
       false,
     );
+  });
+});
+
+describe('connector levels (team apps Phase 2)', () => {
+  it("a run's level reads a connector at its own level or below, as for an item", () => {
+    expect(connectorLevelAllows('team', 'team')).toBe(true);
+    expect(connectorLevelAllows('team', 'client')).toBe(true);
+    expect(connectorLevelAllows('team', 'public')).toBe(true);
+    expect(connectorLevelAllows('team', 'admin')).toBe(false);
+    expect(connectorLevelAllows('client', 'client')).toBe(true);
+    expect(connectorLevelAllows('client', 'team')).toBe(false);
+    expect(connectorLevelAllows('client', 'public')).toBe(false);
+    expect(connectorLevelAllows('public', 'public')).toBe(true);
+    expect(connectorLevelAllows('public', 'client')).toBe(false);
+  });
+
+  it('an outside call logs its kind; a write keeps its input, capped', () => {
+    const tool = { handler: MCP } as unknown as Tool;
+    expect(outsideCallLogDetail({ tool, write: false }, { q: 1 })).toEqual({ handler: 'mcp' });
+    const w = outsideCallLogDetail({ tool, write: true }, { sql: 'x'.repeat(5000) });
+    expect(w).toMatchObject({ handler: 'mcp', write: true });
+    expect(String(w.input).length).toBe(OUTSIDE_WRITE_LOG_INPUT_MAX);
+    const builtin = { handler: { kind: 'builtin', ref: 'note_list' } } as unknown as Tool;
+    expect(outsideCallLogDetail({ tool: builtin }, {})).toEqual({});
   });
 });

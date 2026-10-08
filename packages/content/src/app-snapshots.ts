@@ -245,6 +245,10 @@ async function snapshotLocked(
     codeOnlyWhenLost?: boolean;
   },
   lockTx?: DbTx,
+  /** Told the copy's path once the database copy is written: a caller
+   *  whose transaction commits the row later removes the file if that
+   *  commit fails (Phase 1 re-audit, low 1). */
+  onFile?: (abs: string) => void,
 ): Promise<AppSnapshot | null> {
   const q: Q = lockTx ?? db;
   const code = await currentCode(ownerId, appId, q);
@@ -264,6 +268,7 @@ async function snapshotLocked(
   if (opts.withData !== false) {
     try {
       data = await snapshotAppDatabase(ownerId, appId, abs, q);
+      if (data) onFile?.(abs);
     } catch (err) {
       if (!(err instanceof AppDbMissingError) || !opts.codeOnlyWhenLost) throw err;
       lost = true;
@@ -371,36 +376,47 @@ export async function createAppSnapshot(
   } = {},
 ): Promise<AppSnapshot | null> {
   const trigger = opts.trigger ?? 'manual';
-  const snap = await db.transaction(async (tx) => {
-    await lockAppHistory(tx, appId);
-    if (opts.onlyIfNoneSince) {
-      const [recent] = await tx
-        .select({ id: nodeSnapshots.id })
-        .from(nodeSnapshots)
-        .where(
-          and(
-            eq(nodeSnapshots.nodeId, appId),
-            eq(nodeSnapshots.trigger, trigger),
-            gte(nodeSnapshots.createdAt, opts.onlyIfNoneSince),
-          ),
-        )
-        .limit(1);
-      if (recent) return null;
-    }
-    return snapshotLocked(
-      ownerId,
-      appId,
-      {
-        trigger,
-        actor: opts.actor ?? 'owner',
-        note: opts.note,
-        requireData: opts.requireData === true,
-        withData: opts.withData !== false,
-        codeOnlyWhenLost: opts.codeOnlyWhenLost === true,
-      },
-      tx,
-    );
-  });
+  // The row commits with the lock's transaction: if that commit fails after
+  // the copy was written, the copy goes too (no orphan under _snapshots).
+  let copied: string | null = null;
+  const snap = await db
+    .transaction(async (tx) => {
+      await lockAppHistory(tx, appId);
+      if (opts.onlyIfNoneSince) {
+        const [recent] = await tx
+          .select({ id: nodeSnapshots.id })
+          .from(nodeSnapshots)
+          .where(
+            and(
+              eq(nodeSnapshots.nodeId, appId),
+              eq(nodeSnapshots.trigger, trigger),
+              gte(nodeSnapshots.createdAt, opts.onlyIfNoneSince),
+            ),
+          )
+          .limit(1);
+        if (recent) return null;
+      }
+      return snapshotLocked(
+        ownerId,
+        appId,
+        {
+          trigger,
+          actor: opts.actor ?? 'owner',
+          note: opts.note,
+          requireData: opts.requireData === true,
+          withData: opts.withData !== false,
+          codeOnlyWhenLost: opts.codeOnlyWhenLost === true,
+        },
+        tx,
+        (abs) => {
+          copied = abs;
+        },
+      );
+    })
+    .catch(async (err: unknown) => {
+      if (copied) await rm(copied, { force: true });
+      throw err;
+    });
   if (snap && trigger !== 'manual') await pruneAutoSnapshots(appId, trigger);
   return snap;
 }
