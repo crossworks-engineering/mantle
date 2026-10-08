@@ -1,6 +1,7 @@
 /**
  * Remote MCP endpoint — the Streamable-HTTP transport for the Mantle tool
- * surface, served via the `mcp-handler` Next adapter. Registers the SAME tools
+ * surface, served by the SDK's own web-standard `createMcpHandler`
+ * (@modelcontextprotocol/server). Registers the SAME tools
  * the stdio server exposes, from the shared builder (`@mantle/mcp-core`), so the
  * two transports never drift.
  *
@@ -15,10 +16,11 @@
  * bound to. A second rate limit holds each login to its own budget.
  *
  * `runtime = 'nodejs'`: the tool handlers use node-only deps (pg, drizzle,
- * file/storage). The adapter runs the SDK's Streamable HTTP transport
- * statelessly (no Redis / session store).
+ * file/storage). The handler serves 2025-era clients statelessly (a fresh
+ * server per request, GET and DELETE answered 405, no Redis / session store),
+ * and 2026-07-28 clients per request on the same endpoint.
  */
-import { createMcpHandler } from 'mcp-handler';
+import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
 import {
   mcpInstructionsFor,
   preparedAllows,
@@ -27,7 +29,11 @@ import {
 } from '@mantle/mcp-core';
 import { isRemoteMcpEnabled, wwwAuthenticateHeader } from '@/lib/mcp-oauth';
 import { auditMcpKeyCall, resolveMcpCaller } from '@/lib/mcp-auth';
-import { JSON_BODY_CEILING_BYTES, readBodyCapped } from '@/lib/body-limit';
+import {
+  JSON_BODY_CEILING_BYTES,
+  OWNER_DOCUMENT_CEILING_BYTES,
+  readBodyCapped,
+} from '@/lib/body-limit';
 import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 import { rateLimitAccessKey } from '@/lib/access-keys';
 
@@ -107,7 +113,7 @@ async function handler(req: Request): Promise<Response> {
     }
   }
   // A member's or client's tools are resolved from their responder's groups
-  // here, before the adapter registers synchronously.
+  // here, so the server factory below registers synchronously.
   const prepared = await prepareCallerTools(caller);
   // A write tool an API key calls leaves an audit row (lib/mcp-auth.ts),
   // once the call is one this caller was given.
@@ -124,17 +130,25 @@ async function handler(req: Request): Promise<Response> {
     );
   }
 
+  const instructions = mcpInstructionsFor(caller);
   const mcpHandler = createMcpHandler(
-    // Network transport: `run_terminal` stays off unless the operator sets
-    // MANTLE_MCP_TERMINAL=1 on the box (see packages/mcp-core/src/build-server.ts).
-    (server) => registerPreparedTools(server, prepared, { transport: 'http' }),
-    // Recall's tier-1 hook rides the owner's server instructions, the one
-    // surface a client auto-loads besides the tool list (docs/recall.md); a
-    // login is told who it acts as.
-    { instructions: mcpInstructionsFor(caller) },
-    { basePath: '/api' },
+    () => {
+      // Recall's tier-1 hook rides the owner's server instructions, the one
+      // surface a client auto-loads besides the tool list (docs/recall.md); a
+      // login is told who it acts as.
+      const server = new McpServer({ name: 'mantle', version: '0.0.1' }, { instructions });
+      // Network transport: `run_terminal` stays off unless the operator sets
+      // MANTLE_MCP_TERMINAL=1 on the box (see packages/mcp-core/src/build-server.ts).
+      registerPreparedTools(server, prepared, { transport: 'http' });
+      return server;
+    },
+    // The SDK reads the body itself and caps it at 4 MiB by default. The
+    // ceiling here is the one bodyCeilingFor('/api/mcp') already holds this
+    // route to (a member's or client's body was capped lower above): an
+    // owner's file_upload carries the whole file as base64.
+    { maxRequestBodySize: OWNER_DOCUMENT_CEILING_BYTES },
   );
-  return mcpHandler(req);
+  return mcpHandler.fetch(req);
 }
 
 export { handler as GET, handler as POST, handler as DELETE };

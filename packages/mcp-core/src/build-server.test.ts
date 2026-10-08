@@ -51,7 +51,7 @@ type Handler = (
 function handlerFor(slug: string): Handler {
   const handlers = new Map<string, Handler>();
   const fakeServer = {
-    tool: (name: string, _desc: string, _schema: unknown, handler: Handler) => {
+    registerTool: (name: string, _config: unknown, handler: Handler) => {
       handlers.set(name, handler);
     },
   };

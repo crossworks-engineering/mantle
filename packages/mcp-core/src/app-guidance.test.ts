@@ -20,7 +20,7 @@ type Handler = (
 function surface(): Map<string, { description: string; handler: Handler }> {
   const out = new Map<string, { description: string; handler: Handler }>();
   const fakeServer = {
-    tool: (name: string, description: string, _schema: unknown, handler: Handler) => {
+    registerTool: (name: string, { description }: { description: string }, handler: Handler) => {
       out.set(name, { description, handler });
     },
   };

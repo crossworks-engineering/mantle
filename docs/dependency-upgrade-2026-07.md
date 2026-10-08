@@ -616,6 +616,32 @@ it is not a name takeover), but taking it means moving the whole MCP core onto
 a new package major, which is its own project and touches the tool surface the
 assistant sees. `mcp-handler` stays at ^1.1.0.
 
+> **Taken (2026-10-08, branch `feat/mcp-sdk-v2`).** `@modelcontextprotocol/sdk`
+> 1.30 became `@modelcontextprotocol/server` and `/client` 2.3.1, and
+> `mcp-handler` is gone: `/api/mcp` serves through the SDK's own
+> `createMcpHandler`, which is web-standard (`Request` in, `Response` out) and
+> fits the route as it is. The official Hono adapter (`@modelcontextprotocol/hono`)
+> was not needed: it only builds a Hono app with body parsing and Host checks,
+> and the route is a file-routed handler behind our own gate. Three things to
+> know:
+>
+> - **The tool surface did not change.** SDK 2 converts schemas to
+>   draft-2020-12 by itself; `packages/mcp-core/src/register/tool-input.ts`
+>   keeps the SDK 1 draft-07 output. `tools/list` was dumped before and after
+>   over a real client: 285 owner tools and 292 login tools, names, order,
+>   descriptions and input schemas byte-identical. The only change is that
+>   `execution: { taskSupport: 'forbidden' }` is no longer sent (SDK 2 removed
+>   tasks; an absent value means "forbidden"). `tools-list.test.ts` pins this.
+> - **`createMcpHandler` caps a body at 4 MiB by default.** The route sets
+>   `maxRequestBodySize` to the 128 MB ceiling `/api/mcp` already had, or an
+>   owner's `file_upload` over MCP would 413.
+> - **Connector OAuth.** SDK 2 checks the authorization server's issuer. A
+>   pre-registered app (the Microsoft app, a manual app) names its server
+>   itself, and Entra's metadata names the tenant GUID, so the provider now
+>   hands the SDK that server's metadata as discovery state. The callback route
+>   passes `iss` on (RFC 9207). An unknown tool call now answers a protocol
+>   error (-32602) instead of an `isError` result.
+
 **`pdfjs-dist` 6.2.108 → 6.3.289 and `@napi-rs/canvas` 1.0.2 → 1.0.8 stay
 pinned.** These are the exact-pinned singletons from wave 2, so `deps:drift`
 lists them as out-of-range majors; they are neither. They were left alone

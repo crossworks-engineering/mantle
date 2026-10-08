@@ -14,9 +14,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 
 vi.mock('./ssrf-guard', () => ({ assertFetchableUrl: async () => {} }));
 
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { Server } from '@modelcontextprotocol/server';
+import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node';
 import type { ToolGroupMcpBinding } from '@mantle/db';
 import { closeMcpClient, mcpListRemoteTools, setMcpOAuthStoreFactoryForTests } from './mcp-client';
 import {
@@ -60,10 +59,10 @@ function buildRemoteServer(): Server {
     { name: 'entra-remote', version: '1.0.0' },
     { capabilities: { tools: {} } },
   );
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+  server.setRequestHandler('tools/list', async () => ({
     tools: [{ name: 'ExecuteQuery', description: 'Run DAX.', inputSchema: { type: 'object' } }],
   }));
-  server.setRequestHandler(CallToolRequestSchema, async () => ({
+  server.setRequestHandler('tools/call', async () => ({
     content: [{ type: 'text', text: 'ok' }],
   }));
   return server;
@@ -139,6 +138,10 @@ beforeAll(async () => {
       if (url.pathname === '/tenant-1/v2.0/.well-known/openid-configuration') {
         return json(tenantMeta('tenant-1'));
       }
+      // A tenant named by its domain: Entra's metadata names the GUID tenant.
+      if (url.pathname === '/contoso.example/v2.0/.well-known/openid-configuration') {
+        return json(tenantMeta('tenant-1'));
+      }
       if (url.pathname === '/register') {
         as.registerHits++;
         return json({ error: 'not supported' }, 404);
@@ -187,7 +190,7 @@ beforeAll(async () => {
         return res.end();
       }
       const raw = await readBody();
-      const transport = new StreamableHTTPServerTransport({
+      const transport = new NodeStreamableHTTPServerTransport({
         sessionIdGenerator: undefined,
         enableJsonResponse: true,
       });
@@ -300,6 +303,17 @@ describe('the Microsoft app', () => {
     expect(new URL(flow.authorizeUrl).searchParams.get('scope')).toBe(
       `${origin}/Dataset.Read.All offline_access`,
     );
+  });
+
+  it('a tenant given by its domain still signs in (the issuer names the GUID tenant)', async () => {
+    fresh({ client: { source: 'microsoft' } });
+    msApp = { ...msApp!, authorizationServer: `${origin}/contoso.example/v2.0` };
+    const flow = await startMcpOAuth(store, { redirectUri: REDIRECT });
+    if (!('authorizeUrl' in flow)) throw new Error('expected a redirect flow');
+    expect(new URL(flow.authorizeUrl).pathname).toBe('/tenant-1/oauth2/v2.0/authorize');
+    await completeMcpOAuth(store, { code: AUTH_CODE });
+    expect(binding.oauth?.status).toBe('connected');
+    expect(store.secrets.has('oauth-client')).toBe(false);
   });
 
   it('with no Microsoft app configured: teaching error, no silent pending', async () => {

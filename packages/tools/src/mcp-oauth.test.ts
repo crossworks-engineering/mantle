@@ -12,9 +12,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./ssrf-guard', () => ({ assertFetchableUrl: async () => {} }));
 
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { Server } from '@modelcontextprotocol/server';
+import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node';
 import type { ToolGroupMcpBinding } from '@mantle/db';
 import {
   closeMcpClient,
@@ -54,10 +53,10 @@ function buildRemoteServer(): Server {
     { name: 'oauth-remote', version: '1.0.0' },
     { capabilities: { tools: {} } },
   );
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+  server.setRequestHandler('tools/list', async () => ({
     tools: [{ name: 'ping', description: 'Ping.', inputSchema: { type: 'object' } }],
   }));
-  server.setRequestHandler(CallToolRequestSchema, async () => ({
+  server.setRequestHandler('tools/call', async () => ({
     content: [{ type: 'text', text: 'pong' }],
   }));
   return server;
@@ -162,7 +161,7 @@ beforeAll(async () => {
       }
       const raw = await readBody();
       const body: unknown = raw ? JSON.parse(raw) : undefined;
-      const transport = new StreamableHTTPServerTransport({
+      const transport = new NodeStreamableHTTPServerTransport({
         sessionIdGenerator: undefined,
         enableJsonResponse: true,
       });

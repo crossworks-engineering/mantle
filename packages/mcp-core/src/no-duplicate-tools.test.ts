@@ -5,7 +5,7 @@ import { BUILTIN_TOOLS } from '@mantle/tools';
 /**
  * A slug must have ONE implementation.
  *
- * build-server.ts can either hand-write a `server.tool(...)` or bridge the
+ * build-server.ts can either hand-write an `addTool(server, ...)` or bridge the
  * in-app `BuiltinToolDef` that already implements the same slug. Doing both
  * gives the MCP client a second implementation that no one runs in development,
  * and they drift: the hand-written twins of the content tools had lost ingest
@@ -50,7 +50,7 @@ const KNOWN_UNBRIDGED = [
 ].sort();
 
 /**
- * Slugs registered by a literal `server.tool('…')` call anywhere on the MCP
+ * Slugs registered by a literal `addTool(server, '…')` call anywhere on the MCP
  * surface: build-server.ts itself plus every register/*.ts module.
  *
  * The directory is SWEPT rather than listed, so a new register module cannot
@@ -68,7 +68,7 @@ function handWrittenSlugs(): string[] {
       .map((f) => readFileSync(new URL(f, dir), 'utf8')),
   ];
   return sources.flatMap((src) => [
-    ...[...src.matchAll(/server\.tool\(\s*'([a-z0-9_]+)'/g)].map((m) => m[1]!),
+    ...[...src.matchAll(/addTool\(\s*server,\s*'([a-z0-9_]+)'/g)].map((m) => m[1]!),
   ]);
 }
 

@@ -19,7 +19,7 @@ import {
 
 function registered(allow?: (slug: string) => boolean): string[] {
   const out: string[] = [];
-  const fakeServer = { tool: (name: string) => void out.push(name) };
+  const fakeServer = { registerTool: (name: string) => void out.push(name) };
   registerMantleTools(fakeServer as never, 'owner-1', {
     transport: 'http',
     ...(allow ? { allow } : {}),

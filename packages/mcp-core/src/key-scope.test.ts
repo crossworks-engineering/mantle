@@ -15,7 +15,7 @@ import {
 
 function registeredFor(caller: Partial<McpCaller>): string[] {
   const out: string[] = [];
-  const fakeServer = { tool: (name: string) => void out.push(name) };
+  const fakeServer = { registerTool: (name: string) => void out.push(name) };
   registerPreparedTools(fakeServer as never, {
     kind: 'owner',
     caller: {

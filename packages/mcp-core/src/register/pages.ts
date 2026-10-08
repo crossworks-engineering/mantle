@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { PAGE_TOOLS } from '@mantle/tools';
 import { getPage, listPages } from '@mantle/content';
 import type { McpRegisterContext } from './context';
+import { addTool } from './tool-input';
 
 export function registerPageTools(ctx: McpRegisterContext): void {
   const { server, ownerId, jsonReply, registerBuiltinTools } = ctx;
@@ -19,7 +20,8 @@ export function registerPageTools(ctx: McpRegisterContext): void {
   // authored in the web editor; the assistant finds and reads them. page_list
   // omits the document body; page_get returns the full ProseMirror JSON.
 
-  server.tool(
+  addTool(
+    server,
     'page_list',
     "List the owner's pages. Optional `query` substring-matches title/body/summary; `tag` filters to pages carrying that tag. Bodies are omitted — use page_get for the full document.",
     {
@@ -32,7 +34,8 @@ export function registerPageTools(ctx: McpRegisterContext): void {
     },
   );
 
-  server.tool(
+  addTool(
+    server,
     'page_get',
     'Get a single page by id, including its full ProseMirror/TipTap document.',
     { id: z.string() },

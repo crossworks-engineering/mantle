@@ -14,9 +14,11 @@
  * map).
  */
 
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import {
+  Client,
+  StreamableHTTPClientTransport,
+  type OAuthClientProvider,
+} from '@modelcontextprotocol/client';
 import type { ToolGroupMcpBinding } from '@mantle/db';
 import { getApiKey } from '@mantle/api-keys';
 import { assertFetchableUrl } from './ssrf-guard';
@@ -273,9 +275,12 @@ export async function mcpCallRemoteTool(
   args: Record<string, unknown>,
 ): Promise<McpCallOutcome & { secrets: Map<string, string> }> {
   return withClient(ownerId, groupSlug, mcp, async (client, secrets) => {
-    const res = await client.callTool({ name: toolName, arguments: args }, undefined, {
-      timeout: MCP_CALL_TIMEOUT_MS,
-    });
+    const res = await client.callTool(
+      { name: toolName, arguments: args },
+      {
+        timeout: MCP_CALL_TIMEOUT_MS,
+      },
+    );
     const content = Array.isArray(res.content) ? res.content : [];
     const text = content
       .map((c) => (c && typeof c === 'object' && 'text' in c ? String(c.text) : ''))

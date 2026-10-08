@@ -12,7 +12,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { z } from 'zod';
+import type { StandardSchemaV1 } from '@modelcontextprotocol/server';
 
 import { BUILTIN_TOOLS } from '@mantle/tools';
 
@@ -22,18 +22,25 @@ type Handler = (
   args: Record<string, unknown>,
 ) => Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }>;
 
-type Registration = { schema: Record<string, z.ZodTypeAny>; handler: Handler };
+type Registration = { schema: StandardSchemaV1; handler: Handler };
 
 /** Register the whole surface once and index it by slug. */
 function surface(transport: 'stdio' | 'http' = 'stdio'): Map<string, Registration> {
   const out = new Map<string, Registration>();
   const fakeServer = {
-    tool: (name: string, _desc: string, schema: Record<string, z.ZodTypeAny>, handler: Handler) => {
-      out.set(name, { schema, handler });
+    registerTool: (name: string, config: { inputSchema: StandardSchemaV1 }, handler: Handler) => {
+      out.set(name, { schema: config.inputSchema, handler });
     },
   };
   registerMantleTools(fakeServer as never, 'owner-1', { transport });
   return out;
+}
+
+/** Whether the tool's input schema takes `args`, as the SDK validates them. */
+function accepts(schema: StandardSchemaV1, args: Record<string, unknown>): boolean {
+  const result = schema['~standard'].validate(args);
+  if (result instanceof Promise) throw new Error('expected a synchronous schema');
+  return !result.issues;
 }
 
 function registrationFor(slug: string): Registration {
@@ -229,24 +236,21 @@ describe('bridged tools run their declared preconditions', () => {
 describe('bridged schemas keep the bounds their definitions declare', () => {
   it('enforces numeric minimum/maximum', () => {
     const { schema } = registrationFor('contact_find');
-    const limit = schema.limit;
-    expect(limit, 'contact_find should expose a `limit`').toBeDefined();
-
-    expect(limit!.safeParse(10).success).toBe(true);
+    expect(accepts(schema, { query: 'q', limit: 10 })).toBe(true);
     // Declared as minimum 1 / maximum 25 — both ends must be live.
-    expect(limit!.safeParse(0).success).toBe(false);
-    expect(limit!.safeParse(26).success).toBe(false);
+    expect(accepts(schema, { query: 'q', limit: 0 })).toBe(false);
+    expect(accepts(schema, { query: 'q', limit: 26 })).toBe(false);
   });
 
   it('enforces bounds on a second tool, so the fix is in the converter not one def', () => {
     const { schema } = registrationFor('contact_list');
-    expect(schema.limit!.safeParse(500).success).toBe(false); // maximum 200
-    expect(schema.offset!.safeParse(-1).success).toBe(false); // minimum 0
-    expect(schema.limit!.safeParse(50).success).toBe(true);
+    expect(accepts(schema, { limit: 500 })).toBe(false); // maximum 200
+    expect(accepts(schema, { offset: -1 })).toBe(false); // minimum 0
+    expect(accepts(schema, { limit: 50 })).toBe(true);
   });
 
   it('still accepts an unbounded field of the same type', () => {
     const { schema } = registrationFor('contact_find');
-    expect(schema.query!.safeParse('anything at all').success).toBe(true);
+    expect(accepts(schema, { query: 'anything at all' })).toBe(true);
   });
 });

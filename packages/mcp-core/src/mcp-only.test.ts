@@ -14,7 +14,6 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { z } from 'zod';
 
 import { BUILTIN_TOOLS, listSeedableBuiltins } from '@mantle/tools';
 
@@ -25,7 +24,7 @@ type Handler = (args: Record<string, unknown>) => Promise<unknown>;
 function registeredSlugs(): Set<string> {
   const out = new Set<string>();
   const fakeServer = {
-    tool: (name: string, _d: string, _s: Record<string, z.ZodTypeAny>, _h: Handler) => {
+    registerTool: (name: string, _config: unknown, _h: Handler) => {
       out.add(name);
     },
   };

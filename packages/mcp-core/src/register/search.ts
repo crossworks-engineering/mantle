@@ -31,6 +31,7 @@ import { SEARCH_TOOLS } from '@mantle/tools';
 import { and, eq } from 'drizzle-orm';
 import type { BuiltinToolDef } from '@mantle/tools';
 import type { McpRegisterContext } from './context';
+import { addTool } from './tool-input';
 
 /** The builtin `search` runs. Resolved from the group rather than imported
  *  directly, so it stays tied to the set build-server.ts skips it from: if the
@@ -49,7 +50,8 @@ export function registerSearchTools(ctx: McpRegisterContext): void {
   const { server, ownerId, jsonReply, callBuiltin } = ctx;
   const search_nodes = searchNodesBuiltin();
 
-  server.tool(
+  addTool(
+    server,
     'tree_list',
     'List children of a branch in the Mantle tree. Pass no path for top-level branches.',
     { path: z.string().optional() },
@@ -65,7 +67,8 @@ export function registerSearchTools(ctx: McpRegisterContext): void {
     },
   );
 
-  server.tool(
+  addTool(
+    server,
     'search',
     "Hybrid semantic + full-text search over the user's Mantle — ranks by meaning (vector) with keyword as a booster, so vague/natural queries work, not just exact words. Use `branch` (ltree path) to scope, `type` to filter. Returns the spine (title, tags, summary) — use node_read / file_read / email_get for a full body.",
     {

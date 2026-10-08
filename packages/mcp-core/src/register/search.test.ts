@@ -48,7 +48,7 @@ type Result = { ok: true; output: unknown } | { ok: false; error: string };
 function searchHandler() {
   const handlers = new Map<string, (a: Record<string, unknown>) => Promise<Reply>>();
   const ctx = {
-    server: { tool: (n: string, _d: string, _s: unknown, fn: never) => handlers.set(n, fn) },
+    server: { registerTool: (n: string, _c: unknown, fn: never) => handlers.set(n, fn) },
     ownerId: 'owner-1',
     jsonReply: (v: unknown) => ({ content: [{ type: 'text', text: JSON.stringify(v) }] }),
     callBuiltin: async (
@@ -124,7 +124,7 @@ describe('MCP `search` delegates to the search_nodes builtin', () => {
     const src = await import('node:fs').then((fs) =>
       fs.readFileSync(new URL('./search.ts', import.meta.url), 'utf8'),
     );
-    const body = src.slice(src.indexOf("server.tool(\n    'search'"));
+    const body = src.slice(src.indexOf("addTool(\n    server,\n    'search'"));
     expect(body).not.toContain('searchNodes(');
     expect(body).not.toContain('embed(');
   });

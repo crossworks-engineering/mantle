@@ -317,7 +317,7 @@ const HTTP_SURFACE = [
 /** Register onto a capturing fake; the SDK server is not needed to list names. */
 function surface(transport: 'stdio' | 'http'): string[] {
   const names: string[] = [];
-  registerMantleTools({ tool: (n: string) => void names.push(n) } as never, 'owner-1', {
+  registerMantleTools({ registerTool: (n: string) => void names.push(n) } as never, 'owner-1', {
     transport,
   });
   return names;

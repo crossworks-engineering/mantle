@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { TABLE_TOOLS } from '@mantle/tools';
 import { getTable, listTables, listRows, ensureTableDoc } from '@mantle/content';
 import type { McpRegisterContext } from './context';
+import { addTool } from './tool-input';
 
 export function registerTableTools(ctx: McpRegisterContext): void {
   const { server, ownerId, jsonReply, registerBuiltinTools } = ctx;
@@ -20,7 +21,8 @@ export function registerTableTools(ctx: McpRegisterContext): void {
   // table_get returns columns + a row window; table_rows_list is the addressable
   // row snapshot.
 
-  server.tool(
+  addTool(
+    server,
     'table_list',
     "List the owner's tables. Optional `query` substring-matches title/body/summary; `tag` filters. Grids are summarised (column + row counts) — use table_get for content.",
     {
@@ -33,7 +35,8 @@ export function registerTableTools(ctx: McpRegisterContext): void {
     },
   );
 
-  server.tool(
+  addTool(
+    server,
     'table_get',
     'Get a single table by id: its columns and a window of rows (formula columns resolved). `offset`/`limit` page large grids.',
     { id: z.string(), offset: z.number().optional(), limit: z.number().optional() },
@@ -56,7 +59,8 @@ export function registerTableTools(ctx: McpRegisterContext): void {
     },
   );
 
-  server.tool(
+  addTool(
+    server,
     'table_rows_list',
     "Windowed snapshot of a table's rows — each a stable id + short per-cell text. Page via offset/limit.",
     { table_id: z.string(), offset: z.number().optional(), limit: z.number().optional() },

@@ -16,6 +16,7 @@ import {
 } from '@mantle/runtime/assistant';
 import { errorMessage } from '@mantle/std';
 import type { McpRegisterContext } from './context';
+import { addTool } from './tool-input';
 
 export function registerResponderTools(ctx: McpRegisterContext): void {
   const { server, ownerId, jsonReply } = ctx;
@@ -147,7 +148,8 @@ export function registerResponderTools(ctx: McpRegisterContext): void {
     include_tool_calls: z.boolean().optional(),
   };
 
-  server.tool(
+  addTool(
+    server,
     'ask_responder',
     "Ask one of the user's responder agents a question and get ITS answer, routed through " +
       'its own persona, memory and tools. Runs ONE real turn server-side: composed persona ' +
@@ -163,7 +165,8 @@ export function registerResponderTools(ctx: McpRegisterContext): void {
     async (a) => askResponder({ ...a, toolName: 'ask_responder' }),
   );
 
-  server.tool(
+  addTool(
+    server,
     'ask_as_responder',
     "Adopt a responder's persona and answer as it YOURSELF, in your own loop. Returns the " +
       'composed system prompt (identity + skills + house style), the skill list, the tool slugs ' +
@@ -204,7 +207,8 @@ export function registerResponderTools(ctx: McpRegisterContext): void {
     },
   );
 
-  server.tool(
+  addTool(
+    server,
     'responder_turn_input',
     "Get the exact INPUT one of the user's responder agents would get for a message, so YOUR " +
       'model can answer it as that agent: the composed system prompt, the retrieval context for ' +
@@ -280,7 +284,8 @@ export function registerResponderTools(ctx: McpRegisterContext): void {
     },
   );
 
-  server.tool(
+  addTool(
+    server,
     'responder_turn_record',
     "WRITE a turn you answered AS one of the user's responder agents into that agent's " +
       'conversation, so it shows in the Assistant window as if the agent had answered: the ' +

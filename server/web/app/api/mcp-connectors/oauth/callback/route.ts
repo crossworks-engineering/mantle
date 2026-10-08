@@ -56,7 +56,8 @@ export async function GET(req: Request) {
   }
 
   try {
-    await completeMcpOAuth(store, { code });
+    const iss = url.searchParams.get('iss') ?? undefined;
+    await completeMcpOAuth(store, { code, ...(iss ? { iss } : {}) });
   } catch (err) {
     const msg = errorMessage(err); // already carries its cure, when one is known
     console.error('[mcp-connectors] token exchange failed', groupSlug, msg);

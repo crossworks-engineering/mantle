@@ -12,8 +12,7 @@
  * Every result is the peer's content: it is marked untrusted, like any
  * third-party result.
  */
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { markPeerContacted, peerCallTarget } from '@mantle/content';
 import { readFileById } from '@mantle/files';
 import { errorMessage } from '@mantle/std';
@@ -190,9 +189,12 @@ const peer_call: BuiltinToolDef = {
         input.args && typeof input.args === 'object' && !Array.isArray(input.args)
           ? (input.args as Record<string, unknown>)
           : {};
-      const res = await client.callTool({ name: tool, arguments: args }, undefined, {
-        timeout: CALL_TIMEOUT_MS,
-      });
+      const res = await client.callTool(
+        { name: tool, arguments: args },
+        {
+          timeout: CALL_TIMEOUT_MS,
+        },
+      );
       ctx.step?.setMeta({ peer: peerName, tool });
       return resultOutput(res);
     }),
@@ -248,13 +250,11 @@ const peer_file_copy: BuiltinToolDef = {
               ...(boolOpt(input.overwrite) ? { overwrite: true } : {}),
             },
           },
-          undefined,
           { timeout: CALL_TIMEOUT_MS },
         );
       } else if (names.has('my_file_upload')) {
         res = await client.callTool(
           { name: 'my_file_upload', arguments: { filename, content_base64: b64 } },
-          undefined,
           { timeout: CALL_TIMEOUT_MS },
         );
       } else {

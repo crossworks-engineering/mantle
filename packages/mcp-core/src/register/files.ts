@@ -19,6 +19,7 @@ import {
 import { FILE_MANAGE_TOOLS, FILE_OPERATOR_TOOLS } from '@mantle/tools';
 import { errorMessage } from '@mantle/std';
 import type { McpRegisterContext } from './context';
+import { addTool } from './tool-input';
 
 export function registerFileTools(ctx: McpRegisterContext): void {
   const { server, ownerId, jsonReply, registerBuiltinTools } = ctx;
@@ -30,7 +31,8 @@ export function registerFileTools(ctx: McpRegisterContext): void {
   // shared the implementation without widening what any agent can reach.
   registerBuiltinTools(FILE_OPERATOR_TOOLS);
 
-  server.tool(
+  addTool(
+    server,
     'folder_describe',
     "Set or clear a folder's description. Useful for agents that just created a folder and want to document what goes in it.",
     {
@@ -62,7 +64,8 @@ export function registerFileTools(ctx: McpRegisterContext): void {
     },
   );
 
-  server.tool(
+  addTool(
+    server,
     'folder_rename',
     'Rename a folder in place. `new_name` is lowercased + sanitised. Every file and sub-folder inside moves with it (their paths update). Pass `folder_id` or `path`. Cannot rename the `files` root.',
     {
@@ -105,7 +108,8 @@ export function registerFileTools(ctx: McpRegisterContext): void {
   // no-duplicate-tools.test.ts.
   registerBuiltinTools(FILE_MANAGE_TOOLS);
 
-  server.tool(
+  addTool(
+    server,
     'file_read',
     'Read a file by id. For text files returns the content as a utf-8 string; for binaries returns base64-encoded bytes (only call this on small files).',
     { file_id: z.string().uuid() },
@@ -125,7 +129,8 @@ export function registerFileTools(ctx: McpRegisterContext): void {
     },
   );
 
-  server.tool(
+  addTool(
+    server,
     'file_get',
     "Fetch a file's metadata by id without loading bytes. Useful for resolving a uuid surfaced by search before deciding what to do with it.",
     { file_id: z.string().uuid() },
@@ -138,7 +143,8 @@ export function registerFileTools(ctx: McpRegisterContext): void {
     },
   );
 
-  server.tool(
+  addTool(
+    server,
     'file_rename',
     'Rename a file in place — its folder and extension are kept, only the basename changes. `new_stem` is the new name WITHOUT the extension (e.g. `huntsman-report` → `customerx-report`).',
     { file_id: z.string().uuid(), new_stem: z.string().min(1).max(200) },

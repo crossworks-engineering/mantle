@@ -39,14 +39,14 @@
 import { randomUUID } from 'node:crypto';
 import {
   auth,
+  discoverAuthorizationServerMetadata,
   discoverOAuthProtectedResourceMetadata,
+  type OAuthClientInformationMixed,
+  type OAuthClientMetadata,
   type OAuthClientProvider,
-} from '@modelcontextprotocol/sdk/client/auth.js';
-import type {
-  OAuthClientInformationMixed,
-  OAuthClientMetadata,
-  OAuthTokens,
-} from '@modelcontextprotocol/sdk/shared/auth.js';
+  type OAuthDiscoveryState,
+  type OAuthTokens,
+} from '@modelcontextprotocol/client';
 import { and, eq } from 'drizzle-orm';
 import {
   db,
@@ -244,6 +244,33 @@ function makeProvider(store: McpOAuthStore, opts: ProviderOpts): OAuthClientProv
       return app;
     }));
 
+  // The authorization server a pre-registered app signs in at. The owner
+  // typed it (or Settings → Microsoft did); it is not discovered, so the
+  // mix-up defence the SDK's issuer checks give (RFC 8414 §3.3, the callback
+  // leg's issuer binding) has nothing to defend. Entra needs them off: its
+  // metadata names the tenant GUID (or a literal `{tenantid}` on `common`),
+  // so a tenant given by domain would fail them. The metadata is fetched here
+  // and handed back as discovery state, which the SDK then uses as is.
+  let preregistered: Promise<OAuthDiscoveryState | undefined> | null = null;
+  const preregisteredDiscovery = () =>
+    (preregistered ??= (async () => {
+      const url =
+        client?.source === 'microsoft'
+          ? (await borrowMicrosoftApp()).authorizationServer
+          : client?.source === 'manual'
+            ? client.authorizationServer
+            : undefined;
+      if (!url) return undefined; // full RFC 9728 discovery
+      const metadata = await discoverAuthorizationServerMetadata(url, {
+        fetchFn: mcpOAuthFetch,
+        skipIssuerValidation: true,
+      }).catch(() => undefined);
+      return {
+        authorizationServerUrl: url,
+        ...(metadata ? { authorizationServerMetadata: metadata } : {}),
+      };
+    })());
+
   return {
     get redirectUrl() {
       return opts.redirectUrl;
@@ -252,15 +279,18 @@ function makeProvider(store: McpOAuthStore, opts: ProviderOpts): OAuthClientProv
       return clientMetadata;
     },
     ...(opts.state ? { state: () => opts.state! } : {}),
-    clientInformation: async () => {
+    clientInformation: async (ctx) => {
       if (client?.source === 'microsoft') {
         const app = await borrowMicrosoftApp();
         // client_secret_post, like packages/microsoft: Entra lists it, and it
-        // spares the secret the Basic-auth encoding rules.
+        // spares the secret the Basic-auth encoding rules. Stamped with the
+        // issuer the SDK asks for: the app is resolved fresh every time, so an
+        // unstamped copy would make the SDK store one in this connector's vault.
         return {
           client_id: app.clientId,
           client_secret: app.clientSecret,
           token_endpoint_auth_method: 'client_secret_post',
+          ...(ctx?.issuer ? { issuer: ctx.issuer } : {}),
         };
       }
       return loadJsonSecret<OAuthClientInformationMixed>(store, 'oauth-client');
@@ -271,15 +301,7 @@ function makeProvider(store: McpOAuthStore, opts: ProviderOpts): OAuthClientProv
       await store.setSecret('oauth-client', JSON.stringify(info));
       await patchOAuthState(store, { clientId: String(info.client_id ?? '') });
     },
-    discoveryState: async () => {
-      if (client?.source === 'microsoft') {
-        return { authorizationServerUrl: (await borrowMicrosoftApp()).authorizationServer };
-      }
-      if (client?.source === 'manual' && client.authorizationServer) {
-        return { authorizationServerUrl: client.authorizationServer };
-      }
-      return undefined; // full RFC 9728 discovery
-    },
+    discoveryState: preregisteredDiscovery,
     // Entra v2 derives the token audience from the scope; the RFC 8707
     // `resource` parameter adds nothing there but a way to fail.
     ...(client?.source === 'microsoft' ? { validateResourceURL: async () => undefined } : {}),
@@ -502,14 +524,16 @@ export async function startMcpOAuth(
 }
 
 /**
- * Finish the flow with the code from the callback. The caller has already
- * matched `state` to this connector. Exchanges the code (PKCE verifier from
+ * Finish the flow with the code from the callback, and its `iss` when the
+ * authorization server sent one (RFC 9207: the SDK checks it against the
+ * server's issuer, and requires it when the server says it sends it). The
+ * caller has already matched `state` to this connector. Exchanges the code (PKCE verifier from
  * the vault), seals the tokens, clears the pending marker. A failed exchange
  * clears the marker too and records why.
  */
 export async function completeMcpOAuth(
   store: McpOAuthStore,
-  args: { code: string },
+  args: { code: string; iss?: string },
 ): Promise<void> {
   const mcp = await store.loadMcp();
   if (!mcp?.oauth?.pending) {
@@ -526,6 +550,7 @@ export async function completeMcpOAuth(
     const result = await auth(provider, {
       serverUrl: mcp.url,
       authorizationCode: args.code,
+      ...(args.iss ? { iss: args.iss } : {}),
       fetchFn,
     });
     if (result !== 'AUTHORIZED') throw new Error('token exchange did not complete');

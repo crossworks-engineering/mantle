@@ -12,11 +12,12 @@
  * surprise.
  */
 
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { checkToolPreconditions } from '@mantle/tools';
 import type { BuiltinToolDef, OwnerSurfaceVia, ToolSurface } from '@mantle/tools';
 import { env } from '@mantle/config';
 import { zodShapeFromJsonSchema } from './zod-schema';
+import { addTool } from './tool-input';
 import { KEY_SHARED_CONTENT_TOOLS, contentToolTarget } from '../key-scope';
 import { othersCanRead } from '../shared-item';
 import type { MantleMcpTransport } from '../build-server';
@@ -167,7 +168,7 @@ export function makeRegisterContext(
     for (const def of defs) {
       if (opts?.only && !opts.only.has(def.slug)) continue;
       if (opts?.skip?.(def)) continue;
-      server.tool(def.slug, def.description, zodShapeFromJsonSchema(def.inputSchema), (args) =>
+      addTool(server, def.slug, def.description, zodShapeFromJsonSchema(def.inputSchema), (args) =>
         callBuiltin(def, args),
       );
     }

@@ -24,9 +24,9 @@ describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
   let m: Db;
   let ls: typeof import('./login-surface');
   let sqlTag: typeof import('drizzle-orm').sql;
-  let McpServer: typeof import('@modelcontextprotocol/sdk/server/mcp.js').McpServer;
-  let Client: typeof import('@modelcontextprotocol/sdk/client/index.js').Client;
-  let InMemoryTransport: typeof import('@modelcontextprotocol/sdk/inMemory.js').InMemoryTransport;
+  let McpServer: typeof import('@modelcontextprotocol/server').McpServer;
+  let Client: typeof import('@modelcontextprotocol/client').Client;
+  let InMemoryTransport: typeof import('@modelcontextprotocol/server').InMemoryTransport;
   const tag = `mcplogin-${randomUUID().slice(0, 8)}`;
   const anchor = randomUUID();
   const member = randomUUID();
@@ -70,9 +70,8 @@ describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
     m = await import('@mantle/db');
     ls = await import('./login-surface');
     sqlTag = (await import('drizzle-orm')).sql;
-    ({ McpServer } = await import('@modelcontextprotocol/sdk/server/mcp.js'));
-    ({ Client } = await import('@modelcontextprotocol/sdk/client/index.js'));
-    ({ InMemoryTransport } = await import('@modelcontextprotocol/sdk/inMemory.js'));
+    ({ McpServer, InMemoryTransport } = await import('@modelcontextprotocol/server'));
+    ({ Client } = await import('@modelcontextprotocol/client'));
     const admin = (m.systemDb as unknown as { $client: Parameters<Db['ensureViewerRoles']>[0] })
       .$client;
     await m.ensureViewerRoles(admin, process.env.MANTLE_MASTER_KEY);
@@ -172,9 +171,11 @@ describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
     const c = await connect(asMember(false));
     const list = await names(c);
     expect(list).toEqual(['my_items_list', 'note_list']);
-    const res = await c.callTool({ name: 'note_create', arguments: { title: 'x' } });
-    expect(res.isError).toBe(true);
-    expect(text(res)).toMatch(/not found|unknown/i);
+    // SDK 2.x answers an unknown tool with a protocol error (-32602), where
+    // 1.x returned an isError result.
+    await expect(c.callTool({ name: 'note_create', arguments: { title: 'x' } })).rejects.toThrow(
+      /not found/i,
+    );
   });
 
   it('a client gets the client list only, whatever its groups hold', async () => {
@@ -205,11 +206,12 @@ describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
     expect(draft?.title, text(made)).toBe(`${tag} draft`);
     expect(draft?.owner_id).toBe(memberSpace);
 
-    const lib = await c.callTool({
-      name: 'note_create',
-      arguments: { title: `${tag} library write`, content: 'x' },
-    });
-    expect(lib.isError).toBe(true);
+    await expect(
+      c.callTool({
+        name: 'note_create',
+        arguments: { title: `${tag} library write`, content: 'x' },
+      }),
+    ).rejects.toThrow(/not found/i);
     const [leak] = (await exec(sqlTag`
       select id from nodes where title = ${`${tag} library write`}`)) as unknown as unknown[];
     expect(leak).toBeUndefined();

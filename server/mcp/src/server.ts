@@ -20,7 +20,7 @@
  * Env loading is handled by Node's `--env-file-if-exists=.env.local` in the
  * package script; this entry just trusts `process.env`.
  */
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
 import { authUsers, db, resolveSingleOwnerId } from '@mantle/db';
 import { buildMantleMcpServer } from '@mantle/mcp-core';
 import { registerRecallEmbedder } from '@mantle/content';

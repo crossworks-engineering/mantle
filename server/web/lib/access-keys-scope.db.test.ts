@@ -291,7 +291,7 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
     const caller = await mcpCaller(key.secret);
     const handlers = new Map<string, (args: Record<string, unknown>) => Promise<unknown>>();
     const fakeServer = {
-      tool: (name: string, ...rest: unknown[]) =>
+      registerTool: (name: string, ...rest: unknown[]) =>
         void handlers.set(
           name,
           rest[rest.length - 1] as (a: Record<string, unknown>) => Promise<unknown>,

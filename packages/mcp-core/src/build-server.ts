@@ -28,7 +28,7 @@
  * MANTLE_MCP_TERMINAL=1. `sandbox_exec` — the contained shell, in a container
  * with no route to any of that — is unconditional on both.
  */
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { McpServer } from '@modelcontextprotocol/server';
 import {} from '@mantle/files';
 import {
   CONTACT_TOOLS,
@@ -122,7 +122,7 @@ if (!toolsmithWriteEnabled) {
 }
 
 /**
- * The server with a gate on registration: `tool` / `registerTool` skip any
+ * The server with a gate on registration: `registerTool` skips any
  * name `allow` refuses, so a tool the caller may not have is never listed
  * and cannot be called. Every registrar goes through the context's
  * `server`, so this one wrapper covers the bridged builtins and the
@@ -131,7 +131,7 @@ if (!toolsmithWriteEnabled) {
 export function filteredServer(server: McpServer, allow: (slug: string) => boolean): McpServer {
   return new Proxy(server, {
     get(target, prop) {
-      if (prop === 'tool' || prop === 'registerTool') {
+      if (prop === 'registerTool') {
         const fn = Reflect.get(target, prop, target) as (...a: unknown[]) => unknown;
         return (name: unknown, ...rest: unknown[]) =>
           typeof name === 'string' && allow(name) ? fn.call(target, name, ...rest) : undefined;
@@ -450,8 +450,8 @@ export const MANTLE_MCP_INSTRUCTIONS = [
 /** Create a fresh `McpServer` with the full Mantle tool surface, scoped to
  *  `ownerId`. This is the STDIO entry's builder — no port, no token, spawned by
  *  a client on a machine the owner controls — so it registers the stdio
- *  posture. The HTTP route registers onto the adapter-provided server via
- *  `registerMantleTools` with `transport: 'http'`. */
+ *  posture. The HTTP route builds its own server per request and registers
+ *  onto it with `transport: 'http'` (server/web/app/api/mcp/route.ts). */
 export function buildMantleMcpServer(ownerId: string): McpServer {
   const server = new McpServer(
     { name: 'mantle', version: '0.0.1' },

@@ -18,9 +18,8 @@ vi.mock('@mantle/api-keys', () => ({
     service === 'testsvc' && label === 'default' ? 'test-key-123' : null,
 }));
 
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { Server } from '@modelcontextprotocol/server';
+import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node';
 import type { ToolGroupMcpBinding } from '@mantle/db';
 import { closeMcpClient, mcpCallRemoteTool, mcpListRemoteTools } from './mcp-client';
 
@@ -33,7 +32,7 @@ function buildRemoteServer(): Server {
     { name: 'test-remote', version: '9.9.9' },
     { capabilities: { tools: {} } },
   );
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+  server.setRequestHandler('tools/list', async () => ({
     tools: [
       {
         name: 'echo',
@@ -46,7 +45,7 @@ function buildRemoteServer(): Server {
       },
     ],
   }));
-  server.setRequestHandler(CallToolRequestSchema, async (req) => {
+  server.setRequestHandler('tools/call', async (req) => {
     if (req.params.name === 'echo') {
       return {
         content: [{ type: 'text', text: JSON.stringify({ echoed: req.params.arguments?.msg }) }],
@@ -69,7 +68,7 @@ beforeAll(async () => {
       for await (const c of req) chunks.push(c as Buffer);
       const raw = Buffer.concat(chunks).toString('utf8');
       const body: unknown = raw ? JSON.parse(raw) : undefined;
-      const transport = new StreamableHTTPServerTransport({
+      const transport = new NodeStreamableHTTPServerTransport({
         sessionIdGenerator: undefined,
         enableJsonResponse: true,
       });
@@ -141,7 +140,7 @@ describe('a server whose standalone GET stream hangs (DeepWiki class)', () => {
         for await (const c of req) chunks.push(c as Buffer);
         const raw = Buffer.concat(chunks).toString('utf8');
         const body: unknown = raw ? JSON.parse(raw) : undefined;
-        const transport = new StreamableHTTPServerTransport({
+        const transport = new NodeStreamableHTTPServerTransport({
           sessionIdGenerator: undefined,
           enableJsonResponse: true,
         });

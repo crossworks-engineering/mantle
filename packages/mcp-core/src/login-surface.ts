@@ -20,7 +20,7 @@
  * forum plan section 10a) reads it from the surface the call runs on, never
  * from model arguments.
  */
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { and, eq } from 'drizzle-orm';
 import { agents, db, withViewer, type Tool, type ViewerLevel } from '@mantle/db';
 import {
@@ -47,6 +47,7 @@ import {
   registerMantleTools,
 } from './build-server';
 import { zodShapeFromJsonSchema } from './register/zod-schema';
+import { addTool } from './register/tool-input';
 import { keyAreasAllowTool } from './key-scope';
 
 export type McpLoginRole = 'admin' | 'member' | 'client';
@@ -405,7 +406,8 @@ export function registerLoginRows(
     // row's copy of the schema can lag a release, and the zod shape drops
     // every argument the schema does not name.
     const def = getBuiltin(row.slug);
-    server.tool(
+    addTool(
+      server,
       row.slug,
       def?.description ?? row.description,
       zodShapeFromJsonSchema(
