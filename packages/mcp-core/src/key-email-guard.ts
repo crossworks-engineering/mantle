@@ -1,13 +1,15 @@
 /**
  * An API key without the Search area does not reach email (access matrix
  * M4). The attachments of synced mail are file nodes in the attachments
- * folder under each mail, and the extractor makes image files and Tables
- * from them (T4), so for such a key the Files and Tables tools:
+ * folder under each mail, and image files, Tables, pages and notes are made
+ * from them (the extractor, page_from_file, note_from_file: T4), so for such
+ * a key the Files, Tables, Pages and Notes tools:
  *
- *  - lists (`file_list`, `folder_list`, `table_list`) drop the attachment
+ *  - lists (`file_list`, `folder_list`, `table_list`, `page_list`,
+ *    `note_list`) drop the attachment
  *    rows, the items made from one and the attachments folders, and run as
  *    before otherwise;
- *  - every other Files or Tables tool is refused when an item id, folder id
+ *  - every other tool of those areas is refused when an item id, folder id
  *    or folder path it names is, is inside, or holds a mail's attachments,
  *    or is an item made from one (a copy, move, read, rename, delete, a
  *    table made from an attachment, or an upload there).
@@ -19,11 +21,25 @@ import { emailAttachmentFolders, emailAttachmentIds, reachesEmailAttachment } fr
 import type { ToolCallGuard, ToolCallResult } from './build-server';
 import { toolKeyArea } from './key-scope';
 
-const ID_FIELDS = ['file_id', 'folder_id', 'id', 'table_id', 'node_id'] as const;
+const ID_FIELDS = [
+  'file_id',
+  'folder_id',
+  'id',
+  'table_id',
+  'node_id',
+  'page_id',
+  'note_id',
+] as const;
 const ID_LIST_FIELDS = ['file_ids', 'table_ids'] as const;
 const PATH_FIELDS = ['parent_path', 'parent', 'path', 'dest_path', 'dest_parent_path'] as const;
-const LIST_TOOLS: ReadonlySet<string> = new Set(['file_list', 'folder_list', 'table_list']);
-const GUARDED_AREAS: ReadonlySet<string> = new Set(['files', 'tables']);
+const LIST_TOOLS: ReadonlySet<string> = new Set([
+  'file_list',
+  'folder_list',
+  'table_list',
+  'page_list',
+  'note_list',
+]);
+const GUARDED_AREAS: ReadonlySet<string> = new Set(['files', 'tables', 'pages', 'notes']);
 
 export const KEY_EMAIL_REFUSAL =
   'this is an email attachment, or a folder of them, and this key reaches email only with the Search area.';

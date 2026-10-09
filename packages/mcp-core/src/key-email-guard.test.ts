@@ -96,8 +96,8 @@ describe('a key without Search and email attachments on MCP', () => {
       KEY_EMAIL_REFUSAL,
     );
     expect(await before!('file_upload', { parent_path: 'files.work' })).toBeNull();
-    // Not a Files tool: the guard has nothing to say.
-    expect(await before!('page_get', { id: MAIL })).toBeNull();
+    // Not a guarded area: the guard has nothing to say.
+    expect(await before!('event_get', { id: MAIL })).toBeNull();
   });
 
   it('lists drop attachment rows instead of refusing the call', async () => {
@@ -152,6 +152,23 @@ describe('a key without Search and email attachments on MCP', () => {
       { content: [{ type: 'text', text: JSON.stringify(fileRows) }] },
     );
     expect(JSON.parse(listed.content![0]!.text!)).toEqual([fileRows[0]]);
+  });
+
+  it('guards a page or a note made from an attachment too (A1)', async () => {
+    const { before, after } = keyEmailGuard('owner-1');
+    expect(await before!('page_get', { id: COPY })).toBe(KEY_EMAIL_REFUSAL);
+    expect(await before!('page_blocks_list', { page_id: COPY })).toBe(KEY_EMAIL_REFUSAL);
+    expect(await before!('note_get', { id: COPY })).toBe(KEY_EMAIL_REFUSAL);
+    expect(await before!('page_get', { id: PLAIN })).toBeNull();
+    for (const slug of ['page_list', 'note_list']) {
+      const rows = [{ id: PLAIN }, { id: COPY }];
+      const listed = await after!(
+        slug,
+        {},
+        { content: [{ type: 'text', text: JSON.stringify(rows) }] },
+      );
+      expect(JSON.parse(listed.content![0]!.text!), slug).toEqual([rows[0]]);
+    }
   });
 
   it('leaves a key with Search or every area alone', async () => {

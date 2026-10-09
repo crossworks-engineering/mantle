@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
-import { hiddenFromKey } from '@/lib/api-v1';
+import { callerMayReadEmail } from '@/lib/api-v1';
 import { listStateOf, pageWithPrivate } from '@/lib/admin-private-rows';
 import {
   countTables,
@@ -36,6 +36,9 @@ export async function GET(req: Request) {
     ? (sortParam as TableSort)
     : 'edited';
 
+  // A key without Search does not list a table made from an email
+  // attachment (access matrix T4), filtered in the query so pages stay full.
+  const withoutEmailCopies = !callerMayReadEmail();
   // `?state=brain|private|all` adds the caller's own private tables
   // (lib/admin-private-rows; default brain, the list as before).
   const [listed, tags] = await Promise.all([
@@ -50,22 +53,16 @@ export async function GET(req: Request) {
       pageSize: PAGE_SIZE,
       brain: async (limit, offset) => {
         const [items, total] = await Promise.all([
-          listTables(user.id, { query, tag, sort, limit, offset }),
-          countTables(user.id, { query, tag }),
+          listTables(user.id, { query, tag, sort, limit, offset, withoutEmailCopies }),
+          countTables(user.id, { query, tag, withoutEmailCopies }),
         ]);
         return { items, total };
       },
     }),
     listTableTags(user.id),
   ]);
-  // A key without Search does not list a table made from an email
-  // attachment (access matrix T4).
-  const hidden = await hiddenFromKey(
-    user.id,
-    listed.items.map((t) => t.id),
-  );
   return NextResponse.json({
-    tables: hidden.size ? listed.items.filter((t) => !hidden.has(t.id)) : listed.items,
+    tables: listed.items,
     total: listed.total,
     page,
     pageSize: PAGE_SIZE,

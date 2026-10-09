@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
-import { callerMayConfirm } from '@/lib/api-v1';
+import { callerMayConfirm, callerMayReadEmail } from '@/lib/api-v1';
 import { allPrivateRows, listStateOf, pageWithPrivate } from '@/lib/admin-private-rows';
 import {
   countPages,
@@ -73,6 +73,9 @@ export async function GET(req: Request) {
   const sort: PageSort = SORTS.includes(sortParam as PageSort) ? (sortParam as PageSort) : 'edited';
   const filtering = Boolean(query || tag);
   const state = listStateOf(sp);
+  // A key without Search does not list a page made from an email
+  // attachment (access matrix T4).
+  const withoutEmailCopies = !callerMayReadEmail();
 
   const tagsPromise = listPageTags(user.id);
 
@@ -89,8 +92,8 @@ export async function GET(req: Request) {
         pageSize: PAGE_SIZE,
         brain: async (limit, offset) => {
           const [items, total] = await Promise.all([
-            listPages(user.id, { query, tag, sort, limit, offset }),
-            countPages(user.id, { query, tag }),
+            listPages(user.id, { query, tag, sort, limit, offset, withoutEmailCopies }),
+            countPages(user.id, { query, tag, withoutEmailCopies }),
           ]);
           return { items, total };
         },
@@ -108,7 +111,7 @@ export async function GET(req: Request) {
   }
 
   const [rows, privateRows, tags] = await Promise.all([
-    state === 'private' ? [] : listPages(user.id, { sort, limit: TREE_LIMIT }),
+    state === 'private' ? [] : listPages(user.id, { sort, limit: TREE_LIMIT, withoutEmailCopies }),
     state === 'brain' ? [] : allPrivateRows(user, 'page', { sort }),
     tagsPromise,
   ]);

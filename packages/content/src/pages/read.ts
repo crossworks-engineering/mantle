@@ -8,13 +8,20 @@
  * edit: no version bump, no re-index, fire-and-forget.
  */
 import { and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm';
-import { db, entityEdges, nodes, pages } from '@mantle/db';
+import { db, emailAttachmentSql, entityEdges, nodes, pages } from '@mantle/db';
 import { ensureBlockIds, repairTableRows } from '@mantle/content-core/block-ids';
 import type { Backlink, PageRow, PageSort } from '@mantle/client-types';
 import { EMPTY_DOC, PAGES_ROOT_LABEL, detailOf, rowOf, type PageDetail } from './shared';
 import { currentSpaceScope, readsDrafts } from '@mantle/db/viewer';
 
-type ListPagesOpts = { query?: string; tag?: string; sort?: PageSort };
+type ListPagesOpts = {
+  query?: string;
+  tag?: string;
+  sort?: PageSort;
+  /** Leave out email attachments and items made from one (an API key
+   *  without the Search area: access matrix M4, T4). */
+  withoutEmailCopies?: boolean;
+};
 
 /** Map a sort key to its ORDER BY clause. */
 function pageOrderBy(sort?: PageSort) {
@@ -45,6 +52,7 @@ function pageConds(ownerId: string, opts: ListPagesOpts) {
     if (c) conds.push(c);
   }
   if (opts.tag) conds.push(sql`${opts.tag} = ANY(${nodes.tags})`);
+  if (opts.withoutEmailCopies) conds.push(sql`not ${emailAttachmentSql()}`);
   return conds;
 }
 

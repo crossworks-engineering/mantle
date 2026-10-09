@@ -1,6 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
+import { hiddenFromKey } from '@/lib/api-v1';
 import { deletePage, getPage, updatePage } from '@/lib/pages';
 import { firstIssue } from '@/lib/zod-issue';
 
@@ -22,6 +23,11 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const { id } = await ctx.params;
+  // A page made from an email attachment is not found for a key without
+  // Search (access matrix T4).
+  if ((await hiddenFromKey(user.id, [id])).size > 0) {
+    return NextResponse.json({ error: 'not found' }, { status: 404 });
+  }
   const row = await getPage(user.id, id);
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
   return NextResponse.json({ page: row });

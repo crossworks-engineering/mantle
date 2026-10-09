@@ -1,6 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
+import { callerMayReadEmail } from '@/lib/api-v1';
 import { listStateOf, pageWithPrivate } from '@/lib/admin-private-rows';
 import { countNotes, createNote, isDigestTag, listNoteTags, listNotes } from '@/lib/notes';
 import { recordIngest } from '@mantle/tracing';
@@ -28,6 +29,9 @@ export async function GET(req: Request) {
   const query = sp.get('q')?.trim() || undefined;
   const tag = sp.get('tag')?.trim() || undefined;
   const includeDigests = sp.get('digests') === '1' || (!!tag && isDigestTag(tag));
+  // A key without Search does not list a note made from an email
+  // attachment (access matrix T4).
+  const withoutEmailCopies = !callerMayReadEmail();
 
   const [listed, tags] = await Promise.all([
     pageWithPrivate({
@@ -40,8 +44,8 @@ export async function GET(req: Request) {
       pageSize: PAGE_SIZE,
       brain: async (limit, offset) => {
         const [items, total] = await Promise.all([
-          listNotes(user.id, { query, tag, includeDigests, limit, offset }),
-          countNotes(user.id, { query, tag, includeDigests }),
+          listNotes(user.id, { query, tag, includeDigests, limit, offset, withoutEmailCopies }),
+          countNotes(user.id, { query, tag, includeDigests, withoutEmailCopies }),
         ]);
         return { items, total };
       },

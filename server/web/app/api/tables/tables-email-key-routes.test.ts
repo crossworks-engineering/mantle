@@ -36,6 +36,11 @@ vi.mock('@/lib/tables', async (importOriginal) => ({
   getTable: vi.fn(async (_o: string, id: string) => table(id)),
 }));
 
+vi.mock('@/lib/pages', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  getPage: vi.fn(async (_o: string, id: string) => ({ id })),
+}));
+
 const key = (areas: AccessKeyGrant['areas']) =>
   ({ id: 'k1', loginId: OWNER, access: 'read', areas }) as unknown as AccessKeyGrant;
 
@@ -49,21 +54,38 @@ function as<T>(grant: AccessKeyGrant | undefined, url: string, fn: (req: Request
 
 const ctxOf = (id: string) => ({ params: Promise.resolve({ id }) });
 
-async function ids(res: Response): Promise<string[]> {
-  return ((await res.json()) as { tables: { id: string }[] }).tables.map((t) => t.id);
-}
-
 beforeEach(() => vi.clearAllMocks());
 
-describe('Tables routes and a key without the Search area (T4)', () => {
-  it('leave a Table made from an attachment out of the list', async () => {
+describe('Tables, pages and notes routes and a key without the Search area (T4)', () => {
+  it('leave a Table made from an attachment out of the list, in the query', async () => {
     const { GET } = await import('./route');
-    expect(await ids(await as(key(['tables']), 'http://x/api/v1/tables', GET))).toEqual([PLAIN]);
-    expect(await ids(await as(key(['tables', 'search']), 'http://x/api/v1/tables', GET))).toEqual([
-      PLAIN,
-      FROM_MAIL,
-    ]);
-    expect(await ids(await as(undefined, 'http://x/api/tables', GET))).toEqual([PLAIN, FROM_MAIL]);
+    const { listTables, countTables } = await import('@/lib/tables');
+    const flag = () =>
+      (vi.mocked(listTables).mock.calls.at(-1)![1] as { withoutEmailCopies?: boolean })
+        .withoutEmailCopies;
+    await as(key(['tables']), 'http://x/api/v1/tables', GET);
+    expect(flag()).toBe(true);
+    expect(
+      (vi.mocked(countTables).mock.calls.at(-1)![1] as { withoutEmailCopies?: boolean })
+        .withoutEmailCopies,
+    ).toBe(true);
+    await as(key(['tables', 'search']), 'http://x/api/v1/tables', GET);
+    expect(flag()).toBe(false);
+    await as(undefined, 'http://x/api/tables', GET);
+    expect(flag()).toBe(false);
+  });
+
+  it('answer 404 for a page or a note made from an attachment (A1)', async () => {
+    const pages = await import('../pages/[id]/route');
+    const notes = await import('../notes/[id]/route');
+    for (const [GET, kind] of [
+      [pages.GET, 'pages'],
+      [notes.GET, 'notes'],
+    ] as const) {
+      const url = `http://x/api/v1/${kind}/${FROM_MAIL}`;
+      const hidden = await as(key([kind]), url, (req) => GET(req, ctxOf(FROM_MAIL)));
+      expect(hidden.status, kind).toBe(404);
+    }
   });
 
   it('answer 404 for it by id, and serve an ordinary Table', async () => {

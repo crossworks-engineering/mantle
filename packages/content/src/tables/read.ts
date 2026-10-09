@@ -9,12 +9,19 @@ import { and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm';
 import { existsSync } from 'node:fs';
 import { fileStats, resolveStoragePath } from '@mantle/tabledb';
 import { draftAbsFor } from '../table-storage';
-import { db, nodes, tables } from '@mantle/db';
+import { db, emailAttachmentSql, nodes, tables } from '@mantle/db';
 import type { TableRow, TableDetail, TableSort } from '@mantle/content-core/table-model';
 import { countsFromRegistry, detailOf, docsOf, rowOf, tabsFromStats } from './shared';
 import { readsDrafts } from '@mantle/db/viewer';
 
-type ListTablesOpts = { query?: string; tag?: string; sort?: TableSort };
+type ListTablesOpts = {
+  query?: string;
+  tag?: string;
+  sort?: TableSort;
+  /** Leave out email attachments and items made from one (an API key
+   *  without the Search area: access matrix M4, T4). */
+  withoutEmailCopies?: boolean;
+};
 
 function tableOrderBy(sort?: TableSort) {
   switch (sort) {
@@ -42,6 +49,7 @@ function tableConds(ownerId: string, opts: ListTablesOpts) {
     if (c) conds.push(c);
   }
   if (opts.tag) conds.push(sql`${opts.tag} = ANY(${nodes.tags})`);
+  if (opts.withoutEmailCopies) conds.push(sql`not ${emailAttachmentSql()}`);
   return conds;
 }
 

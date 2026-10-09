@@ -13,6 +13,7 @@ import { and, desc, eq, ilike, or, sql } from 'drizzle-orm';
 import {
   asViewerLevel,
   db,
+  emailAttachmentSql,
   nodes,
   notifyNodeIngested,
   type Node,
@@ -76,7 +77,14 @@ async function ensureRoot(ownerId: string): Promise<void> {
     });
 }
 
-type ListNotesOpts = { query?: string; tag?: string; includeDigests?: boolean };
+type ListNotesOpts = {
+  query?: string;
+  tag?: string;
+  includeDigests?: boolean;
+  /** Leave out email attachments and items made from one (an API key
+   *  without the Search area: access matrix M4, T4). */
+  withoutEmailCopies?: boolean;
+};
 
 /** Agent-minted digest tags (summarizer.ts): the digest marker itself plus its
  *  `agent:`/`topic:` companions. Used to hide machine notes from the Notes
@@ -106,6 +114,7 @@ function noteConds(ownerId: string, opts: ListNotesOpts) {
     if (c) conds.push(c);
   }
   if (opts.tag) conds.push(sql`${opts.tag} = ANY(${nodes.tags})`);
+  if (opts.withoutEmailCopies) conds.push(sql`not ${emailAttachmentSql()}`);
   return conds;
 }
 
