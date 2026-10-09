@@ -12,13 +12,20 @@
 import { NextResponse } from '@/server/http-compat';
 import { resolveSingleOwnerId } from '@mantle/db';
 import { othersCanRead } from '@mantle/mcp-core/shared-item';
-import { isApiKeyRequest } from '@/lib/api-v1';
+import { hiddenFromKey, isApiKeyRequest } from '@/lib/api-v1';
 import { PATCH as patchPage } from '../../../pages/[id]/route';
 
 export { GET } from '../../../pages/[id]/route';
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   if (!isApiKeyRequest()) return patchPage(req, ctx);
+  // A page made from an email attachment is not found for a key without
+  // Search, before any other answer could tell it the page exists (audit C1).
+  const ownerId = await resolveSingleOwnerId();
+  const { id } = await ctx.params;
+  if (ownerId && (await hiddenFromKey(ownerId, [id])).size > 0) {
+    return NextResponse.json({ error: 'not found' }, { status: 404 });
+  }
   const raw = await req.text();
   let body: unknown = null;
   try {
@@ -37,8 +44,6 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     );
   }
   if (body && typeof body === 'object' && 'doc' in body) {
-    const { id } = await ctx.params;
-    const ownerId = await resolveSingleOwnerId();
     if (ownerId && (await othersCanRead(ownerId, id))) {
       return NextResponse.json(
         {

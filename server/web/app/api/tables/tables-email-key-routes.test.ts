@@ -48,6 +48,13 @@ vi.mock('@/lib/pages', async (importOriginal) => ({
 const key = (areas: AccessKeyGrant['areas']) =>
   ({ id: 'k1', loginId: OWNER, access: 'read', areas }) as unknown as AccessKeyGrant;
 
+vi.mock('@mantle/mcp-core/shared-item', () => ({ othersCanRead: vi.fn(async () => false) }));
+
+vi.mock('@mantle/db', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  resolveSingleOwnerId: vi.fn(async () => OWNER),
+}));
+
 vi.mock('@/lib/notes', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getNote: vi.fn(async (_o: string, id: string) => ({ id })),
@@ -152,6 +159,22 @@ describe('Tables, pages and notes routes and a key without the Search area (T4)'
       v1Pages.PATCH(req, ctxOf(PLAIN)),
     );
     expect(plain.status).toBe(200);
+  });
+
+  it('a key PATCH of a shared page made from an attachment is 404, not 403 (C1)', async () => {
+    const v1Pages = await import('../v1/pages/[id]/route');
+    const { othersCanRead } = await import('@mantle/mcp-core/shared-item');
+    vi.mocked(othersCanRead).mockResolvedValue(true);
+    const req = new Request(`http://x/api/v1/pages/${FROM_MAIL}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ doc: { type: 'doc', content: [] } }),
+    });
+    const res = await runWithRequestContext(
+      { req, path: new URL(req.url).pathname, method: 'PATCH', accessKey: key(['pages']) },
+      () => v1Pages.PATCH(req, ctxOf(FROM_MAIL)),
+    );
+    expect(res.status).toBe(404);
   });
 
   it('answer 404 for it by id, and serve an ordinary Table', async () => {
