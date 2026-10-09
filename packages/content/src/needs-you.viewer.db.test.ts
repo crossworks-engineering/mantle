@@ -169,7 +169,7 @@ describe.skipIf(!URL)('needs you: the live event and the counts', () => {
     const n = await ny.loadNeedsYou(anchor);
     expect(n.review).toMatchObject({ submitted: 1, leftBehind: 0 });
     expect(n.review.newest).toMatchObject({ id: pageId, title: `${tag} spec`, from: 'Mia Member' });
-    expect(Object.keys(n.review.newest!).sort()).toEqual(['at', 'from', 'id', 'title']);
+    expect(Object.keys(n.review.newest!).sort()).toEqual(['at', 'from', 'id', 'title', 'type']);
     expect(n.total).toBe(1);
   });
 

@@ -29,6 +29,7 @@ import {
   arrivalKey,
   needsYouArrivals,
   needsYouMessage,
+  reviewDeepLink,
   rememberArrivals,
 } from './needs-you';
 import { loadNeedsYou } from '@mantle/content';
@@ -43,7 +44,7 @@ const needsYou = (over: Partial<NeedsYou> = {}): NeedsYou => ({
   review: {
     submitted: 1,
     leftBehind: 0,
-    newest: { id: 'item-1', title: 'Pump spec', from: 'Mia Member', at: ago(5_000) },
+    newest: { id: 'item-1', type: 'note', title: 'Pump spec', from: 'Mia Member', at: ago(5_000) },
   },
   requests: { open: 0, newest: null },
   total: 1,
@@ -110,13 +111,32 @@ describe('needsYouArrivals', () => {
   });
 });
 
+describe('reviewDeepLink', () => {
+  it('opens the item in its own workspace, Pages for a kind it does not know', () => {
+    const at = ago(0);
+    expect(reviewDeepLink({ id: 'a b', type: 'page', title: '', from: '', at })).toBe(
+      '/pages?review=a%20b',
+    );
+    expect(reviewDeepLink({ id: 'x', type: 'table', title: '', from: '', at })).toBe(
+      '/tables?review=x',
+    );
+    expect(reviewDeepLink({ id: 'x', type: 'draw', title: '', from: '', at })).toBe(
+      '/draw?review=x',
+    );
+    expect(reviewDeepLink({ id: 'x', type: 'file', title: '', from: '', at })).toBe(
+      '/files?review=x',
+    );
+    expect(reviewDeepLink({ id: 'x', title: '', from: '', at })).toBe('/pages?review=x');
+  });
+});
+
 describe('needsYouMessage', () => {
   it('names the title and the member, how many wait, and where to go', () => {
     const [a] = needsYouArrivals(needsYou({ total: 3 }), new Set(), NOW);
     expect(needsYouMessage(a!, 3)).toEqual({
       title: 'Waiting for your review',
       body: '"Pump spec" from Mia Member (3 waiting)',
-      deepLink: '/team-admin?view=review',
+      deepLink: '/notes?review=item-1',
     });
     const req = {
       kind: 'request' as const,
@@ -230,7 +250,7 @@ describe('pushNeedsYou', () => {
       v: 1,
       t: 'Waiting for your review',
       b: '"Pump spec" from Mia Member',
-      deepLink: '/team-admin?view=review',
+      deepLink: '/notes?review=item-1',
       ts: NOW,
       // Multi-login routing: this brain, and the admin the device is for.
       brainId: '0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f',

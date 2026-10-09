@@ -400,7 +400,7 @@ export async function countReviewQueue(
  *  title and author, never its content); null when nothing is submitted. */
 export async function newestSubmitted(
   via: Pick<Tx, 'select'> = db,
-): Promise<{ id: string; title: string; from: string; at: string } | null> {
+): Promise<{ id: string; type: SpaceItemKind; title: string; from: string; at: string } | null> {
   const [j] = await reviewQuery(via)
     .where(and(reviewable, eq(spaceItems.reviewState, 'submitted')))
     .orderBy(desc(spaceItems.submittedAt))
@@ -409,6 +409,7 @@ export async function newestSubmitted(
   const row = rowOf(j);
   return {
     id: row.id,
+    type: row.type,
     title: row.title,
     from: row.author.name,
     at: row.submittedAt ?? row.updatedAt,

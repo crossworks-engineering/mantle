@@ -1,7 +1,8 @@
 // The "needs you" phone push (an admin away from the app): when a member
 // submits an item for review or files a team request, the admins' paired
 // devices get one notice naming the item's title and who it is from, never its
-// content. Since 0230 also when embeddings or extraction start failing (no
+// content. It opens the item in its own workspace (Pages, Notes, Tables, Draw,
+// Files), where admins approve it since Team admin > Review went (2026-10-09). Since 0230 also when embeddings or extraction start failing (no
 // credits, a refused key, a long outage): the fixed reason, never provider
 // text. Driven by the "needs you" NOTIFY (migration 0186), which
 // also fires when something LEAVES a queue; only an arrival pushes.
@@ -67,6 +68,23 @@ export function rememberArrivals(seen: Set<string>, arrivals: NeedsYouArrival[])
   while (seen.size > SEEN_MAX) seen.delete(seen.values().next().value as string);
 }
 
+/** The workspace screen each review kind is approved in (workspace review
+ *  pattern, 2026-10-09): the item opens there, beside its tree. */
+const REVIEW_WORKSPACE: Record<NonNullable<NeedsYouItem['type']>, string> = {
+  page: '/pages',
+  note: '/notes',
+  table: '/tables',
+  draw: '/draw',
+  file: '/files',
+};
+
+/** Where a review push opens: the item in its workspace's "Waiting for
+ *  approval" section. A kind this code does not know opens Pages. */
+export function reviewDeepLink(item: NeedsYouItem): string {
+  const base = (item.type && REVIEW_WORKSPACE[item.type]) || '/pages';
+  return `${base}?review=${encodeURIComponent(item.id)}`;
+}
+
 function clip(s: string, max: number): string {
   const one = s.replace(/\s+/g, ' ').trim();
   return one.length <= max ? one : `${one.slice(0, max - 1)}…`;
@@ -100,6 +118,6 @@ export function needsYouMessage(
   const what = `"${clip(first.item.title || 'Untitled', 80)}" from ${clip(first.item.from, 40)}`;
   const more = total > 1 ? ` (${total} waiting)` : '';
   return first.kind === 'review'
-    ? { title: 'Waiting for your review', body: what + more, deepLink: '/team-admin?view=review' }
+    ? { title: 'Waiting for your review', body: what + more, deepLink: reviewDeepLink(first.item) }
     : { title: 'New team request', body: what + more, deepLink: '/team-admin?view=requests' };
 }

@@ -677,6 +677,10 @@ export type NeedsYouItem = {
   from: string;
   /** When it started waiting (submitted, or the request was filed). */
   at: string;
+  /** A review item's kind: the workspace screen it is reviewed in
+   *  (workspace review pattern, 2026-10-09). Absent on a request, and on a
+   *  brain before it. */
+  type?: 'page' | 'note' | 'table' | 'draw' | 'file';
 };
 
 /**
