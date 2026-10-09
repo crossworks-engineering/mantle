@@ -218,11 +218,16 @@ async function currentCode(
  * The bytes the owner's OWN snapshot copies take now: the manual ones
  * (APP_SNAPSHOT_MAX_MB), never an automatic one, which is pruned on its
  * own line per app (access matrix L22). A member's budget counts the
- * snapshots members took in their space; the brain's counts the brain's,
+ * snapshots that member took in their space; the brain's counts the brain's,
  * never the member-era ones an Accept or an admin's delete moved in
  * (access matrix N7: those were within the member's budget when taken).
  */
-async function usedSnapshotBytes(ownerId: string, member: boolean, q: Q = db): Promise<number> {
+async function usedSnapshotBytes(
+  ownerId: string,
+  member: boolean,
+  q: Q = db,
+  memberLoginId?: string | null,
+): Promise<number> {
   const [row] = await q
     .select({ n: sql<string>`coalesce(sum(${nodeSnapshots.dbBytes}), 0)::bigint` })
     .from(nodeSnapshots)
@@ -231,6 +236,9 @@ async function usedSnapshotBytes(ownerId: string, member: boolean, q: Q = db): P
         eq(nodeSnapshots.ownerId, ownerId),
         eq(nodeSnapshots.trigger, 'manual'),
         member ? eq(nodeSnapshots.actor, 'member') : ne(nodeSnapshots.actor, 'member'),
+        // A member's budget is that member's own (audit B6): a personal space
+        // has one member today, and the refusal says "your snapshots".
+        ...(member && memberLoginId ? [eq(nodeSnapshots.actorLoginId, memberLoginId)] : []),
       ),
     );
   return Number(row?.n ?? 0);
@@ -266,7 +274,7 @@ async function snapshotLocked(
   if (!code) return null;
   if (opts.trigger === 'manual') {
     const member = opts.actor === 'member';
-    const used = await usedSnapshotBytes(ownerId, member, q);
+    const used = await usedSnapshotBytes(ownerId, member, q, opts.actorLoginId);
     const max = maxSnapshotBytes();
     if (used >= max) {
       throw new AppSnapshotBudgetError(Math.round(used / 1048576), Math.round(max / 1048576), {

@@ -369,7 +369,9 @@ export async function mintAccessKey(
             .from(mcpLoginAccess)
             .where(eq(mcpLoginAccess.loginId, input.loginId))
             .limit(1);
-          if (mcp && !mcp.enabled) return MINT_REFUSED_MCP_OFF;
+          // A row that does not say on counts as off (fail closed); no row
+          // keeps the decision above (T16 option a).
+          if (mcp && mcp.enabled !== true) return MINT_REFUSED_MCP_OFF;
         }
         const [live] = await tx
           .select({ n: count() })

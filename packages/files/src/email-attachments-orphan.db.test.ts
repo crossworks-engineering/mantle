@@ -135,6 +135,27 @@ describe.skipIf(!DB_URL)('an attachment outlives its email', () => {
     expect(await e.reachesEmailAttachment(owner, { id: ids.emailed })).toBe(false);
   });
 
+  it('an unstamped one whose email was deleted before the stamp still counts (B4)', async () => {
+    // The backfill cannot find it (no email above, never stamped); its
+    // folder sits under the mail account's branch, which only sync writes.
+    const early = randomUUID();
+    const folder = `${inbox}.earlier.attachments`;
+    await m.db.execute(sqlTag`
+      insert into nodes (id, owner_id, type, title, path, data)
+      values (${early}, ${owner}, 'file', 'early.pdf', ${folder}, '{"sha256": "d"}'::jsonb)`);
+    try {
+      expect([...(await e.emailAttachmentIds(owner, [early]))]).toEqual([early]);
+      expect([...(await e.emailAttachmentFolders(owner, [folder]))]).toEqual([folder]);
+      // An attachments folder outside every mail account's branch is not one.
+      await m.db.execute(
+        sqlTag`update nodes set path = ${`${files}.attachments`}::ltree where id = ${early}`,
+      );
+      expect((await e.emailAttachmentIds(owner, [early])).size).toBe(0);
+    } finally {
+      await m.db.execute(sqlTag`delete from nodes where id = ${early}`);
+    }
+  });
+
   it('a stamped file moved out of the attachments folder is an ordinary file', async () => {
     await m.db.execute(sqlTag`update nodes set path = ${files}::ltree where id = ${ids.stamped}`);
     try {

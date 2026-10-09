@@ -6,9 +6,13 @@
  * file is an attachment when its folder's last label is `attachments` and
  * either the file carries the stamp or an email of the same owner sits at
  * the path above (a file synced before the stamp; migration 0239 stamps
- * those). The stamp is what holds once the owner deletes the emails: the
- * attachment files stay where they are, and without it they would count as
- * ordinary files from then on (access matrix T20).
+ * those), or the folder sits under a mail account's branch. The stamp is
+ * what holds once the owner deletes the emails: the attachment files stay
+ * where they are, and without it they would count as ordinary files from
+ * then on (access matrix T20). The account branch covers the files whose
+ * emails were deleted before the stamp existed, which migration 0239
+ * cannot find (audit B4): no other writer puts an `attachments` folder
+ * under a mail account's branch.
  *
  * An item made FROM an attachment (its `data.sourceFileId` names one) is held
  * to the same rule (emailAttachmentSql, access matrix T4).
@@ -30,8 +34,8 @@ export const EMAIL_ATTACHMENTS_LABEL = 'attachments';
 export const EMAIL_ATTACHMENT_MARK = 'emailAttachment';
 
 /** The folder rule on a `nodes` row (raw SQL fragments for its columns): a
- *  file in an attachments folder, stamped by sync or with an email of the
- *  same owner just above it. */
+ *  file in an attachments folder, stamped by sync, with an email of the
+ *  same owner just above it, or under one of the owner's mail accounts. */
 function attachmentFileRule(c: { type: SQL; path: SQL; ownerId: SQL; data: SQL }): SQL {
   return sql`(${c.type}::text = 'file'
     and nlevel(${c.path}) >= 2
@@ -41,7 +45,11 @@ function attachmentFileRule(c: { type: SQL; path: SQL; ownerId: SQL; data: SQL }
         select 1 from nodes mail_parent
          where mail_parent.owner_id = ${c.ownerId}
            and mail_parent.type = 'email'
-           and mail_parent.path = subpath(${c.path}, 0, nlevel(${c.path}) - 1))))`;
+           and mail_parent.path = subpath(${c.path}, 0, nlevel(${c.path}) - 1))
+      or exists (
+        select 1 from email_accounts mail_acct
+         where mail_acct.user_id = ${c.ownerId}
+           and starts_with(${c.path}::text, mail_acct.branch_path || '.'))))`;
 }
 
 /** The folder rule on the `nodes` row named `alias`. */

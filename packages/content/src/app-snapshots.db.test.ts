@@ -29,6 +29,8 @@ describe.skipIf(!URL)('app history on Postgres', () => {
   const owner = randomUUID();
   /** A second brain for the manual budget test: its sums see only its own rows. */
   const budgetOwner = randomUUID();
+  /** Two member logins, for the per-member budget (audit B6). */
+  const members = [randomUUID(), randomUUID()] as const;
   const tag = owner.slice(0, 8);
   const GREEN = {
     storageKey: 'attachments/aa/bb/test',
@@ -60,13 +62,17 @@ describe.skipIf(!URL)('app history on Postgres', () => {
       (${budgetOwner}, ${`asb-${tag}@example.invalid`}, 'x', 'admin')`;
     await admin`insert into spaces (id, kind, login_id)
                 values (${budgetOwner}, 'brain', ${budgetOwner})`;
+    for (const [i, id] of members.entries()) {
+      await admin`insert into auth.users (id, email, password_hash, role) values
+        (${id}, ${`asm${i}-${tag}@example.invalid`}, 'x', 'member')`;
+    }
   }, 60_000);
 
   afterAll(async () => {
     if (!admin) return;
     await admin`delete from nodes where owner_id in ${admin([owner, budgetOwner])}`;
     await admin`delete from spaces where login_id in ${admin([owner, budgetOwner])}`;
-    await admin`delete from auth.users where id in ${admin([owner, budgetOwner])}`;
+    await admin`delete from auth.users where id in ${admin([owner, budgetOwner, ...members])}`;
     await m.closeDb();
     if (dir) await rm(dir, { recursive: true, force: true });
   });
@@ -406,6 +412,17 @@ describe.skipIf(!URL)('app history on Postgres', () => {
       await expect(snaps.createAppSnapshot(o, app.id, { actor: 'member' })).rejects.toThrow(
         /cannot delete snapshots/,
       );
+      // Per member login (audit B6): one member's copies never fill another's.
+      const [first, second] = members;
+      await snaps.createAppSnapshot(o, app.id, { actor: 'member', actorLoginId: first });
+      await expect(
+        snaps.createAppSnapshot(o, app.id, { actor: 'member', actorLoginId: first }),
+      ).rejects.toThrow(/cannot delete snapshots/);
+      const other = await snaps.createAppSnapshot(o, app.id, {
+        actor: 'member',
+        actorLoginId: second,
+      });
+      expect(other).toMatchObject({ trigger: 'manual' });
     } finally {
       delete process.env.APP_SNAPSHOT_MAX_MB;
     }
