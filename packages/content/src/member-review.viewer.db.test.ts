@@ -1,7 +1,7 @@
 /**
  * Member review on a real, migrated Postgres (member logins Phase 4, plan
  * v3.1 section 6): an admin reads only submitted items and what deactivated
- * logins left shared; Return with a note; Recall beats Accept; Accept moves
+ * logins left shared; Return (no note); Recall beats Accept; Accept moves
  * the item and its bundle into the brain with the same ids, rows and bytes,
  * and is the one path that announces anything to the extractor; the 30-day
  * purge deletes private items only and empties a space's directories.
@@ -167,7 +167,7 @@ describe.skipIf(!URL)('member review, accept and purge', () => {
     await expect(rv.acceptReviewItem(anchor, pageId, reviewer())).rejects.toMatchObject({
       reason: 'not-found',
     });
-    await expect(rv.returnReviewItem(pageId, reviewer(), 'no')).rejects.toMatchObject({
+    await expect(rv.returnReviewItem(pageId, reviewer())).rejects.toMatchObject({
       reason: 'not-found',
     });
     await expect(rv.addReviewComment(anchor, pageId, reviewer(), 'hi')).rejects.toMatchObject({
@@ -216,17 +216,14 @@ describe.skipIf(!URL)('member review, accept and purge', () => {
     ]);
   });
 
-  it('Return sends it back with a note; the author edits and resubmits', async () => {
+  it('Return sends it back, with no note; the author edits and resubmits', async () => {
     const A = spaceOf[loginA]!;
-    await rv.returnReviewItem(pageId, reviewer(), 'Add the date, then send it again.');
+    await rv.returnReviewItem(pageId, reviewer());
     const row = await as(loginA, () => sp.getMineRow(A, pageId));
-    expect([row?.reviewState, row?.returnedNote]).toEqual([
-      'returned',
-      'Add the date, then send it again.',
-    ]);
+    expect([row?.reviewState, row?.returnedNote]).toEqual(['returned', null]);
     expect((await stateOf(pageId))?.reviewed_by).toBe(anchor);
     // Not waiting any more: a second Return or a review comment is refused.
-    await expect(rv.returnReviewItem(pageId, reviewer(), 'again')).rejects.toMatchObject({
+    await expect(rv.returnReviewItem(pageId, reviewer())).rejects.toMatchObject({
       reason: 'not-found',
     });
     await as(loginA, () => sp.assertEditable(A, pageId));

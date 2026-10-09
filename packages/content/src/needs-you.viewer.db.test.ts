@@ -184,9 +184,7 @@ describe.skipIf(!URL)('needs you: the live event and the counts', () => {
 
   it('Return wakes them', async () => {
     await submit(member, pageId);
-    expect(await sent(() => rv.returnReviewItem(pageId, { loginId: adminA }, 'Add dates'))).toEqual(
-      [anchor],
-    );
+    expect(await sent(() => rv.returnReviewItem(pageId, { loginId: adminA }))).toEqual([anchor]);
     expect((await ny.loadNeedsYou(anchor)).review.submitted).toBe(0);
   });
 
@@ -194,9 +192,7 @@ describe.skipIf(!URL)('needs you: the live event and the counts', () => {
     await submit(member, pageId);
     expect(await sent(() => rv.takeOverReviewItem(pageId, actorA()))).toEqual([anchor]);
     expect((await ny.loadNeedsYou(anchor)).review.submitted).toBe(0);
-    expect(await sent(() => tk.giveBackTakenItem(anchor, actorA(), pageId, 'Over to you'))).toEqual(
-      [anchor],
-    );
+    expect(await sent(() => tk.giveBackTakenItem(anchor, actorA(), pageId))).toEqual([anchor]);
   });
 
   it('a taken item whose admin is deactivated comes back, with an event', async () => {
@@ -214,7 +210,7 @@ describe.skipIf(!URL)('needs you: the live event and the counts', () => {
       ),
     ).toEqual([anchor]);
     expect((await ny.loadNeedsYou(anchor)).review.submitted).toBe(0);
-    await tk.giveBackTakenItem(anchor, actorA(), pageId, 'Back');
+    await tk.giveBackTakenItem(anchor, actorA(), pageId);
   });
 
   it('Accept wakes them once', async () => {

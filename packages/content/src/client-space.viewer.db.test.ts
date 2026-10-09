@@ -250,7 +250,7 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
         )
       ).ok,
     ).toBe(true);
-    await expect(tk.giveBackTakenItem(brain, actor, id, 'Fix it')).rejects.toMatchObject({
+    await expect(tk.giveBackTakenItem(brain, actor, id)).rejects.toMatchObject({
       reason: 'embed',
       ids: [brainItems.team],
     });
@@ -262,7 +262,7 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
         )
       ).ok,
     ).toBe(true);
-    const back = await tk.giveBackTakenItem(brain, actor, id, 'Fix it');
+    const back = await tk.giveBackTakenItem(brain, actor, id);
     expect(back.returned.map((b) => b.id)).toEqual([id]);
     const [row] = await exec<{ owner_id: string }>(
       sqlTag`select owner_id from nodes where id = ${id}`,
@@ -295,14 +295,14 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
         `https://other.example.invalid/n/${brainItems.team}`,
       ]) {
         await linked(href);
-        await expect(tk.giveBackTakenItem(brain, actor, id, 'Fix it'), href).rejects.toMatchObject({
+        await expect(tk.giveBackTakenItem(brain, actor, id), href).rejects.toMatchObject({
           reason: 'embed',
           ids: [brainItems.team],
         });
       }
       // An external link still goes back.
       await linked('https://example.com/plan');
-      const back = await tk.giveBackTakenItem(brain, actor, id, 'Fix it');
+      const back = await tk.giveBackTakenItem(brain, actor, id);
       expect(back.returned.map((b) => b.id)).toEqual([id]);
     } finally {
       if (before === undefined) delete process.env.MANTLE_PUBLIC_URL;
@@ -338,13 +338,13 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
       );
     });
     // Return goes back to the client, with the note.
-    await rv.returnReviewItem(mine, { loginId: adminA }, 'Say which site.');
+    await rv.returnReviewItem(mine, { loginId: adminA });
     const [row] = await exec<{ review_state: string; returned_note: string }>(
       sqlTag`select review_state, returned_note from space_items where node_id = ${mine}`,
     );
-    expect(row).toEqual({ review_state: 'returned', returned_note: 'Say which site.' });
+    expect(row).toEqual({ review_state: 'returned', returned_note: null });
     expect((await rv.listReviewQueue()).items.map((i) => i.id)).not.toContain(mine);
-    await rv.returnReviewItem(theirs, { loginId: adminA }, 'Control.');
+    await rv.returnReviewItem(theirs, { loginId: adminA });
   });
 
   it('Accept of a client item at client makes no link, and needs no tick for what stays (A31)', async () => {

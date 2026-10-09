@@ -141,10 +141,8 @@ export {
   adminDeleteSpaceApp,
   adminSpaceApp,
   adminUnshareSpaceApp,
-  listSpaceAppsForAdmin,
   listMemberAppsForReview,
   getMemberAppForReview,
-  type AdminSpaceAppRow,
   type MemberAppForReview,
   type ReviewAppAuthor,
   type ReviewSharedApp,
@@ -152,8 +150,6 @@ export {
   authorSpaceApp,
   createSpaceApp,
   getRunnableSpaceApp,
-  getSpaceAppSubmission,
-  listSpaceAppSubmissions,
   listSpaceApps,
   recallSpaceApp,
   sendBackSpaceApp,
@@ -168,7 +164,6 @@ export {
   type SpaceAppCard,
   type SpaceAppErrorCode,
   type SpaceAppState,
-  type SpaceAppSubmission,
 } from './member-space-apps';
 
 export {

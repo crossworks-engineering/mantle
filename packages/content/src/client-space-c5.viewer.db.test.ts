@@ -332,7 +332,7 @@ describe.skipIf(!URL)('a client’s own space: limits, caps, review talk, cost-s
       message: expect.stringMatching(/50 items waiting/),
     });
     // The item goes back to the author: one place is free again.
-    await tk.giveBackTakenItem(anchor, actor, taken, 'Back to you.');
+    await tk.giveBackTakenItem(anchor, actor, taken);
     expect((await submit(c.open, fiftyFirst)).reviewState).toBe('submitted');
   });
 
@@ -413,16 +413,14 @@ describe.skipIf(!URL)('a client’s own space: limits, caps, review talk, cost-s
     expect(await insert('client', 'review')).toBe('ok');
   });
 
-  it('a reviewer’s Return reaches the client’s own row, with the note; the talk closes', async () => {
-    await rv.returnReviewItem(talkPage, { loginId: adminA }, 'Say which site.');
+  it('a reviewer’s Return reaches the client’s own row, with no note; the talk closes', async () => {
+    await rv.returnReviewItem(talkPage, { loginId: adminA });
     const row = await as(c.talk, () => sp.getMineRow(spaceOf[c.talk]!, talkPage));
-    expect(row).toMatchObject({ reviewState: 'returned', returnedNote: 'Say which site.' });
+    expect(row).toMatchObject({ reviewState: 'returned', returnedNote: null });
     const listed = await as(c.talk, () =>
       sp.listMine(spaceOf[c.talk]!, { reviewStates: ['returned'] }),
     );
-    expect(listed.items.map((i) => [i.id, i.returnedNote])).toEqual([
-      [talkPage, 'Say which site.'],
-    ]);
+    expect(listed.items.map((i) => [i.id, i.returnedNote])).toEqual([[talkPage, null]]);
     await expect(
       as(c.talk, () =>
         sc.addMineComment(

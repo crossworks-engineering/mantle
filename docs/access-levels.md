@@ -522,7 +522,9 @@ A member's app runs only while its author is an active member (not
 disabled, still a member): the run and list queries say so (access matrix
 N2). An admin sees and stops the team-shared and submitted ones (Apps,
 above the brain's own: activity, Unshare, Delete keeping a snapshot); a private draft
-stays the author's alone.
+stays the author's alone. An admin who tests a submitted or shared app in Apps
+runs it on a copy of its current data (submitting or sharing it is consent to
+that review); the copy is the admin's alone and goes when the test ends.
 
 Every app list carries `dataAccess` ('read' or 'read_write'): what the
 viewer may do with the app's data, worked out with the rule its db broker

@@ -237,7 +237,7 @@ describe.skipIf(!URL)('the submitted bundle, the purge and the review deletes', 
     const A = spaceOf[L]!;
     await as(L, () => sp.submitItem(A, pageA));
     expect(await bundleOf(pageA)).toEqual([pageA, drawA]);
-    await rv.returnReviewItem(pageA, reviewer(), 'Once more.');
+    await rv.returnReviewItem(pageA, reviewer());
     expect(await bundleOf(pageA)).toEqual([]);
     await as(L, () => sp.assertEditable(A, drawA));
   });

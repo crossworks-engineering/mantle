@@ -33,6 +33,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   if (app instanceof Response || !app.publishedBuild?.ok) {
     return new NextResponse('not found', { status: 404 });
   }
-  const viewer = await reviewTestViewer({ loginId: ticket.actorId, name: null }, app);
+  // The name is looked up, as every test statement looks it up, so host.me()
+  // and :host_me_name agree.
+  const viewer = await reviewTestViewer({ loginId: ticket.actorId }, app);
   return renderAppFrame(req, app.publishedBuild, { resolvedViewer: viewer });
 }

@@ -310,18 +310,20 @@ describe.skipIf(!URL)('take over a submitted member item', () => {
         )
       ).ok,
     ).toBe(true);
-    await expect(
-      tk.giveBackTakenItem(anchor, actorA(), pageId, 'Please fix'),
-    ).rejects.toMatchObject({ reason: 'embed', ids: [secretId] });
+    await expect(tk.giveBackTakenItem(anchor, actorA(), pageId)).rejects.toMatchObject({
+      reason: 'embed',
+      ids: [secretId],
+    });
     const draft = await import('./pages/draft');
     await as(adminA, () => draft.saveDraft(A, pageId, say('unsaved admin words', [img])));
-    await expect(
-      tk.giveBackTakenItem(anchor, actorA(), pageId, 'Please fix'),
-    ).rejects.toMatchObject({ reason: 'unsaved-draft', ids: [pageId] });
+    await expect(tk.giveBackTakenItem(anchor, actorA(), pageId)).rejects.toMatchObject({
+      reason: 'unsaved-draft',
+      ids: [pageId],
+    });
     // Another admin cannot give it back.
-    await expect(
-      tk.giveBackTakenItem(anchor, actorB(), pageId, 'Please fix'),
-    ).rejects.toMatchObject({ reason: 'not-found' });
+    await expect(tk.giveBackTakenItem(anchor, actorB(), pageId)).rejects.toMatchObject({
+      reason: 'not-found',
+    });
     expect(
       (await as(adminA, () => sp.saveMinePage(A, pageId, say('admin fixed words', [img]), writer)))
         .ok,
@@ -330,12 +332,12 @@ describe.skipIf(!URL)('take over a submitted member item', () => {
 
   it('give back returns it (and its bundle) to the member, editable, with the note', async () => {
     const M = spaceOf[member]!;
-    const res = await tk.giveBackTakenItem(anchor, actorA(), pageId, 'Add the dates.');
+    const res = await tk.giveBackTakenItem(anchor, actorA(), pageId);
     expect(res.returned.map((b) => b.id)).toEqual([pageId, imageId]);
     for (const id of [pageId, imageId]) expect(await ownerOf(id)).toBe(M);
     expect(await rowOf(pageId)).toMatchObject({
       review_state: 'returned',
-      returned_note: 'Add the dates.',
+      returned_note: null,
       reviewed_by: adminA,
       taken_by: null,
       author_login_id: member,
@@ -449,9 +451,9 @@ describe.skipIf(!URL)('take over a submitted member item', () => {
     await m.systemDb.execute(
       sqlTag`update auth.users set disabled_at = now() where id = ${member2}`,
     );
-    await expect(
-      tk.giveBackTakenItem(anchor, actorA(), note.id, 'Back to you'),
-    ).rejects.toMatchObject({ reason: 'author-inactive' });
+    await expect(tk.giveBackTakenItem(anchor, actorA(), note.id)).rejects.toMatchObject({
+      reason: 'author-inactive',
+    });
     expect((await tk.takenFromOf(A, [note.id])).get(note.id)?.canGiveBack).toBe(false);
     expect(await as(adminA, () => sp.deleteMineItem(A, note.id))).toBe(true);
     expect(await ownerOf(note.id)).toBeUndefined();
@@ -531,11 +533,11 @@ describe.skipIf(!URL)('take over a submitted member item', () => {
     await m.systemDb.execute(
       sqlTag`update auth.users set disabled_at = now() where id = ${adminB}`,
     );
-    await rv.returnReviewItem(heldId, { loginId: anchor }, 'Over to you again.', anchor);
+    await rv.returnReviewItem(heldId, { loginId: anchor }, anchor);
     expect(await ownerOf(heldId)).toBe(M);
     expect(await rowOf(heldId)).toMatchObject({
       review_state: 'returned',
-      returned_note: 'Over to you again.',
+      returned_note: null,
       reviewed_by: anchor,
       taken_title: null,
     });

@@ -1667,34 +1667,27 @@ async function moveIntoBrain(
 
 // ── Return (plan 2d) ────────────────────────────────────────────────────────
 
-/** Return a submitted item to its author with a note: back to them to edit,
- *  the note shown as a banner. Only a submitted item can be returned. */
+/** Send a submitted item back to its author: back to them to edit and
+ *  submit again. Only a submitted item can be sent back. No note: review
+ *  flows carry no messages (decided 2026-10-09), so `returned_note` is no
+ *  longer written (the column stays). */
 export async function returnReviewItem(
   id: string,
   reviewer: { loginId: string },
-  note: string,
   /** The brain: needed to return a released taken item (its give-back
    *  checks the member's embed rule against the Library). */
   brainId?: string,
 ): Promise<void> {
-  const text = note.trim().slice(0, 4000);
-  if (!text) throw new ReviewError('invalid', 'Say what needs to change.');
   // A taken item whose admin is gone comes back to its author the way a
   // give-back does: out of that admin's space, bytes and all.
   const found = await reviewRow(id);
   if (found?.row.reviewState === 'taken') {
     if (!brainId) throw new Error('returnReviewItem: a taken item needs the brain id');
-    await giveBackTaken(
-      brainId,
-      { spaceId: found.spaceId, reviewerId: reviewer.loginId },
-      id,
-      text,
-      {
-        // Still released under the lock (its admin did not come back).
-        locate: async (tx) => (await reviewRow(id, tx))?.row.reviewState === 'taken',
-        dropDrafts: true,
-      },
-    );
+    await giveBackTaken(brainId, { spaceId: found.spaceId, reviewerId: reviewer.loginId }, id, {
+      // Still released under the lock (its admin did not come back).
+      locate: async (tx) => (await reviewRow(id, tx))?.row.reviewState === 'taken',
+      dropDrafts: true,
+    });
     return;
   }
   await db.transaction(async (tx) => {
@@ -1702,7 +1695,6 @@ export async function returnReviewItem(
       .update(spaceItems)
       .set({
         reviewState: 'returned',
-        returnedNote: text,
         reviewedBy: reviewer.loginId,
         reviewedAt: new Date(),
         updatedAt: new Date(),

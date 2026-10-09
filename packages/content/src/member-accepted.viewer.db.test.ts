@@ -328,7 +328,7 @@ describe.skipIf(!URL)('member accepted items', () => {
   it('a returned item is not accepted: it is not listed or readable here', async () => {
     const A = spaceOf[loginA]!;
     await as(loginA, () => sp.submitItem(A, draftId));
-    await rv.returnReviewItem(draftId, reviewer(), 'Not yet.');
+    await rv.returnReviewItem(draftId, reviewer());
     expect((await ma.listAccepted(anchor, loginA)).items.map((i) => i.id)).not.toContain(draftId);
     expect(await ma.getAcceptedItem(anchor, loginA, draftId)).toBeNull();
   });

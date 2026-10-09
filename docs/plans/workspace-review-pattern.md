@@ -131,7 +131,7 @@ when the last kind has moved. Each step gets its own independent audit.
   active members to admins (access matrix N2). For pages and the other
   kinds, `member-review.ts` today lets an admin read a team-shared item only
   when its author is deactivated. Showing every team-shared item to admins
-  widens that rule; it needs Jason's yes before the Pages step.
+  widens that rule; it needs the owner's decision before the Pages step.
 - **The existing item review comments.** Team admin > Review has a review
   thread on submitted items today (`/api/team-admin/submissions/:id/comments`,
   `thread_scope` 'review'). Under this pattern it goes when each kind moves:

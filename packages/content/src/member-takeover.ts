@@ -12,7 +12,7 @@
  *    it reads the queue's rule) and Give back both use it.
  *  - `takenGroup`: what was taken together (`space_items.taken_root`).
  *  - `giveBackTakenItem`: the group back to the member's space, the item
- *    `returned` with a note.
+ *    `returned` (no note: review flows carry no messages).
  *  - whom the ADMIN took it from (`takenFromOf`). What the MEMBER sees while
  *    an admin holds their item (`with-admin`) is in member-space.ts.
  *
@@ -412,12 +412,12 @@ async function refsTheAuthorMayNotUse(
  * Give a taken item back to the member who wrote it (audit F07): the acting
  * admin's `own` space must hold it, taken. Everything taken with it goes back
  * to the member's space in one transaction (same ids, bytes moved back), the
- * item (and the group's root) `returned` with `note` (the member sees it as
- * the Return banner, edits, and submits again), the rest as drafts. Private
+ * item (and the group's root) `returned` (the member edits and submits
+ * again), the rest as drafts. Private
  * to the member again: sharing stays private.
  *
  * Refused (SpaceItemStateError): `not-found` (not a taken item in this
- * space), `invalid` (no note), `author-inactive` (the member is deactivated,
+ * space), `author-inactive` (the member is deactivated,
  * deleted or no longer a member: accept or delete it instead),
  * `unsaved-draft` (save a version of each listed item first) and `embed`
  * (the listed ids are things the member may not use: remove them first).
@@ -427,13 +427,11 @@ export async function giveBackTakenItem(
   brainId: string,
   own: { spaceId: string; loginId: string },
   id: string,
-  note: string,
 ): Promise<GiveBackResult> {
   return giveBackTaken(
     brainId,
     { spaceId: own.spaceId, reviewerId: own.loginId, spaceLogin: own.loginId },
     id,
-    note,
   );
 }
 
@@ -449,12 +447,9 @@ export async function giveBackTaken(
   brainId: string,
   from: { spaceId: string; reviewerId: string; spaceLogin?: string },
   id: string,
-  note: string,
   opts: { locate?: (tx: Tx) => Promise<boolean>; dropDrafts?: boolean } = {},
 ): Promise<GiveBackResult> {
   assertAdminPool('giveBackTaken');
-  const text = note.trim().slice(0, 4000);
-  if (!text) throw new SpaceItemStateError('invalid', 'Say what needs to change.');
   const own = { spaceId: from.spaceId, loginId: from.reviewerId };
   const result = await withMoveHooks(async (tx, hooks) => {
     // The state row, locked, in that space.
@@ -528,7 +523,6 @@ export async function giveBackTaken(
       .update(spaceItems)
       .set({
         reviewState: 'returned',
-        returnedNote: text,
         reviewedBy: own.loginId,
         reviewedAt: now,
       })

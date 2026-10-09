@@ -303,7 +303,7 @@ describe.skipIf(!URL)('admin private items', () => {
     await expect(rv.acceptReviewItem(anchor, bNoteId, reviewer)).rejects.toMatchObject({
       reason: 'not-found',
     });
-    await expect(rv.returnReviewItem(bNoteId, reviewer, 'no')).rejects.toMatchObject({
+    await expect(rv.returnReviewItem(bNoteId, reviewer)).rejects.toMatchObject({
       reason: 'not-found',
     });
     await expect(rv.addReviewComment(anchor, bNoteId, reviewer, 'hi')).rejects.toMatchObject({

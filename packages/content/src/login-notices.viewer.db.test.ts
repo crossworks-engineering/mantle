@@ -277,16 +277,16 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
 
   it('Return tells the author, with the note', async () => {
     await submit(member, pageId);
-    expect(await sent(() => rv.returnReviewItem(pageId, { loginId: adminA }, 'Add dates'))).toEqual(
-      [{ kind: 'review', loginId: member, id: pageId, state: 'returned' }],
-    );
+    expect(await sent(() => rv.returnReviewItem(pageId, { loginId: adminA }))).toEqual([
+      { kind: 'review', loginId: member, id: pageId, state: 'returned' },
+    ]);
     expect(await ln.reviewResultNotice(member, 'returned', [pageId])).toEqual({
       loginId: member,
       role: 'member',
       ownerId: anchor,
       kind: 'review',
       title: 'Returned',
-      body: `"${tag} spec" was returned: Add dates`,
+      body: `"${tag} spec" was returned.`,
       deepLink: `/portal/items/${pageId}`,
       itemId: pageId,
       state: 'returned',
@@ -318,9 +318,9 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
       sqlTag`update nodes set title = ${`${tag} spec`} where id = ${pageId}`,
     );
 
-    expect(await sent(() => tk.giveBackTakenItem(anchor, actorA(), pageId, 'Over to you'))).toEqual(
-      [{ kind: 'review', loginId: member, id: pageId, state: 'returned' }],
-    );
+    expect(await sent(() => tk.giveBackTakenItem(anchor, actorA(), pageId))).toEqual([
+      { kind: 'review', loginId: member, id: pageId, state: 'returned' },
+    ]);
 
     await submit(member, pageId);
     expect(await sent(() => rv.acceptReviewItem(anchor, pageId, { loginId: adminA }))).toEqual([
@@ -359,7 +359,7 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
   it('a client author is told as a client', async () => {
     const id = await newNote(client, `${tag} request`);
     await submit(client, id);
-    expect(await sent(() => rv.returnReviewItem(id, { loginId: adminA }, 'Which site?'))).toEqual([
+    expect(await sent(() => rv.returnReviewItem(id, { loginId: adminA }))).toEqual([
       { kind: 'review', loginId: client, id, state: 'returned' },
     ]);
     expect(await ln.reviewResultNotice(client, 'returned', [id])).toMatchObject({

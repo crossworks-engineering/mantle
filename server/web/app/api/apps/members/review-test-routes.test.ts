@@ -65,6 +65,9 @@ vi.mock('@mantle/content/app-review-test', async () => {
     ReviewTestReadOnlyError,
     startReviewTest: vi.fn(async () => ({ idleMs: 1 })),
     endReviewTest: vi.fn(async () => {}),
+    requireReviewTest: vi.fn(async () => {
+      if (h.testGone) throw new ReviewTestGoneError('The test run ended. Start the test again.');
+    }),
     reviewTestViewer: vi.fn(async () => ({ id: 'u_x', name: 'Robin', kind: 'admin' })),
     reviewTestSql: vi.fn(async (...args: unknown[]) => {
       if (h.testGone) throw new ReviewTestGoneError('The test run ended. Start the test again.');
@@ -205,7 +208,13 @@ describe('the review test tool broker', () => {
   it('refuses an outside tool and a write, even one team apps may use', async () => {
     const { POST } = await import('./[id]/test/tool-broker/route');
     h.verdict = { ok: true, tool: { slug: 'outside', handler: { kind: 'mcp' } } };
-    expect((await POST(post({ slug: 'outside', input: {} }), params(APP))).status).toBe(403);
+    const outside = await POST(post({ slug: 'outside', input: {} }), params(APP));
+    expect(outside.status).toBe(403);
+    // Its own reason, so the screen says test mode blocked it (not "undeclared").
+    expect(await outside.json()).toMatchObject({
+      reason: 'review-test-read-only',
+      error: 'Test mode blocks tools that change data.',
+    });
     h.verdict = {
       ok: true,
       write: true,
@@ -216,5 +225,17 @@ describe('the review test tool broker', () => {
     expect(h.dispatched.filter((d) => 'ownerId' in (d as object))).toHaveLength(0);
     expect(h.logged).toHaveLength(2);
     expect(h.logged.every((l) => 'refused' in ((l as { detail: object }).detail ?? {}))).toBe(true);
+  });
+});
+
+describe('the review test tool broker without a running test', () => {
+  it('runs nothing and says the test ended', async () => {
+    const { POST } = await import('./[id]/test/tool-broker/route');
+    h.testGone = true;
+    const res = await POST(post({ slug: 'search', input: {} }), params(APP));
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ reason: 'test-ended' });
+    expect(h.dispatched).toHaveLength(0);
+    expect(h.logged).toHaveLength(0);
   });
 });

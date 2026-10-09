@@ -50,8 +50,9 @@ export class ReviewTestGoneError extends Error {
   }
 }
 
-/** Who runs the test: the admin login, with its display name. */
-export type ReviewTester = { loginId: string; name: string | null };
+/** Who runs the test: the admin login. Its display name is looked up for
+ *  host.me(), the same way in the frame and in every statement. */
+export type ReviewTester = { loginId: string };
 
 /** The app as the test needs it (from getMemberAppForReview). */
 export type ReviewTestApp = Pick<
@@ -216,15 +217,18 @@ async function viewerOf(
   app: ReviewTestApp,
   tester: ReviewTester,
 ): Promise<AppViewer> {
-  return resolveAppViewer(
-    app.spaceId,
-    { kind: 'admin', loginId: tester.loginId, name: tester.name ?? undefined },
-    async () => {
-      const salt = (await readFile(saltFile(file), 'utf8')).trim();
-      if (!salt) throw new ReviewTestGoneError();
-      return salt;
-    },
-  );
+  return resolveAppViewer(app.spaceId, { kind: 'admin', loginId: tester.loginId }, async () => {
+    const salt = (await readFile(saltFile(file), 'utf8')).trim();
+    if (!salt) throw new ReviewTestGoneError();
+    return salt;
+  });
+}
+
+/** The admin's test of this app is running (its copy is there and fresh);
+ *  touches it. A ReviewTestGoneError otherwise: nothing of a test runs
+ *  without its copy, tool calls included. */
+export async function requireReviewTest(tester: ReviewTester, appId: string): Promise<void> {
+  await liveCopy(tester.loginId, appId);
 }
 
 /** What host.me() answers in the test frame, or null without a test. */

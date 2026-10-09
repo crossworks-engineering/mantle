@@ -240,7 +240,6 @@ export function reviewResultNotice(
         // author's to read.
         acceptedTitle: acceptedSnapshots.title,
         takenRoot: spaceItems.takenRoot,
-        returnedNote: spaceItems.returnedNote,
         fresh: freshSql(spaceItems.updatedAt),
       })
       .from(spaceItems)
@@ -275,16 +274,12 @@ export function reviewResultNotice(
       state === 'taken' ? main.takenTitle : state === 'accepted' ? main.acceptedTitle : null;
     const name = `"${clip(known || main.title || 'Untitled', 80)}"`;
 
-    // The note is the reviewer's own text: plain words on a lock screen.
-    const note = state === 'returned' ? markdownPreview(main.returnedNote ?? '', 100) : '';
+    // No reviewer text: review flows carry no messages (2026-10-09).
     const words =
       state === 'accepted'
         ? { title: 'Accepted', body: `${name} was accepted.` }
         : state === 'returned'
-          ? {
-              title: 'Returned',
-              body: note ? `${name} was returned: ${note}` : `${name} was returned.`,
-            }
+          ? { title: 'Returned', body: `${name} was returned.` }
           : { title: 'With an admin', body: `An admin is working on ${name}.` };
     return {
       loginId: login.id,

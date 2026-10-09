@@ -1,7 +1,7 @@
 /**
  * Member-built apps (team apps Phase 3): the helpers the member routes
- * (/api/member/my-apps) and the admin review routes
- * (/api/team-admin/app-submissions) share. The rules live in
+ * (/api/member/my-apps) and the admin review routes in Apps
+ * (/api/apps/members) share. The rules live in
  * @mantle/content member-space-apps.ts; these only map its refusals.
  */
 import { NextResponse } from '@/server/http-compat';

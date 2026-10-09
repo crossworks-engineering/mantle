@@ -29,7 +29,7 @@
  * the system, so a caller inside a viewer scope cannot widen or narrow it.
  */
 import { createHash } from 'node:crypto';
-import { and, asc, desc, eq, inArray, ne, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import {
   appAccessLog,
   appDatabases,
@@ -495,62 +495,6 @@ export async function getRunnableSpaceApp(
 
 // ── The admin's review ───────────────────────────────────────────────────────
 
-/** One submitted member app, as the admin reviews it: what it declares. */
-export type SpaceAppSubmission = {
-  id: string;
-  title: string;
-  description: string | null;
-  author: { loginId: string | null; name: string | null };
-  submittedAt: string | null;
-  version: number;
-  /** The tools the app declares: what it will call. */
-  declaredTools: string[];
-};
-
-/** The member apps waiting for review, oldest first. */
-export async function listSpaceAppSubmissions(): Promise<SpaceAppSubmission[]> {
-  const rows = await asSystem(() =>
-    db
-      .select({
-        id: nodes.id,
-        title: nodes.title,
-        manifest: apps.manifest,
-        version: apps.version,
-        submittedAt: spaceItems.submittedAt,
-        authorLoginId: spaceItems.authorLoginId,
-        authorName: sql<
-          string | null
-        >`coalesce(nullif(trim(${authUsers.displayName}), ''), split_part(${authUsers.email}, '@', 1))`,
-      })
-      .from(nodes)
-      .innerJoin(apps, eq(apps.nodeId, nodes.id))
-      .innerJoin(spaceItems, eq(spaceItems.nodeId, nodes.id))
-      .innerJoin(spaces, eq(spaces.id, nodes.ownerId))
-      .leftJoin(authUsers, eq(authUsers.id, spaceItems.authorLoginId))
-      .where(
-        and(
-          eq(nodes.type, 'app'),
-          eq(spaces.kind, 'personal'),
-          eq(spaceItems.reviewState, 'submitted'),
-        ),
-      )
-      .orderBy(asc(spaceItems.submittedAt))
-      .limit(200),
-  );
-  return rows.map((r) => {
-    const m = (r.manifest ?? {}) as AppManifest;
-    return {
-      id: r.id,
-      title: r.title,
-      description: typeof m.description === 'string' && m.description.trim() ? m.description : null,
-      author: { loginId: r.authorLoginId, name: r.authorName },
-      submittedAt: r.submittedAt ? r.submittedAt.toISOString() : null,
-      version: r.version,
-      declaredTools: m.toolSlugs ?? [],
-    };
-  });
-}
-
 /**
  * What the admin reviews, pinned (M3 audit, high 1): a hash of the
  * published source, the manifest (declared tools, schema) and the published
@@ -581,40 +525,6 @@ function stableJson(v: unknown): string {
   return JSON.stringify(v ?? null);
 }
 
-/**
- * One submitted member app with its PUBLISHED source, for the admin's review
- * (what will run once accepted), or null when it is not waiting for review.
- */
-export async function getSpaceAppSubmission(
-  appId: string,
-): Promise<
-  (SpaceAppSubmission & { entry: string; files: Record<string, string>; reviewHash: string }) | null
-> {
-  const queue = await listSpaceAppSubmissions();
-  const item = queue.find((s) => s.id === appId);
-  if (!item) return null;
-  const [row] = await asSystem(() =>
-    db
-      .select({ ownerId: nodes.ownerId })
-      .from(nodes)
-      .where(and(eq(nodes.id, appId), eq(nodes.type, 'app')))
-      .limit(1),
-  );
-  if (!row) return null;
-  const app = await asSystem(() => getApp(row.ownerId, appId));
-  if (!app) return null;
-  return {
-    ...item,
-    entry: app.source.entry,
-    files: app.source.files,
-    reviewHash: spaceAppReviewHash({
-      source: app.source,
-      manifest: app.manifest,
-      publishedBuild: app.publishedBuild,
-    }),
-  };
-}
-
 /** The levels an admin may accept a member's app at. Client and public come
  *  later, by an admin, as for any app (Settings or access_set). */
 export type SpaceAppAcceptLevel = Extract<ViewerLevel, 'admin' | 'team'>;
@@ -635,7 +545,7 @@ export async function acceptSpaceApp(
     level: SpaceAppAcceptLevel;
     trustTools: boolean;
     /** The version and the review hash the admin was shown
-     *  (`getSpaceAppSubmission`). */
+     *  (`getMemberAppForReview`). */
     version: number;
     reviewHash: string;
   },
@@ -731,7 +641,7 @@ export async function acceptSpaceApp(
 /**
  * Send a submitted member app back to its author (an admin's act): it
  * returns as `returned`, editable again, and the author may change it and
- * submit it again. No note (Jason 2026-10-09: review flows carry no
+ * submit it again. No note (decided 2026-10-09: review flows carry no
  * messages; people talk through their own channels), so the old
  * `returned_note` column is neither written nor read here any more.
  */
@@ -771,21 +681,6 @@ export async function sendBackSpaceApp(
 
 // ── The admin's view of members' apps (access matrix N2) ─────────────────────
 
-/** One member app an admin sees: shared with the team or submitted, never a
- *  private draft (rule S3). */
-export type AdminSpaceAppRow = {
-  id: string;
-  title: string;
-  author: { loginId: string | null; name: string | null; active: boolean };
-  sharing: 'private' | 'team';
-  reviewState: string;
-  /** A green published build: teammates run it (while its author is an
-   *  active member). */
-  runnable: boolean;
-  declaredTools: string[];
-  updatedAt: string;
-};
-
 /** What an admin may reach of members' apps: team-shared or submitted, not
  *  yet accepted. A private draft stays the author's alone. */
 const adminVisible = and(
@@ -794,46 +689,6 @@ const adminVisible = and(
   ne(spaceItems.reviewState, 'accepted'),
   or(eq(spaceItems.sharing, 'team'), eq(spaceItems.reviewState, 'submitted')),
 );
-
-/** The members' apps an admin sees, newest first, with whether each author
- *  is still an active member (an app whose author is not runs for nobody). */
-export async function listSpaceAppsForAdmin(): Promise<AdminSpaceAppRow[]> {
-  const rows = await asSystem(() =>
-    db
-      .select({
-        id: nodes.id,
-        title: nodes.title,
-        manifest: apps.manifest,
-        publishedBuild: apps.publishedBuild,
-        updatedAt: nodes.updatedAt,
-        authorLoginId: spaceItems.authorLoginId,
-        authorName: sql<
-          string | null
-        >`coalesce(nullif(trim(${authUsers.displayName}), ''), split_part(${authUsers.email}, '@', 1))`,
-        active: sql<boolean>`${authorActive}`,
-        sharing: spaceItems.sharing,
-        reviewState: spaceItems.reviewState,
-      })
-      .from(nodes)
-      .innerJoin(apps, eq(apps.nodeId, nodes.id))
-      .innerJoin(spaceItems, eq(spaceItems.nodeId, nodes.id))
-      .innerJoin(spaces, eq(spaces.id, nodes.ownerId))
-      .leftJoin(authUsers, eq(authUsers.id, spaceItems.authorLoginId))
-      .where(adminVisible)
-      .orderBy(desc(nodes.updatedAt))
-      .limit(500),
-  );
-  return rows.map((r) => ({
-    id: r.id,
-    title: r.title,
-    author: { loginId: r.authorLoginId, name: r.authorName, active: r.active === true },
-    sharing: r.sharing === 'team' ? 'team' : 'private',
-    reviewState: r.reviewState,
-    runnable: !!(r.publishedBuild as BuildRef | null)?.ok,
-    declaredTools: ((r.manifest ?? {}) as AppManifest).toolSlugs ?? [],
-    updatedAt: r.updatedAt.toISOString(),
-  }));
-}
 
 /** One member app an admin may act on (team-shared or submitted), with the
  *  space it lives in, or null. */

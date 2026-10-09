@@ -27,5 +27,5 @@ export function reviewAppDto(app: MemberAppForReview) {
 
 /** The admin who tests: the acting login, never the anchor. */
 export function reviewTester(user: SessionUser): ReviewTester {
-  return { loginId: user.actor.id, name: user.actor.displayName?.trim() || null };
+  return { loginId: user.actor.id };
 }

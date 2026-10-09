@@ -4,7 +4,7 @@
  * a draft is private (a teammate neither lists nor runs it); sharing with
  * the team lets teammates run the published version; submit freezes it;
  * accept moves it into the brain with its id, its database and its history;
- * return gives it back with a note; the author restores from its history.
+ * send back gives it back, with no note; the author restores from its history.
  * Seeds its own brain and logins on random ids; removes them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/member-space-apps.db.test.ts
  */
@@ -47,8 +47,8 @@ describe.skipIf(!URL)('member-built apps on Postgres', () => {
   const me = () => ({ loginId: author, spaceId: authorSpace });
   /** What the admin was shown: the version and the review hash. */
   const shown = async (id: string) => {
-    const r = await sa.getSpaceAppSubmission(id);
-    if (!r) throw new Error('not waiting for review');
+    const r = await sa.getMemberAppForReview(id);
+    if (!r?.reviewHash) throw new Error('not waiting for review');
     return { version: r.version, reviewHash: r.reviewHash };
   };
   const them = () => ({ loginId: mate, spaceId: mateSpace });
@@ -165,15 +165,15 @@ describe.skipIf(!URL)('member-built apps on Postgres', () => {
     });
     expect(await sa.getRunnableSpaceApp(author, id)).toMatchObject({ dataReadOnly: true });
     expect((await sa.listSpaceApps(me())).find((a) => a.id === id)?.dataAccess).toBe('read');
-    expect((await sa.listSpaceAppSubmissions()).map((s) => s.id)).toContain(id);
-    const review = await sa.getSpaceAppSubmission(id);
+    expect((await sa.listMemberAppsForReview()).waiting.map((s) => s.id)).toContain(id);
+    const review = await sa.getMemberAppForReview(id);
     expect(review?.files['App.tsx']).toBe('export default () => "one";');
 
     await sa.recallSpaceApp(me(), id);
     expect(await sa.authorSpaceApp(me(), id, { write: true })).toMatchObject({
       reviewState: 'draft',
     });
-    expect(await sa.getSpaceAppSubmission(id)).toBeNull();
+    expect(await sa.getMemberAppForReview(id)).toBeNull();
   });
 
   it('accept moves it into the brain: same id, its data and history, the ceiling kept', async () => {
@@ -271,7 +271,7 @@ describe.skipIf(!URL)('member-built apps on Postgres', () => {
       ),
     ).rejects.toMatchObject({ code: 'changed' });
     // What it was shown now goes through, and the review shows the new tools.
-    expect((await sa.getSpaceAppSubmission(id))?.declaredTools).toEqual(['email_send']);
+    expect((await sa.getMemberAppForReview(id))?.declaredTools).toEqual(['email_send']);
     expect(
       await sa.acceptSpaceApp(
         brain,
@@ -392,16 +392,16 @@ describe.skipIf(!URL)('member-built apps on Postgres', () => {
     await sa.setSpaceAppSharing(me(), id, 'team');
     expect(await sa.getRunnableSpaceApp(mate, id)).toMatchObject({ id });
     // A private draft never shows to an admin; a shared one does.
-    const listed = (await sa.listSpaceAppsForAdmin()).find((a) => a.id === id);
-    expect(listed).toMatchObject({ sharing: 'team', author: { loginId: author, active: true } });
+    const listed = (await sa.listMemberAppsForReview()).shared.find((a) => a.id === id);
+    expect(listed).toMatchObject({ author: { loginId: author, active: true } });
 
     await admin`update auth.users set disabled_at = now() where id = ${author}`;
     try {
       expect(await sa.getRunnableSpaceApp(mate, id)).toBeNull();
       expect((await sa.listSpaceApps(them())).map((a) => a.id)).not.toContain(id);
-      expect((await sa.listSpaceAppsForAdmin()).find((a) => a.id === id)?.author.active).toBe(
-        false,
-      );
+      expect(
+        (await sa.listMemberAppsForReview()).shared.find((a) => a.id === id)?.author.active,
+      ).toBe(false);
     } finally {
       await admin`update auth.users set disabled_at = null where id = ${author}`;
     }
@@ -548,7 +548,7 @@ describe.skipIf(!URL)('member-built apps on Postgres', () => {
     const id = await publishedSpaceApp('tested');
     await sa.setSpaceAppSharing(me(), id, 'team');
     const app = (await sa.getMemberAppForReview(id))!;
-    const tester = { loginId: brain, name: 'Admin' };
+    const tester = { loginId: brain };
     // No test started: nothing runs.
     await expect(t.reviewTestSql(tester, app, 'query', 'SELECT 1', [])).rejects.toBeInstanceOf(
       t.ReviewTestGoneError,
@@ -611,7 +611,7 @@ describe.skipIf(!URL)('member-built apps on Postgres', () => {
     });
     await sa.setSpaceAppSharing(me(), created.id, 'team');
     const app = (await sa.getMemberAppForReview(created.id))!;
-    const tester = { loginId: brain, name: null };
+    const tester = { loginId: brain };
     await t.startReviewTest(tester, app);
     await t.reviewTestSql(tester, app, 'exec', "INSERT INTO items (name) VALUES ('x')", []);
     await t.reviewTestSql(tester, app, 'query', 'SELECT :host_me_id AS id', []);
@@ -627,7 +627,7 @@ describe.skipIf(!URL)('member-built apps on Postgres', () => {
     await sa.setSpaceAppSharing(me(), id, 'team');
     await admin`update apps set data_read_only = true where node_id = ${id}`;
     const app = (await sa.getMemberAppForReview(id))!;
-    const tester = { loginId: brain, name: null };
+    const tester = { loginId: brain };
     await t.startReviewTest(tester, app);
     await expect(
       t.reviewTestSql(tester, app, 'exec', "INSERT INTO items (name) VALUES ('x')", []),

@@ -279,10 +279,14 @@ export function AppSandbox({
           // 403 == the slug isn't in the app's declared tools. That's a wiring
           // bug, not a transient failure — surface it plainly to the builder
           // even if the app's own code swallows the rejection.
-          if (r.status === 403 && data?.ok === false) {
+          // An admin's test run of a member's app refuses tools that change
+          // data on purpose (workspace review pattern): say that instead.
+          if (r.status === 403 && data?.ok === false && data?.reason === 'review-test-read-only') {
+            cbRef.current.onError?.('Test mode blocks tools that change data.');
+          } else if (r.status === 403 && data?.ok === false) {
             cbRef.current.onError?.(
               `This app tried to use the tool “${req.slug}”, which it hasn't declared. ` +
-                `Add it to the app's tools (app_tools_set) — or ask Appsmith to — before it can run.`,
+                `Add it to the app's tools (app_tools_set), or ask Appsmith to, before it can run.`,
             );
           }
           reply(data);

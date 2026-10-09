@@ -150,7 +150,8 @@ function rowOf({ node, item }: Joined): SpaceItemRow {
     sharing: item?.sharing ?? 'private',
     reviewState: item?.reviewState ?? 'draft',
     submittedAt: item?.submittedAt?.toISOString() ?? null,
-    returnedNote: item?.returnedNote ?? null,
+    // Review flows carry no messages (2026-10-09): an old note is not shown.
+    returnedNote: null,
     authorLoginId: item?.authorLoginId ?? null,
     createdAt: node.createdAt.toISOString(),
     updatedAt: node.updatedAt.toISOString(),
