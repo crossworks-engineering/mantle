@@ -9,7 +9,7 @@ const A = '11111111-1111-4111-8111-111111111111';
 const B = '22222222-2222-4222-8222-222222222222';
 
 describe('parseLoginNotice', () => {
-  it('reads the three kinds the triggers send', () => {
+  it('reads the two kinds it acts on; a comment event is no longer one', () => {
     expect(parseLoginNotice(JSON.stringify({ kind: 'chat', loginId: A, id: B }))).toEqual({
       kind: 'chat',
       loginId: A,
@@ -18,10 +18,8 @@ describe('parseLoginNotice', () => {
     expect(
       parseLoginNotice(JSON.stringify({ kind: 'review', loginId: A, id: B, state: 'returned' })),
     ).toEqual({ kind: 'review', loginId: A, id: B, state: 'returned' });
-    expect(parseLoginNotice(JSON.stringify({ kind: 'comment', id: B }))).toEqual({
-      kind: 'comment',
-      id: B,
-    });
+    // The node_comments trigger may still fire: comments are gone (2026-10-09).
+    expect(parseLoginNotice(JSON.stringify({ kind: 'comment', id: B }))).toBeNull();
   });
 
   it('drops anything else: bad JSON, a missing or malformed id, an unknown kind or state', () => {

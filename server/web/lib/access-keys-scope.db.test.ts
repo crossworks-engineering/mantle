@@ -5,7 +5,7 @@
  *  - /api/v1: a read key cannot write (403 key-read-only), a key limited to
  *    some areas cannot reach the others or an any-item route (403
  *    key-area), a path outside the v1 table is a 404 for a key;
- *  - a task comment through /api/v1/tasks/:id/comments is held to tasks;
+ *  - task comments are gone: /api/v1/tasks/:id/comments is a 404 for a key;
  *  - table rows land on the draft and commit publishes them;
  *  - a write made with a key leaves an api.write row naming the key;
  *  - a key that acts as a member reaches whoami and nothing else on v1;
@@ -157,37 +157,19 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
     nodesMade.push(taskId);
     expect((await call(`/api/v1/tasks/${taskId}`, { bearer: key.secret })).status).toBe(200);
 
+    // Task comments are gone (2026-10-09): outside the v1 table, a 404.
     const comment = await call(`/api/v1/tasks/${taskId}/comments`, {
       method: 'POST',
       bearer: key.secret,
       body: { body: 'From a script.' },
     });
-    expect(comment.status).toBe(201);
+    expect(comment.status).toBe(404);
 
     // The write names the key in the audit log, attributed to its login.
     const writes = await audited('api.write', key.id);
     expect(writes.map((w) => w.path)).toContain('/api/v1/tasks');
     // It names the key's maker too (audit item 8).
     expect((writes[0]!.detail as Json).keyCreatedBy).toBe(admin);
-  });
-
-  it('a task comment through v1 is held to tasks', async () => {
-    const pageRes = await call('/api/pages', {
-      method: 'POST',
-      cookie: adminCookie(),
-      body: { title: `${tag} not a task` },
-    });
-    expect(pageRes.status).toBe(201);
-    const pageBody = (await json(pageRes)) as { page?: { id: string }; id?: string };
-    const pageId = pageBody.page?.id ?? pageBody.id!;
-    nodesMade.push(pageId);
-    const key = await makeKey({ access: 'read_write', areas: ['tasks'] });
-    const res = await call(`/api/v1/tasks/${pageId}/comments`, {
-      method: 'POST',
-      bearer: key.secret,
-      body: { body: 'x' },
-    });
-    expect(res.status).toBe(404);
   });
 
   it('table rows land on the draft; commit publishes them', async () => {
