@@ -2,6 +2,9 @@
  * POST /api/team-admin/submissions/:id/accept
  *   { audience?: 'admin'|'team'|'client'|'public', parentPageId?, folderPath?,
  *     folderId?, lowerConfirmed?, confirmedIds? }
+ * `submittedAt` (the pin, workspace review pattern): the `submittedAt` the
+ * admin was shown (null for a left-behind item); a different one now is a
+ * 409 `changed`, nothing moved. Left out by an older client: no check.
  * `visibilityConfirmed`: it lands in a shared folder and is read above the
  * chosen level there, and the admin saw the list (else 409 `visibility`
  * with `changes` and `total`, before anything moves).
@@ -39,6 +42,7 @@ const Body = z.object({
   lowerConfirmed: z.boolean().optional(),
   confirmedIds: z.array(z.string().uuid()).max(5000).optional(),
   visibilityConfirmed: z.boolean().optional(),
+  submittedAt: z.string().datetime({ offset: true }).nullable().optional(),
 });
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {

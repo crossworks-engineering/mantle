@@ -127,6 +127,7 @@ import {
   withMoveHooks,
 } from './member-takeover';
 import { writeAcceptedSnapshots } from './member-snapshots';
+import { pinHolds } from './member-review-pin';
 import {
   TREE_KIND_SPECS,
   TREE_VISIBILITY_LIST_MAX,
@@ -164,7 +165,11 @@ export class ReviewError extends Error {
       | 'visibility'
       // Another write held the same rows (a deadlock broken, or the share
       // lock's timeout): nothing moved; try again (review F7).
-      | 'busy',
+      | 'busy'
+      // Approve was pinned to the version the admin was shown, and the
+      // author recalled and sent it again since: nothing moved; look again
+      // (workspace review pattern, security line 3).
+      | 'changed',
     message: string,
     /** `confirm-level` only: the brain items the Accept would take down
      *  with the item (its embed closure above the chosen level). */
@@ -617,6 +622,12 @@ export type AcceptOptions = {
   /** The admin saw, and accepts, that items land in a shared folder and are
    *  read above the chosen level there (the `visibility` refusal's list). */
   visibilityConfirmed?: boolean;
+  /** The pin (workspace review pattern, security line 3): the `submittedAt`
+   *  of the version the admin was shown (null: a left-behind item, never
+   *  submitted). Checked under the state row's lock; a different one (the
+   *  author recalled it and sent it again) refuses with `changed`. Left out
+   *  by an older client: no check. */
+  submittedAt?: string | null;
 };
 
 export type AcceptResult = {
@@ -811,6 +822,13 @@ export async function acceptReviewItem(
       if (!locked || locked.kind !== 'personal') throw notFound();
       const found = await reviewRow(id, tx);
       if (!found) throw notFound();
+      // Pinned: what the admin approved is what they were shown.
+      if (!pinHolds(opts.submittedAt, found.row.submittedAt)) {
+        throw new ReviewError(
+          'changed',
+          'This item was sent again since you opened it. Look at the new version, then approve it.',
+        );
+      }
       return {
         spaceId: found.spaceId,
         root: { id, type: found.row.type, title: found.row.title },

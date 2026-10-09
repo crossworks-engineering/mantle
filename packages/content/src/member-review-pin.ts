@@ -1,0 +1,17 @@
+/**
+ * The Approve pin (workspace review pattern, security line 3): an Approve
+ * carries the `submittedAt` of the version the admin was shown, and the
+ * locked accept refuses when the item has another one now (its author
+ * recalled it and sent it again). A submitted item is frozen until then, so
+ * the time it was sent names the version. Pure, so it is tested alone.
+ */
+
+/** Whether the pinned `submittedAt` is the one the item has now. Undefined:
+ *  an older client sent no pin, nothing to check. Null: a left-behind item,
+ *  never submitted. */
+export function pinHolds(pinned: string | null | undefined, now: string | null): boolean {
+  if (pinned === undefined) return true;
+  if (pinned === null || now === null) return pinned === now;
+  const a = Date.parse(pinned);
+  return Number.isFinite(a) && a === Date.parse(now);
+}

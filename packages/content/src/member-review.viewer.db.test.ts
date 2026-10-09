@@ -218,6 +218,22 @@ describe.skipIf(!URL)('member review, accept and purge', () => {
     await as(loginA, () => sp.submitItem(A, pageId));
   });
 
+  it('Approve is pinned: a version sent again since the admin looked is refused', async () => {
+    const A = spaceOf[loginA]!;
+    const shown = (await rv.getReviewItem(pageId))!.row.submittedAt;
+    expect(shown).not.toBeNull();
+    // The author recalls it and sends it again: a new submittedAt.
+    await as(loginA, () => sp.recallItem(A, pageId));
+    await new Promise((r) => setTimeout(r, 5));
+    await as(loginA, () => sp.submitItem(A, pageId));
+    await expect(
+      rv.acceptReviewItem(anchor, pageId, reviewer(), { submittedAt: shown }),
+    ).rejects.toMatchObject({ reason: 'changed' });
+    // Nothing moved; it still waits.
+    expect(await ownerOf(pageId)).toBe(A);
+    expect((await stateOf(pageId))?.review_state).toBe('submitted');
+  });
+
   it('nothing was announced to the extractor before Accept', async () => {
     await announcedSoFar();
     expect(announced.filter((id) => [pageId, imageId, noteId].includes(id))).toEqual([]);
@@ -227,7 +243,12 @@ describe.skipIf(!URL)('member review, accept and purge', () => {
     const A = spaceOf[loginA]!;
     const spaceBytes = fp.spaceFilePath(A, imageId);
     expect(existsSync(spaceBytes)).toBe(true);
-    const res = await rv.acceptReviewItem(anchor, pageId, reviewer(), { audience: 'team' });
+    // Pinned to the version on screen, which is the one waiting.
+    const shown = (await rv.getReviewItem(pageId))!.row.submittedAt;
+    const res = await rv.acceptReviewItem(anchor, pageId, reviewer(), {
+      audience: 'team',
+      submittedAt: shown,
+    });
     moved.push(pageId, imageId);
     expect(res.moved.map((b) => b.id)).toEqual([pageId, imageId]);
     expect(res.linksStayingBehind).toBe(1);

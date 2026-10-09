@@ -70,6 +70,10 @@ export type AcceptRequest = {
   /** The admin saw the `visibility` refusal's list and accepts that those
    *  items are read above the chosen level where they land. */
   visibilityConfirmed?: boolean;
+  /** The pin (workspace review pattern): the `submittedAt` of the version
+   *  the admin was shown, null for a left-behind item. A different one now
+   *  is a 409 `changed`; nothing moved. */
+  submittedAt?: string | null;
 };
 
 /** 409 from either Accept (brains with the Accept visibility check): the item, or something of its
