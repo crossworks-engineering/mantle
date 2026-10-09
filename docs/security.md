@@ -88,6 +88,13 @@ Notes that matter to a reviewer:
   (`POST /api/auth/logout` `{ "everywhere": true }`, or an admin's
   `PATCH /api/users/:id` `{ "signOut": true }`) bump it and revoke the
   login's bearers: every copied cookie and token dies on its next request.
+- **A device revoke ends that device, browser tab included.** Revoking one
+  device token (Users > Devices) does not bump the epoch, so it ends that
+  token and the 7-day cookie a browser tab got from it (`POST
+/api/auth/sso` binds the cookie to the device token, claim `dj`). An
+  `?at=` asset token minted before the revoke still serves bytes until it
+  expires (at most 2 hours), and a render cookie for at most 5 minutes;
+  End sessions ends those at once.
   The device that changed its own password stays signed in. Details:
   [member-logins.md](./member-logins.md) section 1.
 - **Credential races are single-use by construction.** An OAuth

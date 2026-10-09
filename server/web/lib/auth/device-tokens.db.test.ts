@@ -277,6 +277,32 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
     expect(await memberProbe({ cookie })).toBe(401);
   });
 
+  it("a bound cookie dies with an expired device, another login's device, or a too-long chain (T2)", async () => {
+    const id = await addLogin('sso-edge', 'member');
+    const other = await addLogin('sso-other', 'member');
+    const token = async (userId: string, opts: { expired?: boolean; rotatedTo?: string } = {}) => {
+      const jti = randomUUID();
+      await sql`insert into mobile_tokens (id, user_id, expires_at, revoked_at, rotated_to)
+                values (${jti}, ${userId},
+                        ${opts.expired ? sql`now() - interval '1 minute'` : sql`now() + interval '1 day'`},
+                        ${opts.rotatedTo ? sql`now()` : null}, ${opts.rotatedTo ?? null})`;
+      return jti;
+    };
+    const bound = (deviceJti: string) =>
+      `mantle_session=${tokens.buildSessionCookie(id, { deviceJti, ttlSeconds: 7 * DAY }).value}`;
+    // A live device: the cookie works.
+    expect(await memberProbe({ cookie: bound(await token(id)) })).toBe(400);
+    // The newest token of the chain has expired.
+    const expired = await token(id, { expired: true });
+    expect(await memberProbe({ cookie: bound(await token(id, { rotatedTo: expired })) })).toBe(401);
+    // The device token belongs to another login.
+    expect(await memberProbe({ cookie: bound(await token(other)) })).toBe(401);
+    // A chain longer than the hop limit is not followed to its end.
+    let head = await token(id);
+    for (let i = 0; i < 17; i += 1) head = await token(id, { rotatedTo: head });
+    expect(await memberProbe({ cookie: bound(head) })).toBe(401);
+  });
+
   it('device-login signs an admin in; a wrong password and a client email are the same 401', async () => {
     const res = await deviceLogin(emailOf('admin'));
     const body = await json(res);
