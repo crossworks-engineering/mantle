@@ -624,6 +624,61 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     }
   });
 
+  // Access matrix T9: an API key or a peer acting as the owner never opens a
+  // connector (turning a tool on, clearing its confirm, lowering the group),
+  // as it never switches External access on. The owner's own paths apply.
+  it('a key and a peer are refused opening a connector; the owner applies (T9)', async () => {
+    const tool = toolDef('api_tool_update');
+    const access = toolDef('access_set');
+    const as = (via: 'api' | 'federation') =>
+      ({ ownerId: anchor, surface: { kind: 'owner', via } }) as never;
+    await exec(sqlTag`update tools set enabled = false where id = ${ids.site_query!}`);
+    try {
+      // The connector is at team: switching its tool on opens it to members.
+      await setConnectorLevel('team');
+      for (const via of ['api', 'federation'] as const) {
+        const reopen = await tool.handler({ slug: 'site_query', enabled: true }, as(via));
+        expect(reopen, via).toMatchObject({
+          ok: false,
+          error: expect.stringMatching(/cannot do: only an admin/),
+        });
+      }
+      // At admin: lowering the connector opens all its tools.
+      await setConnectorLevel('admin');
+      for (const via of ['api', 'federation'] as const) {
+        const lower = await access.handler({ tool_group_slug: 'mcp-site', level: 'team' }, as(via));
+        expect(lower, via).toMatchObject({
+          ok: false,
+          error: expect.stringMatching(/cannot do: only an admin/),
+        });
+      }
+      const [off] = (await exec(
+        sqlTag`select enabled from tools where id = ${ids.site_query!}`,
+      )) as unknown as { enabled: boolean }[];
+      expect(off?.enabled).toBe(false);
+      const [g] = (await exec(sqlTag`
+        select audience from tool_groups where owner_id = ${anchor} and slug = 'mcp-site'`)) as unknown as {
+        audience: string;
+      }[];
+      expect(g?.audience).toBe('admin');
+      // A key may still close a connector: raising it applies.
+      const raise = await access.handler(
+        { tool_group_slug: 'mcp-site', level: 'admin' },
+        as('api'),
+      );
+      expect(raise.ok).toBe(true);
+      // The owner's own MCP client opens it.
+      const owner = await access.handler(
+        { tool_group_slug: 'mcp-site', level: 'team' },
+        { ownerId: anchor, surface: { kind: 'owner', via: 'mcp' } },
+      );
+      expect(owner.ok).toBe(true);
+    } finally {
+      await exec(sqlTag`update tools set enabled = true where id = ${ids.site_query!}`);
+      await setConnectorLevel('team');
+    }
+  });
+
   it('api_tool_update: only the owner MCP client switches on; an agent may switch off', async () => {
     const def = toolDef('api_tool_update');
     await switchOff('site_query');

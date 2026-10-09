@@ -22,7 +22,7 @@ import { str, strOpt } from './coerce';
 import { NODE_ID_PRE } from './builtins-common';
 import { clientLeftWarning } from './builtins-share';
 import { appToolWarnings } from './app-tool-level';
-import { isOwnerSurface } from './surface';
+import { isOwnerSurface, keyOrPeerVia, OPENS_ADMIN_ONLY } from './surface';
 import { queueAgentCallForApproval } from './pending-queue';
 
 const LEVELS = ['admin', 'team', 'client', 'public'];
@@ -251,14 +251,21 @@ export const access_set: BuiltinToolDef = {
         // agent never does that on its own say-so, it waits for the owner
         // (M4 audit, medium 1; the same rule as one tool's switch, N5). On
         // approval the call runs again with no agent context.
-        if (ctx.agent) {
+        if (ctx.agent || keyOrPeerVia(ctx)) {
           const [g] = await db
             .select({ audience: toolGroups.audience, integration: toolGroups.integration })
             .from(toolGroups)
             .where(and(eq(toolGroups.ownerId, ctx.ownerId), eq(toolGroups.slug, groupSlug)))
             .limit(1);
           const from = g?.audience ?? 'admin';
-          if (g?.integration?.mcp && (RANK[level] ?? 0) < (RANK[from] ?? 3)) {
+          if (g?.integration?.mcp && (RANK[level] ?? 0) < (RANK[from] ?? 3) && !ctx.agent) {
+            // An API key or a peer acting as the owner (access matrix T9).
+            return {
+              ok: false,
+              error: `'${groupSlug}' is a connector: lowering it from ${from} to ${level} opens all its tools below admin, which ${OPENS_ADMIN_ONLY}`,
+            };
+          }
+          if (g?.integration?.mcp && (RANK[level] ?? 0) < (RANK[from] ?? 3) && ctx.agent) {
             return queueAgentCallForApproval(
               { ...ctx, agent: ctx.agent },
               'access_set',

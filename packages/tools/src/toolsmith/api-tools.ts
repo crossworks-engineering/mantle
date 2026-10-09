@@ -7,6 +7,7 @@
 
 import { isUniqueViolation, type ToolHandler } from '@mantle/db';
 import { queueAgentCallForApproval } from '../pending-queue';
+import { keyOrPeerVia, OPENS_ADMIN_ONLY } from '../surface';
 import { listApiKeys } from '@mantle/api-keys';
 import { loadProfilePreferences } from '@mantle/content';
 import { createTool, deleteTool, listToolsForOwner, updateTool } from '../crud';
@@ -363,41 +364,45 @@ export const api_tool_update: BuiltinToolDef = {
     // (or its writes) to all of them on the agent's say-so, and an agent can
     // be steered by what it reads. That always waits for the owner, whatever
     // "require approval" says (access matrix N5). On approval the call runs
-    // again with no agent context, so this branch is skipped.
-    if (ctx.agent && existing.kind === 'mcp') {
-      const opens =
-        (input.enabled === true && !row.enabled) ||
-        (input.requires_confirm === false && row.requiresConfirm);
-      const group = opens ? await connectorGroupOf(ctx.ownerId, row) : null;
-      if (opens && group && group.level !== 'admin') {
-        return queueAgentCallForApproval(
-          { ...ctx, agent: ctx.agent },
-          'api_tool_update',
-          { ...input },
-          `'${slug}' belongs to a connector at ${group.level} level: turning it on or removing its confirm opens it below admin, so it needs the owner's approval.`,
-        );
+    // again with no agent context, so this branch is skipped. The same for
+    // any other tool with External access (access matrix T8): switching it
+    // off, or adding a confirm, is how an admin closes it to shared apps.
+    // An API key or a peer acting as the owner is refused outright, as for
+    // switching External access on (access matrix T9).
+    const keyOrPeer = keyOrPeerVia(ctx);
+    if (ctx.agent || keyOrPeer) {
+      let opening: string | null = null;
+      if (existing.kind === 'mcp') {
+        const opens =
+          (input.enabled === true && !row.enabled) ||
+          (input.requires_confirm === false && row.requiresConfirm);
+        const group = opens ? await connectorGroupOf(ctx.ownerId, row) : null;
+        if (opens && group && group.level !== 'admin') {
+          opening = `'${slug}' belongs to a connector at ${group.level} level: turning it on or removing its confirm opens it below admin`;
+        }
+      } else if (row.externalAccess) {
+        const reachable = (t: typeof row) => t.enabled && externalAccessActive(t);
+        const after = {
+          ...row,
+          enabled: typeof input.enabled === 'boolean' ? input.enabled : row.enabled,
+          requiresConfirm:
+            typeof input.requires_confirm === 'boolean'
+              ? input.requires_confirm
+              : row.requiresConfirm,
+        };
+        if (!reachable(row) && reachable(after)) {
+          opening = `'${slug}' has External access: turning it on or removing its confirm opens it to shared apps (members, clients, contacts on a contact link)`;
+        }
       }
-    }
-    // The same for any other tool with External access (access matrix T8):
-    // switching it off, or adding a confirm, is how an admin closes it to
-    // shared apps, so an agent turning it on again, or removing the confirm,
-    // reopens it to members, clients and contact links. Waits for the owner.
-    if (ctx.agent && existing.kind !== 'mcp' && row.externalAccess) {
-      const reachable = (t: typeof row) => t.enabled && externalAccessActive(t);
-      const after = {
-        ...row,
-        enabled: typeof input.enabled === 'boolean' ? input.enabled : row.enabled,
-        requiresConfirm:
-          typeof input.requires_confirm === 'boolean'
-            ? input.requires_confirm
-            : row.requiresConfirm,
-      };
-      if (!reachable(row) && reachable(after)) {
+      if (opening && keyOrPeer) {
+        return { ok: false, error: `${opening}, which ${OPENS_ADMIN_ONLY}` };
+      }
+      if (opening && ctx.agent) {
         return queueAgentCallForApproval(
           { ...ctx, agent: ctx.agent },
           'api_tool_update',
           { ...input },
-          `'${slug}' has External access: turning it on or removing its confirm opens it to shared apps (members, clients, contacts on a contact link), so it needs the owner's approval.`,
+          `${opening}, so it needs the owner's approval.`,
         );
       }
     }
