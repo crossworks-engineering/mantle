@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { listApiKeys, setApiKey } from '@/lib/api-keys';
+import { afterVaultKeyReplaced } from '@/lib/mcp-connectors';
 import { KNOWN_KEY_SERVICES } from '@mantle/api-keys';
 import { isMcpManagedSecretService } from '@mantle/tools';
 import { errorMessage } from '@mantle/std';
@@ -54,6 +55,9 @@ export async function POST(req: Request) {
       parsed.data.label,
       parsed.data.plaintext,
     );
+    // A save over an existing key replaces it, as a rotate does (access
+    // matrix T7): a connector's marks were for the old key.
+    await afterVaultKeyReplaced(user.id, row.service, row.label);
     return NextResponse.json({
       id: row.id,
       service: row.service,

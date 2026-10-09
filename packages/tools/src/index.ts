@@ -189,6 +189,7 @@ export {
   contactAppToolVerdict,
   clearConnectorExternalAccess,
   connectorMarkCount,
+  voidConnectorMarksForKey,
   externalAccessActive,
   externalAccessHandlerSig,
   externalAccessToolSig,

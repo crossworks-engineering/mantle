@@ -25,6 +25,9 @@ vi.mock('@/lib/api-keys', () => ({
 
 vi.mock('@mantle/tools', () => ({ isMcpManagedSecretService: () => false }));
 
+// A connector's marks on a replaced key: key-replace-voids-marks.db.test.ts.
+vi.mock('@/lib/mcp-connectors', () => ({ afterVaultKeyReplaced: vi.fn(async () => {}) }));
+
 /** The shape drizzle 0.45 throws (pinned by packages/db/src/pg-error.db.test.ts). */
 function drizzleError(code: string, constraint?: string): Error {
   return Object.assign(

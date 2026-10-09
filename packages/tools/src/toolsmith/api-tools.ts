@@ -17,6 +17,7 @@ import { isMcpManagedSecretService } from '../mcp-oauth';
 import { type BuiltinToolDef, type ToolHandlerContext, type ToolHandlerResult } from '../types';
 import {
   connectorGroupOf,
+  externalAccessActive,
   setToolExternalAccess,
   externalAccessSummary,
   type ExternalAccessActor,
@@ -374,6 +375,29 @@ export const api_tool_update: BuiltinToolDef = {
           'api_tool_update',
           { ...input },
           `'${slug}' belongs to a connector at ${group.level} level: turning it on or removing its confirm opens it below admin, so it needs the owner's approval.`,
+        );
+      }
+    }
+    // The same for any other tool with External access (access matrix T8):
+    // switching it off, or adding a confirm, is how an admin closes it to
+    // shared apps, so an agent turning it on again, or removing the confirm,
+    // reopens it to members, clients and contact links. Waits for the owner.
+    if (ctx.agent && existing.kind !== 'mcp' && row.externalAccess) {
+      const reachable = (t: typeof row) => t.enabled && externalAccessActive(t);
+      const after = {
+        ...row,
+        enabled: typeof input.enabled === 'boolean' ? input.enabled : row.enabled,
+        requiresConfirm:
+          typeof input.requires_confirm === 'boolean'
+            ? input.requires_confirm
+            : row.requiresConfirm,
+      };
+      if (!reachable(row) && reachable(after)) {
+        return queueAgentCallForApproval(
+          { ...ctx, agent: ctx.agent },
+          'api_tool_update',
+          { ...input },
+          `'${slug}' has External access: turning it on or removing its confirm opens it to shared apps (members, clients, contacts on a contact link), so it needs the owner's approval.`,
         );
       }
     }

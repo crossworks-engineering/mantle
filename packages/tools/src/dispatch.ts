@@ -138,11 +138,35 @@ function nonOwnerRunLevel(ctx: ToolHandlerContext): ViewerLevel | null {
   }
 }
 
+/**
+ * The top-level arguments of a call that the tool's stored input schema does
+ * not declare (access matrix T6). A read-only mark is for the schema the
+ * admin looked at, but the remote server may add a parameter (one that
+ * writes) long before the next sync rewrites the row and voids the mark.
+ * Below the owner a marked tool takes only the arguments it was marked
+ * with; a schema that declares it takes any (`additionalProperties`, as a
+ * capped schema does) leaves nothing undeclared.
+ */
+export function undeclaredToolArgs(schema: unknown, input: Record<string, unknown>): string[] {
+  const s = (schema && typeof schema === 'object' ? schema : {}) as {
+    properties?: unknown;
+    additionalProperties?: unknown;
+  };
+  const open = s.additionalProperties;
+  if (open === true || (open !== null && typeof open === 'object')) return [];
+  const props =
+    s.properties && typeof s.properties === 'object' ? (s.properties as object) : ({} as object);
+  return Object.keys(input).filter(
+    (k) => input[k] !== undefined && !Object.prototype.hasOwnProperty.call(props, k),
+  );
+}
+
 /** Why a connector call is refused for a non-owner run, or null. */
 function connectorCallRefused(
   ctx: ToolHandlerContext,
   connectorLevel: ViewerLevel,
   tool: Tool,
+  input: Record<string, unknown>,
 ): string | null {
   const run = nonOwnerRunLevel(ctx);
   if (!run) return null;
@@ -155,6 +179,12 @@ function connectorCallRefused(
   }
   if (run === 'public' && mark === 'write') {
     return 'On a shared link only connector tools an admin marked read-only run; this one can change data.';
+  }
+  if (mark === 'read') {
+    const extra = undeclaredToolArgs(tool.inputSchema, input);
+    if (extra.length) {
+      return `This connector tool was marked read-only with the inputs it had then, and ${extra.map((k) => `'${k}'`).join(', ')} is not one of them. Call it with only the inputs it lists, or ask an admin to sync the connector and mark the tool again.`;
+    }
   }
   return null;
 }
@@ -201,7 +231,7 @@ async function dispatchMcp(
   // non-owner call runs at must read the connector's level; a public run
   // (a contact link, a public agent) only ever reads (Jason, 2026-10-08:
   // contacts read only), so an unmarked tool is refused there.
-  const refused = connectorCallRefused(ctx, asViewerLevel(group.audience), tool);
+  const refused = connectorCallRefused(ctx, asViewerLevel(group.audience), tool, input);
   if (refused) return { ok: false, error: refused };
   try {
     // asSystem: the remote call reads and, for an OAuth connector, refreshes

@@ -121,6 +121,10 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
         (${anchor}, 'site_recipe', 'n', 'd', ${recipe}::jsonb, false),
         (${anchor}, 'site_http', 'n', 'd', ${http}::jsonb, false),
         (${anchor}, 'quick_sum', 'n', 'd', '{"kind":"builtin","ref":"summarize_text"}'::jsonb, false)`);
+    // The lookup's inputs, as a remote server lists them: a mark is for these.
+    await exec(sqlTag`
+      update tools set input_schema = '{"type":"object","properties":{"q":{"type":"string"}}}'::jsonb
+      where owner_id = ${anchor} and slug = 'site_query'`);
     const rows = (await exec(
       sqlTag`select id, slug from tools where owner_id = ${anchor}`,
     )) as unknown as Array<{ id: string; slug: string }>;
@@ -742,6 +746,157 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
           input_schema = ${JSON.stringify(live.find((t) => t.slug === 'site_query')!.input_schema)}::jsonb,
           handler = ${JSON.stringify({ kind: 'mcp', group: 'mcp-site', toolName: 'query' })}::jsonb
         where id = ${ids.site_query!}`);
+      await switchOn('site_query');
+    }
+  });
+
+  // Access matrix T6: the remote server can add a parameter (one that
+  // writes) long before a sync voids the mark; below the owner a marked tool
+  // takes only the inputs it was marked with.
+  it('a marked connector tool takes only the inputs it was marked with, below the owner', async () => {
+    const { resolveTool } = await import('./resolve');
+    await switchOn('site_query');
+    const tool = await resolveTool(anchor, 'site_query');
+    if (!tool) throw new Error('no tool');
+    const asMember = (input: Record<string, unknown>) =>
+      m.withViewer('team', () =>
+        dispatch.dispatchTool(tool, input, { ownerId: anchor, surface: { kind: 'team' } }),
+      );
+    fake.calls.length = 0;
+    expect(await asMember({ q: 'x' })).toMatchObject({ ok: true });
+    const extra = await asMember({ q: 'x', statement: 'delete from rows' });
+    expect(extra).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/'statement' is not one of them/),
+    });
+    expect(fake.calls).toEqual([{ toolName: 'query', args: { q: 'x' } }]);
+    // The owner's own path is never gated.
+    const owner = await dispatch.dispatchTool(
+      tool,
+      { q: 'x', statement: 'select 1' },
+      { ownerId: anchor, surface: { kind: 'owner', via: 'mcp' } },
+    );
+    expect(owner.ok).toBe(true);
+    // An unmarked tool is a write anyway: members may make it with any input.
+    await switchOff('site_query');
+    try {
+      const fresh = await resolveTool(anchor, 'site_query');
+      const write = await m.withViewer('team', () =>
+        dispatch.dispatchTool(
+          fresh!,
+          { q: 'x', statement: 'select 1' },
+          { ownerId: anchor, surface: { kind: 'team' } },
+        ),
+      );
+      expect(write.ok).toBe(true);
+    } finally {
+      await switchOn('site_query');
+    }
+    // A schema that takes any input (as a capped one does) leaves nothing out.
+    expect(
+      dispatch.undeclaredToolArgs({ type: 'object', additionalProperties: true }, { a: 1 }),
+    ).toEqual([]);
+    expect(dispatch.undeclaredToolArgs({ type: 'object' }, { a: 1, b: undefined })).toEqual(['a']);
+  });
+
+  // Access matrix T8: the N5 gate covers an http tool with External access
+  // too. Switching it off (or adding a confirm) is how an admin closes it to
+  // shared apps; an agent reopening it waits for the owner.
+  it('api_tool_update: an agent reopening an http tool with External access goes to Pending', async () => {
+    const def = toolDef('api_tool_update');
+    const agentCtx = {
+      ownerId: anchor,
+      surface: { kind: 'web' as const },
+      agent: { slug: 'some-agent', name: 'Some agent' },
+    } as never;
+    const state = async () => {
+      const [r] = (await exec(sqlTag`
+        select enabled, requires_confirm from tools where id = ${ids.site_http!}`)) as unknown as {
+        enabled: boolean;
+        requires_confirm: boolean;
+      }[];
+      return r;
+    };
+    // An earlier test leaves it on DELETE, which can never get the switch.
+    await exec(sqlTag`
+      update tools set handler = ${JSON.stringify({
+        kind: 'http',
+        url: 'https://api.example.test/rows',
+        method: 'GET',
+      })}::jsonb
+      where id = ${ids.site_http!}`);
+    expect((await switchOn('site_http')).ok).toBe(true);
+    await exec(sqlTag`update tools set enabled = false where id = ${ids.site_http!}`);
+    try {
+      const queued = await def.handler({ slug: 'site_http', enabled: true }, agentCtx);
+      expect(queued).toMatchObject({ ok: true, output: { status: 'queued_for_approval' } });
+      expect((await state())?.enabled).toBe(false);
+      // A confirm added to close it: removing it waits too.
+      await exec(sqlTag`
+        update tools set enabled = true, requires_confirm = true where id = ${ids.site_http!}`);
+      const unconfirm = await def.handler({ slug: 'site_http', requires_confirm: false }, agentCtx);
+      expect(unconfirm).toMatchObject({ ok: true, output: { status: 'queued_for_approval' } });
+      expect((await state())?.requires_confirm).toBe(true);
+      // Closing stays open to an agent, and the owner applies at once.
+      await exec(sqlTag`update tools set requires_confirm = false where id = ${ids.site_http!}`);
+      const off = await def.handler({ slug: 'site_http', enabled: false }, agentCtx);
+      expect(off.ok && (off.output as { status?: string }).status).not.toBe('queued_for_approval');
+      expect((await state())?.enabled).toBe(false);
+      const owner = await def.handler(
+        { slug: 'site_http', enabled: true },
+        { ownerId: anchor, surface: { kind: 'web' } },
+      );
+      expect(owner.ok).toBe(true);
+      expect((await state())?.enabled).toBe(true);
+      // Without External access an agent may turn it on, as before.
+      await switchOff('site_http');
+      await exec(sqlTag`update tools set enabled = false where id = ${ids.site_http!}`);
+      const plain = await def.handler({ slug: 'site_http', enabled: true }, agentCtx);
+      expect(plain.ok && (plain.output as { status?: string }).status).not.toBe(
+        'queued_for_approval',
+      );
+      expect((await state())?.enabled).toBe(true);
+    } finally {
+      await exec(sqlTag`
+        update tools set enabled = true, requires_confirm = false where id = ${ids.site_http!}`);
+      await exec(sqlTag`delete from pending_tool_calls where owner_id = ${anchor}`);
+    }
+  });
+
+  // Access matrix T7: a new key under the same vault entry voids the marks
+  // of every connector that signs in with it.
+  it('a replaced vault key voids the marks of the connectors that use it', async () => {
+    const state = async (slug: string) => {
+      const [r] = (await exec(sqlTag`
+        select slug, handler, requires_confirm as "requiresConfirm",
+          external_access as "externalAccess", description, input_schema as "inputSchema"
+        from tools where id = ${ids[slug]!}`)) as unknown as Parameters<
+        typeof ta.connectorMarkState
+      >[0][];
+      return ta.connectorMarkState(r!);
+    };
+    const bind = (secretRef: string | null) =>
+      exec(sqlTag`
+        update tool_groups set integration = ${JSON.stringify({
+          service: 'mcp-site',
+          mcp: {
+            url: 'https://mcp.example.test/mcp',
+            ...(secretRef ? { secretRef } : {}),
+          },
+        })}::jsonb
+        where owner_id = ${anchor} and slug = 'mcp-site'`);
+    expect((await switchOn('site_query')).ok).toBe(true);
+    await bind('site-key/default');
+    try {
+      expect(await ta.voidConnectorMarksForKey(anchor, 'other-key', 'default')).toEqual([]);
+      expect(await state('site_query')).toBe('read');
+      expect(await ta.voidConnectorMarksForKey(anchor, 'site-key', 'default')).toEqual([
+        'mcp-site',
+      ]);
+      expect(await state('site_query')).toBe('stale');
+    } finally {
+      await bind(null);
+      await exec(sqlTag`update tools set enabled = true where id = ${ids.site_query!}`);
       await switchOn('site_query');
     }
   });

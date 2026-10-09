@@ -622,3 +622,31 @@ export async function clearConnectorExternalAccess(
       .where(and(ofConnector, sql`${tools.externalAccess} is null`));
   }
 }
+
+/**
+ * A vault key was replaced (rotated, or saved again under the same service
+ * and label): every connector that signs in with it (`secretRef`) now
+ * reaches the remote server as whoever the new key belongs to, which the
+ * admin never looked at (access matrix T7). The same as a move to another
+ * credential: its marks are voided and, below admin, its write tools are
+ * disabled (`clearConnectorExternalAccess`). Gives back the connectors it
+ * touched, so the caller can drop their cached connections.
+ */
+export async function voidConnectorMarksForKey(
+  ownerId: string,
+  service: string,
+  label: string,
+): Promise<string[]> {
+  const ref = `${service}/${label}`;
+  const groups = await db
+    .select({ slug: toolGroups.slug })
+    .from(toolGroups)
+    .where(
+      and(
+        eq(toolGroups.ownerId, ownerId),
+        sql`${toolGroups.integration}->'mcp'->>'secretRef' = ${ref}`,
+      ),
+    );
+  for (const g of groups) await clearConnectorExternalAccess(ownerId, g.slug);
+  return groups.map((g) => g.slug);
+}
