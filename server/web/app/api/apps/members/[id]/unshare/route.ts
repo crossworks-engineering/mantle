@@ -1,8 +1,8 @@
 /**
- * POST /api/team-admin/member-apps/:id/unshare: an admin stops a member's
- * team-shared app (access matrix N2). It goes back to private, its author's
- * alone; nothing is deleted. 404 for an app an admin may not reach, 409 when
- * it was not shared.
+ * POST /api/apps/members/:id/unshare: an admin stops a member's team-shared
+ * app (access matrix N2). It goes back to private, its author's alone;
+ * nothing is deleted. 404 for an app an admin may not reach, 409 when it was
+ * not shared.
  */
 import { NextResponse } from '@/server/http-compat';
 import { adminSpaceApp, adminUnshareSpaceApp } from '@mantle/content';

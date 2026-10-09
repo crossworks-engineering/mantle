@@ -99,7 +99,13 @@ async function resolveFrameViewer(viewer: FrameViewer | undefined): Promise<AppV
 export async function renderAppFrame(
   req: Request,
   build: FrameBuild,
-  opts: { shared?: boolean; viewer?: FrameViewer } = {},
+  opts: {
+    shared?: boolean;
+    viewer?: FrameViewer;
+    /** host.me() already resolved (an admin's test run of a member's app:
+     *  resolving through `viewer` would provision the real app's registry). */
+    resolvedViewer?: AppViewer | null;
+  } = {},
 ): Promise<Response> {
   const url = new URL(req.url);
   const [bundleCode, appCss, importMapJson, neatSpec, viewer] = await Promise.all([
@@ -107,7 +113,9 @@ export async function renderAppFrame(
     build.css ? loadText(build.css.storageKey).catch(() => '') : Promise.resolve(''),
     loadImportMapJson(),
     resolveFrameNeat(opts.shared === true),
-    resolveFrameViewer(opts.viewer),
+    opts.resolvedViewer !== undefined
+      ? Promise.resolve(opts.resolvedViewer)
+      : resolveFrameViewer(opts.viewer),
   ]);
   const html = buildAppFrameHtml({
     bundleCode,

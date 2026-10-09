@@ -62,7 +62,7 @@ vi.mock('@mantle/content', () => {
       if (opts.write && h.frozen) {
         throw new SpaceAppError('frozen', 'This app is submitted for review, so it is frozen.');
       }
-      return { id, title: 'A', sharing: 'private', reviewState: 'draft', returnedNote: null };
+      return { id, title: 'A', sharing: 'private', reviewState: 'draft' };
     }),
     createSpaceApp: vi.fn(),
     // The lock is the content layer's (its DB test); here it runs the change.
@@ -87,7 +87,6 @@ vi.mock('@mantle/content', () => {
       title: 'A',
       sharing,
       reviewState: 'draft',
-      returnedNote: null,
     })),
     submitSpaceApp: vi.fn(),
     workingSource: vi.fn(),

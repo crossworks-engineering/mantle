@@ -17,8 +17,9 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const ticket = t ? verifyAppFrameTicket(t) : null;
   // A share-scoped ticket (`shareId` set) or a member's (`loginId` set) must
   // not open the owner frame: it was minted for a published build, and this
-  // route serves the owner's DRAFT.
-  if (!ticket || ticket.appId !== id || ticket.shareId || ticket.loginId) {
+  // route serves the owner's DRAFT. Nor may a review test ticket: it opens
+  // only the test frame of a member's app.
+  if (!ticket || ticket.appId !== id || ticket.shareId || ticket.loginId || ticket.reviewTest) {
     return new NextResponse('frame ticket required', { status: 401 });
   }
 

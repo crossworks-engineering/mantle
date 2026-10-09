@@ -1,14 +1,12 @@
 /**
- * POST /api/team-admin/app-submissions/:id/accept
+ * POST /api/apps/members/:id/accept
  *   { level: 'admin' | 'team', trustTools?: boolean, version, reviewHash }
- * `version` and `reviewHash` are what GET .../:id showed the admin: the
- * accept refuses (409 `changed`) when the app moved since (M3 audit).
- * Accept a submitted member app into the brain (team apps Phase 3): it moves
- * into the brain's Apps at `level`, ids unchanged, its data and history with
- * it. Client and public are set later, as for any app. Without `trustTools`
- * the author ceiling stays: the app runs its tools at team rules for every
- * runner, admins too. With it, the admin has reviewed the declared tools and
- * the app runs at the runner's own rules.
+ * Approve a submitted member app into the brain. `version` and `reviewHash`
+ * are what GET /api/apps/members/:id showed the admin: the accept refuses
+ * (409 `changed`) when the app moved since (M3 audit). It moves into the
+ * brain's Apps at `level`, ids unchanged, its data and history with it.
+ * Without `trustTools` the author ceiling stays: the app runs its tools at
+ * team rules for every runner, admins too.
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';

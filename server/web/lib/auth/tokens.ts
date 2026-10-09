@@ -444,6 +444,10 @@ export function buildAppFrameTicket(opts: {
   /** A contact share's contact and code epoch (contact shares): the share
    *  frame re-checks both, since the frame navigation carries no cookie. */
   contact?: { contactId: string; codeEpoch: number };
+  /** An admin's TEST run of a member's app (workspace review pattern): only
+   *  /api/apps/members/:id/test/frame accepts it, and every other frame
+   *  route refuses it. Owner surface only (needs `actorId`). */
+  reviewTest?: boolean;
 }): string {
   const claims: Record<string, unknown> = { uid: opts.ownerId, app: opts.appId, k: 'f' };
   if (opts.shareId) claims.sh = opts.shareId;
@@ -456,6 +460,7 @@ export function buildAppFrameTicket(opts: {
   // Only an owner ticket names an admin actor: a share, member or client
   // ticket already says who runs the app.
   if (opts.actorId && !opts.shareId && !opts.loginId) claims.act = opts.actorId;
+  if (opts.reviewTest && opts.actorId && !opts.shareId && !opts.loginId) claims.rv = 1;
   return signClaims(claims, APP_FRAME_TICKET_TTL_SECONDS).value;
 }
 
@@ -482,6 +487,8 @@ export type AppFrameTicket = {
   codeEpoch?: number;
   /** An owner ticket's admin login (app identity: host.me()). */
   actorId?: string;
+  /** An admin's test run of a member's app: only the test frame accepts it. */
+  reviewTest?: boolean;
 };
 
 export function verifyAppFrameTicket(value: string): AppFrameTicket | null {
@@ -491,6 +498,11 @@ export function verifyAppFrameTicket(value: string): AppFrameTicket | null {
   if (typeof claims.sh === 'string') out.shareId = claims.sh;
   if (typeof claims.mem === 'string') out.loginId = claims.mem;
   if (typeof claims.act === 'string' && !out.shareId && !out.loginId) out.actorId = claims.act;
+  if (claims.rv !== undefined) {
+    // Only an admin's ticket with no share or login may be a test ticket.
+    if (claims.rv !== 1 || !out.actorId) return null;
+    out.reviewTest = true;
+  }
   // A contact share's ticket carries both `cid` and `ce`. A `cid` alone (a
   // team visitor's, retired with team links) is ignored, as before.
   if (

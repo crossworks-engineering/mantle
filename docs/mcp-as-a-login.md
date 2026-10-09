@@ -111,8 +111,8 @@ the connectors open to them in their own Settings > MCP
 Sharing an app with the team is the member's own click in the app (Apps >
 Your apps), never an MCP tool: a key, a peer or a model must not open an app
 to the whole team (access matrix N1). `my_app_unshare` makes one private. An
-admin sees the shared and submitted ones in Team admin > Member apps, with
-their activity, and may unshare or delete them; an app runs only while its
+admin sees the shared and submitted ones in Apps, above the brain's own
+apps, with their activity, and may unshare or delete them; an app runs only while its
 author is an active member. Every my_app change over an OAuth, token or peer
 connection writes an audit row (`mcp.my_app_*`); a key's call has its own.
 

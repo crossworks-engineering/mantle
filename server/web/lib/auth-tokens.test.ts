@@ -373,3 +373,50 @@ describe('session epoch claim', () => {
     }
   });
 });
+
+/** An admin's review TEST ticket (workspace review pattern): `rv` only with
+ *  an admin actor and no share or login; a forged combination fails. */
+describe('review test frame tickets', () => {
+  it('carries reviewTest only on an owner ticket that names the admin', async () => {
+    const auth = await authLib();
+    const t = auth.buildAppFrameTicket({
+      ownerId: 'u1',
+      appId: 'a1',
+      actorId: 'l1',
+      reviewTest: true,
+    });
+    expect(auth.verifyAppFrameTicket(t)).toEqual({
+      ownerId: 'u1',
+      appId: 'a1',
+      actorId: 'l1',
+      reviewTest: true,
+    });
+    // No actor, or a member's or a share's ticket: the builder never marks it.
+    for (const opts of [{}, { loginId: 'm1' }, { shareId: 's1' }]) {
+      const plain = auth.buildAppFrameTicket({
+        ownerId: 'u1',
+        appId: 'a1',
+        reviewTest: true,
+        ...opts,
+      });
+      expect(auth.verifyAppFrameTicket(plain)?.reviewTest).toBeUndefined();
+    }
+    const owner = auth.buildAppFrameTicket({ ownerId: 'u1', appId: 'a1', actorId: 'l1' });
+    expect(auth.verifyAppFrameTicket(owner)?.reviewTest).toBeUndefined();
+  });
+
+  it('refuses a forged rv: without an actor, beside a login or a share, or not 1', async () => {
+    const auth = await authLib();
+    const exp = Math.floor(Date.now() / 1000) + 60;
+    for (const extra of [
+      { rv: 1 },
+      { rv: 1, act: 'l1', mem: 'm1' },
+      { rv: 1, act: 'l1', sh: 's1' },
+      { rv: 2, act: 'l1' },
+      { rv: true, act: 'l1' },
+    ]) {
+      const bad = signRaw({ uid: 'u1', app: 'a1', exp, k: 'f', ...extra });
+      expect(auth.verifyAppFrameTicket(bad), JSON.stringify(extra)).toBeNull();
+    }
+  });
+});

@@ -1,9 +1,9 @@
 /**
- * POST /api/team-admin/member-apps/:id/delete { confirm: true }: an admin
- * deletes a member's team-shared or submitted app (access matrix N2). Never
- * silently: the app moves to the brain, its code and data are kept as a
- * pre_delete snapshot, and it waits in the brain's trash like any deleted
- * app, for an admin to restore (M4 audit, medium 2). A private draft is
+ * POST /api/apps/members/:id/delete { confirm: true }: an admin deletes a
+ * member's team-shared or submitted app (access matrix N2). Never silently:
+ * the app moves to the brain, its code and data are kept as a pre_delete
+ * snapshot, and it waits in the brain's trash like any deleted app, for an
+ * admin to restore for 30 days (M4 audit, medium 2). A private draft is
  * never reachable here.
  */
 import { NextResponse } from '@/server/http-compat';

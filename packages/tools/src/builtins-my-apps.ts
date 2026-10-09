@@ -217,7 +217,6 @@ const my_app_get: BuiltinToolDef = {
         description: app.description,
         sharing: state.sharing,
         reviewState: state.reviewState,
-        ...(state.returnedNote ? { returnedNote: state.returnedNote } : {}),
         manifest: app.manifest,
         hasDraft: app.hasDraft,
         draftBuild: app.draftBuild ? { ok: app.draftBuild.ok, bytes: app.draftBuild.bytes } : null,
@@ -730,7 +729,7 @@ const my_app_submit: BuiltinToolDef = {
   slug: 'my_app_submit',
   name: 'Submit my mini app for review',
   description:
-    'Submit your own app to an admin, who may accept it into the brain or return it with a note. The admin reviews the PUBLISHED version: publish first. While submitted it is frozen and its data is read only; `my_app_recall` takes it back.',
+    'Submit your own app to an admin, who may accept it into the brain or send it back to you. The admin reviews the PUBLISHED version: publish first. While submitted it is frozen and its data is read only; `my_app_recall` takes it back.',
   inputSchema: { type: 'object', properties: { ...ID_PROP }, required: ['id'] },
   handler: async (input, ctx) => {
     const p = await prepare(input, ctx, { write: true });

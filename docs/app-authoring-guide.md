@@ -655,12 +655,14 @@ mirror the admin's `app_*` tools; read `my_app_guide` (this guide) first.
   version. While it is shared, every `my_app_publish` (over MCP too) is
   what teammates run from their next open, with no new click and no
   review. Test a change on a private copy first, or make the app private
-  (`my_app_unshare`) while you work. An admin sees what it did under
-  Team admin > Member apps > Activity, and can unshare or delete it.
+  (`my_app_unshare`) while you work. An admin sees what it did in Apps
+  (Shared by members > the app > Activity), and can unshare or delete it.
 - **Submit:** `my_app_submit` sends the PUBLISHED version to an admin. It is
-  frozen and its data is read only until the admin accepts or returns it.
+  frozen and its data is read only until the admin approves it or sends it
+  back (no note: you hear from them through your own channels). The admin
+  may test it first, on a throwaway copy of its data; nothing real changes.
   `my_app_recall` takes it back.
-- **Accept (an admin):** Team admin > Review > Apps. The app moves into the
+- **Approve (an admin):** Apps > Waiting for approval. The app moves into the
   brain's Apps at admin or team level, with the same id, its data and its
   history. Client and public are set later, by an admin, as for any app.
 - **The author ceiling:** a member-built app runs its tools at TEAM rules

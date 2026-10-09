@@ -208,7 +208,7 @@ describe.skipIf(!URL)('member-built apps on Postgres', () => {
     await expect(sa.authorSpaceApp(me(), id)).rejects.toMatchObject({ code: 'not-found' });
   });
 
-  it('accept with the tools reviewed lifts the ceiling; return gives it back with a note', async () => {
+  it('accept with the tools reviewed lifts the ceiling; send back gives it back, no note', async () => {
     const trusted = await publishedSpaceApp('trusted');
     await sa.submitSpaceApp(me(), trusted);
     expect(
@@ -222,14 +222,20 @@ describe.skipIf(!URL)('member-built apps on Postgres', () => {
 
     const back = await publishedSpaceApp('returned');
     await sa.submitSpaceApp(me(), back);
-    await sa.returnSpaceApp(back, { loginId: brain }, 'add a title');
+    await sa.sendBackSpaceApp(back, { loginId: brain });
     expect(await sa.authorSpaceApp(me(), back, { write: true })).toMatchObject({
       reviewState: 'returned',
-      returnedNote: 'add a title',
     });
-    await expect(sa.returnSpaceApp(back, { loginId: brain }, 'again')).rejects.toMatchObject({
+    // Review flows carry no messages: the old column is never written.
+    const [noted] = await admin<{ returned_note: string | null }[]>`
+      select returned_note from space_items where node_id = ${back}`;
+    expect(noted?.returned_note).toBeNull();
+    await expect(sa.sendBackSpaceApp(back, { loginId: brain })).rejects.toMatchObject({
       code: 'not-submitted',
     });
+    // Returned is editable and submits again.
+    await sa.submitSpaceApp(me(), back);
+    expect((await sa.listMemberAppsForReview()).waiting.map((w) => w.id)).toContain(back);
   });
 
   // M3 audit, high 1: only the version the admin read can enter the brain.
@@ -498,5 +504,134 @@ describe.skipIf(!URL)('member-built apps on Postgres', () => {
     const [who] = await admin<{ actor: string; actor_login_id: string }[]>`
       select actor, actor_login_id from node_snapshots where id = ${snap!.id}`;
     expect(who).toEqual({ actor: 'member', actor_login_id: author });
+  });
+
+  // Workspace review pattern (2026-10-09): members' apps in the admin's Apps
+  // screen, two lists, the normal app screen, a test run on a copy.
+  it('the review lists show submitted and shared apps, never a private draft', async () => {
+    const hidden = await publishedSpaceApp('private draft');
+    const shared = await publishedSpaceApp('team shared');
+    await sa.setSpaceAppSharing(me(), shared, 'team');
+    const waiting = await publishedSpaceApp('waiting');
+    await sa.setSpaceAppSharing(me(), waiting, 'team');
+    await sa.submitSpaceApp(me(), waiting);
+
+    const lists = await sa.listMemberAppsForReview();
+    const all = [...lists.waiting, ...lists.shared].map((a) => a.id);
+    expect(all).not.toContain(hidden);
+    expect(lists.shared.find((a) => a.id === shared)).toMatchObject({
+      author: { loginId: author, active: true },
+      runnable: true,
+    });
+    // Submitted and shared: once, under Waiting, at the version sent.
+    expect(lists.shared.map((a) => a.id)).not.toContain(waiting);
+    expect(lists.waiting.find((a) => a.id === waiting)).toMatchObject({
+      version: (await shown(waiting)).version,
+    });
+
+    expect(await sa.getMemberAppForReview(hidden)).toBeNull();
+    // The admin reads the PUBLISHED source, never the author's draft.
+    await m.asSystem(() =>
+      apps.writeDraftFile(authorSpace, shared, 'App.tsx', 'export default () => "secret";'),
+    );
+    const detail = await sa.getMemberAppForReview(shared);
+    expect(detail?.files['App.tsx']).toBe('export default () => "one";');
+    expect(detail?.reviewHash).toBeNull();
+    // A waiting app carries what an Approve sends back.
+    expect((await sa.getMemberAppForReview(waiting))?.reviewHash).toBe(
+      (await shown(waiting)).reviewHash,
+    );
+  });
+
+  it('a test run works on a throwaway copy; the real data never changes', async () => {
+    const t = await import('./app-review-test');
+    const id = await publishedSpaceApp('tested');
+    await sa.setSpaceAppSharing(me(), id, 'team');
+    const app = (await sa.getMemberAppForReview(id))!;
+    const tester = { loginId: brain, name: 'Admin' };
+    // No test started: nothing runs.
+    await expect(t.reviewTestSql(tester, app, 'query', 'SELECT 1', [])).rejects.toBeInstanceOf(
+      t.ReviewTestGoneError,
+    );
+    await t.startReviewTest(tester, app);
+    await t.reviewTestSql(tester, app, 'exec', "INSERT INTO items (name) VALUES ('test')", []);
+    const onCopy = (await t.reviewTestSql(
+      tester,
+      app,
+      'query',
+      'SELECT name FROM items ORDER BY id',
+      [],
+    )) as { name: string }[];
+    expect(onCopy.map((r) => r.name)).toEqual(['a', 'test']);
+    // The member's own file is as it was.
+    const real = await m.asSystem(() =>
+      broker.appDbQuery(authorSpace, id, 'SELECT name FROM items ORDER BY id', [], schema),
+    );
+    expect(real.map((r) => r.name)).toEqual(['a']);
+    // Team rules: rows only, never the schema.
+    await expect(
+      t.reviewTestSql(tester, app, 'exec', 'CREATE TABLE extra (x INTEGER)', []),
+    ).rejects.toThrow();
+    // host.me() is the admin, filled by the server.
+    const me1 = (await t.reviewTestSql(tester, app, 'query', 'SELECT :host_me_kind AS k', [])) as {
+      k: string;
+    }[];
+    expect(me1[0]?.k).toBe('admin');
+    // Ending it removes the copy; a restart starts from the real data again.
+    await t.endReviewTest(brain, id);
+    await expect(t.reviewTestSql(tester, app, 'query', 'SELECT 1', [])).rejects.toBeInstanceOf(
+      t.ReviewTestGoneError,
+    );
+    await t.startReviewTest(tester, app);
+    const fresh = (await t.reviewTestSql(tester, app, 'query', 'SELECT name FROM items', [])) as {
+      name: string;
+    }[];
+    expect(fresh.map((r) => r.name)).toEqual(['a']);
+    // An idle copy goes by itself.
+    expect(await t.sweepReviewTests(Date.now() + t.REVIEW_TEST_IDLE_MS + 60_000)).toBeGreaterThan(
+      0,
+    );
+    await expect(t.reviewTestSql(tester, app, 'query', 'SELECT 1', [])).rejects.toBeInstanceOf(
+      t.ReviewTestGoneError,
+    );
+  });
+
+  it('a test run of an app with no data provisions nothing on the real app', async () => {
+    const t = await import('./app-review-test');
+    const created = await sa.createSpaceApp(me(), { title: `${tag} empty` });
+    await m.asSystem(async () => {
+      await apps.writeDraftFile(authorSpace, created.id, 'App.tsx', 'export default () => 1;');
+      await apps.setManifest(authorSpace, created.id, { sqlite: schema });
+      await apps.setDraftBuild(authorSpace, created.id, GREEN);
+      await apps.publishApp(authorSpace, created.id, {
+        note: 'first',
+        actor: 'member',
+        actorLoginId: author,
+      });
+    });
+    await sa.setSpaceAppSharing(me(), created.id, 'team');
+    const app = (await sa.getMemberAppForReview(created.id))!;
+    const tester = { loginId: brain, name: null };
+    await t.startReviewTest(tester, app);
+    await t.reviewTestSql(tester, app, 'exec', "INSERT INTO items (name) VALUES ('x')", []);
+    await t.reviewTestSql(tester, app, 'query', 'SELECT :host_me_id AS id', []);
+    const [reg] = await admin<{ n: number }[]>`
+      select count(*)::int as n from app_databases where app_node_id = ${created.id}`;
+    expect(reg?.n).toBe(0);
+    await t.endReviewTest(brain, created.id);
+  });
+
+  it('a test run of an informational app reads only', async () => {
+    const t = await import('./app-review-test');
+    const id = await publishedSpaceApp('informational');
+    await sa.setSpaceAppSharing(me(), id, 'team');
+    await admin`update apps set data_read_only = true where node_id = ${id}`;
+    const app = (await sa.getMemberAppForReview(id))!;
+    const tester = { loginId: brain, name: null };
+    await t.startReviewTest(tester, app);
+    await expect(
+      t.reviewTestSql(tester, app, 'exec', "INSERT INTO items (name) VALUES ('x')", []),
+    ).rejects.toBeInstanceOf(t.ReviewTestReadOnlyError);
+    await t.endReviewTest(brain, id);
   });
 });

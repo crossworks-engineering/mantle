@@ -759,6 +759,14 @@ export async function memberLoginActive(loginId: string): Promise<boolean> {
   return !!row && row.role === 'member' && loginUsable(row);
 }
 
+/** Is this admin login still allowed in? For a frame document that a
+ *  seconds-lived ticket opened (an admin's test run of a member's app): the
+ *  row is re-read, so a disabled or demoted login stops at once. */
+export async function adminLoginActive(loginId: string): Promise<boolean> {
+  const row = await loadLoginRow(loginId);
+  return !!row && row.role === 'admin' && loginUsable(row);
+}
+
 /** When the calling request's session cookie expires (ms since epoch), or
  *  null without one. */
 export async function sessionCookieExpiryMs(): Promise<number | null> {

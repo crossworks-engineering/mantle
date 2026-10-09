@@ -10,7 +10,7 @@
  *    no owner surface lists a space's nodes).
  *  - Shared with the team: every member runs it, at team rules. No approval.
  *  - Submitted: frozen (no code edit, its data read only) until an admin
- *    accepts or returns it. The author may recall it.
+ *    accepts it or sends it back. The author may recall it.
  *  - Accepted: re-owned into the brain at the level the admin picks (admin
  *    or team; client and public only later, by an admin, as for any app),
  *    ids unchanged. Its database file and history rows follow by owner; the
@@ -140,7 +140,6 @@ export type SpaceAppState = {
   title: string;
   sharing: 'private' | 'team';
   reviewState: string;
-  returnedNote: string | null;
 };
 
 /**
@@ -160,7 +159,6 @@ export async function authorSpaceApp(
         title: nodes.title,
         sharing: spaceItems.sharing,
         reviewState: spaceItems.reviewState,
-        returnedNote: spaceItems.returnedNote,
       })
       .from(nodes)
       .innerJoin(spaceItems, eq(spaceItems.nodeId, nodes.id))
@@ -229,7 +227,6 @@ export type SpaceAppCard = {
   authorName: string | null;
   sharing: 'private' | 'team';
   reviewState: string;
-  returnedNote: string | null;
   /** A green published build: it runs. */
   runnable: boolean;
   /** What the viewer may do with its data (the R and R/W pill): its
@@ -262,7 +259,6 @@ export async function listSpaceApps(author: SpaceAppAuthor): Promise<SpaceAppCar
         >`coalesce(nullif(trim(${authUsers.displayName}), ''), split_part(${authUsers.email}, '@', 1))`,
         sharing: spaceItems.sharing,
         reviewState: spaceItems.reviewState,
-        returnedNote: spaceItems.returnedNote,
       })
       .from(nodes)
       .innerJoin(apps, eq(apps.nodeId, nodes.id))
@@ -294,7 +290,6 @@ export async function listSpaceApps(author: SpaceAppAuthor): Promise<SpaceAppCar
       authorName: mine ? null : r.authorName,
       sharing: r.sharing === 'team' ? 'team' : 'private',
       reviewState: r.reviewState,
-      returnedNote: mine ? r.returnedNote : null,
       runnable: !!(r.publishedBuild as BuildRef | null)?.ok,
       dataAccess: dataAccessOf(
         !spaceAppDataReadOnly({
@@ -391,7 +386,6 @@ export async function submitSpaceApp(
         title: row.title,
         sharing: row.sharing === 'team' ? 'team' : 'private',
         reviewState: 'submitted',
-        returnedNote: null,
       } satisfies SpaceAppState;
     }),
   );
@@ -734,11 +728,16 @@ export async function acceptSpaceApp(
   return done;
 }
 
-/** Return a submitted member app to its author with a note (an admin's act). */
-export async function returnSpaceApp(
+/**
+ * Send a submitted member app back to its author (an admin's act): it
+ * returns as `returned`, editable again, and the author may change it and
+ * submit it again. No note (Jason 2026-10-09: review flows carry no
+ * messages; people talk through their own channels), so the old
+ * `returned_note` column is neither written nor read here any more.
+ */
+export async function sendBackSpaceApp(
   appId: string,
   reviewer: { loginId: string },
-  note: string,
 ): Promise<void> {
   const now = new Date();
   const changed = await asSystem(() =>
@@ -746,7 +745,6 @@ export async function returnSpaceApp(
       .update(spaceItems)
       .set({
         reviewState: 'returned',
-        returnedNote: note.trim().slice(0, 2000) || null,
         reviewedBy: reviewer.loginId,
         reviewedAt: now,
         updatedAt: now,
@@ -944,4 +942,211 @@ export async function adminUnshareSpaceApp(appId: string): Promise<boolean> {
       .returning({ id: spaceItems.nodeId }),
   );
   return changed.length > 0;
+}
+
+// ── Review in the Apps screen (workspace review pattern, 2026-10-09) ────────
+//
+// Team admin > App review and > Member apps are gone: an admin meets
+// members' apps in /apps, above the brain's own tree, in two lists, and
+// opens one in the normal app screen with a banner. Same line as above
+// (`adminVisible`): submitted, or shared with the team, never a private
+// draft, never the draft source of a visible one.
+
+/** The author as the review lists show them. */
+export type ReviewAppAuthor = { loginId: string | null; name: string | null; active: boolean };
+
+/** One app in "Waiting for approval": a member submitted it. */
+export type ReviewWaitingApp = {
+  id: string;
+  title: string;
+  icon: string | null;
+  color: AppTint | null;
+  author: ReviewAppAuthor;
+  submittedAt: string | null;
+  /** The version the member submitted (the one an Approve accepts). */
+  version: number;
+};
+
+/** One app in "Shared by members": shared with the team, not submitted. */
+export type ReviewSharedApp = {
+  id: string;
+  title: string;
+  icon: string | null;
+  color: AppTint | null;
+  author: ReviewAppAuthor;
+  /** The newest run, tool call or data step, else its last change. */
+  lastActivityAt: string;
+  runnable: boolean;
+};
+
+const authorName = sql<
+  string | null
+>`coalesce(nullif(trim(${authUsers.displayName}), ''), split_part(${authUsers.email}, '@', 1))`;
+
+/** The two review lists for the Apps screen. Waiting oldest first (the
+ *  longest wait on top); shared by newest activity. A submitted app that is
+ *  also shared shows once, under Waiting. */
+export async function listMemberAppsForReview(): Promise<{
+  waiting: ReviewWaitingApp[];
+  shared: ReviewSharedApp[];
+}> {
+  const rows = await asSystem(() =>
+    db
+      .select({
+        id: nodes.id,
+        title: nodes.title,
+        data: nodes.data,
+        updatedAt: nodes.updatedAt,
+        version: apps.version,
+        publishedBuild: apps.publishedBuild,
+        submittedAt: spaceItems.submittedAt,
+        submittedVersion: spaceItems.submittedVersion,
+        authorLoginId: spaceItems.authorLoginId,
+        authorName,
+        active: sql<boolean>`${authorActive}`,
+        sharing: spaceItems.sharing,
+        reviewState: spaceItems.reviewState,
+        lastActivityAt: sql<Date | null>`(
+          select max(l.created_at) from app_access_log l where l.app_node_id = ${nodes.id}
+        )`,
+      })
+      .from(nodes)
+      .innerJoin(apps, eq(apps.nodeId, nodes.id))
+      .innerJoin(spaceItems, eq(spaceItems.nodeId, nodes.id))
+      .innerJoin(spaces, eq(spaces.id, nodes.ownerId))
+      .leftJoin(authUsers, eq(authUsers.id, spaceItems.authorLoginId))
+      .where(adminVisible)
+      .orderBy(desc(nodes.updatedAt))
+      .limit(500),
+  );
+  const face = (data: unknown) => {
+    const d = (data ?? {}) as Record<string, unknown>;
+    return { icon: projectAppIcon(d.icon) ?? null, color: projectAppTint(d.color) ?? null };
+  };
+  const author = (r: (typeof rows)[number]): ReviewAppAuthor => ({
+    loginId: r.authorLoginId,
+    name: r.authorName,
+    active: r.active === true,
+  });
+  const when = (v: Date | string | null): string | null => (v ? new Date(v).toISOString() : null);
+  const waiting = rows
+    .filter((r) => r.reviewState === 'submitted')
+    .map((r) => ({
+      id: r.id,
+      title: r.title,
+      ...face(r.data),
+      author: author(r),
+      submittedAt: when(r.submittedAt),
+      version: r.submittedVersion ?? r.version,
+    }))
+    .sort((a, b) => (a.submittedAt ?? '').localeCompare(b.submittedAt ?? ''));
+  const shared = rows
+    .filter((r) => r.reviewState !== 'submitted' && r.sharing === 'team')
+    .map((r) => ({
+      id: r.id,
+      title: r.title,
+      ...face(r.data),
+      author: author(r),
+      lastActivityAt: when(r.lastActivityAt) ?? r.updatedAt.toISOString(),
+      runnable: !!(r.publishedBuild as BuildRef | null)?.ok,
+    }))
+    .sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt));
+  return { waiting, shared };
+}
+
+/** One member app as the admin's app screen shows it: its PUBLISHED source
+ *  only (a draft stays the author's), what it declares, and where it stands.
+ *  `reviewHash` only while it waits for approval: what an Approve sends
+ *  back with `version`. */
+export type MemberAppForReview = {
+  id: string;
+  title: string;
+  description: string | null;
+  icon: string | null;
+  color: AppTint | null;
+  /** The author's personal space: the owner its data, history and activity
+   *  are keyed to. Server side only; never sent to a browser. */
+  spaceId: string;
+  author: ReviewAppAuthor;
+  sharing: 'private' | 'team';
+  reviewState: string;
+  version: number;
+  submittedAt: string | null;
+  updatedAt: string;
+  declaredTools: string[];
+  /** Informational: runners only read its data. */
+  dataReadOnly: boolean;
+  runnable: boolean;
+  publishedBuild: BuildRef | null;
+  manifest: AppManifest;
+  entry: string;
+  files: Record<string, string>;
+  reviewHash: string | null;
+};
+
+/** The app, or null when an admin may not reach it (a private draft, an
+ *  accepted or a brain app, no such id). */
+export async function getMemberAppForReview(appId: string): Promise<MemberAppForReview | null> {
+  const [row] = await asSystem(() =>
+    db
+      .select({
+        id: nodes.id,
+        title: nodes.title,
+        data: nodes.data,
+        spaceId: nodes.ownerId,
+        updatedAt: nodes.updatedAt,
+        version: apps.version,
+        manifest: apps.manifest,
+        publishedBuild: apps.publishedBuild,
+        dataReadOnly: apps.dataReadOnly,
+        submittedAt: spaceItems.submittedAt,
+        authorLoginId: spaceItems.authorLoginId,
+        authorName,
+        active: sql<boolean>`${authorActive}`,
+        sharing: spaceItems.sharing,
+        reviewState: spaceItems.reviewState,
+      })
+      .from(nodes)
+      .innerJoin(apps, eq(apps.nodeId, nodes.id))
+      .innerJoin(spaceItems, eq(spaceItems.nodeId, nodes.id))
+      .innerJoin(spaces, eq(spaces.id, nodes.ownerId))
+      .leftJoin(authUsers, eq(authUsers.id, spaceItems.authorLoginId))
+      .where(and(eq(nodes.id, appId), adminVisible))
+      .limit(1),
+  );
+  if (!row) return null;
+  const app = await asSystem(() => getApp(row.spaceId, appId));
+  if (!app) return null;
+  const d = (row.data ?? {}) as Record<string, unknown>;
+  const m = (row.manifest ?? {}) as AppManifest;
+  return {
+    id: row.id,
+    title: row.title,
+    description: typeof m.description === 'string' && m.description.trim() ? m.description : null,
+    icon: projectAppIcon(d.icon) ?? null,
+    color: projectAppTint(d.color) ?? null,
+    spaceId: row.spaceId,
+    author: { loginId: row.authorLoginId, name: row.authorName, active: row.active === true },
+    sharing: row.sharing === 'team' ? 'team' : 'private',
+    reviewState: row.reviewState,
+    version: row.version,
+    submittedAt: row.submittedAt ? row.submittedAt.toISOString() : null,
+    updatedAt: row.updatedAt.toISOString(),
+    declaredTools: m.toolSlugs ?? [],
+    dataReadOnly: row.dataReadOnly === true,
+    runnable: !!(row.publishedBuild as BuildRef | null)?.ok,
+    publishedBuild: (row.publishedBuild as BuildRef | null) ?? null,
+    manifest: m,
+    // The published source, never `app.draft` (rule S3).
+    entry: app.source.entry,
+    files: app.source.files,
+    reviewHash:
+      row.reviewState === 'submitted'
+        ? spaceAppReviewHash({
+            source: app.source,
+            manifest: app.manifest,
+            publishedBuild: app.publishedBuild,
+          })
+        : null,
+  };
 }
