@@ -3,9 +3,9 @@
  * a real, migrated Postgres:
  *
  *  - the `login_notice` event fires for a finished reply in a login's own
- *    chat thread, for a review result (accepted, returned, taken) and for a
- *    new comment, and for nothing else (an inbound or pending row, a failed
- *    reply, a portal thread, a submit, a recall, a save);
+ *    chat thread and for a review result (accepted, returned, taken), and
+ *    for nothing else (an inbound or pending row, a failed reply, a portal
+ *    thread, a submit, a recall, a save; comments are gone, 2026-10-09);
  *  - the message built from an event is for the ONE login it concerns, with
  *    words that login could read by opening the app: never an admin, never a
  *    disabled login, never a stale row, never a thread the reader may not
@@ -34,8 +34,6 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
   let sp: typeof import('./member-space');
   let rv: typeof import('./member-review');
   let tk: typeof import('./member-takeover');
-  let cm: typeof import('./member-space-comments');
-  let ct: typeof import('./client-thread');
   let tm: typeof import('./team-messages');
   let ln: typeof import('./login-notices');
   let ts: typeof import('@mantle/db/test-support');
@@ -122,8 +120,6 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
     sp = await import('./member-space');
     rv = await import('./member-review');
     tk = await import('./member-takeover');
-    cm = await import('./member-space-comments');
-    ct = await import('./client-thread');
     tm = await import('./team-messages');
     ln = await import('./login-notices');
     sqlTag = (await import('drizzle-orm')).sql;
@@ -275,7 +271,7 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
     ).toEqual([]);
   });
 
-  it('Return tells the author, with the note', async () => {
+  it('Return tells the author', async () => {
     await submit(member, pageId);
     expect(await sent(() => rv.returnReviewItem(pageId, { loginId: adminA }))).toEqual([
       { kind: 'review', loginId: member, id: pageId, state: 'returned' },
@@ -367,143 +363,6 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
       role: 'client',
       title: 'Returned',
     });
-  });
-
-  // ── Comments ────────────────────────────────────────────────────────────
-
-  it('a comment on an own item tells its author, never the writer', async () => {
-    const id = await newPage(member, `${tag} shared`);
-    await as(member, () => sp.setSharing(spaceOf[member]!, id, 'team'));
-    // The author's own comment: an event, and nobody to tell.
-    let own = '';
-    const fired = await sent(async () => {
-      own = (
-        await as(member, () =>
-          cm.addMineComment(
-            spaceOf[member]!,
-            anchor,
-            id,
-            { loginId: member, name: 'Mia Member' },
-            'my own note',
-          ),
-        )
-      ).id;
-    });
-    expect(fired).toEqual([{ kind: 'comment', id: own }]);
-    expect(await ln.commentNotices(own)).toEqual([]);
-    // A teammate's comment: the author is told.
-    const theirs = await m.withTeamDrafts(() =>
-      cm.addTeamDraftComment(anchor, id, { loginId: member2, name: 'Noah' }, 'Looks good to me'),
-    );
-    expect(await ln.commentNotices(theirs.id)).toEqual([
-      {
-        loginId: member,
-        role: 'member',
-        ownerId: anchor,
-        kind: 'comment',
-        title: 'New comment',
-        body: `Noah on "${tag} shared": Looks good to me`,
-        deepLink: `/portal/items/${id}`,
-        itemId: id,
-        collapseKey: `comment:${id}`,
-      },
-    ]);
-  });
-
-  it("a reviewer's comment tells the member or the client who submitted", async () => {
-    const mine = await newPage(member, `${tag} for review`);
-    await submit(member, mine);
-    const c1 = await rv.addReviewComment(
-      anchor,
-      mine,
-      { loginId: adminA, name: 'Ada Admin' },
-      '**One** question:\n\n- which `pump`?',
-    );
-    const told = await ln.commentNotices(c1.id);
-    expect(told.map((n) => [n.loginId, n.role, n.deepLink])).toEqual([
-      [member, 'member', `/portal/items/${mine}`],
-    ]);
-    // Plain words on the lock screen, not markdown.
-    expect(told[0]!.body).toBe(`Ada Admin on "${tag} for review": One question: which pump?`);
-    const theirs = await newNote(client, `${tag} client ask`);
-    await submit(client, theirs);
-    const c2 = await rv.addReviewComment(
-      anchor,
-      theirs,
-      { loginId: adminA, name: 'Ada Admin' },
-      'Which pump?',
-    );
-    expect((await ln.commentNotices(c2.id)).map((n) => [n.loginId, n.role])).toEqual([
-      [client, 'client'],
-    ]);
-
-    // An item an admin holds (taken) is in the admin's space: a comment
-    // there tells nobody.
-    await rv.takeOverReviewItem(mine, actorA());
-    const [held] = await exec<{ id: string }>(sqlTag`
-      insert into node_comments (owner_id, node_id, author_kind, login_id, author_name, body, thread_scope)
-      values (${anchor}, ${mine}, 'owner', ${adminA}, 'Ada Admin', 'working note', 'review')
-      returning id`);
-    expect(await ln.commentNotices(held!.id)).toEqual([]);
-  });
-
-  it('the client thread tells every active client but the writer, only at client level', async () => {
-    const shared = randomUUID();
-    const teamOnly = randomUUID();
-    await m.systemDb.execute(sqlTag`
-      insert into nodes (id, owner_id, type, title, path, audience) values
-        (${shared}, ${anchor}, 'note', ${`${tag} for clients`}, 'notes', 'client'),
-        (${teamOnly}, ${anchor}, 'note', ${`${tag} team only`}, 'notes', 'team')`);
-    const fromTeam = await ct.addClientThreadComment(
-      anchor,
-      shared,
-      { kind: 'member', loginId: member, name: 'Mia Member' },
-      'Updated the drawing',
-    );
-    const told = await ln.commentNotices(fromTeam!.id);
-    expect(told.map((n) => n.loginId).sort()).toEqual([client, client2].sort());
-    // On a thread every client reads, the lock screen says who commented on
-    // what, never what they wrote.
-    expect(told[0]).toMatchObject({
-      role: 'client',
-      kind: 'comment',
-      body: `Mia Member commented on "${tag} for clients"`,
-      deepLink: `/portal/shared/${shared}`,
-      itemId: shared,
-    });
-    expect(JSON.stringify(told)).not.toContain('Updated the drawing');
-    // A client writes: the other client is told, never the writer, never staff.
-    const fromClient = await ct.addClientThreadComment(
-      anchor,
-      shared,
-      { kind: 'client', loginId: client, name: 'Cleo Client' },
-      'Thanks',
-    );
-    expect((await ln.commentNotices(fromClient!.id)).map((n) => n.loginId)).toEqual([client2]);
-    // A disabled client is told nothing.
-    await m.systemDb.execute(
-      sqlTag`update auth.users set disabled_at = now() where id = ${client2}`,
-    );
-    expect((await ln.commentNotices(fromTeam!.id)).map((n) => n.loginId)).toEqual([client]);
-    await m.systemDb.execute(
-      sqlTag`update auth.users set disabled_at = null where id = ${client2}`,
-    );
-
-    // The admins' own talk on the same item (another scope): nobody.
-    const [adminTalk] = await exec<{ id: string }>(sqlTag`
-      insert into node_comments (owner_id, node_id, author_kind, login_id, author_name, body, thread_scope)
-      values (${anchor}, ${shared}, 'owner', ${adminA}, 'Ada Admin', 'internal: check the price', 'team')
-      returning id`);
-    expect(await ln.commentNotices(adminTalk!.id)).toEqual([]);
-    // A 'client' comment on an item that is NOT at client level: nobody.
-    const [stray] = await exec<{ id: string }>(sqlTag`
-      insert into node_comments (owner_id, node_id, author_kind, login_id, author_name, body, thread_scope)
-      values (${anchor}, ${teamOnly}, 'owner', ${adminA}, 'Ada Admin', 'not for clients', 'client')
-      returning id`);
-    expect(await ln.commentNotices(stray!.id)).toEqual([]);
-    // The item is raised above client level after the comment: nobody.
-    await m.systemDb.execute(sqlTag`update nodes set audience = 'admin' where id = ${shared}`);
-    expect(await ln.commentNotices(fromTeam!.id)).toEqual([]);
   });
 
   // ── Unread ──────────────────────────────────────────────────────────────

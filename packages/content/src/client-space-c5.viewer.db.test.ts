@@ -9,10 +9,9 @@
  *  - the submit caps: 10 submissions in 24 hours (Recall and Submit again
  *    still counts), 50 waiting for review (an item a reviewer took over
  *    counts); a member is never capped;
- *  - the review talk in a client's space: the client reads a reviewer's
- *    review comment and its own, never a member's comment, a team-scope
- *    comment or another client's; a client writes only as itself, review
- *    scope only; a reviewer's Return reaches the client's own row;
+ *  - a client's submit and a reviewer's Return reach the client's own row
+ *    (no review talk: comments are gone, 2026-10-09); the kept
+ *    node_comments table still refuses a client's write as anyone else;
  *  - cost-safety: nothing a client does in their space is announced to the
  *    extractor; Accept announces each moved item exactly once, at team by
  *    default.
@@ -46,7 +45,6 @@ describe.skipIf(!URL)('a client’s own space: limits, caps, review talk, cost-s
   let m: Db;
   let sp: typeof import('./member-space');
   let sf: typeof import('./member-space-files');
-  let sc: typeof import('./member-space-comments');
   let rv: typeof import('./member-review');
   let ma: typeof import('./member-accepted');
   let tk: typeof import('./member-takeover');
@@ -142,7 +140,6 @@ describe.skipIf(!URL)('a client’s own space: limits, caps, review talk, cost-s
     m = await import('@mantle/db');
     sp = await import('./member-space');
     sf = await import('./member-space-files');
-    sc = await import('./member-space-comments');
     rv = await import('./member-review');
     ma = await import('./member-accepted');
     tk = await import('./member-takeover');
@@ -351,43 +348,15 @@ describe.skipIf(!URL)('a client’s own space: limits, caps, review talk, cost-s
   // ── The review talk in a client's space ─────────────────────────────────
 
   let talkPage = '';
-  const commentRow = (id: string, kind: string, login: string, scope: string) => sqlTag`
-    insert into node_comments (id, owner_id, node_id, author_kind, login_id, author_name, body, thread_scope)
-    values (${id}, ${anchor}, ${talkPage}, ${kind}, ${login}, ${`${kind} name`}, ${`${kind} ${scope}`}, ${scope})`;
-
-  it('a client reads a reviewer’s review comment and its own, nothing else', async () => {
+  it('a client submits an item for review (no review talk: comments are gone)', async () => {
     talkPage = await page(c.talk, `${tag} talk`);
     await submit(c.talk, talkPage);
-    const reviewer = randomUUID();
-    const byMember = randomUUID();
-    const teamScope = randomUUID();
-    const byOtherClient = randomUUID();
-    // Allowed: a reviewer's review talk. Hidden, each by one rule only: a
-    // member's review comment (author kind), a reviewer's TEAM comment
-    // (scope), another client's review comment (login).
-    await m.systemDb.execute(commentRow(reviewer, 'owner', adminA, 'review'));
-    await m.systemDb.execute(commentRow(byMember, 'member', member, 'review'));
-    await m.systemDb.execute(commentRow(teamScope, 'owner', adminA, 'team'));
-    await m.systemDb.execute(commentRow(byOtherClient, 'client', c.otherTalk, 'review'));
-    const own = await as(c.talk, () =>
-      sc.addMineComment(
-        spaceOf[c.talk]!,
-        anchor,
-        talkPage,
-        { loginId: c.talk, name: 'Client talk' },
-        'When will it be ready?',
-      ),
-    );
-    expect(own).toMatchObject({ authorKind: 'client', threadScope: 'review', loginId: c.talk });
-    const seen = await as(c.talk, () => sc.listMineComments(spaceOf[c.talk]!, talkPage));
-    expect(seen?.map((r) => r.id).sort()).toEqual([reviewer, own.id].sort());
-    // The reviewer reads every comment on the item (the admin pool).
-    const all = await exec<{ id: string }>(
-      sqlTag`select id from node_comments where node_id = ${talkPage}`,
-    );
-    expect(all.length).toBe(5);
+    const row = await as(c.talk, () => sp.getMineRow(spaceOf[c.talk]!, talkPage));
+    expect(row?.reviewState).toBe('submitted');
   });
 
+  // The node_comments table stays (no destructive migration), and so does its
+  // row security: nothing writes it any more, and a client still could not.
   it('a client writes only as itself, review scope only (row security)', async () => {
     /** The insert's SQLSTATE: 42501 = refused by row security. */
     const insert = (kind: string, scope: string, login = c.talk) =>
@@ -413,7 +382,7 @@ describe.skipIf(!URL)('a client’s own space: limits, caps, review talk, cost-s
     expect(await insert('client', 'review')).toBe('ok');
   });
 
-  it('a reviewer’s Return reaches the client’s own row, with no note; the talk closes', async () => {
+  it('a reviewer’s Return reaches the client’s own row, with no note', async () => {
     await rv.returnReviewItem(talkPage, { loginId: adminA });
     const row = await as(c.talk, () => sp.getMineRow(spaceOf[c.talk]!, talkPage));
     expect(row).toMatchObject({ reviewState: 'returned', returnedNote: null });
@@ -421,17 +390,6 @@ describe.skipIf(!URL)('a client’s own space: limits, caps, review talk, cost-s
       sp.listMine(spaceOf[c.talk]!, { reviewStates: ['returned'] }),
     );
     expect(listed.items.map((i) => [i.id, i.returnedNote])).toEqual([[talkPage, null]]);
-    await expect(
-      as(c.talk, () =>
-        sc.addMineComment(
-          spaceOf[c.talk]!,
-          anchor,
-          talkPage,
-          { loginId: c.talk, name: 'x' },
-          'more',
-        ),
-      ),
-    ).rejects.toMatchObject({ reason: 'not-shared' });
   });
 
   // ── Cost-safety (plan section 9, test 16) ───────────────────────────────
@@ -457,9 +415,6 @@ describe.skipIf(!URL)('a client’s own space: limits, caps, review talk, cost-s
     await submit(c.cost, pageId);
     await recall(c.cost, pageId);
     await submit(c.cost, pageId);
-    await as(c.cost, () =>
-      sc.addMineComment(C, anchor, pageId, { loginId: c.cost, name: 'Cost' }, 'Ready.'),
-    );
     await settle();
     const ours = [pageId, noteId, fileId];
     expect(announced.filter((id) => ours.includes(id))).toEqual([]);

@@ -92,17 +92,12 @@ loads every column in one call; `status=active` = every not-done state
 (the list default in the client); unknown `status`/`priority` filter
 values are a 400, not a silent widen.
 
-**Comments** hang off any node via the `node_comments` table (migration
-0147; tasks are the first surface). Three author voices — `owner` (an
-admin login), `member` (a team contact), `agent` — attributed
-server-side from the session/surface, never from a request body.
-Owner routes: `GET/POST /api/nodes/[id]/comments`,
-`PATCH/DELETE /api/comments/[id]` (edit is author-only; delete is any
-admin login). The team-code member routes (`GET/POST /api/team/comments`)
-were retired with the team portal (member logins Phase 6); member logins
-comment on personal items through `/api/member/*` (member-logins.md). Agent
-tools: `task_comments_list` / `task_comment_add`. `TaskRow.commentCount`
-rides on every list row; the thread DTO computes `mine` per viewer.
+**Comments** are removed on 2026-10-09: the brain has no comment threads any more; user-to-user talk moves to the forum (dev-brain plan Forum v2). The `node_comments` table and its rows stay (no destructive migration), unread and unwritten. Every comment route, the agent tools
+`task_comments_list` / `task_comment_add` (their tool rows are disabled by
+the boot reconcile, `RETIRED_BUILTIN_TOOL_SLUGS`) and the realtime `comment`
+event are gone. Progress on a task goes in its body (`task_update`).
+`TaskRow.commentCount` stays on every row, always 0, so an older UI still
+renders.
 
 ### Events (`type='event'`)
 
@@ -198,7 +193,7 @@ the new tools (server/mcp/src/server.ts):
 | Surface | Tools                                                                                                          |
 | ------- | -------------------------------------------------------------------------------------------------------------- |
 | notes   | `note_list`, `note_get`, `note_create`, `note_update`, `note_delete`                                           |
-| tasks   | `task_list`, `task_get`, `task_create`, `task_update`, `task_delete`, `task_comments_list`, `task_comment_add` |
+| tasks   | `task_list`, `task_get`, `task_create`, `task_update`, `task_delete` |
 | events  | `event_list`, `event_get`, `event_create`, `event_update`, `event_delete`                                      |
 
 Typical flows the assistant can now do without any custom plumbing:

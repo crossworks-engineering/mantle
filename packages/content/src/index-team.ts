@@ -279,27 +279,15 @@ export {
   type SpaceFile,
 } from './member-space-files';
 export {
-  addMineComment,
-  addTeamDraftComment,
-  deleteMineComment,
-  deleteTeamDraftComment,
-  listMineComments,
-  listTeamDraftComments,
-  type SpaceCommentAuthor,
-} from './member-space-comments';
-export {
   BUNDLE_MAX_ITEMS,
   ReviewError,
   acceptAudience,
   acceptOwnItem,
   acceptReviewItem,
-  addReviewComment,
   countReviewQueue,
   countSubmitted,
-  deleteReviewComment,
   discardLeftBehind,
   getReviewItem,
-  listReviewComments,
   listReviewQueue,
   newestSubmitted,
   openReviewFile,
@@ -354,12 +342,10 @@ export {
   type PagedSource,
 } from './member-items';
 export {
-  CLIENT_COMMENTS_PER_DAY,
   CLIENT_DOC_MAX_BYTES,
   CLIENT_NOTE_MAX_CHARS,
   CLIENT_SPACES_TOTAL_BYTES,
   CLIENT_SPACE_LIMITS,
-  THREAD_COMMENT_LIMIT,
   clientSpacesTotalBytes,
   MEMBER_SPACE_LIMITS,
   inClientSpace,
@@ -369,10 +355,8 @@ export {
 export {
   clientStorageRows,
   clientAppDbBytes,
-  clientThreadActivity,
   deleteClientComments,
   type ClientStorageRow,
-  type ClientThreadActivityRow,
 } from './client-admin-usage';
 export {
   CLIENT_QUOTA_REFUSAL_DAYS,
@@ -457,23 +441,14 @@ export {
 export {
   LOGIN_NOTICE_CHANNEL,
   LOGIN_NOTICE_FRESH_MS,
-  MAX_CLIENTS_PER_NOTICE,
-  MAX_LOGINS_PER_NOTICE,
   chatReplyNotice,
   chatTeaser,
-  commentNotices,
   parseLoginNotice,
   reviewResultNotice,
   type LoginNotice,
   type LoginNoticeMessage,
   type LoginNoticeRole,
 } from './login-notices';
-export {
-  addClientThreadComment,
-  deleteClientThreadComment,
-  listClientThread,
-  type ClientThreadAuthor,
-} from './client-thread';
 // Client logins (C2b): email sign-in codes.
 export {
   CLIENT_CODE_CAP_REASONS,

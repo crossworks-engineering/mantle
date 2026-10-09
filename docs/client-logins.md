@@ -1,5 +1,13 @@
 # Client logins
 
+> **Update 2026-10-09: comments are removed.** The client thread on
+> client-level items, the review talk in a client's space, the comment caps
+> and ledger code, Team admin > Clients' comment card and its delete action,
+> and comment pushes are gone. User-to-user talk moves to the forum (dev-brain
+> plan Forum v2). The `node_comments` and `client_comment_ledger` tables and
+> their rows stay; deleting a client login still removes the comments it wrote
+> before.
+
 > Client logins, phases C0 to C6 and the audit fixes of C2 to C5. The
 > operator's guide: what a client login is, how an admin lets a client in,
 > how emailed codes work, what a client reads and writes, and what bounds

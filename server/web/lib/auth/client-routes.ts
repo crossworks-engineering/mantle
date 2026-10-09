@@ -20,11 +20,6 @@ export const CLIENT_ROUTES: readonly string[] = [
   // client level, folders shown only on the way to them (no level fields).
   'GET /api/client/tree/:kind',
   'GET /api/client/tree/:kind/search',
-  // The client thread on an item at client level (C5, decision 8): read on
-  // the client role with the human flag on, written with the level checked.
-  'GET /api/client/shared/:id/comments',
-  'POST /api/client/shared/:id/comments',
-  'DELETE /api/client/shared/:id/comments/:commentId',
   // Bytes of client-level items (session or a client ?at= token).
   'GET /api/client/files/:id',
   'GET /api/client/draws/:id/svg',
@@ -56,9 +51,6 @@ export const CLIENT_ROUTES: readonly string[] = [
   // Own file bytes (session or a client ?at= token).
   'GET /api/client/space/:id/bytes',
   // The review talk on the client's own submitted item.
-  'GET /api/client/space/:id/comments',
-  'POST /api/client/space/:id/comments',
-  'DELETE /api/client/space/:id/comments/:commentId',
   // My requests: own, with a reviewer, and accepted, in one list.
   'GET /api/client/items',
   // What the client wrote and an admin accepted, as accepted.

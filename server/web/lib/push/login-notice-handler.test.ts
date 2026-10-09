@@ -29,10 +29,6 @@ function harness(gatherMs = 20) {
       calls.push(`chat ${n.id}`);
       return OK;
     }),
-    comment: vi.fn(async (commentId: string) => {
-      calls.push(`comment ${commentId}`);
-      return OK;
-    }),
     review: vi.fn(async (loginId: string, state: string, ids: readonly string[]) => {
       calls.push(`review ${loginId} ${state} ${[...ids].sort().join(',')}`);
       return OK;
@@ -56,14 +52,16 @@ describe('the login_notice handler', () => {
     errors.mockRestore();
   });
 
-  it('sends a chat reply and a comment, in the order they came', async () => {
+  it('sends chat replies in the order they came; a comment event is no longer one', async () => {
     const { handler, calls, lines } = harness();
     handler.handle(chat(1));
+    // The node_comments trigger may still fire on an old brain's rows:
+    // comments are gone (2026-10-09), so it sends nothing.
     handler.handle(comment(2));
     handler.handle(chat(3));
     await handler.idle();
-    expect(calls).toEqual([`chat ${id(1)}`, `comment ${id(2)}`, `chat ${id(3)}`]);
-    expect(lines).toHaveLength(3);
+    expect(calls).toEqual([`chat ${id(1)}`, `chat ${id(3)}`]);
+    expect(lines).toHaveLength(2);
   });
 
   it('drops a payload that is not a notice, and keeps going', async () => {
@@ -112,7 +110,6 @@ describe('the login_notice handler', () => {
       cause: { code: '42703', message: 'column "token_id" does not exist' },
     });
     send.chat.mockRejectedValue(missing);
-    send.comment.mockRejectedValue(missing);
     handler.handle(chat(1));
     handler.handle(comment(2));
     handler.handle(chat(3));

@@ -1,13 +1,13 @@
 /**
  * What Team admin > Clients reads of the client tier's use (client logins C5
- * audit, I5 and U2): each client space's storage against the client limits,
- * the client threads clients wrote in lately, and the admin's "delete every
- * comment this client wrote". Admin pool only: the routes call it after
+ * audit, I5): each client space's storage against the client limits, and
+ * the clean-up of a deleted client login's old comments (comments are gone
+ * from the brain since 2026-10-09; the rows a client wrote earlier still go
+ * with their login). Admin pool only: the routes call it after
  * getOwnerOr401, at level admin. No LLM work anywhere.
  */
 import { sql } from 'drizzle-orm';
 import { db } from '@mantle/db';
-import { readAtAliasSql } from './item-level';
 
 /** One client space's use. A FORMER client (the login was deleted, the
  *  space waits for its 30-day purge and still counts toward the total) has
@@ -80,63 +80,11 @@ export async function clientAppDbBytes(brainId: string): Promise<number> {
   return Number(row?.bytes ?? 0);
 }
 
-/** One client-level item whose client thread had a client comment lately. */
-export type ClientThreadActivityRow = {
-  nodeId: string;
-  title: string;
-  type: string;
-  lastCommentAt: string;
-  clientComments: number;
-  lastClientName: string;
-};
-
 /**
- * The brain's items at client level whose client thread had a comment by a
- * CLIENT login in the last `days` days: newest first, at most 100, with the
- * count of client comments in the window and the newest one's author.
- */
-export async function clientThreadActivity(
-  brainId: string,
-  days: number,
-): Promise<ClientThreadActivityRow[]> {
-  const rows = (await db.execute(sql`
-    select n.id, n.title, n.type::text as type,
-           max(c.created_at) as last_at,
-           count(*)::int as n,
-           (array_agg(c.author_name order by c.created_at desc))[1] as last_name
-      from node_comments c
-      join nodes n on n.id = c.node_id
-     where c.owner_id = ${brainId}
-       and c.thread_scope = 'client'
-       and c.author_kind = 'client'
-       and c.created_at > now() - make_interval(days => ${days})
-       and n.owner_id = ${brainId}
-       and ${readAtAliasSql('n', ['client'], { embeds: false })}
-     group by n.id, n.title, n.type
-     order by max(c.created_at) desc
-     limit 100`)) as unknown as {
-    id: string;
-    title: string;
-    type: string;
-    last_at: Date | string;
-    n: number;
-    last_name: string | null;
-  }[];
-  return rows.map((r) => ({
-    nodeId: r.id,
-    title: r.title,
-    type: r.type,
-    lastCommentAt: new Date(r.last_at).toISOString(),
-    clientComments: r.n,
-    lastClientName: r.last_name ?? 'A client',
-  }));
-}
-
-/**
- * Delete every comment a client login wrote on this brain: the client
- * threads and its review talk (author kind client, that login). The day
- * ledger keeps its rows: this refunds no comment place. Returns how many
- * went. `via`: the login delete runs it in its own transaction, before the
+ * Delete every comment a client login wrote on this brain before comments
+ * were removed (2026-10-09): its old client-thread and review rows (author
+ * kind client, that login). Nothing writes comments any more; the old rows
+ * still go with their login. Returns how many went. `via`: the login delete runs it in its own transaction, before the
  * login row goes (audit I5): once the login is gone its comments keep no
  * login id, so nothing could find them any more.
  */

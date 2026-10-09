@@ -30,7 +30,6 @@ The routes past `whoami` are admin routes. A member's or client's key gets `403`
 | `GET /api/v1/notes/{id}` | Notes | Read |
 | `GET`, `POST /api/v1/tasks` | Tasks | List, create |
 | `GET`, `PATCH /api/v1/tasks/{id}` | Tasks | Read, change |
-| `POST /api/v1/tasks/{id}/comments` | Tasks | Comment, body `{ "body": "..." }` |
 | `GET /api/v1/tables` | Tables | List |
 | `GET /api/v1/tables/{id}` | Tables | Read, with columns |
 | `GET`, `POST /api/v1/tables/{id}/rows` | Tables | Read rows; add rows to the draft |

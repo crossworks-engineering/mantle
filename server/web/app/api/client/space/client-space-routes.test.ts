@@ -12,11 +12,10 @@
  *  - the upload's 413 and its headroom use the CLIENT's ceiling, never the
  *    member's;
  *  - writes have their own per-login budget (`client-writes:<login>`);
- *  - the review talk shows a reviewer's comment under the brand name, and
- *    the client's own comment as theirs (`mine` by login);
+ *  - no comment route exists any more (comments are gone, 2026-10-09);
  *  - My requests rows carry no level and no staff name.
  *
- * The rules themselves (limits, caps, row security on comments) are proven
+ * The rules themselves (limits, caps, row security) are proven
  * on Postgres in packages/content/src/client-space-c5.viewer.db.test.ts.
  */
 import { existsSync, readFileSync } from 'node:fs';
@@ -39,15 +38,11 @@ const h = vi.hoisted(() => ({
   calls: [] as Array<[string, unknown[]]>,
   /** The kind getMineRow answers for ITEM. */
   kind: 'page' as string,
-  comments: [] as unknown[],
   headroom: 0,
   uploadError: null as Error | null,
   mine: { items: [] as unknown[], total: 0 },
   held: [] as unknown[],
   accepted: { items: [] as unknown[], total: 0 },
-  /** What the comment writers throw (a SpaceItemStateError reason), if any. */
-  commentRefusal: null as null | string,
-  hasMore: false,
   /** isWithAdmin: a reviewer took the item over. */
   withAdmin: false,
 }));
@@ -115,43 +110,10 @@ vi.mock('@mantle/content', async (importOriginal) => {
     listMine: rec('listMine', () => h.mine),
     listWithAdmin: rec('listWithAdmin', () => h.held),
     listAccepted: rec('listAccepted', () => h.accepted),
-    listMineComments: rec('listMineComments', () => ({ rows: h.comments, hasMore: h.hasMore })),
-    listClientThread: rec('listClientThread', () => ({ rows: h.comments, hasMore: h.hasMore })),
     assertEditable: rec('assertEditable', spaceRow),
     saveMineDraft: rec('saveMineDraft', () => ({ ok: true, rev: 2 })),
     saveMinePage: rec('saveMinePage', () => ({ ok: true })),
     updateMineItem: rec('updateMineItem', () => ({ row: spaceRow(), body: { type: h.kind } })),
-    addMineComment: rec('addMineComment', () => {
-      if (h.commentRefusal) {
-        throw new (actual.SpaceItemStateError as new (r: string, m: string) => Error)(
-          h.commentRefusal,
-          'refused',
-        );
-      }
-      return {
-        id: COMMENT,
-        nodeId: ITEM,
-        ownerId: ANCHOR,
-        authorKind: 'client',
-        loginId: CLIENT,
-        authorName: 'Client Person',
-        body: 'x',
-        threadScope: 'review',
-        contactId: null,
-        agentId: null,
-        createdAt: new Date('2026-09-01T00:00:00Z'),
-        editedAt: null,
-      };
-    }),
-    addClientThreadComment: rec('addClientThreadComment', () => {
-      if (h.commentRefusal) {
-        throw new (actual.SpaceItemStateError as new (r: string, m: string) => Error)(
-          h.commentRefusal,
-          'refused',
-        );
-      }
-      return null;
-    }),
     loadPreferencesFor: rec('loadPreferencesFor', () => ({ siteName: 'Brand Co' })),
     spaceUploadHeadroom: rec('spaceUploadHeadroom', () => h.headroom),
   };
@@ -187,14 +149,11 @@ afterAll(() => {
 beforeEach(() => {
   h.calls.length = 0;
   h.kind = 'page';
-  h.comments = [];
   h.headroom = 0;
   h.uploadError = null;
   h.mine = { items: [], total: 0 };
   h.held = [];
   h.accepted = { items: [], total: 0 };
-  h.commentRefusal = null;
-  h.hasMore = false;
   h.withAdmin = false;
 });
 
@@ -263,7 +222,6 @@ describe('client space routes: kinds', () => {
   it('answers any other kind in the space as a 404, on the item routes', async () => {
     const one = await import('./[id]/route');
     const submit = await import('./[id]/submit/route');
-    const comments = await import('./[id]/comments/route');
     for (const kind of ['draw', 'table']) {
       h.kind = kind;
       const url = `/api/client/space/${ITEM}`;
@@ -271,13 +229,9 @@ describe('client space routes: kinds', () => {
       expect(
         (await call(CLIENT, 'POST', `${url}/submit`, (r) => submit.POST(r, params()))).status,
       ).toBe(404);
-      expect(
-        (await call(CLIENT, 'GET', `${url}/comments`, (r) => comments.GET(r, params()))).status,
-      ).toBe(404);
     }
     expect(names()).not.toContain('getMineItem');
     expect(names()).not.toContain('submitItem');
-    expect(names()).not.toContain('listMineComments');
     h.kind = 'note';
     expect(
       (await call(CLIENT, 'GET', `/api/client/space/${ITEM}`, (r) => one.GET(r, params()))).status,
@@ -311,6 +265,12 @@ describe('client space routes: what a client does not get', () => {
     // The manifest is generated from the files: nothing of the kind exists.
     const manifest = readFileSync(manifestPath, 'utf8');
     expect(manifest).not.toMatch(/\/api\/client\/[^'"]*\/(share|team-drafts)['"/]/);
+  });
+
+  it('has no comment route anywhere (comments are gone, 2026-10-09)', () => {
+    const manifest = readFileSync(manifestPath, 'utf8');
+    expect(manifest).not.toMatch(/\/comments['"/]/);
+    expect(manifest).not.toMatch(/\/api\/comments\//);
   });
 
   it('refuses no session (401), an admin and a member (403) on the new routes', async () => {
@@ -396,39 +356,6 @@ describe('client space routes: limits', () => {
     expect(res.status).toBe(429);
     expect(res.headers.get('retry-after')).toBeTruthy();
     expect(names()).not.toContain('createMineItem');
-  });
-});
-
-describe('client space routes: the review talk', () => {
-  const base = {
-    nodeId: ITEM,
-    ownerId: ANCHOR,
-    contactId: null,
-    agentId: null,
-    threadScope: 'review',
-    body: 'x',
-    createdAt: new Date('2026-09-01T00:00:00Z'),
-    editedAt: null,
-  };
-
-  it('a reviewer’s comment wears the brand name; the client’s own is theirs', async () => {
-    const comments = await import('./[id]/comments/route');
-    h.comments = [
-      { ...base, id: COMMENT, authorKind: 'owner', loginId: ADMIN, authorName: 'Staff Name' },
-      { ...base, id: ITEM, authorKind: 'client', loginId: CLIENT, authorName: 'Client Person' },
-    ];
-    const res = await call(CLIENT, 'GET', `/api/client/space/${ITEM}/comments`, (r) =>
-      comments.GET(r, params()),
-    );
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as {
-      comments: { authorName: string; mine: boolean; authorKind: string }[];
-    };
-    expect(body.comments.map((c) => [c.authorKind, c.authorName, c.mine])).toEqual([
-      ['owner', 'Brand Co', false],
-      ['client', 'Client Person', true],
-    ]);
-    expect(JSON.stringify(body)).not.toContain('Staff Name');
   });
 });
 
@@ -555,69 +482,5 @@ describe('client space routes: the C5 audit limits', () => {
       body: JSON.stringify({ type: 'note', title: 'n', content: 'x'.repeat(50_000) }),
     });
     expect(ok.status).toBe(201);
-  });
-
-  it('the comment caps: 429 comment-cap and 409 thread-full, on both client threads', async () => {
-    const talk = await import('./[id]/comments/route');
-    const shared = await import('../shared/[id]/comments/route');
-    for (const [reason, status] of [
-      ['comment-cap', 429],
-      ['thread-full', 409],
-    ] as const) {
-      h.commentRefusal = reason;
-      const a = await call(
-        CLIENT,
-        'POST',
-        `/api/client/space/${ITEM}/comments`,
-        (r) => talk.POST(r, params()),
-        {
-          body: JSON.stringify({ body: 'hi' }),
-        },
-      );
-      expect([a.status, ((await a.json()) as { reason: string }).reason]).toEqual([status, reason]);
-      const b = await call(
-        CLIENT,
-        'POST',
-        `/api/client/shared/${ITEM}/comments`,
-        (r) => shared.POST(r, params()),
-        {
-          body: JSON.stringify({ body: 'hi' }),
-        },
-      );
-      expect([b.status, ((await b.json()) as { reason: string }).reason]).toEqual([status, reason]);
-    }
-  });
-
-  it('thread reads are paged: `before` reaches the read, `hasMore` the answer', async () => {
-    const talk = await import('./[id]/comments/route');
-    const shared = await import('../shared/[id]/comments/route');
-    const bad = await call(
-      CLIENT,
-      'GET',
-      `/api/client/space/${ITEM}/comments?before=yesterday`,
-      (r) => talk.GET(r, params()),
-    );
-    expect(bad.status).toBe(400);
-    expect(names()).not.toContain('listMineComments');
-    h.hasMore = true;
-    const before = '2026-09-01T10:00:00.123Z';
-    const a = await call(
-      CLIENT,
-      'GET',
-      `/api/client/space/${ITEM}/comments?before=${before}`,
-      (r) => talk.GET(r, params()),
-    );
-    expect(a.status).toBe(200);
-    expect(((await a.json()) as { hasMore: boolean }).hasMore).toBe(true);
-    const page = h.calls.find(([n]) => n === 'listMineComments')![1][2] as { before: Date };
-    expect(page.before.toISOString()).toBe(before);
-    const b = await call(CLIENT, 'GET', `/api/client/shared/${ITEM}/comments`, (r) =>
-      shared.GET(r, params()),
-    );
-    expect(((await b.json()) as { hasMore: boolean }).hasMore).toBe(true);
-    const newest = h.calls.find(([n]) => n === 'listClientThread')![1][2] as {
-      before: Date | null;
-    };
-    expect(newest.before).toBeNull();
   });
 });

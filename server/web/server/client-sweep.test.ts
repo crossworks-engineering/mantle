@@ -174,11 +174,9 @@ describe.skipIf(!hasManifest)('client sweep: client routes serve clients only', 
     // The client's own space (C5): a bad id, or a kind a client never lists.
     '/api/client/space/not-a-uuid',
     '/api/client/space/not-a-uuid/bytes',
-    '/api/client/space/not-a-uuid/comments',
     '/api/client/space?kind=draw',
     '/api/client/items?kind=table',
     '/api/client/accepted/not-a-uuid',
-    '/api/client/shared/not-a-uuid/comments',
   ];
 
   it('lets a client session through to client routes', async () => {

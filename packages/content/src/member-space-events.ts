@@ -1,7 +1,7 @@
 /**
  * The `space_item_changed` realtime event (member logins Phase 2, plan v3.1
  * section 2d): a personal item was created, saved, shared or unshared,
- * submitted or recalled, deleted, or its comment thread changed.
+ * submitted or recalled, or deleted.
  *
  * Raised by the personal-space functions themselves, inside the caller's
  * transaction, so it is delivered on commit and never for a write that
@@ -15,7 +15,7 @@ import { db, nodes, spaceItems } from '@mantle/db';
 
 export const SPACE_ITEM_CHANGED_CHANNEL = 'space_item_changed';
 
-export type SpaceItemChangeKind = 'created' | 'saved' | 'state' | 'deleted' | 'comment';
+export type SpaceItemChangeKind = 'created' | 'saved' | 'state' | 'deleted';
 
 export type SpaceItemChange = {
   id: string;

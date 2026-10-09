@@ -24,7 +24,6 @@ describe.skipIf(!URL)('admin private items', () => {
   let m: Db;
   let sp: typeof import('./member-space');
   let sf: typeof import('./member-space-files');
-  let sc: typeof import('./member-space-comments');
   let rv: typeof import('./member-review');
   let ma: typeof import('./member-accepted');
   let er: typeof import('./embed-refs');
@@ -84,7 +83,6 @@ describe.skipIf(!URL)('admin private items', () => {
     m = await import('@mantle/db');
     sp = await import('./member-space');
     sf = await import('./member-space-files');
-    sc = await import('./member-space-comments');
     rv = await import('./member-review');
     ma = await import('./member-accepted');
     er = await import('./embed-refs');
@@ -298,15 +296,11 @@ describe.skipIf(!URL)('admin private items', () => {
     expect((await rv.listReviewQueue()).items.map((i) => i.id)).not.toContain(bNoteId);
     expect(await rv.getReviewItem(bNoteId)).toBeNull();
     expect(await rv.previewAccept(bNoteId)).toBeNull();
-    expect(await rv.listReviewComments(bNoteId)).toBeNull();
     const reviewer = { loginId: anchor, name: 'Reviewer' };
     await expect(rv.acceptReviewItem(anchor, bNoteId, reviewer)).rejects.toMatchObject({
       reason: 'not-found',
     });
     await expect(rv.returnReviewItem(bNoteId, reviewer)).rejects.toMatchObject({
-      reason: 'not-found',
-    });
-    await expect(rv.addReviewComment(anchor, bNoteId, reviewer, 'hi')).rejects.toMatchObject({
       reason: 'not-found',
     });
     expect(await ownerOf(bNoteId)).toBe(spaceOf[adminB]);
@@ -358,15 +352,7 @@ describe.skipIf(!URL)('admin private items', () => {
         m.db.execute(sqlTag`select id from nodes where id = ${bNoteId}`),
       );
       expect((node as unknown as unknown[]).length).toBe(0);
-      expect(await m.withTeamDrafts(() => sc.listTeamDraftComments(bNoteId))).toBeNull();
-      await expect(
-        sc.addTeamDraftComment(anchor, bNoteId, { loginId: other, name: 'O' }, 'hello'),
-      ).rejects.toMatchObject({ reason: 'not-found' });
-      // The member's shared note takes the same comment.
-      const c = await sc.addTeamDraftComment(anchor, mNoteId, { loginId: other, name: 'O' }, 'hi');
-      expect(c.nodeId).toBe(mNoteId);
     } finally {
-      await m.systemDb.execute(sqlTag`delete from node_comments where login_id = ${other}`);
       await m.systemDb.execute(sqlTag`delete from spaces where login_id = ${other}`);
       await m.systemDb.execute(sqlTag`delete from auth.users where id = ${other}`);
     }

@@ -86,7 +86,6 @@ export const API_V1_ROUTES: readonly ApiV1Route[] = [
   r('POST', '/api/v1/tasks', 'tasks', 'write'),
   r('GET', '/api/v1/tasks/:id', 'tasks', 'read'),
   r('PATCH', '/api/v1/tasks/:id', 'tasks', 'write'),
-  r('POST', '/api/v1/tasks/:id/comments', 'tasks', 'write'),
   // Tables: rows are written to the draft; commit publishes it.
   r('GET', '/api/v1/tables', 'tables', 'read'),
   r('GET', '/api/v1/tables/:id', 'tables', 'read'),

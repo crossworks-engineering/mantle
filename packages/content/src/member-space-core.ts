@@ -34,12 +34,7 @@ export class SpaceItemStateError extends Error {
       | 'author-inactive'
       // A taken item of an author who can take it back: give it back
       // instead of deleting it.
-      | 'taken'
-      // A client login wrote its comments for the day (routes answer 429),
-      // or the thread holds all the comments it may (409). Client logins C5
-      // audit, I2.
-      | 'comment-cap'
-      | 'thread-full',
+      | 'taken',
     message: string,
     /** For `embed`: the referenced ids the item may not use. */
     readonly ids: string[] = [],

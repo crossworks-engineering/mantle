@@ -38,7 +38,7 @@ Open **Settings > Logins**, click **Add login**, set **Role** to Admin, and ente
 
 - **Settings > Logins**: select the login and switch on **Disabled**. Every session it holds ends at once.
 - **Sign out everywhere** on the same screen ends all sessions but keeps the login.
-- For a client, **End sessions** or **Disable** on the **Clients** tab also cancels its open sign-in links. **Disable** keeps the client's chat and comments. **Delete** removes them.
+- For a client, **End sessions** or **Disable** on the **Clients** tab also cancels its open sign-in links. **Disable** keeps the client's chat. **Delete** removes it, and any comments the client wrote before comments were removed.
 
 ## Check it worked
 

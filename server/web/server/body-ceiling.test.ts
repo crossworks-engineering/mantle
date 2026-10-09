@@ -98,7 +98,6 @@ describe('the body ceiling: which route gets which', () => {
     }
     for (const p of [
       '/api/client/space/i1/draft',
-      '/api/client/shared/i1/comments',
       '/api/client/chat',
       '/api/member/space/i1/save',
       '/api/member/chat',

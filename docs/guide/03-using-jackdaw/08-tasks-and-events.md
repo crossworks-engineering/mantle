@@ -8,7 +8,7 @@ A task has a title, a status, a priority and an optional due date. Statuses are 
 
 1. Open **Tasks** and create a task.
 2. Fill in **Title**, **Priority** and **Due**, then save.
-3. Open the task to add a **Checklist** of steps or leave comments.
+3. Open the task to add a **Checklist** of steps, and keep progress in its **Notes**.
 
 Switch between the list and the board with the view toggle. On the board, drag a card to change its status. Blocked tasks sit in the **In progress** column with a badge.
 

@@ -1,5 +1,9 @@
 # Mobile Companion: backend additions
 
+> **Update 2026-10-09:** there are no comment pushes any more (`kind:
+> 'comment'` is never sent): the brain has no comments. Chat replies and review
+> results push as before.
+
 _Last updated: 2026-10-02 (contract v1.1: every push names its brain and its login, for devices that hold several logins)._
 
 API + schema added to Mantle to support the **Mantle Companion** mobile app

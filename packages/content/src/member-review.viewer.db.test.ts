@@ -22,10 +22,8 @@ describe.skipIf(!URL)('member review, accept and purge', () => {
   let m: Db;
   let sp: typeof import('./member-space');
   let sf: typeof import('./member-space-files');
-  let sc: typeof import('./member-space-comments');
   let rv: typeof import('./member-review');
   let pg: typeof import('./member-space-purge');
-  let nc: typeof import('./node-comments');
   let fp: typeof import('@mantle/files');
   let td: typeof import('./tables/draft');
   let sqlTag: typeof import('drizzle-orm').sql;
@@ -77,10 +75,8 @@ describe.skipIf(!URL)('member review, accept and purge', () => {
     m = await import('@mantle/db');
     sp = await import('./member-space');
     sf = await import('./member-space-files');
-    sc = await import('./member-space-comments');
     rv = await import('./member-review');
     pg = await import('./member-space-purge');
-    nc = await import('./node-comments');
     fp = await import('@mantle/files');
     td = await import('./tables/draft');
     sqlTag = (await import('drizzle-orm')).sql;
@@ -162,15 +158,11 @@ describe.skipIf(!URL)('member review, accept and purge', () => {
     expect(q.items.map((i) => i.id)).not.toContain(pageId);
     expect(await rv.getReviewItem(pageId)).toBeNull();
     expect(await rv.previewAccept(pageId)).toBeNull();
-    expect(await rv.listReviewComments(pageId)).toBeNull();
     expect(await rv.openReviewFile(pageId, imageId)).toBeNull();
     await expect(rv.acceptReviewItem(anchor, pageId, reviewer())).rejects.toMatchObject({
       reason: 'not-found',
     });
     await expect(rv.returnReviewItem(pageId, reviewer())).rejects.toMatchObject({
-      reason: 'not-found',
-    });
-    await expect(rv.addReviewComment(anchor, pageId, reviewer(), 'hi')).rejects.toMatchObject({
       reason: 'not-found',
     });
   });
@@ -201,28 +193,13 @@ describe.skipIf(!URL)('member review, accept and purge', () => {
     expect(await rv.openReviewFile(pageId, noteId)).toBeNull();
   });
 
-  it('the review talk goes both ways and never to teammates', async () => {
-    const A = spaceOf[loginA]!;
-    await rv.addReviewComment(anchor, pageId, reviewer(), 'Please add a date.');
-    await as(loginA, () =>
-      sc.addMineComment(A, anchor, pageId, { loginId: loginA, name: 'A' }, 'Will do.'),
-    );
-    const mine = await as(loginA, () => sc.listMineComments(A, pageId));
-    expect(mine?.map((c) => c.body)).toEqual(['Please add a date.', 'Will do.']);
-    const admins = await rv.listReviewComments(pageId);
-    expect(admins?.map((c) => [c.body, c.threadScope])).toEqual([
-      ['Please add a date.', 'review'],
-      ['Will do.', 'review'],
-    ]);
-  });
-
   it('Return sends it back, with no note; the author edits and resubmits', async () => {
     const A = spaceOf[loginA]!;
     await rv.returnReviewItem(pageId, reviewer());
     const row = await as(loginA, () => sp.getMineRow(A, pageId));
     expect([row?.reviewState, row?.returnedNote]).toEqual(['returned', null]);
     expect((await stateOf(pageId))?.reviewed_by).toBe(anchor);
-    // Not waiting any more: a second Return or a review comment is refused.
+    // Not waiting any more: a second Return is refused.
     await expect(rv.returnReviewItem(pageId, reviewer())).rejects.toMatchObject({
       reason: 'not-found',
     });
@@ -275,10 +252,6 @@ describe.skipIf(!URL)('member review, accept and purge', () => {
     expect(disk && readFileSync(disk, 'utf8')).toBe('PNGBYTES');
     expect(existsSync(spaceBytes)).toBe(false);
     expect(f?.data.storage).toBeUndefined();
-
-    // The thread survives, now a brain thread.
-    const thread = await nc.listNodeComments(anchor, pageId);
-    expect(thread.map((c) => c.body)).toContain('Please add a date.');
 
     // Gone from Mine; the author's link target is still theirs.
     expect(await as(loginA, () => sp.getMineRow(A, pageId))).toBeNull();

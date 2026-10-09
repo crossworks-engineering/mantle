@@ -69,14 +69,6 @@ export const CLIENT_DOC_MAX_BYTES = 500_000;
 /** A client's note, in characters (UTF-16 units) at most. */
 export const CLIENT_NOTE_MAX_CHARS = 50_000;
 
-/** Comments a CLIENT login may write in 24 hours across every thread (the
- *  review talk and client threads), counted in client_comment_ledger, so a
- *  deleted comment is never refunded (audit I2). */
-export const CLIENT_COMMENTS_PER_DAY = 100;
-/** Comments one thread holds at most, where a client writes (the review talk
- *  on a client's item, the client thread on a client-level item). */
-export const THREAD_COMMENT_LIMIT = 1000;
-
 /** Whether the current personal-space scope is a client's. Outside a space
  *  scope this is false (the callers all run inside one). */
 export function inClientSpace(): boolean {

@@ -1,7 +1,7 @@
 /**
  * @mantle/content · entries
  *
- * Entry types — notes, tasks, events, journal entries, comments, contacts and ranking.
+ * Entry types — notes, tasks, events, journal entries, contacts and ranking.
  *
  * Split out of the 962-line index.ts on 2026-09-02 (audit, tier 3). The
  * export lists are UNCHANGED — this package's public surface is exactly what
@@ -50,27 +50,6 @@ export {
 } from './tasks';
 
 export { isValidRank, rankBetween, ranksAfter, RANK_RE } from './rank';
-
-export {
-  COMMENT_BODY_MAX,
-  COMMENT_PAGE_SIZE,
-  COMMENTS_CHANGED_CHANNEL,
-  addNodeComment,
-  deleteNodeComment,
-  getNodeComment,
-  isNodeTeamVisible,
-  listNodeComments,
-  resolveAgentAuthor,
-  toNodeCommentDto,
-  updateNodeComment,
-  type CommentAuthor,
-  type CommentPage,
-  type CommentPageQuery,
-  type CommentViewer,
-  type NodeComment,
-  type NodeCommentAuthorKind,
-  type NodeCommentScope,
-} from './node-comments';
 
 export {
   EVENTS_ROOT_LABEL,

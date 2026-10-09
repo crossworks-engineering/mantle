@@ -58,10 +58,11 @@ export type TaskTodo = {
 export type NodeCommentAuthorKind = 'owner' | 'member' | 'agent' | 'client';
 
 /**
- * A comment on a node (tasks first; the table is node-generic). `authorName`
- * is a display snapshot at post time; `mine` is computed server-side per
- * viewer (an owner login sees its own comments as mine, a team member sees
- * theirs), so clients never reconcile the two auth worlds themselves.
+ * A comment on a node. No route serves comments any more (2026-10-09: the
+ * brain has no comment threads; user-to-user talk moves to the forum); the
+ * shape stays for older clients that still type one, such as the always
+ * empty `comments` of a review item. `authorName` was a display snapshot at
+ * post time; `mine` was computed server-side per viewer.
  */
 export type NodeComment = {
   id: string;

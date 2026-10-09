@@ -256,11 +256,11 @@ describe.skipIf(!URL)('push targeting: who a push goes to', () => {
       loginId: client,
       role: 'client',
       ownerId: brain,
-      kind: 'comment',
-      title: 'New comment',
+      kind: 'review',
+      title: 'Returned',
       body: 'for the client',
-      deepLink: '/portal/shared/x',
-      collapseKey: 'comment:x',
+      deepLink: '/portal/items/x',
+      collapseKey: 'review:x',
     });
     expect(h.sent).toEqual([rt('client-live')]);
   });
@@ -421,18 +421,18 @@ describe.skipIf(!URL)('push targeting: who a push goes to', () => {
       expect(h.sent.sort()).toEqual([rt('member-live'), rt('one-phone-member')].sort());
       expect(toPhone()).toEqual([[brainRow.id, member]]);
 
-      // The client's comment: the client's row only, naming the client.
+      // The client's review result: the client's row only, naming the client.
       h.sent = [];
       h.sealed = [];
       await loginNotify.pushToLogin({
         loginId: client,
         role: 'client',
         ownerId: brain,
-        kind: 'comment',
-        title: 'New comment',
+        kind: 'review',
+        title: 'Returned',
         body: 'for the client',
-        deepLink: '/portal/shared/x',
-        collapseKey: 'comment:x',
+        deepLink: '/portal/items/x',
+        collapseKey: 'review:x',
       });
       expect(h.sent.sort()).toEqual([rt('client-live'), rt('one-phone-client')].sort());
       expect(toPhone()).toEqual([[brainRow.id, client]]);

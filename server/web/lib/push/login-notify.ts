@@ -1,6 +1,7 @@
 // The send path for a MEMBER's or a CLIENT's own pushes (migration mobile_roles_push,
 // docs/mobile-companion-backend.md "Three roles on the phone"): a reply in
-// its chat thread, a review result on its item, a new comment. Each message
+// its chat thread, a review result on its item (no comment pushes: the brain
+// has no comments since 2026-10-09). Each message
 // is for ONE login (@mantle/content login-notices.ts decides who and with
 // which words) and goes to that login's live devices only, sealed like every
 // push. An admin's device is never a target here, and an owner teaser never
@@ -8,7 +9,6 @@
 
 import {
   chatReplyNotice,
-  commentNotices,
   reviewResultNotice,
   type LoginNotice,
   type LoginNoticeMessage,
@@ -24,7 +24,6 @@ import {
 const PREF_OF: Record<LoginNoticeMessage['kind'], keyof LoginPushPreferences> = {
   chat: 'chatReplies',
   review: 'reviewResults',
-  comment: 'comments',
 };
 
 const skipped = (reason: NonNullable<PushResult['skipped']>): PushResult => ({
@@ -79,20 +78,4 @@ export async function pushReviewResult(
   now = Date.now(),
 ): Promise<PushResult> {
   return pushToLogin(await reviewResultNotice(loginId, state, nodeIds), now);
-}
-
-/** A new comment: one push per login it concerns. */
-export async function pushComment(commentId: string, now = Date.now()): Promise<PushResult> {
-  const total: PushResult = { attempted: 0, delivered: 0, dropped: 0 };
-  const messages = await commentNotices(commentId);
-  if (messages.length === 0) return skipped('no_message');
-  // commentNotices bounds how many logins one comment tells
-  // (MAX_LOGINS_PER_NOTICE); each holds at most ten devices.
-  for (const m of messages) {
-    const r = await pushToLogin(m, now);
-    total.attempted += r.attempted;
-    total.delivered += r.delivered;
-    total.dropped += r.dropped;
-  }
-  return total;
 }

@@ -567,7 +567,8 @@ rule in the query too, but these hold whatever the code asks for.
   through `mantle_client_request_node()`); pages, drawings, tables and
   chunks follow their node. A draft, returned or accepted item never
   matches.
-- **Comments.** In a client's space (0194, `node_comments_space_read`,
+- **Comments** (removed 2026-10-09: no route reads or writes them; the
+  table, its rows and these policies stay as they are). In a client's space (0194, `node_comments_space_read`,
   `_insert`, `_update`) the client reads only the review talk
   (`thread_scope` 'review') written by a reviewer or by itself, and writes
   only as `author_kind` 'client' in that scope. The client thread
@@ -575,7 +576,7 @@ rule in the query too, but these hold whatever the code asks for.
   the client and team roles, human flag on, only while its item is a brain
   item at client level; raise the item and it reads nothing. No level role
   writes it: the app writes on the admin pool with the item's level checked
-  in the same statement (`packages/content/src/client-thread.ts`).
+  in the same statement (the removed `client-thread.ts`).
 - **Ledgers that deleting does not refund.** `space_submissions` (0194,
   Submit) and `client_comment_ledger` (0195, comments): the space role
   inserts and reads its own rows and has no update or delete rule.

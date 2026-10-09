@@ -193,9 +193,9 @@ section 7):
   every item at client, its old links, the addresses a page was emailed to,
   the team or admin items it names, and old links above it
   (`GET /api/access/client-report`; access-levels.md section 7).
-- **Talking with clients about an item** is the comment thread on a
-  client-level item, which the team, the admins and every client login
-  read and write (client-logins.md section 9), not a link.
+- **Talking with clients about an item** is not a link. The client thread
+  on client-level items was removed on 2026-10-09 with every other comment
+  surface; user-to-user talk moves to the forum (dev-brain plan Forum v2).
 
 ---
 

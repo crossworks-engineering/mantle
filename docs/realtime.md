@@ -61,9 +61,9 @@ useEffect(() => setRows(initialRows), [initialRows]);
   Tasks add two such table+channel pairs: `tasks_changed` (migration 0148
   triggers on task UPDATE/DELETE — covers deletes and rank/tags-only edits,
   which deliberately don't re-ingest; owner-id payload, broadcast typed
-  `task`) and `comments_changed` (migration 0149 triggers on `node_comments`;
-  JSON `{ownerId, nodeId}` payload, broadcast typed `comment` with the node id
-  so a thread invalidates precisely).
+  `task`) and `comments_changed` (migration 0149 triggers on `node_comments`).
+  Since 2026-10-09 nothing listens on `comments_changed`: the brain has no
+  comments, so no `comment` event is broadcast (the trigger stays, unheard).
 
 ## Source of truth
 

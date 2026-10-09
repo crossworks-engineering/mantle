@@ -3,7 +3,6 @@ import { eq } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
 import {
   APP_NAV_CHANGED_CHANNEL,
-  COMMENTS_CHANGED_CHANNEL,
   NEEDS_YOU_CHANGED_CHANNEL,
   NEEDS_YOU_REALTIME_TYPE,
   SPACE_ITEM_CHANGED_CHANNEL,
@@ -149,19 +148,9 @@ async function ensureListening(): Promise<void> {
         /* malformed payload: drop it rather than crash the listener */
       }
     });
-    // Comment writes (migration 0149) — JSON {ownerId, nodeId} payload,
-    // broadcast typed 'comment' with the node id so a thread view can
-    // invalidate precisely.
-    const subComments = await sql.listen(COMMENTS_CHANGED_CHANNEL, (payload) => {
-      try {
-        const c = JSON.parse(payload) as { ownerId?: string; nodeId?: string };
-        if (c && c.ownerId) {
-          broadcast({ ownerId: c.ownerId, type: 'comment', id: c.nodeId ?? '' });
-        }
-      } catch {
-        /* malformed payload — drop it rather than crash the listener */
-      }
-    });
+    // No comment events: the brain has no comments any more (2026-10-09).
+    // The node_comments trigger may still NOTIFY on its channel; nobody
+    // listens, so an older UI's comment views are never told to refetch.
     // Conversation turns (any channel) — payload is JSON {ownerId, agentId,
     // direction}, broadcast to the chat-stream subscribers. Drives live chat.
     const subConversation = await sql.listen(CONVERSATION_CHANGED_CHANNEL, (payload) => {
@@ -208,7 +197,6 @@ async function ensureListening(): Promise<void> {
         await subTasks.unlisten();
         await subAppNav.unlisten();
         await subTree.unlisten();
-        await subComments.unlisten();
         await subConversation.unlisten();
         await subTurnStream.unlisten();
       } catch {

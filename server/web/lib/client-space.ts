@@ -14,16 +14,12 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { isClientItemKind } from '@mantle/client-types/member-kinds';
-import type { NodeComment } from '@mantle/client-types';
-import { withSpace, type NodeCommentDbRow } from '@mantle/db';
-import { errorMessage } from '@mantle/std';
+import { withSpace } from '@mantle/db';
 import {
   CLIENT_DOC_MAX_BYTES,
   CLIENT_NOTE_MAX_CHARS,
   SpaceItemStateError,
   getMineRow,
-  loadPreferencesFor,
-  toNodeCommentDto,
   type SpaceItemRow,
 } from '@mantle/content';
 import type { ClientCaller } from '@/lib/auth';
@@ -116,42 +112,4 @@ export function clientWriteGate(client: ClientCaller): Response | null {
     { error: 'Too many changes at once. Wait a moment, then try again.', reason: 'rate-limit' },
     { status: 429, headers: { 'retry-after': String(gate.retryAfterSec) } },
   );
-}
-
-/** A client's display name for a comment snapshot. */
-export function clientAuthor(client: ClientCaller): { loginId: string; name: string } {
-  const name = client.displayName?.trim() || client.email.split('@')[0] || 'Client';
-  return { loginId: client.loginId, name };
-}
-
-/** What a client sees as the author of a reviewer's comment: the brand. */
-export const REVIEWER_FALLBACK_NAME = 'Reviewer';
-
-/** The brain's brand name (the client shell's `siteName`), the name every
- *  reviewer's comment wears for a client. A failed read answers the
- *  fallback (logged), never a staff name and never a failed thread. */
-export async function brandName(anchorId: string): Promise<string> {
-  try {
-    const prefs = await loadPreferencesFor(anchorId);
-    return prefs.siteName?.trim() || REVIEWER_FALLBACK_NAME;
-  } catch (err) {
-    console.error('[client-space] brand read failed:', errorMessage(err));
-    return REVIEWER_FALLBACK_NAME;
-  }
-}
-
-/**
- * A comment as a client reads it: their own as written (`mine` by login),
- * anyone else's under the brand name, never a staff name. Row security
- * shows a client only a reviewer's review talk and their own (0194); the
- * brand covers any other author kind too.
- */
-export function clientCommentDto(
-  row: NodeCommentDbRow,
-  client: ClientCaller,
-  brand: string,
-): NodeComment {
-  const dto = toNodeCommentDto(row, { loginId: client.loginId });
-  const own = row.authorKind === 'client' && row.loginId === client.loginId;
-  return own ? dto : { ...dto, authorName: brand };
 }

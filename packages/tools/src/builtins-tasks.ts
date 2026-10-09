@@ -19,16 +19,12 @@ import {
   TASK_STATUSES,
   TASK_TODOS_MAX,
   TASK_TODO_TEXT_MAX,
-  addNodeComment,
   countTasks,
   createTask,
   deleteTask,
   getTask,
-  listNodeComments,
   listTasks,
   nodeUrl,
-  resolveAgentAuthor,
-  toNodeCommentDto,
   updateTask,
   type TaskPriority,
   type TaskStatus,
@@ -258,7 +254,7 @@ const task_update: BuiltinToolDef = {
   slug: 'task_update',
   name: 'Update a task',
   description:
-    "Update an existing task. Any field omitted stays unchanged. Set `status: 'done'` to complete it, 'in_progress'/'blocked' to track work. To undo a completion, send `reopen: true` with no status: the task goes back to the status it had before it was marked done. `dueAt` is a UTC ISO 8601 instant; pass '' to clear it (same for `body`, and `tags: []` empties the list). `todos` replaces the WHOLE checklist — read the task first, then send the edited list. Use this to mark tasks done, reprioritise, tick checklist steps, or edit details.",
+    "Update an existing task. Any field omitted stays unchanged. Set `status: 'done'` to complete it, 'in_progress'/'blocked' to track work. To undo a completion, send `reopen: true` with no status: the task goes back to the status it had before it was marked done. `dueAt` is a UTC ISO 8601 instant; pass '' to clear it (same for `body`, and `tags: []` empties the list). `todos` replaces the WHOLE checklist — read the task first, then send the edited list. Use this to mark tasks done, reprioritise, tick checklist steps, or edit details. Tasks have no comments: record progress or a note in `body` (read it first and append).",
   inputSchema: {
     type: 'object',
     properties: {
@@ -371,85 +367,12 @@ const task_delete: BuiltinToolDef = {
   },
 };
 
-const task_comments_list: BuiltinToolDef = {
-  slug: 'task_comments_list',
-  readOnly: true,
-  name: 'List task comments',
-  description:
-    "Read a task's comment thread, oldest first — who said what (`authorKind` owner/member/agent + `authorName`) and when. Use before commenting so you reply in context, or when the user asks what was discussed on a task. For the task's own fields use `task_get`.",
-  inputSchema: {
-    type: 'object',
-    properties: {
-      id: {
-        type: 'string',
-        description: "The task's id (UUID) — from `task_list` / `search_nodes`.",
-      },
-    },
-    required: ['id'],
-  },
-  preconditions: TASK_ID_PRE,
-  handler: async (input, ctx): Promise<ToolHandlerResult> => {
-    const id = str(input.id);
-    if (!id) return { ok: false, error: 'id required' };
-    const rows = await listNodeComments(ctx.ownerId, id);
-    // Agents have no login/contact identity — nothing is ever "mine" here.
-    const comments = rows.map((r) => toNodeCommentDto(r, {}));
-    ctx.step?.setMeta({ taskId: id, count: comments.length });
-    return { ok: true, output: { comments, count: comments.length } };
-  },
-};
-
-const task_comment_add: BuiltinToolDef = {
-  slug: 'task_comment_add',
-  name: 'Comment on a task',
-  description:
-    "Add a comment to a task's discussion thread — a progress note, a question, or an answer the owner and team members will see attributed to you. Use when reporting work done on a task or responding to the thread; for changing the task itself (status, checklist, due date) use `task_update` instead.",
-  inputSchema: {
-    type: 'object',
-    properties: {
-      id: {
-        type: 'string',
-        description: "The task's id (UUID) — from `task_list` / `search_nodes`.",
-      },
-      body: {
-        type: 'string',
-        minLength: 1,
-        maxLength: 10_000,
-        description: 'The comment text (markdown).',
-      },
-    },
-    required: ['id', 'body'],
-  },
-  preconditions: TASK_ID_PRE,
-  handler: async (input, ctx): Promise<ToolHandlerResult> => {
-    const id = str(input.id);
-    const body = str(input.body).trim();
-    if (!id) return { ok: false, error: 'id required' };
-    if (!body) return { ok: false, error: 'body required' };
-    // Attribution from the runtime context (never from model args): resolve
-    // the calling agent's row so the FK + display name land; neutral name on
-    // the MCP/background paths where no agent row exists.
-    const author = ctx.agent?.slug ? await resolveAgentAuthor(ctx.ownerId, ctx.agent.slug) : null;
-    const row = await addNodeComment(
-      ctx.ownerId,
-      id,
-      { kind: 'agent', agentId: author?.agentId, name: author?.name ?? 'Assistant' },
-      body,
-    );
-    if (!row) return notFound('task', id, 'task_list');
-    ctx.step?.setMeta({ taskId: id, commentId: row.id });
-    return { ok: true, output: toNodeCommentDto(row, {}) };
-  },
-};
-
 export const TASK_TOOLS: readonly BuiltinToolDef[] = [
   task_list,
   task_get,
   task_create,
   task_update,
   task_delete,
-  task_comments_list,
-  task_comment_add,
 ];
 
 /** Canonical slug list — granted to conversational agents at boot so

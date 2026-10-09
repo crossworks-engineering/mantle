@@ -1,6 +1,5 @@
 /**
- * Behavioural tests for task_create, task_update and task_comment_add. None
- * had one.
+ * Behavioural tests for task_create and task_update. None had one.
  *
  * Two properties are worth pinning beyond the guard-then-store shape.
  *
@@ -12,11 +11,10 @@
  * helpers would have swallowed as "unchanged"; the test pins that the two
  * spellings reach the store differently.
  *
- * task_comment_add attributes from the RUNTIME context, never from model
- * arguments: an agent's slug resolves to its row (FK + display name), and a
- * context with no agent gets the neutral 'Assistant' with no lookup.
+ * Tasks have no comments any more (2026-10-09): task_comment_add and
+ * task_comments_list are gone, which the last test pins.
  *
- * The stores are stubbed; the tools' coercion, guards and attribution are real.
+ * The stores are stubbed; the tools' coercion and guards are real.
  */
 
 import { describe, expect, it, vi, beforeEach } from 'vitest';
@@ -27,26 +25,19 @@ vi.mock('@mantle/content', async (importOriginal) => {
     ...actual,
     createTask: vi.fn(),
     updateTask: vi.fn(),
-    addNodeComment: vi.fn(),
-    resolveAgentAuthor: vi.fn(),
     nodeUrl: (id: string) => `https://brain.test/n/${id}`,
   };
 });
 
-import { createTask, updateTask, addNodeComment, resolveAgentAuthor } from '@mantle/content';
+import { createTask, updateTask } from '@mantle/content';
 import { TASK_TOOLS } from './builtins-tasks';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 
 const ctx: ToolHandlerContext = { ownerId: 'o1' };
-const agentCtx: ToolHandlerContext = {
-  ownerId: 'o1',
-  agent: { slug: 'responder', depth: 1, delegateTo: [] },
-};
 const ID = '11111111-2222-4333-8444-555555555555';
 
 const create = TASK_TOOLS.find((t) => t.slug === 'task_create')!;
 const update = TASK_TOOLS.find((t) => t.slug === 'task_update')!;
-const comment = TASK_TOOLS.find((t) => t.slug === 'task_comment_add')!;
 
 type Result = Awaited<ReturnType<BuiltinToolDef['handler']>>;
 
@@ -67,25 +58,10 @@ const taskRow = {
   priority: 'normal',
   dueAt: null,
 };
-const commentRow = {
-  id: 'c1',
-  nodeId: ID,
-  authorKind: 'agent',
-  authorName: 'Saskia',
-  loginId: null,
-  contactId: null,
-  agentId: 'a1',
-  body: 'Booked the slot',
-  createdAt: new Date('2026-09-01T00:00:00Z'),
-  editedAt: null,
-};
-
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(createTask).mockResolvedValue(taskRow as never);
   vi.mocked(updateTask).mockResolvedValue(taskRow as never);
-  vi.mocked(addNodeComment).mockResolvedValue(commentRow as never);
-  vi.mocked(resolveAgentAuthor).mockResolvedValue({ agentId: 'a1', name: 'Saskia' });
 });
 
 describe('task_create', () => {
@@ -196,45 +172,12 @@ describe('task_update', () => {
   });
 });
 
-describe('task_comment_add', () => {
-  it('requires id and a non-blank body, resolving nothing without them', async () => {
-    expect(errorOf(await comment.handler({ id: '', body: 'x' }, agentCtx))).toMatch(/id/i);
-    expect(errorOf(await comment.handler({ id: ID, body: '   ' }, agentCtx))).toMatch(/body/);
-    expect(resolveAgentAuthor).not.toHaveBeenCalled();
-    expect(addNodeComment).not.toHaveBeenCalled();
-  });
-
-  it('attributes to the calling agent resolved under the owner, ignoring model args', async () => {
-    const res = await comment.handler(
-      { id: ID, body: '  Booked the slot  ', author: 'owner', name: 'Jason' },
-      agentCtx,
-    );
-
-    expect(resolveAgentAuthor).toHaveBeenCalledWith('o1', 'responder');
-    expect(addNodeComment).toHaveBeenCalledWith(
-      'o1',
-      ID,
-      { kind: 'agent', agentId: 'a1', name: 'Saskia' },
-      'Booked the slot',
-    );
-    expect(outputOf(res)).toMatchObject({ id: 'c1', authorKind: 'agent', body: 'Booked the slot' });
-  });
-
-  it('falls back to the neutral Assistant name with no lookup when there is no agent', async () => {
-    await comment.handler({ id: ID, body: 'note' }, ctx);
-    expect(resolveAgentAuthor).not.toHaveBeenCalled();
-    expect(addNodeComment).toHaveBeenCalledWith(
-      'o1',
-      ID,
-      { kind: 'agent', agentId: undefined, name: 'Assistant' },
-      'note',
-    );
-  });
-
-  it('reports a task the owner does not hold as not found', async () => {
-    vi.mocked(addNodeComment).mockResolvedValue(null);
-    const err = errorOf(await comment.handler({ id: ID, body: 'x' }, ctx));
-    expect(err).toMatch(/not found/i);
-    expect(err).toMatch(/task_list/);
+describe('task comments', () => {
+  it('are gone: no task tool reads or writes a comment thread', () => {
+    const slugs = TASK_TOOLS.map((t) => t.slug);
+    expect(slugs).not.toContain('task_comment_add');
+    expect(slugs).not.toContain('task_comments_list');
+    // Progress goes in the body instead.
+    expect(update.description).toMatch(/no comments/);
   });
 });

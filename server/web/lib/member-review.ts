@@ -6,8 +6,7 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { ReviewError, toNodeCommentDto } from '@mantle/content';
-import type { NodeCommentDbRow } from '@mantle/db';
+import { ReviewError } from '@mantle/content';
 import type { SessionUser } from '@/lib/auth';
 
 export const SubmissionParams = z.object({ id: z.string().uuid() });
@@ -39,8 +38,4 @@ export const reviewNotFound = () => NextResponse.json({ error: 'Not found.' }, {
 export function reviewer(user: SessionUser): { loginId: string; name: string } {
   const name = user.actor.displayName?.trim() || user.actor.email.split('@')[0] || 'Admin';
   return { loginId: user.actor.id, name };
-}
-
-export function commentsDto(rows: NodeCommentDbRow[], user: SessionUser) {
-  return rows.map((r) => toNodeCommentDto(r, { loginId: user.actor.id }));
 }

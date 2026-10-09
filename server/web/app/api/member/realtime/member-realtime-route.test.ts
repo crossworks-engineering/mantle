@@ -79,14 +79,14 @@ describe('GET /api/member/realtime', () => {
     feed({ id: 'theirs-private', spaceId: OTHER_SPACE, kind: 'created', team: false });
     feed({ id: 'theirs-deleted', spaceId: OTHER_SPACE, kind: 'deleted', team: false });
     feed({ id: 'theirs-team', spaceId: OTHER_SPACE, kind: 'state', team: true });
-    feed({ id: 'own-team', spaceId: MY_SPACE, kind: 'comment', team: true });
+    feed({ id: 'own-team', spaceId: MY_SPACE, kind: 'deleted', team: true });
 
     const events = await reading;
     ac.abort();
     expect(events).toEqual([
       { type: 'space_item', id: 'own-private', kind: 'saved', own: true },
       { type: 'space_item', id: 'theirs-team', kind: 'state', own: false },
-      { type: 'space_item', id: 'own-team', kind: 'comment', own: true },
+      { type: 'space_item', id: 'own-team', kind: 'deleted', own: true },
     ]);
     expect(JSON.stringify(events)).not.toContain('theirs-private');
     expect(JSON.stringify(events)).not.toContain('theirs-deleted');

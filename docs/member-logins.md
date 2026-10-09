@@ -1,5 +1,11 @@
 # Member logins
 
+> **Update 2026-10-09: comments are removed.** Every comment thread this doc
+> describes (the review talk on a submitted item, the team's talk on a shared
+> item, the Library's client thread) is gone, routes and UI alike, and so are
+> comment pushes. User-to-user talk moves to the forum (dev-brain plan Forum
+> v2). The `node_comments` table and its rows stay, unread and unwritten.
+
 > Phase 1 of the member logins plan (dev-brain plan v3.1). A member is a user
 > of the brain with the member role: users are the team. Member logins are
 > always on (Phase 6 removed the `MANTLE_MEMBERS` flag).

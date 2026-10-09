@@ -42,7 +42,7 @@ export interface PushPayload {
   agentSlug?: string;
   deepLink: string;
   ts: number;
-  kind?: 'chat' | 'review' | 'comment';
+  kind?: 'chat' | 'review';
   itemId?: string;
   state?: 'accepted' | 'returned' | 'taken';
   /** This brain (migration 0226, lib/brain-identity.ts). A device may hold

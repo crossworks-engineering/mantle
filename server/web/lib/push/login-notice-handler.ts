@@ -11,7 +11,7 @@ import { parseLoginNotice, type LoginNotice } from '@mantle/content';
 import { pgErrorCode } from '@mantle/db';
 import { errorMessage } from '@mantle/std';
 import type { PushResult } from './notify';
-import { pushChatReply, pushComment, pushReviewResult } from './login-notify';
+import { pushChatReply, pushReviewResult } from './login-notify';
 
 type ReviewNotice = Extract<LoginNotice, { kind: 'review' }>;
 
@@ -77,7 +77,6 @@ export function createLoginNoticeHandler(
     /** The sends: stood in by tests. */
     send?: {
       chat: typeof pushChatReply;
-      comment: typeof pushComment;
       review: typeof pushReviewResult;
     };
   } = {},
@@ -86,7 +85,6 @@ export function createLoginNoticeHandler(
   const log = opts.log ?? ((line: string) => console.log(line));
   const send = opts.send ?? {
     chat: pushChatReply,
-    comment: pushComment,
     review: pushReviewResult,
   };
   let chain: Promise<void> = Promise.resolve();
@@ -114,7 +112,6 @@ export function createLoginNoticeHandler(
       const n = parseLoginNotice(payload);
       if (!n) return; // malformed: drop rather than crash the listener
       if (n.kind === 'chat') return queue('chat reply', () => send.chat(n));
-      if (n.kind === 'comment') return queue('comment', () => send.comment(n.id));
       const key = `${n.loginId}:${n.state}`;
       const waiting = pending.get(key);
       if (waiting) {

@@ -1,12 +1,11 @@
 /**
- * The admin client storage and comment routes (client logins C5 audit, I5
- * and U2) without a database: the content layer is stood in, so these pin
- * the route contract jackdaw builds on. The storage card's total is the
- * box's MANTLE_CLIENT_SPACES_TOTAL_BYTES (5 GB unset), the limits are the
- * client ones, and refusals come through as recorded; the comment activity
- * takes 1 to 90 days; delete-all names the client and the brain and is
- * audited. Members and clients are refused by getOwnerOr401 (every route in
- * the sweeps).
+ * The admin client storage route (client logins C5 audit, I5) without a
+ * database: the content layer is stood in, so these pin the route contract
+ * jackdaw builds on. The storage card's total is the box's
+ * MANTLE_CLIENT_SPACES_TOTAL_BYTES (5 GB unset), the limits are the client
+ * ones, and refusals come through as recorded. Members and clients are
+ * refused by getOwnerOr401 (every route in the sweeps). The client comment
+ * routes are gone (2026-10-09).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -58,9 +57,7 @@ vi.mock('@mantle/content', async (importOriginal) => {
     listClientQuotaRefusals: rec('listClientQuotaRefusals', () => [
       { at: '2026-09-29T00:00:00.000Z', loginId: CLIENT, reason: 'total' },
     ]),
-    clientThreadActivity: rec('clientThreadActivity', () => []),
     clientAppDbBytes: rec('clientAppDbBytes', () => 4096),
-    deleteClientComments: rec('deleteClientComments', () => 7),
   };
 });
 
@@ -69,8 +66,6 @@ beforeEach(() => {
   h.audits.length = 0;
   delete process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES;
 });
-
-const req = (url: string, method = 'GET') => new Request(`http://x${url}`, { method });
 
 describe('GET /api/team-admin/clients/storage', () => {
   it('answers the client limits, the total (env or 5 GB), the rows and the refusals', async () => {
@@ -97,45 +92,5 @@ describe('GET /api/team-admin/clients/storage', () => {
     process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES = String(8 * 1024 * 1024 * 1024);
     const raised = (await (await GET()).json()) as { limits: { totalBytes: number } };
     expect(raised.limits.totalBytes).toBe(8 * 1024 * 1024 * 1024);
-  });
-});
-
-describe('GET /api/team-admin/clients/comments', () => {
-  it('takes 1 to 90 days (default 7) and reads this brain', async () => {
-    const { GET } = await import('./comments/route');
-    expect((await GET(req('/api/team-admin/clients/comments'))).status).toBe(200);
-    expect((await GET(req('/api/team-admin/clients/comments?days=30'))).status).toBe(200);
-    for (const bad of ['0', '91', 'week']) {
-      expect((await GET(req(`/api/team-admin/clients/comments?days=${bad}`))).status, bad).toBe(
-        400,
-      );
-    }
-    expect(h.calls.filter(([n]) => n === 'clientThreadActivity').map(([, a]) => a)).toEqual([
-      [ANCHOR, 7],
-      [ANCHOR, 30],
-    ]);
-  });
-});
-
-describe('DELETE /api/team-admin/clients/:id/comments', () => {
-  it('deletes that client’s comments on this brain, answers the count, and audits it', async () => {
-    const { DELETE } = await import('./[id]/comments/route');
-    const res = await DELETE(req(`/api/team-admin/clients/${CLIENT}/comments`, 'DELETE'), {
-      params: Promise.resolve({ id: CLIENT }),
-    });
-    expect(await res.json()).toEqual({ deleted: 7 });
-    expect(h.calls.find(([n]) => n === 'deleteClientComments')?.[1]).toEqual([ANCHOR, CLIENT]);
-    expect(h.audits).toMatchObject([
-      {
-        actorId: ACTOR,
-        action: 'client.comments_deleted',
-        detail: { targetId: CLIENT, deleted: 7 },
-      },
-    ]);
-    const bad = await DELETE(req('/api/team-admin/clients/x/comments', 'DELETE'), {
-      params: Promise.resolve({ id: 'x' }),
-    });
-    expect(bad.status).toBe(404);
-    expect(h.calls.filter(([n]) => n === 'deleteClientComments').length).toBe(1);
   });
 });

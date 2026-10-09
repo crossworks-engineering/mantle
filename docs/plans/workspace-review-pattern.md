@@ -31,7 +31,8 @@ kind, now or later. People talk through their own channels; the brain does
 not grow a messaging system for reviews. Send back carries no text. The old
 `space_items.returned_note` column stays in place (no destructive
 migration) but nothing writes or shows it once a workspace moves to this
-pattern. Task comments are a separate feature and are not touched.
+pattern. Since 2026-10-09 the brain has no comments at all (task comments
+included); user-to-user talk moves to the forum.
 
 ## Security lines every workspace keeps
 
@@ -132,8 +133,5 @@ when the last kind has moved. Each step gets its own independent audit.
   kinds, `member-review.ts` today lets an admin read a team-shared item only
   when its author is deactivated. Showing every team-shared item to admins
   widens that rule; it needs the owner's decision before the Pages step.
-- **The existing item review comments.** Team admin > Review has a review
-  thread on submitted items today (`/api/team-admin/submissions/:id/comments`,
-  `thread_scope` 'review'). Under this pattern it goes when each kind moves:
-  the routes and UI are removed, and the stored rows stay (no destructive
-  migration).
+- **The item review comments**: removed on 2026-10-09 with every other
+  comment surface (not per workspace); the stored rows stay.

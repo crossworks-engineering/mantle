@@ -23,14 +23,13 @@
  * makes that hold wherever this is called from. Nothing here starts LLM
  * work.
  */
-import { and, eq, gt, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import {
   acceptedSnapshots,
   agents,
   asSystem,
   authUsers,
   db,
-  nodeComments,
   nodes,
   spaceItems,
   spaces,
@@ -38,7 +37,6 @@ import {
 } from '@mantle/db';
 import { markdownPreview } from '@mantle/content-core/markdown-to-text';
 import { chatTextsForReader } from './chat-images';
-import { readAtSql } from './item-level';
 import { loadPreferencesFor } from './profile-preferences';
 
 export const LOGIN_NOTICE_CHANNEL = 'login_notice';
@@ -46,15 +44,6 @@ export const LOGIN_NOTICE_CHANNEL = 'login_notice';
 /** An event older than this is not news: a backfill or a bulk repair that
  *  touches old rows must never page anyone. */
 export const LOGIN_NOTICE_FRESH_MS = 30 * 60 * 1000;
-
-/** How many logins one read of the client list takes (a comment on a
- *  client-level item tells every client): the list is read in pages. */
-export const MAX_LOGINS_PER_NOTICE = 100;
-
-/** The most clients one comment tells: far above one client company's
- *  logins, and the bound that keeps one event from holding the send chain
- *  (each login holds at most ten devices). */
-export const MAX_CLIENTS_PER_NOTICE = 2000;
 
 /** "Is this row news?", asked of the DATABASE: the rows are stamped on its
  *  clock, so the worker's clock never decides. */
@@ -66,8 +55,7 @@ type ReviewNoticeState = 'accepted' | 'returned' | 'taken';
 
 export type LoginNotice =
   | { kind: 'chat'; loginId: string; id: string }
-  | { kind: 'review'; loginId: string; id: string; state: ReviewNoticeState }
-  | { kind: 'comment'; id: string };
+  | { kind: 'review'; loginId: string; id: string; state: ReviewNoticeState };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isId = (v: unknown): v is string => typeof v === 'string' && UUID_RE.test(v);
@@ -81,7 +69,8 @@ export function parseLoginNotice(payload: string): LoginNotice | null {
     return null;
   }
   if (!p || typeof p !== 'object' || !isId(p.id)) return null;
-  if (p.kind === 'comment') return { kind: 'comment', id: p.id };
+  // A 'comment' payload (the node_comments trigger) is no longer ours: the
+  // brain has no comments (2026-10-09), so it parses to nothing.
   if (!isId(p.loginId)) return null;
   if (p.kind === 'chat') return { kind: 'chat', loginId: p.loginId, id: p.id };
   if (
@@ -99,7 +88,7 @@ export type LoginNoticeMessage = {
   loginId: string;
   role: LoginNoticeRole;
   ownerId: string;
-  kind: 'chat' | 'review' | 'comment';
+  kind: 'chat' | 'review';
   title: string;
   body: string;
   deepLink: string;
@@ -294,116 +283,5 @@ export function reviewResultNotice(
       state,
       collapseKey: `review:${main.id}`,
     };
-  });
-}
-
-/**
- * A new comment: who is told. On a personal item in its author's own space,
- * the author (unless the author wrote it). On a brain item's client thread,
- * every active client login but the writer, while the item is at client
- * level. Every other comment (an admin's talk on a brain item, a thread on
- * an item an admin holds) tells nobody.
- */
-export function commentNotices(commentId: string): Promise<LoginNoticeMessage[]> {
-  return asSystem(async () => {
-    const [c] = await db
-      .select({
-        nodeId: nodeComments.nodeId,
-        ownerId: nodeComments.ownerId,
-        writer: nodeComments.loginId,
-        authorName: nodeComments.authorName,
-        body: nodeComments.body,
-        scope: nodeComments.threadScope,
-        fresh: freshSql(nodeComments.createdAt),
-        title: nodes.title,
-        space: nodes.ownerId,
-        spaceKind: spaces.kind,
-        spaceLogin: spaces.loginId,
-        itemAuthor: spaceItems.authorLoginId,
-      })
-      .from(nodeComments)
-      .innerJoin(nodes, eq(nodes.id, nodeComments.nodeId))
-      .innerJoin(spaces, eq(spaces.id, nodes.ownerId))
-      .leftJoin(spaceItems, eq(spaceItems.nodeId, nodes.id))
-      .where(eq(nodeComments.id, commentId))
-      .limit(1);
-    if (!c || !c.fresh) return [];
-    // The comment as plain words; one with no words (a picture) still says
-    // who commented on what. Names and titles are names, not markdown: they
-    // are shown as they are.
-    const said = markdownPreview(c.body, 100);
-    const where = `${clip(c.authorName, 40)} on "${clip(c.title || 'Untitled', 60)}"`;
-    const words = {
-      kind: 'comment' as const,
-      ownerId: c.ownerId,
-      title: 'New comment',
-      body: said ? `${where}: ${said}` : where,
-      itemId: c.nodeId,
-      collapseKey: `comment:${c.nodeId}`,
-    };
-
-    if (c.spaceKind === 'personal') {
-      // The item is in its author's own space (not one an admin took over).
-      if (!c.itemAuthor || c.spaceLogin !== c.itemAuthor || c.writer === c.itemAuthor) return [];
-      const login = await noticeLogin(c.itemAuthor);
-      if (!login) return [];
-      return [
-        {
-          ...words,
-          loginId: login.id,
-          role: login.role,
-          deepLink: `/portal/items/${c.nodeId}`,
-        },
-      ];
-    }
-
-    if (c.spaceKind !== 'brain' || c.scope !== 'client') return [];
-    // The thread's own rule (client-thread.ts): a brain item at client level.
-    const [open] = await db
-      .select({ id: nodes.id })
-      .from(nodes)
-      .where(
-        and(
-          eq(nodes.id, c.nodeId),
-          eq(nodes.ownerId, c.ownerId),
-          readAtSql(['client'], { embeds: false }),
-          sql`mantle_workspace_kind(${nodes.type})`,
-        ),
-      )
-      .limit(1);
-    if (!open) return [];
-    // Every active client, read in pages of MAX_LOGINS_PER_NOTICE (by id),
-    // up to MAX_CLIENTS_PER_NOTICE: a brain with more than one page of
-    // clients tells them all, not the same first page every time.
-    const clients: Array<{ id: string }> = [];
-    let after: string | null = null;
-    while (clients.length < MAX_CLIENTS_PER_NOTICE) {
-      const page: Array<{ id: string }> = await db
-        .select({ id: authUsers.id })
-        .from(authUsers)
-        .where(
-          and(
-            eq(authUsers.role, 'client'),
-            isNull(authUsers.disabledAt),
-            ...(c.writer ? [ne(authUsers.id, c.writer)] : []),
-            ...(after ? [gt(authUsers.id, after)] : []),
-          ),
-        )
-        .orderBy(authUsers.id)
-        .limit(MAX_LOGINS_PER_NOTICE);
-      clients.push(...page);
-      if (page.length < MAX_LOGINS_PER_NOTICE) break;
-      after = page[page.length - 1]!.id;
-    }
-    // On a thread every client reads, the lock screen says who commented on
-    // what and not what they wrote: one client's words do not appear on
-    // every other client's phone. The app shows the comment.
-    return clients.map((login) => ({
-      ...words,
-      body: `${clip(c.authorName, 40)} commented on "${clip(c.title || 'Untitled', 60)}"`,
-      loginId: login.id,
-      role: 'client' as const,
-      deepLink: `/portal/shared/${c.nodeId}`,
-    }));
   });
 }

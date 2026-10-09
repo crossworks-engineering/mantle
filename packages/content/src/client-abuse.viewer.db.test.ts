@@ -2,24 +2,18 @@
  * The client tier's abuse limits on a real, migrated Postgres (client logins
  * C5 audit: I2, I3, I5, I7, I8, I11), on real client logins and spaces:
  *
- *  - comments: a client login writes at most 100 a day across every thread
- *    (the review talk and client threads), counted in the ledger, and
- *    deleting never gives a place back; one thread holds at most 1000;
- *    every thread read is paged (the newest 100, oldest first, `hasMore`,
- *    and `before` for older ones);
  *  - text counts: page and note text is in a client's 200 MB and in the
  *    brain-wide total (one definition: mantle_client_space_usage()); a write
  *    that grows the text past the limit is refused, one that shrinks it
  *    passes; a deleted client's space keeps counting until its purge;
  *  - races: two parallel creates at the last item place, two parallel
  *    submits at the last daily place, two clients' parallel uploads at the
- *    last bytes of the total, parallel comments at the last place of the
- *    day and at a thread's last place: exactly one passes each time;
+ *    last bytes of the total: exactly one passes each time;
  *  - give back into a client's space holds the client limits;
  *  - space_items.author_role never changes after insert;
  *  - refusals are recorded (reason and login), and the record stays small;
- *  - the admin reads: the client threads clients wrote in, delete every
- *    comment of one client, the storage rows (a former client flagged).
+ *  - the admin reads: the storage rows (a former client flagged); a deleted
+ *    client login's old comments go with it (comments are gone, 2026-10-09).
  *
  * Big sizes are FAKE (a `size_bytes` written by the admin pool, a spool that
  * claims a size); no test writes real megabytes. The brain-wide total is set
@@ -44,14 +38,11 @@ import { holdTestLock } from '@mantle/db/test-support';
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const MB = 1024 * 1024;
 
-describe.skipIf(!URL)('client abuse limits: comments, text, races, give back', () => {
+describe.skipIf(!URL)('client abuse limits: text, races, give back', () => {
   type Db = typeof import('@mantle/db');
   let m: Db;
   let sp: typeof import('./member-space');
   let sf: typeof import('./member-space-files');
-  let sc: typeof import('./member-space-comments');
-  let ct: typeof import('./client-thread');
-  let nc: typeof import('./node-comments');
   let rv: typeof import('./member-review');
   let tk: typeof import('./member-takeover');
   let ql: typeof import('./client-quota-log');
@@ -133,18 +124,6 @@ describe.skipIf(!URL)('client abuse limits: comments, text, races, give back', (
     brainNodes.push(id);
     return id;
   };
-  /** `n` comments on `nodeId`, one a second back from now. */
-  const seedComments = (nodeId: string, n: number, scope: string, kind = 'owner', login = adminA) =>
-    m.systemDb.execute(sqlTag`
-      insert into node_comments (owner_id, node_id, author_kind, login_id, author_name, body,
-                                 thread_scope, created_at)
-      select ${brain}, ${nodeId}, ${kind}, ${login}, 'Seed', 'seed ' || g, ${scope},
-             now() - make_interval(secs => g)
-        from generate_series(1, ${n}) g`);
-  const ledgerRows = (login: string, n: number, ago = '0 seconds') =>
-    m.systemDb.execute(sqlTag`
-      insert into client_comment_ledger (login_id, created_at)
-      select ${login}, now() - ${ago}::interval from generate_series(1, ${n})`);
   const text = (t: string) => ({
     type: 'doc',
     content: [{ type: 'paragraph', content: [{ type: 'text', text: t }] }],
@@ -184,9 +163,6 @@ describe.skipIf(!URL)('client abuse limits: comments, text, races, give back', (
     m = await import('@mantle/db');
     sp = await import('./member-space');
     sf = await import('./member-space-files');
-    sc = await import('./member-space-comments');
-    ct = await import('./client-thread');
-    nc = await import('./node-comments');
     rv = await import('./member-review');
     tk = await import('./member-takeover');
     ql = await import('./client-quota-log');
@@ -236,184 +212,6 @@ describe.skipIf(!URL)('client abuse limits: comments, text, races, give back', (
       // Released only once this file's client bytes are gone.
       await releaseTotal();
     }
-  });
-
-  // ── Comment caps (I2) ───────────────────────────────────────────────────
-
-  it('a client writes 100 comments a day across every thread; deleting never refunds', async () => {
-    const C = spaceOf[c.cap]!;
-    const talk = await page(c.cap, `${tag} cap talk`);
-    await submit(c.cap, talk);
-    const shared = await clientNote('cap shared');
-    // 98 written earlier today (and 5 yesterday, which no longer count).
-    await ledgerRows(c.cap, 98);
-    await ledgerRows(c.cap, 5, '25 hours');
-    const review = await as(c.cap, () =>
-      sc.addMineComment(C, brain, talk, { loginId: c.cap, name: 'Cap' }, '99th, review talk'),
-    );
-    const thread = await ct.addClientThreadComment(
-      brain,
-      shared,
-      { kind: 'client', loginId: c.cap, name: 'Cap' },
-      '100th, client thread',
-    );
-    expect(thread).toBeTruthy();
-    // The 101st, on either thread: refused.
-    await expect(
-      ct.addClientThreadComment(
-        brain,
-        shared,
-        { kind: 'client', loginId: c.cap, name: 'Cap' },
-        'x',
-      ),
-    ).rejects.toMatchObject({ reason: 'comment-cap' });
-    await expect(
-      as(c.cap, () => sc.addMineComment(C, brain, talk, { loginId: c.cap, name: 'Cap' }, 'x')),
-    ).rejects.toMatchObject({ reason: 'comment-cap' });
-    // Deleting both gives nothing back.
-    expect(await as(c.cap, () => sc.deleteMineComment(C, talk, review.id))).toBe(true);
-    expect(
-      await ct.deleteClientThreadComment(
-        brain,
-        shared,
-        { kind: 'client', loginId: c.cap },
-        thread!.id,
-      ),
-    ).toBe(true);
-    await expect(
-      ct.addClientThreadComment(
-        brain,
-        shared,
-        { kind: 'client', loginId: c.cap, name: 'Cap' },
-        'x',
-      ),
-    ).rejects.toMatchObject({ reason: 'comment-cap' });
-    // A member is never capped by the client's ledger.
-    expect(
-      await ct.addClientThreadComment(
-        brain,
-        shared,
-        { kind: 'member', loginId: member, name: 'Mia' },
-        'm',
-      ),
-    ).toBeTruthy();
-    // Refusals are recorded; the ledger was trimmed of rows past two days
-    // only (yesterday's stay: the cap no longer counts them).
-    expect((await refusals(c.cap)).map((r) => r.reason)).toEqual([
-      'comment-cap',
-      'comment-cap',
-      'comment-cap',
-    ]);
-    const { n } = await one<{ n: number }>(sqlTag`
-      select count(*)::int as n from client_comment_ledger where login_id = ${c.cap}`);
-    expect(n).toBe(105);
-    // A day later the places are free again.
-    await m.systemDb.execute(sqlTag`
-      update client_comment_ledger set created_at = now() - interval '25 hours'
-       where login_id = ${c.cap}`);
-    expect(
-      await ct.addClientThreadComment(
-        brain,
-        shared,
-        { kind: 'client', loginId: c.cap, name: 'Cap' },
-        'y',
-      ),
-    ).toBeTruthy();
-  });
-
-  it('the space role cannot erase or rewrite its ledger rows', async () => {
-    const before = await one<{ n: number }>(sqlTag`
-      select count(*)::int as n from client_comment_ledger where login_id = ${c.cap}`);
-    await as(c.cap, () => m.db.execute(sqlTag`delete from client_comment_ledger`));
-    await as(c.cap, () =>
-      m.db.execute(sqlTag`update client_comment_ledger set created_at = now() - interval '9 days'`),
-    );
-    const seen = await as(c.cap, () =>
-      m.db.execute(sqlTag`select count(*)::int as n from client_comment_ledger`),
-    );
-    expect((seen as unknown as { n: number }[])[0]!.n).toBe(before.n);
-    const after = await one<{ n: number; old: number }>(sqlTag`
-      select count(*)::int as n,
-             count(*) filter (where created_at < now() - interval '8 days')::int as old
-        from client_comment_ledger where login_id = ${c.cap}`);
-    expect(after).toEqual({ n: before.n, old: 0 });
-  });
-
-  it('a thread holds at most 1000 comments, for a client and a member alike', async () => {
-    const full = await clientNote('full thread');
-    await seedComments(full, 1000, 'client');
-    await expect(
-      ct.addClientThreadComment(brain, full, { kind: 'client', loginId: c.full, name: 'F' }, 'x'),
-    ).rejects.toMatchObject({ reason: 'thread-full' });
-    await expect(
-      ct.addClientThreadComment(brain, full, { kind: 'member', loginId: member, name: 'M' }, 'x'),
-    ).rejects.toMatchObject({ reason: 'thread-full' });
-    // One short of full: the 1000th goes, the next does not.
-    const almost = await clientNote('almost full');
-    await seedComments(almost, 999, 'client');
-    expect(
-      await ct.addClientThreadComment(
-        brain,
-        almost,
-        { kind: 'member', loginId: member, name: 'M' },
-        'x',
-      ),
-    ).toBeTruthy();
-    await expect(
-      ct.addClientThreadComment(brain, almost, { kind: 'client', loginId: c.full, name: 'F' }, 'x'),
-    ).rejects.toMatchObject({ reason: 'thread-full' });
-    // The review talk on a client's own item: the same cap.
-    const talk = await page(c.full, `${tag} full talk`);
-    await submit(c.full, talk);
-    await seedComments(talk, 1000, 'review');
-    await expect(
-      as(c.full, () =>
-        sc.addMineComment(spaceOf[c.full]!, brain, talk, { loginId: c.full, name: 'F' }, 'x'),
-      ),
-    ).rejects.toMatchObject({ reason: 'thread-full' });
-    // A refused comment took no place of the day.
-    const { n } = await one<{ n: number }>(sqlTag`
-      select count(*)::int as n from client_comment_ledger where login_id = ${c.full}`);
-    expect(n).toBe(0);
-    expect((await refusals(c.full)).map((r) => r.reason)).toEqual([
-      'thread-full',
-      'thread-full',
-      'thread-full',
-    ]);
-  });
-
-  it('every thread read is paged: the newest 100, oldest first, then `before`', async () => {
-    const node = await clientNote('paged');
-    await seedComments(node, 250, 'client');
-    const all = await nc.listNodeComments(brain, node);
-    expect(all.length).toBe(250);
-    const p1 = await nc.listNodeComments(brain, node, {});
-    expect(p1.hasMore).toBe(true);
-    expect(p1.rows.map((r) => r.id)).toEqual(all.slice(150).map((r) => r.id));
-    const p2 = await nc.listNodeComments(brain, node, { before: p1.rows[0]!.createdAt });
-    expect(p2.hasMore).toBe(true);
-    expect(p2.rows.map((r) => r.id)).toEqual(all.slice(50, 150).map((r) => r.id));
-    const p3 = await nc.listNodeComments(brain, node, { before: p2.rows[0]!.createdAt });
-    expect(p3.hasMore).toBe(false);
-    expect(p3.rows.map((r) => r.id)).toEqual(all.slice(0, 50).map((r) => r.id));
-    // The client thread, as a client and as a member (human scopes).
-    const asClient = await m.withHumanViewer('client', () => ct.listClientThread(brain, node, {}));
-    expect(asClient?.hasMore).toBe(true);
-    expect(asClient?.rows.map((r) => r.id)).toEqual(p1.rows.map((r) => r.id));
-    const asMember = await m.withHumanViewer('team', () =>
-      ct.listClientThread(brain, node, { before: p1.rows[0]!.createdAt }),
-    );
-    expect(asMember?.rows.map((r) => r.id)).toEqual(p2.rows.map((r) => r.id));
-    // The review talk: the client's own read and the admin's.
-    const talk = await page(c.page, `${tag} paged talk`);
-    await submit(c.page, talk);
-    await seedComments(talk, 101, 'review');
-    const mine = await as(c.page, () => sc.listMineComments(spaceOf[c.page]!, talk, {}));
-    expect([mine?.rows.length, mine?.hasMore]).toEqual([100, true]);
-    const admins = await rv.listReviewComments(talk, {});
-    expect([admins?.rows.length, admins?.hasMore]).toEqual([100, true]);
-    const older = await rv.listReviewComments(talk, { before: admins!.rows[0]!.createdAt });
-    expect([older?.rows.length, older?.hasMore]).toEqual([1, false]);
   });
 
   // ── Text counts toward storage (I3, I8) ─────────────────────────────────
@@ -585,46 +383,6 @@ describe.skipIf(!URL)('client abuse limits: comments, text, races, give back', (
     expect(n).toBe(10);
   });
 
-  it('parallel comments at the last place of the day: exactly one passes (I7)', async () => {
-    // 99 places taken; three threads, so only the day's lock can hold it.
-    await ledgerRows(c.raceCap, 99);
-    const notes = await Promise.all([1, 2, 3].map((i) => clientNote(`race day ${i}`)));
-    const results = await Promise.allSettled(
-      notes.map((n) =>
-        ct.addClientThreadComment(brain, n, { kind: 'client', loginId: c.raceCap, name: 'R' }, 'x'),
-      ),
-    );
-    expect(results.filter((r) => r.status === 'fulfilled').length).toBe(1);
-    for (const r of results.filter((x) => x.status === 'rejected')) {
-      expect((r as PromiseRejectedResult).reason).toMatchObject({ reason: 'comment-cap' });
-    }
-    const { n } = await one<{ n: number }>(sqlTag`
-      select count(*)::int as n from client_comment_ledger where login_id = ${c.raceCap}`);
-    expect(n).toBe(100);
-  });
-
-  it('parallel comments at a thread’s last place: exactly one passes (I7)', async () => {
-    // Three clients, each with room in its day: only the thread's lock holds it.
-    const note = await clientNote('race thread');
-    await seedComments(note, 999, 'client');
-    const results = await Promise.allSettled(
-      [c.raceT1, c.raceT2, c.raceT3].map((login) =>
-        ct.addClientThreadComment(brain, note, { kind: 'client', loginId: login, name: 'T' }, 'x'),
-      ),
-    );
-    expect(results.filter((r) => r.status === 'fulfilled').length).toBe(1);
-    for (const r of results.filter((x) => x.status === 'rejected')) {
-      expect((r as PromiseRejectedResult).reason).toMatchObject({ reason: 'thread-full' });
-    }
-    const { n } = await one<{ n: number }>(sqlTag`
-      select count(*)::int as n from node_comments where node_id = ${note}`);
-    expect(n).toBe(1000);
-  });
-
-  // The boundary is the live brain-wide sum plus 6 MB. The other file that
-  // moves megabytes of client bytes waits on the file's 'client-total' lock,
-  // and page text other files write moves it a few KB, so no retry: a
-  // missing product lock fails it (both uploads pass).
   it('two clients’ parallel uploads at the last bytes of the total: exactly one passes', async () => {
     process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES = String((await usedBytes()) + 6 * MB);
     try {
@@ -751,56 +509,18 @@ describe.skipIf(!URL)('client abuse limits: comments, text, races, give back', (
     expect(listed[0]).toMatchObject({ loginId: c.admin, reason: 'total' });
   });
 
-  it('the admin lists the client threads clients wrote in, and deletes one client’s comments', async () => {
-    const A = spaceOf[c.admin]!;
-    const recent = await clientNote('activity recent');
-    const quiet = await clientNote('activity members only');
-    const say = (who: string, node: string, body: string) =>
-      ct.addClientThreadComment(
-        brain,
-        node,
-        { kind: 'client', loginId: who, name: `N ${who.slice(0, 4)}` },
-        body,
-      );
-    await say(c.other, recent, 'first');
-    await say(c.admin, recent, 'second');
-    await ct.addClientThreadComment(
-      brain,
-      quiet,
-      { kind: 'member', loginId: member, name: 'Mia' },
-      'm',
-    );
-    const rows = await au.clientThreadActivity(brain, 7);
-    const mineRow = rows.find((r) => r.nodeId === recent);
-    expect(mineRow).toMatchObject({
-      clientComments: 2,
-      lastClientName: `N ${c.admin.slice(0, 4)}`,
-      type: 'note',
-    });
-    expect(rows.find((r) => r.nodeId === quiet)).toBeUndefined();
-    // Review talk of the same client, and an item that left client level.
-    const talk = await page(c.admin, `${tag} admin talk`);
-    await submit(c.admin, talk);
-    await as(c.admin, () =>
-      sc.addMineComment(A, brain, talk, { loginId: c.admin, name: 'x' }, 'r'),
-    );
-    const ledger = async () =>
-      (
-        await one<{ n: number }>(sqlTag`
-        select count(*)::int as n from client_comment_ledger where login_id = ${c.admin}`)
-      ).n;
-    const places = await ledger();
-    expect(await au.deleteClientComments(brain, c.admin)).toBe(2);
+  it('a deleted client login takes its old comments with it; others stay', async () => {
+    // Nothing writes comments any more (2026-10-09): rows from before are
+    // written here on the admin pool, as they sit on an upgraded brain.
+    const note = await clientNote('old comments');
+    const old = (who: string, kind: string, body: string) => sqlTag`
+      insert into node_comments (owner_id, node_id, author_kind, login_id, author_name, body, thread_scope)
+      values (${brain}, ${note}, ${kind}, ${who}, 'x', ${body}, 'client')`;
+    await m.systemDb.execute(old(c.admin, 'client', 'mine'));
+    await m.systemDb.execute(old(c.other, 'client', 'theirs'));
+    expect(await au.deleteClientComments(brain, c.admin)).toBe(1);
     const left = await exec<{ body: string }>(sqlTag`
-      select body from node_comments where node_id in (${recent}, ${talk}) order by body`);
-    expect(left.map((r) => r.body)).toEqual(['first']);
-    // The day's places are not given back.
-    expect(await ledger()).toBe(places);
-    // Old comments fall out of the window.
-    await m.systemDb.execute(sqlTag`
-      update node_comments set created_at = now() - interval '10 days' where node_id = ${recent}`);
-    expect(
-      (await au.clientThreadActivity(brain, 7)).find((r) => r.nodeId === recent),
-    ).toBeUndefined();
+      select body from node_comments where node_id = ${note} order by body`);
+    expect(left.map((r) => r.body)).toEqual(['theirs']);
   });
 });

@@ -68,8 +68,6 @@ const HTTP_SURFACE = [
   'task_create',
   'task_update',
   'task_delete',
-  'task_comments_list',
-  'task_comment_add',
   'event_list',
   'event_get',
   'event_create',

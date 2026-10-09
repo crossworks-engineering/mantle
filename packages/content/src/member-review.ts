@@ -24,7 +24,7 @@
  * before the commit, put in place after it, removed again on a rollback.
  *
  * Only a MEMBER's item is ever reviewable (Phase 7): an admin's own private
- * items are never in the queue, the count, a Return or a review comment, not
+ * items are never in the queue, the count or a Return, not
  * even when submitted before the login was promoted. An admin accepts their
  * own items themselves (`acceptOwnItem`), through the same move.
  *
@@ -54,13 +54,11 @@ import {
   db,
   draws,
   isViewerLevel,
-  nodeComments,
   nodes,
   pages,
   spaceItems,
   spaces,
   tables,
-  type NodeCommentDbRow,
   type ReviewState,
   type SpaceSharing,
   type ViewerLevel,
@@ -86,12 +84,6 @@ import {
   resolveStoragePath,
   snapshotFile,
 } from '@mantle/tabledb';
-import {
-  COMMENT_BODY_MAX,
-  commentPage,
-  type CommentPage,
-  type CommentPageQuery,
-} from './node-comments';
 import { notifySpaceItemChanged } from './member-space-events';
 import {
   SPACE_ITEM_KINDS,
@@ -457,101 +449,6 @@ export async function getReviewItem(
   if (!found) return null;
   const body = await spaceItemBody(found.spaceId, found.row.type, id, opts);
   return body ? { row: found.row, body: publishedOnly(body) } : null;
-}
-
-/**
- * The thread an admin reads on a reviewable item: the review talk (the
- * author and the reviewers, `thread_scope` 'review'), plus the team's
- * comments while the item is shared with the team (every admin can read
- * what the team reads). Null when the item is not reviewable.
- */
-export async function listReviewComments(id: string): Promise<NodeCommentDbRow[] | null>;
-export async function listReviewComments(
-  id: string,
-  page: CommentPageQuery,
-): Promise<CommentPage | null>;
-export async function listReviewComments(
-  id: string,
-  page?: CommentPageQuery,
-): Promise<NodeCommentDbRow[] | CommentPage | null> {
-  const found = await reviewRow(id);
-  if (!found) return null;
-  const where = and(
-    eq(nodeComments.nodeId, id),
-    found.row.sharing === 'team' ? undefined : eq(nodeComments.threadScope, 'review'),
-  );
-  // With `page`: one page of it (the thread route pages every read, I2).
-  if (page) return commentPage(where, page);
-  return db.select().from(nodeComments).where(where).orderBy(asc(nodeComments.createdAt));
-}
-
-/** The reviewer's side of the review talk: open while the item is submitted
- *  (the author is waiting for an answer). Stored with the brain's id, like
- *  every personal item's thread, so it survives Accept; always review talk,
- *  never the team's. The author reads it in their own thread. */
-export async function addReviewComment(
-  brainId: string,
-  id: string,
-  reviewer: { loginId: string; name: string },
-  body: string,
-): Promise<NodeCommentDbRow> {
-  const text = body.trim().slice(0, COMMENT_BODY_MAX);
-  if (!text) throw new ReviewError('invalid', 'A comment needs some text.');
-  return db.transaction(async (tx) => {
-    // Lock the state row: a Recall or an Accept cannot slip in between.
-    const [si] = await tx
-      .select({ state: spaceItems.reviewState })
-      .from(spaceItems)
-      .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))
-      .innerJoin(spaces, eq(spaces.id, nodes.ownerId))
-      .where(and(eq(spaceItems.nodeId, id), eq(spaces.kind, 'personal')))
-      .for('share', { of: spaceItems })
-      .limit(1);
-    // Reviewable at all (a member's item), else it does not exist for an admin.
-    if (!si || !(await reviewRow(id, tx))) throw notFound();
-    if (si.state !== 'submitted') {
-      throw new ReviewError('not-submitted', 'Only a submitted item takes review comments.');
-    }
-    const [c] = await tx
-      .insert(nodeComments)
-      .values({
-        ownerId: brainId,
-        nodeId: id,
-        authorKind: 'owner',
-        loginId: reviewer.loginId,
-        authorName: reviewer.name.trim().slice(0, 200) || 'Admin',
-        body: text,
-        threadScope: 'review',
-      })
-      .returning();
-    if (!c) throw new Error('addReviewComment: insert returned no row');
-    await notifySpaceItemChanged(id, 'comment', undefined, tx);
-    return c;
-  });
-}
-
-/** Delete one of the caller's own review comments. */
-export async function deleteReviewComment(
-  id: string,
-  loginId: string,
-  commentId: string,
-): Promise<boolean> {
-  return db.transaction(async (tx) => {
-    if (!(await reviewRow(id, tx))) return false;
-    const gone = await tx
-      .delete(nodeComments)
-      .where(
-        and(
-          eq(nodeComments.id, commentId),
-          eq(nodeComments.nodeId, id),
-          eq(nodeComments.authorKind, 'owner'),
-          eq(nodeComments.loginId, loginId),
-        ),
-      )
-      .returning({ id: nodeComments.id });
-    if (gone.length) await notifySpaceItemChanged(id, 'comment', undefined, tx);
-    return gone.length > 0;
-  });
 }
 
 // ── The bundle (plan 6.2, member-bundle.ts) ────────────────────────────────

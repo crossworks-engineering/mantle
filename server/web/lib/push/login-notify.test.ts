@@ -14,7 +14,6 @@ vi.mock('@mantle/content', () => ({
   loadNeedsYou: vi.fn(),
   chatReplyNotice: vi.fn(),
   reviewResultNotice: vi.fn(),
-  commentNotices: vi.fn(),
 }));
 vi.mock('./seal', () => ({ sealToDevice: vi.fn(), publicKeyValid: () => true }));
 vi.mock('../auth/tokens', () => ({ derivedSecret: () => Buffer.from('test-secret') }));
@@ -32,8 +31,8 @@ vi.mock('./store', () => ({
   deleteSubscriptionByRoutingToken: vi.fn(),
 }));
 
-import { chatReplyNotice, commentNotices, reviewResultNotice } from '@mantle/content';
-import { pushChatReply, pushComment, pushReviewResult, pushToLogin } from './login-notify';
+import { chatReplyNotice, reviewResultNotice } from '@mantle/content';
+import { pushChatReply, pushReviewResult, pushToLogin } from './login-notify';
 import { sealToDevice } from './seal';
 import { relayNotify } from './relay-client';
 import {
@@ -117,9 +116,9 @@ describe('pushToLogin', () => {
       await pushToLogin(message({ collapseKey }), NOW);
       return vi.mocked(relayNotify).mock.calls[0]![2].collapseKey;
     };
-    const a = await keyOf('comment:n1');
-    expect(await keyOf('comment:n1')).toBe(a);
-    expect(await keyOf('comment:n2')).not.toBe(a);
+    const a = await keyOf('review:n1');
+    expect(await keyOf('review:n1')).toBe(a);
+    expect(await keyOf('review:n2')).not.toBe(a);
     expect(a).not.toContain('n1');
   });
 
@@ -149,7 +148,6 @@ describe('pushToLogin', () => {
   it.each([
     ['chat', 'chatReplies'],
     ['review', 'reviewResults'],
-    ['comment', 'comments'],
   ] as const)('a %s push respects the login toggle %s', async (kind, pref) => {
     vi.mocked(getLoginPushPrefs).mockResolvedValue({ ...ALL_ON, [pref]: false });
     const res = await pushToLogin(message({ kind }), NOW);
@@ -157,8 +155,8 @@ describe('pushToLogin', () => {
     expect(getLoginPushPrefs).toHaveBeenCalledWith('login-m');
     expect(listLoginSubscriptions).not.toHaveBeenCalled();
     expect(relayNotify).not.toHaveBeenCalled();
-    // The other two kinds still go.
-    for (const other of ['chat', 'review', 'comment'] as const) {
+    // The other kind still goes.
+    for (const other of ['chat', 'review'] as const) {
       if (other === kind) continue;
       expect((await pushToLogin(message({ kind: other }), NOW)).skipped).toBeUndefined();
     }
@@ -174,7 +172,7 @@ describe('pushToLogin', () => {
   });
 });
 
-describe('the three events', () => {
+describe('the two events', () => {
   it('a chat reply pushes the message the content rules built', async () => {
     vi.mocked(chatReplyNotice).mockResolvedValue(message());
     const res = await pushChatReply({ kind: 'chat', loginId: 'login-m', id: 'msg-1' }, NOW);
@@ -195,25 +193,5 @@ describe('the three events', () => {
     expect(res).toEqual({ attempted: 1, delivered: 1, dropped: 0 });
     expect(reviewResultNotice).toHaveBeenCalledWith('login-m', 'accepted', ['n1', 'n2', 'n3']);
     expect(relayNotify).toHaveBeenCalledTimes(1);
-  });
-
-  it('a comment goes to each login it concerns, each on its own devices and toggle', async () => {
-    vi.mocked(commentNotices).mockResolvedValue([
-      message({ kind: 'comment', loginId: 'client-a', role: 'client', collapseKey: 'comment:n1' }),
-      message({ kind: 'comment', loginId: 'client-b', role: 'client', collapseKey: 'comment:n1' }),
-    ]);
-    vi.mocked(listLoginSubscriptions).mockImplementation(async (_owner, login) =>
-      login === 'client-a' ? [device('a', 'client-a')] : [device('b', 'client-b')],
-    );
-    vi.mocked(getLoginPushPrefs).mockImplementation(async (login) =>
-      login === 'client-b' ? { ...ALL_ON, comments: false } : ALL_ON,
-    );
-    const res = await pushComment('c1', NOW);
-    expect(res).toEqual({ attempted: 1, delivered: 1, dropped: 0 });
-    expect(vi.mocked(sealToDevice).mock.calls.map((c) => c[0])).toEqual(['pk-a']);
-    // Each login's push names that login, under the one brain.
-    expect(sealed()).toMatchObject({ kind: 'comment', brainId: BRAIN_ID, loginId: 'client-a' });
-    vi.mocked(commentNotices).mockResolvedValue([]);
-    expect((await pushComment('c2', NOW)).skipped).toBe('no_message');
   });
 });

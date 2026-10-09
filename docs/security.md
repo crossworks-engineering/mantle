@@ -1,5 +1,10 @@
 # Security & safety nets: an overview
 
+> **Update 2026-10-09:** the brain has no comment threads any more (review
+> talk, team talk, client threads and task comments are removed, routes, tools
+> and UI); the comment rows and their row security stay in the database,
+> unread and unwritten. Lines below that describe comments are history.
+
 > How a Mantle brain protects its data, what each external surface can and
 > cannot reach, and the safety nets that keep an install honest over time.
 > Written to be readable by a security reviewer during a corporate pilot; each

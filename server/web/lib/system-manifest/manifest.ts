@@ -529,9 +529,17 @@ export const MANIFEST_HTTP_TOOL_SLUGS: readonly string[] = MANIFEST_HTTP_TOOLS.m
  *   team-notify / team_member_list / team_notify: member-to-member
  *   notifications from the forum era, attached to no agent by default
  *   (member logins Phase 6).
+ *   task_comments_list / task_comment_add: the task comment thread, gone
+ *   with every other comment surface (2026-10-09; user-to-user talk moves
+ *   to the coming forum, progress goes in the task body via task_update).
  */
 export const RETIRED_TOOL_GROUP_SLUGS: readonly string[] = ['team-notify'];
-export const RETIRED_BUILTIN_TOOL_SLUGS: readonly string[] = ['team_member_list', 'team_notify'];
+export const RETIRED_BUILTIN_TOOL_SLUGS: readonly string[] = [
+  'team_member_list',
+  'team_notify',
+  'task_comments_list',
+  'task_comment_add',
+];
 
 export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
   {
@@ -623,7 +631,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
   {
     slug: 'tasks',
     name: 'Tasks',
-    description: 'Task CRUD + the per-task comment thread.',
+    description: 'Task CRUD (progress notes go in the task body).',
     toolSlugs: [
       // The kind's folders (builtins-tree.ts; one set for every row-only kind).
       'tree_folders',
@@ -636,8 +644,6 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'task_create',
       'task_update',
       'task_delete',
-      'task_comments_list',
-      'task_comment_add',
     ],
   },
   {

@@ -14,8 +14,9 @@
  * Under the `tasks` ltree root. Lazy-created on first write. The
  * extractor's special case in server/api/src/agent/extractor.ts:readNodeBodyRaw
  * surfaces status + priority + due_at + todos into the body it summarises.
- * Comments live in the `node_comments` sidecar (node-comments.ts); rows here
- * carry only the count.
+ * Tasks have no comments any more (2026-10-09: user-to-user talk moves to
+ * the forum; progress goes in the task body). `commentCount` stays on the
+ * row, always 0, so an older UI still renders.
  */
 import { and, desc, eq, ilike, or, sql } from 'drizzle-orm';
 import { TEAM_REQUEST_SOURCE, db, nodes, notifyNodeIngested, type Node } from '@mantle/db';
@@ -61,15 +62,7 @@ export function sanitizeTodos(value: unknown): TaskTodo[] {
   return out;
 }
 
-/** Scalar subquery: live comment count for the row (see node-comments.ts).
- *  The outer column must be table-qualified BY HAND — drizzle renders a bare
- *  `${nodes.id}` as unqualified `"id"`, which inside the subquery resolves to
- *  node_comments' own id and silently counts 0 (caught in the live audit). */
-const commentCountSql = sql<number>`(
-  select count(*)::int from node_comments nc where nc.node_id = ${nodes}."id"
-)`;
-
-function rowOf(n: Node, commentCount = 0): TaskRow {
+function rowOf(n: Node): TaskRow {
   const d = (n.data ?? {}) as Record<string, unknown>;
   const status =
     typeof d.status === 'string' && (TASK_STATUSES as readonly string[]).includes(d.status)
@@ -89,7 +82,7 @@ function rowOf(n: Node, commentCount = 0): TaskRow {
     tags: n.tags ?? [],
     todos: sanitizeTodos(d.todos),
     rank: isValidRank(d.rank) ? d.rank : null,
-    commentCount,
+    commentCount: 0,
     summary: typeof d.summary === 'string' ? d.summary : null,
     archivedAt: typeof d.archived_at === 'string' ? d.archived_at : null,
     statusBeforeDone: status === 'done' ? statusBeforeDoneOf(d) : null,
@@ -173,7 +166,7 @@ export async function listTasks(
   // updated_at desc. Rank precedes due date so a hand-ordered board keeps its
   // order in the list too; unranked tasks (rank null) keep the old behavior.
   const rows = await db
-    .select({ node: nodes, commentCount: commentCountSql })
+    .select({ node: nodes })
     .from(nodes)
     .where(and(...taskConds(ownerId, opts)))
     .orderBy(
@@ -187,7 +180,7 @@ export async function listTasks(
     )
     .limit(opts.limit ?? 500)
     .offset(opts.offset ?? 0);
-  return rows.map((r) => rowOf(r.node, r.commentCount));
+  return rows.map((r) => rowOf(r.node));
 }
 
 /** Total tasks matching the same filters as `listTasks` (drives pagination). */
@@ -201,11 +194,11 @@ export async function countTasks(ownerId: string, opts: ListTasksOpts = {}): Pro
 
 export async function getTask(ownerId: string, id: string): Promise<TaskRow | null> {
   const [row] = await db
-    .select({ node: nodes, commentCount: commentCountSql })
+    .select({ node: nodes })
     .from(nodes)
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'task')))
     .limit(1);
-  return row ? rowOf(row.node, row.commentCount) : null;
+  return row ? rowOf(row.node) : null;
 }
 
 /** Caller-supplied checklist item — `id` optional (server assigns). */
@@ -278,7 +271,7 @@ export async function updateTask(
   input: UpdateTaskInput,
 ): Promise<TaskRow | null> {
   const [found] = await db
-    .select({ node: nodes, commentCount: commentCountSql })
+    .select({ node: nodes })
     .from(nodes)
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'task')))
     .limit(1);
@@ -361,7 +354,7 @@ export async function updateTask(
   if (contentChanged || becameReviewed) {
     await notifyNodeIngested(id);
   }
-  return rowOf(updated, found.commentCount);
+  return rowOf(updated);
 }
 
 export async function deleteTask(ownerId: string, id: string): Promise<boolean> {
