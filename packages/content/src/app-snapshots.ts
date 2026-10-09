@@ -21,7 +21,7 @@
 import { randomUUID } from 'node:crypto';
 import { rm } from 'node:fs/promises';
 import * as path from 'node:path';
-import { and, desc, eq, gte, isNotNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, isNotNull, ne, sql } from 'drizzle-orm';
 import { afterRollback, apps, db, nodeSnapshots, nodes, type AppSnapshotCode } from '@mantle/db';
 import type { AppRestoreMode, AppSnapshot } from '@mantle/client-types';
 import {
@@ -60,11 +60,15 @@ export const APP_SNAPSHOT_MCP_KEEP = 24;
  *  (APP_SNAPSHOT_MCP_MAX_MB), apart from the other automatic ones. */
 export const APP_SNAPSHOT_MCP_DEFAULT_MAX_MB = 512;
 
-/** The owner's snapshots would pass APP_SNAPSHOT_MAX_MB. */
+/** The owner's own snapshots would pass APP_SNAPSHOT_MAX_MB. A member
+ *  has no snapshot delete (access matrix N6), so their answer says what
+ *  frees the budget for them instead. */
 export class AppSnapshotBudgetError extends Error {
-  constructor(usedMb: number, maxMb: number) {
+  constructor(usedMb: number, maxMb: number, opts: { member?: boolean } = {}) {
     super(
-      `snapshots already hold ${usedMb} MB of the ${maxMb} MB allowed (APP_SNAPSHOT_MAX_MB): delete old snapshots on the app's History tab (or with app_snapshot_delete) first`,
+      opts.member
+        ? `your snapshots already hold ${usedMb} MB of the ${maxMb} MB allowed (APP_SNAPSHOT_MAX_MB). A member cannot delete snapshots; an app an admin approves or deletes takes its snapshots out of your budget`
+        : `snapshots already hold ${usedMb} MB of the ${maxMb} MB allowed (APP_SNAPSHOT_MAX_MB): delete old snapshots on the app's History tab (or with app_snapshot_delete) first`,
     );
     this.name = 'AppSnapshotBudgetError';
   }
@@ -210,12 +214,25 @@ async function currentCode(
   };
 }
 
-/** The bytes the owner's snapshot copies take now. */
-async function usedSnapshotBytes(ownerId: string, q: Q = db): Promise<number> {
+/**
+ * The bytes the owner's OWN snapshot copies take now: the manual ones
+ * (APP_SNAPSHOT_MAX_MB), never an automatic one, which is pruned on its
+ * own line per app (access matrix L22). A member's budget counts the
+ * snapshots members took in their space; the brain's counts the brain's,
+ * never the member-era ones an Accept or an admin's delete moved in
+ * (access matrix N7: those were within the member's budget when taken).
+ */
+async function usedSnapshotBytes(ownerId: string, member: boolean, q: Q = db): Promise<number> {
   const [row] = await q
     .select({ n: sql<string>`coalesce(sum(${nodeSnapshots.dbBytes}), 0)::bigint` })
     .from(nodeSnapshots)
-    .where(eq(nodeSnapshots.ownerId, ownerId));
+    .where(
+      and(
+        eq(nodeSnapshots.ownerId, ownerId),
+        eq(nodeSnapshots.trigger, 'manual'),
+        member ? eq(nodeSnapshots.actor, 'member') : ne(nodeSnapshots.actor, 'member'),
+      ),
+    );
   return Number(row?.n ?? 0);
 }
 
@@ -248,10 +265,13 @@ async function snapshotLocked(
   const code = await currentCode(ownerId, appId, q);
   if (!code) return null;
   if (opts.trigger === 'manual') {
-    const used = await usedSnapshotBytes(ownerId, q);
+    const member = opts.actor === 'member';
+    const used = await usedSnapshotBytes(ownerId, member, q);
     const max = maxSnapshotBytes();
     if (used >= max) {
-      throw new AppSnapshotBudgetError(Math.round(used / 1048576), Math.round(max / 1048576));
+      throw new AppSnapshotBudgetError(Math.round(used / 1048576), Math.round(max / 1048576), {
+        member,
+      });
     }
   }
   const id = randomUUID();
@@ -345,8 +365,9 @@ export async function removeSnapshotFiles(paths: (string | null)[]): Promise<voi
 /**
  * Take a snapshot of an app: its code (published, and the draft when there is
  * one) and a copy of its database. Null when the app is not this owner's.
- * The owner's own snapshots count against APP_SNAPSHOT_MAX_MB; automatic
- * ones are always taken and the oldest past APP_SNAPSHOT_AUTO_KEEP pruned.
+ * Only the owner's own (manual) snapshots count against APP_SNAPSHOT_MAX_MB;
+ * automatic ones are always taken, never count there, and the oldest past
+ * APP_SNAPSHOT_AUTO_KEEP are pruned.
  */
 export async function createAppSnapshot(
   ownerId: string,

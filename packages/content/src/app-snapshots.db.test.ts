@@ -27,6 +27,8 @@ describe.skipIf(!URL)('app history on Postgres', () => {
   let snaps: typeof import('./app-snapshots');
   let dir = '';
   const owner = randomUUID();
+  /** A second brain for the manual budget test: its sums see only its own rows. */
+  const budgetOwner = randomUUID();
   const tag = owner.slice(0, 8);
   const GREEN = {
     storageKey: 'attachments/aa/bb/test',
@@ -54,13 +56,17 @@ describe.skipIf(!URL)('app history on Postgres', () => {
     await admin`insert into auth.users (id, email, password_hash, role) values
       (${owner}, ${`as-${tag}@example.invalid`}, 'x', 'admin')`;
     await admin`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`;
+    await admin`insert into auth.users (id, email, password_hash, role) values
+      (${budgetOwner}, ${`asb-${tag}@example.invalid`}, 'x', 'admin')`;
+    await admin`insert into spaces (id, kind, login_id)
+                values (${budgetOwner}, 'brain', ${budgetOwner})`;
   }, 60_000);
 
   afterAll(async () => {
     if (!admin) return;
-    await admin`delete from nodes where owner_id = ${owner}`;
-    await admin`delete from spaces where login_id = ${owner}`;
-    await admin`delete from auth.users where id = ${owner}`;
+    await admin`delete from nodes where owner_id in ${admin([owner, budgetOwner])}`;
+    await admin`delete from spaces where login_id in ${admin([owner, budgetOwner])}`;
+    await admin`delete from auth.users where id in ${admin([owner, budgetOwner])}`;
     await m.closeDb();
     if (dir) await rm(dir, { recursive: true, force: true });
   });
@@ -365,6 +371,44 @@ describe.skipIf(!URL)('app history on Postgres', () => {
     );
     expect(auto).toHaveLength(2);
     expect(auto.reduce((n, e) => n + (e.dbBytes ?? 0), 0)).toBeLessThanOrEqual(1024 * 1024);
+  });
+
+  it('the manual budget counts the owner’s own manual snapshots only (L22, N7)', async () => {
+    const o = budgetOwner;
+    const app = await apps.createApp(o, { title: `${tag} manual budget` });
+    await apps.writeDraftFile(o, app.id, 'App.tsx', 'export default () => "one";');
+    await apps.setManifest(o, app.id, { sqlite: schema });
+    await apps.setDraftBuild(o, app.id, GREEN);
+    await apps.publishApp(o, app.id, { actor: 'owner' });
+    // A copy of this database is over 1 MB: one copy fills a 1 MB budget.
+    await broker.appDbExec(
+      o,
+      app.id,
+      'INSERT INTO items (name) VALUES (?)',
+      ['x'.repeat(1_200_000)],
+      schema,
+    );
+    process.env.APP_SNAPSHOT_MAX_MB = '1';
+    try {
+      // A member-era manual snapshot (an Accept moves these in with the
+      // app), an automatic one before a schema change and an MCP undo one.
+      await snaps.createAppSnapshot(o, app.id, { actor: 'member', note: 'member era' });
+      await snaps.createAppSnapshot(o, app.id, { trigger: 'pre_schema', actor: 'agent' });
+      await snaps.createAppSnapshot(o, app.id, { trigger: 'pre_mcp_write', actor: 'mcp' });
+      // None of them counts against the admin's Take snapshot.
+      const own = await snaps.createAppSnapshot(o, app.id, { note: 'admin' });
+      expect(own).toMatchObject({ trigger: 'manual', hasData: true });
+      // The admin's own copies still do.
+      await expect(snaps.createAppSnapshot(o, app.id)).rejects.toBeInstanceOf(
+        snaps.AppSnapshotBudgetError,
+      );
+      // A member's budget counts members' copies, and says what frees it.
+      await expect(snaps.createAppSnapshot(o, app.id, { actor: 'member' })).rejects.toThrow(
+        /cannot delete snapshots/,
+      );
+    } finally {
+      delete process.env.APP_SNAPSHOT_MAX_MB;
+    }
   });
 
   it('a fresh restore marker stops the app’s SQL; a stale one is ignored', async () => {
