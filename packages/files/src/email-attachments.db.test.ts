@@ -139,6 +139,20 @@ describe.skipIf(!URL)('email attachment lookups on Postgres', () => {
     expect([...got]).toEqual([`${inbox}.attachments`]);
   });
 
+  it('counts every path in a mail account branch, so a key cannot make an attachments folder there (C3)', async () => {
+    expect(await e.reachesEmailAttachment(owner, { path: inbox })).toBe(true);
+    expect(await e.reachesEmailAttachment(owner, { path: `${inbox}.made_by_key` })).toBe(true);
+    expect(
+      await e.reachesEmailAttachment(owner, { path: `${inbox}.made_by_key.attachments` }),
+    ).toBe(true);
+    // Outside every mail branch, an attachments folder is an ordinary folder.
+    expect(
+      await e.reachesEmailAttachment(owner, {
+        path: `files.${tag.replace(/-/g, '_')}.attachments`,
+      }),
+    ).toBe(false);
+  });
+
   it('refuses a path it cannot read', async () => {
     expect(await e.reachesEmailAttachment(owner, { path: "files'; drop" })).toBe(true);
     expect(await e.reachesEmailAttachment(owner, { path: '' })).toBe(true);

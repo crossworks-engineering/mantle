@@ -71,8 +71,17 @@ export async function emailAttachmentFolders(
   return new Set(candidates.filter((p, i) => mail.has(parents[i]!) || stamped.has(p)));
 }
 
-/** Whether a folder path is, is inside, or holds a mail's attachments. */
+/** Whether a folder path is, is inside, or holds a mail's attachments. A
+ *  path in a mail account's branch counts as a whole: a key that reaches
+ *  email only with Search must not make an `attachments` folder there and
+ *  move files in, which would hide them as attachments (audit C3). */
 async function pathReaches(ownerId: string, path: string): Promise<boolean> {
+  const branch = (await db.execute(sql`
+    select 1 as hit from email_accounts
+     where user_id = ${ownerId}
+       and (${path} = branch_path or starts_with(${path}, branch_path || '.'))
+     limit 1`)) as unknown as unknown[];
+  if (branch.length > 0) return true;
   // Is, or is inside: some prefix of the path is an attachments folder.
   const labels = path.split('.');
   const prefixes = labels
