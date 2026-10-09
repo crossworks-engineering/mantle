@@ -139,26 +139,36 @@ function nonOwnerRunLevel(ctx: ToolHandlerContext): ViewerLevel | null {
 }
 
 /**
- * The top-level arguments of a call that the tool's stored input schema does
- * not declare (access matrix T6). A read-only mark is for the schema the
- * admin looked at, but the remote server may add a parameter (one that
- * writes) long before the next sync rewrites the row and voids the mark.
- * Below the owner a marked tool takes only the arguments it was marked
- * with; a schema that declares it takes any (`additionalProperties`, as a
- * capped schema does) leaves nothing undeclared.
+ * The arguments of a call that the tool's stored input schema does not
+ * declare (access matrix T6). A read-only mark is for the schema the admin
+ * looked at, but the remote server may add a parameter (one that writes)
+ * long before the next sync rewrites the row and voids the mark. Below the
+ * owner a marked tool takes only the arguments it was marked with: an open
+ * schema (`additionalProperties`) counts as closed, and one level down an
+ * object argument takes only the keys its schema lists (audit B2). An
+ * undeclared key comes back as `name`, a nested one as `name.key`.
  */
 export function undeclaredToolArgs(schema: unknown, input: Record<string, unknown>): string[] {
-  const s = (schema && typeof schema === 'object' ? schema : {}) as {
-    properties?: unknown;
-    additionalProperties?: unknown;
+  const propsOf = (x: unknown): Record<string, unknown> | null => {
+    const p = x && typeof x === 'object' ? (x as { properties?: unknown }).properties : null;
+    return p && typeof p === 'object' && !Array.isArray(p) ? (p as Record<string, unknown>) : null;
   };
-  const open = s.additionalProperties;
-  if (open === true || (open !== null && typeof open === 'object')) return [];
-  const props =
-    s.properties && typeof s.properties === 'object' ? (s.properties as object) : ({} as object);
-  return Object.keys(input).filter(
-    (k) => input[k] !== undefined && !Object.prototype.hasOwnProperty.call(props, k),
-  );
+  const props = propsOf(schema) ?? {};
+  const out: string[] = [];
+  for (const [k, v] of Object.entries(input)) {
+    if (v === undefined) continue;
+    if (!Object.prototype.hasOwnProperty.call(props, k)) {
+      out.push(k);
+      continue;
+    }
+    const inner = propsOf(props[k]);
+    if (!inner || !v || typeof v !== 'object' || Array.isArray(v)) continue;
+    for (const [ik, iv] of Object.entries(v as Record<string, unknown>)) {
+      if (iv !== undefined && !Object.prototype.hasOwnProperty.call(inner, ik))
+        out.push(`${k}.${ik}`);
+    }
+  }
+  return out;
 }
 
 /** Why a connector call is refused for a non-owner run, or null. */

@@ -498,6 +498,18 @@ export type ExternalAccessOffActor = ExternalAccessActor | { via: 'agent' };
 export type SetExternalAccessResult =
   { ok: true; tool: Tool } | { ok: false; status: 400 | 404; error: string };
 
+/** Whether a stored input schema lists its inputs: a `properties` object,
+ *  or a closed schema that takes none. The open stand-in the sync stores
+ *  for a schema too large to keep lists nothing. */
+function hasListedInputs(schema: unknown): boolean {
+  const s = (schema && typeof schema === 'object' ? schema : {}) as {
+    properties?: unknown;
+    additionalProperties?: unknown;
+  };
+  if (s.properties && typeof s.properties === 'object') return true;
+  return !(s.additionalProperties === true || typeof s.additionalProperties === 'object');
+}
+
 /**
  * Switch "External access" on or off for the tool `toolId`. Switching on
  * needs `readOnlyConfirmed` (the admin confirms the tool only reads; the
@@ -531,6 +543,17 @@ export async function setToolExternalAccess(
     const by: ExternalAccessActor = opts.by;
     const why = externalAccessIneligible(row);
     if (why) return { ok: false, status: 400, error: why };
+    // A connector tool whose schema the sync stored open, with no inputs
+    // listed (the remote schema was too large to keep), cannot be marked:
+    // nobody saw its inputs, and below the owner a marked tool takes only
+    // the inputs it lists (audit B2).
+    if ((row.handler as ToolHandler).kind === 'mcp' && !hasListedInputs(row.inputSchema)) {
+      return {
+        ok: false,
+        status: 400,
+        error: `'${row.slug}' was synced without its list of inputs (its schema is too large to keep), so it can't be marked read-only. Leave it to admins, or ask the connector's maker for a smaller schema.`,
+      };
+    }
     if (opts.readOnlyConfirmed !== true) {
       return {
         ok: false,

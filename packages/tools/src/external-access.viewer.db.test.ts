@@ -792,11 +792,42 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     } finally {
       await switchOn('site_query');
     }
-    // A schema that takes any input (as a capped one does) leaves nothing out.
+    // An open schema counts as closed below the owner, and one level down an
+    // object input takes only the keys it lists (audit B2).
     expect(
       dispatch.undeclaredToolArgs({ type: 'object', additionalProperties: true }, { a: 1 }),
-    ).toEqual([]);
+    ).toEqual(['a']);
     expect(dispatch.undeclaredToolArgs({ type: 'object' }, { a: 1, b: undefined })).toEqual(['a']);
+    expect(
+      dispatch.undeclaredToolArgs(
+        {
+          type: 'object',
+          additionalProperties: true,
+          properties: { filter: { type: 'object', properties: { name: {} } } },
+        },
+        { filter: { name: 'x', run_sql: 'drop' } },
+      ),
+    ).toEqual(['filter.run_sql']);
+  });
+
+  it('a connector tool synced without its list of inputs cannot be marked read-only (B2)', async () => {
+    const [big] = (await exec(sqlTag`
+      insert into tools (owner_id, slug, name, description, handler, input_schema)
+      values (${anchor}, 'site_big', 'n', 'd',
+        ${JSON.stringify({ kind: 'mcp', group: 'mcp-site', toolName: 'big' })}::jsonb,
+        '{"type":"object","additionalProperties":true}'::jsonb)
+      returning id`)) as unknown as Array<{ id: string }>;
+    try {
+      const res = await ta.setToolExternalAccess(anchor, big!.id, {
+        allow: true,
+        readOnlyConfirmed: true,
+        by: ADMIN,
+      });
+      expect(res).toMatchObject({ ok: false, status: 400 });
+      expect(res.ok === false && res.error).toMatch(/without its list of inputs/);
+    } finally {
+      await exec(sqlTag`delete from tools where id = ${big!.id}`);
+    }
   });
 
   // Access matrix T8: the N5 gate covers an http tool with External access
