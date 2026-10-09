@@ -204,8 +204,9 @@ function orphanLoginDrops(cluster: ClusterRoles): string[] {
 /**
  * The statements that remove one brain's per-database logins, for its
  * teardown (`pnpm -C packages/db drop-viewer-logins <database>`, run by
- * scripts/rm-worktree.sh). While the database exists its CONNECT grant holds
- * each role, so that goes first. Pure; `roles` = the logins that exist.
+ * `scripts/rm-worktree.sh --drop-viewer-logins`). While the database exists
+ * its CONNECT grant holds each role, so that goes first. Pure; `roles` = the
+ * logins that exist.
  */
 export function viewerLoginDropStatements(
   database: string,

@@ -2,8 +2,8 @@
  * Remove one brain's per-database viewer logins (MANTLE_VIEWER_ROLES_PER_DATABASE):
  * the `mantle_view_<level>_<database>` roles are cluster objects, so dropping
  * the brain's database or its worktree leaves them behind. Run at a throwaway
- * brain's teardown; scripts/rm-worktree.sh runs it for a worktree whose
- * `.env.local` sets the flag. Leaves the database itself alone.
+ * brain's teardown; `scripts/rm-worktree.sh <slug> --drop-viewer-logins`
+ * runs it (never for the integrator's database). Leaves the database alone.
  *
  *   pnpm -C packages/db drop-viewer-logins <database>
  *

@@ -160,8 +160,8 @@ from, to}]`: the Access control and `PATCH /api/access/nodes/:id`,
   On a shared cluster, run every brain in per-database mode.
 - **Teardown.** Per-database logins are cluster objects that outlive their
   brain. `pnpm -C packages/db drop-viewer-logins <database>` removes them
-  (`scripts/rm-worktree.sh` runs it for a worktree whose `.env.local` sets the
-  flag), and every migrate on the cluster drops the logins of databases that
+  (`scripts/rm-worktree.sh <slug> --drop-viewer-logins` runs it, never for
+  the integrator's own database), and every migrate on the cluster drops the logins of databases that
   no longer exist. Whichever brain migrates first in shared mode claims the
   shared roles, so a leftover database that did so blocks every other
   shared-mode migrate on the cluster (a dev stack's included) until it is

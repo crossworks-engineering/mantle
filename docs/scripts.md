@@ -275,17 +275,18 @@ directory or branch already exists.
 scripts/new-worktree.sh remote-mcp
 ```
 
-### `scripts/rm-worktree.sh <slug> [-f]`
+### `scripts/rm-worktree.sh <slug> [-f] [--drop-viewer-logins]`
 
 Removes the worktree, **keeps the branch** (delete it separately once merged).
 Refuses when the tree is dirty unless you pass `-f`.
 
-When the worktree's `server/web/.env.local` sets
-`MANTLE_VIEWER_ROLES_PER_DATABASE=1` (a throwaway brain on a shared Postgres),
-it first runs `pnpm -C packages/db drop-viewer-logins <database>`: that brain's
-`mantle_view_<level>_<database>` login roles are cluster objects and would
-outlive it. It leaves the database itself alone and says so; drop that by
-hand when you are done with it.
+`--drop-viewer-logins` also drops a throwaway brain's per-database logins
+(`pnpm -C packages/db drop-viewer-logins <database>`): with
+`MANTLE_VIEWER_ROLES_PER_DATABASE=1` those `mantle_view_<level>_<database>`
+roles are cluster objects and would outlive it. Only on request, and never
+for the integrator's own database: `new-worktree.sh` copies its `.env.local`,
+so a worktree points at the live brain unless you changed it. It leaves the
+database itself alone. Tests: `bash scripts/test-rm-worktree.sh`.
 
 ---
 
