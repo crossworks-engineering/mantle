@@ -137,7 +137,8 @@ export function appToolScope(
  * app warns about what the client rules refuse (every run, an admin's too);
  * a team or public app about what members are refused. An admin-level app
  * gets none. Given back by every author move that can change the answer:
- * `app_tools_set`, `app_publish` and setting an app's level (`access_set`).
+ * `app_tools_set`, `app_publish`, setting an app's level (`access_set`) and
+ * moving it into another folder (`movedAppToolWarnings`).
  * Best-effort: a failed check warns nothing and never fails the move it
  * rides on.
  */
@@ -171,4 +172,23 @@ export async function appToolWarnings(ownerId: string, appId: string): Promise<s
   } catch {
     return [];
   }
+}
+
+/**
+ * The tool warnings of apps a move filed into another folder (access matrix
+ * N11): a folder shared with clients sets the level an app is used at
+ * (M5), so moving an app in or out changes which of its declared tools
+ * run, for its admins too. Each warning names its app when more than one
+ * moved. Best-effort, as appToolWarnings.
+ */
+export async function movedAppToolWarnings(
+  ownerId: string,
+  appIds: readonly string[],
+): Promise<string[]> {
+  const out: string[] = [];
+  for (const id of appIds) {
+    const warnings = await appToolWarnings(ownerId, id);
+    out.push(...(appIds.length > 1 ? warnings.map((w) => `App ${id}: ${w}`) : warnings));
+  }
+  return out;
 }

@@ -31,6 +31,7 @@ import { str, strArr } from './coerce';
 import { errorMessage } from '@mantle/std';
 import { isOwnerSurface, OWNER_ONLY_ERROR } from './surface';
 import { CONFIRM_INPUT, visibilityRefusal } from './visibility-refusal';
+import { movedAppToolWarnings } from './app-tool-level';
 
 /** The kinds these tools serve: every tree kind but Files. */
 export const TREE_TOOL_KINDS = [
@@ -301,6 +302,16 @@ export const tree_item_move: BuiltinToolDef = {
           ok: false,
           error: `nothing moved: ${result.failed[0]!.error} (each id must be a ${noun} of this brain)`,
         };
+      }
+      // An app's folder can set the level it is used at (a client-shared
+      // folder, M5): say which declared tools its runs now refuse (N11).
+      if (kind === 'apps' && result.moved) {
+        const failed = new Set(result.failed.map((f) => f.id));
+        const warnings = await movedAppToolWarnings(
+          ctx.ownerId,
+          [...new Set(ids)].filter((id) => !failed.has(id)),
+        );
+        if (warnings.length) return { ok: true, output: { ...result, warnings } };
       }
       return { ok: true, output: result };
     }),

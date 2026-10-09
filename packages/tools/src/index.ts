@@ -210,6 +210,7 @@ export {
   appToolScope,
   appToolVerdict,
   appToolWarnings,
+  movedAppToolWarnings,
   APP_NO_TOOLS,
   type AppToolLevel,
   type AppToolRunner,

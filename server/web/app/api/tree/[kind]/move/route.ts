@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { moveTreeItems, notifyTreeChanged } from '@mantle/content/tree';
+import { movedAppToolWarnings } from '@mantle/tools';
 import { firstIssue } from '@/lib/zod-issue';
 import { treeErrorResponse, treeKindOr404 } from '@/lib/tree-route';
 
@@ -32,6 +33,16 @@ export async function POST(req: Request, ctx: { params: Promise<{ kind: string }
       seen: parsed.data.seen,
     });
     if (result.moved) await notifyTreeChanged(user.id, kind);
+    // An app's folder can set the level it is used at (a client-shared
+    // folder, M5): say which declared tools its runs now refuse (N11).
+    if (kind === 'apps' && result.moved) {
+      const failed = new Set(result.failed.map((f) => f.id));
+      const warnings = await movedAppToolWarnings(
+        user.id,
+        [...new Set(parsed.data.ids)].filter((id) => !failed.has(id)),
+      );
+      if (warnings.length) return NextResponse.json({ ...result, warnings });
+    }
     return NextResponse.json(result);
   } catch (err) {
     return treeErrorResponse(err);

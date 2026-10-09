@@ -8,19 +8,22 @@
  *    sets them in Settings > MCP > Team and client access);
  *  - `clients`: the MCP clients THIS member connected (their live OAuth
  *    grants), never another login's;
- *  - `connectors`: the connectors open at team level (team apps Phase 2),
- *    each with its read and write tool counts.
+ *  - `connectors`: the connectors the member's own MCP really offers (team
+ *    apps Phase 2; access matrix N10): the same tools as the surface lists
+ *    (resolveLoginToolRows), so none while the team surface is closed, and
+ *    write tools only with the member's Write switch on. Each with its read
+ *    and write tool counts.
  *
  * A member only: an admin uses Settings > MCP itself, a client has no MCP
  * screen yet. Nothing here is writable but the member's own disconnect
  * (./clients/[id]/route.ts).
  */
 import { NextResponse } from '@/server/http-compat';
-import { and, eq } from 'drizzle-orm';
-import { agents, db, mcpLoginAccess } from '@mantle/db';
-import { TEAM_RESPONDER_SLUG } from '@mantle/runtime/assistant';
+import { eq } from 'drizzle-orm';
+import { db, mcpLoginAccess } from '@mantle/db';
 import { loadProfilePreferences } from '@mantle/content';
 import { listLoginConnectorTools } from '@mantle/tools';
+import { resolveLoginToolRows } from '@mantle/mcp-core';
 import type { MemberMcpConnector, MemberMcpView } from '@mantle/client-types';
 import { getMemberOr401 } from '@/lib/auth';
 import { connectorUrl } from '@/lib/mcp-oauth';
@@ -39,22 +42,31 @@ export async function GET() {
     listLoginClients(member.anchorId, member.loginId),
     listLoginConnectorTools(member.anchorId, 'team'),
   ]);
-  // The connectors open at team level (team apps Phase 2), by connector:
-  // none while MCP is closed to the member (the box or their own switch) or
-  // the team surface is closed (its responder not at team level), as their
-  // MCP then lists no connector tool either (M2 audit, low 7).
-  const [responder] = await db
-    .select({ audience: agents.audience, enabled: agents.enabled })
-    .from(agents)
-    .where(and(eq(agents.ownerId, member.anchorId), eq(agents.slug, TEAM_RESPONDER_SLUG)))
-    .limit(1);
-  const open =
-    prefs.remoteMcpEnabled === true &&
-    access?.enabled === true &&
-    responder?.enabled === true &&
-    responder.audience === 'team';
+  // The connectors the member's MCP offers (M2 audit, low 7; access matrix
+  // N10): none while MCP is closed to the member (the box or their own
+  // switch); else exactly the connector tools the surface lists for an
+  // OAuth client of this member, which leaves them out while the team
+  // surface is closed (its responder not at team level, or no tool of its
+  // own) and lists a write tool only with Write on.
+  const open = prefs.remoteMcpEnabled === true && access?.enabled === true;
+  const offered = open
+    ? new Set(
+        (
+          await resolveLoginToolRows({
+            role: 'member',
+            anchorId: member.anchorId,
+            loginId: member.loginId,
+            via: 'oauth',
+            write: access?.writeEnabled === true,
+          })
+        ).rows
+          .filter((r) => r.handler.kind === 'mcp')
+          .map((r) => r.id),
+      )
+    : new Set<string>();
   const byGroup = new Map<string, MemberMcpConnector>();
-  for (const t of open ? tools : []) {
+  for (const t of tools) {
+    if (!offered.has(t.tool.id)) continue;
     const c = byGroup.get(t.groupId) ?? {
       id: t.groupId,
       name: t.groupName,
