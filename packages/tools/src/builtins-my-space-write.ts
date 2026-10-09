@@ -228,7 +228,7 @@ export const my_item_submit: BuiltinToolDef = {
   slug: 'my_item_submit',
   name: 'Submit one of my items for review',
   description:
-    'Send one of your own items (by id from `my_items_list`) to an admin for review. Its SAVED version is what is reviewed, and it is frozen until the admin accepts or returns it, or you recall it in the app.',
+    'Send one of your own items (by id from `my_items_list`) to an admin for review. Its SAVED version is what is reviewed, and it is frozen until the admin accepts or rejects it, or you recall it in the app.',
   inputSchema: {
     type: 'object',
     properties: { id: { type: 'string', description: 'The item id from my_items_list.' } },

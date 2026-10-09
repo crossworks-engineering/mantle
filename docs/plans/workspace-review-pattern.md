@@ -18,8 +18,10 @@ with the **normal item screen**, never on a separate Team admin review screen.
   read only where the admin must not edit a member's work, with a banner:
   - "Submitted by NAME. Waiting for your approval." Actions: **Approve**
     (asks the level and anything kind-specific, shows the version, confirm
-    dialog, sends the pinned version) and **Send back** (no note; the item
-    returns to the member as returned, editable, and they can submit again).
+    dialog, sends the pinned version) and **Reject** (no note; the item
+    returns to the member as `returned`, editable, and they can submit
+    again). The member reads "Rejected by the reviewer. Change it and
+    submit it again." The route keeps its name, `send-back`.
   - "Shared with the team by NAME." Actions: **Unshare** (back to private,
     nothing deleted), **Delete** (to the brain trash, restorable for 30
     days), **Activity** (where the kind has an activity log).
@@ -28,7 +30,7 @@ with the **normal item screen**, never on a separate Team admin review screen.
 
 **No comments in review flows.** No thread, no note, no message, on any
 kind, now or later. People talk through their own channels; the brain does
-not grow a messaging system for reviews. Send back carries no text. The old
+not grow a messaging system for reviews. Reject carries no text. The old
 `space_items.returned_note` column stays in place (no destructive
 migration) but nothing writes or shows it once a workspace moves to this
 pattern. Since 2026-10-09 the brain has no comments at all (task comments
@@ -81,7 +83,7 @@ UI (jackdaw):
   views, read only, with the banner), Recently deleted apps at the foot of
   the list, and the "N waiting in Apps" link on Team admin.
 - The member's Apps page shows each app's state (private, shared, waiting,
-  sent back) and no note.
+  rejected) and no note.
 
 ## What is reusable
 
@@ -91,9 +93,10 @@ Brain:
   (`ReviewAppAuthor`: login, name, active) are generic. Each kind adds one
   `list<Kind>ForReview()` and one `get<Kind>ForReview(id)` on its own
   visibility rule.
-- Send back without a note is one guarded update of the state row; the same
+- Reject (no note) is one guarded update of the state row; the same
   shape for every kind (`member-review.ts` `returnReviewItem` becomes a
-  no-note send back for the kinds that move).
+  no-note reject for the kinds that move). The UI says Reject; routes and
+  the `returned` state keep their names.
 - Unshare and Delete to trash exist for apps; pages, notes, tables, draws and
   files need the same two admin acts (Delete moves the item into the brain
   first, then the normal delete keeps it restorable, as
@@ -111,7 +114,7 @@ UI:
 ## Order for the other workspaces
 
 1. **Pages.** The most submitted kind, and the read-only page view exists
-   (the share presenter). Move Accept, Send back, Take over and the
+   (the share presenter). Move Accept, Reject, Take over and the
    left-behind Discard from Team admin > Review into /pages. Bundles (a page
    and what renders inside it) keep their current accept move.
 2. **Notes.** Same flow as pages, smaller body; the note presenter is the
@@ -120,7 +123,7 @@ UI:
    and rows as submitted (pin by version).
 4. **Draws.** Read-only canvas view (the SVG render); pin by version.
 5. **Files.** No body to edit; the review is the file viewer plus Approve
-   (which folder, which level) and Send back.
+   (which folder, which level) and Reject.
 
 Each step: brain functions and routes first, then the UI section and banner,
 then remove that kind from Team admin > Review. Team admin > Review goes

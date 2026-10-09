@@ -10,7 +10,7 @@
  *    no owner surface lists a space's nodes).
  *  - Shared with the team: every member runs it, at team rules. No approval.
  *  - Submitted: frozen (no code edit, its data read only) until an admin
- *    accepts it or sends it back. The author may recall it.
+ *    accepts or rejects it. The author may recall it.
  *  - Accepted: re-owned into the brain at the level the admin picks (admin
  *    or team; client and public only later, by an admin, as for any app),
  *    ids unchanged. Its database file and history rows follow by owner; the

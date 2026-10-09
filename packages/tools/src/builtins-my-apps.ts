@@ -10,7 +10,7 @@
  *    access matrix N1): every member runs it, at team
  *    rules;
  *  - submitted (`my_app_submit`): frozen until an admin accepts it into the
- *    brain or returns it (`my_app_recall` takes it back).
+ *    brain or rejects it (`my_app_recall` takes it back).
  *
  * THE AUTHOR CEILING: every app these tools make has `author_level` 'team',
  * so every tool broker runs its tools at most at team rules, an admin's run
@@ -729,7 +729,7 @@ const my_app_submit: BuiltinToolDef = {
   slug: 'my_app_submit',
   name: 'Submit my mini app for review',
   description:
-    'Submit your own app to an admin, who may accept it into the brain or send it back to you. The admin reviews the PUBLISHED version: publish first. While submitted it is frozen and its data is read only; `my_app_recall` takes it back.',
+    'Submit your own app to an admin, who may accept it into the brain or reject it (it comes back to you to change and submit again). The admin reviews the PUBLISHED version: publish first. While submitted it is frozen and its data is read only; `my_app_recall` takes it back.',
   inputSchema: { type: 'object', properties: { ...ID_PROP }, required: ['id'] },
   handler: async (input, ctx) => {
     const p = await prepare(input, ctx, { write: true });

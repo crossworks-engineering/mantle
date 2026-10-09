@@ -50,7 +50,7 @@ The reply appears in the member's chat.
 
 ## Review what members shared
 
-Members can write their own items and submit them. **Review** lists what waits for you. Accept an item into the brain, return it with a note, or take it over.
+Members can write their own items and submit them. **Review** lists what waits for you. Accept an item into the brain, reject it, or take it over. A rejected item goes back to its author to change and submit again.
 
 ## Other tabs
 
