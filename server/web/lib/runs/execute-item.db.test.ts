@@ -107,10 +107,35 @@ describe.skipIf(!URL)('a run item under the planning agent', () => {
     expect(item.failure?.type).toBe('tool_not_granted');
   });
 
+  it('a run whose agent is gone runs nothing', async () => {
+    const item = await runOne(
+      'access_set',
+      { tool_group_slug: 'mcp-src', level: 'team' },
+      randomUUID(),
+    );
+    expect(item.state).toBe('failed');
+    expect(item.failure?.type).toBe('agent_missing');
+    expect(await groupLevel()).toBe('admin');
+  });
+
+  it("a run of an agent below admin runs nothing: it would read past the agent's level", async () => {
+    const [low] = await rows<{ id: string }>(sqlTag`
+      insert into agents (owner_id, slug, name, model, system_prompt, tool_group_slugs, audience)
+      values (${anchor}, 'team-helper', 't', 'm', 'p', ARRAY['g-access'], 'team') returning id`);
+    const item = await runOne('access_set', { tool_group_slug: 'mcp-src', level: 'team' }, low!.id);
+    expect(item.state).toBe('failed');
+    expect(item.failure?.type).toBe('below_admin');
+  });
+
   it('a run with no agent fails closed: the opening change still waits', async () => {
     const before = await pendingCount();
     await runOne('access_set', { tool_group_slug: 'mcp-src', level: 'team' });
     expect(await groupLevel()).toBe('admin');
     expect(await pendingCount()).toBe(before + 1);
+    // No agent planned it: the Pending row names no requester.
+    const [last] = await rows<{ agent_id: string | null }>(sqlTag`
+      select agent_id from pending_tool_calls where owner_id = ${anchor}
+      order by created_at desc limit 1`);
+    expect(last!.agent_id).toBeNull();
   });
 });

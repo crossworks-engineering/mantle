@@ -18,6 +18,7 @@ import {
   BANNED_ITEM_TOOLS,
   dispatchTool,
   loadAgentGrant,
+  NO_AGENT_RUN_SLUG,
   resolveTool,
   validateToolArgs,
 } from '@mantle/tools';
@@ -155,13 +156,22 @@ async function runResolved(
       message: `the agent that planned this run is gone, so '${slug}' cannot run on its behalf`,
     });
   }
+  // A run item runs on the admin pool, so only an admin-level agent's run
+  // may run at all: a lower agent's run would read with admin visibility
+  // (run_plan refuses a limited turn as well; audit A3).
+  if (grant && grant.level !== 'admin') {
+    return fail({
+      type: 'below_admin',
+      message: `agent '${grant.slug}' is below admin level, so its run cannot run items`,
+    });
+  }
   if (grant && !grant.toolSlugs.has(slug)) {
     return fail({
       type: 'tool_not_granted',
       message: `tool '${slug}' is not granted to agent '${grant.slug}', so it cannot run as its item`,
     });
   }
-  const agent = { slug: grant?.slug ?? 'run', depth: 1, delegateTo: [] as string[] };
+  const agent = { slug: grant?.slug ?? NO_AGENT_RUN_SLUG, depth: 1, delegateTo: [] as string[] };
 
   const tool = await resolveTool(run.ownerId, slug);
   if (!tool) {

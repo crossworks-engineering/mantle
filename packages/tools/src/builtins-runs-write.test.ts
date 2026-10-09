@@ -44,7 +44,11 @@ vi.mock('@mantle/db', async (importOriginal) => {
     then: (res: (v: unknown) => void, rej?: (e: unknown) => void) =>
       Promise.resolve(selectQueue.shift() ?? []).then(res, rej),
   };
-  return { ...actual, db: { ...actual.db, select: vi.fn(() => chain) } };
+  return {
+    ...actual,
+    db: { ...actual.db, select: vi.fn(() => chain) },
+    currentViewerLevel: vi.fn(() => 'admin'),
+  };
 });
 vi.mock('@mantle/runs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/runs')>();
@@ -153,6 +157,13 @@ describe('run_plan', () => {
     const res = await plan.handler({ title: 'Digest', plan: okPlan }, delegated);
     expect(errorOf(res)).toMatch(/responder-only/);
     expect(isRunsEnabled).not.toHaveBeenCalled();
+    expect(createRun).not.toHaveBeenCalled();
+  });
+
+  it('refuses a turn below admin: its items would run on the admin pool (A3)', async () => {
+    vi.mocked(dbmod.currentViewerLevel).mockReturnValueOnce('team');
+    const res = await plan.handler({ title: 'Digest', plan: okPlan }, ctx);
+    expect(errorOf(res)).toMatch(/admin level only/);
     expect(createRun).not.toHaveBeenCalled();
   });
 

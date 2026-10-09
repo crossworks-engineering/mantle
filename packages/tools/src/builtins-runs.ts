@@ -15,7 +15,7 @@
  * `run_cancel` stay live so existing runs can always be inspected/stopped.
  */
 import { and, desc, eq, sql } from 'drizzle-orm';
-import { agentGroups, agents, db, runItems, runs } from '@mantle/db';
+import { agentGroups, agents, currentViewerLevel, db, runItems, runs } from '@mantle/db';
 import {
   appendChildren,
   applyAuditVerdict,
@@ -226,8 +226,18 @@ const DISABLED_ERROR =
   'Do the work inline with ordinary tool calls instead.';
 
 /** run_* is a responder affordance — a delegated child agent must not open
- *  side channels of queued work its parent never sees. */
+ *  side channels of queued work its parent never sees. A turn below admin
+ *  (a member's or a client's) is refused too: a run's items execute later on
+ *  the admin pool, which would read past the turn's level (audit A3). */
 function refuseIfDelegated(ctx: ToolHandlerContext): ToolHandlerResult | null {
+  if (currentViewerLevel() !== 'admin') {
+    return {
+      ok: false,
+      error:
+        'run tools work at admin level only, and this turn runs below it. ' +
+        'Do the work inline with ordinary tool calls instead.',
+    };
+  }
   if (ctx.agent && ctx.agent.depth > 1) {
     return {
       ok: false,

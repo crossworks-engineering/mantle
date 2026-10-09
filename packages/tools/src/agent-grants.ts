@@ -7,13 +7,21 @@
  * only call what the planning agent could call inline.
  */
 import { and, eq, inArray } from 'drizzle-orm';
-import { agents, db, isViewerLevel, levelCovers, toolGroups } from '@mantle/db';
+import { agents, db, isViewerLevel, levelCovers, toolGroups, type ViewerLevel } from '@mantle/db';
 
 export type AgentGrant = {
   slug: string;
+  /** The agent's own level (agents.audience). */
+  level: ViewerLevel;
   /** Every tool slug the agent's groups grant. */
   toolSlugs: Set<string>;
 };
+
+/** The agent context a run item carries when no agent planned the run (the
+ *  owner's own MCP client did) or its agent is gone. Not a valid agent slug
+ *  (agent slugs are [a-z0-9_-]), so no lookup by slug ever finds a real
+ *  agent: the Pending row names no requester, persona tools refuse. */
+export const NO_AGENT_RUN_SLUG = '(run)';
 
 /** Null when the agent does not exist (deleted, or never did). */
 export async function loadAgentGrant(
@@ -33,8 +41,8 @@ export async function loadAgentGrant(
   if (!agent) return null;
   const groupSlugs = agent.toolGroupSlugs ?? [];
   const toolSlugs = new Set<string>();
+  const agentLevel: ViewerLevel = isViewerLevel(agent.audience) ? agent.audience : 'admin';
   if (groupSlugs.length > 0) {
-    const agentLevel = isViewerLevel(agent.audience) ? agent.audience : 'admin';
     const rows = await db
       .select({ toolSlugs: toolGroups.toolSlugs, audience: toolGroups.audience })
       .from(toolGroups)
@@ -51,5 +59,5 @@ export async function loadAgentGrant(
       for (const t of r.toolSlugs ?? []) toolSlugs.add(t);
     }
   }
-  return { slug: agent.slug, toolSlugs };
+  return { slug: agent.slug, level: agentLevel, toolSlugs };
 }
