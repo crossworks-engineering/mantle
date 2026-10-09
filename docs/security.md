@@ -289,7 +289,8 @@ company (two companies are two brains), _trusted to read what the team
 set to client_ and to write their own requests, but _never trusted with
 anything above client_, and with no way to move content between levels.
 
-- **Who.** Role `client`, made only in Team admin > Clients. No password
+- **Who.** Role `client`, made only in Settings > Logins > Clients (was
+  Team admin > Clients). No password
   opens it: a client signs in with a one-use link an admin issues (72
   hours, about 92 bits, SHA-256 at rest) or an 8-digit code the brain
   emails (10 minutes, 5 tries, HMAC at rest, bound to the browser that
@@ -364,7 +365,7 @@ anything above client_, and with no way to move content between levels.
   wrote the app, whatever its level later (client-logins.md section 10).
 - **Operations.** A restore revokes every open sign-in link and code the
   dump brought back; the access log redacts codes; code mails never enter
-  the corpus; Team admin > Clients shows each client's chat use, storage
+  the corpus; Settings > Logins > Client settings shows each client's chat use, storage
   and quota refusals (client-logins.md sections 7 and 9).
 - **Accepted trade-offs, stated plainly:** (1) whatever the team sets to
   client every client login reads, and an item embedded in a client item

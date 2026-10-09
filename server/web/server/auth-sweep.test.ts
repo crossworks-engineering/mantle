@@ -159,6 +159,20 @@ describe.skipIf(!hasManifest)('route manifest auth sweep', () => {
     expect(team.status).toBe(404);
   });
 
+  // Team admin's Chat archive (the retired team portal's read-only chat) was
+  // removed on 2026-10-09: an older client's Chat archive tab finds no route,
+  // and the portal chat stays in the data (the assistant's team_chat_* tools
+  // and a login's Chat still read it).
+  it('the removed Chat archive route is not routed', async () => {
+    expect(manifest.filter((e) => e.pattern === '/api/team-admin/members')).toEqual([]);
+    expect(manifest.some((e) => e.pattern === '/api/team-admin/member-chats')).toBe(true);
+    const { buildSessionCookie } = await import('../lib/auth');
+    const cookie = `mantle_session=${buildSessionCookie('11111111-1111-4111-8111-111111111111').value}`;
+    const res = await app.request('/api/team-admin/members?contact=x', { headers: { cookie } });
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'not found' });
+  });
+
   // Contact shares (0214): the owner's routes refuse an anonymous call; the
   // code prompt is a /s route, public at the gate (its handler limits and
   // checks every try itself, contact-share-gate.db.test.ts).

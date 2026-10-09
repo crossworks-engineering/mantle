@@ -31,8 +31,8 @@ The rules sit in the database, not in each screen. A member or client gets the s
 | To give | Do this |
 |---|---|
 | Admin | **Settings > Logins > Add login**, role Admin. See [Member and client logins](../05-admin/07-logins.md). |
-| Member | **Team > Invites**, then set the team agent to Team level once. See [Team and members](../03-using-jackdaw/12-team.md). |
-| Client | **Team > Clients > Add client**, then issue a sign-in link. See [Member and client logins](../05-admin/07-logins.md). |
+| Member | **Settings > Logins > Invite**, then set the team agent to Team level once. See [Team and members](../03-using-jackdaw/12-team.md). |
+| Client | **Settings > Logins > Clients > Add client**, then issue a sign-in link. See [Member and client logins](../05-admin/07-logins.md). |
 | Public | Share the item to make a link. See [Sharing and federation](06-sharing-and-federation.md). |
 
 Set item levels before you let anyone in. Use **Access** in the header of a page, note, table, file, folder, drawing or app.

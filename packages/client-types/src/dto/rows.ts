@@ -623,10 +623,11 @@ export type CuratedTeamSection = {
   items: TeamVisibleShare[];
 };
 
-/** One contact's OLD team portal chat (the Members tab's "Chat archive"
- *  roster, GET /api/team-admin/members). Since team codes were retired
- *  (member logins Phase 6, migration 0178) the roster is every contact with
- *  portal chat, not every code holder. */
+/** One contact's OLD team portal chat (the roster `team_chat_list` reads).
+ *  Since team codes were retired (member logins Phase 6, migration 0178) the
+ *  roster is every contact with portal chat, not every code holder. It was
+ *  also Team admin's "Chat archive" (GET /api/team-admin/members) until that
+ *  tab and its route were removed on 2026-10-09; the data stays. */
 export type TeamMemberActivity = {
   contactId: string;
   /** Contact node title; '(deleted contact)' can't occur here: portal chat

@@ -8,12 +8,12 @@ Each item has a level. A login sees an item only when the item's level allows it
 
 ## Invite a member
 
-1. Open **Team** in the menu, then the **Invites** tab.
-2. Click **Invite by email**, enter the email and, if you like, a name.
+1. Open **Settings > Logins** and click **Invite**.
+2. Enter the email and, if you like, a name.
 3. Click **Create invite**.
 4. Copy the **Invite link** and send it to the person.
 
-The person opens the link, sets a password and is signed in. The link works once, for 72 hours. A new invite for the same person replaces the old link.
+The person opens the link, sets a password and is signed in. The link works once, for 72 hours. A new invite for the same person replaces the old link. Open invites stay at the top of the list until they are used: select one to **Revoke** it or make a **New link**.
 
 You can also make a member directly: **Settings > Logins > Add login**, set **Role** to Member, and give them the email and starting password yourself.
 
@@ -21,14 +21,14 @@ Members can chat only after you click **Let members chat** once, in **Team > Set
 
 ## Add a client
 
-1. Open **Team**, then the **What clients see** tab. Check the list of items clients will read and click **I have checked this list**.
-2. Open the **Clients** tab and click **Add client**.
+1. Open **Settings > Logins**. Under **Clients**, select **What clients see**. Check the list of items clients will read and click **I have checked this list**.
+2. Click **Add client** beside **Clients**.
 3. Pick a contact, or type an email. Click **Add client**.
-4. For the new client, click **Issue sign-in link**, copy the **Sign-in link** and send it.
+4. The new client is selected. Click **Issue sign-in link**, copy the **Sign-in link** and send it.
 
 The client opens the link and types their email to sign in. The link works once, for 72 hours.
 
-To let clients sign in with an emailed code instead, pick a mail account under **Send codes from** on the **Clients** tab. The account must be able to send mail. A small core box has no email worker, so codes do not work there.
+To let clients sign in with an emailed code instead, select **Client settings** under **Clients** and pick a mail account under **Send codes from**. The account must be able to send mail. A small core box has no email worker, so codes do not work there.
 
 ## Add another admin
 
@@ -38,7 +38,7 @@ Open **Settings > Logins**, click **Add login**, set **Role** to Admin, and ente
 
 - **Settings > Logins**: select the login and switch on **Disabled**. Every session it holds ends at once.
 - **Sign out everywhere** on the same screen ends all sessions but keeps the login.
-- For a client, **End sessions** or **Disable** on the **Clients** tab also cancels its open sign-in links. **Disable** keeps the client's chat. **Delete** removes it, and any comments the client wrote before comments were removed.
+- For a client, **Sign out everywhere** or **Disabled** also cancels its open sign-in links. **Disabled** keeps the client's chat. **Delete** removes it, and any comments the client wrote before comments were removed.
 
 ## Check it worked
 

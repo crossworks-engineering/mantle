@@ -1,5 +1,13 @@
 # Client logins
 
+> **Update 2026-10-09: the admin screens moved.** Team admin > Clients, What
+> clients see and Member chats (the client filter) are now in Settings >
+> Logins: a Clients section whose first step is What clients see, then Client
+> settings (sign-in sender, chat use, storage), then the client logins (each
+> with its Sign-in link card and a Chat view). The brain routes and their
+> admin-only gates are unchanged; "Team admin > Clients" below means that
+> section.
+
 > **Update 2026-10-09: comments are removed.** The client thread on
 > client-level items, the review talk in a client's space, the comment caps
 > and ledger code, Team admin > Clients' comment card and its delete action,

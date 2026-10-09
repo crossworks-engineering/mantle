@@ -7,13 +7,13 @@
  * - badges: `{ openRequestCount }` (no `openRequests`, no `pendingUploadCount`)
  * - GET requests: `{ badges, requests }` (no `uploads`, no `moreUploads`)
  * - GET settings: no `dashboardTags`; `teamAgent` is the team-responder's level
- * - GET members: rows with no `forum`, `selected` with no posts, authored
- *   topics or activity paging
+ *
+ * GET members (the Chat archive) was removed on 2026-10-09; auth-sweep.test.ts
+ * pins its 404.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const ANCHOR = '33333333-3333-4333-8333-333333333333';
-const CONTACT = '44444444-4444-4444-8444-444444444444';
 const APP = '88888888-8888-4888-8888-888888888888';
 
 const h = vi.hoisted(() => ({ openRequests: 2 }));
@@ -31,20 +31,6 @@ vi.mock('@mantle/content', async (importOriginal) => ({
       : [{ taskId: 't0' }],
   ),
   countOpenTeamRequests: vi.fn(async () => h.openRequests),
-  listTeamMemberActivity: vi.fn(async () => [
-    {
-      contactId: CONTACT,
-      contactName: 'Ana',
-      memberSince: '2026-09-01T00:00:00.000Z',
-      lastMessageAt: '2026-09-02T00:00:00.000Z',
-      lastMessageText: 'hello',
-      lastMessageDirection: 'inbound',
-      messageCount: 1,
-      unread: 1,
-    },
-  ]),
-  listTeamThread: vi.fn(async () => []),
-  listTeamAccess: vi.fn(async () => []),
   loadProfilePreferences: vi.fn(async () => ({ teamHubAppId: APP, teamHubTags: ['faq'] })),
   isTeamPrivateReadsEnabled: vi.fn(() => false),
   listApps: vi.fn(async () => [{ id: APP, title: 'Home', hasBuild: true }]),
@@ -99,22 +85,5 @@ describe('GET /api/team-admin/settings', () => {
       audience: 'admin',
       enabled: true,
     });
-  });
-});
-
-describe('GET /api/team-admin/members', () => {
-  it('answers rows with no forum and a selection with no forum parts', async () => {
-    const { GET } = await import('./members/route');
-    const res = await GET(new Request('https://brain.example.invalid/api/team-admin/members'));
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as {
-      members: Array<Record<string, unknown>>;
-      selected: Record<string, unknown>;
-    };
-    expect(keys(body)).toEqual(['badges', 'members', 'selected']);
-    expect(body.members).toHaveLength(1);
-    expect(body.members[0]).not.toHaveProperty('forum');
-    expect(keys(body.selected)).toEqual(['access', 'contactId', 'requests', 'thread']);
-    expect(body.selected.contactId).toBe(CONTACT);
   });
 });

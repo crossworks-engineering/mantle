@@ -10,14 +10,14 @@ Jackdaw no longer shows this screen in the menu.
 
 Your team now signs in with its own logins:
 
-1. Open **Team** and go to the **Invites** tab.
-2. Make an invite link for a contact or an email address.
+1. Open **Settings > Logins** and click **Invite**.
+2. Make an invite link for an email address.
 3. Send the link. The person sets a password and signs in as a member.
 
 Members chat with the team agent from their own space. Old portal chats are
-kept in the **Chat archive** tab, and each contact there can be invited as a
-member. See [Team](team-admin.md) and [Member and client
-logins](../05-admin/07-logins.md).
+kept as data: the assistant can still read them, and a member invited from a
+contact shows its old chat in its **Chat** view in **Settings > Logins**. See
+[Logins](users.md) and [Member and client logins](../05-admin/07-logins.md).
 
 ## Assistant
 

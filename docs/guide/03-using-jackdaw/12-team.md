@@ -4,7 +4,7 @@ Invite people to sign in to your brain as members, read their chats and handle t
 
 A member signs in with their own login. They read items you set to **Team** level and chat with the team agent. They cannot change your brain. When they ask for a change, it comes to you as a request.
 
-The **Team** screen (under Review) holds all of this.
+Invites and each member's chat are in **Settings > Logins**. Requests, review and team settings are on the **Team** screen (under Review).
 
 ## Before you start
 
@@ -14,17 +14,17 @@ Members can chat only once the team agent is at **Team** level. It starts at **A
 2. Under **Member chat**, click **Let members chat**.
 3. Read what members will then reach, and click **Let members chat** again.
 
-The card then says **On**. Tool groups above Team level leave the team agent with this step. To close member chat again, click **Stop member chat**. While member chat is off, the **Invites** tab says so.
+The card then says **On**. Tool groups above Team level leave the team agent with this step. To close member chat again, click **Stop member chat**. While member chat is off, the **Invite** dialog says so.
 
 ## Invite a member
 
-1. Open **Team > Invites**.
-2. Click **Invite by email**, or pick a contact.
+1. Open **Settings > Logins** and click **Invite**.
+2. Enter the email and, if you like, a name.
 3. Click **Create invite** and copy the **Invite link**.
 4. Send the link to the person yourself. Jackdaw does not email it.
 5. They open it, set a password, and are signed in.
 
-An invite link works once and expires after 72 hours. A new invite for the same person replaces the old link. Revoke an open invite from the same tab.
+An invite link works once and expires after 72 hours. A new invite for the same person replaces the old link. Open invites are listed at the top of **Settings > Logins**: select one to **Revoke** it or make a **New link**.
 
 To disable, change or remove a login later, use **Settings > Logins**. See [Member and client logins](../05-admin/07-logins.md).
 
@@ -36,7 +36,7 @@ Your email and journal stay out of their answers. To let the team agent read the
 
 ## Read member chats
 
-**Member chats** lists each member's thread with the team agent. Each member sees only their own thread. The assistant can read them too: "What has the team been asking about this week?"
+Open **Settings > Logins**, select a member, and click **Chat** in its header. It shows that member's thread with the team agent, read only. Each member sees only their own thread. A client's chat is there too. The assistant can read them too: "What has the team been asking about this week?"
 
 ## Handle requests
 
@@ -54,9 +54,10 @@ Members can write their own items and submit them. **Review** lists what waits f
 
 ## Other tabs
 
-- **Chat archive**: chats from the retired team portal, read-only.
 - **Shared links**: every open link to your items, newest first.
-- **Clients** and **What clients see**: client logins. See [Member and client logins](../05-admin/07-logins.md).
+- **Settings**: member chat, the read posture and the member home app.
+
+Clients and **What clients see** are in **Settings > Logins**. See [Member and client logins](../05-admin/07-logins.md).
 
 ## Next
 

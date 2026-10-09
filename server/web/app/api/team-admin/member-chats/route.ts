@@ -12,8 +12,9 @@
  * GET /api/member/chat and the turn's context never read it.
  *
  * Read-only. Both windows are admin reads: a reply marked used_private shows
- * the placeholder. The Members tab (GET /api/team-admin/members) still shows
- * every contact's portal thread as history (the Chat archive).
+ * the placeholder. The client reads it as a login's Chat in Settings > Logins
+ * (moved out of Team admin 2026-10-09); the Chat archive tab and its route
+ * (GET /api/team-admin/members) were removed then, the portal chat kept.
  */
 import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';

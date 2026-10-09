@@ -1124,7 +1124,10 @@ is a member login. Nobody hands a password around. The table is
   status helpers (`team-tokens.ts`; the invite code's alphabet and hash
   moved to `member-invites.ts`), and `ContactRow.team` (when a code was
   made and last used).
-  - **The Chat archive needs no code.** `GET /api/team-admin/members`
+  - **The Chat archive needs no code.** (Removed 2026-10-09, Team admin
+    dissolving part 1: the tab and `GET /api/team-admin/members` are gone,
+    the portal chat stays and the tools below still read it.)
+    `GET /api/team-admin/members`
     (the Members tab) lists every contact with old portal chat, newest
     activity first, with or without a login made from it; it listed code
     holders before, so a contact whose code was redeemed dropped off and
@@ -1139,7 +1142,6 @@ is a member login. Nobody hands a password around. The table is
   - Tests: `packages/db/src/drop-contact-team-tokens.db.test.ts` (the FK
     list, no CASCADE, every count kept, a second run a no-op; on its own
     scratch database, like the forum drop test),
-    `server/web/app/api/team-admin/members/members-archive.db.test.ts`,
     `packages/content/src/member-invites.db.test.ts` (an 8-char code
     redeems nothing; a pre-0178 invite still redeems) and
     `member-invites.test.ts` (the alphabet and the hash).
