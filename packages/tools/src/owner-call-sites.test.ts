@@ -121,6 +121,12 @@ const SITES: Record<string, Site> = {
     scope: 'call',
     why: "the owner's own app: appToolScope, web for an admin-level app, the app level's surface below it (client tier audit L1)",
   },
+  'server/web/app/api/apps/members/[id]/test/tool-broker/route.ts': {
+    calls: 1,
+    surface: /surface: scope\.surface/,
+    scope: 'call',
+    why: "an admin's test run of a member's app: appToolScope at team rules (the author ceiling), never the owner's own",
+  },
   // ── someone else: their surface, explicitly ──
   'packages/runtime/src/assistant/run-team-turn.ts': {
     calls: 1,

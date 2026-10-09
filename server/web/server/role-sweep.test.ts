@@ -143,6 +143,8 @@ const TICKET_GATED = new Set([
   'GET /api/apps/:id/frame',
   'GET /api/member/apps/:id/frame',
   'GET /api/client/apps/:id/frame',
+  // An admin's test run of a member's app (workspace review pattern).
+  'GET /api/apps/members/:id/test/frame',
 ]);
 
 // Sign out (every role) and the MCP consent page (an HTML refusal) used to
