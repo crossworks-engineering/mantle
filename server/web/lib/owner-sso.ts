@@ -1,5 +1,5 @@
 /**
- * The owner SSO handoff handler — POST /api/auth/sso (route re-exports this;
+ * The bearer-to-cookie SSO handoff handler — POST /api/auth/sso (route re-exports this;
  * lives in lib with relative imports so the co-located vitest run resolves it,
  * same pattern as token-login.ts).
  *
@@ -21,13 +21,19 @@
  * between carriers, it does not widen it — which is also why a caller who is
  * already on a cookie is served idempotently rather than refused.
  *
+ * A MEMBER is upgraded too (team apps, member MCP over OAuth): the MCP
+ * consent page is a top-level navigation, which carries cookies only, so a
+ * bearer-only member reached it as nobody and was bounced to /login. The
+ * member's cookie reaches what its bearer already reaches, and no more. A
+ * client is refused (see getCookieUpgradeLoginOr401).
+ *
  * Unlike the retired team route this takes NO `next` and never redirects: it is called
  * by `fetch` from our own shell, not by a top-level form navigation, so there
  * is no open-redirect surface to constrain and the bearer rides the
  * Authorization header rather than a form body.
  */
 import { NextResponse } from '../server/http-compat';
-import { buildSessionCookie, getOwnerOr401, loginSessionEpoch, SESSION_COOKIE_NAME } from './auth';
+import { buildSessionCookie, getCookieUpgradeLoginOr401, SESSION_COOKIE_NAME } from './auth';
 import { isTrustedOrigin, rateLimited } from './auth/preflight';
 import { secureCookies } from './auth-constants';
 import { clientIpKey, rateLimit } from './rate-limit';
@@ -45,15 +51,16 @@ export async function handleOwnerSso(req: Request): Promise<NextResponse> {
     return NextResponse.json({ ok: false, error: 'invalid origin' }, { status: 403 });
   }
 
-  // Resolves a session cookie first, then an Authorization bearer — so this is
-  // the same gate every owner API route uses, with no separate trust path.
-  const user = await getOwnerOr401();
-  if (user instanceof Response) return user as NextResponse;
+  // Resolves a session cookie first, then an Authorization bearer — the same
+  // resolver every API route uses, with no separate trust path.
+  const login = await getCookieUpgradeLoginOr401();
+  if (login instanceof Response) return login as NextResponse;
 
-  // Mint for the ACTOR, not the anchor: `user.id` is the anchor the brain's
-  // data is keyed to, but a session identifies the login that opened it —
-  // keying the cookie to the anchor would silently re-attribute every audit
-  // row an added login writes to the anchor instead.
+  // Mint for the LOGIN, not the anchor: an admin's data is keyed to the
+  // anchor, but a session identifies the login that opened it — keying the
+  // cookie to the anchor would silently re-attribute every audit row an added
+  // login writes to the anchor instead. Signed at the epoch the credential
+  // was just verified at.
   //
   // SHORT TTL, deliberately — not the password login's year. The bearer this
   // upgrades is 30-day and revocable per device; the session cookie is
@@ -63,8 +70,8 @@ export async function handleOwnerSso(req: Request): Promise<NextResponse> {
   // enough because the shell re-fires upgradeOwnerCookie on EVERY page load:
   // the cookie renews continuously while the bearer stays valid, and dies
   // within a week of the device's token being revoked.
-  const { value, maxAgeSec } = buildSessionCookie(user.actor.id, {
-    epoch: await loginSessionEpoch(user.actor.id),
+  const { value, maxAgeSec } = buildSessionCookie(login.loginId, {
+    epoch: login.epoch,
     ttlSeconds: OWNER_SSO_COOKIE_TTL_SECONDS,
   });
   const res = new NextResponse(null, { status: 204 });

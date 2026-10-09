@@ -343,7 +343,10 @@ authenticated with cookies, and cookies don't cross origins. The member carve
   SSO upgrade: it verifies whatever credential the caller has and answers 204
   - Set-Cookie. It grants nothing new, the bearer it accepts already
     authorises every owner API call, and mints for the ACTOR, not the anchor,
-    so an added login's audit rows stay its own.
+    so an added login's audit rows stay its own. A member login is upgraded
+    too: the MCP consent page (`GET /api/oauth/authorize`) is a top-level
+    navigation that carries cookies only. A client is refused; in a browser
+    it signs in to a cookie already.
 - **The designated hub app stays first-class**: `AppSandbox` broker fetches
   happen in the parent page, so the client-origin hub passes an absolute
   `apiBase` + a bearer-attaching `fetcher`; the `/s` sub-paths a client-origin

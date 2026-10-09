@@ -119,12 +119,14 @@ export const PUBLIC_SESSION_ROUTES: PublicSessionRoute[] = [
     },
   },
   {
-    // The owner bearer to cookie upgrade: an admin's only.
+    // The bearer to cookie upgrade: an admin's or a member's (the member's
+    // cookie carries it to the MCP consent page). A client signs in to a
+    // cookie already.
     key: 'POST /api/auth/sso',
     path: '/api/auth/sso',
     init: { method: 'POST' },
     expect: {
-      member: refused('member-login'),
+      member: { status: 204 },
       client: refused('client-login'),
       unknown: stranger,
     },

@@ -833,6 +833,31 @@ export async function getLoginOr401(): Promise<
 }
 
 /**
+ * The login POST /api/auth/sso turns into a session cookie (lib/owner-sso.ts):
+ * an admin, audited as every admin call is, or a MEMBER. A member needs the
+ * cookie for one thing a bearer cannot do: a top-level navigation to the MCP
+ * consent page (GET /api/oauth/authorize) carries cookies only. A client is
+ * refused: in a browser it signs in to a cookie already (client-link), and
+ * its device token stays on its device. `epoch` is the epoch the credential
+ * was just verified at, so the cookie is signed with that very session's.
+ */
+export async function getCookieUpgradeLoginOr401(): Promise<
+  { loginId: string; epoch: number } | NextResponse
+> {
+  const res = await resolveLogin();
+  if (!res) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  switch (res.kind) {
+    case 'admin':
+      await auditMutation(res.user);
+      return { loginId: res.user.actor.id, epoch: res.epoch };
+    case 'member':
+      return { loginId: res.member.loginId, epoch: res.epoch };
+    case 'client':
+      return loginRefused(res.kind);
+  }
+}
+
+/**
  * A bcrypt hash (cost 12, same as every login) of a throwaway string. An
  * unknown email is compared against it, so a missing login costs the same
  * bcrypt time as a real one: the answer's timing does not say whether the

@@ -1,7 +1,8 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * POST /api/auth/sso — the owner bearer→cookie upgrade. What must hold:
+ * POST /api/auth/sso — the bearer→cookie upgrade (an admin or a member). What
+ * must hold:
  *   - an authenticated caller gets a fresh session cookie and a 204;
  *   - the cookie identifies the ACTOR (the login), not the anchor the brain's
  *     data is keyed to — otherwise every audit row an added login writes gets
@@ -12,17 +13,16 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
  *   - a cross-origin Origin that isn't ours is 403 (login-CSRF hardening),
  *     checked BEFORE the credential so a foreign page can't probe it.
  * The credential gate itself is mocked — this is the route contract, not the
- * auth resolver, which has its own tests.
+ * auth resolver. Which roles it takes (admin and member yes, client no) is
+ * driven for real by the role sweeps (server/public-session-routes.ts).
  */
 
-const getOwnerOr401 = vi.fn();
+const getCookieUpgradeLoginOr401 = vi.fn();
 vi.mock('./auth', async () => {
   const actual = await vi.importActual<typeof import('./auth')>('./auth');
   return {
     ...actual,
-    getOwnerOr401: () => getOwnerOr401(),
-    // The login's session epoch (0181), read from its row.
-    loginSessionEpoch: async () => 3,
+    getCookieUpgradeLoginOr401: () => getCookieUpgradeLoginOr401(),
   };
 });
 
@@ -33,14 +33,11 @@ beforeAll(() => {
 const ANCHOR = '00000000-0000-4000-8000-00000000aaaa';
 const ADDED_LOGIN = '00000000-0000-4000-8000-00000000bbbb';
 
-/** A session for an ADDED login: `id` is the anchor (brain data is keyed to
- *  it), `actor.id` is the login that actually signed in. */
+/** The gate's answer for an ADDED login: the login that actually signed in
+ *  (never the anchor), and the session epoch (0181) its credential was
+ *  verified at. */
 function addedLoginSession() {
-  return {
-    id: ANCHOR,
-    email: 'second@example.com',
-    actor: { id: ADDED_LOGIN, email: 'second@example.com', displayName: null, isOwner: false },
-  };
+  return { loginId: ADDED_LOGIN, epoch: 3 };
 }
 
 let ipCounter = 0;
@@ -67,7 +64,7 @@ beforeEach(() => {
 
 describe('POST /api/auth/sso', () => {
   it('authenticated caller → 204 with a fresh session cookie', async () => {
-    getOwnerOr401.mockResolvedValue(addedLoginSession());
+    getCookieUpgradeLoginOr401.mockResolvedValue(addedLoginSession());
 
     const res = await post();
 
@@ -79,7 +76,7 @@ describe('POST /api/auth/sso', () => {
   });
 
   it('mints for the ACTOR, not the anchor — the audit trail is the whole point', async () => {
-    getOwnerOr401.mockResolvedValue(addedLoginSession());
+    getCookieUpgradeLoginOr401.mockResolvedValue(addedLoginSession());
 
     const res = await post();
 
@@ -90,13 +87,13 @@ describe('POST /api/auth/sso', () => {
     const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
     expect(claims.uid).toBe(ADDED_LOGIN);
     expect(claims.uid).not.toBe(ANCHOR);
-    // Signed at the login's current session epoch, or the next request
-    // would refuse the cookie it was just given.
+    // Signed at the epoch the credential was verified at, or the next
+    // request would refuse the cookie it was just given.
     expect(claims.ep).toBe(3);
   });
 
   it('mints a SHORT cookie, not the password login’s year', async () => {
-    getOwnerOr401.mockResolvedValue(addedLoginSession());
+    getCookieUpgradeLoginOr401.mockResolvedValue(addedLoginSession());
 
     const res = await post();
 
@@ -112,7 +109,7 @@ describe('POST /api/auth/sso', () => {
 
   it('unauthenticated caller is refused and gets NO cookie', async () => {
     const { NextResponse } = await import('../server/http-compat');
-    getOwnerOr401.mockResolvedValue(NextResponse.json({ error: 'unauthorized' }, { status: 401 }));
+    getCookieUpgradeLoginOr401.mockResolvedValue(NextResponse.json({ error: 'unauthorized' }, { status: 401 }));
 
     const res = await post();
 
@@ -121,7 +118,7 @@ describe('POST /api/auth/sso', () => {
   });
 
   it('a foreign Origin is 403 — before the credential is even consulted', async () => {
-    getOwnerOr401.mockResolvedValue(addedLoginSession());
+    getCookieUpgradeLoginOr401.mockResolvedValue(addedLoginSession());
 
     const res = await post({ origin: 'https://evil.example' });
 
@@ -129,11 +126,11 @@ describe('POST /api/auth/sso', () => {
     expect(res.headers.get('set-cookie') ?? '').not.toContain('mantle_session=');
     // Order matters: a foreign page must not be able to use this to probe
     // whether the browser holds a valid session.
-    expect(getOwnerOr401).not.toHaveBeenCalled();
+    expect(getCookieUpgradeLoginOr401).not.toHaveBeenCalled();
   });
 
   it('our own origin is allowed', async () => {
-    getOwnerOr401.mockResolvedValue(addedLoginSession());
+    getCookieUpgradeLoginOr401.mockResolvedValue(addedLoginSession());
 
     const res = await post({ origin: 'http://server.test' });
 
@@ -142,7 +139,7 @@ describe('POST /api/auth/sso', () => {
 
   it('the configured client origin is allowed (split topology)', async () => {
     vi.stubEnv('MANTLE_CLIENT_ORIGIN', 'https://app.server.test');
-    getOwnerOr401.mockResolvedValue(addedLoginSession());
+    getCookieUpgradeLoginOr401.mockResolvedValue(addedLoginSession());
 
     const res = await post({ origin: 'https://app.server.test' });
 

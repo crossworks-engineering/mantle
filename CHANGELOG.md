@@ -14,6 +14,10 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   active member: disabling, demoting or deleting the author stops it.
 - Accept moves the app's activity rows to the brain app, so its Activity
   tab shows what members did with it.
+- A member login connects an MCP client with OAuth: the bearer to cookie
+  upgrade (`POST /api/auth/sso`) serves a member too, so the consent page,
+  a top-level navigation that carries cookies only, sees the member instead
+  of bouncing to sign-in. A client is still refused there.
 - A client's MCP never reaches a public app, even in a client-shared folder
   (the browser's rule).
 - Sharing a member's app with the team is the member's own click in the app:
