@@ -544,8 +544,8 @@ took one over, and accepted.
   only while it is submitted (migration 0194).
 - **Review.** The same queue, with a Client badge. Accept of a client's item
   defaults to level team; client (or public) needs the explicit tick of
-  everything that would go down with it. Return with a note shows the note
-  to the client as the Returned banner. The badge and the confirmation come
+  everything that would go down with it. Return gives the item back with no
+  note; the client sees the Returned banner. The badge and the confirmation come
   from the role stamped on the item (`space_items.author_role`), so they
   hold after the client login is deleted.
 - **Take over** (member-logins.md section 11). A reviewer may take a

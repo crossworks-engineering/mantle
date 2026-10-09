@@ -203,8 +203,8 @@ from, to}]`: the Access control and `PATCH /api/access/nodes/:id`,
   `mantle-db/system-db-allowlist` lets only those modules import it.
 - **`asSystem(fn)`** is the one audited escape for a write a limited turn
   needs: `team_request_create` files its admin-level task through it. The
-  personal-space code uses it for a teammate's comment and, for an admin in
-  their own private space, the embed rule's read of the brain at every
+  personal-space code uses it, for an admin in their own private space, for
+  the embed rule's read of the brain at every
   level (member-logins.md section 10); each writes its rule in the query.
 - **Queues.** A job runs later in a worker that does not inherit the scope,
   so every enqueue helper calls `assertNoViewer`: a limited turn cannot queue

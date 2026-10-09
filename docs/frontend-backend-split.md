@@ -340,13 +340,16 @@ authenticated with cookies, and cookies don't cross origins. The member carve
   (back to a plain link, which restores the browser's own inline preview and
   Save-As). The bearer-only sessions those loaders would strand are covered by
   `upgradeOwnerCookie()` → `POST /api/auth/sso`, the owner twin of the team
-  SSO upgrade: it verifies whatever credential the caller has and answers 204
+  SSO upgrade: it verifies the caller's device bearer and answers 204
   - Set-Cookie. It grants nothing new, the bearer it accepts already
     authorises every owner API call, and mints for the ACTOR, not the anchor,
     so an added login's audit rows stay its own. A member login is upgraded
     too: the MCP consent page (`GET /api/oauth/authorize`) is a top-level
     navigation that carries cookies only. A client is refused; in a browser
-    it signs in to a cookie already.
+    it signs in to a cookie already. A cookie on its own is refused (401):
+    the upgrade never renews a cookie from itself. The cookie it mints is
+    bound to that device token, so revoking the device (or a refresh chain
+    that ends in a revoked token) ends the cookie on its next request.
 - **The designated hub app stays first-class**: `AppSandbox` broker fetches
   happen in the parent page, so the client-origin hub passes an absolute
   `apiBase` + a bearer-attaching `fetcher`; the `/s` sub-paths a client-origin

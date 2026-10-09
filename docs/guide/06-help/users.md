@@ -28,7 +28,8 @@ Select a login to:
 
 - change its **Role**, or switch on **Disabled** to block it;
 - **Reset password**;
-- see its devices and **Revoke** one, or **Sign out everywhere**;
+- see its devices and **Revoke** one, or **Sign out everywhere**. A revoke
+  also signs out the browser tab that signed in on that device;
 - give it its own assistant (**Create assistant**), so its chats run on their
   own thread, or let it share the brain's default assistant;
 - for a member or client, click **Chat** in the header to read its chat with

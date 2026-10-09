@@ -1,7 +1,7 @@
 # Mobile Companion: backend additions
 
 > **Update 2026-10-09:** there are no comment pushes any more (`kind:
-> 'comment'` is never sent): the brain has no comments. Chat replies and review
+'comment'` is never sent): the brain has no comments. Chat replies and review
 > results push as before.
 
 _Last updated: 2026-10-02 (contract v1.1: every push names its brain and its login, for devices that hold several logins)._
@@ -621,7 +621,7 @@ and nothing else.
 | kind      | t (title)                                                                       | b (body)                                                                                                        | deepLink                                                                       | extra                                              |
 | --------- | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------- |
 | `chat`    | the agent's name; for an admin's note the brain's site name, else `New message` | the reply, pictures removed, 140 chars (`New message` when it is a picture only)                                | `/portal/chat`                                                                 |                                                    |
-| `review`  | `Accepted`, `Returned`, or `With an admin`                                      | the item's title (and the return note); for `Accepted`, the title it was accepted under                         | `/portal/items/<id>`, or `/portal/items` when taken                            | `itemId`, `state`: `accepted`, `returned`, `taken` |
+| `review`  | `Accepted`, `Returned`, or `With an admin`                                      | the item's title; for `Accepted`, the title it was accepted under                                               | `/portal/items/<id>`, or `/portal/items` when taken                            | `itemId`, `state`: `accepted`, `returned`, `taken` |
 | `comment` | `New comment`                                                                   | on the author's own item: `<name> on "<title>": <comment>`; on a client thread: `<name> commented on "<title>"` | `/portal/items/<id>` (own item) or `/portal/shared/<id>` (a client-level item) | `itemId`                                           |
 
 Owner pushes keep their links (`/chat/<slug>`, `/pending`, `/team-admin?...`)
@@ -701,7 +701,7 @@ and `itemId` from the sealed payload. Owner pushes keep their plain keys.
 
 **Teasers are plain text.** Every body (`b`) that comes from markdown is sent
 as plain words: an owner assistant reply, a run's question in an approval, a
-member or client chat reply, a comment, a return note. Headings, bold and
+member or client chat reply. Headings, bold and
 italic, list markers, block quotes and code fences lose their marks; a link
 and a reference chip (`page:`, `media:`, `mention:`, `folder:`, `draw:`)
 keep the label and drop the target; a table keeps its cell text; code keeps
