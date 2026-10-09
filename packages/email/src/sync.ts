@@ -1,4 +1,5 @@
 import {
+  EMAIL_ATTACHMENT_MARK,
   db,
   emailAccounts,
   emailAttachments,
@@ -418,6 +419,10 @@ async function getOrCreateFileNode(
         sha256: args.sha256,
         mimeType: args.mimeType,
         sizeBytes: args.sizeBytes,
+        // An attachment while it sits in this attachments folder, whether or
+        // not its email is still there (access matrix T20). Only a node made
+        // here: a reused Files document stays an ordinary file.
+        [EMAIL_ATTACHMENT_MARK]: true,
       },
     } as NewNode)
     .returning({ id: nodes.id });

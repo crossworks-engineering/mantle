@@ -2,8 +2,13 @@
  * Which file nodes are email attachments, by where they sit (access matrix
  * M4 and H1). Mail sync writes each email node at its branch path and each
  * new attachment file at `<that path>.attachments` (packages/email/src/
- * sync.ts). So a file is an attachment when its folder's last label is
- * `attachments` and an email of the same owner sits at the path above.
+ * sync.ts), stamped `data.emailAttachment` (EMAIL_ATTACHMENT_MARK). So a
+ * file is an attachment when its folder's last label is `attachments` and
+ * either the file carries the stamp or an email of the same owner sits at
+ * the path above (a file synced before the stamp; migration 0239 stamps
+ * those). The stamp is what holds once the owner deletes the emails: the
+ * attachment files stay where they are, and without it they would count as
+ * ordinary files from then on (access matrix T20).
  *
  * An item made FROM an attachment (its `data.sourceFileId` names one) is held
  * to the same rule (emailAttachmentSql, access matrix T4).
@@ -20,31 +25,45 @@ import { nodes } from './schema/index';
 /** The last label of an email's attachments folder. */
 export const EMAIL_ATTACHMENTS_LABEL = 'attachments';
 
-/** The folder rule on the `nodes` row named `alias` (raw SQL): a file in an
- *  attachments folder with an email of the same owner just above it. */
+/** The `data` key mail sync stamps (true) on an attachment file it creates.
+ *  Counts only while the file sits in an attachments folder (see the top). */
+export const EMAIL_ATTACHMENT_MARK = 'emailAttachment';
+
+/** The folder rule on a `nodes` row (raw SQL fragments for its columns): a
+ *  file in an attachments folder, stamped by sync or with an email of the
+ *  same owner just above it. */
+function attachmentFileRule(c: { type: SQL; path: SQL; ownerId: SQL; data: SQL }): SQL {
+  return sql`(${c.type}::text = 'file'
+    and nlevel(${c.path}) >= 2
+    and subpath(${c.path}, -1) = ${EMAIL_ATTACHMENTS_LABEL}::ltree
+    and (coalesce((${c.data}->>${sql.raw(`'${EMAIL_ATTACHMENT_MARK}'`)}) = 'true', false)
+      or exists (
+        select 1 from nodes mail_parent
+         where mail_parent.owner_id = ${c.ownerId}
+           and mail_parent.type = 'email'
+           and mail_parent.path = subpath(${c.path}, 0, nlevel(${c.path}) - 1))))`;
+}
+
+/** The folder rule on the `nodes` row named `alias`. */
 function inAttachmentsFolder(alias: string): SQL {
-  const t = sql.raw(alias);
-  return sql`(${t}.type::text = 'file'
-    and nlevel(${t}.path) >= 2
-    and subpath(${t}.path, -1) = ${EMAIL_ATTACHMENTS_LABEL}::ltree
-    and exists (
-      select 1 from nodes mail_parent
-       where mail_parent.owner_id = ${t}.owner_id
-         and mail_parent.type = 'email'
-         and mail_parent.path = subpath(${t}.path, 0, nlevel(${t}.path) - 1)))`;
+  const col = (name: string) => sql.raw(`${alias}.${name}`);
+  return attachmentFileRule({
+    type: col('type'),
+    path: col('path'),
+    ownerId: col('owner_id'),
+    data: col('data'),
+  });
 }
 
 /** True on a `nodes` row that is a FILE in a mail's attachments folder (the
  *  folder rule alone; see the top). */
 export function emailAttachmentFileSql(): SQL {
-  return sql`(${nodes.type}::text = 'file'
-    and nlevel(${nodes.path}) >= 2
-    and subpath(${nodes.path}, -1) = ${EMAIL_ATTACHMENTS_LABEL}::ltree
-    and exists (
-      select 1 from nodes mail_parent
-       where mail_parent.owner_id = ${nodes.ownerId}
-         and mail_parent.type = 'email'
-         and mail_parent.path = subpath(${nodes.path}, 0, nlevel(${nodes.path}) - 1)))`;
+  return attachmentFileRule({
+    type: sql`${nodes.type}`,
+    path: sql`${nodes.path}`,
+    ownerId: sql`${nodes.ownerId}`,
+    data: sql`${nodes.data}`,
+  });
 }
 
 /**

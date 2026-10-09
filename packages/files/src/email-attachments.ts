@@ -39,7 +39,9 @@ export async function emailAttachmentIds(
 }
 
 /** Of folder `paths`, the ones that are the attachments folder of a mail
- *  (their last label is `attachments` and a mail of this owner sits above). */
+ *  (their last label is `attachments`, and a mail of this owner sits above
+ *  or a file sync stamped as an attachment sits in it: the mails may have
+ *  been deleted, access matrix T20). */
 export async function emailAttachmentFolders(
   ownerId: string,
   paths: readonly string[],
@@ -56,7 +58,17 @@ export async function emailAttachmentFolders(
     path: string;
   }[];
   const mail = new Set(rows.map((r) => r.path));
-  return new Set(candidates.filter((p, i) => mail.has(parents[i]!)));
+  const left = candidates.filter((p, i) => !mail.has(parents[i]!));
+  const stamped = new Set<string>();
+  if (left.length) {
+    const held = (await db.execute(sql`
+      select distinct path::text as path from nodes
+       where owner_id = ${ownerId} and type = 'file'
+         and path::text = any(${`{${left.map((p) => `"${p}"`).join(',')}}`}::text[])
+         and ${emailAttachmentFileSql()}`)) as unknown as { path: string }[];
+    for (const r of held) stamped.add(r.path);
+  }
+  return new Set(candidates.filter((p, i) => mail.has(parents[i]!) || stamped.has(p)));
 }
 
 /** Whether a folder path is, is inside, or holds a mail's attachments. */

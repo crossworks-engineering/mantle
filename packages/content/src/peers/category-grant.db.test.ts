@@ -4,7 +4,8 @@
  * chat archives Mantle writes about the owner's own chats; a Files grant
  * covers the owner's files, never email attachments (a file in the
  * attachments folder under a mail; a Files document that came by mail too
- * stays an ordinary file). A per-node grant still
+ * stays an ordinary file) nor the files the owner sent in chat or over
+ * Telegram (Files / Auto-filed uploads, T19). A per-node grant still
  * reaches one of them when the owner picks it. Every peer read is checked:
  * the list, the ranked search and the single-node read.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/peers/category-grant.db.test.ts
@@ -38,6 +39,10 @@ describe.skipIf(!URL)('peer category grants on Postgres', () => {
     emailNode: randomUUID(),
     attachment: randomUUID(),
     email: randomUUID(),
+    chatUpload: randomUUID(),
+    telegramUpload: randomUUID(),
+    legacyUpload: randomUUID(),
+    generated: randomUUID(),
   };
   const tag = `peer-cat-${owner.slice(0, 8)}`;
   const word = `zebrafish${owner.slice(0, 6)}`;
@@ -67,7 +72,11 @@ describe.skipIf(!URL)('peer category grants on Postgres', () => {
         (${ids.emailedDoc}, ${owner}, 'file', ${`contract-${word}.pdf`}, 'files', '{}'::jsonb),
         (${ids.oldPathNote}, ${owner}, 'note', ${`Old ${word}`}, 'assistant', '{}'::jsonb),
         (${ids.emailNode}, ${owner}, 'email', 'A mail', ${inbox}, '{}'::jsonb),
-        (${ids.attachment}, ${owner}, 'file', ${`invoice-${word}.pdf`}, ${`${inbox}.attachments`}, '{}'::jsonb)`);
+        (${ids.attachment}, ${owner}, 'file', ${`invoice-${word}.pdf`}, ${`${inbox}.attachments`}, '{}'::jsonb),
+        (${ids.chatUpload}, ${owner}, 'file', ${`scan-${word}.pdf`}, 'files.auto_filed.assistant_uploads.2026_10', '{}'::jsonb),
+        (${ids.telegramUpload}, ${owner}, 'file', ${`photo-${word}.jpg`}, 'files.auto_filed.telegram_uploads.2026_10', '{}'::jsonb),
+        (${ids.legacyUpload}, ${owner}, 'file', ${`old-${word}.jpg`}, 'files.telegram_uploads.2026_09_01', '{}'::jsonb),
+        (${ids.generated}, ${owner}, 'file', ${`art-${word}.png`}, 'files.auto_filed.generated_images.2026_10', '{}'::jsonb)`);
     await m.db.execute(sqlTag`
       insert into nodes (id, owner_id, type, title, path, tags) values
         (${ids.taggedDigest}, ${owner}, 'note', ${`Tagged ${word}`}, 'notes',
@@ -108,13 +117,20 @@ describe.skipIf(!URL)('peer category grants on Postgres', () => {
     ids.attachment,
     ids.taggedDigest,
     ids.oldPathNote,
+    ids.chatUpload,
+    ids.telegramUpload,
+    ids.legacyUpload,
   ];
 
   it('the list gives the notes and files, not digests, archives or attachments', async () => {
     const got = (await q.queryForPeer(peer, { limit: 100 })).map((h) => h.id);
     // A Files document that also came by mail (sync reuses the node by its
     // bytes) is still an ordinary file.
-    expect(got).toEqual(expect.arrayContaining([ids.note, ids.file, ids.emailedDoc]));
+    // Another Auto-filed source (generated images) is still a file the
+    // category covers: only the chat uploads are the owner's own corpus.
+    expect(got).toEqual(
+      expect.arrayContaining([ids.note, ids.file, ids.emailedDoc, ids.generated]),
+    );
     for (const id of hidden) expect(got).not.toContain(id);
   });
 

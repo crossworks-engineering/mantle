@@ -1667,6 +1667,13 @@
       "when": 1790193240000,
       "tag": "0238_peer_ended_binding",
       "breakpoints": true
+    },
+    {
+      "idx": 239,
+      "version": "7",
+      "when": 1790193300000,
+      "tag": "0239_email_attachment_mark",
+      "breakpoints": true
     }
   ]
 }

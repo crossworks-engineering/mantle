@@ -33,6 +33,7 @@ export {
 export { ensureViewerRoles, LIMITED_LEVELS } from './viewer-roles';
 export {
   EMAIL_ATTACHMENTS_LABEL,
+  EMAIL_ATTACHMENT_MARK,
   emailAttachmentFileSql,
   emailAttachmentSql,
 } from './email-attachment';

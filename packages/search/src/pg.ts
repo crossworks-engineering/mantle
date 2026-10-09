@@ -17,10 +17,12 @@ export function pgArrayLiteral(values: string[]): string {
  * What a standing CATEGORY grant never covers, though the node has the
  * granted type (access matrix H1): the notes Mantle writes about the owner's
  * own chats (conversation digests and chat archives, in Notes / Auto-filed or
- * at the legacy `assistant` path) and the files that are email attachments.
- * Both are the owner's private corpus, like email and journal, which a
- * category grant cannot name at all. A per-node grant still reaches one of
- * them when the owner picks it.
+ * at the legacy `assistant` path), the files the owner sent in chat or over
+ * Telegram (Files / Auto-filed / Assistant uploads and Telegram uploads, or
+ * those folders at the top of Files before Auto-filed; T19) and the files
+ * that are email attachments. All are the owner's private corpus, like email
+ * and journal, which a category grant cannot name at all. A per-node grant
+ * still reaches one of them when the owner picks it.
  */
 export function peerCategoryExcluded(): SQL {
   // coalesce: a node with no `kind` gives NULL here, and `not NULL` would
@@ -30,6 +32,9 @@ export function peerCategoryExcluded(): SQL {
   // before that folder existed).
   return sql`coalesce(${nodes.path} <@ 'notes.auto_filed'::ltree
     or (${nodes.type}::text = 'note' and ${nodes.path} <@ 'assistant'::ltree)
+    or ${nodes.path} <@ ARRAY['files.auto_filed.assistant_uploads',
+      'files.auto_filed.telegram_uploads', 'files.assistant_uploads',
+      'files.telegram_uploads']::ltree[]
     or (${nodes.data}->>'kind') in ('conversation_digest', 'chat_archive')
     or ${nodes.tags} && ARRAY['conversation-digest', 'chat-archive']::text[]
     or ${emailAttachmentSql()}, false)`;
