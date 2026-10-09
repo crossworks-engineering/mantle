@@ -301,8 +301,10 @@ export async function loadShareView(share: Share): Promise<ShareView | null> {
     // public may read of it. A mention, a link or a child page card of an
     // item it may not read says "Private item", and a hidden embed is left
     // out, as for a client (access matrix M7; the asset routes already
-    // refuse those bytes). A contact share serves what the item embeds at
-    // any level (shareLevels), so it reads the item as it is.
+    // refuse those bytes). A task's or an event's body and a task's
+    // checklist are markdown that can name items too, so they take the
+    // note rule (T18). A contact share serves what the item embeds at any
+    // level (shareLevels), so it reads the item as it is.
     case 'page': {
       const page = await getPage(ownerId, nodeId);
       if (!page) return null;
@@ -326,28 +328,34 @@ export async function loadShareView(share: Share): Promise<ShareView | null> {
       const n = await loadNode(ownerId, nodeId);
       if (!n) return null;
       const d = (n.data ?? {}) as Record<string, unknown>;
+      const shown = (md: string) =>
+        share.contactId ? md : levelFilteredNote(ownerId, 'public', md);
+      const todos = Array.isArray(d.todos)
+        ? (d.todos as Array<Record<string, unknown>>).filter(
+            (t) => typeof t?.text === 'string' && t.text,
+          )
+        : [];
       return {
         kind: 'task',
         title: n.title,
-        body: typeof d.body === 'string' ? d.body : '',
+        body: await shown(typeof d.body === 'string' ? d.body : ''),
         status: typeof d.status === 'string' ? d.status : 'open',
         priority: typeof d.priority === 'string' ? d.priority : 'normal',
         dueAt: typeof d.due_at === 'string' ? d.due_at : null,
-        todos: Array.isArray(d.todos)
-          ? (d.todos as Array<Record<string, unknown>>)
-              .filter((t) => typeof t?.text === 'string' && t.text)
-              .map((t) => ({ text: t.text as string, done: t.done === true }))
-          : [],
+        todos: await Promise.all(
+          todos.map(async (t) => ({ text: await shown(t.text as string), done: t.done === true })),
+        ),
       };
     }
     case 'event': {
       const n = await loadNode(ownerId, nodeId);
       if (!n) return null;
       const d = (n.data ?? {}) as Record<string, unknown>;
+      const body = typeof d.body === 'string' ? d.body : '';
       return {
         kind: 'event',
         title: n.title,
-        body: typeof d.body === 'string' ? d.body : '',
+        body: share.contactId ? body : await levelFilteredNote(ownerId, 'public', body),
         startsAt: typeof d.starts_at === 'string' ? d.starts_at : null,
         endsAt: typeof d.ends_at === 'string' ? d.ends_at : null,
         location: typeof d.location === 'string' ? d.location : null,

@@ -5,7 +5,9 @@
  * admin file gave the anonymous visitor the label, the title and the file
  * name, though the bytes were refused. Now those say "Private item" (the
  * embed is left out), the same rule a client page and the indexed text use;
- * public items keep theirs. A contact share reads the item as it is. Seeds
+ * public items keep theirs. A task's or an event's body and a task's
+ * checklist take the note rule (T18): they named the admin page by its
+ * title. A contact share reads the item as it is. Seeds
  * its own owner and rows and removes them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run shares-public-redact.db.test
  */
@@ -29,6 +31,8 @@ describe.skipIf(!URL)('open links redact what the public may not read', () => {
     secretPage: randomUUID(),
     secretFile: randomUUID(),
     openPage: randomUUID(),
+    task: randomUUID(),
+    event: randomUUID(),
   };
   const SECRET = 'Acquisition plan';
   const SECRET_FILE = 'board-minutes.pdf';
@@ -58,6 +62,8 @@ describe.skipIf(!URL)('open links redact what the public may not read', () => {
       [id.secretPage, 'page', SECRET, 'pages'],
       [id.secretFile, 'file', SECRET_FILE, 'files'],
       [id.openPage, 'page', 'Open page', 'pages'],
+      [id.task, 'task', 'Shared task', 'tasks'],
+      [id.event, 'event', 'Shared event', 'events'],
     ];
     for (const [nid, type, title, path] of rows) {
       await m.db.execute(sqlTag`
@@ -95,6 +101,19 @@ describe.skipIf(!URL)('open links redact what the public may not read', () => {
     await m.db.execute(
       sqlTag`update nodes set data = ${JSON.stringify({ content: note })}::jsonb where id = ${id.note}`,
     );
+    const task = {
+      body: note,
+      status: 'open',
+      todos: [{ text: `Draft [${SECRET}](mention:node:${id.secretPage})`, done: false }],
+    };
+    await m.db.execute(
+      sqlTag`update nodes set data = ${JSON.stringify(task)}::jsonb where id = ${id.task}`,
+    );
+    await m.db.execute(
+      sqlTag`update nodes set data = ${JSON.stringify({ body: note })}::jsonb where id = ${id.event}`,
+    );
+    // A task or an event has no level of its own (only workspace kinds do):
+    // its open link is the share alone.
     // Straight to public, by the row only: the embeds stay admin, as when an
     // admin raised them back above the page on purpose.
     await m.db.execute(
@@ -131,6 +150,31 @@ describe.skipIf(!URL)('open links redact what the public may not read', () => {
     expect(view.content).not.toContain(SECRET);
     expect(view.content).toContain('Private item');
     expect(view.content).toContain('Open page');
+  });
+
+  it('an open task link hides them in the body and the checklist', async () => {
+    const view = await shares.loadShareView(shareOf(id.task, 'task'));
+    if (view?.kind !== 'task') throw new Error('not a task');
+    expect(view.body).not.toContain(SECRET);
+    expect(view.body).toContain('Private item');
+    expect(view.body).toContain('Open page');
+    expect(view.todos).toHaveLength(1);
+    expect(view.todos?.[0]?.text).not.toContain(SECRET);
+    expect(view.todos?.[0]?.text).toContain('Private item');
+  });
+
+  it('an open event link hides them in the body', async () => {
+    const view = await shares.loadShareView(shareOf(id.event, 'event'));
+    if (view?.kind !== 'event') throw new Error('not an event');
+    expect(view.body).not.toContain(SECRET);
+    expect(view.body).toContain('Private item');
+    expect(view.body).toContain('Open page');
+  });
+
+  it('a contact task share reads the body as it is', async () => {
+    const view = await shares.loadShareView(shareOf(id.task, 'task', randomUUID()));
+    if (view?.kind !== 'task') throw new Error('not a task');
+    expect(view.body).toContain(SECRET);
   });
 
   it('a contact share reads the item as it is', async () => {
