@@ -93,13 +93,18 @@ Phase 2): admin (the default: admins only), team (members), client (clients
 and members) or public (members, plus contacts on an app's contact link and
 public agents, read-only tools only; never clients, who reach client-level
 connectors only). Granting the group to an agent never widens that. A tool's
-read-only mark decides read or write. The mark stops counting when the tool's
-description or inputs change, when it vanishes and returns, and when the
-connector's server or sign-in changes (an OAuth reconnect as the same
-account keeps it; the account is a hash of the token's issuer and subject);
-below admin a new or returning tool arrives switched off, and an agent
-turning one on, clearing its confirmation, or lowering the connector's level
-waits in Pending. The full rules: docs/member-logins.md
+read-only mark decides read or write. The mark stops counting when a sync
+finds the tool's description or inputs changed, when it vanishes and
+returns, when the connector's server or sign-in changes (an OAuth reconnect
+as the same account keeps it; the account is a hash of the token's issuer
+and subject), and when the vault key it signs in with is rotated or saved
+over. Between syncs, below the owner a marked tool takes only the inputs
+its stored schema lists (one level deep), and a tool synced without its list
+of inputs cannot be marked. Below admin a new or returning tool arrives
+switched off; an agent turning one on, clearing its confirmation, or
+lowering the connector's level waits in Pending, and an API key or a linked
+brain is refused. Known gap: an http tool with External access whose
+template uses a rotated vault key keeps its mark. The full rules: docs/member-logins.md
 ("External access") and docs/mcp-as-a-login.md.
 
 ## API (owner-gated)
