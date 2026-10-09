@@ -37,6 +37,11 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const { id } = await ctx.params;
+  // An item made from an email attachment is not found for a key without
+  // Search, its writes too (access matrix T4, audit B1).
+  if ((await hiddenFromKey(user.id, [id])).size > 0) {
+    return NextResponse.json({ error: 'not found' }, { status: 404 });
+  }
   const raw = await req.json().catch(() => ({}));
   const parsed = PatchBody.safeParse(raw);
   if (!parsed.success) {
@@ -52,6 +57,11 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const { id } = await ctx.params;
+  // An item made from an email attachment is not found for a key without
+  // Search, its writes too (access matrix T4, audit B1).
+  if ((await hiddenFromKey(user.id, [id])).size > 0) {
+    return NextResponse.json({ error: 'not found' }, { status: 404 });
+  }
   const ok = await deletePage(user.id, id);
   if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });
   return NextResponse.json({ ok: true });

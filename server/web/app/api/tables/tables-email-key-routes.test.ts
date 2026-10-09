@@ -34,15 +34,44 @@ vi.mock('@/lib/tables', async (importOriginal) => ({
   countTables: vi.fn(async () => 2),
   listTableTags: vi.fn(async () => []),
   getTable: vi.fn(async (_o: string, id: string) => table(id)),
+  updateTable: vi.fn(async (_o: string, id: string) => table(id)),
+  deleteTable: vi.fn(async () => true),
 }));
 
 vi.mock('@/lib/pages', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getPage: vi.fn(async (_o: string, id: string) => ({ id })),
+  updatePage: vi.fn(async (_o: string, id: string) => ({ id, doc: { secret: true } })),
+  deletePage: vi.fn(async () => true),
 }));
 
 const key = (areas: AccessKeyGrant['areas']) =>
   ({ id: 'k1', loginId: OWNER, access: 'read', areas }) as unknown as AccessKeyGrant;
+
+vi.mock('@/lib/notes', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  getNote: vi.fn(async (_o: string, id: string) => ({ id })),
+  updateNote: vi.fn(async (_o: string, id: string) => ({ id, content: 'x' })),
+  deleteNote: vi.fn(async () => true),
+}));
+
+/** Run a write handler as the request the gate would hand it. */
+function write<T>(
+  grant: AccessKeyGrant | undefined,
+  url: string,
+  method: 'PATCH' | 'DELETE',
+  fn: (req: Request) => Promise<T>,
+) {
+  const req = new Request(url, {
+    method,
+    headers: { 'content-type': 'application/json' },
+    ...(method === 'PATCH' ? { body: JSON.stringify({ title: 'Renamed' }) } : {}),
+  });
+  return runWithRequestContext(
+    { req, path: new URL(url).pathname, method, ...(grant ? { accessKey: grant } : {}) },
+    () => fn(req),
+  );
+}
 
 function as<T>(grant: AccessKeyGrant | undefined, url: string, fn: (req: Request) => Promise<T>) {
   const req = new Request(url);
@@ -86,6 +115,43 @@ describe('Tables, pages and notes routes and a key without the Search area (T4)'
       const hidden = await as(key([kind]), url, (req) => GET(req, ctxOf(FROM_MAIL)));
       expect(hidden.status, kind).toBe(404);
     }
+  });
+
+  it('answer 404 to a write on one, through v1 and the inner routes (B1)', async () => {
+    const v1Pages = await import('../v1/pages/[id]/route');
+    const pages = await import('../pages/[id]/route');
+    const notes = await import('../notes/[id]/route');
+    const tables = await import('./[id]/route');
+    const lib = {
+      pages: await import('@/lib/pages'),
+      notes: await import('@/lib/notes'),
+      tables: await import('@/lib/tables'),
+    };
+    const cases = [
+      ['pages', 'PATCH', v1Pages.PATCH],
+      ['pages', 'PATCH', pages.PATCH],
+      ['pages', 'DELETE', pages.DELETE],
+      ['notes', 'PATCH', notes.PATCH],
+      ['notes', 'DELETE', notes.DELETE],
+      ['tables', 'PATCH', tables.PATCH],
+      ['tables', 'DELETE', tables.DELETE],
+    ] as const;
+    for (const [kind, method, handler] of cases) {
+      const url = `http://x/api/v1/${kind}/${FROM_MAIL}`;
+      const res = await write(key([kind]), url, method, (req) => handler(req, ctxOf(FROM_MAIL)));
+      expect(res.status, `${method} ${kind}`).toBe(404);
+    }
+    expect(lib.pages.updatePage).not.toHaveBeenCalled();
+    expect(lib.pages.deletePage).not.toHaveBeenCalled();
+    expect(lib.notes.updateNote).not.toHaveBeenCalled();
+    expect(lib.notes.deleteNote).not.toHaveBeenCalled();
+    expect(lib.tables.updateTable).not.toHaveBeenCalled();
+    expect(lib.tables.deleteTable).not.toHaveBeenCalled();
+    // An ordinary page is written as before.
+    const plain = await write(key(['pages']), `http://x/api/v1/pages/${PLAIN}`, 'PATCH', (req) =>
+      v1Pages.PATCH(req, ctxOf(PLAIN)),
+    );
+    expect(plain.status).toBe(200);
   });
 
   it('answer 404 for it by id, and serve an ordinary Table', async () => {

@@ -159,6 +159,10 @@ describe('a key without Search and email attachments on MCP', () => {
     expect(await before!('page_get', { id: COPY })).toBe(KEY_EMAIL_REFUSAL);
     expect(await before!('page_blocks_list', { page_id: COPY })).toBe(KEY_EMAIL_REFUSAL);
     expect(await before!('note_get', { id: COPY })).toBe(KEY_EMAIL_REFUSAL);
+    // A mention of one in an ordinary page would embed its title there.
+    expect(await before!('page_mention', { page_id: PLAIN, target_id: COPY })).toBe(
+      KEY_EMAIL_REFUSAL,
+    );
     expect(await before!('page_get', { id: PLAIN })).toBeNull();
     for (const slug of ['page_list', 'note_list']) {
       const rows = [{ id: PLAIN }, { id: COPY }];

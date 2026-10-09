@@ -29,6 +29,9 @@ const ID_FIELDS = [
   'node_id',
   'page_id',
   'note_id',
+  // page_mention's mentioned item, page_move's parent page.
+  'target_id',
+  'parent_id',
 ] as const;
 const ID_LIST_FIELDS = ['file_ids', 'table_ids'] as const;
 const PATH_FIELDS = ['parent_path', 'parent', 'path', 'dest_path', 'dest_parent_path'] as const;
