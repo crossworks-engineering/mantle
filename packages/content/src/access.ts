@@ -28,12 +28,14 @@
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   agents,
+  channels,
   db,
   isViewerLevel,
   itemLevelAbove,
   levelCovers,
   nodes,
   shares,
+  telegramChats,
   toolGroups,
   WORKSPACE_NODE_TYPES,
   type ViewerLevel,
@@ -120,7 +122,8 @@ export async function accessClosure(ownerId: string, nodeId: string): Promise<Ac
 export class AccessError extends Error {
   constructor(
     message: string,
-    readonly code: 'not_found' | 'type_ceiling' | 'invalid_level' | 'group_above_agent',
+    readonly code:
+      'not_found' | 'type_ceiling' | 'invalid_level' | 'group_above_agent' | 'telegram_paired',
   ) {
     super(message);
     this.name = 'AccessError';
@@ -431,13 +434,71 @@ export async function agentGrantProblems(
 const DROP_GROUPS_HINT = '`dropGroupsAbove: true` (access_set: `drop_groups_above: true`)';
 
 /**
+ * Refuse to lower an agent that is on Telegram (access matrix T21, option
+ * 3): a paired Telegram chat acts as the owner, so only an admin-level agent
+ * keeps a bot or answers a paired chat. The bot is the enabled telegram
+ * channel (a disconnected one is disabled and polls nothing); a paired chat
+ * is an allowed one pinned to this agent. The turn refuses a below-admin
+ * agent anyway; this keeps the owner from building the state at all, and the
+ * refusal names the fix.
+ */
+async function refuseIfOnTelegram(
+  ownerId: string,
+  agentId: string,
+  slug: string,
+  audience: ViewerLevel,
+): Promise<void> {
+  const [bot] = await db
+    .select({ name: channels.displayName })
+    .from(channels)
+    .where(
+      and(
+        eq(channels.ownerId, ownerId),
+        eq(channels.agentId, agentId),
+        eq(channels.type, 'telegram'),
+        eq(channels.enabled, true),
+      ),
+    )
+    .limit(1);
+  const why =
+    `a ${audience}-level agent cannot be on Telegram, because a paired Telegram chat ` +
+    'acts as the owner';
+  if (bot) {
+    throw new AccessError(
+      `agent '${slug}' has a Telegram bot (${bot.name}), and ${why}. ` +
+        `Disconnect the bot first (Settings > Agents > ${slug} > Telegram bot), then set the level`,
+      'telegram_paired',
+    );
+  }
+  const pinned = await db
+    .select({ id: telegramChats.id })
+    .from(telegramChats)
+    .where(
+      and(
+        eq(telegramChats.userId, ownerId),
+        eq(telegramChats.responderAgentId, agentId),
+        eq(telegramChats.allowlistStatus, 'allowed'),
+      ),
+    );
+  if (pinned.length > 0) {
+    const n = pinned.length;
+    throw new AccessError(
+      `agent '${slug}' answers ${n} paired Telegram chat${n === 1 ? '' : 's'}, and ${why}. ` +
+        `Give ${n === 1 ? 'that chat' : 'those chats'} another agent or block ${n === 1 ? 'it' : 'them'} first, then set the level`,
+      'telegram_paired',
+    );
+  }
+}
+
+/**
  * Set an agent's level. Refuses when it holds a tool group above the new
  * level (plan 2c), and the refusal names the fix. `dropGroupsAbove` is that
  * fix in the same call: the groups above the new level leave the agent with
  * the change and come back in `removedGroups` (team-responder going to team
  * leaves `team-read-admin` behind). It is opt-in, never the default: a wrong
  * slug must not strip an agent of its groups (the persona holds only admin
- * groups), and raising the level again does not bring them back.
+ * groups), and raising the level again does not bring them back. Lowering
+ * an agent that is on Telegram is refused outright (refuseIfOnTelegram).
  */
 export async function setAgentAudience(
   ownerId: string,
@@ -457,6 +518,7 @@ export async function setAgentAudience(
     .where(and(eq(agents.id, agentId), eq(agents.ownerId, ownerId)))
     .limit(1);
   if (!agent) throw new AccessError(`agent ${agentId} not found`, 'not_found');
+  if (audience !== 'admin') await refuseIfOnTelegram(ownerId, agent.id, agent.slug, audience);
   const held = agent.groups ?? [];
   const aboveRows = await groupsAbove(ownerId, held, audience);
   const above = new Set(aboveRows.map((g) => g.slug));

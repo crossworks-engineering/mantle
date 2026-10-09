@@ -3,6 +3,8 @@ export { botFor, evictBot } from './client';
 export { gate } from './gate';
 export { pollOnce } from './sync';
 export { upsertTelegramChannel, disableTelegramChannel } from './channels';
+export { belowAdminChatAgent, type BelowAdminChatAgent } from './chat-level';
+export * from './level';
 export {
   sendMessage,
   sendVoice,

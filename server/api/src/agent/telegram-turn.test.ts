@@ -549,6 +549,62 @@ describe('handleTelegramMessage: a pinned agent that is off (access matrix M8)',
   });
 });
 
+describe('handleTelegramMessage: only an admin-level agent answers (access matrix T21)', () => {
+  const REFUSAL =
+    'This chat is turned off: only an admin-level agent answers on Telegram. Ask the owner.';
+
+  it('a paired chat whose agent is team-level gets one plain reply and no turn', async () => {
+    await runTurn(
+      makeMsgRow({ allowlistStatus: 'allowed', channelAgentAudience: 'team' }),
+      makeAgent({ audience: 'team' }),
+    );
+    expect(h.loopCalls).toHaveLength(0);
+    expect(h.traces).toHaveLength(0);
+    expect(h.recordTurnCalls).toHaveLength(0);
+    expect(h.sendMessage).toHaveBeenCalledTimes(1);
+    expect(h.sendMessage.mock.calls[0]![2]).toBe(REFUSAL);
+  });
+
+  it('an agent lowered to client after its chat was paired is refused the same way', async () => {
+    // The chat is still allowed: only the agent's level changed since.
+    await runTurn(makeMsgRow({ allowlistStatus: 'allowed' }), makeAgent({ audience: 'client' }));
+    expect(h.loopCalls).toHaveLength(0);
+    expect(h.sendMessage.mock.calls[0]![2]).toBe(REFUSAL);
+  });
+
+  it("an admin override on a below-admin agent's bot is refused too", async () => {
+    await runTurn(
+      makeMsgRow({ responderAgentId: 'agent-admin', channelAgentAudience: 'public' }),
+      makeAgent({ id: 'agent-admin', audience: 'admin' }),
+    );
+    expect(h.loopCalls).toHaveLength(0);
+    expect(h.sendMessage.mock.calls[0]![2]).toBe(REFUSAL);
+  });
+
+  it('a refused chat runs no /new and ingests no attachment', async () => {
+    h.archiveAgentChat.mockReset();
+    await runTurn(makeMsgRow({ text: '/new' }), makeAgent({ audience: 'team' }));
+    expect(h.archiveAgentChat).not.toHaveBeenCalled();
+    await runTurn(
+      makeMsgRow({
+        text: '(photo)',
+        attachments: [{ kind: 'photo', file_id: 'pf-1', mime: 'image/jpeg' }],
+      }),
+      makeAgent({ audience: 'team' }),
+    );
+    expect(h.downloadTelegramFile).not.toHaveBeenCalled();
+    expect(h.upsertFile).not.toHaveBeenCalled();
+  });
+
+  it('an admin agent on an admin bot still answers', async () => {
+    await runTurn(
+      makeMsgRow({ allowlistStatus: 'allowed', channelAgentAudience: 'admin' }),
+      makeAgent({ audience: 'admin' }),
+    );
+    expect(h.loopCalls).toHaveLength(1);
+  });
+});
+
 describe('handleTelegramMessage — text turn', () => {
   it('claims the row, sends the reply, and persists transport + mirror rows', async () => {
     await runTurn(makeMsgRow());

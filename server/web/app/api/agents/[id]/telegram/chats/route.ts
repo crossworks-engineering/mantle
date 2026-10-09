@@ -27,7 +27,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ ok: true });
   } catch (err) {
     if (err instanceof TelegramTokenError) {
-      return NextResponse.json({ error: err.message }, { status: 400 });
+      return NextResponse.json(
+        { error: err.message, ...(err.code ? { code: err.code } : {}) },
+        { status: 400 },
+      );
     }
     console.error('[telegram chat status]', err);
     return NextResponse.json({ error: 'Could not update the chat.' }, { status: 500 });

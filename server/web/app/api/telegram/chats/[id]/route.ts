@@ -2,6 +2,11 @@ import { and, eq } from 'drizzle-orm';
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { db, agents, telegramChats } from '@mantle/db';
+import {
+  isBelowAdminAgent,
+  TELEGRAM_LEVEL_CODE,
+  telegramResponderRefusal,
+} from '@mantle/telegram/level';
 import { getOwnerOr401 } from '@/lib/auth';
 import { firstIssue } from '@/lib/zod-issue';
 
@@ -36,14 +41,21 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     .limit(1);
   if (!chat) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
 
-  // If setting an override, verify the agent belongs to this owner.
+  // If setting an override, verify the agent belongs to this owner, and that
+  // it is admin-level: a Telegram chat acts as the owner (access matrix T21).
   if (parsed.data.responderAgentId) {
     const [agent] = await db
-      .select({ id: agents.id })
+      .select({ id: agents.id, name: agents.name, audience: agents.audience })
       .from(agents)
       .where(and(eq(agents.id, parsed.data.responderAgentId), eq(agents.ownerId, user.id)))
       .limit(1);
     if (!agent) return NextResponse.json({ error: 'Agent not found.' }, { status: 404 });
+    if (isBelowAdminAgent(agent)) {
+      return NextResponse.json(
+        { error: telegramResponderRefusal(agent), code: TELEGRAM_LEVEL_CODE },
+        { status: 400 },
+      );
+    }
   }
 
   await db

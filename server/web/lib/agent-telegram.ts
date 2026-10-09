@@ -11,13 +11,46 @@
  */
 import { and, eq } from 'drizzle-orm';
 import { agents, channels, db, telegramAccounts, telegramChats } from '@mantle/db';
-import { disableTelegramChannel, sendMessage, upsertTelegramChannel } from '@mantle/telegram';
+import {
+  belowAdminChatAgent,
+  disableTelegramChannel,
+  sendMessage,
+  upsertTelegramChannel,
+} from '@mantle/telegram';
+import {
+  isBelowAdminAgent,
+  TELEGRAM_LEVEL_CODE,
+  telegramConnectRefusal,
+  telegramPairRefusal,
+} from '@mantle/telegram/level';
 import type { AgentTelegramBinding, AgentTelegramChat } from '@mantle/client-types';
 export type { AgentTelegramBinding, AgentTelegramChat };
 
-/** Thrown for user-fixable problems (bad token, username already taken). The
- *  API layer surfaces `.message` to the form. */
-export class TelegramTokenError extends Error {}
+/** Thrown for user-fixable problems (bad token, username already taken, an
+ *  agent below admin). The API layer surfaces `.message` to the form, and
+ *  `.code` when set, so the screen can tell a standing refusal apart. */
+export class TelegramTokenError extends Error {
+  constructor(
+    message: string,
+    readonly code?: string,
+  ) {
+    super(message);
+  }
+}
+
+/** Refuse a below-admin agent its bot (access matrix T21): a paired chat
+ *  acts as the owner, so only an admin-level agent has one. Checked before
+ *  the token reaches Telegram. */
+async function assertAdminLevelAgent(ownerId: string, agentId: string): Promise<void> {
+  const [agent] = await db
+    .select({ name: agents.name, audience: agents.audience })
+    .from(agents)
+    .where(and(eq(agents.id, agentId), eq(agents.ownerId, ownerId)))
+    .limit(1);
+  if (agent && isBelowAdminAgent(agent)) {
+    throw new TelegramTokenError(telegramConnectRefusal(agent), TELEGRAM_LEVEL_CODE);
+  }
+}
 
 async function getMe(token: string): Promise<{ id: number; username: string }> {
   let res: Response;
@@ -105,6 +138,7 @@ export async function connectAgentTelegram(
 ): Promise<AgentTelegramBinding> {
   const trimmed = token.trim();
   if (!trimmed) throw new TelegramTokenError('Paste a bot token.');
+  await assertAdminLevelAgent(ownerId, agentId);
   const me = await getMe(trimmed);
   const branchPath = `inbox.telegram_${me.username.toLowerCase()}`;
 
@@ -253,6 +287,13 @@ export async function setAgentTelegramChatStatus(
     )
     .limit(1);
   if (!chat) throw new TelegramTokenError('Chat not found for this bot.');
+  // A paired chat acts as the owner, so only an admin-level agent's bot is
+  // paired (access matrix T21): the bot's agent and the chat's own responder
+  // both count. Blocking stays open whatever the level.
+  if (status === 'allowed') {
+    const below = await belowAdminChatAgent(ownerId, chat.accountId, chat.responderAgentId);
+    if (below) throw new TelegramTokenError(telegramPairRefusal(below), TELEGRAM_LEVEL_CODE);
+  }
 
   await db
     .update(telegramChats)

@@ -57,13 +57,20 @@ vi.mock('@mantle/db', async (importOriginal) => {
 });
 vi.mock('@mantle/telegram', () => ({
   accountForChat: vi.fn(),
+  belowAdminChatAgent: vi.fn(),
   sendMessage: vi.fn(),
   editMessage: vi.fn(),
   reactToMessage: vi.fn(),
 }));
 
 import * as dbmod from '@mantle/db';
-import { accountForChat, editMessage, reactToMessage, sendMessage } from '@mantle/telegram';
+import {
+  accountForChat,
+  belowAdminChatAgent,
+  editMessage,
+  reactToMessage,
+  sendMessage,
+} from '@mantle/telegram';
 import { TELEGRAM_OPERATOR_TOOLS } from './builtins-telegram';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 
@@ -123,6 +130,7 @@ beforeEach(() => {
   whereArgs.length = 0;
   updateReturn = [];
   vi.mocked(accountForChat).mockResolvedValue(ACCOUNT as never);
+  vi.mocked(belowAdminChatAgent).mockResolvedValue(null);
   vi.mocked(sendMessage).mockResolvedValue([1] as never);
   vi.mocked(editMessage).mockResolvedValue(undefined as never);
   vi.mocked(reactToMessage).mockResolvedValue(undefined as never);
@@ -149,6 +157,24 @@ describe('telegram_pair', () => {
     expect(errorOf(res)).toMatch(/no pending pairing/);
     // Another owner's pending code must not be approvable from here.
     expect(paramsOf(whereArgs[0])).toEqual([CODE, 'o1']);
+    expect(dbmod.db.update).not.toHaveBeenCalled();
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("refuses a below-admin agent's bot, naming its level, and writes nothing (T21)", async () => {
+    selectQueue.push([pendingChat({ responderAgentId: 'agent-pin' })]);
+    vi.mocked(belowAdminChatAgent).mockResolvedValue({
+      id: 'agent-team',
+      slug: 'helper',
+      name: 'Helper',
+      audience: 'team',
+    });
+    const err = errorOf(await pair.handler({ code: CODE }, ctx));
+    expect(err).toMatch(/Helper is a team-level agent/);
+    expect(err).toMatch(/Only an admin-level agent's bot can be paired/);
+    expect(err).toMatch(/acts as the owner/);
+    // Both of the chat's agents are asked about: the bot's and the pinned one.
+    expect(belowAdminChatAgent).toHaveBeenCalledWith('o1', 'acct-1', 'agent-pin');
     expect(dbmod.db.update).not.toHaveBeenCalled();
     expect(sendMessage).not.toHaveBeenCalled();
   });

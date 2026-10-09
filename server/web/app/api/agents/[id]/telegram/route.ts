@@ -44,7 +44,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ binding });
   } catch (err) {
     if (err instanceof TelegramTokenError) {
-      return NextResponse.json({ error: err.message }, { status: 400 });
+      return NextResponse.json(
+        { error: err.message, ...(err.code ? { code: err.code } : {}) },
+        { status: 400 },
+      );
     }
     console.error('[telegram connect]', err);
     return NextResponse.json({ error: 'Could not link the bot.' }, { status: 500 });

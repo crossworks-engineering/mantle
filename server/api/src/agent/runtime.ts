@@ -41,6 +41,7 @@ import {
   type Agent,
 } from '@mantle/db';
 import { accountById } from '@mantle/telegram';
+import { isBelowAdminAgent, TELEGRAM_BELOW_ADMIN_REPLY } from '@mantle/telegram/level';
 
 import { sweepLegacyTables } from '@mantle/content/table-storage';
 
@@ -162,6 +163,7 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
       accountId: telegramMessages.accountId,
       responderAgentId: telegramChats.responderAgentId,
       channelAgentId: channels.agentId,
+      channelAgentAudience: agents.audience,
       allowlistStatus: telegramChats.allowlistStatus,
       attachments: telegramMessages.attachments,
     })
@@ -171,6 +173,7 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
     // Left join: an account whose channel was deleted (with its agent) keeps
     // its queued messages; resolveResponderAgent refuses them.
     .leftJoin(channels, eq(telegramAccounts.channelId, channels.id))
+    .leftJoin(agents, eq(channels.agentId, agents.id))
     .where(eq(telegramMessages.id, messageId))
     .limit(1);
 
@@ -264,6 +267,24 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
     // The message is claimed, so it is not retried: say so instead of going
     // silent. No model runs.
     await sendApology(row, 'This chat is turned off for now. Ask the owner to turn it on.');
+    return;
+  }
+  // Only an admin-level agent answers on Telegram (access matrix T21): a
+  // paired chat runs on the owner's surface, so a team, client or public
+  // agent here would hand the chat the owner's authority. Both the agent that
+  // would answer and the bot's own agent count, read now, so an agent lowered
+  // after its chat was paired is refused too. Before the key, the attachment
+  // ingest and `/new`: no model, no tool, nothing stored.
+  const belowAdmin = isBelowAdminAgent(agent)
+    ? `responder agent '${agent.slug}' is ${agent.audience}-level`
+    : isBelowAdminAgent({ audience: row.channelAgentAudience })
+      ? `the bot's agent is ${row.channelAgentAudience}-level`
+      : null;
+  if (belowAdmin) {
+    logger.error(
+      `${belowAdmin} and a Telegram chat acts as the owner: refused ${messageId}. Raise it to admin, or link the bot to an admin-level agent, at /settings/agents.`,
+    );
+    await sendApology(row, TELEGRAM_BELOW_ADMIN_REPLY);
     return;
   }
   // Resolve the responder's chat key via the shared resolver (keyless `local`

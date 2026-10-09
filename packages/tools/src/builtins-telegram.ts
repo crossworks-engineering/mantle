@@ -23,7 +23,14 @@ import {
 } from '@mantle/db';
 import { type BuiltinToolDef } from './types';
 import { str, strOpt, numOpt as num, boolOpt as bool } from './coerce';
-import { accountForChat, editMessage, reactToMessage, sendMessage } from '@mantle/telegram';
+import {
+  accountForChat,
+  belowAdminChatAgent,
+  editMessage,
+  reactToMessage,
+  sendMessage,
+} from '@mantle/telegram';
+import { telegramPairRefusal } from '@mantle/telegram/level';
 import { errorMessage } from '@mantle/std';
 
 /**
@@ -265,7 +272,7 @@ export const telegram_pair: BuiltinToolDef = {
   mcpOnly: true,
   name: 'Approve a Telegram pairing code',
   description:
-    'Approve a pending Telegram pairing code. The chat gets allowlisted and a confirmation DM is sent.',
+    "Approve a pending Telegram pairing code. The chat gets allowlisted and a confirmation DM is sent. Refused when the bot's agent is below admin level: a paired chat acts as the owner.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -286,6 +293,12 @@ export const telegram_pair: BuiltinToolDef = {
       .where(and(eq(telegramChats.pairingCode, code), eq(telegramChats.userId, ctx.ownerId)))
       .limit(1);
     if (!chat) return { ok: false, error: 'no pending pairing with that code' };
+    // A paired chat acts as the owner, so only an admin-level agent's bot is
+    // paired (access matrix T21): the bot's agent and the chat's own
+    // responder both count. Before the already-paired answer, so a chat
+    // paired before its agent was lowered reads as refused, not as fine.
+    const below = await belowAdminChatAgent(ctx.ownerId, chat.accountId, chat.responderAgentId);
+    if (below) return { ok: false, error: telegramPairRefusal(below) };
     if (chat.allowlistStatus === 'allowed') return { ok: true, output: 'already paired' };
     if (chat.pairingExpiresAt && chat.pairingExpiresAt.getTime() < Date.now()) {
       return { ok: false, error: 'code expired — ask them to DM again' };

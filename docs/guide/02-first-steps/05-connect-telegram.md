@@ -25,7 +25,14 @@ The section shows your bot's `@username`, the word **polling**, and **1 paired c
 
 ## Who a paired chat acts as
 
-A paired chat is you. Whatever it sends, the agent answers as it answers you in Jackdaw: with your whole brain and every tool the agent holds, whatever the agent's level. This holds for every agent's bot, a team agent's too.
+A paired chat is you. Whatever it sends, the agent answers as it answers you in Jackdaw: with your whole brain and every tool the agent holds.
+
+That is why only an admin-level agent can be on Telegram:
+
+- **A team, client or public agent cannot get a bot.** **Connect bot** refuses, and says the agent's level.
+- **Its chats cannot be paired.** **Approve** refuses with the same reason. **Block** still works.
+- **An agent with a bot cannot be lowered.** Changing its level refuses until you click **Disconnect** on its **Telegram bot** section. An agent that a paired chat is pinned to refuses the same way, until that chat has another agent or is blocked.
+- **A chat whose agent is below admin gets no answer.** If an agent's level drops below admin anyway, its paired chats get one short reply saying the chat is turned off, and no turn runs.
 
 So approve only your own Telegram account. To give a teammate or a client an assistant, add a login for them on **Settings > Logins** and let them use Jackdaw or the phone app. Never pair their Telegram chat.
 
@@ -33,6 +40,7 @@ So approve only your own Telegram account. To give a teammate or a client an ass
 
 - **A stranger's request shows up**: click **Block** instead of **Approve**. Anyone can find a bot, but only chats you approve reach the assistant, and each one you approve acts as you.
 - **An error shows next to the bot name**: the token is wrong or was revoked in BotFather. Paste a fresh token and click **Update token**.
+- **"Only an admin-level agent..." shows under the bot section**: the agent is a team, client or public agent. Raise it to admin, or connect the bot to an admin-level agent. See [Who a paired chat acts as](#who-a-paired-chat-acts-as).
 
 ## Next
 

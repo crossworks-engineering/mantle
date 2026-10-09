@@ -22,11 +22,32 @@ the next Claude Code session can pick up without re-deriving context.
 > **Who a paired chat is (access matrix T21).** Every paired chat runs as the
 > owner: the turn's surface is `telegram`, which `isOwnerSurface`
 > (packages/tools/src/surface.ts) counts as the owner, so it gets the owner's
-> context and every tool the bot's agent holds, whatever that agent's level.
-> A teammate paired to a team agent's bot acts as the owner. The admin
-> approves each pairing; the guide (docs/guide/02-first-steps/
-> 05-connect-telegram.md) says to pair only the owner's own account and to
-> give anyone else a login instead.
+> context and every tool the bot's agent holds. So only an admin-level agent
+> is on Telegram (T21 option 3, the owner's decision). The rules live in
+> `@mantle/telegram/level` (packages/telegram/src/level.ts); "a chat's agent"
+> is the bot's channel agent and the chat's `responder_agent_id`, both
+> counted:
+>
+> - **Pairing** is refused when a chat's agent is team, client or public:
+>   `telegram_pair` and `POST /api/agents/:id/telegram/chats` (status
+>   `allowed`) answer with the agent's level and why, the route with
+>   `code: 'agent_below_admin'`. Blocking stays open.
+> - **Linking a bot** to a below-admin agent (`POST /api/agents/:id/telegram`)
+>   and **pinning a chat** to one (`PATCH /api/telegram/chats/:id`) are refused
+>   with the same code, before the token reaches Telegram.
+> - **Lowering** an agent that has an enabled telegram channel, or that an
+>   allowed chat is pinned to, is refused by `setAgentAudience` (code
+>   `telegram_paired`, which names the fix: disconnect the bot, or give the
+>   chat another agent or block it).
+> - **Turns**: `handleTelegramMessage` reads both levels with the message, so
+>   a chat whose agent was lowered after pairing is caught. Such a chat gets
+>   one plain reply ("This chat is turned off: only an admin-level agent
+>   answers on Telegram. Ask the owner.") and no turn: no model call, no
+>   tool, no `/new`, no attachment ingest. An approval-card tap in that chat
+>   is refused the same way.
+>
+> The guide (docs/guide/02-first-steps/05-connect-telegram.md) still says to
+> pair only the owner's own account and to give anyone else a login instead.
 
 ## TL;DR
 

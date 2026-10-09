@@ -13,7 +13,10 @@ import type { ToolHandlerContext } from './types';
 export type ToolSurface = NonNullable<ToolHandlerContext['surface']>;
 
 /** Whether the caller is the brain's owner: their web or Telegram chat, or
- *  an owner path that says so. Team, client and a missing surface are not. */
+ *  an owner path that says so. Team, client and a missing surface are not.
+ *  A Telegram turn exists only for an admin-level agent: a below-admin
+ *  agent's bot is never paired and its chats get no turn (access matrix
+ *  T21, @mantle/telegram/level). */
 export function isOwnerSurface(surface: ToolHandlerContext['surface']): boolean {
   const kind = surface?.kind;
   return kind === 'web' || kind === 'telegram' || kind === 'owner';

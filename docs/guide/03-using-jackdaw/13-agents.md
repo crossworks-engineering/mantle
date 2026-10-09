@@ -27,7 +27,7 @@ Points worth knowing:
 - **Backup route**: an optional second model for when the primary is down. It can be a different provider, so a local model can run first with a cloud model behind it. **Make backup primary** swaps them.
 - **Thinking effort**: **Inherit** follows your profile. **Off** to **Max** override it for this agent. Higher costs more per turn.
 - **Tool groups** are the only way an agent gets tools. The **Effective tools** box shows the result. See [Skills and tools](14-skills-and-tools.md).
-- **Telegram bot**: every chat you pair with an agent's bot acts as you, the owner, with the agent's tools, even when the agent is a team agent. Pair only your own account. See [Connect Telegram](../02-first-steps/05-connect-telegram.md#who-a-paired-chat-acts-as).
+- **Telegram bot**: every chat you pair with an agent's bot acts as you, the owner, with the agent's tools. So only an admin-level agent can have a bot: a team, client or public agent's bot cannot be connected or paired, its chats get no answer, and an agent with a bot cannot be lowered until you disconnect it. Pair only your own account. See [Connect Telegram](../02-first-steps/05-connect-telegram.md#who-a-paired-chat-acts-as).
 
 ### Change many models at once
 

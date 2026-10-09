@@ -12,6 +12,8 @@ import {
 } from '@mantle/db';
 import { botFor } from './client';
 import { gate } from './gate';
+import { belowAdminChatAgent } from './chat-level';
+import { TELEGRAM_BELOW_ADMIN_REPLY } from './level';
 import { answerCallback, editApprovalCard, parseApprovalCallback } from './outbound';
 import type { InboundMessage, PollHandlers } from './types';
 import { errorMessage } from '@mantle/std';
@@ -145,12 +147,22 @@ async function handleCallback(
   }
 
   const [chat] = await db
-    .select({ status: telegramChats.allowlistStatus, userId: telegramChats.userId })
+    .select({
+      status: telegramChats.allowlistStatus,
+      userId: telegramChats.userId,
+      responderAgentId: telegramChats.responderAgentId,
+    })
     .from(telegramChats)
     .where(and(eq(telegramChats.accountId, account.id), eq(telegramChats.telegramChatId, chatId)))
     .limit(1);
   if (!chat || chat.status !== 'allowed') {
     await answerCallback(account, cq.id, 'Not authorised.');
+    return;
+  }
+  // A tap decides for the owner, so it holds only where a turn would run:
+  // a below-admin agent's chat gets neither (access matrix T21).
+  if (await belowAdminChatAgent(chat.userId, account.id, chat.responderAgentId)) {
+    await answerCallback(account, cq.id, TELEGRAM_BELOW_ADMIN_REPLY);
     return;
   }
 
