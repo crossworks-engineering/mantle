@@ -249,6 +249,34 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
     expect((await call('/api/auth/whoami', { bearer })).status).toBe(401);
   });
 
+  it('a cookie from the bearer upgrade dies with its device; a cookie alone never renews (T2)', async () => {
+    const id = await addLogin('sso-mem', 'member');
+    const signed = await json(await deviceLogin(emailOf('sso-mem'), PASSWORD, 'Laptop'));
+    const bearer = signed.token as string;
+    const upgrade = await call('/api/auth/sso', { method: 'POST', bearer });
+    expect(upgrade.status).toBe(204);
+    const value = /mantle_session=([^;]+)/.exec(upgrade.headers.get('set-cookie') ?? '')?.[1];
+    expect(value).toBeTruthy();
+    const cookie = `mantle_session=${value}`;
+    expect(await memberProbe({ cookie })).toBe(400);
+    // The cookie on its own is no credential for a new cookie.
+    const renew = await call('/api/auth/sso', { method: 'POST', cookie });
+    expect(renew.status).toBe(401);
+    expect(renew.headers.get('set-cookie') ?? '').not.toContain('mantle_session=');
+    // A refresh moves the device to a new token: the cookie follows it.
+    await nearExpiry(signed.deviceId as string);
+    const next = await json(await refresh(bearer));
+    expect(next.deviceId).not.toBe(signed.deviceId);
+    expect(await memberProbe({ cookie })).toBe(400);
+    // The admin revokes the laptop: its cookie ends on the next request.
+    const revoke = await call(`/api/users/${id}/devices/${next.deviceId as string}`, {
+      method: 'DELETE',
+      cookie: asAdmin(),
+    });
+    expect(revoke.status).toBe(200);
+    expect(await memberProbe({ cookie })).toBe(401);
+  });
+
   it('device-login signs an admin in; a wrong password and a client email are the same 401', async () => {
     const res = await deviceLogin(emailOf('admin'));
     const body = await json(res);

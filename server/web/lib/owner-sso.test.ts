@@ -43,7 +43,13 @@ const ADDED_LOGIN = '00000000-0000-4000-8000-00000000bbbb';
  *  (never the anchor), and the session epoch (0181) its credential was
  *  verified at. */
 function addedLoginSession(role: 'admin' | 'member' = 'admin') {
-  return { loginId: ADDED_LOGIN, email: 'second@example.com', role, epoch: 3 };
+  return {
+    loginId: ADDED_LOGIN,
+    email: 'second@example.com',
+    role,
+    epoch: 3,
+    deviceJti: '00000000-0000-4000-8000-00000000cccc',
+  };
 }
 
 let ipCounter = 0;
@@ -96,6 +102,9 @@ describe('POST /api/auth/sso', () => {
     // Signed at the epoch the credential was verified at, or the next
     // request would refuse the cookie it was just given.
     expect(claims.ep).toBe(3);
+    // Bound to the device token it was upgraded from: a revoke of that
+    // device ends the cookie (access matrix T2).
+    expect(claims.dj).toBe('00000000-0000-4000-8000-00000000cccc');
   });
 
   it('mints a SHORT cookie, not the password login’s year', async () => {

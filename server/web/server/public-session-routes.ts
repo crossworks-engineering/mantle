@@ -44,6 +44,9 @@ export type PublicSessionRoute = {
    *  (rotation, phone sign-out): their bearer behaviour is proven on
    *  Postgres (lib/auth/device-tokens.db.test.ts). */
   cookieOnly?: true;
+  /** What the route answers the role's session COOKIE instead, for a route
+   *  that takes the device token only (the bearer to cookie upgrade). */
+  withCookie?: Partial<Record<SweepRole, Expected>>;
 };
 
 const UUID = '11111111-1111-4111-8111-111111111111';
@@ -121,7 +124,8 @@ export const PUBLIC_SESSION_ROUTES: PublicSessionRoute[] = [
   {
     // The bearer to cookie upgrade: an admin's or a member's (the member's
     // cookie carries it to the MCP consent page). A client signs in to a
-    // cookie already.
+    // cookie already. A cookie alone is no credential here: it would renew
+    // itself with no device to revoke (access matrix T2).
     key: 'POST /api/auth/sso',
     path: '/api/auth/sso',
     init: { method: 'POST' },
@@ -130,6 +134,7 @@ export const PUBLIC_SESSION_ROUTES: PublicSessionRoute[] = [
       client: refused('client-login'),
       unknown: stranger,
     },
+    withCookie: { member: stranger, client: stranger },
   },
   {
     // The MCP consent page: an HTML refusal to a member or a client, the
@@ -254,7 +259,7 @@ export async function drivePublic(
       'x-forwarded-for': `198.51.100.${driven % 250}`,
     },
   });
-  const want = route.expect[role];
+  const want = (typeof auth === 'string' && route.withCookie?.[role]) || route.expect[role];
   const got: string[] = [];
   if (res.status !== want.status) got.push(`status ${res.status}, want ${want.status}`);
   if (want.reason !== undefined) {

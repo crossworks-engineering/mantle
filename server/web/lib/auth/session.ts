@@ -272,6 +272,12 @@ export async function getMemberForAsset(req: Request): Promise<MemberCaller | Ne
  * refused.
  */
 async function getBearerLogin(): Promise<Resolved | null> {
+  return (await bearerLogin())?.resolved ?? null;
+}
+
+/** getBearerLogin, plus the device token's id (the cookie upgrade binds the
+ *  cookie it mints to it). */
+async function bearerLogin(): Promise<{ resolved: Resolved; jti: string } | null> {
   const token = bearerFromHeader((await headers()).get('authorization'));
   if (!token) return null;
   const claims = verifyMobileToken(token);
@@ -309,7 +315,27 @@ async function getBearerLogin(): Promise<Resolved | null> {
 
   await touchBearerToken(claims.jti);
 
-  return resolvedFor(row, 'mobile');
+  const resolved = await resolvedFor(row, 'mobile');
+  return resolved ? { resolved, jti: claims.jti } : null;
+}
+
+/** Most refreshes a cookie's device token can have gone through and still
+ *  be followed (each refresh revokes the row and points it at the next). */
+const DEVICE_CHAIN_MAX_HOPS = 16;
+
+/**
+ * Is the device a cookie was minted from (its `dj` claim) still signed in?
+ * A refresh replaces the token row and points the old one at the new, so the
+ * chain is followed to its newest row: that row must be live and the same
+ * login's. A device revoke (or End sessions) revokes the newest row, and the
+ * cookie dies with it (access matrix T2).
+ */
+async function cookieDeviceAlive(jti: string, uid: string): Promise<boolean> {
+  let tok = await loadBearerToken(jti);
+  for (let hop = 0; tok?.revokedAt && tok.rotatedTo && hop < DEVICE_CHAIN_MAX_HOPS; hop++) {
+    tok = await loadBearerToken(tok.rotatedTo);
+  }
+  return !!tok && tok.userId === uid && !tok.revokedAt && tok.expiresAt.getTime() > Date.now();
 }
 
 /**
@@ -496,7 +522,9 @@ async function resolveLogin(): Promise<Resolved | null> {
       const tooLong =
         row?.role === 'client' &&
         data.exp > Math.floor(Date.now() / 1000) + CLIENT_SESSION_TTL_SECONDS + 60;
-      if (row && loginUsable(row) && row.sessionEpoch === data.ep && !tooLong) {
+      // A cookie the bearer upgrade minted lives only while its device does.
+      const deviceOk = !data.dj || (await cookieDeviceAlive(data.dj, data.uid));
+      if (row && loginUsable(row) && row.sessionEpoch === data.ep && !tooLong && deviceOk) {
         const resolved = await resolvedFor(row, 'web');
         if (resolved) return resolved;
       }
@@ -848,12 +876,19 @@ export async function getLoginOr401(): Promise<
  * refused: in a browser it signs in to a cookie already (client-link), and
  * its device token stays on its device. `epoch` is the epoch the credential
  * was just verified at, so the cookie is signed with that very session's.
+ *
+ * The DEVICE TOKEN only, never the cookie (access matrix T2): an upgrade
+ * from the cookie alone would renew that cookie forever, with no device
+ * behind it to revoke. `deviceJti` names the token, and the cookie is bound
+ * to it.
  */
 export async function getCookieUpgradeLoginOr401(): Promise<
-  { loginId: string; email: string; role: 'admin' | 'member'; epoch: number } | NextResponse
+  | { loginId: string; email: string; role: 'admin' | 'member'; epoch: number; deviceJti: string }
+  | NextResponse
 > {
-  const res = await resolveLogin();
-  if (!res) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  const bearer = await bearerLogin();
+  if (!bearer) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  const { resolved: res, jti: deviceJti } = bearer;
   switch (res.kind) {
     case 'admin':
       await auditMutation(res.user);
@@ -862,6 +897,7 @@ export async function getCookieUpgradeLoginOr401(): Promise<
         email: res.user.actor.email,
         role: 'admin',
         epoch: res.epoch,
+        deviceJti,
       };
     case 'member':
       return {
@@ -869,6 +905,7 @@ export async function getCookieUpgradeLoginOr401(): Promise<
         email: res.member.email,
         role: 'member',
         epoch: res.epoch,
+        deviceJti,
       };
     case 'client':
       return loginRefused(res.kind);

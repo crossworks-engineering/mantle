@@ -13,13 +13,15 @@
  * back to same-origin cookie auth, a bearer-only owner would 401 on every
  * asset.
  *
- * So: verify the caller (cookie OR bearer, whichever they have), mint a fresh
- * session cookie, answer 204. No token re-entry, no redirect, no re-login.
+ * So: verify the caller's device bearer, mint a fresh session cookie bound
+ * to that device token, answer 204. No token re-entry, no redirect, no
+ * re-login.
  *
  * Why this grants nothing new: the bearer it accepts ALREADY authorises every
  * owner API call. Minting a cookie for that same identity moves the credential
- * between carriers, it does not widen it — which is also why a caller who is
- * already on a cookie is served idempotently rather than refused.
+ * between carriers, it does not widen it. A cookie alone is refused (401): it
+ * would renew itself with no device behind it, so a device revoke could never
+ * end it (access matrix T2).
  *
  * A MEMBER is upgraded too (team apps, member MCP over OAuth): the MCP
  * consent page is a top-level navigation, which carries cookies only, so a
@@ -52,8 +54,8 @@ export async function handleOwnerSso(req: Request): Promise<NextResponse> {
     return NextResponse.json({ ok: false, error: 'invalid origin' }, { status: 403 });
   }
 
-  // Resolves a session cookie first, then an Authorization bearer — the same
-  // resolver every API route uses, with no separate trust path.
+  // The Authorization bearer only: a cookie never renews itself here, or a
+  // revoked device's cookie would live forever (access matrix T2).
   const login = await getCookieUpgradeLoginOr401();
   if (login instanceof Response) return login as NextResponse;
 
@@ -69,11 +71,13 @@ export async function handleOwnerSso(req: Request): Promise<NextResponse> {
   // device, so a long mint here would let one device's cookie outlive that
   // device's revoked token. Seven days is
   // enough because the shell re-fires upgradeOwnerCookie on EVERY page load:
-  // the cookie renews continuously while the bearer stays valid, and dies
-  // within a week of the device's token being revoked.
+  // the cookie renews continuously while the bearer stays valid. It is bound
+  // to that device token (`deviceJti`): a revoke of the device ends the
+  // cookie on its next request, not a week later.
   const { value, maxAgeSec } = buildSessionCookie(login.loginId, {
     epoch: login.epoch,
     ttlSeconds: OWNER_SSO_COOKIE_TTL_SECONDS,
+    deviceJti: login.deviceJti,
   });
   // An admin's call is on the trail already (api.write, at the gate); a
   // member's cookie is new since member MCP over OAuth, so it is logged.
