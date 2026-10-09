@@ -42,6 +42,20 @@ export async function executeWorkerInvoke(itemId: string): Promise<ExecuteItemOu
     .from(runsTable)
     .where(eq(runsTable.id, item.runId));
   const planner = run?.agentId ? await loadAgentGrant(run.ownerId, { id: run.agentId }) : null;
+  if (run?.agentId && !planner) {
+    // The planning agent is gone: nothing runs on its behalf (audit C2), as
+    // for a tool_call item.
+    const { actions } = await completeItem(db, {
+      itemId: item.id,
+      state: 'failed',
+      failure: {
+        type: 'agent_missing',
+        message: 'the agent that planned this run is gone, so its worker step cannot run',
+        itemId: item.id,
+      },
+    });
+    return { claimed: true, actions };
+  }
   if (planner && planner.level !== 'admin') {
     const { actions } = await completeItem(db, {
       itemId: item.id,

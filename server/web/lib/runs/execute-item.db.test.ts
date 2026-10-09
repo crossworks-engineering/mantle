@@ -127,13 +127,11 @@ describe.skipIf(!URL)('a run item under the planning agent', () => {
     expect(item.failure?.type).toBe('below_admin');
   });
 
-  it("a worker step of a below-admin agent's run runs nothing (B3)", async () => {
-    const [low] = await rows<{ id: string }>(sqlTag`
-      insert into agents (owner_id, slug, name, model, system_prompt, audience)
-      values (${anchor}, 'team-planner', 't', 'm', 'p', 'team') returning id`);
+  /** Plan one worker step for `agentId`, make it ready, run it, return it. */
+  async function runWorker(agentId: string) {
     const { runId } = await runs.createRun(m.db, {
       ownerId: anchor,
-      agentId: low!.id,
+      agentId,
       title: `${tag} worker run`,
       plan: {
         kind: 'seq',
@@ -146,8 +144,22 @@ describe.skipIf(!URL)('a run item under the planning agent', () => {
     await exec.executeRunItem(item!.id);
     const [after] = await rows<{ state: string; failure: { type?: string } | null }>(sqlTag`
       select state, result->'failure' as failure from run_items where id = ${item!.id}`);
-    expect(after!.state).toBe('failed');
-    expect(after!.failure?.type).toBe('below_admin');
+    return after!;
+  }
+
+  it("a worker step of a below-admin agent's run runs nothing (B3)", async () => {
+    const [low] = await rows<{ id: string }>(sqlTag`
+      insert into agents (owner_id, slug, name, model, system_prompt, audience)
+      values (${anchor}, 'team-planner', 't', 'm', 'p', 'team') returning id`);
+    const after = await runWorker(low!.id);
+    expect(after.state).toBe('failed');
+    expect(after.failure?.type).toBe('below_admin');
+  });
+
+  it('a worker step of a run whose agent is gone runs nothing (C2)', async () => {
+    const after = await runWorker(randomUUID());
+    expect(after.state).toBe('failed');
+    expect(after.failure?.type).toBe('agent_missing');
   });
 
   it('a run with no agent fails closed: the opening change still waits', async () => {
