@@ -140,8 +140,10 @@ describe.skipIf(!URL)('Shared by members, the admin side', () => {
     await as(loginA, () => sp.submitItem(A, submittedNote));
     await m.systemDb.execute(sqlTag`
       update space_items set review_state = 'returned' where node_id = ${returnedNote}`);
-    // Rows no rule should ever reach, shared with the team by hand: an
-    // admin's own note, a folder in a member's space, a client's note.
+    // Rows no rule should ever reach, written by hand: an admin's own note
+    // and a folder in a member's space, both shared with the team, and a
+    // client's submitted request (a client item can never be team-shared:
+    // a trigger refuses it).
     adminOwn = randomUUID();
     folderId = randomUUID();
     clientNote = randomUUID();
@@ -151,12 +153,17 @@ describe.skipIf(!URL)('Shared by members, the admin side', () => {
       [clientNote, spaceOf[loginC]!, 'note', 'client note', loginC],
     ];
     for (const [id, owner, type, title, author] of odd) {
+      // A folder's path is unique per owner: its own label under notes.
+      const at = type === 'branch' ? `notes.f${id.replace(/-/g, '').slice(0, 12)}` : 'notes';
       await m.systemDb.execute(sqlTag`
         insert into nodes (id, owner_id, type, title, slug, path, audience)
-        values (${id}, ${owner}, ${type}, ${`${tag} ${title}`}, ${`${tag}-${id}`}, 'notes', 'admin')`);
+        values (${id}, ${owner}, ${type}, ${`${tag} ${title}`}, ${`${tag}-${id}`}, ${at}::ltree,
+                'admin')`);
+      const client = author === loginC;
       await m.systemDb.execute(sqlTag`
-        insert into space_items (node_id, author_login_id, sharing)
-        values (${id}, ${author}, 'team')`);
+        insert into space_items (node_id, author_login_id, sharing, review_state)
+        values (${id}, ${author}, ${client ? 'private' : 'team'},
+                ${client ? 'submitted' : 'draft'})`);
     }
     await as(loginB, () => sp.setSharing(B, leftPage, 'team'));
     // B leaves: what B shared is left behind (the review queue offers it).
@@ -225,10 +232,11 @@ describe.skipIf(!URL)('Shared by members, the admin side', () => {
   });
 
   it('Unshare refuses what the rule refuses, and the left-behind item stays queued (M1)', async () => {
-    for (const id of [leftPage, submittedNote, adminOwn, folderId, clientNote]) {
+    for (const id of [leftPage, submittedNote, adminOwn, folderId]) {
       expect(await sh.adminUnshareMemberItem(id), id).toBeNull();
       expect(await sharingOf(id), id).toBe('team');
     }
+    expect(await sh.adminUnshareMemberItem(clientNote)).toBeNull();
     const rv = await import('./member-review');
     const queued = (await rv.listReviewQueue()).items.find((i) => i.id === leftPage);
     expect(queued?.reason).toBe('left-behind');
