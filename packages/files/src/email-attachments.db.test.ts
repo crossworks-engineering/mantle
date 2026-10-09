@@ -31,6 +31,9 @@ describe.skipIf(!URL)('email attachment lookups on Postgres', () => {
     plain: randomUUID(),
     emailed: randomUUID(),
     filesFolder: randomUUID(),
+    image: randomUUID(),
+    table: randomUUID(),
+    plainCopy: randomUUID(),
   };
 
   beforeAll(async () => {
@@ -54,6 +57,14 @@ describe.skipIf(!URL)('email attachment lookups on Postgres', () => {
         (${ids.filesFolder}, ${owner}, 'branch', 'work', ${`files.${tag.replace(/-/g, '_')}`}),
         (${ids.plain}, ${owner}, 'file', 'plan.pdf', ${`files.${tag.replace(/-/g, '_')}`}),
         (${ids.emailed}, ${owner}, 'file', 'contract.pdf', ${`files.${tag.replace(/-/g, '_')}`})`);
+    // What the extractor makes from a file: an image beside other files,
+    // a Table in the tables tree, each naming its source (T4).
+    const from = (id: string) => JSON.stringify({ sourceFileId: id });
+    await m.db.execute(sqlTag`
+      insert into nodes (id, owner_id, type, title, path, data) values
+        (${ids.image}, ${owner}, 'file', 'figure 1', ${`files.${tag.replace(/-/g, '_')}`}, ${from(ids.attachment)}::jsonb),
+        (${ids.table}, ${owner}, 'table', 'invoice lines', 'tables', ${from(ids.attachment)}::jsonb),
+        (${ids.plainCopy}, ${owner}, 'table', 'plan lines', 'tables', ${from(ids.plain)}::jsonb)`);
     await m.db.execute(sqlTag`
       insert into email_accounts (id, user_id, provider, address, branch_path)
       values (${account}, ${owner}, 'imap', ${`${tag}@example.invalid`}, ${inbox})`);
@@ -87,6 +98,28 @@ describe.skipIf(!URL)('email attachment lookups on Postgres', () => {
     expect([...got]).toEqual([ids.attachment]);
     expect((await e.emailAttachmentIds(other, [ids.attachment])).size).toBe(0);
     expect((await e.emailAttachmentIds(owner, [])).size).toBe(0);
+  });
+
+  it('holds an image or a Table made from an attachment to the attachment (T4)', async () => {
+    const got = await e.emailAttachmentIds(owner, [ids.image, ids.table, ids.plainCopy]);
+    expect([...got].sort()).toEqual([ids.image, ids.table].sort());
+    expect(await e.reachesEmailAttachment(owner, { id: ids.table })).toBe(true);
+    expect(await e.reachesEmailAttachment(owner, { id: ids.image })).toBe(true);
+    expect(await e.reachesEmailAttachment(owner, { id: ids.plainCopy })).toBe(false);
+    // The folder the image sits in is an ordinary folder all the same.
+    expect(await e.reachesEmailAttachment(owner, { path: `files.${tag.replace(/-/g, '_')}` })).toBe(
+      false,
+    );
+    // Moved out of the attachments folder, the source is an ordinary file,
+    // and so are the copies.
+    await m.db.execute(sqlTag`update nodes set path = ${`files.${tag.replace(/-/g, '_')}`}
+      where id = ${ids.attachment}`);
+    try {
+      expect((await e.emailAttachmentIds(owner, [ids.image, ids.table])).size).toBe(0);
+    } finally {
+      await m.db.execute(sqlTag`update nodes set path = ${`${inbox}.attachments`}
+        where id = ${ids.attachment}`);
+    }
   });
 
   it('sees an attachment by its id, its folder id and its folder path', async () => {

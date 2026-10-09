@@ -7,6 +7,12 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { checkToolPreconditions, getBuiltin } from '@mantle/tools';
+import { hiddenFromKey } from './api-v1';
+
+/** The id arguments a v1 route passes a builtin: each must be an item the
+ *  caller reaches (an email attachment, or an item made from one, is not
+ *  found for a key without Search: access matrix T4). */
+const ID_ARGS = ['table_id', 'file_id', 'node_id', 'id'] as const;
 
 export async function runBuiltinForApi(
   slug: string,
@@ -16,6 +22,10 @@ export async function runBuiltinForApi(
 ): Promise<Response> {
   const def = getBuiltin(slug);
   if (!def) return NextResponse.json({ error: 'internal error' }, { status: 500 });
+  const ids = ID_ARGS.map((k) => input[k]).filter((v): v is string => typeof v === 'string');
+  if ((await hiddenFromKey(ownerId, ids)).size > 0) {
+    return NextResponse.json({ error: 'not found' }, { status: 404 });
+  }
   if (def.preconditions?.length) {
     const failure = await checkToolPreconditions(def.preconditions, input, ownerId);
     if (failure && !failure.ok) {

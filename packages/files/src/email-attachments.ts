@@ -11,12 +11,19 @@
  * call that names one item or folder is refused (`reachesEmailAttachment`).
  */
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { EMAIL_ATTACHMENTS_LABEL, db, emailAttachmentSql, nodes } from '@mantle/db';
+import {
+  EMAIL_ATTACHMENTS_LABEL,
+  db,
+  emailAttachmentFileSql,
+  emailAttachmentSql,
+  nodes,
+} from '@mantle/db';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PATH_RE = /^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*$/;
 
-/** Of `ids`, the ones that are this owner's email attachments. */
+/** Of `ids`, the ones that are this owner's email attachments, or items made
+ *  from one (an extracted image, an auto table: access matrix T4). */
 export async function emailAttachmentIds(
   ownerId: string,
   ids: readonly string[],
@@ -62,12 +69,19 @@ async function pathReaches(ownerId: string, path: string): Promise<boolean> {
     )
     .filter((p): p is string => p !== null);
   if (prefixes.length && (await emailAttachmentFolders(ownerId, prefixes)).size > 0) return true;
-  // Holds one below it.
+  // Holds one below it. The folder rule only: an item made from an
+  // attachment sits in an ordinary folder (Files / Auto-filed, Tables), and
+  // counting it here would close that whole tree, the root included. The
+  // copy itself is refused by id (emailAttachmentIds).
   const [hit] = await db
     .select({ id: nodes.id })
     .from(nodes)
     .where(
-      and(eq(nodes.ownerId, ownerId), sql`${nodes.path} <@ ${path}::ltree`, emailAttachmentSql()),
+      and(
+        eq(nodes.ownerId, ownerId),
+        sql`${nodes.path} <@ ${path}::ltree`,
+        emailAttachmentFileSql(),
+      ),
     )
     .limit(1);
   return !!hit;
@@ -92,9 +106,8 @@ export async function reachesEmailAttachment(
       .where(and(eq(nodes.id, ref.id), eq(nodes.ownerId, ownerId)))
       .limit(1);
     if (!row) return false;
-    if (row.type === 'file') return (await emailAttachmentIds(ownerId, [ref.id])).size > 0;
     if (row.type === 'branch') return pathReaches(ownerId, String(row.path));
-    return false;
+    return (await emailAttachmentIds(ownerId, [ref.id])).size > 0;
   }
   if (ref.path !== undefined) {
     const path = ref.path.trim();

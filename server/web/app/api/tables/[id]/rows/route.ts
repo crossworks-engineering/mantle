@@ -10,6 +10,7 @@ import {
 } from '@mantle/tabledb';
 import { existsSync } from 'node:fs';
 import { getOwnerOr401 } from '@/lib/auth';
+import { hiddenFromKey } from '@/lib/api-v1';
 
 /**
  * Keyset page of rows for the grid's lazy-load (P3). Draft-first like every
@@ -21,6 +22,10 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const { id } = await ctx.params;
+  // An email attachment's table is not found for a key without Search (T4).
+  if ((await hiddenFromKey(user.id, [id])).size > 0) {
+    return NextResponse.json({ error: 'not found' }, { status: 404 });
+  }
   const [row] = await db
     .select({ storagePath: tables.storagePath })
     .from(tables)

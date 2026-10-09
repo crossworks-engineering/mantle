@@ -12,11 +12,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const MAIL = '33333333-3333-4333-8333-333333333333';
 const PLAIN = '22222222-2222-4222-8222-222222222222';
+/** A Table or an image file the extractor made from an attachment (T4). */
+const COPY = '44444444-4444-4444-8444-444444444444';
 
 const files = vi.hoisted(() => ({
   reachesEmailAttachment: vi.fn(
     async (_o: string, ref: { id?: string; path?: string }) =>
-      ref.id === MAIL || (ref.path ?? '').startsWith('inbox'),
+      ref.id === MAIL || ref.id === COPY || (ref.path ?? '').startsWith('inbox'),
+  ),
+  emailAttachmentIds: vi.fn(
+    async (_o: string, ids: string[]) => new Set(ids.filter((id) => id === MAIL || id === COPY)),
   ),
   emailAttachmentFolders: vi.fn(
     async (_o: string, paths: string[]) =>
@@ -122,6 +127,31 @@ describe('a key without Search and email attachments on MCP', () => {
     // An error or a non-list answer passes through untouched.
     const err = { content: [{ type: 'text', text: 'Error: x' }], isError: true };
     expect(await after!('file_list', {}, err)).toBe(err);
+  });
+
+  it('treats a Table or an image made from an attachment like the attachment (T4)', async () => {
+    const { before, after } = keyEmailGuard('owner-1');
+    expect(await before!('table_get', { table_id: COPY })).toBe(KEY_EMAIL_REFUSAL);
+    expect(await before!('table_sql', { table_id: COPY, sql: 'select 1' })).toBe(KEY_EMAIL_REFUSAL);
+    expect(await before!('table_get', { table_id: PLAIN })).toBeNull();
+    const tableRows = [{ id: PLAIN }, { id: COPY }];
+    const tables = await after!(
+      'table_list',
+      {},
+      { content: [{ type: 'text', text: JSON.stringify(tableRows) }] },
+    );
+    expect(JSON.parse(tables.content![0]!.text!)).toEqual([tableRows[0]]);
+    // An extracted image sits in an ordinary folder: it is dropped by its id.
+    const fileRows = [
+      { id: PLAIN, parentPath: 'files.auto_filed' },
+      { id: COPY, parentPath: 'files.auto_filed' },
+    ];
+    const listed = await after!(
+      'file_list',
+      {},
+      { content: [{ type: 'text', text: JSON.stringify(fileRows) }] },
+    );
+    expect(JSON.parse(listed.content![0]!.text!)).toEqual([fileRows[0]]);
   });
 
   it('leaves a key with Search or every area alone', async () => {

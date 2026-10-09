@@ -1,6 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
+import { hiddenFromKey } from '@/lib/api-v1';
 import { listStateOf, pageWithPrivate } from '@/lib/admin-private-rows';
 import {
   countTables,
@@ -57,8 +58,14 @@ export async function GET(req: Request) {
     }),
     listTableTags(user.id),
   ]);
+  // A key without Search does not list a table made from an email
+  // attachment (access matrix T4).
+  const hidden = await hiddenFromKey(
+    user.id,
+    listed.items.map((t) => t.id),
+  );
   return NextResponse.json({
-    tables: listed.items,
+    tables: hidden.size ? listed.items.filter((t) => !hidden.has(t.id)) : listed.items,
     total: listed.total,
     page,
     pageSize: PAGE_SIZE,

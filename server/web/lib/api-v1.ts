@@ -19,6 +19,7 @@
  * 403 `member-login` / `client-login` from them, as on the routes they
  * alias. Those logins use /api/mcp.
  */
+import { emailAttachmentIds } from '@mantle/files';
 import { keyAreasReachEmail } from '@mantle/mcp-core/key-scope';
 import type { AccessKeyArea, AccessKeyGrant } from './access-keys';
 import { getRequestContext } from '../server/request-context';
@@ -43,6 +44,17 @@ export function callerMayConfirm(): boolean {
 export function callerMayReadEmail(): boolean {
   const key = getRequestContext()?.accessKey;
   return !key || keyAreasReachEmail(key.areas);
+}
+
+/**
+ * Of `ids`, the ones this request may not reach because they are email
+ * attachments or items made from one (an extracted image, an auto table:
+ * access matrix M4, T4). Empty for a session, a device token and a key that
+ * reaches email. The routes answer such an item "not found".
+ */
+export async function hiddenFromKey(ownerId: string, ids: readonly string[]): Promise<Set<string>> {
+  if (callerMayReadEmail() || ids.length === 0) return new Set();
+  return emailAttachmentIds(ownerId, ids);
 }
 
 /** Whether the gate let this request in with an API key. */

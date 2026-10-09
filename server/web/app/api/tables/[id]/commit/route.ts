@@ -1,6 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
+import { hiddenFromKey } from '@/lib/api-v1';
 import { commitTable, tableToText } from '@/lib/tables';
 import type { TableDoc } from '@mantle/content-core/table-model';
 import { recordIngest } from '@mantle/tracing';
@@ -20,6 +21,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const { id } = await ctx.params;
+  // An email attachment's table is not found for a key without Search (T4).
+  if ((await hiddenFromKey(user.id, [id])).size > 0) {
+    return NextResponse.json({ error: 'not found' }, { status: 404 });
+  }
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json({ error: 'invalid input' }, { status: 400 });
