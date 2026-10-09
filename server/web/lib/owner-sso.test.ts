@@ -26,6 +26,12 @@ vi.mock('./auth', async () => {
   };
 });
 
+const audited = vi.fn();
+vi.mock('./audit', async () => {
+  const actual = await vi.importActual<typeof import('./audit')>('./audit');
+  return { ...actual, auditFireAndForget: (e: unknown) => audited(e) };
+});
+
 beforeAll(() => {
   process.env.SESSION_SECRET = 'test-secret-test-secret-test-secret-48chars!!';
 });
@@ -36,8 +42,8 @@ const ADDED_LOGIN = '00000000-0000-4000-8000-00000000bbbb';
 /** The gate's answer for an ADDED login: the login that actually signed in
  *  (never the anchor), and the session epoch (0181) its credential was
  *  verified at. */
-function addedLoginSession() {
-  return { loginId: ADDED_LOGIN, epoch: 3 };
+function addedLoginSession(role: 'admin' | 'member' = 'admin') {
+  return { loginId: ADDED_LOGIN, email: 'second@example.com', role, epoch: 3 };
 }
 
 let ipCounter = 0;
@@ -105,6 +111,22 @@ describe('POST /api/auth/sso', () => {
     const { OWNER_SSO_COOKIE_TTL_SECONDS } = await import('./owner-sso');
     expect(Number(maxAge)).toBe(OWNER_SSO_COOKIE_TTL_SECONDS);
     expect(Number(maxAge)).toBeLessThanOrEqual(7 * 24 * 60 * 60);
+  });
+
+  it('logs a member cookie mint as auth.sso; an admin is on the trail at the gate', async () => {
+    getCookieUpgradeLoginOr401.mockResolvedValue(addedLoginSession('member'));
+    expect((await post()).status).toBe(204);
+    expect(audited).toHaveBeenCalledOnce();
+    expect(audited.mock.calls[0]![0]).toMatchObject({
+      actorId: ADDED_LOGIN,
+      action: 'auth.sso',
+      path: '/api/auth/sso',
+    });
+
+    audited.mockClear();
+    getCookieUpgradeLoginOr401.mockResolvedValue(addedLoginSession('admin'));
+    expect((await post()).status).toBe(204);
+    expect(audited).not.toHaveBeenCalled();
   });
 
   it('unauthenticated caller is refused and gets NO cookie', async () => {

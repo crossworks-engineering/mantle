@@ -36,6 +36,7 @@ import { NextResponse } from '../server/http-compat';
 import { buildSessionCookie, getCookieUpgradeLoginOr401, SESSION_COOKIE_NAME } from './auth';
 import { isTrustedOrigin, rateLimited } from './auth/preflight';
 import { secureCookies } from './auth-constants';
+import { auditFireAndForget, requestMetaFrom } from './audit';
 import { clientIpKey, rateLimit } from './rate-limit';
 
 /** See the mint below for why this is days, not the password login's year. */
@@ -74,6 +75,18 @@ export async function handleOwnerSso(req: Request): Promise<NextResponse> {
     epoch: login.epoch,
     ttlSeconds: OWNER_SSO_COOKIE_TTL_SECONDS,
   });
+  // An admin's call is on the trail already (api.write, at the gate); a
+  // member's cookie is new since member MCP over OAuth, so it is logged.
+  if (login.role === 'member') {
+    auditFireAndForget({
+      actorId: login.loginId,
+      actorEmail: login.email,
+      action: 'auth.sso',
+      method: 'POST',
+      path: '/api/auth/sso',
+      ...requestMetaFrom(req),
+    });
+  }
   const res = new NextResponse(null, { status: 204 });
   res.cookies.set(SESSION_COOKIE_NAME, value, {
     httpOnly: true,

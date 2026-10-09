@@ -18,6 +18,10 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   upgrade (`POST /api/auth/sso`) serves a member too, so the consent page,
   a top-level navigation that carries cookies only, sees the member instead
   of bouncing to sign-in. A client is still refused there.
+- The MCP consent page names the host the code goes back to, not only the
+  client's self-chosen name. A member's bearer to cookie upgrade is audited
+  (`auth.sso`). A password change keeps a web client's 7-day cookie at 7
+  days instead of re-minting a year.
 - A client's MCP never reaches a public app, even in a client-shared folder
   (the browser's rule).
 - Sharing a member's app with the team is the member's own click in the app:

@@ -305,6 +305,16 @@ function consentShell(inner: string): string {
 </style></head><body><div class="card">${inner}</div></body></html>`;
 }
 
+/** The host of a validated redirect_uri (registration takes https, or http
+ *  on loopback), or the whole URI if it does not parse. */
+function redirectHost(uri: string): string {
+  try {
+    return new URL(uri).host || uri;
+  } catch {
+    return uri;
+  }
+}
+
 function consentPage(
   clientName: string,
   p: AuthorizeParams,
@@ -315,6 +325,10 @@ function consentPage(
 ): string {
   const safeName = escapeHtml(clientName);
   const h = (v: string) => escapeHtml(v);
+  // The name is the client's own choice at open registration, so anyone can
+  // call theirs "Claude". The host the code goes back to is not: it is the
+  // validated redirect_uri, and it is what the person checks.
+  const returnHost = h(redirectHost(p.redirectUri));
   const scopes =
     role === 'admin'
       ? `<li>Read and write your notes, pages, tables, tasks, files, contacts and more</li>
@@ -324,6 +338,7 @@ function consentPage(
   const inner = `
   <h1>Connect ${safeName} to Mantle</h1>
   <p class="muted">${safeName} is requesting access to your Mantle brain.</p>
+  <div class="who">It sends you back to <b>${returnHost}</b></div>
   <div class="who">Signed in as <b>${h(email)}</b></div>
   <p class="muted" style="margin-bottom:6px;">This will allow it to:</p>
   <ul class="scopes">
@@ -350,6 +365,6 @@ function consentPage(
       <button class="allow" type="submit" name="decision" value="allow">Allow</button>
     </div>
   </form>
-  <p class="foot">Only allow this if you started a connection from ${safeName}. You can disconnect anytime in Settings.</p>`;
+  <p class="foot">Only allow this if you started a connection from ${safeName} and ${returnHost} is its address. You can disconnect anytime in Settings.</p>`;
   return consentShell(inner);
 }

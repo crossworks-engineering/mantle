@@ -842,16 +842,26 @@ export async function getLoginOr401(): Promise<
  * was just verified at, so the cookie is signed with that very session's.
  */
 export async function getCookieUpgradeLoginOr401(): Promise<
-  { loginId: string; epoch: number } | NextResponse
+  { loginId: string; email: string; role: 'admin' | 'member'; epoch: number } | NextResponse
 > {
   const res = await resolveLogin();
   if (!res) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   switch (res.kind) {
     case 'admin':
       await auditMutation(res.user);
-      return { loginId: res.user.actor.id, epoch: res.epoch };
+      return {
+        loginId: res.user.actor.id,
+        email: res.user.actor.email,
+        role: 'admin',
+        epoch: res.epoch,
+      };
     case 'member':
-      return { loginId: res.member.loginId, epoch: res.epoch };
+      return {
+        loginId: res.member.loginId,
+        email: res.member.email,
+        role: 'member',
+        epoch: res.epoch,
+      };
     case 'client':
       return loginRefused(res.kind);
   }
@@ -925,8 +935,9 @@ export function setSessionCookie(
   req: Request,
   loginId: string,
   epoch: number,
+  opts: { ttlSeconds?: number } = {},
 ): void {
-  const { value, maxAgeSec } = buildSessionCookie(loginId, { epoch });
+  const { value, maxAgeSec } = buildSessionCookie(loginId, { epoch, ttlSeconds: opts.ttlSeconds });
   res.cookies.set(SESSION_COOKIE_NAME, value, {
     httpOnly: true,
     secure: secureCookies(req),

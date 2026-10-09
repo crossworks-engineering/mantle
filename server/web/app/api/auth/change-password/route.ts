@@ -15,6 +15,7 @@ import { rateLimit } from '@/lib/rate-limit';
 import { firstIssue } from '@/lib/zod-issue';
 import { refuseCrossSiteAuthPost } from '@/lib/auth/preflight';
 import { AUTH_BODY_CEILING_BYTES, readJsonCapped } from '@/lib/body-limit';
+import { OWNER_SSO_COOKIE_TTL_SECONDS } from '@/lib/owner-sso';
 
 const ChangePasswordBody = z
   .object({
@@ -92,6 +93,18 @@ export async function POST(req: Request) {
   // How many linked brains (peers acting as the login) were unbound: binding
   // one to the same login again restores it (access matrix L12).
   const res = NextResponse.json({ ok: true, peersUnbound: unboundPeerIds.length });
-  if (login.source === 'web' && epoch !== null) setSessionCookie(res, req, actorId, epoch);
+  // A cookie that rides with a bearer is the web client's upgrade of it
+  // (POST /api/auth/sso): it keeps that short life, or the re-mint would
+  // outlive the device's revocable bearer by a year.
+  if (login.source === 'web' && epoch !== null) {
+    const withBearer = !!bearerFromHeader(req.headers.get('authorization'));
+    setSessionCookie(
+      res,
+      req,
+      actorId,
+      epoch,
+      withBearer ? { ttlSeconds: OWNER_SSO_COOKIE_TTL_SECONDS } : {},
+    );
+  }
   return res;
 }

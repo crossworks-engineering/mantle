@@ -112,6 +112,14 @@ describe('GET /api/oauth/authorize', () => {
     expect(res.status).toBe(200);
     expect(await res.text()).toContain('Connect Test Client to Mantle');
   });
+
+  it('names the host the code goes back to, not only the self-chosen client name', async () => {
+    h.login = member;
+    h.mcpOn = true;
+    const html = await (await get()).text();
+    expect(html).toContain('It sends you back to <b>c.example</b>');
+    expect(html).toContain('and c.example is its address');
+  });
 });
 
 /** Allow on the consent page an admin was shown, with `password`. */

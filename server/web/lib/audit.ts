@@ -36,6 +36,9 @@ export type AuditEntry = {
     | 'push.relay_registered'
     | 'auth.device_revoked'
     | 'auth.password_change'
+    // A member's bearer became a session cookie (POST /api/auth/sso), what
+    // carries it to the MCP consent page. An admin's is an api.write.
+    | 'auth.sso'
     // A first-run signup refused for a wrong or missing setup code
     // (detail.reason). The signup that lands is a user.create.
     | 'auth.signup_failed'
