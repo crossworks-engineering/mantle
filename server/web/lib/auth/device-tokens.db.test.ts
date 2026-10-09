@@ -1060,17 +1060,17 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
     expect(noBearer.status).toBe(400);
     expect(await json(noBearer)).toEqual({ error: 'bearer_required' });
 
-    // Its own toggles.
+    // Its own toggles. The retired comments toggle is ignored like any
+    // unknown field (comments are gone: access matrix T23).
     const prefs = await call('/api/client/push/preferences', {
       method: 'PUT',
       bearer: cPhone.token,
-      body: { comments: false, approvals: false },
+      body: { chatReplies: false, comments: false, approvals: false },
     });
-    expect(await json(prefs)).toEqual({ chatReplies: true, reviewResults: true, comments: false });
+    expect(await json(prefs)).toEqual({ chatReplies: false, reviewResults: true });
     expect(await json(await call('/api/member/push/preferences', { bearer: mBearer }))).toEqual({
       chatReplies: true,
       reviewResults: true,
-      comments: true,
     });
 
     // Remove its own.

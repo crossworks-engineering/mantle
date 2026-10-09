@@ -43,7 +43,7 @@ import {
 } from './store';
 
 const NOW = Date.parse('2026-10-01T09:00:00Z');
-const ALL_ON = { chatReplies: true, reviewResults: true, comments: true };
+const ALL_ON = { chatReplies: true, reviewResults: true };
 const BRAIN_ID = '0b7c6a1e-2f4d-4c1a-9e8b-5d3f2a1c0e9f';
 const device = (n: string, loginId = 'login-m') => ({
   id: `d-${n}`,

@@ -20,7 +20,7 @@ const h = vi.hoisted(() => ({
   audits: [] as Array<Record<string, unknown>>,
   own: [] as Array<{ id: string; platform: string; label: string | null; tokenId: string | null }>,
   deleted: [] as Array<[string, string]>,
-  prefs: { chatReplies: true, reviewResults: true, comments: true },
+  prefs: { chatReplies: true, reviewResults: true },
 }));
 
 vi.mock('@/lib/auth/login-row', () => ({
@@ -115,7 +115,7 @@ beforeEach(() => {
   h.inserted = [];
   h.own = [];
   h.deleted = [];
-  h.prefs = { chatReplies: true, reviewResults: true, comments: true };
+  h.prefs = { chatReplies: true, reviewResults: true };
 });
 
 /** A bearer for `login` with its token row; returns the header and the jti. */
@@ -294,13 +294,18 @@ describe('devices and toggles', () => {
     expect(await (await loginPushPrefs(client)).json()).toEqual({
       chatReplies: true,
       reviewResults: true,
-      comments: true,
     });
+    // `comments` is retired (T23): ignored like any unknown field.
     const res = await loginPushPrefsUpdate(
-      req('PUT', { comments: false, chatReplies: 'no', assistantMessages: false }),
+      req('PUT', {
+        comments: false,
+        reviewResults: false,
+        chatReplies: 'no',
+        assistantMessages: false,
+      }),
       client,
     );
-    expect(await res.json()).toEqual({ chatReplies: true, reviewResults: true, comments: false });
+    expect(await res.json()).toEqual({ chatReplies: true, reviewResults: false });
     expect((await loginPushPrefsUpdate(req('PUT', [1]), client)).status).toBe(400);
   });
 });

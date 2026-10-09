@@ -23,9 +23,15 @@ The section checks for new requests every 10 seconds. A newly connected bot can 
 
 The section shows your bot's `@username`, the word **polling**, and **1 paired chat**. Send the bot a message; the assistant replies there.
 
+## Who a paired chat acts as
+
+A paired chat is you. Whatever it sends, the agent answers as it answers you in Jackdaw: with your whole brain and every tool the agent holds, whatever the agent's level. This holds for every agent's bot, a team agent's too.
+
+So approve only your own Telegram account. To give a teammate or a client an assistant, add a login for them on **Settings > Logins** and let them use Jackdaw or the phone app. Never pair their Telegram chat.
+
 ## If it fails
 
-- **A stranger's request shows up**: click **Block** instead of **Approve**. Anyone can find a bot, but only chats you approve reach the assistant.
+- **A stranger's request shows up**: click **Block** instead of **Approve**. Anyone can find a bot, but only chats you approve reach the assistant, and each one you approve acts as you.
 - **An error shows next to the bot name**: the token is wrong or was revoked in BotFather. Paste a fresh token and click **Update token**.
 
 ## Next

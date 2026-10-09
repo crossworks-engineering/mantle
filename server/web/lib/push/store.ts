@@ -419,14 +419,14 @@ export interface LoginPushPreferences {
   chatReplies: boolean;
   /** An own item accepted, returned or taken over. */
   reviewResults: boolean;
-  /** A comment on an own item, or on an item shared with a client. */
-  comments: boolean;
+  // No `comments` toggle: the brain has no comments since 2026-10-09, so
+  // nothing could ever send one (access matrix T23). Its column stays in
+  // push_login_prefs, unread.
 }
 
 export const DEFAULT_LOGIN_PUSH_PREFS: LoginPushPreferences = {
   chatReplies: true,
   reviewResults: true,
-  comments: true,
 };
 
 /** One login's toggles; all on when it never changed one. */
@@ -437,7 +437,7 @@ export async function getLoginPushPrefs(loginId: string): Promise<LoginPushPrefe
     .where(eq(pushLoginPrefs.loginId, loginId))
     .limit(1);
   if (!row) return DEFAULT_LOGIN_PUSH_PREFS;
-  return { chatReplies: row.chatReplies, reviewResults: row.reviewResults, comments: row.comments };
+  return { chatReplies: row.chatReplies, reviewResults: row.reviewResults };
 }
 
 export async function updateLoginPushPrefs(

@@ -19,6 +19,15 @@ the next Claude Code session can pick up without re-deriving context.
 > `telegram_accounts.responder_agent_id` (migration 0050). Pairing requests are
 > approved with one click there (`telegram_pair` MCP tool remains the fallback).
 
+> **Who a paired chat is (access matrix T21).** Every paired chat runs as the
+> owner: the turn's surface is `telegram`, which `isOwnerSurface`
+> (packages/tools/src/surface.ts) counts as the owner, so it gets the owner's
+> context and every tool the bot's agent holds, whatever that agent's level.
+> A teammate paired to a team agent's bot acts as the owner. The admin
+> approves each pairing; the guide (docs/guide/02-first-steps/
+> 05-connect-telegram.md) says to pair only the owner's own account and to
+> give anyone else a login instead.
+
 ## TL;DR
 
 Telegram is now a first-class data source in Mantle. A long-poll worker

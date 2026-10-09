@@ -14,12 +14,14 @@ export function sanitizePushPrefs(body: Record<string, unknown>): Partial<PushPr
 }
 
 /** The same, for a member's or a client's own toggles
- *  (PUT /api/member/push/preferences, /api/client/push/preferences). */
+ *  (PUT /api/member/push/preferences, /api/client/push/preferences). The
+ *  retired `comments` toggle is dropped like any unknown field: nothing
+ *  sends a comment push since comments were removed (access matrix T23). */
 export function sanitizeLoginPushPrefs(
   body: Record<string, unknown>,
 ): Partial<LoginPushPreferences> {
   const patch: Partial<LoginPushPreferences> = {};
-  for (const key of ['chatReplies', 'reviewResults', 'comments'] as const) {
+  for (const key of ['chatReplies', 'reviewResults'] as const) {
     if (typeof body[key] === 'boolean') patch[key] = body[key];
   }
   return patch;

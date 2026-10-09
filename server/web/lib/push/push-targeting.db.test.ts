@@ -283,7 +283,6 @@ describe.skipIf(!URL)('push targeting: who a push goes to', () => {
     expect(await store.getLoginPushPrefs(member)).toEqual({
       chatReplies: false,
       reviewResults: true,
-      comments: true,
     });
     await store.updateLoginPushPrefs(member, { chatReplies: true });
   });

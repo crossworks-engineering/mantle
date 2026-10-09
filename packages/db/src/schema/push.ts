@@ -113,7 +113,9 @@ export const pushLoginPrefs = pgTable('push_login_prefs', {
   chatReplies: boolean('chat_replies').notNull().default(true),
   /** An own item accepted, returned or taken over. */
   reviewResults: boolean('review_results').notNull().default(true),
-  /** A comment on an own item, or on an item shared with a client. */
+  /** Retired (access matrix T23): comments were removed on 2026-10-09 and
+   *  nothing sends a comment push. Neither read nor offered; the column
+   *  stays so a rollback finds it. */
   comments: boolean('comments').notNull().default(true),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });

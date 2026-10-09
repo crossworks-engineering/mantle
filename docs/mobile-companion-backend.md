@@ -545,7 +545,7 @@ enrol step).
            429 { error: "too_many_requests" } + Retry-After
     GET    {pushBase}/subscriptions   200 { devices: [{ id, platform, label, current }] }
     DELETE {pushBase}/subscriptions/:id   200 { ok: true } | 404 { error: "not_found" }
-    GET    {pushBase}/preferences     200 { chatReplies, reviewResults, comments }
+    GET    {pushBase}/preferences     200 { chatReplies, reviewResults }
     PUT    {pushBase}/preferences     partial patch, same answer
 
 A member or client lists and removes only its own devices. Enrolling a routing
@@ -553,7 +553,8 @@ token again replaces the old row (one row per routing token), so one routing
 token belongs to one login. The relay mints a new routing token on every
 enrol, so each Connect of each login is its own row (see "Push routing on a
 device with several logins"). `POST /api/push/reset` stays admin only. Preferences are
-per login and all default to true.
+per login and all default to true. The `comments` toggle is gone (there are no
+comment pushes): a PUT that names it is ignored like any unknown field.
 
 **Limits.** Connect and enrol share one bucket: 10 a minute per login, above
 that 429 `{ error: "too_many_requests" }` with `Retry-After`. A login holds at
