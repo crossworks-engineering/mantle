@@ -307,6 +307,16 @@ export {
   type ReviewReason,
 } from './member-review';
 export {
+  SHARED_ITEMS_MAX,
+  adminUnshareMemberItem,
+  getMemberItemShared,
+  listMemberItemsShared,
+  memberDrawSvgShared,
+  openMemberFileShared,
+  type SharedItemAuthor,
+  type SharedMemberItem,
+} from './member-items-shared';
+export {
   acceptedAuthors,
   acceptedByLogin,
   acceptedDrawSnapshot,
