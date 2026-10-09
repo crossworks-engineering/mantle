@@ -70,7 +70,19 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     detail: refused ? { via: 'review-test', slug, refused } : { via: 'review-test', slug },
   });
   if (!verdict.ok) {
-    return NextResponse.json({ ok: false, error: verdict.reason }, { status: verdict.status });
+    // A declared tool the team rules refuse (it writes, spends model work,
+    // needs a confirmation, or sits in no team-level group) is test mode
+    // at work, not a wiring bug: its own reason, so the screen says so
+    // instead of "not declared". An undeclared tool keeps the plain answer.
+    const declared = app.declaredTools.includes(slug);
+    return NextResponse.json(
+      {
+        ok: false,
+        error: verdict.reason,
+        ...(declared && verdict.status === 403 ? { reason: 'review-test-read-only' } : {}),
+      },
+      { status: verdict.status },
+    );
   }
   if (refused) {
     return NextResponse.json(

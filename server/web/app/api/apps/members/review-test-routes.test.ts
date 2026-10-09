@@ -228,6 +228,30 @@ describe('the review test tool broker', () => {
   });
 });
 
+describe('the review test tool broker on a team-rules refusal', () => {
+  it('marks a declared tool the team rules refuse as test mode, not as undeclared', async () => {
+    const { POST } = await import('./[id]/test/tool-broker/route');
+    h.verdict = {
+      ok: false,
+      status: 403,
+      reason: "The tool 'search' changes data or reaches outside the brain.",
+    };
+    const declared = await POST(post({ slug: 'search', input: {} }), params(APP));
+    expect(declared.status).toBe(403);
+    expect(await declared.json()).toMatchObject({ reason: 'review-test-read-only' });
+    // An undeclared tool keeps the plain refusal (a wiring bug to fix).
+    h.verdict = { ok: false, status: 403, reason: "This app isn't allowed to use the tool." };
+    const undeclared = await POST(post({ slug: 'email_send', input: {} }), params(APP));
+    expect(undeclared.status).toBe(403);
+    expect((await undeclared.json()).reason).toBeUndefined();
+    // A tool that does not exist stays a 404 with no reason.
+    h.verdict = { ok: false, status: 404, reason: "tool 'search' not found" };
+    const missing = await POST(post({ slug: 'search', input: {} }), params(APP));
+    expect(missing.status).toBe(404);
+    expect((await missing.json()).reason).toBeUndefined();
+  });
+});
+
 describe('the review test tool broker without a running test', () => {
   it('runs nothing and says the test ended', async () => {
     const { POST } = await import('./[id]/test/tool-broker/route');
