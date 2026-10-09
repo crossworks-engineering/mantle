@@ -109,7 +109,9 @@ describe('POST /api/auth/sso', () => {
 
   it('unauthenticated caller is refused and gets NO cookie', async () => {
     const { NextResponse } = await import('../server/http-compat');
-    getCookieUpgradeLoginOr401.mockResolvedValue(NextResponse.json({ error: 'unauthorized' }, { status: 401 }));
+    getCookieUpgradeLoginOr401.mockResolvedValue(
+      NextResponse.json({ error: 'unauthorized' }, { status: 401 }),
+    );
 
     const res = await post();
 
