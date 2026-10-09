@@ -1,9 +1,8 @@
 # Workspace review pattern
 
-Status: decided 2026-10-09. Apps are built. "Waiting for approval" for
-pages, notes, tables, draws and files is built (part 2 of dissolving Team
-admin, 2026-10-09); "Shared by members" for those kinds waits on the open
-decision below.
+Status: decided 2026-10-09. Apps are built. "Waiting for approval" and
+"Shared by members" for pages, notes, tables, draws and files are built
+(part 2 of dissolving Team admin, 2026-10-09).
 
 ## The rule
 
@@ -127,6 +126,33 @@ UI (jackdaw):
   one with something waiting): old `/team-admin?view=review&item=` links,
   the needs-you notice, and a push from an older brain land there.
 
+## Pages, notes, tables, draws and files: Shared by members (built 2026-10-09)
+
+Jason decided (2026-10-09, option 1): admins see what the team shares.
+This widens admin reads to items active members shared with the team; see
+docs/access-levels.md section 7c.
+
+Brain (mantle), `packages/content/src/member-items-shared.ts`:
+
+- `listMemberItemsShared(admin, kind?)`, `getMemberItemShared(id)`,
+  `openMemberFileShared(id)`, `memberDrawSvgShared(id)`: the team-drafts
+  reads on the team role with the human flag, so row security keeps
+  private items out, and only the SAVED version is read. Listed: active
+  authors only, not submitted (Waiting for approval has those), not
+  accepted or taken. A gone author's item stays left behind in the queue.
+- `adminUnshareMemberItem(id)`: back to private, nothing deleted.
+- Routes, admin only: `GET /api/team-admin/member-items[?kind=]`,
+  `GET :id[?tab=]`, `GET :id/bytes[?node=&thumb=1]`, `GET :id/svg[?node=]`,
+  `POST :id/unshare`.
+
+UI (jackdaw): "Shared by members" below "Waiting for approval" in each
+workspace (hidden while empty, and on a brain without the route). A card
+opens the item read only in the same pane (`?review=<id>`; the pane asks
+the review queue first, then the shared route) under the one header:
+**Unshare** in words, **Info** (who shared it, last change) and **Focus** as
+icons. No Take over (the brain takes over submitted items only) and no
+Delete yet.
+
 ## What is reusable
 
 Brain:
@@ -168,16 +194,13 @@ UI:
 5. **Files.** No body to edit; the review is the file viewer plus Approve
    (which folder, which level) and Reject.
 
-Waiting for approval moved for all five kinds at once (2026-10-09), and
-Team admin > Review went with it. Unshare and Delete for team-shared member
-items come with "Shared by members", once its decision below is taken.
+Waiting for approval and Shared by members moved for all five kinds at once
+(2026-10-09), and Team admin > Review went with it. Delete (to the brain
+trash) for a team-shared member item is not built yet.
 
-## Decisions still open
+## Decisions
 
-- **Shared by members for items.** Apps already show team-shared apps of
-  active members to admins (access matrix N2). For pages and the other
-  kinds, `member-review.ts` today lets an admin read a team-shared item only
-  when its author is deactivated. Showing every team-shared item to admins
-  widens that rule; it needs the owner's decision before the Pages step.
+- **Shared by members for items: taken 2026-10-09 (option 1).** Admins see
+  what active members share with the team, read at team level (above).
 - **The item review comments**: removed on 2026-10-09 with every other
   comment surface (not per workspace); the stored rows stay.

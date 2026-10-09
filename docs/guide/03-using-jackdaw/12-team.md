@@ -63,6 +63,10 @@ Members can write their own pages, notes, tables, drawings and files, and submit
 
 The **Team** tab strip shows "2 waiting in Pages" and so on while something waits.
 
+## See what members share with the team
+
+Below **Waiting for approval**, each screen lists **Shared by members**: what your members shared with the team, with who shared it and when it last changed. Click one to read it, as the team sees it. Click **Unshare** to make it private again: nothing is deleted, and its author keeps it.
+
 ## Other tabs
 
 - **Shared links**: every open link to your items, newest first.
