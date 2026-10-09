@@ -10,7 +10,11 @@
  *    access matrix N1): every member runs it, at team
  *    rules;
  *  - submitted (`my_app_submit`): frozen until an admin accepts it into the
- *    brain or rejects it (`my_app_recall` takes it back).
+ *    brain or rejects it (`my_app_recall` takes it back);
+ *  - in the member's trash (`my_app_delete`, access matrix N6): it runs for
+ *    no one and nothing is removed; `my_app_undelete` brings it back
+ *    private. A member also deletes the snapshots they took
+ *    (`my_app_snapshot_delete`), never an automatic one.
  *
  * THE AUTHOR CEILING: every app these tools make has `author_level` 'team',
  * so every tool broker runs its tools at most at team rules, an admin's run
@@ -45,14 +49,17 @@ import {
   createSpaceApp,
   declareAppSchema,
   deleteDraftFile,
+  deleteSpaceApp,
   getApp,
   listAppAccess,
+  listDeletedSpaceApps,
   listSpaceApps,
   publishApp,
   recallSpaceApp,
   setManifest,
   setSpaceAppSharing,
   submitSpaceApp,
+  undeleteSpaceApp,
   withAuthorWrite,
   workingSource,
   writeDraftFile,
@@ -63,6 +70,7 @@ import {
   AppSnapshotBudgetError,
   AppSnapshotRefusedError,
   createAppSnapshot,
+  deleteMemberAppSnapshot,
   listAppSnapshots,
   restoreAppSnapshot,
 } from '@mantle/content/app-snapshots';
@@ -82,8 +90,17 @@ const NO_WRITE =
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** The most apps one member keeps before Accept (any state). */
+/** The most apps one member keeps before Accept (any state), not counting
+ *  their trash. */
 export const MY_APPS_MAX = 50;
+
+/** The most apps one member's trash holds. Nothing in it is ever deleted
+ *  (app data is never hard deleted), so this bounds what a member keeps on
+ *  the box: MY_APPS_MAX live plus this many in the trash. */
+export const MY_APPS_TRASH_MAX = 50;
+
+const atAppCap = (n: number) =>
+  `You have ${n} apps, the most one member keeps. Delete one you no longer need with my_app_delete (it goes to your trash, my_app_deleted_list, and my_app_undelete brings it back), then try again.`;
 
 const ID_PROP = {
   id: { type: 'string', description: 'Your app id (a UUID) from `my_app_list`.' },
@@ -178,7 +195,7 @@ const my_app_list: BuiltinToolDef = {
   readOnly: true,
   name: 'List my mini apps',
   description:
-    'List your own mini apps (private, shared or submitted) and the published apps teammates shared with the team, newest first: id, title, mine, sharing, review state, whether it runs. Change only your own (`mine: true`); run any of them in the app.',
+    'List your own mini apps (private, shared or submitted) and the published apps teammates shared with the team, newest first: id, title, mine, sharing, review state, whether it runs. Change only your own (`mine: true`); run any of them in the app. Apps in your trash are not listed: `my_app_deleted_list` shows those.',
   inputSchema: { type: 'object', properties: {} },
   handler: async (_input, ctx) => {
     const author = await authorOf(ctx);
@@ -256,14 +273,9 @@ const my_app_create: BuiltinToolDef = {
     const name = str(input.name).trim().slice(0, 200);
     if (!name) return { ok: false, error: 'name is required, e.g. "Stock counter".' };
     const mine = (await listSpaceApps(author)).filter((a) => a.mine).length;
-    if (mine >= MY_APPS_MAX) {
-      return {
-        ok: false,
-        // No admin sees a private draft and a member has no delete (access
-        // matrix N6): only a submit lets an admin approve or delete one.
-        error: `You have ${mine} apps, the most one member keeps. A member cannot delete an app, and no admin sees a private one: submit one (my_app_submit) so an admin can approve it into the brain or delete it, and that makes room.`,
-      };
-    }
+    // The member deletes their own (access matrix N6): no admin sees a
+    // private draft, so the way to room is the member's own delete.
+    if (mine >= MY_APPS_MAX) return { ok: false, error: atAppCap(mine) };
     try {
       const description = str(input.description).trim().slice(0, 500);
       const app = await createSpaceApp(author, {
@@ -765,6 +777,140 @@ const my_app_recall: BuiltinToolDef = {
   },
 };
 
+const my_app_snapshot_delete: BuiltinToolDef = {
+  slug: 'my_app_snapshot_delete',
+  name: 'Delete a snapshot of my mini app',
+  description:
+    "Delete one snapshot you took of your own app (`my_app_snapshot_list`), with its copy of the data, to free your snapshot budget. The app's own data is untouched. Refused for a version (what a publish made live), an automatic snapshot (the app's safety net, never in your budget) or one you did not take. Not undoable: ask the member first.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      ...ID_PROP,
+      snapshot_id: { type: 'string', description: 'The entry id from `my_app_snapshot_list`.' },
+    },
+    required: ['id', 'snapshot_id'],
+  },
+  handler: async (input, ctx) => {
+    const p = await prepare(input, ctx, { write: true });
+    if (!isPrepared(p)) return p;
+    const snapshotId = str(input.snapshot_id).trim().toLowerCase();
+    if (!UUID_RE.test(snapshotId)) {
+      return { ok: false, error: 'snapshot_id must be an entry id from my_app_snapshot_list.' };
+    }
+    try {
+      const gone = await withAuthorWrite(p.author, p.id, () =>
+        deleteMemberAppSnapshot(p.author.spaceId, p.id, snapshotId, p.author.loginId),
+      );
+      if (!gone) {
+        return {
+          ok: false,
+          error: `No entry ${snapshotId} on this app's history. Pick one from my_app_snapshot_list.`,
+        };
+      }
+      return {
+        ok: true,
+        output: { id: p.id, deleted: gone.id, seq: gone.seq, freed_bytes: gone.freedBytes },
+      };
+    } catch (err) {
+      return refusal(err);
+    }
+  },
+};
+
+const my_app_delete: BuiltinToolDef = {
+  slug: 'my_app_delete',
+  name: 'Delete my mini app (to my trash)',
+  description:
+    "Move your own app to your trash: it stops running for everyone (teammates and you), leaves the review queue if submitted, and becomes private. Nothing is removed (code, data, history all kept): `my_app_undelete` brings it back, private; `my_app_deleted_list` shows the trash. An app an admin accepted is the brain's, not yours to delete. Ask the member first.",
+  inputSchema: { type: 'object', properties: { ...ID_PROP }, required: ['id'] },
+  handler: async (input, ctx) => {
+    // Any state before Accept: a submitted app may go too (it leaves the
+    // queue), so this checks ownership only; the delete locks and checks.
+    const p = await prepare(input, ctx, { write: false });
+    if (!isPrepared(p)) return p;
+    if (!writeOn(ctx)) return { ok: false, error: NO_WRITE };
+    const inTrash = (await listDeletedSpaceApps(p.author)).length;
+    if (inTrash >= MY_APPS_TRASH_MAX) {
+      return {
+        ok: false,
+        error: `Your trash already holds ${inTrash} apps, the most it keeps, and nothing in it is ever deleted. Bring one back with my_app_undelete and submit it (my_app_submit) so an admin can approve it into the brain or delete it, then try again.`,
+      };
+    }
+    try {
+      const done = await deleteSpaceApp(p.author, p.id);
+      return {
+        ok: true,
+        output: {
+          id: done.id,
+          name: done.title,
+          deleted: true,
+          deleted_at: done.deletedAt,
+          was_shared: done.wasShared,
+          was_submitted: done.wasSubmitted,
+          hint: 'It runs for no one now. my_app_undelete brings it back, private.',
+        },
+      };
+    } catch (err) {
+      return refusal(err);
+    }
+  },
+};
+
+const my_app_undelete: BuiltinToolDef = {
+  slug: 'my_app_undelete',
+  name: 'Bring back my deleted mini app',
+  description:
+    "Bring one of your own apps back from your trash (`my_app_deleted_list`), with its code, data and history: private and a draft, so only you run it until you share it again in the app or submit it. For a snapshot of an app's history use `my_app_snapshot_restore` instead.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', description: 'The app id from `my_app_deleted_list`.' },
+    },
+    required: ['id'],
+  },
+  handler: async (input, ctx) => {
+    const author = await authorOf(ctx);
+    if (!author) return { ok: false, error: NO_LOGIN };
+    if (!writeOn(ctx)) return { ok: false, error: NO_WRITE };
+    const id = str(input.id).trim().toLowerCase();
+    if (!UUID_RE.test(id)) {
+      return { ok: false, error: 'id must be an app id from my_app_deleted_list.' };
+    }
+    const mine = (await listSpaceApps(author)).filter((a) => a.mine).length;
+    if (mine >= MY_APPS_MAX) return { ok: false, error: atAppCap(mine) };
+    try {
+      const state = await undeleteSpaceApp(author, id);
+      return {
+        ok: true,
+        output: {
+          id: state.id,
+          name: state.title,
+          sharing: state.sharing,
+          reviewState: state.reviewState,
+          hint: 'It is private again: only you run it. Share it with the team in the app, or my_app_submit it.',
+        },
+      };
+    } catch (err) {
+      return refusal(err);
+    }
+  },
+};
+
+const my_app_deleted_list: BuiltinToolDef = {
+  slug: 'my_app_deleted_list',
+  readOnly: true,
+  name: 'List my deleted mini apps',
+  description:
+    'List the apps in your trash, newest delete first: id, title, when deleted, whether it was published and whether its data is kept. Nothing in the trash expires. Bring one back with `my_app_undelete`; your live apps are in `my_app_list`.',
+  inputSchema: { type: 'object', properties: {} },
+  handler: async (_input, ctx) => {
+    const author = await authorOf(ctx);
+    if (!author) return { ok: false, error: NO_LOGIN };
+    const apps = await listDeletedSpaceApps(author);
+    return { ok: true, output: { count: apps.length, apps } };
+  },
+};
+
 /** What a member reads of their own apps (offered with write off too). */
 export const MY_APP_READ_TOOLS: BuiltinToolDef[] = [
   my_app_guide,
@@ -772,6 +918,7 @@ export const MY_APP_READ_TOOLS: BuiltinToolDef[] = [
   my_app_get,
   my_app_errors,
   my_app_snapshot_list,
+  my_app_deleted_list,
 ];
 
 /** How long a change waits for the member's previous change to finish. */
@@ -846,9 +993,12 @@ export const MY_APP_WRITE_TOOLS: BuiltinToolDef[] = [
   my_app_tools_set,
   my_app_snapshot_create,
   my_app_snapshot_restore,
+  my_app_snapshot_delete,
   my_app_unshare,
   my_app_submit,
   my_app_recall,
+  my_app_delete,
+  my_app_undelete,
 ].map(oneAtATime);
 
 export const MY_APP_TOOLS: BuiltinToolDef[] = [...MY_APP_READ_TOOLS, ...MY_APP_WRITE_TOOLS];

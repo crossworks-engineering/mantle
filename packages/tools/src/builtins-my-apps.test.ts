@@ -16,6 +16,11 @@ const h = vi.hoisted(() => ({
   running: 0,
   maxRunning: 0,
   deleteDelayMs: 0,
+  // The trash and snapshot deletes (access matrix N6).
+  appDeletes: [] as { author: unknown; id: string }[],
+  appUndeletes: [] as { author: unknown; id: string }[],
+  snapshotDeletes: [] as { owner: string; id: string; snapshotId: string; loginId: string }[],
+  inTrash: 0,
 }));
 
 vi.mock('@mantle/db', () => ({ asSystem: <T>(fn: () => T) => fn() }));
@@ -39,6 +44,12 @@ vi.mock('@mantle/content/app-snapshots', () => ({
   AppSnapshotBudgetError: class extends Error {},
   AppSnapshotRefusedError: class extends Error {},
   createAppSnapshot: vi.fn(),
+  deleteMemberAppSnapshot: vi.fn(
+    async (owner: string, id: string, snapshotId: string, loginId: string) => {
+      h.snapshotDeletes.push({ owner, id, snapshotId, loginId });
+      return { id: snapshotId, seq: 3, freedBytes: 4096 };
+    },
+  ),
   listAppSnapshots: vi.fn(),
   restoreAppSnapshot: vi.fn(),
 }));
@@ -65,6 +76,25 @@ vi.mock('@mantle/content', () => {
       return { id, title: 'A', sharing: 'private', reviewState: 'draft' };
     }),
     createSpaceApp: vi.fn(),
+    deleteSpaceApp: vi.fn(async (author: unknown, id: string) => {
+      h.appDeletes.push({ author, id });
+      return {
+        id,
+        title: 'A',
+        sharing: 'private',
+        reviewState: 'draft',
+        deletedAt: '2026-10-09T00:00:00.000Z',
+        wasShared: true,
+        wasSubmitted: false,
+      };
+    }),
+    undeleteSpaceApp: vi.fn(async (author: unknown, id: string) => {
+      h.appUndeletes.push({ author, id });
+      return { id, title: 'A', sharing: 'private', reviewState: 'draft' };
+    }),
+    listDeletedSpaceApps: vi.fn(async () =>
+      Array.from({ length: h.inTrash }, (_, i) => ({ id: `t${i}`, title: `T${i}` })),
+    ),
     // The lock is the content layer's (its DB test); here it runs the change.
     withAuthorWrite: vi.fn(async (_a: unknown, _id: string, fn: () => Promise<unknown>) => fn()),
     declareAppSchema: vi.fn(),
@@ -118,6 +148,10 @@ beforeEach(() => {
   h.running = 0;
   h.maxRunning = 0;
   h.deleteDelayMs = 0;
+  h.appDeletes.length = 0;
+  h.appUndeletes.length = 0;
+  h.snapshotDeletes.length = 0;
+  h.inTrash = 0;
 });
 
 describe('who may call the my_app tools', () => {
@@ -229,11 +263,12 @@ describe('my_app_unshare', () => {
   });
 });
 
-// Access matrix N6: at the 50-app cap the answer names what a member can
-// do. A member has no delete and no admin sees a private draft, so "ask an
-// admin to delete some" pointed at nothing.
+// Access matrix N6 (option A): at the 50-app cap the answer names the
+// member's own delete. No admin sees a private draft, so "ask an admin to
+// delete some" pointed at nothing, and "a member cannot delete" is no
+// longer true.
 describe('my_app_create at the cap', () => {
-  it('says to submit one, never to ask an admin to delete a private draft', async () => {
+  it("points at the member's own delete, never at an admin or a missing delete", async () => {
     const { listSpaceApps } = await import('@mantle/content');
     vi.mocked(listSpaceApps).mockResolvedValueOnce(
       Array.from({ length: 50 }, (_, i) => ({ id: `a${i}`, mine: true })) as never,
@@ -241,7 +276,127 @@ describe('my_app_create at the cap', () => {
     const res = await def('my_app_create').handler({ name: 'One more' }, member());
     expect(res.ok).toBe(false);
     const error = (res as { error: string }).error;
-    expect(error).toMatch(/my_app_submit/);
+    expect(error).toMatch(/my_app_delete/);
+    expect(error).toMatch(/my_app_undelete/);
+    expect(error).not.toMatch(/cannot delete/);
     expect(error).not.toMatch(/Ask an admin to accept or delete/);
+  });
+});
+
+describe('my_app_delete', () => {
+  it("moves the author's own app to their trash, in the author's own space", async () => {
+    const res = await def('my_app_delete').handler({ id: APP.toUpperCase() }, member());
+    expect(res).toMatchObject({
+      ok: true,
+      output: { id: APP, deleted: true, was_shared: true, was_submitted: false },
+    });
+    // Found by the author's own row first (any state: a submitted app may go).
+    expect(h.authorCalls).toEqual([
+      { author: { loginId: 'login-1', spaceId: 'space-1' }, id: APP, write: false },
+    ]);
+    expect(h.appDeletes).toEqual([{ author: { loginId: 'login-1', spaceId: 'space-1' }, id: APP }]);
+  });
+
+  it('needs the Write switch and deletes nothing without it', async () => {
+    const res = await def('my_app_delete').handler({ id: APP }, member(false));
+    expect(res).toMatchObject({ ok: false, error: expect.stringMatching(/read-only/) });
+    expect(h.appDeletes).toEqual([]);
+  });
+
+  it('refuses when the trash is full, and says how to make room', async () => {
+    h.inTrash = 50;
+    const res = await def('my_app_delete').handler({ id: APP }, member());
+    expect(res).toMatchObject({ ok: false, error: expect.stringMatching(/my_app_undelete/) });
+    expect(h.appDeletes).toEqual([]);
+  });
+
+  it('refuses an id that is not a UUID', async () => {
+    const res = await def('my_app_delete').handler({ id: 'x' }, member());
+    expect(res.ok).toBe(false);
+    expect(h.appDeletes).toEqual([]);
+  });
+
+  it('is a write: offered only with write on, behind the write slot', () => {
+    expect(MY_APP_WRITE_TOOL_SLUGS).toContain('my_app_delete');
+    expect(def('my_app_delete').requiresConfirm).toBeFalsy();
+  });
+});
+
+describe('my_app_undelete', () => {
+  it("brings the author's own app back from their trash, private", async () => {
+    const res = await def('my_app_undelete').handler({ id: APP }, member());
+    expect(res).toMatchObject({
+      ok: true,
+      output: { id: APP, sharing: 'private', reviewState: 'draft' },
+    });
+    expect(h.appUndeletes).toEqual([
+      { author: { loginId: 'login-1', spaceId: 'space-1' }, id: APP },
+    ]);
+  });
+
+  it('refuses at the 50-app cap: restore never passes it', async () => {
+    const { listSpaceApps } = await import('@mantle/content');
+    vi.mocked(listSpaceApps).mockResolvedValueOnce(
+      Array.from({ length: 50 }, (_, i) => ({ id: `a${i}`, mine: true })) as never,
+    );
+    const res = await def('my_app_undelete').handler({ id: APP }, member());
+    expect(res).toMatchObject({ ok: false, error: expect.stringMatching(/my_app_delete/) });
+    expect(h.appUndeletes).toEqual([]);
+  });
+
+  it('needs the Write switch', async () => {
+    const res = await def('my_app_undelete').handler({ id: APP }, member(false));
+    expect(res).toMatchObject({ ok: false, error: expect.stringMatching(/read-only/) });
+    expect(h.appUndeletes).toEqual([]);
+  });
+});
+
+describe('my_app_deleted_list', () => {
+  it("lists the author's own trash, with write off too", async () => {
+    h.inTrash = 2;
+    const res = await def('my_app_deleted_list').handler({}, member(false));
+    expect(res).toMatchObject({ ok: true, output: { count: 2 } });
+    expect(MY_APP_READ_TOOL_SLUGS).toContain('my_app_deleted_list');
+  });
+});
+
+describe('my_app_snapshot_delete', () => {
+  const SNAP = '99999999-8888-4777-8666-555555555555';
+
+  it("deletes the author's own snapshot, by their login, in their own space", async () => {
+    const res = await def('my_app_snapshot_delete').handler(
+      { id: APP, snapshot_id: SNAP.toUpperCase() },
+      member(),
+    );
+    expect(res).toMatchObject({
+      ok: true,
+      output: { id: APP, deleted: SNAP, freed_bytes: 4096 },
+    });
+    expect(h.authorCalls).toEqual([
+      { author: { loginId: 'login-1', spaceId: 'space-1' }, id: APP, write: true },
+    ]);
+    // Keyed to the space and the calling login, never the brain.
+    expect(h.snapshotDeletes).toEqual([
+      { owner: 'space-1', id: APP, snapshotId: SNAP, loginId: 'login-1' },
+    ]);
+  });
+
+  it('refuses a submitted (frozen) app and deletes nothing', async () => {
+    h.frozen = true;
+    const res = await def('my_app_snapshot_delete').handler(
+      { id: APP, snapshot_id: SNAP },
+      member(),
+    );
+    expect(res).toMatchObject({ ok: false, error: expect.stringMatching(/frozen/) });
+    expect(h.snapshotDeletes).toEqual([]);
+  });
+
+  it('refuses a snapshot id that is not a UUID', async () => {
+    const res = await def('my_app_snapshot_delete').handler(
+      { id: APP, snapshot_id: 'v3' },
+      member(),
+    );
+    expect(res.ok).toBe(false);
+    expect(h.snapshotDeletes).toEqual([]);
   });
 });

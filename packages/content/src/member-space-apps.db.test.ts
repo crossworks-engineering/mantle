@@ -9,6 +9,7 @@
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/member-space-apps.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -453,6 +454,172 @@ describe.skipIf(!URL)('member-built apps on Postgres', () => {
     expect(rows.map((r) => r.name)).toEqual(['a']);
     // It is the brain's now, no longer a member app an admin acts on here.
     expect(await sa.adminDeleteSpaceApp(brain, id)).toBe(false);
+  });
+
+  // Access matrix N6 (option A): a member deletes their own app to a trash
+  // in their space. Nothing moves and nothing is removed.
+  it('a member deletes their own app to their trash: it stops for everyone, its data stays, it comes back private', async () => {
+    const id = await publishedSpaceApp('trash');
+    await sa.setSpaceAppSharing(me(), id, 'team');
+    expect(await sa.getRunnableSpaceApp(mate, id)).toMatchObject({ id, mine: false });
+    const dbFile = (await m.asSystem(() => broker.appDatabasePath(authorSpace, id)))!;
+    expect(existsSync(dbFile)).toBe(true);
+
+    // A teammate can neither delete it nor bring it back.
+    await expect(sa.deleteSpaceApp(them(), id)).rejects.toMatchObject({ code: 'not-found' });
+
+    const done = await sa.deleteSpaceApp(me(), id);
+    expect(done).toMatchObject({ id, sharing: 'private', wasShared: true, wasSubmitted: false });
+    // It runs for no one: not the teammate, not the author.
+    expect(await sa.getRunnableSpaceApp(mate, id)).toBeNull();
+    expect(await sa.getRunnableSpaceApp(author, id)).toBeNull();
+    expect((await sa.listSpaceApps(them())).map((a) => a.id)).not.toContain(id);
+    expect((await sa.listSpaceApps(me())).map((a) => a.id)).not.toContain(id);
+    expect(await sa.adminSpaceApp(id)).toBeNull();
+    // Every change refuses; a second delete says it is already there.
+    await expect(sa.authorSpaceApp(me(), id)).rejects.toMatchObject({ code: 'deleted' });
+    await expect(sa.withAuthorWrite(me(), id, async () => undefined)).rejects.toMatchObject({
+      code: 'deleted',
+    });
+    await expect(sa.setSpaceAppSharing(me(), id, 'team')).rejects.toMatchObject({
+      code: 'deleted',
+    });
+    await expect(sa.submitSpaceApp(me(), id)).rejects.toMatchObject({ code: 'deleted' });
+    await expect(sa.deleteSpaceApp(me(), id)).rejects.toMatchObject({ code: 'deleted' });
+
+    // Nothing was removed: the node, the app row, its database file and its
+    // history all stay where they were.
+    const [kept] = await admin<{ owner_id: string; app: number; db: number; history: number }[]>`
+      select n.owner_id,
+             (select count(*)::int from apps where node_id = ${id}) as app,
+             (select count(*)::int from app_databases where app_node_id = ${id}) as db,
+             (select count(*)::int from node_snapshots where node_id = ${id}) as history
+        from nodes n where n.id = ${id}`;
+    expect(kept).toMatchObject({ owner_id: authorSpace, app: 1, db: 1 });
+    expect(kept!.history).toBeGreaterThan(0);
+    expect(existsSync(dbFile)).toBe(true);
+    const trash = await sa.listDeletedSpaceApps(me());
+    expect(trash.find((d) => d.id === id)).toMatchObject({
+      title: `${tag} trash`,
+      published: true,
+      hasData: true,
+    });
+    expect((await sa.listDeletedSpaceApps(them())).map((d) => d.id)).not.toContain(id);
+    await expect(sa.undeleteSpaceApp(them(), id)).rejects.toMatchObject({ code: 'not-found' });
+
+    // Back, private and a draft, with its data; the teammate still cannot run it.
+    expect(await sa.undeleteSpaceApp(me(), id)).toMatchObject({
+      id,
+      sharing: 'private',
+      reviewState: 'draft',
+    });
+    expect(await sa.getRunnableSpaceApp(author, id)).toMatchObject({ id, mine: true });
+    expect(await sa.getRunnableSpaceApp(mate, id)).toBeNull();
+    const rows = await m.asSystem(() =>
+      broker.appDbQuery(authorSpace, id, 'SELECT name FROM items', [], schema),
+    );
+    expect(rows.map((r) => r.name)).toEqual(['a']);
+    expect((await sa.listDeletedSpaceApps(me())).map((d) => d.id)).not.toContain(id);
+    await expect(sa.undeleteSpaceApp(me(), id)).rejects.toMatchObject({ code: 'not-deleted' });
+  });
+
+  it('a submitted app the member deletes leaves the review queue, and an admin cannot reach it', async () => {
+    const id = await publishedSpaceApp('trash submitted');
+    await sa.submitSpaceApp(me(), id);
+    const pinned = await shown(id);
+    expect((await sa.listMemberAppsForReview()).waiting.map((s) => s.id)).toContain(id);
+
+    expect(await sa.deleteSpaceApp(me(), id)).toMatchObject({ wasSubmitted: true });
+    expect((await sa.listMemberAppsForReview()).waiting.map((s) => s.id)).not.toContain(id);
+    expect(await sa.getMemberAppForReview(id)).toBeNull();
+    await expect(
+      sa.acceptSpaceApp(
+        brain,
+        id,
+        { loginId: brain },
+        { level: 'team', trustTools: false, ...pinned },
+      ),
+    ).rejects.toMatchObject({ code: 'not-found' });
+    await expect(sa.sendBackSpaceApp(id, { loginId: brain })).rejects.toMatchObject({
+      code: 'not-submitted',
+    });
+    expect(await sa.adminDeleteSpaceApp(brain, id)).toBe(false);
+    const [node] = await admin<{ owner_id: string }[]>`select owner_id from nodes where id = ${id}`;
+    expect(node?.owner_id).toBe(authorSpace);
+
+    // It comes back a private draft: never straight back to the queue.
+    expect(await sa.undeleteSpaceApp(me(), id)).toMatchObject({ reviewState: 'draft' });
+    expect((await sa.listMemberAppsForReview()).waiting.map((s) => s.id)).not.toContain(id);
+  });
+
+  it("a member deletes only their own manual snapshots, and that frees their budget; the app's data stays", async () => {
+    const id = await publishedSpaceApp('snapshot delete');
+    // A copy of this database is over 1 MB: one copy fills a 1 MB budget.
+    await m.asSystem(() =>
+      broker.appDbExec(
+        authorSpace,
+        id,
+        'INSERT INTO items (name) VALUES (?)',
+        ['x'.repeat(1_200_000)],
+        schema,
+      ),
+    );
+    const dbFile = (await m.asSystem(() => broker.appDatabasePath(authorSpace, id)))!;
+    process.env.APP_SNAPSHOT_MAX_MB = '1';
+    try {
+      const take = (loginId: string) =>
+        m.asSystem(() =>
+          snaps.createAppSnapshot(authorSpace, id, { actor: 'member', actorLoginId: loginId }),
+        );
+      const mine = (await take(author))!;
+      await expect(take(author)).rejects.toThrow(/my_app_snapshot_delete/);
+      // Another login's snapshot (its own budget), an automatic one, and a
+      // version: none of them is the author's to delete.
+      const theirs = (await take(mate))!;
+      const auto = (await m.asSystem(() =>
+        snaps.createAppSnapshot(authorSpace, id, {
+          trigger: 'pre_schema',
+          actor: 'member',
+          actorLoginId: author,
+        }),
+      ))!;
+      const version = (await m.asSystem(() => snaps.listAppSnapshots(authorSpace, id))).find(
+        (e) => e.kind === 'version',
+      )!;
+      const del = (snapshotId: string) =>
+        sa.withAuthorWrite(me(), id, () =>
+          snaps.deleteMemberAppSnapshot(authorSpace, id, snapshotId, author),
+        );
+      await expect(del(theirs.id)).rejects.toThrow(/not a snapshot you took/);
+      await expect(del(auto.id)).rejects.toThrow(/automatic snapshot/);
+      await expect(del(version.id)).rejects.toThrow(/is a version/);
+      // A teammate cannot reach the app at all.
+      await expect(
+        sa.withAuthorWrite(them(), id, () =>
+          snaps.deleteMemberAppSnapshot(authorSpace, id, mine.id, mate),
+        ),
+      ).rejects.toMatchObject({ code: 'not-found' });
+
+      const copy = (await m.asSystem(() => snaps.appSnapshotFile(authorSpace, id, mine.id)))!.path;
+      expect(existsSync(copy)).toBe(true);
+      const gone = await del(mine.id);
+      expect(gone).toMatchObject({ id: mine.id });
+      expect(gone!.freedBytes).toBeGreaterThan(1_000_000);
+      // The row and its copy only: the app's own database file stays, and so
+      // do the other entries.
+      expect(existsSync(copy)).toBe(false);
+      expect(existsSync(dbFile)).toBe(true);
+      const left = (await m.asSystem(() => snaps.listAppSnapshots(authorSpace, id))).map(
+        (e) => e.id,
+      );
+      expect(left).not.toContain(mine.id);
+      expect(left).toEqual(expect.arrayContaining([theirs.id, auto.id, version.id]));
+      expect(await del(mine.id)).toBeNull();
+      // The budget is free again.
+      expect(await take(author)).toMatchObject({ trigger: 'manual' });
+    } finally {
+      delete process.env.APP_SNAPSHOT_MAX_MB;
+    }
   });
 
   // Access matrix N3: what a member's app did shows on the brain app after

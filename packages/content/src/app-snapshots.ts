@@ -22,7 +22,15 @@ import { randomUUID } from 'node:crypto';
 import { rm } from 'node:fs/promises';
 import * as path from 'node:path';
 import { and, desc, eq, gte, isNotNull, ne, sql } from 'drizzle-orm';
-import { afterRollback, apps, db, nodeSnapshots, nodes, type AppSnapshotCode } from '@mantle/db';
+import {
+  afterCommit,
+  afterRollback,
+  apps,
+  db,
+  nodeSnapshots,
+  nodes,
+  type AppSnapshotCode,
+} from '@mantle/db';
 import type { AppRestoreMode, AppSnapshot } from '@mantle/client-types';
 import {
   AppRestoreDraftError,
@@ -61,13 +69,13 @@ export const APP_SNAPSHOT_MCP_KEEP = 24;
 export const APP_SNAPSHOT_MCP_DEFAULT_MAX_MB = 512;
 
 /** The owner's own snapshots would pass APP_SNAPSHOT_MAX_MB. A member
- *  has no snapshot delete (access matrix N6), so their answer says what
- *  frees the budget for them instead. */
+ *  deletes their own with my_app_snapshot_delete (access matrix N6), so
+ *  their answer names that tool. */
 export class AppSnapshotBudgetError extends Error {
   constructor(usedMb: number, maxMb: number, opts: { member?: boolean } = {}) {
     super(
       opts.member
-        ? `your snapshots already hold ${usedMb} MB of the ${maxMb} MB allowed (APP_SNAPSHOT_MAX_MB). A member cannot delete snapshots; an app an admin approves or deletes takes its snapshots out of your budget`
+        ? `your snapshots already hold ${usedMb} MB of the ${maxMb} MB allowed (APP_SNAPSHOT_MAX_MB): delete old snapshots you took with my_app_snapshot_delete (my_app_snapshot_list shows them on each app), then take this one`
         : `snapshots already hold ${usedMb} MB of the ${maxMb} MB allowed (APP_SNAPSHOT_MAX_MB): delete old snapshots on the app's History tab (or with app_snapshot_delete) first`,
     );
     this.name = 'AppSnapshotBudgetError';
@@ -564,6 +572,71 @@ export async function deleteAppSnapshot(
     .returning({ dbPath: nodeSnapshots.dbPath });
   await removeSnapshotFiles(gone.map((g) => g.dbPath));
   return gone.length > 0;
+}
+
+/**
+ * A member deletes one snapshot THEY took of their own app (access matrix
+ * N6), as `deleteAppSnapshot` deletes one for the owner: the history row and
+ * its database copy, never the app's own data (the live database file is
+ * not touched) and never a version. Narrower than the owner's: only a manual
+ * snapshot whose row names this member login. An automatic one (before a
+ * schema change, a restore, an MCP write) is the app's safety net and never
+ * counts against their budget, and another login's is not theirs. Under
+ * the app's history lock, so no restore is reading the copy it removes; the
+ * copy goes once the row's removal commits (`afterCommit`: inside a
+ * caller's transaction, after that one). Null when the app has no such
+ * entry.
+ */
+export async function deleteMemberAppSnapshot(
+  ownerId: string,
+  appId: string,
+  snapshotId: string,
+  memberLoginId: string,
+): Promise<{ id: string; seq: number; freedBytes: number } | null> {
+  const gone = await db.transaction(async (tx) => {
+    await lockAppHistory(tx, appId);
+    const [row] = await tx
+      .select({
+        id: nodeSnapshots.id,
+        seq: nodeSnapshots.seq,
+        trigger: nodeSnapshots.trigger,
+        actor: nodeSnapshots.actor,
+        actorLoginId: nodeSnapshots.actorLoginId,
+        dbPath: nodeSnapshots.dbPath,
+        dbBytes: nodeSnapshots.dbBytes,
+      })
+      .from(nodeSnapshots)
+      .where(
+        and(
+          eq(nodeSnapshots.id, snapshotId),
+          eq(nodeSnapshots.nodeId, appId),
+          eq(nodeSnapshots.ownerId, ownerId),
+        ),
+      )
+      .limit(1);
+    if (!row) return null;
+    if (row.trigger === 'publish') {
+      throw new AppSnapshotRefusedError(
+        `v${row.seq} is a version (what a publish made live) and stays in your app's history; only snapshots you took can be deleted`,
+      );
+    }
+    if (row.trigger !== 'manual') {
+      throw new AppSnapshotRefusedError(
+        `v${row.seq} is an automatic snapshot (${row.trigger}), the app's own safety net: it stays, and it never counts against your snapshot budget. Only snapshots you took with my_app_snapshot_create can be deleted`,
+      );
+    }
+    if (row.actor !== 'member' || row.actorLoginId !== memberLoginId) {
+      throw new AppSnapshotRefusedError(
+        `v${row.seq} is not a snapshot you took; only your own (my_app_snapshot_create) can be deleted`,
+      );
+    }
+    await tx.delete(nodeSnapshots).where(eq(nodeSnapshots.id, snapshotId));
+    return row;
+  });
+  if (!gone) return null;
+  const rel = gone.dbPath;
+  await afterCommit(() => removeSnapshotFiles([rel]));
+  return { id: gone.id, seq: gone.seq, freedBytes: Number(gone.dbBytes ?? 0) };
 }
 
 /** What a restore did. */

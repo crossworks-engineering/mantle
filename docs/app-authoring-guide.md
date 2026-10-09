@@ -6,7 +6,7 @@ binds it to your real Mantle data.
 
 > This file is the canonical reference. An MCP client reads it with the
 > `app_authoring_guide` tool, whole or one section (`section: "who is
-> running"`); the server instructions and the `app_create`, `app_source_set`
+running"`); the server instructions and the `app_create`, `app_source_set`
 > and `app_file_write` descriptions point there. Inside the brain, Appsmith
 > carries the same rules as the `app_authoring` skill
 > (`server/web/lib/system-manifest/prompts.ts`); keep the two in sync when you
@@ -136,10 +136,10 @@ const me = await host.me();
 // { id: 'u_3qK…', name: 'Pat', kind: 'member' }
 ```
 
-| Field  | What it is |
-| ------ | ---------- |
-| `id`   | Stable for this person **in this app only**. `null` on an open link. |
-| `name` | The login's display name, or the contact's name. `null` when none is set, and on an open link. |
+| Field  | What it is                                                                                                                               |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`   | Stable for this person **in this app only**. `null` on an open link.                                                                     |
+| `name` | The login's display name, or the contact's name. `null` when none is set, and on an open link.                                           |
 | `kind` | `'admin'` (the owner or an admin login), `'member'`, `'client'`, `'contact'` (a Contact share), or `'public'` (an open /s link: nobody). |
 
 There is **no email**: an app is code the admin may not have written.
@@ -159,9 +159,9 @@ ids.
 write these names **in the SQL itself** of a `host.db.exec` or
 `host.db.query`:
 
-| Parameter       | Filled with |
-| --------------- | ----------- |
-| `:host_me_id`   | `host.me().id` |
+| Parameter       | Filled with      |
+| --------------- | ---------------- |
+| `:host_me_id`   | `host.me().id`   |
 | `:host_me_name` | `host.me().name` |
 | `:host_me_kind` | `host.me().kind` |
 
@@ -353,11 +353,11 @@ and through `app_snapshot_list`.
 
 **Restore** (`app_snapshot_restore`, or the History tab) has three modes:
 
-| Mode | What comes back | Where |
-|---|---|---|
-| `code` | the code | the **draft**: preview it, then publish. The publish is a new version "restored from vN". The app's tools do not change (the app has one allowlist, the live app's): when the version declared other tools, the answer names them (`declaredTools`), and the owner grants them with `app_tools_set`. The declared schema does not come back either (it belongs to the live data). |
-| `data` | the database | live at once. If the restored data has an older schema than the app declares, the declared script runs over it on the next statement (so keep it re-runnable). |
-| `full` | both | live at once, the code with the build it ran on, its tools and its schema: the pair that worked together. A new version "restored vN". A draft saved with the snapshot comes back as the draft. A snapshot of an app that was never published has no build to go live with: its code goes to the draft (the answer says `code: 'draft'`) and the data goes live. |
+| Mode   | What comes back | Where                                                                                                                                                                                                                                                                                                                                                                             |
+| ------ | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `code` | the code        | the **draft**: preview it, then publish. The publish is a new version "restored from vN". The app's tools do not change (the app has one allowlist, the live app's): when the version declared other tools, the answer names them (`declaredTools`), and the owner grants them with `app_tools_set`. The declared schema does not come back either (it belongs to the live data). |
+| `data` | the database    | live at once. If the restored data has an older schema than the app declares, the declared script runs over it on the next statement (so keep it re-runnable).                                                                                                                                                                                                                    |
+| `full` | both            | live at once, the code with the build it ran on, its tools and its schema: the pair that worked together. A new version "restored vN". A draft saved with the snapshot comes back as the draft. A snapshot of an app that was never published has no build to go live with: its code goes to the draft (the answer says `code: 'draft'`) and the data goes live.                  |
 
 Every restore first takes a snapshot of what it replaces, so it can be
 undone the same way. A data restore pauses the app's database for a few
@@ -405,10 +405,10 @@ once), its draft, its declared tools and schema, and a copy of its data
 **Export** (`GET /api/apps/:id/export`) downloads the app as a `.mantleapp`
 file, to move it to another brain or keep it. It is a zip:
 
-| Entry | What |
-|---|---|
+| Entry            | What                                                                                                                     |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | `mantleapp.json` | name, description, icon, colour, tags; the published code and the draft; the declared tools and schema; format version 1 |
-| `data.sqlite` | a consistent copy of the database (left out with `?data=0`) |
+| `data.sqlite`    | a consistent copy of the database (left out with `?data=0`)                                                              |
 
 **Import** (`POST /api/apps/import-package`, the file as the raw body;
 `?title=` names it, `?data=0` leaves the data out) always makes a NEW app.
@@ -662,10 +662,27 @@ mirror the admin's `app_*` tools; read `my_app_guide` (this guide) first.
 - **The loop:** `my_app_create`, `my_app_file_write`, `my_app_build`,
   `my_app_publish`. `my_app_schema_set` and `my_app_tools_set` declare the
   database and the tools. `my_app_snapshot_*` and `my_app_errors` work as
-  for an admin, on the member's own app only, with no delete: a member
-  deletes neither an app nor a snapshot. A member keeps at most 50 apps; an
-  app an admin approves or deletes leaves that count and takes its
-  snapshots out of the member's snapshot budget.
+  for an admin, on the member's own app only. A member keeps at most 50
+  apps, not counting their trash; an app an admin approves or deletes
+  leaves that count and takes its snapshots out of the member's snapshot
+  budget.
+- **Delete (the member's own trash, access matrix N6):** `my_app_delete`
+  moves one of your own apps (private, shared or submitted, never one an
+  admin accepted) to your trash. It stops running for everyone at once,
+  teammates and you, leaves the review queue if it was submitted, and
+  becomes private. Nothing is removed: its code, builds, database file,
+  history and activity stay where they are, and nothing in the trash
+  expires (unlike the brain's own trash, which keeps a deleted app 30 days).
+  `my_app_deleted_list` shows the trash and `my_app_undelete` brings an app
+  back, private and a draft, with everything it had: share it again in the
+  app, or submit it again. The trash holds at most 50 apps. While an app is
+  in the trash every other change to it is refused.
+- **Delete a snapshot:** `my_app_snapshot_delete` deletes one snapshot YOU
+  took (`my_app_snapshot_create`), with its copy of the data, to free your
+  snapshot budget (it counts the manual snapshots of your login only). The
+  app's own data is never touched. A version (what a publish made live), an
+  automatic snapshot (before a schema change, a restore or an MCP write;
+  never in your budget) and a snapshot another login took stay.
 - **Share with the team:** in the app, Apps > Your apps > Share with team
   (the member's own click; never over MCP, so no key, peer or model opens
   an app to the team; `my_app_unshare` makes it private again). Every member then
@@ -701,7 +718,8 @@ mirror the admin's `app_*` tools; read `my_app_guide` (this guide) first.
   ceiling; only an admin's own "trust its tools" lifts it.
 - **Writes need the Write switch** on the member's MCP. Reads
   (`my_app_list`, `my_app_get`, `my_app_errors`, `my_app_snapshot_list`,
-  `my_app_guide`) do not. A client never gets these tools.
+  `my_app_deleted_list`, `my_app_guide`) do not. A client never gets these
+  tools.
 
 ## Team Hub apps (a designated app as the members' home)
 

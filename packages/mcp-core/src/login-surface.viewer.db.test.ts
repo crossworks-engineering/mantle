@@ -20,6 +20,7 @@ import type { McpCaller } from './login-surface';
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
 const MY_APP_READS = [
+  'my_app_deleted_list',
   'my_app_errors',
   'my_app_get',
   'my_app_guide',
@@ -37,9 +38,12 @@ const MY_APP_SLUGS = [
   'my_app_tools_set',
   'my_app_snapshot_create',
   'my_app_snapshot_restore',
+  'my_app_snapshot_delete',
   'my_app_unshare',
   'my_app_submit',
   'my_app_recall',
+  'my_app_delete',
+  'my_app_undelete',
 ];
 
 describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
@@ -314,6 +318,71 @@ describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
       arguments: { id: brainApp!.id, path: 'App.tsx', content: 'x' },
     });
     expect(text(refused)).toMatch(/No such app of yours/);
+  });
+
+  // Access matrix N6 (option A) and N8: a member deletes their own app to
+  // their trash over MCP and brings it back; each change leaves an audit row.
+  it('write on: a member deletes their own app to their trash and brings it back', async () => {
+    const c = await connect(asMember(true));
+    const made = await c.callTool({
+      name: 'my_app_create',
+      arguments: { name: `${tag} trash app` },
+    });
+    const id = (JSON.parse(text(made)) as { id: string }).id;
+    const ids = async (tool: string) =>
+      (
+        JSON.parse(text(await c.callTool({ name: tool, arguments: {} }))).apps as { id: string }[]
+      ).map((a) => a.id);
+
+    const deleted = await c.callTool({ name: 'my_app_delete', arguments: { id } });
+    expect(deleted.isError ?? false, text(deleted)).toBe(false);
+    expect(JSON.parse(text(deleted))).toMatchObject({ id, deleted: true });
+    expect(await ids('my_app_list')).not.toContain(id);
+    expect(await ids('my_app_deleted_list')).toContain(id);
+    // In the trash it is refused for every change, with the way back named.
+    const write = await c.callTool({
+      name: 'my_app_file_write',
+      arguments: { id, path: 'App.tsx', content: 'x' },
+    });
+    expect(text(write)).toMatch(/my_app_undelete/);
+    // Nothing was removed: the node is still the member's, in their space.
+    const [row] = (await exec(sqlTag`
+      select n.owner_id, si.deleted_at is not null as trashed from nodes n
+      join space_items si on si.node_id = n.id where n.id = ${id}`)) as unknown as {
+      owner_id: string;
+      trashed: boolean;
+    }[];
+    expect(row).toEqual({ owner_id: memberSpace, trashed: true });
+
+    const back = await c.callTool({ name: 'my_app_undelete', arguments: { id } });
+    expect(back.isError ?? false, text(back)).toBe(false);
+    expect(JSON.parse(text(back))).toMatchObject({ id, sharing: 'private' });
+    expect(await ids('my_app_list')).toContain(id);
+    expect(await ids('my_app_deleted_list')).not.toContain(id);
+
+    for (const action of ['mcp.my_app_delete', 'mcp.my_app_undelete']) {
+      let audited: { app: string | null }[] = [];
+      for (let i = 0; i < 40 && audited.length === 0; i++) {
+        audited = (await exec(sqlTag`
+          select detail->>'appId' as app from audit_log
+          where action = ${action} and actor_id = ${member}`)) as unknown as {
+          app: string | null;
+        }[];
+        if (audited.length === 0) await new Promise((r) => setTimeout(r, 50));
+      }
+      expect(
+        audited.map((a) => a.app),
+        action,
+      ).toContain(id);
+    }
+  });
+
+  it('write off: the trash is read only, the delete is not offered', async () => {
+    const list = await names(await connect(asMember(false)));
+    expect(list).toContain('my_app_deleted_list');
+    for (const s of ['my_app_delete', 'my_app_undelete', 'my_app_snapshot_delete']) {
+      expect(list, s).not.toContain(s);
+    }
   });
 
   it('a client never gets the my_app tools, write on or off', async () => {

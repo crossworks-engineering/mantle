@@ -408,16 +408,17 @@ describe.skipIf(!URL)('app history on Postgres', () => {
       await expect(snaps.createAppSnapshot(o, app.id)).rejects.toBeInstanceOf(
         snaps.AppSnapshotBudgetError,
       );
-      // A member's budget counts members' copies, and says what frees it.
+      // A member's budget counts members' copies, and says what frees it:
+      // their own delete (access matrix N6).
       await expect(snaps.createAppSnapshot(o, app.id, { actor: 'member' })).rejects.toThrow(
-        /cannot delete snapshots/,
+        /my_app_snapshot_delete/,
       );
       // Per member login (audit B6): one member's copies never fill another's.
       const [first, second] = members;
       await snaps.createAppSnapshot(o, app.id, { actor: 'member', actorLoginId: first });
       await expect(
         snaps.createAppSnapshot(o, app.id, { actor: 'member', actorLoginId: first }),
-      ).rejects.toThrow(/cannot delete snapshots/);
+      ).rejects.toThrow(/my_app_snapshot_delete/);
       const other = await snaps.createAppSnapshot(o, app.id, {
         actor: 'member',
         actorLoginId: second,

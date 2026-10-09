@@ -16,6 +16,8 @@ const STATUS: Record<SpaceAppErrorCode, number> = {
   'not-submitted': 409,
   'not-draft': 409,
   changed: 409,
+  deleted: 409,
+  'not-deleted': 409,
 };
 
 /** A refusal as a response with its words; anything else rethrows. */

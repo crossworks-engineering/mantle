@@ -116,8 +116,12 @@ Your apps), never an MCP tool: a key, a peer or a model must not open an app
 to the whole team (access matrix N1). `my_app_unshare` makes one private. An
 admin sees the shared and submitted ones in Apps, above the brain's own
 apps, with their activity, and may unshare or delete them; an app runs only while its
-author is an active member. Every my_app change over an OAuth, token or peer
-connection writes an audit row (`mcp.my_app_*`); a key's call has its own.
+author is an active member. The member deletes their own app to a trash in
+their space (`my_app_delete`, access matrix N6), where nothing is removed, and
+brings it back with `my_app_undelete`. Every my_app change over an OAuth,
+token or peer connection writes an audit row (`mcp.my_app_*`, with the app id
+and, for a snapshot restore or delete, the snapshot id); a key's call has its
+own.
 
 A member's MCP also lists the `my_app_*` tools
 (`packages/tools/src/builtins-my-apps.ts`): the reads always, the changes

@@ -84,6 +84,16 @@ const DESTRUCTIVE_WITHOUT_CONFIRM: Record<string, { reason: string; mcpOnly?: tr
   my_app_unshare: {
     reason: "only narrows who runs the member's own app (private again); nothing is deleted",
   },
+  // A login's MCP never offers a confirm-gated tool (loginMayHaveTool), so
+  // these carry no gate; each says what it keeps (access matrix N6).
+  my_app_delete: {
+    reason:
+      "the member's own app to their own trash; nothing is removed, my_app_undelete restores it",
+  },
+  my_app_snapshot_delete: {
+    reason:
+      "a copy the member took themselves, never the app's data, a version or an automatic snapshot",
+  },
   // Routine editing inside an authoring kit whose whole-object delete IS gated
   // (table_delete, app_delete) and lives in a deliberate *-admin group.
   table_row_delete: { reason: 'grid editing; the gated whole is table_delete' },

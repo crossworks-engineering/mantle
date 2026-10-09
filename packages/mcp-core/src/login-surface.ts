@@ -415,6 +415,9 @@ function logMyAppCall(
   args: Record<string, unknown>,
 ): void {
   const appId = typeof args?.id === 'string' ? args.id.slice(0, 64) : undefined;
+  // The history entry a snapshot restore or delete names (access matrix N6).
+  const snapshotId =
+    typeof args?.snapshot_id === 'string' ? args.snapshot_id.slice(0, 64) : undefined;
   void asSystem(() =>
     db.insert(auditLog).values({
       actorId: caller.loginId,
@@ -425,6 +428,7 @@ function logMyAppCall(
       detail: {
         tool: row.slug,
         ...(appId ? { appId } : {}),
+        ...(snapshotId ? { snapshotId } : {}),
         role: caller.role,
         connection: caller.via,
         ...(caller.keyId ? { keyId: caller.keyId } : {}),
@@ -608,7 +612,7 @@ export function mcpInstructionsFor(caller: McpCaller): string {
     caller.role !== 'member'
       ? ''
       : caller.write
-        ? ' The member builds their own mini apps with the my_app_* tools (read my_app_guide first): private until the member shares it with the team in the app (never over MCP; my_app_unshare makes it private again) or submits it to an admin (my_app_submit). Their apps run tools at team rules at most.'
+        ? ' The member builds their own mini apps with the my_app_* tools (read my_app_guide first): private until the member shares it with the team in the app (never over MCP; my_app_unshare makes it private again) or submits it to an admin (my_app_submit). my_app_delete moves one of their apps to their trash, where nothing is removed (my_app_undelete brings it back). Their apps run tools at team rules at most.'
         : " my_app_list and my_app_get read the member's own mini apps; building them needs the Write switch.";
   return `This connection acts as ${who} of this brain, with exactly that login's rights: you see what they may see, nothing more.${write}${apps}${build}`;
 }

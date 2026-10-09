@@ -1674,6 +1674,13 @@
       "when": 1790193300000,
       "tag": "0239_email_attachment_mark",
       "breakpoints": true
+    },
+    {
+      "idx": 240,
+      "version": "7",
+      "when": 1790193360000,
+      "tag": "0240_space_app_trash",
+      "breakpoints": true
     }
   ]
 }

@@ -1197,13 +1197,14 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'my-apps-mcp',
     name: 'Member-built apps over MCP',
     description:
-      "Build a team member's OWN mini apps on their own MCP connection: create, write files, build, publish, set the schema and tools, snapshots, make private, submit for review (sharing with the team is the member's own click in the app, never MCP). The apps live in the member's personal space and run tools at team rules at most (the author ceiling). Reads always; changes with the login's Write switch. Attached to no agent (admin level: the login MCP surface adds these tools itself, for members only, never through a group).",
+      "Build a team member's OWN mini apps on their own MCP connection: create, write files, build, publish, set the schema and tools, snapshots (and delete the ones they took), make private, submit for review, delete to their own trash and bring back (sharing with the team is the member's own click in the app, never MCP). The trash removes nothing. The apps live in the member's personal space and run tools at team rules at most (the author ceiling). Reads always; changes with the login's Write switch. Attached to no agent (admin level: the login MCP surface adds these tools itself, for members only, never through a group).",
     toolSlugs: [
       'my_app_guide',
       'my_app_list',
       'my_app_get',
       'my_app_errors',
       'my_app_snapshot_list',
+      'my_app_deleted_list',
       'my_app_create',
       'my_app_file_write',
       'my_app_file_delete',
@@ -1213,9 +1214,12 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'my_app_tools_set',
       'my_app_snapshot_create',
       'my_app_snapshot_restore',
+      'my_app_snapshot_delete',
       'my_app_unshare',
       'my_app_submit',
       'my_app_recall',
+      'my_app_delete',
+      'my_app_undelete',
     ],
   },
   {

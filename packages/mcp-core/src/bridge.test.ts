@@ -198,9 +198,13 @@ describe('every in-app tool reaches the MCP surface', () => {
     my_app_tools_set: "a member's own MCP only; the owner surface has the app tools",
     my_app_snapshot_create: "a member's own MCP only; the owner surface has the app tools",
     my_app_snapshot_restore: "a member's own MCP only; the owner surface has the app tools",
+    my_app_snapshot_delete: "a member's own MCP only; the owner surface has the app tools",
     my_app_unshare: "a member's own MCP only; the owner surface has the app tools",
     my_app_submit: "a member's own MCP only; the owner surface has the app tools",
     my_app_recall: "a member's own MCP only; the owner surface has the app tools",
+    my_app_delete: "a member's own MCP only; the owner surface has the app tools",
+    my_app_undelete: "a member's own MCP only; the owner surface has the app tools",
+    my_app_deleted_list: "a member's own MCP only; the owner surface has the app tools",
   };
 
   it('exposes every builtin slug over stdio, except the documented ones', () => {

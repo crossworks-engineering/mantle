@@ -342,9 +342,13 @@ export const WRITE_RULES: Readonly<Record<string, WriteRule>> = {
   my_app_tools_set: free(OWN_APP),
   my_app_snapshot_create: free(OWN_APP),
   my_app_snapshot_restore: free(OWN_APP),
+  my_app_snapshot_delete: free(OWN_APP),
   my_app_unshare: free(OWN_APP),
   my_app_submit: free(OWN_APP),
   my_app_recall: free(OWN_APP),
+  // To the member's own trash and back (access matrix N6): nothing removed.
+  my_app_delete: free(OWN_APP),
+  my_app_undelete: free(OWN_APP),
   // Calls on a federated peer as the login it binds us to.
   peer_call: always(OUTWARD),
   peer_file_copy: always(OUTWARD),

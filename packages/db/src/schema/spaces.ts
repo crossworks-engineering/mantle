@@ -101,6 +101,10 @@ export const spaceItems = pgTable(
      *  shows while an admin holds it, never the admin's working title.
      *  Cleared by Give back and Accept. */
     takenTitle: text('taken_title'),
+    /** When the author moved the item to their trash (0240, access matrix
+     *  N6): member-built apps only. Null while it is live. Nothing is
+     *  removed; the restore sets it back to null. */
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -118,6 +122,9 @@ export const spaceItems = pgTable(
     index('space_items_taken_root_idx')
       .on(t.takenRoot)
       .where(sql`${t.takenRoot} is not null`),
+    index('space_items_deleted_idx')
+      .on(t.authorLoginId)
+      .where(sql`${t.deletedAt} is not null`),
   ],
 );
 

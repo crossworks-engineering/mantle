@@ -15,6 +15,10 @@
  *    or team; client and public only later, by an admin, as for any app),
  *    ids unchanged. Its database file and history rows follow by owner; the
  *    files stay where they are (their rows hold the path).
+ *  - In the author's trash (access matrix N6, `space_items.deleted_at`): the
+ *    author deleted it before Accept. Nothing moves and nothing is removed;
+ *    it runs for no one, no admin list shows it, every change but the
+ *    restore refuses, and it comes back private.
  *
  * AUTHOR CEILING (A.4): a member's app has `apps.author_level = 'team'`.
  * Every tool broker runs its tools at most at team rules, an admin's run
@@ -29,7 +33,7 @@
  * the system, so a caller inside a viewer scope cannot widen or narrow it.
  */
 import { createHash } from 'node:crypto';
-import { and, desc, eq, inArray, ne, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import {
   appAccessLog,
   appDatabases,
@@ -65,7 +69,15 @@ import { dataAccessOf, type AppDataAccess } from './app-data-access';
 export type SpaceAppAuthor = { loginId: string; spaceId: string };
 
 export type SpaceAppErrorCode =
-  'not-found' | 'frozen' | 'unpublished' | 'no-build' | 'not-submitted' | 'not-draft' | 'changed';
+  | 'not-found'
+  | 'frozen'
+  | 'unpublished'
+  | 'no-build'
+  | 'not-submitted'
+  | 'not-draft'
+  | 'changed'
+  | 'deleted'
+  | 'not-deleted';
 
 /** A refusal with words for the member or admin. */
 export class SpaceAppError extends Error {
@@ -92,6 +104,19 @@ function frozenError(reviewState: string): SpaceAppError {
 
 /** The states a member may still edit in. */
 const EDITABLE: readonly string[] = ['draft', 'returned'];
+
+/** The states a member may move their app to the trash from: every state
+ *  before Accept (a submitted one leaves the review queue). */
+const DELETABLE: readonly string[] = ['draft', 'returned', 'submitted'];
+
+const IN_TRASH = () =>
+  new SpaceAppError(
+    'deleted',
+    'This app is in your trash (my_app_deleted_list). Bring it back with my_app_undelete first.',
+  );
+
+/** Not in the author's trash: every lookup but the trash's own. */
+const live = isNull(spaceItems.deletedAt);
 
 const publishedGreen = sql`(${apps.publishedBuild}->>'ok')::boolean is true`;
 
@@ -144,8 +169,8 @@ export type SpaceAppState = {
 
 /**
  * The author's own app, or a SpaceAppError: in their space, theirs by its
- * row, and, for `write`, in a state they may edit (draft or returned; a
- * submitted app is frozen until Accept, Return or Recall).
+ * row, not in their trash, and, for `write`, in a state they may edit (draft
+ * or returned; a submitted app is frozen until Accept, Return or Recall).
  */
 export async function authorSpaceApp(
   author: SpaceAppAuthor,
@@ -159,6 +184,7 @@ export async function authorSpaceApp(
         title: nodes.title,
         sharing: spaceItems.sharing,
         reviewState: spaceItems.reviewState,
+        deletedAt: spaceItems.deletedAt,
       })
       .from(nodes)
       .innerJoin(spaceItems, eq(spaceItems.nodeId, nodes.id))
@@ -173,8 +199,14 @@ export async function authorSpaceApp(
       .limit(1),
   );
   if (!row) throw NOT_FOUND();
+  if (row.deletedAt) throw IN_TRASH();
   if (opts.write && !EDITABLE.includes(row.reviewState)) throw frozenError(row.reviewState);
-  return { ...row, sharing: row.sharing === 'team' ? 'team' : 'private' };
+  return {
+    id: row.id,
+    title: row.title,
+    sharing: row.sharing === 'team' ? 'team' : 'private',
+    reviewState: row.reviewState,
+  };
 }
 
 /**
@@ -197,7 +229,7 @@ export async function withAuthorWrite<T>(
     // back (team apps follow-up).
     withSystemTx(async (tx) => {
       const [row] = await tx
-        .select({ reviewState: spaceItems.reviewState })
+        .select({ reviewState: spaceItems.reviewState, deletedAt: spaceItems.deletedAt })
         .from(spaceItems)
         .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))
         .where(
@@ -211,6 +243,7 @@ export async function withAuthorWrite<T>(
         .for('update', { of: spaceItems })
         .limit(1);
       if (!row) throw NOT_FOUND();
+      if (row.deletedAt) throw IN_TRASH();
       if (!EDITABLE.includes(row.reviewState)) throw frozenError(row.reviewState);
       return fn();
     }),
@@ -239,7 +272,7 @@ export type SpaceAppCard = {
 };
 
 /** The member's own apps (any state before Accept) and the published apps
- *  teammates shared with the team. */
+ *  teammates shared with the team; never one in a trash. */
 export async function listSpaceApps(author: SpaceAppAuthor): Promise<SpaceAppCard[]> {
   const rows = await asSystem(() =>
     db
@@ -270,6 +303,7 @@ export async function listSpaceApps(author: SpaceAppAuthor): Promise<SpaceAppCar
           eq(nodes.type, 'app'),
           eq(spaces.kind, 'personal'),
           ne(spaceItems.reviewState, 'accepted'),
+          live,
           or(
             and(eq(nodes.ownerId, author.spaceId), eq(spaceItems.authorLoginId, author.loginId)),
             and(eq(spaceItems.sharing, 'team'), publishedGreen, authorActive),
@@ -342,6 +376,7 @@ export async function submitSpaceApp(
           version: apps.version,
           title: nodes.title,
           sharing: spaceItems.sharing,
+          deletedAt: spaceItems.deletedAt,
         })
         .from(spaceItems)
         .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))
@@ -356,6 +391,7 @@ export async function submitSpaceApp(
         .for('update', { of: spaceItems })
         .limit(1);
       if (!row) throw NOT_FOUND();
+      if (row.deletedAt) throw IN_TRASH();
       if (!EDITABLE.includes(row.reviewState)) {
         throw new SpaceAppError('not-draft', 'This app is already submitted.');
       }
@@ -406,12 +442,196 @@ export async function recallSpaceApp(
           eq(spaceItems.nodeId, appId),
           eq(spaceItems.authorLoginId, author.loginId),
           eq(spaceItems.reviewState, 'submitted'),
+          live,
         ),
       )
       .returning({ id: spaceItems.nodeId }),
   );
   if (!changed.length) throw new SpaceAppError('not-submitted', 'This app is not submitted.');
   return { ...app, reviewState: 'draft' };
+}
+
+// ── The author's trash (access matrix N6, option A) ─────────────────────────
+//
+// A member deletes their OWN app before Accept, to a trash in their space.
+// Nothing moves and nothing is removed: the node, the app row, its database
+// file, its history and its activity stay where they are (standing rule:
+// app data and app databases are never hard deleted). `deleted_at` is the
+// only change, and every lookup in this module that is not the trash's own
+// skips a row that has it, so the app runs for no one, no admin list shows
+// it, and every change but the restore refuses. No sweep ever empties the
+// trash: the nightly app-trash purge only sees apps whose node is gone,
+// and the space purge never removes an app.
+
+/** What a delete did to the app's standing, for the author's answer. */
+export type SpaceAppDeleted = SpaceAppState & {
+  deletedAt: string;
+  /** It was shared with the team: teammates no longer run it. */
+  wasShared: boolean;
+  /** It was waiting for an admin: it left the review queue. */
+  wasSubmitted: boolean;
+};
+
+/**
+ * Move the author's own app to their trash: draft, returned or submitted
+ * (an accepted app is the brain's, and is not found here). It becomes
+ * private and a draft at once, so a submitted app leaves the review queue
+ * and a restore brings it back private, never straight to the team or to
+ * an admin. The state row is locked, then the app's history (the order
+ * every change takes them), so a Submit, an Accept or a restore of its
+ * history never sees half of it.
+ */
+export async function deleteSpaceApp(
+  author: SpaceAppAuthor,
+  appId: string,
+): Promise<SpaceAppDeleted> {
+  return asSystem(() =>
+    db.transaction(async (tx) => {
+      const [row] = await tx
+        .select({
+          title: nodes.title,
+          sharing: spaceItems.sharing,
+          reviewState: spaceItems.reviewState,
+          deletedAt: spaceItems.deletedAt,
+        })
+        .from(spaceItems)
+        .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))
+        .where(
+          and(
+            eq(spaceItems.nodeId, appId),
+            eq(nodes.ownerId, author.spaceId),
+            eq(nodes.type, 'app'),
+            eq(spaceItems.authorLoginId, author.loginId),
+          ),
+        )
+        .for('update', { of: spaceItems })
+        .limit(1);
+      await lockAppHistory(tx, appId);
+      if (!row) throw NOT_FOUND();
+      if (row.deletedAt) {
+        throw new SpaceAppError(
+          'deleted',
+          'This app is already in your trash (my_app_deleted_list); my_app_undelete brings it back.',
+        );
+      }
+      if (!DELETABLE.includes(row.reviewState)) throw frozenError(row.reviewState);
+      const now = new Date();
+      await tx
+        .update(spaceItems)
+        .set({ deletedAt: now, sharing: 'private', reviewState: 'draft', updatedAt: now })
+        .where(eq(spaceItems.nodeId, appId));
+      return {
+        id: appId,
+        title: row.title,
+        sharing: 'private',
+        reviewState: 'draft',
+        deletedAt: now.toISOString(),
+        wasShared: row.sharing === 'team',
+        wasSubmitted: row.reviewState === 'submitted',
+      } satisfies SpaceAppDeleted;
+    }),
+  );
+}
+
+/**
+ * Bring the author's own app back from their trash: private, a draft, with
+ * everything it had (code, builds, data, history), as it was before the
+ * delete but for who runs it. Sharing it with the team or submitting it
+ * again is the author's own next step.
+ */
+export async function undeleteSpaceApp(
+  author: SpaceAppAuthor,
+  appId: string,
+): Promise<SpaceAppState> {
+  const [row] = await asSystem(() =>
+    db
+      .update(spaceItems)
+      .set({ deletedAt: null, sharing: 'private', reviewState: 'draft', updatedAt: new Date() })
+      .where(
+        and(
+          eq(spaceItems.nodeId, appId),
+          eq(spaceItems.authorLoginId, author.loginId),
+          isNotNull(spaceItems.deletedAt),
+          inArray(
+            spaceItems.nodeId,
+            db
+              .select({ id: nodes.id })
+              .from(nodes)
+              .where(
+                and(eq(nodes.id, appId), eq(nodes.ownerId, author.spaceId), eq(nodes.type, 'app')),
+              ),
+          ),
+        ),
+      )
+      .returning({ id: spaceItems.nodeId }),
+  );
+  if (!row) {
+    // Live and theirs: say so; anything else is not theirs to restore.
+    const app = await authorSpaceApp(author, appId);
+    throw new SpaceAppError(
+      'not-deleted',
+      `"${app.title}" is not in your trash; it is one of your apps (my_app_list).`,
+    );
+  }
+  return authorSpaceApp(author, appId);
+}
+
+/** One app in the author's trash. */
+export type DeletedSpaceApp = {
+  id: string;
+  title: string;
+  description: string | null;
+  deletedAt: string;
+  version: number;
+  /** It had a green published build: it runs again for its author once
+   *  restored. */
+  published: boolean;
+  /** Its database is kept (it had one). */
+  hasData: boolean;
+};
+
+/** The author's own apps in their trash, newest delete first. Nothing in it
+ *  expires. */
+export async function listDeletedSpaceApps(author: SpaceAppAuthor): Promise<DeletedSpaceApp[]> {
+  const rows = await asSystem(() =>
+    db
+      .select({
+        id: nodes.id,
+        title: nodes.title,
+        manifest: apps.manifest,
+        version: apps.version,
+        publishedBuild: apps.publishedBuild,
+        deletedAt: spaceItems.deletedAt,
+        hasData: sql<boolean>`exists (
+          select 1 from app_databases d where d.app_node_id = ${nodes.id}
+        )`,
+      })
+      .from(nodes)
+      .innerJoin(apps, eq(apps.nodeId, nodes.id))
+      .innerJoin(spaceItems, eq(spaceItems.nodeId, nodes.id))
+      .where(
+        and(
+          eq(nodes.ownerId, author.spaceId),
+          eq(nodes.type, 'app'),
+          eq(spaceItems.authorLoginId, author.loginId),
+          isNotNull(spaceItems.deletedAt),
+        ),
+      )
+      .orderBy(desc(spaceItems.deletedAt))
+      .limit(500),
+  );
+  return rows.map((r) => {
+    const description = (r.manifest as AppManifest | null)?.description;
+    return {
+      id: r.id,
+      title: r.title,
+      description: typeof description === 'string' && description.trim() ? description : null,
+      deletedAt: (r.deletedAt as Date).toISOString(),
+      version: r.version,
+      published: !!(r.publishedBuild as BuildRef | null)?.ok,
+      hasData: r.hasData === true,
+    };
+  });
 }
 
 // ── Running a member's app ───────────────────────────────────────────────────
@@ -437,8 +657,8 @@ export type RunnableSpaceApp = {
 /**
  * One member's app this member may run, or null: theirs, or shared with
  * the team by a teammate, with a green published build, not yet accepted
- * (an accepted app is the brain's and runs by its level). A submitted app
- * runs read only (it is under review).
+ * (an accepted app is the brain's and runs by its level), not in its
+ * author's trash. A submitted app runs read only (it is under review).
  */
 export async function getRunnableSpaceApp(
   loginId: string,
@@ -467,6 +687,7 @@ export async function getRunnableSpaceApp(
           eq(nodes.type, 'app'),
           eq(spaces.kind, 'personal'),
           ne(spaceItems.reviewState, 'accepted'),
+          live,
           or(eq(spaceItems.authorLoginId, loginId), eq(spaceItems.sharing, 'team')),
           authorActive,
           publishedGreen,
@@ -569,7 +790,12 @@ export async function acceptSpaceApp(
         .innerJoin(apps, eq(apps.nodeId, spaceItems.nodeId))
         .innerJoin(spaces, eq(spaces.id, nodes.ownerId))
         .where(
-          and(eq(spaceItems.nodeId, appId), eq(nodes.type, 'app'), eq(spaces.kind, 'personal')),
+          and(
+            eq(spaceItems.nodeId, appId),
+            eq(nodes.type, 'app'),
+            eq(spaces.kind, 'personal'),
+            live,
+          ),
         )
         .for('update', { of: spaceItems })
         .limit(1);
@@ -663,6 +889,7 @@ export async function sendBackSpaceApp(
         and(
           eq(spaceItems.nodeId, appId),
           eq(spaceItems.reviewState, 'submitted'),
+          live,
           inArray(
             spaceItems.nodeId,
             db
@@ -682,11 +909,13 @@ export async function sendBackSpaceApp(
 // ── The admin's view of members' apps (access matrix N2) ─────────────────────
 
 /** What an admin may reach of members' apps: team-shared or submitted, not
- *  yet accepted. A private draft stays the author's alone. */
+ *  yet accepted, not in its author's trash. A private draft stays the
+ *  author's alone. */
 const adminVisible = and(
   eq(nodes.type, 'app'),
   eq(spaces.kind, 'personal'),
   ne(spaceItems.reviewState, 'accepted'),
+  live,
   or(eq(spaceItems.sharing, 'team'), eq(spaceItems.reviewState, 'submitted')),
 );
 
