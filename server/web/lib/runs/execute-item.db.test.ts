@@ -127,8 +127,35 @@ describe.skipIf(!URL)('a run item under the planning agent', () => {
     expect(item.failure?.type).toBe('below_admin');
   });
 
+  it("a worker step of a below-admin agent's run runs nothing (B3)", async () => {
+    const [low] = await rows<{ id: string }>(sqlTag`
+      insert into agents (owner_id, slug, name, model, system_prompt, audience)
+      values (${anchor}, 'team-planner', 't', 'm', 'p', 'team') returning id`);
+    const { runId } = await runs.createRun(m.db, {
+      ownerId: anchor,
+      agentId: low!.id,
+      title: `${tag} worker run`,
+      plan: {
+        kind: 'seq',
+        children: [{ kind: 'worker_invoke', payload: { step: 'read every admin note' } }],
+      } as never,
+    });
+    const [item] = await rows<{ id: string }>(sqlTag`
+      update run_items set state = 'ready'
+      where run_id = ${runId} and kind = 'worker_invoke' returning id`);
+    await exec.executeRunItem(item!.id);
+    const [after] = await rows<{ state: string; failure: { type?: string } | null }>(sqlTag`
+      select state, result->'failure' as failure from run_items where id = ${item!.id}`);
+    expect(after!.state).toBe('failed');
+    expect(after!.failure?.type).toBe('below_admin');
+  });
+
   it('a run with no agent fails closed: the opening change still waits', async () => {
     const before = await pendingCount();
+    // An agent that happens to be named 'run' must not become the requester.
+    await q(sqlTag`
+      insert into agents (owner_id, slug, name, model, system_prompt)
+      values (${anchor}, 'run', 'r', 'm', 'p') on conflict do nothing`);
     await runOne('access_set', { tool_group_slug: 'mcp-src', level: 'team' });
     expect(await groupLevel()).toBe('admin');
     expect(await pendingCount()).toBe(before + 1);

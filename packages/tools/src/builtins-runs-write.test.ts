@@ -214,13 +214,29 @@ describe('run_plan', () => {
       ownerId: 'o1',
       agent: { slug: 'persona', depth: 1, delegateTo: [] },
     };
-    // The agent row, then its granted groups: none grants `search`.
-    selectQueue.push(
+    // The agent row, then its granted groups (read for the level check,
+    // then for the grant): none grants `search`.
+    const grant = [
       [{ slug: 'persona', toolGroupSlugs: ['g-notes'], audience: 'admin' }],
       [{ toolSlugs: ['note_list'], audience: 'admin' }],
-    );
+    ];
+    selectQueue.push(...grant, ...grant);
     const res = await plan.handler({ title: 'Digest', plan: okPlan }, persona);
     expect(errorOf(res)).toMatch(/not granted to you: search/);
+    expect(createRun).not.toHaveBeenCalled();
+  });
+
+  it('refuses a planning agent below admin, inside an admin turn too (B3)', async () => {
+    const teamBot: ToolHandlerContext = {
+      ownerId: 'o1',
+      agent: { slug: 'team-bot', depth: 1, delegateTo: [] },
+    };
+    selectQueue.push(
+      [{ slug: 'team-bot', toolGroupSlugs: ['g-search'], audience: 'team' }],
+      [{ toolSlugs: ['search'], audience: 'team' }],
+    );
+    const res = await plan.handler({ title: 'Digest', plan: okPlan }, teamBot);
+    expect(errorOf(res)).toMatch(/admin-level agents only, and 'team-bot' is team level/);
     expect(createRun).not.toHaveBeenCalled();
   });
 
@@ -229,11 +245,11 @@ describe('run_plan', () => {
       ownerId: 'o1',
       agent: { slug: 'persona', depth: 1, delegateTo: [] },
     };
-    selectQueue.push(
+    const grant = [
       [{ slug: 'persona', toolGroupSlugs: ['g-search'], audience: 'admin' }],
       [{ toolSlugs: ['search'], audience: 'admin' }],
-      [{ id: 'a1' }],
-    );
+    ];
+    selectQueue.push(...grant, ...grant, [{ id: 'a1' }]);
     const res = await plan.handler({ title: 'Digest', plan: okPlan }, persona);
     expect(outputOf(res).run_id).toBe('r1');
   });

@@ -221,6 +221,22 @@ function parseAskHumanForm(raw: unknown, path: string): { form?: AskHumanForm; e
   return { form };
 }
 
+/** A planning agent below admin (a team agent's Telegram bot, say, inside
+ *  an admin turn) may not create or extend a run: its items execute on the
+ *  admin pool, past the agent's own level (audit A3, B3). The executor
+ *  re-checks. */
+async function refuseBelowAdminAgent(ctx: ToolHandlerContext): Promise<ToolHandlerResult | null> {
+  if (!ctx.agent) return null;
+  const grant = await loadAgentGrant(ctx.ownerId, { slug: ctx.agent.slug });
+  if (!grant || grant.level === 'admin') return null;
+  return {
+    ok: false,
+    error:
+      `run tools work for admin-level agents only, and '${grant.slug}' is ${grant.level} level. ` +
+      'Do the work inline with ordinary tool calls instead.',
+  };
+}
+
 const DISABLED_ERROR =
   'Runner queues are disabled on this brain (MANTLE_RUNS is not set). ' +
   'Do the work inline with ordinary tool calls instead.';
@@ -632,6 +648,8 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
       const refused = refuseIfDelegated(ctx);
       if (refused) return refused;
       if (!isRunsEnabled()) return { ok: false, error: DISABLED_ERROR };
+      const belowAdmin = await refuseBelowAdminAgent(ctx);
+      if (belowAdmin) return belowAdmin;
       const budgetUsd =
         typeof input.budget_usd === 'number' && Number.isFinite(input.budget_usd)
           ? input.budget_usd
@@ -721,6 +739,8 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
       const refused = refuseIfDelegated(ctx);
       if (refused) return refused;
       if (!isRunsEnabled()) return { ok: false, error: DISABLED_ERROR };
+      const belowAdmin = await refuseBelowAdminAgent(ctx);
+      if (belowAdmin) return belowAdmin;
       const run = await loadOwnedRun(ctx.ownerId, input.run_id);
       if (!run) return notFound('run', String(input.run_id ?? ''), 'run_state');
       const groupId =

@@ -21,8 +21,10 @@
  *   capped / stale → ack, as before (slot-release re-dispatch or the sweep
  *                 re-wakes a capped item).
  */
-import { db } from '@mantle/db';
+import { eq } from 'drizzle-orm';
+import { db, runs as runsTable } from '@mantle/db';
 import { claimWorkerItem, completeItem } from '@mantle/runs';
+import { loadAgentGrant } from '@mantle/tools';
 
 import { enqueueRunsWorkerTurn } from './dbos-enqueue';
 import type { ExecuteItemOutcome } from './execute-item';
@@ -31,6 +33,27 @@ import { errorMessage } from '@mantle/std';
 export async function executeWorkerInvoke(itemId: string): Promise<ExecuteItemOutcome> {
   const { item, capped } = await claimWorkerItem(db, itemId);
   if (!item) return { claimed: false, actions: [], ...(capped ? { capped: true } : {}) };
+
+  // The run's planning agent must be admin level, as for a tool_call item
+  // (execute-item.ts): a lower agent's run would hand its work to a worker
+  // that reads past the planner's level (audit A3, B3).
+  const [run] = await db
+    .select({ ownerId: runsTable.ownerId, agentId: runsTable.agentId })
+    .from(runsTable)
+    .where(eq(runsTable.id, item.runId));
+  const planner = run?.agentId ? await loadAgentGrant(run.ownerId, { id: run.agentId }) : null;
+  if (planner && planner.level !== 'admin') {
+    const { actions } = await completeItem(db, {
+      itemId: item.id,
+      state: 'failed',
+      failure: {
+        type: 'below_admin',
+        message: `agent '${planner.slug}' is below admin level, so its run cannot run items`,
+        itemId: item.id,
+      },
+    });
+    return { claimed: true, actions };
+  }
 
   try {
     await enqueueRunsWorkerTurn(item.id, item.attempt);
