@@ -145,8 +145,27 @@ from, to}]`: the Access control and `PATCH /api/access/nodes/:id`,
   that must share a cluster sets `MANTLE_VIEWER_ROLES_PER_DATABASE=1` for its
   migrate and its server: it then logs in as its own
   `mantle_view_<level>_<database>` roles, which may only `SET` the shared role
-  and do so at login in their own database. `current_user`, the grants and
-  the row policies stay the shared role's. Boxes leave it unset.
+  (at login, by a setting on their own database). `current_user`, the grants
+  and the row policies stay the shared role's. Boxes leave it unset.
+- **What keeps a per-database login in its own brain.** The `SET` right is
+  cluster-wide: a login that reaches another brain's database can `SET ROLE`
+  there and read that brain's rows. So a per-database brain's migrate takes
+  `CONNECT` on its database from `PUBLIC` and gives it only to its own four
+  logins and to the role that migrates (the app's role, the same
+  `DATABASE_URL`); the database owner and superusers keep it anyway. The
+  guarantee: no brain's member login can connect to a per-database brain's
+  database. It does not cover a brain in shared mode on the same cluster: its
+  database stays open to every login, so other brains' per-database logins
+  can read it. Migrate in per-database mode warns, naming each such database.
+  On a shared cluster, run every brain in per-database mode.
+- **Teardown.** Per-database logins are cluster objects that outlive their
+  brain. `pnpm -C packages/db drop-viewer-logins <database>` removes them
+  (`scripts/rm-worktree.sh` runs it for a worktree whose `.env.local` sets the
+  flag), and every migrate on the cluster drops the logins of databases that
+  no longer exist. Whichever brain migrates first in shared mode claims the
+  shared roles, so a leftover database that did so blocks every other
+  shared-mode migrate on the cluster (a dev stack's included) until it is
+  dropped.
 - **The viewer scope.** `withViewer(level, fn)` (`@mantle/db/viewer`) sets
   the level in AsyncLocalStorage; `db` picks that level's small pool (3
   connections) on every access. The level only goes down.
@@ -303,7 +322,7 @@ removing any one wrap fails a test.
   trigger again in a form a dump can carry (it compares the text of the
   path), so such a brain is whole again on its next migrate. To see whether
   a box has the trigger: `select count(*) from pg_trigger where tgname =
-  'nodes_share_refresh_after'` (1 is right). A dump from before 0212 still
+'nodes_share_refresh_after'` (1 is right). A dump from before 0212 still
   gives the one error; the script now makes the trigger itself after such a
   restore and does not count that error. From 0204 on it fails the restore
   (exit 2) when the trigger is not there. `packages/db/src/dump-restore.db.test.ts`
@@ -333,8 +352,8 @@ The level is the truth; an item's share link (docs/sharing.md) follows it.
 | client | none: signed-in clients read it (client logins C1)                        |
 | public | open (anyone with the link), shown to the owner                           |
 
-| Share         | What it does to the level                                                                                                                                                                                       |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Share         | What it does to the level                                                                                                                                                                              |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | contact share | none: one item, one contact, opened with the item's link plus that contact's code; read only, an app may let the contact write ("Can write"); never tools (migration 0214, docs/sharing.md section 4b) |
 
 A contact share is beside the level, never part of it: every level path

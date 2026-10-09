@@ -301,9 +301,11 @@ export function viewerRolePassword(masterKey: string, level: PoolRole): string {
  * reset them broke the first ("password authentication failed for user
  * mantle_view_space"). In this mode the brain logs in as its own role,
  * `mantle_view_<level>_<database>`, whose only power is to become the shared
- * role in its own database (`SET role` at login, viewer-roles.ts). So
- * `current_user`, the grants and the row policies are the shared role's, as
- * on a box with one brain. Off (the default) = the shared names, unchanged.
+ * role (`SET role` at login, viewer-roles.ts). So `current_user`, the grants
+ * and the row policies are the shared role's, as on a box with one brain.
+ * That power is cluster-wide; what keeps it to its own brain is CONNECT: a
+ * per-database brain's database admits only its own logins. Off (the
+ * default) = the shared names, unchanged.
  *
  * The database name such a role carries: anything else fails loudly, since a
  * name that had to be mangled could collide with another brain's.

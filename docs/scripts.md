@@ -280,6 +280,13 @@ scripts/new-worktree.sh remote-mcp
 Removes the worktree, **keeps the branch** (delete it separately once merged).
 Refuses when the tree is dirty unless you pass `-f`.
 
+When the worktree's `server/web/.env.local` sets
+`MANTLE_VIEWER_ROLES_PER_DATABASE=1` (a throwaway brain on a shared Postgres),
+it first runs `pnpm -C packages/db drop-viewer-logins <database>`: that brain's
+`mantle_view_<level>_<database>` login roles are cluster objects and would
+outlive it. It leaves the database itself alone and says so; drop that by
+hand when you are done with it.
+
 ---
 
 ## 4. Database: dump, restore, tunnel
@@ -699,7 +706,7 @@ survive fresh worktrees.
 
 | Workflow                            | Trigger                                    | What                                                                                                                                                                                                                                                 |
 | ----------------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `.github/workflows/build-check.yml` | push to `feat/**` or `main`, PRs to `main` | typecheck + lint + format + vitest + the **production build** (the webpack/edge-runtime gate `tsc` and vitest miss). No object store; a throwaway Postgres for the database tests only. Does not build images.                             |
+| `.github/workflows/build-check.yml` | push to `feat/**` or `main`, PRs to `main` | typecheck + lint + format + vitest + the **production build** (the webpack/edge-runtime gate `tsc` and vitest miss). No object store; a throwaway Postgres for the database tests only. Does not build images.                                       |
 | `.github/workflows/release.yml`     | push of a `v*` tag                         | builds `mantle-server` + `mantle-client` for amd64 and arm64 on native runners in parallel, merges digests into multi-arch manifests on Docker Hub, and cuts a GitHub Release carrying the deploy bundle so compose and image are versioned together |
 
 Release needs the `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` repo secrets.

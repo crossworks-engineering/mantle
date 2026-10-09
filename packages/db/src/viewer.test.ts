@@ -22,7 +22,14 @@ import {
   viewerRolePassword,
   withViewer,
 } from './viewer';
-import { noteOwner, ownerNote, viewerRolePlan, viewerRoleStatements } from './viewer-roles';
+import {
+  noteOwner,
+  ownerNote,
+  parseViewerLoginRole,
+  viewerLoginDropStatements,
+  viewerRolePlan,
+  viewerRoleStatements,
+} from './viewer-roles';
 
 describe('personal-space scope (Phase 2)', () => {
   const space = { spaceId: 'space-a', loginId: 'login-a' };
@@ -308,6 +315,73 @@ describe('brains sharing one Postgres cluster (viewerRolePlan)', () => {
       );
       expect(plan).toContain(`ALTER ROLE "${login}" IN DATABASE "brain_b" SET role = '${role}'`);
     }
+  });
+
+  it('per-database closes its database to every login but its own and the app role', () => {
+    const plan = viewerRolePlan(cluster('brain_b', 'brain_a'), 'key-b', true);
+    const revoke = plan.indexOf('REVOKE CONNECT ON DATABASE "brain_b" FROM PUBLIC');
+    const grant = plan.indexOf(
+      'GRANT CONNECT ON DATABASE "brain_b" TO "mantle_view_team_brain_b", "mantle_view_client_brain_b", "mantle_view_public_brain_b", "mantle_view_space_brain_b", CURRENT_USER',
+    );
+    expect(revoke).toBeGreaterThan(-1);
+    expect(grant).toBeGreaterThan(revoke);
+    // Never to the shared roles: the owner brain's logins stay out too.
+    expect(plan.filter((s) => s.startsWith('GRANT CONNECT'))).toHaveLength(1);
+    // Shared mode (every box) changes no database privilege.
+    const box = viewerRolePlan(cluster('brain_a', 'brain_a'), 'key-a', false);
+    expect(box.some((s) => /CONNECT ON DATABASE/.test(s))).toBe(false);
+  });
+
+  it('both modes drop the per-database logins of a database that is gone, and only those', () => {
+    const extra = {
+      mantle_view_space_gone_brain: null,
+      mantle_view_team_gone_brain: null,
+      mantle_view_space_brain_b: null,
+    };
+    for (const perDatabase of [true, false]) {
+      const db = perDatabase ? 'brain_b' : 'brain_a';
+      const plan = viewerRolePlan(cluster(db, 'brain_a', undefined, extra), 'key', perDatabase);
+      const drops = plan.filter((s) => s.startsWith('DROP ROLE'));
+      expect(drops.sort()).toEqual([
+        'DROP ROLE IF EXISTS "mantle_view_space_gone_brain"',
+        'DROP ROLE IF EXISTS "mantle_view_team_gone_brain"',
+      ]);
+    }
+    // A box (no per-database logins) drops nothing.
+    expect(
+      viewerRolePlan(cluster('brain_a', 'brain_a'), 'key-a', false).some((s) =>
+        s.startsWith('DROP'),
+      ),
+    ).toBe(false);
+  });
+
+  it('a login role name parses back to its level and database; the shared ones do not', () => {
+    expect(parseViewerLoginRole('mantle_view_space_brain_b')).toEqual({
+      level: 'space',
+      database: 'brain_b',
+    });
+    expect(parseViewerLoginRole('mantle_view_space')).toBeNull();
+    expect(parseViewerLoginRole('mantle_view_client_')).toBeNull();
+    expect(parseViewerLoginRole('mantle_test_reader_1')).toBeNull();
+  });
+
+  it('teardown revokes the CONNECT grant before it drops a login, and never a shared role', () => {
+    const roles = new Set([
+      'mantle_view_space',
+      'mantle_view_space_brain_b',
+      'mantle_view_team_brain_b',
+    ]);
+    expect(viewerLoginDropStatements('brain_b', true, roles)).toEqual([
+      'REVOKE ALL ON DATABASE "brain_b" FROM "mantle_view_team_brain_b"',
+      'DROP ROLE IF EXISTS "mantle_view_team_brain_b"',
+      'REVOKE ALL ON DATABASE "brain_b" FROM "mantle_view_space_brain_b"',
+      'DROP ROLE IF EXISTS "mantle_view_space_brain_b"',
+    ]);
+    expect(viewerLoginDropStatements('brain_b', false, roles)).toEqual([
+      'DROP ROLE IF EXISTS "mantle_view_team_brain_b"',
+      'DROP ROLE IF EXISTS "mantle_view_space_brain_b"',
+    ]);
+    expect(() => viewerLoginDropStatements('Brain-B', false, roles)).toThrow(/\[a-z0-9_\]/);
   });
 
   it('per-database on an empty cluster creates the shared roles without a login', () => {
