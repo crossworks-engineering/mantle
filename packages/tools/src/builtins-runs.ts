@@ -42,6 +42,7 @@ import {
 } from '@mantle/client-types';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
 import { resolveTools } from './resolve';
+import { loadAgentGrant } from './agent-grants';
 import { notFound } from './errors';
 
 /** Tools that may never run as queue items: the run tools themselves (no
@@ -447,17 +448,29 @@ export function parsePlan(raw: unknown): ParsedPlan {
 }
 
 /** Reject plan-time references to tools the owner doesn't have (missing,
- *  disabled) so the failure is a teaching error now, not a dead item later. */
-async function checkPlanTools(ownerId: string, slugs: string[]): Promise<string | null> {
+ *  disabled) so the failure is a teaching error now, not a dead item later.
+ *  A planning agent may only queue tools its own groups grant: an item runs
+ *  on the agent's behalf, so a plan is no way round the grant (access matrix
+ *  T1). The executor re-checks at run time. */
+async function checkPlanTools(ctx: ToolHandlerContext, slugs: string[]): Promise<string | null> {
   const unique = [...new Set(slugs)];
   if (unique.length === 0) return null;
-  const found = await resolveTools(ownerId, unique);
+  const found = await resolveTools(ctx.ownerId, unique);
   const have = new Set(found.map((t) => t.slug));
   const missing = unique.filter((s) => !have.has(s));
-  if (missing.length === 0) return null;
+  if (missing.length > 0) {
+    return (
+      `unknown or disabled tool(s) in plan: ${missing.join(', ')} — ` +
+      `only tools you can call yourself can run as items; fix the slug or drop the step`
+    );
+  }
+  if (!ctx.agent) return null;
+  const grant = await loadAgentGrant(ctx.ownerId, { slug: ctx.agent.slug });
+  const notHeld = unique.filter((s) => !grant?.toolSlugs.has(s));
+  if (notHeld.length === 0) return null;
   return (
-    `unknown or disabled tool(s) in plan: ${missing.join(', ')} — ` +
-    `only tools you can call yourself can run as items; fix the slug or drop the step`
+    `tool(s) not granted to you: ${notHeld.join(', ')}. ` +
+    `Only tools you can call yourself can run as items; drop the step or ask the owner to grant the tool's group`
   );
 }
 
@@ -623,7 +636,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
       if (!parsed.ok) return { ok: false, error: parsed.error };
       const groupError = await expandWorkerGroups(ctx.ownerId, parsed.plan);
       if (groupError) return { ok: false, error: groupError };
-      const toolError = await checkPlanTools(ctx.ownerId, parsed.toolSlugs);
+      const toolError = await checkPlanTools(ctx, parsed.toolSlugs);
       if (toolError) return { ok: false, error: toolError };
       const workerError = await resolveWorkerRouting(ctx.ownerId, parsed.plan);
       if (workerError) return { ok: false, error: workerError };
@@ -716,7 +729,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
       if (!parsed.ok) return { ok: false, error: parsed.error };
       const groupError = await expandWorkerGroups(ctx.ownerId, parsed.plan);
       if (groupError) return { ok: false, error: groupError };
-      const toolError = await checkPlanTools(ctx.ownerId, parsed.toolSlugs);
+      const toolError = await checkPlanTools(ctx, parsed.toolSlugs);
       if (toolError) return { ok: false, error: toolError };
       const workerError = await resolveWorkerRouting(ctx.ownerId, parsed.plan);
       if (workerError) return { ok: false, error: workerError };

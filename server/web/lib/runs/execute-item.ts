@@ -14,7 +14,13 @@
 import { eq } from 'drizzle-orm';
 import { db, runItems, runs as runsTable, type RunItemFailure, type RunItemRow } from '@mantle/db';
 import { claimItem, completeItem, requeueForRetry, type PostCommitAction } from '@mantle/runs';
-import { BANNED_ITEM_TOOLS, dispatchTool, resolveTool, validateToolArgs } from '@mantle/tools';
+import {
+  BANNED_ITEM_TOOLS,
+  dispatchTool,
+  loadAgentGrant,
+  resolveTool,
+  validateToolArgs,
+} from '@mantle/tools';
 import { currentTrace, startTrace, step } from '@mantle/tracing';
 
 import { executeWorkerInvoke } from './execute-worker';
@@ -135,6 +141,28 @@ async function runResolved(
   const [run] = await db.select().from(runsTable).where(eq(runsTable.id, item.runId));
   if (!run) return fail({ type: 'internal_error', message: 'run row vanished' });
 
+  // The item runs on the planning agent's behalf, never as the bare owner:
+  // it carries that agent's context, so every agent gate (the N5 Pending
+  // step on opening a connector, agent_grant_tool_group's confirm) applies
+  // exactly as it would inline, and it may only call what the agent holds
+  // (access matrix T1). A run with no agent (the owner's own MCP client
+  // planned it) or whose agent is gone still runs as an agent: fail closed,
+  // an opening change waits in Pending for the owner.
+  const grant = run.agentId ? await loadAgentGrant(run.ownerId, { id: run.agentId }) : null;
+  if (run.agentId && !grant) {
+    return fail({
+      type: 'agent_missing',
+      message: `the agent that planned this run is gone, so '${slug}' cannot run on its behalf`,
+    });
+  }
+  if (grant && !grant.toolSlugs.has(slug)) {
+    return fail({
+      type: 'tool_not_granted',
+      message: `tool '${slug}' is not granted to agent '${grant.slug}', so it cannot run as its item`,
+    });
+  }
+  const agent = { slug: grant?.slug ?? 'run', depth: 1, delegateTo: [] as string[] };
+
   const tool = await resolveTool(run.ownerId, slug);
   if (!tool) {
     return fail({
@@ -197,10 +225,12 @@ async function runResolved(
                 handle.addCost(mu);
               },
             },
-            // No ctx.agent (a queue item is headless: invoke_agent refuses).
-            // The run is the owner's own work, so it names the owner surface
-            // (client logins C4); it is no delivery channel, so send-to-user
-            // tools still refuse cleanly.
+            // The planning agent (see above). invoke_agent is banned as an
+            // item, so the empty delegation list never matters. The run is
+            // owner-side work, so it names the owner surface (client logins
+            // C4); it is no delivery channel, so send-to-user tools still
+            // refuse cleanly.
+            agent,
             surface: { kind: 'owner', via: 'run' },
           });
           if (!res.ok) handle.setError(res.error);

@@ -198,6 +198,35 @@ describe('run_plan', () => {
     expect(createRun).not.toHaveBeenCalled();
   });
 
+  it('refuses a tool the planning agent does not hold, though the owner has it (T1)', async () => {
+    const persona: ToolHandlerContext = {
+      ownerId: 'o1',
+      agent: { slug: 'persona', depth: 1, delegateTo: [] },
+    };
+    // The agent row, then its granted groups: none grants `search`.
+    selectQueue.push(
+      [{ slug: 'persona', toolGroupSlugs: ['g-notes'], audience: 'admin' }],
+      [{ toolSlugs: ['note_list'], audience: 'admin' }],
+    );
+    const res = await plan.handler({ title: 'Digest', plan: okPlan }, persona);
+    expect(errorOf(res)).toMatch(/not granted to you: search/);
+    expect(createRun).not.toHaveBeenCalled();
+  });
+
+  it('plans a tool the agent holds through its groups', async () => {
+    const persona: ToolHandlerContext = {
+      ownerId: 'o1',
+      agent: { slug: 'persona', depth: 1, delegateTo: [] },
+    };
+    selectQueue.push(
+      [{ slug: 'persona', toolGroupSlugs: ['g-search'], audience: 'admin' }],
+      [{ toolSlugs: ['search'], audience: 'admin' }],
+      [{ id: 'a1' }],
+    );
+    const res = await plan.handler({ title: 'Digest', plan: okPlan }, persona);
+    expect(outputOf(res).run_id).toBe('r1');
+  });
+
   it('refuses an unknown worker slug and lists the enabled ones', async () => {
     vi.mocked(listWorkerAgents).mockResolvedValue([{ id: 'w1', slug: 'researcher' }] as never);
     const res = await plan.handler(

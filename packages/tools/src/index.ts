@@ -138,6 +138,7 @@ export { CALCULATE_TOOLS, CALCULATE_TOOL_SLUGS } from './builtins-calculate';
 export { LOCATION_TOOLS, LOCATION_TOOL_SLUGS } from './builtins-locations';
 export { PROFILE_TOOLS, PROFILE_TOOL_SLUGS } from './builtins-profile';
 export { RUN_TOOLS, BANNED_ITEM_TOOLS, parsePlan } from './builtins-runs';
+export { loadAgentGrant, type AgentGrant } from './agent-grants';
 export { REPLAY_TOOLS } from './builtins-replay';
 export { IMAGE_TOOLS } from './builtins-images';
 export { TEAM_TOOLS } from './builtins-team';
