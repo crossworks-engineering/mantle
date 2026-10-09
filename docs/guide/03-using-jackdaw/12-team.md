@@ -48,9 +48,20 @@ When a member asks for a change ("please add the new pump to the site register")
 
 The reply appears in the member's chat.
 
-## Review what members shared
+## Approve what members submit
 
-Members can write their own items and submit them. **Review** lists what waits for you. Accept an item into the brain, reject it, or take it over. A rejected item goes back to its author to change and submit again.
+Members can write their own pages, notes, tables, drawings and files, and submit them. A submitted item waits in its own screen: a page in **Pages**, a note in **Notes**, a table in **Tables**, a drawing in **Draw**, a file in **Files**, an app in **Apps**.
+
+1. Open the screen. **Waiting for approval** sits above the folders. It shows only when something waits.
+2. Click the item. It opens beside the folders, read only, as it was sent.
+3. Click **Info** (the i button) to see who sent it and when.
+4. Pick one:
+   - **Approve**: choose who can see it and where it goes. It becomes a brain item you can edit. You approve the version on screen: if the author sent it again since, Approve stops and shows the new one.
+   - **Reject**: it goes back to its author, who can change it and submit it again. No note is sent.
+   - **Take over**: it moves into your own private items, so you can change it before you approve it or give it back.
+   - **Discard**: only for an item a removed login left shared with the team. It is deleted and never enters the brain.
+
+The **Team** tab strip shows "2 waiting in Pages" and so on while something waits.
 
 ## Other tabs
 

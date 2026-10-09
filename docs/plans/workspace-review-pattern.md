@@ -1,7 +1,9 @@
 # Workspace review pattern
 
-Status: decided 2026-10-09. Apps are built. Pages, notes, tables, draws and
-files follow, one workspace at a time, in the order below.
+Status: decided 2026-10-09. Apps are built. "Waiting for approval" for
+pages, notes, tables, draws and files is built (part 2 of dissolving Team
+admin, 2026-10-09); "Shared by members" for those kinds waits on the open
+decision below.
 
 ## The rule
 
@@ -15,14 +17,20 @@ with the **normal item screen**, never on a separate Team admin review screen.
   - **Shared by members**: what members shared with the team. Title, author,
     whether the author is still an active member, last activity.
 - Opening one shows the item in the **normal item screen** for that kind,
-  read only where the admin must not edit a member's work, with a banner:
-  - "Submitted by NAME. Waiting for your approval." Actions: **Approve**
+  beside the tree (the card highlights, the tree column stays, `?review=<id>`
+  in the URL), read only where the admin must not edit a member's work,
+  under ONE header row the same height as that kind's normal item header
+  (an e2e measures both). No banner, no second row: the title and at most
+  one small state badge, worded actions on the left, icon-only actions on
+  the right (each named, with a tooltip), and who sent it, when, and any
+  notice behind an icon-only **Info** button.
+  - Submitted by a member, waiting for approval. Actions: **Approve**
     (asks the level and anything kind-specific, shows the version, confirm
     dialog, sends the pinned version) and **Reject** (no note; the item
     returns to the member as `returned`, editable, and they can submit
     again). The member reads "Rejected by the reviewer. Change it and
     submit it again." The route keeps its name, `send-back`.
-  - "Shared with the team by NAME." Actions: **Unshare** (back to private,
+  - Shared with the team by a member. Actions: **Unshare** (back to private,
     nothing deleted), **Delete** (to the brain trash, restorable for 30
     days), **Activity** (where the kind has an activity log).
 - Team admin keeps only a small "N waiting in WORKSPACE" link per workspace
@@ -85,6 +93,40 @@ UI (jackdaw):
 - The member's Apps page shows each app's state (private, shared, waiting,
   rejected) and no note.
 
+## Pages, notes, tables, draws and files: Waiting for approval (built 2026-10-09)
+
+Brain (mantle): no new route. The review routes stay where they are, admin
+only, because older paired desktop and phone clients call them:
+`/api/team-admin/submissions` (the queue, every kind), `:id`, `bundle`,
+`bytes`, `svg`, `accept`, `return` (Reject), `take-over`, `discard`. What
+changed:
+
+- **Approve is pinned.** The accept route takes `submittedAt`, the time the
+  shown version was sent (null for a left-behind item). Under the state
+  row's lock, a different one now (the author recalled and sent it again)
+  refuses 409 `changed`, nothing moved (`member-review-pin.ts`). Optional,
+  so an older client keeps working without the check. A submitted item is
+  frozen until a recall, so the time it was sent names the version.
+- **Push links.** The needs-you push opens `/<workspace>?review=<id>`; the
+  newest item now carries its kind (`NeedsYouItem.type`, additive).
+
+UI (jackdaw):
+
+- `ItemReviewSections` (components/review/item-review.tsx): this kind's rows
+  of the one queue, as "Waiting for approval" above the tree, hidden while
+  empty. A left-behind item (team-shared by a removed login) lists there too
+  with a "Left behind" badge: it waits for an admin's decision (Approve or
+  Discard). A released item (its taker is gone) wears "Released".
+- `ItemReview`: the item pane. Approve, Reject, Take over, Discard
+  (review-dialogs.tsx, moved out of Team admin), Info and Focus; the body is
+  the saved version through the read-only presenters.
+- `useReviewOpen` (`?review=`) beside `usePrivateOpen` (`?pid=`): opening one
+  closes the other in the same URL replace.
+- Team admin > Review is gone. The strip links "N waiting in Pages" and so
+  on. `/review[?item=<id>]` forwards to the item's workspace (or the first
+  one with something waiting): old `/team-admin?view=review&item=` links,
+  the needs-you notice, and a push from an older brain land there.
+
 ## What is reusable
 
 Brain:
@@ -104,9 +146,10 @@ Brain:
 
 UI:
 
-- `WorkspaceReviewSections` (the two lists) and `ReviewBanner` (the banner
-  with its actions) take the kind's rows and actions as props; the per-kind
-  screen supplies the normal item view in read-only mode.
+- `WorkspaceReviewSections` / `ReviewSections` (the lists) take the kind's
+  rows as props; the per-kind screen supplies the normal item view in
+  read-only mode under its one header (`AppItemHeader` for apps, the
+  item header in `item-review.tsx` for the item kinds).
 - The Approve dialog (level, version, confirm) is shared; kinds add their own
   extra choice the way apps add "trust its tools".
 - The "N waiting in WORKSPACE" link on Team admin takes a count per kind.
@@ -125,9 +168,9 @@ UI:
 5. **Files.** No body to edit; the review is the file viewer plus Approve
    (which folder, which level) and Reject.
 
-Each step: brain functions and routes first, then the UI section and banner,
-then remove that kind from Team admin > Review. Team admin > Review goes
-when the last kind has moved. Each step gets its own independent audit.
+Waiting for approval moved for all five kinds at once (2026-10-09), and
+Team admin > Review went with it. Unshare and Delete for team-shared member
+items come with "Shared by members", once its decision below is taken.
 
 ## Decisions still open
 
