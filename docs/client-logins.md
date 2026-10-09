@@ -642,8 +642,9 @@ write tools are `ownerOnly`: refused on a team, client or missing surface).
   client login and every member reads what the others wrote.
 - **Informational apps.** An admin can mark an app informational
   (`PATCH /api/apps/:id` `{ "dataReadOnly": true }`, admin only; the owner's
-  app DTOs carry `dataReadOnly`). Then members and clients only read its
-  data: a write answers 403 `{ ok: false, error, reason: 'read-only' }`.
+  app DTOs carry `dataReadOnly`). Then members, clients and contacts (a
+  Contact share with "Can write" too) only read its data: a write answers
+  403 `{ ok: false, error, reason: 'read-only' }`.
   The member and client app cards carry `dataReadOnly` so the portal can say
   so. Stored as `apps.data_read_only` (migration 0198).
 - **Running one.** `POST /api/client/apps/:id/frame-ticket` (30 a minute)

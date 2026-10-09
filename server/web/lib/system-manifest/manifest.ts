@@ -532,6 +532,9 @@ export const MANIFEST_HTTP_TOOL_SLUGS: readonly string[] = MANIFEST_HTTP_TOOLS.m
  *   task_comments_list / task_comment_add: the task comment thread, gone
  *   with every other comment surface (2026-10-09; user-to-user talk moves
  *   to the coming forum, progress goes in the task body via task_update).
+ *   my_app_share: sharing a member's app with the team is the member's own
+ *   click in the app, never a tool a key, peer or model calls (access
+ *   matrix N1, T24).
  */
 export const RETIRED_TOOL_GROUP_SLUGS: readonly string[] = ['team-notify'];
 export const RETIRED_BUILTIN_TOOL_SLUGS: readonly string[] = [
@@ -539,6 +542,7 @@ export const RETIRED_BUILTIN_TOOL_SLUGS: readonly string[] = [
   'team_notify',
   'task_comments_list',
   'task_comment_add',
+  'my_app_share',
 ];
 
 export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [

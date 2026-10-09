@@ -459,6 +459,41 @@ describe.skipIf(!URL)('contact shares through /s on Postgres', () => {
       });
     });
 
+    it('Informational wins over Can write: the write is refused and logged (L23)', async () => {
+      const a = await signIn(tok.aApp!, codeA);
+      const share = await content.contactSharesForNode(owner, app);
+      expect(await content.setContactShareCanWrite(owner, share[0]!.shareId, true)).toBe(true);
+      await m.db.execute(sqlTag`update apps set data_read_only = true where node_id = ${app}`);
+      try {
+        const res = await r.db!(
+          post(
+            `/s/${tok.aApp}/db-broker`,
+            { op: 'exec', sql: 'insert into t values (2)' },
+            a.cookie,
+          ),
+          p({ token: tok.aApp! }),
+        );
+        expect(res.status).toBe(403);
+        expect(await res.json()).toMatchObject({ reason: 'read-only' });
+        expect(h.execs).toBe(0);
+        expect(h.synced).toBe(0);
+        const rows = await trail(tok.aApp!, 'refused', (all) =>
+          all.some((x) => x.detail.refused === 'informational'),
+        );
+        expect(rows.map((x) => x.detail)).toContainEqual(
+          expect.objectContaining({ op: 'exec', refused: 'informational' }),
+        );
+        // Reads still run.
+        const q = await r.db!(
+          post(`/s/${tok.aApp}/db-broker`, { op: 'query', sql: 'select 1' }, a.cookie),
+          p({ token: tok.aApp! }),
+        );
+        expect(q.status).toBe(200);
+      } finally {
+        await m.db.execute(sqlTag`update apps set data_read_only = false where node_id = ${app}`);
+      }
+    });
+
     it('the tool broker refuses a built-in on a contact share (only External access tools run there)', async () => {
       const a = await signIn(tok.aApp!, codeA);
       const res = await r.tool!(

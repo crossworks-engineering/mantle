@@ -229,16 +229,16 @@ describe('the review test tool broker', () => {
 });
 
 describe('the review test tool broker on a team-rules refusal', () => {
-  it('marks a declared tool the team rules refuse as test mode, not as undeclared', async () => {
+  it('says the team rules refused a declared tool, in their words, not test mode (T22)', async () => {
     const { POST } = await import('./[id]/test/tool-broker/route');
-    h.verdict = {
-      ok: false,
-      status: 403,
-      reason: "The tool 'search' changes data or reaches outside the brain.",
-    };
+    const why =
+      "The tool 'search' is not in a team-level tool group, so team members can't use it.";
+    h.verdict = { ok: false, status: 403, reason: why };
     const declared = await POST(post({ slug: 'search', input: {} }), params(APP));
     expect(declared.status).toBe(403);
-    expect(await declared.json()).toMatchObject({ reason: 'review-test-read-only' });
+    // Every member's run fails the same way: never worded as test mode.
+    expect(await declared.json()).toEqual({ ok: false, error: why, reason: 'team-rules' });
+    expect(h.logged[0]).toMatchObject({ detail: { refused: why } });
     // An undeclared tool keeps the plain refusal (a wiring bug to fix).
     h.verdict = { ok: false, status: 403, reason: "This app isn't allowed to use the tool." };
     const undeclared = await POST(post({ slug: 'email_send', input: {} }), params(APP));

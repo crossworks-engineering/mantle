@@ -281,8 +281,13 @@ export function AppSandbox({
           // even if the app's own code swallows the rejection.
           // An admin's test run of a member's app refuses tools that change
           // data on purpose (workspace review pattern): say that instead.
+          // A declared tool the team rules refuse (the same test run, reason
+          // 'team-rules', access matrix T22): the rule's own words, since it
+          // fails for every member too.
           if (r.status === 403 && data?.ok === false && data?.reason === 'review-test-read-only') {
             cbRef.current.onError?.('Test mode blocks tools that change data.');
+          } else if (r.status === 403 && data?.ok === false && data?.reason === 'team-rules') {
+            cbRef.current.onError?.(String(data.error ?? 'The team rules refuse this tool.'));
           } else if (r.status === 403 && data?.ok === false) {
             cbRef.current.onError?.(
               `This app tried to use the tool “${req.slug}”, which it hasn't declared. ` +

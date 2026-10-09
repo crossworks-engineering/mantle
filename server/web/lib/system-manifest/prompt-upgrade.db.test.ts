@@ -6,8 +6,8 @@
  *     prose versioning (the old text is v1, one revert away); an edited prompt
  *     and an already-current one are left alone; a second run does nothing.
  *   - disableRetiredManifestItems: the retired `team-notify` group and the
- *     builtin `team_member_list` / `team_notify` rows are disabled; an
- *     operator's own http tool that shares a slug is not.
+ *     builtin `team_member_list` / `team_notify` / `my_app_share` rows are
+ *     disabled; an operator's own http tool that shares a slug is not.
  *
  * The real retired hashes are checked against git history in manifest.test.ts;
  * here one synthetic old default is added to them, so the brains can be seeded
@@ -78,7 +78,8 @@ describe.skipIf(!URL)('reconcile: unedited prompts and retired items', () => {
     await admin`insert into tool_groups (owner_id, slug, name, tool_slugs)
                 values (${u}, 'team-notify', 'Team notifications',
                         ${['team_member_list', 'team_notify']})`;
-    for (const slug of ['team_member_list', 'team_notify']) {
+    // my_app_share: a builtin row an older brain seeded, no handler since N1.
+    for (const slug of ['team_member_list', 'team_notify', 'my_app_share']) {
       await admin`insert into tools (owner_id, slug, name, description, handler)
                   values (${u}, ${slug}, ${slug}, 'x', ${JSON.stringify({ kind: 'builtin', ref: slug })}::jsonb)`;
     }
@@ -128,6 +129,7 @@ describe.skipIf(!URL)('reconcile: unedited prompts and retired items', () => {
   it('disables the retired group and builtin tools, not an operator tool', async () => {
     expect((await rec.disableRetiredManifestItems(brains.unedited)).sort()).toEqual([
       'group team-notify',
+      'tool my_app_share',
       'tool team_member_list',
       'tool team_notify',
     ]);
@@ -138,6 +140,7 @@ describe.skipIf(!URL)('reconcile: unedited prompts and retired items', () => {
     const enabled = Object.fromEntries(rows.map((r) => [`${r.owner_id}:${r.slug}`, r.enabled]));
     expect(enabled[`${brains.unedited}:team_member_list`]).toBe(false);
     expect(enabled[`${brains.unedited}:team_notify`]).toBe(false);
+    expect(enabled[`${brains.unedited}:my_app_share`]).toBe(false);
     expect(await rec.disableRetiredManifestItems(brains.edited)).toEqual([]);
     expect(enabled[`${brains.edited}:team_notify`]).toBe(true);
     const [g] = await admin<Row[]>`select enabled from tool_groups

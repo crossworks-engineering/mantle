@@ -10,7 +10,9 @@
  * `can_write` and names an app: the write schedules the app-table export
  * sync and stamps `app_databases.client_written_at`, so rows exported from
  * the app count as written from outside for the lowering guard
- * (docs/client-logins.md section 8). Anything else: 403 `read-only`.
+ * (docs/client-logins.md section 8). Anything else: 403 `read-only`, and
+ * so is any write to an app an admin marked Informational (`dataReadOnly`),
+ * "Can write" or not.
  *
  * Runs against the app's own SQLite under the share owner's scope, one
  * statement at a time per share (caller key `share:<id>`).
@@ -88,6 +90,24 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   const app = await getAppRuntime(share.ownerId, share.nodeId);
   if (!app || !app.publishedBuild?.ok) {
     return NextResponse.json({ ok: false, error: 'app not found' }, { status: 404 });
+  }
+  // Informational wins over a share's "Can write" (access matrix L23): an
+  // admin who marks an app Informational means read only for everyone, as
+  // the member and client brokers already answer.
+  if (op === 'exec' && app.dataReadOnly) {
+    if (contactId) {
+      recordShareAccess({
+        ownerId: share.ownerId,
+        shareId: share.id,
+        contactId,
+        kind: 'refused',
+        detail: { op, refused: 'informational' },
+      });
+    }
+    return NextResponse.json(
+      { ok: false, reason: 'read-only', error: 'This app is read-only.' },
+      { status: 403 },
+    );
   }
 
   // The app's Activity tab names the contact (app_access_log.contact_id).

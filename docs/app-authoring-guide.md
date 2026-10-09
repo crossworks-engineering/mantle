@@ -213,6 +213,16 @@ Store the name next to the id: names can change, and the row should say
 who it was at the time. The host's own access log (the app's Activity tab)
 still records every open, read and write per login, whatever the app does.
 
+**A filter on `:host_me_id` is a view, not privacy.** It decides what the
+app shows, never what a runner may read: everyone who runs the app may send
+any `SELECT` to its database (`SELECT * FROM review_log` from the browser's
+console works as well as the app's own query). That includes an anonymous
+visitor on an **open link** (the id is `NULL` for them, but they read every
+row). So an app that has an open link serves every row of its database to
+anyone who holds the link, rows a contact wrote through their own Contact
+share included. Keep what a contact or member writes out of an app you also
+share by open link.
+
 ## Binding to data: the important part
 
 **First: many apps need no data binding at all.** A calculator, converter, or
@@ -334,7 +344,12 @@ and through `app_snapshot_list`.
   The automatic ones keep the newest 20 per app, and of those only as many
   as fit in `APP_SNAPSHOT_AUTO_MAX_MB` (default 1024; the newest always
   stays); the owner's own stay until deleted, within `APP_SNAPSHOT_MAX_MB`
-  (default 2048) per owner.
+  (default 2048) per owner. Only the owner's own (manual) snapshots count
+  toward that budget: the automatic ones (before a restore, a schema change,
+  a delete, an import, an MCP write, and the nightly ones) never do, and
+  neither do the ones a member took before an admin approved or deleted
+  their app. A member's own snapshots count toward the same budget in their
+  own space.
 
 **Restore** (`app_snapshot_restore`, or the History tab) has three modes:
 
@@ -580,7 +595,9 @@ own code; the app's level does not change, so an admin app stays admin and
 the team never sees it. The contact reads the app's SQLite
 (`host.db.query`). With **Can write** on (per contact, off by default) the
 contact also writes it (`host.db.exec`): the write schedules the app-table
-export sync like a member's. Never brain tools: `host.tools.call` is
+export sync like a member's. **Informational** wins over Can write: on an app
+an admin marked informational a contact only reads, as members and clients
+do. Never brain tools: `host.tools.call` is
 refused, except for an outside tool the app declares: a connector's tool at
 public level, or an http tool an admin switched "External access" on for
 (docs/member-logins.md). An open
@@ -645,7 +662,10 @@ mirror the admin's `app_*` tools; read `my_app_guide` (this guide) first.
 - **The loop:** `my_app_create`, `my_app_file_write`, `my_app_build`,
   `my_app_publish`. `my_app_schema_set` and `my_app_tools_set` declare the
   database and the tools. `my_app_snapshot_*` and `my_app_errors` work as
-  for an admin, on the member's own app only.
+  for an admin, on the member's own app only, with no delete: a member
+  deletes neither an app nor a snapshot. A member keeps at most 50 apps; an
+  app an admin approves or deletes leaves that count and takes its
+  snapshots out of the member's snapshot budget.
 - **Share with the team:** in the app, Apps > Your apps > Share with team
   (the member's own click; never over MCP, so no key, peer or model opens
   an app to the team; `my_app_unshare` makes it private again). Every member then
@@ -657,6 +677,9 @@ mirror the admin's `app_*` tools; read `my_app_guide` (this guide) first.
   review. Test a change on a private copy first, or make the app private
   (`my_app_unshare`) while you work. An admin sees what it did in Apps
   (Shared by members > the app > Activity), and can unshare or delete it.
+  Unshare makes it private, but its author can share it again at once;
+  to stop it for good, an admin deletes it (to the brain's trash) or
+  disables the author's login.
 - **Submit:** `my_app_submit` sends the PUBLISHED version to an admin. It is
   frozen and its data is read only until the admin approves or rejects it
   (no note: you hear from them through your own channels). A rejected app

@@ -7,9 +7,13 @@
  * (no MCP or HTTP connector, even one opened to team apps), and no write,
  * so a test reaches nothing outside the brain and changes nothing in it
  * (403 `reason: 'review-test-read-only'`, which the app screen words as
- * "Test mode blocks tools that change data."). Nothing runs without the
- * admin's running test (409 `test-ended`). Each call is logged on the app's activity (`via: 'review-test'`): it read
- * brain data.
+ * "Test mode blocks tools that change data."). A declared tool the TEAM
+ * rules refuse (no team-level group, it spends model work, it needs a
+ * confirmation) is not test mode at work: it fails the same way in every
+ * member's run, so it answers 403 `reason: 'team-rules'` with the rule's own
+ * words (access matrix T22), and the screen says that instead. Nothing runs
+ * without the admin's running test (409 `test-ended`). Each call is logged
+ * on the app's activity (`via: 'review-test'`): it read brain data.
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
@@ -71,15 +75,17 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   });
   if (!verdict.ok) {
     // A declared tool the team rules refuse (it writes, spends model work,
-    // needs a confirmation, or sits in no team-level group) is test mode
-    // at work, not a wiring bug: its own reason, so the screen says so
-    // instead of "not declared". An undeclared tool keeps the plain answer.
+    // needs a confirmation, or sits in no team-level group) fails in every
+    // member's run too, test or not (access matrix T22): its own reason, so
+    // the screen says the team rules refused it, in their words, instead of
+    // "not declared" or "test mode". An undeclared tool keeps the plain
+    // answer.
     const declared = app.declaredTools.includes(slug);
     return NextResponse.json(
       {
         ok: false,
         error: verdict.reason,
-        ...(declared && verdict.status === 403 ? { reason: 'review-test-read-only' } : {}),
+        ...(declared && verdict.status === 403 ? { reason: 'team-rules' } : {}),
       },
       { status: verdict.status },
     );

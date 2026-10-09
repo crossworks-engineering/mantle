@@ -228,3 +228,20 @@ describe('my_app_unshare', () => {
     expect(res).toMatchObject({ ok: false, error: expect.stringMatching(/read-only/) });
   });
 });
+
+// Access matrix N6: at the 50-app cap the answer names what a member can
+// do. A member has no delete and no admin sees a private draft, so "ask an
+// admin to delete some" pointed at nothing.
+describe('my_app_create at the cap', () => {
+  it('says to submit one, never to ask an admin to delete a private draft', async () => {
+    const { listSpaceApps } = await import('@mantle/content');
+    vi.mocked(listSpaceApps).mockResolvedValueOnce(
+      Array.from({ length: 50 }, (_, i) => ({ id: `a${i}`, mine: true })) as never,
+    );
+    const res = await def('my_app_create').handler({ name: 'One more' }, member());
+    expect(res.ok).toBe(false);
+    const error = (res as { error: string }).error;
+    expect(error).toMatch(/my_app_submit/);
+    expect(error).not.toMatch(/Ask an admin to accept or delete/);
+  });
+});

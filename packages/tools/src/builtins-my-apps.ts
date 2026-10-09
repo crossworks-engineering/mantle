@@ -259,7 +259,9 @@ const my_app_create: BuiltinToolDef = {
     if (mine >= MY_APPS_MAX) {
       return {
         ok: false,
-        error: `You have ${mine} apps, the most one member keeps. Ask an admin to accept or delete some first.`,
+        // No admin sees a private draft and a member has no delete (access
+        // matrix N6): only a submit lets an admin approve or delete one.
+        error: `You have ${mine} apps, the most one member keeps. A member cannot delete an app, and no admin sees a private one: submit one (my_app_submit) so an admin can approve it into the brain or delete it, and that makes room.`,
       };
     }
     try {

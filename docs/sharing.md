@@ -277,7 +277,9 @@ writes `auth.contact_code_signin`; a bad one `auth.contact_code_failed`.
 **What a contact may do.** Read the item. An app only: write its data when
 the share has "Can write" (the db broker's `exec`; the write schedules the
 app-table export sync and marks `app_databases.client_written_at`, so an
-export of those rows counts as written from outside). Never brain tools.
+export of those rows counts as written from outside). On an app an admin
+marked Informational every write answers 403 `read-only`, Can write or not,
+as for members and clients. Never brain tools.
 One kind of tool runs: an outside (MCP or http) tool the app declares that
 an admin switched "External access" on for (docs/member-logins.md,
 "External access: outside tools in shared apps"). It runs on the public
