@@ -22,7 +22,8 @@
  *
  * Cost-safety: nothing here starts LLM work.
  */
-import { and, desc, eq, inArray, isNull, type SQL } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, type Column, type SQL } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { asSystem, authUsers, db, nodes, spaceItems, spaces, withTeamDrafts } from '@mantle/db';
 import {
   SPACE_ITEM_KINDS,
@@ -60,15 +61,21 @@ export const SHARED_ITEMS_MAX = 200;
 const SHARED_STATES = ['draft', 'returned'] as const;
 
 /** The one rule (see the module comment). Needs `spaceItems`, `spaces` and
- *  `authUsers` (on the space's login) joined to `nodes`. */
-const eligibleRule: SQL = and(
-  inArray(nodes.type, [...SPACE_ITEM_KINDS]),
-  eq(spaces.kind, 'personal'),
-  eq(spaceItems.sharing, 'team'),
-  inArray(spaceItems.reviewState, [...SHARED_STATES]),
-  eq(authUsers.role, 'member'),
-  isNull(authUsers.disabledAt),
-)!;
+ *  the author's login `u` (on the space's login) joined to `nodes`. */
+const ruleFor = (u: { role: Column; disabledAt: Column }): SQL =>
+  and(
+    inArray(nodes.type, [...SPACE_ITEM_KINDS]),
+    eq(spaces.kind, 'personal'),
+    eq(spaceItems.sharing, 'team'),
+    inArray(spaceItems.reviewState, [...SHARED_STATES]),
+    eq(u.role, 'member'),
+    isNull(u.disabledAt),
+  )!;
+const eligibleRule = ruleFor(authUsers);
+
+/** The author's login under an unqualified name: a locking clause (FOR
+ *  SHARE OF) takes no schema-qualified table. */
+const author = alias(authUsers, 'author');
 
 type Eligible = {
   id: string;
@@ -207,7 +214,9 @@ export type UnsharedItem = { id: string; type: SpaceItemKind; authorLoginId: str
  * Only what the rule allows (an active member's draft or returned item), so
  * a left-behind item stays in the review queue and a submitted one stays
  * waiting. One guarded update: the state row's lock re-checks the sharing
- * and the state, so a Submit that lands first wins. Null when there was
+ * and the state, so a Submit that lands first wins, and the author's row is
+ * held FOR SHARE, so a deactivation cannot land between the check and the
+ * write. Null when there was
  * nothing to unshare (a private item answers exactly like a missing one).
  */
 export async function adminUnshareMemberItem(id: string): Promise<UnsharedItem | null> {
@@ -229,8 +238,12 @@ export async function adminUnshareMemberItem(id: string): Promise<UnsharedItem |
               .from(nodes)
               .innerJoin(spaceItems, eq(spaceItems.nodeId, nodes.id))
               .innerJoin(spaces, eq(spaces.id, nodes.ownerId))
-              .innerJoin(authUsers, eq(authUsers.id, spaces.loginId))
-              .where(and(eq(nodes.id, id), eligibleRule)),
+              .innerJoin(author, eq(author.id, spaces.loginId))
+              .where(and(eq(nodes.id, id), ruleFor(author)))
+              // The author's row is held while the update runs: a parallel
+              // deactivation waits, or (landing first) is seen, and then the
+              // item is left behind and not unshared.
+              .for('share', { of: author }),
           ),
         ),
       )

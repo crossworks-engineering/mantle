@@ -546,6 +546,47 @@ describe.skipIf(!URL)('take over a submitted member item', () => {
     expect(announced).not.toContain(heldId);
   });
 
+  it('a released item is approved through the pin the route requires', async () => {
+    const M = spaceOf[member]!;
+    const id = (
+      await as(member, () =>
+        sp.createMineItem(M, { type: 'note', title: `${tag} pinned`, content: 'pin words' }),
+      )
+    ).id;
+    await as(member, () => sp.submitItem(M, id));
+    await rv.takeOverReviewItem(id, actorA());
+    // Admin A goes: released, in the queue again, with the time it was sent.
+    await m.systemDb.execute(
+      sqlTag`update auth.users set disabled_at = now() where id = ${adminA}`,
+    );
+    try {
+      const row = (await rv.listReviewQueue()).items.find((i) => i.id === id);
+      expect(row).toMatchObject({ reason: 'submitted', reviewState: 'taken' });
+      expect(row?.submittedAt).not.toBeNull();
+      const admin = { loginId: anchor };
+      // No pin, or a null one, is refused; nothing moves.
+      await expect(
+        rv.acceptReviewItem(anchor, id, admin, { requirePin: true }),
+      ).rejects.toMatchObject({ reason: 'changed' });
+      await expect(
+        rv.acceptReviewItem(anchor, id, admin, { requirePin: true, submittedAt: null }),
+      ).rejects.toMatchObject({ reason: 'changed' });
+      expect(await ownerOf(id)).toBe(spaceOf[adminA]);
+      // The pin the queue showed approves it.
+      await rv.acceptReviewItem(anchor, id, admin, {
+        requirePin: true,
+        submittedAt: row!.submittedAt,
+      });
+      moved.push(id);
+      expect(await ownerOf(id)).toBe(anchor);
+      expect((await rowOf(id))?.review_state).toBe('accepted');
+    } finally {
+      await m.systemDb.execute(
+        sqlTag`update auth.users set disabled_at = null where id = ${adminA}`,
+      );
+    }
+  });
+
   it('a left-behind item that was never submitted cannot be taken over', async () => {
     const N = spaceOf[member2]!;
     const shared = await as(member2, () =>

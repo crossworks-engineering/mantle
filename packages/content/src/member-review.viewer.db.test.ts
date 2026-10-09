@@ -349,6 +349,44 @@ describe.skipIf(!URL)('member review, accept and purge', () => {
     expect(JSON.stringify(brainTable?.data)).toContain('accepted cell');
   });
 
+  it('a left-behind item is approved through the pin the route requires (null)', async () => {
+    const D = spaceOf[loginD]!;
+    const kept = await as(loginD, () =>
+      sp.createMineItem(D, { type: 'note', title: `${tag} kept`, content: 'left for the team' }),
+    );
+    await as(loginD, () => sp.setSharing(D, kept.id, 'team'));
+    await m.systemDb.execute(
+      sqlTag`update auth.users set disabled_at = now() where id = ${loginD}`,
+    );
+    try {
+      const row = (await rv.listReviewQueue()).items.find((i) => i.id === kept.id);
+      expect(row).toMatchObject({ reason: 'left-behind', submittedAt: null });
+      // No pin is refused; a pin with a time it never had is refused.
+      await expect(
+        rv.acceptReviewItem(anchor, kept.id, reviewer(), { requirePin: true }),
+      ).rejects.toMatchObject({ reason: 'changed' });
+      await expect(
+        rv.acceptReviewItem(anchor, kept.id, reviewer(), {
+          requirePin: true,
+          submittedAt: new Date().toISOString(),
+        }),
+      ).rejects.toMatchObject({ reason: 'changed' });
+      expect(await ownerOf(kept.id)).toBe(D);
+      // The null it was shown approves it.
+      await rv.acceptReviewItem(anchor, kept.id, reviewer(), {
+        requirePin: true,
+        submittedAt: row!.submittedAt,
+      });
+      moved.push(kept.id);
+      expect(await ownerOf(kept.id)).toBe(anchor);
+      expect((await stateOf(kept.id))?.review_state).toBe('accepted');
+    } finally {
+      await m.systemDb.execute(
+        sqlTag`update auth.users set disabled_at = null where id = ${loginD}`,
+      );
+    }
+  });
+
   it('what a deactivated login shared is offered to an admin: discard it', async () => {
     const B = spaceOf[loginB]!;
     const shared = await as(loginB, () =>
