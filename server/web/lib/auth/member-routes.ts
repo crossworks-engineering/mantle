@@ -68,13 +68,18 @@ export const MEMBER_ROUTES: readonly string[] = [
   'POST /api/member/apps/:id/tool-broker',
   'POST /api/member/apps/:id/db-broker',
   // Apps members build (team apps Phase 3): their own and the team's, to
-  // share, submit, recall and read the history of. Building is the
+  // share, submit, recall and read the history of; their own trash and
+  // their own snapshots to delete (access matrix N6). Building is the
   // my_app_* tools on their own MCP.
   'GET /api/member/my-apps',
+  'GET /api/member/my-apps/deleted',
   'POST /api/member/my-apps/:id/share',
   'POST /api/member/my-apps/:id/submit',
   'POST /api/member/my-apps/:id/recall',
+  'POST /api/member/my-apps/:id/delete',
+  'POST /api/member/my-apps/:id/undelete',
   'GET /api/member/my-apps/:id/history',
+  'DELETE /api/member/my-apps/:id/history/:snapshotId',
   // The member home: the pinned home app and what its hub.get() answers.
   'GET /api/member/home',
   // What the member wrote and an admin accepted (Phase 4, plan 6.2): the

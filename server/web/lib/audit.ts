@@ -101,6 +101,12 @@ export type AuditEntry = {
     // An admin put a member's team-shared item back to private (Shared by
     // members). detail.itemId, detail.type, detail.authorLoginId.
     | 'member_item.unshared'
+    // A member moved their own app to their trash, brought it back, or
+    // deleted a snapshot they took, from the app (access matrix N6; the
+    // same changes over MCP are mcp.my_app_*). detail.appId, detail.snapshotId.
+    | 'member_app.deleted'
+    | 'member_app.undeleted'
+    | 'member_app.snapshot_deleted'
     // A peer that acted as a login stopped acting as it: the login's
     // sessions ended or its MCP was switched off (access matrix L12, L13).
     // detail.peerId, detail.loginId, detail.reason.

@@ -587,6 +587,28 @@ export async function deleteAppSnapshot(
  * caller's transaction, after that one). Null when the app has no such
  * entry.
  */
+/** Of an app's history, the ids of the manual snapshots `memberLoginId`
+ *  took: the ones deleteMemberAppSnapshot lets that member delete. */
+export async function memberOwnSnapshotIds(
+  ownerId: string,
+  appId: string,
+  memberLoginId: string,
+): Promise<Set<string>> {
+  const rows = await db
+    .select({ id: nodeSnapshots.id })
+    .from(nodeSnapshots)
+    .where(
+      and(
+        eq(nodeSnapshots.ownerId, ownerId),
+        eq(nodeSnapshots.nodeId, appId),
+        eq(nodeSnapshots.trigger, 'manual'),
+        eq(nodeSnapshots.actor, 'member'),
+        eq(nodeSnapshots.actorLoginId, memberLoginId),
+      ),
+    );
+  return new Set(rows.map((r) => r.id));
+}
+
 export async function deleteMemberAppSnapshot(
   ownerId: string,
   appId: string,

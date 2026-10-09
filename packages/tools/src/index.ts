@@ -154,6 +154,7 @@ export {
   MY_APP_READ_TOOL_SLUGS,
   MY_APP_WRITE_TOOL_SLUGS,
   MY_APPS_MAX,
+  MY_APPS_TRASH_MAX,
 } from './builtins-my-apps';
 export { CLIENT_TOOLS } from './builtins-client';
 export { CLIENT_TURN_TOOL_SLUGS } from './client-turn-tools';
