@@ -23,7 +23,10 @@
  * every grant of the login (endLoginSessions `endKeys`).
  *
  * Security: if client_id or redirect_uri is invalid we render an error and do
- * NOT redirect (never bounce a code to an unvalidated URI).
+ * NOT redirect (never bounce a code to an unvalidated URI). No page here may
+ * be framed (access matrix T12): a frame could dress the Allow step up as
+ * something else. Allow and a wrong consent password are on the audit
+ * trail (T11).
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { NextResponse } from '@/server/http-compat';
@@ -32,6 +35,7 @@ import { rateLimitLogin, rateLimitLoginRefund } from '@/lib/rate-limit';
 import { requestOrigin } from '@/lib/auth-constants';
 import { getClient, isRemoteMcpEnabled, mintAuthCode, DEFAULT_SCOPE } from '@/lib/mcp-oauth';
 import { mcpLoginEnabled, mcpTargetLogin } from '@/lib/mcp-auth';
+import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { env } from '@mantle/config';
 
 type AuthorizeParams = {
@@ -65,13 +69,22 @@ function escapeHtml(s: string): string {
     .replace(/'/g, '&#39;');
 }
 
+/** Every page this route renders: never cached, never framed (T12). */
+const HTML_HEADERS = {
+  'content-type': 'text/html; charset=utf-8',
+  'Cache-Control': 'no-store',
+  'Content-Security-Policy': "frame-ancestors 'none'",
+  'X-Frame-Options': 'DENY',
+} as const;
+
+function htmlPage(html: string, status = 200): Response {
+  return new Response(html, { status, headers: HTML_HEADERS });
+}
+
 function htmlError(message: string, status = 400): Response {
-  return new Response(
+  return htmlPage(
     consentShell(`<h1>Can't connect</h1><p class="muted">${escapeHtml(message)}</p>`),
-    {
-      status,
-      headers: { 'content-type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
-    },
+    status,
   );
 }
 
@@ -178,9 +191,7 @@ export async function GET(req: Request) {
   }
 
   const token = consentToken(user.loginId, p);
-  return new Response(consentPage(validated.clientName, p, token, user.email, user.role), {
-    headers: { 'content-type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
-  });
+  return htmlPage(consentPage(validated.clientName, p, token, user.email, user.role));
 }
 
 /** Wrong (or missing) passwords at consent, per login, per minute. */
@@ -229,8 +240,9 @@ export async function POST(req: Request) {
   if (user.role !== 'client') {
     const bucket = `oauth-consent-pw:${user.loginId}`;
     const tries = rateLimitLogin(bucket, CONSENT_PASSWORD_RATE);
-    const again = (message: string, status: number) =>
-      new Response(
+    const again = (message: string, status: number, reason: 'password' | 'rate-limited') => {
+      auditConsent(req, 'oauth.consent_failed', user, p, { reason });
+      return htmlPage(
         consentPage(
           validated.clientName,
           p,
@@ -239,15 +251,19 @@ export async function POST(req: Request) {
           user.role,
           message,
         ),
-        {
-          status,
-          headers: { 'content-type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
-        },
+        status,
       );
-    if (!tries.ok) return again('Too many tries. Wait a minute, then try again.', 429);
+    };
+    if (!tries.ok) {
+      return again('Too many tries. Wait a minute, then try again.', 429, 'rate-limited');
+    }
     const password = get('password');
     if (!password || !(await verifyPassword(user.loginId, password))) {
-      return again('That password is not right. Type your Mantle password to allow.', 403);
+      return again(
+        'That password is not right. Type your Mantle password to allow.',
+        403,
+        'password',
+      );
     }
     rateLimitLoginRefund(bucket);
   }
@@ -269,11 +285,37 @@ export async function POST(req: Request) {
   if (!code) {
     return htmlError('your session ended — sign in and start the connection again', 401);
   }
+  auditConsent(req, 'oauth.consent', user, p, { clientName: clippedName(validated.clientName) });
 
   const dest = new URL(p.redirectUri);
   dest.searchParams.set('code', code);
   if (p.state) dest.searchParams.set('state', p.state);
   return NextResponse.redirect(dest, { status: 302 });
+}
+
+/** A consent step on the trail: the login, the client, and where the code
+ *  goes back to. */
+function auditConsent(
+  req: Request,
+  action: 'oauth.consent' | 'oauth.consent_failed',
+  user: Consenter,
+  p: AuthorizeParams,
+  extra: Record<string, unknown>,
+): void {
+  auditFireAndForget({
+    actorId: user.loginId,
+    actorEmail: user.email,
+    action,
+    method: 'POST',
+    path: '/api/oauth/authorize',
+    detail: {
+      clientId: p.clientId,
+      redirectHost: redirectHost(p.redirectUri),
+      role: user.role,
+      ...extra,
+    },
+    ...requestMetaFrom(req),
+  });
 }
 
 // ── Consent page (standalone, themed inline — not the app shell) ──────────────
@@ -292,6 +334,10 @@ function consentShell(inner: string): string {
   .muted { color:#9a9aa3; font-size:13.5px; }
   .who { margin:14px 0 18px; padding:12px 14px; background:#0f0f13; border:1px solid #26262d; border-radius:10px; font-size:13.5px; }
   .who b { color:#e7e7ea; }
+  .host { font-size:16px; word-break:break-all; }
+  .label { display:block; margin-bottom:4px; color:#74747d; font-size:12px; }
+  .name { margin:0 0 18px; padding:10px 14px; border:1px dashed #33333b; border-radius:10px;
+    color:#9a9aa3; font-size:13px; font-style:italic; word-break:break-word; }
   .scopes { margin:0 0 20px; padding-left:18px; color:#c4c4cc; font-size:13.5px; }
   .row { display:flex; gap:10px; }
   button { flex:1; padding:11px 14px; border-radius:10px; border:1px solid transparent;
@@ -303,6 +349,15 @@ function consentShell(inner: string): string {
     border:1px solid #33333b; background:#0f0f13; color:#e7e7ea; font-size:14px; }
   .err { margin:-6px 0 14px; color:#f08a8a; font-size:13px; }
 </style></head><body><div class="card">${inner}</div></body></html>`;
+}
+
+/** Longest client name shown: a long one could push the host off a phone
+ *  screen. */
+const CLIENT_NAME_MAX = 60;
+
+function clippedName(name: string): string {
+  const flat = name.replace(/\s+/g, ' ').trim();
+  return flat.length > CLIENT_NAME_MAX ? `${flat.slice(0, CLIENT_NAME_MAX)}...` : flat;
 }
 
 /** The host of a validated redirect_uri (registration takes https, or http
@@ -323,11 +378,14 @@ function consentPage(
   role: Consenter['role'],
   error?: string,
 ): string {
-  const safeName = escapeHtml(clientName);
+  const safeName = escapeHtml(clippedName(clientName));
   const h = (v: string) => escapeHtml(v);
   // The name is the client's own choice at open registration, so anyone can
-  // call theirs "Claude". The host the code goes back to is not: it is the
-  // validated redirect_uri, and it is what the person checks.
+  // call theirs "Claude", or write a sentence that reads like the host line
+  // (access matrix T13). The host the code goes back to is not: it is the
+  // validated redirect_uri, and it is what the person checks. So the host
+  // alone heads the page and has its own box; the name sits apart, quoted
+  // and labelled as the client's own words, in no sentence of ours.
   const returnHost = h(redirectHost(p.redirectUri));
   const scopes =
     role === 'admin'
@@ -336,9 +394,10 @@ function consentPage(
       : `<li>Read what your login may read in this brain, nothing more</li>
     <li>Create drafts in your own space, only if an admin allowed writing</li>`;
   const inner = `
-  <h1>Connect ${safeName} to Mantle</h1>
-  <p class="muted">${safeName} is requesting access to your Mantle brain.</p>
-  <div class="who">It sends you back to <b>${returnHost}</b></div>
+  <h1>Connect ${returnHost} to Mantle</h1>
+  <p class="muted">An app is asking for access to your Mantle brain.</p>
+  <div class="who"><span class="label">It sends you back to</span><b class="host">${returnHost}</b></div>
+  <div class="name"><span class="label">The name it gave itself (anyone can choose any name)</span>&ldquo;${safeName}&rdquo;</div>
   <div class="who">Signed in as <b>${h(email)}</b></div>
   <p class="muted" style="margin-bottom:6px;">This will allow it to:</p>
   <ul class="scopes">
@@ -365,6 +424,6 @@ function consentPage(
       <button class="allow" type="submit" name="decision" value="allow">Allow</button>
     </div>
   </form>
-  <p class="foot">Only allow this if you started a connection from ${safeName} and ${returnHost} is its address. You can disconnect anytime in Settings.</p>`;
+  <p class="foot">Only allow this if you started this connection yourself and ${returnHost} is the address of the app you meant. You can disconnect anytime in Settings.</p>`;
   return consentShell(inner);
 }

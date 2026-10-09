@@ -216,7 +216,11 @@ export type TokenResponse = {
   scope: string;
 };
 
-type GrantResult = { ok: true; tokens: TokenResponse } | { ok: false; error: string };
+/** A grant that was made names its login and client, for the token route's
+ *  audit row (access matrix T11). */
+type GrantResult =
+  | { ok: true; tokens: TokenResponse; login: { id: string; email: string }; clientId: string }
+  | { ok: false; error: string };
 
 /**
  * May this login hold (or keep using) a connector grant? Read from the row on
@@ -237,6 +241,16 @@ export async function actorMayConnect(
    *  (verification audit N1). */
   exec: Exec = db,
 ): Promise<boolean> {
+  return (await connectingLogin(actorId, sessionEpoch, exec)) !== null;
+}
+
+/** actorMayConnect, answering the login's email (the audit row's) when it
+ *  may connect, else null. */
+async function connectingLogin(
+  actorId: string,
+  sessionEpoch: number | null,
+  exec: Exec,
+): Promise<{ id: string; email: string } | null> {
   const [row] = await exec
     .select({
       role: authUsers.role,
@@ -249,13 +263,14 @@ export async function actorMayConnect(
     .leftJoin(mcpLoginAccess, eq(mcpLoginAccess.loginId, authUsers.id))
     .where(eq(authUsers.id, actorId))
     .limit(1);
-  if (!row || row.disabledAt || !row.email) return false;
-  if (sessionEpoch === null) return row.role === 'admin';
-  return (
-    (row.role === 'member' || row.role === 'client') &&
-    row.sessionEpoch === sessionEpoch &&
-    row.mcpEnabled === true
-  );
+  if (!row || row.disabledAt || !row.email) return null;
+  const may =
+    sessionEpoch === null
+      ? row.role === 'admin'
+      : (row.role === 'member' || row.role === 'client') &&
+        row.sessionEpoch === sessionEpoch &&
+        row.mcpEnabled === true;
+  return may ? { id: actorId, email: row.email } : null;
 }
 
 async function issueTokens(
@@ -338,9 +353,8 @@ async function exchangeClaimed(
   }
 
   // The login may have been demoted or disabled between consent and exchange.
-  if (!(await actorMayConnect(row.actorId, row.sessionEpoch ?? null, tx))) {
-    return { ok: false, error: 'invalid_grant' };
-  }
+  const login = await connectingLogin(row.actorId, row.sessionEpoch ?? null, tx);
+  if (!login) return { ok: false, error: 'invalid_grant' };
 
   const tokens = await issueTokens(
     row.clientId,
@@ -350,7 +364,7 @@ async function exchangeClaimed(
     row.sessionEpoch ?? null,
     tx,
   );
-  return { ok: true, tokens };
+  return { ok: true, tokens, login, clientId: row.clientId };
 }
 
 /** refresh_token grant — concurrency-safe rotation.
@@ -442,9 +456,8 @@ async function refreshLocked(
   }
   // Refresh forks new rows, so without this a locked-out login's connector
   // would outlive every revoke that ran before the fork.
-  if (!(await actorMayConnect(row.actorId, row.sessionEpoch ?? null, tx))) {
-    return fail('login may no longer connect');
-  }
+  const login = await connectingLogin(row.actorId, row.sessionEpoch ?? null, tx);
+  if (!login) return fail('login may no longer connect');
 
   const tokens = await issueTokens(
     row.clientId,
@@ -467,7 +480,7 @@ async function refreshLocked(
       lastUsedAt: new Date(now),
     })
     .where(eq(oauthAccessTokens.id, row.id));
-  return { ok: true, tokens };
+  return { ok: true, tokens, login, clientId: row.clientId };
 }
 
 // ── Bearer validation (resource server) ──────────────────────────────────────

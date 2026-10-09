@@ -39,6 +39,14 @@ export type AuditEntry = {
     // A member's bearer became a session cookie (POST /api/auth/sso), what
     // carries it to the MCP consent page. An admin's is an api.write.
     | 'auth.sso'
+    // An MCP client's OAuth grant (access matrix T11): a login pressed
+    // Allow on the consent page and a code was made; a consent password
+    // was wrong (or too many tries); the client exchanged its code, or
+    // refreshed its grant. detail.clientId names the client.
+    | 'oauth.consent'
+    | 'oauth.consent_failed'
+    | 'oauth.code_exchanged'
+    | 'oauth.token_refreshed'
     // A first-run signup refused for a wrong or missing setup code
     // (detail.reason). The signup that lands is a user.create.
     | 'auth.signup_failed'

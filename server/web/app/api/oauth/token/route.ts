@@ -3,11 +3,21 @@
  * access (+ refresh) token, and rotates refresh tokens. Public clients only
  * (token_endpoint_auth_method=none) — PKCE is the client proof. Standard
  * application/x-www-form-urlencoded request. Public endpoint; rate-limited later.
+ *
+ * Gated on the box's MCP switch like every other connector endpoint (access
+ * matrix T10): while it is off, no code is exchanged and no refresh mints a
+ * grant. Each grant made is on the audit trail (T11).
  */
 import { NextResponse } from '@/server/http-compat';
 import { isBusy, pgErrorCode } from '@mantle/db';
-import { exchangeAuthCode, refreshAccessToken, type TokenResponse } from '@/lib/mcp-oauth';
+import {
+  exchangeAuthCode,
+  isRemoteMcpEnabled,
+  refreshAccessToken,
+  type TokenResponse,
+} from '@/lib/mcp-oauth';
 import { clientIpKey, rateLimit } from '@/lib/rate-limit';
+import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 
 function oauthError(error: string, description?: string, status = 400) {
   return NextResponse.json(
@@ -39,9 +49,29 @@ function tokenOk(tokens: TokenResponse) {
   });
 }
 
+/** The grant on the trail, after its transaction committed. */
+function auditGrant(
+  req: Request,
+  action: 'oauth.code_exchanged' | 'oauth.token_refreshed',
+  res: { login: { id: string; email: string }; clientId: string },
+): void {
+  auditFireAndForget({
+    actorId: res.login.id,
+    actorEmail: res.login.email,
+    action,
+    method: 'POST',
+    path: '/api/oauth/token',
+    detail: { clientId: res.clientId },
+    ...requestMetaFrom(req),
+  });
+}
+
 export async function POST(req: Request) {
   const limit = rateLimit(`oauth:token:${clientIpKey(req)}`, { max: 30, windowMs: 60_000 });
   if (!limit.ok) return oauthError('rate_limited', undefined, 429);
+  // The box's switch off: the connector is invisible, as on /api/mcp,
+  // /authorize and /register. A refresh must not keep a grant alive.
+  if (!(await isRemoteMcpEnabled())) return oauthError('not_found', undefined, 404);
 
   let form: FormData;
   try {
@@ -71,7 +101,9 @@ export async function POST(req: Request) {
       exchangeAuthCode({ code, redirectUri, clientId, codeVerifier }),
     );
     if (res instanceof Response) return res;
-    return res.ok ? tokenOk(res.tokens) : oauthError(res.error);
+    if (!res.ok) return oauthError(res.error);
+    auditGrant(req, 'oauth.code_exchanged', res);
+    return tokenOk(res.tokens);
   }
 
   if (grantType === 'refresh_token') {
@@ -82,7 +114,9 @@ export async function POST(req: Request) {
     }
     const res = await whenNotBusy(() => refreshAccessToken({ refreshToken, clientId }));
     if (res instanceof Response) return res;
-    return res.ok ? tokenOk(res.tokens) : oauthError(res.error);
+    if (!res.ok) return oauthError(res.error);
+    auditGrant(req, 'oauth.token_refreshed', res);
+    return tokenOk(res.tokens);
   }
 
   return oauthError('unsupported_grant_type');
