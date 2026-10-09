@@ -7,13 +7,13 @@ bearer (`server/web/lib/mcp-auth.ts`), and gets that caller's tools only.
 
 ## Who can connect
 
-| Bearer | Who | Tools |
-| --- | --- | --- |
-| OAuth token of an admin | the owner | the full owner surface, as before |
-| OAuth token of a member or client | that login | its role's responder tools |
-| API key `mtlk_...` (migration 0232) | the login that made it | that login's tools, narrowed by the key (docs/guide/07-api/08-api-keys.md) |
-| Static token `mtlmcpk_...` (RETIRED, still honoured) | one member or client login | its role's responder tools |
-| Peer token `mtlpeer_...` with "Acts as" | the bound login | as that login, with the peer's write switch (and, bound to a member or client, the login's MCP and Write switches too) |
+| Bearer                                               | Who                        | Tools                                                                                                                  |
+| ---------------------------------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| OAuth token of an admin                              | the owner                  | the full owner surface, as before                                                                                      |
+| OAuth token of a member or client                    | that login                 | its role's responder tools                                                                                             |
+| API key `mtlk_...` (migration 0232)                  | the login that made it     | that login's tools, narrowed by the key (docs/guide/07-api/08-api-keys.md)                                             |
+| Static token `mtlmcpk_...` (RETIRED, still honoured) | one member or client login | its role's responder tools                                                                                             |
+| Peer token `mtlpeer_...` with "Acts as"              | the bound login            | as that login, with the peer's write switch (and, bound to a member or client, the login's MCP and Write switches too) |
 
 Since 2026-10-07 an admin no longer mints static tokens for a member or
 client (`POST /api/mcp-logins/:id/tokens` answers 410): nobody makes a
@@ -25,7 +25,10 @@ A member or client reaches `/api/mcp` only while an admin turned MCP on for
 that login (Settings, MCP; table `mcp_login_access`). Their OAuth grants and
 static tokens carry the login's session epoch: sign out everywhere, a password
 change, a disable or a role change ends them. The box-level remote MCP switch
-still gates everything.
+still gates everything, as a pause: while it is off `/api/mcp`, the consent
+page, client registration and the token endpoint all answer 404, so no grant
+is used or renewed; it revokes nothing, and turning it on again brings back
+every grant still inside its refresh life (access matrix T10, a decision).
 
 ## A member's or client's tools
 

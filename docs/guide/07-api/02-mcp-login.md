@@ -4,11 +4,11 @@ Let a team member, a client or another Mantle use your brain from an MCP client,
 
 The connector URL is the same one the owner uses. Who connects decides which tools they get:
 
-| Who connects | How they prove it | What they get |
-| --- | --- | --- |
-| An admin | Signs in at the connector URL | All owner tools |
+| Who connects       | How they prove it                                         | What they get                                        |
+| ------------------ | --------------------------------------------------------- | ---------------------------------------------------- |
+| An admin           | Signs in at the connector URL                             | All owner tools                                      |
 | A member or client | Signs in at the connector URL, or sends their own API key | Their role's tools, read only unless you allow Write |
-| A peer Mantle | Its peer token, with **Acts as** set | The tools of the login it acts as |
+| A peer Mantle      | Its peer token, with **Acts as** set                      | The tools of the login it acts as                    |
 
 ## Before you start
 
@@ -33,11 +33,11 @@ A member's or client's MCP sees no app data until you open an app to it.
 
 Who reaches the app is the same as in the browser: members for a team, client or public app; clients for a client app. They need the app to be published.
 
-| The login's **Write** | The app's **Informational** | What their MCP may do |
-| --- | --- | --- |
-| Off | Any | Read the rows |
-| On | Off | Read, and insert, update or delete rows |
-| On | On | Read the rows |
+| The login's **Write** | The app's **Informational** | What their MCP may do                   |
+| --------------------- | --------------------------- | --------------------------------------- |
+| Off                   | Any                         | Read the rows                           |
+| On                    | Off                         | Read, and insert, update or delete rows |
+| On                    | On                          | Read the rows                           |
 
 A public app stays read only for members. MCP never changes an app's tables or columns: the schema belongs to the app's author.
 
@@ -47,12 +47,12 @@ Before the first MCP write to an app in an hour, the brain saves a snapshot of t
 
 An MCP connector (Settings > MCP connectors) starts at admin level: only admins use it. Set its level in **Settings > Tool groups** to open it:
 
-| Connector level | Who may use its tools |
-| --- | --- |
-| Admin | Admins only |
-| Team | Members: their own MCP and the apps they run |
-| Client | Clients and members: their own MCP and client apps |
-| Public | Members, plus contacts on a contact-share link of an app and public agents (read-only tools only). Not clients: a client reaches client-level connectors only |
+| Connector level | Who may use its tools                                                                                                                                         |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Admin           | Admins only                                                                                                                                                   |
+| Team            | Members: their own MCP and the apps they run                                                                                                                  |
+| Client          | Clients and members: their own MCP and client apps                                                                                                            |
+| Public          | Members, plus contacts on a contact-share link of an app and public agents (read-only tools only). Not clients: a client reaches client-level connectors only |
 
 Everyone at that level may use every tool of the connector, so keep a source with secret parts at admin level. The level is the only way in: granting a connector's group to the client agent gives clients nothing. A tool you marked read-only (**I confirm this tool only reads data**) is a read. A tool without the mark changes data: apps of members and clients may call it, and a member's or client's MCP only with their **Write** switch on. Contacts and public agents never get a tool without the mark. Every call is logged with the login.
 
@@ -87,7 +87,8 @@ Changing **Acts as** turns **Write** off again.
 - The member disconnecting that client in their own **Settings > MCP**.
 - Turning an app's **MCP access** off ends MCP on that app, for everyone.
 - A password change, a disable, a role change or "sign out everywhere" for that login. A peer that acts as it goes back to acting as nobody. Its **Write** and risky tools are kept, so setting **Acts as** again restores it.
-- Turning the whole connector off in **Settings > MCP**.
+
+Turning the whole connector off in **Settings > MCP** is a pause, not an end. While it is off no client can call Mantle or renew its sign-in. Turning it on again brings every sign-in back that has not expired. To end one login's access for good, use its **MCP** switch.
 
 ## Check it worked
 
