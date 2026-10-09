@@ -184,6 +184,9 @@ export type ListSpaceOpts = {
    *  items an admin has taken over, as `with-admin` rows (title and kind
    *  only), before the own rows; `total` counts them. */
   withAdmin?: boolean;
+  /** Only these items (Team drafts: the admin's Shared by members, which
+   *  picks the eligible ids first, member-items-shared.ts). */
+  ids?: readonly string[];
   limit?: number;
   offset?: number;
 };
@@ -1075,6 +1078,7 @@ export async function listTeamDrafts(
     inMemberSpace,
     sql`${spaceItems.authorLoginId} IS DISTINCT FROM ${loginId}`,
     opts.kind ? eq(nodes.type, opts.kind) : inArray(nodes.type, [...SPACE_ITEM_KINDS]),
+    opts.ids ? (opts.ids.length ? inArray(nodes.id, [...opts.ids]) : sql`false`) : undefined,
     titleFilter(opts.q),
     reviewFilter(opts.reviewStates),
   );

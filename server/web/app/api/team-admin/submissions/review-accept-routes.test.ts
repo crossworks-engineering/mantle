@@ -77,7 +77,11 @@ describe('review Accept routes', () => {
   it('Accept forwards visibilityConfirmed, and a visibility refusal carries the list', async () => {
     const { POST } = await import('./[id]/accept/route');
     expect((await POST(post({ visibilityConfirmed: true }), ctx)).status).toBe(200);
-    expect(callOf('acceptReviewItem')?.[3]).toEqual({ visibilityConfirmed: true });
+    // The route always asks for the pin (the caller's is checked under lock).
+    expect(callOf('acceptReviewItem')?.[3]).toEqual({
+      visibilityConfirmed: true,
+      requirePin: true,
+    });
     const { ReviewError } = await import('@mantle/content');
     const changes = [{ id: FILE, title: 'x', from: 'admin' as const, to: 'client' as const }];
     const res = (await import('@/lib/member-review')).reviewErrorResponse(
@@ -96,7 +100,11 @@ describe('review Accept routes', () => {
     const { POST } = await import('./[id]/accept/route');
     const body = { audience: 'public', lowerConfirmed: true, confirmedIds: [FILE] };
     expect((await POST(post(body), ctx)).status).toBe(200);
-    expect(callOf('acceptReviewItem')?.[3]).toEqual(body);
+    expect(callOf('acceptReviewItem')?.[3]).toEqual({ ...body, requirePin: true });
+    // A client cannot switch the pin off: an unknown key is dropped.
+    h.calls.length = 0;
+    expect((await POST(post({ requirePin: false }), ctx)).status).toBe(200);
+    expect(callOf('acceptReviewItem')?.[3]).toEqual({ requirePin: true });
     expect((await POST(post({ confirmedIds: ['nope'] }), ctx)).status).toBe(400);
   });
 

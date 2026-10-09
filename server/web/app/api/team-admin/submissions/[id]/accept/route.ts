@@ -2,9 +2,9 @@
  * POST /api/team-admin/submissions/:id/accept
  *   { audience?: 'admin'|'team'|'client'|'public', parentPageId?, folderPath?,
  *     folderId?, lowerConfirmed?, confirmedIds? }
- * `submittedAt` (the pin, workspace review pattern): the `submittedAt` the
- * admin was shown (null for a left-behind item); a different one now is a
- * 409 `changed`, nothing moved. Left out by an older client: no check.
+ * `submittedAt` (the pin, workspace review pattern), REQUIRED: the
+ * `submittedAt` the admin was shown (null only for a left-behind item never
+ * submitted). Missing, or a different one now: 409 `changed`, nothing moved.
  * `visibilityConfirmed`: it lands in a shared folder and is read above the
  * chosen level there, and the admin saw the list (else 409 `visibility`
  * with `changes` and `total`, before anything moves).
@@ -53,7 +53,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const body = Body.safeParse(await req.json().catch(() => ({})));
   if (!body.success) return NextResponse.json({ error: 'Invalid accept.' }, { status: 400 });
   try {
-    const res = await acceptReviewItem(user.id, params.data.id, reviewer(user), body.data);
+    const res = await acceptReviewItem(user.id, params.data.id, reviewer(user), {
+      ...body.data,
+      requirePin: true,
+    });
     return NextResponse.json(res);
   } catch (err) {
     return reviewErrorResponse(err);

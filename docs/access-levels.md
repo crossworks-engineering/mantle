@@ -565,26 +565,31 @@ review). The client shows it as the R and R/W pill and never derives it.
 Jason decided (2026-10-09, option 1) that admins see what the team
 shares. Before this, an admin read a member's personal item only when it
 was submitted, or team-shared by a login that is gone (member-review.ts
-`reviewable`). Now an admin also reads every item an ACTIVE member shared
+`reviewable`). Now an admin also reads every item an ACTIVE MEMBER shared
 with the team, in the item's own workspace ("Shared by members" in Pages,
 Notes, Tables, Draw and Files; Apps already did, N2 above).
 
 How it stays narrow:
 
-- The reads run on the team role with `mantle.human` on (`withTeamDrafts`),
-  through the same team-drafts queries a member uses for a teammate's
-  shared items (member-space.ts). Row security decides: a private item, an
-  admin's own private item, a client's item and a brain item are not rows
-  there, so they answer like a missing id.
-- The admin reads the SAVED version, never the author's working draft.
+- One rule (`member-items-shared.ts`, on the admin pool, in SQL): an item
+  kind in the personal space of a login with role member that is not
+  deactivated, shared with the team, in draft or returned. Never a client's
+  item, an admin's own, a folder, a submitted item (it waits for approval),
+  or a deactivated or deleted author's item (it stays "left behind" in the
+  review queue for Approve or Discard). The list, the item, its bytes and
+  SVG, and Unshare all apply it.
+- The reads then run on the team role with `mantle.human` on
+  (`withTeamDrafts`), through the same team-drafts queries a member uses
+  for a teammate's shared items (member-space.ts), so row security confirms
+  every row. The admin reads the SAVED version, never the working draft.
 - Routes: `/api/team-admin/member-items` (list per kind, one item, its
   bytes and SVG, Unshare), each behind `getOwnerOr401` (or the owner asset
-  token for bytes and SVG). A page's embedded file or drawing loads only
-  when it is itself shared with the team.
+  token for bytes and SVG). Bytes and SVG serve the item itself, or an item
+  in its bundle (what it embeds) that is itself shared with the team.
 - One write: Unshare, a guarded update of the state row back to private
-  (`adminUnshareMemberItem`). Nothing is deleted; the author keeps the item.
-- A submitted item lists under "Waiting for approval", and a gone author's
-  team-shared item stays "left behind" in the review queue, not here.
+  (`adminUnshareMemberItem`), under the same rule, re-checked on the
+  locked row. Nothing is deleted; the author keeps the item. It writes a
+  `member_item.unshared` audit row naming the item, its kind and author.
 
 ## 8. Clients in the database (client logins C1 to C5)
 

@@ -1,7 +1,8 @@
 /**
  * GET /api/team-admin/member-items/:id/svg[?node=<drawId>] : the saved SVG
- * of a team-shared member drawing, or of one the shared page shows when that
- * drawing is itself shared with the team (read at team level). Rendered as
+ * of a shared member drawing (:id), or of a drawing the shared item :id
+ * embeds (`node`, in its bundle and itself shared with the team). :id must
+ * be an active member's item shared with the team; read at team level. Rendered as
  * an image, never as markup; the sandbox CSP covers a direct open. Owner
  * session or the owner's `?at=` asset token.
  */
@@ -17,7 +18,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   if (user instanceof Response) return user;
   const params = SubmissionParams.safeParse(await ctx.params);
   const node = Node.safeParse(new URL(req.url).searchParams.get('node') ?? params.data?.id);
-  const svg = params.success && node.success ? await memberDrawSvgShared(node.data) : null;
+  const svg =
+    params.success && node.success ? await memberDrawSvgShared(params.data.id, node.data) : null;
   if (!svg) {
     return new Response('Not found', { status: 404, headers: { 'cache-control': 'no-store' } });
   }

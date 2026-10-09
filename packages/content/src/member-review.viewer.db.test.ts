@@ -229,6 +229,14 @@ describe.skipIf(!URL)('member review, accept and purge', () => {
     await expect(
       rv.acceptReviewItem(anchor, pageId, reviewer(), { submittedAt: shown }),
     ).rejects.toMatchObject({ reason: 'changed' });
+    // The route requires a pin: none at all is refused the same way.
+    await expect(
+      rv.acceptReviewItem(anchor, pageId, reviewer(), { requirePin: true }),
+    ).rejects.toMatchObject({ reason: 'changed' });
+    // And a null pin is for a never-submitted item only.
+    await expect(
+      rv.acceptReviewItem(anchor, pageId, reviewer(), { requirePin: true, submittedAt: null }),
+    ).rejects.toMatchObject({ reason: 'changed' });
     // Nothing moved; it still waits.
     expect(await ownerOf(pageId)).toBe(A);
     expect((await stateOf(pageId))?.review_state).toBe('submitted');
@@ -248,6 +256,7 @@ describe.skipIf(!URL)('member review, accept and purge', () => {
     const res = await rv.acceptReviewItem(anchor, pageId, reviewer(), {
       audience: 'team',
       submittedAt: shown,
+      requirePin: true,
     });
     moved.push(pageId, imageId);
     expect(res.moved.map((b) => b.id)).toEqual([pageId, imageId]);

@@ -1,9 +1,10 @@
 /**
- * GET /api/team-admin/member-items/:id/bytes[?node=<fileId>][&thumb=1] : a
- * team-shared member file, or a file the shared page shows when that file is
- * itself shared with the team (read at team level: nothing else). Owner
- * session or the owner's `?at=` asset token (an <img> src cannot carry a
- * bearer).
+ * GET /api/team-admin/member-items/:id/bytes[?node=<fileId>][&thumb=1] : the
+ * bytes of a shared member file (:id), or of a file the shared item :id
+ * embeds (`node`, in its bundle and itself shared with the team). :id must
+ * be an active member's item shared with the team; read at team level.
+ * Owner session or the owner's `?at=` asset token (an <img> src cannot carry
+ * a bearer).
  */
 import { z } from 'zod';
 import { openMemberFileShared } from '@mantle/content';
@@ -20,5 +21,5 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   if (!params.success) return reviewNotFound();
   const node = Node.safeParse(new URL(req.url).searchParams.get('node') ?? params.data.id);
   if (!node.success) return reviewNotFound();
-  return spaceFileResponse(req, await openMemberFileShared(node.data));
+  return spaceFileResponse(req, await openMemberFileShared(params.data.id, node.data));
 }

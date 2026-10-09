@@ -100,12 +100,12 @@ only, because older paired desktop and phone clients call them:
 `bytes`, `svg`, `accept`, `return` (Reject), `take-over`, `discard`. What
 changed:
 
-- **Approve is pinned.** The accept route takes `submittedAt`, the time the
-  shown version was sent (null for a left-behind item). Under the state
-  row's lock, a different one now (the author recalled and sent it again)
-  refuses 409 `changed`, nothing moved (`member-review-pin.ts`). Optional,
-  so an older client keeps working without the check. A submitted item is
-  frozen until a recall, so the time it was sent names the version.
+- **Approve is pinned.** The accept route REQUIRES `submittedAt`, the time
+  the shown version was sent (null only for a left-behind item never
+  submitted). Missing, or a different one under the state row's lock (the
+  author recalled and sent it again): 409 `changed`, nothing moved
+  (`member-review-pin.ts`, `requirePin`). A submitted item is frozen until
+  a recall, so the time it was sent names the version.
 - **Push links.** The needs-you push opens `/<workspace>?review=<id>`; the
   newest item now carries its kind (`NeedsYouItem.type`, additive).
 
@@ -134,13 +134,17 @@ docs/access-levels.md section 7c.
 
 Brain (mantle), `packages/content/src/member-items-shared.ts`:
 
+- One rule in SQL picks what an admin may reach: an item kind in the
+  space of an active member (role member, not deactivated), shared with
+  the team, in draft or returned. Never a client's item, an admin's own, a
+  folder, a submitted item, or a gone author's (left behind in the queue).
 - `listMemberItemsShared(admin, kind?)`, `getMemberItemShared(id)`,
-  `openMemberFileShared(id)`, `memberDrawSvgShared(id)`: the team-drafts
-  reads on the team role with the human flag, so row security keeps
-  private items out, and only the SAVED version is read. Listed: active
-  authors only, not submitted (Waiting for approval has those), not
-  accepted or taken. A gone author's item stays left behind in the queue.
-- `adminUnshareMemberItem(id)`: back to private, nothing deleted.
+  `openMemberFileShared(id, node?)`, `memberDrawSvgShared(id, node?)`: the
+  rule first, then the team-drafts reads on the team role with the human
+  flag, so row security confirms, and only the SAVED version is read. A
+  `node` must be the item or in its bundle (what it embeds).
+- `adminUnshareMemberItem(id)`: back to private under the same rule,
+  nothing deleted; the route writes a `member_item.unshared` audit row.
 - Routes, admin only: `GET /api/team-admin/member-items[?kind=]`,
   `GET :id[?tab=]`, `GET :id/bytes[?node=&thumb=1]`, `GET :id/svg[?node=]`,
   `POST :id/unshare`.
@@ -149,8 +153,8 @@ UI (jackdaw): "Shared by members" below "Waiting for approval" in each
 workspace (hidden while empty, and on a brain without the route). A card
 opens the item read only in the same pane (`?review=<id>`; the pane asks
 the review queue first, then the shared route) under the one header:
-**Unshare** in words, **Info** (who shared it, last change) and **Focus** as
-icons. No Take over (the brain takes over submitted items only) and no
+**Unshare** in words (with a short confirm), **Info** (who shared it, last
+change) and **Focus** as icons. No Take over (the brain takes over submitted items only) and no
 Delete yet.
 
 ## What is reusable

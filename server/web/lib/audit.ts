@@ -90,6 +90,9 @@ export type AuditEntry = {
     | 'key.revoked'
     | 'key.refused'
     | 'api.write'
+    // An admin put a member's team-shared item back to private (Shared by
+    // members). detail.itemId, detail.type, detail.authorLoginId.
+    | 'member_item.unshared'
     // A peer that acted as a login stopped acting as it: the login's
     // sessions ended or its MCP was switched off (access matrix L12, L13).
     // detail.peerId, detail.loginId, detail.reason.

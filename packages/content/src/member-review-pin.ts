@@ -7,8 +7,9 @@
  */
 
 /** Whether the pinned `submittedAt` is the one the item has now. Undefined:
- *  an older client sent no pin, nothing to check. Null: a left-behind item,
- *  never submitted. */
+ *  no pin, nothing to compare (the accept route refuses that itself,
+ *  `requirePin`). Null matches only an item never submitted (a left-behind
+ *  one): a submitted or taken item always has a time, so a null pin fails. */
 export function pinHolds(pinned: string | null | undefined, now: string | null): boolean {
   if (pinned === undefined) return true;
   if (pinned === null || now === null) return pinned === now;

@@ -70,9 +70,10 @@ export type AcceptRequest = {
   /** The admin saw the `visibility` refusal's list and accepts that those
    *  items are read above the chosen level where they land. */
   visibilityConfirmed?: boolean;
-  /** The pin (workspace review pattern): the `submittedAt` of the version
-   *  the admin was shown, null for a left-behind item. A different one now
-   *  is a 409 `changed`; nothing moved. */
+  /** The pin (workspace review pattern), required by the accept route: the
+   *  `submittedAt` of the version the admin was shown, null for a
+   *  left-behind item never submitted. Missing, or a different one now: 409
+   *  `changed`; nothing moved. */
   submittedAt?: string | null;
 };
 

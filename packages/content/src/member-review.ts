@@ -623,11 +623,13 @@ export type AcceptOptions = {
    *  read above the chosen level there (the `visibility` refusal's list). */
   visibilityConfirmed?: boolean;
   /** The pin (workspace review pattern, security line 3): the `submittedAt`
-   *  of the version the admin was shown (null: a left-behind item, never
+   *  of the version the admin was shown (null: a left-behind item never
    *  submitted). Checked under the state row's lock; a different one (the
-   *  author recalled it and sent it again) refuses with `changed`. Left out
-   *  by an older client: no check. */
+   *  author recalled it and sent it again) refuses with `changed`. */
   submittedAt?: string | null;
+  /** The route sets it: an Approve without a pin is refused (`changed`).
+   *  Only internal callers (tests) accept unpinned. */
+  requirePin?: boolean;
 };
 
 export type AcceptResult = {
@@ -823,6 +825,9 @@ export async function acceptReviewItem(
       const found = await reviewRow(id, tx);
       if (!found) throw notFound();
       // Pinned: what the admin approved is what they were shown.
+      if (opts.requirePin && opts.submittedAt === undefined) {
+        throw new ReviewError('changed', 'Open the item again and approve the version on screen.');
+      }
       if (!pinHolds(opts.submittedAt, found.row.submittedAt)) {
         throw new ReviewError(
           'changed',
