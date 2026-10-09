@@ -1,21 +1,19 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import {
-  bearerFromHeader,
   endLoginSessions,
   getLoginOr401,
   loginRefused,
-  mobileTokenJti,
   setSessionCookie,
   updatePassword,
   verifyPassword,
 } from '@/lib/auth';
+import { ownCookieOpts, ownLiveDeviceJti } from '@/lib/auth/own-device';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { rateLimit } from '@/lib/rate-limit';
 import { firstIssue } from '@/lib/zod-issue';
 import { refuseCrossSiteAuthPost } from '@/lib/auth/preflight';
 import { AUTH_BODY_CEILING_BYTES, readJsonCapped } from '@/lib/body-limit';
-import { OWNER_SSO_COOKIE_TTL_SECONDS } from '@/lib/owner-sso';
 
 const ChangePasswordBody = z
   .object({
@@ -70,16 +68,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Current password is incorrect.' }, { status: 401 });
   }
 
+  // The device that asked, before anything is revoked: its own live device
+  // token, whether the request resolved on it (the phone) or on the cookie
+  // the web client upgraded it to, which rides with it (access matrix T15).
+  const keepJti = await ownLiveDeviceJti(req, actorId);
   await updatePassword(actorId, parsed.data.newPassword);
   // A new password ends every other session the login holds (F06): the epoch
   // bump kills each cookie and asset token signed before it, and the login's
-  // bearers are revoked. The device that asked stays signed in: a cookie
-  // caller gets a fresh cookie at the new epoch, a bearer caller keeps its
-  // own bearer (only the others are revoked).
-  const keepJti =
-    login.source === 'mobile'
-      ? mobileTokenJti(bearerFromHeader(req.headers.get('authorization')) ?? '')
-      : null;
+  // bearers are revoked. The device that asked stays signed in: it keeps its
+  // own bearer (only the others are revoked), and a cookie caller gets a
+  // fresh cookie at the new epoch.
   const unboundPeerIds: string[] = [];
   const epoch = await endLoginSessions(actorId, { keepJti, endKeys: true, unboundPeerIds });
   auditFireAndForget({
@@ -95,16 +93,10 @@ export async function POST(req: Request) {
   const res = NextResponse.json({ ok: true, peersUnbound: unboundPeerIds.length });
   // A cookie that rides with a bearer is the web client's upgrade of it
   // (POST /api/auth/sso): it keeps that short life, or the re-mint would
-  // outlive the device's revocable bearer by a year.
+  // outlive the device's revocable bearer by a year, and it is bound to the
+  // kept device token, so a revoke of that device ends it.
   if (login.source === 'web' && epoch !== null) {
-    const withBearer = !!bearerFromHeader(req.headers.get('authorization'));
-    setSessionCookie(
-      res,
-      req,
-      actorId,
-      epoch,
-      withBearer ? { ttlSeconds: OWNER_SSO_COOKIE_TTL_SECONDS } : {},
-    );
+    setSessionCookie(res, req, actorId, epoch, ownCookieOpts(req, keepJti));
   }
   return res;
 }

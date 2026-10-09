@@ -91,7 +91,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   });
   // After the commit, as endLoginSessions does: a rolled-back switch leaves
   // no row.
-  auditKeysEnded(login.id, user.actor.id, endedKeyIds);
+  auditKeysEnded(login.id, user.actor.id, endedKeyIds, 'mcp-off');
   auditPeersUnbound(login.id, user.actor.id, unboundPeerIds, 'mcp-off');
   return NextResponse.json({
     enabled: row!.enabled,

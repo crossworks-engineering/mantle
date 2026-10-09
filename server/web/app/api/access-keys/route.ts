@@ -26,7 +26,9 @@
  *      per login), a member's key ends within 90 days, and a client (who
  *      has no password) gets at most 30 days. A password change, "sign out
  *      everywhere" and an admin's End sessions revoke every key the login
- *      holds (endLoginSessions `endKeys`).
+ *      holds (endLoginSessions `endKeys`). A member or client makes no key
+ *      while an admin has their MCP turned off (access matrix T16): turning
+ *      it off revoked their keys.
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
@@ -38,6 +40,7 @@ import {
   MAX_ACCESS_KEY_EXPIRY_DAYS,
   MAX_KEY_DAYS_BY_ROLE,
   MAX_LIVE_KEYS_PER_LOGIN,
+  MINT_REFUSED_MCP_OFF,
   expiryFromDays,
   keyNeedsPassword,
   mintAccessKey,
@@ -160,6 +163,15 @@ export async function POST(req: Request) {
     sessionEpoch: login.kind === 'client' ? login.client.sessionEpoch : null,
     maxLive: MAX_LIVE_KEYS_PER_LOGIN,
   });
+  if (minted === MINT_REFUSED_MCP_OFF) {
+    return NextResponse.json(
+      {
+        error: 'An admin has turned MCP off for your login, so you cannot make a key now.',
+        reason: 'mcp-off',
+      },
+      { status: 403 },
+    );
+  }
   if (!minted) {
     return NextResponse.json(
       {

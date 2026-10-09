@@ -6,7 +6,8 @@
  *    endLoginSessions with endKeys) unbinds every peer that acts as the
  *    login; a peer bound to someone else is not touched;
  *  - L13: turning the login's MCP off revokes its API keys and unbinds its
- *    peers, so turning MCP on again brings neither back.
+ *    peers, so turning MCP on again brings neither back. The key rows, like
+ *    the peer rows, say the MCP switch did it (T17).
  *
  * An unbound peer keeps its federation grants; it only stops acting as the
  * login (mcp-auth.ts refuses a peer bound to nobody).
@@ -141,6 +142,15 @@ describe.skipIf(!URL)('peer bindings end with the login', () => {
     expect(k!.revoked_at).not.toBeNull();
     expect(k!.revoked_by).toBe(who.admin);
     expect((await peer(peers.client)).acts_as_login_id).toBeNull();
+    // The key row names the switch, as the peer row does (T17).
+    await vi.waitFor(async () =>
+      expect(
+        (
+          await sql`select actor_email, detail->>'reason' as reason from audit_log
+                     where action = 'key.revoked' and detail->'keyIds' ? ${key}`
+        ).map((r) => ({ ...r })),
+      ).toEqual([{ actor_email: 'mcp-switch', reason: 'mcp-off' }]),
+    );
     // On again: nothing comes back.
     expect((await patch(true)).status).toBe(200);
     const [again] =

@@ -980,9 +980,15 @@ export function setSessionCookie(
   req: Request,
   loginId: string,
   epoch: number,
-  opts: { ttlSeconds?: number } = {},
+  /** `deviceJti`: the device token the cookie rides with (the web client's
+   *  upgrade): the cookie then lives only while that device does. */
+  opts: { ttlSeconds?: number; deviceJti?: string } = {},
 ): void {
-  const { value, maxAgeSec } = buildSessionCookie(loginId, { epoch, ttlSeconds: opts.ttlSeconds });
+  const { value, maxAgeSec } = buildSessionCookie(loginId, {
+    epoch,
+    ttlSeconds: opts.ttlSeconds,
+    deviceJti: opts.deviceJti,
+  });
   res.cookies.set(SESSION_COOKIE_NAME, value, {
     httpOnly: true,
     secure: secureCookies(req),
@@ -1164,14 +1170,21 @@ export async function endLoginSessions(
 
 /** One key.revoked row for the keys a session end revoked (M2 audit N7):
  *  which login, how many, which. Call it after the revoking transaction
- *  commits. No row when there were none. */
-export function auditKeysEnded(loginId: string, actorId: string, keyIds: readonly string[]): void {
+ *  commits. No row when there were none. `reason` says what ended them, as
+ *  the peer rows do: the login's MCP switch turned off is 'mcp-off'
+ *  (access matrix T17). */
+export function auditKeysEnded(
+  loginId: string,
+  actorId: string,
+  keyIds: readonly string[],
+  reason: 'sessions-ended' | 'mcp-off' = 'sessions-ended',
+): void {
   if (keyIds.length === 0) return;
   auditFireAndForget({
     actorId,
-    actorEmail: 'session-end',
+    actorEmail: reason === 'mcp-off' ? 'mcp-switch' : 'session-end',
     action: 'key.revoked',
-    detail: { loginId, count: keyIds.length, keyIds: [...keyIds], reason: 'sessions-ended' },
+    detail: { loginId, count: keyIds.length, keyIds: [...keyIds], reason },
   });
 }
 

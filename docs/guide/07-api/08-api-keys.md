@@ -59,7 +59,7 @@ claude mcp add --transport http mantle https://example.com/api/mcp \
 ## Keys on MCP
 
 - An admin's key gets the owner tools, held to its access and areas. Tools that send, spend or publish stay blocked until you name them under **Risky MCP tools allowed** when you make the key.
-- A member's or client's key gets that login's own tools. It also needs **MCP** turned on for the login in **Settings > MCP** (turning it off revokes the login's keys), and it writes only while both the key and the login's **Write** switch allow it.
+- A member's or client's key gets that login's own tools. It also needs **MCP** turned on for the login in **Settings > MCP** (turning it off revokes the login's keys, and after that the login makes no new key until **MCP** is on again), and it writes only while both the key and the login's **Write** switch allow it.
 
 ## What ends a key
 

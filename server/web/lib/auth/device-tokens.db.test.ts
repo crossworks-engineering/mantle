@@ -16,7 +16,10 @@
  *    the 30 days, and the push devices follow the new token;
  *  - a member or a client enrols, lists and removes only its own push
  *    devices, and a sign-out removes them;
- *  - the unread count and the read cursor of the login's own chat thread.
+ *  - the unread count and the read cursor of the login's own chat thread;
+ *  - a password change or an admin's own reset in the web client (cookie
+ *    and bearer together) keeps the tab's own bearer, and gives back the
+ *    upgrade's short cookie bound to it (T14, T15).
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/auth/device-tokens.db.test.ts
  */
@@ -301,6 +304,83 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
     let head = await token(id);
     for (let i = 0; i < 17; i += 1) head = await token(id, { rotatedTo: head });
     expect(await memberProbe({ cookie: bound(head) })).toBe(401);
+  });
+
+  /** The session cookie a response set: its header value and its claims. */
+  const setCookie = (res: Response) => {
+    const raw = res.headers.get('set-cookie') ?? '';
+    const value = /mantle_session=([^;]+)/.exec(raw)?.[1] ?? '';
+    return {
+      cookie: `mantle_session=${value}`,
+      claims: tokens.verifySessionCookie(value),
+      maxAge: Number(/max-age=(\d+)/i.exec(raw)?.[1]),
+    };
+  };
+  /** A web client tab: its device bearer and the cookie it upgraded it to. */
+  const webTab = async (name: string) => {
+    const signed = await json(await deviceLogin(emailOf(name), PASSWORD, 'Tab'));
+    const bearer = signed.token as string;
+    const upgrade = await call('/api/auth/sso', { method: 'POST', bearer });
+    expect(upgrade.status).toBe(204);
+    return { bearer, deviceId: signed.deviceId as string, cookie: setCookie(upgrade).cookie };
+  };
+
+  it("a password change in the web client keeps the tab's bearer and binds its new cookie to it (T15)", async () => {
+    const id = await addLogin('pw-tab', 'member');
+    const tab = await webTab('pw-tab');
+    const other = await json(await deviceLogin(emailOf('pw-tab'), PASSWORD, 'Other'));
+    const res = await call('/api/auth/change-password', {
+      method: 'POST',
+      cookie: tab.cookie,
+      bearer: tab.bearer,
+      body: { oldPassword: PASSWORD, newPassword: 'a second long password' },
+    });
+    expect(res.status).toBe(200);
+    const fresh = setCookie(res);
+    expect(fresh.maxAge).toBe(7 * DAY);
+    expect(fresh.claims?.dj).toBe(tab.deviceId);
+    // The tab keeps its own bearer; every other device ends.
+    expect(await memberProbe({ bearer: tab.bearer })).toBe(400);
+    expect(await memberProbe({ bearer: other.token as string })).toBe(401);
+    expect(await memberProbe({ cookie: tab.cookie })).toBe(401);
+    expect(await memberProbe({ cookie: fresh.cookie })).toBe(400);
+    // A revoke of the tab's device ends the new cookie with it.
+    const revoke = await call(`/api/users/${id}/devices/${tab.deviceId}`, {
+      method: 'DELETE',
+      cookie: asAdmin(),
+    });
+    expect(revoke.status).toBe(200);
+    expect(await memberProbe({ cookie: fresh.cookie })).toBe(401);
+  });
+
+  it("an admin's reset of their own password in the web client keeps the tab and its short cookie (T14)", async () => {
+    const id = await addLogin('pw-self', 'admin');
+    const tab = await webTab('pw-self');
+    const res = await call(`/api/users/${id}/password`, {
+      method: 'POST',
+      cookie: tab.cookie,
+      bearer: tab.bearer,
+      body: { newPassword: 'a second long password' },
+    });
+    expect(res.status).toBe(200);
+    const fresh = setCookie(res);
+    expect(fresh.maxAge).toBe(7 * DAY);
+    expect(fresh.claims?.dj).toBe(tab.deviceId);
+    expect((await call('/api/auth/whoami', { bearer: tab.bearer })).status).toBe(200);
+    expect((await call('/api/auth/whoami', { cookie: fresh.cookie })).status).toBe(200);
+    // A cookie on its own (a password sign-in) keeps its year.
+    const web = await call('/api/auth/login', {
+      method: 'POST',
+      body: { email: emailOf('pw-self'), password: 'a second long password' },
+    });
+    const alone = await call(`/api/users/${id}/password`, {
+      method: 'POST',
+      cookie: setCookie(web).cookie,
+      body: { newPassword: 'a third long password' },
+    });
+    expect(alone.status).toBe(200);
+    expect(setCookie(alone).maxAge).toBeGreaterThan(300 * DAY);
+    expect(setCookie(alone).claims?.dj).toBeUndefined();
   });
 
   it('device-login signs an admin in; a wrong password and a client email are the same 401', async () => {

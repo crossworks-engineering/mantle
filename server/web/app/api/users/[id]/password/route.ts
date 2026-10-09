@@ -3,13 +3,12 @@ import { z } from 'zod';
 import { db, authUsers, eq } from '@mantle/db';
 import type { PasswordResetRefused } from '@mantle/client-types';
 import {
-  bearerFromHeader,
   endLoginSessions,
   getOwnerOr401WithSource,
-  mobileTokenJti,
   setSessionCookie,
   updatePassword,
 } from '@/lib/auth';
+import { ownCookieOpts, ownLiveDeviceJti } from '@/lib/auth/own-device';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { rateLimit } from '@/lib/rate-limit';
 
@@ -22,7 +21,9 @@ const Body = z.object({ newPassword: z.string().min(8).max(1024) });
  * may reset any account, their own included. The audit event is the
  * accountability mechanism. A reset ends every session the target holds
  * (F06); resetting your own keeps the device you did it from signed in, as
- * /api/auth/change-password does.
+ * /api/auth/change-password does: the device token it came with, and a
+ * cookie that rides with it keeps the web client's short upgrade life,
+ * bound to that token (access matrix T14), never a fresh year.
  */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const auth = await getOwnerOr401WithSource();
@@ -68,12 +69,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json(body, { status: 400 });
   }
 
-  await updatePassword(targetId, parsed.data.newPassword);
   const self = targetId === user.actor.id;
-  const keepJti =
-    self && source === 'mobile'
-      ? mobileTokenJti(bearerFromHeader(req.headers.get('authorization')) ?? '')
-      : null;
+  // Before anything is revoked: the caller's own live device token, on a
+  // bearer request or riding with the web client's cookie (T15).
+  const keepJti = self ? await ownLiveDeviceJti(req, targetId) : null;
+  await updatePassword(targetId, parsed.data.newPassword);
   const unboundPeerIds: string[] = [];
   const epoch = await endLoginSessions(targetId, {
     keepJti,
@@ -95,6 +95,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   // How many linked brains (peers acting as the login) were unbound: binding
   // one to the same login again restores it (access matrix L12).
   const res = NextResponse.json({ ok: true, peersUnbound: unboundPeerIds.length });
-  if (self && source === 'web' && epoch !== null) setSessionCookie(res, req, targetId, epoch);
+  if (self && source === 'web' && epoch !== null) {
+    setSessionCookie(res, req, targetId, epoch, ownCookieOpts(req, keepJti));
+  }
   return res;
 }
