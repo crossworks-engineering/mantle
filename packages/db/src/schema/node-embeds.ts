@@ -1,4 +1,4 @@
-import { index, pgTable, primaryKey, uuid } from 'drizzle-orm/pg-core';
+import { index, jsonb, pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { nodes } from './nodes';
 
 /**
@@ -19,3 +19,21 @@ export const nodeEmbeds = pgTable(
   },
   (t) => [primaryKey({ columns: [t.fromId, t.toId] }), index('node_embeds_to_idx').on(t.toId)],
 );
+
+/**
+ * Old summaries made before always fold (migration 0247, workspaces W2): a
+ * page, note or drawing with embeds whose summary may hold an embed's words.
+ * Moved here out of nodes.data so no reader of the row and no keyword search
+ * sees it; admin pool only (no grant to any limited role). The extractor
+ * deletes the row when it writes a summary from folded text.
+ */
+export const nodeMixedSummaries = pgTable('node_mixed_summaries', {
+  nodeId: uuid('node_id')
+    .primaryKey()
+    .references(() => nodes.id, { onDelete: 'cascade' }),
+  summary: text('summary'),
+  summaryModel: text('summary_model'),
+  summaryAt: text('summary_at'),
+  entities: jsonb('entities'),
+  movedAt: timestamp('moved_at', { withTimezone: true }).defaultNow().notNull(),
+});

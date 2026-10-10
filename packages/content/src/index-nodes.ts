@@ -91,6 +91,14 @@ export {
 export { chunkDocText, type DocChunk } from './chunk';
 export { chunkSpreadsheetProfile, hasSheetMarkers, isSpreadsheetTitle } from './chunk-spreadsheet';
 export { clampPieces } from './chunk-clamp';
+export {
+  EMBED_MARKER_DRAWING,
+  EMBED_MARKER_FILE,
+  EMBED_MARKER_PAGE,
+  foldNoteEmbeds,
+} from './embed-fold';
+export { drawSceneText } from './draw-scene-text';
+export { itemLevel } from './item-level';
 
 export {
   DEFAULT_BACKUP_CONFIG,

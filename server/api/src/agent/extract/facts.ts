@@ -122,7 +122,16 @@ async function classifyAndApplyFact(
   if (decision.decision === 'NOOP') {
     // Re-confirmed by this extraction — clear the suspect flag so the
     // re-extract sweep (H4) keeps it rather than retiring it as stale.
-    if (target) await db.update(facts).set({ dirty: false }).where(eq(facts.id, target.id));
+    // A fact of this node re-asserted from its folded text (always fold,
+    // workspaces plan 5.3) holds no embed's words: its W2 mark clears.
+    if (target)
+      await db
+        .update(facts)
+        .set({
+          dirty: false,
+          derivedMixed: sql`CASE WHEN ${facts.sourceNodeId} = ${sourceNodeId}::uuid THEN false ELSE ${facts.derivedMixed} END`,
+        })
+        .where(eq(facts.id, target.id));
     return 'NOOP';
   }
 

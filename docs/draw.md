@@ -50,8 +50,12 @@ draws
 - `appState` is stored trimmed to a whitelist (background, grid, scroll/zoom).
 - **Pasted images never live in the scene blob.** Each becomes a real `file`
   node via the files pipeline; `file_refs` maps them back. They get OCR'd once
-  by that pipeline, and their extracted text folds into `scene_text` at commit
-  (bounded, same rules as Pages' `foldEmbeddedText`). Deleting a file that a
+  by that pipeline and are indexed as their own items. Since always fold
+  (workspaces W2), `scene_text` holds the drawing's own words and one plain
+  `[embedded file]` marker per placed image, never the image's text: a reader
+  who may read the drawing but not the image finds none of its words.
+  `draw_get` still folds the text of the images the reader may see, live,
+  per reader (`draw-reader.ts`). Deleting a file that a
   committed scene still places is refused with a 409 (`reason: 'in_drawing'`).
 - `scene_text` comes from our own pure walker
   ([`packages/content/src/scene-to-text.ts`](../packages/content/src/scene-to-text.ts)):
@@ -139,9 +143,9 @@ opens the canvas), plain markdown `![alt](draw:<id>)`, and agents writing the
 same markdown. The @-mention picker also lists drawings, but a mention is a
 link chip, not an embed. Because the embed is live (`src` points at the
 drawing's current snapshot), editing the drawing updates every page that
-embeds it. On page commit, each embedded drawing's `scene_text` is folded into
-the page's indexed text, so a term that appears only inside the diagram still
-finds the page.
+embeds it. The page's indexed text holds an `[embedded drawing]` marker for
+it (always fold, workspaces W2): a term inside the diagram finds the drawing,
+through the drawing's own level or grants, not the page.
 
 ## 5a. Editor chrome follows the Mantle theme
 

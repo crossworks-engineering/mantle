@@ -61,6 +61,11 @@ export const facts = pgTable(
       .notNull()
       .default(sql`'{}'::uuid[]`),
     loginId: uuid('login_id'),
+    /** Workspaces W2 (migration 0247): made from a source's text before
+     *  always fold, so it may carry an embed's words. Read only in a scope
+     *  that holds the Admin workspace (never by a level role) until a later
+     *  extraction re-asserts it from folded text. */
+    derivedMixed: boolean('derived_mixed').notNull().default(false),
     /** True if the source node was edited and this fact should be re-extracted. */
     dirty: boolean('dirty').default(false).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

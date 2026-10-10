@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  boolean,
   index,
   jsonb,
   pgEnum,
@@ -116,6 +117,12 @@ export const nodes = pgTable(
     /** A per-login row (a chat, a fact learned from one): read only by
      *  this login inside its workspaces (plan S4). NULL = anyone there. */
     loginId: uuid('login_id'),
+    /** Workspaces W2 (migration 0247): the summary, entities and facts were
+     *  made from text that may hold an embed's words (before always fold).
+     *  The old summary sits in node_mixed_summaries (admin only); marked
+     *  facts are hidden outside Admin. Cleared when the extractor next
+     *  writes a summary from folded text. */
+    derivedMixed: boolean('derived_mixed').notNull().default(false),
     supersededReason: text('superseded_reason').$type<'version' | 'migrated' | 'corrected'>(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

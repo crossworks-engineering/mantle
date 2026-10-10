@@ -6,6 +6,8 @@
  * editor's schema will grow over time.
  */
 
+import { EMBED_MARKER_DRAWING, EMBED_MARKER_FILE, EMBED_MARKER_PAGE } from './embed-fold';
+
 type PMNode = {
   type?: string;
   text?: string;
@@ -69,10 +71,29 @@ const BLOCK_TYPES = new Set([
  *  does the same for Mermaid diagrams (label-dense, so usefully recallable). */
 const LABEL_KEYS = ['label', 'title', 'alt', 'text', 'name', 'filename', 'latex', 'source'];
 
-function render(node: PMNode | null | undefined): string {
+/** The marker an embed of another item indexes as (always fold, workspaces
+ *  plan 5.3), or null when `node` embeds nothing (a URL image, a mention). */
+function embedMarker(node: PMNode): string | null {
+  const a = node.attrs ?? {};
+  const set = (k: string) => typeof a[k] === 'string' && (a[k] as string).length > 0;
+  if (node.type === 'image' || node.type === 'pageImage') {
+    if (set('drawId')) return EMBED_MARKER_DRAWING;
+    if (set('nodeId')) return EMBED_MARKER_FILE;
+    return null;
+  }
+  if (node.type === 'fileEmbed') return set('nodeId') ? EMBED_MARKER_FILE : null;
+  if (node.type === 'childPage') return set('pageId') ? EMBED_MARKER_PAGE : null;
+  return null;
+}
+
+function render(node: PMNode | null | undefined, markers = false): string {
   if (!node || typeof node !== 'object') return '';
   if (typeof node.text === 'string') return node.text;
   if (node.type === 'hardBreak' || node.type === 'hard_break') return '\n';
+  if (markers) {
+    const m = embedMarker(node);
+    if (m) return m;
+  }
 
   const kids = Array.isArray(node.content) ? node.content : [];
   if (kids.length === 0) {
@@ -87,7 +108,7 @@ function render(node: PMNode | null | undefined): string {
 
   let inner = '';
   for (const k of kids) {
-    inner += render(k);
+    inner += render(k, markers);
     if (k.type && BLOCK_TYPES.has(k.type)) inner += '\n';
   }
 
@@ -104,10 +125,13 @@ function render(node: PMNode | null | undefined): string {
 }
 
 /** Render a ProseMirror document object to plaintext. Returns '' for anything
- *  that isn't a non-null object. */
-export function docToText(doc: unknown): string {
+ *  that isn't a non-null object. `embedMarkers`: an embed of another item (an
+ *  uploaded image, a file embed, a drawing, a child page card) renders as a
+ *  plain marker instead of its label, as the indexed text must (always fold,
+ *  workspaces plan 5.3). */
+export function docToText(doc: unknown, opts: { embedMarkers?: boolean } = {}): string {
   if (!doc || typeof doc !== 'object') return '';
-  return render(doc as PMNode)
+  return render(doc as PMNode, opts.embedMarkers === true)
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();

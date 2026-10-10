@@ -2,8 +2,9 @@
  * A page's indexed text at its level (client logins plan 3.3 point 4, N13;
  * audit B1) on a real, migrated Postgres. A client or public page's
  * `doc_text` names no item its level cannot read (a mention, a link, a child
- * page card: "Private item") and folds in only the files and drawings its
- * level reads; a team page's text is unchanged. When a level moves (an
+ * page card: "Private item"). Since always fold (workspaces W2) no page
+ * folds in an embed's text or name, at any level: an embed is a plain
+ * marker ("[embedded file]"). When a level moves (an
  * embedded file raised or lowered, the page's own level), the text is
  * re-folded, and nothing else happens: no summary, version or updated_at
  * change, and no announcement to the extractor. Seeds its own owner and
@@ -172,18 +173,25 @@ describe.skipIf(!URL)('page text at its level', () => {
     for (const w of TEAM_WORDS) expect(text, w).not.toContain(w);
     expect(text).toContain('Intro');
     expect(text).toContain('Private item');
-    expect(text).toContain('client pic');
-    expect(text).toContain('CLIENTFILETEXT');
-    // A readable chip and child page card carry today's title.
-    expect(text.split('Shared plan today').length - 1).toBe(2);
+    // Always fold: the readable embeds are markers, never their words.
+    expect(text).not.toContain('client pic');
+    expect(text).not.toContain('CLIENTFILETEXT');
+    expect(text).toContain('[embedded file]');
+    expect(text).toContain('[embedded page]');
+    // A readable chip carries today's title (the child page card is a marker).
+    expect(text.split('Shared plan today').length - 1).toBe(1);
   });
 
-  it("a team page's text is unchanged: every label and every embed's text", async () => {
+  it("a team page's text keeps every label, and a marker for each embed", async () => {
     const res = await draft.commitPage(owner, id.teamSame, body);
     expect(res.ok).toBe(true);
     const text = (await row(id.teamSame)).doc_text;
-    for (const w of ['TEAMLABEL', 'TEAMLINK', 'TEAMCHILD', 'TEAMFILETEXT', 'TEAMDRAWTEXT']) {
-      expect(text, w).toContain(w);
+    for (const w of ['TEAMLABEL', 'TEAMLINK']) expect(text, w).toContain(w);
+    for (const w of ['TEAMCHILD', 'TEAMALT', 'TEAMFILETEXT', 'TEAMDRAWTEXT', 'CLIENTFILETEXT']) {
+      expect(text, w).not.toContain(w);
+    }
+    for (const mk of ['[embedded file]', '[embedded drawing]', '[embedded page]']) {
+      expect(text).toContain(mk);
     }
     expect(text).toContain('ADMINABS');
     expect(text).not.toContain('Private item');
@@ -234,15 +242,18 @@ describe.skipIf(!URL)('page text at its level', () => {
     expect(String(after.updated_at)).toBe(String(before.updated_at));
     await settle();
     expect(announced).not.toContain(id.clientPage);
-    // The team page is not filtered, so raising changed nothing there.
-    expect((await row(id.teamSame)).doc_text).toContain('CLIENTFILETEXT');
+    // The team page is not filtered: still its markers, never the file's text.
+    expect((await row(id.teamSame)).doc_text).not.toContain('CLIENTFILETEXT');
   });
 
-  it('lowering an embedded file to client folds its text in', async () => {
+  it('lowering an embedded file to client adds its marker, never its text', async () => {
+    const markers = (t: string) => t.split('[embedded file]').length - 1;
+    const before = markers((await row(id.clientPage)).doc_text);
     await a.setItemLevel(owner, id.teamFile, 'client');
     const text = (await row(id.clientPage)).doc_text;
-    expect(text).toContain('TEAMFILETEXT');
-    expect(text).toContain('TEAMALT');
+    expect(markers(text)).toBe(before + 1);
+    expect(text).not.toContain('TEAMFILETEXT');
+    expect(text).not.toContain('TEAMALT');
     expect(text).not.toContain('TEAMLABEL');
   });
 
@@ -274,12 +285,12 @@ describe.skipIf(!URL)('page text at its level', () => {
     expect(text).toContain('Private item');
   });
 
-  it("the page's own level: raised to team, its text is the whole doc again", async () => {
+  it("the page's own level: raised to team, every label again, embeds still markers", async () => {
     await a.setItemLevel(owner, id.clientPage, 'team');
     const text = (await row(id.clientPage)).doc_text;
-    for (const w of ['TEAMLABEL', 'TEAMLINK', 'TEAMCHILD', 'TEAMDRAWTEXT']) {
-      expect(text, w).toContain(w);
-    }
+    for (const w of ['TEAMLABEL', 'TEAMLINK']) expect(text, w).toContain(w);
+    for (const w of ['TEAMCHILD', 'TEAMDRAWTEXT']) expect(text, w).not.toContain(w);
+    expect(text).toContain('[embedded drawing]');
     await settle();
     expect(announced).not.toContain(id.clientPage);
   });

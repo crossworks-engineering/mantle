@@ -4,6 +4,7 @@ A concrete, file-cited tour of how the system fits together. If you want one
 document to read before touching the codebase, this is it.
 
 Companion docs:
+
 - [`memory.md`](./memory.md), the memory layer in depth: tier taxonomy,
   vector vs graph retrieval, the `memories` / `entities` / `entity_edges`
   schema, the build sequence.
@@ -51,7 +52,7 @@ Companion docs:
   the brain (incl. `content_chunks` chunked retrieval + re-extract semantics).
   Also covers the **"Pages" delegate agent** + Phase 2b block-addressed
   editing (stable per-block ids, `page_blocks_list`, `page_block_*` tools)
-  + the Phase 3a editor AI-assist side panel.
+  - the Phase 3a editor AI-assist side panel.
 - [`conversation.md`](./conversation.md), the **unified conversation stream**:
   every channel (web `/assistant`, Telegram, future WhatsApp) writes one
   per-(owner, agent) store (`assistant_messages` + `channel`), one summarizer
@@ -77,19 +78,19 @@ Companion docs:
   sends from the user's mailbox via provider SMTP submission (reusing the IMAP
   app password); never an own MTA. The send half of the §8 read-only pipeline.
 - [`contacts.md`](./contacts.md), `contact` node type (name + company + email
-  + cell + description) and the `/contacts` master-detail UI. The contacts
-  list IS the email allowlist, and it fails closed: the agent may only send to
-  the user's own account addresses plus their contacts, with no contacts yet it
-  can email the user but not arbitrary outside addresses, so a prompt-injected
-  agent can't exfiltrate by mail. Add a contact to permit sending to them.
-  Per-method send counters bumped on success. Same-surname-different-given
-  reconciler refinement lives here too.
+  - cell + description) and the `/contacts` master-detail UI. The contacts
+    list IS the email allowlist, and it fails closed: the agent may only send to
+    the user's own account addresses plus their contacts, with no contacts yet it
+    can email the user but not arbitrary outside addresses, so a prompt-injected
+    agent can't exfiltrate by mail. Add a contact to permit sending to them.
+    Per-method send counters bumped on success. Same-surname-different-given
+    reconciler refinement lives here too.
 - [`chat-failover.md`](./chat-failover.md), primary + backup chat routes for
   agents and chat workers (migrations 0062/0063): a different-model backup the
   runtime fails over to on route-down / 429 / 5xx. Single-shot `chatWithFailover`
-  + sticky-within-turn tool-loop failover, per-route base URL + tailnet flag, the
-  operator UI, and the `resolveChatKey` source of truth. Operator summary in
-  `ai-workers.md` §7a.
+  - sticky-within-turn tool-loop failover, per-route base URL + tailnet flag, the
+    operator UI, and the `resolveChatKey` source of truth. Operator summary in
+    `ai-workers.md` §7a.
 - [`tailscale.md`](./tailscale.md), the networking layer that lets a cloud VPS
   reach a model box behind NAT by MagicDNS name: bundled `tailscale` compose
   sidecar (HTTP proxy, profile-gated), the `local` chat adapter, `tailnetFetch`
@@ -207,18 +208,18 @@ the object store (RustFS) from docker-compose. That's it.
 > Several sections below still cite `server/api/src/main.ts`; those files moved
 > to `server/api/src/agent/` but the behaviour they describe is unchanged.
 
-| Process            | What it does                                                                  |
-|--------------------|-------------------------------------------------------------------------------|
-| `postgres` (Docker)| Source of truth. Holds every row. Healthchecked, restart on failure.          |
-| `objectstore` (Docker) | Object store for attachment bytes (RustFS; MinIO until 2026-09). Healthchecked. |
-| `web`              | Next.js dev server (Turbopack). Serves the UI **and every `/api/**` route** (incl. SSE): but is now a **pure client/API host**: the browser bundle fetches its data over `/api` and no longer imports `@mantle/db` (see [§3a](#3a-durable-runners-the-febe-split-and-live-turn-streaming)). Hosts the `/assistant` chat surface, which **enqueues** the turn onto the `api` runner (POST `/api/assistant/turn` returns `202` immediately) and renders the live stream. |
-| `api`              | **The durable runner** (`server/api/src/main.ts`). Runs assistant + Telegram turns and all background agent work (extractor, summarizer, reflector, heartbeats) as **durable [DBOS](https://docs.dbos.dev/) workflows** journaled to a Postgres system DB. No HTTP surface of its own; it's reached by enqueue (web) and reaches clients by publishing turn events over the Postgres `NOTIFY` bus. Absorbed the old `server/api` (v0.64.0). |
-| `mcp`              | MCP server (`server/mcp/src/server.ts`). Speaks stdio JSON-RPC to Claude Code.  |
-| `worker` (email)   | `server/web/workers/email-sync.ts`. pg-boss queue consumer, runs IMAP syncs.    |
-| `tg`               | `server/web/workers/telegram-poll.ts`. Long-polls Telegram for new DMs.         |
-| `files`            | `server/web/workers/files-watch.ts`. chokidar on `MANTLE_FILES_ROOT`; mirrors external edits (vim, Syncthing, host `cp`) back into the DB. Loop-safe via `syncFileFromDisk`, which never re-writes bytes. |
-| `events`           | `server/web/workers/events-reminders.ts`. Polls every 30s for events whose `remind_at` has passed and `reminder_sent_at` is null; sends a Telegram DM via `@mantle/telegram`. A **recurring** event (`data.recur` = daily/weekly/monthly/yearly, optional `data.recur_until`) rolls its single row forward to the next occurrence and re-arms instead of marking sent, `rollForwardRecurrence` in `@mantle/content/events`. The tick also hosts two piggybacked housekeeping jobs: the tool-result spill sweep (`maybeSweep`, §9m) and the **scheduled-backup check** (`maybeRunScheduledBackups`, [`backups.md`](./backups.md), configured at /settings/backups). |
-| `docs`             | `server/web/workers/docs-sync.ts`. Mirrors the `docs/` collection into the brain as `documentation` nodes (the disk-watcher counterpart for docs). A changed file nulls the node's embedding and fires `node_ingested`; if the agent is down at that moment (a roll), the extract sweep re-queues it, because it windows on `updated_at` (`@mantle/db` extract-exempt.ts). |
+| Process                | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `postgres` (Docker)    | Source of truth. Holds every row. Healthchecked, restart on failure.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `objectstore` (Docker) | Object store for attachment bytes (RustFS; MinIO until 2026-09). Healthchecked.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `web`                  | Next.js dev server (Turbopack). Serves the UI **and every `/api/**` route** (incl. SSE): but is now a **pure client/API host**: the browser bundle fetches its data over `/api` and no longer imports `@mantle/db` (see [§3a](#3a-durable-runners-the-febe-split-and-live-turn-streaming)). Hosts the `/assistant` chat surface, which **enqueues** the turn onto the `api` runner (POST `/api/assistant/turn` returns `202` immediately) and renders the live stream.                                                                                                                                                                                             |
+| `api`                  | **The durable runner** (`server/api/src/main.ts`). Runs assistant + Telegram turns and all background agent work (extractor, summarizer, reflector, heartbeats) as **durable [DBOS](https://docs.dbos.dev/) workflows** journaled to a Postgres system DB. No HTTP surface of its own; it's reached by enqueue (web) and reaches clients by publishing turn events over the Postgres `NOTIFY` bus. Absorbed the old `server/api` (v0.64.0).                                                                                                                                                                                                                        |
+| `mcp`                  | MCP server (`server/mcp/src/server.ts`). Speaks stdio JSON-RPC to Claude Code.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `worker` (email)       | `server/web/workers/email-sync.ts`. pg-boss queue consumer, runs IMAP syncs.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `tg`                   | `server/web/workers/telegram-poll.ts`. Long-polls Telegram for new DMs.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `files`                | `server/web/workers/files-watch.ts`. chokidar on `MANTLE_FILES_ROOT`; mirrors external edits (vim, Syncthing, host `cp`) back into the DB. Loop-safe via `syncFileFromDisk`, which never re-writes bytes.                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `events`               | `server/web/workers/events-reminders.ts`. Polls every 30s for events whose `remind_at` has passed and `reminder_sent_at` is null; sends a Telegram DM via `@mantle/telegram`. A **recurring** event (`data.recur` = daily/weekly/monthly/yearly, optional `data.recur_until`) rolls its single row forward to the next occurrence and re-arms instead of marking sent, `rollForwardRecurrence` in `@mantle/content/events`. The tick also hosts two piggybacked housekeeping jobs: the tool-result spill sweep (`maybeSweep`, §9m) and the **scheduled-backup check** (`maybeRunScheduledBackups`, [`backups.md`](./backups.md), configured at /settings/backups). |
+| `docs`                 | `server/web/workers/docs-sync.ts`. Mirrors the `docs/` collection into the brain as `documentation` nodes (the disk-watcher counterpart for docs). A changed file nulls the node's embedding and fires `node_ingested`; if the agent is down at that moment (a roll), the extract sweep re-queues it, because it windows on `updated_at` (`@mantle/db` extract-exempt.ts).                                                                                                                                                                                                                                                                                         |
 
 > The Telegram responder loop is **no longer a `pnpm dev` lane of its own**: it
 > moved into the `api` runner (above). It still LISTENs on
@@ -232,7 +233,7 @@ them as one process tree.
 
 In **production they already are separate containers**: `docker-compose.yml`
 defines a `worker_*` service per worker, each with its own command, memory limit
-and heartbeat healthcheck. What they still share is the *image*: all of them run
+and heartbeat healthcheck. What they still share is the _image_: all of them run
 `mantle-server`, so a worker container also carries the web build (share-runtime
 assets, TipTap, Recharts, KaTeX, puppeteer-core) it never executes, and workers
 cannot be released independently of the web app. Splitting the image is the open
@@ -275,7 +276,7 @@ How it's wired (the cross-process contract):
   `ASSISTANT_TURN_WORKFLOW`, `RUNNER_QUEUE`, `AssistantTurnInput`,
   `resolveSystemDatabaseUrl`).
 - **`@mantle/tracing` durable seam** ([`durable.ts`](../packages/tracing/src/durable.ts))
-, an AsyncLocalStorage-injected executor that turns existing `step()` boundaries
+  , an AsyncLocalStorage-injected executor that turns existing `step()` boundaries
   into durable journal points **when a workflow is active**, and is an inert
   passthrough otherwise. So the same tracing code is durable inside `server/api` and
   free outside it.
@@ -289,13 +290,14 @@ How it's wired (the cross-process contract):
   heartbeat runners moved with it. One runner for all background agent work.
 
 Schema: migration **0105** added durable turn state (`status pending|complete|failed`
-+ `error`) to `assistant_messages`, the row the runner owns from turn-start, which
-is also what makes liveness reconnection clean (§3a.3).
+
+- `error`) to `assistant_messages`, the row the runner owns from turn-start, which
+  is also what makes liveness reconnection clean (§3a.3).
 
 ### 3a.2 The FE/BE split: `server/web` is now a pure client
 
 The goal: a **desktop (Electron) client** that reuses the same UI, and **DB-less
-local dev**. The blocker was that `server/web` was a *full-stack* app; it
+local dev**. The blocker was that `server/web` was a _full-stack_ app; it
 server-rendered against the database in-process (React Server Components + Server
 Actions), so even "just the UI" needed DB credentials and there was no client
 bundle a shell could load. The split makes the browser bundle **talk to the
@@ -317,7 +319,7 @@ What changed:
 - **Bearer-auth + CORS across `/api`.** Every route gates on `getOwnerOr401()` and
   returns a clean **401** (not a login redirect) when unauthenticated, with opt-in
   CORS for a separate origin. The mobile bearer token (`k:'m'`) and a desktop token
-  (`k:'a'`) ride the `Authorization` header; the cookie path now *rejects* kinded
+  (`k:'a'`) ride the `Authorization` header; the cookie path now _rejects_ kinded
   tokens, so detached clients never depend on cookies.
 - **No `@mantle/db` in the browser bundle**: the §9 definition-of-done. Shared
   **wire types live in `@mantle/client-types`** (agents, AI-workers, tools,
@@ -337,10 +339,10 @@ companion off **one contract**. The governing principle:
 > **Durability and liveness travel separate paths.** Correctness, the final
 > assembled reply, is journaled by DBOS to `assistant_messages` (exactly-once,
 > survives a crash). Liveness (the stream of status/token deltas) rides an
-> **ephemeral** side channel *around* the journal and is allowed to be lost. The
+> **ephemeral** side channel _around_ the journal and is allowed to be lost. The
 > journal **never carries tokens**: if the runner crashes mid-stream the partial
 > tokens are thrown away, DBOS re-runs the step, and the user never loses the
-> answer because the answer was never *in* the stream.
+> answer because the answer was never _in_ the stream.
 
 The moving parts:
 
@@ -358,8 +360,8 @@ The moving parts:
   channel from day one. `NOTIFY` caps payloads at ~8 KB, so long output streams as
   many small `text-delta`s, never one blob.
 - **Grounded status, never a guess.** Labels are built from the agent's **real**
-  tool calls + args ("Reading note *Q3 plan*"). A configurable **`narrator`** AI
-  worker (its own kind, migration **0106**) restyles a *real* status line into the
+  tool calls + args ("Reading note _Q3 plan_"). A configurable **`narrator`** AI
+  worker (its own kind, migration **0106**) restyles a _real_ status line into the
   agent's voice, fed only the grounded event, fire-and-forget off the critical
   path, with its system prompt as the verbosity dial. It auto-seeds as a required
   baseline worker and falls back to a built-in concise label on brains without one.
@@ -384,8 +386,8 @@ The moving parts:
 The contract is deliberately client-neutral: the **Flutter companion** consumes the
 same `GET /api/assistant/turn/:id/stream` (bearer, no cookie), reconciles against
 the durable row on resume, and leans on the existing push relay for the background
-case. *If a change can't be expressed as a JSON event the companion could also
-render, it's modelled wrong.*
+case. _If a change can't be expressed as a JSON event the companion could also
+render, it's modelled wrong._
 
 ---
 
@@ -396,7 +398,7 @@ One Postgres 17 cluster, one database (`postgres`), three schemas:
 - **`public`**: every Mantle table. Owned by Drizzle migrations
   (`packages/db/migrations/*.sql`).
 - **`auth`**: identity. One table: `auth.users(id, email, password_hash,
-  created_at)`. Owned by `infra/postgres/init/02-auth-schema.sql`. Drizzle
+created_at)`. Owned by `infra/postgres/init/02-auth-schema.sql`. Drizzle
   sees it via `packages/db/src/schema/auth-users.ts` but `drizzle.config.ts`
   is filtered to `schemaFilter: ['public']` so Drizzle never tries to manage
   it.
@@ -405,13 +407,13 @@ One Postgres 17 cluster, one database (`postgres`), three schemas:
 
 **Extensions** (`infra/postgres/init/01-extensions.sql`):
 
-| Extension      | What it enables                                                 |
-|----------------|-----------------------------------------------------------------|
-| `ltree`        | `nodes.path`, hierarchical paths with operators like `<@`, `@>` |
-| `pg_trgm`      | Trigram indexes for fuzzy/full-text fallbacks                   |
-| `pgcrypto`     | `gen_random_uuid()` for default PKs                             |
-| `"uuid-ossp"`  | Legacy uuid helpers (a few migrations still reference them)     |
-| `vector`       | pgvector, `nodes.embedding` (768-dim, local EmbeddingGemma)    |
+| Extension     | What it enables                                                 |
+| ------------- | --------------------------------------------------------------- |
+| `ltree`       | `nodes.path`, hierarchical paths with operators like `<@`, `@>` |
+| `pg_trgm`     | Trigram indexes for fuzzy/full-text fallbacks                   |
+| `pgcrypto`    | `gen_random_uuid()` for default PKs                             |
+| `"uuid-ossp"` | Legacy uuid helpers (a few migrations still reference them)     |
+| `vector`      | pgvector, `nodes.embedding` (768-dim, local EmbeddingGemma)     |
 
 **Bootstrap order** matters and is enforced by the filesystem:
 
@@ -429,7 +431,7 @@ which makes a from-scratch replay fail wherever one migration adds an enum value
 runner applies **each migration in its own transaction** (committing between),
 ledger-compatible with drizzle's `__drizzle_migrations`, so a fresh DB replays
 `0001 → latest` in one pass. Implication for authors: keep an `ADD VALUE` in its
-own migration file and use it only in a *later* one. See
+own migration file and use it only in a _later_ one. See
 [`packages/db/README.md`](../packages/db/README.md).
 
 A fresh setup needs one extra step the bootstrap can't do: inserting your own
@@ -578,15 +580,15 @@ gate is computed live per sync by `loadContactGate`
 (`packages/content/src/contact-gate.ts`); the worker
 (`server/web/workers/email-sync.ts`) runs three pg-boss queues (scheduler
 every 2 min, per-account sync, per-contact-entry 90-day backfill on add).
-*(The old per-sender curation layer (`email_senders`/`/settings/senders`)
+_(The old per-sender curation layer (`email_senders`/`/settings/senders`)
 was retired in migration 0074; discovery of new senders now lives in the
-live-peek `/settings/discover` view.)*
+live-peek `/settings/discover` view.)_
 
 **Cross-folder dedup** is two-tier: `emails_account_msg_uq` on
 `(account_id, provider_msg_id)` catches same-UID-same-folder races
 (restart replay, retry-overlap); the partial `emails_account_rfc_msg_id_uq`
 on `(account_id, rfc_message_id)` catches the same logical message
-landing in INBOX *and* INBOX.Archive *and* `[Gmail]/All Mail`, Gmail's
+landing in INBOX _and_ INBOX.Archive _and_ `[Gmail]/All Mail`, Gmail's
 All Mail re-UIDs an old message on every label change, so a
 folder-scoped key alone leaked duplicates. The INSERT uses an untargeted
 `onConflictDoNothing()` + `DuplicateRaceError` sentinel so either
@@ -636,7 +638,7 @@ Flow:
    `last_update_offset` after each batch. It reconciles the enabled-account
    set every 60s, so a newly connected bot starts polling without a restart.
    The cursor is acked at **`max(received update_id) + 1`** (empty long-poll
-   leaves it untouched), so it tracks the stream in *either* direction, if a
+   leaves it untouched), so it tracks the stream in _either_ direction, if a
    bot **token is repointed at a different bot** with a lower update-id range,
    the cursor self-heals instead of pinning above the new stream forever (the
    old "advance only" logic wedged into an infinite "N updates, 0 delivered"
@@ -645,7 +647,7 @@ Flow:
    the `ON CONFLICT … WHERE …` clause **must repeat that predicate** or Postgres
    raises `42P10` (a partial index isn't inferred without it).
    **One poller per token:** Telegram allows a single `getUpdates` consumer per
-   bot token (else `409 Conflict`), so dev and prod each own *different* bots,
+   bot token (else `409 Conflict`), so dev and prod each own _different_ bots,
    dev `@saskiadevbot`, prod `@saskianewbot`, never the same token. Ownership
    is the per-DB `enabled` flag, not stopping the worker.
    Each `telegram_accounts` row holds the bot's AES-sealed token and (since
@@ -828,7 +830,7 @@ Four guardrails ([`packages/tools/src/invoke-agent-guards.ts`](../packages/tools
    `/settings/agents`; `updateAgent` jsonb-**merges** `memory_config`
    (`||`) so a form save never silently drops the allowlist, and removes
    a key only when the body sends it as `null` (a cleared field). (An earlier
-   wholesale overwrite *did* drop it; the form doesn't render
+   wholesale overwrite _did_ drop it; the form doesn't render
    `delegate_to`, so saving any agent wiped the grant. That's why
    delegation looked broken until re-seeded.)
 4. **Cost attribution.** The child gets its own `traces` row
@@ -848,7 +850,7 @@ because recall needs a tool loop (`invoke_agent` only targets
 `agents`); it runs at depth 2 so it iterates sub-ranges itself rather
 than sub-delegating.
 
-**Shipped delegation target, "Researcher" (web search).** The *outward*
+**Shipped delegation target, "Researcher" (web search).** The _outward_
 twin of Remy: Saskia delegates an open-web question to `researcher`
 (slug), which calls the `web_search` builtin (Perplexity Sonar via the
 owner's OpenRouter key) and returns a cited synthesis. Saskia decides
@@ -943,8 +945,8 @@ loops, persona notes, memory configuration, and a multi-turn shape,
 the workers became the awkward minority; they have no persona, no
 memory, no turn structure, and only need a model + key + system prompt.
 At the same time we wanted to add new transformation jobs (voice
-in/out, vision OCR, image generation) that share *worker* DNA but
-emphatically not *agent* DNA.
+in/out, vision OCR, image generation) that share _worker_ DNA but
+emphatically not _agent_ DNA.
 
 So we split:
 
@@ -965,16 +967,16 @@ pick point for the text→vector model used across the whole stack.
 
 Per-kind params (declared in `packages/db/src/schema/ai-workers.ts`):
 
-| Kind | Notable params | Triggered by |
-|---|---|---|
-| `reflector` | `temperature`, `max_tokens`, `window_size`, `max_notes_per_run` | timer (every 10 min) |
-| `extractor` | `temperature`, `target_types`, `extract_facts`, `embedding_model`, `extract_cost_cap_micro_usd` | `pg_notify('node_ingested')` |
-| `summarizer` | `temperature`, `summarize_threshold`, `summarize_batch` | `pg_notify('summarize_due')` |
-| `tts` | `voice`, `speed`, `format`, `instructions` (gpt-4o-mini-tts only) | inbound voice msg OR `[VOICE]` marker |
-| `stt` | `language`, `max_duration_seconds` | inbound voice msg |
-| `vision` | `extraction_prompt`, `max_tokens` | (not wired yet) |
-| `image_gen` | `size`, `style`, `quality` | (not wired yet) |
-| `embedding` | `output_dimensions` (only models that honour it, Gemini) | every embedding call (extractor writes, agent memory reads, recall, MCP search, spill query) |
+| Kind         | Notable params                                                                                  | Triggered by                                                                                 |
+| ------------ | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `reflector`  | `temperature`, `max_tokens`, `window_size`, `max_notes_per_run`                                 | timer (every 10 min)                                                                         |
+| `extractor`  | `temperature`, `target_types`, `extract_facts`, `embedding_model`, `extract_cost_cap_micro_usd` | `pg_notify('node_ingested')`                                                                 |
+| `summarizer` | `temperature`, `summarize_threshold`, `summarize_batch`                                         | `pg_notify('summarize_due')`                                                                 |
+| `tts`        | `voice`, `speed`, `format`, `instructions` (gpt-4o-mini-tts only)                               | inbound voice msg OR `[VOICE]` marker                                                        |
+| `stt`        | `language`, `max_duration_seconds`                                                              | inbound voice msg                                                                            |
+| `vision`     | `extraction_prompt`, `max_tokens`                                                               | (not wired yet)                                                                              |
+| `image_gen`  | `size`, `style`, `quality`                                                                      | (not wired yet)                                                                              |
+| `embedding`  | `output_dimensions` (only models that honour it, Gemini)                                        | every embedding call (extractor writes, agent memory reads, recall, MCP search, spill query) |
 
 One worker per `(owner, kind)` is marked `is_default=true`. The runtime
 calls `getDefaultWorker(ownerId, kind)` from `@mantle/db`; the default
@@ -988,7 +990,7 @@ the pinned worker if owned + enabled, else `getDefaultWorker(_, 'tts')`.
 So you can run several voices and assign them per agent, with unset /
 disabled / deleted all degrading to the default.
 
-**Embedding resolution** is the one kind that's resolved on a *hot path*
+**Embedding resolution** is the one kind that's resolved on a _hot path_
 rather than at trigger time, so it has its own per-owner 60s in-process
 cache in `@mantle/embeddings#resolveEmbeddingModel`. The fall-through
 chain: `ai_workers` (kind=embedding) → `MANTLE_EMBEDDING_MODEL` env var
@@ -1008,7 +1010,7 @@ authoritative dim source. When the dim is known and ≠ 768, the Save
 button is **hard-blocked**: switching to a non-768 model needs a
 schema migration on every `vector(768)` column (nodes, entities, facts,
 content_chunks), not just a re-embed. When the dim matches but the
-*model* changed, a **Rebuild Index** button re-embeds every stored
+_model_ changed, a **Rebuild Index** button re-embeds every stored
 vector against the saved model, same code path as the `pnpm re-embed`
 CLI via `@mantle/embeddings#runReembed`, cache-aware so re-running
 against the same model is free. Full detail in
@@ -1028,22 +1030,22 @@ concepts:
   call shape (`chat(opts)`, `synthesize(opts)`, etc.) plus optional
   hooks for live model discovery and voice listing.
 - **Adapter registry** (`adapters/registry.ts`): `Map<ProviderId,
-  Dispatcher>` per capability. Built-in adapters self-register on
+Dispatcher>` per capability. Built-in adapters self-register on
   import. The runtime resolves
   `getChatAdapter(worker.provider).chat({...})` and the per-provider
   quirks live behind that boundary.
 
 Currently shipped adapters:
 
-| Provider | Chat | TTS | STT | Vision | Image-gen |
-|---|---|---|---|---|---|
-| OpenAI | (via OpenRouter) | ✅ `openai-tts` | ✅ `openai-stt` |, |, |
-| OpenRouter | ✅ (direct SDK) |, |, |, |, |
-| xAI (Grok) | ✅ `xai-chat` |, |, |, |, |
-| Hugging Face | ✅ `huggingface-chat` (router) |, |, |, |, |
-| Anthropic (direct) | ✅ `anthropic-chat` |, |, |, |, |
-| Google (Gemini) | ✅ `google-chat` |, |, |, |, |
-| ElevenLabs |, | ✅ `elevenlabs-tts` |, |, |, |
+| Provider           | Chat                           | TTS                 | STT             | Vision | Image-gen |
+| ------------------ | ------------------------------ | ------------------- | --------------- | ------ | --------- |
+| OpenAI             | (via OpenRouter)               | ✅ `openai-tts`     | ✅ `openai-stt` | ,      | ,         |
+| OpenRouter         | ✅ (direct SDK)                | ,                   | ,               | ,      | ,         |
+| xAI (Grok)         | ✅ `xai-chat`                  | ,                   | ,               | ,      | ,         |
+| Hugging Face       | ✅ `huggingface-chat` (router) | ,                   | ,               | ,      | ,         |
+| Anthropic (direct) | ✅ `anthropic-chat`            | ,                   | ,               | ,      | ,         |
+| Google (Gemini)    | ✅ `google-chat`               | ,                   | ,               | ,      | ,         |
+| ElevenLabs         | ,                              | ✅ `elevenlabs-tts` | ,               | ,      | ,         |
 
 Adding a new provider is `~150 LOC`:
 
@@ -1133,10 +1135,10 @@ live reply via the shared `extractAttachmentForTurn` helper.
   disk-watcher, MCP) (with no inline pass) still gets fully indexed. One
   indexing path however the file lands.
 - **Vision on demand (Saskia tool):** `extract_from_image(node_id |
-  telegram_file_id, prompt?)`; Saskia can re-read a previously-sent
+telegram_file_id, prompt?)`; Saskia can re-read a previously-sent
   photo or any image-typed file node.
 - **Image gen (Saskia tool):** `generate_image(prompt, size?, style?,
-  quality?, negative_prompt?)`, runs the default image_gen worker,
+quality?, negative_prompt?)`, runs the default image_gen worker,
   saves to `/files/auto-filed/generated-images/<month>/`, delivers inline
   (`sendPhoto` on Telegram, base64 artifact on web).
 
@@ -1307,7 +1309,7 @@ only by skill instructions via `heartbeat_update_state`. See
 
 Editing content re-fires `node_ingested`, so a node is extracted many times
 over its life. Every derived brain artifact is therefore written as a
-**rebuild keyed by the node, not an append**: a re-extract *replaces* prior
+**rebuild keyed by the node, not an append**: a re-extract _replaces_ prior
 output instead of piling up:
 
 - **Summary + embedding**: overwritten in place on the `nodes` row.
@@ -1326,7 +1328,7 @@ fixes) sit underneath the rebuild rules:
 
 - The **`already_extracted` skip guard** requires the end-of-pass
   `data.extract_completed_at` marker, not just summary+embedding (which are
-  written *first*), so a pg-boss retry after a partial failure re-runs
+  written _first_), so a pg-boss retry after a partial failure re-runs
   instead of skipping forever.
 - **`update_index` is conditional on the row's `xmin`** captured before the
   LLM call: a user edit mid-extract aborts the stale write (the retry
@@ -1337,8 +1339,16 @@ fixes) sit underneath the rebuild rules:
   agent start and surfaced by the `/debug/integrity` **Dead-lettered
   extractions** check.
 
+The **LLM-work cost guard** (workspaces plan 5.3, phase W2;
+`packages/db/src/llm-guard.ts`): model work derived from an item (summary,
+facts, vision, OCR) runs only when at least one workspace with an assistant
+reads the item. Otherwise the gate indexes it on the embedder only (its
+chunks and a vector from the title and its own text) and records
+`no_assistant_workspace`. Until grants are written (W4) an item's `read_ws`
+is empty and the brain's items keep today's rule.
+
 The last two follow the same **delete-then-rebuild per node** rule. The edge
-clear was a fix (Phase 4): the extractor previously *appended* a `mentioned_in`
+clear was a fix (Phase 4): the extractor previously _appended_ a `mentioned_in`
 edge on every run, so re-edited content accumulated duplicate
 `entity --mentioned_in--> node` rows. Because the rule lives in the **shared
 extractor**, it covers every content type automatically, notes, pages,
@@ -1353,11 +1363,11 @@ Two corollaries:
   [`pages.md`](./pages.md) §3, §6).
 - **Pre-fix duplicates** that accumulated before the edge fix are cleaned in
   one pass by `pnpm dedupe:edges` (dry-run by default; collapses duplicate
-  `mentioned_in` rows, keeping the earliest). `extract:backfill` does *not*
+  `mentioned_in` rows, keeping the earliest). `extract:backfill` does _not_
   clean them; it only re-fires nodes still missing their index.
 - **Duplicate-edge guard (dashboard).** Because the single writer
   delete-then-rebuilds, duplicates can't accrue, so instead of a recurring
-  `dedupe:edges` job (which would *mask* a regression), the dashboard's
+  `dedupe:edges` job (which would _mask_ a regression), the dashboard's
   **Memory-index** card shows a live duplicate count (`graphIntegrity()` in
   `server/web/lib/dashboard.ts`): green when clean, amber with the one-shot
   `pnpm dedupe:edges --apply` remedy if a regression ever surfaces. A monitor,
@@ -1369,7 +1379,7 @@ How the system knows what a model can do,
 [`packages/tracing/src/model-context.ts`](../packages/tracing/src/model-context.ts).
 
 **The problem it solves.** A model's context window, vision support, and
-pricing are all *provider* facts that change without notice, e.g. Claude
+pricing are all _provider_ facts that change without notice, e.g. Claude
 Sonnet/Opus 4.x defaulting to a **1M** window. A hand-maintained table
 silently goes stale: the dashboard's "context %" once read a model as 200K
 when it was really 1M, over-reporting fill by 5×. So capability is sourced
@@ -1378,11 +1388,11 @@ live and cached.
 **Authoritative source.** OpenRouter's public `GET /api/v1/models` (no API
 key required). Per slug we read:
 
-| Field | Used for |
-|---|---|
-| `top_provider.context_length` (fallback `context_length`) | the context window (`contextLimitFor`) |
-| `architecture.input_modalities` (`image` ⇒ multimodal) | vision routing (`modelSupportsVision`) |
-| `pricing.prompt` / `pricing.completion` (USD per token, string-typed) | per-1M pricing badges (`pricingFor`) |
+| Field                                                                 | Used for                               |
+| --------------------------------------------------------------------- | -------------------------------------- |
+| `top_provider.context_length` (fallback `context_length`)             | the context window (`contextLimitFor`) |
+| `architecture.input_modalities` (`image` ⇒ multimodal)                | vision routing (`modelSupportsVision`) |
+| `pricing.prompt` / `pricing.completion` (USD per token, string-typed) | per-1M pricing badges (`pricingFor`)   |
 
 `supported_parameters` (`tools`, `structured_outputs`, `reasoning`, …) is
 available on the same response for future use.
@@ -1402,7 +1412,7 @@ token, string-typed (`"0.0000025"` for $2.50 per 1M). The parser multiplies
 by 1e6 for the per-million view and is tight on the empty-string case,
 `Number('')` is 0 in JS, which would silently promote malformed data into
 "free". Empty / non-numeric input stays `undefined` so callers can
-distinguish *free* (0) from *unknown* (absent).
+distinguish _free_ (0) from _unknown_ (absent).
 
 **The fetch, built to fail safe.** `refreshModelCatalog()` is the single
 entry point. It is **TTL-gated** (6h), **dedupes** concurrent callers
@@ -1425,6 +1435,7 @@ the fallback is accurate: the first read after a cold start uses it, live
 data takes over once the fetch lands, and the TTL-gated calls keep it fresh.
 
 **Where the user sees it.**
+
 - **Usage card** (sidebar): per-agent context-fill bars, now correct, with
   `live`/`fallback` provenance in the tooltip.
 - **`/settings/agents` → Model field**: a searchable combobox over the full
@@ -1452,7 +1463,8 @@ slug, that's the same source the code reads.
 ## 9l′. Model picker UI: searchable combobox over the live catalog
 
 Source: [`jackdaw/components/ui/model-select.tsx`](../jackdaw/components/ui/model-select.tsx)
-+ [`model-select-utils.ts`](../jackdaw/components/ui/model-select-utils.ts).
+
+- [`model-select-utils.ts`](../jackdaw/components/ui/model-select-utils.ts).
 
 **The shape.** A cmdk-backed Popover + Command composition (no new
 dependency, shadcn's existing primitives) used identically on
@@ -1517,12 +1529,13 @@ anchors.
 The fourth member of Mantle's store-full / index-compact / dereference family
 (brain · recall · heartbeats… and now tool output). Implemented in
 [`packages/tools/src/tool-results.ts`](../packages/tools/src/tool-results.ts)
-+ the `read_result` builtin.
+
+- the `read_result` builtin.
 
 **The problem.** A tool result has to travel back to the model inside the
 conversation, where it (a) bloats context, (b) is **re-sent on every tool-loop
 iteration**, and (c) used to be hard-truncated to ~8 KB, which silently
-*dropped the very answer* the model went to fetch (a delegated agent's full
+_dropped the very answer_ the model went to fetch (a delegated agent's full
 synthesis, a big `file_read`, a wide search). That truncation is the single
 most common reason integrated assistants "can't finish the job."
 
@@ -1536,14 +1549,15 @@ is gone and nothing is lost. Same principle as the brain (`content_store` ↔
 the agents form; env defaults `TOOL_RESULT_INLINE_MAX` / `_EMBED_MIN` /
 `_SPILL_MAX`):
 
-| Result size | Behaviour |
-|---|---|
-| ≤ `inline_max` (default 32 KB) | inline, untouched, the common path, zero overhead |
-| > `inline_max` | spill to `tool_results`; model gets `{_spilled, handle:"tr_…", preview, pages, note}` |
-| ≥ `embed_min` (default 100 KB) | same, but the envelope steers the model to semantic `query` |
-| > `spill_max` (default 1 MB) | **head-truncated with a marker before storing**: a runaway tool can't write a giant row or fan out into unbounded chunks |
+| Result size                    | Behaviour                                                                                                                |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| ≤ `inline_max` (default 32 KB) | inline, untouched, the common path, zero overhead                                                                        |
+| > `inline_max`                 | spill to `tool_results`; model gets `{_spilled, handle:"tr_…", preview, pages, note}`                                    |
+| ≥ `embed_min` (default 100 KB) | same, but the envelope steers the model to semantic `query`                                                              |
+| > `spill_max` (default 1 MB)   | **head-truncated with a marker before storing**: a runaway tool can't write a giant row or fan out into unbounded chunks |
 
 **`read_result(handle, …)`**: three modes on any spilled handle:
+
 - `page`, linear slice, **byte-accurate and snapped to newline boundaries**
   (no mid-word / mid-JSON cuts; contiguous, so page _p_ ends where _p+1_
   begins). Global `pageBytes`, so the envelope's page count and reads agree.
@@ -1613,7 +1627,7 @@ success` steps, three rows in `nodes`.
 
 **The fix.** For each LLM response, hash every `tool_use` block by
 `(slug, raw args string)`. First occurrence dispatches normally. Each
-duplicate within the *same response*:
+duplicate within the _same response_:
 
 - Does NOT call the handler.
 - Records a `tool: <slug>` step with status `skipped` and disposition
@@ -1637,7 +1651,7 @@ rather than "I created 3 pages."
 
 **Scope: per LLM response, not lifetime of loop.** The `seenSignatures`
 Map is declared inside the iter loop. A model re-issuing the same call
-in a *later* iteration (e.g. `file_read` after processing a prior
+in a _later_ iteration (e.g. `file_read` after processing a prior
 result) is legitimate and dispatches both times. Only same-response
 duplicates are suppressed.
 
@@ -1670,35 +1684,35 @@ symptom. See `duplicateSuppressionStats` in
 `server/mcp/src/server.ts`, ~340 LOC. Exposes Claude's tools over stdio
 (JSON-RPC) so Claude Code can attach at session startup. Tools:
 
-| Tool                          | Purpose                                                                |
-|-------------------------------|------------------------------------------------------------------------|
-| `tree_list`                   | List children of a branch in the tree                                  |
-| `search`                      | Hybrid full-text + tree search across all node types                   |
-| `email_get`                   | Fetch one email by id                                                  |
-| `email_list`                  | Recent emails, optional `accountId`/`since` filters                    |
-| `folder_list`                 | List folders (children of one, or the whole `files.*` tree)            |
-| `folder_create`               | Create a folder under a parent path                                     |
-| `folder_describe`             | Set/clear a folder's description                                       |
-| `folder_delete`               | Delete an empty folder                                                  |
-| `file_list`                   | Files in a folder                                                       |
-| `file_upload`                 | Create/overwrite a file (`content_text` or `content_base64`)            |
-| `file_read`                   | File metadata + bytes                                                   |
-| `file_get`                    | File metadata only                                                      |
-| `file_delete`                 | Delete a file                                                           |
-| `entity_search`               | Resolve a name/alias to entities (exact + trigram fuzzy)               |
-| `entity_neighbors`            | First-hop entity↔entity edges, both directions                         |
-| `entity_facts`                | Currently-valid facts on an entity (+ optional retired history)        |
-| `entity_mentions`             | Content nodes that mention an entity (via `mentioned_in` edges)        |
-| `pending_list`                | List operator-approval-required tool calls queued by agents            |
-| `pending_get`                 | Inspect one pending call's args before deciding                        |
-| `pending_approve`             | Approve + execute a pending call; result lands under a `manual` trace  |
-| `pending_reject`              | Reject a pending call without executing                                |
-| `telegram_pending`            | Unprocessed DMs, oldest first                                          |
-| `telegram_send`               | Send a DM (allowlist-gated, reply-threading, MarkdownV2 optional)      |
-| `telegram_react`              | Set an emoji reaction                                                  |
-| `telegram_edit`               | Edit a previously-sent message                                         |
-| `telegram_mark_processed`     | Flip `processed=true` so it stops appearing in `telegram_pending`      |
-| `telegram_pair`               | Approve a pending pairing code                                         |
+| Tool                      | Purpose                                                               |
+| ------------------------- | --------------------------------------------------------------------- |
+| `tree_list`               | List children of a branch in the tree                                 |
+| `search`                  | Hybrid full-text + tree search across all node types                  |
+| `email_get`               | Fetch one email by id                                                 |
+| `email_list`              | Recent emails, optional `accountId`/`since` filters                   |
+| `folder_list`             | List folders (children of one, or the whole `files.*` tree)           |
+| `folder_create`           | Create a folder under a parent path                                   |
+| `folder_describe`         | Set/clear a folder's description                                      |
+| `folder_delete`           | Delete an empty folder                                                |
+| `file_list`               | Files in a folder                                                     |
+| `file_upload`             | Create/overwrite a file (`content_text` or `content_base64`)          |
+| `file_read`               | File metadata + bytes                                                 |
+| `file_get`                | File metadata only                                                    |
+| `file_delete`             | Delete a file                                                         |
+| `entity_search`           | Resolve a name/alias to entities (exact + trigram fuzzy)              |
+| `entity_neighbors`        | First-hop entity↔entity edges, both directions                        |
+| `entity_facts`            | Currently-valid facts on an entity (+ optional retired history)       |
+| `entity_mentions`         | Content nodes that mention an entity (via `mentioned_in` edges)       |
+| `pending_list`            | List operator-approval-required tool calls queued by agents           |
+| `pending_get`             | Inspect one pending call's args before deciding                       |
+| `pending_approve`         | Approve + execute a pending call; result lands under a `manual` trace |
+| `pending_reject`          | Reject a pending call without executing                               |
+| `telegram_pending`        | Unprocessed DMs, oldest first                                         |
+| `telegram_send`           | Send a DM (allowlist-gated, reply-threading, MarkdownV2 optional)     |
+| `telegram_react`          | Set an emoji reaction                                                 |
+| `telegram_edit`           | Edit a previously-sent message                                        |
+| `telegram_mark_processed` | Flip `processed=true` so it stops appearing in `telegram_pending`     |
+| `telegram_pair`           | Approve a pending pairing code                                        |
 
 Every query is scoped by `OWNER_ID = process.env.ALLOWED_USER_ID`, single-
 user isolation. The server uses the same `@mantle/db` client as the web app
@@ -1830,19 +1844,19 @@ package; `pnpm-workspace.yaml` declares them.
 
 Granular escape hatches in `package.json`:
 
-| Script             | What                                                       |
-|--------------------|------------------------------------------------------------|
-| `pnpm start`       | Full thing (infra + migrations + pg-boss + dev servers)    |
-| `pnpm dev`         | Dev servers only (preflight refuses if infra isn't ready)  |
-| `pnpm stop`        | Stop infra (keeps data)                                    |
-| `pnpm reset`       | Wipe the dev brain + rebuild from scratch (asks first)     |
-| `pnpm infra:up`    | Infra only                                                 |
-| `pnpm infra:logs`  | Tail postgres + object store + tika                        |
-| `pnpm infra:psql`  | `docker exec -it mantle_dev_pg psql`                           |
-| `pnpm db:migrate`  | Drizzle migrate                                            |
-| `pnpm db:studio`   | Drizzle Studio (DB browser at localhost:4983)              |
-| `pnpm typecheck`   | Recursive tsc across all packages/apps                     |
-| `pnpm test`        | Vitest (currently only `packages/email`)                   |
+| Script            | What                                                      |
+| ----------------- | --------------------------------------------------------- |
+| `pnpm start`      | Full thing (infra + migrations + pg-boss + dev servers)   |
+| `pnpm dev`        | Dev servers only (preflight refuses if infra isn't ready) |
+| `pnpm stop`       | Stop infra (keeps data)                                   |
+| `pnpm reset`      | Wipe the dev brain + rebuild from scratch (asks first)    |
+| `pnpm infra:up`   | Infra only                                                |
+| `pnpm infra:logs` | Tail postgres + object store + tika                       |
+| `pnpm infra:psql` | `docker exec -it mantle_dev_pg psql`                      |
+| `pnpm db:migrate` | Drizzle migrate                                           |
+| `pnpm db:studio`  | Drizzle Studio (DB browser at localhost:4983)             |
+| `pnpm typecheck`  | Recursive tsc across all packages/apps                    |
+| `pnpm test`       | Vitest (currently only `packages/email`)                  |
 
 **Hot reload:** `next dev --turbo` for the web; `tsx --watch` for the MCP +
 workers. Edit a source file, the relevant process respawns. `.env.local`
@@ -1874,6 +1888,7 @@ uses the new enum value. The journal's `breakpoints: true` makes Drizzle
 commit between 0008 and 0009.
 
 **Adding a new column?**
+
 1. Edit the Drizzle schema in `packages/db/src/schema/`.
 2. `pnpm -C packages/db exec drizzle-kit generate`, emits a migration.
 3. Inspect the generated SQL, hand-edit if needed (Drizzle can't emit
@@ -1881,6 +1896,7 @@ commit between 0008 and 0009.
 4. `pnpm db:migrate` to apply.
 
 **Adding a new node type?**
+
 - Add to the enum in `packages/db/src/schema/nodes.ts`.
 - Emit a `0010_node_type_x.sql` migration with `ALTER TYPE ... ADD VALUE`.
 - Add to the MCP server's `search` tool enum (`server/mcp/src/server.ts:62`).
@@ -1926,6 +1942,7 @@ The supabase-era backups (`backups/` at the repo root) are gitignored
 historical snapshots; safe to delete.
 
 **Rolling a secret:**
+
 - `SESSION_SECRET`: edit `.env.local`, restart web. Every existing session
   cookie fails verification, everyone signs in again. (You, single user.)
 - `MANTLE_MASTER_KEY`: re-encrypt every `_enc` column with the new key.
@@ -1955,6 +1972,7 @@ hardening pass closed a batch of these, see
 was fixed, accepted, or deliberately left (and why).
 
 **Deployment & operations**
+
 - **Production deploy untested on a real VPS.** All six daemons are now
   containerized (`Dockerfile` targets web/agent/worker-email/-telegram/
   -files/-events) and a one-shot `migrate` service runs schema
@@ -1976,13 +1994,14 @@ was fixed, accepted, or deliberately left (and why).
 - **Next-externalized packages must be declared in `server/web`.** A
   dep that Next keeps external (its `serverExternalPackages` default
   list, e.g. `@aws-sdk/client-s3`, pulled in transitively via
-  `@mantle/storage`) must be resolvable *from the app dir*. Under
+  `@mantle/storage`) must be resolvable _from the app dir_. Under
   pnpm's isolated layout a transitive dep isn't, so Next errors
   "Package … can't be external". Fix: list it directly in
   `server/web/package.json` (it dedupes to the workspace version). Watch
   for this whenever a workspace package adds such a dep.
 
 **Telegram surface**
+
 - **Web UI for Telegram is missing.** Allowlist management, pairing-
   code approval, conversation view, all happen via MCP tools today.
 - ~~**Embeddings for Telegram messages** aren't generated.~~ **CLOSED
@@ -1997,6 +2016,7 @@ was fixed, accepted, or deliberately left (and why).
 - **Group chats** are still dropped in `gate.ts`. v1 is DM-only.
 
 **Voice modality** ✅ shipped
+
 - Inbound voice → OpenAI Whisper (STT worker, default `whisper-1`) →
   transcript replaces `(voice message)` text → normal responder flow.
 - Outbound voice → OpenAI TTS (TTS worker, default `gpt-4o-mini-tts`,
@@ -2007,6 +2027,7 @@ was fixed, accepted, or deliberately left (and why).
   `search_nodes` can find voice-transcribed turns semantically.
 
 **Vision / image generation**
+
 - Adapter interfaces (`VisionDispatcher`, `ImageGenDispatcher`)
   defined in `@mantle/voice/adapters/types.ts` but no built-in
   adapters yet. Per-provider catalogs are stubbed.
@@ -2016,11 +2037,13 @@ was fixed, accepted, or deliberately left (and why).
   image attachments.
 
 **Auth**
+
 - **OAuth/MFA** isn't here. Bespoke HMAC session is fine for single-
   user; swap in `better-auth` if this ever opens to more humans
   (~half a day with the Drizzle adapter).
 
 **Testing**
+
 - **DB-dependent integration tests** are not yet written. The pure-
   function layer has 285 vitest tests covering crypto, rate-limit,
   events tz/remind helpers, file paths, tool-args, extractor parse,
@@ -2030,6 +2053,7 @@ was fixed, accepted, or deliberately left (and why).
   Postgres, probably a `docker-compose.test.yml`.
 
 **Agent delegation (`invoke_agent`), audit follow-ups, none blocking**
+
 - ~~**Child reply truncated at ~8 KB.**~~ **RESOLVED**: tool results no
   longer truncate. Oversized output (incl. a delegated agent's full
   synthesis) spills to the tool-result store and the model pages/greps/
@@ -2052,6 +2076,7 @@ was fixed, accepted, or deliberately left (and why).
   fake invoker) does not.
 
 **Agent ergonomics**
+
 - **`delegate_to` is now UI-editable** via the "Delegates to" picker at
   `/settings/agents`, and `updateAgent` merges `memory_config` so saves
   no longer wipe it. (Resolved, was previously DB/seed-only.)

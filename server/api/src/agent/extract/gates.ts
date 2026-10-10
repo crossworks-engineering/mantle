@@ -37,6 +37,7 @@ import {
   nodes,
   contentChunks,
   isExtractExempt,
+  llmWorkAllowed,
   withDeadlockRetry,
   withHeads,
   type ExtractorParams,
@@ -49,6 +50,34 @@ import { resolveExtractor } from './model';
 import { maybeAutoTableSpreadsheet } from './auto-table';
 import { maybeExtractEmbeddedImages } from './images';
 import { recordTerminalSkip } from './terminal';
+import { readNodeBodyLocal } from './load-body';
+import { writeRetrievalChunks } from './index-writes';
+
+/**
+ * The cost guard's index (workspaces plan 5.3): the body as the typed
+ * dispatch reads it with no model call, its chunks, and a node vector from
+ * the title and the start of the body, all on the embedder. Nothing here
+ * calls a chat model. Leaves `updated_at` alone, like any derived write.
+ */
+async function indexLocalOnly(
+  node: typeof nodes.$inferSelect,
+  ownerId: string,
+): Promise<{ chunked: boolean; embedded: boolean }> {
+  const body = (await readNodeBodyLocal(node)).trim();
+  if (body) await writeRetrievalChunks(node, ownerId, body, null);
+  const vec = await embed(ownerId, [node.title, body.slice(0, 2000)].filter(Boolean).join('\n\n'));
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`select set_config('mantle.keep_updated_at', 'on', true)`);
+    await tx
+      .update(nodes)
+      .set({
+        embedding: vec,
+        data: sql`(coalesce(${nodes.data}, '{}'::jsonb) - 'extract_skipped' - 'extract_parked') || ${JSON.stringify({ indexing_applied: 'local', extract_completed_at: new Date().toISOString() })}::jsonb`,
+      })
+      .where(eq(nodes.id, node.id));
+  });
+  return { chunked: !!body, embedded: true };
+}
 
 /** Types we will NEVER extract from, no matter what the agent config says.
  *  Note `secret` is NOT here — secret nodes have metadata-only extraction
@@ -432,6 +461,29 @@ export async function admitForExtraction(
         .set({ data: sql`${nodes.data} || '{"indexing_applied":"full"}'::jsonb` })
         .where(eq(nodes.id, node.id));
     }
+  }
+
+  // The LLM-work cost guard (workspaces plan 5.3): no workspace with an
+  // assistant reads this item, so it gets chunks and a vector on the local
+  // embedder and no model work (no summary, no facts, no vision or OCR).
+  // Before the key pre-flight: it needs no model. Under today's levels every
+  // brain item passes (llm-guard.ts).
+  if (!(await llmWorkAllowed(node.id))) {
+    const indexed = await indexLocalOnly(node, ownerId);
+    await recordSkippedTrace({
+      kind: 'extractor_run',
+      ownerId,
+      subjectId: node.id,
+      subjectKind: 'node',
+      disposition: 'no_assistant_workspace',
+      details: {
+        worker_slug: worker.slug,
+        node_type: node.type,
+        ...indexed,
+        hint: 'No workspace with an assistant reads this item: indexed for search on the local embedder, no LLM work (workspaces plan 5.3).',
+      },
+    });
+    return { proceed: false };
   }
 
   // Key pre-flight via the shared resolver — keyless `local` passes, a

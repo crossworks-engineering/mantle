@@ -52,6 +52,7 @@ const CHECKS: CheckDef[] = [
       ) lt ON true
       WHERE n.owner_id = ${o} AND lt.status = 'success'
         AND nullif(n.data->>'summary', '') IS NULL
+        AND NOT n.derived_mixed
       LIMIT ${CAP}`,
     spanQuery: (o) => sql`
       SELECT min(n.created_at)::date::text AS oldest, max(n.created_at)::date::text AS newest
@@ -62,7 +63,8 @@ const CHECKS: CheckDef[] = [
         ORDER BY t.started_at DESC LIMIT 1
       ) lt ON true
       WHERE n.owner_id = ${o} AND lt.status = 'success'
-        AND nullif(n.data->>'summary', '') IS NULL`,
+        AND nullif(n.data->>'summary', '') IS NULL
+        AND NOT n.derived_mixed`,
   },
   {
     key: 'emb_dim_drift',

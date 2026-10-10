@@ -44,6 +44,9 @@ const h = vi.hoisted(() => ({
   recordSkippedTrace: vi.fn(),
   autoTable: vi.fn(),
   embeddedImages: vi.fn(),
+  llmWorkAllowed: vi.fn(),
+  readNodeBodyLocal: vi.fn(),
+  writeRetrievalChunks: vi.fn(),
 }));
 
 vi.mock('@mantle/db', async (importOriginal) => {
@@ -64,6 +67,7 @@ vi.mock('@mantle/db', async (importOriginal) => {
     select: vi.fn(() => selectChain),
     update: vi.fn(() => updateChain),
     delete: vi.fn(() => ({ where: vi.fn(async () => undefined) })),
+    execute: vi.fn(async () => []),
     transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(db)),
   };
   return {
@@ -75,6 +79,7 @@ vi.mock('@mantle/db', async (importOriginal) => {
     withNodeInsertHeads: async (_o: unknown, _i: unknown, fn: (tx: unknown) => unknown) => fn(db),
     withNodeDeleteHeads: async (_ids: unknown, fn: (tx: unknown) => unknown) => fn(db),
     withDeadlockRetry: async (fn: () => unknown) => fn(),
+    llmWorkAllowed: h.llmWorkAllowed,
   };
 });
 vi.mock('@mantle/embeddings', () => ({ embed: h.embed }));
@@ -98,6 +103,8 @@ vi.mock('@mantle/runtime/agent', async (importOriginal) => {
 vi.mock('./model', () => ({ resolveExtractor: h.resolveExtractor }));
 vi.mock('./auto-table', () => ({ maybeAutoTableSpreadsheet: h.autoTable }));
 vi.mock('./images', () => ({ maybeExtractEmbeddedImages: h.embeddedImages }));
+vi.mock('./load-body', () => ({ readNodeBodyLocal: h.readNodeBodyLocal }));
+vi.mock('./index-writes', () => ({ writeRetrievalChunks: h.writeRetrievalChunks }));
 
 import { admitForExtraction } from './gates';
 import { sqlValues } from './test-support';
@@ -145,6 +152,9 @@ beforeEach(() => {
   h.autoTable.mockResolvedValue(undefined);
   h.embeddedImages.mockResolvedValue(undefined);
   h.recordSkippedTrace.mockResolvedValue(undefined);
+  h.llmWorkAllowed.mockResolvedValue(true);
+  h.readNodeBodyLocal.mockResolvedValue('the body');
+  h.writeRetrievalChunks.mockResolvedValue(undefined);
 });
 
 describe('admitForExtraction — refusals', () => {
@@ -437,5 +447,26 @@ describe('admitForExtraction — admission', () => {
     h.autoTable.mockRejectedValue(new Error('one bad sheet'));
     h.selectQueue.push([node({ type: 'note' })]);
     expect((await admitForExtraction('n1', 'o1')).proceed).toBe(true);
+  });
+});
+
+describe('admitForExtraction — the LLM-work cost guard (workspaces plan 5.3)', () => {
+  it('no workspace with an assistant reads it: chunks and a vector locally, no model, no admission', async () => {
+    h.llmWorkAllowed.mockResolvedValue(false);
+    h.selectQueue.push([node()]);
+    const r = await admitForExtraction('n1', 'o1');
+    expect(r.proceed).toBe(false);
+    expect(disposition()).toBe('no_assistant_workspace');
+    expect(h.writeRetrievalChunks).toHaveBeenCalledTimes(1);
+    expect(h.embed).toHaveBeenCalledTimes(1);
+    expect(h.resolveChatKey).not.toHaveBeenCalled();
+    expect(writtenJson()).toContain('"indexing_applied":"local"');
+  });
+
+  it('an item an assistant workspace reads goes on to the model as before', async () => {
+    h.selectQueue.push([node()]);
+    const r = await admitForExtraction('n1', 'o1');
+    expect(r.proceed).toBe(true);
+    expect(h.writeRetrievalChunks).not.toHaveBeenCalled();
   });
 });

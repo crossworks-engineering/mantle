@@ -101,24 +101,29 @@ durable; commits make indexing deliberate. A 30-minute editing session is now
 - The editor loads `draft ?? doc`, so you resume unsaved work; status shows
   Saving → Draft·uncommitted → Committed.
 - Title/tags/width save _live_ (cheap metadata; never index).
-- **Embedded assets are folded into the index.** A page references its images
-  and file chips by `nodeId` (they're real `file` nodes from the files
-  pipeline, so each is vision/OCR'd or parsed once on its own ingest). On
-  **commit**, `commitPage()` appends those referenced files' extracted
-  `data.text` to the page's `doc_text` (`foldEmbeddedText`, bounded
-  4 KB/file · 16 KB total, doc order preserved). So the page is searchable by,
-  and its summary reflects, what's _inside_ its images/docs, not just their
-  filenames. A referenced file whose own extraction hasn't landed yet is
-  skipped and picked up on the next commit (no reactive re-extract).
+- **Always fold: `doc_text` holds the page's own words** (workspaces plan
+  5.3, phase W2; `packages/content/src/pages/level-text.ts`). A page
+  references its images, file chips, drawings and child pages by id; each is
+  a real item, indexed on its own ingest (vision/OCR'd or parsed once) and
+  found through its own level or grants. In `doc_text`, and so in the
+  summary, the chunks and search, an embed is a plain marker
+  (`[embedded file]`, `[embedded drawing]`, `[embedded page]`), never its text
+  or its name, at every level. A note's indexed text does the same for its
+  `media:` and `draw:` embeds. So a page levelled or granted without its embed
+  finds none of the embed's words.
+- **Older summaries made before W2 are set aside.** A page, note or drawing
+  that embedded something and already had a summary or facts was marked by
+  migration 0247 (`nodes.derived_mixed`): its summary moved to the admin-only
+  table `node_mixed_summaries` (an Admin user's item detail may show it,
+  labelled "older summary, includes embedded items"; lists and search never
+  do), and its facts are read only in Admin (`facts.derived_mixed`). The mark
+  clears when the extractor next summarises the item. The hand-run task
+  `pnpm maintain refold-embeds` rewrites the text, chunks and node vector of
+  these items once, on the local embedder, with no model work.
 - **Client and public pages index only what their level reads** (client
-  logins, audit B1; `packages/content/src/pages/level-text.ts`). `doc_text`
-  is what the extractor summarises, chunks and embeds and what search
-  matches, so for a page at client or public it holds only what a reader at
-  that level may read. An embedded file or drawing folds its text in only
-  when the page's level reads it. A mention, a link or a page link card of
-  an item the level cannot read is written as "Private item"; a readable one
-  carries its item's current title. A team or admin page is unchanged: the
-  whole doc and every embed. The filter is the client redactor
+  logins, audit B1). A mention, a link or a page link card of an item the
+  level cannot read is written as "Private item"; a readable one carries its
+  item's current title. The filter is the client redactor
   ([client-logins.md](./client-logins.md) section 5), with the page's level
   deciding what is readable.
 - **A level change re-folds `doc_text` by SQL only.** When a level moves
@@ -126,11 +131,10 @@ durable; commits make indexing deliberate. A 30-minute editing session is now
   public, an Accept), `refoldPageTexts` recomputes the text of that page and
   of every client or public page that names the item. It writes `doc_text`
   and nothing else: no extraction, no summary, no chunks, no embedding, no
-  version (cost safety: a level change never starts model work). The
-  summary and chunks catch up at the page's next commit. So client chat
-  (client logins C4) must re-chunk the client-level items before it
-  searches their chunks: a chunk made before this rule, or before a level
-  change, can hold text the level may not read.
+  version (cost safety: a level change never starts model work). Since
+  always fold no embed text is ever in `doc_text`, so a level change only
+  changes the "Private item" labels; the summary and chunks catch up at the
+  page's next commit.
 
 ---
 

@@ -15,9 +15,8 @@ import { and, eq, sql } from 'drizzle-orm';
 import { asViewerLevel, db, nodes, notifyNodeIngested, pages, withBusyRetry } from '@mantle/db';
 import { ensureBlockIds, repairTableRows } from '@mantle/content-core/block-ids';
 import type { PageVisibility, PageWidth } from '@mantle/client-types';
-import { docToText } from '../doc-to-text';
 import { EMPTY_DOC, dedupeTags, detailOf, type PageDetail } from './shared';
-import { filtersPageText, pageDocText } from './level-text';
+import { pageDocText } from './level-text';
 import { referencedEmbedIds } from '../doc-assets';
 import { followNewEmbeds, itemLevel, refoldEmbedReach } from '../embed-closure';
 
@@ -179,11 +178,10 @@ async function updatePageOnce(
     if (docChanged) {
       const doc = input.doc as Record<string, unknown>;
       const before = await followPageEmbeds(tx, ownerId, id, doc);
-      // At client or public, the text of what that level reads (level-text.ts).
+      // Its own words and a marker per embed; at client or public, the text
+      // of what that level reads (level-text.ts).
       const level = itemLevel(node.audience, node.inheritedLevel, node.embeddedLevel);
-      const docText = filtersPageText(level)
-        ? await pageDocText(ownerId, level, doc, tx, { assets: false })
-        : docToText(doc);
+      const docText = await pageDocText(ownerId, level, doc, tx);
       await tx
         .update(pages)
         .set({
@@ -345,11 +343,11 @@ async function commitPageOnce(
       return { ok: false as const, conflict: true as const, rev: decision.rev };
     }
     const before = await followPageEmbeds(tx, ownerId, id, enriched);
-    // Fold the text *inside* embedded images (vision/OCR) + doc chips into the
-    // indexed plaintext, so the page is searchable by its own assets (and
-    // its summary reflects them), not just their filenames. At client or
-    // public, only what that level reads (pages/level-text.ts). Read after
-    // the embeds followed the page down, in this transaction.
+    // The page's own words, a marker per embed (always fold, workspaces plan
+    // 5.3): an embed's text is indexed on the embed itself. At client or
+    // public, mentions of what that level cannot read are "Private item"
+    // (pages/level-text.ts). Read after the embeds followed the page down,
+    // in this transaction.
     const docText = await pageDocText(
       ownerId,
       itemLevel(node.audience, node.inheritedLevel, node.embeddedLevel),

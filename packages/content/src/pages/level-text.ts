@@ -1,25 +1,22 @@
 /**
  * A page's indexed text at its level (client logins plan 3.3 point 4, N13;
- * audit B1). `pages.doc_text` is what the extractor summarises, chunks and
- * embeds and what search matches, so for a page a client or the public
- * reads it must hold only what that reader may read:
+ * audit B1; always fold, workspaces plan 5.3). `pages.doc_text` is what the
+ * extractor summarises, chunks and embeds and what search matches, so it holds
+ * the page's own words only:
  *
- *  - an embedded file or drawing folds its text in only when the page's
- *    level reads it (a client page: client items; a public page: public
- *    items; `levelCovers`);
- *  - a mention chip, a link and a child page card of an item the page's
- *    level cannot read are written as "Private item" (a readable one carries
- *    its item's current title);
- *  - a team or admin page is unchanged: the whole doc and every embed.
+ *  - an embedded file, drawing or child page is a plain marker
+ *    ("[embedded file]"), at EVERY level: its words are indexed on the item
+ *    itself and found through its own level or grants (phase W2; before it,
+ *    a team or admin page folded every embed's text in);
+ *  - at client or public, a mention chip or a link of an item the page's
+ *    level cannot read is written as "Private item" (a readable one carries
+ *    its item's current title).
  *
  * The filter is the client redactor (client-redact.ts) with the page's level
- * deciding what is readable, so a client page's text says what a client
- * reads of it. When a level changes (the page's own, or an item it names),
- * `refoldPageTexts` recomputes the text of the pages concerned: plain SQL and
- * TypeScript, and NOTHING else. It never announces the page to the
- * extractor, so its summary, chunks and embedding stay as they were until
- * the page is next committed (cost safety: no level change may start LLM
- * work).
+ * deciding what is readable. When a level changes (the page's own, or an item
+ * it names), `refoldPageTexts` recomputes the text of the pages concerned:
+ * plain SQL and TypeScript, and NOTHING else. It never announces the page to
+ * the extractor (cost safety: no level change may start LLM work).
  */
 import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import { asViewerLevel, db, levelCovers, nodes, pages, type ViewerLevel } from '@mantle/db';
@@ -32,7 +29,6 @@ import {
   redactClientNote,
 } from '../client-redact';
 import { clientRedactOrigins } from '../client-origins';
-import { embeddedAssetText } from './embed';
 import { itemLevel } from '../item-level';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -119,23 +115,21 @@ export async function levelFilteredNote(
 }
 
 /**
- * The `doc_text` of a page at `level`: its (filtered) doc as text, and the
- * text of the files and drawings it embeds (only readable ones remain in a
- * filtered doc). `assets: false` leaves the embed text out (updatePage's
- * programmatic write, as before).
+ * The `doc_text` of a page at `level`: its (filtered) doc as text, with a
+ * plain marker for each item it embeds and none of that item's words (always
+ * fold, workspaces plan 5.3, phase W2). The embedded file, drawing or page is
+ * indexed as its own item and found through its own level or grants. At
+ * client or public the doc is filtered first (a mention or link of an item
+ * the level cannot read reads "Private item").
  */
 export async function pageDocText(
   ownerId: string,
   level: ViewerLevel,
   doc: unknown,
   q: LevelTextDb = db,
-  opts: { assets?: boolean } = {},
 ): Promise<string> {
   const shown = await levelFilteredDoc(ownerId, level, doc, q);
-  const base = docToText(shown);
-  if (opts.assets === false) return base;
-  const assetText = await embeddedAssetText(ownerId, shown, q);
-  return assetText ? `${base}\n\n${assetText}` : base;
+  return docToText(shown, { embedMarkers: true });
 }
 
 /**

@@ -80,4 +80,4 @@ export {
 
 export { EMBED_TEXT_PER_FILE, EMBED_TEXT_TOTAL, foldEmbeddedText } from './embed';
 
-export { levelFilteredDoc, levelFilteredNote } from './level-text';
+export { levelFilteredDoc, levelFilteredNote, pageDocText } from './level-text';

@@ -322,6 +322,23 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       'Optional per brain, default off. Resumable. --off switches the window arm off (rows kept); --clear also deletes the rows. A re-embed of content_chunks drops the windows (old space): run this again after one. --parallel=N (1 to 32, default 4) sets the embed calls in flight (about 100 windows each; memory stays under 2 x parallel x 100 vectors); a 429 backs off and retries. On a box, run it in its own container: scripts/box-maintain.sh <box> chunk-windows --apply --yes (docs/maintenance-runner.md).',
   },
   {
+    slug: 'refold-embeds',
+    title: 'Re-fold and re-chunk items that embed other items',
+    description:
+      "Workspaces W2 (always fold): rewrites the stored text (pages.doc_text, draws.scene_text), the chunks and passage windows of every page, note and drawing that embeds another item, so they hold the item's own words and a plain marker per embed, never the embed's words. Rows the 0247 mark flagged also get their node vector from the title and their own text. Dry run prints the counts (candidates and marked rows per type, rows to rewrite, chunks and texts to embed).",
+    kind: 'ops',
+    status: 'live',
+    cost: 'embedding',
+    schedulable: false,
+    script: 'scripts/refold-embeds.ts',
+    cwd: 'server/web',
+    applyFlag: '--go',
+    extraFlags: ['--limit=N', '--allow-remote-embedder'],
+    requiresEnv: ['ALLOWED_USER_ID'],
+    notes:
+      'Hand-run once per box after the W2 migration; never on the cron. The embedder only (local; a remote route needs --allow-remote-embedder): no summary, no facts, no extractor notify, no queue job, updated_at kept. Resumable: rows already folded are skipped. Old summaries stay set aside until the extractor next summarises the item.',
+  },
+  {
     slug: 'extract-skip-stamp',
     title: 'Stop extractor loops on nodes with nothing to read',
     description:

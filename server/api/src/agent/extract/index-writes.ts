@@ -9,6 +9,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import {
   db,
   nodes,
+  nodeMixedSummaries,
   notifyNodeIndexed,
   withDeadlockRetry,
   withHeads,
@@ -166,6 +167,9 @@ export async function writeContentIndex(
         summary_model: worker.model,
         summary_at: new Date().toISOString(),
         entities: uniqueMentions.map((m) => m.name),
+        // Made from folded text (always fold, workspaces plan 5.3): the
+        // W2 mark (0247) never marks this summary again.
+        summary_folded: true,
         ...(persistedText ? { text: persistedText } : {}),
         ...(tableSchemaDigest ? { schemaDigest: tableSchemaDigest } : {}),
       };
@@ -180,6 +184,8 @@ export async function writeContentIndex(
         .set({
           data: sql`${nodes.data} || ${JSON.stringify(indexPatch)}::jsonb`,
           ...(embedding ? { embedding } : {}),
+          // A summary from folded text: the W2 mark clears (0247).
+          derivedMixed: false,
           updatedAt: new Date(),
         })
         .where(and(eq(nodes.id, node.id), rowVersion ? sql`xmin::text = ${rowVersion}` : sql`true`))
@@ -189,6 +195,8 @@ export async function writeContentIndex(
           `extractor: node ${node.id} changed while extraction was in flight — aborting stale write (retry re-reads)`,
         );
       }
+      // The old mixed summary is superseded by this one.
+      await db.delete(nodeMixedSummaries).where(eq(nodeMixedSummaries.nodeId, node.id));
       h.setMeta({
         summaryLength: summary.length,
         embedded: !!embedding,

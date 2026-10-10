@@ -429,6 +429,8 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   // The embed edges (0208): written by triggers, read by the refresh and
   // the admin pool; the viewer roles read embedded_level on the row.
   none('public.node_embeds', 'content'),
+  // Old summaries made before always fold (W2, 0247): admin pool only.
+  none('public.node_mixed_summaries', 'content'),
   none('public.recall_maps'),
   none('public.recall_nodes'),
   // Recall v2: the revision log. Admin pool only, like the other two — the

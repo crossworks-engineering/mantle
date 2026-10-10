@@ -113,6 +113,8 @@ export {
 export { backfillTerminalSkips, type TerminalSkipBackfill } from './extract-skip-backfill';
 export { parkedExtractions, type ParkedExtractions } from './extract-parked';
 export { MIGRATION_TAGS } from './migration-tags';
+export { llmWorkAllowed } from './llm-guard';
+export { OLDER_SUMMARY_LABEL, olderSummaryOf } from './mixed-summaries';
 export {
   WRITE_RETRY_AFTER_MS,
   bestEffortWrite,

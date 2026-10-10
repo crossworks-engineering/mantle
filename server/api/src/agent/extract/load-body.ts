@@ -19,12 +19,18 @@ import {
 } from '@mantle/files';
 import { recordSkippedTrace, step } from '@mantle/tracing';
 import { documentWorkerPrefersNative } from '@mantle/runtime/agent';
-import { parseFormulaSpec, formulaToText } from '@mantle/content';
+import { foldNoteEmbeds, parseFormulaSpec, formulaToText } from '@mantle/content';
 import { isHollowFilenameBody } from '../extractor-parse';
 import { cleanText } from './text';
 import { loadFileBytes, tryUnlockPdf } from './file-bytes';
 import { composeImageBody, ocrIngestPdfNode, visionIngestImageNode } from './images';
 import { recordTerminalSkip } from './terminal';
+
+/** The body of a node with no model call (no vision, no OCR worker): the typed
+ *  dispatch below. The cost guard's local-only index reads this. */
+export async function readNodeBodyLocal(node: typeof nodes.$inferSelect): Promise<string> {
+  return readNodeBodyRaw(node);
+}
 
 async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string> {
   // ─── Secrets — metadata only ─────────────────────────────────────────
@@ -221,7 +227,9 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
     // it would shortcut the real parse below and re-index nothing. Forces a
     // re-parse from disk/storage on the next run.
     if (typeof c === 'string' && c.trim().length > 0 && c.trim() !== node.title.trim())
-      return cleanText(c);
+      // A note indexes its own words and a marker per embedded file or
+      // drawing, never the embed's caption (always fold, workspaces plan 5.3).
+      return cleanText(node.type === 'note' ? foldNoteEmbeds(c) : c);
   }
   // file fallback: if no usable cached body, read the bytes (local disk for
   // uploads, OBJECT STORAGE for email attachments — see loadFileBytes) and
