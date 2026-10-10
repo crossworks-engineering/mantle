@@ -103,7 +103,7 @@ export async function GET(req: Request) {
         kind,
         q,
         order: 'updated',
-        ...(accepted === 'above-library' ? { outside: LIBRARY_LEVELS } : {}),
+        ...(accepted === 'above-library' ? { outsideLibrary: true } : {}),
         limit,
         offset,
       });

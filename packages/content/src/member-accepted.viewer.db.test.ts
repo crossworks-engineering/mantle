@@ -97,10 +97,27 @@ describe.skipIf(!URL)('member accepted items', () => {
       select id, login_id from spaces where kind = 'personal'
         and login_id in (${loginA}, ${loginB})`)) as unknown as { id: string; login_id: string }[];
     for (const r of rows) spaceOf[r.login_id] = r.id;
+    // The brain's workspaces (workspaces W5b2: who reads an item is its
+    // grants): Admin, and Team with both members as users. An Accept at
+    // team gives Team a read grant; the author's list says where each item
+    // stands for them from those grants.
+    await m.systemDb.execute(sqlTag`
+      insert into workspaces (owner_id, name, is_admin, bridge_key) values
+        (${anchor}, 'Admin', true, 'admin'), (${anchor}, 'Team', false, 'team')`);
+    await m.systemDb.execute(sqlTag`
+      insert into workspace_users (workspace_id, login_id, moderator)
+      select w.id, l.id, false from workspaces w
+        cross join (values (${loginA}::uuid), (${loginB}::uuid)) l(id)
+       where w.owner_id = ${anchor} and w.bridge_key = 'team'`);
   }, 60_000);
 
   afterAll(async () => {
     for (const id of moved) await m.systemDb.execute(sqlTag`delete from nodes where id = ${id}`);
+    await m.systemDb.execute(sqlTag`delete from nodes where owner_id = ${anchor}`);
+    const ws = sqlTag`(select id from workspaces where owner_id = ${anchor})`;
+    await m.systemDb.execute(sqlTag`delete from workspace_events where workspace_id in ${ws}`);
+    await m.systemDb.execute(sqlTag`delete from workspace_users where workspace_id in ${ws}`);
+    await m.systemDb.execute(sqlTag`delete from workspaces where owner_id = ${anchor}`);
     for (const s of Object.values(spaceOf)) {
       await m.systemDb.execute(sqlTag`delete from nodes where owner_id = ${s}`);
       await m.systemDb.execute(sqlTag`delete from spaces where id = ${s}`);
@@ -200,13 +217,13 @@ describe.skipIf(!URL)('member accepted items', () => {
     expect((await ma.listAccepted(otherBrain, loginA)).total).toBe(0);
   });
 
-  it('narrows by level and orders by the row time for the one list', async () => {
+  it('narrows to what the Library does not list and orders by the row time', async () => {
     const above = await ma.listAccepted(anchor, loginA, {
-      outside: ['team', 'client'],
+      outsideLibrary: true,
       order: 'updated',
     });
     expect(above.items.map((i) => i.id)).not.toContain(noteTeamId);
-    expect(above.items.every((i) => i.audience === 'admin' || i.audience === 'public')).toBe(true);
+    expect(above.items.every((i) => i.audience === 'admin')).toBe(true);
     expect(above.total).toBe(above.items.length);
     const times = above.items.map((i) => i.updatedAt);
     expect(times).toEqual([...times].sort().reverse());
@@ -351,9 +368,9 @@ describe.skipIf(!URL)('member accepted items', () => {
   });
 
   it('refuses to run inside a viewer scope (the rule needs the admin pool)', async () => {
-    await expect(m.runInLevelRoleForTest('team', () => ma.listAccepted(anchor, loginA))).rejects.toThrow(
-      /admin pool/,
-    );
+    await expect(
+      m.runInLevelRoleForTest('team', () => ma.listAccepted(anchor, loginA)),
+    ).rejects.toThrow(/admin pool/);
     await expect(
       m.runInLevelRoleForTest('team', () => ma.getAcceptedItem(anchor, loginA, pageId)),
     ).rejects.toThrow(/admin pool/);

@@ -42,15 +42,27 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
   getMemberForAsset: vi.fn(async () => member),
 }));
 
-vi.mock('@mantle/db', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  // The space and team-drafts scopes open a transaction; here they only run.
-  withSpace: vi.fn(async (_s: unknown, fn: () => Promise<unknown>) => {
-    h.drawSteps.push('space');
-    return fn();
-  }),
-  withTeamDrafts: vi.fn(async (fn: () => Promise<unknown>) => fn()),
-}));
+vi.mock('@mantle/db', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@mantle/db')>();
+  return {
+    ...actual,
+    // The space and team-drafts scopes open a transaction; here they only run.
+    withSpace: vi.fn(async (_s: unknown, fn: () => Promise<unknown>) => {
+      h.drawSteps.push('space');
+      return fn();
+    }),
+    withTeamDrafts: vi.fn(async (fn: () => Promise<unknown>) => fn()),
+    // The R6 shim reads the login's workspaces on the admin pool; here it
+    // runs `fn` at the level asked, so the stubs see who reads.
+    withViewer: vi.fn(
+      async (
+        level: Parameters<typeof actual.runInLevelRoleForTest>[0],
+        _for: unknown,
+        fn: () => Promise<unknown>,
+      ) => actual.runInLevelRoleForTest(level, fn),
+    ),
+  };
+});
 
 vi.mock('@/lib/files', async () => {
   const { currentViewerLevel } = await import('@mantle/db');

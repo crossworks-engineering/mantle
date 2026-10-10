@@ -171,7 +171,7 @@ describe.skipIf(!URL)('pages in the item tree', () => {
     expect(at).toBe(`pages.${label}_shared`);
     // Its own folder in it, and a draft filed there.
     const mine = await tree.createMemberFolder(scope, 'pages', {
-      parentId: shared.id,
+      parentId: shared!.id,
       name: 'Mine',
     });
     expect(await tree.memberFilingPath(scope, 'pages', mine.id)).toBe(`pages.${label}_shared.mine`);

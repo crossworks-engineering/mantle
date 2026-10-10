@@ -4,7 +4,9 @@
  * space, so it leaves Mine; the `space_items` row stays and records the
  * author. From that row the author gets:
  *
- *  - their own list of accepted items, at whatever level the admin chose;
+ *  - their own list of accepted items, each with where it stands for them:
+ *    in their Library too (a workspace they are a user of reads it, from
+ *    its grants since workspaces W5b2), or theirs to read only here;
  *  - READ access to each one, even at admin: the version ACCEPTED, from the
  *    snapshot taken at Accept (member-snapshots.ts, audit F07), never the
  *    brain's current version, so an admin's later edits stay the brain's;
@@ -35,11 +37,10 @@
  * login as the author, its state is `accepted`, and the item belongs to this
  * brain. Nothing here writes, and nothing returns a draft.
  */
-import { and, desc, eq, ilike, inArray, isNull, notInArray, or, sql } from 'drizzle-orm';
+import { and, desc, eq, ilike, inArray, sql } from 'drizzle-orm';
 import { pageFolderIdOf } from './pages/read';
 import {
   acceptedSnapshots,
-  asViewerLevel,
   authUsers,
   currentSpaceScope,
   db,
@@ -86,10 +87,15 @@ export type AcceptedRow = {
   type: MemberItemKind;
   title: string;
   icon: string | null;
-  /** The level the admin chose: at team or below it is in the Library too. */
+  /** Where the item stands for its author, from its grants (workspaces
+   *  W5b2; the frozen level columns are not read): 'team' for a member,
+   *  'client' for a client, when a live workspace the author is a user of
+   *  reads it (it is in their Library too, by its own grant or its
+   *  folder's); else 'admin' (the author reads only the accepted version,
+   *  here). */
   audience: ViewerLevel;
-  /** The share it takes from a folder holding it (folder sharing): in the
-   *  Library at that level too, whatever `audience` says. */
+  /** Always null since W5b2 (a folder's grant is in `audience`); kept for
+   *  the row's shape. */
   inherited?: 'team' | 'client' | null;
   acceptedAt: string | null;
   updatedAt: string;
@@ -131,6 +137,10 @@ function authoredWhere(anchorId: string, loginId: string) {
 
 type Joined = {
   node: typeof nodes.$inferSelect;
+  /** A live workspace the author is a user of reads the item. */
+  inLibrary: boolean;
+  /** The author is a client login. */
+  client: boolean;
   acceptedAt: Date | null;
   snapTitle?: string | null;
   snapIcon?: string | null;
@@ -138,8 +148,17 @@ type Joined = {
 };
 
 /** The row as accepted: the snapshot's title, icon and time when there is
- *  one (an admin's later rename is the brain's), the level as it is now. */
-function rowOf({ node, acceptedAt, snapTitle, snapIcon, snapAt }: Joined): AcceptedRow {
+ *  one (an admin's later rename is the brain's), and where it stands for
+ *  its author now (its grants). */
+function rowOf({
+  node,
+  inLibrary,
+  client,
+  acceptedAt,
+  snapTitle,
+  snapIcon,
+  snapAt,
+}: Joined): AcceptedRow {
   const d = (node.data ?? {}) as Record<string, unknown>;
   const icon = snapTitle != null ? snapIcon : d.icon;
   return {
@@ -147,11 +166,8 @@ function rowOf({ node, acceptedAt, snapTitle, snapIcon, snapAt }: Joined): Accep
     type: node.type as MemberItemKind,
     title: snapTitle ?? node.title,
     icon: typeof icon === 'string' && icon.trim() ? icon : null,
-    audience: asViewerLevel(node.audience),
-    inherited:
-      node.inheritedLevel === 'team' || node.inheritedLevel === 'client'
-        ? node.inheritedLevel
-        : null,
+    audience: inLibrary ? (client ? 'client' : 'team') : 'admin',
+    inherited: null,
     acceptedAt: acceptedAt?.toISOString() ?? null,
     updatedAt: (snapAt ?? node.updatedAt).toISOString(),
   };
@@ -163,11 +179,37 @@ const snapCols = {
   snapAt: acceptedSnapshots.acceptedAt,
 };
 
+/** The live workspaces `loginId` is a user of, as a uuid[] SQL value. */
+function authorWsSql(loginId: string) {
+  return sql`coalesce((
+    select array_agg(u.workspace_id) from workspace_users u
+      join workspaces w on w.id = u.workspace_id and w.archived_at is null
+     where u.login_id = ${loginId}::uuid), '{}'::uuid[])`;
+}
+
+/** Whether a live workspace of the author reads the row's item. */
+function inLibrarySql(loginId: string) {
+  return sql<boolean>`(${nodes.readWs} && ${authorWsSql(loginId)})`;
+}
+
+/** The columns every accepted row reads besides the node. */
+function rowCols(loginId: string) {
+  return {
+    node: nodes,
+    inLibrary: inLibrarySql(loginId),
+    client: sql<boolean>`exists (select 1 from auth.users l
+                                  where l.id = ${loginId}::uuid and l.role = 'client')`,
+    acceptedAt: spaceItems.acceptedAt,
+    ...snapCols,
+  };
+}
+
 /** The author's accepted items, newest accept first. `q` matches the title
  *  the row shows (the accepted title: an admin's later rename is the
- *  brain's, and a search on it would spell it out, audit L5); `outside`
- *  keeps only items read at none of those levels (own or folder share). `order: 'updated'` sorts by the row's
- *  own `updatedAt` instead (the one list merges on it). */
+ *  brain's, and a search on it would spell it out, audit L5);
+ *  `outsideLibrary` keeps only items no live workspace of the author reads
+ *  (what the Library does not list already). `order: 'updated'` sorts by
+ *  the row's own `updatedAt` instead (the one list merges on it). */
 export async function listAccepted(
   anchorId: string,
   loginId: string,
@@ -176,9 +218,9 @@ export async function listAccepted(
     /** Without `kind`: only these kinds (a client's list, client logins C5). */
     kinds?: readonly MemberItemKind[];
     q?: string;
-    /** Only items read at none of these levels, by their own level or
-     *  through a shared folder: what the Library does not already list. */
-    outside?: readonly ViewerLevel[];
+    /** Only items no live workspace of the author reads (by the item's own
+     *  grant or its folder's): what the Library does not already list. */
+    outsideLibrary?: boolean;
     order?: 'accepted' | 'updated';
     limit?: number;
     offset?: number;
@@ -201,13 +243,7 @@ export async function listAccepted(
           `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`,
         )
       : undefined,
-    opts.outside?.length
-      ? and(
-          notInArray(nodes.audience, [...opts.outside]),
-          or(isNull(nodes.inheritedLevel), notInArray(nodes.inheritedLevel, [...opts.outside])),
-          or(isNull(nodes.embeddedLevel), notInArray(nodes.embeddedLevel, [...opts.outside])),
-        )
-      : undefined,
+    opts.outsideLibrary ? sql`not ${inLibrarySql(loginId)}` : undefined,
   );
   // rowOf's updatedAt: the snapshot's time when there is one, else the node's.
   const order =
@@ -216,7 +252,7 @@ export async function listAccepted(
       : [desc(spaceItems.acceptedAt), desc(nodes.updatedAt)];
   const [rows, [count]] = await Promise.all([
     db
-      .select({ node: nodes, acceptedAt: spaceItems.acceptedAt, ...snapCols })
+      .select(rowCols(loginId))
       .from(spaceItems)
       .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))
       .leftJoin(acceptedSnapshots, eq(acceptedSnapshots.nodeId, nodes.id))
@@ -243,7 +279,7 @@ export async function acceptedRow(
 ): Promise<AcceptedRow | null> {
   assertAdminPool();
   const [row] = await db
-    .select({ node: nodes, acceptedAt: spaceItems.acceptedAt, ...snapCols })
+    .select(rowCols(loginId))
     .from(spaceItems)
     .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))
     .leftJoin(acceptedSnapshots, eq(acceptedSnapshots.nodeId, nodes.id))

@@ -265,15 +265,6 @@ const CHECKS: CheckDef[] = [
       FROM (${sql.raw(GRANT_DRIFT_SQL)}) d WHERE d.n > 0`,
   },
   {
-    key: 'workspaces_connector_drift',
-    label: 'Connector bridge drift',
-    severity: 'medium',
-    note: "connectors whose workspace resource rows differ from what their level gives (plan section 6; the connector bridge of migration 0251 keeps them equal until W5b): every connector on Admin with Write on, and on Team exactly the enabled MCP connectors at team level or below, Write on. Any count here is a bug in the bridge or a writer that went around it: the Team assistant's turns use a connector only where it is a resource of Team.",
-    query: () => sql`
-      SELECT 'connectors' AS id, 'drift' AS kind, n::text || ' row(s)' AS detail
-      FROM (SELECT mantle_connector_drift() AS n) d WHERE d.n > 0`,
-  },
-  {
     key: 'workspaces_fk_pending_validation',
     label: 'Workspace foreign keys pending validation',
     severity: 'low',
