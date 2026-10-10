@@ -61,6 +61,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     app.manifest.toolSlugs ?? [],
     slug,
     client.loginId,
+    { appId: app.id },
   );
   recordAppAccess({
     ownerId: client.anchorId,

@@ -78,6 +78,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     app.manifest.toolSlugs ?? [],
     parsed.data.slug,
     level === 'team' ? undefined : user.actor.id,
+    level === 'admin' ? undefined : { appId: app.id },
   );
   const logError = (message: string, status: number) =>
     recordAppError({

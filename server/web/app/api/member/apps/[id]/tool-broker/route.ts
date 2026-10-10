@@ -66,6 +66,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     app.manifest.toolSlugs ?? [],
     slug,
     member.loginId,
+    // A brain app: every workspace that holds it must hold the connector
+    // (plan R2). A member's own space app has no holders.
+    app.spaceApp ? undefined : { appId: app.id },
   );
   recordAppAccess({
     ownerId: app.ownerId,
