@@ -569,6 +569,8 @@ export type UpdateAppInput = Partial<{
  * "Removed here" rows are left alone. Run under the app's head
  * (withWriterHeads), in the transaction of the flag; each changed row writes
  * a workspace_events row. Until the Grant Access panel carries this switch.
+ *
+ * @heads-held by updateAppMeta (withWriterHeads on the app).
  */
 async function setInformationalGrants(
   tx: Pick<typeof db, 'execute'>,
