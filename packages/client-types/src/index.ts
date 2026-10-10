@@ -242,3 +242,22 @@ export type {
   WorkspaceUserSearchResponse,
   WorkspaceUsersResponse,
 } from './dto/workspaces';
+export type {
+  GrantAddBody,
+  GrantContactShare,
+  GrantEmbed,
+  GrantEmbedSkip,
+  GrantEmbedsBody,
+  GrantEmbedsResponse,
+  GrantError,
+  GrantErrorCode,
+  GrantMoveBody,
+  GrantMovePreviewResponse,
+  GrantMoveResponse,
+  GrantPatchBody,
+  GrantPreviewResponse,
+  GrantRow,
+  GrantWorkspaceRef,
+  GrantsResponse,
+  GrantsWriteResponse,
+} from './dto/grants';

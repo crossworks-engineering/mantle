@@ -101,14 +101,46 @@ describe.skipIf(!URL)('workspaces for a fresh install (W5b1 audit M1)', () => {
     // assistant on Team would bring admin-level tools into Team turns.
     expect(await wm.attachDefaultAssistants()).toBe(1);
     expect(await assistants()).toEqual([{ key: 'admin', slug: 'persona-test' }]);
-    // Opening it (the agent level route calls the same step) puts it on Team.
-    await sql`update agents set audience = 'team' where owner_id = ${owner} and slug = 'team-responder'`;
-    expect(await wm.attachDefaultAssistants()).toBe(1);
+    // Opening it puts it on Team, by any path that sets the level: the level
+    // function attaches it itself (W5b1 audit L2; access_set calls it too).
+    const { setAgentAudience } = await import('@mantle/content');
+    const [tr] = await sql<{ id: string }[]>`
+      select id from agents where owner_id = ${owner} and slug = 'team-responder'`;
+    await setAgentAudience(owner, tr!.id, 'team', { dropGroupsAbove: true });
     expect(await assistants()).toEqual([
       { key: 'admin', slug: 'persona-test' },
       { key: 'team', slug: 'team-responder' },
     ]);
     expect(await wm.attachDefaultAssistants()).toBe(0);
+    // Each attach is logged on its workspace (audit nit).
+    expect(
+      await sql`
+        select w.bridge_key as key, e.subject->>'by' as by from workspace_events e
+          join workspaces w on w.id = e.workspace_id
+         where e.action = 'resource.add' order by 1`,
+    ).toEqual([
+      { key: 'admin', by: 'attach' },
+      { key: 'team', by: 'attach' },
+    ]);
+    // L3: an assistant that sits on Team is not raised to admin (its Team
+    // turns would carry admin-level tools).
+    await expect(setAgentAudience(owner, tr!.id, 'admin')).rejects.toMatchObject({
+      code: 'agent_in_workspace',
+    });
+    // L1: a Moderator takes Team's assistant off. Neither a boot nor a level
+    // change puts it back.
+    const [team] = await sql<{ id: string }[]>`select id from workspaces where bridge_key = 'team'`;
+    const { patchWorkspace } = await import('./workspaces');
+    await patchWorkspace({ kind: 'admin', loginId: owner, anchorId: owner, user: null }, team!.id, {
+      assistantId: null,
+    });
+    expect(await assistants()).toEqual([{ key: 'admin', slug: 'persona-test' }]);
+    expect(await wm.attachDefaultAssistants()).toBe(0);
+    await setAgentAudience(owner, tr!.id, 'team');
+    await wm.migrateWorkspacesQuietly('boot');
+    expect(await assistants()).toEqual([{ key: 'admin', slug: 'persona-test' }]);
+    // Off Team, it may be raised again.
+    await setAgentAudience(owner, tr!.id, 'admin');
 
     // Fix round 2, L-a: the boot step of a migrated brain repairs drift.
     await sql.begin(async (tx) => {

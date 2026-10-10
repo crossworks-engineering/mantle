@@ -124,7 +124,12 @@ export class AccessError extends Error {
   constructor(
     message: string,
     readonly code:
-      'not_found' | 'type_ceiling' | 'invalid_level' | 'group_above_agent' | 'telegram_paired',
+      | 'not_found'
+      | 'type_ceiling'
+      | 'invalid_level'
+      | 'group_above_agent'
+      | 'telegram_paired'
+      | 'agent_in_workspace',
   ) {
     super(message);
     this.name = 'AccessError';
@@ -511,6 +516,29 @@ async function refuseIfOnTelegram(
 }
 
 /**
+ * An assistant of a workspace other than Admin answers there, with tools
+ * capped at its own level (skills.ts): raising it to admin would carry
+ * admin-level tools into that workspace's turns (W5b1 audit L3). Refused
+ * while it sits there; take it off, or clone it for Admin.
+ */
+async function refuseIfWorkspaceAssistant(agent: {
+  slug: string;
+  workspaceId: string | null;
+}): Promise<void> {
+  if (!agent.workspaceId) return;
+  const [ws] = (await db.execute(
+    sql`select is_admin, name from workspaces where id = ${agent.workspaceId}`,
+  )) as unknown as Array<{ is_admin: boolean; name: string }>;
+  if (ws && !ws.is_admin) {
+    throw new AccessError(
+      `agent '${agent.slug}' is the assistant of the ${ws.name} workspace, so it cannot be ` +
+        'raised to admin: take it off that workspace first, or clone it for Admin',
+      'agent_in_workspace',
+    );
+  }
+}
+
+/**
  * Set an agent's level. Refuses when it holds a tool group above the new
  * level (plan 2c), and the refusal names the fix. `dropGroupsAbove` is that
  * fix in the same call: the groups above the new level leave the agent with
@@ -533,12 +561,18 @@ export async function setAgentAudience(
     );
   }
   const [agent] = await db
-    .select({ id: agents.id, slug: agents.slug, groups: agents.toolGroupSlugs })
+    .select({
+      id: agents.id,
+      slug: agents.slug,
+      groups: agents.toolGroupSlugs,
+      workspaceId: agents.workspaceId,
+    })
     .from(agents)
     .where(and(eq(agents.id, agentId), eq(agents.ownerId, ownerId)))
     .limit(1);
   if (!agent) throw new AccessError(`agent ${agentId} not found`, 'not_found');
   if (audience !== 'admin') await refuseIfOnTelegram(ownerId, agent.id, agent.slug, audience);
+  else await refuseIfWorkspaceAssistant(agent);
   const held = agent.groups ?? [];
   const aboveRows = await groupsAbove(ownerId, held, audience);
   const above = new Set(aboveRows.map((g) => g.slug));
@@ -560,7 +594,26 @@ export async function setAgentAudience(
       ...(removedGroups.length > 0 ? { toolGroupSlugs: held.filter((g) => !above.has(g)) } : {}),
     })
     .where(and(eq(agents.id, agentId), eq(agents.ownerId, ownerId)));
+  await attachDefaultAssistants();
   return { id: agent.id, slug: agent.slug, audience, removedGroups };
+}
+
+/**
+ * Put the default assistants on Admin and Team where they have none and no
+ * Moderator took theirs off (0259, 0260): opening the team responder puts it
+ * on Team, by whichever path set the level (the route, access_set; W5b1
+ * audit L2). Best effort: a busy lock or a brain without workspaces leaves
+ * it to the next boot.
+ */
+async function attachDefaultAssistants(): Promise<void> {
+  try {
+    await db.execute(sql`select "public"."mantle_ws_attach_assistants"()`);
+  } catch (err) {
+    console.warn(
+      '[access] attaching the default assistants failed; the next boot tries again:',
+      err instanceof Error ? err.message : err,
+    );
+  }
 }
 
 /**

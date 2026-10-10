@@ -31,6 +31,19 @@ export const ANY_LOGIN_ROUTES: readonly string[] = [
   'POST /api/workspaces/:id/resources',
   'PATCH /api/workspaces/:id/resources/:kind/:refId',
   'DELETE /api/workspaces/:id/resources/:kind/:refId',
+  // Grants (W5b2): the Grant Access panel. The rules are in lib/grants.ts
+  // and in each query: an item or workspace the login may not see answers
+  // 404. Proved per role in lib/grants.db.test.ts.
+  'GET /api/grants/:nodeId',
+  'POST /api/grants/:nodeId',
+  'PATCH /api/grants/:nodeId/:wsId',
+  'DELETE /api/grants/:nodeId/:wsId',
+  'POST /api/grants/:nodeId/:wsId/restore',
+  'POST /api/grants/:nodeId/:wsId/hand',
+  'POST /api/grants/:nodeId/embeds',
+  'GET /api/grants/:nodeId/preview',
+  'POST /api/grants/move',
+  'POST /api/grants/move/preview',
 ];
 
 export function isAnyLoginRoute(method: string, pattern: string): boolean {

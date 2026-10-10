@@ -1814,6 +1814,13 @@
       "when": 1790194620000,
       "tag": "0259_workspaces_w5b1_fixes_2",
       "breakpoints": true
+    },
+    {
+      "idx": 260,
+      "version": "7",
+      "when": 1790194680000,
+      "tag": "0260_workspaces_attach_fixes",
+      "breakpoints": true
     }
   ]
 }
