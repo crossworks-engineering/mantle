@@ -60,6 +60,7 @@ import {
   getActiveShareForNode,
 } from '@mantle/content';
 import { appDbTableDetails } from '@mantle/content/app-broker';
+import { refoldPageTexts } from '@mantle/content/pages';
 import { moveTreeItems, notifyTreeChanged } from '@mantle/content/tree';
 import { publicErrorMessage } from '@mantle/std';
 import { areasFor, workspaceCaller, WsError, type WsCaller } from '@/lib/workspaces';
@@ -413,9 +414,7 @@ async function buildResponse(ctx: Ctx, item: Item, q: Exec = db): Promise<Grants
 
   let addable: GrantWorkspaceRef[] = [];
   if (manage) {
-    const taken = new Set(
-      list.filter((r) => !r.excluded).map((r) => r.ws),
-    );
+    const taken = new Set(list.filter((r) => !r.excluded).map((r) => r.ws));
     const mods = [...ctx.mine.values()].filter((w) => w.moderator && !taken.has(w.id));
     if (mods.length) {
       const ok = await rows<{ id: string }>(
@@ -617,7 +616,42 @@ async function change<T>(
   } catch (err) {
     throw dbRefusal(err) ?? err;
   }
+  await refoldAfter(caller.anchorId, [item0]);
   return after(caller, item0.id);
+}
+
+/**
+ * Page texts after a grant change (plan 5.3): a page's indexed text names
+ * another item only when every holder of the page holds it, so the pages
+ * concerned are folded again: the item (a folder: the pages inside it) and
+ * every page that names it. After the commit, in batches; text only, never
+ * LLM work. Best effort: a failure is logged, the change stands, and the
+ * page's next save folds it again.
+ */
+async function refoldAfter(
+  anchorId: string,
+  items: ReadonlyArray<{ id: string; type: string; path: string | null }>,
+): Promise<void> {
+  try {
+    const ids: string[] = [];
+    for (const item of items) {
+      if (item.type === 'branch' && item.path) {
+        const inside = await rows<{ id: string }>(
+          db,
+          sql`select id from nodes
+               where owner_id = ${anchorId} and type = 'page' and path <@ ${item.path}::ltree`,
+        );
+        ids.push(...inside.map((r) => r.id));
+      } else {
+        ids.push(item.id);
+      }
+    }
+    for (let i = 0; i < ids.length; i += 200) {
+      await refoldPageTexts(anchorId, ids.slice(i, i + 200));
+    }
+  } catch (err) {
+    console.error('[grants] page text refold failed:', publicErrorMessage(err, 'grants refold'));
+  }
 }
 
 const NOT_MANAGER = () =>
@@ -977,6 +1011,10 @@ export async function grantEmbeds(
       throw dbRefusal(err) ?? err;
     }
   }
+  await refoldAfter(
+    caller.anchorId,
+    embeds0.map((e) => ({ id: e.id, type: e.type, path: null })),
+  );
   const panel = await after(caller, host0.id);
   return { ...panel, skipped };
 }
@@ -1459,7 +1497,14 @@ async function moveToFolder(ctx: Ctx, body: MoveInput): Promise<GrantMoveRespons
       confirm: true,
       guard,
     });
-    if (moved.moved) await notifyTreeChanged(ctx.caller.anchorId, plan.kind);
+    if (moved.moved) {
+      await notifyTreeChanged(ctx.caller.anchorId, plan.kind);
+      const failed = new Set(moved.failed.map((f) => f.id));
+      await refoldAfter(
+        ctx.caller.anchorId,
+        plan.perItem.filter((p) => !p.refusal && !failed.has(p.item.id)).map((p) => p.item),
+      );
+    }
     result.moved = moved.moved;
     result.failed.push(...moved.failed);
   } catch (err) {
