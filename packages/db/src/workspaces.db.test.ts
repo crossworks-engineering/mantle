@@ -191,6 +191,28 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
     expect(rows.every((r) => r.via === f)).toBe(true);
   });
 
+  it('an archived workspace: a direct grant is refused, a folder-derived row is skipped (0255)', async () => {
+    const arch = randomUUID();
+    await admin`insert into workspaces (id, owner_id, name) values (${arch}, ${owner}, ${`${tag} Arch`})`;
+    const f = await node('branch', 'f-arch', `${root}.farch`);
+    await grant(f, ws.team);
+    await grant(f, arch);
+    // The archive committed while a create still saw the folder's grant
+    // (the race of W5a fix round 2, L-1): archived_at set, the row kept.
+    await admin`update workspaces set archived_at = now() where id = ${arch}`;
+    // The child's insert succeeds; it takes Team, not the archived one.
+    const p = await node('page', 'in farch', `${root}.farch`);
+    expect(await readWs(p)).toEqual([ws.team]);
+    const rows = await admin<{ w: string }[]>`
+      select workspace_id::text as w from item_grants where node_id = ${p}`;
+    expect(rows.map((r) => r.w)).toEqual([ws.team]);
+    // A derived row written by hand is skipped too; a direct grant refused.
+    const skipped = await admin`insert into item_grants (node_id, workspace_id, via_folder_id)
+      values (${p}, ${arch}, ${f}) returning node_id`;
+    expect(skipped).toHaveLength(0);
+    await expect(grant(p, arch)).rejects.toThrow(/is archived: it takes no grants/);
+  });
+
   it('tests 3 and 5: nested folders, nearest wins, exclusions survive, a deep rename keeps every row', async () => {
     // Folders nest four levels at most (nodes_tree_folder_depth_ck).
     const a = await node('branch', 'a', `${root}.a`);

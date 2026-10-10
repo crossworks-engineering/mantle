@@ -266,6 +266,20 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
       status: 403,
       reason: expect.stringMatching(/signed-in client/),
     });
+    // The author warnings ask without a run (no login): a client-level
+    // connector tool raises none (W5a fix round 2, M-1).
+    await exec(sqlTag`update nodes set audience = 'client' where id = ${appId}`);
+    try {
+      const set = await toolDef('app_tools_set').handler(
+        { id: appId, tool_slugs: ['site_query'] },
+        { ownerId: anchor, surface: { kind: 'web' } },
+      );
+      expect(set.ok).toBe(true);
+      expect((set.ok && (set.output as { warnings?: string[] }).warnings) || []).toEqual([]);
+      expect(await level.appToolWarnings(anchor, appId)).toEqual([]);
+    } finally {
+      await exec(sqlTag`update nodes set audience = 'team' where id = ${appId}`);
+    }
     const v = await level.appToolVerdict('client', anchor, DECLARED, 'site_query', client);
     if (!v.ok) throw new Error(v.reason);
     const scope = level.appToolScope('client', { loginId: randomUUID(), name: 'A client' });

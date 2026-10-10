@@ -536,16 +536,16 @@ export function systemDbCallerOf(stack: string): string | null {
 }
 
 /** The drizzle internals read on `systemDb` itself while a query it was
- *  asked for runs (drizzle reads `this.session` and friends on the proxy;
- *  `execute` reads `this.authToken` only when the query is awaited, from a
- *  frame with no caller file). The check already ran when the caller
- *  touched the method, so these skip it (W5a audit W3): one stack per call,
- *  not several, in a turn. */
+ *  asked for runs: `this.session` and `this.dialect`, and `this.authToken`,
+ *  which `execute` reads only when the query is awaited, from a frame with
+ *  no caller file. The check already ran when the caller touched the
+ *  method, so these skip it (W5a audit W3): one stack per call, not
+ *  several, in a turn. Nothing else: `$client` (the raw pool) and `_` stay
+ *  checked, so code handed systemDb cannot reach the pool unchecked (fix
+ *  round 2, L-2). */
 const SYSTEM_DB_INTERNAL_PROPS: ReadonlySet<PropertyKey> = new Set([
   'session',
   'dialect',
-  '_',
-  '$client',
   'authToken',
 ]);
 

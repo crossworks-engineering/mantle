@@ -427,15 +427,31 @@ async function event(
 /** Names are not unique (0255, audit M3): a clash with a workspace the
  *  caller cannot see would tell them it exists. Only the names of the Admin
  *  and Team workspaces are reserved, and everybody knows those two. */
+const RESERVED = () =>
+  new WsError(
+    409,
+    'reserved_name',
+    'Admin and Team are the names of the built-in workspaces. Pick another name.',
+  );
+
 function nameError(err: unknown): WsError | null {
   if (isUniqueViolation(err) && pgConstraint(err) === 'workspaces_reserved_name_uq') {
-    return new WsError(
-      409,
-      'reserved_name',
-      'Admin and Team are the names of the built-in workspaces. Pick another name.',
-    );
+    return RESERVED();
   }
   return null;
+}
+
+/** The reserved names, in code (fix round 2, L-3): for any workspace but
+ *  the built-in ones, whatever the built-in ones are called. The index
+ *  (0255) is the backstop. */
+function refuseReservedName(name: string): void {
+  const n = name.trim().toLowerCase();
+  if (n === 'admin' || n === 'team') throw RESERVED();
+}
+
+/** The Admin and Team workspaces (the bridges' rows). */
+function builtIn(w: WsRow): boolean {
+  return w.is_admin || w.bridge_key !== null;
 }
 
 /** POST /api/workspaces: the maker is its only user and a Moderator (plan
@@ -451,6 +467,7 @@ export async function createWorkspace(
   if (!info.migrated) {
     throw new WsError(409, 'not_migrated', 'Workspaces are not set up on this brain yet.');
   }
+  refuseReservedName(body.name);
   let id: string;
   try {
     id = await db.transaction(async (tx) => {
@@ -491,6 +508,15 @@ export async function patchWorkspace(
       if (w.archived_at !== null) throw archivedError();
       if ((body.name !== undefined || body.description !== undefined) && !seen.mod && !seen.admin) {
         throw new WsError(403, 'forbidden', 'Only a Moderator of this workspace can change it.');
+      }
+      if (body.name !== undefined && body.name !== w.name) {
+        // The built-in workspaces keep their names (fix round 2, L-3): a
+        // renamed Team would free "Team" for anyone, and a later clash
+        // would tell them it exists.
+        if (builtIn(w)) {
+          throw new WsError(409, 'reserved_name', 'The built-in workspaces keep their names.');
+        }
+        refuseReservedName(body.name);
       }
       if (body.contactNodeId !== undefined && !seen.admin) {
         throw new WsError(403, 'admin_only', 'Only an Admin user can set the contact.');

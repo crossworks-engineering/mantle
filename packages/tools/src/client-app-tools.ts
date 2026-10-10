@@ -31,7 +31,7 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db, toolGroups, type Tool } from '@mantle/db';
 import { resolveTool } from './resolve';
-import { outsideToolVerdict } from './external-access';
+import { outsideToolVerdict, type OutsideToolCheck } from './external-access';
 
 /**
  * The tools a client's app may call: the client chat's tools
@@ -89,6 +89,7 @@ export async function clientAppToolVerdict(
   declared: readonly string[],
   slug: string,
   loginId?: string,
+  check?: OutsideToolCheck,
 ): Promise<ClientAppToolVerdict> {
   if (!declared.includes(slug)) {
     return {
@@ -108,7 +109,7 @@ export async function clientAppToolVerdict(
     if (!getBuiltin(slug)) {
       const outside = await resolveTool(ownerId, slug);
       if (outside && outside.handler.kind !== 'builtin') {
-        return outsideToolVerdict(ownerId, outside, slug, 'client', loginId);
+        return outsideToolVerdict(ownerId, outside, slug, 'client', loginId, check);
       }
     }
     return { ok: false, status: 403, reason: notForClients(slug) };

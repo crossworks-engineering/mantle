@@ -34,6 +34,7 @@ import { getAppRuntime } from '@mantle/content';
 import { resolveTool } from './resolve';
 import { memberAppToolVerdict } from './member-app-tools';
 import { CLIENT_APP_TOOL_SLUGS, clientAppToolVerdict } from './client-app-tools';
+import type { OutsideToolCheck } from './external-access';
 import type { ToolHandlerContext } from './types';
 
 /** The rules an app's tool call runs under. */
@@ -83,10 +84,11 @@ export async function appToolVerdict(
   declared: readonly string[],
   slug: string,
   loginId?: string,
+  check?: OutsideToolCheck,
 ): Promise<AppToolVerdict> {
   switch (level) {
     case 'client':
-      return clientAppToolVerdict(ownerId, declared, slug, loginId);
+      return clientAppToolVerdict(ownerId, declared, slug, loginId, check);
     case 'team':
       return memberAppToolVerdict(ownerId, declared, slug, loginId);
     case 'admin': {
@@ -160,7 +162,10 @@ export async function appToolWarnings(ownerId: string, appId: string): Promise<s
     const declared = [...new Set(app.manifest.toolSlugs ?? [])];
     const warnings: string[] = [];
     for (const slug of declared) {
-      const verdict = await appToolVerdict(level, ownerId, declared, slug);
+      // No run here, so no runner login: the level rules alone.
+      const verdict = await appToolVerdict(level, ownerId, declared, slug, undefined, {
+        rulesOnly: true,
+      });
       if (verdict.ok) continue;
       if (level === 'client') {
         warnings.push(

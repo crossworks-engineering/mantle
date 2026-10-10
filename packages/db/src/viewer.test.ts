@@ -539,10 +539,22 @@ describe('systemDb inside a turn scope: allowlisted modules only (W4b fix round 
   it("skips drizzle's internal reads on the proxy, checks every method (W5a audit W3)", () => {
     // drizzle reads these on systemDb while a query the caller asked for
     // runs: the caller was checked when it touched the method.
-    for (const prop of ['session', 'dialect', '_', '$client']) {
+    for (const prop of ['session', 'dialect', 'authToken']) {
       expect(systemDbAccessChecked(prop), prop).toBe(false);
     }
-    for (const prop of ['execute', 'select', 'insert', 'update', 'delete', 'transaction']) {
+    // The raw pool and drizzle's schema handle stay checked (fix round 2,
+    // L-2): systemDb.$client is never a way past the guard.
+    for (const prop of [
+      '$client',
+      '_',
+      'query',
+      'execute',
+      'select',
+      'insert',
+      'update',
+      'delete',
+      'transaction',
+    ]) {
       expect(systemDbAccessChecked(prop), prop).toBe(true);
     }
     expect(systemDbAccessChecked(Symbol('x'))).toBe(true);

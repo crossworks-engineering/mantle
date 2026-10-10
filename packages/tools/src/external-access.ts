@@ -440,12 +440,18 @@ export async function loginConnectorRefused(
  *    login's workspace rule too (loginConnectorRule): the same rule as the
  *    login's own MCP, so an app is no way around it.
  */
+/** How an outside tool is checked. `rulesOnly`: no run, the author warnings
+ *  (appToolWarnings) ask what the level rules allow, with no runner login.
+ *  Never set it for a run: a client run without a login is refused. */
+export type OutsideToolCheck = { rulesOnly?: true };
+
 export async function connectorToolVerdict(
   ownerId: string,
   tool: Tool,
   slug: string,
   runner: ExternalAccessRunner,
   loginId?: string,
+  check?: OutsideToolCheck,
 ): Promise<OutsideToolVerdict> {
   const who =
     runner === 'member' ? 'a team app' : runner === 'client' ? 'a client app' : 'a shared link';
@@ -482,8 +488,9 @@ export async function connectorToolVerdict(
   }
   const write = mark === 'write';
   // A client always runs as a known login (W5a audit W2): with none, there
-  // is no rule to hold it to, so refuse rather than fall through.
-  if (runner === 'client' && !loginId) {
+  // is no rule to hold it to, so refuse rather than fall through. Only the
+  // author warnings ask without a run (rulesOnly): the level rules alone.
+  if (runner === 'client' && !loginId && !check?.rulesOnly) {
     return {
       ok: false,
       status: 403,
@@ -602,9 +609,10 @@ export async function outsideToolVerdict(
   slug: string,
   runner: ExternalAccessRunner,
   loginId?: string,
+  check?: OutsideToolCheck,
 ): Promise<OutsideToolVerdict> {
   if ((tool.handler as ToolHandler).kind === 'mcp') {
-    return connectorToolVerdict(ownerId, tool, slug, runner, loginId);
+    return connectorToolVerdict(ownerId, tool, slug, runner, loginId, check);
   }
   const v = externalToolVerdict(tool, slug, runner);
   return v.ok ? { ...v, write: false } : v;

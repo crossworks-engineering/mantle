@@ -313,6 +313,35 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     }
   });
 
+  it('names: the built-in workspaces keep theirs; no other may take one (fix round 2, L-3)', async () => {
+    // A Team Moderator cannot rename Team (then "Team" would be free to
+    // take, and a later clash would tell who took it)...
+    await as(mem);
+    const team1 = await call(r.one.PATCH(req('PATCH', { name: 'Staff' }), p({ id: team })));
+    expect(team1.status).toBe(409);
+    expect(team1.body.code).toBe('reserved_name');
+    // ...but may change its description, and resend its own name.
+    const desc = await call(
+      r.one.PATCH(req('PATCH', { name: 'Team', description: 'Everyone' }), p({ id: team })),
+    );
+    expect(desc.status).toBe(200);
+    expect((desc.body as Json).name).toBe('Team');
+    // An Admin user cannot rename Admin either.
+    await as(owner);
+    const admin1 = await call(r.one.PATCH(req('PATCH', { name: 'Owners' }), p({ id: admin })));
+    expect(admin1.body.code).toBe('reserved_name');
+    // Any other workspace: never a reserved name, in any case or spacing.
+    const mine = await create(mem3, 'Moe renames');
+    for (const name of ['Admin', ' TEAM ']) {
+      const out = await call(r.one.PATCH(req('PATCH', { name }), p({ id: mine })));
+      expect(out.status, name).toBe(409);
+      expect(out.body.code, name).toBe('reserved_name');
+    }
+    const [names] = await x<{ n: number }>(sql`select count(*)::int as n from workspaces
+      where owner_id = ${owner} and lower(btrim(name)) in ('admin', 'team')`);
+    expect(names!.n).toBe(2);
+  });
+
   it('the last Moderator can be neither removed nor demoted', async () => {
     const ws = await create(mem2, 'Max solo');
     await as(mem2);

@@ -12,7 +12,9 @@
 -- same time on another connection could land after the drop. The trigger
 -- below reads the workspace row FOR KEY SHARE, which waits for that lock, and
 -- then sees archived_at as committed. A grant written first holds the same
--- share lock, so the archive waits for it and drops it.
+-- share lock, so the archive waits for it and drops it. A direct grant to an
+-- archived workspace is refused; a folder-derived row is skipped (fix round
+-- 2, L-1), so a create or move that raced the archive still succeeds.
 --
 -- Small table (workspaces) and a new trigger: plain DDL. Nothing here writes
 -- a grant, starts LLM work or notifies the extractor.
@@ -41,6 +43,13 @@ BEGIN
    WHERE w."id" = NEW."workspace_id"
      FOR KEY SHARE;
   IF archived IS NOT NULL THEN
+    -- A row a folder derives (0251: a new item placed in the folder, or a
+    -- re-derive after a move) read the folder's grant before the archive
+    -- dropped it. Skip that row: the user's create or move goes on, and the
+    -- archived workspace gains nothing. Only a direct grant is refused.
+    IF NEW."via_folder_id" IS NOT NULL THEN
+      RETURN NULL;
+    END IF;
     RAISE EXCEPTION 'workspace % is archived: it takes no grants', NEW."workspace_id"
       USING ERRCODE = 'check_violation';
   END IF;
