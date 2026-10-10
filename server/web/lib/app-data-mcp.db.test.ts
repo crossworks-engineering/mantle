@@ -111,7 +111,8 @@ describe.skipIf(!URL)('app data over a login MCP, end to end', () => {
     process.env.APP_DB_DIR = dir;
     m = await import('@mantle/db');
     sql = (m.systemDb as unknown as { $client: typeof sql }).$client;
-    await m.ensureViewerRoles(sql, process.env.MANTLE_MASTER_KEY);
+    // The viewer roles are the cluster's (set up once for the test run): a
+    // scratch database never resets them.
     content = await import('@mantle/content');
     ls = await import('@mantle/mcp-core');
     auth = await import('./mcp-auth');

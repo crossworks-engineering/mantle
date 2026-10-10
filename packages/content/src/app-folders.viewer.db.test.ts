@@ -241,9 +241,8 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
     tree = await import('./tree/index');
     folders = await import('./app-folders');
     sqlTag = (await import('drizzle-orm')).sql;
-    const admin = (m.systemDb as unknown as { $client: Parameters<Db['ensureViewerRoles']>[0] })
-      .$client;
-    await m.ensureViewerRoles(admin, process.env.MANTLE_MASTER_KEY);
+    // The viewer roles are the cluster's (set up once for the test run): a
+    // scratch database never resets them.
     await m.systemDb.execute(sqlTag`
       insert into auth.users (id, email, password_hash, is_owner, role)
       values (${brain}, ${`${label}-owner@example.invalid`}, 'x', true, 'admin')`);
