@@ -14,8 +14,65 @@ import { isSwept } from './level-reads.mjs';
  * withHumanViewer (the review flows, until W5c), both inside
  * packages/db/src/client.ts. The runtime half (what each scope reads) is
  * packages/db/src/viewer-shim.db.test.ts.
+ *
+ * A guarded function is found however it is reached: by its own name, on a
+ * namespace (`db.withViewer(`), through a renamed import or destructure
+ * (`import { withViewer as wv }`, `const { withViewer: wv } = await
+ * import(...)`), and it is never passed around as a value (`const wv =
+ * withViewer`, `{ withViewer }`, `m['withViewer']`), so no call escapes the
+ * checks below. The fixtures at the end pin each of those.
  */
 const ROOT = join(__dirname, '..');
+
+const CLIENT = 'packages/db/src/client.ts';
+const VIEWER = 'packages/db/src/viewer.ts';
+const DB_INDEX = 'packages/db/src/index.ts';
+
+/** Where the scope functions are defined (and re-exported): exempt. */
+const HOME = new Set([CLIENT, VIEWER, DB_INDEX]);
+
+/** Entered only inside client.ts: a workspace scope is opened by
+ *  withViewer for whom it acts for (or by a turn, withTurnScope), never
+ *  from a hand-built scope. */
+const CLIENT_ONLY = ['withScope', 'runInViewerScope'] as const;
+
+/** The level-role entries: client.ts and viewer.ts only (tests excepted). */
+const LEVEL_ENTRIES = ['runInTxScope', 'getViewerDb', 'runInLevelRoleForTest'] as const;
+
+/**
+ * withHumanViewer is the one level-role path left (the review flows, until
+ * W5c): its callers, and those of its team wrapper withTeamDrafts, are
+ * exactly these. Each reads team drafts or client requests for a login's
+ * own request, never for an agent. A new caller fails here: it reads in a
+ * workspace scope (withViewer) instead.
+ */
+const HUMAN_VIEWER_CALLERS: Record<string, readonly string[]> = {
+  withHumanViewer: [
+    CLIENT, // withTeamDrafts
+    'server/web/app/api/member/client-requests/route.ts',
+    'server/web/app/api/member/client-requests/[id]/route.ts',
+    'server/web/app/api/member/client-requests/[id]/bytes/route.ts',
+    'server/web/app/api/member/items/route.ts',
+  ],
+  withTeamDrafts: [
+    'server/web/app/api/member/team-drafts/route.ts',
+    'server/web/app/api/member/team-drafts/[id]/route.ts',
+    'server/web/app/api/member/team-drafts/[id]/bytes/route.ts',
+    'server/web/app/api/member/draws/[id]/svg/route.ts',
+    'server/web/app/api/member/items/route.ts',
+    // The member's tree (teammates' team drafts next to their own) and the
+    // admin's list of team-shared member items: the same team drafts reads.
+    'packages/content/src/tree/member-tree.ts',
+    'packages/content/src/member-items-shared.ts',
+  ],
+};
+
+const GUARDED = [
+  'withViewer',
+  ...CLIENT_ONLY,
+  ...LEVEL_ENTRIES,
+  ...Object.keys(HUMAN_VIEWER_CALLERS),
+] as const;
 
 function sweptFiles(): string[] {
   const out = execFileSync(
@@ -26,82 +83,198 @@ function sweptFiles(): string[] {
   return out.split('\n').filter((f: string) => isSwept(f) && /\.(ts|tsx|mjs|js)$/.test(f));
 }
 
-/** The file's code: comments and double-quoted strings blanked (they may
- *  name withViewer in prose). */
-function read(f: string): string | null {
-  let text: string;
+function load(f: string): string | null {
   try {
-    text = readFileSync(join(ROOT, f), 'utf8');
+    return readFileSync(join(ROOT, f), 'utf8');
   } catch {
     return null; // listed by git, deleted in the working tree
   }
-  return text
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/(^|[^:])\/\/.*$/gm, '$1')
-    .replace(/"(?:[^"\\\n]|\\.)*"/g, '""');
 }
 
-/** The text of every call `name(...)` in `text`, parentheses balanced. */
-function calls(text: string, name: string): string[] {
+/** The file's code without comments (they may name withViewer in prose). */
+function code(raw: string): string {
+  return raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+}
+
+/** The code with double-quoted strings blanked too (error messages may name
+ *  withViewer). Module specifiers and keys are single-quoted here. */
+function blanked(src: string): string {
+  return src.replace(/"(?:[^"\\\n]|\\.)*"/g, '""');
+}
+
+const esc = (s: string) => s.replace(/[$]/g, '\\$');
+
+/** The keys of ViewerFor, the type of withViewer's second argument: a new
+ *  variant there is a new accepted key here. */
+function viewerForKeys(): string[] {
+  const text = code(load(VIEWER)!);
+  const at = text.indexOf('export type ViewerFor');
+  expect(at, 'ViewerFor is declared in viewer.ts').toBeGreaterThan(0);
+  const body = text.slice(text.indexOf('=', at) + 1, text.indexOf(';', at));
+  const keys: string[] = [];
+  let depth = 0;
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i];
+    if (c === '{') {
+      if (depth++ === 0) {
+        const key = /^\s*([\w$]+)\s*\??\s*:/.exec(body.slice(i + 1));
+        if (key) keys.push(key[1]!);
+      }
+    } else if (c === '}') depth--;
+  }
+  return keys;
+}
+
+/** Every local name `src` binds to `name`: the name itself (a direct or a
+ *  namespace call), a renamed import or re-export (`name as x`) and a
+ *  renamed destructure (`const { name: x } = ...`). */
+function localNames(src: string, name: string): string[] {
+  const out = new Set([name]);
+  for (const m of src.matchAll(new RegExp(`(?<![\\w$])${esc(name)}\\s+as\\s+([\\w$]+)`, 'g'))) {
+    out.add(m[1]!);
+  }
+  for (const d of src.matchAll(/\b(?:const|let|var)\s*\{([^}]*)\}\s*=/g)) {
+    const re = new RegExp(`(?<![\\w$])${esc(name)}\\s*:\\s*([\\w$]+)`, 'g');
+    for (const m of d[1]!.matchAll(re)) out.add(m[1]!);
+  }
+  return [...out];
+}
+
+/** The text of every call of `local` in `text` (direct, on a namespace,
+ *  optional or generic), parentheses balanced; declarations skipped. */
+function calls(text: string, local: string): string[] {
   const out: string[] = [];
-  const re = new RegExp(`\\b${name}\\(`, 'g');
+  const re = new RegExp(`(?<![\\w$])${esc(local)}\\s*(?:\\?\\.)?\\s*(?:<[^()]*?>)?\\s*\\(`, 'g');
   for (let m = re.exec(text); m; m = re.exec(text)) {
-    // A declaration, not a call.
-    if (/function\s+$/.test(text.slice(Math.max(0, m.index - 12), m.index))) continue;
+    if (/function\s*\*?\s*$/.test(text.slice(Math.max(0, m.index - 16), m.index))) continue;
     let depth = 0;
     let i = m.index + m[0].length - 1;
     for (; i < text.length; i++) {
       if (text[i] === '(') depth++;
       else if (text[i] === ')' && --depth === 0) break;
     }
-    out.push(text.slice(m.index, i + 1));
+    out.push(`${local}(${text.slice(m.index + m[0].length, i)})`);
   }
   return out;
 }
 
-const CLIENT = 'packages/db/src/client.ts';
-const VIEWER = 'packages/db/src/viewer.ts';
+/** Spans where a bare name is a binding, not a use: import and export
+ *  clauses and destructuring patterns. */
+function bindingSpans(text: string): [number, number][] {
+  const spans: [number, number][] = [];
+  const res = [
+    /\b(?:import|export)\s+(?:type\s+)?(?:[\w$]+\s*,\s*)?\{[^}]*\}/g,
+    /\b(?:const|let|var)\s*\{[^}]*\}\s*=/g,
+  ];
+  for (const re of res) {
+    for (const m of text.matchAll(re)) spans.push([m.index!, m.index! + m[0].length]);
+  }
+  return spans;
+}
+
+/** Each place `local` is used as a VALUE (passed, aliased, stored, put in
+ *  an object), not called: a call made through it would escape the sweep. */
+function valueUses(text: string, local: string): string[] {
+  const spans = bindingSpans(text);
+  const out: string[] = [];
+  const re = new RegExp(`(?<![\\w$'])${esc(local)}(?![\\w$'])`, 'g');
+  for (const m of text.matchAll(re)) {
+    const at = m.index!;
+    const after = text.slice(at + local.length);
+    const before = text.slice(Math.max(0, at - 16), at);
+    if (/^\s*(?:\?\.)?\s*(?:<[^()]*?>)?\s*\(/.test(after)) continue; // a call
+    if (/(?:function\s*\*?|typeof)\s*$/.test(before)) continue;
+    if (/^\s*as\s/.test(after) || /\bas\s+$/.test(before)) continue;
+    if (spans.some(([s, e]) => at >= s && at < e)) continue;
+    out.push(text.slice(Math.max(0, at - 20), at + local.length + 20).replace(/\s+/g, ' '));
+  }
+  // By key: m['withViewer'], m[`withViewer`].
+  const byKey = new RegExp(`\\[\\s*['\`]${esc(local)}['\`]\\s*\\]`, 'g');
+  for (const m of text.matchAll(byKey)) out.push(m[0]);
+  return out;
+}
+
+/** What the sweep finds wrong in one file (`f`, its repo path). */
+function problems(f: string, raw: string, keys: readonly string[]): string[] {
+  const src = code(raw);
+  const text = blanked(src);
+  const bad: string[] = [];
+  // The test-only level runner is never named in product code.
+  if (/\brunInLevelRoleForTest\b/.test(text) && !HOME.has(f) && !f.endsWith('test-support.ts')) {
+    bad.push(`${f}: runInLevelRoleForTest`);
+  }
+  if (HOME.has(f)) return bad;
+  const actsFor = new RegExp(`^withViewer\\(\\s*[^,]+,\\s*\\{\\s*(${keys.join('|')})\\s*:`);
+  for (const name of GUARDED) {
+    for (const local of localNames(src, name)) {
+      for (const use of valueUses(text, local)) {
+        bad.push(`${f}: ${name} used as a value (${use}); call it`);
+      }
+      const found = calls(text, local).map((c) => `${name}${c.slice(local.length)}`);
+      if (!found.length) continue;
+      if (name === 'withViewer') {
+        for (const c of found) {
+          if (!actsFor.test(c)) bad.push(`${f}: ${c.slice(0, 80).replace(/\s+/g, ' ')}`);
+        }
+      } else if (name in HUMAN_VIEWER_CALLERS) {
+        if (!HUMAN_VIEWER_CALLERS[name]!.includes(f)) bad.push(`${f}: ${name}`);
+      } else {
+        bad.push(`${f}: ${name}`);
+      }
+    }
+  }
+  return bad;
+}
 
 describe('the withViewer shim sweep (R6)', () => {
-  it('every withViewer call names whom it acts for', () => {
-    const bad: string[] = [];
-    for (const f of sweptFiles()) {
-      if (f === CLIENT || f === VIEWER) continue;
-      const text = read(f);
-      if (!text) continue;
-      for (const c of calls(text, 'withViewer')) {
-        // withViewer(level, { login | agent | link: ... }, fn)
-        if (!/^withViewer\(\s*[^,]+,\s*\{\s*(login|agent|link)\s*:/.test(c)) {
-          bad.push(`${f}: ${c.slice(0, 80).replace(/\s+/g, ' ')}`);
-        }
-      }
-    }
-    expect(bad, 'pass { login }, { agent } or { link } as the second argument').toEqual([]);
+  const keys = viewerForKeys();
+  const all = sweptFiles().flatMap((f) => {
+    const raw = load(f);
+    return raw === null ? [] : problems(f, raw, keys);
   });
 
-  it('no product code enters a level role outside the two kept paths', () => {
-    const bad: string[] = [];
-    for (const f of sweptFiles()) {
-      const text = read(f);
-      if (!text) continue;
-      // The test-only level runner never reaches product code.
-      if (
-        /\brunInLevelRoleForTest\b/.test(text) &&
-        f !== VIEWER &&
-        !f.endsWith('test-support.ts')
-      ) {
-        if (f !== 'packages/db/src/index.ts') bad.push(`${f}: runInLevelRoleForTest`);
-      }
-      if (f === CLIENT || f === VIEWER) continue;
-      for (const name of ['runInTxScope', 'getViewerDb', 'runInLevelRoleForTest']) {
-        if (calls(text, name).length) bad.push(`${f}: ${name}`);
+  it('withViewer takes whom it acts for: the ViewerFor keys', () => {
+    expect(keys).toEqual(expect.arrayContaining(['login', 'agent', 'link']));
+  });
+
+  it('every withViewer call names whom it acts for', () => {
+    expect(
+      all.filter((p) => /: withViewer\(/.test(p)),
+      `pass { ${keys.join(' | ')} } as the second argument`,
+    ).toEqual([]);
+  });
+
+  it('no product code enters a level role, or a hand-built scope, outside client.ts', () => {
+    const names = [...CLIENT_ONLY, ...LEVEL_ENTRIES];
+    expect(all.filter((p) => names.some((n) => p.endsWith(`: ${n}`)))).toEqual([]);
+  });
+
+  it('withHumanViewer and withTeamDrafts are called by the review flows only', () => {
+    const names = Object.keys(HUMAN_VIEWER_CALLERS);
+    expect(all.filter((p) => names.some((n) => p.endsWith(`: ${n}`)))).toEqual([]);
+    // Each listed caller still calls it (a stale entry would let a new file
+    // take its place unnoticed).
+    for (const [name, files] of Object.entries(HUMAN_VIEWER_CALLERS)) {
+      for (const f of files) {
+        const text = blanked(code(load(f) ?? ''));
+        expect(
+          localNames(code(load(f) ?? ''), name).some((l) => calls(text, l).length),
+          `${f} calls ${name}`,
+        ).toBe(true);
       }
     }
-    expect(bad).toEqual([]);
+  });
+
+  it('no guarded function is passed around as a value', () => {
+    expect(all.filter((p) => p.includes(' used as a value '))).toEqual([]);
+  });
+
+  it('nothing else is wrong', () => {
+    expect(all).toEqual([]);
   });
 
   it('in client.ts a level pool is opened only by getDb, withSpace and withHumanViewer', () => {
-    const text = read(CLIENT)!;
+    const text = blanked(code(load(CLIENT)!));
     const levelPools = calls(text, 'getViewerDb').filter(
       (c) => !/getViewerDb\('(user|space)'\)/.test(c),
     );
@@ -119,12 +292,98 @@ describe('the withViewer shim sweep (R6)', () => {
   });
 
   it('in viewer.ts only the test runner enters a bare level scope', () => {
-    const text = read(VIEWER)!;
+    const text = blanked(code(load(VIEWER)!));
     const bare = calls(text, 'store.run').filter((c) =>
       /^store\.run\(\{\s*level: next\s*\}/.test(c),
     );
     expect(bare).toHaveLength(1);
     const fn = text.slice(text.indexOf('export function runInLevelRoleForTest'));
     expect(fn.indexOf('store.run({ level: next }')).toBeGreaterThan(0);
+  });
+});
+
+describe('the sweep itself (fixtures)', () => {
+  const KEYS = ['login', 'agent', 'link'];
+  const F = 'packages/x/src/thing.ts';
+  const run = (src: string, f = F) => problems(f, src, KEYS);
+
+  it('passes a call that names whom it acts for, by any name', () => {
+    expect(
+      run(`import { withViewer, withViewer as wv } from '@mantle/db';
+        import * as dbm from '@mantle/db';
+        await withViewer('team', { login: id }, fn);
+        await wv('team', { agent: a.id }, fn);
+        await dbm.withViewer<number>('client', { link: { served } }, fn);`),
+    ).toEqual([]);
+  });
+
+  it('catches a level-only call made directly, renamed, on a namespace or destructured', () => {
+    const cases = [
+      `import { withViewer } from '@mantle/db'; withViewer('team', fn);`,
+      `import { withViewer as wv } from '@mantle/db'; wv('team', fn);`,
+      `import * as db from '@mantle/db'; db.withViewer('team', fn);`,
+      `const m = await import('@mantle/db'); await m.withViewer?.('team', fn);`,
+      `const { withViewer: wv } = await import('@mantle/db'); wv('team', fn);`,
+      `const { withViewer: wv } = dbmod; wv<T>('team', fn);`,
+      `import { withViewer } from '@mantle/db'; withViewer('team', { ws: [] }, fn);`,
+    ];
+    for (const src of cases) expect(run(src), src).toHaveLength(1);
+  });
+
+  it('accepts a new ViewerFor key once the type has it', () => {
+    const src = `withViewer('team', { app: run }, fn);`;
+    expect(run(src)).toHaveLength(1);
+    expect(problems(F, src, [...KEYS, 'app'])).toEqual([]);
+  });
+
+  it('catches withScope and runInViewerScope outside client.ts, however named', () => {
+    const cases = [
+      `import { withScope } from '@mantle/db'; withScope(scope, fn);`,
+      `import { withScope as ws } from '@mantle/db'; ws(scope, fn);`,
+      `import * as v from '@mantle/db/viewer'; v.runInViewerScope(scope, fn);`,
+      `const { runInViewerScope: enter } = await import('@mantle/db/viewer'); enter(s, fn);`,
+    ];
+    for (const src of cases) expect(run(src), src).toEqual([expect.stringMatching(/: \w+$/)]);
+    expect(run(`withScope(scope, fn);`, CLIENT)).toEqual([]);
+  });
+
+  it('catches a guarded function passed around as a value', () => {
+    const cases = [
+      `import { withViewer } from '@mantle/db'; const wv = withViewer; wv(fn);`,
+      `import * as db from '@mantle/db'; const wv = db.withViewer.bind(null, 'team');`,
+      `import { withHumanViewer } from '@mantle/db'; run({ withHumanViewer });`,
+      `import * as db from '@mantle/db'; db['withViewer']('team', fn);`,
+      `import { withTeamDrafts } from '@mantle/db'; [a].map(withTeamDrafts);`,
+    ];
+    for (const src of cases) {
+      expect(
+        run(src).some((p) => p.includes(' used as a value ')),
+        src,
+      ).toBe(true);
+    }
+    // Types and re-export clauses are not uses.
+    expect(
+      run(`import { withViewer } from '@mantle/db';
+        type W = typeof withViewer;
+        export { withViewer } from '@mantle/db';`),
+    ).toEqual([]);
+  });
+
+  it('allows withHumanViewer and withTeamDrafts only in the listed review flows', () => {
+    const human = `import { withHumanViewer as hv } from '@mantle/db'; hv('team', fn);`;
+    expect(run(human)).toEqual([`${F}: withHumanViewer`]);
+    expect(run(human, 'server/web/app/api/member/client-requests/route.ts')).toEqual([]);
+    const drafts = `import * as db from '@mantle/db'; db.withTeamDrafts(fn);`;
+    expect(run(drafts)).toEqual([`${F}: withTeamDrafts`]);
+    expect(run(drafts, 'server/web/app/api/member/team-drafts/route.ts')).toEqual([]);
+  });
+
+  it('ignores names in comments and double-quoted strings, and declarations', () => {
+    expect(
+      run(`// withViewer('team', fn)
+        /* withHumanViewer('team', fn) */
+        throw new Error("read outside withHumanViewer('team')");
+        export async function withViewerish() {}`),
+    ).toEqual([]);
   });
 });
