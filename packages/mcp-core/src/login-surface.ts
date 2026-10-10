@@ -5,8 +5,10 @@
  * `callBuiltin` (which runs `def.handler` directly). It now serves any LOGIN:
  *
  *  - an ADMIN (OAuth): the full owner surface, unchanged;
- *  - an admin bound to a PEER token or an API key: the owner surface as
- *    is (a peer or a key acts exactly as its user, owner decision W5b2);
+ *  - an admin bound to a PEER token or an API key: the owner surface,
+ *    narrowed by the peer's or key's write switch and the risky-tool rule
+ *    (`ownerPeerAllows`), and for a key by its areas too (workspaces plan
+ *    7.5 and 7.6: a key or a peer acts as its login and only narrows it);
  *  - a MEMBER or a CLIENT (OAuth, a static login token, or a peer token):
  *    the tools that role's responder already has, nothing more, each call
  *    run through `dispatchTool` (so the owner-only gate and the declared
@@ -43,6 +45,7 @@ import {
   loginConnectorRefused,
   getBuiltin,
   isBuiltinReadOnly,
+  isBuiltinSpending,
   listLoginConnectorTools,
   resolveTools,
   type ToolHandlerContext,
@@ -56,10 +59,16 @@ import { effectiveToolSlugs, resolveAgentToolGroups } from '@mantle/runtime/agen
 import { CLIENT_RESPONDER_SLUG, TEAM_RESPONDER_SLUG } from '@mantle/runtime/assistant';
 import { publicErrorMessage, publicToolError } from '@mantle/std';
 import { watchDatabaseErrors } from '@mantle/std/db-watch';
-import { MANTLE_MCP_INSTRUCTIONS, registerMantleTools } from './build-server';
+import {
+  MANTLE_MCP_INSTRUCTIONS,
+  TOOLSMITH_WRITE_SLUGS,
+  registerMantleTools,
+} from './build-server';
 import { zodShapeFromJsonSchema } from './register/zod-schema';
 import { addTool } from './register/tool-input';
 import { withModelImages } from './register/model-images';
+import { keyAreasAllowTool, keyAreasReachEmail } from './key-scope';
+import { keyEmailGuard } from './key-email-guard';
 
 export type McpLoginRole = 'admin' | 'member' | 'client';
 
@@ -91,6 +100,80 @@ export type McpCaller = {
   areas?: readonly string[] | null;
 };
 
+/** Whether a caller's areas (an API key's; null or absent = all) allow
+ *  this tool. */
+export function callerAreasAllow(slug: string, caller: Pick<McpCaller, 'areas'>): boolean {
+  return keyAreasAllowTool(slug, caller.areas ?? null);
+}
+
+// ── The owner surface for a peer or a key ────────────────────────────────────
+
+/**
+ * Owner tools a PEER or an API key bound to the owner never gets unless the
+ * owner named them on it: anything that sends outside the box or spends,
+ * runs a shell or a container, publishes, or hands out privilege (Jason,
+ * 2026-10-03). Every `spends` builtin is in it too (`isPeerRiskyTool`).
+ * The owner's own OAuth connector is not filtered by this.
+ */
+export const PEER_RISKY_TOOL_SLUGS: ReadonlySet<string> = new Set([
+  'email_send',
+  'run_terminal',
+  'app_publish',
+  'node_share',
+  'page_share',
+  'secret_create',
+  'invoke_agent',
+  'ask_responder',
+  'ask_as_responder',
+  'responder_turn_input',
+  // Writes into the owner's conversation as one of their agents.
+  'responder_turn_record',
+  'access_set',
+  'pending_approve',
+  'pending_reject',
+  'api_tool_test',
+  'recipe_tool_test',
+  // Mail out under the owner's address, and the allowlist that gates it
+  // (a new contact also starts a paid inbound backfill).
+  'email_page',
+  'contact_create',
+  'contact_update',
+  // A run queues tool calls and workers that execute later as the owner,
+  // outside this filter (audit H1).
+  'run_plan',
+  'run_append',
+  // Model routing for every agent.
+  'model_pool_set',
+  'model_pool_remove',
+  'video_ingest',
+  ...TOOLSMITH_WRITE_SLUGS,
+]);
+/** Prefixes of whole risky families: Telegram, the CLI sandboxes, the web,
+ *  and other peers (egress to a third brain on this brain's credentials). */
+export const PEER_RISKY_TOOL_PREFIXES: readonly string[] = [
+  'telegram_',
+  'sandbox_',
+  'web_',
+  'peer_',
+];
+
+/**
+ * Risky for a peer bound to the owner: listed by name or family, or it
+ * spends, or it waits for the owner's confirm in the app (deletes, restores:
+ * the owner surface does not hold that gate), or it changes a mini app's
+ * code or grants (a published app runs the change at once).
+ */
+export function isPeerRiskyTool(slug: string): boolean {
+  const def = getBuiltin(slug);
+  return (
+    PEER_RISKY_TOOL_SLUGS.has(slug) ||
+    PEER_RISKY_TOOL_PREFIXES.some((p) => slug.startsWith(p)) ||
+    isBuiltinSpending(slug) ||
+    def?.requiresConfirm === true ||
+    (slug.startsWith('app_') && !isBuiltinReadOnly(slug))
+  );
+}
+
 /** The hand-written MCP tools (register/*.ts) that only read. Every other
  *  hand-written tool counts as a write (default deny), like the registry's
  *  `readOnly`. mcp-core's surface test pins this against the live list. */
@@ -110,6 +193,17 @@ export const MCP_HANDWRITTEN_READ_ONLY: ReadonlySet<string> = new Set([
  *  read-only hand-written tool. Unknown = no. */
 export function isMcpToolReadOnly(slug: string): boolean {
   return MCP_HANDWRITTEN_READ_ONLY.has(slug) || isBuiltinReadOnly(slug);
+}
+
+/** The owner tools a peer or a key bound to the owner may call: the owner's
+ *  surface, narrowed (never widened) by its write switch and the risky
+ *  tools the owner named on it. */
+export function ownerPeerAllows(
+  slug: string,
+  peer: { write: boolean; riskyAllowed?: readonly string[] },
+): boolean {
+  if (isPeerRiskyTool(slug) && !(peer.riskyAllowed ?? []).includes(slug)) return false;
+  return peer.write || isMcpToolReadOnly(slug);
 }
 
 // ── The member and client surface ────────────────────────────────────────────
@@ -227,7 +321,11 @@ export async function resolveLoginToolRows(
     if (slugs.length === 0) return [];
     return resolveTools(caller.anchorId, slugs);
   });
-  const builtins = rows.filter((r) => loginMayHaveTool(r, caller.write));
+  // A key's areas narrow the login's tools further (plan 7.5); a key's
+  // access is already in `caller.write` (mcp-auth.ts).
+  const builtins = rows.filter(
+    (r) => loginMayHaveTool(r, caller.write) && callerAreasAllow(r.slug, caller),
+  );
   // Connector tools (team apps Phase 2; W5b2): outside the responder's
   // groups and the client cut, exactly the tools the call would pass
   // (loginConnectorRule): the connector a resource of one of the login's
@@ -242,7 +340,7 @@ export async function resolveLoginToolRows(
     builtins.length === 0
       ? []
       : (await listLoginConnectorTools(caller.anchorId, caller.loginId))
-          .filter((c) => c.readOnly || caller.write)
+          .filter((c) => (c.readOnly || caller.write) && callerAreasAllow(c.tool.slug, caller))
           .map((c) => c.tool);
   return { rows: [...builtins, ...connectors], level, privateReads };
 }
@@ -487,9 +585,9 @@ export async function prepareCallerTools(caller: McpCaller): Promise<PreparedCal
  *  (owner OAuth: every tool). */
 export function preparedAllows(prepared: PreparedCallerTools, slug: string): boolean {
   if (prepared.kind === 'login') return prepared.rows.some((r) => r.slug === slug);
-  // An API key or a linked brain acting as the owner is the owner (owner
-  // decision, W5b2): no write switch, risky-tool list or areas of its own.
-  return true;
+  const { caller } = prepared;
+  if (caller.via === 'oauth') return true;
+  return ownerPeerAllows(slug, caller) && callerAreasAllow(slug, caller);
 }
 
 export function registerPreparedTools(
@@ -499,12 +597,21 @@ export function registerPreparedTools(
 ): void {
   if (prepared.kind === 'owner') {
     const { caller } = prepared;
-    // An API key or a linked brain acting as the owner gets the owner's
-    // surface as is (owner decision, W5b2: a key or a peer acts exactly as
-    // its user); `via` only names the channel for the audit trail.
+    if (caller.via === 'oauth') {
+      registerMantleTools(server, caller.anchorId, { transport: opts.transport ?? 'http' });
+      return;
+    }
+    // A peer or an API key acting as the owner: the owner's surface,
+    // narrowed by the risky-tool rule and the write switch, and for a key
+    // its areas too (plan 7.5 and 7.6: it narrows, never widens).
     registerMantleTools(server, caller.anchorId, {
       transport: opts.transport ?? 'http',
-      ...(caller.via === 'oauth' ? {} : { via: caller.via === 'key' ? 'api' : 'federation' }),
+      via: caller.via === 'key' ? 'api' : 'federation',
+      allow: (slug) => ownerPeerAllows(slug, caller) && callerAreasAllow(slug, caller),
+      // A key without Search does not reach email through Files (M4).
+      ...(caller.via === 'key' && !keyAreasReachEmail(caller.areas ?? null)
+        ? { guard: keyEmailGuard(caller.anchorId) }
+        : {}),
     });
     return;
   }

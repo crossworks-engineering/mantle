@@ -355,6 +355,11 @@ describe.skipIf(!URL)('inbound API keys', () => {
   });
 
   it('gives an image-shaped /api/v1 path no way around the key checks', async () => {
+    // A key's areas hold there as anywhere (plan 7.5: they narrow).
+    const tasksOnly = await makeKey({ areas: ['tasks'] });
+    const narrowed = await call('/api/v1/files/picture.png', { bearer: tasksOnly.secret });
+    expect(narrowed.status).toBe(403);
+    expect(await json(narrowed)).toMatchObject({ reason: 'key-area' });
     // The key gate runs there as anywhere: a live key passes it (the route
     // then answers the id it was given), a revoked one is refused by the
     // gate itself (its key.refused row is the gate's own).
@@ -367,17 +372,15 @@ describe.skipIf(!URL)('inbound API keys', () => {
     expect(refused.map((r) => (r.detail as Json).reason)).toContain('revoked');
   });
 
-  it('a read key acts as its login: an admin read key writes (W5b2)', async () => {
+  it('refuses a write to a read key, even an admin one (it narrows its login)', async () => {
     const { secret } = await makeKey({ access: 'read' });
     const res = await call('/api/v1/notes', {
       method: 'POST',
       bearer: secret,
       body: { title: `${tag} by a read key`, body: 'x' },
     });
-    expect(res.status).toBe(201);
-    const made = (await json(res)) as { note?: { id: string }; id?: string };
-    const id = made.note?.id ?? made.id;
-    if (id) await sql`delete from nodes where id = ${id}`;
+    expect(res.status).toBe(403);
+    expect(await json(res)).toMatchObject({ reason: 'key-read-only' });
   });
 
   it('refuses a wrong secret and a malformed key', async () => {

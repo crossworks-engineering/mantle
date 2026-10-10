@@ -1,8 +1,7 @@
 /**
  * The owner surface a PEER gets when its token acts as the owner (plan page
- * e5b854dd). Since W5b2 a peer acts exactly as its bound login: its write
- * switch and risky-tool names no longer narrow the surface, so a peer bound
- * to the owner gets the owner's surface as is. Driven through the real
+ * e5b854dd): read-only unless the peer's write switch is on, and never the
+ * risky tools unless the owner named them. Driven through the real
  * registration path against a capturing fake server; no database, no model.
  * The DB-backed member and client half is login-surface.viewer.db.test.ts.
  */
@@ -12,32 +11,18 @@ import { registerMantleTools } from './build-server';
 import {
   MCP_HANDWRITTEN_READ_ONLY,
   isMcpToolReadOnly,
+  isPeerRiskyTool,
   loginMayHaveTool,
   mcpInstructionsFor,
-  registerPreparedTools,
-  type McpCaller,
+  ownerPeerAllows,
 } from './login-surface';
 
-function registered(): string[] {
+function registered(allow?: (slug: string) => boolean): string[] {
   const out: string[] = [];
   const fakeServer = { registerTool: (name: string) => void out.push(name) };
-  registerMantleTools(fakeServer as never, 'owner-1', { transport: 'http' });
-  return out;
-}
-
-function registeredForPeer(peer: Partial<McpCaller>): string[] {
-  const out: string[] = [];
-  const fakeServer = { registerTool: (name: string) => void out.push(name) };
-  registerPreparedTools(fakeServer as never, {
-    kind: 'owner',
-    caller: {
-      role: 'admin',
-      anchorId: 'owner-1',
-      loginId: 'owner-1',
-      via: 'peer',
-      write: false,
-      ...peer,
-    },
+  registerMantleTools(fakeServer as never, 'owner-1', {
+    transport: 'http',
+    ...(allow ? { allow } : {}),
   });
   return out;
 }
@@ -52,18 +37,70 @@ describe('owner surface for a peer', () => {
     }
   });
 
-  it('a peer bound to the owner acts as the owner: write off and risky names do not narrow it (W5b2)', () => {
-    const owner = registered();
-    for (const s of ['file_upload', 'note_create', 'email_send', 'peer_call', 'access_set']) {
-      expect(owner, s).toContain(s);
+  it('write off: registers only read-only tools, and no risky one', () => {
+    const tools = registered((s) => ownerPeerAllows(s, { write: false }));
+    expect(tools.length).toBeGreaterThan(20);
+    for (const s of tools) {
+      expect(isMcpToolReadOnly(s), s).toBe(true);
+      expect(isPeerRiskyTool(s), s).toBe(false);
     }
-    for (const peer of [
-      { write: false },
-      { write: true },
-      { write: true, riskyAllowed: ['email_send'] },
-    ] satisfies Partial<McpCaller>[]) {
-      expect(registeredForPeer(peer).sort(), JSON.stringify(peer)).toEqual([...owner].sort());
+    expect(tools).toContain('search');
+    expect(tools).toContain('file_read');
+    expect(tools).not.toContain('file_upload');
+    expect(tools).not.toContain('note_create');
+  });
+
+  it('write on: adds the write tools but keeps the risky ones out', () => {
+    const tools = registered((s) => ownerPeerAllows(s, { write: true }));
+    for (const s of ['file_upload', 'note_create', 'event_create', 'folder_create']) {
+      expect(tools).toContain(s);
     }
+    for (const s of [
+      'email_send',
+      'app_publish',
+      'node_share',
+      'telegram_send',
+      'sandbox_exec',
+      'web_search',
+      'invoke_agent',
+      'secret_create',
+      'access_set',
+      'pending_approve',
+      'agent_grant_tool_group',
+      // audit 2026-10-03: runs, mail by page, the allowlist, confirm-gated
+      // deletes, live app code, third-brain egress, model routing
+      'run_plan',
+      'run_append',
+      'email_page',
+      'contact_create',
+      'page_delete',
+      'app_source_set',
+      'app_tools_set',
+      'peer_call',
+      'peer_file_copy',
+      'model_pool_set',
+    ]) {
+      expect(tools, s).not.toContain(s);
+    }
+  });
+
+  it('a risky tool comes back only when the owner names it', () => {
+    const tools = registered((s) =>
+      ownerPeerAllows(s, { write: true, riskyAllowed: ['email_send'] }),
+    );
+    expect(tools).toContain('email_send');
+    expect(tools).not.toContain('telegram_send');
+  });
+
+  it('every spending or confirm-gated builtin counts as risky', () => {
+    for (const d of BUILTIN_TOOLS) {
+      if (d.spends || d.requiresConfirm) expect(isPeerRiskyTool(d.slug), d.slug).toBe(true);
+    }
+  });
+
+  it('write off: no peer egress either', () => {
+    const tools = registered((s) => ownerPeerAllows(s, { write: false }));
+    expect(tools.filter((s) => s.startsWith('peer_'))).toEqual([]);
   });
 });
 

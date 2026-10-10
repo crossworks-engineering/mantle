@@ -469,11 +469,12 @@ describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
       await hold(ws.clients, false);
       expect(await connectorNames(asClient(true))).toEqual(['mcp_src_read']);
       expect(await connectorNames(asMember(false))).toEqual(['mcp_src_read']);
-      // A key acts exactly as its login (W5b2): its areas no longer narrow
-      // it, so it gets the login's connector tools, and no more.
+      // A key limited to areas never gets a connector tool (a connector tool
+      // is in no key area); an all-areas key gets the login's, and no more
+      // (it acts as its login, plan 7.5).
       expect(
         await connectorNames({ ...asMember(true), via: 'key', keyId: 'k', areas: ['app_data'] }),
-      ).toEqual(['mcp_src_read', 'mcp_src_write']);
+      ).toEqual([]);
       expect(
         await connectorNames({ ...asMember(false), via: 'key', keyId: 'k', areas: null }),
       ).toEqual(['mcp_src_read']);

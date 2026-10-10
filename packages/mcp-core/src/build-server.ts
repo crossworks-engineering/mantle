@@ -198,7 +198,8 @@ export function registerMantleTools(
     allow?: (slug: string) => boolean;
     /** Which owner path the bridged builtins name (default 'mcp'). */
     via?: OwnerSurfaceVia;
-    /** Checked before every call. Needs `allow`. */
+    /** Checked before every call (an API key without the Search area,
+     *  key-email-guard.ts). Needs `allow`. */
     guard?: ToolCallGuard;
   } = {},
 ): void {

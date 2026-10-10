@@ -5,9 +5,10 @@
  *
  *  - the owner gets an MCP image block after the JSON (text only unless
  *    asked);
- *  - an API key or a peer bound to the owner gets it as the owner does: a
- *    key or a peer acts exactly as its login (W5b2), its areas, access and
- *    write switch no longer narrow the surface;
+ *  - an API key reaches it only with every area (draw_get is in no key area),
+ *    so a key limited to areas, the one the email-attachment guard is for,
+ *    never gets it;
+ *  - a peer bound to the owner gets it read-only (draw_get only reads);
  *  - a member's call runs through the login path with the member stamped on
  *    the surface (their image rule), and comes back with the image block;
  *  - a client never gets draw_get (the client cut).
@@ -60,8 +61,11 @@ vi.mock('@mantle/tools', async (importOriginal) => {
 import type { Tool } from '@mantle/db';
 import { CLIENT_TURN_TOOL_SLUGS } from '@mantle/tools';
 import { registerMantleTools } from './build-server';
+import { keyAreasAllowTool } from './key-scope';
+import { keyEmailGuard } from './key-email-guard';
 import {
   loginMayHaveTool,
+  ownerPeerAllows,
   preparedAllows,
   registerLoginRows,
   type McpCaller,
@@ -104,7 +108,11 @@ describe('draw_get picture on MCP', () => {
     expect(h.readableDrawSvg).toHaveBeenLastCalledWith('anchor', ID, { kind: 'scope' });
   });
 
-  it('API key: acts as its login, so any key of the owner gets draw_get and its picture', async () => {
+  it('API key: only an all-areas key has draw_get, so no area key gets the picture', () => {
+    expect(keyAreasAllowTool('draw_get', null)).toBe(true);
+    for (const areas of [['files'], ['search'], ['pages', 'notes', 'tables', 'files', 'search']]) {
+      expect(keyAreasAllowTool('draw_get', areas), areas.join()).toBe(false);
+    }
     const key = (areas: string[] | null): McpCaller => ({
       role: 'admin',
       anchorId: 'anchor',
@@ -113,27 +121,25 @@ describe('draw_get picture on MCP', () => {
       write: false,
       areas,
     });
-    // Areas and access no longer narrow a key (W5b2): the owner's surface.
-    for (const areas of [null, ['files'], ['files', 'search']]) {
-      expect(preparedAllows({ kind: 'owner', caller: key(areas) }, 'draw_get')).toBe(true);
-    }
-    const reply = await ownerSurface({ via: 'api' }).get('draw_get')!({ id: ID, image: true });
-    expect(reply.content.map((c) => c.type)).toEqual(['text', 'image']);
+    expect(preparedAllows({ kind: 'owner', caller: key(null) }, 'draw_get')).toBe(true);
+    expect(preparedAllows({ kind: 'owner', caller: key(['files', 'search']) }, 'draw_get')).toBe(
+      false,
+    );
+    const limited = ownerSurface({
+      via: 'api',
+      allow: (s) => keyAreasAllowTool(s, ['files']),
+      guard: keyEmailGuard('anchor'),
+    });
+    expect(limited.has('draw_get')).toBe(false);
   });
 
-  it('peer bound to the owner: draw_get with its picture, as the owner', async () => {
-    const peer: McpCaller = {
-      role: 'admin',
-      anchorId: 'anchor',
-      loginId: 'anchor',
-      via: 'peer',
-      write: false,
-    };
-    expect(preparedAllows({ kind: 'owner', caller: peer }, 'draw_get')).toBe(true);
-    const reply = await ownerSurface({ via: 'federation' }).get('draw_get')!({
-      id: ID,
-      image: true,
+  it('peer bound to the owner: draw_get with its picture, read-only', async () => {
+    expect(ownerPeerAllows('draw_get', { write: false })).toBe(true);
+    const peer = ownerSurface({
+      via: 'federation',
+      allow: (s) => ownerPeerAllows(s, { write: false }),
     });
+    const reply = await peer.get('draw_get')!({ id: ID, image: true });
     expect(reply.content.map((c) => c.type)).toEqual(['text', 'image']);
   });
 

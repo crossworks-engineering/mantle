@@ -10,8 +10,8 @@
  *    Team holds takes the folder's grant (S6) and is reached, its data
  *    written by the grant's Write switch;
  *  - a peer bound to a member acts under that member's MCP and Write
- *    switches (resolveMcpCaller), and only those: its own Write switch no
- *    longer narrows it (W5b2, contract 26).
+ *    switches (resolveMcpCaller), narrowed by its own Write switch (plan
+ *    7.6).
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/app-data-mcp.db.test.ts
  */
@@ -216,15 +216,11 @@ describe.skipIf(!URL)('app data over a login MCP, end to end', () => {
     await sql`update mcp_login_access set enabled = true, write_enabled = false
               where login_id = ${member}`;
     expect(await resolve()).toMatchObject({ role: 'member', via: 'peer', write: false });
-    // The member's Write on: the peer writes.
+    // Both on: the peer writes.
     await sql`update mcp_login_access set write_enabled = true where login_id = ${member}`;
     expect(await resolve()).toMatchObject({ role: 'member', via: 'peer', write: true });
-    // A peer acts exactly as its bound login (W5b2, contract 26): its own
-    // Write switch no longer narrows it.
+    // The peer's own Write off still wins (it narrows, plan 7.6).
     await sql`update mantle_peers set write_enabled = false where id = ${peerId}`;
-    expect(await resolve()).toMatchObject({ write: true });
-    // The member's Write off: the peer reads only again.
-    await sql`update mcp_login_access set write_enabled = false where login_id = ${member}`;
     expect(await resolve()).toMatchObject({ write: false });
   });
 });

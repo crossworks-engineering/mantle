@@ -1,13 +1,19 @@
 /**
- * An inbound API key on /api/mcp (migration 0232): the owner surface an
- * admin key gets. Since W5b2 a key acts exactly as
- * its login: its areas, access and risky-tool names no longer narrow the
- * surface, so an admin key gets the owner's surface as is. Driven through
+ * An inbound API key on /api/mcp (migration 0232): the area of each tool,
+ * and the owner surface an admin key gets. A key acts as its login and only
+ * narrows it (workspaces plan 7.5): its areas, access and risky-tool names
+ * take tools away from the owner's surface, never add one. Driven through
  * the real registration path against a capturing fake server; no database.
  */
 import { describe, expect, it } from 'vitest';
-import { KEY_AREAS } from './key-scope';
-import { registerPreparedTools, type McpCaller } from './login-surface';
+import { BUILTIN_TOOLS } from '@mantle/tools';
+import { KEY_AREAS, keyAreasAllowTool, toolKeyArea } from './key-scope';
+import {
+  isMcpToolReadOnly,
+  isPeerRiskyTool,
+  registerPreparedTools,
+  type McpCaller,
+} from './login-surface';
 
 function registeredFor(caller: Partial<McpCaller>): string[] {
   const out: string[] = [];
@@ -26,23 +32,91 @@ function registeredFor(caller: Partial<McpCaller>): string[] {
   return out;
 }
 
-describe('API keys on MCP', () => {
-  it('keeps the stored area names (accepted, narrowing nothing)', () => {
+describe('API key areas for MCP tools', () => {
+  it('maps tool families to their area', () => {
+    expect(toolKeyArea('page_get')).toBe('pages');
+    expect(toolKeyArea('note_create')).toBe('notes');
+    expect(toolKeyArea('task_update')).toBe('tasks');
+    expect(toolKeyArea('table_rows_add')).toBe('tables');
+    expect(toolKeyArea('file_read')).toBe('files');
+    expect(toolKeyArea('folder_list')).toBe('files');
+    expect(toolKeyArea('event_list')).toBe('calendar');
+    expect(toolKeyArea('contact_get')).toBe('contacts');
+    expect(toolKeyArea('journal_create')).toBe('journal');
+    expect(toolKeyArea('app_list')).toBe('apps');
+    expect(toolKeyArea('search')).toBe('search');
+    expect(toolKeyArea('entity_search')).toBe('search');
+    expect(toolKeyArea('my_page_create')).toBe('pages');
+  });
+
+  it('gives every conversion tool no area: it reads one kind to write another', () => {
+    const slugs = new Set([
+      ...BUILTIN_TOOLS.map((t) => t.slug),
+      ...registeredFor({ areas: null, write: true, riskyAllowed: [] }),
+    ]);
+    const conversions = [...slugs].filter((s) => s.includes('_from_'));
+    expect(conversions).toEqual(expect.arrayContaining(['page_from_journal', 'note_from_page']));
+    for (const slug of conversions) expect(toolKeyArea(slug), slug).toBeNull();
+    const pagesKey = registeredFor({ areas: ['pages', 'notes', 'files', 'tables'], write: true });
+    for (const slug of conversions) expect(pagesKey, slug).not.toContain(slug);
+  });
+
+  it('puts the app data tools in their own area, apart from app authoring', () => {
+    for (const slug of ['app_data_list', 'app_data_schema', 'app_data_query', 'app_data_write']) {
+      expect(toolKeyArea(slug), slug).toBe('app_data');
+      expect(keyAreasAllowTool(slug, ['app_data']), slug).toBe(true);
+      expect(keyAreasAllowTool(slug, ['apps']), slug).toBe(false);
+    }
+    expect(keyAreasAllowTool('app_db_query', ['app_data'])).toBe(false);
+    expect(keyAreasAllowTool('app_file_write', ['app_data'])).toBe(false);
     expect(KEY_AREAS).toContain('app_data');
   });
 
-  it('an admin key acts as its login: areas, access and risky names do not narrow it (W5b2)', () => {
-    const owner = registeredFor({ via: 'oauth', write: true });
-    expect(owner).toContain('email_send');
-    expect(owner).toContain('page_create');
-    expect(owner).toContain('recall_open');
+  it('leaves everything else to an all-areas key', () => {
+    for (const slug of ['recall_open', 'agent_list', 'peer_call', 'email_send', 'tree_list']) {
+      expect(toolKeyArea(slug), slug).toBeNull();
+      expect(keyAreasAllowTool(slug, null), slug).toBe(true);
+      expect(keyAreasAllowTool(slug, [...KEY_AREAS]), slug).toBe(false);
+    }
+  });
+
+  it('an admin key limited to tasks, read only, gets the task reads and nothing else', () => {
+    const tools = registeredFor({ areas: ['tasks'] });
+    expect(tools.length).toBeGreaterThan(0);
+    expect(tools).toContain('task_list');
+    expect(tools).toContain('task_get');
+    for (const s of tools) {
+      expect(toolKeyArea(s), s).toBe('tasks');
+      expect(isMcpToolReadOnly(s), s).toBe(true);
+    }
+  });
+
+  it('read_write adds the writes in its areas, never the risky tools', () => {
+    const tools = registeredFor({ areas: ['tasks', 'notes'], write: true });
+    expect(tools).toContain('task_create');
+    expect(tools).toContain('note_create');
+    expect(tools).not.toContain('page_create');
+    for (const s of tools) expect(isPeerRiskyTool(s), s).toBe(false);
+  });
+
+  it('an all-areas key is the owner-peer surface: risky tools only by name', () => {
+    const plain = registeredFor({ areas: null, write: true });
+    expect(plain).not.toContain('email_send');
+    expect(plain).toContain('recall_open');
+    const named = registeredFor({ areas: null, write: true, riskyAllowed: ['email_send'] });
+    expect(named).toContain('email_send');
+  });
+
+  it('narrows the owner surface, never widens it (plan 7.5)', () => {
+    const owner = new Set(registeredFor({ via: 'oauth', write: true }));
     for (const caller of [
+      { areas: null, write: true, riskyAllowed: ['email_send', 'not_a_tool'] },
+      { areas: [...KEY_AREAS], write: true },
       { areas: ['tasks'] },
-      { areas: ['tasks', 'notes'], write: true },
-      { areas: null, write: true },
-      { areas: null, write: true, riskyAllowed: ['email_send'] },
     ] satisfies Partial<McpCaller>[]) {
-      expect(registeredFor(caller).sort(), JSON.stringify(caller)).toEqual([...owner].sort());
+      const tools = registeredFor(caller);
+      expect(tools.length, JSON.stringify(caller)).toBeLessThan(owner.size);
+      for (const s of tools) expect(owner.has(s), s).toBe(true);
     }
   });
 });

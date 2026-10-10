@@ -51,7 +51,7 @@ describe('public API v1 table', () => {
     expect(matchApiV1Route('PATCH', `/api/v1/tables/${id}/rows/r1`)?.area).toBe('tables');
   });
 
-  it('a key acts as its login: only the v1 table holds it, never its areas or access (W5b2)', () => {
+  it('holds a key to its areas and its access', () => {
     const pages = matchApiV1Route('GET', '/api/v1/pages');
     const newPage = matchApiV1Route('POST', '/api/v1/pages');
     const node = matchApiV1Route('GET', '/api/v1/nodes/x');
@@ -59,12 +59,16 @@ describe('public API v1 table', () => {
     const all = { access: 'read_write' as const, areas: null };
     const readTasks = { access: 'read' as const, areas: ['tasks' as const] };
 
-    for (const key of [all, readTasks, { access: 'read' as const, areas: null }]) {
-      for (const route of [pages, newPage, node, whoami]) {
-        expect(keyMayCall(key, route)).toEqual({ ok: true });
-      }
-      // A path outside the v1 table stays refused for every key.
-      expect(keyMayCall(key, null)).toEqual({ ok: false, reason: 'not-in-api' });
-    }
+    expect(keyMayCall(all, pages)).toEqual({ ok: true });
+    expect(keyMayCall(all, newPage)).toEqual({ ok: true });
+    expect(keyMayCall(all, node)).toEqual({ ok: true });
+    expect(keyMayCall(readTasks, whoami)).toEqual({ ok: true });
+    expect(keyMayCall(readTasks, pages)).toEqual({ ok: false, reason: 'key-area' });
+    expect(keyMayCall(readTasks, node)).toEqual({ ok: false, reason: 'key-area' });
+    expect(keyMayCall({ access: 'read', areas: null }, newPage)).toEqual({
+      ok: false,
+      reason: 'key-read-only',
+    });
+    expect(keyMayCall(all, null)).toEqual({ ok: false, reason: 'not-in-api' });
   });
 });
