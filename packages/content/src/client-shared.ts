@@ -1,15 +1,15 @@
 /**
  * "Shared with you" (client logins C2): the items a CLIENT login reads. The
  * list and the item are the Library's (member-library.ts), read inside
- * `withViewer('client', …)`: row security on the client role shows client
- * items only, and the Library holds exactly the client level for a client
- * reader (decision 6), so there is no access filter here to get wrong.
+ * `withViewer('client', { login })`: row security shows the items the
+ * login's workspaces hold (W5b2: their grants; brain items have no level),
+ * so there is no access filter here to get wrong.
  *
  * What this adds is the client's shape of each item: no staff field (no
  * author, no level, no app link; clients see the brand), and a page's doc or
  * a note's text with every reference to an item the client may not read
  * taken out (plan N6, client-redact.ts). Which references those are is ONE
- * query, at the client level, for every id the body names; the same query
+ * query, in the client's scope, for every id the body names; the same query
  * gives the readable items' current titles, which their chips carry.
  *
  * No summary (audit B1): the extractor writes it from the page's whole text,
@@ -31,7 +31,6 @@ import {
   redactClientNote,
   type ClientRedactOptions,
 } from './client-redact';
-import { readAtSql } from './item-level';
 import { clientRedactOrigins } from './client-origins';
 import { getLibraryItem, listLibrary, type LibraryKind, type LibraryRow } from './member-library';
 
@@ -46,9 +45,9 @@ function assertClient(): void {
 }
 
 /** The items among `ids` a client may read, with their current titles:
- *  items of this brain at client by their own level or through a folder
- *  shared with clients (row security agrees; the level is also in the
- *  query). Keys lower-case. */
+ *  items of this brain a workspace of the client login holds (W5b2: its
+ *  grants, which row security applies; brain items have no level). Keys
+ *  lower-case. */
 export async function clientReadable(
   anchorId: string,
   ids: readonly string[],
@@ -59,7 +58,7 @@ export async function clientReadable(
   const rows = await db
     .select({ id: nodes.id, title: nodes.title })
     .from(nodes)
-    .where(and(eq(nodes.ownerId, anchorId), readAtSql(['client']), inArray(nodes.id, wanted)));
+    .where(and(eq(nodes.ownerId, anchorId), inArray(nodes.id, wanted)));
   return new Map(rows.map((r) => [r.id.toLowerCase(), r.title]));
 }
 

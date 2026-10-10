@@ -137,9 +137,7 @@ export type WorkspaceScope = {
  * or a workspace); a public link reads no workspace, only its served list.
  */
 export type ViewerFor =
-  | { login: string }
-  | { agent: string | null }
-  | { link: { served: readonly string[] } };
+  { login: string } | { agent: string | null } | { link: { served: readonly string[] } };
 
 /** What the current code runs as: system work (no scope), a level scope
  *  (the tier model, until it is retired), or a workspace scope. */
@@ -338,7 +336,10 @@ export function runInViewerScope<T>(ws: WorkspaceScope, fn: () => Promise<T>): P
     if (sameWorkspaceScope(open.ws, ws)) return fn();
     return Promise.reject(new Error('withViewer: already inside another workspace scope'));
   }
-  return store.run({ level: 'public', ws, perQuery: true }, fn);
+  // Awaited INSIDE the scope: a callback that returns a query builder (a
+  // thenable, run when awaited) runs it here, not in the caller's scope
+  // after this one has ended (ScopeLostError there).
+  return store.run({ level: 'public', ws, perQuery: true }, async () => await fn());
 }
 
 /**

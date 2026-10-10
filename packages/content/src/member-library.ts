@@ -80,25 +80,32 @@ export function libraryLevelsOf(level: ViewerLevel): readonly LibraryAudience[] 
   return Object.hasOwn(LIBRARY_LEVELS, level) ? LIBRARY_LEVELS[level] : [];
 }
 
-/** The levels of `table` the current reader has (empty for an unknown one). */
-function levelsOf<T>(table: Readonly<Record<ViewerLevel, readonly T[]>>): readonly T[] {
+/** The levels of `table` the current reader has (empty for an unknown one).
+ *  Null in a login's workspace scope (withViewer with `{ login }`, W5b2):
+ *  brain items have no level there, the grants of the login's workspaces
+ *  decide (row security), so there is no level rule to add. */
+function levelsOf<T>(table: Readonly<Record<ViewerLevel, readonly T[]>>): readonly T[] | null {
   const scope = currentScope();
+  if (scope.kind === 'user') return null;
   if (scope.kind !== 'level') return [];
   return Object.hasOwn(table, scope.level) ? table[scope.level] : [];
 }
 
-/** A level rule as SQL: false when the reader has no level there. An item
- *  counts at its own level OR the share it inherits from a folder holding it
- *  (folder sharing), the union rule the row policy uses: a note an admin keeps
- *  at admin in a folder shared with the team is in a member's Library. */
-function levelWhere(levels: readonly string[] = levelsOf(LIBRARY_LEVELS)) {
-  return readAtSql(levels);
+/** A level rule as SQL: false when the reader has no level there, none in a
+ *  login's workspace scope (null: the grants decide). An item counts at its
+ *  own level OR the share it inherits from a folder holding it (folder
+ *  sharing), the union rule the row policy uses: a note an admin keeps at
+ *  admin in a folder shared with the team is in a member's Library. */
+function levelWhere(levels: readonly string[] | null = levelsOf(LIBRARY_LEVELS)) {
+  return levels === null ? undefined : readAtSql(levels);
 }
 
-/** Refuse to run at admin: this module exists to be read at a member's level,
- *  and at admin it would list the whole brain. */
+/** Refuse to run at admin: this module exists to be read as a member or a
+ *  client (a login's workspace scope, or a level role in a test), and at
+ *  admin it would list the whole brain. */
 function assertLimited(): void {
-  if (currentScope().kind !== 'level') {
+  const kind = currentScope().kind;
+  if (kind !== 'level' && kind !== 'user') {
     throw new Error('member Library read outside a viewer scope: wrap it in withViewer');
   }
 }

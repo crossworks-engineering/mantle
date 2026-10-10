@@ -1,14 +1,16 @@
 /**
  * The images inside a drawing's saved SVG, as a CLIENT may see them (client
  * logins C2; the client twin of member-draw-images.ts). exportToSvg inlines
- * each image's BYTES into the SVG, so a client-level drawing that holds a
- * team or admin image would hand a client a file the client files route
- * refuses. The client SVG keeps an image only when its file is a client-level
- * file of this brain; every other image is taken out and its frame shows
- * empty. There is no author rule here: a client writes nothing into the brain.
+ * each image's BYTES into the SVG, so a drawing a client reads that holds an
+ * image the client may not read would hand a client a file the client files
+ * route refuses. The client SVG keeps an image only when its file is a file
+ * of this brain a workspace of the client login holds; every other image is
+ * taken out and its frame shows empty. There is no author rule here: a
+ * client writes nothing into the brain.
  *
- * Read at the client level (the drawing's image refs and the files both
- * follow row security), with the level written in the query as well.
+ * Read in the client's scope, withViewer('client', { login }): the
+ * drawing's image refs and the files both follow row security (the grants
+ * of the login's workspaces, W5b2).
  *
  * Element links too (audit B25): exportToSvg wraps a linked element in
  * `<a href>`, and a link to an item the client may not read (`/n/<id>`, a
@@ -18,7 +20,6 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { currentScope, db, draws, nodes } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
-import { readAtSql } from './item-level';
 import { clientLinkHidden, clientOwnUrl, linkRefIds } from './client-redact';
 import { clientRedactOrigins } from './client-origins';
 import { clientReadableIds } from './client-shared';
@@ -32,7 +33,7 @@ export async function clientVisibleDrawFileIds(
 ): Promise<Set<string>> {
   if (currentScope().kind !== 'user') {
     throw new Error(
-      "clientVisibleDrawFileIds reads at the client level: wrap it in withViewer('client')",
+      "clientVisibleDrawFileIds reads in a client's scope: wrap it in withViewer('client', { login })",
     );
   }
   const [row] = await db
@@ -57,8 +58,7 @@ export async function clientVisibleDrawFileIds(
       and(
         eq(nodes.ownerId, anchorId),
         eq(nodes.type, 'file'),
-        // At client by its own level or through a folder shared with clients.
-        readAtSql(['client']),
+        // A workspace of the client login holds it (row security, W5b2).
         inArray(nodes.id, [...byNode.keys()]),
       ),
     );
