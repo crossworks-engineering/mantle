@@ -535,10 +535,17 @@ describe('file_upload (operator surface)', () => {
   });
 });
 
-describe('the visibility confirm: into or out of a shared folder', () => {
+describe('the visibility confirm: into or out of a folder another workspace reads', () => {
   const refused = () =>
     new (TreeVisibilityError as unknown as new (d: unknown) => Error)({
-      changes: [{ id: FILE_ID, title: 'notes.md', from: 'admin', to: 'client' }],
+      changes: [
+        {
+          id: FILE_ID,
+          title: 'notes.md',
+          alsoVisibleTo: [{ wsId: 'w1', name: 'Clients' }],
+          removedFrom: [],
+        },
+      ],
       total: 1,
     });
 
@@ -547,7 +554,7 @@ describe('the visibility confirm: into or out of a shared folder', () => {
     const err = errorOf(
       await fileMove.handler({ file_id: FILE_ID, dest_path: 'files.clients' }, ctx),
     );
-    expect(err).toMatch(/'notes.md' admin → client/);
+    expect(err).toMatch(/'notes.md' also visible to Clients/);
     expect(err).toMatch(/confirm: true/);
     expect(moveFileById).not.toHaveBeenCalled();
 
