@@ -38,7 +38,8 @@
  * the whole change, so a Submit or an Accept never races it (M3 audit). The owner the app's rows are
  * keyed to is the author's space, so nothing here reaches a brain app.
  */
-import { asSystem, currentWorkspaceScope } from '@mantle/db';
+import { asSystem } from '@mantle/db';
+import { currentWorkspaceScope } from '@mantle/db/viewer';
 import {
   AppRestoreDraftError,
   AppSourceLimitError,

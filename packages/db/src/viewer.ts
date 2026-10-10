@@ -497,6 +497,10 @@ export function runInSystemTx<T>(
  *  - `client-sourced-check`: the client-sourced taint checks and the
  *    conversation mark (client-sourced.ts, client-sourced-rules.ts): yes or
  *    no over admin tables, fail closed, no content returned.
+ *  - `app-data`: the app_data tools on a login's own MCP
+ *    (builtins-app-data.ts) run the app's SQLite work, its registry rows and
+ *    its undo snapshot as the system, only after the lookup in the login's
+ *    scope found the app (as the app brokers run that work).
  */
 export const AS_SYSTEM_TURN_REASONS = [
   'agent-workspace',
@@ -508,6 +512,7 @@ export const AS_SYSTEM_TURN_REASONS = [
   'own-space',
   'heartbeat-own-row',
   'client-sourced-check',
+  'app-data',
 ] as const;
 export type AsSystemReason = (typeof AS_SYSTEM_TURN_REASONS)[number];
 

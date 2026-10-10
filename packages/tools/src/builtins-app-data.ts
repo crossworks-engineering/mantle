@@ -19,6 +19,9 @@
  * inside withViewer), so row security holds as a second lock. The SQLite
  * work runs as the system (`asSystem`), like the member and client brokers:
  * it writes the app's database registry rows, which a viewer role cannot.
+ * The login's scope is a workspace scope since W5b2, so each of those exits
+ * names its door ('app-data', AS_SYSTEM_TURN_REASONS), always after the
+ * lookup in the scope found the app.
  *
  * Every call lands an app_access_log row (`via: 'mcp'`, the key, peer or
  * OAuth client, the person's per-app id); a write keeps its SQL (2 KB) and
@@ -120,7 +123,7 @@ function logDetail(who: Who): Record<string, unknown> {
 /** The person's per-app id (host.me) for the log, best effort. */
 async function personId(ownerId: string, appId: string, who: Who): Promise<string | null> {
   try {
-    return (await asSystem(() => appViewerFor(ownerId, appId, viewerOf(who)))).id;
+    return (await asSystem(() => appViewerFor(ownerId, appId, viewerOf(who)), 'app-data')).id;
   } catch {
     return null;
   }
@@ -229,7 +232,7 @@ export const app_data_list: BuiltinToolDef = {
             kind: 'db',
             detail: { ...logDetail(who), op: 'list' },
           });
-          const tables = await asSystem(() => appDbSchema(ctx.ownerId, app.id));
+          const tables = await asSystem(() => appDbSchema(ctx.ownerId, app.id), 'app-data');
           out.push({
             app_id: app.id,
             name: app.title,
@@ -272,11 +275,13 @@ export const app_data_schema: BuiltinToolDef = {
     try {
       const app = await reach(ctx, who, appId);
       if (!app) return { ok: false, error: NOT_FOUND };
-      const details = await asSystem(() =>
-        appDbTableDetails(ctx.ownerId, app.id, {
-          callerKey: callerKey(who),
-          schema: app.manifest.sqlite,
-        }),
+      const details = await asSystem(
+        () =>
+          appDbTableDetails(ctx.ownerId, app.id, {
+            callerKey: callerKey(who),
+            schema: app.manifest.sqlite,
+          }),
+        'app-data',
       );
       recordAppAccess({
         ownerId: ctx.ownerId,
@@ -344,11 +349,13 @@ export const app_data_query: BuiltinToolDef = {
         detail: { ...logDetail(who), op: 'query' },
       });
       try {
-        const rows = await asSystem(() =>
-          appDbQuery(ctx.ownerId, app.id, stmt.sql, stmt.params, app.manifest.sqlite, {
-            callerKey: callerKey(who),
-            viewer: viewerOf(who),
-          }),
+        const rows = await asSystem(
+          () =>
+            appDbQuery(ctx.ownerId, app.id, stmt.sql, stmt.params, app.manifest.sqlite, {
+              callerKey: callerKey(who),
+              viewer: viewerOf(who),
+            }),
+          'app-data',
         );
         ctx.step?.setOutput({ rows: rows.length });
         return { ok: true, output: { rows, row_count: rows.length, note: DATA_NOTE } };
@@ -427,14 +434,16 @@ export const app_data_write: BuiltinToolDef = {
       // Undo first: the first MCP write to this app in an hour takes a
       // snapshot (code and a copy of the data). No snapshot, no write.
       try {
-        await asSystem(() =>
-          createAppSnapshot(ctx.ownerId, app.id, {
-            trigger: 'pre_mcp_write',
-            actor: 'mcp',
-            note: `Before an MCP write by ${who.name?.trim() || who.role}`,
-            requireData: true,
-            onlyIfNoneSince: new Date(Date.now() - APP_DATA_SNAPSHOT_EVERY_MS),
-          }),
+        await asSystem(
+          () =>
+            createAppSnapshot(ctx.ownerId, app.id, {
+              trigger: 'pre_mcp_write',
+              actor: 'mcp',
+              note: `Before an MCP write by ${who.name?.trim() || who.role}`,
+              requireData: true,
+              onlyIfNoneSince: new Date(Date.now() - APP_DATA_SNAPSHOT_EVERY_MS),
+            }),
+          'app-data',
         );
       } catch (err) {
         console.error('[app-data] undo snapshot failed:', errorMessage(err));
@@ -468,12 +477,14 @@ export const app_data_write: BuiltinToolDef = {
       }
       let res;
       try {
-        res = await asSystem(() =>
-          appDbExec(ctx.ownerId, app.id, stmt.sql, stmt.params, app.manifest.sqlite, {
-            callerKey: callerKey(who),
-            viewer: viewerOf(who),
-            dataOnly: true,
-          }),
+        res = await asSystem(
+          () =>
+            appDbExec(ctx.ownerId, app.id, stmt.sql, stmt.params, app.manifest.sqlite, {
+              callerKey: callerKey(who),
+              viewer: viewerOf(who),
+              dataOnly: true,
+            }),
+          'app-data',
         );
       } catch (err) {
         if (err instanceof AppSqlError) {
@@ -508,7 +519,7 @@ export const app_data_write: BuiltinToolDef = {
             console.error('[app-data] client-written mark failed:', errorMessage(err)),
           );
         }
-      });
+      }, 'app-data');
       ctx.step?.setOutput({ changes: res.changes });
       return {
         ok: true,

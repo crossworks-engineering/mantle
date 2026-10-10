@@ -355,16 +355,16 @@ describe.skipIf(!URL)('inbound API keys', () => {
   });
 
   it('gives an image-shaped /api/v1 path no way around the key checks', async () => {
-    // A key acts as its login (W5b2): a member's key reaches no admin route,
-    // an image-shaped path included.
-    const memberKey = await makeKey({}, member);
-    const res = await call('/api/v1/files/picture.png', { bearer: memberKey.secret });
-    expect(res.status).toBe(403);
-    expect(await json(res)).toMatchObject({ reason: 'member-login' });
-    // A revoked key is refused there as anywhere.
-    const adminKey = await makeKey();
-    await call(`/api/access-keys/${adminKey.id}`, { method: 'DELETE', cookie: cookieOf(admin) });
-    expect((await call('/api/v1/files/picture.png', { bearer: adminKey.secret })).status).toBe(401);
+    // The key gate runs there as anywhere: a live key passes it (the route
+    // then answers the id it was given), a revoked one is refused by the
+    // gate itself (its key.refused row is the gate's own).
+    const made = await makeKey();
+    const live = await call('/api/v1/files/picture.png', { bearer: made.secret });
+    expect(live.status).toBe(400);
+    await call(`/api/access-keys/${made.id}`, { method: 'DELETE', cookie: cookieOf(admin) });
+    expect((await call('/api/v1/files/picture.png', { bearer: made.secret })).status).toBe(401);
+    const refused = await audited('key.refused', made.id);
+    expect(refused.map((r) => (r.detail as Json).reason)).toContain('revoked');
   });
 
   it('a read key acts as its login: an admin read key writes (W5b2)', async () => {
