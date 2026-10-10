@@ -12,7 +12,13 @@
  * sourceless semantic/preference facts are CORRECT (the reaper keeps them), so
  * the reaper-miss check only flags episodic/factual orphans.
  */
-import { db, extractParkedSql, MIGRATION_TAGS, teamReadsAliasSql } from '@mantle/db';
+import {
+  db,
+  extractParkedSql,
+  GRANT_DRIFT_SQL,
+  MIGRATION_TAGS,
+  teamReadsAliasSql,
+} from '@mantle/db';
 import { sql, type SQL } from 'drizzle-orm';
 
 import { rowsOf } from './sql-util';
@@ -250,13 +256,13 @@ const CHECKS: CheckDef[] = [
       WHERE mantle_brain_id() IS NOT NULL AND mantle_ws_skip_reason() IS NOT NULL`,
   },
   {
-    key: 'workspaces_bridge_drift',
-    label: 'Level bridge drift',
+    key: 'workspaces_grant_drift',
+    label: 'Workspace grant drift',
     severity: 'medium',
-    note: 'brain items whose bridge-owned grants differ from what their level gives (plan 9.2; the bridge of migration 0251 keeps them equal until W5b turns it off). Any count here is a bug in the bridge or a writer that went around it: the item reads with its grants in scoped work (assistants) and with its level elsewhere.',
+    note: 'items whose derived read, write or home columns differ from what their workspace grants give (the grants are the only truth since migration 0261; triggers keep the columns equal). Any count here is a writer that went around the derivation: the item reads by its stale columns. The same count is the first line of pnpm -C server/web workspaces:check, which also counts orphan grants, items without a home, workspaces without a Moderator, assistants not in exactly one workspace and open links with no served key.',
     query: () => sql`
-      SELECT 'bridge' AS id, 'drift' AS kind, n::text || ' item(s)' AS detail
-      FROM (SELECT mantle_bridge_drift() AS n) d WHERE d.n > 0`,
+      SELECT 'grants' AS id, 'drift' AS kind, d.n::text || ' item(s)' AS detail
+      FROM (${sql.raw(GRANT_DRIFT_SQL)}) d WHERE d.n > 0`,
   },
   {
     key: 'workspaces_connector_drift',

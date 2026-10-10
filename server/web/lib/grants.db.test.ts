@@ -1,12 +1,13 @@
 /**
  * The Grant Access panel's API (W5b2 part A), through the real routes on a
  * scratch brain the workspaces migration made live (the session is stood
- * in). The level bridge runs, as on dev:
+ * in). The level bridge is off (0261): grants are the only truth.
  *
  *  - reading: 404 for an item or workspace the caller may not see (never
  *    403); rows of other workspaces only for an Admin user or a manager;
- *    the home's name hidden from a non-user of it; bridge rows marked;
- *  - the bridge's rows refuse every change (409 bridge_owned);
+ *    the home's name hidden from a non-user of it;
+ *  - the rows of items made today are plain grants, free to change; the
+ *    levels are frozen;
  *  - who may grant: home Moderator AND target Moderator to add, restore,
  *    hand and switch Write on; either one to remove and switch Write off;
  *    the home row is never removed; an Admin-only kind stays in Admin;
@@ -128,14 +129,14 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
   const misses = async () =>
     (await x<{ n: number }>(sql`select count(*)::int as n from heads_check_misses`))[0]!.n;
 
-  /** A node the brain makes (the bridge homes it in Admin). */
+  /** A node the brain makes (homed in Admin by default, 0261). */
   const node = async (type: string, title: string, path: string, id = randomUUID()) => {
     await x(sql`insert into nodes (id, owner_id, type, title, path)
                 values (${id}, ${owner}, ${type}::node_type, ${title}, ${path}::ltree)`);
     return id;
   };
-  /** Home `id` in workspace `ws` by hand: no bridge row left, so the bridge
-   *  leaves it alone (an item that was moved there). Setup only. */
+  /** Home `id` in workspace `ws` by hand (an item that was moved there).
+   *  Setup only. */
   const homeIn = async (id: string, ws: string) => {
     await m.withHeads([id], 'update', async (tx) => {
       await tx.execute(sql`delete from item_grants where node_id = ${id}`);
@@ -181,22 +182,22 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
     await scratch?.drop();
   });
 
-  it('reads: 404 never 403; rows by who may see them; the bridge rows marked', async () => {
-    const note = await node('note', 'a bridged note', 'notes');
+  it('reads: 404 never 403; rows by who may see them; a new item has its home only', async () => {
+    const note = await node('note', 'a new note', 'notes');
     await as(owner);
     const own = await get(note);
     expect(own.status).toBe(200);
     expect(own.body.home).toEqual({ wsId: admin, name: 'Admin' });
     expect(own.body.mayManage).toBe(true);
-    // Admin home (bridge) and the Team exclusion the bridge keeps: the
-    // exclusion is hidden (no folder grants Team here).
-    expect(own.body.rows.map((x: Json) => [x.wsId, x.isHome, x.bridgeOwned])).toEqual([
-      [admin, true, true],
+    // The default home and nothing else: no Team row, decided or not.
+    expect(own.body.rows.map((x: Json) => [x.wsId, x.isHome])).toEqual([[admin, true]]);
+    expect(await rowsOf(note)).toEqual([
+      { ws: admin, write: false, is_home: true, via: null, excluded: false },
     ]);
-    // Addable: the owner's Moderator workspaces it is not in, minus the
-    // bridge-owned Team row.
-    expect(own.body.addable.map((w: Json) => w.name)).toEqual(['Proj', 'Quay']);
-    expect(own.body.item).toEqual({ id: note, title: 'a bridged note', type: 'note' });
+    // Addable: every Moderator workspace of the owner it is not in, Team
+    // included.
+    expect(own.body.addable.map((w: Json) => w.name)).toEqual(['Proj', 'Quay', 'Team']);
+    expect(own.body.item).toEqual({ id: note, title: 'a new note', type: 'note' });
     expect(own.body.hasLink).toBe(false);
     expect(own.body.link).toBeNull();
 
@@ -227,26 +228,33 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
     expect((await patch(pnote, P, true)).status).toBe(404);
   });
 
-  it('the bridge owns its rows: every change there is 409 bridge_owned', async () => {
-    const page = await node('page', 'a team page', 'pages');
-    await x(sql`update nodes set audience = 'team' where id = ${page}`);
-    // The update needs no heads in warn mode; the bridge gave Team a row.
-    expect((await rowsOf(page)).map((x) => x.ws).sort()).toEqual([admin, team].sort());
+  it('rows of items made today are plain grants: Team added, Write, removed, home moved', async () => {
+    const page = await node('page', 'a page', 'pages');
+    // The levels are frozen: grants decide.
+    await expect(
+      x(sql`update nodes set audience = 'team' where id = ${page}`),
+    ).rejects.toMatchObject({ cause: { code: '55000' } });
+    expect((await rowsOf(page)).map((x) => x.ws)).toEqual([admin]);
     await as(owner);
-    expect((await patch(page, team, true)).body.code).toBe('bridge_owned');
-    expect((await del(page, team)).body.code).toBe('bridge_owned');
-    expect((await del(page, admin)).body.code).toBe('bridge_owned');
-    expect((await hand(page, team)).status).toBe(409);
-    const moved = await call(r.move.POST(req('POST', { nodeIds: [page], toWorkspaceId: P })));
-    expect(moved.body).toEqual({ moved: 0, failed: [{ id: page, error: expect.any(String) }] });
-    // Another workspace is free.
     const before = await misses();
-    expect((await add(page, P)).status).toBe(200);
-    expect((await readWs(page)).sort()).toEqual([admin, team, P].sort());
+    expect((await add(page, team)).status).toBe(200);
+    expect((await readWs(page)).sort()).toEqual([admin, team].sort());
+    expect((await patch(page, team, true)).status).toBe(200);
+    expect((await rowsOf(page)).find((x) => x.ws === team)).toMatchObject({
+      write: true,
+      is_home: false,
+    });
+    expect((await del(page, team)).status).toBe(200);
+    expect(await readWs(page)).toEqual([admin]);
+    // No row the panel cannot change.
+    expect(
+      (await x<{ n: number }>(sql`select count(*)::int as n from item_grants where bridge`))[0]!.n,
+    ).toBe(0);
+    // The home moves like any other.
+    const moved = await call(r.move.POST(req('POST', { nodeIds: [page], toWorkspaceId: P })));
+    expect(moved.body).toMatchObject({ moved: 1, failed: [] });
+    expect((await rowsOf(page)).find((x) => x.is_home)!.ws).toBe(P);
     expect(await misses()).toBe(before);
-    const panel = await get(page);
-    expect(panel.body.rows.find((x: Json) => x.wsId === P).bridgeOwned).toBe(false);
-    expect(panel.body.rows.find((x: Json) => x.wsId === team).bridgeOwned).toBe(true);
   });
 
   it('who may: add and Write on need both Moderators; remove and Write off either', async () => {
@@ -624,14 +632,16 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
     expect(await x(sql`select path::text as path from nodes where id = ${c1}`)).toEqual(before);
   });
 
-  it('a Team add on a bridge-homed item is 409 bridge_owned', async () => {
-    const note = await node('note', 'bridged, no team row', 'notes');
-    await m.withHeads([note], 'update', async (tx) => {
-      await tx.execute(
-        sql`delete from item_grants where node_id = ${note} and workspace_id = ${team}`,
-      );
-    });
+  it('a Team add on an item made today is a plain grant', async () => {
+    const note = await node('note', 'made today, no team row', 'notes');
     await as(owner);
-    expect((await add(note, team)).body.code).toBe('bridge_owned');
+    const res = await add(note, team);
+    expect(res.status).toBe(200);
+    expect(await rowsOf(note)).toEqual(
+      [
+        { ws: admin, write: false, is_home: true, via: null, excluded: false },
+        { ws: team, write: false, is_home: false, via: null, excluded: false },
+      ].sort((a, b) => (a.ws < b.ws ? -1 : 1)),
+    );
   });
 });

@@ -1,6 +1,14 @@
 export * from './schema/index';
 export { teamReadsSql, teamReadsAliasSql } from './grant-reads';
 export {
+  GRANT_DRIFT_SQL,
+  WORKSPACES_CHECK_SQL,
+  parseWorkspacesCheck,
+  runWorkspacesCheck,
+  workspacesCheckFindings,
+  type WorkspacesCheck,
+} from './workspaces-check';
+export {
   db,
   systemDb,
   closeDb,

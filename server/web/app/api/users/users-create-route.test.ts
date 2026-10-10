@@ -13,6 +13,7 @@ const h = vi.hoisted(() => ({
   selects: [] as unknown[][],
   insertError: null as unknown,
   inserted: null as null | Record<string, unknown>,
+  executed: [] as string[],
 }));
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
@@ -45,6 +46,11 @@ vi.mock('@mantle/db', async (importOriginal) => {
           if (h.insertError) throw h.insertError;
         },
       }),
+      // The login's Admin and Team rows, after the insert (0261).
+      execute: async (q: { queryChunks?: unknown[] }) => {
+        h.executed.push(JSON.stringify(q.queryChunks ?? q));
+        return [];
+      },
     },
   };
 });
@@ -72,6 +78,7 @@ describe('POST /api/users, the insert refused', () => {
     h.selects = [];
     h.insertError = null;
     h.inserted = null;
+    h.executed = [];
   });
 
   it('answers 409 for a duplicate email', async () => {
@@ -80,6 +87,7 @@ describe('POST /api/users, the insert refused', () => {
     const res = await POST(post(BODY));
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ error: 'A user with that email already exists.' });
+    expect(h.executed).toEqual([]);
   });
 
   it('answers 409 naming the contact when the contact already has a login', async () => {
@@ -102,6 +110,9 @@ describe('POST /api/users, the insert refused', () => {
     const admin = await POST(post({ ...noRole, email: 'adm@example.invalid', role: 'admin' }));
     expect(admin.status).toBe(201);
     expect(h.inserted).toMatchObject({ role: 'admin' });
+    // Each new login is put in the workspaces its role gives, by name.
+    expect(h.executed).toHaveLength(2);
+    expect(h.executed.every((q) => q.includes('mantle_bridge_login'))).toBe(true);
   });
 
   it('still answers 500 for any other database error', async () => {

@@ -4,7 +4,10 @@
  * with an admin, two members, items at every level today, folder shares,
  * embeds, a team app, and personal items in every review state. The dry run
  * must give no login anything it does not read today, list exactly the
- * expected assistant gains, and stop when a client login exists.
+ * expected assistant gains, and stop when a client login exists. The levels
+ * are frozen since W5b2 (0261) and their upkeep triggers gone, so the
+ * fixture's inserts name the folder share, inherited and embed levels a
+ * brain made before the switch holds.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/workspaces-dry-run.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -56,10 +59,18 @@ describe.skipIf(!URL)('workspaces dry run and reach diff (0243)', () => {
     const spA = await space(memberA);
     const spGone = await space(gone);
 
-    const node = async (owner_: string, type: string, path: string, audience = 'admin') => {
+    const node = async (
+      owner_: string,
+      type: string,
+      path: string,
+      audience = 'admin',
+      levels: { share?: string; inherited?: string; embedded?: string } = {},
+    ) => {
       const id = randomUUID();
-      await sql`insert into nodes (id, owner_id, type, title, path, audience)
-        values (${id}, ${owner_}, ${type}::node_type, ${type}, ${path}::ltree, ${audience})`;
+      await sql`insert into nodes (id, owner_id, type, title, path, audience,
+                                   share_level, inherited_level, embedded_level)
+        values (${id}, ${owner_}, ${type}::node_type, ${type}, ${path}::ltree, ${audience},
+                ${levels.share ?? null}, ${levels.inherited ?? null}, ${levels.embedded ?? null})`;
       return id;
     };
     // Brain items at each level, a shared folder, an embed, apps.
@@ -67,14 +78,14 @@ describe.skipIf(!URL)('workspaces dry run and reach diff (0243)', () => {
     await node(owner, 'page', 'pages', 'team');
     await node(owner, 'note', 'notes', 'public');
     await node(owner, 'email', 'emails', 'admin');
-    const folder = await node(owner, 'branch', 'pages.shared', 'admin');
-    await sql`update nodes set share_level = 'team' where id = ${folder}`;
-    await node(owner, 'page', 'pages.shared', 'admin'); // team through the folder
+    await node(owner, 'branch', 'pages.shared', 'admin', { share: 'team' });
+    // team through the folder
+    await node(owner, 'page', 'pages.shared', 'admin', { inherited: 'team' });
     // The host passes its FOLDER's share to what it embeds (0208: inherited
     // or embedded level, never its own audience): it sits in the shared folder.
-    const host = await node(owner, 'page', 'pages.shared', 'admin');
-    const embedded = await node(owner, 'file', 'files', 'admin');
-    const appViaEmbed = await node(owner, 'app', 'apps', 'admin');
+    const host = await node(owner, 'page', 'pages.shared', 'admin', { inherited: 'team' });
+    const embedded = await node(owner, 'file', 'files', 'admin', { embedded: 'team' });
+    const appViaEmbed = await node(owner, 'app', 'apps', 'admin', { embedded: 'team' });
     await sql`insert into node_embeds (from_id, to_id) values (${host}, ${embedded}), (${host}, ${appViaEmbed})`;
     const teamApp = await node(owner, 'app', 'apps', 'team');
     await sql`insert into apps (node_id, source) values (${teamApp}, '{}'::jsonb), (${appViaEmbed}, '{}'::jsonb)`.catch(

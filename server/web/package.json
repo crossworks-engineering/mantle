@@ -72,6 +72,7 @@
     "app-export:catch-up": "tsx --env-file-if-exists=./.env.local scripts/app-export-catch-up.ts",
     "typecheck": "tsc --noEmit",
     "widen:content-hits": "tsx --env-file-if-exists=./.env.local scripts/widen-content-hits.ts",
+    "workspaces:check": "tsx --env-file-if-exists=./.env.local scripts/workspaces-check.ts",
     "worker:calendar:dev": "tsx --watch --env-file-if-exists=./.env.local workers/calendar-sync.ts",
     "worker:dev": "tsx --watch --env-file-if-exists=./.env.local workers/email-sync.ts",
     "worker:docs:dev": "tsx --watch --env-file-if-exists=./.env.local workers/docs-sync.ts",

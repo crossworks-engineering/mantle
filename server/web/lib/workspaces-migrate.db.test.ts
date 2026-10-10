@@ -2,7 +2,10 @@
  * Workspaces W5b1 fix round 1 (audit M1): a fresh install is put on
  * workspaces when its first owner signs up, and at boot; a box with client
  * logins is still skipped (owner rule 21.9), and the integrity row says why.
- * Own scratch databases (the migration writes brain-wide rows).
+ * Since W5b2 (0261) the migration ends with plain grants (no bridge) and the
+ * boot step repairs nothing: an item left without a home is what
+ * workspaces:check counts. Own scratch databases (the migration writes
+ * brain-wide rows).
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/workspaces-migrate.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -35,7 +38,7 @@ describe.skipIf(!URL)('workspaces for a fresh install (W5b1 audit M1)', () => {
     return { scratch, sql };
   }
 
-  it('the first owner gets Admin, Team and the bridges, with no drift; a second run and a boot change nothing', async () => {
+  it('the first owner gets Admin and Team, plain grants and a home for every item; a second run and a boot change nothing', async () => {
     const { scratch, sql } = await brain();
     process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
@@ -59,18 +62,24 @@ describe.skipIf(!URL)('workspaces for a fresh install (W5b1 audit M1)', () => {
     expect(users.map((u) => u.key)).toContain('admin');
     expect((await sql`select mantle_ws_skip_reason() as r`)[0]!.r).toBeNull();
 
-    // The bridges run: a new team page gets its Team grant at once.
+    // No bridge: a new page gets its home in Admin and nothing more, whatever
+    // level the insert names.
     const page = randomUUID();
     await sql`insert into nodes (id, owner_id, type, title, path, audience)
       values (${page}, ${owner}, 'page', 'p', 'pages'::ltree, 'team')`;
-    const [g] = await sql<{ n: number }[]>`
-      select count(*)::int as n from item_grants g join workspaces w on w.id = g.workspace_id
-       where g.node_id = ${page} and w.bridge_key = 'team'`;
-    expect(g!.n).toBe(1);
-    expect(Number((await sql`select mantle_bridge_drift() as d`)[0]!.d)).toBe(0);
-    expect(await sql`select * from mantle_ws_reach_diff() where section = 'reach-fail'`).toEqual(
-      [],
-    );
+    const g = await sql<{ key: string; home: boolean }[]>`
+      select w.bridge_key as key, g.is_home as home from item_grants g
+        join workspaces w on w.id = g.workspace_id
+       where g.node_id = ${page}`;
+    expect(g).toEqual([{ key: 'admin', home: true }]);
+    expect(Number((await sql`select count(*) as n from item_grants where bridge`)[0]!.n)).toBe(0);
+    const { runWorkspacesCheck } = await import('@mantle/db');
+    expect(await runWorkspacesCheck()).toMatchObject({
+      migrated: true,
+      grantDrift: 0,
+      orphanGrants: 0,
+      itemsWithoutHome: 0,
+    });
 
     // Idempotent: the boot step finds it migrated, writes nothing.
     const wm = await import('./workspaces-migrate');
@@ -142,17 +151,20 @@ describe.skipIf(!URL)('workspaces for a fresh install (W5b1 audit M1)', () => {
     // Off Team, it may be raised again.
     await setAgentAudience(owner, tr!.id, 'admin');
 
-    // Fix round 2, L-a: the boot step of a migrated brain repairs drift.
+    // No boot repair (W5b2): an item that lost its grants stays as it is,
+    // and the check counts it.
     await sql.begin(async (tx) => {
       await tx`select mantle_lock_heads(array[${page}::uuid], 'update')`;
       await tx`delete from item_grants where node_id = ${page}`;
     });
-    expect(Number((await sql`select mantle_bridge_drift() as d`)[0]!.d)).toBe(1);
     await wm.migrateWorkspacesQuietly('boot');
-    expect(Number((await sql`select mantle_bridge_drift() as d`)[0]!.d)).toBe(0);
+    expect(
+      Number((await sql`select count(*) as n from item_grants where node_id = ${page}`)[0]!.n),
+    ).toBe(0);
+    expect(await runWorkspacesCheck()).toMatchObject({ itemsWithoutHome: 1, grantDrift: 0 });
   });
 
-  it('fix round 2, L-a: an item made while the migration runs gets its grants from the drift repair', async () => {
+  it('fix round 2, L-a: an item made while the migration runs is left without a home, and counted', async () => {
     const { sql } = await brain();
     const owner = randomUUID();
     await sql`insert into auth.users (id, email, password_hash, role, is_owner) values
@@ -174,11 +186,13 @@ describe.skipIf(!URL)('workspaces for a fresh install (W5b1 audit M1)', () => {
     const grants = async () =>
       Number((await sql`select count(*) as n from item_grants where node_id = ${page}`)[0]!.n);
     expect(await grants()).toBe(0);
-    expect(Number((await sql`select mantle_bridge_drift() as d`)[0]!.d)).toBe(1);
-    expect(Number((await sql`select mantle_ws_repair_drift() as n`)[0]!.n)).toBe(1);
-    expect(await grants()).toBe(2);
-    expect(Number((await sql`select mantle_bridge_drift() as d`)[0]!.d)).toBe(0);
+    // The drift repair is gone (0261): nothing gives it grants behind the
+    // owner's back. workspaces:check counts it; the owner homes it by hand.
     expect(Number((await sql`select mantle_ws_repair_drift() as n`)[0]!.n)).toBe(0);
+    expect(await grants()).toBe(0);
+    const { WORKSPACES_CHECK_SQL, parseWorkspacesCheck } = await import('@mantle/db');
+    const c = parseWorkspacesCheck((await sql.unsafe(WORKSPACES_CHECK_SQL))[0] as never);
+    expect(c).toMatchObject({ itemsWithoutHome: 1, grantDrift: 0, orphanGrants: 0 });
   });
 
   it('fix round 2, L-b: the locked migration waits at most 10 s for a lock', async () => {

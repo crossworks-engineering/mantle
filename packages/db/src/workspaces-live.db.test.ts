@@ -1,18 +1,20 @@
 /**
  * Workspaces W4a (migration 0250): the workspaces go live as data, on a
- * scratch database of its own. A small brain with an owner, a member, items
- * at each level, a shared folder, an embed, apps, personal items, assistants,
- * connectors and facts. Checked:
+ * scratch database of its own, with the bridge off since W5b2 (0261). A small
+ * brain with an owner, a member, items at each level (written by the insert,
+ * as a brain made before the switch holds them), a shared folder, apps,
+ * personal items, assistants, connectors and facts. Checked:
  *
  *  - a brain with a client login is skipped (nothing written), then migrated
  *    once the client is gone; a second run does nothing;
- *  - the 9.2 table: every brain item has one home, Team where the team reads
- *    it today, "removed here" otherwise; personal items get no grants; the
- *    reach diff finds no gain; resources and the R3 stamp;
- *  - the item bridge follows a level change, a new item in a folder, an app's
- *    read-only switch; and its three limits (never Admin on an item homed
- *    elsewhere, never an item with a non-bridge home, only bridge rows);
- *  - the login bridge follows a role;
+ *  - the 9.2 table, as plain grants: every brain item has one home, Team
+ *    where the team read it, derived from the folder where the folder's
+ *    share gave it; no "removed here" without a folder grant; personal items
+ *    get no grants; the reach diff finds no gain; resources and the R3 stamp;
+ *  - no bridge: a level change is refused, a new item takes a home and its
+ *    folder's rows, an app's read-only switch writes no grant, a moved item
+ *    keeps its home;
+ *  - a login joins the workspaces only by name (mantle_bridge_login);
  *  - facts with a source follow their node (a grant change writes no fact),
  *    a deleted source freezes the fact's access, a cleared one too;
  *  - chat facts map to Admin.
@@ -22,6 +24,7 @@ import { randomUUID } from 'node:crypto';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createMigratedScratchDatabase } from './test-support';
+import { GRANT_DRIFT_SQL } from './workspaces-check';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -38,19 +41,26 @@ describe.skipIf(!URL)('workspaces live (0250): migration, bridges, facts', () =>
   let admin = '';
   let team = '';
 
+  /** A node; `share` and `inherited` are the folder levels a brain made
+   *  before the switch holds (the insert names them: no upkeep trigger). */
   const node = async (
     key: string,
     owner_: string,
     type: string,
     path: string,
     audience = 'admin',
+    levels: { share?: string; inherited?: string } = {},
   ) => {
     const id = randomUUID();
-    await sql`insert into nodes (id, owner_id, type, title, path, audience)
-      values (${id}, ${owner_}, ${type}::node_type, ${key}, ${path}::ltree, ${audience})`;
+    await sql`insert into nodes (id, owner_id, type, title, path, audience, share_level, inherited_level)
+      values (${id}, ${owner_}, ${type}::node_type, ${key}, ${path}::ltree, ${audience},
+              ${levels.share ?? null}, ${levels.inherited ?? null})`;
     ids[key] = id;
     return id;
   };
+  const drift = async () => Number((await sql.unsafe(GRANT_DRIFT_SQL))[0]!.n);
+  const bridgeRows = async () =>
+    Number((await sql`select count(*) as n from item_grants where bridge`)[0]!.n);
   const grants = async (id: string): Promise<Record<string, Grant>> => {
     const rows = await sql<(Grant & { name: string })[]>`
       select w.name, g.workspace_id::text as ws, g.is_home as home, g.excluded, g.write, g.bridge
@@ -91,9 +101,8 @@ describe.skipIf(!URL)('workspaces live (0250): migration, bridges, facts', () =>
     await node('teamPage', owner, 'page', 'pages', 'team');
     await node('publicNote', owner, 'note', 'notes', 'public');
     await node('email', owner, 'email', 'emails', 'admin');
-    const folder = await node('folder', owner, 'branch', 'pages.shared', 'admin');
-    await sql`update nodes set share_level = 'team' where id = ${folder}`;
-    await node('inFolder', owner, 'page', 'pages.shared', 'admin');
+    await node('folder', owner, 'branch', 'pages.shared', 'admin', { share: 'team' });
+    await node('inFolder', owner, 'page', 'pages.shared', 'admin', { inherited: 'team' });
     await node('teamApp', owner, 'app', 'apps', 'team');
     await node('roApp', owner, 'app', 'apps', 'team');
     await node('adminApp', owner, 'app', 'apps', 'admin');
@@ -153,20 +162,25 @@ describe.skipIf(!URL)('workspaces live (0250): migration, bridges, facts', () =>
     expect((await migrate())[0]).toMatchObject({ section: 'skip', metric: 'already migrated' });
   });
 
-  it('writes the 9.2 table: one home per brain item, Team where the team reads, nothing personal', async () => {
-    expect(await grants(ids.adminPage!)).toMatchObject({
-      Admin: { home: true, excluded: false, bridge: true },
-      Team: { home: false, excluded: true, bridge: true },
+  it('writes the 9.2 table as plain grants: one home per brain item, Team where the team read, nothing personal', async () => {
+    expect(await bridgeRows()).toBe(0);
+    // No "removed here" without a folder grant to remove.
+    expect(await grants(ids.adminPage!)).toEqual({
+      Admin: { ws: admin, home: true, excluded: false, write: false, bridge: false },
     });
     expect((await grants(ids.teamPage!)).Team).toMatchObject({ excluded: false, write: false });
     expect((await grants(ids.publicNote!)).Team).toMatchObject({ excluded: false });
-    expect((await grants(ids.inFolder!)).Team).toMatchObject({ excluded: false }); // folder share
+    // The folder's share: a row on the folder, derived on the item.
+    expect((await grants(ids.folder!)).Team).toMatchObject({ excluded: false, home: false });
+    expect((await grants(ids.inFolder!)).Team).toMatchObject({ excluded: false });
+    const [via] = await sql<{ v: string | null }[]>`
+      select via_folder_id::text as v from item_grants where node_id = ${ids.inFolder!} and workspace_id = ${team}`;
+    expect(via!.v).toBe(ids.folder);
     // Admin-only kinds: Admin only.
     expect(Object.keys(await grants(ids.email!))).toEqual(['Admin']);
     // T1: an app the team reads is homed in Team; Write follows read-only.
-    expect(await grants(ids.teamApp!)).toMatchObject({
-      Team: { home: true, write: true },
-      Admin: { excluded: true },
+    expect(await grants(ids.teamApp!)).toEqual({
+      Team: { ws: team, home: true, excluded: false, write: true, bridge: false },
     });
     expect((await grants(ids.roApp!)).Team).toMatchObject({ home: true, write: false });
     expect((await grants(ids.adminApp!)).Admin).toMatchObject({ home: true });
@@ -176,7 +190,7 @@ describe.skipIf(!URL)('workspaces live (0250): migration, bridges, facts', () =>
       select count(*)::int as n from nodes
        where owner_id = ${owner} and home_ws is null`;
     expect(h!.n).toBe(0);
-    expect(Number((await sql`select mantle_bridge_drift() as n`)[0]!.n)).toBe(0);
+    expect(await drift()).toBe(0);
     // Membership: owner moderates both, the member moderates Team.
     const users = await sql<{ ws: string; login: string; m: boolean }[]>`
       select workspace_id::text as ws, login_id::text as login, moderator as m from workspace_users`;
@@ -213,134 +227,13 @@ describe.skipIf(!URL)('workspaces live (0250): migration, bridges, facts', () =>
     expect(r!.ws).toBe(team);
   });
 
-  it('the item bridge follows a level change, a new item in a folder and an app switch', async () => {
-    await sql`update nodes set audience = 'team' where id = ${ids.adminPage!}`;
-    expect((await grants(ids.adminPage!)).Team).toMatchObject({ excluded: false, bridge: true });
-    expect(await readWs(ids.adminPage!)).toEqual([admin, team].sort());
-    await sql`update nodes set audience = 'admin' where id = ${ids.adminPage!}`;
-    expect((await grants(ids.adminPage!)).Team).toMatchObject({ excluded: true });
-    expect(await readWs(ids.adminPage!)).toEqual([admin]);
-    // New items: home Admin; in the shared folder Team too; elsewhere Team is
-    // decided "removed here".
-    const fresh = await node('fresh', owner, 'page', 'pages', 'admin');
-    expect(await grants(fresh)).toMatchObject({ Admin: { home: true }, Team: { excluded: true } });
-    const placed = await node('placed', owner, 'page', 'pages.shared', 'admin');
-    expect((await grants(placed)).Team).toMatchObject({ excluded: false });
-    expect(await readWs(placed)).toEqual([admin, team].sort());
-    // The folder stops sharing: its items leave Team.
-    await sql`update nodes set share_level = null where id = ${ids.folder!}`;
-    expect((await grants(placed)).Team).toMatchObject({ excluded: true });
-    await sql`update nodes set share_level = 'team' where id = ${ids.folder!}`;
-    // An app's read-only switch is its Team grant's Write.
-    await sql`update apps set data_read_only = true where node_id = ${ids.teamApp!}`;
-    expect((await grants(ids.teamApp!)).Team).toMatchObject({ write: false });
-    await sql`update apps set data_read_only = false where node_id = ${ids.teamApp!}`;
-    expect((await grants(ids.teamApp!)).Team).toMatchObject({ write: true });
-    expect(Number((await sql`select mantle_bridge_drift() as n`)[0]!.n)).toBe(0);
-  });
-
-  it('one statement that makes or re-levels many items: every one decided, row written once', async () => {
-    const made = await sql<{ id: string; x: string }[]>`
-      insert into nodes (owner_id, type, title, path, audience)
-      select ${owner}, 'page', 'bulk ' || g, (case when g % 2 = 0 then 'pages.shared' else 'pages' end)::ltree, 'admin'
-        from generate_series(1, 20) g
-      returning id, xmin::text as x`;
-    const bulk = made.map((r) => r.id);
-    const rows = await sql<{ id: string; r: string[]; x: string; h: string }[]>`
-      select id, read_ws::text[] as r, xmin::text as x, home_ws::text as h from nodes
-       where id = any(${`{${bulk.join(',')}}`}::uuid[]) order by title`;
-    for (const r of rows) {
-      expect(r.h).toBe(admin);
-      // Written once: the BEFORE trigger set what the grants say.
-      expect(r.x).toBe(made.find((m) => m.id === r.id)!.x);
-    }
-    expect(new Set(rows.map((r) => r.r.length))).toEqual(new Set([1, 2]));
-    await sql`update nodes set audience = 'team' where id = any(${`{${bulk.join(',')}}`}::uuid[])`;
-    const after = await sql<{ r: string[] }[]>`
-      select read_ws::text[] as r from nodes where id = any(${`{${bulk.join(',')}}`}::uuid[])`;
-    expect(after.every((r) => r.r.length === 2)).toBe(true);
-    expect(Number((await sql`select count(*) as n from mantle_bridge_pending`)[0]!.n)).toBe(0);
-    expect(Number((await sql`select mantle_bridge_drift() as n`)[0]!.n)).toBe(0);
-  });
-
-  it('limit 1 and 2: an item homed outside the bridge is never touched, and never gets Admin', async () => {
-    // Made today (the bridge homes it in Admin), then re-homed the workspace
-    // way (W5): a Team home the bridge does not own, no Admin row. The flag
-    // is not used: these are ordinary grant writes.
-    const x = await node('wsItem', owner, 'page', 'pages', 'admin');
-    await sql.begin(async (tx) => {
-      await tx`delete from item_grants where node_id = ${x}`;
-      await tx`insert into item_grants (node_id, workspace_id, is_home, bridge) values (${x}, ${team}, true, false)`;
-    });
-    const before = await grants(x);
-    expect(before).toEqual({
-      Team: { ws: team, home: true, excluded: false, write: false, bridge: false },
-    });
-    // A level change and a move: without the limit the bridge would add an
-    // Admin home (a second home: refused) or rewrite the Team row.
-    await sql`update nodes set audience = 'team' where id = ${x}`;
-    await sql`update nodes set audience = 'admin' where id = ${x}`;
-    expect(await grants(x)).toEqual(before);
-    expect(await readWs(x)).toEqual([team]);
-    // A move into a folder: the bridge still leaves it alone (its Team home
-    // row unchanged, no Admin home). The folder passes its own rows (S6,
-    // placing is accepting), so Admin arrives as a row derived from the
-    // folder, never as a home.
-    await sql`update nodes set path = 'pages.shared' where id = ${x}`;
-    const moved = await grants(x);
-    expect(moved.Team).toEqual(before.Team);
-    expect(moved.Admin).toMatchObject({ home: false });
-    const [via] = await sql<{ v: string | null }[]>`
-      select via_folder_id::text as v from item_grants where node_id = ${x} and workspace_id = ${admin}`;
-    expect(via!.v).toBe(ids.folder);
-    await sql`delete from nodes where id = ${x}`;
-  });
-
-  it('limit 3: the bridge rewrites only bridge rows', async () => {
-    const y = await node('mixed', owner, 'page', 'pages', 'admin');
-    // A row the bridge does not own on (y, Team): granted by hand, Write on.
-    await sql.begin(async (tx) => {
-      await tx`select set_config('mantle.acl_internal', 'on', true)`;
-      await tx`update item_grants set bridge = false, excluded = false, write = true
-                where node_id = ${y} and workspace_id = ${team}`;
-    });
-    await sql`update nodes set audience = 'team' where id = ${y}`;
-    await sql`update nodes set audience = 'admin' where id = ${y}`;
-    expect((await grants(y)).Team).toMatchObject({ bridge: false, excluded: false, write: true });
-    expect((await grants(y)).Admin).toMatchObject({ bridge: true, home: true });
-    await sql`delete from nodes where id = ${y}`;
-  });
-
-  it('a move follows the folder: one item, and a whole sub-folder, in and out of a team folder', async () => {
-    const item = await node('mover', owner, 'page', 'pages', 'admin');
-    expect((await grants(item)).Team).toMatchObject({ excluded: true });
-    await sql`update nodes set path = 'pages.shared' where id = ${item}`;
-    expect((await grants(item)).Team).toMatchObject({ excluded: false });
-    expect(await readWs(item)).toEqual([admin, team].sort());
-    await sql`update nodes set path = 'pages' where id = ${item}`;
-    expect((await grants(item)).Team).toMatchObject({ excluded: true });
-    expect(await readWs(item)).toEqual([admin]);
-    // A sub-folder with an item, moved in one statement under the shared
-    // folder and back.
-    const sub = await node('sub', owner, 'branch', 'pages.sub', 'admin');
-    const inSub = await node('inSub', owner, 'page', 'pages.sub', 'admin');
-    await sql`update nodes set path = ('pages.shared' || subpath(path, 1))::ltree
-               where owner_id = ${owner} and path <@ 'pages.sub'::ltree`;
-    for (const id of [sub, inSub]) expect(await readWs(id)).toEqual([admin, team].sort());
-    await sql`update nodes set path = ('pages' || subpath(path, 2))::ltree
-               where owner_id = ${owner} and path <@ 'pages.shared.sub'::ltree`;
-    for (const id of [sub, inSub]) expect(await readWs(id)).toEqual([admin]);
-    expect(Number((await sql`select mantle_bridge_drift() as n`)[0]!.n)).toBe(0);
-  });
-
   it('the reach diff fails on a planted gain and on a connector that differs from today', async () => {
     let fails: string[] = [];
     await sql
       .begin(async (tx) => {
-        // A Team grant the level does not give, written past the bridge.
-        await tx`select set_config('mantle.acl_internal', 'on', true)`;
-        await tx`update item_grants set excluded = false
-                  where node_id = ${ids.adminPage!} and workspace_id = ${team}`;
+        // A Team grant the level does not give (the reach diff compares
+        // with the levels frozen at the switch).
+        await tx`insert into item_grants (node_id, workspace_id) values (${ids.adminPage!}, ${team})`;
         await tx`delete from workspace_resources where workspace_id = ${team} and ref_id = 'conn-team'`;
         const rows = await tx<
           Row[]
@@ -358,7 +251,112 @@ describe.skipIf(!URL)('workspaces live (0250): migration, bridges, facts', () =>
     );
   });
 
-  it('the login bridge follows a role', async () => {
+  it('no bridge: a level change is refused; a new item takes a home and its folder rows; an app switch writes no grant', async () => {
+    await expect(
+      sql`update nodes set audience = 'team' where id = ${ids.adminPage!}`,
+    ).rejects.toMatchObject({ code: '55000' });
+    await expect(
+      sql`update nodes set share_level = null where id = ${ids.folder!}`,
+    ).rejects.toMatchObject({ code: '55000' });
+    // New items: home Admin; in the shared folder Team too, from the folder.
+    const fresh = await node('fresh', owner, 'page', 'pages', 'admin');
+    expect(Object.keys(await grants(fresh))).toEqual(['Admin']);
+    expect((await grants(fresh)).Admin).toMatchObject({ home: true });
+    const placed = await node('placed', owner, 'page', 'pages.shared', 'admin');
+    expect((await grants(placed)).Team).toMatchObject({ excluded: false, home: false });
+    expect(await readWs(placed)).toEqual([admin, team].sort());
+    // The folder's Team row goes: its items leave Team.
+    await sql.begin(async (tx) => {
+      await tx`select mantle_lock_heads(array[${ids.folder!}::uuid], 'update')`;
+      await tx`delete from item_grants where node_id = ${ids.folder!} and workspace_id = ${team}`;
+    });
+    expect((await grants(placed)).Team).toBeUndefined();
+    expect((await grants(ids.inFolder!)).Team).toBeUndefined();
+    await sql.begin(async (tx) => {
+      await tx`select mantle_lock_heads(array[${ids.folder!}::uuid], 'update')`;
+      await tx`insert into item_grants (node_id, workspace_id) values (${ids.folder!}, ${team})`;
+    });
+    expect((await grants(placed)).Team).toMatchObject({ excluded: false });
+    expect((await grants(ids.inFolder!)).Team).toMatchObject({ excluded: false });
+    // An app's read-only switch is the app's, not a grant (the Team row's
+    // Write is set in the Grant Access panel).
+    await sql`update apps set data_read_only = true where node_id = ${ids.teamApp!}`;
+    expect((await grants(ids.teamApp!)).Team).toMatchObject({ write: true });
+    await sql`update apps set data_read_only = false where node_id = ${ids.teamApp!}`;
+    expect(await drift()).toBe(0);
+  });
+
+  it('one statement that makes many items: every one homed, row written once', async () => {
+    const made = await sql<{ id: string; x: string }[]>`
+      insert into nodes (owner_id, type, title, path, audience)
+      select ${owner}, 'page', 'bulk ' || g, (case when g % 2 = 0 then 'pages.shared' else 'pages' end)::ltree, 'admin'
+        from generate_series(1, 20) g
+      returning id, xmin::text as x`;
+    const bulk = made.map((r) => r.id);
+    const rows = await sql<{ id: string; r: string[]; x: string; h: string }[]>`
+      select id, read_ws::text[] as r, xmin::text as x, home_ws::text as h from nodes
+       where id = any(${`{${bulk.join(',')}}`}::uuid[]) order by title`;
+    for (const r of rows) {
+      expect(r.h).toBe(admin);
+      // Written once: the BEFORE trigger set what the grants say.
+      expect(r.x).toBe(made.find((m) => m.id === r.id)!.x);
+    }
+    expect(new Set(rows.map((r) => r.r.length))).toEqual(new Set([1, 2]));
+    // One statement that changes many levels is refused whole.
+    await expect(
+      sql`update nodes set audience = 'team' where id = any(${`{${bulk.join(',')}}`}::uuid[])`,
+    ).rejects.toMatchObject({ code: '55000' });
+    expect(await drift()).toBe(0);
+  });
+
+  it('an item homed outside Admin keeps its home on a move; the folder passes its rows', async () => {
+    // Re-homed the workspace way (W5): a Team home, no Admin row.
+    const x = await node('wsItem', owner, 'page', 'pages', 'admin');
+    await sql.begin(async (tx) => {
+      await tx`delete from item_grants where node_id = ${x}`;
+      await tx`insert into item_grants (node_id, workspace_id, is_home) values (${x}, ${team}, true)`;
+    });
+    const before = await grants(x);
+    expect(before).toEqual({
+      Team: { ws: team, home: true, excluded: false, write: false, bridge: false },
+    });
+    expect(await readWs(x)).toEqual([team]);
+    // A move into a folder: its Team home row unchanged, no Admin home. The
+    // folder passes its own rows (S6, placing is accepting), so Admin
+    // arrives as a row derived from the folder, never as a home.
+    await sql`update nodes set path = 'pages.shared' where id = ${x}`;
+    const moved = await grants(x);
+    expect(moved.Team).toEqual(before.Team);
+    expect(moved.Admin).toMatchObject({ home: false });
+    const [via] = await sql<{ v: string | null }[]>`
+      select via_folder_id::text as v from item_grants where node_id = ${x} and workspace_id = ${admin}`;
+    expect(via!.v).toBe(ids.folder);
+    await sql`delete from nodes where id = ${x}`;
+  });
+
+  it('a move follows the folder: one item, and a whole sub-folder, in and out of a team folder', async () => {
+    const item = await node('mover', owner, 'page', 'pages', 'admin');
+    expect((await grants(item)).Team).toBeUndefined();
+    await sql`update nodes set path = 'pages.shared' where id = ${item}`;
+    expect((await grants(item)).Team).toMatchObject({ excluded: false });
+    expect(await readWs(item)).toEqual([admin, team].sort());
+    await sql`update nodes set path = 'pages' where id = ${item}`;
+    expect((await grants(item)).Team).toBeUndefined();
+    expect(await readWs(item)).toEqual([admin]);
+    // A sub-folder with an item, moved in one statement under the shared
+    // folder and back.
+    const sub = await node('sub', owner, 'branch', 'pages.sub', 'admin');
+    const inSub = await node('inSub', owner, 'page', 'pages.sub', 'admin');
+    await sql`update nodes set path = ('pages.shared' || subpath(path, 1))::ltree
+               where owner_id = ${owner} and path <@ 'pages.sub'::ltree`;
+    for (const id of [sub, inSub]) expect(await readWs(id)).toEqual([admin, team].sort());
+    await sql`update nodes set path = ('pages' || subpath(path, 2))::ltree
+               where owner_id = ${owner} and path <@ 'pages.shared.sub'::ltree`;
+    for (const id of [sub, inSub]) expect(await readWs(id)).toEqual([admin]);
+    expect(await drift()).toBe(0);
+  });
+
+  it('a login joins the workspaces only by name: no trigger on a new login or a role', async () => {
     const z = randomUUID();
     await sql`insert into auth.users (id, email, password_hash, role) values
       (${z}, 'z@example.invalid', 'x', 'member')`;
@@ -370,14 +368,17 @@ describe.skipIf(!URL)('workspaces live (0250): migration, bridges, facts', () =>
       )
         .map((r) => (r.ws === admin ? 'A' : 'T'))
         .sort();
+    expect(await where()).toEqual([]);
+    // What POST /api/users does after the insert.
+    await sql`select mantle_bridge_login(${z})`;
     expect(await where()).toEqual(['T']);
     await sql`update auth.users set role = 'admin' where id = ${z}`;
-    expect(await where()).toEqual(['A', 'T']);
-    await sql`update auth.users set role = 'member' where id = ${z}`;
     expect(await where()).toEqual(['T']);
+    await sql`select mantle_bridge_login(${z})`;
+    expect(await where()).toEqual(['A', 'T']);
     const [e] = await sql<{ n: number }[]>`
       select count(*)::int as n from workspace_events where action = 'bridge.login' and subject->>'login' = ${z}`;
-    expect(e!.n).toBe(3);
+    expect(e!.n).toBe(2);
     await sql`delete from auth.users where id = ${z}`;
     expect(await where()).toEqual([]);
   });
@@ -392,10 +393,21 @@ describe.skipIf(!URL)('workspaces live (0250): migration, bridges, facts', () =>
         async (tx) => (await tx<{ id: string }[]>`select id from facts where id = ${f!.id}`).length,
       );
     expect(await sees([team])).toBe(1);
-    await sql`update nodes set audience = 'admin' where id = ${ids.teamPage!}`;
+    const teamRow = (fn: (tx: postgres.TransactionSql) => Promise<unknown>) =>
+      sql.begin(async (tx) => {
+        await tx`select mantle_lock_heads(array[${ids.teamPage!}::uuid], 'update')`;
+        await fn(tx);
+      });
+    await teamRow(
+      (tx) =>
+        tx`delete from item_grants where node_id = ${ids.teamPage!} and workspace_id = ${team}`,
+    );
     expect(await sees([team])).toBe(0);
     expect(await sees([admin])).toBe(1);
-    await sql`update nodes set audience = 'team' where id = ${ids.teamPage!}`;
+    await teamRow(
+      (tx) =>
+        tx`insert into item_grants (node_id, workspace_id) values (${ids.teamPage!}, ${team})`,
+    );
     expect(await sees([team])).toBe(1);
     const [after] = await sql<
       { x: string }[]
@@ -404,7 +416,9 @@ describe.skipIf(!URL)('workspaces live (0250): migration, bridges, facts', () =>
   });
 
   it('R7: a deleted source freezes a kept fact at its LAST access; the reap still drops the rest', async () => {
-    const src = await node('src', owner, 'page', 'pages', 'team');
+    // A Team grant by hand (a new item's level gives it nothing).
+    const src = await node('src', owner, 'page', 'pages');
+    await sql`insert into item_grants (node_id, workspace_id) values (${src}, ${team})`;
     const [f] = await sql<{ id: string }[]>`
       insert into facts (owner_id, content, kind, source_node_id)
       values (${owner}, 'kept', 'semantic', ${src}) returning id`;
@@ -413,7 +427,7 @@ describe.skipIf(!URL)('workspaces live (0250): migration, bridges, facts', () =>
       values (${owner}, 'reaped', 'factual', ${src}) returning id`;
     // The copy written at insert says Admin + Team; the source then narrows
     // to Admin. Only a freeze at delete time can know that.
-    await sql`update nodes set audience = 'admin' where id = ${src}`;
+    await sql`delete from item_grants where node_id = ${src} and workspace_id = ${team}`;
     await sql`delete from nodes where id = ${src}`;
     const [row] = await sql<{ s: string | null; r: string[] }[]>`
       select source_node_id as s, read_ws::text[] as r from facts where id = ${f!.id}`;
@@ -425,11 +439,12 @@ describe.skipIf(!URL)('workspaces live (0250): migration, bridges, facts', () =>
     expect(await sees([team])).toBe(0);
     expect(await sees([admin])).toBe(1);
     // Cleared by hand: the same freeze, from the source as it is now.
-    const src2 = await node('src2', owner, 'page', 'pages', 'team');
+    const src2 = await node('src2', owner, 'page', 'pages');
+    await sql`insert into item_grants (node_id, workspace_id) values (${src2}, ${team})`;
     const [g] = await sql<{ id: string }[]>`
       insert into facts (owner_id, content, kind, source_node_id)
       values (${owner}, 'cleared', 'semantic', ${src2}) returning id`;
-    await sql`update nodes set audience = 'admin' where id = ${src2}`;
+    await sql`delete from item_grants where node_id = ${src2} and workspace_id = ${team}`;
     await sql`update facts set source_node_id = null where id = ${g!.id}`;
     const [row2] = await sql<
       { r: string[] }[]

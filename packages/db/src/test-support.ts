@@ -27,6 +27,8 @@
  *    nodes. Such a test runs on a database of its own, migrated from scratch
  *    and dropped after, so it shares no table with anything running in
  *    parallel.
+ *  - createScratchDatabaseBefore: the same, migrated up to one migration, so
+ *    a test can build the world that migration meets and then run it.
  *  - createEmptyScratchDatabase: the same database before anything is put in
  *    it (no init scripts, no migration): what a dump is restored into
  *    (dump-restore.db.test.ts).
@@ -246,32 +248,8 @@ export async function createMigratedScratchDatabase(
   const { url, name, drop } = await createEmptyScratchDatabase(adminUrl);
   const sql = postgres(url, { max: 1, prepare: false, onnotice: () => {} });
   try {
-    const initFiles = readdirSync(INIT_DIR)
-      .filter((f) => f.endsWith('.sql'))
-      .sort();
-    for (const f of initFiles) await sql.unsafe(readFileSync(join(INIT_DIR, f), 'utf8'));
-    const roles = new Set(
-      (
-        await sql<
-          { rolname: string }[]
-        >`select rolname from pg_roles where rolname like 'mantle_view_%'`
-      ).map((r) => r.rolname),
-    );
-    for (const level of POOL_ROLES) {
-      const role = viewerRoleName(level);
-      if (roles.has(role)) continue;
-      await sql
-        .unsafe(`create role "${role}" with nologin nosuperuser nobypassrls noinherit`)
-        .catch((err: Error) => {
-          // Another scratch database created it first.
-          if (!/already exists/.test(err.message)) throw err;
-        });
-    }
-    for (const migration of readMigrationFiles({ migrationsFolder: MIGRATIONS_DIR })) {
-      await sql.begin(async (tx) => {
-        for (const stmt of migration.sql) await tx.unsafe(stmt);
-      });
-    }
+    await prepareScratch(sql);
+    await applyMigrations(sql, readMigrationFiles({ migrationsFolder: MIGRATIONS_DIR }));
     // Grants are per database: migrate applies the access matrix after the
     // migrations, so a limited role (a member's space) can work here too.
     await applyViewerGrants(sql);
@@ -282,6 +260,87 @@ export async function createMigratedScratchDatabase(
   }
   await sql.end();
   return { url, name, drop };
+}
+
+/**
+ * The same scratch database, migrated only up to (not including) the
+ * migration `tag` (`0261_workspaces_bridge_off`): a test builds the world
+ * that migration meets, then `migrateRest()` applies it and every later one,
+ * and the grants, as migrate.ts would on a live box.
+ */
+export async function createScratchDatabaseBefore(
+  adminUrl: string,
+  tag: string,
+): Promise<{
+  url: string;
+  name: string;
+  drop: () => Promise<void>;
+  migrateRest: () => Promise<void>;
+}> {
+  const journal = JSON.parse(
+    readFileSync(join(MIGRATIONS_DIR, 'meta', '_journal.json'), 'utf8'),
+  ) as { entries: { tag: string }[] };
+  const at = journal.entries.findIndex((e) => e.tag === tag);
+  if (at < 0) throw new Error(`createScratchDatabaseBefore: no migration ${tag}`);
+  const all = readMigrationFiles({ migrationsFolder: MIGRATIONS_DIR });
+  const { url, name, drop } = await createEmptyScratchDatabase(adminUrl);
+  const sql = postgres(url, { max: 1, prepare: false, onnotice: () => {} });
+  try {
+    await prepareScratch(sql);
+    await applyMigrations(sql, all.slice(0, at));
+  } catch (err) {
+    await sql.end();
+    await drop();
+    throw err;
+  }
+  await sql.end();
+  const migrateRest = async () => {
+    const rest = postgres(url, { max: 1, prepare: false, onnotice: () => {} });
+    try {
+      await applyMigrations(rest, all.slice(at));
+      await applyViewerGrants(rest);
+    } finally {
+      await rest.end();
+    }
+  };
+  return { url, name, drop, migrateRest };
+}
+
+/** infra/postgres/init, and the viewer roles a scratch database needs. */
+async function prepareScratch(sql: Sql): Promise<void> {
+  const initFiles = readdirSync(INIT_DIR)
+    .filter((f) => f.endsWith('.sql'))
+    .sort();
+  for (const f of initFiles) await sql.unsafe(readFileSync(join(INIT_DIR, f), 'utf8'));
+  const roles = new Set(
+    (
+      await sql<
+        { rolname: string }[]
+      >`select rolname from pg_roles where rolname like 'mantle_view_%'`
+    ).map((r) => r.rolname),
+  );
+  for (const level of POOL_ROLES) {
+    const role = viewerRoleName(level);
+    if (roles.has(role)) continue;
+    await sql
+      .unsafe(`create role "${role}" with nologin nosuperuser nobypassrls noinherit`)
+      .catch((err: Error) => {
+        // Another scratch database created it first.
+        if (!/already exists/.test(err.message)) throw err;
+      });
+  }
+}
+
+/** Each migration in its own transaction, as migrate.ts runs them. */
+async function applyMigrations(
+  sql: Sql,
+  migrations: ReturnType<typeof readMigrationFiles>,
+): Promise<void> {
+  for (const migration of migrations) {
+    await sql.begin(async (tx) => {
+      for (const stmt of migration.sql) await tx.unsafe(stmt);
+    });
+  }
 }
 
 /**

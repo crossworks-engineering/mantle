@@ -708,6 +708,24 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     notes: 'No flags; no dry-run. Idempotent (WHERE rfc_message_id IS NULL guard).',
   },
 
+  // ── Workspaces ───────────────────────────────────────────────────────────
+  {
+    slug: 'workspaces-check',
+    title: 'Workspaces check',
+    description:
+      "Counts what the workspace grants should never hold now that they are the only truth (migration 0261, plan 7.8): items whose derived read, write or home columns differ from their grants, orphan grants (a missing item or workspace, or a folder row whose folder is not the item's folder or no longer grants that workspace), brain items without a home, workspaces without a Moderator who can sign in (Admin counted on its own), assistants not in exactly one workspace, and open links whose settings carry no served key. Numbers only, never titles. Replaced the level bridge drift row.",
+    kind: 'recurring',
+    status: 'live',
+    cost: 'sql',
+    schedulable: false,
+    script: 'scripts/workspaces-check.ts',
+    cwd: 'server/web',
+    readOnly: true,
+    extraFlags: ['--json'],
+    notes:
+      'Hand-run only, no cron: one READ ONLY transaction, so it cannot write. Exits 0 even when it finds something. A link with no served key counts only once some open link carries the key (a box whose links predate it is not flagged). The grant drift count is also the integrity row workspaces_grant_drift.',
+  },
+
   // ── Supply chain ─────────────────────────────────────────────────────────
   {
     slug: 'deps-drift',

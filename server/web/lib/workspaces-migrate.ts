@@ -9,36 +9,24 @@
  * skips, without a lock, a brain already migrated, one with no owner, and one
  * with client logins or client-level items (owner rule 21.9: clients are set
  * up by hand; the integrity row workspaces_not_migrated says why). It waits
- * at most 10 s for a lock. Then mantle_ws_repair_drift gives grants to any
- * item made while it ran, and mantle_ws_attach_assistants puts the default
- * assistants on Admin and Team once onboarding has made them. No LLM work,
- * no extractor notify.
+ * at most 10 s for a lock, and ends with the bridge's rows as plain grants
+ * (0261). Then mantle_ws_attach_assistants puts the default assistants on
+ * Admin and Team once onboarding has made them. Nothing repairs grants at
+ * boot: an item left without a home (one made in another transaction while
+ * the migration ran) is counted by `pnpm workspaces:check`. No LLM work, no
+ * extractor notify.
  */
 import { sql } from 'drizzle-orm';
 import { db } from '@mantle/db';
 
 export type WsMigrateRow = { section: string; subject: string; metric: string; n: number };
 
-/** Migrate this brain if it has no workspaces and nothing stops it, then
- *  repair the bridge drift of anything made meanwhile (its own transaction,
- *  after the migration committed). */
+/** Migrate this brain if it has no workspaces and nothing stops it. */
 export async function migrateWorkspaces(): Promise<WsMigrateRow[]> {
   const rows = (await db.execute(
     sql`select * from "public"."mantle_ws_migrate_locked"()`,
   )) as unknown as WsMigrateRow[];
-  await repairWorkspaceDrift();
   return rows.map((r) => ({ ...r, n: Number(r.n) }));
-}
-
-/** Give the bridge's grants to items that lack them (heads first). Returns
- *  how many items it repaired; 0 when there is no drift. */
-export async function repairWorkspaceDrift(): Promise<number> {
-  const [r] = (await db.execute(
-    sql`select "public"."mantle_ws_repair_drift"() as n`,
-  )) as unknown as {
-    n: number;
-  }[];
-  return Number(r?.n ?? 0);
 }
 
 /** Attach the default assistants where Admin or Team has none yet. Returns
