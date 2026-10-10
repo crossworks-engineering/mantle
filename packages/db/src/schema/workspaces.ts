@@ -17,6 +17,7 @@ import {
   bigserial,
   boolean,
   check,
+  customType,
   index,
   jsonb,
   pgTable,
@@ -203,6 +204,23 @@ export const mantleHeadsKey = pgTable(
       .default(sql`(gen_random_uuid()::text || gen_random_uuid()::text)`),
   },
   (t) => [check('mantle_heads_key_id_check', sql`${t.id}`)],
+);
+
+const xid8 = customType<{ data: string }>({ dataType: () => 'xid8' });
+
+/**
+ * The rows a statement moved, keyed by transaction id: written by the move
+ * row trigger, taken by the statement trigger of the same transaction
+ * (audit M2: never a session temp table). Unlogged, empty outside a running
+ * statement; definer functions only.
+ */
+export const mantleMovedNodes = pgTable(
+  'mantle_moved_nodes',
+  {
+    xid: xid8('xid').notNull(),
+    id: uuid('id').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.xid, t.id] })],
 );
 
 export type Workspace = typeof workspaces.$inferSelect;

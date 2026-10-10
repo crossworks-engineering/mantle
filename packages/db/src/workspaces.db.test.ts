@@ -801,6 +801,7 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
       'node_acl_head',
       'heads_check_misses',
       'mantle_heads_key',
+      'mantle_moved_nodes',
     ]) {
       await expect(
         m.withScope({ kind: 'user', loginId: userA, ws: [ws.team], modWs: [] }, () =>
@@ -824,6 +825,7 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
       'node_acl_head',
       'heads_check_misses',
       'mantle_heads_key',
+      'mantle_moved_nodes',
     ];
     const [open] = await admin<{ open: string[] }[]>`
       select array(
@@ -888,6 +890,202 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
     expect(lock).toBeLessThan(trigger);
     // Nothing above the lock writes or locks another table first.
     expect(text.slice(0, lock)).not.toMatch(/^\s*(INSERT|UPDATE|DELETE|ALTER|CREATE)\b/im);
+  });
+
+  /** A transaction on the personal-space role for userA's space, as the
+   *  space pool runs it (row security on, its own login). */
+  const asSpaceRole = async () => {
+    const [s] = await admin<{ id: string }[]>`
+      select id from spaces where kind = 'personal' and login_id = ${userA}`;
+    const t = await txConn();
+    await t.c`set local role mantle_view_space`;
+    await t.c`select set_config('mantle.space_id', ${s!.id}, true),
+                     set_config('mantle.login_id', ${userA}, true)`;
+    return { ...t, spaceId: s!.id };
+  };
+
+  it('audit M2: a session table or view named mantle_moved_nodes is never used by the move triggers', async () => {
+    const [s] = await admin<{ id: string }[]>`
+      select id from spaces where kind = 'personal' and login_id = ${userA}`;
+    const folder = randomUUID();
+    await admin`insert into nodes (id, owner_id, type, title, path)
+                values (${folder}, ${s!.id}, 'branch', ${`${tag} m2`}, ${`pages.${tag}m2a`}::ltree)`;
+    const t = await asSpaceRole();
+    try {
+      // The session's own objects: a table of that name whose every write
+      // raises, and a view of that name next to it would be the same.
+      await t.c`create temp table mantle_moved_nodes (id uuid)`;
+      await t.c`create function pg_temp.m2_trap() returns trigger language plpgsql as $f$
+                begin raise exception 'M2 trap ran'; end $f$`;
+      await t.c`create trigger m2_trap before insert or update or delete on pg_temp.mantle_moved_nodes
+                for each row execute function pg_temp.m2_trap()`;
+      await t.c`create trigger m2_trap_s before insert or update or delete on pg_temp.mantle_moved_nodes
+                for each statement execute function pg_temp.m2_trap()`;
+      // The statement trigger fires with no row moved, and with one.
+      await t.c`update nodes set path = path where false`;
+      await t.c`update nodes set path = ${`pages.${tag}m2b`}::ltree where id = ${folder}`;
+      const [n] = await t.c<
+        { n: number }[]
+      >`select count(*)::int as n from pg_temp.mantle_moved_nodes`;
+      expect(n!.n).toBe(0);
+      // And the definer's own table is closed to the role.
+      await expect(t.c`select 1 from public.mantle_moved_nodes`).rejects.toMatchObject({
+        code: '42501',
+      });
+    } finally {
+      await t.rollback();
+      await admin`delete from nodes where id = ${folder}`;
+    }
+    // Nothing is left behind by a committed move either.
+    const [left] = await admin<{ n: number }[]>`select count(*)::int as n from mantle_moved_nodes`;
+    expect(left!.n).toBe(0);
+  });
+
+  it('audit L9: a grant written from inside another trigger still reaches the folder contents', async () => {
+    const f = await node('branch', 'l9', `${root}.l9`);
+    const child = await node('page', 'l9 child', `${root}.l9`);
+    const t = await txConn();
+    try {
+      // Heads first, before the temp objects (their catalog writes count).
+      await t.c`select mantle_lock_heads(${`{${f},${child}}`}::uuid[], 'update')`;
+      await t.c`create temp table l9_relay (folder uuid, ws uuid)`;
+      await t.c`create function pg_temp.l9_relay() returns trigger language plpgsql as $f$
+                begin
+                  insert into public.item_grants (node_id, workspace_id) values (new.folder, new.ws);
+                  return null;
+                end $f$`;
+      await t.c`create trigger l9_relay after insert on pg_temp.l9_relay
+                for each row execute function pg_temp.l9_relay()`;
+      await t.c`insert into pg_temp.l9_relay values (${f}, ${ws.team})`;
+      await t.commit();
+    } catch (err) {
+      await t.rollback();
+      throw err;
+    }
+    expect(await readWs(child)).toEqual([ws.team]);
+  });
+
+  it('re-audit LOW a: a login change needs the node head for update', async () => {
+    const id = await node('telegram_message', 'login head', root, { loginId: userA });
+    const bare = await txConn();
+    try {
+      await bare.c`set local mantle.heads_check = 'on'`;
+      await expect(
+        bare.c`update nodes set login_id = ${userB} where id = ${id}`,
+      ).rejects.toMatchObject({ code: '40001' });
+    } finally {
+      await bare.rollback();
+    }
+    const ok = await txConn();
+    try {
+      await ok.c`set local mantle.heads_check = 'on'`;
+      await ok.c`select mantle_lock_heads(${`{${id}}`}::uuid[], 'update')`;
+      await ok.c`update nodes set login_id = ${userB} where id = ${id}`;
+      await ok.commit();
+    } catch (err) {
+      await ok.rollback();
+      throw err;
+    }
+    const [r] = await admin<{ l: string }[]>`select login_id as l from nodes where id = ${id}`;
+    expect(r!.l).toBe(userB);
+  });
+
+  it('re-audit LOW b: the space role sets a node login only to nothing or its own', async () => {
+    const [s] = await admin<{ id: string }[]>`
+      select id from spaces where kind = 'personal' and login_id = ${userA}`;
+    const id = randomUUID();
+    await admin`insert into nodes (id, owner_id, type, title, path)
+                values (${id}, ${s!.id}, 'page', ${`${tag} lowb`}, 'pages')`;
+    try {
+      const other = await asSpaceRole();
+      try {
+        await expect(
+          other.c`update nodes set login_id = ${userB} where id = ${id}`,
+        ).rejects.toThrow(/login can only be your own/);
+      } finally {
+        await other.rollback();
+      }
+      const own = await asSpaceRole();
+      try {
+        await own.c`update nodes set login_id = ${userA} where id = ${id}`;
+        await own.c`update nodes set login_id = null where id = ${id}`;
+        await expect(
+          own.c`insert into nodes (owner_id, type, title, path, login_id)
+                values (${own.spaceId}, 'page', ${`${tag} lowb2`}, 'pages', ${userB})`,
+        ).rejects.toMatchObject({ code: '42501' });
+      } finally {
+        await own.rollback();
+      }
+    } finally {
+      await admin`delete from nodes where id = ${id}`;
+    }
+  });
+
+  it('re-audit LOW c: two REPEATABLE READ demotions of the last two Admin Moderators cannot both commit', async () => {
+    const second = randomUUID();
+    await admin`insert into auth.users (id, email, password_hash, role)
+                values (${second}, ${`${tag}-o3@example.invalid`}, 'x', 'admin')`;
+    await admin`insert into workspace_users (workspace_id, login_id, moderator)
+                values (${ws.admin}, ${second}, true)`;
+    try {
+      const t1 = await txConn();
+      const t2 = await txConn();
+      await t1.c`set transaction isolation level repeatable read`;
+      await t2.c`set transaction isolation level repeatable read`;
+      // Both snapshots taken before either change.
+      await t1.c`select count(*) from workspace_users where workspace_id = ${ws.admin}`;
+      await t2.c`select count(*) from workspace_users where workspace_id = ${ws.admin}`;
+      await t1.c`update workspace_users set moderator = false
+                  where workspace_id = ${ws.admin} and login_id = ${owner}`;
+      await t2.c`update workspace_users set moderator = false
+                  where workspace_id = ${ws.admin} and login_id = ${second}`;
+      const results = await Promise.allSettled([t1.commit(), t2.commit()]);
+      expect(results.filter((r) => r.status === 'rejected')).toHaveLength(1);
+      const [mods] = await admin<{ n: number }[]>`
+        select count(*)::int as n from workspace_users where workspace_id = ${ws.admin} and moderator`;
+      expect(mods!.n).toBe(1);
+    } finally {
+      await admin`update workspace_users set moderator = true
+                   where workspace_id = ${ws.admin} and login_id = ${owner}`;
+      await admin`delete from workspace_users where login_id = ${second}`;
+      await admin`delete from auth.users where id = ${second}`;
+    }
+  });
+
+  it('re-audit INFO: a fact that had a source cannot have its read_ws set in the same update', async () => {
+    const id = await node('page', 'fact source', root);
+    await grant(id, ws.team);
+    const [f] = await admin<{ id: string }[]>`
+      insert into facts (owner_id, content, kind, source_node_id)
+      values (${owner}, ${`${tag} sourced`}, 'semantic', ${id}) returning id`;
+    try {
+      await expect(
+        admin`update facts set source_node_id = null, read_ws = ${`{${ws.other}}`}::uuid[]
+              where id = ${f!.id}`,
+      ).rejects.toThrow(/follow their node/);
+      // The delete path (ON DELETE SET NULL) still never trips it.
+      await admin`update facts set source_node_id = null where id = ${f!.id}`;
+    } finally {
+      await admin`delete from facts where id = ${f!.id}`;
+    }
+  });
+
+  it('re-audit INFO: a hand-set "already warned" marker does not hide a miss', async () => {
+    const check = `${tag}_marker`;
+    const t = await txConn();
+    try {
+      const [k] = await t.c<{ k: string }[]>`select 'mantle.heads_missed_' || md5(${check}) as k`;
+      await t.c`select set_config(${k!.k}, '1', true)`;
+      await t.c`select mantle_heads_miss(${check}, null, 'marker test')`;
+      await t.commit();
+    } catch (err) {
+      await t.rollback();
+      throw err;
+    }
+    const [r] = await admin<{ n: number }[]>`
+      select count(*)::int as n from heads_check_misses where check_name = ${check}`;
+    expect(r!.n).toBe(1);
+    await admin`delete from heads_check_misses where check_name = ${check}`;
   });
 
   it('withDeadlockRetry retries the whole run for retryable codes only', async () => {

@@ -188,6 +188,20 @@ INSERT INTO "public"."mantle_heads_key" DEFAULT VALUES ON CONFLICT DO NOTHING;
 --> statement-breakpoint
 ALTER TABLE "public"."mantle_heads_key" ENABLE ROW LEVEL SECURITY;
 --> statement-breakpoint
+-- The rows a statement moved, noted by the row trigger and taken by the
+-- statement trigger of the same transaction (keyed by its id). A table the
+-- definer owns, never a session temp table: a temp table found by name could
+-- be the session's own, with its triggers or rules running as the definer
+-- (audit M2). Unlogged: it is empty outside a running statement. No grant to
+-- any role, row security on with no policy.
+CREATE UNLOGGED TABLE IF NOT EXISTS "public"."mantle_moved_nodes" (
+  "xid" xid8 NOT NULL,
+  "id" uuid NOT NULL,
+  PRIMARY KEY ("xid", "id")
+);
+--> statement-breakpoint
+ALTER TABLE "public"."mantle_moved_nodes" ENABLE ROW LEVEL SECURITY;
+--> statement-breakpoint
 
 -- ── Derived columns ──────────────────────────────────────────────────────────
 -- Constant defaults: metadata only, no table rewrite.
@@ -291,13 +305,17 @@ $$;
 -- security definer functions below; inside them current_user is that
 -- owner). Called from SECURITY INVOKER guards, so current_user here is the
 -- role that ran the statement.
-CREATE OR REPLACE FUNCTION "public"."mantle_acl_writer"()
+CREATE OR REPLACE FUNCTION "public"."mantle_owner_role"()
   RETURNS boolean LANGUAGE sql STABLE AS $$
-  SELECT "public"."mantle_acl_internal"()
-     AND pg_has_role(current_user,
+  SELECT pg_has_role(current_user,
                      (SELECT p.proowner FROM pg_proc p
                        WHERE p.oid = 'public.mantle_acl_internal()'::regprocedure),
                      'USAGE')
+$$;
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION "public"."mantle_acl_writer"()
+  RETURNS boolean LANGUAGE sql STABLE AS $$
+  SELECT "public"."mantle_acl_internal"() AND "public"."mantle_owner_role"()
 $$;
 --> statement-breakpoint
 
@@ -331,11 +349,21 @@ $$;
 -- list and the update-locked subset, signed with the key and this
 -- transaction's id, so a hand-set list (or one from another transaction)
 -- reads as empty.
+-- A keyed hash of `msg` for this transaction: sha256(k || sha256(k || msg))
+-- (core sha256, no extension; the outer hash stops length extension).
+CREATE OR REPLACE FUNCTION "public"."mantle_heads_mac"(msg text)
+  RETURNS text LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  WITH k AS (SELECT "k" FROM "public"."mantle_heads_key" LIMIT 1)
+  SELECT encode(sha256(convert_to(k."k" || encode(sha256(convert_to(
+           k."k" || ':' || txid_current()::text || ':' || msg, 'UTF8')), 'hex'), 'UTF8')), 'hex')
+    FROM k
+$$;
+--> statement-breakpoint
 CREATE OR REPLACE FUNCTION "public"."mantle_heads_sig"(held text, held_upd text)
   RETURNS text LANGUAGE sql STABLE SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
-  SELECT md5((SELECT "k" FROM "public"."mantle_heads_key" LIMIT 1)
-             || ':' || txid_current()::text || ':' || held || ':' || held_upd)
+  SELECT "public"."mantle_heads_mac"('held:' || held || ':' || held_upd)
 $$;
 --> statement-breakpoint
 CREATE OR REPLACE FUNCTION "public"."mantle_heads_held"(update_only boolean DEFAULT false)
@@ -381,14 +409,18 @@ CREATE OR REPLACE FUNCTION "public"."mantle_heads_miss"(check_name text, node uu
 DECLARE
   mode text := "public"."mantle_heads_check_mode"();
   seen_key text := 'mantle.heads_missed_' || md5(check_name);
+  seen text;
 BEGIN
   IF mode = 'off' THEN RETURN; END IF;
   IF mode = 'on' THEN
     RAISE EXCEPTION 'heads not held for % (node %): %', check_name, node, detail
       USING ERRCODE = '40001';
   END IF;
-  IF coalesce(current_setting(seen_key, true), '') = '1' THEN RETURN; END IF;
-  PERFORM set_config(seen_key, '1', true);
+  -- Once per transaction and check. The marker is signed, so a session that
+  -- sets it by hand does not hide its misses.
+  seen := "public"."mantle_heads_mac"('missed:' || check_name);
+  IF coalesce(current_setting(seen_key, true), '') = seen THEN RETURN; END IF;
+  PERFORM set_config(seen_key, seen, true);
   RAISE WARNING 'heads not held for % (node %): %', check_name, node, detail;
   IF (SELECT count(*) FROM (SELECT 1 FROM "public"."heads_check_misses" m
                              WHERE m."check_name" = mantle_heads_miss.check_name
@@ -970,12 +1002,33 @@ BEGIN
 END
 $$;
 --> statement-breakpoint
+-- A login change rewrites the copies on chunks, windows and facts: it takes
+-- the node's head FOR UPDATE like any chunk rewrite (re-audit LOW a).
 CREATE OR REPLACE FUNCTION "public"."mantle_nodes_login_follow_trg"()
   RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
 BEGIN
+  PERFORM "public"."mantle_heads_require"(ARRAY[NEW."id"], 'nodes_login', true);
   PERFORM "public"."mantle_acl_refresh"(ARRAY[NEW."id"]);
   RETURN NULL;
+END
+$$;
+--> statement-breakpoint
+-- A limited role (the personal-space role) may set a node's login_id only to
+-- nothing or to its own login (re-audit LOW b): a per-login row is read by
+-- that login alone, so naming another login would hand it the row. SECURITY
+-- INVOKER: it must see the role that ran the statement.
+CREATE OR REPLACE FUNCTION "public"."mantle_nodes_login_guard_trg"()
+  RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER
+  SET search_path = "public", pg_temp AS $$
+BEGIN
+  IF NEW."login_id" IS NOT NULL
+     AND (TG_OP = 'INSERT' OR NEW."login_id" IS DISTINCT FROM OLD."login_id")
+     AND NEW."login_id" IS DISTINCT FROM "public"."mantle_login_id"()
+     AND NOT "public"."mantle_owner_role"() THEN
+    RAISE EXCEPTION 'a node''s login can only be your own' USING ERRCODE = '42501';
+  END IF;
+  RETURN NEW;
 END
 $$;
 --> statement-breakpoint
@@ -995,32 +1048,18 @@ END
 $$;
 --> statement-breakpoint
 
--- A moved row (its path changed) is noted in a session temp table; the
--- statement trigger below handles the whole statement once. Postgres allows
--- no column list on a trigger with transition tables, and a transition table
--- on every UPDATE of nodes would copy each saved row; this costs nothing for
--- an update that does not touch the path.
--- A moved row (its path changed) is noted in a session temp table; the
--- statement trigger below handles the whole statement once. Postgres allows
--- no column list on a trigger with transition tables, and a transition table
--- on every UPDATE of nodes would copy each saved row; this costs nothing for
--- an update that does not touch the path. The table must be this function's
--- own, with no trigger and no rule (audit M2: a table of that name made by
--- the session would otherwise run its code here as the definer).
+-- A moved row (its path changed) is noted in public.mantle_moved_nodes under
+-- this transaction's id; the statement trigger below handles the whole
+-- statement once. Postgres allows no column list on a trigger with
+-- transition tables, and a transition table on every UPDATE of nodes would
+-- copy each saved row; this costs nothing for an update that does not touch
+-- the path. Never a session temp table (audit M2).
 CREATE OR REPLACE FUNCTION "public"."mantle_nodes_moved_row_trg"()
   RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
-DECLARE
-  rel regclass := to_regclass('pg_temp.mantle_moved_nodes');
 BEGIN
-  IF rel IS NULL THEN
-    CREATE TEMP TABLE "mantle_moved_nodes" ("id" uuid PRIMARY KEY) ON COMMIT DELETE ROWS;
-  ELSIF NOT EXISTS (SELECT 1 FROM pg_class c WHERE c.oid = rel AND c.relowner = current_user::regrole AND c.relkind = 'r')
-     OR EXISTS (SELECT 1 FROM pg_trigger t WHERE t.tgrelid = rel)
-     OR EXISTS (SELECT 1 FROM pg_rewrite r WHERE r.ev_class = rel) THEN
-    RAISE EXCEPTION 'mantle_moved_nodes is not the move trigger''s own table' USING ERRCODE = '42501';
-  END IF;
-  INSERT INTO pg_temp."mantle_moved_nodes" ("id") VALUES (NEW."id") ON CONFLICT DO NOTHING;
+  INSERT INTO "public"."mantle_moved_nodes" ("xid", "id")
+    VALUES (pg_current_xact_id(), NEW."id") ON CONFLICT DO NOTHING;
   RETURN NULL;
 END
 $$;
@@ -1034,15 +1073,21 @@ CREATE OR REPLACE FUNCTION "public"."mantle_nodes_acl_path_trg"()
   RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
 DECLARE
+  me xid8;
   moved uuid[];
   roots uuid[];
   folders uuid[];
   m record;
   root uuid;
 BEGIN
-  IF to_regclass('pg_temp.mantle_moved_nodes') IS NULL THEN RETURN NULL; END IF;
-  SELECT coalesce(array_agg("id"), '{}'::uuid[]) INTO moved FROM pg_temp."mantle_moved_nodes";
-  DELETE FROM pg_temp."mantle_moved_nodes";
+  -- No transaction id yet: this statement moved nothing (UPDATE ... WHERE
+  -- false), and none is assigned here.
+  me := pg_current_xact_id_if_assigned();
+  IF me IS NULL THEN RETURN NULL; END IF;
+  WITH taken AS (
+    DELETE FROM "public"."mantle_moved_nodes" t WHERE t."xid" = me RETURNING t."id"
+  )
+  SELECT coalesce(array_agg("id"), '{}'::uuid[]) INTO moved FROM taken;
   IF cardinality(moved) = 0 THEN RETURN NULL; END IF;
 
   -- Roots: moved rows whose new folder did not move with them.
@@ -1155,6 +1200,11 @@ DROP TRIGGER IF EXISTS "nodes_acl_guard" ON "public"."nodes";
 CREATE TRIGGER "nodes_acl_guard" BEFORE UPDATE OF "read_ws", "write_ws", "home_ws" ON "public"."nodes"
   FOR EACH ROW EXECUTE FUNCTION "public"."mantle_nodes_acl_guard_trg"();
 --> statement-breakpoint
+DROP TRIGGER IF EXISTS "nodes_login_guard" ON "public"."nodes";
+--> statement-breakpoint
+CREATE TRIGGER "nodes_login_guard" BEFORE INSERT OR UPDATE OF "login_id" ON "public"."nodes"
+  FOR EACH ROW EXECUTE FUNCTION "public"."mantle_nodes_login_guard_trg"();
+--> statement-breakpoint
 DROP TRIGGER IF EXISTS "nodes_login_follow" ON "public"."nodes";
 --> statement-breakpoint
 CREATE TRIGGER "nodes_login_follow" AFTER UPDATE OF "login_id" ON "public"."nodes"
@@ -1174,7 +1224,7 @@ CREATE TRIGGER "content_chunk_windows_acl_guard" BEFORE UPDATE OF "read_ws", "lo
 DROP TRIGGER IF EXISTS "facts_acl_guard" ON "public"."facts";
 --> statement-breakpoint
 CREATE TRIGGER "facts_acl_guard" BEFORE UPDATE OF "read_ws", "login_id" ON "public"."facts"
-  FOR EACH ROW WHEN (NEW."source_node_id" IS NOT NULL)
+  FOR EACH ROW WHEN (NEW."source_node_id" IS NOT NULL OR OLD."source_node_id" IS NOT NULL)
   EXECUTE FUNCTION "public"."mantle_follow_guard_trg"();
 --> statement-breakpoint
 DROP TRIGGER IF EXISTS "facts_acl_trg" ON "public"."facts";
@@ -1258,7 +1308,14 @@ DECLARE
   ws uuid := OLD."workspace_id";
   is_admin_ws boolean;
 BEGIN
-  SELECT w."is_admin" INTO is_admin_ws FROM "public"."workspaces" w WHERE w."id" = ws FOR UPDATE;
+  SELECT w."is_admin" INTO is_admin_ws FROM "public"."workspaces" w WHERE w."id" = ws;
+  -- A real write, not only a row lock: two transactions that each remove a
+  -- different Moderator then conflict under REPEATABLE READ and SERIALIZABLE
+  -- too (a serialization failure), not only under READ COMMITTED (re-audit
+  -- LOW c).
+  IF coalesce(is_admin_ws, false) THEN
+    UPDATE "public"."workspaces" SET "updated_at" = now() WHERE "id" = ws;
+  END IF;
   IF coalesce(is_admin_ws, false)
      AND NOT EXISTS (SELECT 1 FROM "public"."workspace_users" u
                       WHERE u."workspace_id" = ws AND u."moderator") THEN
@@ -1308,7 +1365,8 @@ BEGIN
       FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
      WHERE n.nspname = 'public' AND p.prosecdef
        AND p.proname IN (
-         'mantle_heads_check_mode', 'mantle_heads_sig', 'mantle_heads_held', 'mantle_heads_set',
+         'mantle_heads_check_mode', 'mantle_heads_mac', 'mantle_heads_sig', 'mantle_heads_held',
+         'mantle_heads_set',
          'mantle_heads_miss', 'mantle_heads_require', 'mantle_lock_heads', 'mantle_lock_heads_more',
          'mantle_lock_subtree_heads', 'mantle_acl_refresh',
          'mantle_rederive_subtree', 'mantle_rederive_nodes', 'mantle_apply_folder_change',
