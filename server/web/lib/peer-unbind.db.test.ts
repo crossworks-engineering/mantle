@@ -18,6 +18,10 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ensureTestAnchor } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
+// The audit rows are written fire-and-forget after the response (audit must
+// never break the request it describes). vi.waitFor's 1 s default is too
+// short when the full suite loads the database: the row lands, just later.
+const AUDIT_WAIT = { timeout: 10_000, interval: 50 };
 
 const who = vi.hoisted(() => ({ anchor: '', admin: '' }));
 vi.mock('@/lib/auth', async (importOriginal) => ({
@@ -110,12 +114,13 @@ describe.skipIf(!URL)('peer bindings end with the login', () => {
       write_enabled: true,
       ended_acts_as_login_id: member,
     });
-    await vi.waitFor(async () =>
-      expect(await unboundAudits(peers.member)).toEqual([{ reason: 'sessions-ended' }]),
+    await vi.waitFor(
+      async () => expect(await unboundAudits(peers.member)).toEqual([{ reason: 'sessions-ended' }]),
+      AUDIT_WAIT,
     );
     expect((await peer(peers.client)).acts_as_login_id).toBe(client);
     expect((await peer(peers.other)).acts_as_login_id).toBe(who.anchor);
-  });
+  }, 30_000);
 
   it('turning MCP off revokes the keys and unbinds the peers, for good', async () => {
     const { PATCH } = await import('../app/api/mcp-logins/[id]/route');
@@ -131,8 +136,9 @@ describe.skipIf(!URL)('peer bindings end with the login', () => {
     const off = await patch(false);
     expect(off.status).toBe(200);
     expect(await off.json()).toMatchObject({ enabled: false, peersUnbound: 1 });
-    await vi.waitFor(async () =>
-      expect(await unboundAudits(peers.client)).toEqual([{ reason: 'mcp-off' }]),
+    await vi.waitFor(
+      async () => expect(await unboundAudits(peers.client)).toEqual([{ reason: 'mcp-off' }]),
+      AUDIT_WAIT,
     );
     const [k] =
       (await sql`select revoked_at, revoked_by from access_keys where id = ${key}`) as unknown as {
@@ -143,13 +149,15 @@ describe.skipIf(!URL)('peer bindings end with the login', () => {
     expect(k!.revoked_by).toBe(who.admin);
     expect((await peer(peers.client)).acts_as_login_id).toBeNull();
     // The key row names the switch, as the peer row does (T17).
-    await vi.waitFor(async () =>
-      expect(
-        (
-          await sql`select actor_email, detail->>'reason' as reason from audit_log
+    await vi.waitFor(
+      async () =>
+        expect(
+          (
+            await sql`select actor_email, detail->>'reason' as reason from audit_log
                      where action = 'key.revoked' and detail->'keyIds' ? ${key}`
-        ).map((r) => ({ ...r })),
-      ).toEqual([{ actor_email: 'mcp-switch', reason: 'mcp-off' }]),
+          ).map((r) => ({ ...r })),
+        ).toEqual([{ actor_email: 'mcp-switch', reason: 'mcp-off' }]),
+      AUDIT_WAIT,
     );
     // On again: nothing comes back.
     expect((await patch(true)).status).toBe(200);
@@ -160,7 +168,7 @@ describe.skipIf(!URL)('peer bindings end with the login', () => {
     expect(again!.revoked_at).not.toBeNull();
     expect((await peer(peers.client)).acts_as_login_id).toBeNull();
     expect((await peer(peers.other)).acts_as_login_id).toBe(who.anchor);
-  });
+  }, 30_000);
 
   it('binding a peer again to the same login restores Write; another login starts closed', async () => {
     const { setPeerAccess } = await import('@mantle/content');

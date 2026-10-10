@@ -21,6 +21,8 @@
 -- node_ingested notify fires on INSERT of nodes, never on these updates.
 -- Every trigger function is SECURITY DEFINER with a pinned search_path, so a
 -- limited role (the personal-space role) needs no grant on the new tables.
+-- Two guards are SECURITY INVOKER on purpose: they must see the role that
+-- ran the statement (mantle_acl_writer).
 
 -- Every table this migration alters, locked first and briefly (audit L10):
 -- a busy box fails fast and the migration is run again, never a long wait
@@ -280,6 +282,22 @@ $$;
 CREATE OR REPLACE FUNCTION "public"."mantle_acl_internal"()
   RETURNS boolean LANGUAGE sql STABLE PARALLEL SAFE AS $$
   SELECT coalesce(current_setting('mantle.acl_internal', true), '') = 'on'
+$$;
+--> statement-breakpoint
+-- The flag alone is not proof: any session may set a custom setting, the
+-- personal-space role included, and that role may UPDATE nodes. A write of
+-- the derived columns counts as the derivation's only when the flag is on
+-- AND the current role is the one the derivation runs as (the owner of the
+-- security definer functions below; inside them current_user is that
+-- owner). Called from SECURITY INVOKER guards, so current_user here is the
+-- role that ran the statement.
+CREATE OR REPLACE FUNCTION "public"."mantle_acl_writer"()
+  RETURNS boolean LANGUAGE sql STABLE AS $$
+  SELECT "public"."mantle_acl_internal"()
+     AND pg_has_role(current_user,
+                     (SELECT p.proowner FROM pg_proc p
+                       WHERE p.oid = 'public.mantle_acl_internal()'::regprocedure),
+                     'USAGE')
 $$;
 --> statement-breakpoint
 
@@ -936,11 +954,13 @@ $$;
 -- read_ws, write_ws or home_ws by anyone else (a member-space update with
 -- column privileges, an app bug) is refused. A change of login_id is
 -- allowed and reaches the rows that follow the node.
+-- SECURITY INVOKER on purpose: the guard must see the role that ran the
+-- statement (mantle_acl_writer), not the owner.
 CREATE OR REPLACE FUNCTION "public"."mantle_nodes_acl_guard_trg"()
-  RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+  RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER
   SET search_path = "public", pg_temp AS $$
 BEGIN
-  IF NOT "public"."mantle_acl_internal"()
+  IF NOT "public"."mantle_acl_writer"()
      AND (NEW."read_ws", NEW."write_ws", NEW."home_ws")
          IS DISTINCT FROM (OLD."read_ws", OLD."write_ws", OLD."home_ws") THEN
     RAISE EXCEPTION 'read_ws, write_ws and home_ws are derived from item_grants and cannot be written'
@@ -962,10 +982,10 @@ $$;
 -- The same guard on the copies: their read_ws and login_id come from the
 -- node, or (a fact learned from chat, no source node) from the app at insert.
 CREATE OR REPLACE FUNCTION "public"."mantle_follow_guard_trg"()
-  RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+  RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER
   SET search_path = "public", pg_temp AS $$
 BEGIN
-  IF NOT "public"."mantle_acl_internal"()
+  IF NOT "public"."mantle_acl_writer"()
      AND (NEW."read_ws", NEW."login_id") IS DISTINCT FROM (OLD."read_ws", OLD."login_id") THEN
     RAISE EXCEPTION 'read_ws and login_id of % follow their node and cannot be written', TG_TABLE_NAME
       USING ERRCODE = '42501';
@@ -1292,11 +1312,9 @@ BEGIN
          'mantle_heads_miss', 'mantle_heads_require', 'mantle_lock_heads', 'mantle_lock_heads_more',
          'mantle_lock_subtree_heads', 'mantle_acl_refresh',
          'mantle_rederive_subtree', 'mantle_rederive_nodes', 'mantle_apply_folder_change',
-         'mantle_grant_kind_ok', 'mantle_parent_folder',
          'mantle_item_grants_refresh_trg', 'mantle_item_grants_check_trg',
          'mantle_item_grants_propagate_trg', 'mantle_nodes_acl_before_ins_trg',
-         'mantle_nodes_acl_after_ins_trg', 'mantle_nodes_acl_guard_trg',
-         'mantle_nodes_login_follow_trg', 'mantle_follow_guard_trg',
+         'mantle_nodes_acl_after_ins_trg', 'mantle_nodes_login_follow_trg',
          'mantle_nodes_moved_row_trg', 'mantle_nodes_acl_path_trg', 'mantle_follow_node_acl_trg',
          'mantle_agents_workspace_freeze_trg', 'mantle_ws_assistant_trg',
          'mantle_ws_last_admin_mod_trg', 'mantle_ws_admin_fixed_trg')

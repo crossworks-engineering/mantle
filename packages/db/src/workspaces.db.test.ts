@@ -14,6 +14,8 @@
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/workspaces.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -701,6 +703,191 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
     await grant(f, ws.team);
     const chat = await node('telegram_message', 'in folder', `${root}.convo`, { loginId: userA });
     expect(await readWs(chat)).toEqual([]);
+  });
+
+  it('audit M1: no security definer function of 0241 or 0242 is callable by PUBLIC or a limited role', async () => {
+    const names = new Set<string>();
+    for (const f of ['0241_workspaces_model.sql', '0242_workspaces_user_role.sql']) {
+      const text = readFileSync(join(__dirname, '..', 'migrations', f), 'utf8');
+      for (const mm of text.matchAll(/CREATE OR REPLACE FUNCTION "public"\."(\w+)"\([^]*?\$\$/g)) {
+        if (/SECURITY DEFINER/.test(mm[0])) names.add(mm[1]!);
+      }
+    }
+    expect(names.size).toBeGreaterThan(20);
+    const rows = await admin<{ name: string; pub: boolean; roles: string[] }[]>`
+      select p.proname as name,
+             (p.proacl is null or exists (
+                select 1 from aclexplode(p.proacl) a
+                 where a.grantee = 0 and a.privilege_type = 'EXECUTE')) as pub,
+             array(select r.rolname::text from pg_roles r
+                    where r.rolname like 'mantle_view_%'
+                      and has_function_privilege(r.oid, p.oid, 'EXECUTE')) as roles
+        from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.prosecdef and p.proname = any(${[...names]})`;
+    expect(rows.map((r) => r.name).sort()).toEqual([...names].sort());
+    expect(rows.filter((r) => r.pub).map((r) => r.name)).toEqual([]);
+    expect(rows.filter((r) => r.roles.length).map((r) => `${r.name}: ${r.roles}`)).toEqual([]);
+  });
+
+  it('audit M4: the personal-space role cannot write the derived columns, flag or no flag', async () => {
+    const { sql: sqlTag } = await import('drizzle-orm');
+    const [s] = await admin<{ id: string }[]>`
+      select id from spaces where kind = 'personal' and login_id = ${userA}`;
+    const id = randomUUID();
+    await admin`insert into nodes (id, owner_id, type, title, path)
+                values (${id}, ${s!.id}, 'page', ${`${tag} space page`}, 'pages')`;
+    const asA = <T>(fn: () => Promise<T>) => m.withSpace({ spaceId: s!.id, loginId: userA }, fn);
+    try {
+      for (const flag of [false, true]) {
+        await expect(
+          asA(async () => {
+            if (flag) {
+              await m.db.execute(sqlTag`select set_config('mantle.acl_internal', 'on', true)`);
+            }
+            await m.db.execute(
+              sqlTag`update nodes set read_ws = ${`{${ws.team}}`}::uuid[] where id = ${id}`,
+            );
+          }),
+        ).rejects.toMatchObject({ cause: { code: '42501' } });
+      }
+      // A plain save by the same role still works and changes no derived column.
+      await asA(() =>
+        m.db.execute(sqlTag`update nodes set title = ${`${tag} space page 2`} where id = ${id}`),
+      );
+      const [r] = await admin<{ title: string; r: string[] }[]>`
+        select title, read_ws as r from nodes where id = ${id}`;
+      expect(r).toEqual({ title: `${tag} space page 2`, r: [] });
+    } finally {
+      await admin`delete from nodes where id = ${id}`;
+    }
+  });
+
+  it('a login change after a grant moves every copy: the old login loses the rows, the new one gains them', async () => {
+    const { sql: sqlTag } = await import('drizzle-orm');
+    const id = await node('telegram_message', 'handover chat', root, { loginId: userA });
+    await grant(id, ws.team);
+    const [c] = await admin<{ id: string }[]>`
+      insert into content_chunks (owner_id, node_id, ordinal, text)
+      values (${owner}, ${id}, 0, ${`${tag} handover`}) returning id`;
+    await admin`insert into content_chunk_windows (chunk_id, j, owner_id, node_id, embedding)
+                values (${c!.id}, 0, ${owner}, ${id}, array_fill(0.1, array[768])::halfvec(768))`;
+    await admin`insert into facts (owner_id, content, kind, source_node_id)
+                values (${owner}, ${`${tag} handover fact`}, 'semantic', ${id})`;
+    const seen = (loginId: string) =>
+      m.withScope({ kind: 'user', loginId, ws: [ws.team], modWs: [] }, async () => {
+        const n = async (q: ReturnType<typeof sqlTag>) =>
+          ((await m.db.execute(q)) as unknown as unknown[]).length;
+        return {
+          node: await n(sqlTag`select 1 from nodes where id = ${id}`),
+          chunks: await n(sqlTag`select 1 from content_chunks where node_id = ${id}`),
+          windows: await n(sqlTag`select 1 from content_chunk_windows where node_id = ${id}`),
+          facts: await n(sqlTag`select 1 from facts where source_node_id = ${id}`),
+        };
+      });
+    const all = { node: 1, chunks: 1, windows: 1, facts: 1 };
+    const none = { node: 0, chunks: 0, windows: 0, facts: 0 };
+    expect(await seen(userA)).toEqual(all);
+    expect(await seen(userB)).toEqual(none);
+    await admin`update nodes set login_id = ${userB} where id = ${id}`;
+    expect(await seen(userA)).toEqual(none);
+    expect(await seen(userB)).toEqual(all);
+    await admin`delete from facts where source_node_id = ${id}`;
+  });
+
+  it('audit L11: the other model tables are closed to the workspace role and to the level roles', async () => {
+    const { sql: sqlTag } = await import('drizzle-orm');
+    for (const table of [
+      'workspace_events',
+      'node_acl_head',
+      'heads_check_misses',
+      'mantle_heads_key',
+    ]) {
+      await expect(
+        m.withScope({ kind: 'user', loginId: userA, ws: [ws.team], modWs: [] }, () =>
+          m.db.execute(sqlTag`select 1 from ${sqlTag.identifier(table)} limit 1`),
+        ),
+        table,
+      ).rejects.toMatchObject({ cause: { code: '42501' } });
+    }
+    const levelRoles = (
+      await admin<{ r: string }[]>`
+        select rolname as r from pg_roles
+         where rolname like 'mantle_view_%' and rolname <> 'mantle_view_user'`
+    ).map((x) => x.r);
+    expect(levelRoles.length).toBeGreaterThan(0);
+    const model = [
+      'workspaces',
+      'workspace_users',
+      'workspace_resources',
+      'item_grants',
+      'workspace_events',
+      'node_acl_head',
+      'heads_check_misses',
+      'mantle_heads_key',
+    ];
+    const [open] = await admin<{ open: string[] }[]>`
+      select array(
+        select r || ' ' || t from unnest(${levelRoles}::text[]) as r, unnest(${model}::text[]) as t
+         where has_table_privilege(r, 'public.' || t, 'SELECT')
+            or has_any_column_privilege(r, 'public.' || t, 'SELECT')) as open`;
+    expect(open!.open).toEqual([]);
+  });
+
+  it('audit L8: removing the last Admin Moderator is refused, also by delete and by two racing demotions', async () => {
+    const second = randomUUID();
+    await admin`insert into auth.users (id, email, password_hash, role)
+                values (${second}, ${`${tag}-o2@example.invalid`}, 'x', 'admin')`;
+    await admin`insert into workspace_users (workspace_id, login_id, moderator)
+                values (${ws.admin}, ${second}, true)`;
+    try {
+      // Two transactions, each demoting a different Moderator: one must fail.
+      const t1 = await txConn();
+      const t2 = await txConn();
+      await t1.c`update workspace_users set moderator = false
+                  where workspace_id = ${ws.admin} and login_id = ${owner}`;
+      await t2.c`update workspace_users set moderator = false
+                  where workspace_id = ${ws.admin} and login_id = ${second}`;
+      const results = await Promise.allSettled([t1.commit(), t2.commit()]);
+      expect(results.filter((r) => r.status === 'rejected')).toHaveLength(1);
+      const [mods] = await admin<{ n: number }[]>`
+        select count(*)::int as n from workspace_users where workspace_id = ${ws.admin} and moderator`;
+      expect(mods!.n).toBe(1);
+      // Both Moderators again, then a delete of one leaves the other: fine.
+      await admin`update workspace_users set moderator = true where workspace_id = ${ws.admin}`;
+      await admin`delete from workspace_users where workspace_id = ${ws.admin} and login_id = ${second}`;
+      // Deleting the last one is refused.
+      await expect(
+        admin`delete from workspace_users where workspace_id = ${ws.admin} and login_id = ${owner}`,
+      ).rejects.toThrow(/at least one Moderator/);
+    } finally {
+      await admin`update workspace_users set moderator = true
+                   where workspace_id = ${ws.admin} and login_id = ${owner}`;
+      await admin`delete from workspace_users where login_id = ${second}`;
+      await admin`delete from auth.users where id = ${second}`;
+    }
+  });
+
+  it('audit M3: 0241 takes its table locks before the head backfill and before the insert trigger exists', () => {
+    const text = readFileSync(
+      join(__dirname, '..', 'migrations', '0241_workspaces_model.sql'),
+      'utf8',
+    );
+    const at = (re: RegExp) => {
+      const i = text.search(re);
+      expect(i, String(re)).toBeGreaterThanOrEqual(0);
+      return i;
+    };
+    const timeout = at(/SET LOCAL lock_timeout/);
+    const lock = at(/LOCK TABLE "public"\."nodes"[^;]*IN ACCESS EXCLUSIVE MODE;/);
+    const backfill = at(
+      /INSERT INTO "public"\."node_acl_head" \("node_id"\)\s+SELECT "id" FROM "public"\."nodes"/,
+    );
+    const trigger = at(/CREATE TRIGGER "nodes_acl_after_ins" AFTER INSERT ON "public"\."nodes"/);
+    expect(timeout).toBeLessThan(lock);
+    expect(lock).toBeLessThan(backfill);
+    expect(lock).toBeLessThan(trigger);
+    // Nothing above the lock writes or locks another table first.
+    expect(text.slice(0, lock)).not.toMatch(/^\s*(INSERT|UPDATE|DELETE|ALTER|CREATE)\b/im);
   });
 
   it('withDeadlockRetry retries the whole run for retryable codes only', async () => {

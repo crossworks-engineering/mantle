@@ -16,6 +16,7 @@ import {
   bigint,
   bigserial,
   boolean,
+  check,
   index,
   jsonb,
   pgTable,
@@ -186,6 +187,22 @@ export const headsCheckMisses = pgTable(
     detail: text('detail'),
   },
   (t) => [index('heads_check_misses_at_idx').on(t.at)],
+);
+
+/**
+ * The key the held-heads list is signed with (audit L6). One row, read only by
+ * the security definer functions of 0241: no grant to any role, row security
+ * on with no policy. The app never reads or writes it.
+ */
+export const mantleHeadsKey = pgTable(
+  'mantle_heads_key',
+  {
+    id: boolean('id').primaryKey().default(true),
+    k: text('k')
+      .notNull()
+      .default(sql`(gen_random_uuid()::text || gen_random_uuid()::text)`),
+  },
+  (t) => [check('mantle_heads_key_id_check', sql`${t.id}`)],
 );
 
 export type Workspace = typeof workspaces.$inferSelect;
