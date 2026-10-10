@@ -18,10 +18,13 @@ import type { ClientCaller } from '@/lib/auth';
 export async function clientAppOr404(
   anchorId: string,
   id: string,
+  loginId: string,
 ): Promise<ClientRunnableApp | NextResponse> {
   const notFound = NextResponse.json({ ok: false, error: 'app not found' }, { status: 404 });
   if (!isUuid(id)) return notFound;
-  const app = await withViewer('client', () => getClientRunnableApp(anchorId, id.toLowerCase()));
+  const app = await withViewer('client', { login: loginId }, () =>
+    getClientRunnableApp(anchorId, id.toLowerCase()),
+  );
   return app ?? notFound;
 }
 

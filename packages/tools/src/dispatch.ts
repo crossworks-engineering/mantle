@@ -22,7 +22,7 @@ import {
   type ToolHandler,
   type ViewerLevel,
 } from '@mantle/db';
-import { currentWorkspaceScope, currentScope, levelOfScope } from '@mantle/db/viewer';
+import { currentWorkspaceScope, currentScope } from '@mantle/db/viewer';
 import { connectorMarkState, connectorResources } from './external-access';
 import { getApiKey } from '@mantle/api-keys';
 import { getBuiltin, getBuiltinHandler } from './registry';
@@ -166,7 +166,11 @@ function nonOwnerRunLevel(ctx: ToolHandlerContext): ViewerLevel | null {
         : s?.kind === 'contact'
           ? 'public'
           : null;
-  const viewer = levelOfScope(currentScope());
+  // Outside a workspace scope (its callers return first inside one): system
+  // work, or a personal space at its login's level (until W6b).
+  const outer = currentScope();
+  const viewer: ViewerLevel =
+    outer.kind === 'level' ? outer.level : outer.kind === 'system' ? 'admin' : 'public';
   if (!bySurface) return viewer === 'admin' ? null : viewer;
   try {
     return lowerLevel(viewer, bySurface);

@@ -22,8 +22,10 @@ export async function GET() {
   if (member instanceof Response) return member;
   const prefs = await loadProfilePreferences(member.anchorId);
   const [{ apps, folders }, home] = await Promise.all([
-    appLauncher(member.anchorId, 'team'),
-    withViewer('team', () => resolveMemberHomeApp(member.anchorId, prefs.teamHubAppId)),
+    appLauncher(member.anchorId, 'team', member.loginId),
+    withViewer('team', { login: member.loginId }, () =>
+      resolveMemberHomeApp(member.anchorId, prefs.teamHubAppId),
+    ),
   ]);
   return NextResponse.json({
     apps,

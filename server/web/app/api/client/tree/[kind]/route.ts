@@ -17,7 +17,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ kind: string }>
   if (kind instanceof Response) return kind;
   const parsed = ReaderTreeQuery.safeParse(Object.fromEntries(new URL(req.url).searchParams));
   if (!parsed.success) return NextResponse.json({ error: 'invalid query' }, { status: 400 });
-  const page = await loadReaderTreeFolder(client.anchorId, 'client', kind, {
+  const page = await loadReaderTreeFolder(client.anchorId, 'client', client.loginId, kind, {
     folderId: parsed.data.folder ?? null,
     cursor: parsed.data.cursor,
     sort: parsed.data.sort,

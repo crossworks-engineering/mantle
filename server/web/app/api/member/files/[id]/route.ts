@@ -43,7 +43,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const lookup = async <T>(
     fn: () => Promise<T | null>,
   ): Promise<{ value: T; accepted: Accepted } | null> => {
-    const atTeam = await withViewer('team', fn);
+    const atTeam = await withViewer('team', { login: member.loginId }, fn);
     if (atTeam) return { value: atTeam, accepted: null };
     const accepted = await acceptedFileMeta(member.anchorId, member.loginId, scope.fileId);
     const value = accepted ? await fn() : null;

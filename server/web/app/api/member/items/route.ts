@@ -90,7 +90,7 @@ export async function GET(req: Request) {
   }
   if (plan.library) {
     sources.push(async (limit, offset) => {
-      const res = await withViewer('team', () =>
+      const res = await withViewer('team', { login: member.loginId }, () =>
         listLibrary(member.anchorId, { kind, q, limit, offset }),
       );
       return { items: res.items.map((r) => libraryItemRow(r)), total: res.total };

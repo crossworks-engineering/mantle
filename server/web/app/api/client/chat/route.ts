@@ -106,6 +106,7 @@ export async function GET(req: Request) {
   const texts = await chatTextsForReader(
     client.anchorId,
     'client',
+    client.loginId,
     rows.map((r) => r.text),
   );
   const body: ClientChatThread = {

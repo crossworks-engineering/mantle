@@ -37,7 +37,9 @@ export async function memberAppOr404(
   const notFound = NextResponse.json({ ok: false, error: 'app not found' }, { status: 404 });
   if (!isUuid(id)) return notFound;
   const appId = id.toLowerCase();
-  const app = await withViewer('team', () => getMemberRunnableApp(anchorId, appId));
+  const app = await withViewer('team', { login: loginId }, () =>
+    getMemberRunnableApp(anchorId, appId),
+  );
   if (app) return { ...app, ownerId: anchorId, spaceApp: false };
   const own = await getRunnableSpaceApp(loginId, appId);
   if (!own) return notFound;

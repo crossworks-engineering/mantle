@@ -20,7 +20,6 @@
  * alias. Those logins use /api/mcp.
  */
 import { emailAttachmentIds } from '@mantle/files';
-import { keyAreasReachEmail } from '@mantle/mcp-core/key-scope';
 import type { AccessKeyArea, AccessKeyGrant } from './access-keys';
 import { getRequestContext } from '../server/request-context';
 
@@ -36,14 +35,12 @@ export function callerMayConfirm(): boolean {
 }
 
 /**
- * Whether this request may reach email. A key reaches it only with the
- * Search area (or every area); the attachments of synced mail are file
- * nodes, so the Files routes leave them out for any other key (access
- * matrix M4). Sessions and device tokens are not limited by areas.
+ * Whether this request may reach email: always since W5b2 (a key acts
+ * exactly as its login; its areas no longer narrow it). Kept so the Files
+ * routes' call sites stay one rule.
  */
 export function callerMayReadEmail(): boolean {
-  const key = getRequestContext()?.accessKey;
-  return !key || keyAreasReachEmail(key.areas);
+  return true;
 }
 
 /**
@@ -135,22 +132,13 @@ export function matchApiV1Route(method: string, path: string): ApiV1Route | null
 
 export type KeyScopeRefusal = 'not-in-api' | 'key-area' | 'key-read-only';
 
-/** Whether an API key may call this v1 route: the route is in the table,
- *  its area is one of the key's (or the key has all), and a write needs a
- *  read_write key. */
+/** Whether an API key may call this v1 route: the route is in the table.
+ *  A key acts exactly as its login (owner decision, W5b2): its access and
+ *  areas no longer narrow it; the login's own rights decide. */
 export function keyMayCall(
-  grant: Pick<AccessKeyGrant, 'access' | 'areas'>,
+  _grant: Pick<AccessKeyGrant, 'access' | 'areas'>,
   route: ApiV1Route | null,
 ): { ok: true } | { ok: false; reason: KeyScopeRefusal } {
   if (!route) return { ok: false, reason: 'not-in-api' };
-  if (route.access === 'write' && grant.access !== 'read_write') {
-    return { ok: false, reason: 'key-read-only' };
-  }
-  // whoami is about the key itself: every key may ask it.
-  if (route.pattern === '/api/v1/whoami') return { ok: true };
-  if (grant.areas === null) return { ok: true };
-  if (route.area === null || !grant.areas.includes(route.area)) {
-    return { ok: false, reason: 'key-area' };
-  }
   return { ok: true };
 }

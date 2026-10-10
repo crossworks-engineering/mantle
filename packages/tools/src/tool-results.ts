@@ -33,7 +33,7 @@ import {
   toolResultChunks,
   workspaces,
   currentScope,
-  levelOfScope,
+  type ViewerLevel,
 } from '@mantle/db';
 // Infrastructure writes: systemDb (the admin pool) whatever the viewer, so a
 // turn under a limited role (member logins Phase 0b) still records them.
@@ -43,6 +43,16 @@ import { envDynamic } from '@mantle/config';
 // ─── Configuration ──────────────────────────────────────────────────────────
 
 /** Resolved byte thresholds for one tool-loop. */
+
+/** Outside a workspace scope the code is system work ('admin') or a
+ *  personal space at its login's level (until W6b); a workspace scope has
+ *  no level and reads as the narrowest (fails closed). */
+function spaceOrSystemLevel(): ViewerLevel {
+  const scope = currentScope();
+  if (scope.kind === 'system') return 'admin';
+  return scope.kind === 'level' ? scope.level : 'public';
+}
+
 export type ResultHandling = {
   /** Results at or under this go inline, untouched (the common case). */
   inlineMaxBytes: number;
@@ -197,7 +207,7 @@ export async function spillToolResult(args: {
   // is team, the level the one non-Admin workspace (Team) mirrors, for the
   // level readers that remain until W6a.
   const inWorkspace = currentWorkspaceScope() !== null;
-  const level = inWorkspace ? 'team' : levelOfScope(currentScope());
+  const level = inWorkspace ? 'team' : spaceOrSystemLevel();
   const stamp = currentTurnStamp();
   await systemDb.insert(toolResults).values({
     id: handle,
@@ -357,7 +367,7 @@ async function loadResult(
     .where(where)
     .limit(1);
   if (!row) return null;
-  if (!levelCovers(levelOfScope(currentScope()), asViewerLevel(row.viewerLevel ?? 'admin')))
+  if (!levelCovers(spaceOrSystemLevel(), asViewerLevel(row.viewerLevel ?? 'admin')))
     return null;
   // A level reader (not the system) never reads a spill of a non-Admin
   // workspace's turn: those are read through the workspace rule only.

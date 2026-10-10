@@ -31,10 +31,6 @@ export type GrantRow = {
   /** "Removed here": the folder grants this workspace, the item does not
    *  take it (with "Restore"). */
   excluded: boolean;
-  /** The level bridge owns this row until grants become the truth (the
-   *  Admin and Team rows of items from today's sharing levels): shown, not
-   *  editable (409 bridge_owned). */
-  bridgeOwned: boolean;
 };
 
 /** An embed of a page, drawing or note that is not granted to every
@@ -163,7 +159,6 @@ export type GrantErrorCode =
   | 'not_migrated'
   | 'not_found'
   | 'forbidden'
-  | 'bridge_owned'
   | 'already_granted'
   | 'not_granted'
   | 'not_excluded'

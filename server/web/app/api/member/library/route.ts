@@ -25,7 +25,7 @@ export async function GET(req: Request) {
   const parsed = Query.safeParse(Object.fromEntries(new URL(req.url).searchParams));
   if (!parsed.success) return NextResponse.json({ error: 'Invalid query.' }, { status: 400 });
   const { kind, q, page } = parsed.data;
-  const res = await withViewer('team', () =>
+  const res = await withViewer('team', { login: member.loginId }, () =>
     listLibrary(member.anchorId, { kind, q, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
   );
   const authors = await acceptedAuthors(

@@ -20,6 +20,6 @@ import { getClientOr401 } from '@/lib/auth';
 export async function GET() {
   const client = await getClientOr401();
   if (client instanceof Response) return client;
-  const { apps, folders } = await appLauncher(client.anchorId, 'client');
+  const { apps, folders } = await appLauncher(client.anchorId, 'client', client.loginId);
   return NextResponse.json({ apps, folders } satisfies ClientAppList);
 }

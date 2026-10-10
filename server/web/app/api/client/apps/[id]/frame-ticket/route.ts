@@ -26,7 +26,7 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
     );
   }
   const { id } = await ctx.params;
-  const app = await clientAppOr404(client.anchorId, id);
+  const app = await clientAppOr404(client.anchorId, id, client.loginId);
   if (app instanceof Response) return app;
   recordAppAccess({
     ownerId: client.anchorId,

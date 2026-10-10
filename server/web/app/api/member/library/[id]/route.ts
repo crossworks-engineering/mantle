@@ -24,7 +24,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const query = Query.safeParse(Object.fromEntries(new URL(req.url).searchParams));
   if (!query.success) return NextResponse.json({ error: 'Invalid tab.' }, { status: 400 });
   const tabId = query.data.tab;
-  const item = await withViewer('team', () =>
+  const item = await withViewer('team', { login: member.loginId }, () =>
     getLibraryItem(member.anchorId, params.data.id, tabId ? { tabId } : {}),
   );
   if (!item) return NextResponse.json({ error: 'Not found.' }, { status: 404 });

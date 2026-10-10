@@ -18,7 +18,7 @@
  */
 import { and, eq, inArray } from 'drizzle-orm';
 import { pageFolderIdOf } from './pages/read';
-import { currentSpaceScope, db, nodes, inLevelScope } from '@mantle/db';
+import { currentScope, db, nodes } from '@mantle/db';
 import type { TableDetail } from '@mantle/content-core/table-model';
 import type { ClientSharedItem, ClientSharedRow, ClientSharedTable } from '@mantle/client-types';
 import {
@@ -40,8 +40,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Refuse to run anywhere but a plain client scope: at any other level the
  *  "readable" answer would be someone else's. */
 function assertClient(): void {
-  if (!inLevelScope('client') || currentSpaceScope()) {
-    throw new Error("client read outside withViewer('client')");
+  if (currentScope().kind !== 'user') {
+    throw new Error("client read outside withViewer('client', { login })");
   }
 }
 

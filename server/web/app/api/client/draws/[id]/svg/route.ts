@@ -27,7 +27,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return new Response('Invalid id', { status: 400 });
   const id = idParsed.data.id;
-  const out = await withViewer('client', async () => {
+  const out = await withViewer('client', { login: client.loginId }, async () => {
     const svg = await getDrawSvg(client.anchorId, id);
     return svg ? clientDrawSvg(client.anchorId, id, svg) : null;
   });

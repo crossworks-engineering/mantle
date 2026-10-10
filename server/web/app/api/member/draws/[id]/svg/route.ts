@@ -34,7 +34,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   if (!idParsed.success) return new Response('Invalid id', { status: 400 });
   const id = idParsed.data.id;
   const readable =
-    (await withViewer('team', () => getDrawSvg(member.anchorId, id))) ??
+    (await withViewer('team', { login: member.loginId }, () => getDrawSvg(member.anchorId, id))) ??
     (await withSpace({ spaceId: member.spaceId, loginId: member.loginId }, () =>
       getDrawSvg(member.spaceId, id),
     )) ??

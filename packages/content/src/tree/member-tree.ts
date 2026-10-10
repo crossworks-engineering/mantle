@@ -189,7 +189,7 @@ export async function memberView(scope: MemberTreeScope, kind: TreeKind): Promis
   const root = storedRoot(kind);
   const space = { spaceId: scope.spaceId, loginId: scope.loginId };
   const [vis, own, team] = await Promise.all([
-    visibleFolders(scope.anchorId, 'team', kind),
+    visibleFolders(scope.anchorId, 'team', scope.loginId, kind),
     withSpace(space, async () => {
       const folders = (await db.execute(sql`
         select id, path::text as path, title, data from nodes
@@ -381,7 +381,7 @@ export async function loadMemberTreeFolder(
   const page =
     draftsLeft || room === 0
       ? { items: [], nextCursor: null }
-      : await withViewer('team', () =>
+      : await withViewer('team', { login: scope.loginId }, () =>
           itemPage(
             scope.anchorId,
             kind,
@@ -470,7 +470,7 @@ export async function searchMemberTree(
   // The brain's next `limit` rows after the cursor. Any row it holds beyond
   // them sorts after all of these, so the first `limit` of these and the
   // drafts together are the true next page.
-  const { page, more } = await withViewer('team', () =>
+  const { page, more } = await withViewer('team', { login: scope.loginId }, () =>
     searchItemRows(scope.anchorId, kind, term, opts.cursor, limit, readerItems('team', 'n')),
   );
   const found = new Map<string, { item: TreeItem; path: string; key: string }>();

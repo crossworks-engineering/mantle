@@ -904,8 +904,9 @@ export async function disallowedRefs(
     );
     for (const r of brain) ok.add(r.id);
   } else if (rest.length) {
-    // The Library, read as the team level reads it (row security decides).
-    const lib = await withViewer('team', () =>
+    // The brain, read as the login reads it (its workspaces; row security
+    // decides).
+    const lib = await withViewer('team', { login: loginId }, () =>
       db
         .select({ id: nodes.id })
         .from(nodes)

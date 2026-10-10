@@ -31,12 +31,12 @@ export async function GET() {
   const member = await getMemberOr401();
   if (member instanceof Response) return member;
   const prefs = await loadProfilePreferences(member.anchorId);
-  const homeApp = await withViewer('team', () =>
+  const homeApp = await withViewer('team', { login: member.loginId }, () =>
     resolveMemberHomeApp(member.anchorId, prefs.teamHubAppId),
   );
   // Most brains pin nothing: the built-in home needs no hub data.
   if (!homeApp) return NextResponse.json({ homeApp: null, hub: null } satisfies MemberHomeData);
-  const [pages, counts, apps] = await withViewer('team', () =>
+  const [pages, counts, apps] = await withViewer('team', { login: member.loginId }, () =>
     Promise.all([
       listLibrary(member.anchorId, { kind: 'page', limit: SECTION_LIMIT }),
       libraryCounts(member.anchorId),

@@ -8,9 +8,10 @@ import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { authUsers, db } from '@mantle/db';
 
-/** A tool name the owner allows on a peer bound to the owner (a risky one:
- *  see PEER_RISKY_TOOL_SLUGS in @mantle/mcp-core). An unknown name allows
- *  nothing: the surface only checks names it registers. */
+/** A tool name once allowed on a peer bound to the owner. Stored, no longer
+ *  used: since W5b2 a peer acts exactly as its login (owner decision), so
+ *  `writeEnabled` and `allowedRiskyTools` narrow nothing (columns kept for
+ *  W8). */
 const RiskyName = z.string().regex(/^[a-z][a-z0-9_]{1,63}$/);
 
 export const PeerAccessBody = z.object({

@@ -29,12 +29,11 @@
  * that fakes the whole `@mantle/db` module keeps the real scope.
  */
 import { and, eq } from 'drizzle-orm';
-import { asSystem, db, withTurnScope, workspaces, workspaceUsers } from '@mantle/db';
+import { asSystem, db, withTurnScope, withViewer, workspaces, workspaceUsers } from '@mantle/db';
 import {
   currentWorkspaceScope,
   isViewerLevel,
   withTurnStamp,
-  withViewer,
   type ViewerLevel,
 } from '@mantle/db/viewer';
 
@@ -46,6 +45,9 @@ export function agentLevel(agent: { audience?: string | null }): ViewerLevel {
 
 /** What a scope wrapper needs of an agent. */
 export type ScopedAgent = {
+  /** agents.id: whom a level scope acts for (R6); absent reads as an
+   *  assistant on no workspace (nothing). */
+  id?: string | null;
   audience?: string | null;
   /** agents.workspace_id: the workspace this assistant answers in, if any. */
   workspaceId?: string | null;
@@ -117,7 +119,7 @@ export async function withAgentScope<T>(
   if (!wsId) {
     // A helper: inside a turn it runs in the caller's scope, never wider.
     if (open) return fn();
-    return withViewer(agentLevel(agent), fn);
+    return withViewer(agentLevel(agent), { agent: agent.id ?? null }, fn);
   }
   if (open) {
     if (open.ws.length === 1 && open.ws[0] === wsId) return fn();
@@ -129,7 +131,9 @@ export async function withAgentScope<T>(
   const ws = await agentWorkspace(wsId);
   if (ws.isAdmin) {
     // The Admin assistant: the system pool until W6a, with its stamp.
-    return withTurnStamp({ workspaceId: wsId, loginId }, () => withViewer(agentLevel(agent), fn));
+    return withTurnStamp({ workspaceId: wsId, loginId }, () =>
+      withViewer(agentLevel(agent), { agent: agent.id ?? null }, fn),
+    );
   }
   // The login the turn answers must be a user of the workspace (L3): a
   // login with no row there is refused, never read as a reader without one.

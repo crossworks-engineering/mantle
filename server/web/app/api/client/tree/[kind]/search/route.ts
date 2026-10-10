@@ -16,7 +16,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ kind: string }>
   if (!parsed.success) return NextResponse.json({ error: 'invalid query' }, { status: 400 });
   return NextResponse.json(
     clientTreeSearch(
-      await searchReaderTree(client.anchorId, 'client', kind, parsed.data.q, {
+      await searchReaderTree(client.anchorId, 'client', client.loginId, kind, parsed.data.q, {
         cursor: parsed.data.cursor,
         limit: parsed.data.limit,
       }),

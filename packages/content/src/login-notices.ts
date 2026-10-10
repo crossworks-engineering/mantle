@@ -169,7 +169,7 @@ export function chatReplyNotice(n: {
 
     // The text exactly as the reader's chat route returns it.
     const reader = login.role === 'client' ? 'client' : 'team';
-    const [text] = await chatTextsForReader(msg.ownerId, reader, [msg.text]);
+    const [text] = await chatTextsForReader(msg.ownerId, reader, n.loginId, [msg.text]);
     let title: string | null = null;
     if (msg.agentId) {
       const [agent] = await db

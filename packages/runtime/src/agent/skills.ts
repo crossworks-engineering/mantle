@@ -16,7 +16,6 @@ import {
   lowerLevel,
   type ViewerLevel,
   currentScope,
-  levelOfScope,
 } from '@mantle/db/viewer';
 
 export type SkillForRuntime = {
@@ -141,7 +140,10 @@ export async function resolveAgentToolGroups(
   // hold (adminOnly groups outside Admin, connectors that are not a resource
   // of the workspace), and an adminOnly group is left out here too.
   const inWorkspace = currentWorkspaceScope() !== null;
-  const current = inWorkspace ? level : levelOfScope(currentScope());
+  // Outside a workspace scope: system work, or a personal space at its
+  // login's level (until W6b).
+  const outer = currentScope();
+  const current = inWorkspace ? level : outer.kind === 'level' ? outer.level : 'admin';
   if (!levelsMeet(current, level)) {
     console.warn(`[skills] a ${level}-level agent under a ${current}-level caller gets no tools`);
     return [];

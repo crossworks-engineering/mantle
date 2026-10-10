@@ -287,7 +287,9 @@ async function runLoginTurn(
       runTeamTurnSteps(role, ownerId, trimmed, displayText, channel, options, progress);
     // The client's own wrap (N7): the turn never reads above client level,
     // whatever the agent's level says.
-    return await (role === 'client' ? withViewer('client', steps) : steps());
+    return await (role === 'client'
+      ? withViewer('client', { login: options.loginId }, steps)
+      : steps());
   } catch (err) {
     // A turn that fails BEFORE the inbound row is written (no agent, no key,
     // retrieval down) used to leave nothing behind: the route had already

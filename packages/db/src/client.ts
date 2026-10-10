@@ -23,7 +23,11 @@ import {
   runInTurnScope,
   type WorkspaceScope,
   runTxHooks,
-  withViewer,
+  runInViewerScope,
+  exitScope,
+  lowerLevel,
+  type ViewerFor,
+  type ViewerLevel,
   viewerDatabaseUrl,
   viewerRolePassword,
   type PoolRole,
@@ -725,23 +729,103 @@ export async function withTeamDrafts<T>(fn: () => Promise<T>): Promise<T> {
  * request, never an agent (no agent path calls this). For team: Team drafts
  * and a client's submitted items (client requests, 0194); for both: the
  * client thread on a client-level brain item (0194, decision 8). One short
- * transaction on that level's pool. Inside a lower scope the level only goes
- * down (withViewer), and the flag is set on the transaction this opens.
+ * transaction on that level's pool.
+ *
+ * The ONE level-role path left after W5b2 (the R6 sweep names it): the
+ * review flows it serves go in W5c. It leaves the scope around it (a member
+ * request's workspace scope) for that transaction; inside a level scope the
+ * level only goes down.
  */
 export async function withHumanViewer<T>(
   level: 'team' | 'client',
   fn: () => Promise<T>,
 ): Promise<T> {
-  return withViewer(level, () => {
-    const scope = currentScope();
-    const effective = scope.kind === 'level' ? scope.level : scope.kind;
-    if (effective !== 'team' && effective !== 'client') {
-      throw new Error(`withHumanViewer: no human scope at ${effective}`);
-    }
-    return getViewerDb(effective).transaction(async (tx) => {
+  const scope = currentScope();
+  const effective = scope.kind === 'level' ? lowerLevel(scope.level, level) : level;
+  if (effective !== 'team' && effective !== 'client') {
+    throw new Error(`withHumanViewer: no human scope at ${effective}`);
+  }
+  return exitScope(() =>
+    getViewerDb(effective).transaction(async (tx) => {
       await tx.execute(sqlTag`select set_config('mantle.human', 'on', true)`);
       return runInTxScope({ level: effective, tx }, fn);
+    }),
+  );
+}
+
+/**
+ * The R6 shim (plan R6, S2, T4): run `fn` for whoever `actsFor` names, in a
+ * WORKSPACE scope, never on a level role. A login reads the union of its
+ * live workspaces (a disabled login: none); an assistant reads its own
+ * workspace (none when it sits on no workspace); a public link reads no
+ * workspace and carries its served list. Every query inside, after any
+ * await, runs on the workspace role in its own short transaction that sets
+ * the scope (as a turn scope does), so a long request holds no transaction.
+ * Fails closed: an empty scope reads nothing.
+ *
+ * `level` 'admin' is system work (the Admin assistant until W6a): `fn` runs
+ * as is. Any lower level only says "not system"; the scope is the truth.
+ * Inside the same workspace scope it just runs `fn`; inside another one it
+ * is refused.
+ */
+export async function withViewer<T>(
+  level: ViewerLevel,
+  actsFor: ViewerFor,
+  fn: () => Promise<T>,
+): Promise<T> {
+  if (level === 'admin') return fn();
+  return runInViewerScope(await viewerScopeFor(actsFor), fn);
+}
+
+/** The scope `withViewer` enters for `actsFor`, read on the admin pool. */
+export async function viewerScopeFor(actsFor: ViewerFor): Promise<WorkspaceScope> {
+  const admin = getAdminDb();
+  if ('login' in actsFor) {
+    if (!UUID_RE.test(actsFor.login)) throw new Error('withViewer: login must be a uuid');
+    const rows = (await admin.execute(
+      sqlTag`select coalesce(array_agg(u.workspace_id::text order by u.workspace_id), '{}') as ws,
+                    coalesce(array_agg(u.workspace_id::text order by u.workspace_id)
+                             filter (where u.moderator), '{}') as mod
+               from workspace_users u
+               join workspaces w on w.id = u.workspace_id and w.archived_at is null
+               join auth.users l on l.id = u.login_id and l.disabled_at is null
+              where u.login_id = ${actsFor.login}`,
+    )) as unknown as { ws: string[]; mod: string[] }[];
+    return Object.freeze({
+      kind: 'user',
+      loginId: actsFor.login.toLowerCase(),
+      ws: Object.freeze([...(rows[0]?.ws ?? [])]),
+      modWs: Object.freeze([...(rows[0]?.mod ?? [])]),
     });
+  }
+  if ('agent' in actsFor) {
+    const none = Object.freeze({
+      kind: 'assistant' as const,
+      loginId: null,
+      ws: Object.freeze([]),
+      modWs: Object.freeze([]),
+    });
+    if (actsFor.agent === null) return none;
+    if (!UUID_RE.test(actsFor.agent)) throw new Error('withViewer: agent must be a uuid');
+    const rows = (await admin.execute(
+      sqlTag`select a.workspace_id::text as ws from agents a
+               join workspaces w on w.id = a.workspace_id and w.archived_at is null
+              where a.id = ${actsFor.agent}`,
+    )) as unknown as { ws: string }[];
+    return Object.freeze({
+      kind: 'assistant',
+      loginId: null,
+      ws: Object.freeze(rows[0]?.ws ? [rows[0].ws] : []),
+      modWs: Object.freeze([]),
+    });
+  }
+  const served = actsFor.link.served.filter((id) => UUID_RE.test(id)).map((id) => id.toLowerCase());
+  return Object.freeze({
+    kind: 'link',
+    loginId: null,
+    ws: Object.freeze([]),
+    modWs: Object.freeze([]),
+    served: Object.freeze([...new Set(served)].sort()),
   });
 }
 

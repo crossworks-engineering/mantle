@@ -26,7 +26,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const query = Query.safeParse(Object.fromEntries(new URL(req.url).searchParams));
   if (!query.success) return NextResponse.json({ error: 'Invalid tab.' }, { status: 400 });
   const tabId = query.data.tab;
-  const item = await withViewer('client', () =>
+  const item = await withViewer('client', { login: client.loginId }, () =>
     getClientSharedItem(client.anchorId, params.data.id, tabId ? { tabId } : {}),
   );
   if (!item) return NextResponse.json({ error: 'Not found.' }, { status: 404 });

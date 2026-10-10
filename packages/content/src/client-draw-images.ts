@@ -16,7 +16,7 @@
  * stays and points nowhere. Links to readable items and external sites stay.
  */
 import { and, eq, inArray } from 'drizzle-orm';
-import { currentSpaceScope, db, draws, nodes, inLevelScope } from '@mantle/db';
+import { currentScope, db, draws, nodes } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
 import { readAtSql } from './item-level';
 import { clientLinkHidden, clientOwnUrl, linkRefIds } from './client-redact';
@@ -30,7 +30,7 @@ export async function clientVisibleDrawFileIds(
   anchorId: string,
   drawId: string,
 ): Promise<Set<string>> {
-  if (!inLevelScope('client') || currentSpaceScope()) {
+  if (currentScope().kind !== 'user') {
     throw new Error(
       "clientVisibleDrawFileIds reads at the client level: wrap it in withViewer('client')",
     );

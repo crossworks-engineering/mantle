@@ -81,6 +81,7 @@ export type Visible = {
 export async function visibleFolders(
   anchorId: string,
   reader: TreeReader,
+  loginId: string,
   kind: TreeKind,
 ): Promise<Visible> {
   const spec = TREE_KIND_SPECS[kind];
@@ -88,6 +89,7 @@ export async function visibleFolders(
   const [itemRows, sharedRows] = await Promise.all([
     withViewer(
       reader,
+      { login: loginId },
       async () =>
         (await db.execute(sql`
           select n.path::text as path, count(*)::int as n
@@ -145,6 +147,7 @@ function recount(f: TreeFolder, vis: Visible): TreeFolder {
 export async function loadReaderTreeFolder(
   anchorId: string,
   reader: TreeReader,
+  loginId: string,
   kind: TreeKind,
   opts: { folderId?: string | null; cursor?: string | null; sort?: TreeSort; limit?: number } = {},
 ): Promise<TreeFolderPage | null> {
@@ -152,7 +155,7 @@ export async function loadReaderTreeFolder(
   if (!READER_TREE_KINDS.includes(kind)) return null;
   const spec = TREE_KIND_SPECS[kind];
   const sort = opts.sort && spec.sorts.includes(opts.sort) ? opts.sort : spec.sorts[0]!;
-  const vis = await visibleFolders(anchorId, reader, kind);
+  const vis = await visibleFolders(anchorId, reader, loginId, kind);
   const found = opts.folderId ? await treeFolderById(anchorId, kind, opts.folderId) : null;
   if (opts.folderId && (!found || !vis.paths.has(found.path))) return null;
   const path = found?.path ?? spec.root;
@@ -167,7 +170,7 @@ export async function loadReaderTreeFolder(
           (m) => m.get(treeParentPath(found.path)) ?? [],
         )
       : Promise.resolve([]),
-    withViewer(reader, () =>
+    withViewer(reader, { login: loginId }, () =>
       itemPage(
         anchorId,
         kind,
@@ -198,6 +201,7 @@ export async function loadReaderTreeFolder(
 export async function searchReaderTree(
   anchorId: string,
   reader: TreeReader,
+  loginId: string,
   kind: TreeKind,
   q: string,
   opts: { cursor?: string | null; limit?: number } = {},
@@ -207,7 +211,7 @@ export async function searchReaderTree(
   const spec = TREE_KIND_SPECS[kind];
   const limit = treePageLimit(opts.limit);
   const term = q.trim();
-  const vis = await visibleFolders(anchorId, reader, kind);
+  const vis = await visibleFolders(anchorId, reader, loginId, kind);
   const pattern = likePattern(term);
   const folders =
     opts.cursor || !term
@@ -223,7 +227,7 @@ export async function searchReaderTree(
           .filter((f) => vis.paths.has(f.path))
           .slice(0, limit)
           .map((f) => recount(f, vis));
-  const { page, more } = await withViewer(reader, () =>
+  const { page, more } = await withViewer(reader, { login: loginId }, () =>
     searchItemRows(anchorId, kind, term, opts.cursor, limit, readerItems(reader, 'n')),
   );
   const crumbs = await treeCrumbsFor(anchorId, [

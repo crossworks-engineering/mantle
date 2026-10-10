@@ -24,7 +24,7 @@ export async function GET(req: Request) {
   const parsed = Query.safeParse(Object.fromEntries(new URL(req.url).searchParams));
   if (!parsed.success) return NextResponse.json({ error: 'Invalid query.' }, { status: 400 });
   const { kind, q, page } = parsed.data;
-  const res = await withViewer('client', () =>
+  const res = await withViewer('client', { login: client.loginId }, () =>
     listClientShared(client.anchorId, {
       kind,
       q,

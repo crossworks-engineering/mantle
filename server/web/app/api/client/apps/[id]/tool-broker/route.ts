@@ -46,7 +46,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ ok: false, error: 'invalid input' }, { status: 400 });
   }
   const { id } = await ctx.params;
-  const app = await clientAppOr404(client.anchorId, id);
+  const app = await clientAppOr404(client.anchorId, id, client.loginId);
   if (app instanceof Response) return app;
 
   const { slug, input } = parsed.data;
@@ -89,7 +89,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ ok: false, error: verdict.reason }, { status: verdict.status });
   }
   const scope = appToolScope(level, { loginId: client.loginId, name: clientName(client) });
-  const result = await withViewer(scope.viewer, () =>
+  const result = await withViewer(scope.viewer, { login: client.loginId }, () =>
     dispatchTool(verdict.tool, input, { ownerId: client.anchorId, surface: scope.surface }),
   );
   if (!result.ok) logError(result.error, 200);

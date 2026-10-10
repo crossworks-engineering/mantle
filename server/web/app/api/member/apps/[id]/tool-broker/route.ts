@@ -95,7 +95,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ ok: false, error: verdict.reason }, { status: verdict.status });
   }
   const scope = appToolScope(level, { loginId: member.loginId, name: memberName(member) });
-  const result = await withViewer(scope.viewer, () =>
+  const result = await withViewer(scope.viewer, { login: member.loginId }, () =>
     dispatchTool(verdict.tool, input, { ownerId: member.anchorId, surface: scope.surface }),
   );
   if (!result.ok) logError(result.error, 200);

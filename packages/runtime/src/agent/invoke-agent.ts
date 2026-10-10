@@ -49,7 +49,7 @@ import {
 } from './skills';
 import type { ChatMessage } from './messages';
 import { agentLevel, agentTurnScoped, surfaceLoginId, withAgentScope } from './agent-viewer';
-import { currentWorkspaceScope, levelsMeet, currentScope, levelOfScope } from '@mantle/db/viewer';
+import { currentWorkspaceScope, levelsMeet, currentScope } from '@mantle/db/viewer';
 
 /** A delegated child's thinking loop args. Inherit = the forwarded budget
  *  alone (no effort), which is also what the child hands on to its own
@@ -107,7 +107,9 @@ export const invokeAgent: AgentInvoker = async ({
   // In a workspace turn scope there is no level (W4b): the scope decides.
   const openScope = currentWorkspaceScope();
   if (!openScope) {
-    const callerLevel = levelOfScope(currentScope());
+    // System work, or a personal space at its login's level (until W6b).
+    const outer = currentScope();
+    const callerLevel = outer.kind === 'level' ? outer.level : 'admin';
     const targetLevel = agentLevel(target);
     if (!levelsMeet(callerLevel, targetLevel)) {
       return {

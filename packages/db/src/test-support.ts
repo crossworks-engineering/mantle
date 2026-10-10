@@ -403,3 +403,7 @@ export function findPgTools(url: string, containerName?: string): PgTools | null
   }
   return null;
 }
+
+/** Run `fn` on a level role (tests of that role's row security only): the
+ *  pre-W5b2 withViewer. */
+export { runInLevelRoleForTest } from './viewer';

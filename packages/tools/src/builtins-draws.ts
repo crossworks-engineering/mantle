@@ -55,7 +55,7 @@ const WIDE_RATIO = 3.5;
 function drawReaderOf(ctx: ToolHandlerContext): DrawReader {
   const s = ctx.surface;
   if (s?.kind === 'team' && s.loginId) return { kind: 'member', loginId: s.loginId };
-  if (s?.kind === 'client') return { kind: 'client' };
+  if (s?.kind === 'client' && s.loginId) return { kind: 'client', loginId: s.loginId };
   return { kind: 'scope' };
 }
 

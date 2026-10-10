@@ -42,7 +42,9 @@ import { foldEmbeddedText } from './pages';
 /** Who the call reads for: a member login, a client login, or whoever the
  *  current viewer scope is (the owner's own paths, an agent at its level). */
 export type DrawReader =
-  { kind: 'scope' } | { kind: 'member'; loginId: string } | { kind: 'client' };
+  | { kind: 'scope' }
+  | { kind: 'member'; loginId: string }
+  | { kind: 'client'; loginId: string };
 
 export type ReadableDraw = {
   id: string;
@@ -107,7 +109,9 @@ export async function readerVisibleFileIds(
       return await asSystem(() => memberVisibleDrawFileIds(ownerId, reader.loginId, id));
     }
     if (reader.kind === 'client') {
-      return await withViewer('client', () => clientVisibleDrawFileIds(ownerId, id));
+      return await withViewer('client', { login: reader.loginId }, () =>
+        clientVisibleDrawFileIds(ownerId, id),
+      );
     }
     if (isSystemScope() && !currentSpaceScope()) return null;
     return await scopeVisibleDrawFileIds(ownerId, id);

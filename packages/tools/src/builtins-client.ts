@@ -58,9 +58,12 @@ export function clientOf(ctx: ToolHandlerContext): { loginId: string; name: stri
   return { loginId: s.loginId, name: s.contactName ?? null };
 }
 
-/** A client read, at client level whatever the caller's scope. */
-function asClient<T>(fn: () => Promise<T>): Promise<T> {
-  return withViewer('client', fn);
+/** A client read, in the client login's own scope (its workspaces) whatever
+ *  the caller's scope. No client login: refused. */
+function asClient<T>(ctx: ToolHandlerContext, fn: () => Promise<T>): Promise<T> {
+  const client = clientOf(ctx);
+  if (!client) return Promise.reject(new Error(NOT_CLIENT));
+  return withViewer('client', { login: client.loginId }, fn);
 }
 
 /** The link a client follows to an item: the portal opens `/n/<id>`. */
@@ -162,7 +165,7 @@ export const client_shared_list: BuiltinToolDef = {
     if (kind && !(CLIENT_KINDS as readonly string[]).includes(kind)) {
       return { ok: false, error: `unknown kind '${kind}'; use one of ${CLIENT_KINDS.join(', ')}.` };
     }
-    const res = await asClient(() =>
+    const res = await asClient(ctx, () =>
       listClientShared(ctx.ownerId, {
         ...(kind ? { kind: kind as ClientKind } : {}),
         ...(strOpt(input.q) ? { q: strOpt(input.q) } : {}),
@@ -207,7 +210,7 @@ export const client_shared_search: BuiltinToolDef = {
     // Matched on what the CLIENT reads (the redacted text), never on the raw
     // page text or the index built from it: a word that only a Private item's
     // title carries must not find the page that mentions it.
-    const hits = await asClient(async () => {
+    const hits = await asClient(ctx, async () => {
       const { items } = await listClientShared(ctx.ownerId, {
         ...(kind ? { kind: kind as ClientKind } : {}),
         limit: SEARCH_SCAN,
@@ -262,7 +265,7 @@ export const client_shared_open: BuiltinToolDef = {
         'item not found among the items shared with clients; list them with client_shared_list.',
     };
     if (!UUID_RE.test(id)) return notFound;
-    const item = await asClient(() =>
+    const item = await asClient(ctx, () =>
       getClientSharedItem(
         ctx.ownerId,
         id,

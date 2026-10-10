@@ -157,11 +157,10 @@ async function callerFromLoginToken(token: string): Promise<McpCaller | null> {
 }
 
 /**
- * An inbound API key (`mtlk_`, migration 0232): it acts as its login and
- * only narrows it. An admin key gets the owner tools held to the key's
- * write switch, its risky tools and its areas (as a peer bound to the
- * owner). A member or client key also needs the login's MCP switch on, and
- * writes only while both the key and the login's Write switch allow it.
+ * An inbound API key (`mtlk_`, migration 0232): it acts EXACTLY as its
+ * login (owner decision, W5b2): an admin key is the owner, a member or
+ * client key is that login under its own MCP and Write switches. The key's
+ * access and areas no longer narrow it (the columns stay until W8).
  * A refused key is a 401 like any bad bearer; the failed try counts
  * against the caller's address, as on /api/v1.
  */
@@ -186,7 +185,6 @@ async function callerFromAccessKey(req: Request, token: string): Promise<McpCall
   const key = check.grant;
   const anchorId = await resolveSingleOwnerId();
   if (!anchorId) return null;
-  const keyWrite = key.access === 'read_write';
   let caller: McpCaller | null;
   if (key.role === 'admin') {
     caller = {
@@ -195,17 +193,16 @@ async function callerFromAccessKey(req: Request, token: string): Promise<McpCall
       loginId: key.loginId,
       displayName: key.login.displayName,
       via: 'key',
-      write: keyWrite,
-      riskyAllowed: key.riskyTools,
+      write: true,
     };
   } else {
     const row = await loadLogin(key.loginId);
     const login = row ? loginCaller(row, anchorId, 'token') : null;
-    caller = login ? { ...login, via: 'key', write: login.write && keyWrite } : null;
+    caller = login ? { ...login, via: 'key' } : null;
   }
   if (!caller) return null;
   touchAccessKey(key.id, ip);
-  const out: McpCaller = { ...caller, keyId: key.id, areas: key.areas };
+  const out: McpCaller = { ...caller, keyId: key.id };
   keyCallers.set(out, { email: key.login.email, createdBy: key.createdBy });
   return out;
 }
@@ -267,12 +264,11 @@ async function callerFromPeerToken(token: string): Promise<McpCaller | null> {
   const row = await loadLogin(peer.actsAsLoginId);
   if (!row || row.disabledAt || !row.email) return null;
   if (!isRole(row.role) || row.role !== peer.actsAsRole) return null;
-  // A peer bound to a member or client acts as that login, under that
-  // login's switches too (team apps M1 audit, medium 1): the login's MCP
-  // switch off ends the peer, and it writes only while both the peer's and
-  // the login's Write switches are on. Before, an admin who turned a
-  // member's MCP or Write off left a bound peer reading and writing app
-  // rows. A peer bound to the owner keeps its own rules.
+  // A linked brain acts as the login it is bound to, exactly (owner
+  // decision, W5b2): that login's workspaces, and for a member or client
+  // its MCP and Write switches (its MCP switch off ends the peer). The
+  // peer's own write switch and risky-tool list no longer narrow it (the
+  // columns stay until W8).
   const login = row.role === 'member' || row.role === 'client';
   if (login && row.mcpEnabled !== true) return null;
   return {
@@ -282,8 +278,7 @@ async function callerFromPeerToken(token: string): Promise<McpCaller | null> {
     displayName: row.displayName,
     via: 'peer',
     peerId: peer.id,
-    write: login ? peer.writeEnabled && row.mcpWrite === true : peer.writeEnabled,
-    riskyAllowed: row.role === 'admin' ? (peer.allowedRiskyTools ?? []) : [],
+    write: login ? row.mcpWrite === true : true,
   };
 }
 

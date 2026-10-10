@@ -152,7 +152,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     loginId: user.actor.id,
     name: user.actor.displayName?.trim() || user.actor.email.split('@')[0] || 'admin',
   });
-  const result = await withViewer(scope.viewer, () =>
+  const result = await withViewer(scope.viewer, { login: user.actor.id }, () =>
     dispatchTool(verdict.tool, parsed.data.input, { ownerId: user.id, surface: scope.surface }),
   );
   if (!result.ok) logError(result.error, 200);

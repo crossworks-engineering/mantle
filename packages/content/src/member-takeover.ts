@@ -328,7 +328,7 @@ export function isAuthorRole(role: string | null | undefined): role is AuthorRol
 async function authorSpaceOf(
   via: Via,
   loginId: string | null,
-): Promise<{ spaceId: string; level: 'team' | 'client' } | null> {
+): Promise<{ spaceId: string; level: 'team' | 'client'; loginId: string } | null> {
   if (!loginId) return null;
   const [r] = await via
     .select({ spaceId: spaces.id, role: authUsers.role })
@@ -344,7 +344,7 @@ async function authorSpaceOf(
     )
     .limit(1);
   if (!r || !isAuthorRole(r.role)) return null;
-  return { spaceId: r.spaceId, level: AUTHOR_LEVELS[r.role] };
+  return { spaceId: r.spaceId, level: AUTHOR_LEVELS[r.role], loginId };
 }
 
 /** A login's personal space, whatever the login is now (the realtime event
@@ -378,7 +378,7 @@ export type GiveBackResult = { id: string; returned: BundleItem[] };
 async function refsTheAuthorMayNotUse(
   tx: Via,
   brainId: string,
-  author: { spaceId: string; level: 'team' | 'client' },
+  author: { spaceId: string; level: 'team' | 'client'; loginId: string },
   group: BundleItem[],
 ): Promise<string[]> {
   const memberSpaceId = author.spaceId;
@@ -401,8 +401,9 @@ async function refsTheAuthorMayNotUse(
   const ok = new Set(own.map((r) => r.id));
   const others = rest.filter((id) => !ok.has(id));
   if (others.length) {
-    // The brain, read as the author's level reads it (row security decides).
-    const lib = await withViewer(author.level, () =>
+    // The brain, read as the author reads it (their workspaces; row security
+    // decides).
+    const lib = await withViewer(author.level, { login: author.loginId }, () =>
       db
         .select({ id: nodes.id })
         .from(nodes)

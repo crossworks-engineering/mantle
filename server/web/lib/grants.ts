@@ -20,10 +20,8 @@
  * that Restore clears (19.5). A folder change needs the confirm and is
  * refused above FOLDER_GRANT_LIMIT.max items (S5).
  *
- * While the level bridge runs (0251), the rows it owns (the Admin and Team
- * rows of items made in today's UI) answer 409 bridge_owned: a change there
- * would be undone at the next level change or by the boot drift repair.
- * Grants to any other workspace are free.
+ * Grants are the only truth since W5b2 part B (0261 turned the level bridge
+ * off): every row, the ones the bridge once wrote included, is changed here.
  *
  * Every write takes the heads of what it changes FIRST (a folder: its whole
  * subtree), in one transaction retried whole on a busy head or a deadlock
@@ -81,12 +79,6 @@ export class GrantError extends Error {
 
 const ITEM_NOT_FOUND = () => new GrantError(404, 'not_found', 'Item not found.');
 const WS_NOT_FOUND = () => new GrantError(404, 'not_found', 'Workspace not found.');
-const BRIDGE_OWNED = () =>
-  new GrantError(
-    409,
-    'bridge_owned',
-    'This grant follows the item’s sharing level until grants become the truth. Change the level instead.',
-  );
 
 /** A folder change is refused above `max` items (S5: the measured
  *  50,000-item folder change stays well under a minute). An object so a
@@ -236,7 +228,6 @@ type GrantDbRow = {
   isHome: boolean;
   via: string | null;
   excluded: boolean;
-  bridge: boolean;
 };
 
 /** The item if the caller reads it (one of its workspaces holds a grant),
@@ -282,11 +273,10 @@ async function grantRows(q: Exec, nodeId: string): Promise<Map<string, GrantDbRo
     is_home: boolean;
     via: string | null;
     excluded: boolean;
-    bridge: boolean;
   }>(
     q,
     sql`select g.workspace_id as ws, w.name, g.write, g.is_home, g.via_folder_id as via,
-               g.excluded, g.bridge
+               g.excluded
           from item_grants g join workspaces w on w.id = g.workspace_id
          where g.node_id = ${nodeId}`,
   );
@@ -300,16 +290,9 @@ async function grantRows(q: Exec, nodeId: string): Promise<Map<string, GrantDbRo
         isHome: r.is_home,
         via: r.via,
         excluded: r.excluded,
-        bridge: r.bridge,
       },
     ]),
   );
-}
-
-/** The item is decided by the level bridge: its home row is a bridge row. */
-function bridgeHomed(grants: Map<string, GrantDbRow>): boolean {
-  for (const g of grants.values()) if (g.isHome && g.bridge) return true;
-  return false;
 }
 
 const mayManage = (ctx: Ctx, item: Item) => isMod(ctx, item.home);
@@ -334,15 +317,6 @@ async function kindOk(q: Exec, type: string, ws: string): Promise<boolean> {
   const [r] = await rows<{ ok: boolean }>(
     q,
     sql`select mantle_grant_kind_ok(${type}::node_type, ${ws}::uuid) as ok`,
-  );
-  return r?.ok === true;
-}
-
-/** One of the workspaces the level bridge writes (Admin, Team). */
-async function bridgeWorkspace(q: Exec, ws: string): Promise<boolean> {
-  const [r] = await rows<{ ok: boolean }>(
-    q,
-    sql`select exists (select 1 from workspaces where id = ${ws} and bridge_key is not null) as ok`,
   );
   return r?.ok === true;
 }
@@ -384,13 +358,12 @@ async function buildResponse(ctx: Ctx, item: Item, q: Exec = db): Promise<Grants
     via_title: string | null;
     via_readable: boolean | null;
     excluded: boolean;
-    bridge: boolean;
     derivable: boolean;
   }>(
     q,
     sql`select g.workspace_id as ws, w.name, g.write, g.is_home, g.via_folder_id as via,
                f.title as via_title, (f.read_ws && ${mine}::uuid[]) as via_readable,
-               g.excluded, g.bridge,
+               g.excluded,
                (${item.parent}::uuid is not null and exists (
                   select 1 from item_grants fg
                    where fg.node_id = ${item.parent}::uuid and fg.workspace_id = g.workspace_id
@@ -402,7 +375,6 @@ async function buildResponse(ctx: Ctx, item: Item, q: Exec = db): Promise<Grants
          where g.node_id = ${item.id}
          order by g.is_home desc, lower(w.name), g.workspace_id`,
   );
-  const bridged = list.some((r) => r.is_home && r.bridge);
   let parentFolder: { id: string; title: string | null } | null = null;
   if (item.parent && list.some((r) => r.excluded && r.derivable)) {
     const [p] = await rows<{ title: string; readable: boolean }>(
@@ -428,7 +400,6 @@ async function buildResponse(ctx: Ctx, item: Item, q: Exec = db): Promise<Grants
           ? { id: r.via, title: r.via_readable ? r.via_title : null }
           : null,
       excluded: r.excluded,
-      bridgeOwned: r.bridge && bridged,
     });
   }
 
@@ -443,7 +414,7 @@ async function buildResponse(ctx: Ctx, item: Item, q: Exec = db): Promise<Grants
   let addable: GrantWorkspaceRef[] = [];
   if (manage) {
     const taken = new Set(
-      list.filter((r) => !r.excluded || (r.bridge && bridged)).map((r) => r.ws),
+      list.filter((r) => !r.excluded).map((r) => r.ws),
     );
     const mods = [...ctx.mine.values()].filter((w) => w.moderator && !taken.has(w.id));
     if (mods.length) {
@@ -678,11 +649,6 @@ export async function addGrant(
         );
       }
       const row = grants.get(t.wsId);
-      if (bridgeHomed(grants) && (row?.bridge || (await bridgeWorkspace(q, t.wsId)))) {
-        // A bridge-homed item's Admin and Team rows follow its level: a
-        // hand row there would be undone at the next level change.
-        throw BRIDGE_OWNED();
-      }
       if (row && !row.excluded) {
         throw new GrantError(409, 'already_granted', 'The item is already in that workspace.');
       }
@@ -701,7 +667,7 @@ export async function addGrant(
       if (row) {
         await tx.execute(
           sql`update item_grants
-                 set excluded = false, via_folder_id = null, write = ${write}, bridge = false,
+                 set excluded = false, via_folder_id = null, write = ${write},
                      granted_by = ${ctx.caller.loginId}, granted_at = now()
                where node_id = ${item.id} and workspace_id = ${t.wsId}`,
         );
@@ -749,7 +715,6 @@ export async function patchGrant(
     async (_q, ctx, item, grants) => {
       const row = rowFor(ctx, item, grants, wsId);
       if (!row || row.excluded) throw NOT_GRANTED();
-      if (row.bridge && bridgeHomed(grants)) throw BRIDGE_OWNED();
       if (row.via) {
         throw new GrantError(
           409,
@@ -799,7 +764,6 @@ export async function removeGrant(
     async (_q, ctx, item, grants) => {
       const row = rowFor(ctx, item, grants, wsId);
       if (!row || row.excluded) throw NOT_GRANTED();
-      if (row.bridge && bridgeHomed(grants)) throw BRIDGE_OWNED();
       if (row.isHome) {
         throw new GrantError(
           409,
@@ -818,7 +782,7 @@ export async function removeGrant(
       if (exclude) {
         await tx.execute(
           sql`update item_grants
-               set excluded = true, write = false, via_folder_id = null, bridge = false,
+               set excluded = true, write = false, via_folder_id = null,
                    granted_by = ${ctx.caller.loginId}, granted_at = now()
              where node_id = ${item.id} and workspace_id = ${row.ws}`,
         );
@@ -853,7 +817,6 @@ export async function restoreGrant(
       if (!row?.excluded) {
         throw new GrantError(409, 'not_excluded', 'The item is not removed from that workspace.');
       }
-      if (row.bridge && bridgeHomed(grants)) throw BRIDGE_OWNED();
       if (!mayManage(ctx, item) || !isMod(ctx, row.ws)) {
         throw new GrantError(
           403,
@@ -893,7 +856,6 @@ export async function handGrant(
       if (!row || row.excluded || !row.via) {
         throw new GrantError(409, 'not_derived', 'This grant does not come from a folder.');
       }
-      if (row.bridge && bridgeHomed(grants)) throw BRIDGE_OWNED();
       if (!mayManage(ctx, item) || !isMod(ctx, row.ws)) {
         throw new GrantError(
           403,
@@ -907,7 +869,7 @@ export async function handGrant(
     async (tx, ctx, item, _grants, row) => {
       await tx.execute(
         sql`update item_grants
-               set via_folder_id = null, bridge = false,
+               set via_folder_id = null,
                    granted_by = ${ctx.caller.loginId}, granted_at = now()
              where node_id = ${item.id} and workspace_id = ${row.ws}`,
       );
@@ -981,10 +943,6 @@ export async function grantEmbeds(
                 skip('forbidden');
                 continue;
               }
-              if (bridgeHomed(grants) && (row?.bridge || (await bridgeWorkspace(tx, ws)))) {
-                skip('bridge_owned');
-                continue;
-              }
               if (!(await kindOk(tx, embed.type, ws))) {
                 skip('kind_not_allowed');
                 continue;
@@ -996,7 +954,7 @@ export async function grantEmbeds(
               if (row) {
                 await tx.execute(
                   sql`update item_grants
-                         set excluded = false, via_folder_id = null, write = false, bridge = false,
+                         set excluded = false, via_folder_id = null, write = false,
                              granted_by = ${ctx.caller.loginId}, granted_at = now()
                        where node_id = ${embed.id} and workspace_id = ${ws}`,
                 );
@@ -1398,7 +1356,6 @@ async function moveHome(caller: WsCaller, nodeId: string, to: string, body: Move
       }
       const from = item.home!;
       if (from === to) throw new GrantError(409, 'same_home', 'The item already lives there.');
-      if (bridgeHomed(grants)) throw BRIDGE_OWNED();
       if (body.keepReadableIn !== undefined && body.keepReadableIn.toLowerCase() !== from) {
         throw new GrantError(400, 'invalid', 'keepReadableIn: only the old home can be kept.');
       }
@@ -1422,7 +1379,7 @@ async function moveHome(caller: WsCaller, nodeId: string, to: string, body: Move
       if (target) {
         await tx.execute(
           sql`update item_grants
-                 set is_home = true, via_folder_id = null, excluded = false, bridge = false,
+                 set is_home = true, via_folder_id = null, excluded = false,
                      write = ${target.excluded ? false : target.write},
                      granted_by = ${ctx.caller.loginId}, granted_at = now()
                where node_id = ${item.id} and workspace_id = ${to}`,
@@ -1435,7 +1392,7 @@ async function moveHome(caller: WsCaller, nodeId: string, to: string, body: Move
       }
       if (keep) {
         await tx.execute(
-          sql`update item_grants set write = false, bridge = false
+          sql`update item_grants set write = false
                where node_id = ${item.id} and workspace_id = ${from}`,
         );
       } else {

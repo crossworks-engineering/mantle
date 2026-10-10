@@ -41,7 +41,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ ok: false, error: appDbBodyError(parsed.error) }, { status: 400 });
   }
   const { id } = await ctx.params;
-  const app = await clientAppOr404(client.anchorId, id);
+  const app = await clientAppOr404(client.anchorId, id, client.loginId);
   if (app instanceof Response) return app;
 
   const { op, sql, params } = parsed.data;

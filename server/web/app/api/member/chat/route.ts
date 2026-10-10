@@ -107,6 +107,7 @@ export async function GET(req: Request) {
   const texts = await chatTextsForReader(
     member.anchorId,
     'team',
+    member.loginId,
     rows.map((r) => r.text),
   );
   const body: MemberChatThread = {

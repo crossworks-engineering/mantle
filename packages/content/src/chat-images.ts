@@ -135,11 +135,12 @@ export function rewriteChatImages(
 export async function chatImagesFor(
   anchorId: string,
   reader: ChatImageReader,
+  loginId: string,
   ids: readonly string[],
 ): Promise<Map<string, ChatImageKind>> {
   const out = new Map<string, ChatImageKind>();
   if (!ids.length) return out;
-  const rows = await withViewer(reader, () =>
+  const rows = await withViewer(reader, { login: loginId }, () =>
     db
       .select({ id: nodes.id, type: nodes.type })
       .from(nodes)
@@ -160,12 +161,13 @@ export async function chatImagesFor(
 export async function chatTextsForReader(
   anchorId: string,
   reader: ChatImageReader,
+  loginId: string,
   texts: readonly string[],
 ): Promise<string[]> {
   const ownUrl = clientOwnUrl(clientRedactOrigins());
   const ids = chatImageIds(texts, ownUrl);
   const readable = ids.length
-    ? await chatImagesFor(anchorId, reader, ids)
+    ? await chatImagesFor(anchorId, reader, loginId, ids)
     : new Map<string, ChatImageKind>();
   return texts.map((t) => rewriteChatImages(t, readable, reader, ownUrl));
 }

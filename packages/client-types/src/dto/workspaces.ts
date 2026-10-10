@@ -32,8 +32,8 @@ export type Workspace = {
   /** The Admin workspace: its users manage the brain (requireArea). */
   isAdmin: boolean;
   /** Admin or Team, the built-in workspaces: they cannot be renamed or
-   *  archived, and their connectors follow each connector's level until
-   *  W5b (locked). Hide Archive, rename and the connector picker there. */
+   *  archived (hide Rename and Archive there). Their connectors are
+   *  attached here like any workspace's since W5b2. */
   builtIn: boolean;
   /** Every Admin workspace user is a Moderator here (the Team workspace);
    *  only an Admin user may remove or demote one of them. */
@@ -82,9 +82,6 @@ export type WorkspaceResource = {
   id: string;
   name: string;
   write: boolean;
-  /** Owned by a level bridge until W5b (the Admin and Team workspaces'
-   *  connectors follow each connector's level): shown, not editable here. */
-  locked: boolean;
 };
 
 /** GET /api/workspaces/:id. */
@@ -164,7 +161,7 @@ export type WorkspaceErrorCode =
   | 'reserved_name'
   | 'archived'
   | 'admin_workspace'
-  | 'bridge_owned'
+  | 'built_in'
   | 'workspace_holds_items'
   | 'already_user'
   | 'not_user'

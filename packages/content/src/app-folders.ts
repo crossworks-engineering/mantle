@@ -119,22 +119,25 @@ async function folderRowsFor(
 export function appLauncher(
   anchorId: string,
   reader: 'team',
+  loginId: string,
 ): Promise<{ apps: MemberAppCard[]; folders: AppLauncherFolder[] }>;
 export function appLauncher(
   anchorId: string,
   reader: 'client',
+  loginId: string,
 ): Promise<{ apps: ClientAppCard[]; folders: AppLauncherFolder[] }>;
 export async function appLauncher(
   anchorId: string,
   reader: AppLauncherReader,
+  loginId: string,
 ): Promise<{ apps: Array<MemberAppCard | ClientAppCard>; folders: AppLauncherFolder[] }> {
   if (!isSystemScope() || currentSpaceScope()) {
     throw new Error('app launcher called inside a viewer scope: call it on the admin pool');
   }
   const { apps, places }: { apps: Array<MemberAppCard | ClientAppCard>; places: AppPlace[] } =
     reader === 'team'
-      ? await withViewer('team', () => listMemberAppsPlaced(anchorId))
-      : await withViewer('client', () => listClientAppsPlaced(anchorId));
+      ? await withViewer('team', { login: loginId }, () => listMemberAppsPlaced(anchorId))
+      : await withViewer('client', { login: loginId }, () => listClientAppsPlaced(anchorId));
   let folders: AppLauncherFolder[] = [];
   try {
     folders = buildAppLauncherFolders(await folderRowsFor(anchorId, places), places);

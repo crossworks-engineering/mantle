@@ -123,7 +123,23 @@ export type WorkspaceScope = {
   ws: readonly string[];
   /** The workspaces where the login is a Moderator (a subset of `ws`). */
   modWs: readonly string[];
+  /** A link scope only (plan 8.1, R6): the node ids the link serves next to
+   *  its own item. The scope reads no workspace; code that serves a link
+   *  checks this list. */
+  served?: readonly string[];
 };
+
+/**
+ * Who a viewer scope acts for (plan R6). `withViewer` builds the scope from
+ * it: a login (a member, a client, an MCP login, an API key, a linked brain
+ * acting as its user) reads the union of that login's workspaces; an
+ * assistant (the bot channel) reads its own workspace (none without an id
+ * or a workspace); a public link reads no workspace, only its served list.
+ */
+export type ViewerFor =
+  | { login: string }
+  | { agent: string | null }
+  | { link: { served: readonly string[] } };
 
 /** What the current code runs as: system work (no scope), a level scope
  *  (the tier model, until it is retired), or a workspace scope. */
@@ -307,27 +323,47 @@ export function currentScopeTx(): unknown {
 }
 
 /**
- * Run `fn` at `level` (or lower, if the caller already runs lower). Every
- * `db` query inside, including after awaits, uses that level's limited pool.
- * A client scope asked for public work (or a public scope for client work)
- * rejects with ViewerLevelConflictError: the two read different items, so
- * there is no lower level to run at.
- * `withViewer('admin', fn)` changes nothing: it never raises a lower scope
- * back to admin and never leaves a scope's transaction. Any lower level
- * starts a plain scope at that level: from inside a member's space request,
- * `withViewer('team', …)` reads the brain's Library on the team pool.
+ * Enter the scope `withViewer` built (client.ts, plan R6): `fn` and what it
+ * awaits read on the workspace role, each query in its own short
+ * transaction that sets the scope, as a turn scope does. It replaces a
+ * personal-space, level or system scope around it (as a level scope did
+ * before W5b2: a member's space request reads the brain through it). Inside
+ * a workspace scope it runs `fn` as is when the scope is the same and is
+ * refused otherwise (a scope is never widened or swapped). Only client.ts
+ * calls this, with a validated, frozen scope.
  */
-export function withViewer<T>(level: ViewerLevel, fn: () => Promise<T>): Promise<T> {
+export function runInViewerScope<T>(ws: WorkspaceScope, fn: () => Promise<T>): Promise<T> {
+  const open = store.getStore();
+  if (open?.ws) {
+    if (sameWorkspaceScope(open.ws, ws)) return fn();
+    return Promise.reject(new Error('withViewer: already inside another workspace scope'));
+  }
+  return store.run({ level: 'public', ws, perQuery: true }, fn);
+}
+
+/**
+ * TESTS ONLY (exported by @mantle/db/test-support): run `fn` on a level
+ * role, as withViewer did before W5b2, to prove that role's row security
+ * (the level roles still serve personal spaces and withHumanViewer until
+ * W5c and W6b). Product code never enters a level scope this way (the R6
+ * sweep checks it).
+ */
+export function runInLevelRoleForTest<T>(level: ViewerLevel, fn: () => Promise<T>): Promise<T> {
   let next: ViewerLevel;
   try {
     next = lowerLevel(levelOfScope(currentScope()), level);
   } catch (err) {
-    // A client scope meeting public work (or the reverse): refused, as a
-    // rejected promise like any other failure of `fn`.
     return Promise.reject(err);
   }
   if (level === 'admin' || next === 'admin') return fn();
   return store.run({ level: next }, fn);
+}
+
+/** Run `fn` outside every scope (system work). Only client.ts calls this,
+ *  for a level-role transaction that must not inherit the scope around it
+ *  (withHumanViewer, kept until W5c). */
+export function exitScope<T>(fn: () => T): T {
+  return store.exit(fn);
 }
 
 /** Enter a scope that runs in one transaction at `level` (or lower). Only

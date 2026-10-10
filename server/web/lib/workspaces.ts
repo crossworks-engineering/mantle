@@ -25,11 +25,11 @@
  *    Moderator: nobody demotes or removes one there, Admin users and the
  *    user itself included (19.5, 21.8 row 2).
  *
- * Until W5b two bridges own some rows: a user of the Admin workspace IS an
- * admin login (adding one or removing one is the same role change the Users
- * screen made, through applyLoginChange; the 0251 login bridge writes the
- * rows), and the Admin and Team workspaces' connectors follow each
- * connector's level (0251 connector bridge), so they are shown locked.
+ * A user of the Admin workspace IS an admin login until W5c (adding one or
+ * removing one is the same role change the Users screen makes, through
+ * applyLoginChange, which keeps the Admin and Team rows in step with the
+ * role). Connectors are attached here only: since W5b2 (0261) no level
+ * attaches one.
  *
  * Every refusal is a WsError: `{ error, code }` with its status. A workspace
  * or login the caller may not see is 404, never 403. Every change writes a
@@ -381,7 +381,6 @@ async function detail(
            order by r.type, lower(coalesce(a.name, g.name, r.ref_id))`,
     ),
   ]);
-  const locked = seen.row.bridge_key !== null;
   const outUsers: WorkspaceUser[] = users.map((u) => ({
     loginId: u.login_id,
     name: u.name,
@@ -396,7 +395,6 @@ async function detail(
     id: r.ref_id,
     name: r.name,
     write: r.write,
-    locked: r.type === 'connector' && locked,
   }));
   const hasHistory = seen.row.agent_id ? await agentHasHistory(q, seen.row.agent_id) : false;
   return {
@@ -696,11 +694,7 @@ function mayArchive(seen: Seen): void {
     throw new WsError(409, 'admin_workspace', 'The Admin workspace cannot be archived.');
   }
   if (seen.row.bridge_key !== null) {
-    throw new WsError(
-      409,
-      'bridge_owned',
-      'This workspace follows today’s sharing levels until grants become the truth. It cannot be archived yet.',
-    );
+    throw new WsError(409, 'built_in', 'Team is a built-in workspace: it cannot be archived.');
   }
   if (seen.row.archived_at !== null) throw archivedError();
 }
@@ -1156,13 +1150,6 @@ function mayManageResource(seen: Seen, kind: WorkspaceResourceKind): void {
     );
   }
   if (seen.row.archived_at !== null) throw archivedError();
-  if (kind === 'connector' && seen.row.bridge_key !== null) {
-    throw new WsError(
-      409,
-      'bridge_owned',
-      'Until grants become the truth, this workspace’s connectors follow each connector’s level. Change the level under Connectors.',
-    );
-  }
 }
 
 /** POST /api/workspaces/:id/resources. */
