@@ -34,7 +34,12 @@ import {
   recallNodes,
   recallRevisions,
   RECALL_REVISIONS_PER_MAP,
+  withDeadlockRetry,
+  withNodeDeleteHeads,
+  withNodeInsertHeads,
+  type Db,
 } from '@mantle/db';
+import { UUID_RE } from '@mantle/std';
 import {
   RECALL_BODY_CHAR_BUDGET,
   RECALL_MAX_MAP_NODES,
@@ -123,7 +128,11 @@ export type RecallWriteResult = {
   optionsDropped?: { cardSlug: string; label: string }[];
 };
 
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+/** A plain transaction or a heads transaction (withNodeInsertHeads and
+ *  friends): the helpers below only query through it. */
+type Tx =
+  | Parameters<Parameters<typeof db.transaction>[0]>[0]
+  | Pick<Db, 'select' | 'insert' | 'update' | 'delete' | 'execute'>;
 type CardRow = typeof recallNodes.$inferSelect;
 type StoredOption = NonNullable<CardRow['options']>[number];
 
@@ -503,51 +512,55 @@ export async function createRecallMap(
   await ensureRecallRoot(ownerId);
   const path = await resolveFolderPath(ownerId, input.folder);
 
-  const made = await db.transaction(async (tx) => {
-    // Two creates with the same title at once would both pick the same free
-    // slug and the second would die on the unique index as a raw 500. One
-    // owner-scoped lock makes the slug pick and the insert one step.
-    await tx.execute(
-      sql`select pg_advisory_xact_lock(hashtext(${`recall-map-create:${ownerId}`}))`,
-    );
-    const slug = uniqueSlug(recallNativeSlug(title), await mapSlugsTaken(tx, ownerId));
-    const published = actor.kind === 'owner';
-    const [item] = await tx
-      .insert(nodes)
-      .values({ ownerId, type: 'recall', title, slug, path, data: { enterWhen, published } })
-      .returning({ id: nodes.id });
-    const mapId = item!.id;
-    await tx.insert(recallMaps).values({
-      id: mapId,
-      ownerId,
-      nodeId: mapId,
-      slug,
-      title,
-      enterWhen,
-      nodeCount: 1,
-      published,
-      version: 1,
-    });
-    await tx.insert(recallNodes).values({
-      ownerId,
-      mapId,
-      slug: 'start',
-      kind: 'index',
-      title,
-      bodyMd: '',
-      bodyChars: 0,
-      useWhen: '',
-      options: [],
-      rank: 0,
-      sourceVersion: 1,
-    });
-    await recordRevision(tx, ownerId, mapId, actor, { summary: 'map created' }, null, {
-      title,
-      enterWhen,
-      slug,
-    });
-    return { mapId, slug, version: 1, published };
-  });
+  // Heads first (workspaces plan U1): the folder the map item lands in,
+  // before the advisory lock and the inserts.
+  const made = await withDeadlockRetry(() =>
+    withNodeInsertHeads(ownerId, [{ type: 'recall', path }], async (tx) => {
+      // Two creates with the same title at once would both pick the same free
+      // slug and the second would die on the unique index as a raw 500. One
+      // owner-scoped lock makes the slug pick and the insert one step.
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtext(${`recall-map-create:${ownerId}`}))`,
+      );
+      const slug = uniqueSlug(recallNativeSlug(title), await mapSlugsTaken(tx, ownerId));
+      const published = actor.kind === 'owner';
+      const [item] = await tx
+        .insert(nodes)
+        .values({ ownerId, type: 'recall', title, slug, path, data: { enterWhen, published } })
+        .returning({ id: nodes.id });
+      const mapId = item!.id;
+      await tx.insert(recallMaps).values({
+        id: mapId,
+        ownerId,
+        nodeId: mapId,
+        slug,
+        title,
+        enterWhen,
+        nodeCount: 1,
+        published,
+        version: 1,
+      });
+      await tx.insert(recallNodes).values({
+        ownerId,
+        mapId,
+        slug: 'start',
+        kind: 'index',
+        title,
+        bodyMd: '',
+        bodyChars: 0,
+        useWhen: '',
+        options: [],
+        rank: 0,
+        sourceVersion: 1,
+      });
+      await recordRevision(tx, ownerId, mapId, actor, { summary: 'map created' }, null, {
+        title,
+        enterWhen,
+        slug,
+      });
+      return { mapId, slug, version: 1, published };
+    }),
+  );
   await notifyTreeChanged(ownerId, 'recall');
   return made;
 }
@@ -695,17 +708,24 @@ export async function updateRecallMap(
     // The item carries the title, the enter-when line and the published flag
     // for the tree (a draft pill on an unpublished map). `data` is MERGED, not
     // replaced: an enter-when edit must not wipe the flag, or the reverse.
-    const itemSet: Record<string, unknown> = {};
-    if (set.title) itemSet.title = set.title;
-    if (set.slug) itemSet.slug = set.slug;
     const itemData: Record<string, unknown> = {};
     if (set.enterWhen) itemData.enterWhen = set.enterWhen;
     if (set.published !== undefined) itemData.published = set.published;
-    if (Object.keys(itemData).length > 0) {
-      itemSet.data = sql`coalesce(${nodes.data}, '{}'::jsonb) || ${JSON.stringify(itemData)}::jsonb`;
-    }
-    if (Object.keys(itemSet).length > 0 && map.nodeId) {
-      await tx.update(nodes).set(itemSet).where(eq(nodes.id, map.nodeId));
+    const hasItemData = Object.keys(itemData).length > 0;
+    // Title, slug and data only, never the path: no heads (plan V2).
+    if ((set.title || set.slug || hasItemData) && map.nodeId) {
+      await tx
+        .update(nodes)
+        .set({
+          ...(set.title ? { title: set.title } : {}),
+          ...(set.slug ? { slug: set.slug } : {}),
+          ...(hasItemData
+            ? {
+                data: sql`coalesce(${nodes.data}, '{}'::jsonb) || ${JSON.stringify(itemData)}::jsonb`,
+              }
+            : {}),
+        })
+        .where(eq(nodes.id, map.nodeId));
     }
     // The entry card's title tracks the map's, so the map does not read as two
     // different things in the catalog and in the editor.
@@ -1350,16 +1370,22 @@ export async function deleteRecallMap(
   mapId: string,
   actor: RecallActor,
 ): Promise<void> {
-  await db.transaction(async (tx) => {
-    const map = await mapOr404(tx, ownerId, mapId);
-    if (actor.kind !== 'owner') {
-      throw new RecallWriteError(
-        'delete_is_owners',
-        `Deleting map '${map.slug}' is the owner's call. An agent can empty a map's cards but not retire it.`,
-      );
-    }
-    await tx.delete(nodes).where(and(eq(nodes.ownerId, ownerId), eq(nodes.id, map.nodeId!)));
-  });
+  // Heads first (workspaces plan V4), before the map row lock. A native
+  // map's id is its node id; a malformed id locks nothing and misses below,
+  // as before.
+  const heads = UUID_RE.test(mapId) ? [mapId] : [];
+  await withDeadlockRetry(() =>
+    withNodeDeleteHeads(heads, async (tx) => {
+      const map = await mapOr404(tx, ownerId, mapId);
+      if (actor.kind !== 'owner') {
+        throw new RecallWriteError(
+          'delete_is_owners',
+          `Deleting map '${map.slug}' is the owner's call. An agent can empty a map's cards but not retire it.`,
+        );
+      }
+      await tx.delete(nodes).where(and(eq(nodes.ownerId, ownerId), eq(nodes.id, map.nodeId!)));
+    }),
+  );
   await notifyTreeChanged(ownerId, 'recall');
 }
 

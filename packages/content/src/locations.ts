@@ -22,7 +22,15 @@
  * exported (pure, unit-tested) and reused by the geo builtins.
  */
 import { and, desc, eq, ilike, or, sql } from 'drizzle-orm';
-import { db, nodes, notifyNodeIngested, type Node } from '@mantle/db';
+import {
+  db,
+  nodes,
+  notifyNodeIngested,
+  type Node,
+  withDeadlockRetry,
+  withNodeDeleteHeads,
+  withNodeInsertHeads,
+} from '@mantle/db';
 
 export const LOCATIONS_ROOT_LABEL = 'locations';
 
@@ -67,23 +75,27 @@ function rowOf(n: Node): LocationRow {
 }
 
 async function ensureRoot(ownerId: string): Promise<void> {
-  await db
-    .insert(nodes)
-    .values({
-      ownerId,
-      type: 'branch',
-      title: 'Locations',
-      slug: LOCATIONS_ROOT_LABEL,
-      path: LOCATIONS_ROOT_LABEL,
-      data: {
-        description:
-          'Resolved places — coordinates reverse-geocoded to addresses and saved for reuse. Indexed, embedded, and searchable.',
-      },
-    })
-    .onConflictDoNothing({
-      target: [nodes.ownerId, nodes.path],
-      where: sql`${nodes.type} = 'branch'`,
-    });
+  await withDeadlockRetry(() =>
+    withNodeInsertHeads(ownerId, [{ type: 'branch', path: LOCATIONS_ROOT_LABEL }], (tx) =>
+      tx
+        .insert(nodes)
+        .values({
+          ownerId,
+          type: 'branch',
+          title: 'Locations',
+          slug: LOCATIONS_ROOT_LABEL,
+          path: LOCATIONS_ROOT_LABEL,
+          data: {
+            description:
+              'Resolved places — coordinates reverse-geocoded to addresses and saved for reuse. Indexed, embedded, and searchable.',
+          },
+        })
+        .onConflictDoNothing({
+          target: [nodes.ownerId, nodes.path],
+          where: sql`${nodes.type} = 'branch'`,
+        }),
+    ),
+  );
 }
 
 type ListLocationsOpts = {
@@ -186,17 +198,21 @@ export async function createLocation(
     input.title?.trim() ||
     input.address?.trim() ||
     `${input.latitude.toFixed(5)}, ${input.longitude.toFixed(5)}`;
-  const [row] = await db
-    .insert(nodes)
-    .values({
-      ownerId,
-      type: 'location',
-      title: title.slice(0, 200),
-      path: LOCATIONS_ROOT_LABEL,
-      data,
-      tags: dedupeTags(input.tags ?? []),
-    })
-    .returning();
+  const [row] = await withDeadlockRetry(() =>
+    withNodeInsertHeads(ownerId, [{ type: 'location', path: LOCATIONS_ROOT_LABEL }], (tx) =>
+      tx
+        .insert(nodes)
+        .values({
+          ownerId,
+          type: 'location',
+          title: title.slice(0, 200),
+          path: LOCATIONS_ROOT_LABEL,
+          data,
+          tags: dedupeTags(input.tags ?? []),
+        })
+        .returning(),
+    ),
+  );
   if (!row) throw new Error('createLocation: insert returned no row');
   return rowOf(row);
 }
@@ -277,7 +293,9 @@ export async function deleteLocation(ownerId: string, id: string): Promise<boole
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'location')))
     .limit(1);
   if (!row) return false;
-  await db.delete(nodes).where(eq(nodes.id, id));
+  await withDeadlockRetry(() =>
+    withNodeDeleteHeads([id], (tx) => tx.delete(nodes).where(eq(nodes.id, id))),
+  );
   return true;
 }
 

@@ -14,6 +14,7 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import nextPlugin from '@next/eslint-plugin-next';
 import mantlePlugin from './eslint-rules/pair-fill-foreground.mjs';
 import mantleDbPlugin from './eslint-rules/system-db-allowlist.mjs';
+import mantleHeadsPlugin from './eslint-rules/heads-writers.mjs';
 
 export default tseslint.config(
   {
@@ -169,6 +170,14 @@ export default tseslint.config(
     files: ['server/**/*.{ts,tsx}', 'packages/**/*.{ts,tsx}'],
     plugins: { 'mantle-db': mantleDbPlugin },
     rules: { 'mantle-db/system-db-allowlist': 'error' },
+  },
+  {
+    // Writers of the rows that carry access lock heads first (workspaces
+    // plan U1, V5): withHeads and friends from @mantle/db, or a function
+    // marked @heads-held (its caller holds them). No exemption marker.
+    files: ['server/**/*.{ts,tsx}', 'packages/**/*.{ts,tsx}'],
+    plugins: { 'mantle-heads': mantleHeadsPlugin },
+    rules: { 'mantle-heads/heads-writers': 'error' },
   },
   {
     // Tests + one-shot scripts: relax rules that only make sense for shipped code.

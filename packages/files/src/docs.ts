@@ -28,10 +28,14 @@ import {
   db,
   docCollections,
   eq,
+  inArray,
   isWriteRefused,
-  notifyNodeIngested,
   nodes,
+  notifyNodeIngested,
   sql,
+  withDeadlockRetry,
+  withNodeDeleteHeads,
+  withNodeInsertHeads,
 } from '@mantle/db';
 import type { DocBrainDepth, DocCollection } from '@mantle/db';
 import { dashToLtree, ltreeToDash } from './slug';
@@ -134,20 +138,25 @@ async function ensureDocBranchChain(ownerId: string, ltreePath: string): Promise
     const prefix = segments.slice(0, i).join('.');
     const label = segments[i - 1]!;
     const slug = ltreeToDash(label);
-    await db
-      .insert(nodes)
-      .values({
-        ownerId,
-        type: 'branch',
-        title: i === 1 ? 'Documentation' : slug,
-        slug: null,
-        path: prefix,
-        data: { description: '', slug },
-      })
-      .onConflictDoNothing({
-        target: [nodes.ownerId, nodes.path],
-        where: sql`${nodes.type} = 'branch'`,
-      });
+    // Heads first (workspaces plan U1): the folder it lands in, shared.
+    await withDeadlockRetry(() =>
+      withNodeInsertHeads(ownerId, [{ type: 'branch', path: prefix }], async (tx) => {
+        await tx
+          .insert(nodes)
+          .values({
+            ownerId,
+            type: 'branch',
+            title: i === 1 ? 'Documentation' : slug,
+            slug: null,
+            path: prefix,
+            data: { description: '', slug },
+          })
+          .onConflictDoNothing({
+            target: [nodes.ownerId, nodes.path],
+            where: sql`${nodes.type} = 'branch'`,
+          });
+      }),
+    );
   }
 }
 
@@ -217,18 +226,23 @@ export async function upsertDocFromDisk(args: {
   }
 
   await ensureDocBranchChain(ownerId, loc.parentPath);
-  const [inserted] = await db
-    .insert(nodes)
-    .values({
-      ownerId,
-      type: 'documentation',
-      title: loc.relPath,
-      slug: null,
-      path: loc.parentPath,
-      data: newData,
-      tags: ['documentation', collection.origin],
-    })
-    .returning({ id: nodes.id });
+  // Heads first (workspaces plan U1): the folder it lands in, shared.
+  const [inserted] = await withDeadlockRetry(() =>
+    withNodeInsertHeads(ownerId, [{ type: 'documentation', path: loc.parentPath }], (tx) =>
+      tx
+        .insert(nodes)
+        .values({
+          ownerId,
+          type: 'documentation',
+          title: loc.relPath,
+          slug: null,
+          path: loc.parentPath,
+          data: newData,
+          tags: ['documentation', collection.origin],
+        })
+        .returning({ id: nodes.id }),
+    ),
+  );
   if (!inserted) throw new Error('upsertDocFromDisk: insert returned no row');
   // INSERT of a non-branch node auto-fires node_ingested (migration 0018).
   return { status: 'inserted', nodeId: inserted.id };
@@ -253,7 +267,12 @@ export async function deleteDocByRelPath(args: {
     )
     .limit(1);
   if (!node) return { ok: false };
-  await db.delete(nodes).where(eq(nodes.id, node.id)); // content_chunks cascade via FK
+  // Heads first (workspaces plan U1).
+  await withDeadlockRetry(() =>
+    withNodeDeleteHeads([node.id], async (tx) => {
+      await tx.delete(nodes).where(eq(nodes.id, node.id)); // content_chunks cascade via FK
+    }),
+  );
   return { ok: true };
 }
 
@@ -449,16 +468,23 @@ export async function reconcileEnabledCollections(ownerId: string): Promise<void
 /** Hard-delete every documentation node in a collection (chunks cascade). Run
  *  when a collection is disabled. */
 export async function purgeCollection(ownerId: string, collectionKey: string): Promise<number> {
-  const deleted = await db
-    .delete(nodes)
-    .where(
-      and(
-        eq(nodes.ownerId, ownerId),
-        eq(nodes.type, 'documentation'),
-        sql`${nodes.data}->>'collection' = ${collectionKey}`,
-      ),
-    )
-    .returning({ id: nodes.id });
+  const where = and(
+    eq(nodes.ownerId, ownerId),
+    eq(nodes.type, 'documentation'),
+    sql`${nodes.data}->>'collection' = ${collectionKey}`,
+  );
+  // Heads first (workspaces plan U1): read the ids to know whose heads to
+  // take, then delete only those.
+  const ids = (await db.select({ id: nodes.id }).from(nodes).where(where)).map((r) => r.id);
+  if (ids.length === 0) return 0;
+  const deleted = await withDeadlockRetry(() =>
+    withNodeDeleteHeads(ids, (tx) =>
+      tx
+        .delete(nodes)
+        .where(and(where, inArray(nodes.id, ids)))
+        .returning({ id: nodes.id }),
+    ),
+  );
   return deleted.length;
 }
 

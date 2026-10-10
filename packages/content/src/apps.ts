@@ -32,6 +32,9 @@ import {
   type AppManifest,
   type AppAuthorLevel,
   type BuildRef,
+  withDeadlockRetry,
+  withNodeDeleteHeads,
+  withNodeInsertHeads,
 } from '@mantle/db';
 import { loadProfilePreferences } from './profile-preferences';
 import { notifyAppNavChanged } from './app-nav';
@@ -187,20 +190,24 @@ export async function ensureAppsRoot(ownerId: string): Promise<void> {
 }
 
 async function ensureRoot(ownerId: string): Promise<void> {
-  await db
-    .insert(nodes)
-    .values({
-      ownerId,
-      type: 'branch',
-      title: 'Apps',
-      slug: APPS_ROOT_LABEL,
-      path: APPS_ROOT_LABEL,
-      data: { description: 'Mini apps (TSX) the Appsmith agent builds and runs in a sandbox.' },
-    })
-    .onConflictDoNothing({
-      target: [nodes.ownerId, nodes.path],
-      where: sql`${nodes.type} = 'branch'`,
-    });
+  await withDeadlockRetry(() =>
+    withNodeInsertHeads(ownerId, [{ type: 'branch', path: APPS_ROOT_LABEL }], (tx) =>
+      tx
+        .insert(nodes)
+        .values({
+          ownerId,
+          type: 'branch',
+          title: 'Apps',
+          slug: APPS_ROOT_LABEL,
+          path: APPS_ROOT_LABEL,
+          data: { description: 'Mini apps (TSX) the Appsmith agent builds and runs in a sandbox.' },
+        })
+        .onConflictDoNothing({
+          target: [nodes.ownerId, nodes.path],
+          where: sql`${nodes.type} = 'branch'`,
+        }),
+    ),
+  );
 }
 
 export type AppSort = 'edited' | 'newest' | 'oldest' | 'title';
@@ -453,43 +460,46 @@ export async function createApp(ownerId: string, input: CreateAppInput): Promise
   const manifest: AppManifest = input.description ? { description: input.description } : {};
   const id = input.id ?? randomUUID();
 
-  return db.transaction(async (tx) => {
-    const [node] = await tx
-      .insert(nodes)
-      .values({
-        id,
-        ownerId,
-        type: 'app',
-        title: input.title.trim().slice(0, 200) || 'Untitled app',
-        path: APPS_ROOT_LABEL,
-        data: {
-          ...(projectAppIcon(input.icon) ? { icon: projectAppIcon(input.icon) } : {}),
-          ...(projectAppTint(input.color) ? { color: input.color } : {}),
-        },
-        tags: dedupeTags(input.tags ?? []),
-      })
-      .returning();
-    if (!node) throw new Error('createApp: insert returned no row');
-    await tx.insert(apps).values({
-      nodeId: node.id,
-      source,
-      sourceText: sourceToText(source),
-      manifest,
-      ...(input.authorLevel ? { authorLevel: input.authorLevel } : {}),
-    });
-    return detailOf(node, {
-      source,
-      draftSource: null,
-      manifest,
-      draftBuild: null,
-      publishedBuild: null,
-      // A just-created app has no share and can't be the designated hub.
-      shareSettings: null,
-      hubAppId: null,
-      dataReadOnly: false,
-      authorLevel: input.authorLevel ?? 'admin',
-    });
-  });
+  // Heads first (workspaces plan U1): the folder the app lands in.
+  return withDeadlockRetry(() =>
+    withNodeInsertHeads(ownerId, [{ type: 'app', path: APPS_ROOT_LABEL }], async (tx) => {
+      const [node] = await tx
+        .insert(nodes)
+        .values({
+          id,
+          ownerId,
+          type: 'app',
+          title: input.title.trim().slice(0, 200) || 'Untitled app',
+          path: APPS_ROOT_LABEL,
+          data: {
+            ...(projectAppIcon(input.icon) ? { icon: projectAppIcon(input.icon) } : {}),
+            ...(projectAppTint(input.color) ? { color: input.color } : {}),
+          },
+          tags: dedupeTags(input.tags ?? []),
+        })
+        .returning();
+      if (!node) throw new Error('createApp: insert returned no row');
+      await tx.insert(apps).values({
+        nodeId: node.id,
+        source,
+        sourceText: sourceToText(source),
+        manifest,
+        ...(input.authorLevel ? { authorLevel: input.authorLevel } : {}),
+      });
+      return detailOf(node, {
+        source,
+        draftSource: null,
+        manifest,
+        draftBuild: null,
+        publishedBuild: null,
+        // A just-created app has no share and can't be the designated hub.
+        shareSettings: null,
+        hubAppId: null,
+        dataReadOnly: false,
+        authorLevel: input.authorLevel ?? 'admin',
+      });
+    }),
+  );
 }
 
 /**
@@ -1154,7 +1164,10 @@ export async function deleteApp(
   // path is read now: the `app_databases` row cascades away with the node.
   // The snapshot files stay, with the history rows, for the trash.
   const dbPath = await broker.appDatabasePath(ownerId, id);
-  await db.delete(nodes).where(eq(nodes.id, id)); // `apps` + `app_databases` cascade.
+  // `apps` + `app_databases` cascade.
+  await withDeadlockRetry(() =>
+    withNodeDeleteHeads([id], (tx) => tx.delete(nodes).where(eq(nodes.id, id))),
+  );
   if (dbPath) {
     try {
       await broker.removeAppDatabaseFiles(dbPath);

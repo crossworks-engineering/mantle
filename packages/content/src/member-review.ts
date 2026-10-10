@@ -49,22 +49,25 @@ import path from 'node:path';
 import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import {
-  isUniqueViolation,
   authUsers,
+  BUSY_MESSAGE,
   db,
   draws,
+  isBusy,
+  isUniqueViolation,
   isViewerLevel,
+  lockMoreHeads,
   nodes,
+  onSpaceRows,
   pages,
+  type ReviewState,
   spaceItems,
   spaces,
-  tables,
-  type ReviewState,
   type SpaceSharing,
-  type ViewerLevel,
+  tables,
   takeShareReadLock,
-  isBusy,
-  BUSY_MESSAGE,
+  type ViewerLevel,
+  withHeads,
 } from '@mantle/db';
 import {
   TEXT_EXTS,
@@ -651,7 +654,9 @@ export type AcceptResult = {
 /** The small-text cache a brain file carries (mirrors upsertFile). */
 const TEXT_CACHE_MAX_BYTES = 1_000_000;
 
-/** Ensure a brain root branch exists (lazy, like each kind's own create). */
+/** Ensure a brain root branch exists (lazy, like each kind's own create).
+ *  @heads-held: moveIntoBrain's transaction; a root sits in no folder, so it
+ *  needs no head of its own. */
 async function ensureBrainRoot(tx: Tx, brainId: string, label: string, title: string) {
   await tx
     .insert(nodes)
@@ -1208,7 +1213,12 @@ async function moveIntoBrain(
   const onRollback: (() => Promise<unknown>)[] = [];
   let result: AcceptResult;
   try {
-    result = await db.transaction(async (tx) => {
+    // Heads first (plan U1): the item's own, before any other lock; the
+    // bundle and the landing folders are added below (lockMoreHeads, NOWAIT:
+    // a busy head answers "busy, try again", as a busy folder lock does).
+    result = await withHeads([id], 'update', async (heads) => {
+      // The heads transaction, as the helpers below type a transaction.
+      const tx = heads as unknown as Tx;
       // 0. The brain's share lock (shared), before any row lock: a folder
       //    rename, move or delete holds it exclusive and then updates the
       //    drafts under the folder (carrySpaceRows), so taking a draft's row
@@ -1245,6 +1255,8 @@ async function moveIntoBrain(
       if (!inSpace.has(root.id)) throw notFound();
       const items = bundle.items.filter((b) => inSpace.has(b.id));
       const ids = items.map((b) => b.id);
+      // Every item that moves into the brain: its head, for update.
+      await lockMoreHeads(tx, ids);
 
       // 3a. Where each item lands, planned before anything moves (read
       //     only), and the share it is read at there (folder plan phase 5):
@@ -1286,11 +1298,17 @@ async function moveIntoBrain(
       // it lands under (the share lock is held since step 0).
       const landings = [...new Set(landingOf.values())];
       if (landings.length) {
-        await tx.execute(sql`
-          select 1 from nodes
+        const above = (await tx.execute(sql`
+          select id from nodes
            where owner_id = ${brainId} and type = 'branch'
              and path @> any(${`{${landings.join(',')}}`}::ltree[])
-           for share`);
+           for share`)) as unknown as { id: string }[];
+        // And their heads: a grant change on a landing folder waits for the
+        // Accept, or the Accept for it (folders made below are its own).
+        await lockMoreHeads(
+          tx,
+          above.map((r) => r.id),
+        );
       }
       const shares = await sharesAt(
         tx,
@@ -1681,15 +1699,18 @@ export async function discardLeftBehind(id: string): Promise<void> {
     // Deleted only while it is still in the space (audit F03): an Accept of
     // another item that moves this one along (a shared embed) re-owns it to
     // the brain, and the delete, re-checked on the new row, then matches
-    // nothing. Never a brain row.
+    // nothing. Never a brain row: the space's own rows need no heads
+    // (onSpaceRows, 0244).
     const workbooks = await tx
       .select({ id: tables.nodeId, storagePath: tables.storagePath })
       .from(tables)
       .where(inArray(tables.nodeId, doomedIds));
-    const gone = await tx
-      .delete(nodes)
-      .where(and(inArray(nodes.id, doomedIds), eq(nodes.ownerId, spaceId)))
-      .returning({ id: nodes.id });
+    const gone = await onSpaceRows(tx, spaceId, (q) =>
+      q
+        .delete(nodes)
+        .where(and(inArray(nodes.id, doomedIds), eq(nodes.ownerId, spaceId)))
+        .returning({ id: nodes.id }),
+    );
     const goneIds = new Set(gone.map((g) => g.id));
     if (!goneIds.has(id)) throw notFound();
     for (const d of doomed) {

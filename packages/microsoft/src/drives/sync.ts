@@ -10,7 +10,16 @@
  * docs/microsoft-graph-ingest.md).
  */
 import { and, eq } from 'drizzle-orm';
-import { db, msDriveItems, msDrives, nodes, type MsAccount, type MsDrive } from '@mantle/db';
+import {
+  db,
+  msDriveItems,
+  msDrives,
+  nodes,
+  withDeadlockRetry,
+  withNodeDeleteHeads,
+  type MsAccount,
+  type MsDrive,
+} from '@mantle/db';
 import { MAX_UPLOAD_BYTES } from '@mantle/files';
 import { deleteFileWithDerived } from '@mantle/content';
 import { getValidAccessToken } from '../token-store';
@@ -78,7 +87,12 @@ async function removeItem(driveDbId: string, itemId: string): Promise<number> {
     .limit(1);
   if (!other) {
     try {
-      await db.delete(nodes).where(eq(nodes.id, row.nodeId));
+      // The node's heads first (plan V4), in its own transaction.
+      await withDeadlockRetry(() =>
+        withNodeDeleteHeads([row.nodeId], async (tx) => {
+          await tx.delete(nodes).where(eq(nodes.id, row.nodeId));
+        }),
+      );
     } catch {
       // Referenced elsewhere (restrict) — leave the node in place.
     }

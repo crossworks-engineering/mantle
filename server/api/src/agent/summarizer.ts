@@ -23,6 +23,8 @@ import {
   bumpWorkerUsage,
   getDefaultWorker,
   nodes,
+  withDeadlockRetry,
+  withNodeInsertHeads,
   type AiWorker,
   type SummarizerParams,
 } from '@mantle/db';
@@ -328,110 +330,119 @@ export async function summarizeAgentConversation(ownerId: string, agentId: strin
           input: { topics: topics.length, turns: batch.length },
         },
         async (h) => {
-          return await db.transaction(async (tx) => {
-            const batchIds = batch.map((b) => b.id);
-            const still = await tx
-              .select({ id: assistantMessages.id })
-              .from(assistantMessages)
-              .where(
-                and(
-                  eq(assistantMessages.ownerId, ownerId),
-                  inArray(assistantMessages.id, batchIds),
-                  isNull(assistantMessages.digestNodeId),
-                ),
-              )
-              .for('update');
-            if (still.length !== batchIds.length) {
-              h.setMeta({
-                disposition: 'lost_claim_race',
-                still_undigested: still.length,
-                expected: batchIds.length,
-              });
-              return null;
-            }
+          // The digest folder's head first (plan U1). The model has already
+          // answered and the topics are embedded, so a retry repeats only
+          // this transaction.
+          return await withDeadlockRetry(() =>
+            withNodeInsertHeads(
+              ownerId,
+              [{ type: 'note', path: CONVERSATION_DIGEST_PATH }],
+              async (tx) => {
+                const batchIds = batch.map((b) => b.id);
+                const still = await tx
+                  .select({ id: assistantMessages.id })
+                  .from(assistantMessages)
+                  .where(
+                    and(
+                      eq(assistantMessages.ownerId, ownerId),
+                      inArray(assistantMessages.id, batchIds),
+                      isNull(assistantMessages.digestNodeId),
+                    ),
+                  )
+                  .for('update');
+                if (still.length !== batchIds.length) {
+                  h.setMeta({
+                    disposition: 'lost_claim_race',
+                    still_undigested: still.length,
+                    expected: batchIds.length,
+                  });
+                  return null;
+                }
 
-            const turnToDigest = new Map<string, string>();
-            const out: { topic: string; turnCount: number }[] = [];
-            for (let ti = 0; ti < topics.length; ti++) {
-              const topic = topics[ti]!;
-              const turns = topic.turnIndexes
-                .map((i) => batch[i - 1])
-                .filter((t): t is (typeof batch)[number] => t != null);
-              if (turns.length === 0) continue;
-              const periodStart = turns[0]!.createdAt.toISOString();
-              const periodEnd = turns[turns.length - 1]!.createdAt.toISOString();
-              const title = `${topic.label} · ${periodStart.slice(0, 10)} → ${periodEnd.slice(0, 10)} (${turns.length} turns)`;
+                const turnToDigest = new Map<string, string>();
+                const out: { topic: string; turnCount: number }[] = [];
+                for (let ti = 0; ti < topics.length; ti++) {
+                  const topic = topics[ti]!;
+                  const turns = topic.turnIndexes
+                    .map((i) => batch[i - 1])
+                    .filter((t): t is (typeof batch)[number] => t != null);
+                  if (turns.length === 0) continue;
+                  const periodStart = turns[0]!.createdAt.toISOString();
+                  const periodEnd = turns[turns.length - 1]!.createdAt.toISOString();
+                  const title = `${topic.label} · ${periodStart.slice(0, 10)} → ${periodEnd.slice(0, 10)} (${turns.length} turns)`;
 
-              const vec = topicVecs[ti] ?? null;
-              const [n] = await tx
-                .insert(nodes)
-                .values({
-                  ownerId,
-                  type: 'note',
-                  title,
-                  path: CONVERSATION_DIGEST_PATH,
-                  ...(vec ? { embedding: vec } : {}),
-                  data: {
-                    kind: 'conversation_digest',
-                    // The conversational agent this digest belongs to — the key
-                    // loadConversationContext filters digests by (per agent,
-                    // cross-channel). NOT the summarizer worker.
-                    agent_id: agentId,
-                    agent_slug: agentSlug,
-                    period_start: periodStart,
-                    period_end: periodEnd,
-                    source_turn_count: turns.length,
-                    model: worker.model,
-                    summarizer_worker: worker.slug,
-                    content: topic.summary,
-                    summary: topic.summary,
-                    topic: topic.label,
-                    topic_slug: slugifyTopic(topic.label),
-                  },
-                  tags: [
-                    'conversation-digest',
-                    `agent:${slugifyTopic(agentSlug)}`,
-                    `topic:${slugifyTopic(topic.label)}`,
-                  ],
-                })
-                .returning({ id: nodes.id });
-              if (!n) throw new Error('summarizer: failed to insert digest node');
-              for (const t of turns) turnToDigest.set(t.id, n.id);
-              out.push({ topic: topic.label, turnCount: turns.length });
-            }
+                  const vec = topicVecs[ti] ?? null;
+                  const [n] = await tx
+                    .insert(nodes)
+                    .values({
+                      ownerId,
+                      type: 'note',
+                      title,
+                      path: CONVERSATION_DIGEST_PATH,
+                      ...(vec ? { embedding: vec } : {}),
+                      data: {
+                        kind: 'conversation_digest',
+                        // The conversational agent this digest belongs to — the key
+                        // loadConversationContext filters digests by (per agent,
+                        // cross-channel). NOT the summarizer worker.
+                        agent_id: agentId,
+                        agent_slug: agentSlug,
+                        period_start: periodStart,
+                        period_end: periodEnd,
+                        source_turn_count: turns.length,
+                        model: worker.model,
+                        summarizer_worker: worker.slug,
+                        content: topic.summary,
+                        summary: topic.summary,
+                        topic: topic.label,
+                        topic_slug: slugifyTopic(topic.label),
+                      },
+                      tags: [
+                        'conversation-digest',
+                        `agent:${slugifyTopic(agentSlug)}`,
+                        `topic:${slugifyTopic(topic.label)}`,
+                      ],
+                    })
+                    .returning({ id: nodes.id });
+                  if (!n) throw new Error('summarizer: failed to insert digest node');
+                  for (const t of turns) turnToDigest.set(t.id, n.id);
+                  out.push({ topic: topic.label, turnCount: turns.length });
+                }
 
-            // Topics parsed but none resolved to actual turns (model emitted
-            // empty/garbled turn_indexes everywhere): throwing rolls back and
-            // surfaces an errored trace. Silently returning here would leave
-            // the batch undigested and re-bill the same LLM call on every
-            // subsequent insert — an unbounded spend leak.
-            if (out.length === 0) {
-              throw new Error(
-                'summarizer: topics parsed but none resolved to turns — not persisting',
-              );
-            }
+                // Topics parsed but none resolved to actual turns (model emitted
+                // empty/garbled turn_indexes everywhere): throwing rolls back and
+                // surfaces an errored trace. Silently returning here would leave
+                // the batch undigested and re-bill the same LLM call on every
+                // subsequent insert — an unbounded spend leak.
+                if (out.length === 0) {
+                  throw new Error(
+                    'summarizer: topics parsed but none resolved to turns — not persisting',
+                  );
+                }
 
-            const fallbackId = turnToDigest.values().next().value;
-            if (fallbackId) {
-              for (const t of batch)
-                if (!turnToDigest.has(t.id)) turnToDigest.set(t.id, fallbackId);
-            }
+                const fallbackId = turnToDigest.values().next().value;
+                if (fallbackId) {
+                  for (const t of batch)
+                    if (!turnToDigest.has(t.id)) turnToDigest.set(t.id, fallbackId);
+                }
 
-            const byDigest = new Map<string, string[]>();
-            for (const [turnId, digestId] of turnToDigest) {
-              const list = byDigest.get(digestId) ?? [];
-              list.push(turnId);
-              byDigest.set(digestId, list);
-            }
-            for (const [digestId, ids] of byDigest) {
-              await tx
-                .update(assistantMessages)
-                .set({ digestNodeId: digestId })
-                .where(inArray(assistantMessages.id, ids));
-            }
-            h.setMeta({ digests: out.length, embedded: topicVecs.filter(Boolean).length });
-            return out;
-          });
+                const byDigest = new Map<string, string[]>();
+                for (const [turnId, digestId] of turnToDigest) {
+                  const list = byDigest.get(digestId) ?? [];
+                  list.push(turnId);
+                  byDigest.set(digestId, list);
+                }
+                for (const [digestId, ids] of byDigest) {
+                  await tx
+                    .update(assistantMessages)
+                    .set({ digestNodeId: digestId })
+                    .where(inArray(assistantMessages.id, ids));
+                }
+                h.setMeta({ digests: out.length, embedded: topicVecs.filter(Boolean).length });
+                return out;
+              },
+            ),
+          );
         },
       );
       if (!inserted) {

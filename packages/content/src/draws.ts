@@ -27,6 +27,10 @@ import {
   type Node,
   type ViewerLevel,
   withBusyRetry,
+  headsOrSpace,
+  withDeadlockRetry,
+  withNodeDeleteHeads,
+  withNodeInsertHeads,
 } from '@mantle/db';
 import { sceneToText } from './scene-to-text';
 import { acceptSceneSvg, EXCALIDRAW_ENGINE } from './scene-svg';
@@ -211,7 +215,18 @@ export async function withDrawLock<T>(
 }
 
 async function ensureRoot(ownerId: string): Promise<void> {
-  await db
+  await headsOrSpace(
+    (f) =>
+      withDeadlockRetry(() =>
+        withNodeInsertHeads(ownerId, [{ type: 'branch', path: DRAWS_ROOT_LABEL }], f),
+      ),
+    (tx) => insertRoot(tx, ownerId),
+  );
+}
+
+/** @heads-held by ensureRoot (through headsOrSpace). */
+async function insertRoot(tx: Pick<typeof db, 'insert'>, ownerId: string): Promise<void> {
+  await tx
     .insert(nodes)
     .values({
       ownerId,
@@ -513,22 +528,29 @@ export async function createDraw(ownerId: string, input: CreateDrawInput): Promi
   const scene = normalizeScene(input.scene ?? EMPTY_SCENE);
   const sceneText = sceneToText(scene);
 
-  return db.transaction(async (tx) => {
-    const [node] = await tx
-      .insert(nodes)
-      .values({
-        ownerId,
-        type: 'draw',
-        title: input.title.trim().slice(0, 200) || 'Untitled drawing',
-        path: DRAWS_ROOT_LABEL,
-        data: { visibility: 'private' },
-        tags: dedupeTags(input.tags ?? []),
-      })
-      .returning();
-    if (!node) throw new Error('createDraw: insert returned no row');
-    await tx.insert(draws).values({ nodeId: node.id, scene, sceneText });
-    return detailOf(node, scene);
-  });
+  // Heads first (workspaces plan U1): the folder the drawing lands in.
+  return headsOrSpace<DrawDetail>(
+    (f) =>
+      withDeadlockRetry(() =>
+        withNodeInsertHeads(ownerId, [{ type: 'draw', path: DRAWS_ROOT_LABEL }], f),
+      ),
+    async (tx) => {
+      const [node] = await tx
+        .insert(nodes)
+        .values({
+          ownerId,
+          type: 'draw',
+          title: input.title.trim().slice(0, 200) || 'Untitled drawing',
+          path: DRAWS_ROOT_LABEL,
+          data: { visibility: 'private' },
+          tags: dedupeTags(input.tags ?? []),
+        })
+        .returning();
+      if (!node) throw new Error('createDraw: insert returned no row');
+      await tx.insert(draws).values({ nodeId: node.id, scene, sceneText });
+      return detailOf(node, scene);
+    },
+  );
 }
 
 export type UpdateDrawInput = {
@@ -810,7 +832,11 @@ export async function deleteDraw(ownerId: string, id: string): Promise<boolean> 
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'draw')))
     .limit(1);
   if (!row) return false;
-  await db.delete(nodes).where(eq(nodes.id, id)); // `draws` row cascades.
+  // `draws` row cascades.
+  await headsOrSpace(
+    (f) => withDeadlockRetry(() => withNodeDeleteHeads([id], f)),
+    (tx) => tx.delete(nodes).where(eq(nodes.id, id)),
+  );
   return true;
 }
 

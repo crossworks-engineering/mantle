@@ -43,6 +43,7 @@ import postgres from 'postgres';
 import { env, envFlag } from '@mantle/config';
 import { ensureViewerRoles } from './viewer-roles';
 import { applyViewerGrants } from './access-matrix';
+import { headsBypassesIn } from './heads-bypass';
 
 async function main() {
   const url = env('DATABASE_URL');
@@ -94,6 +95,10 @@ async function main() {
       });
       applied += 1;
       console.log(`  ✓ ${migration.folderMillis} (${migration.sql.length} statement(s))`);
+      // A named heads-check bypass (0244) shows here as well as in the log.
+      for (const name of headsBypassesIn(migration.sql)) {
+        console.log(`    heads check bypassed by name: ${name}`);
+      }
     }
 
     console.log(applied === 0 ? 'Already up to date.' : `Done — applied ${applied} migration(s).`);

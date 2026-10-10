@@ -9,7 +9,17 @@
  * slug, and nothing nests deeper than TREE_MAX_DEPTH folders.
  */
 import { and, eq, sql } from 'drizzle-orm';
-import { carrySpaceRows, db, nodes, takeShareWriteLock, takeShareReadLock } from '@mantle/db';
+import {
+  carrySpaceRows,
+  db,
+  nodes,
+  takeShareWriteLock,
+  takeShareReadLock,
+  withDeadlockRetry,
+  withNodeInsertHeads,
+  withNodeMoveHeads,
+  withSubtreeHeads,
+} from '@mantle/db';
 import { dashToLtree, folderSlugOf } from '@mantle/files';
 import {
   TREE_KIND_SPECS,
@@ -57,22 +67,26 @@ const ROOT_TITLE: Record<TreeKind, string> = {
 export async function ensureKindRoot(ownerId: string, kind: TreeKind): Promise<boolean> {
   const root = TREE_KIND_SPECS[kind].root;
   if (await branchAt(ownerId, root)) return true;
+  // Heads first (plan U1): a root sits in no folder, so there are none to
+  // wait on, but the insert runs in the heads transaction all the same.
   const made = await unlessWriteRefused(() =>
-    db
-      .insert(nodes)
-      .values({
-        ownerId,
-        type: 'branch',
-        title: ROOT_TITLE[kind],
-        slug: root,
-        path: root,
-        data: {},
-        tags: [],
-      })
-      .onConflictDoNothing({
-        target: [nodes.ownerId, nodes.path],
-        where: sql`${nodes.type} = 'branch'`,
-      }),
+    withNodeInsertHeads(ownerId, [{ type: 'branch', path: root }], (tx) =>
+      tx
+        .insert(nodes)
+        .values({
+          ownerId,
+          type: 'branch',
+          title: ROOT_TITLE[kind],
+          slug: root,
+          path: root,
+          data: {},
+          tags: [],
+        })
+        .onConflictDoNothing({
+          target: [nodes.ownerId, nodes.path],
+          where: sql`${nodes.type} = 'branch'`,
+        }),
+    ),
   );
   return made !== null;
 }
@@ -126,7 +140,8 @@ async function subtreeLevels(ownerId: string, path: string): Promise<number> {
   return Number(row?.levels ?? 1);
 }
 
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+/** A write's transaction (the heads helpers hand it over). */
+type Tx = Pick<typeof db, 'execute'>;
 
 /**
  * Inside a write's transaction: lock the folder (and the destination folder,
@@ -174,9 +189,11 @@ async function lockAndRecheck(
  * new path (subpath at its own depth would throw). Items keep their
  * `updated_at`: filing something is not editing it. Members' drafts and
  * folders under a brain folder follow it (carrySpaceRows).
+ *
+ * @heads-held by renameNodeFolder, moveNodeFolder
  */
 async function rewriteSubtree(
-  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  tx: Tx,
   ownerId: string,
   oldPath: string,
   newPath: string,
@@ -210,19 +227,22 @@ export async function createNodeFolder(
   if (await branchAt(ownerId, path)) {
     throw new NodeOpRefusal('conflict', `a folder named '${title}' already exists here`);
   }
-  const [row] = await db
-    .insert(nodes)
-    .values({
-      ...(opts.id ? { id: opts.id } : {}),
-      ownerId,
-      type: 'branch',
-      title,
-      slug,
-      path,
-      data: opts.data ?? {},
-      tags: [],
-    })
-    .returning({ id: nodes.id });
+  // Heads first (plan U1): the parent folder, shared.
+  const [row] = await withNodeInsertHeads(ownerId, [{ type: 'branch', path }], (tx) =>
+    tx
+      .insert(nodes)
+      .values({
+        ...(opts.id ? { id: opts.id } : {}),
+        ownerId,
+        type: 'branch',
+        title,
+        slug,
+        path,
+        data: opts.data ?? {},
+        tags: [],
+      })
+      .returning({ id: nodes.id }),
+  );
   if (!row) throw new Error('createNodeFolder: insert returned no row');
   return row.id;
 }
@@ -247,15 +267,19 @@ export async function renameNodeFolder(
   if (await branchAt(ownerId, newPath)) {
     throw new NodeOpRefusal('conflict', `a folder named '${title}' already exists here`);
   }
-  await db.transaction(async (tx) => {
-    await takeShareWriteLock(tx, ownerId);
-    await lockAndRecheck(tx, ownerId, folder, { newPath });
-    await rewriteSubtree(tx, ownerId, folder.path, newPath);
-    await tx
-      .update(nodes)
-      .set({ title, slug, updatedAt: new Date() })
-      .where(and(eq(nodes.id, folderId), eq(nodes.ownerId, ownerId)));
-  });
+  // Heads first (plan V3): the folder and everything below it, and its parent.
+  const node = { id: folder.id, type: 'branch', path: folder.path };
+  await withDeadlockRetry(() =>
+    withNodeMoveHeads(ownerId, node, newPath, async (tx) => {
+      await takeShareWriteLock(tx, ownerId);
+      await lockAndRecheck(tx, ownerId, folder, { newPath });
+      await rewriteSubtree(tx, ownerId, folder.path, newPath);
+      await tx
+        .update(nodes)
+        .set({ title, slug, updatedAt: new Date() })
+        .where(and(eq(nodes.id, folderId), eq(nodes.ownerId, ownerId)));
+    }),
+  );
 }
 
 export async function moveNodeFolder(
@@ -285,15 +309,20 @@ export async function moveNodeFolder(
       `the destination already has a folder named '${folder.title}'`,
     );
   }
-  await db.transaction(async (tx) => {
-    await takeShareWriteLock(tx, ownerId);
-    await lockAndRecheck(tx, ownerId, folder, { destParentPath, newPath });
-    await rewriteSubtree(tx, ownerId, folder.path, newPath);
-    await tx
-      .update(nodes)
-      .set({ updatedAt: new Date() })
-      .where(and(eq(nodes.id, folderId), eq(nodes.ownerId, ownerId)));
-  });
+  // Heads first (plan V3): the folder and everything below it, the folder it
+  // leaves and the one it lands in.
+  const node = { id: folder.id, type: 'branch', path: folder.path };
+  await withDeadlockRetry(() =>
+    withNodeMoveHeads(ownerId, node, newPath, async (tx) => {
+      await takeShareWriteLock(tx, ownerId);
+      await lockAndRecheck(tx, ownerId, folder, { destParentPath, newPath });
+      await rewriteSubtree(tx, ownerId, folder.path, newPath);
+      await tx
+        .update(nodes)
+        .set({ updatedAt: new Date() })
+        .where(and(eq(nodes.id, folderId), eq(nodes.ownerId, ownerId)));
+    }),
+  );
 }
 
 export async function moveNodeItem(
@@ -302,21 +331,33 @@ export async function moveNodeItem(
   itemId: string,
   destPath: string,
 ): Promise<void> {
-  // The share lock (shared) before the row: see takeShareReadLock.
-  const moved = await db.transaction(async (tx) => {
-    await takeShareReadLock(tx, ownerId);
-    return tx
-      .update(nodes)
-      .set({ path: destPath })
-      .where(
-        and(
-          eq(nodes.id, itemId),
-          eq(nodes.ownerId, ownerId),
-          sql`${nodes.type} = ${TREE_KIND_SPECS[kind].nodeType}`,
-        ),
-      )
-      .returning({ id: nodes.id });
-  });
+  // Heads first (plan V3): the item, the folder it leaves and the one it
+  // lands in, so its current path is read before the transaction.
+  const type = TREE_KIND_SPECS[kind].nodeType;
+  const [item] = (await db.execute(sql`
+    select path::text as path from nodes
+     where id = ${itemId} and owner_id = ${ownerId} and type = ${type}`)) as unknown as Array<{
+    path: string;
+  }>;
+  if (!item) throw new NodeOpRefusal('not-found', 'not found');
+  const node = { id: itemId, type, path: item.path };
+  const moved = await withDeadlockRetry(() =>
+    withNodeMoveHeads(ownerId, node, destPath, async (tx) => {
+      // The share lock (shared) before the row: see takeShareReadLock.
+      await takeShareReadLock(tx, ownerId);
+      return tx
+        .update(nodes)
+        .set({ path: destPath })
+        .where(
+          and(
+            eq(nodes.id, itemId),
+            eq(nodes.ownerId, ownerId),
+            sql`${nodes.type} = ${TREE_KIND_SPECS[kind].nodeType}`,
+          ),
+        )
+        .returning({ id: nodes.id });
+    }),
+  );
   if (!moved.length) throw new NodeOpRefusal('not-found', 'not found');
 }
 
@@ -336,38 +377,51 @@ export async function deleteNodeFolderMerging(ownerId: string, folderId: string)
   const q = treeParentPath(p);
   const landing = sql`(case when n.path = ${p}::ltree then ${q}::ltree
                             else ${q}::ltree || subpath(n.path, nlevel(${p}::ltree)) end)`;
-  await db.transaction(async (tx) => {
-    await takeShareWriteLock(tx, ownerId);
-    const [self] = (await tx.execute(sql`
+  // Heads first (plan V3, V4): the folder and everything below it, its
+  // parent (where the rest lands) and the folders outside it that subfolders
+  // merge into (what they held lands there). Read again on a retry.
+  await withDeadlockRetry(async () => {
+    const into = (
+      (await db.execute(sql`
+        select distinct b.id::text as id from nodes n
+          join nodes b on b.owner_id = ${ownerId} and b.type = 'branch'
+                      and b.path = ${landing} and not (b.path <@ ${p}::ltree)
+         where n.owner_id = ${ownerId} and n.type = 'branch'
+           and n.path <@ ${p}::ltree and n.id <> ${folderId}`)) as unknown as Array<{ id: string }>
+    ).map((r) => r.id);
+    return withSubtreeHeads(folderId, into, async (tx) => {
+      await takeShareWriteLock(tx, ownerId);
+      const [self] = (await tx.execute(sql`
       select path::text as path from nodes
        where id = ${folderId} and owner_id = ${ownerId} and type = 'branch'
        for update`)) as unknown as Array<{ path: string }>;
-    if (!self || self.path !== p) {
-      throw new NodeOpRefusal('conflict', `'${folder.title}' changed meanwhile; try again`);
-    }
-    // 1. Subfolders that merge: a folder is already at their landing path,
-    //    outside the deleted one. Their contents land in it below.
-    await tx.execute(sql`
+      if (!self || self.path !== p) {
+        throw new NodeOpRefusal('conflict', `'${folder.title}' changed meanwhile; try again`);
+      }
+      // 1. Subfolders that merge: a folder is already at their landing path,
+      //    outside the deleted one. Their contents land in it below.
+      await tx.execute(sql`
       delete from nodes n
        where n.owner_id = ${ownerId} and n.type = 'branch'
          and n.path <@ ${p}::ltree and n.id <> ${folderId}
          and exists (select 1 from nodes b
                       where b.owner_id = ${ownerId} and b.type = 'branch'
                         and b.path = ${landing} and not (b.path <@ ${p}::ltree))`);
-    // 2. The folder itself (a shared one refreshes what sat below: 0207).
-    await tx.execute(sql`delete from nodes where id = ${folderId} and owner_id = ${ownerId}`);
-    // 3. The rest moves up one level, shallowest first: a row's landing path
-    //    can be the old path of a row one level up (a subfolder named like
-    //    the deleted folder), and that row has moved by then. Items keep
-    //    their updated_at: filing is not editing.
-    const [deepest] = (await tx.execute(sql`
+      // 2. The folder itself (a shared one refreshes what sat below: 0207).
+      await tx.execute(sql`delete from nodes where id = ${folderId} and owner_id = ${ownerId}`);
+      // 3. The rest moves up one level, shallowest first: a row's landing path
+      //    can be the old path of a row one level up (a subfolder named like
+      //    the deleted folder), and that row has moved by then. Items keep
+      //    their updated_at: filing is not editing.
+      const [deepest] = (await tx.execute(sql`
       select coalesce(max(nlevel(path)), 0)::int as n from nodes
        where owner_id = ${ownerId} and path <@ ${p}::ltree`)) as unknown as Array<{ n: number }>;
-    for (let level = folderDepth(p) + 1; level <= Number(deepest?.n ?? 0); level++) {
-      await tx.execute(sql`
+      for (let level = folderDepth(p) + 1; level <= Number(deepest?.n ?? 0); level++) {
+        await tx.execute(sql`
         update nodes n set path = ${landing}
          where n.owner_id = ${ownerId} and n.path <@ ${p}::ltree and nlevel(n.path) = ${level}`);
-    }
-    await carrySpaceRows(tx, ownerId, p, q, { lift: true });
+      }
+      await carrySpaceRows(tx, ownerId, p, q, { lift: true });
+    });
   });
 }

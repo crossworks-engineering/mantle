@@ -27,7 +27,13 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import JSZip from 'jszip';
 import { eq } from 'drizzle-orm';
-import { db, nodes, type AppManifest, type AppSource } from '@mantle/db';
+import {
+  nodes,
+  withDeadlockRetry,
+  withNodeDeleteHeads,
+  type AppManifest,
+  type AppSource,
+} from '@mantle/db';
 import type { AppDetail, AppTint } from '@mantle/client-types';
 import {
   AppSourceLimitError,
@@ -473,7 +479,9 @@ export async function openAppPackage(bytes: Buffer | Uint8Array): Promise<Opened
  *  failed half way leaves nothing behind. */
 export async function dropUnfinishedApp(ownerId: string, appId: string): Promise<void> {
   const dbPath = await appDatabasePath(ownerId, appId);
-  await db.delete(nodes).where(eq(nodes.id, appId));
+  await withDeadlockRetry(() =>
+    withNodeDeleteHeads([appId], (tx) => tx.delete(nodes).where(eq(nodes.id, appId))),
+  );
   if (dbPath) await removeAppDatabaseFiles(dbPath).catch(() => {});
 }
 

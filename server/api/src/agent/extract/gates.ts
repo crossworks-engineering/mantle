@@ -32,7 +32,15 @@
  */
 
 import { eq, sql } from 'drizzle-orm';
-import { db, nodes, contentChunks, isExtractExempt, type ExtractorParams } from '@mantle/db';
+import {
+  db,
+  nodes,
+  contentChunks,
+  isExtractExempt,
+  withDeadlockRetry,
+  withHeads,
+  type ExtractorParams,
+} from '@mantle/db';
 import { embed } from '@mantle/embeddings';
 import { effectiveBrainDepth, resolveEffectiveIndexing, metadataSpineText } from '@mantle/files';
 import { recordSkippedTrace } from '@mantle/tracing';
@@ -365,30 +373,36 @@ export async function admitForExtraction(
           err instanceof Error ? err.message : err,
         );
       }
-      await db.transaction(async (tx) => {
-        // Reap content chunks — on a full→metadata flip they are exactly the
-        // content the owner just un-indexed, and search would keep serving
-        // them. A fresh upload has none; the delete is a no-op there.
-        await tx.delete(contentChunks).where(eq(contentChunks.nodeId, node.id));
-        // Strip the content CACHES too (`- 'text' - 'content'`), not just the
-        // chunks: `search_tsv` is a generated column over the whole data blob,
-        // so extracted text left in `data` keeps matching keyword search —
-        // exactly the leak this mode promises not to have (2026-08-22 audit).
-        // Disk keeps the bytes; a flip back to full re-reads from there
-        // (readNodeBodyRaw's documented fallback), so nothing is lost.
-        await tx
-          .update(nodes)
-          .set({
-            data: sql`(${nodes.data} - 'text' - 'content' - 'extract_skipped') || ${JSON.stringify({
-              summary: spine,
-              summary_model: 'metadata-only',
-              indexing_applied: 'metadata',
-              ...(vec ? { extract_completed_at: new Date().toISOString() } : {}),
-            })}::jsonb`,
-            ...(vec ? { embedding: vec } : {}),
-          })
-          .where(eq(nodes.id, node.id));
-      });
+      // The node's head first (plan U1); the embed above already ran, so a
+      // retry repeats only these two writes.
+      await withDeadlockRetry(() =>
+        withHeads([node.id], 'update', async (tx) => {
+          // Reap content chunks — on a full→metadata flip they are exactly the
+          // content the owner just un-indexed, and search would keep serving
+          // them. A fresh upload has none; the delete is a no-op there.
+          await tx.delete(contentChunks).where(eq(contentChunks.nodeId, node.id));
+          // Strip the content CACHES too (`- 'text' - 'content'`), not just the
+          // chunks: `search_tsv` is a generated column over the whole data blob,
+          // so extracted text left in `data` keeps matching keyword search —
+          // exactly the leak this mode promises not to have (2026-08-22 audit).
+          // Disk keeps the bytes; a flip back to full re-reads from there
+          // (readNodeBodyRaw's documented fallback), so nothing is lost.
+          await tx
+            .update(nodes)
+            .set({
+              data: sql`(${nodes.data} - 'text' - 'content' - 'extract_skipped') || ${JSON.stringify(
+                {
+                  summary: spine,
+                  summary_model: 'metadata-only',
+                  indexing_applied: 'metadata',
+                  ...(vec ? { extract_completed_at: new Date().toISOString() } : {}),
+                },
+              )}::jsonb`,
+              ...(vec ? { embedding: vec } : {}),
+            })
+            .where(eq(nodes.id, node.id));
+        }),
+      );
       await recordSkippedTrace({
         kind: 'extractor_run',
         ownerId,

@@ -27,7 +27,16 @@
  * anymore; `category` maps to a kind at read time (legacyCategoryToKind).
  */
 import { and, eq, ilike, or, sql, type SQL } from 'drizzle-orm';
-import { agents, db, nodes, notifyNodeIngested, type Node } from '@mantle/db';
+import {
+  agents,
+  db,
+  nodes,
+  notifyNodeIngested,
+  type Node,
+  withDeadlockRetry,
+  withNodeDeleteHeads,
+  withNodeInsertHeads,
+} from '@mantle/db';
 import { legacyCategoryToKind, normalizeEntryDate } from '@mantle/content-core/journal-options';
 
 export const JOURNAL_ROOT_LABEL = 'journal';
@@ -115,23 +124,27 @@ function rowOf(n: Node): JournalRow {
 }
 
 async function ensureRoot(ownerId: string): Promise<void> {
-  await db
-    .insert(nodes)
-    .values({
-      ownerId,
-      type: 'branch',
-      title: 'Journal',
-      slug: JOURNAL_ROOT_LABEL,
-      path: JOURNAL_ROOT_LABEL,
-      data: {
-        description:
-          'The brain’s experience log — durable self-knowledge from the user, working notes and open questions from the agents. Indexed, embedded, and distilled into every agent turn.',
-      },
-    })
-    .onConflictDoNothing({
-      target: [nodes.ownerId, nodes.path],
-      where: sql`${nodes.type} = 'branch'`,
-    });
+  await withDeadlockRetry(() =>
+    withNodeInsertHeads(ownerId, [{ type: 'branch', path: JOURNAL_ROOT_LABEL }], (tx) =>
+      tx
+        .insert(nodes)
+        .values({
+          ownerId,
+          type: 'branch',
+          title: 'Journal',
+          slug: JOURNAL_ROOT_LABEL,
+          path: JOURNAL_ROOT_LABEL,
+          data: {
+            description:
+              'The brain’s experience log — durable self-knowledge from the user, working notes and open questions from the agents. Indexed, embedded, and distilled into every agent turn.',
+          },
+        })
+        .onConflictDoNothing({
+          target: [nodes.ownerId, nodes.path],
+          where: sql`${nodes.type} = 'branch'`,
+        }),
+    ),
+  );
 }
 
 /** Derive a compact title from the entry body (first sentence / ~60 chars).
@@ -302,17 +315,21 @@ export async function createJournal(
     data.entry_date = iso;
   }
   const title = input.title?.trim() || deriveTitle(body);
-  const [row] = await db
-    .insert(nodes)
-    .values({
-      ownerId,
-      type: 'journal',
-      title: title.slice(0, 200) || 'Journal entry',
-      path: JOURNAL_ROOT_LABEL,
-      data,
-      tags: dedupeTags(input.tags ?? []),
-    })
-    .returning();
+  const [row] = await withDeadlockRetry(() =>
+    withNodeInsertHeads(ownerId, [{ type: 'journal', path: JOURNAL_ROOT_LABEL }], (tx) =>
+      tx
+        .insert(nodes)
+        .values({
+          ownerId,
+          type: 'journal',
+          title: title.slice(0, 200) || 'Journal entry',
+          path: JOURNAL_ROOT_LABEL,
+          data,
+          tags: dedupeTags(input.tags ?? []),
+        })
+        .returning(),
+    ),
+  );
   if (!row) throw new Error('createJournal: insert returned no row');
   return rowOf(row);
 }
@@ -460,7 +477,9 @@ export async function deleteJournal(ownerId: string, id: string): Promise<boolea
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'journal')))
     .limit(1);
   if (!row) return false;
-  await db.delete(nodes).where(eq(nodes.id, id));
+  await withDeadlockRetry(() =>
+    withNodeDeleteHeads([id], (tx) => tx.delete(nodes).where(eq(nodes.id, id))),
+  );
   return true;
 }
 

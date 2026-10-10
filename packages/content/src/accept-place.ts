@@ -17,7 +17,7 @@
  * `space_files` (spaceFilesPath, @mantle/db); the brain's are `files...`.
  */
 import { sql } from 'drizzle-orm';
-import { db, spaceFilesPath } from '@mantle/db';
+import { db, onSpaceRows, spaceFilesPath } from '@mantle/db';
 import {
   TREE_KIND_SPECS,
   TREE_MAX_DEPTH,
@@ -149,7 +149,10 @@ export async function planPlace(
 
 /** Make the plan's chain real: brain folders at each path, kept when one is
  *  already there (merged by name). Files folders get their directory when
- *  the file lands (the Accept copies with `mkdir -p`). */
+ *  the file lands (the Accept copies with `mkdir -p`).
+ *  @heads-held: the Accept (moveIntoBrain) holds the heads of the existing
+ *  folders above every landing; a folder made here is the transaction's own
+ *  (0244 rule 4). */
 export async function ensurePlaced(tx: Via, brainId: string, plan: PlacePlan): Promise<void> {
   for (const f of plan.chain) {
     await tx.execute(sql`
@@ -163,25 +166,28 @@ export async function ensurePlaced(tx: Via, brainId: string, plan: PlacePlan): P
 /** Remove the member's own folders on `paths` (stored) that hold nothing of
  *  the member's any more: after an Accept took what was in them. */
 export async function dropEmptyOwnFolders(
-  tx: Via,
+  outer: Via,
   spaceId: string,
   paths: readonly string[],
 ): Promise<void> {
   const wanted = [...new Set(paths.flatMap((p) => treeFolderChain(p)))];
   if (!wanted.length) return;
-  // Deepest first: a parent is empty only once its child has gone.
-  for (let i = 0; i < TREE_MAX_DEPTH; i++) {
-    await tx.execute(sql`
-      delete from nodes n
-       where n.owner_id = ${spaceId} and n.type = 'branch'
-         and n.path::text in (${sql.join(
-           wanted.map((w) => sql`${w}`),
-           sql`, `,
-         )})
-         and not exists (select 1 from nodes c
-                          where c.owner_id = n.owner_id and c.id <> n.id
-                            and c.path <@ n.path)`);
-  }
+  // The member's own rows (personal space): no heads (onSpaceRows, 0244).
+  await onSpaceRows(outer, spaceId, async (tx) => {
+    // Deepest first: a parent is empty only once its child has gone.
+    for (let i = 0; i < TREE_MAX_DEPTH; i++) {
+      await tx.execute(sql`
+        delete from nodes n
+         where n.owner_id = ${spaceId} and n.type = 'branch'
+           and n.path::text in (${sql.join(
+             wanted.map((w) => sql`${w}`),
+             sql`, `,
+           )})
+           and not exists (select 1 from nodes c
+                            where c.owner_id = n.owner_id and c.id <> n.id
+                              and c.path <@ n.path)`);
+    }
+  });
 }
 
 /**

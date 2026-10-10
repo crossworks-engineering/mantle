@@ -23,6 +23,7 @@ import {
   spaceItems,
   spaceUploads,
   tables,
+  withSpaceRows,
 } from '@mantle/db';
 import {
   adoptSpooledIntoSpace,
@@ -343,22 +344,25 @@ export async function createMineFile(
     await adoptSpooledIntoSpace(spaceId, id, spooled);
     adopted = true;
     const extension = extOf(filename);
-    await db.insert(nodes).values({
-      id,
-      ownerId: spaceId,
-      type: 'file',
-      title: filename,
-      path,
-      data: {
-        filename,
-        extension,
-        mime_type: mimeForExt(extension),
-        size_bytes: spooled.size,
-        sha256: spooled.sha256,
-        storage: 'space',
-      },
-      tags: ['file'],
-    });
+    // The space's own row: no heads (withSpaceRows, 0244).
+    await withSpaceRows((tx) =>
+      tx.insert(nodes).values({
+        id,
+        ownerId: spaceId,
+        type: 'file',
+        title: filename,
+        path,
+        data: {
+          filename,
+          extension,
+          mime_type: mimeForExt(extension),
+          size_bytes: spooled.size,
+          sha256: spooled.sha256,
+          storage: 'space',
+        },
+        tags: ['file'],
+      }),
+    );
     await db.insert(spaceItems).values({ nodeId: id, authorLoginId: loginId });
     await db.insert(spaceUploads).values({ spaceId, bytes: spooled.size });
     await notifySpaceItemChanged(id, 'created', { spaceId, team: false });
@@ -407,10 +411,12 @@ export async function renameMineFile(spaceId: string, id: string, title: string)
  *  Frozen items are refused before this by the caller (assertEditable). */
 export async function deleteMineFile(spaceId: string, id: string): Promise<boolean> {
   requireSpace(spaceId);
-  const gone = await db
-    .delete(nodes)
-    .where(and(eq(nodes.id, id), eq(nodes.ownerId, spaceId), eq(nodes.type, 'file')))
-    .returning({ id: nodes.id });
+  const gone = await withSpaceRows((tx) =>
+    tx
+      .delete(nodes)
+      .where(and(eq(nodes.id, id), eq(nodes.ownerId, spaceId), eq(nodes.type, 'file')))
+      .returning({ id: nodes.id }),
+  );
   if (!gone.length) return false;
   // The bytes go once the delete has COMMITTED: this runs inside the space
   // transaction, and a later failure there keeps the row, which then needs

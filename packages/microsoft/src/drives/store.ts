@@ -7,7 +7,7 @@
  * ordinary file nodes so the whole pipeline works unchanged.
  */
 import { and, eq, sql } from 'drizzle-orm';
-import { db, nodes, type NewNode } from '@mantle/db';
+import { db, nodes, withDeadlockRetry, withNodeInsertHeads, type NewNode } from '@mantle/db';
 import { hashBuffer, putContent } from '@mantle/storage';
 import { extOf, mimeForExt, sanitizeFilename } from '@mantle/files';
 import { ensureBranchPath } from './branch';
@@ -51,16 +51,22 @@ export async function storeRemoteFileAsNode(args: {
 
   const filename = sanitizeFilename(args.filename) ?? 'file';
   const mime = args.mimeType ?? mimeForExt(extOf(filename));
-  const [row] = await db
-    .insert(nodes)
-    .values({
-      ownerId: args.ownerId,
-      type: 'file',
-      title: filename,
-      path: args.path,
-      data: { sha256, mimeType: mime, sizeBytes: args.bytes.byteLength, source: args.source },
-    } as NewNode)
-    .returning({ id: nodes.id });
+  // The folder's head first (plan U1). The bytes are already stored, so a
+  // retry repeats only the insert.
+  const [row] = await withDeadlockRetry(() =>
+    withNodeInsertHeads(args.ownerId, [{ type: 'file', path: args.path }], (tx) =>
+      tx
+        .insert(nodes)
+        .values({
+          ownerId: args.ownerId,
+          type: 'file',
+          title: filename,
+          path: args.path,
+          data: { sha256, mimeType: mime, sizeBytes: args.bytes.byteLength, source: args.source },
+        } as NewNode)
+        .returning({ id: nodes.id }),
+    ),
+  );
   if (!row) throw new Error('storeRemoteFileAsNode: insert failed');
 
   return { nodeId: row.id, sha256, deduped: false };

@@ -18,7 +18,7 @@
  * needed and no migration.
  */
 import { sql } from 'drizzle-orm';
-import { db, takeShareReadLock } from '@mantle/db';
+import { db, takeShareReadLock, withDeadlockRetry, withHeads } from '@mantle/db';
 import type { AppNavEntry, AppNavFolder } from '@mantle/client-types';
 import { EMPTY_APP_NAV } from '@mantle/client-types/app-nav';
 import { TREE_MAX_DEPTH } from '@mantle/client-types/tree';
@@ -126,16 +126,38 @@ async function makeFolder(
 
 async function placeApps(ownerId: string, ids: readonly string[], path: string): Promise<void> {
   if (!ids.length) return;
-  // The share lock (shared) before the rows: see takeShareReadLock.
-  await db.transaction(async (tx) => {
-    await takeShareReadLock(tx, ownerId);
-    await tx.execute(sql`
-      update nodes set path = ${path}::ltree
-       where owner_id = ${ownerId} and type = 'app'
-         and id in (${sql.join(
-           ids.map((id) => sql`${id}::uuid`),
-           sql`, `,
-         )})`);
+  const idList = sql.join(
+    ids.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  );
+  await withDeadlockRetry(async () => {
+    // Heads first (plan V3): the apps, the folders they leave and the one
+    // they land in, read before the transaction.
+    const heads = (await db.execute(sql`
+      select x.id::text as id from (
+        select n.id from nodes n
+         where n.owner_id = ${ownerId} and n.type = 'app' and n.id in (${idList})
+        union
+        select mantle_parent_folder(n.owner_id, n.type, n.path) from nodes n
+         where n.owner_id = ${ownerId} and n.type = 'app' and n.id in (${idList})
+        union
+        select mantle_parent_folder(${ownerId}::uuid, 'app'::node_type, ${path}::ltree)
+      ) x where x.id is not null`)) as unknown as Array<{ id: string }>;
+    return withHeads(
+      heads.map((h) => h.id),
+      'update',
+      async (tx) => {
+        // The share lock (shared) before the rows: see takeShareReadLock.
+        await takeShareReadLock(tx, ownerId);
+        await tx.execute(sql`
+          update nodes set path = ${path}::ltree
+           where owner_id = ${ownerId} and type = 'app'
+             and id in (${sql.join(
+               ids.map((id) => sql`${id}::uuid`),
+               sql`, `,
+             )})`);
+      },
+    );
   });
 }
 

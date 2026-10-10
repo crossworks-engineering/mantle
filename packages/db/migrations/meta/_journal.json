@@ -1695,6 +1695,20 @@
       "when": 1790193480000,
       "tag": "0242_workspaces_user_role",
       "breakpoints": true
+    },
+    {
+      "idx": 243,
+      "version": "7",
+      "when": 1790193540000,
+      "tag": "0243_workspaces_dry_run",
+      "breakpoints": true
+    },
+    {
+      "idx": 244,
+      "version": "7",
+      "when": 1790193600000,
+      "tag": "0244_workspaces_space_rows",
+      "breakpoints": true
     }
   ]
 }

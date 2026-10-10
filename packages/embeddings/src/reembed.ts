@@ -32,6 +32,8 @@ import {
   extractExemptSql,
   facts,
   nodes,
+  withDeadlockRetry,
+  withHeads,
   type ContentChunk,
   type Entity,
   type Fact,
@@ -352,6 +354,8 @@ async function _runReembedInner(ownerId: string, opts: ReembedOpts): Promise<Ree
     // search_chunks is the primary long-document retrieval primitive; leaving
     // chunk vectors in the old model's space after a rebuild is the split-brain
     // the rest of this walk exists to prevent. Chunks carry their own `text`.
+    // The writer takes each chunk's node head (plan U1), so it needs the node.
+    const chunkNode = new Map<string, string>();
     byTable.content_chunks = await reEmbedTable<ContentChunk>({
       ownerId,
       label: 'content_chunks',
@@ -370,11 +374,17 @@ async function _runReembedInner(ownerId: string, opts: ReembedOpts): Promise<Ree
             ),
           );
         const rows = limit ? await q.limit(limit) : await q;
+        for (const r of rows) chunkNode.set(r.id, r.nodeId);
         return rows as ContentChunk[];
       },
       textFor: (row) => row.text,
       writer: async (id, vec) => {
-        await db.update(contentChunks).set({ embedding: vec }).where(eq(contentChunks.id, id));
+        // The vector is already computed, so a retry repeats only the write.
+        await withDeadlockRetry(() =>
+          withHeads([chunkNode.get(id)!], 'update', async (tx) => {
+            await tx.update(contentChunks).set({ embedding: vec }).where(eq(contentChunks.id, id));
+          }),
+        );
       },
     });
   }
@@ -386,7 +396,23 @@ async function _runReembedInner(ownerId: string, opts: ReembedOpts): Promise<Ree
   // on). `pnpm maintain chunk-windows --apply` rebuilds them, and the
   // extractor writes them again for every node it re-indexes.
   if (!dryRun && tables.has('content_chunks')) {
-    await db.delete(contentChunkWindows).where(eq(contentChunkWindows.ownerId, ownerId));
+    // The heads of every node that has windows first (plan U1); none, nothing
+    // to drop.
+    const windowNodes = await db
+      .selectDistinct({ nodeId: contentChunkWindows.nodeId })
+      .from(contentChunkWindows)
+      .where(eq(contentChunkWindows.ownerId, ownerId));
+    if (windowNodes.length > 0) {
+      await withDeadlockRetry(() =>
+        withHeads(
+          windowNodes.map((w) => w.nodeId),
+          'update',
+          async (tx) => {
+            await tx.delete(contentChunkWindows).where(eq(contentChunkWindows.ownerId, ownerId));
+          },
+        ),
+      );
+    }
   }
 
   // Recall prompts carry a vector too (recall_nodes, kind 'prompt'). After a

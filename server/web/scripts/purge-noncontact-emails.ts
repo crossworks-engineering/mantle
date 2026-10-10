@@ -27,7 +27,14 @@
  *   ... --apply --purge-orphan-files
  */
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { db, emailAttachments, emails, nodes } from '@mantle/db';
+import {
+  db,
+  emailAttachments,
+  emails,
+  nodes,
+  withDeadlockRetry,
+  withNodeDeleteHeads,
+} from '@mantle/db';
 import { loadContactGate } from '@mantle/content';
 import { env } from '@mantle/config';
 
@@ -97,7 +104,12 @@ async function main() {
     let deleted = 0;
     for (let i = 0; i < ids.length; i += BATCH) {
       const chunk = ids.slice(i, i + BATCH);
-      await db.delete(nodes).where(inArray(nodes.id, chunk));
+      // Heads first, one transaction per batch (workspaces plan V4).
+      await withDeadlockRetry(() =>
+        withNodeDeleteHeads(chunk, async (tx) => {
+          await tx.delete(nodes).where(inArray(nodes.id, chunk));
+        }),
+      );
       deleted += chunk.length;
     }
     console.log(`\nDeleted ${deleted} email node(s).`);
@@ -127,7 +139,11 @@ async function main() {
     let deleted = 0;
     for (let i = 0; i < ids.length; i += BATCH) {
       const chunk = ids.slice(i, i + BATCH);
-      await db.delete(nodes).where(inArray(nodes.id, chunk));
+      await withDeadlockRetry(() =>
+        withNodeDeleteHeads(chunk, async (tx) => {
+          await tx.delete(nodes).where(inArray(nodes.id, chunk));
+        }),
+      );
       deleted += chunk.length;
     }
     console.log(

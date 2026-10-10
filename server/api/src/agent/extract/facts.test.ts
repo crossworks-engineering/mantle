@@ -71,7 +71,16 @@ vi.mock('@mantle/db', async (importOriginal) => {
     })),
     execute: vi.fn(async () => []),
   };
-  return { ...actual, db };
+  return {
+    ...actual,
+    db,
+    // The heads helpers (workspaces plan U1) open their own transaction on
+    // the real pool; here they run the callback on the mocked db.
+    withHeads: async (_ids: unknown, _mode: unknown, fn: (tx: unknown) => unknown) => fn(db),
+    withNodeInsertHeads: async (_o: unknown, _i: unknown, fn: (tx: unknown) => unknown) => fn(db),
+    withNodeDeleteHeads: async (_ids: unknown, fn: (tx: unknown) => unknown) => fn(db),
+    withDeadlockRetry: async (fn: () => unknown) => fn(),
+  };
 });
 vi.mock('@mantle/embeddings', () => ({ embedBatch: h.embedBatch, embed: vi.fn() }));
 vi.mock('@mantle/tracing', async (importOriginal) => {

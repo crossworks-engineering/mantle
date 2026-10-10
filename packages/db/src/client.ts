@@ -300,6 +300,161 @@ export async function withSubtreeHeads<T>(
   });
 }
 
+/** The folders `items` would sit in (an item's path is its folder's path; a
+ *  folder's parent is one level up). Read on the admin pool BEFORE the
+ *  transaction, so the heads can still be its first lock. */
+export async function folderHeadIds(
+  ownerId: string,
+  items: readonly { type: string; path: string }[],
+): Promise<string[]> {
+  if (!UUID_RE.test(ownerId)) throw new Error('folderHeadIds: ownerId must be a uuid');
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const it of items) {
+    const key = `${it.type}\u0000${it.path}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const rows = (await getAdminDb().execute(
+      sqlTag`select mantle_parent_folder(${ownerId}::uuid, ${it.type}::node_type, ${it.path}::ltree) as id`,
+    )) as unknown as { id: string | null }[];
+    const id = rows[0]?.id;
+    if (id && !out.includes(id)) out.push(id);
+  }
+  return out;
+}
+
+/**
+ * Heads for creating nodes (plan U1): the folders they land in, SHARE (many
+ * creators may add to one folder at once; a grant change on the folder
+ * waits for them, or they for it).
+ */
+export async function withNodeInsertHeads<T>(
+  ownerId: string,
+  items: readonly { type: string; path: string }[],
+  fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<T>,
+): Promise<T> {
+  return withHeads(await folderHeadIds(ownerId, items), 'share', fn);
+}
+
+/**
+ * Heads for moving one node (a path change, plan V3): the node and, for a
+ * folder, everything under it, plus its old folder and the folder at
+ * `newPath`, in rounds until stable.
+ */
+export async function withNodeMoveHeads<T>(
+  ownerId: string,
+  node: { id: string; type: string; path: string },
+  newPath: string,
+  fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<T>,
+): Promise<T> {
+  const folders = await folderHeadIds(ownerId, [
+    { type: node.type, path: node.path },
+    { type: node.type, path: newPath },
+  ]);
+  return withSubtreeHeads(node.id, folders, fn);
+}
+
+/**
+ * Heads for deleting nodes (plan V4): each node, everything under a folder,
+ * and the folders they sit in, UPDATE. Read before the transaction.
+ */
+export async function withNodeDeleteHeads<T>(
+  ids: readonly string[],
+  fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<T>,
+): Promise<T> {
+  const list = uuidArrayLiteral(ids, 'withNodeDeleteHeads');
+  const rows = (await getAdminDb().execute(
+    sqlTag`select distinct x.id from (
+             select d.id from nodes n
+               join nodes d on d.owner_id = n.owner_id
+                and (d.id = n.id or (n.type = 'branch' and d.path <@ n.path))
+              where n.id = any(${list}::uuid[])
+             union
+             select mantle_parent_folder(n.owner_id, n.type, n.path) from nodes n
+              where n.id = any(${list}::uuid[])
+           ) x where x.id is not null`,
+  )) as unknown as { id: string }[];
+  return withHeads(
+    rows.map((r) => r.id),
+    'update',
+    fn,
+  );
+}
+
+/**
+ * Heads for a writer that also runs inside a member's personal space: in the
+ * brain, `open` takes the heads and runs `fn` in its transaction; inside a
+ * personal-space scope (rows outside any workspace grant, on the space
+ * role, where heads cannot be taken) `fn` runs on the scope's own
+ * transaction. That second path is removed with personal spaces in W6b
+ * (workspaces plan); it is the one sanctioned exemption.
+ */
+export async function headsOrSpace<T>(
+  open: (fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<T>) => Promise<T>,
+  fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<T>,
+): Promise<T> {
+  if (currentSpaceScope()) return fn(getDb());
+  return open(fn);
+}
+
+/**
+ * A write of rows the CURRENT personal space owns, on the space's own
+ * transaction (withSpace). The space role cannot take heads, and it needs
+ * none: the database exempts rows a personal space owns from the heads
+ * check, because no workspace reads them (migration 0244 refuses a grant on
+ * one). Throws outside a personal-space scope, so it cannot carry a brain
+ * write. Removed with personal spaces in W6b (W4 replaces the exemption
+ * before it grants personal items).
+ */
+export async function withSpaceRows<T>(
+  fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<T>,
+): Promise<T> {
+  if (!currentSpaceScope()) {
+    throw new Error('withSpaceRows: only inside a personal-space scope (withSpace)');
+  }
+  return fn(getDb());
+}
+
+/**
+ * Rows that personal spaces own, written on `q` (an open transaction or the
+ * pool) outside a space scope: an admin's purge, a takeover between two
+ * spaces, a brain folder rename carried into the members' drafts. Checks
+ * first that every id in `spaceIds` is a personal space. The database
+ * exempts those rows from the heads check (0244) and still checks any brain
+ * row, so a brain write slipped in here is caught there. Removed with
+ * personal spaces in W6b.
+ */
+export async function onSpaceRows<
+  Q extends { execute: PostgresJsDatabase<typeof schema>['execute'] },
+  T,
+>(q: Q, spaceIds: string | readonly string[], fn: (q: Q) => Promise<T>): Promise<T> {
+  const ids = typeof spaceIds === 'string' ? [spaceIds] : [...new Set(spaceIds)];
+  const list = uuidArrayLiteral(ids, 'onSpaceRows');
+  const rows = (await q.execute(
+    sqlTag`select count(*)::int as n from spaces
+            where id = any(${list}::uuid[]) and kind = 'personal'`,
+  )) as unknown as { n: number }[];
+  if ((rows[0]?.n ?? 0) !== ids.length) {
+    throw new Error('onSpaceRows: every id must be a personal space');
+  }
+  return fn(q);
+}
+
+/**
+ * Lock more heads later in a heads transaction (plan U2, V1): FOR UPDATE
+ * NOWAIT, for rows found only after the first lock (a bundle, the folders an
+ * Accept lands in). A busy head fails with 55P03: run the whole transaction
+ * in withDeadlockRetry.
+ */
+export async function lockMoreHeads(
+  tx: { execute: PostgresJsDatabase<typeof schema>['execute'] },
+  ids: readonly string[],
+): Promise<void> {
+  if (!ids.length) return;
+  const list = uuidArrayLiteral(ids, 'lockMoreHeads');
+  await tx.execute(sqlTag`select mantle_lock_heads_more(${list}::uuid[])`);
+}
+
 /** SQLSTATEs a whole transaction may be retried for: a deadlock, a
  *  serialization failure (a head missing in 'on' mode, a growing subtree), a
  *  NOWAIT lock that was busy. */

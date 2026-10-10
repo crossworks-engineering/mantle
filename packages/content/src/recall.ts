@@ -12,7 +12,7 @@
 
 import { and, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm';
 
-import { db, nodes, recallNodes } from '@mantle/db';
+import { db, nodes, recallNodes, withDeadlockRetry, withNodeInsertHeads } from '@mantle/db';
 import { getRecallEmbedder } from './embed-bridge';
 
 /**
@@ -33,22 +33,26 @@ export const RECALL_ROOT_LABEL = 'recall';
  * native write path before a map is created.
  */
 export async function ensureRecallRoot(ownerId: string): Promise<void> {
-  await db
-    .insert(nodes)
-    .values({
-      ownerId,
-      type: 'branch',
-      title: 'Recall',
-      slug: RECALL_ROOT_LABEL,
-      path: RECALL_ROOT_LABEL,
-      data: {
-        description: 'Memory maps for agents: what to read, and when. Owner-authored.',
-      },
-    })
-    .onConflictDoNothing({
-      target: [nodes.ownerId, nodes.path],
-      where: sql`${nodes.type} = 'branch'`,
-    });
+  await withDeadlockRetry(() =>
+    withNodeInsertHeads(ownerId, [{ type: 'branch', path: RECALL_ROOT_LABEL }], (tx) =>
+      tx
+        .insert(nodes)
+        .values({
+          ownerId,
+          type: 'branch',
+          title: 'Recall',
+          slug: RECALL_ROOT_LABEL,
+          path: RECALL_ROOT_LABEL,
+          data: {
+            description: 'Memory maps for agents: what to read, and when. Owner-authored.',
+          },
+        })
+        .onConflictDoNothing({
+          target: [nodes.ownerId, nodes.path],
+          where: sql`${nodes.type} = 'branch'`,
+        }),
+    ),
+  );
 }
 
 /**

@@ -37,18 +37,21 @@ import { and, desc, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-
 import {
   appAccessLog,
   appDatabases,
+  type AppManifest,
   apps,
   asSystem,
   authUsers,
-  withSystemTx,
+  type BuildRef,
   db,
-  nodeSnapshots,
+  folderHeadIds,
   nodes,
+  nodeSnapshots,
   spaceItems,
   spaces,
-  type AppManifest,
-  type BuildRef,
   type ViewerLevel,
+  withDeadlockRetry,
+  withHeads,
+  withSystemTx,
 } from '@mantle/db';
 import {
   APPS_ROOT_LABEL,
@@ -772,93 +775,101 @@ export async function acceptSpaceApp(
   },
 ): Promise<{ id: string; level: SpaceAppAcceptLevel; authorLevel: 'admin' | 'team' }> {
   await asSystem(() => ensureAppsRoot(brainId));
+  // Heads first (plan U1): the app (it moves into the brain) and the brain
+  // folder it lands in, before the state row and the history lock.
+  const heads = [
+    appId,
+    ...(await folderHeadIds(brainId, [{ type: 'app', path: APPS_ROOT_LABEL }])),
+  ];
   const done = await asSystem(() =>
-    db.transaction(async (tx) => {
-      const [row] = await tx
-        .select({
-          spaceId: nodes.ownerId,
-          reviewState: spaceItems.reviewState,
-          submittedVersion: spaceItems.submittedVersion,
-          version: apps.version,
-          source: apps.source,
-          manifest: apps.manifest,
-          publishedBuild: apps.publishedBuild,
-          draft: sql<boolean>`${apps.draftSource} is not null or ${apps.draftBuild} is not null`,
-        })
-        .from(spaceItems)
-        .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))
-        .innerJoin(apps, eq(apps.nodeId, spaceItems.nodeId))
-        .innerJoin(spaces, eq(spaces.id, nodes.ownerId))
-        .where(
-          and(
-            eq(spaceItems.nodeId, appId),
-            eq(nodes.type, 'app'),
-            eq(spaces.kind, 'personal'),
-            live,
-          ),
-        )
-        .for('update', { of: spaceItems })
-        .limit(1);
-      // Then the app's history lock (team apps follow-up), in the order a
-      // member's change takes them (state row, then history): a member's
-      // restore holds it while it works and re-checks the owner under it,
-      // so it never lands on the app after this moves it to the brain.
-      await lockAppHistory(tx, appId);
-      if (!row) throw new SpaceAppError('not-found', 'No such member app.');
-      if (row.reviewState !== 'submitted') {
-        throw new SpaceAppError('not-submitted', 'This app is not waiting for review.');
-      }
-      // Only the version the admin read (M3 audit, high 1): the version it
-      // was submitted at, the one the admin was shown, and the same code,
-      // tools and build. No pending change either (medium 3).
-      const shown =
-        row.version === opts.version &&
-        row.submittedVersion === opts.version &&
-        spaceAppReviewHash({
-          source: row.source,
-          manifest: row.manifest,
-          publishedBuild: row.publishedBuild,
-        }) === opts.reviewHash;
-      if (!shown || row.draft) {
-        throw new SpaceAppError(
-          'changed',
-          'This app changed since you opened it. Open it again, read it, then accept.',
-        );
-      }
-      const now = new Date();
-      const authorLevel = opts.trustTools ? 'admin' : 'team';
-      await tx
-        .update(nodes)
-        .set({ ownerId: brainId, audience: opts.level, path: APPS_ROOT_LABEL, updatedAt: now })
-        .where(eq(nodes.id, appId));
-      await tx.update(apps).set({ authorLevel, updatedAt: now }).where(eq(apps.nodeId, appId));
-      await tx
-        .update(appDatabases)
-        .set({ ownerId: brainId, updatedAt: now })
-        .where(eq(appDatabases.appNodeId, appId));
-      await tx
-        .update(nodeSnapshots)
-        .set({ ownerId: brainId })
-        .where(eq(nodeSnapshots.nodeId, appId));
-      // Its activity too (access matrix N3): every call made while it was a
-      // member's app, connector writes included, shows on the brain app's
-      // Activity tab.
-      await tx
-        .update(appAccessLog)
-        .set({ ownerId: brainId })
-        .where(eq(appAccessLog.appNodeId, appId));
-      await tx
-        .update(spaceItems)
-        .set({
-          reviewState: 'accepted',
-          reviewedBy: reviewer.loginId,
-          reviewedAt: now,
-          acceptedAt: now,
-          updatedAt: now,
-        })
-        .where(eq(spaceItems.nodeId, appId));
-      return { id: appId, level: opts.level, authorLevel } as const;
-    }),
+    withDeadlockRetry(() =>
+      withHeads(heads, 'update', async (tx) => {
+        const [row] = await tx
+          .select({
+            spaceId: nodes.ownerId,
+            reviewState: spaceItems.reviewState,
+            submittedVersion: spaceItems.submittedVersion,
+            version: apps.version,
+            source: apps.source,
+            manifest: apps.manifest,
+            publishedBuild: apps.publishedBuild,
+            draft: sql<boolean>`${apps.draftSource} is not null or ${apps.draftBuild} is not null`,
+          })
+          .from(spaceItems)
+          .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))
+          .innerJoin(apps, eq(apps.nodeId, spaceItems.nodeId))
+          .innerJoin(spaces, eq(spaces.id, nodes.ownerId))
+          .where(
+            and(
+              eq(spaceItems.nodeId, appId),
+              eq(nodes.type, 'app'),
+              eq(spaces.kind, 'personal'),
+              live,
+            ),
+          )
+          .for('update', { of: spaceItems })
+          .limit(1);
+        // Then the app's history lock (team apps follow-up), in the order a
+        // member's change takes them (state row, then history): a member's
+        // restore holds it while it works and re-checks the owner under it,
+        // so it never lands on the app after this moves it to the brain.
+        await lockAppHistory(tx, appId);
+        if (!row) throw new SpaceAppError('not-found', 'No such member app.');
+        if (row.reviewState !== 'submitted') {
+          throw new SpaceAppError('not-submitted', 'This app is not waiting for review.');
+        }
+        // Only the version the admin read (M3 audit, high 1): the version it
+        // was submitted at, the one the admin was shown, and the same code,
+        // tools and build. No pending change either (medium 3).
+        const shown =
+          row.version === opts.version &&
+          row.submittedVersion === opts.version &&
+          spaceAppReviewHash({
+            source: row.source,
+            manifest: row.manifest,
+            publishedBuild: row.publishedBuild,
+          }) === opts.reviewHash;
+        if (!shown || row.draft) {
+          throw new SpaceAppError(
+            'changed',
+            'This app changed since you opened it. Open it again, read it, then accept.',
+          );
+        }
+        const now = new Date();
+        const authorLevel = opts.trustTools ? 'admin' : 'team';
+        await tx
+          .update(nodes)
+          .set({ ownerId: brainId, audience: opts.level, path: APPS_ROOT_LABEL, updatedAt: now })
+          .where(eq(nodes.id, appId));
+        await tx.update(apps).set({ authorLevel, updatedAt: now }).where(eq(apps.nodeId, appId));
+        await tx
+          .update(appDatabases)
+          .set({ ownerId: brainId, updatedAt: now })
+          .where(eq(appDatabases.appNodeId, appId));
+        await tx
+          .update(nodeSnapshots)
+          .set({ ownerId: brainId })
+          .where(eq(nodeSnapshots.nodeId, appId));
+        // Its activity too (access matrix N3): every call made while it was a
+        // member's app, connector writes included, shows on the brain app's
+        // Activity tab.
+        await tx
+          .update(appAccessLog)
+          .set({ ownerId: brainId })
+          .where(eq(appAccessLog.appNodeId, appId));
+        await tx
+          .update(spaceItems)
+          .set({
+            reviewState: 'accepted',
+            reviewedBy: reviewer.loginId,
+            reviewedAt: now,
+            acceptedAt: now,
+            updatedAt: now,
+          })
+          .where(eq(spaceItems.nodeId, appId));
+        return { id: appId, level: opts.level, authorLevel } as const;
+      }),
+    ),
   );
   void notifyAppNavChanged(brainId);
   return done;
@@ -953,47 +964,55 @@ export async function adminSpaceApp(
  */
 export async function adminDeleteSpaceApp(brainId: string, appId: string): Promise<boolean> {
   await asSystem(() => ensureAppsRoot(brainId));
+  // Heads first (plan U1): the app (it moves into the brain) and the brain
+  // folder it lands in, before the state row and the history lock.
+  const heads = [
+    appId,
+    ...(await folderHeadIds(brainId, [{ type: 'app', path: APPS_ROOT_LABEL }])),
+  ];
   const moved = await asSystem(() =>
-    db.transaction(async (tx) => {
-      // The state row, then the history lock: the order a member's change
-      // takes them (as Accept does), so no member write lands mid-move.
-      const [row] = await tx
-        .select({ id: spaceItems.nodeId })
-        .from(spaceItems)
-        .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))
-        .innerJoin(spaces, eq(spaces.id, nodes.ownerId))
-        .where(and(eq(spaceItems.nodeId, appId), adminVisible))
-        .for('update', { of: spaceItems })
-        .limit(1);
-      await lockAppHistory(tx, appId);
-      if (!row) return false;
-      const now = new Date();
-      await tx
-        .update(nodes)
-        .set({ ownerId: brainId, audience: 'admin', path: APPS_ROOT_LABEL, updatedAt: now })
-        .where(eq(nodes.id, appId));
-      // A member's app ran at team rules: so does it if it comes back.
-      await tx
-        .update(apps)
-        .set({ authorLevel: 'team', updatedAt: now })
-        .where(eq(apps.nodeId, appId));
-      await tx
-        .update(appDatabases)
-        .set({ ownerId: brainId, updatedAt: now })
-        .where(eq(appDatabases.appNodeId, appId));
-      await tx
-        .update(nodeSnapshots)
-        .set({ ownerId: brainId })
-        .where(eq(nodeSnapshots.nodeId, appId));
-      await tx
-        .update(appAccessLog)
-        .set({ ownerId: brainId })
-        .where(eq(appAccessLog.appNodeId, appId));
-      // Out of the member's space: the node delete below would cascade it,
-      // and until then it is no longer the member's.
-      await tx.delete(spaceItems).where(eq(spaceItems.nodeId, appId));
-      return true;
-    }),
+    withDeadlockRetry(() =>
+      withHeads(heads, 'update', async (tx) => {
+        // The state row, then the history lock: the order a member's change
+        // takes them (as Accept does), so no member write lands mid-move.
+        const [row] = await tx
+          .select({ id: spaceItems.nodeId })
+          .from(spaceItems)
+          .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))
+          .innerJoin(spaces, eq(spaces.id, nodes.ownerId))
+          .where(and(eq(spaceItems.nodeId, appId), adminVisible))
+          .for('update', { of: spaceItems })
+          .limit(1);
+        await lockAppHistory(tx, appId);
+        if (!row) return false;
+        const now = new Date();
+        await tx
+          .update(nodes)
+          .set({ ownerId: brainId, audience: 'admin', path: APPS_ROOT_LABEL, updatedAt: now })
+          .where(eq(nodes.id, appId));
+        // A member's app ran at team rules: so does it if it comes back.
+        await tx
+          .update(apps)
+          .set({ authorLevel: 'team', updatedAt: now })
+          .where(eq(apps.nodeId, appId));
+        await tx
+          .update(appDatabases)
+          .set({ ownerId: brainId, updatedAt: now })
+          .where(eq(appDatabases.appNodeId, appId));
+        await tx
+          .update(nodeSnapshots)
+          .set({ ownerId: brainId })
+          .where(eq(nodeSnapshots.nodeId, appId));
+        await tx
+          .update(appAccessLog)
+          .set({ ownerId: brainId })
+          .where(eq(appAccessLog.appNodeId, appId));
+        // Out of the member's space: the node delete below would cascade it,
+        // and until then it is no longer the member's.
+        await tx.delete(spaceItems).where(eq(spaceItems.nodeId, appId));
+        return true;
+      }),
+    ),
   );
   if (!moved) return false;
   const deleted = await asSystem(() => deleteApp(brainId, appId, { actor: 'owner' }));

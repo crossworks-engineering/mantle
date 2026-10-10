@@ -17,7 +17,14 @@
  * `chunk-windows` maintenance task, dry run by default). No trigger, no job.
  */
 import { and, eq, gt, isNotNull, sql } from 'drizzle-orm';
-import { contentChunks, contentChunkWindows, db, embeddingConfig } from '@mantle/db';
+import {
+  contentChunks,
+  contentChunkWindows,
+  db,
+  embeddingConfig,
+  withDeadlockRetry,
+  withHeads,
+} from '@mantle/db';
 import { embedBatch, resolveEmbeddingConfig, clearEmbeddingModelCache } from './index';
 import { estimateEmbeddingUsd } from './reembed';
 
@@ -191,10 +198,27 @@ export async function runChunkWindows(
   };
   if (opts.clear) {
     await setChunkWindows(ownerId, false);
-    const gone = await db.execute(
-      sql`delete from ${contentChunkWindows} where ${contentChunkWindows.ownerId} = ${ownerId}`,
-    );
-    return { ...empty, written: -affected(gone) };
+    // Heads first (workspaces plan U1, V5): one batch of nodes at a time,
+    // each batch under its nodes' heads.
+    let removed = 0;
+    for (;;) {
+      const batch = (await db.execute(
+        sql`select distinct ${contentChunkWindows.nodeId} as id from ${contentChunkWindows}
+             where ${contentChunkWindows.ownerId} = ${ownerId} limit 500`,
+      )) as unknown as { id: string }[];
+      if (batch.length === 0) break;
+      const ids = batch.map((r) => r.id);
+      const gone = await withDeadlockRetry(() =>
+        withHeads(ids, 'update', (tx) =>
+          tx.execute(
+            sql`delete from ${contentChunkWindows} where ${contentChunkWindows.ownerId} = ${ownerId}
+                 and ${contentChunkWindows.nodeId} = any(${`{${ids.join(',')}}`}::uuid[])`,
+          ),
+        ),
+      );
+      removed += affected(gone);
+    }
+    return { ...empty, written: -removed };
   }
   const batchSize = Math.max(1, opts.batch ?? CHUNK_WINDOW_BATCH);
   const parallel = Math.max(1, opts.parallel ?? 4);
@@ -239,14 +263,29 @@ export async function runChunkWindows(
   };
   // One-window chunks: the window IS the chunk, so its vector is copied in
   // SQL (vector to halfvec) and never crosses into Node.
+  // Each write takes the heads of the nodes it touches first (workspaces
+  // plan U1, V5); the vectors are computed before, so a retry repeats only
+  // the insert.
   const copy = async (ids: string[]): Promise<void> => {
     if (ids.length === 0) return;
-    const res = await db.execute(sql`
+    const chunkIds = `{${ids.join(',')}}`;
+    const owners = (await db.execute(
+      sql`select distinct node_id as id from ${contentChunks} where id = any(${chunkIds}::uuid[])`,
+    )) as unknown as { id: string }[];
+    if (owners.length === 0) return;
+    const res = await withDeadlockRetry(() =>
+      withHeads(
+        owners.map((r) => r.id),
+        'update',
+        (tx) =>
+          tx.execute(sql`
       insert into ${contentChunkWindows} (chunk_id, j, owner_id, node_id, embedding)
       select c.id, 0, c.owner_id, c.node_id, c.embedding::halfvec(768)
       from ${contentChunks} c
-      where c.id = any(${`{${ids.join(',')}}`}::uuid[]) and c.embedding is not null
-      on conflict do nothing`);
+      where c.id = any(${chunkIds}::uuid[]) and c.embedding is not null
+      on conflict do nothing`),
+      ),
+    );
     progress(affected(res));
   };
   // Multi-window chunks: one insert per embed call, with a typed parameter
@@ -258,12 +297,17 @@ export async function runChunkWindows(
       (e, i) =>
         sql`(${e.chunkId}::uuid, ${e.j}::int, ${e.nodeId}::uuid, ${`[${vectors[i]!.join(',')}]`}::halfvec(768))`,
     );
-    const res = await db.execute(sql`
+    const nodeIds = [...new Set(items.map((e) => e.nodeId))];
+    const res = await withDeadlockRetry(() =>
+      withHeads(nodeIds, 'update', (tx) =>
+        tx.execute(sql`
       insert into ${contentChunkWindows} (chunk_id, j, owner_id, node_id, embedding)
       select v.chunk_id, v.j, ${ownerId}::uuid, v.node_id, v.embedding
       from (values ${sql.join(values, sql`, `)}) as v(chunk_id, j, node_id, embedding)
       where exists (select 1 from ${contentChunks} c where c.id = v.chunk_id)
-      on conflict do nothing`);
+      on conflict do nothing`),
+      ),
+    );
     progress(affected(res));
   };
 

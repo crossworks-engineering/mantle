@@ -19,6 +19,10 @@ import {
   type Node,
   type ViewerLevel,
   withBusyRetry,
+  headsOrSpace,
+  withDeadlockRetry,
+  withNodeDeleteHeads,
+  withNodeInsertHeads,
 } from '@mantle/db';
 import { followNewEmbeds, noteEmbedIds, refoldEmbedReach } from './embed-closure';
 
@@ -61,7 +65,18 @@ function rowOf(n: Node): NoteRow {
 }
 
 async function ensureRoot(ownerId: string): Promise<void> {
-  await db
+  await headsOrSpace(
+    (f) =>
+      withDeadlockRetry(() =>
+        withNodeInsertHeads(ownerId, [{ type: 'branch', path: NOTES_ROOT_LABEL }], f),
+      ),
+    (tx) => insertRoot(tx, ownerId),
+  );
+}
+
+/** @heads-held by ensureRoot (through headsOrSpace). */
+async function insertRoot(tx: Pick<typeof db, 'insert'>, ownerId: string): Promise<void> {
+  await tx
     .insert(nodes)
     .values({
       ownerId,
@@ -182,17 +197,25 @@ export type CreateNoteInput = {
 
 export async function createNote(ownerId: string, input: CreateNoteInput): Promise<NoteRow> {
   await ensureRoot(ownerId);
-  const [row] = await db
-    .insert(nodes)
-    .values({
-      ownerId,
-      type: 'note',
-      title: input.title.trim().slice(0, 200) || 'Untitled note',
-      path: NOTES_ROOT_LABEL,
-      data: { content: input.content ?? '' },
-      tags: dedupeTags(input.tags ?? []),
-    })
-    .returning();
+  // Heads first (workspaces plan U1): the folder the note lands in.
+  const [row] = await headsOrSpace<Node[]>(
+    (f) =>
+      withDeadlockRetry(() =>
+        withNodeInsertHeads(ownerId, [{ type: 'note', path: NOTES_ROOT_LABEL }], f),
+      ),
+    (tx) =>
+      tx
+        .insert(nodes)
+        .values({
+          ownerId,
+          type: 'note',
+          title: input.title.trim().slice(0, 200) || 'Untitled note',
+          path: NOTES_ROOT_LABEL,
+          data: { content: input.content ?? '' },
+          tags: dedupeTags(input.tags ?? []),
+        })
+        .returning(),
+  );
   if (!row) throw new Error('createNote: insert returned no row');
   return rowOf(row);
 }
@@ -270,7 +293,10 @@ export async function deleteNote(ownerId: string, id: string): Promise<boolean> 
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'note')))
     .limit(1);
   if (!row) return false;
-  await db.delete(nodes).where(eq(nodes.id, id));
+  await headsOrSpace(
+    (f) => withDeadlockRetry(() => withNodeDeleteHeads([id], f)),
+    (tx) => tx.delete(nodes).where(eq(nodes.id, id)),
+  );
   return true;
 }
 

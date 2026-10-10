@@ -30,9 +30,16 @@ const valuesFn = vi.fn((_v: unknown) => ({
 
 vi.mock('@mantle/db', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/db')>();
+  const db = { ...actual.db, insert: vi.fn(() => ({ values: valuesFn })) };
   return {
     ...actual,
-    db: { ...actual.db, insert: vi.fn(() => ({ values: valuesFn })) },
+    db,
+    // The heads helpers (workspaces plan U1) open their own transaction on
+    // the real pool; here they run the callback on the mocked db.
+    withHeads: async (_ids: unknown, _mode: unknown, fn: (tx: unknown) => unknown) => fn(db),
+    withNodeInsertHeads: async (_o: unknown, _i: unknown, fn: (tx: unknown) => unknown) => fn(db),
+    withNodeDeleteHeads: async (_ids: unknown, fn: (tx: unknown) => unknown) => fn(db),
+    withDeadlockRetry: async (fn: () => unknown) => fn(),
   };
 });
 vi.mock('@mantle/crypto', () => ({ seal: vi.fn() }));

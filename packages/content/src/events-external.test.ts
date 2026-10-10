@@ -80,9 +80,16 @@ vi.mock('@mantle/db', async (importOriginal) => {
       }),
     })),
   };
+  // The heads helpers open a real transaction; here they hand the stub over
+  // as `tx` and run once.
+  const viaStub = async (...args: unknown[]) =>
+    (args[args.length - 1] as (tx: unknown) => Promise<unknown>)(db);
   return {
     ...actual,
     db,
+    withDeadlockRetry: vi.fn((run: () => Promise<unknown>) => run()),
+    withNodeInsertHeads: vi.fn(viaStub),
+    withNodeDeleteHeads: vi.fn(viaStub),
     notifyNodeIngested: vi.fn(async (id: string) => void h.notified.push(id)),
   };
 });

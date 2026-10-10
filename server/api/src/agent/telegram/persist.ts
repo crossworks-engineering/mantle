@@ -5,7 +5,14 @@
  * per-agent conversation stream. Split out of runtime.ts on 2026-09-02
  * (audit, bloat B2).
  */
-import { db, nodes, telegramMessages, type Agent, type TelegramAccount } from '@mantle/db';
+import {
+  nodes,
+  telegramMessages,
+  withDeadlockRetry,
+  withNodeInsertHeads,
+  type Agent,
+  type TelegramAccount,
+} from '@mantle/db';
 import { recordTurn } from '@mantle/runtime/agent';
 import type { ResponderLoopResult } from '@mantle/runtime/assistant';
 import { step } from '@mantle/tracing';
@@ -28,40 +35,50 @@ export async function persistOutbound(args: {
     const titleStem = reply.slice(0, 120);
     const targets: (number | null)[] = delivered ? telegramMessageIds : [null];
     for (const tgMsgId of targets) {
-      const [node] = await db
-        .insert(nodes)
-        .values({
+      // The account branch's head first (plan U1): the node and its
+      // transport row land together.
+      await withDeadlockRetry(() =>
+        withNodeInsertHeads(
           ownerId,
-          type: 'telegram_message',
-          title: titleStem,
-          path: account.branchPath,
-          data: {
-            direction: 'outbound',
-            model: agent.model,
-            agent: agent.slug,
-            replyToTelegramMessageId: row.telegramMessageId,
-            delivered,
-          },
-          tags: ['telegram', 'outbound'],
-        })
-        .returning({ id: nodes.id });
-      if (!node) throw new Error('failed to create outbound node');
+          [{ type: 'telegram_message', path: account.branchPath }],
+          async (tx) => {
+            const [node] = await tx
+              .insert(nodes)
+              .values({
+                ownerId,
+                type: 'telegram_message',
+                title: titleStem,
+                path: account.branchPath,
+                data: {
+                  direction: 'outbound',
+                  model: agent.model,
+                  agent: agent.slug,
+                  replyToTelegramMessageId: row.telegramMessageId,
+                  delivered,
+                },
+                tags: ['telegram', 'outbound'],
+              })
+              .returning({ id: nodes.id });
+            if (!node) throw new Error('failed to create outbound node');
 
-      await db.insert(telegramMessages).values({
-        nodeId: node.id,
-        accountId: row.accountId,
-        chatId: row.chatPk,
-        telegramMessageId: tgMsgId == null ? null : String(tgMsgId),
-        text: reply,
-        sentAt: now,
-        direction: 'outbound',
-        agentId: agent.id,
-        modelUsed: agent.model,
-        replyToId: row.id,
-        delivered,
-        processed: true,
-        processedAt: now,
-      });
+            await tx.insert(telegramMessages).values({
+              nodeId: node.id,
+              accountId: row.accountId,
+              chatId: row.chatPk,
+              telegramMessageId: tgMsgId == null ? null : String(tgMsgId),
+              text: reply,
+              sentAt: now,
+              direction: 'outbound',
+              agentId: agent.id,
+              modelUsed: agent.model,
+              replyToId: row.id,
+              delivered,
+              processed: true,
+              processedAt: now,
+            });
+          },
+        ),
+      );
     }
 
     // Mirror the outbound into the unified per-agent stream ONCE (the

@@ -11,7 +11,14 @@
  * it costs one indexed lookup after that. Path only, so it is reversible.
  */
 import { sql } from 'drizzle-orm';
-import { db, nodes, takeShareReadLock } from '@mantle/db';
+import {
+  db,
+  nodes,
+  takeShareReadLock,
+  withDeadlockRetry,
+  withHeads,
+  withNodeInsertHeads,
+} from '@mantle/db';
 import { ensureKindRoot } from './node-ops';
 import { unlessWriteRefused } from './refused-write';
 
@@ -39,21 +46,25 @@ const FOLDERS = [
 export async function ensureNotesAssistantFolder(ownerId: string): Promise<string> {
   await ensureKindRoot(ownerId, 'notes');
   for (const f of FOLDERS) {
-    await db
-      .insert(nodes)
-      .values({
-        ownerId,
-        type: 'branch',
-        title: f.title,
-        slug: f.slug,
-        path: f.path,
-        data: { system: true, description: f.description },
-        tags: [],
-      })
-      .onConflictDoNothing({
-        target: [nodes.ownerId, nodes.path],
-        where: sql`${nodes.type} = 'branch'`,
-      });
+    // Heads first (plan U1): the parent folder, shared; one at a time, so
+    // Assistant's parent exists when its heads are read.
+    await withNodeInsertHeads(ownerId, [{ type: 'branch', path: f.path }], (tx) =>
+      tx
+        .insert(nodes)
+        .values({
+          ownerId,
+          type: 'branch',
+          title: f.title,
+          slug: f.slug,
+          path: f.path,
+          data: { system: true, description: f.description },
+          tags: [],
+        })
+        .onConflictDoNothing({
+          target: [nodes.ownerId, nodes.path],
+          where: sql`${nodes.type} = 'branch'`,
+        }),
+    );
   }
   return NOTES_ASSISTANT_PATH;
 }
@@ -70,13 +81,32 @@ export async function reconcileNotesAutoFiled(ownerId: string): Promise<number |
   if (!waiting.length) return 0;
   return unlessWriteRefused(async () => {
     await ensureNotesAssistantFolder(ownerId);
-    // The share lock (shared) before the rows: see takeShareReadLock.
-    const moved = await db.transaction(async (tx) => {
-      await takeShareReadLock(tx, ownerId);
-      return (await tx.execute(sql`
-        update nodes set path = ${NOTES_ASSISTANT_PATH}::ltree
-         where owner_id = ${ownerId} and type = 'note' and path <@ ${LEGACY_DIGEST_PATH}::ltree
-         returning id`)) as unknown as unknown[];
+    const moved = await withDeadlockRetry(async () => {
+      // Heads first (plan V3): the digests, the folders they leave (none
+      // at the old path, as a rule) and Assistant, read before the
+      // transaction.
+      const heads = (await db.execute(sql`
+        select x.id::text as id from (
+          select n.id from nodes n
+           where n.owner_id = ${ownerId} and n.type = 'note' and n.path <@ ${LEGACY_DIGEST_PATH}::ltree
+          union
+          select mantle_parent_folder(n.owner_id, n.type, n.path) from nodes n
+           where n.owner_id = ${ownerId} and n.type = 'note' and n.path <@ ${LEGACY_DIGEST_PATH}::ltree
+          union
+          select mantle_parent_folder(${ownerId}::uuid, 'note'::node_type, ${NOTES_ASSISTANT_PATH}::ltree)
+        ) x where x.id is not null`)) as unknown as Array<{ id: string }>;
+      return withHeads(
+        heads.map((h) => h.id),
+        'update',
+        async (tx) => {
+          // The share lock (shared) before the rows: see takeShareReadLock.
+          await takeShareReadLock(tx, ownerId);
+          return (await tx.execute(sql`
+            update nodes set path = ${NOTES_ASSISTANT_PATH}::ltree
+             where owner_id = ${ownerId} and type = 'note' and path <@ ${LEGACY_DIGEST_PATH}::ltree
+             returning id`)) as unknown as unknown[];
+        },
+      );
     });
     return moved.length;
   });

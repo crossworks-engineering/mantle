@@ -21,7 +21,7 @@ import path from 'node:path';
 import { constants } from 'node:fs';
 import { access, rm } from 'node:fs/promises';
 import { and, eq, inArray, isNotNull, lte, ne, notInArray, or, isNull, sql } from 'drizzle-orm';
-import { authUsers, db, nodes, spaceItems, spaces, tables } from '@mantle/db';
+import { authUsers, db, nodes, onSpaceRows, spaceItems, spaces, tables } from '@mantle/db';
 import { computeBundle, recordedBundle, sharedOrSubmittedRoot } from './member-bundle';
 import { removeSpaceFile, spaceDir, spacesRoot, spacesRootAvailable } from '@mantle/files';
 import { resolveStoragePath, tableDbRoot } from '@mantle/tabledb';
@@ -186,19 +186,22 @@ export async function purgeDeactivatedSpaces(
         if (!listed.length) return { count: 0, emptied: false };
         // Only rows still in this space (audit F03): an Accept that re-owns
         // one to the brain meanwhile makes the delete, re-checked on the new
-        // row, match nothing. Never a brain row.
-        const gone = await tx
-          .delete(nodes)
-          .where(
-            and(
-              inArray(
-                nodes.id,
-                listed.map((d) => d.id),
+        // row, match nothing. Never a brain row: the space's own rows need
+        // no heads (onSpaceRows, 0244).
+        const gone = await onSpaceRows(tx, spaceId, (q) =>
+          q
+            .delete(nodes)
+            .where(
+              and(
+                inArray(
+                  nodes.id,
+                  listed.map((d) => d.id),
+                ),
+                eq(nodes.ownerId, spaceId),
               ),
-              eq(nodes.ownerId, spaceId),
-            ),
-          )
-          .returning({ id: nodes.id });
+            )
+            .returning({ id: nodes.id }),
+        );
         const goneIds = new Set(gone.map((g) => g.id));
         const doomed = listed.filter((d) => goneIds.has(d.id));
         if (!doomed.length) return { count: 0, emptied: false };
@@ -208,7 +211,7 @@ export async function purgeDeactivatedSpaces(
           .where(and(eq(nodes.ownerId, spaceId), ne(nodes.type, 'branch')));
         if ((left?.n ?? 0) === 0) {
           // Nothing left: the per-kind roots go too, and so do both directories.
-          await tx.delete(nodes).where(eq(nodes.ownerId, spaceId));
+          await onSpaceRows(tx, spaceId, (q) => q.delete(nodes).where(eq(nodes.ownerId, spaceId)));
           after.push(() => rm(spaceDir(spaceId), { recursive: true, force: true }));
           after.push(() => rm(path.join(tableDbRoot(), spaceId), { recursive: true, force: true }));
           return { count: doomed.length, emptied: true };

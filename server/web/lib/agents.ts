@@ -9,6 +9,8 @@ import {
   nodes,
   telegramChats,
   applyPersonaUpdate,
+  withDeadlockRetry,
+  withNodeDeleteHeads,
   noteRef,
   type Agent,
   type AgentAvatar,
@@ -538,55 +540,59 @@ export async function deleteAgent(
   opts: { conversation?: AgentConversationMode } = {},
 ): Promise<DeleteAgentResult | null> {
   const conversation = opts.conversation ?? 'keep';
-  return db.transaction(async (tx) => {
-    // Lock the row first so a concurrent turn cannot land a message between
-    // the purge and the delete (it would be orphaned by the SET NULL).
-    const [agent] = await tx
-      .select({ id: agents.id })
-      .from(agents)
-      .where(and(eq(agents.id, id), eq(agents.ownerId, userId)))
-      .for('update')
-      .limit(1);
-    if (!agent) return null;
+  // The digests' heads first (plan V4): which notes go is read before the
+  // transaction, so the heads can be its first lock.
+  const digestWhere = and(
+    eq(nodes.ownerId, userId),
+    eq(nodes.type, 'note'),
+    // The chat archive summaries (0231) go with them: they are the
+    // same agent's conversation, one note per archived thread.
+    sql`(${nodes.tags} @> ARRAY['conversation-digest']::text[] or ${nodes.data}->>'kind' = 'chat_archive')`,
+    sql`${nodes.data}->>'agent_id' = ${id}`,
+  );
+  const digestIds =
+    conversation === 'delete'
+      ? (await db.select({ id: nodes.id }).from(nodes).where(digestWhere)).map((r) => r.id)
+      : [];
+  return withDeadlockRetry(() =>
+    withNodeDeleteHeads(digestIds, async (tx) => {
+      // Lock the row first so a concurrent turn cannot land a message between
+      // the purge and the delete (it would be orphaned by the SET NULL).
+      const [agent] = await tx
+        .select({ id: agents.id })
+        .from(agents)
+        .where(and(eq(agents.id, id), eq(agents.ownerId, userId)))
+        .for('update')
+        .limit(1);
+      if (!agent) return null;
 
-    let deletedMessages = 0;
-    let deletedDigests = 0;
-    if (conversation === 'delete') {
-      const msgs = await tx
-        .delete(assistantMessages)
-        .where(and(eq(assistantMessages.ownerId, userId), eq(assistantMessages.agentId, id)))
-        .returning({ id: assistantMessages.id });
-      deletedMessages = msgs.length;
-      // Digests key off data.agent_id (the summarizer's contract), not the
-      // agent:<slug> tag, which a later agent could reuse.
-      const digests = await tx
-        .delete(nodes)
-        .where(
-          and(
-            eq(nodes.ownerId, userId),
-            eq(nodes.type, 'note'),
-            // The chat archive summaries (0231) go with them: they are the
-            // same agent's conversation, one note per archived thread.
-            sql`(${nodes.tags} @> ARRAY['conversation-digest']::text[] or ${nodes.data}->>'kind' = 'chat_archive')`,
-            sql`${nodes.data}->>'agent_id' = ${id}`,
-          ),
-        )
-        .returning({ id: nodes.id });
-      deletedDigests = digests.length;
-    }
+      let deletedMessages = 0;
+      let deletedDigests = 0;
+      if (conversation === 'delete') {
+        const msgs = await tx
+          .delete(assistantMessages)
+          .where(and(eq(assistantMessages.ownerId, userId), eq(assistantMessages.agentId, id)))
+          .returning({ id: assistantMessages.id });
+        deletedMessages = msgs.length;
+        // Digests key off data.agent_id (the summarizer's contract), not the
+        // agent:<slug> tag, which a later agent could reuse.
+        const digests = await tx.delete(nodes).where(digestWhere).returning({ id: nodes.id });
+        deletedDigests = digests.length;
+      }
 
-    // A Telegram chat pinned to this agent is turned off (denied), not left
-    // to the SET NULL: with its override gone it would fall to the bot's own
-    // agent, often the owner's persona (access matrix M8). The owner allows
-    // it again, and picks its agent, in the chat list.
-    await tx
-      .update(telegramChats)
-      .set({ allowlistStatus: 'denied', updatedAt: new Date() })
-      .where(and(eq(telegramChats.responderAgentId, id), eq(telegramChats.userId, userId)));
+      // A Telegram chat pinned to this agent is turned off (denied), not left
+      // to the SET NULL: with its override gone it would fall to the bot's own
+      // agent, often the owner's persona (access matrix M8). The owner allows
+      // it again, and picks its agent, in the chat list.
+      await tx
+        .update(telegramChats)
+        .set({ allowlistStatus: 'denied', updatedAt: new Date() })
+        .where(and(eq(telegramChats.responderAgentId, id), eq(telegramChats.userId, userId)));
 
-    await tx.delete(agents).where(and(eq(agents.id, id), eq(agents.ownerId, userId)));
-    return { conversation, deletedMessages, deletedDigests };
-  });
+      await tx.delete(agents).where(and(eq(agents.id, id), eq(agents.ownerId, userId)));
+      return { conversation, deletedMessages, deletedDigests };
+    }),
+  );
 }
 
 /* ---------------------------------------------------------------------------

@@ -32,7 +32,7 @@
  * folders moves only its own rows).
  */
 import { sql } from 'drizzle-orm';
-import type { Db } from './client';
+import { onSpaceRows, type Db } from './client';
 
 /** Root plus three folder levels (TREE_MAX_DEPTH in @mantle/client-types). */
 const MAX_TREE_NLEVEL = 4;
@@ -80,67 +80,77 @@ async function carry(
   newPath: string,
   lift: boolean,
 ): Promise<number> {
-  const mapped = sql`case when n.path = ${oldPath}::ltree then text2ltree(${newPath})
-                          else (text2ltree(${newPath}) || subpath(n.path, nlevel(${oldPath}::ltree)))::ltree end`;
-  const inSpaces = sql`n.owner_id in (select s.id from spaces s where s.kind = 'personal')
-                       and n.path <@ ${oldPath}::ltree`;
-  // Folders that merge or clamp away first, so the rewrite below never meets
-  // the (owner, path) unique index.
-  await tx.execute(sql`
-    delete from nodes n
-     where ${inSpaces} and n.type = 'branch'
-       and (nlevel(${mapped}) > ${MAX_TREE_NLEVEL}
-            or (${lift} and n.path = ${oldPath}::ltree)
-            or exists (select 1 from nodes b
-                        where b.owner_id = n.owner_id and b.type = 'branch'
-                          and b.path = ${mapped}
-                          and not (b.path <@ ${oldPath}::ltree)))`);
-  // A member's FILE landing where the member already has one of that name
-  // (a lift, a merge, or a clamp of deeper folders) takes a "-2" name (then
-  // "-3"...), as Accept does: file names are unique per owner and folder
-  // (file_filename_in_parent_uq, and the slug index), and a clash here
-  // failed the admin's rename, move or delete half done (review F6).
-  const finalPath = sql`subpath(${mapped}, 0, least(nlevel(${mapped}), ${MAX_TREE_NLEVEL}))`;
-  const renamed = sql`(case when r.fname ~ '^.+[.][^.]+$'
-                        then regexp_replace(r.fname, '^(.*)([.][^.]+)$', '\\1-' || (r.dup + 1)::text || '\\2')
-                        else r.fname || '-' || (r.dup + 1)::text end)`;
-  await tx.execute(sql`
-    with moving as (
-      select n.id, n.owner_id, ${finalPath} as fp, n.data->>'filename' as fname
-        from nodes n
-       where ${inSpaces} and n.type = 'file' and n.data ? 'filename'
-    ), ranked as (
-      select m.id, m.fname,
-             row_number() over (partition by m.owner_id, m.fp, lower(m.fname) order by m.id)
-             + (case when exists (
-                  select 1 from nodes b
-                   where b.owner_id = m.owner_id and b.type = 'file'
-                     and b.path = m.fp and lower(b.data->>'filename') = lower(m.fname)
-                     and not (b.path <@ ${oldPath}::ltree)) then 1 else 0 end)
-             - 1 as dup
-        from moving m
-    )
-    update nodes n
-       set data = jsonb_set(n.data, '{filename}', to_jsonb(${renamed})),
-           slug = case when n.slug is null then null else lower(${renamed}) end,
-           title = case when n.title = r.fname then ${renamed} else n.title end
-      from ranked r
-     where n.id = r.id and r.dup > 0`);
-  // Two passes through a temporary prefix: in one UPDATE a row's new path
-  // can be another moving row's old one (a lift maps `a.o.o.y` onto `a.o.y`,
-  // which itself moves on to `a.y`), and the unique index is checked row by
-  // row, so a single pass failed or not by physical order (folder audit C3).
-  // The prefix sits outside every kind root, so no folder check applies.
-  await tx.execute(sql`
-    update nodes n set path = text2ltree(${CARRY_TMP}) || n.path where ${inSpaces}`);
-  const from = sql`subpath(n.path, 1)`;
-  const mappedTmp = sql`case when ${from} = ${oldPath}::ltree then text2ltree(${newPath})
-                             else (text2ltree(${newPath}) || subpath(${from}, nlevel(${oldPath}::ltree)))::ltree end`;
-  const moved = (await tx.execute(sql`
-    update nodes n
-       set path = subpath(${mappedTmp}, 0, least(nlevel(${mappedTmp}), ${MAX_TREE_NLEVEL}))
-     where n.owner_id in (select s.id from spaces s where s.kind = 'personal')
-       and n.path <@ (text2ltree(${CARRY_TMP}) || ${oldPath}::ltree)
-    returning n.id`)) as unknown as unknown[];
-  return moved.length;
+  // Rows the personal spaces own, never a brain row: no heads (onSpaceRows,
+  // 0244); the database still checks any brain row.
+  const owners = (
+    (await tx.execute(sql`
+      select distinct n.owner_id as id from nodes n
+       where n.owner_id in (select s.id from spaces s where s.kind = 'personal')
+         and n.path <@ ${oldPath}::ltree`)) as unknown as { id: string }[]
+  ).map((r) => r.id);
+  return onSpaceRows(tx, owners, async (q) => {
+    const mapped = sql`case when n.path = ${oldPath}::ltree then text2ltree(${newPath})
+                            else (text2ltree(${newPath}) || subpath(n.path, nlevel(${oldPath}::ltree)))::ltree end`;
+    const inSpaces = sql`n.owner_id in (select s.id from spaces s where s.kind = 'personal')
+                         and n.path <@ ${oldPath}::ltree`;
+    // Folders that merge or clamp away first, so the rewrite below never meets
+    // the (owner, path) unique index.
+    await q.execute(sql`
+      delete from nodes n
+       where ${inSpaces} and n.type = 'branch'
+         and (nlevel(${mapped}) > ${MAX_TREE_NLEVEL}
+              or (${lift} and n.path = ${oldPath}::ltree)
+              or exists (select 1 from nodes b
+                          where b.owner_id = n.owner_id and b.type = 'branch'
+                            and b.path = ${mapped}
+                            and not (b.path <@ ${oldPath}::ltree)))`);
+    // A member's FILE landing where the member already has one of that name
+    // (a lift, a merge, or a clamp of deeper folders) takes a "-2" name (then
+    // "-3"...), as Accept does: file names are unique per owner and folder
+    // (file_filename_in_parent_uq, and the slug index), and a clash here
+    // failed the admin's rename, move or delete half done (review F6).
+    const finalPath = sql`subpath(${mapped}, 0, least(nlevel(${mapped}), ${MAX_TREE_NLEVEL}))`;
+    const renamed = sql`(case when r.fname ~ '^.+[.][^.]+$'
+                          then regexp_replace(r.fname, '^(.*)([.][^.]+)$', '\\1-' || (r.dup + 1)::text || '\\2')
+                          else r.fname || '-' || (r.dup + 1)::text end)`;
+    await q.execute(sql`
+      with moving as (
+        select n.id, n.owner_id, ${finalPath} as fp, n.data->>'filename' as fname
+          from nodes n
+         where ${inSpaces} and n.type = 'file' and n.data ? 'filename'
+      ), ranked as (
+        select m.id, m.fname,
+               row_number() over (partition by m.owner_id, m.fp, lower(m.fname) order by m.id)
+               + (case when exists (
+                    select 1 from nodes b
+                     where b.owner_id = m.owner_id and b.type = 'file'
+                       and b.path = m.fp and lower(b.data->>'filename') = lower(m.fname)
+                       and not (b.path <@ ${oldPath}::ltree)) then 1 else 0 end)
+               - 1 as dup
+          from moving m
+      )
+      update nodes n
+         set data = jsonb_set(n.data, '{filename}', to_jsonb(${renamed})),
+             slug = case when n.slug is null then null else lower(${renamed}) end,
+             title = case when n.title = r.fname then ${renamed} else n.title end
+        from ranked r
+       where n.id = r.id and r.dup > 0`);
+    // Two passes through a temporary prefix: in one UPDATE a row's new path
+    // can be another moving row's old one (a lift maps `a.o.o.y` onto `a.o.y`,
+    // which itself moves on to `a.y`), and the unique index is checked row by
+    // row, so a single pass failed or not by physical order (folder audit C3).
+    // The prefix sits outside every kind root, so no folder check applies.
+    await q.execute(sql`
+      update nodes n set path = text2ltree(${CARRY_TMP}) || n.path where ${inSpaces}`);
+    const from = sql`subpath(n.path, 1)`;
+    const mappedTmp = sql`case when ${from} = ${oldPath}::ltree then text2ltree(${newPath})
+                               else (text2ltree(${newPath}) || subpath(${from}, nlevel(${oldPath}::ltree)))::ltree end`;
+    const moved = (await q.execute(sql`
+      update nodes n
+         set path = subpath(${mappedTmp}, 0, least(nlevel(${mappedTmp}), ${MAX_TREE_NLEVEL}))
+       where n.owner_id in (select s.id from spaces s where s.kind = 'personal')
+         and n.path <@ (text2ltree(${CARRY_TMP}) || ${oldPath}::ltree)
+      returning n.id`)) as unknown as unknown[];
+    return moved.length;
+  });
 }

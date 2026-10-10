@@ -62,14 +62,15 @@ import {
   resolveExtractionConcurrency,
   type EmbeddingConfig,
 } from '@mantle/embeddings';
+import { HEADS_DEAD_QUEUE, parkHeadsFailure } from './extract-heads-park';
 import {
   countDeadLetteredExtracts,
   listOpenProviderAlerts,
+  type ProviderSubject,
   recordProviderFailure,
   recordProviderProbeFailure,
   resolveProviderAlert,
   setProviderAlertPaused,
-  type ProviderSubject,
 } from '@mantle/db';
 import { extractNode } from './extractor.js';
 import { probeExtractionModel } from './extract/model.js';
@@ -234,6 +235,7 @@ export async function startExtractQueue(
   // pg-boss 12 types the options as Omit<Queue,'name'>: the queue name is the
   // first argument, so repeating it in the options object is now rejected.
   await boss.createQueue(DEAD_LETTER_QUEUE, { policy: 'standard' });
+  await boss.createQueue(HEADS_DEAD_QUEUE, { policy: 'standard' });
 
   await boss.createQueue(EXTRACT_QUEUE, queueOptions);
   // createQueue is ON CONFLICT DO NOTHING, so an existing queue keeps the
@@ -309,6 +311,17 @@ async function handleExtractJob([job]: { data: ExtractJob }[]): Promise<void> {
   try {
     await run;
   } catch (err) {
+    // The heads check refused a write (plan V5): parked once, no retry.
+    if (
+      await parkHeadsFailure(err, nodeId, {
+        park: async (data) => {
+          await boss?.send(HEADS_DEAD_QUEUE, data);
+        },
+        log: (msg) => console.error(`[extract-queue] ${msg}`),
+      })
+    ) {
+      return;
+    }
     // An account error (no credits, refused key) pauses the queue once a
     // probe confirms it; anything else retries as before. Not awaited: the
     // confirm probe must not hold this job's failure back from pg-boss.

@@ -164,6 +164,24 @@ const CHECKS: CheckDef[] = [
       WHERE j.name = 'mantle.extract.dead' AND j.state = 'created'`,
   },
   {
+    key: 'extract_heads_parked',
+    label: 'Extractions parked by the heads check',
+    severity: 'high',
+    note: 'a node whose extraction wrote without locking its heads first (workspaces plan V5, mantle.heads_check on): parked once, never retried or re-driven on its own, so the extraction model is not called again. The remedy is a code fix in the writer the job hit (the job keeps the error); then extract the node again by hand.',
+    query: (o) => sql`
+      SELECT coalesce(n.id::text, j.id::text) AS id,
+             coalesce(n.type::text, 'unknown') AS kind,
+             left(coalesce(n.title, j.data->>'nodeId', ''), 60) AS detail
+      FROM pgboss.job j
+      LEFT JOIN nodes n ON n.id::text = j.data->>'nodeId' AND n.owner_id = ${o}
+      WHERE j.name = 'mantle.extract.heads' AND j.state = 'created'
+      LIMIT ${CAP}`,
+    spanQuery: () => sql`
+      SELECT min(j.created_on)::date::text AS oldest, max(j.created_on)::date::text AS newest
+      FROM pgboss.job j
+      WHERE j.name = 'mantle.extract.heads' AND j.state = 'created'`,
+  },
+  {
     key: 'unembedded_facts',
     label: 'Unembedded facts',
     severity: 'medium',

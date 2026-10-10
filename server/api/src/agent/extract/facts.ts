@@ -7,7 +7,15 @@
 
 import { factValidFrom, parseClassifierDecision, resolveCostCap } from './rules';
 import { and, eq, isNull, sql } from 'drizzle-orm';
-import { db, facts, nodes, type AiWorker, type ExtractorParams } from '@mantle/db';
+import {
+  db,
+  facts,
+  nodes,
+  withDeadlockRetry,
+  withHeads,
+  type AiWorker,
+  type ExtractorParams,
+} from '@mantle/db';
 
 import { currentTrace, step } from '@mantle/tracing';
 import { prefilterFactAdd, type FactAddPrefilter } from '@mantle/decisions';
@@ -51,18 +59,29 @@ async function classifyAndApplyFact(
 
   const closeNeighbours = neighbours.filter((n) => (n.dist ?? 1) <= FACT_DEDUP_THRESHOLD);
 
+  const newFact = {
+    ownerId,
+    content: candidate.content,
+    kind: candidate.kind,
+    entityId: primaryEntityId,
+    confidence: candidate.confidence,
+    validFrom,
+    sourceNodeId,
+    embedding: candidateEmbedding,
+  };
+  // Every fact write takes the source node's head first (plan U1). The
+  // classifier has already answered by then, so a retry repeats only the
+  // database write, never a model call.
+  const addFact = () =>
+    withDeadlockRetry(() =>
+      withHeads([sourceNodeId], 'update', async (tx) => {
+        await tx.insert(facts).values(newFact);
+      }),
+    );
+
   // Fast path: no close neighbours → just ADD.
   if (closeNeighbours.length === 0) {
-    await db.insert(facts).values({
-      ownerId,
-      content: candidate.content,
-      kind: candidate.kind,
-      entityId: primaryEntityId,
-      confidence: candidate.confidence,
-      validFrom,
-      sourceNodeId,
-      embedding: candidateEmbedding,
-    });
+    await addFact();
     return 'ADD';
   }
 
@@ -78,16 +97,7 @@ async function classifyAndApplyFact(
   );
   if (prefilter?.mode === 'live' && prefilter.wouldSkip) {
     await recordPrefilterVerdict(prefilter, null);
-    await db.insert(facts).values({
-      ownerId,
-      content: candidate.content,
-      kind: candidate.kind,
-      entityId: primaryEntityId,
-      confidence: candidate.confidence,
-      validFrom,
-      sourceNodeId,
-      embedding: candidateEmbedding,
-    });
+    await addFact();
     return 'ADD';
   }
 
@@ -124,39 +134,24 @@ async function classifyAndApplyFact(
 
   if (decision.decision === 'UPDATE' && target) {
     // Retire the old, insert the new pointing back via supersededBy.
-    await db.update(facts).set({ validTo: now, updatedAt: now }).where(eq(facts.id, target.id));
-    const [inserted] = await db
-      .insert(facts)
-      .values({
-        ownerId,
-        content: candidate.content,
-        kind: candidate.kind,
-        entityId: primaryEntityId,
-        confidence: candidate.confidence,
-        validFrom,
-        sourceNodeId,
-        embedding: candidateEmbedding,
-        supersededBy: null,
-      })
-      .returning({ id: facts.id });
-    if (inserted) {
-      // Older row's superseded_by points at the newer row.
-      await db.update(facts).set({ supersededBy: inserted.id }).where(eq(facts.id, target.id));
-    }
+    await withDeadlockRetry(() =>
+      withHeads([sourceNodeId], 'update', async (tx) => {
+        await tx.update(facts).set({ validTo: now, updatedAt: now }).where(eq(facts.id, target.id));
+        const [inserted] = await tx
+          .insert(facts)
+          .values({ ...newFact, supersededBy: null })
+          .returning({ id: facts.id });
+        if (inserted) {
+          // Older row's superseded_by points at the newer row.
+          await tx.update(facts).set({ supersededBy: inserted.id }).where(eq(facts.id, target.id));
+        }
+      }),
+    );
     return 'UPDATE';
   }
 
   // Default: ADD (even if classifier said UPDATE/DELETE but no valid target).
-  await db.insert(facts).values({
-    ownerId,
-    content: candidate.content,
-    kind: candidate.kind,
-    entityId: primaryEntityId,
-    confidence: candidate.confidence,
-    validFrom,
-    sourceNodeId,
-    embedding: candidateEmbedding,
-  });
+  await addFact();
   return 'ADD';
 }
 

@@ -6,7 +6,7 @@
 
 import { createReadStream, promises as fsp } from 'node:fs';
 import { Readable } from 'node:stream';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import {
   assertFilesFolderDepth,
   diskPathForFile,
@@ -29,9 +29,13 @@ import {
   db,
   draws,
   emailAttachments,
+  type Node,
   nodes,
   notifyNodeIngested,
-  type Node,
+  withDeadlockRetry,
+  withHeads,
+  withNodeDeleteHeads,
+  withNodeInsertHeads,
 } from '@mantle/db';
 import { getContent } from '@mantle/storage';
 import { fileRowFromNode, type FileRow } from './shared';
@@ -218,22 +222,27 @@ export async function upsertFile(args: {
   // and update it like any existing row, so the caller's title/data/tags land.
   let target: Node | undefined = existing;
   if (!target) {
-    const [inserted] = await db
-      .insert(nodes)
-      .values({
-        ownerId: args.ownerId,
-        type: 'file',
-        title: args.title?.trim() || filename,
-        slug: filename,
-        path: args.parentPath,
-        data: newData,
-        tags: [...new Set(['file', ...(args.tags ?? [])])],
-      })
-      .onConflictDoNothing({
-        target: [nodes.ownerId, nodes.path, nodes.slug],
-        where: sql`${nodes.slug} is not null and ${nodes.type} = 'file'`,
-      })
-      .returning();
+    // Heads first (workspaces plan U1): the folder it lands in, shared.
+    const [inserted] = await withDeadlockRetry(() =>
+      withNodeInsertHeads(args.ownerId, [{ type: 'file', path: args.parentPath }], (tx) =>
+        tx
+          .insert(nodes)
+          .values({
+            ownerId: args.ownerId,
+            type: 'file',
+            title: args.title?.trim() || filename,
+            slug: filename,
+            path: args.parentPath,
+            data: newData,
+            tags: [...new Set(['file', ...(args.tags ?? [])])],
+          })
+          .onConflictDoNothing({
+            target: [nodes.ownerId, nodes.path, nodes.slug],
+            where: sql`${nodes.slug} is not null and ${nodes.type} = 'file'`,
+          })
+          .returning(),
+      ),
+    );
     // pg_notify('node_ingested') is fired by migration 0018's trigger;
     // no explicit notify needed for fresh inserts.
     if (inserted) return fileRowFromNode(inserted);
@@ -266,25 +275,28 @@ export async function upsertFile(args: {
   const nextTitle =
     args.title?.trim() || (existingTitle && existingTitle !== filename ? existingTitle : filename);
   const row = target;
-  const updated = await db.transaction(async (tx) => {
-    const [u] = await tx
-      .update(nodes)
-      .set({
-        title: nextTitle,
-        data: fileDataAfterWrite(oldData, newData, !sameContent),
-        // Only when the caller brings tags: a plain re-upsert leaves them be,
-        // and the race path above must still land them on the watcher's row.
-        ...(args.tags?.length ? { tags: [...new Set([...row.tags, 'file', ...args.tags])] } : {}),
-        updatedAt: new Date(),
-        ...(sameContent ? {} : columnsAfterContentChange(row)),
-      })
-      .where(eq(nodes.id, row.id))
-      .returning();
-    // Old passages go now, not when the re-extract lands: until then (and
-    // for good, should it never run) search would quote the old bytes.
-    if (u && !sameContent) await tx.delete(contentChunks).where(eq(contentChunks.nodeId, u.id));
-    return u;
-  });
+  // Heads first (workspaces plan U1): the chunk delete below needs them.
+  const updated = await withDeadlockRetry(() =>
+    withHeads([row.id], 'update', async (tx) => {
+      const [u] = await tx
+        .update(nodes)
+        .set({
+          title: nextTitle,
+          data: fileDataAfterWrite(oldData, newData, !sameContent),
+          // Only when the caller brings tags: a plain re-upsert leaves them be,
+          // and the race path above must still land them on the watcher's row.
+          ...(args.tags?.length ? { tags: [...new Set([...row.tags, 'file', ...args.tags])] } : {}),
+          updatedAt: new Date(),
+          ...(sameContent ? {} : columnsAfterContentChange(row)),
+        })
+        .where(eq(nodes.id, row.id))
+        .returning();
+      // Old passages go now, not when the re-extract lands: until then (and
+      // for good, should it never run) search would quote the old bytes.
+      if (u && !sameContent) await tx.delete(contentChunks).where(eq(contentChunks.nodeId, u.id));
+      return u;
+    }),
+  );
   if (!updated) throw new Error('upsertFile: update returned no row');
   // Notify the extractor again only when content changed.
   if (!sameContent) {
@@ -537,7 +549,12 @@ export async function deleteFileById(args: {
   }
   const data = (node.data ?? {}) as Record<string, unknown>;
   const filename = String(data.filename ?? '');
-  await db.delete(nodes).where(eq(nodes.id, node.id));
+  // Heads first (workspaces plan U1): the file and its folder.
+  await withDeadlockRetry(() =>
+    withNodeDeleteHeads([node.id], async (tx) => {
+      await tx.delete(nodes).where(eq(nodes.id, node.id));
+    }),
+  );
   if (filename) await deleteFileOnDisk(node.path, filename);
   // Reap the cached thumbnail derivatives too — keyed by content hash, so a
   // deleted photo doesn't leave its preview behind. Best-effort.
@@ -654,43 +671,51 @@ export async function syncFileFromDisk(args: {
     // extraction fields ARE cleared (fileDataAfterWrite), and the node's old
     // chunks with them: content changed, so all of it is recomputed by the
     // node_ingested notify below.
-    const [updated] = await db.transaction(async (tx) => {
-      const rows = await tx
-        .update(nodes)
-        .set({
-          title: filename,
-          data: fileDataAfterWrite(oldData, newData, true),
-          updatedAt: new Date(),
-          ...columnsAfterContentChange(existing),
-        })
-        .where(eq(nodes.id, existing.id))
-        .returning({ id: nodes.id });
-      await tx.delete(contentChunks).where(eq(contentChunks.nodeId, existing.id));
-      return rows;
-    });
+    // Heads first (workspaces plan U1): the chunk delete needs them.
+    const [updated] = await withDeadlockRetry(() =>
+      withHeads([existing.id], 'update', async (tx) => {
+        const rows = await tx
+          .update(nodes)
+          .set({
+            title: filename,
+            data: fileDataAfterWrite(oldData, newData, true),
+            updatedAt: new Date(),
+            ...columnsAfterContentChange(existing),
+          })
+          .where(eq(nodes.id, existing.id))
+          .returning({ id: nodes.id });
+        await tx.delete(contentChunks).where(eq(contentChunks.nodeId, existing.id));
+        return rows;
+      }),
+    );
     if (!updated) throw new Error('syncFileFromDisk: update returned no row');
     await notifyNodeIngested(updated.id);
     return { status: 'updated', nodeId: updated.id };
   }
-  const [inserted] = await db
-    .insert(nodes)
-    .values({
-      ownerId: args.ownerId,
-      type: 'file',
-      title: filename,
-      slug: filename,
-      path: args.parentPath,
-      data: newData,
-      tags: ['file'],
-    })
-    // A file is unique per (owner, folder, filename): migration 0184. The one
-    // clash left is a race: an upload wrote these bytes and inserted its node
-    // between our lookup and this insert. That node IS this file; no-op.
-    .onConflictDoNothing({
-      target: [nodes.ownerId, nodes.path, nodes.slug],
-      where: sql`${nodes.slug} is not null and ${nodes.type} = 'file'`,
-    })
-    .returning({ id: nodes.id });
+  // Heads first (workspaces plan U1): the folder it lands in, shared.
+  const [inserted] = await withDeadlockRetry(() =>
+    withNodeInsertHeads(args.ownerId, [{ type: 'file', path: args.parentPath }], (tx) =>
+      tx
+        .insert(nodes)
+        .values({
+          ownerId: args.ownerId,
+          type: 'file',
+          title: filename,
+          slug: filename,
+          path: args.parentPath,
+          data: newData,
+          tags: ['file'],
+        })
+        // A file is unique per (owner, folder, filename): migration 0184. The one
+        // clash left is a race: an upload wrote these bytes and inserted its node
+        // between our lookup and this insert. That node IS this file; no-op.
+        .onConflictDoNothing({
+          target: [nodes.ownerId, nodes.path, nodes.slug],
+          where: sql`${nodes.slug} is not null and ${nodes.type} = 'file'`,
+        })
+        .returning({ id: nodes.id }),
+    ),
+  );
   if (!inserted) {
     const [winner] = await db
       .select({ id: nodes.id })
@@ -722,17 +747,25 @@ export async function deleteFileByPath(args: {
   // (READ COMMITTED re-evaluates the WHERE), so the watcher's unlink for the
   // old path never deletes a file that just moved (folder audit C1). A
   // select-then-delete by id did.
-  const done = await db
-    .delete(nodes)
-    .where(
-      and(
-        eq(nodes.ownerId, args.ownerId),
-        eq(nodes.type, 'file'),
-        sql`${nodes.path}::text = ${args.parentPath}`,
-        sql`lower(${nodes.data}->>'filename') = lower(${args.filename})`,
-      ),
-    )
-    .returning({ id: nodes.id });
+  const where = and(
+    eq(nodes.ownerId, args.ownerId),
+    eq(nodes.type, 'file'),
+    sql`${nodes.path}::text = ${args.parentPath}`,
+    sql`lower(${nodes.data}->>'filename') = lower(${args.filename})`,
+  );
+  // Heads first (workspaces plan U1): the ids are read only to know whose
+  // heads to take; the delete keeps the path and name in its WHERE, and a
+  // move holds the same heads, so the re-check above still holds.
+  const ids = (await db.select({ id: nodes.id }).from(nodes).where(where)).map((r) => r.id);
+  if (ids.length === 0) return { ok: false };
+  const done = await withDeadlockRetry(() =>
+    withNodeDeleteHeads(ids, (tx) =>
+      tx
+        .delete(nodes)
+        .where(and(where, inArray(nodes.id, ids)))
+        .returning({ id: nodes.id }),
+    ),
+  );
   return { ok: done.length > 0 };
 }
 
@@ -746,20 +779,25 @@ async function ensureBranchChain(ownerId: string, ltreePath: string): Promise<vo
     const prefix = segments.slice(0, i).join('.');
     const label = segments[i - 1]!;
     const slug = label.replace(/_/g, '-');
-    await db
-      .insert(nodes)
-      .values({
-        ownerId,
-        type: 'branch',
-        title: slug,
-        slug,
-        path: prefix,
-        data: { description: '', slug },
-      })
-      .onConflictDoNothing({
-        target: [nodes.ownerId, nodes.path],
-        where: sql`${nodes.type} = 'branch'`,
-      });
+    // Heads first (workspaces plan U1): the folder it lands in, shared.
+    await withDeadlockRetry(() =>
+      withNodeInsertHeads(ownerId, [{ type: 'branch', path: prefix }], async (tx) => {
+        await tx
+          .insert(nodes)
+          .values({
+            ownerId,
+            type: 'branch',
+            title: slug,
+            slug,
+            path: prefix,
+            data: { description: '', slug },
+          })
+          .onConflictDoNothing({
+            target: [nodes.ownerId, nodes.path],
+            where: sql`${nodes.type} = 'branch'`,
+          });
+      }),
+    );
   }
 }
 

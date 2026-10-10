@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   BusyError,
   isBusy,
+  isHeadsCheckError,
   isUniqueViolation,
   pgConstraint,
   pgErrorCode,
@@ -115,5 +116,27 @@ describe('withBusyRetry', () => {
       }),
     ).rejects.toBe(pgUnique);
     expect(calls).toBe(1);
+  });
+});
+
+describe('isHeadsCheckError', () => {
+  const wrapped = (code: string, message: string) =>
+    Object.assign(new Error('Failed query'), {
+      cause: Object.assign(new Error(message), { code }),
+    });
+  it('knows the heads check refusals, through the Drizzle wrapper', () => {
+    expect(isHeadsCheckError(wrapped('40001', 'heads not held for nodes_move (node x): y'))).toBe(
+      true,
+    );
+    expect(
+      isHeadsCheckError(
+        wrapped('55000', 'mantle_lock_heads: heads must be the first lock of the transaction'),
+      ),
+    ).toBe(true);
+  });
+  it('is not fooled by other serialization failures or other codes', () => {
+    expect(isHeadsCheckError(wrapped('40001', 'could not serialize access'))).toBe(false);
+    expect(isHeadsCheckError(wrapped('23505', 'heads not held'))).toBe(false);
+    expect(isHeadsCheckError(new Error('heads not held'))).toBe(false);
   });
 });

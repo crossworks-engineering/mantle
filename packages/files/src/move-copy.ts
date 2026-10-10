@@ -26,10 +26,12 @@ import { and, eq, sql } from 'drizzle-orm';
 import {
   carrySpaceRows,
   db,
-  nodes,
-  takeShareWriteLock,
   type Node,
+  nodes,
   takeShareReadLock,
+  takeShareWriteLock,
+  withDeadlockRetry,
+  withNodeMoveHeads,
 } from '@mantle/db';
 import { moveFile as moveFileOnDisk, renameFolder as renameFolderOnDisk } from './disk';
 import {
@@ -128,15 +130,23 @@ export async function moveFileById(args: {
   const oldPath = node.path;
   await moveFileOnDisk(oldPath, filename, args.destPath);
   try {
-    // The share lock (shared) before the row: see takeShareReadLock.
-    await db.transaction(async (tx) => {
-      await takeShareReadLock(tx, args.ownerId);
-      await tx
-        .update(nodes)
-        // Filing is not editing: the file keeps its updated_at (node-ops.ts).
-        .set({ path: args.destPath })
-        .where(eq(nodes.id, node.id));
-    });
+    // Heads first (workspaces plan U1): the file and both folders. Then the
+    // share lock (shared) before the row: see takeShareReadLock.
+    await withDeadlockRetry(() =>
+      withNodeMoveHeads(
+        args.ownerId,
+        { id: node.id, type: 'file', path: oldPath },
+        args.destPath,
+        async (tx) => {
+          await takeShareReadLock(tx, args.ownerId);
+          await tx
+            .update(nodes)
+            // Filing is not editing: the file keeps its updated_at (node-ops.ts).
+            .set({ path: args.destPath })
+            .where(eq(nodes.id, node.id));
+        },
+      ),
+    );
   } catch (err) {
     await moveFileOnDisk(args.destPath, filename, oldPath).catch(() => {});
     throw err;
@@ -238,9 +248,16 @@ export async function moveFolderById(args: {
   // renameFolderById discipline; the ltree rewrite is the same CASE shape.
   await renameFolderOnDisk(oldPath, newPath);
   try {
-    await db.transaction(async (tx) => {
-      await takeShareWriteLock(tx, args.ownerId);
-      await tx.execute(sql`
+    // Heads first (workspaces plan U1): the folder, its subtree and both
+    // parents, then the share lock.
+    await withDeadlockRetry(() =>
+      withNodeMoveHeads(
+        args.ownerId,
+        { id: node.id, type: 'branch', path: oldPath },
+        newPath,
+        async (tx) => {
+          await takeShareWriteLock(tx, args.ownerId);
+          await tx.execute(sql`
         UPDATE ${nodes}
         SET path = CASE
               WHEN path = ${oldPath}::ltree THEN text2ltree(${newPath})
@@ -251,8 +268,10 @@ export async function moveFolderById(args: {
             updated_at = CASE WHEN path = ${oldPath}::ltree THEN now() ELSE updated_at END
         WHERE owner_id = ${args.ownerId} AND path <@ ${oldPath}::ltree
       `);
-      await carrySpaceRows(tx, args.ownerId, oldPath, newPath);
-    });
+          await carrySpaceRows(tx, args.ownerId, oldPath, newPath);
+        },
+      ),
+    );
   } catch (err) {
     await renameFolderOnDisk(newPath, oldPath).catch(() => {});
     throw err;

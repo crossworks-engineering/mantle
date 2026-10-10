@@ -705,9 +705,14 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
     expect(await readWs(chat)).toEqual([]);
   });
 
-  it('audit M1: no security definer function of 0241 or 0242 is callable by PUBLIC or a limited role', async () => {
+  it('audit M1: no security definer function of 0241 to 0244 is callable by PUBLIC or a limited role', async () => {
     const names = new Set<string>();
-    for (const f of ['0241_workspaces_model.sql', '0242_workspaces_user_role.sql']) {
+    for (const f of [
+      '0241_workspaces_model.sql',
+      '0242_workspaces_user_role.sql',
+      '0243_workspaces_dry_run.sql',
+      '0244_workspaces_space_rows.sql',
+    ]) {
       const text = readFileSync(join(__dirname, '..', 'migrations', f), 'utf8');
       for (const mm of text.matchAll(/CREATE OR REPLACE FUNCTION "public"\."(\w+)"\([^]*?\$\$/g)) {
         if (/SECURITY DEFINER/.test(mm[0])) names.add(mm[1]!);

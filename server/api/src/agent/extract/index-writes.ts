@@ -10,6 +10,8 @@ import {
   db,
   nodes,
   notifyNodeIndexed,
+  withDeadlockRetry,
+  withHeads,
   tables,
   contentChunks,
   contentChunkWindows,
@@ -254,7 +256,13 @@ export async function writeRetrievalChunks(
             : chunkDocText(rawBody)),
       );
       if (pieces.length === 0) {
-        await db.delete(contentChunks).where(eq(contentChunks.nodeId, node.id));
+        // Heads first (workspaces plan U1): a grant change on this node
+        // waits for the swap, or the swap for it, never both.
+        await withDeadlockRetry(() =>
+          withHeads([node.id], 'update', (tx) =>
+            tx.delete(contentChunks).where(eq(contentChunks.nodeId, node.id)),
+          ),
+        );
         h.setOutput({ chunks: 0 });
         return;
       }
@@ -293,35 +301,40 @@ export async function writeRetrievalChunks(
           windows.push({ ordinal: Number(e.chunk.id), j: e.j, embedding: windowVecs[k]! }),
         );
       }
-      await db.transaction(async (tx) => {
-        await tx.delete(contentChunks).where(eq(contentChunks.nodeId, node.id));
-        const written = await tx
-          .insert(contentChunks)
-          .values(
-            pieces.map((p, i) => ({
-              ownerId,
-              nodeId: node.id,
-              ordinal: i,
-              headingPath: p.headingPath ?? null,
-              text: p.text,
-              embedding: vectors[i] ?? null,
-            })),
-          )
-          .returning({ id: contentChunks.id, ordinal: contentChunks.ordinal });
-        if (windows.length > 0) {
-          // The old windows went with the old chunks (FK cascade).
-          const idOf = new Map(written.map((r) => [r.ordinal, r.id]));
-          await tx.insert(contentChunkWindows).values(
-            windows.map((w) => ({
-              chunkId: idOf.get(w.ordinal)!,
-              j: w.j,
-              ownerId,
-              nodeId: node.id,
-              embedding: w.embedding,
-            })),
-          );
-        }
-      });
+      // Heads first (workspaces plan U1, V1): the node's head, then the
+      // swap. Everything above (the embeds) is done, so a retry of this
+      // step repeats only the database write, never model work.
+      await withDeadlockRetry(() =>
+        withHeads([node.id], 'update', async (tx) => {
+          await tx.delete(contentChunks).where(eq(contentChunks.nodeId, node.id));
+          const written = await tx
+            .insert(contentChunks)
+            .values(
+              pieces.map((p, i) => ({
+                ownerId,
+                nodeId: node.id,
+                ordinal: i,
+                headingPath: p.headingPath ?? null,
+                text: p.text,
+                embedding: vectors[i] ?? null,
+              })),
+            )
+            .returning({ id: contentChunks.id, ordinal: contentChunks.ordinal });
+          if (windows.length > 0) {
+            // The old windows went with the old chunks (FK cascade).
+            const idOf = new Map(written.map((r) => [r.ordinal, r.id]));
+            await tx.insert(contentChunkWindows).values(
+              windows.map((w) => ({
+                chunkId: idOf.get(w.ordinal)!,
+                j: w.j,
+                ownerId,
+                nodeId: node.id,
+                embedding: w.embedding,
+              })),
+            );
+          }
+        }),
+      );
       h.setOutput({ chunks: pieces.length, windows: windows.length });
     },
   );

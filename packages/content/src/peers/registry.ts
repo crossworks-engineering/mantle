@@ -10,7 +10,16 @@
  * `MantlePeer` is not.
  */
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
-import { bestEffortWrite, db, mantlePeers, nodes, type MantlePeer } from '@mantle/db';
+import {
+  bestEffortWrite,
+  db,
+  mantlePeers,
+  nodes,
+  type MantlePeer,
+  withDeadlockRetry,
+  withNodeDeleteHeads,
+  withNodeInsertHeads,
+} from '@mantle/db';
 import { open, seal } from '@mantle/crypto';
 import { hashToken, mintInboundToken, tokenMatchesHash } from '../peers-crypto';
 
@@ -65,22 +74,27 @@ function rowOf(p: MantlePeer): PeerRow {
 }
 
 async function ensureRoot(ownerId: string): Promise<void> {
-  await db
-    .insert(nodes)
-    .values({
-      ownerId,
-      type: 'branch',
-      title: 'Peers',
-      slug: PEERS_ROOT_LABEL,
-      path: PEERS_ROOT_LABEL,
-      data: {
-        description: 'Federated Mantle peers. Each exchanges scoped data over the federation API.',
-      },
-    })
-    .onConflictDoNothing({
-      target: [nodes.ownerId, nodes.path],
-      where: sql`${nodes.type} = 'branch'`,
-    });
+  await withDeadlockRetry(() =>
+    withNodeInsertHeads(ownerId, [{ type: 'branch', path: PEERS_ROOT_LABEL }], (tx) =>
+      tx
+        .insert(nodes)
+        .values({
+          ownerId,
+          type: 'branch',
+          title: 'Peers',
+          slug: PEERS_ROOT_LABEL,
+          path: PEERS_ROOT_LABEL,
+          data: {
+            description:
+              'Federated Mantle peers. Each exchanges scoped data over the federation API.',
+          },
+        })
+        .onConflictDoNothing({
+          target: [nodes.ownerId, nodes.path],
+          where: sql`${nodes.type} = 'branch'`,
+        }),
+    ),
+  );
 }
 
 function normaliseBaseUrl(raw: string): string {
@@ -116,16 +130,20 @@ export async function createPeer(
   const outbound = input.outboundToken?.trim() || null;
 
   await ensureRoot(ownerId);
-  const [node] = await db
-    .insert(nodes)
-    .values({
-      ownerId,
-      type: 'mantle_peer',
-      title: displayName,
-      path: PEERS_ROOT_LABEL,
-      data: { base_url: baseUrl, description: input.description ?? '' },
-    })
-    .returning();
+  const [node] = await withDeadlockRetry(() =>
+    withNodeInsertHeads(ownerId, [{ type: 'mantle_peer', path: PEERS_ROOT_LABEL }], (tx) =>
+      tx
+        .insert(nodes)
+        .values({
+          ownerId,
+          type: 'mantle_peer',
+          title: displayName,
+          path: PEERS_ROOT_LABEL,
+          data: { base_url: baseUrl, description: input.description ?? '' },
+        })
+        .returning(),
+    ),
+  );
   if (!node) throw new Error('createPeer: node insert returned no row');
 
   // Allocate the peer id up-front so the seal AAD (= row id) is known before
@@ -311,7 +329,9 @@ export async function deletePeer(ownerId: string, id: string): Promise<boolean> 
   if (!row) return false;
   // One statement: mantle_peers and peer_shares both cascade from the node
   // (schema/mantle-peers.ts), so deleting it is the whole operation, atomically.
-  await db.delete(nodes).where(eq(nodes.id, row.nodeId));
+  await withDeadlockRetry(() =>
+    withNodeDeleteHeads([row.nodeId], (tx) => tx.delete(nodes).where(eq(nodes.id, row.nodeId))),
+  );
   return true;
 }
 

@@ -34,6 +34,7 @@ import {
   db,
   draws,
   nodes,
+  onSpaceRows,
   pages,
   spaceItems,
   spaces,
@@ -107,113 +108,117 @@ const ROOTS: Partial<Record<SpaceItemKind, { label: string; title: string }>> = 
  * what moves is the SAVED version. Rows only: nothing is announced.
  */
 export async function moveBetweenSpaces(
-  tx: Tx,
+  outer: Tx,
   from: string,
   to: string,
   items: BundleItem[],
   hooks: MoveHooks,
 ): Promise<void> {
   if (!items.length || from === to) return;
-  for (const kind of new Set(items.map((b) => b.type))) {
-    const root = ROOTS[kind];
-    if (!root) continue;
-    await tx
-      .insert(nodes)
-      .values({
-        ownerId: to,
-        type: 'branch',
-        title: root.title,
-        slug: root.label,
-        path: root.label,
-      })
-      .onConflictDoNothing({
-        target: [nodes.ownerId, nodes.path],
-        where: sql`${nodes.type} = 'branch'`,
-      });
-  }
-  let names: Set<string> | null = null;
-  const now = new Date();
-  for (const b of items) {
-    const [n] = await tx
-      .select()
-      .from(nodes)
-      .where(and(eq(nodes.id, b.id), eq(nodes.ownerId, from)))
-      .limit(1);
-    if (!n) continue;
-    const common = { ownerId: to, updatedAt: now };
-    switch (b.type) {
-      case 'page':
-        await tx
-          .update(nodes)
-          .set({ ...common, parentId: null })
-          .where(eq(nodes.id, b.id));
-        await tx
-          .update(pages)
-          .set({ draftDoc: null, draftUpdatedAt: null })
-          .where(eq(pages.nodeId, b.id));
-        break;
-      case 'note':
-        await tx.update(nodes).set(common).where(eq(nodes.id, b.id));
-        break;
-      case 'draw':
-        await tx.update(nodes).set(common).where(eq(nodes.id, b.id));
-        await tx
-          .update(draws)
-          .set({ draftScene: null, draftUpdatedAt: null })
-          .where(eq(draws.nodeId, b.id));
-        break;
-      case 'table': {
-        const [t] = await tx
-          .select({ storagePath: tables.storagePath })
-          .from(tables)
-          .where(eq(tables.nodeId, b.id))
-          .limit(1);
-        let storagePath = t?.storagePath ?? null;
-        if (storagePath) {
-          const src = resolveStoragePath(storagePath);
-          const dest = publishedPath(to, b.id);
-          snapshotFile(src, dest);
-          const old = storagePath;
-          hooks.onRollback.push(async () => removeTableFile(dest));
-          hooks.onCommit.push(async () => {
-            removeTableFile(draftAbsFor(old));
-            removeTableFile(src);
-          });
-          storagePath = relativeStoragePath(to, b.id);
+  // Rows of two personal spaces, never a brain row: no heads (onSpaceRows,
+  // 0244); the database still checks any brain row.
+  await onSpaceRows(outer, [from, to], async (tx) => {
+    for (const kind of new Set(items.map((b) => b.type))) {
+      const root = ROOTS[kind];
+      if (!root) continue;
+      await tx
+        .insert(nodes)
+        .values({
+          ownerId: to,
+          type: 'branch',
+          title: root.title,
+          slug: root.label,
+          path: root.label,
+        })
+        .onConflictDoNothing({
+          target: [nodes.ownerId, nodes.path],
+          where: sql`${nodes.type} = 'branch'`,
+        });
+    }
+    let names: Set<string> | null = null;
+    const now = new Date();
+    for (const b of items) {
+      const [n] = await tx
+        .select()
+        .from(nodes)
+        .where(and(eq(nodes.id, b.id), eq(nodes.ownerId, from)))
+        .limit(1);
+      if (!n) continue;
+      const common = { ownerId: to, updatedAt: now };
+      switch (b.type) {
+        case 'page':
+          await tx
+            .update(nodes)
+            .set({ ...common, parentId: null })
+            .where(eq(nodes.id, b.id));
+          await tx
+            .update(pages)
+            .set({ draftDoc: null, draftUpdatedAt: null })
+            .where(eq(pages.nodeId, b.id));
+          break;
+        case 'note':
+          await tx.update(nodes).set(common).where(eq(nodes.id, b.id));
+          break;
+        case 'draw':
+          await tx.update(nodes).set(common).where(eq(nodes.id, b.id));
+          await tx
+            .update(draws)
+            .set({ draftScene: null, draftUpdatedAt: null })
+            .where(eq(draws.nodeId, b.id));
+          break;
+        case 'table': {
+          const [t] = await tx
+            .select({ storagePath: tables.storagePath })
+            .from(tables)
+            .where(eq(tables.nodeId, b.id))
+            .limit(1);
+          let storagePath = t?.storagePath ?? null;
+          if (storagePath) {
+            const src = resolveStoragePath(storagePath);
+            const dest = publishedPath(to, b.id);
+            snapshotFile(src, dest);
+            const old = storagePath;
+            hooks.onRollback.push(async () => removeTableFile(dest));
+            hooks.onCommit.push(async () => {
+              removeTableFile(draftAbsFor(old));
+              removeTableFile(src);
+            });
+            storagePath = relativeStoragePath(to, b.id);
+          }
+          await tx.update(nodes).set(common).where(eq(nodes.id, b.id));
+          await tx
+            .update(tables)
+            .set({ storagePath, draftData: null, draftUpdatedAt: null })
+            .where(eq(tables.nodeId, b.id));
+          break;
         }
-        await tx.update(nodes).set(common).where(eq(nodes.id, b.id));
-        await tx
-          .update(tables)
-          .set({ storagePath, draftData: null, draftUpdatedAt: null })
-          .where(eq(tables.nodeId, b.id));
-        break;
-      }
-      case 'file': {
-        names ??= await fileNamesOf(tx, to);
-        const data = { ...((n.data ?? {}) as Record<string, unknown>) };
-        const display =
-          typeof data.filename === 'string' && data.filename ? data.filename : n.title;
-        const name = dedupeFilename(display, names);
-        names.add(name);
-        const dest = spaceFilePath(to, b.id);
-        await mkdir(path.dirname(dest), { recursive: true });
-        await copyFile(spaceFilePath(from, b.id), dest);
-        hooks.onRollback.push(() => removeSpaceFile(to, b.id));
-        hooks.onCommit.push(() => removeSpaceFile(from, b.id));
-        const extension = extOf(name);
-        await tx
-          .update(nodes)
-          .set({
-            ...common,
-            title: name === display ? n.title : name,
-            path: sql`${SPACE_FILES_PATH}::ltree`,
-            data: { ...data, filename: name, extension, mime_type: mimeForExt(extension) },
-          })
-          .where(eq(nodes.id, b.id));
-        break;
+        case 'file': {
+          names ??= await fileNamesOf(tx, to);
+          const data = { ...((n.data ?? {}) as Record<string, unknown>) };
+          const display =
+            typeof data.filename === 'string' && data.filename ? data.filename : n.title;
+          const name = dedupeFilename(display, names);
+          names.add(name);
+          const dest = spaceFilePath(to, b.id);
+          await mkdir(path.dirname(dest), { recursive: true });
+          await copyFile(spaceFilePath(from, b.id), dest);
+          hooks.onRollback.push(() => removeSpaceFile(to, b.id));
+          hooks.onCommit.push(() => removeSpaceFile(from, b.id));
+          const extension = extOf(name);
+          await tx
+            .update(nodes)
+            .set({
+              ...common,
+              title: name === display ? n.title : name,
+              path: sql`${SPACE_FILES_PATH}::ltree`,
+              data: { ...data, filename: name, extension, mime_type: mimeForExt(extension) },
+            })
+            .where(eq(nodes.id, b.id));
+          break;
+        }
       }
     }
-  }
+  });
 }
 
 /** The file names a space already uses (the unique index is per owner, path

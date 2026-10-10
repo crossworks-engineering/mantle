@@ -42,6 +42,20 @@ export function pgConstraint(err: unknown): string | null {
   return typeof name === 'string' ? name : null;
 }
 
+/**
+ * A write the workspaces heads check refused (0241, plan V5): in 'on' mode a
+ * writer that did not lock its heads first fails with 40001 "heads not held
+ * ...", and a first lock taken after a write with 55000. Not transient: the
+ * same code path fails the same way again, so a worker sends the job to its
+ * dead letter at once instead of retrying (no LLM work runs twice).
+ */
+export function isHeadsCheckError(err: unknown): boolean {
+  const pg = findPgError(err) as (PgLike & { message?: unknown }) | null;
+  if (!pg || (pg.code !== '40001' && pg.code !== '55000')) return false;
+  const message = typeof pg.message === 'string' ? pg.message : '';
+  return /heads not held|mantle_lock_heads/.test(message);
+}
+
 /** 23505 unique_violation: the write hit a unique index or constraint. */
 export function isUniqueViolation(err: unknown): boolean {
   return pgErrorCode(err) === '23505';

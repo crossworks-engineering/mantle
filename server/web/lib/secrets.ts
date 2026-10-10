@@ -23,7 +23,16 @@
  */
 
 import { and, desc, eq, ilike, or, sql } from 'drizzle-orm';
-import { db, nodes, notifyNodeIngested, secrets, type Node } from '@mantle/db';
+import {
+  db,
+  nodes,
+  notifyNodeIngested,
+  secrets,
+  withDeadlockRetry,
+  withNodeDeleteHeads,
+  withNodeInsertHeads,
+  type Node,
+} from '@mantle/db';
 import { seal, open } from '@mantle/crypto';
 
 /** ltree root label for all secrets. Mirrors the `files` root convention
@@ -85,23 +94,28 @@ function nodeToRow(node: Node): SecretRow {
  *  added. Same pattern as `ensureFilesRootBranch` over in @mantle/files
  *  but without the disk side. */
 async function ensureSecretsRoot(ownerId: string): Promise<void> {
-  await db
-    .insert(nodes)
-    .values({
-      ownerId,
-      type: 'branch',
-      title: 'Secrets',
-      slug: SECRETS_ROOT_LABEL,
-      path: SECRETS_ROOT_LABEL,
-      data: {
-        description:
-          'Encrypted credentials, tokens, and other sensitive notes. Metadata is searchable; values stay sealed until you click reveal.',
-      },
-    })
-    .onConflictDoNothing({
-      target: [nodes.ownerId, nodes.path],
-      where: sql`${nodes.type} = 'branch'`,
-    });
+  // Heads first (workspaces plan U1): the folder the root lands in.
+  await withDeadlockRetry(() =>
+    withNodeInsertHeads(ownerId, [{ type: 'branch', path: SECRETS_ROOT_LABEL }], async (tx) => {
+      await tx
+        .insert(nodes)
+        .values({
+          ownerId,
+          type: 'branch',
+          title: 'Secrets',
+          slug: SECRETS_ROOT_LABEL,
+          path: SECRETS_ROOT_LABEL,
+          data: {
+            description:
+              'Encrypted credentials, tokens, and other sensitive notes. Metadata is searchable; values stay sealed until you click reveal.',
+          },
+        })
+        .onConflictDoNothing({
+          target: [nodes.ownerId, nodes.path],
+          where: sql`${nodes.type} = 'branch'`,
+        });
+    }),
+  );
 }
 
 // ─── Public API ────────────────────────────────────────────────────────────
@@ -203,26 +217,33 @@ export async function createSecret(ownerId: string, input: CreateSecretInput): P
     field_count: payload.fields.length,
   };
 
-  const [inserted] = await db
-    .insert(nodes)
-    .values({
-      ownerId,
-      type: 'secret',
-      title: input.title.trim().slice(0, 200) || 'Untitled secret',
-      slug: null,
-      path: SECRETS_ROOT_LABEL,
-      data,
-      tags: dedupeTags(input.tags),
-    })
-    .returning();
-  if (!inserted) throw new Error('createSecret: insert returned no row');
+  // The node and its sealed value in one transaction, the secrets folder's
+  // head first (plan U1). No outside effects, so a retry is safe.
+  const inserted = await withDeadlockRetry(() =>
+    withNodeInsertHeads(ownerId, [{ type: 'secret', path: SECRETS_ROOT_LABEL }], async (tx) => {
+      const [row] = await tx
+        .insert(nodes)
+        .values({
+          ownerId,
+          type: 'secret',
+          title: input.title.trim().slice(0, 200) || 'Untitled secret',
+          slug: null,
+          path: SECRETS_ROOT_LABEL,
+          data,
+          tags: dedupeTags(input.tags),
+        })
+        .returning();
+      if (!row) throw new Error('createSecret: insert returned no row');
 
-  const sealed = seal(JSON.stringify(payload), aadFor(inserted.id));
-  await db.insert(secrets).values({
-    nodeId: inserted.id,
-    ciphertext: sealed.ciphertext,
-    keyVersion: sealed.keyVersion,
-  });
+      const sealed = seal(JSON.stringify(payload), aadFor(row.id));
+      await tx.insert(secrets).values({
+        nodeId: row.id,
+        ciphertext: sealed.ciphertext,
+        keyVersion: sealed.keyVersion,
+      });
+      return row;
+    }),
+  );
 
   return nodeToRow(inserted);
 }
@@ -321,8 +342,12 @@ export async function deleteSecret(ownerId: string, id: string): Promise<boolean
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'secret')))
     .limit(1);
   if (!node) return false;
-  // Cascade drops the `secrets` row too.
-  await db.delete(nodes).where(eq(nodes.id, id));
+  // Cascade drops the `secrets` row too. Heads first (plan V4).
+  await withDeadlockRetry(() =>
+    withNodeDeleteHeads([id], async (tx) => {
+      await tx.delete(nodes).where(eq(nodes.id, id));
+    }),
+  );
   return true;
 }
 

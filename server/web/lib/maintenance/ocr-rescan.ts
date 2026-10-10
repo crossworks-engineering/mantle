@@ -18,7 +18,15 @@
  * Output is counts, ids and model names only: safe on a client box.
  */
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { contentChunks, db, getDefaultWorker, nodes, notifyNodeIngested } from '@mantle/db';
+import {
+  contentChunks,
+  db,
+  getDefaultWorker,
+  nodes,
+  notifyNodeIngested,
+  withDeadlockRetry,
+  withHeads,
+} from '@mantle/db';
 import { BYTE_DERIVED_DATA_KEYS, readFileById } from '@mantle/files';
 import { getVisionAdapter, isProviderId } from '@mantle/voice';
 import { fallbackCostMicroUsd } from '@mantle/tracing';
@@ -214,17 +222,20 @@ export async function ocrWorkers(ownerId: string) {
  */
 export async function clearForRescan(id: string): Promise<void> {
   const keys = [...BYTE_DERIVED_DATA_KEYS, 'extract_skipped'];
-  await db.transaction(async (tx) => {
-    await tx.delete(contentChunks).where(eq(contentChunks.nodeId, id));
-    await tx
-      .update(nodes)
-      .set({
-        embedding: null,
-        data: sql`coalesce(${nodes.data}, '{}'::jsonb) - ${sql.raw(`array[${keys.map((k) => `'${k}'`).join(',')}]::text[]`)}`,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(nodes.id, id), eq(nodes.type, 'file')));
-  });
+  // The node's head first (workspaces plan U1).
+  await withDeadlockRetry(() =>
+    withHeads([id], 'update', async (tx) => {
+      await tx.delete(contentChunks).where(eq(contentChunks.nodeId, id));
+      await tx
+        .update(nodes)
+        .set({
+          embedding: null,
+          data: sql`coalesce(${nodes.data}, '{}'::jsonb) - ${sql.raw(`array[${keys.map((k) => `'${k}'`).join(',')}]::text[]`)}`,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(nodes.id, id), eq(nodes.type, 'file')));
+    }),
+  );
 }
 
 /** Ids from `ids` that still have an extract job waiting or running. */

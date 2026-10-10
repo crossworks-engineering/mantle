@@ -18,7 +18,17 @@ import {
   folderSlugOf,
   untrackedFilesOnDisk,
 } from '../index';
-import { carrySpaceRows, isUniqueViolation, db, nodes, takeShareWriteLock } from '@mantle/db';
+import {
+  carrySpaceRows,
+  db,
+  isUniqueViolation,
+  nodes,
+  takeShareWriteLock,
+  withDeadlockRetry,
+  withNodeDeleteHeads,
+  withNodeInsertHeads,
+  withNodeMoveHeads,
+} from '@mantle/db';
 import { folderCounts, folderRowFromNode, type FolderRow } from './shared';
 import { folderById } from './queries';
 
@@ -81,24 +91,29 @@ export async function createFolder(args: {
   }
 
   // DB first — if the unique index trips, we don't want a leftover dir
-  // confusing the next attempt.
-  const [row] = await db
-    .insert(nodes)
-    .values({
-      ownerId: args.ownerId,
-      type: 'branch',
-      title: folderDisplayName(args.name ?? '') || slug,
-      slug,
-      path: childPath,
-      data: {
-        description: args.description ?? '',
-        ...(args.system ? { system: true } : {}),
-        ...(args.icon ? { icon: args.icon } : {}),
-        ...(args.color ? { color: args.color } : {}),
-      },
-      tags: [],
-    })
-    .returning();
+  // confusing the next attempt. Heads first (workspaces plan U1): the parent
+  // folder, shared.
+  const [row] = await withDeadlockRetry(() =>
+    withNodeInsertHeads(args.ownerId, [{ type: 'branch', path: childPath }], (tx) =>
+      tx
+        .insert(nodes)
+        .values({
+          ownerId: args.ownerId,
+          type: 'branch',
+          title: folderDisplayName(args.name ?? '') || slug,
+          slug,
+          path: childPath,
+          data: {
+            description: args.description ?? '',
+            ...(args.system ? { system: true } : {}),
+            ...(args.icon ? { icon: args.icon } : {}),
+            ...(args.color ? { color: args.color } : {}),
+          },
+          tags: [],
+        })
+        .returning(),
+    ),
+  );
   if (!row) throw new Error('createFolder: insert returned no row');
 
   await ensureDir(childPath);
@@ -278,8 +293,10 @@ export async function deleteFolder(args: {
   // Members' drafts and folders in it move up to the parent (never deleted).
   // Checked again under the lock: an upload filing into it meanwhile (the
   // insert takes the same lock, shared) is committed by then and seen here,
-  // so its bytes are never removed with the directory (review F9).
-  const refused = await db.transaction(async (tx) => {
+  // so its bytes are never removed with the directory (review F9). Heads
+  // first (workspaces plan U1), then the share lock. No retry: the check
+  // reads the disk.
+  const refused = await withNodeDeleteHeads([args.folderId], async (tx) => {
     await takeShareWriteLock(tx, args.ownerId);
     const again = await folderCounts(args.ownerId, folder.path);
     if (again.childFolderCount > 0 || again.fileCount > 0) {
@@ -421,14 +438,21 @@ export async function renameFolderById(args: {
   // never diverge.
   await renameFolderOnDisk(oldPath, newPath);
   try {
-    await db.transaction(async (tx) => {
-      await takeShareWriteLock(tx, args.ownerId);
-      // Rewrite the prefix for the folder itself + every descendant (folders and
-      // files — a file's path IS its parent folder's path). The folder itself is
-      // handled by the CASE: `subpath(path, nlevel(oldPath))` would throw
-      // "invalid positions" when offset == nlevel (the self row), so map it to
-      // newPath directly; descendants keep their tail under the new prefix.
-      await tx.execute(sql`
+    // Heads first (workspaces plan U1): the folder, its subtree and both
+    // parents, then the share lock.
+    await withDeadlockRetry(() =>
+      withNodeMoveHeads(
+        args.ownerId,
+        { id: node.id, type: 'branch', path: oldPath },
+        newPath,
+        async (tx) => {
+          await takeShareWriteLock(tx, args.ownerId);
+          // Rewrite the prefix for the folder itself + every descendant (folders and
+          // files — a file's path IS its parent folder's path). The folder itself is
+          // handled by the CASE: `subpath(path, nlevel(oldPath))` would throw
+          // "invalid positions" when offset == nlevel (the self row), so map it to
+          // newPath directly; descendants keep their tail under the new prefix.
+          await tx.execute(sql`
         UPDATE ${nodes}
         SET path = CASE
               WHEN path = ${oldPath}::ltree THEN text2ltree(${newPath})
@@ -439,16 +463,18 @@ export async function renameFolderById(args: {
             updated_at = CASE WHEN path = ${oldPath}::ltree THEN now() ELSE updated_at END
         WHERE owner_id = ${args.ownerId} AND path <@ ${oldPath}::ltree
       `);
-      // Members' drafts and folders under it follow (no bytes move: member
-      // files are keyed by id, never by path).
-      await carrySpaceRows(tx, args.ownerId, oldPath, newPath);
-      // The folder's own label fields (path already rewritten above).
-      const data = (node.data ?? {}) as Record<string, unknown>;
-      await tx
-        .update(nodes)
-        .set({ title: name, slug, data: { ...data, slug }, updatedAt: new Date() })
-        .where(eq(nodes.id, node.id));
-    });
+          // Members' drafts and folders under it follow (no bytes move: member
+          // files are keyed by id, never by path).
+          await carrySpaceRows(tx, args.ownerId, oldPath, newPath);
+          // The folder's own label fields (path already rewritten above).
+          const data = (node.data ?? {}) as Record<string, unknown>;
+          await tx
+            .update(nodes)
+            .set({ title: name, slug, data: { ...data, slug }, updatedAt: new Date() })
+            .where(eq(nodes.id, node.id));
+        },
+      ),
+    );
   } catch (err) {
     await renameFolderOnDisk(newPath, oldPath).catch(() => {});
     throw err;

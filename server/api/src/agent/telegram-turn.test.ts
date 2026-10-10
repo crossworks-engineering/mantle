@@ -147,6 +147,12 @@ vi.mock('@mantle/db', () => {
 
   return {
     db,
+    // The heads helpers (workspaces plan U1) open their own transaction on
+    // the real pool; here they run the callback on the mocked db.
+    withHeads: async (_ids: unknown, _mode: unknown, fn: (tx: unknown) => unknown) => fn(db),
+    withNodeInsertHeads: async (_o: unknown, _i: unknown, fn: (tx: unknown) => unknown) => fn(db),
+    withNodeDeleteHeads: async (_ids: unknown, fn: (tx: unknown) => unknown) => fn(db),
+    withDeadlockRetry: async (fn: () => unknown) => fn(),
     agents: table('agents'),
     toolGroups: table('toolGroups'),
     channels: table('channels'),

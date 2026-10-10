@@ -16,7 +16,15 @@
  * once the contacts list is non-empty. See docs/contacts.md.
  */
 import { and, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm';
-import { authUsers, db, nodes, type Node } from '@mantle/db';
+import {
+  authUsers,
+  db,
+  nodes,
+  type Node,
+  withDeadlockRetry,
+  withNodeDeleteHeads,
+  withNodeInsertHeads,
+} from '@mantle/db';
 import {
   deriveContactTitle,
   digitsOnly,
@@ -137,23 +145,27 @@ async function withSharing(ownerId: string, list: ContactRow[]): Promise<Contact
 }
 
 async function ensureRoot(ownerId: string): Promise<void> {
-  await db
-    .insert(nodes)
-    .values({
-      ownerId,
-      type: 'branch',
-      title: 'Contacts',
-      slug: CONTACTS_ROOT_LABEL,
-      path: CONTACTS_ROOT_LABEL,
-      data: {
-        description:
-          "People + organisations the agents may email/message. Acts as the email allowlist: once non-empty, sending is restricted to these recipients plus the user's own account addresses.",
-      },
-    })
-    .onConflictDoNothing({
-      target: [nodes.ownerId, nodes.path],
-      where: sql`${nodes.type} = 'branch'`,
-    });
+  await withDeadlockRetry(() =>
+    withNodeInsertHeads(ownerId, [{ type: 'branch', path: CONTACTS_ROOT_LABEL }], (tx) =>
+      tx
+        .insert(nodes)
+        .values({
+          ownerId,
+          type: 'branch',
+          title: 'Contacts',
+          slug: CONTACTS_ROOT_LABEL,
+          path: CONTACTS_ROOT_LABEL,
+          data: {
+            description:
+              "People + organisations the agents may email/message. Acts as the email allowlist: once non-empty, sending is restricted to these recipients plus the user's own account addresses.",
+          },
+        })
+        .onConflictDoNothing({
+          target: [nodes.ownerId, nodes.path],
+          where: sql`${nodes.type} = 'branch'`,
+        }),
+    ),
+  );
 }
 
 type ListContactsOpts = { query?: string; tag?: string };
@@ -423,32 +435,36 @@ export async function createContact(
 ): Promise<ContactWriteResult> {
   const fields = normalizeContactInput(input);
   await ensureRoot(ownerId);
-  const [row] = await db
-    .insert(nodes)
-    .values({
-      ownerId,
-      type: 'contact',
-      title: deriveContactTitle({
-        firstName: fields.firstName,
-        lastName: fields.lastName,
-        company: fields.company,
-        emails: fields.emails,
-        countryCode: fields.countryCode,
-        cell: fields.cell,
-      }),
-      path: CONTACTS_ROOT_LABEL,
-      data: {
-        first_name: fields.firstName,
-        last_name: fields.lastName,
-        company: fields.company,
-        emails: fields.emails,
-        country_code: fields.countryCode,
-        cell: fields.cell,
-        description: fields.description,
-      },
-      tags: dedupeTags(input.tags ?? []),
-    })
-    .returning();
+  const [row] = await withDeadlockRetry(() =>
+    withNodeInsertHeads(ownerId, [{ type: 'contact', path: CONTACTS_ROOT_LABEL }], (tx) =>
+      tx
+        .insert(nodes)
+        .values({
+          ownerId,
+          type: 'contact',
+          title: deriveContactTitle({
+            firstName: fields.firstName,
+            lastName: fields.lastName,
+            company: fields.company,
+            emails: fields.emails,
+            countryCode: fields.countryCode,
+            cell: fields.cell,
+          }),
+          path: CONTACTS_ROOT_LABEL,
+          data: {
+            first_name: fields.firstName,
+            last_name: fields.lastName,
+            company: fields.company,
+            emails: fields.emails,
+            country_code: fields.countryCode,
+            cell: fields.cell,
+            description: fields.description,
+          },
+          tags: dedupeTags(input.tags ?? []),
+        })
+        .returning(),
+    ),
+  );
   if (!row) throw new Error('createContact: insert returned no row');
   return { contact: { ...rowOf(row), sharing: null }, addedEmails: fields.emails };
 }
@@ -561,7 +577,9 @@ export async function deleteContact(ownerId: string, id: string): Promise<boolea
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'contact')))
     .limit(1);
   if (!row) return false;
-  await db.delete(nodes).where(eq(nodes.id, id));
+  await withDeadlockRetry(() =>
+    withNodeDeleteHeads([id], (tx) => tx.delete(nodes).where(eq(nodes.id, id))),
+  );
   return true;
 }
 

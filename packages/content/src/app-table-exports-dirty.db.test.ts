@@ -11,7 +11,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -74,9 +74,16 @@ describe.skipIf(!URL)('app table export dirty stamp on Postgres', () => {
     const { appId, linkId } = await appWithExport('stamp');
     expect(await dirtyOf(linkId)).toBeNull();
     exportsMod.scheduleAppTableExportSync(owner, appId);
-    await settle();
-    const first = await dirtyOf(linkId);
-    expect(first).toEqual(expect.any(Number));
+    // The stamp is written fire-and-forget: wait for it rather than a fixed
+    // pause, which a loaded full-suite database outlasts.
+    const first = await vi.waitFor(
+      async () => {
+        const v = await dirtyOf(linkId);
+        expect(v).toEqual(expect.any(Number));
+        return v;
+      },
+      { timeout: 10_000, interval: 50 },
+    );
     // A second write in the same burst keeps the first stamp.
     exportsMod.scheduleAppTableExportSync(owner, appId);
     await settle();
@@ -85,7 +92,7 @@ describe.skipIf(!URL)('app table export dirty stamp on Postgres', () => {
     await broker.appDbExec(owner, appId, "INSERT INTO notes (body) VALUES ('b')", [], schema);
     expect(await exportsMod.syncAppTableExports(owner, appId)).toMatchObject({ synced: 1 });
     expect(await dirtyOf(linkId)).toBeNull();
-  });
+  }, 30_000);
 
   it('a write stamped after the sync read the rows stays dirty', async () => {
     const { appId, linkId } = await appWithExport('during');

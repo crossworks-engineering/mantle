@@ -28,6 +28,9 @@ import {
   notifyNodeIngested,
   type Node,
   type ViewerLevel,
+  withDeadlockRetry,
+  withNodeDeleteHeads,
+  withNodeInsertHeads,
 } from '@mantle/db';
 import { parseFormulaSpec, type FormulaSpec } from '@mantle/content-core/formula-spec';
 
@@ -72,23 +75,27 @@ function rowOf(n: Node): FormulaRow {
 }
 
 async function ensureRoot(ownerId: string): Promise<void> {
-  await db
-    .insert(nodes)
-    .values({
-      ownerId,
-      type: 'branch',
-      title: 'Formulas',
-      slug: FORMULA_ROOT_LABEL,
-      path: FORMULA_ROOT_LABEL,
-      data: {
-        description:
-          'Calculation models taken from published standards — equations, branches, lookup tables and rating criteria. Indexed and embedded so they can be found and cited.',
-      },
-    })
-    .onConflictDoNothing({
-      target: [nodes.ownerId, nodes.path],
-      where: sql`${nodes.type} = 'branch'`,
-    });
+  await withDeadlockRetry(() =>
+    withNodeInsertHeads(ownerId, [{ type: 'branch', path: FORMULA_ROOT_LABEL }], (tx) =>
+      tx
+        .insert(nodes)
+        .values({
+          ownerId,
+          type: 'branch',
+          title: 'Formulas',
+          slug: FORMULA_ROOT_LABEL,
+          path: FORMULA_ROOT_LABEL,
+          data: {
+            description:
+              'Calculation models taken from published standards — equations, branches, lookup tables and rating criteria. Indexed and embedded so they can be found and cited.',
+          },
+        })
+        .onConflictDoNothing({
+          target: [nodes.ownerId, nodes.path],
+          where: sql`${nodes.type} = 'branch'`,
+        }),
+    ),
+  );
 }
 
 /** Validation failed on the way in. Carries every problem, not just the first. */
@@ -132,17 +139,21 @@ export async function createFormula(
   const spec = validate(input.spec);
   await ensureRoot(ownerId);
   const title = (input.title?.trim() || spec.name || spec.id).slice(0, 200);
-  const [row] = await db
-    .insert(nodes)
-    .values({
-      ownerId,
-      type: 'formula',
-      title,
-      path: FORMULA_ROOT_LABEL,
-      data: { spec },
-      tags: dedupeTags(input.tags ?? []),
-    })
-    .returning();
+  const [row] = await withDeadlockRetry(() =>
+    withNodeInsertHeads(ownerId, [{ type: 'formula', path: FORMULA_ROOT_LABEL }], (tx) =>
+      tx
+        .insert(nodes)
+        .values({
+          ownerId,
+          type: 'formula',
+          title,
+          path: FORMULA_ROOT_LABEL,
+          data: { spec },
+          tags: dedupeTags(input.tags ?? []),
+        })
+        .returning(),
+    ),
+  );
   if (!row) throw new Error('createFormula: insert returned no row');
   return rowOf(row);
 }
@@ -318,7 +329,9 @@ export async function deleteFormula(ownerId: string, id: string): Promise<boolea
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'formula')))
     .limit(1);
   if (!row) return false;
-  await db.delete(nodes).where(eq(nodes.id, id));
+  await withDeadlockRetry(() =>
+    withNodeDeleteHeads([id], (tx) => tx.delete(nodes).where(eq(nodes.id, id))),
+  );
   return true;
 }
 

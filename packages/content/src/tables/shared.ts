@@ -14,6 +14,9 @@ import {
   nodes,
   appTableExports,
   type Node,
+  headsOrSpace,
+  withDeadlockRetry,
+  withNodeInsertHeads,
 } from '@mantle/db';
 import {
   ensureTableDoc,
@@ -192,7 +195,18 @@ export function docsOf(
 export const TAB_NAME = 'Sheet1';
 
 export async function ensureRoot(ownerId: string): Promise<void> {
-  await db
+  await headsOrSpace(
+    (f) =>
+      withDeadlockRetry(() =>
+        withNodeInsertHeads(ownerId, [{ type: 'branch', path: TABLES_ROOT_LABEL }], f),
+      ),
+    (tx) => insertRoot(tx, ownerId),
+  );
+}
+
+/** @heads-held by ensureRoot (through headsOrSpace). */
+async function insertRoot(tx: Pick<typeof db, 'insert'>, ownerId: string): Promise<void> {
+  await tx
     .insert(nodes)
     .values({
       ownerId,

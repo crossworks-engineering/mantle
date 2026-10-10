@@ -18,7 +18,7 @@
  * (dangling_source_file at /debug/integrity), never silent orphans.
  */
 import { and, eq, sql } from 'drizzle-orm';
-import { db, nodes } from '@mantle/db';
+import { db, nodes, withDeadlockRetry, withNodeDeleteHeads } from '@mantle/db';
 import {
   dashToLtree,
   deleteFileById,
@@ -118,10 +118,14 @@ export async function reapDerivedFromFile(
           ok = await deleteNote(ownerId, row.id);
           break;
         default: {
-          const deleted = await db
-            .delete(nodes)
-            .where(and(eq(nodes.id, row.id), eq(nodes.ownerId, ownerId)))
-            .returning({ id: nodes.id });
+          const deleted = await withDeadlockRetry(() =>
+            withNodeDeleteHeads([row.id], (tx) =>
+              tx
+                .delete(nodes)
+                .where(and(eq(nodes.id, row.id), eq(nodes.ownerId, ownerId)))
+                .returning({ id: nodes.id }),
+            ),
+          );
           ok = deleted.length > 0;
         }
       }

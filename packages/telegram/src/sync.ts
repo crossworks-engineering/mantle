@@ -7,6 +7,8 @@ import {
   telegramAccounts,
   telegramChats,
   telegramMessages,
+  withDeadlockRetry,
+  withNodeInsertHeads,
   type TelegramAccount,
   type TelegramAttachment,
 } from '@mantle/db';
@@ -306,71 +308,75 @@ async function persist(account: TelegramAccount, inbound: InboundMessage): Promi
     .replace(/[^a-z0-9._]/gi, '_')
     .toLowerCase();
 
-  return await db.transaction(async (tx) => {
-    const [node] = await tx
-      .insert(nodes)
-      .values({
-        ownerId: account.userId,
-        type: 'telegram_message',
-        title,
-        path,
-        data: {
-          chat_id: inbound.chatId,
-          message_id: inbound.messageId,
-          from_user_id: inbound.fromUserId,
-          from_username: inbound.fromUsername,
-          from_name: inbound.fromName,
+  // The chat folder's head first (plan U1). The duplicate undo below deletes
+  // only the node this same transaction inserted.
+  return await withDeadlockRetry(() =>
+    withNodeInsertHeads(account.userId, [{ type: 'telegram_message', path }], async (tx) => {
+      const [node] = await tx
+        .insert(nodes)
+        .values({
+          ownerId: account.userId,
+          type: 'telegram_message',
+          title,
+          path,
+          data: {
+            chat_id: inbound.chatId,
+            message_id: inbound.messageId,
+            from_user_id: inbound.fromUserId,
+            from_username: inbound.fromUsername,
+            from_name: inbound.fromName,
+            text: inbound.text,
+            sent_at: inbound.sentAt.toISOString(),
+            attachments: inbound.attachments,
+          },
+        })
+        .returning();
+
+      // Idempotent on (account_id, telegram_update_id). A re-delivered update —
+      // common when two pollers briefly overlap on restart, or any Telegram
+      // at-least-once redelivery — must be SKIPPED, not raised. Raising 23505
+      // inside the transaction aborts it (so a catch's node-cleanup can never
+      // run — Postgres rejects every command until rollback) AND escapes pollOnce
+      // before it advances last_update_offset, wedging the account into a
+      // re-fetch/throw loop on that update. onConflictDoNothing avoids the error
+      // entirely; an empty `returning` is the "was a duplicate" signal.
+      const ins = await tx
+        .insert(telegramMessages)
+        .values({
+          nodeId: node!.id,
+          accountId: account.id,
+          chatId: chat.id,
+          telegramMessageId: inbound.messageId,
+          telegramUpdateId: inbound.updateId,
+          fromUserId: inbound.fromUserId,
+          fromUsername: inbound.fromUsername,
+          fromName: inbound.fromName,
           text: inbound.text,
-          sent_at: inbound.sentAt.toISOString(),
+          sentAt: inbound.sentAt,
           attachments: inbound.attachments,
-        },
-      })
-      .returning();
+        })
+        // The arbiter is a PARTIAL unique index (`… where telegram_update_id is
+        // not null`, migration 0012 — outbound rows have a null update_id). Postgres
+        // only infers a partial index when the ON CONFLICT clause repeats its
+        // predicate; without this `where` it raises 42P10 "no unique or exclusion
+        // constraint matching the ON CONFLICT specification".
+        .onConflictDoNothing({
+          target: [telegramMessages.accountId, telegramMessages.telegramUpdateId],
+          where: sql`${telegramMessages.telegramUpdateId} is not null`,
+        })
+        .returning({ id: telegramMessages.id });
 
-    // Idempotent on (account_id, telegram_update_id). A re-delivered update —
-    // common when two pollers briefly overlap on restart, or any Telegram
-    // at-least-once redelivery — must be SKIPPED, not raised. Raising 23505
-    // inside the transaction aborts it (so a catch's node-cleanup can never
-    // run — Postgres rejects every command until rollback) AND escapes pollOnce
-    // before it advances last_update_offset, wedging the account into a
-    // re-fetch/throw loop on that update. onConflictDoNothing avoids the error
-    // entirely; an empty `returning` is the "was a duplicate" signal.
-    const ins = await tx
-      .insert(telegramMessages)
-      .values({
-        nodeId: node!.id,
-        accountId: account.id,
-        chatId: chat.id,
-        telegramMessageId: inbound.messageId,
-        telegramUpdateId: inbound.updateId,
-        fromUserId: inbound.fromUserId,
-        fromUsername: inbound.fromUsername,
-        fromName: inbound.fromName,
-        text: inbound.text,
-        sentAt: inbound.sentAt,
-        attachments: inbound.attachments,
-      })
-      // The arbiter is a PARTIAL unique index (`… where telegram_update_id is
-      // not null`, migration 0012 — outbound rows have a null update_id). Postgres
-      // only infers a partial index when the ON CONFLICT clause repeats its
-      // predicate; without this `where` it raises 42P10 "no unique or exclusion
-      // constraint matching the ON CONFLICT specification".
-      .onConflictDoNothing({
-        target: [telegramMessages.accountId, telegramMessages.telegramUpdateId],
-        where: sql`${telegramMessages.telegramUpdateId} is not null`,
-      })
-      .returning({ id: telegramMessages.id });
+      if (ins.length === 0) {
+        // Duplicate — undo the node we optimistically inserted, report not-delivered.
+        await tx.delete(nodes).where(eq(nodes.id, node!.id));
+        return false;
+      }
 
-    if (ins.length === 0) {
-      // Duplicate — undo the node we optimistically inserted, report not-delivered.
-      await tx.delete(nodes).where(eq(nodes.id, node!.id));
-      return false;
-    }
-
-    await tx
-      .update(telegramChats)
-      .set({ lastMessageAt: inbound.sentAt, updatedAt: new Date() })
-      .where(eq(telegramChats.id, chat.id));
-    return true;
-  });
+      await tx
+        .update(telegramChats)
+        .set({ lastMessageAt: inbound.sentAt, updatedAt: new Date() })
+        .where(eq(telegramChats.id, chat.id));
+      return true;
+    }),
+  );
 }

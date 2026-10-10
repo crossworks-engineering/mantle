@@ -7,6 +7,9 @@ import {
   ingestRules,
   nodes,
   syncRuns,
+  withDeadlockRetry,
+  withNodeInsertHeads,
+  type Db,
   type EmailAccount,
   type NewEmail,
   type NewEmailAttachment,
@@ -210,8 +213,15 @@ async function ingestOne(
   // between our pre-check SELECT and now, the INSERT returns 0 rows and we
   // throw DuplicateRaceError. The catch around the transaction below treats
   // it as "already exists" — same outcome as the SELECT fast-path.
+  // Heads first (workspaces plan U1): the folders the email node and its
+  // attachment file nodes land in. No retry: the transaction stores
+  // attachment bytes as it goes.
+  const headItems = [
+    { type: 'email', path },
+    ...(full.attachments.length > 0 ? [{ type: 'file', path: `${path}.attachments` }] : []),
+  ];
   try {
-    await db.transaction(async (tx) => {
+    await withNodeInsertHeads(account.userId, headItems, async (tx) => {
       const nodeId = await insertEmailNode(tx, {
         ownerId: account.userId,
         path,
@@ -318,19 +328,25 @@ async function ensureBranchPath(ownerId: string, path: string): Promise<void> {
   const segments = path.split('.');
   for (let i = 1; i <= segments.length; i++) {
     const prefix = segments.slice(0, i).join('.');
-    await db
-      .insert(nodes)
-      .values({
-        ownerId,
-        type: 'branch',
-        title: prettyTitle(segments[i - 1]!),
-        path: prefix,
-        data: {},
-      } as NewNode)
-      .onConflictDoNothing({
-        target: [nodes.ownerId, nodes.path],
-        where: sql`${nodes.type} = 'branch'`,
-      });
+    // One branch per transaction, its parent folder's head first (plan U1):
+    // the parent is the previous round's branch, so it exists by now.
+    await withDeadlockRetry(() =>
+      withNodeInsertHeads(ownerId, [{ type: 'branch', path: prefix }], async (tx) => {
+        await tx
+          .insert(nodes)
+          .values({
+            ownerId,
+            type: 'branch',
+            title: prettyTitle(segments[i - 1]!),
+            path: prefix,
+            data: {},
+          } as NewNode)
+          .onConflictDoNothing({
+            target: [nodes.ownerId, nodes.path],
+            where: sql`${nodes.type} = 'branch'`,
+          });
+      }),
+    );
   }
 }
 
@@ -338,8 +354,9 @@ function prettyTitle(slug: string): string {
   return slug.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+/** @heads-held by ingestOne (withNodeInsertHeads on the email's folder). */
 async function insertEmailNode(
-  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  tx: Db,
   args: {
     ownerId: string;
     path: string;
@@ -370,8 +387,9 @@ async function insertEmailNode(
   return row.id;
 }
 
+/** @heads-held by ingestOne (withNodeInsertHeads on the attachments folder). */
 async function getOrCreateFileNode(
-  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  tx: Db,
   args: {
     ownerId: string;
     path: string;

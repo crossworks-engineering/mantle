@@ -26,16 +26,17 @@ import {
   currentSpaceScope,
   currentViewerLevel,
   db,
-  spaces,
-  withViewer,
   draws,
   nodes,
   pages,
+  type ReviewState,
   spaceItems,
+  spaces,
+  type SpaceSharing,
   spaceSubmissions,
   tables,
-  type ReviewState,
-  type SpaceSharing,
+  withSpaceRows,
+  withViewer,
 } from '@mantle/db';
 import { existsSync } from 'node:fs';
 import type {
@@ -486,10 +487,13 @@ export async function createMineItem(
     (created) => created,
   );
   if (opts.path) {
-    await db
-      .update(nodes)
-      .set({ path: opts.path })
-      .where(and(eq(nodes.id, id), eq(nodes.ownerId, spaceId)));
+    const path = opts.path;
+    await withSpaceRows((tx) =>
+      tx
+        .update(nodes)
+        .set({ path })
+        .where(and(eq(nodes.id, id), eq(nodes.ownerId, spaceId))),
+    );
   }
   await db.insert(spaceItems).values({ nodeId: id, authorLoginId: loginId });
   const row = await getMineRow(spaceId, id);

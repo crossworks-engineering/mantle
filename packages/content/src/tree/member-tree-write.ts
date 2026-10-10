@@ -16,7 +16,7 @@
  * so the place the admin reviewed is the place Accept uses.
  */
 import { sql } from 'drizzle-orm';
-import { db, takeShareWriteLock, takeShareReadLock } from '@mantle/db';
+import { db, onSpaceRows, takeShareReadLock, takeShareWriteLock } from '@mantle/db';
 import { dashToLtree, folderSlugOf } from '@mantle/files';
 import type { AppTint } from '@mantle/client-types/app-nav';
 import {
@@ -118,12 +118,18 @@ export async function createMemberFolder(
   const look: Record<string, unknown> = {};
   if (args.icon) look.icon = args.icon;
   if (args.color) look.color = args.color;
-  const [row] = (await db.execute(sql`
-    insert into nodes (owner_id, type, title, slug, path, audience, data, tags)
-    values (${scope.spaceId}, 'branch', ${title}, ${slug}, ${storedPathOf(kind, path)}::ltree,
-            'admin', ${JSON.stringify(look)}::jsonb, '{}')
-    on conflict do nothing
-    returning id`)) as unknown as { id: string }[];
+  // The member's own row (personal space): no heads (onSpaceRows, 0244).
+  const [row] = await onSpaceRows(
+    db,
+    scope.spaceId,
+    async (q) =>
+      (await q.execute(sql`
+        insert into nodes (owner_id, type, title, slug, path, audience, data, tags)
+        values (${scope.spaceId}, 'branch', ${title}, ${slug}, ${storedPathOf(kind, path)}::ltree,
+                'admin', ${JSON.stringify(look)}::jsonb, '{}')
+        on conflict do nothing
+        returning id`)) as unknown as { id: string }[],
+  );
   if (!row) throw new TreeError('conflict', `a folder named '${title}' already exists here`);
   return reload(scope, kind, row.id);
 }
@@ -148,14 +154,17 @@ async function rewriteOwn(
   const mapped = sql`case when n.path = ${from}::ltree then text2ltree(${to})
                           else (text2ltree(${to}) || subpath(n.path, nlevel(${from}::ltree)))::ltree end`;
   const own = sql`n.owner_id = ${spaceId} and n.path <@ ${from}::ltree`;
-  await tx.execute(sql`
-    delete from nodes n
-     where ${own} and n.type = 'branch'
-       and (${!opts.keepSelf} and n.path = ${from}::ltree
-            or exists (select 1 from nodes b
-                        where b.owner_id = n.owner_id and b.type = 'branch'
-                          and b.path = ${mapped} and not (b.path <@ ${from}::ltree)))`);
-  await tx.execute(sql`update nodes n set path = ${mapped} where ${own}`);
+  // The member's own rows (personal space): no heads (onSpaceRows, 0244).
+  await onSpaceRows(tx, spaceId, async (q) => {
+    await q.execute(sql`
+      delete from nodes n
+       where ${own} and n.type = 'branch'
+         and (${!opts.keepSelf} and n.path = ${from}::ltree
+              or exists (select 1 from nodes b
+                          where b.owner_id = n.owner_id and b.type = 'branch'
+                            and b.path = ${mapped} and not (b.path <@ ${from}::ltree)))`);
+    await q.execute(sql`update nodes n set path = ${mapped} where ${own}`);
+  });
 }
 
 /** Refuse to move a folder (rename, move, delete) while it holds a draft
@@ -298,12 +307,18 @@ export async function moveMemberItems(
       // The space's share lock (shared) before the row: takeShareReadLock.
       const rows = await db.transaction(async (tx) => {
         await takeShareReadLock(tx, scope.spaceId);
-        return (await tx.execute(sql`
-          update nodes set path = ${dest}::ltree
-           where id = ${id} and owner_id = ${scope.spaceId}
-             and type = ${TREE_KIND_SPECS[kind].nodeType}
-             and not mantle_space_item_frozen(id)
-          returning id`)) as unknown as unknown[];
+        // The member's own row (personal space): no heads (onSpaceRows, 0244).
+        return onSpaceRows(
+          tx,
+          scope.spaceId,
+          async (q) =>
+            (await q.execute(sql`
+              update nodes set path = ${dest}::ltree
+               where id = ${id} and owner_id = ${scope.spaceId}
+                 and type = ${TREE_KIND_SPECS[kind].nodeType}
+                 and not mantle_space_item_frozen(id)
+              returning id`)) as unknown as unknown[],
+        );
       });
       if (rows.length) result.moved += 1;
       else result.failed.push({ id, error: 'not one of your drafts that can move now' });

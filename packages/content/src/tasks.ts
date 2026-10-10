@@ -19,7 +19,16 @@
  * row, always 0, so an older UI still renders.
  */
 import { and, desc, eq, ilike, or, sql } from 'drizzle-orm';
-import { TEAM_REQUEST_SOURCE, db, nodes, notifyNodeIngested, type Node } from '@mantle/db';
+import {
+  TEAM_REQUEST_SOURCE,
+  db,
+  nodes,
+  notifyNodeIngested,
+  type Node,
+  withDeadlockRetry,
+  withNodeDeleteHeads,
+  withNodeInsertHeads,
+} from '@mantle/db';
 import type { TaskRow, TaskStatus, TaskPriority, TaskTodo } from '@mantle/client-types';
 import { isValidRank } from './rank';
 import { TASK_STATUSES, statusBeforeDoneOf } from './task-status';
@@ -92,20 +101,24 @@ function rowOf(n: Node): TaskRow {
 }
 
 async function ensureRoot(ownerId: string): Promise<void> {
-  await db
-    .insert(nodes)
-    .values({
-      ownerId,
-      type: 'branch',
-      title: 'Tasks',
-      slug: TASKS_ROOT_LABEL,
-      path: TASKS_ROOT_LABEL,
-      data: { description: 'Tasks.' },
-    })
-    .onConflictDoNothing({
-      target: [nodes.ownerId, nodes.path],
-      where: sql`${nodes.type} = 'branch'`,
-    });
+  await withDeadlockRetry(() =>
+    withNodeInsertHeads(ownerId, [{ type: 'branch', path: TASKS_ROOT_LABEL }], (tx) =>
+      tx
+        .insert(nodes)
+        .values({
+          ownerId,
+          type: 'branch',
+          title: 'Tasks',
+          slug: TASKS_ROOT_LABEL,
+          path: TASKS_ROOT_LABEL,
+          data: { description: 'Tasks.' },
+        })
+        .onConflictDoNothing({
+          target: [nodes.ownerId, nodes.path],
+          where: sql`${nodes.type} = 'branch'`,
+        }),
+    ),
+  );
 }
 
 /** `active` = every not-done status — the natural default view now that the
@@ -232,17 +245,21 @@ export async function createTask(ownerId: string, input: CreateTaskInput): Promi
     ...(input.todos?.length ? { todos: sanitizeTodos(input.todos) } : {}),
     ...(isValidRank(input.rank) ? { rank: input.rank } : {}),
   };
-  const [row] = await db
-    .insert(nodes)
-    .values({
-      ownerId,
-      type: 'task',
-      title: input.title.trim().slice(0, 200) || 'Untitled task',
-      path: TASKS_ROOT_LABEL,
-      data,
-      tags: dedupeTags(input.tags ?? []),
-    })
-    .returning();
+  const [row] = await withDeadlockRetry(() =>
+    withNodeInsertHeads(ownerId, [{ type: 'task', path: TASKS_ROOT_LABEL }], (tx) =>
+      tx
+        .insert(nodes)
+        .values({
+          ownerId,
+          type: 'task',
+          title: input.title.trim().slice(0, 200) || 'Untitled task',
+          path: TASKS_ROOT_LABEL,
+          data,
+          tags: dedupeTags(input.tags ?? []),
+        })
+        .returning(),
+    ),
+  );
   if (!row) throw new Error('createTask: insert returned no row');
   return rowOf(row);
 }
@@ -364,7 +381,9 @@ export async function deleteTask(ownerId: string, id: string): Promise<boolean> 
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'task')))
     .limit(1);
   if (!row) return false;
-  await db.delete(nodes).where(eq(nodes.id, id));
+  await withDeadlockRetry(() =>
+    withNodeDeleteHeads([id], (tx) => tx.delete(nodes).where(eq(nodes.id, id))),
+  );
   return true;
 }
 

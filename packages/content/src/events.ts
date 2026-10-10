@@ -20,7 +20,15 @@
  * the reminder) instead of marking it sent — see `rollForwardRecurrence`.
  */
 import { and, asc, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
-import { db, nodes, notifyNodeIngested, type Node } from '@mantle/db';
+import {
+  db,
+  nodes,
+  notifyNodeIngested,
+  withDeadlockRetry,
+  withNodeDeleteHeads,
+  withNodeInsertHeads,
+  type Node,
+} from '@mantle/db';
 
 export type { RecurFreq } from './events-time';
 
@@ -55,22 +63,27 @@ function rowOf(n: Node): EventRow {
 }
 
 async function ensureRoot(ownerId: string): Promise<void> {
-  await db
-    .insert(nodes)
-    .values({
-      ownerId,
-      type: 'branch',
-      title: 'Events',
-      slug: EVENTS_ROOT_LABEL,
-      path: EVENTS_ROOT_LABEL,
-      data: {
-        description: 'Calendar events. The reminder worker pings Telegram at remind_at.',
-      },
-    })
-    .onConflictDoNothing({
-      target: [nodes.ownerId, nodes.path],
-      where: sql`${nodes.type} = 'branch'`,
-    });
+  // Heads first (workspaces plan U1): the folder the root lands in.
+  await withDeadlockRetry(() =>
+    withNodeInsertHeads(ownerId, [{ type: 'branch', path: EVENTS_ROOT_LABEL }], (tx) =>
+      tx
+        .insert(nodes)
+        .values({
+          ownerId,
+          type: 'branch',
+          title: 'Events',
+          slug: EVENTS_ROOT_LABEL,
+          path: EVENTS_ROOT_LABEL,
+          data: {
+            description: 'Calendar events. The reminder worker pings Telegram at remind_at.',
+          },
+        })
+        .onConflictDoNothing({
+          target: [nodes.ownerId, nodes.path],
+          where: sql`${nodes.type} = 'branch'`,
+        }),
+    ),
+  );
 }
 
 type ListEventsOpts = { query?: string; window?: 'upcoming' | 'past' | 'all'; tag?: string };
@@ -195,17 +208,21 @@ export async function createEvent(ownerId: string, input: CreateEventInput): Pro
     data.ends_at = endsAt.toISOString();
   }
   if (input.location) data.location = input.location.slice(0, 200);
-  const [row] = await db
-    .insert(nodes)
-    .values({
-      ownerId,
-      type: 'event',
-      title: input.title.trim().slice(0, 200) || 'Untitled event',
-      path: EVENTS_ROOT_LABEL,
-      data,
-      tags: dedupeTags(input.tags ?? []),
-    })
-    .returning();
+  const [row] = await withDeadlockRetry(() =>
+    withNodeInsertHeads(ownerId, [{ type: 'event', path: EVENTS_ROOT_LABEL }], (tx) =>
+      tx
+        .insert(nodes)
+        .values({
+          ownerId,
+          type: 'event',
+          title: input.title.trim().slice(0, 200) || 'Untitled event',
+          path: EVENTS_ROOT_LABEL,
+          data,
+          tags: dedupeTags(input.tags ?? []),
+        })
+        .returning(),
+    ),
+  );
   if (!row) throw new Error('createEvent: insert returned no row');
   return rowOf(row);
 }
@@ -321,7 +338,9 @@ export async function deleteEvent(ownerId: string, id: string): Promise<boolean>
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'event')))
     .limit(1);
   if (!row) return false;
-  await db.delete(nodes).where(eq(nodes.id, id));
+  await withDeadlockRetry(() =>
+    withNodeDeleteHeads([id], (tx) => tx.delete(nodes).where(eq(nodes.id, id))),
+  );
   return true;
 }
 
@@ -544,18 +563,22 @@ export async function upsertExternalEvent(
   // and drizzle 0.45's `target` takes columns only. The only other unique
   // constraint on `nodes` is the primary key, whose value is a fresh
   // gen_random_uuid, so there is no second conflict this could be hiding.
-  const [row] = await db
-    .insert(nodes)
-    .values({
-      ownerId,
-      type: 'event',
-      title,
-      path: EVENTS_ROOT_LABEL,
-      data,
-      tags: dedupeTags(input.tags ?? []),
-    })
-    .onConflictDoNothing()
-    .returning();
+  const [row] = await withDeadlockRetry(() =>
+    withNodeInsertHeads(ownerId, [{ type: 'event', path: EVENTS_ROOT_LABEL }], (tx) =>
+      tx
+        .insert(nodes)
+        .values({
+          ownerId,
+          type: 'event',
+          title,
+          path: EVENTS_ROOT_LABEL,
+          data,
+          tags: dedupeTags(input.tags ?? []),
+        })
+        .onConflictDoNothing()
+        .returning(),
+    ),
+  );
 
   if (!row) {
     // Lost the race. Start over rather than hand-rolling the merge here: the
@@ -613,7 +636,9 @@ export async function deleteExternalEvents(
   const drop = new Set(uids);
   const ids = rows.filter((r) => drop.has(r.uid)).map((r) => r.id);
   if (ids.length === 0) return 0;
-  await db.delete(nodes).where(inArray(nodes.id, ids));
+  await withDeadlockRetry(() =>
+    withNodeDeleteHeads(ids, (tx) => tx.delete(nodes).where(inArray(nodes.id, ids))),
+  );
   return ids.length;
 }
 
@@ -622,16 +647,24 @@ export async function deleteAllExternalEvents(
   ownerId: string,
   externalAccountId: string,
 ): Promise<number> {
-  const rows = await db
-    .delete(nodes)
-    .where(
-      and(
-        eq(nodes.ownerId, ownerId),
-        eq(nodes.type, 'event'),
-        sql`${nodes.data}->>'external_account_id' = ${externalAccountId}`,
-      ),
-    )
-    .returning({ id: nodes.id });
+  const where = and(
+    eq(nodes.ownerId, ownerId),
+    eq(nodes.type, 'event'),
+    sql`${nodes.data}->>'external_account_id' = ${externalAccountId}`,
+  );
+  // Heads first (workspaces plan V4): read the ids, lock their heads, then
+  // delete exactly those rows.
+  const found = await db.select({ id: nodes.id }).from(nodes).where(where);
+  if (found.length === 0) return 0;
+  const ids = found.map((r) => r.id);
+  const rows = await withDeadlockRetry(() =>
+    withNodeDeleteHeads(ids, (tx) =>
+      tx
+        .delete(nodes)
+        .where(and(where, inArray(nodes.id, ids)))
+        .returning({ id: nodes.id }),
+    ),
+  );
   return rows.length;
 }
 

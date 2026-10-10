@@ -8,27 +8,53 @@
  * (../tree/page-guard.ts).
  */
 import { and, eq, sql } from 'drizzle-orm';
-import { db, nodes, pages, takeShareReadLock } from '@mantle/db';
+import {
+  currentSpaceScope,
+  db,
+  nodes,
+  pages,
+  takeShareReadLock,
+  withDeadlockRetry,
+  withNodeDeleteHeads,
+  withNodeInsertHeads,
+  withSpaceRows,
+} from '@mantle/db';
 import { docToText } from '../doc-to-text';
 import { guardNewPageIn } from '../tree/page-guard';
 import { EMPTY_DOC, PAGES_ROOT_LABEL, dedupeTags, detailOf, type PageDetail } from './shared';
 
+function rootRow(ownerId: string) {
+  return {
+    ownerId,
+    type: 'branch' as const,
+    title: 'Pages',
+    slug: PAGES_ROOT_LABEL,
+    path: PAGES_ROOT_LABEL,
+    data: { description: 'Rich documents (TipTap). Indexed and embedded automatically.' },
+  };
+}
+
+const ROOT_CONFLICT = {
+  target: [nodes.ownerId, nodes.path],
+  where: sql`${nodes.type} = 'branch'`,
+};
+
 /** Lazy-create the `pages` ltree root. Idempotent — every create calls it. */
 async function ensureRoot(ownerId: string): Promise<void> {
-  await db
-    .insert(nodes)
-    .values({
-      ownerId,
-      type: 'branch',
-      title: 'Pages',
-      slug: PAGES_ROOT_LABEL,
-      path: PAGES_ROOT_LABEL,
-      data: { description: 'Rich documents (TipTap). Indexed and embedded automatically.' },
-    })
-    .onConflictDoNothing({
-      target: [nodes.ownerId, nodes.path],
-      where: sql`${nodes.type} = 'branch'`,
-    });
+  if (currentSpaceScope()) return ensureSpaceRoot(ownerId);
+  // Heads first (plan U1): a root sits in no folder, so there are none to
+  // wait on, but the insert runs in the heads transaction all the same.
+  await withNodeInsertHeads(ownerId, [{ type: 'branch', path: PAGES_ROOT_LABEL }], (tx) =>
+    tx.insert(nodes).values(rootRow(ownerId)).onConflictDoNothing(ROOT_CONFLICT),
+  );
+}
+
+/** ensureRoot inside a member's space (withSpace): the space's own rows,
+ *  on its transaction (withSpaceRows; personal spaces go in W6b). */
+async function ensureSpaceRoot(ownerId: string): Promise<void> {
+  await withSpaceRows((tx) =>
+    tx.insert(nodes).values(rootRow(ownerId)).onConflictDoNothing(ROOT_CONFLICT),
+  );
 }
 
 export type CreatePageInput = {
@@ -132,36 +158,17 @@ export async function createPage(ownerId: string, input: CreatePageInput): Promi
   const docText = docToText(doc);
   const title = input.title.trim().slice(0, 200) || 'Untitled page';
 
-  const result = await db.transaction(async (tx) => {
-    // The share lock (shared) first, then the folder, then the row (0207).
-    await takeShareReadLock(tx, ownerId);
-    const path = await pagePathFor(tx, ownerId, input);
-    // A folder's share reaches the new row through the insert trigger
-    // (0204) and what the doc embeds through 0208's edges: asked first. A
-    // page made next to another (split, extract) is read where its source
-    // already is, so its own row is not asked about; what its document
-    // opens still is (a draft-only embed of the source is not open yet).
-    if (path !== PAGES_ROOT_LABEL) {
-      await guardNewPageIn(tx, ownerId, path, title, doc, {
-        confirm: input.confirm,
-        seen: input.seen,
-        ownRow: !input.siblingOf,
-      });
-    }
+  if (currentSpaceScope()) return createSpacePage(ownerId, input, title, doc, docText);
+
+  // Heads first (plan U1): the folder the page lands in, shared. Its path is
+  // read here for the heads and again inside, under the share lock; the
+  // folder keeps its id if it moves meanwhile, so the heads still hold.
+  const at = await pagePathFor(db, ownerId, input);
+  const result = await withNodeInsertHeads(ownerId, [{ type: 'page', path: at }], async (tx) => {
+    const path = await placeNewPage(tx, ownerId, input, title, doc);
     const [node] = await tx
       .insert(nodes)
-      .values({
-        ownerId,
-        type: 'page',
-        title,
-        path,
-        data: {
-          ...(input.data ?? {}),
-          visibility: 'private',
-          ...(input.icon ? { icon: input.icon } : {}),
-        },
-        tags: dedupeTags(input.tags ?? []),
-      })
+      .values(pageRow(ownerId, input, title, path))
       .returning();
     if (!node) throw new Error('createPage: insert returned no row');
     await tx.insert(pages).values({ nodeId: node.id, doc, docText });
@@ -171,6 +178,70 @@ export async function createPage(ownerId: string, input: CreatePageInput): Promi
   return result;
 }
 
+/** createPage inside a member's space (withSpace): the space's own rows,
+ *  on its transaction (withSpaceRows; personal spaces go in W6b). */
+async function createSpacePage(
+  ownerId: string,
+  input: CreatePageInput,
+  title: string,
+  doc: Record<string, unknown>,
+  docText: string,
+): Promise<PageDetail> {
+  return withSpaceRows((space) =>
+    space.transaction(async (tx) => {
+      const path = await placeNewPage(tx, ownerId, input, title, doc);
+      const [node] = await tx
+        .insert(nodes)
+        .values(pageRow(ownerId, input, title, path))
+        .returning();
+      if (!node) throw new Error('createPage: insert returned no row');
+      await tx.insert(pages).values({ nodeId: node.id, doc, docText });
+      return detailOf(node, doc);
+    }),
+  );
+}
+
+/** Inside the create's transaction: the share lock, the path, the guard. */
+async function placeNewPage(
+  tx: Via,
+  ownerId: string,
+  input: CreatePageInput,
+  title: string,
+  doc: Record<string, unknown>,
+): Promise<string> {
+  // The share lock (shared) first, then the folder, then the row (0207).
+  await takeShareReadLock(tx, ownerId);
+  const path = await pagePathFor(tx, ownerId, input);
+  // A folder's share reaches the new row through the insert trigger
+  // (0204) and what the doc embeds through 0208's edges: asked first. A
+  // page made next to another (split, extract) is read where its source
+  // already is, so its own row is not asked about; what its document
+  // opens still is (a draft-only embed of the source is not open yet).
+  if (path !== PAGES_ROOT_LABEL) {
+    await guardNewPageIn(tx, ownerId, path, title, doc, {
+      confirm: input.confirm,
+      seen: input.seen,
+      ownRow: !input.siblingOf,
+    });
+  }
+  return path;
+}
+
+function pageRow(ownerId: string, input: CreatePageInput, title: string, path: string) {
+  return {
+    ownerId,
+    type: 'page' as const,
+    title,
+    path,
+    data: {
+      ...(input.data ?? {}),
+      visibility: 'private',
+      ...(input.icon ? { icon: input.icon } : {}),
+    },
+    tags: dedupeTags(input.tags ?? []),
+  };
+}
+
 export async function deletePage(ownerId: string, id: string): Promise<boolean> {
   const [row] = await db
     .select({ id: nodes.id })
@@ -178,6 +249,19 @@ export async function deletePage(ownerId: string, id: string): Promise<boolean> 
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
     .limit(1);
   if (!row) return false;
-  await db.delete(nodes).where(eq(nodes.id, id)); // `pages` row cascades.
+  if (currentSpaceScope()) {
+    await deleteSpacePage(id);
+    return true;
+  }
+  // Heads first (plan V4): the page and its folder.
+  await withDeadlockRetry(() =>
+    withNodeDeleteHeads([id], (tx) => tx.delete(nodes).where(eq(nodes.id, id))),
+  ); // `pages` row cascades.
   return true;
+}
+
+/** deletePage inside a member's space (withSpace): the space's own rows,
+ *  on its transaction (withSpaceRows; personal spaces go in W6b). */
+async function deleteSpacePage(id: string): Promise<void> {
+  await withSpaceRows((tx) => tx.delete(nodes).where(eq(nodes.id, id))); // `pages` row cascades.
 }

@@ -6,7 +6,7 @@
  */
 
 import { sql } from 'drizzle-orm';
-import { db, nodes, secrets } from '@mantle/db';
+import { nodes, secrets, withDeadlockRetry, withNodeInsertHeads } from '@mantle/db';
 import { seal } from '@mantle/crypto';
 import { nodeUrl } from '@mantle/content';
 import { type BuiltinToolDef } from './types';
@@ -69,24 +69,33 @@ export const secret_create: BuiltinToolDef = {
     if (!value) return { ok: false, error: 'value required' };
     const kind = (SECRET_KIND_VALUES as readonly string[]).includes(kindRaw) ? kindRaw : 'other';
 
-    // Lazy-create the `secrets` ltree root the same way the UI does.
-    await db
-      .insert(nodes)
-      .values({
-        ownerId: ctx.ownerId,
-        type: 'branch',
-        title: 'Secrets',
-        slug: SECRETS_ROOT_LABEL,
-        path: SECRETS_ROOT_LABEL,
-        data: {
-          description:
-            'Encrypted credentials, tokens, and other sensitive notes. Metadata is searchable; values stay sealed until you click reveal.',
+    // Lazy-create the `secrets` ltree root the same way the UI does. Heads
+    // first (plan U1), here and for the secret below.
+    await withDeadlockRetry(() =>
+      withNodeInsertHeads(
+        ctx.ownerId,
+        [{ type: 'branch', path: SECRETS_ROOT_LABEL }],
+        async (tx) => {
+          await tx
+            .insert(nodes)
+            .values({
+              ownerId: ctx.ownerId,
+              type: 'branch',
+              title: 'Secrets',
+              slug: SECRETS_ROOT_LABEL,
+              path: SECRETS_ROOT_LABEL,
+              data: {
+                description:
+                  'Encrypted credentials, tokens, and other sensitive notes. Metadata is searchable; values stay sealed until you click reveal.',
+              },
+            })
+            .onConflictDoNothing({
+              target: [nodes.ownerId, nodes.path],
+              where: sql`${nodes.type} = 'branch'`,
+            });
         },
-      })
-      .onConflictDoNothing({
-        target: [nodes.ownerId, nodes.path],
-        where: sql`${nodes.type} = 'branch'`,
-      });
+      ),
+    );
 
     // Sanitise tags (max 20, lowercase, dedup, 40 chars each).
     const seen = new Set<string>();
@@ -99,39 +108,51 @@ export const secret_create: BuiltinToolDef = {
       if (tags.length >= 20) break;
     }
 
-    // Insert metadata row first to get the node id (needed as AAD).
-    const [inserted] = await db
-      .insert(nodes)
-      .values({
-        ownerId: ctx.ownerId,
-        type: 'secret',
-        title: title.slice(0, 200),
-        slug: null,
-        path: SECRETS_ROOT_LABEL,
-        data: {
-          description,
-          kind,
-          has_note: false,
-          field_count: 1,
-        },
-        tags,
-      })
-      .returning();
-    if (!inserted) return { ok: false, error: 'failed to insert secret node' };
-
-    // Seal the payload — single labeled field. AAD binds ciphertext to
-    // this node id so an attacker who swaps the bytea column can't
-    // replay another secret's ciphertext into this row.
     const payload = JSON.stringify({
       note: '',
       fields: [{ label: label.slice(0, 60), value }],
     });
-    const sealed = seal(payload, `secret:${inserted.id}`);
-    await db.insert(secrets).values({
-      nodeId: inserted.id,
-      ciphertext: sealed.ciphertext,
-      keyVersion: sealed.keyVersion,
-    });
+    // The node and its sealed value in one transaction (no outside effects,
+    // so a retry is safe).
+    const inserted = await withDeadlockRetry(() =>
+      withNodeInsertHeads(
+        ctx.ownerId,
+        [{ type: 'secret', path: SECRETS_ROOT_LABEL }],
+        async (tx) => {
+          // Insert metadata row first to get the node id (needed as AAD).
+          const [row] = await tx
+            .insert(nodes)
+            .values({
+              ownerId: ctx.ownerId,
+              type: 'secret',
+              title: title.slice(0, 200),
+              slug: null,
+              path: SECRETS_ROOT_LABEL,
+              data: {
+                description,
+                kind,
+                has_note: false,
+                field_count: 1,
+              },
+              tags,
+            })
+            .returning();
+          if (!row) return null;
+
+          // Seal the payload — single labeled field. AAD binds ciphertext to
+          // this node id so an attacker who swaps the bytea column can't
+          // replay another secret's ciphertext into this row.
+          const sealed = seal(payload, `secret:${row.id}`);
+          await tx.insert(secrets).values({
+            nodeId: row.id,
+            ciphertext: sealed.ciphertext,
+            keyVersion: sealed.keyVersion,
+          });
+          return row;
+        },
+      ),
+    );
+    if (!inserted) return { ok: false, error: 'failed to insert secret node' };
 
     // Trace meta deliberately omits the value. setOutput is also
     // safe: only id + title + kind. Never include the value here.

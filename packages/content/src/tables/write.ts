@@ -8,7 +8,17 @@
  */
 import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
-import { afterCommit, afterRollback, db, nodes, tables } from '@mantle/db';
+import {
+  afterCommit,
+  afterRollback,
+  db,
+  headsOrSpace,
+  nodes,
+  tables,
+  withDeadlockRetry,
+  withNodeDeleteHeads,
+  withNodeInsertHeads,
+} from '@mantle/db';
 import {
   MATERIALIZE_MAX,
   TableTooLargeError,
@@ -107,47 +117,52 @@ export async function createTable(ownerId: string, input: CreateTableInput): Pro
   // transition (rollback = clear storage_path, plan §9).
   const publishedAbs = publishedPath(ownerId, id);
   try {
-    const created = await db.transaction(async (tx) => {
-      const [node] = await tx
-        .insert(nodes)
-        .values({
-          id,
+    // Heads first (workspaces plan U1): the folder the table lands in. No
+    // retry: the transaction writes the workbook file.
+    const created = await headsOrSpace<ReturnType<typeof detailOf>>(
+      (f) => withNodeInsertHeads(ownerId, [{ type: 'table', path: TABLES_ROOT_LABEL }], f),
+      async (tx) => {
+        const [node] = await tx
+          .insert(nodes)
+          .values({
+            id,
+            ownerId,
+            type: 'table',
+            title: input.title.trim().slice(0, 200) || 'Untitled table',
+            path: TABLES_ROOT_LABEL,
+            data: {
+              visibility: 'private',
+              ...(input.icon ? { icon: input.icon } : {}),
+              ...(input.sourceFileId ? { sourceFileId: input.sourceFileId } : {}),
+              ...(input.description?.trim() ? { description: input.description.trim() } : {}),
+              ...(input.brainDepth ? { brain_depth: input.brainDepth } : {}),
+            },
+            tags: dedupeTags(input.tags ?? []),
+          })
+          .returning();
+        if (!node) throw new Error('createTable: insert returned no row');
+        const res = writeDocFile(publishedAbs, workbook ?? data, {
+          nodeId: id,
           ownerId,
-          type: 'table',
-          title: input.title.trim().slice(0, 200) || 'Untitled table',
-          path: TABLES_ROOT_LABEL,
-          data: {
-            visibility: 'private',
-            ...(input.icon ? { icon: input.icon } : {}),
-            ...(input.sourceFileId ? { sourceFileId: input.sourceFileId } : {}),
-            ...(input.description?.trim() ? { description: input.description.trim() } : {}),
-            ...(input.brainDepth ? { brain_depth: input.brainDepth } : {}),
-          },
-          tags: dedupeTags(input.tags ?? []),
-        })
-        .returning();
-      if (!node) throw new Error('createTable: insert returned no row');
-      const res = writeDocFile(publishedAbs, workbook ?? data, {
-        nodeId: id,
-        ownerId,
-        tabName: TAB_NAME,
-        fts: true,
-      });
-      await tx.insert(tables).values({
-        nodeId: node.id,
-        // JSONB mirror only while it fits the window AND stays single-tab;
-        // beyond either, the file is the sole carrier (a multi-hundred-MB
-        // blob mirrors nothing useful, and the mirror can't represent tabs).
-        data: !workbook && data.rows.length <= MATERIALIZE_MAX ? data : {},
-        dataText: buildTableDataText(publishedAbs, workbook ? null : data, node.title),
-        ...registryFileColumns(res, relativeStoragePath(ownerId, id)),
-      });
-      return detailOf(node, data, null, {
-        totalRows,
-        tabs: tabsFromStats(res.stats),
-        tabId: res.stats.tabs[0]?.tabId,
-      });
-    });
+          tabName: TAB_NAME,
+          fts: true,
+        });
+        await tx.insert(tables).values({
+          nodeId: node.id,
+          // JSONB mirror only while it fits the window AND stays single-tab;
+          // beyond either, the file is the sole carrier (a multi-hundred-MB
+          // blob mirrors nothing useful, and the mirror can't represent tabs).
+          data: !workbook && data.rows.length <= MATERIALIZE_MAX ? data : {},
+          dataText: buildTableDataText(publishedAbs, workbook ? null : data, node.title),
+          ...registryFileColumns(res, relativeStoragePath(ownerId, id)),
+        });
+        return detailOf(node, data, null, {
+          totalRows,
+          tabs: tabsFromStats(res.stats),
+          tabId: res.stats.tabs[0]?.tabId,
+        });
+      },
+    );
     afterRollback(() => removeTableFile(publishedAbs));
     return created;
   } catch (err) {
@@ -216,7 +231,11 @@ export async function deleteTable(ownerId: string, id: string): Promise<boolean>
   // An app table can't be deleted out from under its export link — remove the
   // export first (or delete the app; the link cascades either way).
   await assertTableWritable(id);
-  await db.delete(nodes).where(eq(nodes.id, id)); // `tables` row cascades.
+  // `tables` row cascades.
+  await headsOrSpace(
+    (f) => withDeadlockRetry(() => withNodeDeleteHeads([id], f)),
+    (tx) => tx.delete(nodes).where(eq(nodes.id, id)),
+  );
   // Workbook files go AFTER the registry delete commits (a failed delete must
   // never leave a registry row pointing at removed files). Inside a personal
   // space the delete commits with the space transaction, so afterCommit waits

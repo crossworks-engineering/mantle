@@ -24,6 +24,8 @@ import {
   nodes,
   notSuperseded,
   agents,
+  withDeadlockRetry,
+  withNodeInsertHeads,
   type ChatThread,
 } from '@mantle/db';
 import { NOTES_ASSISTANT_PATH, ensureNotesAssistantFolder } from '@mantle/content/tree';
@@ -358,41 +360,49 @@ export async function summarizeChatThread(
       const periodEnd = end.toISOString();
       return step(
         { name: 'persist_archive_summary', kind: 'db_write', input: { title } },
+        // The notes folder's head first (plan U1). The model has answered
+        // and the note is embedded, so a retry repeats only this write.
         async () =>
-          db.transaction(async (tx) => {
-            const [node] = await tx
-              .insert(nodes)
-              .values({
-                ownerId,
-                type: 'note',
-                title: `Chat: ${title} · ${periodStart.slice(0, 10)} → ${periodEnd.slice(0, 10)}`,
-                path: NOTES_ASSISTANT_PATH,
-                ...(vec ? { embedding: vec } : {}),
-                data: {
-                  kind: 'chat_archive',
-                  thread_id: thread.id,
-                  agent_id: thread.agentId,
-                  agent_slug: agentSlug,
-                  period_start: periodStart,
-                  period_end: periodEnd,
-                  source_turn_count: thread.turnCount,
-                  model: worker.model,
-                  summarizer_worker: worker.slug,
-                  topic: title,
-                  summary,
-                  content: summary,
-                },
-                tags: ['chat-archive', `agent:${tagSlug(agentSlug)}`],
-              })
-              .returning({ id: nodes.id });
-            if (!node) throw new Error('chat-archive: failed to insert the summary note');
-            const [row] = await tx
-              .update(chatThreads)
-              .set({ title, summaryNodeId: node.id, updatedAt: sql`now()` })
-              .where(eq(chatThreads.id, thread.id))
-              .returning();
-            return row ?? thread;
-          }),
+          withDeadlockRetry(() =>
+            withNodeInsertHeads(
+              ownerId,
+              [{ type: 'note', path: NOTES_ASSISTANT_PATH }],
+              async (tx) => {
+                const [node] = await tx
+                  .insert(nodes)
+                  .values({
+                    ownerId,
+                    type: 'note',
+                    title: `Chat: ${title} · ${periodStart.slice(0, 10)} → ${periodEnd.slice(0, 10)}`,
+                    path: NOTES_ASSISTANT_PATH,
+                    ...(vec ? { embedding: vec } : {}),
+                    data: {
+                      kind: 'chat_archive',
+                      thread_id: thread.id,
+                      agent_id: thread.agentId,
+                      agent_slug: agentSlug,
+                      period_start: periodStart,
+                      period_end: periodEnd,
+                      source_turn_count: thread.turnCount,
+                      model: worker.model,
+                      summarizer_worker: worker.slug,
+                      topic: title,
+                      summary,
+                      content: summary,
+                    },
+                    tags: ['chat-archive', `agent:${tagSlug(agentSlug)}`],
+                  })
+                  .returning({ id: nodes.id });
+                if (!node) throw new Error('chat-archive: failed to insert the summary note');
+                const [row] = await tx
+                  .update(chatThreads)
+                  .set({ title, summaryNodeId: node.id, updatedAt: sql`now()` })
+                  .where(eq(chatThreads.id, thread.id))
+                  .returning();
+                return row ?? thread;
+              },
+            ),
+          ),
       );
     },
   );
