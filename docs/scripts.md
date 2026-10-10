@@ -581,7 +581,7 @@ spawns. Full detail (including the nightly cron and the `/settings` UI tab) in
 Registry kinds: **recurring hygiene** (`entities-dedupe`, `backup-app-dbs`,
 `backup-table-dbs`, `traces-reap`, `turns-reap`, `space-purge`,
 `client-codes-reap`, `device-tokens-reap`, `app-access-log-reap`, `app-trash-purge`,
-`app-export-catch-up`) · **remedies** (`dedupe-edges`) · **ops**
+`app-export-catch-up`, and the hand-run `workspaces-check`) · **remedies** (`dedupe-edges`) · **ops**
 (`re-embed`, `extract-backfill`, `rotate-master-key`, `sync-now`,
 `imap-folders`, `pgboss-init`) · **retired backfills** (the rest).
 
@@ -596,6 +596,7 @@ Registry kinds: **recurring hygiene** (`entities-dedupe`, `backup-app-dbs`,
 | `imap-folders`                              | Prints every folder on every account and marks which are in scope                                                               |
 | `extract:backfill`                          | Re-fires `node_ingested` for nodes with no summary/embedding                                                                    |
 | `traces:reap`                               | Reaps abandoned traces for every owner (the cron-schedulable twin of the owner-scoped UI sweep)                                 |
+| `workspaces:check`                          | Read-only counts of what the workspace grants should never hold (grant drift, orphan grants, items without a home, and more)    |
 | `entities:dedupe`                           | Near-duplicate entity consolidation, free, pure DB, **dry-run by default**                                                      |
 | `dedupe:edges`                              | Collapses duplicate `mentioned_in` edges from before the extractor became idempotent                                            |
 | `apps:push`                                 | Pushes a local directory of mini-app source in, builds it, optionally publishes, the headless twin of `/api/apps/import`        |

@@ -105,7 +105,10 @@ folder share refresh trigger; docs/access-levels.md, section 6). The script
 makes that trigger itself and does not count the error. A dump of a brain
 that had already lost the trigger can carry stale folder share levels:
 migration 0212 repairs them at the next migrate, and under a release before
-0212 the nightly `share-drift` sweep does.
+0212 the nightly `share-drift` sweep does. From migration 0261 on the levels
+are frozen (archived in `archive_node_levels`) and the workspace grants decide
+access; a restored brain's grants are checked with
+`pnpm -C server/web workspaces:check`.
 
 A restore drill brings back the SAME brain: the plain restore keeps its
 brain id (migration 0226). Restoring the dump as a second, separate brain

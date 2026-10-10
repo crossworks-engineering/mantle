@@ -227,7 +227,10 @@ contacts, secrets) cannot be shared.
   of its transaction, and one that moves existing rows (an item move,
   Accept) takes it shared first. Both wait at most 10 seconds; a write that
   meets another on the same rows answers "busy, try again" (409), never SQL.
-  A nightly `share-drift` sweep repairs anything that slips through.
+  Until migration 0261 a nightly `share-drift` sweep repaired anything that
+  slipped through. Since then (workspaces W5b2) the levels are frozen, the
+  workspace grants decide who reads an item, and
+  `pnpm -C server/web workspaces:check` counts grant drift.
 - **Restores** (migration 0212). A brain restored from a dump taken at
   migration 0204 up to 0210 came back without the refresh trigger; 0212
   repairs the stale levels and puts it back (docs/access-levels.md,

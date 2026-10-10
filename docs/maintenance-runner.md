@@ -256,6 +256,18 @@ took four tries):
   and `pool-fit`. Backups stay on the
   `db-dump.sh` path; they are already scheduled there.
 
+  Not on the schedule: `workspaces-check` (`pnpm -C server/web workspaces:check`,
+  or the Maintenance tab), a read-only report run by hand. Since migration
+  0261 (workspaces W5b2) the workspace grants are the only truth of who reads
+  an item and the tier levels are frozen, so the level bridge's drift row and
+  the nightly `share-drift` repair have nothing left to keep. The check counts
+  what the grants should never hold: items whose derived read, write or home
+  columns differ from their grants, orphan grants, brain items without a
+  home, workspaces without a Moderator who can sign in (Admin on its own),
+  assistants not in exactly one workspace, and open links with no `served`
+  key. Numbers only, in one READ ONLY transaction; its first count is the
+  integrity row `workspaces_grant_drift`.
+
   The three model reports answer different questions and none subsumes the
   others. `models-drift` is CATALOGUE-level: does our onboarding dropdown still
   offer what providers serve? It skips OpenRouter, whose list is built from the

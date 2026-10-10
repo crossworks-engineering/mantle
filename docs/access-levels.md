@@ -319,6 +319,8 @@ removing any one wrap fails a test.
   maintenance worker runs, the nightly `share-drift` sweep set those levels
   right, so a stale level lived for about a day at most; the sweep's run
   history shows whether a box was hit ("repaired n of n drifted row(s)").
+  (Since migration 0261 the levels are frozen and the workspace grants
+  decide access; `pnpm -C server/web workspaces:check` counts grant drift.)
   Migration 0212 sets every stale level right once more and makes the
   trigger again in a form a dump can carry (it compares the text of the
   path), so such a brain is whole again on its next migrate. To see whether
