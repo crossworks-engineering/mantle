@@ -53,6 +53,7 @@ export {
   levelsMeet,
   itemLevelAbove,
   ViewerLevelConflictError,
+  runInLevelRoleForTest,
   asSystem,
   AS_SYSTEM_TURN_REASONS,
   TurnScopeExitError,
