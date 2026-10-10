@@ -21,9 +21,29 @@ const h = vi.hoisted(() => ({
   appUndeletes: [] as { author: unknown; id: string }[],
   snapshotDeletes: [] as { owner: string; id: string; snapshotId: string; loginId: string }[],
   inTrash: 0,
+  // The scope the call runs in (null: none), each exit from it with its
+  // reason, and how deep in such an exit the code runs now.
+  scope: null as { loginId: string | null } | null,
+  exits: [] as (string | undefined)[],
+  exitDepth: 0,
+  // What ran inside an exit (depth > 0) and what in the login's scope.
+  seen: [] as { what: string; inExit: boolean }[],
 }));
 
-vi.mock('@mantle/db', () => ({ asSystem: <T>(fn: () => T) => fn() }));
+vi.mock('@mantle/db', () => ({
+  asSystem: async <T>(fn: () => Promise<T>, reason?: string): Promise<T> => {
+    h.exits.push(reason);
+    h.exitDepth++;
+    try {
+      return await fn();
+    } finally {
+      h.exitDepth--;
+    }
+  },
+}));
+vi.mock('@mantle/db/viewer', () => ({
+  currentWorkspaceScope: () => h.scope,
+}));
 vi.mock('./builtins-my-space', () => ({
   onBehalfOf: vi.fn(async (ctx: ToolHandlerContext) => {
     const s = ctx.surface;
@@ -35,7 +55,12 @@ vi.mock('./builtins-app-guide', () => ({
   appGuideHandler: vi.fn(async () => ({ ok: true, output: { guide: '# Guide' } })),
 }));
 vi.mock('./app-build-stage', () => ({ buildAndStageApp: vi.fn() }));
-vi.mock('./member-app-tools', () => ({ memberAppToolVerdict: vi.fn() }));
+vi.mock('./member-app-tools', () => ({
+  memberAppToolVerdict: vi.fn(async () => {
+    h.seen.push({ what: 'verdict', inExit: h.exitDepth > 0 });
+    return { ok: true };
+  }),
+}));
 vi.mock('@mantle/content/app-broker', () => ({
   assertSafeScript: vi.fn(),
   checkAppSchemaScript: vi.fn(),
@@ -69,6 +94,7 @@ vi.mock('@mantle/content', () => {
     CannotDeleteEntryError: class extends Error {},
     NoGreenBuildError: class extends Error {},
     authorSpaceApp: vi.fn(async (author: unknown, id: string, opts: { write?: boolean } = {}) => {
+      h.seen.push({ what: 'authorSpaceApp', inExit: h.exitDepth > 0 });
       h.authorCalls.push({ author, id, write: opts.write });
       if (opts.write && h.frozen) {
         throw new SpaceAppError('frozen', 'This app is submitted for review, so it is frozen.');
@@ -96,7 +122,10 @@ vi.mock('@mantle/content', () => {
       Array.from({ length: h.inTrash }, (_, i) => ({ id: `t${i}`, title: `T${i}` })),
     ),
     // The lock is the content layer's (its DB test); here it runs the change.
-    withAuthorWrite: vi.fn(async (_a: unknown, _id: string, fn: () => Promise<unknown>) => fn()),
+    withAuthorWrite: vi.fn(async (_a: unknown, _id: string, fn: () => Promise<unknown>) => {
+      h.seen.push({ what: 'withAuthorWrite', inExit: h.exitDepth > 0 });
+      return fn();
+    }),
     declareAppSchema: vi.fn(),
     deleteDraftFile: vi.fn(async (owner: string, id: string, path: string) => {
       h.running += 1;
@@ -111,7 +140,10 @@ vi.mock('@mantle/content', () => {
     listSpaceApps: vi.fn(async () => []),
     publishApp: vi.fn(),
     recallSpaceApp: vi.fn(),
-    setManifest: vi.fn(),
+    setManifest: vi.fn(async (_o: string, _id: string, m: Record<string, unknown>) => {
+      h.seen.push({ what: 'setManifest', inExit: h.exitDepth > 0 });
+      return m;
+    }),
     setSpaceAppSharing: vi.fn(async (_a: unknown, id: string, sharing: string) => ({
       id,
       title: 'A',
@@ -152,6 +184,10 @@ beforeEach(() => {
   h.appUndeletes.length = 0;
   h.snapshotDeletes.length = 0;
   h.inTrash = 0;
+  h.scope = null;
+  h.exits.length = 0;
+  h.exitDepth = 0;
+  h.seen.length = 0;
 });
 
 describe('who may call the my_app tools', () => {
@@ -398,5 +434,62 @@ describe('my_app_snapshot_delete', () => {
     );
     expect(res.ok).toBe(false);
     expect(h.snapshotDeletes).toEqual([]);
+  });
+});
+
+describe("the login's scope is left only for the author's own space", () => {
+  it('my_app_tools_set checks the declared tools in the login scope, the app rows by own-space', async () => {
+    h.scope = { loginId: 'login-1' };
+    const res = await def('my_app_tools_set').handler(
+      { id: APP, tool_slugs: ['contact_list', 'page_get'] },
+      member(),
+    );
+    expect(res).toMatchObject({ ok: true, output: { tool_slugs: ['contact_list', 'page_get'] } });
+    // The member-rule check reads as the login (its workspace scope), not
+    // as the system.
+    expect(h.seen.filter((x) => x.what === 'verdict')).toEqual([
+      { what: 'verdict', inExit: false },
+      { what: 'verdict', inExit: false },
+    ]);
+    // The author's own app: inside the named exit.
+    for (const what of ['authorSpaceApp', 'withAuthorWrite', 'setManifest']) {
+      expect(h.seen.filter((x) => x.what === what).length, what).toBeGreaterThan(0);
+      expect(
+        h.seen.filter((x) => x.what === what).every((x) => x.inExit),
+        what,
+      ).toBe(true);
+    }
+    expect(h.exits.length).toBeGreaterThan(0);
+    expect(h.exits.every((r) => r === 'own-space')).toBe(true);
+  });
+
+  it('my_app_guide leaves the scope for nothing', async () => {
+    h.scope = { loginId: 'login-1' };
+    expect((await def('my_app_guide').handler({}, member(false))).ok).toBe(true);
+    expect(h.exits).toEqual([]);
+  });
+
+  it('refuses a scope opened for another login, before any exit', async () => {
+    h.scope = { loginId: 'login-2' };
+    for (const t of MY_APP_TOOLS) {
+      const res = await t.handler(
+        { id: APP, tool_slugs: ['x'], name: 'x', path: 'a.ts' },
+        member(),
+      );
+      expect(res, t.slug).toMatchObject({
+        ok: false,
+        error: expect.stringMatching(/No one to act for/),
+      });
+    }
+    expect(h.exits).toEqual([]);
+    expect(h.seen).toEqual([]);
+  });
+
+  it('no tool body leaves the scope as a whole (source pin)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(new URL('./builtins-my-apps.ts', import.meta.url), 'utf8');
+    expect(src).not.toMatch(/asSystem\(\s*\(\)\s*=>\s*def\.handler/);
+    // One exit helper, and every exit goes through it.
+    expect(src.match(/\basSystem\(/g)).toHaveLength(1);
   });
 });

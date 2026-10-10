@@ -32,8 +32,9 @@
  * by the server, never a value from the caller); a submitted or accepted
  * app is refused for every change.
  *
- * The app work runs as the system (`asSystem`), as the brokers do: the
- * space role has no grant on the app tables. Every change runs inside
+ * The app work runs as the system, as the brokers do: the space role has
+ * no grant on the app tables. From the login's scope each such call leaves
+ * it by 'own-space' (`ownSpace`), one call at a time, never the whole tool. Every change runs inside
  * `withAuthorWrite`, which holds the app's state row locked and editable for
  * the whole change, so a Submit or an Accept never races it (M3 audit). The owner the app's rows are
  * keyed to is the author's space, so nothing here reaches a brain app.
@@ -137,7 +138,7 @@ async function prepare(
   const id = str(input.id).trim().toLowerCase();
   if (!UUID_RE.test(id)) return { ok: false, error: 'id must be your app id from my_app_list.' };
   try {
-    await authorSpaceApp(author, id, { write: opts.write });
+    await ownSpace(() => authorSpaceApp(author, id, { write: opts.write }));
   } catch (err) {
     return refusal(err);
   }
@@ -166,6 +167,17 @@ function refusal(err: unknown): ToolHandlerResult {
 /** Who a history row names: the member, by login. */
 function actorOf(author: SpaceAppAuthor) {
   return { actor: 'member' as const, actorLoginId: author.loginId };
+}
+
+/**
+ * A call keyed to the author's own space (their app rows, files, builds,
+ * history and trash): the app work runs as the system (see the file
+ * header), so from the login's workspace scope it leaves by the named door
+ * 'own-space', checked by inLoginScope against the scope's login. Only
+ * these calls leave the scope, never a whole tool.
+ */
+function ownSpace<T>(fn: () => Promise<T>): Promise<T> {
+  return asSystem(fn, 'own-space');
 }
 
 const NOT_FOUND = (id: string) => `No app ${id} of yours. List your apps with my_app_list.`;
@@ -201,7 +213,7 @@ const my_app_list: BuiltinToolDef = {
   handler: async (_input, ctx) => {
     const author = await authorOf(ctx);
     if (!author) return { ok: false, error: NO_LOGIN };
-    const apps = await listSpaceApps(author);
+    const apps = await ownSpace(() => listSpaceApps(author));
     return { ok: true, output: { count: apps.length, apps } };
   },
 };
@@ -223,8 +235,8 @@ const my_app_get: BuiltinToolDef = {
   handler: async (input, ctx) => {
     const p = await prepare(input, ctx, { write: false });
     if (!isPrepared(p)) return p;
-    const state = await authorSpaceApp(p.author, p.id);
-    const app = await asSystem(() => getApp(p.author.spaceId, p.id));
+    const state = await ownSpace(() => authorSpaceApp(p.author, p.id));
+    const app = await ownSpace(() => getApp(p.author.spaceId, p.id));
     if (!app) return { ok: false, error: NOT_FOUND(p.id) };
     const src = workingSource(app);
     return {
@@ -273,16 +285,18 @@ const my_app_create: BuiltinToolDef = {
     if (!writeOn(ctx)) return { ok: false, error: NO_WRITE };
     const name = str(input.name).trim().slice(0, 200);
     if (!name) return { ok: false, error: 'name is required, e.g. "Stock counter".' };
-    const mine = (await listSpaceApps(author)).filter((a) => a.mine).length;
+    const mine = (await ownSpace(() => listSpaceApps(author))).filter((a) => a.mine).length;
     // The member deletes their own (access matrix N6): no admin sees a
     // private draft, so the way to room is the member's own delete.
     if (mine >= MY_APPS_MAX) return { ok: false, error: atAppCap(mine) };
     try {
       const description = str(input.description).trim().slice(0, 500);
-      const app = await createSpaceApp(author, {
-        title: name,
-        ...(description ? { description } : {}),
-      });
+      const app = await ownSpace(() =>
+        createSpaceApp(author, {
+          title: name,
+          ...(description ? { description } : {}),
+        }),
+      );
       return {
         ok: true,
         output: {
@@ -321,8 +335,10 @@ const my_app_file_write: BuiltinToolDef = {
     if (!path) return { ok: false, error: "path is required, e.g. 'App.tsx'." };
     const content = str(input.content);
     try {
-      const next = await withAuthorWrite(p.author, p.id, () =>
-        writeDraftFile(p.author.spaceId, p.id, path, content),
+      const next = await ownSpace(() =>
+        withAuthorWrite(p.author, p.id, () =>
+          writeDraftFile(p.author.spaceId, p.id, path, content),
+        ),
       );
       if (!next) return { ok: false, error: NOT_FOUND(p.id) };
       return {
@@ -356,8 +372,8 @@ const my_app_file_delete: BuiltinToolDef = {
     const path = str(input.path).trim();
     if (!path) return { ok: false, error: 'path is required.' };
     try {
-      const next = await withAuthorWrite(p.author, p.id, () =>
-        deleteDraftFile(p.author.spaceId, p.id, path),
+      const next = await ownSpace(() =>
+        withAuthorWrite(p.author, p.id, () => deleteDraftFile(p.author.spaceId, p.id, path)),
       );
       if (!next) return { ok: false, error: NOT_FOUND(p.id) };
       return { ok: true, output: { id: p.id, path, deleted: true } };
@@ -377,8 +393,8 @@ const my_app_build: BuiltinToolDef = {
     const p = await prepare(input, ctx, { write: true });
     if (!isPrepared(p)) return p;
     try {
-      const res = await withAuthorWrite(p.author, p.id, () =>
-        buildAndStageApp(p.author.spaceId, p.id),
+      const res = await ownSpace(() =>
+        withAuthorWrite(p.author, p.id, () => buildAndStageApp(p.author.spaceId, p.id)),
       );
       if (!res) return { ok: false, error: NOT_FOUND(p.id) };
       if (!res.buildOk) {
@@ -431,11 +447,13 @@ const my_app_publish: BuiltinToolDef = {
     const p = await prepare(input, ctx, { write: true });
     if (!isPrepared(p)) return p;
     try {
-      const app = await withAuthorWrite(p.author, p.id, () =>
-        publishApp(p.author.spaceId, p.id, {
-          note: str(input.note).trim().slice(0, 500) || null,
-          ...actorOf(p.author),
-        }),
+      const app = await ownSpace(() =>
+        withAuthorWrite(p.author, p.id, () =>
+          publishApp(p.author.spaceId, p.id, {
+            note: str(input.note).trim().slice(0, 500) || null,
+            ...actorOf(p.author),
+          }),
+        ),
       );
       if (!app) return { ok: false, error: NOT_FOUND(p.id) };
       return {
@@ -472,18 +490,20 @@ const my_app_schema_set: BuiltinToolDef = {
     if (!schemaSql.trim()) return { ok: false, error: 'schema_sql is required.' };
     try {
       assertSafeScript(schemaSql);
-      await asSystem(() => checkAppSchemaScript(p.author.spaceId, p.id, schemaSql));
+      await ownSpace(() => checkAppSchemaScript(p.author.spaceId, p.id, schemaSql));
     } catch (err) {
       return refusal(err);
     }
     try {
-      await withAuthorWrite(p.author, p.id, () =>
-        createAppSnapshot(p.author.spaceId, p.id, {
-          trigger: 'pre_schema',
-          note: 'before a schema change',
-          requireData: true,
-          ...actorOf(p.author),
-        }),
+      await ownSpace(() =>
+        withAuthorWrite(p.author, p.id, () =>
+          createAppSnapshot(p.author.spaceId, p.id, {
+            trigger: 'pre_schema',
+            note: 'before a schema change',
+            requireData: true,
+            ...actorOf(p.author),
+          }),
+        ),
       );
     } catch (err) {
       return {
@@ -491,8 +511,8 @@ const my_app_schema_set: BuiltinToolDef = {
         error: `could not take the safety snapshot before the schema change, so nothing changed: ${errorMessage(err)}`,
       };
     }
-    const version = await withAuthorWrite(p.author, p.id, () =>
-      declareAppSchema(p.author.spaceId, p.id, schemaSql),
+    const version = await ownSpace(() =>
+      withAuthorWrite(p.author, p.id, () => declareAppSchema(p.author.spaceId, p.id, schemaSql)),
     );
     if (version === null) return { ok: false, error: NOT_FOUND(p.id) };
     return { ok: true, output: { id: p.id, schema_version: version } };
@@ -534,8 +554,10 @@ const my_app_tools_set: BuiltinToolDef = {
       const verdict = await memberAppToolVerdict(ctx.ownerId, slugs, slug);
       if (!verdict.ok) warnings.push(`${slug}: ${verdict.reason}`);
     }
-    const manifest = await withAuthorWrite(p.author, p.id, () =>
-      setManifest(p.author.spaceId, p.id, { toolSlugs: slugs }),
+    const manifest = await ownSpace(() =>
+      withAuthorWrite(p.author, p.id, () =>
+        setManifest(p.author.spaceId, p.id, { toolSlugs: slugs }),
+      ),
     );
     if (!manifest) return { ok: false, error: NOT_FOUND(p.id) };
     return {
@@ -569,7 +591,7 @@ const my_app_errors: BuiltinToolDef = {
     const p = await prepare(input, ctx, { write: false });
     if (!isPrepared(p)) return p;
     const limit = typeof input.limit === 'number' ? input.limit : 50;
-    const rows = await asSystem(() =>
+    const rows = await ownSpace(() =>
       listAppAccess(p.author.spaceId, p.id, limit, { kind: 'error' }),
     );
     return {
@@ -608,7 +630,7 @@ const my_app_snapshot_list: BuiltinToolDef = {
     const p = await prepare(input, ctx, { write: false });
     if (!isPrepared(p)) return p;
     const limit = typeof input.limit === 'number' ? input.limit : 50;
-    const entries = await asSystem(() => listAppSnapshots(p.author.spaceId, p.id, { limit }));
+    const entries = await ownSpace(() => listAppSnapshots(p.author.spaceId, p.id, { limit }));
     return { ok: true, output: { id: p.id, entries } };
   },
 };
@@ -630,11 +652,13 @@ const my_app_snapshot_create: BuiltinToolDef = {
     const p = await prepare(input, ctx, { write: true });
     if (!isPrepared(p)) return p;
     try {
-      const snap = await withAuthorWrite(p.author, p.id, () =>
-        createAppSnapshot(p.author.spaceId, p.id, {
-          note: str(input.note).trim().slice(0, 500) || null,
-          ...actorOf(p.author),
-        }),
+      const snap = await ownSpace(() =>
+        withAuthorWrite(p.author, p.id, () =>
+          createAppSnapshot(p.author.spaceId, p.id, {
+            note: str(input.note).trim().slice(0, 500) || null,
+            ...actorOf(p.author),
+          }),
+        ),
       );
       if (!snap) return { ok: false, error: NOT_FOUND(p.id) };
       return { ok: true, output: { id: p.id, snapshot: snap } };
@@ -691,7 +715,9 @@ const my_app_snapshot_restore: BuiltinToolDef = {
       // The data is not what an admin reviews, so a Submit meanwhile changes
       // nothing an Accept relies on.
       const res =
-        mode === 'code' ? await withAuthorWrite(p.author, p.id, run) : await asSystem(run);
+        mode === 'code'
+          ? await ownSpace(() => withAuthorWrite(p.author, p.id, run))
+          : await ownSpace(run);
       if (!res) {
         return {
           ok: false,
@@ -732,7 +758,7 @@ const my_app_unshare: BuiltinToolDef = {
     if (!isPrepared(p)) return p;
     if (!writeOn(ctx)) return { ok: false, error: NO_WRITE };
     try {
-      const state = await setSpaceAppSharing(p.author, p.id, 'private');
+      const state = await ownSpace(() => setSpaceAppSharing(p.author, p.id, 'private'));
       return { ok: true, output: { id: p.id, sharing: state.sharing } };
     } catch (err) {
       return refusal(err);
@@ -750,7 +776,7 @@ const my_app_submit: BuiltinToolDef = {
     const p = await prepare(input, ctx, { write: true });
     if (!isPrepared(p)) return p;
     try {
-      const state = await submitSpaceApp(p.author, p.id);
+      const state = await ownSpace(() => submitSpaceApp(p.author, p.id));
       return { ok: true, output: { id: p.id, reviewState: state.reviewState } };
     } catch (err) {
       return refusal(err);
@@ -770,7 +796,7 @@ const my_app_recall: BuiltinToolDef = {
     if (!isPrepared(p)) return p;
     if (!writeOn(ctx)) return { ok: false, error: NO_WRITE };
     try {
-      const state = await recallSpaceApp(p.author, p.id);
+      const state = await ownSpace(() => recallSpaceApp(p.author, p.id));
       return { ok: true, output: { id: p.id, reviewState: state.reviewState } };
     } catch (err) {
       return refusal(err);
@@ -799,8 +825,10 @@ const my_app_snapshot_delete: BuiltinToolDef = {
       return { ok: false, error: 'snapshot_id must be an entry id from my_app_snapshot_list.' };
     }
     try {
-      const gone = await withAuthorWrite(p.author, p.id, () =>
-        deleteMemberAppSnapshot(p.author.spaceId, p.id, snapshotId, p.author.loginId),
+      const gone = await ownSpace(() =>
+        withAuthorWrite(p.author, p.id, () =>
+          deleteMemberAppSnapshot(p.author.spaceId, p.id, snapshotId, p.author.loginId),
+        ),
       );
       if (!gone) {
         return {
@@ -830,7 +858,7 @@ const my_app_delete: BuiltinToolDef = {
     const p = await prepare(input, ctx, { write: false });
     if (!isPrepared(p)) return p;
     if (!writeOn(ctx)) return { ok: false, error: NO_WRITE };
-    const inTrash = (await listDeletedSpaceApps(p.author)).length;
+    const inTrash = (await ownSpace(() => listDeletedSpaceApps(p.author))).length;
     if (inTrash >= MY_APPS_TRASH_MAX) {
       return {
         ok: false,
@@ -838,7 +866,7 @@ const my_app_delete: BuiltinToolDef = {
       };
     }
     try {
-      const done = await deleteSpaceApp(p.author, p.id);
+      const done = await ownSpace(() => deleteSpaceApp(p.author, p.id));
       return {
         ok: true,
         output: {
@@ -877,10 +905,10 @@ const my_app_undelete: BuiltinToolDef = {
     if (!UUID_RE.test(id)) {
       return { ok: false, error: 'id must be an app id from my_app_deleted_list.' };
     }
-    const mine = (await listSpaceApps(author)).filter((a) => a.mine).length;
+    const mine = (await ownSpace(() => listSpaceApps(author))).filter((a) => a.mine).length;
     if (mine >= MY_APPS_MAX) return { ok: false, error: atAppCap(mine) };
     try {
-      const state = await undeleteSpaceApp(author, id);
+      const state = await ownSpace(() => undeleteSpaceApp(author, id));
       return {
         ok: true,
         output: {
@@ -907,20 +935,19 @@ const my_app_deleted_list: BuiltinToolDef = {
   handler: async (_input, ctx) => {
     const author = await authorOf(ctx);
     if (!author) return { ok: false, error: NO_LOGIN };
-    const apps = await listDeletedSpaceApps(author);
+    const apps = await ownSpace(() => listDeletedSpaceApps(author));
     return { ok: true, output: { count: apps.length, apps } };
   },
 };
 
 /**
- * The app work runs as the system (see the file header). The login's MCP
- * call runs in a workspace scope since W5b2 (withViewer for the login), and
- * a scope is left for the system pool only by a named door: the whole tool
- * leaves it once, by 'own-space' (the apps live in the author's own space,
- * and every query below names that space). Checked first: the login the
- * surface names is the scope's own login, never someone else.
+ * The login's MCP call runs in a workspace scope since W5b2 (withViewer for
+ * the login). Checked first: the login the surface names is the scope's own
+ * login, never someone else. The tool then runs IN that scope: only its
+ * calls keyed to the author's own space leave it (ownSpace); the rest, the
+ * member-rule check of declared tools among them, reads as the login.
  */
-function outOfLoginScope(def: BuiltinToolDef): BuiltinToolDef {
+function inLoginScope(def: BuiltinToolDef): BuiltinToolDef {
   return {
     ...def,
     handler: async (input, ctx) => {
@@ -930,7 +957,7 @@ function outOfLoginScope(def: BuiltinToolDef): BuiltinToolDef {
       if (s?.kind !== 'team' || !s.loginId || scope.loginId !== s.loginId) {
         return { ok: false, error: NO_LOGIN };
       }
-      return asSystem(() => def.handler(input, ctx), 'own-space');
+      return def.handler(input, ctx);
     },
   };
 }
@@ -943,7 +970,7 @@ export const MY_APP_READ_TOOLS: BuiltinToolDef[] = [
   my_app_errors,
   my_app_snapshot_list,
   my_app_deleted_list,
-].map(outOfLoginScope);
+].map(inLoginScope);
 
 /** How long a change waits for the member's previous change to finish. */
 export const MY_APP_WRITE_WAIT_MS = 15_000;
@@ -1025,7 +1052,7 @@ export const MY_APP_WRITE_TOOLS: BuiltinToolDef[] = [
   my_app_undelete,
 ]
   .map(oneAtATime)
-  .map(outOfLoginScope);
+  .map(inLoginScope);
 
 export const MY_APP_TOOLS: BuiltinToolDef[] = [...MY_APP_READ_TOOLS, ...MY_APP_WRITE_TOOLS];
 export const MY_APP_READ_TOOL_SLUGS: readonly string[] = MY_APP_READ_TOOLS.map((t) => t.slug);
