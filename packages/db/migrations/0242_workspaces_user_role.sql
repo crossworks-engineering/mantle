@@ -71,8 +71,10 @@ CREATE POLICY "app_databases_user_read" ON "public"."app_databases" FOR SELECT T
   USING (EXISTS (SELECT 1 FROM "public"."nodes" n WHERE n.id = "app_databases"."app_node_id"));
 --> statement-breakpoint
 
--- The model itself: a user sees the workspaces in their scope, the people
--- in them, their resources, and the grants of the items they read.
+-- The model itself: a signed-in user sees the workspaces in their scope,
+-- the people in them, their resources, and the grants of the items they read
+-- to those workspaces. Column lists (ACCESS_MATRIX) keep resource settings,
+-- area limits and who granted what out (audit L11).
 ALTER TABLE "public"."workspaces" ENABLE ROW LEVEL SECURITY;
 --> statement-breakpoint
 ALTER TABLE "public"."workspace_users" ENABLE ROW LEVEL SECURITY;
@@ -91,19 +93,26 @@ ALTER TABLE "public"."heads_check_misses" ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "workspaces_user_read" ON "public"."workspaces";
 --> statement-breakpoint
 CREATE POLICY "workspaces_user_read" ON "public"."workspaces" FOR SELECT TO mantle_view_user
-  USING ("id" = ANY ((SELECT "public"."mantle_scope_ws"())::uuid[]));
+  USING ((SELECT "public"."mantle_login_id"()) IS NOT NULL
+         AND "id" = ANY ((SELECT "public"."mantle_scope_ws"())::uuid[]));
 --> statement-breakpoint
 DROP POLICY IF EXISTS "workspace_users_user_read" ON "public"."workspace_users";
 --> statement-breakpoint
 CREATE POLICY "workspace_users_user_read" ON "public"."workspace_users" FOR SELECT TO mantle_view_user
-  USING ("workspace_id" = ANY ((SELECT "public"."mantle_scope_ws"())::uuid[]));
+  USING ((SELECT "public"."mantle_login_id"()) IS NOT NULL
+         AND "workspace_id" = ANY ((SELECT "public"."mantle_scope_ws"())::uuid[]));
 --> statement-breakpoint
 DROP POLICY IF EXISTS "workspace_resources_user_read" ON "public"."workspace_resources";
 --> statement-breakpoint
 CREATE POLICY "workspace_resources_user_read" ON "public"."workspace_resources" FOR SELECT TO mantle_view_user
-  USING ("workspace_id" = ANY ((SELECT "public"."mantle_scope_ws"())::uuid[]));
+  USING ((SELECT "public"."mantle_login_id"()) IS NOT NULL
+         AND "workspace_id" = ANY ((SELECT "public"."mantle_scope_ws"())::uuid[]));
 --> statement-breakpoint
 DROP POLICY IF EXISTS "item_grants_user_read" ON "public"."item_grants";
 --> statement-breakpoint
+-- Only the grants to workspaces in the scope: an item also held elsewhere
+-- does not name the other workspace (audit L11).
 CREATE POLICY "item_grants_user_read" ON "public"."item_grants" FOR SELECT TO mantle_view_user
-  USING (EXISTS (SELECT 1 FROM "public"."nodes" n WHERE n.id = "item_grants"."node_id"));
+  USING ((SELECT "public"."mantle_login_id"()) IS NOT NULL
+         AND "workspace_id" = ANY ((SELECT "public"."mantle_scope_ws"())::uuid[])
+         AND EXISTS (SELECT 1 FROM "public"."nodes" n WHERE n.id = "item_grants"."node_id"));

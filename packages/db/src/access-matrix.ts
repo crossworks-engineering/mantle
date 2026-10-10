@@ -463,15 +463,43 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   // ── Workspaces (W1, migrations 0241 and 0242) ────────────────────────────
   // The model: the workspace role reads the rows of the workspaces in its
   // scope (and the grants of the items it reads); the level roles never do.
-  { table: 'public.workspaces', read: 'none', rule: 'none', writer: 'admin', user: 'all' },
-  { table: 'public.workspace_users', read: 'none', rule: 'none', writer: 'admin', user: 'all' },
-  { table: 'public.workspace_resources', read: 'none', rule: 'none', writer: 'admin', user: 'all' },
-  { table: 'public.item_grants', read: 'none', rule: 'none', writer: 'content', user: 'all' },
+  {
+    table: 'public.workspaces',
+    read: 'none',
+    rule: 'none',
+    writer: 'admin',
+    user: ['id', 'name', 'description', 'contact_id', 'is_admin', 'archived_at'],
+  },
+  {
+    table: 'public.workspace_users',
+    read: 'none',
+    rule: 'none',
+    writer: 'admin',
+    user: ['workspace_id', 'login_id', 'moderator'],
+  },
+  {
+    table: 'public.workspace_resources',
+    read: 'none',
+    rule: 'none',
+    writer: 'admin',
+    // Never `settings`: a resource's settings may carry configuration the
+    // users of the workspace have no business reading (audit L11).
+    user: ['id', 'workspace_id', 'type', 'ref_id', 'write'],
+  },
+  {
+    table: 'public.item_grants',
+    read: 'none',
+    rule: 'none',
+    writer: 'content',
+    user: ['node_id', 'workspace_id', 'write', 'is_home', 'via_folder_id', 'excluded'],
+  },
   // Audit of workspace changes, the heads rows and the heads-check log:
   // admin pool only (the lock functions are security definer).
   none('public.workspace_events'),
   none('public.node_acl_head', 'content'),
   none('public.heads_check_misses', 'system'),
+  // The key the held-heads list is signed with: definer functions only.
+  none('public.mantle_heads_key', 'system'),
 ];
 
 /** Columns no viewer role may ever read, whatever the matrix says. */

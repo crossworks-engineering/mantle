@@ -22,7 +22,13 @@
 -- Every trigger function is SECURITY DEFINER with a pinned search_path, so a
 -- limited role (the personal-space role) needs no grant on the new tables.
 
-SET LOCAL lock_timeout = '30s';
+-- Every table this migration alters, locked first and briefly (audit L10):
+-- a busy box fails fast and the migration is run again, never a long wait
+-- holding half the locks.
+SET LOCAL lock_timeout = '5s';
+--> statement-breakpoint
+LOCK TABLE "public"."nodes", "public"."content_chunks", "public"."content_chunk_windows",
+  "public"."facts", "public"."agents" IN ACCESS EXCLUSIVE MODE;
 --> statement-breakpoint
 
 -- ── The model ────────────────────────────────────────────────────────────────
@@ -73,7 +79,10 @@ CREATE INDEX IF NOT EXISTS "workspace_users_login_idx"
 -- here" against a folder's grant (19.5).
 CREATE TABLE IF NOT EXISTS "public"."item_grants" (
   "node_id" uuid NOT NULL REFERENCES "public"."nodes"("id") ON DELETE CASCADE,
-  "workspace_id" uuid NOT NULL REFERENCES "public"."workspaces"("id") ON DELETE RESTRICT,
+  -- NO ACTION, not RESTRICT (audit L7): checked at the end of the
+  -- statement, so a cascade that removes the item too (a space deleted)
+  -- passes, and a workspace still holding grants on its own cannot go.
+  "workspace_id" uuid NOT NULL REFERENCES "public"."workspaces"("id") ON DELETE NO ACTION,
   "write" boolean NOT NULL DEFAULT false,
   "is_home" boolean NOT NULL DEFAULT false,
   "via_folder_id" uuid REFERENCES "public"."nodes"("id") ON DELETE CASCADE,
@@ -140,6 +149,10 @@ CREATE TABLE IF NOT EXISTS "public"."node_acl_head" (
   "version" bigint NOT NULL DEFAULT 0
 );
 --> statement-breakpoint
+-- Every existing node gets its head. Safe from a racing insert: nodes is
+-- locked ACCESS EXCLUSIVE since the start of this migration, and the insert
+-- trigger exists before the lock is released (audit M3). mantle_lock_heads
+-- also creates a missing head, as a second line.
 INSERT INTO "public"."node_acl_head" ("node_id")
   SELECT "id" FROM "public"."nodes"
   ON CONFLICT DO NOTHING;
@@ -157,6 +170,21 @@ CREATE TABLE IF NOT EXISTS "public"."heads_check_misses" (
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "heads_check_misses_at_idx"
   ON "public"."heads_check_misses" ("at" DESC);
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "heads_check_misses_check_idx"
+  ON "public"."heads_check_misses" ("check_name", "at" DESC);
+--> statement-breakpoint
+-- The key the held-heads list is signed with (audit L6): a session that sets
+-- mantle.heads_held by hand cannot sign it. One random row, read only by the
+-- security definer functions (no grant, row security on, no policy).
+CREATE TABLE IF NOT EXISTS "public"."mantle_heads_key" (
+  "id" boolean PRIMARY KEY DEFAULT true CHECK ("id"),
+  "k" text NOT NULL DEFAULT (gen_random_uuid()::text || gen_random_uuid()::text)
+);
+--> statement-breakpoint
+INSERT INTO "public"."mantle_heads_key" DEFAULT VALUES ON CONFLICT DO NOTHING;
+--> statement-breakpoint
+ALTER TABLE "public"."mantle_heads_key" ENABLE ROW LEVEL SECURITY;
 --> statement-breakpoint
 
 -- ── Derived columns ──────────────────────────────────────────────────────────
@@ -181,10 +209,7 @@ ALTER TABLE "public"."facts"
   ADD COLUMN IF NOT EXISTS "login_id" uuid;
 --> statement-breakpoint
 ALTER TABLE "public"."agents"
-  ADD COLUMN IF NOT EXISTS "workspace_id" uuid REFERENCES "public"."workspaces"("id") ON DELETE RESTRICT;
---> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "nodes_read_ws_gin"
-  ON "public"."nodes" USING gin ("read_ws") WITH (fastupdate = on);
+  ADD COLUMN IF NOT EXISTS "workspace_id" uuid REFERENCES "public"."workspaces"("id") ON DELETE NO ACTION;
 --> statement-breakpoint
 
 -- ── Scope ────────────────────────────────────────────────────────────────────
@@ -234,30 +259,104 @@ CREATE OR REPLACE FUNCTION "public"."mantle_kind_class"(t "public"."node_type")
 $$;
 --> statement-breakpoint
 -- Whether a grant of kind `t` to workspace `ws` is allowed at all.
-CREATE OR REPLACE FUNCTION "public"."mantle_grant_kind_ok"(t "public"."node_type", ws uuid)
+-- Whether a grant of kind `t` to workspace `ws` is allowed at all, and
+-- whether a FOLDER may pass it on (`derived`): a conversation row belongs to
+-- the workspace of the assistant that holds the chat, set by hand, never
+-- taken from a folder (plan R8). mantle_workspace_kind (0159) is the tier
+-- model's list and goes with it in W8; this is the workspace model's.
+CREATE OR REPLACE FUNCTION "public"."mantle_grant_kind_ok"(t "public"."node_type", ws uuid, derived boolean DEFAULT false)
   RETURNS boolean LANGUAGE sql STABLE PARALLEL SAFE
   SET search_path = "public", pg_temp AS $$
-  SELECT "public"."mantle_kind_class"(t) <> 'admin_only'
-      OR EXISTS (SELECT 1 FROM "public"."workspaces" w WHERE w."id" = ws AND w."is_admin")
+  SELECT CASE "public"."mantle_kind_class"(t)
+    WHEN 'workspace' THEN true
+    WHEN 'conversation' THEN NOT derived
+    ELSE EXISTS (SELECT 1 FROM "public"."workspaces" w WHERE w."id" = ws AND w."is_admin")
+  END
+$$;
+--> statement-breakpoint
+-- The derivation's own writes are marked by a transaction-local flag, set
+-- and restored by the functions below. The guards on the derived columns
+-- (audit M4) and the propagation trigger (audit L9) read it.
+CREATE OR REPLACE FUNCTION "public"."mantle_acl_internal"()
+  RETURNS boolean LANGUAGE sql STABLE PARALLEL SAFE AS $$
+  SELECT coalesce(current_setting('mantle.acl_internal', true), '') = 'on'
 $$;
 --> statement-breakpoint
 
 -- ── The heads check ──────────────────────────────────────────────────────────
 
+-- The mode: the box setting (ALTER DATABASE ... SET mantle.heads_check), read
+-- from the catalog so a session cannot lower it; a session may only make it
+-- stricter (a test turning 'on' in its own transaction). Audit L6.
 CREATE OR REPLACE FUNCTION "public"."mantle_heads_check_mode"()
-  RETURNS text LANGUAGE sql STABLE PARALLEL SAFE AS $$
-  SELECT CASE coalesce(nullif(current_setting('mantle.heads_check', true), ''), 'warn')
-    WHEN 'off' THEN 'off' WHEN 'on' THEN 'on' ELSE 'warn' END
+  RETURNS text LANGUAGE plpgsql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+DECLARE
+  box text;
+  sess text := coalesce(nullif(current_setting('mantle.heads_check', true), ''), 'warn');
+  rank_box int;
+  rank_sess int;
+BEGIN
+  SELECT split_part(c, '=', 2) INTO box
+    FROM pg_db_role_setting d, unnest(d.setconfig) AS c
+   WHERE d.setdatabase = (SELECT oid FROM pg_database WHERE datname = current_database())
+     AND d.setrole = 0 AND c LIKE 'mantle.heads_check=%'
+   LIMIT 1;
+  box := coalesce(box, 'warn');
+  rank_box := CASE box WHEN 'off' THEN 0 WHEN 'on' THEN 2 ELSE 1 END;
+  rank_sess := CASE sess WHEN 'off' THEN 0 WHEN 'on' THEN 2 ELSE 1 END;
+  RETURN CASE greatest(rank_box, rank_sess) WHEN 0 THEN 'off' WHEN 2 THEN 'on' ELSE 'warn' END;
+END
 $$;
 --> statement-breakpoint
-CREATE OR REPLACE FUNCTION "public"."mantle_heads_held"()
-  RETURNS uuid[] LANGUAGE sql STABLE PARALLEL SAFE AS $$
-  SELECT coalesce(nullif(current_setting('mantle.heads_held', true), '')::uuid[], '{}'::uuid[])
+-- The held list, trusted only when its signature matches (audit L6): the
+-- list and the update-locked subset, signed with the key and this
+-- transaction's id, so a hand-set list (or one from another transaction)
+-- reads as empty.
+CREATE OR REPLACE FUNCTION "public"."mantle_heads_sig"(held text, held_upd text)
+  RETURNS text LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  SELECT md5((SELECT "k" FROM "public"."mantle_heads_key" LIMIT 1)
+             || ':' || txid_current()::text || ':' || held || ':' || held_upd)
+$$;
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION "public"."mantle_heads_held"(update_only boolean DEFAULT false)
+  RETURNS uuid[] LANGUAGE plpgsql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+DECLARE
+  held text := coalesce(current_setting('mantle.heads_held', true), '');
+  held_upd text := coalesce(current_setting('mantle.heads_held_upd', true), '');
+BEGIN
+  IF held = '' OR coalesce(current_setting('mantle.heads_sig', true), '')
+                  <> "public"."mantle_heads_sig"(held, held_upd) THEN
+    RETURN '{}'::uuid[];
+  END IF;
+  RETURN (CASE WHEN update_only THEN nullif(held_upd, '') ELSE held END)::uuid[];
+END
+$$;
+--> statement-breakpoint
+-- Record the held lists (and sign them). Definer only.
+CREATE OR REPLACE FUNCTION "public"."mantle_heads_set"(held uuid[], held_upd uuid[])
+  RETURNS void LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+DECLARE
+  h text := (SELECT coalesce(array_agg(DISTINCT x ORDER BY x), '{}'::uuid[])::text
+               FROM unnest(held) AS x WHERE x IS NOT NULL);
+  u text := (SELECT coalesce(array_agg(DISTINCT x ORDER BY x), '{}'::uuid[])::text
+               FROM unnest(held_upd) AS x WHERE x IS NOT NULL);
+BEGIN
+  PERFORM set_config('mantle.heads_held', h, true);
+  PERFORM set_config('mantle.heads_held_upd', u, true);
+  PERFORM set_config('mantle.heads_sig', "public"."mantle_heads_sig"(h, u), true);
+END
 $$;
 --> statement-breakpoint
 
 -- A check that found heads missing. 'warn': one WARNING and one log row per
 -- transaction and check name; 'on': SQLSTATE 40001 (retryable by the caller).
+-- A check that found heads missing. 'warn': one WARNING per transaction and
+-- check, and a log row while that check logged fewer than 100 in the last
+-- hour (audit L12: bounded); 'on': SQLSTATE 40001 (retryable by the caller).
 CREATE OR REPLACE FUNCTION "public"."mantle_heads_miss"(check_name text, node uuid, detail text)
   RETURNS void LANGUAGE plpgsql VOLATILE SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
@@ -273,28 +372,38 @@ BEGIN
   IF coalesce(current_setting(seen_key, true), '') = '1' THEN RETURN; END IF;
   PERFORM set_config(seen_key, '1', true);
   RAISE WARNING 'heads not held for % (node %): %', check_name, node, detail;
-  INSERT INTO "public"."heads_check_misses" ("check_name", "node_id", "detail")
-    VALUES (check_name, node, left(detail, 500));
+  IF (SELECT count(*) FROM (SELECT 1 FROM "public"."heads_check_misses" m
+                             WHERE m."check_name" = mantle_heads_miss.check_name
+                               AND m."at" > now() - interval '1 hour' LIMIT 100) x) < 100 THEN
+    INSERT INTO "public"."heads_check_misses" ("check_name", "node_id", "detail")
+      VALUES (check_name, node, left(detail, 500));
+  END IF;
 END
 $$;
 --> statement-breakpoint
 
 -- Require that every id in `ids` has its head held in this transaction.
-CREATE OR REPLACE FUNCTION "public"."mantle_heads_require"(ids uuid[], check_name text)
+-- Require that every id in `ids` has its head held in this transaction
+-- (`need_update`: held FOR UPDATE, as a grant change or a chunk rewrite
+-- must; a new item in a folder needs only a share lock on the folder).
+CREATE OR REPLACE FUNCTION "public"."mantle_heads_require"(ids uuid[], check_name text, need_update boolean DEFAULT false)
   RETURNS void LANGUAGE plpgsql VOLATILE SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
 DECLARE
   missing uuid;
+  held uuid[];
 BEGIN
   IF ids IS NULL OR cardinality(ids) = 0 OR "public"."mantle_heads_check_mode"() = 'off' THEN
     RETURN;
   END IF;
+  held := "public"."mantle_heads_held"(need_update);
   SELECT x INTO missing
     FROM unnest(ids) AS x
-   WHERE x IS NOT NULL AND NOT (x = ANY ("public"."mantle_heads_held"()))
+   WHERE x IS NOT NULL AND NOT (x = ANY (held))
    LIMIT 1;
   IF missing IS NOT NULL THEN
-    PERFORM "public"."mantle_heads_miss"(check_name, missing, 'head not locked first');
+    PERFORM "public"."mantle_heads_miss"(check_name, missing,
+      CASE WHEN need_update THEN 'head not locked first for update' ELSE 'head not locked first' END);
   END IF;
 END
 $$;
@@ -304,6 +413,11 @@ $$;
 -- transaction has written or locked anything (pg_current_xact_id_if_assigned
 -- is NULL until then). Called once per transaction; only
 -- mantle_lock_heads_more may add heads later.
+-- Lock heads FIRST (U1, V2): one statement ordered by node id, before the
+-- transaction has written or locked anything (pg_current_xact_id_if_assigned
+-- is NULL until then). Called once per transaction; only
+-- mantle_lock_heads_more may add heads later. A node with no head row yet
+-- gets one first (audit M3).
 CREATE OR REPLACE FUNCTION "public"."mantle_lock_heads"(ids uuid[], lock_mode text)
   RETURNS void LANGUAGE plpgsql VOLATILE SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
@@ -322,17 +436,20 @@ BEGIN
     END IF;
     PERFORM "public"."mantle_heads_miss"('lock_heads_first', NULL, 'transaction wrote or locked before taking heads');
   END IF;
+  INSERT INTO "public"."node_acl_head" ("node_id")
+    SELECT n."id" FROM "public"."nodes" n
+     WHERE n."id" = ANY (ids)
+       AND NOT EXISTS (SELECT 1 FROM "public"."node_acl_head" h WHERE h."node_id" = n."id")
+    ON CONFLICT DO NOTHING;
   IF lock_mode = 'update' THEN
     PERFORM 1 FROM "public"."node_acl_head" h
       WHERE h."node_id" = ANY (ids) ORDER BY h."node_id" FOR UPDATE;
+    PERFORM "public"."mantle_heads_set"(ids, ids);
   ELSE
     PERFORM 1 FROM "public"."node_acl_head" h
       WHERE h."node_id" = ANY (ids) ORDER BY h."node_id" FOR SHARE;
+    PERFORM "public"."mantle_heads_set"(ids, '{}'::uuid[]);
   END IF;
-  PERFORM set_config('mantle.heads_held',
-    (SELECT coalesce(array_agg(DISTINCT x ORDER BY x), '{}'::uuid[])::text
-       FROM unnest(ids) AS x WHERE x IS NOT NULL), true);
-  PERFORM set_config('mantle.heads_mode', lock_mode, true);
 END
 $$;
 --> statement-breakpoint
@@ -340,23 +457,31 @@ $$;
 -- Add heads in a later round (U2, V1): NOWAIT, so a later round never waits
 -- (a busy head raises 55P03 and the caller retries the whole transaction).
 -- Only while heads are already held.
+-- Add heads in a later round (U2, V1): NOWAIT, so a later round never waits
+-- (a busy head raises 55P03 and the caller retries the whole transaction).
+-- Only while heads are already held; always FOR UPDATE.
 CREATE OR REPLACE FUNCTION "public"."mantle_lock_heads_more"(ids uuid[])
   RETURNS void LANGUAGE plpgsql VOLATILE SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
 DECLARE
   held uuid[] := "public"."mantle_heads_held"();
+  held_upd uuid[] := "public"."mantle_heads_held"(true);
   add uuid[];
 BEGIN
   IF cardinality(held) = 0 THEN
     RAISE EXCEPTION 'mantle_lock_heads_more: no heads held yet' USING ERRCODE = '55000';
   END IF;
   SELECT coalesce(array_agg(DISTINCT x ORDER BY x), '{}'::uuid[]) INTO add
-    FROM unnest(ids) AS x WHERE x IS NOT NULL AND NOT (x = ANY (held));
+    FROM unnest(ids) AS x WHERE x IS NOT NULL AND NOT (x = ANY (held_upd));
   IF cardinality(add) = 0 THEN RETURN; END IF;
+  INSERT INTO "public"."node_acl_head" ("node_id")
+    SELECT n."id" FROM "public"."nodes" n
+     WHERE n."id" = ANY (add)
+       AND NOT EXISTS (SELECT 1 FROM "public"."node_acl_head" h WHERE h."node_id" = n."id")
+    ON CONFLICT DO NOTHING;
   PERFORM 1 FROM "public"."node_acl_head" h
     WHERE h."node_id" = ANY (add) ORDER BY h."node_id" FOR UPDATE NOWAIT;
-  PERFORM set_config('mantle.heads_held',
-    (SELECT array_agg(DISTINCT x ORDER BY x) FROM unnest(held || add) AS x)::text, true);
+  PERFORM "public"."mantle_heads_set"(held || add, held_upd || add);
 END
 $$;
 --> statement-breakpoint
@@ -431,11 +556,17 @@ $$;
 
 -- Recompute the derived columns of `ids` from item_grants, then copy them to
 -- the rows that follow those nodes. Writes only what changed.
+-- Recompute the derived columns of `ids` from item_grants, then copy them to
+-- the rows that follow those nodes. Writes only what changed, under the
+-- internal flag (the guards let only this write the derived columns).
 CREATE OR REPLACE FUNCTION "public"."mantle_acl_refresh"(ids uuid[])
   RETURNS void LANGUAGE plpgsql VOLATILE SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
+DECLARE
+  was text := coalesce(current_setting('mantle.acl_internal', true), '');
 BEGIN
   IF ids IS NULL OR cardinality(ids) = 0 THEN RETURN; END IF;
+  PERFORM set_config('mantle.acl_internal', 'on', true);
   UPDATE "public"."nodes" n
      SET "read_ws" = x.r, "write_ws" = x.w, "home_ws" = x.h
     FROM (
@@ -469,6 +600,7 @@ BEGIN
     FROM "public"."nodes" n
    WHERE n."id" = ANY (ids) AND f."source_node_id" = n."id"
      AND (f."read_ws", f."login_id") IS DISTINCT FROM (n."read_ws", n."login_id");
+  PERFORM set_config('mantle.acl_internal', was, true);
 END
 $$;
 --> statement-breakpoint
@@ -519,11 +651,17 @@ $$;
 
 -- Re-derive the folder rows of exactly these nodes from their direct
 -- folders (set based).
+-- Re-derive the folder rows of exactly these nodes from their direct
+-- folders (set based), under the internal flag (its grant writes start no
+-- second propagation: audit L9).
 CREATE OR REPLACE FUNCTION "public"."mantle_rederive_nodes"(ids uuid[])
   RETURNS void LANGUAGE plpgsql VOLATILE SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
+DECLARE
+  was text := coalesce(current_setting('mantle.acl_internal', true), '');
 BEGIN
   IF ids IS NULL OR cardinality(ids) = 0 THEN RETURN; END IF;
+  PERFORM set_config('mantle.acl_internal', 'on', true);
 
   -- Stale derived rows: the folder no longer gives that workspace (or the
   -- item left the folder).
@@ -538,7 +676,7 @@ BEGIN
       SELECT 1 FROM "public"."item_grants" fg
        WHERE fg."node_id" = f."id" AND fg."workspace_id" = ig."workspace_id"
          AND NOT fg."excluded"
-         AND "public"."mantle_grant_kind_ok"(n."type", fg."workspace_id"));
+         AND "public"."mantle_grant_kind_ok"(n."type", fg."workspace_id", true));
 
   -- Wanted derived rows: insert, or bring an existing derived row up to date.
   INSERT INTO "public"."item_grants" ("node_id", "workspace_id", "write", "via_folder_id")
@@ -549,13 +687,14 @@ BEGIN
      AND f."path" = "public"."mantle_parent_folder_path"(n."type", n."path")
     JOIN "public"."item_grants" fg ON fg."node_id" = f."id" AND NOT fg."excluded"
    WHERE n."id" = ANY (ids)
-     AND "public"."mantle_grant_kind_ok"(n."type", fg."workspace_id")
+     AND "public"."mantle_grant_kind_ok"(n."type", fg."workspace_id", true)
   ON CONFLICT ("node_id", "workspace_id") DO UPDATE
      SET "write" = EXCLUDED."write", "via_folder_id" = EXCLUDED."via_folder_id"
    WHERE "item_grants"."via_folder_id" IS NOT NULL
      AND NOT "item_grants"."is_home" AND NOT "item_grants"."excluded"
      AND ("item_grants"."write", "item_grants"."via_folder_id")
          IS DISTINCT FROM (EXCLUDED."write", EXCLUDED."via_folder_id");
+  PERFORM set_config('mantle.acl_internal', was, true);
 END
 $$;
 --> statement-breakpoint
@@ -598,6 +737,9 @@ $$;
 
 -- Keep the derived columns equal to the grants. Always runs, at any trigger
 -- depth (test 3: the depth guard never skips this).
+-- Keep the derived columns equal to the grants, at any depth (test 3). A
+-- grant written outside the derivation needs the node's head FOR UPDATE
+-- (audit M5); the derivation's own rows were locked by its caller's rounds.
 CREATE OR REPLACE FUNCTION "public"."mantle_item_grants_refresh_trg"()
   RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
@@ -611,6 +753,13 @@ BEGIN
   ELSE
     SELECT array_agg(DISTINCT x) INTO ids FROM (
       SELECT "node_id" AS x FROM new_rows UNION SELECT "node_id" FROM old_rows) s;
+  END IF;
+  IF NOT "public"."mantle_acl_internal"() THEN
+    -- Only rows of nodes that still exist: a node delete cascades to its
+    -- grants and never needs heads for that (V4).
+    PERFORM "public"."mantle_heads_require"(
+      ARRAY(SELECT n."id" FROM "public"."nodes" n WHERE n."id" = ANY (coalesce(ids, '{}'::uuid[]))),
+      'item_grants_write', true);
   END IF;
   PERFORM "public"."mantle_acl_refresh"(ids);
   RETURN NULL;
@@ -645,7 +794,9 @@ DECLARE
   ids uuid[];
   f uuid;
 BEGIN
-  IF pg_trigger_depth() > 1 THEN RETURN NULL; END IF;
+  -- The derivation's own rows never start a second derivation; a hand
+  -- write at any depth (a cascade, another trigger) does (audit L9).
+  IF "public"."mantle_acl_internal"() THEN RETURN NULL; END IF;
   -- Transition tables exist only for their event: branch on TG_OP so no
   -- statement names a table this event lacks.
   IF TG_OP = 'INSERT' THEN
@@ -732,7 +883,7 @@ BEGIN
       INTO NEW."read_ws", NEW."write_ws"
       FROM "public"."item_grants" g
      WHERE g."node_id" = f AND NOT g."excluded"
-       AND "public"."mantle_grant_kind_ok"(NEW."type", g."workspace_id");
+       AND "public"."mantle_grant_kind_ok"(NEW."type", g."workspace_id", true);
   ELSE
     NEW."read_ws" := '{}'::uuid[];
     NEW."write_ws" := '{}'::uuid[];
@@ -748,21 +899,78 @@ $$;
 -- After the insert: the head row, and the folder's rows as derived grants.
 -- Row level (no transition table: it would copy every inserted row,
 -- embeddings included).
+-- After the insert: the head row (counted as held: the node is this
+-- transaction's own), and the folder's rows as derived grants. Row level
+-- (no transition table: it would copy every inserted row, embeddings
+-- included).
 CREATE OR REPLACE FUNCTION "public"."mantle_nodes_acl_after_ins_trg"()
   RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
+DECLARE
+  was text := coalesce(current_setting('mantle.acl_internal', true), '');
 BEGIN
   INSERT INTO "public"."node_acl_head" ("node_id") VALUES (NEW."id")
     ON CONFLICT DO NOTHING;
+  IF NOT EXISTS (
+    SELECT 1 FROM "public"."nodes" f
+      JOIN "public"."item_grants" g ON g."node_id" = f."id"
+     WHERE f."owner_id" = NEW."owner_id" AND f."type" = 'branch'
+       AND f."path" = "public"."mantle_parent_folder_path"(NEW."type", NEW."path")) THEN
+    RETURN NULL;
+  END IF;
+  PERFORM set_config('mantle.acl_internal', 'on', true);
   INSERT INTO "public"."item_grants" ("node_id", "workspace_id", "write", "via_folder_id")
   SELECT NEW."id", g."workspace_id", g."write", f."id"
     FROM "public"."nodes" f
     JOIN "public"."item_grants" g ON g."node_id" = f."id" AND NOT g."excluded"
    WHERE f."owner_id" = NEW."owner_id" AND f."type" = 'branch'
      AND f."path" = "public"."mantle_parent_folder_path"(NEW."type", NEW."path")
-     AND "public"."mantle_grant_kind_ok"(NEW."type", g."workspace_id")
+     AND "public"."mantle_grant_kind_ok"(NEW."type", g."workspace_id", true)
   ON CONFLICT DO NOTHING;
+  PERFORM set_config('mantle.acl_internal', was, true);
   RETURN NULL;
+END
+$$;
+--> statement-breakpoint
+-- Only the derivation writes the derived columns (audit M4): a write of
+-- read_ws, write_ws or home_ws by anyone else (a member-space update with
+-- column privileges, an app bug) is refused. A change of login_id is
+-- allowed and reaches the rows that follow the node.
+CREATE OR REPLACE FUNCTION "public"."mantle_nodes_acl_guard_trg"()
+  RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+BEGIN
+  IF NOT "public"."mantle_acl_internal"()
+     AND (NEW."read_ws", NEW."write_ws", NEW."home_ws")
+         IS DISTINCT FROM (OLD."read_ws", OLD."write_ws", OLD."home_ws") THEN
+    RAISE EXCEPTION 'read_ws, write_ws and home_ws are derived from item_grants and cannot be written'
+      USING ERRCODE = '42501';
+  END IF;
+  RETURN NEW;
+END
+$$;
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION "public"."mantle_nodes_login_follow_trg"()
+  RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+BEGIN
+  PERFORM "public"."mantle_acl_refresh"(ARRAY[NEW."id"]);
+  RETURN NULL;
+END
+$$;
+--> statement-breakpoint
+-- The same guard on the copies: their read_ws and login_id come from the
+-- node, or (a fact learned from chat, no source node) from the app at insert.
+CREATE OR REPLACE FUNCTION "public"."mantle_follow_guard_trg"()
+  RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+BEGIN
+  IF NOT "public"."mantle_acl_internal"()
+     AND (NEW."read_ws", NEW."login_id") IS DISTINCT FROM (OLD."read_ws", OLD."login_id") THEN
+    RAISE EXCEPTION 'read_ws and login_id of % follow their node and cannot be written', TG_TABLE_NAME
+      USING ERRCODE = '42501';
+  END IF;
+  RETURN NEW;
 END
 $$;
 --> statement-breakpoint
@@ -772,12 +980,25 @@ $$;
 -- no column list on a trigger with transition tables, and a transition table
 -- on every UPDATE of nodes would copy each saved row; this costs nothing for
 -- an update that does not touch the path.
+-- A moved row (its path changed) is noted in a session temp table; the
+-- statement trigger below handles the whole statement once. Postgres allows
+-- no column list on a trigger with transition tables, and a transition table
+-- on every UPDATE of nodes would copy each saved row; this costs nothing for
+-- an update that does not touch the path. The table must be this function's
+-- own, with no trigger and no rule (audit M2: a table of that name made by
+-- the session would otherwise run its code here as the definer).
 CREATE OR REPLACE FUNCTION "public"."mantle_nodes_moved_row_trg"()
   RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
+DECLARE
+  rel regclass := to_regclass('pg_temp.mantle_moved_nodes');
 BEGIN
-  IF to_regclass('pg_temp.mantle_moved_nodes') IS NULL THEN
+  IF rel IS NULL THEN
     CREATE TEMP TABLE "mantle_moved_nodes" ("id" uuid PRIMARY KEY) ON COMMIT DELETE ROWS;
+  ELSIF NOT EXISTS (SELECT 1 FROM pg_class c WHERE c.oid = rel AND c.relowner = current_user::regrole AND c.relkind = 'r')
+     OR EXISTS (SELECT 1 FROM pg_trigger t WHERE t.tgrelid = rel)
+     OR EXISTS (SELECT 1 FROM pg_rewrite r WHERE r.ev_class = rel) THEN
+    RAISE EXCEPTION 'mantle_moved_nodes is not the move trigger''s own table' USING ERRCODE = '42501';
   END IF;
   INSERT INTO pg_temp."mantle_moved_nodes" ("id") VALUES (NEW."id") ON CONFLICT DO NOTHING;
   RETURN NULL;
@@ -815,7 +1036,8 @@ BEGIN
    WHERE n."id" = ANY (moved)
      AND (pf."id" IS NULL OR NOT (pf."id" = ANY (moved)));
 
-  PERFORM "public"."mantle_heads_require"(moved || folders, 'nodes_move');
+  PERFORM "public"."mantle_heads_require"(moved, 'nodes_move', true);
+  PERFORM "public"."mantle_heads_require"(folders, 'nodes_move_folder');
 
   IF "public"."mantle_scope_active"() THEN
     FOR m IN
@@ -889,7 +1111,7 @@ DECLARE
 BEGIN
   IF TG_TABLE_NAME = 'facts' THEN nid := NEW."source_node_id"; ELSE nid := NEW."node_id"; END IF;
   IF nid IS NULL THEN RETURN NEW; END IF;
-  PERFORM "public"."mantle_heads_require"(ARRAY[nid], TG_TABLE_NAME || '_write');
+  PERFORM "public"."mantle_heads_require"(ARRAY[nid], TG_TABLE_NAME || '_write', true);
   SELECT n."read_ws", n."login_id" INTO NEW."read_ws", NEW."login_id"
     FROM "public"."nodes" n WHERE n."id" = nid;
   RETURN NEW;
@@ -907,6 +1129,33 @@ DROP TRIGGER IF EXISTS "content_chunk_windows_acl_trg" ON "public"."content_chun
 CREATE TRIGGER "content_chunk_windows_acl_trg"
   BEFORE INSERT OR UPDATE OF "node_id" ON "public"."content_chunk_windows"
   FOR EACH ROW EXECUTE FUNCTION "public"."mantle_follow_node_acl_trg"();
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "nodes_acl_guard" ON "public"."nodes";
+--> statement-breakpoint
+CREATE TRIGGER "nodes_acl_guard" BEFORE UPDATE OF "read_ws", "write_ws", "home_ws" ON "public"."nodes"
+  FOR EACH ROW EXECUTE FUNCTION "public"."mantle_nodes_acl_guard_trg"();
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "nodes_login_follow" ON "public"."nodes";
+--> statement-breakpoint
+CREATE TRIGGER "nodes_login_follow" AFTER UPDATE OF "login_id" ON "public"."nodes"
+  FOR EACH ROW WHEN (OLD."login_id" IS DISTINCT FROM NEW."login_id")
+  EXECUTE FUNCTION "public"."mantle_nodes_login_follow_trg"();
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "content_chunks_acl_guard" ON "public"."content_chunks";
+--> statement-breakpoint
+CREATE TRIGGER "content_chunks_acl_guard" BEFORE UPDATE OF "read_ws", "login_id" ON "public"."content_chunks"
+  FOR EACH ROW EXECUTE FUNCTION "public"."mantle_follow_guard_trg"();
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "content_chunk_windows_acl_guard" ON "public"."content_chunk_windows";
+--> statement-breakpoint
+CREATE TRIGGER "content_chunk_windows_acl_guard" BEFORE UPDATE OF "read_ws", "login_id" ON "public"."content_chunk_windows"
+  FOR EACH ROW EXECUTE FUNCTION "public"."mantle_follow_guard_trg"();
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "facts_acl_guard" ON "public"."facts";
+--> statement-breakpoint
+CREATE TRIGGER "facts_acl_guard" BEFORE UPDATE OF "read_ws", "login_id" ON "public"."facts"
+  FOR EACH ROW WHEN (NEW."source_node_id" IS NOT NULL)
+  EXECUTE FUNCTION "public"."mantle_follow_guard_trg"();
 --> statement-breakpoint
 DROP TRIGGER IF EXISTS "facts_acl_trg" ON "public"."facts";
 --> statement-breakpoint
@@ -979,18 +1228,36 @@ CREATE TRIGGER "workspace_resources_assistant_trg"
 -- ── Moderators ───────────────────────────────────────────────────────────────
 
 -- The Admin workspace keeps at least one Moderator.
+-- The Admin workspace keeps at least one Moderator. Checked at commit with
+-- the workspace row locked, so two transactions that each remove a
+-- different Moderator cannot both pass (audit L8: write skew).
 CREATE OR REPLACE FUNCTION "public"."mantle_ws_last_admin_mod_trg"()
   RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
 DECLARE
   ws uuid := OLD."workspace_id";
+  is_admin_ws boolean;
 BEGIN
-  IF EXISTS (SELECT 1 FROM "public"."workspaces" w WHERE w."id" = ws AND w."is_admin")
+  SELECT w."is_admin" INTO is_admin_ws FROM "public"."workspaces" w WHERE w."id" = ws FOR UPDATE;
+  IF coalesce(is_admin_ws, false)
      AND NOT EXISTS (SELECT 1 FROM "public"."workspace_users" u
                       WHERE u."workspace_id" = ws AND u."moderator") THEN
     RAISE EXCEPTION 'the Admin workspace needs at least one Moderator' USING ERRCODE = '23514';
   END IF;
   RETURN NULL;
+END
+$$;
+--> statement-breakpoint
+-- Which workspace is the Admin workspace never changes after it is made
+-- (audit L8: a flip would dodge the Moderator guard).
+CREATE OR REPLACE FUNCTION "public"."mantle_ws_admin_fixed_trg"()
+  RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+BEGIN
+  IF NEW."is_admin" IS DISTINCT FROM OLD."is_admin" THEN
+    RAISE EXCEPTION 'is_admin is fixed when a workspace is made' USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
 END
 $$;
 --> statement-breakpoint
@@ -1000,3 +1267,40 @@ CREATE CONSTRAINT TRIGGER "workspace_users_last_admin_mod"
   AFTER UPDATE OR DELETE ON "public"."workspace_users"
   DEFERRABLE INITIALLY DEFERRED
   FOR EACH ROW EXECUTE FUNCTION "public"."mantle_ws_last_admin_mod_trg"();
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "workspaces_admin_fixed" ON "public"."workspaces";
+--> statement-breakpoint
+CREATE TRIGGER "workspaces_admin_fixed" BEFORE UPDATE OF "is_admin" ON "public"."workspaces"
+  FOR EACH ROW EXECUTE FUNCTION "public"."mantle_ws_admin_fixed_trg"();
+--> statement-breakpoint
+
+-- ── Who may call what (audit M1) ─────────────────────────────────────────────
+-- The security definer helpers and trigger functions run only for the app
+-- (the migrating role) and inside triggers. No limited role calls them, so
+-- PUBLIC loses EXECUTE: a viewer connection cannot lock every head or write
+-- the log.
+DO $$
+DECLARE
+  f record;
+BEGIN
+  FOR f IN
+    SELECT p.oid::regprocedure AS sig
+      FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+     WHERE n.nspname = 'public' AND p.prosecdef
+       AND p.proname IN (
+         'mantle_heads_check_mode', 'mantle_heads_sig', 'mantle_heads_held', 'mantle_heads_set',
+         'mantle_heads_miss', 'mantle_heads_require', 'mantle_lock_heads', 'mantle_lock_heads_more',
+         'mantle_lock_subtree_heads', 'mantle_acl_refresh',
+         'mantle_rederive_subtree', 'mantle_rederive_nodes', 'mantle_apply_folder_change',
+         'mantle_grant_kind_ok', 'mantle_parent_folder',
+         'mantle_item_grants_refresh_trg', 'mantle_item_grants_check_trg',
+         'mantle_item_grants_propagate_trg', 'mantle_nodes_acl_before_ins_trg',
+         'mantle_nodes_acl_after_ins_trg', 'mantle_nodes_acl_guard_trg',
+         'mantle_nodes_login_follow_trg', 'mantle_follow_guard_trg',
+         'mantle_nodes_moved_row_trg', 'mantle_nodes_acl_path_trg', 'mantle_follow_node_acl_trg',
+         'mantle_agents_workspace_freeze_trg', 'mantle_ws_assistant_trg',
+         'mantle_ws_last_admin_mod_trg', 'mantle_ws_admin_fixed_trg')
+  LOOP
+    EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC', f.sig);
+  END LOOP;
+END $$;

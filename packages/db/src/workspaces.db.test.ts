@@ -538,6 +538,171 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
     await admin`delete from agents where id = ${agent}`;
   });
 
+  it('audit M1: a limited role cannot call the heads functions', async () => {
+    const { sql: sqlTag } = await import('drizzle-orm');
+    const id = await node('page', 'priv', root);
+    await expect(
+      m.withScope({ kind: 'user', loginId: userA, ws: [ws.team], modWs: [] }, () =>
+        m.db.execute(sqlTag`select mantle_lock_heads(${`{${id}}`}::uuid[], 'update')`),
+      ),
+    ).rejects.toMatchObject({ cause: { code: '42501' } });
+  });
+
+  it('audit M4: only the derivation writes the derived columns; a login change reaches the copies', async () => {
+    const id = await node('page', 'guarded', root);
+    await grant(id, ws.team);
+    await expect(
+      admin`update nodes set read_ws = ${`{${ws.other}}`}::uuid[] where id = ${id}`,
+    ).rejects.toThrow(/derived from item_grants/);
+    await admin`insert into content_chunks (owner_id, node_id, ordinal, text) values (${owner}, ${id}, 0, 'x')`;
+    const [f] = await admin<{ id: string }[]>`
+      insert into facts (owner_id, content, kind, source_node_id) values (${owner}, ${`${tag} f`}, 'semantic', ${id})
+      returning id`;
+    await expect(
+      admin`update content_chunks set read_ws = ${`{${ws.other}}`}::uuid[] where node_id = ${id}`,
+    ).rejects.toThrow(/follow their node/);
+    await admin`update nodes set login_id = ${userA} where id = ${id}`;
+    const [c] = await admin<
+      { l: string }[]
+    >`select login_id as l from content_chunks where node_id = ${id}`;
+    const [fa] = await admin<{ l: string }[]>`select login_id as l from facts where id = ${f!.id}`;
+    expect(c!.l).toBe(userA);
+    expect(fa!.l).toBe(userA);
+    await admin`delete from facts where id = ${f!.id}`;
+  });
+
+  it('per-login rows: chunks and facts of a login-private node reach only that login', async () => {
+    const { sql: sqlTag } = await import('drizzle-orm');
+    const id = await node('telegram_message', 'chat chunk', root, { loginId: userA });
+    await grant(id, ws.team);
+    await admin`insert into content_chunks (owner_id, node_id, ordinal, text) values (${owner}, ${id}, 0, ${`${tag} chunk`})`;
+    await admin`insert into facts (owner_id, content, kind, source_node_id) values (${owner}, ${`${tag} chatfact`}, 'semantic', ${id})`;
+    const seen = async (loginId: string) =>
+      m.withScope({ kind: 'user', loginId, ws: [ws.team], modWs: [] }, async () => ({
+        chunks: (
+          (await m.db.execute(
+            sqlTag`select 1 from content_chunks where node_id = ${id}`,
+          )) as unknown as unknown[]
+        ).length,
+        facts: (
+          (await m.db.execute(
+            sqlTag`select 1 from facts where source_node_id = ${id}`,
+          )) as unknown as unknown[]
+        ).length,
+      }));
+    expect(await seen(userA)).toEqual({ chunks: 1, facts: 1 });
+    expect(await seen(userB)).toEqual({ chunks: 0, facts: 0 });
+    await admin`delete from facts where source_node_id = ${id}`;
+  });
+
+  it('audit L11: the model tables show only the scope, and only to a signed-in user', async () => {
+    const { sql: sqlTag } = await import('drizzle-orm');
+    const id = await node('page', 'two homes', root);
+    await grant(id, ws.team);
+    await grant(id, ws.other);
+    const read = async (loginId: string | null) =>
+      m.withScope({ kind: 'user', loginId, ws: [ws.team], modWs: [] }, async () => ({
+        ws: (
+          (await m.db.execute(sqlTag`select id from workspaces`)) as unknown as { id: string }[]
+        ).map((r) => r.id),
+        grants: (
+          (await m.db.execute(
+            sqlTag`select workspace_id from item_grants where node_id = ${id}`,
+          )) as unknown as { workspace_id: string }[]
+        ).map((r) => r.workspace_id),
+      }));
+    const signedIn = await read(userA);
+    expect(signedIn.ws).toEqual([ws.team]);
+    expect(signedIn.grants).toEqual([ws.team]);
+    const anonymous = await read(null);
+    expect(anonymous.ws).toEqual([]);
+    expect(anonymous.grants).toEqual([]);
+    // Resource settings are never readable.
+    await expect(
+      m.withScope({ kind: 'user', loginId: userA, ws: [ws.team], modWs: [] }, () =>
+        m.db.execute(sqlTag`select settings from workspace_resources`),
+      ),
+    ).rejects.toMatchObject({ cause: { code: '42501' } });
+  });
+
+  it('audit L8: the Admin workspace keeps a Moderator, and which workspace is Admin never changes', async () => {
+    await expect(
+      admin.begin(async (tx) => {
+        await tx`update workspace_users set moderator = false where workspace_id = ${ws.admin}`;
+      }),
+    ).rejects.toThrow(/at least one Moderator/);
+    await expect(
+      admin`update workspaces set is_admin = false where id = ${ws.admin}`,
+    ).rejects.toThrow(/is_admin is fixed/);
+  });
+
+  it('audit M3 and L6: a missing head is created on lock; a forged list or a lowered mode does not count', async () => {
+    const id = await node('page', 'headless', root);
+    await admin`delete from node_acl_head where node_id = ${id}`;
+    const t = await txConn();
+    try {
+      await t.c`select mantle_lock_heads(${`{${id}}`}::uuid[], 'update')`;
+      const [h] = await t.c<
+        { n: number }[]
+      >`select count(*)::int as n from node_acl_head where node_id = ${id}`;
+      expect(h!.n).toBe(1);
+    } finally {
+      await t.rollback();
+    }
+    await admin`insert into node_acl_head (node_id) values (${id}) on conflict do nothing`;
+    const forged = await txConn();
+    try {
+      await forged.c`set local mantle.heads_check = 'on'`;
+      await forged.c`select set_config('mantle.heads_held', ${`{${id}}`}, true),
+                            set_config('mantle.heads_held_upd', ${`{${id}}`}, true)`;
+      await expect(
+        forged.c`insert into content_chunks (owner_id, node_id, ordinal, text) values (${owner}, ${id}, 0, 'x')`,
+      ).rejects.toMatchObject({ code: '40001' });
+    } finally {
+      await forged.rollback();
+    }
+    const lowered = await txConn();
+    try {
+      await lowered.c`set local mantle.heads_check = 'off'`;
+      const [mode] = await lowered.c<{ m: string }[]>`select mantle_heads_check_mode() as m`;
+      expect(mode!.m).toBe('warn');
+    } finally {
+      await lowered.rollback();
+    }
+  });
+
+  it('audit M5: a grant written without its head is caught; a share lock is not enough', async () => {
+    const id = await node('page', 'grant heads', root);
+    const t = await txConn();
+    try {
+      await t.c`set local mantle.heads_check = 'on'`;
+      await t.c`select mantle_lock_heads(${`{${id}}`}::uuid[], 'share')`;
+      await expect(
+        t.c`insert into item_grants (node_id, workspace_id) values (${id}, ${ws.team})`,
+      ).rejects.toMatchObject({ code: '40001' });
+    } finally {
+      await t.rollback();
+    }
+    const ok = await txConn();
+    try {
+      await ok.c`set local mantle.heads_check = 'on'`;
+      await ok.c`select mantle_lock_heads(${`{${id}}`}::uuid[], 'update')`;
+      await ok.c`insert into item_grants (node_id, workspace_id) values (${id}, ${ws.team})`;
+      await ok.commit();
+    } catch (err) {
+      await ok.rollback();
+      throw err;
+    }
+    expect(await readWs(id)).toEqual([ws.team]);
+  });
+
+  it('a conversation row never inherits a folder grant', async () => {
+    const f = await node('branch', 'convo', `${root}.convo`);
+    await grant(f, ws.team);
+    const chat = await node('telegram_message', 'in folder', `${root}.convo`, { loginId: userA });
+    expect(await readWs(chat)).toEqual([]);
+  });
+
   it('withDeadlockRetry retries the whole run for retryable codes only', async () => {
     let runs = 0;
     await expect(
