@@ -18,9 +18,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm';
-import { itemLevel } from './item-level';
 import {
-  asViewerLevel,
   db,
   nodes,
   apps,
@@ -106,6 +104,8 @@ type SidecarCols = {
   publishedBuild: BuildRef | null;
   /** settings of the node's ACTIVE share, null when unshared/revoked. */
   shareSettings: Record<string, unknown> | null;
+  /** That share's expiry (null: none). */
+  shareExpiresAt?: Date | null;
   /** prefs.teamHubAppId — resolved once per query, compared per row. */
   hubAppId: string | null;
   /** apps.data_read_only: informational (client logins C6). */
@@ -121,18 +121,7 @@ type SidecarCols = {
 };
 
 /** The node columns an app row shows (listApps reads only these). */
-type RowNode = Pick<
-  Node,
-  | 'id'
-  | 'title'
-  | 'data'
-  | 'tags'
-  | 'audience'
-  | 'inheritedLevel'
-  | 'embeddedLevel'
-  | 'createdAt'
-  | 'updatedAt'
->;
+type RowNode = Pick<Node, 'id' | 'title' | 'data' | 'tags' | 'createdAt' | 'updatedAt'>;
 
 function rowOf(n: RowNode, s: Partial<SidecarCols> = {}): AppRow {
   const d = (n.data ?? {}) as Record<string, unknown>;
@@ -153,10 +142,8 @@ function rowOf(n: RowNode, s: Partial<SidecarCols> = {}): AppRow {
     // Every live link is open: team links are retired (migration 0176).
     shareMode: s.shareSettings ? 'public' : null,
     isHub: s.hubAppId != null && s.hubAppId === n.id,
-    audience: asViewerLevel(n.audience),
-    inherited:
-      n.inheritedLevel === 'team' || n.inheritedLevel === 'client' ? n.inheritedLevel : null,
-    embedded: n.embeddedLevel === 'team' || n.embeddedLevel === 'client' ? n.embeddedLevel : null,
+    // A live open link: not revoked (the join), not expired.
+    hasLink: s.shareSettings != null && !(s.shareExpiresAt && s.shareExpiresAt <= new Date()),
     dataReadOnly: s.dataReadOnly === true,
     mcpAccess: s.mcpAccess === true,
     authorLevel: s.authorLevel === 'team' ? 'team' : 'admin',
@@ -213,7 +200,13 @@ async function ensureRoot(ownerId: string): Promise<void> {
 
 export type AppSort = 'edited' | 'newest' | 'oldest' | 'title';
 
-type ListAppsOpts = { query?: string; tag?: string; sort?: AppSort };
+type ListAppsOpts = {
+  query?: string;
+  tag?: string;
+  sort?: AppSort;
+  /** Only the apps this workspace holds (its id is in the app's read_ws). */
+  ws?: string;
+};
 
 function appOrderBy(sort?: AppSort) {
   switch (sort) {
@@ -241,6 +234,7 @@ function appConds(ownerId: string, opts: ListAppsOpts) {
     if (c) conds.push(c);
   }
   if (opts.tag) conds.push(sql`${opts.tag} = ANY(${nodes.tags})`);
+  if (opts.ws) conds.push(sql`${opts.ws}::uuid = ANY(${nodes.readWs})`);
   return conds;
 }
 
@@ -262,9 +256,6 @@ export async function listApps(
           title: nodes.title,
           data: nodes.data,
           tags: nodes.tags,
-          audience: nodes.audience,
-          inheritedLevel: nodes.inheritedLevel,
-          embeddedLevel: nodes.embeddedLevel,
           createdAt: nodes.createdAt,
           updatedAt: nodes.updatedAt,
         },
@@ -276,6 +267,7 @@ export async function listApps(
         authorLevel: apps.authorLevel,
         authorCeilingSeen: apps.authorCeilingSeen,
         shareSettings: shares.settings,
+        shareExpiresAt: shares.expiresAt,
       })
       .from(nodes)
       .leftJoin(apps, eq(apps.nodeId, nodes.id))
@@ -297,6 +289,7 @@ export async function listApps(
       hasDraft: r.hasDraft === true,
       publishedBuild: r.publishedBuild ?? null,
       shareSettings: r.shareSettings ?? null,
+      shareExpiresAt: r.shareExpiresAt ?? null,
       hubAppId,
       dataReadOnly: r.dataReadOnly === true,
       mcpAccess: r.mcpAccess === true,
@@ -343,6 +336,7 @@ async function loadDetail(ownerId: string, id: string): Promise<AppDetail | null
         authorCeilingSeen: apps.authorCeilingSeen,
         draftUpdatedAt: apps.draftUpdatedAt,
         shareSettings: shares.settings,
+        shareExpiresAt: shares.expiresAt,
       })
       .from(nodes)
       .leftJoin(apps, eq(apps.nodeId, nodes.id))
@@ -363,6 +357,7 @@ async function loadDetail(ownerId: string, id: string): Promise<AppDetail | null
     draftBuild: row.draftBuild ?? null,
     publishedBuild: row.publishedBuild ?? null,
     shareSettings: row.shareSettings ?? null,
+    shareExpiresAt: row.shareExpiresAt ?? null,
     hubAppId: prefs.teamHubAppId ?? null,
     dataReadOnly: row.dataReadOnly === true,
     mcpAccess: row.mcpAccess === true,
@@ -376,15 +371,21 @@ export async function getApp(ownerId: string, id: string): Promise<AppDetail | n
   return loadDetail(ownerId, id);
 }
 
-/** What RUNNING an app needs: its level, manifest and builds. */
+/** The rules an app's holders allow its tools (plan R2): 'admin' when the
+ *  Admin workspace alone holds it (or nothing does), 'team' when any other
+ *  workspace holds it. The tool brokers decide by it (app-tool-level.ts). */
+export type AppToolRules = 'admin' | 'team';
+
+/** A workspace other than Admin holds the app (its grants; admin pool). */
+const heldBeyondAdmin = sql<boolean>`exists (
+  select 1 from workspaces w where w.id = any(${nodes.readWs}) and not w.is_admin)`;
+
+/** What RUNNING an app needs: who holds it, its manifest and builds. */
 export type AppRuntime = {
   id: string;
   title: string;
-  audience: AppDetail['audience'];
-  /** The level it is USED at: its own, or a folder share above it when
-   *  that is more open (embeds never count for an app). What the tool
-   *  brokers decide by (access matrix audit, M5). */
-  effectiveAudience: AppDetail['audience'];
+  /** What its holders allow its tools (R2). */
+  toolRules: AppToolRules;
   manifest: AppManifest;
   draftBuild: BuildRef | null;
   publishedBuild: BuildRef | null;
@@ -405,8 +406,7 @@ export async function getAppRuntime(ownerId: string, id: string): Promise<AppRun
   const [row] = await db
     .select({
       title: nodes.title,
-      audience: nodes.audience,
-      inheritedLevel: nodes.inheritedLevel,
+      heldBeyondAdmin,
       manifest: apps.manifest,
       draftBuild: apps.draftBuild,
       publishedBuild: apps.publishedBuild,
@@ -421,8 +421,7 @@ export async function getAppRuntime(ownerId: string, id: string): Promise<AppRun
   return {
     id,
     title: row.title,
-    audience: asViewerLevel(row.audience),
-    effectiveAudience: itemLevel(row.audience, row.inheritedLevel),
+    toolRules: row.heldBeyondAdmin === true ? 'team' : 'admin',
     manifest: row.manifest ?? {},
     draftBuild: row.draftBuild ?? null,
     publishedBuild: row.publishedBuild ?? null,

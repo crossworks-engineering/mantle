@@ -1,5 +1,7 @@
 /**
- * /api/apps — list (GET) + create (POST) mini apps. Mirrors /api/pages.
+ * /api/apps: list (GET) + create (POST) mini apps. Mirrors /api/pages. Each
+ * listed app carries its workspace chips and whether it has a live open link;
+ * `?ws=<id>` keeps the apps that workspace holds (lib/list-workspaces.ts).
  */
 import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
@@ -7,6 +9,8 @@ import { AppMetaFields } from '@/lib/app-meta';
 import { createApp, listApps, countApps, notifyAppNavChanged, type AppSort } from '@mantle/content';
 import { recordIngest } from '@mantle/tracing';
 import { firstIssue } from '@/lib/zod-issue';
+import { parseWsFilter, workspaceChips } from '@/lib/list-workspaces';
+import type { AppListResponse, AppListRow } from '@mantle/client-types';
 
 const PAGE_SIZE = 50;
 
@@ -14,16 +18,30 @@ export async function GET(req: Request) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const url = new URL(req.url);
+  const filter = await parseWsFilter(url, user.id, user.actor.id);
+  if (filter instanceof Response) return filter;
+  const ws = filter.ws ?? undefined;
   const query = url.searchParams.get('q')?.trim() || undefined;
   const tag = url.searchParams.get('tag')?.trim() || undefined;
   const sort = (url.searchParams.get('sort') as AppSort | null) ?? undefined;
   const page = Math.max(1, Number(url.searchParams.get('page') ?? '1') || 1);
   const offset = (page - 1) * PAGE_SIZE;
-  const [apps, total] = await Promise.all([
-    listApps(user.id, { query, tag, sort, limit: PAGE_SIZE, offset }),
-    countApps(user.id, { query, tag }),
+  const [rows, total] = await Promise.all([
+    listApps(user.id, { query, tag, sort, ws, limit: PAGE_SIZE, offset }),
+    countApps(user.id, { query, tag, ws }),
   ]);
-  return NextResponse.json({ apps, total, page, pageSize: PAGE_SIZE });
+  const chips = await workspaceChips(
+    user.id,
+    user.actor.id,
+    rows.map((r) => r.id),
+  );
+  const apps: AppListRow[] = rows.map((r) => ({
+    ...r,
+    workspaces: chips.get(r.id) ?? [],
+    hasLink: r.hasLink === true,
+  }));
+  const body: AppListResponse = { apps, total, page, pageSize: PAGE_SIZE, ...(ws ? { ws } : {}) };
+  return NextResponse.json(body);
 }
 
 const CreateBody = AppMetaFields.extend({

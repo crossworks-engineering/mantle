@@ -29,7 +29,7 @@ import {
   AppRestoreDraftError,
   type AppDetail,
   listTeamLevelAppIds,
-  listAppIdsUsedAt,
+  listClientApps,
   listAppAccess,
 } from '@mantle/content';
 import {
@@ -884,8 +884,10 @@ async function teamReachableApps(ctx: Parameters<BuiltinToolDef['handler']>[1]) 
   }
   const scope = currentScope();
   const level = scope.kind === 'level' ? scope.level : scope.kind === 'system' ? 'admin' : null;
-  if (level === 'team') return listAppIdsUsedAt(ctx.ownerId, ['team', 'client', 'public']);
-  if (level === 'client') return listAppIdsUsedAt(ctx.ownerId, ['client']);
+  // A team scope: the apps the member's workspaces hold (their grants). A
+  // client scope: the client apps a client runs (clients are not migrated).
+  if (level === 'team') return listTeamLevelAppIds(ctx.ownerId);
+  if (level === 'client') return new Set((await listClientApps(ctx.ownerId)).map((a) => a.id));
   if (level !== 'admin') return new Set<string>();
   // An admin-level agent serving a non-owner surface.
   if (isOwnerSurface(ctx.surface)) return null;

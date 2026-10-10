@@ -1,7 +1,8 @@
 /**
  * The table tools' draft guard on a real migrated Postgres (audit T1, the
  * tool half of the d549fa73 fix): below admin, windowFile answers the
- * PUBLISHED workbook, never the admin's unsaved draft.
+ * PUBLISHED workbook, never the admin's unsaved draft. Below admin is a
+ * workspace scope that holds the table (its grant, workspaces W5b2).
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/tools/src/tables-draft-guard.viewer.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -25,6 +26,7 @@ describe.skipIf(!URL)('table tools never read a draft below admin', () => {
   const root = mkdtempSync(path.join(tmpdir(), 'mantle-tdguard-'));
   let anchor: string;
   let tableId: string;
+  const wsId = randomUUID();
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
@@ -49,8 +51,14 @@ describe.skipIf(!URL)('table tools never read a draft below admin', () => {
       },
     });
     tableId = t.id;
-    // The Library: a team-level agent may read this table.
-    await m.systemDb.execute(sqlTag`update nodes set audience = 'team' where id = ${tableId}`);
+    // A workspace of this test's own holds the table: its users may read it.
+    await m.systemDb.execute(sqlTag`
+      insert into workspaces (id, owner_id, name) values (${wsId}, ${anchor}, ${`${tag} ws`})`);
+    await m.withHeads([tableId], 'update', (tx) =>
+      tx.execute(
+        sqlTag`insert into item_grants (node_id, workspace_id) values (${tableId}, ${wsId})`,
+      ),
+    );
     // The admin's unsaved edit: a draft workbook next to the published one.
     const applied = await c.applyTableOps(anchor, tableId, [
       { op: 'row_add', cells: { [col]: 'admin draft secret' } },
@@ -59,12 +67,14 @@ describe.skipIf(!URL)('table tools never read a draft below admin', () => {
   }, 60_000);
 
   afterAll(async () => {
+    await m.systemDb.execute(sqlTag`delete from item_grants where node_id = ${tableId}`);
     await m.systemDb.execute(sqlTag`delete from nodes where id = ${tableId}`);
+    await m.systemDb.execute(sqlTag`delete from workspaces where id = ${wsId}`);
     await m.closeDb();
     rmSync(root, { recursive: true, force: true });
   });
 
-  it('admin reads the draft; the team level reads the published file only', async () => {
+  it('admin reads the draft; a workspace scope reads the published file only', async () => {
     const { readDocClipped } = await import('@mantle/tabledb');
     const text = (abs: string | null) => JSON.stringify(abs ? readDocClipped(abs, 100).doc : null);
 
@@ -72,7 +82,10 @@ describe.skipIf(!URL)('table tools never read a draft below admin', () => {
     expect(adminFile).toMatch(/\.draft\.sqlite$/);
     expect(text(adminFile)).toContain('admin draft secret');
 
-    const teamFile = await m.withViewer('team', () => common.windowFile(anchor, tableId));
+    const teamFile = await m.withScope(
+      { kind: 'assistant', loginId: null, ws: [wsId], modWs: [] },
+      () => common.windowFile(anchor, tableId),
+    );
     expect(teamFile).not.toBeNull();
     expect(teamFile).not.toMatch(/\.draft\.sqlite$/);
     expect(text(teamFile)).toContain('published row');

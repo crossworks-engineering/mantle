@@ -83,6 +83,7 @@ export {
   AppDraftConflictError,
   getAppRuntime,
   type AppRuntime,
+  type AppToolRules,
   type PublishAppOpts,
   type AppHistoryActor,
   AppRestoreDraftError,
@@ -112,13 +113,12 @@ export {
 
 export {
   MEMBER_APP_LEVELS,
-  MEMBER_LISTED_APP_LEVELS,
-  isMemberAppLevel,
   listMemberApps,
   getMemberRunnableApp,
   listTeamLevelAppIds,
-  listAppIdsUsedAt,
   memberMayWriteAppData,
+  memberReachSql,
+  memberWritesSql,
   resolveMemberHomeApp,
   type MemberAppCard,
   type MemberRunnableApp,

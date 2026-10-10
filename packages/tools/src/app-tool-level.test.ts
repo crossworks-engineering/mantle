@@ -1,8 +1,9 @@
 /**
- * The one app tool level rule (client tier audit 2026-09-30, L1): a
- * client-level app's tools run at client level for every runner (owner,
- * member and client brokers alike); any other app keeps the runner's rules.
- * The author warnings follow the same rule. No database: the lookups are
+ * The one app tool rule (client tier audit 2026-09-30, L1; workspaces W5b2,
+ * plan R2): an app a workspace other than Admin holds runs the team rules
+ * for every runner; an app Admin alone holds keeps the runner's rules; the
+ * client rules run only for the client portal's own apps. The author
+ * warnings follow the same rule. No database: the lookups are
  * stood in (the team and client rules themselves are proven on Postgres in
  * {member,client}-app-tools.viewer.db.test.ts).
  */
@@ -10,7 +11,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
   app: null as null | {
-    audience: string;
+    toolRules: 'admin' | 'team';
     manifest: { toolSlugs?: string[] };
     authorLevel?: 'admin' | 'team';
   },
@@ -42,9 +43,7 @@ vi.mock('./resolve', () => ({
 }));
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  getAppRuntime: vi.fn(async () =>
-    h.app ? { authorLevel: 'admin', effectiveAudience: h.app.audience, ...h.app } : null,
-  ),
+  getAppRuntime: vi.fn(async () => (h.app ? { authorLevel: 'admin', ...h.app } : null)),
 }));
 
 import { resolveTool } from './resolve';
@@ -61,36 +60,35 @@ beforeEach(() => {
   vi.mocked(resolveTool).mockClear();
 });
 
-describe('appToolLevel: a client app runs client rules for everyone', () => {
+describe('appToolLevel: the holders set the rules (R2)', () => {
   it.each([
     ['admin', 'admin', 'admin'],
-    ['admin', 'team', 'admin'],
-    ['admin', 'client', 'client'],
-    ['admin', 'public', 'admin'],
+    ['admin', 'team', 'team'],
+    ['admin', 'client', 'none'],
+    ['team', 'admin', 'team'],
     ['team', 'team', 'team'],
-    ['team', 'client', 'client'],
-    ['team', 'public', 'team'],
+    ['team', 'client', 'none'],
     ['client', 'client', 'client'],
     ['client', 'team', 'none'],
-    ['client', 'public', 'none'],
-  ] as const)('runner %s, app %s: %s', (runner, app, want) => {
-    expect(appToolLevel(runner, app)).toBe(want);
+    ['client', 'admin', 'none'],
+  ] as const)('runner %s, held %s: %s', (runner, held, want) => {
+    expect(appToolLevel(runner, held)).toBe(want);
   });
 
-  it('reads an unknown stored level as admin: the runner keeps its rules, a client gets none', () => {
-    expect(appToolLevel('team', 'weird')).toBe('team');
-    expect(appToolLevel('client', undefined)).toBe('none');
+  it('an unknown holding runs no tools', () => {
+    expect(appToolLevel('admin', undefined)).toBe('none');
+    expect(appToolLevel('team', null)).toBe('none');
   });
 
   // Team apps Phase 3, plan A.4: a member-built app never runs admin rules.
   it('the author ceiling: a member-built app runs at most team rules, an admin run included', () => {
-    for (const app of ['admin', 'team', 'public']) {
-      expect(appToolLevel('admin', app, 'team'), app).toBe('team');
-      expect(appToolLevel('admin', app, 'admin'), app).toBe('admin');
-      expect(appToolLevel('team', app, 'team'), app).toBe('team');
+    for (const held of ['admin', 'team'] as const) {
+      expect(appToolLevel('admin', held, 'team'), held).toBe('team');
+      expect(appToolLevel('team', held, 'team'), held).toBe('team');
     }
+    expect(appToolLevel('admin', 'admin', 'admin')).toBe('admin');
     // Lower rules stay as they are.
-    expect(appToolLevel('admin', 'client', 'team')).toBe('client');
+    expect(appToolLevel('client', 'client', 'team')).toBe('client');
     expect(appToolLevel('client', 'team', 'team')).toBe('none');
   });
 });
@@ -157,33 +155,21 @@ describe('appToolScope', () => {
   });
 });
 
-describe('appToolWarnings follows the app level', () => {
-  it('warns a client-level app about every tool the client rules refuse', async () => {
-    h.app = { audience: 'client', manifest: { toolSlugs: ['page_get', 'contact_list'] } };
+describe('appToolWarnings follows the holders', () => {
+  it('warns an app another workspace holds about what the team rules refuse', async () => {
+    h.app = { toolRules: 'team', manifest: { toolSlugs: ['weather'] } };
     const w = await appToolWarnings('brain', 'app');
-    expect(w).toHaveLength(2);
-    expect(w[0]).toContain("'page_get'");
-    expect(w[1]).toContain("'contact_list'");
-    expect(w.join(' ')).toMatch(/admins and members too/);
+    expect(w).toHaveLength(1);
+    expect(w[0]).toContain("'weather'");
+    expect(w[0]).toMatch(/admins too/);
   });
 
-  it('warns a team or public app about what members are refused', async () => {
-    for (const audience of ['team', 'public']) {
-      h.app = { audience, manifest: { toolSlugs: ['weather'] } };
-      const w = await appToolWarnings('brain', 'app');
-      expect(w, audience).toHaveLength(1);
-      expect(w[0]).toMatch(/Members running this app/);
-    }
-  });
-
-  it('says nothing for an admin-level app or a missing one', async () => {
-    h.app = { audience: 'admin', manifest: { toolSlugs: ['contact_list'] } };
+  it('says nothing for an app Admin alone holds, or a missing one', async () => {
+    h.app = { toolRules: 'admin', manifest: { toolSlugs: ['contact_list', 'weather'] } };
     expect(await appToolWarnings('brain', 'app')).toEqual([]);
-    // A member-built app at admin level still warns: it runs team rules.
-    h.app = { audience: 'admin', manifest: { toolSlugs: ['weather'] }, authorLevel: 'team' };
+    // A member-built app Admin holds still warns: it runs team rules.
+    h.app = { toolRules: 'admin', manifest: { toolSlugs: ['weather'] }, authorLevel: 'team' };
     expect((await appToolWarnings('brain', 'app')).length).toBe(1);
-    h.app = { audience: 'admin', manifest: { toolSlugs: ['contact_list'] } };
-    expect(await appToolWarnings('brain', 'app')).toEqual([]);
     h.app = null;
     expect(await appToolWarnings('brain', 'app')).toEqual([]);
   });

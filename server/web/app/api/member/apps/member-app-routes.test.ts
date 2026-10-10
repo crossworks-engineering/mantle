@@ -20,7 +20,8 @@ const SPACE = '44444444-4444-4444-8444-444444444444';
 
 const h = vi.hoisted(() => ({
   runnable: true,
-  audience: 'team',
+  // The grant's Write switch of the member's workspace (workspaces W5b2).
+  writable: true,
   dataReadOnly: false,
   displayName: 'Pat' as string | null,
   lookups: [] as string[],
@@ -85,7 +86,7 @@ vi.mock('@mantle/content', async (importOriginal) => {
             title: 'Polls',
             icon: null,
             color: null,
-            audience: h.audience,
+            writable: h.writable,
             manifest: { toolSlugs: h.toolSlugs },
             publishedBuild: PUBLISHED,
             dataReadOnly: h.dataReadOnly,
@@ -245,7 +246,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   h.runnable = true;
-  h.audience = 'team';
+  h.writable = true;
   h.dataReadOnly = false;
   h.displayName = 'Pat';
   h.lookups.length = 0;
@@ -324,52 +325,17 @@ describe('member tool broker', () => {
     expect(h.dispatched[0]!.ctx).toMatchObject({ surface: { contactName: 'Pat' } });
   });
 
-  it('runs a client-level app by the client rules: page_get refused, a team app still gets it (audit L1)', async () => {
-    h.toolSlugs = ['page_get'];
-    h.audience = 'client';
-    const refused = await toolBroker(post({ slug: 'page_get', input: {} }), params());
-    expect(refused.status).toBe(403);
-    expect(((await refused.json()) as { error: string }).error).toMatch(/client apps/);
-    expect(h.levels).toEqual(['client']);
-    expect(h.dispatched).toHaveLength(0);
-    expect(h.logged[0]).toMatchObject({
-      detail: { via: 'member', slug: 'page_get', refused: expect.stringMatching(/client apps/) },
-    });
-
-    // The same declaration on a team app: the member rules, on the team role.
-    h.audience = 'team';
-    const ok = await toolBroker(post({ slug: 'page_get', input: {} }), params());
-    expect(ok.status).toBe(200);
-    expect(h.levels).toEqual(['client', 'team']);
-    expect(h.dispatched).toHaveLength(1);
-    expect(h.dispatched[0]!.level).toBe('team');
-  });
-
-  it('dispatches an allowed call of a client-level app on the client role and a client surface', async () => {
-    h.audience = 'client';
-    h.toolSlugs = ['client_shared_list'];
-    verdictMock.mockImplementationOnce(
-      async (level: string, _o: string, _d: string[], slug: string) => {
-        h.levels.push(level);
-        return { ok: true, tool: { slug, handler: { kind: 'builtin', ref: slug } } };
-      },
-    );
-    const res = await toolBroker(post({ slug: 'client_shared_list', input: {} }), params());
-    expect(res.status).toBe(200);
-    expect(h.levels).toEqual(['client']);
-    expect(h.dispatched[0]!.level).toBe('client');
-    expect(h.dispatched[0]!.ctx).toMatchObject({
-      ownerId: ANCHOR,
-      surface: { kind: 'client', loginId: LOGIN, contactName: 'Pat' },
-    });
-  });
-
-  it('runs a public app on the member rules, as before', async () => {
-    h.audience = 'public';
-    const res = await toolBroker(post({ slug: 'note_list', input: {} }), params());
-    expect(res.status).toBe(200);
-    expect(h.levels).toEqual(['team']);
-    expect(h.dispatched).toHaveLength(1);
+  // Workspaces W5b2 (plan R2): an app a member runs is held by a workspace
+  // of theirs, so it runs the member rules; no client rules for it.
+  it('runs every app a member may run on the member rules, Write on or off', async () => {
+    for (const writable of [true, false]) {
+      h.writable = writable;
+      h.levels.length = 0;
+      const res = await toolBroker(post({ slug: 'note_list', input: {} }), params());
+      expect(res.status).toBe(200);
+      expect(h.levels).toEqual(['team']);
+    }
+    expect(h.dispatched.map((d) => d.level)).toEqual(['team', 'team']);
   });
 
   it('passes a refusal through, dispatches nothing, and logs the refusal', async () => {
@@ -474,33 +440,16 @@ describe('member db broker', () => {
     expect(h.logged[0]).toMatchObject({ actorId: LOGIN, kind: 'db' });
   });
 
-  // Jason's rule (client logins C6): an app at team or client level is a
-  // shared workspace every member who runs it writes.
-  it('writes to a client-level app as to a team one', async () => {
-    h.audience = 'client';
+  // Workspaces W5b2: the grant's Write switch decides (Informational is
+  // Write off).
+  it("refuses a write where the grant's Write is off, and still reads", async () => {
+    h.writable = false;
     const res = await dbBroker(post({ op: 'exec', sql: 'insert into t values (1)' }), params());
-    expect(res.status).toBe(200);
-    expect(h.dbCalls).toEqual([`exec:${ANCHOR}:${APP}:admin`]);
-    expect(h.synced).toBe(1);
-  });
-
-  it('refuses a write to a public app, and to an informational team or client app', async () => {
-    for (const [level, readOnly] of [
-      ['public', false],
-      ['team', true],
-      ['client', true],
-    ] as const) {
-      h.audience = level;
-      h.dataReadOnly = readOnly;
-      h.logged.length = 0;
-      const res = await dbBroker(post({ op: 'exec', sql: 'insert into t values (1)' }), params());
-      expect(res.status, level).toBe(403);
-      expect(await res.json(), level).toMatchObject({ ok: false, reason: 'read-only' });
-      expect(h.logged[0]).toMatchObject({ detail: { op: 'exec', refused: 'read-only' } });
-    }
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ ok: false, reason: 'read-only' });
+    expect(h.logged[0]).toMatchObject({ detail: { op: 'exec', refused: 'read-only' } });
     expect(h.dbCalls).toEqual([]);
     expect(h.synced).toBe(0);
-    // Reads still work there.
     await dbBroker(post({ op: 'query', sql: 'select 1' }), params());
     expect(h.dbCalls).toEqual([`query:${ANCHOR}:${APP}:admin`]);
   });
@@ -582,11 +531,8 @@ describe('member frame', () => {
     expect(h.rendered).toEqual([]);
   });
 
-  // Contact shares plan P0 (2026-10-01): a public app is in no member list
-  // (proven on Postgres in packages/content/src/member-apps.viewer.db.test.ts),
-  // but a member who has its link still runs it, read only.
-  it('still opens a public app the member reaches by its link, read only', async () => {
-    h.audience = 'public';
+  it('opens an app whose grant has Write off, read only', async () => {
+    h.writable = false;
     const res = await ticketRoute(post({}), params());
     expect(res.status).toBe(200);
     const { ticket } = (await res.json()) as { ticket: string };

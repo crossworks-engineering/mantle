@@ -1,26 +1,25 @@
 /**
  * Which apps a member's or client's MCP connection may reach (team apps
- * Phase 1, plan page b6dd688e, section B). The rule: MCP gives a login
- * exactly what the app's own broker gives them in the browser, and only on
- * an app whose MCP access switch is on.
+ * Phase 1, plan page b6dd688e, section B; workspaces W5b2). The rule: MCP
+ * gives a login exactly what the app's own broker gives them in the browser,
+ * and only on an app whose MCP access switch is on.
  *
- *  - Reach: an app the login may RUN (member: team, client or public level;
- *    client: client level; a green PUBLISHED build; never admin level, never
- *    a draft), with `apps.mcp_access` on.
- *  - Write: the role's browser write rule (member: a team or client app that
- *    is not informational; client: an app that is not informational). The
- *    login's Write switch is the MCP surface's part: without it the write
- *    tool is never offered.
+ *  - Member: an app a workspace of theirs holds (member-apps.ts), with a
+ *    green PUBLISHED build (never a draft) and `apps.mcp_access` on. Write:
+ *    the grant's Write switch (Informational is Write off).
+ *  - Client: an app the client portal gives them (client-apps.ts; clients
+ *    are not migrated), with `apps.mcp_access` on. Write: unless the app is
+ *    informational.
  *
- * The rule is written in the query, as in member-apps.ts and client-apps.ts,
- * and the callers run it on the login's viewer role, so row security holds
- * as well. Only granted columns are read (never `apps.draft_*`).
+ * The login's Write switch is the MCP surface's part: without it the write
+ * tool is never offered. The rule is written in the query, and the callers
+ * run it on the login's viewer role, so row security holds as well. Only
+ * granted columns are read (never `apps.draft_*`).
  */
-import { and, asc, eq, ne, sql } from 'drizzle-orm';
-import { apps, db, nodes, type AppManifest, type ViewerLevel, teamReadsSql } from '@mantle/db';
-import { CLIENT_APP_LEVELS } from './client-apps';
-import { MEMBER_APP_LEVELS, memberMayWriteAppData } from './member-apps';
-import { isReadAt, itemLevel, readAtSql } from './item-level';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { apps, db, nodes, type AppManifest } from '@mantle/db';
+import { getClientRunnableApp, listClientApps } from './client-apps';
+import { memberReachSql, memberWritesSql } from './member-apps';
 
 export type McpDataRole = 'member' | 'client';
 
@@ -28,8 +27,6 @@ export type McpDataRole = 'member' | 'client';
 export type McpDataApp = {
   id: string;
   title: string;
-  /** The level it is read at: its own, or its folder's share. */
-  level: ViewerLevel;
   /** Whether this login may write its rows (before the Write switch). */
   writable: boolean;
   manifest: AppManifest;
@@ -38,100 +35,90 @@ export type McpDataApp = {
 /** At most this many apps in one list. */
 export const MCP_DATA_APPS_MAX = 200;
 
-/** As member-apps.ts: an app is used here (its database), not only read, so
- *  an embed in a shared item does not open it. */
-const APP_READ = { embeds: false } as const;
+const published = sql`(${apps.publishedBuild}->>'ok')::boolean is true`;
 
-function levelsFor(role: McpDataRole) {
-  return role === 'member' ? MEMBER_APP_LEVELS : CLIENT_APP_LEVELS;
-}
-
-function reachWhere(anchorId: string, role: McpDataRole) {
+function memberWhere(anchorId: string) {
   return and(
     eq(nodes.ownerId, anchorId),
     eq(nodes.type, 'app'),
-    readAtSql(levelsFor(role), APP_READ),
-    // A client never reaches a public app, even in a folder shared with
-    // clients: the browser's client rule (client-apps.ts, access matrix M2),
-    // on MCP too.
-    role === 'client' ? ne(nodes.audience, 'public') : undefined,
-    sql`(${apps.publishedBuild}->>'ok')::boolean is true`,
+    memberReachSql(),
+    published,
     eq(apps.mcpAccess, true),
   );
 }
 
-const cols = {
-  id: nodes.id,
-  title: nodes.title,
-  audience: nodes.audience,
-  inheritedLevel: nodes.inheritedLevel,
-  manifest: apps.manifest,
-  dataReadOnly: apps.dataReadOnly,
-  // A member's reach is the Team grant (workspaces W5b1), not the levels.
-  teamReads: teamReadsSql(),
-};
+function memberCols() {
+  return {
+    id: nodes.id,
+    title: nodes.title,
+    manifest: apps.manifest,
+    writable: memberWritesSql(),
+  };
+}
 
-type Row = {
+type MemberRow = {
   id: string;
   title: string;
-  audience: string;
-  inheritedLevel: string | null;
   manifest: AppManifest | null;
-  dataReadOnly: boolean | null;
-  teamReads: boolean | null;
+  writable: boolean | null;
 };
 
-function toApp(role: McpDataRole, r: Row): McpDataApp | null {
-  // The query keeps to these levels already; a row outside them is never
-  // reached, whatever the column holds.
-  if (
-    role === 'member'
-      ? r.teamReads !== true
-      : !isReadAt(r.audience, r.inheritedLevel, levelsFor(role))
-  )
-    return null;
-  const level = itemLevel(r.audience, r.inheritedLevel);
-  // A client reaches client apps only (access matrix M2).
-  if (role === 'client' && level !== 'client') return null;
-  const dataReadOnly = r.dataReadOnly === true;
-  return {
-    id: r.id,
-    title: r.title,
-    level,
-    writable:
-      role === 'member' ? memberMayWriteAppData({ audience: level, dataReadOnly }) : !dataReadOnly,
-    manifest: r.manifest ?? {},
-  };
+function memberApp(r: MemberRow): McpDataApp {
+  return { id: r.id, title: r.title, writable: r.writable === true, manifest: r.manifest ?? {} };
+}
+
+/** The apps of `ids` with MCP access on, with their manifests (a client's
+ *  reach). */
+async function mcpOpen(ids: readonly string[]): Promise<Map<string, AppManifest>> {
+  if (!ids.length) return new Map();
+  const rows = await db
+    .select({ id: apps.nodeId, manifest: apps.manifest })
+    .from(apps)
+    .where(and(inArray(apps.nodeId, [...ids]), eq(apps.mcpAccess, true)));
+  return new Map(rows.map((r) => [r.id, r.manifest ?? {}]));
 }
 
 /** The apps this login's MCP may reach, by title. */
 export async function listMcpDataApps(anchorId: string, role: McpDataRole): Promise<McpDataApp[]> {
-  const rows: Row[] = await db
-    .select(cols)
+  if (role === 'client') {
+    const cards = await listClientApps(anchorId);
+    const open = await mcpOpen(cards.map((c) => c.id));
+    return cards
+      .flatMap((c): McpDataApp[] => {
+        const manifest = open.get(c.id);
+        return manifest ? [{ id: c.id, title: c.title, writable: !c.dataReadOnly, manifest }] : [];
+      })
+      .slice(0, MCP_DATA_APPS_MAX);
+  }
+  const rows: MemberRow[] = await db
+    .select(memberCols())
     .from(nodes)
     .innerJoin(apps, eq(apps.nodeId, nodes.id))
-    .where(reachWhere(anchorId, role))
+    .where(memberWhere(anchorId))
     .orderBy(asc(nodes.title))
     .limit(MCP_DATA_APPS_MAX);
-  return rows.flatMap((r) => {
-    const app = toApp(role, r);
-    return app ? [app] : [];
-  });
+  return rows.map(memberApp);
 }
 
 /** One app this login's MCP may reach, or null: no such app, not this
- *  brain's, above the login's level, no green published build, or MCP
- *  access off. The same null for all of them. */
+ *  brain's, not the login's, no green published build, or MCP access off.
+ *  The same null for all of them. */
 export async function getMcpDataApp(
   anchorId: string,
   role: McpDataRole,
   appId: string,
 ): Promise<McpDataApp | null> {
-  const [row]: Row[] = await db
-    .select(cols)
+  if (role === 'client') {
+    const app = await getClientRunnableApp(anchorId, appId);
+    if (!app || !(await mcpOpen([app.id])).has(app.id)) return null;
+    // The runnable app's own (published) manifest.
+    return { id: app.id, title: app.title, writable: !app.dataReadOnly, manifest: app.manifest };
+  }
+  const [row]: MemberRow[] = await db
+    .select(memberCols())
     .from(nodes)
     .innerJoin(apps, eq(apps.nodeId, nodes.id))
-    .where(and(eq(nodes.id, appId), reachWhere(anchorId, role)))
+    .where(and(eq(nodes.id, appId), memberWhere(anchorId)))
     .limit(1);
-  return row ? toApp(role, row) : null;
+  return row ? memberApp(row) : null;
 }

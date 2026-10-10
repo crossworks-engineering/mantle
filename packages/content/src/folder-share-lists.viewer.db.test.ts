@@ -213,7 +213,7 @@ describe.skipIf(!URL)('folder-shared items in the Library and for clients', () =
     const run = await m.withViewer('team', () =>
       memberApps.getMemberRunnableApp(brain, ids.appInTeam),
     );
-    expect(run?.audience).toBe('team');
+    expect(run?.writable).toBe(true);
     // The team surfaces' app-data reach (admin pool).
     const teamIds = await memberApps.listTeamLevelAppIds(brain);
     expect(teamIds.has(ids.appInTeam) && teamIds.has(ids.appInClient)).toBe(true);

@@ -53,7 +53,7 @@ vi.mock('@/lib/member-apps', async (importOriginal) => ({
   memberAppOr404: vi.fn(async () => ({
     id: '77777777-7777-4777-8777-777777777777',
     title: 'Mine',
-    audience: 'team',
+    writable: true,
     manifest: { toolSlugs: h.toolSlugs },
     ownerId: h.login,
     spaceApp: true,
@@ -65,7 +65,7 @@ vi.mock('@mantle/content', async (importOriginal) => ({
   recordAppError: vi.fn(),
   // A member-built app, as the owner broker sees it.
   getAppRuntime: vi.fn(async () => ({
-    effectiveAudience: 'team',
+    toolRules: 'admin',
     authorLevel: 'team',
     manifest: { toolSlugs: h.toolSlugs },
   })),

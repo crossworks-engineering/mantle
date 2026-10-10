@@ -2,17 +2,22 @@
  * App data over a login's own MCP (team apps Phase 1, plan page b6dd688e) on
  * a real, migrated Postgres and real SQLite files:
  *
- *  - reach: only apps with MCP access on, published, at the login's level,
- *    of this brain; never admin level, a draft, or MCP access off;
- *  - read or write: the Write switch and the browser's rule (Informational,
- *    a public app, the client level);
+ *  - reach: only apps with MCP access on, published, of this brain: for a
+ *    member one the Team workspace holds (its grant; workspaces W5b2), for
+ *    a client one at client level (clients are not migrated); never an app
+ *    only Admin holds, one with only a public link, a draft, or MCP access
+ *    off;
+ *  - read or write: the login's Write switch and the browser's rule (for a
+ *    member the grant's Write switch, Informational being Write off; for a
+ *    client the informational flag);
  *  - query: read-only, `:host_me_*` filled for the caller;
  *  - write: rows only (no DDL), an hourly `pre_mcp_write` snapshot first,
  *    the SQL and the changes in the access log;
  *  - none of it off a login's own MCP connection.
  *
  * The lookups run on the admin pool here: the rule is in the query (as the
- * member-apps tests prove theirs). Row security on the team role is keyed on
+ * member-apps tests prove theirs; on the admin pool the member's workspace is
+ * the Team of the app's owner). Row security on the team role is keyed on
  * the box's one brain, which this test's brain is not; the team-role case
  * only proves the lookup's columns are granted.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/tools/src/builtins-app-data.db.test.ts
@@ -40,6 +45,7 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
   const client = randomUUID();
   const tag = anchor.slice(0, 8);
   const ids: Record<string, string> = {};
+  const ws = { admin: randomUUID(), team: randomUUID(), otherTeam: randomUUID() };
   const GREEN = {
     storageKey: 'attachments/aa/bb/test',
     sha256: 'test',
@@ -70,28 +76,50 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
   };
   type ListOut = { apps: { app_id: string; access: string; tables?: string[] }[] };
 
-  /** A published app at `level` with one row, MCP access as given. */
+  /**
+   * A published app with one row, MCP access as given. `team`: the Team
+   * grant ('write': Write on, 'read': Write off, none: only Admin holds it).
+   * `client`: written at client level when made (the client portal's rule;
+   * the levels are frozen after). `link`: an open public link.
+   */
   async function app(
     key: string,
     owner: string,
-    level: string,
-    opts: { mcp?: boolean; informational?: boolean; publish?: boolean; used?: boolean } = {},
+    opts: {
+      team?: 'write' | 'read';
+      client?: boolean;
+      link?: boolean;
+      mcp?: boolean;
+      publish?: boolean;
+      used?: boolean;
+    } = {},
   ) {
-    const a = await content.createApp(owner, { title: `${tag} ${key}` });
-    await content.writeDraftFile(owner, a.id, 'App.tsx', 'export default () => "x";');
-    await content.setManifest(owner, a.id, { sqlite: schema });
-    await content.setDraftBuild(owner, a.id, GREEN);
-    if (opts.publish !== false) {
-      await content.publishApp(owner, a.id, { note: 'v1', actor: 'owner' });
-    }
+    const id = randomUUID();
+    await admin`insert into nodes (id, owner_id, type, title, path, audience)
+      values (${id}, ${owner}, 'app', ${`${tag} ${key}`}, 'apps', ${opts.client ? 'client' : 'admin'})`;
+    const manifest = JSON.stringify({ sqlite: schema });
+    const build = JSON.stringify(GREEN);
+    await admin`insert into apps (node_id, manifest, published_build, mcp_access)
+      values (${id}, ${manifest}::jsonb,
+              ${opts.publish === false ? null : build}::jsonb, ${opts.mcp !== false})`;
     if (opts.used !== false) {
-      await broker.appDbExec(owner, a.id, "INSERT INTO items (name) VALUES ('seed')", [], schema);
+      await broker.appDbExec(owner, id, "INSERT INTO items (name) VALUES ('seed')", [], schema);
     }
-    await admin`update nodes set audience = ${level} where id = ${a.id}`;
-    await admin`update apps set mcp_access = ${opts.mcp !== false},
-      data_read_only = ${opts.informational === true} where node_id = ${a.id}`;
-    ids[key] = a.id;
+    const home = owner === anchor ? ws.admin : ws.otherTeam;
+    await grant(id, home, false, true);
+    if (opts.team && owner === anchor) await grant(id, ws.team, opts.team === 'write');
+    if (opts.link) {
+      await admin`insert into shares (owner_id, node_id, node_type, token)
+        values (${owner}, ${id}, 'app', ${`${tag}-${randomUUID()}`})`;
+    }
+    ids[key] = id;
   }
+
+  const grant = (node: string, wsId: string, write: boolean, home = false) =>
+    m.withHeads([node], 'update', (tx) =>
+      tx.execute(m.sql`insert into item_grants (node_id, workspace_id, write, is_home)
+        values (${node}, ${wsId}, ${write}, ${home})`),
+    );
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
@@ -111,20 +139,28 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
       (${client}, ${`ad-${tag}-c@example.invalid`}, 'x', 'client', 'Cam Client')`;
     await admin`insert into spaces (id, kind, login_id) values
       (${anchor}, 'brain', ${anchor}), (${other}, 'brain', ${other})`;
-    await app('a team', anchor, 'team');
-    await app('b team mcp off', anchor, 'team', { mcp: false });
-    await app('c team informational', anchor, 'team', { informational: true });
-    await app('d admin', anchor, 'admin');
-    await app('e client', anchor, 'client');
-    await app('f public', anchor, 'public');
-    await app('g draft only', anchor, 'team', { publish: false });
-    await app('i team never used', anchor, 'team', { used: false });
-    await app('h other brain', other, 'team');
+    await admin`insert into workspaces (id, owner_id, name, is_admin, bridge_key) values
+      (${ws.admin}, ${anchor}, ${`${tag} Admin`}, true, 'admin'),
+      (${ws.team}, ${anchor}, ${`${tag} Team`}, false, 'team'),
+      (${ws.otherTeam}, ${other}, ${`${tag} Other team`}, false, 'team')`;
+    await app('a team', anchor, { team: 'write' });
+    await app('b team mcp off', anchor, { team: 'write', mcp: false });
+    await app('c team write off', anchor, { team: 'read' });
+    await app('d admin', anchor);
+    await app('e client', anchor, { client: true });
+    await app('f public link', anchor, { link: true });
+    await app('g draft only', anchor, { team: 'write', publish: false });
+    await app('i team never used', anchor, { team: 'write', used: false });
+    await app('h other brain', other);
   }, 120_000);
 
   afterAll(async () => {
     if (!admin) return;
+    await admin`delete from shares where owner_id in (${anchor}, ${other})`;
+    await admin`delete from item_grants where node_id in
+      (select id from nodes where owner_id in (${anchor}, ${other}))`;
     await admin`delete from nodes where owner_id in (${anchor}, ${other})`;
+    await admin`delete from workspaces where owner_id in (${anchor}, ${other})`;
     await admin`delete from spaces where login_id in (${anchor}, ${other}, ${member}, ${client})`;
     await admin`delete from auth.users where id in (${anchor}, ${other}, ${member}, ${client})`;
     await m.closeDb();
@@ -143,22 +179,15 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
     }
   });
 
-  it('a member reaches the published apps at their levels with MCP access on, nothing else', async () => {
+  it('a member reaches the published apps Team holds with MCP access on, nothing else', async () => {
     const list = out<ListOut>(await call('app_data_list', {}, asMember()));
     const byId = new Map(list.apps.map((a) => [a.app_id, a]));
     expect([...byId.keys()].sort()).toEqual(
-      [
-        ids['a team'],
-        ids['c team informational'],
-        ids['e client'],
-        ids['f public'],
-        ids['i team never used'],
-      ].sort(),
+      [ids['a team'], ids['c team write off'], ids['i team never used']].sort(),
     );
     expect(byId.get(ids['a team']!)).toMatchObject({ access: 'read_write', tables: ['items'] });
-    expect(byId.get(ids['c team informational']!)?.access).toBe('read');
-    expect(byId.get(ids['e client']!)?.access).toBe('read_write');
-    expect(byId.get(ids['f public']!)?.access).toBe('read');
+    // The grant's Write switch off (Informational): read only.
+    expect(byId.get(ids['c team write off']!)?.access).toBe('read');
     // Write off: everything reads only.
     const ro = out<ListOut>(await call('app_data_list', {}, asMember(false)));
     expect(new Set(ro.apps.map((a) => a.access))).toEqual(new Set(['read']));
@@ -167,33 +196,22 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
   it('a client reaches client-level apps only', async () => {
     const list = out<ListOut>(await call('app_data_list', {}, asClient()));
     expect(list.apps.map((a) => a.app_id)).toEqual([ids['e client']]);
-    for (const key of ['a team', 'f public']) {
+    expect(list.apps[0]?.access).toBe('read_write');
+    for (const key of ['a team', 'f public link']) {
       const r = await call('app_data_query', { app_id: ids[key], sql: 'SELECT 1' }, asClient());
       expect(r.ok, key).toBe(false);
     }
   });
 
-  // Access matrix M2 on MCP: a public app in a folder shared with clients
-  // stays out of a client's reach, as in the browser.
-  it('a client never reaches a public app in a client-shared folder', async () => {
-    const pub = ids['f public']!;
-    await admin`update nodes set inherited_level = 'client' where id = ${pub}`;
-    try {
-      const list = out<ListOut>(await call('app_data_list', {}, asClient()));
-      expect(list.apps.map((a) => a.app_id)).not.toContain(pub);
-      for (const [slug, input] of [
-        ['app_data_query', { app_id: pub, sql: 'SELECT 1' }],
-        ['app_data_write', { app_id: pub, sql: 'INSERT INTO t (x) VALUES (1)' }],
-      ] as const) {
-        expect((await call(slug, input, asClient(true))).ok, slug).toBe(false);
-      }
-    } finally {
-      await admin`update nodes set inherited_level = null where id = ${pub}`;
-    }
-  });
-
   it('every unreachable app answers the same not found', async () => {
-    for (const key of ['b team mcp off', 'd admin', 'g draft only', 'h other brain']) {
+    for (const key of [
+      'b team mcp off',
+      'd admin',
+      'e client',
+      'f public link',
+      'g draft only',
+      'h other brain',
+    ]) {
       for (const slug of ['app_data_schema', 'app_data_query', 'app_data_write']) {
         const r = await call(
           slug,
@@ -256,7 +274,7 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
     expect(n?.n).toBe(0);
   });
 
-  it('write: refused without the Write switch, on an informational or public app, and for DDL', async () => {
+  it("write: refused without the login's or the grant's Write switch, and for DDL", async () => {
     const insert = "INSERT INTO items (name) VALUES ('nope')";
     const off = await call(
       'app_data_write',
@@ -264,10 +282,12 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
       asMember(false),
     );
     expect(!off.ok && off.error).toMatch(/read-only/);
-    for (const key of ['c team informational', 'f public']) {
-      const r = await call('app_data_write', { app_id: ids[key], sql: insert }, asMember());
-      expect(!r.ok && r.error, key).toMatch(/read-only for you/);
-    }
+    const grantOff = await call(
+      'app_data_write',
+      { app_id: ids['c team write off'], sql: insert },
+      asMember(),
+    );
+    expect(!grantOff.ok && grantOff.error).toMatch(/read-only for you/);
     for (const sql of [
       'CREATE TABLE z (x)',
       'DROP TABLE items',

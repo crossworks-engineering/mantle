@@ -5,8 +5,8 @@
  * apps and nothing else, as the routes answer them (GET /api/member/apps,
  * /api/client/apps).
  *
- *  - a member sees a team app inside a folder shared with the team, with the
- *    folder's name, icon and colour;
+ *  - a member sees an app inside a folder Team holds (the folder's grant,
+ *    workspaces W5b2), with the folder's name, icon and colour;
  *  - a member does not see an admin-only app that sits next to a team app,
  *    nor a draft (no published build) in a shared folder;
  *  - a folder that holds only admin-only apps, or only drafts, is not
@@ -16,15 +16,18 @@
  *    a folder shared with clients): a client app in a team-shared folder
  *    under an unshared one names both, and the team and public apps next to
  *    it are never named;
- *  - when a folder stops sharing, its apps and the folder go;
+ *  - when Team no longer holds the folder, its apps and the folder go;
  *  - another owner's folder at the same path, and a member's own folder
  *    there, are never answered;
  *  - an app read only through an embed is not run, and names no folder.
  *
- * Rows belong to the shared test anchor, under folders of this run's own,
- * and carry this run's label (other files use the anchor in parallel, so
- * answers are narrowed by it). Every folder is inserted in one statement
- * with what it holds, so it never sits in the anchor empty.
+ * The brain is the box's brain of a scratch database of its own, migrated to
+ * workspaces: a member's apps are the ones Team holds (its grants), a
+ * client's the ones at client level (clients are not migrated). The levels
+ * are frozen: the fixture writes them when it inserts a row, as the
+ * migration left them next to the grants (the level roles' row security
+ * still reads them until the scope shim). Every folder is inserted in one
+ * statement with what it holds, so it never sits empty.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/app-folders.viewer.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -38,7 +41,9 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
   let tree: typeof import('./tree/index');
   let folders: typeof import('./app-folders');
   let sqlTag: typeof import('drizzle-orm').sql;
-  let brain = '';
+  let scratch: { url: string; drop: () => Promise<void> } | null = null;
+  const brain = randomUUID();
+  let team = '';
   const label = `apf${randomUUID().slice(0, 8)}`;
   const path = {
     shared: `apps.${label}_shared`,
@@ -128,6 +133,10 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
     title: string;
     at: string;
     audience?: string;
+    /** The archived folder share and embed levels, as the migration left
+     *  them (read by the level roles' row security only). */
+    inherited?: string;
+    embedded?: string;
     data?: Record<string, unknown>;
   };
   /**
@@ -139,11 +148,13 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
    */
   const insertNodes = (rows: NodeRow[]) =>
     m.systemDb.execute(sqlTag`
-      insert into nodes (id, owner_id, type, title, path, audience, data, tags)
+      insert into nodes (id, owner_id, type, title, path, audience, inherited_level,
+                         embedded_level, data, tags)
       values ${sqlTag.join(
         rows.map(
           (r) => sqlTag`(${r.id}, ${r.owner}, ${r.type}::node_type, ${r.title}, ${r.at}::ltree,
-                         ${r.audience ?? 'admin'}, ${JSON.stringify(r.data ?? {})}::jsonb, '{}')`,
+                         ${r.audience ?? 'admin'}, ${r.inherited ?? null}, ${r.embedded ?? null},
+                         ${JSON.stringify(r.data ?? {})}::jsonb, '{}')`,
         ),
         sqlTag`, `,
       )}`);
@@ -155,13 +166,19 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
     at,
     data,
   });
-  const appRow = (id: string, at: string, audience: string): NodeRow => ({
+  const appRow = (
+    id: string,
+    at: string,
+    audience: string,
+    levels: { inherited?: string; embedded?: string } = {},
+  ): NodeRow => ({
     id,
     owner: brain,
     type: 'app',
     title: appTitle(id),
     at,
     audience,
+    ...levels,
   });
   const green = JSON.stringify({
     storageKey: 'apps/x.js',
@@ -182,8 +199,16 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
         ),
         sqlTag`, `,
       )}`);
-  const share = (id: string, level: string | null) =>
-    m.systemDb.execute(sqlTag`update nodes set share_level = ${level} where id = ${id}`);
+  /** Team holds `id` (a folder passes it to what it holds), or no longer. */
+  const holdTeam = (id: string, on: boolean) =>
+    m.withSubtreeHeads(id, [], (tx) =>
+      tx.execute(
+        on
+          ? sqlTag`insert into item_grants (node_id, workspace_id, write)
+                   values (${id}, ${team}, true) on conflict do nothing`
+          : sqlTag`delete from item_grants where node_id = ${id} and workspace_id = ${team}`,
+      ),
+    );
 
   const ourFolders = new Set<string>(Object.values(f));
   const ourApps = new Set<string>(Object.values(a));
@@ -208,17 +233,29 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
   const byId = <T extends { id: string }>(list: T[], id: string) => list.find((x) => x.id === id);
 
   beforeAll(async () => {
-    process.env.DATABASE_URL = URL;
+    const ts = await import('@mantle/db/test-support');
+    scratch = await ts.createMigratedScratchDatabase(URL!);
+    process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('@mantle/db');
     tree = await import('./tree/index');
     folders = await import('./app-folders');
     sqlTag = (await import('drizzle-orm')).sql;
-    const { ensureTestAnchor } = await import('@mantle/db/test-support');
     const admin = (m.systemDb as unknown as { $client: Parameters<Db['ensureViewerRoles']>[0] })
       .$client;
     await m.ensureViewerRoles(admin, process.env.MANTLE_MASTER_KEY);
-    brain = await ensureTestAnchor(admin);
+    await m.systemDb.execute(sqlTag`
+      insert into auth.users (id, email, password_hash, is_owner, role)
+      values (${brain}, ${`${label}-owner@example.invalid`}, 'x', true, 'admin')`);
+    await m.systemDb.execute(sqlTag`
+      insert into spaces (id, kind, login_id) values (${brain}, 'brain', ${brain})
+      on conflict (id) do nothing`);
+    await m.systemDb.execute(sqlTag`select * from mantle_ws_migrate()`);
+    team = (
+      (await m.systemDb.execute(sqlTag`
+        select id::text as id from workspaces
+         where owner_id = ${brain} and bridge_key = 'team'`)) as unknown as { id: string }[]
+    )[0]!.id;
     await tree.ensureKindRoot(brain, 'apps');
     await tree.ensureKindRoot(brain, 'notes');
 
@@ -237,7 +274,7 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
       folderRow(f.grand, path.grand),
       folderRow(f.parent, path.parent),
       folderRow(f.embedded, path.embedded),
-      appRow(a.adminInShared, path.shared, 'admin'),
+      appRow(a.adminInShared, path.shared, 'admin', { inherited: 'team' }),
       appRow(a.draftInShared, path.shared, 'admin'),
       appRow(a.teamInPlain, path.plain, 'team'),
       appRow(a.clientInPlain, path.plain, 'client'),
@@ -246,12 +283,12 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
       appRow(a.draftOnly, path.drafts, 'team'),
       appRow(a.teamDeep, path.leaf, 'team'),
       appRow(a.adminSide, path.side, 'admin'),
-      appRow(a.adminInClient, path.client, 'admin'),
+      appRow(a.adminInClient, path.client, 'admin', { inherited: 'client' }),
       appRow(a.teamTop, 'apps', 'team'),
-      appRow(a.clientInParent, path.parent, 'client'),
-      appRow(a.adminInParent, path.parent, 'admin'),
-      appRow(a.publicInParent, path.parent, 'public'),
-      appRow(a.embeddedOnly, path.embedded, 'admin'),
+      appRow(a.clientInParent, path.parent, 'client', { inherited: 'team' }),
+      appRow(a.adminInParent, path.parent, 'admin', { inherited: 'team' }),
+      appRow(a.publicInParent, path.parent, 'public', { inherited: 'team' }),
+      appRow(a.embeddedOnly, path.embedded, 'admin', { embedded: 'team' }),
     ]);
     await publish([
       [a.adminInShared, true],
@@ -271,14 +308,16 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
       [a.embeddedOnly, true],
     ]);
 
-    await share(f.shared, 'team');
-    await share(f.drafts, 'team');
-    await share(f.client, 'client');
-    await share(f.parent, 'team');
+    // Team holds these folders (and what they hold) and these apps; the
+    // client folder's share is a level (clients are not migrated).
+    for (const id of [f.shared, f.drafts, f.parent]) await holdTeam(id, true);
+    for (const id of [a.teamInPlain, a.clientInPlain, a.teamDeep, a.teamTop]) {
+      await holdTeam(id, true);
+    }
 
-    // A note in a notes folder shared with the team embeds the app: the app
-    // is then READ at team (migration 0208), which must not make it run. The
-    // folder and its note in one statement, for the same reason as above.
+    // A note in a notes folder Team holds embeds the app: an embed gives no
+    // grant, so the app never runs. The folder and its note in one
+    // statement, for the same reason as above.
     await insertNodes([
       {
         id: notesFolder,
@@ -296,7 +335,9 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
         data: { content: `![x](media:${a.embeddedOnly})` },
       },
     ]);
-    await share(notesFolder, 'team');
+    await holdTeam(notesFolder, true);
+    await m.systemDb.execute(sqlTag`
+      insert into node_embeds (from_id, to_id) values (${embedNote}, ${a.embeddedOnly})`);
 
     // Another brain with a folder and a team app at one of our paths, and a
     // member's own folder there: rows of other owners at the same path.
@@ -340,19 +381,8 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
   }, 60_000);
 
   afterAll(async () => {
-    await m.systemDb.execute(sqlTag`
-      delete from nodes where owner_id = ${brain} and (
-        id = ${a.teamTop}
-        or path <@ ${path.shared}::ltree or path <@ ${path.plain}::ltree
-        or path <@ ${path.hidden}::ltree or path <@ ${path.drafts}::ltree
-        or path <@ ${path.deep}::ltree or path <@ ${path.client}::ltree
-        or path <@ ${path.grand}::ltree or path <@ ${path.embedded}::ltree
-        or path <@ ${path.notes}::ltree)`);
-    await m.systemDb.execute(
-      sqlTag`delete from nodes where owner_id in (${other}, ${memberSpace})`,
-    );
-    await m.systemDb.execute(sqlTag`delete from spaces where login_id in (${other}, ${member})`);
-    await m.systemDb.execute(sqlTag`delete from auth.users where id in (${other}, ${member})`);
+    await m?.closeDb();
+    await scratch?.drop();
   }, 60_000);
 
   it('holds every folder of the fixture, each with something in it (no other file can take it for an empty one)', async () => {
@@ -375,7 +405,7 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
     expect(rows.filter((r) => r.empty)).toEqual([]);
   });
 
-  it('shows a member a team app inside a folder shared with the team, with the folder’s look', async () => {
+  it('shows a member an app inside a folder Team holds, with the folder’s look', async () => {
     const got = await launcher('team');
     expect(byId(got.apps, a.adminInShared)).toMatchObject({ audience: 'team' });
     expect(byId(got.folders, f.shared)).toEqual({
@@ -474,15 +504,15 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
     );
   });
 
-  it('drops the app and its folder when the folder stops sharing', async () => {
-    await share(f.shared, null);
+  it('drops the app and its folder when Team no longer holds the folder', async () => {
+    await holdTeam(f.shared, false);
     try {
       const got = await launcher('team');
       expect(byId(got.apps, a.adminInShared)).toBeUndefined();
       expect(byId(got.folders, f.shared)).toBeUndefined();
       expect(got.wire).not.toContain(folderName(f.shared));
     } finally {
-      await share(f.shared, 'team');
+      await holdTeam(f.shared, true);
     }
     expect(byId((await launcher('team')).folders, f.shared)).toBeDefined();
   });
@@ -504,9 +534,12 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
     const [row] = (await m.systemDb.execute(sqlTag`
       select audience, inherited_level, embedded_level from nodes
        where id = ${a.embeddedOnly}`)) as unknown as Array<Record<string, string | null>>;
-    // The fixture holds: the app is read at team through the note, and by
-    // nothing else.
+    // The fixture holds: an archived embed level, and no Team grant.
     expect(row).toEqual({ audience: 'admin', inherited_level: null, embedded_level: 'team' });
+    const [held] = (await m.systemDb.execute(sqlTag`
+      select ${team}::uuid = any(read_ws) as team from nodes
+       where id = ${a.embeddedOnly}`)) as unknown as Array<{ team: boolean }>;
+    expect(held?.team).toBe(false);
     const got = await launcher('team');
     expect(byId(got.apps, a.embeddedOnly)).toBeUndefined();
     expect(byId(got.folders, f.embedded)).toBeUndefined();

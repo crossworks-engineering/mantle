@@ -61,7 +61,7 @@ const NO_LOGIN =
   "No one to act for: the app_data tools work on a team member's or client's own MCP connection only.";
 
 const NOT_FOUND =
-  'No such app on your MCP connection: it may not exist, it may be above your level, or its MCP access is off. List the apps you can reach with app_data_list.';
+  'No such app on your MCP connection: it may not exist, it may not be shared with you, or its MCP access is off. List the apps you can reach with app_data_list.';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -208,7 +208,7 @@ export const app_data_list: BuiltinToolDef = {
   readOnly: true,
   name: 'List the apps you can reach',
   description:
-    "List the mini apps whose data your MCP connection may reach: each app's id, name, level, whether you may only read or also write its data, and its tables. Only apps an admin opened to MCP and that you may run are listed. Start here, then app_data_schema for columns and app_data_query to read rows.",
+    "List the mini apps whose data your MCP connection may reach: each app's id, name, whether you may only read or also write its data, and its tables. Only apps an admin opened to MCP and that you may run are listed. Start here, then app_data_schema for columns and app_data_query to read rows.",
   inputSchema: { type: 'object', properties: {} },
   handler: async (_input, ctx) => {
     const who = appDataCaller(ctx);
@@ -233,7 +233,6 @@ export const app_data_list: BuiltinToolDef = {
           out.push({
             app_id: app.id,
             name: app.title,
-            level: app.level,
             access: modeOf(app, who),
             tables: tables.map((t) => t.name),
           });
@@ -241,7 +240,6 @@ export const app_data_list: BuiltinToolDef = {
           out.push({
             app_id: app.id,
             name: app.title,
-            level: app.level,
             access: modeOf(app, who),
             error: err instanceof AppDbMissingError ? err.message : 'tables could not be read',
           });
@@ -423,7 +421,7 @@ export const app_data_write: BuiltinToolDef = {
         });
         return {
           ok: false,
-          error: 'This app is read-only for you (an admin marked it Informational, or its level).',
+          error: 'This app is read-only for you (its sharing does not let you change it).',
         };
       }
       // Undo first: the first MCP write to this app in an hour takes a
@@ -453,8 +451,7 @@ export const app_data_write: BuiltinToolDef = {
       }
       // Reach and the write rule again, right before the write (M1 audit,
       // low 2): the snapshot can take a while, and an admin may have turned
-      // MCP access off, marked the app Informational or lowered its level
-      // meanwhile.
+      // MCP access off or switched its grant's Write off meanwhile.
       const still = await reach(ctx, who, appId);
       if (!still?.writable) {
         recordAppAccess({
@@ -465,7 +462,7 @@ export const app_data_write: BuiltinToolDef = {
         return {
           ok: false,
           error: still
-            ? 'This app is read-only for you (an admin marked it Informational, or its level).'
+            ? 'This app is read-only for you (its sharing does not let you change it).'
             : NOT_FOUND,
         };
       }

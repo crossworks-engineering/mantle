@@ -5,7 +5,8 @@
  * not on the refused list, and an ENABLED tool group at team level or lower
  * holds it. Checked per call, so a group raised to admin or switched off
  * refuses the next call. A dispatch on the team role reads only team items.
- * `app_tools_set` warns with the same words.
+ * `app_tools_set` warns with the same words when a workspace other than
+ * Admin holds the app (its grants, workspaces W5b2 plan R2).
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/tools/src/member-app-tools.viewer.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -24,6 +25,7 @@ describe.skipIf(!URL)('member app tool broker rules', () => {
   // A brain of this test's own (test files run in parallel).
   const anchor = randomUUID();
   const appId = randomUUID();
+  const ws = { admin: randomUUID(), team: randomUUID() };
   const DECLARED = [
     'note_list',
     'page_list',
@@ -83,12 +85,22 @@ describe.skipIf(!URL)('member app tool broker rules', () => {
       insert into nodes (id, owner_id, type, title, path, audience) values
         (${appId}, ${anchor}, 'app', ${`${tag} app`}, 'apps', 'team')`);
     await exec(sqlTag`insert into apps (node_id) values (${appId})`);
+    await exec(sqlTag`
+      insert into workspaces (id, owner_id, name, is_admin, bridge_key) values
+        (${ws.admin}, ${anchor}, ${`${tag} Admin`}, true, 'admin'),
+        (${ws.team}, ${anchor}, ${`${tag} Team`}, false, 'team')`);
+    await m.withHeads([appId], 'update', (tx) =>
+      tx.execute(sqlTag`insert into item_grants (node_id, workspace_id, write, is_home) values
+        (${appId}, ${ws.admin}, false, true), (${appId}, ${ws.team}, true, false)`),
+    );
   }, 60_000);
 
   afterAll(async () => {
     await exec(sqlTag`delete from tool_groups where owner_id = ${anchor}`);
     await exec(sqlTag`delete from tools where owner_id = ${anchor}`);
+    await exec(sqlTag`delete from item_grants where node_id = ${appId}`);
     await exec(sqlTag`delete from nodes where owner_id = ${anchor}`);
+    await exec(sqlTag`delete from workspaces where owner_id = ${anchor}`);
     await exec(sqlTag`delete from spaces where login_id = ${anchor}`);
     await exec(sqlTag`delete from auth.users where id = ${anchor}`);
     await m.closeDb();
@@ -166,7 +178,7 @@ describe.skipIf(!URL)('member app tool broker rules', () => {
     );
   });
 
-  it('app_tools_set warns about every tool members of a team app cannot use', async () => {
+  it('app_tools_set warns about every tool members of an app Team holds cannot use', async () => {
     const def = builtins.BUILTIN_TOOLS.find((t) => t.slug === 'app_tools_set');
     if (!def) throw new Error('app_tools_set is not a builtin any more');
     const res = await def.handler(
@@ -179,12 +191,24 @@ describe.skipIf(!URL)('member app tool broker rules', () => {
     expect(warnings.join(' ')).toContain("'admin_only'");
     expect(warnings.join(' ')).toContain("'shell_thing'");
 
-    // The same app at admin level: only admins run it, so no warnings.
-    await exec(sqlTag`update nodes set audience = 'admin' where id = ${appId}`);
-    const quiet = await def.handler(
-      { id: appId, tool_slugs: ['admin_only'] },
-      { ownerId: anchor, surface: { kind: 'web' } },
+    // The same app once only Admin holds it: only admins run it, so no
+    // warnings (the level written on the row means nothing).
+    await m.withHeads([appId], 'update', (tx) =>
+      tx.execute(
+        sqlTag`delete from item_grants where node_id = ${appId} and workspace_id = ${ws.team}`,
+      ),
     );
-    expect(quiet.ok && (quiet.output as { warnings?: string[] }).warnings).toBeUndefined();
+    try {
+      const quiet = await def.handler(
+        { id: appId, tool_slugs: ['admin_only'] },
+        { ownerId: anchor, surface: { kind: 'web' } },
+      );
+      expect(quiet.ok && (quiet.output as { warnings?: string[] }).warnings).toBeUndefined();
+    } finally {
+      await m.withHeads([appId], 'update', (tx) =>
+        tx.execute(sqlTag`insert into item_grants (node_id, workspace_id, write)
+          values (${appId}, ${ws.team}, true)`),
+      );
+    }
   });
 });

@@ -1,5 +1,5 @@
 export * from './schema/index';
-export { teamReadsSql, teamReadsAliasSql } from './grant-reads';
+export { teamReadsSql, teamReadsAliasSql, teamWritesSql } from './grant-reads';
 export {
   GRANT_DRIFT_SQL,
   WORKSPACES_CHECK_SQL,

@@ -22,18 +22,14 @@ const Body = z.object({
 /**
  * POST /api/member/apps/:id/tool-broker: a member's run of an app calls
  * host.tools.call() (member logins Phase 4b, plan 4a). Run-only and checked
- * at dispatch time, every call, by the rules of the LOWER of the member's
- * level and the app's (appToolLevel, client tier audit L1): a team app gets
- * the member rules (memberAppToolVerdict: declared by the app, a built-in,
+ * at dispatch time, every call, by the rules its holders allow (appToolLevel,
+ * plan R2): an app a workspace of the member holds gets the member rules (memberAppToolVerdict: declared by the app, a built-in,
  * no confirmation, in an enabled team-level tool group, not on the refused
  * list, read-only) and runs on the TEAM role, on a team surface that names
  * the login (so team refusals apply), with the private corpus off. An
  * outside tool (mcp or http) passes only when an admin switched on "Team
- * apps may use" on it (external-access.ts), on the same role and surface. A
- * client-level app gets the client rules (clientAppToolVerdict) and runs on
- * the CLIENT role, on a client surface, as a client's run does: its
- * database is read by every client, so nothing above client level may land
- * in it. Refused calls are logged too.
+ * apps may use" on it (external-access.ts), on the same role and surface.
+ * Refused calls are logged too.
  */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const member = await getMemberOr401();
@@ -54,10 +50,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (app instanceof Response) return app;
 
   const { slug, input } = parsed.data;
-  // A member-built app (team apps Phase 3) comes back at team level: the
-  // author ceiling holds here too. The tools are the brain's, so the verdict
-  // and the dispatch keep the brain as owner.
-  const level = appToolLevel('team', app.audience, app.spaceApp ? 'team' : 'admin');
+  // An app a member runs is held by a workspace of theirs, so it runs the
+  // team rules (R2); a member-built app (team apps Phase 3) too, by the
+  // author ceiling. The tools are the brain's, so the verdict and the
+  // dispatch keep the brain as owner.
+  const level = appToolLevel('team', 'team', app.spaceApp ? 'team' : 'admin');
   // The member's login: a connector tool also needs the login's workspace
   // rule, as on the member's own MCP (W4b fix round 2).
   const verdict = await appToolVerdict(

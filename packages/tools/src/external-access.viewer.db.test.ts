@@ -335,9 +335,11 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     );
     expect(out).toMatchObject({ ok: true, output: { rows: [{ n: 1 }] } });
     expect(fake.calls).toEqual([{ toolName: 'query', args: { q: 'c' } }]);
-    // An admin's or a member's run of a client app gets the client rules too.
-    expect(level.appToolLevel('team', 'client')).toBe('client');
-    expect(level.appToolLevel('admin', 'client')).toBe('client');
+    // The client rules run for a client's run only: no client rules for a
+    // workspace app (workspaces W5b2).
+    expect(level.appToolLevel('client', 'client')).toBe('client');
+    expect(level.appToolLevel('team', 'client')).toBe('none');
+    expect(level.appToolLevel('admin', 'client')).toBe('none');
     // Mark off: a write, which needs the connector's Write on where the
     // client is a Moderator; a built-in off the client list stays refused.
     await switchOff('site_query');

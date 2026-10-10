@@ -4,15 +4,14 @@
  * (migration 0208), whichever is most open (content-core effectiveLevel). What its embeds follow and its page text is folded for.
  * A module of its own so the embed closure and the page text can both use it
  * without importing each other.
+ *
+ * Since workspaces W5b2 the levels are frozen and decide no access (grants
+ * do). What is left here serves the readers still on the levels (the client
+ * portal and the member Library, W5c; text folded at a level). Apps no
+ * longer ask it (member-apps.ts reads the grants).
  */
 import { inArray, or, sql, type SQL } from 'drizzle-orm';
-import {
-  asViewerLevel,
-  nodes,
-  teamReadsAliasSql,
-  teamReadsSql,
-  type ViewerLevel,
-} from '@mantle/db';
+import { asViewerLevel, nodes, type ViewerLevel } from '@mantle/db';
 import { effectiveLevel } from '@mantle/content-core/tree';
 
 export function itemLevel(
@@ -52,32 +51,15 @@ export function isReadAt(
   );
 }
 
-/** Every level the team role reads: an app read at these, without its
- *  embeds, is exactly an app the Team workspace holds (workspaces plan 9.2). */
-const TEAM_READ_LEVELS = ['client', 'public', 'team'];
-
-/** Whether a level rule is "the Team workspace reads this APP" (workspaces
- *  W5b1): the team role's levels, embeds left out. For an app that is its
- *  Team grant (the bridge never counts an app's embeds). Any other rule tells
- *  client or public from team, which grants cannot. */
-function isTeamAppRule(levels: readonly string[], opts: ReadAtOpts): boolean {
-  return opts.embeds === false && [...new Set(levels)].sort().join() === TEAM_READ_LEVELS.join();
-}
-
-/** `isReadAt` as SQL over `nodes`: false when `levels` is empty. With the
- *  team rule an app asks its Team grant; any other row keeps the level rule
- *  (for a page or a note the grant counts embeds, which this rule leaves
- *  out). */
+/** `isReadAt` as SQL over `nodes`: false when `levels` is empty. */
 export function readAtSql(levels: readonly string[], opts: ReadAtOpts = {}): SQL {
   if (!levels.length) return sql`false`;
   const list = [...levels];
-  const rule = or(
+  return or(
     inArray(nodes.audience, list),
     inArray(nodes.inheritedLevel, list),
     ...(opts.embeds === false ? [] : [inArray(nodes.embeddedLevel, list)]),
   )!;
-  if (!isTeamAppRule(levels, opts)) return rule;
-  return sql`(case when ${nodes.type} = 'app' then ${teamReadsSql()} else ${rule} end)`;
 }
 
 /** `readAtSql` on a raw query's alias (`n.audience`, `n.inherited_level`,
@@ -94,7 +76,5 @@ export function readAtAliasSql(
     sql`, `,
   );
   const embedded = opts.embeds === false ? sql`` : sql` or ${a}.embedded_level in (${list})`;
-  const rule = sql`(${a}.audience in (${list}) or ${a}.inherited_level in (${list})${embedded})`;
-  if (!isTeamAppRule(levels, opts)) return rule;
-  return sql`(case when ${a}.type = 'app' then ${teamReadsAliasSql(alias)} else ${rule} end)`;
+  return sql`(${a}.audience in (${list}) or ${a}.inherited_level in (${list})${embedded})`;
 }

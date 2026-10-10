@@ -5,12 +5,12 @@
  * itself was authored by the toolsmith / API Console; we just dispatch it with
  * the owner's auth so secrets resolve server-side (the iframe never sees a key).
  *
- * The rules come from appToolLevel (client tier audit L1), the one rule the
- * member and client brokers share. A client-level app gets the client rules
- * on the client role, on a surface that names the admin's login, even when
- * an admin runs it: every client reads its database with any SQL, so a tool
- * that read above client could copy team or admin data there. Any other app
- * runs any declared tool with the owner's auth, as always.
+ * The rules come from appToolLevel (client tier audit L1, plan R2), the one
+ * rule the member and client brokers share. An app a workspace other than
+ * Admin holds gets the team rules on the team role, even when an admin runs
+ * it: it reads only what every holder reads, so a tool that read more could
+ * copy it into data the other holders read. An app the Admin workspace alone
+ * holds runs any declared tool with the owner's auth, as always.
  *
  * The id is bound to the authenticated session + route — an app can only ever
  * broker as itself.
@@ -61,11 +61,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!app) return NextResponse.json({ ok: false, error: 'app not found' }, { status: 404 });
 
   // The author ceiling (team apps Phase 3): a member-built app runs its
-  // tools at team rules, an admin's run included.
-  // The level the app is used at (its own, or a folder share above it):
-  // an app clients run through a shared folder runs the client rules here
-  // too (access matrix audit, M5).
-  const level = appToolLevel('admin', app.effectiveAudience, app.authorLevel);
+  // tools at team rules, an admin's run included. An app a workspace other
+  // than Admin holds runs the team rules too (plan R2).
+  const level = appToolLevel('admin', app.toolRules, app.authorLevel);
   // The admin's own login rule applies to a client-level app run. A
   // member-built app (team rules by its author) keeps the Team rule: the
   // admin's own connectors (their Admin workspace's Write ticks) must not

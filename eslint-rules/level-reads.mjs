@@ -47,11 +47,6 @@ export const LEVEL_READ_ALLOWLIST = {
     phase: 'W5b2',
     why: 'writer: the old level engine (setItemLevel, closure, links, agent and connector levels)',
   },
-  'packages/content/src/apps.ts': {
-    lines: 16,
-    phase: 'W5b2',
-    why: 'display + app tool level (client rules run for a client-level app)',
-  },
   'packages/content/src/draws.ts': {
     lines: 6,
     phase: 'W5b2',
@@ -62,21 +57,6 @@ export const LEVEL_READ_ALLOWLIST = {
     phase: 'W5b2',
     why: 'deprecated no-op EmbedItem type: goes with the calls in access, shares, member-review, access-shadow',
   },
-  'packages/content/src/item-level.ts': {
-    lines: 24,
-    phase: 'W5b2',
-    why: 'the level helpers; the Team rule already reads grants (isTeamRule)',
-  },
-  'packages/content/src/mcp-app-data.ts': {
-    lines: 10,
-    phase: 'W5b2',
-    why: 'member reach reads grants; the level shown and the public write rule stay',
-  },
-  'packages/content/src/member-apps.ts': {
-    lines: 15,
-    phase: 'W5b2',
-    why: 'member app gate reads grants; listing and write rule tell public from team',
-  },
   'packages/content/src/notes.ts': {
     lines: 6,
     phase: 'W5b2',
@@ -86,11 +66,6 @@ export const LEVEL_READ_ALLOWLIST = {
     lines: 6,
     phase: 'W5b2',
     why: 'levelFilteredDoc/Note: the links helper',
-  },
-  'packages/content/src/shared-via.ts': {
-    lines: 9,
-    phase: 'W5b2',
-    why: 'display: Shared via / Read through labels',
   },
   'packages/content/src/shares.ts': {
     lines: 14,
@@ -103,25 +78,10 @@ export const LEVEL_READ_ALLOWLIST = {
     why: 'writer: nightly inherited/embedded repair the bridge depends on',
   },
   'packages/content/src/tree/write.ts': { lines: 4, phase: 'W5b2', why: 'writer: setFolderShare' },
-  'packages/db/src/grant-reads.ts': {
-    lines: 2,
-    phase: 'W5b2',
-    why: 'the level fallback of mantle_item_team_reads (unmigrated brains, personal rows)',
-  },
-  'packages/mcp-core/src/shared-item.ts': {
-    lines: 8,
-    phase: 'W5b2',
-    why: 'othersCanRead: folder share and app embeds are not in grants',
-  },
   'packages/runtime/src/agent/skills.ts': {
     lines: 4,
     phase: 'W5b2',
     why: 'levelOfScope for the caller level (2 lines, the shim); then agent and tool-group levels (2 lines, kept until W7, contract 21): a connector group is capped by the agent level only, the scope decides the caller',
-  },
-  'packages/tools/src/app-tool-level.ts': {
-    lines: 4,
-    phase: 'W5b2',
-    why: 'app tool level (client rules)',
   },
   'packages/tools/src/builtins-access.ts': {
     lines: 5,
@@ -154,11 +114,6 @@ export const LEVEL_READ_ALLOWLIST = {
     phase: 'W5b2',
     why: 'writer: connector level route',
   },
-  'server/web/app/api/member/apps/[id]/tool-broker/route.ts': {
-    lines: 1,
-    phase: 'W5b2',
-    why: 'app tool level',
-  },
   'server/web/app/api/shares/[id]/route.ts': { lines: 1, phase: 'W5b2', why: 'public: comment' },
   'server/web/app/s/[token]/draw/route.ts': { lines: 3, phase: 'W5b2', why: 'public: link levels' },
   'server/web/components/share/folder-presenter.tsx': {
@@ -172,6 +127,16 @@ export const LEVEL_READ_ALLOWLIST = {
     why: 'public: link and contact share serving rules',
   },
   // ── W5c (member and client review, the client portal) ──
+  'packages/content/src/item-level.ts': {
+    lines: 24,
+    phase: 'W5c',
+    why: 'the level helpers the client portal, member Library and member drawings still import (apps read grants since W5b2)',
+  },
+  'packages/content/src/member-apps.ts': {
+    lines: 1,
+    phase: 'W5c',
+    why: 'DTO: the member launcher card still carries its level field (always team since W5b2)',
+  },
   'packages/client-types/src/dto/member-apps.ts': {
     lines: 2,
     phase: 'W5c',
@@ -315,7 +280,6 @@ export const LEVEL_READ_ALLOWLIST = {
     phase: 'W5c',
     why: 'review accept level',
   },
-  'server/web/lib/member-apps.ts': { lines: 1, phase: 'W5c', why: 'member app card level' },
   // ── W6b (personal-space rows, accepted-item author path) ──
   'packages/content/src/member-accepted.ts': {
     lines: 8,
@@ -374,7 +338,7 @@ export const LEVEL_READ_ALLOWLIST = {
     why: 'DTO: connector level field',
   },
   'packages/client-types/src/dto/rows.ts': {
-    lines: 3,
+    lines: 2,
     phase: 'W8',
     why: 'DTO: owner row level badge',
   },

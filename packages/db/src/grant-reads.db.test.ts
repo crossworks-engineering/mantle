@@ -1,29 +1,33 @@
 /**
- * Workspaces W5b1 (migration 0256): "does the Team workspace read this item"
- * from the grants, on a scratch database of its own. Checked:
+ * Workspaces W5b2 (bridge off, migration 0261): "does the Team workspace
+ * read this item" is the Team grant alone, on a scratch database of its own.
+ * Checked:
  *
- *  - before the brain is migrated, and for personal-space rows after, the
- *    answer is the team role's level rule (the fallback);
- *  - after the migration, every brain item answers from its Team grant, and
- *    that answer equals the level rule while the bridge runs (behaviour
- *    unchanged, plan S2);
- *  - the grant wins when the two disagree (the function reads read_ws);
- *  - the level roles and the workspace role may call it.
+ *  - before the brain is migrated nothing reads as Team's (no Team: fail
+ *    closed), whatever the levels say;
+ *  - after the migration every brain item answers from its Team grant
+ *    (read_ws), and the levels mean nothing: a new item at 'team' is not
+ *    Team's, a personal-space row is not Team's (no grants until W6b);
+ *  - the grant decides both ways; the Write switch is read the same way;
+ *  - the system form (the row owner's Team) and the viewer form (the
+ *    brain's Team, mantle_brain_team_ws) agree;
+ *  - the level roles and the workspace role may ask for the Team workspace.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/grant-reads.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
-import { sql as sqlTag } from 'drizzle-orm';
+import { sql as sqlTag, type SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { teamReadsAliasSql } from './grant-reads';
 import { createMigratedScratchDatabase } from './test-support';
+import { withViewer } from './viewer';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
-type Cmp = { id: string; title: string; grant: boolean; level: boolean; home: string | null };
+type Cmp = { id: string; title: string; sys: boolean; viewer: boolean; inws: boolean };
 
-describe.skipIf(!URL)('grant reads (0256): Team reads from the grants', () => {
+describe.skipIf(!URL)('grant reads (W5b2): Team reads from the grants alone', () => {
   let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>>;
   let sql: ReturnType<typeof postgres>;
   const owner = randomUUID();
@@ -36,24 +40,28 @@ describe.skipIf(!URL)('grant reads (0256): Team reads from the grants', () => {
     type: string,
     path: string,
     audience = 'admin',
+    shareLevel: string | null = null,
+    embeddedLevel: string | null = null,
   ) => {
     const id = randomUUID();
-    await sql`insert into nodes (id, owner_id, type, title, path, audience)
-      values (${id}, ${owner_}, ${type}::node_type, ${key}, ${path}::ltree, ${audience})`;
+    await sql`insert into nodes (id, owner_id, type, title, path, audience, share_level, embedded_level)
+      values (${id}, ${owner_}, ${type}::node_type, ${key}, ${path}::ltree, ${audience},
+              ${shareLevel}, ${embeddedLevel})`;
     ids[key] = id;
     return id;
   };
 
-  /** The helper's SQL next to the level rule it replaces, for every node. */
+  /** Both forms of the helper, next to the plain "Team in read_ws". */
   const compare = async (): Promise<Cmp[]> => {
+    const viewerForm = await withViewer('team', async () => teamReadsAliasSql('n'));
     const q = new PgDialect().sqlToQuery(sqlTag`
-      select n.id::text as id, n.title, ${teamReadsAliasSql('n')} as grant,
-             mantle_team_reads(n.type, n.audience, n.inherited_level,
-               case when n.type = 'app' then null else n.embedded_level end) as level,
-             n.home_ws::text as home
+      select n.id::text as id, n.title, ${teamReadsAliasSql('n')} as sys,
+             ${viewerForm as SQL} as viewer,
+             coalesce(mantle_brain_team_ws() = any(n.read_ws), false) as inws
         from nodes n order by n.title`);
     return (await sql.unsafe(q.sql, q.params as never[])) as unknown as Cmp[];
   };
+  const reads = async () => Object.fromEntries((await compare()).map((r) => [r.title, r.sys]));
 
   beforeAll(async () => {
     scratch = await createMigratedScratchDatabase(URL!);
@@ -70,19 +78,12 @@ describe.skipIf(!URL)('grant reads (0256): Team reads from the grants', () => {
     await node('teamPage', owner, 'page', 'pages', 'team');
     await node('publicNote', owner, 'note', 'notes', 'public');
     await node('email', owner, 'email', 'emails', 'admin');
-    const folder = await node('folder', owner, 'branch', 'pages.shared', 'admin');
-    await sql`update nodes set share_level = 'team' where id = ${folder}`;
-    await node('inFolder', owner, 'page', 'pages.shared', 'admin');
-    await node('embeddedPage', owner, 'page', 'pages', 'admin');
-    await node('embeddedApp', owner, 'app', 'apps', 'admin');
-    await sql`update nodes set embedded_level = 'team'
-               where id in (${ids.embeddedPage!}, ${ids.embeddedApp!})`;
+    await node('embeddedApp', owner, 'app', 'apps', 'admin', null, 'team');
     await node('teamApp', owner, 'app', 'apps', 'team');
-    await node('publicApp', owner, 'app', 'apps', 'public');
     await node('adminApp', owner, 'app', 'apps', 'admin');
     await sql`insert into apps (node_id, source) values
       (${ids.embeddedApp!}, '{}'::jsonb), (${ids.teamApp!}, '{}'::jsonb),
-      (${ids.publicApp!}, '{}'::jsonb), (${ids.adminApp!}, '{}'::jsonb)`;
+      (${ids.adminApp!}, '{}'::jsonb)`;
     await node('draft', spaceA, 'page', 'pages', 'team');
   }, 180_000);
 
@@ -91,87 +92,49 @@ describe.skipIf(!URL)('grant reads (0256): Team reads from the grants', () => {
     await scratch?.drop();
   });
 
-  it('before the migration: the level rule, for every row', async () => {
+  it('before the migration: no Team, so nothing is Team’s (fail closed)', async () => {
     expect((await sql`select mantle_brain_team_ws() as t`)[0]!.t).toBeNull();
     const rows = await compare();
-    expect(rows.length).toBe(12);
-    expect(rows.filter((r) => r.grant !== r.level).map((r) => r.title)).toEqual([]);
-    const byTitle = Object.fromEntries(rows.map((r) => [r.title, r.grant]));
-    expect(byTitle).toMatchObject({
-      adminPage: false,
-      teamPage: true,
-      publicNote: true,
-      email: false,
-      inFolder: true,
-      embeddedPage: true,
-      embeddedApp: false,
-      teamApp: true,
-      publicApp: true,
-      adminApp: false,
-      draft: true,
-    });
+    expect(rows.length).toBe(8);
+    expect(rows.filter((r) => r.sys || r.viewer).map((r) => r.title)).toEqual([]);
   });
 
-  it('after the migration: the Team grant, equal to the level rule while the bridge runs', async () => {
+  it('after the migration: the Team grant, in both forms, and levels mean nothing', async () => {
     const done = await sql<{ section: string }[]>`select * from mantle_ws_migrate()`;
     expect(done.filter((r) => r.section === 'reach-fail')).toEqual([]);
     const team = (await sql<{ t: string }[]>`select mantle_brain_team_ws()::text as t`)[0]!.t;
     expect(team).toMatch(/^[0-9a-f-]{36}$/);
     const rows = await compare();
-    expect(rows.filter((r) => r.grant !== r.level).map((r) => r.title)).toEqual([]);
-    // Brain items answer from their grants; the personal draft keeps the
-    // level rule (no grants until W6b).
-    const grantPath = await sql<{ title: string; inws: boolean }[]>`
-      select n.title, ${team}::uuid = any(n.read_ws) as inws from nodes n
-       where n.home_ws is not null order by n.title`;
-    const byTitle = Object.fromEntries(rows.map((r) => [r.title, r.grant]));
-    for (const g of grantPath) expect([g.title, byTitle[g.title]]).toEqual([g.title, g.inws]);
-    expect(rows.find((r) => r.title === 'draft')).toMatchObject({ home: null, grant: true });
-  });
-
-  it('the grant wins over the levels when they disagree', async () => {
-    const team = (await sql<{ t: string }[]>`select mantle_brain_team_ws()::text as t`)[0]!.t;
-    const space = randomUUID();
-    const [r] = await sql<{ granted: boolean; removed: boolean; personal: boolean }[]>`
-      select mantle_item_team_reads(array[${team}::uuid], ${owner}::uuid, ${owner}::uuid, 'page', 'admin', null, null, ${team}::uuid) as granted,
-             mantle_item_team_reads('{}'::uuid[], ${owner}::uuid, ${owner}::uuid, 'page', 'team', 'team', 'team', ${team}::uuid) as removed,
-             mantle_item_team_reads('{}'::uuid[], ${space}::uuid, ${owner}::uuid, 'page', 'team', null, null, ${team}::uuid) as personal`;
-    expect(r).toEqual({ granted: true, removed: false, personal: true });
-  });
-
-  it("audit M2: a migrated brain item with no grant reads as nobody's, not by its level", async () => {
-    const id = ids.teamPage!;
-    await sql.begin(async (tx) => {
-      await tx`select mantle_lock_heads(array[${id}::uuid], 'update')`;
-      await tx`delete from item_grants where node_id = ${id}`;
+    expect(rows.filter((r) => r.sys !== r.inws || r.viewer !== r.inws)).toEqual([]);
+    expect(await reads()).toMatchObject({
+      adminPage: false,
+      teamPage: true,
+      publicNote: true,
+      email: false,
+      // An embed never opens an app.
+      embeddedApp: false,
+      teamApp: true,
+      adminApp: false,
+      // A personal-space row: no grants until W6b.
+      draft: false,
     });
-    const [n] = await sql<{ home: string | null; read: string[] }[]>`
-      select home_ws::text as home, read_ws::text[] as read from nodes where id = ${id}`;
-    expect(n).toEqual({ home: null, read: [] });
-    const row = (await compare()).find((r) => r.title === 'teamPage')!;
-    expect(row).toMatchObject({ grant: false, level: true });
-    // The bridge puts it back (its level is still team), and it reads again.
-    await sql.begin(async (tx) => {
-      await tx`select mantle_lock_heads(array[${id}::uuid], 'update')`;
-      await tx`select mantle_bridge_apply(array[${id}::uuid])`;
-    });
-    expect((await compare()).find((r) => r.title === 'teamPage')).toMatchObject({ grant: true });
+    // A new item at 'team' takes a home (Admin) and nothing from its level.
+    await node('newTeamPage', owner, 'page', 'pages', 'team');
+    expect((await reads()).newTeamPage).toBe(false);
   });
 
-  it('audit L1: a public app gives Team read, not write; a team app gives both', async () => {
+  it('the grant decides both ways, and the Write switch reads the same', async () => {
     const team = (await sql<{ t: string }[]>`select mantle_brain_team_ws()::text as t`)[0]!.t;
-    // A new public app after the migration takes the insert path too.
-    await node('newPublicApp', owner, 'app', 'apps', 'public');
-    await sql`insert into apps (node_id, source) values (${ids.newPublicApp!}, '{}'::jsonb)`;
-    const rows = await sql<{ title: string; reads: boolean; writes: boolean }[]>`
-      select title, ${team}::uuid = any(read_ws) as reads, ${team}::uuid = any(write_ws) as writes
-        from nodes where id in ${sql([ids.publicApp!, ids.newPublicApp!, ids.teamApp!])} order by title`;
-    expect(rows).toEqual([
-      { title: 'newPublicApp', reads: true, writes: false },
-      { title: 'publicApp', reads: true, writes: false },
-      { title: 'teamApp', reads: true, writes: true },
-    ]);
-    expect(Number((await sql`select mantle_bridge_drift() as d`)[0]!.d)).toBe(0);
+    await sql.begin(async (tx) => {
+      await tx`select mantle_lock_heads(array[${ids.adminPage!}::uuid, ${ids.teamPage!}::uuid], 'update')`;
+      await tx`insert into item_grants (node_id, workspace_id, write)
+               values (${ids.adminPage!}, ${team}, true)`;
+      await tx`delete from item_grants where node_id = ${ids.teamPage!} and workspace_id = ${team}`;
+    });
+    expect(await reads()).toMatchObject({ adminPage: true, teamPage: false });
+    const [w] = await sql<{ writes: boolean }[]>`
+      select ${team}::uuid = any(write_ws) as writes from nodes where id = ${ids.adminPage!}`;
+    expect(w!.writes).toBe(true);
   });
 
   it('the level roles and the workspace role may ask for the Team workspace', async () => {

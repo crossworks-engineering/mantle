@@ -184,15 +184,17 @@ export type AppRow = {
   shareMode: ShareMode | null;
   /** Whether this app is the designated Team Hub (prefs.teamHubAppId). */
   isHub: boolean;
-  /** Access level (admin > team > client > public); the owner UI's badge. */
-  audience: AccessLevel;
-  /** The share it inherits from a folder above it (team or client), or
-   *  null; it is read at the more open of this and `audience`. Optional:
-   *  absent from brains before the folder audit fixes. */
+  /** The old access level badge. Not sent since workspaces W5b2 (grants
+   *  decide who reads an app: the list's `workspaces` chips and `hasLink`);
+   *  the field goes in W8. */
+  audience?: AccessLevel;
+  /** Not sent since W5b2 (with the level badge). */
   inherited?: 'team' | 'client' | null;
-  /** The share it is read at through something that embeds it (migration
-   *  0208), or null. Optional: absent from brains before it. */
+  /** Not sent since W5b2 (with the level badge). */
   embedded?: 'team' | 'client' | null;
+  /** A live open public link exists (not revoked, not expired): the
+   *  "Public" pill. Absent from a brain before W5b2. */
+  hasLink?: boolean;
   /** Informational (client logins C6): members and clients only read the
    *  app's data. Off, an app at team or client level is a shared workspace
    *  everyone who runs it writes. Set with PATCH /api/apps/:id
@@ -219,6 +221,29 @@ export type AppRow = {
   authorCeilingSeen?: boolean;
   createdAt: string;
   updatedAt: string;
+};
+
+/** A workspace as a list row's chip names it. */
+export type WorkspaceChip = { id: string; name: string };
+
+/** One row of GET /api/apps (workspaces W5b2). */
+export type AppListRow = AppRow & {
+  /** The workspaces that hold the app (its read_ws) that the caller is a
+   *  user of; every one of them for an Admin user. Sorted by name. */
+  workspaces: WorkspaceChip[];
+  /** A live open public link exists. */
+  hasLink: boolean;
+};
+
+/** GET /api/apps?q=&tag=&sort=&page=&ws=. `ws` (a workspace id): only the
+ *  apps that workspace holds, echoed back; a workspace the caller may not
+ *  see answers 404 `{ error, code: 'not_found' }`. */
+export type AppListResponse = {
+  apps: AppListRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  ws?: string;
 };
 
 export type AppDetail = AppRow & {

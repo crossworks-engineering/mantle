@@ -2,11 +2,13 @@
  * App data over a login's own MCP, end to end on a real migrated Postgres
  * (team apps M1 audit, low 6 and medium 1):
  *
- *  - through the real login path (callLoginTool: withViewer at the login's
- *    level, dispatchTool, the surface the route stamps), on the box's brain
- *    so row security applies for real;
- *  - an admin-level app inside a folder shared with the team is reached at
- *    team level, as the browser runs it;
+ *  - through the real login path (callLoginTool: the login's read scope,
+ *    dispatchTool, the surface the route stamps), on the box's brain of a
+ *    scratch database of its own, migrated to workspaces, so row security
+ *    applies for real;
+ *  - the Team grant decides (workspaces W5b2): an app placed in a folder
+ *    Team holds takes the folder's grant (S6) and is reached, its data
+ *    written by the grant's Write switch;
  *  - a peer bound to a member acts under that member's MCP and Write
  *    switches (resolveMcpCaller).
  *
@@ -17,7 +19,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ensureTestAnchor } from '@mantle/db/test-support';
+import { createMigratedScratchDatabase } from '@mantle/db/test-support';
 import type { McpCaller } from '@mantle/mcp-core';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
@@ -32,7 +34,9 @@ describe.skipIf(!URL)('app data over a login MCP, end to end', () => {
   let auth: typeof import('./mcp-auth');
   let hashToken: typeof import('@mantle/content/peers-crypto').hashToken;
   let dir = '';
-  let anchor = '';
+  let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>> | null = null;
+  const anchor = randomUUID();
+  let team = '';
   const tag = `adm-${randomUUID().slice(0, 8)}`;
   const member = randomUUID();
   const label = `adm${randomUUID().slice(0, 8)}`;
@@ -87,8 +91,21 @@ describe.skipIf(!URL)('app data over a login MCP, end to end', () => {
     return a.id;
   }
 
+  /** Grant `node` to Team, Write as given (a folder passes it on). */
+  const grantTeam = (node: string, write: boolean) =>
+    m.withSubtreeHeads(node, [], (tx) =>
+      tx.execute(m.sql`insert into item_grants (node_id, workspace_id, write)
+        values (${node}, ${team}, ${write})
+        on conflict (node_id, workspace_id) do update set write = excluded.write`),
+    );
+  const ungrantTeam = (node: string) =>
+    m.withSubtreeHeads(node, [], (tx) =>
+      tx.execute(m.sql`delete from item_grants where node_id = ${node} and workspace_id = ${team}`),
+    );
+
   beforeAll(async () => {
-    process.env.DATABASE_URL = URL;
+    scratch = await createMigratedScratchDatabase(URL!);
+    process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     dir = await mkdtemp(path.join(tmpdir(), 'app-data-mcp-'));
     process.env.APP_DB_DIR = dir;
@@ -99,26 +116,29 @@ describe.skipIf(!URL)('app data over a login MCP, end to end', () => {
     ls = await import('@mantle/mcp-core');
     auth = await import('./mcp-auth');
     ({ hashToken } = await import('@mantle/content/peers-crypto'));
-    anchor = await ensureTestAnchor(sql);
-    await sql`insert into auth.users (id, email, password_hash, role, display_name)
-      values (${member}, ${`${tag}-m@example.invalid`}, 'x', 'member', 'Mia Member')`;
-  }, 120_000);
+    await sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
+      (${anchor}, ${`${tag}-o@example.invalid`}, 'x', true, 'admin', 'Olive Owner'),
+      (${member}, ${`${tag}-m@example.invalid`}, 'x', false, 'member', 'Mia Member')`;
+    await sql`insert into spaces (id, kind, login_id) values (${anchor}, 'brain', ${anchor})
+      on conflict (id) do nothing`;
+    await sql`select * from mantle_ws_migrate()`;
+    team = (
+      await sql<{ id: string }[]>`select id::text as id from workspaces
+        where owner_id = ${anchor} and bridge_key = 'team'`
+    )[0]!.id;
+    await sql`insert into workspace_users (workspace_id, login_id) values (${team}, ${member})
+      on conflict do nothing`;
+  }, 180_000);
 
   afterAll(async () => {
-    if (!sql) return;
-    await sql`delete from mantle_peers where id = ${peerId}`;
-    if (appIds.length) await sql`delete from nodes where id in ${sql(appIds)}`;
-    await sql`delete from nodes where id in (${folder}, ${peerNode})`;
-    await sql`delete from mcp_login_access where login_id = ${member}`;
-    await sql`delete from spaces where login_id = ${member}`;
-    await sql`delete from auth.users where id = ${member}`;
-    await m.closeDb();
+    if (m) await m.closeDb();
+    await scratch?.drop();
     if (dir) await rm(dir, { recursive: true, force: true });
   }, 60_000);
 
-  it('query and write run through the real login path, on the team role', async () => {
+  it('query and write run through the real login path, by the Team grant', async () => {
     const id = await publishedApp('team app');
-    await sql`update nodes set audience = 'team' where id = ${id}`;
+    await grantTeam(id, true);
     const wrote = await run('app_data_write', {
       app_id: id,
       sql: 'INSERT INTO items (name) VALUES (?)',
@@ -128,25 +148,28 @@ describe.skipIf(!URL)('app data over a login MCP, end to end', () => {
     const read = await run('app_data_query', { app_id: id, sql: 'SELECT name FROM items' });
     expect(read.isError ?? false, text(read)).toBe(false);
     expect(JSON.parse(text(read)).rows).toEqual([{ name: 'e2e' }]);
-    // The same call above the login's level: an admin app is not there.
-    await sql`update nodes set audience = 'admin' where id = ${id}`;
+    // The same call once Team no longer holds it: the app is not there.
+    await ungrantTeam(id);
     const hidden = await run('app_data_query', { app_id: id, sql: 'SELECT 1' });
     expect(text(hidden)).toMatch(/No such app on your MCP connection/);
   });
 
-  it('an admin-level app inside a folder shared with the team is reached at team level', async () => {
-    await sql`insert into nodes (id, owner_id, type, title, path, audience)
-      values (${folder}, ${anchor}, 'branch', ${`${tag} folder`}, ${`apps.${label}`}::ltree, 'admin')`;
-    await sql`update nodes set share_level = 'team' where id = ${folder}`;
+  it('an app placed in a folder Team holds takes its grant, and its Write switch', async () => {
+    await sql`insert into nodes (id, owner_id, type, title, path)
+      values (${folder}, ${anchor}, 'branch', ${`${tag} folder`}, ${`apps.${label}`}::ltree)`;
+    await grantTeam(folder, true);
     const id = await publishedApp('in shared folder');
-    await sql`update nodes set path = ${`apps.${label}`}::ltree, audience = 'admin' where id = ${id}`;
-    const [n] = await sql<Row[]>`select inherited_level from nodes where id = ${id}`;
-    expect(n?.inherited_level).toBe('team');
+    await m.withHeads([id, folder], 'update', (tx) =>
+      tx.execute(m.sql`update nodes set path = ${`apps.${label}`}::ltree where id = ${id}`),
+    );
+    const [n] = await sql<Row[]>`select ${team}::uuid = any(read_ws) as reads from nodes
+      where id = ${id}`;
+    expect(n?.reads).toBe(true);
     const listed = await run('app_data_list', {});
     const app = (
-      JSON.parse(text(listed)) as { apps: { app_id: string; level: string; access: string }[] }
+      JSON.parse(text(listed)) as { apps: { app_id: string; access: string }[] }
     ).apps.find((a) => a.app_id === id);
-    expect(app).toMatchObject({ level: 'team', access: 'read_write' });
+    expect(app).toMatchObject({ access: 'read_write' });
     const read = await run('app_data_query', {
       app_id: id,
       sql: 'SELECT count(*) AS n FROM items',
@@ -157,6 +180,14 @@ describe.skipIf(!URL)('app data over a login MCP, end to end', () => {
     const [logged] = await sql<Row[]>`select count(*)::int as n from app_access_log
       where app_node_id = ${id} and actor_id = ${member} and detail->>'op' = 'list'`;
     expect(Number(logged?.n)).toBeGreaterThan(0);
+    // The folder's Write switch off: the app reads only.
+    await grantTeam(folder, false);
+    const ro = (
+      JSON.parse(text(await run('app_data_list', {}))) as {
+        apps: { app_id: string; access: string }[];
+      }
+    ).apps.find((a) => a.app_id === id);
+    expect(ro).toMatchObject({ access: 'read' });
   });
 
   it("a peer bound to a member acts under the member's MCP and Write switches", async () => {

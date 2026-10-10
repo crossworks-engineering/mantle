@@ -1,10 +1,10 @@
 /**
- * The OWNER's app tool broker (client tier audit 2026-09-30, L1): an admin's
- * run of a CLIENT-level app keeps the client rules, because every client
- * reads that app's database; any other app keeps the owner's rules. The level rule (appToolLevel,
- * appToolScope) is the real one; the verdict records the level it was asked
- * at, and at client level and at none the REAL rules answer (they refuse
- * before any lookup). No database.
+ * The OWNER's app tool broker (client tier audit 2026-09-30, L1; workspaces
+ * W5b2, plan R2): an admin's run of an app a workspace other than Admin
+ * holds keeps the team rules, because the app reads only what every holder
+ * reads; an app Admin alone holds keeps the owner's rules. The rule
+ * (appToolLevel, appToolScope) is the real one; the verdict records the
+ * level it was asked at. No database.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -13,9 +13,8 @@ const ACTOR = '55555555-5555-4555-8555-555555555555';
 const APP = '77777777-7777-4777-8777-777777777777';
 
 const h = vi.hoisted(() => ({
-  audience: 'admin',
-  // A folder share above the app (null: none), access matrix audit M5.
-  inherited: null as string | null,
+  // What the app's holders allow (AppRuntime.toolRules).
+  toolRules: 'admin' as 'admin' | 'team',
   toolSlugs: ['contact_list'] as string[],
   levels: [] as string[],
   dispatched: [] as Array<{ level: string; ctx: Record<string, unknown> }>,
@@ -35,8 +34,7 @@ vi.mock('@mantle/content', async (importOriginal) => ({
     id === APP
       ? {
           id,
-          audience: h.audience,
-          effectiveAudience: h.inherited === 'client' ? 'client' : h.audience,
+          toolRules: h.toolRules,
           manifest: { toolSlugs: h.toolSlugs },
         }
       : null,
@@ -84,15 +82,14 @@ beforeAll(async () => {
 }, 60_000);
 
 beforeEach(() => {
-  h.audience = 'admin';
-  h.inherited = null;
+  h.toolRules = 'admin';
   h.toolSlugs = ['contact_list'];
   h.levels.length = 0;
   h.dispatched.length = 0;
 });
 
-describe('owner app tool broker: client rules on a client app, owner rules elsewhere', () => {
-  it('an admin-level app runs a declared tool with the owner auth, as always', async () => {
+describe('owner app tool broker: team rules when another workspace holds the app', () => {
+  it('an app Admin alone holds runs a declared tool with the owner auth, as always', async () => {
     const res = await call('contact_list');
     expect(res.status).toBe(200);
     expect(h.levels).toEqual(['admin']);
@@ -102,40 +99,27 @@ describe('owner app tool broker: client rules on a client app, owner rules elsew
     });
   });
 
-  it('a client-level app refuses contact_list and page_get for an admin too', async () => {
-    h.audience = 'client';
-    h.toolSlugs = ['contact_list', 'page_get'];
-    for (const slug of h.toolSlugs) {
-      const res = await call(slug);
-      expect(res.status, slug).toBe(403);
-      expect(((await res.json()) as { error: string }).error).toMatch(/client apps/);
-    }
-    expect(h.levels).toEqual(['client', 'client']);
-    expect(h.dispatched).toHaveLength(0);
-  });
-
-  it('an admin app in a folder shared with clients runs the client rules (access matrix M5)', async () => {
-    h.inherited = 'client';
-    h.toolSlugs = ['contact_list'];
+  it('an app another workspace holds runs the team rules for an admin too (R2)', async () => {
+    h.toolRules = 'team';
     const res = await call('contact_list');
-    expect(res.status).toBe(403);
-    expect(h.levels).toEqual(['client']);
-    expect(h.dispatched).toHaveLength(0);
+    expect(res.status).toBe(200);
+    expect(h.levels).toEqual(['team']);
+    expect(h.dispatched[0]).toMatchObject({
+      level: 'team',
+      ctx: {
+        ownerId: ANCHOR,
+        surface: { kind: 'team', loginId: ACTOR, contactName: 'Jo', privateReads: false },
+      },
+    });
   });
 
-  it('a team or public app keeps the owner rules (team apps call MCP and recipe tools)', async () => {
-    for (const audience of ['team', 'public']) {
-      h.audience = audience;
-      h.levels.length = 0;
-      h.dispatched.length = 0;
-      const res = await call('contact_list');
-      expect(res.status, audience).toBe(200);
-      expect(h.levels).toEqual(['admin']);
-      expect(h.dispatched[0]).toMatchObject({
-        level: 'admin',
-        ctx: { ownerId: ANCHOR, surface: { kind: 'web' } },
-      });
+  it('an undeclared tool is refused, whoever holds the app', async () => {
+    for (const rules of ['admin', 'team'] as const) {
+      h.toolRules = rules;
+      const res = await call('page_get');
+      expect(res.status, rules).toBe(403);
     }
+    expect(h.dispatched).toHaveLength(0);
   });
 });
 

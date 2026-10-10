@@ -6,7 +6,8 @@
  * others. Also: never a draft-only app, a red build or another brain's app;
  * the lookups work on the client role (no draft column is read) and row
  * security holds there as a second lock; the informational flag reaches the
- * client card, the member card and the owner's DTOs, and only the owner's
+ * client card and the owner's DTOs (a member's write is the grant's Write
+ * switch since workspaces W5b2), and only the owner's
  * update writes it; the access log names a client login, and a deleted one
  * as "Removed client".
  *
@@ -187,23 +188,13 @@ describe.skipIf(!URL)('apps for clients', () => {
     expect((await ca.listClientApps(other)).map((a) => a.id)).toEqual([ids.otherBrain]);
   });
 
-  it('reports the informational flag to members: read only on a public or informational app', async () => {
-    // A public app is in no member list (contact shares plan P0), so its
-    // read-only flag is seen where the member runs it from its link.
-    const cards = mine(await ma.listMemberApps(brain));
-    const flag = Object.fromEntries(cards.map((c) => [c.id, c.dataReadOnly]));
-    expect(flag).toEqual({
-      [ids.client]: false,
-      [ids.team]: false,
-      [ids.info]: true,
-    });
-    const info = await ma.getMemberRunnableApp(brain, ids.info);
-    expect(info?.dataReadOnly).toBe(true);
-    expect(ma.memberMayWriteAppData(info!)).toBe(false);
-    for (const id of [ids.client, ids.team]) {
-      expect(ma.memberMayWriteAppData((await ma.getMemberRunnableApp(brain, id))!), id).toBe(true);
+  // Workspaces W5b2: a member runs only what a workspace of theirs holds
+  // (member-apps.viewer.db.test.ts); a level, client or team, opens none.
+  it('gives members none of these level-only apps', async () => {
+    expect(mine(await ma.listMemberApps(brain))).toEqual([]);
+    for (const id of [ids.client, ids.team, ids.pub, ids.info]) {
+      expect(await ma.getMemberRunnableApp(brain, id), id).toBeNull();
     }
-    expect(ma.memberMayWriteAppData((await ma.getMemberRunnableApp(brain, ids.pub))!)).toBe(false);
   });
 
   it("the owner's update sets the flag, and the owner's DTOs show it", async () => {

@@ -1,6 +1,6 @@
 /**
  * Apps for members (member logins Phase 4b): the one lookup every member app
- * route makes. A member runs an app at team level or lower with a green
+ * route makes. A member runs an app a workspace of theirs holds, with a green
  * PUBLISHED build, or (team apps Phase 3) a member-built app of their own or
  * one a teammate shared with the team; everything else (an admin app, a
  * draft-only app, a teammate's private app, another brain's app, no such id)
@@ -27,8 +27,8 @@ export type MemberApp = MemberRunnableApp & {
   spaceApp: boolean;
 };
 
-/** The app, or a 404 response. A member-built app runs at team level (team
- *  rules, the author ceiling); under review its data is read only. */
+/** The app, or a 404 response. A member-built app runs at team rules (the
+ *  author ceiling); under review its data is read only. */
 export async function memberAppOr404(
   anchorId: string,
   id: string,
@@ -48,7 +48,8 @@ export async function memberAppOr404(
     title: own.title,
     icon: own.icon,
     color: own.color,
-    audience: 'team',
+    // Its runners change its data unless it is under review.
+    writable: !own.dataReadOnly,
     manifest: own.manifest,
     publishedBuild: own.publishedBuild,
     dataReadOnly: own.dataReadOnly,

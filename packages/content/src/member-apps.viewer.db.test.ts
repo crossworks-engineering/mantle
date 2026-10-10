@@ -1,12 +1,14 @@
 /**
- * Apps for members on a real, migrated Postgres (member logins Phase 4b, plan
- * v3.1 section 4a): a member may run an app at team level or lower with a
- * green PUBLISHED build, and the launcher lists only team and client apps,
- * never a public one (contact shares plan P0), never an admin app, a draft-only app, a red build or
- * another brain's app (the rule is in the query, so the admin pool proves
- * it); the lookups work on the team role (no draft column is read); the home
+ * Apps for members on a real, migrated Postgres (member logins Phase 4b;
+ * workspaces W5b2): a member runs an app a workspace of theirs holds (its
+ * grant) with a green PUBLISHED build, and writes its data only where that
+ * grant has Write on. Never an app only Admin holds, a draft-only app, a red
+ * build, another brain's app, or an app that only has a public link; the
+ * levels mean nothing. The workspaces of the member: a workspace scope's own,
+ * else the brain's Team (the rule is in the query, so the admin pool proves
+ * it). The lookups work on the team role (no draft column is read); the home
  * app is honoured only while a member may run it; the access log names the
- * member login.
+ * member login; an app's tool rules come from its holders (R2).
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/member-apps.viewer.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -19,7 +21,6 @@ describe.skipIf(!URL)('apps for members', () => {
   let m: Db;
   let ma: typeof import('./member-apps');
   let log: typeof import('./app-access-log');
-  let lib: typeof import('./member-library');
   let sqlTag: typeof import('drizzle-orm').sql;
   const tag = `mapps-${randomUUID().slice(0, 8)}`;
   // Brains of this test's own. Not mantle_brain_id(): test files run in
@@ -27,12 +28,21 @@ describe.skipIf(!URL)('apps for members', () => {
   const anchor = randomUUID();
   const other = randomUUID();
   const member = randomUUID();
-  const ids = {
+  const ws = {
+    admin: randomUUID(),
     team: randomUUID(),
-    pub: randomUUID(),
+    field: randomUUID(),
+    otherTeam: randomUUID(),
+  };
+  const ids = {
+    teamRw: randomUUID(),
+    teamRo: randomUUID(),
+    field: randomUUID(),
     admin: randomUUID(),
     draftOnly: randomUUID(),
     red: randomUUID(),
+    linkOnly: randomUUID(),
+    levelOnly: randomUUID(),
     otherBrain: randomUUID(),
   };
   const green = JSON.stringify({
@@ -45,6 +55,13 @@ describe.skipIf(!URL)('apps for members', () => {
   });
   const red = JSON.stringify({ ...JSON.parse(green), ok: false });
 
+  /** Grant `node` to `wsId` (Write as given), the first grant as its home. */
+  const grant = (node: string, wsId: string, write = false, home = false) =>
+    m.withHeads([node], 'update', (tx) =>
+      tx.execute(sqlTag`insert into item_grants (node_id, workspace_id, write, is_home)
+        values (${node}, ${wsId}, ${write}, ${home})`),
+    );
+
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
     // ONE key for every viewer DB test: roles are cluster-wide (28P01).
@@ -52,7 +69,6 @@ describe.skipIf(!URL)('apps for members', () => {
     m = await import('@mantle/db');
     ma = await import('./member-apps');
     log = await import('./app-access-log');
-    lib = await import('./member-library');
     sqlTag = (await import('drizzle-orm')).sql;
     const admin = (m.systemDb as unknown as { $client: Parameters<Db['ensureViewerRoles']>[0] })
       .$client;
@@ -67,26 +83,58 @@ describe.skipIf(!URL)('apps for members', () => {
       insert into spaces (id, kind, login_id) values
         (${anchor}, 'brain', ${anchor}), (${other}, 'brain', ${other})`);
     await m.systemDb.execute(sqlTag`
+      insert into workspaces (id, owner_id, name, is_admin, bridge_key) values
+        (${ws.admin}, ${anchor}, ${`${tag} Admin`}, true, 'admin'),
+        (${ws.team}, ${anchor}, ${`${tag} Team`}, false, 'team'),
+        (${ws.field}, ${anchor}, ${`${tag} Field`}, false, null),
+        (${ws.otherTeam}, ${other}, ${`${tag} Other team`}, false, 'team')`);
+    // The levels mean nothing now: every app carries 'team', none is read
+    // by it.
+    await m.systemDb.execute(sqlTag`
       insert into nodes (id, owner_id, type, title, path, audience) values
-        (${ids.team}, ${anchor}, 'app', ${`${tag} b team`}, 'apps', 'team'),
-        (${ids.pub}, ${anchor}, 'app', ${`${tag} a public`}, 'apps', 'public'),
-        (${ids.admin}, ${anchor}, 'app', ${`${tag} admin`}, 'apps', 'admin'),
+        (${ids.teamRw}, ${anchor}, 'app', ${`${tag} b team`}, 'apps', 'team'),
+        (${ids.teamRo}, ${anchor}, 'app', ${`${tag} a team informational`}, 'apps', 'team'),
+        (${ids.field}, ${anchor}, 'app', ${`${tag} field`}, 'apps', 'team'),
+        (${ids.admin}, ${anchor}, 'app', ${`${tag} admin`}, 'apps', 'team'),
         (${ids.draftOnly}, ${anchor}, 'app', ${`${tag} draft only`}, 'apps', 'team'),
         (${ids.red}, ${anchor}, 'app', ${`${tag} red`}, 'apps', 'team'),
+        (${ids.linkOnly}, ${anchor}, 'app', ${`${tag} link only`}, 'apps', 'public'),
+        (${ids.levelOnly}, ${anchor}, 'app', ${`${tag} level only`}, 'apps', 'team'),
         (${ids.otherBrain}, ${other}, 'app', ${`${tag} other`}, 'apps', 'team')`);
     const manifest = JSON.stringify({ toolSlugs: ['note_list'], description: 'Polls' });
     await m.systemDb.execute(sqlTag`
       insert into apps (node_id, manifest, published_build, draft_build, draft_source) values
-        (${ids.team}, ${manifest}::jsonb, ${green}::jsonb, ${green}::jsonb, '{"entry":"App.tsx","files":{}}'::jsonb),
-        (${ids.pub}, '{}'::jsonb, ${green}::jsonb, null, null),
+        (${ids.teamRw}, ${manifest}::jsonb, ${green}::jsonb, ${green}::jsonb, '{"entry":"App.tsx","files":{}}'::jsonb),
+        (${ids.teamRo}, '{}'::jsonb, ${green}::jsonb, null, null),
+        (${ids.field}, '{}'::jsonb, ${green}::jsonb, null, null),
         (${ids.admin}, '{}'::jsonb, ${green}::jsonb, null, null),
         (${ids.draftOnly}, '{}'::jsonb, null, ${green}::jsonb, '{"entry":"App.tsx","files":{}}'::jsonb),
         (${ids.red}, '{}'::jsonb, ${red}::jsonb, null, null),
+        (${ids.linkOnly}, '{}'::jsonb, ${green}::jsonb, null, null),
+        (${ids.levelOnly}, '{}'::jsonb, ${green}::jsonb, null, null),
         (${ids.otherBrain}, '{}'::jsonb, ${green}::jsonb, null, null)`);
+    for (const id of Object.values(ids)) {
+      if (id !== ids.otherBrain && id !== ids.levelOnly) await grant(id, ws.admin, false, true);
+    }
+    await grant(ids.teamRw, ws.team, true);
+    await grant(ids.teamRo, ws.team, false);
+    await grant(ids.field, ws.field, true);
+    await grant(ids.draftOnly, ws.team, true);
+    await grant(ids.red, ws.team, true);
+    await grant(ids.otherBrain, ws.otherTeam, true, true);
+    await m.systemDb.execute(sqlTag`
+      insert into shares (owner_id, node_id, node_type, token)
+      values (${anchor}, ${ids.linkOnly}, 'app', ${`${tag}-${randomUUID()}`})`);
   }, 60_000);
 
   afterAll(async () => {
+    await m.systemDb.execute(sqlTag`delete from shares where owner_id = ${anchor}`);
+    await m.systemDb.execute(sqlTag`
+      delete from item_grants where node_id in (select id from nodes where owner_id in (${anchor}, ${other}))`);
     await m.systemDb.execute(sqlTag`delete from nodes where owner_id in (${anchor}, ${other})`);
+    await m.systemDb.execute(
+      sqlTag`delete from workspaces where owner_id in (${anchor}, ${other})`,
+    );
     await m.systemDb.execute(
       sqlTag`delete from spaces where login_id in (${anchor}, ${other}, ${member})`,
     );
@@ -97,76 +145,109 @@ describe.skipIf(!URL)('apps for members', () => {
   }, 60_000);
 
   const team = <T>(fn: () => Promise<T>) => m.withViewer('team', fn);
+  const inField = <T>(fn: () => Promise<T>) =>
+    m.withScope({ kind: 'user', loginId: member, ws: [ws.field], modWs: [] }, fn);
 
-  // The rule is written in the query, so the admin pool proves it. The team
-  // role adds row security keyed on the box's one brain (mantle_brain_id()),
-  // which this test's own brain is not: see the team-role case below.
-  it('lists team and client apps with a green published build, by title', async () => {
+  it('lists the apps Team holds with a green published build, by title', async () => {
     const apps = await ma.listMemberApps(anchor);
-    expect(apps.map((a) => a.id)).toEqual([ids.team]);
-    expect(apps.find((a) => a.id === ids.team)).toMatchObject({
+    expect(apps.map((a) => a.id)).toEqual([ids.teamRo, ids.teamRw]);
+    expect(apps.find((a) => a.id === ids.teamRw)).toMatchObject({
       description: 'Polls',
       audience: 'team',
-      // The R and R/W pill (team apps Phase 3): the member broker's rule.
+      // The R and R/W pill: the grant's Write switch.
       dataReadOnly: false,
       dataAccess: 'read_write',
     });
+    expect(apps.find((a) => a.id === ids.teamRo)).toMatchObject({
+      dataReadOnly: true,
+      dataAccess: 'read',
+    });
   });
 
-  // Contact shares plan P0 (decided 2026-10-01): Public means "anyone with
-  // the link" for an app as for every other kind. A public app is in no
-  // member list, the launcher's folders included; a member who has the link
-  // still runs it, read only.
-  it('lists no public app, yet a member still runs one from its link', async () => {
-    const placed = await ma.listMemberAppsPlaced(anchor);
-    expect(placed.apps.map((a) => a.id)).not.toContain(ids.pub);
-    expect(placed.places.map((p) => p.id)).not.toContain(ids.pub);
-    const pub = await ma.getMemberRunnableApp(anchor, ids.pub);
-    expect(pub).toMatchObject({ id: ids.pub, audience: 'public' });
-    expect(ma.memberMayWriteAppData(pub!)).toBe(false);
-    expect(ma.MEMBER_LISTED_APP_LEVELS).toEqual(['team', 'client']);
+  it('writes the data only where the grant has Write on', async () => {
+    const rw = await ma.getMemberRunnableApp(anchor, ids.teamRw);
+    const ro = await ma.getMemberRunnableApp(anchor, ids.teamRo);
+    expect(rw).toMatchObject({ writable: true });
+    expect(ro).toMatchObject({ writable: false });
+    expect(ma.memberMayWriteAppData(rw!)).toBe(true);
+    expect(ma.memberMayWriteAppData(ro!)).toBe(false);
   });
 
-  it('never opens an admin app, a draft-only app, a red build or another brain', async () => {
-    for (const id of [ids.admin, ids.draftOnly, ids.red, ids.otherBrain]) {
+  it('never opens an Admin-only app, a draft-only app, a red build, another brain, a link or a level', async () => {
+    for (const id of [
+      ids.admin,
+      ids.draftOnly,
+      ids.red,
+      ids.otherBrain,
+      ids.linkOnly,
+      ids.levelOnly,
+      // Another workspace than Team: not the member's outside its scope.
+      ids.field,
+    ]) {
       expect(await ma.getMemberRunnableApp(anchor, id), id).toBeNull();
     }
+    const listed = (await ma.listMemberAppsPlaced(anchor)).places.map((p) => p.id);
+    expect(listed).not.toContain(ids.linkOnly);
+    expect(listed).not.toContain(ids.levelOnly);
   });
 
   it('opens a runnable app with its PUBLISHED build and manifest, never a draft', async () => {
-    const app = await ma.getMemberRunnableApp(anchor, ids.team);
-    expect(app).toMatchObject({ id: ids.team, manifest: { toolSlugs: ['note_list'] } });
+    const app = await ma.getMemberRunnableApp(anchor, ids.teamRw);
+    expect(app).toMatchObject({ id: ids.teamRw, manifest: { toolSlugs: ['note_list'] } });
     expect(app?.publishedBuild.ok).toBe(true);
     expect(Object.keys(app ?? {})).not.toContain('draftBuild');
   });
 
-  it('runs on the team role: only granted columns, and row security still applies', async () => {
-    // A draft column (never granted) would be "permission denied" here. Row
-    // security then hides a brain that is not this box's: nothing leaks.
-    expect(await team(() => ma.listMemberApps(anchor))).toEqual([]);
-    expect(await team(() => ma.getMemberRunnableApp(anchor, ids.team))).toBeNull();
-    expect(await team(() => ma.resolveMemberHomeApp(anchor, ids.team))).toBeNull();
-    expect(await team(() => lib.libraryCounts(anchor))).toEqual({
-      page: 0,
-      note: 0,
-      draw: 0,
-      table: 0,
-      file: 0,
+  it('in a workspace scope: the apps the scope holds, on the workspace role', async () => {
+    const apps = await inField(() => ma.listMemberApps(anchor));
+    expect(apps.map((a) => a.id)).toEqual([ids.field]);
+    expect(apps[0]).toMatchObject({ dataAccess: 'read_write' });
+    expect(await inField(() => ma.getMemberRunnableApp(anchor, ids.field))).toMatchObject({
+      writable: true,
     });
-    await expect(lib.libraryCounts(anchor)).rejects.toThrow(/withViewer/);
+    expect(await inField(() => ma.getMemberRunnableApp(anchor, ids.teamRw))).toBeNull();
+    expect([...(await inField(() => ma.listTeamLevelAppIds(anchor)))]).toEqual([ids.field]);
   });
 
-  it('gives team chat the data of team-level apps only', async () => {
+  it('runs on the team role: only granted columns, and row security still applies', async () => {
+    // A draft column (never granted) would be "permission denied" here. Row
+    // security and the Team of the box's own brain then hide a brain that is
+    // not this box's: nothing leaks.
+    expect(await team(() => ma.listMemberApps(anchor))).toEqual([]);
+    expect(await team(() => ma.getMemberRunnableApp(anchor, ids.teamRw))).toBeNull();
+    expect(await team(() => ma.resolveMemberHomeApp(anchor, ids.teamRw))).toBeNull();
+  });
+
+  it('gives team chat the data of the apps Team holds only (published or not)', async () => {
     const reach = await ma.listTeamLevelAppIds(anchor);
-    expect(reach.has(ids.team)).toBe(true);
+    expect(reach.has(ids.teamRw)).toBe(true);
     expect(reach.has(ids.draftOnly)).toBe(true);
     expect(reach.has(ids.admin)).toBe(false);
+    expect(reach.has(ids.field)).toBe(false);
+    expect(reach.has(ids.levelOnly)).toBe(false);
     expect(reach.has(ids.otherBrain)).toBe(false);
   });
 
+  it('an embed never opens an app: its grants do not follow one', async () => {
+    const page = randomUUID();
+    await m.systemDb.execute(sqlTag`
+      insert into nodes (id, owner_id, type, title, path, audience)
+      values (${page}, ${anchor}, 'page', ${`${tag} page`}, 'pages', 'team')`);
+    try {
+      await grant(page, ws.team, true, true);
+      await m.systemDb.execute(sqlTag`
+        insert into node_embeds (from_id, to_id) values (${page}, ${ids.admin})`);
+      expect((await ma.listTeamLevelAppIds(anchor)).has(ids.admin)).toBe(false);
+    } finally {
+      await m.systemDb.execute(sqlTag`delete from node_embeds where from_id = ${page}`);
+      await m.systemDb.execute(sqlTag`delete from item_grants where node_id = ${page}`);
+      await m.systemDb.execute(sqlTag`delete from nodes where id = ${page}`);
+    }
+  });
+
   it('honours the pinned home app only while a member may run it', async () => {
-    expect(await ma.resolveMemberHomeApp(anchor, ids.team)).toEqual({
-      appId: ids.team,
+    expect(await ma.resolveMemberHomeApp(anchor, ids.teamRw)).toEqual({
+      appId: ids.teamRw,
       title: `${tag} b team`,
       icon: null,
       color: null,
@@ -176,10 +257,21 @@ describe.skipIf(!URL)('apps for members', () => {
     expect(await ma.resolveMemberHomeApp(anchor, undefined)).toBeNull();
   });
 
+  // Plan R2: an app reads only what every holder reads.
+  it("an app's tool rules come from its holders, never a level", async () => {
+    const apps = await import('./apps');
+    const rules = async (id: string) => (await apps.getAppRuntime(anchor, id))?.toolRules;
+    expect(await rules(ids.admin)).toBe('admin');
+    expect(await rules(ids.linkOnly)).toBe('admin');
+    expect(await rules(ids.levelOnly)).toBe('admin');
+    expect(await rules(ids.teamRw)).toBe('team');
+    expect(await rules(ids.field)).toBe('team');
+  });
+
   it('logs a member run by login and names the login to the admin', async () => {
     log.recordAppAccess({
       ownerId: anchor,
-      appNodeId: ids.team,
+      appNodeId: ids.teamRw,
       actorId: member,
       kind: 'db',
       detail: { op: 'exec' },
@@ -187,7 +279,7 @@ describe.skipIf(!URL)('apps for members', () => {
     let rows: Awaited<ReturnType<typeof log.listAppAccess>> = [];
     for (let i = 0; i < 250 && rows.length === 0; i++) {
       await new Promise((r) => setTimeout(r, 20));
-      rows = await log.listAppAccess(anchor, ids.team);
+      rows = await log.listAppAccess(anchor, ids.teamRw);
     }
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
@@ -205,7 +297,7 @@ describe.skipIf(!URL)('apps for members', () => {
       values (${plain}, ${`${tag}-sam@example.invalid`}, 'x', 'member', '  ')`);
     log.recordAppAccess({
       ownerId: anchor,
-      appNodeId: ids.pub,
+      appNodeId: ids.teamRo,
       actorId: plain,
       kind: 'tool',
       detail: { via: 'member', slug: 'note_list' },
@@ -213,55 +305,12 @@ describe.skipIf(!URL)('apps for members', () => {
     let rows: Awaited<ReturnType<typeof log.listAppAccess>> = [];
     for (let i = 0; i < 250 && rows.length === 0; i++) {
       await new Promise((r) => setTimeout(r, 20));
-      rows = await log.listAppAccess(anchor, ids.pub);
+      rows = await log.listAppAccess(anchor, ids.teamRo);
     }
     expect(rows[0]).toMatchObject({ actorId: plain, contactName: `${tag}-sam` });
     await m.systemDb.execute(sqlTag`delete from spaces where login_id = ${plain}`);
     await m.systemDb.execute(sqlTag`delete from auth.users where id = ${plain}`);
-    const [after] = await log.listAppAccess(anchor, ids.pub);
+    const [after] = await log.listAppAccess(anchor, ids.teamRo);
     expect(after).toMatchObject({ actorId: null, contactId: null, contactName: 'Removed member' });
-  });
-
-  // Access matrix M6 (N12): an embed opens reading the embedding item, never
-  // an app's data. The app data reads below admin keep to this list.
-  it('apps used at a level: own level or a folder share, never an embed', async () => {
-    await m.systemDb.execute(
-      sqlTag`update nodes set embedded_level = 'team' where id = ${ids.admin}`,
-    );
-    try {
-      const used = await ma.listAppIdsUsedAt(anchor, ['team', 'client', 'public']);
-      expect(used.has(ids.team!)).toBe(true);
-      expect(used.has(ids.admin!)).toBe(false);
-      // A folder share does count.
-      await m.systemDb.execute(
-        sqlTag`update nodes set inherited_level = 'team' where id = ${ids.admin}`,
-      );
-      expect((await ma.listAppIdsUsedAt(anchor, ['team'])).has(ids.admin!)).toBe(true);
-    } finally {
-      await m.systemDb.execute(
-        sqlTag`update nodes set embedded_level = null, inherited_level = null where id = ${ids.admin}`,
-      );
-    }
-  });
-
-  // Access matrix M5 (N12): the level an app is USED at, read for real (the
-  // broker test mocks it).
-  it("an app's effective level counts a folder share, never an embed", async () => {
-    const apps = await import('./apps');
-    expect((await apps.getAppRuntime(anchor, ids.admin!))?.effectiveAudience).toBe('admin');
-    await m.systemDb.execute(
-      sqlTag`update nodes set embedded_level = 'client' where id = ${ids.admin}`,
-    );
-    expect((await apps.getAppRuntime(anchor, ids.admin!))?.effectiveAudience).toBe('admin');
-    await m.systemDb.execute(
-      sqlTag`update nodes set embedded_level = null, inherited_level = 'client' where id = ${ids.admin}`,
-    );
-    try {
-      expect((await apps.getAppRuntime(anchor, ids.admin!))?.effectiveAudience).toBe('client');
-    } finally {
-      await m.systemDb.execute(
-        sqlTag`update nodes set inherited_level = null where id = ${ids.admin}`,
-      );
-    }
   });
 });

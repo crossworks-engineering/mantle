@@ -1,22 +1,25 @@
 /**
- * The ONE rule for the level an app's tools run at (client tier audit
- * 2026-09-30, L1). The three app tool brokers (owner, member, client) and the
- * author warnings all ask here, so they cannot drift.
+ * The ONE rule for the rules an app's tools run under (client tier audit
+ * 2026-09-30, L1; workspaces W5b2, plan R2). The three app tool brokers
+ * (owner, member, client) and the author warnings all ask here, so they
+ * cannot drift.
  *
- * Why: an app's database is shared by everyone who runs the app, and every
- * client reads a client-level app's database with any SQL. A tool that reads
- * above client level would let a member's or an admin's run copy team or
- * admin data into it. So a client-level app gets the client rules for EVERY
- * runner, an admin's and a member's run included (Jason, 2026-09-30). Every
- * other app keeps the runner's own rules, as before: a team app's members
- * write only what members can read, and an admin's run of a team or public
- * app keeps the admin's tools (team apps on real boxes call MCP and recipe
- * tools from an admin's run).
+ * Why: an app's database is shared by everyone who runs the app, so the app
+ * reads only what EVERY holder of the app reads (R2): a tool that reads more
+ * would let one runner copy it into data the other holders read. The
+ * holders are the workspaces its grants name (`AppRuntime.toolRules`): an
+ * app the Admin workspace alone holds keeps the runner's own rules; an app
+ * any other workspace holds (Team, or a workspace of its own) runs the team
+ * rules for EVERY runner, an admin's run included. (A one-user private
+ * workspace whose user is also in another holder will not count as a
+ * holder: private workspaces come with W6b.) Clients are not migrated
+ * (owner rule 21.9): the client rules run only for the client portal's own
+ * apps (client-apps.ts), never for a workspace app.
  *
- *   runner \ app   admin    team     client   public
- *   admin          admin    admin    client   admin
- *   member         (never)  team     client   team
- *   client         (never)  (never)  client   (never)
+ *   runner \ held by   Admin only   another workspace   client portal app
+ *   admin              admin        team                (never)
+ *   member             team         team                (never)
+ *   client             (never)      (never)             client
  *
  * AUTHOR CEILING (team apps Phase 3, plan A.4): an app a member built
  * (`apps.author_level` 'team') runs its tools at most at team rules, for
@@ -29,11 +32,11 @@
  * `team` is memberAppToolVerdict; `client` is clientAppToolVerdict; `none`
  * refuses every tool.
  */
-import { asViewerLevel, type AppAuthorLevel, type Tool, type ViewerLevel } from '@mantle/db';
-import { getAppRuntime } from '@mantle/content';
+import type { AppAuthorLevel, Tool, ViewerLevel } from '@mantle/db';
+import { getAppRuntime, type AppToolRules } from '@mantle/content';
 import { resolveTool } from './resolve';
 import { memberAppToolVerdict } from './member-app-tools';
-import { CLIENT_APP_TOOL_SLUGS, clientAppToolVerdict } from './client-app-tools';
+import { clientAppToolVerdict } from './client-app-tools';
 import type { OutsideToolCheck } from './external-access';
 import type { ToolHandlerContext } from './types';
 
@@ -43,29 +46,30 @@ export type AppToolLevel = 'admin' | 'team' | 'client' | 'none';
 /** Who runs the app: the owner broker's admin, a member or a client. */
 export type AppToolRunner = 'admin' | 'team' | 'client';
 
+/** What the app's holders allow (`AppRuntime.toolRules`), or 'client' for
+ *  an app of the client portal (the client broker). */
+export type AppHolding = AppToolRules | 'client';
+
 /** `write`: an outside call that writes (team apps Phase 2); the member
  *  and client brokers log its input. */
 export type AppToolVerdict =
   { ok: true; tool: Tool; write?: boolean } | { ok: false; status: 403 | 404; reason: string };
 
-/** A client-level app runs the client rules for every runner; any other app
- *  runs the runner's own rules. A client never runs a non-client app (its
- *  broker 404s first), so that pair runs no tools. Then the author ceiling:
- *  a member-built app (`authorLevel` 'team') never runs at admin rules. */
+/** The rules a run gets: see the table above. Anything but a known holding
+ *  runs no tools. Then the author ceiling: a member-built app
+ *  (`authorLevel` 'team') never runs at admin rules. */
 export function appToolLevel(
   runner: AppToolRunner,
-  appLevel: unknown,
+  holding: AppHolding | null | undefined,
   authorLevel: AppAuthorLevel = 'admin',
 ): AppToolLevel {
-  let level: ViewerLevel;
-  try {
-    level = asViewerLevel(appLevel);
-  } catch {
-    return 'none';
-  }
-  const byRunner: AppToolLevel =
-    level === 'client' ? 'client' : runner === 'client' ? 'none' : runner;
-  return byRunner === 'admin' && authorLevel === 'team' ? 'team' : byRunner;
+  let byHolders: AppToolLevel;
+  if (holding === 'client') byHolders = runner === 'client' ? 'client' : 'none';
+  else if (runner === 'client') byHolders = 'none';
+  else if (holding === 'team') byHolders = 'team';
+  else if (holding === 'admin') byHolders = runner;
+  else byHolders = 'none';
+  return byHolders === 'admin' && authorLevel === 'team' ? 'team' : byHolders;
 }
 
 const notDeclared = (slug: string) =>
@@ -138,44 +142,32 @@ export function appToolScope(
 }
 
 /**
- * For an app anyone below admin runs (team level or lower): one warning per
- * declared tool its runs would refuse, in the broker's own words. A client
- * app warns about what the client rules refuse (every run, an admin's too);
- * a team or public app about what members are refused. An admin-level app
- * gets none. Given back by every author move that can change the answer:
- * `app_tools_set`, `app_publish`, setting an app's level (`access_set`) and
- * moving it into another folder (`movedAppToolWarnings`).
- * Best-effort: a failed check warns nothing and never fails the move it
- * rides on.
+ * For an app a workspace other than Admin holds: one warning per declared
+ * tool its runs would refuse, in the broker's own words (the team rules run
+ * for every runner, R2). An app the Admin workspace alone holds gets none,
+ * unless a member built it (the author ceiling runs it at team rules for its
+ * admins too). Given back by every author move that can change the answer:
+ * `app_tools_set`, `app_publish`, a grant change and moving it into another
+ * folder (`movedAppToolWarnings`). Best-effort: a failed check warns nothing
+ * and never fails the move it rides on.
  */
 export async function appToolWarnings(ownerId: string, appId: string): Promise<string[]> {
   try {
     const app = await getAppRuntime(ownerId, appId);
     if (!app) return [];
-    // The level it is used at, folder shares included (access matrix M5).
-    const audience = app.effectiveAudience;
-    const level = appToolLevel('team', audience);
-    // An admin-level app warns only when a member built it: the author
-    // ceiling runs it at team rules for its admins too (Phase 3).
-    const capped = audience === 'admin' && app.authorLevel === 'team';
-    if ((audience === 'admin' && !capped) || level === 'none') return [];
+    const level = appToolLevel('admin', app.toolRules, app.authorLevel);
+    if (level !== 'team') return [];
     const declared = [...new Set(app.manifest.toolSlugs ?? [])];
     const warnings: string[] = [];
     for (const slug of declared) {
-      // No run here, so no runner login: the level rules alone.
+      // No run here, so no runner login: the rules alone.
       const verdict = await appToolVerdict(level, ownerId, declared, slug, undefined, {
         rulesOnly: true,
       });
       if (verdict.ok) continue;
-      if (level === 'client') {
-        warnings.push(
-          `${verdict.reason} Everyone running this app (admins and members too) gets an error: a client-level app uses the client rules, so it can call only the client tools (${CLIENT_APP_TOOL_SLUGS.join(', ')}) from an enabled client-level group, a connector tool whose connector is at client level, or an http tool an admin switched External access on for. Raise the app to team level to use other built-in tools.`,
-        );
-      } else {
-        warnings.push(
-          `${verdict.reason} Members running this app get an error: declare a read-only built-in tool from an enabled team-level group instead (\`tool_group_list\` shows levels), have an admin set a connector's level to team or lower for its tools, switch External access on for an http tool that only reads, or keep the app at admin level.`,
-        );
-      }
+      warnings.push(
+        `${verdict.reason} Everyone running this app (admins too) gets an error: an app a workspace other than Admin holds runs the team rules. Declare a read-only built-in tool from an enabled team-level group instead (\`tool_group_list\` shows levels), have an admin open a connector to that workspace, switch External access on for an http tool that only reads, or keep the app in the Admin workspace only.`,
+      );
     }
     return warnings;
   } catch {
@@ -185,10 +177,10 @@ export async function appToolWarnings(ownerId: string, appId: string): Promise<s
 
 /**
  * The tool warnings of apps a move filed into another folder (access matrix
- * N11): a folder shared with clients sets the level an app is used at
- * (M5), so moving an app in or out changes which of its declared tools
- * run, for its admins too. Each warning names its app when more than one
- * moved. Best-effort, as appToolWarnings.
+ * N11): an app placed in a folder takes its grants (S6), and its holders set
+ * the rules its tools run under (R2), so moving an app changes which of its
+ * declared tools run, for its admins too. Each warning names its app when
+ * more than one moved. Best-effort, as appToolWarnings.
  */
 export async function movedAppToolWarnings(
   ownerId: string,
