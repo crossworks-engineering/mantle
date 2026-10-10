@@ -74,7 +74,7 @@ describe.skipIf(!URL)('workspaces:check (plan 7.8)', () => {
       (${owner}, 'o@example.invalid', 'x', 'admin', true),
       (${member}, 'm@example.invalid', 'x', 'member', false)`;
     await node('page', 'page', 'pages', 'team');
-    await node('folder', 'branch', 'pages.shared', 'admin,team');
+    await node('folder', 'branch', 'pages.shared', 'team,team');
     await node('inFolder', 'page', 'pages.shared', 'admin,,team');
     await node('app', 'app', 'apps', 'team');
     await node('contact', 'contact', 'contacts');

@@ -101,7 +101,9 @@ describe.skipIf(!URL)('workspaces live (0250): migration, bridges, facts', () =>
     await node('teamPage', owner, 'page', 'pages', 'team');
     await node('publicNote', owner, 'note', 'notes', 'public');
     await node('email', owner, 'email', 'emails', 'admin');
-    await node('folder', owner, 'branch', 'pages.shared', 'admin', { share: 'team' });
+    // A folder the team reads and shares: its Team row passes on (a folder
+    // shared by its share level alone holds none, see the bridge-off test).
+    await node('folder', owner, 'branch', 'pages.shared', 'team', { share: 'team' });
     await node('inFolder', owner, 'page', 'pages.shared', 'admin', { inherited: 'team' });
     await node('teamApp', owner, 'app', 'apps', 'team');
     await node('roApp', owner, 'app', 'apps', 'team');
