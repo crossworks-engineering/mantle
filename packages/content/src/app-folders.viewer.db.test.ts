@@ -335,8 +335,6 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
       },
     ]);
     await holdTeam(notesFolder, true);
-    await m.systemDb.execute(sqlTag`
-      insert into node_embeds (from_id, to_id) values (${embedNote}, ${a.embeddedOnly})`);
 
     // Another brain with a folder and a team app at one of our paths, and a
     // member's own folder there: rows of other owners at the same path.
