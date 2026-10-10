@@ -250,12 +250,23 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
   });
 
   it('a client-level app: only a connector at client level, under the client role', async () => {
-    expect(await level.appToolVerdict('client', anchor, DECLARED, 'site_query')).toMatchObject({
+    // A client runs as its login (W5a audit W2); this brain has no
+    // workspaces, so the login's rule passes and the level decides.
+    const client = randomUUID();
+    expect(
+      await level.appToolVerdict('client', anchor, DECLARED, 'site_query', client),
+    ).toMatchObject({
       ok: false,
       reason: expect.stringMatching(/connector at team level/),
     });
     await setConnectorLevel('client');
-    const v = await level.appToolVerdict('client', anchor, DECLARED, 'site_query');
+    // Without the client's login: refused, whatever the level.
+    expect(await level.appToolVerdict('client', anchor, DECLARED, 'site_query')).toMatchObject({
+      ok: false,
+      status: 403,
+      reason: expect.stringMatching(/signed-in client/),
+    });
+    const v = await level.appToolVerdict('client', anchor, DECLARED, 'site_query', client);
     if (!v.ok) throw new Error(v.reason);
     const scope = level.appToolScope('client', { loginId: randomUUID(), name: 'A client' });
     fake.calls.length = 0;
@@ -271,11 +282,15 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     // stays refused.
     await switchOff('site_query');
     try {
-      expect(await level.appToolVerdict('client', anchor, DECLARED, 'site_query')).toMatchObject({
+      expect(
+        await level.appToolVerdict('client', anchor, DECLARED, 'site_query', client),
+      ).toMatchObject({
         ok: true,
         write: true,
       });
-      expect(await level.appToolVerdict('client', anchor, DECLARED, 'quick_sum')).toMatchObject({
+      expect(
+        await level.appToolVerdict('client', anchor, DECLARED, 'quick_sum', client),
+      ).toMatchObject({
         ok: false,
         status: 403,
       });

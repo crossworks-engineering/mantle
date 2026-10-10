@@ -481,6 +481,15 @@ export async function connectorToolVerdict(
     };
   }
   const write = mark === 'write';
+  // A client always runs as a known login (W5a audit W2): with none, there
+  // is no rule to hold it to, so refuse rather than fall through.
+  if (runner === 'client' && !loginId) {
+    return {
+      ok: false,
+      status: 403,
+      reason: `The tool '${slug}' can't run: ${who} needs the signed-in client to use a connector.`,
+    };
+  }
   // The second check (W4b, plan section 6; fix round 2). With the runner's
   // login known: the login's own rule (M3), so a member's own app reaches no
   // connector its MCP would refuse. Without one, a member's app runs in

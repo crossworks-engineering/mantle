@@ -81,4 +81,24 @@ describe('client audit rows', () => {
       ['api.write', '/api/client/space', CLIENT_ID],
     ]);
   });
+
+  it('a route any login may call: auditLoginMutation writes the row, getLoginOr401 alone none (W5a audit M2)', async () => {
+    const session = await import('./session');
+    const shared = (method: string, path: string) =>
+      run(
+        { req: new Request(`http://x${path}`, { method, headers: { cookie } }), path, method },
+        async () => {
+          const login = await session.getLoginOr401();
+          if (login instanceof Response) throw new Error('no login');
+          expect(h.audited).toEqual([]);
+          await session.auditLoginMutation(login);
+        },
+      );
+    await shared('GET', '/api/workspaces');
+    expect(h.audited).toEqual([]);
+    await shared('POST', '/api/workspaces');
+    expect(h.audited.map((r) => [r.action, r.method, r.path, r.actorId])).toEqual([
+      ['api.write', 'POST', '/api/workspaces', CLIENT_ID],
+    ]);
+  });
 });

@@ -56,8 +56,15 @@ export type WorkspaceUser = {
   email: string;
   moderator: boolean;
   /** A Moderator here because they are an Admin user and the workspace is
-   *  Admin-moderated: only an Admin user may remove or demote them. */
+   *  Admin-moderated: nobody may remove or demote them here (409
+   *  admin_kept); they stop being one by leaving the Admin workspace. */
   adminViaArea: boolean;
+  /** Who added them ("Added by NAME on DATE", plan S1): `name` is the
+   *  display name or else the email. null when unknown (the adder's login
+   *  is gone, or a migration or bridge added them). */
+  addedBy: { loginId: string; name: string } | null;
+  /** When they were added (ISO 8601). */
+  addedAt: string;
 };
 
 /** A resource kind on the workspace screen (plan 1.4). */
@@ -119,10 +126,11 @@ export type WorkspaceUserPatchBody = { moderator: boolean };
 /** POST, PATCH and DELETE on users answer the workspace screen again. */
 export type WorkspaceUsersResponse = WorkspaceDetailResponse;
 
-/** GET /api/workspaces/user-search?q=: logins by email or name. A
- *  non-Admin Moderator needs at least 3 characters and gets at most 10;
- *  an Admin user may send an empty q (everyone) and gets at most 50.
- *  Disabled logins are left out. */
+/** GET /api/workspaces/user-search?q=&offset=: logins by email or name. A
+ *  non-Admin Moderator needs at least 3 characters and gets at most 10 (no
+ *  paging: offset > 0 answers 400 invalid). An Admin user may send an empty
+ *  q (everyone) and gets pages of 50: a full page may have more, so ask
+ *  again with offset + 50. Disabled and client logins are left out. */
 export type WorkspaceUserSearchHit = { loginId: string; name: string | null; email: string };
 export type WorkspaceUserSearchResponse = WorkspaceUserSearchHit[];
 
@@ -149,16 +157,15 @@ export type WorkspaceErrorCode =
   | 'not_found'
   | 'forbidden'
   | 'admin_only'
-  | 'name_taken'
+  | 'reserved_name'
   | 'archived'
   | 'admin_workspace'
   | 'bridge_owned'
   | 'workspace_holds_items'
   | 'already_user'
   | 'not_user'
-  | 'self_add_refused'
   | 'last_moderator'
-  | 'admin_user_kept'
+  | 'admin_kept'
   | 'owner_stays_admin'
   | 'self_demote'
   | 'client_login'

@@ -535,6 +535,26 @@ export function systemDbCallerOf(stack: string): string | null {
   return null;
 }
 
+/** The drizzle internals read on `systemDb` itself while a query it was
+ *  asked for runs (drizzle reads `this.session` and friends on the proxy;
+ *  `execute` reads `this.authToken` only when the query is awaited, from a
+ *  frame with no caller file). The check already ran when the caller
+ *  touched the method, so these skip it (W5a audit W3): one stack per call,
+ *  not several, in a turn. */
+const SYSTEM_DB_INTERNAL_PROPS: ReadonlySet<PropertyKey> = new Set([
+  'session',
+  'dialect',
+  '_',
+  '$client',
+  'authToken',
+]);
+
+/** Whether an access of `prop` on `systemDb` inside a turn scope is checked
+ *  (assertSystemDbCaller): every one but drizzle's internals. */
+export function systemDbAccessChecked(prop: PropertyKey): boolean {
+  return !SYSTEM_DB_INTERNAL_PROPS.has(prop);
+}
+
 /** Whether `file` is one of SYSTEM_DB_MODULES (or a test file). */
 export function isSystemDbModule(file: string): boolean {
   if (/\.test\.tsx?$/.test(file)) return true;

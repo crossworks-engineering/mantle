@@ -70,16 +70,23 @@ export async function loadLoginTarget(id: string): Promise<LoginTarget | null> {
   return row ?? null;
 }
 
+type LoginTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
 /**
  * Apply `change` to `target` for `actor`. `inTx` runs last inside the same
  * transaction (the workspace screen writes its own rows there), after the
  * login bridge has written the Admin and Team rows the new role gives.
+ * `firstInTx` runs first in it, before any write: the workspace screen
+ * locks the workspace and checks its rules there (W5a audit L2), against
+ * the rows as they are before the bridge changes them. What it throws ends
+ * the transaction and is thrown on.
  */
 export async function applyLoginChange(
   actor: SessionUser,
   target: LoginTarget,
   change: LoginChange,
-  inTx?: (tx: Parameters<Parameters<typeof db.transaction>[0]>[0]) => Promise<void>,
+  inTx?: (tx: LoginTx) => Promise<void>,
+  firstInTx?: (tx: LoginTx) => Promise<void>,
 ): Promise<LoginChangeDone | LoginChangeRefusal> {
   const targetId = target.id;
   // Any role but admin locks the login out of admin sessions (client logins
@@ -167,6 +174,7 @@ export async function applyLoginChange(
   let releasedAgentId: string | null = null;
   try {
     await db.transaction(async (tx) => {
+      if (firstInTx) await firstInTx(tx);
       if (Object.keys(changes).length > 0) {
         await tx.update(authUsers).set(changes).where(eq(authUsers.id, targetId));
       }

@@ -14,6 +14,7 @@ import {
   currentWorkspaceScope,
   inTurnScope,
   assertSystemDbCaller,
+  systemDbAccessChecked,
   isUnscoped,
   runInTurnScope,
   type WorkspaceScope,
@@ -730,7 +731,7 @@ export const db = new Proxy({} as PostgresJsDatabase<typeof schema>, {
  */
 export const systemDb = new Proxy({} as PostgresJsDatabase<typeof schema>, {
   get(_t, prop) {
-    if (inTurnScope()) assertSystemDbCaller();
+    if (inTurnScope() && systemDbAccessChecked(prop)) assertSystemDbCaller();
     return Reflect.get(getAdminDb() as object, prop);
   },
 });

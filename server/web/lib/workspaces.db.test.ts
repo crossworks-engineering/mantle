@@ -5,18 +5,24 @@
  *  - who sees what: an Admin user every workspace, a login its own; a
  *    workspace the caller may not see is 404, never 403 (GET, PATCH, users,
  *    resources, archive, a bad id);
- *  - who may add whom: a Moderator adds anyone, a plain user nobody, an
- *    Admin user OTHER users anywhere but itself only to an empty workspace
- *    (17 R7); a client login never;
+ *  - who may add whom: a Moderator adds anyone, a plain user nobody (asked
+ *    before the login is looked up), an Admin user anyone, itself included,
+ *    private workspaces too (S1), logged and shown as "Added by"; a client
+ *    login never;
+ *  - names: only Admin and Team are reserved; a name clash with a workspace
+ *    the caller cannot see is allowed (audit M3);
  *  - the last Moderator can be neither removed nor demoted;
- *  - in the Admin-moderated workspace only an Admin user removes or demotes
- *    an Admin user (19.5);
+ *  - in the Admin-moderated workspace an Admin user stays a Moderator:
+ *    nobody demotes or removes one (19.5, 21.8 row 2); an Admin user's
+ *    self-add there is a Moderator (18.8);
  *  - the Admin workspace's users are the admin logins (the role change, its
- *    owner and self rules);
+ *    owner and self rules, its checks inside the change, its audit row);
  *  - the assistant is frozen once it has history; resources need the area;
  *    the bridge workspaces' connectors are locked;
- *  - archive counts, the refusals, and the grants it drops;
- *  - user search (Q3): 3 characters, Moderators and Admin users only;
+ *  - archive counts, the refusals, the grants and exclusions it drops, and
+ *    no grant lands in an archived workspace, even racing the archive;
+ *  - user search (Q3): 3 characters, Moderators and Admin users only, an
+ *    Admin user pages through everyone;
  *  - /api/shell's workspaces and areas.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/workspaces.db.test.ts
@@ -27,13 +33,24 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
-const h = vi.hoisted(() => ({ res: null as unknown }));
+const h = vi.hoisted(() => ({
+  res: null as unknown,
+  audits: [] as Array<Record<string, unknown>>,
+  loginAudits: [] as string[],
+}));
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getLoginOr401: vi.fn(async () => h.res),
+  auditLoginMutation: vi.fn(async (login: { kind: string }) => {
+    h.loginAudits.push(login.kind);
+  }),
 }));
-vi.mock('@/lib/audit', () => ({ auditFireAndForget: () => {}, requestMetaFrom: () => ({}) }));
+vi.mock('@/lib/audit', () => ({
+  auditFireAndForget: (row: Record<string, unknown>) => h.audits.push(row),
+  requestMetaFrom: () => ({}),
+  requestMeta: async () => ({ ip: null, userAgent: null }),
+}));
 vi.mock('@/lib/push/relay-client', () => ({ relayDeleteDevice: vi.fn(async () => true) }));
 vi.mock('@mantle/crypto', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -94,6 +111,15 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     return { status: r.status, body: (await r.json()) as Json };
   };
   const p = <T extends Json>(v: T) => ({ params: Promise.resolve(v) });
+  /** An error's message with its causes (drizzle wraps the database's). */
+  const errText = (err: unknown): string => {
+    const out: string[] = [];
+    for (let e: unknown = err, d = 0; e && d < 4; d++) {
+      out.push(String((e as { message?: unknown }).message ?? e));
+      e = (e as { cause?: unknown }).cause;
+    }
+    return out.join(' | ');
+  };
 
   const routes = async () => ({
     root: await import('@/app/api/workspaces/route'),
@@ -217,7 +243,7 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     expect(codes).toEqual(Array(codes.length).fill(404));
   });
 
-  it('who may add whom: Moderators anyone; plain users nobody; Admin users others only', async () => {
+  it('who may add whom: Moderators anyone; plain users nobody; Admin users anyone (S1)', async () => {
     const ws = await create(mem, 'Mia team');
     await as(mem);
     // A Moderator adds a user (not a Moderator by default).
@@ -227,31 +253,64 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     expect((await addUser(ws, mem2)).body.code).toBe('already_user');
     expect((await addUser(ws, cli)).body.code).toBe('client_login');
     expect((await addUser(ws, randomUUID())).status).toBe(404);
-    // A plain user of the workspace adds nobody (it sees the workspace: 403).
+    // A plain user of the workspace adds nobody (it sees the workspace:
+    // 403), and is told so before the login it names is looked up (audit
+    // L1): a missing login and a client login answer the same 403.
     await as(mem2);
-    const plain = await addUser(ws, mem3);
-    expect(plain.status).toBe(403);
-    expect(plain.body.code).toBe('forbidden');
-    // An Admin user who is not a user of it adds ANOTHER user...
+    for (const target of [mem3, randomUUID(), cli]) {
+      const plain = await addUser(ws, target);
+      expect(plain.status, target).toBe(403);
+      expect(plain.body.code, target).toBe('forbidden');
+    }
+    // An Admin user who is not a user of it adds another user...
     await as(adm2);
     expect((await addUser(ws, mem3)).status).toBe(200);
-    // ...but never itself to a workspace that has users (17 R7).
+    // ...and itself, to this private workspace with users (S1): logged with
+    // self, shown as "Added by".
     const self = await addUser(ws, adm2);
-    expect(self.status).toBe(403);
-    expect(self.body.code).toBe('self_add_refused');
-    expect(await userRow(ws, adm2)).toBeNull();
-    // A workspace with no users left (its only user's login was deleted) may
-    // be joined by an Admin user, and it is logged.
+    expect(self.status).toBe(200);
+    expect(await userRow(ws, adm2)).toEqual({ moderator: false });
+    const [ev] = await x<{ subject: Json }>(sql`select subject from workspace_events
+      where workspace_id = ${ws} and actor_id = ${adm2} and action = 'user.add'
+        and subject->>'login' = ${adm2}`);
+    expect(ev!.subject).toEqual({ login: adm2, moderator: false, self: true });
+    const users = self.body.users as Json[];
+    const by = (id: string) => users.find((u) => u.loginId === id)!;
+    expect(by(adm2).addedBy).toEqual({ loginId: adm2, name: 'Ada Admin' });
+    expect(by(mem2).addedBy).toEqual({ loginId: mem, name: 'Mia Member' });
+    expect(by(mem).addedBy).toEqual({ loginId: mem, name: 'Mia Member' });
+    expect(Number.isNaN(Date.parse(by(adm2).addedAt as string))).toBe(false);
+    // The adder's login gone: no name to show.
     const gone = randomUUID();
     await x(sql`insert into auth.users (id, email, password_hash, role)
       values (${gone}, ${email(gone, 'gone')}, 'x', 'member')`);
     const empty = await create(gone, 'Former user');
+    expect((await addUser(empty, mem, true)).status).toBe(200);
     await x(sql`delete from auth.users where id = ${gone}`);
     await as(adm2);
-    expect((await addUser(empty, adm2, true)).status).toBe(200);
-    const [ev] = await x<{ action: string }>(sql`select action from workspace_events
-      where workspace_id = ${empty} and actor_id = ${adm2} and action = 'user.add'`);
-    expect(ev).toEqual({ action: 'user.add' });
+    const screen = (await call(r.one.GET(req('GET'), p({ id: empty })))).body;
+    expect((screen.users as Json[])[0]).toMatchObject({ loginId: mem, addedBy: null });
+  });
+
+  it('names: only Admin and Team are reserved; a hidden name never clashes (audit M3)', async () => {
+    // A private workspace the member cannot see...
+    await create(mem2, 'Secret plans');
+    // ...does not stop the member using its name (a 409 would tell them it
+    // exists).
+    const twin = await create(mem, 'secret PLANS');
+    await as(mem);
+    expect((await call(r.one.GET(req('GET'), p({ id: twin })))).status).toBe(200);
+    // The two reserved names, any case and spacing, for anyone.
+    for (const [who, name] of [
+      [mem, 'Team'],
+      [mem, ' team '],
+      [owner, 'ADMIN'],
+    ] as const) {
+      await as(who);
+      const out = await call(r.root.POST(req('POST', { name })));
+      expect(out.status, name).toBe(409);
+      expect(out.body.code, name).toBe('reserved_name');
+    }
   });
 
   it('the last Moderator can be neither removed nor demoted', async () => {
@@ -277,14 +336,20 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     expect(await userRow(ws, mem3)).toEqual({ moderator: true });
   });
 
-  it('Team: only an Admin user removes or demotes an Admin user (19.5)', async () => {
-    await as(mem);
+  it('Team: an Admin user stays a Moderator, for everyone (19.5, 21.8 row 2, audit L4)', async () => {
     const id = p({ id: team, loginId: adm2 });
-    const demote = await call(r.user.PATCH(req('PATCH', { moderator: false }), id));
-    expect(demote.status).toBe(403);
-    expect(demote.body.code).toBe('admin_user_kept');
-    const remove = await call(r.user.DELETE(req('DELETE'), id));
-    expect(remove.body.code).toBe('admin_user_kept');
+    // A member, another Admin user, and the Admin user itself: all refused.
+    for (const who of [mem, owner, adm2]) {
+      await as(who);
+      const demote = await call(r.user.PATCH(req('PATCH', { moderator: false }), id));
+      expect(demote.status, who).toBe(409);
+      expect(demote.body.code, who).toBe('admin_kept');
+      const remove = await call(r.user.DELETE(req('DELETE'), id));
+      expect(remove.status, who).toBe(409);
+      expect(remove.body.code, who).toBe('admin_kept');
+    }
+    expect(await userRow(team, adm2)).toEqual({ moderator: true });
+    await as(mem);
     const screen = (await call(r.one.GET(req('GET'), p({ id: team })))).body;
     const ada = (screen.users as Json[]).find((u) => u.loginId === adm2)!;
     expect(ada.adminViaArea).toBe(true);
@@ -296,19 +361,63 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     expect(await userRow(team, mem3)).toEqual({ moderator: false });
   });
 
+  it('Team: an Admin user who adds itself is a Moderator (18.8)', async () => {
+    // Off Team by hand (the login bridge put every admin there).
+    await x(sql`delete from workspace_users where workspace_id = ${team} and login_id = ${adm2}`);
+    await as(adm2);
+    const out = await addUser(team, adm2, false);
+    expect(out.status).toBe(200);
+    expect(await userRow(team, adm2)).toEqual({ moderator: true });
+    const [ev] = await x<{ subject: Json }>(sql`select subject from workspace_events
+      where workspace_id = ${team} and action = 'user.add' and subject->>'login' = ${adm2}`);
+    expect(ev!.subject).toEqual({ login: adm2, moderator: true, self: true });
+  });
+
   it('the Admin workspace: adding a user is the admin role, removing it the member role', async () => {
     await as(mem);
     expect((await addUser(admin, mem)).status).toBe(404);
     await as(owner);
+    h.audits.length = 0;
     const add = await addUser(admin, mem2);
     expect(add.status).toBe(200);
+    // The Users screen's audit row (audit M2).
+    expect(h.audits).toEqual([
+      expect.objectContaining({
+        action: 'user.update',
+        actorId: owner,
+        method: 'POST',
+        path: `/api/workspaces/${admin}/users`,
+        detail: {
+          targetId: mem2,
+          targetEmail: email(mem2, 'mem'),
+          changes: { role: 'admin' },
+          sessionsEnded: true,
+        },
+      }),
+    ]);
     expect(await roleOf(mem2)).toBe('admin');
     expect(await userRow(admin, mem2)).toEqual({ moderator: true });
     // The login bridge keeps them in Team as a Moderator.
     expect(await userRow(team, mem2)).toEqual({ moderator: true });
+    h.audits.length = 0;
     const remove = await call(r.user.DELETE(req('DELETE'), p({ id: admin, loginId: mem2 })));
     expect(remove.status).toBe(200);
     expect(await roleOf(mem2)).toBe('member');
+    expect(h.audits).toEqual([
+      expect.objectContaining({
+        action: 'user.update',
+        method: 'DELETE',
+        path: `/api/workspaces/${admin}/users/${mem2}`,
+        detail: expect.objectContaining({
+          targetId: mem2,
+          changes: { role: 'member' },
+          sessionsEnded: true,
+          releasedAgentId: null,
+        }),
+      }),
+    ]);
+    // A refused change writes none.
+    h.audits.length = 0;
     expect(await userRow(admin, mem2)).toBeNull();
     // Never yourself, never the original account.
     await as(adm2);
@@ -320,6 +429,52 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     expect(anchor.status).toBe(403);
     expect(anchor.body.code).toBe('owner_stays_admin');
     expect(await roleOf(owner)).toBe('admin');
+    expect(h.audits).toEqual([]);
+    // Every route call of an admin login goes through the api.write hook.
+    expect(h.loginAudits).toContain('admin');
+  });
+
+  it('the Admin workspace: its checks run inside the role change, before the bridge (audit L2)', async () => {
+    const { applyLoginChange, loadLoginTarget } = await import('@/lib/login-update');
+    const target = (await loadLoginTarget(mem3))!;
+    const actor = {
+      id: owner,
+      email: email(owner, 'owner'),
+      actor: { id: owner, email: email(owner, 'owner'), displayName: null, isOwner: true },
+    };
+    const seen: string[] = [];
+    const rowIn = async (tx: { execute: (typeof m.db)['execute'] }) =>
+      (
+        (await tx.execute(sql`select 1 from workspace_users
+          where workspace_id = ${admin} and login_id = ${mem3}`)) as unknown as unknown[]
+      ).length;
+    // A refusal in the first step ends the change: no role, no row.
+    await expect(
+      applyLoginChange(actor, target, { role: 'admin' }, undefined, async (tx) => {
+        seen.push(`first:${await rowIn(tx)}`);
+        throw new Error('refused here');
+      }),
+    ).rejects.toThrow('refused here');
+    expect(await roleOf(mem3)).toBe('member');
+    // The first step sees the rows before the bridge, the last after it.
+    const done = await applyLoginChange(
+      actor,
+      target,
+      { role: 'admin' },
+      async (tx) => {
+        seen.push(`last:${await rowIn(tx)}`);
+      },
+      async (tx) => {
+        seen.push(`first:${await rowIn(tx)}`);
+      },
+    );
+    expect(done.ok).toBe(true);
+    expect(seen).toEqual(['first:0', 'first:0', 'last:1']);
+    // Back to a member, through the workspace screen.
+    await as(owner);
+    const back = await call(r.user.DELETE(req('DELETE'), p({ id: admin, loginId: mem3 })));
+    expect(back.status).toBe(200);
+    expect(await roleOf(mem3)).toBe('member');
   });
 
   it('PATCH: name by a Moderator; contact and assistant by an Admin user only', async () => {
@@ -328,7 +483,7 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     const id = p({ id: ws });
     expect((await call(r.one.PATCH(req('PATCH', { name: 'Mia renamed' }), id))).status).toBe(200);
     expect((await call(r.one.PATCH(req('PATCH', { name: 'Team' }), id))).body.code).toBe(
-      'name_taken',
+      'reserved_name',
     );
     expect((await call(r.one.PATCH(req('PATCH', { assistantId: agentA }), id))).body.code).toBe(
       'admin_only',
@@ -430,12 +585,18 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
       'bridge_owned',
     );
     const ws = await create(mem, 'Mia archive');
-    // The note is shared here (not its home).
-    await m.withHeads([note], 'update', (tx) =>
-      tx.execute(
+    // The note is shared here (not its home); a second item is "removed
+    // here" (an exclusion row).
+    const other = randomUUID();
+    await x(sql`insert into nodes (id, owner_id, type, title, path)
+      values (${other}, ${owner}, 'note', 'another note', 'notes')`);
+    await m.withHeads([note, other], 'update', async (tx) => {
+      await tx.execute(
         sql`insert into item_grants (node_id, workspace_id, write) values (${note}, ${ws}, false)`,
-      ),
-    );
+      );
+      await tx.execute(sql`insert into item_grants (node_id, workspace_id, write, excluded)
+        values (${other}, ${ws}, false, true)`);
+    });
     await as(mem2);
     expect((await call(r.preview.GET(req('GET'), p({ id: ws })))).status).toBe(404);
     await as(mem);
@@ -447,6 +608,22 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     expect(done.status).toBe(200);
     expect(done.body).toMatchObject({ grantCount: 1, itemCount: 0 });
     expect((done.body.workspace as Json).archived).toBe(true);
+    // The event counts both kinds of row it dropped (audit L5).
+    const [ev] = await x<{ subject: Json }>(sql`select subject from workspace_events
+      where workspace_id = ${ws} and action = 'workspace.archive'`);
+    expect(ev!.subject).toEqual({ grantsDropped: 1, exclusionsDropped: 1 });
+    const [left] = await x<{ n: number }>(
+      sql`select count(*)::int as n from item_grants where workspace_id = ${ws}`,
+    );
+    expect(left!.n).toBe(0);
+    // An archived workspace takes no grant (audit L3).
+    const late = await m
+      .withHeads([note], 'update', (tx) =>
+        tx.execute(sql`insert into item_grants (node_id, workspace_id, write)
+          values (${note}, ${ws}, false)`),
+      )
+      .then(() => 'landed', errText);
+    expect(late).toMatch(/is archived: it takes no grants/);
     const [n] = await x<{ has: boolean }>(
       sql`select ${ws}::uuid = any(read_ws) as has from nodes where id = ${note}`,
     );
@@ -486,6 +663,45 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     expect(held.body.code).toBe('workspace_holds_items');
   });
 
+  it('a grant racing the archive on another connection never lands (audit L3)', async () => {
+    const ws = await create(mem, 'Mia race');
+    let release!: () => void;
+    const held = new Promise<void>((res) => (release = res));
+    let locked!: () => void;
+    const isLocked = new Promise<void>((res) => (locked = res));
+    // Connection 1: the archive, holding the workspace row FOR UPDATE.
+    const archive = m.systemDb.transaction(async (tx) => {
+      await tx.execute(sql`select id from workspaces where id = ${ws} for update`);
+      locked();
+      await held;
+      await tx.execute(sql`delete from item_grants where workspace_id = ${ws} and not is_home`);
+      await tx.execute(sql`update workspaces set archived_at = now() where id = ${ws}`);
+    });
+    await isLocked;
+    // Connection 2: a grant to it, while the archive holds the row.
+    let settled = false;
+    const grant = m
+      .withHeads([note], 'update', (tx) =>
+        tx.execute(sql`insert into item_grants (node_id, workspace_id, write)
+          values (${note}, ${ws}, false)`),
+      )
+      .finally(() => {
+        settled = true;
+      });
+    const outcome = grant.then(() => 'landed', errText);
+    await new Promise((res) => setTimeout(res, 400));
+    // It waits on the archive's lock...
+    expect(settled).toBe(false);
+    release();
+    await archive;
+    // ...and then sees the archive: refused, nothing left behind.
+    expect(await outcome).toMatch(/is archived: it takes no grants/);
+    const [n] = await x<{ n: number }>(
+      sql`select count(*)::int as n from item_grants where workspace_id = ${ws}`,
+    );
+    expect(n!.n).toBe(0);
+  });
+
   it('user search (Q3): Moderators and Admin users, 3 characters, no disabled or client logins', async () => {
     const q = (v: string) =>
       call(r.search.GET(req('GET', undefined, `/user-search?q=${encodeURIComponent(v)}`)));
@@ -509,6 +725,29 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     // An Admin user may list everyone.
     await as(owner);
     expect(((await q('')).body as unknown as Json[]).length).toBeGreaterThanOrEqual(5);
+  });
+
+  it('user search: an Admin user pages through everyone, 50 a page', async () => {
+    const page = (offset: string) =>
+      call(r.search.GET(req('GET', undefined, `/user-search?q=pager&offset=${offset}`)));
+    const many = Array.from({ length: 53 }, () => randomUUID());
+    for (const [i, id] of many.entries()) {
+      await x(sql`insert into auth.users (id, email, password_hash, role, display_name)
+        values (${id}, ${email(id, 'pager')}, 'x', 'member', ${`Pager ${String(i).padStart(2, '0')}`})`);
+    }
+    await as(owner);
+    const first = (await page('0')).body as unknown as Json[];
+    const second = (await page('50')).body as unknown as Json[];
+    expect(first).toHaveLength(50);
+    expect(second).toHaveLength(3);
+    const seen = [...first, ...second].map((h2) => h2.loginId);
+    expect(new Set(seen).size).toBe(53);
+    expect([...seen].sort()).toEqual([...many].sort());
+    expect((await page('x')).body.code).toBe('invalid');
+    // A Moderator who is not an Admin user gets no paging.
+    await as(mem);
+    expect((await page('10')).body.code).toBe('invalid');
+    expect(((await page('0')).body as unknown as Json[]).length).toBe(10);
   });
 
   it('/api/shell: the login workspaces and areas', async () => {

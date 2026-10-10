@@ -9,7 +9,9 @@
  *  - the MCP listing (resolveLoginToolRows' connector half,
  *    listLoginConnectorTools with the login) equals the tools its MCP call
  *    (callLoginTool) and its app runs (appToolVerdict) let through, for a
- *    Moderator, a plain user and a login in no workspace.
+ *    Moderator, a plain user and a login in no workspace;
+ *  - a member-built app an admin opens (the owner tool broker): the Team
+ *    rule, never the admin's own connectors (W5a audit W1).
  *
  * Only the sign-in, the app lookup, the app logs and the remote dispatch are
  * stood in; every rule is the real one on Postgres.
@@ -30,6 +32,11 @@ const h = vi.hoisted(() => ({
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
+  getOwnerOr401: vi.fn(async () => ({
+    id: h.owner,
+    email: 'o@example.invalid',
+    actor: { id: h.owner, email: 'o@example.invalid', displayName: 'O', isOwner: true },
+  })),
   getMemberOr401: vi.fn(async () => ({
     role: 'member',
     loginId: h.login,
@@ -56,6 +63,12 @@ vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   recordAppAccess: vi.fn(),
   recordAppError: vi.fn(),
+  // A member-built app, as the owner broker sees it.
+  getAppRuntime: vi.fn(async () => ({
+    effectiveAudience: 'team',
+    authorLevel: 'team',
+    manifest: { toolSlugs: h.toolSlugs },
+  })),
 }));
 // The remote call itself: every gate before it is real.
 vi.mock('@mantle/tools', async (importOriginal) => ({
@@ -73,6 +86,7 @@ describe.skipIf(!URL)('a login’s connector tools: one rule (W4b fix round 2)',
   let tools: typeof import('@mantle/tools');
   let mcp: typeof import('@mantle/mcp-core');
   let broker: (req: Request, ctx: { params: Promise<{ id: string }> }) => Promise<Response>;
+  let ownerBroker: typeof broker;
   const owner = randomUUID();
   const moderator = randomUUID();
   const plain = randomUUID();
@@ -108,6 +122,7 @@ describe.skipIf(!URL)('a login’s connector tools: one rule (W4b fix round 2)',
     tools = await import('@mantle/tools');
     mcp = await import('@mantle/mcp-core');
     broker = (await import('./[id]/tool-broker/route')).POST;
+    ownerBroker = (await import('../../apps/[id]/tool-broker/route')).POST;
     h.owner = owner;
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role) values
       (${owner}, ${`co-${owner.slice(0, 8)}@example.invalid`}, 'x', true, 'admin'),
@@ -214,6 +229,48 @@ describe.skipIf(!URL)('a login’s connector tools: one rule (W4b fix round 2)',
       const r = await call(moderator, SLUGS.bRead);
       expect(r.status).toBe(403);
       expect(r.body.error).toMatch(/not a resource of any of your workspaces/);
+    });
+  });
+
+  describe('a member-built app an admin opens (the owner tool broker)', () => {
+    const ownerCall = async (slug: string) => {
+      const res = await ownerBroker(
+        new Request('http://brain.invalid/api/apps/x/tool-broker', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ slug, input: {} }),
+        }),
+        { params: Promise.resolve({ id: '77777777-7777-4777-8777-777777777777' }) },
+      );
+      return { status: res.status, body: (await res.json()) as { ok: boolean; error?: string } };
+    };
+
+    it('Team Write off: the write is refused, though the admin may write A elsewhere', async () => {
+      const [adminWs] = await x<{ id: string }>(sql`
+        select id::text as id from workspaces where owner_id = ${owner} and is_admin`);
+      // The admin's own rule would let the write through (A with Write on
+      // in the Admin workspace, where the owner is a Moderator)...
+      await x(sql`insert into workspace_resources (workspace_id, type, ref_id, write)
+        values (${adminWs!.id}, 'connector', ${A}, true)
+        on conflict (workspace_id, type, ref_id) do update set write = true`);
+      expect(
+        await tools.appToolVerdict('team', owner, Object.values(SLUGS), SLUGS.aWrite, owner),
+      ).toMatchObject({ ok: true });
+      await x(sql`update workspace_resources set write = false
+        where workspace_id = ${team} and type = 'connector' and ref_id = ${A}`);
+      try {
+        // ...but a member-built app runs at team rules: the Team rule.
+        const w = await ownerCall(SLUGS.aWrite);
+        expect(w.status).toBe(403);
+        expect(w.body.error).toMatch(/Team workspace does not hold with Write on/);
+        expect(await ownerCall(SLUGS.aRead)).toMatchObject({ status: 200 });
+        expect(h.dispatched).toEqual([SLUGS.aRead]);
+      } finally {
+        await x(sql`update workspace_resources set write = true
+          where workspace_id = ${team} and type = 'connector' and ref_id = ${A}`);
+      }
+      // Team Write on again: the same write runs.
+      expect(await ownerCall(SLUGS.aWrite)).toMatchObject({ status: 200 });
     });
   });
 

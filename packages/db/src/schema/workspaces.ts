@@ -62,9 +62,10 @@ export const workspaces = pgTable(
     uniqueIndex('workspaces_bridge_key_uq')
       .on(t.ownerId, t.bridgeKey)
       .where(sql`${t.bridgeKey} is not null`),
-    uniqueIndex('workspaces_live_name_uq')
-      .on(t.ownerId, sql`lower(${t.name})`)
-      .where(sql`${t.archivedAt} is null`),
+    // Only the Admin and Team names are reserved (0255, W5a audit M3).
+    uniqueIndex('workspaces_reserved_name_uq')
+      .on(t.ownerId, sql`lower(btrim(${t.name}))`)
+      .where(sql`${t.archivedAt} is null and lower(btrim(${t.name})) in ('admin', 'team')`),
   ],
 );
 

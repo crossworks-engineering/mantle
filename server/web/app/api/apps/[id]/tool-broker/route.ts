@@ -66,12 +66,18 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   // an app clients run through a shared folder runs the client rules here
   // too (access matrix audit, M5).
   const level = appToolLevel('admin', app.effectiveAudience, app.authorLevel);
+  // The admin's own login rule applies to a client-level app run. A
+  // member-built app (team rules by its author) keeps the Team rule: the
+  // admin's own connectors (their Admin workspace's Write ticks) must not
+  // lift an author-limited app above what it runs with for its members.
+  // The admin's test run of a submitted app does the same
+  // (apps/members/[id]/test/tool-broker).
   const verdict = await appToolVerdict(
     level,
     user.id,
     app.manifest.toolSlugs ?? [],
     parsed.data.slug,
-    user.actor.id,
+    level === 'team' ? undefined : user.actor.id,
   );
   const logError = (message: string, status: number) =>
     recordAppError({

@@ -803,6 +803,33 @@ export async function sessionCookieExpiryMs(): Promise<number | null> {
   return data ? data.exp * 1000 : null;
 }
 
+/**
+ * The generic `api.write` row for a route any login may call (getLoginOr401;
+ * the workspace routes, lib/auth/any-login-routes.ts), by the rule each role's
+ * own gate follows: an admin's write always, a client's write always, a
+ * member's write when it was made with an API key. Reads are not logged, and
+ * a path that logs its own richer event is skipped (auditMutation).
+ */
+export async function auditLoginMutation(
+  login: Exclude<Awaited<ReturnType<typeof getLoginOr401>>, NextResponse>,
+): Promise<void> {
+  switch (login.kind) {
+    case 'admin':
+      return auditMutation(login.user);
+    case 'client':
+      return auditClientMutation(login.client);
+    case 'member': {
+      if (login.source !== 'api') return;
+      const m = login.member;
+      return auditMutation({
+        id: m.anchorId,
+        email: m.email,
+        actor: { id: m.loginId, email: m.email, displayName: m.displayName, isOwner: false },
+      });
+    }
+  }
+}
+
 /** The calling login's own row, whatever its role: for the few routes about
  *  the login itself (change its password, sign out, who am I). Never for
  *  brain data. Each caller decides per role; a client is its own kind.

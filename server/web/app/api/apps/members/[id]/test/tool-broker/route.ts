@@ -60,6 +60,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     );
   }
   const { slug, input } = parsed.data;
+  // Team rules without the admin's login: the Team workspace's connector
+  // rule, as the owner broker uses for a member-built app (W5a audit W1).
   const verdict = await appToolVerdict('team', user.id, app.declaredTools, slug);
   const refused = !verdict.ok
     ? verdict.reason

@@ -12,6 +12,7 @@ import {
   assertSystemDbCaller,
   SYSTEM_DB_MODULES,
   systemDbCallerOf,
+  systemDbAccessChecked,
   currentScope,
   runInTurnScope,
   TurnScopeExitError,
@@ -533,6 +534,18 @@ describe('systemDb inside a turn scope: allowlisted modules only (W4b fix round 
       '    at PgDatabase.transaction (/repo/node_modules/drizzle-orm/pg-core/db.js:9:9)\n    at loadThing',
     );
     expect(systemDbCallerOf(viaDrizzle)).toBe(content);
+  });
+
+  it("skips drizzle's internal reads on the proxy, checks every method (W5a audit W3)", () => {
+    // drizzle reads these on systemDb while a query the caller asked for
+    // runs: the caller was checked when it touched the method.
+    for (const prop of ['session', 'dialect', '_', '$client']) {
+      expect(systemDbAccessChecked(prop), prop).toBe(false);
+    }
+    for (const prop of ['execute', 'select', 'insert', 'update', 'delete', 'transaction']) {
+      expect(systemDbAccessChecked(prop), prop).toBe(true);
+    }
+    expect(systemDbAccessChecked(Symbol('x'))).toBe(true);
   });
 
   it('outside a turn: any caller, as before', () => {

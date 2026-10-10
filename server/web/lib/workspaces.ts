@@ -14,12 +14,16 @@
  *    (requireArea; every area today, per-user switches later). With 'users'
  *    they see every workspace and manage its users, name and contact; with
  *    'assistants' its assistant; with 'connectors' its connectors. They may
- *    add OTHER users anywhere, but themselves only to a workspace with no
- *    users (17 R7, as the W5a brief keeps it).
+ *    add anyone anywhere, themselves included, private workspaces too (S1,
+ *    which replaces 17 R7): logged (subject.self) and shown on the screen as
+ *    "Added by NAME on DATE".
  *  - A Moderator of a workspace manages its users (add by search, Moderator
  *    tick, remove) and its name and description.
  *  - Any login may make a workspace (it becomes its only user, a Moderator)
  *    and leave one, except as its last Moderator.
+ *  - In the Admin-moderated workspace (Team) an Admin user stays a
+ *    Moderator: nobody demotes or removes one there, Admin users and the
+ *    user itself included (19.5, 21.8 row 2).
  *
  * Until W5b two bridges own some rows: a user of the Admin workspace IS an
  * admin login (adding one or removing one is the same role change the Users
@@ -29,7 +33,9 @@
  *
  * Every refusal is a WsError: `{ error, code }` with its status. A workspace
  * or login the caller may not see is 404, never 403. Every change writes a
- * workspace_events row.
+ * workspace_events row; an admin login's write also the generic api.write
+ * audit row, and a change of who is an Admin user the user.update row the
+ * Users screen writes.
  */
 import { NextResponse } from '@/server/http-compat';
 import {
@@ -55,7 +61,8 @@ import type {
   WorkspaceUserSearchHit,
 } from '@mantle/client-types';
 import { WORKSPACE_AREAS } from '@mantle/client-types/dto/workspaces';
-import { getLoginOr401, type SessionUser } from '@/lib/auth';
+import { auditLoginMutation, getLoginOr401, type SessionUser } from '@/lib/auth';
+import { auditFireAndForget, requestMeta } from '@/lib/audit';
 import { applyLoginChange, loadLoginTarget } from '@/lib/login-update';
 import { rateLimit } from '@/lib/rate-limit';
 
@@ -86,6 +93,9 @@ export type WsCaller = {
 export async function workspaceCaller(): Promise<WsCaller | Response> {
   const res = await getLoginOr401();
   if (res instanceof Response) return res;
+  // The generic api.write row, as the sibling admin, member and client gates
+  // write it (an admin's write; any login's write with an API key).
+  await auditLoginMutation(res);
   switch (res.kind) {
     case 'admin':
       return { kind: 'admin', loginId: res.loginId, anchorId: res.user.id, user: res.user };
@@ -331,15 +341,21 @@ async function detail(
       email: string;
       moderator: boolean;
       admin_via: boolean;
+      added_by: string | null;
+      added_by_name: string | null;
+      added_at: string | Date;
     }>(
       q,
       sql`select u.login_id, x.display_name as name, x.email, u.moderator,
                  (w.admin_moderated and exists (
                     select 1 from workspace_users au
                       join workspaces aw on aw.id = au.workspace_id and aw.is_admin
-                     where au.login_id = u.login_id and aw.owner_id = w.owner_id)) as admin_via
+                     where au.login_id = u.login_id and aw.owner_id = w.owner_id)) as admin_via,
+                 u.added_by, coalesce(nullif(btrim(b.display_name), ''), b.email) as added_by_name,
+                 u.added_at
             from workspace_users u
             join auth.users x on x.id = u.login_id
+            left join auth.users b on b.id = u.added_by
             join workspaces w on w.id = u.workspace_id
            where u.workspace_id = ${id}
            order by lower(coalesce(x.display_name, x.email))`,
@@ -362,6 +378,8 @@ async function detail(
     email: u.email,
     moderator: u.moderator,
     adminViaArea: u.admin_via,
+    addedBy: u.added_by && u.added_by_name ? { loginId: u.added_by, name: u.added_by_name } : null,
+    addedAt: new Date(u.added_at).toISOString(),
   }));
   const outResources: WorkspaceResource[] = resources.map((r) => ({
     kind: r.type,
@@ -406,12 +424,17 @@ async function event(
 
 // ── Create and change ────────────────────────────────────────────────────────
 
-const NAME_TAKEN = () =>
-  new WsError(409, 'name_taken', 'A workspace with this name already exists. Pick another name.');
-
+/** Names are not unique (0255, audit M3): a clash with a workspace the
+ *  caller cannot see would tell them it exists. Only the names of the Admin
+ *  and Team workspaces are reserved, and everybody knows those two. */
 function nameError(err: unknown): WsError | null {
-  if (isUniqueViolation(err) && pgConstraint(err) === 'workspaces_live_name_uq')
-    return NAME_TAKEN();
+  if (isUniqueViolation(err) && pgConstraint(err) === 'workspaces_reserved_name_uq') {
+    return new WsError(
+      409,
+      'reserved_name',
+      'Admin and Team are the names of the built-in workspaces. Pick another name.',
+    );
+  }
   return null;
 }
 
@@ -611,14 +634,22 @@ async function setAssistant(
 
 // ── Archive (plan 15, 18.8, 21.8 row 11) ─────────────────────────────────────
 
-async function archiveCounts(q: Exec, id: string): Promise<WorkspaceArchivePreview> {
-  const [r] = await rows<{ items: number; grants: number }>(
+async function archiveCounts(
+  q: Exec,
+  id: string,
+): Promise<WorkspaceArchivePreview & { exclusionCount: number }> {
+  const [r] = await rows<{ items: number; grants: number; exclusions: number }>(
     q,
     sql`select count(*) filter (where is_home)::int as items,
-               count(*) filter (where not is_home and not excluded)::int as grants
+               count(*) filter (where not is_home and not excluded)::int as grants,
+               count(*) filter (where excluded)::int as exclusions
           from item_grants where workspace_id = ${id}`,
   );
-  return { itemCount: r?.items ?? 0, grantCount: r?.grants ?? 0 };
+  return {
+    itemCount: r?.items ?? 0,
+    grantCount: r?.grants ?? 0,
+    exclusionCount: r?.exclusions ?? 0,
+  };
 }
 
 function mayArchive(seen: Seen): void {
@@ -647,7 +678,8 @@ export async function archivePreview(
   if (!seen.mod && !seen.admin) {
     throw new WsError(403, 'forbidden', 'Only a Moderator of this workspace can archive it.');
   }
-  return archiveCounts(db, seen.row.id);
+  const { itemCount, grantCount } = await archiveCounts(db, seen.row.id);
+  return { itemCount, grantCount };
 }
 
 /** POST /api/workspaces/:id/archive: refused while it is any item's home;
@@ -688,8 +720,13 @@ export async function archiveWorkspace(
       await tx.execute(
         sql`update workspaces set archived_at = now(), updated_at = now() where id = ${wid}`,
       );
-      await event(tx, wid, caller.loginId, 'workspace.archive', { grantsDropped: now.grantCount });
-      return { ...now, row: again.row };
+      // Both kinds of row the delete drops (audit L5): grants, and the
+      // "removed here" exclusions against a folder's grant.
+      await event(tx, wid, caller.loginId, 'workspace.archive', {
+        grantsDropped: now.grantCount,
+        exclusionsDropped: now.exclusionCount,
+      });
+      return { itemCount: now.itemCount, grantCount: now.grantCount, row: again.row };
     }),
   );
   // Read inside the change: a login that is not an Admin user no longer
@@ -756,25 +793,59 @@ function mayManageUsers(seen: Seen): void {
   if (seen.row.archived_at !== null) throw archivedError();
 }
 
-/** The Admin-workspace role change behind adding or removing a user there. */
+/** The Admin-workspace role change behind adding or removing a user there.
+ *  `checks` runs first inside the change's transaction (it locks the
+ *  workspace, audit L2); `inTx` last, after the login bridge. On success the
+ *  user.update audit row the Users screen writes (audit M2). */
 async function adminRoleChange(
   caller: WsCaller,
   loginId: string,
   role: 'admin' | 'member',
+  path: { method: 'POST' | 'DELETE'; path: string },
+  checks: (tx: Exec) => Promise<unknown>,
   inTx: (tx: Exec) => Promise<void>,
 ): Promise<void> {
-  if (!caller.user) {
+  const actor = caller.user;
+  if (!actor) {
     throw new WsError(403, 'admin_only', 'Only an Admin user can change who is an Admin user.');
   }
-  const target = await loadLoginTarget(loginId);
+  const target = UUID_RE.test(loginId) ? await loadLoginTarget(loginId) : null;
   if (!target) throw new WsError(404, 'not_found', 'User not found.');
   if (target.role === role) {
     // No role change (a row out of step with its role): only the row.
-    await db.transaction(async (tx) => inTx(tx));
+    await db.transaction(async (tx) => {
+      await checks(tx);
+      await inTx(tx);
+    });
     return;
   }
-  const done = await applyLoginChange(caller.user, target, { role }, inTx);
-  if (done.ok) return;
+  // The workspace lock comes before the login row here, the other way round
+  // on the Users screen: a deadlock between the two is retried whole.
+  const done = await withDeadlockRetry(() =>
+    applyLoginChange(actor, target, { role }, inTx, async (tx) => {
+      await checks(tx);
+    }),
+  );
+  if (done.ok) {
+    auditFireAndForget({
+      actorId: actor.actor.id,
+      actorEmail: actor.actor.email,
+      action: 'user.update',
+      method: path.method,
+      path: path.path,
+      detail: {
+        targetId: target.id,
+        targetEmail: target.email,
+        changes: { role },
+        ...(done.sessionsEnded ? { sessionsEnded: true } : {}),
+        ...(done.lockingOut
+          ? { releasedAgentId: done.releasedAgentId, pushDevicesRemoved: done.pushDevicesRemoved }
+          : {}),
+      },
+      ...(await requestMeta()),
+    });
+    return;
+  }
   switch (done.reason) {
     case 'owner':
       throw new WsError(
@@ -794,53 +865,59 @@ async function adminRoleChange(
 }
 
 /** POST /api/workspaces/:id/users. A Moderator adds anyone (Q3); an Admin
- *  user adds OTHER users anywhere, and itself only to a workspace with no
- *  users (17 R7). On the Admin workspace the add is the role change to
- *  admin (W5a). In the Admin-moderated workspace an Admin user is always a
- *  Moderator. */
+ *  user adds anyone anywhere, itself included, private workspaces too (S1):
+ *  logged with subject.self and shown as "Added by NAME on DATE". On the
+ *  Admin workspace the add is the role change to admin (W5a). In the
+ *  Admin-moderated workspace an Admin user is always a Moderator (18.8). */
 export async function addUser(
   caller: WsCaller,
   id: string,
   body: { loginId: string; moderator?: boolean },
 ): Promise<WorkspaceDetailResponse> {
+  // Who may add comes first (audit L1): a caller who may not manage this
+  // workspace learns nothing about the login it names.
+  const pre = await seeWorkspace(caller, id);
+  mayManageUsers(pre);
+  const wid = pre.row.id;
   const target = await loginOf(db, body.loginId);
   if (!target) throw new WsError(404, 'not_found', 'User not found.');
   if (target.role === 'client') {
     throw new WsError(409, 'client_login', 'Client logins are set up by hand, not here.');
   }
-  const pre = await seeWorkspace(caller, id);
-  mayManageUsers(pre);
-  const wid = pre.row.id;
+  const self = target.id === caller.loginId;
   const checks = async (q: Exec): Promise<Seen> => {
     const seen = await seeWorkspace(caller, wid, q, true);
     mayManageUsers(seen);
     if (await userRow(q, wid, target.id)) {
       throw new WsError(409, 'already_user', 'This person is already a user of this workspace.');
     }
-    if (target.id === caller.loginId && seen.row.user_count > 0) {
-      throw new WsError(
-        403,
-        'self_add_refused',
-        'You cannot add yourself to a workspace that has users. Ask one of its Moderators to add you.',
-      );
-    }
     return seen;
   };
+  const subject = (moderator: boolean) => ({
+    login: target.id,
+    moderator,
+    ...(self ? { self: true } : {}),
+  });
   if (pre.row.is_admin) {
-    // Checked first outside the role change, then again inside it.
-    await checks(db);
-    await adminRoleChange(caller, target.id, 'admin', async (tx) => {
-      // The login bridge (0251) made the row (Moderator); the tick asked for
-      // here wins. The last-Moderator guard still holds at commit.
-      const wanted = body.moderator ?? true;
-      await tx.execute(
-        sql`insert into workspace_users (workspace_id, login_id, moderator, added_by)
-            values (${wid}, ${target.id}, ${wanted}, ${caller.loginId})
-            on conflict (workspace_id, login_id)
-            do update set moderator = excluded.moderator, added_by = excluded.added_by`,
-      );
-      await event(tx, wid, caller.loginId, 'user.add', { login: target.id, moderator: wanted });
-    });
+    await adminRoleChange(
+      caller,
+      target.id,
+      'admin',
+      { method: 'POST', path: `/api/workspaces/${wid}/users` },
+      checks,
+      async (tx) => {
+        // The login bridge (0251) made the row (Moderator); the tick asked
+        // for here wins. The last-Moderator guard still holds at commit.
+        const wanted = body.moderator ?? true;
+        await tx.execute(
+          sql`insert into workspace_users (workspace_id, login_id, moderator, added_by)
+              values (${wid}, ${target.id}, ${wanted}, ${caller.loginId})
+              on conflict (workspace_id, login_id)
+              do update set moderator = excluded.moderator, added_by = excluded.added_by`,
+        );
+        await event(tx, wid, caller.loginId, 'user.add', subject(wanted));
+      },
+    );
     return reread(caller, wid);
   }
   await db.transaction(async (tx) => {
@@ -851,20 +928,22 @@ export async function addUser(
       sql`insert into workspace_users (workspace_id, login_id, moderator, added_by)
           values (${wid}, ${target.id}, ${moderator}, ${caller.loginId})`,
     );
-    await event(tx, wid, caller.loginId, 'user.add', { login: target.id, moderator });
+    await event(tx, wid, caller.loginId, 'user.add', subject(moderator));
   });
   return reread(caller, wid);
 }
 
-/** In the Admin-moderated workspace only an Admin user may remove or demote
- *  an Admin user (19.5). */
+/** In the Admin-moderated workspace (Team) an Admin user stays a Moderator
+ *  (19.5, 21.8 row 2): nobody demotes or removes one there, Admin users and
+ *  the user itself included. They stop being one by leaving the Admin
+ *  workspace. */
 async function guardAdminKept(tx: Exec, caller: WsCaller, seen: Seen, loginId: string) {
-  if (!seen.row.admin_moderated || seen.admin) return;
+  if (!seen.row.admin_moderated) return;
   if (await isAdminUser(tx, caller.anchorId, loginId)) {
     throw new WsError(
-      403,
-      'admin_user_kept',
-      'Admin users moderate this workspace. Only an Admin user can remove or demote one.',
+      409,
+      'admin_kept',
+      'Admin users always moderate this workspace. They cannot be demoted or removed here.',
     );
   }
 }
@@ -911,8 +990,9 @@ function lastAdminError(err: unknown): WsError | null {
 }
 
 /** DELETE /api/workspaces/:id/users/:loginId: a Moderator or an Admin user
- *  removes a user; anyone may leave. Never the last Moderator. On the Admin
- *  workspace it is the role change to member (W5a). */
+ *  removes a user; anyone may leave. Never the last Moderator, never an
+ *  Admin user from the Admin-moderated workspace. On the Admin workspace it
+ *  is the role change to member (W5a). */
 export async function removeUser(
   caller: WsCaller,
   id: string,
@@ -928,17 +1008,23 @@ export async function removeUser(
     const row = UUID_RE.test(loginId) ? await userRow(q, wid, loginId) : null;
     if (!row) throw new WsError(404, 'not_user', 'This person is not a user of this workspace.');
     if (row.moderator && (await otherModerators(q, wid, loginId)) === 0) throw LAST_MOD();
-    if (!self) await guardAdminKept(q, caller, seen, loginId);
+    await guardAdminKept(q, caller, seen, loginId);
   };
   if (pre.row.is_admin) {
-    await checks(db);
-    await adminRoleChange(caller, loginId, 'member', async (tx) => {
-      // The login bridge (0251) removed the row; make sure, and log it.
-      await tx.execute(
-        sql`delete from workspace_users where workspace_id = ${wid} and login_id = ${loginId}`,
-      );
-      await event(tx, wid, caller.loginId, 'user.remove', { login: loginId });
-    });
+    await adminRoleChange(
+      caller,
+      loginId,
+      'member',
+      { method: 'DELETE', path: `/api/workspaces/${wid}/users/${loginId}` },
+      checks,
+      async (tx) => {
+        // The login bridge (0251) removed the row; make sure, and log it.
+        await tx.execute(
+          sql`delete from workspace_users where workspace_id = ${wid} and login_id = ${loginId}`,
+        );
+        await event(tx, wid, caller.loginId, 'user.remove', { login: loginId });
+      },
+    );
   } else {
     await db.transaction(async (tx) => {
       await checks(tx);
@@ -970,11 +1056,19 @@ async function detailAfterLeave(pre: Seen): Promise<WorkspaceDetailResponse> {
   };
 }
 
-/** GET /api/workspaces/user-search?q= (Q3): logins by email or name, for a
- *  Moderator of any workspace or an Admin user. A non-Admin Moderator needs
- *  3 characters and gets 10 at most; an Admin user any query, 50 at most.
+/** An Admin user's page of user search. */
+export const USER_SEARCH_PAGE = 50;
+
+/** GET /api/workspaces/user-search?q=&offset= (Q3): logins by email or
+ *  name, for a Moderator of any workspace or an Admin user. A non-Admin
+ *  Moderator needs 3 characters and gets 10 at most, no paging; an Admin
+ *  user any query, in pages of 50 (`offset`), so they can list everyone.
  *  Disabled and client logins are left out (they cannot be added here). */
-export async function searchUsers(caller: WsCaller, q: string): Promise<WorkspaceUserSearchHit[]> {
+export async function searchUsers(
+  caller: WsCaller,
+  q: string,
+  offset = 0,
+): Promise<WorkspaceUserSearchHit[]> {
   const admin = await requireArea(caller, 'users');
   if (!admin) {
     const [m] = await rows<{ ok: boolean }>(
@@ -987,6 +1081,12 @@ export async function searchUsers(caller: WsCaller, q: string): Promise<Workspac
     if (!m?.ok) {
       throw new WsError(403, 'forbidden', 'Only a Moderator of a workspace can search for users.');
     }
+  }
+  if (!Number.isSafeInteger(offset) || offset < 0) {
+    throw new WsError(400, 'invalid', 'offset: a whole number of 0 or more.');
+  }
+  if (!admin && offset > 0) {
+    throw new WsError(400, 'invalid', 'offset: paging is for Admin users.');
   }
   const term = q.trim();
   if (!admin && term.length < 3) {
@@ -1002,8 +1102,8 @@ export async function searchUsers(caller: WsCaller, q: string): Promise<Workspac
     sql`select id, display_name as name, email from auth.users
          where disabled_at is null and role <> 'client'
            and (${term} = '' or email ilike ${like} or coalesce(display_name, '') ilike ${like})
-         order by lower(coalesce(display_name, email))
-         limit ${admin ? 50 : 10}`,
+         order by lower(coalesce(display_name, email)), id
+         limit ${admin ? USER_SEARCH_PAGE : 10} offset ${offset}`,
   );
   return hits.map((h) => ({ loginId: h.id, name: h.name, email: h.email }));
 }
