@@ -10,7 +10,7 @@
  * or inside a function whose leading comment carries `@heads-held` (the
  * caller holds the heads and passes its transaction in; say which caller;
  * the database checks it). There is no exemption marker: a migration that
- * writes these rows in bulk calls mantle_heads_bypass('<its name>'), which
+ * writes these rows in bulk calls the named migration bypass, which
  * the database logs and the runner prints (0244).
  *
  * What counts as a write that needs heads:
@@ -21,8 +21,10 @@
  *    touch access and needs no heads (plan V2);
  *  - update of `facts` that sets `sourceNodeId`; any update of the other
  *    three tables;
- *  - raw SQL (a tagged template) that inserts into, deletes from, or moves
- *    rows of those tables.
+ *  - raw SQL that inserts into, deletes from, or moves rows of those
+ *    tables, or updates content_chunks, content_chunk_windows, facts or
+ *    item_grants: a tagged template, or a string or template literal passed
+ *    to `.unsafe(...)` (postgres.js) or `sql.raw(...)` (drizzle).
  *
  * Tests and migrations are out of scope.
  */
@@ -53,7 +55,7 @@ const HEADS_CALLEES = new Set([
 ]);
 
 const RAW_SQL_WRITE =
-  /\b(insert\s+into|delete\s+from)\s+"?(public"?\."?)?"?(nodes|content_chunks|content_chunk_windows|facts|item_grants)\b|\bupdate\s+"?(public"?\."?)?"?nodes"?(\s+\w+)?\s+set\s+(?:(?!\bwhere\b)[^;])*?\b(path|owner_id|login_id)\s*=/i;
+  /\b(insert\s+into|delete\s+from)\s+"?(public"?\."?)?"?(nodes|content_chunks|content_chunk_windows|facts|item_grants)\b|\bupdate\s+"?(public"?\."?)?"?nodes"?(\s+\w+)?\s+set\s+(?:(?!\bwhere\b)[^;])*?\b(path|owner_id|login_id)\s*=|\bupdate\s+"?(public"?\."?)?"?(content_chunks|content_chunk_windows|facts|item_grants)"?(\s+\w+)?\s+set\b/i;
 
 /** Drizzle tables interpolated into raw SQL (`update ${nodes} set ...`),
  *  by the SQL name they stand for. */
@@ -172,6 +174,17 @@ function needsHeads(op, table, call) {
   return true;
 }
 
+/** The text of a string or untagged template literal (interpolations as
+ *  placeholders); null for anything else. */
+function literalText(arg) {
+  if (!arg) return null;
+  if (arg.type === 'Literal' && typeof arg.value === 'string') return arg.value;
+  if (arg.type === 'TemplateLiteral') {
+    return arg.quasis.map((q) => q.value.cooked ?? q.value.raw).join(' $x ');
+  }
+  return null;
+}
+
 export const rule = {
   meta: {
     type: 'problem',
@@ -197,6 +210,16 @@ export const rule = {
         if (!needsHeads(name, arg.name, node)) return;
         if (covered(context, node)) return;
         context.report({ node, messageId: 'noHeads', data: { what: `${name}(${arg.name})` } });
+      },
+      // Raw strings: postgres.js `.unsafe('...')` and drizzle `sql.raw('...')`.
+      'CallExpression:exit'(node) {
+        const name = calleeName(node);
+        if (name !== 'unsafe' && name !== 'raw') return;
+        if (node.callee.type !== 'MemberExpression') return;
+        const text = literalText(node.arguments[0]);
+        if (text === null || !RAW_SQL_WRITE.test(text)) return;
+        if (covered(context, node)) return;
+        context.report({ node, messageId: 'noHeads', data: { what: `raw SQL (.${name})` } });
       },
       TaggedTemplateExpression(node) {
         // Interpolated tables read as their SQL names; any other value as a

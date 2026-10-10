@@ -106,8 +106,12 @@ export {
   TERMINAL_EXTRACT_SKIPS,
   extractSkippedStamp,
   extractSkippedSql,
+  EXTRACT_PARKED_KEY,
+  extractParkedStamp,
+  extractParkedSql,
 } from './extract-exempt';
 export { backfillTerminalSkips, type TerminalSkipBackfill } from './extract-skip-backfill';
+export { parkedExtractions, type ParkedExtractions } from './extract-parked';
 export {
   WRITE_RETRY_AFTER_MS,
   bestEffortWrite,

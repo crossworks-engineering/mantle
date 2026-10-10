@@ -167,7 +167,7 @@ const CHECKS: CheckDef[] = [
     key: 'extract_heads_parked',
     label: 'Extractions parked by the heads check',
     severity: 'high',
-    note: 'a node whose extraction wrote without locking its heads first (workspaces plan V5, mantle.heads_check on): parked once, never retried or re-driven on its own, so the extraction model is not called again. The remedy is a code fix in the writer the job hit (the job keeps the error); then extract the node again by hand.',
+    note: 'a node whose extraction wrote without locking its heads first (workspaces plan V5, mantle.heads_check on): parked once, never retried or re-driven on its own (the node carries data.extract_parked, which the boot drain and the provider-recovery drain skip), so the extraction model is not called again. The remedy is a code fix in the writer the job hit (the job keeps the error); then extract the node again by hand.',
     query: (o) => sql`
       SELECT coalesce(n.id::text, j.id::text) AS id,
              coalesce(n.type::text, 'unknown') AS kind,
@@ -175,11 +175,51 @@ const CHECKS: CheckDef[] = [
       FROM pgboss.job j
       LEFT JOIN nodes n ON n.id::text = j.data->>'nodeId' AND n.owner_id = ${o}
       WHERE j.name = 'mantle.extract.heads' AND j.state = 'created'
+      UNION
+      SELECT n.id::text, n.type::text, left(coalesce(n.title, ''), 60)
+      FROM nodes n
+      WHERE n.owner_id = ${o} AND n.data ? 'extract_parked'
+      LIMIT ${CAP}`,
+    spanQuery: (o) => sql`
+      SELECT min(d)::date::text AS oldest, max(d)::date::text AS newest FROM (
+        SELECT j.created_on AS d FROM pgboss.job j
+         WHERE j.name = 'mantle.extract.heads' AND j.state = 'created'
+        UNION ALL
+        SELECT (n.data->'extract_parked'->>'at')::timestamptz FROM nodes n
+         WHERE n.owner_id = ${o} AND n.data ? 'extract_parked') x`,
+  },
+  {
+    key: 'heads_bypass_log',
+    label: 'Heads-check bypasses',
+    severity: 'low',
+    note: 'every use of the named migration bypass (workspaces plan V5, 0244): a migration that wrote nodes, chunks, windows, facts or grants in bulk with the heads check off for its own transaction. Only migrations may call it (a CI check keeps every other caller out); a name here that is not a migration is a finding.',
+    query: () => sql`
+      SELECT m.id::text AS id, 'bypass' AS kind,
+             left(coalesce(m.detail, ''), 60) || ' (' || to_char(m.at, 'YYYY-MM-DD HH24:MI') || ')' AS detail
+      FROM heads_check_misses m
+      WHERE m.check_name = 'bypass'
+      ORDER BY m.at DESC
       LIMIT ${CAP}`,
     spanQuery: () => sql`
-      SELECT min(j.created_on)::date::text AS oldest, max(j.created_on)::date::text AS newest
-      FROM pgboss.job j
-      WHERE j.name = 'mantle.extract.heads' AND j.state = 'created'`,
+      SELECT min(at)::date::text AS oldest, max(at)::date::text AS newest
+      FROM heads_check_misses WHERE check_name = 'bypass'`,
+  },
+  {
+    key: 'heads_check_misses',
+    label: 'Heads-check misses',
+    severity: 'medium',
+    note: 'writes that did not lock their heads first (workspaces plan U1, V5), one row per check name with its count: in warn mode the write went through and was logged (at most 100 per check per hour). Each check name points at a writer to fix before the box runs with the check on.',
+    query: () => sql`
+      SELECT m.check_name AS id, 'heads miss' AS kind,
+             count(*)::text || ' logged, last ' || to_char(max(m.at), 'YYYY-MM-DD HH24:MI') AS detail
+      FROM heads_check_misses m
+      WHERE m.check_name <> 'bypass'
+      GROUP BY m.check_name
+      ORDER BY max(m.at) DESC
+      LIMIT ${CAP}`,
+    spanQuery: () => sql`
+      SELECT min(at)::date::text AS oldest, max(at)::date::text AS newest
+      FROM heads_check_misses WHERE check_name <> 'bypass'`,
   },
   {
     key: 'unembedded_facts',

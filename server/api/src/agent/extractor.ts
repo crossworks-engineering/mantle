@@ -266,7 +266,7 @@ async function stampExtractCompleted(nodeId: string): Promise<void> {
   await db
     .update(nodes)
     .set({
-      data: sql`(${nodes.data} - 'extract_skipped') || ${JSON.stringify({ extract_completed_at: new Date().toISOString() })}::jsonb`,
+      data: sql`(${nodes.data} - 'extract_skipped' - 'extract_parked') || ${JSON.stringify({ extract_completed_at: new Date().toISOString() })}::jsonb`,
     })
     .where(eq(nodes.id, nodeId));
 }

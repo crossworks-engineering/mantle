@@ -51,6 +51,14 @@
 
 import postgres from 'postgres';
 import { env } from '@mantle/config';
+import {
+  closeDb,
+  inArray,
+  nodes,
+  sql as dsql,
+  withDeadlockRetry,
+  withNodeDeleteHeads,
+} from '@mantle/db';
 
 const DATABASE_URL = env('DATABASE_URL');
 if (!DATABASE_URL) {
@@ -192,16 +200,20 @@ async function main() {
     let i = 0;
     for (const row of rows) {
       i++;
-      await sql.begin(async (tx) => {
-        await tx.unsafe(
-          `delete from nodes c
-            where c.type = 'file'
-              and c.data->>'sourceFileId' = $1
-              and 'extracted-image' = any(c.tags)`,
-          [row.id],
-        );
-        await tx.unsafe(`select pg_notify('node_ingested', $1)`, [row.id]);
-      });
+      // The image nodes to replace, read first; then heads first, one
+      // transaction (workspaces plan V4).
+      const kids = (
+        (await sql`select c.id from nodes c
+                    where c.type = 'file'
+                      and c.data->>'sourceFileId' = ${row.id}
+                      and 'extracted-image' = any(c.tags)`) as unknown as { id: string }[]
+      ).map((k) => k.id);
+      await withDeadlockRetry(() =>
+        withNodeDeleteHeads(kids, async (tx) => {
+          if (kids.length) await tx.delete(nodes).where(inArray(nodes.id, kids));
+          await tx.execute(dsql`select pg_notify('node_ingested', ${row.id})`);
+        }),
+      );
       console.log(
         `[images-backfill] (${i}/${rows.length}) upgraded ${row.id.slice(0, 8)} — ${row.title.slice(0, 60)}`,
       );
@@ -292,7 +304,9 @@ async function main() {
   await sql.end();
 }
 
-main().catch((err) => {
-  console.error('[images-backfill] fatal:', err);
-  process.exit(1);
-});
+main()
+  .then(() => closeDb())
+  .catch((err) => {
+    console.error('[images-backfill] fatal:', err);
+    process.exit(1);
+  });

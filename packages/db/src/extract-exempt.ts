@@ -113,9 +113,30 @@ export function extractSkippedSql(): SQL {
 }
 
 /**
+ * A job the workspaces heads check refused (plan V5, 0241): the extraction
+ * ran, its write failed the check, and the job was parked (never retried, so
+ * the extraction model is not called again). `data.extract_parked = { at }`
+ * keeps the boot drain and the provider-recovery drain from queueing the node
+ * again (each re-queue would run the model for a write that fails the same
+ * way). Like the terminal skip, it holds while the node is unchanged; a
+ * successful pass removes it. W1 audit, LOW 4.
+ */
+export const EXTRACT_PARKED_KEY = 'extract_parked';
+
+/** The jsonb to merge onto `nodes.data` for a parked extraction. */
+export function extractParkedStamp(): SQL {
+  return sql`jsonb_build_object(${EXTRACT_PARKED_KEY}::text, jsonb_build_object('at', now()))`;
+}
+
+/** True on `nodes` when a parked stamp is current (at or after the last write). */
+export function extractParkedSql(): SQL {
+  return sql`coalesce((${nodes.data}->${EXTRACT_PARKED_KEY}->>'at')::timestamptz >= ${nodes.updatedAt}, false)`;
+}
+
+/**
  * The nodes the extractor's safety nets re-queue: the owner's non-folder
  * nodes WRITTEN since `since` that still have no embedding, less the exempt
- * ones and less those with a current terminal skip. The boot drain uses it as
+ * ones and less those with a current terminal skip or parked stamp. The boot drain uses it as
  * is; the periodic sweep adds `noExtractSinceWriteSql` on top.
  *
  * The window is on `updated_at`, not `created_at`. A content change nulls the
@@ -132,6 +153,7 @@ export function unextractedNodeConds(ownerId: string, since: Date): SQL {
     isNull(nodes.embedding),
     not(extractExemptSql()),
     not(extractSkippedSql()),
+    not(extractParkedSql()),
   )!;
 }
 

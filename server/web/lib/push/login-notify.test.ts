@@ -7,7 +7,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LoginNoticeMessage } from '@mantle/content';
 
-vi.mock('@mantle/db', () => ({ db: {}, agents: {}, assistantMessages: {} }));
+vi.mock('@mantle/db', () => ({
+  db: {},
+  agents: {},
+  assistantMessages: {},
+  parkedExtractions: async () => ({ count: 0, newest: null }),
+}));
 vi.mock('@mantle/tools', () => ({ countPending: vi.fn(), listPendingCalls: vi.fn() }));
 vi.mock('@mantle/content', () => ({
   loadProfilePreferences: vi.fn(),

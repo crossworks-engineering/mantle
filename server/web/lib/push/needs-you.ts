@@ -11,7 +11,12 @@ import type { NeedsYou, NeedsYouItem, ProviderAlert } from '@mantle/client-types
 
 export type NeedsYouArrival =
   | { kind: 'review' | 'request'; item: NeedsYouItem }
-  | { kind: 'provider'; item: NeedsYouItem; alert: ProviderAlert };
+  | { kind: 'provider'; item: NeedsYouItem; alert: ProviderAlert }
+  | { kind: 'parked'; item: NeedsYouItem; count: number };
+
+/** Extractions the workspaces heads check parked (server side only, never on
+ *  the wire): how many, and when the newest was parked. */
+export type ParkedSummary = { count: number; newest: string | null };
 
 /** How recent the newest item must be to count as an arrival. The event
  *  follows the write within a second; the margin covers a slow worker and a
@@ -46,6 +51,7 @@ export function needsYouArrivals(
   seen: ReadonlySet<string>,
   now: number,
   windowMs = NEEDS_YOU_ARRIVAL_WINDOW_MS,
+  parked: ParkedSummary | null = null,
 ): NeedsYouArrival[] {
   const out: NeedsYouArrival[] = [];
   if (n.review.newest) out.push({ kind: 'review', item: n.review.newest });
@@ -53,10 +59,18 @@ export function needsYouArrivals(
   for (const alert of n.providers ?? []) {
     out.push({ kind: 'provider', item: providerItem(alert), alert });
   }
+  if (parked && parked.count > 0 && parked.newest) {
+    out.push({
+      kind: 'parked',
+      item: { id: 'extract-parked', title: 'Extraction parked', from: '', at: parked.newest },
+      count: parked.count,
+    });
+  }
   return out
     .filter((a) => {
       const at = Date.parse(a.item.at);
-      const win = a.kind === 'provider' ? PROVIDER_ARRIVAL_WINDOW_MS : windowMs;
+      const win =
+        a.kind === 'review' || a.kind === 'request' ? windowMs : PROVIDER_ARRIVAL_WINDOW_MS;
       return Number.isFinite(at) && now - at <= win && !seen.has(arrivalKey(a));
     })
     .sort((a, b) => Date.parse(b.item.at) - Date.parse(a.item.at));
@@ -96,6 +110,16 @@ export function needsYouMessage(
   first: NeedsYouArrival,
   total: number,
 ): { title: string; body: string; deepLink: string } {
+  if (first.kind === 'parked') {
+    return {
+      title: 'Extraction parked',
+      body:
+        first.count === 1
+          ? 'An item was refused by the access check and waits for a fix.'
+          : `${first.count} items were refused by the access check and wait for a fix.`,
+      deepLink: '/debug/integrity',
+    };
+  }
   if (first.kind === 'provider') {
     const a = first.alert;
     const waiting = a.waiting

@@ -10,7 +10,7 @@
 
 import { createHmac } from 'node:crypto';
 import { and, desc, eq } from 'drizzle-orm';
-import { db, agents, assistantMessages } from '@mantle/db';
+import { db, agents, assistantMessages, parkedExtractions } from '@mantle/db';
 import { markdownPreview } from '@mantle/content-core/markdown-to-text';
 import { countPending, listPendingCalls } from '@mantle/tools';
 import { loadNeedsYou, loadProfilePreferences } from '@mantle/content';
@@ -368,8 +368,11 @@ export async function pushNeedsYou(
   const prefs = await getPushPrefs();
   if (!prefs.approvals) return { attempted: 0, delivered: 0, dropped: 0, skipped: 'disabled' };
 
-  const n = await loadNeedsYou(ownerId);
-  const arrivals = needsYouArrivals(n, seen, now);
+  const [n, parked] = await Promise.all([
+    loadNeedsYou(ownerId),
+    parkedExtractions(ownerId).catch(() => null),
+  ]);
+  const arrivals = needsYouArrivals(n, seen, now, undefined, parked);
   if (arrivals.length === 0) {
     return { attempted: 0, delivered: 0, dropped: 0, skipped: 'no_message' };
   }

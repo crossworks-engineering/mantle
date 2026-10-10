@@ -64,6 +64,13 @@ describe('heads-writers', () => {
           code: 'onSpaceRows(tx, s, async (q) => { await q.update(nodes).set({ path: p }); });',
           filename: file,
         },
+        // Raw strings that read, or write under heads.
+        { code: "tx.unsafe('select id from nodes where id = $1', [i]);", filename: file },
+        { code: "db.execute(sql.raw('update nodes set title = 1'));", filename: file },
+        {
+          code: "withHeads([i], 'update', (tx) => tx.unsafe('delete from nodes where id = $1', [i]));",
+          filename: file,
+        },
         // Tests are exempt.
         { code: 'db.insert(nodes).values(v);', filename: '/r/packages/content/src/x.test.ts' },
       ],
@@ -137,6 +144,38 @@ describe('heads-writers', () => {
         },
         {
           code: 'sql`update nodes n set owner_id = ${b} where n.id = ${id}`;',
+          filename: file,
+          errors: [{ messageId: 'noHeads' }],
+        },
+        // Raw strings to .unsafe and sql.raw (W1 audit, LOW 3).
+        {
+          code: "tx.unsafe('delete from nodes c where c.type = $1', [t]);",
+          filename: file,
+          errors: [{ messageId: 'noHeads' }],
+        },
+        {
+          code: 'tx.unsafe(`insert into facts (content) values ($1)`, [c]);',
+          filename: file,
+          errors: [{ messageId: 'noHeads' }],
+        },
+        {
+          code: "db.execute(sql.raw('update item_grants set write = true'));",
+          filename: file,
+          errors: [{ messageId: 'noHeads' }],
+        },
+        // A raw update of chunks, windows, facts or grants.
+        {
+          code: 'sql`update content_chunks set text = ${t} where id = ${id}`;',
+          filename: file,
+          errors: [{ messageId: 'noHeads' }],
+        },
+        {
+          code: 'sql`update "public"."content_chunk_windows" w set text = ${t}`;',
+          filename: file,
+          errors: [{ messageId: 'noHeads' }],
+        },
+        {
+          code: 'sql`update ${facts} set source_node_id = ${n}`;',
           filename: file,
           errors: [{ messageId: 'noHeads' }],
         },

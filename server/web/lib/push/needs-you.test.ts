@@ -6,7 +6,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NeedsYou, ProviderAlert } from '@mantle/client-types';
 
-vi.mock('@mantle/db', () => ({ db: {}, agents: {}, assistantMessages: {} }));
+vi.mock('@mantle/db', () => ({
+  db: {},
+  agents: {},
+  assistantMessages: {},
+  parkedExtractions: vi.fn(async () => ({ count: 0, newest: null })),
+}));
 vi.mock('@mantle/tools', () => ({ countPending: vi.fn(), listPendingCalls: vi.fn() }));
 vi.mock('@mantle/content', () => ({ loadProfilePreferences: vi.fn(), loadNeedsYou: vi.fn() }));
 vi.mock('./seal', () => ({ sealToDevice: vi.fn(), publicKeyValid: () => true }));
@@ -127,6 +132,34 @@ describe('reviewDeepLink', () => {
       '/files?review=x',
     );
     expect(reviewDeepLink({ id: 'x', title: '', from: '', at })).toBe('/pages?review=x');
+  });
+});
+
+describe('parked extractions (W1 audit, LOW 4)', () => {
+  const none = { ...needsYou(), review: { submitted: 0, leftBehind: 0, newest: null }, total: 0 };
+
+  it('a new parked extraction arrives once, as a count with no title', () => {
+    const seen = new Set<string>();
+    const a = needsYouArrivals(none, seen, NOW, undefined, { count: 3, newest: ago(60_000) });
+    expect(a).toHaveLength(1);
+    expect(a[0]).toMatchObject({ kind: 'parked', count: 3 });
+    const m = needsYouMessage(a[0]!, 3);
+    expect(m.title).toBe('Extraction parked');
+    expect(m.body).toContain('3 items');
+    expect(m.deepLink).toBe('/debug/integrity');
+    rememberArrivals(seen, a);
+    expect(needsYouArrivals(none, seen, NOW, undefined, { count: 3, newest: ago(60_000) })).toEqual(
+      [],
+    );
+  });
+
+  it('none parked, or parked long ago, pushes nothing', () => {
+    expect(needsYouArrivals(none, new Set(), NOW, undefined, { count: 0, newest: null })).toEqual(
+      [],
+    );
+    expect(
+      needsYouArrivals(none, new Set(), NOW, undefined, { count: 1, newest: ago(3_600_000) }),
+    ).toEqual([]);
   });
 });
 

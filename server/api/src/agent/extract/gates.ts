@@ -390,7 +390,7 @@ export async function admitForExtraction(
           await tx
             .update(nodes)
             .set({
-              data: sql`(${nodes.data} - 'text' - 'content' - 'extract_skipped') || ${JSON.stringify(
+              data: sql`(${nodes.data} - 'text' - 'content' - 'extract_skipped' - 'extract_parked') || ${JSON.stringify(
                 {
                   summary: spine,
                   summary_model: 'metadata-only',

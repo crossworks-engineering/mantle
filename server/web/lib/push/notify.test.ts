@@ -47,6 +47,7 @@ vi.mock('@mantle/db', () => {
       data: 'am.data',
       createdAt: 'am.createdAt',
     },
+    parkedExtractions: async () => ({ count: 0, newest: null }),
   };
 });
 

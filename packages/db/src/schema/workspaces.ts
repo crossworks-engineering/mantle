@@ -219,6 +219,9 @@ export const mantleMovedNodes = pgTable(
   {
     xid: xid8('xid').notNull(),
     id: uuid('id').notNull(),
+    /** The owner before the move (0245): a move is exempt from the heads
+     *  check only when the row was personal before AND after it. */
+    oldOwner: uuid('old_owner'),
   },
   (t) => [primaryKey({ columns: [t.xid, t.id] })],
 );

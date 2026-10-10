@@ -62,7 +62,12 @@ import {
   resolveExtractionConcurrency,
   type EmbeddingConfig,
 } from '@mantle/embeddings';
-import { HEADS_DEAD_QUEUE, parkHeadsFailure } from './extract-heads-park';
+import {
+  HEADS_DEAD_QUEUE,
+  notifyParked,
+  parkHeadsFailure,
+  stampExtractParked,
+} from './extract-heads-park';
 import {
   countDeadLetteredExtracts,
   listOpenProviderAlerts,
@@ -314,9 +319,13 @@ async function handleExtractJob([job]: { data: ExtractJob }[]): Promise<void> {
     // The heads check refused a write (plan V5): parked once, no retry.
     if (
       await parkHeadsFailure(err, nodeId, {
-        park: async (data) => {
-          await boss?.send(HEADS_DEAD_QUEUE, data);
-        },
+        stamp: stampExtractParked,
+        park: boss
+          ? async (data) => {
+              await boss?.send(HEADS_DEAD_QUEUE, data);
+            }
+          : null,
+        alert: () => notifyParked(ownerId),
         log: (msg) => console.error(`[extract-queue] ${msg}`),
       })
     ) {
