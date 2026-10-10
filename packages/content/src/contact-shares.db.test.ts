@@ -12,10 +12,9 @@
  * share to a node that is not a contact; share_access_log is reaped at 90
  * days.
  *
- * Levels: a level change to admin, team, client or public never revokes a
- * contact share; removing a contact share changes no level; the open-link
- * paths (node_share's createShare, the unshare paths) make and revoke only
- * the open link; a contact-shared admin app is in no member or client
+ * Links (workspaces W5b2): the open link and the contact shares never
+ * revoke one another, and neither changes the item's level; a contact share
+ * holds no served list; a contact-shared admin app is in no member or client
  * launcher.
  *
  * Codes: a right code opens; the per-share limit (10 an hour) and the
@@ -41,7 +40,6 @@ describe.skipIf(!URL)('contact shares on Postgres', () => {
   let codes: typeof import('./contact-share-codes');
   let cs: typeof import('./contact-shares');
   let sh: typeof import('./shares');
-  let access: typeof import('./access');
   let memberApps: typeof import('./member-apps');
   let clientApps: typeof import('./client-apps');
   let log: typeof import('./share-access-log');
@@ -101,7 +99,6 @@ describe.skipIf(!URL)('contact shares on Postgres', () => {
     codes = await import('./contact-share-codes');
     cs = await import('./contact-shares');
     sh = await import('./shares');
-    access = await import('./access');
     memberApps = await import('./member-apps');
     clientApps = await import('./client-apps');
     log = await import('./share-access-log');
@@ -338,31 +335,44 @@ describe.skipIf(!URL)('contact shares on Postgres', () => {
     });
   });
 
-  describe('levels', () => {
-    it('removing a contact share is a revoke only: no level changes', async () => {
+  describe('links', () => {
+    it('removing a contact share is a revoke only: the open link and the level stay', async () => {
       const item = randomUUID();
       await insertNodes([[item, 'note', `${tag} unshare`, 'notes']]);
-      // Items have no level to set since W5b2: the one they carry stays.
       const before = await levelOf(item);
+      const open = await sh.createShare(owner, item);
       const [s] = await cs.createContactShares(owner, item, [contactA]);
-      const r = await access.unshareItem(owner, s!.shareId);
-      expect(r).toEqual({ revoked: true });
+      expect(s!.path).toMatch(/^\/s\//);
+      // DELETE /api/shares/:id on the contact share.
+      expect(await sh.revokeShare(owner, s!.shareId)).toBe(true);
+      expect(await liveContactShares(item)).toBe(0);
+      expect((await sh.getActiveShareForNode(owner, item))?.id).toBe(open.id);
       expect(await levelOf(item)).toBe(before);
     });
 
-    it('the open-link paths make and revoke only the open link', async () => {
+    it('the open-link paths make and revoke only the open link, and change no level', async () => {
       const item = randomUUID();
       await insertNodes([[item, 'note', `${tag} open`, 'notes']]);
-      await cs.createContactShares(owner, item, [contactA]);
+      const before = await levelOf(item);
+      await cs.createContactShares(owner, item, [contactB]);
       // node_share / the email link: createShare.
       const open = await sh.createShare(owner, item);
-      expect(await levelOf(item)).toBe('public');
+      expect(await levelOf(item)).toBe(before);
       expect(await liveContactShares(item)).toBe(1);
       // node_unshare / DELETE /api/shares/:id on the open link.
-      await access.unshareItem(owner, open.id);
-      expect(await levelOf(item)).toBe('admin');
+      expect(await sh.revokeShare(owner, open.id)).toBe(true);
+      expect(await levelOf(item)).toBe(before);
       expect(await liveContactShares(item)).toBe(1);
       expect(await sh.getActiveShareForNode(owner, item)).toBeNull();
+    });
+
+    it('a contact share holds no served list', async () => {
+      const item = randomUUID();
+      await insertNodes([[item, 'note', `${tag} no list`, 'notes']]);
+      const [s] = await cs.createContactShares(owner, item, [contactA]);
+      const row = (await sh.listActiveShares(owner)).find((x) => x.id === s!.shareId);
+      expect(row?.served).toEqual([]);
+      expect(await sh.setShareServed(owner, s!.shareId, [item])).toBeNull();
     });
 
     it('a contact-shared admin app is in no member or client launcher', async () => {
@@ -503,7 +513,7 @@ describe.skipIf(!URL)('contact shares on Postgres', () => {
       const row = (await cs.listContactSharesForAdmin(owner, menuContact)).shares.find(
         (s) => s.nodeId === revoke,
       )!;
-      await access.unshareItem(owner, row.shareId);
+      await sh.revokeShare(owner, row.shareId);
       await m.db.execute(sqlTag`
         update shares set expires_at = now() - interval '1 minute'
          where node_id = ${expire} and contact_id = ${menuContact}`);

@@ -371,7 +371,7 @@ describe.skipIf(!URL)('contact shares through /s on Postgres', () => {
       expect((await page$(t, a.cookie)).status).toBe(404);
       await m.db.execute(sqlTag`update shares set expires_at = null where id = ${s!.shareId}`);
       expect((await page$(t, a.cookie)).status).toBe(200);
-      await content.unshareItem(owner, s!.shareId);
+      await content.revokeShare(owner, s!.shareId);
       expect((await page$(t, a.cookie)).status).toBe(404);
     });
   });
@@ -523,7 +523,7 @@ describe.skipIf(!URL)('contact shares through /s on Postgres', () => {
       const [row] = (await content.listContactSharesForAdmin(owner, contactA)).shares.filter(
         (s) => s.nodeId === page,
       );
-      await content.unshareItem(owner, row!.shareId);
+      await content.revokeShare(owner, row!.shareId);
       expect((await get(image)).status).toBe(404);
       // Put it back for the menu tests.
       const [again] = await content.createContactShares(owner, page, [contactA]);
@@ -552,7 +552,7 @@ describe.skipIf(!URL)('contact shares through /s on Postgres', () => {
       const appShare = (await content.contactSharesForNode(owner, app)).find(
         (s) => s.contactId === contactA,
       )!;
-      await content.unshareItem(owner, appShare.shareId);
+      await content.revokeShare(owner, appShare.shareId);
       const view = await page$(tok.aPage!, a.cookie);
       expect(view.html).toContain('Shared with you (1)');
       expect(view.html).not.toContain(`/s/${tok.aApp}`);

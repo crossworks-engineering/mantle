@@ -18,11 +18,11 @@
  * NOTHING else. It never announces the page to the extractor (cost safety: no
  * grant change may start LLM work).
  *
- * `levelFilteredDoc` and `levelFilteredNote` are the open-link render rule
- * (the share pages) and still read levels: the links work replaces them.
+ * `servedFilteredDoc` and `servedFilteredNote` are the open-link render rule
+ * (the share pages): a link shows the items on its served list.
  */
 import { and, eq, inArray, or, sql } from 'drizzle-orm';
-import { asViewerLevel, db, levelCovers, nodes, pages, type ViewerLevel } from '@mantle/db';
+import { db, nodes, pages } from '@mantle/db';
 import { CLIENT_PRIVATE_LABEL } from '@mantle/client-types/dto/client';
 import { docToText } from '../doc-to-text';
 import {
@@ -41,61 +41,44 @@ export type LevelTextDb = typeof db | Tx;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** The levels whose readers do not read every other item: their pages'
- *  text is filtered. */
-const FILTERED: ReadonlySet<ViewerLevel> = new Set(['client', 'public']);
-
-/** Whether a page at `level` gets a filtered text. */
-export function filtersPageText(level: ViewerLevel): boolean {
-  return FILTERED.has(level);
-}
-
-/** The items among `ids` a reader at `level` reads, with their titles. The
- *  owner's items only. Keys lower-case. */
-async function readableAt(
+/** The titles of the owner's items among `ids` that are in `served`. Keys
+ *  lower-case. */
+async function servedTitles(
   ownerId: string,
-  level: ViewerLevel,
+  served: ReadonlySet<string>,
   ids: readonly string[],
   q: LevelTextDb,
 ): Promise<Map<string, string>> {
-  const wanted = [...new Set(ids.filter((i) => UUID.test(i)).map((i) => i.toLowerCase()))];
+  const wanted = [
+    ...new Set(
+      ids
+        .filter((i) => UUID.test(i))
+        .map((i) => i.toLowerCase())
+        .filter((i) => served.has(i)),
+    ),
+  ];
   if (!wanted.length) return new Map();
   const rows = await q
-    .select({
-      id: nodes.id,
-      title: nodes.title,
-      audience: nodes.audience,
-      inheritedLevel: nodes.inheritedLevel,
-      embeddedLevel: nodes.embeddedLevel,
-    })
+    .select({ id: nodes.id, title: nodes.title })
     .from(nodes)
     .where(and(eq(nodes.ownerId, ownerId), inArray(nodes.id, wanted)));
-  // A reader reads a row at its own level, its inherited share or the share
-  // of something that embeds it (nodes_viewer_read, migrations 0204 and
-  // 0208): the same union here.
-  return new Map(
-    rows
-      .filter(
-        (r) =>
-          levelCovers(level, asViewerLevel(r.audience)) ||
-          (!!r.inheritedLevel && levelCovers(level, asViewerLevel(r.inheritedLevel))) ||
-          (!!r.embeddedLevel && levelCovers(level, asViewerLevel(r.embeddedLevel))),
-      )
-      .map((r) => [r.id.toLowerCase(), r.title]),
-  );
+  return new Map(rows.map((r) => [r.id.toLowerCase(), r.title]));
 }
 
-/** The page document as a reader at `level` reads it (see the top). A team
- *  or admin page's doc comes back as it is. */
-export async function levelFilteredDoc(
+/**
+ * A page document as an open link shows it (workspaces plan 8.1): a mention,
+ * a link or a child page card of an item not in `served` (lower-case ids:
+ * the link's item and its served list) reads "Private item", and an embed of
+ * one is left out. A served item's mention carries its current title.
+ */
+export async function servedFilteredDoc(
   ownerId: string,
-  level: ViewerLevel,
+  served: ReadonlySet<string>,
   doc: unknown,
   q: LevelTextDb = db,
 ): Promise<unknown> {
-  if (!filtersPageText(level)) return doc;
   const ownUrl = clientOwnUrl(clientRedactOrigins());
-  const titles = await readableAt(ownerId, level, docRefIds(doc, { ownUrl }), q);
+  const titles = await servedTitles(ownerId, served, docRefIds(doc, { ownUrl }), q);
   return redactClientDoc(doc, new Set(titles.keys()), {
     ownUrl,
     titles,
@@ -103,18 +86,17 @@ export async function levelFilteredDoc(
   });
 }
 
-/** A note's markdown as a reader at `level` reads it: the same rule as a
- *  page's doc (an item the level cannot read is "Private item", a picture
- *  of one is left out). A team or admin note comes back as it is. */
-export async function levelFilteredNote(
+/** A note's (a task's, an event's) markdown as an open link shows it: the
+ *  rule of {@link servedFilteredDoc} (an item not served is "Private item",
+ *  a picture of one is left out). */
+export async function servedFilteredNote(
   ownerId: string,
-  level: ViewerLevel,
+  served: ReadonlySet<string>,
   markdown: string,
   q: LevelTextDb = db,
 ): Promise<string> {
-  if (!filtersPageText(level)) return markdown;
   const ownUrl = clientOwnUrl(clientRedactOrigins());
-  const titles = await readableAt(ownerId, level, noteRefIds(markdown, { ownUrl }), q);
+  const titles = await servedTitles(ownerId, served, noteRefIds(markdown, { ownUrl }), q);
   return redactClientNote(markdown, new Set(titles.keys()), { ownUrl, titles });
 }
 

@@ -1,14 +1,13 @@
 /**
- * An open link shows a page or note only as the public may read it (access
- * matrix M7), against a real, migrated Postgres. A public page that mentions
- * an admin item, holds a child page card of an admin page and embeds an
- * admin file gave the anonymous visitor the label, the title and the file
- * name, though the bytes were refused. Now those say "Private item" (the
- * embed is left out), the same rule a client page and the indexed text use;
- * public items keep theirs. A task's or an event's body and a task's
- * checklist take the note rule (T18): they named the admin page by its
- * title. A contact share reads the item as it is. Seeds
- * its own owner and rows and removes them.
+ * An open link shows a page or note only as its served list allows (plan
+ * 8.1; before W5b2, as the public might read it, access matrix M7), against
+ * a real, migrated Postgres. A page that mentions an item not served, holds
+ * a child page card of one and embeds one gives the anonymous visitor no
+ * label, title or file name: those say "Private item" (the embed is left
+ * out); a served item keeps its title. A task's or an event's body and a
+ * task's checklist take the note rule (T18). A contact share reads the item
+ * as it is. The list 0262 fills from the frozen levels shows exactly what
+ * the level rule showed. Seeds its own owner and rows and removes them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run shares-public-redact.db.test
  */
 import { randomUUID } from 'node:crypto';
@@ -37,7 +36,12 @@ describe.skipIf(!URL)('open links redact what the public may not read', () => {
   const SECRET = 'Acquisition plan';
   const SECRET_FILE = 'board-minutes.pdf';
 
-  const shareOf = (nodeId: string, nodeType: string, contactId: string | null = null) =>
+  const shareOf = (
+    nodeId: string,
+    nodeType: string,
+    contactId: string | null = null,
+    served: string[] = [id.openPage],
+  ) =>
     ({
       id: randomUUID(),
       ownerId: owner,
@@ -45,6 +49,7 @@ describe.skipIf(!URL)('open links redact what the public may not read', () => {
       nodeType,
       token: 't',
       contactId,
+      settings: contactId ? {} : { served },
     }) as unknown as Share;
 
   beforeAll(async () => {
@@ -56,19 +61,21 @@ describe.skipIf(!URL)('open links redact what the public may not read', () => {
       insert into auth.users (id, email, password_hash, role) values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin')`);
     await m.db.execute(sqlTag`
       insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`);
-    const rows: Array<[string, string, string, string]> = [
-      [id.page, 'page', 'Shared page', 'pages'],
-      [id.note, 'note', 'Shared note', 'notes'],
-      [id.secretPage, 'page', SECRET, 'pages'],
-      [id.secretFile, 'file', SECRET_FILE, 'files'],
-      [id.openPage, 'page', 'Open page', 'pages'],
-      [id.task, 'task', 'Shared task', 'tasks'],
-      [id.event, 'event', 'Shared event', 'events'],
+    // The frozen levels (written on insert) the 0262 fill reads: the page,
+    // the note and the open page public, the secret page and file admin.
+    const rows: Array<[string, string, string, string, string]> = [
+      [id.page, 'page', 'Shared page', 'pages', 'public'],
+      [id.note, 'note', 'Shared note', 'notes', 'public'],
+      [id.secretPage, 'page', SECRET, 'pages', 'admin'],
+      [id.secretFile, 'file', SECRET_FILE, 'files', 'admin'],
+      [id.openPage, 'page', 'Open page', 'pages', 'public'],
+      [id.task, 'task', 'Shared task', 'tasks', 'admin'],
+      [id.event, 'event', 'Shared event', 'events', 'admin'],
     ];
-    for (const [nid, type, title, path] of rows) {
+    for (const [nid, type, title, path, audience] of rows) {
       await m.db.execute(sqlTag`
-        insert into nodes (id, owner_id, type, title, path) values
-          (${nid}, ${owner}, ${type}, ${title}, ${path}::ltree)`);
+        insert into nodes (id, owner_id, type, title, path, audience) values
+          (${nid}, ${owner}, ${type}, ${title}, ${path}::ltree, ${audience})`);
     }
     const doc = {
       type: 'doc',
@@ -111,13 +118,6 @@ describe.skipIf(!URL)('open links redact what the public may not read', () => {
     );
     await m.db.execute(
       sqlTag`update nodes set data = ${JSON.stringify({ body: note })}::jsonb where id = ${id.event}`,
-    );
-    // A task or an event has no level of its own (only workspace kinds do):
-    // its open link is the share alone.
-    // Straight to public, by the row only: the embeds stay admin, as when an
-    // admin raised them back above the page on purpose.
-    await m.db.execute(
-      sqlTag`update nodes set audience = 'public' where id in (${id.page}, ${id.note}, ${id.openPage})`,
     );
   }, 60_000);
 
@@ -175,6 +175,35 @@ describe.skipIf(!URL)('open links redact what the public may not read', () => {
     const view = await shares.loadShareView(shareOf(id.task, 'task', randomUUID()));
     if (view?.kind !== 'task') throw new Error('not a task');
     expect(view.body).toContain(SECRET);
+  });
+
+  it('0262 fills each link with what the level rule showed: the open page only', async () => {
+    for (const [nodeId, type] of [
+      [id.page, 'page'],
+      [id.note, 'note'],
+      [id.task, 'task'],
+      [id.event, 'event'],
+    ] as const) {
+      const [row] = (await m.db.execute(sqlTag`
+        insert into shares (owner_id, node_id, node_type, token)
+        values (${owner}, ${nodeId}, ${type}, ${`${tag}-${type}`}) returning id`)) as unknown as {
+        id: string;
+      }[];
+      const [got] = (await m.db.execute(
+        sqlTag`select mantle_link_served_by_levels(${row!.id}) as served`,
+      )) as unknown as { served: string[] }[];
+      expect(got!.served, type).toEqual([id.openPage]);
+    }
+  });
+
+  it('a served item keeps its title; one taken off the list reads "Private item"', async () => {
+    const all = await html(shareOf(id.page, 'page', null, [id.openPage, id.secretPage]));
+    expect(all).toContain(SECRET);
+    // The file is not on the list: left out, never named.
+    expect(all).not.toContain(SECRET_FILE);
+    const none = await html(shareOf(id.page, 'page', null, []));
+    expect(none).not.toContain('Open page');
+    expect(none).toContain('Private item');
   });
 
   it('a contact share reads the item as it is', async () => {

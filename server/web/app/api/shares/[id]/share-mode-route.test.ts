@@ -3,7 +3,7 @@
  * team links are retired, so `mode: 'team'` is a 400 with reason
  * `team-links-retired` and a message that says members use their own logins,
  * and the store is never called. `public` still goes through; anything else
- * is a plain 400. DELETE answers without the retired `keptTeam` flag.
+ * is a plain 400. DELETE answers `{ ok }` only (no level talk since W5b2).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -14,19 +14,26 @@ const h = vi.hoisted(() => ({ modes: [] as string[], found: true }));
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  getOwnerOr401: vi.fn(async () => ({ id: ANCHOR, email: 'admin@example.invalid' })),
+  getOwnerOr401: vi.fn(async () => ({
+    id: ANCHOR,
+    email: 'admin@example.invalid',
+    actor: { id: ANCHOR, email: 'admin@example.invalid' },
+  })),
 }));
 
-vi.mock('@/lib/shares', () => ({
+vi.mock('@/lib/shares', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   applyShareMode: vi.fn(async (_owner: string, _id: string, mode: string) => {
     h.modes.push(mode);
     return h.found;
   }),
+  getLiveShare: vi.fn(async () => ({ id: SHARE, nodeId: ANCHOR, contactId: null, served: [] })),
+  revokeShare: vi.fn(async () => true),
 }));
 
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@mantle/content')>()),
-  unshareItem: vi.fn(async () => ({ revoked: true })),
+  assertMayLink: vi.fn(async () => ({ id: ANCHOR, type: 'note', path: null })),
 }));
 
 beforeEach(() => {

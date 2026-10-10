@@ -1828,6 +1828,13 @@
       "when": 1790194740000,
       "tag": "0261_workspaces_bridge_off",
       "breakpoints": true
+    },
+    {
+      "idx": 262,
+      "version": "7",
+      "when": 1790194800000,
+      "tag": "0262_workspaces_served_links",
+      "breakpoints": true
     }
   ]
 }

@@ -1,7 +1,5 @@
 import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
-import { isDrawServable, shareLevels } from '@/lib/shares';
-import { db, nodes } from '@mantle/db';
-import { and, eq } from 'drizzle-orm';
+import { isDrawServable } from '@/lib/shares';
 import { getDrawSvg } from '@mantle/content';
 import { clientIpKey, rateLimit } from '@/lib/rate-limit';
 
@@ -20,8 +18,8 @@ import { clientIpKey, rateLimit } from '@/lib/rate-limit';
  * and the node behind the token must actually be a draw (getDrawSvg filters
  * ownerId + type). Uniform 404 so a URL never reveals that a token exists.
  * The snapshot carries the drawing's images, so every image it places must
- * sit at the link's levels (linkLevels): one an admin raised above the
- * drawing on purpose keeps the snapshot off the link.
+ * be on the link's served list (isDrawServable, plan 8.1): one that is not
+ * keeps the snapshot off the link.
  */
 
 function notFound() {
@@ -46,19 +44,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   if (gate.kind === 'code') return contactCodeRequired(gate.share);
   const share = gate.kind === 'ok' ? gate.share : null;
   if (!share) return notFound();
-  const [node] = await db
-    .select({ audience: nodes.audience })
-    .from(nodes)
-    .where(and(eq(nodes.id, share.nodeId), eq(nodes.ownerId, share.ownerId)))
-    .limit(1);
-  if (!node) return notFound();
-  if (
-    !(await isDrawServable(share.ownerId, share.nodeId, shareLevels(share, node.audience), {
-      self: false,
-    }))
-  ) {
-    return notFound();
-  }
+  if (!(await isDrawServable(share, share.nodeId, { self: false }))) return notFound();
 
   const svg = await getDrawSvg(share.ownerId, share.nodeId);
   if (!svg) return notFound();

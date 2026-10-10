@@ -3,42 +3,92 @@ import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import {
+  assertMayLink,
+  checkServeList,
   getContactShare,
   setContactShareCanWrite,
   TeamLinkRetiredError,
-  unshareItem,
 } from '@mantle/content';
-import { applyShareMode } from '@/lib/shares';
+import {
+  applyShareMode,
+  getLiveShare,
+  linkRefusal,
+  revokeShare,
+  SERVE_MAX,
+  setShareServed,
+} from '@/lib/shares';
 
-/** DELETE /api/shares/[id] → revoke the link or contact share
- *  (owner-scoped): `{ ok }`. A plain revoke: who reads the item is its
- *  grants (workspaces W5b2), which a revoke leaves alone. The item's share
- *  dialog Remove and the contact's "Shared" tab Revoke both call this. */
+/** DELETE /api/shares/[id] → `{ ok }`: revoke the link or the contact share
+ *  (owner-scoped; `ok` false when it was already gone). Who may: a user who
+ *  may edit the item (an app: a Moderator of its home), the Grant Access
+ *  panel's `mayLink`; else 404 `not_found` or 403 `forbidden`. A link never
+ *  changes a level or a grant, so removing one changes none either (the
+ *  item's share dialog Remove and the contact's "Shared" tab Revoke both
+ *  call this). */
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const { id } = await params;
-  const { revoked } = await unshareItem(user.id, id);
-  return NextResponse.json({ ok: revoked });
+  const share = await getLiveShare(user.id, id);
+  if (!share) return NextResponse.json({ ok: false });
+  try {
+    await assertMayLink(user.id, user.actor.id, share.nodeId);
+  } catch (err) {
+    return linkRefusal(err);
+  }
+  return NextResponse.json({ ok: await revokeShare(user.id, id) });
 }
 
-const PatchBody = z.union([z.object({ mode: z.string() }), z.object({ canWrite: z.boolean() })]);
+const PatchBody = z.union([
+  z.object({ mode: z.string() }),
+  z.object({ canWrite: z.boolean() }),
+  z.object({ serve: z.array(z.string().uuid()).max(SERVE_MAX) }),
+]);
 
-/** PATCH /api/shares/[id] { canWrite } → "Can write" on a contact share of
+/** PATCH /api/shares/[id] { serve } → `{ ok: true, served }`: replace an
+ *  open link's served list (plan 8.1), with the checks of POST /api/shares:
+ *  who may change the link (`mayLink`), and each id ADDED must be named or
+ *  embedded by the item (a folder link: sit in the folder) and editable by
+ *  the caller. 404 `not_found` (no such live open link, or an item or id
+ *  the caller cannot read), 403 `forbidden`.
+ *
+ *  PATCH /api/shares/[id] { canWrite } → "Can write" on a contact share of
  *  an app (contact shares, 0214); 400 `write-not-app` on another kind.
  *  Audited (`contact.share_can_write`).
  *
  *  PATCH /api/shares/[id] { mode } → set the link's admission (owner-scoped).
  *  'public' is the only mode (a live link already is: this confirms it).
  *  'team' is refused with 400 `team-links-retired`: team links are retired
- *  (member logins Phase 6 stage 6), members use their own logins, and an
- *  item is shown to them by setting its level to team. */
+ *  (member logins Phase 6 stage 6), members use their own logins. */
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const { id } = await params;
   const parsed = PatchBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: 'invalid mode' }, { status: 400 });
+  if ('serve' in parsed.data) {
+    const share = await getLiveShare(user.id, id);
+    if (!share || share.contactId) {
+      return NextResponse.json({ error: 'Link not found.', code: 'not_found' }, { status: 404 });
+    }
+    try {
+      const item = await assertMayLink(user.id, user.actor.id, share.nodeId);
+      const list = await checkServeList(
+        user.id,
+        user.actor.id,
+        item,
+        parsed.data.serve,
+        share.served,
+      );
+      const updated = await setShareServed(user.id, id, list);
+      if (!updated) {
+        return NextResponse.json({ error: 'Link not found.', code: 'not_found' }, { status: 404 });
+      }
+      return NextResponse.json({ ok: true, served: updated.served });
+    } catch (err) {
+      return linkRefusal(err);
+    }
+  }
   // { canWrite }: a live contact share of an app (contact shares, 0214).
   if ('canWrite' in parsed.data) {
     const share = await getContactShare(user.id, id);

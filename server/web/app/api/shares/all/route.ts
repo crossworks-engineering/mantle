@@ -3,9 +3,8 @@ import { listActiveShares } from '@mantle/content';
 import { getOwnerOr401 } from '@/lib/auth';
 
 /** GET /api/shares/all → every ACTIVE share the owner has, newest first — the
- *  "what is exposed right now" registry (every live link is public). `level`
- *  is the item's level (client logins C1): a live link on a client item is
- *  an old one, made when client meant an open link. */
+ *  "what is exposed right now" registry (every live link is public). No
+ *  `level` since workspaces W5b2: a link does not follow a level. */
 export async function GET() {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
@@ -23,7 +22,6 @@ export async function GET() {
       createdAt: s.createdAt,
       viewCount: s.viewCount,
       lastViewedAt: s.lastViewedAt,
-      level: s.level,
       // A contact share (0214): the contact it is for, and its right.
       contactId: s.contactId,
       contactName: s.contactName,

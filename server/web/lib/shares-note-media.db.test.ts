@@ -3,9 +3,10 @@
  * and nothing else, against a real, migrated Postgres. The note embeds
  * pictures, a file and a drawing; the share serves exactly those, read the
  * way a page's doc is (a link inside a sentence, or an id quoted in code, is
- * not an embed), under the same level rule as a page (an embed an admin
- * raised above the link is not served). A file or drawing the note does NOT
- * embed stays refused even at public, and an expired or revoked share
+ * not an embed), under the same rule as a page: on the link's served list
+ * (plan 8.1; an embed taken off the list is not served). A file or drawing
+ * the note does NOT embed stays refused even on the list, and an expired or
+ * revoked share
  * refuses everything, through the real /s routes. Only the file byte store is
  * stubbed. Seeds its own owner and rows and removes them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run shares-note-media.db.test
@@ -72,8 +73,19 @@ describe.skipIf(!URL)('a shared note serves the pictures and files it names', ()
     `[a page](page:${id.page})`,
   ].join('\n\n');
 
-  const noteLink = () =>
-    ({ id: randomUUID(), ownerId: owner, nodeId: id.note, nodeType: 'note', token: 't' }) as Share;
+  /** Every item of the fixture: the served list of the links below, so a
+   *  refusal is the reference rule, not the list. */
+  const everything = () => Object.values(id);
+  const noteLink = (served = everything()) =>
+    ({
+      id: randomUUID(),
+      ownerId: owner,
+      nodeId: id.note,
+      nodeType: 'note',
+      token: 't',
+      contactId: null,
+      settings: { served },
+    }) as unknown as Share;
 
   /** An admin raises an item back to admin (under the test bypass). */
   const raise = (nodeId: string) =>
@@ -119,22 +131,14 @@ describe.skipIf(!URL)('a shared note serves the pictures and files it names', ()
         insert into draws (node_id, scene, file_refs, scene_svg) values
           (${d}, '{"elements":[]}'::jsonb, '{}'::jsonb, ${svg})`);
     }
-    // Every row public, the notes, what they embed and the items they do not
-    // name, so a refusal below is the reference rule, not the level rule.
-    // (The levels are frozen since W5b2 and their engine is gone: the fixture
-    // sets the level the link serving still reads under the test bypass.)
-    await m.db.transaction(async (tx) => {
-      await tx.execute(sqlTag`select mantle_heads_bypass('test fixture')`);
-      await tx.execute(sqlTag`update nodes set audience = 'public' where owner_id = ${owner}`);
-    });
-    // The notes' open links: the second one has run out.
+    // The links serve every item of the fixture, the ones the note does not
+    // name too, so a refusal below is the reference rule, not the list.
+    const served = JSON.stringify({ served: everything() });
     await m.db.execute(sqlTag`
-      insert into shares (owner_id, node_id, node_type, token, expires_at) values
-        (${owner}, ${id.note}, 'note', ${token.live}, null),
-        (${owner}, ${id.note2}, 'note', ${token.expired}, now() - interval '1 hour')`);
-    await m.db.execute(sqlTag`
-      insert into shares (owner_id, node_id, node_type, token, revoked_at) values
-        (${owner}, ${id.note}, 'note', ${token.revoked}, now())`);
+      insert into shares (owner_id, node_id, node_type, token, settings, expires_at, revoked_at) values
+        (${owner}, ${id.note}, 'note', ${token.live}, ${served}::jsonb, null, null),
+        (${owner}, ${id.note2}, 'note', ${token.expired}, ${served}::jsonb, now() - interval '1 hour', null),
+        (${owner}, ${id.note}, 'note', ${token.revoked}, ${served}::jsonb, null, now())`);
   }, 60_000);
 
   afterAll(async () => {
@@ -170,14 +174,14 @@ describe.skipIf(!URL)('a shared note serves the pictures and files it names', ()
     expect(await getDraw(token.live, id.draw)).toBe(200);
   });
 
-  it('refuses an id the note only quotes in code, even at public', async () => {
+  it('refuses an id the note only quotes in code, even on the list', async () => {
     expect(await shares.isAssetAllowed(noteLink(), id.fenced)).toBe(false);
     expect(await shares.isAssetAllowed(noteLink(), id.inlineCode)).toBe(false);
     expect(await getAsset(token.live, id.fenced)).toBe(404);
     expect(await getAsset(token.live, id.inlineCode)).toBe(404);
   });
 
-  it('refuses a file the note only links inside a sentence, even at public', async () => {
+  it('refuses a file the note only links inside a sentence, even on the list', async () => {
     // A link, not an embed: a page share refuses the same.
     expect(await shares.isAssetAllowed(noteLink(), id.inlineDoc)).toBe(false);
     expect(await getAsset(token.live, id.inlineDoc)).toBe(404);
@@ -215,13 +219,19 @@ describe.skipIf(!URL)('a shared note serves the pictures and files it names', ()
     }
   });
 
-  it('does not serve an embed an admin raised back above the link', async () => {
-    await raise(id.pic);
-    expect(await shares.isAssetAllowed(noteLink(), id.pic)).toBe(false);
+  it('does not serve an embed taken off the served list', async () => {
+    const without = everything().filter((x) => x !== id.pic && x !== id.draw);
+    expect(await shares.isAssetAllowed(noteLink(without), id.pic)).toBe(false);
+    expect(await shares.isEmbeddedDrawAllowed(noteLink(without), id.draw)).toBe(false);
+    await m.db.execute(sqlTag`
+      update shares set settings = ${JSON.stringify({ served: without })}::jsonb
+      where token = ${token.live}`);
     expect(await getAsset(token.live, id.pic)).toBe(404);
-    await raise(id.draw);
-    expect(await shares.isEmbeddedDrawAllowed(noteLink(), id.draw)).toBe(false);
     expect(await getDraw(token.live, id.draw)).toBe(404);
+    expect(await getAsset(token.live, id.doc)).toBe(200);
+    await m.db.execute(sqlTag`
+      update shares set settings = ${JSON.stringify({ served: everything() })}::jsonb
+      where token = ${token.live}`);
   });
 
   it('drops a file the moment an edit takes its reference out of the note', async () => {

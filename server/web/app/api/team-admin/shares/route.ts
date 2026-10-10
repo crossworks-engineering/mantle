@@ -1,7 +1,7 @@
 /**
  * GET /api/team-admin/shares — the Shared-links tab: every active share,
  * shaped exactly as SharedLinksPanel expects (the old SSR page's mapping),
- * with each item's `level` (SharedLinkRow.level; audit A18), and `retired`:
+ * no `level` since workspaces W5b2 (a link does not follow one), and `retired`:
  * the old client links C3 retired (RetiredClientLinkRow; they answer "Sign
  * in as a client" now), so the admin sees which customer URLs stopped.
  */
@@ -33,7 +33,6 @@ export async function GET() {
       createdAt: s.createdAt,
       viewCount: s.viewCount,
       lastViewedAt: s.lastViewedAt,
-      level: s.level,
       // A contact share (0214): the contact it is for, and its right.
       contactId: s.contactId,
       contactName: s.contactName,

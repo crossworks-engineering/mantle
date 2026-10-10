@@ -26,7 +26,8 @@ vi.mock('@mantle/content', async (importOriginal) => {
     createShare: vi.fn(),
     deletePage: vi.fn(),
     getActiveShareForNode: vi.fn(),
-    unshareItem: vi.fn(),
+    revokeShare: vi.fn(),
+    assertMayLink: vi.fn(),
     shareUrlForToken: (token: string) => `https://brain.test/s/${token}`,
   };
 });
@@ -39,7 +40,8 @@ import {
   createShare,
   deletePage,
   getActiveShareForNode,
-  unshareItem,
+  revokeShare,
+  assertMayLink,
 } from '@mantle/content';
 import { PAGE_TOOLS } from './builtins-pages';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
@@ -98,7 +100,15 @@ beforeEach(() => {
   vi.mocked(createShare).mockResolvedValue({ id: 's-1', token: 'tok', mode: 'public' } as never);
   vi.mocked(deletePage).mockResolvedValue(true as never);
   vi.mocked(getActiveShareForNode).mockResolvedValue({ id: 's-1', token: 'tok' } as never);
-  vi.mocked(unshareItem).mockResolvedValue({ revoked: true });
+  vi.mocked(revokeShare).mockResolvedValue(true);
+  vi.mocked(assertMayLink).mockResolvedValue({
+    id: PAGE_ID,
+    type: 'page',
+    path: null,
+    read: true,
+    edit: true,
+    manage: true,
+  });
 });
 
 describe('page_block_delete', () => {
@@ -175,7 +185,8 @@ describe('page_share', () => {
 
   it('mints the link and returns its URL', async () => {
     const res = await share.handler({ id: PAGE_ID }, ctx);
-    expect(createShare).toHaveBeenCalledWith('o1', PAGE_ID, { alsoLowered: [] });
+    expect(assertMayLink).toHaveBeenCalledWith('o1', 'o1', PAGE_ID);
+    expect(createShare).toHaveBeenCalledWith('o1', PAGE_ID, { serve: undefined });
     expect(outputOf(res)).toMatchObject({ id: PAGE_ID, url: 'https://brain.test/s/tok' });
   });
 
@@ -231,7 +242,7 @@ describe('page_delete', () => {
 describe('page_unshare', () => {
   it('refuses an empty id and revokes nothing', async () => {
     expect(errorOf(await unshare.handler({ id: '' }, ctx))).toMatch(/id is required/);
-    expect(unshareItem).not.toHaveBeenCalled();
+    expect(revokeShare).not.toHaveBeenCalled();
   });
 
   it('succeeds as a no-op when the page was never shared', async () => {
@@ -240,17 +251,18 @@ describe('page_unshare', () => {
     // "Make it private" on an already-private page is not an error — and it
     // must not reach the revoke path with an undefined share id.
     expect(outputOf(res)).toEqual({ id: PAGE_ID, unshared: false });
-    expect(unshareItem).not.toHaveBeenCalled();
+    expect(revokeShare).not.toHaveBeenCalled();
   });
 
-  it('revokes by share id through unshareItem', async () => {
+  it('revokes by share id, after the link check, and says nothing of levels', async () => {
     const res = await unshare.handler({ id: PAGE_ID }, ctx);
-    expect(unshareItem).toHaveBeenCalledWith('o1', 's-1');
+    expect(assertMayLink).toHaveBeenCalledWith('o1', 'o1', PAGE_ID);
+    expect(revokeShare).toHaveBeenCalledWith('o1', 's-1');
     expect(outputOf(res)).toEqual({ id: PAGE_ID, unshared: true });
   });
 
   it('surfaces a store failure as a tool error, not a throw', async () => {
-    vi.mocked(unshareItem).mockRejectedValue(new Error('db down'));
+    vi.mocked(revokeShare).mockRejectedValue(new Error('db down'));
     expect(errorOf(await unshare.handler({ id: PAGE_ID }, ctx))).toMatch(/db down/);
   });
 });

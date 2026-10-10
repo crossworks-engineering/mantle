@@ -1,6 +1,6 @@
 /**
  * GET /api/team-admin/shares (client logins C3) without a database: the live
- * links with their level, and the retired old client links, shaped for
+ * links (no level since W5b2), and the retired old client links, shaped for
  * jackdaw, never with a token for a retired one. An admin route: members and
  * clients are refused by getOwnerOr401 (the sweeps drive every route).
  */
@@ -30,7 +30,6 @@ vi.mock('@mantle/content', async (importOriginal) => ({
       createdAt: '2026-09-01T00:00:00.000Z',
       viewCount: 3,
       lastViewedAt: null,
-      level: 'public',
     },
   ]),
   listRetiredClientLinks: vi.fn(async () => [
@@ -53,9 +52,8 @@ describe('GET /api/team-admin/shares', () => {
   it('lists live links and the retired old client links, without a token for those', async () => {
     const { GET } = await import('./route');
     const body = await (await GET()).json();
-    expect(body.shares).toEqual([
-      expect.objectContaining({ id: 's1', path: '/s/live-token', level: 'public' }),
-    ]);
+    expect(body.shares).toEqual([expect.objectContaining({ id: 's1', path: '/s/live-token' })]);
+    expect(body.shares[0]).not.toHaveProperty('level');
     expect(body.retired).toEqual([
       {
         id: 's2',

@@ -87,11 +87,20 @@ vi.mock('@mantle/content', async (importOriginal) => {
     // caught it because email_page had no success arm (2026-09-03 audit).
     renderPageEmail: vi.fn(() => ({ html: '<p>x</p>', imageFileIds: [] })),
     createShare: vi.fn(),
+    assertMayLink: vi.fn(async () => ({ id: 'p1', type: 'page', path: null })),
+    getActiveShareForNode: vi.fn(async () => null),
   };
 });
 
 import { sendEmail, accountCanSend } from '@mantle/email';
-import { getPage, contactEmails, createShare, loginEmails, renderPageEmail } from '@mantle/content';
+import {
+  assertMayLink,
+  getPage,
+  contactEmails,
+  createShare,
+  loginEmails,
+  renderPageEmail,
+} from '@mantle/content';
 import { paramsOf } from './test-support';
 import { EMAIL_TOOLS } from './builtins-email';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
@@ -288,43 +297,37 @@ describe('email_page', () => {
     });
   });
 
-  it('refuses includeLink on a client page BEFORE sending (client logins C1, A20)', async () => {
-    const { ClientLinkRetiredError } =
+  it('refuses includeLink BEFORE sending when the link may not be opened (A20, plan 8.1)', async () => {
+    const { LinkRefusedError } =
       await vi.importActual<typeof import('@mantle/content')>('@mantle/content');
-    vi.mocked(createShare).mockRejectedValue(new ClientLinkRetiredError());
+    vi.mocked(assertMayLink).mockRejectedValueOnce(
+      new LinkRefusedError(
+        403,
+        'forbidden',
+        'Only someone who may edit this item may open or close its link.',
+      ),
+    );
     const res = await page.handler(
       { pageId: 'p1', to: 'friend@example.com', includeLink: true },
       ctx,
     );
-    expect(errorOf(res)).toMatch(/Nothing was sent: this page is at client level/);
+    expect(errorOf(res)).toMatch(/Nothing was sent: the page's link cannot be opened/);
     expect(errorOf(res)).toMatch(/without includeLink/);
     // The mail never goes out promising a link it does not carry.
     expect(sendEmail).not.toHaveBeenCalled();
+    expect(createShare).not.toHaveBeenCalled();
   });
 
-  it("names an embedded client item that the link took out of client logins' view (A10)", async () => {
-    vi.mocked(createShare).mockImplementation((async (
-      _o: string,
-      _id: string,
-      opts: { alsoLowered?: unknown[] },
-    ) => {
-      opts.alsoLowered?.push({
-        id: 'f1',
-        type: 'file',
-        title: 'plan.pdf',
-        from: 'client',
-        to: 'public',
-      });
-      return { id: 's1', token: 'tok', mode: 'public' };
-    }) as never);
+  it('opens the link without touching its served list, and no level talk', async () => {
+    vi.mocked(createShare).mockResolvedValue({ id: 's1', token: 'tok', mode: 'public' } as never);
     const res = await page.handler(
       { pageId: 'p1', to: 'friend@example.com', includeLink: true },
       ctx,
     );
     expect(res.ok).toBe(true);
-    expect(res.ok && (res.output as { warning?: string }).warning).toMatch(
-      /from client to public .*left client logins' view: plan\.pdf \(file\)/,
-    );
+    expect(createShare).toHaveBeenCalledWith('o1', 'p1', { serve: undefined });
+    expect(res.ok && (res.output as { shareUrl?: string }).shareUrl).toMatch(/\/s\/tok$/);
+    expect(res.ok && (res.output as { warning?: string }).warning).toBeUndefined();
   });
 
   it('defaults the subject to the page title', async () => {

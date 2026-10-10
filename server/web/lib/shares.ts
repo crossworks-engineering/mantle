@@ -3,10 +3,17 @@
  * and adds the PUBLIC read path: resolve a token → the data a presenter needs,
  * and the asset-scoping check the public file route enforces. None of this
  * calls requireOwner — the public surface trusts a resolved active token and
- * only ever reaches the one shared node (+ its referenced files).
+ * only ever reaches the one shared node plus what it serves.
+ *
+ * What an open link serves (workspaces plan 8.1, decision 12): its item, and
+ * the items on its served list (`settings.served`) that the item still
+ * names or embeds (a folder link: that still sit under the folder). A
+ * contact share holds no list: it serves what its item names. No level is
+ * read: the rule is the list, checked here on the system pool per request.
  */
-import { and, eq, inArray, sql } from 'drizzle-orm';
-import { asViewerLevel, db, draws, nodes, tables, type Share, type ViewerLevel } from '@mantle/db';
+import { and, eq, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
+import { db, draws, nodes, tables, type Share } from '@mantle/db';
 import {
   drawPlacedFileIds,
   getPage,
@@ -14,12 +21,16 @@ import {
   getDrawSvg,
   referencedDrawIds,
   referencedFileIds,
+  shareServedIds,
   ensureTableDoc,
   emptyTableDoc,
   parseFormulaSpec,
   checkLookupCoverage,
   checkDimensions,
   signatureOf,
+  LinkRefusedError,
+  ShareInputError,
+  TeamLinkRetiredError,
   type AggregateKind,
   type Column,
   type Row,
@@ -31,8 +42,9 @@ import {
 import { aggregateWindow, describeWorkbook, resolveStoragePath } from '@mantle/tabledb';
 import { markdownToDoc } from '@mantle/content-core/markdown';
 import { isUuid } from '@mantle/std';
-import { levelFilteredDoc, levelFilteredNote } from '@mantle/content/pages';
+import { servedFilteredDoc, servedFilteredNote } from '@mantle/content/pages';
 import { fileById, folderById } from '@/lib/files';
+import { NextResponse } from '@/server/http-compat';
 
 export {
   createShare,
@@ -40,6 +52,8 @@ export {
   revokeShareTree,
   applyShareMode,
   getActiveShareForNode,
+  getLiveShare,
+  setShareServed,
   resolveActiveShareByToken,
   resolveActiveShareRowByToken,
   recordShareView,
@@ -49,6 +63,27 @@ export {
 
 export function buildShareUrl(origin: string, token: string): string {
   return `${origin.replace(/\/$/, '')}/s/${token}`;
+}
+
+/** The most ids one served list takes (POST and PATCH /api/shares). */
+export const SERVE_MAX = 5000;
+
+/** A link refusal as `{ error, code }` (the share routes): 404 `not_found`,
+ *  403 `forbidden`, 400 `not_shareable`; a team mode keeps its old
+ *  `{ error, reason }`. Anything else throws (opaque 500). */
+export function linkRefusal(err: unknown): Response {
+  if (err instanceof LinkRefusedError) {
+    return NextResponse.json({ error: err.message, code: err.code }, { status: err.status });
+  }
+  if (err instanceof ShareInputError) {
+    return err.reason === 'not-found'
+      ? NextResponse.json({ error: 'Item not found.', code: 'not_found' }, { status: 404 })
+      : NextResponse.json({ error: err.message, code: 'not_shareable' }, { status: 400 });
+  }
+  if (err instanceof TeamLinkRetiredError) {
+    return NextResponse.json({ error: err.message, reason: err.reason }, { status: 400 });
+  }
+  throw err;
 }
 
 export type ShareView =
@@ -128,9 +163,9 @@ export type ShareView =
       folderId: string;
       title: string;
       path: string;
-      /** The item levels this link shows (linkLevels): never sent to the
-       *  visitor, it filters the listing and the asset route. */
-      levels: ViewerLevel[];
+      /** The link's served list (servedIds): never sent to the visitor, it
+       *  filters the listing. */
+      served: string[];
     }
   // Only WHETHER a committed snapshot exists (false when the last commit
   // carried none; the presenter shows a placeholder rather than 404ing a link
@@ -138,133 +173,86 @@ export type ShareView =
   // image, by /s/<token>/draw.
   | { kind: 'draw'; title: string; hasSvg: boolean; hasImage?: boolean };
 
-/**
- * The item levels a folder's or a page's open link shows: its contents, a
- * page's embeds, a drawing link's images. Every link is public (client
- * logins C3: the old client links are retired, migration 0192, and the
- * public read path never serves a link on a client item), so a link shows
- * public items only. A file uploaded later into a folder lands at admin (no
- * inheritance), so it stays out until someone lowers it; an embed follows
- * its page down when the page is lowered (embedding means sharing), so it
- * is served unless an admin raised it again on purpose. The shared item
- * itself is not filtered: the item IS the link. The parameter stays so the
- * callers keep their shape.
- */
-export function linkLevels(_folderAudience: string): ViewerLevel[] {
-  return ['public'];
+/** The ids an open link serves, lower-case: its item and its served list.
+ *  Membership only: a page's, note's or drawing's caller still checks that
+ *  the item names the id, a folder's that the id sits under the folder
+ *  ({@link isServed}). */
+export function servedIds(share: Pick<Share, 'nodeId' | 'settings'>): Set<string> {
+  return new Set([share.nodeId.toLowerCase(), ...shareServedIds(share.settings)]);
 }
 
-/** Every level: what a CONTACT share's embeds may sit at. */
-const ANY_LEVEL: ViewerLevel[] = ['admin', 'team', 'client', 'public'];
-
 /**
- * The levels a share serves its embeds at. An open link: `linkLevels`
- * (public only). A CONTACT share (migration 0214) lowers nothing, so an
- * admin page's images stay admin; it serves what the shared item itself
- * embeds whatever its level, read only, and only while the share lives
- * (the same idea as "embeds follow their embedder" for folder shares,
- * migration 0208, with no column). Every caller still checks the embed is
- * named by the shared item's own content (its embed closure).
+ * Does this share serve `nodeId` (plan 8.1)? Its own item, always. An open
+ * link: an id on its served list, and for a folder link one that still sits
+ * under the folder (moved out, it is not served on its next fetch). A
+ * CONTACT share (migration 0214) holds no list: it serves what its item
+ * names, read only and only while the share lives. Every caller also checks
+ * that the item names or embeds the id (its own content), so a share never
+ * becomes a way to read arbitrary items by id.
  */
-export function shareLevels(share: Pick<Share, 'contactId'>, audience: string): ViewerLevel[] {
-  return share.contactId ? ANY_LEVEL : linkLevels(audience);
-}
-
-/** Whether every one of `ids` (the owner's items that still exist) sits at
- *  `levels`. An id with no row is not a reason to refuse: the byte route
- *  404s it on its own. */
-async function allAtLevels(
-  ownerId: string,
-  ids: readonly string[],
-  levels: readonly ViewerLevel[],
-): Promise<boolean> {
-  if (ids.length === 0) return true;
+export async function isServed(share: Share, nodeId: string): Promise<boolean> {
+  if (!isUuid(nodeId)) return false;
+  const id = nodeId.toLowerCase();
+  if (id === share.nodeId.toLowerCase()) return true;
+  if (share.contactId) return true;
+  if (!servedIds(share).has(id)) return false;
+  if (share.nodeType !== 'branch') return true;
+  const root = alias(nodes, 'share_root');
   const [hit] = await db
     .select({ id: nodes.id })
     .from(nodes)
-    .where(
-      and(
-        eq(nodes.ownerId, ownerId),
-        inArray(nodes.id, [...ids]),
-        sql`${nodes.audience} not in (${levelList(levels)})`,
-      ),
+    .innerJoin(
+      root,
+      and(eq(root.id, share.nodeId), eq(root.ownerId, share.ownerId), eq(root.type, 'branch')),
     )
-    .limit(1);
-  return !hit;
-}
-
-/**
- * May a link at `levels` show this drawing's snapshot? The snapshot carries
- * every image the committed scene places, so one image above the link's
- * levels (an admin raised it on purpose) keeps the whole snapshot off the
- * link: there is no serving it without that image. `self`: the drawing is an
- * EMBED (in a shared page), so its own level counts too; a drawing that is
- * itself the shared item is the link and is not filtered.
- */
-export async function isDrawServable(
-  ownerId: string,
-  drawId: string,
-  levels: readonly ViewerLevel[],
-  opts: { self: boolean },
-): Promise<boolean> {
-  const [row] = await db
-    .select({ audience: nodes.audience, scene: draws.scene, fileRefs: draws.fileRefs })
-    .from(nodes)
-    .innerJoin(draws, eq(draws.nodeId, nodes.id))
-    .where(and(eq(nodes.id, drawId), eq(nodes.ownerId, ownerId), eq(nodes.type, 'draw')))
-    .limit(1);
-  if (!row) return false;
-  if (opts.self && !levels.includes(asViewerLevel(row.audience))) return false;
-  return allAtLevels(ownerId, drawPlacedFileIds(row.scene, row.fileRefs), levels);
-}
-
-/** SQL list of `levels`, for an IN / NOT IN. */
-function levelList(levels: readonly ViewerLevel[]) {
-  return sql.join(
-    levels.map((l) => sql`${l}`),
-    sql`, `,
-  );
-}
-
-/**
- * Is there a folder strictly between the shared folder `rootPath` and
- * `path` (inclusive of `path` itself when it is a folder, and of a file's
- * own folder, since a file's path IS its folder's) that sits above the
- * link's levels? Such a folder is not listed, so nothing under it is
- * reachable through the link either, even an item at a low enough level.
- */
-export async function hiddenFolderBetween(
-  ownerId: string,
-  rootPath: string,
-  path: string,
-  levels: readonly ViewerLevel[],
-): Promise<boolean> {
-  const [hit] = await db
-    .select({ id: nodes.id })
-    .from(nodes)
     .where(
       and(
-        eq(nodes.ownerId, ownerId),
-        eq(nodes.type, 'branch'),
-        sql`${nodes.path} @> ${path}::ltree`,
-        sql`${nodes.path} <@ ${rootPath}::ltree`,
-        sql`${nodes.path} <> ${rootPath}::ltree`,
-        sql`${nodes.audience} not in (${levelList(levels)})`,
+        eq(nodes.id, id),
+        eq(nodes.ownerId, share.ownerId),
+        sql`${nodes.path} <@ ${root.path}`,
+        sql`${nodes.id} <> ${root.id}`,
       ),
     )
     .limit(1);
   return !!hit;
 }
 
-/** Per folder path, how many files directly in it sit at `levels`: the
- *  count a folder link shows beside a subfolder, so hidden files are not
- *  even counted. */
-export async function visibleFileCounts(
+/**
+ * May this share show this drawing's snapshot? The snapshot carries every
+ * image the committed scene places, so every one of them must be served:
+ * an image not on the list keeps the whole snapshot off the link (there is
+ * no serving it without that image). `self`: the drawing is an EMBED (in a
+ * shared page or note), so it must be served itself; a drawing that is the
+ * shared item is the link.
+ */
+export async function isDrawServable(
+  share: Share,
+  drawId: string,
+  opts: { self: boolean },
+): Promise<boolean> {
+  const [row] = await db
+    .select({ scene: draws.scene, fileRefs: draws.fileRefs })
+    .from(nodes)
+    .innerJoin(draws, eq(draws.nodeId, nodes.id))
+    .where(and(eq(nodes.id, drawId), eq(nodes.ownerId, share.ownerId), eq(nodes.type, 'draw')))
+    .limit(1);
+  if (!row) return false;
+  if (opts.self && !(await isServed(share, drawId))) return false;
+  if (share.contactId) return true;
+  const served = servedIds(share);
+  return drawPlacedFileIds(row.scene, row.fileRefs).every((f) => served.has(f.toLowerCase()));
+}
+
+/** Per folder path, how many files directly in it are on `served`: the
+ *  count a folder link shows beside a subfolder, so a file not served is
+ *  not even counted. */
+export async function servedFileCounts(
   ownerId: string,
   folderPaths: readonly string[],
-  levels: readonly ViewerLevel[],
+  served: readonly string[],
 ): Promise<Map<string, number>> {
-  if (folderPaths.length === 0) return new Map();
+  const ids = served.filter((id) => isUuid(id));
+  if (folderPaths.length === 0 || ids.length === 0) return new Map();
   const rows = await db
     .select({ path: sql<string>`${nodes.path}::text`, n: sql<number>`count(*)::int` })
     .from(nodes)
@@ -276,7 +264,7 @@ export async function visibleFileCounts(
           folderPaths.map((p) => sql`${p}`),
           sql`, `,
         )})`,
-        inArray(nodes.audience, [...levels]),
+        sql`${nodes.id} = any (${`{${ids.join(',')}}`}::uuid[])`,
       ),
     )
     .groupBy(nodes.path);
@@ -296,21 +284,21 @@ async function loadNode(ownerId: string, nodeId: string) {
  *  if the underlying node vanished (deleted after the link was minted). */
 export async function loadShareView(share: Share): Promise<ShareView | null> {
   const { ownerId, nodeId, nodeType } = share;
+  const served = servedIds(share);
   switch (nodeType) {
-    // An open link is read by anyone: a page or note shows only what the
-    // public may read of it. A mention, a link or a child page card of an
-    // item it may not read says "Private item", and a hidden embed is left
-    // out, as for a client (access matrix M7; the asset routes already
-    // refuse those bytes). A task's or an event's body and a task's
-    // checklist are markdown that can name items too, so they take the
-    // note rule (T18). A contact share serves what the item embeds at any
-    // level (shareLevels), so it reads the item as it is.
+    // An open link is read by anyone: a page or note shows only what its
+    // link serves (plan 8.1). A mention, a link or a child page card of an
+    // item not served says "Private item", and an embed not served is left
+    // out (the asset routes refuse those bytes too). A task's or an event's
+    // body and a task's checklist are markdown that can name items too, so
+    // they take the note rule (T18). A contact share serves what its item
+    // names, so it reads the item as it is.
     case 'page': {
       const page = await getPage(ownerId, nodeId);
       if (!page) return null;
       const doc = share.contactId
         ? page.doc
-        : ((await levelFilteredDoc(ownerId, 'public', page.doc)) as typeof page.doc);
+        : ((await servedFilteredDoc(ownerId, served, page.doc)) as typeof page.doc);
       return { kind: 'page', title: page.title, icon: page.icon, width: page.width, doc };
     }
     case 'note': {
@@ -321,7 +309,7 @@ export async function loadShareView(share: Share): Promise<ShareView | null> {
       return {
         kind: 'note',
         title: n.title,
-        content: share.contactId ? content : await levelFilteredNote(ownerId, 'public', content),
+        content: share.contactId ? content : await servedFilteredNote(ownerId, served, content),
       };
     }
     case 'task': {
@@ -329,7 +317,7 @@ export async function loadShareView(share: Share): Promise<ShareView | null> {
       if (!n) return null;
       const d = (n.data ?? {}) as Record<string, unknown>;
       const shown = (md: string) =>
-        share.contactId ? md : levelFilteredNote(ownerId, 'public', md);
+        share.contactId ? md : servedFilteredNote(ownerId, served, md);
       const todos = Array.isArray(d.todos)
         ? (d.todos as Array<Record<string, unknown>>).filter(
             (t) => typeof t?.text === 'string' && t.text,
@@ -355,7 +343,7 @@ export async function loadShareView(share: Share): Promise<ShareView | null> {
       return {
         kind: 'event',
         title: n.title,
-        body: share.contactId ? body : await levelFilteredNote(ownerId, 'public', body),
+        body: share.contactId ? body : await servedFilteredNote(ownerId, served, body),
         startsAt: typeof d.starts_at === 'string' ? d.starts_at : null,
         endsAt: typeof d.ends_at === 'string' ? d.ends_at : null,
         location: typeof d.location === 'string' ? d.location : null,
@@ -487,7 +475,7 @@ export async function loadShareView(share: Share): Promise<ShareView | null> {
         folderId: nodeId,
         title: folder.slug,
         path: folder.path,
-        levels: linkLevels(folder.audience),
+        served: [...served].filter((id) => id !== nodeId.toLowerCase()),
       };
     }
     default:
@@ -495,12 +483,12 @@ export async function loadShareView(share: Share): Promise<ShareView | null> {
   }
 }
 
-/** The shared note's markdown and level, or null when the node is gone or
- *  is not a note. Read per request, so an edit that drops a reference takes
- *  the file off the link on its next fetch. */
-async function loadSharedNote(share: Share): Promise<{ content: string; audience: string } | null> {
+/** The shared note's markdown, or null when the node is gone or is not a
+ *  note. Read per request, so an edit that drops a reference takes the file
+ *  off the link on its next fetch. */
+async function loadSharedNote(share: Share): Promise<string | null> {
   const [row] = await db
-    .select({ data: nodes.data, audience: nodes.audience })
+    .select({ data: nodes.data })
     .from(nodes)
     .where(
       and(eq(nodes.id, share.nodeId), eq(nodes.ownerId, share.ownerId), eq(nodes.type, 'note')),
@@ -508,7 +496,7 @@ async function loadSharedNote(share: Share): Promise<{ content: string; audience
     .limit(1);
   if (!row) return null;
   const d = (row.data ?? {}) as Record<string, unknown>;
-  return { content: typeof d.content === 'string' ? d.content : '', audience: row.audience };
+  return typeof d.content === 'string' ? d.content : '';
 }
 
 /** The ids a note's markdown EMBEDS as `kind` (files: its pictures and
@@ -528,105 +516,65 @@ function noteEmbeds(content: string, kind: 'file' | 'draw'): string[] {
 /** May this share serve the drawing `drawId` as an embed? Only a page or a
  *  note share, only a drawing its own content embeds (a page's doc, a note's
  *  `draw:` pictures), and only when the drawing and every image its snapshot
- *  carries sit at the share's levels (shareLevels, as for files). So a share
- *  never becomes a way to read arbitrary drawings by id. The /s/:token/draw
- *  route serves a drawing that is itself the shared item; this is the
- *  /s/:token/draw/:drawId route's authorization. */
+ *  carries are served (isDrawServable). So a share never becomes a way to
+ *  read arbitrary drawings by id. The /s/:token/draw route serves a drawing
+ *  that is itself the shared item; this is the /s/:token/draw/:drawId
+ *  route's authorization. */
 export async function isEmbeddedDrawAllowed(share: Share, drawId: string): Promise<boolean> {
   if (!isUuid(drawId)) return false;
   const id = drawId.toLowerCase();
   if (share.nodeType === 'page') {
     const page = await getPage(share.ownerId, share.nodeId);
-    if (!page || !referencedDrawIds(page.doc).includes(drawId)) return false;
-    return isDrawServable(share.ownerId, drawId, shareLevels(share, page.audience), {
-      self: true,
-    });
+    if (!page || !referencedDrawIds(page.doc).some((d) => d.toLowerCase() === id)) return false;
+    return isDrawServable(share, id, { self: true });
   }
   if (share.nodeType === 'note') {
-    const note = await loadSharedNote(share);
-    if (!note || !noteEmbeds(note.content, 'draw').includes(id)) return false;
-    return isDrawServable(share.ownerId, id, shareLevels(share, note.audience), { self: true });
+    const content = await loadSharedNote(share);
+    if (content === null || !noteEmbeds(content, 'draw').includes(id)) return false;
+    return isDrawServable(share, id, { self: true });
   }
   return false;
 }
 
 /** Is `fileId` allowed to be served under this share? A file share serves
- *  itself; a page share serves only the files its doc references that sit
- *  at the link's levels (an embed an admin raised above the page is not
- *  served; linkLevels); a note share serves only the files its markdown
- *  embeds (`media:` pictures and file embeds, parsed as a page doc is,
- *  noteEmbeds), under the same level rule (shareLevels); a folder
- *  share serves the files under the folder's subtree (recursive, evaluated
- *  per request: a file moved out is denied on its next fetch) that sit at
- *  the link's levels, under no folder above them (linkLevels, audit F19): a
- *  file uploaded into a public folder stays admin and is not served. Anything
- *  else is denied. This is the asset route's authorization. */
+ *  itself; a page share serves only the files its doc references that are
+ *  served (isServed); a note share only the files its markdown embeds
+ *  (`media:` pictures and file embeds, parsed as a page doc is, noteEmbeds)
+ *  that are served; an open folder link only a file under the folder's
+ *  subtree that is on its list (evaluated per request: a file moved out is
+ *  denied on its next fetch; one uploaded later is not on the list). A
+ *  contact share serves what its item names. Anything else is denied. This
+ *  is the asset route's authorization. */
 export async function isAssetAllowed(share: Share, fileId: string): Promise<boolean> {
   if (share.nodeType === 'file') return share.nodeId === fileId;
+  if (!isUuid(fileId)) return false;
+  const id = fileId.toLowerCase();
   if (share.nodeType === 'page') {
     const page = await getPage(share.ownerId, share.nodeId);
     if (!page) return false;
-    if (!referencedFileIds(page.doc).includes(fileId)) return false;
-    const [hit] = await db
-      .select({ id: nodes.id })
-      .from(nodes)
-      .where(
-        and(
-          eq(nodes.id, fileId),
-          eq(nodes.ownerId, share.ownerId),
-          inArray(nodes.audience, shareLevels(share, page.audience)),
-        ),
-      )
-      .limit(1);
-    return !!hit;
+    if (!referencedFileIds(page.doc).some((f) => f.toLowerCase() === id)) return false;
+    return isServed(share, id);
   }
   if (share.nodeType === 'note') {
-    if (!isUuid(fileId)) return false;
-    const note = await loadSharedNote(share);
-    if (!note || !noteEmbeds(note.content, 'file').includes(fileId.toLowerCase())) return false;
-    const [hit] = await db
-      .select({ id: nodes.id })
-      .from(nodes)
-      .where(
-        and(
-          eq(nodes.id, fileId),
-          eq(nodes.ownerId, share.ownerId),
-          eq(nodes.type, 'file'),
-          inArray(nodes.audience, shareLevels(share, note.audience)),
-        ),
-      )
-      .limit(1);
-    return !!hit;
+    const content = await loadSharedNote(share);
+    if (content === null || !noteEmbeds(content, 'file').includes(id)) return false;
+    if (!(await isFile(share.ownerId, id))) return false;
+    return isServed(share, id);
   }
   // A folder is never a contact share (v1, decision 2): refuse outright.
   if (share.nodeType === 'branch' && !share.contactId) {
-    // Hot path (one call per file/download under a folder share): fetch only
-    // the folder's path — folderById would also run two folderCounts queries
-    // whose results this check never reads.
-    const [folder] = await db
-      .select({ path: nodes.path, audience: nodes.audience })
-      .from(nodes)
-      .where(
-        and(eq(nodes.id, share.nodeId), eq(nodes.ownerId, share.ownerId), eq(nodes.type, 'branch')),
-      )
-      .limit(1);
-    if (!folder?.path) return false;
-    const levels = linkLevels(folder.audience);
-    const [hit] = await db
-      .select({ path: nodes.path })
-      .from(nodes)
-      .where(
-        and(
-          eq(nodes.id, fileId),
-          eq(nodes.ownerId, share.ownerId),
-          eq(nodes.type, 'file'),
-          sql`${nodes.path} <@ ${folder.path}::ltree`,
-          inArray(nodes.audience, levels),
-        ),
-      )
-      .limit(1);
-    if (!hit) return false;
-    return !(await hiddenFolderBetween(share.ownerId, folder.path, hit.path, levels));
+    if (!(await isFile(share.ownerId, id))) return false;
+    return isServed(share, id);
   }
   return false;
+}
+
+/** Whether `id` is one of the owner's files. */
+async function isFile(ownerId: string, id: string): Promise<boolean> {
+  const [hit] = await db
+    .select({ id: nodes.id })
+    .from(nodes)
+    .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'file')))
+    .limit(1);
+  return !!hit;
 }

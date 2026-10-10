@@ -1,17 +1,18 @@
 /**
- * Tests for node_share / node_unshare — the generic, type-agnostic sharing
- * pair. Until now neither had a behavioural test, which is a poor place for
- * that gap: these are the two tools that decide whether brain content is
- * reachable by someone with no login at all.
+ * Tests for node_share / node_unshare: the generic, type-agnostic sharing
+ * pair: the two tools that decide whether brain content is reachable by
+ * someone with no login at all.
  *
- * The DB edges (createShare / getActiveShareForNode / unshareItem) are
- * stubbed; the tools' own logic is real. What is worth pinning is the
- * branching, because each branch is a different answer to "who can now read
- * this":
+ * The DB edges (createShare / getActiveShareForNode / revokeShare and the
+ * link checks assertMayLink / checkServeList) are stubbed; the tools' own
+ * logic is real. What is worth pinning is the branching, because each branch
+ * is a different answer to "who can now read this":
  *
  *  - team links are retired (member logins Phase 6 stage 6): `mode: 'team'`
  *    is refused with what to do instead, and nothing is created;
  *  - an unrecognised `mode` must NOT fall through to public;
+ *  - who may link is checked before anything is written (plan 8.1), and a
+ *    `serve` list goes through its checks before it is stored;
  *  - unsharing something that was never shared must not call revoke at all;
  *  - a refused share (not owned / not a shareable type) must surface the
  *    store's own corrective rather than a generic failure.
@@ -19,19 +20,40 @@
 
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-vi.mock('@mantle/content', () => ({
-  createShare: vi.fn(),
-  getActiveShareForNode: vi.fn(),
-  unshareItem: vi.fn(),
-  shareUrlForToken: (token: string) => `https://brain.test/s/${token}`,
-  TeamLinkRetiredError: class extends Error {
-    constructor() {
-      super('Team links are retired: members sign in with their own logins now.');
+vi.mock('@mantle/content', () => {
+  class LinkRefusedError extends Error {
+    constructor(
+      readonly status: number,
+      readonly code: string,
+      message: string,
+    ) {
+      super(message);
     }
-  },
-}));
+  }
+  return {
+    createShare: vi.fn(),
+    getActiveShareForNode: vi.fn(),
+    revokeShare: vi.fn(),
+    assertMayLink: vi.fn(),
+    checkServeList: vi.fn(),
+    LinkRefusedError,
+    shareUrlForToken: (token: string) => `https://brain.test/s/${token}`,
+    TeamLinkRetiredError: class extends Error {
+      constructor() {
+        super('Team links are retired: members sign in with their own logins now.');
+      }
+    },
+  };
+});
 
-import { createShare, getActiveShareForNode, unshareItem } from '@mantle/content';
+import {
+  assertMayLink,
+  checkServeList,
+  createShare,
+  getActiveShareForNode,
+  LinkRefusedError,
+  revokeShare,
+} from '@mantle/content';
 import { SHARE_TOOLS } from './builtins-share';
 import type { ToolHandlerContext } from './types';
 
@@ -39,10 +61,11 @@ const share = SHARE_TOOLS.find((t) => t.slug === 'node_share')!;
 const unshare = SHARE_TOOLS.find((t) => t.slug === 'node_unshare')!;
 const ctx: ToolHandlerContext = { ownerId: 'o1' };
 const NODE_ID = 'n-1';
+const ITEM = { id: NODE_ID, type: 'note', path: null, read: true, edit: true, manage: true };
 
 type Result = Awaited<ReturnType<(typeof share)['handler']>>;
 
-/** Narrow to the failure arm, asserting it IS one — an unexpected success
+/** Narrow to the failure arm, asserting it IS one: an unexpected success
  *  fails here rather than silently skipping the assertions after it. */
 function errorOf(res: Result): string {
   if (res.ok) throw new Error(`expected a failure, got ok with ${JSON.stringify(res.output)}`);
@@ -60,11 +83,15 @@ beforeEach(() => {
     id: 's-1',
     token: 'tok',
     mode: 'public',
+    served: [],
   } as unknown as Awaited<ReturnType<typeof createShare>>);
+  vi.mocked(assertMayLink).mockResolvedValue(ITEM);
+  vi.mocked(getActiveShareForNode).mockResolvedValue(null);
+  vi.mocked(checkServeList).mockImplementation(async (_o, _l, _i, serve) => [...serve]);
 });
 
 describe('node_share', () => {
-  it('is confirm-gated — it publishes brain content outward-facing', () => {
+  it('is confirm-gated: it publishes brain content outward-facing', () => {
     // The gate is the only thing standing between an agent deciding to share
     // and a public URL existing. Pin it here so removing it fails a test.
     expect(share.requiresConfirm).toBe(true);
@@ -76,16 +103,65 @@ describe('node_share', () => {
     expect(createShare).not.toHaveBeenCalled();
   });
 
-  it('creates the link and returns the store’s mode', async () => {
+  it('creates the link as the owner, its list untouched, and returns the store’s mode', async () => {
     for (const input of [{ id: NODE_ID }, { id: NODE_ID, mode: 'public' }]) {
       const res = await share.handler(input, ctx);
       expect(outputOf(res)).toEqual({
         id: NODE_ID,
         url: 'https://brain.test/s/tok',
         mode: 'public',
+        served: [],
       });
     }
+    expect(assertMayLink).toHaveBeenCalledWith('o1', 'o1', NODE_ID);
     expect(createShare).toHaveBeenCalledTimes(2);
+    expect(createShare).toHaveBeenCalledWith('o1', NODE_ID, { serve: undefined });
+    expect(checkServeList).not.toHaveBeenCalled();
+  });
+
+  it('checks a serve list against what the link already serves, then stores it', async () => {
+    vi.mocked(getActiveShareForNode).mockResolvedValue({
+      id: 's-1',
+      served: ['f-old'],
+    } as never);
+    await share.handler({ id: NODE_ID, serve: ['f-1', 'f-old'] }, ctx);
+    expect(checkServeList).toHaveBeenCalledWith('o1', 'o1', ITEM, ['f-1', 'f-old'], ['f-old']);
+    expect(createShare).toHaveBeenCalledWith('o1', NODE_ID, { serve: ['f-1', 'f-old'] });
+  });
+
+  it('refuses a serve that is not a list of ids, creating nothing', async () => {
+    const res = await share.handler({ id: NODE_ID, serve: 'f-1' }, ctx);
+    expect(errorOf(res)).toMatch(/serve must be a list/);
+    expect(createShare).not.toHaveBeenCalled();
+  });
+
+  it('refuses a caller who may not link, creating nothing; an unreadable item is not found', async () => {
+    vi.mocked(assertMayLink).mockRejectedValueOnce(
+      new LinkRefusedError(
+        403,
+        'forbidden',
+        'Only someone who may edit this item may open or close its link.',
+      ),
+    );
+    expect(errorOf(await share.handler({ id: NODE_ID }, ctx))).toMatch(/may edit this item/);
+    vi.mocked(assertMayLink).mockRejectedValueOnce(
+      new LinkRefusedError(404, 'not_found', 'Item not found.'),
+    );
+    expect(errorOf(await share.handler({ id: NODE_ID }, ctx))).toMatch(/not found/);
+    expect(createShare).not.toHaveBeenCalled();
+  });
+
+  it('refuses a serve id it may not add, creating nothing', async () => {
+    vi.mocked(checkServeList).mockRejectedValueOnce(
+      new LinkRefusedError(
+        403,
+        'forbidden',
+        'A link serves only items its item names or embeds that you may edit.',
+      ),
+    );
+    const res = await share.handler({ id: NODE_ID, serve: ['x'] }, ctx);
+    expect(errorOf(res)).toMatch(/names or embeds/);
+    expect(createShare).not.toHaveBeenCalled();
   });
 
   it('refuses a team link, saying members use their own logins, and creates nothing', async () => {
@@ -103,29 +179,10 @@ describe('node_share', () => {
     expect(createShare).not.toHaveBeenCalled();
   });
 
-  it("calls out an embedded client item the link took out of client logins' view (A10)", async () => {
-    vi.mocked(createShare).mockImplementation((async (
-      _o: string,
-      _id: string,
-      opts: { alsoLowered?: unknown[] },
-    ) => {
-      opts.alsoLowered?.push(
-        { id: 'f-1', type: 'file', title: 'plan.pdf', from: 'client', to: 'public' },
-        { id: 'f-2', type: 'file', title: 'logo.png', from: 'admin', to: 'public' },
-      );
-      return { id: 's-1', token: 'tok', mode: 'public' };
-    }) as never);
-    const out = outputOf(await share.handler({ id: NODE_ID }, ctx));
-    expect(out.warning).toBe(
-      "An embedded client item went from client to public with it and so left client logins' view: plan.pdf (file). Tell the owner; if clients should keep them, the owner decides what to change.",
-    );
-    // An admin embed going public is the ordinary rule, not called out.
-    expect(out.warning).not.toMatch(/logo\.png/);
-  });
-
-  it('says nothing extra when no client item moved', async () => {
+  it('says nothing about levels', async () => {
     const out = outputOf(await share.handler({ id: NODE_ID }, ctx));
     expect(out).not.toHaveProperty('warning');
+    expect(out).not.toHaveProperty('alsoLowered');
   });
 
   it('surfaces the store’s own corrective when the item is not shareable', async () => {
@@ -142,29 +199,27 @@ describe('node_unshare', () => {
     const res = await unshare.handler({ id: '  ' }, ctx);
     expect(errorOf(res)).toMatch(/id is required/);
     expect(getActiveShareForNode).not.toHaveBeenCalled();
-    expect(unshareItem).not.toHaveBeenCalled();
+    expect(revokeShare).not.toHaveBeenCalled();
   });
 
   it('is a no-op success when the item was never shared', async () => {
     vi.mocked(getActiveShareForNode).mockResolvedValue(null);
     const res = await unshare.handler({ id: NODE_ID }, ctx);
     expect(outputOf(res)).toEqual({ id: NODE_ID, unshared: false });
-    // Nothing to revoke — and revoking "nothing" must not reach the tree
-    // walker, which is what would make an unshare of an unshared node
-    // expensive (or, on a bad id, wrong).
-    expect(unshareItem).not.toHaveBeenCalled();
+    expect(revokeShare).not.toHaveBeenCalled();
   });
 
-  it('revokes the active share by its share id, not the node id', async () => {
+  it('revokes the active share by its share id, not the node id, after the link check', async () => {
     vi.mocked(getActiveShareForNode).mockResolvedValue({ id: 's-9' } as unknown as Awaited<
       ReturnType<typeof getActiveShareForNode>
     >);
-    vi.mocked(unshareItem).mockResolvedValue({ revoked: true });
+    vi.mocked(revokeShare).mockResolvedValue(true);
 
     const res = await unshare.handler({ id: NODE_ID }, ctx);
-    // Passing the node id here would revoke nothing (or the wrong tree) while
-    // still reporting success — the failure this asserts against.
-    expect(unshareItem).toHaveBeenCalledWith('o1', 's-9');
+    // Passing the node id here would revoke nothing while still reporting
+    // success: the failure this asserts against.
+    expect(assertMayLink).toHaveBeenCalledWith('o1', 'o1', NODE_ID);
+    expect(revokeShare).toHaveBeenCalledWith('o1', 's-9');
     expect(outputOf(res)).toEqual({ id: NODE_ID, unshared: true });
   });
 
@@ -172,12 +227,25 @@ describe('node_unshare', () => {
     vi.mocked(getActiveShareForNode).mockResolvedValue({ id: 's-9' } as unknown as Awaited<
       ReturnType<typeof getActiveShareForNode>
     >);
-    vi.mocked(unshareItem).mockResolvedValue({ revoked: false });
+    vi.mocked(revokeShare).mockResolvedValue(false);
 
     const res = await unshare.handler({ id: NODE_ID }, ctx);
-    // Still ok:true — the call worked — but the caller must be able to tell
+    // Still ok:true (the call worked), but the caller must be able to tell
     // that the link may still be live.
     expect(outputOf(res)).toEqual({ id: NODE_ID, unshared: false });
+  });
+
+  it('keeps the link when the caller may not close it', async () => {
+    vi.mocked(getActiveShareForNode).mockResolvedValue({ id: 's-9' } as never);
+    vi.mocked(assertMayLink).mockRejectedValueOnce(
+      new LinkRefusedError(
+        403,
+        'forbidden',
+        'Only someone who may edit this item may open or close its link.',
+      ),
+    );
+    expect(errorOf(await unshare.handler({ id: NODE_ID }, ctx))).toMatch(/may edit this item/);
+    expect(revokeShare).not.toHaveBeenCalled();
   });
 
   it('surfaces a revoke failure rather than reporting success', async () => {

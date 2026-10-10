@@ -1,13 +1,15 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { ClientLinkRetiredError, type LoweredItem } from '@mantle/content';
+import { assertMayLink, checkServeList } from '@mantle/content';
 import { getOwnerOr401 } from '@/lib/auth';
-import { createShare, getActiveShareForNode } from '@/lib/shares';
+import { createShare, getActiveShareForNode, linkRefusal, SERVE_MAX } from '@/lib/shares';
+import { firstIssue } from '@/lib/zod-issue';
 
-/** GET /api/shares?nodeId=… → the node's active link (or null). `childCount`
- *  is always 0 and `cascade` always false since folder phase 7 (pages do
- *  not nest, so a link never shares sub-pages); both stay on the wire for
- *  clients from before the pages tree. */
+/** GET /api/shares?nodeId=… → the node's active link (or null), with its
+ *  served list (`served`, node ids, plan 8.1). `childCount` is always 0
+ *  and `cascade` always false since folder phase 7 (pages do not nest, so a
+ *  link never shares sub-pages); both stay on the wire for clients from
+ *  before the pages tree. */
 export async function GET(req: Request) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
@@ -23,37 +25,57 @@ export async function GET(req: Request) {
           path: `/s/${share.token}`,
           mode: share.mode,
           cascade: share.cascade,
+          served: share.served,
         }
       : null,
     childCount,
   });
 }
 
-const CreateBody = z.object({ nodeId: z.string().uuid() });
+const CreateBody = z.object({
+  nodeId: z.string().uuid(),
+  serve: z.array(z.string().uuid()).max(SERVE_MAX).optional(),
+});
 
-/** POST /api/shares { nodeId } → create (or return existing) active link. */
+/**
+ * POST /api/shares { nodeId, serve? } → create (or return the existing)
+ * open link, `{ share: { id, token, path, mode, served } }`. Who may: a
+ * user who may edit the item (an app: a Moderator of its home), the Grant
+ * Access panel's `mayLink`. `serve` (node ids) replaces the link's served
+ * list: each id must be named or embedded by the item (a folder: sit in
+ * it) and editable by the caller; ids the link already serves are kept
+ * without a check. A link never changes a level or a grant.
+ *
+ * Refusals, `{ error, code }`: 404 `not_found` (an item the caller cannot
+ * read, or a `serve` id it cannot read), 403 `forbidden` (may read but not
+ * link, or a `serve` id it may not add), 400 `not_shareable`.
+ */
 export async function POST(req: Request) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const parsed = CreateBody.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success)
-    return NextResponse.json({ error: 'valid nodeId required' }, { status: 400 });
+  if (!parsed.success) {
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
+  }
+  const { nodeId, serve } = parsed.data;
   try {
-    // The item's embeds go down with it (embedding means sharing).
-    const alsoLowered: LoweredItem[] = [];
-    const share = await createShare(user.id, parsed.data.nodeId, { alsoLowered });
+    const item = await assertMayLink(user.id, user.actor.id, nodeId);
+    const current = await getActiveShareForNode(user.id, nodeId);
+    const list =
+      serve === undefined
+        ? undefined
+        : await checkServeList(user.id, user.actor.id, item, serve, current?.served ?? []);
+    const share = await createShare(user.id, nodeId, { serve: list });
     return NextResponse.json({
-      share: { id: share.id, token: share.token, path: `/s/${share.token}`, mode: share.mode },
-      alsoLowered,
+      share: {
+        id: share.id,
+        token: share.token,
+        path: `/s/${share.token}`,
+        mode: share.mode,
+        served: share.served,
+      },
     });
   } catch (err) {
-    // A client item has no open link (client logins C1).
-    if (err instanceof ClientLinkRetiredError) {
-      return NextResponse.json({ error: err.message, reason: err.reason }, { status: 400 });
-    }
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'failed to create share' },
-      { status: 400 },
-    );
+    return linkRefusal(err);
   }
 }

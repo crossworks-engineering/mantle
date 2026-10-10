@@ -4,10 +4,10 @@
  * revokes every live link on a client item, an expired one included, marks
  * each `retired: 'client'` (a link revoked earlier without the mark too,
  * keeping its revoked_at), and leaves links on items at other levels and
- * every item's level alone. The public read path never serves a link on a
- * client item, even one the migration has not reached; an old client token
- * is recognised so /s can say "sign in as a client"; Shared links lists the
- * retired ones without a token.
+ * every item's level alone. An old client token (the mark) is recognised so
+ * /s can say "sign in as a client"; Shared links lists the retired ones
+ * without a token. Since workspaces W5b2 the read path reads no level: 0262
+ * retired any client link left live, and the mark alone decides.
  * Seeds its own owner and rows and removes them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/retire-client-links.db.test.ts
  */
@@ -113,13 +113,6 @@ describe.skipIf(!URL)('retire client links (0192 and the share read path)', () =
     await admin`delete from auth.users where id = ${owner}`;
   });
 
-  it('never serves a live link on a client item, even before the migration', async () => {
-    expect(await s.resolveActiveShareByToken(token.clientNote)).toBeNull();
-    expect((await s.resolveActiveShareByToken(token.publicNote))?.nodeId).toBe(n.publicNote);
-    // Such a token is already an old client link to /s.
-    expect(await s.isRetiredClientLinkToken(token.clientNote)).toBe(true);
-  });
-
   it('revokes and marks every client link, and nothing else', async () => {
     const before = Date.now();
     await runMigration();
@@ -166,25 +159,11 @@ describe.skipIf(!URL)('retire client links (0192 and the share read path)', () =
     expect(await s.isRetiredClientLinkToken('')).toBe(false);
   });
 
-  it('a public item raised to client later: its link stops, and reads as an old client link', async () => {
-    await admin`update nodes set audience = 'client' where id = ${n.publicNote}`;
-    try {
-      expect(await s.resolveActiveShareByToken(token.publicNote)).toBeNull();
-      expect(await s.isRetiredClientLinkToken(token.publicNote)).toBe(true);
-    } finally {
-      await admin`update nodes set audience = 'public' where id = ${n.publicNote}`;
-    }
+  it('a retired link stays retired, and a live one on another item is served', async () => {
+    expect(await s.isRetiredClientLinkToken(token.oldClient)).toBe(true);
+    expect(await s.resolveActiveShareByToken(token.oldClient)).toBeNull();
+    expect(await s.resolveActiveShareByToken(token.clientNote)).toBeNull();
     expect((await s.resolveActiveShareByToken(token.publicNote))?.nodeId).toBe(n.publicNote);
-  });
-
-  it('a retired link stays retired after its item leaves client', async () => {
-    await admin`update nodes set audience = 'team' where id = ${n.oldClient}`;
-    try {
-      expect(await s.isRetiredClientLinkToken(token.oldClient)).toBe(true);
-      expect(await s.resolveActiveShareByToken(token.oldClient)).toBeNull();
-    } finally {
-      await admin`update nodes set audience = 'client' where id = ${n.oldClient}`;
-    }
   });
 
   it('lists the retired links for Shared links, without a token', async () => {

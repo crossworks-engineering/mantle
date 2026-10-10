@@ -6,10 +6,9 @@
  * contact-share-gate.ts).
  *
  * The rules, here and in every caller:
- *  - a contact share NEVER changes a level. Every level path in shares.ts
- *    reads open links only (`openPredicate`), so a level change (admin,
- *    team, client or public) leaves contact shares alone, and removing one
- *    is a revoke only (unshareItem);
+ *  - a contact share NEVER changes a level or a grant (no link does, since
+ *    workspaces W5b2), and removing one is a revoke only (revokeShare);
+ *    it holds no served list: it serves what its item names;
  *  - only workspace kinds, never a folder (v1, decision 2), never a contact;
  *  - only for a contact with sharing on; a switch off revokes them all;
  *  - `can_write` only on an app (the database CHECK says so too);

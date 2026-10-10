@@ -1,41 +1,36 @@
 /**
  * Share-link CRUD. A share is a revocable token granting read-only public
- * access to one node. The owner toggles a link on/off; the public surface
- * resolves strictly by an *active* token. See docs/sharing.md.
+ * access to one node, plus the items its served list holds
+ * (`settings.served`, workspaces plan 8.1, migration 0262): a link is an
+ * open door for people with no login, never a grant, and it never changes a
+ * level or a grant. Who may open or close one, and what may go on its list,
+ * is link-serve.ts. The public surface resolves strictly by an *active*
+ * token. See docs/sharing.md.
  *
  * Token: 16 random bytes (128-bit) as base64url (~22 url-safe chars).
  */
 import { randomBytes } from 'node:crypto';
-import { and, eq, gt, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, eq, gt, isNull, lte, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
-import {
-  bestEffortWrite,
-  db,
-  nodes,
-  shares,
-  WORKSPACE_NODE_TYPES,
-  type Share,
-  type ViewerLevel,
-} from '@mantle/db';
+import { bestEffortWrite, db, nodes, shares, type Share, type ViewerLevel } from '@mantle/db';
 import type { ShareMode } from '@mantle/client-types';
 import { env } from '@mantle/config';
-import { EMBEDDING_KINDS, levelAbove, lowerEmbedClosure, type LoweredItem } from './embed-closure';
-import { refoldPageTexts } from './pages/level-text';
 
 export type { ShareMode };
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
-/** Where a share read or write runs: the pool, or a caller's transaction
- *  (`setItemLevel` writes the level and the link as one). Every function
- *  below that takes one runs ALL its reads and writes through it: a write on
- *  the pool while the caller's transaction holds the row would wait on itself. */
+/** Where a share read or write runs: the pool, or a caller's transaction.
+ *  Every function below that takes one runs ALL its reads and writes
+ *  through it: a write on the pool while the caller's transaction holds the
+ *  row would wait on itself. */
 export type ShareDb = typeof db | Tx;
 
 /** Node types that may be shared publicly. Sensitive types are excluded.
- *  `branch` = a FILES FOLDER only — sharing one shares every file under it,
- *  subfolders included, evaluated per request (see {@link isShareableFolderPath}
- *  and docs/sharing.md §folders). Branches outside the files tree (and the
- *  files root itself) are rejected at {@link createShare}. */
+ *  `branch` = a FILES FOLDER only: a folder link serves the files and
+ *  subfolders under it that are on its served list (see
+ *  {@link isShareableFolderPath} and docs/sharing.md §folders). Branches
+ *  outside the files tree (and the files root itself) are rejected at
+ *  {@link createShare}. */
 export const SHAREABLE_TYPES = [
   'page',
   'note',
@@ -73,45 +68,18 @@ export function canShareNode(node: { type: string; path: string | null }): boole
   return node.type !== 'branch' || isShareableFolderPath(node.path);
 }
 
-// ─── Levels drive links ──────────────────────────────────────────────────────
-// A workspace item's level (nodes.audience) is the truth; its link follows it
-// (docs/access-levels.md §7). Public items carry an open link; admin, team and
-// client items carry none. Client means "signed-in clients" (client logins
-// C1), never an open link: no path makes a new link on a client item
-// (ClientLinkRetiredError, inside createShare), and no link of its OWN, old or
-// new, changes a client item's level. A link (or the public level) on ANOTHER
-// item that embeds it does: embedding means sharing, so the embed goes down
-// to public with it and leaves client logins' view (the tools say so, see
-// clientLeftWarning in @mantle/tools). A client item's own link, when revoked,
-// is marked `settings.retired = 'client'` (retireSettings below), as 0176
-// marked team links by their mode. Team links are retired (member logins Phase 6
-// stage 6): members read team items by level with their own logins, migration
-// 0176 revoked every team link, and nothing makes one (TeamLinkRetiredError).
-// Every share mutation below re-derives the level from the link it leaves, so
-// the older share paths (the share API, node_share / page_share, the email
-// link) cannot drift from the level. Tasks, events and other non-workspace
-// kinds stay admin whatever link they carry.
+// ─── Links and levels ────────────────────────────────────────────────────────
+// Since workspaces W5b2 a link neither follows nor sets a level: the levels
+// are frozen (migration 0261) and grants decide who reads an item. An open
+// link serves its item and its served list (0262). Team links stay retired
+// (member logins Phase 6 stage 6: nothing makes one, TeamLinkRetiredError).
+// The old client links were retired by 0192 and 0262 and are marked
+// `settings.retired = 'client'`; /s still tells their visitors to sign in.
 
-/** The link a level needs: an open one at public, none above (client logins
- *  C1: client is signed-in clients, not a link). */
+/** The link the old level path (`setItemLevel`) asks for: an open one at
+ *  public, none above. */
 export function shareModeForLevel(level: ViewerLevel): ShareMode | null {
   return level === 'public' ? 'public' : null;
-}
-
-/** Thrown when a link is asked for on a client item (client logins C1): client
- *  items are for signed-in clients, and public is the only level with an
- *  open link. Thrown inside createShare, so every path that makes a link
- *  (node_share, page_share, POST /api/shares, the email link) meets it. */
-export class ClientLinkRetiredError extends Error {
-  readonly reason = 'client-links-retired';
-  constructor() {
-    super(
-      'Client items have no open link; clients sign in to read them. ' +
-        'Ask the owner whether to make it public: that puts it on an open link anyone can use, ' +
-        "and takes it out of client logins' view.",
-    );
-    this.name = 'ClientLinkRetiredError';
-  }
 }
 
 /** Thrown when a caller asks for a team-mode link. Team links are retired
@@ -121,7 +89,7 @@ export class TeamLinkRetiredError extends Error {
   constructor() {
     super(
       'Team links are retired: members sign in with their own logins now. ' +
-        'To show an item to members, set its level to team (access_set, or the Access control).',
+        "To show an item to members, grant it to their workspace in the item's Grant Access panel.",
     );
     this.name = 'TeamLinkRetiredError';
   }
@@ -132,80 +100,41 @@ function assertLinkMode(mode: string | undefined): void {
   if (mode !== undefined && mode !== 'public') throw new TeamLinkRetiredError();
 }
 
-/**
- * The level a node's link implies. A node at client stays at client whatever
- * its own link says (client logins C1: until the old client links are retired
- * they are still live, and no re-sync may flip them, or their embeds, to
- * public or admin). `mode` null = no active link: admin, except that a node
- * at team stays at team (team is a level members read by, not a link). An
- * open link keeps a node at public and drops anything higher to public.
- */
-export function levelForShareMode(current: ViewerLevel, mode: ShareMode | null): ViewerLevel {
-  if (current === 'client') return 'client';
-  if (mode === null) return current === 'team' ? 'team' : 'admin';
-  return 'public';
-}
-
-/** Re-derive the level of `nodeIds` from their active links (workspace kinds
- *  only). A node this LOWERS takes its embeds down with it (embedding means
- *  sharing, embed-closure.ts), in one transaction with its own level; what
- *  went down is pushed to `alsoLowered` when given. */
-async function syncLevelsFromShares(
-  ownerId: string,
-  nodeIds: readonly string[],
-  q: ShareDb = db,
-  alsoLowered?: LoweredItem[],
-): Promise<void> {
-  const ids = [...new Set(nodeIds)];
-  if (ids.length === 0) return;
-  const [rows, links] = await Promise.all([
-    q
-      .select({ id: nodes.id, type: nodes.type, audience: nodes.audience })
-      .from(nodes)
-      .where(and(eq(nodes.ownerId, ownerId), inArray(nodes.id, ids))),
-    q
-      .select({ nodeId: shares.nodeId })
-      .from(shares)
-      .where(and(eq(shares.ownerId, ownerId), inArray(shares.nodeId, ids), openPredicate())),
-  ]);
-  // Every active OPEN link is public (team links are retired and never
-  // active). A contact share (0214) is not read here: it never sets a level.
-  const linked = new Set(links.map((l) => l.nodeId));
-  const byTarget = new Map<ViewerLevel, string[]>();
-  const followers: { id: string; level: ViewerLevel }[] = [];
-  for (const r of rows) {
-    if (!(WORKSPACE_NODE_TYPES as readonly string[]).includes(r.type)) continue;
-    const current = r.audience as ViewerLevel;
-    const target = levelForShareMode(current, linked.has(r.id) ? 'public' : null);
-    if (target === current) continue;
-    byTarget.set(target, [...(byTarget.get(target) ?? []), r.id]);
-    if (levelAbove(current, target) && EMBEDDING_KINDS.includes(r.type)) {
-      followers.push({ id: r.id, level: target });
-    }
+/** A request for a link the item cannot carry (missing, a kind that is not
+ *  shareable, a folder outside `files`). The message names nothing hidden
+ *  and is safe to show. */
+export class ShareInputError extends Error {
+  constructor(
+    readonly reason: 'not-found' | 'not-shareable',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'ShareInputError';
   }
-  if (byTarget.size === 0) return;
-  await q.transaction(async (tx) => {
-    for (const [audience, targetIds] of byTarget) {
-      await tx
-        .update(nodes)
-        .set({ audience })
-        .where(and(eq(nodes.ownerId, ownerId), inArray(nodes.id, targetIds)));
-    }
-    for (const f of followers) {
-      const { lowered } = await lowerEmbedClosure(ownerId, f.id, f.level, tx);
-      alsoLowered?.push(...lowered);
-    }
-    // The indexed text follows the levels (pages/level-text.ts, SQL only).
-    await refoldPageTexts(ownerId, [...byTarget.values()].flat(), tx);
-  });
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The served list a share's settings hold: lower-case node ids, in order,
+ *  no repeats. */
+export function shareServedIds(settings: unknown): string[] {
+  const raw = (settings as { served?: unknown } | null | undefined)?.served;
+  if (!Array.isArray(raw)) return [];
+  const out = new Set<string>();
+  for (const v of raw) if (typeof v === 'string' && UUID_RE.test(v)) out.add(v.toLowerCase());
+  return [...out];
+}
+
+/** Lower-case, de-duplicated uuids, in order; anything else dropped. */
+function normalizeServed(ids: readonly string[]): string[] {
+  return shareServedIds({ served: ids });
 }
 
 /**
- * Make a node's link match the level it was just set to: revoke it at admin
- * team and client, create it at public. Returns the link left in place (null
- * below public, or when the node cannot carry one, e.g. a folder outside
- * `files`). The
- * owner's level path (`setItemLevel`) calls this after writing the level.
+ * Make a node's link match a level: revoke it below public, create it at
+ * public. Returns the link left in place (null below public, or when the
+ * node cannot carry one, e.g. a folder outside `files`). Only the old level
+ * path (`setItemLevel`) calls this; it writes no level.
  */
 export async function applyLevelToShare(
   ownerId: string,
@@ -250,6 +179,9 @@ export type ShareSummary = {
   contactId: string | null;
   /** A contact share of an app whose contact may write the app's data. */
   canWrite: boolean;
+  /** What an open link serves besides its item (plan 8.1): node ids, lower
+   *  case. Empty on a contact share (it serves what its item names). */
+  served: string[];
 };
 
 function toSummary(s: Share): ShareSummary {
@@ -265,6 +197,7 @@ function toSummary(s: Share): ShareSummary {
     viewCount: s.viewCount,
     contactId: s.contactId ?? null,
     canWrite: s.canWrite === true,
+    served: s.contactId ? [] : shareServedIds(s.settings),
   };
 }
 
@@ -339,27 +272,10 @@ function activePredicate() {
   );
 }
 
-/** SQL predicate: an active OPEN link (no contact). Every level path reads
- *  open links only: a contact share (migration 0214) never sets, keeps or
- *  drops a level, and a level change never touches one. */
+/** SQL predicate: an active OPEN link (no contact). A contact share
+ *  (migration 0214) is managed in contact-shares.ts. */
 function openPredicate() {
   return and(activePredicate(), isNull(shares.contactId));
-}
-
-/** The `settings` a revoke writes: unchanged, except that a link on an item
- *  at CLIENT is marked `retired: 'client'` (client logins C1: client is
- *  signed-in clients, so its old open link retires with the revoke). Read at
- *  the moment of the revoke: `setItemLevel` writes the level before the link
- *  follows it. /s reads the mark (isRetiredClientLinkToken, C3) and answers
- *  "sign in as a client"; Shared links lists these (listRetiredClientLinks). */
-function retireSettings() {
-  // Qualified by hand: drizzle renders a column unqualified inside raw sql,
-  // and inside the subquery it must name the row being updated. A contact
-  // share is never an old client link, whatever its item's level.
-  return sql`case when "shares"."contact_id" is null and exists (select 1 from ${nodes} rn
-      where rn.id = "shares"."node_id" and rn.audience = 'client')
-    then "shares"."settings" || '{"retired":"client"}'::jsonb
-    else "shares"."settings" end`;
 }
 
 /** The owner's active OPEN link for a node, or null. Contact shares are
@@ -377,36 +293,57 @@ export async function getActiveShareForNode(
   return row ? toSummary(row) : null;
 }
 
+/** The owner's live share by id (an open link or a contact share), or null.
+ *  Revoked shares are not returned; an expired one is (it can still be
+ *  revoked). */
+export async function getLiveShare(
+  ownerId: string,
+  shareId: string,
+  q: ShareDb = db,
+): Promise<ShareSummary | null> {
+  if (!UUID_RE.test(shareId)) return null;
+  const [row] = await q
+    .select()
+    .from(shares)
+    .where(and(eq(shares.id, shareId), eq(shares.ownerId, ownerId), isNull(shares.revokedAt)))
+    .limit(1);
+  return row ? toSummary(row) : null;
+}
+
 /**
- * Create (or return the existing) active share for a node. Idempotent —
- * "one link per item": if an active link exists, it's returned unchanged.
- * Validates owner + shareable type. `mode` may only be public: a team link
- * throws {@link TeamLinkRetiredError}. A node the link lowers takes its
- * embeds with it; `alsoLowered` collects them for the caller to show.
+ * Create (or return the existing) active link for a node. Idempotent: "one
+ * link per item": if an active link exists, it's returned, with its served
+ * list replaced when `serve` is given. Validates owner + shareable type
+ * ({@link ShareInputError}). `mode` may only be public: a team link throws
+ * {@link TeamLinkRetiredError}. `serve` is stored as given (normalized):
+ * the caller checks it first (link-serve.ts, checkServeList). Writes no
+ * level and no grant.
  */
 export async function createShare(
   ownerId: string,
   nodeId: string,
-  opts: { mode?: ShareMode; alsoLowered?: LoweredItem[] } = {},
+  opts: { mode?: ShareMode; serve?: readonly string[] } = {},
   q: ShareDb = db,
 ): Promise<ShareSummary> {
   assertLinkMode(opts.mode);
   const [node] = await q
-    .select({ id: nodes.id, type: nodes.type, path: nodes.path, audience: nodes.audience })
+    .select({ id: nodes.id, type: nodes.type, path: nodes.path })
     .from(nodes)
     .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ownerId)))
     .limit(1);
-  if (!node) throw new Error('node not found');
-  if (!isShareable(node.type)) throw new Error(`type '${node.type}' is not shareable`);
-  if (node.type === 'branch' && !isShareableFolderPath(node.path)) {
-    throw new Error('only folders under files can be shared');
+  if (!node) throw new ShareInputError('not-found', 'node not found');
+  if (!isShareable(node.type)) {
+    throw new ShareInputError('not-shareable', `type '${node.type}' is not shareable`);
   }
-  // Client items are for signed-in clients (client logins C1). Before the
-  // idempotent return: an old client link is not handed out again either.
-  if (node.audience === 'client') throw new ClientLinkRetiredError();
+  if (node.type === 'branch' && !isShareableFolderPath(node.path)) {
+    throw new ShareInputError('not-shareable', 'only folders under files can be shared');
+  }
 
   const existing = await getActiveShareForNode(ownerId, nodeId, q);
-  if (existing) return existing;
+  if (existing) {
+    if (opts.serve === undefined) return existing;
+    return (await setShareServed(ownerId, existing.id, opts.serve, q)) ?? existing;
+  }
 
   // An expired link (or a team link, retired) is not active but still holds
   // the one-link slot (shares_node_open_uq is WHERE revoked_at IS NULL AND
@@ -427,16 +364,40 @@ export async function createShare(
 
   const [row] = await q
     .insert(shares)
-    .values({ ownerId, nodeId, nodeType: node.type, token: genToken() })
+    .values({
+      ownerId,
+      nodeId,
+      nodeType: node.type,
+      token: genToken(),
+      settings: { served: normalizeServed(opts.serve ?? []) },
+    })
     .returning();
   if (!row) throw new Error('failed to create share');
-  await syncLevelsFromShares(ownerId, [nodeId], q, opts.alsoLowered);
   return toSummary(row);
 }
 
-/** Revoke a share by id (owner-scoped). Returns true if a row was revoked.
- *  Revoking a contact share (0214) is a revoke only: no level is
- *  re-derived, since a contact share never set one. */
+/** Replace an active open link's served list (the ids normalized; the
+ *  caller checked them, link-serve.ts). Returns the link, or null when no
+ *  such active open link. */
+export async function setShareServed(
+  ownerId: string,
+  shareId: string,
+  serve: readonly string[],
+  q: ShareDb = db,
+): Promise<ShareSummary | null> {
+  const served = normalizeServed(serve);
+  const [row] = await q
+    .update(shares)
+    .set({
+      settings: sql`${shares.settings} || jsonb_build_object('served', ${JSON.stringify(served)}::jsonb)`,
+    })
+    .where(and(eq(shares.id, shareId), eq(shares.ownerId, ownerId), openPredicate()))
+    .returning();
+  return row ? toSummary(row) : null;
+}
+
+/** Revoke a share by id (owner-scoped): an open link or a contact share.
+ *  Returns true if a row was revoked. Changes no level and no grant. */
 export async function revokeShare(
   ownerId: string,
   shareId: string,
@@ -444,14 +405,9 @@ export async function revokeShare(
 ): Promise<boolean> {
   const rows = await q
     .update(shares)
-    .set({ revokedAt: new Date(), settings: retireSettings() })
+    .set({ revokedAt: new Date() })
     .where(and(eq(shares.id, shareId), eq(shares.ownerId, ownerId), isNull(shares.revokedAt)))
-    .returning({ id: shares.id, nodeId: shares.nodeId, contactId: shares.contactId });
-  await syncLevelsFromShares(
-    ownerId,
-    rows.filter((r) => r.contactId === null).map((r) => r.nodeId),
-    q,
-  );
+    .returning({ id: shares.id });
   return rows.length > 0;
 }
 
@@ -465,57 +421,39 @@ export async function resolveActiveShareByToken(token: string): Promise<Share | 
   const [row] = await db
     .select()
     .from(shares)
-    .where(and(eq(shares.token, token), openPredicate(), notOnClientItem()))
+    .where(and(eq(shares.token, token), openPredicate()))
     .limit(1);
   return row ?? null;
 }
 
 /** Resolve an active share by its token, an open link or a CONTACT share
- *  (migration 0214). An open link on a client item never resolves (as
- *  above); a contact share does (it is not an open link, and the item stays
- *  at client). Only the contact share gate (server/web/lib/
+ *  (migration 0214). Only the contact share gate (server/web/lib/
  *  contact-share-gate.ts) may serve what this returns for a contact share. */
 export async function resolveActiveShareRowByToken(token: string): Promise<Share | null> {
   if (!token) return null;
   const [row] = await db
     .select()
     .from(shares)
-    .where(
-      and(
-        eq(shares.token, token),
-        activePredicate(),
-        or(isNotNull(shares.contactId), notOnClientItem()),
-      ),
-    )
+    .where(and(eq(shares.token, token), activePredicate()))
     .limit(1);
   return row ?? null;
 }
 
-/** SQL predicate: the share's item is not at CLIENT level. The public read
- *  path never serves a link on a client item (client logins C3: migration
- *  0192 revoked them all; one that somehow stayed live answers "sign in as
- *  a client" like the rest). Qualified by hand, as in retireSettings. */
-function notOnClientItem() {
-  return sql`not exists (select 1 from ${nodes} cn
-      where cn.id = "shares"."node_id" and cn.audience = 'client')`;
-}
-
 /** Whether a token that no longer resolves was an old client link (client
- *  logins C3): marked `retired: 'client'` (0192 and every later revoke of a
- *  client item's link), or a link on an item that is at client now. The /s
- *  page tells its visitor to sign in as a client instead of the plain
- *  not-found; any other dead token keeps the uniform 404. */
+ *  logins C3): marked `retired: 'client'` (by 0192, a revoke of a client
+ *  item's link before W5b2, or 0262). The /s page tells its visitor to sign
+ *  in as a client instead of the plain not-found; any other dead token keeps
+ *  the uniform 404. */
 export async function isRetiredClientLinkToken(token: string): Promise<boolean> {
   if (!token) return false;
   const [row] = await db
     .select({ id: shares.id })
     .from(shares)
-    .innerJoin(nodes, eq(nodes.id, shares.nodeId))
     .where(
       and(
         eq(shares.token, token),
         isNull(shares.contactId),
-        or(sql`${shares.settings}->>'retired' = 'client'`, eq(nodes.audience, 'client')),
+        sql`${shares.settings}->>'retired' = 'client'`,
       ),
     )
     .limit(1);
@@ -554,9 +492,6 @@ export type ActiveShareListing = ShareSummary & {
   /** A contact share's contact, by name (migration 0214); null on an open
    *  link. */
   contactName: string | null;
-  /** The shared item's level (client logins C1: a live link on a client
-   *  item is an old one, from when client meant an open link). */
-  level: ViewerLevel;
   nodeIcon: string | null;
   nodePath: string | null;
   lastViewedAt: string | null;
@@ -575,7 +510,6 @@ export async function listActiveShares(ownerId: string): Promise<ActiveShareList
       title: nodes.title,
       data: nodes.data,
       path: nodes.path,
-      audience: nodes.audience,
       contactName: contact.title,
     })
     .from(shares)
@@ -589,7 +523,6 @@ export async function listActiveShares(ownerId: string): Promise<ActiveShareList
       ...toSummary(r.share),
       title: r.title,
       contactName: r.share.contactId ? (r.contactName ?? '') : null,
-      level: r.audience as ViewerLevel,
       nodeIcon: typeof d.icon === 'string' ? d.icon : null,
       nodePath: r.path ?? null,
       lastViewedAt: r.share.lastViewedAt ? r.share.lastViewedAt.toISOString() : null,
@@ -605,7 +538,8 @@ export type RetiredClientLinkListing = {
   nodeType: string;
   title: string;
   nodeIcon: string | null;
-  /** The item's level now (client, unless an admin changed it since). */
+  /** The level the link was retired at: always client (levels are frozen,
+   *  grants decide who reads the item now). */
   level: ViewerLevel;
   createdAt: string;
   retiredAt: string | null;
@@ -617,7 +551,7 @@ export type RetiredClientLinkListing = {
  *  token is never listed: the link is dead, and a client signs in. */
 export async function listRetiredClientLinks(ownerId: string): Promise<RetiredClientLinkListing[]> {
   const rows = await db
-    .select({ share: shares, title: nodes.title, data: nodes.data, audience: nodes.audience })
+    .select({ share: shares, title: nodes.title, data: nodes.data })
     .from(shares)
     .innerJoin(nodes, eq(nodes.id, shares.nodeId))
     .where(and(eq(shares.ownerId, ownerId), sql`${shares.settings}->>'retired' = 'client'`))
@@ -630,7 +564,7 @@ export async function listRetiredClientLinks(ownerId: string): Promise<RetiredCl
       nodeType: r.share.nodeType,
       title: r.title,
       nodeIcon: typeof d.icon === 'string' ? d.icon : null,
-      level: r.audience as ViewerLevel,
+      level: 'client' as const,
       createdAt: r.share.createdAt.toISOString(),
       retiredAt: r.share.revokedAt ? r.share.revokedAt.toISOString() : null,
       viewCount: r.share.viewCount,
@@ -641,9 +575,8 @@ export async function listRetiredClientLinks(ownerId: string): Promise<RetiredCl
 
 /** Set a share's mode (the owner PATCH path, `node_share` / `page_share`
  *  with a mode). Public is the only mode: a live link already is, so this
- *  confirms the link and re-derives its node's level. Team throws
- *  {@link TeamLinkRetiredError} and changes nothing. Returns false when no
- *  such active share. */
+ *  confirms the link. Team throws {@link TeamLinkRetiredError} and changes
+ *  nothing. Returns false when no such active share. */
 export async function applyShareMode(
   ownerId: string,
   shareId: string,
@@ -652,13 +585,11 @@ export async function applyShareMode(
 ): Promise<boolean> {
   assertLinkMode(mode);
   const [row] = await q
-    .select()
+    .select({ id: shares.id })
     .from(shares)
     .where(and(eq(shares.id, shareId), eq(shares.ownerId, ownerId), openPredicate()))
     .limit(1);
-  if (!row) return false;
-  await syncLevelsFromShares(ownerId, [row.nodeId], q);
-  return true;
+  return !!row;
 }
 
 /** Revoke a share on the owner DELETE path. The name is from when a page

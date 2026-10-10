@@ -39,9 +39,6 @@ const PUBLIC_VALUE_EXPORTS = [
   'extractSectionToPage',
   'foldEmbeddedText',
   'getPage',
-  // The level rule an open link renders by (access matrix M7).
-  'levelFilteredDoc',
-  'levelFilteredNote',
   'listBacklinks',
   'listPageTags',
   'listPages',
@@ -50,6 +47,9 @@ const PUBLIC_VALUE_EXPORTS = [
   'pageHolders',
   'refoldPageTexts',
   'saveDraft',
+  // The served-list rule an open link renders by (workspaces plan 8.1).
+  'servedFilteredDoc',
+  'servedFilteredNote',
   'splitPage',
   'updatePage',
   'withPageLock',

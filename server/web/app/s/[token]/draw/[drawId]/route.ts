@@ -12,8 +12,7 @@ import { clientIpKey, rateLimit } from '@/lib/rate-limit';
  * (isEmbeddedDrawAllowed): the token must be active, and the id must appear
  * in the shared page's own doc or the shared note's own markdown, so a share
  * never becomes a way to read arbitrary drawings by id. The drawing and every
- * image its snapshot carries must sit at the link's levels (linkLevels): one
- * an admin raised above the page or note on purpose is not served.
+ * image its snapshot carries must be on the link's served list (plan 8.1).
  *
  * Cache-only, deliberately. Rendering a missing snapshot spawns a browser, and
  * anonymous share traffic does not get to do that (see

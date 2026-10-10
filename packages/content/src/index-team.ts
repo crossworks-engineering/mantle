@@ -21,7 +21,10 @@ export {
   listActiveShares,
   type ActiveShareListing,
   getActiveShareForNode,
+  getLiveShare,
   createShare,
+  setShareServed,
+  shareServedIds,
   revokeShare,
   resolveActiveShareByToken,
   resolveActiveShareRowByToken,
@@ -38,14 +41,21 @@ export {
   revokeShareTree,
   canShareNode,
   shareModeForLevel,
-  levelForShareMode,
   applyLevelToShare,
   TeamLinkRetiredError,
-  ClientLinkRetiredError,
+  ShareInputError,
   type ShareMode,
   type ShareableType,
   type ShareSummary,
 } from './shares';
+
+export {
+  LinkRefusedError,
+  assertMayLink,
+  checkServeList,
+  linkRights,
+  type LinkRights,
+} from './link-serve';
 
 export {
   CONTACT_CODE_LENGTH,
