@@ -199,7 +199,8 @@ describe.skipIf(!URL)('writers with the bridge off hold their heads (heads check
         )
         .then(
           () => null,
-          (e: unknown) => e,
+          // drizzle wraps the database's error as the cause.
+          (e: unknown) => (e as { cause?: unknown }).cause ?? e,
         );
       expect(err, 'refused').toMatchObject({ code: '55000' });
     }
