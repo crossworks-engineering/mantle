@@ -277,6 +277,10 @@ const TEAM_KIND_ALLOWED: Record<string, string[]> = {
   'builtins-my-space-write.ts': ["if (ctx.surface?.kind !== 'team') {"],
   // read_result binds a client's or member's turn to its own spills.
   'builtins-tool-results.ts': ["if (kind !== 'client' && kind !== 'team') return undefined;"],
+  // draw_get's picture follows a member's own image rule (draw-reader.ts).
+  'builtins-draws.ts': [
+    "if (s?.kind === 'team' && s.loginId) return { kind: 'member', loginId: s.loginId };",
+  ],
 };
 
 function sourceFiles(dir: string): string[] {

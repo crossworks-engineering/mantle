@@ -878,7 +878,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'draw-read',
     name: 'Draw (read)',
     description:
-      'List + read whiteboard drawings as text (committed scenes only). No authoring — the canvas is the only writer; agent authoring is a future, separate decision.',
+      'List + read whiteboard drawings as text, or as a picture on request (committed scenes only). No authoring: the canvas is the only writer; agent authoring is a future, separate decision.',
     toolSlugs: [
       // The kind's folders (builtins-tree.ts; one set for every row-only kind).
       'tree_folders',

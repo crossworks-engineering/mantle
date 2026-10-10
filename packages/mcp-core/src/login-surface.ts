@@ -62,6 +62,7 @@ import {
 } from './build-server';
 import { zodShapeFromJsonSchema } from './register/zod-schema';
 import { addTool } from './register/tool-input';
+import { withModelImages } from './register/model-images';
 import { keyAreasAllowTool, keyAreasReachEmail } from './key-scope';
 import { keyEmailGuard } from './key-email-guard';
 
@@ -488,11 +489,14 @@ export async function callLoginTool(
         isError: true,
       };
     }
-    return {
-      content: [
-        { type: 'text' as const, text: JSON.stringify(stripVectors(result.output), null, 2) },
-      ],
-    };
+    return withModelImages(
+      {
+        content: [
+          { type: 'text' as const, text: JSON.stringify(stripVectors(result.output), null, 2) },
+        ],
+      },
+      result.modelImages,
+    );
   } catch (err) {
     return {
       content: [{ type: 'text' as const, text: `Error: ${errorMessage(err)}` }],

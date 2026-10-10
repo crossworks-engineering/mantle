@@ -48,6 +48,22 @@ export {
   type LockedDrawRow,
 } from './draws';
 export { sceneToText } from './scene-to-text';
+export {
+  readableDraw,
+  readableDrawText,
+  readableDrawSvg,
+  type DrawReader,
+  type ReadableDraw,
+} from './draw-reader';
+export {
+  DRAW_PNG_LONG_EDGE,
+  renderDrawSvgPng,
+  cachedDrawPng,
+  cacheDrawPng,
+  validRegion,
+  type DrawPng,
+  type DrawRegion,
+} from './draw-png';
 export { acceptSceneSvg, keepSvgImages, SCENE_SVG_MAX_BYTES, EXCALIDRAW_ENGINE } from './scene-svg';
 export {
   APPS_ROOT_LABEL,

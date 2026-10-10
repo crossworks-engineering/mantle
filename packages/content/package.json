@@ -43,13 +43,15 @@
     "@mantle/search": "workspace:*",
     "@mantle/std": "workspace:*",
     "@mantle/tabledb": "workspace:*",
+    "@resvg/resvg-js": "2.6.2",
     "docx": "^9.9.0",
     "drizzle-orm": "^0.45.3",
     "exceljs": "^4.4.0",
     "jszip": "^3.10.2",
     "marked": "^18.1.0",
     "mathjs": "15.2.0",
-    "tz-lookup": "^6.1.25"
+    "tz-lookup": "^6.1.25",
+    "wawoff2": "^2.0.1"
   },
   "devDependencies": {
     "@types/node": "^26.6.4",

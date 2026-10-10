@@ -20,6 +20,7 @@ import { zodShapeFromJsonSchema } from './zod-schema';
 import { addTool } from './tool-input';
 import { KEY_SHARED_CONTENT_TOOLS, contentToolTarget } from '../key-scope';
 import { othersCanRead } from '../shared-item';
+import { withModelImages } from './model-images';
 import type { MantleMcpTransport } from '../build-server';
 
 /** The surface every bridged builtin runs under on the MCP server. */
@@ -159,7 +160,9 @@ export function makeRegisterContext(
         isError: true,
       };
     }
-    return jsonReply(result.output);
+    // A picture the tool made for the caller (draw_get with image) goes out
+    // as an MCP image block after the JSON.
+    return withModelImages(jsonReply(result.output), result.modelImages);
   }
 
   function registerBuiltinTools(

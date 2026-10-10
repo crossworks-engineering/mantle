@@ -2,6 +2,7 @@ export type {
   BuiltinToolDef,
   BuiltinToolHandler,
   ToolArtifact,
+  ToolModelImage,
   ToolHandlerContext,
   ToolHandlerResult,
   ToolForModel,

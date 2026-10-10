@@ -20,7 +20,9 @@ Share a drawing or export it from the header.
 - "Find my sketch about the ingest pipeline."
 - "What did I plan on the architecture whiteboard?"
 
-The assistant reads a drawing's text, not its pixels. Label your shapes and name your frames so it can find them. It cannot draw or edit.
+- "Look at the onboarding flow drawing and tell me which steps are ticked."
+
+The assistant reads a drawing's text first: frame names, shape labels and labelled arrows. Label your shapes and name your frames so it can find them. When positions, colours, ticks or layout matter, it can also look at the drawing as a picture. That needs a model that can see images; a text-only model gets the text. The picture is the last commit, the same image a share link shows. The assistant cannot draw or edit.
 
 ## Technical
 
@@ -28,3 +30,5 @@ The assistant reads a drawing's text, not its pixels. Label your shapes and name
 - On commit, frame names, shape labels and labelled arrows become searchable text, and a preview image is saved.
 - Pasted images are stored in Files. Deleting a drawing keeps them.
 - Tools: `draw_list`, `draw_get`. They read committed drawings only.
+- `draw_get` with `image: true` also returns the committed preview as a PNG (white background, long edge 2000 px). `region` zooms into part of a wide scene. Over MCP the PNG is an image block next to the JSON. In chat and runs it goes to the model only when the model can see images.
+- The picture follows the same rules as the text: whoever may call `draw_get` on a drawing may get its picture. A team member or a client gets it without the pasted images they may not open, as on their own preview.

@@ -2351,3 +2351,84 @@ describe('runToolLoop finishReason', () => {
     expect(result.reply).toBe('second time lucky');
   });
 });
+
+describe('runToolLoop: pictures a tool returns for the model', () => {
+  const PNG_B64 = Buffer.from('89504e470d0a1a0a', 'hex').toString('base64');
+  const withPicture = () => {
+    dispatchToolImpl = () =>
+      ({
+        ok: true,
+        output: { title: 'Pipeline', content: 'A -> B', image: { format: 'png' } },
+        modelImages: [{ mimeType: 'image/png', base64: PNG_B64, caption: 'The drawing' }],
+      }) as never;
+  };
+  const script = (): ScriptStep[] => [
+    {
+      type: 'toolCalls',
+      toolCalls: [
+        { id: 'c1', type: 'function', function: { name: 'draw_get', arguments: '{"image":true}' } },
+      ],
+    },
+    { type: 'text', text: 'It shows A feeding B.' },
+  ];
+  const run = (model: string, adapter: ChatDispatcher) =>
+    runToolLoop({
+      adapter,
+      apiKey: 'k',
+      model,
+      params: {},
+      ownerId: 'owner-1',
+      initialMessages: [{ role: 'user', content: 'what does the drawing show?' }],
+      tools: [fakeTool({ slug: 'draw_get' })],
+    });
+
+  it('a vision model sees the picture right after the tool result', async () => {
+    withPicture();
+    const { adapter, calls } = makeFakeAdapter(script());
+    await run('anthropic/claude-sonnet-4', adapter);
+    const sent = calls[1]!.messages;
+    const toolIdx = sent.findIndex((m) => m.role === 'tool');
+    const pic = sent[toolIdx + 1] as { role: string; content: unknown };
+    expect(pic.role).toBe('user');
+    const parts = pic.content as Array<{ type: string; imageUrl?: { url: string } }>;
+    expect(parts.find((p) => p.type === 'image_url')?.imageUrl?.url).toBe(
+      `data:image/png;base64,${PNG_B64}`,
+    );
+    // The bytes ride only in the picture message, never in the tool's JSON.
+    expect(String((sent[toolIdx] as { content: string }).content)).not.toContain(PNG_B64);
+  });
+
+  it('a text-only model gets the text and a note, no picture', async () => {
+    withPicture();
+    const { adapter, calls } = makeFakeAdapter(script());
+    await run('meta-llama/llama-3.1-8b-instruct', adapter);
+    const sent = calls[1]!.messages;
+    expect(sent.some((m) => Array.isArray(m.content))).toBe(false);
+    const tool = sent.find((m) => m.role === 'tool') as { content: string };
+    expect(tool.content).toContain('reads text only');
+    expect(tool.content).toContain('A -> B');
+  });
+
+  it('caps the pictures one turn shows', async () => {
+    withPicture();
+    const many = Array.from({ length: 6 }, (_, i) => ({
+      id: `c${i}`,
+      type: 'function' as const,
+      function: { name: 'draw_get', arguments: `{"image":true,"n":${i}}` },
+    }));
+    const { adapter, calls } = makeFakeAdapter([
+      { type: 'toolCalls', toolCalls: many },
+      { type: 'text', text: 'done' },
+    ]);
+    await run('anthropic/claude-sonnet-4', adapter);
+    const sent = calls[1]!.messages;
+    const pics = sent
+      .filter((m) => Array.isArray(m.content))
+      .flatMap((m) => (m.content as Array<{ type: string }>).filter((p) => p.type === 'image_url'));
+    expect(pics).toHaveLength(4);
+    const notes = sent.filter(
+      (m) => m.role === 'tool' && String(m.content).includes('already shows 4 tool pictures'),
+    );
+    expect(notes).toHaveLength(2);
+  });
+});

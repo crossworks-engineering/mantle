@@ -50,7 +50,7 @@ import {
 } from '@mantle/tools/client-sourced';
 import { toolCreatesNodes } from '@mantle/tools/client-sourced-rules';
 import { type Tool, type AgentParams } from '@mantle/db';
-import type { ToolArtifact } from '@mantle/tools';
+import type { ToolArtifact, ToolModelImage } from '@mantle/tools';
 import {
   type ChatDispatcher,
   type ChatFinishReason,
@@ -72,6 +72,7 @@ import {
 } from './tool-loop/guards';
 import { createModelCaller } from './tool-loop/model-caller';
 import { executeToolCall, toolResultPayload } from './tool-loop/execute-call';
+import { toolImageVerdict, toolImagesMessage, withImageNote } from './tool-loop/tool-images';
 import { loadToolGroupsForCatalog } from './skills';
 import { env } from '@mantle/config';
 import { UUID_RE } from '@mantle/std';
@@ -647,6 +648,9 @@ async function runToolLoopAtLevel(args: ToolLoopArgs): Promise<ToolLoopResult> {
   // (web /assistant). Telegram-path tools deliver via their own
   // send* calls and don't populate this.
   const artifacts: ToolArtifact[] = [];
+  // Pictures tools returned for the model (tool-loop/tool-images.ts), counted
+  // across the turn for the per-turn cap.
+  let toolImagesShown = 0;
 
   // True once the user hit Stop (the turn's AbortController fired). The signal
   // is already threaded into every LLM call (dispatchChat) so generation
@@ -823,6 +827,7 @@ async function runToolLoopAtLevel(args: ToolLoopArgs): Promise<ToolLoopResult> {
     // order, which calls run (see TurnGuards); every skipped call still gets
     // its paired synthetic result.
     guards.beginBatch();
+    const batchImages: { slug: string; callId: string; image: ToolModelImage }[] = [];
     for (let call of calls) {
       // Stop mid-batch: nothing new starts. Each remaining call still gets a
       // paired synthetic result (providers reject an unpaired tool_use on any
@@ -968,6 +973,15 @@ async function runToolLoopAtLevel(args: ToolLoopArgs): Promise<ToolLoopResult> {
           error: `${outcome.error}\nInput schema of ${slug}: ${JSON.stringify(tool.inputSchema ?? {})}`,
         };
       }
+      // A picture for the model: shown after the batch's results to a model
+      // that can see it, otherwise left out with a note in the output.
+      if (outcome.ok && outcome.modelImages && outcome.modelImages.length > 0) {
+        const verdict = toolImageVerdict(model.model, outcome.modelImages, toolImagesShown);
+        for (const image of verdict.show) batchImages.push({ slug, callId: call.id, image });
+        toolImagesShown += verdict.show.length;
+        if (verdict.note)
+          outcome = { ...outcome, output: withImageNote(outcome.output, verdict.note) };
+      }
       // Did this call bring client-written text into the turn? Its input
       // (a client login's id) or its output (a client request's id) says so.
       await taintFromText(
@@ -1043,6 +1057,9 @@ async function runToolLoopAtLevel(args: ToolLoopArgs): Promise<ToolLoopResult> {
         ...(outcome.ok ? {} : { isError: true as const }),
       });
     }
+    // After every result of the batch: the provider protocol pairs each tool
+    // call with its result first, and a picture rides in a user message.
+    if (batchImages.length > 0) messages.push(toolImagesMessage(batchImages));
     // Stop landed during the batch (possibly on its very last call, which the
     // per-call guard can't catch): finalize now instead of running another
     // round against an already-dead signal. The round's text is already in

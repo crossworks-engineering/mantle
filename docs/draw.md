@@ -250,7 +250,17 @@ palette and @-mentions know the type.
 
 Agents read via `draw_list` / `draw_get`
 ([`packages/tools/src/builtins-draws.ts`](../packages/tools/src/builtins-draws.ts)),
-which return metadata + `scene_text`. Agent WRITING of scenes is deliberately
+which return metadata + `scene_text`. `draw_get` with `image: true` (or a
+`region`) also renders the committed `scene_svg` to a PNG with resvg, no browser
+([`packages/content/src/draw-png.ts`](../packages/content/src/draw-png.ts)):
+the inlined woff2 fonts are unpacked to TTF for the render, every `href` that
+is not `#id` or `data:image/` is blanked first (resvg reads bare file paths),
+and the picture is cached by the hash of the SVG the reader gets. What a
+reader gets (the drawing, the draft flag, the inlined images) is decided in
+one helper, [`packages/content/src/draw-reader.ts`](../packages/content/src/draw-reader.ts).
+The PNG travels as `modelImages`: an MCP image block, or in the agent loop a
+user message after the tool results for a vision model (a text-only model gets
+a note instead). Agent WRITING of scenes is deliberately
 not shipped (plan §Phase 6): it would go through Excalidraw's documented
 Skeleton JSON, never raw internals, and is a separate decision.
 

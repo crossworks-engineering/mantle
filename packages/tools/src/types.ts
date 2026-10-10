@@ -209,11 +209,25 @@ export type ToolArtifact = {
   producedBy: string;
 };
 
+/** A picture for the MODEL that called the tool, not for the person (that
+ *  is `ToolArtifact`). The agent tool loop shows it to a vision-capable model
+ *  right after the call's result, and tells a text-only model it was left
+ *  out; MCP returns it as an image content block next to the JSON. Never in
+ *  `output`, which is text the model reads and traces keep. */
+export type ToolModelImage = {
+  mimeType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
+  /** Base64-encoded bytes. */
+  base64: string;
+  /** One line naming what the picture is, shown to the model with it. */
+  caption?: string;
+};
+
 export type ToolHandlerResult =
   | {
       ok: true;
       output: unknown;
       artifacts?: ToolArtifact[];
+      modelImages?: ToolModelImage[];
       /** Set by the dispatch layer when the output embeds THIRD-PARTY
        *  authored content (http tools hit arbitrary endpoints; a recipe may
        *  run an http/web step mid-chain). The tool-loop fences flagged
