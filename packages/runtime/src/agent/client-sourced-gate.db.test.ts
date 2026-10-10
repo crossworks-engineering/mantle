@@ -119,6 +119,17 @@ describe.skipIf(!URL)('the lowering guard, end to end', () => {
         select (doc::text like ${`%${text}%`}) as hit from pages where node_id = ${id}`
     )[0]?.hit === true;
 
+  const clientsWs = randomUUID();
+  const clientLogin = randomUUID();
+  /** Grant `id` to the client workspace, under its heads. */
+  const toClients = (id: string) =>
+    m.withHeads([id], 'update', async (tx) => {
+      await tx.execute(
+        (await import('drizzle-orm'))
+          .sql`insert into item_grants (node_id, workspace_id) values (${id}, ${clientsWs})`,
+      );
+    });
+
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
@@ -140,13 +151,20 @@ describe.skipIf(!URL)('the lowering guard, end to end', () => {
     ids.teamPage = (await content.createPage(ownerId, { title: `${tag} team price list` })).id;
     ids.clientPage = (await content.createPage(ownerId, { title: `${tag} project status` })).id;
     ids.otherTeamPage = (await content.createPage(ownerId, { title: `${tag} team notes` })).id;
-    // The gate reads the archived levels (frozen since W5b2): set them under
-    // the named test bypass.
+    // Since W5b2 the gate reads the grants: a client workspace (a client
+    // login in it) holds the client page. The team pages keep a team level
+    // (frozen, set under the named test bypass) only for the access_set
+    // check below.
+    await admin`insert into auth.users (id, email, password_hash, role)
+      values (${clientLogin}, ${`${tag}-c@example.invalid`}, 'x', 'client')`;
+    await admin`insert into workspaces (id, owner_id, name) values (${clientsWs}, ${ownerId}, ${`${tag} Clients`})`;
+    await admin`insert into workspace_users (workspace_id, login_id, moderator)
+      values (${clientsWs}, ${clientLogin}, false)`;
     await admin.begin(async (tx) => {
       await tx`select mantle_heads_bypass('test fixture')`;
       await tx`update nodes set audience = 'team' where id in ${tx([ids.teamPage, ids.otherTeamPage])}`;
-      await tx`update nodes set audience = 'client' where id = ${ids.clientPage}`;
     });
+    await toClients(ids.clientPage);
     // Made an hour ago: only what a call creates counts as new.
     await admin`update nodes set created_at = now() - interval '1 hour'
       where id in ${admin([ids.teamPage, ids.clientPage, ids.otherTeamPage])}`;
@@ -156,6 +174,7 @@ describe.skipIf(!URL)('the lowering guard, end to end', () => {
       (${ids.appTeamOnly}, ${ownerId}, 'app', ${`${tag} app 2`}, 'apps', 'admin'),
       (${ids.appTable}, ${ownerId}, 'table', ${`${tag} app table`}, 'tables', 'client'),
       (${ids.appTableTeam}, ${ownerId}, 'table', ${`${tag} app table 2`}, 'tables', 'team')`;
+    await toClients(ids.appTable);
     await admin`insert into app_table_exports (owner_id, app_node_id, sqlite_table, table_node_id) values
       (${ownerId}, ${ids.app}, 'rows', ${ids.appTable}),
       (${ownerId}, ${ids.appTeamOnly}, 'rows', ${ids.appTableTeam})`;
@@ -174,10 +193,15 @@ describe.skipIf(!URL)('the lowering guard, end to end', () => {
       await admin`delete from pending_tool_calls where owner_id = ${ownerId} and args::text like ${`%${id}%`}`;
     }
     await admin`delete from app_table_exports where app_node_id in ${admin([ids.app, ids.appTeamOnly])}`;
+    await admin`delete from item_grants where workspace_id = ${clientsWs}`;
     await admin`delete from nodes where id in ${admin(all)}`;
     await admin`delete from nodes where owner_id = ${ownerId} and title like ${`${tag}%`}`;
     await admin`delete from tool_groups where owner_id = ${ownerId} and slug in ${admin([groupClient, groupTeam])}`;
     await admin`delete from agents where owner_id = ${ownerId} and slug = ${agentClient}`;
+    await admin`delete from item_grants where workspace_id = ${clientsWs}`;
+    await admin`delete from workspaces where id = ${clientsWs}`;
+    await admin`delete from spaces where login_id = ${clientLogin}`;
+    await admin`delete from auth.users where id = ${clientLogin}`;
     await m.closeDb();
   });
 
@@ -312,13 +336,10 @@ describe.skipIf(!URL)('the lowering guard, end to end', () => {
       (${f.inPlain}, ${ownerId}, 'note', ${`${tag} in plain`}, ${`notes.${label}_plain`}, '{}'::jsonb),
       (${f.filesShared}, ${ownerId}, 'branch', ${`${tag} files shared`}, ${`files.${label}_shared`}, '{}'::jsonb),
       (${f.filesPlain}, ${ownerId}, 'branch', ${`${tag} files plain`}, ${`files.${label}_plain`}, '{}'::jsonb)`;
-    // The folder share and what it gave the note inside (the level upkeep
-    // the bridge did before W5b2), under the test bypass.
-    await admin.begin(async (tx) => {
-      await tx`select mantle_heads_bypass('test fixture')`;
-      await tx`update nodes set share_level = 'client' where id in ${tx([f.shared, f.filesShared])}`;
-      await tx`update nodes set inherited_level = 'client' where id = ${f.inShared}`;
-    });
+    // The client workspace holds the two folders (W5b2: grants); the note
+    // inside takes the folder's row.
+    await toClients(f.shared);
+    await toClients(f.filesShared);
 
     // Moving an admin note into the client-shared folder waits; elsewhere runs.
     expect(

@@ -167,11 +167,11 @@ const SITES: Record<string, Site> = {
     why: 'recipe_tool_test runs for whoever asked for the test',
   },
   'packages/tools/src/builtins-my-apps.ts': {
-    calls: 2,
+    calls: 4,
     // The same ctx object, untouched: the surface is the caller's.
     surface: /def\.handler\(input, ctx\)/,
     scope: 'call',
-    why: "the per-login write slot wraps a member's own my_app_* handler and passes its ctx on unchanged",
+    why: "the per-login write slot and the exit from the login's scope (W5b2: 'own-space') wrap a member's own my_app_* handler and pass its ctx on unchanged",
   },
   'packages/tools/src/toolsmith/api-tools.ts': {
     calls: 1,

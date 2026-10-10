@@ -174,7 +174,7 @@ describe.skipIf(!URL)('workspaces bridge off (0261)', () => {
     });
     // A Team row a folder's share gave is derived from that folder, where
     // the folder holds Team itself (a sub-folder of a shared folder, or a
-    // folder the team reads); the folder's own row stays plain.
+    // folder the team reads).
     for (const [item, folder] of [
       ['inSub', 'subShared'],
       ['inBoth', 'folderBoth'],
@@ -185,8 +185,14 @@ describe.skipIf(!URL)('workspaces bridge off (0261)', () => {
         write: false,
         via: ids[folder],
       });
-      expect((await grants(ids[folder]!)).Team).toMatchObject({ excluded: false, via: null });
     }
+    // The folder that reads Team by its own level keeps a plain row; the
+    // sub-folder of the top shared folder derives Team from it (step a0).
+    expect((await grants(ids.folderBoth!)).Team).toMatchObject({ excluded: false, via: null });
+    expect((await grants(ids.subShared!)).Team).toMatchObject({
+      excluded: false,
+      via: ids.folderShared,
+    });
     // An item's own level and an embed keep plain rows; an item of the top
     // shared folder derives Team from it (step a0): nobody loses a read.
     expect((await grants(ids.teamInShared!)).Team).toMatchObject({ excluded: false, via: null });

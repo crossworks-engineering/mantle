@@ -26,6 +26,8 @@ describe.skipIf(!URL)('namesClientSourced', () => {
   let cs: typeof import('./client-sourced');
   const owner = randomUUID();
   const other = randomUUID();
+  const clientsWs = randomUUID();
+  let sqlTag: typeof import('drizzle-orm').sql;
   const ids = {
     clientTask: randomUUID(),
     teamTask: randomUUID(),
@@ -56,6 +58,7 @@ describe.skipIf(!URL)('namesClientSourced', () => {
     m = await import('@mantle/db');
     admin = (m.systemDb as unknown as { $client: typeof admin }).$client;
     cs = await import('./client-sourced');
+    sqlTag = (await import('drizzle-orm')).sql;
     await admin`insert into auth.users (id, email, password_hash, role) values
       (${owner}, ${`cs-o-${owner.slice(0, 8)}@example.invalid`}, 'x', 'admin'),
       (${other}, ${`cs-x-${other.slice(0, 8)}@example.invalid`}, 'x', 'admin'),
@@ -94,24 +97,35 @@ describe.skipIf(!URL)('namesClientSourced', () => {
     await admin`insert into app_table_exports (owner_id, app_node_id, sqlite_table, table_node_id) values
       (${owner}, ${ids.clientApp}, 'orders', ${ids.clientAppTable}),
       (${owner}, ${ids.teamApp}, 'orders', ${ids.teamAppTable})`;
+    // A client workspace (workspaces W5b2: who reads an app is its grants)
+    // with the client login in it; it holds the client app.
+    await admin`insert into workspaces (id, owner_id, name) values (${clientsWs}, ${owner}, 'Clients')`;
+    await admin`insert into workspace_users (workspace_id, login_id, moderator)
+      values (${clientsWs}, ${ids.clientLogin}, false)`;
+    await setLevel(ids.clientApp, 'client');
     // The client login goes: author_login_id goes NULL, the stamp stays.
     await admin`delete from spaces where login_id = ${ids.goneClient}`;
     await admin`delete from auth.users where id = ${ids.goneClient}`;
   }, 60_000);
 
-  /** Move an app's level: the level columns are frozen since W5b2 (0261),
-   *  so a fixture moves one inside the heads bypass. The client-sourced
-   *  rule (C6) still reads the app's level. */
-  const setLevel = (id: string, level: string) =>
-    admin.begin(async (tx) => {
-      await tx`select mantle_heads_bypass('test fixture')`;
-      await tx`update nodes set audience = ${level} where id = ${id}`;
+  /** Put an app at client (the client workspace holds it) or take it off
+   *  ('team': the grant goes). Since W5b2 the client-sourced rule (C6) reads
+   *  the grants, not the frozen level. */
+  const setLevel = (id: string, level: 'client' | 'team') =>
+    m.withHeads([id], 'update', async (tx) => {
+      await tx.execute(
+        level === 'client'
+          ? sqlTag`insert into item_grants (node_id, workspace_id) values (${id}, ${clientsWs})`
+          : sqlTag`delete from item_grants where node_id = ${id} and workspace_id = ${clientsWs}`,
+      );
     });
 
   afterAll(async () => {
     if (!admin) return;
     await admin`delete from conversation_taints where owner_id in ${admin([owner, other])}`;
     await admin`delete from nodes where owner_id in ${admin([owner, other])}`;
+    await admin`delete from item_grants where workspace_id = ${clientsWs}`;
+    await admin`delete from workspaces where id = ${clientsWs}`;
     await admin`delete from nodes where id = ${ids.submittedClientItem}`;
     await admin`delete from spaces where login_id in ${admin([owner, other, ids.clientLogin, ids.memberLogin])}`;
     await admin`delete from auth.users where id in ${admin([owner, other, ids.clientLogin, ids.memberLogin])}`;
@@ -165,7 +179,7 @@ describe.skipIf(!URL)('namesClientSourced', () => {
     expect(await cs.markCreatedClientSourced(owner, out, 1500, 'note_create')).toBe(0);
   });
 
-  it('a Table exported from an app at client level is client-sourced, from a team app not (C6)', async () => {
+  it('a Table exported from an app a client workspace holds is client-sourced, from a team app not (C6)', async () => {
     expect(await cs.namesClientSourced(owner, [ids.clientAppTable])).toBe(true);
     expect(await cs.namesClientSourced(owner, [ids.teamAppTable])).toBe(false);
     // Only for this brain.
@@ -208,9 +222,6 @@ describe.skipIf(!URL)('namesClientSourced', () => {
       expect([...(await cs.clientSourcedAmong(owner, [ids.clientAppTable]))]).toEqual([
         ids.clientAppTable,
       ]);
-      // Even at admin level.
-      await setLevel(ids.clientApp, 'admin');
-      expect(await cs.namesClientSourced(owner, [ids.clientAppTable])).toBe(true);
       // A second client write keeps the first stamp.
       await markAppClientWritten(owner, ids.clientApp);
       const [again] = await admin<{ at: string | null }[]>`

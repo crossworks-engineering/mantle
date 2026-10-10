@@ -86,7 +86,7 @@ describe.skipIf(!URL)('client-sourced holds read the grants', () => {
   afterAll(async () => {
     await admin`delete from shares where owner_id = ${owner}`;
     await admin`delete from nodes where owner_id = ${owner}`;
-    await admin`delete from workspace_users where workspace_id in (${ws.admin}, ${ws.team}, ${ws.clients})`;
+    await admin`delete from item_grants where workspace_id in (${ws.admin}, ${ws.team}, ${ws.clients})`;
     await admin`delete from workspaces where owner_id = ${owner}`;
     await admin`delete from spaces where login_id in (${owner}, ${client})`;
     await admin`delete from auth.users where id in (${owner}, ${client})`;

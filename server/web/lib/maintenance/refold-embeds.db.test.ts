@@ -181,6 +181,9 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
     await admin`delete from facts where content like ${`${tag}%`}`;
     await admin`delete from node_mixed_summaries where node_id in (${levelled}, ${granted}, ${orphan}, ${raced}, ${note}, ${noteEdited}, ${plain}, ${parent})`;
     await admin`delete from nodes where id in (${levelled}, ${granted}, ${orphan}, ${raced}, ${note}, ${noteEdited}, ${plain}, ${parent}, ${file})`;
+    // Items other test files made on the shared anchor meanwhile may have
+    // taken a home here: their rows go with the workspaces.
+    await admin`delete from item_grants where workspace_id in (${ws.admin}, ${ws.team})`;
     await admin`delete from workspaces where id in (${ws.admin}, ${ws.team})`;
     await admin`delete from spaces where login_id = ${member}`;
     await admin`delete from auth.users where id = ${member}`;

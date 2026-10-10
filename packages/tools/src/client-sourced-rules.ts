@@ -371,15 +371,17 @@ const EXPOSED: ReadonlySet<string> = new Set(['client', 'public']);
  *  holds it (its own grant or its folder's), or a live open link shows it
  *  (the link's own item, or on its served list). */
 function exposedSql(ownerId: string) {
+  // Written out in full: inside the subquery an unqualified id would name
+  // the share's own id.
   return sql<boolean>`(
-    ${nodes.readWs} && ${clientWsSql(ownerId)}
+    "nodes"."read_ws" && ${clientWsSql(ownerId)}
     or exists (
       select 1 from shares s
        where s.owner_id = ${ownerId} and s.revoked_at is null and s.contact_id is null
          and (s.expires_at is null or s.expires_at > now())
          and coalesce(s.settings->>'mode', 'public') <> 'team'
-         and (s.node_id = ${nodes.id}
-              or coalesce(s.settings->'served', '[]'::jsonb) ? lower(${nodes.id}::text))))`;
+         and (s.node_id = "nodes"."id"
+              or coalesce(s.settings->'served', '[]'::jsonb) ? lower("nodes"."id"::text))))`;
 }
 const RUN: GateVerdict = { gate: false };
 const wait = (why: string): GateVerdict => ({ gate: true, why });
