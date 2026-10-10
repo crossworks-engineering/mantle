@@ -15,6 +15,7 @@ import nextPlugin from '@next/eslint-plugin-next';
 import mantlePlugin from './eslint-rules/pair-fill-foreground.mjs';
 import mantleDbPlugin from './eslint-rules/system-db-allowlist.mjs';
 import mantleHeadsPlugin from './eslint-rules/heads-writers.mjs';
+import mantleLevelReadsPlugin from './eslint-rules/level-reads.mjs';
 
 export default tseslint.config(
   {
@@ -178,6 +179,14 @@ export default tseslint.config(
     files: ['server/**/*.{ts,tsx}', 'packages/**/*.{ts,tsx}'],
     plugins: { 'mantle-heads': mantleHeadsPlugin },
     rules: { 'mantle-heads/heads-writers': 'error' },
+  },
+  {
+    // No product code reads the tier levels (workspaces plan S2, W5b1 on):
+    // access comes from grants and currentScope(). What is left is pinned,
+    // file by file, in the rule file's allowlist (level-reads.test.ts).
+    files: ['server/**/*.{ts,tsx}', 'packages/**/*.{ts,tsx}', 'scripts/**/*.{ts,mjs,js}'],
+    plugins: { 'mantle-levels': mantleLevelReadsPlugin },
+    rules: { 'mantle-levels/level-reads': 'error' },
   },
   {
     // Tests + one-shot scripts: relax rules that only make sense for shipped code.

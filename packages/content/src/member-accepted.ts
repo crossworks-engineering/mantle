@@ -42,13 +42,13 @@ import {
   asViewerLevel,
   authUsers,
   currentSpaceScope,
-  currentViewerLevel,
   db,
   nodes,
   spaceItems,
   spaces,
   withViewer,
   type ViewerLevel,
+  isSystemScope,
 } from '@mantle/db';
 import type {
   ClientAcceptedItem,
@@ -113,7 +113,7 @@ export type AcceptedItem =
  *  own rule; inside a viewer or space scope they would see nothing (or the
  *  wrong thing), so refuse to run there. */
 function assertAdminPool(): void {
-  if (currentViewerLevel() !== 'admin' || currentSpaceScope()) {
+  if (!isSystemScope() || currentSpaceScope()) {
     throw new Error('member-accepted reads on the admin pool: call it outside a viewer scope');
   }
 }

@@ -24,7 +24,6 @@ import {
   asSystem,
   authUsers,
   currentSpaceScope,
-  currentViewerLevel,
   db,
   draws,
   nodes,
@@ -37,6 +36,7 @@ import {
   tables,
   withSpaceRows,
   withViewer,
+  currentScope,
 } from '@mantle/db';
 import { existsSync } from 'node:fs';
 import type {
@@ -134,7 +134,7 @@ const inMemberSpace = sql`mantle_member_space(${nodes.ownerId})`;
 
 /** Team drafts run on the team role with the human flag; never at admin. */
 function requireTeamDrafts(): void {
-  if (currentViewerLevel() === 'admin' || currentSpaceScope()) {
+  if (currentScope().kind !== 'level' || currentSpaceScope()) {
     throw new Error('team drafts read outside withTeamDrafts');
   }
 }

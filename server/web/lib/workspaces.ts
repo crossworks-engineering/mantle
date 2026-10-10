@@ -195,7 +195,9 @@ function areasOf(info: AdminInfo, caller: WsCaller): WorkspaceArea[] {
 
 /** The Admin areas the caller holds (plan 1.4): every area for a user of
  *  the Admin workspace unless its limits switch one off, none for anyone
- *  else. The ONE reader of workspace_users.limits. */
+ *  else. The ONE reader of workspace_users.limits in TypeScript; code that
+ *  runs in a user scope asks scopeHasArea, whose SQL (mantle_scope_has_area,
+ *  0256) is the same rule. */
 export async function areasFor(caller: WsCaller): Promise<WorkspaceArea[]> {
   return areasOf(await adminInfo(caller), caller);
 }

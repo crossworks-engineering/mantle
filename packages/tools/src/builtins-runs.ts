@@ -16,7 +16,7 @@
  */
 import { currentTrace } from '@mantle/tracing';
 import { and, desc, eq, sql } from 'drizzle-orm';
-import { agentGroups, agents, currentViewerLevel, db, runItems, runs } from '@mantle/db';
+import { agentGroups, agents, db, runItems, runs, scopeHasArea } from '@mantle/db';
 import {
   appendChildren,
   applyAuditVerdict,
@@ -246,8 +246,8 @@ const DISABLED_ERROR =
  *  side channels of queued work its parent never sees. A turn below admin
  *  (a member's or a client's) is refused too: a run's items execute later on
  *  the admin pool, which would read past the turn's level (audit A3). */
-function refuseIfDelegated(ctx: ToolHandlerContext): ToolHandlerResult | null {
-  if (currentViewerLevel() !== 'admin') {
+async function refuseIfDelegated(ctx: ToolHandlerContext): Promise<ToolHandlerResult | null> {
+  if (!(await scopeHasArea('assistants'))) {
     return {
       ok: false,
       error:
@@ -646,7 +646,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
       required: ['title', 'plan'],
     },
     handler: async (input, ctx) => {
-      const refused = refuseIfDelegated(ctx);
+      const refused = await refuseIfDelegated(ctx);
       if (refused) return refused;
       if (!isRunsEnabled()) return { ok: false, error: DISABLED_ERROR };
       const belowAdmin = await refuseBelowAdminAgent(ctx);
@@ -739,7 +739,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
       required: ['run_id', 'children'],
     },
     handler: async (input, ctx) => {
-      const refused = refuseIfDelegated(ctx);
+      const refused = await refuseIfDelegated(ctx);
       if (refused) return refused;
       if (!isRunsEnabled()) return { ok: false, error: DISABLED_ERROR };
       const belowAdmin = await refuseBelowAdminAgent(ctx);
@@ -825,7 +825,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
       },
     },
     handler: async (input, ctx) => {
-      const refused = refuseIfDelegated(ctx);
+      const refused = await refuseIfDelegated(ctx);
       if (refused) return refused;
       if (typeof input.run_id === 'string' && input.run_id.trim()) {
         const run = await loadOwnedRun(ctx.ownerId, input.run_id);
@@ -881,7 +881,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
     handler: async (input, ctx) => {
       // Depth guard on the read/stop tools too (§2.7 "every run_* tool"): a
       // delegated worker must never cancel the run it is a step of.
-      const refused = refuseIfDelegated(ctx);
+      const refused = await refuseIfDelegated(ctx);
       if (refused) return refused;
       const run = await loadOwnedRun(ctx.ownerId, input.run_id);
       if (!run) return notFound('run', String(input.run_id ?? ''), 'run_state');
@@ -943,7 +943,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
       required: ['run_id', 'audit_item_id', 'verdict'],
     },
     handler: async (input, ctx) => {
-      const refused = refuseIfDelegated(ctx);
+      const refused = await refuseIfDelegated(ctx);
       if (refused) return refused;
       const run = await loadOwnedRun(ctx.ownerId, input.run_id);
       if (!run) return notFound('run', String(input.run_id ?? ''), 'run_state');

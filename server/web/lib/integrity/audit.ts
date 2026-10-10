@@ -12,7 +12,7 @@
  * sourceless semantic/preference facts are CORRECT (the reaper keeps them), so
  * the reaper-miss check only flags episodic/factual orphans.
  */
-import { db, extractParkedSql, MIGRATION_TAGS } from '@mantle/db';
+import { db, extractParkedSql, MIGRATION_TAGS, teamReadsAliasSql } from '@mantle/db';
 import { sql, type SQL } from 'drizzle-orm';
 
 import { rowsOf } from './sql-util';
@@ -291,8 +291,7 @@ const CHECKS: CheckDef[] = [
       SELECT n.id::text AS id, 'snapshot copy pending' AS kind, si.review_state AS detail
       FROM space_items si JOIN nodes n ON n.id = si.node_id
       WHERE si.review_state IN ('accepted', 'taken') AND n.owner_id = mantle_brain_id()
-        AND n.audience = 'admin'
-        AND NOT mantle_team_reads(n.type, n.audience, n.inherited_level, n.embedded_level)
+        AND NOT ${teamReadsAliasSql('n')}
         AND NOT EXISTS (SELECT 1 FROM nodes c WHERE c.data->>'snapshot_of' = n.id::text)
       LIMIT ${CAP}`,
   },

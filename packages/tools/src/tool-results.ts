@@ -24,7 +24,6 @@ import { and, asc, eq, isNotNull, sql } from 'drizzle-orm';
 import {
   asViewerLevel,
   currentTurnStamp,
-  currentViewerLevel,
   currentWorkspaceScope,
   db,
   isUnscoped,
@@ -33,6 +32,8 @@ import {
   toolResults,
   toolResultChunks,
   workspaces,
+  currentScope,
+  levelOfScope,
 } from '@mantle/db';
 // Infrastructure writes: systemDb (the admin pool) whatever the viewer, so a
 // turn under a limited role (member logins Phase 0b) still records them.
@@ -196,7 +197,7 @@ export async function spillToolResult(args: {
   // is team, the level the one non-Admin workspace (Team) mirrors, for the
   // level readers that remain until W6a.
   const inWorkspace = currentWorkspaceScope() !== null;
-  const level = inWorkspace ? 'team' : currentViewerLevel();
+  const level = inWorkspace ? 'team' : levelOfScope(currentScope());
   const stamp = currentTurnStamp();
   await systemDb.insert(toolResults).values({
     id: handle,
@@ -356,7 +357,8 @@ async function loadResult(
     .where(where)
     .limit(1);
   if (!row) return null;
-  if (!levelCovers(currentViewerLevel(), asViewerLevel(row.viewerLevel ?? 'admin'))) return null;
+  if (!levelCovers(levelOfScope(currentScope()), asViewerLevel(row.viewerLevel ?? 'admin')))
+    return null;
   // A level reader (not the system) never reads a spill of a non-Admin
   // workspace's turn: those are read through the workspace rule only.
   if (!isUnscoped() && row.workspaceId && row.wsIsAdmin !== true) return null;

@@ -9,13 +9,14 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { toolServiceAvailable } from '@mantle/config';
 import { db, scopeHoldsAdmin, skills, toolGroups, type Skill } from '@mantle/db';
 import {
-  currentViewerLevel,
   currentWorkspaceScope,
   isViewerLevel,
   levelCovers,
   levelsMeet,
   lowerLevel,
   type ViewerLevel,
+  currentScope,
+  levelOfScope,
 } from '@mantle/db/viewer';
 
 export type SkillForRuntime = {
@@ -140,7 +141,7 @@ export async function resolveAgentToolGroups(
   // hold (adminOnly groups outside Admin, connectors that are not a resource
   // of the workspace), and an adminOnly group is left out here too.
   const inWorkspace = currentWorkspaceScope() !== null;
-  const current = inWorkspace ? level : currentViewerLevel();
+  const current = inWorkspace ? level : levelOfScope(currentScope());
   if (!levelsMeet(current, level)) {
     console.warn(`[skills] a ${level}-level agent under a ${current}-level caller gets no tools`);
     return [];

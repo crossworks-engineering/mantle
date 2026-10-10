@@ -9,7 +9,7 @@
  * and these limits read that level.
  */
 import { envInt } from '@mantle/config';
-import { currentSpaceScope, currentViewerLevel } from '@mantle/db';
+import { currentSpaceScope, inLevelScope } from '@mantle/db';
 
 export type SpaceLimits = {
   /** One upload's ceiling. */
@@ -72,7 +72,7 @@ export const CLIENT_NOTE_MAX_CHARS = 50_000;
 /** Whether the current personal-space scope is a client's. Outside a space
  *  scope this is false (the callers all run inside one). */
 export function inClientSpace(): boolean {
-  return currentSpaceScope() !== null && currentViewerLevel() === 'client';
+  return currentSpaceScope() !== null && inLevelScope('client');
 }
 
 /** The limits of the current personal-space scope, by its login's role. */

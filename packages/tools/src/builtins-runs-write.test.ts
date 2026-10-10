@@ -47,7 +47,7 @@ vi.mock('@mantle/db', async (importOriginal) => {
   return {
     ...actual,
     db: { ...actual.db, select: vi.fn(() => chain) },
-    currentViewerLevel: vi.fn(() => 'admin'),
+    scopeHasArea: vi.fn(async () => true),
   };
 });
 vi.mock('@mantle/runs', async (importOriginal) => {
@@ -161,7 +161,7 @@ describe('run_plan', () => {
   });
 
   it('refuses a turn below admin: its items would run on the admin pool (A3)', async () => {
-    vi.mocked(dbmod.currentViewerLevel).mockReturnValueOnce('team');
+    vi.mocked(dbmod.scopeHasArea).mockResolvedValueOnce(false);
     const res = await plan.handler({ title: 'Digest', plan: okPlan }, ctx);
     expect(errorOf(res)).toMatch(/admin level only/);
     expect(createRun).not.toHaveBeenCalled();

@@ -30,7 +30,6 @@ import {
   asSystem,
   authUsers,
   currentSpaceScope,
-  currentViewerLevel,
   db,
   draws,
   nodes,
@@ -40,6 +39,7 @@ import {
   spaces,
   tables,
   withViewer,
+  isSystemScope,
 } from '@mantle/db';
 import type { AdminTakenFrom } from '@mantle/client-types';
 import {
@@ -84,7 +84,7 @@ export type MoveHooks = {
 };
 
 function assertAdminPool(what: string): void {
-  if (currentViewerLevel() !== 'admin' || currentSpaceScope()) {
+  if (!isSystemScope() || currentSpaceScope()) {
     throw new Error(`${what} runs on the admin pool: call it outside a viewer scope`);
   }
 }

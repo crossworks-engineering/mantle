@@ -1,4 +1,5 @@
 export * from './schema/index';
+export { teamReadsSql, teamReadsAliasSql } from './grant-reads';
 export {
   db,
   systemDb,
@@ -11,6 +12,7 @@ export {
   withTurnScope,
   ScopeLostError,
   scopeHoldsAdmin,
+  scopeHasArea,
   withHeads,
   withSubtreeHeads,
   withNodeInsertHeads,
@@ -29,6 +31,11 @@ export {
   VIEWER_LEVELS,
   currentViewerLevel,
   currentScope,
+  levelOfScope,
+  isSystemScope,
+  inLevelScope,
+  SCOPE_AREAS,
+  type ScopeArea,
   currentWorkspaceScope,
   currentTurnStamp,
   withTurnStamp,

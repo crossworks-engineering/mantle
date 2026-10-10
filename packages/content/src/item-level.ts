@@ -6,7 +6,13 @@
  * without importing each other.
  */
 import { inArray, or, sql, type SQL } from 'drizzle-orm';
-import { asViewerLevel, nodes, type ViewerLevel } from '@mantle/db';
+import {
+  asViewerLevel,
+  nodes,
+  teamReadsAliasSql,
+  teamReadsSql,
+  type ViewerLevel,
+} from '@mantle/db';
 import { effectiveLevel } from '@mantle/content-core/tree';
 
 export function itemLevel(
@@ -46,9 +52,21 @@ export function isReadAt(
   );
 }
 
+/** Every level the team role reads: an app read at these, without its
+ *  embeds, is exactly an app the Team workspace holds (workspaces plan 9.2). */
+const TEAM_READ_LEVELS = ['client', 'public', 'team'];
+
+/** Whether a level rule is "the Team workspace reads it" (workspaces W5b1):
+ *  the team role's levels, embeds left out. Those reads ask the grants. Any
+ *  other rule tells client or public from team, which grants cannot. */
+function isTeamRule(levels: readonly string[], opts: ReadAtOpts): boolean {
+  return opts.embeds === false && [...new Set(levels)].sort().join() === TEAM_READ_LEVELS.join();
+}
+
 /** `isReadAt` as SQL over `nodes`: false when `levels` is empty. */
 export function readAtSql(levels: readonly string[], opts: ReadAtOpts = {}): SQL {
   if (!levels.length) return sql`false`;
+  if (isTeamRule(levels, opts)) return teamReadsSql();
   const list = [...levels];
   return or(
     inArray(nodes.audience, list),
@@ -65,6 +83,7 @@ export function readAtAliasSql(
   opts: ReadAtOpts = {},
 ): SQL {
   if (!levels.length) return sql`false`;
+  if (isTeamRule(levels, opts)) return teamReadsAliasSql(alias);
   const a = sql.raw(alias);
   const list = sql.join(
     levels.map((l) => sql`${l}`),

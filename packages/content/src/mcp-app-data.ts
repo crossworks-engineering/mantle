@@ -17,7 +17,7 @@
  * as well. Only granted columns are read (never `apps.draft_*`).
  */
 import { and, asc, eq, ne, sql } from 'drizzle-orm';
-import { apps, db, nodes, type AppManifest, type ViewerLevel } from '@mantle/db';
+import { apps, db, nodes, type AppManifest, type ViewerLevel, teamReadsSql } from '@mantle/db';
 import { CLIENT_APP_LEVELS } from './client-apps';
 import { MEMBER_APP_LEVELS, memberMayWriteAppData } from './member-apps';
 import { isReadAt, itemLevel, readAtSql } from './item-level';
@@ -67,6 +67,8 @@ const cols = {
   inheritedLevel: nodes.inheritedLevel,
   manifest: apps.manifest,
   dataReadOnly: apps.dataReadOnly,
+  // A member's reach is the Team grant (workspaces W5b1), not the levels.
+  teamReads: teamReadsSql(),
 };
 
 type Row = {
@@ -76,12 +78,18 @@ type Row = {
   inheritedLevel: string | null;
   manifest: AppManifest | null;
   dataReadOnly: boolean | null;
+  teamReads: boolean | null;
 };
 
 function toApp(role: McpDataRole, r: Row): McpDataApp | null {
   // The query keeps to these levels already; a row outside them is never
   // reached, whatever the column holds.
-  if (!isReadAt(r.audience, r.inheritedLevel, levelsFor(role))) return null;
+  if (
+    role === 'member'
+      ? r.teamReads !== true
+      : !isReadAt(r.audience, r.inheritedLevel, levelsFor(role))
+  )
+    return null;
   const level = itemLevel(r.audience, r.inheritedLevel);
   // A client reaches client apps only (access matrix M2).
   if (role === 'client' && level !== 'client') return null;

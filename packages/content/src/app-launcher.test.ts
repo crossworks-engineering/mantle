@@ -15,7 +15,7 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock('@mantle/db', () => ({
-  currentViewerLevel: () => h.level,
+  isSystemScope: () => h.level === 'admin',
   currentSpaceScope: () => h.space,
   withViewer: async (level: string, fn: () => Promise<unknown>) => {
     h.viewers.push(level);

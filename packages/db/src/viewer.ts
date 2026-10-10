@@ -203,18 +203,21 @@ export function afterRollback(fn: () => unknown): void {
 
 const store = new AsyncLocalStorage<Scope>();
 
-/** The level the current code runs at: 'admin' outside any viewer scope. A
- *  personal-space scope runs at its login's level ('team' for an admin or a
- *  member, 'client' for a client), so everything that refuses a limited
- *  caller (enqueue, admin agents) refuses it too. */
+/**
+ * @deprecated Workspaces plan S2: no product code reads this (the
+ * level-reads sweep fails on it; W8 deletes it). Use currentScope() and
+ * handle every kind, or scopeHasArea() for an "Admin only" check.
+ * 'admin' outside any viewer scope; throws ScopeLevelError inside a
+ * workspace scope.
+ */
 export function currentViewerLevel(): ViewerLevel {
-  const scope = store.getStore();
-  if (scope?.ws) throw new ScopeLevelError('currentViewerLevel');
-  return scope?.level ?? 'admin';
+  return levelOfScope(currentScope());
 }
 
 /** What the current code runs as (see CurrentScope). Never 'system' inside
- *  a level scope or a workspace scope (plan T4). */
+ *  a level scope or a workspace scope (plan T4). A personal-space scope
+ *  runs at its login's level ('team' for an admin or a member, 'client' for
+ *  a client), so everything that refuses a limited caller refuses it too. */
 export function currentScope(): CurrentScope {
   const scope = store.getStore();
   if (!scope) return { kind: 'system' };
@@ -222,6 +225,41 @@ export function currentScope(): CurrentScope {
   if (scope.level === 'admin') return { kind: 'system' };
   return { kind: 'level', level: scope.level as LimitedLevel };
 }
+
+/**
+ * The tier level a scope runs at, for the tier-model code that remains while
+ * the bridge keeps grants equal to levels (W5b1): 'admin' for system work,
+ * the level of a level scope. A workspace scope has no level (ScopeLevelError),
+ * and an unknown kind is refused the same way (fails closed, plan S2).
+ */
+export function levelOfScope(scope: CurrentScope): ViewerLevel {
+  switch (scope.kind) {
+    case 'system':
+      return 'admin';
+    case 'level':
+      return scope.level;
+    default:
+      throw new ScopeLevelError(`a '${String(scope.kind)}' scope`);
+  }
+}
+
+/** Whether the current code runs in a level scope at exactly `level` (a
+ *  personal space counts, at its login's level). */
+export function inLevelScope(level: LimitedLevel): boolean {
+  const scope = currentScope();
+  return scope.kind === 'level' && scope.level === level;
+}
+
+/** Whether the current code is system work: outside every level, space and
+ *  workspace scope (a system transaction counts, as it did as 'admin'). */
+export function isSystemScope(): boolean {
+  return currentScope().kind === 'system';
+}
+
+/** The areas an Admin workspace user manages (plan 2.4). Equal to
+ *  WORKSPACE_AREAS in @mantle/client-types (a test pins it). */
+export const SCOPE_AREAS = ['settings', 'users', 'assistants', 'connectors', 'keys'] as const;
+export type ScopeArea = (typeof SCOPE_AREAS)[number];
 
 /** The workspace scope the current code runs in, if any. */
 export function currentWorkspaceScope(): WorkspaceScope | null {
@@ -243,13 +281,13 @@ export function readsDrafts(): boolean {
   // A workspace scope reads published columns only (they are all the
   // workspace role is granted).
   if (store.getStore()?.ws) return false;
-  return currentViewerLevel() === 'admin' || currentSpaceScope() !== null;
+  return isSystemScope() || currentSpaceScope() !== null;
 }
 
 /**
  * Whether the current code runs unlimited: the system pool, outside every
  * level, space and workspace scope. Never throws (unlike
- * currentViewerLevel inside a workspace scope): for the checks that only ask
+ * levelOfScope inside a workspace scope): for the checks that only ask
  * "is this the owner's unlimited path?".
  */
 export function isUnscoped(): boolean {
@@ -282,7 +320,7 @@ export function currentScopeTx(): unknown {
 export function withViewer<T>(level: ViewerLevel, fn: () => Promise<T>): Promise<T> {
   let next: ViewerLevel;
   try {
-    next = lowerLevel(currentViewerLevel(), level);
+    next = lowerLevel(levelOfScope(currentScope()), level);
   } catch (err) {
     // A client scope meeting public work (or the reverse): refused, as a
     // rejected promise like any other failure of `fn`.
@@ -300,7 +338,7 @@ export function runInTxScope<T>(
   scope: { level: LimitedLevel; space?: SpaceScope; tx: unknown; hooks?: TxHooks },
   fn: () => Promise<T>,
 ): Promise<T> {
-  const level = lowerLevel(currentViewerLevel(), scope.level) as LimitedLevel;
+  const level = lowerLevel(levelOfScope(currentScope()), scope.level) as LimitedLevel;
   return store.run({ ...scope, level }, fn);
 }
 
@@ -314,7 +352,7 @@ export function runInWorkspaceTx<T>(
   if (store.getStore()) {
     return Promise.reject(new Error('runInWorkspaceTx: only outside any other scope'));
   }
-  // `level` is never read inside (currentViewerLevel throws); 'public' is the
+  // `level` is never read inside (levelOfScope throws); 'public' is the
   // narrowest value, should anything read the field directly.
   return store.run({ level: 'public', ws: scope.ws, tx: scope.tx, hooks: scope.hooks }, fn);
 }
@@ -601,8 +639,9 @@ export function assertNoViewer(what: string): void {
         'Work queued from a workspace scope must carry that scope.',
     );
   }
-  const level = currentViewerLevel();
-  if (level !== 'admin') {
+  const scope = currentScope();
+  if (scope.kind !== 'system') {
+    const level = scope.kind === 'level' ? scope.level : scope.kind;
     throw new Error(
       `${what} leaves this process and would run at admin, but the caller runs at '${level}'. ` +
         'A limited-level turn cannot queue work.',

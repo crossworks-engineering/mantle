@@ -31,7 +31,7 @@ import { copyFile, mkdir } from 'node:fs/promises';
 import * as path from 'node:path';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { db, nodeSnapshots, nodes, tables } from '@mantle/db';
-import { currentSpaceScope, currentViewerLevel } from '@mantle/db/viewer';
+import { currentSpaceScope, isSystemScope } from '@mantle/db/viewer';
 import { draftPathFor, resolveStoragePath, tableDbRoot } from '@mantle/tabledb';
 import type { TableSnapshot } from '@mantle/client-types';
 import { copySqliteFile, linkOrCopy } from './history-files';
@@ -85,7 +85,7 @@ function snapshotAbsPath(rel: string): string {
  *  viewer has no grant on node_snapshots (a refused insert would fail the
  *  commit it rides). */
 function historyWritable(): boolean {
-  return currentViewerLevel() === 'admin' && currentSpaceScope() === null;
+  return isSystemScope() && currentSpaceScope() === null;
 }
 
 /**

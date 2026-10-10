@@ -6,7 +6,11 @@ import { env, envFlag } from '@mantle/config';
 import {
   currentScopeTx,
   currentSpaceScope,
-  currentViewerLevel,
+  currentScope,
+  isSystemScope,
+  levelOfScope,
+  SCOPE_AREAS,
+  type ScopeArea,
   newTxHooks,
   runInSystemTx,
   runInTxScope,
@@ -190,7 +194,7 @@ function getDb(): PostgresJsDatabase<typeof schema> {
   const tx = currentScopeTx();
   if (tx) return tx as PostgresJsDatabase<typeof schema>;
   if (inTurnScope()) return getTurnScopedDb();
-  const level = currentViewerLevel();
+  const level = levelOfScope(currentScope());
   return level === 'admin' ? getAdminDb() : getViewerDb(level);
 }
 
@@ -294,7 +298,7 @@ export async function withSpace<T>(
 export async function withSystemTx<T>(
   fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<T>,
 ): Promise<T> {
-  if (currentViewerLevel() !== 'admin' || currentScopeTx()) {
+  if (!isSystemScope() || currentScopeTx()) {
     throw new Error('withSystemTx: only outside a viewer scope and any other transaction');
   }
   const hooks = newTxHooks();
@@ -371,7 +375,7 @@ export async function withScope<T>(scope: WorkspaceScope, fn: () => Promise<T>):
  * no transaction is held across an LLM call. Fails closed: a query built
  * here that runs after the turn ended (or from a callback that lost it) is
  * refused (ScopeLostError), never sent on the system pool; a level question
- * (currentViewerLevel) throws. Nested in the same scope it just runs `fn`;
+ * (levelOfScope) throws. Nested in the same scope it just runs `fn`;
  * inside any other scope it is refused. `modWs` must be a subset of `ws`.
  * Writes are not made here: they go through the system pool's own paths.
  */
@@ -422,6 +426,36 @@ export async function scopeHoldsAdmin(): Promise<boolean> {
     holdsAdmin.set(scope, p);
   }
   return p;
+}
+
+/**
+ * Whether the current code may do an "Admin only" thing in `area` (plan S2,
+ * 2.4): system work may; a user scope may when it holds the Admin workspace,
+ * its login is a user there and its limits leave the area on
+ * (mantle_scope_has_area, the rule of areasFor); a level scope, a link and an
+ * assistant turn never may (the Admin assistant runs as system work until
+ * W6a). An unknown kind or area is refused (fails closed).
+ */
+export async function scopeHasArea(area: ScopeArea): Promise<boolean> {
+  if (!SCOPE_AREAS.includes(area)) return false;
+  const scope = currentScope();
+  switch (scope.kind) {
+    case 'system':
+      return true;
+    case 'user': {
+      if (!scope.loginId) return false;
+      try {
+        const rows = (await getDb().execute(
+          sqlTag`select "public"."mantle_scope_has_area"(${area}) as a`,
+        )) as unknown as { a: boolean }[];
+        return rows[0]?.a === true;
+      } catch {
+        return false;
+      }
+    }
+    default:
+      return false;
+  }
 }
 
 /**
@@ -699,7 +733,8 @@ export async function withHumanViewer<T>(
   fn: () => Promise<T>,
 ): Promise<T> {
   return withViewer(level, () => {
-    const effective = currentViewerLevel();
+    const scope = currentScope();
+    const effective = scope.kind === 'level' ? scope.level : scope.kind;
     if (effective !== 'team' && effective !== 'client') {
       throw new Error(`withHumanViewer: no human scope at ${effective}`);
     }

@@ -23,7 +23,6 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import {
   asSystem,
   currentSpaceScope,
-  currentViewerLevel,
   db,
   draws,
   nodes,
@@ -31,6 +30,7 @@ import {
   readsDrafts,
   TurnScopeExitError,
   withViewer,
+  isSystemScope,
 } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
 import { EMPTY_SCENE, getDrawSceneText, getDrawSvg } from './draws';
@@ -109,7 +109,7 @@ export async function readerVisibleFileIds(
     if (reader.kind === 'client') {
       return await withViewer('client', () => clientVisibleDrawFileIds(ownerId, id));
     }
-    if (currentViewerLevel() === 'admin' && !currentSpaceScope()) return null;
+    if (isSystemScope() && !currentSpaceScope()) return null;
     return await scopeVisibleDrawFileIds(ownerId, id);
   } catch (err) {
     // An unnamed exit from a turn scope is a bug to report (strict mode

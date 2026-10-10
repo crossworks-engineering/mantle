@@ -523,6 +523,63 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
     });
   });
 
+  it('W5b1: levelOfScope and scopeHasArea, kind by kind (plan S2)', async () => {
+    // System work: admin, every area, never an unknown area.
+    expect(m.levelOfScope(m.currentScope())).toBe('admin');
+    expect(m.isSystemScope()).toBe(true);
+    expect(await m.scopeHasArea('users')).toBe(true);
+    expect(await m.scopeHasArea('nope' as never)).toBe(false);
+    // A level scope: its level, no area.
+    await m.withViewer('team', async () => {
+      expect(m.levelOfScope(m.currentScope())).toBe('team');
+      expect(m.inLevelScope('team')).toBe(true);
+      expect(m.inLevelScope('client')).toBe(false);
+      expect(m.isSystemScope()).toBe(false);
+      expect(await m.scopeHasArea('settings')).toBe(false);
+    });
+    // A workspace scope: no level; an area only when it holds the Admin workspace.
+    await m.withScope({ kind: 'user', loginId: userA, ws: [ws.team], modWs: [] }, async () => {
+      expect(() => m.levelOfScope(m.currentScope())).toThrow(m.ScopeLevelError);
+      expect(m.isSystemScope()).toBe(false);
+      expect(await m.scopeHasArea('settings')).toBe(false);
+    });
+    await m.withScope(
+      { kind: 'user', loginId: owner, ws: [ws.admin, ws.team], modWs: [] },
+      async () => {
+        expect(await m.scopeHasArea('settings')).toBe(true);
+      },
+    );
+    // Its limits switch an area off (the rule of areasFor).
+    const [was] = await admin<{ limits: unknown }[]>`
+      select limits from workspace_users where workspace_id = ${ws.admin} and login_id = ${owner}`;
+    await admin`update workspace_users set limits = '{"areas":{"keys":false}}'::jsonb
+                 where workspace_id = ${ws.admin} and login_id = ${owner}`;
+    try {
+      await m.withScope({ kind: 'user', loginId: owner, ws: [ws.admin], modWs: [] }, async () => {
+        expect(await m.scopeHasArea('keys')).toBe(false);
+        expect(await m.scopeHasArea('users')).toBe(true);
+      });
+    } finally {
+      await admin`update workspace_users set limits = ${JSON.stringify(was?.limits ?? {})}::jsonb
+                   where workspace_id = ${ws.admin} and login_id = ${owner}`;
+    }
+    // Not a user of Admin, an assistant, a link: no area.
+    await m.withScope({ kind: 'user', loginId: userA, ws: [ws.admin], modWs: [] }, async () => {
+      expect(await m.scopeHasArea('settings')).toBe(false);
+    });
+    await m.withScope(
+      { kind: 'assistant', loginId: owner, ws: [ws.admin], modWs: [] },
+      async () => {
+        expect(await m.scopeHasArea('settings')).toBe(false);
+      },
+    );
+    await m.withScope({ kind: 'link', loginId: null, ws: [ws.admin], modWs: [] }, async () => {
+      expect(await m.scopeHasArea('settings')).toBe(false);
+    });
+    // An unknown kind has no level (fails closed).
+    expect(() => m.levelOfScope({ kind: 'robot' } as never)).toThrow(m.ScopeLevelError);
+  });
+
   it('test 6: a user scope may place an item only where it may edit, and move only what it manages', async () => {
     const dest = await node('branch', 'dest', `${root}.dest`);
     await admin`insert into item_grants (node_id, workspace_id, is_home) values (${dest}, ${ws.team}, true)`;
@@ -780,14 +837,28 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
     // The two read helpers of the workspace role's own row rules (0254): a
     // boolean about the caller's own scope, nothing written, nothing else
     // read out. The workspace role only; no other role, never PUBLIC.
-    const RULE_HELPERS: Record<string, string> = {
-      mantle_scope_has_connector: 'mantle_view_user',
-      mantle_scope_is_admin: 'mantle_view_user',
+    const RULE_HELPERS: Record<string, string[]> = {
+      mantle_scope_has_connector: ['mantle_view_user'],
+      mantle_scope_is_admin: ['mantle_view_user'],
+      // W5b1 (0256): scopeHasArea for a user scope (areasFor's rule).
+      mantle_scope_has_area: ['mantle_view_user'],
+      // W5b1 (0256): the brain's Team workspace id, for the grant reads that
+      // replace the level columns; one id every login of the brain may know.
+      mantle_brain_team_ws: [
+        'mantle_view_client',
+        'mantle_view_public',
+        'mantle_view_space',
+        'mantle_view_team',
+        'mantle_view_user',
+      ],
     };
     expect(
       rows
         .filter((r) => r.roles.length)
-        .filter((r) => !(r.roles.length === 1 && RULE_HELPERS[r.name] === r.roles[0]))
+        .filter(
+          (r) =>
+            JSON.stringify([...r.roles].sort()) !== JSON.stringify(RULE_HELPERS[r.name] ?? null),
+        )
         .map((r) => `${r.name}: ${r.roles}`),
     ).toEqual([]);
   });

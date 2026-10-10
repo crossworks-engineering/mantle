@@ -16,14 +16,7 @@
  * only a set of ids to KEEP, never an item's content.
  */
 import { and, eq, inArray } from 'drizzle-orm';
-import {
-  currentSpaceScope,
-  currentViewerLevel,
-  db,
-  draws,
-  LIMITED_LEVELS,
-  nodes,
-} from '@mantle/db';
+import { currentSpaceScope, db, draws, LIMITED_LEVELS, nodes, isSystemScope } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
 import { readAtSql } from './item-level';
 import { acceptedFileReadable, isAuthorOfAcceptedFile } from './member-accepted';
@@ -38,7 +31,7 @@ export async function memberVisibleDrawFileIds(
   /** The accepted snapshot's image refs, for the SVG as accepted. */
   snapshotRefs?: Record<string, unknown>,
 ): Promise<Set<string>> {
-  if (currentViewerLevel() !== 'admin' || currentSpaceScope()) {
+  if (!isSystemScope() || currentSpaceScope()) {
     throw new Error(
       'memberVisibleDrawFileIds reads on the admin pool: call it outside a viewer scope',
     );

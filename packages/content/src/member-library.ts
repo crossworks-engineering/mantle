@@ -21,7 +21,7 @@
  * Read-only in Phase 1. Writing and personal spaces come in Phase 2.
  */
 import { and, desc, eq, ilike, inArray, sql } from 'drizzle-orm';
-import { currentViewerLevel, db, nodes, type ViewerLevel } from '@mantle/db';
+import { db, nodes, type ViewerLevel, currentScope } from '@mantle/db';
 import { isReadAt, readAtSql } from './item-level';
 import { getNote } from './notes';
 import { getPage } from './pages/read';
@@ -82,8 +82,9 @@ export function libraryLevelsOf(level: ViewerLevel): readonly LibraryAudience[] 
 
 /** The levels of `table` the current reader has (empty for an unknown one). */
 function levelsOf<T>(table: Readonly<Record<ViewerLevel, readonly T[]>>): readonly T[] {
-  const level = currentViewerLevel();
-  return Object.hasOwn(table, level) ? table[level] : [];
+  const scope = currentScope();
+  if (scope.kind !== 'level') return [];
+  return Object.hasOwn(table, scope.level) ? table[scope.level] : [];
 }
 
 /** A level rule as SQL: false when the reader has no level there. An item
@@ -97,7 +98,7 @@ function levelWhere(levels: readonly string[] = levelsOf(LIBRARY_LEVELS)) {
 /** Refuse to run at admin: this module exists to be read at a member's level,
  *  and at admin it would list the whole brain. */
 function assertLimited(): void {
-  if (currentViewerLevel() === 'admin') {
+  if (currentScope().kind !== 'level') {
     throw new Error('member Library read outside a viewer scope: wrap it in withViewer');
   }
 }

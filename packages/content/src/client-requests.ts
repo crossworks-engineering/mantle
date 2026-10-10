@@ -22,10 +22,10 @@ import {
   asSystem,
   authUsers,
   currentSpaceScope,
-  currentViewerLevel,
   db,
   nodes,
   spaceItems,
+  inLevelScope,
 } from '@mantle/db';
 import type { MemberItemAuthor } from '@mantle/client-types';
 import { CLIENT_ITEM_KINDS, type ClientItemKind } from '@mantle/client-types/member-kinds';
@@ -39,7 +39,7 @@ export type ClientRequestRow = { row: SpaceItemRow; author: MemberItemAuthor };
 /** Client requests run on the team role with the human flag; never at
  *  admin, never inside a personal space. */
 function requireClientRequests(): void {
-  if (currentViewerLevel() !== 'team' || currentSpaceScope()) {
+  if (!inLevelScope('team') || currentSpaceScope()) {
     throw new Error("client requests read outside withHumanViewer('team')");
   }
 }

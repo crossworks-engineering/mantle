@@ -39,12 +39,12 @@ import { sql } from 'drizzle-orm';
 import {
   SPACE_FILES_ROOT,
   currentSpaceScope,
-  currentViewerLevel,
   db,
   spaceFilesPath,
   withSpace,
   withTeamDrafts,
   withViewer,
+  isSystemScope,
 } from '@mantle/db';
 import {
   TREE_KIND_SPECS,
@@ -87,7 +87,7 @@ export type MemberTreeScope = { anchorId: string; spaceId: string; loginId: stri
 const DRAFTS_MAX = SPACE_ITEM_LIMIT;
 
 function assertAdminScope(): void {
-  if (currentViewerLevel() !== 'admin' || currentSpaceScope()) {
+  if (!isSystemScope() || currentSpaceScope()) {
     throw new Error('member tree called inside a viewer scope: call it on the admin pool');
   }
 }

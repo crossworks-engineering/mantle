@@ -81,7 +81,7 @@ import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { str, strArr } from './coerce';
 import { errorMessage } from '@mantle/std';
 import { isOwnerSurface, OWNER_ONLY_ERROR } from './surface';
-import { currentViewerLevel, currentWorkspaceScope } from '@mantle/db/viewer';
+import { currentWorkspaceScope, currentScope } from '@mantle/db/viewer';
 import { and as andWhere, eq as eqWhere } from 'drizzle-orm';
 import { db as scopedDb, nodes as nodesTable } from '@mantle/db';
 
@@ -882,7 +882,8 @@ async function teamReachableApps(ctx: Parameters<BuiltinToolDef['handler']>[1]) 
       .where(andWhere(eqWhere(nodesTable.ownerId, ctx.ownerId), eqWhere(nodesTable.type, 'app')));
     return new Set(rows.map((r) => r.id));
   }
-  const level = currentViewerLevel();
+  const scope = currentScope();
+  const level = scope.kind === 'level' ? scope.level : scope.kind === 'system' ? 'admin' : null;
   if (level === 'team') return listAppIdsUsedAt(ctx.ownerId, ['team', 'client', 'public']);
   if (level === 'client') return listAppIdsUsedAt(ctx.ownerId, ['client']);
   if (level !== 'admin') return new Set<string>();

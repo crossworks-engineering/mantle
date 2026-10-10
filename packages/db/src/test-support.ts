@@ -114,6 +114,11 @@ export async function createReadOnlyRole(
       sql.unsafe(`grant select on all tables in schema "${nspname}" to "${name}"`),
     );
   }
+  // What the demo's reader is granted besides SELECT (0256): the owner's
+  // app sidebar asks for the Team workspace.
+  await withRoleRetry(() =>
+    sql.unsafe(`grant execute on function "public"."mantle_brain_team_ws"() to "${name}"`),
+  );
   const url = new URL(adminUrl);
   url.username = name;
   url.password = password;

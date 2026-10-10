@@ -22,7 +22,7 @@
  * reads. A member's own folders and drafts are merged in by ./member-tree.
  */
 import { sql, type SQL } from 'drizzle-orm';
-import { currentSpaceScope, currentViewerLevel, db, withViewer } from '@mantle/db';
+import { currentSpaceScope, db, withViewer, isSystemScope } from '@mantle/db';
 import {
   TREE_KIND_SPECS,
   type ClientTreeFolder,
@@ -56,7 +56,7 @@ import {
 export type TreeReader = 'team' | 'client';
 
 function assertAdminScope(): void {
-  if (currentViewerLevel() !== 'admin' || currentSpaceScope()) {
+  if (!isSystemScope() || currentSpaceScope()) {
     throw new Error('reader tree called inside a viewer scope: call it on the admin pool');
   }
 }

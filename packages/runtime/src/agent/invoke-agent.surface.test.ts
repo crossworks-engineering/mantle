@@ -34,7 +34,8 @@ vi.mock('@mantle/db', async (importOriginal) => {
   return { ...actual, db: { select: () => chain }, bumpAgentUsage: vi.fn() };
 });
 vi.mock('@mantle/db/viewer', () => ({
-  currentViewerLevel: () => 'admin',
+  currentScope: () => ({ kind: 'system' }),
+  levelOfScope: () => 'admin',
   currentWorkspaceScope: () => null,
   levelsMeet: () => true,
 }));

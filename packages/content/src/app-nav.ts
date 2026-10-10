@@ -17,7 +17,7 @@
  */
 import { createHash } from 'node:crypto';
 import { and, desc, eq, sql } from 'drizzle-orm';
-import { apps, db, nodes } from '@mantle/db';
+import { apps, db, nodes, teamReadsSql } from '@mantle/db';
 import type {
   AppNavEntry,
   AppNavFolder,
@@ -31,7 +31,6 @@ import { reconcileAppMarks, reconcileAppNav } from './tree/apps-nav';
 import { recordItemOpened } from './tree/marks';
 import { listTreeFolders } from './tree/read';
 import { dataAccessOf } from './app-data-access';
-import { itemLevel } from './item-level';
 
 /** NOTIFY channel for any app-nav write (payload: anchor owner id). Consumed
  *  by server/web/lib/realtime.ts, which broadcasts it as type 'app-nav'. */
@@ -65,8 +64,8 @@ export async function listAppNavItems(ownerId: string): Promise<AppNavItem[]> {
       publishedBuild: apps.publishedBuild,
       draftBuild: apps.draftBuild,
       mcpAccess: apps.mcpAccess,
-      audience: nodes.audience,
-      inheritedLevel: nodes.inheritedLevel,
+      // Read below admin (workspaces W5b1: the Team grant, not the levels).
+      teamReads: teamReadsSql(),
     })
     .from(nodes)
     .leftJoin(apps, eq(apps.nodeId, nodes.id))
@@ -95,10 +94,7 @@ export async function listAppNavItems(ownerId: string): Promise<AppNavItem[]> {
       mcpAccess: r.mcpAccess === true,
       // Whether that switch reaches anyone now (access matrix N9): the
       // app_data tools reach a published app below admin only.
-      mcpReach:
-        r.mcpAccess === true &&
-        r.publishedBuild?.ok === true &&
-        itemLevel(r.audience, r.inheritedLevel) !== 'admin',
+      mcpReach: r.mcpAccess === true && r.publishedBuild?.ok === true && r.teamReads === true,
     };
   });
 }

@@ -19,7 +19,7 @@
  * on the admin pool, outside any viewer scope.
  */
 import { sql } from 'drizzle-orm';
-import { currentSpaceScope, currentViewerLevel, db, withViewer } from '@mantle/db';
+import { currentSpaceScope, db, withViewer, isSystemScope } from '@mantle/db';
 import type { AppLauncherFolder, ClientAppCard, MemberAppCard } from '@mantle/client-types';
 import { TREE_KIND_SPECS } from '@mantle/client-types/tree';
 import { projectAppIcon, projectAppTint } from '@mantle/content-core/app-nav';
@@ -128,7 +128,7 @@ export async function appLauncher(
   anchorId: string,
   reader: AppLauncherReader,
 ): Promise<{ apps: Array<MemberAppCard | ClientAppCard>; folders: AppLauncherFolder[] }> {
-  if (currentViewerLevel() !== 'admin' || currentSpaceScope()) {
+  if (!isSystemScope() || currentSpaceScope()) {
     throw new Error('app launcher called inside a viewer scope: call it on the admin pool');
   }
   const { apps, places }: { apps: Array<MemberAppCard | ClientAppCard>; places: AppPlace[] } =
