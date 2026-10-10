@@ -42,9 +42,7 @@ import { foldEmbeddedText } from './pages';
 /** Who the call reads for: a member login, a client login, or whoever the
  *  current viewer scope is (the owner's own paths, an agent at its level). */
 export type DrawReader =
-  | { kind: 'scope' }
-  | { kind: 'member'; loginId: string }
-  | { kind: 'client'; loginId: string };
+  { kind: 'scope' } | { kind: 'member'; loginId: string } | { kind: 'client'; loginId: string };
 
 export type ReadableDraw = {
   id: string;

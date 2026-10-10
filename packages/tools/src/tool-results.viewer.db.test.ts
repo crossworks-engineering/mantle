@@ -88,7 +88,9 @@ describe.skipIf(!URL)('read_result spills carry their level', () => {
       }),
     );
     const page = (traceId: string | null) =>
-      m.runInLevelRoleForTest('client', () => tr.readResultPage(owner, mine.handle, 1, 1000, { traceId }));
+      m.runInLevelRoleForTest('client', () =>
+        tr.readResultPage(owner, mine.handle, 1, 1000, { traceId }),
+      );
     expect(await page(turnA)).toMatchObject({ ok: true, text: 'turn A text' });
     // Another turn at the same level (another client login), and a reader
     // with no trace: not found.
@@ -105,7 +107,9 @@ describe.skipIf(!URL)('read_result spills carry their level', () => {
   });
 
   it('grep and query refuse the same way', async () => {
-    const g = await m.runInLevelRoleForTest('client', () => tr.grepResult(owner, handles.admin!, 'written'));
+    const g = await m.runInLevelRoleForTest('client', () =>
+      tr.grepResult(owner, handles.admin!, 'written'),
+    );
     expect(g).toMatchObject({ ok: false });
   });
 });

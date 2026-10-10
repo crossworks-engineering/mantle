@@ -86,10 +86,14 @@ describe.skipIf(!URL)('the client level after the audit fixes', () => {
 
   it('the client role reads no embedding config and only the preferences of a profile (A27)', async () => {
     await expect(
-      m.runInLevelRoleForTest('client', () => m.db.execute(sqlTag`select 1 from embedding_config limit 1`)),
+      m.runInLevelRoleForTest('client', () =>
+        m.db.execute(sqlTag`select 1 from embedding_config limit 1`),
+      ),
     ).rejects.toMatchObject({ cause: { code: '42501' } });
     await expect(
-      m.runInLevelRoleForTest('client', () => m.db.execute(sqlTag`select display_name from profiles limit 1`)),
+      m.runInLevelRoleForTest('client', () =>
+        m.db.execute(sqlTag`select display_name from profiles limit 1`),
+      ),
     ).rejects.toMatchObject({ cause: { code: '42501' } });
     await expect(
       m.runInLevelRoleForTest('client', () =>

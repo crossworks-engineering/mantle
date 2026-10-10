@@ -70,12 +70,16 @@ describe.skipIf(!URL)('team delegation reaches admin agents under the team role'
 
   it('the delegate roster lists the admin agent and its group at team', async () => {
     const { buildDelegateRoster } = await import('@mantle/tools');
-    const roster = await m.runInLevelRoleForTest('team', () => buildDelegateRoster(ownerId, [agentSlug]));
+    const roster = await m.runInLevelRoleForTest('team', () =>
+      buildDelegateRoster(ownerId, [agentSlug]),
+    );
     expect(roster).toContain(agentSlug);
     expect(roster).toContain(groupName);
     // The contrast: the client role reads agents by level, and this one is
     // an admin agent.
-    expect(await m.runInLevelRoleForTest('client', () => buildDelegateRoster(ownerId, [agentSlug]))).toBe('');
+    expect(
+      await m.runInLevelRoleForTest('client', () => buildDelegateRoster(ownerId, [agentSlug])),
+    ).toBe('');
   });
 
   it("invoke_agent's agent load finds the admin agent at team", async () => {

@@ -240,7 +240,9 @@ describe.skipIf(!URL)('the client role reads client items only, on every search 
 
   it('logins: no grant for the client role, the brain id still resolves', async () => {
     await expect(
-      m.runInLevelRoleForTest('client', () => m.db.execute(sqlTag`select id from auth.users limit 1`)),
+      m.runInLevelRoleForTest('client', () =>
+        m.db.execute(sqlTag`select id from auth.users limit 1`),
+      ),
     ).rejects.toMatchObject({ cause: { code: '42501' } });
     const [brain] = (await m.runInLevelRoleForTest('client', () =>
       m.db.execute(sqlTag`select mantle_brain_id() as id`),

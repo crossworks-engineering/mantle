@@ -367,8 +367,7 @@ async function loadResult(
     .where(where)
     .limit(1);
   if (!row) return null;
-  if (!levelCovers(spaceOrSystemLevel(), asViewerLevel(row.viewerLevel ?? 'admin')))
-    return null;
+  if (!levelCovers(spaceOrSystemLevel(), asViewerLevel(row.viewerLevel ?? 'admin'))) return null;
   // A level reader (not the system) never reads a spill of a non-Admin
   // workspace's turn: those are read through the workspace rule only.
   if (!isUnscoped() && row.workspaceId && row.wsIsAdmin !== true) return null;

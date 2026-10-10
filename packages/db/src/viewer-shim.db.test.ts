@@ -29,7 +29,6 @@ describe.skipIf(!URL)('the withViewer shim (W5b2, R6)', () => {
   const gone = randomUUID();
   const disabled = randomUUID();
   const ids: Record<string, string> = {};
-  let admin = '';
   let team = '';
 
   const sys = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
@@ -73,7 +72,6 @@ describe.skipIf(!URL)('the withViewer shim (W5b2, R6)', () => {
     const ws = await sys<{ key: string; id: string }>(
       sql`select bridge_key as key, id::text as id from workspaces where owner_id = ${owner}`,
     );
-    admin = ws.find((w) => w.key === 'admin')!.id;
     team = ws.find((w) => w.key === 'team')!.id;
     await sys(sql`update agents set workspace_id = ${team} where id = ${agentId}`);
     // `gone` leaves Team (a Moderator removed it); `disabled` is disabled.

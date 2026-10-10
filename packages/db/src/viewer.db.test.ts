@@ -124,7 +124,9 @@ describe.skipIf(!URL)('viewer pools on Postgres', () => {
 
   it('a table the grant matrix does not name is an error, not an empty result', async () => {
     await expect(
-      m.runInLevelRoleForTest('team', () => m.db.execute(sqlTag`select 1 from pg_catalog.pg_authid`)),
+      m.runInLevelRoleForTest('team', () =>
+        m.db.execute(sqlTag`select 1 from pg_catalog.pg_authid`),
+      ),
     ).rejects.toMatchObject({ cause: { code: INSUFFICIENT_PRIVILEGE } });
   });
 });

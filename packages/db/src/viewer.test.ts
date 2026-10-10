@@ -72,7 +72,11 @@ describe('personal-space scope (Phase 2)', () => {
 
   it('a lower withViewer leaves the space for the brain at that level (no drafts)', async () => {
     const seen = await inSpace(() =>
-      runInLevelRoleForTest('team', async () => [currentSpaceScope(), currentScopeTx(), readsDrafts()]),
+      runInLevelRoleForTest('team', async () => [
+        currentSpaceScope(),
+        currentScopeTx(),
+        readsDrafts(),
+      ]),
     );
     expect(seen).toEqual([null, null, false]);
   });
@@ -168,9 +172,9 @@ describe('withViewer', () => {
 
   it('a client scope refuses public work and a public scope client work (never widened)', async () => {
     await runInLevelRoleForTest('client', async () => {
-      await expect(runInLevelRoleForTest('public', async () => currentViewerLevel())).rejects.toBeInstanceOf(
-        ViewerLevelConflictError,
-      );
+      await expect(
+        runInLevelRoleForTest('public', async () => currentViewerLevel()),
+      ).rejects.toBeInstanceOf(ViewerLevelConflictError);
       // admin and team requests keep the client scope.
       expect(await runInLevelRoleForTest('team', async () => currentViewerLevel())).toBe('client');
       expect(await runInLevelRoleForTest('admin', async () => currentViewerLevel())).toBe('client');
@@ -184,8 +188,12 @@ describe('withViewer', () => {
     });
     // A team scope still lowers to either.
     await runInLevelRoleForTest('team', async () => {
-      expect(await runInLevelRoleForTest('public', async () => currentViewerLevel())).toBe('public');
-      expect(await runInLevelRoleForTest('client', async () => currentViewerLevel())).toBe('client');
+      expect(await runInLevelRoleForTest('public', async () => currentViewerLevel())).toBe(
+        'public',
+      );
+      expect(await runInLevelRoleForTest('client', async () => currentViewerLevel())).toBe(
+        'client',
+      );
     });
   });
 

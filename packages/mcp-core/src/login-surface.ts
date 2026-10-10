@@ -56,10 +56,7 @@ import { effectiveToolSlugs, resolveAgentToolGroups } from '@mantle/runtime/agen
 import { CLIENT_RESPONDER_SLUG, TEAM_RESPONDER_SLUG } from '@mantle/runtime/assistant';
 import { publicErrorMessage, publicToolError } from '@mantle/std';
 import { watchDatabaseErrors } from '@mantle/std/db-watch';
-import {
-  MANTLE_MCP_INSTRUCTIONS,
-  registerMantleTools,
-} from './build-server';
+import { MANTLE_MCP_INSTRUCTIONS, registerMantleTools } from './build-server';
 import { zodShapeFromJsonSchema } from './register/zod-schema';
 import { addTool } from './register/tool-input';
 import { withModelImages } from './register/model-images';
@@ -230,9 +227,7 @@ export async function resolveLoginToolRows(
     if (slugs.length === 0) return [];
     return resolveTools(caller.anchorId, slugs);
   });
-  const builtins = rows.filter(
-    (r) => loginMayHaveTool(r, caller.write),
-  );
+  const builtins = rows.filter((r) => loginMayHaveTool(r, caller.write));
   // Connector tools (team apps Phase 2; W5b2): outside the responder's
   // groups and the client cut, exactly the tools the call would pass
   // (loginConnectorRule): the connector a resource of one of the login's

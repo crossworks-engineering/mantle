@@ -87,13 +87,6 @@ describe.skipIf(!URL)('a shared note serves the pictures and files it names', ()
       settings: { served },
     }) as unknown as Share;
 
-  /** An admin raises an item back to admin (under the test bypass). */
-  const raise = (nodeId: string) =>
-    m.db.transaction(async (tx) => {
-      await tx.execute(sqlTag`select mantle_heads_bypass('test fixture')`);
-      await tx.execute(sqlTag`update nodes set audience = 'admin' where id = ${nodeId}`);
-    });
-
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
     m = await import('@mantle/db');
