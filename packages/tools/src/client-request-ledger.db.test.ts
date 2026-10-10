@@ -49,8 +49,24 @@ describe.skipIf(!URL)('client request caps count the filing ledger', () => {
     await m.closeDb();
   });
 
+  // In the client's own scope, as its turn runs (run-team-turn.ts).
   const file = (messageId: string, n: number) =>
-    tool.handler({ title: `${tag} request ${n}`, body: 'Please.' }, ctx(messageId));
+    m.withViewer('client', { login: loginId }, () =>
+      tool.handler({ title: `${tag} request ${n}`, body: 'Please.' }, ctx(messageId)),
+    );
+
+  it("files nothing outside the client's own scope (system work, another login)", async () => {
+    const msg = randomUUID();
+    const bare = await tool.handler({ title: `${tag} bare`, body: 'Please.' }, ctx(msg));
+    expect(bare.ok).toBe(false);
+    const other = await m.withViewer('client', { login: randomUUID() }, () =>
+      tool.handler({ title: `${tag} other`, body: 'Please.' }, ctx(msg)),
+    );
+    expect(other.ok).toBe(false);
+    const [filed] = await admin<{ n: number }[]>`
+      select count(*)::int as n from client_request_filings where login_id = ${loginId}`;
+    expect(filed?.n).toBe(0);
+  });
 
   it('3 a message: the 4th in the same message is refused, a new message files', async () => {
     const msg = randomUUID();

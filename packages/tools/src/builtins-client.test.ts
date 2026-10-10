@@ -19,6 +19,9 @@ const h = vi.hoisted(() => ({
   counts: { turn: 0, day: 0 },
   systemCalls: 0,
   ledger: [] as Record<string, unknown>[],
+  // The scope the handler runs in: the client's own (withViewer for its
+  // login, as run-team-turn opens it) unless a test says otherwise.
+  scope: null as Record<string, unknown> | null,
 }));
 
 vi.mock('@mantle/db', async (importOriginal) => ({
@@ -36,6 +39,7 @@ vi.mock('@mantle/db/viewer', async (importOriginal) => ({
     h.systemCalls++;
     return fn();
   },
+  currentScope: () => h.scope ?? { kind: 'user', loginId: LOGIN, ws: [], modWs: [] },
 }));
 
 vi.mock('@mantle/content', async (importOriginal) => ({
@@ -110,6 +114,7 @@ beforeEach(() => {
   h.counts = { turn: 0, day: 0 };
   h.systemCalls = 0;
   h.ledger = [];
+  h.scope = null;
 });
 
 describe('client tools serve a client surface only', () => {
@@ -244,5 +249,35 @@ describe('client_request_create', () => {
     expect((perDay as { error: string }).error).toMatch(/10 requests in 24 hours/);
     expect(h.filed).toEqual([]);
     expect(h.ledger).toEqual([]);
+  });
+
+  it("files only from the client's own scope: another login's, system work or a level scope files nothing", async () => {
+    const { client_request_create } = await import('./builtins-client');
+    const other = '99999999-9999-4999-8999-999999999999';
+    const scopes = [
+      { kind: 'user', loginId: other, ws: [], modWs: [] },
+      { kind: 'assistant', loginId: null, ws: [], modWs: [] },
+      { kind: 'system' },
+      { kind: 'level', level: 'client' },
+    ];
+    for (const scope of scopes) {
+      h.scope = scope;
+      const res = await client_request_create.handler(
+        { title: 't', body: 'b' },
+        clientCtx({ inboundMessageId: 'msg-1' }) as never,
+      );
+      expect(res.ok, JSON.stringify(scope)).toBe(false);
+    }
+    // Refused before any exit from the scope: nothing counted, filed or recorded.
+    expect(h.systemCalls).toBe(0);
+    expect(h.filed).toEqual([]);
+    expect(h.ledger).toEqual([]);
+    // The same login in another case is still the client's own scope.
+    h.scope = { kind: 'user', loginId: LOGIN.toUpperCase(), ws: [], modWs: [] };
+    const own = await client_request_create.handler(
+      { title: 't', body: 'b' },
+      clientCtx({ inboundMessageId: 'msg-2' }) as never,
+    );
+    expect(own.ok).toBe(true);
   });
 });

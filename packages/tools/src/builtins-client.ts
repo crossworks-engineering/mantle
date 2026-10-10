@@ -30,7 +30,7 @@ import {
   type TaskPriority,
 } from '@mantle/content';
 import { CLIENT_REQUEST_SOURCE, withViewer } from '@mantle/db';
-import { asSystem } from '@mantle/db/viewer';
+import { asSystem, currentScope } from '@mantle/db/viewer';
 import type { ClientSharedItem, ClientSharedRow } from '@mantle/client-types';
 import { errorMessage, UUID_RE } from '@mantle/std';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
@@ -50,6 +50,16 @@ const SEARCH_OPEN_MAX = 40;
 
 const NOT_CLIENT =
   "This tool serves the client you are chatting with, so it only runs in a client's own chat.";
+
+/** Whether the current scope is a workspace scope opened for `loginId`. */
+function scopeIsLogin(loginId: string): boolean {
+  const scope = currentScope();
+  return (
+    'loginId' in scope &&
+    typeof scope.loginId === 'string' &&
+    scope.loginId.toLowerCase() === loginId.toLowerCase()
+  );
+}
 
 /** The client this turn works for, or null: only a client surface counts. */
 export function clientOf(ctx: ToolHandlerContext): { loginId: string; name: string | null } | null {
@@ -327,6 +337,11 @@ export const client_request_create: BuiltinToolDef = {
     if (!title || !body) return { ok: false, error: 'title and body required' };
     // Provenance from the server-stamped surface, never from the model.
     const { loginId, contactName, inboundMessageId } = s;
+    // The exits below leave the client's own scope ('member-request'): only
+    // for the login that scope was opened for (withViewer for the client's
+    // login, run-team-turn.ts). Any other scope, system work included, files
+    // nothing on anyone's behalf.
+    if (!scopeIsLogin(loginId)) return { ok: false, error: NOT_CLIENT };
 
     // The caps count the filing ledger, not the live tasks (C5 audit fix
     // I12): an admin deleting a request never gives the quota back. Admin
