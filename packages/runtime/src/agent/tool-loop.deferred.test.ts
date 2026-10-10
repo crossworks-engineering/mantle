@@ -51,7 +51,13 @@ vi.mock('@mantle/tools', async () => {
   };
 });
 
-vi.mock('@mantle/db', () => ({ db: {}, systemDb: {}, pendingToolCalls: {} }));
+vi.mock('@mantle/db', () => ({
+  db: {},
+  systemDb: {},
+  pendingToolCalls: {},
+  // The R6 shim: no database here, the scope is not under test.
+  withViewer: vi.fn(async (_level: unknown, _for: unknown, fn: () => Promise<unknown>) => fn()),
+}));
 
 vi.mock('@mantle/tools/client-sourced', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),

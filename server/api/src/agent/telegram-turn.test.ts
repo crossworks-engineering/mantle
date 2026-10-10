@@ -153,6 +153,9 @@ vi.mock('@mantle/db', () => {
     withNodeInsertHeads: async (_o: unknown, _i: unknown, fn: (tx: unknown) => unknown) => fn(db),
     withNodeDeleteHeads: async (_ids: unknown, fn: (tx: unknown) => unknown) => fn(db),
     withDeadlockRetry: async (fn: () => unknown) => fn(),
+    // The R6 shim: a Telegram turn is an admin-level agent's, which runs
+    // as is (system work).
+    withViewer: async (_level: unknown, _for: unknown, fn: () => unknown) => fn(),
     agents: table('agents'),
     toolGroups: table('toolGroups'),
     channels: table('channels'),

@@ -1,20 +1,46 @@
 /**
- * The responder loop runs at the agent's level (member logins Phase 0b): for
- * a team-level agent, the context load, the backup-route lookup, the message
- * build and the tool loop all start inside the team viewer scope. The audit
- * removed this wrap and every test stayed green; this pins it. The tool loop
- * and tracing are faked; each collaborator records `currentViewerLevel()`.
+ * The responder loop runs in the agent's scope (member logins Phase 0b,
+ * workspaces W5b2): for a team-level agent, the context load, the
+ * backup-route lookup, the message build and the tool loop all start inside
+ * the scope the R6 shim (withViewer) enters for it, never as system work.
+ * The audit removed this wrap and every test stayed green; this pins it. The
+ * tool loop and tracing are faked; each collaborator records the scope it
+ * runs in. withViewer enters the scope viewerScopeFor gives an agent on no
+ * workspace.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { currentViewerLevel } from '@mantle/db/viewer';
+import { currentScope } from '@mantle/db/viewer';
 import type { Agent } from '@mantle/db';
 import type { ConversationContext } from '../agent';
 import type { AssembledResponderTurn } from './assemble-turn';
 
 const h = vi.hoisted(() => ({ levels: [] as string[] }));
 
+/** The scope the code runs in: 'admin' for system work, else the workspace
+ *  scope's kind and workspaces. */
+function where(): string {
+  const s = currentScope();
+  if (s.kind === 'system') return 'admin';
+  if (s.kind === 'level') return `level:${s.level}`;
+  return `${s.kind}(${s.ws.join(',')})`;
+}
+
+vi.mock('@mantle/db', async (importOriginal) => {
+  const { runInViewerScope } = await import('@mantle/db/viewer');
+  return {
+    ...(await importOriginal<Record<string, unknown>>()),
+    // The R6 shim without a database: 'admin' is system work; any lower
+    // level enters the workspace scope of an agent on no workspace.
+    withViewer: vi.fn((level: string, _for: unknown, fn: () => Promise<unknown>) =>
+      level === 'admin'
+        ? fn()
+        : runInViewerScope({ kind: 'assistant', loginId: null, ws: [], modWs: [] }, fn),
+    ),
+  };
+});
+
 vi.mock('../agent', async () => {
-  const { currentViewerLevel: level } = await import('@mantle/db/viewer');
+  const level = where;
   return {
     runToolLoop: vi.fn(async (args: { agentLevel?: string }) => {
       h.levels.push(`loop:${level()}`, `loop-arg:${args.agentLevel}`);
@@ -92,11 +118,11 @@ const run = (audience: string) =>
     logPrefix: '[test]',
     assembled: ASSEMBLED,
     loadContext: async () => {
-      h.levels.push(`context:${currentViewerLevel()}`);
+      h.levels.push(`context:${where()}`);
       return CTX;
     },
     buildMessages: () => {
-      h.levels.push(`messages:${currentViewerLevel()}`);
+      h.levels.push(`messages:${where()}`);
       return [{ role: 'user' as const, content: 'hi' }];
     },
     surface: { kind: 'team', loginId: 'login-1', privateReads: false } as never,
@@ -106,15 +132,15 @@ beforeEach(() => {
   h.levels = [];
 });
 
-describe('runResponderLoop runs at the agent level', () => {
-  it('a team agent: context, backup lookup, messages and the loop run at team', async () => {
+describe('runResponderLoop runs in the agent scope', () => {
+  it('a team agent: context, backup lookup, messages and the loop run in its workspace scope', async () => {
     const res = await run('team');
     expect(res.reply).toBe('ok');
     expect(h.levels).toEqual([
-      'context:team',
-      'backup:team',
-      'messages:team',
-      'loop:team',
+      'context:assistant()',
+      'backup:assistant()',
+      'messages:assistant()',
+      'loop:assistant()',
       'loop-arg:team',
     ]);
   });

@@ -69,7 +69,7 @@ vi.mock('@mantle/content', async (importOriginal) => ({
   // chat-images.viewer.db.test.ts): here, that the route sends its output.
   chatTextsForReader: vi.fn(async (...args: unknown[]) => {
     h.readerCalls.push(args);
-    return (args[2] as string[]).map((t) => `${t} [for the member]`);
+    return (args[3] as string[]).map((t) => `${t} [for the member]`);
   }),
 }));
 
@@ -232,7 +232,7 @@ describe('GET /api/member/chat', () => {
         messages: { text: string }[];
       };
       expect(body.messages.map((m) => m.text)).toEqual(['see ![x](media:abc) [for the member]']);
-      expect(h.readerCalls.at(-1)).toEqual([ANCHOR, 'team', ['see ![x](media:abc)']]);
+      expect(h.readerCalls.at(-1)).toEqual([ANCHOR, 'team', LOGIN, ['see ![x](media:abc)']]);
     } finally {
       h.thread = [];
     }

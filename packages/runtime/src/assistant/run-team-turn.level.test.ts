@@ -1,16 +1,18 @@
 /**
- * A member's team turn runs at the agent's level (member logins Phase 0b,
- * plan section 2b): with team-responder at `team`, everything runTeamTurn
- * reads for the turn (the owner's preferences, the member's thread, the
- * retrieval, the assembly, the loop) runs in the team viewer scope, with no
- * outer wrap from the caller. The audit removed this wrap and every test
- * stayed green; this pins it. No database: the agent row, the content
- * functions and the inner stages are faked, each recording
- * `currentViewerLevel()`. The inner stages wrap themselves too; faking them
- * here is what makes this test about runTeamTurn's own wrap.
+ * A member's team turn runs in the agent's scope (member logins Phase 0b,
+ * plan section 2b, workspaces W5b2): with team-responder at `team`,
+ * everything runTeamTurn reads for the turn (the owner's preferences, the
+ * member's thread, the retrieval, the assembly, the loop) runs in the scope
+ * the R6 shim (withViewer) enters for the agent, with no outer wrap from the
+ * caller; a client turn runs all of it in the client login's own scope. The
+ * audit removed this wrap and every test stayed green; this pins it. No
+ * database: the agent row, the content functions and the inner stages are
+ * faked, each recording the scope it runs in, and withViewer enters a fake
+ * scope that names whom it acts for. The inner stages wrap themselves too;
+ * faking them here is what makes this test about runTeamTurn's own wrap.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { currentViewerLevel } from '@mantle/db/viewer';
+import { currentScope } from '@mantle/db/viewer';
 
 const h = vi.hoisted(() => ({
   levels: [] as string[],
@@ -23,15 +25,24 @@ const h = vi.hoisted(() => ({
   loopTools: [] as string[],
 }));
 
+/** The scope the code runs in: 'admin' for system work, else the workspace
+ *  scope's kind and workspaces. */
+function where(): string {
+  const s = currentScope();
+  if (s.kind === 'system') return 'admin';
+  if (s.kind === 'level') return `level:${s.level}`;
+  return `${s.kind}(${s.ws.join(',')})`;
+}
+
 vi.mock('@mantle/db', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
+  const { runInViewerScope } = await import('@mantle/db/viewer');
   const chain: Record<string, unknown> = {};
   for (const m of ['from', 'where']) chain[m] = () => chain;
-  const { currentViewerLevel: level } = await import('@mantle/db/viewer');
   chain['limit'] = async () => {
     // Where the agent row is read: a client turn reads it inside its own
     // client wrap (client logins C4, N7).
-    h.levels.push(`agent:${level()}`);
+    h.levels.push(`agent:${where()}`);
     return [
       {
         id: 'agent-1',
@@ -46,7 +57,23 @@ vi.mock('@mantle/db', async (importOriginal) => {
       },
     ];
   };
-  return { ...actual, db: { select: () => chain } };
+  return {
+    ...actual,
+    db: { select: () => chain },
+    // The R6 shim without a database: 'admin' is system work; a login reads
+    // its workspaces (here one named for it); an agent on no workspace reads
+    // none.
+    withViewer: vi.fn((level: string, actsFor: { login?: string }, fn: () => Promise<unknown>) =>
+      level === 'admin'
+        ? fn()
+        : runInViewerScope(
+            actsFor.login
+              ? { kind: 'user', loginId: actsFor.login, ws: [`ws-of-${actsFor.login}`], modWs: [] }
+              : { kind: 'assistant', loginId: null, ws: [], modWs: [] },
+            fn,
+          ),
+    ),
+  };
 });
 
 vi.mock('@mantle/api-keys', async (importOriginal) => ({
@@ -60,8 +87,7 @@ vi.mock('@mantle/voice', async (importOriginal) => ({
 }));
 
 vi.mock('@mantle/content', async (importOriginal) => {
-  const { currentViewerLevel: level } = await import('@mantle/db/viewer');
-  const r = (what: string) => h.levels.push(`${what}:${level()}`);
+  const r = (what: string) => h.levels.push(`${what}:${where()}`);
   let n = 0;
   return {
     ...(await importOriginal<Record<string, unknown>>()),
@@ -86,7 +112,7 @@ vi.mock('@mantle/content', async (importOriginal) => {
 });
 
 vi.mock('../agent', async (importOriginal) => {
-  const { currentViewerLevel: level } = await import('@mantle/db/viewer');
+  const level = where;
   return {
     ...(await importOriginal<Record<string, unknown>>()),
     loadConversationContext: vi.fn(async () => {
@@ -108,7 +134,7 @@ vi.mock('../agent', async (importOriginal) => {
 });
 
 vi.mock('./assemble-turn', async () => {
-  const { currentViewerLevel: level } = await import('@mantle/db/viewer');
+  const level = where;
   return {
     assembleResponderTurn: vi.fn(async () => {
       h.levels.push(`assemble:${level()}`);
@@ -124,7 +150,7 @@ vi.mock('./assemble-turn', async () => {
 });
 
 vi.mock('./responder-loop', async (importOriginal) => {
-  const { currentViewerLevel: level } = await import('@mantle/db/viewer');
+  const level = where;
   const actual = await importOriginal<typeof import('./responder-loop')>();
   return {
     ...actual,
@@ -164,21 +190,21 @@ beforeEach(() => {
   h.loopTools = [];
 });
 
-describe('runTeamTurn runs at the agent level', () => {
-  it('team-responder at team: every read of the turn runs at team, with no outer wrap', async () => {
-    expect(currentViewerLevel()).toBe('admin'); // the caller is at admin
+describe('runTeamTurn runs in the agent scope', () => {
+  it('team-responder at team: every read of the turn runs in its scope, with no outer wrap', async () => {
+    expect(where()).toBe('admin'); // the caller is system work
     const res = await runTeamTurn('owner-1', 'what does the handbook say?', {
       loginId: 'login-1',
     });
     expect(res.reply).toBe('ok, done');
     expect(h.levels).toEqual([
       'agent:admin',
-      'prefs:team',
+      'prefs:assistant()',
       // The thread first: a short follow-up is enriched from it.
-      'thread:team',
-      'context:team',
-      'assemble:team',
-      'loop:team',
+      'thread:assistant()',
+      'context:assistant()',
+      'assemble:assistant()',
+      'loop:assistant()',
     ]);
   });
 
@@ -191,21 +217,23 @@ describe('runTeamTurn runs at the agent level', () => {
   });
 });
 
-describe('runClientTurn runs at client level twice over (client logins C4)', () => {
+describe('runClientTurn runs in the client login scope (client logins C4)', () => {
   const opts = { loginId: 'login-c', sessionEpoch: 3 };
+  const CLIENT = 'user(ws-of-login-c)';
 
-  it('the whole turn, the agent lookup included, runs at client; no retrieval context', async () => {
+  it('the whole turn, the agent lookup included, runs in the login scope; no retrieval context', async () => {
     h.audience = 'client';
     const res = await runClientTurn('owner-1', 'what is shared with me?', opts);
     expect(res.reply).toBe('ok, done');
     expect(h.levels).toEqual([
       'may-run:admin',
-      // The client's own wrap: the agent row is read on the client role too.
-      'agent:client',
-      'prefs:client',
-      'thread:client',
-      'assemble:client',
-      'loop:client',
+      // The client's own wrap: the agent row is read in the login scope too,
+      // and the agent's own wrap stays inside it, never wider.
+      `agent:${CLIENT}`,
+      `prefs:${CLIENT}`,
+      `thread:${CLIENT}`,
+      `assemble:${CLIENT}`,
+      `loop:${CLIENT}`,
     ]);
   });
 
@@ -230,7 +258,7 @@ describe('runClientTurn runs at client level twice over (client logins C4)', () 
     await expect(runClientTurn('owner-1', 'hello', opts)).rejects.toThrow(
       /only chat with a client-level agent/,
     );
-    expect(h.levels).toEqual(['may-run:admin', 'agent:client']);
+    expect(h.levels).toEqual(['may-run:admin', `agent:${CLIENT}`]);
   });
 });
 

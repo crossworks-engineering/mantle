@@ -1,15 +1,26 @@
 /**
- * The tool loop runs at the agent's level (member logins Phase 0b): for a
- * team-level agent, the model call and every tool dispatch run inside the
- * team viewer scope, so row level security decides what the tools read.
- * The audit removed this wrap and every test stayed green; this pins it.
- * No database: the dispatcher and the model are faked, and each records
- * `currentViewerLevel()` at the moment it runs.
+ * The tool loop runs in the agent's scope (member logins Phase 0b, workspaces
+ * W5b2): for a team-level agent, the model call and every tool dispatch run
+ * inside the scope the R6 shim (withViewer) enters for it, never as system
+ * work, so the grants decide what the tools read. The audit removed this wrap
+ * and every test stayed green; this pins it. No database: the dispatcher and
+ * the model are faked, each records the scope it runs in, and withViewer
+ * enters the scope viewerScopeFor gives an agent on no workspace (it reads
+ * nothing).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { currentViewerLevel } from '@mantle/db/viewer';
+import { currentScope } from '@mantle/db/viewer';
 
 const h = vi.hoisted(() => ({ levels: [] as string[] }));
+
+/** The scope the code runs in: 'admin' for system work, else the workspace
+ *  scope's kind and workspaces. */
+function where(): string {
+  const s = currentScope();
+  if (s.kind === 'system') return 'admin';
+  if (s.kind === 'level') return `level:${s.level}`;
+  return `${s.kind}(${s.ws.join(',')})`;
+}
 
 vi.mock('@mantle/tools', async () => ({
   validateToolArgs: (
@@ -24,7 +35,7 @@ vi.mock('@mantle/tools', async () => ({
   PRIVATE_OUTPUT_TOOL_SLUGS: new Set<string>(),
   getDynamicSchema: () => null,
   dispatchTool: vi.fn(async () => {
-    h.levels.push(`dispatch:${currentViewerLevel()}`);
+    h.levels.push(`dispatch:${where()}`);
     return { ok: true, output: { ok: 1 } };
   }),
   resolveTool: vi.fn(async () => null),
@@ -45,13 +56,23 @@ vi.mock('@mantle/tools', async () => ({
   notifyPendingCreated: vi.fn(async () => {}),
 }));
 
-vi.mock('@mantle/db', () => ({
-  get systemDb(): unknown {
-    return (this as { db: unknown }).db;
-  },
-  db: {},
-  pendingToolCalls: {},
-}));
+vi.mock('@mantle/db', async () => {
+  const { runInViewerScope } = await import('@mantle/db/viewer');
+  return {
+    get systemDb(): unknown {
+      return (this as { db: unknown }).db;
+    },
+    db: {},
+    pendingToolCalls: {},
+    // The R6 shim without a database: 'admin' is system work; any lower
+    // level enters the workspace scope of an agent on no workspace.
+    withViewer: vi.fn((level: string, _for: unknown, fn: () => Promise<unknown>) =>
+      level === 'admin'
+        ? fn()
+        : runInViewerScope({ kind: 'assistant', loginId: null, ws: [], modWs: [] }, fn),
+    ),
+  };
+});
 
 import { runToolLoop } from './tool-loop';
 import type { ChatDispatcher, ChatOptions, ChatResult } from '@mantle/voice';
@@ -76,7 +97,7 @@ function adapter(): ChatDispatcher {
     providerId: 'openrouter',
     adapterName: 'fake-chat',
     chat: vi.fn(async (_opts: ChatOptions): Promise<ChatResult> => {
-      h.levels.push(`model:${currentViewerLevel()}`);
+      h.levels.push(`model:${where()}`);
       n += 1;
       if (n === 1) {
         return {
@@ -108,12 +129,12 @@ beforeEach(() => {
   h.levels = [];
 });
 
-describe('runToolLoop runs at the agent level', () => {
-  it('a team agent: the model call and the tool dispatch run at team', async () => {
+describe('runToolLoop runs in the agent scope', () => {
+  it('a team agent: the model call and the tool dispatch run in its workspace scope', async () => {
     const res = await run({ agentId: 'a1', agentSlug: 'team-responder', agentLevel: 'team' });
     expect(res.reply).toBe('done');
-    expect(h.levels).toEqual(['model:team', 'dispatch:team', 'model:team']);
-    expect(currentViewerLevel()).toBe('admin'); // the scope ends with the loop
+    expect(h.levels).toEqual(['model:assistant()', 'dispatch:assistant()', 'model:assistant()']);
+    expect(where()).toBe('admin'); // the scope ends with the loop
   });
 
   it('control: an admin agent runs at admin', async () => {

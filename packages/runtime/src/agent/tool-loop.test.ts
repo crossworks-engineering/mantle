@@ -107,6 +107,8 @@ vi.mock('@mantle/db', () => ({
     })),
   },
   pendingToolCalls: {},
+  // The R6 shim: no database here, the scope is not under test.
+  withViewer: vi.fn(async (_level: unknown, _for: unknown, fn: () => Promise<unknown>) => fn()),
 }));
 
 // The client-sourced scan (client logins C4): a stand-in that marks the turn

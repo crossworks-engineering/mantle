@@ -100,7 +100,7 @@ vi.mock('@mantle/content', async (importOriginal) => ({
   // chat-images.viewer.db.test.ts): here, that the route sends its output.
   chatTextsForReader: vi.fn(async (...args: unknown[]) => {
     h.readerCalls.push(args);
-    return (args[2] as string[]).map((t) => `${t} [for the client]`);
+    return (args[3] as string[]).map((t) => `${t} [for the client]`);
   }),
 }));
 
@@ -263,8 +263,9 @@ describe('GET /api/client/chat', () => {
     expect(anchor).toBe(ANCHOR);
     expect(contact).toBe('');
     expect(opts).toMatchObject({ loginId: LOGIN, before: '2026-09-29T11:00:00Z' });
-    // The pictures are rewritten for this brain, at the client level.
-    expect(h.readerCalls.at(-1)).toEqual([ANCHOR, 'client', ['hello']]);
+    // The pictures are rewritten for this brain, for the session's login
+    // (what its workspaces hold).
+    expect(h.readerCalls.at(-1)).toEqual([ANCHOR, 'client', LOGIN, ['hello']]);
   });
 
   it('agent null while client-responder is not at client level', async () => {

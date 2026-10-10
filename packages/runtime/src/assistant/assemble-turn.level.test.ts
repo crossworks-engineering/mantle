@@ -1,14 +1,40 @@
 /**
- * The responder-turn assembly runs at the agent's level (member logins Phase
- * 0b): for a team-level agent, the skill, tool-group and tool lookups (and
- * anything else the prompt derives from the brain) run in the team viewer
- * scope. The audit removed this wrap and every test stayed green; this pins
- * it. Collaborators are faked; each records `currentViewerLevel()`.
+ * The responder-turn assembly runs in the agent's scope (member logins Phase
+ * 0b, workspaces W5b2): for a team-level agent, the skill, tool-group and
+ * tool lookups (and anything else the prompt derives from the brain) run in
+ * the scope the R6 shim (withViewer) enters for it, never as system work.
+ * The audit removed this wrap and every test stayed green; this pins it.
+ * Collaborators are faked; each records the scope it runs in. withViewer
+ * enters the scope viewerScopeFor gives an agent on no workspace.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { currentScope } from '@mantle/db/viewer';
 import type { Agent } from '@mantle/db';
 
 const h = vi.hoisted(() => ({ levels: [] as string[] }));
+
+/** The scope the code runs in: 'admin' for system work, else the workspace
+ *  scope's kind and workspaces. */
+function where(): string {
+  const s = currentScope();
+  if (s.kind === 'system') return 'admin';
+  if (s.kind === 'level') return `level:${s.level}`;
+  return `${s.kind}(${s.ws.join(',')})`;
+}
+
+vi.mock('@mantle/db', async (importOriginal) => {
+  const { runInViewerScope } = await import('@mantle/db/viewer');
+  return {
+    ...(await importOriginal<Record<string, unknown>>()),
+    // The R6 shim without a database: 'admin' is system work; any lower
+    // level enters the workspace scope of an agent on no workspace.
+    withViewer: vi.fn((level: string, _for: unknown, fn: () => Promise<unknown>) =>
+      level === 'admin'
+        ? fn()
+        : runInViewerScope({ kind: 'assistant', loginId: null, ws: [], modWs: [] }, fn),
+    ),
+  };
+});
 
 vi.mock('@mantle/decisions', () => ({
   loadDelegates: vi.fn(async () => []),
@@ -17,8 +43,7 @@ vi.mock('@mantle/decisions', () => ({
 }));
 
 vi.mock('../agent', async () => {
-  const { currentViewerLevel: level } = await import('@mantle/db/viewer');
-  const rec = (what: string) => h.levels.push(`${what}:${level()}`);
+  const rec = (what: string) => h.levels.push(`${what}:${where()}`);
   return {
     isBuiltinReadOnly: () => true,
     composeSystemPromptWithSkills: (prompt: string) => prompt,
@@ -95,12 +120,12 @@ beforeEach(() => {
   h.levels = [];
 });
 
-describe('assembleResponderTurn runs at the agent level', () => {
-  it('a team agent: skills, groups and tools resolve at team', async () => {
+describe('assembleResponderTurn runs in the agent scope', () => {
+  it('a team agent: skills, groups and tools resolve in its workspace scope', async () => {
     const a = await assemble('team');
     expect(a.allowedTools.map((t) => t.slug)).toContain('search_nodes');
-    expect(h.levels).toContain('tools:team');
-    expect(h.levels.filter((l) => !l.endsWith(':team'))).toEqual([]);
+    expect(h.levels).toContain('tools:assistant()');
+    expect(h.levels.filter((l) => !l.endsWith(':assistant()'))).toEqual([]);
   });
 
   it('control: an admin agent resolves at admin', async () => {
