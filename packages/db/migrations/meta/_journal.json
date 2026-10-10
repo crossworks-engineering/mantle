@@ -1807,6 +1807,13 @@
       "when": 1790194560000,
       "tag": "0258_workspaces_app_write",
       "breakpoints": true
+    },
+    {
+      "idx": 259,
+      "version": "7",
+      "when": 1790194620000,
+      "tag": "0259_workspaces_w5b1_fixes_2",
+      "breakpoints": true
     }
   ]
 }

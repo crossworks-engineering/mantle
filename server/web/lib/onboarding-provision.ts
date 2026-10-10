@@ -22,6 +22,7 @@ import {
   PERSONA_TOOL_GROUP_SLUGS,
 } from '@/lib/system-manifest';
 import type { ProvisionResult } from '@mantle/client-types';
+import { attachDefaultAssistantsQuietly } from './workspaces-migrate';
 export type { ProvisionResult };
 
 /**
@@ -202,6 +203,9 @@ export async function provisionDefaults(ownerId: string): Promise<ProvisionResul
   if (openrouter) {
     seededSpecialists = await seedSpecialistStack(ownerId);
   }
+  // The persona and the team responder now exist: put them on Admin and Team
+  // (a fresh install was migrated at signup, before they existed; W5b1 M-new).
+  await attachDefaultAssistantsQuietly('onboarding');
 
   return { createdWorkers: created, createdAgent, skipped, seededSpecialists };
 }

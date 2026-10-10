@@ -16,6 +16,7 @@ type Ts = typeof import('@mantle/db/test-support');
 describe.skipIf(!URL)('workspaces for a fresh install (W5b1 audit M1)', () => {
   const made: Array<{ drop: () => Promise<void> }> = [];
   const clients: Array<ReturnType<typeof postgres>> = [];
+  const urls: string[] = [];
 
   afterAll(async () => {
     const m = await import('@mantle/db');
@@ -28,6 +29,7 @@ describe.skipIf(!URL)('workspaces for a fresh install (W5b1 audit M1)', () => {
     const ts: Ts = await import('@mantle/db/test-support');
     const scratch = await ts.createMigratedScratchDatabase(URL!);
     made.push(scratch);
+    urls.push(scratch.url);
     const sql = postgres(scratch.url, { max: 2, prepare: false, onnotice: () => {} });
     clients.push(sql);
     return { scratch, sql };
@@ -71,12 +73,87 @@ describe.skipIf(!URL)('workspaces for a fresh install (W5b1 audit M1)', () => {
     );
 
     // Idempotent: the boot step finds it migrated, writes nothing.
-    const { migrateWorkspaces } = await import('./workspaces-migrate');
-    const again = await migrateWorkspaces();
+    const wm = await import('./workspaces-migrate');
+    const again = await wm.migrateWorkspaces();
     expect(again).toEqual([
       { section: 'skip', subject: 'workspaces', metric: 'already migrated', n: 1 },
     ]);
     expect(Number((await sql`select count(*) as n from workspaces`)[0]!.n)).toBe(2);
+
+    // Fix round 2, M-new: onboarding makes the assistants after the signup
+    // migrated the brain; the step after the manifest seed attaches them.
+    const assistants = async () =>
+      sql<{ key: string; slug: string }[]>`
+        select w.bridge_key as key, a.slug from workspace_resources r
+          join workspaces w on w.id = r.workspace_id
+          join agents a on a.id::text = r.ref_id
+         where r.type = 'assistant' order by 1`;
+    expect(await assistants()).toEqual([]);
+    // As onboarding leaves it: the OpenRouter key, then the manifest seed.
+    await sql`insert into api_keys (id, user_id, service, label, key_enc)
+      values (${randomUUID()}, ${owner}, 'openrouter', 'default', '\\x00'::bytea)`;
+    const seed = await import('./system-manifest/seed');
+    await seed.applyManifest(owner);
+    await sql`insert into agents (owner_id, slug, name, role, audience, model, system_prompt)
+      values (${owner}, 'persona-test', 'Persona', 'responder', 'admin', 'test/model', 'p')`;
+    // The persona goes on Admin. The team responder ships closed (admin
+    // level): 0251 attaches it only at team level, and an admin-level
+    // assistant on Team would bring admin-level tools into Team turns.
+    expect(await wm.attachDefaultAssistants()).toBe(1);
+    expect(await assistants()).toEqual([{ key: 'admin', slug: 'persona-test' }]);
+    // Opening it (the agent level route calls the same step) puts it on Team.
+    await sql`update agents set audience = 'team' where owner_id = ${owner} and slug = 'team-responder'`;
+    expect(await wm.attachDefaultAssistants()).toBe(1);
+    expect(await assistants()).toEqual([
+      { key: 'admin', slug: 'persona-test' },
+      { key: 'team', slug: 'team-responder' },
+    ]);
+    expect(await wm.attachDefaultAssistants()).toBe(0);
+
+    // Fix round 2, L-a: the boot step of a migrated brain repairs drift.
+    await sql.begin(async (tx) => {
+      await tx`select mantle_lock_heads(array[${page}::uuid], 'update')`;
+      await tx`delete from item_grants where node_id = ${page}`;
+    });
+    expect(Number((await sql`select mantle_bridge_drift() as d`)[0]!.d)).toBe(1);
+    await wm.migrateWorkspacesQuietly('boot');
+    expect(Number((await sql`select mantle_bridge_drift() as d`)[0]!.d)).toBe(0);
+  });
+
+  it('fix round 2, L-a: an item made while the migration runs gets its grants from the drift repair', async () => {
+    const { sql } = await brain();
+    const owner = randomUUID();
+    await sql`insert into auth.users (id, email, password_hash, role, is_owner) values
+      (${owner}, 'o3@example.invalid', 'x', 'admin', true)`;
+    const page = randomUUID();
+    const other = postgres(urls.at(-1)!, { max: 1, prepare: false, onnotice: () => {} });
+    clients.push(other);
+    // Another transaction inserts a team page and has not committed when the
+    // migration runs: the migration cannot see it, its trigger saw no
+    // workspaces.
+    const reserved = await other.reserve();
+    await reserved`begin`;
+    await reserved`insert into nodes (id, owner_id, type, title, path, audience)
+      values (${page}, ${owner}, 'page', 'late', 'pages'::ltree, 'team')`;
+    const rows = await sql<{ section: string }[]>`select * from mantle_ws_migrate_locked()`;
+    expect(rows.filter((r) => r.section === 'reach-fail')).toEqual([]);
+    await reserved`commit`;
+    reserved.release();
+    const grants = async () =>
+      Number((await sql`select count(*) as n from item_grants where node_id = ${page}`)[0]!.n);
+    expect(await grants()).toBe(0);
+    expect(Number((await sql`select mantle_bridge_drift() as d`)[0]!.d)).toBe(1);
+    expect(Number((await sql`select mantle_ws_repair_drift() as n`)[0]!.n)).toBe(1);
+    expect(await grants()).toBe(2);
+    expect(Number((await sql`select mantle_bridge_drift() as d`)[0]!.d)).toBe(0);
+    expect(Number((await sql`select mantle_ws_repair_drift() as n`)[0]!.n)).toBe(0);
+  });
+
+  it('fix round 2, L-b: the locked migration waits at most 10 s for a lock', async () => {
+    const { sql } = await brain();
+    const [r] = await sql<{ cfg: string[] }[]>`
+      select proconfig as cfg from pg_proc where proname = 'mantle_ws_migrate_locked'`;
+    expect(r!.cfg).toContain('lock_timeout=10s');
   });
 
   it('a box with a client login is skipped, and the integrity row says clients are present', async () => {

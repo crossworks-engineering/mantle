@@ -16,6 +16,7 @@ import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
 import { getOwnerOr401 } from '@/lib/auth';
 import { firstIssue } from '@/lib/zod-issue';
+import { attachDefaultAssistantsQuietly } from '@/lib/workspaces-migrate';
 import { AccessError, setAgentAudience } from '@mantle/content';
 import { agents, db, VIEWER_LEVELS } from '@mantle/db';
 
@@ -44,11 +45,13 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ slug: string 
     .limit(1);
   if (!agent) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
   try {
-    return NextResponse.json({
-      agent: await setAgentAudience(user.id, agent.id, parsed.data.audience, {
-        dropGroupsAbove: parsed.data.dropGroupsAbove === true,
-      }),
+    const updated = await setAgentAudience(user.id, agent.id, parsed.data.audience, {
+      dropGroupsAbove: parsed.data.dropGroupsAbove === true,
     });
+    // Opening the team responder (team level) puts it on Team when Team has
+    // no assistant yet (W5b1 fix round 2, M-new; the selection of 0251).
+    await attachDefaultAssistantsQuietly('agent level');
+    return NextResponse.json({ agent: updated });
   } catch (err) {
     if (err instanceof AccessError) {
       return NextResponse.json({ error: err.message, code: err.code }, { status: 400 });
