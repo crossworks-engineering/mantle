@@ -62,6 +62,8 @@ import { writeRetrievalChunks } from './index-writes';
 async function indexLocalOnly(
   node: typeof nodes.$inferSelect,
   ownerId: string,
+  /** More keys for the same data write (the re-fold stamp). */
+  extra: Record<string, unknown> = {},
 ): Promise<{ chunked: boolean; embedded: boolean }> {
   const body = (await readNodeBodyLocal(node)).trim();
   if (body) await writeRetrievalChunks(node, ownerId, body, null);
@@ -72,7 +74,7 @@ async function indexLocalOnly(
       .update(nodes)
       .set({
         embedding: vec,
-        data: sql`(coalesce(${nodes.data}, '{}'::jsonb) - 'extract_skipped' - 'extract_parked') || ${JSON.stringify({ indexing_applied: 'local', extract_completed_at: new Date().toISOString() })}::jsonb`,
+        data: sql`(coalesce(${nodes.data}, '{}'::jsonb) - 'extract_skipped' - 'extract_parked') || ${JSON.stringify({ ...extra, indexing_applied: 'local', extract_completed_at: new Date().toISOString() })}::jsonb`,
       })
       .where(eq(nodes.id, node.id));
   });
@@ -207,16 +209,20 @@ export async function admitForExtraction(
     return { proceed: false };
   }
   // A page or drawing the W2 mark flagged (0247, 0248) that the hand-run
-  // re-fold has not rewritten yet: its stored chunks and text may still hold
-  // an embed's words, and a summary written now would clear the mark. No
-  // model and no side pass: a terminal skip, so no drain re-queues it. The
-  // re-fold stamps data.refolded; after it an explicit notify (an edit, a
-  // manual re-extract) runs as usual.
+  // re-fold has not rewritten yet: its stored chunks may still hold an
+  // embed's words, and a summary written now would clear the mark. So no
+  // model and no side pass: it is indexed locally from its LIVE text (the
+  // body comes from pages.doc or draws.scene, folded), which is the
+  // re-fold's own work, stamped refolded in the same write. An edit before
+  // the re-fold (it nulls the vector) lands here and is searchable again at
+  // once. A terminal skip, so no drain re-queues it; its next edit or a
+  // per-node re-extract runs the model as usual.
   if (
     (node.type === 'page' || node.type === 'draw') &&
     node.derivedMixed &&
     (node.data as Record<string, unknown> | null)?.refolded !== true
   ) {
+    const indexed = await indexLocalOnly(node, ownerId, { refolded: true });
     await recordTerminalSkip({
       kind: 'extractor_run',
       ownerId,
@@ -226,7 +232,8 @@ export async function admitForExtraction(
       details: {
         node_type: node.type,
         worker_slug: worker.slug,
-        hint: 'Marked by the clean-derived migration and not re-folded yet: run pnpm maintain refold-embeds --go first (workspaces plan 5.3).',
+        ...indexed,
+        hint: 'Marked by the clean-derived migration and not re-folded yet: indexed locally from its own text (no model) and stamped refolded; the next edit summarises it (workspaces plan 5.3).',
       },
     });
     return { proceed: false };

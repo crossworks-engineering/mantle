@@ -262,7 +262,10 @@ export const process_extraction: BuiltinToolDef = {
       sql`${nodes.type} <> 'secret'`,
       sql`(${nodes.data}->>'summary' is null or ${nodes.embedding} is null)`,
       // A row the clean-derived mark flagged has no summary on purpose (its
-      // old one is set aside until the re-fold, workspaces plan 5.3).
+      // old one is set aside, workspaces plan 5.3). Re-folded ones too: they
+      // get a summary only from their next edit or a per-node call (node_id
+      // above), never from a sweep, so a sweep never spends a model call on
+      // the marked rows of a whole brain at once (cost).
       sql`not ${nodes.derivedMixed}`,
     ];
     if (typeFilter && typeFilter.length > 0) {

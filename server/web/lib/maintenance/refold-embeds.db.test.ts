@@ -45,6 +45,7 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
   const orphan = randomUUID();
   const raced = randomUUID();
   const note = randomUUID();
+  const noteEdited = randomUUID();
   const plain = randomUUID();
   const parent = randomUUID();
   const member = randomUUID();
@@ -155,6 +156,12 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
               ${JSON.stringify({ content: `Valve check ![gauge](media:${file})` })}::jsonb, true)`;
     await admin`insert into node_mixed_summaries (node_id, summary, summary_model)
       values (${note}, 'Valve check summary', 'm1')`;
+    // The same, but edited after the mark: its old summary must not return.
+    await admin`insert into nodes (id, owner_id, type, title, path, audience, data, derived_mixed)
+      values (${noteEdited}, ${anchor}, 'note', ${`${tag} edited note`}, 'notes', 'admin',
+              ${JSON.stringify({ content: `New words ![gauge](media:${file})` })}::jsonb, true)`;
+    await admin`insert into node_mixed_summaries (node_id, summary, summary_model, moved_at)
+      values (${noteEdited}, 'Stale summary', 'm1', now() - interval '1 hour')`;
     // A real pg-boss schema, so the queue check below is never vacuous.
     const { PgBoss } = await import('pg-boss');
     const boss = new PgBoss({ connectionString: URL!, schema: 'pgboss' });
@@ -172,8 +179,8 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
     if (!admin) return;
     await admin`delete from item_grants where node_id in (${granted}, ${levelled}, ${file})`;
     await admin`delete from facts where content like ${`${tag}%`}`;
-    await admin`delete from node_mixed_summaries where node_id in (${levelled}, ${granted}, ${orphan}, ${raced}, ${note}, ${plain}, ${parent})`;
-    await admin`delete from nodes where id in (${levelled}, ${granted}, ${orphan}, ${raced}, ${note}, ${plain}, ${parent}, ${file})`;
+    await admin`delete from node_mixed_summaries where node_id in (${levelled}, ${granted}, ${orphan}, ${raced}, ${note}, ${noteEdited}, ${plain}, ${parent})`;
+    await admin`delete from nodes where id in (${levelled}, ${granted}, ${orphan}, ${raced}, ${note}, ${noteEdited}, ${plain}, ${parent}, ${file})`;
     await admin`delete from workspaces where id in (${ws.admin}, ${ws.team})`;
     await admin`delete from spaces where login_id = ${member}`;
     await admin`delete from auth.users where id = ${member}`;
@@ -295,6 +302,15 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
     const [side] = await admin<{ n: number }[]>`
       select count(*)::int as n from node_mixed_summaries where node_id = ${note}`;
     expect(side!.n).toBe(0);
+    // Edited after the mark: unmarked, its stale summary not brought back.
+    const [ue] = await admin<{ n: string }[]>`
+      select mantle_unmark_mixed_notes(${[noteEdited]}::uuid[]) as n`;
+    expect(Number(ue!.n)).toBe(1);
+    const [e] = await admin<{ s: string | null; d: boolean; side: number }[]>`
+      select data->>'summary' as s, derived_mixed as d,
+             (select count(*)::int from node_mixed_summaries where node_id = ${noteEdited}) as side
+        from nodes where id = ${noteEdited}`;
+    expect(e).toEqual({ s: null, d: false, side: 0 });
     // It embeds a file and has a summary: still never marked.
     expect(await admin`select * from mantle_mark_derived_mixed(false, ${[note]}::uuid[])`).toEqual(
       [],

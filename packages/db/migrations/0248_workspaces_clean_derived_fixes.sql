@@ -35,16 +35,15 @@ CREATE OR REPLACE FUNCTION "public"."mantle_embed_host"(id uuid, t "public"."nod
     WHEN $2 = 'page' THEN EXISTS (
       SELECT 1 FROM "public"."pages" p
        WHERE p."node_id" = $1
-         AND (jsonb_path_exists(p."doc",
-               'strict $.** ? ((@.type == "image" || @.type == "pageImage")
-                               && ((exists(@.attrs.drawId) && @.attrs.drawId.type() == "string" && @.attrs.drawId != "")
-                                   || (exists(@.attrs.nodeId) && @.attrs.nodeId.type() == "string" && @.attrs.nodeId != "")))'::jsonpath)
-          OR jsonb_path_exists(p."doc",
-               'strict $.** ? (@.type == "fileEmbed"
-                               && exists(@.attrs.nodeId) && @.attrs.nodeId.type() == "string" && @.attrs.nodeId != "")'::jsonpath)
-          OR jsonb_path_exists(p."doc",
-               'strict $.** ? (@.type == "childPage"
-                               && exists(@.attrs.pageId) && @.attrs.pageId.type() == "string" && @.attrs.pageId != "")'::jsonpath)))
+         -- One walk of the doc for all three kinds.
+         AND jsonb_path_exists(p."doc",
+               'strict $.** ? (((@.type == "image" || @.type == "pageImage")
+                                && ((exists(@.attrs.drawId) && @.attrs.drawId.type() == "string" && @.attrs.drawId != "")
+                                    || (exists(@.attrs.nodeId) && @.attrs.nodeId.type() == "string" && @.attrs.nodeId != "")))
+                               || (@.type == "fileEmbed"
+                                   && exists(@.attrs.nodeId) && @.attrs.nodeId.type() == "string" && @.attrs.nodeId != "")
+                               || (@.type == "childPage"
+                                   && exists(@.attrs.pageId) && @.attrs.pageId.type() == "string" && @.attrs.pageId != ""))'::jsonpath))
     WHEN $2 = 'draw' THEN EXISTS (
       SELECT 1 FROM "public"."draws" d
        CROSS JOIN LATERAL jsonb_array_elements(
@@ -77,19 +76,23 @@ BEGIN
   CREATE TEMP TABLE IF NOT EXISTS mantle_mark_tmp (id uuid PRIMARY KEY, t text, has_summary boolean, is_new boolean)
     ON COMMIT DROP;
   TRUNCATE mantle_mark_tmp;
-  -- New rows to mark.
+  -- New rows to mark. The cheap tests first (a summary or facts), in a
+  -- materialized set; only those rows have their content read.
+  WITH cand AS MATERIALIZED (
+    SELECT n."id", n."type", n."data" ? 'summary' AS has_summary
+      FROM "public"."nodes" n
+      JOIN "public"."spaces" s ON s."id" = n."owner_id" AND s."kind" = 'brain'
+     WHERE n."type" IN ('page', 'draw')
+       AND NOT n."derived_mixed"
+       AND (node_ids IS NULL OR n."id" = ANY (node_ids))
+       AND coalesce(n."data"->>'summary_folded', '') <> 'true'
+       AND (n."data" ? 'summary'
+            OR EXISTS (SELECT 1 FROM "public"."facts" f WHERE f."source_node_id" = n."id")))
   INSERT INTO mantle_mark_tmp (id, t, has_summary, is_new)
-  SELECT n."id", n."type"::text, n."data" ? 'summary', true
-    FROM "public"."nodes" n
-    JOIN "public"."spaces" s ON s."id" = n."owner_id" AND s."kind" = 'brain'
-   WHERE n."type" IN ('page', 'draw')
-     AND NOT n."derived_mixed"
-     AND (node_ids IS NULL OR n."id" = ANY (node_ids))
-     AND coalesce(n."data"->>'summary_folded', '') <> 'true'
-     AND (EXISTS (SELECT 1 FROM "public"."node_embeds" e WHERE e."from_id" = n."id")
-          OR "public"."mantle_embed_host"(n."id", n."type"))
-     AND (n."data" ? 'summary'
-          OR EXISTS (SELECT 1 FROM "public"."facts" f WHERE f."source_node_id" = n."id"));
+  SELECT c."id", c."type"::text, c.has_summary, true
+    FROM cand c
+   WHERE EXISTS (SELECT 1 FROM "public"."node_embeds" e WHERE e."from_id" = c."id")
+      OR "public"."mantle_embed_host"(c."id", c."type");
   -- Rows marked earlier whose facts are not all marked (0247 left retired
   -- facts unmarked).
   INSERT INTO mantle_mark_tmp (id, t, has_summary, is_new)
@@ -136,8 +139,8 @@ REVOKE EXECUTE ON FUNCTION "public"."mantle_mark_derived_mixed"(boolean, uuid[])
 --> statement-breakpoint
 
 -- Notes 0247 marked: the summary comes back from node_mixed_summaries (only
--- when the node has none since), the side row goes, the node and its facts
--- are unmarked. `node_ids`: these nodes only (tests; NULL = every row).
+-- when the node has none since and was not edited after the mark), the side
+-- row goes, the node and its facts are unmarked. `node_ids`: these nodes only (tests; NULL = every row).
 -- Returns the notes unmarked.
 CREATE OR REPLACE FUNCTION "public"."mantle_unmark_mixed_notes"(node_ids uuid[] DEFAULT NULL)
   RETURNS bigint LANGUAGE plpgsql VOLATILE
@@ -158,7 +161,9 @@ BEGIN
            'summary_at', s."summary_at", 'entities', s."entities"))
     FROM "public"."node_mixed_summaries" s
    WHERE s."node_id" = n."id" AND n."id" = ANY (ids)
-     AND NOT (coalesce(n."data", '{}'::jsonb) ? 'summary');
+     AND NOT (coalesce(n."data", '{}'::jsonb) ? 'summary')
+     -- An edit since the mark: the old summary no longer describes it.
+     AND n."updated_at" <= s."moved_at";
   DELETE FROM "public"."node_mixed_summaries" WHERE "node_id" = ANY (ids);
   UPDATE "public"."facts" SET "derived_mixed" = false
    WHERE "source_node_id" = ANY (ids) AND "derived_mixed";
