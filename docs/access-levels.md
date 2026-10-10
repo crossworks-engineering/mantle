@@ -10,6 +10,16 @@
 > this page says about item levels is history. A link serves its item and
 > its served list (`shares.settings.served`): a new embed on an item that
 > already has a link is not served until someone ticks it (decision 12).
+> A brain that is not on workspaces (client logins or client-level items,
+> owner rule 21.9) is not switched by 0261: it keeps its levels and the
+> bridge until it is set up by hand and `mantle_ws_migrate_locked()` runs.
+> The switch, wherever it runs, ends in `mantle_ws_switch_guard()`: any read
+> (items, their chunks, facts), write or link serve gained against the
+> levels rolls it back (23514). An app run reads through the app (its
+> holders beyond Admin met with the runner's workspaces), never the
+> runner's whole login. API keys and linked brains act as their login and
+> still narrow it: a key's access and areas, a peer's Write switch and
+> risky-tool list.
 
 > Member logins, Phase 0b; client logins C1 to C5. What an agent, a member
 > or a client may read is decided by Postgres row level security on a
