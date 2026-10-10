@@ -190,7 +190,9 @@ export {
   connectorMarkState,
   VOIDED_MARK_SIG,
   listLoginConnectorTools,
-  connectorLevelAllows,
+  connectorOpensBeyondAdmin,
+  appConnectorRefused,
+  LINK_NO_CONNECTORS,
   outsideCallLogDetail,
   OUTSIDE_WRITE_LOG_INPUT_MAX,
   type OutsideToolVerdict,
@@ -405,9 +407,3 @@ export {
   LOWERING_TOOL_SLUGS,
   type TurnTaint,
 } from './client-sourced';
-export {
-  connectorLevelReport,
-  type ConnectorLevelAppRow,
-  type ConnectorLevelGroupRow,
-  type ConnectorLevelReport,
-} from './connector-level-report';

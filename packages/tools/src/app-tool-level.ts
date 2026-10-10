@@ -90,7 +90,7 @@ export async function appToolVerdict(
     case 'client':
       return clientAppToolVerdict(ownerId, declared, slug, loginId, check);
     case 'team':
-      return memberAppToolVerdict(ownerId, declared, slug, loginId);
+      return memberAppToolVerdict(ownerId, declared, slug, loginId, check);
     case 'admin': {
       if (!declared.includes(slug)) return { ok: false, status: 403, reason: notDeclared(slug) };
       const tool = await resolveTool(ownerId, slug);

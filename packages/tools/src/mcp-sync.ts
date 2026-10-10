@@ -23,7 +23,7 @@ import {
   type ToolHandler,
 } from '@mantle/db';
 import { parseMcpBinding } from './integration-meta';
-import { VOIDED_MARK_SIG, canonical } from './external-access';
+import { VOIDED_MARK_SIG, canonical, connectorOpensBeyondAdmin } from './external-access';
 import { closeMcpClient, mcpListRemoteTools, type McpRemoteTool } from './mcp-client';
 import {
   clearMcpOAuthSecrets,
@@ -232,11 +232,12 @@ export async function syncMcpConnector(ownerId: string, groupSlug: string): Prom
   });
 
   const now = new Date();
-  // A connector below admin gives its tools to members, clients or links
-  // (team apps Phase 2): a tool the remote server adds later arrives
-  // DISABLED there, unmarked, until an admin looks at it and enables it
-  // (M2 audit, low 5). At admin level it arrives enabled, as before.
-  const openBelowAdmin = group.audience !== 'admin';
+  // A connector a workspace other than Admin holds gives its tools to the
+  // users of that workspace (W5b2; team apps Phase 2 said "below admin"): a
+  // tool the remote server adds later arrives DISABLED there, unmarked,
+  // until an admin looks at it and enables it (M2 audit, low 5). Held by
+  // Admin alone it arrives enabled, as before.
+  const openBelowAdmin = await connectorOpensBeyondAdmin(ownerId, groupSlug);
   for (const ins of plan.inserts) {
     await db.insert(tools).values({
       ownerId,
@@ -254,7 +255,7 @@ export async function syncMcpConnector(ownerId: string, groupSlug: string): Prom
     // The remote tool changed (its description or input schema), or it came
     // back after it vanished (access matrix N4): a read-only mark was for
     // the tool the admin looked at, so it is voided (kept, refused below the
-    // owner until marked again). Below admin a returning tool also comes
+    // owner until marked again). Beyond Admin a returning tool also comes
     // back DISABLED, as a new one arrives, until an admin looks at it.
     const changed = fields.description !== undefined || fields.inputSchema !== undefined;
     const returning = fields.enabled === true;

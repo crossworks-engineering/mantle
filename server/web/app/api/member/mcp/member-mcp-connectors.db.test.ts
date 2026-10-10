@@ -93,6 +93,17 @@ describe.skipIf(!URL)("the member MCP screen's connectors", () => {
     await exec(sqlTag`
       insert into agents (owner_id, slug, name, model, system_prompt, tool_group_slugs, audience) values
         (${anchor}, 'team-responder', 't', 'm', 'p', ARRAY['g-team'], 'team')`);
+    // The connector reaches the member through a workspace (W5b2): one the
+    // member moderates holds it with Write on.
+    const ws = randomUUID();
+    await exec(
+      sqlTag`insert into workspaces (id, owner_id, name) values (${ws}, ${anchor}, ${tag})`,
+    );
+    await exec(sqlTag`
+      insert into workspace_users (workspace_id, login_id, moderator) values (${ws}, ${member}, true)`);
+    await exec(sqlTag`
+      insert into workspace_resources (workspace_id, type, ref_id, write)
+      values (${ws}, 'connector', 'mcp-src', true)`);
   }, 60_000);
 
   afterAll(async () => {

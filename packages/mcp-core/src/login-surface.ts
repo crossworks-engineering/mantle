@@ -233,21 +233,20 @@ export async function resolveLoginToolRows(
   const builtins = rows.filter(
     (r) => loginMayHaveTool(r, caller.write),
   );
-  // Connector tools (team apps Phase 2): those of a connector whose level
-  // the login's level reads, outside the responder's groups and the
-  // client cut (the connector's level is the grant). A tool with the
-  // admin's read-only mark reads; one without writes, so it needs write
-  // on. A connector tool is in no key area: only an all-areas key reaches
-  // it (a connector can read anything its far side holds). Only while the
-  // role's surface is open at all (its responder at the role's level). On a
-  // brain the workspaces migration made live, only the tools the call would
-  // pass (loginConnectorRule, W4b fix round 2): the connector a resource of
-  // one of the login's workspaces, a write tool only where the login may
-  // write; a login in no workspace gets none.
+  // Connector tools (team apps Phase 2; W5b2): outside the responder's
+  // groups and the client cut, exactly the tools the call would pass
+  // (loginConnectorRule): the connector a resource of one of the login's
+  // workspaces, a write tool only where the login may write; a login in no
+  // workspace gets none. The connector's level decides nothing here. A tool
+  // with the admin's read-only mark reads; one without writes, so it needs
+  // write on. A connector tool is in no key area: only an all-areas key
+  // reaches it (a connector can read anything its far side holds). Only
+  // while the role's surface is open at all (its responder at the role's
+  // level).
   const connectors =
     builtins.length === 0
       ? []
-      : (await listLoginConnectorTools(caller.anchorId, level, caller.loginId))
+      : (await listLoginConnectorTools(caller.anchorId, caller.loginId))
           .filter((c) => c.readOnly || caller.write)
           .map((c) => c.tool);
   return { rows: [...builtins, ...connectors], level, privateReads };

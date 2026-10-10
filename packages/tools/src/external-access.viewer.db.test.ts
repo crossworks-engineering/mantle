@@ -5,13 +5,15 @@
  * connector or site data is ever reached. Proves: an http tool is refused
  * until an admin switches External access on with the read-only
  * confirmation, then needs the app's declaration and nothing else. A
- * CONNECTOR tool (team apps Phase 2) is allowed by its connector's level
- * (the connector the handler names): team for a member's run, client for a
- * client app, public for a contact link; the switch is its READ-ONLY MARK
- * (on = a read, off = a write, which an app may make). It runs under the
- * caller's role; a disabled connector refuses; confirm-gated, shell and
- * recipe tools never pass, nor any built-in on a link; a changed handler or
- * a moved connector voids the mark; the author warnings follow the level;
+ * CONNECTOR tool (team apps Phase 2; W5b2) is allowed by the workspaces that
+ * hold its connector (the connector the handler names), never its level: a
+ * member's run without a login by Team, a login's run by the login's
+ * workspaces, and a contact link never (a link holds no workspace); the
+ * switch is its READ-ONLY MARK (on = a read, off = a write, which needs the
+ * connector's Write tick and a Moderator). It runs under the caller's role;
+ * a disabled connector refuses; confirm-gated, shell and recipe tools never
+ * pass, nor any built-in on a link; a changed handler or a moved connector
+ * voids the mark; the author warnings follow the workspaces;
  * only the owner's MCP client may switch it on through `api_tool_update`;
  * each switch writes an audit row with the actor.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/tools/src/external-access.viewer.db.test.ts
@@ -56,6 +58,12 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
   const tag = `tapps-${randomUUID().slice(0, 8)}`;
   const anchor = randomUUID();
   const appId = randomUUID();
+  // A member (a Moderator of Team) and a client (a user of Clients), and
+  // the brain's workspaces: Team holds the connector with Write on, Clients
+  // with Write off (W5b2: the workspaces decide, not the connector's level).
+  const member = randomUUID();
+  const client = randomUUID();
+  const ws = { admin: randomUUID(), team: randomUUID(), clients: randomUUID() };
   const ids: Record<string, string> = {};
   const ADMIN = { via: 'web' as const, actorId: anchor, actorEmail: `${tag}@example.invalid` };
   const DECLARED = [
@@ -142,6 +150,23 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
       insert into nodes (id, owner_id, type, title, path, audience) values
         (${appId}, ${anchor}, 'app', ${`${tag} app`}, 'apps', 'team')`);
     await exec(sqlTag`insert into apps (node_id) values (${appId})`);
+    await exec(sqlTag`
+      insert into auth.users (id, email, password_hash, role) values
+        (${member}, ${`${tag}-m@example.invalid`}, 'x', 'member'),
+        (${client}, ${`${tag}-c@example.invalid`}, 'x', 'client')`);
+    await exec(sqlTag`
+      insert into workspaces (id, owner_id, name, is_admin, bridge_key) values
+        (${ws.admin}, ${anchor}, 'Admin', true, 'admin'),
+        (${ws.team}, ${anchor}, 'Team', false, 'team'),
+        (${ws.clients}, ${anchor}, ${`${tag} Clients`}, false, null)`);
+    await exec(sqlTag`
+      insert into workspace_users (workspace_id, login_id, moderator) values
+        (${ws.team}, ${member}, true), (${ws.clients}, ${client}, false)`);
+    await exec(sqlTag`
+      insert into workspace_resources (workspace_id, type, ref_id, write) values
+        (${ws.admin}, 'connector', 'mcp-site', true),
+        (${ws.team}, 'connector', 'mcp-site', true),
+        (${ws.clients}, 'connector', 'mcp-site', false)`);
   }, 60_000);
 
   afterAll(async () => {
@@ -151,16 +176,29 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     await exec(sqlTag`delete from tool_groups where owner_id = ${anchor}`);
     await exec(sqlTag`delete from tools where owner_id = ${anchor}`);
     await exec(sqlTag`delete from nodes where owner_id = ${anchor}`);
+    await exec(sqlTag`delete from workspaces where owner_id = ${anchor}`);
     await exec(sqlTag`delete from spaces where login_id = ${anchor}`);
-    await exec(sqlTag`delete from auth.users where id = ${anchor}`);
+    await exec(sqlTag`delete from auth.users where id in (${anchor}, ${member}, ${client})`);
     await m.closeDb();
   }, 60_000);
 
+  /** Take the connector off a workspace for the length of `fn`. */
+  const without = async (wsId: string, fn: () => Promise<void>) => {
+    await exec(sqlTag`delete from workspace_resources
+      where workspace_id = ${wsId} and type = 'connector' and ref_id = 'mcp-site'`);
+    try {
+      await fn();
+    } finally {
+      await exec(sqlTag`insert into workspace_resources (workspace_id, type, ref_id, write)
+        values (${wsId}, 'connector', 'mcp-site', ${wsId !== ws.clients})
+        on conflict (workspace_id, type, ref_id) do nothing`);
+    }
+  };
   const setConnectorLevel = (lvl: string) =>
     exec(sqlTag`update tool_groups set audience = ${lvl}
       where owner_id = ${anchor} and slug = 'mcp-site'`);
 
-  it('a connector tool at team level without the mark: a member app may call it, as a write', async () => {
+  it('a connector tool Team holds with Write on, without the mark: a member app may call it, as a write', async () => {
     expect(await verdict('site_query')).toMatchObject({ ok: true, write: true });
   });
 
@@ -180,7 +218,7 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     const v = await verdict('site_query');
     if (!v.ok) throw new Error(v.reason);
     expect(v.write).toBe(false);
-    const scope = level.appToolScope('team', { loginId: randomUUID(), name: 'A member' });
+    const scope = level.appToolScope('team', { loginId: member, name: 'A member' });
     expect(scope).toMatchObject({ viewer: 'team', surface: { kind: 'team', privateReads: false } });
     fake.calls.length = 0;
     const out = await m.withViewer(scope.viewer, () =>
@@ -194,20 +232,25 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     expect(await verdict('site_query', ['site_http'])).toMatchObject({ ok: false, status: 403 });
   });
 
-  it('the connector the handler names decides, not a group that lists the tool; at admin it is refused, marked or not', async () => {
+  it('the connector the handler names decides, not a group that lists the tool; off Team it is refused, marked or not, whatever its level', async () => {
     // site_admin_only is listed only in an admin-level group, but its
-    // handler names the team-level connector.
+    // handler names the connector Team holds.
     expect((await switchOn('site_admin_only')).ok).toBe(true);
     expect(await verdict('site_admin_only')).toMatchObject({ ok: true, write: false });
-    await setConnectorLevel('admin');
-    try {
+    await without(ws.team, async () => {
+      // Its level says team: the level no longer opens it (W5b2).
       for (const slug of ['site_query', 'site_admin_only']) {
         expect(await verdict(slug), slug).toMatchObject({
           ok: false,
           status: 403,
-          reason: expect.stringMatching(/connector at admin level/),
+          reason: expect.stringMatching(/Team workspace does not hold/),
         });
       }
+    });
+    // And its level does not close it either.
+    await setConnectorLevel('admin');
+    try {
+      expect(await verdict('site_admin_only')).toMatchObject({ ok: true, write: false });
     } finally {
       await setConnectorLevel('team');
     }
@@ -249,40 +292,43 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     expect((await verdict('site_query')).ok).toBe(true);
   });
 
-  it('a client-level app: only a connector at client level, under the client role', async () => {
-    // A client runs as its login (W5a audit W2); this brain has no
-    // workspaces, so the login's rule passes and the level decides.
-    const client = randomUUID();
+  it('a client app: a connector the workspaces of the client hold, under the client role', async () => {
+    // A client runs as its login (W5a audit W2): a client in no workspace
+    // that holds the connector is refused, whatever its level.
+    const stranger = randomUUID();
+    await setConnectorLevel('client');
     expect(
-      await level.appToolVerdict('client', anchor, DECLARED, 'site_query', client),
+      await level.appToolVerdict('client', anchor, DECLARED, 'site_query', stranger),
     ).toMatchObject({
       ok: false,
-      reason: expect.stringMatching(/connector at team level/),
+      reason: expect.stringMatching(/not a user of any workspace/),
     });
-    await setConnectorLevel('client');
-    // Without the client's login: refused, whatever the level.
+    // Without the client's login: refused.
     expect(await level.appToolVerdict('client', anchor, DECLARED, 'site_query')).toMatchObject({
       ok: false,
       status: 403,
       reason: expect.stringMatching(/signed-in client/),
     });
-    // The author warnings ask without a run (no login): a client-level
-    // connector tool raises none (W5a fix round 2, M-1).
-    await exec(sqlTag`update nodes set audience = 'client' where id = ${appId}`);
-    try {
-      const set = await toolDef('app_tools_set').handler(
-        { id: appId, tool_slugs: ['site_query'] },
-        { ownerId: anchor, surface: { kind: 'web' } },
-      );
-      expect(set.ok).toBe(true);
-      expect((set.ok && (set.output as { warnings?: string[] }).warnings) || []).toEqual([]);
-      expect(await level.appToolWarnings(anchor, appId)).toEqual([]);
-    } finally {
-      await exec(sqlTag`update nodes set audience = 'team' where id = ${appId}`);
-    }
+    // The author warnings ask without a run (no login): a connector a
+    // workspace other than Admin holds raises none (W5a fix round 2, M-1);
+    // one only Admin holds does.
+    const rulesOnly = () =>
+      level.appToolVerdict('client', anchor, DECLARED, 'site_query', undefined, {
+        rulesOnly: true,
+      });
+    expect(await rulesOnly()).toMatchObject({ ok: true });
+    await without(ws.team, () =>
+      without(ws.clients, async () => {
+        expect(await rulesOnly()).toMatchObject({
+          ok: false,
+          reason: expect.stringMatching(/no workspace other than Admin holds/),
+        });
+      }),
+    );
+    await setConnectorLevel('team');
     const v = await level.appToolVerdict('client', anchor, DECLARED, 'site_query', client);
     if (!v.ok) throw new Error(v.reason);
-    const scope = level.appToolScope('client', { loginId: randomUUID(), name: 'A client' });
+    const scope = level.appToolScope('client', { loginId: client, name: 'A client' });
     fake.calls.length = 0;
     const out = await m.withViewer(scope.viewer, () =>
       dispatch.dispatchTool(v.tool, { q: 'c' }, { ownerId: anchor, surface: scope.surface }),
@@ -292,16 +338,24 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     // An admin's or a member's run of a client app gets the client rules too.
     expect(level.appToolLevel('team', 'client')).toBe('client');
     expect(level.appToolLevel('admin', 'client')).toBe('client');
-    // Mark off: still allowed, as a write; a built-in off the client list
-    // stays refused.
+    // Mark off: a write, which needs the connector's Write on where the
+    // client is a Moderator; a built-in off the client list stays refused.
     await switchOff('site_query');
+    const promote = (on: boolean) =>
+      Promise.all([
+        exec(sqlTag`update workspace_resources set write = ${on}
+          where workspace_id = ${ws.clients} and type = 'connector' and ref_id = 'mcp-site'`),
+        exec(sqlTag`update workspace_users set moderator = ${on}
+          where workspace_id = ${ws.clients} and login_id = ${client}`),
+      ]);
     try {
       expect(
         await level.appToolVerdict('client', anchor, DECLARED, 'site_query', client),
-      ).toMatchObject({
-        ok: true,
-        write: true,
-      });
+      ).toMatchObject({ ok: false, reason: expect.stringMatching(/Write switched on/) });
+      await promote(true);
+      expect(
+        await level.appToolVerdict('client', anchor, DECLARED, 'site_query', client),
+      ).toMatchObject({ ok: true, write: true });
       expect(
         await level.appToolVerdict('client', anchor, DECLARED, 'quick_sum', client),
       ).toMatchObject({
@@ -309,38 +363,62 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
         status: 403,
       });
     } finally {
+      await promote(false);
       await switchOn('site_query');
-      await setConnectorLevel('team');
     }
   });
 
-  it('a contact link: a connector at public level, an http tool with the switch on, never a built-in', async () => {
-    expect(await ta.contactAppToolVerdict(anchor, DECLARED, 'site_query')).toMatchObject({
+  it('an app run: every workspace that holds the app must hold the connector (R2)', async () => {
+    const check = { appId };
+    // Grant writes take the item's head (0244).
+    const grants = (q: ReturnType<typeof sqlTag>) =>
+      m.withHeads([appId], 'update', (tx) => tx.execute(q));
+    const run = () => level.appToolVerdict('team', anchor, DECLARED, 'site_query', member, check);
+    // The app is in no workspace: no connector.
+    expect(await run()).toMatchObject({
       ok: false,
-      reason: expect.stringMatching(/connector at team level/),
+      reason: expect.stringMatching(/app is in no workspace/),
     });
-    await setConnectorLevel('public');
-    const v = await ta.contactAppToolVerdict(anchor, DECLARED, 'site_query');
-    // Contacts read only (Jason, 2026-10-08): an unmarked tool on a public
-    // connector is refused on a link.
-    await switchOff('site_query');
-    const unmarked = await ta.contactAppToolVerdict(anchor, DECLARED, 'site_query');
-    await switchOn('site_query');
-    expect(unmarked).toMatchObject({
-      ok: false,
-      status: 403,
-      reason: expect.stringMatching(/marked read-only/),
-    });
-    if (!v.ok) throw new Error(v.reason);
-    fake.calls.length = 0;
-    // The dispatch holds the connector's level too (M2 audit, low 6): the
-    // call runs while the connector is still at public level.
-    const fresh = await (await import('./resolve')).resolveTool(anchor, 'site_query');
-    let out: Awaited<ReturnType<typeof dispatch.dispatchTool>>;
+    await grants(sqlTag`insert into item_grants (node_id, workspace_id, write, is_home)
+      values (${appId}, ${ws.team}, false, true)`);
     try {
-      out = await m.withViewer('public', () =>
+      expect(await run()).toMatchObject({ ok: true, write: false });
+      // A second holder without the connector: refused.
+      await without(ws.clients, async () => {
+        await grants(sqlTag`insert into item_grants (node_id, workspace_id, write)
+          values (${appId}, ${ws.clients}, false)`);
+        expect(await run()).toMatchObject({
+          ok: false,
+          reason: expect.stringMatching(/every workspace that holds this app/),
+        });
+      });
+      // Held by both, but Clients without Write: a write is refused.
+      await switchOff('site_query');
+      expect(await run()).toMatchObject({
+        ok: false,
+        reason: expect.stringMatching(/Write switched on in every workspace/),
+      });
+    } finally {
+      await switchOn('site_query');
+      await grants(sqlTag`delete from item_grants where node_id = ${appId}`);
+    }
+  });
+
+  it('a contact link: no connector tool (a link holds no workspace), an http tool with the switch on, never a built-in', async () => {
+    // Whatever the connector's level, marked or not.
+    await setConnectorLevel('public');
+    try {
+      expect(await ta.contactAppToolVerdict(anchor, DECLARED, 'site_query')).toMatchObject({
+        ok: false,
+        status: 403,
+        reason: expect.stringMatching(/holds no workspace/),
+      });
+      fake.calls.length = 0;
+      // The dispatch holds it too (M2 audit, low 6).
+      const fresh = await (await import('./resolve')).resolveTool(anchor, 'site_query');
+      const out = await m.withViewer('public', () =>
         dispatch.dispatchTool(
-          fresh ?? v.tool,
+          fresh!,
           { q: 'l' },
           {
             ownerId: anchor,
@@ -348,11 +426,11 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
           },
         ),
       );
+      expect(out).toMatchObject({ ok: false, error: expect.stringMatching(/holds no workspace/) });
+      expect(fake.calls).toEqual([]);
     } finally {
       await setConnectorLevel('team');
     }
-    expect(out).toMatchObject({ ok: true, output: { rows: [{ n: 1 }] } });
-    expect(fake.calls).toEqual([{ toolName: 'query', args: { q: 'l' } }]);
     expect(await ta.contactAppToolVerdict(anchor, ['site_http'], 'site_query')).toMatchObject({
       ok: false,
       status: 403,
@@ -424,25 +502,41 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     expect(await verdict('quick_sum')).toMatchObject({ ok: false, status: 403 });
   });
 
-  it('dispatch itself holds the level and the public read-only rule on every non-owner call', async () => {
+  it('dispatch itself holds the workspace rule and the public read-only rule on every non-owner call', async () => {
     const [row] = (await exec(
       sqlTag`select id from tools where id = ${ids.site_query!}`,
     )) as unknown as { id: string }[];
     expect(row).toBeTruthy();
     const tool = await (await import('./resolve')).resolveTool(anchor, 'site_query');
     if (!tool) throw new Error('no tool');
-    // A member's chat turn through some other group: the connector's own
-    // level decides (M2 audit, low 6).
+    // A member's call through some other group: the workspaces that hold
+    // the connector decide (M2 audit, low 6; W5b2), never its level.
+    const asLogin = (loginId?: string) =>
+      m.withViewer('team', () =>
+        dispatch.dispatchTool(
+          tool,
+          {},
+          { ownerId: anchor, surface: { kind: 'team', ...(loginId ? { loginId } : {}) } },
+        ),
+      );
+    fake.calls.length = 0;
+    expect(await asLogin(member)).toMatchObject({ ok: true });
+    expect(await asLogin()).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/signed-in user of a workspace/),
+    });
+    await without(ws.team, async () => {
+      expect(await asLogin(member)).toMatchObject({
+        ok: false,
+        error: expect.stringMatching(/not a resource of any of your workspaces/),
+      });
+    });
+    expect(fake.calls).toHaveLength(1);
     await setConnectorLevel('admin');
     try {
       fake.calls.length = 0;
-      const chat = await m.withViewer('team', () =>
-        dispatch.dispatchTool(tool, {}, { ownerId: anchor, surface: { kind: 'team' } }),
-      );
-      expect(chat).toMatchObject({
-        ok: false,
-        error: expect.stringMatching(/not open at your level/),
-      });
+      // The level does not close it to the member either.
+      expect(await asLogin(member)).toMatchObject({ ok: true });
       // The owner's own path is never gated.
       const owner = await dispatch.dispatchTool(
         tool,
@@ -456,8 +550,7 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     } finally {
       await setConnectorLevel('team');
     }
-    // A public run (a public agent, a contact link) only reads.
-    await setConnectorLevel('public');
+    // A public run (a public agent) only reads, whatever else holds.
     await switchOff('site_query');
     try {
       const unmarked = await crud.getToolById(anchor, ids.site_query!);
@@ -469,7 +562,6 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
       expect(pub).toMatchObject({ ok: false, error: expect.stringMatching(/marked read-only/) });
     } finally {
       await switchOn('site_query');
-      await setConnectorLevel('team');
     }
   });
 
@@ -518,7 +610,7 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     expect(await verdict('site_query')).toMatchObject({ ok: true, write: false });
   });
 
-  it('a connector moved to another server voids every mark (refused, never a write) and disables its write tools below admin', async () => {
+  it('a connector moved to another server voids every mark (refused, never a write) and disables its write tools beyond Admin', async () => {
     expect(await verdict('site_query')).toMatchObject({ ok: true, write: false });
     await ta.clearConnectorExternalAccess(anchor, 'mcp-site');
     expect(await verdict('site_query')).toMatchObject({
@@ -528,7 +620,7 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     expect((await crud.getToolById(anchor, ids.site_query!))?.externalAccess).toMatchObject({
       on: false,
     });
-    // site_confirm was never marked: on a team-level connector it is now off.
+    // site_confirm was never marked: on a connector Team holds it is now off.
     const [confirmRow] = (await exec(
       sqlTag`select enabled from tools where id = ${ids.site_confirm!}`,
     )) as unknown as { enabled: boolean }[];
@@ -537,7 +629,7 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     expect((await switchOn('site_query')).ok).toBe(true);
   });
 
-  it("the author warnings follow the connector's level (app_tools_set, access_set)", async () => {
+  it('the author warnings follow the workspaces that hold the connector (app_tools_set)', async () => {
     const def = toolDef('app_tools_set');
     const warn = async () => {
       const res = await def.handler(
@@ -548,26 +640,18 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
       return (res.ok ? (res.output as { warnings?: string[] }).warnings : []) ?? [];
     };
     expect(await warn()).toEqual([]);
-    await setConnectorLevel('admin');
-    try {
+    await without(ws.team, async () => {
       const warned = await warn();
       expect(warned).toHaveLength(1);
       expect(warned[0]).toContain("'site_query'");
-      expect(warned[0]).toContain('connector at admin level');
-      const access = await toolDef('access_set').handler(
-        { node_id: appId, level: 'team' },
-        { ownerId: anchor, surface: { kind: 'web' } },
-      );
-      expect(access.ok && (access.output as { warnings?: string[] }).warnings).toHaveLength(1);
-    } finally {
-      await setConnectorLevel('team');
-    }
+      expect(warned[0]).toContain('Team workspace does not hold');
+    });
     expect(await warn()).toEqual([]);
   });
 
   // Access matrix N5: an agent turning a closed connector tool back on, or
   // clearing its confirm, below admin waits for the owner.
-  it('api_tool_update: an agent re-opening a connector tool below admin goes to Pending', async () => {
+  it('api_tool_update: an agent re-opening a connector tool beyond Admin goes to Pending', async () => {
     const def = toolDef('api_tool_update');
     const agentCtx = {
       ownerId: anchor,
@@ -763,7 +847,7 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
   });
 
   // Access matrix N4: a read-only mark is for the tool the admin looked at.
-  it('a sync voids the mark when the remote tool changes, and a returning tool stays off below admin', async () => {
+  it('a sync voids the mark when the remote tool changes, and a returning tool stays off beyond Admin', async () => {
     const { syncMcpConnector } = await import('./mcp-sync');
     type Live = { slug: string; description: string; input_schema: Record<string, unknown> };
     const live = (await exec(sqlTag`
@@ -842,10 +926,9 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     await switchOn('site_query');
     const tool = await resolveTool(anchor, 'site_query');
     if (!tool) throw new Error('no tool');
+    const surface = { kind: 'team' as const, loginId: member };
     const asMember = (input: Record<string, unknown>) =>
-      m.withViewer('team', () =>
-        dispatch.dispatchTool(tool, input, { ownerId: anchor, surface: { kind: 'team' } }),
-      );
+      m.withViewer('team', () => dispatch.dispatchTool(tool, input, { ownerId: anchor, surface }));
     fake.calls.length = 0;
     expect(await asMember({ q: 'x' })).toMatchObject({ ok: true });
     const extra = await asMember({ q: 'x', statement: 'delete from rows' });
@@ -861,7 +944,8 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
       { ownerId: anchor, surface: { kind: 'owner', via: 'mcp' } },
     );
     expect(owner.ok).toBe(true);
-    // An unmarked tool is a write anyway: members may make it with any input.
+    // An unmarked tool is a write anyway: a Moderator of a workspace that
+    // holds the connector with Write on may make it with any input.
     await switchOff('site_query');
     try {
       const fresh = await resolveTool(anchor, 'site_query');
@@ -869,7 +953,7 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
         dispatch.dispatchTool(
           fresh!,
           { q: 'x', statement: 'select 1' },
-          { ownerId: anchor, surface: { kind: 'team' } },
+          { ownerId: anchor, surface },
         ),
       );
       expect(write.ok).toBe(true);

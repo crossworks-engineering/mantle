@@ -413,9 +413,11 @@ describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
     expect(list).not.toContain('note_create');
   });
 
-  // Team apps Phase 2: a connector's level decides; its read-only mark
-  // decides read (any login with MCP on) or write (write on only).
-  it("connector tools by the connector's level, read or write by the mark", async () => {
+  // Team apps Phase 2; W5b2: the workspaces that hold a connector decide
+  // (never its level); its read-only mark decides read (any login with MCP
+  // on) or write (write on only, and the connector's Write tick where the
+  // login is a Moderator).
+  it('connector tools by the workspaces that hold the connector, read or write by the mark', async () => {
     const { externalAccessHandlerSig } = await import('@mantle/tools');
     const handler = (toolName: string) => ({ kind: 'mcp', group: 'mcp-src', toolName });
     const mark = JSON.stringify({
@@ -436,24 +438,36 @@ describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
     await exec(sqlTag`
       insert into tool_groups (owner_id, slug, name, tool_slugs, audience, enabled, integration)
       values (${anchor}, 'mcp-src', 'src', ARRAY['mcp_src_read','mcp_src_write'], 'admin', true, ${binding}::jsonb)`);
-    const level = (l: string) =>
-      exec(
-        sqlTag`update tool_groups set audience = ${l} where owner_id = ${anchor} and slug = 'mcp-src'`,
-      );
+    // The member moderates a Team workspace, the client uses a Clients one.
+    const ws = { team: randomUUID(), clients: randomUUID() };
+    await exec(sqlTag`
+      insert into workspaces (id, owner_id, name) values
+        (${ws.team}, ${anchor}, ${`${tag} team`}), (${ws.clients}, ${anchor}, ${`${tag} clients`})`);
+    await exec(sqlTag`
+      insert into workspace_users (workspace_id, login_id, moderator) values
+        (${ws.team}, ${member}, true), (${ws.clients}, ${client}, false)`);
+    const hold = (wsId: string, write: boolean) =>
+      exec(sqlTag`insert into workspace_resources (workspace_id, type, ref_id, write)
+        values (${wsId}, 'connector', 'mcp-src', ${write})`);
     const connectorNames = async (caller: McpCaller) =>
       (await names(await connect(caller))).filter((n) => n.startsWith('mcp_src_'));
     try {
-      // At admin: nobody below admin gets it.
+      // No workspace holds it: nobody below the owner gets it, whatever its
+      // level.
+      await exec(
+        sqlTag`update tool_groups set audience = 'public' where owner_id = ${anchor} and slug = 'mcp-src'`,
+      );
       expect(await connectorNames(asMember(true))).toEqual([]);
       expect(await connectorNames(asClient(true))).toEqual([]);
-      // At team: members; the write tool only with write on. Clients: no.
-      await level('team');
+      // On the member's workspace, Write on: the write tool only with write
+      // on. Clients: no.
+      await hold(ws.team, true);
       expect(await connectorNames(asMember(false))).toEqual(['mcp_src_read']);
       expect(await connectorNames(asMember(true))).toEqual(['mcp_src_read', 'mcp_src_write']);
       expect(await connectorNames(asClient(true))).toEqual([]);
-      // At client: clients too (and members, whose level reads client).
-      await level('client');
-      expect(await connectorNames(asClient(false))).toEqual(['mcp_src_read']);
+      // On the client's workspace, Write off: the read tool only.
+      await hold(ws.clients, false);
+      expect(await connectorNames(asClient(true))).toEqual(['mcp_src_read']);
       expect(await connectorNames(asMember(false))).toEqual(['mcp_src_read']);
       // A key limited to areas never gets a connector tool.
       expect(
@@ -495,6 +509,7 @@ describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
       expect(logged.length).toBeGreaterThan(0);
     } finally {
       await exec(sqlTag`delete from audit_log where actor_id = ${member}`);
+      await exec(sqlTag`delete from workspaces where id in (${ws.team}, ${ws.clients})`);
       await exec(sqlTag`delete from tool_groups where owner_id = ${anchor} and slug = 'mcp-src'`);
       await exec(sqlTag`delete from tools where owner_id = ${anchor} and slug like 'mcp_src_%'`);
     }

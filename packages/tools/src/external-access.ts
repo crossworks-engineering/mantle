@@ -27,11 +27,13 @@
  * (no contact). Each still needs the app to declare the tool, and the call
  * may come by hand with any input, not only from the app's screens.
  *
- * CONNECTOR tools (mcp) follow another rule since team apps Phase 2
- * (connectorToolVerdict below): the connector's level decides who may use
- * them, and the confirm stored here is their READ-ONLY MARK (marked = a
- * read, unmarked = a write). The switch's eligibility and signature rules
- * hold for the mark as they did for the switch.
+ * CONNECTOR tools (mcp) follow another rule (connectorToolVerdict below):
+ * the workspaces that hold the connector decide who may use them (plan
+ * section 6; from W5b2 the connector's level no longer does, it only says
+ * which agents may hold the group), and the confirm stored here is their
+ * READ-ONLY MARK (marked = a read, unmarked = a write). The switch's
+ * eligibility and signature rules hold for the mark as they did for the
+ * switch.
  *
  * The row stores WHEN the admin confirmed, WHO, and a signature of the
  * handler they looked at. The switch counts only while that signature equals
@@ -46,10 +48,9 @@ import { createHash } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import {
   asSystem,
-  asViewerLevel,
   auditLog,
   db,
-  levelCovers,
+  nodes,
   toolGroups,
   tools,
   workspaceResources,
@@ -58,7 +59,6 @@ import {
   type Tool,
   type ToolHandler,
   type ToolExternalAccess,
-  type ViewerLevel,
 } from '@mantle/db';
 import type { ToolExternalAccessDTO } from '@mantle/client-types';
 import { resolveTool } from './resolve';
@@ -220,16 +220,7 @@ export function externalToolVerdict(
   };
 }
 
-// ── Connector tools: the connector's level decides (team apps Phase 2) ──────
-
-/** The level a runner's app call runs at, for a connector's level: a
- *  member's team rules, a client app's client rules, a contact link's
- *  public scope. */
-const RUNNER_LEVEL: Record<ExternalAccessRunner, ViewerLevel> = {
-  member: 'team',
-  client: 'client',
-  contact: 'public',
-};
+// ── Connector tools: the workspaces that hold the connector decide ──────────
 
 /** An outside tool's verdict, and whether the call writes: a connector tool
  *  without the admin's read-only mark is a write tool. */
@@ -241,39 +232,31 @@ export type OutsideToolVerdict =
 export async function connectorGroupOf(
   ownerId: string,
   tool: Pick<Tool, 'handler'>,
-): Promise<{ id: string; slug: string; level: ViewerLevel; usable: boolean } | null> {
+): Promise<{ id: string; slug: string; usable: boolean } | null> {
   const h = tool.handler as ToolHandler;
   if (h.kind !== 'mcp') return null;
-  // As the system: a client-scope read sees client-level groups only, and
-  // the rule is in the code below, not in row security.
-  const [g] = await asSystem(() =>
-    db
-      .select({
-        id: toolGroups.id,
-        slug: toolGroups.slug,
-        audience: toolGroups.audience,
-        enabled: toolGroups.enabled,
-        integration: toolGroups.integration,
-      })
-      .from(toolGroups)
-      .where(and(eq(toolGroups.ownerId, ownerId), eq(toolGroups.slug, h.group)))
-      .limit(1),
+  // As the system: a limited scope's row security may hide the group, and
+  // the rule is in the code below.
+  const [g] = await asSystem(
+    () =>
+      db
+        .select({
+          id: toolGroups.id,
+          slug: toolGroups.slug,
+          enabled: toolGroups.enabled,
+          integration: toolGroups.integration,
+        })
+        .from(toolGroups)
+        .where(and(eq(toolGroups.ownerId, ownerId), eq(toolGroups.slug, h.group)))
+        .limit(1),
+    'connector-binding',
   );
   if (!g) return null;
-  return {
-    id: g.id,
-    slug: g.slug,
-    level: asViewerLevel(g.audience),
-    usable: g.enabled === true && !!g.integration?.mcp,
-  };
+  return { id: g.id, slug: g.slug, usable: g.enabled === true && !!g.integration?.mcp };
 }
 
-/** Whether a runner at `run` may use a connector at `connector` level: the
- *  connector's level must be one the runner's level reads (levelCovers),
- *  as for an item. */
-export function connectorLevelAllows(run: ViewerLevel, connector: ViewerLevel): boolean {
-  return levelCovers(run, connector);
-}
+/** The literal of a uuid array for `= any(...)`. */
+const uuidArray = (ids: readonly string[]) => `{${ids.join(',')}}`;
 
 /**
  * A connector as a workspace resource (workspaces plan section 6, W4b): the
@@ -299,44 +282,119 @@ export async function connectorResources(
             eq(workspaceResources.refId, groupSlug),
             eq(workspaces.ownerId, ownerId),
             sql`${workspaces.archivedAt} is null`,
-            sql`${workspaceResources.workspaceId} = any(${`{${wsIds.join(',')}}`}::uuid[])`,
+            sql`${workspaceResources.workspaceId} = any(${uuidArray(wsIds)}::uuid[])`,
           ),
         ),
     'workspace-resources',
   );
 }
 
-/** The brain's Team workspace while the bridge runs (W4a), else null (a
- *  brain the workspaces migration skipped). */
-async function bridgeTeamWorkspace(ownerId: string): Promise<string | null> {
+/**
+ * Whether the connector `groupSlug` reaches anyone beyond the Admin
+ * workspace: a live workspace other than Admin holds it (W5b2; before, a
+ * connector below admin level). Such a connector's new or returning remote
+ * tools arrive disabled, a moved connector's write tools are disabled, and
+ * an agent turning one of its tools on waits for the owner.
+ */
+export async function connectorOpensBeyondAdmin(
+  ownerId: string,
+  groupSlug: string,
+): Promise<boolean> {
+  const [row] = await asSystem(
+    () =>
+      db
+        .select({ id: workspaceResources.id })
+        .from(workspaceResources)
+        .innerJoin(workspaces, eq(workspaces.id, workspaceResources.workspaceId))
+        .where(
+          and(
+            eq(workspaceResources.type, 'connector'),
+            eq(workspaceResources.refId, groupSlug),
+            eq(workspaces.ownerId, ownerId),
+            eq(workspaces.isAdmin, false),
+            sql`${workspaces.archivedAt} is null`,
+          ),
+        )
+        .limit(1),
+    'workspace-resources',
+  );
+  return !!row;
+}
+
+/** The brain's Team workspace (the built-in one, bridge_key 'team'), else
+ *  null (a brain the workspaces migration skipped). */
+async function teamWorkspace(ownerId: string): Promise<string | null> {
   const [row] = await asSystem(
     () =>
       db
         .select({ id: workspaces.id })
         .from(workspaces)
-        .where(and(eq(workspaces.ownerId, ownerId), eq(workspaces.bridgeKey, 'team')))
+        .where(
+          and(
+            eq(workspaces.ownerId, ownerId),
+            eq(workspaces.bridgeKey, 'team'),
+            sql`${workspaces.archivedAt} is null`,
+          ),
+        )
         .limit(1),
     'workspace-resources',
   );
   return row?.id ?? null;
 }
 
+/**
+ * Why an APP's run may not use the connector `groupSlug`, or null (plan R2):
+ * every workspace that holds the app (its read_ws) must hold the connector,
+ * and a write needs the connector's Write on in every one of them. An app
+ * no workspace holds uses no connector. Read as the system: the rule is in
+ * the query.
+ */
+export async function appConnectorRefused(
+  ownerId: string,
+  appId: string,
+  groupSlug: string,
+  write: boolean,
+): Promise<string | null> {
+  const [app] = await asSystem(
+    () =>
+      db
+        .select({ readWs: nodes.readWs })
+        .from(nodes)
+        .where(and(eq(nodes.ownerId, ownerId), eq(nodes.id, appId), eq(nodes.type, 'app')))
+        .limit(1),
+    'workspace-resources',
+  );
+  const holders = [...new Set(app?.readWs ?? [])];
+  if (holders.length === 0) {
+    return 'This app is in no workspace, so connector tools do not run from it.';
+  }
+  const rows = await connectorResources(ownerId, groupSlug, holders);
+  const held = new Map(rows.map((r) => [r.workspaceId, r.write]));
+  if (!holders.every((w) => held.has(w))) {
+    return 'This connector is not a resource of every workspace that holds this app, so its tools do not run from it.';
+  }
+  if (write && !holders.every((w) => held.get(w) === true)) {
+    return 'This connector tool can change data: it needs the connector’s Write switched on in every workspace that holds this app.';
+  }
+  return null;
+}
+
 /** Why a login's connector call is refused (`groupSlug`, `write`), or null. */
 export type LoginConnectorRule = (groupSlug: string, write: boolean) => string | null;
 
 /**
- * The connector rule of ONE login (W4b fix round 1, M3; fix round 2), loaded
- * once, on a brain the workspaces migration made live: the connector must be
- * a resource of one of the login's workspaces, and a tool not marked
- * read-only needs that resource's Write on in a workspace where the login is
- * a Moderator. A login in no workspace of a migrated brain gets no connector
- * at all (a client: the migration skips a brain with clients, so none exist
- * there yet). A brain with no workspaces (the migration skipped it) keeps
- * the level rule alone, as before.
+ * The connector rule of ONE login (W4b fix round 1, M3; fix round 2; W5b2),
+ * loaded once: the connector must be a resource of one of the login's
+ * workspaces, and a tool not marked read-only needs that resource's Write
+ * on in a workspace where the login is a Moderator. A login in no workspace
+ * gets no connector at all, and so does every login of a brain with no
+ * workspaces (the migration skipped it): the connector's level no longer
+ * decides (W5b2), so nothing below the owner reaches a connector there.
  *
  * The ONE rule behind a login's MCP listing (listLoginConnectorTools), its
- * MCP call (callLoginTool) and its app runs (connectorToolVerdict), so the
- * three never disagree. Read as the system: the rule is in the query.
+ * MCP call (callLoginTool), its app runs (connectorToolVerdict) and the
+ * dispatch of a call on its surface (dispatch.ts), so they never disagree.
+ * Read as the system: the rule is in the query.
  */
 export async function loginConnectorRule(
   ownerId: string,
@@ -358,16 +416,6 @@ export async function loginConnectorRule(
     'workspace-resources',
   );
   if (mine.length === 0) {
-    const [any] = await asSystem(
-      () =>
-        db
-          .select({ id: workspaces.id })
-          .from(workspaces)
-          .where(eq(workspaces.ownerId, ownerId))
-          .limit(1),
-      'workspace-resources',
-    );
-    if (!any) return () => null;
     return () =>
       'You are not a user of any workspace on this brain, so connector tools do not run for you.';
   }
@@ -386,7 +434,7 @@ export async function loginConnectorRule(
         .where(
           and(
             eq(workspaceResources.type, 'connector'),
-            sql`${workspaceResources.workspaceId} = any(${`{${wsIds.join(',')}}`}::uuid[])`,
+            sql`${workspaceResources.workspaceId} = any(${uuidArray(wsIds)}::uuid[])`,
           ),
         ),
     'workspace-resources',
@@ -416,34 +464,43 @@ export async function loginConnectorRefused(
   return (await loginConnectorRule(ownerId, loginId))(groupSlug, write);
 }
 
+/** Why a shared link never runs a connector tool (W5b2): a link holds no
+ *  workspace, and connectors are workspace resources. */
+export const LINK_NO_CONNECTORS =
+  'A shared link holds no workspace, so it uses no connector tools (connectors are attached to workspaces).';
+
 /**
  * The ONE rule for a CONNECTOR tool (an mcp tool) in an app run below admin
- * (team apps Phase 2, Jason 2026-10-08): the connector group's level decides
- * who may use it, the same as the level on an item, and the admin's
+ * (team apps Phase 2; workspaces plan section 6 and R2, W5b2): the
+ * workspaces that hold the connector decide who may use it, and the admin's
  * read-only mark decides read or write. It replaces External access for
  * connector tools; a single http tool keeps External access
- * (externalToolVerdict).
+ * (externalToolVerdict). The connector's level decides nothing here (it
+ * only says which agents may hold the group, until W7).
  *
  *  - the connector is enabled and bound (dispatchMcp refuses otherwise);
- *  - its level is one the run's level reads: a member's team rules reach a
- *    team, client or public connector; a client app a client one; a contact
- *    link a public one. A new connector starts at admin: nothing opens by
- *    itself, and no code ever raises a level;
  *  - a tool that needs a confirmation is refused (nobody is there);
  *  - marked read-only (the admin's confirm, on the handler they looked at)
  *    = a read; unmarked = a WRITE, which an app run by a member or a client
- *    may make too (Jason's decision 1). A contact link only reads (Jason,
- *    2026-10-08): an unmarked tool is refused there. The brokers log every
- *    write call with its input. dispatchMcp holds the same level and
- *    public-read rule on every call (connectorCallRefused);
- *  - with the runner's login known (a member's or a client's run), the
- *    login's workspace rule too (loginConnectorRule): the same rule as the
- *    login's own MCP, so an app is no way around it.
+ *    may make too (Jason's decision 1), where the workspace rule lets it.
+ *    The brokers log every write call with its input;
+ *  - who: with the runner's login known (a member's or a client's run), the
+ *    login's workspace rule (loginConnectorRule), the same as the login's
+ *    own MCP, so an app is no way around it. A member's run with no login
+ *    (a member-built app an admin opens) runs at Team's rule: the Team
+ *    workspace must hold the connector, with Write on for a write. A
+ *    client's run always names its login (W5a audit W2); the author
+ *    warnings (rulesOnly) ask with none, and then a workspace other than
+ *    Admin must hold it. A contact link holds no workspace, so it uses no
+ *    connector (LINK_NO_CONNECTORS);
+ *  - which app: with `check.appId`, every workspace that holds the app
+ *    must hold the connector too (appConnectorRefused).
  */
 /** How an outside tool is checked. `rulesOnly`: no run, the author warnings
- *  (appToolWarnings) ask what the level rules allow, with no runner login.
- *  Never set it for a run: a client run without a login is refused. */
-export type OutsideToolCheck = { rulesOnly?: true };
+ *  (appToolWarnings) ask what the rules allow, with no runner login. Never
+ *  set it for a run: a client run without a login is refused. `appId`: the
+ *  app the run is for, whose holders must hold a connector it calls. */
+export type OutsideToolCheck = { rulesOnly?: true; appId?: string };
 
 export async function connectorToolVerdict(
   ownerId: string,
@@ -455,103 +512,70 @@ export async function connectorToolVerdict(
 ): Promise<OutsideToolVerdict> {
   const who =
     runner === 'member' ? 'a team app' : runner === 'client' ? 'a client app' : 'a shared link';
+  const refuse = (reason: string): OutsideToolVerdict => ({ ok: false, status: 403, reason });
+  if (runner === 'contact') return refuse(`The tool '${slug}' can't run: ${LINK_NO_CONNECTORS}`);
   if (tool.requiresConfirm) {
-    return {
-      ok: false,
-      status: 403,
-      reason: `The tool '${slug}' needs an admin's confirmation on every call, so ${who} can't use it.`,
-    };
+    return refuse(
+      `The tool '${slug}' needs an admin's confirmation on every call, so ${who} can't use it.`,
+    );
   }
   const group = await connectorGroupOf(ownerId, tool);
   if (!group?.usable) {
-    return {
-      ok: false,
-      status: 403,
-      reason: `The connector of the tool '${slug}' is off or not set up, so ${who} can't use it.`,
-    };
-  }
-  const run = RUNNER_LEVEL[runner];
-  if (!connectorLevelAllows(run, group.level)) {
-    return {
-      ok: false,
-      status: 403,
-      reason: `The tool '${slug}' belongs to a connector at ${group.level} level, so ${who} can't use it. An admin can set the connector's level (Settings → Tool groups).`,
-    };
+    return refuse(
+      `The connector of the tool '${slug}' is off or not set up, so ${who} can't use it.`,
+    );
   }
   const mark = connectorMarkState(tool);
   if (mark === 'stale') {
-    return {
-      ok: false,
-      status: 403,
-      reason: `The tool '${slug}' changed after an admin marked it read-only, so ${who} can't use it until an admin marks it again.`,
-    };
+    return refuse(
+      `The tool '${slug}' changed after an admin marked it read-only, so ${who} can't use it until an admin marks it again.`,
+    );
   }
   const write = mark === 'write';
   // A client always runs as a known login (W5a audit W2): with none, there
   // is no rule to hold it to, so refuse rather than fall through. Only the
-  // author warnings ask without a run (rulesOnly): the level rules alone.
+  // author warnings ask without a run (rulesOnly).
   if (runner === 'client' && !loginId && !check?.rulesOnly) {
-    return {
-      ok: false,
-      status: 403,
-      reason: `The tool '${slug}' can't run: ${who} needs the signed-in client to use a connector.`,
-    };
+    return refuse(
+      `The tool '${slug}' can't run: ${who} needs the signed-in client to use a connector.`,
+    );
   }
-  // The second check (W4b, plan section 6; fix round 2). With the runner's
-  // login known: the login's own rule (M3), so a member's own app reaches no
-  // connector its MCP would refuse. Without one, a member's app runs in
-  // Team, so on a migrated brain the connector must be a resource of Team,
-  // and a write needs its Write tick. The connector bridge keeps them in
-  // step; a disagreement refuses.
-  if (loginId && runner !== 'contact') {
+  if (loginId) {
     const refused = await loginConnectorRefused(ownerId, loginId, group.slug, write);
-    if (refused) {
-      return { ok: false, status: 403, reason: `The tool '${slug}' can't run: ${refused}` };
-    }
+    if (refused) return refuse(`The tool '${slug}' can't run: ${refused}`);
   } else if (runner === 'member') {
-    const team = await bridgeTeamWorkspace(ownerId);
-    if (team) {
-      const [res] = await connectorResources(ownerId, group.slug, [team]);
-      if (!res || (write && !res.write)) {
-        return {
-          ok: false,
-          status: 403,
-          reason: `The tool '${slug}' belongs to a connector the Team workspace does not hold${res ? ' with Write on' : ''}, so ${who} can't use it.`,
-        };
-      }
+    const team = await teamWorkspace(ownerId);
+    const [res] = team ? await connectorResources(ownerId, group.slug, [team]) : [];
+    if (!res || (write && !res.write)) {
+      return refuse(
+        `The tool '${slug}' belongs to a connector the Team workspace does not hold${res ? ' with Write on' : ''}, so ${who} can't use it.`,
+      );
     }
+  } else if (!(await connectorOpensBeyondAdmin(ownerId, group.slug))) {
+    return refuse(
+      `The tool '${slug}' belongs to a connector no workspace other than Admin holds, so ${who} can't use it.`,
+    );
   }
-  // Contacts read only (Jason, 2026-10-08): writes through a connector stay
-  // with signed-in members and clients, whatever the connector's level.
-  if (write && runner === 'contact') {
-    return {
-      ok: false,
-      status: 403,
-      reason: `The tool '${slug}' can change data, and a shared link uses only connector tools an admin marked read-only.`,
-    };
+  if (check?.appId) {
+    const refused = await appConnectorRefused(ownerId, check.appId, group.slug, write);
+    if (refused) return refuse(`The tool '${slug}' can't run: ${refused}`);
   }
   return { ok: true, tool, write };
 }
 
 /**
- * The connector tools a login at `level` may use over its own MCP (team
- * apps Phase 2): enabled mcp tools of an enabled, bound connector whose
- * level `level` reads, each with whether it carries the admin's read-only
- * mark. A tool that needs a confirmation is left out (nobody confirms on a
- * login's MCP). The rule is in the query (as the system: a client scope's
- * row security would hide the groups, and the level is checked here).
- *
- * With `loginId` (the login's own MCP), also the login's workspace rule
- * (loginConnectorRule, W4b fix round 2): a tool is listed only when its call
- * would pass, so a write tool is left out where the login may not write.
+ * The connector tools a login may use over its own MCP (team apps Phase 2;
+ * W5b2): enabled mcp tools of an enabled, bound connector whose call would
+ * pass the login's workspace rule (loginConnectorRule), each with whether
+ * it carries the admin's read-only mark. A write tool is left out where the
+ * login may not write, and a tool that needs a confirmation always is
+ * (nobody confirms on a login's MCP). The rule is in the query (as the
+ * system: a limited scope's row security may hide the groups).
  */
 export async function listLoginConnectorTools(
   ownerId: string,
-  level: ViewerLevel,
-  loginId?: string,
-): Promise<
-  { tool: Tool; readOnly: boolean; groupId: string; groupName: string; groupLevel: ViewerLevel }[]
-> {
+  loginId: string,
+): Promise<{ tool: Tool; readOnly: boolean; groupId: string; groupName: string }[]> {
   const rows = await asSystem(() =>
     db
       .select({
@@ -559,7 +583,6 @@ export async function listLoginConnectorTools(
         groupId: toolGroups.id,
         groupName: toolGroups.name,
         groupSlug: toolGroups.slug,
-        groupLevel: toolGroups.audience,
       })
       .from(tools)
       .innerJoin(
@@ -580,28 +603,26 @@ export async function listLoginConnectorTools(
         ),
       ),
   );
-  const rule = loginId ? await loginConnectorRule(ownerId, loginId) : null;
+  const rule = await loginConnectorRule(ownerId, loginId);
   return rows.flatMap((r) => {
-    const groupLevel = asViewerLevel(r.groupLevel);
-    if (!connectorLevelAllows(level, groupLevel)) return [];
     // A voided mark is refused below the owner (connectorMarkState).
     const mark = connectorMarkState(r.tool);
     if (mark === 'stale') return [];
-    if (rule && rule(r.groupSlug, mark === 'write') !== null) return [];
+    if (rule(r.groupSlug, mark === 'write') !== null) return [];
     return [
       {
         tool: r.tool,
         readOnly: externalAccessActive(r.tool),
         groupId: r.groupId,
         groupName: r.groupName,
-        groupLevel,
       },
     ];
   });
 }
 
-/** An outside tool's verdict by its kind: a connector tool by its
- *  connector's level and read-only mark, any other by External access
+/** An outside tool's verdict by its kind: a connector tool by the
+ *  workspaces that hold its connector and its read-only mark, any other by
+ *  External access
  *  (which only a read-only tool gets, so it never writes). */
 export async function outsideToolVerdict(
   ownerId: string,
@@ -642,11 +663,12 @@ export function outsideCallLogDetail(
 
 /**
  * May a CONTACT on a contact-share link call `slug` from the shared app that
- * declares `declared`? Only an outside tool: a connector tool at public
- * level, or another outside tool with External access. No built-in ever
- * runs on a link (a link has no login, and a brain read tool would reach
- * the owner's content). The /s broker has already refused an open link (no
- * contact) and checked the contact's code gate.
+ * declares `declared`? Only an outside tool that is not a connector's, with
+ * External access. No built-in ever runs on a link (a link has no login,
+ * and a brain read tool would reach the owner's content), and no connector
+ * tool (W5b2: a link holds no workspace, LINK_NO_CONNECTORS). The /s broker
+ * has already refused an open link (no contact) and checked the contact's
+ * code gate.
  */
 export async function contactAppToolVerdict(
   ownerId: string,
@@ -668,7 +690,7 @@ export async function contactAppToolVerdict(
     return {
       ok: false,
       status: 403,
-      reason: `The tool '${slug}' is built in, and a shared link runs no built-in tools (only outside tools: a connector's at public level, or one with External access).`,
+      reason: `The tool '${slug}' is built in, and a shared link runs no built-in tools (only an outside tool with External access).`,
     };
   }
   return outsideToolVerdict(ownerId, tool, slug, 'contact');
@@ -797,9 +819,10 @@ export async function setToolExternalAccess(
  * something the admin never confirmed. Every read-only mark on them is
  * VOIDED (kept, never a handler's signature), so a marked tool is refused
  * below the owner until an admin marks it again, never turned into a write
- * (M2 audit, low 5); and on a connector below admin its unmarked (write)
- * tools are disabled until an admin enables them again. Called by the
- * connector binding update.
+ * (M2 audit, low 5); and on a connector a workspace other than Admin
+ * holds (connectorOpensBeyondAdmin) its unmarked (write) tools are disabled
+ * until an admin enables them again. Called by the connector binding
+ * update.
  */
 /** How many of a connector's tools carry a read-only mark (live or void). */
 export async function connectorMarkCount(ownerId: string, groupSlug: string): Promise<number> {
@@ -832,12 +855,7 @@ export async function clearConnectorExternalAccess(
       externalAccess: sql`jsonb_set(${tools.externalAccess}, '{handlerSig}', to_jsonb(${VOIDED_MARK_SIG}::text))`,
     })
     .where(and(ofConnector, sql`${tools.externalAccess} is not null`));
-  const [group] = await db
-    .select({ audience: toolGroups.audience })
-    .from(toolGroups)
-    .where(and(eq(toolGroups.ownerId, ownerId), eq(toolGroups.slug, groupSlug)))
-    .limit(1);
-  if (group && group.audience !== 'admin') {
+  if (await connectorOpensBeyondAdmin(ownerId, groupSlug)) {
     await db
       .update(tools)
       .set({ enabled: false, updatedAt: new Date() })
@@ -850,7 +868,7 @@ export async function clearConnectorExternalAccess(
  * and label): every connector that signs in with it (`secretRef`) now
  * reaches the remote server as whoever the new key belongs to, which the
  * admin never looked at (access matrix T7). The same as a move to another
- * credential: its marks are voided and, below admin, its write tools are
+ * credential: its marks are voided and, beyond Admin, its write tools are
  * disabled (`clearConnectorExternalAccess`). Gives back the connectors it
  * touched, so the caller can drop their cached connections.
  */

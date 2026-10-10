@@ -139,6 +139,11 @@ export async function resolveAgentToolGroups(
   // own level caps, the workspace role's rule hides what the scope may not
   // hold (adminOnly groups outside Admin, connectors that are not a resource
   // of the workspace), and an adminOnly group is left out here too.
+  // A CONNECTOR group is capped by the agent's level alone (which agent may
+  // hold it, kept until W7): whether the caller reaches it comes from the
+  // scope (W5b2), the workspace role's rule in a workspace scope, and in a
+  // level scope the dispatch's workspace rule on every call (dispatch.ts
+  // connectorCallRefused), never the connector's level against the caller's.
   const inWorkspace = currentWorkspaceScope() !== null;
   // Outside a workspace scope: system work, or a personal space at its
   // login's level (until W6b).
@@ -156,6 +161,7 @@ export async function resolveAgentToolGroups(
       toolSlugs: toolGroups.toolSlugs,
       audience: toolGroups.audience,
       adminOnly: toolGroups.adminOnly,
+      integration: toolGroups.integration,
     })
     .from(toolGroups)
     .where(
@@ -174,9 +180,10 @@ export async function resolveAgentToolGroups(
       return false;
     }
     const groupLevel = isViewerLevel(r.audience) ? r.audience : 'admin';
-    if (levelCovers(cap, groupLevel)) return true;
+    const limit = r.integration ? level : cap;
+    if (levelCovers(limit, groupLevel)) return true;
     console.warn(
-      `[skills] tool group '${r.slug}' is ${groupLevel}-level; left out for a ${cap}-level agent`,
+      `[skills] tool group '${r.slug}' is ${groupLevel}-level; left out for a ${limit}-level agent`,
     );
     return false;
   });

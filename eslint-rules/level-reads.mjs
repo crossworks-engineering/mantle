@@ -136,12 +136,7 @@ export const LEVEL_READ_ALLOWLIST = {
   'packages/runtime/src/agent/skills.ts': {
     lines: 4,
     phase: 'W5b2',
-    why: 'connector level cap; levelOfScope for the caller level',
-  },
-  'packages/tools/src/agent-grants.ts': {
-    lines: 5,
-    phase: 'W5b2',
-    why: 'agent vs connector level',
+    why: 'levelOfScope for the caller level (2 lines, the shim); then agent and tool-group levels (2 lines, kept until W7, contract 21): a connector group is capped by the agent level only, the scope decides the caller',
   },
   'packages/tools/src/app-tool-level.ts': {
     lines: 4,
@@ -159,35 +154,10 @@ export const LEVEL_READ_ALLOWLIST = {
     why: 'reply text names the level',
   },
   'packages/tools/src/builtins-share.ts': { lines: 1, phase: 'W5b2', why: 'public: unshare reply' },
-  'packages/tools/src/connector-level-report.ts': {
-    lines: 8,
-    phase: 'W5b2',
-    why: 'connector level report',
-  },
   'packages/tools/src/dispatch.ts': {
-    lines: 3,
+    lines: 2,
     phase: 'W5b2',
-    why: 'connector level in connectorCallRefused',
-  },
-  'packages/tools/src/external-access.ts': {
-    lines: 5,
-    phase: 'W5b2',
-    why: 'connector level lists and resets',
-  },
-  'packages/tools/src/mcp-sync.ts': {
-    lines: 1,
-    phase: 'W5b2',
-    why: 'connector level of new remote tools',
-  },
-  'packages/tools/src/member-app-tools.ts': {
-    lines: 1,
-    phase: 'W5b2',
-    why: 'connector level for member app tools',
-  },
-  'packages/tools/src/toolsmith/groups.ts': {
-    lines: 6,
-    phase: 'W5b2',
-    why: 'connector/agent level (+ OAuth audience lines)',
+    why: 'levelOfScope: the run level of a non-owner call (the shim); connectors read workspace_resources',
   },
   'server/web/app/api/access/agents/[slug]/route.ts': {
     lines: 5,
@@ -378,6 +348,21 @@ export const LEVEL_READ_ALLOWLIST = {
     why: 'personal folder insert names the level default',
   },
   // ── W7 (MCP, peers, Telegram) ──
+  'packages/tools/src/agent-grants.ts': {
+    lines: 5,
+    phase: 'W7',
+    why: 'agent and tool-group levels (kept until W7, contract 21): an agent holds groups at or below its level',
+  },
+  'packages/tools/src/member-app-tools.ts': {
+    lines: 1,
+    phase: 'W7',
+    why: 'agent and tool-group levels (kept until W7, contract 21): a member app draws built-ins from team-level groups',
+  },
+  'packages/tools/src/toolsmith/groups.ts': {
+    lines: 6,
+    phase: 'W7',
+    why: 'agent and tool-group levels (kept until W7, contract 21): grant and group-change rules (4 lines); OAuth audience (2 lines, keep)',
+  },
   'packages/mcp-core/src/login-surface.ts': {
     lines: 3,
     phase: 'W7',

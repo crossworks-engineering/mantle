@@ -12,9 +12,7 @@
 import { and, eq } from 'drizzle-orm';
 import {
   asSystem,
-  asViewerLevel,
   db,
-  levelCovers,
   lowerLevel,
   scopeHoldsAdmin,
   toolGroups,
@@ -23,7 +21,12 @@ import {
   type ViewerLevel,
 } from '@mantle/db';
 import { currentWorkspaceScope, currentScope } from '@mantle/db/viewer';
-import { connectorMarkState, connectorResources } from './external-access';
+import {
+  connectorMarkState,
+  connectorResources,
+  LINK_NO_CONNECTORS,
+  loginConnectorRefused,
+} from './external-access';
 import { getApiKey } from '@mantle/api-keys';
 import { getBuiltin, getBuiltinHandler } from './registry';
 import { checkToolPreconditions } from './preconditions';
@@ -225,6 +228,8 @@ async function connectorScopeRefused(
 ): Promise<string | null> {
   const scope = currentWorkspaceScope();
   if (!scope) return null;
+  // A link scope holds no workspace (W5b2): no connector reaches it.
+  if (scope.kind === 'link') return LINK_NO_CONNECTORS;
   const held = await connectorResources(ctx.ownerId, groupSlug, scope.ws);
   if (held.length === 0) {
     return "This connector is not one of this workspace's resources, so its tools do not run here.";
@@ -247,20 +252,25 @@ async function connectorScopeRefused(
   return null;
 }
 
-/** Why a connector call is refused for a non-owner run, or null. */
-function connectorCallRefused(
+/**
+ * Why a connector call is refused for a non-owner run outside a workspace
+ * scope, or null (W5b2). The connector's level decides nothing (it only
+ * says which agents may hold the group): the workspaces that hold the
+ * connector do. A call on a login's surface (a member's or a client's)
+ * takes the login's workspace rule (loginConnectorRefused); a contact link
+ * holds no workspace, so it reaches no connector; any other non-owner run
+ * names no login to check, so it is refused too (fails closed).
+ */
+async function connectorCallRefused(
   ctx: ToolHandlerContext,
-  connectorLevel: ViewerLevel,
+  groupSlug: string,
   tool: Tool,
   input: Record<string, unknown>,
-): string | null {
-  // A workspace turn scope has no level: connectorScopeRefused decides.
+): Promise<string | null> {
+  // A workspace scope: connectorScopeRefused decides.
   if (currentWorkspaceScope()) return null;
   const run = nonOwnerRunLevel(ctx);
   if (!run) return null;
-  if (!levelCovers(run, connectorLevel)) {
-    return `This connector's tools are not open at your level (the connector is at ${connectorLevel} level).`;
-  }
   const mark = connectorMarkState(tool);
   if (mark === 'stale') {
     return 'This connector tool changed after an admin marked it read-only; it runs again once an admin marks it again.';
@@ -274,7 +284,12 @@ function connectorCallRefused(
       return `This connector tool was marked read-only with the inputs it had then, and ${extra.map((k) => `'${k}'`).join(', ')} is not one of them. Call it with only the inputs it lists, or ask an admin to sync the connector and mark the tool again.`;
     }
   }
-  return null;
+  const s = ctx.surface;
+  if (s?.kind === 'contact') return LINK_NO_CONNECTORS;
+  if ((s?.kind === 'team' || s?.kind === 'client') && s.loginId) {
+    return loginConnectorRefused(ctx.ownerId, s.loginId, groupSlug, mark === 'write');
+  }
+  return 'This connector tool runs below the owner only for a signed-in user of a workspace that holds the connector.';
 }
 
 /**
@@ -315,14 +330,13 @@ async function dispatchMcp(
       error: `MCP connector '${h.group}' is disabled — ask the owner to enable it under Settings → Tool groups`,
     };
   }
-  // The connector's level and the read-only mark hold on EVERY path below
-  // the owner (team apps M2 audit, low 6): a chat turn whose agent holds the
-  // tool through another group, an app run, a login's MCP. The level a
-  // non-owner call runs at must read the connector's level; a public run
-  // (a contact link, a public agent) only ever reads (Jason, 2026-10-08:
-  // contacts read only), so an unmarked tool is refused there.
+  // The workspaces that hold the connector and the read-only mark hold on
+  // EVERY path below the owner (team apps M2 audit, low 6; W5b2): a chat
+  // turn whose agent holds the tool through another group, an app run, a
+  // login's MCP. A public run (a public agent) only ever reads (Jason,
+  // 2026-10-08), so an unmarked tool is refused there.
   const refused =
-    connectorCallRefused(ctx, asViewerLevel(group.audience), tool, input) ??
+    (await connectorCallRefused(ctx, group.slug, tool, input)) ??
     (await connectorScopeRefused(ctx, group.slug, tool, input));
   if (refused) return { ok: false, error: refused };
   try {

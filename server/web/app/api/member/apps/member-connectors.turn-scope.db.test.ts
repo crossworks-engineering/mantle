@@ -92,8 +92,8 @@ describe.skipIf(!URL)('a login’s connector tools: one rule (W4b fix round 2)',
   const plain = randomUUID();
   const stranger = randomUUID();
   let team = '';
-  // Connector A: a resource of Team (the bridge puts a team-level connector
-  // there, Write on). Connector B: team level, but no workspace holds it.
+  // Connector A: a resource of Team, Write on. Connector B: team level, but
+  // no workspace holds it (W5b2: its level opens nothing).
   const A = 'conn-a';
   const B = 'conn-b';
   const SLUGS = { aRead: 'conn_a_read', aWrite: 'conn_a_write', bRead: 'conn_b_read' };
@@ -213,8 +213,11 @@ describe.skipIf(!URL)('a login’s connector tools: one rule (W4b fix round 2)',
       const removed = randomUUID();
       await x(sql`insert into auth.users (id, email, password_hash, is_owner, role)
         values (${removed}, ${`cr-${removed.slice(0, 8)}@example.invalid`}, 'x', false, 'member')`);
-      // The login bridge put it on Team; taken off by hand, as a moderator
-      // would once user management lands.
+      // On Team, then taken off it, as a Moderator would (W5b2: no login
+      // bridge puts a new login anywhere).
+      await x(
+        sql`insert into workspace_users (workspace_id, login_id) values (${team}, ${removed})`,
+      );
       expect(
         await x(sql`delete from workspace_users where workspace_id = ${team}
           and login_id = ${removed} returning login_id`),
@@ -283,7 +286,7 @@ describe.skipIf(!URL)('a login’s connector tools: one rule (W4b fix round 2)',
       write: true,
     });
     const listed = async (login: string) =>
-      (await tools.listLoginConnectorTools(owner, 'team', login)).map((c) => c.tool.slug).sort();
+      (await tools.listLoginConnectorTools(owner, login)).map((c) => c.tool.slug).sort();
     const callable = async (login: string) => {
       const out: string[] = [];
       for (const slug of Object.values(SLUGS)) {

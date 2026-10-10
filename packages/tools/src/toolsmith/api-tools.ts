@@ -17,7 +17,7 @@ import { describeInheritance, type InheritedPieces } from '../integration';
 import { isMcpManagedSecretService } from '../mcp-oauth';
 import { type BuiltinToolDef, type ToolHandlerContext, type ToolHandlerResult } from '../types';
 import {
-  connectorGroupOf,
+  connectorOpensBeyondAdmin,
   externalAccessActive,
   setToolExternalAccess,
   externalAccessSummary,
@@ -359,16 +359,17 @@ export const api_tool_update: BuiltinToolDef = {
       return { ok: false, error: EXTERNAL_ACCESS_ADMIN_ONLY };
     }
 
-    // A connector tool below admin is open to members, clients or links: an
-    // in-brain agent turning it on, or clearing its confirm, would open it
-    // (or its writes) to all of them on the agent's say-so, and an agent can
-    // be steered by what it reads. That always waits for the owner, whatever
-    // "require approval" says (access matrix N5). On approval the call runs
-    // again with no agent context, so this branch is skipped. The same for
-    // any other tool with External access (access matrix T8): switching it
-    // off, or adding a confirm, is how an admin closes it to shared apps.
-    // An API key or a peer acting as the owner is refused outright, as for
-    // switching External access on (access matrix T9).
+    // A connector tool a workspace other than Admin holds is open to that
+    // workspace's users: an in-brain agent turning it on, or clearing its
+    // confirm, would open it (or its writes) to all of them on the agent's
+    // say-so, and an agent can be steered by what it reads. That always
+    // waits for the owner, whatever "require approval" says (access matrix
+    // N5). On approval the call runs again with no agent context, so this
+    // branch is skipped. The same for any other tool with External access
+    // (access matrix T8): switching it off, or adding a confirm, is how an
+    // admin closes it to shared apps. An API key or a peer acting as the
+    // owner is refused outright, as for switching External access on
+    // (access matrix T9).
     const keyOrPeer = keyOrPeerVia(ctx);
     if (ctx.agent || keyOrPeer) {
       let opening: string | null = null;
@@ -376,9 +377,8 @@ export const api_tool_update: BuiltinToolDef = {
         const opens =
           (input.enabled === true && !row.enabled) ||
           (input.requires_confirm === false && row.requiresConfirm);
-        const group = opens ? await connectorGroupOf(ctx.ownerId, row) : null;
-        if (opens && group && group.level !== 'admin') {
-          opening = `'${slug}' belongs to a connector at ${group.level} level: turning it on or removing its confirm opens it below admin`;
+        if (opens && (await connectorOpensBeyondAdmin(ctx.ownerId, existing.group))) {
+          opening = `'${slug}' belongs to a connector a workspace other than Admin holds: turning it on or removing its confirm opens it to that workspace's users`;
         }
       } else if (row.externalAccess) {
         const reachable = (t: typeof row) => t.enabled && externalAccessActive(t);

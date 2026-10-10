@@ -18,14 +18,18 @@
  *      writing or spending builtin an admin put in a team-level group for
  *      chat must not become callable 60 times a minute (audit 2026-09-27;
  *      `spends` since audit F17, as a read can spend too);
- *   5. an ENABLED tool group at team level or lower holds it.
+ *   5. an ENABLED tool group at team level or lower holds it (the group's
+ *      level as the rule of which app tools may hold it: kept until W7,
+ *      contract 21).
  * An OUTSIDE tool takes another path after rule 2 (external-access.ts). A
- * CONNECTOR tool (mcp): its connector's level must be team or lower, and the
- * admin's read-only mark makes it a read, its absence a write (team apps
- * Phase 2, Jason 2026-10-08). An http tool: an admin switched on "External
- * access" on it and confirmed it only reads (widened 2026-10-02). Either
- * counts only while the handler is the one the admin confirmed and the
- * tool needs no confirmation. Never for recipe or shell tools.
+ * CONNECTOR tool (mcp): the workspaces that hold its connector decide (the
+ * runner's login's workspaces, and with `check.appId` every workspace that
+ * holds the app; W5b2), and the admin's read-only mark makes it a read, its
+ * absence a write (team apps Phase 2, Jason 2026-10-08). An http tool: an
+ * admin switched on "External access" on it and confirmed it only reads
+ * (widened 2026-10-02). Either counts only while the handler is the one the
+ * admin confirmed and the tool needs no confirmation. Never for recipe or
+ * shell tools.
  * The caller then dispatches inside `withViewer('team', …)` on a team surface
  * that carries the login, so row security still decides what the tool reads.
  *
@@ -36,7 +40,7 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db, toolGroups, type Tool } from '@mantle/db';
 import { resolveTool } from './resolve';
-import { outsideToolVerdict } from './external-access';
+import { outsideToolVerdict, type OutsideToolCheck } from './external-access';
 
 /** The group levels a member's app may draw tools from. */
 const MEMBER_GROUP_LEVELS = ['team', 'client', 'public'];
@@ -89,12 +93,14 @@ async function inTeamLevelGroup(ownerId: string, slug: string): Promise<boolean>
   return !!row;
 }
 
-/** May a member's run of an app that declares `declared` call `slug`? */
+/** May a member's run of an app that declares `declared` call `slug`?
+ *  `check` goes to a connector tool's rule (external-access.ts). */
 export async function memberAppToolVerdict(
   ownerId: string,
   declared: readonly string[],
   slug: string,
   loginId?: string,
+  check?: OutsideToolCheck,
 ): Promise<MemberAppToolVerdict> {
   if (!declared.includes(slug)) {
     return {
@@ -109,13 +115,13 @@ export async function memberAppToolVerdict(
   const tool = await resolveTool(ownerId, slug);
   if (!tool) return { ok: false, status: 404, reason: `tool '${slug}' not found` };
   if (tool.handler.kind !== 'builtin') {
-    // An outside tool (external-access.ts): a connector tool by its
-    // connector's level (team, client or public for a member's run), read
-    // or write by the admin's read-only mark (team apps Phase 2); any other
-    // outside tool by External access, the admin's read-only confirmation.
-    // Recipe and shell tools, a write method, a tool that needs
-    // confirmation and a handler changed since are refused.
-    return outsideToolVerdict(ownerId, tool, slug, 'member', loginId);
+    // An outside tool (external-access.ts): a connector tool by the
+    // workspaces that hold its connector, read or write by the admin's
+    // read-only mark (team apps Phase 2; W5b2); any other outside tool by
+    // External access, the admin's read-only confirmation. Recipe and shell
+    // tools, a write method, a tool that needs confirmation and a handler
+    // changed since are refused.
+    return outsideToolVerdict(ownerId, tool, slug, 'member', loginId, check);
   }
   if (MEMBER_APP_REFUSED_SLUGS.includes(tool.handler.ref)) {
     return { ok: false, status: 403, reason: `The tool '${slug}' is not available in team apps.` };
