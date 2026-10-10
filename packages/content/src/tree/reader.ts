@@ -3,19 +3,20 @@
  * tree"): a kind's folders and items as a member (team) or client login sees
  * them, read only.
  *
- * Items are read AS the reader (`withViewer`): row security decides, and the
- * reader's Library levels narrow it by the union rule (its own level OR the
- * share it inherits from a folder), as the Library does. Extracted image
- * fragments are left out, as the Library leaves them out.
+ * Items are read AS the reader (`withViewer` with its login, workspaces
+ * W5b2): row security on the workspace role decides, so a member or a
+ * client reads what a workspace of theirs holds (its grants), nothing by
+ * level. Extracted image fragments are left out, as the Library leaves them
+ * out.
  *
- * Folders are read as the brain, because a shared folder's own row is not the
- * reader's to read (it inherits only from ABOVE itself). A folder shows when:
- *   - its share, or the share it inherits, covers the reader (so an empty
- *     subfolder of a shared folder still shows), or
+ * A folder shows when:
+ *   - a workspace of the reader holds it (read as the reader, the same row
+ *     security: so an empty subfolder of a held folder still shows), or
  *   - it is on the way to something the reader reads (names are
- *     organisational), or to such a shared folder.
- * No stored state, no definer function: the visible set is computed per call
- * from the reader's item paths and the shared folders. Counts are the
+ *     organisational), or to such a held folder.
+ * The folder rows themselves (names, looks) are read as the brain, along
+ * those paths only. No stored state, no definer function: the visible set is
+ * computed per call from the reader's item and folder paths. Counts are the
  * reader's (what it would see inside), never the brain's.
  *
  * Call it on the admin pool, outside any viewer scope: it scopes its own item
@@ -37,8 +38,6 @@ import {
   type TreeSort,
 } from '@mantle/client-types/tree';
 import { treeFolderChain, treeParentPath } from '@mantle/content-core/tree';
-import { readAtAliasSql } from '../item-level';
-import { libraryLevelsOf } from '../member-library';
 import { encodeTreeCursor } from './cursor';
 import { READER_TREE_KINDS } from './kinds';
 import {
@@ -61,11 +60,12 @@ function assertAdminScope(): void {
   }
 }
 
-/** What the reader lists of a kind's items (`and ...` on alias `n`). */
-export function readerItems(reader: TreeReader, alias: string): SQL {
+/** What the reader lists of a kind's items (`and ...` on alias `n`), read
+ *  inside its workspace scope: row security decides which; extracted image
+ *  fragments are left out. */
+export function readerItems(alias: string): SQL {
   const a = sql.raw(alias);
-  return sql`and ${readAtAliasSql(alias, libraryLevelsOf(reader))}
-    and not (${a}.type = 'file' and ${a}.data ? 'sourceFileId')`;
+  return sql`and not (${a}.type = 'file' and ${a}.data ? 'sourceFileId')`;
 }
 
 export type Visible = {
@@ -85,28 +85,25 @@ export async function visibleFolders(
   kind: TreeKind,
 ): Promise<Visible> {
   const spec = TREE_KIND_SPECS[kind];
-  const levels = libraryLevelsOf(reader);
-  const [itemRows, sharedRows] = await Promise.all([
-    withViewer(
-      reader,
-      { login: loginId },
-      async () =>
-        (await db.execute(sql`
-          select n.path::text as path, count(*)::int as n
-            from nodes n
-           where n.owner_id = ${anchorId} and n.type = ${spec.nodeType}
-             and n.path <@ ${spec.root}::ltree ${readerItems(reader, 'n')}
-           group by n.path`)) as unknown as Array<{ path: string; n: number }>,
-    ),
-    levels.length
-      ? (db.execute(sql`
-          select f.path::text as path
-            from nodes f
-           where f.owner_id = ${anchorId} and f.type = 'branch'
-             and f.path <@ ${spec.root}::ltree and nlevel(f.path) > 1
-             and ${readAtAliasShare('f', levels)}`) as unknown as Promise<Array<{ path: string }>>)
-      : Promise.resolve([] as Array<{ path: string }>),
-  ]);
+  const [itemRows, sharedRows] = await withViewer(reader, { login: loginId }, () =>
+    Promise.all([
+      db.execute(sql`
+        select n.path::text as path, count(*)::int as n
+          from nodes n
+         where n.owner_id = ${anchorId} and n.type = ${spec.nodeType}
+           and n.path <@ ${spec.root}::ltree ${readerItems('n')}
+         group by n.path`) as unknown as Promise<Array<{ path: string; n: number }>>,
+      // The folders a workspace of the reader holds: row security answers
+      // those rows only.
+      db.execute(sql`
+        select f.path::text as path
+          from nodes f
+         where f.owner_id = ${anchorId} and f.type = 'branch'
+           and f.path <@ ${spec.root}::ltree and nlevel(f.path) > 1`) as unknown as Promise<
+        Array<{ path: string }>
+      >,
+    ]),
+  );
   const paths = new Set<string>();
   for (const p of [...itemRows.map((r) => r.path), ...sharedRows.map((r) => r.path)]) {
     for (const c of treeFolderChain(p)) paths.add(c);
@@ -117,16 +114,6 @@ export async function visibleFolders(
     children.set(parent, (children.get(parent) ?? 0) + 1);
   }
   return { paths, items: new Map(itemRows.map((r) => [r.path, Number(r.n)])), children };
-}
-
-/** A folder whose own share or inherited share is one of `levels`. */
-function readAtAliasShare(alias: string, levels: readonly string[]): SQL {
-  const a = sql.raw(alias);
-  const list = sql.join(
-    levels.map((l) => sql`${l}`),
-    sql`, `,
-  );
-  return sql`(${a}.share_level in (${list}) or ${a}.inherited_level in (${list}))`;
 }
 
 /** The folder with the reader's counts. */
@@ -178,7 +165,7 @@ export async function loadReaderTreeFolder(
         sort,
         opts.cursor,
         treePageLimit(opts.limit),
-        readerItems(reader, 'n'),
+        readerItems('n'),
       ),
     ),
   ]);
@@ -228,7 +215,7 @@ export async function searchReaderTree(
           .slice(0, limit)
           .map((f) => recount(f, vis));
   const { page, more } = await withViewer(reader, { login: loginId }, () =>
-    searchItemRows(anchorId, kind, term, opts.cursor, limit, readerItems(reader, 'n')),
+    searchItemRows(anchorId, kind, term, opts.cursor, limit, readerItems('n')),
   );
   const crumbs = await treeCrumbsFor(anchorId, [
     ...folders.map((f) => treeParentPath(f.path)),

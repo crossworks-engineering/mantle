@@ -9,8 +9,8 @@
  * shows at the deepest folder of its path that this member sees (never the
  * teammate's private folders), else at the top level.
  *
- * A brain folder shows only by the reader rules (./reader): its share covers
- * the member, or it leads to something the member reads. Where a member's
+ * A brain folder shows only by the reader rules (./reader): a workspace of
+ * the member holds it, or it leads to something the member reads. Where a member's
  * own folder sits at the path of a brain folder the member does NOT see, the
  * member's own row shows (its name, its id), never the brain's: a member
  * cannot learn a hidden folder's name, look or id by naming a folder like it
@@ -391,7 +391,7 @@ export async function loadMemberTreeFolder(
             sort,
             shownDrafts === null ? opts.cursor : null,
             room,
-            readerItems('team', 'n'),
+            readerItems('n'),
           ),
         );
   const nextCursor = draftsLeft
@@ -473,7 +473,7 @@ export async function searchMemberTree(
   // them sorts after all of these, so the first `limit` of these and the
   // drafts together are the true next page.
   const { page, more } = await withViewer('team', { login: scope.loginId }, () =>
-    searchItemRows(scope.anchorId, kind, term, opts.cursor, limit, readerItems('team', 'n')),
+    searchItemRows(scope.anchorId, kind, term, opts.cursor, limit, readerItems('n')),
   );
   const found = new Map<string, { item: TreeItem; path: string; key: string }>();
   for (const d of drafts) found.set(d.item.id, { item: d.item, path: d.path, key: d.sortKey });

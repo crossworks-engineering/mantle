@@ -18,6 +18,11 @@
  * images still loaded. A public item reads as `audience: 'team'` there (no
  * Client badge: a client login does not read it).
  *
+ * Since workspaces W5b2 the routes read as the login (withViewer with
+ * { login }): the grants decide (row security on the workspace role) and no
+ * level narrows the list; `audience` still badges an item by its frozen
+ * level. The level rules below serve a level scope only.
+ *
  * Read-only in Phase 1. Writing and personal spaces come in Phase 2.
  */
 import { and, desc, eq, ilike, inArray, sql } from 'drizzle-orm';
