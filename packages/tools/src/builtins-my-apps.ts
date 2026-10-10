@@ -38,7 +38,7 @@
  * the whole change, so a Submit or an Accept never races it (M3 audit). The owner the app's rows are
  * keyed to is the author's space, so nothing here reaches a brain app.
  */
-import { asSystem } from '@mantle/db';
+import { asSystem, currentWorkspaceScope } from '@mantle/db';
 import {
   AppRestoreDraftError,
   AppSourceLimitError,
@@ -911,6 +911,29 @@ const my_app_deleted_list: BuiltinToolDef = {
   },
 };
 
+/**
+ * The app work runs as the system (see the file header). The login's MCP
+ * call runs in a workspace scope since W5b2 (withViewer for the login), and
+ * a scope is left for the system pool only by a named door: the whole tool
+ * leaves it once, by 'own-space' (the apps live in the author's own space,
+ * and every query below names that space). Checked first: the login the
+ * surface names is the scope's own login, never someone else.
+ */
+function outOfLoginScope(def: BuiltinToolDef): BuiltinToolDef {
+  return {
+    ...def,
+    handler: async (input, ctx) => {
+      const scope = currentWorkspaceScope();
+      if (!scope) return def.handler(input, ctx);
+      const s = ctx.surface;
+      if (s?.kind !== 'team' || !s.loginId || scope.loginId !== s.loginId) {
+        return { ok: false, error: NO_LOGIN };
+      }
+      return asSystem(() => def.handler(input, ctx), 'own-space');
+    },
+  };
+}
+
 /** What a member reads of their own apps (offered with write off too). */
 export const MY_APP_READ_TOOLS: BuiltinToolDef[] = [
   my_app_guide,
@@ -919,7 +942,7 @@ export const MY_APP_READ_TOOLS: BuiltinToolDef[] = [
   my_app_errors,
   my_app_snapshot_list,
   my_app_deleted_list,
-];
+].map(outOfLoginScope);
 
 /** How long a change waits for the member's previous change to finish. */
 export const MY_APP_WRITE_WAIT_MS = 15_000;
@@ -999,7 +1022,9 @@ export const MY_APP_WRITE_TOOLS: BuiltinToolDef[] = [
   my_app_recall,
   my_app_delete,
   my_app_undelete,
-].map(oneAtATime);
+]
+  .map(oneAtATime)
+  .map(outOfLoginScope);
 
 export const MY_APP_TOOLS: BuiltinToolDef[] = [...MY_APP_READ_TOOLS, ...MY_APP_WRITE_TOOLS];
 export const MY_APP_READ_TOOL_SLUGS: readonly string[] = MY_APP_READ_TOOLS.map((t) => t.slug);

@@ -641,14 +641,29 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
       expect(res.ok).toBe(true);
       return (res.ok ? (res.output as { warnings?: string[] }).warnings : []) ?? [];
     };
-    expect(await warn()).toEqual([]);
+    // The team rules run only for an app a workspace other than Admin holds
+    // (R2): held by Admin alone, the app keeps the runner's rules and warns
+    // nothing, whoever holds the connector.
     await without(ws.team, async () => {
-      const warned = await warn();
-      expect(warned).toHaveLength(1);
-      expect(warned[0]).toContain("'site_query'");
-      expect(warned[0]).toContain('Team workspace does not hold');
+      expect(await warn()).toEqual([]);
     });
-    expect(await warn()).toEqual([]);
+    // Grant writes take the item's head (0244).
+    const grants = (q: ReturnType<typeof sqlTag>) =>
+      m.withHeads([appId], 'update', (tx) => tx.execute(q));
+    await grants(sqlTag`insert into item_grants (node_id, workspace_id, write, is_home)
+      values (${appId}, ${ws.team}, false, true)`);
+    try {
+      expect(await warn()).toEqual([]);
+      await without(ws.team, async () => {
+        const warned = await warn();
+        expect(warned).toHaveLength(1);
+        expect(warned[0]).toContain("'site_query'");
+        expect(warned[0]).toContain('Team workspace does not hold');
+      });
+      expect(await warn()).toEqual([]);
+    } finally {
+      await grants(sqlTag`delete from item_grants where node_id = ${appId}`);
+    }
   });
 
   // Access matrix N5: an agent turning a closed connector tool back on, or
@@ -930,7 +945,9 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     if (!tool) throw new Error('no tool');
     const surface = { kind: 'team' as const, loginId: member };
     const asMember = (input: Record<string, unknown>) =>
-      m.runInLevelRoleForTest('team', () => dispatch.dispatchTool(tool, input, { ownerId: anchor, surface }));
+      m.runInLevelRoleForTest('team', () =>
+        dispatch.dispatchTool(tool, input, { ownerId: anchor, surface }),
+      );
     fake.calls.length = 0;
     expect(await asMember({ q: 'x' })).toMatchObject({ ok: true });
     const extra = await asMember({ q: 'x', statement: 'delete from rows' });

@@ -14,6 +14,7 @@ const NOTE = '55555555-5555-4555-8555-555555555555';
 
 const h = vi.hoisted(() => ({
   levels: [] as string[],
+  actsFor: [] as unknown[],
   filed: [] as Record<string, unknown>[],
   counts: { turn: 0, day: 0 },
   systemCalls: 0,
@@ -22,8 +23,9 @@ const h = vi.hoisted(() => ({
 
 vi.mock('@mantle/db', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  withViewer: async (level: string, fn: () => Promise<unknown>) => {
+  withViewer: async (level: string, actsFor: unknown, fn: () => Promise<unknown>) => {
     h.levels.push(level);
+    h.actsFor.push(actsFor);
     return fn();
   },
 }));
@@ -103,6 +105,7 @@ const clientCtx = (extra: Record<string, unknown> = {}) => ({
 
 beforeEach(() => {
   h.levels = [];
+  h.actsFor = [];
   h.filed = [];
   h.counts = { turn: 0, day: 0 };
   h.systemCalls = 0;
@@ -140,6 +143,7 @@ describe('client_shared_list / _open read at client level, as the portal shows i
     const { client_shared_list } = await import('./builtins-client');
     const res = await client_shared_list.handler({}, clientCtx() as never);
     expect(h.levels).toEqual(['client']);
+    expect(h.actsFor).toEqual([{ login: LOGIN }]);
     expect(res).toMatchObject({
       ok: true,
       output: {
@@ -156,6 +160,7 @@ describe('client_shared_list / _open read at client level, as the portal shows i
     const { client_shared_open } = await import('./builtins-client');
     const res = await client_shared_open.handler({ id: PAGE }, clientCtx() as never);
     expect(h.levels).toEqual(['client']);
+    expect(h.actsFor).toEqual([{ login: LOGIN }]);
     expect(res.ok).toBe(true);
     const out = (res as { output: { text: string } }).output;
     expect(out.text).toContain('The unit restarts on 12 October.');

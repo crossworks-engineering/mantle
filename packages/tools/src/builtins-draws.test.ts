@@ -131,7 +131,12 @@ describe('draw_get picture', () => {
       { id: ID, image: true },
       { ownerId: 'anchor', surface: { kind: 'client', loginId: 'client-1' } },
     );
-    expect(h.readableDrawSvg).toHaveBeenLastCalledWith('anchor', ID, { kind: 'client' });
+    // A client reads by its own login's workspaces (W5b2), named by the
+    // surface too.
+    expect(h.readableDrawSvg).toHaveBeenLastCalledWith('anchor', ID, {
+      kind: 'client',
+      loginId: 'client-1',
+    });
     await draw_get.handler({ id: ID, image: true }, owner);
     expect(h.readableDrawSvg).toHaveBeenLastCalledWith('anchor', ID, { kind: 'scope' });
   });

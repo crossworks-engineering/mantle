@@ -4,7 +4,9 @@
  * writes DRAFTS into their own personal space, the same as the space routes
  * (POST /api/member/space, /api/member/space-files, .../submit) and nothing
  * more: an admin reviews what they submit. No library write, no new row
- * rules: every write runs inside `withSpace` on the personal-space role.
+ * rules: every write runs inside `withSpace` on the personal-space role
+ * (`inOwnSpace`: from the login's MCP scope, a workspace scope since W5b2,
+ * it leaves that scope for the one space).
  *
  * The login is the one the server stamped on the surface (`onBehalfOf`), as
  * for my_items_list; the model never names it. Any other caller finds no one
@@ -13,7 +15,6 @@
  * (or its peer's) is on.
  */
 import { Readable } from 'node:stream';
-import { withSpace } from '@mantle/db';
 import {
   SPACE_FILE_MAX_BYTES,
   SpaceItemStateError,
@@ -27,7 +28,7 @@ import {
 import { memberFilingPath } from '@mantle/content/tree';
 import { discardSpooled, spaceSpoolDir, spoolUpload, UploadTooLargeError } from '@mantle/files';
 import { errorMessage } from '@mantle/std';
-import { onBehalfOf } from './builtins-my-space';
+import { inOwnSpace, onBehalfOf } from './builtins-my-space';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
 import { str, strOpt } from './coerce';
 
@@ -100,7 +101,7 @@ export const my_note_create: BuiltinToolDef = {
     const path = await filingPath(ctx, who, 'notes', strOpt(input.folder_id));
     if (path && typeof path === 'object') return { ok: false, error: path.error };
     try {
-      const row = await withSpace(who, () =>
+      const row = await inOwnSpace(who, () =>
         createMineItem(
           who.spaceId,
           { type: 'note', title: str(input.title).trim().slice(0, TITLE_MAX), content },
@@ -139,7 +140,7 @@ export const my_page_create: BuiltinToolDef = {
     if (path && typeof path === 'object') return { ok: false, error: path.error };
     try {
       const doc = md.trim() ? (markdownToDoc(md) as Record<string, unknown>) : undefined;
-      const row = await withSpace(who, () =>
+      const row = await inOwnSpace(who, () =>
         createMineItem(
           who.spaceId,
           { type: 'page', title: str(input.title).trim().slice(0, TITLE_MAX), doc },
@@ -186,7 +187,7 @@ export const my_file_upload: BuiltinToolDef = {
     if (bytes.length === 0) return { ok: false, error: 'The file is empty.' };
     const path = await filingPath(ctx, who, 'files', strOpt(input.folder_id));
     if (path && typeof path === 'object') return { ok: false, error: path.error };
-    const headroom = await withSpace(who, () => spaceUploadHeadroom(who.spaceId));
+    const headroom = await inOwnSpace(who, () => spaceUploadHeadroom(who.spaceId));
     if (headroom <= 0 || bytes.length > headroom) {
       return {
         ok: false,
@@ -205,7 +206,7 @@ export const my_file_upload: BuiltinToolDef = {
       return refusal(err);
     }
     try {
-      const got = await withSpace(who, async () => {
+      const got = await inOwnSpace(who, async () => {
         const id = await createMineFile(who.spaceId, {
           filename: str(input.filename),
           spooled,
@@ -241,7 +242,7 @@ export const my_item_submit: BuiltinToolDef = {
     const id = str(input.id).trim();
     if (!UUID_RE.test(id)) return { ok: false, error: 'id must be a full item id.' };
     try {
-      const row = await withSpace(who, () => submitItem(who.spaceId, id));
+      const row = await inOwnSpace(who, () => submitItem(who.spaceId, id));
       return { ok: true, output: itemOut(row) };
     } catch (err) {
       return refusal(err);

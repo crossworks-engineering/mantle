@@ -1,12 +1,12 @@
 /**
- * A key reaches email only with the Search area (access matrix M4). On
- * /api/mcp an admin key limited to Files gets the Files tools: the lists
- * drop attachment rows and attachments folders, and any other Files tool
- * whose file id, folder id or folder path is (or holds) an email attachment
- * is refused before it runs. A key with Search, or with every area, runs
- * the tool as before. The attachment lookup is pinned by
- * packages/files/src/email-attachments.db.test.ts; this drives the real
- * registration path against a capturing fake server.
+ * The email-attachment guard (`keyEmailGuard`, access matrix M4): a Files
+ * tool whose file id, folder id or folder path is (or holds) an email
+ * attachment is refused before it runs. Since W5b2 a key acts exactly as
+ * its login (its areas no longer narrow it), so /api/mcp no longer puts the
+ * guard on a key's surface: an admin key runs the Files tools as the owner
+ * does. The guard itself is pinned below. The attachment lookup is pinned by
+ * packages/files/src/email-attachments.db.test.ts; the surface test drives
+ * the real registration path against a capturing fake server.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -73,15 +73,15 @@ describe('a key without Search and email attachments on MCP', () => {
     expect(keyAreasReachEmail(['files', 'pages', 'notes'])).toBe(false);
   });
 
-  it('refuses a Files tool on an attachment, before it runs', async () => {
+  it('a key acts as its login on MCP: a Files-only key runs a Files tool on an attachment as the owner (W5b2)', async () => {
     const fileGet = toolsFor(['files']).get('file_get')!;
     const res = await fileGet({ file_id: MAIL }, {});
-    expect(res.isError).toBe(true);
-    expect(res.content[0]!.text).toBe(`Error: ${KEY_EMAIL_REFUSAL}`);
-    expect(files.fileById).not.toHaveBeenCalled();
+    expect(res.isError).toBeUndefined();
+    expect(res.content[0]!.text).not.toBe(`Error: ${KEY_EMAIL_REFUSAL}`);
+    expect(files.reachesEmailAttachment).not.toHaveBeenCalled();
     const ok = await fileGet({ file_id: PLAIN }, {});
     expect(ok.isError).toBeUndefined();
-    expect(files.fileById).toHaveBeenCalledTimes(1);
+    expect(files.fileById).toHaveBeenCalledTimes(2);
   });
 
   it('checks folder ids and folder paths too, uploads and moves included', async () => {

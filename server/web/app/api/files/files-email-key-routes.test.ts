@@ -1,11 +1,10 @@
 /**
- * A key reaches email only with the Search area (access matrix M4). The
- * attachments of synced mail are file nodes, so for a key limited to Files
- * the Files routes (/api/v1/files aliases them) leave them out of the
- * recent list and a folder list, and answer 404 for one by id, its bytes
- * included. A session, an all-areas key and a key with Search see them as
- * before. The lookup itself is pinned by
- * packages/files/src/email-attachments.db.test.ts.
+ * Email attachments on the Files routes (/api/v1/files aliases them). Until
+ * W5b2 a key reached email only with the Search area (access matrix M4).
+ * Since W5b2 a key acts exactly as its login (contract change 25): its areas
+ * no longer narrow it, so a key limited to Files lists, opens and uploads
+ * into attachments exactly as a session of its login does. The lookup
+ * itself is pinned by packages/files/src/email-attachments.db.test.ts.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AccessKeyGrant } from '@/lib/access-keys';
@@ -71,47 +70,34 @@ async function ids(res: Response): Promise<string[]> {
 
 beforeEach(() => vi.clearAllMocks());
 
-describe('Files routes and a key without the Search area', () => {
-  it('leave attachments out of the recent list and a folder list', async () => {
+describe('Files routes and a key: the key acts as its login (W5b2)', () => {
+  const grants = [undefined, key(['files']), key(null), key(['files', 'search'])];
+
+  it('list attachments in the recent list and a folder list, as a session does', async () => {
     const { GET } = await import('./files/route');
-    const filesOnly = key(['files']);
-    expect(await ids(await as(filesOnly, 'http://x/api/v1/files?recent=1', GET))).toEqual([PLAIN]);
-    expect(await ids(await as(filesOnly, 'http://x/api/v1/files?parent=inbox.a', GET))).toEqual([
-      PLAIN,
-    ]);
-  });
-
-  it('answer 404 for an attachment by id, metadata and bytes', async () => {
-    const { GET } = await import('./files/[id]/route');
-    const filesOnly = key(['files']);
-    const meta = await as(filesOnly, `http://x/api/v1/files/${MAIL}`, (r) => GET(r, ctxOf(MAIL)));
-    expect(meta.status).toBe(404);
-    const raw = await as(filesOnly, `http://x/api/v1/files/${MAIL}?raw=1`, (r) =>
-      GET(r, ctxOf(MAIL)),
-    );
-    expect(raw.status).toBe(404);
-    const plain = await as(filesOnly, `http://x/api/v1/files/${PLAIN}?raw=1`, (r) =>
-      GET(r, ctxOf(PLAIN)),
-    );
-    expect(plain.status).toBe(200);
-  });
-
-  it('leave a session, an all-areas key and a Search key as before', async () => {
-    const list = (await import('./files/route')).GET;
-    const one = (await import('./files/[id]/route')).GET;
-    for (const grant of [undefined, key(null), key(['files', 'search'])]) {
-      expect(await ids(await as(grant, 'http://x/api/v1/files?recent=1', list))).toEqual([
+    for (const grant of grants) {
+      expect(await ids(await as(grant, 'http://x/api/v1/files?recent=1', GET))).toEqual([
         PLAIN,
         MAIL,
       ]);
-      const res = await as(grant, `http://x/api/v1/files/${MAIL}?raw=1`, (r) =>
-        one(r, ctxOf(MAIL)),
-      );
-      expect(res.status).toBe(200);
+      expect(await ids(await as(grant, 'http://x/api/v1/files?parent=inbox.a', GET))).toEqual([
+        PLAIN,
+        MAIL,
+      ]);
     }
   });
 
-  it('refuse an upload into an attachments folder for a Files-only key', async () => {
+  it('serve an attachment by id, metadata and bytes, as a session does', async () => {
+    const { GET } = await import('./files/[id]/route');
+    for (const grant of grants) {
+      for (const url of [`http://x/api/v1/files/${MAIL}`, `http://x/api/v1/files/${MAIL}?raw=1`]) {
+        const res = await as(grant, url, (r) => GET(r, ctxOf(MAIL)));
+        expect(res.status, url).toBe(200);
+      }
+    }
+  });
+
+  it('take an upload into an attachments folder, as a session does', async () => {
     const { POST } = await import('./files/route');
     const post = (grant: AccessKeyGrant | undefined, parentPath: string) => {
       const url = 'http://x/api/v1/files';
@@ -125,9 +111,9 @@ describe('Files routes and a key without the Search area', () => {
         () => POST(req),
       );
     };
-    expect((await post(key(['files']), 'inbox.a.attachments')).status).toBe(403);
-    expect((await post(key(['files']), 'files.work')).status).toBe(200);
-    expect((await post(undefined, 'inbox.a.attachments')).status).toBe(200);
-    expect((await post(key(['files', 'search']), 'inbox.a.attachments')).status).toBe(200);
+    for (const grant of grants) {
+      expect((await post(grant, 'inbox.a.attachments')).status).toBe(200);
+      expect((await post(grant, 'files.work')).status).toBe(200);
+    }
   });
 });

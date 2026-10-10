@@ -489,7 +489,9 @@ export function runInSystemTx<T>(
  *  - `member-request`: team_request_create files a task on the member's
  *    behalf (builtins-team.ts), the one write a member turn makes.
  *  - `own-space`: the my_* tools leave the turn to enter the login's own
- *    personal space (withSpace), checked against the scope's login.
+ *    personal space (withSpace), checked against the scope's login; the
+ *    my_app_* tools leave it the same way for the author's own apps (they
+ *    run as the system, keyed to that space).
  *  - `heartbeat-own-row`: a heartbeat's control tools change the row of the
  *    heartbeat that is firing, and only that one (heartbeats/tools.ts).
  *  - `client-sourced-check`: the client-sourced taint checks and the

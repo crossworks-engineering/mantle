@@ -61,7 +61,7 @@ export async function onBehalfOf(
  * workspace turn scope the read leaves the turn's scope for that ONE space
  * (asSystem only to leave it; withSpace narrows to the space at once).
  */
-function inOwnSpace<T>(
+export function inOwnSpace<T>(
   who: { loginId: string; spaceId: string },
   fn: () => Promise<T>,
 ): Promise<T> {

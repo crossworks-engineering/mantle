@@ -1,17 +1,20 @@
 /**
  * Inbound API keys held to their scope, on a real migrated Postgres through
- * the real app (createApp), and on /api/mcp through its caller lookup:
+ * the real app (createApp), and on /api/mcp through its caller lookup.
+ * Since W5b2 a key acts exactly as its login (contract change 25): its
+ * access and areas no longer narrow it, the login's own rights decide.
  *
- *  - /api/v1: a read key cannot write (403 key-read-only), a key limited to
- *    some areas cannot reach the others or an any-item route (403
- *    key-area), a path outside the v1 table is a 404 for a key;
+ *  - /api/v1: a read key or a key with areas writes and reads as its login;
+ *    a path outside the v1 table is a 404 for a key;
  *  - task comments are gone: /api/v1/tasks/:id/comments is a 404 for a key;
  *  - table rows land on the draft and commit publishes them;
  *  - a write made with a key leaves an api.write row naming the key;
+ *  - a key never confirms a change of who can see an item (F1), and never
+ *    changes the content of an item another workspace reads (N3);
  *  - a key that acts as a member reaches whoami and nothing else on v1;
- *  - /api/mcp: an admin key's caller carries its write switch, risky tools
- *    and areas; a member key needs the login's MCP switch and writes only
- *    while both the key and the login's Write switch allow it.
+ *  - /api/mcp: an admin key's caller is the owner (write on, no risky list,
+ *    no areas); a member key needs the login's MCP switch, and writes
+ *    exactly while the login's Write switch is on.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/access-keys-scope.db.test.ts
  */
@@ -39,6 +42,7 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
   const all = [admin, member];
   const emailOf = (s: string) => `${tag}-${s}@example.com`;
   const nodesMade: string[] = [];
+  const workspacesMade: string[] = [];
   let ip = 0;
 
   const call = async (
@@ -116,6 +120,9 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
     if (ids.length) await sql`delete from audit_log where detail->>'keyId' in ${sql(ids)}`;
     await sql`delete from access_keys where login_id in ${sql(all)}`;
     if (nodesMade.length) await sql`delete from nodes where id in ${sql(nodesMade)}`;
+    if (workspacesMade.length) {
+      await sql`delete from workspaces where id in ${sql(workspacesMade)}`;
+    }
     await sql`delete from mcp_login_access where login_id in ${sql(all)}`;
     await sql`delete from spaces where login_id in ${sql(all)}`;
     await sql`delete from auth.users where id in ${sql(all)}`;
@@ -123,7 +130,7 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
 
   // ── /api/v1 ───────────────────────────────────────────────────────────────
 
-  it('a read key reads but never writes, and a refusal is audited', async () => {
+  it('a read key acts as its login: it writes as the admin, and the write is audited (W5b2)', async () => {
     const key = await makeKey({ access: 'read' });
     expect((await call('/api/v1/pages', { bearer: key.secret })).status).toBe(200);
     const res = await call('/api/v1/pages', {
@@ -131,20 +138,19 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
       bearer: key.secret,
       body: { title: `${tag} page` },
     });
-    expect(res.status).toBe(403);
-    expect(await json(res)).toMatchObject({ error: 'forbidden', reason: 'key-read-only' });
-    const refused = await audited('key.refused', key.id);
-    expect((refused[0]!.detail as Json).reason).toBe('key-read-only');
+    expect(res.status).toBe(201);
+    nodesMade.push(((await json(res)) as { page: { id: string } }).page.id);
+    const writes = await audited('api.write', key.id);
+    expect(writes.map((w) => w.path)).toContain('/api/v1/pages');
   });
 
-  it('a key limited to tasks reaches tasks only', async () => {
+  it('a key with areas acts as its login: its areas do not narrow it (W5b2)', async () => {
     const key = await makeKey({ access: 'read_write', areas: ['tasks'] });
     const page = await call('/api/v1/pages', { bearer: key.secret });
-    expect(page.status).toBe(403);
-    expect(await json(page)).toMatchObject({ reason: 'key-area' });
-    // An any-item route belongs to no area: only an all-areas key.
+    expect(page.status).toBe(200);
+    // An any-item route: the login's own rights decide (an unknown id).
     const node = await call(`/api/v1/nodes/${randomUUID()}`, { bearer: key.secret });
-    expect(node.status).toBe(403);
+    expect(node.status).not.toBe(403);
 
     const made = await call('/api/v1/tasks', {
       method: 'POST',
@@ -182,25 +188,8 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
     const tableId = ((await json(created)) as { table: { id: string } }).table.id;
     nodesMade.push(tableId);
 
+    // A read key acts as its login too (W5b2): it reads the rows below.
     const reader = await makeKey({ access: 'read', areas: ['tables'] });
-    expect(
-      (
-        await call(`/api/v1/tables/${tableId}/rows`, {
-          method: 'POST',
-          bearer: reader.secret,
-          body: { rows: [{ Name: 'nope' }] },
-        })
-      ).status,
-    ).toBe(403);
-    expect(
-      (
-        await call(`/api/v1/tables/${tableId}/rows/r1`, {
-          method: 'PATCH',
-          bearer: reader.secret,
-          body: { cells: { Name: 'nope' } },
-        })
-      ).status,
-    ).toBe(403);
 
     const writer = await makeKey({ access: 'read_write', areas: ['tables'] });
     const added = await call(`/api/v1/tables/${tableId}/rows`, {
@@ -229,12 +218,16 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
     expect(folderRes.status).toBe(201);
     const folderId = ((await json(folderRes)) as { folder: { id: string } }).folder.id;
     nodesMade.push(folderId);
-    const share = await call(`/api/tree/pages/folders/${folderId}`, {
-      method: 'PATCH',
-      cookie: adminCookie(),
-      body: { share: 'team', confirm: true },
+    // Another workspace holds the folder (W5b2: grants, not a share level),
+    // so a page filed in it is readable beyond Admin.
+    const wsId = randomUUID();
+    workspacesMade.push(wsId);
+    await sql`insert into workspaces (id, owner_id, name) values (${wsId}, ${anchor}, ${`${tag} ws`})`;
+    await m.withSubtreeHeads(folderId, [], async (tx) => {
+      await tx.execute(
+        m.sql`insert into item_grants (node_id, workspace_id) values (${folderId}, ${wsId})`,
+      );
     });
-    expect(share.status).toBe(200);
 
     const key = await makeKey({ access: 'read_write', areas: ['pages'] });
     const res = await call('/api/v1/pages', {
@@ -378,7 +371,7 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
     expect((rows[0]!.detail as Json).keyCreatedBy).toBe(admin);
   });
 
-  it('an admin key on MCP carries its access, risky tools and areas', async () => {
+  it('an admin key on MCP is its login: write on, no risky list, no areas (W5b2)', async () => {
     const key = await makeKey({
       access: 'read',
       areas: ['pages', 'tasks'],
@@ -390,16 +383,16 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
       anchorId: anchor,
       loginId: admin,
       via: 'key',
-      write: false,
+      write: true,
       keyId: key.id,
-      riskyAllowed: ['email_send'],
-      areas: ['pages', 'tasks'],
     });
+    expect(caller?.riskyAllowed).toBeUndefined();
+    expect(caller?.areas).toBeUndefined();
     await call(`/api/access-keys/${key.id}`, { method: 'DELETE', cookie: adminCookie() });
     expect(await mcpCaller(key.secret)).toBeNull();
   });
 
-  it("a member key on MCP needs the login's switch, and both write switches", async () => {
+  it("a member key on MCP needs the login's switch, and writes by the login's Write switch", async () => {
     const key = await makeKey({ access: 'read_write' }, member);
     expect(await mcpCaller(key.secret)).toBeNull();
 
@@ -412,13 +405,15 @@ describe.skipIf(!URL)('inbound API keys: scope', () => {
       via: 'key',
       write: false,
       keyId: key.id,
-      areas: null,
     });
 
     await sql`update mcp_login_access set write_enabled = true where login_id = ${member}`;
     expect((await mcpCaller(key.secret))?.write).toBe(true);
 
+    // A read key acts as its login too (W5b2): the login's Write decides.
     const reader = await makeKey({ access: 'read' }, member);
-    expect((await mcpCaller(reader.secret))?.write).toBe(false);
+    expect((await mcpCaller(reader.secret))?.write).toBe(true);
+    await sql`update mcp_login_access set write_enabled = false where login_id = ${member}`;
+    expect((await mcpCaller(key.secret))?.write).toBe(false);
   });
 });

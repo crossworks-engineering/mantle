@@ -355,25 +355,29 @@ describe.skipIf(!URL)('inbound API keys', () => {
   });
 
   it('gives an image-shaped /api/v1 path no way around the key checks', async () => {
-    const tasksOnly = await makeKey({ areas: ['tasks'] });
-    const res = await call('/api/v1/files/picture.png', { bearer: tasksOnly.secret });
+    // A key acts as its login (W5b2): a member's key reaches no admin route,
+    // an image-shaped path included.
+    const memberKey = await makeKey({}, member);
+    const res = await call('/api/v1/files/picture.png', { bearer: memberKey.secret });
     expect(res.status).toBe(403);
-    expect(await json(res)).toMatchObject({ reason: 'key-area' });
-    await call(`/api/access-keys/${tasksOnly.id}`, { method: 'DELETE', cookie: cookieOf(admin) });
-    expect((await call('/api/v1/files/picture.png', { bearer: tasksOnly.secret })).status).toBe(
-      401,
-    );
+    expect(await json(res)).toMatchObject({ reason: 'member-login' });
+    // A revoked key is refused there as anywhere.
+    const adminKey = await makeKey();
+    await call(`/api/access-keys/${adminKey.id}`, { method: 'DELETE', cookie: cookieOf(admin) });
+    expect((await call('/api/v1/files/picture.png', { bearer: adminKey.secret })).status).toBe(401);
   });
 
-  it('refuses a write to a read key', async () => {
+  it('a read key acts as its login: an admin read key writes (W5b2)', async () => {
     const { secret } = await makeKey({ access: 'read' });
     const res = await call('/api/v1/notes', {
       method: 'POST',
       bearer: secret,
-      body: { title: 'x', body: 'x' },
+      body: { title: `${tag} by a read key`, body: 'x' },
     });
-    expect(res.status).toBe(403);
-    expect(await json(res)).toMatchObject({ reason: 'key-read-only' });
+    expect(res.status).toBe(201);
+    const made = (await json(res)) as { note?: { id: string }; id?: string };
+    const id = made.note?.id ?? made.id;
+    if (id) await sql`delete from nodes where id = ${id}`;
   });
 
   it('refuses a wrong secret and a malformed key', async () => {

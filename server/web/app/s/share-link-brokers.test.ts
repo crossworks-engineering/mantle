@@ -7,8 +7,9 @@
  *
  * A CONTACT share (migration 0214) without the contact's cookie gets 401 on
  * every broker and the frame ticket; with it, the tool broker runs only a
- * declared outside tool with External access (on the public role, a contact
- * surface, logged with the contact), the db broker writes only with Can write, and the frame
+ * declared outside tool with External access (in the link's own viewer
+ * scope: no workspace, only the items the link serves, settings.served; a
+ * contact surface, logged with the contact), the db broker writes only with Can write, and the frame
  * ticket names the contact and its code epoch. (On Postgres:
  * contact-share-gate.db.test.ts.)
  */
@@ -22,11 +23,37 @@ const h = vi.hoisted(() => ({
   dispatched: [] as Array<{ level: string; ctx: Record<string, unknown> }>,
   appLog: [] as Array<Record<string, unknown>>,
   shareLog: [] as Array<Record<string, unknown>>,
+  viewers: [] as Array<{ level: string; actsFor: unknown }>,
+  /** The level of the withViewer scope the code runs in, if any. */
+  inViewer: null as string | null,
+}));
+
+// The viewer scope without a database (W5b2, plan R6): who it acts for is
+// recorded, and the dispatch below sees the scope's level.
+vi.mock('@mantle/db', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  withViewer: vi.fn(async (level: string, actsFor: unknown, fn: () => Promise<unknown>) => {
+    h.viewers.push({ level, actsFor });
+    const prev = h.inViewer;
+    h.inViewer = level;
+    try {
+      return await fn();
+    } finally {
+      h.inViewer = prev;
+    }
+  }),
 }));
 
 const SHARE = { id: 'share-1', ownerId: 'owner-1', nodeId: 'app-1', nodeType: 'app', settings: {} };
 const CONTACT = 'contact-7';
-const CONTACT_SHARE = { ...SHARE, id: 'share-2', contactId: CONTACT, canWrite: false };
+const CONTACT_SHARE = {
+  ...SHARE,
+  id: 'share-2',
+  contactId: CONTACT,
+  canWrite: false,
+  // The items the link serves next to its own (plan 8.1).
+  settings: { served: ['page-9'] },
+};
 const WRITER_SHARE = { ...SHARE, id: 'share-3', contactId: CONTACT, canWrite: true };
 const byToken: Record<string, unknown> = {
   live: SHARE,
@@ -60,7 +87,6 @@ vi.mock('@mantle/content/app-table-exports', () => ({ scheduleAppTableExportSync
 // before any lookup).
 vi.mock('@mantle/tools', async (importOriginal) => {
   const real = await importOriginal<typeof import('@mantle/tools')>();
-  const { currentViewerLevel } = await import('@mantle/db');
   return {
     ...real,
     contactAppToolVerdict: vi.fn(async (owner: string, declared: string[], slug: string) =>
@@ -72,7 +98,7 @@ vi.mock('@mantle/tools', async (importOriginal) => {
         : real.contactAppToolVerdict(owner, declared, slug),
     ),
     dispatchTool: vi.fn(async (_t: unknown, _i: unknown, ctx: Record<string, unknown>) => {
-      h.dispatched.push({ level: currentViewerLevel(), ctx });
+      h.dispatched.push({ level: h.inViewer ?? 'admin', ctx });
       return { ok: true, output: { rows: [] } };
     }),
   };
@@ -114,6 +140,8 @@ beforeEach(() => {
   h.dispatched.length = 0;
   h.appLog.length = 0;
   h.shareLog.length = 0;
+  h.viewers.length = 0;
+  h.inViewer = null;
 });
 
 const post = (path: string, body: unknown) =>
@@ -220,7 +248,7 @@ describe('a contact share (0214)', () => {
     expect(h.queries + h.execs).toBe(0);
   });
 
-  it('with the cookie: a declared External access tool runs on the public role and is logged with the contact', async () => {
+  it('with the cookie: a declared External access tool runs in the link scope and is logged with the contact', async () => {
     const cookie = await cookieFor(3);
     const tool = (await import('./[token]/tool-broker/route')).POST;
     const res = await tool(
@@ -236,6 +264,10 @@ describe('a contact share (0214)', () => {
           surface: { kind: 'contact', contactId: CONTACT, shareId: 'share-2' },
         },
       },
+    ]);
+    // The link reads no workspace: only its own item and its served list.
+    expect(h.viewers).toEqual([
+      { level: 'public', actsFor: { link: { served: ['app-1', 'page-9'] } } },
     ]);
     expect(h.appLog[0]).toMatchObject({
       contactId: CONTACT,

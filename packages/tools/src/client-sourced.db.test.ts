@@ -99,6 +99,15 @@ describe.skipIf(!URL)('namesClientSourced', () => {
     await admin`delete from auth.users where id = ${ids.goneClient}`;
   }, 60_000);
 
+  /** Move an app's level: the level columns are frozen since W5b2 (0261),
+   *  so a fixture moves one inside the heads bypass. The client-sourced
+   *  rule (C6) still reads the app's level. */
+  const setLevel = (id: string, level: string) =>
+    admin.begin(async (tx) => {
+      await tx`select mantle_heads_bypass('test fixture')`;
+      await tx`update nodes set audience = ${level} where id = ${id}`;
+    });
+
   afterAll(async () => {
     if (!admin) return;
     await admin`delete from conversation_taints where owner_id in ${admin([owner, other])}`;
@@ -163,18 +172,20 @@ describe.skipIf(!URL)('namesClientSourced', () => {
     expect(await cs.namesClientSourced(other, [ids.clientAppTable])).toBe(false);
     // Read on a limited role too (the check runs as the system).
     expect(
-      await m.runInLevelRoleForTest('team', () => cs.namesClientSourced(owner, [ids.clientAppTable])),
+      await m.runInLevelRoleForTest('team', () =>
+        cs.namesClientSourced(owner, [ids.clientAppTable]),
+      ),
     ).toBe(true);
     expect([
       ...(await cs.clientSourcedAmong(owner, [ids.clientAppTable, ids.teamAppTable])),
     ]).toEqual([ids.clientAppTable]);
     // Raise the app above client before any client wrote it: its table
     // stops counting.
-    await admin`update nodes set audience = 'team' where id = ${ids.clientApp}`;
+    await setLevel(ids.clientApp, 'team');
     try {
       expect(await cs.namesClientSourced(owner, [ids.clientAppTable])).toBe(false);
     } finally {
-      await admin`update nodes set audience = 'client' where id = ${ids.clientApp}`;
+      await setLevel(ids.clientApp, 'client');
     }
   });
 
@@ -191,14 +202,14 @@ describe.skipIf(!URL)('namesClientSourced', () => {
     await markAppClientWritten(other, ids.teamApp);
     expect(await cs.namesClientSourced(owner, [ids.teamAppTable])).toBe(false);
 
-    await admin`update nodes set audience = 'team' where id = ${ids.clientApp}`;
+    await setLevel(ids.clientApp, 'team');
     try {
       expect(await cs.namesClientSourced(owner, [ids.clientAppTable])).toBe(true);
       expect([...(await cs.clientSourcedAmong(owner, [ids.clientAppTable]))]).toEqual([
         ids.clientAppTable,
       ]);
       // Even at admin level.
-      await admin`update nodes set audience = 'admin' where id = ${ids.clientApp}`;
+      await setLevel(ids.clientApp, 'admin');
       expect(await cs.namesClientSourced(owner, [ids.clientAppTable])).toBe(true);
       // A second client write keeps the first stamp.
       await markAppClientWritten(owner, ids.clientApp);
@@ -214,7 +225,7 @@ describe.skipIf(!URL)('namesClientSourced', () => {
       expect(await removeAppTableExport(owner, ids.teamApp, 'orders')).toBe(true);
       expect(await cs.namesClientSourced(owner, [ids.teamAppTable])).toBe(false);
     } finally {
-      await admin`update nodes set audience = 'client' where id = ${ids.clientApp}`;
+      await setLevel(ids.clientApp, 'client');
       await admin`insert into app_table_exports (owner_id, app_node_id, sqlite_table, table_node_id)
         values (${owner}, ${ids.clientApp}, 'orders', ${ids.clientAppTable}),
                (${owner}, ${ids.teamApp}, 'orders', ${ids.teamAppTable})

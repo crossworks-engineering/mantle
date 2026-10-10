@@ -469,10 +469,14 @@ describe.skipIf(!URL)('MCP as a login (tool layer)', () => {
       await hold(ws.clients, false);
       expect(await connectorNames(asClient(true))).toEqual(['mcp_src_read']);
       expect(await connectorNames(asMember(false))).toEqual(['mcp_src_read']);
-      // A key limited to areas never gets a connector tool.
+      // A key acts exactly as its login (W5b2): its areas no longer narrow
+      // it, so it gets the login's connector tools, and no more.
       expect(
         await connectorNames({ ...asMember(true), via: 'key', keyId: 'k', areas: ['app_data'] }),
-      ).toEqual([]);
+      ).toEqual(['mcp_src_read', 'mcp_src_write']);
+      expect(
+        await connectorNames({ ...asMember(false), via: 'key', keyId: 'k', areas: null }),
+      ).toEqual(['mcp_src_read']);
       // Called anyway with write off, the write tool refuses before dispatch.
       const prepared = await ls.prepareCallerTools(asMember(false));
       if (prepared.kind !== 'login') throw new Error('expected a login surface');

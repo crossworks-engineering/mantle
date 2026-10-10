@@ -1,17 +1,14 @@
 /**
  * An inbound API key on /api/mcp (migration 0232): the area of each tool,
- * and the owner surface an admin key gets. Driven through the real
- * registration path against a capturing fake server; no database.
+ * and the owner surface an admin key gets. Since W5b2 a key acts exactly as
+ * its login: its areas, access and risky-tool names no longer narrow the
+ * surface, so an admin key gets the owner's surface as is. Driven through
+ * the real registration path against a capturing fake server; no database.
  */
 import { describe, expect, it } from 'vitest';
 import { BUILTIN_TOOLS } from '@mantle/tools';
 import { KEY_AREAS, keyAreasAllowTool, toolKeyArea } from './key-scope';
-import {
-  isMcpToolReadOnly,
-  isPeerRiskyTool,
-  registerPreparedTools,
-  type McpCaller,
-} from './login-surface';
+import { registerPreparedTools, type McpCaller } from './login-surface';
 
 function registeredFor(caller: Partial<McpCaller>): string[] {
   const out: string[] = [];
@@ -55,8 +52,9 @@ describe('API key areas for MCP tools', () => {
     const conversions = [...slugs].filter((s) => s.includes('_from_'));
     expect(conversions).toEqual(expect.arrayContaining(['page_from_journal', 'note_from_page']));
     for (const slug of conversions) expect(toolKeyArea(slug), slug).toBeNull();
-    const pagesKey = registeredFor({ areas: ['pages', 'notes', 'files', 'tables'], write: true });
-    for (const slug of conversions) expect(pagesKey, slug).not.toContain(slug);
+    for (const slug of conversions) {
+      expect(keyAreasAllowTool(slug, ['pages', 'notes', 'files', 'tables']), slug).toBe(false);
+    }
   });
 
   it('puts the app data tools in their own area, apart from app authoring', () => {
@@ -78,30 +76,18 @@ describe('API key areas for MCP tools', () => {
     }
   });
 
-  it('an admin key limited to tasks, read only, gets the task reads and nothing else', () => {
-    const tools = registeredFor({ areas: ['tasks'] });
-    expect(tools.length).toBeGreaterThan(0);
-    expect(tools).toContain('task_list');
-    expect(tools).toContain('task_get');
-    for (const s of tools) {
-      expect(toolKeyArea(s), s).toBe('tasks');
-      expect(isMcpToolReadOnly(s), s).toBe(true);
+  it('an admin key acts as its login: areas, access and risky names do not narrow it (W5b2)', () => {
+    const owner = registeredFor({ via: 'oauth', write: true });
+    expect(owner).toContain('email_send');
+    expect(owner).toContain('page_create');
+    expect(owner).toContain('recall_open');
+    for (const caller of [
+      { areas: ['tasks'] },
+      { areas: ['tasks', 'notes'], write: true },
+      { areas: null, write: true },
+      { areas: null, write: true, riskyAllowed: ['email_send'] },
+    ] satisfies Partial<McpCaller>[]) {
+      expect(registeredFor(caller).sort(), JSON.stringify(caller)).toEqual([...owner].sort());
     }
-  });
-
-  it('read_write adds the writes in its areas, never the risky tools', () => {
-    const tools = registeredFor({ areas: ['tasks', 'notes'], write: true });
-    expect(tools).toContain('task_create');
-    expect(tools).toContain('note_create');
-    expect(tools).not.toContain('page_create');
-    for (const s of tools) expect(isPeerRiskyTool(s), s).toBe(false);
-  });
-
-  it('an all-areas key is the owner-peer surface: risky tools only by name', () => {
-    const plain = registeredFor({ areas: null, write: true });
-    expect(plain).not.toContain('email_send');
-    expect(plain).toContain('recall_open');
-    const named = registeredFor({ areas: null, write: true, riskyAllowed: ['email_send'] });
-    expect(named).toContain('email_send');
   });
 });
