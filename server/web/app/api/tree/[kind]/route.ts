@@ -15,7 +15,7 @@ const Query = z.object({
   ws: z.string().optional(),
 });
 
-/** GET /api/tree/:kind?folder=&cursor=&sort=&limit=&ws= — one folder's page:
+/** GET /api/tree/:kind?folder=&cursor=&sort=&limit=&ws=: one folder's page:
  *  its subfolders and one page of its items (TreeFolderPage), each with its
  *  workspaces and link pill. No folder is the root, where the caller's own
  *  private items come first. `ws` keeps only the items that workspace reads

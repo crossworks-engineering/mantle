@@ -15,7 +15,7 @@ const Query = z.object({
   ws: z.string().optional(),
 });
 
-/** GET /api/tree/:kind/search?q=&cursor=&ws=&tag= — matching folders, then
+/** GET /api/tree/:kind/search?q=&cursor=&ws=&tag=: matching folders, then
  *  items, each with the crumbs of where it lives, its workspaces and link
  *  pill (TreeSearchResult). An empty or missing `q` lists every item by name
  *  (the A to Z view), no folders. `ws` and `tag` (TreeFilter) narrow the
