@@ -557,7 +557,7 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
     ).rejects.toMatchObject({ cause: { code: '42501' } });
   });
 
-  it('audit M4: only the derivation writes the derived columns; a login change reaches the copies', async () => {
+  it('audit M4: only the derivation writes the derived columns; a fact reads its node, not a copy', async () => {
     const id = await node('page', 'guarded', root);
     await grant(id, ws.team);
     await expect(
@@ -570,9 +570,13 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
     await expect(
       admin`update facts set read_ws = ${`{${ws.other}}`}::uuid[] where id = ${f!.id}`,
     ).rejects.toThrow(/follow their node/);
+    // Since 0250 a fact with a source reads its node (EXISTS), so a login
+    // change on the node writes no fact row: the copy stays as written.
     await admin`update nodes set login_id = ${userA} where id = ${id}`;
-    const [fa] = await admin<{ l: string }[]>`select login_id as l from facts where id = ${f!.id}`;
-    expect(fa!.l).toBe(userA);
+    const [fa] = await admin<
+      { l: string | null }[]
+    >`select login_id as l from facts where id = ${f!.id}`;
+    expect(fa!.l).toBeNull();
     await admin`delete from facts where id = ${f!.id}`;
   });
 

@@ -102,6 +102,27 @@ describe('database errors for callers outside the server', () => {
     // Outside a watch nothing is collected (and errorMessage is unchanged).
     expect(errorMessage(pg)).toBe(pg.message);
   });
+
+  it('watchDatabaseErrors: a thrown message repeating database text goes on generic', async () => {
+    const { errorMessage, DATABASE_ERROR_PUBLIC } = await import('./index');
+    const { watchDatabaseErrors } = await import('./db-watch');
+    const pg = Object.assign(new Error('null value in column "secret_col"'), {
+      code: '23502',
+      severity: 'ERROR',
+    });
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(
+      watchDatabaseErrors(async () => {
+        throw new Error(`save failed: ${errorMessage(pg)}`);
+      }),
+    ).rejects.toThrow(DATABASE_ERROR_PUBLIC);
+    await expect(
+      watchDatabaseErrors(async () => {
+        throw new Error('q is required');
+      }),
+    ).rejects.toThrow('q is required');
+    spy.mockRestore();
+  });
 });
 
 describe('browser safety', () => {

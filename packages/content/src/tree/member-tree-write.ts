@@ -16,6 +16,7 @@
  * so the place the admin reviewed is the place Accept uses.
  */
 import { sql } from 'drizzle-orm';
+import { publicErrorMessage } from '@mantle/std';
 import { db, onSpaceRows, takeShareReadLock, takeShareWriteLock } from '@mantle/db';
 import { dashToLtree, folderSlugOf } from '@mantle/files';
 import type { AppTint } from '@mantle/client-types/app-nav';
@@ -323,7 +324,7 @@ export async function moveMemberItems(
       if (rows.length) result.moved += 1;
       else result.failed.push({ id, error: 'not one of your drafts that can move now' });
     } catch (err) {
-      result.failed.push({ id, error: err instanceof Error ? err.message : String(err) });
+      result.failed.push({ id, error: publicErrorMessage(err, 'tree move') });
     }
   }
   return result;

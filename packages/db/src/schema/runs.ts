@@ -72,6 +72,11 @@ export const runs = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     completedAt: timestamp('completed_at', { withTimezone: true }),
+    /** Workspaces R3 (0250): the workspace this row belongs to, stamped at
+     *  insert from its agent (NULL = the Admin workspace), and the login it
+     *  was for. The foreign key lives in the migration. */
+    workspaceId: uuid('workspace_id'),
+    loginId: uuid('login_id'),
   },
   (t) => [
     index('runs_owner_status_idx').on(t.ownerId, t.status),
@@ -167,6 +172,11 @@ export const runItems = pgTable(
      *  resume-worthy group's responder wake-up is claimed (claimResume). NULL
      *  on everything else. At-most-once: marked BEFORE the resume turn runs. */
     resumedAt: timestamp('resumed_at', { withTimezone: true }),
+    /** Workspaces R3 (0250): the workspace this row belongs to, stamped at
+     *  insert from its agent (NULL = the Admin workspace), and the login it
+     *  was for. The foreign key lives in the migration. */
+    workspaceId: uuid('workspace_id'),
+    loginId: uuid('login_id'),
   },
   (t) => [
     index('run_items_run_state_idx').on(t.runId, t.state),

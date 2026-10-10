@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { setDatabaseErrorWatch } from './index';
+import { DATABASE_ERROR_PUBLIC, isDatabaseError, setDatabaseErrorWatch } from './index';
 
 /**
  * Node-only half of the database error watch (workspaces W3): kept out of
@@ -17,6 +17,21 @@ export async function watchDatabaseErrors<T>(
   fn: () => Promise<T>,
 ): Promise<{ value: T; texts: readonly string[] }> {
   const texts = { texts: [] as string[] };
-  const value = await store.run(texts, fn);
-  return { value, texts: texts.texts };
+  try {
+    const value = await store.run(texts, fn);
+    return { value, texts: texts.texts };
+  } catch (err) {
+    // A thrown error of our own whose message repeats a database text seen
+    // in the call (or drizzle's "Failed query") carries no cause to detect it
+    // by: it goes on as a generic one, logged in full.
+    const text = err instanceof Error ? err.message : String(err);
+    if (
+      !isDatabaseError(err) &&
+      (/Failed query:/.test(text) || texts.texts.some((t) => text.includes(t)))
+    ) {
+      console.error('[watchDatabaseErrors] database error in a thrown message:', err);
+      throw new Error(DATABASE_ERROR_PUBLIC, { cause: err });
+    }
+    throw err;
+  }
 }

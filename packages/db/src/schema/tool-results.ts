@@ -39,6 +39,11 @@ export const toolResults = pgTable(
      *  its reader's level does not cover. */
     viewerLevel: text('viewer_level'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    /** Workspaces R3 (0250): the workspace this row belongs to, stamped at
+     *  insert from its agent (NULL = the Admin workspace), and the login it
+     *  was for. The foreign key lives in the migration. */
+    workspaceId: uuid('workspace_id'),
+    loginId: uuid('login_id'),
   },
   (t) => [
     // Drives TTL cleanup ("delete where created_at < now() - interval").

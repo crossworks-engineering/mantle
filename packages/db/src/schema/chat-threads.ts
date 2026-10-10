@@ -64,6 +64,11 @@ export const chatThreads = pgTable(
       .notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    /** Workspaces R3 (0250): the workspace this row belongs to, stamped at
+     *  insert from its agent (NULL = the Admin workspace), and the login it
+     *  was for. The foreign key lives in the migration. */
+    workspaceId: uuid('workspace_id'),
+    loginId: uuid('login_id'),
   },
   (t) => [
     index('chat_threads_owner_agent_started_idx').on(t.ownerId, t.agentId, t.startedAt),

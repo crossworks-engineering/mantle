@@ -79,6 +79,11 @@ export const traces = pgTable(
       .default(sql`'{}'::jsonb`)
       .notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    /** Workspaces R3 (0250): the workspace this row belongs to, stamped at
+     *  insert from its agent (NULL = the Admin workspace), and the login it
+     *  was for. The foreign key lives in the migration. */
+    workspaceId: uuid('workspace_id'),
+    loginId: uuid('login_id'),
   },
   (t) => [
     index('traces_owner_kind_started_idx').on(t.ownerId, t.kind, t.startedAt),

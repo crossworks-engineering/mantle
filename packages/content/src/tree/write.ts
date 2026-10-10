@@ -9,6 +9,7 @@
  * order are plain row data for every kind.
  */
 import { and, eq, sql } from 'drizzle-orm';
+import { publicErrorMessage } from '@mantle/std';
 import { db, isCheckViolation, nodes, takeShareWriteLock, isBusy, BUSY_MESSAGE } from '@mantle/db';
 import {
   createFolder as createFilesFolder,
@@ -525,7 +526,7 @@ export async function moveTreeItems(
     } catch (err) {
       result.failed.push({
         id,
-        error: isBusy(err) ? BUSY_MESSAGE : err instanceof Error ? err.message : String(err),
+        error: isBusy(err) ? BUSY_MESSAGE : publicErrorMessage(err, 'tree move'),
       });
     }
   }

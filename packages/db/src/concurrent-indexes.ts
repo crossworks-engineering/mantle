@@ -33,6 +33,15 @@ export const CONCURRENT_INDEXES: readonly ConcurrentIndex[] = [
       'CREATE INDEX CONCURRENTLY IF NOT EXISTS "nodes_read_ws_gin" ON "public"."nodes" ' +
       'USING gin ("read_ws") WITH (fastupdate = on)',
   },
+  {
+    // Facts without a source (learned in chat, or whose source is gone) are
+    // read by their own read_ws (W4a): the small-scope count and the exact
+    // facts arm find a scope's ones here. Facts with a source go by node id.
+    name: 'facts_own_read_ws_gin',
+    create:
+      'CREATE INDEX CONCURRENTLY IF NOT EXISTS "facts_own_read_ws_gin" ON "public"."facts" ' +
+      'USING gin ("read_ws") WHERE "source_node_id" IS NULL',
+  },
 ];
 
 /** What happened to each index, for the runner's log. 'failed': the build
@@ -64,6 +73,30 @@ export async function ensureConcurrentIndexes(
 ): Promise<Record<string, ConcurrentIndexOutcome>> {
   const lockMs = Math.max(1, Math.floor(opts.lockTimeoutMs ?? 30_000));
   const stmtMs = Math.max(1, Math.floor(opts.statementTimeoutMs ?? 15 * 60_000));
+  const out: Record<string, ConcurrentIndexOutcome> = {};
+  if (opts.onError) {
+    // Never fatal: the connection and its time limits too (a full pool, a
+    // refused setting) are reported like a failed build.
+    try {
+      return await buildAll(sql, list, lockMs, stmtMs, opts);
+    } catch (err) {
+      for (const ix of list) {
+        if (!(ix.name in out)) out[ix.name] = 'failed';
+      }
+      opts.onError('(setup)', err);
+      return out;
+    }
+  }
+  return buildAll(sql, list, lockMs, stmtMs, opts);
+}
+
+async function buildAll(
+  sql: Sql,
+  list: readonly ConcurrentIndex[],
+  lockMs: number,
+  stmtMs: number,
+  opts: ConcurrentIndexOptions,
+): Promise<Record<string, ConcurrentIndexOutcome>> {
   const out: Record<string, ConcurrentIndexOutcome> = {};
   const conn = await sql.reserve();
   try {

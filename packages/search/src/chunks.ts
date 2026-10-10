@@ -144,14 +144,17 @@ async function runChunkSearch(
   // A workspace scope with few chunks searches them exactly (scope.ts): the
   // scope's chunks by node id, ordered by their true distance. The vector
   // arms only; the keyword arm keeps its text index.
-  const exact = await smallScope('content_chunks');
+  // A search that gives the vector arm no weight never needs the count.
+  const vectorWeighted = !(opts.q?.trim() && opts.semanticWeight === 0);
+  const exact = vectorWeighted ? await smallScope('content_chunks') : false;
   const exactFilter = exact
     ? [sql`${contentChunks.nodeId} = any(${scopeNodeIds(opts.ownerId)})`]
     : [];
   const chunkOrder = distanceOrder(sql`${contentChunks.embedding} <=> ${vec}::vector`, exact);
   const pinHnsw = { hnswFirst: hnswFirst(exact) };
   // Windows are many more rows per item than chunks: their own decision.
-  const exactWindows = opts.windows ? await smallScope('content_chunk_windows') : false;
+  const exactWindows =
+    opts.windows && vectorWeighted ? await smallScope('content_chunk_windows') : false;
 
   const q = opts.q?.trim();
 

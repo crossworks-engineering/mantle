@@ -48,6 +48,8 @@ export const workspaces = pgTable(
     isAdmin: boolean('is_admin').notNull().default(false),
     /** Admin workspace users are Moderators here, kept by trigger. */
     adminModerated: boolean('admin_moderated').notNull().default(false),
+    /** The brain's workspaces the bridges keep ('admin', 'team'; 0250). */
+    bridgeKey: text('bridge_key'),
     createdBy: uuid('created_by').references(() => authUsers.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -57,6 +59,9 @@ export const workspaces = pgTable(
     uniqueIndex('workspaces_one_admin_uq')
       .on(t.ownerId)
       .where(sql`${t.isAdmin}`),
+    uniqueIndex('workspaces_bridge_key_uq')
+      .on(t.ownerId, t.bridgeKey)
+      .where(sql`${t.bridgeKey} is not null`),
     uniqueIndex('workspaces_live_name_uq')
       .on(t.ownerId, sql`lower(${t.name})`)
       .where(sql`${t.archivedAt} is null`),
@@ -102,6 +107,9 @@ export const itemGrants = pgTable(
     viaFolderId: uuid('via_folder_id').references(() => nodes.id, { onDelete: 'cascade' }),
     /** "Removed here" against a folder's grant. */
     excluded: boolean('excluded').notNull().default(false),
+    /** Written by the level bridge (0250, until W5b): the bridge rewrites only
+     *  rows with this mark. */
+    bridge: boolean('bridge').notNull().default(false),
     grantedBy: uuid('granted_by').references(() => authUsers.id, { onDelete: 'set null' }),
     grantedAt: timestamp('granted_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -223,6 +231,22 @@ export const mantleMovedNodes = pgTable(
     /** The owner before the move (0245): a move is exempt from the heads
      *  check only when the row was personal before AND after it. */
     oldOwner: uuid('old_owner'),
+  },
+  (t) => [primaryKey({ columns: [t.xid, t.id] })],
+);
+
+/**
+ * The nodes whose level changed in the running statement, keyed by
+ * transaction id (0250): written by the bridge's row trigger, taken by its
+ * statement trigger, so the level bridge runs once per statement. Unlogged,
+ * empty outside a running statement; definer functions only. Goes with the
+ * bridge in W5b.
+ */
+export const mantleBridgePending = pgTable(
+  'mantle_bridge_pending',
+  {
+    xid: xid8('xid').notNull(),
+    id: uuid('id').notNull(),
   },
   (t) => [primaryKey({ columns: [t.xid, t.id] })],
 );

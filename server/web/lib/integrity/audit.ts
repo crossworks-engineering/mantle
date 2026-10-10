@@ -241,6 +241,43 @@ const CHECKS: CheckDef[] = [
       WHERE oid = 'pg_catalog.ts_match_vq(tsvector, tsquery)'::regprocedure AND NOT proleakproof`,
   },
   {
+    key: 'workspaces_not_migrated',
+    label: 'Workspaces not migrated',
+    severity: 'medium',
+    note: 'the workspaces migration (0250, phase W4a) wrote no workspace on this brain. It skips a brain that has client logins or client-level items (plan 21.9: clients are set up by hand), and then this brain keeps running on levels alone: the bridges are inert and assistants are not scoped. Set the clients up by hand, then run select * from mantle_ws_migrate() as the migrating role.',
+    query: () => sql`
+      SELECT 'workspaces' AS id, 'not migrated' AS kind,
+             (SELECT count(*) FROM auth.users WHERE role = 'client')::text || ' client login(s), ' ||
+             (SELECT count(*) FROM nodes WHERE owner_id = mantle_brain_id()
+                AND (audience = 'client' OR inherited_level = 'client' OR embedded_level = 'client'))::text ||
+             ' client-level item(s) present' AS detail
+      WHERE mantle_brain_id() IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM workspaces WHERE owner_id = mantle_brain_id() AND bridge_key = 'admin')`,
+  },
+  {
+    key: 'workspaces_bridge_drift',
+    label: 'Level bridge drift',
+    severity: 'medium',
+    note: 'brain items whose bridge-owned grants differ from what their level gives (plan 9.2; the bridge of migration 0250 keeps them equal until W5b turns it off). Any count here is a bug in the bridge or a writer that went around it: the item reads with its grants in scoped work (assistants) and with its level elsewhere.',
+    query: () => sql`
+      SELECT 'bridge' AS id, 'drift' AS kind, n::text || ' item(s)' AS detail
+      FROM (SELECT mantle_bridge_drift() AS n) d WHERE d.n > 0`,
+  },
+  {
+    key: 'workspaces_snapshots_pending',
+    label: 'Accepted-item snapshot copies pending',
+    severity: 'medium',
+    note: "items a member wrote that an admin accepted at admin level: today their author reads only the accepted snapshot (member-accepted.ts). Each needs its read-only snapshot copy in the author's private workspace (plan S3), made by a hand-run task that lands with the private workspaces (W6b). Pending is expected until then and nothing is lost: today's author read path must stay until the task has run on this box (W5b may not remove or narrow it; W6b retires it after the task).",
+    query: () => sql`
+      SELECT n.id::text AS id, 'snapshot copy pending' AS kind, si.review_state AS detail
+      FROM space_items si JOIN nodes n ON n.id = si.node_id
+      WHERE si.review_state IN ('accepted', 'taken') AND n.owner_id = mantle_brain_id()
+        AND n.audience = 'admin'
+        AND NOT mantle_team_reads(n.type, n.audience, n.inherited_level, n.embedded_level)
+        AND NOT EXISTS (SELECT 1 FROM nodes c WHERE c.data->>'snapshot_of' = n.id::text)
+      LIMIT ${CAP}`,
+  },
+  {
     key: 'unembedded_facts',
     label: 'Unembedded facts',
     severity: 'medium',
