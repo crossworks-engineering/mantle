@@ -4,7 +4,7 @@
  * page's own words: an embed is a plain marker, and a mention or link of
  * another item carries that item's title only when every workspace that
  * holds the page also holds the item, else "Private item" (an entity
- * mention only on a page Admin alone holds). After a grant change
+ * mention chip always keeps its label: the author's own words). After a grant change
  * `refoldPageTexts` rewrites the text, and nothing else happens: no summary,
  * version or updated_at change, no announcement to the extractor.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/pages/level-text.db.test.ts
@@ -31,6 +31,7 @@ describe.skipIf(!URL)('page text by its holders', () => {
     adminPage: randomUUID(),
     shared: randomUUID(),
     adminNote: randomUUID(),
+    adminOnly: randomUUID(),
     file: randomUUID(),
   };
   const para = (...content: unknown[]) => ({ type: 'paragraph', content });
@@ -132,12 +133,14 @@ describe.skipIf(!URL)('page text by its holders', () => {
     // Held by both: today's title, not the stored label.
     expect(text).toContain('Shared note today');
     expect(text).not.toContain('STALELABEL');
-    // Admin only (a note, an absolute link to it, an entity): "Private item".
-    for (const w of ['ADMINLABEL', 'ADMINLINK', 'ADMINABS', 'ADMINNOTETITLE', 'ENTITYLABEL']) {
+    // Admin only (a note, an absolute link to it): "Private item".
+    for (const w of ['ADMINLABEL', 'ADMINLINK', 'ADMINABS', 'ADMINNOTETITLE']) {
       expect(text, w).not.toContain(w);
     }
-    // The mention, the link (two runs, once), the absolute link, the entity.
-    expect(count(text, 'Private item')).toBe(4);
+    // The mention, the link (two runs, once), the absolute link.
+    expect(count(text, 'Private item')).toBe(3);
+    // An entity mention is the author's own words: always kept.
+    expect(text).toContain('ENTITYLABEL');
     // An external link names no item: it stays.
     expect(text).toContain('the wiki');
     // Every embed is a marker, held or not, never its words.
@@ -148,7 +151,7 @@ describe.skipIf(!URL)('page text by its holders', () => {
     }
   });
 
-  it('a page Admin alone holds names everything Admin holds, entities too', async () => {
+  it('a page Admin alone holds names everything Admin holds', async () => {
     expect((await pages.commitPage(owner, id.adminPage, body())).ok).toBe(true);
     const text = (await row(id.adminPage)).doc_text;
     expect(text).toContain('Shared note today');
@@ -194,9 +197,8 @@ describe.skipIf(!URL)('page text by its holders', () => {
     const after = await row(id.teamPage);
     expect(after.doc_text).toContain('Admin note ADMINNOTETITLE');
     expect(after.doc_text).toContain('ADMINLINK');
-    // The entity is still Admin's alone.
-    expect(after.doc_text).not.toContain('ENTITYLABEL');
-    expect(count(after.doc_text, 'Private item')).toBe(1);
+    expect(after.doc_text).toContain('ENTITYLABEL');
+    expect(after.doc_text).not.toContain('Private item');
     // Text only: summary, version and updated_at as they were, and the
     // extractor heard nothing.
     expect(after.summary).toBe('SUMMARYKEEP');
@@ -206,12 +208,19 @@ describe.skipIf(!URL)('page text by its holders', () => {
     expect(announced).not.toContain(id.teamPage);
   });
 
-  it("the page's own holders: Team joins the Admin page, its entity goes private", async () => {
+  it("the page's own holders: Team joins the Admin page, an Admin-only item goes private", async () => {
+    await node(id.adminOnly, 'note', 'Still ADMINONLYTITLE', 'notes');
+    const doc = {
+      type: 'doc',
+      content: [para(mention(id.adminOnly, 'X'), mention(randomUUID(), 'ENTITY2', 'entity'))],
+    };
+    expect((await pages.commitPage(owner, id.adminPage, doc)).ok).toBe(true);
+    expect((await row(id.adminPage)).doc_text).toContain('Still ADMINONLYTITLE');
     await grant(id.adminPage, team);
     await pages.refoldPageTexts(owner, [id.adminPage]);
     const text = (await row(id.adminPage)).doc_text;
-    expect(text).not.toContain('ENTITYLABEL');
-    expect(text).toContain('Admin note ADMINNOTETITLE');
+    expect(text).not.toContain('ADMINONLYTITLE');
+    expect(text).toContain('ENTITY2');
     expect(count(text, 'Private item')).toBe(1);
   });
 

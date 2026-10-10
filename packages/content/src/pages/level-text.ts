@@ -9,8 +9,8 @@
  *  - a mention chip or a link of another item carries that item's current
  *    title only when EVERY workspace that holds the page also holds that
  *    item (the item's read_ws contains all of the page's read_ws); otherwise
- *    it is "Private item". An entity mention (entities live in Admin only)
- *    keeps its label only on a page that Admin alone holds.
+ *    it is "Private item". An entity mention chip always keeps its label:
+ *    it is text the author typed, the page's own words.
  *
  * A page no workspace holds (a personal space's page) is not filtered. When
  * grants change (the page's, or an item it names), `refoldPageTexts`
@@ -130,9 +130,8 @@ type PMNode = {
 };
 
 /** What every holder of a page reads, for its fold: the named items they all
- *  hold (lower-case id to current title), and whether entity mentions are
- *  theirs (Admin alone holds the page). */
-type HolderView = { held: ReadonlyMap<string, string>; entities: boolean; ownUrl: OwnUrl };
+ *  hold (lower-case id to current title). */
+type HolderView = { held: ReadonlyMap<string, string>; ownUrl: OwnUrl };
 
 /** A uuid array literal for the workspaces in `ids`. */
 function uuidArray(ids: readonly string[]) {
@@ -161,7 +160,6 @@ async function holderView(
   ownerId: string,
   holders: readonly string[],
   ids: readonly string[],
-  withEntities: boolean,
   ownUrl: OwnUrl,
   q: LevelTextDb,
 ): Promise<HolderView> {
@@ -180,24 +178,13 @@ async function holderView(
       );
     for (const r of rows) held.set(r.id.toLowerCase(), r.title);
   }
-  let entities = false;
-  if (withEntities) {
-    const [admin] = (await q.execute(sql`
-      select id::text as id from workspaces
-       where owner_id = ${ownerId}::uuid and is_admin limit 1`)) as unknown as Array<{
-      id: string;
-    }>;
-    entities = !!admin && holders.every((h) => h.toLowerCase() === admin.id.toLowerCase());
-  }
-  return { held, entities, ownUrl };
+  return { held, ownUrl };
 }
 
-/** Whether a link mark names an item not every holder holds (or an entity
- *  they do not all read). A target that names no item stays. */
+/** Whether a link mark names an item not every holder holds. A target that
+ *  names no item (an external link, an entity) stays. */
 function linkHidden(m: PMMark, v: HolderView): boolean {
-  const refs = pageRefs({ type: 'text', marks: [m] }, v.ownUrl);
-  if (refs.ids.some((id) => !v.held.has(id))) return true;
-  return !v.entities && refs.refused.some((r) => /^\s*mention:/i.test(r));
+  return pageRefs({ type: 'text', marks: [m] }, v.ownUrl).ids.some((id) => !v.held.has(id));
 }
 
 function privateMention(n: PMNode): PMNode {
@@ -207,14 +194,11 @@ function privateMention(n: PMNode): PMNode {
 function foldNode(n: PMNode, v: HolderView): PMNode {
   if (!n || typeof n !== 'object') return n;
   let out: PMNode = n;
-  if (n.type === 'mention') {
-    const a = n.attrs ?? {};
-    if (a.ref === 'node') {
-      const title = typeof a.id === 'string' ? v.held.get(a.id.toLowerCase()) : undefined;
-      out = title === undefined ? privateMention(n) : { ...n, attrs: { ...a, label: title } };
-    } else if (!v.entities) {
-      out = privateMention(n);
-    }
+  // A node mention follows the holder rule; an entity mention keeps its label.
+  if (n.type === 'mention' && n.attrs?.ref === 'node') {
+    const a = n.attrs;
+    const title = typeof a.id === 'string' ? v.held.get(a.id.toLowerCase()) : undefined;
+    out = title === undefined ? privateMention(n) : { ...n, attrs: { ...a, label: title } };
   }
   if (Array.isArray(n.content)) out = { ...out, content: foldContent(n.content, v) };
   return out;
@@ -264,9 +248,8 @@ export async function pageDocText(
   }
   const ownUrl = clientOwnUrl(clientRedactOrigins());
   const refs = pageRefs(doc, ownUrl);
-  const withEntities = refs.refused.some((r) => /^\s*mention:/i.test(r));
-  if (!refs.ids.length && !withEntities) return docToText(doc, { embedMarkers: true });
-  const view = await holderView(ownerId, ws, refs.ids, withEntities, ownUrl, q);
+  if (!refs.ids.length) return docToText(doc, { embedMarkers: true });
+  const view = await holderView(ownerId, ws, refs.ids, ownUrl, q);
   return docToText(foldNode(doc as PMNode, view), { embedMarkers: true });
 }
 
