@@ -1,6 +1,9 @@
 /**
  * The member Library on a real, migrated Postgres, read at the team level
  * (member logins, Phase 1): row security alone decides what a member sees.
+ * The level rules run on the level roles (runInLevelRoleForTest); the last
+ * block reads as a login in the shim's workspace scope (withViewer with
+ * { login }, workspaces W5b2), where the grants decide and no level narrows.
  * Seeds its own rows under the brain's anchor and removes them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/member-library.viewer.db.test.ts
  */
@@ -78,7 +81,9 @@ describe.skipIf(!URL)('member Library at the team level', () => {
   });
 
   it('lists team and client items with their level: never admin, and not open-link (public) ones', async () => {
-    const { items, total } = await m.runInLevelRoleForTest('team', () => lib.listLibrary(anchor, { q: tag }));
+    const { items, total } = await m.runInLevelRoleForTest('team', () =>
+      lib.listLibrary(anchor, { q: tag }),
+    );
     expect(items.map((i) => [i.id, i.audience]).sort()).toEqual(
       [
         [ids.teamPage, 'team'],
@@ -89,23 +94,35 @@ describe.skipIf(!URL)('member Library at the team level', () => {
   });
 
   it('shows a client-level reader only client items', async () => {
-    const { items } = await m.runInLevelRoleForTest('client', () => lib.listLibrary(anchor, { q: tag }));
+    const { items } = await m.runInLevelRoleForTest('client', () =>
+      lib.listLibrary(anchor, { q: tag }),
+    );
     expect(items.map((i) => i.id)).toEqual([ids.clientNote]);
-    expect(await m.runInLevelRoleForTest('client', () => lib.getLibraryItem(anchor, ids.teamPage))).toBeNull();
+    expect(
+      await m.runInLevelRoleForTest('client', () => lib.getLibraryItem(anchor, ids.teamPage)),
+    ).toBeNull();
   });
 
   it('leaves images cut out of documents out of the list, but reads them by id', async () => {
-    const { items } = await m.runInLevelRoleForTest('team', () => lib.listLibrary(anchor, { q: tag }));
+    const { items } = await m.runInLevelRoleForTest('team', () =>
+      lib.listLibrary(anchor, { q: tag }),
+    );
     expect(items.map((i) => i.id)).not.toContain(ids.fragment);
-    const frag = await m.runInLevelRoleForTest('team', () => lib.getLibraryItem(anchor, ids.fragment));
+    const frag = await m.runInLevelRoleForTest('team', () =>
+      lib.getLibraryItem(anchor, ids.fragment),
+    );
     expect(frag?.type).toBe('file');
   });
 
   it('reads a client item by id at the team level, and a public one too (audit B10)', async () => {
-    const note = await m.runInLevelRoleForTest('team', () => lib.getLibraryItem(anchor, ids.clientNote));
+    const note = await m.runInLevelRoleForTest('team', () =>
+      lib.getLibraryItem(anchor, ids.clientNote),
+    );
     expect(note).toMatchObject({ type: 'note', audience: 'client' });
     // Not listed (the test above), but opened by id: no Client badge.
-    const open = await m.runInLevelRoleForTest('team', () => lib.getLibraryItem(anchor, ids.publicNote));
+    const open = await m.runInLevelRoleForTest('team', () =>
+      lib.getLibraryItem(anchor, ids.publicNote),
+    );
     expect(open).toMatchObject({ id: ids.publicNote, type: 'note', audience: 'team' });
   });
 
@@ -116,11 +133,17 @@ describe.skipIf(!URL)('member Library at the team level', () => {
   });
 
   it('reads a team page (published doc only) and 404s an admin one', async () => {
-    const page = await m.runInLevelRoleForTest('team', () => lib.getLibraryItem(anchor, ids.teamPage));
+    const page = await m.runInLevelRoleForTest('team', () =>
+      lib.getLibraryItem(anchor, ids.teamPage),
+    );
     expect(page?.type).toBe('page');
     expect(page && 'doc' in page && page.doc).toEqual({ type: 'doc', content: [] });
-    expect(await m.runInLevelRoleForTest('team', () => lib.getLibraryItem(anchor, ids.adminPage))).toBeNull();
-    expect(await m.runInLevelRoleForTest('team', () => lib.getLibraryItem(anchor, ids.task))).toBeNull();
+    expect(
+      await m.runInLevelRoleForTest('team', () => lib.getLibraryItem(anchor, ids.adminPage)),
+    ).toBeNull();
+    expect(
+      await m.runInLevelRoleForTest('team', () => lib.getLibraryItem(anchor, ids.task)),
+    ).toBeNull();
   });
 
   it('lists nothing for a level with no Library (public): fail closed', async () => {
@@ -150,7 +173,12 @@ describe.skipIf(!URL)('member Library at the team level', () => {
       ...t.data,
       rows: [{ id: randomUUID(), cells: { [col]: 'published cell' } }],
     });
-    await m.systemDb.execute(sqlTag`update nodes set audience = 'team' where id = ${t.id}`);
+    // The levels are frozen since W5b2: the level role reads one, so the
+    // fixture sets it under the test bypass.
+    await m.systemDb.transaction(async (tx) => {
+      await tx.execute(sqlTag`select mantle_heads_bypass('test fixture')`);
+      await tx.execute(sqlTag`update nodes set audience = 'team' where id = ${t.id}`);
+    });
     const applied = await draft.applyTableOps(anchor, t.id, [
       { op: 'row_add', cells: { [col]: 'admin draft secret' } },
     ]);
@@ -159,5 +187,55 @@ describe.skipIf(!URL)('member Library at the team level', () => {
     const text = JSON.stringify(item);
     expect(text).toContain('published cell');
     expect(text).not.toContain('admin draft secret');
+  });
+  it('as a login (workspace scope): lists and opens what its workspace holds, by grant, nothing else', async () => {
+    const login = randomUUID();
+    const ws = randomUUID();
+    const other = randomUUID();
+    await m.systemDb.execute(sqlTag`
+      insert into auth.users (id, email, password_hash, role)
+      values (${login}, ${`${tag}-ws@example.invalid`}, 'x', 'member')`);
+    await m.systemDb.execute(sqlTag`
+      insert into workspaces (id, owner_id, name) values
+        (${ws}, ${anchor}, ${`${tag} ws`}), (${other}, ${anchor}, ${`${tag} other`})`);
+    await m.systemDb.execute(
+      sqlTag`insert into workspace_users (workspace_id, login_id) values (${ws}, ${login})`,
+    );
+    // Its workspace holds the team page and the admin page (the grant
+    // decides, not the frozen level); another workspace the client note.
+    const holds: Array<[string, string]> = [
+      [ws, ids.teamPage],
+      [ws, ids.adminPage],
+      [other, ids.clientNote],
+    ];
+    for (const [wsId, id] of holds) {
+      await m.withSubtreeHeads(id, [], (tx) =>
+        tx.execute(sqlTag`insert into item_grants (node_id, workspace_id) values (${id}, ${wsId})`),
+      );
+    }
+    try {
+      const as = <T>(fn: () => Promise<T>) => m.withViewer('team', { login }, fn);
+      const { items, total } = await as(() => lib.listLibrary(anchor, { q: tag }));
+      expect(items.map((i) => i.id).sort()).toEqual([ids.teamPage, ids.adminPage].sort());
+      expect(total).toBe(2);
+      expect(await as(() => lib.getLibraryItem(anchor, ids.adminPage))).toMatchObject({
+        type: 'page',
+      });
+      // Not held by a workspace of theirs: neither listed nor opened.
+      expect(await as(() => lib.getLibraryItem(anchor, ids.clientNote))).toBeNull();
+      expect(await as(() => lib.getLibraryItem(anchor, ids.publicNote))).toBeNull();
+      expect((await as(() => lib.libraryCounts(anchor))).note).toBe(0);
+    } finally {
+      for (const [wsId, id] of holds) {
+        await m.withSubtreeHeads(id, [], (tx) =>
+          tx.execute(
+            sqlTag`delete from item_grants where node_id = ${id} and workspace_id = ${wsId}`,
+          ),
+        );
+      }
+      await m.systemDb.execute(sqlTag`delete from workspaces where id in (${ws}, ${other})`);
+      await m.systemDb.execute(sqlTag`delete from spaces where login_id = ${login}`);
+      await m.systemDb.execute(sqlTag`delete from auth.users where id = ${login}`);
+    }
   });
 });

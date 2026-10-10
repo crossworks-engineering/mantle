@@ -5,7 +5,8 @@
  * as the real roles (withSpace, withTeamDrafts, withViewer inside the module).
  *
  * Fixture, under folders of this run's own on the shared test anchor:
- *   notes.<L>_team    shared with the team, holds an admin note
+ *   notes.<L>_team    held by the members' workspace (A and B are its
+ *                     users, workspaces W5b2), holds an admin note
  *   notes.<L>_hidden  not shared, holds an admin note; the member's draft or
  *                     own folder there never reveals it (audit S4)
  *   notes.<L>_closed  not shared, holds only an admin note: never shows
@@ -27,6 +28,7 @@ describe.skipIf(!URL)('a member’s tree: own folders, drafts in place, teammate
   const L = `mt${randomUUID().slice(0, 8)}`;
   const a = randomUUID();
   const b = randomUUID();
+  const members = randomUUID();
   const spaceOf: Record<string, string> = {};
   const ids = {
     teamF: randomUUID(),
@@ -92,12 +94,21 @@ describe.skipIf(!URL)('a member’s tree: own folders, drafts in place, teammate
     await brainRow(ids.inTeam, 'note', `notes.${L}_team`);
     await brainRow(ids.inHidden, 'note', `notes.${L}_hidden`);
     await brainRow(ids.inClosed, 'note', `notes.${L}_closed`);
-    await m.systemDb.execute(sqlTag`update nodes set share_level = 'team' where id = ${ids.teamF}`);
+    await m.systemDb.execute(sqlTag`
+      insert into workspaces (id, owner_id, name) values (${members}, ${brain}, ${`${L} members`})`);
+    await m.systemDb.execute(sqlTag`
+      insert into workspace_users (workspace_id, login_id) values (${members}, ${a}), (${members}, ${b})`);
+    await m.withSubtreeHeads(ids.teamF, [], (tx) =>
+      tx.execute(
+        sqlTag`insert into item_grants (node_id, workspace_id) values (${ids.teamF}, ${members})`,
+      ),
+    );
   }, 60_000);
 
   afterAll(async () => {
     await m.systemDb.execute(sqlTag`delete from nodes where owner_id = ${brain}
       and (path::text like ${`notes.${L}%`})`);
+    await m.systemDb.execute(sqlTag`delete from workspaces where id = ${members}`);
     for (const l of [a, b]) {
       await m.systemDb.execute(sqlTag`delete from nodes where owner_id in
         (select id from spaces where login_id = ${l})`);

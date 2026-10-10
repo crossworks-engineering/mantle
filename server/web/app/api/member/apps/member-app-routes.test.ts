@@ -26,7 +26,7 @@ const h = vi.hoisted(() => ({
   displayName: 'Pat' as string | null,
   lookups: [] as string[],
   reads: [] as Array<{ fn: string; level: string }>,
-  launcherReads: [] as Array<{ level: string; reader: string }>,
+  launcherReads: [] as Array<{ level: string; reader: string; loginId: string }>,
   homeAppId: undefined as string | undefined,
   loginActive: true,
   verdict: { ok: true } as { ok: boolean; status?: number; reason?: string },
@@ -46,7 +46,26 @@ const h = vi.hoisted(() => ({
   // A member-built app the member may run (theirs, or shared with the team);
   // null = none. `frozen` = under review.
   spaceApp: null as null | { frozen: boolean },
+  // Who each withViewer call acted for.
+  viewers: [] as unknown[],
 }));
+
+// No database: the workspace scope withViewer enters is read on Postgres
+// (packages/db/src/viewer-shim.db.test.ts). Here it records who the route
+// acts for and runs the reads at the level it names, so the stand-ins below
+// see which role a read ran on.
+vi.mock('@mantle/db', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@mantle/db')>();
+  return {
+    ...real,
+    withViewer: vi.fn(
+      async (level: 'admin' | 'team' | 'client', actsFor: unknown, fn: () => Promise<unknown>) => {
+        h.viewers.push(actsFor);
+        return real.runInLevelRoleForTest(level, fn);
+      },
+    ),
+  };
+});
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -119,8 +138,8 @@ vi.mock('@mantle/content', async (importOriginal) => {
     listMemberApps: vi.fn(async () =>
       read('listMemberApps', [card(APP, 'Polls'), card(OTHER_APP, 'Budget')]),
     ),
-    appLauncher: vi.fn(async (_anchor: string, reader: string) => {
-      h.launcherReads.push({ level: currentViewerLevel(), reader });
+    appLauncher: vi.fn(async (_anchor: string, reader: string, loginId: string) => {
+      h.launcherReads.push({ level: currentViewerLevel(), reader, loginId });
       return {
         apps: [card(APP, 'Polls'), card(OTHER_APP, 'Budget')],
         folders: [
@@ -268,6 +287,7 @@ beforeEach(() => {
   h.rendered.length = 0;
   h.frameViewers.length = 0;
   h.spaceApp = null;
+  h.viewers.length = 0;
 });
 
 describe('member tool broker', () => {
@@ -320,8 +340,11 @@ describe('member tool broker', () => {
       detail: { via: 'member', slug: 'note_list' },
     });
     // The rule is asked about THIS app's declared tools, for this brain,
-    // for this login (its connector rule, W4b fix round 2).
-    expect(verdictMock).toHaveBeenCalledWith('team', ANCHOR, ['note_list'], 'note_list', LOGIN);
+    // for this login (its connector rule, W4b fix round 2), and this app (every
+    // workspace that holds it must hold the connector, plan R2).
+    expect(verdictMock).toHaveBeenCalledWith('team', ANCHOR, ['note_list'], 'note_list', LOGIN, {
+      appId: APP,
+    });
     expect(h.dispatched[0]!.ctx).toMatchObject({ surface: { contactName: 'Pat' } });
   });
 
@@ -588,6 +611,10 @@ describe('member app list and home', () => {
     expect(body.apps).toHaveLength(2);
     expect(body.homeAppId).toBe(APP);
     expect(h.reads.every((r) => r.level === 'team')).toBe(true);
+    expect(h.viewers.length).toBeGreaterThan(0);
+    expect(h.viewers.every((v) => JSON.stringify(v) === JSON.stringify({ login: LOGIN }))).toBe(
+      true,
+    );
     h.runnable = false;
     expect(((await (await listRoute()).json()) as { homeAppId: unknown }).homeAppId).toBeNull();
   });
@@ -603,7 +630,7 @@ describe('member app list and home', () => {
     // The route hands no path to anything: the launcher is asked for the
     // team reader, on the admin pool (it scopes its own reads; the rule is
     // proven on Postgres in packages/content/src/app-folders.viewer.db.test.ts).
-    expect(h.launcherReads).toEqual([{ level: 'admin', reader: 'team' }]);
+    expect(h.launcherReads).toEqual([{ level: 'admin', reader: 'team', loginId: LOGIN }]);
   });
 
   it('gives no hub data when nothing is pinned, and skips the hub reads', async () => {

@@ -22,6 +22,18 @@ const h = vi.hoisted(() => ({
   dispatched: [] as unknown[],
   logged: [] as unknown[],
   rendered: [] as unknown[],
+  viewers: [] as unknown[],
+}));
+
+// No database: withViewer's workspace scope is proven on Postgres
+// (packages/db/src/viewer-shim.db.test.ts). Here it records who the broker
+// acts for.
+vi.mock('@mantle/db', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@mantle/db')>()),
+  withViewer: vi.fn(async (level: string, actsFor: unknown, fn: () => Promise<unknown>) => {
+    h.viewers.push({ level, actsFor });
+    return fn();
+  }),
 }));
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
@@ -107,6 +119,7 @@ beforeEach(() => {
   h.dispatched = [];
   h.logged = [];
   h.rendered = [];
+  h.viewers = [];
   h.verdict = { ok: true, tool: { slug: 'search', handler: { kind: 'builtin', ref: 'search' } } };
 });
 
@@ -198,6 +211,7 @@ describe('the review test tool broker', () => {
     const res = await POST(post({ slug: 'search', input: {} }), params(APP));
     expect(res.status).toBe(200);
     expect(h.dispatched[0]).toEqual({ verdictLevel: 'team' });
+    expect(h.viewers).toEqual([{ level: 'team', actsFor: { login: ADMIN_LOGIN } }]);
     expect(h.dispatched[1]).toMatchObject({
       ownerId: OWNER,
       surface: { kind: 'team', loginId: ADMIN_LOGIN, privateReads: false },

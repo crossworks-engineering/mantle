@@ -123,6 +123,7 @@ describe.skipIf(!URL)('Accept claims in place', () => {
 
   afterAll(async () => {
     await m.systemDb.execute(sqlTag`delete from nodes where owner_id in (${anchor}, ${space})`);
+    await m.systemDb.execute(sqlTag`delete from workspaces where owner_id = ${anchor}`);
     await m.systemDb.execute(sqlTag`delete from spaces where id in (${anchor}, ${space})`);
     await m.systemDb.execute(sqlTag`delete from auth.users where id in (${anchor}, ${login})`);
     await m.closeDb();
@@ -249,14 +250,19 @@ describe.skipIf(!URL)('Accept claims in place', () => {
   });
 
   it('keeps a member folder that holds a submitted draft where it is', async () => {
-    // A folder the member sees (shared with the team), its own folder inside.
+    // A folder the member sees (a workspace of theirs holds it, W5b2), its
+    // own folder inside.
     const room = await tree.createTreeFolder(anchor, 'notes', { parentId: null, name: 'Room' });
-    // (Folder shares are gone since W5b2: the share the member tree still
-    // reads is set under the test bypass.)
-    await m.systemDb.transaction(async (tx) => {
-      await tx.execute(sqlTag`select mantle_heads_bypass('test fixture')`);
-      await tx.execute(sqlTag`update nodes set share_level = 'team' where id = ${room.id}`);
-    });
+    const readers = randomUUID();
+    await m.systemDb.execute(sqlTag`
+      insert into workspaces (id, owner_id, name) values (${readers}, ${anchor}, 'Room readers')`);
+    await m.systemDb.execute(sqlTag`
+      insert into workspace_users (workspace_id, login_id) values (${readers}, ${login})`);
+    await m.withSubtreeHeads(room.id, [], (tx) =>
+      tx.execute(
+        sqlTag`insert into item_grants (node_id, workspace_id) values (${room.id}, ${readers})`,
+      ),
+    );
     const held = await ownFolder('notes.room.held', 'Held');
     const id = await submittedNote('held', 'notes.room.held');
     const scope = { anchorId: anchor, spaceId: space, loginId: login };

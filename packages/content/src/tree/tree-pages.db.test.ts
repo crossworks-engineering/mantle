@@ -22,6 +22,8 @@ describe.skipIf(!URL)('pages in the item tree', () => {
   let sqlTag: typeof import('drizzle-orm').sql;
   let brain = '';
   const member = randomUUID();
+  /** A workspace of the member's, on the shared anchor. */
+  const readers = randomUUID();
   let space = '';
   const label = `pages_${randomUUID().slice(0, 8)}`;
   const own = async (id: string) =>
@@ -66,6 +68,7 @@ describe.skipIf(!URL)('pages in the item tree', () => {
                 [...made, randomUUID()].map((id) => sqlTag`${id}::uuid`),
                 sqlTag`, `,
               )}))`);
+    await m.systemDb.execute(sqlTag`delete from workspaces where id = ${readers}`);
     if (space) await m.systemDb.execute(sqlTag`delete from spaces where id = ${space}`);
     await m.systemDb.execute(sqlTag`delete from auth.users where id = ${member}`);
   });
@@ -157,16 +160,20 @@ describe.skipIf(!URL)('pages in the item tree', () => {
 
   it('a member files a page draft where its tree shows, never in a hidden brain folder', async () => {
     const scope = { anchorId: brain, spaceId: space, loginId: member };
-    // A brain folder shared with the team: the member sees it. (The levels
-    // are frozen since W5b2: the fixture sets the share the member tree still
-    // reads under the test bypass.)
+    // A brain folder a workspace of the member holds: the member sees it
+    // (W5b2: the folder's grant, not a share level).
     const [shared] = (await m.systemDb.execute(sqlTag`
       select id from nodes where owner_id = ${brain} and type = 'branch'
          and path = ${`pages.${label}_shared`}::ltree`)) as unknown as Array<{ id: string }>;
-    await m.systemDb.transaction(async (tx) => {
-      await tx.execute(sqlTag`select mantle_heads_bypass('test fixture')`);
-      await tx.execute(sqlTag`update nodes set share_level = 'team' where id = ${shared!.id}`);
-    });
+    await m.systemDb.execute(sqlTag`
+      insert into workspaces (id, owner_id, name) values (${readers}, ${brain}, ${`${label} readers`})`);
+    await m.systemDb.execute(sqlTag`
+      insert into workspace_users (workspace_id, login_id) values (${readers}, ${member})`);
+    await m.withSubtreeHeads(shared!.id, [], (tx) =>
+      tx.execute(
+        sqlTag`insert into item_grants (node_id, workspace_id) values (${shared!.id}, ${readers})`,
+      ),
+    );
     const at = await tree.memberFilingPath(scope, 'pages', shared!.id);
     expect(at).toBe(`pages.${label}_shared`);
     // Its own folder in it, and a draft filed there.

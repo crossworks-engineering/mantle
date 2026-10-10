@@ -18,7 +18,24 @@ const h = vi.hoisted(() => ({
   toolSlugs: ['contact_list'] as string[],
   levels: [] as string[],
   dispatched: [] as Array<{ level: string; ctx: Record<string, unknown> }>,
+  viewers: [] as Array<{ level: string; actsFor: unknown }>,
 }));
+
+// No database: the workspace scope withViewer enters is read on Postgres
+// (proven in packages/db/src/viewer-shim.db.test.ts). Here it records who the
+// broker acts for and runs the dispatch at the level it names.
+vi.mock('@mantle/db', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@mantle/db')>();
+  return {
+    ...real,
+    withViewer: vi.fn(
+      async (level: 'admin' | 'team' | 'client', actsFor: unknown, fn: () => Promise<unknown>) => {
+        h.viewers.push({ level, actsFor });
+        return real.runInLevelRoleForTest(level, fn);
+      },
+    ),
+  };
+});
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -86,6 +103,7 @@ beforeEach(() => {
   h.toolSlugs = ['contact_list'];
   h.levels.length = 0;
   h.dispatched.length = 0;
+  h.viewers.length = 0;
 });
 
 describe('owner app tool broker: team rules when another workspace holds the app', () => {
@@ -104,6 +122,7 @@ describe('owner app tool broker: team rules when another workspace holds the app
     const res = await call('contact_list');
     expect(res.status).toBe(200);
     expect(h.levels).toEqual(['team']);
+    expect(h.viewers).toEqual([{ level: 'team', actsFor: { login: ACTOR } }]);
     expect(h.dispatched[0]).toMatchObject({
       level: 'team',
       ctx: {

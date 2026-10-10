@@ -6,8 +6,9 @@
  * (Beta before Alpha) and only the first page carried any, so a member with
  * more drafts than a page never saw the rest.
  *
- * Fixture, on the shared test anchor: a notes folder shared with the team
- * that holds brain notes; member A's drafts and teammate B's shared draft.
+ * Fixture, on the shared test anchor: a notes folder the members' workspace
+ * holds (A and B are its users, workspaces W5b2), with brain notes in it;
+ * member A's drafts and teammate B's shared draft.
  * Reads run as the real roles (inside the module).
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/tree/member-tree-az.viewer.db.test.ts
  */
@@ -27,6 +28,7 @@ describe.skipIf(!URL)('a member’s tree by name: drafts and brain items in one 
   const L = `az${randomUUID().slice(0, 8)}`;
   const a = randomUUID();
   const b = randomUUID();
+  const members = randomUUID();
   const spaceOf: Record<string, string> = {};
   const folderId = randomUUID();
   const keeperId = randomUUID();
@@ -95,16 +97,28 @@ describe.skipIf(!URL)('a member’s tree by name: drafts and brain items in one 
     // keeper's title ("zz keeper") matches none of the reads below, whether
     // or not a member reads it.
     await m.systemDb.execute(sqlTag`
-      insert into nodes (id, owner_id, type, title, slug, path, audience, data, tags, share_level)
+      insert into nodes (id, owner_id, type, title, slug, path, audience, data, tags)
       values (${folderId}, ${brain}, 'branch', ${`${L} team`}, ${`${L}_team`},
-              ${folderPath}::ltree, 'admin', '{}'::jsonb, '{}', 'team'),
+              ${folderPath}::ltree, 'admin', '{}'::jsonb, '{}'),
              (${keeperId}, ${brain}, 'note', ${`${L} zz keeper`}, null,
-              ${folderPath}::ltree, 'admin', '{"content":"x"}'::jsonb, '{}', null)`);
+              ${folderPath}::ltree, 'admin', '{"content":"x"}'::jsonb, '{}')`);
+    // The members' workspace holds the folder: the notes put in it later
+    // take its grant.
+    await m.systemDb.execute(sqlTag`
+      insert into workspaces (id, owner_id, name) values (${members}, ${brain}, ${`${L} members`})`);
+    await m.systemDb.execute(sqlTag`
+      insert into workspace_users (workspace_id, login_id) values (${members}, ${a}), (${members}, ${b})`);
+    await m.withSubtreeHeads(folderId, [], (tx) =>
+      tx.execute(
+        sqlTag`insert into item_grants (node_id, workspace_id) values (${folderId}, ${members})`,
+      ),
+    );
   }, 60_000);
 
   afterAll(async () => {
     await m.systemDb.execute(sqlTag`delete from nodes where owner_id = ${brain}
       and path <@ ${folderPath}::ltree`);
+    await m.systemDb.execute(sqlTag`delete from workspaces where id = ${members}`);
     for (const l of [a, b]) {
       await m.systemDb.execute(sqlTag`delete from nodes where owner_id in
         (select id from spaces where login_id = ${l})`);

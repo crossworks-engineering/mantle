@@ -1,10 +1,15 @@
 /**
  * The member and client trees (folder plan phase 4): what a member (team) or
  * a client login sees of a kind's folders. Items are read as that reader
- * (row security, the Library's levels by the union rule); a folder shows
- * when its share covers the reader or when it is on the way to something the
- * reader reads. Counts are the reader's. A folder the reader cannot see is
- * not found, by id or by search. A client's shape carries no level.
+ * (withViewer with its login, workspaces W5b2: what a workspace of theirs
+ * holds); a folder shows when a workspace of the reader holds it or when it
+ * is on the way to something the reader reads. Counts are the reader's. A
+ * folder the reader cannot see is not found, by id or by search. A client's
+ * shape carries no level.
+ *
+ * The member is a user of a workspace that holds the team folder, the client
+ * folder and two team items; the client a user of a workspace that holds the
+ * client folder only.
  *
  * Rows belong to the shared test anchor, under folders of this run's own
  * (other files use the anchor in parallel, so lists are narrowed to them).
@@ -67,11 +72,25 @@ describe.skipIf(!URL)('the member and client trees', () => {
       values (${id}, ${brain}, ${type}::node_type, ${title}, ${path}::ltree, ${audience},
               ${type === 'note' ? JSON.stringify({ content: 'x' }) : '{}'}::jsonb, '{}')`);
   };
+  const member = randomUUID();
+  const client = randomUUID();
+  const ws = { members: randomUUID(), clients: randomUUID() };
+  const loginOf = { team: member, client } as const;
+  /** `wsId` holds `id` (a folder passes it to what it holds), or no longer. */
+  const hold = (wsId: string, id: string, on = true) =>
+    m.withSubtreeHeads(id, [], (tx) =>
+      tx.execute(
+        on
+          ? sqlTag`insert into item_grants (node_id, workspace_id) values (${id}, ${wsId})
+                   on conflict do nothing`
+          : sqlTag`delete from item_grants where node_id = ${id} and workspace_id = ${wsId}`,
+      ),
+    );
   const ours = new Set<string>([...Object.values(f), ...Object.values(i)]);
   const mine = <T extends { id: string }>(rows: T[]) => rows.filter((r) => ours.has(r.id));
   const ids = (rows: { id: string }[]) => mine(rows).map((r) => r.id);
   const open = (reader: 'team' | 'client', folderId: string | null) =>
-    tree.loadReaderTreeFolder(brain, reader, 'notes', { folderId });
+    tree.loadReaderTreeFolder(brain, reader, loginOf[reader], 'notes', { folderId });
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
@@ -98,10 +117,19 @@ describe.skipIf(!URL)('the member and client trees', () => {
     await node(i.teamOwn, 'note', P.hasTeam, `${label} team own`, 'team');
     await node(i.rootTeam, 'note', 'notes', `${label} root team`, 'team');
     await node(i.inPrivate, 'note', P.private, `${label} in private`);
-    await m.systemDb.execute(sqlTag`update nodes set share_level = 'team' where id = ${f.team}`);
-    await m.systemDb.execute(
-      sqlTag`update nodes set share_level = 'client' where id = ${f.client}`,
-    );
+    await m.systemDb.execute(sqlTag`
+      insert into auth.users (id, email, password_hash, role) values
+        (${member}, ${`${label}-m@example.invalid`}, 'x', 'member'),
+        (${client}, ${`${label}-c@example.invalid`}, 'x', 'client')`);
+    await m.systemDb.execute(sqlTag`
+      insert into workspaces (id, owner_id, name) values
+        (${ws.members}, ${brain}, ${`${label} members`}),
+        (${ws.clients}, ${brain}, ${`${label} clients`})`);
+    await m.systemDb.execute(sqlTag`
+      insert into workspace_users (workspace_id, login_id) values
+        (${ws.members}, ${member}), (${ws.clients}, ${client})`);
+    for (const id of [f.team, f.client, i.teamOwn, i.rootTeam]) await hold(ws.members, id);
+    await hold(ws.clients, f.client);
   }, 60_000);
 
   afterAll(async () => {
@@ -109,6 +137,11 @@ describe.skipIf(!URL)('the member and client trees', () => {
       delete from nodes where owner_id = ${brain} and (
         path <@ ${P.top}::ltree or path <@ ${P.private}::ltree
         or id = ${i.rootTeam})`);
+    await m.systemDb.execute(
+      sqlTag`delete from workspaces where id in (${ws.members}, ${ws.clients})`,
+    );
+    await m.systemDb.execute(sqlTag`delete from spaces where login_id in (${member}, ${client})`);
+    await m.systemDb.execute(sqlTag`delete from auth.users where id in (${member}, ${client})`);
   });
 
   it('shows a member the folders on the way to what they read, with their counts', async () => {
@@ -121,16 +154,15 @@ describe.skipIf(!URL)('the member and client trees', () => {
     const top = (await open('team', f.top))!;
     expect(ids(top.folders)).toEqual([f.client, f.hasTeam, f.team]);
     const byId = new Map(top.folders.map((x) => [x.id, x]));
-    expect(byId.get(f.team)).toMatchObject({ share: 'team', folderCount: 1, itemCount: 1 });
+    expect(byId.get(f.team)).toMatchObject({ folderCount: 1, itemCount: 1 });
     expect(byId.get(f.hasTeam)).toMatchObject({ folderCount: 0, itemCount: 1 });
     expect(top.crumbs).toEqual([]);
 
     const team = (await open('team', f.team))!;
     expect(ids(team.folders)).toEqual([f.deep]);
     expect(ids(team.items)).toEqual([i.inTeam]);
-    expect(team.items[0]).toMatchObject({ level: 'team', inherited: 'team' });
     expect(team.crumbs).toEqual([{ id: f.top, name: `${label} Top` }]);
-    // A shared folder's empty subfolder still shows: the share covers it.
+    // A held folder's empty subfolder still shows: the folder's grant covers it.
     const deep = (await open('team', f.deep))!;
     expect(deep.items).toEqual([]);
   });
@@ -165,26 +197,49 @@ describe.skipIf(!URL)('the member and client trees', () => {
   });
 
   it('searches as the reader: folders it may see, items it may read', async () => {
-    const member = await tree.searchReaderTree(brain, 'team', 'notes', label);
-    expect(ids(member.folders).sort()).toEqual([f.top, f.team, f.deep, f.client, f.hasTeam].sort());
-    expect(ids(member.items).sort()).toEqual([i.inTeam, i.inClient, i.teamOwn, i.rootTeam].sort());
-    const hit = member.items.find((x) => x.id === i.inTeam)!;
+    const asMember = await tree.searchReaderTree(brain, 'team', member, 'notes', label);
+    expect(ids(asMember.folders).sort()).toEqual(
+      [f.top, f.team, f.deep, f.client, f.hasTeam].sort(),
+    );
+    expect(ids(asMember.items).sort()).toEqual(
+      [i.inTeam, i.inClient, i.teamOwn, i.rootTeam].sort(),
+    );
+    const hit = asMember.items.find((x) => x.id === i.inTeam)!;
     expect(hit.crumbs.map((c) => c.id)).toEqual([f.top, f.team]);
 
-    const client = await tree.searchReaderTree(brain, 'client', 'notes', label);
-    expect(ids(client.folders).sort()).toEqual([f.top, f.client].sort());
-    expect(ids(client.items)).toEqual([i.inClient]);
+    const asClient = await tree.searchReaderTree(brain, 'client', client, 'notes', label);
+    expect(ids(asClient.folders).sort()).toEqual([f.top, f.client].sort());
+    expect(ids(asClient.items)).toEqual([i.inClient]);
   });
 
-  it('follows a share as it changes', async () => {
-    await m.systemDb.execute(sqlTag`update nodes set share_level = null where id = ${f.client}`);
+  it('follows a grant as it changes', async () => {
+    await hold(ws.clients, f.client, false);
     try {
       expect(await open('client', f.client)).toBeNull();
       expect(ids((await open('client', null))!.folders)).toEqual([]);
+      const search = await tree.searchReaderTree(brain, 'client', client, 'notes', label);
+      expect(ids(search.items)).toEqual([]);
     } finally {
-      await m.systemDb.execute(
-        sqlTag`update nodes set share_level = 'client' where id = ${f.client}`,
-      );
+      await hold(ws.clients, f.client);
+    }
+    expect(ids((await open('client', f.client))!.items)).toEqual([i.inClient]);
+  });
+
+  it('a login in no workspace reads nothing, whatever it is', async () => {
+    const lone = randomUUID();
+    await m.systemDb.execute(sqlTag`
+      insert into auth.users (id, email, password_hash, role)
+      values (${lone}, ${`${label}-lone@example.invalid`}, 'x', 'member')`);
+    try {
+      const root = (await tree.loadReaderTreeFolder(brain, 'team', lone, 'notes', {}))!;
+      expect(ids(root.folders)).toEqual([]);
+      expect(ids(root.items)).toEqual([]);
+      expect(
+        await tree.loadReaderTreeFolder(brain, 'team', lone, 'notes', { folderId: f.team }),
+      ).toBeNull();
+    } finally {
+      await m.systemDb.execute(sqlTag`delete from spaces where login_id = ${lone}`);
+      await m.systemDb.execute(sqlTag`delete from auth.users where id = ${lone}`);
     }
   });
 });

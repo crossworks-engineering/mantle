@@ -22,12 +22,13 @@
  *  - an app read only through an embed is not run, and names no folder.
  *
  * The brain is the box's brain of a scratch database of its own, migrated to
- * workspaces: a member's apps are the ones Team holds (its grants), a
- * client's the ones at client level (clients are not migrated). The levels
- * are frozen: the fixture writes them when it inserts a row, as the
- * migration left them next to the grants (the level roles' row security
- * still reads them until the scope shim). Every folder is inserted in one
- * statement with what it holds, so it never sits empty.
+ * workspaces. The readers are real logins in the shim's workspace scope
+ * (withViewer with { login }): a member who is a user of Team runs the apps
+ * Team holds (its grants); a client who is a user of a client workspace runs
+ * the apps that workspace holds, at client level (the client portal still
+ * names the level, W5c). The levels are frozen: the fixture writes them when
+ * it inserts a row. Every folder is inserted in one statement with what it
+ * holds, so it never sits empty.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/app-folders.viewer.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -44,6 +45,10 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
   let scratch: { url: string; drop: () => Promise<void> } | null = null;
   const brain = randomUUID();
   let team = '';
+  /** A client workspace (clients are not migrated: the fixture makes one). */
+  const clients = randomUUID();
+  /** The client login, a user of `clients`. */
+  const clientLogin = randomUUID();
   const label = `apf${randomUUID().slice(0, 8)}`;
   const path = {
     shared: `apps.${label}_shared`,
@@ -199,16 +204,17 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
         ),
         sqlTag`, `,
       )}`);
-  /** Team holds `id` (a folder passes it to what it holds), or no longer. */
-  const holdTeam = (id: string, on: boolean) =>
+  /** `ws` holds `id` (a folder passes it to what it holds), or no longer. */
+  const hold = (ws: string, id: string, on: boolean) =>
     m.withSubtreeHeads(id, [], (tx) =>
       tx.execute(
         on
           ? sqlTag`insert into item_grants (node_id, workspace_id, write)
-                   values (${id}, ${team}, true) on conflict do nothing`
-          : sqlTag`delete from item_grants where node_id = ${id} and workspace_id = ${team}`,
+                   values (${id}, ${ws}, true) on conflict do nothing`
+          : sqlTag`delete from item_grants where node_id = ${id} and workspace_id = ${ws}`,
       ),
     );
+  const holdTeam = (id: string, on: boolean) => hold(team, id, on);
 
   const ourFolders = new Set<string>(Object.values(f));
   const ourApps = new Set<string>(Object.values(a));
@@ -219,8 +225,8 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
       folders: Awaited<ReturnType<typeof folders.appLauncher>>['folders'];
     } =
       reader === 'team'
-        ? await folders.appLauncher(brain, 'team')
-        : await folders.appLauncher(brain, 'client');
+        ? await folders.appLauncher(brain, 'team', member)
+        : await folders.appLauncher(brain, 'client', clientLogin);
     return {
       apps: all.apps.filter((x) => ourApps.has(x.id)),
       folders: all.folders
@@ -308,11 +314,14 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
     ]);
 
     // Team holds these folders (and what they hold) and these apps; the
-    // client folder's share is a level (clients are not migrated).
+    // client workspace holds the client folder and the two client apps.
     for (const id of [f.shared, f.drafts, f.parent]) await holdTeam(id, true);
     for (const id of [a.teamInPlain, a.clientInPlain, a.teamDeep, a.teamTop]) {
       await holdTeam(id, true);
     }
+    await m.systemDb.execute(sqlTag`
+      insert into workspaces (id, owner_id, name) values (${clients}, ${brain}, ${`${label} Clients`})`);
+    for (const id of [f.client, a.clientInPlain, a.clientInParent]) await hold(clients, id, true);
 
     // A note in a notes folder Team holds embeds the app: an embed gives no
     // grant, so the app never runs. The folder and its note in one
@@ -341,7 +350,11 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
     await m.systemDb.execute(sqlTag`
       insert into auth.users (id, email, password_hash, role, display_name) values
         (${other}, ${`${label}-other@example.invalid`}, 'x', 'admin', null),
-        (${member}, ${`${label}-pat@example.invalid`}, 'x', 'member', 'Pat Member')`);
+        (${member}, ${`${label}-pat@example.invalid`}, 'x', 'member', 'Pat Member'),
+        (${clientLogin}, ${`${label}-cy@example.invalid`}, 'x', 'client', 'Cy Client')`);
+    await m.systemDb.execute(sqlTag`
+      insert into workspace_users (workspace_id, login_id) values
+        (${team}, ${member}), (${clients}, ${clientLogin})`);
     await m.systemDb.execute(sqlTag`
       insert into spaces (id, kind, login_id) values (${other}, 'brain', ${other})`);
     memberSpace = (
@@ -545,8 +558,8 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
   });
 
   it('refuses to run inside a viewer scope', async () => {
-    await expect(m.runInLevelRoleForTest('team', () => folders.appLauncher(brain, 'team'))).rejects.toThrow(
-      /admin pool/,
-    );
+    await expect(
+      m.runInLevelRoleForTest('team', () => folders.appLauncher(brain, 'team', member)),
+    ).rejects.toThrow(/admin pool/);
   });
 });

@@ -287,9 +287,25 @@ describe.skipIf(!URL)('member personal space', () => {
     const label = tag.replace('-', '_');
     const brainFolder = randomUUID();
     await m.systemDb.execute(sqlTag`
-      insert into nodes (id, owner_id, type, title, slug, path, audience, share_level, data, tags)
+      insert into nodes (id, owner_id, type, title, slug, path, audience, data, tags)
       values (${brainFolder}, ${brain}, 'branch', ${`${tag} shared`}, ${label},
-              ${`pages.${label}`}::ltree, 'admin', 'team', '{}'::jsonb, '{}')`);
+              ${`pages.${label}`}::ltree, 'admin', '{}'::jsonb, '{}')`);
+    // A workspace of member A holds the brain folder (W5b2: its grant, not a
+    // share level).
+    const readers = randomUUID();
+    await m.systemDb.execute(sqlTag`
+      insert into workspaces (id, owner_id, name) values (${readers}, ${brain}, ${`${tag} readers`})`);
+    await m.systemDb.execute(sqlTag`
+      insert into workspace_users (workspace_id, login_id) values (${readers}, ${loginA})`);
+    const holdFolder = (on: boolean) =>
+      m.withSubtreeHeads(brainFolder, [], (tx) =>
+        tx.execute(
+          on
+            ? sqlTag`insert into item_grants (node_id, workspace_id) values (${brainFolder}, ${readers})`
+            : sqlTag`delete from item_grants where node_id = ${brainFolder} and workspace_id = ${readers}`,
+        ),
+      );
+    await holdFolder(true);
     const page = (title: string, path?: string) =>
       asA(() => sp.createMineItem(spaceA, { type: 'page', title }, {}, { path }));
     const folderOf = async (id: string) => {
@@ -334,13 +350,12 @@ describe.skipIf(!URL)('member personal space', () => {
       expect(moved).toEqual({ moved: 1, failed: [] });
       expect(await folderOf(inOwn.id)).toBeNull();
 
-      // The admin unshares the brain folder: the draft stays at its path, so
-      // the body still names that folder (the id alone gives nothing away),
-      // but the member's tree no longer opens it (the block says "not shared
-      // with you") and shows the draft at the top level instead.
-      await m.systemDb.execute(
-        sqlTag`update nodes set share_level = null where id = ${brainFolder}`,
-      );
+      // The admin takes the brain folder off the member's workspace: the
+      // draft stays at its path, so the body still names that folder (the id
+      // alone gives nothing away), but the member's tree no longer opens it
+      // (the block says "not shared with you") and shows the draft at the
+      // top level instead.
+      await holdFolder(false);
       expect(await folderOf(inBrain.id)).toBe(brainFolder);
       expect(await tree.loadMemberTreeFolder(scope, 'pages', { folderId: brainFolder })).toBeNull();
       const top2 = await tree.loadMemberTreeFolder(scope, 'pages', { folderId: null });
@@ -348,6 +363,7 @@ describe.skipIf(!URL)('member personal space', () => {
     } finally {
       await m.systemDb.execute(sqlTag`delete from nodes where owner_id = ${spaceA}`);
       await m.systemDb.execute(sqlTag`delete from nodes where id = ${brainFolder}`);
+      await m.systemDb.execute(sqlTag`delete from workspaces where id = ${readers}`);
     }
   });
 });

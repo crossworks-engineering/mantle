@@ -1,14 +1,17 @@
 /**
  * What draw_get's reader gets of a drawing (draw-reader.ts), on a real,
- * migrated Postgres with the level roles:
+ * migrated Postgres, the readers in the shim's workspace scope (withViewer
+ * with { login }, workspaces W5b2):
  *
- *  - the drawing itself follows the reader's scope: a member reaches a team
- *    drawing and not an admin one, a client neither;
- *  - the draft flag is only asked where drafts are readable (the level roles
- *    hold no draft columns, so asking there would fail the whole read);
+ *  - the drawing itself follows the reader's scope: a member reaches the
+ *    drawing a workspace of theirs holds and not an admin one, a client
+ *    neither;
+ *  - the draft flag is only asked where drafts are readable (the workspace
+ *    role holds no draft columns, so asking there would fail the whole read);
  *  - the snapshot's inlined images follow each reader's own image rule: the
- *    owner keeps all, a member and a team-level agent keep the team file and
- *    lose the admin one, a client keeps only a client-level file.
+ *    owner keeps all, a member and a reader on its scope's rule keep the team
+ *    file and lose the admin one, a client keeps only the client file its
+ *    workspace holds.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/draw-reader.viewer.db.test.ts
  */
@@ -32,6 +35,12 @@ describe.skipIf(!URL)('draw_get reader rules', () => {
   // see the brain's own rows. Never deleted by a test.
   let anchor = '';
   const member = randomUUID();
+  const client = randomUUID();
+  // The member's workspace holds the team and client items; the client's
+  // the client ones. Nobody but the owner holds the admin ones.
+  const ws = { members: randomUUID(), clients: randomUUID() };
+  const asMember = <T>(fn: () => Promise<T>) => m.withViewer('team', { login: member }, fn);
+  const asClient = <T>(fn: () => Promise<T>) => m.withViewer('client', { login: client }, fn);
   const d = { team: randomUUID(), admin: randomUUID(), client: randomUUID() };
   const f = { team: randomUUID(), admin: randomUUID(), client: randomUUID() };
   const fileRefs = { sceneTeam: f.team, sceneAdmin: f.admin, sceneClient: f.client };
@@ -87,7 +96,15 @@ describe.skipIf(!URL)('draw_get reader rules', () => {
     anchor = await ensureTestAnchor(admin);
     await m.systemDb.execute(sqlTag`
       insert into auth.users (id, email, password_hash, role, display_name) values
-        (${member}, ${`${tag}-pat@example.invalid`}, 'x', 'member', 'Pat')`);
+        (${member}, ${`${tag}-pat@example.invalid`}, 'x', 'member', 'Pat'),
+        (${client}, ${`${tag}-cy@example.invalid`}, 'x', 'client', 'Cy')`);
+    await m.systemDb.execute(sqlTag`
+      insert into workspaces (id, owner_id, name) values
+        (${ws.members}, ${anchor}, ${`${tag} members`}),
+        (${ws.clients}, ${anchor}, ${`${tag} clients`})`);
+    await m.systemDb.execute(sqlTag`
+      insert into workspace_users (workspace_id, login_id) values
+        (${ws.members}, ${member}), (${ws.clients}, ${client})`);
     await m.systemDb.execute(sqlTag`
       insert into nodes (id, owner_id, type, title, path, audience) values
         (${f.team}, ${anchor}, 'file', ${`${tag} team file`}, 'files', 'team'),
@@ -107,14 +124,30 @@ describe.skipIf(!URL)('draw_get reader rules', () => {
           (${id}, ${JSON.stringify(scene)}::jsonb, ${JSON.stringify(fileRefs)}::jsonb, ${svg},
            ${storedText}, ${JSON.stringify({ elements: [{ id: 'draft-only' }] })}::jsonb)`);
     }
+    const holds: Array<[string, string]> = [
+      [ws.members, d.team],
+      [ws.members, d.client],
+      [ws.members, f.team],
+      [ws.members, f.client],
+      [ws.clients, d.client],
+      [ws.clients, f.client],
+    ];
+    for (const [wsId, id] of holds) {
+      await m.withSubtreeHeads(id, [], (tx) =>
+        tx.execute(sqlTag`insert into item_grants (node_id, workspace_id) values (${id}, ${wsId})`),
+      );
+    }
   }, 60_000);
 
   afterAll(async () => {
     for (const id of [...Object.values(d), ...Object.values(f)]) {
       await m.systemDb.execute(sqlTag`delete from nodes where id = ${id}`);
     }
-    await m.systemDb.execute(sqlTag`delete from spaces where login_id = ${member}`);
-    await m.systemDb.execute(sqlTag`delete from auth.users where id = ${member}`);
+    await m.systemDb.execute(
+      sqlTag`delete from workspaces where id in (${ws.members}, ${ws.clients})`,
+    );
+    await m.systemDb.execute(sqlTag`delete from spaces where login_id in (${member}, ${client})`);
+    await m.systemDb.execute(sqlTag`delete from auth.users where id in (${member}, ${client})`);
     await m.closeDb();
     rmSync(root, { recursive: true, force: true });
   }, 60_000);
@@ -128,12 +161,12 @@ describe.skipIf(!URL)('draw_get reader rules', () => {
   });
 
   it('member: the team drawing without its admin image, never the admin drawing', async () => {
-    await m.runInLevelRoleForTest('team', async () => {
+    await asMember(async () => {
       expect(await dr.readableDraw(anchor, d.admin)).toBeNull();
       expect(
         await dr.readableDrawSvg(anchor, d.admin, { kind: 'member', loginId: member }),
       ).toBeNull();
-      // The draft columns are not readable at team: the flag says false
+      // The draft columns are not readable in a workspace scope: the flag says false
       // instead of failing the read.
       expect(await dr.readableDraw(anchor, d.team)).toMatchObject({
         hasDraft: false,
@@ -145,33 +178,34 @@ describe.skipIf(!URL)('draw_get reader rules', () => {
     });
   });
 
-  it('an agent at team level with no login: the files its scope reads', async () => {
-    await m.runInLevelRoleForTest('team', async () => {
+  it('a reader on its scope’s rule (an agent): the files its scope reads', async () => {
+    await asMember(async () => {
       const out = await dr.readableDrawSvg(anchor, d.team, { kind: 'scope' });
       expect([has(out, TEAM), has(out, ADMIN), has(out, CLIENT)]).toEqual([true, false, true]);
     });
   });
 
   it('client: only the client drawing, with only the client image', async () => {
-    await m.runInLevelRoleForTest('client', async () => {
+    const reader = { kind: 'client', loginId: client } as const;
+    await asClient(async () => {
       expect(await dr.readableDraw(anchor, d.team)).toBeNull();
-      expect(await dr.readableDrawSvg(anchor, d.team, { kind: 'client' })).toBeNull();
+      expect(await dr.readableDrawSvg(anchor, d.team, reader)).toBeNull();
       expect(await dr.readableDraw(anchor, d.client)).toMatchObject({ hasDraft: false });
-      const out = await dr.readableDrawSvg(anchor, d.client, { kind: 'client' });
+      const out = await dr.readableDrawSvg(anchor, d.client, reader);
       expect([has(out, TEAM), has(out, ADMIN), has(out, CLIENT)]).toEqual([false, false, true]);
     });
   });
 
   it('a reader that is not the scope still gets its own rule (fail closed)', async () => {
     // A client reader on an owner path: the client rule, not everything.
-    const out = await dr.readableDrawSvg(anchor, d.client, { kind: 'client' });
+    const out = await dr.readableDrawSvg(anchor, d.client, { kind: 'client', loginId: client });
     expect([has(out, TEAM), has(out, ADMIN), has(out, CLIENT)]).toEqual([false, false, true]);
   });
 
   it('audit M3: the text carries only the words of images the reader may see', async () => {
     // The owner reads the stored text, every image's words in it.
     expect(await dr.readableDrawText(anchor, d.admin, { kind: 'scope' })).toBe(storedText);
-    await m.runInLevelRoleForTest('team', async () => {
+    await asMember(async () => {
       const text = await dr.readableDrawText(anchor, d.team, { kind: 'member', loginId: member });
       expect(text).toContain('Ingest');
       expect(text).toContain('TEAMWORDS');
@@ -181,8 +215,11 @@ describe.skipIf(!URL)('draw_get reader rules', () => {
       expect(agent).toContain('TEAMWORDS');
       expect(agent).not.toContain('ADMINWORDS');
     });
-    await m.runInLevelRoleForTest('client', async () => {
-      const text = await dr.readableDrawText(anchor, d.client, { kind: 'client' });
+    await asClient(async () => {
+      const text = await dr.readableDrawText(anchor, d.client, {
+        kind: 'client',
+        loginId: client,
+      });
       expect(text).toContain('CLIENTWORDS');
       expect(text).not.toMatch(/TEAMWORDS|ADMINWORDS/);
     });

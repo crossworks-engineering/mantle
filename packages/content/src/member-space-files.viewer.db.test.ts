@@ -334,6 +334,22 @@ describe.skipIf(!URL)('member personal space: tables and files', () => {
       insert into nodes (id, owner_id, type, title, path, audience) values
         (${libPage}, ${anchor}, 'page', ${`${tag} library`}, 'pages', 'team'),
         (${adminPage}, ${anchor}, 'page', ${`${tag} secret`}, 'pages', 'admin')`);
+    // A workspace of member A holds the Library page (W5b2: its grant);
+    // another workspace, not A's, holds the secret one.
+    const ws = { mine: randomUUID(), other: randomUUID() };
+    await m.systemDb.execute(sqlTag`
+      insert into workspaces (id, owner_id, name) values
+        (${ws.mine}, ${anchor}, ${`${tag} mine`}), (${ws.other}, ${anchor}, ${`${tag} other`})`);
+    await m.systemDb.execute(sqlTag`
+      insert into workspace_users (workspace_id, login_id) values (${ws.mine}, ${loginA})`);
+    for (const [wsId, id] of [
+      [ws.mine, libPage],
+      [ws.other, adminPage],
+    ] as const) {
+      await m.withSubtreeHeads(id, [], (tx) =>
+        tx.execute(sqlTag`insert into item_grants (node_id, workspace_id) values (${id}, ${wsId})`),
+      );
+    }
     try {
       const own = await asA(() => sp.createMineItem(spaceA, { type: 'note', title: `${tag} n` }));
       const theirs = await asB(() =>
@@ -426,6 +442,9 @@ describe.skipIf(!URL)('member personal space: tables and files', () => {
       });
     } finally {
       await m.systemDb.execute(sqlTag`delete from nodes where id in (${libPage}, ${adminPage})`);
+      await m.systemDb.execute(
+        sqlTag`delete from workspaces where id in (${ws.mine}, ${ws.other})`,
+      );
     }
   });
   // ── Quotas (audit D3) ─────────────────────────────────────────────────────
