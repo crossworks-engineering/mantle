@@ -90,7 +90,8 @@ describe.skipIf(!URL)('agent levels: client and public never meet', () => {
     // guarded stays asserted: the public page never reaches it.
     const { withAgentViewer } = await import('./agent-viewer');
     const fromLevel = await m.runInLevelRoleForTest('client', () =>
-      withAgentViewer({ audience: 'public' }, readPages),
+      // Awaited inside: a query handed out unrun leaves the scope (refused).
+      withAgentViewer({ audience: 'public' }, async () => await readPages()),
     );
     expect(fromLevel).toEqual([]);
     const inScope = await m.withViewer('client', { agent: null }, async () => ({

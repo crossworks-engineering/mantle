@@ -312,9 +312,12 @@ describe.skipIf(!URL)('the lowering guard, end to end', () => {
       (${f.inPlain}, ${ownerId}, 'note', ${`${tag} in plain`}, ${`notes.${label}_plain`}, '{}'::jsonb),
       (${f.filesShared}, ${ownerId}, 'branch', ${`${tag} files shared`}, ${`files.${label}_shared`}, '{}'::jsonb),
       (${f.filesPlain}, ${ownerId}, 'branch', ${`${tag} files plain`}, ${`files.${label}_plain`}, '{}'::jsonb)`;
+    // The folder share and what it gave the note inside (the level upkeep
+    // the bridge did before W5b2), under the test bypass.
     await admin.begin(async (tx) => {
       await tx`select mantle_heads_bypass('test fixture')`;
       await tx`update nodes set share_level = 'client' where id in ${tx([f.shared, f.filesShared])}`;
+      await tx`update nodes set inherited_level = 'client' where id = ${f.inShared}`;
     });
 
     // Moving an admin note into the client-shared folder waits; elsewhere runs.
