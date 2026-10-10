@@ -7,6 +7,7 @@ import { isOnboarded } from '@/lib/onboarding';
 import { shellPart } from '@/lib/shell-part';
 import { TREE_LIVE_KINDS } from '@mantle/content/tree';
 import { shellFeatures } from '@/lib/features';
+import { shellWorkspaces } from '@/lib/workspaces';
 
 type Prefs = Awaited<ReturnType<typeof loadPreferencesFor>>;
 
@@ -31,9 +32,16 @@ export async function GET() {
   if (user instanceof Response) return user;
   const read = await shellPart('shell', 'preferences', () => loadPreferencesFor(user.id), null);
   const prefs: Prefs = read ?? ({} as Prefs);
-  const [onboarded, pendingApprovals] = await Promise.all([
+  const [onboarded, pendingApprovals, ws] = await Promise.all([
     read ? shellPart('shell', 'onboarding', () => isOnboarded(user.id, read), true) : true,
     shellPart('shell', 'pending count', () => countPending(user.id), 0),
+    // The login's workspaces (the switcher) and its Admin areas (W5a).
+    shellPart(
+      'shell',
+      'workspaces',
+      () => shellWorkspaces({ kind: 'admin', loginId: user.actor.id, anchorId: user.id, user }),
+      { workspaces: [], areas: [] },
+    ),
   ]);
   // The FACE is per-login: seed, builder pins, and the uploaded photo come
   // from the ACTOR's row (loadPreferencesFor routes brain keys to the anchor
@@ -89,6 +97,8 @@ export async function GET() {
     avatar,
     avatarPhotoVersion,
     pendingApprovals,
+    workspaces: ws.workspaces,
+    areas: ws.areas,
     assetToken,
     // The streamed upload cap, so the uploader can refuse an oversized file
     // before sending a byte and say the real number in the message.

@@ -217,3 +217,28 @@ export type {
   TreeVisibilityChange,
   TreeVisibilityRefusal,
 } from './tree';
+// Types only; WORKSPACE_AREAS (runtime) is the `@mantle/client-types/dto/workspaces` subpath.
+export type {
+  ShellWorkspace,
+  ShellWorkspaces,
+  Workspace,
+  WorkspaceArchivePreview,
+  WorkspaceArchiveResponse,
+  WorkspaceArea,
+  WorkspaceCreateBody,
+  WorkspaceDetailResponse,
+  WorkspaceError,
+  WorkspaceErrorCode,
+  WorkspaceListResponse,
+  WorkspacePatchBody,
+  WorkspaceResource,
+  WorkspaceResourceAddBody,
+  WorkspaceResourceKind,
+  WorkspaceResourcePatchBody,
+  WorkspaceUser,
+  WorkspaceUserAddBody,
+  WorkspaceUserPatchBody,
+  WorkspaceUserSearchHit,
+  WorkspaceUserSearchResponse,
+  WorkspaceUsersResponse,
+} from './dto/workspaces';

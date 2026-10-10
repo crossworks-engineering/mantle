@@ -94,6 +94,19 @@ vi.mock('@/lib/onboarding', () => ({
 
 vi.mock('@mantle/files', () => ({ maxStreamedUploadBytes: () => 1024 }));
 
+const WS = {
+  id: '77777777-7777-4777-8777-777777777777',
+  name: 'Team',
+  isAdmin: false,
+  moderator: true,
+};
+vi.mock('@/lib/workspaces', () => ({
+  shellWorkspaces: async () => {
+    boom('workspaces');
+    return { workspaces: [WS], areas: ['users'] };
+  },
+}));
+
 type Body = Record<string, unknown>;
 const get = async (mod: Promise<{ GET: () => Promise<Response> }>) => {
   const res = await (await mod).GET();
@@ -120,10 +133,12 @@ describe('shell chrome reads never fail the shell', () => {
         siteName: 'Brand',
         avatar: { seed: 'seed' },
         email: 'actor@example.invalid',
+        workspaces: [WS],
+        areas: ['users'],
       });
     });
 
-    it.each(['pending count', 'onboarding', 'asset token', 'own preferences'])(
+    it.each(['pending count', 'onboarding', 'asset token', 'own preferences', 'workspaces'])(
       'answers 200 when the %s read throws, that part empty',
       async (part) => {
         h.fail.add(part);
@@ -135,6 +150,7 @@ describe('shell chrome reads never fail the shell', () => {
         if (part === 'onboarding') expect(body.onboarded).toBe(true);
         if (part === 'asset token') expect(body).not.toHaveProperty('assetToken');
         if (part === 'own preferences') expect(body.avatar).toBeNull();
+        if (part === 'workspaces') expect(body).toMatchObject({ workspaces: [], areas: [] });
         expect(console.error).toHaveBeenCalledWith(expect.stringContaining(`[shell] ${part}`));
       },
     );
@@ -147,7 +163,14 @@ describe('shell chrome reads never fail the shell', () => {
     });
 
     it('answers 200 with every part failing at once', async () => {
-      for (const p of ['brand', 'own preferences', 'pending count', 'onboarding', 'asset token'])
+      for (const p of [
+        'brand',
+        'own preferences',
+        'pending count',
+        'onboarding',
+        'asset token',
+        'workspaces',
+      ])
         h.fail.add(p);
       const { status, body } = await shell();
       expect(status).toBe(200);
