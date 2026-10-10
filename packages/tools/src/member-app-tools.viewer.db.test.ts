@@ -187,20 +187,4 @@ describe.skipIf(!URL)('member app tool broker rules', () => {
     );
     expect(quiet.ok && (quiet.output as { warnings?: string[] }).warnings).toBeUndefined();
   });
-
-  it('access_set on an app warns about the tools members would be refused', async () => {
-    const def = builtins.BUILTIN_TOOLS.find((t) => t.slug === 'access_set');
-    if (!def) throw new Error('access_set is not a builtin any more');
-    await exec(
-      sqlTag`update apps set manifest = '{"toolSlugs":["note_list","note_create"]}'::jsonb where node_id = ${appId}`,
-    );
-    const res = await def.handler(
-      { node_id: appId, level: 'team' },
-      { ownerId: anchor, surface: { kind: 'web' } },
-    );
-    expect(res.ok).toBe(true);
-    const warnings = (res.ok ? (res.output as { warnings?: string[] }).warnings : []) ?? [];
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain("'note_create'");
-  });
 });

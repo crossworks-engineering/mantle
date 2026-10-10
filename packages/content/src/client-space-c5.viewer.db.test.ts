@@ -424,7 +424,9 @@ describe.skipIf(!URL)('a client’s own space: limits, caps, review talk, cost-s
     const [node] = await exec<{ audience: string; owner_id: string }>(
       sqlTag`select audience, owner_id from nodes where id = ${pageId}`,
     );
-    expect(node).toEqual({ audience: 'team', owner_id: anchor });
+    // No level is written since W5b2 (contract change 22): the brain's Team
+    // workspace, when it has one, gets a read grant instead.
+    expect(node).toEqual({ audience: 'admin', owner_id: anchor });
     const moved = res.moved.map((b) => b.id).sort();
     expect(moved).toEqual([pageId, fileId].sort());
     await settle();
