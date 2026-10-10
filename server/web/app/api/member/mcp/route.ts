@@ -40,7 +40,7 @@ export async function GET() {
       .where(eq(mcpLoginAccess.loginId, member.loginId))
       .limit(1),
     listLoginClients(member.anchorId, member.loginId),
-    listLoginConnectorTools(member.anchorId, 'team'),
+    listLoginConnectorTools(member.anchorId, 'team', member.loginId),
   ]);
   // The connectors the member's MCP offers (M2 audit, low 7; access matrix
   // N10): none while MCP is closed to the member (the box or their own

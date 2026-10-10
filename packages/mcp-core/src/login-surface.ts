@@ -326,11 +326,15 @@ export async function resolveLoginToolRows(
   // admin's read-only mark reads; one without writes, so it needs write
   // on. A connector tool is in no key area: only an all-areas key reaches
   // it (a connector can read anything its far side holds). Only while the
-  // role's surface is open at all (its responder at the role's level).
+  // role's surface is open at all (its responder at the role's level). On a
+  // brain the workspaces migration made live, only the tools the call would
+  // pass (loginConnectorRule, W4b fix round 2): the connector a resource of
+  // one of the login's workspaces, a write tool only where the login may
+  // write; a login in no workspace gets none.
   const connectors =
     builtins.length === 0
       ? []
-      : (await listLoginConnectorTools(caller.anchorId, level))
+      : (await listLoginConnectorTools(caller.anchorId, level, caller.loginId))
           .filter((c) => (c.readOnly || caller.write) && callerAreasAllow(c.tool.slug, caller))
           .map((c) => c.tool);
   return { rows: [...builtins, ...connectors], level, privateReads };

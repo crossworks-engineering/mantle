@@ -52,7 +52,16 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const { slug, input } = parsed.data;
   // clientAppOr404 finds client-level apps only, so this is 'client'.
   const level = appToolLevel('client', 'client');
-  const verdict = await appToolVerdict(level, client.anchorId, app.manifest.toolSlugs ?? [], slug);
+  // The client's login: a connector tool also needs the login's workspace
+  // rule (W4b fix round 2), so a login in no workspace of a migrated brain
+  // reaches none, as on its own MCP.
+  const verdict = await appToolVerdict(
+    level,
+    client.anchorId,
+    app.manifest.toolSlugs ?? [],
+    slug,
+    client.loginId,
+  );
   recordAppAccess({
     ownerId: client.anchorId,
     appNodeId: app.id,

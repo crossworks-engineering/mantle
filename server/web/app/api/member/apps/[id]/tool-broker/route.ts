@@ -58,7 +58,15 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   // author ceiling holds here too. The tools are the brain's, so the verdict
   // and the dispatch keep the brain as owner.
   const level = appToolLevel('team', app.audience, app.spaceApp ? 'team' : 'admin');
-  const verdict = await appToolVerdict(level, member.anchorId, app.manifest.toolSlugs ?? [], slug);
+  // The member's login: a connector tool also needs the login's workspace
+  // rule, as on the member's own MCP (W4b fix round 2).
+  const verdict = await appToolVerdict(
+    level,
+    member.anchorId,
+    app.manifest.toolSlugs ?? [],
+    slug,
+    member.loginId,
+  );
   recordAppAccess({
     ownerId: app.ownerId,
     appNodeId: app.id,

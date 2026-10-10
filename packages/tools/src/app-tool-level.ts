@@ -73,18 +73,22 @@ const notDeclared = (slug: string) =>
 /** Why a run gets no tools (a client run of a non-client app, never reached). */
 export const APP_NO_TOOLS = "This app can't use tools here.";
 
-/** May a run at `level` of an app that declares `declared` call `slug`? */
+/** May a run at `level` of an app that declares `declared` call `slug`?
+ *  `loginId`: who runs it, when known; a connector tool then also needs the
+ *  login's workspace rule (loginConnectorRule, W4b fix round 2), the same
+ *  as the login's own MCP. */
 export async function appToolVerdict(
   level: AppToolLevel,
   ownerId: string,
   declared: readonly string[],
   slug: string,
+  loginId?: string,
 ): Promise<AppToolVerdict> {
   switch (level) {
     case 'client':
-      return clientAppToolVerdict(ownerId, declared, slug);
+      return clientAppToolVerdict(ownerId, declared, slug, loginId);
     case 'team':
-      return memberAppToolVerdict(ownerId, declared, slug);
+      return memberAppToolVerdict(ownerId, declared, slug, loginId);
     case 'admin': {
       if (!declared.includes(slug)) return { ok: false, status: 403, reason: notDeclared(slug) };
       const tool = await resolveTool(ownerId, slug);

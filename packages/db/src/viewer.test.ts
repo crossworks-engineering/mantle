@@ -2,11 +2,16 @@
  * The viewer scope's rules (member logins Phase 0b). Pure: no database. The
  * row-level behaviour against a real Postgres is viewer.db.test.ts.
  */
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   AS_SYSTEM_TURN_REASONS,
   asSystem,
   assertNoViewer,
+  assertSystemDbCaller,
+  SYSTEM_DB_MODULES,
+  systemDbCallerOf,
   currentScope,
   runInTurnScope,
   TurnScopeExitError,
@@ -490,5 +495,88 @@ describe('asSystem inside a turn scope needs a named reason (W4b fix round 1, M4
 
   it('the list stays small', () => {
     expect(AS_SYSTEM_TURN_REASONS.length).toBeLessThanOrEqual(10);
+  });
+});
+
+describe('systemDb inside a turn scope: allowlisted modules only (W4b fix round 2)', () => {
+  const scope = {
+    kind: 'assistant' as const,
+    loginId: null,
+    ws: ['00000000-0000-4000-8000-0000000000a2'],
+    modWs: [],
+  };
+  const inTurn = <T>(fn: () => Promise<T>) => runInTurnScope(scope, fn);
+  const env = process.env.NODE_ENV;
+  afterEach(() => {
+    process.env.NODE_ENV = env;
+    vi.restoreAllMocks();
+  });
+  /** A stack as the systemDb proxy sees it, called from `file`. */
+  const stackFrom = (file: string) =>
+    [
+      'Error',
+      '    at assertSystemDbCaller (/repo/packages/db/src/viewer.ts:600:20)',
+      '    at Object.get (/repo/packages/db/src/client.ts:740:30)',
+      `    at loadThing (${file}:12:7)`,
+      '    at async run (/repo/packages/runtime/src/agent/tool-loop.ts:1:1)',
+    ].join('\n');
+  const content = '/repo/packages/content/src/nodes.ts';
+
+  it('names the calling file past the proxy frames', () => {
+    expect(systemDbCallerOf(stackFrom(content))).toBe(content);
+    expect(systemDbCallerOf(stackFrom(`file://${content}`))).toBe(content);
+    expect(systemDbCallerOf('Error\n    at <anonymous>')).toBeNull();
+    // drizzle reads `this.session` on the proxy inside its own methods: the
+    // caller is the project file below it.
+    const viaDrizzle = stackFrom(content).replace(
+      '    at loadThing',
+      '    at PgDatabase.transaction (/repo/node_modules/drizzle-orm/pg-core/db.js:9:9)\n    at loadThing',
+    );
+    expect(systemDbCallerOf(viaDrizzle)).toBe(content);
+  });
+
+  it('outside a turn: any caller, as before', () => {
+    expect(() => assertSystemDbCaller(stackFrom(content))).not.toThrow();
+  });
+
+  it('in a turn: the infrastructure modules pass, anything else throws', async () => {
+    process.env.NODE_ENV = 'test';
+    await inTurn(async () => {
+      for (const ok of [
+        '/repo/packages/tools/src/tool-results.ts',
+        '/repo/packages/tracing/src/store.ts',
+        '/repo/packages/db/src/llm-guard.ts',
+        '/repo/server/web/lib/turn-gates.turn-scope.db.test.ts',
+      ]) {
+        expect(() => assertSystemDbCaller(stackFrom(ok))).not.toThrow();
+      }
+      expect(() => assertSystemDbCaller(stackFrom(content))).toThrow(TurnScopeExitError);
+      expect(() => assertSystemDbCaller(stackFrom(content))).toThrow(/used from .*nodes\.ts/);
+      expect(() => assertSystemDbCaller('Error')).toThrow(/an unknown file/);
+    });
+  });
+
+  it('in production: logged once per calling file and allowed for now', async () => {
+    process.env.NODE_ENV = 'production';
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const other = '/repo/packages/content/src/pages.ts';
+    await inTurn(async () => {
+      expect(() => assertSystemDbCaller(stackFrom(content))).not.toThrow();
+      assertSystemDbCaller(stackFrom(content));
+      assertSystemDbCaller(stackFrom(other));
+    });
+    expect(error).toHaveBeenCalledTimes(2);
+    expect(String(error.mock.calls[0]![0])).toMatch(/SYSTEM_DB_MODULES/);
+  });
+
+  it('the module list equals the eslint import allowlist', () => {
+    const file = readFileSync(
+      fileURLToPath(new URL('../../../eslint-rules/system-db-allowlist.mjs', import.meta.url)),
+      'utf8',
+    );
+    const block = /SYSTEM_DB_ALLOWLIST = \[([\s\S]*?)\];/.exec(file)?.[1] ?? '';
+    const listed = [...block.matchAll(/^\s*'([^']+)',/gm)].map((m) => m[1]);
+    expect(listed.length).toBeGreaterThan(5);
+    expect([...SYSTEM_DB_MODULES].sort()).toEqual([...listed].sort());
   });
 });

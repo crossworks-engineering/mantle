@@ -13,6 +13,7 @@ import {
   runInWorkspaceTx,
   currentWorkspaceScope,
   inTurnScope,
+  assertSystemDbCaller,
   isUnscoped,
   runInTurnScope,
   type WorkspaceScope,
@@ -724,10 +725,12 @@ export const db = new Proxy({} as PostgresJsDatabase<typeof schema>, {
  * writes a limited turn still needs (traces, trace steps, tool-result spills,
  * pending tool calls, share counters, access logs). NEVER for content reads:
  * that would read past row level security. Only an allowlisted set of
- * infrastructure modules may import it.
+ * infrastructure modules may import it, and inside a turn scope only they
+ * may use it (assertSystemDbCaller, workspaces W4b fix round 2).
  */
 export const systemDb = new Proxy({} as PostgresJsDatabase<typeof schema>, {
   get(_t, prop) {
+    if (inTurnScope()) assertSystemDbCaller();
     return Reflect.get(getAdminDb() as object, prop);
   },
 });

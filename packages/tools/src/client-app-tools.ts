@@ -88,6 +88,7 @@ export async function clientAppToolVerdict(
   ownerId: string,
   declared: readonly string[],
   slug: string,
+  loginId?: string,
 ): Promise<ClientAppToolVerdict> {
   if (!declared.includes(slug)) {
     return {
@@ -107,7 +108,7 @@ export async function clientAppToolVerdict(
     if (!getBuiltin(slug)) {
       const outside = await resolveTool(ownerId, slug);
       if (outside && outside.handler.kind !== 'builtin') {
-        return outsideToolVerdict(ownerId, outside, slug, 'client');
+        return outsideToolVerdict(ownerId, outside, slug, 'client', loginId);
       }
     }
     return { ok: false, status: 403, reason: notForClients(slug) };

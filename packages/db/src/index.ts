@@ -49,6 +49,8 @@ export {
   AS_SYSTEM_TURN_REASONS,
   TurnScopeExitError,
   type AsSystemReason,
+  SYSTEM_DB_MODULES,
+  assertSystemDbCaller,
   afterCommit,
   afterRollback,
   viewerRoleName,

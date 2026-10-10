@@ -271,12 +271,14 @@ describe('client tool broker', () => {
       ownerId: ANCHOR,
       surface: { kind: 'client', loginId: LOGIN, contactName: 'Casey' },
     });
-    // The rule is asked about THIS app's declared tools, for this brain.
+    // The rule is asked about THIS app's declared tools, for this brain,
+    // for this login (its connector rule, W4b fix round 2).
     expect(verdictMock).toHaveBeenCalledWith(
       'client',
       ANCHOR,
       ['client_shared_list'],
       'client_shared_list',
+      LOGIN,
     );
     expect(h.logged[0]).toMatchObject({
       ownerId: ANCHOR,

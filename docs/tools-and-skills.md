@@ -466,7 +466,11 @@ MCP reach a connector at team level or lower, a client app and a client's
 MCP one at client level, a contact link one at public level. The admin's
 read-only mark on the tool (the old "External access" confirm) makes a call
 a read; without it the call is a write, which an app may make and a
-login's MCP only with its Write switch. A single http tool still needs
+login's MCP only with its Write switch. On a brain with workspaces, a
+member's or client's run and MCP also need the login's workspace rule
+(`loginConnectorRule`: the connector a resource of one of the login's
+workspaces, a write only where the login moderates one with Write on). A
+single http tool still needs
 "External access" on, with the read-only confirmation. Rules, surfaces and
 how the mark is voided: docs/member-logins.md, "External access: outside
 tools in shared apps".

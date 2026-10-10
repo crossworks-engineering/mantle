@@ -94,6 +94,7 @@ export async function memberAppToolVerdict(
   ownerId: string,
   declared: readonly string[],
   slug: string,
+  loginId?: string,
 ): Promise<MemberAppToolVerdict> {
   if (!declared.includes(slug)) {
     return {
@@ -114,7 +115,7 @@ export async function memberAppToolVerdict(
     // outside tool by External access, the admin's read-only confirmation.
     // Recipe and shell tools, a write method, a tool that needs
     // confirmation and a handler changed since are refused.
-    return outsideToolVerdict(ownerId, tool, slug, 'member');
+    return outsideToolVerdict(ownerId, tool, slug, 'member', loginId);
   }
   if (MEMBER_APP_REFUSED_SLUGS.includes(tool.handler.ref)) {
     return { ok: false, status: 403, reason: `The tool '${slug}' is not available in team apps.` };

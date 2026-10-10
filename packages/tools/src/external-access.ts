@@ -321,21 +321,27 @@ async function bridgeTeamWorkspace(ownerId: string): Promise<string | null> {
   return row?.id ?? null;
 }
 
+/** Why a login's connector call is refused (`groupSlug`, `write`), or null. */
+export type LoginConnectorRule = (groupSlug: string, write: boolean) => string | null;
+
 /**
- * A login's own MCP call of a connector tool (W4b fix round 1, M3), on a
- * brain the workspaces migration made live: the connector must be a
- * resource of one of the login's workspaces, and a tool not marked
+ * The connector rule of ONE login (W4b fix round 1, M3; fix round 2), loaded
+ * once, on a brain the workspaces migration made live: the connector must be
+ * a resource of one of the login's workspaces, and a tool not marked
  * read-only needs that resource's Write on in a workspace where the login is
- * a Moderator. Why it is refused, or null. A brain with no workspaces (the
- * migration skipped it) keeps the level rule alone, as before. Read as the
- * system: the rule is in the query.
+ * a Moderator. A login in no workspace of a migrated brain gets no connector
+ * at all (a client: the migration skips a brain with clients, so none exist
+ * there yet). A brain with no workspaces (the migration skipped it) keeps
+ * the level rule alone, as before.
+ *
+ * The ONE rule behind a login's MCP listing (listLoginConnectorTools), its
+ * MCP call (callLoginTool) and its app runs (connectorToolVerdict), so the
+ * three never disagree. Read as the system: the rule is in the query.
  */
-export async function loginConnectorRefused(
+export async function loginConnectorRule(
   ownerId: string,
   loginId: string,
-  groupSlug: string,
-  write: boolean,
-): Promise<string | null> {
+): Promise<LoginConnectorRule> {
   const mine = await asSystem(
     () =>
       db
@@ -361,23 +367,53 @@ export async function loginConnectorRefused(
           .limit(1),
       'workspace-resources',
     );
-    if (!any) return null;
-    return 'You are not a user of any workspace on this brain, so connector tools do not run for you.';
+    if (!any) return () => null;
+    return () =>
+      'You are not a user of any workspace on this brain, so connector tools do not run for you.';
   }
-  const held = await connectorResources(
-    ownerId,
-    groupSlug,
-    mine.map((r) => r.workspaceId),
+  // Every connector resource of the login's workspaces (live, unarchived
+  // ones of this brain: `mine` holds no other).
+  const wsIds = mine.map((r) => r.workspaceId);
+  const held = await asSystem(
+    () =>
+      db
+        .select({
+          workspaceId: workspaceResources.workspaceId,
+          slug: workspaceResources.refId,
+          write: workspaceResources.write,
+        })
+        .from(workspaceResources)
+        .where(
+          and(
+            eq(workspaceResources.type, 'connector'),
+            sql`${workspaceResources.workspaceId} = any(${`{${wsIds.join(',')}}`}::uuid[])`,
+          ),
+        ),
+    'workspace-resources',
   );
-  if (held.length === 0) {
-    return 'This connector is not a resource of any of your workspaces, so its tools do not run for you.';
-  }
-  if (!write) return null;
   const moderated = new Set(mine.filter((r) => r.moderator).map((r) => r.workspaceId));
-  if (!held.some((r) => r.write && moderated.has(r.workspaceId))) {
-    return 'This connector tool can change data: it needs the connector’s Write switched on in a workspace where you are a Moderator.';
-  }
-  return null;
+  return (groupSlug, write) => {
+    const rows = held.filter((r) => r.slug === groupSlug);
+    if (rows.length === 0) {
+      return 'This connector is not a resource of any of your workspaces, so its tools do not run for you.';
+    }
+    if (!write) return null;
+    if (!rows.some((r) => r.write && moderated.has(r.workspaceId))) {
+      return 'This connector tool can change data: it needs the connector’s Write switched on in a workspace where you are a Moderator.';
+    }
+    return null;
+  };
+}
+
+/** A login's connector call of one tool, by loginConnectorRule: why it is
+ *  refused, or null. */
+export async function loginConnectorRefused(
+  ownerId: string,
+  loginId: string,
+  groupSlug: string,
+  write: boolean,
+): Promise<string | null> {
+  return (await loginConnectorRule(ownerId, loginId))(groupSlug, write);
 }
 
 /**
@@ -399,13 +435,17 @@ export async function loginConnectorRefused(
  *    may make too (Jason's decision 1). A contact link only reads (Jason,
  *    2026-10-08): an unmarked tool is refused there. The brokers log every
  *    write call with its input. dispatchMcp holds the same level and
- *    public-read rule on every call (connectorCallRefused).
+ *    public-read rule on every call (connectorCallRefused);
+ *  - with the runner's login known (a member's or a client's run), the
+ *    login's workspace rule too (loginConnectorRule): the same rule as the
+ *    login's own MCP, so an app is no way around it.
  */
 export async function connectorToolVerdict(
   ownerId: string,
   tool: Tool,
   slug: string,
   runner: ExternalAccessRunner,
+  loginId?: string,
 ): Promise<OutsideToolVerdict> {
   const who =
     runner === 'member' ? 'a team app' : runner === 'client' ? 'a client app' : 'a shared link';
@@ -441,11 +481,18 @@ export async function connectorToolVerdict(
     };
   }
   const write = mark === 'write';
-  // The second check (W4b, plan section 6): a member's app runs in Team, so
-  // on a migrated brain the connector must also be a resource of Team, and a
-  // write needs its Write tick. The connector bridge keeps the two in step;
-  // a disagreement refuses.
-  if (runner === 'member') {
+  // The second check (W4b, plan section 6; fix round 2). With the runner's
+  // login known: the login's own rule (M3), so a member's own app reaches no
+  // connector its MCP would refuse. Without one, a member's app runs in
+  // Team, so on a migrated brain the connector must be a resource of Team,
+  // and a write needs its Write tick. The connector bridge keeps them in
+  // step; a disagreement refuses.
+  if (loginId && runner !== 'contact') {
+    const refused = await loginConnectorRefused(ownerId, loginId, group.slug, write);
+    if (refused) {
+      return { ok: false, status: 403, reason: `The tool '${slug}' can't run: ${refused}` };
+    }
+  } else if (runner === 'member') {
     const team = await bridgeTeamWorkspace(ownerId);
     if (team) {
       const [res] = await connectorResources(ownerId, group.slug, [team]);
@@ -477,10 +524,15 @@ export async function connectorToolVerdict(
  * mark. A tool that needs a confirmation is left out (nobody confirms on a
  * login's MCP). The rule is in the query (as the system: a client scope's
  * row security would hide the groups, and the level is checked here).
+ *
+ * With `loginId` (the login's own MCP), also the login's workspace rule
+ * (loginConnectorRule, W4b fix round 2): a tool is listed only when its call
+ * would pass, so a write tool is left out where the login may not write.
  */
 export async function listLoginConnectorTools(
   ownerId: string,
   level: ViewerLevel,
+  loginId?: string,
 ): Promise<
   { tool: Tool; readOnly: boolean; groupId: string; groupName: string; groupLevel: ViewerLevel }[]
 > {
@@ -490,6 +542,7 @@ export async function listLoginConnectorTools(
         tool: tools,
         groupId: toolGroups.id,
         groupName: toolGroups.name,
+        groupSlug: toolGroups.slug,
         groupLevel: toolGroups.audience,
       })
       .from(tools)
@@ -511,11 +564,14 @@ export async function listLoginConnectorTools(
         ),
       ),
   );
+  const rule = loginId ? await loginConnectorRule(ownerId, loginId) : null;
   return rows.flatMap((r) => {
     const groupLevel = asViewerLevel(r.groupLevel);
     if (!connectorLevelAllows(level, groupLevel)) return [];
     // A voided mark is refused below the owner (connectorMarkState).
-    if (connectorMarkState(r.tool) === 'stale') return [];
+    const mark = connectorMarkState(r.tool);
+    if (mark === 'stale') return [];
+    if (rule && rule(r.groupSlug, mark === 'write') !== null) return [];
     return [
       {
         tool: r.tool,
@@ -536,9 +592,10 @@ export async function outsideToolVerdict(
   tool: Tool,
   slug: string,
   runner: ExternalAccessRunner,
+  loginId?: string,
 ): Promise<OutsideToolVerdict> {
   if ((tool.handler as ToolHandler).kind === 'mcp') {
-    return connectorToolVerdict(ownerId, tool, slug, runner);
+    return connectorToolVerdict(ownerId, tool, slug, runner, loginId);
   }
   const v = externalToolVerdict(tool, slug, runner);
   return v.ok ? { ...v, write: false } : v;

@@ -318,8 +318,9 @@ describe('member tool broker', () => {
       kind: 'tool',
       detail: { via: 'member', slug: 'note_list' },
     });
-    // The rule is asked about THIS app's declared tools, for this brain.
-    expect(verdictMock).toHaveBeenCalledWith('team', ANCHOR, ['note_list'], 'note_list');
+    // The rule is asked about THIS app's declared tools, for this brain,
+    // for this login (its connector rule, W4b fix round 2).
+    expect(verdictMock).toHaveBeenCalledWith('team', ANCHOR, ['note_list'], 'note_list', LOGIN);
     expect(h.dispatched[0]!.ctx).toMatchObject({ surface: { contactName: 'Pat' } });
   });
 

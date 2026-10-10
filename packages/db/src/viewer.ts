@@ -392,10 +392,13 @@ export function runInSystemTx<T>(
 
 /**
  * Why code inside a TURN scope may leave it for the system pool (workspaces
- * W4b fix round 1, M4). A turn scope fails closed: every query runs on the
- * workspace role, and `asSystem` is the one door out. Inside a turn it must
- * name one of these reasons; each is logged once per process. Keep the list
- * small: a new entry is a new way out of the scope and needs review.
+ * W4b fix round 1, M4). A turn scope fails closed: every `db` query runs on
+ * the workspace role. There are two doors out to the admin pool: `asSystem`,
+ * which inside a turn must name one of these reasons (each logged once per
+ * process), and `systemDb`, the infrastructure handle (tool results, pending
+ * calls, traces, logs), which inside a turn only the modules of
+ * SYSTEM_DB_MODULES may use (assertSystemDbCaller, fix round 2). Keep both
+ * lists small: a new entry is a new way out of the scope and needs review.
  *
  *  - `agent-workspace`: the workspace row and membership an assistant runs
  *    in (agent-viewer.ts), read before the scope is entered or re-entered.
@@ -431,14 +434,16 @@ export const AS_SYSTEM_TURN_REASONS = [
 ] as const;
 export type AsSystemReason = (typeof AS_SYSTEM_TURN_REASONS)[number];
 
-/** asSystem was called inside a turn scope without an allowlisted reason. */
+/** asSystem was called inside a turn scope without an allowlisted reason,
+ *  or systemDb used there by a module off SYSTEM_DB_MODULES (`message`). */
 export class TurnScopeExitError extends Error {
   readonly code = 'turn-scope-exit';
-  constructor(reason: string | undefined) {
+  constructor(reason: string | undefined, message?: string) {
     super(
-      `asSystem inside a turn scope needs an allowlisted reason (AS_SYSTEM_TURN_REASONS); got ${
-        reason ? `'${reason}'` : 'none'
-      }. A turn never leaves its scope for the system pool unnamed.`,
+      message ??
+        `asSystem inside a turn scope needs an allowlisted reason (AS_SYSTEM_TURN_REASONS); got ${
+          reason ? `'${reason}'` : 'none'
+        }. A turn never leaves its scope for the system pool unnamed.`,
     );
     this.name = 'TurnScopeExitError';
   }
@@ -484,6 +489,80 @@ export function asSystem<T>(fn: () => Promise<T>, reason?: AsSystemReason): Prom
     }
   }
   return store.exit(fn);
+}
+
+/**
+ * The modules that may use `systemDb` (workspaces W4b fix round 2): the same
+ * list as eslint-rules/system-db-allowlist.mjs, which refuses the import
+ * anywhere else (viewer.test.ts keeps the two equal). Test files may too.
+ */
+export const SYSTEM_DB_MODULES: readonly string[] = [
+  'packages/db/src/',
+  'packages/tracing/src/store.ts',
+  'packages/tools/src/tool-results.ts',
+  'packages/turn-stream/src/publish.ts',
+  'packages/turn-stream/src/replay.ts',
+  'packages/embeddings/src/index.ts',
+  'packages/content/src/team-messages.ts',
+  'packages/content/src/app-access-log.ts',
+  'packages/content/src/share-access-log.ts',
+  'packages/content/src/team-access-log.ts',
+  'packages/content/src/member-turn-ledger.ts',
+  'packages/runtime/src/agent/tool-loop/execute-call.ts',
+  'server/web/lib/audit.ts',
+  'packages/api-keys/src/index.ts',
+];
+
+/** The file that touched `systemDb`, from a stack taken in its proxy: the
+ *  first frame outside this module, client.ts, a dependency (drizzle reads
+ *  `this.session` on the proxy inside its own methods) and node's own code.
+ *  Null when none names a file. */
+export function systemDbCallerOf(stack: string): string | null {
+  for (const line of stack.split('\n').slice(1)) {
+    const m = /\(?((?:file:\/\/)?[^\s()]+?):\d+:\d+\)?\s*$/.exec(line.trim());
+    if (!m) continue;
+    const file = m[1]!.replace(/^file:\/\//, '').replace(/\\/g, '/');
+    if (
+      file.endsWith('packages/db/src/viewer.ts') ||
+      file.endsWith('packages/db/src/client.ts') ||
+      file.includes('/node_modules/') ||
+      file.startsWith('node:')
+    ) {
+      continue;
+    }
+    return file;
+  }
+  return null;
+}
+
+/** Whether `file` is one of SYSTEM_DB_MODULES (or a test file). */
+export function isSystemDbModule(file: string): boolean {
+  if (/\.test\.tsx?$/.test(file)) return true;
+  return SYSTEM_DB_MODULES.some((p) => file.includes(`/${p}`) || file.startsWith(p));
+}
+
+/**
+ * `systemDb` inside a turn scope (workspaces W4b fix round 2): the second
+ * door out of the scope, so only SYSTEM_DB_MODULES may use it there (the
+ * eslint rule holds the import; this holds the call, whatever path the
+ * handle took). Anything else throws TurnScopeExitError in tests and local
+ * development, and is logged once per calling file in production, as asSystem
+ * does (M4). Outside a turn scope: nothing. client.ts calls it on every
+ * access to `systemDb` in a turn scope; `stack` is for tests.
+ */
+export function assertSystemDbCaller(stack?: string): void {
+  if (!store.getStore()?.perQuery) return;
+  const caller = systemDbCallerOf(stack ?? new Error().stack ?? '');
+  if (caller && isSystemDbModule(caller)) return;
+  const message =
+    `systemDb inside a turn scope is for the infrastructure modules of SYSTEM_DB_MODULES only; ` +
+    `used from ${caller ?? 'an unknown file'}. A turn never reads past its scope on the admin pool.`;
+  if (strictTurnExits()) throw new TurnScopeExitError(undefined, message);
+  const key = `system-db:${caller ?? ''}`;
+  if (!loggedTurnExits.has(key)) {
+    loggedTurnExits.add(key);
+    console.error(`[db] ${message} Allowed in production.`, { stack: new Error().stack });
+  }
 }
 
 /**

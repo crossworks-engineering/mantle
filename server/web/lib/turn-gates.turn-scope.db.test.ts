@@ -228,6 +228,34 @@ describe.skipIf(!URL)('workspace turn gates (W4b fix round 1)', () => {
     ).toMatchObject({ ok: false });
   });
 
+  it('draw_get in a Team turn: Team-visible images only, never an unnamed exit (fix round 2)', async () => {
+    const [draw, teamFile, adminFile] = [randomUUID(), randomUUID(), randomUUID()];
+    await x(sql`insert into nodes (id, owner_id, type, title, path, audience, data) values
+      (${draw}, ${owner}, 'draw', 'Plant layout', 'draws', 'team', '{}'::jsonb),
+      (${teamFile}, ${owner}, 'file', 'team.png', 'files', 'team',
+        ${JSON.stringify({ text: 'TEAM IMAGE WORDS' })}::jsonb),
+      (${adminFile}, ${owner}, 'file', 'admin.png', 'files', 'admin',
+        ${JSON.stringify({ text: 'ADMIN IMAGE WORDS' })}::jsonb)`);
+    const refs = JSON.stringify({ 'f-team': teamFile, 'f-admin': adminFile });
+    await x(sql`insert into draws (node_id, scene, scene_text, scene_svg, file_refs)
+      values (${draw}, '{"elements":[]}'::jsonb, 'TEAM IMAGE WORDS ADMIN IMAGE WORDS',
+              '<svg xmlns="http://www.w3.org/2000/svg"/>', ${refs}::jsonb)`);
+    const content = await import('@mantle/content');
+    const drawGet = fakeTool('draw_get', { kind: 'builtin', ref: 'draw_get' });
+    const reader = { kind: 'member' as const, loginId: member };
+    // NODE_ENV is 'test': an unnamed asSystem inside the turn throws
+    // TurnScopeExitError, and the draw reader no longer swallows it.
+    const [res, svg] = await m.withTurnScope(scope(), async () => [
+      await tools.dispatchTool(drawGet, { id: draw }, ctx()),
+      await content.readableDrawSvg(owner, draw, reader),
+    ]);
+    expect(res.ok).toBe(true);
+    const text = String((res as { output: { content: string } }).output.content);
+    expect(text).toContain('TEAM IMAGE WORDS');
+    expect(text).not.toContain('ADMIN IMAGE WORDS');
+    expect([...(svg?.visibleFileIds ?? ['all'])]).toEqual(['f-team']);
+  });
+
   describe('a member’s own MCP call of a connector tool (M3)', () => {
     const caller = (loginId: string) => ({
       role: 'member' as const,

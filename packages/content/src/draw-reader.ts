@@ -27,7 +27,9 @@ import {
   db,
   draws,
   nodes,
+  inTurnScope,
   readsDrafts,
+  TurnScopeExitError,
   withViewer,
 } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
@@ -95,6 +97,10 @@ export async function readerVisibleFileIds(
   reader: DrawReader,
 ): Promise<ReadonlySet<string> | null> {
   try {
+    // Inside a turn scope (workspaces W4b fix round 2) the scope's own row
+    // rules decide, for every reader: the member and client rules read on
+    // other pools, and a turn never leaves its scope unnamed.
+    if (inTurnScope()) return await scopeVisibleDrawFileIds(ownerId, id);
     if (reader.kind === 'member') {
       // The member rule reads on the admin pool (its author half needs it);
       // the drawing itself is reached at the member's scope by the caller.
@@ -105,7 +111,10 @@ export async function readerVisibleFileIds(
     }
     if (currentViewerLevel() === 'admin' && !currentSpaceScope()) return null;
     return await scopeVisibleDrawFileIds(ownerId, id);
-  } catch {
+  } catch (err) {
+    // An unnamed exit from a turn scope is a bug to report (strict mode
+    // throws it), never a drawing without images.
+    if (err instanceof TurnScopeExitError) throw err;
     return new Set();
   }
 }
@@ -142,13 +151,14 @@ export async function readableDrawText(
   }
   if (nodeIds.length === 0) return base;
   // Visibility is decided above; the texts are read on the admin pool so a
-  // member's own accepted image (the author rule) keeps its words too.
-  const files = await asSystem(() =>
+  // member's own accepted image (the author rule) keeps its words too. In a
+  // turn scope the scope itself decided, so they are read there.
+  const readFiles = () =>
     db
       .select({ id: nodes.id, title: nodes.title, data: nodes.data })
       .from(nodes)
-      .where(and(eq(nodes.ownerId, ownerId), eq(nodes.type, 'file'), inArray(nodes.id, nodeIds))),
-  );
+      .where(and(eq(nodes.ownerId, ownerId), eq(nodes.type, 'file'), inArray(nodes.id, nodeIds)));
+  const files = inTurnScope() ? await readFiles() : await asSystem(readFiles);
   const byId = new Map(files.map((f) => [f.id, f]));
   const fold = foldEmbeddedText(
     nodeIds.flatMap((n) => {

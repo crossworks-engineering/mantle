@@ -102,7 +102,12 @@ client cut. A tool with the admin's read-only mark is a read; one without
 is a write and is offered only with the login's Write switch on (on the key
 or peer too). A tool that needs a confirmation is never offered. A
 connector tool is in no key area, so only an all-areas key reaches it.
-Every call lands an `audit_log` row (`mcp.connector.read` /
+On a brain the workspaces migration made live, the login's workspaces
+decide too (`loginConnectorRule`): the connector must be a resource of one
+of them, and a write tool needs that resource's Write on in a workspace
+where the login is a Moderator. A login in no workspace gets no connector
+tool. The listing, the call and the login's app runs use the same rule, so
+the MCP never lists a tool the call refuses. Every call lands an `audit_log` row (`mcp.connector.read` /
 `mcp.connector.write`) with the login, the tool, its connector and the
 connection; a write keeps its input (2 KB). The remote call runs as the
 system (`dispatchMcp`), so the credential stays in the vault. Members see

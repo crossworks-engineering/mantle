@@ -196,6 +196,8 @@ export {
   type OutsideToolVerdict,
   contactAppToolVerdict,
   loginConnectorRefused,
+  loginConnectorRule,
+  type LoginConnectorRule,
   clearConnectorExternalAccess,
   connectorMarkCount,
   voidConnectorMarksForKey,
