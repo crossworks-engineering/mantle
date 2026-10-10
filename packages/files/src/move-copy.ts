@@ -88,6 +88,10 @@ async function fileInFolder(
   return row ?? null;
 }
 
+/** A check run inside a move's transaction, after its heads (the item and
+ *  both folders) are held: throw to refuse the move of that item. */
+export type MoveGuard = (tx: Pick<typeof db, 'execute'>, itemId: string) => Promise<void>;
+
 /**
  * Move ONE file to another folder. Filename travels unchanged (rename is a
  * separate op on purpose — one verb per action keeps the teaching errors
@@ -98,6 +102,7 @@ export async function moveFileById(args: {
   fileId: string;
   /** Destination FOLDER ltree path, e.g. 'files.archive.2026'. */
   destPath: string;
+  guard?: MoveGuard;
 }): Promise<FileRow> {
   const [node] = await db
     .select()
@@ -139,6 +144,7 @@ export async function moveFileById(args: {
         args.destPath,
         async (tx) => {
           await takeShareReadLock(tx, args.ownerId);
+          if (args.guard) await args.guard(tx, node.id);
           await tx
             .update(nodes)
             // Filing is not editing: the file keeps its updated_at (node-ops.ts).

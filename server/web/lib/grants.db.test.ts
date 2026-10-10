@@ -218,7 +218,8 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
     await as(mem2);
     const q = await get(pnote);
     expect(q.status).toBe(200);
-    expect(q.body.home).toEqual({ wsId: P, name: null });
+    // A home the caller may not name is not identified either (audit L4).
+    expect(q.body.home).toEqual({ wsId: null, name: null });
     expect(q.body.rows.map((x: Json) => x.wsId)).toEqual([Q]);
     expect(q.body.mayManage).toBe(false);
     expect(q.body.addable).toEqual([]);
@@ -315,7 +316,7 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
     await as(owner);
     // The preview: F and the four items inside it gain Q.
     const pv = await preview(F, `add=${Q}`);
-    expect(pv.body).toEqual({ gain: 5, lose: 0, total: 5, tooBig: false });
+    expect(pv.body).toEqual({ gain: 5, gainApps: 0, lose: 0, total: 5, hidden: 0, tooBig: false });
     // No confirm: refused, nothing written.
     expect((await add(F, Q)).body.code).toBe('confirm_required');
     expect(await rowsOf(c1)).toHaveLength(1);
@@ -388,8 +389,10 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
     const pv = await preview(app, `add=${Q}`);
     expect(pv.body).toEqual({
       gain: 1,
+      gainApps: 1,
       lose: 0,
       total: 1,
+      hidden: 0,
       tooBig: false,
       app: { rows: null, exportedTables: 0 },
     });
@@ -534,5 +537,101 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
     expect(
       (await call(r.movePreview.POST(req('POST', { nodeIds: [it2], toWorkspaceId: P })))).status,
     ).toBe(404);
+  });
+
+  it('part A fix round 1: rules before counts, preview rules, placesInto, the guard', async () => {
+    const F = await node('branch', 'AF', 'notes.af');
+    const G = await node('branch', 'AG', 'notes.af.ag');
+    const c1 = await node('note', 'a1', 'notes.af.ag');
+    const hiddenItem = await node('note', 'r only', 'notes.af');
+    const app = await node('app', 'An app inside', 'notes.af');
+    await x(sql`insert into apps (node_id) values (${app})`);
+    for (const id of [F, G, c1, app]) await homeIn(id, P);
+    await homeIn(hiddenItem, R);
+    await as(owner);
+    expect((await add(F, Q, { confirm: true })).status).toBe(200);
+    // mem2 reads F (via Q) but does not manage it. The R item is taken out
+    // of what F passes on, so only R (nobody here but mem2) reads it.
+    await m.withHeads([hiddenItem], 'update', async (tx) => {
+      await tx.execute(sql`update item_grants set excluded = true, write = false, via_folder_id = null
+                            where node_id = ${hiddenItem} and workspace_id in (${P}, ${Q})`);
+    });
+
+    // M1: a caller who may not make the change learns no count: forbidden
+    // before confirm_required and before too_big.
+    await as(mem2);
+    const noConfirm = await add(F, R);
+    expect(noConfirm.body.code).toBe('forbidden');
+    expect(noConfirm.body.error).not.toMatch(/\d/);
+    g.FOLDER_GRANT_LIMIT.max = 1;
+    try {
+      expect((await add(F, R, { confirm: true })).body.code).toBe('forbidden');
+      // Through a move: the failed entry is the rule, not a count.
+      const mv = await call(r.move.POST(req('POST', { nodeIds: [F], toWorkspaceId: R })));
+      expect(mv.body.moved).toBe(0);
+      expect(mv.body.failed[0].error).not.toMatch(/\d/);
+      expect(mv.body.failed[0].error).toMatch(/Moderator/);
+      // L1: "Change here" on a folder is held to the size limit too.
+      await as(owner);
+      expect((await hand(G, Q)).body.code).toBe('too_big');
+    } finally {
+      g.FOLDER_GRANT_LIMIT.max = 50_000;
+    }
+    expect((await rowsOf(G)).find((x) => x.ws === Q)!.via).toBe(F);
+
+    // M2: preview add = home Moderator AND target Moderator; remove = either.
+    await as(mem);
+    expect((await preview(F, `add=${Q}`)).body.code).toBe('forbidden');
+    expect((await preview(F, `remove=${Q}`)).status).toBe(200);
+    await as(mem2);
+    expect((await preview(F, `add=${R}`)).body.code).toBe('forbidden');
+    expect((await preview(F, `remove=${Q}`)).status).toBe(200);
+    // The honest total, with what the caller cannot open said (M2), and the
+    // apps among the gains (L2).
+    await as(owner);
+    const pv = await preview(F, `add=${admin}`);
+    expect(pv.body).toMatchObject({ total: 5, hidden: 1, gainApps: 1 });
+
+    // M3: the move preview applies the move's rules first.
+    await as(mem2);
+    const mp = await call(r.movePreview.POST(req('POST', { nodeIds: [c1], toWorkspaceId: R })));
+    expect(mp.body.code).toBe('forbidden');
+    const fp = await call(r.movePreview.POST(req('POST', { nodeIds: [c1], toFolderId: null })));
+    expect(fp.body.code).toBe('forbidden');
+
+    // M4: placesInto for a caller who may add items to the folder.
+    await as(owner);
+    expect((await get(F)).body.placesInto).toEqual([
+      { wsId: P, name: 'Proj' },
+      { wsId: Q, name: 'Quay' },
+    ]);
+    await as(mem2);
+    expect((await get(F)).body.placesInto).toBeUndefined();
+
+    // L3: the tree move runs the guard under each item's heads; a refusal
+    // there moves nothing and is reported.
+    const tree = await import('@mantle/content/tree');
+    const before = await x<{ path: string }>(
+      sql`select path::text as path from nodes where id = ${c1}`,
+    );
+    const res = await tree.moveTreeItems(owner, 'notes', [c1], null, {
+      confirm: true,
+      guard: async () => {
+        throw new Error('refused under the heads');
+      },
+    });
+    expect(res).toEqual({ moved: 0, failed: [{ id: c1, error: 'refused under the heads' }] });
+    expect(await x(sql`select path::text as path from nodes where id = ${c1}`)).toEqual(before);
+  });
+
+  it('a Team add on a bridge-homed item is 409 bridge_owned', async () => {
+    const note = await node('note', 'bridged, no team row', 'notes');
+    await m.withHeads([note], 'update', async (tx) => {
+      await tx.execute(
+        sql`delete from item_grants where node_id = ${note} and workspace_id = ${team}`,
+      );
+    });
+    await as(owner);
+    expect((await add(note, team)).body.code).toBe('bridge_owned');
   });
 });

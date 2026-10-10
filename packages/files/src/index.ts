@@ -197,6 +197,7 @@ export {
 } from './thumbnail';
 export {
   moveFileById,
+  type MoveGuard,
   moveFolderById,
   copyFileById,
   copyFolderById,

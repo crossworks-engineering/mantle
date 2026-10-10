@@ -25,6 +25,7 @@ import {
   moveFileById,
   moveFolderById,
   renameFolderById,
+  type MoveGuard,
 } from '@mantle/files';
 import type { AppTint } from '@mantle/client-types/app-nav';
 import {
@@ -106,7 +107,7 @@ type TreeKindOps = {
   ): Promise<string>;
   renameFolder(ownerId: string, folderId: string, name: string): Promise<void>;
   moveFolder(ownerId: string, folderId: string, destParentPath: string): Promise<void>;
-  moveItem(ownerId: string, itemId: string, destPath: string): Promise<void>;
+  moveItem(ownerId: string, itemId: string, destPath: string, guard?: MoveGuard): Promise<void>;
 };
 
 const FILES_OPS: TreeKindOps = {
@@ -119,8 +120,8 @@ const FILES_OPS: TreeKindOps = {
   async moveFolder(ownerId, folderId, destParentPath) {
     await moveFolderById({ ownerId, folderId, destParentPath });
   },
-  async moveItem(ownerId, itemId, destPath) {
-    await moveFileById({ ownerId, fileId: itemId, destPath });
+  async moveItem(ownerId, itemId, destPath, guard) {
+    await moveFileById({ ownerId, fileId: itemId, destPath, guard });
   },
 };
 
@@ -131,7 +132,8 @@ function nodeOps(kind: TreeKind): TreeKindOps {
       createNodeFolder(ownerId, parentPath, name, look ? { data: look } : {}),
     renameFolder: renameNodeFolder,
     moveFolder: moveNodeFolder,
-    moveItem: (ownerId, itemId, destPath) => moveNodeItem(ownerId, kind, itemId, destPath),
+    moveItem: (ownerId, itemId, destPath, guard) =>
+      moveNodeItem(ownerId, kind, itemId, destPath, guard),
   };
 }
 
@@ -238,6 +240,9 @@ export type TreeWriteOpts = {
    *  the dialog was open), it is refused again with the new list instead of
    *  going ahead unseen. Left out, `confirm` alone goes ahead. */
   seen?: number;
+  /** Item moves only: checked again inside each item's transaction, under
+   *  its heads (the grants API re-plans a move into a folder there). */
+  guard?: MoveGuard;
 };
 
 async function checkVisibility(
@@ -535,7 +540,7 @@ export async function moveTreeItems(
   const result: TreeMoveResult = { moved: 0, failed: [] };
   for (const id of ids) {
     try {
-      await ops.moveItem(ownerId, id, dest);
+      await ops.moveItem(ownerId, id, dest, opts.guard);
       result.moved += 1;
     } catch (err) {
       result.failed.push({

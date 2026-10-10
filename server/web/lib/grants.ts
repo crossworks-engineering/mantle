@@ -338,6 +338,15 @@ async function kindOk(q: Exec, type: string, ws: string): Promise<boolean> {
   return r?.ok === true;
 }
 
+/** One of the workspaces the level bridge writes (Admin, Team). */
+async function bridgeWorkspace(q: Exec, ws: string): Promise<boolean> {
+  const [r] = await rows<{ ok: boolean }>(
+    q,
+    sql`select exists (select 1 from workspaces where id = ${ws} and bridge_key is not null) as ok`,
+  );
+  return r?.ok === true;
+}
+
 async function subtreeCount(q: Exec, anchorId: string, item: Item): Promise<number> {
   if (item.type !== 'branch' || !item.path) return 1;
   const [r] = await rows<{ n: number }>(
@@ -424,9 +433,11 @@ async function buildResponse(ctx: Ctx, item: Item, q: Exec = db): Promise<Grants
   }
 
   const homeRow = list.find((r) => r.is_home);
+  // A home the caller may not name is not identified either (audit L4).
+  const homeShown = !!homeRow && (ctx.mine.has(homeRow.ws) || ctx.seesAll);
   const home = {
-    wsId: item.home ?? '',
-    name: homeRow && (ctx.mine.has(homeRow.ws) || ctx.seesAll) ? homeRow.name : null,
+    wsId: homeShown ? homeRow.ws : null,
+    name: homeShown ? homeRow.name : null,
   };
 
   let addable: GrantWorkspaceRef[] = [];
@@ -475,6 +486,19 @@ async function buildResponse(ctx: Ctx, item: Item, q: Exec = db): Promise<Grants
     contactShares,
     embedsNotGranted,
   };
+  if (item.type === 'branch' && mayEdit(ctx, item)) {
+    // What a new item placed here takes (S6, 21.8 row 1): every row of the
+    // folder not removed here, named even where the caller is not a user,
+    // so the create dialog can say every workspace it will reach.
+    body.placesInto = (
+      await rows<{ id: string; name: string }>(
+        q,
+        sql`select w.id, w.name from item_grants g join workspaces w on w.id = g.workspace_id
+             where g.node_id = ${item.id} and not g.excluded
+             order by lower(w.name), w.id`,
+      )
+    ).map((w) => ({ wsId: w.id, name: w.name }));
+  }
   if (item.type === 'app') {
     const [a] = await rows<{ mcp: boolean }>(
       q,
@@ -552,29 +576,40 @@ function dbRefusal(err: unknown): GrantError | null {
 }
 
 type Change = {
-  /** A folder (or an app, see `appConfirm`) needs the confirm. */
+  /** A folder needs the confirm (every folder change is held to the size
+   *  limit, the confirm or not: a change on a folder reaches its subtree). */
   folderConfirm: boolean;
   /** An app also needs it (a new holder: S7). */
   appConfirm?: boolean;
   confirm: boolean;
 };
 
+type Grants = Map<string, GrantDbRow>;
+
+/** The rules of one change: throws the refusal (404, 403, 409) or answers
+ *  what `apply` needs. Read-only. */
+type Check<T> = (q: Exec, ctx: Ctx, item: Item, grants: Grants) => Promise<T>;
+
 /**
- * Run one change of `nodeId`'s grants: the caller and item read once to
- * answer 404/409 early; then, in ONE transaction whose first lock is the
- * heads (the item, or a folder's whole subtree), read again and `fn`
- * applied. Retried whole on a busy head or a deadlock.
+ * Run one change of `nodeId`'s grants. The rules (`check`) run first on a
+ * plain read, so a caller who may not make the change learns nothing more
+ * (no counts, no confirm: audit M1). Then the size limit and the confirm.
+ * Then, in ONE transaction whose first lock is the heads (the item, or a
+ * folder's whole subtree), the rules again on a fresh read and `apply`.
+ * Retried whole on a busy head or a deadlock.
  */
-async function change(
+async function change<T>(
   caller: WsCaller,
   nodeId: string,
   opts: Change,
-  fn: (tx: Exec, ctx: Ctx, item: Item, grants: Map<string, GrantDbRow>) => Promise<void>,
+  check: Check<T>,
+  apply: (tx: Exec, ctx: Ctx, item: Item, grants: Grants, checked: T) => Promise<void>,
 ): Promise<GrantsWriteResponse> {
   const ctx0 = await loadCtx(caller);
   const item0 = await loadItem(ctx0, nodeId);
+  await check(db, ctx0, item0, await grantRows(db, item0.id));
   const folder = item0.type === 'branch';
-  if (folder && opts.folderConfirm) {
+  if (folder) {
     const total = await subtreeCount(db, caller.anchorId, item0);
     if (total > FOLDER_GRANT_LIMIT.max) {
       throw new GrantError(
@@ -583,7 +618,7 @@ async function change(
         `This folder holds ${total.toLocaleString('en')} items. Share its sub-folders one by one.`,
       );
     }
-    if (!opts.confirm) {
+    if (opts.folderConfirm && !opts.confirm) {
       throw new GrantError(
         409,
         'confirm_required',
@@ -601,7 +636,8 @@ async function change(
   const run = async (tx: Exec) => {
     const ctx = await loadCtx(caller, tx);
     const item = await loadItem(ctx, item0.id, tx);
-    await fn(tx, ctx, item, await grantRows(tx, item.id));
+    const grants = await grantRows(tx, item.id);
+    await apply(tx, ctx, item, grants, await check(tx, ctx, item, grants));
   };
   try {
     await withDeadlockRetry(() =>
@@ -631,10 +667,8 @@ export async function addGrant(
     caller,
     nodeId,
     { folderConfirm: true, appConfirm: true, confirm: body.confirm === true },
-    // @heads-held: change() runs this under the item's heads (a folder: its subtree).
-
-    async (tx, ctx, item, grants) => {
-      const t = await seeTarget(ctx, body.wsId, tx);
+    async (q, ctx, item, grants) => {
+      const t = await seeTarget(ctx, body.wsId, q);
       if (!mayManage(ctx, item)) throw NOT_MANAGER();
       if (!isMod(ctx, t.wsId)) {
         throw new GrantError(
@@ -644,17 +678,25 @@ export async function addGrant(
         );
       }
       const row = grants.get(t.wsId);
-      if (row?.bridge && bridgeHomed(grants)) throw BRIDGE_OWNED();
+      if (bridgeHomed(grants) && (row?.bridge || (await bridgeWorkspace(q, t.wsId)))) {
+        // A bridge-homed item's Admin and Team rows follow its level: a
+        // hand row there would be undone at the next level change.
+        throw BRIDGE_OWNED();
+      }
       if (row && !row.excluded) {
         throw new GrantError(409, 'already_granted', 'The item is already in that workspace.');
       }
-      if (!(await kindOk(tx, item.type, t.wsId))) {
+      if (!(await kindOk(q, item.type, t.wsId))) {
         throw new GrantError(
           409,
           'kind_not_allowed',
           'This kind of item lives in the Admin workspace only.',
         );
       }
+      return { t, row };
+    },
+    // @heads-held: change() runs this under the item's heads (a folder: its subtree).
+    async (tx, ctx, item, _grants, { t, row }) => {
       const write = body.write === true;
       if (row) {
         await tx.execute(
@@ -704,9 +746,7 @@ export async function patchGrant(
     caller,
     nodeId,
     { folderConfirm: true, confirm: body.confirm === true },
-    // @heads-held: change() runs this under the item's heads (a folder: its subtree).
-
-    async (tx, ctx, item, grants) => {
+    async (_q, ctx, item, grants) => {
       const row = rowFor(ctx, item, grants, wsId);
       if (!row || row.excluded) throw NOT_GRANTED();
       if (row.bridge && bridgeHomed(grants)) throw BRIDGE_OWNED();
@@ -726,6 +766,10 @@ export async function patchGrant(
       if (!allowed) {
         throw new GrantError(403, 'forbidden', 'You may not change Write on this grant.');
       }
+      return row;
+    },
+    // @heads-held: change() runs this under the item's heads (a folder: its subtree).
+    async (tx, ctx, item, _grants, row) => {
       if (row.write === body.write) return;
       await tx.execute(
         sql`update item_grants set write = ${body.write}
@@ -752,8 +796,7 @@ export async function removeGrant(
     caller,
     nodeId,
     { folderConfirm: true, confirm },
-    // @heads-held: change() runs this under the item's heads (a folder: its subtree).
-    async (tx, ctx, item, grants) => {
+    async (_q, ctx, item, grants) => {
       const row = rowFor(ctx, item, grants, wsId);
       if (!row || row.excluded) throw NOT_GRANTED();
       if (row.bridge && bridgeHomed(grants)) throw BRIDGE_OWNED();
@@ -767,6 +810,10 @@ export async function removeGrant(
       if (!mayManage(ctx, item) && !isMod(ctx, row.ws)) {
         throw new GrantError(403, 'forbidden', 'You may not remove the item from that workspace.');
       }
+      return row;
+    },
+    // @heads-held: change() runs this under the item's heads (a folder: its subtree).
+    async (tx, ctx, item, _grants, row) => {
       const exclude = row.via !== null || (await folderGrants(tx, item, row.ws));
       if (exclude) {
         await tx.execute(
@@ -801,8 +848,7 @@ export async function restoreGrant(
     caller,
     nodeId,
     { folderConfirm: true, confirm },
-    // @heads-held: change() runs this under the item's heads (a folder: its subtree).
-    async (tx, ctx, item, grants) => {
+    async (_q, ctx, item, grants) => {
       const row = rowFor(ctx, item, grants, wsId);
       if (!row?.excluded) {
         throw new GrantError(409, 'not_excluded', 'The item is not removed from that workspace.');
@@ -815,6 +861,10 @@ export async function restoreGrant(
           'Only a Moderator of the item’s home who also moderates that workspace can restore it.',
         );
       }
+      return row;
+    },
+    // @heads-held: change() runs this under the item's heads (a folder: its subtree).
+    async (tx, ctx, item, _grants, row) => {
       // The delete re-derives the item from its folder (0241 propagation).
       await tx.execute(
         sql`delete from item_grants where node_id = ${item.id} and workspace_id = ${row.ws}`,
@@ -835,10 +885,10 @@ export async function handGrant(
   return change(
     caller,
     nodeId,
+    // A folder's row changing from derived to hand reaches its subtree: the
+    // size limit holds (audit L1), no confirm (nobody gains or loses).
     { folderConfirm: false, confirm: true },
-    // @heads-held: change() runs this under the item's heads (a folder: its subtree).
-
-    async (tx, ctx, item, grants) => {
+    async (_q, ctx, item, grants) => {
       const row = rowFor(ctx, item, grants, wsId);
       if (!row || row.excluded || !row.via) {
         throw new GrantError(409, 'not_derived', 'This grant does not come from a folder.');
@@ -851,6 +901,10 @@ export async function handGrant(
           'Only a Moderator of the item’s home who also moderates that workspace can change it here.',
         );
       }
+      return row;
+    },
+    // @heads-held: change() runs this under the item's heads (a folder: its subtree).
+    async (tx, ctx, item, _grants, row) => {
       await tx.execute(
         sql`update item_grants
                set via_folder_id = null, bridge = false,
@@ -878,14 +932,22 @@ export async function grantEmbeds(
   if (!EMBEDDING_KINDS.includes(host0.type)) {
     throw new GrantError(400, 'invalid', 'Only pages, drawings and notes embed items.');
   }
-  const targets: string[] = [];
-  for (const raw of new Set(body.wsIds)) {
-    const t = await seeTarget(ctx0, raw);
-    if (!host0.readWs.includes(t.wsId)) {
-      throw new GrantError(400, 'invalid', `${t.name}: the item itself is not in that workspace.`);
+  const checkTargets = async (ctx: Ctx, host: Item, q: Exec): Promise<string[]> => {
+    const out: string[] = [];
+    for (const raw of new Set(body.wsIds)) {
+      const t = await seeTarget(ctx, raw, q);
+      if (!host.readWs.includes(t.wsId)) {
+        throw new GrantError(
+          400,
+          'invalid',
+          `${t.name}: the item itself is not in that workspace.`,
+        );
+      }
+      out.push(t.wsId);
     }
-    targets.push(t.wsId);
-  }
+    return out;
+  };
+  const targets = await checkTargets(ctx0, host0, db);
   const embeds0 = await embedRows(ctx0, host0, db);
   const skipped: GrantEmbedSkip[] = [];
   if (embeds0.length && targets.length) {
@@ -896,6 +958,9 @@ export async function grantEmbeds(
           skipped.length = 0;
           const ctx = await loadCtx(caller, tx);
           const host = await loadItem(ctx, host0.id, tx);
+          // The targets again under the heads (audit L3): the host may have
+          // left a workspace, or the caller a workspace, since the first read.
+          const targetsNow = await checkTargets(ctx, host, tx);
           const now = await embedRows(ctx, host, tx);
           // An embed added since the first read: its head too, without
           // waiting (a busy one retries the whole transaction).
@@ -907,7 +972,7 @@ export async function grantEmbeds(
           for (const e of now) {
             const embed = await loadItem(ctx, e.id, tx);
             const grants = await grantRows(tx, embed.id);
-            for (const ws of targets) {
+            for (const ws of targetsNow) {
               const row = grants.get(ws);
               if (row && !row.excluded) continue;
               const skip = (code: GrantErrorCode) =>
@@ -916,7 +981,7 @@ export async function grantEmbeds(
                 skip('forbidden');
                 continue;
               }
-              if (row?.bridge && bridgeHomed(grants)) {
+              if (bridgeHomed(grants) && (row?.bridge || (await bridgeWorkspace(tx, ws)))) {
                 skip('bridge_owned');
                 continue;
               }
@@ -963,15 +1028,21 @@ export async function grantEmbeds(
 /** How many items (the item, and for a folder everything in it) would gain
  *  `ws` if it were granted to the item. An exclusion inside the folder stops
  *  the folder's grant below it; an item already granted gains nothing. */
-async function gainCount(q: Exec, anchorId: string, item: Item, ws: string): Promise<number> {
-  const [r] = await rows<{ n: number }>(
+async function gainCount(
+  q: Exec,
+  anchorId: string,
+  item: Item,
+  ws: string,
+): Promise<{ n: number; apps: number }> {
+  const [r] = await rows<{ n: number; apps: number }>(
     q,
     sql`with x as (select id, owner_id, path, type from nodes where id = ${item.id}),
         sub as (
           select n.id, n.type, n.path from nodes n, x
            where n.owner_id = ${anchorId}
              and (n.id = x.id or (x.type = 'branch' and n.path <@ x.path)))
-        select count(*)::int as n from sub d, x
+        select count(*)::int as n, (count(*) filter (where d.type = 'app'))::int as apps
+          from sub d, x
          where not exists (select 1 from item_grants g
                             where g.node_id = d.id and g.workspace_id = ${ws} and not g.excluded)
            and (d.id = x.id or (
@@ -984,6 +1055,19 @@ async function gainCount(q: Exec, anchorId: string, item: Item, ws: string): Pro
                                         and ag.excluded
                     where a.owner_id = x.owner_id and a.type = 'branch' and a.path <@ x.path
                       and a.id <> x.id and a.id <> d.id and d.path <@ a.path)))`,
+  );
+  return { n: r?.n ?? 0, apps: r?.apps ?? 0 };
+}
+
+/** Items in the folder the caller cannot open (0 for an item: the caller
+ *  reads it). The counts stay honest; the panel says some are hidden. */
+async function hiddenCount(q: Exec, ctx: Ctx, item: Item): Promise<number> {
+  if (item.type !== 'branch' || !item.path) return 0;
+  const [r] = await rows<{ n: number }>(
+    q,
+    sql`select count(*)::int as n from nodes
+         where owner_id = ${ctx.caller.anchorId} and path <@ ${item.path}::ltree
+           and not (read_ws && ${uuidList(myIds(ctx))}::uuid[])`,
   );
   return r?.n ?? 0;
 }
@@ -1028,16 +1112,24 @@ export async function previewGrant(
   if (!addWs && !removeWs) {
     throw new GrantError(400, 'invalid', 'Name a workspace to add or to remove.');
   }
-  const named = [addWs, removeWs].filter((w): w is string => !!w);
-  if (!mayManage(ctx, item) && !named.every((w) => isMod(ctx, w))) {
+  // The change's own rules (audit M2): add = home Moderator AND Moderator
+  // of the target; remove = either.
+  const manage = mayManage(ctx, item);
+  if (
+    (addWs && !(manage && isMod(ctx, addWs))) ||
+    (removeWs && !(manage || isMod(ctx, removeWs)))
+  ) {
     throw new GrantError(403, 'forbidden', 'Only a Moderator can preview this change.');
   }
   const anchor = caller.anchorId;
   const total = await subtreeCount(db, anchor, item);
+  const gain = addWs ? await gainCount(db, anchor, item, addWs) : { n: 0, apps: 0 };
   const out: GrantPreviewResponse = {
-    gain: addWs ? await gainCount(db, anchor, item, addWs) : 0,
+    gain: gain.n,
+    gainApps: gain.apps,
     lose: removeWs ? await loseCount(db, anchor, item, removeWs) : 0,
     total,
+    hidden: await hiddenCount(db, ctx, item),
     tooBig: item.type === 'branch' && total > FOLDER_GRANT_LIMIT.max,
   };
   if (item.type === 'app' && addWs) {
@@ -1107,29 +1199,108 @@ const nameOf = async (ctx: Ctx, ids: Iterable<string>): Promise<GrantWorkspaceRe
   return named.map((w) => ({ wsId: w.id, name: w.name }));
 };
 
-/** The move to a workspace, checked: the items, the target, what each item
- *  would gain and lose. */
+/** The move to a workspace, checked by its own rules first (audit M3):
+ *  Moderator of the target and of every item's home. Then what each item
+ *  would gain and lose: only the target and the old homes, all workspaces
+ *  the caller moderates. */
 async function planWorkspaceMove(ctx: Ctx, body: MoveInput, q: Exec) {
   const t = await seeTarget(ctx, body.toWorkspaceId!, q);
-  const items: Array<{ item: Item; grants: Map<string, GrantDbRow> }> = [];
+  if (!isMod(ctx, t.wsId)) {
+    throw new GrantError(
+      403,
+      'forbidden',
+      'Only a Moderator of that workspace can move items into it.',
+    );
+  }
+  const items: Item[] = [];
   for (const id of new Set(body.nodeIds)) {
     const item = await loadItem(ctx, id, q);
-    items.push({ item, grants: await grantRows(q, item.id) });
+    if (!mayManage(ctx, item)) {
+      throw new GrantError(403, 'forbidden', 'Only a Moderator of the item’s home can move it.');
+    }
+    items.push(item);
   }
   const gain = new Set<string>();
   const lose = new Set<string>();
-  for (const { item } of items) {
+  for (const item of items) {
     if (!item.readWs.includes(t.wsId)) gain.add(t.wsId);
     if (item.home && item.home !== t.wsId && body.keepReadableIn !== item.home) {
       if (!(await folderGrants(q, item, item.home))) lose.add(item.home);
     }
   }
-  return { t, items, gain, lose };
+  return { gain, lose };
 }
 
+/** The workspaces a folder passes on (its rows not removed there); none at
+ *  a kind's root. */
+async function folderWorkspaces(q: Exec, folder: Item | null): Promise<string[]> {
+  if (!folder) return [];
+  return (
+    await rows<{ ws: string }>(
+      q,
+      sql`select workspace_id as ws from item_grants
+           where node_id = ${folder.id} and not excluded`,
+    )
+  ).map((r) => r.ws);
+}
+
+/** What one item gains and loses by being placed in a folder that passes
+ *  `folderWs` (S6): it takes those rows (not where it is "Removed here", and
+ *  only kinds that may take them), and drops its folder-derived rows the new
+ *  folder does not give, unless a grant set on it keeps that workspace. */
+async function placeInFolder(
+  q: Exec,
+  item: Item,
+  folderWs: string[],
+): Promise<{ adds: string[]; loses: string[] }> {
+  const grants = await grantRows(q, item.id);
+  const kept = new Set([...grants.values()].filter((g) => !g.excluded && !g.via).map((g) => g.ws));
+  const blocked = new Set([...grants.values()].filter((g) => g.excluded).map((g) => g.ws));
+  const okRows = folderWs.length
+    ? await rows<{ id: string }>(
+        q,
+        sql`select x.id from unnest(${uuidList(folderWs)}::uuid[]) as x(id)
+             where mantle_grant_kind_ok(${item.type}::node_type, x.id, true)`,
+      )
+    : [];
+  const takes = new Set(okRows.map((r) => r.id).filter((w) => !blocked.has(w)));
+  const adds = [...takes].filter((w) => !item.readWs.includes(w));
+  const loses = [...grants.values()]
+    .filter((g) => !g.excluded && g.via && !takes.has(g.ws) && !kept.has(g.ws))
+    .map((g) => g.ws);
+  return { adds, loses };
+}
+
+/** The folder a move targets: one the caller may add items to (S6), of the
+ *  items' tree kind; null = the kind's root. */
+async function targetFolder(
+  ctx: Ctx,
+  folderId: string | null | undefined,
+  kind: TreeKind,
+  q: Exec,
+): Promise<Item | null> {
+  if (!folderId) return null;
+  const folder = await loadItem(ctx, folderId, q).catch(() => {
+    throw new GrantError(404, 'not_found', 'Folder not found.');
+  });
+  if (folder.type !== 'branch' || treeKindOf(folder.path) !== kind) {
+    throw new GrantError(404, 'not_found', 'Folder not found.');
+  }
+  if (!mayEdit(ctx, folder)) {
+    throw new GrantError(403, 'forbidden', 'You may not add items to that folder.');
+  }
+  return folder;
+}
+
+/** An app placed where it gains a holder the caller does not moderate. */
+const APP_HOLDER = () =>
+  new GrantError(403, 'forbidden', 'Placing this app there adds a workspace you do not moderate.');
+
 /** The move into a folder, checked: S6 (edit the folder, manage the item),
- *  apps need Moderator of every new holder (18.8). */
-async function planFolderMove(ctx: Ctx, body: MoveInput, q: Exec) {
+ *  apps need Moderator of every new holder (18.8). `strict` (the preview)
+ *  refuses the whole move on any item that may not go; the move itself
+ *  reports such items one by one. */
+async function planFolderMove(ctx: Ctx, body: MoveInput, q: Exec, strict: boolean) {
   const items: Item[] = [];
   for (const id of new Set(body.nodeIds)) items.push(await loadItem(ctx, id, q));
   if (items.some((i) => i.type === 'branch')) {
@@ -1140,49 +1311,26 @@ async function planFolderMove(ctx: Ctx, body: MoveInput, q: Exec) {
     throw new GrantError(409, 'mixed_kinds', 'Move items of one kind at a time.');
   }
   const kind = [...kinds][0]!;
-  let folder: Item | null = null;
-  let folderWs: string[] = [];
-  if (body.toFolderId) {
-    folder = await loadItem(ctx, body.toFolderId, q).catch(() => {
-      throw new GrantError(404, 'not_found', 'Folder not found.');
-    });
-    if (folder.type !== 'branch' || treeKindOf(folder.path) !== kind) {
-      throw new GrantError(404, 'not_found', 'Folder not found.');
-    }
-    if (!mayEdit(ctx, folder)) {
-      throw new GrantError(403, 'forbidden', 'You may not add items to that folder.');
-    }
-    folderWs = (
-      await rows<{ ws: string }>(
-        q,
-        sql`select workspace_id as ws from item_grants
-             where node_id = ${folder.id} and not excluded`,
-      )
-    ).map((r) => r.ws);
-  }
+  const folder = await targetFolder(ctx, body.toFolderId, kind, q);
+  const folderWs = await folderWorkspaces(q, folder);
   const gain = new Set<string>();
   const lose = new Set<string>();
-  const perItem: Array<{ item: Item; adds: string[] }> = [];
+  const perItem: Array<{ item: Item; adds: string[]; refusal: GrantError | null }> = [];
   for (const item of items) {
-    const grants = await grantRows(q, item.id);
-    const kept = new Set(
-      [...grants.values()].filter((g) => !g.excluded && !g.via).map((g) => g.ws),
-    );
-    const blocked = new Set([...grants.values()].filter((g) => g.excluded).map((g) => g.ws));
-    const okRows = folderWs.length
-      ? await rows<{ id: string }>(
-          q,
-          sql`select x.id from unnest(${uuidList(folderWs)}::uuid[]) as x(id)
-               where mantle_grant_kind_ok(${item.type}::node_type, x.id, true)`,
-        )
-      : [];
-    const takes = new Set(okRows.map((r) => r.id).filter((w) => !blocked.has(w)));
-    const adds = [...takes].filter((w) => !item.readWs.includes(w));
-    for (const w of adds) gain.add(w);
-    for (const g of grants.values()) {
-      if (!g.excluded && g.via && !takes.has(g.ws) && !kept.has(g.ws)) lose.add(g.ws);
+    const { adds, loses } = await placeInFolder(q, item, folderWs);
+    const refusal = !mayManage(ctx, item)
+      ? NOT_MANAGER()
+      : item.type === 'app' && adds.some((w) => !isMod(ctx, w))
+        ? APP_HOLDER()
+        : null;
+    if (refusal && strict) throw refusal;
+    if (refusal) {
+      perItem.push({ item, adds, refusal });
+      continue;
     }
-    perItem.push({ item, adds });
+    for (const w of adds) gain.add(w);
+    for (const w of loses) lose.add(w);
+    perItem.push({ item, adds, refusal: null });
   }
   return { kind, folder, gain, lose, perItem };
 }
@@ -1196,7 +1344,7 @@ export async function previewMove(
   const plan =
     moveTarget(body) === 'workspace'
       ? await planWorkspaceMove(ctx, body, db)
-      : await planFolderMove(ctx, body, db);
+      : await planFolderMove(ctx, body, db, true);
   return { alsoVisibleTo: await nameOf(ctx, plan.gain), removedFrom: await nameOf(ctx, plan.lose) };
 }
 
@@ -1237,9 +1385,7 @@ async function moveHome(caller: WsCaller, nodeId: string, to: string, body: Move
     caller,
     nodeId,
     { folderConfirm: true, appConfirm: true, confirm: body.confirm === true },
-    // @heads-held: change() runs this under the item's heads (a folder: its subtree).
-
-    async (tx, ctx, item, grants) => {
+    async (q, ctx, item, grants) => {
       if (!mayManage(ctx, item)) {
         throw new GrantError(403, 'forbidden', 'Only a Moderator of the item’s home can move it.');
       }
@@ -1256,13 +1402,17 @@ async function moveHome(caller: WsCaller, nodeId: string, to: string, body: Move
       if (body.keepReadableIn !== undefined && body.keepReadableIn.toLowerCase() !== from) {
         throw new GrantError(400, 'invalid', 'keepReadableIn: only the old home can be kept.');
       }
-      if (!(await kindOk(tx, item.type, to))) {
+      if (!(await kindOk(q, item.type, to))) {
         throw new GrantError(
           409,
           'kind_not_allowed',
           'This kind of item lives in the Admin workspace only.',
         );
       }
+      return from;
+    },
+    // @heads-held: change() runs this under the item's heads (a folder: its subtree).
+    async (tx, ctx, item, grants, from) => {
       const keep = body.keepReadableIn !== undefined;
       const target = grants.get(to);
       await tx.execute(
@@ -1313,24 +1463,16 @@ async function moveHome(caller: WsCaller, nodeId: string, to: string, body: Move
 
 /** Items into a folder (or the kind's root): checked by S6, then moved by
  *  the tree's own move (heads, paths, files on disk), whose triggers derive
- *  the folder's grants. */
+ *  the folder's grants. Each item's move checks the plan again under its
+ *  heads (the item and both folders, audit L3): the folder's workspaces,
+ *  the app holder rule and the confirm, as they are now. */
 async function moveToFolder(ctx: Ctx, body: MoveInput): Promise<GrantMoveResponse> {
-  const plan = await planFolderMove(ctx, body, db);
+  const plan = await planFolderMove(ctx, body, db, false);
   const result: GrantMoveResponse = { moved: 0, failed: [] };
   const go: string[] = [];
-  for (const { item, adds } of plan.perItem) {
-    if (!mayManage(ctx, item)) {
-      result.failed.push({ id: item.id, error: NOT_MANAGER().message });
-      continue;
-    }
-    if (item.type === 'app' && adds.some((w) => !isMod(ctx, w))) {
-      result.failed.push({
-        id: item.id,
-        error: 'Placing this app there adds a workspace you do not moderate.',
-      });
-      continue;
-    }
-    go.push(item.id);
+  for (const { item, refusal } of plan.perItem) {
+    if (refusal) result.failed.push({ id: item.id, error: refusal.message });
+    else go.push(item.id);
   }
   if (go.length && (plan.gain.size || plan.lose.size) && body.confirm !== true) {
     throw new GrantError(
@@ -1340,9 +1482,25 @@ async function moveToFolder(ctx: Ctx, body: MoveInput): Promise<GrantMoveRespons
     );
   }
   if (!go.length) return result;
+  const guard = async (tx: Exec, itemId: string) => {
+    const now = await loadCtx(ctx.caller, tx);
+    const item = await loadItem(now, itemId, tx);
+    if (!mayManage(now, item)) throw NOT_MANAGER();
+    const folder = await targetFolder(now, body.toFolderId, plan.kind, tx);
+    const { adds, loses } = await placeInFolder(tx, item, await folderWorkspaces(tx, folder));
+    if (item.type === 'app' && adds.some((w) => !isMod(now, w))) throw APP_HOLDER();
+    if ((adds.length || loses.length) && body.confirm !== true) {
+      throw new GrantError(
+        409,
+        'confirm_required',
+        'This move now changes who can see the item. Confirm to go ahead.',
+      );
+    }
+  };
   try {
     const moved = await moveTreeItems(ctx.caller.anchorId, plan.kind, go, plan.folder?.id ?? null, {
       confirm: true,
+      guard,
     });
     if (moved.moved) await notifyTreeChanged(ctx.caller.anchorId, plan.kind);
     result.moved = moved.moved;

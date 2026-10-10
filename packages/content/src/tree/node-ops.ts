@@ -20,7 +20,7 @@ import {
   withNodeMoveHeads,
   withSubtreeHeads,
 } from '@mantle/db';
-import { dashToLtree, folderSlugOf } from '@mantle/files';
+import { dashToLtree, folderSlugOf, type MoveGuard } from '@mantle/files';
 import {
   TREE_KIND_SPECS,
   TREE_MAX_DEPTH,
@@ -330,6 +330,7 @@ export async function moveNodeItem(
   kind: TreeKind,
   itemId: string,
   destPath: string,
+  guard?: MoveGuard,
 ): Promise<void> {
   // Heads first (plan V3): the item, the folder it leaves and the one it
   // lands in, so its current path is read before the transaction.
@@ -345,6 +346,7 @@ export async function moveNodeItem(
     withNodeMoveHeads(ownerId, node, destPath, async (tx) => {
       // The share lock (shared) before the row: see takeShareReadLock.
       await takeShareReadLock(tx, ownerId);
+      if (guard) await guard(tx, itemId);
       return tx
         .update(nodes)
         .set({ path: destPath })

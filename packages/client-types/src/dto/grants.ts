@@ -57,9 +57,9 @@ export type GrantContactShare = {
 /** GET /api/grants/:nodeId (an item or a folder). */
 export type GrantsResponse = {
   item: { id: string; title: string; type: string };
-  /** `name` is null when the caller is not a user of the home workspace
-   *  (and not an Admin user). */
-  home: { wsId: string; name: string | null };
+  /** Both null when the caller is not a user of the home workspace (and
+   *  not an Admin user): a home the caller may not name is not identified. */
+  home: { wsId: string | null; name: string | null };
   /** The home first, then by name. Only rows of workspaces the caller is a
    *  user of, unless it is an Admin user or manages the item. */
   rows: GrantRow[];
@@ -83,6 +83,10 @@ export type GrantsResponse = {
   embedsNotGranted: GrantEmbed[];
   /** Apps only. MCP access is written by PATCH /api/apps/:id. */
   app?: { mcpAccess: boolean };
+  /** Folders, when the caller may add items there: every workspace a new
+   *  item placed in it takes (its rows not removed there, the home's
+   *  included), named even where the caller is not a user (S6). */
+  placesInto?: GrantWorkspaceRef[];
 };
 
 /** A write answers the panel again, or `{ visible: false }` when the caller
@@ -112,14 +116,21 @@ export type GrantEmbedsResponse = GrantsWriteResponse & { skipped: GrantEmbedSki
 
 /** GET /api/grants/:nodeId/preview?add=<ws>&remove=<ws>: how many items
  *  (the item, and for a folder everything inside it) would gain or lose
- *  that workspace. `tooBig` when a folder holds more than the limit (the
- *  change then answers 409 too_big). `app` for an app with `add`: what the
- *  new holder would see (rows null when the app has no database yet or it
- *  cannot be read). */
+ *  that workspace. The caller must be allowed the change itself (add: home
+ *  Moderator and Moderator of the target; remove: either), else 403.
+ *  `tooBig` when a folder holds more than the limit (the change then
+ *  answers 409 too_big). `app` for an app with `add`: what the new holder
+ *  would see (rows null when the app has no database yet or it cannot be
+ *  read). */
 export type GrantPreviewResponse = {
   gain: number;
+  /** Apps among `gain`: each also narrows what it reads (21.8 row 13). */
+  gainApps: number;
   lose: number;
   total: number;
+  /** Items in the folder the caller cannot open, counted in `total`,
+   *  `gain` and `lose` all the same ("N items, some you cannot open"). */
+  hidden: number;
   tooBig: boolean;
   app?: { rows: number | null; exportedTables: number };
 };
