@@ -24,6 +24,7 @@ import { createRequire } from 'node:module';
 import { Worker } from 'node:worker_threads';
 import type { RenderJob, RenderResult } from './draw-png-render';
 import { sanitizeSceneSvg, type SvgRegion } from './svg-sanitize';
+import { SCENE_SVG_MAX_BYTES } from './scene-svg';
 
 /** The long edge of a rendered picture, in pixels. Big enough to read a
  *  whiteboard's small print, small enough to stay well under every vision
@@ -113,8 +114,11 @@ async function renderInWorker(job: RenderJob, timeoutMs: number): Promise<Render
   return new Promise<RenderResult>((resolve, reject) => {
     const worker = new Worker(new URL('./draw-png-render.ts', import.meta.url), {
       workerData: { kind: 'mantle-draw-png', job, wasm },
-      // The JS heap only: resvg's memory is WebAssembly, bounded by the pixel
-      // size the long edge sets.
+      // This caps the JS heap ONLY. resvg and the font decoder run in
+      // WebAssembly memory, which it does not cap; that is bounded by the
+      // inputs instead: the long edge (the output canvas), the sanitizer's
+      // pixel budget for inline pictures and its element caps, and the font
+      // size checks made before unpacking (draw-png-render.ts).
       resourceLimits: { maxOldGenerationSizeMb: 256 },
     });
     let settled = false;
@@ -155,28 +159,36 @@ export async function renderDrawSvgPng(
     keepImagesOf?: ReadonlySet<string>;
   } = {},
 ): Promise<DrawPng> {
-  const clean = sanitizeSceneSvg(svg, {
-    ...(opts.region ? { region: opts.region } : {}),
-    ...(opts.keepImagesOf ? { keepImagesOf: opts.keepImagesOf } : {}),
+  // The snapshot's own cap (a stored one is under it already; a caller that
+  // hands anything else in gets the same bound).
+  if (Buffer.byteLength(svg, 'utf8') > SCENE_SVG_MAX_BYTES) {
+    throw new Error('the snapshot is too large to draw');
+  }
+  // The slot first: a busy renderer refuses before any parsing.
+  return withSlot(async () => {
+    const clean = sanitizeSceneSvg(svg, {
+      ...(opts.region ? { region: opts.region } : {}),
+      ...(opts.keepImagesOf ? { keepImagesOf: opts.keepImagesOf } : {}),
+    });
+    const [, , sw, sh] = clean.sceneBox;
+    const w = opts.region ? opts.region.width * sw : sw;
+    const h = opts.region ? opts.region.height * sh : sh;
+    const job: RenderJob = {
+      svg: clean.svg,
+      fonts: clean.fonts,
+      fallbackFont: await bundledFallbackFont(),
+      longEdge: opts.longEdge ?? DRAW_PNG_LONG_EDGE,
+      landscape: w >= h,
+    };
+    const out = await renderInWorker(job, opts.timeoutMs ?? DRAW_PNG_TIMEOUT_MS);
+    return {
+      png: Buffer.from(out.png.buffer, out.png.byteOffset, out.png.byteLength),
+      width: out.width,
+      height: out.height,
+      sceneWidth: sw,
+      sceneHeight: sh,
+    };
   });
-  const [, , sw, sh] = clean.sceneBox;
-  const w = opts.region ? opts.region.width * sw : sw;
-  const h = opts.region ? opts.region.height * sh : sh;
-  const job: RenderJob = {
-    svg: clean.svg,
-    fonts: clean.fonts,
-    fallbackFont: await bundledFallbackFont(),
-    longEdge: opts.longEdge ?? DRAW_PNG_LONG_EDGE,
-    landscape: w >= h,
-  };
-  const out = await withSlot(() => renderInWorker(job, opts.timeoutMs ?? DRAW_PNG_TIMEOUT_MS));
-  return {
-    png: Buffer.from(out.png.buffer, out.png.byteOffset, out.png.byteLength),
-    width: out.width,
-    height: out.height,
-    sceneWidth: sw,
-    sceneHeight: sh,
-  };
 }
 
 // ─── cache ────────────────────────────────────────────────────────────────

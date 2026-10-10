@@ -201,3 +201,22 @@ describe('namespaced links and images (draw PNG audit H1)', () => {
     expect(keepSvgImages(svg, new Set(['a']))).not.toContain('QQ==');
   });
 });
+
+describe('keepSvgImages stays linear (re-audit L3)', () => {
+  it('a long run of unclosed image tags takes linear time', () => {
+    const hostile = `<svg>${'<image href="x" '.repeat(100_000)}</svg>`;
+    const t = Date.now();
+    keepSvgImages(hostile, new Set(['a']));
+    expect(Date.now() - t).toBeLessThan(2_000);
+  });
+
+  it('an open image and its end tag go together', () => {
+    const svg =
+      '<svg><symbol id="image-a"><image href="data:image/png;base64,QQ=="></image></symbol>' +
+      '<symbol id="image-b"><image href="data:image/png;base64,Qg=="></image></symbol></svg>';
+    expect(keepSvgImages(svg, new Set(['a']))).toBe(
+      '<svg><symbol id="image-a"><image href="data:image/png;base64,QQ=="></image></symbol>' +
+        '<symbol id="image-b"></symbol></svg>',
+    );
+  });
+});

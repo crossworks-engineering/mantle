@@ -108,10 +108,15 @@ export function acceptSceneSvg(svg: unknown): string | null {
 /** One tag's attributes, quoted values skipped whole (a `>` inside quotes
  *  does not end the tag). */
 const ATTRS = `(?:[^>"']|"[^"]*"|'[^']*')*`;
-/** A `<symbol>` open or close tag, or a whole `<image>` / `<feImage>`
- *  element (self-closed, closed by its end tag, or left open). */
+/** One tag's attributes for the image pass: no raw `<` anywhere (XML
+ *  forbids it in an attribute value), so every match attempt stops at the
+ *  next `<` and a run of unclosed tags costs linear time, not quadratic. */
+const TAG_ATTRS = `(?:[^<>"']|"[^"<]*"|'[^'<]*')*`;
+/** A `<symbol>` or `<image>` / `<feImage>` open tag (self-closed or not), or
+ *  one of their end tags, under any prefix. Each token is matched on its
+ *  own, never by searching ahead for its end tag. */
 const SVG_IMAGE_TOKENS = new RegExp(
-  `<(?:[\\w.-]+:)?symbol\\b${ATTRS}>|<\\/(?:[\\w.-]+:)?symbol\\s*>|<((?:[\\w.-]+:)?(?:image|feImage))\\b${ATTRS}?(?:\\/>|>[\\s\\S]*?<\\/\\1\\s*>|>)`,
+  `<\\/?(?:[\\w.-]+:)?(?:symbol|image|feImage)\\b${TAG_ATTRS}>`,
   'gi',
 );
 
@@ -140,6 +145,9 @@ export function symbolFileIds(tag: string): string[] {
  */
 export function keepSvgImages(svg: string, allowedFileIds: ReadonlySet<string>): string {
   let inAllowedSymbol = false;
+  /** Per open (not self-closed) image: whether it was kept, so its end tag
+   *  goes the same way. */
+  const openImages: boolean[] = [];
   return svg.replace(SVG_IMAGE_TOKENS, (token: string) => {
     if (/^<(?:[\w.-]+:)?symbol\b/i.test(token)) {
       inAllowedSymbol = symbolFileIds(token).some((id) => allowedFileIds.has(id));
@@ -149,8 +157,11 @@ export function keepSvgImages(svg: string, allowedFileIds: ReadonlySet<string>):
       inAllowedSymbol = false;
       return token;
     }
+    if (token.startsWith('</')) return openImages.pop() === true ? token : '';
     // A prefixed image (any namespace) is never kept: an export writes none.
-    return inAllowedSymbol && /^<image\b/i.test(token) ? token : '';
+    const keep = inAllowedSymbol && /^<image\b/i.test(token);
+    if (!/\/\s*>$/.test(token)) openImages.push(keep);
+    return keep ? token : '';
   });
 }
 

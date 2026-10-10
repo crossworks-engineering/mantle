@@ -117,10 +117,10 @@ const draw_list: BuiltinToolDef = {
   },
 };
 
-/** The picture for one reader's SVG, from the cache or freshly drawn. The
- *  key is the SVG the reader gets (images already filtered), the image ids
- *  the renderer keeps, and the view, so a recommit, a re-render or a change
- *  in what the reader may see is a new picture, never a stale one. */
+/** The picture for one reader, from the cache or freshly drawn. The key is
+ *  the stored snapshot, the image ids the renderer keeps for this reader,
+ *  and the view, so a recommit, a re-render or a change in what the reader
+ *  may see is a new picture, never a stale one. */
 async function pictureOf(
   svg: string,
   visibleFileIds: ReadonlySet<string> | null,
@@ -229,7 +229,7 @@ const draw_get: BuiltinToolDef = {
       }
       let png: DrawPng;
       try {
-        png = await pictureOf(snap.svg, snap.visibleFileIds, region);
+        png = await pictureOf(snap.snapshot, snap.visibleFileIds, region);
       } catch (err) {
         output.image = null;
         output.image_note = `The picture could not be drawn (${errorMessage(err)}). Use \`content\`.`;

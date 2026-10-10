@@ -6,7 +6,26 @@
  * reach a file, and a real export's shape must come out drawable.
  */
 import { describe, expect, it } from 'vitest';
-import { SVG_MAX_DEPTH, SVG_MAX_ELEMENTS, allowedHref, sanitizeSceneSvg } from './svg-sanitize';
+import {
+  SVG_MAX_DEPTH,
+  SVG_MAX_ELEMENTS,
+  SVG_MAX_USES,
+  allowedHref,
+  rasterSize,
+  sanitizeSceneSvg,
+} from './svg-sanitize';
+
+/** A PNG header of a given size: all the pixel budget reads. */
+const png = (w: number, h = 1) => {
+  const b = Buffer.alloc(33);
+  Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex').copy(b);
+  b.writeUInt32BE(w, 16);
+  b.writeUInt32BE(h, 20);
+  return b.toString('base64');
+};
+const P1 = png(1);
+const P2 = png(2);
+const P3 = png(3);
 
 const OPEN =
   '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 100 100" width="100" height="100">';
@@ -50,13 +69,13 @@ describe('sanitizeSceneSvg: links under any name', () => {
   it('keeps #id and inline raster pictures on use and image, nothing else', () => {
     const out = sanitizeSceneSvg(
       doc(
-        '<use xlink:href="#a"/><image href="data:image/png;base64,AAAA"/>' +
+        `<use xlink:href="#a"/><image href="data:image/png;base64,${P1}"/>` +
           '<image href="data:image/svg+xml;base64,PHN2Zy8+"/><image href="file:///etc/hosts"/>' +
           '<rect href="#a"/><image href="https://example.invalid/x.png"/>',
       ),
     ).svg;
     expect(out).toContain('<use href="#a">');
-    expect(out).toContain('<image href="data:image/png;base64,AAAA">');
+    expect(out).toContain(`<image href="data:image/png;base64,${P1}">`);
     expect(out).not.toContain('svg+xml');
     expect(out).toContain('<rect>');
     clean(out);
@@ -122,23 +141,23 @@ describe('sanitizeSceneSvg: links under any name', () => {
 
 describe('sanitizeSceneSvg: the reader image rule', () => {
   const body =
-    '<defs><symbol id="image-ok"><image href="data:image/png;base64,T0s="/></symbol>' +
-    '<symbol id="image-crop-hidden-123"><image href="data:image/png;base64,SElE"/></symbol></defs>' +
-    '<image href="data:image/png;base64,T1VU"/>';
+    `<defs><symbol id="image-ok"><image href="data:image/png;base64,${P1}"/></symbol>` +
+    `<symbol id="image-crop-hidden-123"><image href="data:image/png;base64,${P2}"/></symbol></defs>` +
+    `<image href="data:image/png;base64,${P3}"/>`;
 
   it('keeps every image when no rule is given (the owner)', () => {
     const out = sanitizeSceneSvg(doc(body)).svg;
-    expect(out).toContain('T0s=');
-    expect(out).toContain('SElE');
-    expect(out).toContain('T1VU');
+    expect(out).toContain(P1);
+    expect(out).toContain(P2);
+    expect(out).toContain(P3);
   });
 
   it('keeps only images inside a symbol of an allowed scene file', () => {
     const out = sanitizeSceneSvg(doc(body), { keepImagesOf: new Set(['ok']) }).svg;
-    expect(out).toContain('T0s=');
-    expect(out).not.toContain('SElE');
+    expect(out).toContain(P1);
+    expect(out).not.toContain(P2);
     // An image outside any symbol has no file to check: never kept.
-    expect(out).not.toContain('T1VU');
+    expect(out).not.toContain(P3);
   });
 
   it('never keeps a prefixed image, even in an allowed symbol', () => {
@@ -157,7 +176,7 @@ describe('sanitizeSceneSvg: a real export survives', () => {
       '<svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" width="400" height="200">' +
       '<!-- svg-source:excalidraw --><metadata></metadata><defs><style class="style-fonts">\n' +
       '  @font-face { font-family: Excalifont; src: url(data:font/woff2;base64,d09GMgABAAA=); }</style>' +
-      '<symbol id="image-f1"><image href="data:image/png;base64,iVBORw0KGgo=" preserveAspectRatio="none" width="100%" height="100%"/></symbol></defs>' +
+      `<symbol id="image-f1"><image href="data:image/png;base64,${P1}" preserveAspectRatio="none" width="100%" height="100%"/></symbol></defs>` +
       '<rect x="0" y="0" width="400" height="200" fill="#ffffff"/>' +
       '<g stroke-linecap="round" transform="translate(10 10) rotate(0 90 50)"><path d="M0 0 L180 0" stroke="#1971c2" stroke-width="2" fill="none"/></g>' +
       '<mask id="m"><rect fill="#fff" width="10" height="10"/></mask><g mask="url(#m)"><use href="#image-f1" width="50" height="50"/></g>' +
@@ -166,9 +185,7 @@ describe('sanitizeSceneSvg: a real export survives', () => {
     const out = sanitizeSceneSvg(input);
     expect(out.sceneBox).toEqual([0, 0, 400, 200]);
     expect(out.fonts).toEqual([{ family: 'Excalifont', base64: 'd09GMgABAAA=' }]);
-    expect(out.svg).toContain(
-      '<symbol id="image-f1"><image href="data:image/png;base64,iVBORw0KGgo="',
-    );
+    expect(out.svg).toContain(`<symbol id="image-f1"><image href="data:image/png;base64,${P1}"`);
     expect(out.svg).toContain('<use href="#image-f1" width="50" height="50">');
     expect(out.svg).toContain('<g mask="url(#m)">');
     expect(out.svg).toContain(
@@ -208,5 +225,54 @@ describe('allowedHref', () => {
     ]) {
       expect(allowedHref(bad), bad).toBeNull();
     }
+  });
+});
+
+describe('sanitizeSceneSvg: decode budget (re-audit M)', () => {
+  const pic = (b64: string, mime = 'png') =>
+    `<image href="data:image/${mime};base64,${b64}" width="10" height="10"/>`;
+
+  it('drops a picture whose header says it decodes past the per-picture budget', () => {
+    const huge = png(20_000, 20_000);
+    const out = sanitizeSceneSvg(doc(pic(huge) + pic(P1))).svg;
+    expect(out).not.toContain(huge);
+    expect(out).toContain(P1);
+  });
+
+  it('drops pictures past the total budget, keeps those before it', () => {
+    const big = png(5_000, 5_000); // 25 MP each: one fits, two pass the 40 MP total
+    const big2 = png(4_999, 5_000);
+    const out = sanitizeSceneSvg(doc(pic(big) + pic(big2))).svg;
+    expect(out).toContain(big);
+    expect(out).not.toContain(big2);
+  });
+
+  it('drops a picture whose size it cannot read', () => {
+    const out = sanitizeSceneSvg(doc(pic('AAAA') + pic('/9j/AA==', 'jpeg'))).svg;
+    expect(out).not.toContain('base64,');
+  });
+
+  it('reads JPEG, GIF and WebP headers', () => {
+    // JPEG: SOI, an APP0 segment, then SOF0 with height 300, width 400.
+    const jpeg = Buffer.from(
+      'ffd8ffe000104a46494600010100000100010000ffc0001108012c019003012200021101031101',
+      'hex',
+    );
+    expect(rasterSize(jpeg)).toEqual({ width: 400, height: 300 });
+    const gif = Buffer.from('474946383961' + '2c01' + 'c800' + '000000', 'hex');
+    expect(rasterSize(gif)).toEqual({ width: 300, height: 200 });
+    const webp = Buffer.alloc(30);
+    webp.write('RIFF', 0, 'latin1');
+    webp.write('WEBPVP8X', 8, 'latin1');
+    webp.writeUIntLE(639, 24, 3);
+    webp.writeUIntLE(479, 27, 3);
+    expect(rasterSize(webp)).toEqual({ width: 640, height: 480 });
+    expect(rasterSize(Buffer.from('not a picture'))).toBeNull();
+  });
+
+  it('caps use elements', () => {
+    expect(() => sanitizeSceneSvg(doc('<use href="#a"/>'.repeat(SVG_MAX_USES + 1)))).toThrow(
+      /too many use/,
+    );
   });
 });

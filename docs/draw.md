@@ -257,10 +257,13 @@ The snapshot is user data, so it passes two layers. First
 [`svg-sanitize.ts`](../packages/content/src/svg-sanitize.ts) parses it as XML
 (namespaces resolved, DOCTYPE refused) and rebuilds it from an allowlist: only
 `#id` and inline raster `data:image/` links survive, prefixed elements go, and
-an image stays only inside a symbol of a file the reader may see. Then resvg
-renders it as WebAssembly in a worker thread (no file system, a 20 s timeout,
-a bounded queue), with the inlined woff2 fonts unpacked from bytes after a
-size check, plus a bundled fallback font. `acceptSceneSvg` also refuses
+an image stays only inside a symbol of a file the reader may see, and an
+inline picture is kept only within a decode budget read from its own header
+(25 MP each, 40 MP in all). Then resvg renders it as WebAssembly in a worker
+thread (no file system, a 20 s timeout, a bounded queue that refuses before
+parsing), with the inlined woff2 fonts unpacked from bytes after their table
+directory is checked, plus a bundled fallback font. WebAssembly memory is not
+capped by the worker's heap limit, so these input bounds are what bound it. `acceptSceneSvg` also refuses
 prefixed links, prefixed elements, DOCTYPE and `xml:base` at commit. What a
 reader gets (the drawing, the draft flag, the inlined images, and the words
 of those images in the text) is decided in one helper,

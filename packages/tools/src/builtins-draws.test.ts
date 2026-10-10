@@ -61,7 +61,7 @@ beforeEach(async () => {
   h.render.mockReset().mockImplementation(real.renderDrawSvgPng);
   h.readableDraw.mockReset().mockResolvedValue(META);
   h.readableDrawText.mockReset().mockResolvedValue('# Pipeline\nIngest -> Extract');
-  h.readableDrawSvg.mockReset().mockResolvedValue({ svg: SVG, visibleFileIds: null });
+  h.readableDrawSvg.mockReset().mockResolvedValue({ snapshot: SVG, visibleFileIds: null });
 });
 
 describe('draw_get picture', () => {
@@ -162,7 +162,7 @@ describe('draw_get picture', () => {
 
   it('a long thin scene suggests a region', async () => {
     h.readableDrawSvg.mockResolvedValue({
-      svg: SVG.replace(
+      snapshot: SVG.replace(
         'viewBox="0 0 400 200" width="400" height="200"',
         'viewBox="0 0 1600 200" width="1600" height="200"',
       ),
@@ -174,7 +174,7 @@ describe('draw_get picture', () => {
 
   it('a snapshot that cannot be drawn still returns the text', async () => {
     h.readableDrawSvg.mockResolvedValue({
-      svg: '<svg xmlns="http://www.w3.org/2000/svg"></svg>',
+      snapshot: '<svg xmlns="http://www.w3.org/2000/svg"></svg>',
       visibleFileIds: null,
     });
     const r = await draw_get.handler({ id: ID, image: true }, owner);
@@ -188,7 +188,7 @@ describe('draw_get picture', () => {
   it("hands the reader's visible images to the renderer's own parse", async () => {
     const ids = new Set(['f1']);
     h.readableDrawSvg.mockResolvedValue({
-      svg: SVG.replace('fill="#1971c2"', 'fill="#2f9e44"'),
+      snapshot: SVG.replace('fill="#1971c2"', 'fill="#2f9e44"'),
       visibleFileIds: ids,
     });
     await draw_get.handler({ id: ID, image: true }, owner);

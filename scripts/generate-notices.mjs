@@ -38,6 +38,17 @@ function collectLicenses() {
   return JSON.parse(raw);
 }
 
+/** Third-party files committed to this repo and shipped in the product
+ *  outside any package. */
+const BUNDLED_ASSETS = [
+  {
+    name: 'Nunito Sans (font)',
+    license: 'OFL-1.1',
+    path: 'packages/content/assets/fonts/nunito-sans.woff2',
+    licenseFile: 'packages/content/assets/fonts/nunito-sans-LICENSE.txt',
+  },
+];
+
 const LICENSE_FILE_RE = /^(LICEN[SC]E|COPYING|NOTICE|UNLICENSE)(\..*)?$/i;
 
 // Canonical SPDX license texts bundled under scripts/license-texts/, used as a
@@ -260,6 +271,24 @@ function main() {
       }
     }
     out.push('');
+  }
+
+  // Files the repo ships itself, not through a package (a font the PNG
+  // renderer bundles). Each keeps its licence file beside it.
+  if (BUNDLED_ASSETS.length) {
+    out.push('## Bundled assets');
+    out.push('');
+    for (const a of BUNDLED_ASSETS) {
+      out.push(`#### ${a.name}`);
+      out.push('');
+      out.push(`- License: ${a.license}`);
+      out.push(`- Shipped as: \`${a.path}\``);
+      out.push('');
+      out.push('```');
+      out.push(readFileSync(join(repoRoot, a.licenseFile), 'utf8').trim());
+      out.push('```');
+      out.push('');
+    }
   }
 
   out.push('---');

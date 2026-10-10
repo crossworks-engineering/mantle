@@ -21,7 +21,13 @@ import {
   renderDrawSvgPng,
   validRegion,
 } from './draw-png';
-import { sfntFamilyName, unpackFonts } from './draw-png-render';
+import {
+  renameFamilies,
+  safeFamilyName,
+  sfntFamilyName,
+  unpackFonts,
+  woff2Sizes,
+} from './draw-png-render';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const FONT = readFileSync(
@@ -232,5 +238,51 @@ describe('cache', () => {
     cacheDrawPng('k1', png);
     expect(cachedDrawPng('k1')).toBe(png);
     expect(cachedDrawPng('k2')).toBeNull();
+  });
+});
+
+describe('re-audit: font bounds, names and input size', () => {
+  it('bounds a woff2 by its table directory, not only the header it could lie in', () => {
+    const real = woff2Sizes(FONT)!;
+    expect(real).toBeGreaterThan(FONT.length);
+    const lying = Buffer.from(FONT);
+    lying.writeUInt32BE(100, 16); // header says 100 bytes
+    // Still bounded by the table directory (the header adds only padding).
+    expect(woff2Sizes(lying)).toBeGreaterThan(real * 0.95);
+    // One table whose directory entry claims 50 MB.
+    const forged = Buffer.alloc(60);
+    forged.write('wOF2', 0, 'latin1');
+    forged.writeUInt16BE(1, 12);
+    forged.writeUInt32BE(100, 16);
+    forged[48] = 0x00; // cmap, not transformed
+    Buffer.from([0x97, 0xeb, 0xe1, 0x00]).copy(forged, 49); // UIntBase128 50_000_000
+    expect(woff2Sizes(forged)).toBe(50_000_000);
+  });
+
+  it('skips a font whose directory is over the cap, before unpacking', async () => {
+    const forged = Buffer.alloc(60);
+    forged.write('wOF2', 0, 'latin1');
+    forged.writeUInt16BE(1, 12);
+    forged.writeUInt32BE(100, 16);
+    Buffer.from([0x97, 0xeb, 0xe1, 0x00]).copy(forged, 49);
+    expect(await unpackFonts([{ family: 'X', base64: forged.toString('base64') }])).toEqual([]);
+  });
+
+  it('writes only plain family names into the SVG', () => {
+    expect(safeFamilyName('Excalifont')).toBe('Excalifont');
+    expect(safeFamilyName('Nunito Sans')).toBe('Nunito Sans');
+    for (const bad of ['a"b', 'x" onload="y', 'a;b', 'a<b', '', null]) {
+      expect(safeFamilyName(bad), String(bad)).toBeNull();
+    }
+    const out = renameFamilies(
+      '<text font-family="Excalifont, X">a</text>',
+      new Map([['excalifont', 'Fredoka']]),
+    );
+    expect(out).toBe('<text font-family="Fredoka, X">a</text>');
+  });
+
+  it('refuses a snapshot over the stored-snapshot cap before any work', async () => {
+    const big = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><desc>${'x'.repeat(6_000_001)}</desc></svg>`;
+    await expect(renderDrawSvgPng(big)).rejects.toThrow(/too large/);
   });
 });

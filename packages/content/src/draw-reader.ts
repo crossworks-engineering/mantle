@@ -34,7 +34,6 @@ import { UUID_RE } from '@mantle/std';
 import { EMPTY_SCENE, getDrawSceneText, getDrawSvg } from './draws';
 import { memberVisibleDrawFileIds } from './member-draw-images';
 import { clientVisibleDrawFileIds } from './client-draw-images';
-import { keepSvgImages, svgHasImages } from './scene-svg';
 import { sceneToText } from './scene-to-text';
 import { foldEmbeddedText } from './pages';
 
@@ -195,27 +194,27 @@ async function scopeVisibleDrawFileIds(ownerId: string, id: string): Promise<Set
 }
 
 export type ReadableDrawSvg = {
-  /** The snapshot with every image the reader may not see taken out. */
-  svg: string;
-  /** Those images' scene file ids, for the renderer to apply the same rule
-   *  to what its XML parser sees; null = all (the owner). */
+  /** The committed snapshot AS STORED, images and all. Only ever for
+   *  `renderDrawSvgPng` with `keepImagesOf: visibleFileIds`, whose XML parse
+   *  applies the image rule; never serve it as it is. */
+  snapshot: string;
+  /** The scene file ids whose image this reader may see; null = all (the
+   *  owner). */
   visibleFileIds: ReadonlySet<string> | null;
 };
 
 /**
- * The committed SVG snapshot as this reader may see it: null when there is
- * none (or the drawing is out of reach). The image rule is applied twice: to
- * the text here (as the reader's own SVG route does), and by the renderer's
- * parser through `visibleFileIds`.
+ * The committed SVG snapshot and this reader's image rule: null when there
+ * is no snapshot (or the drawing is out of reach). The rule is applied by the
+ * renderer's parser (svg-sanitize.ts), on what the parser sees, rather than
+ * by a text pass here.
  */
 export async function readableDrawSvg(
   ownerId: string,
   id: string,
   reader: DrawReader,
 ): Promise<ReadableDrawSvg | null> {
-  const svg = await getDrawSvg(ownerId, id);
-  if (!svg) return null;
-  const visible = await readerVisibleFileIds(ownerId, id, reader);
-  if (visible === null) return { svg, visibleFileIds: null };
-  return { svg: svgHasImages(svg) ? keepSvgImages(svg, visible) : svg, visibleFileIds: visible };
+  const snapshot = await getDrawSvg(ownerId, id);
+  if (!snapshot) return null;
+  return { snapshot, visibleFileIds: await readerVisibleFileIds(ownerId, id, reader) };
 }

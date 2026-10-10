@@ -82,7 +82,7 @@ function ownerSurface(opts: Parameters<typeof registerMantleTools>[2] = {}): Map
 }
 
 beforeEach(() => {
-  h.readableDrawSvg.mockReset().mockResolvedValue({ svg: SVG, visibleFileIds: null });
+  h.readableDrawSvg.mockReset().mockResolvedValue({ snapshot: SVG, visibleFileIds: null });
 });
 
 describe('draw_get picture on MCP', () => {

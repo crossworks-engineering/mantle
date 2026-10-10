@@ -17,6 +17,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { sanitizeSceneSvg } from './svg-sanitize';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -34,23 +35,41 @@ describe.skipIf(!URL)('draw_get reader rules', () => {
   const d = { team: randomUUID(), admin: randomUUID(), client: randomUUID() };
   const f = { team: randomUUID(), admin: randomUUID(), client: randomUUID() };
   const fileRefs = { sceneTeam: f.team, sceneAdmin: f.admin, sceneClient: f.client };
+  // A PNG header of a given width: all the sanitizer's pixel budget reads.
+  const png = (w: number) => {
+    const b = Buffer.alloc(33);
+    Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex').copy(b);
+    b.writeUInt32BE(w, 16);
+    b.writeUInt32BE(1, 20);
+    return b.toString('base64');
+  };
+  const TEAM = png(11);
+  const ADMIN = png(12);
+  const CLIENT = png(13);
   // exportToSvg's shape: each scene image in a symbol, drawn with <use>.
   const svg =
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100"><defs>' +
-    '<symbol id="image-sceneTeam"><image href="data:image/png;base64,VEVBTQ=="/></symbol>' +
-    '<symbol id="image-sceneAdmin"><image href="data:image/png;base64,QURNSU4="/></symbol>' +
-    '<symbol id="image-sceneClient"><image href="data:image/png;base64,Q0xJRU5U"/></symbol>' +
+    `<symbol id="image-sceneTeam"><image href="data:image/png;base64,${TEAM}"/></symbol>` +
+    `<symbol id="image-sceneAdmin"><image href="data:image/png;base64,${ADMIN}"/></symbol>` +
+    `<symbol id="image-sceneClient"><image href="data:image/png;base64,${CLIENT}"/></symbol>` +
     '</defs><use href="#image-sceneTeam"/><use href="#image-sceneAdmin"/><use href="#image-sceneClient"/></svg>';
-  const has = (s: { svg: string } | null, b64: string) => !!s && s.svg.includes(`base64,${b64}`);
+  // What the renderer draws for this reader: the stored snapshot through
+  // the parse that applies the reader's image rule.
+  const has = (
+    s: { snapshot: string; visibleFileIds: ReadonlySet<string> | null } | null,
+    b64: string,
+  ) =>
+    !!s &&
+    sanitizeSceneSvg(
+      s.snapshot,
+      s.visibleFileIds ? { keepImagesOf: s.visibleFileIds } : {},
+    ).svg.includes(`base64,${b64}`);
   // Each image file's own extracted text, and the scene_text a commit folds
   // from all of them (what the brain indexed for the owner).
   const words = { team: 'TEAMWORDS', admin: 'ADMINWORDS', client: 'CLIENTWORDS' };
   const scene = { elements: [{ id: 't1', type: 'text', text: 'Ingest', originalText: 'Ingest' }] };
   const storedText =
     'Ingest\n\n[Embedded file: team]\nTEAMWORDS\n\n[Embedded file: admin]\nADMINWORDS\n\n[Embedded file: client]\nCLIENTWORDS';
-  const TEAM = 'VEVBTQ==';
-  const ADMIN = 'QURNSU4=';
-  const CLIENT = 'Q0xJRU5U';
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;

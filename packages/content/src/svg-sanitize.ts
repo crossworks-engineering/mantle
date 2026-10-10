@@ -42,6 +42,15 @@ const XLINK_NS = 'http://www.w3.org/1999/xlink';
 
 export const SVG_MAX_ELEMENTS = 50_000;
 export const SVG_MAX_DEPTH = 64;
+/** `use` elements: each one draws its target again. */
+export const SVG_MAX_USES = 2_000;
+/** Decoded pixels of one inline picture, and of all of them together. The
+ *  renderer decodes every picture in full into WebAssembly memory, which no
+ *  thread limit caps, and a small compressed file can decode huge (a 20000
+ *  by 20000 JPEG of a few hundred KB is about 1.6 GB of pixels). A picture
+ *  over budget, or whose size cannot be read, is dropped. */
+export const IMAGE_MAX_PIXELS = 25_000_000;
+export const IMAGES_MAX_PIXELS_TOTAL = 40_000_000;
 /** Embedded fonts read per snapshot (a real export holds a handful). */
 export const SVG_MAX_FONTS = 24;
 /** Base64 length of one embedded font (about 6 MB of bytes). */
@@ -166,6 +175,72 @@ function esc(v: string): string {
     .replace(/"/g, '&quot;');
 }
 
+/** Width and height from an inline picture's own header (PNG, JPEG, GIF,
+ *  WebP), or null when it cannot be read. */
+export function rasterSize(bytes: Buffer): { width: number; height: number } | null {
+  const b = bytes;
+  if (
+    b.length >= 24 &&
+    b.readUInt32BE(0) === 0x89504e47 &&
+    b.toString('latin1', 12, 16) === 'IHDR'
+  ) {
+    return { width: b.readUInt32BE(16), height: b.readUInt32BE(20) };
+  }
+  if (b.length >= 10 && b.toString('latin1', 0, 3) === 'GIF') {
+    // The logical screen; a frame larger than it is not drawn past it.
+    return { width: b.readUInt16LE(6), height: b.readUInt16LE(8) };
+  }
+  if (
+    b.length >= 30 &&
+    b.toString('latin1', 0, 4) === 'RIFF' &&
+    b.toString('latin1', 8, 12) === 'WEBP'
+  ) {
+    const chunk = b.toString('latin1', 12, 16);
+    if (chunk === 'VP8X') {
+      return { width: 1 + b.readUIntLE(24, 3), height: 1 + b.readUIntLE(27, 3) };
+    }
+    if (chunk === 'VP8L' && b[20] === 0x2f) {
+      const bits = b.readUInt32LE(21);
+      return { width: 1 + (bits & 0x3fff), height: 1 + ((bits >> 14) & 0x3fff) };
+    }
+    if (chunk === 'VP8 ' && b.length >= 30) {
+      return { width: b.readUInt16LE(26) & 0x3fff, height: b.readUInt16LE(28) & 0x3fff };
+    }
+    return null;
+  }
+  if (b.length >= 4 && b[0] === 0xff && b[1] === 0xd8) {
+    // Walk the segments to the first frame header (SOF0..SOF15 bar DHT, JPG,
+    // DAC). Each step moves forward, so this is linear in the file.
+    let at = 2;
+    while (at + 9 < b.length) {
+      if (b[at] !== 0xff) return null;
+      const marker = b[at + 1]!;
+      if (marker === 0xff) {
+        at++;
+        continue;
+      }
+      if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
+        at += 2;
+        continue;
+      }
+      const len = b.readUInt16BE(at + 2);
+      if (len < 2) return null;
+      if (
+        marker >= 0xc0 &&
+        marker <= 0xcf &&
+        marker !== 0xc4 &&
+        marker !== 0xc8 &&
+        marker !== 0xcc
+      ) {
+        return { width: b.readUInt16BE(at + 7), height: b.readUInt16BE(at + 5) };
+      }
+      at += 2 + len;
+    }
+    return null;
+  }
+  return null;
+}
+
 /** A link value the renderer may follow, or null. */
 export function allowedHref(v: string): string | null {
   const t = v.trim();
@@ -255,6 +330,19 @@ export function sanitizeSceneSvg(
   let inStyle = false;
   let styleText = '';
   let elements = 0;
+  let uses = 0;
+  let pixels = 0;
+  /** An inline picture's href, if its decoded size fits what is left of the
+   *  budget; null drops the link (and so the picture). */
+  const withinPixelBudget = (href: string): boolean => {
+    if (!href.startsWith('data:')) return true;
+    const size = rasterSize(Buffer.from(href.slice(href.indexOf(',') + 1), 'base64'));
+    if (!size || size.width <= 0 || size.height <= 0) return false;
+    const px = size.width * size.height;
+    if (px > IMAGE_MAX_PIXELS || pixels + px > IMAGES_MAX_PIXELS_TOTAL) return false;
+    pixels += px;
+    return true;
+  };
   let rootSeen = false;
   let sceneBox: [number, number, number, number] | null = null;
 
@@ -309,6 +397,8 @@ export function sanitizeSceneSvg(
       stack.push(null);
       return;
     }
+    if (name === 'use' && ++uses > SVG_MAX_USES)
+      throw new Error('the snapshot has too many use elements');
     if (name === 'symbol') {
       const id = Object.values(tag.attributes).find((a) => !a.uri && a.local === 'id')?.value ?? '';
       symbols.push(
@@ -322,7 +412,7 @@ export function sanitizeSceneSvg(
       if (isHref) {
         if (!LINK_ELEMENTS.has(name)) continue;
         const href = allowedHref(a.value);
-        if (href) parts.push(`href="${esc(href)}"`);
+        if (href && withinPixelBudget(href)) parts.push(`href="${esc(href)}"`);
         continue;
       }
       if (a.uri || !ATTRIBUTES.has(a.local)) continue;

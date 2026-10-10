@@ -25,11 +25,53 @@ export type RenderJob = {
 };
 export type RenderResult = { png: Uint8Array; width: number; height: number };
 
-/** One unpacked font, and all of them together. A woff2 states its unpacked
- *  size in its header, so a font that would unpack past these is refused
- *  before any work. */
+/** One unpacked font, and all of them together. Checked BEFORE unpacking,
+ *  against every size the decoder works from (woff2Sizes), and again on the
+ *  real output: the decoder runs in WebAssembly memory, which no thread
+ *  limit caps. */
 export const FONT_MAX_UNPACKED_BYTES = 8_000_000;
 export const FONTS_MAX_UNPACKED_TOTAL = 24_000_000;
+
+/** A woff2 font's sizes as the decoder will allocate them: the header's
+ *  unpacked size, and from the table directory the summed table sizes and
+ *  the summed sizes of the compressed stream. The largest of them is what
+ *  unpacking can cost. Null when the header or directory is malformed. */
+export function woff2Sizes(b: Uint8Array): number | null {
+  if (b.length < 48) return null;
+  const v = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  const numTables = v.getUint16(12);
+  const header = v.getUint32(16);
+  let at = 48;
+  const base128 = (): number | null => {
+    let n = 0;
+    for (let i = 0; i < 5; i++) {
+      if (at >= b.length) return null;
+      const byte = b[at++]!;
+      if (i === 0 && byte === 0x80) return null;
+      if (n > 0x01ffffff) return null;
+      n = n * 128 + (byte & 0x7f);
+      if ((byte & 0x80) === 0) return n;
+    }
+    return null;
+  };
+  let tables = 0;
+  let stream = 0;
+  for (let t = 0; t < numTables; t++) {
+    if (at >= b.length) return null;
+    const flags = b[at++]!;
+    if ((flags & 0x3f) === 0x3f) at += 4;
+    const orig = base128();
+    if (orig === null) return null;
+    const version = (flags >> 6) & 3;
+    const glyfOrLoca = (flags & 0x3f) === 10 || (flags & 0x3f) === 11;
+    const transformed = glyfOrLoca ? version === 0 : version !== 0;
+    const len = transformed ? base128() : orig;
+    if (len === null) return null;
+    tables += orig;
+    stream += len;
+  }
+  return Math.max(header, tables, stream);
+}
 
 /** The family name an sfnt font calls itself (name table: typographic family
  *  16, else family 1). Null when the table is missing or unreadable. */
@@ -84,8 +126,11 @@ export async function unpackFonts(
     if (bytes.length < 20) continue;
     const magic = bytes.subarray(0, 4).toString('latin1');
     let size: number;
-    if (magic === 'wOF2') size = bytes.readUInt32BE(16);
-    else if (magic === 'OTTO' || magic === 'true' || bytes.readUInt32BE(0) === 0x00010000) {
+    if (magic === 'wOF2') {
+      const declared = woff2Sizes(bytes);
+      if (declared === null) continue;
+      size = declared;
+    } else if (magic === 'OTTO' || magic === 'true' || bytes.readUInt32BE(0) === 0x00010000) {
       size = bytes.length;
     } else continue;
     if (size > FONT_MAX_UNPACKED_BYTES || total + size > FONTS_MAX_UNPACKED_TOTAL) continue;
@@ -130,6 +175,13 @@ export function renameFamilies(svg: string, rename: Map<string, string>): string
 let wasmReady: Promise<void> | null = null;
 
 /** Render in THIS thread (the worker calls it; tests may too). */
+/** A family name that may be written into the SVG's text as is. A name
+ *  comes from a font file (user data), so anything outside plain letters,
+ *  digits, space, dot, dash and underscore is not used at all. */
+export function safeFamilyName(name: string | null): string | null {
+  return name && /^[\w .-]{1,64}$/.test(name) ? name : null;
+}
+
 export async function renderJob(job: RenderJob, wasm: WebAssembly.Module): Promise<RenderResult> {
   const { initWasm, Resvg } = await import('@resvg/resvg-wasm');
   // Once per thread; a second init (a test that also decodes with resvg in
@@ -142,13 +194,13 @@ export async function renderJob(job: RenderJob, wasm: WebAssembly.Module): Promi
   const rename = new Map<string, string>();
   const families: string[] = [];
   for (const f of fonts) {
-    const own = sfntFamilyName(f.sfnt);
+    const own = safeFamilyName(sfntFamilyName(f.sfnt));
     if (own) families.push(own);
     if (own && f.family && own.toLowerCase() !== f.family.toLowerCase()) {
       rename.set(f.family.toLowerCase(), own);
     }
   }
-  const fallbackFamily = sfntFamilyName(job.fallbackFont) ?? undefined;
+  const fallbackFamily = safeFamilyName(sfntFamilyName(job.fallbackFont)) ?? undefined;
   const defaultFamily = families[0] ?? fallbackFamily;
   const svg = renameFamilies(job.svg, rename);
   const resvg = new Resvg(svg, {
