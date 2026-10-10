@@ -17,8 +17,14 @@
  * Nothing else: no summary, no facts, no model call, no extractor notify, no
  * queue job. updated_at is kept (mantle.keep_updated_at), so the extractor's
  * safety nets never read a re-folded row as edited. Each row is written in
- * its own transaction with its head locked first (plan U1). Resumable: a row
- * whose text and chunks already match is skipped. Dry run by default.
+ * its own transaction with its head locked first (plan U1). The row is read
+ * again under that lock: one that changed since it was read (an edit, a new
+ * chunk set) is left for the next run. Resumable: a row whose text and
+ * chunks already match is skipped. Dry run by default.
+ *
+ * Candidates are found by their content as well as by node_embeds: an embed
+ * whose item was deleted has no edge any more, but its words may still sit in
+ * the host's stored text (mantle_embed_host, migration 0248).
  */
 import { and, asc, eq, inArray, or, sql } from 'drizzle-orm';
 import {
@@ -75,16 +81,27 @@ export interface RefoldReport {
   embedTexts: number;
   /** Rows with no text of their own (left as they are). */
   empty: number;
+  /** Rows that changed between the read and the write: left for the next run. */
+  changed: number;
 }
+
+type Q = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /** What one row indexes after the fold: its stored text (pages, drawings)
  *  and the body its chunks come from (as the extractor's load-body reads it). */
 async function foldedRow(
   ownerId: string,
   n: typeof nodes.$inferSelect,
-): Promise<{ stored: string | null; storedBefore: string | null; body: string } | null> {
+  q: Q = db,
+): Promise<{
+  stored: string | null;
+  storedBefore: string | null;
+  body: string;
+  /** Everything the row's fold was computed from (the change check). */
+  source: string;
+} | null> {
   if (n.type === 'page') {
-    const [p] = await db
+    const [p] = await q
       .select({ doc: pages.doc, docText: pages.docText })
       .from(pages)
       .where(eq(pages.nodeId, n.id))
@@ -94,11 +111,17 @@ async function foldedRow(
       ownerId,
       itemLevel(n.audience, n.inheritedLevel, n.embeddedLevel),
       p.doc,
+      q,
     );
-    return { stored: text, storedBefore: p.docText ?? null, body: text.trim() ? text : n.title };
+    return {
+      stored: text,
+      storedBefore: p.docText ?? null,
+      body: text.trim() ? text : n.title,
+      source: JSON.stringify([p.doc, p.docText]),
+    };
   }
   if (n.type === 'draw') {
-    const [d] = await db
+    const [d] = await q
       .select({ scene: draws.scene, fileRefs: draws.fileRefs, sceneText: draws.sceneText })
       .from(draws)
       .where(eq(draws.nodeId, n.id))
@@ -109,6 +132,7 @@ async function foldedRow(
       stored: text,
       storedBefore: d.sceneText ?? null,
       body: text.trim() ? text : n.title,
+      source: JSON.stringify([d.scene, d.fileRefs, d.sceneText]),
     };
   }
   // A note: its markdown is the source, nothing derived is stored. The body
@@ -117,11 +141,52 @@ async function foldedRow(
   const data = (n.data ?? {}) as Record<string, unknown>;
   for (const c of [data.content, data.text, data.body, data.markdown]) {
     if (typeof c === 'string' && c.trim() && c.trim() !== n.title.trim()) {
-      // eslint-disable-next-line no-control-regex -- the extractor strips NUL too
-      return { stored: null, storedBefore: null, body: foldNoteEmbeds(c).replace(/\x00/g, '') };
+      return {
+        stored: null,
+        storedBefore: null,
+        // eslint-disable-next-line no-control-regex -- the extractor strips NUL too
+        body: foldNoteEmbeds(c).replace(/\x00/g, ''),
+        source: JSON.stringify(c),
+      };
     }
   }
   return null;
+}
+
+/** The row as the fold saw it: its node fields, its fold source and its chunk
+ *  texts. Read again under the head lock; any difference skips the write. */
+async function rowState(
+  ownerId: string,
+  id: string,
+  q: Q,
+): Promise<{
+  n: typeof nodes.$inferSelect;
+  folded: Awaited<ReturnType<typeof foldedRow>>;
+  chunks: string[];
+  key: string;
+} | null> {
+  const [n] = await q.select().from(nodes).where(eq(nodes.id, id)).limit(1);
+  if (!n) return null;
+  const folded = await foldedRow(ownerId, n, q);
+  const chunks = (
+    await q
+      .select({ text: contentChunks.text })
+      .from(contentChunks)
+      .where(eq(contentChunks.nodeId, id))
+      .orderBy(asc(contentChunks.ordinal))
+  ).map((o) => o.text);
+  const data = (n.data ?? {}) as Record<string, unknown>;
+  const key = JSON.stringify([
+    n.title,
+    n.audience,
+    n.inheritedLevel,
+    n.embeddedLevel,
+    n.derivedMixed,
+    data.refolded === true,
+    folded?.source ?? null,
+    chunks,
+  ]);
+  return { n, folded, chunks, key };
 }
 
 export async function refoldEmbeds(
@@ -139,6 +204,7 @@ export async function refoldEmbeds(
     nodeVectors: 0,
     embedTexts: 0,
     empty: 0,
+    changed: 0,
   };
   const rows = await db
     .select()
@@ -151,6 +217,9 @@ export async function refoldEmbeds(
         or(
           eq(nodes.derivedMixed, true),
           sql`EXISTS (SELECT 1 FROM node_embeds e WHERE e.from_id = ${nodes.id})`,
+          // By content too: a deleted embed leaves no edge (0248).
+          sql`public.mantle_embed_host(${nodes.id}, ${nodes.type})`,
+          sql`(${nodes.type} = 'note' AND ${nodes.data}::text ~ '\\]\\((media|draw):')`,
         ),
       ),
     )
@@ -158,24 +227,21 @@ export async function refoldEmbeds(
     .limit(opts.limit ?? 1_000_000);
   const windowsOn = await opts.deps.windowsEnabled(ownerId);
 
-  for (const n of rows) {
-    const kind = n.type as Kind;
+  for (const row of rows) {
+    const kind = row.type as Kind;
     report.candidates[kind] += 1;
-    if (n.derivedMixed) report.marked[kind] += 1;
-    const folded = await foldedRow(ownerId, n);
+    if (row.derivedMixed) report.marked[kind] += 1;
+    const seen = await rowState(ownerId, row.id, db);
+    if (!seen) continue;
+    const { n, folded } = seen;
     if (!folded) {
       report.empty += 1;
       continue;
     }
     const pieces = clampPieces(chunkDocText(folded.body));
-    const old = await db
-      .select({ text: contentChunks.text })
-      .from(contentChunks)
-      .where(eq(contentChunks.nodeId, n.id))
-      .orderBy(asc(contentChunks.ordinal));
+    const old = seen.chunks;
     const textChanged = folded.stored !== null && folded.stored !== folded.storedBefore;
-    const chunksChanged =
-      old.length !== pieces.length || old.some((o, i) => o.text !== pieces[i]!.text);
+    const chunksChanged = old.length !== pieces.length || old.some((o, i) => o !== pieces[i]!.text);
     // A marked row needs its node vector once (data.refolded records it).
     const needsVector =
       n.derivedMixed && (n.data as Record<string, unknown> | null)?.refolded !== true;
@@ -231,8 +297,12 @@ export async function refoldEmbeds(
       );
     }
 
-    await withDeadlockRetry(() =>
+    const wrote = await withDeadlockRetry(() =>
       withHeads([n.id], 'update', async (tx) => {
+        // Read again under the head: an edit or a new chunk set since the
+        // read above leaves the row for the next run (W2 audit).
+        const now = await rowState(ownerId, n.id, tx);
+        if (!now || now.key !== seen.key) return false;
         await tx.execute(sql`select set_config('mantle.keep_updated_at', 'on', true)`);
         if (textChanged && n.type === 'page') {
           await tx.update(pages).set({ docText: folded.stored! }).where(eq(pages.nodeId, n.id));
@@ -279,8 +349,18 @@ export async function refoldEmbeds(
             })
             .where(eq(nodes.id, n.id));
         }
+        return true;
       }),
     );
+    if (!wrote) {
+      report.changed += 1;
+      if (textChanged) report.textRewritten -= 1;
+      if (chunksChanged) {
+        report.rechunked -= 1;
+        report.chunks -= pieces.length;
+      }
+      if (needsVector) report.nodeVectors -= 1;
+    }
   }
   return report;
 }

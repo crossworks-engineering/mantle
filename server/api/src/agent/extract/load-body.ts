@@ -19,7 +19,14 @@ import {
 } from '@mantle/files';
 import { recordSkippedTrace, step } from '@mantle/tracing';
 import { documentWorkerPrefersNative } from '@mantle/runtime/agent';
-import { foldNoteEmbeds, parseFormulaSpec, formulaToText } from '@mantle/content';
+import {
+  drawSceneText,
+  foldNoteEmbeds,
+  itemLevel,
+  parseFormulaSpec,
+  formulaToText,
+} from '@mantle/content';
+import { pageDocText } from '@mantle/content/pages';
 import { isHollowFilenameBody } from '../extractor-parse';
 import { cleanText } from './text';
 import { loadFileBytes, tryUnlockPdf } from './file-bytes';
@@ -172,16 +179,27 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
     const when = enterWhen ? `\n\nEnter when: ${enterWhen}` : '';
     return `${node.title}\n\nRecall map — content served via the recall tools.${when}`.trim();
   }
-  // ─── Pages — derived plaintext from the TipTap sidecar ───────────────
-  // The ProseMirror doc lives in `pages.doc`; `pages.doc_text` is its
-  // flattened plaintext, computed on every save in @mantle/content.
+  // ─── Pages — plaintext from the TipTap sidecar ────────────────────────
+  // The ProseMirror doc lives in `pages.doc`. Its text is computed here from
+  // the doc, the way a save computes `pages.doc_text` (pageDocText: a marker
+  // per embed, filtered at client and public), never read from the stored
+  // copy: a row saved before always fold may still hold an embed's words in
+  // doc_text until the re-fold runs (workspaces plan 5.3, W2 audit).
   if (node.type === 'page') {
     const [row] = await db
-      .select({ docText: pages.docText })
+      .select({ doc: pages.doc })
       .from(pages)
       .where(eq(pages.nodeId, node.id))
       .limit(1);
-    return row?.docText?.trim() ? row.docText : node.title;
+    if (!row) return node.title;
+    const text = row.doc
+      ? await pageDocText(
+          node.ownerId,
+          itemLevel(node.audience, node.inheritedLevel, node.embeddedLevel),
+          row.doc,
+        )
+      : '';
+    return text.trim() ? text : node.title;
   }
   // ─── Tables — derived markdown from the typed-grid sidecar ────────────
   // The TableDoc lives in `tables.data`; `tables.data_text` is its markdown
@@ -194,19 +212,23 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
       .limit(1);
     return row?.dataText?.trim() ? row.dataText : node.title;
   }
-  // ─── Draws — derived plaintext from the Excalidraw sidecar ────────────
-  // The scene JSON lives in `draws.scene`; `draws.scene_text` is its
-  // structured plaintext (frame names as headings, shape labels, bound
-  // arrows as `A -> B: label` relations), computed on commit in
-  // @mantle/content. Only committed scenes ever reach this point — drafts
-  // never fire node_ingested.
+  // ─── Draws — plaintext from the Excalidraw sidecar ────────────────────
+  // The scene JSON lives in `draws.scene`. Its structured plaintext (frame
+  // names as headings, shape labels, bound arrows as `A -> B: label`
+  // relations, a marker per placed image) is computed here the way a commit
+  // computes `draws.scene_text` (drawSceneText), never read from the stored
+  // copy, which may predate always fold (workspaces plan 5.3, W2 audit).
+  // Only committed scenes ever reach this point: drafts never fire
+  // node_ingested.
   if (node.type === 'draw') {
     const [row] = await db
-      .select({ sceneText: draws.sceneText })
+      .select({ scene: draws.scene, fileRefs: draws.fileRefs })
       .from(draws)
       .where(eq(draws.nodeId, node.id))
       .limit(1);
-    return row?.sceneText?.trim() ? row.sceneText : node.title;
+    if (!row) return node.title;
+    const text = drawSceneText((row.scene ?? {}) as Record<string, unknown>, row.fileRefs);
+    return text.trim() ? text : node.title;
   }
   // ─── Documentation — the markdown body, cached in data.content ────────
   // Docs are synced from disk (one node per .md file). The full markdown is

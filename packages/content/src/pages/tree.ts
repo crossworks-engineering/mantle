@@ -19,7 +19,8 @@ import {
   withNodeInsertHeads,
   withSpaceRows,
 } from '@mantle/db';
-import { docToText } from '../doc-to-text';
+import { itemLevel } from '../item-level';
+import { pageDocText } from './level-text';
 import { guardNewPageIn } from '../tree/page-guard';
 import { EMPTY_DOC, PAGES_ROOT_LABEL, dedupeTags, detailOf, type PageDetail } from './shared';
 
@@ -155,10 +156,12 @@ async function pagePathFor(
 export async function createPage(ownerId: string, input: CreatePageInput): Promise<PageDetail> {
   await ensureRoot(ownerId);
   const doc = input.doc ?? EMPTY_DOC;
-  const docText = docToText(doc);
   const title = input.title.trim().slice(0, 200) || 'Untitled page';
 
-  if (currentSpaceScope()) return createSpacePage(ownerId, input, title, doc, docText);
+  // A personal-space page: its own words and a marker per embed (always
+  // fold, workspaces plan 5.3); no level filter applies there.
+  if (currentSpaceScope())
+    return createSpacePage(ownerId, input, title, doc, await pageDocText(ownerId, 'admin', doc));
 
   // Heads first (plan U1): the folder the page lands in, shared. Its path is
   // read here for the heads and again inside, under the share lock; the
@@ -171,6 +174,14 @@ export async function createPage(ownerId: string, input: CreatePageInput): Promi
       .values(pageRow(ownerId, input, title, path))
       .returning();
     if (!node) throw new Error('createPage: insert returned no row');
+    // The same text a save writes (pageDocText): a marker per embed, and at
+    // client or public the level filter, by the level the new row has.
+    const docText = await pageDocText(
+      ownerId,
+      itemLevel(node.audience, node.inheritedLevel, node.embeddedLevel),
+      doc,
+      tx,
+    );
     await tx.insert(pages).values({ nodeId: node.id, doc, docText });
     return detailOf(node, doc);
   });

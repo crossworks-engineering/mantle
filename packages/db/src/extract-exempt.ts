@@ -98,6 +98,7 @@ export const TERMINAL_EXTRACT_SKIPS: readonly string[] = [
   'type_not_in_allowlist',
   'conversation_digest',
   'chat_archive',
+  'derived_mixed_unrefolded',
 ];
 
 /** The jsonb to merge onto `nodes.data` for a terminal skip. `at` is the

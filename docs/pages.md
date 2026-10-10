@@ -111,15 +111,21 @@ durable; commits make indexing deliberate. A 30-minute editing session is now
   or its name, at every level. A note's indexed text does the same for its
   `media:` and `draw:` embeds. So a page levelled or granted without its embed
   finds none of the embed's words.
-- **Older summaries made before W2 are set aside.** A page, note or drawing
-  that embedded something and already had a summary or facts was marked by
-  migration 0247 (`nodes.derived_mixed`): its summary moved to the admin-only
-  table `node_mixed_summaries` (an Admin user's item detail may show it,
-  labelled "older summary, includes embedded items"; lists and search never
-  do), and its facts are read only in Admin (`facts.derived_mixed`). The mark
-  clears when the extractor next summarises the item. The hand-run task
-  `pnpm maintain refold-embeds` rewrites the text, chunks and node vector of
-  these items once, on the local embedder, with no model work.
+- **Older summaries made before W2 are set aside.** A page or drawing that
+  embedded something and already had a summary or facts was marked by
+  migrations 0247 and 0248 (`nodes.derived_mixed`): its summary moved to the
+  admin-only table `node_mixed_summaries` (an Admin user's item detail may
+  show it, labelled "older summary, includes embedded items"; lists and
+  search never do), and all its facts, retired ones too, are read only in
+  Admin (`facts.derived_mixed`). The mark reads the stored content
+  (`mantle_embed_host`), so a page whose embedded file was deleted is marked
+  too. Notes are not marked (0248 gave 0247's notes their summary back). The
+  hand-run task `pnpm maintain refold-embeds` rewrites the text, chunks and
+  node vector of these items once, on the local embedder, with no model work;
+  until it has, the extractor skips a marked item (`derived_mixed_unrefolded`,
+  a terminal skip, no model). The extractor computes a page's or drawing's
+  text from its doc or scene, never from the stored copy. The mark clears
+  when the extractor next summarises the item after the re-fold.
 - **Client and public pages index only what their level reads** (client
   logins, audit B1). A mention, a link or a page link card of an item the
   level cannot read is written as "Private item"; a readable one carries its

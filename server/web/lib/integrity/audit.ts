@@ -97,6 +97,9 @@ const CHECKS: CheckDef[] = [
         -- (Digest notes used to be excluded here too — they're embedded at
         -- insert now, so the invariant applies to them again.)
         AND n.type <> 'telegram_message'
+        -- A row the clean-derived mark flagged has no summary on purpose
+        -- until the re-fold (workspaces plan 5.3): not half-indexed.
+        AND NOT n.derived_mixed
         AND (
           -- summary written but embedding missing: a real interrupted index write.
           (nullif(n.data->>'summary', '') IS NOT NULL AND n.embedding IS NULL)
@@ -112,6 +115,7 @@ const CHECKS: CheckDef[] = [
       FROM nodes n
       WHERE n.owner_id = ${o}
         AND n.type <> 'telegram_message'
+        AND NOT n.derived_mixed
         AND (
           (nullif(n.data->>'summary', '') IS NOT NULL AND n.embedding IS NULL)
           OR

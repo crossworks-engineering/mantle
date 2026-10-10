@@ -261,6 +261,9 @@ export const process_extraction: BuiltinToolDef = {
       sql`${nodes.type} <> 'branch'`,
       sql`${nodes.type} <> 'secret'`,
       sql`(${nodes.data}->>'summary' is null or ${nodes.embedding} is null)`,
+      // A row the clean-derived mark flagged has no summary on purpose (its
+      // old one is set aside until the re-fold, workspaces plan 5.3).
+      sql`not ${nodes.derivedMixed}`,
     ];
     if (typeFilter && typeFilter.length > 0) {
       conds.push(inArray(sql`${nodes.type}::text`, typeFilter));

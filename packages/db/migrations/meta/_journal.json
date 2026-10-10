@@ -1730,6 +1730,13 @@
       "when": 1790193780000,
       "tag": "0247_workspaces_clean_derived",
       "breakpoints": true
+    },
+    {
+      "idx": 248,
+      "version": "7",
+      "when": 1790193840000,
+      "tag": "0248_workspaces_clean_derived_fixes",
+      "breakpoints": true
     }
   ]
 }

@@ -470,3 +470,41 @@ describe('admitForExtraction — the LLM-work cost guard (workspaces plan 5.3)',
     expect(h.writeRetrievalChunks).not.toHaveBeenCalled();
   });
 });
+
+describe('admitForExtraction — rows the clean-derived mark flagged (workspaces plan 5.3)', () => {
+  it('a marked page or drawing not yet re-folded: terminal skip, no model, no pass, nothing written', async () => {
+    for (const type of ['page', 'draw']) {
+      vi.clearAllMocks();
+      h.updates.length = 0;
+      h.resolveExtractor.mockResolvedValue({ ...WORKER, params: { target_types: ['*'] } });
+      h.selectQueue.push([node({ type, derivedMixed: true, data: {} })]);
+      const r = await admitForExtraction('n1', 'o1');
+      expect(r.proceed).toBe(false);
+      expect(disposition()).toBe('derived_mixed_unrefolded');
+      // No side pass, no embed, no key check: nothing reads the stored text.
+      expect(h.autoTable).not.toHaveBeenCalled();
+      expect(h.embeddedImages).not.toHaveBeenCalled();
+      expect(h.embed).not.toHaveBeenCalled();
+      expect(h.readNodeBodyLocal).not.toHaveBeenCalled();
+      expect(h.writeRetrievalChunks).not.toHaveBeenCalled();
+      expect(h.resolveChatKey).not.toHaveBeenCalled();
+      // Only the terminal stamp is written: the mark stays, no summary.
+      const written = writtenJson();
+      expect(written).toContain('extract_skipped');
+      expect(written).not.toContain('summary');
+      expect(h.updates).toHaveLength(1);
+    }
+  });
+
+  it('a marked page the re-fold rewrote goes on as before', async () => {
+    h.resolveExtractor.mockResolvedValue({ ...WORKER, params: { target_types: ['*'] } });
+    h.selectQueue.push([node({ type: 'page', derivedMixed: true, data: { refolded: true } })]);
+    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(true);
+  });
+
+  it('an unmarked page goes on as before', async () => {
+    h.resolveExtractor.mockResolvedValue({ ...WORKER, params: { target_types: ['*'] } });
+    h.selectQueue.push([node({ type: 'page', derivedMixed: false })]);
+    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(true);
+  });
+});
