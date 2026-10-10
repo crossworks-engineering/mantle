@@ -83,7 +83,9 @@ export async function GET(req: Request) {
  * An API key without the Search area does not write into a mail's
  * attachments folder (access matrix M4, audit LOW-3): with `replace=true` it
  * would overwrite an attachment, and a 409 on a taken name would tell it
- * which attachments exist. MCP refuses the same (key-email-guard.ts).
+ * which attachments exist. Since W5b2 a key acts as its login
+ * (callerMayReadEmail is always true), so this never refuses; it goes with
+ * the stored key areas in W8.
  */
 async function mailFolderRefusal(ownerId: string, parentPath: string): Promise<Response | null> {
   if (callerMayReadEmail()) return null;
