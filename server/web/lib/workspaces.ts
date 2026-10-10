@@ -250,6 +250,7 @@ function toWorkspace(r: WsRow): Workspace {
     contactNodeId: r.contact_id,
     assistant: r.agent_id ? { id: r.agent_id, name: r.agent_name ?? '' } : null,
     isAdmin: r.is_admin,
+    builtIn: builtIn(r),
     adminModerated: r.admin_moderated,
     archived: r.archived_at !== null,
     userCount: r.user_count,

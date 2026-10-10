@@ -29,6 +29,20 @@ CREATE UNIQUE INDEX IF NOT EXISTS "workspaces_reserved_name_uq"
   WHERE "archived_at" IS NULL AND lower(btrim("name")) IN ('admin', 'team');
 --> statement-breakpoint
 
+-- Hardening (fix round 3): a home row is never folder-derived. Every writer
+-- of a home today clears via_folder_id (the bridge), and the archive trigger
+-- below skips derived rows, so a derived home could vanish. A plain ADD:
+-- the migration runs in one transaction, so a separate VALIDATE would scan
+-- under the same lock anyway, and item_grants is small (thousands of rows
+-- on the dev and bible copies; lock_timeout above bounds the wait).
+ALTER TABLE "public"."item_grants"
+  DROP CONSTRAINT IF EXISTS "item_grants_home_not_derived_ck";
+--> statement-breakpoint
+ALTER TABLE "public"."item_grants"
+  ADD CONSTRAINT "item_grants_home_not_derived_ck"
+  CHECK (NOT ("is_home" AND "via_folder_id" IS NOT NULL));
+--> statement-breakpoint
+
 -- SECURITY DEFINER with a pinned search_path, as every grant trigger: the
 -- writer's role may lack UPDATE on workspaces (FOR KEY SHARE needs it) and
 -- its row security may hide the row.

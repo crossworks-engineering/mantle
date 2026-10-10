@@ -213,6 +213,24 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
     await expect(grant(p, arch)).rejects.toThrow(/is archived: it takes no grants/);
   });
 
+  it('a home row is never folder-derived (0255, fix round 3)', async () => {
+    const f = await node('branch', 'f-home', `${root}.fhome`);
+    const p = await node('page', 'in fhome', `${root}.fhome`);
+    const err = await admin`insert into item_grants (node_id, workspace_id, is_home, via_folder_id)
+      values (${p}, ${ws.other}, true, ${f})`.then(
+      () => null,
+      (e: { code?: string; constraint_name?: string }) => e,
+    );
+    expect(err).toMatchObject({
+      code: '23514',
+      constraint_name: 'item_grants_home_not_derived_ck',
+    });
+    // The same home without the folder mark is fine.
+    await admin`insert into item_grants (node_id, workspace_id, is_home)
+      values (${p}, ${ws.other}, true)`;
+    expect(await readWs(p)).toContain(ws.other);
+  });
+
   it('tests 3 and 5: nested folders, nearest wins, exclusions survive, a deep rename keeps every row', async () => {
     // Folders nest four levels at most (nodes_tree_folder_depth_ck).
     const a = await node('branch', 'a', `${root}.a`);

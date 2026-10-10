@@ -12,6 +12,7 @@ const CONTACT = '44444444-4444-4444-8444-444444444444';
 const h = vi.hoisted(() => ({
   selects: [] as unknown[][],
   insertError: null as unknown,
+  inserted: null as null | Record<string, unknown>,
 }));
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
@@ -39,7 +40,8 @@ vi.mock('@mantle/db', async (importOriginal) => {
     db: {
       select: () => chain,
       insert: () => ({
-        values: async () => {
+        values: async (row: Record<string, unknown>) => {
+          h.inserted = row;
           if (h.insertError) throw h.insertError;
         },
       }),
@@ -69,6 +71,7 @@ describe('POST /api/users, the insert refused', () => {
   beforeEach(() => {
     h.selects = [];
     h.insertError = null;
+    h.inserted = null;
   });
 
   it('answers 409 for a duplicate email', async () => {
@@ -88,6 +91,17 @@ describe('POST /api/users, the insert refused', () => {
     expect(await res.json()).toEqual({
       error: 'That contact is already linked to another user.',
     });
+  });
+
+  it('makes a member when no role is given; an admin only when asked for (W5a fix round 3)', async () => {
+    const { POST } = await import('./route');
+    const noRole = { email: BODY.email, password: BODY.password };
+    const plain = await POST(post(noRole));
+    expect(plain.status).toBe(201);
+    expect(h.inserted).toMatchObject({ role: 'member', isOwner: false });
+    const admin = await POST(post({ ...noRole, email: 'adm@example.invalid', role: 'admin' }));
+    expect(admin.status).toBe(201);
+    expect(h.inserted).toMatchObject({ role: 'admin' });
   });
 
   it('still answers 500 for any other database error', async () => {

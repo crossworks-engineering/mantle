@@ -203,9 +203,23 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     const all = await call(r.root.GET());
     const names = (all.body.workspaces as Json[]).map((w) => w.name);
     expect(names).toEqual(expect.arrayContaining(['Admin', 'Team', 'Moe private']));
+    // builtIn: Admin and Team only (fix round 3), on the list and the screen.
+    const builtIn = Object.fromEntries(
+      (all.body.workspaces as Json[]).map((w) => [w.name as string, w.builtIn]),
+    );
+    expect(builtIn).toMatchObject({ Admin: true, Team: true, 'Moe private': false });
+    for (const [id, want] of [
+      [admin, true],
+      [team, true],
+      [mine, false],
+    ] as const) {
+      const one = await call(r.one.GET(req('GET'), p({ id })));
+      expect((one.body.workspace as Json).builtIn, id).toBe(want);
+    }
     await as(mem);
     const memList = (await call(r.root.GET())).body.workspaces as Json[];
     expect(memList.map((w) => w.name)).toEqual(['Team']);
+    expect(memList[0]!.builtIn).toBe(true);
     expect(memList[0]!.me).toEqual({ member: true, moderator: true });
     expect(memList[0]!.adminModerated).toBe(true);
     await as(cli);

@@ -85,7 +85,8 @@ const CreateBody = z.object({
   /** Omit to keep today's behaviour exactly: the login shares the brain's
    *  default agent, as every login did before 0143. Admins only. */
   agent: AgentAssignmentBody.optional(),
-  /** Default admin. */
+  /** Default member: an admin login (a full co-owner) is only ever made
+   *  when asked for by name (W5a fix round 3). */
   role: z.enum(['admin', 'member']).optional(),
   /** The team contact a member login belongs to. */
   contactId: z.string().uuid().optional(),
@@ -103,7 +104,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const role = parsed.data.role ?? 'admin';
+  const role = parsed.data.role ?? 'member';
   if (role === 'member') {
     if (parsed.data.agent) {
       return NextResponse.json(

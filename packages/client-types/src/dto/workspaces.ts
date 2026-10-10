@@ -31,6 +31,10 @@ export type Workspace = {
   assistant: { id: string; name: string } | null;
   /** The Admin workspace: its users manage the brain (requireArea). */
   isAdmin: boolean;
+  /** Admin or Team, the built-in workspaces: they cannot be renamed or
+   *  archived, and their connectors follow each connector's level until
+   *  W5b (locked). Hide Archive, rename and the connector picker there. */
+  builtIn: boolean;
   /** Every Admin workspace user is a Moderator here (the Team workspace);
    *  only an Admin user may remove or demote one of them. */
   adminModerated: boolean;
