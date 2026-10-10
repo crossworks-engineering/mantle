@@ -18,6 +18,7 @@ const h = vi.hoisted(() => ({
   readableDraw: vi.fn(),
   readableDrawText: vi.fn(),
   readableDrawSvg: vi.fn(),
+  render: vi.fn(),
 }));
 
 vi.mock('@mantle/content', async () => {
@@ -28,7 +29,7 @@ vi.mock('@mantle/content', async () => {
     readableDraw: h.readableDraw,
     readableDrawText: h.readableDrawText,
     readableDrawSvg: h.readableDrawSvg,
-    renderDrawSvgPng: png.renderDrawSvgPng,
+    renderDrawSvgPng: h.render,
     cachedDrawPng: png.cachedDrawPng,
     cacheDrawPng: png.cacheDrawPng,
     validRegion: png.validRegion,
@@ -55,10 +56,12 @@ const META = {
 
 const owner: ToolHandlerContext = { ownerId: 'anchor', surface: { kind: 'web' } };
 
-beforeEach(() => {
+beforeEach(async () => {
+  const real = await import('../../content/src/draw-png');
+  h.render.mockReset().mockImplementation(real.renderDrawSvgPng);
   h.readableDraw.mockReset().mockResolvedValue(META);
   h.readableDrawText.mockReset().mockResolvedValue('# Pipeline\nIngest -> Extract');
-  h.readableDrawSvg.mockReset().mockResolvedValue(SVG);
+  h.readableDrawSvg.mockReset().mockResolvedValue({ svg: SVG, visibleFileIds: null });
 });
 
 describe('draw_get picture', () => {
@@ -83,6 +86,8 @@ describe('draw_get picture', () => {
     expect(out.image).toEqual({ format: 'png', width: 2000, height: 1000 });
     expect(out.image_note).toBeUndefined();
     expect(JSON.stringify(out)).not.toContain(img!.base64.slice(0, 40));
+    // Nothing author-written travels with the picture (audit M2).
+    expect(Object.keys(img!).sort()).toEqual(['base64', 'mimeType']);
     // The text still comes with it.
     expect(out.content).toContain('Ingest -> Extract');
   });
@@ -114,6 +119,11 @@ describe('draw_get picture', () => {
       { ownerId: 'anchor', surface: { kind: 'team', loginId: 'member-1' } },
     );
     expect(h.readableDrawSvg).toHaveBeenLastCalledWith('anchor', ID, {
+      kind: 'member',
+      loginId: 'member-1',
+    });
+    // The text is read for the same reader (its image words follow it).
+    expect(h.readableDrawText).toHaveBeenLastCalledWith('anchor', ID, {
       kind: 'member',
       loginId: 'member-1',
     });
@@ -151,23 +161,37 @@ describe('draw_get picture', () => {
   });
 
   it('a long thin scene suggests a region', async () => {
-    h.readableDrawSvg.mockResolvedValue(
-      SVG.replace(
+    h.readableDrawSvg.mockResolvedValue({
+      svg: SVG.replace(
         'viewBox="0 0 400 200" width="400" height="200"',
         'viewBox="0 0 1600 200" width="1600" height="200"',
       ),
-    );
+      visibleFileIds: null,
+    });
     const r = await draw_get.handler({ id: ID, image: true }, owner);
     expect(r.ok && (r.output as Record<string, unknown>).image_note).toMatch(/region/);
   });
 
   it('a snapshot that cannot be drawn still returns the text', async () => {
-    h.readableDrawSvg.mockResolvedValue('<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+    h.readableDrawSvg.mockResolvedValue({
+      svg: '<svg xmlns="http://www.w3.org/2000/svg"></svg>',
+      visibleFileIds: null,
+    });
     const r = await draw_get.handler({ id: ID, image: true }, owner);
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.modelImages).toBeUndefined();
     expect((r.output as Record<string, unknown>).image_note).toMatch(/could not be drawn/);
     expect((r.output as Record<string, unknown>).content).toContain('Ingest');
+  });
+
+  it("hands the reader's visible images to the renderer's own parse", async () => {
+    const ids = new Set(['f1']);
+    h.readableDrawSvg.mockResolvedValue({
+      svg: SVG.replace('fill="#1971c2"', 'fill="#2f9e44"'),
+      visibleFileIds: ids,
+    });
+    await draw_get.handler({ id: ID, image: true }, owner);
+    expect(h.render).toHaveBeenLastCalledWith(expect.any(String), { keepImagesOf: ids });
   });
 });

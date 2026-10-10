@@ -180,3 +180,24 @@ describe('svgLinkHrefs / dropSvgLinks (element links, audit B25)', () => {
     expect(svgLinkHrefs(out)).toEqual(['https://example.invalid/']);
   });
 });
+
+describe('namespaced links and images (draw PNG audit H1)', () => {
+  it('refuses a link or an element under any prefix, a DOCTYPE, entities and xml:base at commit', () => {
+    for (const bad of [
+      '<svg xmlns:q="http://www.w3.org/1999/xlink"><image q:href="/etc/hosts"/></svg>',
+      '<svg><image xlink:href="/etc/hosts"/></svg>',
+      '<svg xmlns:p="http://www.w3.org/2000/svg"><p:image href="/etc/hosts"/></svg>',
+      '<svg><g xml:base="file:///etc/"><image href="hosts"/></g></svg>',
+      '<?xml version="1.0"?><!DOCTYPE svg [<!ENTITY p "/etc/hosts">]><svg><image href="&p;"/></svg>',
+    ]) {
+      expect(acceptSceneSvg(bad), bad).toBeNull();
+    }
+  });
+
+  it('keepSvgImages and svgHasImages see a prefixed image, and keep none of them', () => {
+    const svg =
+      '<svg><defs><p:symbol id="image-a"><p:image href="data:image/png;base64,QQ=="/></p:symbol></defs></svg>';
+    expect(svgHasImages(svg)).toBe(true);
+    expect(keepSvgImages(svg, new Set(['a']))).not.toContain('QQ==');
+  });
+});

@@ -13,15 +13,15 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
+import { createRequire } from 'node:module';
 import {
   DRAW_PNG_LONG_EDGE,
-  blankExternalHrefs,
   cacheDrawPng,
   cachedDrawPng,
   renderDrawSvgPng,
-  sfntFamilyName,
   validRegion,
 } from './draw-png';
+import { sfntFamilyName, unpackFonts } from './draw-png-render';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const FONT = readFileSync(
@@ -50,15 +50,23 @@ function scene(extra = ''): string {
 }
 
 /** The RGBA pixels of a rendered picture, decoded by drawing it 1:1 into a
- *  bare SVG of its own size (no PNG decoder dependency for one test). */
-async function rgba(out: { png: Buffer; width: number; height: number }): Promise<Buffer> {
-  const { renderAsync } = await import('@resvg/resvg-js');
+ *  bare SVG of its own size with resvg (no PNG decoder dependency). */
+let wasmInit: Promise<void> | null = null;
+async function rgba(out: { png: Buffer; width: number; height: number }): Promise<Uint8Array> {
+  const { initWasm, Resvg } = await import('@resvg/resvg-wasm');
+  const require = createRequire(import.meta.url);
+  wasmInit ??= initWasm(readFileSync(require.resolve('@resvg/resvg-wasm/index_bg.wasm'))).catch(
+    (err: unknown) => {
+      if (!/already initialized/i.test(String(err))) throw err;
+    },
+  );
+  await wasmInit;
   const { width: w, height: h } = out;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><image width="${w}" height="${h}" href="data:image/png;base64,${out.png.toString('base64')}"/></svg>`;
-  return (await renderAsync(svg, { fitTo: { mode: 'original' } })).pixels;
+  return new Resvg(svg, { fitTo: { mode: 'original' } }).render().pixels;
 }
 
-function count(px: Buffer, test: (r: number, g: number, b: number) => boolean): number {
+function count(px: Uint8Array, test: (r: number, g: number, b: number) => boolean): number {
   let n = 0;
   for (let i = 0; i < px.length; i += 4) if (test(px[i]!, px[i + 1]!, px[i + 2]!)) n++;
   return n;
@@ -139,26 +147,65 @@ describe('renderDrawSvgPng', () => {
   });
 });
 
-describe('blankExternalHrefs', () => {
-  it('keeps in-document refs and inline pictures, blanks everything else', () => {
-    const svg =
-      '<svg><use href="#image-a"/><image href="data:image/png;base64,AAAA"/>' +
-      '<image href="/etc/hosts"/><image xlink:href=\'file:///etc/hosts\'/>' +
-      '<a href="https://example.invalid/x"><rect/></a><image href=" data:text/html,x"/></svg>';
-    const out = blankExternalHrefs(svg);
-    expect(out).toContain('href="#image-a"');
-    expect(out).toContain('href="data:image/png;base64,AAAA"');
-    expect(out).not.toContain('/etc/hosts');
-    expect(out).not.toContain('example.invalid');
-    expect(out).not.toContain('text/html');
-  });
-});
-
 describe('fonts', () => {
   it('reads the family name a font file carries', async () => {
     const { decompress } = await import('wawoff2');
     expect(sfntFamilyName(await decompress(FONT))).toBe('Fredoka');
     expect(sfntFamilyName(new Uint8Array(8))).toBeNull();
+  });
+
+  it('refuses a font whose header says it unpacks too big, before unpacking', async () => {
+    const huge = Buffer.from(FONT);
+    huge.writeUInt32BE(50_000_000, 16); // woff2 totalSfntSize
+    expect(await unpackFonts([{ family: 'X', base64: huge.toString('base64') }])).toEqual([]);
+    const ok = await unpackFonts([{ family: 'X', base64: FONT.toString('base64') }]);
+    expect(ok).toHaveLength(1);
+  });
+});
+
+describe('the renderer itself cannot read the disk', () => {
+  it('draws nothing for a file path even when handed an unsanitized document', async () => {
+    const { renderJob } = await import('./draw-png-render');
+    const red = await renderDrawSvgPng(
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" width="10" height="10"><rect width="10" height="10" fill="#ff0000"/></svg>',
+      { longEdge: 50 },
+    );
+    const file = path.join(tmp, 'red-direct.png');
+    writeFileSync(file, red.png);
+    const require = createRequire(import.meta.url);
+    const wasm = await WebAssembly.compile(
+      readFileSync(require.resolve('@resvg/resvg-wasm/index_bg.wasm')),
+    );
+    const out = await renderJob(
+      {
+        svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100"><image href="${file}" width="100" height="100"/></svg>`,
+        fonts: [],
+        fallbackFont: new Uint8Array(0),
+        longEdge: 100,
+        landscape: true,
+      },
+      wasm,
+    );
+    const png = { png: Buffer.from(out.png), width: out.width, height: out.height };
+    expect(count(await rgba(png), isRed)).toBe(0);
+  });
+});
+
+describe('render limits', () => {
+  it('stops a render past its deadline', async () => {
+    await expect(renderDrawSvgPng(scene(), { timeoutMs: 1 })).rejects.toThrow(/longer than/);
+  });
+
+  it('refuses at once when the queue is full, instead of queueing without bound', async () => {
+    const runs = Array.from({ length: 12 }, () =>
+      renderDrawSvgPng(scene(), { longEdge: 200 }).then(
+        () => 'ok',
+        (e: Error) => e.message,
+      ),
+    );
+    const results = await Promise.all(runs);
+    expect(results.filter((r) => /busy/.test(r)).length).toBeGreaterThan(0);
+    expect(results.filter((r) => r === 'ok').length).toBeGreaterThanOrEqual(2);
   });
 });
 

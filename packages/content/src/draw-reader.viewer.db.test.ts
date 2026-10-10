@@ -41,7 +41,13 @@ describe.skipIf(!URL)('draw_get reader rules', () => {
     '<symbol id="image-sceneAdmin"><image href="data:image/png;base64,QURNSU4="/></symbol>' +
     '<symbol id="image-sceneClient"><image href="data:image/png;base64,Q0xJRU5U"/></symbol>' +
     '</defs><use href="#image-sceneTeam"/><use href="#image-sceneAdmin"/><use href="#image-sceneClient"/></svg>';
-  const has = (s: string | null, b64: string) => !!s && s.includes(`base64,${b64}`);
+  const has = (s: { svg: string } | null, b64: string) => !!s && s.svg.includes(`base64,${b64}`);
+  // Each image file's own extracted text, and the scene_text a commit folds
+  // from all of them (what the brain indexed for the owner).
+  const words = { team: 'TEAMWORDS', admin: 'ADMINWORDS', client: 'CLIENTWORDS' };
+  const scene = { elements: [{ id: 't1', type: 'text', text: 'Ingest', originalText: 'Ingest' }] };
+  const storedText =
+    'Ingest\n\n[Embedded file: team]\nTEAMWORDS\n\n[Embedded file: admin]\nADMINWORDS\n\n[Embedded file: client]\nCLIENTWORDS';
   const TEAM = 'VEVBTQ==';
   const ADMIN = 'QURNSU4=';
   const CLIENT = 'Q0xJRU5U';
@@ -71,11 +77,16 @@ describe.skipIf(!URL)('draw_get reader rules', () => {
         (${d.team}, ${anchor}, 'draw', ${`${tag} team drawing`}, 'draws', 'team'),
         (${d.admin}, ${anchor}, 'draw', ${`${tag} admin drawing`}, 'draws', 'admin'),
         (${d.client}, ${anchor}, 'draw', ${`${tag} client drawing`}, 'draws', 'client')`);
+    for (const [k, w] of Object.entries(words)) {
+      await m.systemDb.execute(sqlTag`
+        update nodes set data = ${JSON.stringify({ text: w })}::jsonb
+         where id = ${f[k as keyof typeof f]}`);
+    }
     for (const id of [d.team, d.admin, d.client]) {
       await m.systemDb.execute(sqlTag`
-        insert into draws (node_id, file_refs, scene_svg, scene_text, draft_scene) values
-          (${id}, ${JSON.stringify(fileRefs)}::jsonb, ${svg}, 'Ingest -> Extract',
-           ${JSON.stringify({ elements: [{ id: 'draft-only' }] })}::jsonb)`);
+        insert into draws (node_id, scene, file_refs, scene_svg, scene_text, draft_scene) values
+          (${id}, ${JSON.stringify(scene)}::jsonb, ${JSON.stringify(fileRefs)}::jsonb, ${svg},
+           ${storedText}, ${JSON.stringify({ elements: [{ id: 'draft-only' }] })}::jsonb)`);
     }
   }, 60_000);
 
@@ -94,6 +105,7 @@ describe.skipIf(!URL)('draw_get reader rules', () => {
     expect(meta).toMatchObject({ id: d.admin, hasDraft: true, hasSvg: true });
     const out = await dr.readableDrawSvg(anchor, d.admin, { kind: 'scope' });
     expect([has(out, TEAM), has(out, ADMIN), has(out, CLIENT)]).toEqual([true, true, true]);
+    expect(out?.visibleFileIds).toBeNull();
   });
 
   it('member: the team drawing without its admin image, never the admin drawing', async () => {
@@ -108,9 +120,9 @@ describe.skipIf(!URL)('draw_get reader rules', () => {
         hasDraft: false,
         hasSvg: true,
       });
-      expect(await dr.readableDrawText(anchor, d.team)).toBe('Ingest -> Extract');
       const out = await dr.readableDrawSvg(anchor, d.team, { kind: 'member', loginId: member });
       expect([has(out, TEAM), has(out, ADMIN), has(out, CLIENT)]).toEqual([true, false, true]);
+      expect([...(out?.visibleFileIds ?? [])].sort()).toEqual(['sceneClient', 'sceneTeam']);
     });
   });
 
@@ -135,5 +147,25 @@ describe.skipIf(!URL)('draw_get reader rules', () => {
     // A client reader on an owner path: the client rule, not everything.
     const out = await dr.readableDrawSvg(anchor, d.client, { kind: 'client' });
     expect([has(out, TEAM), has(out, ADMIN), has(out, CLIENT)]).toEqual([false, false, true]);
+  });
+
+  it('audit M3: the text carries only the words of images the reader may see', async () => {
+    // The owner reads the stored text, every image's words in it.
+    expect(await dr.readableDrawText(anchor, d.admin, { kind: 'scope' })).toBe(storedText);
+    await m.withViewer('team', async () => {
+      const text = await dr.readableDrawText(anchor, d.team, { kind: 'member', loginId: member });
+      expect(text).toContain('Ingest');
+      expect(text).toContain('TEAMWORDS');
+      expect(text).toContain('CLIENTWORDS');
+      expect(text).not.toContain('ADMINWORDS');
+      const agent = await dr.readableDrawText(anchor, d.team, { kind: 'scope' });
+      expect(agent).toContain('TEAMWORDS');
+      expect(agent).not.toContain('ADMINWORDS');
+    });
+    await m.withViewer('client', async () => {
+      const text = await dr.readableDrawText(anchor, d.client, { kind: 'client' });
+      expect(text).toContain('CLIENTWORDS');
+      expect(text).not.toMatch(/TEAMWORDS|ADMINWORDS/);
+    });
   });
 });

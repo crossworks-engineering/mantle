@@ -2359,7 +2359,7 @@ describe('runToolLoop: pictures a tool returns for the model', () => {
       ({
         ok: true,
         output: { title: 'Pipeline', content: 'A -> B', image: { format: 'png' } },
-        modelImages: [{ mimeType: 'image/png', base64: PNG_B64, caption: 'The drawing' }],
+        modelImages: [{ mimeType: 'image/png', base64: PNG_B64 }],
       }) as never;
   };
   const script = (): ScriptStep[] => [
@@ -2396,6 +2396,58 @@ describe('runToolLoop: pictures a tool returns for the model', () => {
     );
     // The bytes ride only in the picture message, never in the tool's JSON.
     expect(String((sent[toolIdx] as { content: string }).content)).not.toContain(PNG_B64);
+    // Fixed text only in the user-role message: no title, no "[system]"
+    // (audit M2); the title stays in the tool's JSON.
+    const text = parts
+      .filter((p) => p.type === 'text')
+      .map((p) => (p as unknown as { text: string }).text)
+      .join(' ');
+    expect(text).not.toMatch(/\[system\]|Pipeline/);
+    expect(text).toContain('draw_get');
+    expect(String((sent[toolIdx] as { content: string }).content)).toContain('Pipeline');
+  });
+
+  it('a failover to a text-only backup takes the pictures out first', async () => {
+    withPicture();
+    const { adapter: backup, calls: bCalls } = makeFakeAdapter([
+      { type: 'text', text: 'From the text: A feeds B.' },
+    ]);
+    let n = 0;
+    const primary: ChatDispatcher = {
+      providerId: 'anthropic',
+      adapterName: 'primary-chat',
+      chat: vi.fn(async (): Promise<ChatResult> => {
+        n++;
+        if (n === 1) {
+          return {
+            text: '',
+            model: 'anthropic/claude-sonnet-4',
+            toolCalls:
+              script()[0]!.type === 'toolCalls'
+                ? (script()[0] as { toolCalls: ChatToolCall[] }).toolCalls
+                : [],
+            tokensIn: 1,
+            tokensOut: 1,
+          };
+        }
+        throw Object.assign(new Error('primary upstream 503'), { status: 503 });
+      }),
+    };
+    const result = await runToolLoop({
+      adapter: primary,
+      apiKey: 'k',
+      model: 'anthropic/claude-sonnet-4',
+      backup: { adapter: backup, apiKey: 'k', model: 'meta-llama/llama-3.1-8b-instruct' },
+      params: {},
+      ownerId: 'owner-1',
+      initialMessages: [{ role: 'user', content: 'what does the drawing show?' }],
+      tools: [fakeTool({ slug: 'draw_get' })],
+    });
+    expect(result.reply).toBe('From the text: A feeds B.');
+    const sent = bCalls[0]!.messages;
+    const parts = sent.flatMap((m) => (Array.isArray(m.content) ? m.content : []));
+    expect(parts.some((p) => (p as { type: string }).type === 'image_url')).toBe(false);
+    expect(JSON.stringify(sent)).not.toContain(PNG_B64);
   });
 
   it('a text-only model gets the text and a note, no picture', async () => {
@@ -2430,5 +2482,19 @@ describe('runToolLoop: pictures a tool returns for the model', () => {
       (m) => m.role === 'tool' && String(m.content).includes('already shows 4 tool pictures'),
     );
     expect(notes).toHaveLength(2);
+  });
+});
+
+describe('tool pictures: the per-turn budget', () => {
+  it('one counter per user turn, shared by every loop under it', async () => {
+    const { toolImageBudget } = await import('./tool-loop/tool-images');
+    const turn = new AbortController().signal;
+    const parent = toolImageBudget(turn);
+    parent.shown = 3;
+    // A delegated agent's loop runs under the same turn: same counter.
+    expect(toolImageBudget(turn).shown).toBe(3);
+    // A loop with no turn (a background run) counts on its own.
+    expect(toolImageBudget(undefined).shown).toBe(0);
+    expect(toolImageBudget(new AbortController().signal).shown).toBe(0);
   });
 });

@@ -4,13 +4,20 @@
  * primary→backup failover. Lifted out of runToolLoop on 2026-09-02 (audit,
  * complexity C1); step names, inputs and the failover rule are unchanged.
  */
-import { step, isTurnStreaming, emitTurnDelta, currentTurnAbortSignal } from '@mantle/tracing';
+import {
+  step,
+  isTurnStreaming,
+  emitTurnDelta,
+  currentTurnAbortSignal,
+  modelSupportsVision,
+} from '@mantle/tracing';
 import type { ChatDispatcher, ChatOptions, ChatResult, ChatToolDefinition } from '@mantle/voice';
 import { errorMessage } from '@mantle/std';
 import { recordChatUsage } from '../llm-usage';
 import { cacheFingerprint } from './cache-fingerprint';
 import { isChatFailover } from '../chat-failover';
 import type { ChatMessage } from '../messages';
+import { stripImageParts } from './tool-images';
 import type { ToolLoopArgs } from '../tool-loop';
 import { clampThinkingBudget, resolveMaxTokens } from '../tool-loop';
 
@@ -237,6 +244,10 @@ export function createModelCaller(deps: {
               viaTailnet: args.backup.viaTailnet ?? false,
             };
             failedOver = true;
+            // A text-only backup cannot take the pictures already in the
+            // turn (a user's attachment, a tool's picture): each becomes a
+            // one-line note so the request stays valid for it.
+            if (!modelSupportsVision(active.model)) stripImageParts(messages);
             const r = await dispatchChat(active.adapter, { ...routeOpts(), ...chatOpts }, iter);
             recordChatUsage(h, r, active.model);
             h.setMeta({

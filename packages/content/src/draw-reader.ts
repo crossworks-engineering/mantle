@@ -9,13 +9,15 @@
  *
  *  - the draft is never read (the picture is the committed snapshot, and the
  *    draft flag is only asked where the draft columns are readable at all);
- *  - a snapshot inlines its images' BYTES, so a reader below the owner gets it
- *    with only the images whose file they may read, by the same rule as their
- *    own SVG route: a member's (member-draw-images.ts), a client's
+ *  - a snapshot inlines its images' BYTES, and `scene_text` folds in their
+ *    extracted TEXT, so a reader below the owner gets both with only the
+ *    images whose file they may read, by the same rule as their own SVG
+ *    route: a member's (member-draw-images.ts), a client's
  *    (client-draw-images.ts), else the files the current scope reads.
  *
  * Kept in one place on purpose: when items move from levels to workspaces,
- * this is the body to swap, and both the text and the picture follow.
+ * `readerVisibleFileIds` and `readableDraw` are the bodies to swap, and both
+ * the text and the picture follow.
  */
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import {
@@ -29,10 +31,12 @@ import {
   withViewer,
 } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
-import { getDrawSceneText, getDrawSvg } from './draws';
-import { memberDrawSvg } from './member-draw-images';
-import { clientDrawSvg } from './client-draw-images';
+import { EMPTY_SCENE, getDrawSceneText, getDrawSvg } from './draws';
+import { memberVisibleDrawFileIds } from './member-draw-images';
+import { clientVisibleDrawFileIds } from './client-draw-images';
 import { keepSvgImages, svgHasImages } from './scene-svg';
+import { sceneToText } from './scene-to-text';
+import { foldEmbeddedText } from './pages';
 
 /** Who the call reads for: a member login, a client login, or whoever the
  *  current viewer scope is (the owner's own paths, an agent at its level). */
@@ -81,9 +85,81 @@ export async function readableDraw(ownerId: string, id: string): Promise<Readabl
   };
 }
 
-/** The committed text (`scene_text`), as the current scope may read it. */
-export function readableDrawText(ownerId: string, id: string): Promise<string | null> {
-  return getDrawSceneText(ownerId, id);
+/**
+ * The scene file ids of this drawing's images the reader may see, by the
+ * same rule as their own SVG route; null means all of them (the owner).
+ * Fail closed: a rule that cannot run leaves none.
+ */
+export async function readerVisibleFileIds(
+  ownerId: string,
+  id: string,
+  reader: DrawReader,
+): Promise<ReadonlySet<string> | null> {
+  try {
+    if (reader.kind === 'member') {
+      // The member rule reads on the admin pool (its author half needs it);
+      // the drawing itself is reached at the member's scope by the caller.
+      return await asSystem(() => memberVisibleDrawFileIds(ownerId, reader.loginId, id));
+    }
+    if (reader.kind === 'client') {
+      return await withViewer('client', () => clientVisibleDrawFileIds(ownerId, id));
+    }
+    if (currentViewerLevel() === 'admin' && !currentSpaceScope()) return null;
+    return await scopeVisibleDrawFileIds(ownerId, id);
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * The committed text as this reader may read it. The owner gets the stored
+ * `scene_text`, the very text the brain indexed. Everyone else gets the
+ * scene's own text (labels, frames, arrows) plus the extracted text of only
+ * the pasted images they may see: `scene_text` folds every image's text in
+ * at commit, so serving it as stored would hand a reader the words of an
+ * image their picture hides. Each file keeps its own text (`nodes.data.text`,
+ * written once by the file extractor), so the fold is redone per reader from
+ * the same source the commit used, with the same bounds.
+ */
+export async function readableDrawText(
+  ownerId: string,
+  id: string,
+  reader: DrawReader,
+): Promise<string | null> {
+  const visible = await readerVisibleFileIds(ownerId, id, reader);
+  if (visible === null) return getDrawSceneText(ownerId, id);
+  const [row] = await db
+    .select({ scene: draws.scene, fileRefs: draws.fileRefs })
+    .from(draws)
+    .innerJoin(nodes, eq(nodes.id, draws.nodeId))
+    .where(and(eq(draws.nodeId, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'draw')))
+    .limit(1);
+  if (!row) return null;
+  const base = sceneToText((row.scene as Record<string, unknown> | null) ?? EMPTY_SCENE);
+  const nodeIds: string[] = [];
+  for (const [fileId, nodeId] of Object.entries((row.fileRefs ?? {}) as Record<string, unknown>)) {
+    if (!visible.has(fileId) || typeof nodeId !== 'string' || !UUID_RE.test(nodeId)) continue;
+    if (!nodeIds.includes(nodeId)) nodeIds.push(nodeId);
+  }
+  if (nodeIds.length === 0) return base;
+  // Visibility is decided above; the texts are read on the admin pool so a
+  // member's own accepted image (the author rule) keeps its words too.
+  const files = await asSystem(() =>
+    db
+      .select({ id: nodes.id, title: nodes.title, data: nodes.data })
+      .from(nodes)
+      .where(and(eq(nodes.ownerId, ownerId), eq(nodes.type, 'file'), inArray(nodes.id, nodeIds))),
+  );
+  const byId = new Map(files.map((f) => [f.id, f]));
+  const fold = foldEmbeddedText(
+    nodeIds.flatMap((n) => {
+      const f = byId.get(n);
+      return f
+        ? [{ title: f.title, text: (f.data as Record<string, unknown> | null)?.text as string }]
+        : [];
+    }),
+  );
+  return fold ? `${base}\n\n${fold}` : base;
 }
 
 /** The scene file ids of this drawing's images whose file the current scope
@@ -118,32 +194,28 @@ async function scopeVisibleDrawFileIds(ownerId: string, id: string): Promise<Set
   return visible;
 }
 
+export type ReadableDrawSvg = {
+  /** The snapshot with every image the reader may not see taken out. */
+  svg: string;
+  /** Those images' scene file ids, for the renderer to apply the same rule
+   *  to what its XML parser sees; null = all (the owner). */
+  visibleFileIds: ReadonlySet<string> | null;
+};
+
 /**
  * The committed SVG snapshot as this reader may see it: null when there is
- * none (or the drawing is out of reach), else the snapshot with every image
- * the reader may not see taken out. Fail closed: a rule that cannot run
- * leaves no images at all.
+ * none (or the drawing is out of reach). The image rule is applied twice: to
+ * the text here (as the reader's own SVG route does), and by the renderer's
+ * parser through `visibleFileIds`.
  */
 export async function readableDrawSvg(
   ownerId: string,
   id: string,
   reader: DrawReader,
-): Promise<string | null> {
+): Promise<ReadableDrawSvg | null> {
   const svg = await getDrawSvg(ownerId, id);
   if (!svg) return null;
-  if (reader.kind === 'member') {
-    // The member rule reads on the admin pool (its author half needs it);
-    // the drawing itself was reached above, at the member's scope.
-    return asSystem(() => memberDrawSvg(ownerId, reader.loginId, id, svg));
-  }
-  if (reader.kind === 'client') {
-    try {
-      return await withViewer('client', () => clientDrawSvg(ownerId, id, svg));
-    } catch {
-      return keepSvgImages(svg, new Set());
-    }
-  }
-  if (currentViewerLevel() === 'admin' && !currentSpaceScope()) return svg;
-  if (!svgHasImages(svg)) return svg;
-  return keepSvgImages(svg, await scopeVisibleDrawFileIds(ownerId, id));
+  const visible = await readerVisibleFileIds(ownerId, id, reader);
+  if (visible === null) return { svg, visibleFileIds: null };
+  return { svg: svgHasImages(svg) ? keepSvgImages(svg, visible) : svg, visibleFileIds: visible };
 }

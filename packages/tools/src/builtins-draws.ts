@@ -118,21 +118,30 @@ const draw_list: BuiltinToolDef = {
 };
 
 /** The picture for one reader's SVG, from the cache or freshly drawn. The
- *  key is the SVG the reader gets (images already filtered) plus the view,
- *  so a recommit, a re-render or a change in what the reader may see is a
- *  new picture, never a stale one. */
-async function pictureOf(svg: string, region: DrawRegion | null): Promise<DrawPng> {
-  const hash = createHash('sha256').update(svg).digest('hex');
+ *  key is the SVG the reader gets (images already filtered), the image ids
+ *  the renderer keeps, and the view, so a recommit, a re-render or a change
+ *  in what the reader may see is a new picture, never a stale one. */
+async function pictureOf(
+  svg: string,
+  visibleFileIds: ReadonlySet<string> | null,
+  region: DrawRegion | null,
+): Promise<DrawPng> {
+  const hash = createHash('sha256')
+    .update(svg)
+    .update('\0')
+    .update(visibleFileIds ? [...visibleFileIds].sort().join('\n') : '*')
+    .digest('hex');
   const view = region ? `${region.x},${region.y},${region.width},${region.height}` : 'all';
   const key = `${hash}:${view}`;
   const hit = cachedDrawPng(key);
   if (hit) return hit;
-  let png = await renderDrawSvgPng(svg, { ...(region ? { region } : {}) });
+  const opts = {
+    ...(region ? { region } : {}),
+    ...(visibleFileIds ? { keepImagesOf: visibleFileIds } : {}),
+  };
+  let png = await renderDrawSvgPng(svg, opts);
   if (png.png.length > MAX_PNG_BYTES) {
-    png = await renderDrawSvgPng(svg, {
-      ...(region ? { region } : {}),
-      longEdge: SMALLER_LONG_EDGE,
-    });
+    png = await renderDrawSvgPng(svg, { ...opts, longEdge: SMALLER_LONG_EDGE });
   }
   cacheDrawPng(key, png);
   return png;
@@ -198,7 +207,8 @@ const draw_get: BuiltinToolDef = {
       // (draw-reader.ts in @mantle/content).
       const draw = await readableDraw(ctx.ownerId, id);
       if (!draw) return notFound('drawing', id, 'draw_list / search_nodes');
-      const content = (await readableDrawText(ctx.ownerId, id)) ?? '';
+      const reader = drawReaderOf(ctx);
+      const content = (await readableDrawText(ctx.ownerId, id, reader)) ?? '';
       const output: Record<string, unknown> = {
         id: draw.id,
         title: draw.title,
@@ -210,8 +220,8 @@ const draw_get: BuiltinToolDef = {
       };
       if (!wantImage) return { ok: true, output };
 
-      const svg = draw.hasSvg ? await readableDrawSvg(ctx.ownerId, id, drawReaderOf(ctx)) : null;
-      if (!svg) {
+      const snap = draw.hasSvg ? await readableDrawSvg(ctx.ownerId, id, reader) : null;
+      if (!snap) {
         output.image = null;
         output.image_note =
           'No picture: this drawing has no committed snapshot yet (one is made when it is committed on the canvas). Use `content`.';
@@ -219,7 +229,7 @@ const draw_get: BuiltinToolDef = {
       }
       let png: DrawPng;
       try {
-        png = await pictureOf(svg, region);
+        png = await pictureOf(snap.svg, snap.visibleFileIds, region);
       } catch (err) {
         output.image = null;
         output.image_note = `The picture could not be drawn (${errorMessage(err)}). Use \`content\`.`;
@@ -253,13 +263,9 @@ const draw_get: BuiltinToolDef = {
       return {
         ok: true,
         output,
-        modelImages: [
-          {
-            mimeType: 'image/png',
-            base64: png.png.toString('base64'),
-            caption: `The drawing "${draw.title}"${region ? ' (one region of it)' : ''}, as last committed`,
-          },
-        ],
+        // No caption: the title is author-written, and the picture rides in a
+        // user-role message; the title stays in the JSON output only.
+        modelImages: [{ mimeType: 'image/png', base64: png.png.toString('base64') }],
       };
     } catch (err) {
       return { ok: false, error: errorMessage(err) };

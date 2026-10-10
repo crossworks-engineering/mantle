@@ -72,7 +72,12 @@ import {
 } from './tool-loop/guards';
 import { createModelCaller } from './tool-loop/model-caller';
 import { executeToolCall, toolResultPayload } from './tool-loop/execute-call';
-import { toolImageVerdict, toolImagesMessage, withImageNote } from './tool-loop/tool-images';
+import {
+  toolImageBudget,
+  toolImageVerdict,
+  toolImagesMessage,
+  withImageNote,
+} from './tool-loop/tool-images';
 import { loadToolGroupsForCatalog } from './skills';
 import { env } from '@mantle/config';
 import { UUID_RE } from '@mantle/std';
@@ -649,8 +654,8 @@ async function runToolLoopAtLevel(args: ToolLoopArgs): Promise<ToolLoopResult> {
   // send* calls and don't populate this.
   const artifacts: ToolArtifact[] = [];
   // Pictures tools returned for the model (tool-loop/tool-images.ts), counted
-  // across the turn for the per-turn cap.
-  let toolImagesShown = 0;
+  // per user turn (a delegated agent shares its parent's count).
+  const toolImages = toolImageBudget(currentTurnAbortSignal());
 
   // True once the user hit Stop (the turn's AbortController fired). The signal
   // is already threaded into every LLM call (dispatchChat) so generation
@@ -976,9 +981,9 @@ async function runToolLoopAtLevel(args: ToolLoopArgs): Promise<ToolLoopResult> {
       // A picture for the model: shown after the batch's results to a model
       // that can see it, otherwise left out with a note in the output.
       if (outcome.ok && outcome.modelImages && outcome.modelImages.length > 0) {
-        const verdict = toolImageVerdict(model.model, outcome.modelImages, toolImagesShown);
+        const verdict = toolImageVerdict(model.model, outcome.modelImages, toolImages.shown);
         for (const image of verdict.show) batchImages.push({ slug, callId: call.id, image });
-        toolImagesShown += verdict.show.length;
+        toolImages.shown += verdict.show.length;
         if (verdict.note)
           outcome = { ...outcome, output: withImageNote(outcome.output, verdict.note) };
       }

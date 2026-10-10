@@ -63,6 +63,17 @@ const FORBIDDEN = [
   // which this deliberately also rejects rather than trying to tell the two
   // apart. Text with an ampersand in it costs the preview, not the drawing.
   /&#/,
+  // Namespaces are resolved by the parser, not by the text: a link or an
+  // image under another prefix is as live as an unprefixed one, and none of
+  // the checks here (nor keepSvgImages) would see it. exportToSvg declares
+  // only the default namespace, so a snapshot with any of these is refused.
+  // A DOCTYPE can declare entities; xml:base re-roots every relative link.
+  /<!DOCTYPE/i,
+  /<!ENTITY/i,
+  /<\/?[A-Za-z_][\w.-]*:[A-Za-z_]/,
+  /[\s/][A-Za-z_][\w.-]*:href\s*=/i,
+  /[\s/]xmlns:[\w.-]+\s*=/i,
+  /[\s/]xml:base\s*=/i,
 ];
 
 // Two checks that belong on this list conceptually and MUST NOT be added,
@@ -100,13 +111,13 @@ const ATTRS = `(?:[^>"']|"[^"]*"|'[^']*')*`;
 /** A `<symbol>` open or close tag, or a whole `<image>` / `<feImage>`
  *  element (self-closed, closed by its end tag, or left open). */
 const SVG_IMAGE_TOKENS = new RegExp(
-  `<symbol\\b${ATTRS}>|<\\/symbol\\s*>|<(image|feImage)\\b${ATTRS}?(?:\\/>|>[\\s\\S]*?<\\/\\1\\s*>|>)`,
+  `<(?:[\\w.-]+:)?symbol\\b${ATTRS}>|<\\/(?:[\\w.-]+:)?symbol\\s*>|<((?:[\\w.-]+:)?(?:image|feImage))\\b${ATTRS}?(?:\\/>|>[\\s\\S]*?<\\/\\1\\s*>|>)`,
   'gi',
 );
 
 /** The scene file id a symbol id names, both ways exportToSvg writes it:
  *  `image-<fileId>`, or `image-crop-<fileId>-<hash>` (the hash is decimal). */
-function symbolFileIds(tag: string): string[] {
+export function symbolFileIds(tag: string): string[] {
   const m = /\sid\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(tag);
   const id = m?.[1] ?? m?.[2] ?? '';
   const out: string[] = [];
@@ -130,14 +141,15 @@ function symbolFileIds(tag: string): string[] {
 export function keepSvgImages(svg: string, allowedFileIds: ReadonlySet<string>): string {
   let inAllowedSymbol = false;
   return svg.replace(SVG_IMAGE_TOKENS, (token: string) => {
-    if (/^<symbol\b/i.test(token)) {
+    if (/^<(?:[\w.-]+:)?symbol\b/i.test(token)) {
       inAllowedSymbol = symbolFileIds(token).some((id) => allowedFileIds.has(id));
       return token;
     }
-    if (/^<\/symbol/i.test(token)) {
+    if (/^<\/(?:[\w.-]+:)?symbol/i.test(token)) {
       inAllowedSymbol = false;
       return token;
     }
+    // A prefixed image (any namespace) is never kept: an export writes none.
     return inAllowedSymbol && /^<image\b/i.test(token) ? token : '';
   });
 }
@@ -145,7 +157,7 @@ export function keepSvgImages(svg: string, allowedFileIds: ReadonlySet<string>):
 /** True when the SVG embeds any image at all (the common drawing does not,
  *  and then there is nothing to check). */
 export function svgHasImages(svg: string): boolean {
-  return /<(?:image|feImage)\b/i.test(svg);
+  return /<(?:[\w.-]+:)?(?:image|feImage)\b/i.test(svg);
 }
 
 /** An `<a>` open tag (its attributes, quoted values skipped whole). */

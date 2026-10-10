@@ -4,41 +4,43 @@
  * keeps labels and `A -> B` relations but loses positions, colours, ticks,
  * switches and layout; a picture of the same drawing keeps all of it.
  *
- * Pure library, no browser: resvg (a Rust SVG renderer behind N-API) draws the
- * snapshot as stored. Nothing is re-rendered from the scene, so an uncommitted
- * draft can never reach a picture, and the picture is exactly what /s, the
- * list preview and export show.
+ * Nothing is re-rendered from the scene, so an uncommitted draft can never
+ * reach a picture, and the picture is what /s, the list preview and export
+ * show. The snapshot is user data, so it passes two independent layers:
  *
- * Fonts: exportToSvg inlines the fonts it used as `@font-face` rules with a
- * `data:font/woff2` source (subset to the glyphs in the drawing). resvg reads
- * no CSS fonts and no woff2, so each one is unpacked to TTF (wawoff2, wasm),
- * written to a temp folder for this one render and handed over as a font
- * file. System fonts load too, as a fallback for a glyph no embedded font has.
- *
- * Links: resvg loads an `<image href>` that is a bare file path from the local
- * disk. The snapshot is user data, so every `href` that is not an inline
- * picture (`data:image/…`) or a reference inside the document (`#id`) is
- * blanked before rendering. An inline SVG picture is safe: resvg does not
- * follow file paths inside it.
+ *  1. svg-sanitize.ts parses it as XML and rebuilds it from an allowlist,
+ *     with every link that is not `#id` or an inline raster picture gone;
+ *  2. the renderer (draw-png-render.ts) is resvg as WebAssembly in a worker
+ *     thread: no file system, no network, a hard timeout, and fonts read
+ *     from bytes with their unpacked size checked first.
  *
  * Callers own access: hand this only an SVG the reader may see, with the
  * images they may not see already taken out (draw-reader.ts).
  */
 // eslint-disable-next-line @typescript-eslint/triple-slash-reference -- loads the local ambient type for the untyped wawoff2 module
 /// <reference path="./wawoff2.d.ts" />
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+import { Worker } from 'node:worker_threads';
+import type { RenderJob, RenderResult } from './draw-png-render';
+import { sanitizeSceneSvg, type SvgRegion } from './svg-sanitize';
 
 /** The long edge of a rendered picture, in pixels. Big enough to read a
  *  whiteboard's small print, small enough to stay well under every vision
  *  model's image limits (the providers scale larger images down anyway). */
 export const DRAW_PNG_LONG_EDGE = 2000;
 
+/** A render that takes longer is stopped (its thread terminated). */
+export const DRAW_PNG_TIMEOUT_MS = 20_000;
+/** Renders at once, and renders allowed to wait for a slot. Past both, a
+ *  request is refused at once rather than queued without bound. */
+const MAX_CONCURRENT = 2;
+const MAX_WAITING = 6;
+
 /** A part of the scene, as fractions of its width and height (0 to 1, from
  *  the top-left corner). `{ x: 0.5, y: 0, width: 0.5, height: 0.5 }` is the
  *  top-right quarter. Rendered at the full long edge, so it zooms in. */
-export type DrawRegion = { x: number; y: number; width: number; height: number };
+export type DrawRegion = SvgRegion;
 
 export type DrawPng = {
   png: Buffer;
@@ -48,53 +50,6 @@ export type DrawPng = {
   sceneWidth: number;
   sceneHeight: number;
 };
-
-/** One tag's attributes, quoted values skipped whole. */
-const ATTRS = `(?:[^>"']|"[^"]*"|'[^']*')*`;
-const ROOT_SVG = new RegExp(`<svg\\b${ATTRS}>`, 'i');
-const LINK_ATTR = /(\s)((?:xlink:)?href)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
-const FONT_FACE = /@font-face\s*\{([^}]*)\}/gi;
-const FONT_FAMILY_DECL = /font-family\s*:\s*([^;]+)/i;
-const DATA_URL = /url\(\s*(["']?)(data:[^"')\s]+)\1\s*\)/gi;
-const FONT_FAMILY_ATTR = /(\sfont-family\s*=\s*)(?:"([^"]*)"|'([^']*)')/gi;
-const FONT_FAMILY_STYLE = /(font-family\s*:\s*)([^;"']+)/gi;
-
-/** Embedded fonts read per render. A real export holds a handful (one per
- *  family the drawing uses). */
-const MAX_FONTS = 24;
-
-/** The SVG with every link that could reach outside the document blanked. */
-export function blankExternalHrefs(svg: string): string {
-  return svg.replace(LINK_ATTR, (whole, sp: string, name: string, a?: string, b?: string) => {
-    const v = (a ?? b ?? '').trim();
-    return v.startsWith('#') || /^data:image\//i.test(v) ? whole : `${sp}${name}=""`;
-  });
-}
-
-function attr(tag: string, name: string): string | null {
-  const m = new RegExp(`\\s${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, 'i').exec(tag);
-  return m ? (m[1] ?? m[2] ?? '') : null;
-}
-
-function setAttr(tag: string, name: string, value: string): string {
-  const re = new RegExp(`(\\s${name}\\s*=\\s*)(?:"[^"]*"|'[^']*')`, 'i');
-  if (re.test(tag)) return tag.replace(re, `$1"${value}"`);
-  return tag.replace(/\s*\/?>$/, (end) => ` ${name}="${value}"${end.trim()}`);
-}
-
-/** The root viewBox: the attribute, else `0 0 width height`. */
-function sceneBox(rootTag: string): [number, number, number, number] | null {
-  const vb = attr(rootTag, 'viewBox')
-    ?.trim()
-    .split(/[\s,]+/)
-    .map(Number);
-  if (vb && vb.length === 4 && vb.every(Number.isFinite) && vb[2]! > 0 && vb[3]! > 0) {
-    return vb as [number, number, number, number];
-  }
-  const w = parseFloat(attr(rootTag, 'width') ?? '');
-  const h = parseFloat(attr(rootTag, 'height') ?? '');
-  return w > 0 && h > 0 ? [0, 0, w, h] : null;
-}
 
 /** Whether a region is a usable part of the scene. */
 export function validRegion(r: DrawRegion): boolean {
@@ -111,106 +66,37 @@ export function validRegion(r: DrawRegion): boolean {
   );
 }
 
-/** The family name an sfnt font calls itself (name table: typographic family
- *  16, else family 1). Null when the table is missing or unreadable. */
-export function sfntFamilyName(font: Uint8Array): string | null {
-  const v = new DataView(font.buffer, font.byteOffset, font.byteLength);
-  try {
-    const numTables = v.getUint16(4);
-    let nameOff = -1;
-    for (let i = 0; i < numTables; i++) {
-      const rec = 12 + i * 16;
-      const tag = String.fromCharCode(font[rec]!, font[rec + 1]!, font[rec + 2]!, font[rec + 3]!);
-      if (tag === 'name') nameOff = v.getUint32(rec + 8);
-    }
-    if (nameOff < 0) return null;
-    const count = v.getUint16(nameOff + 2);
-    const strings = nameOff + v.getUint16(nameOff + 4);
-    const found = new Map<number, string>();
-    for (let i = 0; i < count; i++) {
-      const r = nameOff + 6 + i * 12;
-      const platform = v.getUint16(r);
-      const nameId = v.getUint16(r + 6);
-      if ((nameId !== 1 && nameId !== 16) || found.has(nameId)) continue;
-      const len = v.getUint16(r + 8);
-      const at = strings + v.getUint16(r + 10);
-      const bytes = font.subarray(at, at + len);
-      let s = '';
-      if (platform === 0 || platform === 3) {
-        for (let j = 0; j + 1 < bytes.length; j += 2)
-          s += String.fromCharCode((bytes[j]! << 8) | bytes[j + 1]!);
-      } else {
-        s = Buffer.from(bytes).toString('latin1');
-      }
-      if (s.trim()) found.set(nameId, s.trim());
-    }
-    return found.get(16) ?? found.get(1) ?? null;
-  } catch {
-    return null;
-  }
+const require = createRequire(import.meta.url);
+let wasmModule: Promise<WebAssembly.Module> | null = null;
+let fallbackFont: Promise<Uint8Array> | null = null;
+
+/** The resvg WebAssembly, compiled once per process and handed to each
+ *  worker (a compiled module crosses threads without recompiling). */
+function resvgWasm(): Promise<WebAssembly.Module> {
+  wasmModule ??= readFile(require.resolve('@resvg/resvg-wasm/index_bg.wasm')).then((b) =>
+    WebAssembly.compile(b),
+  );
+  return wasmModule;
 }
 
-function bareFamily(f: string): string {
-  return f
-    .trim()
-    .replace(/^["']|["']$/g, '')
-    .trim();
+/** Nunito Sans (OFL, licence beside it): drawn for any glyph the snapshot's
+ *  own fonts do not carry, and for snapshots made before fonts were inlined.
+ *  The WebAssembly renderer has no system fonts to fall back on. */
+function bundledFallbackFont(): Promise<Uint8Array> {
+  fallbackFont ??= (async () => {
+    const { decompress } = await import('wawoff2');
+    const woff2 = await readFile(new URL('../assets/fonts/nunito-sans.woff2', import.meta.url));
+    return decompress(woff2);
+  })();
+  return fallbackFont;
 }
 
-type EmbeddedFont = { cssFamily: string; sfnt: Uint8Array };
-
-/** The fonts the snapshot inlines, unpacked to sfnt, and the SVG without
- *  their `@font-face` rules (resvg does not use them, and they are most of
- *  a snapshot's bytes). */
-async function takeEmbeddedFonts(svg: string): Promise<{ svg: string; fonts: EmbeddedFont[] }> {
-  const faces = [...svg.matchAll(FONT_FACE)].slice(0, MAX_FONTS);
-  if (faces.length === 0) return { svg, fonts: [] };
-  const { decompress } = await import('wawoff2');
-  const fonts: EmbeddedFont[] = [];
-  for (const face of faces) {
-    const body = face[1] ?? '';
-    const cssFamily = bareFamily(FONT_FAMILY_DECL.exec(body)?.[1] ?? '');
-    for (const m of body.matchAll(DATA_URL)) {
-      const comma = m[2]!.indexOf(',');
-      if (comma < 0 || !/;base64$/i.test(m[2]!.slice(0, comma))) continue;
-      const bytes = Buffer.from(m[2]!.slice(comma + 1), 'base64');
-      const magic = bytes.subarray(0, 4).toString('latin1');
-      try {
-        if (magic === 'wOF2') fonts.push({ cssFamily, sfnt: await decompress(bytes) });
-        else if (magic === 'OTTO' || magic === 'true' || bytes.readUInt32BE(0) === 0x00010000) {
-          fonts.push({ cssFamily, sfnt: bytes });
-        }
-      } catch {
-        // A font that does not unpack costs its glyphs (the fallback font
-        // draws them), never the picture.
-      }
-    }
-  }
-  return { svg: svg.replace(FONT_FACE, ''), fonts };
-}
-
-/** Rename font families in the SVG's text to the names the font files carry,
- *  where the `@font-face` rule called a font something else. */
-function renameFamilies(svg: string, rename: Map<string, string>): string {
-  if (rename.size === 0) return svg;
-  const mapList = (list: string) =>
-    list
-      .split(',')
-      .map((f) => rename.get(bareFamily(f).toLowerCase()) ?? f.trim())
-      .join(', ');
-  return svg
-    .replace(FONT_FAMILY_ATTR, (_w, pre: string, a?: string, b?: string) =>
-      a !== undefined ? `${pre}"${mapList(a)}"` : `${pre}'${mapList(b ?? '')}'`,
-    )
-    .replace(FONT_FAMILY_STYLE, (_w, pre: string, list: string) => `${pre}${mapList(list)}`);
-}
-
-// Two renders at a time: each one holds a decoded scene and a full-size
-// pixel buffer, and a burst of tool calls must not stack them up.
-const MAX_CONCURRENT = 2;
 let active = 0;
 const waiting: (() => void)[] = [];
 async function withSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (active >= MAX_CONCURRENT && waiting.length >= MAX_WAITING) {
+    throw new Error('the picture renderer is busy; try again in a moment');
+  }
   while (active >= MAX_CONCURRENT) await new Promise<void>((r) => waiting.push(r));
   active++;
   try {
@@ -221,89 +107,83 @@ async function withSlot<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-/**
- * Render a committed snapshot to a PNG on white: the whole scene, or one
- * region of it, with the long edge at `DRAW_PNG_LONG_EDGE`. Throws when the
- * SVG has no usable size or does not parse.
- */
-export async function renderDrawSvgPng(
-  svg: string,
-  opts: { region?: DrawRegion; longEdge?: number } = {},
-): Promise<DrawPng> {
-  const longEdge = opts.longEdge ?? DRAW_PNG_LONG_EDGE;
-  const root = ROOT_SVG.exec(svg)?.[0];
-  const box = root ? sceneBox(root) : null;
-  if (!root || !box)
-    throw new Error('the snapshot has no usable size (no viewBox or width/height)');
-  let [x, y, w, h] = box;
-  const sceneWidth = w;
-  const sceneHeight = h;
-  if (opts.region) {
-    const r = opts.region;
-    x += r.x * sceneWidth;
-    y += r.y * sceneHeight;
-    w = r.width * sceneWidth;
-    h = r.height * sceneHeight;
-  }
-  let rootOut = setAttr(root, 'viewBox', `${x} ${y} ${w} ${h}`);
-  rootOut = setAttr(rootOut, 'width', String(w));
-  rootOut = setAttr(rootOut, 'height', String(h));
-  let doc = blankExternalHrefs(svg.replace(root, rootOut));
-
-  const taken = await takeEmbeddedFonts(doc);
-  doc = taken.svg;
-  const rename = new Map<string, string>();
-  const families: string[] = [];
-  for (const f of taken.fonts) {
-    const own = sfntFamilyName(f.sfnt);
-    if (own) families.push(own);
-    if (own && f.cssFamily && own.toLowerCase() !== f.cssFamily.toLowerCase()) {
-      rename.set(f.cssFamily.toLowerCase(), own);
-    }
-  }
-  doc = renameFamilies(doc, rename);
-
-  return withSlot(async () => {
-    const dir = taken.fonts.length ? await mkdtemp(join(tmpdir(), 'mantle-draw-fonts-')) : null;
-    try {
-      const fontFiles: string[] = [];
-      if (dir) {
-        for (const [i, f] of taken.fonts.entries()) {
-          const file = join(dir, `${i}.ttf`);
-          await writeFile(file, f.sfnt);
-          fontFiles.push(file);
-        }
-      }
-      const { renderAsync } = await import('@resvg/resvg-js');
-      // Unknown option keys make resvg-js drop the WHOLE options object
-      // without a word (it is sent across as JSON), so keep to its typed set.
-      const img = await renderAsync(doc, {
-        background: '#ffffff',
-        fitTo: w >= h ? { mode: 'width', value: longEdge } : { mode: 'height', value: longEdge },
-        font: {
-          loadSystemFonts: true,
-          fontFiles,
-          ...(families[0] ? { defaultFontFamily: families[0] } : {}),
-        },
-        logLevel: 'off',
-      });
-      return {
-        png: img.asPng(),
-        width: img.width,
-        height: img.height,
-        sceneWidth,
-        sceneHeight,
-      };
-    } finally {
-      if (dir) await rm(dir, { recursive: true, force: true });
-    }
+/** Run one job in its own worker thread, ended at the deadline. */
+async function renderInWorker(job: RenderJob, timeoutMs: number): Promise<RenderResult> {
+  const wasm = await resvgWasm();
+  return new Promise<RenderResult>((resolve, reject) => {
+    const worker = new Worker(new URL('./draw-png-render.ts', import.meta.url), {
+      workerData: { kind: 'mantle-draw-png', job, wasm },
+      // The JS heap only: resvg's memory is WebAssembly, bounded by the pixel
+      // size the long edge sets.
+      resourceLimits: { maxOldGenerationSizeMb: 256 },
+    });
+    let settled = false;
+    const finish = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      void worker.terminate();
+      fn();
+    };
+    const timer = setTimeout(
+      () => finish(() => reject(new Error(`the picture took longer than ${timeoutMs / 1000} s`))),
+      timeoutMs,
+    );
+    worker.once('message', (m: { ok: true; result: RenderResult } | { ok: false; error: string }) =>
+      finish(() => (m.ok ? resolve(m.result) : reject(new Error(m.error)))),
+    );
+    worker.once('error', (err) => finish(() => reject(err)));
+    worker.once('exit', (code) =>
+      finish(() => reject(new Error(`the picture renderer stopped (exit ${code})`))),
+    );
   });
 }
 
+/**
+ * Render a committed snapshot to a PNG on white: the whole scene, or one
+ * region of it, with the long edge at `DRAW_PNG_LONG_EDGE`. Throws when the
+ * snapshot is refused (not well-formed, a DOCTYPE, no size, too large), when
+ * the renderer is busy, or past the timeout.
+ */
+export async function renderDrawSvgPng(
+  svg: string,
+  opts: {
+    region?: DrawRegion;
+    longEdge?: number;
+    timeoutMs?: number;
+    /** Scene file ids whose image the reader may see; absent = all. */
+    keepImagesOf?: ReadonlySet<string>;
+  } = {},
+): Promise<DrawPng> {
+  const clean = sanitizeSceneSvg(svg, {
+    ...(opts.region ? { region: opts.region } : {}),
+    ...(opts.keepImagesOf ? { keepImagesOf: opts.keepImagesOf } : {}),
+  });
+  const [, , sw, sh] = clean.sceneBox;
+  const w = opts.region ? opts.region.width * sw : sw;
+  const h = opts.region ? opts.region.height * sh : sh;
+  const job: RenderJob = {
+    svg: clean.svg,
+    fonts: clean.fonts,
+    fallbackFont: await bundledFallbackFont(),
+    longEdge: opts.longEdge ?? DRAW_PNG_LONG_EDGE,
+    landscape: w >= h,
+  };
+  const out = await withSlot(() => renderInWorker(job, opts.timeoutMs ?? DRAW_PNG_TIMEOUT_MS));
+  return {
+    png: Buffer.from(out.png.buffer, out.png.byteOffset, out.png.byteLength),
+    width: out.width,
+    height: out.height,
+    sceneWidth: sw,
+    sceneHeight: sh,
+  };
+}
+
 // ─── cache ────────────────────────────────────────────────────────────────
-// Keyed by the caller (drawing id + commit version + reader + region), and
-// consulted only AFTER the caller's own access check, so a hit never skips
-// one. Memory only; a restart starts cold.
+// The caller picks the key (draw_get: a hash of the SVG the reader gets,
+// images already filtered, plus the region), and consults the cache only
+// AFTER its own access check, so a hit never skips one. Memory only; a
+// restart starts cold.
 const CACHE_MAX_ENTRIES = 24;
 const CACHE_MAX_BYTES = 48_000_000;
 const cache = new Map<string, DrawPng>();

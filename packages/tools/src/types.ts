@@ -216,10 +216,9 @@ export type ToolArtifact = {
  *  `output`, which is text the model reads and traces keep. */
 export type ToolModelImage = {
   mimeType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
-  /** Base64-encoded bytes. */
+  /** Base64-encoded bytes. No caption: the picture rides in a user-role
+   *  message, so nothing author-written travels with it. */
   base64: string;
-  /** One line naming what the picture is, shown to the model with it. */
-  caption?: string;
 };
 
 export type ToolHandlerResult =
