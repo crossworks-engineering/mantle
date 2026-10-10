@@ -1,11 +1,9 @@
-import { AsyncLocalStorage } from 'node:async_hooks';
-
 /**
  * @mantle/std — the four helpers every package used to carry its own copy of
  * (2026-09-02 audit, sloppiness A7): the error-to-message idiom appeared 322
  * times inline, the UUID regex 21 times, `sleep` twice by name and a dozen
- * times inline. No package dependencies (node:async_hooks only); safe to
- * import from anywhere in the server tree. The published contract packages (client-types, content-core,
+ * times inline. No package dependencies, no node builtins (the share runtime
+ * bundles this file for the browser); safe to import from anywhere. The published contract packages (client-types, content-core,
  * share-ui, voice-client) stay dependency-free and are deliberately NOT
  * consumers.
  */
@@ -16,12 +14,18 @@ import { AsyncLocalStorage } from 'node:async_hooks';
  * a tool that turned the error into a string reply can still be caught at
  * the surface (publicToolError) without touching every tool.
  */
-const dbErrorWatch = new AsyncLocalStorage<{ texts: string[] }>();
+let dbErrorWatch: () => { texts: string[] } | undefined = () => undefined;
+
+/** Installed by '@mantle/std/db-watch' (node only), so this file stays free of
+ *  node builtins and the browser bundles that import it still build. */
+export function setDatabaseErrorWatch(get: () => { texts: string[] } | undefined): void {
+  dbErrorWatch = get;
+}
 
 /** The message of anything thrown: an Error's message, else its string form. */
 export function errorMessage(err: unknown): string {
   const text = err instanceof Error ? err.message : String(err);
-  const watch = dbErrorWatch.getStore();
+  const watch = dbErrorWatch();
   if (watch && text && isDatabaseError(err)) watch.texts.push(text);
   return text;
 }
@@ -80,18 +84,6 @@ export function publicErrorMessage(err: unknown, where: string): string {
   if (!isDatabaseError(err)) return err instanceof Error ? err.message : String(err);
   console.error(`[${where}] database error:`, err);
   return DATABASE_ERROR_PUBLIC;
-}
-
-/**
- * Run `fn` (one tool call for a caller outside the server) and collect the
- * text of every database error errorMessage turned into a string during it.
- */
-export async function watchDatabaseErrors<T>(
-  fn: () => Promise<T>,
-): Promise<{ value: T; texts: readonly string[] }> {
-  const store = { texts: [] as string[] };
-  const value = await dbErrorWatch.run(store, fn);
-  return { value, texts: store.texts };
 }
 
 /**

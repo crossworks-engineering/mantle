@@ -83,8 +83,8 @@ describe('database errors for callers outside the server', () => {
   });
 
   it('watchDatabaseErrors collects what errorMessage gave for one; publicToolError maps it', async () => {
-    const { errorMessage, watchDatabaseErrors, publicToolError, DATABASE_ERROR_PUBLIC } =
-      await import('./index');
+    const { errorMessage, publicToolError, DATABASE_ERROR_PUBLIC } = await import('./index');
+    const { watchDatabaseErrors } = await import('./db-watch');
     const pg = Object.assign(new Error('value too long for "secret_col"'), {
       code: '22001',
       severity: 'ERROR',
@@ -101,5 +101,13 @@ describe('database errors for callers outside the server', () => {
     spy.mockRestore();
     // Outside a watch nothing is collected (and errorMessage is unchanged).
     expect(errorMessage(pg)).toBe(pg.message);
+  });
+});
+
+describe('browser safety', () => {
+  it('index.ts imports no node builtin (the share runtime bundles it for the browser)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(new URL('./index.ts', import.meta.url), 'utf8');
+    expect(src).not.toMatch(/from ['"]node:/);
   });
 });

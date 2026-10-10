@@ -54,7 +54,8 @@ import {
 } from '@mantle/content';
 import { effectiveToolSlugs, resolveAgentToolGroups } from '@mantle/runtime/agent';
 import { CLIENT_RESPONDER_SLUG, TEAM_RESPONDER_SLUG } from '@mantle/runtime/assistant';
-import { publicErrorMessage, publicToolError, watchDatabaseErrors } from '@mantle/std';
+import { publicErrorMessage, publicToolError } from '@mantle/std';
+import { watchDatabaseErrors } from '@mantle/std/db-watch';
 import {
   MANTLE_MCP_INSTRUCTIONS,
   TOOLSMITH_WRITE_SLUGS,
