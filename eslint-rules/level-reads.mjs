@@ -26,107 +26,12 @@ export const LEVEL_READ_PATTERN =
 
 /** @type {Record<string, { lines: number, phase: 'W5b2' | 'W5c' | 'W6b' | 'W7' | 'W8' | 'keep', why: string }>} */
 export const LEVEL_READ_ALLOWLIST = {
-  // ── W5b2 (the bridge writers, the old Access panel, public links, connector levels) ──
-  'packages/tools/src/tool-results.ts': {
-    lines: 3,
-    phase: 'W5b2',
-    why: 'levelOfScope: spill viewer level (level scopes go with the shim)',
-  },
-  'packages/runtime/src/agent/invoke-agent.ts': {
-    lines: 2,
-    phase: 'W5b2',
-    why: 'levelOfScope: caller vs target agent level (level scopes go with the shim)',
-  },
-  'packages/content/src/access-shadow.ts': {
-    lines: 9,
-    phase: 'W5b2',
-    why: 'display: access shadow report by level',
-  },
-  'packages/content/src/access.ts': {
-    lines: 61,
-    phase: 'W5b2',
-    why: 'writer: the old level engine (setItemLevel, closure, links, agent and connector levels)',
-  },
-  'packages/content/src/draws.ts': {
-    lines: 6,
-    phase: 'W5b2',
-    why: 'display rows (list chips: the tree helper)',
-  },
+  // ── W5c (member and client review, the client portal) ──
   'packages/content/src/embed-closure.ts': {
     lines: 1,
-    phase: 'W5b2',
-    why: 'deprecated no-op EmbedItem type: goes with the calls in access, shares, member-review, access-shadow',
+    phase: 'W5c',
+    why: 'deprecated no-op EmbedItem type: goes with the member review accept closure that still names it (member-review.ts)',
   },
-  'packages/content/src/notes.ts': {
-    lines: 6,
-    phase: 'W5b2',
-    why: 'display rows (list chips: the tree helper)',
-  },
-  'packages/content/src/pages/level-text.ts': {
-    lines: 6,
-    phase: 'W5b2',
-    why: 'levelFilteredDoc/Note: the links helper',
-  },
-  'packages/content/src/shares.ts': {
-    lines: 14,
-    phase: 'W5b2',
-    why: 'public: links follow the level (served list, 8.1)',
-  },
-  'packages/content/src/tree/share-drift.ts': {
-    lines: 16,
-    phase: 'W5b2',
-    why: 'writer: nightly inherited/embedded repair the bridge depends on',
-  },
-  'packages/content/src/tree/write.ts': { lines: 4, phase: 'W5b2', why: 'writer: setFolderShare' },
-  'packages/runtime/src/agent/skills.ts': {
-    lines: 4,
-    phase: 'W5b2',
-    why: 'levelOfScope for the caller level (2 lines, the shim); then agent and tool-group levels (2 lines, kept until W7, contract 21): a connector group is capped by the agent level only, the scope decides the caller',
-  },
-  'packages/tools/src/builtins-access.ts': {
-    lines: 5,
-    phase: 'W5b2',
-    why: 'access_get returns levels',
-  },
-  'packages/tools/src/builtins-nodes.ts': {
-    lines: 1,
-    phase: 'W5b2',
-    why: 'reply text names the level',
-  },
-  'packages/tools/src/builtins-share.ts': { lines: 1, phase: 'W5b2', why: 'public: unshare reply' },
-  'packages/tools/src/dispatch.ts': {
-    lines: 2,
-    phase: 'W5b2',
-    why: 'levelOfScope: the run level of a non-owner call (the shim); connectors read workspace_resources',
-  },
-  'server/web/app/api/access/agents/[slug]/route.ts': {
-    lines: 5,
-    phase: 'W5b2',
-    why: 'writer: agent level route',
-  },
-  'server/web/app/api/access/nodes/[id]/route.ts': {
-    lines: 7,
-    phase: 'W5b2',
-    why: 'writer: old Access route',
-  },
-  'server/web/app/api/access/tool-groups/[slug]/route.ts': {
-    lines: 3,
-    phase: 'W5b2',
-    why: 'writer: connector level route',
-  },
-  'server/web/app/api/shares/[id]/route.ts': { lines: 1, phase: 'W5b2', why: 'public: comment' },
-  'server/web/app/s/[token]/draw/route.ts': { lines: 3, phase: 'W5b2', why: 'public: link levels' },
-  'server/web/components/share/folder-presenter.tsx': {
-    lines: 3,
-    phase: 'W5b2',
-    why: 'public: link levels',
-  },
-  'server/web/lib/shares.ts': {
-    lines: 21,
-    phase: 'W5b2',
-    why: 'public: link and contact share serving rules',
-  },
-  // ── W5c (member and client review, the client portal) ──
   'packages/content/src/item-level.ts': {
     lines: 24,
     phase: 'W5c',
@@ -187,7 +92,11 @@ export const LEVEL_READ_ALLOWLIST = {
     phase: 'W5c',
     why: 'client: retired client links',
   },
-  'packages/content/src/client-report.ts': { lines: 9, phase: 'W5c', why: 'client: client report' },
+  'packages/content/src/client-report.ts': {
+    lines: 9,
+    phase: 'W5c',
+    why: 'client: client report',
+  },
   'packages/content/src/client-shared.ts': {
     lines: 2,
     phase: 'W5c',
@@ -209,14 +118,9 @@ export const LEVEL_READ_ALLOWLIST = {
     why: 'member Library (team levels without public)',
   },
   'packages/content/src/member-review.ts': {
-    lines: 28,
+    lines: 24,
     phase: 'W5c',
     why: 'review: accept sets levels',
-  },
-  'packages/content/src/member-space-apps.ts': {
-    lines: 3,
-    phase: 'W5c',
-    why: 'review: member app accept sets level',
   },
   'packages/content/src/tree/member-tree.ts': {
     lines: 1,
@@ -233,7 +137,11 @@ export const LEVEL_READ_ALLOWLIST = {
     phase: 'W5c',
     why: 'agent level per login role',
   },
-  'packages/tools/src/client-app-tools.ts': { lines: 1, phase: 'W5c', why: 'client app tools' },
+  'packages/tools/src/client-app-tools.ts': {
+    lines: 1,
+    phase: 'W5c',
+    why: 'client app tools',
+  },
   'packages/tools/src/client-sourced-rules.ts': {
     lines: 13,
     phase: 'W5c',
@@ -244,7 +152,11 @@ export const LEVEL_READ_ALLOWLIST = {
     phase: 'W5c',
     why: 'client-sourced export tables',
   },
-  'scripts/client-level-counts.sql': { lines: 7, phase: 'W5c', why: 'one-off client counts' },
+  'scripts/client-level-counts.sql': {
+    lines: 7,
+    phase: 'W5c',
+    why: 'one-off client counts',
+  },
   'server/web/app/api/admin/space/[id]/accept/route.ts': {
     lines: 2,
     phase: 'W5c',
@@ -270,11 +182,6 @@ export const LEVEL_READ_ALLOWLIST = {
     phase: 'W5c',
     why: 'member chat agent level',
   },
-  'server/web/app/api/team-admin/hub-app/route.ts': {
-    lines: 1,
-    phase: 'W5c',
-    why: 'writer: hub app raised to team',
-  },
   'server/web/app/api/team-admin/submissions/[id]/accept/route.ts': {
     lines: 2,
     phase: 'W5c',
@@ -282,7 +189,7 @@ export const LEVEL_READ_ALLOWLIST = {
   },
   // ── W6b (personal-space rows, accepted-item author path) ──
   'packages/content/src/member-accepted.ts': {
-    lines: 8,
+    lines: 3,
     phase: 'W6b',
     why: 'accepted items: author read path must stay until the S3 snapshot task (HANDOVER 4)',
   },
@@ -291,7 +198,32 @@ export const LEVEL_READ_ALLOWLIST = {
     phase: 'W6b',
     why: 'personal folder insert names the level default',
   },
-  // ── W7 (MCP, peers, Telegram) ──
+  // ── W7 (MCP, peers, Telegram, agent and tool-group levels) ──
+  'packages/content/src/access.ts': {
+    lines: 29,
+    phase: 'W7',
+    why: 'agent and tool-group levels (kept until W7, contract 21): agent level writer, tool-group level writer, the agent-holds-group rule, the Telegram rule',
+  },
+  'packages/runtime/src/agent/skills.ts': {
+    lines: 2,
+    phase: 'W7',
+    why: 'agent and tool-group levels (kept until W7, contract 21): a connector group is capped by the agent level only, the scope decides the caller',
+  },
+  'packages/tools/src/builtins-access.ts': {
+    lines: 4,
+    phase: 'W7',
+    why: 'agent and tool-group levels (kept until W7, contract 21): access_get and access_set on agents and connectors',
+  },
+  'server/web/app/api/access/agents/[slug]/route.ts': {
+    lines: 5,
+    phase: 'W7',
+    why: 'agent and tool-group levels (kept until W7, contract 21): the agent level route',
+  },
+  'server/web/app/api/access/tool-groups/[slug]/route.ts': {
+    lines: 3,
+    phase: 'W7',
+    why: 'agent and tool-group levels (kept until W7, contract 21): the connector level route',
+  },
   'packages/tools/src/agent-grants.ts': {
     lines: 5,
     phase: 'W7',
@@ -312,15 +244,31 @@ export const LEVEL_READ_ALLOWLIST = {
     phase: 'W7',
     why: 'agent level of the MCP login responder',
   },
-  'packages/telegram/src/chat-level.ts': { lines: 2, phase: 'W7', why: 'agent level of a chat' },
-  'packages/telegram/src/level.ts': { lines: 6, phase: 'W7', why: 'agent level checks' },
-  'server/api/src/agent/runtime.ts': { lines: 3, phase: 'W7', why: 'Telegram agent level' },
+  'packages/telegram/src/chat-level.ts': {
+    lines: 2,
+    phase: 'W7',
+    why: 'agent level of a chat',
+  },
+  'packages/telegram/src/level.ts': {
+    lines: 6,
+    phase: 'W7',
+    why: 'agent level checks',
+  },
+  'server/api/src/agent/runtime.ts': {
+    lines: 3,
+    phase: 'W7',
+    why: 'Telegram agent level',
+  },
   'server/web/app/api/telegram/chats/[id]/route.ts': {
     lines: 1,
     phase: 'W7',
     why: 'Telegram agent level',
   },
-  'server/web/lib/agent-telegram.ts': { lines: 1, phase: 'W7', why: 'Telegram agent level' },
+  'server/web/lib/agent-telegram.ts': {
+    lines: 1,
+    phase: 'W7',
+    why: 'Telegram agent level',
+  },
   // ── W8 (schema columns, DTO fields, comments, the deprecated function) ──
   'packages/db/src/client.ts': {
     lines: 3,
@@ -342,7 +290,11 @@ export const LEVEL_READ_ALLOWLIST = {
     phase: 'W8',
     why: 'DTO: owner row level badge',
   },
-  'packages/client-types/src/tree.ts': { lines: 3, phase: 'W8', why: 'DTO: tree share levels' },
+  'packages/client-types/src/tree.ts': {
+    lines: 3,
+    phase: 'W8',
+    why: 'DTO: tree share levels',
+  },
   'packages/content-core/src/table-model.ts': {
     lines: 2,
     phase: 'W8',
@@ -353,8 +305,16 @@ export const LEVEL_READ_ALLOWLIST = {
     phase: 'W8',
     why: 'effectiveLevel, the level combiner',
   },
-  'packages/content/src/formulas.ts': { lines: 5, phase: 'W8', why: 'display: formula row level' },
-  'packages/content/src/pages/shared.ts': { lines: 1, phase: 'W8', why: 'display: page row level' },
+  'packages/content/src/formulas.ts': {
+    lines: 5,
+    phase: 'W8',
+    why: 'display: formula row level',
+  },
+  'packages/content/src/pages/shared.ts': {
+    lines: 1,
+    phase: 'W8',
+    why: 'display: page row level',
+  },
   'packages/content/src/tables/shared.ts': {
     lines: 3,
     phase: 'W8',
@@ -365,15 +325,31 @@ export const LEVEL_READ_ALLOWLIST = {
     phase: 'W8',
     why: 'display: pinned rows level',
   },
-  'packages/db/src/access-matrix.ts': { lines: 3, phase: 'W8', why: 'comments' },
+  'packages/db/src/access-matrix.ts': {
+    lines: 3,
+    phase: 'W8',
+    why: 'comments',
+  },
   'packages/db/src/index.ts': {
     lines: 2,
     phase: 'W8',
     why: 'export of the deprecated currentViewerLevel',
   },
-  'packages/db/src/schema/agents.ts': { lines: 1, phase: 'W8', why: 'schema: agents.audience' },
-  'packages/db/src/schema/node-embeds.ts': { lines: 1, phase: 'W8', why: 'schema comment' },
-  'packages/db/src/schema/nodes.ts': { lines: 4, phase: 'W8', why: 'schema: the level columns' },
+  'packages/db/src/schema/agents.ts': {
+    lines: 1,
+    phase: 'W8',
+    why: 'schema: agents.audience',
+  },
+  'packages/db/src/schema/node-embeds.ts': {
+    lines: 1,
+    phase: 'W8',
+    why: 'schema comment',
+  },
+  'packages/db/src/schema/nodes.ts': {
+    lines: 4,
+    phase: 'W8',
+    why: 'schema: the level columns',
+  },
   'packages/db/src/schema/tool-groups.ts': {
     lines: 2,
     phase: 'W8',
@@ -404,9 +380,16 @@ export const LEVEL_READ_ALLOWLIST = {
     phase: 'W8',
     why: 'agent vs group level on grant',
   },
-  'server/web/lib/maintenance/registry.ts': { lines: 1, phase: 'W8', why: 'task description text' },
-  'server/web/lib/mcp-connectors.ts': { lines: 1, phase: 'W8', why: 'connector DTO level' },
-  'server/web/lib/system-manifest/manifest.ts': { lines: 2, phase: 'W8', why: 'comments' },
+  'server/web/lib/mcp-connectors.ts': {
+    lines: 1,
+    phase: 'W8',
+    why: 'connector DTO level',
+  },
+  'server/web/lib/system-manifest/manifest.ts': {
+    lines: 2,
+    phase: 'W8',
+    why: 'comments',
+  },
   'server/web/lib/system-manifest/reconcile.ts': {
     lines: 6,
     phase: 'W8',
@@ -417,7 +400,11 @@ export const LEVEL_READ_ALLOWLIST = {
     phase: 'W8',
     why: 'seeded agent and group levels',
   },
-  'server/web/lib/tool-groups.ts': { lines: 1, phase: 'W8', why: 'connector DTO level' },
+  'server/web/lib/tool-groups.ts': {
+    lines: 1,
+    phase: 'W8',
+    why: 'connector DTO level',
+  },
   // ── keep (the word means something else: OAuth audience, plain English) ──
   'packages/tools/src/integration-meta.ts': {
     lines: 7,

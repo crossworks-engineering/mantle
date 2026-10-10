@@ -11,13 +11,11 @@
  */
 import { and, desc, eq, ilike, or, sql } from 'drizzle-orm';
 import {
-  asViewerLevel,
   db,
   emailAttachmentSql,
   nodes,
   notifyNodeIngested,
   type Node,
-  type ViewerLevel,
   withBusyRetry,
   headsOrSpace,
   withDeadlockRetry,
@@ -36,15 +34,8 @@ export type NoteRow = {
   content: string;
   tags: string[];
   summary: string | null;
-  /** Access level (admin > team > client > public); the owner UI's badge. */
-  audience: ViewerLevel;
-  /** The share it inherits from a folder above it (team or client), or
-   *  null. It is read at the more open of this and `audience`. */
-  inherited: 'team' | 'client' | null;
-  /** The share it is read at through something that embeds it (migration
-   *  0208), or null. It is read at the most open of this, `inherited` and
-   *  `audience`. */
-  embedded: 'team' | 'client' | null;
+  // Who reads it is its workspace grants (workspaces W5b2): the list's
+  // chips (`workspaces`, `hasLink`), not a level on the row.
   createdAt: string;
   updatedAt: string;
 };
@@ -57,10 +48,6 @@ function rowOf(n: Node): NoteRow {
     content: typeof d.content === 'string' ? d.content : '',
     tags: n.tags ?? [],
     summary: typeof d.summary === 'string' ? d.summary : null,
-    audience: asViewerLevel(n.audience),
-    inherited:
-      n.inheritedLevel === 'team' || n.inheritedLevel === 'client' ? n.inheritedLevel : null,
-    embedded: n.embeddedLevel === 'team' || n.embeddedLevel === 'client' ? n.embeddedLevel : null,
     createdAt: n.createdAt.toISOString(),
     updatedAt: n.updatedAt.toISOString(),
   };
