@@ -7,16 +7,20 @@
  *
  *  - withSpace runs a client's space at level client (a member's at team),
  *    so everything inside reads the brain as a client does;
- *  - the save-time embed rule reads at the author's level: a client draft
- *    may name its own items and client items, never a team item;
+ *  - the save-time embed rule reads as the author (W5b2: the author's
+ *    workspaces): a client draft may name its own items and items its
+ *    client workspace holds, never an item only Team holds;
  *  - Accept of a client-authored item defaults to team, and client or
  *    public needs an explicit confirmation (a member's item keeps admin);
- *  - give back after Take over checks the item at the author's level:
- *    refused while it names a team item, allowed with a client item.
+ *    since W5b2 an Accept takes nothing down with it (an embed keeps its
+ *    own grants), so the confirmation is of the level alone;
+ *  - give back after Take over checks the item as the author reads:
+ *    refused while it names an item only Team holds, allowed with an item
+ *    the client's workspace holds.
  *
- * Brain items belong to the shared test anchor (mantle_brain_id()): the
- * level reads go through row security, which knows only that brain. Removes
- * its rows after (the anchor stays).
+ * Brain items belong to the shared test anchor (mantle_brain_id()); the
+ * workspaces (the client's, and a team one with the member in it) are this
+ * test's own. Removes its rows after (the anchor stays).
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/client-space.viewer.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -46,6 +50,9 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
   const logins = [client, member, adminA];
   const spaceOf: Record<string, string> = {};
   const brainItems = { team: randomUUID(), client: randomUUID(), pub: randomUUID() };
+  // The client's workspace (the client item), and a team one the member is
+  // in (the team and client items); the public note no workspace holds.
+  const ws = { client: randomUUID(), team: randomUUID() };
   // A file of the Accept brain, at client: a client's page embeds it (audit
   // A28, the closure an Accept takes down).
   const acceptFile = randomUUID();
@@ -128,6 +135,18 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
         (${brainItems.client}, ${brain}, 'note', ${`${tag} client note`}, 'notes', 'client'),
         (${brainItems.pub}, ${brain}, 'note', ${`${tag} public note`}, 'notes', 'public'),
         (${acceptFile}, ${acceptBrain}, 'file', ${`${tag} plan.png`}, 'files', 'client')`);
+    await m.systemDb.execute(sqlTag`
+      insert into workspaces (id, owner_id, name) values
+        (${ws.client}, ${brain}, ${`${tag} client`}), (${ws.team}, ${brain}, ${`${tag} team`})`);
+    await m.systemDb.execute(sqlTag`
+      insert into workspace_users (workspace_id, login_id) values
+        (${ws.client}, ${client}), (${ws.team}, ${member})`);
+    await m.withHeads([brainItems.team, brainItems.client], 'update', async (tx) => {
+      await tx.execute(sqlTag`
+        insert into item_grants (node_id, workspace_id) values
+          (${brainItems.client}, ${ws.client}), (${brainItems.client}, ${ws.team}),
+          (${brainItems.team}, ${ws.team})`);
+    });
     // Imports the review, take-over and share modules: a loaded run needs time.
   }, 60_000);
 
@@ -140,6 +159,7 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
     for (const id of [...created, ...Object.values(brainItems)]) {
       await m.systemDb.execute(sqlTag`delete from nodes where id = ${id}`);
     }
+    await m.systemDb.execute(sqlTag`delete from workspaces where id in (${ws.client}, ${ws.team})`);
     for (const l of logins) {
       await m.systemDb.execute(sqlTag`delete from nodes where owner_id in
         (select id from spaces where login_id = ${l})`);
@@ -178,7 +198,7 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
     ).rejects.toThrow(/no such login/);
   });
 
-  it('the embed rule reads at the author’s level: a client may not name a team item', async () => {
+  it('the embed rule reads as the author: a client may not name an item only Team holds', async () => {
     const C = spaceOf[client]!;
     const id = (await as(client, () => sp.createMineItem(C, { type: 'page', title: `${tag} c` })))
       .id;
@@ -189,7 +209,7 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
     await expect(refused).rejects.toThrow(
       'This page uses items you cannot share: only your own items and items shared with you.',
     );
-    // A public item is not a client item either (decision 3).
+    // Nor an item only an open link reads (decision 3).
     await expect(
       as(client, () => sp.saveMinePage(C, id, say('x', [mention(brainItems.pub)]))),
     ).rejects.toMatchObject({ reason: 'embed', ids: [brainItems.pub] });
@@ -243,15 +263,15 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
     expect(rv.acceptAudience('member', { audience: 'client' })).toBe('client');
   });
 
-  it('give back after Take over checks the item at the author’s level (client)', async () => {
+  it('give back after Take over checks the item as the author (a client) reads', async () => {
     const id = await submitted(client, `${tag} to take`);
     const actor = { loginId: adminA, spaceId: spaceOf[adminA]! };
     await rv.takeOverReviewItem(id, actor);
     const from = await tk.takenFromOf(actor.spaceId, [id]);
     expect(from.get(id)).toMatchObject({ loginId: client, name: 'Cleo Client', canGiveBack: true });
 
-    // The admin names a TEAM item while it is theirs: a member could take
-    // that back, a client may not.
+    // The admin names an item only Team holds while it is theirs: a member
+    // could take that back, a client may not.
     const A = actor.spaceId;
     const writer = { adminOfBrain: brain };
     expect(
@@ -358,14 +378,13 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
     await rv.returnReviewItem(theirs, { loginId: adminA });
   });
 
-  it('Accept of a client item at client makes no link, and needs no tick for what stays (A31)', async () => {
+  it('Accept of a client item at client makes no link, and needs no tick for what it embeds (A31)', async () => {
     const id = await submitted(client, `${tag} at client`);
     await embedAcceptFile(id);
+    // Since W5b2 an Accept takes nothing down (an embed keeps its own
+    // grants): the closure is empty, the level confirmation is enough.
     const preview = await rv.previewAccept(id, acceptBrain);
-    expect(preview?.closure).toEqual([
-      { id: acceptFile, type: 'file', title: `${tag} plan.png`, audience: 'client' },
-    ]);
-    // At client the file does not go down: the level confirmation is enough.
+    expect(preview?.closure).toEqual([]);
     const res = await rv.acceptReviewItem(
       acceptBrain,
       id,
@@ -381,23 +400,19 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
     expect(await audienceOf(acceptFile)).toBe('client');
   });
 
-  it('Accept of a client item at public needs every closure item that goes down ticked (A28)', async () => {
+  it('Accept of a client item at public needs the level confirmed; nothing it embeds goes down (A28)', async () => {
     const reviewer = { loginId: adminA };
     const id = await submitted(client, `${tag} at public`);
     await embedAcceptFile(id);
-    const goingDown = [
-      { id: acceptFile, type: 'file', title: `${tag} plan.png`, audience: 'client' },
-    ];
-    // The level confirmed, the image not ticked: refused, with the list.
-    const refused = rv.acceptReviewItem(acceptBrain, id, reviewer, {
-      audience: 'public',
-      lowerConfirmed: true,
-    });
+    // Since W5b2 nothing goes down with an Accept (the embed closure is
+    // gone): the list is empty, and the level still needs its confirmation.
+    const goingDown: unknown[] = [];
+    const refused = rv.acceptReviewItem(acceptBrain, id, reviewer, { audience: 'public' });
     await expect(refused).rejects.toMatchObject({ reason: 'confirm-level', goingDown });
     await expect(refused).rejects.toThrow(
       /anyone with its open link reads it; client logins do not/,
     );
-    // The image ticked, the level not confirmed: refused too.
+    // A tick is no confirmation of the level.
     await expect(
       rv.acceptReviewItem(acceptBrain, id, reviewer, {
         audience: 'public',
@@ -406,12 +421,11 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
     ).rejects.toMatchObject({ reason: 'confirm-level', goingDown });
     expect(await audienceOf(acceptFile)).toBe('client');
     expect(await audienceOf(id)).toBe('admin'); // still the client's, untouched
-    // Both: accepted. Since W5b2 nothing it embeds changes level (they are
-    // frozen; contract change 22).
+    // The level confirmed: accepted, and nothing it embeds changes (the
+    // levels are frozen; contract change 22).
     const res = await rv.acceptReviewItem(acceptBrain, id, reviewer, {
       audience: 'public',
       lowerConfirmed: true,
-      confirmedIds: [acceptFile],
     });
     expect(res.audience).toBe('public');
     expect(res.alsoLowered).toEqual([]);

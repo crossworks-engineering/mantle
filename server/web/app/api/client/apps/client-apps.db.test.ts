@@ -3,7 +3,11 @@
  * migrated Postgres, through the real app (createApp), the real gates and a
  * real SQLite per app. The fixture is FOUR published apps identical but for
  * the level (client, team, admin, public), plus an informational client app,
- * so only the level rule and the flag tell them apart:
+ * so only the level rule, the workspaces and the flag tell them apart (W5b2:
+ * the client login is a user of a client workspace that holds the client app
+ * and the informational one; the member is a user of a workspace that holds
+ * the client and team apps with Write on, the public and informational ones
+ * with Write off; the admin app no workspace of theirs holds):
  *
  *  - a client lists, runs and writes the client app, and is refused the team,
  *    admin and public twins with the same 404 as an id that does not exist
@@ -55,6 +59,7 @@ describe.skipIf(!URL)('client apps, end to end', () => {
     info: randomUUID(),
   };
   const ours = new Set<string>(Object.values(ids));
+  const ws = { client: randomUUID(), team: randomUUID() };
   const root = mkdtempSync(path.join(tmpdir(), 'mantle-capps-'));
   let brain = '';
   let ip = 0;
@@ -147,6 +152,18 @@ describe.skipIf(!URL)('client apps, end to end', () => {
                 values (${id}, ${JSON.stringify(manifest)}::jsonb, ${JSON.stringify(green)}::jsonb,
                         ${id === ids.info})`;
     }
+    // The workspaces (W5b2: grants decide who reads, not the level).
+    await sql`insert into workspaces (id, owner_id, name) values
+      (${ws.client}, ${brain}, ${`${tag} client`}), (${ws.team}, ${brain}, ${`${tag} team`})`;
+    await sql`insert into workspace_users (workspace_id, login_id) values
+      (${ws.client}, ${clientLogin}), (${ws.team}, ${memberLogin})`;
+    await m.withHeads(Object.values(ids), 'update', async (tx) => {
+      const { sql: q } = await import('drizzle-orm');
+      await tx.execute(q`insert into item_grants (node_id, workspace_id, write) values
+        (${ids.client}, ${ws.client}, false), (${ids.info}, ${ws.client}, false),
+        (${ids.client}, ${ws.team}, true), (${ids.team}, ${ws.team}, true),
+        (${ids.pub}, ${ws.team}, false), (${ids.info}, ${ws.team}, false)`);
+    });
     const { createApp } = await import('@/server/app');
     app = await createApp();
   }, 120_000);
@@ -154,6 +171,7 @@ describe.skipIf(!URL)('client apps, end to end', () => {
   afterAll(async () => {
     if (!sql) return;
     await sql`delete from nodes where id in ${sql([...ours])}`;
+    await sql`delete from workspaces where id in ${sql([ws.client, ws.team])}`;
     await sql`delete from audit_log where actor_email like ${`${tag}%`}`;
     await sql`delete from spaces where login_id in ${sql([clientLogin, memberLogin])}`;
     await sql`delete from auth.users where id in ${sql([clientLogin, memberLogin])}`;

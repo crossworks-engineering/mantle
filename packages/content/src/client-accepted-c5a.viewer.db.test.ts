@@ -3,8 +3,9 @@
  * audit: L1, L5, L6, L7, I6), on a real, migrated Postgres:
  *
  *  - an item a reviewer TOOK OVER, edited and accepted reaches its author
- *    redacted at the author's level: a client reads "Private item" for a
- *    team mention and a team link, and no child page card of an admin page;
+ *    redacted as the author reads (W5b2: the grants of the author's
+ *    workspaces): a client reads "Private item" for a mention of and a link
+ *    to an item only Team holds, and no child page card of an admin page;
  *    a member reads "Private item" for an admin mention, for a table cell
  *    that links an admin item, and their drawing's link to an admin item
  *    loses its href, and an accepted table carries nothing of the live
@@ -23,8 +24,10 @@
  *
  * Every hidden fixture is in the accepted snapshot as written (checked
  * first), so only the redaction under test hides it. Brain items belong to
- * the shared test anchor (mantle_brain_id()): the level roles' row security
- * knows only that brain. Removes its own rows after (the anchor stays).
+ * the shared test anchor (mantle_brain_id()); the workspaces are this
+ * file's own: the client's (the client item) and a team one with the member
+ * in it (the team and client items). Removes its own rows after (the anchor
+ * stays).
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/client-accepted-c5a.viewer.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -61,6 +64,7 @@ describe.skipIf(!URL)('held and accepted items, as their author reads them', () 
   const client = randomUUID();
   const gone = randomUUID(); // a client login deleted mid-review
   const logins = [adminA, member, client, gone];
+  const ws = { client: randomUUID(), team: randomUUID() };
   const spaceOf: Record<string, string> = {};
   const root = mkdtempSync(path.join(tmpdir(), 'mantle-c5aleak-'));
 
@@ -97,14 +101,23 @@ describe.skipIf(!URL)('held and accepted items, as their author reads them', () 
       )
     ).id;
   const submit = (login: string, id: string) => as(login, () => sp.submitItem(spaceOf[login]!, id));
-  /** A brain item at `level`, made through the content functions. */
-  const brainItem = async (type: 'page' | 'note', title: string, level: string) => {
+  /** A brain item the workspaces `holders` hold (none: Admin only), made
+   *  through the content functions. */
+  const brainItem = async (type: 'page' | 'note', title: string, holders: string[]) => {
     const id =
       type === 'page'
         ? (await (await import('./pages/tree')).createPage(anchor, { title })).id
         : (await (await import('./notes')).createNote(anchor, { title, content: 'x' })).id;
-    await m.systemDb.execute(sqlTag`update nodes set audience = ${level} where id = ${id}`);
     mine.push(id);
+    if (holders.length) {
+      await m.withHeads([id], 'update', async (tx) => {
+        for (const w of holders) {
+          await tx.execute(
+            sqlTag`insert into item_grants (node_id, workspace_id) values (${id}, ${w})`,
+          );
+        }
+      });
+    }
     return id;
   };
   const snapshotText = async (id: string) =>
@@ -158,6 +171,12 @@ describe.skipIf(!URL)('held and accepted items, as their author reads them', () 
       select id, login_id from spaces where kind = 'personal'
         and login_id = any(${`{${logins.join(',')}}`}::uuid[])`);
     for (const r of rows) spaceOf[r.login_id] = r.id;
+    await m.systemDb.execute(sqlTag`
+      insert into workspaces (id, owner_id, name) values
+        (${ws.client}, ${anchor}, ${`${tag} client`}), (${ws.team}, ${anchor}, ${`${tag} team`})`);
+    await m.systemDb.execute(sqlTag`
+      insert into workspace_users (workspace_id, login_id) values
+        (${ws.client}, ${client}), (${ws.team}, ${member})`);
   }, 60_000);
 
   afterAll(async () => {
@@ -204,6 +223,7 @@ describe.skipIf(!URL)('held and accepted items, as their author reads them', () 
     await m.systemDb.execute(
       sqlTag`delete from auth.users where id = any(${`{${logins.join(',')}}`}::uuid[])`,
     );
+    await m.systemDb.execute(sqlTag`delete from workspaces where id in (${ws.client}, ${ws.team})`);
     await m.closeDb();
     rmSync(root, { recursive: true, force: true });
     // Asserted last, so a failure here never leaves this file's rows behind.
@@ -211,16 +231,16 @@ describe.skipIf(!URL)('held and accepted items, as their author reads them', () 
   });
 
   // Brain items the taken items name.
-  let teamNote: string; // a team item: a client may not read it
-  let adminNote: string; // an admin item: a member may not read it
-  let adminPage: string; // an admin page, embedded as a child page
-  let clientNote: string; // a client item: a client reads it
+  let teamNote: string; // only Team holds it: a client may not read it
+  let adminNote: string; // Admin only: a member may not read it
+  let adminPage: string; // Admin only, embedded as a child page
+  let clientNote: string; // the client's workspace holds it (and Team)
 
-  it('brain items at each level', async () => {
-    teamNote = await brainItem('note', `${tag} TEAMSECRET note`, 'team');
-    adminNote = await brainItem('note', `${tag} ADMINSECRET note`, 'admin');
-    adminPage = await brainItem('page', `${tag} ADMINSECRET child`, 'admin');
-    clientNote = await brainItem('note', `${tag} CLIENTOK old`, 'client');
+  it('brain items, each held by its workspaces', async () => {
+    teamNote = await brainItem('note', `${tag} TEAMSECRET note`, [ws.team]);
+    adminNote = await brainItem('note', `${tag} ADMINSECRET note`, []);
+    adminPage = await brainItem('page', `${tag} ADMINSECRET child`, []);
+    clientNote = await brainItem('note', `${tag} CLIENTOK old`, [ws.client, ws.team]);
   });
 
   // ── A client's page, taken over, edited, accepted ───────────────────────
@@ -413,7 +433,7 @@ describe.skipIf(!URL)('held and accepted items, as their author reads them', () 
     await as(member, () => sp.saveMineTable(M, t.id));
     await submit(member, t.id);
     await rv.takeOverReviewItem(t.id, actorA());
-    adminPage2 = await brainItem('page', `${tag} ADMINSECRET page two`, 'admin');
+    adminPage2 = await brainItem('page', `${tag} ADMINSECRET page two`, []);
     // The admin links admin items (a path, an app scheme, an absolute URL)
     // and a team item the member reads, then saves.
     const cells = [

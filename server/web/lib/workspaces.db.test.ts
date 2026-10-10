@@ -18,7 +18,8 @@
  *  - the Admin workspace's users are the admin logins (the role change, its
  *    owner and self rules, its checks inside the change, its audit row);
  *  - the assistant is frozen once it has history; resources need the area;
- *    the bridge workspaces' connectors are locked;
+ *    Admin and Team take connectors like any workspace (W5b2: no level
+ *    attaches one any more, so nothing is locked);
  *  - archive counts, the refusals, the grants and exclusions it drops, and
  *    no grant lands in an archived workspace, even racing the archive;
  *  - user search (Q3): 3 characters, Moderators and Admin users only, an
@@ -581,7 +582,7 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     expect(del.body.code).toBe('assistant_has_history');
   });
 
-  it('resources: connectors by an Admin user; Admin and Team connectors are locked', async () => {
+  it('resources: connectors by an Admin user; Team takes one like any workspace', async () => {
     const ws = await create(mem, 'Mia tools');
     await as(mem);
     const id = p({ id: ws });
@@ -592,7 +593,7 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     const add = await call(r.res.POST(req('POST', { kind: 'connector', id: CONN }), id));
     expect(add.status).toBe(200);
     expect(add.body.resources).toEqual([
-      { kind: 'connector', id: CONN, name: 'Connector W', write: false, locked: false },
+      { kind: 'connector', id: CONN, name: 'Connector W', write: false },
     ]);
     expect(
       (await call(r.res.POST(req('POST', { kind: 'connector', id: CONN }), id))).body.code,
@@ -604,19 +605,25 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     const tick = await call(r.resOne.PATCH(req('PATCH', { write: true }), one));
     expect((tick.body.resources as Json[])[0]!.write).toBe(true);
     expect((await call(r.resOne.DELETE(req('DELETE'), one))).body.resources).toEqual([]);
-    // The bridge workspaces: shown locked, refused.
-    const teamScreen = (await call(r.one.GET(req('GET'), p({ id: admin })))).body;
-    expect((teamScreen.resources as Json[]).find((x2) => x2.id === CONN)).toMatchObject({
-      locked: true,
-    });
-    const locked = await call(
-      r.resOne.PATCH(
-        req('PATCH', { write: false }),
-        p({ id: admin, kind: 'connector', refId: CONN }),
-      ),
+    // Team (a built-in workspace) takes a connector like any other since
+    // W5b2: no level attaches one, so nothing is locked or refused.
+    const onTeam = await call(
+      r.res.POST(req('POST', { kind: 'connector', id: CONN }), p({ id: team })),
     );
-    expect(locked.status).toBe(409);
-    expect(locked.body.code).toBe('bridge_owned');
+    expect(onTeam.status).toBe(200);
+    const teamConn = (onTeam.body.resources as Json[]).find((x2) => x2.id === CONN);
+    expect(teamConn).toEqual({ kind: 'connector', id: CONN, name: 'Connector W', write: false });
+    const teamOne = p({ id: team, kind: 'connector', refId: CONN });
+    expect((await call(r.resOne.PATCH(req('PATCH', { write: true }), teamOne))).status).toBe(200);
+    const gone = await call(r.resOne.DELETE(req('DELETE'), teamOne));
+    expect(gone.status).toBe(200);
+    expect((gone.body.resources as Json[]).find((x2) => x2.id === CONN)).toBeUndefined();
+    // A member of Team who is no Admin user still may not.
+    await as(mem);
+    expect(
+      (await call(r.res.POST(req('POST', { kind: 'connector', id: CONN }), p({ id: team })))).body
+        .code,
+    ).toBe('admin_only');
   });
 
   it('archive: counts first, refusals, and the grants it drops', async () => {
@@ -624,9 +631,7 @@ describe.skipIf(!URL)('workspace management (W5a)', () => {
     expect((await call(r.archive.POST(req('POST'), p({ id: admin })))).body.code).toBe(
       'admin_workspace',
     );
-    expect((await call(r.archive.POST(req('POST'), p({ id: team })))).body.code).toBe(
-      'bridge_owned',
-    );
+    expect((await call(r.archive.POST(req('POST'), p({ id: team })))).body.code).toBe('built_in');
     const ws = await create(mem, 'Mia archive');
     // The note is shared here (not its home); a second item is "removed
     // here" (an exclusion row).

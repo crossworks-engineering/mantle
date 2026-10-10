@@ -28,6 +28,7 @@ describe.skipIf(!URL)('POST /api/pages/:id/move, on Postgres', () => {
   const label = `move_${randomUUID().slice(0, 8)}`;
   const ids = { a: '', b: '', c: '' };
   let plans = '';
+  let shared = '';
 
   const post = (id: string, body: unknown) =>
     route.POST(

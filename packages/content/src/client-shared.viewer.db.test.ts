@@ -1,15 +1,17 @@
 /**
  * What a CLIENT login reads (client logins C2), on a real, migrated Postgres,
- * inside withViewer('client'): "Shared with you" is exactly the brain's
- * client items (never public, team, admin, a team draft, a member's space or
- * an admin's private space); a team item by id is a miss; a client page that
- * names a team item carries "Private item" instead of its title and leaves
- * its embed out; file bytes and drawing images above client are never
- * served; no DTO carries an author or a level.
+ * inside withViewer('client', { login }) (W5b2: the grants of the login's
+ * workspaces decide, brain items have no level): "Shared with you" is exactly
+ * what the client's workspace holds (never an item only Team, Admin or a
+ * public link holds, a team draft, a member's space or an admin's private
+ * space); any other item by id is a miss; a client page that names an item
+ * the client may not read carries "Private item" instead of its title and
+ * leaves its embed out; file bytes and drawing images the client may not
+ * read are never served; no DTO carries an author or a level.
  *
- * Brain items belong to the shared test anchor (mantle_brain_id()): the
- * client role's row security knows only that brain. Removes its rows after
- * (the anchor stays).
+ * Brain items belong to the shared test anchor (mantle_brain_id()); the
+ * workspaces (the client's, and a team one the client is not in) are this
+ * test's own. Removes its rows after (the anchor stays).
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/client-shared.viewer.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -32,7 +34,10 @@ describe.skipIf(!URL)('what a client reads', () => {
   let brain = '';
   const member = randomUUID();
   const adminA = randomUUID();
-  const logins = [member, adminA];
+  const clientLogin = randomUUID();
+  const logins = [member, adminA, clientLogin];
+  // The client's workspace, and a team one the client is not a user of.
+  const ws = { client: randomUUID(), team: randomUUID() };
   const spaceOf: Record<string, string> = {};
   const b = {
     clientPage: randomUUID(),
@@ -49,7 +54,16 @@ describe.skipIf(!URL)('what a client reads', () => {
   };
   const s = { teamDraft: randomUUID(), memberPrivate: randomUUID(), adminPrivate: randomUUID() };
   const root = mkdtempSync(path.join(tmpdir(), 'mantle-cshared-'));
-  const client = <T>(fn: () => Promise<T>) => m.runInLevelRoleForTest('client', fn);
+  const client = <T>(fn: () => Promise<T>) => m.withViewer('client', { login: clientLogin }, fn);
+  /** Grants by hand (heads first): `ids` to workspace `wsId`. */
+  const grant = (wsId: string, ids: readonly string[]) =>
+    m.withHeads(ids, 'update', async (tx) => {
+      for (const id of ids) {
+        await tx.execute(
+          sqlTag`insert into item_grants (node_id, workspace_id) values (${id}, ${wsId})`,
+        );
+      }
+    });
 
   const clientDoc = {
     type: 'doc',
@@ -114,7 +128,14 @@ describe.skipIf(!URL)('what a client reads', () => {
     await m.systemDb.execute(sqlTag`
       insert into auth.users (id, email, password_hash, role, display_name) values
         (${member}, ${`${tag}-m@example.invalid`}, 'x', 'member', 'Pat Member'),
-        (${adminA}, ${`${tag}-a@example.invalid`}, 'x', 'admin', 'Ann Admin')`);
+        (${adminA}, ${`${tag}-a@example.invalid`}, 'x', 'admin', 'Ann Admin'),
+        (${clientLogin}, ${`${tag}-c@example.invalid`}, 'x', 'client', 'Casey Client')`);
+    await m.systemDb.execute(sqlTag`
+      insert into workspaces (id, owner_id, name) values
+        (${ws.client}, ${brain}, ${`${tag} client`}), (${ws.team}, ${brain}, ${`${tag} team`})`);
+    await m.systemDb.execute(sqlTag`
+      insert into workspace_users (workspace_id, login_id) values
+        (${ws.client}, ${clientLogin}), (${ws.team}, ${member})`);
     const rows = (await m.systemDb.execute(sqlTag`
       select id, login_id from spaces where kind = 'personal'
         and login_id in (${member}, ${adminA})`)) as unknown as { id: string; login_id: string }[];
@@ -138,8 +159,14 @@ describe.skipIf(!URL)('what a client reads', () => {
         (${b.adminPage}, ${brain}, 'page', ${`${tag} ADMINTITLE`}, 'pages', 'admin', '{}'::jsonb),
         (${b.adminFile}, ${brain}, 'file', ${`${tag} admin file`}, 'files', 'admin', ${fileData('a.txt', 'ADMIN BYTES')}::jsonb),
         (${b.publicNote}, ${brain}, 'note', ${`${tag} PUBLICTITLE`}, 'notes', 'public', '{}'::jsonb)`);
+    // What each workspace holds (the levels above are history: frozen, read
+    // by nothing here). The admin items and the public note no workspace of
+    // the client holds.
+    await grant(ws.client, [b.clientPage, b.clientPage2, b.clientNote, b.clientFile, b.clientDraw]);
+    await grant(ws.team, [b.teamPage, b.teamFile, b.teamDraw]);
     // Items in personal spaces, each set to client: the owner is not the
-    // brain, so the client role never sees them, whatever their level says.
+    // brain and no workspace holds them, so the client never sees them,
+    // whatever their level says.
     await m.systemDb.execute(sqlTag`
       insert into nodes (id, owner_id, type, title, path, audience) values
         (${s.teamDraft}, ${spaceOf[member]!}, 'page', ${`${tag} team draft`}, 'pages', 'client'),
@@ -180,18 +207,21 @@ describe.skipIf(!URL)('what a client reads', () => {
       await m.systemDb.execute(sqlTag`delete from spaces where login_id = ${l}`);
       await m.systemDb.execute(sqlTag`delete from auth.users where id = ${l}`);
     }
+    await m.systemDb.execute(sqlTag`delete from workspaces where id in (${ws.client}, ${ws.team})`);
     await m.closeDb();
     rmSync(root, { recursive: true, force: true });
   }, 60_000);
 
   it('refuses to run anywhere but a client scope', async () => {
-    await expect(cs.listClientShared(brain)).rejects.toThrow(/withViewer\('client'\)/);
-    await expect(m.runInLevelRoleForTest('team', () => cs.listClientShared(brain))).rejects.toThrow();
+    await expect(cs.listClientShared(brain)).rejects.toThrow(/withViewer\('client', \{ login \}\)/);
+    await expect(
+      m.runInLevelRoleForTest('team', () => cs.listClientShared(brain)),
+    ).rejects.toThrow();
     await expect(cs.clientReadableIds(brain, [b.teamPage])).rejects.toThrow();
     await expect(cd.clientVisibleDrawFileIds(brain, b.clientDraw)).rejects.toThrow();
   });
 
-  it('"Shared with you" is exactly the client items: no public, team, admin or space item', async () => {
+  it('"Shared with you" is exactly what the client workspace holds: no public, team, admin or space item', async () => {
     const { items, total } = await client(() => cs.listClientShared(brain, { q: tag }));
     expect(items.map((i) => i.id).sort()).toEqual(
       [b.clientPage, b.clientPage2, b.clientNote, b.clientFile, b.clientDraw].sort(),
@@ -217,7 +247,7 @@ describe.skipIf(!URL)('what a client reads', () => {
     }
   });
 
-  it('a team, admin, public or space item by id is a miss', async () => {
+  it('an item only Team, Admin, a link or a space holds is a miss by id', async () => {
     for (const id of [b.teamPage, b.adminPage, b.publicNote, s.teamDraft, s.adminPrivate]) {
       expect(await client(() => cs.getClientSharedItem(brain, id)), id).toBeNull();
     }
@@ -287,9 +317,10 @@ describe.skipIf(!URL)('what a client reads', () => {
     });
     const link = { appId: randomUUID(), appName: 'APPNAME internal', sqliteTable: 't' };
     await m.systemDb.execute(sqlTag`
-      update nodes set audience = 'client',
+      update nodes set
              data = data || ${JSON.stringify({ appLink: link, summary: 'SUMMARYSECRET', visibility: 'public' })}::jsonb
        where id = ${t.id}`);
+    await grant(ws.client, [t.id]);
     try {
       const item = await client(() => cs.getClientSharedItem(brain, t.id));
       expect(item?.type).toBe('table');
@@ -371,7 +402,9 @@ describe.skipIf(!URL)('what a client reads', () => {
   });
 
   it('the member Library lists team and client items with their level, never admin or public; opens a public one by id', async () => {
-    const { items } = await m.runInLevelRoleForTest('team', () => lib.listLibrary(brain, { q: tag }));
+    const { items } = await m.runInLevelRoleForTest('team', () =>
+      lib.listLibrary(brain, { q: tag }),
+    );
     const byId = new Map(items.map((i) => [i.id, i.audience]));
     expect([...byId.keys()].sort()).toEqual(
       [
@@ -390,12 +423,15 @@ describe.skipIf(!URL)('what a client reads', () => {
     const counts = await m.runInLevelRoleForTest('team', () => lib.libraryCounts(brain));
     expect(counts.page).toBeGreaterThanOrEqual(3);
     // A public item is not listed, but a member opens it by id (audit B10).
-    expect((await m.runInLevelRoleForTest('team', () => lib.getLibraryItem(brain, b.publicNote)))?.id).toBe(
-      b.publicNote,
-    );
-    expect(await m.runInLevelRoleForTest('team', () => lib.getLibraryItem(brain, b.adminPage))).toBeNull();
     expect(
-      (await m.runInLevelRoleForTest('team', () => lib.getLibraryItem(brain, b.clientNote)))?.audience,
+      (await m.runInLevelRoleForTest('team', () => lib.getLibraryItem(brain, b.publicNote)))?.id,
+    ).toBe(b.publicNote);
+    expect(
+      await m.runInLevelRoleForTest('team', () => lib.getLibraryItem(brain, b.adminPage)),
+    ).toBeNull();
+    expect(
+      (await m.runInLevelRoleForTest('team', () => lib.getLibraryItem(brain, b.clientNote)))
+        ?.audience,
     ).toBe('client');
   });
 });

@@ -3,8 +3,10 @@
  * rows and the content reads are stood in, the gate is the real one
  * (getClientOr401 / getClientForAsset over a signed cookie or `?at=` token).
  * These pin what the ROUTES do: admins and members are refused (403) before
- * any read, a malformed id is a 400 before any read, every read runs at the
- * client level, and the shell's asset token is minted for the client login.
+ * any read, a malformed id is a 400 before any read, every read runs in the
+ * client login's own scope (withViewer('client', { login }), recorded here as
+ * `client:<login>`; 'admin' outside it), and the shell's asset token is
+ * minted for the client login.
  * The rules themselves are proven on Postgres in
  * packages/content/src/client-shared.viewer.db.test.ts.
  */
@@ -57,12 +59,32 @@ vi.mock('@/lib/auth/login-row', () => ({
   loadPersonalSpaceId: async () => SPACE,
 }));
 
+/** The scope a stood-in read runs in: `client:<login>` inside
+ *  withViewer('client', { login }), 'admin' outside every scope. */
+vi.mock('@mantle/db', async (importOriginal) => {
+  const scope: string[] = [];
+  (globalThis as { __scope?: string[] }).__scope = scope;
+  return {
+    ...(await importOriginal<Record<string, unknown>>()),
+    withViewer: vi.fn(
+      async (level: string, actsFor: { login?: string }, fn: () => Promise<unknown>) => {
+        scope.push(`${level}:${actsFor.login ?? '?'}`);
+        try {
+          return await fn();
+        } finally {
+          scope.pop();
+        }
+      },
+    ),
+  };
+});
+const scopeNow = () => (globalThis as { __scope?: string[] }).__scope?.at(-1) ?? 'admin';
+
 vi.mock('@mantle/content', async (importOriginal) => {
-  const { currentViewerLevel } = await import('@mantle/db');
   const read =
     <T>(name: string, ret: () => T) =>
     async () => {
-      h.reads.push([name, currentViewerLevel()]);
+      h.reads.push([name, scopeNow()]);
       return ret();
     };
   return {
@@ -86,21 +108,20 @@ vi.mock('@mantle/files', async (importOriginal) => ({
 }));
 
 vi.mock('@/lib/files', async () => {
-  const { currentViewerLevel } = await import('@mantle/db');
   const { Readable } = await import('node:stream');
   return {
     fileById: vi.fn(async (scope: { fileId: string }) => {
-      h.reads.push(['fileById', currentViewerLevel()]);
+      h.reads.push(['fileById', scopeNow()]);
       return scope.fileId === PICTURE ? { sha256: 'abc', mimeType: 'image/png' } : null;
     }),
     readFileById: vi.fn(async () => {
-      h.reads.push(['readFileById', currentViewerLevel()]);
+      h.reads.push(['readFileById', scopeNow()]);
       return { bytes: Buffer.from('PNG') };
     }),
     openFileById: vi.fn(async (scope: { fileId: string }) => {
-      h.reads.push(['openFileById', currentViewerLevel()]);
-      // The accepted file sits at team: the client level does not see it.
-      if (scope.fileId === ACCEPTED && currentViewerLevel() === 'client') return null;
+      h.reads.push(['openFileById', scopeNow()]);
+      // The accepted file sits in Team: the client's scope does not see it.
+      if (scope.fileId === ACCEPTED && scopeNow().startsWith('client:')) return null;
       return {
         stream: Readable.from([Buffer.from('BYTES')]),
         size: 5,
@@ -247,9 +268,9 @@ describe('client read routes: a client', () => {
     const hit = await call(CLIENT, `/api/client/shared/${ITEM}`, byId(one, ITEM));
     expect(await hit.json()).toEqual({ item: h.item });
     expect(h.reads).toEqual([
-      ['listClientShared', 'client'],
-      ['getClientSharedItem', 'client'],
-      ['getClientSharedItem', 'client'],
+      ['listClientShared', `client:${CLIENT}`],
+      ['getClientSharedItem', `client:${CLIENT}`],
+      ['getClientSharedItem', `client:${CLIENT}`],
     ]);
   });
 
@@ -266,9 +287,9 @@ describe('client read routes: a client', () => {
     expect(await pic.text()).toBe('<svg id="client"/>');
     expect(pic.headers.get('content-security-policy')).toMatch(/sandbox/);
     expect(h.reads).toEqual([
-      ['openFileById', 'client'],
-      ['getDrawSvg', 'client'],
-      ['clientDrawSvg', 'client'],
+      ['openFileById', `client:${CLIENT}`],
+      ['getDrawSvg', `client:${CLIENT}`],
+      ['clientDrawSvg', `client:${CLIENT}`],
     ]);
   });
 
@@ -293,8 +314,8 @@ describe('client read routes: a client', () => {
     expect(res.headers.get('content-type')).toBe('image/jpeg');
     expect(await res.text()).toBe('THUMB:PNG');
     expect(h.reads).toEqual([
-      ['fileById', 'client'],
-      ['readFileById', 'client'],
+      ['fileById', `client:${CLIENT2}`],
+      ['readFileById', `client:${CLIENT2}`],
     ]);
   });
 
@@ -333,7 +354,7 @@ describe('client files route: the author’s accepted file (client logins C5)', 
     expect(res.headers.get('content-type')).toBe('text/plain');
     // The client level first; the author rule and the read only after it.
     expect(h.reads).toEqual([
-      ['openFileById', 'client'],
+      ['openFileById', `client:${CLIENT}`],
       ['acceptedFileMeta', 'admin'],
       ['openFileById', 'admin'],
     ]);
@@ -344,7 +365,7 @@ describe('client files route: the author’s accepted file (client logins C5)', 
     const res = await call(CLIENT, `/api/client/files/${ACCEPTED}`, byId(files, ACCEPTED));
     expect(res.status).toBe(404);
     expect(h.reads).toEqual([
-      ['openFileById', 'client'],
+      ['openFileById', `client:${CLIENT}`],
       ['acceptedFileMeta', 'admin'],
     ]);
   });

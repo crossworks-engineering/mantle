@@ -115,6 +115,16 @@ describe.skipIf(!URL)('apps for clients', () => {
   }, 60_000);
 
   const asClient = <T>(fn: () => Promise<T>) => m.runInLevelRoleForTest('client', fn);
+  // The levels are frozen since W5b2: a row a folder shared with clients
+  // left behind (inherited_level) is set under the test bypass, for the
+  // level rule the client app lookup still reads.
+  const inherit = (ids: readonly string[], level: 'client' | null) =>
+    m.systemDb.transaction(async (tx) => {
+      await tx.execute(sqlTag`select mantle_heads_bypass('test fixture')`);
+      for (const id of ids) {
+        await tx.execute(sqlTag`update nodes set inherited_level = ${level} where id = ${id}`);
+      }
+    });
   const mine = <T extends { id: string }>(rows: T[]) => rows.filter((r) => ours.has(r.id));
 
   it('lists the client-level apps with a green published build, and no level twin', async () => {
@@ -140,21 +150,15 @@ describe.skipIf(!URL)('apps for clients', () => {
   // Access matrix audit, M2: a public app is read at public even inside a
   // folder shared with clients; clients never run or write it.
   it('never runs a public app that sits in a folder shared with clients', async () => {
-    await m.systemDb.execute(
-      sqlTag`update nodes set inherited_level = 'client' where id = ${ids.pub}`,
-    );
+    await inherit([ids.pub], 'client');
     try {
       expect(mine(await ca.listClientApps(brain)).map((a) => a.id)).not.toContain(ids.pub);
       expect(await ca.getClientRunnableApp(brain, ids.pub)).toBeNull();
       // An admin app in the same folder is a client app there.
-      await m.systemDb.execute(
-        sqlTag`update nodes set inherited_level = 'client' where id = ${ids.admin}`,
-      );
+      await inherit([ids.admin], 'client');
       expect(await ca.getClientRunnableApp(brain, ids.admin)).toMatchObject({ id: ids.admin });
     } finally {
-      await m.systemDb.execute(
-        sqlTag`update nodes set inherited_level = null where id in (${ids.pub}, ${ids.admin})`,
-      );
+      await inherit([ids.pub, ids.admin], null);
     }
   });
 

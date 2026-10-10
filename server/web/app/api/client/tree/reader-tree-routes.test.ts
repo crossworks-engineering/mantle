@@ -1,8 +1,8 @@
 /**
  * The member and client tree routes without a database: the login rows and
  * the tree reads are stood in, the gate is the real one. These pin what the
- * ROUTES do: each reads as its own role (a member as team, a client as
- * client), a kind the Library does not hold is a 404 before any read, a folder
+ * ROUTES do: each reads as its own login (a member through its space and
+ * workspaces, a client through its client workspaces), a kind the Library does not hold is a 404 before any read, a folder
  * the reader cannot see is a 404, and a client's answer carries no level,
  * share or system flag. The rules themselves are proven on Postgres in
  * packages/content/src/tree/tree-reader.viewer.db.test.ts.
@@ -154,10 +154,12 @@ describe('the member and client tree routes', () => {
     expect(
       (await call(CLIENT, `/api/client/tree/notes?folder=${FOLDER}`, client, 'notes')).status,
     ).toBe(200);
-    expect(h.calls.map((c) => [c.fn, c.args[0], c.args[1]])).toEqual([
-      ['member-load', { anchorId: ANCHOR, spaceId: SPACE, loginId: MEMBER }, 'notes'],
-      ['load', ANCHOR, 'client'],
+    // A client reads as its own login (its client workspaces decide).
+    expect(h.calls.map((c) => c.args.slice(0, 3))).toEqual([
+      [{ anchorId: ANCHOR, spaceId: SPACE, loginId: MEMBER }, 'notes', expect.anything()],
+      [ANCHOR, 'client', CLIENT],
     ]);
+    expect(h.calls.map((c) => c.fn)).toEqual(['member-load', 'load']);
   });
 
   it('gives a member levels and a client none', async () => {
@@ -177,7 +179,7 @@ describe('the member and client tree routes', () => {
     ).json();
     expect(s.items[0]).not.toHaveProperty('level');
     expect(s.folders[0]).not.toHaveProperty('share');
-    expect(h.calls.at(-1)!.args.slice(0, 4)).toEqual([ANCHOR, 'client', 'notes', 'a']);
+    expect(h.calls.at(-1)!.args.slice(0, 5)).toEqual([ANCHOR, 'client', CLIENT, 'notes', 'a']);
   });
 
   it('refuses a kind the Library does not hold before any read', async () => {

@@ -7,6 +7,8 @@
  * an informational app and schedules the export sync after a write; the
  * frame opens only for a client ticket at the login's current session epoch,
  * and only the published build; every call is logged with the client login.
+ * The scope a stood-in read runs in is recorded as `client:<login>` inside
+ * withViewer('client', { login }), 'admin' outside every scope.
  * The rules themselves are proven on Postgres in
  * packages/{content,tools}/src/client-app*.viewer.db.test.ts and end to end
  * in client-apps.db.test.ts next to this file.
@@ -58,12 +60,29 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
     return h.loginActive;
   }),
 }));
+vi.mock('@mantle/db', async (importOriginal) => {
+  const scope: string[] = [];
+  (globalThis as { __scope?: string[] }).__scope = scope;
+  return {
+    ...(await importOriginal<Record<string, unknown>>()),
+    withViewer: vi.fn(
+      async (level: string, actsFor: { login?: string }, fn: () => Promise<unknown>) => {
+        scope.push(`${level}:${actsFor.login ?? '?'}`);
+        try {
+          return await fn();
+        } finally {
+          scope.pop();
+        }
+      },
+    ),
+  };
+});
+const scopeNow = () => (globalThis as { __scope?: string[] }).__scope?.at(-1) ?? 'admin';
 vi.mock('@mantle/content', async (importOriginal) => {
-  const { currentViewerLevel } = await import('@mantle/db');
   return {
     ...(await importOriginal<Record<string, unknown>>()),
     getClientRunnableApp: vi.fn(async (_anchor: string, id: string) => {
-      h.lookups.push({ id, level: currentViewerLevel() });
+      h.lookups.push({ id, level: scopeNow() });
       return h.runnable
         ? {
             id,
@@ -77,7 +96,7 @@ vi.mock('@mantle/content', async (importOriginal) => {
         : null;
     }),
     appLauncher: vi.fn(async (_anchor: string, reader: string) => {
-      h.launcherReads.push({ level: currentViewerLevel(), reader });
+      h.launcherReads.push({ level: scopeNow(), reader });
       return {
         apps: [
           {
@@ -100,14 +119,13 @@ vi.mock('@mantle/content', async (importOriginal) => {
   };
 });
 vi.mock('@mantle/tools', async (importOriginal) => {
-  const { currentViewerLevel } = await import('@mantle/db');
   return {
     ...(await importOriginal<Record<string, unknown>>()),
     appToolVerdict: vi.fn(async () =>
       h.verdict.ok ? { ok: true, tool: { slug: 'client_shared_list' } } : h.verdict,
     ),
     dispatchTool: vi.fn(async (_tool: unknown, _input: unknown, ctx: Record<string, unknown>) => {
-      h.dispatched.push({ level: currentViewerLevel(), ctx });
+      h.dispatched.push({ level: scopeNow(), ctx });
       return { ok: true, output: [] };
     }),
   };
@@ -115,10 +133,9 @@ vi.mock('@mantle/tools', async (importOriginal) => {
 vi.mock('@mantle/content/app-broker', async (importOriginal) => {
   const { AppSqlError, AppSqlBusyError, AppDbMissingError } =
     await importOriginal<typeof import('@mantle/content/app-broker')>();
-  const { currentViewerLevel } = await import('@mantle/db');
   // The SQLite work runs on the admin pool: it writes registry rows.
   const call = (op: string, owner: string, app: string) =>
-    h.dbCalls.push(`${op}:${owner}:${app}:${currentViewerLevel()}`);
+    h.dbCalls.push(`${op}:${owner}:${app}:${scopeNow()}`);
   return {
     AppSqlError,
     AppSqlBusyError,
@@ -231,7 +248,7 @@ describe('the app lookup', () => {
   it('runs on the client role, in lower case, and never for a malformed id', async () => {
     const lettered = 'abcdef12-3456-4789-8abc-def012345678';
     await dbBroker(post({ op: 'query', sql: 'select 1' }), params(lettered.toUpperCase()));
-    expect(h.lookups).toEqual([{ id: lettered, level: 'client' }]);
+    expect(h.lookups).toEqual([{ id: lettered, level: `client:${LOGIN}` }]);
     h.lookups.length = 0;
     const res = await dbBroker(post({ op: 'query', sql: 'select 1' }), params('not-a-uuid'));
     expect(res.status).toBe(404);
@@ -266,7 +283,7 @@ describe('client tool broker', () => {
     const res = await toolBroker(post({ slug: 'client_shared_list', input: {} }), params());
     expect(res.status).toBe(200);
     expect(h.dispatched).toHaveLength(1);
-    expect(h.dispatched[0]!.level).toBe('client');
+    expect(h.dispatched[0]!.level).toBe(`client:${LOGIN}`);
     expect(h.dispatched[0]!.ctx).toMatchObject({
       ownerId: ANCHOR,
       surface: { kind: 'client', loginId: LOGIN, contactName: 'Casey' },
@@ -279,6 +296,7 @@ describe('client tool broker', () => {
       ['client_shared_list'],
       'client_shared_list',
       LOGIN,
+      { appId: APP },
     );
     expect(h.logged[0]).toMatchObject({
       ownerId: ANCHOR,

@@ -63,6 +63,19 @@ describe.skipIf(!URL)('the "What clients see" report', () => {
   ];
   const share = { folder: randomUUID(), embPage: randomUUID() };
   const exec = (q: ReturnType<typeof sqlTag>) => m.systemDb.execute(q);
+  // The levels are frozen since W5b2 (the report still reads them, the gate
+  // before the first client login): a change is made under the test bypass.
+  const setLevel = (
+    nodeId: string,
+    column: 'audience' | 'share_level' | 'inherited_level',
+    level: string,
+  ) =>
+    m.systemDb.transaction(async (tx) => {
+      await tx.execute(sqlTag`select mantle_heads_bypass('test fixture')`);
+      await tx.execute(
+        sqlTag`update nodes set ${sqlTag.identifier(column)} = ${level} where id = ${nodeId}`,
+      );
+    });
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
@@ -291,9 +304,9 @@ describe.skipIf(!URL)('the "What clients see" report', () => {
   });
 
   it('asks again once an item not in it goes to client; an item leaving client does not', async () => {
-    await exec(sqlTag`update nodes set audience = 'team' where id = ${id.note}`);
+    await setLevel(id.note, 'audience', 'team');
     expect(await r.clientReportAcknowledged(owner)).toBe(true);
-    await exec(sqlTag`update nodes set audience = 'client' where id = ${id.later}`);
+    await setLevel(id.later, 'audience', 'client');
     expect(await r.clientReportAcknowledged(owner)).toBe(false);
     const rep = await r.clientReport(owner);
     expect(rep.acknowledged).toBe(false);
@@ -303,7 +316,7 @@ describe.skipIf(!URL)('the "What clients see" report', () => {
   it('acknowledges by fingerprint; a stale fingerprint is refused and records nothing', async () => {
     const rep = await r.clientReport(owner);
     // Something changes after the admin loaded the report.
-    await exec(sqlTag`update nodes set audience = 'client' where id = ${id.note}`);
+    await setLevel(id.note, 'audience', 'client');
     await expect(
       r.acknowledgeClientReport(owner, admin, { fingerprint: rep.fingerprint! }),
     ).rejects.toBeInstanceOf(r.ClientReportChangedError);
@@ -314,7 +327,11 @@ describe.skipIf(!URL)('the "What clients see" report', () => {
     expect(await r.clientReportAcknowledged(owner)).toBe(true);
   });
 
-  it('counts what a folder shared with clients holds, and asks again when one is shared', async () => {
+  // Folder shares are gone since W5b2 (nothing passes a share down any
+  // more): what one left behind is a frozen inherited level, which the
+  // report still counts. Set here under the test bypass, as the share and
+  // its upkeep trigger once wrote them.
+  it('counts what a folder shared with clients left at client, and asks again for it', async () => {
     const folderId = randomUUID();
     const inside = randomUUID();
     const folderPath = `notes.${tag.replace(/-/g, '_')}_shared`;
@@ -324,7 +341,8 @@ describe.skipIf(!URL)('the "What clients see" report', () => {
         (${inside}, ${owner}, 'note', 'Admin note in it', ${folderPath}::ltree, '{}'::jsonb)`);
     // Admin by its own level: not a client item yet.
     expect(await r.clientReportAcknowledged(owner)).toBe(true);
-    await exec(sqlTag`update nodes set share_level = 'client' where id = ${folderId}`);
+    await setLevel(folderId, 'share_level', 'client');
+    await setLevel(inside, 'inherited_level', 'client');
     expect(await r.clientReportAcknowledged(owner)).toBe(false);
     const rep = await r.clientReport(owner);
     expect(rep.items.map((i) => i.id)).toContain(inside);
