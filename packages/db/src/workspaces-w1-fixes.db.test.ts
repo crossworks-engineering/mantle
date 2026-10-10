@@ -108,6 +108,15 @@ describe.skipIf(!URL)('workspaces W1 audit fixes (0245)', () => {
       throw err;
     }
     expect(await ownerOf(item)).toBe(space);
+    // And back: a personal row moved into the brain needs its head too.
+    const back = await strict();
+    try {
+      await expect(
+        back.c`update nodes set owner_id = ${owner}, path = ${`pages.${tag}`}::ltree where id = ${item}`,
+      ).rejects.toMatchObject({ code: '40001' });
+    } finally {
+      await back.done(false);
+    }
     // Inside the space, a move between its own folders still needs nothing.
     const inSpace = await strict();
     try {
@@ -134,7 +143,12 @@ describe.skipIf(!URL)('workspaces W1 audit fixes (0245)', () => {
         await (grantFirst ? grant(a.c) : move(a.c));
         // B waits for A's heads, then sees what A committed.
         const bLock = b.c`select mantle_lock_heads(${lockList}::uuid[], 'update')`.execute();
-        await new Promise((r) => setTimeout(r, 200));
+        // B really waits on A's heads (it would not, were the heads missing).
+        const state = await Promise.race([
+          bLock.then(() => 'done'),
+          new Promise((r) => setTimeout(() => r('waiting'), 300)),
+        ]);
+        expect(state).toBe('waiting');
         await a.done(true);
         await bLock;
         await expect(grantFirst ? move(b.c) : grant(b.c)).rejects.toMatchObject({

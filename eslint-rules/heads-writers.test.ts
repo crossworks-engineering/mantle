@@ -71,6 +71,9 @@ describe('heads-writers', () => {
           code: "withHeads([i], 'update', (tx) => tx.unsafe('delete from nodes where id = $1', [i]));",
           filename: file,
         },
+        // A reviewed file may pass dynamic SQL; a literal concatenation is read.
+        { code: 'tx.unsafe(stmt);', filename: '/r/packages/db/src/migrate.ts' },
+        { code: "sql.unsafe('select 1 ' + (l ? 'limit 2' : ''));", filename: file },
         // Tests are exempt.
         { code: 'db.insert(nodes).values(v);', filename: '/r/packages/content/src/x.test.ts' },
       ],
@@ -178,6 +181,24 @@ describe('heads-writers', () => {
           code: 'sql`update ${facts} set source_node_id = ${n}`;',
           filename: file,
           errors: [{ messageId: 'noHeads' }],
+        },
+        // MERGE and COPY into a guarded table.
+        {
+          code: 'sql`merge into nodes n using x on n.id = x.id when matched then delete`;',
+          filename: file,
+          errors: [{ messageId: 'noHeads' }],
+        },
+        {
+          code: "tx.unsafe('copy content_chunks (text) from stdin');",
+          filename: file,
+          errors: [{ messageId: 'noHeads' }],
+        },
+        // Dynamic SQL to .unsafe outside the reviewed files, even under heads.
+        { code: 'tx.unsafe(q, params);', filename: file, errors: [{ messageId: 'dynamicUnsafe' }] },
+        {
+          code: "withHeads([i], 'update', (tx) => tx.unsafe(stmt));",
+          filename: file,
+          errors: [{ messageId: 'dynamicUnsafe' }],
         },
         // There is no exemption marker any more.
         {

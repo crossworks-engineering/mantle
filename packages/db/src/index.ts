@@ -112,6 +112,7 @@ export {
 } from './extract-exempt';
 export { backfillTerminalSkips, type TerminalSkipBackfill } from './extract-skip-backfill';
 export { parkedExtractions, type ParkedExtractions } from './extract-parked';
+export { MIGRATION_TAGS } from './migration-tags';
 export {
   WRITE_RETRY_AFTER_MS,
   bestEffortWrite,

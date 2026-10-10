@@ -6,6 +6,8 @@
  */
 import { sql } from 'drizzle-orm';
 import { systemDb } from './client';
+import { extractParkedSql } from './extract-exempt';
+import { nodes } from './schema/nodes';
 
 export interface ParkedExtractions {
   count: number;
@@ -14,12 +16,14 @@ export interface ParkedExtractions {
 }
 
 export async function parkedExtractions(ownerId: string): Promise<ParkedExtractions> {
+  // `data ? 'extract_parked'` matches the partial index nodes_extract_parked_idx
+  // (0246), so this reads the few parked rows, not every node.
   const rows = (await systemDb.execute(sql`
-    SELECT count(*)::int AS n, max((data->'extract_parked'->>'at')::timestamptz) AS newest
-      FROM nodes
-     WHERE owner_id = ${ownerId}
-       AND data ? 'extract_parked'
-       AND (data->'extract_parked'->>'at')::timestamptz >= updated_at`)) as unknown as {
+    SELECT count(*)::int AS n, max((${nodes.data}->'extract_parked'->>'at')::timestamptz) AS newest
+      FROM ${nodes}
+     WHERE ${nodes.ownerId} = ${ownerId}
+       AND ${nodes.data} ? 'extract_parked'
+       AND ${extractParkedSql()}`)) as unknown as {
     n: number;
     newest: Date | string | null;
   }[];

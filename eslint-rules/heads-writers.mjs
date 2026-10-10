@@ -23,8 +23,11 @@
  *    three tables;
  *  - raw SQL that inserts into, deletes from, or moves rows of those
  *    tables, or updates content_chunks, content_chunk_windows, facts or
- *    item_grants: a tagged template, or a string or template literal passed
- *    to `.unsafe(...)` (postgres.js) or `sql.raw(...)` (drizzle).
+ *    item_grants, or MERGE INTO or COPY ... FROM into the five: a tagged
+ *    template, or a string or template literal passed to `.unsafe(...)`
+ *    (postgres.js) or `sql.raw(...)` (drizzle);
+ *  - `.unsafe(...)` with SQL that is not a literal, outside the reviewed
+ *    files (DYNAMIC_UNSAFE_REVIEWED).
  *
  * Tests and migrations are out of scope.
  */
@@ -55,7 +58,32 @@ const HEADS_CALLEES = new Set([
 ]);
 
 const RAW_SQL_WRITE =
-  /\b(insert\s+into|delete\s+from)\s+"?(public"?\."?)?"?(nodes|content_chunks|content_chunk_windows|facts|item_grants)\b|\bupdate\s+"?(public"?\."?)?"?nodes"?(\s+\w+)?\s+set\s+(?:(?!\bwhere\b)[^;])*?\b(path|owner_id|login_id)\s*=|\bupdate\s+"?(public"?\."?)?"?(content_chunks|content_chunk_windows|facts|item_grants)"?(\s+\w+)?\s+set\b/i;
+  /\b(insert\s+into|delete\s+from)\s+"?(public"?\."?)?"?(nodes|content_chunks|content_chunk_windows|facts|item_grants)\b|\bupdate\s+"?(public"?\."?)?"?nodes"?(\s+\w+)?\s+set\s+(?:(?!\bwhere\b)[^;])*?\b(path|owner_id|login_id)\s*=|\bupdate\s+"?(public"?\."?)?"?(content_chunks|content_chunk_windows|facts|item_grants)"?(\s+\w+)?\s+set\b|\bmerge\s+into\s+"?(public"?\."?)?"?(nodes|content_chunks|content_chunk_windows|facts|item_grants)\b|\bcopy\s+"?(public"?\."?)?"?(nodes|content_chunks|content_chunk_windows|facts|item_grants)"?\s*(\([^)]*\))?\s*from\b/i;
+
+/**
+ * Files whose `.unsafe(...)` takes SQL that is not a literal, each reviewed:
+ * none of them writes the guarded tables. A new dynamic `.unsafe` elsewhere
+ * is an error (W1 audit, LOW 6): write the SQL as a literal or a tagged
+ * template, or add the file here with its reason.
+ */
+const DYNAMIC_UNSAFE_REVIEWED = new Map([
+  ['packages/db/src/access-matrix.ts', 'GRANT and REVOKE statements for the limited roles'],
+  ['packages/db/src/viewer-roles.ts', 'CREATE and ALTER ROLE statements'],
+  ['packages/db/src/init-scratch.ts', 'the scratch init SQL files'],
+  ['packages/db/src/migrate.ts', 'the migration runner (migrations are out of scope)'],
+  ['packages/search/src/entities.ts', 'one read query on the simple protocol'],
+  ['server/api/src/bench/run.ts', 'the bench harness on its own database'],
+  ['server/web/scripts/dedupe-edges.ts', 'a constant PARTITION BY fragment'],
+  ['server/web/scripts/extract-backfill.ts', 'a read query'],
+  ['server/web/scripts/relations-backfill.ts', 'a read query'],
+  ['server/web/scripts/extract-images-backfill.ts', 'read queries'],
+]);
+
+function dynamicUnsafeReviewed(filename) {
+  const f = filename.replace(/\\/g, '/');
+  for (const k of DYNAMIC_UNSAFE_REVIEWED.keys()) if (f.endsWith(`/${k}`) || f === k) return true;
+  return false;
+}
 
 /** Drizzle tables interpolated into raw SQL (`update ${nodes} set ...`),
  *  by the SQL name they stand for. */
@@ -182,6 +210,13 @@ function literalText(arg) {
   if (arg.type === 'TemplateLiteral') {
     return arg.quasis.map((q) => q.value.cooked ?? q.value.raw).join(' $x ');
   }
+  // `'...' + '...'` of literals (a conditional suffix reads as a placeholder).
+  if (arg.type === 'BinaryExpression' && arg.operator === '+') {
+    const l = literalText(arg.left);
+    const r = literalText(arg.right);
+    if (l === null && r === null) return null;
+    return `${l ?? ' $x '}${r ?? ' $x '}`;
+  }
   return null;
 }
 
@@ -193,6 +228,8 @@ export const rule = {
         'Writers of nodes, chunks, windows, facts and item grants lock heads first (withHeads).',
     },
     messages: {
+      dynamicUnsafe:
+        'This passes SQL the heads rule cannot read to .unsafe(). Write it as a literal or a tagged template, or add the file to DYNAMIC_UNSAFE_REVIEWED in eslint-rules/heads-writers.mjs with its reason (it must not write nodes, chunks, windows, facts or grants).',
       noHeads:
         "This writes {{what}} without heads. Wrap the transaction in withHeads(...) or withSubtreeHeads(...) from @mantle/db (plan U1), or mark the function '@heads-held' when its caller holds them.",
     },
@@ -217,7 +254,15 @@ export const rule = {
         if (name !== 'unsafe' && name !== 'raw') return;
         if (node.callee.type !== 'MemberExpression') return;
         const text = literalText(node.arguments[0]);
-        if (text === null || !RAW_SQL_WRITE.test(text)) return;
+        if (text === null) {
+          // SQL this rule cannot read: only reviewed files may pass it to
+          // postgres.js (a heads helper around it does not tell what it does).
+          if (name === 'unsafe' && node.arguments[0] && !dynamicUnsafeReviewed(context.filename)) {
+            context.report({ node, messageId: 'dynamicUnsafe' });
+          }
+          return;
+        }
+        if (!RAW_SQL_WRITE.test(text)) return;
         if (covered(context, node)) return;
         context.report({ node, messageId: 'noHeads', data: { what: `raw SQL (.${name})` } });
       },

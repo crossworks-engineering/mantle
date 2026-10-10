@@ -11,6 +11,10 @@
 --    row it owns from the heads check and from grants (0244 rules 1 and 2).
 --
 -- No trigger here starts LLM work: checks and the existing re-derivation.
+--
+-- The ADD COLUMN on mantle_moved_nodes needs its ACCESS EXCLUSIVE lock, and a
+-- transaction that is moving nodes holds a row lock there until it ends: the
+-- migration then waits at most 5 s, fails, and is safe to run again.
 
 SET LOCAL lock_timeout = '5s';
 --> statement-breakpoint

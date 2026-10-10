@@ -12,7 +12,7 @@
  * sourceless semantic/preference facts are CORRECT (the reaper keeps them), so
  * the reaper-miss check only flags episodic/factual orphans.
  */
-import { db } from '@mantle/db';
+import { db, extractParkedSql, MIGRATION_TAGS } from '@mantle/db';
 import { sql, type SQL } from 'drizzle-orm';
 
 import { rowsOf } from './sql-util';
@@ -176,25 +176,27 @@ const CHECKS: CheckDef[] = [
       LEFT JOIN nodes n ON n.id::text = j.data->>'nodeId' AND n.owner_id = ${o}
       WHERE j.name = 'mantle.extract.heads' AND j.state = 'created'
       UNION
-      SELECT n.id::text, n.type::text, left(coalesce(n.title, ''), 60)
-      FROM nodes n
-      WHERE n.owner_id = ${o} AND n.data ? 'extract_parked'
+      SELECT nodes.id::text, nodes.type::text, left(coalesce(nodes.title, ''), 60)
+      FROM nodes
+      WHERE nodes.owner_id = ${o} AND ${extractParkedSql()}
       LIMIT ${CAP}`,
     spanQuery: (o) => sql`
       SELECT min(d)::date::text AS oldest, max(d)::date::text AS newest FROM (
         SELECT j.created_on AS d FROM pgboss.job j
          WHERE j.name = 'mantle.extract.heads' AND j.state = 'created'
         UNION ALL
-        SELECT (n.data->'extract_parked'->>'at')::timestamptz FROM nodes n
-         WHERE n.owner_id = ${o} AND n.data ? 'extract_parked') x`,
+        SELECT (nodes.data->'extract_parked'->>'at')::timestamptz FROM nodes
+         WHERE nodes.owner_id = ${o} AND ${extractParkedSql()}) x`,
   },
   {
     key: 'heads_bypass_log',
     label: 'Heads-check bypasses',
     severity: 'low',
-    note: 'every use of the named migration bypass (workspaces plan V5, 0244): a migration that wrote nodes, chunks, windows, facts or grants in bulk with the heads check off for its own transaction. Only migrations may call it (a CI check keeps every other caller out); a name here that is not a migration is a finding.',
+    note: 'every use of the named migration bypass (workspaces plan V5, 0244): a migration that wrote nodes, chunks, windows, facts or grants in bulk with the heads check off for its own transaction. Only migrations may call it, each under its own tag (a CI check keeps every other caller out). A row of kind "not a migration" names no shipped migration: find who called it.',
     query: () => sql`
-      SELECT m.id::text AS id, 'bypass' AS kind,
+      SELECT m.id::text AS id,
+             CASE WHEN m.detail = ANY (${`{${[...MIGRATION_TAGS].join(',')}}`}::text[])
+                  THEN 'bypass' ELSE 'not a migration' END AS kind,
              left(coalesce(m.detail, ''), 60) || ' (' || to_char(m.at, 'YYYY-MM-DD HH24:MI') || ')' AS detail
       FROM heads_check_misses m
       WHERE m.check_name = 'bypass'

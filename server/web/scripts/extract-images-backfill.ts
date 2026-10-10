@@ -53,6 +53,7 @@ import postgres from 'postgres';
 import { env } from '@mantle/config';
 import {
   closeDb,
+  db,
   inArray,
   nodes,
   sql as dsql,
@@ -200,20 +201,33 @@ async function main() {
     let i = 0;
     for (const row of rows) {
       i++;
-      // The image nodes to replace, read first; then heads first, one
-      // transaction (workspaces plan V4).
-      const kids = (
-        (await sql`select c.id from nodes c
-                    where c.type = 'file'
-                      and c.data->>'sourceFileId' = ${row.id}
-                      and 'extracted-image' = any(c.tags)`) as unknown as { id: string }[]
-      ).map((k) => k.id);
-      await withDeadlockRetry(() =>
-        withNodeDeleteHeads(kids, async (tx) => {
-          if (kids.length) await tx.delete(nodes).where(inArray(nodes.id, kids));
-          await tx.execute(dsql`select pg_notify('node_ingested', ${row.id})`);
-        }),
-      );
+      // The image nodes to replace, read first so their heads can be the
+      // transaction's first lock (workspaces plan V4); read again under the
+      // heads, and the whole step retried when an image arrived in between
+      // (W1 audit, LOW 4), so a new image is never deleted without its head.
+      const imagesOf = async (q: { execute: typeof db.execute }) =>
+        (
+          (await q.execute(
+            dsql`select c.id from nodes c
+                  where c.type = 'file'
+                    and c.data->>'sourceFileId' = ${row.id}
+                    and 'extracted-image' = any(c.tags)`,
+          )) as unknown as { id: string }[]
+        ).map((k) => k.id);
+      for (let attempt = 1; ; attempt++) {
+        const kids = await imagesOf(db);
+        const done = await withDeadlockRetry(() =>
+          withNodeDeleteHeads(kids, async (tx) => {
+            const now = await imagesOf(tx);
+            if (now.some((id) => !kids.includes(id))) return false;
+            if (now.length) await tx.delete(nodes).where(inArray(nodes.id, now));
+            await tx.execute(dsql`select pg_notify('node_ingested', ${row.id})`);
+            return true;
+          }),
+        );
+        if (done) break;
+        if (attempt >= 3) throw new Error(`images-backfill: ${row.id} kept gaining images`);
+      }
       console.log(
         `[images-backfill] (${i}/${rows.length}) upgraded ${row.id.slice(0, 8)} — ${row.title.slice(0, 60)}`,
       );

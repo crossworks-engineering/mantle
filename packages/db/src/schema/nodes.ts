@@ -129,6 +129,10 @@ export const nodes = pgTable(
     index('nodes_superseded_by_idx')
       .on(t.supersededBy)
       .where(sql`${t.supersededBy} is not null`),
+    // Parked extractions (0246): the push worker counts them per event.
+    index('nodes_extract_parked_idx')
+      .on(t.ownerId)
+      .where(sql`${t.data} ? 'extract_parked'`),
     // Owner-wide slug uniqueness applies to nodes that are neither folders nor
     // files. Folders (branches) rely on path-uniqueness below — two folders
     // under different parents may share a name (e.g. each upload surface's
