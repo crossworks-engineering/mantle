@@ -82,11 +82,6 @@ export const LEVEL_READ_ALLOWLIST = {
     phase: 'W5c',
     why: 'client: client app list and gate',
   },
-  'packages/content/src/client-draw-images.ts': {
-    lines: 2,
-    phase: 'W5c',
-    why: 'client: client drawing images',
-  },
   'packages/content/src/client-old-links.ts': {
     lines: 2,
     phase: 'W5c',
@@ -96,11 +91,6 @@ export const LEVEL_READ_ALLOWLIST = {
     lines: 9,
     phase: 'W5c',
     why: 'client: client report',
-  },
-  'packages/content/src/client-shared.ts': {
-    lines: 2,
-    phase: 'W5c',
-    why: 'client: client shared reads',
   },
   'packages/content/src/member-draw-images.ts': {
     lines: 2,
@@ -127,11 +117,6 @@ export const LEVEL_READ_ALLOWLIST = {
     phase: 'W5c',
     why: 'member tree (Library levels)',
   },
-  'packages/content/src/tree/reader.ts': {
-    lines: 3,
-    phase: 'W5c',
-    why: 'member/client tree reader (Library levels)',
-  },
   'packages/runtime/src/assistant/run-team-turn.ts': {
     lines: 2,
     phase: 'W5c',
@@ -141,16 +126,6 @@ export const LEVEL_READ_ALLOWLIST = {
     lines: 1,
     phase: 'W5c',
     why: 'client app tools',
-  },
-  'packages/tools/src/client-sourced-rules.ts': {
-    lines: 13,
-    phase: 'W5c',
-    why: 'client-sourced write holds',
-  },
-  'packages/tools/src/client-sourced.ts': {
-    lines: 2,
-    phase: 'W5c',
-    why: 'client-sourced export tables',
   },
   'scripts/client-level-counts.sql': {
     lines: 7,
@@ -199,6 +174,11 @@ export const LEVEL_READ_ALLOWLIST = {
     why: 'personal folder insert names the level default',
   },
   // ── W7 (MCP, peers, Telegram, agent and tool-group levels) ──
+  'packages/tools/src/client-sourced-rules.ts': {
+    lines: 4,
+    phase: 'W7',
+    why: 'agent and tool-group levels (kept until W7, contract 21): an agent or tool group a client or the public meets holds a client-marked write',
+  },
   'packages/content/src/access.ts': {
     lines: 29,
     phase: 'W7',

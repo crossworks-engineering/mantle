@@ -20,8 +20,8 @@
  *
  * Since workspaces W5b2 the routes read as the login (withViewer with
  * { login }): the grants decide (row security on the workspace role) and no
- * level narrows the list; `audience` still badges an item by its frozen
- * level. The level rules below serve a level scope only.
+ * level narrows the list; the row's badge field still shows the frozen
+ * level (W5c moves it). The level rules below serve a level scope only.
  *
  * Read-only in Phase 1. Writing and personal spaces come in Phase 2.
  */
