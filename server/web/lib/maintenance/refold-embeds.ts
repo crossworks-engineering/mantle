@@ -37,14 +37,8 @@ import {
   withDeadlockRetry,
   withHeads,
 } from '@mantle/db';
-import {
-  chunkDocText,
-  clampPieces,
-  drawSceneText,
-  foldNoteEmbeds,
-  itemLevel,
-} from '@mantle/content';
-import { pageDocText } from '@mantle/content/pages';
+import { chunkDocText, clampPieces, drawSceneText, foldNoteEmbeds } from '@mantle/content';
+import { pageDocText, pageHolders } from '@mantle/content/pages';
 
 type Kind = 'page' | 'note' | 'draw';
 const KINDS: readonly Kind[] = ['page', 'note', 'draw'];
@@ -107,17 +101,14 @@ async function foldedRow(
       .where(eq(pages.nodeId, n.id))
       .limit(1);
     if (!p) return null;
-    const text = await pageDocText(
-      ownerId,
-      itemLevel(n.audience, n.inheritedLevel, n.embeddedLevel),
-      p.doc,
-      q,
-    );
+    // Filtered by the workspaces that hold the page (pages/level-text.ts).
+    const holders = await pageHolders(n.id, q);
+    const text = await pageDocText(ownerId, holders, p.doc, q);
     return {
       stored: text,
       storedBefore: p.docText ?? null,
       body: text.trim() ? text : n.title,
-      source: JSON.stringify([p.doc, p.docText]),
+      source: JSON.stringify([p.doc, p.docText, holders]),
     };
   }
   if (n.type === 'draw') {
@@ -178,9 +169,6 @@ async function rowState(
   const data = (n.data ?? {}) as Record<string, unknown>;
   const key = JSON.stringify([
     n.title,
-    n.audience,
-    n.inheritedLevel,
-    n.embeddedLevel,
     n.derivedMixed,
     data.refolded === true,
     folded?.source ?? null,

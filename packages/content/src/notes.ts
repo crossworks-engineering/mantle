@@ -25,7 +25,6 @@ import {
   withNodeInsertHeads,
   withWriterHeads,
 } from '@mantle/db';
-import { followNewEmbeds, noteEmbedIds, refoldEmbedReach } from './embed-closure';
 
 type NoteTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -260,17 +259,8 @@ async function updateNoteOnce(
     ? <R>(body: (tx: NoteTx) => Promise<R>) =>
         withWriterHeads([id], (tx) => body(tx as unknown as NoteTx))
     : <R>(body: (tx: NoteTx) => Promise<R>) => db.transaction(body);
+  // An embed changes no one's access (W5b2): the database keeps the edges.
   const [updated] = await open(async (tx) => {
-    // Later embeds follow on save: a note whose own level is below admin and
-    // that gains an image, file or drawing takes it to that level (embedding
-    // means sharing). A folder share it is read through is the database's to
-    // follow (0208).
-    const level = asViewerLevel(node.audience);
-    const before = noteEmbedIds(typeof oldData.content === 'string' ? oldData.content : '');
-    const after = contentChanged ? noteEmbedIds(input.content ?? '') : before;
-    if (contentChanged && level !== 'admin') {
-      await followNewEmbeds(ownerId, { id, audience: level }, before, after, tx);
-    }
     const rows = await tx
       .update(nodes)
       .set({
@@ -284,7 +274,6 @@ async function updateNoteOnce(
       })
       .where(eq(nodes.id, id))
       .returning();
-    if (contentChanged) await refoldEmbedReach(ownerId, id, before, after, tx);
     return rows;
   });
   if (!updated) throw new Error('updateNote: update returned no row');

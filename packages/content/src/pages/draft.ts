@@ -12,49 +12,11 @@
  * writing while the user types) from silently winning a lost update.
  */
 import { and, eq, sql } from 'drizzle-orm';
-import {
-  asViewerLevel,
-  db,
-  nodes,
-  notifyNodeIngested,
-  pages,
-  withBusyRetry,
-  withWriterHeads,
-} from '@mantle/db';
+import { db, nodes, notifyNodeIngested, pages, withBusyRetry, withWriterHeads } from '@mantle/db';
 import { ensureBlockIds, repairTableRows } from '@mantle/content-core/block-ids';
 import type { PageVisibility, PageWidth } from '@mantle/client-types';
 import { EMPTY_DOC, dedupeTags, detailOf, type PageDetail } from './shared';
-import { pageDocText } from './level-text';
-import { referencedEmbedIds } from '../doc-assets';
-import { followNewEmbeds, itemLevel, refoldEmbedReach } from '../embed-closure';
-
-/** Later embeds follow on save (embedding means sharing): a page whose OWN
- *  level is below admin and that gains an embed in this write takes it, and
- *  what it embeds, to that level, inside the write's transaction. A folder
- *  share it is read through is the database's to follow (0208), not this.
- *  Reads the page's level and its published doc BEFORE the write replaces
- *  it; returns what the published doc embedded, for `refoldEmbedReach`
- *  once the new doc is written. */
-async function followPageEmbeds(
-  tx: PageTx,
-  ownerId: string,
-  id: string,
-  next: Record<string, unknown>,
-): Promise<string[]> {
-  const [prev] = await tx
-    .select({ audience: nodes.audience, doc: pages.doc })
-    .from(nodes)
-    .innerJoin(pages, eq(pages.nodeId, nodes.id))
-    .where(eq(nodes.id, id))
-    .limit(1);
-  if (!prev) return [];
-  const before = referencedEmbedIds(prev.doc);
-  const level = asViewerLevel(prev.audience);
-  if (level !== 'admin') {
-    await followNewEmbeds(ownerId, { id, audience: level }, before, referencedEmbedIds(next), tx);
-  }
-  return before;
-}
+import { pageDocText, pageHolders } from './level-text';
 
 // ── Draft concurrency control (audit item #3) ────────────────────────────────
 // Page drafts mirror the Tables registry-lock spine (see table-storage.ts):
@@ -199,11 +161,10 @@ async function updatePageOnce(
 
     if (docChanged) {
       const doc = input.doc as Record<string, unknown>;
-      const before = await followPageEmbeds(tx, ownerId, id, doc);
-      // Its own words and a marker per embed; at client or public, the text
-      // of what that level reads (level-text.ts).
-      const level = itemLevel(node.audience, node.inheritedLevel, node.embeddedLevel);
-      const docText = await pageDocText(ownerId, level, doc, tx);
+      // Its own words and a marker per embed; a mention or link of an item
+      // not every workspace holding the page holds is "Private item"
+      // (level-text.ts). An embed changes no one's access (W5b2).
+      const docText = await pageDocText(ownerId, await pageHolders(id, tx), doc, tx);
       await tx
         .update(pages)
         .set({
@@ -213,7 +174,6 @@ async function updatePageOnce(
           updatedAt: new Date(),
         })
         .where(eq(pages.nodeId, id));
-      await refoldEmbedReach(ownerId, id, before, referencedEmbedIds(doc), tx);
       return detailOf(row, doc);
     }
     const [p] = await tx
@@ -366,18 +326,11 @@ async function commitPageOnce(
       if (decision.conflict) {
         return { ok: false as const, conflict: true as const, rev: decision.rev };
       }
-      const before = await followPageEmbeds(tx, ownerId, id, enriched);
       // The page's own words, a marker per embed (always fold, workspaces plan
-      // 5.3): an embed's text is indexed on the embed itself. At client or
-      // public, mentions of what that level cannot read are "Private item"
-      // (pages/level-text.ts). Read after the embeds followed the page down,
-      // in this transaction.
-      const docText = await pageDocText(
-        ownerId,
-        itemLevel(node.audience, node.inheritedLevel, node.embeddedLevel),
-        enriched,
-        tx,
-      );
+      // 5.3): an embed's text is indexed on the embed itself. A mention or
+      // link of an item not every workspace holding the page holds is
+      // "Private item" (pages/level-text.ts).
+      const docText = await pageDocText(ownerId, await pageHolders(id, tx), enriched, tx);
       const [row] = await tx
         .update(nodes)
         .set({ data: newData, embedding: null, updatedAt: new Date() })
@@ -396,7 +349,6 @@ async function commitPageOnce(
           updatedAt: new Date(),
         })
         .where(eq(pages.nodeId, id));
-      await refoldEmbedReach(ownerId, id, before, referencedEmbedIds(enriched), tx);
       return {
         ok: true as const,
         page: detailOf(row, enriched, null, { draftRev: decision.nextRev }),

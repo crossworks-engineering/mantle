@@ -19,14 +19,8 @@ import {
 } from '@mantle/files';
 import { recordSkippedTrace, step } from '@mantle/tracing';
 import { documentWorkerPrefersNative } from '@mantle/runtime/agent';
-import {
-  drawSceneText,
-  foldNoteEmbeds,
-  itemLevel,
-  parseFormulaSpec,
-  formulaToText,
-} from '@mantle/content';
-import { pageDocText } from '@mantle/content/pages';
+import { drawSceneText, foldNoteEmbeds, parseFormulaSpec, formulaToText } from '@mantle/content';
+import { pageDocText, pageHolders } from '@mantle/content/pages';
 import { isHollowFilenameBody } from '../extractor-parse';
 import { cleanText } from './text';
 import { loadFileBytes, tryUnlockPdf } from './file-bytes';
@@ -182,7 +176,7 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
   // ─── Pages — plaintext from the TipTap sidecar ────────────────────────
   // The ProseMirror doc lives in `pages.doc`. Its text is computed here from
   // the doc, the way a save computes `pages.doc_text` (pageDocText: a marker
-  // per embed, filtered at client and public), never read from the stored
+  // per embed, filtered by the workspaces that hold it), never read from the stored
   // copy: a row saved before always fold may still hold an embed's words in
   // doc_text until the re-fold runs (workspaces plan 5.3, W2 audit).
   if (node.type === 'page') {
@@ -193,11 +187,7 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
       .limit(1);
     if (!row) return node.title;
     const text = row.doc
-      ? await pageDocText(
-          node.ownerId,
-          itemLevel(node.audience, node.inheritedLevel, node.embeddedLevel),
-          row.doc,
-        )
+      ? await pageDocText(node.ownerId, await pageHolders(node.id), row.doc)
       : '';
     return text.trim() ? text : node.title;
   }

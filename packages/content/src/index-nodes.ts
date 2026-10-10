@@ -98,7 +98,6 @@ export {
   foldNoteEmbeds,
 } from './embed-fold';
 export { drawSceneText } from './draw-scene-text';
-export { itemLevel } from './item-level';
 
 export {
   DEFAULT_BACKUP_CONFIG,

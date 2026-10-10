@@ -252,12 +252,13 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
     const [p] = await admin<
       { t: string }[]
     >`select doc_text as t from pages where node_id = ${levelled}`;
-    // At public the redactor leaves an unreadable picture out (no marker either).
-    expect(p!.t).toBe('Pump overhaul notes.');
+    // Its own words and a marker for the picture (no workspace holds this
+    // page, so nothing else is hidden; W5b2).
+    expect(p!.t).toBe('Pump overhaul notes.\n[embedded file]');
     const [o] = await admin<
       { t: string }[]
     >`select doc_text as t from pages where node_id = ${orphan}`;
-    expect(o!.t).toBe('Pump overhaul notes.');
+    expect(o!.t).toBe('Pump overhaul notes.\n[embedded file]');
   });
 
   it('a row that changes between the read and the write is left for the next run', async () => {

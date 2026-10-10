@@ -1,297 +1,224 @@
 /**
- * A page's indexed text at its level (client logins plan 3.3 point 4, N13;
- * audit B1) on a real, migrated Postgres. A client or public page's
- * `doc_text` names no item its level cannot read (a mention, a link, a child
- * page card: "Private item"). Since always fold (workspaces W2) no page
- * folds in an embed's text or name, at any level: an embed is a plain
- * marker ("[embedded file]"). When a level moves (an
- * embedded file raised or lowered, the page's own level), the text is
- * re-folded, and nothing else happens: no summary, version or updated_at
- * change, and no announcement to the extractor. Seeds its own owner and
- * rows and removes them.
+ * A page's indexed text by its holders (workspaces plan 5.3, W5b2), on a
+ * scratch brain the workspaces migration made live. `doc_text` holds the
+ * page's own words: an embed is a plain marker, and a mention or link of
+ * another item carries that item's title only when every workspace that
+ * holds the page also holds the item, else "Private item" (an entity
+ * mention only on a page Admin alone holds). After a grant change
+ * `refoldPageTexts` rewrites the text, and nothing else happens: no summary,
+ * version or updated_at change, no announcement to the extractor.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/pages/level-text.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
+import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { notifyBarrier } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
-describe.skipIf(!URL)('page text at its level', () => {
+describe.skipIf(!URL)('page text by its holders', () => {
+  type Ts = typeof import('@mantle/db/test-support');
+  let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
   let m: typeof import('@mantle/db');
-  let a: typeof import('../access');
-  let draft: typeof import('./draft');
-  let sqlTag: typeof import('drizzle-orm').sql;
-  let unlisten: () => Promise<void>;
-  const announced: string[] = [];
+  let ts: Ts;
+  let pages: typeof import('./index');
   const owner = randomUUID();
-  const tag = `lvltext-${owner.slice(0, 8)}`;
+  let team = '';
+  let admin = '';
+  const announced: string[] = [];
+  let unlisten: () => Promise<void> = async () => {};
   const id = {
-    clientPage: randomUUID(),
-    teamSame: randomUUID(),
-    publicPage: randomUUID(),
-    editedPage: randomUUID(),
-    teamTitle: randomUUID(),
-    shared: randomUUID(),
-    clientFile: randomUUID(),
-    teamFile: randomUUID(),
-    teamDraw: randomUUID(),
+    teamPage: randomUUID(),
     adminPage: randomUUID(),
-    publicNote: randomUUID(),
-    mentioner: randomUUID(),
-    shareMe: randomUUID(),
+    shared: randomUUID(),
+    adminNote: randomUUID(),
+    file: randomUUID(),
   };
   const para = (...content: unknown[]) => ({ type: 'paragraph', content });
-  const mention = (to: string, label: string) => ({
+  const mention = (to: string, label: string, ref = 'node') => ({
     type: 'mention',
-    attrs: { id: to, label, ref: 'node' },
+    attrs: { id: to, label, ref },
   });
-  const linked = (text: string, href: string) => ({
+  const linked = (text: string, href: string, more: unknown[] = []) => ({
     type: 'text',
     text,
-    marks: [{ type: 'link', attrs: { href } }],
+    marks: [...more, { type: 'link', attrs: { href } }],
   });
-  const body = {
+  const body = () => ({
     type: 'doc',
     content: [
       para(
         { type: 'text', text: 'Intro ' },
-        mention(id.teamTitle, 'TEAMLABEL'),
-        linked(' TEAMLINK', `/n/${id.teamTitle}`),
         mention(id.shared, 'STALELABEL'),
-        linked(' ADMINABS', `https://brain.example.invalid/n/${id.adminPage}`),
-        mention(id.publicNote, 'PUBLICLABEL'),
+        mention(id.adminNote, 'ADMINLABEL'),
+        // One link over two runs reads "Private item" once.
+        linked(' ADMINLINK', `/n/${id.adminNote}`),
+        linked(' ADMINLINKBOLD', `/n/${id.adminNote}`, [{ type: 'bold' }]),
+        linked(' ADMINABS', `https://brain.example.invalid/n/${id.adminNote}`),
+        mention(randomUUID(), 'ENTITYLABEL', 'entity'),
+        linked(' the wiki', 'https://example.invalid/wiki'),
       ),
-      { type: 'image', attrs: { nodeId: id.clientFile, alt: 'client pic' } },
-      { type: 'image', attrs: { nodeId: id.teamFile, alt: 'TEAMALT' } },
-      { type: 'image', attrs: { drawId: id.teamDraw } },
-      { type: 'childPage', attrs: { pageId: id.teamTitle, title: 'TEAMCHILD' } },
-      { type: 'childPage', attrs: { pageId: id.shared, title: 'STALECHILD' } },
+      { type: 'image', attrs: { nodeId: id.file, alt: 'FILEALT' } },
+      { type: 'childPage', attrs: { pageId: id.adminPage, title: 'ADMINCHILD' } },
     ],
-  };
-  const TEAM_WORDS = [
-    'TEAMLABEL',
-    'TEAMLINK',
-    'TEAMTITLE',
-    'TEAMCHILD',
-    'TEAMALT',
-    'TEAMFILETEXT',
-    'TEAMDRAWTEXT',
-    'ADMINABS',
-    'ADMINTITLE',
-    'PUBLICLABEL',
-    'STALE',
-  ];
+  });
 
-  const adminSql = () =>
-    (m.systemDb as unknown as { $client: Parameters<typeof notifyBarrier>[0] }).$client;
-  const row = async (nodeId: string) =>
+  const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await m.systemDb.execute(q)) as unknown as T[];
+  const client = () =>
+    (m.systemDb as unknown as { $client: Parameters<Ts['notifyBarrier']>[0] }).$client;
+  const settle = () =>
+    ts.notifyBarrier(client(), 'node_ingested', { seen: (p) => announced.includes(p) });
+  const node = (nid: string, type: string, title: string, path: string) =>
+    x(sql`insert into nodes (id, owner_id, type, title, path)
+          values (${nid}, ${owner}, ${type}::node_type, ${title}, ${path}::ltree)`);
+  const grant = (nid: string, ws: string) =>
+    m.withHeads([nid], 'update', (tx) =>
+      tx.execute(sql`insert into item_grants (node_id, workspace_id) values (${nid}, ${ws})
+                     on conflict do nothing`),
+    );
+  const row = async (nid: string) =>
     (
-      (await m.db.execute(sqlTag`
-        select p.doc_text, p.version, n.data->>'summary' as summary, n.updated_at
-          from pages p join nodes n on n.id = p.node_id where p.node_id = ${nodeId}`)) as unknown as {
-        doc_text: string;
-        version: number;
-        summary: string | null;
-        updated_at: unknown;
-      }[]
+      await x<{ doc_text: string; version: number; summary: string | null; updated_at: unknown }>(
+        sql`select p.doc_text, p.version, n.data->>'summary' as summary, n.updated_at::text
+              from pages p join nodes n on n.id = p.node_id where p.node_id = ${nid}`,
+      )
     )[0]!;
-  const settle = async () => {
-    await notifyBarrier(adminSql(), 'node_ingested', { seen: (x) => announced.includes(x) });
-  };
+  const count = (text: string, w: string) => text.split(w).length - 1;
 
   beforeAll(async () => {
-    process.env.DATABASE_URL = URL;
+    ts = await import('@mantle/db/test-support');
+    scratch = await ts.createMigratedScratchDatabase(URL!);
+    process.env.DATABASE_URL = scratch.url;
+    process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('@mantle/db');
-    a = await import('../access');
-    draft = await import('./draft');
-    sqlTag = (await import('drizzle-orm')).sql;
-    const sub = await adminSql().listen('node_ingested', (p: string) => announced.push(p));
-    unlisten = () => sub.unlisten();
+    pages = await import('./index');
+    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role) values
+      (${owner}, ${`lvltext-${owner.slice(0, 8)}@example.invalid`}, 'x', true, 'admin')`);
+    await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
+      on conflict (id) do nothing`);
+    await x(sql`select * from mantle_ws_migrate()`);
+    const ws = await x<{ id: string; key: string }>(sql`
+      select id::text as id, bridge_key as key from workspaces where owner_id = ${owner}`);
+    team = ws.find((w) => w.key === 'team')!.id;
+    admin = ws.find((w) => w.key === 'admin')!.id;
 
-    await m.db.execute(sqlTag`
-      insert into auth.users (id, email, password_hash, role) values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin')`);
-    await m.db.execute(sqlTag`
-      insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`);
-    const rows: Array<[string, string, string, string, string, Record<string, unknown>]> = [
-      [id.clientPage, 'page', 'Client page', 'pages', 'client', {}],
-      [id.teamSame, 'page', 'Team page', 'pages', 'team', {}],
-      [id.publicPage, 'page', 'Public page', 'pages', 'public', {}],
-      [id.editedPage, 'page', 'Edited page', 'pages', 'client', {}],
-      [id.teamTitle, 'page', 'Price floor TEAMTITLE', 'pages', 'team', {}],
-      [id.shared, 'page', 'Shared plan today', 'pages', 'client', {}],
-      [id.clientFile, 'file', 'client.png', 'files', 'client', { text: 'CLIENTFILETEXT' }],
-      [id.teamFile, 'file', 'team.png', 'files', 'team', { text: 'TEAMFILETEXT' }],
-      [id.teamDraw, 'draw', 'Team sketch', 'draw', 'team', {}],
-      [id.adminPage, 'page', 'ADMINTITLE', 'pages', 'admin', {}],
-      [id.publicNote, 'note', 'Public note today', 'notes', 'public', {}],
-      [id.mentioner, 'page', 'Mentions the team title', 'pages', 'client', {}],
-      [id.shareMe, 'page', 'Gets an open link', 'pages', 'admin', {}],
-    ];
-    for (const [nid, type, title, path, level, data] of rows) {
-      await m.db.execute(sqlTag`
-        insert into nodes (id, owner_id, type, title, path, audience, data) values
-          (${nid}, ${owner}, ${type}, ${title}, ${path}::ltree, ${level}, ${JSON.stringify(data)}::jsonb)`);
-    }
-    // The published doc is already the body, so a commit adds no embed and
-    // lowers nothing (embedding means sharing only follows NEW embeds).
-    for (const p of [id.clientPage, id.teamSame]) {
-      await m.db.execute(sqlTag`
-        insert into pages (node_id, doc, doc_text) values (${p}, ${JSON.stringify(body)}::jsonb, '')`);
-    }
+    // Every new brain item is homed in Admin; the Team page and the shared
+    // note are Team's too.
+    await node(id.teamPage, 'page', 'Team page', 'pages');
+    await node(id.adminPage, 'page', 'Admin page ADMINTITLE', 'pages');
+    await node(id.shared, 'note', 'Shared note today', 'notes');
+    await node(id.adminNote, 'note', 'Admin note ADMINNOTETITLE', 'notes');
+    await node(id.file, 'file', 'FILETITLE.png', 'files');
     const empty = JSON.stringify({ type: 'doc', content: [] });
-    for (const p of [id.publicPage, id.editedPage, id.teamTitle, id.shared, id.adminPage]) {
-      await m.db.execute(sqlTag`
-        insert into pages (node_id, doc, doc_text) values (${p}, ${empty}::jsonb, '')`);
-    }
-    // Texts as a commit before the level-filtered text wrote them.
-    const named = (label: string) =>
-      JSON.stringify({ type: 'doc', content: [para(mention(id.teamTitle, label))] });
-    await m.db.execute(sqlTag`
-      insert into pages (node_id, doc, doc_text) values
-        (${id.mentioner}, ${named('XLABEL')}::jsonb, 'XLABEL'),
-        (${id.shareMe}, ${named('SHARETEAM')}::jsonb, 'SHARETEAM')`);
-    await m.db.execute(sqlTag`
-      insert into draws (node_id, scene, scene_text) values
-        (${id.teamDraw}, '{"elements":[]}'::jsonb, 'TEAMDRAWTEXT')`);
-  }, 60_000);
+    await x(sql`insert into pages (node_id, doc, doc_text) values
+      (${id.teamPage}, ${empty}::jsonb, ''), (${id.adminPage}, ${empty}::jsonb, '')`);
+    await grant(id.teamPage, team);
+    await grant(id.shared, team);
+
+    const sub = await client().listen('node_ingested', (p: string) => announced.push(p));
+    unlisten = () => sub.unlisten();
+  }, 180_000);
 
   afterAll(async () => {
     await unlisten();
-    await m.db.execute(sqlTag`delete from shares where owner_id = ${owner}`);
-    await m.db.execute(sqlTag`delete from nodes where owner_id = ${owner}`);
-    await m.db.execute(sqlTag`delete from profiles where user_id = ${owner}`);
-    await m.db.execute(sqlTag`delete from spaces where id = ${owner} or login_id = ${owner}`);
-    await m.db.execute(sqlTag`delete from auth.users where id = ${owner}`);
-    await m.closeDb();
+    await m?.closeDb();
+    await scratch?.drop();
   });
 
-  it('a client page commits a text that names no team, admin or public item', async () => {
-    const res = await draft.commitPage(owner, id.clientPage, body);
-    expect(res.ok).toBe(true);
-    const text = (await row(id.clientPage)).doc_text;
-    for (const w of TEAM_WORDS) expect(text, w).not.toContain(w);
+  it('a page Team and Admin hold names only what both hold', async () => {
+    expect((await pages.commitPage(owner, id.teamPage, body())).ok).toBe(true);
+    const text = (await row(id.teamPage)).doc_text;
     expect(text).toContain('Intro');
-    expect(text).toContain('Private item');
-    // Always fold: the readable embeds are markers, never their words.
-    expect(text).not.toContain('client pic');
-    expect(text).not.toContain('CLIENTFILETEXT');
-    expect(text).toContain('[embedded file]');
-    expect(text).toContain('[embedded page]');
-    // A readable chip carries today's title (the child page card is a marker).
-    expect(text.split('Shared plan today').length - 1).toBe(1);
-  });
-
-  it("a team page's text keeps every label, and a marker for each embed", async () => {
-    const res = await draft.commitPage(owner, id.teamSame, body);
-    expect(res.ok).toBe(true);
-    const text = (await row(id.teamSame)).doc_text;
-    for (const w of ['TEAMLABEL', 'TEAMLINK']) expect(text, w).toContain(w);
-    for (const w of ['TEAMCHILD', 'TEAMALT', 'TEAMFILETEXT', 'TEAMDRAWTEXT', 'CLIENTFILETEXT']) {
+    // Held by both: today's title, not the stored label.
+    expect(text).toContain('Shared note today');
+    expect(text).not.toContain('STALELABEL');
+    // Admin only (a note, an absolute link to it, an entity): "Private item".
+    for (const w of ['ADMINLABEL', 'ADMINLINK', 'ADMINABS', 'ADMINNOTETITLE', 'ENTITYLABEL']) {
       expect(text, w).not.toContain(w);
     }
-    for (const mk of ['[embedded file]', '[embedded drawing]', '[embedded page]']) {
-      expect(text).toContain(mk);
+    // The mention, the link (two runs, once), the absolute link, the entity.
+    expect(count(text, 'Private item')).toBe(4);
+    // An external link names no item: it stays.
+    expect(text).toContain('the wiki');
+    // Every embed is a marker, held or not, never its words.
+    expect(text).toContain('[embedded file]');
+    expect(text).toContain('[embedded page]');
+    for (const w of ['FILEALT', 'FILETITLE', 'ADMINCHILD', 'ADMINTITLE']) {
+      expect(text, w).not.toContain(w);
     }
-    expect(text).toContain('ADMINABS');
+  });
+
+  it('a page Admin alone holds names everything Admin holds, entities too', async () => {
+    expect((await pages.commitPage(owner, id.adminPage, body())).ok).toBe(true);
+    const text = (await row(id.adminPage)).doc_text;
+    expect(text).toContain('Shared note today');
+    expect(text).toContain('Admin note ADMINNOTETITLE');
+    for (const w of ['ADMINLINK', 'ADMINLINKBOLD', 'ADMINABS', 'ENTITYLABEL']) {
+      expect(text, w).toContain(w);
+    }
     expect(text).not.toContain('Private item');
+    expect(text).toContain('[embedded file]');
   });
 
-  it('a public page reads public items only: a client item is "Private item"', async () => {
-    const doc = {
-      type: 'doc',
-      content: [
-        para(mention(id.shared, 'CLIENTLABEL'), { type: 'text', text: ' and ' }),
-        para(mention(id.publicNote, 'old public label')),
-      ],
-    };
-    await m.db.execute(
-      sqlTag`update pages set doc = ${JSON.stringify(doc)}::jsonb where node_id = ${id.publicPage}`,
-    );
-    expect((await draft.commitPage(owner, id.publicPage, doc)).ok).toBe(true);
-    const text = (await row(id.publicPage)).doc_text;
-    expect(text).not.toContain('CLIENTLABEL');
-    expect(text).not.toContain('Shared plan today');
+  it('a programmatic write (updatePage) folds the same way', async () => {
+    const doc = { type: 'doc', content: [para(mention(id.adminNote, 'UPDLABEL'))] };
+    await pages.updatePage(owner, id.teamPage, { doc }, { reindex: false });
+    const text = (await row(id.teamPage)).doc_text;
+    expect(text).not.toContain('UPDLABEL');
     expect(text).toContain('Private item');
-    expect(text).toContain('Public note today');
+    // Back to the full body for the refold below.
+    expect((await pages.commitPage(owner, id.teamPage, body())).ok).toBe(true);
   });
 
-  it("a programmatic write (updatePage) filters a client page's text too", async () => {
-    const doc = { type: 'doc', content: [para(mention(id.teamTitle, 'UPDTEAM'))] };
-    await draft.updatePage(owner, id.editedPage, { doc }, { reindex: false });
-    const text = (await row(id.editedPage)).doc_text;
-    expect(text).not.toContain('UPDTEAM');
-    expect(text).toContain('Private item');
+  it('a page made in the brain folds by the holders its insert gave it', async () => {
+    const made = await pages.createPage(owner, {
+      title: 'Made here',
+      doc: { type: 'doc', content: [para(mention(id.adminNote, 'MADELABEL'))] },
+    });
+    const text = (await row(made.id)).doc_text;
+    // Admin alone holds a new page (its home): the note's title.
+    expect(text).toContain('Admin note ADMINNOTETITLE');
+    expect(await pages.pageHolders(made.id)).toEqual([admin]);
   });
 
-  it('raising an embedded file re-folds the text, and nothing else happens', async () => {
-    await m.db.execute(sqlTag`
-      update nodes set data = data || '{"summary":"SUMMARYKEEP"}'::jsonb where id = ${id.clientPage}`);
-    const before = await row(id.clientPage);
+  it('a grant change re-folds the text, and nothing else happens', async () => {
+    await x(sql`update nodes set data = data || '{"summary":"SUMMARYKEEP"}'::jsonb
+                 where id = ${id.teamPage}`);
+    const before = await row(id.teamPage);
     await settle();
     announced.length = 0;
 
-    await a.setItemLevel(owner, id.clientFile, 'team');
-    const after = await row(id.clientPage);
-    expect(after.doc_text).not.toContain('CLIENTFILETEXT');
-    expect(after.doc_text).not.toContain('client pic');
-    // Text only: the summary, version and updated_at are as they were, and
-    // the extractor heard nothing.
+    // Team now holds the Admin note too: the Team page may name it.
+    await grant(id.adminNote, team);
+    expect(await pages.refoldPageTexts(owner, [id.adminNote])).toBeGreaterThanOrEqual(1);
+    const after = await row(id.teamPage);
+    expect(after.doc_text).toContain('Admin note ADMINNOTETITLE');
+    expect(after.doc_text).toContain('ADMINLINK');
+    // The entity is still Admin's alone.
+    expect(after.doc_text).not.toContain('ENTITYLABEL');
+    expect(count(after.doc_text, 'Private item')).toBe(1);
+    // Text only: summary, version and updated_at as they were, and the
+    // extractor heard nothing.
     expect(after.summary).toBe('SUMMARYKEEP');
     expect(after.version).toBe(before.version);
     expect(String(after.updated_at)).toBe(String(before.updated_at));
     await settle();
-    expect(announced).not.toContain(id.clientPage);
-    // The team page is not filtered: still its markers, never the file's text.
-    expect((await row(id.teamSame)).doc_text).not.toContain('CLIENTFILETEXT');
+    expect(announced).not.toContain(id.teamPage);
   });
 
-  it('lowering an embedded file to client adds its marker, never its text', async () => {
-    const markers = (t: string) => t.split('[embedded file]').length - 1;
-    const before = markers((await row(id.clientPage)).doc_text);
-    await a.setItemLevel(owner, id.teamFile, 'client');
-    const text = (await row(id.clientPage)).doc_text;
-    expect(markers(text)).toBe(before + 1);
-    expect(text).not.toContain('TEAMFILETEXT');
-    expect(text).not.toContain('TEAMALT');
-    expect(text).not.toContain('TEAMLABEL');
+  it("the page's own holders: Team joins the Admin page, its entity goes private", async () => {
+    await grant(id.adminPage, team);
+    await pages.refoldPageTexts(owner, [id.adminPage]);
+    const text = (await row(id.adminPage)).doc_text;
+    expect(text).not.toContain('ENTITYLABEL');
+    expect(text).toContain('Admin note ADMINNOTETITLE');
+    expect(count(text, 'Private item')).toBe(1);
   });
 
-  it('an item lowered with the page that embeds it re-folds the pages that name it', async () => {
-    await m.db.execute(sqlTag`
-      update pages set doc_text = 'XLABEL' where node_id = ${id.mentioner}`);
-    // teamSame embeds teamTitle as a child page: lowering teamSame to client
-    // takes teamTitle down with it, and the client page that mentions
-    // teamTitle now reads its title.
-    await a.setItemLevel(owner, id.teamSame, 'client');
-    expect(
-      (
-        (await m.db.execute(
-          sqlTag`select audience from nodes where id = ${id.teamTitle}`,
-        )) as unknown as { audience: string }[]
-      )[0]!.audience,
-    ).toBe('client');
-    const text = (await row(id.mentioner)).doc_text;
-    expect(text).not.toContain('XLABEL');
-    expect(text).toContain('Price floor TEAMTITLE');
-  });
-
-  it('an open link makes a page public: its text is re-folded to public', async () => {
-    const s = await import('../shares');
-    await s.createShare(owner, id.shareMe);
-    const text = (await row(id.shareMe)).doc_text;
-    expect(text).not.toContain('SHARETEAM');
-    expect(text).not.toContain('TEAMTITLE');
-    expect(text).toContain('Private item');
-  });
-
-  it("the page's own level: raised to team, every label again, embeds still markers", async () => {
-    await a.setItemLevel(owner, id.clientPage, 'team');
-    const text = (await row(id.clientPage)).doc_text;
-    for (const w of ['TEAMLABEL', 'TEAMLINK']) expect(text, w).toContain(w);
-    for (const w of ['TEAMCHILD', 'TEAMDRAWTEXT']) expect(text, w).not.toContain(w);
-    expect(text).toContain('[embedded drawing]');
-    await settle();
-    expect(announced).not.toContain(id.clientPage);
+  it('a page no workspace holds is not filtered (no database read)', async () => {
+    const t = await pages.pageDocText(owner, [], body());
+    expect(t).toContain('ENTITYLABEL');
+    expect(t).toContain('STALELABEL');
+    expect(t).not.toContain('Private item');
   });
 });

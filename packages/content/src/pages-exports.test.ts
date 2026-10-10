@@ -47,6 +47,8 @@ const PUBLIC_VALUE_EXPORTS = [
   'listPages',
   'pageDocText',
   'pageFolderIdOf',
+  'pageHolders',
+  'refoldPageTexts',
   'saveDraft',
   'splitPage',
   'updatePage',

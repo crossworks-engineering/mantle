@@ -53,19 +53,14 @@ export const LEVEL_READ_ALLOWLIST = {
     why: 'display + app tool level (client rules run for a client-level app)',
   },
   'packages/content/src/draws.ts': {
-    lines: 9,
+    lines: 6,
     phase: 'W5b2',
-    why: 'display rows + writer (embed follow on commit)',
+    why: 'display rows (list chips: the tree helper)',
   },
   'packages/content/src/embed-closure.ts': {
-    lines: 21,
-    phase: 'W5b2',
-    why: 'writer: embed closure lowering and reconcile',
-  },
-  'packages/content/src/index-nodes.ts': {
     lines: 1,
     phase: 'W5b2',
-    why: 'derived text folded at the item level (client/public redaction)',
+    why: 'deprecated no-op EmbedItem type: goes with the calls in access, shares, member-review, access-shadow',
   },
   'packages/content/src/item-level.ts': {
     lines: 24,
@@ -83,24 +78,14 @@ export const LEVEL_READ_ALLOWLIST = {
     why: 'member app gate reads grants; listing and write rule tell public from team',
   },
   'packages/content/src/notes.ts': {
-    lines: 8,
-    phase: 'W5b2',
-    why: 'display rows + writer (embed follow)',
-  },
-  'packages/content/src/pages/draft.ts': {
     lines: 6,
     phase: 'W5b2',
-    why: 'writer (embed follow) + page text folded at level',
+    why: 'display rows (list chips: the tree helper)',
   },
   'packages/content/src/pages/level-text.ts': {
-    lines: 14,
+    lines: 6,
     phase: 'W5b2',
-    why: 'page text folded for client/public',
-  },
-  'packages/content/src/pages/tree.ts': {
-    lines: 2,
-    phase: 'W5b2',
-    why: 'page text folded at level on create',
+    why: 'levelFilteredDoc/Note: the links helper',
   },
   'packages/content/src/shared-via.ts': {
     lines: 9,
@@ -204,11 +189,6 @@ export const LEVEL_READ_ALLOWLIST = {
     phase: 'W5b2',
     why: 'connector/agent level (+ OAuth audience lines)',
   },
-  'server/api/src/agent/extract/load-body.ts': {
-    lines: 2,
-    phase: 'W5b2',
-    why: 'extract text folded at level',
-  },
   'server/web/app/api/access/agents/[slug]/route.ts': {
     lines: 5,
     phase: 'W5b2',
@@ -235,11 +215,6 @@ export const LEVEL_READ_ALLOWLIST = {
     lines: 3,
     phase: 'W5b2',
     why: 'public: link levels',
-  },
-  'server/web/lib/maintenance/refold-embeds.ts': {
-    lines: 5,
-    phase: 'W5b2',
-    why: 'text folded at level',
   },
   'server/web/lib/shares.ts': {
     lines: 21,

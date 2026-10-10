@@ -1,25 +1,29 @@
 /**
- * A page's indexed text at its level (client logins plan 3.3 point 4, N13;
- * audit B1; always fold, workspaces plan 5.3). `pages.doc_text` is what the
- * extractor summarises, chunks and embeds and what search matches, so it holds
- * the page's own words only:
+ * A page's indexed text (workspaces plan 5.3: derived text holds only the
+ * item's own words). `pages.doc_text` is what the extractor summarises,
+ * chunks and embeds and what search matches, so:
  *
  *  - an embedded file, drawing or child page is a plain marker
- *    ("[embedded file]"), at EVERY level: its words are indexed on the item
- *    itself and found through its own level or grants (phase W2; before it,
- *    a team or admin page folded every embed's text in);
- *  - at client or public, a mention chip or a link of an item the page's
- *    level cannot read is written as "Private item" (a readable one carries
- *    its item's current title).
+ *    ("[embedded file]"): its words are indexed on the item itself and found
+ *    through its own grants;
+ *  - a mention chip or a link of another item carries that item's current
+ *    title only when EVERY workspace that holds the page also holds that
+ *    item (the item's read_ws contains all of the page's read_ws); otherwise
+ *    it is "Private item". An entity mention (entities live in Admin only)
+ *    keeps its label only on a page that Admin alone holds.
  *
- * The filter is the client redactor (client-redact.ts) with the page's level
- * deciding what is readable. When a level changes (the page's own, or an item
- * it names), `refoldPageTexts` recomputes the text of the pages concerned:
- * plain SQL and TypeScript, and NOTHING else. It never announces the page to
- * the extractor (cost safety: no level change may start LLM work).
+ * A page no workspace holds (a personal space's page) is not filtered. When
+ * grants change (the page's, or an item it names), `refoldPageTexts`
+ * recomputes the text of the pages concerned: plain SQL and TypeScript, and
+ * NOTHING else. It never announces the page to the extractor (cost safety: no
+ * grant change may start LLM work).
+ *
+ * `levelFilteredDoc` and `levelFilteredNote` are the open-link render rule
+ * (the share pages) and still read levels: the links work replaces them.
  */
 import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import { asViewerLevel, db, levelCovers, nodes, pages, type ViewerLevel } from '@mantle/db';
+import { CLIENT_PRIVATE_LABEL } from '@mantle/client-types/dto/client';
 import { docToText } from '../doc-to-text';
 import {
   clientOwnUrl,
@@ -29,10 +33,10 @@ import {
   redactClientNote,
 } from '../client-redact';
 import { clientRedactOrigins } from '../client-origins';
-import { itemLevel } from '../item-level';
+import { pageRefs, type OwnUrl } from '../embed-refs';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
-/** The pool, or a caller's transaction (the level writes run in one). */
+/** The pool, or a caller's transaction. */
 export type LevelTextDb = typeof db | Tx;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -114,32 +118,166 @@ export async function levelFilteredNote(
   return redactClientNote(markdown, new Set(titles.keys()), { ownUrl, titles });
 }
 
-/**
- * The `doc_text` of a page at `level`: its (filtered) doc as text, with a
- * plain marker for each item it embeds and none of that item's words (always
- * fold, workspaces plan 5.3, phase W2). The embedded file, drawing or page is
- * indexed as its own item and found through its own level or grants. At
- * client or public the doc is filtered first (a mention or link of an item
- * the level cannot read reads "Private item").
- */
-export async function pageDocText(
+// ── The grants fold (doc_text) ───────────────────────────────────────────────
+
+type PMMark = { type?: string; attrs?: Record<string, unknown> };
+type PMNode = {
+  type?: string;
+  attrs?: Record<string, unknown>;
+  marks?: PMMark[];
+  content?: PMNode[];
+  text?: string;
+};
+
+/** What every holder of a page reads, for its fold: the named items they all
+ *  hold (lower-case id to current title), and whether entity mentions are
+ *  theirs (Admin alone holds the page). */
+type HolderView = { held: ReadonlyMap<string, string>; entities: boolean; ownUrl: OwnUrl };
+
+/** A uuid array literal for the workspaces in `ids`. */
+function uuidArray(ids: readonly string[]) {
+  return sql`array[${sql.join(
+    ids.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  )}]::uuid[]`;
+}
+
+/** The workspaces that hold `pageId` (its read_ws). Empty for a page no
+ *  workspace holds (a personal space's page) or one that is gone. */
+export async function pageHolders(pageId: string, q: LevelTextDb = db): Promise<string[]> {
+  if (!UUID.test(pageId)) return [];
+  const [row] = (await q.execute(sql`
+    select coalesce(array_to_string(read_ws, ','), '') as ws
+      from nodes where id = ${pageId}::uuid`)) as unknown as Array<{ ws: string }>;
+  return wsList(row?.ws);
+}
+
+function wsList(ws: string | null | undefined): string[] {
+  return ws ? ws.split(',').filter((w) => UUID.test(w)) : [];
+}
+
+/** The view of a page held by `holders`, for the ids its doc names. */
+async function holderView(
   ownerId: string,
-  level: ViewerLevel,
-  doc: unknown,
-  q: LevelTextDb = db,
-): Promise<string> {
-  const shown = await levelFilteredDoc(ownerId, level, doc, q);
-  return docToText(shown, { embedMarkers: true });
+  holders: readonly string[],
+  ids: readonly string[],
+  withEntities: boolean,
+  ownUrl: OwnUrl,
+  q: LevelTextDb,
+): Promise<HolderView> {
+  const wanted = [...new Set(ids.filter((i) => UUID.test(i)).map((i) => i.toLowerCase()))];
+  const held = new Map<string, string>();
+  if (wanted.length) {
+    const rows = await q
+      .select({ id: nodes.id, title: nodes.title })
+      .from(nodes)
+      .where(
+        and(
+          eq(nodes.ownerId, ownerId),
+          inArray(nodes.id, wanted),
+          sql`${nodes}.read_ws @> ${uuidArray(holders)}`,
+        ),
+      );
+    for (const r of rows) held.set(r.id.toLowerCase(), r.title);
+  }
+  let entities = false;
+  if (withEntities) {
+    const [admin] = (await q.execute(sql`
+      select id::text as id from workspaces
+       where owner_id = ${ownerId}::uuid and is_admin limit 1`)) as unknown as Array<{
+      id: string;
+    }>;
+    entities = !!admin && holders.every((h) => h.toLowerCase() === admin.id.toLowerCase());
+  }
+  return { held, entities, ownUrl };
+}
+
+/** Whether a link mark names an item not every holder holds (or an entity
+ *  they do not all read). A target that names no item stays. */
+function linkHidden(m: PMMark, v: HolderView): boolean {
+  const refs = pageRefs({ type: 'text', marks: [m] }, v.ownUrl);
+  if (refs.ids.some((id) => !v.held.has(id))) return true;
+  return !v.entities && refs.refused.some((r) => /^\s*mention:/i.test(r));
+}
+
+function privateMention(n: PMNode): PMNode {
+  return { ...n, attrs: { id: null, label: CLIENT_PRIVATE_LABEL, ref: null, kind: null } };
+}
+
+function foldNode(n: PMNode, v: HolderView): PMNode {
+  if (!n || typeof n !== 'object') return n;
+  let out: PMNode = n;
+  if (n.type === 'mention') {
+    const a = n.attrs ?? {};
+    if (a.ref === 'node') {
+      const title = typeof a.id === 'string' ? v.held.get(a.id.toLowerCase()) : undefined;
+      out = title === undefined ? privateMention(n) : { ...n, attrs: { ...a, label: title } };
+    } else if (!v.entities) {
+      out = privateMention(n);
+    }
+  }
+  if (Array.isArray(n.content)) out = { ...out, content: foldContent(n.content, v) };
+  return out;
+}
+
+/** A hidden link reads "Private item" once, however many text runs (bold
+ *  here, plain there) it spans. */
+function foldContent(kids: PMNode[], v: HolderView): PMNode[] {
+  const out: PMNode[] = [];
+  let lastHidden: string | null = null;
+  for (const k of kids) {
+    if (k && typeof k === 'object' && k.type === 'text' && k.marks?.length) {
+      const hidden = k.marks.filter((m) => linkHidden(m, v));
+      if (hidden.length) {
+        const key = JSON.stringify(hidden.map((m) => m.attrs ?? {}));
+        if (key !== lastHidden) {
+          const label: PMNode = { ...k, text: CLIENT_PRIVATE_LABEL };
+          delete label.marks;
+          out.push(label);
+        }
+        lastHidden = key;
+        continue;
+      }
+    }
+    lastHidden = null;
+    out.push(foldNode(k, v));
+  }
+  return out;
 }
 
 /**
- * Re-fold `doc_text` after levels changed (`changedIds`: every item whose
- * level moved): the changed items that are pages (their own level decides
- * their filter), and every client or public page of the owner whose doc names
- * a changed item (whether that item is readable at the page's level may have
- * changed). Writes `doc_text` only, and only when it differs: no summary,
- * embedding, chunk or version change, no extractor announcement. Returns how
- * many pages were rewritten.
+ * The `doc_text` of a page that the workspaces `holders` hold (its read_ws):
+ * its doc as text, with a plain marker for each item it embeds and none of
+ * that item's words, and a mention or link of another item as that item's
+ * title only when every holder holds it, else "Private item" (see the top).
+ * No holders: the doc as it is (no database read).
+ */
+export async function pageDocText(
+  ownerId: string,
+  holders: readonly string[],
+  doc: unknown,
+  q: LevelTextDb = db,
+): Promise<string> {
+  const ws = holders.filter((h) => UUID.test(h));
+  if (!ws.length || !doc || typeof doc !== 'object') {
+    return docToText(doc, { embedMarkers: true });
+  }
+  const ownUrl = clientOwnUrl(clientRedactOrigins());
+  const refs = pageRefs(doc, ownUrl);
+  const withEntities = refs.refused.some((r) => /^\s*mention:/i.test(r));
+  if (!refs.ids.length && !withEntities) return docToText(doc, { embedMarkers: true });
+  const view = await holderView(ownerId, ws, refs.ids, withEntities, ownUrl, q);
+  return docToText(foldNode(doc as PMNode, view), { embedMarkers: true });
+}
+
+/**
+ * Re-fold `doc_text` after grants changed (`changedIds`: every item whose
+ * grants moved): the changed items that are pages (their holders may have
+ * changed), and every page of the owner whose doc names a changed item
+ * (whether all its holders hold that item may have changed). Writes
+ * `doc_text` only, and only when it differs: no summary, embedding, chunk or
+ * version change, no extractor announcement. Returns how many pages were
+ * rewritten.
  */
 export async function refoldPageTexts(
   ownerId: string,
@@ -155,38 +293,16 @@ export async function refoldPageTexts(
   const rows = await q
     .select({
       id: nodes.id,
-      audience: nodes.audience,
-      inheritedLevel: nodes.inheritedLevel,
-      embeddedLevel: nodes.embeddedLevel,
+      ws: sql<string>`coalesce(array_to_string(${nodes}.read_ws, ','), '')`,
       doc: pages.doc,
       docText: pages.docText,
     })
     .from(pages)
     .innerJoin(nodes, eq(nodes.id, pages.nodeId))
-    .where(
-      and(
-        eq(nodes.ownerId, ownerId),
-        or(
-          inArray(pages.nodeId, ids),
-          and(
-            or(
-              inArray(nodes.audience, [...FILTERED]),
-              eq(nodes.inheritedLevel, 'client'),
-              eq(nodes.embeddedLevel, 'client'),
-            ),
-            sql`(${names})`,
-          ),
-        ),
-      ),
-    );
+    .where(and(eq(nodes.ownerId, ownerId), or(inArray(pages.nodeId, ids), sql`(${names})`)));
   let written = 0;
   for (const r of rows) {
-    const text = await pageDocText(
-      ownerId,
-      itemLevel(r.audience, r.inheritedLevel, r.embeddedLevel),
-      r.doc,
-      q,
-    );
+    const text = await pageDocText(ownerId, wsList(r.ws), r.doc, q);
     if (text === r.docText) continue;
     await q.update(pages).set({ docText: text }).where(eq(pages.nodeId, r.id));
     written += 1;

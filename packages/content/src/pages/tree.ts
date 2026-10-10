@@ -19,8 +19,7 @@ import {
   withNodeInsertHeads,
   withSpaceRows,
 } from '@mantle/db';
-import { itemLevel } from '../item-level';
-import { pageDocText } from './level-text';
+import { pageDocText, pageHolders } from './level-text';
 import { guardNewPageIn } from '../tree/page-guard';
 import { EMPTY_DOC, PAGES_ROOT_LABEL, dedupeTags, detailOf, type PageDetail } from './shared';
 
@@ -159,9 +158,9 @@ export async function createPage(ownerId: string, input: CreatePageInput): Promi
   const title = input.title.trim().slice(0, 200) || 'Untitled page';
 
   // A personal-space page: its own words and a marker per embed (always
-  // fold, workspaces plan 5.3); no level filter applies there.
+  // fold, workspaces plan 5.3); no workspace holds it, so nothing is hidden.
   if (currentSpaceScope())
-    return createSpacePage(ownerId, input, title, doc, await pageDocText(ownerId, 'admin', doc));
+    return createSpacePage(ownerId, input, title, doc, await pageDocText(ownerId, [], doc));
 
   // Heads first (plan U1): the folder the page lands in, shared. Its path is
   // read here for the heads and again inside, under the share lock; the
@@ -174,14 +173,10 @@ export async function createPage(ownerId: string, input: CreatePageInput): Promi
       .values(pageRow(ownerId, input, title, path))
       .returning();
     if (!node) throw new Error('createPage: insert returned no row');
-    // The same text a save writes (pageDocText): a marker per embed, and at
-    // client or public the level filter, by the level the new row has.
-    const docText = await pageDocText(
-      ownerId,
-      itemLevel(node.audience, node.inheritedLevel, node.embeddedLevel),
-      doc,
-      tx,
-    );
+    // The same text a save writes (pageDocText): a marker per embed, and a
+    // mention or link of an item not every workspace holding the new row
+    // holds (its home and its folder's rows, set by the insert) is hidden.
+    const docText = await pageDocText(ownerId, await pageHolders(node.id, tx), doc, tx);
     await tx.insert(pages).values({ nodeId: node.id, doc, docText });
     return detailOf(node, doc);
   });

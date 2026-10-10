@@ -60,12 +60,6 @@ void import('../lib/system-manifest/reconcile')
   .then(({ reconcileManifestOnBoot }) => reconcileManifestOnBoot())
   .catch((err) => console.error('[boot] manifest reconcile failed:', err));
 
-// Embedding means sharing: close the embed gaps left from before embeds
-// followed their item down (once per brain, logged, no LLM work).
-void import('../lib/access/embed-reconcile')
-  .then(({ reconcileEmbedClosuresOnBoot }) => reconcileEmbedClosuresOnBoot())
-  .catch((err) => console.error('[boot] embed reconcile failed:', err));
-
 // A brain with no workspaces yet (a fresh install whose owner signed up
 // before this release, W5b1 audit M1): migrate it once. Skips a migrated
 // brain and one with clients (21.9) without a lock; no LLM work.

@@ -35,8 +35,8 @@ describe('always fold', () => {
     expect(docToText(doc)).toContain('marmalade-quote.pdf');
   });
 
-  it('pageDocText at an unfiltered level is the marker text, with no database read', async () => {
-    const t = await pageDocText('owner', 'admin', doc);
+  it('pageDocText of a page no workspace holds is the marker text, with no database read', async () => {
+    const t = await pageDocText('owner', [], doc);
     expect(t).toBe(docToText(doc, { embedMarkers: true }));
   });
 
