@@ -906,11 +906,14 @@ export async function disallowedRefs(
   } else if (rest.length) {
     // The brain, read as the login reads it (its workspaces; row security
     // decides).
-    const lib = await withViewer('team', { login: loginId }, () =>
-      db
-        .select({ id: nodes.id })
-        .from(nodes)
-        .where(and(sql`${nodes.ownerId} = mantle_brain_id()`, inArray(nodes.id, rest))),
+    const lib = await withViewer(
+      'team',
+      { login: loginId },
+      async () =>
+        await db
+          .select({ id: nodes.id })
+          .from(nodes)
+          .where(and(sql`${nodes.ownerId} = mantle_brain_id()`, inArray(nodes.id, rest))),
     );
     for (const r of lib) ok.add(r.id);
   }

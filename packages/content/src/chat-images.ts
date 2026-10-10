@@ -140,18 +140,21 @@ export async function chatImagesFor(
 ): Promise<Map<string, ChatImageKind>> {
   const out = new Map<string, ChatImageKind>();
   if (!ids.length) return out;
-  const rows = await withViewer(reader, { login: loginId }, () =>
-    db
-      .select({ id: nodes.id, type: nodes.type })
-      .from(nodes)
-      .where(
-        and(
-          eq(nodes.ownerId, anchorId),
-          inArray(nodes.id, [...ids]),
-          inArray(nodes.type, ['file', 'draw']),
-          reader === 'client' ? readAtSql(['client']) : undefined,
+  const rows = await withViewer(
+    reader,
+    { login: loginId },
+    async () =>
+      await db
+        .select({ id: nodes.id, type: nodes.type })
+        .from(nodes)
+        .where(
+          and(
+            eq(nodes.ownerId, anchorId),
+            inArray(nodes.id, [...ids]),
+            inArray(nodes.type, ['file', 'draw']),
+            reader === 'client' ? readAtSql(['client']) : undefined,
+          ),
         ),
-      ),
   );
   for (const r of rows) out.set(r.id.toLowerCase(), r.type as ChatImageKind);
   return out;

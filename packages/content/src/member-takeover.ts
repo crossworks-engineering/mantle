@@ -403,11 +403,14 @@ async function refsTheAuthorMayNotUse(
   if (others.length) {
     // The brain, read as the author reads it (their workspaces; row security
     // decides).
-    const lib = await withViewer(author.level, { login: author.loginId }, () =>
-      db
-        .select({ id: nodes.id })
-        .from(nodes)
-        .where(and(eq(nodes.ownerId, brainId), inArray(nodes.id, others))),
+    const lib = await withViewer(
+      author.level,
+      { login: author.loginId },
+      async () =>
+        await db
+          .select({ id: nodes.id })
+          .from(nodes)
+          .where(and(eq(nodes.ownerId, brainId), inArray(nodes.id, others))),
     );
     for (const r of lib) ok.add(r.id);
   }
