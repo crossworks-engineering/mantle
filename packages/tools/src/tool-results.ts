@@ -23,11 +23,16 @@ import { randomBytes } from 'node:crypto';
 import { and, asc, eq, isNotNull, sql } from 'drizzle-orm';
 import {
   asViewerLevel,
+  currentTurnStamp,
   currentViewerLevel,
+  currentWorkspaceScope,
+  db,
+  isUnscoped,
   levelCovers,
   systemDb,
   toolResults,
   toolResultChunks,
+  workspaces,
 } from '@mantle/db';
 // Infrastructure writes: systemDb (the admin pool) whatever the viewer, so a
 // turn under a limited role (member logins Phase 0b) still records them.
@@ -186,7 +191,13 @@ export async function spillToolResult(args: {
   const bytes = byteLen(args.content);
   // The level it was written at (audit A27): a spill holds what a tool read
   // at that level, so only a reader whose level covers it may page it back.
-  const level = currentViewerLevel();
+  // In a workspace turn scope (W4b) the row carries the turn's workspace and
+  // login (R3) and is read back through the workspace role's rule; its level
+  // is team, the level the one non-Admin workspace (Team) mirrors, for the
+  // level readers that remain until W6a.
+  const inWorkspace = currentWorkspaceScope() !== null;
+  const level = inWorkspace ? 'team' : currentViewerLevel();
+  const stamp = currentTurnStamp();
   await systemDb.insert(toolResults).values({
     id: handle,
     ownerId: args.ownerId,
@@ -195,6 +206,7 @@ export async function spillToolResult(args: {
     content: args.content,
     bytes,
     viewerLevel: level === 'admin' ? null : level,
+    ...(stamp ? { workspaceId: stamp.workspaceId, loginId: stamp.loginId } : {}),
   });
   return { handle, bytes };
 }
@@ -314,22 +326,42 @@ async function loadResult(
   handle: string,
   bind?: ResultBinding,
 ): Promise<ResultRow | null> {
+  const cols = {
+    content: toolResults.content,
+    bytes: toolResults.bytes,
+    chunked: toolResults.chunked,
+    toolSlug: toolResults.toolSlug,
+    traceId: toolResults.traceId,
+  };
+  const where = and(eq(toolResults.id, handle), eq(toolResults.ownerId, ownerId));
+  if (currentWorkspaceScope()) {
+    // A workspace turn scope (R3): the workspace role's rule decides (the
+    // scope's workspaces, the scope's own login; a row with no login or no
+    // workspace is Admin's).
+    const [row] = await db.select(cols).from(toolResults).where(where).limit(1);
+    if (!row) return null;
+    if (bind && (!bind.traceId || row.traceId !== bind.traceId)) return null;
+    const { traceId: _trace, ...rest } = row;
+    return rest;
+  }
   const [row] = await systemDb
     .select({
-      content: toolResults.content,
-      bytes: toolResults.bytes,
-      chunked: toolResults.chunked,
-      toolSlug: toolResults.toolSlug,
+      ...cols,
       viewerLevel: toolResults.viewerLevel,
-      traceId: toolResults.traceId,
+      workspaceId: toolResults.workspaceId,
+      wsIsAdmin: workspaces.isAdmin,
     })
     .from(toolResults)
-    .where(and(eq(toolResults.id, handle), eq(toolResults.ownerId, ownerId)))
+    .leftJoin(workspaces, eq(workspaces.id, toolResults.workspaceId))
+    .where(where)
     .limit(1);
   if (!row) return null;
   if (!levelCovers(currentViewerLevel(), asViewerLevel(row.viewerLevel ?? 'admin'))) return null;
+  // A level reader (not the system) never reads a spill of a non-Admin
+  // workspace's turn: those are read through the workspace rule only.
+  if (!isUnscoped() && row.workspaceId && row.wsIsAdmin !== true) return null;
   if (bind && (!bind.traceId || row.traceId !== bind.traceId)) return null;
-  const { viewerLevel: _level, traceId: _trace, ...rest } = row;
+  const { viewerLevel: _level, traceId: _trace, workspaceId: _ws, wsIsAdmin: _a, ...rest } = row;
   return rest;
 }
 

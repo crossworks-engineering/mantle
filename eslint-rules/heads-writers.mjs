@@ -78,6 +78,10 @@ const DYNAMIC_UNSAFE_REVIEWED = new Map([
   ['packages/db/src/migrate.ts', 'the migration runner (migrations are out of scope)'],
   ['packages/db/src/concurrent-indexes.ts', 'CREATE and DROP INDEX CONCURRENTLY from a fixed list'],
   ['packages/search/src/entities.ts', 'one read query on the simple protocol'],
+  [
+    'packages/db/src/client.ts',
+    'the turn-scope client passes drizzle queries through on the workspace role, which holds SELECT grants only (W4b)',
+  ],
   ['server/api/src/bench/run.ts', 'the bench harness on its own database'],
   ['server/web/scripts/dedupe-edges.ts', 'a constant PARTITION BY fragment'],
   ['server/web/scripts/extract-backfill.ts', 'a read query'],

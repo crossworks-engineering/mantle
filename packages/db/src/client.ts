@@ -12,6 +12,9 @@ import {
   runInTxScope,
   runInWorkspaceTx,
   currentWorkspaceScope,
+  inTurnScope,
+  isUnscoped,
+  runInTurnScope,
   type WorkspaceScope,
   runTxHooks,
   withViewer,
@@ -29,6 +32,9 @@ declare global {
   var __mantleViewerDbs:
     | Map<PoolRole, { sql: ReturnType<typeof postgres>; db: PostgresJsDatabase<typeof schema> }>
     | undefined;
+
+  /** The turn-scope handle (workspaces W4b), over the workspace role's pool. */
+  var __mantleTurnDb: PostgresJsDatabase<typeof schema> | undefined;
 }
 
 /** Connections per limited pool. Small on purpose: max_connections is 200
@@ -81,11 +87,107 @@ function getViewerDb(level: PoolRole): PostgresJsDatabase<typeof schema> {
   return client;
 }
 
+/**
+ * A turn's scope was looked for at query time and is gone (workspaces W4b):
+ * a query built inside a turn scope ran after the turn ended, or from a
+ * callback that does not carry it. Refused, never run unscoped.
+ */
+export class ScopeLostError extends Error {
+  readonly code = 'scope-lost';
+  constructor() {
+    super('A scoped query ran outside its turn scope; refused (it never runs unscoped).');
+    this.name = 'ScopeLostError';
+  }
+}
+
+const SCOPE_SETTINGS_SQL =
+  "select set_config('mantle.ws', $1, true), set_config('mantle.mod_ws', $2, true), " +
+  "set_config('mantle.login_id', $3, true)";
+
+/** The settings of the turn scope running NOW: read when a query runs, not
+ *  when it was built. */
+function turnScopeParams(): [string, string, string] {
+  const scope = currentWorkspaceScope();
+  if (!scope || !inTurnScope()) throw new ScopeLostError();
+  return [
+    uuidArrayLiteral(scope.ws, 'turn scope ws'),
+    uuidArrayLiteral(scope.modWs, 'turn scope modWs'),
+    scope.loginId ?? '',
+  ];
+}
+
+type PgSql = ReturnType<typeof postgres>;
+
+/**
+ * A postgres.js client for drizzle that runs every query in its own short
+ * transaction on the workspace role: BEGIN, the turn's scope settings
+ * (transaction-local), the query, COMMIT, pipelined on one connection. The
+ * scope is read when the query RUNS; with none (the turn ended, or the
+ * callback lost it) the query is refused (ScopeLostError), never sent on
+ * another pool. `begin` (db.transaction) sets the same settings first, so a
+ * search step that needs one transaction (withHnswPool) keeps the scope.
+ */
+function turnScopedClient(base: PgSql): PgSql {
+  const run = (query: string, params: unknown[] | undefined, values: boolean) => {
+    let settings: [string, string, string];
+    try {
+      settings = turnScopeParams();
+    } catch (err) {
+      return Promise.reject(err);
+    }
+    return base
+      .begin((t) => {
+        const q = t.unsafe(query, (params ?? []) as never[]);
+        return [t.unsafe(SCOPE_SETTINGS_SQL, settings), values ? q.values() : q] as const;
+      })
+      .then((out) => (out as unknown as unknown[])[1]);
+  };
+  const client = {
+    options: base.options,
+    unsafe(query: string, params?: unknown[]) {
+      let pending: Promise<unknown> | null = null;
+      const once = () => (pending ??= run(query, params, false));
+      return {
+        values: () => run(query, params, true),
+        then: (ok?: (v: unknown) => unknown, bad?: (e: unknown) => unknown) => once().then(ok, bad),
+        catch: (bad?: (e: unknown) => unknown) => once().catch(bad),
+        finally: (fn?: () => void) => once().finally(fn),
+      };
+    },
+    begin(fn: (t: PgSql) => unknown) {
+      let settings: [string, string, string];
+      try {
+        settings = turnScopeParams();
+      } catch (err) {
+        return Promise.reject(err);
+      }
+      return base.begin(async (t) => {
+        await t.unsafe(SCOPE_SETTINGS_SQL, settings);
+        return fn(t as unknown as PgSql);
+      });
+    },
+  };
+  return client as unknown as PgSql;
+}
+
+/** The drizzle handle of turn scopes: one per process, over the workspace
+ *  role's pool. */
+function getTurnScopedDb(): PostgresJsDatabase<typeof schema> {
+  if (globalThis.__mantleTurnDb) return globalThis.__mantleTurnDb;
+  getViewerDb('user');
+  const base = globalThis.__mantleViewerDbs!.get('user')!.sql;
+  const client = drizzle(turnScopedClient(base), { schema });
+  globalThis.__mantleTurnDb = client;
+  return client;
+}
+
 /** The handle for the current scope (viewer.ts): a scope's own transaction
- *  (a personal space, team drafts), else the level's pool, else admin. */
+ *  (a personal space, team drafts), a turn scope's per-query handle, else
+ *  the level's pool, else admin. */
 function getDb(): PostgresJsDatabase<typeof schema> {
   const tx = currentScopeTx();
   if (tx) return tx as PostgresJsDatabase<typeof schema>;
+  if (inTurnScope()) return getTurnScopedDb();
   const level = currentViewerLevel();
   return level === 'admin' ? getAdminDb() : getViewerDb(level);
 }
@@ -258,6 +360,66 @@ export async function withScope<T>(scope: WorkspaceScope, fn: () => Promise<T>):
   }
   await runTxHooks(hooks.commit, 'commit');
   return result;
+}
+
+/**
+ * Run `fn` as an assistant TURN in one workspace scope (workspaces W4b, plan
+ * 5.1): every `db` query inside, after any await, runs on the workspace role
+ * (`mantle_view_user`) in its own short transaction that sets the scope, so
+ * no transaction is held across an LLM call. Fails closed: a query built
+ * here that runs after the turn ended (or from a callback that lost it) is
+ * refused (ScopeLostError), never sent on the system pool; a level question
+ * (currentViewerLevel) throws. Nested in the same scope it just runs `fn`;
+ * inside any other scope it is refused. `modWs` must be a subset of `ws`.
+ * Writes are not made here: they go through the system pool's own paths.
+ */
+export async function withTurnScope<T>(scope: WorkspaceScope, fn: () => Promise<T>): Promise<T> {
+  if (scope.loginId !== null && !UUID_RE.test(scope.loginId)) {
+    throw new Error('withTurnScope: loginId must be a uuid');
+  }
+  uuidArrayLiteral(scope.ws, 'withTurnScope ws');
+  uuidArrayLiteral(scope.modWs, 'withTurnScope modWs');
+  if (scope.ws.length === 0) throw new Error('withTurnScope: a turn reads at least one workspace');
+  const inWs = new Set(scope.ws);
+  if (scope.modWs.some((id) => !inWs.has(id))) {
+    throw new Error('withTurnScope: modWs must be a subset of ws');
+  }
+  const frozen: WorkspaceScope = Object.freeze({
+    kind: scope.kind,
+    loginId: scope.loginId,
+    ws: Object.freeze([...new Set(scope.ws)].sort()),
+    modWs: Object.freeze([...new Set(scope.modWs)].sort()),
+  });
+  return runInTurnScope(frozen, fn);
+}
+
+const holdsAdmin = new WeakMap<WorkspaceScope, Promise<boolean>>();
+
+/**
+ * Whether the current code may do Admin-workspace work (plan 5.4, adminOnly):
+ * unscoped system work (the owner's paths, the Admin assistant until W6a)
+ * yes; a level or personal-space scope no; a workspace scope when it holds
+ * the Admin workspace (asked of the database once per scope). Fails closed:
+ * an error reads as no.
+ */
+export async function scopeHoldsAdmin(): Promise<boolean> {
+  const scope = currentWorkspaceScope();
+  if (!scope) return isUnscoped();
+  let p = holdsAdmin.get(scope);
+  if (!p) {
+    p = (async () => {
+      try {
+        const rows = (await getDb().execute(
+          sqlTag`select "public"."mantle_scope_is_admin"() as a`,
+        )) as unknown as { a: boolean }[];
+        return rows[0]?.a === true;
+      } catch {
+        return false;
+      }
+    })();
+    holdsAdmin.set(scope, p);
+  }
+  return p;
 }
 
 /**
@@ -590,6 +752,7 @@ export async function closeDb(): Promise<void> {
   globalThis.__mantleSql = undefined;
   globalThis.__mantleDb = undefined;
   globalThis.__mantleViewerDbs = undefined;
+  globalThis.__mantleTurnDb = undefined;
   if (sql) await sql.end();
   if (viewers) await Promise.all([...viewers.values()].map((v) => v.sql.end()));
 }

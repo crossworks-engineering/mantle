@@ -737,7 +737,19 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
        where n.nspname = 'public' and p.prosecdef and p.proname = any(${[...names]})`;
     expect(rows.map((r) => r.name).sort()).toEqual([...names].sort());
     expect(rows.filter((r) => r.pub).map((r) => r.name)).toEqual([]);
-    expect(rows.filter((r) => r.roles.length).map((r) => `${r.name}: ${r.roles}`)).toEqual([]);
+    // The two read helpers of the workspace role's own row rules (0254): a
+    // boolean about the caller's own scope, nothing written, nothing else
+    // read out. The workspace role only; no other role, never PUBLIC.
+    const RULE_HELPERS: Record<string, string> = {
+      mantle_scope_has_connector: 'mantle_view_user',
+      mantle_scope_is_admin: 'mantle_view_user',
+    };
+    expect(
+      rows
+        .filter((r) => r.roles.length)
+        .filter((r) => !(r.roles.length === 1 && RULE_HELPERS[r.name] === r.roles[0]))
+        .map((r) => `${r.name}: ${r.roles}`),
+    ).toEqual([]);
   });
 
   it('audit M4: the personal-space role cannot write the derived columns, flag or no flag', async () => {

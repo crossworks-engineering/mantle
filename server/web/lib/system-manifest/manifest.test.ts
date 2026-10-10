@@ -640,3 +640,34 @@ describe('mcpOnly builtins are not grantable', () => {
     expect(bundled).toEqual([]);
   });
 });
+
+describe('adminOnly tool groups (workspaces W4b)', () => {
+  it('the manifest list names manifest groups, and migration 0254 backfilled the same slugs', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const { MANIFEST_ADMIN_ONLY_GROUPS } = await import('./manifest');
+    const groupSlugs = new Set(MANIFEST_TOOL_GROUPS.map((g) => g.slug));
+    for (const slug of MANIFEST_ADMIN_ONLY_GROUPS) expect(groupSlugs.has(slug), slug).toBe(true);
+    const sqlText = readFileSync(
+      join(
+        __dirname,
+        '..',
+        '..',
+        '..',
+        '..',
+        'packages',
+        'db',
+        'migrations',
+        '0254_workspaces_turns.sql',
+      ),
+      'utf8',
+    );
+    const list = sqlText.match(/WHERE "slug" IN \(([^)]*)\)/)![1]!;
+    const migrated = [...list.matchAll(/'([a-z0-9-]+)'/g)].map((m) => m[1]);
+    expect([...migrated].sort()).toEqual([...MANIFEST_ADMIN_ONLY_GROUPS].sort());
+    // The Team assistant's own groups are never adminOnly.
+    for (const slug of ['team-read', 'formulas-eval']) {
+      expect(MANIFEST_ADMIN_ONLY_GROUPS).not.toContain(slug);
+    }
+  });
+});

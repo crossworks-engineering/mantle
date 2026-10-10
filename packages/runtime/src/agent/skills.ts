@@ -7,9 +7,10 @@
 
 import { and, eq, inArray } from 'drizzle-orm';
 import { toolServiceAvailable } from '@mantle/config';
-import { db, skills, toolGroups, type Skill } from '@mantle/db';
+import { db, scopeHoldsAdmin, skills, toolGroups, type Skill } from '@mantle/db';
 import {
   currentViewerLevel,
+  currentWorkspaceScope,
   isViewerLevel,
   levelCovers,
   levelsMeet,
@@ -134,17 +135,24 @@ export async function resolveAgentToolGroups(
   // above the current viewer scope (whichever is lower), is left out whatever
   // the grant says. Fail closed: the tools simply are not there. A client
   // scope and a public agent (or the reverse) have no common level: no tools.
-  const current = currentViewerLevel();
+  // Inside a workspace turn scope (W4b) there is no viewer level: the agent's
+  // own level caps, the workspace role's rule hides what the scope may not
+  // hold (adminOnly groups outside Admin, connectors that are not a resource
+  // of the workspace), and an adminOnly group is left out here too.
+  const inWorkspace = currentWorkspaceScope() !== null;
+  const current = inWorkspace ? level : currentViewerLevel();
   if (!levelsMeet(current, level)) {
     console.warn(`[skills] a ${level}-level agent under a ${current}-level caller gets no tools`);
     return [];
   }
   const cap = lowerLevel(current, level);
+  const adminScope = inWorkspace ? await scopeHoldsAdmin() : true;
   const rows = await db
     .select({
       slug: toolGroups.slug,
       toolSlugs: toolGroups.toolSlugs,
       audience: toolGroups.audience,
+      adminOnly: toolGroups.adminOnly,
     })
     .from(toolGroups)
     .where(
@@ -158,6 +166,10 @@ export async function resolveAgentToolGroups(
   // cached prompt prefix, so it must be byte-stable between turns (and the
   // cap in effectiveToolSlugs then cuts the same tools every time).
   const allowed = rows.filter((r) => {
+    if (r.adminOnly && !adminScope) {
+      console.warn(`[skills] tool group '${r.slug}' is adminOnly; left out outside Admin`);
+      return false;
+    }
     const groupLevel = isViewerLevel(r.audience) ? r.audience : 'admin';
     if (levelCovers(cap, groupLevel)) return true;
     console.warn(

@@ -152,6 +152,9 @@ type Scope = {
   ws?: WorkspaceScope;
   tx?: unknown;
   hooks?: TxHooks;
+  /** A turn scope (workspaces W4b): no transaction of its own; every query
+   *  opens a short one on the workspace role (client.ts). */
+  perQuery?: true;
 };
 
 /** Work a scope's transaction owes the world outside the database, run once
@@ -236,7 +239,27 @@ export function currentSpaceScope(): SpaceScope | null {
  * the level roles, so a read that forgets this fails loudly (42501).
  */
 export function readsDrafts(): boolean {
+  // A workspace scope reads published columns only (they are all the
+  // workspace role is granted).
+  if (store.getStore()?.ws) return false;
   return currentViewerLevel() === 'admin' || currentSpaceScope() !== null;
+}
+
+/**
+ * Whether the current code runs unlimited: the system pool, outside every
+ * level, space and workspace scope. Never throws (unlike
+ * currentViewerLevel inside a workspace scope): for the checks that only ask
+ * "is this the owner's unlimited path?".
+ */
+export function isUnscoped(): boolean {
+  const scope = store.getStore();
+  if (!scope) return true;
+  return !scope.ws && !scope.space && !scope.tx && scope.level === 'admin';
+}
+
+/** Whether the current code runs in a turn scope (per-query transactions). */
+export function inTurnScope(): boolean {
+  return store.getStore()?.perQuery === true;
 }
 
 /** The transaction the current scope runs in, if it carries one. */
@@ -296,6 +319,58 @@ export function runInWorkspaceTx<T>(
 }
 
 /**
+ * Enter a TURN scope (workspaces W4b): `fn` and everything it awaits read on
+ * the workspace role, each query in its own short transaction that sets the
+ * scope (client.ts). No transaction is held across the turn, so an LLM call
+ * inside never holds one. Nested: the same scope runs `fn` as is; any other
+ * scope (another workspace scope, a level scope, a personal space, a
+ * transaction) is refused, so a scope is never widened or swapped. Only
+ * client.ts calls this (`withTurnScope`), with a validated, frozen scope.
+ */
+export function runInTurnScope<T>(ws: WorkspaceScope, fn: () => Promise<T>): Promise<T> {
+  const open = store.getStore();
+  if (open) {
+    if (open.perQuery && open.ws && sameWorkspaceScope(open.ws, ws)) return fn();
+    return Promise.reject(new Error('withTurnScope: already inside another scope'));
+  }
+  return store.run({ level: 'public', ws, perQuery: true }, fn);
+}
+
+/** Two workspace scopes that read and write exactly the same. */
+export function sameWorkspaceScope(a: WorkspaceScope, b: WorkspaceScope): boolean {
+  const eqList = (x: readonly string[], y: readonly string[]) =>
+    x.length === y.length && [...x].sort().every((v, i) => v === [...y].sort()[i]);
+  return (
+    a.kind === b.kind && a.loginId === b.loginId && eqList(a.ws, b.ws) && eqList(a.modWs, b.modWs)
+  );
+}
+
+/**
+ * Who a turn's rows belong to (workspaces W4b, R3): the workspace and the
+ * login a run, a trace or a tool result is stamped with. Inside a turn scope
+ * it is the scope's (one workspace); the Admin assistant, which stays on the
+ * system pool until W6a, carries it here. Null = system work (Admin by the
+ * stamp trigger's NULL rule).
+ */
+export type TurnStamp = { workspaceId: string; loginId: string | null };
+
+const stampStore = new AsyncLocalStorage<TurnStamp>();
+
+/** Run `fn` with `stamp` as the turn's stamp (the system-pool assistant). */
+export function withTurnStamp<T>(stamp: TurnStamp, fn: () => Promise<T>): Promise<T> {
+  return stampStore.run({ ...stamp }, fn);
+}
+
+/** The current turn's stamp: the turn scope's, else the carried one. */
+export function currentTurnStamp(): TurnStamp | null {
+  const ws = store.getStore()?.ws;
+  if (ws) {
+    return ws.ws.length === 1 ? { workspaceId: ws.ws[0]!, loginId: ws.loginId } : null;
+  }
+  return stampStore.getStore() ?? null;
+}
+
+/**
  * Run `fn` on an ADMIN-pool transaction's own connection: every `db` query
  * inside uses `tx`, so work that holds a row lock in `tx` never needs a
  * second connection from the pool (team apps M3 re-audit: a member's
@@ -332,6 +407,14 @@ export function asSystem<T>(fn: () => Promise<T>): Promise<T> {
  * turn cannot queue work at all (plan section 2b).
  */
 export function assertNoViewer(what: string): void {
+  if (store.getStore()?.ws) {
+    // A workspace scope never hands work on without carrying it (plan 5.4,
+    // U5): a caller that carries it checks with assertScopeCarried instead.
+    throw new Error(
+      `${what} leaves this process and would run unscoped, but the caller runs in a workspace scope. ` +
+        'Work queued from a workspace scope must carry that scope.',
+    );
+  }
   const level = currentViewerLevel();
   if (level !== 'admin') {
     throw new Error(

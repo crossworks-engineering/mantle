@@ -67,7 +67,13 @@ export {
   type ChatArchiveResult,
 } from './chat-archive';
 export { invokeAgent } from './invoke-agent';
-export { agentLevel, withAgentViewer } from './agent-viewer';
+export {
+  agentLevel,
+  surfaceLoginId,
+  withAgentScope,
+  withAgentViewer,
+  withRunScope,
+} from './agent-viewer';
 
 export {
   recordTurn,

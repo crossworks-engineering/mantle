@@ -25,6 +25,7 @@
 import { and, asc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import {
   assistantMessages,
+  currentTurnStamp,
   db,
   nodes,
   telegramChats,
@@ -32,6 +33,7 @@ import {
   traces,
   traceSteps,
 } from '@mantle/db';
+import type { AnyColumn, SQL } from 'drizzle-orm';
 import { embed } from '@mantle/embeddings';
 import type { BuiltinToolDef } from './types';
 import { str, strOpt, numOr as num } from './coerce';
@@ -112,6 +114,20 @@ function stepSummary(
   return s.length > 0 ? s : undefined;
 }
 
+/**
+ * Replay reads the Admin workspace only (workspaces S4, W4b): a trace or a
+ * message of another workspace's assistant (the Team assistant's turns) is
+ * never replayed, and of the Admin rows only the asking login's and the
+ * system's (no login). The asking login is the turn's stamp, else the brain
+ * owner (an owner surface with no turn: MCP, a run).
+ */
+function adminWorkspaceRows(ownerId: string, ws: AnyColumn, login: AnyColumn): SQL {
+  const asker = currentTurnStamp()?.loginId ?? ownerId;
+  return sql`(${ws} is null or ${ws} in (select w.id from workspaces w
+                where w.owner_id = ${ownerId} and w.is_admin))
+             and (${login} is null or ${login} = ${asker}::uuid)`;
+}
+
 /** The trace rows (+ compact step gists) whose work happened inside a window —
  *  the "what the system actually did then" companion to the dialogue. */
 async function fetchWindowTraces(ownerId: string, from: Date, to: Date): Promise<RecalledTrace[]> {
@@ -124,7 +140,14 @@ async function fetchWindowTraces(ownerId: string, from: Date, to: Date): Promise
       costMicroUsd: traces.costMicroUsd,
     })
     .from(traces)
-    .where(and(eq(traces.ownerId, ownerId), gte(traces.startedAt, from), lte(traces.startedAt, to)))
+    .where(
+      and(
+        eq(traces.ownerId, ownerId),
+        gte(traces.startedAt, from),
+        lte(traces.startedAt, to),
+        adminWorkspaceRows(ownerId, traces.workspaceId, traces.loginId),
+      ),
+    )
     .orderBy(asc(traces.startedAt))
     .limit(TRACE_LIMIT);
   if (traceRows.length === 0) return [];
@@ -379,6 +402,11 @@ const replay_window: BuiltinToolDef = {
           and(
             eq(assistantMessages.ownerId, ctx.ownerId),
             inArray(assistantMessages.channel, ['web', 'mobile', 'mcp']),
+            adminWorkspaceRows(
+              ctx.ownerId,
+              assistantMessages.workspaceId,
+              assistantMessages.loginId,
+            ),
             gte(assistantMessages.createdAt, from),
             lte(assistantMessages.createdAt, to),
           ),

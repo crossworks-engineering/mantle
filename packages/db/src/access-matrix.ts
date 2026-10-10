@@ -284,28 +284,34 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   // (migration 0187, narrowed by 0189: client and public are siblings, not
   // a chain): the team role keeps every row, because a team-level agent may
   // still delegate to an admin agent.
+  // The workspace role (W4b, 0252): an assistant of a workspace in the scope
+  // or a helper; tool groups never adminOnly outside Admin, connectors only
+  // as a resource of a workspace in the scope.
   {
     table: 'public.agents',
     read: 'all',
+    user: 'all',
     rule: 'all-rows',
     writer: 'admin',
     byRole: { client: { rule: 'level-rows' } },
   },
-  { table: 'public.tools', read: 'all', rule: 'all-rows', writer: 'admin' },
+  { table: 'public.tools', read: 'all', user: 'all', rule: 'all-rows', writer: 'admin' },
   {
     table: 'public.tool_groups',
     read: 'all',
+    user: 'all',
     rule: 'all-rows',
     writer: 'admin',
     byRole: { client: { rule: 'level-rows' } },
   },
-  { table: 'public.skills', read: 'all', rule: 'all-rows', writer: 'admin' },
+  { table: 'public.skills', read: 'all', user: 'all', rule: 'all-rows', writer: 'admin' },
   // The client role reads none of it: resolveEmbeddingConfig reads on the
   // admin pool (systemDb), so no client path needs the row with its base
   // URLs (audit A27).
   {
     table: 'public.embedding_config',
     read: 'all',
+    user: 'all',
     rule: 'all-rows',
     writer: 'admin',
     byRole: { client: { read: 'none', rule: 'none' } },
@@ -313,12 +319,13 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   // Every column for the client role too: the worker resolver
   // (ai-workers-resolve.ts) selects whole rows on the viewer's pool, so a
   // column list would fail a client-level turn (C4). Narrow it there.
-  { table: 'public.ai_workers', read: 'all', rule: 'all-rows', writer: 'admin' },
+  { table: 'public.ai_workers', read: 'all', user: 'all', rule: 'all-rows', writer: 'admin' },
   // The client role reads the preferences only (loadProfilePreferences), not
   // the owner's display name (audit A27).
   {
     table: 'public.profiles',
     read: 'all',
+    user: 'all',
     rule: 'all-rows',
     writer: 'admin',
     byRole: { client: { read: ['user_id', 'preferences'] } },
@@ -329,6 +336,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   {
     table: 'auth.users',
     read: ['id', 'is_owner', 'created_at'],
+    user: 'level',
     rule: 'all-rows',
     writer: 'admin',
     byRole: { client: { read: 'none', rule: 'none' } },
@@ -340,9 +348,11 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   // extract queue on the admin pool, read by admin routes only.
   none('public.provider_alerts', 'system'),
   none('public.trace_steps', 'system'),
-  none('public.tool_results', 'system'),
+  // The per-login stores (R3, W4b 0252): the workspace role reads its own
+  // login's rows of the workspaces in its scope; the level roles none.
+  { ...none('public.tool_results', 'system'), user: 'all' },
   none('public.tool_result_chunks', 'system'),
-  none('public.pending_tool_calls', 'system'),
+  { ...none('public.pending_tool_calls', 'system'), user: 'all' },
   none('public.turn_stream_buffer', 'system'),
   none('public.audit_log', 'system'),
   none('public.app_access_log', 'system'),
@@ -362,8 +372,8 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.sync_runs', 'system'),
   none('public.maintenance_runs', 'system'),
   none('public.heartbeat_fires', 'system'),
-  none('public.runs', 'system'),
-  none('public.run_items', 'system'),
+  { ...none('public.runs', 'system'), user: 'all' },
+  { ...none('public.run_items', 'system'), user: 'all' },
   // This brain's own id (0226): written once by its migration, read by
   // whoami and the push worker on the admin pool.
   none('public.brain_identity', 'system'),
@@ -420,9 +430,9 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.mantle_peers'),
   none('public.peer_shares'),
   none('public.peer_share_scopes'),
-  none('public.assistant_messages'),
+  { ...none('public.assistant_messages'), user: 'all' },
   // Chat archive threads (0231): time ranges over assistant_messages, admin pool.
-  none('public.chat_threads'),
+  { ...none('public.chat_threads'), user: 'all' },
   none('public.entities', 'content'),
   none('public.entity_edges', 'content'),
   none('public.entity_merge_dismissals'),

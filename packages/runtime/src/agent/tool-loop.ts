@@ -80,8 +80,10 @@ import {
 } from './tool-loop/tool-images';
 import { loadToolGroupsForCatalog } from './skills';
 import { env } from '@mantle/config';
-import { UUID_RE } from '@mantle/std';
-import { withViewer, type ViewerLevel } from '@mantle/db/viewer';
+import { publicToolError, UUID_RE } from '@mantle/std';
+import { watchDatabaseErrors } from '@mantle/std/db-watch';
+import { isUnscoped, type ViewerLevel } from '@mantle/db/viewer';
+import { surfaceLoginId, withAgentScope } from './agent-viewer';
 
 export const DEFAULT_MAX_ITERATIONS = 6;
 
@@ -413,6 +415,10 @@ export type ToolLoopArgs = {
   /** The agent's level (agents.audience): required with `agentId`. The loop
    *  runs every query at this level (member logins Phase 0b). */
   agentLevel?: ViewerLevel;
+  /** agents.workspace_id (workspaces W4b): an assistant of a workspace other
+   *  than Admin runs the loop in a turn scope of that workspace
+   *  (withAgentScope). Unset or null: the level, as before. */
+  agentWorkspaceId?: string | null;
   /** The agent row's slug. Passed to handlers (specifically
    *  `invoke_agent`) so they can refuse self-calls + reason about who
    *  invoked them. Optional for scripts that aren't running an agent. */
@@ -583,6 +589,13 @@ export function withCatalogBlock(initial: readonly ChatMessage[], block: string)
   return out;
 }
 
+/** The owner's own surfaces (isOwnerSurface in @mantle/tools, kept here so
+ *  the loop's tests that fake that module still see it). */
+function ownerSurface(surface: ToolLoopArgs['surface']): boolean {
+  const kind = surface?.kind;
+  return kind === 'web' || kind === 'telegram' || kind === 'owner';
+}
+
 /**
  * The tool loop, at the agent's level (member logins Phase 0b). A loop run for
  * an agent MUST say the agent's level: a missing one throws rather than
@@ -595,7 +608,11 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         'the loop runs at the agent level.',
     );
   }
-  return withViewer(args.agentLevel ?? 'admin', () => runToolLoopAtLevel(args));
+  return withAgentScope(
+    { audience: args.agentLevel ?? 'admin', workspaceId: args.agentWorkspaceId ?? null },
+    () => runToolLoopAtLevel(args),
+    { loginId: surfaceLoginId(args.surface) },
+  );
 }
 
 async function runToolLoopAtLevel(args: ToolLoopArgs): Promise<ToolLoopResult> {
@@ -947,19 +964,36 @@ async function runToolLoopAtLevel(args: ToolLoopArgs): Promise<ToolLoopResult> {
       }
       guards.admit(slug);
 
-      let outcome = await executeToolCall({
-        args,
-        slug,
-        call,
-        tool,
-        input,
-        argParseError,
-        argValidation,
-        argValidationMode,
-        lastUserMessage,
-        pendingIds,
-        taint,
-      });
+      const execute = () =>
+        executeToolCall({
+          args,
+          slug,
+          call,
+          tool,
+          input,
+          argParseError,
+          argValidation,
+          argValidationMode,
+          lastUserMessage,
+          pendingIds,
+          taint,
+        });
+      // A member's or a client's turn (or any scoped one) never hands the
+      // model a database error's text (W3 re-audit 6): the reply says the
+      // read failed, the log keeps the detail.
+      let outcome: Awaited<ReturnType<typeof executeToolCall>>;
+      if (isUnscoped() && ownerSurface(args.surface)) {
+        outcome = await execute();
+      } else {
+        const watched = await watchDatabaseErrors(execute);
+        outcome = watched.value;
+        if (!outcome.ok && typeof outcome.error === 'string') {
+          outcome = {
+            ...outcome,
+            error: publicToolError(outcome.error, watched.texts, `tool ${slug}`),
+          };
+        }
+      }
       // Deferred loading: a model may call a catalog tool by name without
       // loading it first, and then guess its arguments. When such a call fails
       // on its arguments, hand back the real schema once per tool per turn so

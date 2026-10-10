@@ -8,6 +8,9 @@ export {
   withTeamDrafts,
   withHumanViewer,
   withScope,
+  withTurnScope,
+  ScopeLostError,
+  scopeHoldsAdmin,
   withHeads,
   withSubtreeHeads,
   withNodeInsertHeads,
@@ -27,6 +30,10 @@ export {
   currentViewerLevel,
   currentScope,
   currentWorkspaceScope,
+  currentTurnStamp,
+  withTurnStamp,
+  isUnscoped,
+  inTurnScope,
   ScopeLevelError,
   currentSpaceScope,
   readsDrafts,
@@ -48,6 +55,7 @@ export {
   type ScopeKind,
   type WorkspaceScope,
   type CurrentScope,
+  type TurnStamp,
 } from './viewer';
 export { ensureViewerRoles, LIMITED_LEVELS } from './viewer-roles';
 export {

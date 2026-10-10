@@ -42,7 +42,7 @@ import {
 } from '@mantle/tools/client-sourced';
 import { stageLabelForStep } from './stage-label';
 import type { AssembledResponderTurn } from './assemble-turn';
-import { agentLevel, withAgentViewer } from '../agent/agent-viewer';
+import { agentLevel, surfaceLoginId, withAgentViewer } from '../agent/agent-viewer';
 
 /** Rebuild the persistable thought trail from a turn's tool calls — the same
  *  grounded action labels the live trail shows (search/write/delegate), via the
@@ -212,7 +212,9 @@ export function loadContextStep(
  *  tool it dispatches reads through row level security for a below-admin
  *  agent, whoever called it. */
 export function runResponderLoop(opts: RunResponderLoopOptions): Promise<ResponderLoopResult> {
-  return withAgentViewer(opts.agent, () => runResponderLoopAtLevel(opts));
+  return withAgentViewer(opts.agent, () => runResponderLoopAtLevel(opts), {
+    loginId: surfaceLoginId(opts.surface),
+  });
 }
 
 async function runResponderLoopAtLevel(
@@ -262,6 +264,7 @@ async function runResponderLoopAtLevel(
     agentId: agent.id,
     agentSlug: agent.slug,
     agentLevel: agentLevel(agent),
+    agentWorkspaceId: agent.workspaceId ?? null,
     agentDepth: 1,
     delegateTo: assembled.delegateTo,
     resultHandling: assembled.resultHandling,

@@ -1772,6 +1772,13 @@
       "when": 1790194260000,
       "tag": "0253_workspaces_bridge_heads",
       "breakpoints": true
+    },
+    {
+      "idx": 254,
+      "version": "7",
+      "when": 1790194320000,
+      "tag": "0254_workspaces_turns",
+      "breakpoints": true
     }
   ]
 }

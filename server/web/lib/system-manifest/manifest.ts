@@ -545,6 +545,39 @@ export const RETIRED_BUILTIN_TOOL_SLUGS: readonly string[] = [
   'my_app_share',
 ];
 
+/**
+ * The adminOnly tool groups (workspaces W4b, plan 5.4): they run only in a
+ * turn whose scope holds the Admin workspace (email, Journal, contacts,
+ * secrets, calendar, the graph, settings, keys, users, maintenance, runs,
+ * replay, export, linked brains, Telegram). The seed and the boot reconcile
+ * set tool_groups.admin_only from this list (only ever on: never cleared by
+ * code); migration 0252 backfilled the same slugs (manifest.test.ts).
+ */
+export const MANIFEST_ADMIN_ONLY_GROUPS: readonly string[] = [
+  'email',
+  'journal',
+  'journal-admin',
+  'contacts',
+  'contacts-admin',
+  'secrets',
+  'events',
+  'tasks',
+  'team-read-admin',
+  'access',
+  'team-admin',
+  'runs',
+  'export',
+  'replay',
+  'replay-search',
+  'persona',
+  'model-curation',
+  'brain-health',
+  'ingest',
+  'federation',
+  'federation-write',
+  'messaging',
+];
+
 export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
   {
     slug: 'memory-core',

@@ -351,299 +351,305 @@ async function runTeamTurnSteps(
 
   // Everything below runs at the agent's level (agents.audience): a team
   // responder reads only what row level security shows the team role.
-  return withAgentViewer(agent, async () => {
-    // Retrieval context. The team-responder has no assistant_messages rows, so
-    // ctx.history is structurally empty; digests are off via the agent's
-    // memoryConfig. We use facts/contentHits/chunkHits/relations only, and load
-    // the REAL history from the member's own team thread below.
-    // Steps before the trace opens (the decider's pruning + hint calls, the
-    // query embed) are held here and written into the trace below.
-    const prelude = createTracePrelude();
-    // The owner's private-reads switch is read BEFORE retrieval: the context
-    // loader hides the same node types the read tools do.
-    const prefs = await loadProfilePreferences(ownerId);
-    // The owner's private-reads switch is for team turns only.
-    const privateReads = role === 'member' && isTeamPrivateReadsEnabled(prefs);
-    const memoryConfig = (agent.memoryConfig ?? {}) as { history_limit?: number };
-    const loadedHistoryRows = await recentTeamMessages(
-      ownerId,
-      '', // a login's thread is read by login
-      memoryConfig.history_limit ?? 20,
-      loginId,
-    );
-    const ctx =
-      role === 'client'
-        ? emptyLoginContext(trimmed)
-        : await withTracePrelude(prelude, () =>
-            loadConversationContext({
+  return withAgentViewer(
+    agent,
+    async () => {
+      // Retrieval context. The team-responder has no assistant_messages rows, so
+      // ctx.history is structurally empty; digests are off via the agent's
+      // memoryConfig. We use facts/contentHits/chunkHits/relations only, and load
+      // the REAL history from the member's own team thread below.
+      // Steps before the trace opens (the decider's pruning + hint calls, the
+      // query embed) are held here and written into the trace below.
+      const prelude = createTracePrelude();
+      // The owner's private-reads switch is read BEFORE retrieval: the context
+      // loader hides the same node types the read tools do.
+      const prefs = await loadProfilePreferences(ownerId);
+      // The owner's private-reads switch is for team turns only.
+      const privateReads = role === 'member' && isTeamPrivateReadsEnabled(prefs);
+      const memoryConfig = (agent.memoryConfig ?? {}) as { history_limit?: number };
+      const loadedHistoryRows = await recentTeamMessages(
+        ownerId,
+        '', // a login's thread is read by login
+        memoryConfig.history_limit ?? 20,
+        loginId,
+      );
+      const ctx =
+        role === 'client'
+          ? emptyLoginContext(trimmed)
+          : await withTracePrelude(prelude, () =>
+              loadConversationContext({
+                ownerId,
+                agent,
+                inboundText: trimmed,
+                includeJournal: false,
+                excludeNodeTypes: teamHiddenNodeTypes(privateReads),
+                // A short follow-up ("what about in pages?") is enriched from
+                // the member's own thread: the owner's chat is not readable at
+                // team.
+                recentTurnTexts: teamThreadToHistory(loadedHistoryRows).map((t) => t.text),
+              }),
+            );
+
+      const inbound = await runDurableStep('record_team_inbound', () =>
+        appendTeamMessage({
+          ownerId,
+          contactId: null,
+          direction: 'inbound',
+          text: displayText,
+          channel,
+          attachments: options.attachments ?? [],
+          loginId,
+        }),
+      );
+      progress.inboundWritten = true;
+      // The history is read before the inbound step, outside any durable step,
+      // so a turn RECOVERED after that step (DBOS replays it from the journal)
+      // finds its own inbound row already in the thread: it would reach the
+      // model twice, once as history and once as the new message (audit F31).
+      const teamHistoryRows = historyBeforeInbound(loadedHistoryRows, inbound.id);
+      const history = teamThreadToHistory(teamHistoryRows);
+
+      // Durable "thinking…" bubble — same contract as the owner surface, so the
+      // member UI + a reload mid-turn can bind to a stable outbound id. History
+      // loading filters status='complete', so this empty row never reaches a
+      // later turn's prompt.
+      const outboundPending = await runDurableStep('record_team_outbound_pending', () =>
+        appendTeamMessage({
+          ownerId,
+          contactId: null,
+          direction: 'outbound',
+          text: '',
+          channel,
+          agentId: agent.id,
+          model: agent.model,
+          status: 'pending',
+          loginId,
+        }),
+      );
+
+      if (options.streamId) {
+        emitTurnLifecycle(options.streamId, ownerId, 'turn-start', {
+          agentSlug: agent.slug,
+          model: agent.model,
+          inboundId: inbound.id,
+          outboundId: outboundPending.id,
+        });
+      }
+      const abortController = options.streamId
+        ? registerTurnAbort(options.streamId, ownerId)
+        : null;
+      const retireAbort = () => {
+        if (options.streamId) unregisterTurnAbort(options.streamId);
+      };
+
+      // Member identity rides the VOLATILE block: per-contact text in the cached
+      // prefix would bust the shared per-agent cache on every member switch.
+      const memberLine =
+        role === 'client'
+          ? `Client: ${options.contactName ?? 'unknown name'} (client login ${loginId}). You are serving this person: a client of the team, not a team member and not the brain's owner.`
+          : `Team member: ${options.contactName ?? 'unknown name'} (user ${loginId}). You are serving this person: a member of the team, not the brain's owner.`;
+
+      // Shared responder-turn assembly (audit #5c), configured for the team
+      // surface's HARD isolation: no identity/journal block, no heartbeats, no
+      // owner thinking budget (an effort set on the responder agent itself
+      // still applies), no delegation (fail closed). The private-reads
+      // switch (default OFF) is enforced HERE, at tool resolution — independent
+      // of the `team-read` group grant, so it can't be bypassed by a manifest
+      // change that re-adds the slugs.
+      const assembledForAgent = await withTracePrelude(prelude, () =>
+        assembleResponderTurn({
+          ownerId,
+          agent,
+          prefs,
+          logPrefix: '[team-turn]',
+          includeIdentity: false,
+          volatileExtras: [memberLine],
+          withThinking: false,
+          allowDelegation: false,
+          excludeToolSlugs: privateReads ? [] : TEAM_PRIVATE_READ_SLUGS,
+        }),
+      );
+      // A client turn gets the client tools and nothing else, whatever the
+      // agent's groups hold (client logins C5 audit, L3): a group is config,
+      // and a brain-wide read tool at client level still shows what the portal
+      // never does. Applied last, to everything the assembly offers.
+      const assembled = role === 'client' ? clientToolsOnly(assembledForAgent) : assembledForAgent;
+      const { volatileContext, allowedTools } = assembled;
+
+      const adapter = getChatAdapter(agent.provider);
+      if (!adapter) {
+        throw new Error(
+          `team turn: no chat adapter for provider '${agent.provider}' (agent ${agent.slug})`,
+        );
+      }
+
+      const messages = buildChatMessages({
+        model: agent.model,
+        provider: agent.provider,
+        systemPrompt: assembled.effectiveSystemPrompt,
+        volatileContext,
+        // HARD isolation: no persona notes, no digests — owner-personal context
+        // never reaches a team turn (see header invariants).
+        personaNotes: [],
+        facts: ctx.facts,
+        digests: [],
+        contentHits: ctx.contentHits,
+        chunkHits: ctx.chunkHits,
+        relations: ctx.relations,
+        history,
+        newUserText: trimmed,
+      });
+
+      let capturedTraceId: string | null = null;
+      let outcome: ResponderLoopResult;
+      try {
+        outcome = await startTrace(
+          {
+            kind: 'responder_turn',
+            prelude,
+            ownerId,
+            loginId,
+            turnId: options.streamId,
+            subjectId: inbound.id,
+            subjectKind: 'team_turn',
+            agentId: agent.id,
+            data: {
+              surface: role === 'client' ? 'client' : 'team',
+              login_role: role,
+              contact_id: null,
+              login_id: loginId,
+              channel,
+              model: agent.model,
+              agent_slug: agent.slug,
+              tool_count: allowedTools.length,
+            },
+          },
+          async () => {
+            capturedTraceId = currentTrace()?.id ?? null;
+            return runResponderLoop({
               ownerId,
               agent,
-              inboundText: trimmed,
-              includeJournal: false,
-              excludeNodeTypes: teamHiddenNodeTypes(privateReads),
-              // A short follow-up ("what about in pages?") is enriched from
-              // the member's own thread: the owner's chat is not readable at
-              // team.
-              recentTurnTexts: teamThreadToHistory(loadedHistoryRows).map((t) => t.text),
-            }),
-          );
-
-    const inbound = await runDurableStep('record_team_inbound', () =>
-      appendTeamMessage({
-        ownerId,
-        contactId: null,
-        direction: 'inbound',
-        text: displayText,
-        channel,
-        attachments: options.attachments ?? [],
-        loginId,
-      }),
-    );
-    progress.inboundWritten = true;
-    // The history is read before the inbound step, outside any durable step,
-    // so a turn RECOVERED after that step (DBOS replays it from the journal)
-    // finds its own inbound row already in the thread: it would reach the
-    // model twice, once as history and once as the new message (audit F31).
-    const teamHistoryRows = historyBeforeInbound(loadedHistoryRows, inbound.id);
-    const history = teamThreadToHistory(teamHistoryRows);
-
-    // Durable "thinking…" bubble — same contract as the owner surface, so the
-    // member UI + a reload mid-turn can bind to a stable outbound id. History
-    // loading filters status='complete', so this empty row never reaches a
-    // later turn's prompt.
-    const outboundPending = await runDurableStep('record_team_outbound_pending', () =>
-      appendTeamMessage({
-        ownerId,
-        contactId: null,
-        direction: 'outbound',
-        text: '',
-        channel,
-        agentId: agent.id,
-        model: agent.model,
-        status: 'pending',
-        loginId,
-      }),
-    );
-
-    if (options.streamId) {
-      emitTurnLifecycle(options.streamId, ownerId, 'turn-start', {
-        agentSlug: agent.slug,
-        model: agent.model,
-        inboundId: inbound.id,
-        outboundId: outboundPending.id,
-      });
-    }
-    const abortController = options.streamId ? registerTurnAbort(options.streamId, ownerId) : null;
-    const retireAbort = () => {
-      if (options.streamId) unregisterTurnAbort(options.streamId);
-    };
-
-    // Member identity rides the VOLATILE block: per-contact text in the cached
-    // prefix would bust the shared per-agent cache on every member switch.
-    const memberLine =
-      role === 'client'
-        ? `Client: ${options.contactName ?? 'unknown name'} (client login ${loginId}). You are serving this person: a client of the team, not a team member and not the brain's owner.`
-        : `Team member: ${options.contactName ?? 'unknown name'} (user ${loginId}). You are serving this person: a member of the team, not the brain's owner.`;
-
-    // Shared responder-turn assembly (audit #5c), configured for the team
-    // surface's HARD isolation: no identity/journal block, no heartbeats, no
-    // owner thinking budget (an effort set on the responder agent itself
-    // still applies), no delegation (fail closed). The private-reads
-    // switch (default OFF) is enforced HERE, at tool resolution — independent
-    // of the `team-read` group grant, so it can't be bypassed by a manifest
-    // change that re-adds the slugs.
-    const assembledForAgent = await withTracePrelude(prelude, () =>
-      assembleResponderTurn({
-        ownerId,
-        agent,
-        prefs,
-        logPrefix: '[team-turn]',
-        includeIdentity: false,
-        volatileExtras: [memberLine],
-        withThinking: false,
-        allowDelegation: false,
-        excludeToolSlugs: privateReads ? [] : TEAM_PRIVATE_READ_SLUGS,
-      }),
-    );
-    // A client turn gets the client tools and nothing else, whatever the
-    // agent's groups hold (client logins C5 audit, L3): a group is config,
-    // and a brain-wide read tool at client level still shows what the portal
-    // never does. Applied last, to everything the assembly offers.
-    const assembled = role === 'client' ? clientToolsOnly(assembledForAgent) : assembledForAgent;
-    const { volatileContext, allowedTools } = assembled;
-
-    const adapter = getChatAdapter(agent.provider);
-    if (!adapter) {
-      throw new Error(
-        `team turn: no chat adapter for provider '${agent.provider}' (agent ${agent.slug})`,
-      );
-    }
-
-    const messages = buildChatMessages({
-      model: agent.model,
-      provider: agent.provider,
-      systemPrompt: assembled.effectiveSystemPrompt,
-      volatileContext,
-      // HARD isolation: no persona notes, no digests — owner-personal context
-      // never reaches a team turn (see header invariants).
-      personaNotes: [],
-      facts: ctx.facts,
-      digests: [],
-      contentHits: ctx.contentHits,
-      chunkHits: ctx.chunkHits,
-      relations: ctx.relations,
-      history,
-      newUserText: trimmed,
-    });
-
-    let capturedTraceId: string | null = null;
-    let outcome: ResponderLoopResult;
-    try {
-      outcome = await startTrace(
-        {
-          kind: 'responder_turn',
-          prelude,
-          ownerId,
-          loginId,
-          turnId: options.streamId,
-          subjectId: inbound.id,
-          subjectKind: 'team_turn',
-          agentId: agent.id,
-          data: {
-            surface: role === 'client' ? 'client' : 'team',
-            login_role: role,
-            contact_id: null,
-            login_id: loginId,
-            channel,
-            model: agent.model,
-            agent_slug: agent.slug,
-            tool_count: allowedTools.length,
+              adapter,
+              apiKey,
+              prefs,
+              logPrefix: '[team-turn]',
+              // Fail closed: the team responder never delegates (assembly ran
+              // with allowDelegation:false / withThinking:false). `assembled` also
+              // carries loopOverrides (spread by runResponderLoop): since the
+              // unification, the team-responder's memory_config max_tool_calls /
+              // max_calls_per_tool clamps are enforced here where they weren't
+              // before — safe (tighter caps), inert unless the agent configures them.
+              assembled,
+              // Retrieval ran before the trace; the member's REAL history came
+              // from their own team thread, so the step's turnCount reflects
+              // that thread, not the structurally-empty ctx history.
+              loadContext: async () => ctx,
+              contextStepInput: { agentId: agent.id, contactId: null, loginId },
+              contextStepExtra: { turnCount: history.length },
+              buildMessages: () => messages,
+              // The provenance channel: team_request_create reads WHO is asking
+              // from here; owner-side tools see 'team' and refuse.
+              surface:
+                role === 'client'
+                  ? {
+                      kind: 'client',
+                      loginId,
+                      contactName: options.contactName,
+                      inboundMessageId: inbound.id,
+                    }
+                  : {
+                      kind: 'team',
+                      loginId,
+                      contactName: options.contactName,
+                      privateReads,
+                      inboundMessageId: inbound.id,
+                    },
+              abortSignal: abortController?.signal ?? null,
+            });
           },
-        },
-        async () => {
-          capturedTraceId = currentTrace()?.id ?? null;
-          return runResponderLoop({
-            ownerId,
-            agent,
-            adapter,
-            apiKey,
-            prefs,
-            logPrefix: '[team-turn]',
-            // Fail closed: the team responder never delegates (assembly ran
-            // with allowDelegation:false / withThinking:false). `assembled` also
-            // carries loopOverrides (spread by runResponderLoop): since the
-            // unification, the team-responder's memory_config max_tool_calls /
-            // max_calls_per_tool clamps are enforced here where they weren't
-            // before — safe (tighter caps), inert unless the agent configures them.
-            assembled,
-            // Retrieval ran before the trace; the member's REAL history came
-            // from their own team thread, so the step's turnCount reflects
-            // that thread, not the structurally-empty ctx history.
-            loadContext: async () => ctx,
-            contextStepInput: { agentId: agent.id, contactId: null, loginId },
-            contextStepExtra: { turnCount: history.length },
-            buildMessages: () => messages,
-            // The provenance channel: team_request_create reads WHO is asking
-            // from here; owner-side tools see 'team' and refuse.
-            surface:
-              role === 'client'
-                ? {
-                    kind: 'client',
-                    loginId,
-                    contactName: options.contactName,
-                    inboundMessageId: inbound.id,
-                  }
-                : {
-                    kind: 'team',
-                    loginId,
-                    contactName: options.contactName,
-                    privateReads,
-                    inboundMessageId: inbound.id,
-                  },
-            abortSignal: abortController?.signal ?? null,
-          });
-        },
-      );
-    } catch (err) {
-      if (abortController?.signal.aborted) {
-        outcome = {
-          loop: emptyLoopResult(),
-          reply: '',
-          emptyReplySubstituted: false,
-          blockedByProvider: false,
-          truncated: false,
-          persistedThoughts: [],
-          toolStats: null,
-          ctx,
-        };
-      } else {
-        const msg = errorMessage(err);
-        await runDurableStep('fail_team_outbound', () =>
-          updateTeamMessageOutcome({
-            ownerId,
-            id: outboundPending.id,
-            status: 'failed',
-            error: msg,
-            traceId: capturedTraceId,
-          }),
-        ).catch((e) => console.error('[team-turn] could not mark turn failed:', e));
-        if (options.streamId)
-          emitTurnLifecycle(options.streamId, ownerId, 'error', { message: msg });
-        retireAbort();
-        throw err;
+        );
+      } catch (err) {
+        if (abortController?.signal.aborted) {
+          outcome = {
+            loop: emptyLoopResult(),
+            reply: '',
+            emptyReplySubstituted: false,
+            blockedByProvider: false,
+            truncated: false,
+            persistedThoughts: [],
+            toolStats: null,
+            ctx,
+          };
+        } else {
+          const msg = errorMessage(err);
+          await runDurableStep('fail_team_outbound', () =>
+            updateTeamMessageOutcome({
+              ownerId,
+              id: outboundPending.id,
+              status: 'failed',
+              error: msg,
+              traceId: capturedTraceId,
+            }),
+          ).catch((e) => console.error('[team-turn] could not mark turn failed:', e));
+          if (options.streamId)
+            emitTurnLifecycle(options.streamId, ownerId, 'error', { message: msg });
+          retireAbort();
+          throw err;
+        }
       }
-    }
 
-    // The core already applied the shared empty-reply fallback (a Stop keeps
-    // its partial reply). Strip audio tags — the team surface is text-only.
-    const reply = stripAudioTags(outcome.reply).text;
+      // The core already applied the shared empty-reply fallback (a Stop keeps
+      // its partial reply). Strip audio tags — the team surface is text-only.
+      const reply = stripAudioTags(outcome.reply).text;
 
-    // Persist the turn's media onto the row — the same rule the owner turn
-    // follows (run-turn.ts), and for the same reason: the live `artifacts`
-    // channel only reaches a client on the legacy blocking response, so an
-    // artifact not written here is never rendered at all.
-    //
-    // Node reference only, never the base64. A route that serves the bytes to
-    // the member must authorize off this very column (the retired team-code
-    // chat did), so an artifact WITHOUT a node id has nothing to point at and
-    // is dropped rather than written as an unreachable row.
-    //
-    // A reply can also PLACE a picture itself with `![alt](media:<id>)`. Anything
-    // it placed must not ALSO appear in the strip below; artifactsNotPlacedInline
-    // is the shared rule (inline-images.ts).
-    const durableAttachments = durableAttachmentsFor(outcome.loop.artifacts, reply);
+      // Persist the turn's media onto the row — the same rule the owner turn
+      // follows (run-turn.ts), and for the same reason: the live `artifacts`
+      // channel only reaches a client on the legacy blocking response, so an
+      // artifact not written here is never rendered at all.
+      //
+      // Node reference only, never the base64. A route that serves the bytes to
+      // the member must authorize off this very column (the retired team-code
+      // chat did), so an artifact WITHOUT a node id has nothing to point at and
+      // is dropped rather than written as an unreachable row.
+      //
+      // A reply can also PLACE a picture itself with `![alt](media:<id>)`. Anything
+      // it placed must not ALSO appear in the strip below; artifactsNotPlacedInline
+      // is the shared rule (inline-images.ts).
+      const durableAttachments = durableAttachmentsFor(outcome.loop.artifacts, reply);
 
-    // Admins never see a member's private items (audit S3): a reply that read
-    // them with a my-space tool, or that follows such a reply in the history
-    // the model saw, is marked; the admin readers show a placeholder.
-    const usedPrivate = replyUsedPrivate(outcome.loop.toolCalls, teamHistoryRows);
-    const finalized = await runDurableStep('finalize_team_outbound', () =>
-      updateTeamMessageOutcome({
-        ownerId,
-        id: outboundPending.id,
-        status: 'complete',
+      // Admins never see a member's private items (audit S3): a reply that read
+      // them with a my-space tool, or that follows such a reply in the history
+      // the model saw, is marked; the admin readers show a placeholder.
+      const usedPrivate = replyUsedPrivate(outcome.loop.toolCalls, teamHistoryRows);
+      const finalized = await runDurableStep('finalize_team_outbound', () =>
+        updateTeamMessageOutcome({
+          ownerId,
+          id: outboundPending.id,
+          status: 'complete',
+          text: reply,
+          model: agent.model,
+          traceId: capturedTraceId,
+          usedPrivate,
+          ...(durableAttachments.length ? { attachments: durableAttachments } : {}),
+        }),
+      );
+      const outbound: TeamMessage = finalized ?? {
+        ...outboundPending,
         text: reply,
-        model: agent.model,
+        status: 'complete',
         traceId: capturedTraceId,
-        usedPrivate,
-        ...(durableAttachments.length ? { attachments: durableAttachments } : {}),
-      }),
-    );
-    const outbound: TeamMessage = finalized ?? {
-      ...outboundPending,
-      text: reply,
-      status: 'complete',
-      traceId: capturedTraceId,
-    };
+      };
 
-    retireAbort();
-    if (options.streamId) {
-      emitTurnLifecycle(options.streamId, ownerId, 'done', {
-        outboundId: outboundPending.id,
-        tokensOut: outcome.loop.tokensOut,
-      });
-    }
+      retireAbort();
+      if (options.streamId) {
+        emitTurnLifecycle(options.streamId, ownerId, 'done', {
+          outboundId: outboundPending.id,
+          tokensOut: outcome.loop.tokensOut,
+        });
+      }
 
-    return { inbound, outbound, reply };
-  });
+      return { inbound, outbound, reply };
+    },
+    { loginId },
+  );
 }

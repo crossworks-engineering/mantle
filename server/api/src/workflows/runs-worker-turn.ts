@@ -70,7 +70,7 @@ import { currentTrace, runDurableStep, startTrace, withDurableSteps } from '@man
 import { getChatAdapter } from '@mantle/voice';
 import { errorMessage } from '@mantle/std';
 import { applyAgentThinking, NO_THINKING } from '@mantle/content-core/profile-projections';
-import { agentLevel } from '@mantle/runtime/agent';
+import { agentLevel, withRunScope } from '@mantle/runtime/agent';
 
 const PROPOSAL_CAP_CHARS = 2_000;
 
@@ -351,41 +351,44 @@ export async function runsWorkerTurnImpl(
               ...(payload.redo_of ? { redo_of: payload.redo_of } : {}),
             },
           },
-          async () => {
-            const result = await runToolLoop({
-              adapter,
-              apiKey: keyCheck.apiKey,
-              model: route.model,
-              baseUrl: route.baseUrl,
-              viaTailnet: route.viaTailnet,
-              backup: await resolveBackupAdapter(run.ownerId, route),
-              params: (worker.params ?? {}) as AgentParams,
-              ownerId: run.ownerId,
-              agentId: worker.id,
-              agentSlug: worker.slug,
-              agentLevel: agentLevel(worker),
-              // Depth 2 + empty allowlist: run_* and invoke_agent refuse —
-              // propose-don't-mutate is enforced structurally, not by prompt.
-              agentDepth: 2,
-              delegateTo: [],
-              // Run workers never had the profile's thinking: inherit stays
-              // off. Only an effort set on the worker row itself applies.
-              ...workerThinking(worker),
-              initialMessages,
-              tools: allowedTools,
-              // The owner's own run (client logins C4): a missing surface is
-              // not the owner.
-              surface: { kind: 'owner', via: 'run' },
-            });
-            const ctx = currentTrace();
-            if (ctx) {
-              traceId = ctx.id;
-              costMicroUsd = ctx.costMicroUsd;
-              tokensIn = ctx.tokens.in;
-              tokensOut = ctx.tokens.out;
-            }
-            return result;
-          },
+          // The run's own scope (W4b): a run planned in a non-Admin
+          // workspace is worked in that workspace, never wider.
+          () =>
+            withRunScope(run, async () => {
+              const result = await runToolLoop({
+                adapter,
+                apiKey: keyCheck.apiKey,
+                model: route.model,
+                baseUrl: route.baseUrl,
+                viaTailnet: route.viaTailnet,
+                backup: await resolveBackupAdapter(run.ownerId, route),
+                params: (worker.params ?? {}) as AgentParams,
+                ownerId: run.ownerId,
+                agentId: worker.id,
+                agentSlug: worker.slug,
+                agentLevel: agentLevel(worker),
+                // Depth 2 + empty allowlist: run_* and invoke_agent refuse —
+                // propose-don't-mutate is enforced structurally, not by prompt.
+                agentDepth: 2,
+                delegateTo: [],
+                // Run workers never had the profile's thinking: inherit stays
+                // off. Only an effort set on the worker row itself applies.
+                ...workerThinking(worker),
+                initialMessages,
+                tools: allowedTools,
+                // The owner's own run (client logins C4): a missing surface is
+                // not the owner.
+                surface: { kind: 'owner', via: 'run' },
+              });
+              const ctx = currentTrace();
+              if (ctx) {
+                traceId = ctx.id;
+                costMicroUsd = ctx.costMicroUsd;
+                tokensIn = ctx.tokens.in;
+                tokensOut = ctx.tokens.out;
+              }
+              return result;
+            }),
         );
 
         void bumpAgentUsage(worker.id).catch(() => {});

@@ -20,7 +20,9 @@ import type { PostCommitAction } from './engine';
 import { notifyPendingCreated } from './notify';
 import { RUN_RESUME_QUEUE, RUN_TOOL_QUEUE, RUN_WORKER_QUEUE } from './queues';
 import { env } from '@mantle/config';
-import { assertNoViewer } from '@mantle/db/viewer';
+import { assertNoViewer, currentWorkspaceScope } from '@mantle/db/viewer';
+import { sql } from 'drizzle-orm';
+import { asSystem, db } from '@mantle/db';
 
 let bossPromise: Promise<PgBoss> | null = null;
 
@@ -83,11 +85,16 @@ export async function runPendingNotices(actions: readonly PostCommitAction[]): P
 /** The queue-job half of a batch. Pairs with {@link runPendingNotices} for
  *  callers that handle the two halves separately. */
 export async function enqueueRunJobs(actions: readonly PostCommitAction[]): Promise<void> {
-  assertNoViewer('enqueueRunJobs');
   const jobs = actions.filter(
     (a): a is Exclude<PostCommitAction, { type: 'pending_created' }> =>
       a.type !== 'pending_created',
   );
+  // A job leaves this process. From a workspace scope it must carry the scope
+  // (plan 5.4, U5): every run it names is stamped with a workspace of the
+  // scope (runs.workspace_id, from the planning agent), and the worker
+  // re-enters that scope before its first query. Anything else throws.
+  if (currentWorkspaceScope()) await assertRunsCarryScope(jobs);
+  else assertNoViewer('enqueueRunJobs');
   if (jobs.length === 0) return;
   const boss = await getSendBoss();
   for (const a of jobs) {
@@ -104,6 +111,30 @@ export async function enqueueRunJobs(actions: readonly PostCommitAction[]): Prom
         { singletonKey: a.groupId, retryLimit: 2, retryDelay: 10, retryBackoff: true },
       );
     }
+  }
+}
+
+/** Throws unless every run the jobs name is stamped with a workspace of the
+ *  current scope (read as the system: the rule is in the query). */
+async function assertRunsCarryScope(
+  jobs: readonly Exclude<PostCommitAction, { type: 'pending_created' }>[],
+): Promise<void> {
+  const scope = currentWorkspaceScope();
+  if (!scope || jobs.length === 0) return;
+  const itemIds = jobs.flatMap((j) => (j.type === 'dispatch' ? [j.itemId] : []));
+  const runIds = jobs.flatMap((j) => (j.type === 'resume' ? [j.runId] : []));
+  const list = (ids: string[]) => `{${ids.join(',')}}`;
+  const rows = (await asSystem(() =>
+    db.execute(sql`
+      select r.workspace_id::text as ws from runs r
+       where r.id = any(${list(runIds)}::uuid[])
+          or r.id in (select i.run_id from run_items i where i.id = any(${list(itemIds)}::uuid[]))`),
+  )) as unknown as { ws: string | null }[];
+  const inScope = new Set(scope.ws);
+  if (rows.length === 0 || rows.some((r) => !r.ws || !inScope.has(r.ws))) {
+    throw new Error(
+      'enqueueRunJobs: a job from a workspace scope must name runs of that scope; refused.',
+    );
   }
 }
 

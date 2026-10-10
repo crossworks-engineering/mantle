@@ -42,6 +42,7 @@ import {
   MANIFEST_SKILLS,
   MANIFEST_SKILL_SLUGS,
   MANIFEST_TOOL_GROUPS,
+  MANIFEST_ADMIN_ONLY_GROUPS,
   MANIFEST_WORKERS,
   PERSONA_SLUG,
   PERSONA_TOOL_GROUP_SLUGS,
@@ -206,10 +207,19 @@ async function upsertToolGroup(
   mode: ApplyMode,
 ): Promise<void> {
   const [existing] = await db
-    .select({ id: toolGroups.id })
+    .select({ id: toolGroups.id, adminOnly: toolGroups.adminOnly })
     .from(toolGroups)
     .where(and(eq(toolGroups.ownerId, ownerId), eq(toolGroups.slug, def.slug)))
     .limit(1);
+  // adminOnly (workspaces W4b) only ever turns ON from the manifest, in every
+  // mode: it narrows who may run the group, never widens.
+  const adminOnly = MANIFEST_ADMIN_ONLY_GROUPS.includes(def.slug);
+  if (existing && adminOnly && !existing.adminOnly) {
+    await db
+      .update(toolGroups)
+      .set({ adminOnly: true, updatedAt: new Date() })
+      .where(eq(toolGroups.id, existing.id));
+  }
   if (existing) {
     if (mode === 'overwrite') {
       await db
@@ -236,6 +246,7 @@ async function upsertToolGroup(
     description: def.description,
     toolSlugs: def.toolSlugs,
     ...(def.level ? { audience: def.level } : {}),
+    adminOnly,
     enabled: true,
   });
 }

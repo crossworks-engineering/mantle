@@ -16,13 +16,14 @@ import {
   db,
   levelCovers,
   lowerLevel,
+  scopeHoldsAdmin,
   toolGroups,
   type Tool,
   type ToolHandler,
   type ViewerLevel,
 } from '@mantle/db';
-import { currentViewerLevel } from '@mantle/db/viewer';
-import { connectorMarkState } from './external-access';
+import { currentViewerLevel, currentWorkspaceScope } from '@mantle/db/viewer';
+import { connectorMarkState, connectorResources } from './external-access';
 import { getApiKey } from '@mantle/api-keys';
 import { getBuiltin, getBuiltinHandler } from './registry';
 import { checkToolPreconditions } from './preconditions';
@@ -60,6 +61,27 @@ import { errorMessage } from '@mantle/std';
 
 const HTTP_TIMEOUT_MS_DEFAULT = 15_000;
 
+/**
+ * Tools that read the owner's own history or the run machinery (workspaces
+ * R3, W4b): adminOnly whatever group grants them. In a workspace turn scope
+ * that does not hold the Admin workspace they are refused, as every
+ * ownerOnly tool is.
+ */
+export const ADMIN_ONLY_TOOL_SLUGS: ReadonlySet<string> = new Set([
+  'replay_window',
+  'find_window',
+  'export_node',
+  'run_plan',
+  'run_append',
+  'run_state',
+  'run_cancel',
+  'run_audit',
+]);
+
+/** The refusal of an adminOnly tool outside the Admin workspace. */
+export const ADMIN_ONLY_ERROR =
+  'This tool belongs to the Admin workspace; it does not run in this workspace.';
+
 export async function dispatchTool(
   tool: Tool,
   input: Record<string, unknown>,
@@ -81,6 +103,15 @@ export async function dispatchTool(
     // (client logins C4): a team, client or MISSING surface is not the owner.
     if (def?.ownerOnly && !isOwnerSurface(ctx.surface)) {
       return { ok: false, error: OWNER_ONLY_ERROR };
+    }
+    // adminOnly (W4b, plan 5.4): an ownerOnly or adminOnly tool runs in a
+    // workspace turn scope only when that scope holds the Admin workspace.
+    if (
+      (def?.ownerOnly || ADMIN_ONLY_TOOL_SLUGS.has(tool.slug)) &&
+      currentWorkspaceScope() &&
+      !(await scopeHoldsAdmin())
+    ) {
+      return { ok: false, error: ADMIN_ONLY_ERROR };
     }
     try {
       // Declared referential preconditions run first — a call aimed at a
@@ -171,6 +202,40 @@ export function undeclaredToolArgs(schema: unknown, input: Record<string, unknow
   return out;
 }
 
+/** Why a connector call is refused in a workspace turn scope (W4b, plan
+ *  section 6), or null: the connector must be a resource of the scope's
+ *  workspace; a tool not marked read-only needs that resource's Write on AND
+ *  the asking login a Moderator there; a stale mark is refused. */
+async function connectorScopeRefused(
+  ctx: ToolHandlerContext,
+  groupSlug: string,
+  tool: Tool,
+  input: Record<string, unknown>,
+): Promise<string | null> {
+  const scope = currentWorkspaceScope();
+  if (!scope) return null;
+  const held = await connectorResources(ctx.ownerId, groupSlug, scope.ws);
+  if (held.length === 0) {
+    return "This connector is not one of this workspace's resources, so its tools do not run here.";
+  }
+  const mark = connectorMarkState(tool);
+  if (mark === 'stale') {
+    return 'This connector tool changed after an admin marked it read-only; it runs again once an admin marks it again.';
+  }
+  if (mark === 'read') {
+    const extra = undeclaredToolArgs(tool.inputSchema, input);
+    if (extra.length) {
+      return `This connector tool was marked read-only with the inputs it had then, and ${extra.map((k) => `'${k}'`).join(', ')} is not one of them. Call it with only the inputs it lists, or ask an admin to sync the connector and mark the tool again.`;
+    }
+    return null;
+  }
+  const mod = new Set(scope.modWs);
+  if (!held.some((r) => r.write && mod.has(r.workspaceId))) {
+    return 'This connector tool can change data: it needs the connector’s Write switched on in this workspace, and the person asking to be a Moderator here.';
+  }
+  return null;
+}
+
 /** Why a connector call is refused for a non-owner run, or null. */
 function connectorCallRefused(
   ctx: ToolHandlerContext,
@@ -178,6 +243,8 @@ function connectorCallRefused(
   tool: Tool,
   input: Record<string, unknown>,
 ): string | null {
+  // A workspace turn scope has no level: connectorScopeRefused decides.
+  if (currentWorkspaceScope()) return null;
   const run = nonOwnerRunLevel(ctx);
   if (!run) return null;
   if (!levelCovers(run, connectorLevel)) {
@@ -241,7 +308,9 @@ async function dispatchMcp(
   // non-owner call runs at must read the connector's level; a public run
   // (a contact link, a public agent) only ever reads (Jason, 2026-10-08:
   // contacts read only), so an unmarked tool is refused there.
-  const refused = connectorCallRefused(ctx, asViewerLevel(group.audience), tool, input);
+  const refused =
+    connectorCallRefused(ctx, asViewerLevel(group.audience), tool, input) ??
+    (await connectorScopeRefused(ctx, group.slug, tool, input));
   if (refused) return { ok: false, error: refused };
   try {
     // asSystem: the remote call reads and, for an OAuth connector, refreshes

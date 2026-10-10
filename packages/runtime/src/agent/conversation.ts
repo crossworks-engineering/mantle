@@ -86,6 +86,10 @@ import {
   resolveSupersededTargets,
   visibleFactSource,
   withHnswPool,
+  distanceOrder,
+  hnswFirst,
+  scopeNodeIds,
+  smallScope,
 } from '@mantle/search';
 import type {
   ChunkContextHit,
@@ -194,7 +198,7 @@ import {
 } from './conversation/select';
 import { withAgentViewer } from './agent-viewer';
 import { withoutClientSourced } from '@mantle/tools/client-sourced';
-import { currentViewerLevel } from '@mantle/db/viewer';
+import { currentWorkspaceScope, isUnscoped } from '@mantle/db/viewer';
 
 /** How many section-level passages to auto-pull into context (the fine-grained
  *  complement to the node-level content hits). The budget that matters is
@@ -575,7 +579,9 @@ async function recallOlderExchanges(o: {
 export function loadConversationContext(
   args: Parameters<typeof loadConversationContextAtLevel>[0],
 ): Promise<ConversationContext> {
-  return withAgentViewer(args.agent, () => loadConversationContextAtLevel(args));
+  return withAgentViewer(args.agent, () => loadConversationContextAtLevel(args), {
+    loginId: args.loginId ?? null,
+  });
 }
 
 async function loadConversationContextAtLevel(args: {
@@ -598,6 +604,8 @@ async function loadConversationContextAtLevel(args: {
    *  passes it: below admin the owner's assistant_messages is not readable,
    *  and a team turn without it enriches nothing. */
   recentTurnTexts?: readonly string[];
+  /** The login the turn answers (workspaces W4b): its scope's login. */
+  loginId?: string | null;
 }): Promise<ConversationContext> {
   const { ownerId, agent, inboundText } = args;
   // Decision trace v1 (snapshot.trace): what each stage considered, kept and
@@ -611,7 +619,7 @@ async function loadConversationContextAtLevel(args: {
   // entity names and the relation graph (learned from every source, email
   // included), the owner's own chat history and Journal. Those arms are
   // skipped, not left to fail on a permission error.
-  const belowAdmin = currentViewerLevel() !== 'admin';
+  const belowAdmin = !isUnscoped();
   const entityNameCol = belowAdmin ? sql<string | null>`null` : entities.name;
   const memoryConfig = (agent.memoryConfig ?? {}) as AgentMemoryConfig;
   const historyLimit = memoryConfig.history_limit ?? 20;
@@ -780,61 +788,82 @@ async function loadConversationContextAtLevel(args: {
     // The recency-adjusted ranking distance, also selected for the trace.
     const factRankDist = sql<number>`(${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector) + (case ${facts.kind} when 'episodic' then ${RECENCY_EPISODIC}::float8 when 'factual' then ${RECENCY_FACTUAL}::float8 else 0::float8 end) * (1 - exp(- extract(epoch from (now() - coalesce(${facts.validFrom}, ${facts.createdAt}))) / ${RECENCY_TAU_SEC}::float8))`;
     let factPooled = 0;
-    const rows = await withHnswPool(factPool, async (tx) => {
-      const factConds = and(
-        eq(facts.ownerId, ownerId),
-        isNull(facts.validTo),
-        sql`${facts.embedding} is not null`,
-        factVisible,
-      );
-      // Below admin the pool JOINS the visible source nodes: with a selective
-      // row rule the HNSW scan alone stops short (spike: recall@50 0.54 for
-      // a client-level role); the join makes it an exact search over the
-      // visible facts (recall 1.00, plan section 14b).
-      const pooled = (await tx.execute(
-        belowAdmin
-          ? sql`select ${facts.id} as id from ${facts}
+    // A workspace turn scope (W4b): the small-scope exact path (the scope's
+    // items' facts and its own chat facts, by true distance) or the HNSW
+    // order pinned (scope.ts). The row rule decides what is read either way.
+    const inWorkspace = currentWorkspaceScope() !== null;
+    const factExact = inWorkspace ? await smallScope('facts') : false;
+    const rows = await withHnswPool(
+      factPool,
+      async (tx) => {
+        const factConds = and(
+          eq(facts.ownerId, ownerId),
+          isNull(facts.validTo),
+          sql`${facts.embedding} is not null`,
+          factVisible,
+        );
+        // Below admin the pool JOINS the visible source nodes: with a selective
+        // row rule the HNSW scan alone stops short (spike: recall@50 0.54 for
+        // a client-level role); the join makes it an exact search over the
+        // visible facts (recall 1.00, plan section 14b).
+        const vecDist = sql`${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector`;
+        const pooled = (await tx.execute(
+          inWorkspace
+            ? sql`select ${facts.id} as id from ${facts}
+              where ${factConds}
+              ${
+                factExact
+                  ? sql`and (${facts.sourceNodeId} = any(${scopeNodeIds(ownerId)})
+                         or (${facts.sourceNodeId} is null and ${facts.readWs} && mantle_scope_ws()))`
+                  : sql``
+              }
+              order by ${distanceOrder(vecDist, factExact)}
+              limit ${factPool}`
+            : belowAdmin
+              ? sql`select ${facts.id} as id from ${facts}
               join ${nodes} on ${nodes.id} = ${facts.sourceNodeId}
               where ${factConds}
               order by ${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector
               limit ${factPool}`
-          : sql`select id from ${facts}
+              : sql`select id from ${facts}
               where ${factConds}
               order by ${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector
               limit ${factPool}`,
-      )) as unknown as { id: string }[];
-      factPooled = pooled.length;
-      if (pooled.length === 0) return [];
-      const hydrate = tx
-        .select({
-          id: facts.id,
-          content: facts.content,
-          kind: facts.kind,
-          entityId: facts.entityId,
-          entityName: entityNameCol,
-          sourceNodeId: facts.sourceNodeId,
-          dist: sql<number>`${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector`,
-          rankDist: factRankDist,
-        })
-        .from(facts)
-        .$dynamic();
-      return (
-        (belowAdmin ? hydrate : hydrate.leftJoin(entities, eq(facts.entityId, entities.id)))
-          .where(
-            inArray(
-              facts.id,
-              pooled.map((r) => r.id),
-            ),
-          )
-          // Rank by cosine + a kind-aware age penalty: episodic memories decay
-          // (recent ones win), factual mildly, semantic/preference not at all (stable
-          // identity). Anchor on valid_from (when the fact became true) → created_at.
-          // The mismatch guard below still filters on raw cosine, so recency reorders
-          // but never surfaces a garbage-space row.
-          .orderBy(factRankDist)
-          .limit(factLimit)
-      );
-    });
+        )) as unknown as { id: string }[];
+        factPooled = pooled.length;
+        if (pooled.length === 0) return [];
+        const hydrate = tx
+          .select({
+            id: facts.id,
+            content: facts.content,
+            kind: facts.kind,
+            entityId: facts.entityId,
+            entityName: entityNameCol,
+            sourceNodeId: facts.sourceNodeId,
+            dist: sql<number>`${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector`,
+            rankDist: factRankDist,
+          })
+          .from(facts)
+          .$dynamic();
+        return (
+          (belowAdmin ? hydrate : hydrate.leftJoin(entities, eq(facts.entityId, entities.id)))
+            .where(
+              inArray(
+                facts.id,
+                pooled.map((r) => r.id),
+              ),
+            )
+            // Rank by cosine + a kind-aware age penalty: episodic memories decay
+            // (recent ones win), factual mildly, semantic/preference not at all (stable
+            // identity). Anchor on valid_from (when the fact became true) → created_at.
+            // The mismatch guard below still filters on raw cosine, so recency reorders
+            // but never surfaces a garbage-space row.
+            .orderBy(factRankDist)
+            .limit(factLimit)
+        );
+      },
+      { hnswFirst: hnswFirst(factExact) },
+    );
     const selection = selectFacts(rows);
     rows.forEach((r, i) => {
       const kept = (r.dist ?? 1) < 0.85;
@@ -932,46 +961,53 @@ async function loadConversationContextAtLevel(args: {
     // The salience + recency ranking distance, also selected for the trace.
     const hitRankDist = sql<number>`(${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector) + ${SALIENCE_LAMBDA}::float8 * (1 - ${nodes.salience}) + ${RECENCY_CONTENT}::float8 * (1 - exp(- extract(epoch from (now() - coalesce((${nodes.data}->>'internalDate')::timestamptz, ${nodes.createdAt}))) / ${RECENCY_TAU_SEC}::float8))`;
     let hitPooled = 0;
-    const rows = await withHnswPool(contentPool, async (tx) => {
-      const pooled = (await tx.execute(
-        sql`select id from ${nodes}
+    // A workspace turn scope (W4b): exact over the scope's items when small,
+    // else the HNSW order pinned (scope.ts).
+    const contentExact = currentWorkspaceScope() !== null ? await smallScope('nodes') : false;
+    const rows = await withHnswPool(
+      contentPool,
+      async (tx) => {
+        const pooled = (await tx.execute(
+          sql`select id from ${nodes}
             where ${contentFilters}
-            order by ${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector
+            order by ${distanceOrder(sql`${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector`, contentExact)}
             limit ${contentPool}`,
-      )) as unknown as { id: string }[];
-      hitPooled = pooled.length;
-      if (pooled.length === 0) return [];
-      return (
-        tx
-          .select({
-            nodeId: nodes.id,
-            title: nodes.title,
-            type: nodes.type,
-            data: nodes.data,
-            supersededBy: nodes.supersededBy,
-            // Salience-adjusted distance: bulk/marketing mail (low salience) is
-            // pushed back so it can't crowd out real content. Non-email nodes have
-            // salience 1.0 → no change.
-            dist: sql<number>`(${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector) + ${SALIENCE_LAMBDA} * (1 - ${nodes.salience})`,
-            rawDist: sql<number>`${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector`,
-            rankDist: hitRankDist,
-          })
-          .from(nodes)
-          .where(
-            inArray(
-              nodes.id,
-              pooled.map((r) => r.id),
-            ),
-          )
-          // Order by salience-adjusted distance + a MILD recency penalty. The date
-          // anchor is the content's own date when it has one (an email's send date —
-          // so an old email synced last month reads as old, not fresh), else
-          // created_at. Recency only reorders here; the 0.6 cutoff below stays on the
-          // salience distance, so a relevant-but-old doc is never dropped for age.
-          .orderBy(hitRankDist)
-          .limit(contentHitLimit)
-      );
-    });
+        )) as unknown as { id: string }[];
+        hitPooled = pooled.length;
+        if (pooled.length === 0) return [];
+        return (
+          tx
+            .select({
+              nodeId: nodes.id,
+              title: nodes.title,
+              type: nodes.type,
+              data: nodes.data,
+              supersededBy: nodes.supersededBy,
+              // Salience-adjusted distance: bulk/marketing mail (low salience) is
+              // pushed back so it can't crowd out real content. Non-email nodes have
+              // salience 1.0 → no change.
+              dist: sql<number>`(${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector) + ${SALIENCE_LAMBDA} * (1 - ${nodes.salience})`,
+              rawDist: sql<number>`${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector`,
+              rankDist: hitRankDist,
+            })
+            .from(nodes)
+            .where(
+              inArray(
+                nodes.id,
+                pooled.map((r) => r.id),
+              ),
+            )
+            // Order by salience-adjusted distance + a MILD recency penalty. The date
+            // anchor is the content's own date when it has one (an email's send date —
+            // so an old email synced last month reads as old, not fresh), else
+            // created_at. Recency only reorders here; the 0.6 cutoff below stays on the
+            // salience distance, so a relevant-but-old doc is never dropped for age.
+            .orderBy(hitRankDist)
+            .limit(contentHitLimit)
+        );
+      },
+      { hnswFirst: hnswFirst(contentExact) },
+    );
     const selection = selectContentHits(rows);
     rows.forEach((r, i) => {
       const kept = (r.dist ?? 1) < 0.6;

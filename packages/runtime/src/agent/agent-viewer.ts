@@ -1,19 +1,41 @@
 /**
- * An agent runs inside its level (member logins Phase 0b, plan section 2b).
+ * An agent runs inside its workspace (workspaces W4b, plan 5.1), or, for an
+ * agent with none, inside its level (member logins Phase 0b, plan section 2b).
  *
- * `agents.audience` is the one switch: an admin agent runs on the admin pool
- * as today; a team (or lower) agent runs every query of its turn on that
- * level's limited role, so row level security decides what it reads.
+ * The four functions that read the brain for an agent wrap THEMSELVES here
+ * (loadConversationContext, assembleResponderTurn, runResponderLoop,
+ * runToolLoop), so no entry point can forget:
  *
- * The four functions that read the brain for an agent wrap THEMSELVES at the
- * agent's level (loadConversationContext, assembleResponderTurn,
- * runResponderLoop, runToolLoop), so no entry point can forget. The level only
- * goes down: a team agent that invokes an admin agent still runs it at team.
+ *  - an assistant of a workspace other than Admin (the Team assistant) runs
+ *    its turn in a TURN scope of that one workspace on the workspace role:
+ *    every query in its own short transaction, none held across an LLM call,
+ *    and a lost scope refused (withTurnScope). Its writes stay on the system
+ *    pool's own paths. modWs is the workspace when the login it answers is a
+ *    Moderator there, else empty; no login (a heartbeat) reads only;
+ *  - the Admin assistant stays on the system pool until W6a (the Admin
+ *    workspace holds every migrated item) and only carries its stamp (the
+ *    workspace and login its runs and traces are written with);
+ *  - an agent with no workspace (a specialist, a worker) runs at its level,
+ *    as before, and INSIDE a turn scope it runs in the caller's scope: a
+ *    helper never widens it (plan 5.1).
  *
- * Imported from `@mantle/db/viewer`, not `@mantle/db`: a test that fakes the
- * whole `@mantle/db` module keeps the real scope (it is the same module).
+ * Nested: the same workspace reuses the open scope; another workspace, or an
+ * Admin assistant inside a non-Admin turn, is refused (fail closed). A
+ * workspace that cannot be read (gone, archived) is refused, never read as
+ * no workspace.
+ *
+ * Imported from `@mantle/db/viewer` where it can be, not `@mantle/db`: a test
+ * that fakes the whole `@mantle/db` module keeps the real scope.
  */
-import { isViewerLevel, withViewer, type ViewerLevel } from '@mantle/db/viewer';
+import { and, eq } from 'drizzle-orm';
+import { asSystem, db, withTurnScope, workspaces, workspaceUsers } from '@mantle/db';
+import {
+  currentWorkspaceScope,
+  isViewerLevel,
+  withTurnStamp,
+  withViewer,
+  type ViewerLevel,
+} from '@mantle/db/viewer';
 
 /** The agent's level. A row always carries a valid one (CHECK + default);
  *  a value-less stand-in (tests, synthetic agents) counts as admin. */
@@ -21,10 +43,112 @@ export function agentLevel(agent: { audience?: string | null }): ViewerLevel {
   return isViewerLevel(agent.audience) ? agent.audience : 'admin';
 }
 
-/** Run `fn` at the agent's level (never higher than the caller's). */
+/** What a scope wrapper needs of an agent. */
+export type ScopedAgent = {
+  audience?: string | null;
+  /** agents.workspace_id: the workspace this assistant answers in, if any. */
+  workspaceId?: string | null;
+};
+
+/** The workspace an assistant answers in could not be used. */
+export class AgentWorkspaceError extends Error {
+  readonly code = 'agent-workspace';
+  constructor(message: string) {
+    super(message);
+    this.name = 'AgentWorkspaceError';
+  }
+}
+
+/** The workspace row an assistant answers in, read on the system pool. */
+async function agentWorkspace(id: string): Promise<{ isAdmin: boolean }> {
+  const [row] = await asSystem(() =>
+    db
+      .select({ isAdmin: workspaces.isAdmin, archivedAt: workspaces.archivedAt })
+      .from(workspaces)
+      .where(eq(workspaces.id, id))
+      .limit(1),
+  );
+  if (!row) throw new AgentWorkspaceError('This assistant’s workspace no longer exists.');
+  if (row.archivedAt) throw new AgentWorkspaceError('This assistant’s workspace is archived.');
+  return { isAdmin: row.isAdmin };
+}
+
+/** Whether `loginId` is a Moderator of workspace `wsId` (system pool). */
+async function isModerator(wsId: string, loginId: string): Promise<boolean> {
+  const [row] = await asSystem(() =>
+    db
+      .select({ moderator: workspaceUsers.moderator })
+      .from(workspaceUsers)
+      .where(and(eq(workspaceUsers.workspaceId, wsId), eq(workspaceUsers.loginId, loginId)))
+      .limit(1),
+  );
+  return row?.moderator === true;
+}
+
+/**
+ * Run `fn` in the agent's scope (see the module comment). `loginId` is the
+ * login the turn answers (its R3 rows and its write rights), or null.
+ */
+export async function withAgentScope<T>(
+  agent: ScopedAgent,
+  fn: () => Promise<T>,
+  opts: { loginId?: string | null } = {},
+): Promise<T> {
+  const open = currentWorkspaceScope();
+  const wsId = agent.workspaceId ?? null;
+  if (!wsId) {
+    // A helper: inside a turn it runs in the caller's scope, never wider.
+    if (open) return fn();
+    return withViewer(agentLevel(agent), fn);
+  }
+  if (open) {
+    if (open.ws.length === 1 && open.ws[0] === wsId) return fn();
+    throw new AgentWorkspaceError(
+      'An assistant of another workspace cannot run inside this turn: its scope would change.',
+    );
+  }
+  const loginId = opts.loginId ?? null;
+  const ws = await agentWorkspace(wsId);
+  if (ws.isAdmin) {
+    // The Admin assistant: the system pool until W6a, with its stamp.
+    return withTurnStamp({ workspaceId: wsId, loginId }, () => withViewer(agentLevel(agent), fn));
+  }
+  const modWs = loginId && (await isModerator(wsId, loginId)) ? [wsId] : [];
+  return withTurnScope({ kind: 'assistant', loginId, ws: [wsId], modWs }, fn);
+}
+
+/** Run `fn` at the agent's level or in its workspace (withAgentScope). */
 export function withAgentViewer<T>(
-  agent: { audience?: string | null },
+  agent: ScopedAgent,
+  fn: () => Promise<T>,
+  opts: { loginId?: string | null } = {},
+): Promise<T> {
+  return withAgentScope(agent, fn, opts);
+}
+
+/** The login a tool surface names (a member's or a client's turn), if any. */
+export function surfaceLoginId(surface: unknown): string | null {
+  const s = surface as { kind?: string; loginId?: unknown } | null | undefined;
+  if ((s?.kind === 'team' || s?.kind === 'client') && typeof s.loginId === 'string') {
+    return s.loginId;
+  }
+  return null;
+}
+
+/**
+ * Re-enter the scope a run was made in (plan 5.4, U5): a run carries the
+ * workspace and login of the turn that planned it (runs.workspace_id and
+ * login_id, stamped at write; NULL = Admin). A worker calls this before its
+ * first query for the run: the Admin workspace (or none) runs as before on
+ * the system pool with its stamp; any other workspace in a turn scope of
+ * it, read only unless the run's login moderates there.
+ */
+export async function withRunScope<T>(
+  run: { workspaceId?: string | null; loginId?: string | null },
   fn: () => Promise<T>,
 ): Promise<T> {
-  return withViewer(agentLevel(agent), fn);
+  if (!run.workspaceId) return fn();
+  return withAgentScope({ audience: 'admin', workspaceId: run.workspaceId }, fn, {
+    loginId: run.loginId ?? null,
+  });
 }

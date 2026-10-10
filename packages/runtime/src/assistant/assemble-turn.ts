@@ -94,6 +94,8 @@ export type ResponderLoopOverrides = {
 export type AssembleResponderTurnOptions = {
   ownerId: string;
   agent: Agent;
+  /** The login the turn answers (workspaces W4b): its scope's login. */
+  loginId?: string | null;
   /** Pre-loaded profile preferences. Loaded by the caller because the web
    *  path may have just auto-switched the timezone (applyAutoTimezone) and
    *  the time line below must reflect the updated prefs. */
@@ -184,7 +186,9 @@ export type AssembledResponderTurn = {
 export function assembleResponderTurn(
   opts: AssembleResponderTurnOptions,
 ): Promise<AssembledResponderTurn> {
-  return withAgentViewer(opts.agent, () => assembleResponderTurnAtLevel(opts));
+  return withAgentViewer(opts.agent, () => assembleResponderTurnAtLevel(opts), {
+    loginId: opts.loginId ?? null,
+  });
 }
 
 async function assembleResponderTurnAtLevel(

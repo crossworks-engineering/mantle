@@ -81,7 +81,9 @@ import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { str, strArr } from './coerce';
 import { errorMessage } from '@mantle/std';
 import { isOwnerSurface, OWNER_ONLY_ERROR } from './surface';
-import { currentViewerLevel } from '@mantle/db/viewer';
+import { currentViewerLevel, currentWorkspaceScope } from '@mantle/db/viewer';
+import { and as andWhere, eq as eqWhere } from 'drizzle-orm';
+import { db as scopedDb, nodes as nodesTable } from '@mantle/db';
 
 /**
  * The app write tools (everything that writes an app's code, manifest,
@@ -871,6 +873,15 @@ async function teamReachableApps(ctx: Parameters<BuiltinToolDef['handler']>[1]) 
   // can READ, and an embed in a shared item opens reading: the app's own
   // database must not follow it (access matrix audit, M6). So the list holds
   // only apps used at the viewer's level (own level or a folder share).
+  // A workspace turn scope (W4b): the apps the scope holds by their OWN
+  // grant (an app's grants never follow an embed), as the row rule reads them.
+  if (currentWorkspaceScope()) {
+    const rows = await scopedDb
+      .select({ id: nodesTable.id })
+      .from(nodesTable)
+      .where(andWhere(eqWhere(nodesTable.ownerId, ctx.ownerId), eqWhere(nodesTable.type, 'app')));
+    return new Set(rows.map((r) => r.id));
+  }
   const level = currentViewerLevel();
   if (level === 'team') return listAppIdsUsedAt(ctx.ownerId, ['team', 'client', 'public']);
   if (level === 'client') return listAppIdsUsedAt(ctx.ownerId, ['client']);

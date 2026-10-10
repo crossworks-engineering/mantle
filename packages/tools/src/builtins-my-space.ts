@@ -13,7 +13,7 @@
  * that one space (withSpace, human flag off): row security holds the rest.
  */
 import { sql } from 'drizzle-orm';
-import { db, withSpace } from '@mantle/db';
+import { asSystem, currentWorkspaceScope, db, withSpace } from '@mantle/db';
 import {
   SPACE_ITEM_KINDS,
   docToText,
@@ -43,11 +43,28 @@ export async function onBehalfOf(
   const s = ctx.surface;
   const loginId = s?.kind === 'team' || s?.kind === 'client' ? s.loginId : undefined;
   if (!loginId) return null;
-  const rows = (await db.execute(
-    sql`select mantle_personal_space(${loginId}::uuid) as id`,
+  // In a workspace turn scope (W4b) the member is the scope's own login, or
+  // nobody: the surface never names someone else.
+  const scope = currentWorkspaceScope();
+  if (scope && scope.loginId !== loginId) return null;
+  const rows = (await asSystem(() =>
+    db.execute(sql`select mantle_personal_space(${loginId}::uuid) as id`),
   )) as unknown as { id: string | null }[];
   const spaceId = rows[0]?.id;
   return spaceId ? { loginId, spaceId } : null;
+}
+
+/**
+ * Read the member's own personal space (the space role, one short
+ * transaction). Personal items keep the space rules until W6b: from a
+ * workspace turn scope the read leaves the turn's scope for that ONE space
+ * (asSystem only to leave it; withSpace narrows to the space at once).
+ */
+function inOwnSpace<T>(
+  who: { loginId: string; spaceId: string },
+  fn: () => Promise<T>,
+): Promise<T> {
+  return currentWorkspaceScope() ? asSystem(() => withSpace(who, fn)) : withSpace(who, fn);
 }
 
 function clip(text: string): { text: string; truncated?: true } {
@@ -92,7 +109,7 @@ export const my_items_list: BuiltinToolDef = {
         error: `unknown kind '${kind}'; use one of ${SPACE_ITEM_KINDS.join(', ')}.`,
       };
     }
-    const res = await withSpace(who, () =>
+    const res = await inOwnSpace(who, () =>
       listMine(who.spaceId, {
         ...(kind && isSpaceItemKind(kind) ? { kind } : {}),
         ...(strOpt(input.q) ? { q: strOpt(input.q) } : {}),
@@ -148,7 +165,9 @@ export const my_item_open: BuiltinToolDef = {
       };
     }
     const tab = strOpt(input.tab);
-    const got = await withSpace(who, () => getMineItem(who.spaceId, id, tab ? { tabId: tab } : {}));
+    const got = await inOwnSpace(who, () =>
+      getMineItem(who.spaceId, id, tab ? { tabId: tab } : {}),
+    );
     if (!got) {
       return {
         ok: false,

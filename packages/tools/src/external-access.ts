@@ -52,6 +52,8 @@ import {
   levelCovers,
   toolGroups,
   tools,
+  workspaceResources,
+  workspaces,
   type Tool,
   type ToolHandler,
   type ToolExternalAccess,
@@ -273,6 +275,48 @@ export function connectorLevelAllows(run: ViewerLevel, connector: ViewerLevel): 
 }
 
 /**
+ * A connector as a workspace resource (workspaces plan section 6, W4b): the
+ * rows that put the connector group `groupSlug` on any of `wsIds` (live,
+ * unarchived workspaces of the brain), with their Write tick. Read as the
+ * system: the rule is in the query.
+ */
+export async function connectorResources(
+  ownerId: string,
+  groupSlug: string,
+  wsIds: readonly string[],
+): Promise<{ workspaceId: string; write: boolean }[]> {
+  if (wsIds.length === 0) return [];
+  return asSystem(() =>
+    db
+      .select({ workspaceId: workspaceResources.workspaceId, write: workspaceResources.write })
+      .from(workspaceResources)
+      .innerJoin(workspaces, eq(workspaces.id, workspaceResources.workspaceId))
+      .where(
+        and(
+          eq(workspaceResources.type, 'connector'),
+          eq(workspaceResources.refId, groupSlug),
+          eq(workspaces.ownerId, ownerId),
+          sql`${workspaces.archivedAt} is null`,
+          sql`${workspaceResources.workspaceId} = any(${`{${wsIds.join(',')}}`}::uuid[])`,
+        ),
+      ),
+  );
+}
+
+/** The brain's Team workspace while the bridge runs (W4a), else null (a
+ *  brain the workspaces migration skipped). */
+async function bridgeTeamWorkspace(ownerId: string): Promise<string | null> {
+  const [row] = await asSystem(() =>
+    db
+      .select({ id: workspaces.id })
+      .from(workspaces)
+      .where(and(eq(workspaces.ownerId, ownerId), eq(workspaces.bridgeKey, 'team')))
+      .limit(1),
+  );
+  return row?.id ?? null;
+}
+
+/**
  * The ONE rule for a CONNECTOR tool (an mcp tool) in an app run below admin
  * (team apps Phase 2, Jason 2026-10-08): the connector group's level decides
  * who may use it, the same as the level on an item, and the admin's
@@ -333,6 +377,23 @@ export async function connectorToolVerdict(
     };
   }
   const write = mark === 'write';
+  // The second check (W4b, plan section 6): a member's app runs in Team, so
+  // on a migrated brain the connector must also be a resource of Team, and a
+  // write needs its Write tick. The connector bridge keeps the two in step;
+  // a disagreement refuses.
+  if (runner === 'member') {
+    const team = await bridgeTeamWorkspace(ownerId);
+    if (team) {
+      const [res] = await connectorResources(ownerId, group.slug, [team]);
+      if (!res || (write && !res.write)) {
+        return {
+          ok: false,
+          status: 403,
+          reason: `The tool '${slug}' belongs to a connector the Team workspace does not hold${res ? ' with Write on' : ''}, so ${who} can't use it.`,
+        };
+      }
+    }
+  }
   // Contacts read only (Jason, 2026-10-08): writes through a connector stay
   // with signed-in members and clients, whatever the connector's level.
   if (write && runner === 'contact') {
