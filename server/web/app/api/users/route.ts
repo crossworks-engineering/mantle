@@ -15,6 +15,7 @@ import {
 } from '@mantle/db';
 import { getOwnerOr401, hashLoginPassword } from '@/lib/auth';
 import { cloneAgentForUser } from '@/lib/agents';
+import { insertLoginWithWorkspaces } from '@/lib/login-create';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 
 /**
@@ -152,19 +153,17 @@ export async function POST(req: Request) {
   }
 
   try {
-    await db.insert(authUsers).values({
+    // With its Admin and Team rows for the role, in the same transaction.
+    await insertLoginWithWorkspaces({
       id,
       email,
       passwordHash,
       displayName: parsed.data.displayName ?? null,
-      // Never the anchor — that's the first-run signup only.
+      // Never the anchor: that's the first-run signup only.
       isOwner: false,
       role,
       contactId: parsed.data.contactId ?? null,
     });
-    // Admin and Team rows for the role (the login bridge's trigger is off
-    // since W5b2; its function stays, 0261).
-    await db.execute(sql`select "public"."mantle_bridge_login"(${id}::uuid)`);
   } catch (err) {
     // 23505 = unique_violation. Two rules on auth.users can fire: the contact
     // (one login per contact, 0181; not pre-checked above) and the email

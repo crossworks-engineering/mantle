@@ -14,6 +14,9 @@ const h = vi.hoisted(() => ({
   insertError: null as unknown,
   inserted: null as null | Record<string, unknown>,
   executed: [] as string[],
+  // Transactions opened, and the one each bridge call ran in.
+  txCount: 0,
+  executedInTx: [] as number[],
 }));
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
@@ -36,20 +39,36 @@ vi.mock('@mantle/db', async (importOriginal) => {
     where: () => chain,
     limit: async () => h.selects.shift() ?? [],
   };
+  // The insert and the login's Admin and Team rows (0261) run only on the
+  // transaction, never on the bare handle.
+  let inTx = 0;
+  const tx = {
+    insert: () => ({
+      values: async (row: Record<string, unknown>) => {
+        if (!inTx) throw new Error('insert outside the transaction');
+        h.inserted = row;
+        if (h.insertError) throw h.insertError;
+      },
+    }),
+    execute: async (q: { queryChunks?: unknown[] }) => {
+      if (!inTx) throw new Error('bridge outside the transaction');
+      h.executed.push(JSON.stringify(q.queryChunks ?? q));
+      h.executedInTx.push(h.txCount);
+      return [];
+    },
+  };
   return {
     ...(await importOriginal<typeof import('@mantle/db')>()),
     db: {
       select: () => chain,
-      insert: () => ({
-        values: async (row: Record<string, unknown>) => {
-          h.inserted = row;
-          if (h.insertError) throw h.insertError;
-        },
-      }),
-      // The login's Admin and Team rows, after the insert (0261).
-      execute: async (q: { queryChunks?: unknown[] }) => {
-        h.executed.push(JSON.stringify(q.queryChunks ?? q));
-        return [];
+      transaction: async (fn: (t: typeof tx) => Promise<unknown>) => {
+        h.txCount++;
+        inTx++;
+        try {
+          return await fn(tx);
+        } finally {
+          inTx--;
+        }
       },
     },
   };
@@ -79,6 +98,8 @@ describe('POST /api/users, the insert refused', () => {
     h.insertError = null;
     h.inserted = null;
     h.executed = [];
+    h.txCount = 0;
+    h.executedInTx = [];
   });
 
   it('answers 409 for a duplicate email', async () => {
@@ -113,6 +134,9 @@ describe('POST /api/users, the insert refused', () => {
     // Each new login is put in the workspaces its role gives, by name.
     expect(h.executed).toHaveLength(2);
     expect(h.executed.every((q) => q.includes('mantle_bridge_login'))).toBe(true);
+    // Each login with its rows in its own one transaction.
+    expect(h.txCount).toBe(2);
+    expect(h.executedInTx).toEqual([1, 2]);
   });
 
   it('still answers 500 for any other database error', async () => {
