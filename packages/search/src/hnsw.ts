@@ -71,13 +71,14 @@ export async function withHnswPool<T>(
     if (!opts.hnswFirst) return fn(tx);
     // Transaction-scoped setting inside what may be a savepoint of a longer
     // scoped transaction: put it back, so no later query plans without sorts.
+    // Only on success: when fn fails the transaction (or savepoint) is
+    // aborted, a restore would fail with 25P02 and hide the real error, and
+    // the rollback resets enable_sort anyway.
     const prev = (await tx.execute(
       sql`select current_setting('enable_sort') as v, set_config('enable_sort', 'off', true)`,
     )) as unknown as Array<{ v: string }>;
-    try {
-      return await fn(tx);
-    } finally {
-      await tx.execute(sql`select set_config('enable_sort', ${prev[0]?.v ?? 'on'}, true)`);
-    }
+    const out = await fn(tx);
+    await tx.execute(sql`select set_config('enable_sort', ${prev[0]?.v ?? 'on'}, true)`);
+    return out;
   });
 }

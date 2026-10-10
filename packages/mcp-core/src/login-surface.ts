@@ -54,7 +54,7 @@ import {
 } from '@mantle/content';
 import { effectiveToolSlugs, resolveAgentToolGroups } from '@mantle/runtime/agent';
 import { CLIENT_RESPONDER_SLUG, TEAM_RESPONDER_SLUG } from '@mantle/runtime/assistant';
-import { errorMessage } from '@mantle/std';
+import { publicErrorMessage, publicToolError, watchDatabaseErrors } from '@mantle/std';
 import {
   MANTLE_MCP_INSTRUCTIONS,
   TOOLSMITH_WRITE_SLUGS,
@@ -477,15 +477,25 @@ export async function callLoginTool(
     logMyAppCall(caller, row, args);
   }
   try {
-    const result = await withViewer(level, () =>
-      dispatchTool(row, args ?? {}, {
-        ownerId: caller.anchorId,
-        surface: loginSurface(caller, privateReads),
-      }),
+    // Database text never reaches the client (workspaces W3): an error the
+    // tool turned into its reply is matched against the database errors
+    // seen during the call, a thrown one is mapped below.
+    const { value: result, texts } = await watchDatabaseErrors(() =>
+      withViewer(level, () =>
+        dispatchTool(row, args ?? {}, {
+          ownerId: caller.anchorId,
+          surface: loginSurface(caller, privateReads),
+        }),
+      ),
     );
     if (!result.ok) {
       return {
-        content: [{ type: 'text' as const, text: `Error: ${result.error}` }],
+        content: [
+          {
+            type: 'text' as const,
+            text: `Error: ${publicToolError(result.error, texts, `mcp ${row.slug}`)}`,
+          },
+        ],
         isError: true,
       };
     }
@@ -499,7 +509,9 @@ export async function callLoginTool(
     );
   } catch (err) {
     return {
-      content: [{ type: 'text' as const, text: `Error: ${errorMessage(err)}` }],
+      content: [
+        { type: 'text' as const, text: `Error: ${publicErrorMessage(err, `mcp ${row.slug}`)}` },
+      ],
       isError: true,
     };
   }

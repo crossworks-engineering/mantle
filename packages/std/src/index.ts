@@ -1,35 +1,66 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
+
 /**
  * @mantle/std — the four helpers every package used to carry its own copy of
  * (2026-09-02 audit, sloppiness A7): the error-to-message idiom appeared 322
  * times inline, the UUID regex 21 times, `sleep` twice by name and a dozen
- * times inline. Zero dependencies; safe to import from anywhere in the
- * server tree. The published contract packages (client-types, content-core,
+ * times inline. No package dependencies (node:async_hooks only); safe to
+ * import from anywhere in the server tree. The published contract packages (client-types, content-core,
  * share-ui, voice-client) stay dependency-free and are deliberately NOT
  * consumers.
  */
 
+/**
+ * Database errors seen while a caller outside the server is being served
+ * (watchDatabaseErrors): errorMessage records the text it gives for one, so
+ * a tool that turned the error into a string reply can still be caught at
+ * the surface (publicToolError) without touching every tool.
+ */
+const dbErrorWatch = new AsyncLocalStorage<{ texts: string[] }>();
+
 /** The message of anything thrown: an Error's message, else its string form. */
 export function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+  const text = err instanceof Error ? err.message : String(err);
+  const watch = dbErrorWatch.getStore();
+  if (watch && text && isDatabaseError(err)) watch.texts.push(text);
+  return text;
 }
 
+function databaseShaped(e: unknown): boolean {
+  if (!e || typeof e !== 'object') return false;
+  const o = e as { name?: unknown; code?: unknown; severity?: unknown };
+  if (o.name === 'DrizzleQueryError') return true;
+  return (
+    typeof o.code === 'string' && /^[0-9A-Z]{5}$/.test(o.code) && typeof o.severity === 'string'
+  );
+}
+
+/** Drizzle's query error message, which carries the SQL and its parameters. */
+const FAILED_QUERY_RE = /Failed query:/;
+
 /**
- * Whether `err` (or anything in its cause chain) came from the database: a
- * Postgres error (a five-character SQLSTATE `code` and a `severity`, as
- * postgres.js reports them) or a drizzle query error, whose message carries
- * the SQL and its parameters.
+ * Whether `err`'s message could carry database text: a Postgres error (a
+ * five-character SQLSTATE `code` and a `severity`, as postgres.js reports
+ * them) or a drizzle query error (its message carries the SQL and its
+ * parameters), or an error wrapping one whose message repeats the database
+ * text. A wrapper of our own whose message is its own (a friendly "busy, try
+ * again" over a lock timeout) is not one: its text is safe to show.
  */
 export function isDatabaseError(err: unknown): boolean {
+  const outer: string[] = [];
   for (let e: unknown = err, depth = 0; e && typeof e === 'object' && depth < 5; depth++) {
-    const o = e as { name?: unknown; code?: unknown; severity?: unknown; cause?: unknown };
-    if (o.name === 'DrizzleQueryError') return true;
-    if (
-      typeof o.code === 'string' &&
-      /^[0-9A-Z]{5}$/.test(o.code) &&
-      typeof o.severity === 'string'
-    )
-      return true;
-    e = o.cause;
+    if (databaseShaped(e)) {
+      if (outer.length === 0) return true;
+      const inner = (e as { message?: unknown }).message;
+      return outer.some(
+        (m) =>
+          FAILED_QUERY_RE.test(m) ||
+          (typeof inner === 'string' && inner !== '' && m.includes(inner)),
+      );
+    }
+    const m = (e as { message?: unknown }).message;
+    outer.push(typeof m === 'string' ? m : '');
+    e = (e as { cause?: unknown }).cause;
   }
   return false;
 }
@@ -46,8 +77,31 @@ export const DATABASE_ERROR_PUBLIC =
  * under `where`. Anything else keeps its message.
  */
 export function publicErrorMessage(err: unknown, where: string): string {
-  if (!isDatabaseError(err)) return errorMessage(err);
+  if (!isDatabaseError(err)) return err instanceof Error ? err.message : String(err);
   console.error(`[${where}] database error:`, err);
+  return DATABASE_ERROR_PUBLIC;
+}
+
+/**
+ * Run `fn` (one tool call for a caller outside the server) and collect the
+ * text of every database error errorMessage turned into a string during it.
+ */
+export async function watchDatabaseErrors<T>(
+  fn: () => Promise<T>,
+): Promise<{ value: T; texts: readonly string[] }> {
+  const store = { texts: [] as string[] };
+  const value = await dbErrorWatch.run(store, fn);
+  return { value, texts: store.texts };
+}
+
+/**
+ * A tool's error text for a caller outside the server: generic when it
+ * carries a database error's text (one collected by watchDatabaseErrors, or
+ * drizzle's "Failed query"), else unchanged. Logged in full under `where`.
+ */
+export function publicToolError(text: string, texts: readonly string[], where: string): string {
+  if (!FAILED_QUERY_RE.test(text) && !texts.some((t) => text.includes(t))) return text;
+  console.error(`[${where}] database error in a tool reply:`, text);
   return DATABASE_ERROR_PUBLIC;
 }
 

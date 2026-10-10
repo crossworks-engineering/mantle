@@ -16,6 +16,7 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { checkToolPreconditions } from '@mantle/tools';
 import type { BuiltinToolDef, OwnerSurfaceVia, ToolSurface } from '@mantle/tools';
 import { env } from '@mantle/config';
+import { publicToolError, watchDatabaseErrors } from '@mantle/std';
 import { zodShapeFromJsonSchema } from './zod-schema';
 import { addTool } from './tool-input';
 import { KEY_SHARED_CONTENT_TOOLS, contentToolTarget } from '../key-scope';
@@ -153,10 +154,20 @@ export function makeRegisterContext(
         };
       }
     }
-    const result = await def.handler(input, { ownerId: ownerId, surface });
+    // A tool that turned a database error into its reply text never hands
+    // that text to the client (workspaces W3): the texts errorMessage gave
+    // for database errors during the call are collected and matched.
+    const { value: result, texts } = await watchDatabaseErrors(() =>
+      def.handler(input, { ownerId: ownerId, surface }),
+    );
     if (!result.ok) {
       return {
-        content: [{ type: 'text' as const, text: `Error: ${result.error}` }],
+        content: [
+          {
+            type: 'text' as const,
+            text: `Error: ${publicToolError(result.error, texts, `mcp ${def.slug}`)}`,
+          },
+        ],
         isError: true,
       };
     }

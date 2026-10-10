@@ -24,6 +24,20 @@ const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
 type LiveColumn = { schema: string; table: string; column: string; nullable: boolean };
 
+/**
+ * Columns the code no longer uses but the database keeps for ONE release, so
+ * the previous release (still serving during a roll, or after a rollback)
+ * keeps inserting: drizzle names every schema column in an insert, so a drop
+ * in the same release would fail its writes. Each must take a default or
+ * NULL (new code never names it). A later release drops them and removes the
+ * entry; an entry whose column is gone fails, so the list cannot go stale.
+ */
+const RETIRING: Record<string, readonly string[]> = {
+  // Workspaces W3 (0249): chunks and windows follow their node.
+  'public.content_chunks': ['read_ws', 'login_id'],
+  'public.content_chunk_windows': ['read_ws', 'login_id'],
+};
+
 describe.skipIf(!URL)('drizzle schema matches the migrated database', () => {
   const tables = Object.values(schema).filter((v) => is(v, Table)) as unknown as PgTable[];
 
@@ -70,8 +84,14 @@ describe.skipIf(!URL)('drizzle schema matches the migrated database', () => {
             );
           }
         }
+        const retiring = RETIRING[name] ?? [];
+        for (const col of retiring) {
+          if (!liveCols.has(col)) {
+            problems.push(`"${name}"."${col}" is listed as retiring but is gone: remove the entry`);
+          }
+        }
         for (const col of liveCols.keys()) {
-          if (!wanted.has(col)) {
+          if (!wanted.has(col) && !retiring.includes(col)) {
             problems.push(
               `"${name}"."${col}" exists in the database but not in the Drizzle schema`,
             );

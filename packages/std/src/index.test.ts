@@ -47,21 +47,59 @@ describe('truncate', () => {
 });
 
 describe('database errors for callers outside the server', () => {
-  it('knows a Postgres or drizzle error, also deep in the cause chain', async () => {
+  it('knows a Postgres or drizzle error, also deep in the cause chain when the text is repeated', async () => {
     const { isDatabaseError, publicErrorMessage, DATABASE_ERROR_PUBLIC } = await import('./index');
     const pg = Object.assign(new Error('bad'), { code: '22P02', severity: 'ERROR' });
     expect(isDatabaseError(pg)).toBe(true);
     expect(isDatabaseError(Object.assign(new Error('x'), { name: 'DrizzleQueryError' }))).toBe(
       true,
     );
-    expect(isDatabaseError(new Error('wrap', { cause: new Error('mid', { cause: pg }) }))).toBe(
-      true,
-    );
+    expect(
+      isDatabaseError(new Error('wrap: bad', { cause: new Error('mid', { cause: pg }) })),
+    ).toBe(true);
     expect(isDatabaseError(new Error('node not found'))).toBe(false);
     expect(isDatabaseError(Object.assign(new Error('fs'), { code: 'ENOENT' }))).toBe(false);
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     expect(publicErrorMessage(pg, 't')).toBe(DATABASE_ERROR_PUBLIC);
     expect(publicErrorMessage(new Error('q is required'), 't')).toBe('q is required');
     spy.mockRestore();
+  });
+
+  it('a wrapper of our own keeps its message; one repeating the database text does not', async () => {
+    const { isDatabaseError } = await import('./index');
+    const pg = Object.assign(new Error('could not obtain lock on row'), {
+      code: '55P03',
+      severity: 'ERROR',
+    });
+    expect(isDatabaseError(new Error('Busy; try again in a moment.', { cause: pg }))).toBe(false);
+    expect(isDatabaseError(new Error(`save failed: ${pg.message}`, { cause: pg }))).toBe(true);
+    const drizzle = Object.assign(new Error('Failed query: select 1'), {
+      name: 'DrizzleQueryError',
+      cause: pg,
+    });
+    expect(
+      isDatabaseError(new Error('save failed: Failed query: select 1', { cause: drizzle })),
+    ).toBe(true);
+  });
+
+  it('watchDatabaseErrors collects what errorMessage gave for one; publicToolError maps it', async () => {
+    const { errorMessage, watchDatabaseErrors, publicToolError, DATABASE_ERROR_PUBLIC } =
+      await import('./index');
+    const pg = Object.assign(new Error('value too long for "secret_col"'), {
+      code: '22001',
+      severity: 'ERROR',
+    });
+    const { value, texts } = await watchDatabaseErrors(async () => {
+      errorMessage(new Error('not a database error'));
+      return `x: ${errorMessage(pg)}`;
+    });
+    expect(texts).toEqual([pg.message]);
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(publicToolError(value, texts, 't')).toBe(DATABASE_ERROR_PUBLIC);
+    expect(publicToolError('q is required', texts, 't')).toBe('q is required');
+    expect(publicToolError('Failed query: select 1', [], 't')).toBe(DATABASE_ERROR_PUBLIC);
+    spy.mockRestore();
+    // Outside a watch nothing is collected (and errorMessage is unchanged).
+    expect(errorMessage(pg)).toBe(pg.message);
   });
 });

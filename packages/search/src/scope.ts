@@ -13,10 +13,10 @@
  * "Small" is in ROWS of the table the arm searches, not in items: a scope
  * of 400 sermons holds 13,000 chunks and 34,000 windows, and the exact
  * search costs per row (the W3 bench: about 5 microseconds a chunk, so
- * 15,000 chunks is about 70 ms). The scope's items are counted once per
- * transaction, bounded (at most the threshold + 1 rows read from the GIN
- * index on nodes.read_ws), and multiplied by the table's rows per node from
- * the planner statistics (pg_class.reltuples). Over the threshold the arms
+ * 15,000 chunks is about 70 ms). The scope's items (on the GIN index on
+ * nodes.read_ws) and then their rows in the searched table (by node id) are
+ * counted once per transaction, each bounded at the threshold + 1. Over the
+ * threshold the arms
  * use HNSW, pinned to the index order (hnsw.ts). Outside a workspace scope
  * (the system pool, a level role, a personal space) nothing here applies.
  */
@@ -34,58 +34,69 @@ export function scopeExactMaxRows(): number {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
-const counted = new WeakMap<WorkspaceScope, Promise<number>>();
-let ratios: { at: number; per: Record<ScopeTable, number> } | null = null;
-const RATIO_TTL_MS = 10 * 60_000;
+const counted = new WeakMap<WorkspaceScope, Map<ScopeTable, Promise<number>>>();
 
-/** Rows per node of each table, from the planner statistics (refreshed every
- *  ten minutes per process). A table never analysed counts as one per node. */
-async function rowsPerNode(): Promise<Record<ScopeTable, number>> {
-  if (ratios && Date.now() - ratios.at < RATIO_TTL_MS) return ratios.per;
-  const rows = (await db.execute(sql`
-    select relname as t, reltuples::float8 as n from pg_class
-     where relnamespace = 'public'::regnamespace
-       and relname in ('nodes', 'content_chunks', 'content_chunk_windows', 'facts')
-       and relkind = 'r'`)) as unknown as Array<{ t: ScopeTable; n: number }>;
-  const of = (t: ScopeTable) => Number(rows.find((r) => r.t === t)?.n ?? -1);
-  const nodes = of('nodes');
-  const per = (t: ScopeTable) => (nodes > 0 && of(t) >= 0 ? Math.max(of(t) / nodes, 1) : 1);
-  ratios = {
-    at: Date.now(),
-    per: {
-      nodes: 1,
-      content_chunks: per('content_chunks'),
-      content_chunk_windows: per('content_chunk_windows'),
-      facts: per('facts'),
-    },
-  };
-  return ratios.per;
+/** The scope's items, as one array (at most `cap`, on the GIN index). */
+function scopeItems(cap: number): SQL {
+  return sql`array(select id from nodes where read_ws && mantle_scope_ws() limit ${cap})`;
+}
+
+/** The scope's rows of `table`, counted up to `cap` (an index read per item:
+ *  the node index of chunks and windows, the source index of facts). */
+function countRows(table: ScopeTable, cap: number): SQL {
+  switch (table) {
+    case 'nodes':
+      return sql`select count(*)::int as n from (
+        select 1 from nodes where read_ws && mantle_scope_ws() limit ${cap}) s`;
+    case 'content_chunks':
+      return sql`select count(*)::int as n from (
+        select 1 from content_chunks where node_id = any(${scopeItems(cap)}) limit ${cap}) s`;
+    case 'content_chunk_windows':
+      return sql`select count(*)::int as n from (
+        select 1 from content_chunk_windows where node_id = any(${scopeItems(cap)}) limit ${cap}) s`;
+    case 'facts':
+      // A fact with a source counts with its node; one without (learned in
+      // chat) by its own read_ws.
+      return sql`select count(*)::int as n from (
+        (select 1 from facts where source_node_id = any(${scopeItems(cap)}) limit ${cap})
+        union all
+        (select 1 from facts where source_node_id is null and read_ws && mantle_scope_ws() limit ${cap})
+        limit ${cap}) s`;
+  }
 }
 
 /**
  * True inside a workspace scope whose rows of `table` number at most
- * scopeExactMaxRows() (estimated: the scope's items, counted, times the
- * table's rows per node). The items are counted once per scope (the frozen
- * scope object lives for one transaction), bounded, on the GIN index.
+ * scopeExactMaxRows(). Counted, not estimated: the scope's items on the GIN
+ * index, then their rows in `table` by node id, each bounded at the
+ * threshold + 1, so a chunk-heavy scope is measured as it is and not by the
+ * brain's average. Once per scope and table (the frozen scope object lives
+ * for one transaction).
  */
 export async function smallScope(table: ScopeTable = 'nodes'): Promise<boolean> {
   const scope = currentWorkspaceScope();
   const max = scopeExactMaxRows();
   if (!scope || max === 0) return false;
-  let p = counted.get(scope);
-  if (!p) {
-    p = (async () => {
-      const rows = (await db.execute(sql`
-        select count(*)::int as n from (
-          select 1 from nodes where read_ws && mantle_scope_ws()
-           limit ${max + 1}) s`)) as unknown as Array<{ n: number }>;
-      return Number(rows[0]?.n ?? 0);
-    })();
-    counted.set(scope, p);
+  let byTable = counted.get(scope);
+  if (!byTable) {
+    byTable = new Map();
+    counted.set(scope, byTable);
   }
-  const items = await p;
-  if (items > max) return false;
-  return items * (await rowsPerNode())[table] <= max;
+  const cache = byTable;
+  const count = (t: ScopeTable): Promise<number> => {
+    let p = cache.get(t);
+    if (!p) {
+      p = (async () => {
+        const rows = (await db.execute(countRows(t, max + 1))) as unknown as Array<{ n: number }>;
+        return Number(rows[0]?.n ?? 0);
+      })();
+      cache.set(t, p);
+    }
+    return p;
+  };
+  // Too many items is too many rows (and too long an id list) for any table.
+  if ((await count('nodes')) > max) return false;
+  return table === 'nodes' || (await count(table)) <= max;
 }
 
 /** The ids of the scope's items of `ownerId`, as one array (the exact path's

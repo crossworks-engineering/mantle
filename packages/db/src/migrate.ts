@@ -46,7 +46,7 @@ import { env, envFlag } from '@mantle/config';
 import { ensureViewerRoles } from './viewer-roles';
 import { applyViewerGrants } from './access-matrix';
 import { headsBypassesIn } from './heads-bypass';
-import { ensureConcurrentIndexes } from './concurrent-indexes';
+import { CONCURRENT_INDEXES, ensureConcurrentIndexes } from './concurrent-indexes';
 import { ensureTsMatchLeakproof } from './leakproof';
 
 async function main() {
@@ -107,23 +107,38 @@ async function main() {
 
     console.log(applied === 0 ? 'Already up to date.' : `Done — applied ${applied} migration(s).`);
 
-    // Indexes built CONCURRENTLY, outside any transaction (workspaces W3).
-    for (const [name, outcome] of Object.entries(await ensureConcurrentIndexes(sql))) {
-      if (outcome !== 'present') console.log(`  index ${name}: ${outcome} concurrently`);
-    }
-    // Keyword search under row security: the flag 0249 sets, again after a
-    // restore (leakproof.ts).
-    const lp = await ensureTsMatchLeakproof(sql);
-    if (lp === 'set')
-      console.log('  ts_match_vq marked LEAKPROOF (keyword index under row security)');
-    if (lp === 'not-superuser')
-      console.log(
-        '  ts_match_vq not LEAKPROOF and not a superuser: keyword arms scan under row security',
-      );
-
     // The viewer roles' grants come from the access matrix, re-applied every
-    // run so the live grants always equal the checked-in list.
+    // run so the live grants always equal the checked-in list. Before the
+    // speed-only steps below: nothing of theirs may stand in its way.
     await applyViewerGrants(sql);
+
+    // Keyword search under row security: the flag 0249 sets, again after a
+    // restore (leakproof.ts). Speed only: a failure is a warning.
+    try {
+      const lp = await ensureTsMatchLeakproof(sql);
+      if (lp === 'set')
+        console.log('  ts_match_vq marked LEAKPROOF (keyword index under row security)');
+      if (lp === 'not-superuser')
+        console.log(
+          '  ts_match_vq not LEAKPROOF and not a superuser: keyword arms scan under row security',
+        );
+    } catch (err) {
+      console.warn('  WARNING ts_match_vq LEAKPROOF not set (keyword arms scan):', err);
+    }
+
+    // Indexes built CONCURRENTLY, outside any transaction (workspaces W3).
+    // Last, bounded, and never fatal: an index here is speed only, so a
+    // build that waits on a lock or runs long is given up (and its INVALID
+    // leftover dropped) with a warning, and the next run tries again.
+    for (const [name, outcome] of Object.entries(
+      await ensureConcurrentIndexes(sql, CONCURRENT_INDEXES, {
+        onError: (ix, err) =>
+          console.warn(`  WARNING index ${ix} not built (speed only; next run retries):`, err),
+      }),
+    )) {
+      if (outcome !== 'present' && outcome !== 'failed')
+        console.log(`  index ${name}: ${outcome} concurrently`);
+    }
   } finally {
     await sql.end();
   }

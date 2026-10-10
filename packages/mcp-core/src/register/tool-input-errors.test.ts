@@ -6,8 +6,10 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
-import { DATABASE_ERROR_PUBLIC } from '@mantle/std';
+import { DATABASE_ERROR_PUBLIC, errorMessage } from '@mantle/std';
+import type { BuiltinToolDef } from '@mantle/tools';
 import { addTool } from './tool-input';
+import { makeRegisterContext } from './context';
 
 type Handler = (args: unknown, extra: unknown) => Promise<unknown>;
 
@@ -57,5 +59,47 @@ describe('MCP tool errors from the database', () => {
         throw new Error('node not found');
       })({ q: 'x' }, {}),
     ).rejects.toThrow('node not found');
+  });
+
+  it('a builtin that returns a database error as its reply text is generic too (callBuiltin)', async () => {
+    const pg = Object.assign(new Error('duplicate key value violates "nodes_secret_key"'), {
+      code: '23505',
+      severity: 'ERROR',
+    });
+    const def = (handler: BuiltinToolDef['handler']) =>
+      ({
+        slug: 'probe',
+        name: 'probe',
+        description: 'probe',
+        inputSchema: { type: 'object', properties: {} },
+        handler,
+      }) as BuiltinToolDef;
+    const ctx = makeRegisterContext({} as never, 'owner-1', 'http');
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    // The 134 builtins that answer { ok: false, error: errorMessage(err) }.
+    const asIs = (await ctx.callBuiltin(
+      def(async () => ({ ok: false, error: `could not save: ${errorMessage(pg)}` })),
+      {},
+    )) as { content: Array<{ text: string }> };
+    expect(asIs.content[0]!.text).toBe(`Error: ${DATABASE_ERROR_PUBLIC}`);
+    // A friendly error of our own over a database cause keeps its words.
+    const busy = new Error('Another change is under way; try again in a moment.', {
+      cause: Object.assign(new Error('could not obtain lock'), {
+        code: '55P03',
+        severity: 'ERROR',
+      }),
+    });
+    const friendly = (await ctx.callBuiltin(
+      def(async () => ({ ok: false, error: errorMessage(busy) })),
+      {},
+    )) as { content: Array<{ text: string }> };
+    expect(friendly.content[0]!.text).toBe(`Error: ${busy.message}`);
+    // A plain tool error is unchanged.
+    const plain = (await ctx.callBuiltin(
+      def(async () => ({ ok: false, error: 'q is required' })),
+      {},
+    )) as { content: Array<{ text: string }> };
+    expect(plain.content[0]!.text).toBe('Error: q is required');
+    spy.mockRestore();
   });
 });

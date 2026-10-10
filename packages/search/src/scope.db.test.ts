@@ -11,7 +11,8 @@
  *    the migrations) and searched exactly; its results equal an exact
  *    search of the scope's rows. Over the threshold the HNSW path still
  *    returns only the scope's rows.
- *  - ensureConcurrentIndexes rebuilds an index left INVALID.
+ *  - ensureConcurrentIndexes rebuilds an index left INVALID, and gives up
+ *    at its lock limit without leaving an index behind.
  *
  * Seeds its own rows on the shared anchor and removes them after.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/search/src/scope.db.test.ts
@@ -35,7 +36,8 @@ describe.skipIf(!URL)('W3: chunks follow their node; small scopes search exactly
   const other = randomUUID();
   const ws = { team: randomUUID(), small: randomUUID(), none: randomUUID() };
   // Six items: four granted to Team, two of those also to Small. Each has two
-  // chunks and one window per chunk; the vectors differ so the order is real.
+  // chunks and one window per chunk; every chunk has its own vector, at its
+  // own distance from the query, so the order is real.
   const items = Array.from({ length: 6 }, () => randomUUID());
   const inTeam = items.slice(0, 4);
   const inSmall = items.slice(0, 2);
@@ -98,10 +100,10 @@ describe.skipIf(!URL)('W3: chunks follow their node; small scopes search exactly
       for (const ord of [0, 1]) {
         const [c] = await admin<{ id: string }[]>`
           insert into content_chunks (owner_id, node_id, ordinal, text, embedding)
-          values (${anchor}, ${id}, ${ord}, ${`${tag} passage ${k} ${ord}`}, ${lit(vec(k + ord))}::vector)
+          values (${anchor}, ${id}, ${ord}, ${`${tag} passage ${k} ${ord}`}, ${lit(vec(2 * k + ord))}::vector)
           returning id`;
         await admin`insert into content_chunk_windows (chunk_id, j, owner_id, node_id, embedding)
-          values (${c!.id}, 0, ${anchor}, ${id}, ${lit(vec(k + ord))}::halfvec)`;
+          values (${c!.id}, 0, ${anchor}, ${id}, ${lit(vec(2 * k + ord))}::halfvec)`;
       }
     }
     for (const id of inTeam) await grant(id, ws.team);
@@ -122,12 +124,37 @@ describe.skipIf(!URL)('W3: chunks follow their node; small scopes search exactly
     await m?.closeDb();
   });
 
-  it('chunks and windows carry no access copy', async () => {
-    const cols = await admin<{ t: string; c: string }[]>`
-      select table_name as t, column_name as c from information_schema.columns
+  it('chunks and windows carry no access copy in the schema; the old columns only take defaults', async () => {
+    // The drizzle schema no longer lists the copies, so this release never
+    // names them; the columns stay one release so the previous code (which
+    // names every schema column in an insert) keeps inserting during a roll.
+    const { getTableColumns } = await import('drizzle-orm');
+    for (const t of [m.contentChunks, m.contentChunkWindows]) {
+      const cols = Object.values(getTableColumns(t)).map((c) => c.name);
+      expect(cols).not.toContain('read_ws');
+      expect(cols).not.toContain('login_id');
+    }
+    const cols = await admin<{ t: string; c: string; d: string | null }[]>`
+      select table_name as t, column_name as c, column_default as d from information_schema.columns
        where table_schema = 'public' and table_name in ('content_chunks', 'content_chunk_windows')
-         and column_name in ('read_ws', 'login_id')`;
-    expect(cols).toEqual([]);
+         and column_name in ('read_ws', 'login_id') order by 1, 2`;
+    expect(cols.map((r) => `${r.t}.${r.c}`)).toEqual([
+      'content_chunk_windows.login_id',
+      'content_chunk_windows.read_ws',
+      'content_chunks.login_id',
+      'content_chunks.read_ws',
+    ]);
+    // An insert in the previous release's shape (every column named, the
+    // copies as DEFAULT) still works, and a grant change never touches them.
+    const x = items[4]!;
+    const [c] = await admin<{ id: string; r: string; l: string | null }[]>`
+      insert into content_chunks (owner_id, node_id, ordinal, text, embedding, read_ws, login_id)
+      values (${anchor}, ${x}, 9, ${`${tag} old shape`}, ${lit(vec(20))}::vector, default, default)
+      returning id, read_ws::text as r, login_id as l`;
+    expect(c).toMatchObject({ r: '{}', l: null });
+    await admin`insert into content_chunk_windows (chunk_id, j, owner_id, node_id, embedding, read_ws, login_id)
+      values (${c!.id}, 0, ${anchor}, ${x}, ${lit(vec(20))}::halfvec, default, default)`;
+    await admin`delete from content_chunks where id = ${c!.id}`;
   });
 
   it('a scope reads the chunks and windows of the nodes it reads, and no others', async () => {
@@ -220,6 +247,14 @@ describe.skipIf(!URL)('W3: chunks follow their node; small scopes search exactly
     expect(await m.withScope(scope([ws.small]), () => s.smallScope())).toBe(true); // 2 items
     expect(await m.withScope(scope([ws.team]), () => s.smallScope())).toBe(false); // 4 items
     expect(await s.smallScope()).toBe(false); // no workspace scope
+    // Rows are counted in the searched table, not guessed from an average:
+    // Small holds 2 items but 4 chunks.
+    expect(await m.withScope(scope([ws.small]), () => s.smallScope('content_chunks'))).toBe(false);
+    process.env.MANTLE_SCOPE_EXACT_MAX_ROWS = '4';
+    expect(await m.withScope(scope([ws.small]), () => s.smallScope('content_chunks'))).toBe(true);
+    expect(await m.withScope(scope([ws.small]), () => s.smallScope('content_chunk_windows'))).toBe(
+      true,
+    );
     process.env.MANTLE_SCOPE_EXACT_MAX_ROWS = '0';
     expect(await m.withScope(scope([ws.small]), () => s.smallScope())).toBe(false); // off
   });
@@ -238,11 +273,21 @@ describe.skipIf(!URL)('W3: chunks follow their node; small scopes search exactly
       [ws.team, '1'], // over the threshold: HNSW with iterative scan
     ] as const) {
       process.env.MANTLE_SCOPE_EXACT_MAX_ROWS = max;
-      const hits = await m.withScope(scope([wsId]), () =>
-        s.searchChunks({ ownerId: anchor, embedding: query, limit: 10, nodeIds: items }),
-      );
+      // The decision is made once per scope and table and cached on the
+      // scope, so the search in the same scope took the path read here.
+      const { path, hits } = await m.withScope(scope([wsId]), async () => ({
+        path: (await s.smallScope('content_chunks')) ? 'exact' : 'hnsw',
+        hits: await s.searchChunks({
+          ownerId: anchor,
+          embedding: query,
+          limit: 10,
+          nodeIds: items,
+        }),
+      }));
+      expect(path).toBe(wsId === ws.small ? 'exact' : 'hnsw');
       const got = hits.map((h) => `${h.nodeId}:${h.ordinal}`);
-      expect(new Set(got)).toEqual(new Set(await exact(wsId)));
+      // Every chunk is at its own distance: the order is the exact order.
+      expect(got).toEqual(await exact(wsId));
       for (const h of hits) expect(wsId === ws.small ? inSmall : inTeam).toContain(h.nodeId);
     }
     process.env.MANTLE_SCOPE_EXACT_MAX_ROWS = '8000';
@@ -250,6 +295,26 @@ describe.skipIf(!URL)('W3: chunks follow their node; small scopes search exactly
       s.searchNodes({ ownerId: anchor, queryEmbedding: query, ids: items, limit: 10 }),
     );
     expect(nodesHit.map((n) => n.id).sort()).toEqual([...inSmall].sort());
+  });
+
+  it('hnswFirst: a failing query surfaces its own error, and the setting is back after', async () => {
+    const out = await m.withScope(scope([ws.team]), async () => {
+      const err = await s
+        .withHnswPool(10, (tx) => tx.execute(sqlTag`select 1 / 0`), { hnswFirst: true })
+        .then(
+          () => null,
+          (e: unknown) => e,
+        );
+      const r = (await m.db.execute(
+        sqlTag`select current_setting('enable_sort') as v`,
+      )) as unknown as Array<{ v: string }>;
+      return { err, sort: r[0]!.v };
+    });
+    // division_by_zero, not 25P02 (in_failed_sql_transaction) from a restore.
+    const code = (e: unknown): string | undefined =>
+      (e as { code?: string })?.code ?? (e as { cause?: { code?: string } })?.cause?.code;
+    expect(code(out.err)).toBe('22012');
+    expect(out.sort).toBe('on');
   });
 
   it('keyword search keeps its text index under row security (ts_match_vq LEAKPROOF)', async () => {
@@ -286,6 +351,42 @@ describe.skipIf(!URL)('W3: chunks follow their node; small scopes search exactly
       const [r] = await admin<{ v: boolean }[]>`
         select indisvalid as v from pg_index where indexrelid = ${`"${t}_a"`}::regclass`;
       expect(r!.v).toBe(true);
+      // A build that waits on a lock gives up at the lock limit, reports it,
+      // and leaves no index behind (the runner warns and boots on).
+      await admin.unsafe(`drop index "${t}_a"`);
+      const holder = await admin.reserve();
+      try {
+        await holder`begin`;
+        await holder.unsafe(`lock table public.${t} in access exclusive mode`);
+        const errs: string[] = [];
+        const t0 = Date.now();
+        expect(
+          await m.ensureConcurrentIndexes(admin, list, {
+            lockTimeoutMs: 200,
+            onError: (name) => errs.push(name),
+          }),
+        ).toEqual({ [`${t}_a`]: 'failed' });
+        expect(errs).toEqual([`${t}_a`]);
+        expect(Date.now() - t0).toBeLessThan(10_000);
+        await holder`rollback`;
+      } finally {
+        holder.release();
+      }
+      const [gone] = await admin<{ n: number }[]>`
+        select count(*)::int as n from pg_class where relname = ${`${t}_a`}`;
+      expect(gone!.n).toBe(0);
+      // Without onError the failure is thrown.
+      const holder2 = await admin.reserve();
+      try {
+        await holder2`begin`;
+        await holder2.unsafe(`lock table public.${t} in access exclusive mode`);
+        await expect(
+          m.ensureConcurrentIndexes(admin, list, { lockTimeoutMs: 200 }),
+        ).rejects.toThrow();
+        await holder2`rollback`;
+      } finally {
+        holder2.release();
+      }
     } finally {
       await admin.unsafe(`drop table if exists public.${t}`);
     }

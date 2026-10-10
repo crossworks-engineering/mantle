@@ -8,7 +8,8 @@
 -- the chunk and window rules for mantle_view_user were exactly the node's
 -- rule. So:
 --
---  - content_chunks and content_chunk_windows lose read_ws and login_id. Their
+--  - content_chunks and content_chunk_windows stop using read_ws and login_id
+--    (the columns stay one release for the previous code; see below). Their
 --    rule for mantle_view_user reads the node: the row is visible when its
 --    node is (EXISTS on nodes, the form pages, draws, tables and apps already
 --    use; the node's own rule applies inside it). A grant change writes no
@@ -123,14 +124,13 @@ $$;
 REVOKE EXECUTE ON FUNCTION "public"."mantle_acl_refresh"(uuid[]) FROM PUBLIC;
 --> statement-breakpoint
 
--- ── The copies go ────────────────────────────────────────────────────────────
--- Metadata only (no table rewrite); the space is reclaimed as rows are
--- rewritten.
-
-ALTER TABLE "public"."content_chunks" DROP COLUMN IF EXISTS "read_ws", DROP COLUMN IF EXISTS "login_id";
---> statement-breakpoint
-ALTER TABLE "public"."content_chunk_windows" DROP COLUMN IF EXISTS "read_ws", DROP COLUMN IF EXISTS "login_id";
---> statement-breakpoint
+-- ── The copies stay, unused, for one release ─────────────────────────────────
+-- The columns are NOT dropped here: during a roll (and after a rollback) the
+-- previous release still serves, and drizzle names every schema column in an
+-- insert, so a drop would fail every chunk and window insert it makes. From
+-- this release nothing reads or writes them (the drizzle schema no longer
+-- lists them; their defaults, '{}' and NULL, fill new rows), and the rules
+-- above do not look at them. A later release drops them.
 
 -- ── Keyword search under row security ────────────────────────────────────────
 -- Under a row rule Postgres uses an index for a condition only when its
