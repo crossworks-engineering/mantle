@@ -74,6 +74,11 @@ describe('heads-writers', () => {
         // A reviewed file may pass dynamic SQL; a literal concatenation is read.
         { code: 'tx.unsafe(stmt);', filename: '/r/packages/db/src/migrate.ts' },
         { code: "sql.unsafe('select 1 ' + (l ? 'limit 2' : ''));", filename: file },
+        // An imported Drizzle table of another name is read as that table.
+        {
+          code: "import { recallNodes } from '@mantle/db';\nsql`update ${recallNodes} set options = ${o}`;",
+          filename: file,
+        },
         // Tests are exempt.
         { code: 'db.insert(nodes).values(v);', filename: '/r/packages/content/src/x.test.ts' },
       ],
@@ -199,6 +204,17 @@ describe('heads-writers', () => {
           code: "withHeads([i], 'update', (tx) => tx.unsafe(stmt));",
           filename: file,
           errors: [{ messageId: 'dynamicUnsafe' }],
+        },
+        // A table the rule cannot read (a concatenated or interpolated name).
+        {
+          code: "tx.unsafe('delete from ' + tbl + ' where id = $1', [i]);",
+          filename: file,
+          errors: [{ messageId: 'noHeads' }],
+        },
+        {
+          code: 'const t = "nodes"; sql`delete from ${t} where id = ${i}`;',
+          filename: file,
+          errors: [{ messageId: 'noHeads' }],
         },
         // There is no exemption marker any more.
         {

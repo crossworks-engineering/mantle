@@ -6,9 +6,10 @@
 -- CONCURRENTLY) takes a SHARE lock on nodes for the build: reads go on,
 -- writes to nodes wait while one pass over the table runs (well under a
 -- second on dev; a few seconds on the largest box). The lock wait itself is
--- capped below; on a timeout the migration fails and is re-runnable.
+-- capped at 5 s below (a queued SHARE lock would stall node writes behind it);
+-- on a timeout the migration fails and is re-runnable.
 
-SET LOCAL lock_timeout = '30s';
+SET LOCAL lock_timeout = '5s';
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "nodes_extract_parked_idx"
   ON "public"."nodes" ("owner_id") WHERE "data" ? 'extract_parked';

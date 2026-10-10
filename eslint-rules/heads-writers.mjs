@@ -60,12 +60,17 @@ const HEADS_CALLEES = new Set([
 const RAW_SQL_WRITE =
   /\b(insert\s+into|delete\s+from)\s+"?(public"?\."?)?"?(nodes|content_chunks|content_chunk_windows|facts|item_grants)\b|\bupdate\s+"?(public"?\."?)?"?nodes"?(\s+\w+)?\s+set\s+(?:(?!\bwhere\b)[^;])*?\b(path|owner_id|login_id)\s*=|\bupdate\s+"?(public"?\."?)?"?(content_chunks|content_chunk_windows|facts|item_grants)"?(\s+\w+)?\s+set\b|\bmerge\s+into\s+"?(public"?\."?)?"?(nodes|content_chunks|content_chunk_windows|facts|item_grants)\b|\bcopy\s+"?(public"?\."?)?"?(nodes|content_chunks|content_chunk_windows|facts|item_grants)"?\s*(\([^)]*\))?\s*from\b/i;
 
+/** A write whose table the rule cannot read (`'delete from ' + t`,
+ *  `delete from ${t}`): treated as a write to a guarded table. */
+const DYNAMIC_TABLE_WRITE = /\b(insert\s+into|delete\s+from|update|merge\s+into|copy)\s+\$x\b/i;
+
 /**
  * Files whose `.unsafe(...)` takes SQL that is not a literal, each reviewed:
  * none of them writes the guarded tables. A new dynamic `.unsafe` elsewhere
  * is an error (W1 audit, LOW 6): write the SQL as a literal or a tagged
  * template, or add the file here with its reason.
  */
+// Whole-file: a NEW dynamic .unsafe added to one of these files is not checked.
 const DYNAMIC_UNSAFE_REVIEWED = new Map([
   ['packages/db/src/access-matrix.ts', 'GRANT and REVOKE statements for the limited roles'],
   ['packages/db/src/viewer-roles.ts', 'CREATE and ALTER ROLE statements'],
@@ -220,6 +225,17 @@ function literalText(arg) {
   return null;
 }
 
+/** Whether `name`, seen at `node`, is bound by an import declaration. */
+function isImported(context, node, name) {
+  const source = context.sourceCode ?? context.getSourceCode();
+  let scope = source.getScope ? source.getScope(node) : context.getScope();
+  for (; scope; scope = scope.upper) {
+    const v = scope.set.get(name);
+    if (v) return v.defs.some((d) => d.type === 'ImportBinding');
+  }
+  return false;
+}
+
 export const rule = {
   meta: {
     type: 'problem',
@@ -262,7 +278,7 @@ export const rule = {
           }
           return;
         }
-        if (!RAW_SQL_WRITE.test(text)) return;
+        if (!RAW_SQL_WRITE.test(text) && !DYNAMIC_TABLE_WRITE.test(text)) return;
         if (covered(context, node)) return;
         context.report({ node, messageId: 'noHeads', data: { what: `raw SQL (.${name})` } });
       },
@@ -274,10 +290,16 @@ export const rule = {
           parts.push(q.value.cooked ?? q.value.raw);
           const e = node.quasi.expressions[i];
           if (!e) return;
-          parts.push(e.type === 'Identifier' && SQL_NAME[e.name] ? SQL_NAME[e.name] : ' $x ');
+          if (e.type === 'Identifier' && SQL_NAME[e.name]) parts.push(SQL_NAME[e.name]);
+          // An imported binding is a Drizzle table of another name
+          // (`update ${recallNodes} set ...`); anything else (a local string,
+          // a call) is a table the rule cannot read.
+          else if (e.type === 'Identifier' && isImported(context, node, e.name)) {
+            parts.push(` ${e.name} `);
+          } else parts.push(' $x ');
         });
         const text = parts.join('');
-        if (!RAW_SQL_WRITE.test(text)) return;
+        if (!RAW_SQL_WRITE.test(text) && !DYNAMIC_TABLE_WRITE.test(text)) return;
         if (covered(context, node)) return;
         context.report({ node, messageId: 'noHeads', data: { what: 'raw SQL' } });
       },

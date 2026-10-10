@@ -112,7 +112,7 @@ describe.skipIf(!URL)('workspaces W1 audit fixes (0245)', () => {
     const back = await strict();
     try {
       await expect(
-        back.c`update nodes set owner_id = ${owner}, path = ${`pages.${tag}`}::ltree where id = ${item}`,
+        back.c`update nodes set owner_id = ${owner}, path = 'pages' where id = ${item}`,
       ).rejects.toMatchObject({ code: '40001' });
     } finally {
       await back.done(false);
