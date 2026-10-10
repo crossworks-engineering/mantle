@@ -12,6 +12,7 @@
  */
 
 import { z } from 'zod';
+import { DATABASE_ERROR_PUBLIC, isDatabaseError } from '@mantle/std';
 import type { McpServer, StandardSchemaWithJSON, ToolCallback } from '@modelcontextprotocol/server';
 
 type ShapeSchema<S extends z.ZodRawShape> = StandardSchemaWithJSON<
@@ -44,5 +45,21 @@ export function addTool<S extends z.ZodRawShape>(
   shape: S,
   handler: ToolCallback<ShapeSchema<S>>,
 ): void {
-  server.registerTool(name, { description, inputSchema: toolInputSchema(shape) }, handler);
+  // A tool that throws a database error never hands its text to the client
+  // (SQL, parameters, or with a row rule in force something about a row the
+  // caller may not read: workspaces W3). Logged in full; any other error is
+  // left to the SDK as before.
+  const guarded = (async (args: never, extra: never) => {
+    try {
+      return await (handler as (a: never, e: never) => unknown)(args, extra);
+    } catch (err) {
+      if (!isDatabaseError(err)) throw err;
+      console.error(`[mcp ${name}] database error:`, err);
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${DATABASE_ERROR_PUBLIC}` }],
+        isError: true,
+      };
+    }
+  }) as unknown as ToolCallback<ShapeSchema<S>>;
+  server.registerTool(name, { description, inputSchema: toolInputSchema(shape) }, guarded);
 }

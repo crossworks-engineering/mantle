@@ -50,6 +50,13 @@ export {
 } from './viewer';
 export { ensureViewerRoles, LIMITED_LEVELS } from './viewer-roles';
 export {
+  CONCURRENT_INDEXES,
+  ensureConcurrentIndexes,
+  type ConcurrentIndex,
+  type ConcurrentIndexOutcome,
+} from './concurrent-indexes';
+export { ensureTsMatchLeakproof, tsMatchLeakproof, TS_MATCH_SIGNATURE } from './leakproof';
+export {
   EMAIL_ATTACHMENTS_LABEL,
   EMAIL_ATTACHMENT_MARK,
   emailAttachmentFileSql,

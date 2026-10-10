@@ -15,6 +15,7 @@
 import { and, asc, eq, isNotNull, sql, type SQL } from 'drizzle-orm';
 import { contentChunks, contentChunkWindows, db, nodes } from '@mantle/db';
 import { withHnswPool } from './hnsw';
+import { distanceOrder, hnswFirst, scopeNodeIds, smallScope } from './scope';
 import { grantUnionFilter, pgArrayLiteral } from './pg';
 import { gateRareTerms, keywordSql, resolveKeywordQuery } from './keyword-query';
 import { applyRescueFloor, fuseRrf, mergeIds, type MergeOrder } from './rrf';
@@ -140,6 +141,17 @@ async function runChunkSearch(
   if (opts.nodeIds)
     scope.push(sql`${contentChunks.nodeId} = any(${pgArrayLiteral(opts.nodeIds)}::uuid[])`);
   if (opts.nodeIdsOrTypes) scope.push(grantUnionFilter(contentChunks.nodeId, opts.nodeIdsOrTypes));
+  // A workspace scope with few chunks searches them exactly (scope.ts): the
+  // scope's chunks by node id, ordered by their true distance. The vector
+  // arms only; the keyword arm keeps its text index.
+  const exact = await smallScope('content_chunks');
+  const exactFilter = exact
+    ? [sql`${contentChunks.nodeId} = any(${scopeNodeIds(opts.ownerId)})`]
+    : [];
+  const chunkOrder = distanceOrder(sql`${contentChunks.embedding} <=> ${vec}::vector`, exact);
+  const pinHnsw = { hnswFirst: hnswFirst(exact) };
+  // Windows are many more rows per item than chunks: their own decision.
+  const exactWindows = opts.windows ? await smallScope('content_chunk_windows') : false;
 
   const q = opts.q?.trim();
 
@@ -151,9 +163,11 @@ async function runChunkSearch(
   // full-scan the chunk table at scale (see hnsw.ts). Join filters stay inside
   // the inner query so iterative scan keeps walking until the pool is full.
   if (!q) {
-    const conds = [...scope, isNotNull(contentChunks.embedding)];
-    const rows = (await withHnswPool(pool, (tx) =>
-      tx.execute(sql`
+    const conds = [...scope, ...exactFilter, isNotNull(contentChunks.embedding)];
+    const rows = (await withHnswPool(
+      pool,
+      (tx) =>
+        tx.execute(sql`
         select node_id, node_title, node_type, ordinal, heading_path, text, superseded_by, dist from (
           select ${contentChunks.nodeId} as node_id, ${nodes.title} as node_title,
                  ${nodes.type} as node_type, ${contentChunks.ordinal} as ordinal,
@@ -164,12 +178,13 @@ async function runChunkSearch(
           from ${contentChunks}
           inner join ${nodes} on ${nodes.id} = ${contentChunks.nodeId}
           where ${and(...conds)}
-          order by ${contentChunks.embedding} <=> ${vec}::vector
+          order by ${chunkOrder}
           limit ${pool}
         ) c
         order by dist + ${SALIENCE_LAMBDA} * (1 - salience)
         limit ${limit}
       `),
+      pinHnsw,
     )) as unknown as RawChunkRow[];
     return {
       hits: rows.map((r, i) =>
@@ -188,20 +203,23 @@ async function runChunkSearch(
   const vectorRows =
     opts.arms === 'keyword'
       ? []
-      : ((await withHnswPool(pool, (tx) =>
-          tx.execute(sql`
+      : ((await withHnswPool(
+          pool,
+          (tx) =>
+            tx.execute(sql`
       select id from (
         select ${contentChunks.id} as id, ${nodes.salience} as salience,
                ${contentChunks.embedding} <=> ${vec}::vector as dist
         from ${contentChunks}
         inner join ${nodes} on ${nodes.id} = ${contentChunks.nodeId}
-        where ${and(...scope, isNotNull(contentChunks.embedding))}
-        order by ${contentChunks.embedding} <=> ${vec}::vector
+        where ${and(...scope, ...exactFilter, isNotNull(contentChunks.embedding))}
+        order by ${chunkOrder}
         limit ${pool}
       ) c
       order by dist + ${SALIENCE_LAMBDA} * (1 - salience)
       limit ${pool}
     `),
+          pinHnsw,
         )) as unknown as Array<{ id: string }>);
 
   // Rarest terms ORed, not every stem ANDed: a whole chat message ANDed
@@ -227,22 +245,31 @@ async function runChunkSearch(
   // arm's. A chunk keeps its best (lowest) window distance for the cutoffs.
   const windowRows =
     opts.windows && opts.arms !== 'keyword'
-      ? ((await withHnswPool(Math.min(pool * 2, 1000), (tx) =>
-          tx.execute(sql`
+      ? ((await withHnswPool(
+          Math.min(pool * 2, 1000),
+          (tx) =>
+            tx.execute(sql`
       select chunk_id as id, min(dist) as dist from (
         select ${contentChunkWindows.chunkId} as chunk_id, ${nodes.salience} as salience,
                ${contentChunkWindows.embedding} <=> ${vec}::halfvec as dist
         from ${contentChunkWindows}
         inner join ${contentChunks} on ${contentChunks.id} = ${contentChunkWindows.chunkId}
         inner join ${nodes} on ${nodes.id} = ${contentChunks.nodeId}
-        where ${and(eq(contentChunkWindows.ownerId, opts.ownerId), ...scope)}
-        order by ${contentChunkWindows.embedding} <=> ${vec}::halfvec
+        where ${and(
+          eq(contentChunkWindows.ownerId, opts.ownerId),
+          ...scope,
+          ...(exactWindows
+            ? [sql`${contentChunkWindows.nodeId} = any(${scopeNodeIds(opts.ownerId)})`]
+            : []),
+        )}
+        order by ${distanceOrder(sql`${contentChunkWindows.embedding} <=> ${vec}::halfvec`, exactWindows)}
         limit ${Math.min(pool * 2, 1000)}
       ) w
       group by chunk_id
       order by min(dist + ${SALIENCE_LAMBDA} * (1 - salience))
       limit ${pool}
     `),
+          { hnswFirst: hnswFirst(exactWindows) },
         )) as unknown as Array<{ id: string; dist: number | string }>)
       : [];
   const windowIds = windowRows.map((r) => r.id);

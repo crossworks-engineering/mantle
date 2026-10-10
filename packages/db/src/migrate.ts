@@ -36,7 +36,9 @@
  * (Rails, Flyway, golang-migrate) and is strictly better for resumability — the
  * next run picks up where it left off. No migration here relies on cross-
  * migration atomicity, and none uses a non-transactional statement
- * (CONCURRENTLY / VACUUM — verified absent).
+ * (CONCURRENTLY / VACUUM — verified absent). An index a live table must gain
+ * without blocking writes is built CONCURRENTLY after the migrations
+ * (concurrent-indexes.ts).
  */
 import { readMigrationFiles } from 'drizzle-orm/migrator';
 import postgres from 'postgres';
@@ -44,6 +46,8 @@ import { env, envFlag } from '@mantle/config';
 import { ensureViewerRoles } from './viewer-roles';
 import { applyViewerGrants } from './access-matrix';
 import { headsBypassesIn } from './heads-bypass';
+import { ensureConcurrentIndexes } from './concurrent-indexes';
+import { ensureTsMatchLeakproof } from './leakproof';
 
 async function main() {
   const url = env('DATABASE_URL');
@@ -102,6 +106,20 @@ async function main() {
     }
 
     console.log(applied === 0 ? 'Already up to date.' : `Done — applied ${applied} migration(s).`);
+
+    // Indexes built CONCURRENTLY, outside any transaction (workspaces W3).
+    for (const [name, outcome] of Object.entries(await ensureConcurrentIndexes(sql))) {
+      if (outcome !== 'present') console.log(`  index ${name}: ${outcome} concurrently`);
+    }
+    // Keyword search under row security: the flag 0249 sets, again after a
+    // restore (leakproof.ts).
+    const lp = await ensureTsMatchLeakproof(sql);
+    if (lp === 'set')
+      console.log('  ts_match_vq marked LEAKPROOF (keyword index under row security)');
+    if (lp === 'not-superuser')
+      console.log(
+        '  ts_match_vq not LEAKPROOF and not a superuser: keyword arms scan under row security',
+      );
 
     // The viewer roles' grants come from the access matrix, re-applied every
     // run so the live grants always equal the checked-in list.

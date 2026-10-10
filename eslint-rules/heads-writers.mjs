@@ -76,6 +76,7 @@ const DYNAMIC_UNSAFE_REVIEWED = new Map([
   ['packages/db/src/viewer-roles.ts', 'CREATE and ALTER ROLE statements'],
   ['packages/db/src/init-scratch.ts', 'the scratch init SQL files'],
   ['packages/db/src/migrate.ts', 'the migration runner (migrations are out of scope)'],
+  ['packages/db/src/concurrent-indexes.ts', 'CREATE and DROP INDEX CONCURRENTLY from a fixed list'],
   ['packages/search/src/entities.ts', 'one read query on the simple protocol'],
   ['server/api/src/bench/run.ts', 'the bench harness on its own database'],
   ['server/web/scripts/dedupe-edges.ts', 'a constant PARTITION BY fragment'],

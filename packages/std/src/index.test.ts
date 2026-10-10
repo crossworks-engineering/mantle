@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { errorMessage, isUuid, sleep, truncate, UUID_RE } from './index';
 
 describe('@mantle/std', () => {
@@ -43,5 +43,25 @@ describe('truncate', () => {
     // can land mid-pair. Callers sizing a visual column should allow for it.
     expect(truncate('ab', 2)).toBe('ab');
     expect(truncate('abcd', 2)).toBe('a…');
+  });
+});
+
+describe('database errors for callers outside the server', () => {
+  it('knows a Postgres or drizzle error, also deep in the cause chain', async () => {
+    const { isDatabaseError, publicErrorMessage, DATABASE_ERROR_PUBLIC } = await import('./index');
+    const pg = Object.assign(new Error('bad'), { code: '22P02', severity: 'ERROR' });
+    expect(isDatabaseError(pg)).toBe(true);
+    expect(isDatabaseError(Object.assign(new Error('x'), { name: 'DrizzleQueryError' }))).toBe(
+      true,
+    );
+    expect(isDatabaseError(new Error('wrap', { cause: new Error('mid', { cause: pg }) }))).toBe(
+      true,
+    );
+    expect(isDatabaseError(new Error('node not found'))).toBe(false);
+    expect(isDatabaseError(Object.assign(new Error('fs'), { code: 'ENOENT' }))).toBe(false);
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(publicErrorMessage(pg, 't')).toBe(DATABASE_ERROR_PUBLIC);
+    expect(publicErrorMessage(new Error('q is required'), 't')).toBe('q is required');
+    spy.mockRestore();
   });
 });

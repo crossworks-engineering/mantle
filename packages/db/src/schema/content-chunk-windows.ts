@@ -1,4 +1,3 @@
-import { sql } from 'drizzle-orm';
 import { index, integer, pgTable, primaryKey, uuid } from 'drizzle-orm/pg-core';
 import { halfvec } from './_shared';
 import { contentChunks } from './content-chunks';
@@ -31,12 +30,8 @@ export const contentChunkWindows = pgTable(
       .notNull()
       .references(() => nodes.id, { onDelete: 'cascade' }),
     embedding: halfvec(768)('embedding').notNull(),
-    /** Workspaces W1: a copy of the node's read_ws and login_id (0241). */
-    readWs: uuid('read_ws')
-      .array()
-      .notNull()
-      .default(sql`'{}'::uuid[]`),
-    loginId: uuid('login_id'),
+    // No access copy: the workspace role reads a window when it reads its
+    // node (migration 0249).
   },
   (t) => [
     primaryKey({ columns: [t.chunkId, t.j] }),

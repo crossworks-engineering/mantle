@@ -277,7 +277,8 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
     } finally {
       await t.rollback();
     }
-    // With its head first, in 'on' mode, the chunk copies the node's rows.
+    // With its head first, in 'on' mode, the chunk is written. It holds no
+    // copy (0249): a Team scope reads it through its node.
     await grant(id, ws.team);
     const t2 = await txConn();
     try {
@@ -289,9 +290,17 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
       await t2.rollback();
       throw err;
     }
-    const [c] = await admin<{ r: string[] }[]>`
-      select read_ws as r from content_chunks where node_id = ${id} and ordinal = 2`;
-    expect(c!.r).toEqual([ws.team]);
+    const { sql: sqlTag } = await import('drizzle-orm');
+    const seen = await m.withScope(
+      { kind: 'user', loginId: userA, ws: [ws.team], modWs: [] },
+      async () =>
+        (
+          (await m.db.execute(
+            sqlTag`select 1 from content_chunks where node_id = ${id} and ordinal = 2`,
+          )) as unknown as unknown[]
+        ).length,
+    );
+    expect(seen).toBe(1);
   });
 
   it('test 16: deleting a node with facts and chunks never trips the check; facts keep read_ws', async () => {
@@ -433,11 +442,9 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
       throw err;
     }
     expect(await readWs(x)).toEqual([ws.team]);
-    const chunks = await admin<
-      { r: string[] }[]
-    >`select read_ws as r from content_chunks where node_id = ${x}`;
+    // The chunk follows its node (no copy since 0249).
+    const chunks = await admin`select 1 from content_chunks where node_id = ${x}`;
     expect(chunks.length).toBe(1);
-    expect(chunks[0]!.r).toEqual([ws.team]);
   });
 
   it('the workspace role reads only what the scope holds, per-login rows only by their login', async () => {
@@ -561,14 +568,10 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
       insert into facts (owner_id, content, kind, source_node_id) values (${owner}, ${`${tag} f`}, 'semantic', ${id})
       returning id`;
     await expect(
-      admin`update content_chunks set read_ws = ${`{${ws.other}}`}::uuid[] where node_id = ${id}`,
+      admin`update facts set read_ws = ${`{${ws.other}}`}::uuid[] where id = ${f!.id}`,
     ).rejects.toThrow(/follow their node/);
     await admin`update nodes set login_id = ${userA} where id = ${id}`;
-    const [c] = await admin<
-      { l: string }[]
-    >`select login_id as l from content_chunks where node_id = ${id}`;
     const [fa] = await admin<{ l: string }[]>`select login_id as l from facts where id = ${f!.id}`;
-    expect(c!.l).toBe(userA);
     expect(fa!.l).toBe(userA);
     await admin`delete from facts where id = ${f!.id}`;
   });

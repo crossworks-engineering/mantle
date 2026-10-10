@@ -13,6 +13,44 @@ export function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/**
+ * Whether `err` (or anything in its cause chain) came from the database: a
+ * Postgres error (a five-character SQLSTATE `code` and a `severity`, as
+ * postgres.js reports them) or a drizzle query error, whose message carries
+ * the SQL and its parameters.
+ */
+export function isDatabaseError(err: unknown): boolean {
+  for (let e: unknown = err, depth = 0; e && typeof e === 'object' && depth < 5; depth++) {
+    const o = e as { name?: unknown; code?: unknown; severity?: unknown; cause?: unknown };
+    if (o.name === 'DrizzleQueryError') return true;
+    if (
+      typeof o.code === 'string' &&
+      /^[0-9A-Z]{5}$/.test(o.code) &&
+      typeof o.severity === 'string'
+    )
+      return true;
+    e = o.cause;
+  }
+  return false;
+}
+
+/** What a caller outside the server may read of a database error. */
+export const DATABASE_ERROR_PUBLIC =
+  'the database could not run this request (the details are in the server log)';
+
+/**
+ * The message of `err` for a caller outside the server (a tool reply, an MCP
+ * client): a database error never goes out as its own text, which can carry
+ * SQL, parameters or (with a row rule in force) something about a row the
+ * caller may not read (workspaces W3, defence in depth). Logged in full
+ * under `where`. Anything else keeps its message.
+ */
+export function publicErrorMessage(err: unknown, where: string): string {
+  if (!isDatabaseError(err)) return errorMessage(err);
+  console.error(`[${where}] database error:`, err);
+  return DATABASE_ERROR_PUBLIC;
+}
+
 /** Canonical UUID shape (any version, either case). Postgres accepts both
  *  cases, so do we; anchor it and it is safe to use on untrusted input. */
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

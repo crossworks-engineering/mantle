@@ -39,7 +39,22 @@ const EF_SEARCH_MAX = 1000; // pgvector's hard GUC ceiling
 
 let hasIterativeScan: boolean | undefined;
 
-export async function withHnswPool<T>(pool: number, fn: (tx: Tx) => Promise<T>): Promise<T> {
+export async function withHnswPool<T>(
+  pool: number,
+  fn: (tx: Tx) => Promise<T>,
+  opts: {
+    /**
+     * Keep the planner on the HNSW order (workspaces W3). Under a workspace
+     * scope the row rule's selectivity is unknown at plan time (the scope is
+     * a run-time setting), so the planner guesses a tiny share of nodes and
+     * picks "every node, then its chunks, then sort": 0.6 to 2.7 s on a 50k
+     * brain where the scope holds every item. With sorts off for this one
+     * query it walks the index instead (tens of ms). Only for a scope too
+     * big for the exact path (scope.ts); restored right after.
+     */
+    hnswFirst?: boolean;
+  } = {},
+): Promise<T> {
   const ef = Math.min(Math.max(Math.ceil(pool), EF_SEARCH_MIN), EF_SEARCH_MAX);
   if (hasIterativeScan === undefined) {
     const probe = (await db.execute(
@@ -53,6 +68,16 @@ export async function withHnswPool<T>(pool: number, fn: (tx: Tx) => Promise<T>):
     if (hasIterativeScan) {
       await tx.execute(sql.raw(`set local hnsw.iterative_scan = 'relaxed_order'`));
     }
-    return fn(tx);
+    if (!opts.hnswFirst) return fn(tx);
+    // Transaction-scoped setting inside what may be a savepoint of a longer
+    // scoped transaction: put it back, so no later query plans without sorts.
+    const prev = (await tx.execute(
+      sql`select current_setting('enable_sort') as v, set_config('enable_sort', 'off', true)`,
+    )) as unknown as Array<{ v: string }>;
+    try {
+      return await fn(tx);
+    } finally {
+      await tx.execute(sql`select set_config('enable_sort', ${prev[0]?.v ?? 'on'}, true)`);
+    }
   });
 }

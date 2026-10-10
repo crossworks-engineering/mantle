@@ -1,11 +1,20 @@
 import { db, nodes, type Node } from '@mantle/db';
 import { and, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { withHnswPool } from './hnsw';
+import { distanceOrder, hnswFirst, smallScope } from './scope';
 import { grantUnionFilter, pgArrayLiteral } from './pg';
 import { keywordSql, resolveKeywordQuery } from './keyword-query';
 import { env } from '@mantle/config';
 
 export { withHnswPool } from './hnsw';
+export {
+  distanceOrder,
+  hnswFirst,
+  scopeExactMaxRows,
+  scopeNodeIds,
+  smallScope,
+  type ScopeTable,
+} from './scope';
 export { grantUnionFilter, pgArrayLiteral } from './pg';
 
 export {
@@ -178,19 +187,29 @@ export async function searchNodes(opts: SearchOptions): Promise<Node[]> {
   // dominant RRF contributor) so it falls in rank. The adjustment lives in the
   // OUTER re-rank, not the scan's ORDER BY — an adjusted ORDER BY is not
   // HNSW-eligible and forces a full scan + sort at scale (see hnsw.ts).
-  const vectorRows = (await withHnswPool(pool, (tx) =>
-    tx.execute(sql`
+  // A workspace scope that holds few items searches exactly (scope.ts): its
+  // items by the GIN index on read_ws, ordered by their true distance.
+  const exact = await smallScope('nodes');
+  const vectorRows = (await withHnswPool(
+    pool,
+    (tx) =>
+      tx.execute(sql`
       select id from (
         select ${nodes.id} as id, ${nodes.salience} as salience,
                ${nodes.embedding} <=> ${vec}::vector as dist
         from ${nodes}
-        where ${and(...filters, sql`${nodes.embedding} is not null`)}
-        order by ${nodes.embedding} <=> ${vec}::vector
+        where ${and(
+          ...filters,
+          sql`${nodes.embedding} is not null`,
+          ...(exact ? [sql`${nodes.readWs} && mantle_scope_ws()`] : []),
+        )}
+        order by ${distanceOrder(sql`${nodes.embedding} <=> ${vec}::vector`, exact)}
         limit ${pool}
       ) c
       order by dist + ${SALIENCE_LAMBDA} * (1 - salience)
       limit ${pool}
     `),
+    { hnswFirst: hnswFirst(exact) },
   )) as unknown as { id: string }[];
 
   let ftsRows: { id: string }[] = [];

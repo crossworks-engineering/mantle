@@ -5,8 +5,9 @@
  * and any number of connectors (workspace_resources). An item is shared by a
  * grant to a workspace (item_grants, the ONE truth for sharing), each with
  * its own Write switch; exactly one grant per item is its home. The derived
- * columns that row security reads (nodes.read_ws and the copies on chunks,
- * windows and facts) are kept by triggers, never by the app.
+ * columns that row security reads (nodes.read_ws and the copy on facts) are
+ * kept by triggers, never by the app; chunks and windows read their node
+ * (migration 0249).
  *
  * W1 ships the model in shadow: nothing in the product reads these tables
  * yet.

@@ -230,6 +230,17 @@ const CHECKS: CheckDef[] = [
       FROM heads_check_misses WHERE check_name <> 'bypass'`,
   },
   {
+    key: 'keyword_index_rls',
+    label: 'Keyword index usable under row security',
+    severity: 'medium',
+    note: 'whether pg_catalog.ts_match_vq (the function behind `search_tsv @@ query`) is LEAKPROOF (workspaces W3, migration 0249). If not, Postgres cannot use the text index for a limited role or the workspace role, and every keyword search arm under row security scans its whole table (about 0.5 s on a 50k-item brain instead of about 15 ms). A box restored from pg_dump, or migrated by a non-superuser, loses or never gets the flag. A warning, not an error: the next migration run as a superuser sets it again (pnpm -C packages/db migrate).',
+    query: () => sql`
+      SELECT 'ts_match_vq' AS id, 'not leakproof' AS kind,
+             'keyword arms scan under row security' AS detail
+      FROM pg_proc
+      WHERE oid = 'pg_catalog.ts_match_vq(tsvector, tsquery)'::regprocedure AND NOT proleakproof`,
+  },
+  {
     key: 'unembedded_facts',
     label: 'Unembedded facts',
     severity: 'medium',

@@ -26,7 +26,7 @@ import {
 import { nodeUrl } from '@mantle/content';
 import { type BuiltinToolDef } from './types';
 import { str, strOpt, numOpt as num } from './coerce';
-import { errorMessage } from '@mantle/std';
+import { publicErrorMessage } from '@mantle/std';
 import { NODE_ID_PRE } from './builtins-common';
 import { surfaceHiddenNodeTypes } from './team-visibility';
 
@@ -164,7 +164,7 @@ export const search_nodes: BuiltinToolDef = {
         }),
       };
     } catch (err) {
-      return { ok: false, error: errorMessage(err) };
+      return { ok: false, error: publicErrorMessage(err, 'search_nodes') };
     }
   },
 };
@@ -324,7 +324,7 @@ export const search_chunks: BuiltinToolDef = {
         }),
       };
     } catch (err) {
-      return { ok: false, error: errorMessage(err) };
+      return { ok: false, error: publicErrorMessage(err, 'search_chunks') };
     }
   },
 };

@@ -119,6 +119,28 @@ pool (clamped 40–1000) + `hnsw.iterative_scan = relaxed_order` (pgvector
 approximation (the adjustments only penalise, never promote); at small
 corpora the planner still picks the exact seq scan, which is correct.
 
+**Small workspace scopes search exactly** (workspaces W3,
+`packages/search/src/scope.ts`). Under a workspace scope row security keeps
+the rows whose node the scope reads; chunks and windows hold no access copy
+of their own and follow their node (migration 0249), so a grant change
+rewrites no vector row. HNSW walks the whole graph and drops what the rule
+hides, so a scope that holds a small share of a big brain gets short or poor
+pools. When the scope's rows in the searched table number at most
+`MANTLE_SCOPE_EXACT_MAX_ROWS` (default 15000: the scope's items, counted once
+per transaction and bounded on the GIN index `nodes_read_ws_gin`, times the
+table's rows per item from the planner statistics; a sermon brain has about
+33 chunks and 85 windows per item), the node, chunk and window arms take the
+scope's items by that index and their rows by node id, and order by the true
+distance (an ORDER BY no index serves). Over the threshold they use HNSW as above, with
+one more step: the scope is a run-time setting, so the planner cannot tell
+how much of the brain it holds and guesses a tiny share, then plans "every
+node, then its chunks, then sort" (0.3 to 2.7 s on a 50k-item brain). The
+vector pool query therefore runs with sorts off (`withHnswPool(..., {
+hnswFirst })`), which keeps it on the HNSW order; the setting is restored
+right after. The GIN
+index is built `CONCURRENTLY` by the migration runner after the migrations
+(`packages/db/src/concurrent-indexes.ts`), never inside a migration.
+
 One more driver trap while you're here: drizzle's postgres-js driver does
 **not** serialise a JS array bind param into a Postgres array literal, use
 `pgArrayLiteral` (`packages/search/src/pg.ts`) with a `::uuid[]`/`::text[]`

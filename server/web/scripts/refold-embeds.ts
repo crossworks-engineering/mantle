@@ -65,7 +65,7 @@ async function main(): Promise<void> {
       `  marked (old summary set aside): page ${r.marked.page}, note ${r.marked.note}, draw ${r.marked.draw}\n` +
       `  unchanged ${r.unchanged}, empty ${r.empty}, text rewritten ${r.textRewritten}, ` +
       `rechunked ${r.rechunked} (${r.chunks} chunks), node vectors ${r.nodeVectors}, ` +
-      `embed texts ${r.embedTexts}` +
+      `embed texts ${r.embedTexts}, changed during the run ${r.changed} (left for the next run)` +
       (apply ? '' : '\n  nothing written (--go runs it)'),
   );
 }
