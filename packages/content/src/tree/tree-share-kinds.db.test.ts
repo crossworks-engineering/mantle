@@ -1,10 +1,8 @@
 /**
- * Every live tree kind against the database's own share rule: a kind the
- * spec calls shareable really takes a share at each of its levels (the CHECK
- * nodes_share_level_ck and the triggers agree with TREE_KIND_SPECS), and a
- * kind that is not is refused as a TreeError, never a 500. Recall shipped
- * shareable in the spec while the database refused it (folder audit Q1);
- * this is the test that would have caught it.
+ * Every live tree kind refuses a folder share since workspaces W5b2 (a
+ * folder share is a grant, set in Grant Access): any `share` in the patch,
+ * a level or null, answers a TreeError `gone` (410 on the route), never a
+ * 500, and the folder's share stays as it was.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/tree/tree-share-kinds.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -12,11 +10,11 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { TREE_KIND_SPECS, TREE_SHARE_LEVELS } from '@mantle/client-types/tree';
+import { TREE_SHARE_LEVELS } from '@mantle/client-types/tree';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
-describe.skipIf(!URL)('every tree kind against the share rule', () => {
+describe.skipIf(!URL)('every tree kind refuses a folder share', () => {
   let m: typeof import('@mantle/db');
   let tree: typeof import('./index');
   let files: typeof import('@mantle/files');
@@ -50,7 +48,7 @@ describe.skipIf(!URL)('every tree kind against the share rule', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  it('shares what the spec says, at every level it names, and refuses the rest', async () => {
+  it('answers gone for a share at every level, and for null', async () => {
     const live = tree.TREE_LIVE_KINDS;
     expect(live.length).toBeGreaterThan(5);
     for (const kind of live) {
@@ -60,22 +58,16 @@ describe.skipIf(!URL)('every tree kind against the share rule', () => {
         parentId: null,
         name: `Share ${kind}`,
       });
-      const spec = TREE_KIND_SPECS[kind];
-      for (const level of TREE_SHARE_LEVELS) {
-        const allowed = spec.shareable && (spec.shareLevels ?? TREE_SHARE_LEVELS).includes(level);
-        const res = tree.updateTreeFolder(owner, kind, f.id, { share: level }, { confirm: true });
-        if (allowed) {
-          await expect(res, `${kind} at ${level}`).resolves.toMatchObject({ share: level });
-        } else {
-          await expect(res, `${kind} at ${level}`).rejects.toMatchObject({
-            name: 'TreeError',
-            code: 'invalid',
-          });
-        }
+      for (const share of [...TREE_SHARE_LEVELS, null]) {
+        await expect(
+          tree.updateTreeFolder(owner, kind, f.id, { share }, { confirm: true }),
+          `${kind} at ${share}`,
+        ).rejects.toMatchObject({ name: 'TreeError', code: 'gone' });
       }
-      if (spec.shareable) {
-        await tree.updateTreeFolder(owner, kind, f.id, { share: null }, { confirm: true });
-      }
+      const [row] = (await m.db.execute(
+        sqlTag`select share_level from nodes where id = ${f.id}`,
+      )) as unknown as { share_level: string | null }[];
+      expect(row?.share_level ?? null, kind).toBeNull();
     }
   });
 });

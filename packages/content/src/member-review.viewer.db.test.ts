@@ -3,7 +3,9 @@
  * v3.1 section 6): an admin reads only submitted items and what deactivated
  * logins left shared; Return (no note); Recall beats Accept; Accept moves
  * the item and its bundle into the brain with the same ids, rows and bytes,
- * and is the one path that announces anything to the extractor; the 30-day
+ * writes no level and, at team, gives Team a read grant on each moved item
+ * (contract change 22, W5b2), and is the one path that announces anything
+ * to the extractor; the 30-day
  * purge deletes private items only and empties a space's directories.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/member-review.viewer.db.test.ts
  */
@@ -44,6 +46,7 @@ describe.skipIf(!URL)('member review, accept and purge', () => {
   const loginE = randomUUID();
   const spaceOf: Record<string, string> = {};
   let anchor: string;
+  let teamWs: string;
   const root = mkdtempSync(path.join(tmpdir(), 'mantle-review-'));
   const reviewer = () => ({ loginId: anchor, name: 'Reviewer' });
 
@@ -95,6 +98,12 @@ describe.skipIf(!URL)('member review, accept and purge', () => {
       values (${anchor}, ${`${tag}-admin@example.invalid`}, 'x', 'admin')`);
     await m.systemDb.execute(sqlTag`
       insert into spaces (id, kind, login_id) values (${anchor}, 'brain', ${anchor})`);
+    // Its Team workspace: an Accept at team gives Team a read grant.
+    teamWs = (
+      await exec<{ id: string }>(sqlTag`
+        insert into workspaces (owner_id, name, bridge_key)
+        values (${anchor}, 'Team', 'team') returning id::text as id`)
+    )[0]!.id;
     await m.systemDb.execute(sqlTag`
       insert into auth.users (id, email, password_hash, role) values
         (${loginA}, ${`${tag}-a@example.invalid`}, 'x', 'member'),
@@ -247,7 +256,7 @@ describe.skipIf(!URL)('member review, accept and purge', () => {
     expect(announced.filter((id) => [pageId, imageId, noteId].includes(id))).toEqual([]);
   });
 
-  it('Accept moves the item and its bundle into the brain, same ids, at the level picked', async () => {
+  it('Accept moves the item and its bundle into the brain, same ids, Team granted at team', async () => {
     const A = spaceOf[loginA]!;
     const spaceBytes = fp.spaceFilePath(A, imageId);
     expect(existsSync(spaceBytes)).toBe(true);
@@ -265,10 +274,31 @@ describe.skipIf(!URL)('member review, accept and purge', () => {
     expect(await ownerOf(pageId)).toBe(anchor);
     expect(await ownerOf(imageId)).toBe(anchor);
     expect(await ownerOf(noteId)).toBe(A); // a link, not an embed: it stays
-    const levels = await exec<{ id: string; audience: string }>(
-      sqlTag`select id, audience from nodes where id in (${pageId}, ${imageId})`,
+    // No level is written (they are frozen): Team reads them by a grant,
+    // Write off, logged as the Accept's.
+    const levels = await exec<{ audience: string }>(
+      sqlTag`select audience from nodes where id in (${pageId}, ${imageId})`,
     );
-    expect(levels.map((l) => l.audience)).toEqual(['team', 'team']);
+    expect(levels.map((l) => l.audience)).toEqual(['admin', 'admin']);
+    expect(res.alsoLowered).toEqual([]);
+    expect([...res.teamGranted].sort()).toEqual([pageId, imageId].sort());
+    const team = await exec<{ node_id: string; write: boolean; reads: boolean }>(sqlTag`
+      select g.node_id::text as node_id, g.write, ${teamWs}::uuid = any(n.read_ws) as reads
+        from item_grants g join nodes n on n.id = g.node_id
+       where g.workspace_id = ${teamWs} and g.node_id in (${pageId}, ${imageId})
+       order by g.node_id`);
+    expect(team.map((t) => [t.node_id, t.write, t.reads])).toEqual(
+      [pageId, imageId].sort().map((id) => [id, false, true]),
+    );
+    const events = await exec<{ node: string; by: string; write: boolean; actor: string }>(sqlTag`
+      select subject->>'node' as node, subject->>'by' as by, (subject->>'write')::boolean as write,
+             actor_id::text as actor
+        from workspace_events
+       where workspace_id = ${teamWs} and action = 'grant.add'
+       order by subject->>'node'`);
+    expect(events).toEqual(
+      [pageId, imageId].sort().map((node) => ({ node, by: 'accept', write: false, actor: anchor })),
+    );
     for (const id of [pageId, imageId]) {
       expect(await stateOf(id)).toMatchObject({ review_state: 'accepted', reviewed_by: anchor });
     }

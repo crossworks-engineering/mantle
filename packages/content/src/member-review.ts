@@ -112,14 +112,9 @@ import { NOTES_ROOT_LABEL } from './notes';
 import { PAGES_ROOT_LABEL } from './pages/shared';
 import { draftAbsFor, removeTableFile } from './table-storage';
 import { dedupeFilename } from './dedupe-filename';
-import { isWorkspaceKind, setItemLevel } from './access';
-import {
-  brainEmbedsOf,
-  levelAbove,
-  lowerEmbedClosure,
-  type EmbedItem,
-  type LoweredItem,
-} from './embed-closure';
+import { isWorkspaceKind } from './access';
+import { brainEmbedsOf, levelAbove, type EmbedItem } from './embed-closure';
+import { addTeamReadGrants } from './team-grant';
 import { refoldPageTexts } from './pages/level-text';
 import {
   detachFromGroups,
@@ -594,9 +589,12 @@ export async function reviewDrawSvg(id: string, drawId: string): Promise<string 
 // ── Accept (plan 6.2) ───────────────────────────────────────────────────────
 
 export type AcceptOptions = {
-  /** The level the accepted item (and everything that moves with it) gets.
-   *  Admin by default (decided 2026-09-25); team by default for an item a
-   *  CLIENT wrote (client logins C1, see `acceptAudience`). */
+  /** Who reads the accepted item (and everything that moves with it), as
+   *  the request names it. Admin by default (decided 2026-09-25); team by
+   *  default for an item a CLIENT wrote (client logins C1, see
+   *  `acceptAudience`). Since workspaces W5b2 (contract change 22) no level
+   *  is written: every item gets its home by trigger, and team, client or
+   *  public add a Team read grant to each moved item Team does not read. */
   audience?: ViewerLevel;
   /** For an item a client wrote: the admin confirmed that it, and what it
    *  takes with it, goes down to client (every client login reads it) or
@@ -643,12 +641,11 @@ export type AcceptResult = {
   readAt: ViewerLevel;
   moved: BundleItem[];
   linksStayingBehind: number;
-  /** Brain items it embeds that went down to its level with it (embedding
-   *  means sharing: a Library image a member placed, say). Empty at admin. */
-  alsoLowered: LoweredItem[];
-  /** Set when the item's level was stored but its link could not be made;
-   *  the admin can set the level again from the item. */
-  levelWarning?: string;
+  /** Always empty since workspaces W5b2: nothing an item embeds changes with
+   *  an Accept. Kept on the wire for older clients. */
+  alsoLowered: [];
+  /** The moved items given a Team read grant (team, client or public). */
+  teamGranted: string[];
 };
 
 /** The small-text cache a brain file carries (mirrors upsertFile). */
@@ -803,9 +800,9 @@ function embedLevelSql(embedded: SQL): SQL {
  * the item's state row (a Recall that lands first wins: not found), take its
  * bundle (the one recorded at Submit), re-own every item in it (same ids),
  * stage its bytes, mark every space_items row accepted (the row stays: it
- * records the author), discard leftover drafts and set the level. Then,
- * after the commit, the bytes are put in place, each moved item is announced
- * to the extractor once, and the item's link follows its level.
+ * records the author), discard leftover drafts and, at team or wider, give
+ * Team a read grant. Then, after the commit, the bytes are put in place and
+ * each moved item is announced to the extractor once.
  */
 export async function acceptReviewItem(
   brainId: string,
@@ -816,6 +813,7 @@ export async function acceptReviewItem(
   // The level by the author's role (client logins C1): checked inside the
   // move's transaction, before anything moves (moveIntoBrain).
   return moveIntoBrain(brainId, id, opts, {
+    actorId: reviewer.loginId,
     locate: async (tx) => {
       // The state row, locked. A Recall, Return or second Accept waits.
       const [locked] = await tx
@@ -893,6 +891,7 @@ export async function acceptOwnItem(
   opts: AcceptOptions = {},
 ): Promise<AcceptResult> {
   return moveIntoBrain(brainId, id, opts, {
+    actorId: own.loginId,
     locate: async (tx) => {
       // The item, locked, in the caller's own personal space.
       const [locked] = await tx
@@ -1168,6 +1167,9 @@ export async function takeOverReviewItem(
  *  admin's own: how the item is found and locked, and what happens to the
  *  bundle's state rows. Everything between is `moveIntoBrain`. */
 type AcceptSteps = {
+  /** The login that accepts: the Team grant's `granted_by` and the event's
+   *  actor. */
+  actorId: string;
   /** Lock the item and prove the caller may accept it (throws otherwise);
    *  `bundle` then names what moves with it, read in the same transaction. */
   locate: (tx: Tx) => Promise<{
@@ -1184,10 +1186,10 @@ type AcceptSteps = {
 /**
  * The move itself, shared by both Accepts: in one transaction, locate and
  * lock the item, take its bundle, lock what is still in the space, re-own
- * every item (same ids), stage its bytes, settle the state rows and discard
- * leftover drafts. After the commit the bytes are put in place, each moved
- * item is announced to the extractor once, and the item's link follows its
- * level.
+ * every item (same ids; the re-own gives each its home, 0261), stage its
+ * bytes, give Team a read grant at team or wider, settle the state rows and
+ * discard leftover drafts. After the commit the bytes are put in place and
+ * each moved item is announced to the extractor once.
  */
 async function moveIntoBrain(
   brainId: string,
@@ -1399,7 +1401,7 @@ async function moveIntoBrain(
       for (const b of items) {
         const [n] = await tx.select().from(nodes).where(eq(nodes.id, b.id)).limit(1);
         if (!n) continue;
-        const common = { ownerId: brainId, audience, updatedAt: now };
+        const common = { ownerId: brainId, updatedAt: now };
         switch (b.type) {
           case 'page': {
             // In its brain folder, like a note (folder phase 7); parent_id
@@ -1516,14 +1518,13 @@ async function moveIntoBrain(
       //     now go: their brain twins took their place.
       await dropEmptyOwnFolders(tx, spaceId, fromPaths);
 
-      // 4b. Embedding means sharing: at a level below admin, what the item
-      //     embeds that is already the brain's (a Library item) goes down
-      //     with it, to the level the admin chose. The share of the folder it
-      //     lands in reaches its embeds through the database instead
-      //     (nodes.embedded_level, migration 0208), and goes again when the
-      //     folder is unshared or the item moves out. The bundle itself took
-      //     the level above.
-      const { lowered: alsoLowered } = await lowerEmbedClosure(brainId, id, audience, tx);
+      // 4b. Who reads it (contract change 22): the re-own gave every moved
+      //     item its home (0261). Team, client or public add a Team read
+      //     grant to each moved item Team does not read yet, under the heads
+      //     this transaction holds. No level is written, and nothing it
+      //     embeds changes.
+      const teamGranted =
+        audience === 'admin' ? [] : await addTeamReadGrants(tx, brainId, ids, steps.actorId);
       // What the moved pages, and the pages they reach through embeds,
       // index is their new level's (pages/level-text.ts, SQL only); the
       // extractor hears of the moved ones once, below, as before.
@@ -1568,7 +1569,8 @@ async function moveIntoBrain(
         readAt,
         moved: items,
         linksStayingBehind: bundle.linksStayingBehind,
-        alsoLowered,
+        alsoLowered: [],
+        teamGranted,
       };
     });
   } catch (err) {
@@ -1591,15 +1593,6 @@ async function moveIntoBrain(
       .catch((err: unknown) =>
         console.error('[member-review] accept: announcing a moved item failed:', err),
       );
-  }
-  // The item's link follows its level (levels drive links). The level itself
-  // is already stored for the whole bundle.
-  if (result.audience !== 'admin') {
-    try {
-      await setItemLevel(brainId, id, result.audience);
-    } catch (err) {
-      result.levelWarning = err instanceof Error ? err.message : String(err);
-    }
   }
   return result;
 }

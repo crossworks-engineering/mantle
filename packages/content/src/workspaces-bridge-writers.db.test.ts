@@ -1,12 +1,10 @@
 /**
- * The writers the level bridge (migration 0251) depends on, with the heads
- * check ON for the database (W4a re-audit 2): each takes its heads first, so
- * the bridge's own check passes, and the rows that follow from the change
- * (the embeds a save adds, a folder's inherited levels, the embeds a page
- * takes down with it) are locked by the bridge itself. Checked for a level
- * set (setItemAudience, setItemLevel), a folder share, page, note and
- * drawing saves that add an embed, and a new app. Also the connector bridge
- * (re-audit 3): Team's resource row follows a connector's level and switch.
+ * The writers with the level bridge OFF (workspaces W5b2, migration 0261),
+ * with the heads check ON for the database: each still takes its heads
+ * first, and none writes a level. A new item gets its home (Admin, or its
+ * folder's home) and takes its folder's grant rows (S6); a page save that
+ * adds an embed changes no grant; a folder share is refused (`gone`) and
+ * writes nothing; and an UPDATE of a level column is refused (55000).
  *
  * Runs on a scratch database of its own (migrated from scratch, dropped
  * after): the workspaces migration and the database-wide heads setting are
@@ -23,7 +21,7 @@ const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
 type Grant = { ws: string; excluded: boolean; home: boolean };
 
-describe.skipIf(!URL)('level bridge writers hold their heads (heads check on)', () => {
+describe.skipIf(!URL)('writers with the bridge off hold their heads (heads check on)', () => {
   type Ts = typeof import('@mantle/db/test-support');
   let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
   let m: typeof import('@mantle/db');
@@ -111,76 +109,60 @@ describe.skipIf(!URL)('level bridge writers hold their heads (heads check on)', 
     expect(mode[0]!.m).toBe('on');
   });
 
-  it('a page save that adds an embed, then the page lowered to team, takes the file along', async () => {
+  it('a page save that adds an embed changes no grant', async () => {
     const c = await import('./pages/tree');
     const d = await import('./pages/draft');
-    const a = await import('./access');
     const f = await file('page-image');
     const page = await c.createPage(brain, { title: 'With a picture' });
+    expect(await grants(page.id)).toEqual({ Admin: { ws: admin, excluded: false, home: true } });
+    const before = await grants(f);
     await d.updatePage(brain, page.id, { doc: fileEmbedDoc(f) });
+    expect(await grants(f)).toEqual(before);
     expect(await teamReads(f)).toBe(false);
-    await a.setItemAudience(brain, page.id, 'team');
-    expect(await teamReads(page.id)).toBe(true);
-    expect(await teamReads(f)).toBe(true);
-    // Back up, with the link path (setItemLevel).
-    await a.setItemLevel(brain, page.id, 'admin');
-    expect(await teamReads(page.id)).toBe(false);
   });
 
-  it('a commit of a team page that adds an embed brings the file to team', async () => {
-    const c = await import('./pages/tree');
-    const d = await import('./pages/draft');
-    const a = await import('./access');
-    const page = await c.createPage(brain, { title: 'Team page' });
-    await a.setItemAudience(brain, page.id, 'team');
-    const f = await file('commit-image');
-    const res = await d.commitPage(brain, page.id, fileEmbedDoc(f));
-    expect(res.ok).toBe(true);
-    expect(await teamReads(f)).toBe(true);
-  });
-
-  it('a team note that gains an image brings it to team', async () => {
-    const n = await import('./notes');
-    const a = await import('./access');
-    const note = await n.createNote(brain, { title: 'Team note', content: 'plain' });
-    await a.setItemAudience(brain, note.id, 'team');
-    const f = await file('note-image');
-    await n.updateNote(brain, note.id, { content: `look\n\n![pic](media:${f})\n` });
-    expect(await teamReads(f)).toBe(true);
-  });
-
-  it('a team drawing whose commit places an image brings it to team', async () => {
-    const dr = await import('./draws');
-    const a = await import('./access');
-    const draw = await dr.createDraw(brain, { title: 'Team drawing' });
-    await a.setItemAudience(brain, draw.id, 'team');
-    const f = await file('draw-image');
-    const scene = {
-      type: 'excalidraw',
-      elements: [{ id: 'el1', type: 'image', fileId: 'img1', x: 0, y: 0, width: 10, height: 10 }],
-      appState: {},
-      files: {},
-    };
-    const res = await dr.commitDraw(brain, draw.id, scene, { fileRefs: { img1: f } });
-    expect(res.ok).toBe(true);
-    expect(await teamReads(f)).toBe(true);
-  });
-
-  it('a folder share carries its pages and their embeds to team, and back', async () => {
+  it('a page made in a folder Team reads takes the folder rows (S6)', async () => {
     const t = await import('./tree/write');
     const c = await import('./pages/tree');
-    const d = await import('./pages/draft');
-    const folder = await t.createTreeFolder(brain, 'pages', { parentId: null, name: 'Shared' });
+    const folder = await t.createTreeFolder(brain, 'pages', {
+      parentId: null,
+      name: 'For the team',
+    });
+    // The grant as the Grant Access panel writes it: under the folder's heads.
+    await m.withSubtreeHeads(folder.id, [], (tx) =>
+      tx.execute(sqlTag`insert into item_grants (node_id, workspace_id, write)
+        values (${folder.id}, ${team}, false)`),
+    );
     const page = await c.createPage(brain, { title: 'In the folder', folderId: folder.id });
-    const f = await file('folder-image');
-    await d.updatePage(brain, page.id, { doc: fileEmbedDoc(f) });
-    expect(await teamReads(page.id)).toBe(false);
-    await t.updateTreeFolder(brain, 'pages', folder.id, { share: 'team' }, { confirm: true });
     expect(await teamReads(page.id)).toBe(true);
-    expect(await teamReads(f)).toBe(true);
-    await t.updateTreeFolder(brain, 'pages', folder.id, { share: null }, { confirm: true });
-    expect(await teamReads(page.id)).toBe(false);
-    expect(await teamReads(f)).toBe(false);
+    expect((await grants(page.id)).Admin?.home).toBe(true);
+  });
+
+  it('a folder share is refused (gone) and writes nothing, the rest of the patch neither', async () => {
+    const t = await import('./tree/write');
+    const folder = await t.createTreeFolder(brain, 'pages', { parentId: null, name: 'Shared' });
+    for (const share of ['team', null] as const) {
+      await expect(
+        t.updateTreeFolder(
+          brain,
+          'pages',
+          folder.id,
+          { name: 'Renamed', share },
+          { confirm: true },
+        ),
+      ).rejects.toMatchObject({ code: 'gone' });
+    }
+    const [row] = await rows<{ title: string; share_level: string | null }>(
+      sqlTag`select title, share_level from nodes where id = ${folder.id}`,
+    );
+    expect(row).toEqual({ title: 'Shared', share_level: null });
+    expect(await teamReads(folder.id)).toBe(false);
+    // Renaming alone still works.
+    await t.updateTreeFolder(brain, 'pages', folder.id, { name: 'Renamed' });
+    const [after] = await rows<{ title: string }>(
+      sqlTag`select title from nodes where id = ${folder.id}`,
+    );
+    expect(after?.title).toBe('Renamed');
   });
 
   it('a new app is made with its rows (the apps insert needs no head of its own)', async () => {
@@ -189,133 +171,47 @@ describe.skipIf(!URL)('level bridge writers hold their heads (heads check on)', 
     expect((await grants(app.id)).Admin?.home).toBe(true);
   });
 
-  it('an app settings save: the read-only switch takes the head; other fields need none', async () => {
-    const ap = await import('./apps');
-    const a = await import('./access');
-    const app = await ap.createApp(brain, { title: 'Switch app' });
-    await a.setItemAudience(brain, app.id, 'team');
-    const teamWrite = async () =>
-      (
-        await rows<{ write: boolean }>(sqlTag`select g.write from item_grants g
-          where g.node_id = ${app.id} and g.workspace_id = ${team}`)
-      )[0]?.write;
-    await ap.updateAppMeta(brain, app.id, { dataReadOnly: true });
-    expect(await teamWrite()).toBe(false);
-    await ap.updateAppMeta(brain, app.id, { dataReadOnly: false });
-    expect(await teamWrite()).toBe(true);
-    // A title save writes no grant and takes no head (the trigger's WHEN).
-    await ap.updateAppMeta(brain, app.id, { title: 'Renamed app' });
-  });
-
   it('a writer inside an open heads transaction runs on a savepoint of it', async () => {
     const c = await import('./pages/tree');
     const d = await import('./pages/draft');
-    const a = await import('./access');
     const page = await c.createPage(brain, { title: 'Savepoint page' });
-    await a.setItemAudience(brain, page.id, 'team');
     const f = await file('savepoint-image');
     await m.withHeads([page.id], 'update', async () => {
       await d.updatePage(brain, page.id, { doc: fileEmbedDoc(f) });
     });
-    expect(await teamReads(f)).toBe(true);
+    const [row] = await rows<{ n: number }>(sqlTag`select count(*)::int as n from node_embeds
+      where from_id = ${page.id} and to_id = ${f}`);
+    expect(row?.n).toBe(1);
   });
 
-  it('a busy head: refused with 55P03 while held, retried once it is free', async () => {
+  it('a level column cannot change any more (55000)', async () => {
     const c = await import('./pages/tree');
-    const d = await import('./pages/draft');
-    const a = await import('./access');
-    type Tag = (s: TemplateStringsArray, ...v: unknown[]) => Promise<unknown>;
-    const client = (
-      m.systemDb as unknown as {
-        $client: { begin: (fn: (t: Tag) => Promise<unknown>) => Promise<unknown> };
-      }
-    ).$client;
-    const hold = (ms: number, f: string) =>
-      client.begin(async (t: Tag) => {
-        await t`select 1 from node_acl_head where node_id = ${f} for update`;
-        await new Promise((r) => setTimeout(r, ms));
-      });
-    const page = await c.createPage(brain, { title: 'Busy page' });
-    await a.setItemAudience(brain, page.id, 'team');
-    // Held through every retry: the save fails, nothing half-written.
-    const f1 = await file('busy-image');
-    const held = hold(1500, f1);
-    await new Promise((r) => setTimeout(r, 50));
-    const err = await d.updatePage(brain, page.id, { doc: fileEmbedDoc(f1) }).then(
-      () => null,
-      (e: unknown) => e,
+    const page = await c.createPage(brain, { title: 'Frozen page' });
+    for (const set of [
+      sqlTag`audience = 'team'`,
+      sqlTag`share_level = 'team'`,
+      sqlTag`inherited_level = 'team'`,
+      sqlTag`embedded_level = 'team'`,
+    ]) {
+      const err = await m
+        .withHeads([page.id], 'update', (tx) =>
+          tx.execute(sqlTag`update nodes set ${set} where id = ${page.id}`),
+        )
+        .then(
+          () => null,
+          (e: unknown) => e,
+        );
+      expect(err, 'refused').toMatchObject({ code: '55000' });
+    }
+    // The same value is no change: a write that names the column passes.
+    await m.withHeads([page.id], 'update', (tx) =>
+      tx.execute(sqlTag`update nodes set audience = audience where id = ${page.id}`),
     );
-    await held;
-    expect(m.isBusy(err)).toBe(true);
-    expect(await teamReads(f1)).toBe(false);
-    // Freed soon after: a retry goes through.
-    const f2 = await file('busy-image-2');
-    const brief = hold(20, f2);
-    await new Promise((r) => setTimeout(r, 5));
-    await d.updatePage(brain, page.id, { doc: fileEmbedDoc(f2) });
-    await brief;
-    expect(await teamReads(f2)).toBe(true);
   });
 
   // In 'on' mode a miss raises (40001) and fails its writer: the tests above
   // passing is the check; the log must be empty as well.
-  it('logged no miss and left no drift', async () => {
+  it('logged no miss', async () => {
     expect(await misses()).toBe(0);
-    const drift = await rows<{ n: number }>(sqlTag`select mantle_bridge_drift()::int as n`);
-    expect(drift[0]!.n).toBe(0);
-  });
-
-  it('the connector bridge keeps Team’s row with the connector’s level and switch', async () => {
-    const onTeam = async (slug: string) =>
-      (
-        await rows<{ write: boolean }>(sqlTag`select write from workspace_resources
-          where workspace_id = ${team} and type = 'connector' and ref_id = ${slug}`)
-      )[0] ?? null;
-    const onAdmin = async (slug: string) =>
-      (
-        await rows<{ n: number }>(sqlTag`select count(*)::int as n from workspace_resources
-          where workspace_id = ${admin} and type = 'connector' and ref_id = ${slug}`)
-      )[0]!.n;
-    await m.systemDb
-      .execute(sqlTag`insert into tool_groups (owner_id, slug, name, integration, audience)
-      values (${brain}, 'conn-x', 'x', '{"mcp":{}}'::jsonb, 'team')`);
-    expect(await onTeam('conn-x')).toEqual({ write: true });
-    expect(await onAdmin('conn-x')).toBe(1);
-    await m.systemDb.execute(sqlTag`update tool_groups set audience = 'admin'
-      where owner_id = ${brain} and slug = 'conn-x'`);
-    expect(await onTeam('conn-x')).toBeNull();
-    await m.systemDb.execute(sqlTag`update tool_groups set audience = 'team', enabled = false
-      where owner_id = ${brain} and slug = 'conn-x'`);
-    expect(await onTeam('conn-x')).toBeNull();
-    await m.systemDb.execute(sqlTag`update tool_groups set enabled = true
-      where owner_id = ${brain} and slug = 'conn-x'`);
-    expect(await onTeam('conn-x')).toEqual({ write: true });
-    // An OpenAPI group (no mcp binding) is on Admin only.
-    await m.systemDb
-      .execute(sqlTag`insert into tool_groups (owner_id, slug, name, integration, audience)
-      values (${brain}, 'api-y', 'y', '{"baseUrl":"https://example.invalid"}'::jsonb, 'team')`);
-    expect(await onTeam('api-y')).toBeNull();
-    expect(await onAdmin('api-y')).toBe(1);
-    // A renamed connector keeps its rows, under the new slug.
-    await m.systemDb.execute(sqlTag`update tool_groups set slug = 'conn-z'
-      where owner_id = ${brain} and slug = 'conn-x'`);
-    expect(await onTeam('conn-x')).toBeNull();
-    expect(await onAdmin('conn-x')).toBe(0);
-    expect(await onTeam('conn-z')).toEqual({ write: true });
-    expect(await onAdmin('conn-z')).toBe(1);
-    await m.systemDb.execute(sqlTag`update tool_groups set slug = 'conn-x'
-      where owner_id = ${brain} and slug = 'conn-z'`);
-    await m.systemDb.execute(
-      sqlTag`delete from tool_groups where owner_id = ${brain} and slug = 'conn-x'`,
-    );
-    expect(await onAdmin('conn-x')).toBe(0);
-    const drift = await rows<{ n: number }>(sqlTag`select mantle_connector_drift()::int as n`);
-    expect(drift[0]!.n).toBe(0);
-    // Drift is seen: a Team row written around the bridge.
-    await m.systemDb
-      .execute(sqlTag`insert into workspace_resources (workspace_id, type, ref_id, write)
-      values (${team}, 'connector', 'api-y', true)`);
-    const after = await rows<{ n: number }>(sqlTag`select mantle_connector_drift()::int as n`);
-    expect(after[0]!.n).toBe(1);
   });
 });

@@ -28,7 +28,6 @@ describe.skipIf(!URL)('a shared note serves the pictures and files it names', ()
   type Db = typeof import('@mantle/db');
   let m: Db;
   let shares: typeof import('./shares');
-  let access: typeof import('@mantle/content');
   let assetRoute: typeof import('@/app/s/[token]/a/[fileId]/route');
   let drawRoute: typeof import('@/app/s/[token]/draw/[drawId]/route');
   let sqlTag: typeof import('drizzle-orm').sql;
@@ -76,11 +75,17 @@ describe.skipIf(!URL)('a shared note serves the pictures and files it names', ()
   const noteLink = () =>
     ({ id: randomUUID(), ownerId: owner, nodeId: id.note, nodeType: 'note', token: 't' }) as Share;
 
+  /** An admin raises an item back to admin (under the test bypass). */
+  const raise = (nodeId: string) =>
+    m.db.transaction(async (tx) => {
+      await tx.execute(sqlTag`select mantle_heads_bypass('test fixture')`);
+      await tx.execute(sqlTag`update nodes set audience = 'admin' where id = ${nodeId}`);
+    });
+
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
     m = await import('@mantle/db');
     shares = await import('./shares');
-    access = await import('@mantle/content');
     assetRoute = await import('@/app/s/[token]/a/[fileId]/route');
     drawRoute = await import('@/app/s/[token]/draw/[drawId]/route');
     sqlTag = (await import('drizzle-orm')).sql;
@@ -114,25 +119,19 @@ describe.skipIf(!URL)('a shared note serves the pictures and files it names', ()
         insert into draws (node_id, scene, file_refs, scene_svg) values
           (${d}, '{"elements":[]}'::jsonb, '{}'::jsonb, ${svg})`);
     }
-    // The admin makes the note public: what it embeds goes down with it.
-    await access.setItemLevel(owner, id.note, 'public');
-    await access.setItemLevel(owner, id.note2, 'public');
-    // The items it does not name are public too, so a refusal below is the
-    // reference rule, not the level rule.
-    await access.setItemAudience(owner, id.otherFile, 'public');
-    await access.setItemAudience(owner, id.otherDraw, 'public');
-    await access.setItemAudience(owner, id.page, 'public');
-    await access.setItemAudience(owner, id.fenced, 'public');
-    await access.setItemAudience(owner, id.inlineCode, 'public');
-    await access.setItemAudience(owner, id.inlineDoc, 'public');
-    // Making a note public opens its link: name those links' tokens, and
-    // let the second one run out.
+    // Every row public, the notes, what they embed and the items they do not
+    // name, so a refusal below is the reference rule, not the level rule.
+    // (The levels are frozen since W5b2 and their engine is gone: the fixture
+    // sets the level the link serving still reads under the test bypass.)
+    await m.db.transaction(async (tx) => {
+      await tx.execute(sqlTag`select mantle_heads_bypass('test fixture')`);
+      await tx.execute(sqlTag`update nodes set audience = 'public' where owner_id = ${owner}`);
+    });
+    // The notes' open links: the second one has run out.
     await m.db.execute(sqlTag`
-      update shares set token = ${token.live}
-      where owner_id = ${owner} and node_id = ${id.note} and revoked_at is null`);
-    await m.db.execute(sqlTag`
-      update shares set token = ${token.expired}, expires_at = now() - interval '1 hour'
-      where owner_id = ${owner} and node_id = ${id.note2} and revoked_at is null`);
+      insert into shares (owner_id, node_id, node_type, token, expires_at) values
+        (${owner}, ${id.note}, 'note', ${token.live}, null),
+        (${owner}, ${id.note2}, 'note', ${token.expired}, now() - interval '1 hour')`);
     await m.db.execute(sqlTag`
       insert into shares (owner_id, node_id, node_type, token, revoked_at) values
         (${owner}, ${id.note}, 'note', ${token.revoked}, now())`);
@@ -217,10 +216,10 @@ describe.skipIf(!URL)('a shared note serves the pictures and files it names', ()
   });
 
   it('does not serve an embed an admin raised back above the link', async () => {
-    await access.setItemAudience(owner, id.pic, 'admin');
+    await raise(id.pic);
     expect(await shares.isAssetAllowed(noteLink(), id.pic)).toBe(false);
     expect(await getAsset(token.live, id.pic)).toBe(404);
-    await access.setItemAudience(owner, id.draw, 'admin');
+    await raise(id.draw);
     expect(await shares.isEmbeddedDrawAllowed(noteLink(), id.draw)).toBe(false);
     expect(await getDraw(token.live, id.draw)).toBe(404);
   });

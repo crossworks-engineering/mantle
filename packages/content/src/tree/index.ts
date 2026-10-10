@@ -31,6 +31,7 @@ export {
 } from './marks';
 export {
   TREE_CHANGED_CHANNEL,
+  FOLDER_SHARE_GONE,
   TreeError,
   notifyTreeChanged,
   createTreeFolder,
@@ -59,7 +60,6 @@ export {
   type ConfirmOpts,
 } from './files-guard';
 export { guardNewPageIn, newPageDiff } from './page-guard';
-export { repairShareDrift, type ShareDriftResult } from './share-drift';
 export {
   clientTreeFolderPage,
   clientTreeSearch,

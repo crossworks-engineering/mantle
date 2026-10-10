@@ -10,19 +10,16 @@ import {
 } from '@mantle/content';
 import { applyShareMode } from '@/lib/shares';
 
-/** DELETE /api/shares/[id] → revoke the link (owner-scoped). Removing
- *  an open link puts the item at admin with the same closure rule as the
- *  Access control: `stillBelow` lists what it embeds that is still below
- *  admin (raise it with PATCH /api/access/nodes/:id { audience: 'admin',
- *  raiseClosure: true }). Removing a CONTACT share (0214) is a revoke only:
- *  no level changes (the item's share dialog Remove and the contact's
- *  "Shared" tab Revoke both call this). */
+/** DELETE /api/shares/[id] → revoke the link or contact share
+ *  (owner-scoped): `{ ok }`. A plain revoke: who reads the item is its
+ *  grants (workspaces W5b2), which a revoke leaves alone. The item's share
+ *  dialog Remove and the contact's "Shared" tab Revoke both call this. */
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const { id } = await params;
-  const { revoked, stillBelow } = await unshareItem(user.id, id);
-  return NextResponse.json({ ok: revoked, stillBelow });
+  const { revoked } = await unshareItem(user.id, id);
+  return NextResponse.json({ ok: revoked });
 }
 
 const PatchBody = z.union([z.object({ mode: z.string() }), z.object({ canWrite: z.boolean() })]);

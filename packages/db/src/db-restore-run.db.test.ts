@@ -6,14 +6,15 @@
  * six brains, and checks the exit code, what it says and what the restored
  * database holds.
  *
- *   new      a brain at 0212                              exit 0, no error
+ *   new      a brain at the last migration (past 0261,    exit 0, no error
+ *            which dropped the trigger)
  *   old      a brain at 0210, with 0204's trigger         exit 0: the one
  *            (every dump taken before 0212)               error is explained
  *                                                         and the trigger is
  *                                                         made as 0212 does
  *   gone     a brain at 0210 that had lost the trigger    exit 0: made
  *   nofn     the same, and the trigger cannot be made     exit 2: missing
- *   another  a brain at 0212 with one more trigger a      exit 2: missing
+ *   another  a brain at the last migration with one more  exit 2: missing
  *            restore cannot make
  *   mixed    `old`, plus a table a restore cannot make    exit 3: the known
  *                                                         error is not
@@ -154,7 +155,8 @@ describe.skipIf(!DB_URL || (!source && !isCi()))('scripts/db-restore.sh, run for
     }
     // The six brains are made one after the other in the same database,
     // each dumped before the next change: no copy of the database is needed.
-    const dropTrigger = 'DROP TRIGGER "nodes_share_refresh_after" ON "public"."nodes"';
+    // The migrated base has no share refresh trigger (0261 dropped it).
+    const dropTrigger = 'DROP TRIGGER IF EXISTS "nodes_share_refresh_after" ON "public"."nodes"';
     // The ledger of a brain that has not run 0212.
     const before0212 = `DELETE FROM drizzle.__drizzle_migrations WHERE created_at >= ${WHEN_0212}`;
     const steps: Array<[Variant, string[]]> = [
@@ -224,12 +226,13 @@ describe.skipIf(!DB_URL || (!source && !isCi()))('scripts/db-restore.sh, run for
     if (dir) rmSync(dir, { recursive: true, force: true });
   }, 120_000);
 
-  it('new: a dump at 0212 restores with no error and says "Restore complete"', () => {
+  it('new: a dump at the last migration restores with no error and says "Restore complete"', () => {
     const r = restore('new');
     expect(r.out).not.toMatch(/pg_restore: error/);
     expect(r.out).toMatch(/✔ Restore complete: public\.nodes has \d+ rows, auth\.users 1\./);
     expect(r.status, r.out).toBe(0);
-    expect(shareTrigger()).toMatch(/\(old\.path\)::text IS DISTINCT FROM \(new\.path\)::text/);
+    // 0261 dropped the share refresh trigger: none is made, none is required.
+    expect(shareTrigger()).toBe('none');
   }, 120_000);
 
   const restoredBrainId = () => inTarget('select brain_id::text from brain_identity');

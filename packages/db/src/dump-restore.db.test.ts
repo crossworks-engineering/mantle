@@ -153,8 +153,9 @@ describe.skipIf(!DB_URL || (!tools && !ci))('a dump of a migrated brain restores
   const expectSameCatalog = async (target: Scratch) => {
     const before = await catalogOf(source!.url);
     const after = await catalogOf(target.url);
-    // The check is not empty: the migrated schema has all of these.
-    expect(Object.keys(before.triggers)).toContain(TRIGGER);
+    // The check is not empty: the migrated schema has all of these. (0261
+    // dropped the share refresh trigger and froze the levels.)
+    expect(Object.keys(before.triggers)).toContain('public.nodes.nodes_levels_frozen');
     expect(Object.keys(before.triggers).length).toBeGreaterThan(20);
     expect(Object.keys(before.policies)).toContain('public.nodes.nodes_viewer_read');
     expect(Object.keys(before.functions)).toContain('mantle_nodes_refresh_trg()');
@@ -216,9 +217,16 @@ describe.skipIf(!DB_URL || (!tools && !ci))('a dump of a migrated brain restores
         values (${nodeId}, ${brain}, ${type}::node_type, ${title}, ${path}::ltree,
                 ${sql.json(data)}, '{}')`;
       await node(randomUUID(), 'branch', 'Files', 'files');
-      await node(id.folder, 'branch', 'Shared', 'files.shared');
-      await sql`update nodes set share_level = 'team' where id = ${id.folder}`;
-      await node(id.file, 'file', 'a.txt', 'files.shared', { filename: 'a.txt' });
+      // The levels are frozen since 0261 and nothing keeps the inherited one:
+      // the rows carry them from their insert.
+      await sql`
+        insert into nodes (id, owner_id, type, title, path, share_level, data, tags)
+        values (${id.folder}, ${brain}, 'branch', 'Shared', 'files.shared'::ltree, 'team',
+                '{}'::jsonb, '{}')`;
+      await sql`
+        insert into nodes (id, owner_id, type, title, path, inherited_level, data, tags)
+        values (${id.file}, ${brain}, 'file', 'a.txt', 'files.shared'::ltree, 'team',
+                ${sql.json({ filename: 'a.txt' })}, '{}')`;
       await node(id.note, 'note', 'A note', 'notes', { content: 'restore me' });
       await sql`update nodes set embedding = ${vector}::vector where id = ${id.note}`;
       await sql`
@@ -276,7 +284,7 @@ describe.skipIf(!DB_URL || (!tools && !ci))('a dump of a migrated brain restores
     expect(made).toMatch(/OLD\."path" IS DISTINCT FROM NEW\."path"/);
     const sql = postgres(source!.url, { max: 1, onnotice: () => {} });
     try {
-      await sql.unsafe('DROP TRIGGER "nodes_share_refresh_after" ON "public"."nodes"');
+      await sql.unsafe('DROP TRIGGER IF EXISTS "nodes_share_refresh_after" ON "public"."nodes"');
       await sql.unsafe(made!);
     } finally {
       await sql.end();

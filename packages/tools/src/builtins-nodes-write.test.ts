@@ -13,7 +13,8 @@
  * tool must turn that particular rejection into a corrective error naming
  * the lookups, not a raw message.
  *
- * `supersedeNode` / `unsupersedeNode` are stubbed; the tool's surface gate,
+ * `supersedeNode` / `unsupersedeNode` are stubbed, and so is the read of
+ * the workspaces that read the old version; the tool's surface gate,
  * clear-vs-mark branching and error mapping are real.
  */
 
@@ -29,6 +30,16 @@ vi.mock('@mantle/content', async (importOriginal) => {
   };
 });
 vi.mock('@mantle/search', () => ({ resolveSupersededTargets: vi.fn() }));
+
+// The workspaces other than Admin that read the old version (a select chain).
+const h = vi.hoisted(() => ({ reading: [] as string[] }));
+vi.mock('@mantle/db', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@mantle/db')>();
+  const chain: Record<string, unknown> = {};
+  for (const step of ['from', 'innerJoin', 'where']) chain[step] = () => chain;
+  chain.orderBy = async () => h.reading.map((name) => ({ name }));
+  return { ...actual, db: { ...actual.db, select: () => chain } };
+});
 
 import { supersedeNode, unsupersedeNode } from '@mantle/content';
 import { CONTENT_CURATION_TOOLS } from './builtins-nodes';
@@ -56,10 +67,10 @@ function outputOf(res: Result): Record<string, unknown> {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  h.reading = [];
   vi.mocked(supersedeNode).mockResolvedValue({
     id: OLD,
     title: 'Old spec',
-    audience: 'admin',
     supersededBy: NEW,
     supersededReason: 'migrated',
   } as never);
@@ -130,22 +141,16 @@ describe('content_supersede', () => {
     expect(err).toMatch(/page_list/);
   });
 
-  it('says nothing about levels when the old version is admin', async () => {
+  it('says nothing when only Admin reads the old version', async () => {
     const out = outputOf(await supersede.handler({ node_id: OLD, superseded_by: NEW }, ctx));
     expect(out.warning).toBeUndefined();
   });
 
-  it('warns that an old version below admin is still visible, and how to raise it', async () => {
-    vi.mocked(supersedeNode).mockResolvedValue({
-      id: OLD,
-      title: 'Old spec',
-      audience: 'client',
-      supersededBy: NEW,
-      supersededReason: 'migrated',
-    } as never);
+  it('names the workspaces that still read an old version, and how to hide it', async () => {
+    h.reading = ['Clients', 'Team'];
     const out = outputOf(await supersede.handler({ node_id: OLD, superseded_by: NEW }, ctx));
-    expect(out.warning).toMatch(/still visible at client level/);
-    expect(out.warning).toContain(`access_set(node_id: '${OLD}', level: 'admin')`);
+    expect(out.warning).toMatch(/still visible in Clients, Team/);
+    expect(out.warning).toMatch(/Grant Access/);
   });
 
   it('passes any other store failure through as-is', async () => {

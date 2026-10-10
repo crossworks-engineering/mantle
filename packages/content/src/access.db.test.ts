@@ -1,8 +1,9 @@
 /**
- * Setting levels against a real, migrated Postgres (member logins Phase 0b):
- * the type ceiling, closure (a page's embeds follow it down; a folder's
- * contents are lowered or raised on request only, the two never mixed), and
- * the agent / tool-group rule. Seeds its own owner and rows and removes them.
+ * Agent and tool-group levels against a real, migrated Postgres (member
+ * logins Phase 0b; kept until W7), and the plain unshare of workspaces W5b2:
+ * revoking a link changes no level and no grant. Brain items have no level
+ * any more, so nothing here sets one. Seeds its own owner and rows and
+ * removes them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/access.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -10,40 +11,28 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
-describe.skipIf(!URL)('setting levels on Postgres', () => {
+describe.skipIf(!URL)('agent and tool-group levels, and the plain unshare, on Postgres', () => {
   type Db = typeof import('@mantle/db');
   type Access = typeof import('./access');
   let m: Db;
   let a: Access;
   let sqlTag: typeof import('drizzle-orm').sql;
   const owner = randomUUID();
-  const ids = {
-    page: randomUUID(),
-    embeddedFile: randomUUID(),
-    folder: randomUUID(),
-    child: randomUUID(),
-    publicChild: randomUUID(),
-    journal: randomUUID(),
-    agent: randomUUID(),
-  };
+  const ids = { note: randomUUID(), agent: randomUUID() };
   const tag = `access-test-${owner.slice(0, 8)}`;
 
-  const audienceOf = async (id: string) =>
+  const accessOf = async (id: string) =>
     (
-      (await m.db.execute(sqlTag`select audience from nodes where id = ${id}`)) as unknown as {
-        audience: string;
-      }[]
-    )[0]!.audience;
+      (await m.db.execute(
+        sqlTag`select audience, read_ws::text as read_ws from nodes where id = ${id}`,
+      )) as unknown as { audience: string; read_ws: string }[]
+    )[0]!;
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
     m = await import('@mantle/db');
     a = await import('./access');
     sqlTag = (await import('drizzle-orm')).sql;
-    const doc = {
-      type: 'doc',
-      content: [{ type: 'image', attrs: { nodeId: ids.embeddedFile, src: 'x' } }],
-    };
     await m.db.execute(sqlTag`
       insert into auth.users (id, email, password_hash, role) values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin')`);
     // Items belong to a space (0165): this test's own owner is a brain row.
@@ -51,16 +40,7 @@ describe.skipIf(!URL)('setting levels on Postgres', () => {
       insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`);
     await m.db.execute(sqlTag`
       insert into nodes (id, owner_id, type, title, path) values
-        (${ids.page}, ${owner}, 'page', 'A page', 'pages'),
-        (${ids.embeddedFile}, ${owner}, 'file', 'img.png', 'files'),
-        (${ids.folder}, ${owner}, 'branch', 'shared', ${`files.${tag.replace(/-/g, '_')}`}),
-        (${ids.child}, ${owner}, 'file', 'a.pdf', ${`files.${tag.replace(/-/g, '_')}`}),
-        (${ids.publicChild}, ${owner}, 'note', 'n', ${`files.${tag.replace(/-/g, '_')}`}),
-        (${ids.journal}, ${owner}, 'journal', 'j', 'journal')`);
-    await m.db.execute(sqlTag`update nodes set audience = 'public' where id = ${ids.publicChild}`);
-    await m.db.execute(
-      sqlTag`insert into pages (node_id, doc, doc_text) values (${ids.page}, ${JSON.stringify(doc)}::jsonb, '')`,
-    );
+        (${ids.note}, ${owner}, 'note', 'n', 'notes')`);
     await m.db.execute(sqlTag`
       insert into tool_groups (owner_id, slug, name, audience) values
         (${owner}, ${`${tag}-admin`}, 'admin group', 'admin'),
@@ -81,67 +61,21 @@ describe.skipIf(!URL)('setting levels on Postgres', () => {
     await m.closeDb();
   });
 
-  it('refuses a non-workspace kind below admin (the type ceiling)', async () => {
-    await expect(a.setItemAudience(owner, ids.journal, 'team')).rejects.toMatchObject({
-      code: 'type_ceiling',
-    });
-    expect(await audienceOf(ids.journal)).toBe('admin');
-  });
-
-  it('refuses a value that is not a level', async () => {
-    await expect(a.setItemAudience(owner, ids.page, 'everyone')).rejects.toMatchObject({
-      code: 'invalid_level',
-    });
-  });
-
-  it('lowering a page takes its embedded file down with it (embedding means sharing)', async () => {
-    const res = await a.setItemAudience(owner, ids.page, 'team');
-    expect(res.lowered.map((i) => i.id)).toEqual([ids.embeddedFile]);
-    expect(res.alsoLowered.map((i) => [i.id, i.from, i.to])).toEqual([
-      [ids.embeddedFile, 'admin', 'team'],
-    ]);
-    expect(res.stillAbove).toEqual([]);
-    expect(await audienceOf(ids.embeddedFile)).toBe('team');
-  });
-
-  it("a folder's contents do not follow it unless asked", async () => {
-    const res = await a.setItemAudience(owner, ids.folder, 'client');
-    expect(res.lowered).toEqual([]);
-    expect(res.stillAbove.map((i) => i.id)).toEqual([ids.child]);
-    expect(await audienceOf(ids.child)).toBe('admin');
-  });
-
-  it('a folder closure lowers its contents but never raises one', async () => {
-    const res = await a.setItemAudience(owner, ids.folder, 'team', { withClosure: true });
-    expect(res.lowered.map((i) => i.id)).toEqual([ids.child]);
-    expect(await audienceOf(ids.child)).toBe('team');
-    expect(await audienceOf(ids.publicChild), 'a public child stays public').toBe('public');
-  });
-
-  it('raising a folder reports what it holds below, and raises it only when asked (MED 7)', async () => {
-    // The public child carries its own open link: raising it must revoke it,
-    // or an admin item would keep an open link.
-    const linked = await a.setItemLevel(owner, ids.publicChild, 'public');
-    expect(linked.share).not.toBeNull();
-
-    const first = await a.setItemLevel(owner, ids.folder, 'admin');
-    expect(first.stillBelow.map((i) => i.id).sort()).toEqual([ids.child, ids.publicChild].sort());
-    expect(first.raised).toEqual([]);
-    expect(await audienceOf(ids.child), 'nothing follows on its own').toBe('team');
-
-    // "Lower them too" must never raise: withClosure alone leaves them below.
-    await a.setItemLevel(owner, ids.folder, 'admin', { withClosure: true });
-    expect(await audienceOf(ids.publicChild)).toBe('public');
-
-    const second = await a.setItemLevel(owner, ids.folder, 'admin', { raiseClosure: true });
-    expect(second.raised.map((i) => i.id).sort()).toEqual([ids.child, ids.publicChild].sort());
-    expect(await audienceOf(ids.child)).toBe('admin');
-    expect(await audienceOf(ids.publicChild)).toBe('admin');
-    const shares = await import('./shares');
-    expect(
-      await shares.getActiveShareForNode(owner, ids.publicChild),
-      'its link follows',
-    ).toBeNull();
+  it('unshare is a plain revoke: no level, no grant changes', async () => {
+    const shareId = randomUUID();
+    await m.db.execute(sqlTag`
+      insert into shares (id, owner_id, node_id, node_type, token)
+      values (${shareId}, ${owner}, ${ids.note}, 'note', ${`${tag}-tok`})`);
+    const before = await accessOf(ids.note);
+    await expect(a.unshareItem(owner, shareId)).resolves.toEqual({ revoked: true });
+    const [row] = (await m.db.execute(
+      sqlTag`select revoked_at is not null as revoked from shares where id = ${shareId}`,
+    )) as unknown as { revoked: boolean }[];
+    expect(row?.revoked).toBe(true);
+    expect(await accessOf(ids.note)).toEqual(before);
+    // Already gone, or another owner's: nothing to revoke.
+    await expect(a.unshareItem(owner, shareId)).resolves.toEqual({ revoked: false });
+    await expect(a.unshareItem(randomUUID(), shareId)).resolves.toEqual({ revoked: false });
   });
 
   it('an agent cannot be lowered while it holds a group above the new level', async () => {

@@ -1,8 +1,8 @@
 /**
- * DELETE /api/shares/:id against a real, migrated Postgres (MED 7): turning
- * a page's link off takes it to admin with the same closure rule as the
- * Access control, so the response lists the embedded file still at public in
- * `stillBelow` and leaves it there. Only the owner check is stubbed.
+ * DELETE /api/shares/:id against a real, migrated Postgres (workspaces
+ * W5b2): turning a page's link off is a plain revoke. The answer is
+ * `{ ok }` only, and nothing about the page or what it embeds changes (who
+ * reads them is their grants). Only the owner check is stubbed.
  * Seeds its own owner and rows and removes them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run unshare-route.db.test
  */
@@ -14,11 +14,9 @@ const h = vi.hoisted(() => ({ owner: '' }));
 
 vi.mock('@/lib/auth', () => ({ getOwnerOr401: vi.fn(async () => ({ id: h.owner })) }));
 
-describe.skipIf(!URL)('DELETE /api/shares/:id reports the closure on Postgres', () => {
+describe.skipIf(!URL)('DELETE /api/shares/:id is a plain revoke on Postgres', () => {
   type Db = typeof import('@mantle/db');
-  type Content = typeof import('@mantle/content');
   let m: Db;
-  let c: Content;
   let route: typeof import('./route');
   let sqlTag: typeof import('drizzle-orm').sql;
   const owner = randomUUID();
@@ -26,17 +24,16 @@ describe.skipIf(!URL)('DELETE /api/shares/:id reports the closure on Postgres', 
   const ids = { page: randomUUID(), file: randomUUID() };
   const tag = `unshare-route-${owner.slice(0, 8)}`;
 
-  const audienceOf = async (id: string) =>
+  const accessOf = async (id: string) =>
     (
-      (await m.db.execute(sqlTag`select audience from nodes where id = ${id}`)) as unknown as {
-        audience: string;
-      }[]
-    )[0]!.audience;
+      (await m.db.execute(
+        sqlTag`select audience, read_ws::text as read_ws from nodes where id = ${id}`,
+      )) as unknown as { audience: string; read_ws: string }[]
+    )[0]!;
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
     m = await import('@mantle/db');
-    c = await import('@mantle/content');
     route = await import('./route');
     sqlTag = (await import('drizzle-orm')).sql;
     const doc = {
@@ -64,23 +61,23 @@ describe.skipIf(!URL)('DELETE /api/shares/:id reports the closure on Postgres', 
     await m.closeDb();
   });
 
-  it('lists the embedded file still at public and leaves it there', async () => {
-    await c.setItemLevel(owner, ids.page, 'public', { withClosure: true });
-    const link = (await c.getActiveShareForNode(owner, ids.page))!;
-
-    const res = await route.DELETE(
-      new Request('http://brain.test/api/shares/x', { method: 'DELETE' }),
-      {
-        params: Promise.resolve({ id: link.id }),
-      },
-    );
-    const body = (await res.json()) as {
-      ok: boolean;
-      stillBelow: { id: string; audience: string }[];
-    };
-    expect(body.ok).toBe(true);
-    expect(body.stillBelow.map((i) => [i.id, i.audience])).toEqual([[ids.file, 'public']]);
-    expect(await audienceOf(ids.page)).toBe('admin');
-    expect(await audienceOf(ids.file)).toBe('public');
+  it('revokes the link and answers { ok } only; nothing else changes', async () => {
+    const linkId = randomUUID();
+    await m.db.execute(sqlTag`
+      insert into shares (id, owner_id, node_id, node_type, token)
+      values (${linkId}, ${owner}, ${ids.page}, 'page', ${`${tag}-tok`})`);
+    const before = [await accessOf(ids.page), await accessOf(ids.file)];
+    const del = () =>
+      route.DELETE(new Request('http://brain.test/api/shares/x', { method: 'DELETE' }), {
+        params: Promise.resolve({ id: linkId }),
+      });
+    expect(await (await del()).json()).toEqual({ ok: true });
+    const [row] = (await m.db.execute(
+      sqlTag`select revoked_at is not null as revoked from shares where id = ${linkId}`,
+    )) as unknown as { revoked: boolean }[];
+    expect(row?.revoked).toBe(true);
+    expect([await accessOf(ids.page), await accessOf(ids.file)]).toEqual(before);
+    // Already revoked: nothing to do.
+    expect(await (await del()).json()).toEqual({ ok: false });
   });
 });

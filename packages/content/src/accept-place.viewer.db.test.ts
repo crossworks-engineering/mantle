@@ -4,10 +4,9 @@
  * there on Accept, the member's own folders below it become brain folders
  * (merging by name, keeping their name and look, cut to three levels), the
  * admin may pick another folder (the member's folders still go below it),
- * and the member's emptied folders go. Files land on the brain's disk path.
- * A landing in a shared folder that would be read above the chosen level is
- * refused (reason `visibility`, the list) until the admin confirms, and a
- * member's folder holding a submitted draft does not move.
+ * and the member's emptied folders go. Files land on the brain's disk path,
+ * and a member's folder holding a submitted draft does not move. (Folder
+ * shares are gone since W5b2, so the landing refusals they drove are too.)
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/accept-place.viewer.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -231,96 +230,6 @@ describe.skipIf(!URL)('Accept claims in place', () => {
     expect(readFileSync(onDisk, 'utf8')).toBe('DOCBYTES');
   });
 
-  it('refuses a landing in a client-shared folder until the admin confirms, and nothing moves', async () => {
-    const portal = await tree.createTreeFolder(anchor, 'notes', {
-      parentId: null,
-      name: 'Portal',
-    });
-    await tree.updateTreeFolder(anchor, 'notes', portal.id, { share: 'client' }, { confirm: true });
-    const id = await submittedNote('into portal', 'notes.portal');
-    expect((await rv.previewAccept(id, anchor))?.place).toMatchObject({
-      folderId: portal.id,
-      share: 'client',
-    });
-    // The default level (admin) would be read at client there: refused.
-    await expect(rv.acceptReviewItem(anchor, id, reviewer())).rejects.toMatchObject({
-      reason: 'visibility',
-      visibility: { total: 1, changes: [{ id, from: 'admin', to: 'client' }] },
-    });
-    expect(await row(id)).toMatchObject({ owner_id: space, path: 'notes.portal' });
-    // Confirmed: it lands, read at client.
-    const res = await rv.acceptReviewItem(anchor, id, reviewer(), { visibilityConfirmed: true });
-    expect(res).toMatchObject({ audience: 'admin', readAt: 'client' });
-    const [landed] = (await m.systemDb.execute(sqlTag`
-      select owner_id, audience, inherited_level from nodes where id = ${id}`)) as unknown as Array<{
-      owner_id: string;
-      audience: string;
-      inherited_level: string | null;
-    }>;
-    expect(landed).toEqual({ owner_id: anchor, audience: 'admin', inherited_level: 'client' });
-
-    // The admin's pick into the shared folder is refused the same way; a
-    // level at or below the share needs no confirmation.
-    const picked = await submittedNote('picked into portal', 'notes.clients');
-    await expect(
-      rv.acceptReviewItem(anchor, picked, reviewer(), { folderId: portal.id }),
-    ).rejects.toMatchObject({ reason: 'visibility' });
-    expect((await rv.previewAccept(picked, anchor, portal.id))?.place).toMatchObject({
-      folderId: portal.id,
-      share: 'client',
-    });
-    await rv.acceptReviewItem(anchor, picked, reviewer(), {
-      folderId: portal.id,
-      audience: 'client',
-    });
-    expect(await row(picked)).toMatchObject({ owner_id: anchor, path: 'notes.portal' });
-  });
-
-  it('what an accepted note embeds is read through its folder share, never lowered', async () => {
-    const img = randomUUID();
-    await m.systemDb.execute(sqlTag`
-      insert into nodes (id, owner_id, type, title, path, data, tags, audience)
-      values (${img}, ${anchor}, 'file', 'logo.png', 'files', '{}'::jsonb, '{}', 'team')`);
-    const lobby = await tree.createTreeFolder(anchor, 'notes', { parentId: null, name: 'Lobby' });
-    await tree.updateTreeFolder(anchor, 'notes', lobby.id, { share: 'client' }, { confirm: true });
-    const note = await as(() =>
-      sp.createMineItem(
-        space,
-        { type: 'note', title: 'with logo', content: 'x' },
-        {},
-        { path: 'notes.lobby' },
-      ),
-    );
-    // This brain is not the viewer anchor, so the member's Library check
-    // cannot see its items: the embed is written as the system.
-    await m.systemDb.execute(sqlTag`
-      update nodes set data = jsonb_set(data, '{content}', to_jsonb(${`![logo](media:${img})`}::text))
-       where id = ${note.id}`);
-    await as(() => sp.submitItem(space, note.id));
-    // The refusal lists the Library item that would be read through it.
-    await expect(rv.acceptReviewItem(anchor, note.id, reviewer())).rejects.toMatchObject({
-      reason: 'visibility',
-      visibility: {
-        changes: [{ id: note.id, from: 'admin', to: 'client' }],
-        alsoEmbeds: [{ id: img, title: 'logo.png', from: 'team', to: 'client', type: 'file' }],
-      },
-    });
-    await rv.acceptReviewItem(anchor, note.id, reviewer(), { visibilityConfirmed: true });
-    const level = async () =>
-      (
-        (await m.systemDb.execute(sqlTag`
-          select audience, embedded_level from nodes where id = ${img}`)) as unknown as Array<{
-          audience: string;
-          embedded_level: string | null;
-        }>
-      )[0];
-    // A Library item (team): read through the note at the folder's share,
-    // its own level untouched; the unshare takes that back.
-    expect(await level()).toEqual({ audience: 'team', embedded_level: 'client' });
-    await tree.updateTreeFolder(anchor, 'notes', lobby.id, { share: null }, { confirm: true });
-    expect(await level()).toEqual({ audience: 'team', embedded_level: null });
-  });
-
   it('a member cannot slip an embed past the save gate in a heading (review F1)', async () => {
     const secret = randomUUID();
     await m.systemDb.execute(sqlTag`
@@ -339,48 +248,15 @@ describe.skipIf(!URL)('Accept claims in place', () => {
     }
   });
 
-  it('an Accept at the folder’s own level still lists what its note embeds (review F1)', async () => {
-    const img = randomUUID();
-    await m.systemDb.execute(sqlTag`
-      insert into nodes (id, owner_id, type, title, path, data, tags, audience)
-      values (${img}, ${anchor}, 'file', 'chart.png', 'files', '{}'::jsonb, '{}', 'team')`);
-    const hall = await tree.createTreeFolder(anchor, 'notes', { parentId: null, name: 'Hall' });
-    await tree.updateTreeFolder(anchor, 'notes', hall.id, { share: 'client' }, { confirm: true });
-    const note = await as(() =>
-      sp.createMineItem(
-        space,
-        { type: 'note', title: 'at client already', content: 'x' },
-        {},
-        { path: 'notes.hall' },
-      ),
-    );
-    await m.systemDb.execute(sqlTag`
-      update nodes set data = jsonb_set(data, '{content}', to_jsonb(${`# Chart ![c](media:${img})`}::text))
-       where id = ${note.id}`);
-    await as(() => sp.submitItem(space, note.id));
-    // Chosen level client = the folder's share: the note itself changes
-    // nothing, but its embed would open. Listed, nothing moved.
-    await expect(
-      rv.acceptReviewItem(anchor, note.id, reviewer(), { audience: 'client' }),
-    ).rejects.toMatchObject({
-      reason: 'visibility',
-      visibility: {
-        changes: [],
-        alsoEmbeds: [{ id: img, from: 'team', to: 'client', type: 'file' }],
-      },
-    });
-    expect(await row(note.id)).toMatchObject({ owner_id: space });
-    await rv.acceptReviewItem(anchor, note.id, reviewer(), {
-      audience: 'client',
-      visibilityConfirmed: true,
-    });
-    expect(await row(note.id)).toMatchObject({ owner_id: anchor });
-  });
-
   it('keeps a member folder that holds a submitted draft where it is', async () => {
     // A folder the member sees (shared with the team), its own folder inside.
     const room = await tree.createTreeFolder(anchor, 'notes', { parentId: null, name: 'Room' });
-    await tree.updateTreeFolder(anchor, 'notes', room.id, { share: 'team' }, { confirm: true });
+    // (Folder shares are gone since W5b2: the share the member tree still
+    // reads is set under the test bypass.)
+    await m.systemDb.transaction(async (tx) => {
+      await tx.execute(sqlTag`select mantle_heads_bypass('test fixture')`);
+      await tx.execute(sqlTag`update nodes set share_level = 'team' where id = ${room.id}`);
+    });
     const held = await ownFolder('notes.room.held', 'Held');
     const id = await submittedNote('held', 'notes.room.held');
     const scope = { anchorId: anchor, spaceId: space, loginId: login };

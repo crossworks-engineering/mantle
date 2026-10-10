@@ -12,7 +12,6 @@ import {
   shareUrlForToken,
   TeamLinkRetiredError,
   unshareItem,
-  type AccessItem,
   type LoweredItem,
 } from '@mantle/content';
 import type { BuiltinToolDef } from './types';
@@ -101,25 +100,10 @@ export function linkModeRefusal(mode: unknown): string | null {
   return "mode must be 'public' (the only link mode)";
 }
 
-/**
- * The unshare tools' output. An open link's item goes to admin with its
- * link; what it embeds (a page's files and drawings, a folder's contents)
- * keeps its own level, so name what is still below and how to raise it, as
- * access_set does.
- */
-export function unshareOutput(
-  id: string,
-  revoked: boolean,
-  stillBelow: readonly AccessItem[],
-): Record<string, unknown> {
-  if (!revoked || stillBelow.length === 0) return { id, unshared: revoked };
-  const names = stillBelow.map((i) => `${i.title} (${i.type}, ${i.audience})`).join(', ');
-  return {
-    id,
-    unshared: revoked,
-    stillBelow,
-    warning: `The item is admin now, but what it embeds is still below admin: ${names}. People at those levels can still open them. To raise them too: access_set(node_id: '${id}', level: 'admin', raise_closure: true).`,
-  };
+/** The unshare tools' output: a plain revoke (workspaces W5b2: who reads
+ *  the item is its grants, which a revoke leaves alone). */
+export function unshareOutput(id: string, revoked: boolean): Record<string, unknown> {
+  return { id, unshared: revoked };
 }
 
 const node_unshare: BuiltinToolDef = {
@@ -140,9 +124,9 @@ const node_unshare: BuiltinToolDef = {
     try {
       const share = await getActiveShareForNode(ctx.ownerId, id);
       if (!share) return { ok: true, output: { id, unshared: false } };
-      const { revoked, stillBelow } = await unshareItem(ctx.ownerId, share.id);
+      const { revoked } = await unshareItem(ctx.ownerId, share.id);
       ctx.step?.setOutput({ id, unshared: revoked });
-      return { ok: true, output: unshareOutput(id, revoked, stillBelow) };
+      return { ok: true, output: unshareOutput(id, revoked) };
     } catch (err) {
       return { ok: false, error: errorMessage(err) };
     }

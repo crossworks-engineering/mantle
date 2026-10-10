@@ -67,8 +67,13 @@ describe.skipIf(!URL)('folder-shared items in the Library and for clients', () =
       values (${id}, ${brain}, ${type}::node_type, ${title(id)}, ${path}::ltree, ${audience},
               ${type === 'note' ? JSON.stringify({ content: 'x' }) : '{}'}::jsonb, '{}')`);
   };
+  // The levels are frozen since W5b2: the fixture sets one under the test
+  // bypass, for the reads that still go through levels until the shim.
   const share = (id: string, level: string | null) =>
-    m.systemDb.execute(sqlTag`update nodes set share_level = ${level} where id = ${id}`);
+    m.systemDb.transaction(async (tx) => {
+      await tx.execute(sqlTag`select mantle_heads_bypass('test fixture')`);
+      await tx.execute(sqlTag`update nodes set share_level = ${level} where id = ${id}`);
+    });
 
   const listed = async (level: 'team' | 'client') =>
     m.withViewer(level, async () => {

@@ -1,11 +1,9 @@
 /**
- * Filing an app into another folder warns about its tools (access matrix
- * N11), on a real migrated Postgres. A folder shared with clients sets the
- * level an app is used at (M5), so moving an admin app into one makes its
- * runs use the client rules, an admin's too: a declared tool those rules
- * refuse now fails for every runner. `tree_item_move` says so, as
- * `app_tools_set`, `app_publish` and `access_set` do; a move that changes
- * nothing for the app's tools warns nothing.
+ * Filing an app into another folder warns about its tools only when the move
+ * changes the rules its runs use (access matrix N11), on a real migrated
+ * Postgres: a move that changes nothing for the app's tools warns nothing.
+ * (A folder shared with clients set the level an app was used at until
+ * W5b2; folder shares are gone, so that warning has no move to follow.)
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/tools/src/tree-move-app-warnings.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -13,7 +11,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
-describe.skipIf(!URL)('moving an app into a client-shared folder', () => {
+describe.skipIf(!URL)('moving an app between folders', () => {
   type Db = typeof import('@mantle/db');
   let m: Db;
   let tree: typeof import('@mantle/content/tree');
@@ -22,7 +20,6 @@ describe.skipIf(!URL)('moving an app into a client-shared folder', () => {
   const owner = randomUUID();
   const tag = `tree-app-warn-${owner.slice(0, 8)}`;
   const appId = randomUUID();
-  let clientFolder = '';
   let plainFolder = '';
 
   const exec = (q: ReturnType<typeof sqlTag>) => m.systemDb.execute(q);
@@ -49,9 +46,6 @@ describe.skipIf(!URL)('moving an app into a client-shared folder', () => {
       sqlTag`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`,
     );
     await tree.ensureKindRoot(owner, 'apps');
-    const client = await tree.createTreeFolder(owner, 'apps', { parentId: null, name: 'Client' });
-    await tree.updateTreeFolder(owner, 'apps', client.id, { share: 'client' }, { confirm: true });
-    clientFolder = client.id;
     plainFolder = (await tree.createTreeFolder(owner, 'apps', { parentId: null, name: 'Plain' }))
       .id;
     // An admin app that declares a built-in write tool: fine at admin, never
@@ -76,14 +70,5 @@ describe.skipIf(!URL)('moving an app into a client-shared folder', () => {
     const res = await move(plainFolder);
     expect(res).toMatchObject({ ok: true, output: { moved: 1 } });
     expect((res as { output: { warnings?: string[] } }).output.warnings).toBeUndefined();
-  });
-
-  it('a move into a client-shared folder names the tool its runs now refuse', async () => {
-    const res = await move(clientFolder);
-    expect(res).toMatchObject({ ok: true, output: { moved: 1 } });
-    const warnings = (res as { output: { warnings?: string[] } }).output.warnings ?? [];
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toMatch(/note_create/);
-    expect(warnings[0]).toMatch(/client rules/);
   });
 });

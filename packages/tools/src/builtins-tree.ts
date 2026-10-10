@@ -14,6 +14,7 @@
  * kind.
  */
 import {
+  FOLDER_SHARE_GONE,
   TreeError,
   createTreeFolder,
   deleteTreeFolder,
@@ -239,6 +240,8 @@ export const tree_folder_update: BuiltinToolDef = {
     run(input, ctx, async (kind) => {
       const folderId = str(input.folder_id);
       if (!folderId) return { ok: false, error: 'folder_id required' };
+      // A folder share is a grant now (workspaces W5b2).
+      if ('share' in input) return { ok: false, error: FOLDER_SHARE_GONE };
       const patch: TreeFolderPatch = {};
       const name = str(input.name);
       if (name) patch.name = name;

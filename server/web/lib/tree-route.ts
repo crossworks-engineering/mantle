@@ -107,6 +107,9 @@ export function treeErrorResponse(err: unknown): NextResponse {
     );
   }
   if (err instanceof TreeError) {
+    if (err.code === 'gone') {
+      return NextResponse.json({ error: err.message, code: 'gone' }, { status: 410 });
+    }
     const status = err.code === 'not-found' ? 404 : err.code === 'conflict' ? 409 : 400;
     return NextResponse.json({ error: err.message }, { status });
   }

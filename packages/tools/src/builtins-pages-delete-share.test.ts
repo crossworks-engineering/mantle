@@ -98,7 +98,7 @@ beforeEach(() => {
   vi.mocked(createShare).mockResolvedValue({ id: 's-1', token: 'tok', mode: 'public' } as never);
   vi.mocked(deletePage).mockResolvedValue(true as never);
   vi.mocked(getActiveShareForNode).mockResolvedValue({ id: 's-1', token: 'tok' } as never);
-  vi.mocked(unshareItem).mockResolvedValue({ revoked: true, stillBelow: [] });
+  vi.mocked(unshareItem).mockResolvedValue({ revoked: true });
 });
 
 describe('page_block_delete', () => {
@@ -247,14 +247,6 @@ describe('page_unshare', () => {
     const res = await unshare.handler({ id: PAGE_ID }, ctx);
     expect(unshareItem).toHaveBeenCalledWith('o1', 's-1');
     expect(outputOf(res)).toEqual({ id: PAGE_ID, unshared: true });
-  });
-
-  it('reports the embedded files still below admin (MED 7)', async () => {
-    const file = { id: 'f-1', type: 'file', title: 'img.png', audience: 'client' as const };
-    vi.mocked(unshareItem).mockResolvedValue({ revoked: true, stillBelow: [file] });
-    const out = outputOf(await unshare.handler({ id: PAGE_ID }, ctx));
-    expect(out.stillBelow).toEqual([file]);
-    expect(out.warning).toMatch(/img\.png \(file, client\)/);
   });
 
   it('surfaces a store failure as a tool error, not a throw', async () => {

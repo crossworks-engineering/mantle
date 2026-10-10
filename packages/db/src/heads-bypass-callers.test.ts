@@ -7,8 +7,9 @@ import { describe, expect, it } from 'vitest';
  * database cannot tell the app from the migration runner (both connect as
  * the owner role), so this check keeps every other caller out: no tracked
  * file outside packages/db/migrations/ may name mantle_heads_bypass, except
- * the runner's parser, the database tests that prove it, and this test.
- * W1 audit, LOW 2.
+ * the runner's parser, the database tests (those that prove it, and since
+ * W5b2 the fixtures that set a frozen level a later phase still reads), and
+ * this test. W1 audit, LOW 2.
  */
 const ALLOWED = new Set([
   'packages/db/src/heads-bypass.ts',
@@ -35,7 +36,7 @@ describe('mantle_heads_bypass callers', () => {
       .filter(Boolean)
       .filter((f) => !f.startsWith('packages/db/migrations/'))
       .filter((f) => !ALLOWED.has(f))
-      .filter((f) => !/^packages\/db\/src\/[\w-]+\.db\.test\.ts$/.test(f));
+      .filter((f) => !/^(packages|server)\/[\w./[\]-]+\.db\.test\.ts$/.test(f));
     expect(offenders).toEqual([]);
   });
 });

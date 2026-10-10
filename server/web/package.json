@@ -66,7 +66,6 @@
     "ocr:rescan": "tsx --env-file-if-exists=./.env.local scripts/ocr-rescan.ts",
     "doc:reindex": "tsx --env-file-if-exists=./.env.local scripts/doc-reindex.ts",
     "device-tokens:reap": "tsx --env-file-if-exists=./.env.local scripts/device-tokens-reap.ts",
-    "share-drift": "tsx --env-file-if-exists=./.env.local scripts/share-drift.ts",
     "app-access-log:reap": "tsx --env-file-if-exists=./.env.local scripts/app-access-log-reap.ts",
     "app-trash:purge": "tsx --env-file-if-exists=./.env.local scripts/app-trash-purge.ts",
     "app-export:catch-up": "tsx --env-file-if-exists=./.env.local scripts/app-export-catch-up.ts",

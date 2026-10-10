@@ -1,5 +1,14 @@
 # Access levels: one level system, enforced by the database
 
+> **Brain items have no level since workspaces W5b2 (migration 0261).** Who
+> reads an item is its grants (`item_grants`, the item's Grant Access panel,
+> `/api/grants`); the four item level columns are frozen. Gone with it: the
+> item level engine (`setItemLevel`), `access_set` on an item (refused),
+> `GET|PATCH /api/access/nodes/:id` (410 `gone`), folder shares (410
+> `gone`), the shadow report and the nightly `share-drift` sweep. Removing a
+> link is a plain revoke. Agent and tool-group levels stay until W7. What
+> this page says about item levels is history.
+
 > Member logins, Phase 0b; client logins C1 to C5. What an agent, a member
 > or a client may read is decided by Postgres row level security on a
 > limited login role, not by a check in each route or tool. It is live on
@@ -242,11 +251,12 @@ removing any one wrap fails a test.
 
 ## 4. Setting levels
 
-- MCP / assistant: `access_get`, `access_set`, `access_shadow_report` (tool
-  group `access`, owner-side only, attached to no agent yet).
-- API (owner only): `GET|PATCH /api/access/nodes/:id`,
-  `PATCH /api/access/agents/:slug`, `PATCH /api/access/tool-groups/:slug`,
-  `GET /api/access/shadow?days=30`.
+- MCP / assistant: `access_get`, `access_set` (tool group `access`,
+  owner-side only, attached to no agent yet). Since W5b2 `access_get` on an
+  item answers its grants and `access_set` refuses an item.
+- API (owner only): `PATCH /api/access/agents/:slug`,
+  `PATCH /api/access/tool-groups/:slug`. `GET|PATCH /api/access/nodes/:id`
+  answers 410 since W5b2.
   The agent PATCH takes `{ audience, dropGroupsAbove? }` and answers
   `{ agent: { id, slug, audience, removedGroups } }`.
 - Migration 0159 carried today's sharing over: active team shares went to
@@ -261,14 +271,9 @@ removing any one wrap fails a test.
 
 ## 5. Turning it on for the team responder
 
-1. Run the shadow report. It lists what recent member turns used (the last
-   30 days; traces of the retired forum still count until they age out) that
-   is still admin, shared tasks and events (admin forever: members lose
-   them), items below admin whose embeds sit above them (`closureGaps`:
-   empty once the boot reconcile ran, unless an admin raised an embed on
-   purpose), and how many facts stay usable.
-2. Set the levels of what the team should keep reading (a page's embeds go
-   with it; a folder's contents with "Lower them too").
+1. (Retired in W5b2: the shadow report.) Check that the Team workspace
+   reads what the team should keep reading.
+2. Share what is missing with Team in each item's Grant Access panel.
 3. Open the responder: in Jackdaw, **Team > Settings > Member chat > Let
    members chat** (it reads the level from `teamAgent` on
    `GET /api/team-admin/settings` and makes the call below). Or one call:
@@ -316,8 +321,8 @@ removing any one wrap fails a test.
   the share they had, so an unshared folder's contents stayed readable at
   the old share (docs/folder-tree.md, "Sharing a folder"). Nothing else was
   lost, and a brain migrated in place never lost it. On a box whose
-  maintenance worker runs, the nightly `share-drift` sweep set those levels
-  right, so a stale level lived for about a day at most; the sweep's run
+  maintenance worker ran, the nightly `share-drift` sweep (removed in W5b2)
+  set those levels right, so a stale level lived for about a day at most; the sweep's run
   history shows whether a box was hit ("repaired n of n drifted row(s)").
   (Since migration 0261 the levels are frozen and the workspace grants
   decide access; `pnpm -C server/web workspaces:check` counts grant drift.)
@@ -458,8 +463,8 @@ outside a login reaches a team item.
   team.)
 - **Turning an open link off is setting admin.** The share DELETE route
   (`DELETE /api/shares/:id`), `node_unshare` and `page_unshare` go through
-  `unshareItem` (access.ts): revoke the link, then `setItemLevel(admin)`,
-  so the closure rule is the Access
+  `unshareItem` (access.ts). Until W5b2 that was: revoke the link, then
+  `setItemLevel(admin)`, so the closure rule was the Access
   control's. What the item embeds keeps its own level and is reported,
   never raised on its own: `stillBelow` in the route's JSON, and
   `stillBelow` plus a `warning` naming

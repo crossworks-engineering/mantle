@@ -18,10 +18,18 @@ describe.skipIf(!URL)('page and drawing links serve embeds by level on Postgres'
   type Db = typeof import('@mantle/db');
   let m: Db;
   let shares: typeof import('./shares');
-  let access: typeof import('@mantle/content');
   let sqlTag: typeof import('drizzle-orm').sql;
   const owner = randomUUID();
   const tag = `embed-levels-${owner.slice(0, 8)}`;
+  /** The levels are frozen since W5b2 and their engine is gone: the fixture
+   *  sets the level the link serving still reads under the test bypass. */
+  const setLevel = (ids: string[], level: string) =>
+    m.db.transaction(async (tx) => {
+      await tx.execute(sqlTag`select mantle_heads_bypass('test fixture')`);
+      for (const nodeId of ids) {
+        await tx.execute(sqlTag`update nodes set audience = ${level} where id = ${nodeId}`);
+      }
+    });
   const id = {
     page: randomUUID(),
     img: randomUUID(),
@@ -36,7 +44,6 @@ describe.skipIf(!URL)('page and drawing links serve embeds by level on Postgres'
     process.env.DATABASE_URL = URL;
     m = await import('@mantle/db');
     shares = await import('./shares');
-    access = await import('@mantle/content');
     sqlTag = (await import('drizzle-orm')).sql;
     await m.db.execute(sqlTag`
       insert into auth.users (id, email, password_hash, role) values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin')`);
@@ -67,8 +74,8 @@ describe.skipIf(!URL)('page and drawing links serve embeds by level on Postgres'
     await m.db.execute(sqlTag`
       insert into draws (node_id, scene, file_refs) values
         (${id.draw}, ${JSON.stringify(scene)}::jsonb, ${JSON.stringify({ f1: id.drawImg })}::jsonb)`);
-    // The admin makes the page public: its embeds go down with it.
-    await access.setItemLevel(owner, id.page, 'public');
+    // The page public, its embeds with it (as the retired level engine did).
+    await setLevel([id.page, id.img, id.draw, id.drawImg], 'public');
   }, 60_000);
 
   afterAll(async () => {
@@ -88,26 +95,26 @@ describe.skipIf(!URL)('page and drawing links serve embeds by level on Postgres'
   });
 
   it('does not serve an embed an admin raised back above the link', async () => {
-    await access.setItemAudience(owner, id.img, 'admin');
+    await setLevel([id.img], 'admin');
     expect(await shares.isAssetAllowed(pageLink(), id.img)).toBe(false);
     // A client raise is still above a public link.
-    await access.setItemAudience(owner, id.img, 'client');
+    await setLevel([id.img], 'client');
     expect(await shares.isAssetAllowed(pageLink(), id.img)).toBe(false);
     // A single-item link on the file is the file itself: not filtered.
     expect(await shares.isAssetAllowed(shareOf(id.img, 'file'), id.img)).toBe(true);
   });
 
   it("keeps a drawing's snapshot off the link when one of its images was raised", async () => {
-    await access.setItemAudience(owner, id.drawImg, 'admin');
+    await setLevel([id.drawImg], 'admin');
     expect(await shares.isDrawServable(owner, id.draw, publicLevels(), { self: true })).toBe(false);
     // Also when the drawing itself is the shared item: its snapshot carries the image.
     expect(await shares.isDrawServable(owner, id.draw, publicLevels(), { self: false })).toBe(
       false,
     );
-    await access.setItemAudience(owner, id.drawImg, 'public');
+    await setLevel([id.drawImg], 'public');
     expect(await shares.isDrawServable(owner, id.draw, publicLevels(), { self: false })).toBe(true);
     // An embedded drawing raised above the page is not served through it.
-    await access.setItemAudience(owner, id.draw, 'admin');
+    await setLevel([id.draw], 'admin');
     expect(await shares.isDrawServable(owner, id.draw, publicLevels(), { self: true })).toBe(false);
   });
 });

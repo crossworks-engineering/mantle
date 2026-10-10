@@ -37,7 +37,6 @@ import { runPinnedModelDrift } from './pinned-model-drift-run';
 import { summarisePoolFit } from './pool-fit';
 import { runPoolFit } from './pool-fit-run';
 import { reapAbandonedTracesAllOwners } from '../journey';
-import { repairShareDrift } from '@mantle/content/tree';
 import { purgeExpiredDeletedApps, sweepAppFileLeftovers } from '@mantle/content/app-trash';
 import { purgeOrphanTableHistory } from '@mantle/content/table-snapshots';
 import { reapStalePendingTurns, summariseTurnsReap } from './turns-reap';
@@ -152,25 +151,6 @@ export const SWEEPS: Record<string, (ownerId: string) => Promise<string>> = {
   'device-tokens-reap': async () => {
     const r = await reapDeviceTokens();
     return r.deleted === 0 ? 'nothing to reap' : `deleted ${r.deleted} device token row(s)`;
-  },
-  // Folder audit Y1: rows read at a share their folders no longer give;
-  // S5 (0208): embed edges and the level embeds are read at.
-  'share-drift': async () => {
-    const r = await repairShareDrift();
-    const parts = [
-      ...(r.drifted
-        ? [
-            `repaired ${r.repaired} of ${r.drifted} drifted row(s) (${r.openedTooFar} read too openly)`,
-          ]
-        : []),
-      ...(r.edgesDrifted ? [`put back ${r.edgesDrifted} embed edge(s)`] : []),
-      ...(r.embeddedDrifted
-        ? [
-            `repaired ${r.embeddedDrifted} embedded level(s) (${r.embeddedOpenedTooFar} read too openly)`,
-          ]
-        : []),
-    ];
-    return parts.length ? parts.join('; ') : 'no drift';
   },
   // Client tier audit I4: app access log rows older than 90 days.
   // Contact shares (0214): the contact share trail, same 90 days.

@@ -1,60 +1,71 @@
 /**
- * Builtins: access_get / access_set, the owner's levers for the one level
- * system (member logins Phase 0b): admin > team > client > public on brain
- * items, agents and tool groups. Owner-side only.
+ * Builtins: access_get / access_set, owner-side only. A brain item has no
+ * level any more (workspaces W5b2): access_get answers its grants (the
+ * workspaces that read it), and access_set refuses an item, since grants are
+ * set in its Grant Access panel. Agents and tool groups keep their levels
+ * (admin > team > client > public) until W7 (contract change 21).
  */
-import { and, eq } from 'drizzle-orm';
-import { agents, db, isViewerLevel, nodes, toolGroups } from '@mantle/db';
+import { alias } from 'drizzle-orm/pg-core';
+import { and, asc, desc, eq } from 'drizzle-orm';
+import { agents, db, isViewerLevel, itemGrants, nodes, toolGroups, workspaces } from '@mantle/db';
 import {
   AccessError,
-  accessClosure,
-  accessShadowReport,
   contactSharesForNode,
   setAgentAudience,
-  setItemLevel,
   setToolGroupAudience,
-  readThroughEmbeds,
-  sharedViaFolder,
 } from '@mantle/content';
 import { errorMessage } from '@mantle/std';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
 import { str, strOpt } from './coerce';
 import { NODE_ID_PRE } from './builtins-common';
-import { clientLeftWarning } from './builtins-share';
-import { appToolWarnings } from './app-tool-level';
 import { isOwnerSurface, keyOrPeerVia, OPENS_ADMIN_ONLY } from './surface';
 import { queueAgentCallForApproval } from './pending-queue';
 
 const LEVELS = ['admin', 'team', 'client', 'public'];
 const RANK: Record<string, number> = { public: 0, client: 1, team: 2, admin: 3 };
 
-/** Set above the share of a folder holding it, an item is still read at
- *  that share: say so, and how to hide it. */
-async function sharedFolderWarning(
-  ownerId: string,
+/** access_set's answer for a brain item. */
+export const ITEM_LEVEL_GONE =
+  'Brain items have no sharing level any more: the workspaces that read an item are its grants. ' +
+  "Use Grant Access (the item's Grant Access panel) to add or remove a workspace.";
+
+/** One grant row of an item, as access_get answers it. */
+export type AccessGrantRow = {
+  workspace: string;
+  write: boolean;
+  /** The folder this row comes from (it follows that folder), or null. */
+  viaFolder: string | null;
+  /** "Removed here": the folder grants the workspace, this item does not. */
+  removedHere: boolean;
+};
+
+/** An item's grants: its home workspace and every row, home first. */
+async function itemGrantsOf(
   nodeId: string,
-  level: string,
-): Promise<string | null> {
-  const [via, through] = await Promise.all([
-    sharedViaFolder(ownerId, nodeId),
-    readThroughEmbeds(ownerId, nodeId),
-  ]);
-  const lines: string[] = [];
-  if (via && (RANK[level] ?? 0) > RANK[via.level]!) {
-    const who = via.level === 'team' ? 'the team' : 'clients';
-    lines.push(
-      `It is still read at ${via.level}: it sits in "${via.trail.join(' / ')}", a folder ` +
-        `shared with ${who}. Move it out of that folder to hide it.`,
-    );
-  }
-  if (through && (RANK[level] ?? 0) > RANK[through.level]!) {
-    const names = through.via.map((v) => `the ${v.type} '${v.title}'`).join(', ');
-    lines.push(
-      `It is still read at ${through.level} through what embeds it (${names}). ` +
-        'Take it out of those, or move them out of their shared folder, to hide it.',
-    );
-  }
-  return lines.length ? lines.join(' ') : null;
+): Promise<{ home: string | null; grants: AccessGrantRow[] }> {
+  const folder = alias(nodes, 'via_folder');
+  const rows = await db
+    .select({
+      workspace: workspaces.name,
+      write: itemGrants.write,
+      isHome: itemGrants.isHome,
+      excluded: itemGrants.excluded,
+      viaFolder: folder.title,
+    })
+    .from(itemGrants)
+    .innerJoin(workspaces, eq(workspaces.id, itemGrants.workspaceId))
+    .leftJoin(folder, eq(folder.id, itemGrants.viaFolderId))
+    .where(eq(itemGrants.nodeId, nodeId))
+    .orderBy(desc(itemGrants.isHome), asc(workspaces.name));
+  return {
+    home: rows.find((r) => r.isHome)?.workspace ?? null,
+    grants: rows.map((r) => ({
+      workspace: r.workspace,
+      write: r.write,
+      viaFolder: r.viaFolder ?? null,
+      removedHere: r.excluded,
+    })),
+  };
 }
 
 function ownerOnly(ctx: ToolHandlerContext): ToolHandlerResult | null {
@@ -72,9 +83,9 @@ export const access_get: BuiltinToolDef = {
   ownerOnly: true,
   readOnly: true,
   preconditions: NODE_ID_PRE,
-  name: 'Get an access level',
+  name: 'Get who can read an item, or an access level',
   description:
-    'Read the level (admin, team, client or public) of one brain item, agent or tool group. For an item in a shared folder it returns `sharedVia`: the folder it takes its share from; for one a shared item embeds, `readThrough`: those items. It is read at least at their level. For an item it also returns its CLOSURE, each with its own level: for a page, drawing or note what it embeds (images, files, drawings, child pages), which goes down with it when it is lowered; for a folder its contents, which keep their own levels. Use before `access_set` to see what lowering an item will also share.',
+    "For a brain item: its grants, the workspaces that read it (`home`: the workspace it lives in; `grants`: one row per workspace with `write`, `viaFolder` (the folder the row follows, or null) and `removedHere` (the folder grants that workspace, this item does not)), and the contacts it is shared with. Items have no level any more; grants are changed in the item's Grant Access panel. For an agent or a tool group: its level (admin, team, client or public).",
   inputSchema: {
     type: 'object',
     properties: {
@@ -96,28 +107,23 @@ export const access_get: BuiltinToolDef = {
       const groupSlug = strOpt(input.tool_group_slug);
       if (nodeId) {
         const [row] = await db
-          .select({ id: nodes.id, type: nodes.type, title: nodes.title, audience: nodes.audience })
+          .select({ id: nodes.id, type: nodes.type, title: nodes.title })
           .from(nodes)
           .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ctx.ownerId)))
           .limit(1);
         if (!row) return { ok: false, error: 'item not found: find its id with search_nodes' };
-        const [closure, sharedVia, readThrough, contactShares] = await Promise.all([
-          accessClosure(ctx.ownerId, nodeId),
-          sharedViaFolder(ctx.ownerId, nodeId),
-          readThroughEmbeds(ctx.ownerId, nodeId),
+        const [{ home, grants }, contactShares] = await Promise.all([
+          itemGrantsOf(nodeId),
           contactSharesForNode(ctx.ownerId, nodeId),
         ]);
-        // In a shared folder it is read at least at the folder's share, and
-        // through what embeds it at least at theirs (0208).
         return {
           ok: true,
           output: {
             item: row,
-            closure,
-            ...(sharedVia ? { sharedVia } : {}),
-            ...(readThrough ? { readThrough } : {}),
+            home,
+            grants,
             // Contact shares (0214), read only: who it is shared with, by
-            // name and right. They change no level; no tool makes one (v1).
+            // name and right. No tool makes one (v1).
             ...(contactShares.length
               ? {
                   contactShares: contactShares.map((c) => ({
@@ -167,26 +173,14 @@ export const access_set: BuiltinToolDef = {
   preconditions: NODE_ID_PRE,
   name: 'Set an access level',
   description:
-    "Set the level of one brain item, agent or tool group: admin (default), team, client or public. A caller sees what is at or below its level. Only pages, notes, drawings, tables, files, folders, apps and formulas go below admin. Lowering an item is your decision for it AND what it embeds: a page's, drawing's or note's images, files, drawings and child pages go down with it, listed in `alsoLowered` (never raised; an embed that cannot go below admin stays admin, in `stillAbove`). A folder's contents keep their levels unless `with_closure: true`. `raise_closure: true` raises closure items below the new level. The link follows the level: open at public only; set public only when the owner asks. Check `access_get` first.",
+    'Set the level of an agent or a tool group: admin (default), team, client or public. A brain item has no level any more: refused, with a pointer to its Grant Access panel (see access_get for who reads it).',
   inputSchema: {
     type: 'object',
     properties: {
-      node_id: { type: 'string', format: 'uuid', description: 'a brain item id' },
+      node_id: { type: 'string', format: 'uuid', description: 'a brain item id (refused)' },
       agent_slug: { type: 'string', description: "an agent's slug, e.g. 'team-responder'" },
       tool_group_slug: { type: 'string', description: "a tool group's slug, e.g. 'team-read'" },
       level: { type: 'string', enum: LEVELS, description: 'the new level' },
-      with_closure: {
-        type: 'boolean',
-        default: false,
-        description:
-          "folders only: also lower the folder's contents (a page's, drawing's or note's embeds always go down with it)",
-      },
-      raise_closure: {
-        type: 'boolean',
-        default: false,
-        description:
-          "items only: also raise the item's embeds / folder contents that sit below the new level",
-      },
       drop_groups_above: {
         type: 'boolean',
         default: false,
@@ -199,38 +193,13 @@ export const access_set: BuiltinToolDef = {
   handler: async (input, ctx) => {
     const refused = ownerOnly(ctx);
     if (refused) return refused;
+    if (strOpt(input.node_id)) return { ok: false, error: ITEM_LEVEL_GONE };
     const level = str(input.level).trim();
     if (!isViewerLevel(level))
       return { ok: false, error: `level must be one of ${LEVELS.join(', ')}` };
     try {
-      const nodeId = strOpt(input.node_id);
       const agentSlug = strOpt(input.agent_slug);
       const groupSlug = strOpt(input.tool_group_slug);
-      if (nodeId) {
-        const res = await setItemLevel(ctx.ownerId, nodeId, level, {
-          withClosure: input.with_closure === true,
-          raiseClosure: input.raise_closure === true,
-        });
-        // An app set to team level or lower runs its tools by that level's
-        // rules: say which of its declared tools would be refused (member
-        // logins Phase 4b; client and public rules since the client tier
-        // audit, L1).
-        const warnings = res.item.type === 'app' ? await appToolWarnings(ctx.ownerId, nodeId) : [];
-        // Client items it embeds that went to public left client logins'
-        // view (audit A10): say so.
-        const left = clientLeftWarning(res.alsoLowered);
-        if (left) warnings.push(left);
-        const floor = await sharedFolderWarning(ctx.ownerId, nodeId, level);
-        if (floor) warnings.push(floor);
-        ctx.step?.setOutput({
-          id: nodeId,
-          level,
-          lowered: res.lowered.length,
-          alsoLowered: res.alsoLowered.length,
-          raised: res.raised.length,
-        });
-        return { ok: true, output: warnings.length ? { ...res, warnings } : res };
-      }
       if (agentSlug) {
         const [row] = await db
           .select({ id: agents.id })
@@ -286,52 +255,5 @@ export const access_set: BuiltinToolDef = {
   },
 };
 
-export const access_shadow_report: BuiltinToolDef = {
-  slug: 'access_shadow_report',
-  readOnly: true,
-  name: 'Access shadow report',
-  description:
-    'What the team responder would LOSE if it ran at team level today: items recent team and forum turns used that are still admin, shared items that can never go below admin (a shared task or event), items below admin whose embeds sit above them (an embed an admin raised on purpose; lowering an item takes its embeds with it), how many facts stay usable, and any tool group the responder holds above team. Read-only, no model call. Read it before lowering `team-responder` with `access_set`; fix what it lists first.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      days: {
-        type: 'integer',
-        minimum: 1,
-        maximum: 365,
-        default: 30,
-        description: 'How far back to read recorded turns.',
-      },
-      agent_slug: {
-        type: 'string',
-        description: "the member-facing agent to check, e.g. 'team-responder'",
-      },
-    },
-  },
-  handler: async (input, ctx) => {
-    const refused = ownerOnly(ctx);
-    if (refused) return refused;
-    try {
-      const days = typeof input.days === 'number' ? input.days : undefined;
-      const report = await accessShadowReport(ctx.ownerId, {
-        days,
-        agentSlug: strOpt(input.agent_slug),
-      });
-      ctx.step?.setOutput({
-        turns: report.turns,
-        usedAtAdmin: report.usedAtAdmin.length,
-        closureGaps: report.closureGaps.length,
-      });
-      return { ok: true, output: report };
-    } catch (err) {
-      return { ok: false, error: errorMessage(err) };
-    }
-  },
-};
-
-/** The owner's level levers. */
-export const ACCESS_TOOLS: readonly BuiltinToolDef[] = [
-  access_get,
-  access_set,
-  access_shadow_report,
-];
+/** The owner's access levers. */
+export const ACCESS_TOOLS: readonly BuiltinToolDef[] = [access_get, access_set];

@@ -3,7 +3,7 @@
  * A.2 to A.5; decided by Jason 2026-10-08: "apps work like Pages").
  *
  * A member's app is a personal-space item: its node is owned by the
- * member's personal space, at admin audience (as every space item), with a
+ * member's personal space (as every space item), with a
  * `space_items` row naming its author.
  *
  *  - Draft (private): only the author runs it. Admins never see it (rule S3:
@@ -63,6 +63,7 @@ import {
 } from './apps';
 import { notifyAppNavChanged } from './app-nav';
 import { lockAppHistory } from './app-history-lock';
+import { addTeamReadGrants } from './team-grant';
 import { projectAppIcon, projectAppTint } from '@mantle/content-core/app-nav';
 import type { AppTint } from '@mantle/client-types';
 import { dataAccessOf, type AppDataAccess } from './app-data-access';
@@ -755,7 +756,9 @@ export type SpaceAppAcceptLevel = Extract<ViewerLevel, 'admin' | 'team'>;
 
 /**
  * Accept a submitted member app into the brain (an admin's act): re-own its
- * node to the brain at `level`, ids unchanged; its database registry and
+ * node to the brain, ids unchanged (the re-own gives it its home, 0261); at
+ * `level` team Team gets a read grant (Write off), with a `grant.add` event
+ * (contract change 22; no level is written). Its database registry and
  * history rows follow by owner (the files stay where their rows say). With
  * `trustTools` the admin has reviewed the declared tools and lifts the
  * author ceiling to admin; without it the app keeps running its tools at
@@ -839,8 +842,9 @@ export async function acceptSpaceApp(
         const authorLevel = opts.trustTools ? 'admin' : 'team';
         await tx
           .update(nodes)
-          .set({ ownerId: brainId, audience: opts.level, path: APPS_ROOT_LABEL, updatedAt: now })
+          .set({ ownerId: brainId, path: APPS_ROOT_LABEL, updatedAt: now })
           .where(eq(nodes.id, appId));
+        if (opts.level !== 'admin') await addTeamReadGrants(tx, brainId, [appId], reviewer.loginId);
         await tx.update(apps).set({ authorLevel, updatedAt: now }).where(eq(apps.nodeId, appId));
         await tx
           .update(appDatabases)
@@ -956,7 +960,7 @@ export async function adminSpaceApp(
  * An admin deletes a member's team-shared or submitted app (access matrix N2)
  * so that it can come back (M4 audit, medium 2). The app, its database, its
  * history and its activity move to the brain first, as an Accept moves them,
- * at admin level; then the normal delete keeps a pre_delete snapshot and the
+ * with no grant but its home (Admin only); then the normal delete keeps a pre_delete snapshot and the
  * app waits in the brain's trash for APP_TRASH_DAYS, where an admin restores
  * it (as an admin-only app at team rules, as any member-era app comes back).
  * False when the app is not one an admin may act on. Should the delete fail
@@ -988,7 +992,7 @@ export async function adminDeleteSpaceApp(brainId: string, appId: string): Promi
         const now = new Date();
         await tx
           .update(nodes)
-          .set({ ownerId: brainId, audience: 'admin', path: APPS_ROOT_LABEL, updatedAt: now })
+          .set({ ownerId: brainId, path: APPS_ROOT_LABEL, updatedAt: now })
           .where(eq(nodes.id, appId));
         // A member's app ran at team rules: so does it if it comes back.
         await tx

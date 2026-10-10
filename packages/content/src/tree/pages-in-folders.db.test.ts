@@ -84,10 +84,15 @@ describe.skipIf(!URL)('migration 0210: pages in folders', () => {
   const links = { casc: randomUUID(), cascKid: randomUUID(), flat: randomUUID() };
   const label = (uuid: string) => uuid.replace(/-/g, '_');
 
+  // Run again on a database past 0261, whose levels are frozen: in one
+  // transaction under the migration's own named bypass, as the runner would.
   const run = async () => {
-    for (const stmt of statementsOf('0210_pages_in_folders.sql')) {
-      await m.systemDb.execute(sqlTag.raw(stmt));
-    }
+    await m.systemDb.transaction(async (tx) => {
+      await tx.execute(sqlTag`select mantle_heads_bypass('0210_pages_in_folders')`);
+      for (const stmt of statementsOf('0210_pages_in_folders.sql')) {
+        await tx.execute(sqlTag.raw(stmt));
+      }
+    });
   };
   const pageOf = async (pageId: string) =>
     (
@@ -198,7 +203,7 @@ describe.skipIf(!URL)('migration 0210: pages in folders', () => {
       (${links.casc}, ${brain}, ${id.casc}, 'page', ${`t-${links.casc}`}, '{"cascade": true}'::jsonb),
       (${links.cascKid}, ${brain}, ${id.cascKid}, 'page', ${`t-${links.cascKid}`}, '{}'::jsonb),
       (${links.flat}, ${brain}, ${id.flat}, 'page', ${`t-${links.flat}`}, '{"cascade": false}'::jsonb)`);
-    // The 0208 triggers made the edge and the image's embedded level.
+    // The 0208 triggers made the edge.
     const [edge] = await sql<{ n: number }>(sqlTag`
       select count(*)::int as n from node_embeds where from_id = ${id.shared} and to_id = ${image}`);
     if (edge!.n !== 1) throw new Error('setup: the embed edge was not made');
@@ -320,17 +325,17 @@ describe.skipIf(!URL)('migration 0210: pages in folders', () => {
     expect(own.map((f) => [f.path, f.title])).toEqual([['pages.mine', 'Mine']]);
   });
 
-  it('keeps tags, levels, the shared folder, its inherited share and the embed edge', async () => {
+  it('keeps tags, levels, the shared folder and the embed edge', async () => {
     const [a] = await sql<Snap>(sqlTag`select tags, audience from nodes where id = ${id.a}`);
     expect(a).toMatchObject({ tags: ['plans', 'q3'], audience: 'admin' });
+    // (The folder share's upkeep, inherited and embedded levels, is gone
+    // since 0261: grants decide.)
     const [shared] = await sql<Snap>(sqlTag`
-      select path::text as path, share_level, inherited_level from nodes where id = ${sharedFolder}`);
+      select path::text as path, share_level from nodes where id = ${sharedFolder}`);
     expect(shared).toMatchObject({ path: 'pages.shared', share_level: 'client' });
     const [inShared] = await sql<Snap>(sqlTag`
-      select path::text as path, inherited_level from nodes where id = ${id.shared}`);
-    expect(inShared).toMatchObject({ path: 'pages.shared', inherited_level: 'client' });
-    const [pic] = await sql<Snap>(sqlTag`select embedded_level from nodes where id = ${image}`);
-    expect(pic!.embedded_level).toBe('client');
+      select path::text as path from nodes where id = ${id.shared}`);
+    expect(inShared).toMatchObject({ path: 'pages.shared' });
     const [edge] = await sql<{ n: number }>(sqlTag`
       select count(*)::int as n from node_embeds where from_id = ${id.shared} and to_id = ${image}`);
     expect(edge!.n).toBe(1);

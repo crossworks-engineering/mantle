@@ -159,7 +159,7 @@ describe('node_unshare', () => {
     vi.mocked(getActiveShareForNode).mockResolvedValue({ id: 's-9' } as unknown as Awaited<
       ReturnType<typeof getActiveShareForNode>
     >);
-    vi.mocked(unshareItem).mockResolvedValue({ revoked: true, stillBelow: [] });
+    vi.mocked(unshareItem).mockResolvedValue({ revoked: true });
 
     const res = await unshare.handler({ id: NODE_ID }, ctx);
     // Passing the node id here would revoke nothing (or the wrong tree) while
@@ -172,25 +172,12 @@ describe('node_unshare', () => {
     vi.mocked(getActiveShareForNode).mockResolvedValue({ id: 's-9' } as unknown as Awaited<
       ReturnType<typeof getActiveShareForNode>
     >);
-    vi.mocked(unshareItem).mockResolvedValue({ revoked: false, stillBelow: [] });
+    vi.mocked(unshareItem).mockResolvedValue({ revoked: false });
 
     const res = await unshare.handler({ id: NODE_ID }, ctx);
     // Still ok:true — the call worked — but the caller must be able to tell
     // that the link may still be live.
     expect(outputOf(res)).toEqual({ id: NODE_ID, unshared: false });
-  });
-
-  it('names what the item embeds that is still below admin, and how to raise it (MED 7)', async () => {
-    vi.mocked(getActiveShareForNode).mockResolvedValue({ id: 's-9' } as unknown as Awaited<
-      ReturnType<typeof getActiveShareForNode>
-    >);
-    const file = { id: 'f-1', type: 'file', title: 'plan.pdf', audience: 'client' as const };
-    vi.mocked(unshareItem).mockResolvedValue({ revoked: true, stillBelow: [file] });
-
-    const out = outputOf(await unshare.handler({ id: NODE_ID }, ctx));
-    expect(out.stillBelow).toEqual([file]);
-    expect(out.warning).toMatch(/plan\.pdf \(file, client\)/);
-    expect(out.warning).toMatch(/raise_closure: true/);
   });
 
   it('surfaces a revoke failure rather than reporting success', async () => {

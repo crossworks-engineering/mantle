@@ -186,21 +186,6 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       'Plain SQL, no model, idempotent; a no-op once clean. The rule lives in server/web/lib/auth/device-token-reap.ts (reapDeviceTokens), shared by the cron and the script.',
   },
   {
-    slug: 'share-drift',
-    title: 'Repair folder-share drift',
-    description:
-      "Finds rows whose stored inherited share (nodes.inherited_level) differs from what their folders give (migration 0204's rule) and sets them right. The triggers keep it true for every ordinary write; this catches a race between an unshare and an insert into the same folder, which would leave a row readable at a share nobody set (folder audit Y1). Also puts the embed edges back to what the stored pages, drawings and notes say and repairs the level embeds are read through (nodes.embedded_level, migration 0208). Reports how many were read more openly than allowed.",
-    kind: 'recurring',
-    status: 'live',
-    cost: 'sql',
-    schedulable: true,
-    script: 'scripts/share-drift.ts',
-    cwd: 'server/web',
-    applyFlag: '--apply',
-    notes:
-      'Plain SQL, no model, idempotent; a no-op once clean. The rule lives in @mantle/content/tree share-drift.ts (repairShareDrift), shared by the cron and the script.',
-  },
-  {
     slug: 'app-access-log-reap',
     title: 'Trim the app access log',
     description:

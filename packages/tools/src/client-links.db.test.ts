@@ -17,9 +17,7 @@ const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
 describe.skipIf(!URL)('the share tools on client items, on Postgres', () => {
   type Db = typeof import('@mantle/db');
-  type Content = typeof import('@mantle/content');
   let m: Db;
-  let c: Content;
   let nodeShare: BuiltinToolDef;
   let pageShare: BuiltinToolDef;
   let sqlTag: typeof import('drizzle-orm').sql;
@@ -49,7 +47,6 @@ describe.skipIf(!URL)('the share tools on client items, on Postgres', () => {
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
     m = await import('@mantle/db');
-    c = await import('@mantle/content');
     nodeShare = (await import('./builtins-share')).SHARE_TOOLS.find(
       (t) => t.slug === 'node_share',
     )!;
@@ -109,14 +106,5 @@ describe.skipIf(!URL)('the share tools on client items, on Postgres', () => {
     expect(out.alsoLowered.map((l) => [l.id, l.from])).toEqual([[ids.file, 'client']]);
     expect(out.warning).toMatch(/left client logins' view: plan\.png \(file\)/);
     expect(await audienceOf(ids.file)).toBe('public');
-    // The Access lever says the same (access_set to public).
-    await c.setItemLevel(owner, ids.file, 'client');
-    await c.setItemLevel(owner, ids.embedder, 'admin');
-    const { access_set } = await import('./builtins-access');
-    const set = await access_set.handler({ node_id: ids.embedder, level: 'public' }, ctx);
-    if (!set.ok) throw new Error(set.error);
-    expect((set.output as { warnings: string[] }).warnings.join(' ')).toMatch(
-      /left client logins' view/,
-    );
   });
 });

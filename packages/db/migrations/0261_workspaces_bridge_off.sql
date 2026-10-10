@@ -32,6 +32,8 @@
 --
 -- No LLM work, no extractor notify. Narrowing only.
 
+SET LOCAL lock_timeout = '30s';
+--> statement-breakpoint
 SELECT "public"."mantle_heads_bypass"('0261_workspaces_bridge_off');
 --> statement-breakpoint
 

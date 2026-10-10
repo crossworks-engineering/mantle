@@ -26,7 +26,7 @@ vi.mock('@/lib/shares', () => ({
 
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@mantle/content')>()),
-  unshareItem: vi.fn(async () => ({ revoked: true, stillBelow: [] })),
+  unshareItem: vi.fn(async () => ({ revoked: true })),
 }));
 
 beforeEach(() => {
@@ -76,11 +76,11 @@ describe('PATCH /api/shares/:id', () => {
 });
 
 describe('DELETE /api/shares/:id', () => {
-  it('answers ok and stillBelow only', async () => {
+  it('answers ok only', async () => {
     const { DELETE } = await import('./route');
     const res = await DELETE(new Request(`https://brain.example.invalid/api/shares/${SHARE}`), {
       params: Promise.resolve({ id: SHARE }),
     });
-    expect(await res.json()).toEqual({ ok: true, stillBelow: [] });
+    expect(await res.json()).toEqual({ ok: true });
   });
 });

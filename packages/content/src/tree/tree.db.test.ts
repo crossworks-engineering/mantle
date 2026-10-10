@@ -191,9 +191,14 @@ describe.skipIf(!URL)('the item tree on Files', () => {
   });
 
   it('filters items by level and tag, without folders, and lists the tags in use', async () => {
-    await m.db.execute(sqlTag`
-      update nodes set tags = array_append(tags, 'invoice'), audience = 'team'
-       where owner_id = ${owner} and type = 'file' and title in ('b.txt', 'd.txt')`);
+    // The levels are frozen since W5b2: the level the filter still reads (until
+    // a later phase) is set under the test bypass.
+    await m.db.transaction(async (tx) => {
+      await tx.execute(sqlTag`select mantle_heads_bypass('test fixture')`);
+      await tx.execute(sqlTag`
+        update nodes set tags = array_append(tags, 'invoice'), audience = 'team'
+         where owner_id = ${owner} and type = 'file' and title in ('b.txt', 'd.txt')`);
+    });
     await m.db.execute(sqlTag`
       update nodes set tags = array_append(tags, 'invoice')
        where owner_id = ${owner} and type = 'file' and title = 'e.txt'`);

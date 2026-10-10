@@ -5,13 +5,15 @@
  * `teamHubAppId`: the retired team-code /hub (member logins Phase 6) was its
  * first reader.
  *
- * PUT { appId } — designate: requires a green PUBLISHED build, puts an app
- * still at admin at team (members run apps by level, not by link), then
- * points the `teamHubAppId` pref at it. An app at team, client or public
- * keeps its level. No share link is made (team links are retired, member
- * logins Phase 6 stage 6). Answers `{ appId, levelChanged }`.
+ * PUT { appId } designates it. It requires a green PUBLISHED build and an app the
+ * Team workspace reads (members run what Team reads), then points the
+ * `teamHubAppId` pref at it. No grant is made here (workspaces W5b2, no
+ * magic): an app Team does not read is refused with 409 `not_in_team`, and
+ * the admin shares it with Team in Grant Access first. No share link is made
+ * either. Answers `{ appId, levelChanged: false }` (`levelChanged` stays on
+ * the wire for older clients; nothing changes level any more).
  *
- * DELETE — undesignate: clears the pref only. The app keeps its level.
+ * DELETE undesignates it: it clears the pref only. The app keeps its grants.
  *
  * Session-gated — under /api/team-admin, which is NOT in PUBLIC_PATHS, so it
  * carries the owner session, never a team token.
@@ -20,7 +22,7 @@ import { NextResponse } from '@/server/http-compat';
 import {
   getApp,
   projectTeamHubAppId,
-  setItemLevel,
+  teamReadsItem,
   updateProfilePreferences,
 } from '@mantle/content';
 import { getOwnerOr401 } from '@/lib/auth';
@@ -51,13 +53,17 @@ export async function PUT(req: Request) {
     );
   }
 
-  // A member runs an app at team, client or public (resolveMemberHomeApp);
-  // one still at admin goes to team, or the designation would show nobody.
-  const levelChanged = app.audience === 'admin';
-  if (levelChanged) await setItemLevel(user.id, appId, 'team');
+  // Members run what Team reads: an app Team does not read would show
+  // nobody, and the grant is the admin's to make (no magic grant).
+  if (!(await teamReadsItem(user.id, appId))) {
+    return NextResponse.json(
+      { error: 'Share the app with Team in Grant Access first.', code: 'not_in_team' },
+      { status: 409 },
+    );
+  }
 
   await updateProfilePreferences(user.id, { teamHubAppId: appId });
-  return NextResponse.json({ appId, levelChanged });
+  return NextResponse.json({ appId, levelChanged: false });
 }
 
 export async function DELETE() {

@@ -104,12 +104,16 @@ describe('db-restore.sh', () => {
     expect(repair).toBeGreaterThan(0);
     expect(script.slice(repair, repair + 200)).toContain('! has_trigger "$SHARE_REFRESH"; then');
     // A create that fails is printed, and the check below then fails the
-    // restore: from 0204 on the trigger must be there, listed or not.
+    // restore: from 0204 on the trigger must be there, listed or not, until
+    // 0261 dropped it (grants are the truth; a dump from 0261 on has none).
     const create = script.indexOf('-c "$SHARE_REFRESH_TRIGGER" 2>&1); then');
     expect(create).toBeGreaterThan(repair);
     expect(script).toContain('could not make the trigger nodes_share_refresh_after');
     const required = script.indexOf(
-      'if [ "$LEDGER" -ge "$WHEN_0204" ] && ! has_trigger "$SHARE_REFRESH"; then\n  fail "the trigger nodes_share_refresh_after on public.nodes is missing',
+      'if [ "$LEDGER" -ge "$WHEN_0204" ] && [ "$LEDGER" -lt "$WHEN_0261" ] && ! has_trigger "$SHARE_REFRESH"; then\n  fail "the trigger nodes_share_refresh_after on public.nodes is missing',
+    );
+    expect(read('packages/db/migrations/0261_workspaces_bridge_off.sql')).toContain(
+      'DROP TRIGGER IF EXISTS "nodes_share_refresh_after" ON "public"."nodes";',
     );
     expect(required).toBeGreaterThan(create);
     expect(required).toBeLessThan(script.search(/Restore FAILED[\s\S]*?exit 2/));

@@ -45,6 +45,7 @@ describe.skipIf(!URL)('member-built apps on Postgres', () => {
     schemaSql: 'CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, name TEXT);',
     schemaVersion: 1,
   };
+  let teamWs = '';
   const me = () => ({ loginId: author, spaceId: authorSpace });
   /** What the admin was shown: the version and the review hash. */
   const shown = async (id: string) => {
@@ -72,6 +73,11 @@ describe.skipIf(!URL)('member-built apps on Postgres', () => {
       (${author}, ${`msa-${tag}-a@example.invalid`}, 'x', 'member'),
       (${mate}, ${`msa-${tag}-b@example.invalid`}, 'x', 'member')`;
     await admin`insert into spaces (id, kind, login_id) values (${brain}, 'brain', ${brain})`;
+    // Its Team workspace: an Accept at team gives Team a read grant (W5b2).
+    teamWs = (
+      await admin<{ id: string }[]>`insert into workspaces (owner_id, name, bridge_key)
+        values (${brain}, 'Team', 'team') returning id::text as id`
+    )[0]!.id;
     const rows = await admin<{ id: string; login_id: string }[]>`
       select id, login_id from spaces where kind = 'personal' and login_id in (${author}, ${mate})`;
     authorSpace = rows.find((r) => r.login_id === author)!.id;
@@ -187,10 +193,27 @@ describe.skipIf(!URL)('member-built apps on Postgres', () => {
       { level: 'team', trustTools: false, ...(await shown(id)) },
     );
     expect(res).toEqual({ id, level: 'team', authorLevel: 'team' });
-    const [row] = await admin<{ owner_id: string; audience: string; author_level: string }[]>`
-      select n.owner_id, n.audience, a.author_level from nodes n join apps a on a.node_id = n.id
-      where n.id = ${id}`;
-    expect(row).toEqual({ owner_id: brain, audience: 'team', author_level: 'team' });
+    // No level is written (W5b2): Team reads it by a grant, Write off,
+    // logged as the Accept's.
+    const [row] = await admin<
+      { owner_id: string; audience: string; author_level: string; team_reads: boolean }[]
+    >`
+      select n.owner_id, n.audience, a.author_level, ${teamWs}::uuid = any(n.read_ws) as team_reads
+        from nodes n join apps a on a.node_id = n.id
+       where n.id = ${id}`;
+    expect(row).toEqual({
+      owner_id: brain,
+      audience: 'admin',
+      author_level: 'team',
+      team_reads: true,
+    });
+    const grants = await admin<{ write: boolean }[]>`
+      select write from item_grants where node_id = ${id} and workspace_id = ${teamWs}`;
+    expect(grants).toEqual([{ write: false }]);
+    const events = await admin<{ by: string; actor: string }[]>`
+      select subject->>'by' as by, actor_id::text as actor from workspace_events
+       where workspace_id = ${teamWs} and action = 'grant.add' and subject->>'node' = ${id}`;
+    expect(events).toEqual([{ by: 'accept', actor: brain }]);
     // Its database followed: the row the author wrote reads under the brain.
     const rows = await m.asSystem(() =>
       broker.appDbQuery(brain, id, 'SELECT name FROM items', [], schema),

@@ -98,7 +98,12 @@ describe.skipIf(!URL)('migration 0161: nested folders, deepest wins', () => {
   });
 
   it('gives each item the level of the nearest shared folder above it', async () => {
-    await m.db.execute(sqlTag.raw(folderStatement(owner)));
+    // The levels are frozen since 0261: the old statement runs as its
+    // migration did, under the migration's named bypass.
+    await m.db.transaction(async (tx) => {
+      await tx.execute(sqlTag`select mantle_heads_bypass('0161_levels_follow_links')`);
+      await tx.execute(sqlTag.raw(folderStatement(owner)));
+    });
     for (const id of ids.inInner) expect(await audienceOf(id)).toBe('public');
     expect(await audienceOf(ids.inMiddle)).toBe('client');
     expect(await audienceOf(ids.inOuter)).toBe('team');

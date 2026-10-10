@@ -395,17 +395,16 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
     ).rejects.toMatchObject({ reason: 'confirm-level', goingDown });
     expect(await audienceOf(acceptFile)).toBe('client');
     expect(await audienceOf(id)).toBe('admin'); // still the client's, untouched
-    // Both: accepted, and the image went down with it.
+    // Both: accepted. Since W5b2 nothing it embeds changes level (they are
+    // frozen; contract change 22).
     const res = await rv.acceptReviewItem(acceptBrain, id, reviewer, {
       audience: 'public',
       lowerConfirmed: true,
       confirmedIds: [acceptFile],
     });
     expect(res.audience).toBe('public');
-    expect(res.alsoLowered.map((l) => [l.id, l.from, l.to])).toEqual([
-      [acceptFile, 'client', 'public'],
-    ]);
-    expect(await audienceOf(acceptFile)).toBe('public');
+    expect(res.alsoLowered).toEqual([]);
+    expect(await audienceOf(acceptFile)).toBe('client');
   });
 
   it("an admin's own Accept after Take over follows the client rule (A6)", async () => {

@@ -13,8 +13,8 @@
  *    Revoke and the dialog's Remove are this one call);
  *  - GET /api/contacts/:id/shares lists the contact's live shares;
  *    DELETE revokes them all and keeps sharing on;
- *  - GET /api/access/nodes/:id lists the item's contacts; Shared links name
- *    the contact.
+ *  - Shared links name the contact. (The old Access view, which listed an
+ *    item's contacts, is gone since W5b2: 410.)
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run contact-sharing-routes.db.test
  */
 import { randomUUID } from 'node:crypto';
@@ -89,7 +89,6 @@ describe.skipIf(!URL)('the contact share owner API on Postgres', () => {
     r.patch = one.PATCH as unknown as Route;
     r.remove = one.DELETE as unknown as Route;
     r.all = (await import('../shares/all/route')).GET as unknown as Route;
-    r.access = (await import('../access/nodes/[id]/route')).GET as unknown as Route;
 
     await m.db.execute(sqlTag`
       insert into auth.users (id, email, password_hash, role) values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin')`);
@@ -181,12 +180,7 @@ describe.skipIf(!URL)('the contact share owner API on Postgres', () => {
     expect(h.audits.filter((a) => a.action === 'contact.share_can_write')).toHaveLength(1);
   });
 
-  it('the access view and Shared links name the contacts', async () => {
-    const view = await json<{ contactShares: Array<{ name: string; sharingOn: boolean }> }>(
-      await r.access!(call('GET', '/x'), p({ id: page })),
-    );
-    expect(view.contactShares.map((c) => c.name)).toEqual([`${tag} Ann`, `${tag} Ben`]);
-    expect(view.contactShares.every((c) => c.sharingOn)).toBe(true);
+  it('Shared links name the contacts', async () => {
     const all = await json<{
       shares: Array<{ nodeId: string; contactName: string | null; canWrite: boolean }>;
     }>(await r.all!(call('GET', '/x')));
@@ -201,7 +195,7 @@ describe.skipIf(!URL)('the contact share owner API on Postgres', () => {
     expect(tab.shares.map((s) => s.nodeId).sort()).toEqual([app, page].sort());
     const pageRow = tab.shares.find((s) => s.nodeId === page)!;
     const res = await r.remove!(call('DELETE', '/x'), p({ id: pageRow.shareId }));
-    expect(await res.json()).toEqual({ ok: true, stillBelow: [] });
+    expect(await res.json()).toEqual({ ok: true });
     expect(await levelOf(page)).toBe('team');
     const after = await json<{ shares: Array<{ nodeId: string }> }>(
       await r.tabGet!(call('GET', `/api/contacts/${ann}/shares`), p({ id: ann })),

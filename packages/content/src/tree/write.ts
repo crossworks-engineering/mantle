@@ -10,16 +10,7 @@
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { publicErrorMessage } from '@mantle/std';
-import {
-  db,
-  isCheckViolation,
-  nodes,
-  takeShareWriteLock,
-  isBusy,
-  BUSY_MESSAGE,
-  withDeadlockRetry,
-  withSubtreeHeads,
-} from '@mantle/db';
+import { db, nodes, isBusy, BUSY_MESSAGE } from '@mantle/db';
 import {
   createFolder as createFilesFolder,
   moveFileById,
@@ -31,7 +22,6 @@ import type { AppTint } from '@mantle/client-types/app-nav';
 import {
   TREE_FOLDER_NAME_MAX,
   TREE_KIND_SPECS,
-  TREE_SHARE_LEVELS,
   type TreeFolder,
   type TreeKind,
   type TreeShareLevel,
@@ -44,7 +34,6 @@ import {
   liftDiff,
   moveFolderDiff,
   moveItemsDiff,
-  shareDiff,
   type VisibilityDiff,
   withEmbedChanges,
   changeCount,
@@ -84,10 +73,10 @@ export async function notifyTreeChanged(ownerId: string, kind: TreeKind): Promis
 }
 
 /** A refusal the caller can show: `not-found` (404), `conflict` (409),
- *  `invalid` (400). */
+ *  `invalid` (400), `gone` (410: a retired request, the folder share). */
 export class TreeError extends Error {
   constructor(
-    readonly code: 'not-found' | 'conflict' | 'invalid',
+    readonly code: 'not-found' | 'conflict' | 'invalid' | 'gone',
     message: string,
   ) {
     super(message);
@@ -226,8 +215,8 @@ export type TreeFolderPatch = {
   parentId?: string | null;
   /** Reorder among its siblings: directly after this sibling; null = first. */
   after?: string | null;
-  /** Share the folder, and everything in it now and later, with the team or
-   *  clients; null stops sharing it (folder plan phase 4). */
+  /** RETIRED (workspaces W5b2): a folder share is a grant now, set in the
+   *  folder's Grant Access panel. Any value is refused with `gone`. */
   share?: TreeShareLevel | null;
 };
 
@@ -264,8 +253,8 @@ async function checkVisibility(
 
 /**
  * After a write changed where items sit relative to shared folders: the
- * database has already carried what they embed along (nodes.embedded_level,
- * migration 0208; nothing's own level changes), so what is left is the
+ * database has already carried what they embed along (migration 0208;
+ * nothing's own level changes), so what is left is the
  * indexed text: the pages concerned, the items they reach through embeds,
  * and the pages that name any of them are folded for the level they are now
  * read at (pages/level-text.ts). `scope` is a subtree path, or ids.
@@ -297,6 +286,10 @@ async function followShares(
 /** Ids per refold: each names a pattern the refold matches page docs by. */
 const REFOLD_BATCH = 200;
 
+/** The refusal of a folder share (workspaces W5b2). */
+export const FOLDER_SHARE_GONE =
+  "Folder sharing levels are gone. Use the folder's Grant Access panel to share it with a workspace.";
+
 /** Apply one or more changes to a folder, in a fixed order: move, rename,
  *  look, then place. Returns the folder as it now is. */
 export async function updateTreeFolder(
@@ -306,16 +299,11 @@ export async function updateTreeFolder(
   patch: TreeFolderPatch,
   opts: TreeWriteOpts = {},
 ): Promise<TreeFolder> {
+  // A folder share is a grant now (workspaces W5b2): refused before
+  // anything else is written, so the rest of the patch does not half apply.
+  if (patch.share !== undefined) throw new TreeError('gone', FOLDER_SHARE_GONE);
   const ops = opsFor(kind);
   const folder = await folderOrThrow(ownerId, kind, folderId);
-  // A share in the patch is checked before anything else is written: its
-  // refusal (not shareable, or a confirmation needed) writes nothing.
-  if (patch.share !== undefined && (folder.share ?? null) !== patch.share) {
-    assertShareable(kind, folder, patch.share);
-    if (!opts.confirm) {
-      await checkVisibility(ownerId, shareDiff(ownerId, folder, patch.share), opts);
-    }
-  }
   if (patch.parentId !== undefined) {
     if (patch.parentId === folderId) throw new TreeError('invalid', 'a folder cannot hold itself');
     if (folder.system && patch.parentId !== folder.parentId) {
@@ -342,72 +330,7 @@ export async function updateTreeFolder(
   if (patch.after !== undefined) {
     await placeFolder(ownerId, kind, folderId, patch.after);
   }
-  if (patch.share !== undefined) {
-    await setFolderShare(
-      ownerId,
-      kind,
-      await folderOrThrow(ownerId, kind, folderId),
-      patch.share,
-      opts,
-    );
-  }
   return folderOrThrow(ownerId, kind, folderId);
-}
-
-/** Refuse a share this kind, level or folder may not take (stopping a share
- *  is always allowed). */
-function assertShareable(kind: TreeKind, folder: TreeFolder, share: TreeShareLevel | null): void {
-  if (share === null) return;
-  const spec = TREE_KIND_SPECS[kind];
-  if (!spec.shareable) {
-    throw new TreeError('invalid', `${kind} folders stay with admins; they cannot be shared`);
-  }
-  if (!(spec.shareLevels ?? TREE_SHARE_LEVELS).includes(share)) {
-    throw new TreeError(
-      'invalid',
-      `a ${kind} folder can only be shared with the ${(spec.shareLevels ?? TREE_SHARE_LEVELS).join(' or ')}`,
-    );
-  }
-  if (folder.system) {
-    throw new TreeError('invalid', 'this folder is made by Mantle and stays with admins');
-  }
-}
-
-/** Share a folder (and everything below it) at `share`, or stop sharing it. */
-async function setFolderShare(
-  ownerId: string,
-  kind: TreeKind,
-  folder: TreeFolder,
-  share: TreeShareLevel | null,
-  opts: TreeWriteOpts,
-): Promise<void> {
-  assertShareable(kind, folder, share);
-  if ((folder.share ?? null) === share) return;
-  const diff = await checkVisibility(ownerId, shareDiff(ownerId, folder, share), opts);
-  // The database refreshes everything below (migration 0204 triggers). Its
-  // share check is the last word on which roots may share: a refusal there
-  // is a refusal, not a server error.
-  // The folder and everything under it FIRST (the level bridge rewrites the
-  // grants of every item whose inherited level changes; the embeds that
-  // follow, it locks itself). Retried whole on a busy head.
-  try {
-    await withDeadlockRetry(() =>
-      withSubtreeHeads(folder.id, [], async (tx) => {
-        await takeShareWriteLock(tx, ownerId);
-        await tx
-          .update(nodes)
-          .set({ shareLevel: share, updatedAt: new Date() })
-          .where(and(eq(nodes.id, folder.id), eq(nodes.ownerId, ownerId)));
-      }),
-    );
-  } catch (err) {
-    if (isCheckViolation(err)) {
-      throw new TreeError('invalid', `${kind} folders cannot be shared on this brain yet`);
-    }
-    if (isBusy(err)) throw new TreeError('conflict', BUSY_MESSAGE);
-    throw err;
-  }
-  if (changeCount(diff) > 0) await followShares(ownerId, { path: folder.path });
 }
 
 async function setFolderLook(

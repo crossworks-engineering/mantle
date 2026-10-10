@@ -339,29 +339,15 @@ describe.skipIf(!URL)('contact shares on Postgres', () => {
   });
 
   describe('levels', () => {
-    it('a level change to admin, team, client or public never revokes a contact share', async () => {
-      const item = randomUUID();
-      await insertNodes([[item, 'note', `${tag} levels`, 'notes']]);
-      await cs.createContactShares(owner, item, [contactA, contactB]);
-      for (const level of ['team', 'client', 'public', 'admin', 'public', 'team'] as const) {
-        await access.setItemLevel(owner, item, level);
-        expect(await levelOf(item), level).toBe(level);
-        expect(await liveContactShares(item), level).toBe(2);
-      }
-      // The open link followed the levels and nothing else: none at team.
-      expect(await sh.getActiveShareForNode(owner, item)).toBeNull();
-    });
-
     it('removing a contact share is a revoke only: no level changes', async () => {
       const item = randomUUID();
       await insertNodes([[item, 'note', `${tag} unshare`, 'notes']]);
-      for (const level of ['admin', 'team', 'client', 'public'] as const) {
-        await access.setItemLevel(owner, item, level);
-        const [s] = await cs.createContactShares(owner, item, [contactA]);
-        const r = await access.unshareItem(owner, s!.shareId);
-        expect(r, level).toEqual({ revoked: true, stillBelow: [] });
-        expect(await levelOf(item), level).toBe(level);
-      }
+      // Items have no level to set since W5b2: the one they carry stays.
+      const before = await levelOf(item);
+      const [s] = await cs.createContactShares(owner, item, [contactA]);
+      const r = await access.unshareItem(owner, s!.shareId);
+      expect(r).toEqual({ revoked: true });
+      expect(await levelOf(item)).toBe(before);
     });
 
     it('the open-link paths make and revoke only the open link', async () => {
@@ -542,12 +528,12 @@ describe.skipIf(!URL)('contact shares on Postgres', () => {
     });
 
     it("Revoke all ends only this contact's shares, changes no level, keeps the code", async () => {
-      await access.setItemLevel(owner, many[0]!, 'team');
+      const before = await levelOf(many[0]!);
       const n = await cs.revokeAllContactShares(owner, menuContact);
       expect(n).toBe(102);
       expect((await cs.listContactSharesForAdmin(owner, menuContact)).shares).toEqual([]);
       expect((await cs.listContactShares(owner, otherContact)).items).toHaveLength(1);
-      expect(await levelOf(many[0]!)).toBe('team');
+      expect(await levelOf(many[0]!)).toBe(before);
       expect((await codes.contactShareGateRow(menuContact))?.open).toBe(true);
       expect(await codes.contactSharingFor(owner, menuContact)).toMatchObject({ shareCount: 0 });
     });

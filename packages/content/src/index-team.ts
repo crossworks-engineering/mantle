@@ -174,29 +174,18 @@ export {
   type RedeemedMemberInvite,
 } from './member-invites';
 
-// Levels: admin > team > client > public (member logins Phase 0b).
+// Agent and tool-group levels (until W7), and the plain unshare.
 export {
   AccessError,
-  accessClosure,
   agentGrantProblems,
   getAgentAccess,
   isWorkspaceKind,
   setAgentAudience,
-  setItemAudience,
-  setItemLevel,
   setToolGroupAudience,
   unshareItem,
-  type AccessItem,
-  type SetItemAudienceResult,
-  type SetItemLevelResult,
   type UnshareItemResult,
 } from './access';
-export {
-  accessShadowReport,
-  idsUsedByStep,
-  type AccessShadowReport,
-  type ShadowItem,
-} from './access-shadow';
+export { teamReadsItem } from './team-grant';
 // What an item embeds (W5b2: an embed never changes who reads anything).
 // LoweredItem is a deprecated type: callers go in the writers/links helpers.
 export { EMBEDDING_KINDS, drawPlacedFileIds, type LoweredItem } from './embed-closure';

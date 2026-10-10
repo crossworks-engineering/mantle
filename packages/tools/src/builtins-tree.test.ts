@@ -21,6 +21,7 @@ vi.mock('@mantle/content/tree', () => {
     }
   }
   return {
+    FOLDER_SHARE_GONE: 'Folder sharing levels are gone. Use Grant Access.',
     TreeError,
     TreeVisibilityError,
     createTreeFolder: vi.fn(),
@@ -175,6 +176,19 @@ describe('tree folder tools', () => {
       { parentId: null },
       { confirm: false },
     );
+  });
+
+  it('refuses a folder share, pointing at Grant Access (W5b2)', async () => {
+    for (const share of ['team', null]) {
+      const err = errorOf(
+        await tool('tree_folder_update').handler(
+          { kind: 'notes', folder_id: FOLDER, name: 'A', share },
+          owner,
+        ),
+      );
+      expect(err).toMatch(/Grant Access/);
+    }
+    expect(updateTreeFolder).not.toHaveBeenCalled();
   });
 
   it('names what a share change would do, and waits for confirm', async () => {

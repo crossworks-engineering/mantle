@@ -105,7 +105,14 @@ describe.skipIf(!URL)('the Team assistant’s tools in its turn scope', () => {
         },
       })
     ).id;
-    for (const id of Object.values(ids)) await c.setItemAudience(owner, id, 'team');
+    // Team reads them: a grant each, as Grant Access writes it (W5b2).
+    const shared = Object.values(ids);
+    await m.withHeads(shared, 'update', async (tx) => {
+      for (const id of shared) {
+        await tx.execute(sqlTag`insert into item_grants (node_id, workspace_id, write)
+          values (${id}, ${team}, false)`);
+      }
+    });
     ids.adminPage = (await c.createPage(owner, { title: 'admin page' })).id;
     await x(sqlTag`update nodes set embedding = ${vec}::vector
       where owner_id = ${owner} and type in ('page', 'note', 'table')`);
