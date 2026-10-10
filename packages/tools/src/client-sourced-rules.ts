@@ -7,12 +7,14 @@
  * client or the public:
  *  - a lowering to client or public (`access_set`, a share link,
  *    `email_page` with a link);
- *  - a write INTO an item already at client or public level: a page, note,
- *    table, drawing, file, folder, formula or app, its blocks, rows, draft,
- *    commit, title or place. A commit takes the item's embeds down to the
- *    item's own level (embed-closure.ts), so a write into an item at team or
- *    admin level can never lower anything to client or public: checking the
- *    target's level checks the closure the write would lower too;
+ *  - a write INTO an item a client or the public already reads: a page,
+ *    note, table, drawing, file, folder, formula or app, its blocks, rows,
+ *    draft, commit, title or place. Since workspaces W5b2 that is its
+ *    grants: a workspace with a client user holds it (its own grant or its
+ *    folder's), or a live open link shows it (its item or its served list).
+ *    An embed changes no one's access any more, so the target alone decides;
+ *  - a destination folder a client workspace reads (what lands there takes
+ *    its rows);
  *  - a write into an agent or tool group at client or public level (a new
  *    tool in the client agent's group, say);
  *  - anything whose target cannot be read from its input (a command, a run,
@@ -27,7 +29,7 @@
 import { and, arrayOverlaps, eq, inArray, or, sql } from 'drizzle-orm';
 import { agents, appTableExports, db, nodes, toolGroups } from '@mantle/db';
 import { asSystem } from '@mantle/db/viewer';
-import { isLoweringCall } from './client-sourced';
+import { clientWsSql, isLoweringCall } from './client-sourced';
 
 type Input = Record<string, unknown>;
 
@@ -361,7 +363,24 @@ export type GateTool = { slug: string; handler: unknown };
 export type GateVerdict = { gate: false } | { gate: true; why: string };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** The agent and tool-group levels a client or the public meets (agents and
+ *  tool groups keep their levels until W7, contract 21). */
 const EXPOSED: ReadonlySet<string> = new Set(['client', 'public']);
+
+/** Whether a client or the public reads the row's item: a client workspace
+ *  holds it (its own grant or its folder's), or a live open link shows it
+ *  (the link's own item, or on its served list). */
+function exposedSql(ownerId: string) {
+  return sql<boolean>`(
+    ${nodes.readWs} && ${clientWsSql(ownerId)}
+    or exists (
+      select 1 from shares s
+       where s.owner_id = ${ownerId} and s.revoked_at is null and s.contact_id is null
+         and (s.expires_at is null or s.expires_at > now())
+         and coalesce(s.settings->>'mode', 'public') <> 'team'
+         and (s.node_id = ${nodes.id}
+              or coalesce(s.settings->'served', '[]'::jsonb) ? lower(${nodes.id}::text))))`;
+}
 const RUN: GateVerdict = { gate: false };
 const wait = (why: string): GateVerdict => ({ gate: true, why });
 
@@ -505,40 +524,28 @@ async function writeVerdict(
     ];
     if (wanted.length > 0) {
       const rows = await db
-        .select({
-          id: nodes.id,
-          audience: nodes.audience,
-          inheritedLevel: nodes.inheritedLevel,
-          embeddedLevel: nodes.embeddedLevel,
-          shareLevel: nodes.shareLevel,
-        })
+        .select({ id: nodes.id, exposed: exposedSql(ownerId) })
         .from(nodes)
         .where(and(eq(nodes.ownerId, ownerId), inArray(nodes.id, wanted)));
       if (rows.length < wanted.length) return wait('its target is not an item of this brain');
-      // Read by clients at its own level, through a folder holding it, through
-      // something that embeds it, or (a folder) sharing what it holds with them.
-      if (
-        rows.some(
-          (r) =>
-            EXPOSED.has(r.audience) ||
-            EXPOSED.has(r.inheritedLevel ?? '') ||
-            EXPOSED.has(r.embeddedLevel ?? '') ||
-            EXPOSED.has(r.shareLevel ?? ''),
-        )
-      ) {
+      // Read by a client (a workspace with a client user holds it, by its
+      // own grant or its folder's) or by the public (an open link shows it).
+      if (rows.some((r) => r.exposed === true)) {
         return wait('it writes into an item clients or the public read');
       }
     }
     for (const path of paths) {
-      // A folder at or above the destination shared with clients.
+      // A folder at or above the destination that a client workspace reads:
+      // what lands there takes the folder's rows (S6).
       const [shared] = await db
         .select({ id: nodes.id })
         .from(nodes)
         .where(
           and(
             eq(nodes.ownerId, ownerId),
-            eq(nodes.shareLevel, 'client'),
+            eq(nodes.type, 'branch'),
             sql`${nodes.path} @> ${path}::ltree`,
+            sql`${nodes.readWs} && ${clientWsSql(ownerId)}`,
           ),
         )
         .limit(1);

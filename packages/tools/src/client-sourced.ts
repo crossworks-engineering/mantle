@@ -85,9 +85,20 @@ function batches<T>(list: readonly T[]): T[][] {
   return out;
 }
 
+/** The brain's live workspaces with a client user, as a uuid[] SQL value
+ *  (workspaces W5b2: who reads an item is its grants, not its frozen
+ *  level). */
+export function clientWsSql(ownerId: string) {
+  return sql`coalesce((
+    select array_agg(distinct w.id) from workspaces w
+      join workspace_users u on u.workspace_id = w.id
+      join auth.users l on l.id = u.login_id and l.role = 'client'
+     where w.owner_id = ${ownerId} and w.archived_at is null), '{}'::uuid[])`;
+}
+
 /**
  * Which of `ids` name a brain Table exported from an app clients write
- * (client logins C6): an app at client level NOW, or one a client login has
+ * (client logins C6): an app a client workspace holds NOW, or one a client login has
  * written (`app_databases.client_written_at`, client tier audit I3). The
  * export copies the app's rows into the table, and the rows a client wrote
  * stay in the app's database, and so in every later export, whatever the
@@ -107,11 +118,11 @@ function clientAppExportsAmong(ownerId: string, list: readonly string[]) {
       and(
         eq(appTableExports.ownerId, ownerId),
         inArray(appTableExports.tableNodeId, [...list]),
-        // At client level by its own level OR through a client-shared folder
-        // (the row policy's union rule, item-level.ts).
+        // A client workspace holds the app now (its own grant or its
+        // folder's; workspaces W5b2: grants, not the frozen level), or a
+        // client has written it.
         or(
-          eq(nodes.audience, 'client'),
-          eq(nodes.inheritedLevel, 'client'),
+          sql`${nodes.readWs} && ${clientWsSql(ownerId)}`,
           isNotNull(appDatabases.clientWrittenAt),
         ),
       ),
