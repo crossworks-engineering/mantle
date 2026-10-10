@@ -131,12 +131,47 @@ describe.skipIf(!URL)('grant reads (0256): Team reads from the grants', () => {
 
   it('the grant wins over the levels when they disagree', async () => {
     const team = (await sql<{ t: string }[]>`select mantle_brain_team_ws()::text as t`)[0]!.t;
-    const home = randomUUID();
-    const [r] = await sql<{ granted: boolean; removed: boolean; fallback: boolean }[]>`
-      select mantle_item_team_reads(array[${team}::uuid], ${home}::uuid, 'page', 'admin', null, null, ${team}::uuid) as granted,
-             mantle_item_team_reads('{}'::uuid[], ${home}::uuid, 'page', 'team', 'team', 'team', ${team}::uuid) as removed,
-             mantle_item_team_reads('{}'::uuid[], null, 'page', 'team', null, null, ${team}::uuid) as fallback`;
-    expect(r).toEqual({ granted: true, removed: false, fallback: true });
+    const space = randomUUID();
+    const [r] = await sql<{ granted: boolean; removed: boolean; personal: boolean }[]>`
+      select mantle_item_team_reads(array[${team}::uuid], ${owner}::uuid, ${owner}::uuid, 'page', 'admin', null, null, ${team}::uuid) as granted,
+             mantle_item_team_reads('{}'::uuid[], ${owner}::uuid, ${owner}::uuid, 'page', 'team', 'team', 'team', ${team}::uuid) as removed,
+             mantle_item_team_reads('{}'::uuid[], ${space}::uuid, ${owner}::uuid, 'page', 'team', null, null, ${team}::uuid) as personal`;
+    expect(r).toEqual({ granted: true, removed: false, personal: true });
+  });
+
+  it("audit M2: a migrated brain item with no grant reads as nobody's, not by its level", async () => {
+    const id = ids.teamPage!;
+    await sql.begin(async (tx) => {
+      await tx`select mantle_lock_heads(array[${id}::uuid], 'update')`;
+      await tx`delete from item_grants where node_id = ${id}`;
+    });
+    const [n] = await sql<{ home: string | null; read: string[] }[]>`
+      select home_ws::text as home, read_ws::text[] as read from nodes where id = ${id}`;
+    expect(n).toEqual({ home: null, read: [] });
+    const row = (await compare()).find((r) => r.title === 'teamPage')!;
+    expect(row).toMatchObject({ grant: false, level: true });
+    // The bridge puts it back (its level is still team), and it reads again.
+    await sql.begin(async (tx) => {
+      await tx`select mantle_lock_heads(array[${id}::uuid], 'update')`;
+      await tx`select mantle_bridge_apply(array[${id}::uuid])`;
+    });
+    expect((await compare()).find((r) => r.title === 'teamPage')).toMatchObject({ grant: true });
+  });
+
+  it('audit L1: a public app gives Team read, not write; a team app gives both', async () => {
+    const team = (await sql<{ t: string }[]>`select mantle_brain_team_ws()::text as t`)[0]!.t;
+    // A new public app after the migration takes the insert path too.
+    await node('newPublicApp', owner, 'app', 'apps', 'public');
+    await sql`insert into apps (node_id, source) values (${ids.newPublicApp!}, '{}'::jsonb)`;
+    const rows = await sql<{ title: string; reads: boolean; writes: boolean }[]>`
+      select title, ${team}::uuid = any(read_ws) as reads, ${team}::uuid = any(write_ws) as writes
+        from nodes where id in ${sql([ids.publicApp!, ids.newPublicApp!, ids.teamApp!])} order by title`;
+    expect(rows).toEqual([
+      { title: 'newPublicApp', reads: true, writes: false },
+      { title: 'publicApp', reads: true, writes: false },
+      { title: 'teamApp', reads: true, writes: true },
+    ]);
+    expect(Number((await sql`select mantle_bridge_drift() as d`)[0]!.d)).toBe(0);
   });
 
   it('the level roles and the workspace role may ask for the Team workspace', async () => {

@@ -66,6 +66,13 @@ void import('../lib/access/embed-reconcile')
   .then(({ reconcileEmbedClosuresOnBoot }) => reconcileEmbedClosuresOnBoot())
   .catch((err) => console.error('[boot] embed reconcile failed:', err));
 
+// A brain with no workspaces yet (a fresh install whose owner signed up
+// before this release, W5b1 audit M1): migrate it once. Skips a migrated
+// brain and one with clients (21.9) without a lock; no LLM work.
+void import('../lib/workspaces-migrate')
+  .then(({ migrateWorkspacesQuietly }) => migrateWorkspacesQuietly('boot'))
+  .catch((err) => console.error('[boot] workspaces migration failed:', err));
+
 // App table exports a restart left unsynced (apps plan D8): their debounce
 // timers died with the old process. The usual hash-gated sync, once.
 void import('@mantle/content/app-table-exports')

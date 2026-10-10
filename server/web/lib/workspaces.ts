@@ -189,8 +189,15 @@ function areasOf(info: AdminInfo, caller: WsCaller): WorkspaceArea[] {
   // A brain the migration skipped keeps today's rule: an admin login.
   if (!info.migrated) return caller.kind === 'admin' ? [...WORKSPACE_AREAS] : [];
   if (!info.member) return [];
-  const off = (info.limits.areas ?? {}) as Record<string, unknown>;
-  return WORKSPACE_AREAS.filter((a) => off[a] !== false);
+  return areasFromLimits(info.limits);
+}
+
+/** The areas an Admin workspace user holds by its limits: every area unless
+ *  limits.areas switches it off with false or "false", the same rule as SQL
+ *  (mantle_scope_has_area reads ->> 'false' for both; W5b1 audit L5). */
+export function areasFromLimits(limits: Record<string, unknown>): WorkspaceArea[] {
+  const off = (limits.areas ?? {}) as Record<string, unknown>;
+  return WORKSPACE_AREAS.filter((a) => off[a] !== false && off[a] !== 'false');
 }
 
 /** The Admin areas the caller holds (plan 1.4): every area for a user of

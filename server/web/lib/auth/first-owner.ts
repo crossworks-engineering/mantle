@@ -6,11 +6,13 @@
  * The insert lands ONLY while auth.users is empty. The conditional
  * INSERT ... SELECT ... WHERE NOT EXISTS is atomic, which closes the window
  * between a caller's "no users yet" check and the insert: two concurrent
- * first-run signups with different emails cannot both land.
+ * first-run signups with different emails cannot both land. The brain is
+ * then put on workspaces (lib/workspaces-migrate.ts).
  */
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { db, isUniqueViolation } from '@mantle/db';
+import { migrateWorkspacesQuietly } from '../workspaces-migrate';
 import { hashLoginPassword } from './session';
 
 export type FirstOwnerResult =
@@ -44,5 +46,8 @@ export async function createFirstOwner(
     if (isUniqueViolation(err)) return { ok: false, reason: 'exists' };
     throw err;
   }
+  // A fresh install starts on workspaces (W5b1 audit M1): Admin, Team and
+  // the bridges, with the owner in Admin. Best effort; boot tries again.
+  await migrateWorkspacesQuietly('first owner');
   return { ok: true, id, email };
 }

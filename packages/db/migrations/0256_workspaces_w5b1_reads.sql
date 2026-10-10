@@ -6,10 +6,13 @@
 -- brain item equals the team role's level rule (mantle_team_reads) and the
 -- answer does not change. Two kinds of rows have no grants yet and keep the
 -- level rule, in this ONE place:
---   - every row of a brain that was never migrated (mantle_ws_migrate skips
---     a brain that has client logins or client items, and a database whose
---     owner signs up after the migrations ran);
---   - personal-space rows (home_ws is NULL until W6b moves them in).
+--   - every row of a brain that is not migrated (mantle_ws_migrate skips a
+--     brain that has client logins or client items; a fresh install is
+--     migrated at its first owner and at boot, 0257);
+--   - personal-space rows (not brain items: owner_id is the space, until
+--     W6b moves them in).
+-- A brain item of a migrated brain answers from its grants only: no Team
+-- grant (or no grant at all) reads as "no".
 -- W5b2 (bridge off) and W6b remove the fallback; the level-reads sweep
 -- (eslint-rules/level-reads.mjs) keeps every other product read of the level
 -- columns out.
@@ -46,20 +49,24 @@ END
 $$;
 --> statement-breakpoint
 
--- Does the Team workspace read this item? The grant when the item has one
--- (a brain item of a migrated brain: home_ws set), else the level rule
+-- Does the Team workspace read this item? The Team grant for a brain item of
+-- a migrated brain (`owner` is the brain, `team` set), else the level rule
 -- (mantle_team_reads, apps without their embeds: an embed never opens an
--- app's data, old trap 2). Pure, so the planner inlines it.
+-- app's data, old trap 2). Pure, so the planner inlines it; `brain` and
+-- `team` come in as init plans.
 CREATE OR REPLACE FUNCTION "public"."mantle_item_team_reads"(
-  read_ws uuid[], home_ws uuid, t "public"."node_type",
+  read_ws uuid[], owner uuid, brain uuid, t "public"."node_type",
   audience text, inherited text, embedded text, team uuid)
   RETURNS boolean LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
   SELECT CASE
-    WHEN team IS NOT NULL AND home_ws IS NOT NULL THEN coalesce(team = ANY (read_ws), false)
+    WHEN team IS NOT NULL AND owner = brain THEN coalesce(team = ANY (read_ws), false)
     ELSE "public"."mantle_team_reads"(t, audience, inherited,
            CASE WHEN t = 'app' THEN NULL ELSE embedded END)
   END
 $$;
+--> statement-breakpoint
+-- The workspace role asks for the brain too (the level roles may since 0189).
+GRANT EXECUTE ON FUNCTION "public"."mantle_brain_id"() TO mantle_view_user;
 --> statement-breakpoint
 
 -- Whether the current workspace scope may do an "Admin only" thing in `area`

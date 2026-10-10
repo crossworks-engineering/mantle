@@ -117,7 +117,9 @@ export async function createReadOnlyRole(
   // What the demo's reader is granted besides SELECT (0256): the owner's
   // app sidebar asks for the Team workspace.
   await withRoleRetry(() =>
-    sql.unsafe(`grant execute on function "public"."mantle_brain_team_ws"() to "${name}"`),
+    sql.unsafe(
+      `grant execute on function "public"."mantle_brain_team_ws"(), "public"."mantle_brain_id"() to "${name}"`,
+    ),
   );
   const url = new URL(adminUrl);
   url.username = name;

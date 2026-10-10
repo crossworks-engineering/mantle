@@ -559,6 +559,13 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
         expect(await m.scopeHasArea('keys')).toBe(false);
         expect(await m.scopeHasArea('users')).toBe(true);
       });
+      // "false" as a JSON string is off too, as areasFromLimits reads it (L5).
+      await admin`update workspace_users set limits = '{"areas":{"users":"false"}}'::jsonb
+                   where workspace_id = ${ws.admin} and login_id = ${owner}`;
+      await m.withScope({ kind: 'user', loginId: owner, ws: [ws.admin], modWs: [] }, async () => {
+        expect(await m.scopeHasArea('users')).toBe(false);
+        expect(await m.scopeHasArea('keys')).toBe(true);
+      });
     } finally {
       await admin`update workspace_users set limits = ${JSON.stringify(was?.limits ?? {})}::jsonb
                    where workspace_id = ${ws.admin} and login_id = ${owner}`;

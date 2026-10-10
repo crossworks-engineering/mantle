@@ -13,6 +13,7 @@ const h = vi.hoisted(() => ({
   audits: [] as { action: string; detail?: Record<string, unknown> }[],
 }));
 
+vi.mock('@/lib/workspaces-migrate', () => ({ migrateWorkspacesQuietly: async () => {} }));
 vi.mock('@mantle/db', () => ({
   countUsers: async () => h.users,
   db: {

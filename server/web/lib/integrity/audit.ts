@@ -244,15 +244,10 @@ const CHECKS: CheckDef[] = [
     key: 'workspaces_not_migrated',
     label: 'Workspaces not migrated',
     severity: 'medium',
-    note: 'the workspaces migration (0252, phase W4a; its rules and triggers are 0251) wrote no workspace on this brain. It skips a brain that has client logins or client-level items (plan 21.9: clients are set up by hand), and then this brain keeps running on levels alone: the bridges are inert and assistants are not scoped. Set the clients up by hand, then run select * from mantle_ws_migrate() as the migrating role.',
+    note: 'this brain has no workspaces, so it runs on levels alone: the bridges are inert and assistants are not scoped. The detail says why. "no workspaces yet": a fresh install is migrated when its first owner signs up and at every start (lib/workspaces-migrate.ts), so this clears at the next restart; if it stays, the server log says why. "clients present": the migration skips a brain with client logins or client-level items (plan 21.9: clients are set up by hand); set them up by hand, then run select * from mantle_ws_migrate_locked() as the migrating role.',
     query: () => sql`
-      SELECT 'workspaces' AS id, 'not migrated' AS kind,
-             (SELECT count(*) FROM auth.users WHERE role = 'client')::text || ' client login(s), ' ||
-             (SELECT count(*) FROM nodes WHERE owner_id = mantle_brain_id()
-                AND (audience = 'client' OR inherited_level = 'client' OR embedded_level = 'client'))::text ||
-             ' client-level item(s) present' AS detail
-      WHERE mantle_brain_id() IS NOT NULL
-        AND NOT EXISTS (SELECT 1 FROM workspaces WHERE owner_id = mantle_brain_id() AND bridge_key = 'admin')`,
+      SELECT 'workspaces' AS id, 'not migrated' AS kind, mantle_ws_skip_reason() AS detail
+      WHERE mantle_brain_id() IS NOT NULL AND mantle_ws_skip_reason() IS NOT NULL`,
   },
   {
     key: 'workspaces_bridge_drift',

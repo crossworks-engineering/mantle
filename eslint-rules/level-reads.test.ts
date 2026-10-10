@@ -25,6 +25,9 @@ function sweptFiles(): string[] {
 }
 
 describe('level-reads sweep', () => {
+  // The allowlist is review-only (W5b1 audit L3): a pinned count may only
+  // drop. Raising one, or listing a new file, needs the CEO's review in the
+  // PR; CI does not tell the two apart, the reviewer does.
   it('finds exactly the allowlisted level reads, file by file', () => {
     const found: Record<string, number> = {};
     for (const f of sweptFiles()) {
@@ -43,6 +46,23 @@ describe('level-reads sweep', () => {
       .filter(([f, e]) => (found[f] ?? 0) !== e.lines)
       .map(([f, e]) => `${f}: listed ${e.lines}, found ${found[f] ?? 0}`);
     expect(changed, 'update the pinned count (lower it when a read goes)').toEqual([]);
+  });
+
+  it('no column name is split across a string concatenation to dodge it', () => {
+    // 'inherited_' + 'level' reads the column without matching the pattern:
+    // join adjacent string pieces and count again (W5b1 audit L2).
+    const glue = (t: string) => t.replace(/(['"`])\s*\+\s*(['"`])/g, '');
+    const dodges = sweptFiles().filter((f) => {
+      let text: string;
+      try {
+        text = readFileSync(join(ROOT, f), 'utf8');
+      } catch {
+        return false;
+      }
+      return countLevelReads(glue(text)) > countLevelReads(text);
+    });
+    expect(dodges).toEqual([]);
+    expect(countLevelReads(glue("const c = 'inherited_' + 'level';"))).toBe(1);
   });
 
   it('every entry names its phase and a reason', () => {

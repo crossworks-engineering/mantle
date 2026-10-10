@@ -5,8 +5,9 @@
  * embedded_level, agents.audience, tool_groups.audience), the helpers that
  * read them for you (readAtSql, readAtAliasSql, isReadAt, itemLevel,
  * effectiveLevel, effectiveLevelSql, mantle_team_reads,
- * mantle_inherited_level), or currentViewerLevel (use currentScope() and
- * handle every kind, or scopeHasArea()).
+ * mantle_inherited_level), or currentViewerLevel and levelOfScope (the tier
+ * level of a scope: use currentScope() and handle every kind, or
+ * scopeHasArea()).
  *
  * Swept: packages/, server/, scripts/ (.ts, .tsx, .mjs, .js, .sql). Not swept:
  * tests, packages/db/migrations/ and any archive/ folder.
@@ -21,11 +22,21 @@
  * Adding a file or raising a count is a review decision: say why in the PR.
  */
 export const LEVEL_READ_PATTERN =
-  /\baudience\b|share_level|shareLevel|inherited_level|inheritedLevel|embedded_level|embeddedLevel|currentViewerLevel|\breadAtSql\b|\breadAtAliasSql\b|\bisReadAt\b|\bitemLevel\b|\beffectiveLevelSql\b|\beffectiveLevel\b|mantle_team_reads|mantle_inherited_level/;
+  /\baudience\b|share_level|shareLevel|inherited_level|inheritedLevel|embedded_level|embeddedLevel|currentViewerLevel|\breadAtSql\b|\breadAtAliasSql\b|\bisReadAt\b|\bitemLevel\b|\beffectiveLevelSql\b|\beffectiveLevel\b|mantle_team_reads|mantle_inherited_level|\blevelOfScope\b/;
 
 /** @type {Record<string, { lines: number, phase: 'W5b2' | 'W5c' | 'W6b' | 'W7' | 'W8' | 'keep', why: string }>} */
 export const LEVEL_READ_ALLOWLIST = {
   // ── W5b2 (the bridge writers, the old Access panel, public links, connector levels) ──
+  'packages/tools/src/tool-results.ts': {
+    lines: 3,
+    phase: 'W5b2',
+    why: 'levelOfScope: spill viewer level (level scopes go with the shim)',
+  },
+  'packages/runtime/src/agent/invoke-agent.ts': {
+    lines: 2,
+    phase: 'W5b2',
+    why: 'levelOfScope: caller vs target agent level (level scopes go with the shim)',
+  },
   'packages/content/src/access-shadow.ts': {
     lines: 9,
     phase: 'W5b2',
@@ -137,7 +148,11 @@ export const LEVEL_READ_ALLOWLIST = {
     phase: 'W5b2',
     why: 'othersCanRead: folder share and app embeds are not in grants',
   },
-  'packages/runtime/src/agent/skills.ts': { lines: 2, phase: 'W5b2', why: 'connector level cap' },
+  'packages/runtime/src/agent/skills.ts': {
+    lines: 4,
+    phase: 'W5b2',
+    why: 'connector level cap; levelOfScope for the caller level',
+  },
   'packages/tools/src/agent-grants.ts': {
     lines: 5,
     phase: 'W5b2',
@@ -165,7 +180,7 @@ export const LEVEL_READ_ALLOWLIST = {
     why: 'connector level report',
   },
   'packages/tools/src/dispatch.ts': {
-    lines: 1,
+    lines: 3,
     phase: 'W5b2',
     why: 'connector level in connectorCallRefused',
   },
@@ -375,11 +390,6 @@ export const LEVEL_READ_ALLOWLIST = {
     phase: 'W5c',
     why: 'review accept level',
   },
-  'server/web/lib/integrity/audit.ts': {
-    lines: 1,
-    phase: 'W5c',
-    why: 'not-migrated detail counts client items',
-  },
   'server/web/lib/member-apps.ts': { lines: 1, phase: 'W5c', why: 'member app card level' },
   // ── W6b (personal-space rows, accepted-item author path) ──
   'packages/content/src/member-accepted.ts': {
@@ -408,6 +418,11 @@ export const LEVEL_READ_ALLOWLIST = {
   },
   'server/web/lib/agent-telegram.ts': { lines: 1, phase: 'W7', why: 'Telegram agent level' },
   // ── W8 (schema columns, DTO fields, comments, the deprecated function) ──
+  'packages/db/src/client.ts': {
+    lines: 3,
+    phase: 'W8',
+    why: 'levelOfScope picks the level pool (db internals)',
+  },
   'packages/client-types/src/dto/access.ts': {
     lines: 3,
     phase: 'W8',
@@ -448,7 +463,7 @@ export const LEVEL_READ_ALLOWLIST = {
   },
   'packages/db/src/access-matrix.ts': { lines: 3, phase: 'W8', why: 'comments' },
   'packages/db/src/index.ts': {
-    lines: 1,
+    lines: 2,
     phase: 'W8',
     why: 'export of the deprecated currentViewerLevel',
   },
@@ -461,7 +476,7 @@ export const LEVEL_READ_ALLOWLIST = {
     why: 'schema: tool_groups.audience (+ an OAuth audience field)',
   },
   'packages/db/src/viewer.ts': {
-    lines: 1,
+    lines: 7,
     phase: 'W8',
     why: 'the deprecated currentViewerLevel itself',
   },

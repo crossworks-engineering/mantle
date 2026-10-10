@@ -9,7 +9,7 @@ import { PgDialect } from 'drizzle-orm/pg-core';
 import type { SQL } from 'drizzle-orm';
 import { describe, expect, it, vi } from 'vitest';
 
-const h = vi.hoisted(() => ({ queries: [] as unknown[] }));
+const h = vi.hoisted(() => ({ queries: [] as unknown[], migrated: [] as string[] }));
 
 vi.mock('@mantle/db', () => ({
   countUsers: async () => 0,
@@ -18,6 +18,13 @@ vi.mock('@mantle/db', () => ({
       h.queries.push(q);
       return [{ id: 'x' }];
     },
+  },
+}));
+// The workspaces migration after the first owner (W5b1 audit M1) runs on
+// its own; workspaces-migrate.db.test drives it on a real database.
+vi.mock('@/lib/workspaces-migrate', () => ({
+  migrateWorkspacesQuietly: async (when: string) => {
+    h.migrated.push(when);
   },
 }));
 vi.mock('@/lib/audit', () => ({ auditFireAndForget: () => {}, requestMetaFrom: () => ({}) }));
@@ -36,6 +43,7 @@ describe('POST /api/auth/signup', () => {
     );
     expect(res.status).toBe(200);
     expect(h.queries).toHaveLength(1);
+    expect(h.migrated).toEqual(['first owner']);
     const { sql, params } = new PgDialect().sqlToQuery(h.queries[0] as SQL);
     const cols = /INSERT INTO auth\.users \(([^)]*)\)/
       .exec(sql)?.[1]

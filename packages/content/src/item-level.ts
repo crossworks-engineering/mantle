@@ -56,23 +56,28 @@ export function isReadAt(
  *  embeds, is exactly an app the Team workspace holds (workspaces plan 9.2). */
 const TEAM_READ_LEVELS = ['client', 'public', 'team'];
 
-/** Whether a level rule is "the Team workspace reads it" (workspaces W5b1):
- *  the team role's levels, embeds left out. Those reads ask the grants. Any
- *  other rule tells client or public from team, which grants cannot. */
-function isTeamRule(levels: readonly string[], opts: ReadAtOpts): boolean {
+/** Whether a level rule is "the Team workspace reads this APP" (workspaces
+ *  W5b1): the team role's levels, embeds left out. For an app that is its
+ *  Team grant (the bridge never counts an app's embeds). Any other rule tells
+ *  client or public from team, which grants cannot. */
+function isTeamAppRule(levels: readonly string[], opts: ReadAtOpts): boolean {
   return opts.embeds === false && [...new Set(levels)].sort().join() === TEAM_READ_LEVELS.join();
 }
 
-/** `isReadAt` as SQL over `nodes`: false when `levels` is empty. */
+/** `isReadAt` as SQL over `nodes`: false when `levels` is empty. With the
+ *  team rule an app asks its Team grant; any other row keeps the level rule
+ *  (for a page or a note the grant counts embeds, which this rule leaves
+ *  out). */
 export function readAtSql(levels: readonly string[], opts: ReadAtOpts = {}): SQL {
   if (!levels.length) return sql`false`;
-  if (isTeamRule(levels, opts)) return teamReadsSql();
   const list = [...levels];
-  return or(
+  const rule = or(
     inArray(nodes.audience, list),
     inArray(nodes.inheritedLevel, list),
     ...(opts.embeds === false ? [] : [inArray(nodes.embeddedLevel, list)]),
   )!;
+  if (!isTeamAppRule(levels, opts)) return rule;
+  return sql`(case when ${nodes.type} = 'app' then ${teamReadsSql()} else ${rule} end)`;
 }
 
 /** `readAtSql` on a raw query's alias (`n.audience`, `n.inherited_level`,
@@ -83,12 +88,13 @@ export function readAtAliasSql(
   opts: ReadAtOpts = {},
 ): SQL {
   if (!levels.length) return sql`false`;
-  if (isTeamRule(levels, opts)) return teamReadsAliasSql(alias);
   const a = sql.raw(alias);
   const list = sql.join(
     levels.map((l) => sql`${l}`),
     sql`, `,
   );
   const embedded = opts.embeds === false ? sql`` : sql` or ${a}.embedded_level in (${list})`;
-  return sql`(${a}.audience in (${list}) or ${a}.inherited_level in (${list})${embedded})`;
+  const rule = sql`(${a}.audience in (${list}) or ${a}.inherited_level in (${list})${embedded})`;
+  if (!isTeamAppRule(levels, opts)) return rule;
+  return sql`(case when ${a}.type = 'app' then ${teamReadsAliasSql(alias)} else ${rule} end)`;
 }
