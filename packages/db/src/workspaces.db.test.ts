@@ -1088,6 +1088,40 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
     await admin`delete from heads_check_misses where check_name = ${check}`;
   });
 
+  it('a 5,000-item folder: locking its heads and changing its grant are linear, not n squared', async () => {
+    const f = await node('branch', 'big', `${root}.big`);
+    const fill = await txConn();
+    try {
+      await fill.c`select mantle_lock_heads(${`{${f}}`}::uuid[], 'share')`;
+      await fill.c`insert into nodes (owner_id, type, title, path)
+        select ${owner}, 'page', ${`${tag} big `} || g, ${`${root}.big`}::ltree
+          from generate_series(1, 5000) g`;
+      await fill.commit();
+    } catch (err) {
+      await fill.rollback();
+      throw err;
+    }
+    const t = await txConn();
+    const started = Date.now();
+    try {
+      await t.c`select mantle_lock_subtree_heads(${f}, '{}')`;
+      const locked = Date.now() - started;
+      await t.c`insert into item_grants (node_id, workspace_id) values (${f}, ${ws.team})`;
+      await t.commit();
+      // The held list was read per row before (25 min on 50k); now one read
+      // per round. Generous bounds: a busy test box, but far below n squared.
+      expect(locked).toBeLessThan(5_000);
+      expect(Date.now() - started).toBeLessThan(30_000);
+    } catch (err) {
+      await t.rollback();
+      throw err;
+    }
+    const [r] = await admin<{ n: number }[]>`
+      select count(*)::int as n from nodes
+       where path = ${`${root}.big`}::ltree and type = 'page' and read_ws @> ${`{${ws.team}}`}::uuid[]`;
+    expect(r!.n).toBe(5000);
+  }, 120_000);
+
   it('withDeadlockRetry retries the whole run for retryable codes only', async () => {
     let runs = 0;
     await expect(

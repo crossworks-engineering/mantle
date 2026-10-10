@@ -446,10 +446,13 @@ BEGIN
   IF ids IS NULL OR cardinality(ids) = 0 OR "public"."mantle_heads_check_mode"() = 'off' THEN
     RETURN;
   END IF;
+  -- The held list is read (and its signature checked) once; the difference
+  -- is a set operation, so a 50k-row subtree costs one hash, not n squared.
   held := "public"."mantle_heads_held"(need_update);
-  SELECT x INTO missing
-    FROM unnest(ids) AS x
-   WHERE x IS NOT NULL AND NOT (x = ANY (held))
+  SELECT d.x INTO missing
+    FROM (SELECT u.x FROM unnest(ids) AS u(x) WHERE u.x IS NOT NULL
+          EXCEPT
+          SELECT h.x FROM unnest(held) AS h(x)) d
    LIMIT 1;
   IF missing IS NOT NULL THEN
     PERFORM "public"."mantle_heads_miss"(check_name, missing,
@@ -521,8 +524,10 @@ BEGIN
   IF cardinality(held) = 0 THEN
     RAISE EXCEPTION 'mantle_lock_heads_more: no heads held yet' USING ERRCODE = '55000';
   END IF;
-  SELECT coalesce(array_agg(DISTINCT x ORDER BY x), '{}'::uuid[]) INTO add
-    FROM unnest(ids) AS x WHERE x IS NOT NULL AND NOT (x = ANY (held_upd));
+  SELECT coalesce(array_agg(d.x ORDER BY d.x), '{}'::uuid[]) INTO add
+    FROM (SELECT u.x FROM unnest(ids) AS u(x) WHERE u.x IS NOT NULL
+          EXCEPT
+          SELECT h.x FROM unnest(held_upd) AS h(x)) d;
   IF cardinality(add) = 0 THEN RETURN; END IF;
   INSERT INTO "public"."node_acl_head" ("node_id")
     SELECT n."id" FROM "public"."nodes" n
@@ -547,6 +552,7 @@ CREATE OR REPLACE FUNCTION "public"."mantle_lock_subtree_heads"(root uuid, extra
 DECLARE
   r record;
   ids uuid[];
+  held uuid[];
   rounds int := 0;
 BEGIN
   SELECT "owner_id", "path", "type" INTO r FROM "public"."nodes" WHERE "id" = root;
@@ -564,11 +570,15 @@ BEGIN
     'update');
   IF r."type" <> 'branch' THEN RETURN; END IF;
   LOOP
-    SELECT coalesce(array_agg(n."id" ORDER BY n."id"), '{}'::uuid[]) INTO ids
-      FROM "public"."nodes" n
-     WHERE n."owner_id" = r."owner_id"
-       AND n."path" <@ (SELECT x."path" FROM "public"."nodes" x WHERE x."id" = root)
-       AND NOT (n."id" = ANY ("public"."mantle_heads_held"()));
+    -- The held list once per round, and a set difference: never a call or
+    -- an array scan per row (that was n squared on a 50k folder).
+    held := "public"."mantle_heads_held"();
+    SELECT coalesce(array_agg(d.id ORDER BY d.id), '{}'::uuid[]) INTO ids
+      FROM (SELECT n."id" FROM "public"."nodes" n
+             WHERE n."owner_id" = r."owner_id"
+               AND n."path" <@ (SELECT x."path" FROM "public"."nodes" x WHERE x."id" = root)
+            EXCEPT
+            SELECT h.x FROM unnest(held) AS h(x)) d;
     EXIT WHEN cardinality(ids) = 0;
     rounds := rounds + 1;
     IF rounds > 5 THEN
@@ -758,22 +768,27 @@ CREATE OR REPLACE FUNCTION "public"."mantle_apply_folder_change"(folder uuid)
 DECLARE
   r record;
   ids uuid[];
+  held uuid[];
   rounds int := 0;
 BEGIN
   SELECT "owner_id", "path", "type" INTO r FROM "public"."nodes" WHERE "id" = folder;
   IF NOT FOUND OR r."type" <> 'branch' THEN RETURN; END IF;
-  IF cardinality("public"."mantle_heads_held"()) > 0 THEN
+  held := "public"."mantle_heads_held"();
+  IF cardinality(held) > 0 THEN
     LOOP
-      SELECT coalesce(array_agg(n."id" ORDER BY n."id"), '{}'::uuid[]) INTO ids
-        FROM "public"."nodes" n
-       WHERE n."owner_id" = r."owner_id" AND n."path" <@ r."path"
-         AND NOT (n."id" = ANY ("public"."mantle_heads_held"()));
+      -- As in mantle_lock_subtree_heads: one read per round, a set difference.
+      SELECT coalesce(array_agg(d.id ORDER BY d.id), '{}'::uuid[]) INTO ids
+        FROM (SELECT n."id" FROM "public"."nodes" n
+               WHERE n."owner_id" = r."owner_id" AND n."path" <@ r."path"
+              EXCEPT
+              SELECT h.x FROM unnest(held) AS h(x)) d;
       EXIT WHEN cardinality(ids) = 0;
       rounds := rounds + 1;
       IF rounds > 5 THEN
         RAISE EXCEPTION 'mantle_apply_folder_change: subtree kept growing' USING ERRCODE = '40001';
       END IF;
       PERFORM "public"."mantle_lock_heads_more"(ids);
+      held := "public"."mantle_heads_held"();
     END LOOP;
   ELSE
     PERFORM "public"."mantle_heads_miss"('folder_change', folder, 'folder grant changed without heads');
