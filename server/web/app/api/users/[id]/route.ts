@@ -1,6 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import {
+  isCheckViolation,
   isUniqueViolation,
   db,
   and,
@@ -199,6 +200,9 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
         { status: 409 },
       );
     }
+    if (isLastAdminRefusal(err)) {
+      return NextResponse.json({ error: LAST_ADMIN_MESSAGE }, { status: 409 });
+    }
     throw err;
   }
   // After the commit, as the single unpair route does: tell the relay.
@@ -279,12 +283,21 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
   // since a comment whose login is gone could no longer be found by it.
   // Disable is how an admin ends a client and keeps that history.
   const isClient = target.role === 'client';
-  const { pushTokens, commentsDeleted } = await db.transaction(async (tx) => {
-    const tokens = await deleteLoginSubscriptions(targetId, tx);
-    const comments = isClient ? await deleteClientComments(user.id, targetId, tx) : 0;
-    await tx.delete(authUsers).where(eq(authUsers.id, targetId));
-    return { pushTokens: tokens, commentsDeleted: comments };
-  });
+  let ended: { pushTokens: string[]; commentsDeleted: number };
+  try {
+    ended = await db.transaction(async (tx) => {
+      const tokens = await deleteLoginSubscriptions(targetId, tx);
+      const comments = isClient ? await deleteClientComments(user.id, targetId, tx) : 0;
+      await tx.delete(authUsers).where(eq(authUsers.id, targetId));
+      return { pushTokens: tokens, commentsDeleted: comments };
+    });
+  } catch (err) {
+    if (isLastAdminRefusal(err)) {
+      return NextResponse.json({ error: LAST_ADMIN_MESSAGE }, { status: 409 });
+    }
+    throw err;
+  }
+  const { pushTokens, commentsDeleted } = ended;
   await forgetRelayDevices(pushTokens);
 
   auditFireAndForget({
@@ -298,4 +311,20 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
   });
 
   return NextResponse.json(isClient ? { ok: true, commentsDeleted } : { ok: true });
+}
+
+/** The Admin workspace keeps at least one Moderator (workspaces 0241; the
+ *  login bridge of 0251 makes every admin one): the database refuses, at
+ *  commit, the change that would remove the last. Said plainly here. */
+const LAST_ADMIN_MESSAGE =
+  'At least one admin must remain. Make another login an admin first, then try again.';
+
+function isLastAdminRefusal(err: unknown): boolean {
+  if (!isCheckViolation(err)) return false;
+  for (let e: unknown = err, d = 0; e && d < 4; d++) {
+    const m = (e as { message?: unknown }).message;
+    if (typeof m === 'string' && m.includes('at least one Moderator')) return true;
+    e = (e as { cause?: unknown }).cause;
+  }
+  return false;
 }

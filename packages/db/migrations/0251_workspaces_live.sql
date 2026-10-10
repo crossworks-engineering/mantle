@@ -1,4 +1,5 @@
--- Workspaces, phase W4a: the workspaces go live as DATA (plan page 4887b8e7,
+-- Workspaces, phase W4a, part 2: the workspaces go live as DATA (the columns
+-- are 0250) (plan page 4887b8e7,
 -- sections 9.1, 9.2, 9.4, 11, R3, R7, S1, T1, 21.8 and 21.9; the CEO's W4
 -- decisions of 2026-10-10).
 --
@@ -39,10 +40,9 @@
 -- source is gone keeps its last access, never wider (R7). Facts learned in
 -- chat (no source) keep their own copy; the ones already stored map to Admin.
 --
--- Threads, messages, tool results, runs and traces gain workspace_id and
--- login_id (R3). A row's workspace is stamped from its agent at insert; NULL
--- means the Admin workspace (every row written before this release is from
--- the admin era). Only rows of agents attached elsewhere are backfilled.
+-- Threads, messages, tool results, runs and traces got workspace_id and
+-- login_id in 0250 (R3); here only rows of agents attached outside Admin are
+-- backfilled (NULL = Admin).
 --
 -- No trigger here starts LLM work and nothing notifies the extractor. Grant
 -- writes are arrays only. Apps, app data and app-db files are not touched:
@@ -50,93 +50,7 @@
 
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
-SELECT "public"."mantle_heads_bypass"('0250_workspaces_live');
---> statement-breakpoint
-
--- ── Columns ──────────────────────────────────────────────────────────────────
-
-ALTER TABLE "public"."item_grants"
-  ADD COLUMN IF NOT EXISTS "bridge" boolean NOT NULL DEFAULT false;
---> statement-breakpoint
--- Which of the brain's workspaces the bridges keep ('admin', 'team').
-ALTER TABLE "public"."workspaces"
-  ADD COLUMN IF NOT EXISTS "bridge_key" text;
---> statement-breakpoint
-CREATE UNIQUE INDEX IF NOT EXISTS "workspaces_bridge_key_uq"
-  ON "public"."workspaces" ("owner_id", "bridge_key") WHERE "bridge_key" IS NOT NULL;
---> statement-breakpoint
-ALTER TABLE "public"."assistant_messages"
-  ADD COLUMN IF NOT EXISTS "workspace_id" uuid REFERENCES "public"."workspaces"("id") ON DELETE NO ACTION,
-  ADD COLUMN IF NOT EXISTS "login_id" uuid;
---> statement-breakpoint
-ALTER TABLE "public"."chat_threads"
-  ADD COLUMN IF NOT EXISTS "workspace_id" uuid REFERENCES "public"."workspaces"("id") ON DELETE NO ACTION,
-  ADD COLUMN IF NOT EXISTS "login_id" uuid;
---> statement-breakpoint
-ALTER TABLE "public"."tool_results"
-  ADD COLUMN IF NOT EXISTS "workspace_id" uuid REFERENCES "public"."workspaces"("id") ON DELETE NO ACTION,
-  ADD COLUMN IF NOT EXISTS "login_id" uuid;
---> statement-breakpoint
-ALTER TABLE "public"."runs"
-  ADD COLUMN IF NOT EXISTS "workspace_id" uuid REFERENCES "public"."workspaces"("id") ON DELETE NO ACTION,
-  ADD COLUMN IF NOT EXISTS "login_id" uuid;
---> statement-breakpoint
-ALTER TABLE "public"."run_items"
-  ADD COLUMN IF NOT EXISTS "workspace_id" uuid REFERENCES "public"."workspaces"("id") ON DELETE NO ACTION,
-  ADD COLUMN IF NOT EXISTS "login_id" uuid;
---> statement-breakpoint
-ALTER TABLE "public"."pending_tool_calls"
-  ADD COLUMN IF NOT EXISTS "workspace_id" uuid REFERENCES "public"."workspaces"("id") ON DELETE NO ACTION,
-  ADD COLUMN IF NOT EXISTS "login_id" uuid;
---> statement-breakpoint
-ALTER TABLE "public"."traces"
-  ADD COLUMN IF NOT EXISTS "workspace_id" uuid REFERENCES "public"."workspaces"("id") ON DELETE NO ACTION,
-  ADD COLUMN IF NOT EXISTS "login_id" uuid;
---> statement-breakpoint
-
--- ── R3: stamp the workspace at insert ───────────────────────────────────────
--- From the row's agent (its workspace once attached), or for a run item from
--- its run, for a tool result from its trace. A value the writer set wins.
--- A lookup by primary key per row: no LLM work, no notify.
-CREATE OR REPLACE FUNCTION "public"."mantle_stamp_workspace_trg"()
-  RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
-  SET search_path = "public", pg_temp AS $$
-DECLARE
-  src record;
-BEGIN
-  IF NEW."workspace_id" IS NOT NULL THEN RETURN NEW; END IF;
-  IF TG_TABLE_NAME = 'run_items' THEN
-    SELECT r."workspace_id" AS ws, r."login_id" AS login INTO src
-      FROM "public"."runs" r WHERE r."id" = NEW."run_id";
-  ELSIF TG_TABLE_NAME = 'tool_results' THEN
-    SELECT t."workspace_id" AS ws, t."login_id" AS login INTO src
-      FROM "public"."traces" t WHERE t."id" = NEW."trace_id";
-  ELSE
-    SELECT a."workspace_id" AS ws, NULL::uuid AS login INTO src
-      FROM "public"."agents" a WHERE a."id" = NEW."agent_id";
-  END IF;
-  IF FOUND THEN
-    NEW."workspace_id" := src.ws;
-    NEW."login_id" := coalesce(NEW."login_id", src.login);
-  END IF;
-  RETURN NEW;
-END
-$$;
---> statement-breakpoint
-REVOKE EXECUTE ON FUNCTION "public"."mantle_stamp_workspace_trg"() FROM PUBLIC;
---> statement-breakpoint
-DO $$
-DECLARE
-  t text;
-BEGIN
-  FOREACH t IN ARRAY ARRAY['assistant_messages', 'chat_threads', 'tool_results', 'runs',
-                           'run_items', 'pending_tool_calls', 'traces'] LOOP
-    EXECUTE format('DROP TRIGGER IF EXISTS %I ON "public".%I', t || '_stamp_ws', t);
-    EXECUTE format('CREATE TRIGGER %I BEFORE INSERT ON "public".%I FOR EACH ROW '
-                   'EXECUTE FUNCTION "public"."mantle_stamp_workspace_trg"()', t || '_stamp_ws', t);
-  END LOOP;
-END
-$$;
+SELECT "public"."mantle_heads_bypass"('0251_workspaces_live');
 --> statement-breakpoint
 
 -- ── Facts with a source follow their node ────────────────────────────────────
@@ -380,9 +294,17 @@ REVOKE EXECUTE ON FUNCTION "public"."mantle_nodes_acl_after_ins_trg"() FROM PUBL
 -- Admin-only and conversation kinds get their home only (a folder never
 -- passes them anything). Items whose home is not bridge-owned are left out,
 -- and so is every personal-space item (its owner is not the brain).
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'mantle_bridge_row') THEN
+    CREATE TYPE "public"."mantle_bridge_row" AS (
+      "node_id" uuid, "workspace_id" uuid, "write" boolean, "is_home" boolean, "excluded" boolean);
+  END IF;
+END
+$$;
+--> statement-breakpoint
 CREATE OR REPLACE FUNCTION "public"."mantle_bridge_wanted"(ids uuid[])
-  RETURNS TABLE ("node_id" uuid, "workspace_id" uuid, "write" boolean,
-                 "is_home" boolean, "excluded" boolean)
+  RETURNS SETOF "public"."mantle_bridge_row"
   LANGUAGE sql STABLE SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
   WITH ws AS (
@@ -421,32 +343,34 @@ REVOKE EXECUTE ON FUNCTION "public"."mantle_bridge_wanted"(uuid[]) FROM PUBLIC;
 -- Bring the bridge-owned rows of `ids` to what mantle_bridge_wanted says.
 -- Rows that are not bridge-owned are never written. Under the internal flag:
 -- every pair the bridge owns is decided, so nothing needs propagating, and
--- the writer that changed the level holds the item's head (W1).
+-- the writer that changed the level holds the item's head (W1): the level
+-- triggers below check it (mantle_heads_require) before calling this.
 CREATE OR REPLACE FUNCTION "public"."mantle_bridge_apply"(ids uuid[])
   RETURNS void LANGUAGE plpgsql VOLATILE SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
 DECLARE
   was text := coalesce(current_setting('mantle.acl_internal', true), '');
+  want "public"."mantle_bridge_row"[];
 BEGIN
   IF ids IS NULL OR cardinality(ids) = 0 THEN RETURN; END IF;
   IF NOT EXISTS (SELECT 1 FROM "public"."workspaces" w
                   WHERE w."owner_id" = "public"."mantle_brain_id"() AND w."bridge_key" = 'admin') THEN
     RETURN; -- not migrated: inert
   END IF;
+  -- The wanted rows once, in a variable (no temporary table: this runs for
+  -- every changed node, and a table per transaction churns the catalog).
+  want := ARRAY(SELECT w FROM "public"."mantle_bridge_wanted"(ids) w);
   PERFORM set_config('mantle.acl_internal', 'on', true);
-  -- No temporary table: this runs for every new node, and a temporary table
-  -- per transaction churns the catalog. The wanted rows are recomputed per
-  -- statement; the bridge's own writes never change them.
 
   -- Bridge rows of these items the table no longer wants.
   DELETE FROM "public"."item_grants" g
-   WHERE g."node_id" = ANY (ids) AND g."bridge"
-     AND EXISTS (SELECT 1 FROM "public"."mantle_bridge_wanted"(ARRAY[g."node_id"]) w0)
-     AND NOT EXISTS (SELECT 1 FROM "public"."mantle_bridge_wanted"(ARRAY[g."node_id"]) w
-                      WHERE w."workspace_id" = g."workspace_id");
+   WHERE g."node_id" IN (SELECT DISTINCT w."node_id" FROM unnest(want) w)
+     AND g."bridge"
+     AND NOT EXISTS (SELECT 1 FROM unnest(want) w
+                      WHERE w."node_id" = g."node_id" AND w."workspace_id" = g."workspace_id");
   -- A home that moves: the old home row lets go first (one home per item).
   UPDATE "public"."item_grants" g SET "is_home" = false
-    FROM "public"."mantle_bridge_wanted"(ids) w
+    FROM unnest(want) w
    WHERE g."node_id" = w."node_id" AND g."workspace_id" = w."workspace_id"
      AND g."bridge" AND g."is_home" AND NOT w."is_home";
   -- The wanted rows: new, or a bridge row brought up to date. A pair that
@@ -454,7 +378,7 @@ BEGIN
   INSERT INTO "public"."item_grants"
     ("node_id", "workspace_id", "write", "is_home", "excluded", "via_folder_id", "bridge")
   SELECT w."node_id", w."workspace_id", w."write", w."is_home", w."excluded", NULL, true
-    FROM "public"."mantle_bridge_wanted"(ids) w
+    FROM unnest(want) w
   ON CONFLICT ("node_id", "workspace_id") DO UPDATE
      SET "write" = EXCLUDED."write", "is_home" = EXCLUDED."is_home",
          "excluded" = EXCLUDED."excluded", "via_folder_id" = NULL
@@ -557,6 +481,9 @@ BEGIN
   WITH taken AS (
     DELETE FROM "public"."mantle_bridge_pending" p WHERE p."xid" = me RETURNING p."id")
   SELECT array_agg(t."id") INTO ids FROM taken t;
+  -- A level change or a move rewrites grants: its writer holds the heads
+  -- for update (W1; warn mode counts a miss, on mode refuses).
+  PERFORM "public"."mantle_heads_require"(ids, 'bridge', true);
   PERFORM "public"."mantle_bridge_apply"(ids);
   RETURN NULL;
 END
@@ -569,6 +496,7 @@ CREATE OR REPLACE FUNCTION "public"."mantle_bridge_app_trg"()
   RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
 BEGIN
+  PERFORM "public"."mantle_heads_require"(ARRAY[NEW."node_id"], 'bridge', true);
   PERFORM "public"."mantle_bridge_apply"(ARRAY[NEW."node_id"]);
   RETURN NULL;
 END
@@ -592,18 +520,25 @@ CREATE TRIGGER "nodes_zz_bridge_ins" AFTER INSERT ON "public"."nodes"
 DROP TRIGGER IF EXISTS "nodes_zz_bridge_upd" ON "public"."nodes";
 --> statement-breakpoint
 CREATE TRIGGER "nodes_zz_bridge_upd"
-  AFTER UPDATE OF "audience", "inherited_level", "embedded_level", "owner_id" ON "public"."nodes"
+  AFTER UPDATE OF "audience", "inherited_level", "embedded_level", "owner_id", "path", "type"
+  ON "public"."nodes"
   FOR EACH ROW
+  -- A move sets only path: inherited_level then changes in a BEFORE trigger
+  -- (0204), which column-list triggers do not see. So path and type are
+  -- listed, and WHEN compares the final row.
   WHEN (OLD."audience" IS DISTINCT FROM NEW."audience"
         OR OLD."inherited_level" IS DISTINCT FROM NEW."inherited_level"
         OR OLD."embedded_level" IS DISTINCT FROM NEW."embedded_level"
-        OR OLD."owner_id" IS DISTINCT FROM NEW."owner_id")
+        OR OLD."owner_id" IS DISTINCT FROM NEW."owner_id"
+        OR OLD."path"::text IS DISTINCT FROM NEW."path"::text
+        OR OLD."type" IS DISTINCT FROM NEW."type")
   EXECUTE FUNCTION "public"."mantle_bridge_upd_row_trg"();
 --> statement-breakpoint
 DROP TRIGGER IF EXISTS "nodes_zz_bridge_upd_stmt" ON "public"."nodes";
 --> statement-breakpoint
 CREATE TRIGGER "nodes_zz_bridge_upd_stmt"
-  AFTER UPDATE OF "audience", "inherited_level", "embedded_level", "owner_id" ON "public"."nodes"
+  AFTER UPDATE OF "audience", "inherited_level", "embedded_level", "owner_id", "path", "type"
+  ON "public"."nodes"
   FOR EACH STATEMENT EXECUTE FUNCTION "public"."mantle_bridge_upd_stmt_trg"();
 --> statement-breakpoint
 DROP TRIGGER IF EXISTS "apps_zz_bridge" ON "public"."apps";
@@ -615,8 +550,8 @@ CREATE TRIGGER "apps_zz_bridge" AFTER INSERT OR UPDATE OF "data_read_only" ON "p
 -- Drift between levels and bridge rows (the workspaces check, hand-run and in
 -- /debug/integrity): brain items whose bridge-owned pairs differ from what
 -- the table wants. Numbers only.
-CREATE OR REPLACE FUNCTION "public"."mantle_bridge_drift"()
-  RETURNS bigint LANGUAGE sql STABLE SECURITY DEFINER
+CREATE OR REPLACE FUNCTION "public"."mantle_bridge_drift_ids"()
+  RETURNS SETOF uuid LANGUAGE sql STABLE SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
   WITH w AS (
     SELECT * FROM "public"."mantle_bridge_wanted"(ARRAY(
@@ -626,11 +561,19 @@ CREATE OR REPLACE FUNCTION "public"."mantle_bridge_drift"()
       FROM "public"."item_grants" ig
      WHERE ig."bridge" AND ig."node_id" IN (SELECT w."node_id" FROM w)
   )
-  SELECT count(DISTINCT x."node_id") FROM (
+  SELECT DISTINCT x."node_id" FROM (
     (SELECT * FROM w EXCEPT SELECT * FROM g)
     UNION ALL
     (SELECT * FROM g EXCEPT SELECT * FROM w)
   ) x
+$$;
+--> statement-breakpoint
+REVOKE EXECUTE ON FUNCTION "public"."mantle_bridge_drift_ids"() FROM PUBLIC;
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION "public"."mantle_bridge_drift"()
+  RETURNS bigint LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  SELECT count(*) FROM "public"."mantle_bridge_drift_ids"()
 $$;
 --> statement-breakpoint
 REVOKE EXECUTE ON FUNCTION "public"."mantle_bridge_drift"() FROM PUBLIC;
@@ -697,71 +640,88 @@ CREATE TRIGGER "users_zz_bridge" AFTER INSERT OR UPDATE OF "role" ON auth.users
 --> statement-breakpoint
 
 -- ── The reach diff (9.4), on the live tables ─────────────────────────────────
--- OLD: what each login and the two assistants read in the brain today (the
--- personal spaces are not part of this release: they keep their own rules).
--- NEW: the brain items whose read_ws meets their workspaces. A gain is a
--- 'reach-fail' row. Numbers only.
+-- OLD: what each login and the two assistants read in the brain today, from
+-- today's row rule itself (nodes_viewer_read for the team role: the brain's
+-- items whose audience, inherited or embedded level is team, client or
+-- public, of a workspace kind), independent of the bridge's table. The
+-- personal spaces are not part of this release (they keep their own rules).
+-- NEW: the brain items whose read_ws meets their workspaces. Connectors too:
+-- Team holds a connector exactly when a member may use it today (an enabled
+-- mcp connector at team level or below), with Write on exactly then. A gain
+-- or a connector mismatch is a 'reach-fail' row. Numbers only. CTEs only: no
+-- temporary table inside a definer function (0241 M2).
 CREATE OR REPLACE FUNCTION "public"."mantle_ws_reach_diff"()
   RETURNS TABLE ("section" text, "subject" text, "metric" text, "n" bigint)
-  LANGUAGE plpgsql VOLATILE SECURITY DEFINER
-  SET search_path = "public", pg_temp SET client_min_messages = warning AS $$
-#variable_conflict use_column
-DECLARE
-  brain uuid := "public"."mantle_brain_id"();
-  admin_ws uuid;
-  team_ws uuid;
-BEGIN
-  SELECT w."id" INTO admin_ws FROM "public"."workspaces" w WHERE w."owner_id" = brain AND w."bridge_key" = 'admin';
-  SELECT w."id" INTO team_ws FROM "public"."workspaces" w WHERE w."owner_id" = brain AND w."bridge_key" = 'team';
-  CREATE TEMP TABLE IF NOT EXISTS _wsr_old (subject text, node_id uuid, PRIMARY KEY (subject, node_id)) ON COMMIT DROP;
-  CREATE TEMP TABLE IF NOT EXISTS _wsr_new (subject text, node_id uuid, PRIMARY KEY (subject, node_id)) ON COMMIT DROP;
-  DELETE FROM _wsr_old;
-  DELETE FROM _wsr_new;
-  INSERT INTO _wsr_old
-    SELECT 'login:' || u.id, n.id FROM auth.users u JOIN "public"."nodes" n ON n.owner_id = brain
-     WHERE u.role = 'admin';
-  INSERT INTO _wsr_old
-    SELECT 'login:' || u.id, n.id FROM auth.users u JOIN "public"."nodes" n ON n.owner_id = brain
-     WHERE u.role = 'member'
-       AND "public"."mantle_team_reads"(n.type, n.audience, n.inherited_level, n.embedded_level);
-  INSERT INTO _wsr_old SELECT 'assistant:admin', n.id FROM "public"."nodes" n WHERE n.owner_id = brain;
-  INSERT INTO _wsr_old
-    SELECT 'assistant:team', n.id FROM "public"."nodes" n
-     WHERE n.owner_id = brain
-       AND "public"."mantle_team_reads"(n.type, n.audience, n.inherited_level, n.embedded_level);
-
-  INSERT INTO _wsr_new
-    SELECT DISTINCT 'login:' || wu.login_id, n.id
+  LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  WITH b AS (SELECT "public"."mantle_brain_id"() AS brain),
+  ws AS (
+    SELECT (SELECT w."id" FROM "public"."workspaces" w, b WHERE w."owner_id" = b.brain AND w."bridge_key" = 'admin') AS admin_ws,
+           (SELECT w."id" FROM "public"."workspaces" w, b WHERE w."owner_id" = b.brain AND w."bridge_key" = 'team') AS team_ws
+  ),
+  team_today AS (
+    SELECT n."id" FROM "public"."nodes" n, b
+     WHERE n."owner_id" = b.brain
+       AND (n."audience" = ANY (ARRAY['team', 'client', 'public'])
+            OR n."inherited_level" = ANY (ARRAY['team', 'client', 'public'])
+            OR n."embedded_level" = ANY (ARRAY['team', 'client', 'public']))
+       AND "public"."mantle_workspace_kind"(n."type")
+  ),
+  old_reach AS (
+    SELECT 'login:' || u."id" AS subject, n."id" AS node_id
+      FROM auth.users u JOIN "public"."nodes" n ON n."owner_id" = (SELECT brain FROM b)
+     WHERE u."role" = 'admin'
+    UNION
+    SELECT 'login:' || u."id", t."id" FROM auth.users u, team_today t WHERE u."role" = 'member'
+    UNION
+    SELECT 'assistant:admin', n."id" FROM "public"."nodes" n WHERE n."owner_id" = (SELECT brain FROM b)
+    UNION
+    SELECT 'assistant:team', t."id" FROM team_today t
+  ),
+  new_reach AS (
+    SELECT 'login:' || wu."login_id" AS subject, n."id" AS node_id
       FROM "public"."workspace_users" wu
-      JOIN "public"."nodes" n ON n.owner_id = brain AND n.read_ws @> ARRAY[wu.workspace_id]
-    ON CONFLICT DO NOTHING;
-  INSERT INTO _wsr_new
-    SELECT 'assistant:admin', n.id FROM "public"."nodes" n
-     WHERE n.owner_id = brain AND admin_ws IS NOT NULL AND n.read_ws @> ARRAY[admin_ws];
-  INSERT INTO _wsr_new
-    SELECT 'assistant:team', n.id FROM "public"."nodes" n
-     WHERE n.owner_id = brain AND team_ws IS NOT NULL AND n.read_ws @> ARRAY[team_ws];
-
-  RETURN QUERY
-    SELECT 'reach-fail', CASE WHEN nw.subject LIKE 'login:%'
-                              THEN 'login (' || coalesce(u.role, 'gone') || ')' ELSE nw.subject END,
-           'gained items', count(*)
-      FROM _wsr_new nw
-      LEFT JOIN auth.users u ON 'login:' || u.id = nw.subject
-     WHERE NOT EXISTS (SELECT 1 FROM _wsr_old o WHERE o.subject = nw.subject AND o.node_id = nw.node_id)
-     GROUP BY 2;
-  RETURN QUERY
-    SELECT 'reach', CASE WHEN o.subject LIKE 'login:%'
-                         THEN 'login (' || coalesce(u.role, 'gone') || ')' ELSE o.subject END,
-           'lost items (narrower, allowed)', count(*)
-      FROM _wsr_old o
-      LEFT JOIN auth.users u ON 'login:' || u.id = o.subject
-     WHERE NOT EXISTS (SELECT 1 FROM _wsr_new nw WHERE nw.subject = o.subject AND nw.node_id = o.node_id)
-     GROUP BY 2;
-  RETURN QUERY
-    SELECT 'reach', split_part(s.subject, ':', 1), 'subjects', count(*)
-      FROM (SELECT DISTINCT subject FROM _wsr_new) s GROUP BY 2;
-END
+      JOIN "public"."nodes" n ON n."owner_id" = (SELECT brain FROM b) AND n."read_ws" @> ARRAY[wu."workspace_id"]
+    UNION
+    SELECT 'assistant:admin', n."id" FROM "public"."nodes" n, ws
+     WHERE n."owner_id" = (SELECT brain FROM b) AND n."read_ws" @> ARRAY[ws.admin_ws]
+    UNION
+    SELECT 'assistant:team', n."id" FROM "public"."nodes" n, ws
+     WHERE n."owner_id" = (SELECT brain FROM b) AND n."read_ws" @> ARRAY[ws.team_ws]
+  ),
+  conn AS (
+    SELECT g."slug",
+           (g."integration" ? 'mcp' AND g."enabled" AND g."audience" IN ('team', 'client', 'public')) AS member_today,
+           r."id" IS NOT NULL AS held, coalesce(r."write", false) AS team_write
+      FROM "public"."tool_groups" g
+      CROSS JOIN ws
+      LEFT JOIN "public"."workspace_resources" r
+        ON r."workspace_id" = ws.team_ws AND r."type" = 'connector' AND r."ref_id" = g."slug"
+     WHERE g."owner_id" = (SELECT brain FROM b) AND g."integration" IS NOT NULL
+  )
+  SELECT 'reach-fail', CASE WHEN nw.subject LIKE 'login:%'
+                            THEN 'login (' || coalesce(u."role", 'gone') || ')' ELSE nw.subject END,
+         'gained items', count(*)
+    FROM new_reach nw
+    LEFT JOIN auth.users u ON 'login:' || u."id" = nw.subject
+   WHERE NOT EXISTS (SELECT 1 FROM old_reach o WHERE o.subject = nw.subject AND o.node_id = nw.node_id)
+   GROUP BY 2
+  UNION ALL
+  SELECT 'reach', CASE WHEN o.subject LIKE 'login:%'
+                       THEN 'login (' || coalesce(u."role", 'gone') || ')' ELSE o.subject END,
+         'lost items (narrower, allowed)', count(*)
+    FROM old_reach o
+    LEFT JOIN auth.users u ON 'login:' || u."id" = o.subject
+   WHERE NOT EXISTS (SELECT 1 FROM new_reach nw WHERE nw.subject = o.subject AND nw.node_id = o.node_id)
+   GROUP BY 2
+  UNION ALL
+  SELECT 'reach', split_part(s.subject, ':', 1), 'subjects', count(*)
+    FROM (SELECT DISTINCT subject FROM new_reach) s GROUP BY 2
+  UNION ALL
+  SELECT 'reach-fail', 'connectors on Team', 'differ from what members may use today', count(*)
+    FROM conn c
+   WHERE c.member_today <> c.held OR (c.held AND c.team_write <> c.member_today)
+  HAVING count(*) > 0
 $$;
 --> statement-breakpoint
 REVOKE EXECUTE ON FUNCTION "public"."mantle_ws_reach_diff"() FROM PUBLIC;
@@ -844,9 +804,10 @@ BEGIN
    LIMIT 1;
 
   -- Connectors (a tool group with an integration binding): every one on
-  -- Admin with Write on (the owner's turns write today); the ones at team
-  -- level or below also on Team, Write on (an app run by a member may write
-  -- through them today; the read-only marks still apply per tool).
+  -- Admin with Write on (the owner's turns write today). On Team exactly the
+  -- ones a member may use today (an enabled mcp connector at team level or
+  -- below), Write on as today (a member's app run or MCP may call its
+  -- unmarked tools; the read-only marks still apply per tool).
   INSERT INTO "public"."workspace_resources" ("workspace_id", "type", "ref_id", "write")
   SELECT admin_ws, 'connector', g."slug", true
     FROM "public"."tool_groups" g
@@ -854,7 +815,7 @@ BEGIN
   INSERT INTO "public"."workspace_resources" ("workspace_id", "type", "ref_id", "write")
   SELECT team_ws, 'connector', g."slug", true
     FROM "public"."tool_groups" g
-   WHERE g."owner_id" = brain AND g."integration" IS NOT NULL
+   WHERE g."owner_id" = brain AND g."integration" ? 'mcp' AND g."enabled"
      AND g."audience" IN ('team', 'client', 'public');
 
   -- R3 backfill: only rows of agents attached outside Admin (NULL = Admin).
@@ -905,3 +866,7 @@ REVOKE EXECUTE ON FUNCTION "public"."mantle_ws_migrate"() FROM PUBLIC;
 --> statement-breakpoint
 
 SELECT * FROM "public"."mantle_ws_migrate"();
+--> statement-breakpoint
+-- Any item the bridge left out of step (none expected on a fresh run) is
+-- brought to its level once.
+SELECT "public"."mantle_bridge_apply"(ARRAY(SELECT "public"."mantle_bridge_drift_ids"()));

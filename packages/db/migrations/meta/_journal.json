@@ -1749,7 +1749,14 @@
       "idx": 250,
       "version": "7",
       "when": 1790193960000,
-      "tag": "0250_workspaces_live",
+      "tag": "0250_workspaces_live_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 251,
+      "version": "7",
+      "when": 1790194020000,
+      "tag": "0251_workspaces_live",
       "breakpoints": true
     }
   ]

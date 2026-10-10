@@ -115,6 +115,8 @@ describe.skipIf(!URL)('workspaces live (0250): migration, bridges, facts', () =>
       (${owner}, 'conn-admin', 'a', '{"mcp":{}}'::jsonb, 'admin'),
       (${owner}, 'conn-team', 't', '{"mcp":{}}'::jsonb, 'team'),
       (${owner}, 'plain', 'p', null, 'team')`;
+    await sql`insert into tool_groups (owner_id, slug, name, integration, audience, enabled) values
+      (${owner}, 'conn-off', 'o', '{"mcp":{}}'::jsonb, 'team', false)`;
 
     // A chat fact and a fact from the team page.
     await sql`insert into facts (owner_id, content, kind) values (${owner}, 'chat fact', 'semantic')`;
@@ -197,6 +199,10 @@ describe.skipIf(!URL)('workspaces live (0250): migration, bridges, facts', () =>
     );
     expect(has(team, 'connector', 'conn-team')).toBe(true);
     expect(has(team, 'connector', 'conn-admin') || has(admin, 'connector', 'plain')).toBe(false);
+    // Team holds what a member may use today: not a connector that is off.
+    expect(has(team, 'connector', 'conn-off')).toBe(false);
+    expect(has(admin, 'connector', 'conn-off')).toBe(true);
+    expect(res.find((r) => r.ws === team && r.ref === 'conn-team')?.write).toBe(true);
     const [t] = await sql<{ id: string; ws: string }[]>`
       insert into traces (owner_id, kind, agent_id) values (${owner}, 'responder_turn', ${ids['team-responder']!})
       returning id, workspace_id::text as ws`;
@@ -258,12 +264,11 @@ describe.skipIf(!URL)('workspaces live (0250): migration, bridges, facts', () =>
   });
 
   it('limit 1 and 2: an item homed outside the bridge is never touched, and never gets Admin', async () => {
-    const x = randomUUID();
+    // Made today (the bridge homes it in Admin), then re-homed the workspace
+    // way (W5): a Team home the bridge does not own, no Admin row. The flag
+    // is not used: these are ordinary grant writes.
+    const x = await node('wsItem', owner, 'page', 'pages', 'admin');
     await sql.begin(async (tx) => {
-      // Made the workspace way (W5): bridge off for this insert, home Team.
-      await tx`select set_config('mantle.acl_internal', 'on', true)`;
-      await tx`insert into nodes (id, owner_id, type, title, path, audience)
-        values (${x}, ${owner}, 'page', 'ws item', 'pages', 'admin')`;
       await tx`delete from item_grants where node_id = ${x}`;
       await tx`insert into item_grants (node_id, workspace_id, is_home, bridge) values (${x}, ${team}, true, false)`;
     });
@@ -271,10 +276,24 @@ describe.skipIf(!URL)('workspaces live (0250): migration, bridges, facts', () =>
     expect(before).toEqual({
       Team: { ws: team, home: true, excluded: false, write: false, bridge: false },
     });
+    // A level change and a move: without the limit the bridge would add an
+    // Admin home (a second home: refused) or rewrite the Team row.
     await sql`update nodes set audience = 'team' where id = ${x}`;
     await sql`update nodes set audience = 'admin' where id = ${x}`;
     expect(await grants(x)).toEqual(before);
     expect(await readWs(x)).toEqual([team]);
+    // A move into a folder: the bridge still leaves it alone (its Team home
+    // row unchanged, no Admin home). The folder passes its own rows (S6,
+    // placing is accepting), so Admin arrives as a row derived from the
+    // folder, never as a home.
+    await sql`update nodes set path = 'pages.shared' where id = ${x}`;
+    const moved = await grants(x);
+    expect(moved.Team).toEqual(before.Team);
+    expect(moved.Admin).toMatchObject({ home: false });
+    const [via] = await sql<{ v: string | null }[]>`
+      select via_folder_id::text as v from item_grants where node_id = ${x} and workspace_id = ${admin}`;
+    expect(via!.v).toBe(ids.folder);
+    await sql`delete from nodes where id = ${x}`;
   });
 
   it('limit 3: the bridge rewrites only bridge rows', async () => {
@@ -289,6 +308,54 @@ describe.skipIf(!URL)('workspaces live (0250): migration, bridges, facts', () =>
     await sql`update nodes set audience = 'admin' where id = ${y}`;
     expect((await grants(y)).Team).toMatchObject({ bridge: false, excluded: false, write: true });
     expect((await grants(y)).Admin).toMatchObject({ bridge: true, home: true });
+    await sql`delete from nodes where id = ${y}`;
+  });
+
+  it('a move follows the folder: one item, and a whole sub-folder, in and out of a team folder', async () => {
+    const item = await node('mover', owner, 'page', 'pages', 'admin');
+    expect((await grants(item)).Team).toMatchObject({ excluded: true });
+    await sql`update nodes set path = 'pages.shared' where id = ${item}`;
+    expect((await grants(item)).Team).toMatchObject({ excluded: false });
+    expect(await readWs(item)).toEqual([admin, team].sort());
+    await sql`update nodes set path = 'pages' where id = ${item}`;
+    expect((await grants(item)).Team).toMatchObject({ excluded: true });
+    expect(await readWs(item)).toEqual([admin]);
+    // A sub-folder with an item, moved in one statement under the shared
+    // folder and back.
+    const sub = await node('sub', owner, 'branch', 'pages.sub', 'admin');
+    const inSub = await node('inSub', owner, 'page', 'pages.sub', 'admin');
+    await sql`update nodes set path = ('pages.shared' || subpath(path, 1))::ltree
+               where owner_id = ${owner} and path <@ 'pages.sub'::ltree`;
+    for (const id of [sub, inSub]) expect(await readWs(id)).toEqual([admin, team].sort());
+    await sql`update nodes set path = ('pages' || subpath(path, 2))::ltree
+               where owner_id = ${owner} and path <@ 'pages.shared.sub'::ltree`;
+    for (const id of [sub, inSub]) expect(await readWs(id)).toEqual([admin]);
+    expect(Number((await sql`select mantle_bridge_drift() as n`)[0]!.n)).toBe(0);
+  });
+
+  it('the reach diff fails on a planted gain and on a connector that differs from today', async () => {
+    let fails: string[] = [];
+    await sql
+      .begin(async (tx) => {
+        // A Team grant the level does not give, written past the bridge.
+        await tx`select set_config('mantle.acl_internal', 'on', true)`;
+        await tx`update item_grants set excluded = false
+                  where node_id = ${ids.adminPage!} and workspace_id = ${team}`;
+        await tx`delete from workspace_resources where workspace_id = ${team} and ref_id = 'conn-team'`;
+        const rows = await tx<
+          Row[]
+        >`select * from mantle_ws_reach_diff() where section = 'reach-fail'`;
+        fails = rows.map((r) => `${r.subject}: ${r.metric} ${r.n}`);
+        throw new Error('roll back');
+      })
+      .catch(() => undefined);
+    expect(fails.sort()).toEqual(
+      [
+        'login (member): gained items 1',
+        'assistant:team: gained items 1',
+        'connectors on Team: differ from what members may use today 1',
+      ].sort(),
+    );
   });
 
   it('the login bridge follows a role', async () => {
@@ -336,25 +403,33 @@ describe.skipIf(!URL)('workspaces live (0250): migration, bridges, facts', () =>
     expect(after!.x).toBe(f!.x);
   });
 
-  it('R7: a deleted source freezes a kept fact at its last access, never wider', async () => {
+  it('R7: a deleted source freezes a kept fact at its LAST access; the reap still drops the rest', async () => {
     const src = await node('src', owner, 'page', 'pages', 'team');
     const [f] = await sql<{ id: string }[]>`
       insert into facts (owner_id, content, kind, source_node_id)
       values (${owner}, 'kept', 'semantic', ${src}) returning id`;
+    const [gone] = await sql<{ id: string }[]>`
+      insert into facts (owner_id, content, kind, source_node_id)
+      values (${owner}, 'reaped', 'factual', ${src}) returning id`;
+    // The copy written at insert says Admin + Team; the source then narrows
+    // to Admin. Only a freeze at delete time can know that.
+    await sql`update nodes set audience = 'admin' where id = ${src}`;
     await sql`delete from nodes where id = ${src}`;
     const [row] = await sql<{ s: string | null; r: string[] }[]>`
       select source_node_id as s, read_ws::text[] as r from facts where id = ${f!.id}`;
     expect(row!.s).toBeNull();
-    expect(row!.r).toEqual([admin, team].sort());
+    expect(row!.r).toEqual([admin]);
+    expect((await sql`select 1 from facts where id = ${gone!.id}`).length).toBe(0);
     const sees = (ws: string[]) =>
       asUser(ws, owner, async (tx) => (await tx`select 1 from facts where id = ${f!.id}`).length);
-    expect(await sees([team])).toBe(1);
-    expect(await sees([randomUUID()])).toBe(0);
+    expect(await sees([team])).toBe(0);
+    expect(await sees([admin])).toBe(1);
     // Cleared by hand: the same freeze, from the source as it is now.
-    const src2 = await node('src2', owner, 'page', 'pages', 'admin');
+    const src2 = await node('src2', owner, 'page', 'pages', 'team');
     const [g] = await sql<{ id: string }[]>`
       insert into facts (owner_id, content, kind, source_node_id)
       values (${owner}, 'cleared', 'semantic', ${src2}) returning id`;
+    await sql`update nodes set audience = 'admin' where id = ${src2}`;
     await sql`update facts set source_node_id = null where id = ${g!.id}`;
     const [row2] = await sql<
       { r: string[] }[]

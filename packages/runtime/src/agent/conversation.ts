@@ -264,6 +264,10 @@ export async function recordTurn(args: {
    *  currently the device `{ location }` ping the companion app attaches to
    *  inbound turns. Omitted ⇒ left at the column default. */
   data?: Record<string, unknown> | null;
+  /** The login this turn was for (workspaces R3). Unset: the database stamps
+   *  the scope's login, if any; a row of a non-Admin workspace with no login
+   *  is read in the Admin workspace only. */
+  loginId?: string | null;
   tx?: Executor;
 }): Promise<AssistantMessage> {
   const exec = args.tx ?? db;
@@ -280,6 +284,7 @@ export async function recordTurn(args: {
       externalRef: args.externalRef ?? null,
       ...(args.status ? { status: args.status } : {}),
       ...(args.data != null ? { data: args.data } : {}),
+      ...(args.loginId ? { loginId: args.loginId } : {}),
     })
     .returning();
   if (!row) throw new Error('recordTurn: insert returned no row');
