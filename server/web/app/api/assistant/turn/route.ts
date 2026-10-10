@@ -359,6 +359,8 @@ async function runTurn(req: Request, idempotencyKey: string | null): Promise<Tur
 
     const options: RunAssistantTurnOptions = {
       agentSlug,
+      // The signed-in login (R3): its messages and trace carry it.
+      loginId: user.actor.id,
       // An API key ('api') never reaches this route (keys work on /api/v1
       // only); the type still names it, so it maps to no channel.
       channel: source === 'api' ? undefined : source,

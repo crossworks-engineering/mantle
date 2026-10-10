@@ -80,6 +80,8 @@ export async function runTelegramTurn(args: {
     recordTurn({
       ownerId,
       agentId: agent.id,
+      // The brain owner's own surface (R3): the owner's login.
+      loginId: ownerId,
       direction: 'inbound',
       text: row.text,
       channel: 'telegram',

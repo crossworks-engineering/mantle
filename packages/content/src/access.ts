@@ -39,6 +39,7 @@ import {
   toolGroups,
   WORKSPACE_NODE_TYPES,
   type ViewerLevel,
+  withWriterHeads,
 } from '@mantle/db';
 import {
   EMBEDDING_KINDS,
@@ -296,7 +297,25 @@ export async function setItemAudience(
   audience: string,
   opts: { withClosure?: boolean; raiseClosure?: boolean } = {},
 ): Promise<SetItemAudienceResult> {
-  return applyItemAudience(ownerId, await planItemAudience(ownerId, nodeId, audience), opts, db);
+  const plan = await planItemAudience(ownerId, nodeId, audience);
+  return withWriterHeads(audienceHeads(plan, opts), (tx) =>
+    applyItemAudience(ownerId, plan, opts, tx as unknown as ShareDb),
+  );
+}
+
+/** The heads a level change takes first (workspaces W1, the W4a bridge): the
+ *  item, and the closure items it will write. What follows from the change
+ *  (embeds lowered with it, embedded levels) the level bridge locks itself,
+ *  without waiting, once these are held. */
+function audienceHeads(
+  plan: AudiencePlan,
+  opts: { withClosure?: boolean; raiseClosure?: boolean },
+): string[] {
+  return [
+    plan.item.id,
+    ...(opts.withClosure ? plan.above.map((a) => a.id) : []),
+    ...(opts.raiseClosure ? plan.below.map((b) => b.id) : []),
+  ];
 }
 
 export type SetItemLevelResult = SetItemAudienceResult & {
@@ -321,7 +340,8 @@ export async function setItemLevel(
   opts: { withClosure?: boolean; raiseClosure?: boolean } = {},
 ): Promise<SetItemLevelResult> {
   const plan = await planItemAudience(ownerId, nodeId, audience);
-  return db.transaction(async (tx) => {
+  return withWriterHeads(audienceHeads(plan, opts), async (heads) => {
+    const tx = heads as unknown as ShareDb;
     // The level before the change, read under a row lock: another writer
     // cannot move it between this read and the write below.
     const [before] = await tx

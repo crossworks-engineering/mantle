@@ -12,7 +12,15 @@
  * writing while the user types) from silently winning a lost update.
  */
 import { and, eq, sql } from 'drizzle-orm';
-import { asViewerLevel, db, nodes, notifyNodeIngested, pages, withBusyRetry } from '@mantle/db';
+import {
+  asViewerLevel,
+  db,
+  nodes,
+  notifyNodeIngested,
+  pages,
+  withBusyRetry,
+  withWriterHeads,
+} from '@mantle/db';
 import { ensureBlockIds, repairTableRows } from '@mantle/content-core/block-ids';
 import type { PageVisibility, PageWidth } from '@mantle/client-types';
 import { EMPTY_DOC, dedupeTags, detailOf, type PageDetail } from './shared';
@@ -73,8 +81,17 @@ export type LockedPageRow = {
 export async function withPageLock<T>(
   nodeId: string,
   fn: (tx: PageTx, locked: LockedPageRow) => Promise<T>,
+  opts: {
+    /** A commit, which may add or drop an embed (the level bridge rewrites
+     *  their grants): take the page's head first (withWriterHeads). */
+    heads?: boolean;
+  } = {},
 ): Promise<T> {
-  return db.transaction(async (tx) => {
+  const open = opts.heads
+    ? (body: (tx: PageTx) => Promise<T>) =>
+        withWriterHeads([nodeId], (tx) => body(tx as unknown as PageTx))
+    : (body: (tx: PageTx) => Promise<T>) => db.transaction(body);
+  return open(async (tx) => {
     const result = await tx.execute<{
       draft_rev: number;
       draft_doc: Record<string, unknown> | null;
@@ -159,7 +176,12 @@ async function updatePageOnce(
     delete newData.entities;
   }
 
-  const result = await db.transaction(async (tx) => {
+  // A doc change may add or drop an embed: the page's head first.
+  const open = docChanged
+    ? <R>(body: (tx: PageTx) => Promise<R>) =>
+        withWriterHeads([id], (tx) => body(tx as unknown as PageTx))
+    : <R>(body: (tx: PageTx) => Promise<R>) => db.transaction(body);
+  const result = await open(async (tx) => {
     const [row] = await tx
       .update(nodes)
       .set({
@@ -336,48 +358,52 @@ async function commitPageOnce(
   // returns a conflict WITHOUT publishing, so a client committing a doc it
   // built on an out-of-date draft can't blow away a newer draft. The
   // successful commit clears the draft and bumps `draft_rev` in the same tx.
-  const result = await withPageLock(id, async (tx, locked) => {
-    if (!locked) return { ok: false as const, missing: true as const };
-    const decision = evaluateDraftRev(locked.draftRev, opts.baseRev);
-    if (decision.conflict) {
-      return { ok: false as const, conflict: true as const, rev: decision.rev };
-    }
-    const before = await followPageEmbeds(tx, ownerId, id, enriched);
-    // The page's own words, a marker per embed (always fold, workspaces plan
-    // 5.3): an embed's text is indexed on the embed itself. At client or
-    // public, mentions of what that level cannot read are "Private item"
-    // (pages/level-text.ts). Read after the embeds followed the page down,
-    // in this transaction.
-    const docText = await pageDocText(
-      ownerId,
-      itemLevel(node.audience, node.inheritedLevel, node.embeddedLevel),
-      enriched,
-      tx,
-    );
-    const [row] = await tx
-      .update(nodes)
-      .set({ data: newData, embedding: null, updatedAt: new Date() })
-      .where(eq(nodes.id, id))
-      .returning();
-    if (!row) throw new Error('commitPage: update returned no row');
-    await tx
-      .update(pages)
-      .set({
-        doc: enriched,
-        docText,
-        draftDoc: null,
-        draftUpdatedAt: null,
-        version: sql`${pages.version} + 1`,
-        draftRev: sql`${pages.draftRev} + 1`,
-        updatedAt: new Date(),
-      })
-      .where(eq(pages.nodeId, id));
-    await refoldEmbedReach(ownerId, id, before, referencedEmbedIds(enriched), tx);
-    return {
-      ok: true as const,
-      page: detailOf(row, enriched, null, { draftRev: decision.nextRev }),
-    };
-  });
+  const result = await withPageLock(
+    id,
+    async (tx, locked) => {
+      if (!locked) return { ok: false as const, missing: true as const };
+      const decision = evaluateDraftRev(locked.draftRev, opts.baseRev);
+      if (decision.conflict) {
+        return { ok: false as const, conflict: true as const, rev: decision.rev };
+      }
+      const before = await followPageEmbeds(tx, ownerId, id, enriched);
+      // The page's own words, a marker per embed (always fold, workspaces plan
+      // 5.3): an embed's text is indexed on the embed itself. At client or
+      // public, mentions of what that level cannot read are "Private item"
+      // (pages/level-text.ts). Read after the embeds followed the page down,
+      // in this transaction.
+      const docText = await pageDocText(
+        ownerId,
+        itemLevel(node.audience, node.inheritedLevel, node.embeddedLevel),
+        enriched,
+        tx,
+      );
+      const [row] = await tx
+        .update(nodes)
+        .set({ data: newData, embedding: null, updatedAt: new Date() })
+        .where(eq(nodes.id, id))
+        .returning();
+      if (!row) throw new Error('commitPage: update returned no row');
+      await tx
+        .update(pages)
+        .set({
+          doc: enriched,
+          docText,
+          draftDoc: null,
+          draftUpdatedAt: null,
+          version: sql`${pages.version} + 1`,
+          draftRev: sql`${pages.draftRev} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(eq(pages.nodeId, id));
+      await refoldEmbedReach(ownerId, id, before, referencedEmbedIds(enriched), tx);
+      return {
+        ok: true as const,
+        page: detailOf(row, enriched, null, { draftRev: decision.nextRev }),
+      };
+    },
+    { heads: true },
+  );
 
   if (result.ok) {
     await notifyNodeIngested(id);

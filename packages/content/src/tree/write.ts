@@ -10,7 +10,16 @@
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { publicErrorMessage } from '@mantle/std';
-import { db, isCheckViolation, nodes, takeShareWriteLock, isBusy, BUSY_MESSAGE } from '@mantle/db';
+import {
+  db,
+  isCheckViolation,
+  nodes,
+  takeShareWriteLock,
+  isBusy,
+  BUSY_MESSAGE,
+  withDeadlockRetry,
+  withSubtreeHeads,
+} from '@mantle/db';
 import {
   createFolder as createFilesFolder,
   moveFileById,
@@ -373,14 +382,19 @@ async function setFolderShare(
   // The database refreshes everything below (migration 0204 triggers). Its
   // share check is the last word on which roots may share: a refusal there
   // is a refusal, not a server error.
+  // The folder and everything under it FIRST (the level bridge rewrites the
+  // grants of every item whose inherited level changes; the embeds that
+  // follow, it locks itself). Retried whole on a busy head.
   try {
-    await db.transaction(async (tx) => {
-      await takeShareWriteLock(tx, ownerId);
-      await tx
-        .update(nodes)
-        .set({ shareLevel: share, updatedAt: new Date() })
-        .where(and(eq(nodes.id, folder.id), eq(nodes.ownerId, ownerId)));
-    });
+    await withDeadlockRetry(() =>
+      withSubtreeHeads(folder.id, [], async (tx) => {
+        await takeShareWriteLock(tx, ownerId);
+        await tx
+          .update(nodes)
+          .set({ shareLevel: share, updatedAt: new Date() })
+          .where(and(eq(nodes.id, folder.id), eq(nodes.ownerId, ownerId)));
+      }),
+    );
   } catch (err) {
     if (isCheckViolation(err)) {
       throw new TreeError('invalid', `${kind} folders cannot be shared on this brain yet`);

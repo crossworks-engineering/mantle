@@ -308,6 +308,8 @@ export function registerResponderTools(ctx: McpRegisterContext): void {
     async (a) => {
       try {
         const res = await recordMcpResponderTurn(ownerId, {
+          // The owner's MCP surface: the brain owner's own login (R3).
+          loginId: ownerId,
           message: a.message,
           reply: a.reply,
           model: a.model,

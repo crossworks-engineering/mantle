@@ -67,6 +67,9 @@ export type RecordMcpResponderTurnOptions = {
   inputTraceId?: string;
   /** Tools the client says it called. Stored as its claim. */
   toolsUsed?: string[];
+  /** The login the turn serves (workspaces R3): stamped on both rows and the
+   *  trace. The owner's MCP surface passes the brain owner's login. */
+  loginId?: string | null;
 };
 
 export type RecordMcpResponderTurnResult = {
@@ -119,6 +122,7 @@ export async function recordMcpResponderTurn(
     text: message,
     channel: MCP_TURN_CHANNEL,
     data: { via: 'mcp', ...link },
+    ...(opts.loginId ? { loginId: opts.loginId } : {}),
   });
   const outbound = await recordTurn({
     ownerId,
@@ -128,6 +132,7 @@ export async function recordMcpResponderTurn(
     channel: MCP_TURN_CHANNEL,
     model,
     data: { via: 'mcp', authored_by: authoredBy, ...link, ...claimedTools },
+    ...(opts.loginId ? { loginId: opts.loginId } : {}),
   });
 
   // Who answered, on /traces: subject the inbound row, as a real turn's trace.
@@ -136,6 +141,7 @@ export async function recordMcpResponderTurn(
     {
       kind: 'manual',
       ownerId,
+      loginId: opts.loginId ?? null,
       subjectKind: 'assistant_message',
       subjectId: inbound.id,
       agentId: agent.id,

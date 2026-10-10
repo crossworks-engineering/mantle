@@ -51,6 +51,10 @@ export type StartTraceInit = {
    *  omit for the root turn — the responder's own steps stay unprefixed. */
   streamLabel?: string;
   data?: Record<string, unknown>;
+  /** The login the turn serves (workspaces R3): stamped on the trace row, and
+   *  inherited by nested traces. Unset: the parent's, else none (a row of a
+   *  non-Admin workspace with no login is read in the Admin workspace only). */
+  loginId?: string | null;
   /** Steps that ran before this trace opened (see createTracePrelude). They are
    *  written first, and their tokens + cost count toward this trace. Consumed:
    *  a second trace given the same prelude (an image-fallback retry) gets none. */
@@ -109,6 +113,8 @@ export type TokenDelta = {
 export type TraceContext = {
   readonly id: string;
   readonly ownerId: string;
+  /** The login the turn serves (StartTraceInit.loginId), inherited. */
+  readonly loginId: string | null;
   /** Live-streaming correlation id; null for un-streamed (background) traces.
    *  A delegated child inherits the parent's `turnId` (see startTrace) so its
    *  steps surface in the SAME live stream. */
@@ -652,9 +658,11 @@ export async function startTrace<T>(init: StartTraceInit, fn: () => Promise<T>):
   // trace opened INSIDE a delegated child would stream its steps bare —
   // silently misattributed to the responder.
   const streamLabel = init.streamLabel ?? parent?.streamLabel ?? null;
+  const loginId = init.loginId ?? parent?.loginId ?? null;
   const ctx: TraceContext = {
     id,
     ownerId: init.ownerId,
+    loginId,
     turnId,
     isStreamRoot,
     streamLabel,
@@ -693,6 +701,7 @@ export async function startTrace<T>(init: StartTraceInit, fn: () => Promise<T>):
       subjectId: init.subjectId ?? null,
       subjectKind: init.subjectKind ?? null,
       agentId: init.agentId ?? null,
+      loginId,
       status: 'running',
       // `turn_id` rides in data (no schema change): it lets the Journey UI
       // offer "Stop" on a running streamed turn (POST /turn/:id/cancel needs

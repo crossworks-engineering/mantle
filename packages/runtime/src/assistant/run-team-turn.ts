@@ -504,6 +504,7 @@ async function runTeamTurnSteps(
           kind: 'responder_turn',
           prelude,
           ownerId,
+          loginId,
           turnId: options.streamId,
           subjectId: inbound.id,
           subjectKind: 'team_turn',

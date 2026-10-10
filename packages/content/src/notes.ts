@@ -23,8 +23,11 @@ import {
   withDeadlockRetry,
   withNodeDeleteHeads,
   withNodeInsertHeads,
+  withWriterHeads,
 } from '@mantle/db';
 import { followNewEmbeds, noteEmbedIds, refoldEmbedReach } from './embed-closure';
+
+type NoteTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 export const NOTES_ROOT_LABEL = 'notes';
 
@@ -252,7 +255,12 @@ async function updateNoteOnce(
     delete newData.summary_at;
     delete newData.entities;
   }
-  const [updated] = await db.transaction(async (tx) => {
+  // A content change may add or drop an embed: the note's head first.
+  const open = contentChanged
+    ? <R>(body: (tx: NoteTx) => Promise<R>) =>
+        withWriterHeads([id], (tx) => body(tx as unknown as NoteTx))
+    : <R>(body: (tx: NoteTx) => Promise<R>) => db.transaction(body);
+  const [updated] = await open(async (tx) => {
     // Later embeds follow on save: a note whose own level is below admin and
     // that gains an image, file or drawing takes it to that level (embedding
     // means sharing). A folder share it is read through is the database's to

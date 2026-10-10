@@ -224,6 +224,9 @@ export type RunAssistantTurnOptions = {
    *  runs (see docs/live-turn-streaming.md). Omit → no live stream; the poll
    *  fallback still works. */
   streamId?: string;
+  /** The login this turn serves (workspaces R3): stamped on its messages and
+   *  its trace. The owner's chat passes the signed-in login. */
+  loginId?: string | null;
 };
 
 export async function runAssistantTurn(
@@ -294,6 +297,7 @@ export async function runAssistantTurn(
       channel,
       attachments: inboundAttachments,
       ...(options?.location ? { data: { location: options.location } } : {}),
+      loginId: options?.loginId ?? null,
     }),
   );
   // Remember the surface this turn came in on so proactive delivery (reminders)
@@ -318,6 +322,7 @@ export async function runAssistantTurn(
       channel,
       model: agent.model,
       status: 'pending',
+      loginId: options?.loginId ?? null,
     }),
   );
   // turn-start: both durable rows now exist. Carries their ids so the client can
@@ -462,6 +467,7 @@ export async function runAssistantTurn(
         kind: 'responder_turn',
         prelude,
         ownerId,
+        loginId: options?.loginId ?? null,
         // When the client minted a stream id, key this turn's live status/token
         // events on it (no-op when absent — the trace just isn't streamed).
         turnId: options?.streamId,

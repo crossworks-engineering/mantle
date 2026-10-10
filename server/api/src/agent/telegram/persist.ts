@@ -92,6 +92,8 @@ export async function persistOutbound(args: {
     await recordTurn({
       ownerId,
       agentId: agent.id,
+      // The brain owner's own surface (R3): the owner's login.
+      loginId: ownerId,
       direction: 'outbound',
       text: reply,
       channel: 'telegram',

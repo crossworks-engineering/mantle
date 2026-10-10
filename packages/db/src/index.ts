@@ -13,6 +13,7 @@ export {
   withNodeInsertHeads,
   withNodeMoveHeads,
   withNodeDeleteHeads,
+  withWriterHeads,
   folderHeadIds,
   headsOrSpace,
   withSpaceRows,

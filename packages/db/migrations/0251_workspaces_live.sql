@@ -1,9 +1,14 @@
--- Workspaces, phase W4a, part 2: the workspaces go live as DATA (the columns
--- are 0250) (plan page 4887b8e7,
--- sections 9.1, 9.2, 9.4, 11, R3, R7, S1, T1, 21.8 and 21.9; the CEO's W4
--- decisions of 2026-10-10).
+-- Workspaces, phase W4a, part 2: the rules, functions and triggers that take
+-- the workspaces live as DATA (the columns are 0250, the data pass is 0252)
+-- (plan page 4887b8e7, sections 9.1, 9.2, 9.4, 11, R3, R7, S1, T1, 21.8 and
+-- 21.9; the CEO's W4 decisions of 2026-10-10).
 --
--- What this writes, once, on a brain without client logins or client items:
+-- DDL only, in its own transaction: CREATE/DROP POLICY and the trigger
+-- changes take ACCESS EXCLUSIVE locks on facts, nodes, apps, tool_groups and
+-- auth.users, and they end at this commit, before the data pass starts
+-- (W4a re-audit 1). Nothing here writes a row.
+--
+-- What mantle_ws_migrate() (run by 0252) writes, once, on a brain without client logins or client items:
 --  - the Admin workspace (every admin login, Moderator) and the Team
 --    workspace (every admin and member login, all Moderators; Admin users
 --    moderate it by admin_moderated);
@@ -23,7 +28,7 @@
 -- says so in a NOTICE; the bridges stay inert while there is no Admin
 -- workspace, and /debug/integrity shows a warning.
 --
--- The reach diff runs inside this transaction: if any login or assistant
+-- The reach diff runs inside the data pass's transaction: if any login or assistant
 -- would read an item it does not read today, the migration fails and
 -- nothing is written (9.4).
 --
@@ -49,8 +54,6 @@
 -- only grant rows are written.
 
 SET LOCAL lock_timeout = '30s';
---> statement-breakpoint
-SELECT "public"."mantle_heads_bypass"('0251_workspaces_live');
 --> statement-breakpoint
 
 -- ── Facts with a source follow their node ────────────────────────────────────
@@ -362,12 +365,16 @@ BEGIN
   want := ARRAY(SELECT w FROM "public"."mantle_bridge_wanted"(ids) w);
   PERFORM set_config('mantle.acl_internal', 'on', true);
 
-  -- Bridge rows of these items the table no longer wants.
+  -- Bridge rows of these items the table no longer wants. One row per item
+  -- with the workspaces it keeps (at most two), joined on the item: an index
+  -- lookup per item, never an anti-join over the whole list (a generic plan
+  -- guesses ten rows for unnest and may nest-loop it: n x n on a big folder).
   DELETE FROM "public"."item_grants" g
-   WHERE g."node_id" IN (SELECT DISTINCT w."node_id" FROM unnest(want) w)
+   USING (SELECT w."node_id", array_agg(w."workspace_id") AS keep
+            FROM unnest(want) w GROUP BY w."node_id") k
+   WHERE g."node_id" = k."node_id"
      AND g."bridge"
-     AND NOT EXISTS (SELECT 1 FROM unnest(want) w
-                      WHERE w."node_id" = g."node_id" AND w."workspace_id" = g."workspace_id");
+     AND NOT (g."workspace_id" = ANY (k.keep));
   -- A home that moves: the old home row lets go first (one home per item).
   UPDATE "public"."item_grants" g SET "is_home" = false
     FROM unnest(want) w
@@ -482,7 +489,16 @@ BEGIN
     DELETE FROM "public"."mantle_bridge_pending" p WHERE p."xid" = me RETURNING p."id")
   SELECT array_agg(t."id") INTO ids FROM taken t;
   -- A level change or a move rewrites grants: its writer holds the heads
-  -- for update (W1; warn mode counts a miss, on mode refuses).
+  -- for update (W1; warn mode counts a miss, on mode refuses). A writer that
+  -- holds its own heads first (the item, a folder's subtree, the page it
+  -- saves) also covers the rows whose level follows from its change (a
+  -- folder share's inherited levels, a save's embedded levels, an embed
+  -- lowered with its page): those were found only now, so they are locked
+  -- here without waiting (U2, V1: a busy one fails with 55P03 and the
+  -- writer retries the whole transaction).
+  IF cardinality("public"."mantle_heads_held"()) > 0 THEN
+    PERFORM "public"."mantle_lock_heads_more"(ids);
+  END IF;
   PERFORM "public"."mantle_heads_require"(ids, 'bridge', true);
   PERFORM "public"."mantle_bridge_apply"(ids);
   RETURN NULL;
@@ -496,7 +512,13 @@ CREATE OR REPLACE FUNCTION "public"."mantle_bridge_app_trg"()
   RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
   SET search_path = "public", pg_temp AS $$
 BEGIN
-  PERFORM "public"."mantle_heads_require"(ARRAY[NEW."node_id"], 'bridge', true);
+  -- An apps row is made with its node, in the node's own insert (createApp
+  -- holds the folder's head, share); the node's bridge rows were written by
+  -- that insert. Only a later read-only switch rewrites grants of an item
+  -- that exists, and it needs the item's head.
+  IF TG_OP = 'UPDATE' THEN
+    PERFORM "public"."mantle_heads_require"(ARRAY[NEW."node_id"], 'bridge', true);
+  END IF;
   PERFORM "public"."mantle_bridge_apply"(ARRAY[NEW."node_id"]);
   RETURN NULL;
 END
@@ -577,6 +599,116 @@ CREATE OR REPLACE FUNCTION "public"."mantle_bridge_drift"()
 $$;
 --> statement-breakpoint
 REVOKE EXECUTE ON FUNCTION "public"."mantle_bridge_drift"() FROM PUBLIC;
+--> statement-breakpoint
+
+-- ── The connector bridge (a group's level to Team's resource row, until W5b) ─
+-- What the migration wrote once, kept: every connector (a group with an
+-- integration) is a resource of Admin with Write on; Team holds exactly the
+-- ones a member may use today (an enabled mcp connector at team level or
+-- below), Write on. A connector raised above team, disabled, or no longer an
+-- mcp connector leaves Team; a new or lowered one joins it. Only the two
+-- bridge workspaces' connector rows are written. Inert until migrated.
+CREATE OR REPLACE FUNCTION "public"."mantle_bridge_connector"(p_owner uuid, p_slug text)
+  RETURNS void LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+DECLARE
+  admin_ws uuid;
+  team_ws uuid;
+  g record;
+  member_today boolean;
+BEGIN
+  IF p_owner IS DISTINCT FROM "public"."mantle_brain_id"() THEN RETURN; END IF;
+  SELECT w."id" INTO admin_ws FROM "public"."workspaces" w
+   WHERE w."owner_id" = p_owner AND w."bridge_key" = 'admin';
+  SELECT w."id" INTO team_ws FROM "public"."workspaces" w
+   WHERE w."owner_id" = p_owner AND w."bridge_key" = 'team';
+  IF admin_ws IS NULL THEN RETURN; END IF;
+  SELECT t."integration", t."enabled", t."audience" INTO g
+    FROM "public"."tool_groups" t WHERE t."owner_id" = p_owner AND t."slug" = p_slug;
+  IF NOT FOUND OR g."integration" IS NULL THEN
+    DELETE FROM "public"."workspace_resources" r
+     WHERE r."type" = 'connector' AND r."ref_id" = p_slug
+       AND r."workspace_id" IN (admin_ws, coalesce(team_ws, admin_ws));
+    RETURN;
+  END IF;
+  INSERT INTO "public"."workspace_resources" ("workspace_id", "type", "ref_id", "write")
+  SELECT admin_ws, 'connector', p_slug, true
+   WHERE NOT EXISTS (SELECT 1 FROM "public"."workspace_resources" r
+                      WHERE r."workspace_id" = admin_ws AND r."type" = 'connector' AND r."ref_id" = p_slug);
+  IF team_ws IS NULL THEN RETURN; END IF;
+  member_today := g."integration" ? 'mcp' AND g."enabled"
+                  AND g."audience" IN ('team', 'client', 'public');
+  IF member_today THEN
+    INSERT INTO "public"."workspace_resources" ("workspace_id", "type", "ref_id", "write")
+    SELECT team_ws, 'connector', p_slug, true
+     WHERE NOT EXISTS (SELECT 1 FROM "public"."workspace_resources" r
+                        WHERE r."workspace_id" = team_ws AND r."type" = 'connector' AND r."ref_id" = p_slug);
+    UPDATE "public"."workspace_resources" r SET "write" = true
+     WHERE r."workspace_id" = team_ws AND r."type" = 'connector' AND r."ref_id" = p_slug AND NOT r."write";
+  ELSE
+    DELETE FROM "public"."workspace_resources" r
+     WHERE r."workspace_id" = team_ws AND r."type" = 'connector' AND r."ref_id" = p_slug;
+  END IF;
+END
+$$;
+--> statement-breakpoint
+REVOKE EXECUTE ON FUNCTION "public"."mantle_bridge_connector"(uuid, text) FROM PUBLIC;
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION "public"."mantle_bridge_connector_trg"()
+  RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+BEGIN
+  IF TG_OP IN ('UPDATE', 'DELETE') THEN
+    PERFORM "public"."mantle_bridge_connector"(OLD."owner_id", OLD."slug");
+  END IF;
+  IF TG_OP IN ('INSERT', 'UPDATE') THEN
+    PERFORM "public"."mantle_bridge_connector"(NEW."owner_id", NEW."slug");
+  END IF;
+  RETURN NULL;
+END
+$$;
+--> statement-breakpoint
+REVOKE EXECUTE ON FUNCTION "public"."mantle_bridge_connector_trg"() FROM PUBLIC;
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "tool_groups_zz_bridge" ON "public"."tool_groups";
+--> statement-breakpoint
+CREATE TRIGGER "tool_groups_zz_bridge"
+  AFTER INSERT OR DELETE OR UPDATE OF "audience", "enabled", "integration", "slug", "owner_id"
+  ON "public"."tool_groups"
+  FOR EACH ROW EXECUTE FUNCTION "public"."mantle_bridge_connector_trg"();
+--> statement-breakpoint
+-- Connector drift (the integrity row): the brain's connectors whose bridge
+-- rows differ from what the rule above wants. Numbers only.
+CREATE OR REPLACE FUNCTION "public"."mantle_connector_drift"()
+  RETURNS bigint LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  WITH ws AS (
+    SELECT (SELECT w."id" FROM "public"."workspaces" w
+             WHERE w."owner_id" = "public"."mantle_brain_id"() AND w."bridge_key" = 'admin') AS admin_ws,
+           (SELECT w."id" FROM "public"."workspaces" w
+             WHERE w."owner_id" = "public"."mantle_brain_id"() AND w."bridge_key" = 'team') AS team_ws
+  ), g AS (
+    SELECT t."slug",
+           t."integration" ? 'mcp' AND t."enabled" AND t."audience" IN ('team', 'client', 'public') AS member_today,
+           EXISTS (SELECT 1 FROM "public"."workspace_resources" r, ws
+                    WHERE r."workspace_id" = ws.admin_ws AND r."type" = 'connector' AND r."ref_id" = t."slug") AS on_admin,
+           (SELECT r."write" FROM "public"."workspace_resources" r, ws
+             WHERE r."workspace_id" = ws.team_ws AND r."type" = 'connector' AND r."ref_id" = t."slug") AS team_write
+      FROM "public"."tool_groups" t
+     WHERE t."owner_id" = "public"."mantle_brain_id"() AND t."integration" IS NOT NULL
+  )
+  SELECT CASE WHEN (SELECT admin_ws FROM ws) IS NULL THEN 0 ELSE (
+    (SELECT count(*) FROM g
+      WHERE NOT g.on_admin
+         OR ((SELECT team_ws FROM ws) IS NOT NULL
+             AND (g.member_today IS DISTINCT FROM (g.team_write IS NOT NULL)
+                  OR (g.team_write IS NOT NULL AND NOT g.team_write))))
+    + (SELECT count(*) FROM "public"."workspace_resources" r, ws
+        WHERE r."type" = 'connector' AND r."workspace_id" IN (ws.admin_ws, ws.team_ws)
+          AND NOT EXISTS (SELECT 1 FROM g WHERE g."slug" = r."ref_id"))) END
+$$;
+--> statement-breakpoint
+REVOKE EXECUTE ON FUNCTION "public"."mantle_connector_drift"() FROM PUBLIC;
 --> statement-breakpoint
 
 -- ── The login bridge (role to Admin and Team membership, until W5a) ──────────
@@ -834,6 +966,10 @@ BEGIN
   UPDATE "public"."tool_results" m SET "workspace_id" = t."workspace_id"
     FROM "public"."traces" t WHERE t."id" = m."trace_id" AND t."workspace_id" = team_ws;
 
+  -- Any item the bridge left out of step (none expected on a fresh run) is
+  -- brought to its level before the proof, so the proof sees the result.
+  PERFORM "public"."mantle_bridge_apply"(ARRAY(SELECT "public"."mantle_bridge_drift_ids"()));
+
   -- The proof (9.4): nobody reads more than today, or nothing is written.
   SELECT coalesce(sum(d."n"), 0) INTO fails
     FROM "public"."mantle_ws_reach_diff"() d WHERE d."section" = 'reach-fail';
@@ -863,10 +999,3 @@ END
 $$;
 --> statement-breakpoint
 REVOKE EXECUTE ON FUNCTION "public"."mantle_ws_migrate"() FROM PUBLIC;
---> statement-breakpoint
-
-SELECT * FROM "public"."mantle_ws_migrate"();
---> statement-breakpoint
--- Any item the bridge left out of step (none expected on a fresh run) is
--- brought to its level once.
-SELECT "public"."mantle_bridge_apply"(ARRAY(SELECT "public"."mantle_bridge_drift_ids"()));

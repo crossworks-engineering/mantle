@@ -218,6 +218,8 @@ async function tick(): Promise<void> {
           await recordTurn({
             ownerId,
             agentId: agent.id,
+            // The brain owner's own surface (R3): the owner's login.
+            loginId: ownerId,
             direction: 'outbound',
             text: formatReminder(evt),
             channel: 'mobile',

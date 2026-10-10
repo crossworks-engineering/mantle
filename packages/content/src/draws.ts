@@ -31,6 +31,7 @@ import {
   withDeadlockRetry,
   withNodeDeleteHeads,
   withNodeInsertHeads,
+  withWriterHeads,
 } from '@mantle/db';
 import { sceneToText } from './scene-to-text';
 import { acceptSceneSvg, EXCALIDRAW_ENGINE } from './scene-svg';
@@ -199,8 +200,17 @@ export type LockedDrawRow = {
 export async function withDrawLock<T>(
   nodeId: string,
   fn: (tx: DrawTx, locked: LockedDrawRow) => Promise<T>,
+  opts: {
+    /** A commit, which may add or drop an embed (the level bridge rewrites
+     *  their grants): take the drawing's head first (withWriterHeads). */
+    heads?: boolean;
+  } = {},
 ): Promise<T> {
-  return db.transaction(async (tx) => {
+  const open = opts.heads
+    ? (body: (tx: DrawTx) => Promise<T>) =>
+        withWriterHeads([nodeId], (tx) => body(tx as unknown as DrawTx))
+    : (body: (tx: DrawTx) => Promise<T>) => db.transaction(body);
+  return open(async (tx) => {
     const result = await tx.execute<{
       draft_rev: number;
       draft_scene: Record<string, unknown> | null;
@@ -725,74 +735,78 @@ async function commitDrawOnce(
   delete newData.summary_at;
   delete newData.entities;
 
-  const result = await withDrawLock(id, async (tx, locked) => {
-    if (!locked) return { ok: false as const, missing: true as const };
-    const decision = evaluateDraftRev(locked.draftRev, opts.baseRev);
-    if (decision.conflict) {
-      return { ok: false as const, conflict: true as const, rev: decision.rev };
-    }
-    // Later embeds follow on save: a drawing below admin that gains an image
-    // takes it to its level. "Before" is what the committed scene placed (a
-    // draft autosave may already have rewritten the file map).
-    const [prev] = await tx
-      .select({
-        audience: nodes.audience,
-        scene: draws.scene,
-        fileRefs: draws.fileRefs,
-      })
-      .from(nodes)
-      .innerJoin(draws, eq(draws.nodeId, nodes.id))
-      .where(eq(nodes.id, id))
-      .limit(1);
-    // Its own level only: a folder share it is read through is the
-    // database's to follow (0208).
-    const level = prev ? asViewerLevel(prev.audience) : 'admin';
-    // What the published scene places, before and after: the edges the
-    // database keeps for a drawing (0208).
-    const embedsBefore = prev ? drawPlacedFileIds(prev.scene, prev.fileRefs) : [];
-    const embedsAfter = prev ? drawPlacedFileIds(normalized, opts.fileRefs ?? prev.fileRefs) : [];
-    if (prev && level !== 'admin') {
-      await followNewEmbeds(
-        ownerId,
-        { id, audience: level },
-        drawPlacedFileIds(prev.scene, prev.fileRefs),
-        embedsAfter,
-        tx,
-      );
-    }
-    const [row] = await tx
-      .update(nodes)
-      .set({ data: newData, embedding: null, updatedAt: new Date() })
-      .where(eq(nodes.id, id))
-      .returning();
-    if (!row) throw new Error('commitDraw: update returned no row');
-    await tx
-      .update(draws)
-      .set({
-        scene: normalized,
-        sceneText,
-        // A commit without a (valid) snapshot clears the old one — a stale
-        // preview of a superseded scene is worse than no preview. The cache is
-        // refillable from `scene` by the sidecar, so this is a miss, not a loss.
-        sceneSvg,
-        svgEngine: sceneSvg ? EXCALIDRAW_ENGINE : null,
-        draftScene: null,
-        draftUpdatedAt: null,
-        version: sql`${draws.version} + 1`,
-        draftRev: sql`${draws.draftRev} + 1`,
-        updatedAt: new Date(),
-        ...(opts.fileRefs !== undefined ? { fileRefs: opts.fileRefs } : {}),
-      })
-      .where(eq(draws.nodeId, id));
-    await refoldEmbedReach(ownerId, id, embedsBefore, embedsAfter, tx);
-    return {
-      ok: true as const,
-      draw: detailOf(row, normalized, null, {
-        draftRev: decision.nextRev,
-        hasSvg: sceneSvg !== null,
-      }),
-    };
-  });
+  const result = await withDrawLock(
+    id,
+    async (tx, locked) => {
+      if (!locked) return { ok: false as const, missing: true as const };
+      const decision = evaluateDraftRev(locked.draftRev, opts.baseRev);
+      if (decision.conflict) {
+        return { ok: false as const, conflict: true as const, rev: decision.rev };
+      }
+      // Later embeds follow on save: a drawing below admin that gains an image
+      // takes it to its level. "Before" is what the committed scene placed (a
+      // draft autosave may already have rewritten the file map).
+      const [prev] = await tx
+        .select({
+          audience: nodes.audience,
+          scene: draws.scene,
+          fileRefs: draws.fileRefs,
+        })
+        .from(nodes)
+        .innerJoin(draws, eq(draws.nodeId, nodes.id))
+        .where(eq(nodes.id, id))
+        .limit(1);
+      // Its own level only: a folder share it is read through is the
+      // database's to follow (0208).
+      const level = prev ? asViewerLevel(prev.audience) : 'admin';
+      // What the published scene places, before and after: the edges the
+      // database keeps for a drawing (0208).
+      const embedsBefore = prev ? drawPlacedFileIds(prev.scene, prev.fileRefs) : [];
+      const embedsAfter = prev ? drawPlacedFileIds(normalized, opts.fileRefs ?? prev.fileRefs) : [];
+      if (prev && level !== 'admin') {
+        await followNewEmbeds(
+          ownerId,
+          { id, audience: level },
+          drawPlacedFileIds(prev.scene, prev.fileRefs),
+          embedsAfter,
+          tx,
+        );
+      }
+      const [row] = await tx
+        .update(nodes)
+        .set({ data: newData, embedding: null, updatedAt: new Date() })
+        .where(eq(nodes.id, id))
+        .returning();
+      if (!row) throw new Error('commitDraw: update returned no row');
+      await tx
+        .update(draws)
+        .set({
+          scene: normalized,
+          sceneText,
+          // A commit without a (valid) snapshot clears the old one — a stale
+          // preview of a superseded scene is worse than no preview. The cache is
+          // refillable from `scene` by the sidecar, so this is a miss, not a loss.
+          sceneSvg,
+          svgEngine: sceneSvg ? EXCALIDRAW_ENGINE : null,
+          draftScene: null,
+          draftUpdatedAt: null,
+          version: sql`${draws.version} + 1`,
+          draftRev: sql`${draws.draftRev} + 1`,
+          updatedAt: new Date(),
+          ...(opts.fileRefs !== undefined ? { fileRefs: opts.fileRefs } : {}),
+        })
+        .where(eq(draws.nodeId, id));
+      await refoldEmbedReach(ownerId, id, embedsBefore, embedsAfter, tx);
+      return {
+        ok: true as const,
+        draw: detailOf(row, normalized, null, {
+          draftRev: decision.nextRev,
+          hasSvg: sceneSvg !== null,
+        }),
+      };
+    },
+    { heads: true },
+  );
 
   if (result.ok) await notifyNodeIngested(id);
   return result;

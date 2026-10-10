@@ -69,7 +69,13 @@ vi.mock('@mantle/db', async (importOriginal) => {
         return fn;
       },
     });
-  return { ...actual, db: watch(actual.db) };
+  return {
+    ...actual,
+    db: watch(actual.db),
+    // A level change opens its transaction with its heads first (W4a).
+    withWriterHeads: (ids: readonly string[], cb: (tx: object) => unknown) =>
+      actual.withWriterHeads(ids, (tx) => cb(watch(tx)) as never),
+  };
 });
 
 describe.skipIf(!URL)('levels and links at the edges on Postgres', () => {

@@ -441,6 +441,30 @@ export async function onSpaceRows<
 }
 
 /**
+ * Heads for a writer that changes an item's level or what it embeds (a level
+ * set, a save that adds or drops an embed): the item's head (`ids`, for
+ * update) FIRST, so the level bridge (0251) finds its writer holding heads
+ * and takes the rows that follow from the change (embeds, inherited levels)
+ * itself without waiting. The whole transaction is retried when a head was
+ * busy (55P03) or a deadlock was broken.
+ *
+ * Inside a personal-space scope (withSpace) `fn` runs on the space's own
+ * transaction (headsOrSpace: no heads there, rule 1 of 0244). Inside an open
+ * system transaction (withSystemTx, withHeads) it runs on that transaction:
+ * its heads are already first, and the bridge locks the rest.
+ */
+export async function withWriterHeads<T>(
+  ids: readonly string[],
+  fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<T>,
+): Promise<T> {
+  if (currentSpaceScope() || currentScopeTx()) {
+    // A savepoint of the open transaction, as db.transaction is there.
+    return getDb().transaction((tx) => fn(tx as unknown as PostgresJsDatabase<typeof schema>));
+  }
+  return withDeadlockRetry(() => withHeads(ids, 'update', fn));
+}
+
+/**
  * Lock more heads later in a heads transaction (plan U2, V1): FOR UPDATE
  * NOWAIT, for rows found only after the first lock (a bundle, the folders an
  * Accept lands in). A busy head fails with 55P03: run the whole transaction

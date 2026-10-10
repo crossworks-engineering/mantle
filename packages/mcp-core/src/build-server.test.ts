@@ -305,6 +305,7 @@ describe('responder_turn_record MCP tool', () => {
     });
     expect(res.isError).toBeUndefined();
     expect(h.recordCalls[0]).toEqual({
+      loginId: 'owner-1',
       message: 'What is Jev?',
       reply: 'A typed-decision model.',
       model: 'claude-haiku-4-5',

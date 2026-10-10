@@ -322,6 +322,8 @@ export async function runsResumeTurnImpl(
           await recordTurn({
             ownerId: run.ownerId,
             agentId: agent.id,
+            // Runs are the owner's (R3): the brain owner's login.
+            loginId: run.ownerId,
             direction: 'outbound',
             text: reply,
             channel: delivered,

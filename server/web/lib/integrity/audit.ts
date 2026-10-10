@@ -244,7 +244,7 @@ const CHECKS: CheckDef[] = [
     key: 'workspaces_not_migrated',
     label: 'Workspaces not migrated',
     severity: 'medium',
-    note: 'the workspaces migration (0250, phase W4a) wrote no workspace on this brain. It skips a brain that has client logins or client-level items (plan 21.9: clients are set up by hand), and then this brain keeps running on levels alone: the bridges are inert and assistants are not scoped. Set the clients up by hand, then run select * from mantle_ws_migrate() as the migrating role.',
+    note: 'the workspaces migration (0252, phase W4a; its rules and triggers are 0251) wrote no workspace on this brain. It skips a brain that has client logins or client-level items (plan 21.9: clients are set up by hand), and then this brain keeps running on levels alone: the bridges are inert and assistants are not scoped. Set the clients up by hand, then run select * from mantle_ws_migrate() as the migrating role.',
     query: () => sql`
       SELECT 'workspaces' AS id, 'not migrated' AS kind,
              (SELECT count(*) FROM auth.users WHERE role = 'client')::text || ' client login(s), ' ||
@@ -258,10 +258,29 @@ const CHECKS: CheckDef[] = [
     key: 'workspaces_bridge_drift',
     label: 'Level bridge drift',
     severity: 'medium',
-    note: 'brain items whose bridge-owned grants differ from what their level gives (plan 9.2; the bridge of migration 0250 keeps them equal until W5b turns it off). Any count here is a bug in the bridge or a writer that went around it: the item reads with its grants in scoped work (assistants) and with its level elsewhere.',
+    note: 'brain items whose bridge-owned grants differ from what their level gives (plan 9.2; the bridge of migration 0251 keeps them equal until W5b turns it off). Any count here is a bug in the bridge or a writer that went around it: the item reads with its grants in scoped work (assistants) and with its level elsewhere.',
     query: () => sql`
       SELECT 'bridge' AS id, 'drift' AS kind, n::text || ' item(s)' AS detail
       FROM (SELECT mantle_bridge_drift() AS n) d WHERE d.n > 0`,
+  },
+  {
+    key: 'workspaces_connector_drift',
+    label: 'Connector bridge drift',
+    severity: 'medium',
+    note: "connectors whose workspace resource rows differ from what their level gives (plan section 6; the connector bridge of migration 0251 keeps them equal until W5b): every connector on Admin with Write on, and on Team exactly the enabled MCP connectors at team level or below, Write on. Any count here is a bug in the bridge or a writer that went around it: the Team assistant's turns use a connector only where it is a resource of Team.",
+    query: () => sql`
+      SELECT 'connectors' AS id, 'drift' AS kind, n::text || ' row(s)' AS detail
+      FROM (SELECT mantle_connector_drift() AS n) d WHERE d.n > 0`,
+  },
+  {
+    key: 'workspaces_fk_pending_validation',
+    label: 'Workspace foreign keys pending validation',
+    severity: 'low',
+    note: 'the workspace_id foreign keys that migration 0250 added NOT VALID on the chat, run, tool-result and trace tables (adding them valid would have scanned and locked those tables). New rows are checked already; the old rows are checked once a later release runs ALTER TABLE ... VALIDATE CONSTRAINT (it does not block writes). Pending is expected until that release; nothing is wrong meanwhile.',
+    query: () => sql`
+      SELECT c.conname AS id, 'not validated' AS kind, c.conrelid::regclass::text AS detail
+      FROM pg_constraint c
+      WHERE c.conname LIKE '%\_workspace\_id\_fk' AND c.contype = 'f' AND NOT c.convalidated`,
   },
   {
     key: 'workspaces_snapshots_pending',
