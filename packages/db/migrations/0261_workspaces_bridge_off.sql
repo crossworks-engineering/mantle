@@ -11,8 +11,13 @@
 --    reach proof and the one-time migration of a fresh brain still use them).
 --    node_embeds keeps its rows (the Grant Access panel and the share pages
 --    read them).
--- 3. The bridge's rows become plain grants, after three narrowing-only fixes
---    (no login reads more; the reach proof checks it):
+-- 3. The bridge's rows become plain grants, after one accepted widening and
+--    narrowing-only fixes (no login reads more items; the reach proof checks
+--    it):
+--    a0. a folder shared with the team or clients by its share level holds a
+--       Team row (Write off), so it passes Team on to what is placed in it
+--       later; members read the folder's title (accepted, CEO call
+--       2026-10-11; the reach diff counts such a folder as read today);
 --    a. a folder whose Team row came from its own level, not a folder share,
 --       would pass Team to every new item placed in it (S6): that row goes;
 --    b. an item whose Team row came only from its folder's share becomes a
@@ -148,6 +153,26 @@ BEGIN
   PERFORM set_config('mantle.acl_internal', 'on', true);
 
   IF team_ws IS NOT NULL THEN
+    -- a0. A folder shared with the team or with clients by its share level
+    --     IS the share: it holds a Team row of its own (Write off), so what
+    --     is placed in it after the switch still reaches Team (the bridge
+    --     marked such a folder "Removed here" when its own level was Admin,
+    --     and step c would delete that row). The one widening of the switch,
+    --     accepted (CEO call, 2026-10-11): members read the folder node
+    --     itself, its title, which they already browse into. The reach diff
+    --     counts these folders as read by Team today.
+    INSERT INTO "public"."item_grants" AS g
+           ("node_id", "workspace_id", "write", "is_home", "excluded", "via_folder_id", "bridge")
+    SELECT f."id", team_ws, false, false, false, NULL, true
+      FROM "public"."nodes" f
+     WHERE f."owner_id" = brain AND f."type" = 'branch'
+       AND f."share_level"::text IN ('team', 'client')
+    ON CONFLICT ("node_id", "workspace_id") DO UPDATE
+       SET "excluded" = false, "write" = false, "via_folder_id" = NULL, "bridge" = true
+     WHERE g."excluded";
+    GET DIAGNOSTICS c = ROW_COUNT;
+    RETURN QUERY SELECT 'shared folders, team row given', c;
+
     -- a. A folder that holds Team by its own level only (no folder share
     --    reaches it, and it shares nothing): its Team row goes.
     DELETE FROM "public"."item_grants" g
@@ -206,6 +231,90 @@ END
 $$;
 --> statement-breakpoint
 REVOKE EXECUTE ON FUNCTION "public"."mantle_ws_bridge_off"() FROM PUBLIC;
+--> statement-breakpoint
+-- The reach diff (0251) counts a folder shared with the team or clients by
+-- its share level as read by Team today: step a0 above gives it its Team row.
+CREATE OR REPLACE FUNCTION "public"."mantle_ws_reach_diff"()
+  RETURNS TABLE ("section" text, "subject" text, "metric" text, "n" bigint)
+  LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  WITH b AS (SELECT "public"."mantle_brain_id"() AS brain),
+  ws AS (
+    SELECT (SELECT w."id" FROM "public"."workspaces" w, b WHERE w."owner_id" = b.brain AND w."bridge_key" = 'admin') AS admin_ws,
+           (SELECT w."id" FROM "public"."workspaces" w, b WHERE w."owner_id" = b.brain AND w."bridge_key" = 'team') AS team_ws
+  ),
+  team_today AS (
+    SELECT n."id" FROM "public"."nodes" n, b
+     WHERE n."owner_id" = b.brain
+       AND (n."audience" = ANY (ARRAY['team', 'client', 'public'])
+            OR n."inherited_level" = ANY (ARRAY['team', 'client', 'public'])
+            OR n."embedded_level" = ANY (ARRAY['team', 'client', 'public']))
+       AND "public"."mantle_workspace_kind"(n."type")
+    UNION
+    -- A folder shared with the team or clients by its share level: Team
+    -- holds it since 0261 (its title, the accepted widening).
+    SELECT n."id" FROM "public"."nodes" n, b
+     WHERE n."owner_id" = b.brain AND n."type" = 'branch'
+       AND n."share_level" = ANY (ARRAY['team', 'client'])
+  ),
+  old_reach AS (
+    SELECT 'login:' || u."id" AS subject, n."id" AS node_id
+      FROM auth.users u JOIN "public"."nodes" n ON n."owner_id" = (SELECT brain FROM b)
+     WHERE u."role" = 'admin'
+    UNION
+    SELECT 'login:' || u."id", t."id" FROM auth.users u, team_today t WHERE u."role" = 'member'
+    UNION
+    SELECT 'assistant:admin', n."id" FROM "public"."nodes" n WHERE n."owner_id" = (SELECT brain FROM b)
+    UNION
+    SELECT 'assistant:team', t."id" FROM team_today t
+  ),
+  new_reach AS (
+    SELECT 'login:' || wu."login_id" AS subject, n."id" AS node_id
+      FROM "public"."workspace_users" wu
+      JOIN "public"."nodes" n ON n."owner_id" = (SELECT brain FROM b) AND n."read_ws" @> ARRAY[wu."workspace_id"]
+    UNION
+    SELECT 'assistant:admin', n."id" FROM "public"."nodes" n, ws
+     WHERE n."owner_id" = (SELECT brain FROM b) AND n."read_ws" @> ARRAY[ws.admin_ws]
+    UNION
+    SELECT 'assistant:team', n."id" FROM "public"."nodes" n, ws
+     WHERE n."owner_id" = (SELECT brain FROM b) AND n."read_ws" @> ARRAY[ws.team_ws]
+  ),
+  conn AS (
+    SELECT g."slug",
+           (g."integration" ? 'mcp' AND g."enabled" AND g."audience" IN ('team', 'client', 'public')) AS member_today,
+           r."id" IS NOT NULL AS held, coalesce(r."write", false) AS team_write
+      FROM "public"."tool_groups" g
+      CROSS JOIN ws
+      LEFT JOIN "public"."workspace_resources" r
+        ON r."workspace_id" = ws.team_ws AND r."type" = 'connector' AND r."ref_id" = g."slug"
+     WHERE g."owner_id" = (SELECT brain FROM b) AND g."integration" IS NOT NULL
+  )
+  SELECT 'reach-fail', CASE WHEN nw.subject LIKE 'login:%'
+                            THEN 'login (' || coalesce(u."role", 'gone') || ')' ELSE nw.subject END,
+         'gained items', count(*)
+    FROM new_reach nw
+    LEFT JOIN auth.users u ON 'login:' || u."id" = nw.subject
+   WHERE NOT EXISTS (SELECT 1 FROM old_reach o WHERE o.subject = nw.subject AND o.node_id = nw.node_id)
+   GROUP BY 2
+  UNION ALL
+  SELECT 'reach', CASE WHEN o.subject LIKE 'login:%'
+                       THEN 'login (' || coalesce(u."role", 'gone') || ')' ELSE o.subject END,
+         'lost items (narrower, allowed)', count(*)
+    FROM old_reach o
+    LEFT JOIN auth.users u ON 'login:' || u."id" = o.subject
+   WHERE NOT EXISTS (SELECT 1 FROM new_reach nw WHERE nw.subject = o.subject AND nw.node_id = o.node_id)
+   GROUP BY 2
+  UNION ALL
+  SELECT 'reach', split_part(s.subject, ':', 1), 'subjects', count(*)
+    FROM (SELECT DISTINCT subject FROM new_reach) s GROUP BY 2
+  UNION ALL
+  SELECT 'reach-fail', 'connectors on Team', 'differ from what members may use today', count(*)
+    FROM conn c
+   WHERE c.member_today <> c.held OR (c.held AND c.team_write <> c.member_today)
+  HAVING count(*) > 0
+$$;
+--> statement-breakpoint
+REVOKE EXECUTE ON FUNCTION "public"."mantle_ws_reach_diff"() FROM PUBLIC;
 --> statement-breakpoint
 SELECT * FROM "public"."mantle_ws_bridge_off"();
 --> statement-breakpoint

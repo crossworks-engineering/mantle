@@ -9,8 +9,8 @@
  *      level loses it; a Team row a folder share gave is derived from that
  *      folder; a public app's Team row has Write off; a "Removed here" row
  *      with no folder grant is gone (one against a folder grant stays);
- *      a top folder shared by its share level alone holds no Team row of
- *      its own, so it passes nothing on (pinned as a known gap, it.fails);
+ *      a top folder shared by its share level alone holds a Team row of its
+ *      own (Write off) and passes Team on, its items derived from it;
  *  (g) the reach diff gains nothing; (h) archive_node_levels holds the
  *      levels as they were;
  *  (b) a level UPDATE is refused (55000), and passes under a named bypass;
@@ -178,11 +178,14 @@ describe.skipIf(!URL)('workspaces bridge off (0261)', () => {
       });
       expect((await grants(ids[folder]!)).Team).toMatchObject({ excluded: false, via: null });
     }
-    // An item's own level, an embed, and an item of the top shared folder
-    // keep plain rows: nobody loses a read.
+    // An item's own level and an embed keep plain rows; an item of the top
+    // shared folder derives Team from it (step a0): nobody loses a read.
     expect((await grants(ids.teamInShared!)).Team).toMatchObject({ excluded: false, via: null });
     expect((await grants(ids.embedded!)).Team).toMatchObject({ excluded: false, via: null });
-    expect((await grants(ids.inShared!)).Team).toMatchObject({ excluded: false, via: null });
+    expect((await grants(ids.inShared!)).Team).toMatchObject({
+      excluded: false,
+      via: ids.folderShared,
+    });
     // "Removed here" with no folder grant: gone; against one: kept.
     expect(Object.keys(await grants(ids.adminPage!))).toEqual(['Admin']);
     expect((await grants(ids.removedKept!)).Team).toMatchObject({ excluded: true });
@@ -211,15 +214,18 @@ describe.skipIf(!URL)('workspaces bridge off (0261)', () => {
     expect(trg).toEqual([]);
   });
 
-  // Known gap in 0261 (reported): the bridge decided a top folder shared by
-  // its share level alone "removed here" for Team (the folder itself was
-  // never read by the team), step c drops that row, and step b needs a
-  // folder row to derive from. So the folder holds no Team row: its items
-  // keep plain rows, and an item placed in it later is NOT shared with the
-  // team as it was before the switch. Flip to it() once 0261 gives such a
-  // folder its Team row.
-  it.fails('a top folder shared by its share level keeps passing Team on', async () => {
-    expect((await grants(ids.folderShared!)).Team).toMatchObject({ excluded: false });
+  // The bridge decided a top folder shared by its share level alone
+  // "removed here" for Team (the folder itself was never read by the team).
+  // 0261 step a0 gives such a folder a Team row of its own (Write off), so
+  // its items derive Team from it and an item placed in it later is shared
+  // with the team as before the switch. The accepted widening: members read
+  // the folder node (its title); the reach diff counts it as read today.
+  it('a top folder shared by its share level keeps passing Team on', async () => {
+    expect((await grants(ids.folderShared!)).Team).toMatchObject({
+      excluded: false,
+      write: false,
+      via: null,
+    });
     expect((await grants(ids.inShared!)).Team).toMatchObject({ via: ids.folderShared });
   });
 
@@ -243,6 +249,15 @@ describe.skipIf(!URL)('workspaces bridge off (0261)', () => {
     expect(await lv(ids.inShared!)).toMatchObject({ i: 'team' });
     expect(await lv(ids.embedded!)).toMatchObject({ e: 'team' });
     expect(await lv(ids.publicApp!)).toMatchObject({ a: 'public' });
+  });
+
+  it('an item placed in the shared folder after the switch reaches Team', async () => {
+    const later = await node('laterInShared', 'page', 'pages.shared');
+    expect((await grants(later)).Team).toMatchObject({
+      excluded: false,
+      write: false,
+      via: ids.folderShared,
+    });
   });
 
   it('(b) a level UPDATE is refused, and passes under a named bypass', async () => {
