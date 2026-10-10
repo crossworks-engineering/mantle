@@ -4,8 +4,8 @@
  * client role reads client items only and the public role public items
  * only, so the two are siblings, not a chain:
  *
- *  - a public agent run from a client scope is refused (it would otherwise
- *    read every public item) and reads nothing;
+ *  - a public agent run from a client scope reads nothing (W5b2: it runs
+ *    in the caller's workspace scope or none, never at its own level);
  *  - the client role loads client agents and tool groups only, never public
  *    ones, so a client scope cannot even find a public agent to delegate to;
  *  - a public scope never runs a client agent (invoke_agent refuses it);
@@ -83,20 +83,25 @@ describe.skipIf(!URL)('agent levels: client and public never meet', () => {
       sqlTag`select id from nodes where id in (${page.client}, ${page.public})`,
     ) as unknown as Promise<{ id: string }[]>;
 
-  it('a public agent under a client scope is refused and reads 0 public items', async () => {
+  it('a public agent under a client scope reads 0 public items, never wider', async () => {
+    // W5b2 (R6): an agent on no workspace runs in the caller's workspace
+    // scope, never wider; outside one, the shim gives it no workspace. The
+    // level meeting that refused it is gone with the level engine; what it
+    // guarded stays asserted: the public page never reaches it.
     const { withAgentViewer } = await import('./agent-viewer');
-    const { ViewerLevelConflictError } = await import('@mantle/db/viewer');
-    let read: { id: string }[] | null = null;
-    await m.runInLevelRoleForTest('client', async () => {
-      await expect(
-        withAgentViewer({ audience: 'public' }, async () => {
-          read = await readPages();
-          return read;
-        }),
-      ).rejects.toBeInstanceOf(ViewerLevelConflictError);
-    });
-    expect(read).toBeNull();
-    // The client scope itself reads its own level only.
+    const fromLevel = await m.runInLevelRoleForTest('client', () =>
+      withAgentViewer({ audience: 'public' }, readPages),
+    );
+    expect(fromLevel).toEqual([]);
+    const inScope = await m.withViewer('client', { agent: null }, async () => ({
+      outer: m.currentScope(),
+      inner: await withAgentViewer({ audience: 'public' }, async () => ({
+        scope: m.currentScope(),
+        read: await readPages(),
+      })),
+    }));
+    expect(inScope.inner).toEqual({ scope: inScope.outer, read: [] });
+    // The client role itself reads its own level only.
     const own = await m.runInLevelRoleForTest('client', readPages);
     expect(own.map((r) => r.id)).toEqual([page.client]);
   });

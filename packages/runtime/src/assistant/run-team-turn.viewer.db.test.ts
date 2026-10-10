@@ -1,26 +1,25 @@
 /**
- * A REAL team turn under the team viewer role (member logins Phase 0b, plan
- * section 2b spike item 3): runTeamTurn end to end with row level security
- * on. The switch is the agent's level alone: the test's team agent is at
- * `team` and the turn is called with no outer wrap. Only the model, the
- * embedder and the API key are faked; everything else (context loader, tool
- * resolution, dispatch, traces, the team thread) is the production code on
- * the limited pool.
+ * A REAL team turn in its workspace (member logins Phase 0b, plan section 2b
+ * spike item 3; workspaces W5b2): runTeamTurn end to end with row level
+ * security on. The test's team agent answers in Team (agents.workspace_id),
+ * so its turn runs in a Team turn scope on the workspace role, with no outer
+ * wrap. Only the model, the embedder and the API key are faked; everything
+ * else (context loader, tool resolution, dispatch, traces, the team thread)
+ * is the production code.
  *
  * It proves three things: the turn completes (no table the loop needs is
  * missing from the grant matrix, and infrastructure writes go through
- * systemDb); what the team role reads is only team-visible (an admin page
- * and an admin journal entry, embedded exactly like the team page, never
- * reach the model); the trace is written.
+ * systemDb); what the turn reads is only what Team holds (an admin page and
+ * an admin journal entry, embedded exactly like the team page, never reach
+ * the model); the trace is written.
  *
- * It seeds its own minimal brain on the shared test database (so it runs in
- * CI): the shared anchor, an API key row, the three read tools, a team-level
- * tool group and agent of its own (a unique slug, so the brain's
- * team-responder is never touched), and one team page, one admin page and one
- * admin journal entry with the same fixed embedding. It removes them after
- * (the anchor stays).
+ * On a scratch brain the workspaces migration made live: a member of Team,
+ * the three read tools, a team-level tool group and agent of its own, and
+ * one team page, one admin page and one admin journal entry with the same
+ * fixed embedding (the migration gives the team page to Team).
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/runtime/src/assistant/run-team-turn.viewer.db.test.ts
  */
+import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
@@ -94,13 +93,15 @@ function returnedIds(): string[] {
   ].map((mm) => mm[1]!);
 }
 
-describe.skipIf(!URL)('a team turn under the team viewer role', () => {
+describe.skipIf(!URL)('a team turn in its Team turn scope', () => {
+  type Ts = typeof import('@mantle/db/test-support');
   type Db = typeof import('@mantle/db');
   type Admin = Parameters<Db['ensureViewerRoles']>[0];
+  let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
   let m: Db;
   let admin: Admin;
-  let sqlTag: typeof import('drizzle-orm').sql;
-  let ownerId = '';
+  const ownerId = crypto.randomUUID();
+  let team = '';
   const tag = `teamturn-${crypto.randomUUID().slice(0, 8)}`;
   const agentSlug = `team-responder-${tag}`;
   const groupSlug = `team-read-${tag}`;
@@ -117,16 +118,18 @@ describe.skipIf(!URL)('a team turn under the team viewer role', () => {
   const adminOnly = (): string[] => [ids.adminPage, ids.journal];
 
   beforeAll(async () => {
-    process.env.DATABASE_URL = URL;
+    const ts: Ts = await import('@mantle/db/test-support');
+    scratch = await ts.createMigratedScratchDatabase(URL!);
+    process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key'; // shared: roles are cluster-wide
     m = await import('@mantle/db');
-    sqlTag = (await import('drizzle-orm')).sql;
-    const { ensureTestAnchor } = await import('@mantle/db/test-support');
     const { BUILTIN_TOOLS } = await import('@mantle/tools');
     // The admin pool's own postgres-js client, for setup.
     admin = (m.systemDb as unknown as { $client: Admin }).$client;
-    await m.ensureViewerRoles(admin, process.env.MANTLE_MASTER_KEY);
-    ownerId = await ensureTestAnchor(admin);
+    await admin`insert into auth.users (id, email, password_hash, is_owner, role)
+      values (${ownerId}, ${`owner-${tag}@example.invalid`}, 'x', true, 'admin')`;
+    await admin`insert into spaces (id, kind, login_id) values (${ownerId}, 'brain', ${ownerId})
+      on conflict (id) do nothing`;
     await admin`insert into auth.users (id, email, password_hash, role)
       values (${memberLoginId}, ${`member-${memberLoginId.slice(0, 8)}@example.invalid`}, 'x',
               'member')`;
@@ -168,24 +171,23 @@ describe.skipIf(!URL)('a team turn under the team viewer role', () => {
               ${JSON.stringify({ digest_limit: 0 })}::jsonb, 'team')
       returning id`;
     agentId = a!.id;
-  }, 60_000);
+    // Live workspaces: the team page to Team, the admin items to Admin only,
+    // the member a user of Team. The agent answers in Team.
+    await m.systemDb.execute(sql`select * from mantle_ws_migrate()`);
+    const [t] = await admin<{ id: string }[]>`
+      select id::text as id from workspaces where owner_id = ${ownerId} and bridge_key = 'team'`;
+    team = t!.id;
+    await admin`update agents set workspace_id = ${team} where id = ${agentId}`;
+  }, 180_000);
 
   afterAll(async () => {
-    if (!admin) return;
-    await admin`delete from team_messages where login_id = ${memberLoginId}`;
-    await admin`delete from traces where agent_id = ${agentId}`;
-    await admin`delete from agents where id = ${agentId}`;
-    await admin`delete from tool_groups where owner_id = ${ownerId} and slug = ${groupSlug}`;
-    await admin`delete from api_keys where id = ${apiKeyId}`;
-    await admin`delete from nodes where id in ${admin(Object.values(ids))}`;
-    await admin`delete from spaces where login_id = ${memberLoginId}`;
-    await admin`delete from auth.users where id = ${memberLoginId}`;
     await m?.closeDb();
+    await scratch?.drop();
   });
 
-  it('completes, reads only team-visible items, and writes its trace', async () => {
+  it('completes, reads only what Team holds, and writes its trace', async () => {
     const { runTeamTurn } = await import('./run-team-turn');
-    // No outer wrap: the agent's level alone puts the turn on the team role.
+    // No outer wrap: the agent's workspace alone puts the turn in Team's scope.
     const result = await runTeamTurn(ownerId, `what does the brain say about ${tag}?`, {
       loginId: memberLoginId,
       agentSlug,
@@ -201,18 +203,17 @@ describe.skipIf(!URL)('a team turn under the team viewer role', () => {
       returned.filter((id) => adminOnly().includes(id)),
       'admin items reached the model',
     ).toEqual([]);
-    // Whatever else the brain holds (other test files write to it), nothing
-    // returned is above the team level.
-    const above = await admin<{ id: string }[]>`
+    // Nothing returned is outside what Team holds.
+    const outside = await admin<{ id: string }[]>`
       select id from nodes where id in ${admin(returned)}
-        and (audience = 'admin' or owner_id <> ${ownerId} or not mantle_workspace_kind(type))`;
-    expect(above, 'items outside the team level').toEqual([]);
+        and (not (${team}::uuid = any(read_ws)) or owner_id <> ${ownerId})`;
+    expect(outside, 'items Team does not hold').toEqual([]);
     // The admin-only journal entry, asked for by id, never reached the model.
     expect(h.seenToolResults.join(' ')).not.toContain(h.hiddenTitle);
 
     // The trace landed (systemDb).
     const traces = (await m.systemDb.execute(
-      sqlTag`select count(*)::int as n from traces where kind = 'responder_turn' and agent_id = ${agentId}`,
+      sql`select count(*)::int as n from traces where kind = 'responder_turn' and agent_id = ${agentId}`,
     )) as unknown as { n: number }[];
     expect(traces[0]!.n).toBeGreaterThan(0);
   });
@@ -222,6 +223,9 @@ describe.skipIf(!URL)('a team turn under the team viewer role', () => {
     const loginId = crypto.randomUUID();
     await admin`insert into auth.users (id, email, password_hash, role)
       values (${loginId}, ${`member-${loginId.slice(0, 8)}@example.invalid`}, 'x', 'member')`;
+    // A user of Team (an admin added it): the assistant's workspace.
+    await admin`insert into workspace_users (workspace_id, login_id, moderator)
+      values (${team}, ${loginId}, false)`;
     try {
       const { runTeamTurn } = await import('./run-team-turn');
       const result = await runTeamTurn(ownerId, 'hello from a member', {
@@ -239,8 +243,6 @@ describe.skipIf(!URL)('a team turn under the team viewer role', () => {
       ]);
     } finally {
       await admin`delete from team_messages where login_id = ${loginId}`;
-      await admin`delete from spaces where login_id = ${loginId}`;
-      await admin`delete from auth.users where id = ${loginId}`;
     }
   });
 

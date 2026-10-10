@@ -1,17 +1,20 @@
 /**
- * Every tool in a TEAM-level manifest group, run on the team viewer role
- * (member logins Phase 0b). A team-level group may only hold tools that work
- * at team level: they return team items or nothing, and never fail on a table
- * or column the team role may not read.
+ * Every tool in a TEAM-level manifest group, run where a Team assistant runs
+ * it: a Team turn scope on the workspace role (member logins Phase 0b,
+ * workspaces W5b2). A team-level group may only hold tools that work there:
+ * they return what Team holds or nothing, and never fail on a table or
+ * column the workspace role may not read.
  *
- * Seeds its own team-level items under the shared test anchor (a page, a
- * table, a note, a file and a folder) so it runs on the shared test database
- * (CI), and removes them after (the anchor stays).
+ * On a scratch brain the workspaces migration made live, with a member of
+ * Team and one item of each kind the tools read (a page, a table, a note, a
+ * file and a folder), each held by Team by a grant.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/system-manifest/team-groups.viewer.db.test.ts
  */
+import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { MANIFEST_TOOL_GROUPS } from './manifest';
 
@@ -27,61 +30,85 @@ vi.mock('@mantle/embeddings', async (importOriginal) => ({
 
 type Row = Record<string, unknown>;
 
-describe.skipIf(!URL)('team-level tool groups on the team viewer role', () => {
+describe.skipIf(!URL)('team-level tool groups in a Team turn scope', () => {
+  type Ts = typeof import('@mantle/db/test-support');
+  let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
   let m: typeof import('@mantle/db');
-  let admin: Parameters<typeof m.ensureViewerRoles>[0];
-  let ownerId = '';
+  const ownerId = randomUUID();
+  const member = randomUUID();
+  let team = '';
   const ids: Record<string, string> = {};
-  const tag = `team-groups-${crypto.randomUUID().slice(0, 8)}`;
+  const tag = `team-groups-${randomUUID().slice(0, 8)}`;
   const root = mkdtempSync(path.join(tmpdir(), 'mantle-team-groups-'));
 
+  const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
+    (await m.systemDb.execute(q)) as unknown as T[];
+
   beforeAll(async () => {
-    process.env.DATABASE_URL = URL;
+    const ts: Ts = await import('@mantle/db/test-support');
+    scratch = await ts.createMigratedScratchDatabase(URL!);
+    process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key'; // shared: roles are cluster-wide
     process.env.TABLE_DB_DIR = path.join(root, 'table-dbs');
     process.env.MANTLE_FILES_ROOT = path.join(root, 'files');
     m = await import('@mantle/db');
-    const { ensureTestAnchor } = await import('@mantle/db/test-support');
     const c = await import('@mantle/content');
-    admin = (m.systemDb as unknown as { $client: typeof admin }).$client;
-    await m.ensureViewerRoles(admin, process.env.MANTLE_MASTER_KEY);
-    ownerId = await ensureTestAnchor(admin);
+    const email = (who: string) => `tg-${who}-${ownerId.slice(0, 8)}@example.invalid`;
+    await x(sql`insert into auth.users (id, email, password_hash, is_owner, role) values
+      (${ownerId}, ${email('owner')}, 'x', true, 'admin'),
+      (${member}, ${email('member')}, 'x', false, 'member')`);
+    await x(sql`insert into spaces (id, kind, login_id) values (${ownerId}, 'brain', ${ownerId})
+      on conflict (id) do nothing`);
+    await x(sql`select * from mantle_ws_migrate()`);
+    team = (
+      await x<{ id: string }>(sql`select id::text as id from workspaces
+        where owner_id = ${ownerId} and bridge_key = 'team'`)
+    )[0]!.id;
     h.vec = Array.from({ length: 768 }, (_, i) => (i === 0 ? 1 : 0));
     const vec = `[${h.vec.join(',')}]`;
 
-    // One of each workspace kind the tools read, at team level.
+    // One of each workspace kind the tools read (homed in Admin as new).
     ids.page = (await c.createPage(ownerId, { title: `${tag} page` })).id;
     ids.note = (await c.createNote(ownerId, { title: `${tag} note`, content: 'team note' })).id;
-    const col = crypto.randomUUID();
+    const col = randomUUID();
     ids.table = (
       await c.createTable(ownerId, {
         title: `${tag} table`,
         data: {
           columns: [{ id: col, name: 'Name', type: 'text' }],
-          rows: [{ id: crypto.randomUUID(), cells: { [col]: 'a row' } }],
+          rows: [{ id: randomUUID(), cells: { [col]: 'a row' } }],
         },
       })
     ).id;
-    ids.branch = crypto.randomUUID();
-    // Its own folder path: a folder's path is unique per brain, and other
-    // test files may hold the shared anchor's `files` root at the same time.
-    ids.file = crypto.randomUUID();
-    await admin`insert into nodes (id, owner_id, type, title, path, audience) values
+    ids.branch = randomUUID();
+    ids.file = randomUUID();
+    await x(sql`insert into nodes (id, owner_id, type, title, path) values
       (${ids.branch}, ${ownerId}, 'branch', ${`${tag} folder`},
-       ${`files.tg_${ids.branch.replace(/-/g, '')}`}, 'team')`;
-    await admin`insert into nodes (id, owner_id, type, title, path, audience, data) values
-      (${ids.file}, ${ownerId}, 'file', ${`${tag} file.txt`}, 'files', 'team',
-       ${JSON.stringify({ filename: `${tag}.txt`, mime_type: 'text/plain' })}::jsonb)`;
+       ${`files.tg_${ids.branch.replace(/-/g, '')}`}::ltree)`);
+    await x(sql`insert into nodes (id, owner_id, type, title, path, data) values
+      (${ids.file}, ${ownerId}, 'file', ${`${tag} file.txt`}, 'files',
+       ${JSON.stringify({ filename: `${tag}.txt`, mime_type: 'text/plain' })}::jsonb)`);
+    // Team holds every one of them (W5b2: a grant, not a level).
     const all = Object.values(ids);
-    await admin`update nodes set audience = 'team', embedding = ${vec}::vector
-      where id in ${admin(all)}`;
-  }, 60_000);
+    for (const id of all) {
+      await m.withSubtreeHeads(id, [], async (tx) => {
+        await tx.execute(
+          sql`insert into item_grants (node_id, workspace_id) values (${id}, ${team})`,
+        );
+      });
+    }
+    await m.withHeads(all, 'update', async (tx) => {
+      await tx.execute(sql`update nodes set embedding = ${vec}::vector
+        where id in (${sql.join(
+          all.map((id) => sql`${id}::uuid`),
+          sql`, `,
+        )})`);
+    });
+  }, 180_000);
 
   afterAll(async () => {
-    if (admin && Object.keys(ids).length) {
-      await admin`delete from nodes where id in ${admin(Object.values(ids))}`;
-    }
     await m?.closeDb();
+    await scratch?.drop();
     rmSync(root, { recursive: true, force: true });
   });
 
@@ -131,11 +158,13 @@ describe.skipIf(!URL)('team-level tool groups on the team viewer role', () => {
       if (!tool) continue;
       let outcome: string;
       try {
-        const res = await m.runInLevelRoleForTest('team', () =>
-          tool.handler(inputs[slug] ?? {}, {
-            ownerId,
-            surface: { kind: 'team', contactId: 'c', privateReads: false },
-          }),
+        const res = await m.withTurnScope(
+          { kind: 'assistant', loginId: member, ws: [team], modWs: [] },
+          () =>
+            tool.handler(inputs[slug] ?? {}, {
+              ownerId,
+              surface: { kind: 'team', loginId: member, privateReads: false },
+            }),
         );
         outcome = res.ok ? 'ok' : `error: ${res.error}`;
       } catch (err) {
@@ -146,6 +175,6 @@ describe.skipIf(!URL)('team-level tool groups on the team viewer role', () => {
       report.push(`${slug}: ${outcome.slice(0, 110)}`);
     }
     console.log('[team-tools]\n' + report.join('\n'));
-    expect(denied, 'tools in a team-level group that fail at team level').toEqual([]);
+    expect(denied, 'tools in a team-level group that fail in a Team turn').toEqual([]);
   });
 });

@@ -7,9 +7,11 @@
  * page to client, to write into a client-level page, and to hang a new page
  * under the client-level page: all three wait at Pending, and nothing
  * changes. In the same turn a write into a team page and a new note run (the
- * note carries the client-sourced mark). An unmarked turn runs the lowering
- * and the write. The database allows every one of these writes (the owner's
- * turn, admin level): only the gate stops them.
+ * note carries the client-sourced mark). An unmarked turn holds neither: the
+ * write runs, and the lowering reaches access_set, which refuses an item
+ * since W5b2 (grants decide). The database allows every one of these writes
+ * (the owner's turn, admin level): only the gate stops them. The gate still
+ * reads the archived levels, so the fixture sets them under the test bypass.
  *
  * Then the gate's lookups one by one: an app whose exported table is at
  * client level, a tool group at client level, an agent at client level.
@@ -138,8 +140,13 @@ describe.skipIf(!URL)('the lowering guard, end to end', () => {
     ids.teamPage = (await content.createPage(ownerId, { title: `${tag} team price list` })).id;
     ids.clientPage = (await content.createPage(ownerId, { title: `${tag} project status` })).id;
     ids.otherTeamPage = (await content.createPage(ownerId, { title: `${tag} team notes` })).id;
-    await admin`update nodes set audience = 'team' where id in ${admin([ids.teamPage, ids.otherTeamPage])}`;
-    await admin`update nodes set audience = 'client' where id = ${ids.clientPage}`;
+    // The gate reads the archived levels (frozen since W5b2): set them under
+    // the named test bypass.
+    await admin.begin(async (tx) => {
+      await tx`select mantle_heads_bypass('test fixture')`;
+      await tx`update nodes set audience = 'team' where id in ${tx([ids.teamPage, ids.otherTeamPage])}`;
+      await tx`update nodes set audience = 'client' where id = ${ids.clientPage}`;
+    });
     // Made an hour ago: only what a call creates counts as new.
     await admin`update nodes set created_at = now() - interval '1 hour'
       where id in ${admin([ids.teamPage, ids.clientPage, ids.otherTeamPage])}`;
@@ -225,8 +232,14 @@ describe.skipIf(!URL)('the lowering guard, end to end', () => {
         ['page_update', { id: ids.clientPage, markdown: `APPROVED ${tag}` }],
       ],
     ]);
+    // Neither waits: both reach their tool.
     expect(res.pendingIds).toEqual([]);
-    expect(await audience(ids.teamPage)).toBe('client');
+    // An item has no level to set since W5b2 (grants decide): access_set
+    // itself refuses it, so the level stays.
+    const set = res.toolCalls.find((c) => c.slug === 'access_set');
+    expect(set).toMatchObject({ status: 'error' });
+    expect(set?.error).toMatch(/no sharing level any more/);
+    expect(await audience(ids.teamPage)).toBe('team');
     expect(await docHas(ids.clientPage, 'APPROVED')).toBe(true);
   });
 
@@ -299,7 +312,10 @@ describe.skipIf(!URL)('the lowering guard, end to end', () => {
       (${f.inPlain}, ${ownerId}, 'note', ${`${tag} in plain`}, ${`notes.${label}_plain`}, '{}'::jsonb),
       (${f.filesShared}, ${ownerId}, 'branch', ${`${tag} files shared`}, ${`files.${label}_shared`}, '{}'::jsonb),
       (${f.filesPlain}, ${ownerId}, 'branch', ${`${tag} files plain`}, ${`files.${label}_plain`}, '{}'::jsonb)`;
-    await admin`update nodes set share_level = 'client' where id in ${admin([f.shared, f.filesShared])}`;
+    await admin.begin(async (tx) => {
+      await tx`select mantle_heads_bypass('test fixture')`;
+      await tx`update nodes set share_level = 'client' where id in ${tx([f.shared, f.filesShared])}`;
+    });
 
     // Moving an admin note into the client-shared folder waits; elsewhere runs.
     expect(

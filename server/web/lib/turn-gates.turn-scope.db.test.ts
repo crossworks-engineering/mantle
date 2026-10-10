@@ -230,12 +230,21 @@ describe.skipIf(!URL)('workspace turn gates (W4b fix round 1)', () => {
 
   it('draw_get in a Team turn: Team-visible images only, never an unnamed exit (fix round 2)', async () => {
     const [draw, teamFile, adminFile] = [randomUUID(), randomUUID(), randomUUID()];
-    await x(sql`insert into nodes (id, owner_id, type, title, path, audience, data) values
-      (${draw}, ${owner}, 'draw', 'Plant layout', 'draws', 'team', '{}'::jsonb),
-      (${teamFile}, ${owner}, 'file', 'team.png', 'files', 'team',
+    // New items live in Admin (their home); Team holds the drawing and one
+    // image by a grant (W5b2: grants decide, the level is frozen).
+    await x(sql`insert into nodes (id, owner_id, type, title, path, data) values
+      (${draw}, ${owner}, 'draw', 'Plant layout', 'draws', '{}'::jsonb),
+      (${teamFile}, ${owner}, 'file', 'team.png', 'files',
         ${JSON.stringify({ text: 'TEAM IMAGE WORDS' })}::jsonb),
-      (${adminFile}, ${owner}, 'file', 'admin.png', 'files', 'admin',
+      (${adminFile}, ${owner}, 'file', 'admin.png', 'files',
         ${JSON.stringify({ text: 'ADMIN IMAGE WORDS' })}::jsonb)`);
+    for (const id of [draw, teamFile]) {
+      await m.withSubtreeHeads(id, [], async (tx) => {
+        await tx.execute(
+          sql`insert into item_grants (node_id, workspace_id) values (${id}, ${team})`,
+        );
+      });
+    }
     const refs = JSON.stringify({ 'f-team': teamFile, 'f-admin': adminFile });
     await x(sql`insert into draws (node_id, scene, scene_text, scene_svg, file_refs)
       values (${draw}, '{"elements":[]}'::jsonb, 'TEAM IMAGE WORDS ADMIN IMAGE WORDS',

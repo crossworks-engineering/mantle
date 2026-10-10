@@ -1,22 +1,25 @@
 /**
  * A REAL client turn (client logins C4, plan section 12: "a real client turn
  * cannot surface a public, team or admin item through context, facts, chunks
- * or any tool"): runClientTurn end to end on Postgres with row level
- * security on. Only the model and the API key are faked; the agent lookup,
- * the level caps, the tool resolution, the client tools, the dispatch, the
- * request filing, the thread and the trace are the production code.
+ * or any tool"): runClientTurn end to end on Postgres, in the client login's
+ * own scope (workspaces W5b2: it reads what its workspaces hold). Only the
+ * model and the API key are faked; the agent lookup, the level caps, the tool
+ * resolution, the client tools, the dispatch, the request filing, the thread
+ * and the trace are the production code.
  *
- * The brain holds a client page whose body mentions a team page (the chip's
- * stored label carries the team title), an OLD unredacted chunk of that page
- * (the text the index held before the level-filtered text), a team page, an
- * admin page and a public note, all with the same embedding. The client agent
- * holds its client group AND a team-level trap group with search_chunks: the
- * level cap must drop the trap.
+ * The brain holds a client page (held by the client's workspace) whose body
+ * mentions a team page (the chip's stored label carries the team title), an
+ * OLD unredacted chunk of that page (the text the index held before the
+ * filtered text), a team page (Team), an admin page (Admin) and a public
+ * note (no client workspace holds it), all with the same embedding. The
+ * client agent holds its client group AND a team-level trap group with
+ * search_chunks: the level cap must drop the trap.
  *
- * Seeds its own rows on the shared test anchor (unique tag), removes them by
- * id after (the anchor stays).
+ * On a scratch brain the workspaces migration made live; the client's
+ * workspace is set up by hand after it, as an admin would.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/runtime/src/assistant/run-client-turn.viewer.db.test.ts
  */
+import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
@@ -79,11 +82,13 @@ vi.mock('@mantle/voice', async (importOriginal) => {
 });
 
 describe.skipIf(!URL)('a real client turn at client level', () => {
+  type Ts = typeof import('@mantle/db/test-support');
   type Db = typeof import('@mantle/db');
   type Admin = Parameters<Db['ensureViewerRoles']>[0];
+  let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
   let m: Db;
   let admin: Admin;
-  let ownerId = '';
+  const ownerId = crypto.randomUUID();
   const tag = `clientturn-${crypto.randomUUID().slice(0, 8)}`;
   const agentSlug = `client-responder-${tag}`;
   const groupSlug = `client-read-${tag}`;
@@ -96,6 +101,7 @@ describe.skipIf(!URL)('a real client turn at client level', () => {
   ];
   const apiKeyId = crypto.randomUUID();
   const loginId = crypto.randomUUID();
+  const clientWs = crypto.randomUUID();
   let agentId = '';
   const ids = {
     clientPage: crypto.randomUUID(),
@@ -103,31 +109,47 @@ describe.skipIf(!URL)('a real client turn at client level', () => {
     adminPage: crypto.randomUUID(),
     publicNote: crypto.randomUUID(),
   };
-  const filed: string[] = [];
   // Retrieval limits an admin might set: the client turn must load no context
   // WHATEVER the agent's config says (the code, not the config, is the rule).
   const RETRIEVAL_ON = { digest_limit: 0, fact_limit: 10, content_hit_limit: 5, chunk_limit: 8 };
 
   beforeAll(async () => {
-    process.env.DATABASE_URL = URL;
+    const ts: Ts = await import('@mantle/db/test-support');
+    scratch = await ts.createMigratedScratchDatabase(URL!);
+    process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     h.tag = tag;
     h.ids = ids;
     m = await import('@mantle/db');
-    const { ensureTestAnchor } = await import('@mantle/db/test-support');
     const { BUILTIN_TOOLS } = await import('@mantle/tools');
     admin = (m.systemDb as unknown as { $client: Admin }).$client;
-    await m.ensureViewerRoles(admin, process.env.MANTLE_MASTER_KEY);
-    ownerId = await ensureTestAnchor(admin);
-    await admin`insert into auth.users (id, email, password_hash, role, display_name)
-      values (${loginId}, ${`${tag}@example.invalid`}, 'x', 'client', 'Casey Client')`;
+    await admin`insert into auth.users (id, email, password_hash, is_owner, role)
+      values (${ownerId}, ${`owner-${tag}@example.invalid`}, 'x', true, 'admin')`;
+    await admin`insert into spaces (id, kind, login_id) values (${ownerId}, 'brain', ${ownerId})
+      on conflict (id) do nothing`;
 
     const vec = `[${Array.from({ length: 768 }, (_, i) => (i === 0 ? 1 : 0)).join(',')}]`;
+    // The team, admin and public items, before the migration: it gives the
+    // team page to Team, the admin page to Admin only.
     await admin`insert into nodes (id, owner_id, type, title, path, audience, embedding) values
-      (${ids.clientPage}, ${ownerId}, 'page', ${`${tag} client page`}, 'pages', 'client', ${vec}::vector),
       (${ids.teamPage}, ${ownerId}, 'page', ${`${tag} TEAMSECRET`}, 'pages', 'team', ${vec}::vector),
       (${ids.adminPage}, ${ownerId}, 'page', ${`${tag} ADMINSECRET`}, 'pages', 'admin', ${vec}::vector),
       (${ids.publicNote}, ${ownerId}, 'note', ${`${tag} PUBLICSECRET`}, 'notes', 'public', ${vec}::vector)`;
+    await m.systemDb.execute(sql`select * from mantle_ws_migrate()`);
+    // The client, its workspace (set up by hand: clients are never migrated)
+    // and the one page that workspace holds.
+    await admin`insert into auth.users (id, email, password_hash, role, display_name)
+      values (${loginId}, ${`${tag}@example.invalid`}, 'x', 'client', 'Casey Client')`;
+    await admin`insert into workspaces (id, owner_id, name) values (${clientWs}, ${ownerId}, 'Client')`;
+    await admin`insert into workspace_users (workspace_id, login_id, moderator)
+      values (${clientWs}, ${loginId}, false)`;
+    await admin`insert into nodes (id, owner_id, type, title, path, embedding) values
+      (${ids.clientPage}, ${ownerId}, 'page', ${`${tag} client page`}, 'pages', ${vec}::vector)`;
+    await m.withSubtreeHeads(ids.clientPage, [], async (tx) => {
+      await tx.execute(
+        sql`insert into item_grants (node_id, workspace_id) values (${ids.clientPage}, ${clientWs})`,
+      );
+    });
     const doc = {
       type: 'doc',
       content: [
@@ -172,20 +194,11 @@ describe.skipIf(!URL)('a real client turn at client level', () => {
               'client')
       returning id`;
     agentId = a!.id;
-  }, 60_000);
+  }, 180_000);
 
   afterAll(async () => {
-    if (!admin) return;
-    await admin`delete from team_messages where login_id = ${loginId}`;
-    await admin`delete from traces where agent_id = ${agentId}`;
-    await admin`delete from agents where id = ${agentId}`;
-    await admin`delete from tool_groups where owner_id = ${ownerId} and slug in ${admin([groupSlug, trapSlug])}`;
-    await admin`delete from api_keys where id = ${apiKeyId}`;
-    for (const id of [...Object.values(ids), ...filed])
-      await admin`delete from nodes where id = ${id}`;
-    await admin`delete from spaces where login_id = ${loginId}`;
-    await admin`delete from auth.users where id = ${loginId}`;
     await m?.closeDb();
+    await scratch?.drop();
   });
 
   it('completes and never shows the model a public, team or admin item, or the old chunk', async () => {
@@ -221,7 +234,6 @@ describe.skipIf(!URL)('a real client turn at client level', () => {
     const rows = await admin<{ id: string; data: Record<string, unknown>; tags: string[] }[]>`
       select id, data, tags from nodes where owner_id = ${ownerId} and type = 'task'
         and title = ${`${tag} request`}`;
-    filed.push(...rows.map((r) => r.id));
     expect(rows).toHaveLength(1);
     expect(rows[0]!.tags).toEqual(expect.arrayContaining(['team-request', 'client-request']));
     expect(rows[0]!.data).toMatchObject({

@@ -332,8 +332,9 @@ export const client_request_create: BuiltinToolDef = {
     // I12): an admin deleting a request never gives the quota back. Admin
     // level, so asSystem: the client role cannot read it.
     if (inboundMessageId) {
-      const thisTurn = await asSystem(() =>
-        countClientRequestFilings(ctx.ownerId, { threadMessageId: inboundMessageId }),
+      const thisTurn = await asSystem(
+        () => countClientRequestFilings(ctx.ownerId, { threadMessageId: inboundMessageId }),
+        'member-request',
       );
       if (thisTurn >= CLIENT_REQUESTS_PER_TURN) {
         return {
@@ -346,8 +347,10 @@ export const client_request_create: BuiltinToolDef = {
     }
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
     if (
-      (await asSystem(() => countClientRequestFilings(ctx.ownerId, { loginId, since }))) >=
-      CLIENT_REQUESTS_PER_DAY
+      (await asSystem(
+        () => countClientRequestFilings(ctx.ownerId, { loginId, since }),
+        'member-request',
+      )) >= CLIENT_REQUESTS_PER_DAY
     ) {
       return {
         ok: false,
@@ -365,35 +368,40 @@ export const client_request_create: BuiltinToolDef = {
       // request in the same queue (the admin's reply reaches the client's
       // thread by login), marked client-sourced: extract-exempt until an admin
       // acts, and a staff turn that reads it cannot lower a level without
-      // approval (plan N18).
-      const row = await asSystem(() =>
-        createTask(ctx.ownerId, {
-          title,
-          body: `**Client request from ${who}.**\n\n${body}`,
-          priority: (['low', 'normal', 'high'].includes(priority ?? '')
-            ? priority
-            : 'normal') as TaskPriority,
-          tags: [TEAM_REQUEST_TAG, CLIENT_REQUEST_TAG],
-          extraData: {
-            source: CLIENT_REQUEST_SOURCE,
-            teamRequest: {
-              contactId: null,
-              loginId,
-              contactName: contactName ?? null,
-              requesterRole: 'client',
-              threadMessageId: inboundMessageId ?? null,
-              attachments: [],
-              filedAt: new Date().toISOString(),
+      // approval (plan N18). Inside the client's turn scope, named: the same
+      // audited escape as a member's request.
+      const row = await asSystem(
+        () =>
+          createTask(ctx.ownerId, {
+            title,
+            body: `**Client request from ${who}.**\n\n${body}`,
+            priority: (['low', 'normal', 'high'].includes(priority ?? '')
+              ? priority
+              : 'normal') as TaskPriority,
+            tags: [TEAM_REQUEST_TAG, CLIENT_REQUEST_TAG],
+            extraData: {
+              source: CLIENT_REQUEST_SOURCE,
+              teamRequest: {
+                contactId: null,
+                loginId,
+                contactName: contactName ?? null,
+                requesterRole: 'client',
+                threadMessageId: inboundMessageId ?? null,
+                attachments: [],
+                filedAt: new Date().toISOString(),
+              },
             },
-          },
-        }),
+          }),
+        'member-request',
       );
-      await asSystem(() =>
-        recordClientRequestFiling(ctx.ownerId, {
-          loginId,
-          threadMessageId: inboundMessageId ?? null,
-          taskId: row.id,
-        }),
+      await asSystem(
+        () =>
+          recordClientRequestFiling(ctx.ownerId, {
+            loginId,
+            threadMessageId: inboundMessageId ?? null,
+            taskId: row.id,
+          }),
+        'member-request',
       );
       ctx.step?.setMeta({ taskId: row.id });
       return { ok: true, output: { id: row.id, title: row.title, status: 'with the team' } };
