@@ -403,6 +403,11 @@ export async function redeemMemberInvite(
         contactId: invite.contactId,
       });
 
+      // A member is a Moderator of the Team workspace (plan Q1): the login
+      // function of 0251 (its trigger is off since W5b2) adds the row and
+      // logs it.
+      await tx.execute(sql`select "public"."mantle_bridge_login"(${loginId}::uuid)`);
+
       const marked = await tx
         .update(memberInvites)
         .set({ redeemedAt: now, redeemedLoginId: loginId })

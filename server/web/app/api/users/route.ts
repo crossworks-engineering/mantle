@@ -162,6 +162,9 @@ export async function POST(req: Request) {
       role,
       contactId: parsed.data.contactId ?? null,
     });
+    // Admin and Team rows for the role (the login bridge's trigger is off
+    // since W5b2; its function stays, 0261).
+    await db.execute(sql`select "public"."mantle_bridge_login"(${id}::uuid)`);
   } catch (err) {
     // 23505 = unique_violation. Two rules on auth.users can fire: the contact
     // (one login per contact, 0181; not pre-checked above) and the email

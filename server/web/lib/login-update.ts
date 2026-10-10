@@ -12,6 +12,7 @@ import {
   oauthAccessTokens,
   oauthAuthCodes,
   pairingCodes,
+  sql,
 } from '@mantle/db';
 import { revokeOpenClientSignins, settleSpaceOnPromotion } from '@mantle/content';
 import { auditKeysEnded, endLoginSessions, type SessionUser } from '@/lib/auth';
@@ -177,6 +178,12 @@ export async function applyLoginChange(
       if (firstInTx) await firstInTx(tx);
       if (Object.keys(changes).length > 0) {
         await tx.update(authUsers).set(changes).where(eq(authUsers.id, targetId));
+        // The role still names who is an Admin user (until W5c): keep the
+        // Admin and Team rows in step, as the login bridge's trigger did
+        // before W5b2 turned it off (the function stays, 0261).
+        if (changes.role !== undefined) {
+          await tx.execute(sql`select "public"."mantle_bridge_login"(${targetId}::uuid)`);
+        }
       }
       if (endSessions) {
         // The login's push devices go with its sessions; the relay is told

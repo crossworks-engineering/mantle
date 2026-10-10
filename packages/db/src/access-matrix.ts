@@ -516,6 +516,8 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.mantle_moved_nodes', 'system'),
   // The level bridge's per-transaction list of changed nodes (0250).
   none('public.mantle_bridge_pending', 'system'),
+  // The tier levels as they were when grants became the truth (0261, W8).
+  none('public.archive_node_levels', 'system'),
 ];
 
 /** Columns no viewer role may ever read, whatever the matrix says. */

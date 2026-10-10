@@ -139,6 +139,7 @@ WHEN_0187=1790017500000   # 0187_client_level: agents and tool_groups rules
 WHEN_0188=1790017560000   # 0188_client_signin_codes: client sign-in links and codes
 WHEN_0204=1790018520000   # 0204_folder_sharing: nodes_share_refresh_after, in a form no dump can carry
 WHEN_0212=1790019000000   # 0212_restorable_share_refresh_trigger: the same trigger, in a form a dump can carry
+WHEN_0261=1790194740000   # 0261_workspaces_bridge_off: the trigger is dropped (grants are the truth)
 FAILED=""
 fail() { FAILED="${FAILED}  - $1"$'\n'; }
 
@@ -230,8 +231,9 @@ if [ "$LEDGER" -ge "$WHEN_0204" ] && [ "$LEDGER" -lt "$WHEN_0212" ] && ! has_tri
     printf '%s\n' "$MADE" | sed 's/^/    /' >&2
   fi
 fi
-# From 0204 on the trigger must be there, listed by the dump or not.
-if [ "$LEDGER" -ge "$WHEN_0204" ] && ! has_trigger "$SHARE_REFRESH"; then
+# From 0204 on the trigger must be there, listed by the dump or not, until
+# 0261 dropped it (grants are the truth; levels are frozen).
+if [ "$LEDGER" -ge "$WHEN_0204" ] && [ "$LEDGER" -lt "$WHEN_0261" ] && ! has_trigger "$SHARE_REFRESH"; then
   fail "the trigger nodes_share_refresh_after on public.nodes is missing (folder shares no longer reach the rows below a folder)"
 fi
 # Read line by line: a name is never split or matched against file names.
