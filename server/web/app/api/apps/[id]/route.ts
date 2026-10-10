@@ -37,7 +37,10 @@ const PatchBody = z.object({
   // '' clears it.
   description: z.string().max(APP_DESCRIPTION_MAX).optional(),
   // Informational (client logins C6): members and clients only read the
-  // app's data. This route (admin only) is its one writer.
+  // app's data. This route (admin only) is its one writer. Since workspaces
+  // W5b2 it also sets Write on the app's grants beyond Admin in the same
+  // transaction (on: Write off; off: Write on again), the grant's Write
+  // being what lets a member write the data.
   dataReadOnly: z.boolean().optional(),
   // MCP access (team apps Phase 1, 0234): a member's or client's MCP
   // connection reaches the app's data. This route (admin only) is its one
@@ -60,7 +63,12 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   const { name, trustTools, ...rest } = parsed.data;
-  let app = await updateAppMeta(user.id, id, { ...(name ? { title: name } : {}), ...rest });
+  let app = await updateAppMeta(
+    user.id,
+    id,
+    { ...(name ? { title: name } : {}), ...rest },
+    { actorId: user.actor.id },
+  );
   if (!app) return NextResponse.json({ error: 'app not found' }, { status: 404 });
   if (trustTools !== undefined) {
     await setAppAuthorLevel(user.id, id, trustTools ? 'admin' : 'team');

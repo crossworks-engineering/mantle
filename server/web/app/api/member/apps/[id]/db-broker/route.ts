@@ -12,16 +12,16 @@ import { rateLimit } from '@/lib/rate-limit';
 /**
  * POST /api/member/apps/:id/db-broker: a member's run of an app calls
  * host.db.query / host.db.exec on the app's own SQLite (member logins Phase
- * 4b). Row security does not reach SQLite, so the audience check is explicit
- * (memberAppOr404: team level or lower, published). An app at team or
- * client level is a shared workspace (Jason's rule, 2026-09-30; client
- * logins C6): every member who runs it writes it, unless an admin marked it
- * informational (`dataReadOnly`), and then a write answers 403
- * `reason: 'read-only'` (memberMayWriteAppData). A public app stays read-only
- * for members, so nothing a member writes shows to anonymous visitors
- * (decided 2026-09-27). App data is shared per app, not per member (v1):
- * every member, and on a client app every client login, reads and writes the
- * same database.
+ * 4b). Row security does not reach SQLite, so the reach check is explicit
+ * (memberAppOr404: a workspace of the member holds the app's grant, and its
+ * published build is green). Writes follow the grant's Write switch only
+ * (workspaces W5b2 part B): a member writes the data when a workspace of
+ * theirs holds the app with Write on, else a write answers 403
+ * `reason: 'read-only'` (memberMayWriteAppData). The informational switch
+ * (`dataReadOnly`, PATCH /api/apps/:id) acts through those grants: on, it
+ * sets Write off on every grant beyond Admin. The levels decide nothing. App
+ * data is shared per app, not per member (v1): every member who may write it
+ * writes the same database.
  *
  * App identity: the member fills the reserved `:host_me_*` parameters
  * (kind 'member', the login's display name, a per-app id); a value the

@@ -48,6 +48,7 @@ import type {
   GrantMoveResponse,
   GrantPreviewResponse,
   GrantRow,
+  GrantServedRef,
   GrantsResponse,
   GrantsWriteResponse,
   GrantWorkspaceRef,
@@ -455,7 +456,11 @@ async function buildResponse(ctx: Ctx, item: Item, q: Exec = db): Promise<Grants
     hasLink: share !== null,
     link:
       mayLink && share
-        ? { id: share.id, path: `/s/${share.token}`, served: [...share.served] }
+        ? {
+            id: share.id,
+            path: `/s/${share.token}`,
+            served: await servedRefs(ctx, share.served, q),
+          }
         : null,
     serveCandidates: mayLink ? await listServeCandidates(anchor, ctx.caller.loginId, item) : [],
     contactShares,
@@ -489,6 +494,24 @@ async function buildResponse(ctx: Ctx, item: Item, q: Exec = db): Promise<Grants
     body.app = { mcpAccess: a?.mcp === true };
   }
   return body;
+}
+
+/** A link's served list as the panel names it, in its order: the title
+ *  only where the caller reads the item (null otherwise, and for an id with
+ *  no item left). */
+async function servedRefs(ctx: Ctx, served: readonly string[], q: Exec): Promise<GrantServedRef[]> {
+  const ids = served.filter((id) => UUID_RE.test(id)).map((id) => id.toLowerCase());
+  if (!ids.length) return [];
+  const found = await rows<{ id: string; title: string; readable: boolean }>(
+    q,
+    sql`select id::text as id, title, read_ws && ${uuidList(myIds(ctx))}::uuid[] as readable
+          from nodes
+         where owner_id = ${ctx.caller.anchorId} and id = any (${uuidList(ids)}::uuid[])`,
+  );
+  const titles = new Map(
+    found.map((r) => [r.id.toLowerCase(), r.readable === true ? r.title : null]),
+  );
+  return ids.map((id) => ({ nodeId: id, title: titles.get(id) ?? null }));
 }
 
 type EmbedRow = { id: string; title: string; type: string; read_ws: unknown };

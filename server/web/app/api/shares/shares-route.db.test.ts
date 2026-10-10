@@ -11,6 +11,7 @@
  *    editable by the caller; an id the caller cannot read is 404; ids the
  *    link already serves are kept without a check; a refusal changes
  *    nothing;
+ *  - DELETE: also an Admin user with the 'users' area, on any link;
  *  - a link changes no level and no grant (a frozen client item gets one
  *    like any other);
  *  - the 0262 fill: a live open link on an item frozen at client is retired
@@ -290,16 +291,60 @@ describe.skipIf(!URL)('the share routes on the served list', () => {
     expect(out.body.error).toMatch(/inside the folder/);
   });
 
+  const adm2Areas = (areas: Record<string, boolean>) =>
+    x(sql`update workspace_users set limits = ${JSON.stringify({ areas })}::jsonb
+           where login_id = ${adm2}
+             and workspace_id = (select id from workspaces where owner_id = ${owner} and is_admin)`);
+
   it('DELETE: only someone who may edit the item closes its link; a second close is ok false', async () => {
     as(owner);
     const link = (await post({ nodeId: id.page })).body.share as Json;
-    as(adm2);
-    // adm2 reads it (a user of Admin) but may not edit it.
-    expect((await del(link.id)).status).toBe(403);
+    // adm2 reads it (a user of Admin) but may not edit it, and its limits
+    // switch the users area off.
+    await adm2Areas({ users: false });
+    try {
+      as(adm2);
+      expect((await del(link.id)).status).toBe(403);
+    } finally {
+      await adm2Areas({});
+    }
     as(owner);
     const before = await levelOf(id.page);
     expect(await del(link.id)).toEqual({ status: 200, body: { ok: true } });
     expect(await del(link.id)).toEqual({ status: 200, body: { ok: false } });
     expect(await levelOf(id.page)).toBe(before);
+  });
+
+  it('DELETE: an Admin user with the users area revokes any link, even one it cannot read', async () => {
+    as(owner);
+    // Homed in R: adm2 reads it nowhere (it may not link it: 404).
+    const link = (await post({ nodeId: id.rNote })).body.share as Json;
+    await adm2Areas({ users: false });
+    try {
+      as(adm2);
+      const refused = await del(link.id);
+      expect(refused.status).toBe(404);
+      expect(refused.body.code).toBe('not_found');
+    } finally {
+      await adm2Areas({});
+    }
+    as(adm2);
+    expect(await del(link.id)).toEqual({ status: 200, body: { ok: true } });
+    const [row] = await x<{ revoked: boolean }>(
+      sql`select revoked_at is not null as revoked from shares where id = ${link.id}`,
+    );
+    expect(row?.revoked).toBe(true);
+    // Another area does not stand in for it.
+    as(owner);
+    const again = (await post({ nodeId: id.page })).body.share as Json;
+    await adm2Areas({ users: false, settings: true });
+    try {
+      as(adm2);
+      expect((await del(again.id)).status).toBe(403);
+    } finally {
+      await adm2Areas({});
+    }
+    as(owner);
+    expect((await del(again.id)).body).toEqual({ ok: true });
   });
 });

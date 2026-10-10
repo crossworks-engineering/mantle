@@ -37,6 +37,10 @@ export type GrantRow = {
  *  workspace the item is ("Grant these too"). */
 export type GrantEmbed = { nodeId: string; title: string; kind: string };
 
+/** One item on a link's served list. `nodeId` lower-case; `title` null
+ *  when the caller cannot read that item (or it is gone). */
+export type GrantServedRef = { nodeId: string; title: string | null };
+
 /** A contact the item is shared with (the same shape as the Access
  *  control's AccessContactShare). */
 export type GrantContactShare = {
@@ -70,12 +74,15 @@ export type GrantsResponse = {
   /** A live open link exists (the "Public" pill). */
   hasLink: boolean;
   /** The open link, only when `mayLink`, with its served list (plan 8.1:
-   *  the items the link shows besides its own; ids, lower-case). Changed by
-   *  PATCH /api/shares/:id { serve }. */
-  link: { id: string; path: string; served: string[] } | null;
+   *  the items the link shows besides its own, in the list's order). Changed
+   *  by PATCH /api/shares/:id { serve }, which takes the ids. A new embed of
+   *  an item that already has a link is NOT served until it is ticked
+   *  (decision 12): it shows in `serveCandidates`, not here. */
+  link: { id: string; path: string; served: GrantServedRef[] } | null;
   /** What the caller may put on the link's served list: the items this item
-   *  names or embeds (a folder: the items under it, at most 500) that the
-   *  caller may edit, by title. Empty unless `mayLink`. The same rule POST
+   *  names or embeds (a folder: the first 500 items under it that the
+   *  caller may edit) that the caller may edit, by title; the ones already
+   *  served among them. Empty unless `mayLink`. The same rule POST
    *  /api/shares and PATCH /api/shares/:id { serve } check. */
   serveCandidates: GrantEmbed[];
   /** The contacts it is shared with: only for an Admin user who `mayLink`,

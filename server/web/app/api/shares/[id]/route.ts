@@ -17,14 +17,16 @@ import {
   SERVE_MAX,
   setShareServed,
 } from '@/lib/shares';
+import { requireArea, type WsCaller } from '@/lib/workspaces';
 
 /** DELETE /api/shares/[id] → `{ ok }`: revoke the link or the contact share
  *  (owner-scoped; `ok` false when it was already gone). Who may: a user who
  *  may edit the item (an app: a Moderator of its home), the Grant Access
- *  panel's `mayLink`; else 404 `not_found` or 403 `forbidden`. A link never
- *  changes a level or a grant, so removing one changes none either (the
- *  item's share dialog Remove and the contact's "Shared" tab Revoke both
- *  call this). */
+ *  panel's `mayLink`; or an Admin user with the 'users' area, who may revoke
+ *  any link of the brain (W5b2 part B: closing a link only narrows); else
+ *  404 `not_found` or 403 `forbidden`. A link never changes a level or a
+ *  grant, so removing one changes none either (the item's share dialog
+ *  Remove and the contact's "Shared" tab Revoke both call this). */
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
@@ -34,7 +36,13 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   try {
     await assertMayLink(user.id, user.actor.id, share.nodeId);
   } catch (err) {
-    return linkRefusal(err);
+    const caller: WsCaller = {
+      kind: 'admin',
+      loginId: user.actor.id,
+      anchorId: user.id,
+      user,
+    };
+    if (!(await requireArea(caller, 'users'))) return linkRefusal(err);
   }
   return NextResponse.json({ ok: await revokeShare(user.id, id) });
 }

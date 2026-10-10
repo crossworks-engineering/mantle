@@ -557,7 +557,36 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
     await x(sql`insert into shares (owner_id, node_id, node_type, token, settings)
                 values (${owner}, ${pg}, 'page', ${token}, ${JSON.stringify({ served: [e1] })}::jsonb)`);
     const after = await get(pg);
-    expect(after.body.link).toMatchObject({ path: `/s/${token}`, served: [e1] });
+    expect(after.body.link).toMatchObject({
+      path: `/s/${token}`,
+      served: [{ nodeId: e1, title: 'served.png' }],
+    });
+
+    // Decision 12: an embed added to a page that already has a link is not
+    // served until someone ticks it; the panel offers it, unticked.
+    const e3 = await node('file', 'added later.png', 'files');
+    await homeIn(e3, P);
+    await x(sql`insert into node_embeds (from_id, to_id) values (${pg}, ${e3})`);
+    const later = await get(pg);
+    expect(later.body.serveCandidates).toEqual([
+      { nodeId: e3, title: 'added later.png', kind: 'file' },
+      { nodeId: e1, title: 'served.png', kind: 'file' },
+    ]);
+    expect(later.body.link.served).toEqual([{ nodeId: e1, title: 'served.png' }]);
+    const [held] = await x<{ s: unknown }>(
+      sql`select settings->'served' as s from shares where token = ${token}`,
+    );
+    expect(held!.s).toEqual([e1]);
+
+    // A served item the caller cannot read is named by id only.
+    const e4 = await node('file', 'reef only.png', 'files');
+    await homeIn(e4, R);
+    await x(sql`update shares set settings = ${JSON.stringify({ served: [e1, e4] })}::jsonb
+                 where token = ${token}`);
+    expect((await get(pg)).body.link.served).toEqual([
+      { nodeId: e1, title: 'served.png' },
+      { nodeId: e4, title: null },
+    ]);
     // A caller who reads the page (Q, Write off) but may not edit it sees
     // neither.
     await m.withHeads([pg], 'update', async (tx) => {
@@ -570,6 +599,37 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
     expect(other.body.link).toBeNull();
     expect(other.body.serveCandidates).toEqual([]);
     await x(sql`delete from shares where token = ${token}`);
+  });
+
+  it('a folder link offers the items the caller may edit, counted before the cap', async () => {
+    const path = `files.sv_${randomUUID().slice(0, 8)}`;
+    const folder = await node('branch', 'serve cap', path);
+    await homeIn(folder, Q);
+    // 500 items it may not edit sort first by id (homed in P, where mem2 is
+    // nobody; the folder's Q row passes on with Write off), then one it may.
+    const head = `00000000-${randomUUID().slice(9, 24)}`;
+    const low = Array.from({ length: 500 }, (_, i) => `${head}${String(i).padStart(12, '0')}`);
+    const high = `ffffffff-${randomUUID().slice(9)}`;
+    await m.withHeads([folder], 'share', async (tx) => {
+      await tx.execute(sql`insert into nodes (id, owner_id, type, title, path)
+        select x.id, ${owner}, 'file', 'not editable', ${path}::ltree
+          from unnest(${`{${low.join(',')}}`}::uuid[]) as x(id)`);
+      await tx.execute(sql`insert into nodes (id, owner_id, type, title, path)
+        values (${high}, ${owner}, 'file', 'editable', ${path}::ltree)`);
+    });
+    await m.withHeads(low, 'update', async (tx) => {
+      await tx.execute(
+        sql`delete from item_grants where node_id = any (${`{${low.join(',')}}`}::uuid[])`,
+      );
+      await tx.execute(sql`insert into item_grants (node_id, workspace_id, is_home)
+        select x.id, ${P}, true from unnest(${`{${low.join(',')}}`}::uuid[]) as x(id)
+        on conflict (node_id, workspace_id)
+        do update set is_home = true, via_folder_id = null, excluded = false`);
+    });
+    await as(mem2);
+    const res = await get(folder);
+    expect(res.body.mayLink).toBe(true);
+    expect(res.body.serveCandidates).toEqual([{ nodeId: high, title: 'editable', kind: 'file' }]);
   });
 
   it('a member in none of the workspaces reads nothing', async () => {

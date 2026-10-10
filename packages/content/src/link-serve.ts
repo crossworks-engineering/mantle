@@ -134,14 +134,30 @@ export async function assertMayLink(
  *  list (the Grant Access panel's `serveCandidates`). */
 export const FOLDER_SERVE_OFFER_MAX = 500;
 
+/** The caller may edit the node (the `edit` of {@link linkRights}, as SQL
+ *  on `nodes`): a Moderator of its home, or a user of a workspace whose
+ *  grant has Write on; anyone on a brain never migrated. */
+function editableSql(ownerId: string, loginId: string) {
+  return sql`(
+    not exists (select 1 from workspaces w0 where w0.owner_id = ${ownerId} and w0.is_admin)
+    or exists (
+      select 1 from workspace_users u join workspaces w on w.id = u.workspace_id
+       where u.login_id = ${loginId} and w.owner_id = ${ownerId} and w.archived_at is null
+         and ((u.workspace_id = ${nodes.homeWs} and u.moderator)
+              or u.workspace_id = any (${nodes.writeWs}))))`;
+}
+
 /** The ids the item may serve (see the top): named or embedded by it, or
  *  under it for a folder. `ids`: only these (a check); null: every one (the
- *  panel's offer; a folder's capped at FOLDER_SERVE_OFFER_MAX). */
+ *  panel's offer; a folder's capped at FOLDER_SERVE_OFFER_MAX, counted
+ *  among the items `editor` may edit, so items it may not edit never take
+ *  the places of ones it may). */
 async function serveCandidates(
   ownerId: string,
   item: { id: string; type: string; path: string | null },
   ids: readonly string[] | null,
   q: ShareDb,
+  editor?: string,
 ): Promise<Set<string>> {
   if (ids && !ids.length) return new Set();
   if (item.type === 'branch') {
@@ -155,6 +171,7 @@ async function serveCandidates(
           ids ? inArray(nodes.id, [...ids]) : undefined,
           sql`${nodes.path} <@ ${item.path}::ltree`,
           sql`${nodes.id} <> ${item.id}`,
+          !ids && editor ? editableSql(ownerId, editor) : undefined,
         ),
       )
       .orderBy(nodes.id)
@@ -214,7 +231,7 @@ export async function listServeCandidates(
   item: { id: string; type: string; path: string | null },
   q: ShareDb = db,
 ): Promise<Array<{ nodeId: string; title: string; kind: string }>> {
-  const ids = [...(await serveCandidates(ownerId, item, null, q))].filter(
+  const ids = [...(await serveCandidates(ownerId, item, null, q, loginId))].filter(
     (id) => id !== item.id.toLowerCase(),
   );
   if (!ids.length) return [];

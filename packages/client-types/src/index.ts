@@ -258,6 +258,7 @@ export type {
   GrantPatchBody,
   GrantPreviewResponse,
   GrantRow,
+  GrantServedRef,
   GrantWorkspaceRef,
   GrantsResponse,
   GrantsWriteResponse,

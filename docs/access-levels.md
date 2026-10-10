@@ -7,7 +7,9 @@
 > `GET|PATCH /api/access/nodes/:id` (410 `gone`), folder shares (410
 > `gone`), the shadow report and the nightly `share-drift` sweep. Removing a
 > link is a plain revoke. Agent and tool-group levels stay until W7. What
-> this page says about item levels is history.
+> this page says about item levels is history. A link serves its item and
+> its served list (`shares.settings.served`): a new embed on an item that
+> already has a link is not served until someone ticks it (decision 12).
 
 > Member logins, Phase 0b; client logins C1 to C5. What an agent, a member
 > or a client may read is decided by Postgres row level security on a
