@@ -218,7 +218,7 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     const v = await verdict('site_query');
     if (!v.ok) throw new Error(v.reason);
     expect(v.write).toBe(false);
-    const scope = level.appToolScope('team', { loginId: member, name: 'A member' });
+    const scope = level.appToolScope('team', { loginId: member, name: 'A member' }, { team: true });
     expect(scope).toMatchObject({ viewer: 'team', surface: { kind: 'team', privateReads: false } });
     fake.calls.length = 0;
     const out = await m.runInLevelRoleForTest(scope.viewer, () =>
@@ -328,7 +328,11 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     await setConnectorLevel('team');
     const v = await level.appToolVerdict('client', anchor, DECLARED, 'site_query', client);
     if (!v.ok) throw new Error(v.reason);
-    const scope = level.appToolScope('client', { loginId: client, name: 'A client' });
+    const scope = level.appToolScope(
+      'client',
+      { loginId: client, name: 'A client' },
+      { team: true },
+    );
     fake.calls.length = 0;
     const out = await m.runInLevelRoleForTest(scope.viewer, () =>
       dispatch.dispatchTool(v.tool, { q: 'c' }, { ownerId: anchor, surface: scope.surface }),

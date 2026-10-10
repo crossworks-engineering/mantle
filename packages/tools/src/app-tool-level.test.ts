@@ -138,20 +138,35 @@ describe('appToolVerdict', () => {
 
 describe('appToolScope', () => {
   const who = { loginId: 'l1', name: 'Pat' };
+  const app = { id: 'a1' };
+  const actsFor = { login: 'l1', app };
   it('runs admin on the owner web surface, team and client on their roles', () => {
-    expect(appToolScope('admin', who)).toEqual({ viewer: 'admin', surface: { kind: 'web' } });
-    expect(appToolScope('team', who)).toEqual({
+    expect(appToolScope('admin', who, app)).toEqual({
+      viewer: 'admin',
+      actsFor,
+      surface: { kind: 'web' },
+    });
+    expect(appToolScope('team', who, app)).toEqual({
       viewer: 'team',
+      actsFor,
       surface: { kind: 'team', loginId: 'l1', contactName: 'Pat', privateReads: false },
     });
-    expect(appToolScope('client', who)).toEqual({
+    expect(appToolScope('client', who, app)).toEqual({
       viewer: 'client',
+      actsFor,
       surface: { kind: 'client', loginId: 'l1', contactName: 'Pat' },
     });
   });
 
+  it('acts for the runner THROUGH the app, never the runner alone (R2, H1)', () => {
+    expect(appToolScope('team', who, { team: true }).actsFor).toEqual({
+      login: 'l1',
+      app: { team: true },
+    });
+  });
+
   it('never scopes a call at none', () => {
-    expect(() => appToolScope('none', who)).toThrow(APP_NO_TOOLS);
+    expect(() => appToolScope('none', who, app)).toThrow(APP_NO_TOOLS);
   });
 });
 

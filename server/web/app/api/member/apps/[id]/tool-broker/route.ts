@@ -94,8 +94,15 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     logError(verdict.reason, verdict.status);
     return NextResponse.json({ ok: false, error: verdict.reason }, { status: verdict.status });
   }
-  const scope = appToolScope(level, { loginId: member.loginId, name: memberName(member) });
-  const result = await withViewer(scope.viewer, { login: member.loginId }, () =>
+  // The run reads through the app (its holders met with the member's
+  // workspaces), never the member's other workspaces (plan R2, H1). A space
+  // app has no brain holders: team rules, the Team workspace.
+  const scope = appToolScope(
+    level,
+    { loginId: member.loginId, name: memberName(member) },
+    app.spaceApp ? { team: true } : { id: app.id },
+  );
+  const result = await withViewer(scope.viewer, scope.actsFor, () =>
     dispatchTool(verdict.tool, input, { ownerId: member.anchorId, surface: scope.surface }),
   );
   if (!result.ok) logError(result.error, 200);

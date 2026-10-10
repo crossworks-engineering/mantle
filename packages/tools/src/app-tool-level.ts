@@ -32,7 +32,7 @@
  * `team` is memberAppToolVerdict; `client` is clientAppToolVerdict; `none`
  * refuses every tool.
  */
-import type { AppAuthorLevel, Tool, ViewerLevel } from '@mantle/db';
+import type { AppAuthorLevel, AppRunFor, Tool, ViewerFor, ViewerLevel } from '@mantle/db';
 import { getAppRuntime, type AppToolRules } from '@mantle/content';
 import { resolveTool } from './resolve';
 import { memberAppToolVerdict } from './member-app-tools';
@@ -107,25 +107,39 @@ export async function appToolVerdict(
 }
 
 /**
- * Where an allowed call runs: the viewer scope and the surface (a call at
- * 'none' is never allowed, and throws). `admin` is
- * the owner's web surface, as the owner broker always ran; `team` and
- * `client` are the member and client brokers' surfaces, naming the runner's
- * login (for an admin who runs a lower app, the admin's own login).
+ * Where an allowed call runs: the viewer scope, who it acts for and the
+ * surface (a call at 'none' is never allowed, and throws). `admin` is the
+ * owner's web surface, as the owner broker always ran (system work: only
+ * an app the Admin workspace alone holds runs there); `team` and `client`
+ * are the member and client brokers' surfaces, naming the runner's login
+ * (for an admin who runs a lower app, the admin's own login).
+ *
+ * `actsFor` (plan R2, W5b2 part B fix round 1 H1): a run below admin reads
+ * through the APP, not the runner's whole login: the app's holders beyond
+ * Admin met with the runner's workspaces (AppRunFor in @mantle/db). So an
+ * admin's run of a Team-held app never reads an Admin-only item, and a
+ * member's run never reads the member's other workspaces.
  */
 export function appToolScope(
   level: AppToolLevel,
   runner: { loginId: string; name: string },
-): { viewer: ViewerLevel; surface: NonNullable<ToolHandlerContext['surface']> } {
+  app: AppRunFor,
+): {
+  viewer: ViewerLevel;
+  actsFor: ViewerFor;
+  surface: NonNullable<ToolHandlerContext['surface']>;
+} {
+  const actsFor: ViewerFor = { login: runner.loginId, app };
   switch (level) {
     case 'none':
       // appToolVerdict refuses every call at 'none', so nothing gets here.
       throw new Error(APP_NO_TOOLS);
     case 'admin':
-      return { viewer: 'admin', surface: { kind: 'web' } };
+      return { viewer: 'admin', actsFor, surface: { kind: 'web' } };
     case 'team':
       return {
         viewer: 'team',
+        actsFor,
         surface: {
           kind: 'team',
           loginId: runner.loginId,
@@ -136,6 +150,7 @@ export function appToolScope(
     case 'client':
       return {
         viewer: 'client',
+        actsFor,
         surface: { kind: 'client', loginId: runner.loginId, contactName: runner.name },
       };
   }

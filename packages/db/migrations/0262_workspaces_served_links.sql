@@ -159,3 +159,18 @@ $$;
 REVOKE EXECUTE ON FUNCTION "public"."mantle_link_served_fill"() FROM PUBLIC;
 --> statement-breakpoint
 SELECT * FROM "public"."mantle_link_served_fill"();
+--> statement-breakpoint
+-- The links half of the switch proof (9.4, M2): no live open link serves an
+-- item it did not serve under the levels, or nothing is written.
+DO $$
+DECLARE
+  fails bigint;
+BEGIN
+  SELECT coalesce(sum(d."n"), 0) INTO fails
+    FROM "public"."mantle_ws_links_diff"() d WHERE d."section" = 'reach-fail';
+  IF fails > 0 THEN
+    RAISE EXCEPTION '0262: % served item(s) were not served before; nothing written', fails
+      USING ERRCODE = '23514';
+  END IF;
+END
+$$;

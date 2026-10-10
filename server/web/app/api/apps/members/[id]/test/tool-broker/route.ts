@@ -98,11 +98,17 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       { status: 403 },
     );
   }
-  const scope = appToolScope('team', {
-    loginId: user.actor.id,
-    name: user.actor.displayName?.trim() || user.actor.email.split('@')[0] || 'admin',
-  });
-  const result = await withViewer(scope.viewer, { login: user.actor.id }, () =>
+  // A member's space app at team rules: the run reads the Team workspace
+  // (met with the admin's own), never the admin's whole login (H1).
+  const scope = appToolScope(
+    'team',
+    {
+      loginId: user.actor.id,
+      name: user.actor.displayName?.trim() || user.actor.email.split('@')[0] || 'admin',
+    },
+    { team: true },
+  );
+  const result = await withViewer(scope.viewer, scope.actsFor, () =>
     dispatchTool(verdict.tool, input, { ownerId: user.id, surface: scope.surface }),
   );
   return NextResponse.json(result);

@@ -141,6 +141,13 @@ describe.skipIf(!URL)('workspaces bridge off (0261)', () => {
                 where node_id = ${ids.removedKept!} and workspace_id = ${team}`;
       await tx`update item_grants set write = true
                 where node_id = ${ids.publicApp!} and workspace_id = ${team}`;
+      // M1: a sub-folder's Team row with Write on, its item's row off. Step
+      // b derives the item's row from the folder: Write may only narrow
+      // (before the fix it took the folder's Write and widened).
+      await tx`update item_grants set write = true
+                where node_id = ${ids.subShared!} and workspace_id = ${team}`;
+      await tx`update item_grants set write = false
+                where node_id = ${ids.inSub!} and workspace_id = ${team}`;
       // An informational app granted by hand, Write on, to another
       // workspace (data_read_only kept its users from writing until now).
       await tx`insert into workspaces (id, owner_id, name) values (${sales}, ${owner}, 'Sales')`;
@@ -251,6 +258,57 @@ describe.skipIf(!URL)('workspaces bridge off (0261)', () => {
 
   it('(g) the reach diff gains nothing after the switch', async () => {
     expect(await reachFails()).toEqual([]);
+    // The whole proof (reads, chunks, facts, writes, links) passes too.
+    const rows = await sql<{ section: string }[]>`select * from mantle_ws_switch_guard()`;
+    expect(rows.filter((r) => r.section === 'reach-fail')).toEqual([]);
+  });
+
+  // M1 and M2: the guard raises 23514 on any gained read, write, fact or
+  // serve, so the migration (or mantle_ws_migrate) rolls back. Each case in
+  // a transaction rolled back after.
+  it('(i) the switch guard refuses a gained read, write, fact or serve', async () => {
+    const refused = async (what: RegExp, fn: (tx: postgres.TransactionSql) => Promise<unknown>) => {
+      const err = await sql
+        .begin(async (tx) => {
+          await tx`select set_config('mantle.acl_internal', 'on', true)`;
+          await fn(tx);
+          await tx`select * from mantle_ws_switch_guard()`;
+        })
+        .then(
+          () => null,
+          (e: { code?: string; message?: string }) => e,
+        );
+      expect(err).toMatchObject({ code: '23514' });
+      expect(err!.message).toMatch(what);
+    };
+    // A read: Team on an Admin-only page.
+    await refused(
+      /gained items/,
+      (tx) =>
+        tx`insert into item_grants (node_id, workspace_id) values (${ids.adminPage!}, ${team})`,
+    );
+    // A fact read by Team with no source item (a chat fact is Admin's).
+    await refused(/facts/, async (tx) => {
+      const [f] = await tx<{ id: string }[]>`insert into facts (owner_id, kind, content)
+        values (${owner}, 'factual', 'h2 fact') returning id`;
+      await tx`update facts set read_ws = ARRAY[${team}::uuid] where id = ${f!.id}`;
+    });
+    // A write the switch gave: before = now, then Write turned on.
+    await refused(/writes/, async (tx) => {
+      await tx`create temp table ws_switch_writes_before (node_id uuid, workspace_id uuid)
+                 on commit drop`;
+      await tx`insert into ws_switch_writes_before
+               select n.id, x from nodes n cross join lateral unnest(n.write_ws) x`;
+      await tx`update item_grants set write = true
+                where node_id = ${ids.teamPage!} and workspace_id = ${team}`;
+    });
+    // A serve: an open link on the public note that serves the Admin page.
+    await refused(
+      /links/,
+      (tx) => tx`insert into shares (owner_id, node_id, node_type, token, settings)
+        values (${owner}, ${ids.publicNote!}, 'note', ${`t-${randomUUID()}`},
+                ${sql.json({ served: [ids.adminPage!] })})`,
+    );
   });
 
   it('(h) archive_node_levels holds the levels as they were at the switch', async () => {
@@ -427,4 +485,86 @@ describe.skipIf(!URL)('workspaces bridge off (0261)', () => {
       await fresh.drop();
     }
   }, 180_000);
+});
+
+// H2 (owner rule 21.9): a brain that was never moved to workspaces (here:
+// it has a client login) is not switched by 0261. It keeps its levels, its
+// bridge and its level upkeep; members read as before; nothing is archived;
+// mantle_ws_migrate_locked still skips it until it is set up by hand.
+describe.skipIf(!URL)('0261 leaves a brain that is not on workspaces alone (H2)', () => {
+  let scratch: Awaited<ReturnType<typeof createScratchDatabaseBefore>>;
+  let sql: ReturnType<typeof postgres>;
+  const owner = randomUUID();
+  const member = randomUUID();
+  const client = randomUUID();
+  const ids: Record<string, string> = {};
+  const node = async (key: string, type: string, path: string, audience = 'admin') => {
+    const id = randomUUID();
+    await sql`insert into nodes (id, owner_id, type, title, path, audience)
+      values (${id}, ${owner}, ${type}::node_type, ${key}, ${path}::ltree, ${audience})`;
+    ids[key] = id;
+    return id;
+  };
+  /** The brain titles the team level role reads (a member's reads before
+   *  the switch). */
+  const teamReads = async () =>
+    (
+      await sql.begin(async (tx) => {
+        await tx`set local role mantle_view_team`;
+        return tx<{ title: string }[]>`select title from nodes
+          where owner_id = ${owner} and type <> 'branch' order by title`;
+      })
+    ).map((r) => r.title);
+
+  beforeAll(async () => {
+    scratch = await createScratchDatabaseBefore(URL!, '0261_workspaces_bridge_off');
+    sql = postgres(scratch.url, { max: 3, prepare: false, onnotice: () => {} });
+    await sql`insert into auth.users (id, email, password_hash, role, is_owner) values
+      (${owner}, 'h2o@example.invalid', 'x', 'admin', true),
+      (${member}, 'h2m@example.invalid', 'x', 'member', false),
+      (${client}, 'h2c@example.invalid', 'x', 'client', false)`;
+    await node('adminPage', 'page', 'pages');
+    await node('teamPage', 'page', 'pages', 'team');
+    await node('folderShared', 'branch', 'pages.shared');
+    await sql`update nodes set share_level = 'team' where id = ${ids.folderShared!}`;
+    await node('inShared', 'page', 'pages.shared');
+    // The 0251 pass skips this brain: clients are set up by hand.
+    const [w] = await sql<{ why: string | null }[]>`select mantle_ws_skip_reason() as why`;
+    expect(w!.why).toMatch(/^clients present/);
+    await scratch.migrateRest();
+  }, 240_000);
+
+  afterAll(async () => {
+    await sql?.end();
+    await scratch?.drop();
+  });
+
+  it('keeps the bridge and the level upkeep triggers, and no freeze', async () => {
+    const rows = await sql<{ t: string }[]>`select tgname as t from pg_trigger
+      where tgname in ('nodes_zz_bridge_ins', 'nodes_zz_bridge_upd', 'users_zz_bridge',
+                       'nodes_inherit_before', 'nodes_share_refresh_after',
+                       'node_embeds_added_after', 'nodes_levels_frozen')`;
+    expect(rows.map((r) => r.t).sort()).toEqual([
+      'node_embeds_added_after',
+      'nodes_inherit_before',
+      'nodes_share_refresh_after',
+      'nodes_zz_bridge_ins',
+      'nodes_zz_bridge_upd',
+      'users_zz_bridge',
+    ]);
+    expect(Number((await sql`select count(*) as n from archive_node_levels`)[0]!.n)).toBe(0);
+    expect((await sql`select * from mantle_ws_migrate_locked()`)[0]).toMatchObject({
+      section: 'skip',
+    });
+  });
+
+  it('members read as before, and the levels still change and keep their upkeep', async () => {
+    expect(await teamReads()).toEqual(['inShared', 'teamPage']);
+    await sql`update nodes set audience = 'team' where id = ${ids.adminPage!}`;
+    await node('laterInShared', 'page', 'pages.shared');
+    const [lv] = await sql<{ i: string | null }[]>`
+      select inherited_level as i from nodes where id = ${ids.laterInShared!}`;
+    expect(lv!.i).toBe('team');
+    expect(await teamReads()).toEqual(['adminPage', 'inShared', 'laterInShared', 'teamPage']);
+  });
 });

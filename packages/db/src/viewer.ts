@@ -137,7 +137,27 @@ export type WorkspaceScope = {
  * or a workspace); a public link reads no workspace, only its served list.
  */
 export type ViewerFor =
-  { login: string } | { agent: string | null } | { link: { served: readonly string[] } };
+  | { login: string; app?: AppRunFor }
+  | { agent: string | null }
+  | { link: { served: readonly string[] } };
+
+/**
+ * A login running an APP (plan R2; W5b2 part B fix round 1, H1). The app's
+ * database is shared by every holder, so a run must never read what one
+ * holder reads and another does not. The scope is the app's holder
+ * workspaces other than Admin, met with the runner's own workspaces, never
+ * the runner's whole union:
+ * - `{ id }`: a brain app; its holders come from its grants. An app no
+ *   workspace beyond Admin holds runs here only at team rules (the author
+ *   ceiling), so it reads the Team workspace. Two or more holders beyond
+ *   Admin read nothing: the row rule reads any workspace of the scope, not
+ *   "every one of them", so no scope expresses their common items yet.
+ * - `{ team: true }`: a run at team rules with no brain holders (a member's
+ *   own space app, an admin's test run of one): the Team workspace.
+ * A runner outside the holder reads nothing. No Moderator rights beyond the
+ * scope.
+ */
+export type AppRunFor = { id: string } | { team: true };
 
 /** What the current code runs as: system work (no scope), a level scope
  *  (the tier model, until it is retired), or a workspace scope. */

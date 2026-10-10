@@ -77,6 +77,7 @@ export {
   type ScopeKind,
   type WorkspaceScope,
   type ViewerFor,
+  type AppRunFor,
   type CurrentScope,
   type TurnStamp,
 } from './viewer';

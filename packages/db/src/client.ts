@@ -27,6 +27,7 @@ import {
   exitScope,
   lowerLevel,
   type ViewerFor,
+  type AppRunFor,
   type ViewerLevel,
   viewerDatabaseUrl,
   viewerRolePassword,
@@ -777,6 +778,30 @@ export async function withViewer<T>(
   return runInViewerScope(await viewerScopeFor(actsFor), fn);
 }
 
+/** The live workspaces beyond Admin an app run reads through (AppRunFor):
+ *  a brain app's holders from its grants, else the brain's Team workspace
+ *  (team rules). Admin pool. */
+async function appRunHolders(app: AppRunFor): Promise<string[]> {
+  const admin = getAdminDb();
+  if ('id' in app) {
+    if (!UUID_RE.test(app.id)) throw new Error('withViewer: app must be a uuid');
+    const rows = (await admin.execute(
+      sqlTag`select w.id::text as id from nodes n
+               join workspaces w on w.id = any(n.read_ws)
+                and not w.is_admin and w.archived_at is null
+              where n.id = ${app.id} and n.type = 'app'
+              order by w.id`,
+    )) as unknown as { id: string }[];
+    if (rows.length > 0) return rows.map((r) => r.id);
+  }
+  const team = (await admin.execute(
+    sqlTag`select w.id::text as id from workspaces w
+            where w.owner_id = mantle_brain_id() and w.bridge_key = 'team'
+              and w.archived_at is null`,
+  )) as unknown as { id: string }[];
+  return team.map((r) => r.id);
+}
+
 /** The scope `withViewer` enters for `actsFor`, read on the admin pool. */
 export async function viewerScopeFor(actsFor: ViewerFor): Promise<WorkspaceScope> {
   const admin = getAdminDb();
@@ -791,11 +816,21 @@ export async function viewerScopeFor(actsFor: ViewerFor): Promise<WorkspaceScope
                join auth.users l on l.id = u.login_id and l.disabled_at is null
               where u.login_id = ${actsFor.login}`,
     )) as unknown as { ws: string[]; mod: string[] }[];
+    let ws = rows[0]?.ws ?? [];
+    let mod = rows[0]?.mod ?? [];
+    if (actsFor.app) {
+      // An app run (plan R2, H1): the holders beyond Admin, met with the
+      // runner's workspaces; see AppRunFor.
+      const held = await appRunHolders(actsFor.app);
+      const holder = held.length === 1 ? held[0]! : null;
+      ws = holder && ws.includes(holder) ? [holder] : [];
+      mod = mod.filter((m) => ws.includes(m));
+    }
     return Object.freeze({
       kind: 'user',
       loginId: actsFor.login.toLowerCase(),
-      ws: Object.freeze([...(rows[0]?.ws ?? [])]),
-      modWs: Object.freeze([...(rows[0]?.mod ?? [])]),
+      ws: Object.freeze([...ws]),
+      modWs: Object.freeze([...mod]),
     });
   }
   if ('agent' in actsFor) {

@@ -89,8 +89,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     logError(verdict.reason, verdict.status);
     return NextResponse.json({ ok: false, error: verdict.reason }, { status: verdict.status });
   }
-  const scope = appToolScope(level, { loginId: client.loginId, name: clientName(client) });
-  const result = await withViewer(scope.viewer, { login: client.loginId }, () =>
+  const scope = appToolScope(
+    level,
+    { loginId: client.loginId, name: clientName(client) },
+    { id: app.id },
+  );
+  const result = await withViewer(scope.viewer, scope.actsFor, () =>
     dispatchTool(verdict.tool, input, { ownerId: client.anchorId, surface: scope.surface }),
   );
   if (!result.ok) logError(result.error, 200);

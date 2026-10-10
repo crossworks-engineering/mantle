@@ -122,7 +122,7 @@ describe('owner app tool broker: team rules when another workspace holds the app
     const res = await call('contact_list');
     expect(res.status).toBe(200);
     expect(h.levels).toEqual(['team']);
-    expect(h.viewers).toEqual([{ level: 'team', actsFor: { login: ACTOR } }]);
+    expect(h.viewers).toEqual([{ level: 'team', actsFor: { login: ACTOR, app: { id: APP } } }]);
     expect(h.dispatched[0]).toMatchObject({
       level: 'team',
       ctx: {
