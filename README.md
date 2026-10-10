@@ -260,7 +260,7 @@ provably stale, never a number someone typed once.
 ![migrations](https://img.shields.io/badge/migrations-252-336791?logo=postgresql&logoColor=white)
 ![built-in tools](https://img.shields.io/badge/built--in%20tools-330-6b4fbb)
 ![docs](https://img.shields.io/badge/docs-103%20guides-4c8eda)
-![releases](https://img.shields.io/badge/releases-515-blue)
+![releases](https://img.shields.io/badge/releases-516-blue)
 
 **Code & tests** — the suite runs on every push, DB-less, in CI. Test counts below are cases *declared*; parameterised tables (`it.each`) expand to more at run time, so the executed total is higher than the number shown.
 
@@ -268,7 +268,7 @@ provably stale, never a number someone typed once.
 | --- | --- |
 | 📐 &nbsp;TypeScript (excl. tests) | **289,549** lines in 1,789 files |
 | 🧪 &nbsp;Test suite | **8,605+** cases declared in 888 files |
-| ⚖️ &nbsp;Test weight | 170,146 lines — 1 for every 1.7 of source |
+| ⚖️ &nbsp;Test weight | 170,156 lines — 1 for every 1.7 of source |
 | 🗂️ &nbsp;Tracked files | 3,724 |
 | 🐘 &nbsp;SQL migrations | 252, replayed in order on every boot |
 | 📚 &nbsp;Docs | 103 engineering docs, 116 user-guide pages, 224 changelog entries (67,750 lines) |
@@ -285,15 +285,15 @@ provably stale, never a number someone typed once.
 | 💾 &nbsp;Datastores | **1** (Postgres — vectors, graph, FTS, queues, realtime, auth) |
 | 🧊 &nbsp;Idle footprint | ~2.5 GB RAM, whole stack |
 
-**Velocity** — v0.239.84, 4,630 commits and 515 releases since 2026-05-14 (150 days, ~30.9 commits/day).
+**Velocity** — v0.239.85, 4,632 commits and 516 releases since 2026-05-14 (150 days, ~30.9 commits/day).
 
 ```
-commits/week, last 22 weeks   ▁▃▃▃▁▁▃▃▂▂▂▃▃▂▂▁▃▁▁▂█▄   peak 979
+commits/week, last 22 weeks   ▁▃▃▃▁▁▃▃▂▂▂▃▃▂▂▁▃▁▁▂█▄   peak 977
 ```
 
 ```mermaid
 pie showData title Lines of TypeScript by area
-    "packages/*" : 318590
+    "packages/*" : 318600
     "server/web" : 118433
     "server/api + mcp" : 20268
     "elsewhere" : 2404
