@@ -118,6 +118,14 @@ describe.skipIf(!ADMIN_URL)('runs engine (DB-backed)', () => {
         if (s && !s.startsWith('ALTER TYPE')) await client.unsafe(s);
       }
     }
+    // The workspace stamp columns (0250, workspaces R3): the drizzle schema
+    // names them on every insert. Their FKs and the stamp trigger belong to
+    // the full schema; the engine never reads them.
+    for (const t of ['runs', 'run_items']) {
+      await client.unsafe(
+        `ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS workspace_id uuid, ADD COLUMN IF NOT EXISTS login_id uuid`,
+      );
+    }
     // Minimal pending_tool_calls stand-in for the ask_human paths (WP3).
     // The real migration carries FKs to agents/traces, which live outside
     // the engine's scratch schema — the engine only ever writes the columns
@@ -138,6 +146,8 @@ describe.skipIf(!ADMIN_URL)('runs engine (DB-backed)', () => {
       decided_at timestamptz,
       executed_at timestamptz,
       expires_at timestamptz,
+      workspace_id uuid,
+      login_id uuid,
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
     )`);
