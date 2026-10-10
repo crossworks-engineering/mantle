@@ -487,7 +487,8 @@ export function runInSystemTx<T>(
  *  - `runs-scope-check`: enqueue checks the runs it names carry the scope
  *    (runs boss.ts); the rule is in the query.
  *  - `member-request`: team_request_create files a task on the member's
- *    behalf (builtins-team.ts), the one write a member turn makes.
+ *    behalf (builtins-team.ts), the one write a member turn makes;
+ *    client_request_create does the same for a client (builtins-client.ts).
  *  - `own-space`: the my_* tools leave the turn to enter the login's own
  *    personal space (withSpace), checked against the scope's login; the
  *    my_app_* tools leave it the same way for the author's own apps (they
