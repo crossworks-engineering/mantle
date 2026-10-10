@@ -4,7 +4,7 @@ import { getOwnerOr401 } from '@/lib/auth';
 import { TREE_SEARCH_MAX, TREE_TAG_MAX } from '@mantle/client-types/tree';
 import { searchTree } from '@mantle/content/tree';
 import { treeKindOr404 } from '@/lib/tree-route';
-import { parseWsFilter, withChips, workspaceChips } from '@/lib/listWorkspaces';
+import { parseWsFilter, withChips, workspaceChips } from '@/lib/list-workspaces';
 
 const Query = z.object({
   q: z.string().trim().max(TREE_SEARCH_MAX).default(''),

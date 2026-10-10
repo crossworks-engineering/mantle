@@ -4,7 +4,7 @@ import { getOwnerOr401 } from '@/lib/auth';
 import { TREE_MARK_VIEWS } from '@mantle/client-types/tree';
 import { listTreeMarks } from '@mantle/content/tree';
 import { ensureTreeRoot, treeKindOr404 } from '@/lib/tree-route';
-import { chipped } from '@/lib/listWorkspaces';
+import { chipped } from '@/lib/list-workspaces';
 
 const Query = z.object({ view: z.enum(TREE_MARK_VIEWS) });
 

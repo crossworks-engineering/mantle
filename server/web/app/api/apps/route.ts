@@ -18,9 +18,9 @@ export async function GET(req: Request) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const url = new URL(req.url);
-  const filter = await parseWsFilter(url, user.id, user.actor.id);
+  const filter = await parseWsFilter(req, user.id, user.actor.id);
   if (filter instanceof Response) return filter;
-  const ws = filter.ws ?? undefined;
+  const ws = filter ?? undefined;
   const query = url.searchParams.get('q')?.trim() || undefined;
   const tag = url.searchParams.get('tag')?.trim() || undefined;
   const sort = (url.searchParams.get('sort') as AppSort | null) ?? undefined;
@@ -35,9 +35,10 @@ export async function GET(req: Request) {
     user.actor.id,
     rows.map((r) => r.id),
   );
+  // The link pill comes with the row (listApps); the chips from the helper.
   const apps: AppListRow[] = rows.map((r) => ({
     ...r,
-    workspaces: chips.get(r.id) ?? [],
+    workspaces: chips.get(r.id)?.workspaces ?? [],
     hasLink: r.hasLink === true,
   }));
   const body: AppListResponse = { apps, total, page, pageSize: PAGE_SIZE, ...(ws ? { ws } : {}) };

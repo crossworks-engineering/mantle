@@ -16,7 +16,7 @@ import {
 import { recordIngest } from '@mantle/tracing';
 import { firstIssue } from '@/lib/zod-issue';
 import { treeErrorResponse } from '@/lib/tree-route';
-import { chipped, parseWsFilter } from '@/lib/listWorkspaces';
+import { chipped, parseWsFilter } from '@/lib/list-workspaces';
 
 const SORTS: PageSort[] = ['edited', 'newest', 'oldest', 'title'];
 const PAGE_SIZE = 50;
@@ -62,7 +62,7 @@ const CreateBody = z.object({
  * AdminPrivateListRow rows (top level in the tree, merged in the sort order
  * when filtering, none under a tag); `private` lists them alone.
  *
- * Every row carries its `workspaces` and `hasLink` (lib/listWorkspaces).
+ * Every row carries its `workspaces` and `hasLink` (lib/list-workspaces).
  * `?ws=<id>` keeps only the pages that workspace reads (no private rows:
  * they are in no workspace) and is echoed as `ws`.
  */

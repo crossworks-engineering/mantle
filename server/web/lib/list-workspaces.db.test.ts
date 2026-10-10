@@ -11,7 +11,7 @@
  *    workspace the caller may not name (unknown, archived, not a user of
  *    it, not an id) is 404 `not_found`.
  *
- *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/listWorkspaces.db.test.ts
+ *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/list-workspaces.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
@@ -32,7 +32,7 @@ describe.skipIf(!URL)('list chips and ?ws= (W5b2)', () => {
   type Ts = typeof import('@mantle/db/test-support');
   let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
   let m: typeof import('@mantle/db');
-  let lw: typeof import('@/lib/listWorkspaces');
+  let lw: typeof import('@/lib/list-workspaces');
   const owner = randomUUID();
   const mem = randomUUID();
   const P = randomUUID(); // the member's
@@ -75,7 +75,7 @@ describe.skipIf(!URL)('list chips and ?ws= (W5b2)', () => {
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     process.env.SESSION_SECRET ??= 'list-chips-db-test-secret-at-least-32-characters';
     m = await import('@mantle/db');
-    lw = await import('@/lib/listWorkspaces');
+    lw = await import('@/lib/list-workspaces');
     const email = (who: string) => `chips-${who}-${owner.slice(0, 8)}@example.invalid`;
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role) values
       (${owner}, ${email('owner')}, 'x', true, 'admin'),

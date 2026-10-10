@@ -12,7 +12,7 @@
 
 import type { AppNav, AppOpenStat, AppTint } from '../app-nav';
 import type { AccessLevel } from './access';
-import type { ListChips } from './grants';
+import type { ListChips, ListWorkspace } from './grants';
 
 // ── Row/DTO shapes moved from the server packages (jackdaw split P0) ─────────
 // Sources: @mantle/content, @mantle/email, @mantle/microsoft, @mantle/runtime/agent
@@ -223,17 +223,12 @@ export type AppRow = {
   updatedAt: string;
 };
 
-/** A workspace as a list row's chip names it. */
-export type WorkspaceChip = { id: string; name: string };
+/** A workspace as a list row's chip names it (the same as ListWorkspace). */
+export type WorkspaceChip = ListWorkspace;
 
-/** One row of GET /api/apps (workspaces W5b2). */
-export type AppListRow = AppRow & {
-  /** The workspaces that hold the app (its read_ws) that the caller is a
-   *  user of; every one of them for an Admin user. Sorted by name. */
-  workspaces: WorkspaceChip[];
-  /** A live open public link exists. */
-  hasLink: boolean;
-};
+/** One row of GET /api/apps (workspaces W5b2): the chips every list row
+ *  carries (ListChips, lib/list-workspaces.ts). */
+export type AppListRow = AppRow & ListChips;
 
 /** GET /api/apps?q=&tag=&sort=&page=&ws=. `ws` (a workspace id): only the
  *  apps that workspace holds, echoed back; a workspace the caller may not

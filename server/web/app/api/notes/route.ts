@@ -6,7 +6,7 @@ import { listStateOf, pageWithPrivate } from '@/lib/admin-private-rows';
 import { countNotes, createNote, isDigestTag, listNoteTags, listNotes } from '@/lib/notes';
 import { recordIngest } from '@mantle/tracing';
 import { firstIssue } from '@/lib/zod-issue';
-import { chipped, parseWsFilter } from '@/lib/listWorkspaces';
+import { chipped, parseWsFilter } from '@/lib/list-workspaces';
 
 const PAGE_SIZE = 50;
 
@@ -21,7 +21,7 @@ const CreateBody = z.object({
  * server page. Agent digests are hidden unless `?digests=1` (or the tag is
  * itself a digest tag like `agent:assistant`). `?state=brain|private|all`
  * adds the caller's own private notes (lib/admin-private-rows; default brain).
- * Every row carries its `workspaces` and `hasLink` (lib/listWorkspaces).
+ * Every row carries its `workspaces` and `hasLink` (lib/list-workspaces).
  * `?ws=<id>` keeps only the notes that workspace reads (no private rows:
  * they are in no workspace) and is echoed as `ws`.
  */

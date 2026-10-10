@@ -4,7 +4,7 @@ import { getOwnerOr401 } from '@/lib/auth';
 import { TREE_SORTS } from '@mantle/client-types/tree';
 import { loadTreeFolder } from '@mantle/content/tree';
 import { ensureTreeRoot, privateRootItems, treeKindOr404 } from '@/lib/tree-route';
-import { parseWsFilter, withChips, workspaceChips } from '@/lib/listWorkspaces';
+import { parseWsFilter, withChips, workspaceChips } from '@/lib/list-workspaces';
 
 const Query = z.object({
   folder: z.string().uuid().optional(),
