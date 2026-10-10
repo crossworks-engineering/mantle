@@ -40,15 +40,19 @@ describe.skipIf(!URL)('the share routes on the served list', () => {
   let create: typeof import('./route');
   let one: typeof import('./[id]/route');
   const owner = randomUUID(); // the anchor
-  const adm2 = randomUUID(); // a second admin login: a plain user of P and Q
+  // A second admin login: a plain user (no Moderator) of Admin, P and Q,
+  // in no way a user of R.
+  const adm2 = randomUUID();
   const P = randomUUID();
   const Q = randomUUID();
+  const R = randomUUID();
   const id = {
     page: randomUUID(),
     img: randomUUID(),
     stray: randomUUID(),
     pPage: randomUUID(), // homed in P
-    pImg: randomUUID(), // homed in Admin, embedded in pPage
+    pImg: randomUUID(), // homed in R, embedded in pPage
+    rNote: randomUUID(), // homed in R
     folder: randomUUID(),
     inFolder: randomUUID(),
     outside: randomUUID(),
@@ -136,18 +140,22 @@ describe.skipIf(!URL)('the share routes on the served list', () => {
       (${adm2}, ${email('adm2')}, 'x', false, 'admin', 'Ada Admin')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
+    await x(sql`select * from mantle_ws_migrate()`);
     // Links made before W5b2: no list yet (the fill test below).
     await node(id.oldClient, 'note', 'old client note', 'notes', 'client');
     await node(id.oldPublic, 'note', 'old public note', 'notes', 'public');
     await x(sql`insert into shares (owner_id, node_id, node_type, token) values
       (${owner}, ${id.oldClient}, 'note', ${`${owner}-oc`}),
       (${owner}, ${id.oldPublic}, 'note', ${`${owner}-op`})`);
-    await x(sql`select * from mantle_ws_migrate()`);
     await x(sql`insert into workspaces (id, owner_id, name) values
-      (${P}, ${owner}, 'Proj'), (${Q}, ${owner}, 'Quay')`);
+      (${P}, ${owner}, 'Proj'), (${Q}, ${owner}, 'Quay'), (${R}, ${owner}, 'Reef')`);
     await x(sql`insert into workspace_users (workspace_id, login_id, moderator) values
       (${P}, ${owner}, true), (${P}, ${adm2}, false),
-      (${Q}, ${owner}, true), (${Q}, ${adm2}, false)`);
+      (${Q}, ${owner}, true), (${Q}, ${adm2}, false), (${R}, ${owner}, true)`);
+    // adm2 in Admin, as a plain user (the migration may have made it one).
+    await x(sql`insert into workspace_users (workspace_id, login_id, moderator)
+                select id, ${adm2}, false from workspaces where owner_id = ${owner} and is_admin
+                on conflict (workspace_id, login_id) do update set moderator = false`);
 
     await node(id.page, 'page', 'A page', 'pages');
     await node(id.img, 'file', 'img.png', 'files');
@@ -162,7 +170,10 @@ describe.skipIf(!URL)('the share routes on the served list', () => {
       JSON.stringify({ type: 'doc', content: [{ type: 'image', attrs: { nodeId: img } }] });
     await x(sql`insert into pages (node_id, doc, doc_text) values
       (${id.page}, ${docOf(id.img)}::jsonb, ''), (${id.pPage}, ${docOf(id.pImg)}::jsonb, '')`);
+    await node(id.rNote, 'note', 'An R note', 'notes');
     await homeIn(id.pPage, P);
+    await homeIn(id.pImg, R);
+    await homeIn(id.rNote, R);
   }, 180_000);
 
   afterAll(async () => {
@@ -223,9 +234,13 @@ describe.skipIf(!URL)('the share routes on the served list', () => {
 
   it('who may link: 404 for an item the caller cannot read, 403 for one it may not edit', async () => {
     as(adm2);
-    // Homed in Admin: adm2 is in no workspace that reads it.
-    expect((await post({ nodeId: id.page })).status).toBe(404);
-    // Homed in P, where adm2 is a plain user: reads, may not edit.
+    // Homed in R: adm2 is in no workspace that reads it.
+    const ghost = await post({ nodeId: id.rNote });
+    expect(ghost.status).toBe(404);
+    expect(ghost.body.code).toBe('not_found');
+    // Homed in Admin, where adm2 is a plain user: reads, may not edit.
+    expect((await post({ nodeId: id.page })).status).toBe(403);
+    // Homed in P, where adm2 is a plain user too.
     const ro = await post({ nodeId: id.pPage });
     expect(ro.status).toBe(403);
     expect(ro.body.code).toBe('forbidden');
@@ -234,7 +249,7 @@ describe.skipIf(!URL)('the share routes on the served list', () => {
     await grant(id.pPage, Q, true);
     const rw = await post({ nodeId: id.pPage });
     expect(rw.status).toBe(200);
-    // The image it embeds is homed in Admin: adm2 cannot read it, so 404.
+    // The image it embeds is homed in R: adm2 cannot read it, so 404.
     expect((await post({ nodeId: id.pPage, serve: [id.pImg] })).status).toBe(404);
     // Read only in Q: 403. Written in Q: served.
     await grant(id.pImg, Q, false);
@@ -279,7 +294,8 @@ describe.skipIf(!URL)('the share routes on the served list', () => {
     as(owner);
     const link = (await post({ nodeId: id.page })).body.share as Json;
     as(adm2);
-    expect((await del(link.id)).status).toBe(404);
+    // adm2 reads it (a user of Admin) but may not edit it.
+    expect((await del(link.id)).status).toBe(403);
     as(owner);
     const before = await levelOf(id.page);
     expect(await del(link.id)).toEqual({ status: 200, body: { ok: true } });
