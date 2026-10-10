@@ -80,4 +80,5 @@ export * from './runs';
 export * from './agent-groups';
 export * from './sandboxes';
 export * from './spaces';
+export * from './workspaces';
 export * from './item-marks';

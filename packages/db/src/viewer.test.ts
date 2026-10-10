@@ -249,6 +249,7 @@ describe('brains sharing one Postgres cluster (viewerRolePlan)', () => {
     'mantle_view_client',
     'mantle_view_public',
     'mantle_view_space',
+    'mantle_view_user',
   ];
   const cluster = (
     database: string,
@@ -284,7 +285,7 @@ describe('brains sharing one Postgres cluster (viewerRolePlan)', () => {
 
   it('the owner migrating again resets the passwords (a key change) and writes no note', () => {
     const plan = viewerRolePlan(cluster('brain_a', 'brain_a'), 'key-a2', false);
-    expect(plan.filter((s) => s.startsWith('ALTER ROLE'))).toHaveLength(4);
+    expect(plan.filter((s) => s.startsWith('ALTER ROLE'))).toHaveLength(shared.length);
     expect(plan.some((s) => s.startsWith('COMMENT'))).toBe(false);
   });
 
@@ -321,7 +322,7 @@ describe('brains sharing one Postgres cluster (viewerRolePlan)', () => {
     const plan = viewerRolePlan(cluster('brain_b', 'brain_a'), 'key-b', true);
     const revoke = plan.indexOf('REVOKE CONNECT ON DATABASE "brain_b" FROM PUBLIC');
     const grant = plan.indexOf(
-      'GRANT CONNECT ON DATABASE "brain_b" TO "mantle_view_team_brain_b", "mantle_view_client_brain_b", "mantle_view_public_brain_b", "mantle_view_space_brain_b", CURRENT_USER',
+      'GRANT CONNECT ON DATABASE "brain_b" TO "mantle_view_team_brain_b", "mantle_view_client_brain_b", "mantle_view_public_brain_b", "mantle_view_space_brain_b", "mantle_view_user_brain_b", CURRENT_USER',
     );
     expect(revoke).toBeGreaterThan(-1);
     expect(grant).toBeGreaterThan(revoke);

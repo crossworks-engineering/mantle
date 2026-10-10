@@ -13,6 +13,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import { apiKeys } from './api-keys';
+import { workspaces } from './workspaces';
 
 /**
  * `assistant`  — interactive chat surfaces (web /assistant, future voice).
@@ -361,6 +362,9 @@ export const agents = pgTable(
      *  Phase 0b: who may chat with it AND what it reads. A below-admin agent
      *  runs inside its level (withAgentViewer). Default admin. */
     audience: text('audience').notNull().default('admin'),
+    /** Workspaces W1 (0241): the one workspace this assistant answers in,
+     *  written at its first attach and frozen once it has history. */
+    workspaceId: uuid('workspace_id').references(() => workspaces.id, { onDelete: 'restrict' }),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
     usageCount: bigint('usage_count', { mode: 'number' }).default(0).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

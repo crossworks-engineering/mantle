@@ -30,6 +30,13 @@ export const contentChunks = pgTable(
     // Declared so SELECTs can reference it; the GENERATED clause + GIN index
     // live in the SQL migration (0119), same split as nodes.search_tsv.
     searchTsv: tsvector('search_tsv'),
+    /** Workspaces W1: a copy of the node's read_ws and login_id, kept by
+     *  triggers (migration 0241), so a vector scan filters on its own row. */
+    readWs: uuid('read_ws')
+      .array()
+      .notNull()
+      .default(sql`'{}'::uuid[]`),
+    loginId: uuid('login_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [

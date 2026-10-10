@@ -106,9 +106,53 @@ export type SpaceScope = {
   loginId: string;
 };
 
+/**
+ * A workspace scope (workspaces W1, plan section 2.1): the code inside reads
+ * what the workspaces in `ws` hold, on the workspace role
+ * (`mantle_view_user`), and may edit as a Moderator of `modWs`. `kind` says
+ * who the work is for: a signed-in user, an assistant turn (its own
+ * workspace only), or a public link.
+ */
+export type ScopeKind = 'user' | 'assistant' | 'link';
+export type WorkspaceScope = {
+  kind: ScopeKind;
+  /** The login acting (the user, or the user an assistant answers). */
+  loginId: string | null;
+  /** The workspaces this work reads. */
+  ws: readonly string[];
+  /** The workspaces where the login is a Moderator (a subset of `ws`). */
+  modWs: readonly string[];
+};
+
+/** What the current code runs as: system work (no scope), a level scope
+ *  (the tier model, until it is retired), or a workspace scope. */
+export type CurrentScope =
+  | { kind: 'system' }
+  | { kind: 'level'; level: LimitedLevel }
+  | ({ kind: ScopeKind } & WorkspaceScope);
+
+/**
+ * Asked for a viewer LEVEL inside a workspace scope (plan S2): levels have no
+ * meaning there, and the old answer ('admin' when unset) would widen a
+ * workspace scope to everything. Callers move to `currentScope()`.
+ */
+export class ScopeLevelError extends Error {
+  readonly code = 'scope-level';
+  constructor(what: string) {
+    super(`${what}: a workspace scope has no viewer level; use currentScope()`);
+    this.name = 'ScopeLevelError';
+  }
+}
+
 /** `tx`: a scope that must run in one transaction (its settings are
  *  transaction-local) carries it here; `db` returns it for every query. */
-type Scope = { level: ViewerLevel; space?: SpaceScope; tx?: unknown; hooks?: TxHooks };
+type Scope = {
+  level: ViewerLevel;
+  space?: SpaceScope;
+  ws?: WorkspaceScope;
+  tx?: unknown;
+  hooks?: TxHooks;
+};
 
 /** Work a scope's transaction owes the world outside the database, run once
  *  it ends: `commit` after a commit, `rollback` after a rollback. */
@@ -160,7 +204,24 @@ const store = new AsyncLocalStorage<Scope>();
  *  member, 'client' for a client), so everything that refuses a limited
  *  caller (enqueue, admin agents) refuses it too. */
 export function currentViewerLevel(): ViewerLevel {
-  return store.getStore()?.level ?? 'admin';
+  const scope = store.getStore();
+  if (scope?.ws) throw new ScopeLevelError('currentViewerLevel');
+  return scope?.level ?? 'admin';
+}
+
+/** What the current code runs as (see CurrentScope). Never 'system' inside
+ *  a level scope or a workspace scope (plan T4). */
+export function currentScope(): CurrentScope {
+  const scope = store.getStore();
+  if (!scope) return { kind: 'system' };
+  if (scope.ws) return { ...scope.ws };
+  if (scope.level === 'admin') return { kind: 'system' };
+  return { kind: 'level', level: scope.level as LimitedLevel };
+}
+
+/** The workspace scope the current code runs in, if any. */
+export function currentWorkspaceScope(): WorkspaceScope | null {
+  return store.getStore()?.ws ?? null;
 }
 
 /** The personal-space scope the current code runs in, if any. */
@@ -219,6 +280,21 @@ export function runInTxScope<T>(
   return store.run({ ...scope, level }, fn);
 }
 
+/** Enter a workspace scope that runs in one transaction on the workspace
+ *  role. Only client.ts calls this (`withScope`), with the transaction it
+ *  opened and whose settings it set. */
+export function runInWorkspaceTx<T>(
+  scope: { ws: WorkspaceScope; tx: unknown; hooks: TxHooks },
+  fn: () => Promise<T>,
+): Promise<T> {
+  if (store.getStore()) {
+    return Promise.reject(new Error('runInWorkspaceTx: only outside any other scope'));
+  }
+  // `level` is never read inside (currentViewerLevel throws); 'public' is the
+  // narrowest value, should anything read the field directly.
+  return store.run({ level: 'public', ws: scope.ws, tx: scope.tx, hooks: scope.hooks }, fn);
+}
+
 /**
  * Run `fn` on an ADMIN-pool transaction's own connection: every `db` query
  * inside uses `tx`, so work that holds a row lock in `tx` never needs a
@@ -265,8 +341,9 @@ export function assertNoViewer(what: string): void {
   }
 }
 
-/** A limited pool: one per level, plus the personal-space role. */
-export type PoolRole = LimitedLevel | 'space';
+/** A limited pool: one per level, the personal-space role, and the
+ *  workspace role (workspaces W1). */
+export type PoolRole = LimitedLevel | 'space' | 'user';
 
 /** The Postgres LOGIN role for a limited pool. Not `mantle_team`: that name
  *  is already the team visitor cookie. `mantle_view_space` is the

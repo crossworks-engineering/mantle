@@ -95,7 +95,19 @@ export type TableAccess = {
    * the delegate roster load admin agents under a team viewer.
    */
   byRole?: Partial<Record<LimitedLevel, { read?: LimitedRead; rule?: RowRule }>>;
+  /**
+   * What the workspace role (`mantle_view_user`, workspaces W1) may SELECT.
+   * Absent = none. Its row rules are the workspace policies of migration
+   * 0242 (the row's workspaces meet the scope), not the level rules.
+   * 'level': the same columns as `read`.
+   */
+  user?: LimitedRead | 'level';
 };
+
+/** What the workspace role may SELECT on `t`. */
+export function userReadFor(t: TableAccess): LimitedRead {
+  return t.user === 'level' ? t.read : (t.user ?? 'none');
+}
 
 /** What `level`'s role may SELECT on `t`. */
 export function readFor(t: TableAccess, level: LimitedLevel): LimitedRead {
@@ -116,12 +128,32 @@ const none = (table: string, writer: Writer = 'admin'): TableAccess => ({
 
 export const ACCESS_MATRIX: readonly TableAccess[] = [
   // ── Brain content: readable at the viewer's level ─────────────────────────
-  { table: 'public.nodes', read: 'all', rule: 'brain-level', writer: 'content', space: 'write' },
-  { table: 'public.content_chunks', read: 'all', rule: 'follows-node', writer: 'content' },
-  { table: 'public.content_chunk_windows', read: 'all', rule: 'follows-node', writer: 'content' },
-  { table: 'public.facts', read: 'all', rule: 'source-node', writer: 'content' },
+  {
+    table: 'public.nodes',
+    read: 'all',
+    user: 'all',
+    rule: 'brain-level',
+    writer: 'content',
+    space: 'write',
+  },
+  {
+    table: 'public.content_chunks',
+    read: 'all',
+    user: 'all',
+    rule: 'follows-node',
+    writer: 'content',
+  },
+  {
+    table: 'public.content_chunk_windows',
+    read: 'all',
+    user: 'all',
+    rule: 'follows-node',
+    writer: 'content',
+  },
+  { table: 'public.facts', read: 'all', user: 'all', rule: 'source-node', writer: 'content' },
   {
     table: 'public.pages',
+    user: 'level',
     read: ['node_id', 'doc', 'doc_text', 'version', 'created_at', 'updated_at'],
     rule: 'follows-node',
     writer: 'content',
@@ -129,6 +161,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   },
   {
     table: 'public.draws',
+    user: 'level',
     read: [
       'node_id',
       'scene',
@@ -146,6 +179,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   },
   {
     table: 'public.tables',
+    user: 'level',
     read: [
       'node_id',
       'data',
@@ -165,6 +199,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   },
   {
     table: 'public.apps',
+    user: 'level',
     read: [
       'node_id',
       'source',
@@ -184,7 +219,13 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
     rule: 'follows-node',
     writer: 'content',
   },
-  { table: 'public.app_databases', read: 'all', rule: 'follows-node', writer: 'content' },
+  {
+    table: 'public.app_databases',
+    read: 'all',
+    user: 'all',
+    rule: 'follows-node',
+    writer: 'content',
+  },
 
   // ── Personal spaces (Phase 2) ─────────────────────────────────────────────
   // Sharing and review state of personal items. The team role reads the
@@ -418,6 +459,19 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.heartbeats'),
   none('public.sandboxes'),
   none('public.app_table_exports'),
+
+  // ── Workspaces (W1, migrations 0241 and 0242) ────────────────────────────
+  // The model: the workspace role reads the rows of the workspaces in its
+  // scope (and the grants of the items it reads); the level roles never do.
+  { table: 'public.workspaces', read: 'none', rule: 'none', writer: 'admin', user: 'all' },
+  { table: 'public.workspace_users', read: 'none', rule: 'none', writer: 'admin', user: 'all' },
+  { table: 'public.workspace_resources', read: 'none', rule: 'none', writer: 'admin', user: 'all' },
+  { table: 'public.item_grants', read: 'none', rule: 'none', writer: 'content', user: 'all' },
+  // Audit of workspace changes, the heads rows and the heads-check log:
+  // admin pool only (the lock functions are security definer).
+  none('public.workspace_events'),
+  none('public.node_acl_head', 'content'),
+  none('public.heads_check_misses', 'system'),
 ];
 
 /** Columns no viewer role may ever read, whatever the matrix says. */
@@ -457,6 +511,18 @@ export function spaceGrantStatements(role: string = viewerRoleName('space')): st
   return out;
 }
 
+/** The GRANT statements for the workspace role (`mantle_view_user`). Pure. */
+export function userGrantStatements(role: string = viewerRoleName('user')): string[] {
+  const out: string[] = [];
+  for (const t of ACCESS_MATRIX) {
+    const read = userReadFor(t);
+    if (read === 'none') continue;
+    const cols = read === 'all' ? '' : ` (${read.map((c) => `"${c}"`).join(', ')})`;
+    out.push(`GRANT SELECT${cols} ON ${quoteTable(t.table)} TO "${role}"`);
+  }
+  return out;
+}
+
 /**
  * Make the live grants equal the matrix: revoke everything the limited roles
  * hold on every table in the matrix, then grant what it lists. One
@@ -472,5 +538,6 @@ export async function applyViewerGrants(sql: ReturnType<typeof postgres>): Promi
       for (const stmt of viewerGrantStatements(level)) await tx.unsafe(stmt);
     }
     for (const stmt of spaceGrantStatements()) await tx.unsafe(stmt);
+    for (const stmt of userGrantStatements()) await tx.unsafe(stmt);
   });
 }

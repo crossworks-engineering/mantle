@@ -65,7 +65,7 @@ describe.skipIf(!URL)('viewer roles on a shared cluster', () => {
     const sql = postgres(URL!, { max: 1, onnotice: () => {} });
     try {
       for (const b of brains) {
-        expect(await dropViewerLogins(sql, b.name)).toHaveLength(4);
+        expect(await dropViewerLogins(sql, b.name)).toHaveLength(POOL_ROLES.length);
         expect(await dropViewerLogins(sql, b.name)).toEqual([]);
       }
     } finally {

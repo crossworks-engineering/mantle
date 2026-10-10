@@ -10,6 +10,9 @@ import {
   newTxHooks,
   runInSystemTx,
   runInTxScope,
+  runInWorkspaceTx,
+  currentWorkspaceScope,
+  type WorkspaceScope,
   runTxHooks,
   withViewer,
   viewerDatabaseUrl,
@@ -200,6 +203,134 @@ export async function withSystemTx<T>(
   }
   await runTxHooks(hooks.commit, 'commit');
   return result;
+}
+
+/** A Postgres uuid[] literal from validated ids. */
+function uuidArrayLiteral(ids: readonly string[], what: string): string {
+  for (const id of ids) {
+    if (!UUID_RE.test(id)) throw new Error(`${what}: not a uuid: ${String(id).slice(0, 40)}`);
+  }
+  return `{${[...new Set(ids)].sort().join(',')}}`;
+}
+
+/**
+ * Run `fn` in ONE workspace scope (workspaces W1, plan section 2.1): a short
+ * transaction on the workspace role (`mantle_view_user`) that sets
+ * `mantle.ws`, `mantle.mod_ws` and `mantle.login_id`; every `db` query inside
+ * runs in it, so row security shows only what those workspaces hold (and a
+ * per-login row only to its login). `modWs` must be a subset of `ws`.
+ * Not nested in any other scope (fails loudly); keep it short, never across
+ * an LLM call.
+ */
+export async function withScope<T>(scope: WorkspaceScope, fn: () => Promise<T>): Promise<T> {
+  if (currentWorkspaceScope() || currentScopeTx() || currentSpaceScope()) {
+    throw new Error('withScope: already inside a scope');
+  }
+  if (scope.loginId !== null && !UUID_RE.test(scope.loginId)) {
+    throw new Error('withScope: loginId must be a uuid');
+  }
+  const ws = uuidArrayLiteral(scope.ws, 'withScope ws');
+  const mod = uuidArrayLiteral(scope.modWs, 'withScope modWs');
+  const inWs = new Set(scope.ws);
+  if (scope.modWs.some((id) => !inWs.has(id))) {
+    throw new Error('withScope: modWs must be a subset of ws');
+  }
+  const frozen: WorkspaceScope = {
+    kind: scope.kind,
+    loginId: scope.loginId,
+    ws: Object.freeze([...new Set(scope.ws)].sort()),
+    modWs: Object.freeze([...new Set(scope.modWs)].sort()),
+  };
+  const hooks = newTxHooks();
+  let result: T;
+  try {
+    result = await getViewerDb('user').transaction(async (tx) => {
+      await tx.execute(
+        sqlTag`select set_config('mantle.ws', ${ws}, true),
+                      set_config('mantle.mod_ws', ${mod}, true),
+                      set_config('mantle.login_id', ${scope.loginId ?? ''}, true)`,
+      );
+      return runInWorkspaceTx({ ws: frozen, tx, hooks }, fn);
+    });
+  } catch (err) {
+    await runTxHooks(hooks.rollback, 'rollback');
+    throw err;
+  }
+  await runTxHooks(hooks.commit, 'commit');
+  return result;
+}
+
+/**
+ * Run `fn` in ONE admin-pool transaction whose FIRST lock is the heads of
+ * `ids` (workspaces plan U1 and V2): every writer of nodes, chunks, windows,
+ * facts and grants goes through here, so no two writers can deadlock and none
+ * can miss another's grant change. `update` for a change of grants, a move, a
+ * delete or a chunk rewrite; `share` for a new item in a folder (lock the
+ * folder). The database checks it (mantle.heads_check: off, warn, on).
+ */
+export async function withHeads<T>(
+  ids: readonly string[],
+  mode: 'update' | 'share',
+  fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<T>,
+): Promise<T> {
+  const list = uuidArrayLiteral(ids, 'withHeads');
+  return withSystemTx(async (tx) => {
+    await tx.execute(sqlTag`select mantle_lock_heads(${list}::uuid[], ${mode})`);
+    return fn(tx);
+  });
+}
+
+/**
+ * withHeads for a whole subtree (plan U2, V1, V3): the heads of `root` and
+ * everything under it (a folder), plus `extra` (a move's old and new
+ * folder), locked FIRST; later rounds pick up rows that arrived while the
+ * first round waited, without waiting. For a folder's grant change and for a
+ * move. A busy later round fails with 55P03: wrap in withDeadlockRetry.
+ */
+export async function withSubtreeHeads<T>(
+  root: string,
+  extra: readonly string[],
+  fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<T>,
+): Promise<T> {
+  if (!UUID_RE.test(root)) throw new Error('withSubtreeHeads: root must be a uuid');
+  const list = uuidArrayLiteral(extra, 'withSubtreeHeads');
+  return withSystemTx(async (tx) => {
+    await tx.execute(sqlTag`select mantle_lock_subtree_heads(${root}::uuid, ${list}::uuid[])`);
+    return fn(tx);
+  });
+}
+
+/** SQLSTATEs a whole transaction may be retried for: a deadlock, a
+ *  serialization failure (a head missing in 'on' mode, a growing subtree), a
+ *  NOWAIT lock that was busy. */
+const RETRYABLE = new Set(['40P01', '40001', '55P03']);
+
+function sqlState(err: unknown): string | null {
+  let e: unknown = err;
+  for (let depth = 0; e && depth < 4; depth++) {
+    const code = (e as { code?: unknown }).code;
+    if (typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code)) return code;
+    e = (e as { cause?: unknown }).cause;
+  }
+  return null;
+}
+
+/**
+ * Run a whole transaction again when it failed for a retryable reason
+ * (plan V1: every retry is at the caller, never inside a function). `run`
+ * must start its own transaction each time (withHeads, withScope,
+ * withSystemTx), so nothing of a failed attempt survives.
+ */
+export async function withDeadlockRetry<T>(run: () => Promise<T>, attempts = 3): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await run();
+    } catch (err) {
+      const code = sqlState(err);
+      if (attempt >= attempts || code === null || !RETRYABLE.has(code)) throw err;
+      await new Promise((r) => setTimeout(r, 15 * attempt + Math.random() * 40 * attempt));
+    }
+  }
 }
 
 /**

@@ -54,6 +54,13 @@ export const facts = pgTable(
       .$type<Record<string, unknown>>()
       .default(sql`'{}'::jsonb`)
       .notNull(),
+    /** Workspaces W1: a copy of the node's read_ws and login_id, kept by
+     *  triggers (migration 0241), so a vector scan filters on its own row. */
+    readWs: uuid('read_ws')
+      .array()
+      .notNull()
+      .default(sql`'{}'::uuid[]`),
+    loginId: uuid('login_id'),
     /** True if the source node was edited and this fact should be re-extracted. */
     dirty: boolean('dirty').default(false).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

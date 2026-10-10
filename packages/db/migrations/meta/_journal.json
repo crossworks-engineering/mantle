@@ -1681,6 +1681,20 @@
       "when": 1790193360000,
       "tag": "0240_space_app_trash",
       "breakpoints": true
+    },
+    {
+      "idx": 241,
+      "version": "7",
+      "when": 1790193420000,
+      "tag": "0241_workspaces_model",
+      "breakpoints": true
+    },
+    {
+      "idx": 242,
+      "version": "7",
+      "when": 1790193480000,
+      "tag": "0242_workspaces_user_role",
+      "breakpoints": true
     }
   ]
 }

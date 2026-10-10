@@ -7,11 +7,18 @@ export {
   withSystemTx,
   withTeamDrafts,
   withHumanViewer,
+  withScope,
+  withHeads,
+  withSubtreeHeads,
+  withDeadlockRetry,
   type Db,
 } from './client';
 export {
   VIEWER_LEVELS,
   currentViewerLevel,
+  currentScope,
+  currentWorkspaceScope,
+  ScopeLevelError,
   currentSpaceScope,
   readsDrafts,
   isViewerLevel,
@@ -29,6 +36,9 @@ export {
   type LimitedLevel,
   type SpaceScope,
   type ViewerLevel,
+  type ScopeKind,
+  type WorkspaceScope,
+  type CurrentScope,
 } from './viewer';
 export { ensureViewerRoles, LIMITED_LEVELS } from './viewer-roles';
 export {

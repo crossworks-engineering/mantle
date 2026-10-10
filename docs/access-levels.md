@@ -288,9 +288,10 @@ removing any one wrap fails a test.
 
 ## 6. Operations
 
-- **Restore** (`scripts/db-restore.sh`) creates the four roles
-  (`mantle_view_team`, `mantle_view_client`, `mantle_view_public` and
-  `mantle_view_space`) before `pg_restore` (a dump does not carry roles, but
+- **Restore** (`scripts/db-restore.sh`) creates the five roles
+  (`mantle_view_team`, `mantle_view_client`, `mantle_view_public`,
+  `mantle_view_space` and `mantle_view_user`, the workspace role of
+  workspaces W1) before `pg_restore` (a dump does not carry roles, but
   its policies and grants name them; migrate later gives them their login
   and password). It restores into a pristine database (it drops the empty
   `postgres` database the init scripts made and creates a new one, and

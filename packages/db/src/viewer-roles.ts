@@ -27,9 +27,11 @@ import {
 
 export const LIMITED_LEVELS: readonly LimitedLevel[] = ['team', 'client', 'public'];
 
-/** Every limited LOGIN role: the three levels plus the personal-space role
- *  (member logins Phase 2), which sees only the space its transaction names. */
-export const POOL_ROLES: readonly PoolRole[] = [...LIMITED_LEVELS, 'space'];
+/** Every limited LOGIN role: the three levels, the personal-space role
+ *  (member logins Phase 2), which sees only the space its transaction names,
+ *  and the workspace role (workspaces W1), which sees what the workspaces of
+ *  its transaction's scope hold. */
+export const POOL_ROLES: readonly PoolRole[] = [...LIMITED_LEVELS, 'space', 'user'];
 
 /** Hard cap on connections per role, across every process of a box. */
 const ROLE_CONNECTION_LIMIT = 30;

@@ -100,6 +100,22 @@ export const nodes = pgTable(
     embeddedLevel: text('embedded_level'),
     /** Why: 'version' (filename-family sibling), 'migrated' (page built from
      *  this source), 'corrected' (explicit mark — demotes harder). */
+    /** Workspaces W1 (migration 0241): derived from item_grants by
+     *  triggers, never written by the app. The home workspace, the
+     *  workspaces the item is granted to, and those whose grant has Write
+     *  on. Row security for the workspace role reads read_ws. */
+    homeWs: uuid('home_ws'),
+    readWs: uuid('read_ws')
+      .array()
+      .notNull()
+      .default(sql`'{}'::uuid[]`),
+    writeWs: uuid('write_ws')
+      .array()
+      .notNull()
+      .default(sql`'{}'::uuid[]`),
+    /** A per-login row (a chat, a fact learned from one): read only by
+     *  this login inside its workspaces (plan S4). NULL = anyone there. */
+    loginId: uuid('login_id'),
     supersededReason: text('superseded_reason').$type<'version' | 'migrated' | 'corrected'>(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
