@@ -14,6 +14,7 @@
  * `MANTLE_RUNS=1` (dark by default; dogfood on dev). `run_state` /
  * `run_cancel` stay live so existing runs can always be inspected/stopped.
  */
+import { currentTrace } from '@mantle/tracing';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { agentGroups, agents, currentViewerLevel, db, runItems, runs } from '@mantle/db';
 import {
@@ -684,6 +685,8 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
         created = await createRun(db, {
           ownerId: ctx.ownerId,
           agentId,
+          // The login the planning turn serves (R3), from its trace.
+          loginId: currentTrace()?.loginId ?? null,
           title,
           plan: parsed.plan,
           ...(budgetUsd !== undefined ? { budgetMicroUsd: Math.round(budgetUsd * 1e6) } : {}),

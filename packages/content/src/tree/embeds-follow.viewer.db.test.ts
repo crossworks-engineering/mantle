@@ -479,7 +479,8 @@ describe.skipIf(!URL)('embeds follow their embedder', () => {
   it('a row deleted while the repair writes its edges drops out, the sweep goes on', async () => {
     // The nightly sweep runs against a live brain: a delete can commit
     // between the repair reading an edge and writing it. The delete here
-    // holds both ends until the repair waits on them, then commits.
+    // holds both ends until the repair waits on them (on their heads, which
+    // the repair takes first since W4a, or on the rows), then commits.
     const img = await node('file', 'files', 'gone.png');
     const n = await note(folderF.path, 'gone note', `![x](media:${img})`);
     await driftLock(async () => {
@@ -494,7 +495,8 @@ describe.skipIf(!URL)('embeds follow their embedder', () => {
             const [w] = await admin<{ n: number }[]>`
               select count(*)::int as n from pg_stat_activity
                where ${me!.pid}::int = any (pg_blocking_pids(pid))
-                 and query ilike '%insert into node_embeds%'`;
+                 and (query ilike '%insert into node_embeds%'
+                      or query ilike '%mantle_lock_heads%')`;
             return (w?.n ?? 0) > 0;
           },
           { what: 'the repair to wait on the deleted rows' },

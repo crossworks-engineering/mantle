@@ -189,6 +189,76 @@ describe.skipIf(!URL)('level bridge writers hold their heads (heads check on)', 
     expect((await grants(app.id)).Admin?.home).toBe(true);
   });
 
+  it('an app settings save: the read-only switch takes the head; other fields need none', async () => {
+    const ap = await import('./apps');
+    const a = await import('./access');
+    const app = await ap.createApp(brain, { title: 'Switch app' });
+    await a.setItemAudience(brain, app.id, 'team');
+    const teamWrite = async () =>
+      (
+        await rows<{ write: boolean }>(sqlTag`select g.write from item_grants g
+          where g.node_id = ${app.id} and g.workspace_id = ${team}`)
+      )[0]?.write;
+    await ap.updateAppMeta(brain, app.id, { dataReadOnly: true });
+    expect(await teamWrite()).toBe(false);
+    await ap.updateAppMeta(brain, app.id, { dataReadOnly: false });
+    expect(await teamWrite()).toBe(true);
+    // A title save writes no grant and takes no head (the trigger's WHEN).
+    await ap.updateAppMeta(brain, app.id, { title: 'Renamed app' });
+  });
+
+  it('a writer inside an open heads transaction runs on a savepoint of it', async () => {
+    const c = await import('./pages/tree');
+    const d = await import('./pages/draft');
+    const a = await import('./access');
+    const page = await c.createPage(brain, { title: 'Savepoint page' });
+    await a.setItemAudience(brain, page.id, 'team');
+    const f = await file('savepoint-image');
+    await m.withHeads([page.id], 'update', async () => {
+      await d.updatePage(brain, page.id, { doc: fileEmbedDoc(f) });
+    });
+    expect(await teamReads(f)).toBe(true);
+  });
+
+  it('a busy head: refused with 55P03 while held, retried once it is free', async () => {
+    const c = await import('./pages/tree');
+    const d = await import('./pages/draft');
+    const a = await import('./access');
+    type Tag = (s: TemplateStringsArray, ...v: unknown[]) => Promise<unknown>;
+    const client = (
+      m.systemDb as unknown as {
+        $client: { begin: (fn: (t: Tag) => Promise<unknown>) => Promise<unknown> };
+      }
+    ).$client;
+    const hold = (ms: number, f: string) =>
+      client.begin(async (t: Tag) => {
+        await t`select 1 from node_acl_head where node_id = ${f} for update`;
+        await new Promise((r) => setTimeout(r, ms));
+      });
+    const page = await c.createPage(brain, { title: 'Busy page' });
+    await a.setItemAudience(brain, page.id, 'team');
+    // Held through every retry: the save fails, nothing half-written.
+    const f1 = await file('busy-image');
+    const held = hold(1500, f1);
+    await new Promise((r) => setTimeout(r, 50));
+    const err = await d.updatePage(brain, page.id, { doc: fileEmbedDoc(f1) }).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    await held;
+    expect(m.isBusy(err)).toBe(true);
+    expect(await teamReads(f1)).toBe(false);
+    // Freed soon after: a retry goes through.
+    const f2 = await file('busy-image-2');
+    const brief = hold(20, f2);
+    await new Promise((r) => setTimeout(r, 5));
+    await d.updatePage(brain, page.id, { doc: fileEmbedDoc(f2) });
+    await brief;
+    expect(await teamReads(f2)).toBe(true);
+  });
+
+  // In 'on' mode a miss raises (40001) and fails its writer: the tests above
+  // passing is the check; the log must be empty as well.
   it('logged no miss and left no drift', async () => {
     expect(await misses()).toBe(0);
     const drift = await rows<{ n: number }>(sqlTag`select mantle_bridge_drift()::int as n`);
@@ -226,6 +296,15 @@ describe.skipIf(!URL)('level bridge writers hold their heads (heads check on)', 
       values (${brain}, 'api-y', 'y', '{"baseUrl":"https://example.invalid"}'::jsonb, 'team')`);
     expect(await onTeam('api-y')).toBeNull();
     expect(await onAdmin('api-y')).toBe(1);
+    // A renamed connector keeps its rows, under the new slug.
+    await m.systemDb.execute(sqlTag`update tool_groups set slug = 'conn-z'
+      where owner_id = ${brain} and slug = 'conn-x'`);
+    expect(await onTeam('conn-x')).toBeNull();
+    expect(await onAdmin('conn-x')).toBe(0);
+    expect(await onTeam('conn-z')).toEqual({ write: true });
+    expect(await onAdmin('conn-z')).toBe(1);
+    await m.systemDb.execute(sqlTag`update tool_groups set slug = 'conn-x'
+      where owner_id = ${brain} and slug = 'conn-z'`);
     await m.systemDb.execute(
       sqlTag`delete from tool_groups where owner_id = ${brain} and slug = 'conn-x'`,
     );

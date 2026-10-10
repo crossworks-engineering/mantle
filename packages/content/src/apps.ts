@@ -35,6 +35,7 @@ import {
   withDeadlockRetry,
   withNodeDeleteHeads,
   withNodeInsertHeads,
+  withWriterHeads,
 } from '@mantle/db';
 import { loadProfilePreferences } from './profile-preferences';
 import { notifyAppNavChanged } from './app-nav';
@@ -590,14 +591,19 @@ export async function updateAppMeta(
     })
     .where(eq(nodes.id, id));
   if (input.dataReadOnly !== undefined || input.mcpAccess !== undefined) {
-    await db
-      .update(apps)
-      .set({
-        ...(input.dataReadOnly !== undefined ? { dataReadOnly: input.dataReadOnly } : {}),
-        ...(input.mcpAccess !== undefined ? { mcpAccess: input.mcpAccess } : {}),
-        updatedAt: new Date(),
-      })
-      .where(eq(apps.nodeId, id));
+    // The read-only switch is the app's Team Write (the level bridge, 0251):
+    // the app's head first.
+    const write = (q: Pick<typeof db, 'update'>) =>
+      q
+        .update(apps)
+        .set({
+          ...(input.dataReadOnly !== undefined ? { dataReadOnly: input.dataReadOnly } : {}),
+          ...(input.mcpAccess !== undefined ? { mcpAccess: input.mcpAccess } : {}),
+          updatedAt: new Date(),
+        })
+        .where(eq(apps.nodeId, id));
+    if (input.dataReadOnly !== undefined) await withWriterHeads([id], (tx) => write(tx));
+    else await write(db);
   }
   if (input.description !== undefined) {
     // On the manifest, under the row lock like every manifest write.

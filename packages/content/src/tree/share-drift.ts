@@ -17,7 +17,19 @@
  * of it; it never fails the sweep.
  */
 import { sql } from 'drizzle-orm';
-import { db } from '@mantle/db';
+import { db, withDeadlockRetry, withHeads } from '@mantle/db';
+
+type Exec = Pick<typeof db, 'execute'>;
+
+/** Run a repair write with the heads of `ids` first (the level bridge,
+ *  0251, rewrites the grants of every row whose level it changes; what
+ *  follows from it, the bridge locks itself). Nothing to do: no write. */
+async function withRepairHeads(ids: readonly string[], fn: (tx: Exec) => Promise<unknown>) {
+  if (ids.length === 0) return;
+  await withDeadlockRetry(() => withHeads(ids, 'update', (tx) => fn(tx)));
+}
+
+const idsOf = (rows: unknown) => (rows as Array<{ id: string }>).map((r) => r.id);
 
 export type ShareDriftResult = {
   /** Rows found drifted (all owners). */
@@ -65,17 +77,32 @@ async function repairEmbedDrift(
            as n`)) as unknown as Array<{ n: number }>;
   const edgesDrifted = Number(edges?.n ?? 0);
   if (!dryRun && edgesDrifted > 0) {
-    // Through the table, so the edge triggers refresh what the fix reaches.
-    await db.execute(sql`
+    // The ends of every edge the fix writes, heads first.
+    const ends = idsOf(
+      await db.execute(sql`
+        select distinct u.id from (
+          select x.from_id, x.to_id from ${EXPECTED} x
+           where not exists (select 1 from node_embeds e
+                              where e.from_id = x.from_id and e.to_id = x.to_id)
+          union all
+          select e.from_id, e.to_id from node_embeds e
+           where not exists (select 1 from ${EXPECTED} x
+                              where x.from_id = e.from_id and x.to_id = e.to_id)) d
+        cross join lateral (values (d.from_id), (d.to_id)) u(id)
+        join nodes n on n.id = u.id`),
+    );
+    await withRepairHeads(ends, async (tx) => {
+      // Through the table, so the edge triggers refresh what the fix reaches.
+      await tx.execute(sql`
       delete from node_embeds e
        where not exists (select 1 from ${EXPECTED} x
                           where x.from_id = e.from_id and x.to_id = e.to_id)`);
-    // Only the missing edges, each with both ends locked. The sweep runs
-    // against a live brain: a row deleted after this statement's snapshot
-    // read it would fail the foreign key and with it the whole sweep. Under
-    // the lock such a row drops out instead (read committed skips a locked
-    // row that turns out deleted), and a delete that comes later waits.
-    await db.execute(sql`
+      // Only the missing edges, each with both ends locked. The sweep runs
+      // against a live brain: a row deleted after this statement's snapshot
+      // read it would fail the foreign key and with it the whole sweep. Under
+      // the lock such a row drops out instead (read committed skips a locked
+      // row that turns out deleted), and a delete that comes later waits.
+      await tx.execute(sql`
       insert into node_embeds (from_id, to_id)
       select x.from_id, x.to_id from ${EXPECTED} x
         join nodes a on a.id = x.from_id
@@ -84,6 +111,7 @@ async function repairEmbedDrift(
                           where e.from_id = x.from_id and e.to_id = x.to_id)
          for key share of a, b
       on conflict do nothing`);
+    });
   }
   const rule = sql`mantle_embedded_level(n.owner_id, n.id, n.type)`;
   const [count] = (await db.execute(sql`
@@ -98,9 +126,17 @@ async function repairEmbedDrift(
   }>;
   const embeddedDrifted = Number(count?.drifted ?? 0);
   if (!dryRun && embeddedDrifted > 0) {
-    await db.execute(sql`
-      update nodes n set embedded_level = ${rule}
-       where ${embedCandidates} and n.embedded_level is distinct from ${rule}`);
+    const ids = idsOf(
+      await db.execute(sql`
+        select n.id from nodes n
+         where ${embedCandidates} and n.embedded_level is distinct from ${rule}`),
+    );
+    await withRepairHeads(ids, (tx) =>
+      tx.execute(sql`
+        update nodes n set embedded_level = ${rule}
+         where n.id = any(${`{${ids.join(',')}}`}::uuid[])
+           and n.embedded_level is distinct from ${rule}`),
+    );
   }
   return {
     edgesDrifted,
@@ -134,13 +170,16 @@ export async function repairShareDrift(opts: { dryRun?: boolean } = {}): Promise
   let repaired = 0;
   if (!opts.dryRun && drifted > 0) {
     // Shares first: what embeds are read through follows them (0208 trigger).
-    const done = (await db.execute(sql`
-      update nodes n
-         set inherited_level = mantle_inherited_level(n.owner_id, n.path, n.type)
-       where ${candidates}
-         and n.inherited_level is distinct from mantle_inherited_level(n.owner_id, n.path, n.type)
-      returning n.id`)) as unknown as unknown[];
-    repaired = done.length;
+    const ids = idsOf(await db.execute(sql`select d.id from (${drift}) d`));
+    await withRepairHeads(ids, async (tx) => {
+      const done = (await tx.execute(sql`
+        update nodes n
+           set inherited_level = mantle_inherited_level(n.owner_id, n.path, n.type)
+         where n.id = any(${`{${ids.join(',')}}`}::uuid[])
+           and n.inherited_level is distinct from mantle_inherited_level(n.owner_id, n.path, n.type)
+        returning n.id`)) as unknown as unknown[];
+      repaired = done.length;
+    });
   }
   return { drifted, repaired, openedTooFar, ...(await repairEmbedDrift(!!opts.dryRun)) };
 }

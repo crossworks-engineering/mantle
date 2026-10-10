@@ -181,6 +181,8 @@ export async function createRun(
     /** Surface the run was created from — the root resume reports back
      *  here (0134). Omit for web/background. */
     originChannel?: { kind: 'telegram'; chat_id: string };
+    /** The login the planning turn served (R3): its trace's login. */
+    loginId?: string | null;
   },
 ): Promise<{ runId: string; rootItemId: string; actions: PostCommitAction[] }> {
   return db.transaction(async (tx) => {
@@ -194,6 +196,7 @@ export async function createRun(
         budgetMicroUsd: opts.budgetMicroUsd,
         ...(opts.itemCap !== undefined ? { itemCap: opts.itemCap } : {}),
         ...(opts.originChannel ? { originChannel: opts.originChannel } : {}),
+        ...(opts.loginId ? { loginId: opts.loginId } : {}),
       })
       .returning({ id: runs.id, itemCap: runs.itemCap });
     // WP4: the runaway backstop, enforced at birth — a plan bigger than the

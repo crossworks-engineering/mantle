@@ -640,25 +640,31 @@ export async function saveDrawDraft(
     .limit(1);
   if (!node) return { ok: false, missing: true };
   const normalized = normalizeScene(scene);
-  return withDrawLock(id, async (tx, locked) => {
-    if (!locked) return { ok: false as const, missing: true as const };
-    const decision = evaluateDraftRev(locked.draftRev, opts.baseRev);
-    if (decision.conflict) {
-      return { ok: false as const, conflict: true as const, rev: decision.rev };
-    }
-    await tx
-      .update(draws)
-      .set({
-        draftScene: normalized,
-        draftUpdatedAt: new Date(),
-        draftRev: sql`${draws.draftRev} + 1`,
-        // The BinaryFile-id → file-node-id map rides along whenever the editor
-        // uploaded new scene images. Replace-whole-map: the editor owns it.
-        ...(opts.fileRefs !== undefined ? { fileRefs: opts.fileRefs } : {}),
-      })
-      .where(eq(draws.nodeId, id));
-    return { ok: true as const, rev: decision.nextRev };
-  });
+  return withDrawLock(
+    id,
+    async (tx, locked) => {
+      if (!locked) return { ok: false as const, missing: true as const };
+      const decision = evaluateDraftRev(locked.draftRev, opts.baseRev);
+      if (decision.conflict) {
+        return { ok: false as const, conflict: true as const, rev: decision.rev };
+      }
+      await tx
+        .update(draws)
+        .set({
+          draftScene: normalized,
+          draftUpdatedAt: new Date(),
+          draftRev: sql`${draws.draftRev} + 1`,
+          // The BinaryFile-id → file-node-id map rides along whenever the editor
+          // uploaded new scene images. Replace-whole-map: the editor owns it.
+          ...(opts.fileRefs !== undefined ? { fileRefs: opts.fileRefs } : {}),
+        })
+        .where(eq(draws.nodeId, id));
+      return { ok: true as const, rev: decision.nextRev };
+    },
+    // A new file map can drop or add an embed (the bridge rewrites grants):
+    // the drawing's head first then.
+    { heads: opts.fileRefs !== undefined },
+  );
 }
 
 /** Throw away the working draft. Published scene untouched; brain untouched.

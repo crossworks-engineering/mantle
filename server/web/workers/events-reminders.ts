@@ -218,8 +218,8 @@ async function tick(): Promise<void> {
           await recordTurn({
             ownerId,
             agentId: agent.id,
-            // The brain owner's own surface (R3): the owner's login.
-            loginId: ownerId,
+            // A reminder answers no one's turn (R3): no login.
+            loginId: null,
             direction: 'outbound',
             text: formatReminder(evt),
             channel: 'mobile',
