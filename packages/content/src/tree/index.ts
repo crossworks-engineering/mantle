@@ -48,6 +48,7 @@ export {
   liftDiff,
   moveFolderDiff,
   moveItemsDiff,
+  newItemDiff,
   shareDiff,
   type VisibilityDiff,
 } from './visibility';

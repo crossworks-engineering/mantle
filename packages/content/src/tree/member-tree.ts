@@ -176,6 +176,8 @@ function ownFolder(r: {
     folderCount: 0,
     itemCount: 0,
     own: true,
+    workspaces: [],
+    hasLink: false,
   };
 }
 

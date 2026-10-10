@@ -133,7 +133,7 @@ describe.skipIf(!URL)('the item tree on Files', () => {
     }
     expect(seen).toEqual(['a.txt', 'b.txt', 'c.txt', 'd.txt', 'e.txt']);
     const first = await tree.loadTreeFolder(owner, 'files', { folderId: f.id });
-    expect(first!.items[0]).toMatchObject({ subtype: 'txt', level: 'admin', state: null });
+    expect(first!.items[0]).toMatchObject({ subtype: 'txt', state: null });
   });
 
   it('lists subfolders with counts and crumbs', async () => {
@@ -190,25 +190,17 @@ describe.skipIf(!URL)('the item tree on Files', () => {
     expect(rest.nextCursor).toBeNull();
   });
 
-  it('filters items by level and tag, without folders, and lists the tags in use', async () => {
-    // The levels are frozen since W5b2: the level the filter still reads (until
-    // a later phase) is set under the test bypass.
-    await m.db.transaction(async (tx) => {
-      await tx.execute(sqlTag`select mantle_heads_bypass('test fixture')`);
-      await tx.execute(sqlTag`
-        update nodes set tags = array_append(tags, 'invoice'), audience = 'team'
-         where owner_id = ${owner} and type = 'file' and title in ('b.txt', 'd.txt')`);
-    });
+  it('filters items by tag, without folders, and lists the tags in use', async () => {
     await m.db.execute(sqlTag`
       update nodes set tags = array_append(tags, 'invoice')
-       where owner_id = ${owner} and type = 'file' and title = 'e.txt'`);
+       where owner_id = ${owner} and type = 'file' and title in ('b.txt', 'd.txt', 'e.txt')`);
     const titles = (r: { items: Array<{ title: string }> }) => r.items.map((i) => i.title);
     const byTag = await tree.searchTree(owner, 'files', '', { tag: 'invoice' });
     expect(titles(byTag)).toEqual(['b.txt', 'd.txt', 'e.txt']);
-    const byLevel = await tree.searchTree(owner, 'files', '', { level: 'team' });
-    expect(titles(byLevel)).toEqual(['b.txt', 'd.txt']);
-    expect(byLevel.items[0]!.level).toBe('team');
-    const both = await tree.searchTree(owner, 'files', 'd', { tag: 'invoice', level: 'team' });
+    // No level on an item any more (W5b2): the routes add the workspaces.
+    expect(byTag.items[0]).not.toHaveProperty('level');
+    expect(byTag.items[0]).toMatchObject({ workspaces: [], hasLink: false });
+    const both = await tree.searchTree(owner, 'files', 'd', { tag: 'invoice' });
     expect(titles(both)).toEqual(['d.txt']);
     // "Paged" matches a term that a folder would; a filtered search has none.
     const withTerm = await tree.searchTree(owner, 'files', 'pag', { tag: 'invoice' });

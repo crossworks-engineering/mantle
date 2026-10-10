@@ -91,18 +91,11 @@ async function ensureTreeRootOnce(
 
 /** A TreeError as its HTTP answer; anything else is rethrown (a 500). */
 export function treeErrorResponse(err: unknown): NextResponse {
-  // Who can see items would change: the list, so the caller can ask and
-  // repeat with confirm (TreeVisibilityRefusal).
+  // Which workspaces read items would change: the list, so the caller can
+  // ask and repeat with confirm (TreeVisibilityRefusal).
   if (err instanceof TreeVisibilityError) {
     return NextResponse.json(
-      {
-        error: 'visibility',
-        changes: err.diff.changes,
-        total: err.diff.total,
-        ...(err.diff.alsoEmbeds?.length
-          ? { alsoEmbeds: err.diff.alsoEmbeds, embedsTotal: err.diff.embedsTotal }
-          : {}),
-      },
+      { error: 'visibility', changes: err.diff.changes, total: err.diff.total },
       { status: 409 },
     );
   }
@@ -142,9 +135,11 @@ export async function privateRootItems(user: SessionUser, kind: TreeKind): Promi
     icon: r.icon,
     color: null,
     subtype: kind === 'files' ? extensionOf(r.title) : null,
-    level: 'admin',
     state: 'private',
     updatedAt: r.updatedAt,
+    // A private item is in no workspace and has no link.
+    workspaces: [],
+    hasLink: false,
   }));
 }
 

@@ -172,3 +172,25 @@ export type GrantErrorCode =
   | 'mixed_kinds';
 
 export type GrantError = { error: string; code: GrantErrorCode };
+
+// ── Lists (W5b2 contract changes 5 and 14) ───────────────────────────────────
+
+/** A workspace chip on a list row. */
+export type ListWorkspace = { id: string; name: string };
+
+/** What every row of GET /api/pages and /api/notes, and every item and
+ *  folder of GET /api/tree/:kind (its search and marks too), carries. */
+export type ListChips = {
+  /** The workspaces that read the item (its read_ws) and that the caller is
+   *  a user of; all of them for an Admin user. Live workspaces only, by
+   *  name. */
+  workspaces: ListWorkspace[];
+  /** A live open public link exists (the "Public" pill). */
+  hasLink: boolean;
+};
+
+/** A list asked with `?ws=<id>` keeps only the items that workspace reads
+ *  and echoes the id as a top-level `ws` (absent when not asked). A
+ *  workspace the caller is not a user of, unless an Admin user, answers 404
+ *  `{ error, code: 'not_found' }`. */
+export type ListWsEcho = { ws?: string };

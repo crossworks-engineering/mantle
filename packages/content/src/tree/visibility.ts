@@ -1,16 +1,21 @@
 /**
- * What a tree write would change about who can see items (folder plan phase
- * 4, "Confirm before visibility changes"). Every write that can move an item
- * under a different shared folder (a folder's share set or cleared, an item
- * or a folder moved, a folder deleted with its contents lifted) is computed
- * here first, DRY: nothing is written, so a Files move (disk first) never has
- * to be undone. When the answer is not empty and the caller did not confirm,
- * the write is refused with the list (TreeVisibilityError, 409).
+ * What a tree write would change about which workspaces read items (folder
+ * plan phase 4, "Confirm before visibility changes"; workspaces W5b2, S6).
+ * Every write that places items under another folder (a folder or items
+ * moved, a folder deleted with its contents lifted, a file or page made or
+ * copied into a folder) is computed here first, DRY: nothing is written, so
+ * a Files move (disk first) never has to be undone. When the answer is not
+ * empty and the caller did not confirm, the write is refused with the list
+ * (TreeVisibilityError, 409).
  *
- * Levels compared are EFFECTIVE levels (content-core effectiveLevel): the
- * most open of an item's own level, its inherited share and its embedded
- * level (migration 0208), the level its pill shows. Only workspace kinds ever inherit (migration 0204), so the rest
- * never appear. A member's draft is another owner's row and never inherits.
+ * The answer comes from the grants, as the move triggers derive them (0244,
+ * mantle_rederive_nodes): an item placed in a folder takes the folder's rows
+ * (not where the item has them "Removed here", only kinds that may take
+ * them) and drops its folder-derived rows the new folder does not give. A
+ * grant set on the item, its home and its exclusions stay. Inside a moved
+ * folder, a change passes down to what is inside unless a folder on the way
+ * stops it (its own grant keeps a workspace; its exclusion blocks one).
+ * Embeds do not follow (0261): nothing is ever granted for you.
  */
 import { sql, type SQL } from 'drizzle-orm';
 import { db } from '@mantle/db';
@@ -20,27 +25,23 @@ import {
   type TreeKind,
   type TreeShareLevel,
   type TreeVisibilityChange,
+  type TreeWorkspaceChange,
 } from '@mantle/client-types/tree';
-import type { AccessLevel } from '@mantle/client-types';
+
+type Via = Pick<typeof db, 'execute'>;
 
 export type VisibilityDiff = {
-  changes: TreeVisibilityChange[];
+  changes: TreeWorkspaceChange[];
   total: number;
-  /** Embedded items elsewhere whose access changes with them (see
-   *  TreeVisibilityRefusal.alsoEmbeds): the first TREE_VISIBILITY_LIST_MAX. */
+  /** @deprecated Never set since W5b2 (embeds do not follow). */
   alsoEmbeds?: TreeVisibilityChange[];
-  /** How many embedded items change in all (withEmbedChanges). */
+  /** @deprecated Never set since W5b2. */
   embedsTotal?: number;
-  /** The rows in scope with the share each would inherit (id, old_inh,
-   *  new_inh): every row whose share changes passes it on to what it embeds,
-   *  listed or not. Internal, never sent. */
-  rows?: SQL;
 };
 
-/** Everything a write changes: the items and what they embed. What a
- *  caller's `seen` is compared with. */
+/** Everything a write changes: what a caller's `seen` is compared with. */
 export function changeCount(d: VisibilityDiff): number {
-  return d.total + (d.embedsTotal ?? 0);
+  return d.total;
 }
 
 /** A write refused until it is repeated with `confirm: true`. */
@@ -56,273 +57,111 @@ export class TreeVisibilityError extends Error {
 
 export const NO_CHANGE: VisibilityDiff = { changes: [], total: 0 };
 
-/**
- * What else a refused write changes (TreeVisibilityRefusal.alsoEmbeds): an
- * item read through a folder share makes what it embeds readable at that
- * share too, wherever that lives (nodes.embedded_level, migration 0208), and
- * an unshare or a move out takes that away again. Dry: the items that EVERY
- * row in scope whose share changes reaches through embeds (listed or not,
- * and whether or not its own level changes), each at the level it would be
- * read at with the new shares, where that differs from now; the first
- * TREE_VISIBILITY_LIST_MAX and the total (review F6).
- */
+/** @deprecated Embeds no longer open with what embeds them (0261): there is
+ *  nothing to add. Goes with the writers' last caller. */
 export async function withEmbedChanges(
-  ownerId: string,
+  _ownerId: string,
   diff: VisibilityDiff,
 ): Promise<VisibilityDiff> {
-  if (!diff.rows) return diff;
-  const inherited = sql`(case when ov.id is not null then ov.lvl else m.inherited_level end)`;
-  const found = (await db.execute(sql`
-    with recursive ov(id, lvl) as (
-      select r.id, r.new_inh from (${diff.rows}) r
-       where r.old_inh is distinct from r.new_inh
-    ),
-    down(id) as (
-      select e.to_id from node_embeds e join ov on e.from_id = ov.id
-      union
-      select e.to_id from node_embeds e
-        join down on e.from_id = down.id
-        join nodes x on x.id = down.id and x.owner_id = ${ownerId}
-    ),
-    tg as (
-      select n.id, n.title, n.type, n.audience, n.inherited_level, n.embedded_level
-        from nodes n join down on n.id = down.id
-       where n.owner_id = ${ownerId} and mantle_workspace_kind(n.type)
-         and not exists (select 1 from ov where ov.id = n.id)
-    ),
-    up(t, id) as (
-      select tg.id, e.from_id from tg
-        join node_embeds e on e.to_id = tg.id
-        join nodes x on x.id = e.from_id and x.owner_id = ${ownerId}
-      union
-      select up.t, e.from_id from up
-        join node_embeds e on e.to_id = up.id
-        join nodes x on x.id = e.from_id and x.owner_id = ${ownerId}
-    ),
-    lv as (
-      select up.t,
-             case when bool_or(${inherited} = 'client') then 'client'
-                  when bool_or(${inherited} = 'team') then 'team' end as emb
-        from up
-        join nodes m on m.id = up.id
-        left join ov on ov.id = m.id
-       where m.id <> up.t
-       group by up.t
-    )
-    select r.id::text as id, r.title, r."from", r."to", r.type,
-           count(*) over () as total from (
-      select tg.id, tg.title, tg.type::text as type,
-             ${eff(sql`tg.audience`, sql`tg.inherited_level`, sql`tg.embedded_level`)} as "from",
-             ${eff(sql`tg.audience`, sql`tg.inherited_level`, sql`lv.emb`)} as "to"
-        from tg left join lv on lv.t = tg.id) r
-     where r."from" is distinct from r."to"
-     order by lower(r.title), r.id
-     limit ${TREE_VISIBILITY_LIST_MAX}`)) as unknown as Array<
-    TreeVisibilityChange & { total: number | string }
-  >;
-  if (!found.length) return diff;
-  const out: VisibilityDiff = {
-    ...diff,
-    alsoEmbeds: found.map(({ total: _total, ...c }) => c),
-    embedsTotal: Number(found[0]!.total),
-  };
-  Object.defineProperty(out, 'rows', { value: diff.rows, enumerable: false });
-  return out;
-}
-
-/** effectiveLevel in SQL: the most open of an own level and two shares. */
-function eff(audience: SQL, inherited: SQL, embedded: SQL): SQL {
-  return sql`(case
-      when 'client' in (${inherited}, ${embedded}) and ${audience} in ('admin', 'team') then 'client'
-      when 'team' in (${inherited}, ${embedded}) and ${audience} = 'admin' then 'team'
-      else ${audience} end)`;
-}
-
-/** Run a query of rows (id, title, audience, emb, old_inh, new_inh) and keep
- *  the ones whose effective level changes. The embedded level is as it is
- *  now: what changes through embeds is listed apart (withEmbedChanges). */
-async function diffOf(rows: SQL): Promise<VisibilityDiff> {
-  const from = eff(sql`r.audience`, sql`r.old_inh`, sql`r.emb`);
-  const to = eff(sql`r.audience`, sql`r.new_inh`, sql`r.emb`);
-  const found = (await db.execute(sql`
-    select r.id::text as id, r.title, ${from} as "from", ${to} as "to",
-           count(*) over () as total
-      from (${rows}) r
-     where ${from} is distinct from ${to}
-     order by lower(r.title), r.id
-     limit ${TREE_VISIBILITY_LIST_MAX}`)) as unknown as Array<{
-    id: string;
-    title: string;
-    from: AccessLevel;
-    to: AccessLevel;
-    total: number | string;
-  }>;
-  const diff: VisibilityDiff = {
-    changes: found.map(({ id, title, from: f, to: t }) => ({ id, title, from: f, to: t })),
-    total: Number(found[0]?.total ?? 0),
-  };
-  // Internal: kept off the enumerable shape (never sent, never compared).
-  Object.defineProperty(diff, 'rows', { value: rows, enumerable: false });
   return diff;
 }
 
-/**
- * The rows of one owner's subtree at `path` (the folder itself excluded) with
- * the inherited share they would have if everything at or above `path` were
- * replaced by `replacement`: a row keeps its value when a nearer shared folder
- * inside the subtree (strictly below `path`, or at it too when `keepRoot`)
- * still holds it.
- */
-function subtreeRows(
-  ownerId: string,
-  path: string,
-  folderId: string,
-  keepRoot: boolean,
-  replacement: SQL,
-): SQL {
-  const inside = keepRoot ? sql`true` : sql`a.path <> ${path}::ltree`;
-  return sql`
-    select n.id, n.title, n.audience, n.embedded_level as emb, n.inherited_level as old_inh,
-      case
-        when not mantle_workspace_kind(n.type) then null
-        when exists (
-          select 1 from nodes a
-           where a.owner_id = n.owner_id and a.share_level is not null
-             and a.path <@ ${path}::ltree and ${inside}
-             and a.path @> n.path and (n.type <> 'branch' or a.path <> n.path)
-        ) then n.inherited_level
-        else ${replacement}
-      end as new_inh
-      from nodes n
-     where n.owner_id = ${ownerId} and n.path <@ ${path}::ltree and n.id <> ${folderId}`;
-}
-
-/** Setting or clearing a folder's share. */
+/** @deprecated Folder shares are frozen (0261): a share change is refused
+ *  by the database, so it changes nothing here. Goes with setFolderShare. */
 export function shareDiff(
-  ownerId: string,
-  folder: { id: string; path: string },
-  share: TreeShareLevel | null,
+  _ownerId: string,
+  _folder: { id: string; path: string },
+  _share: TreeShareLevel | null,
 ): Promise<VisibilityDiff> {
-  const fromAbove = sql`(select inherited_level from nodes where id = ${folder.id})`;
-  const replacement = share ? sql`${share}::text` : fromAbove;
-  return diffOf(subtreeRows(ownerId, folder.path, folder.id, false, replacement));
+  return Promise.resolve(NO_CHANGE);
 }
 
-/** A folder moving under `destParentPath` (its own share, and every share
- *  inside it, moves with it). */
-export function moveFolderDiff(
-  ownerId: string,
-  folder: { id: string; path: string },
-  destParentPath: string,
-): Promise<VisibilityDiff> {
-  const label = folder.path.split('.').at(-1)!;
-  const newPath = `${destParentPath}.${label}`;
-  const replacement = sql`mantle_inherited_level(n.owner_id, ${newPath}::ltree, 'branch')`;
-  return diffOf(subtreeRows(ownerId, folder.path, folder.id, true, replacement));
+/** `ids` as a uuid[] parameter. */
+function idArray(ids: readonly string[]): SQL {
+  return sql`array[${sql.join(
+    ids.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  )}]::uuid[]`;
 }
 
-/**
- * A folder deleted after its contents move up (write.ts deleteTreeFolder).
- * Everything below it lands one level up: `P.rest` goes to `Q.rest`, where
- * `Q` is the parent. A subfolder whose landing path is already a folder
- * merges into it, so what it holds takes THAT folder's share; a subfolder
- * that moves keeps its own share and takes the shares above its new place.
- * Each row is compared at its real landing path, against the tree as it
- * will be: the shared folders outside the deleted one, plus the shared
- * subfolders that move (not the ones that merge away). Merged folder rows
- * are left out: they go.
- */
-export function liftDiff(
-  ownerId: string,
-  folder: { id: string; path: string },
-): Promise<VisibilityDiff> {
-  const p = sql`${folder.path}::ltree`;
-  const q = sql`${folder.path.split('.').slice(0, -1).join('.')}::ltree`;
-  // subpath() cannot take a path down to nothing: a row at `P` lands at `Q`.
-  const landing = (alias: string) => {
-    const path = sql.raw(`${alias}.path`);
-    return sql`(case when ${path} = ${p} then ${q} else ${q} || subpath(${path}, nlevel(${p})) end)`;
+/** The workspaces a folder passes on: its rows not removed there, that an
+ *  item of `type` may take. None for no folder (a kind's root). */
+function folderPasses(folder: SQL, type: SQL): SQL {
+  return sql`array(
+    select g.workspace_id from item_grants g
+     where g.node_id = ${folder} and not g.excluded
+       and mantle_grant_kind_ok(${type}, g.workspace_id, true))`;
+}
+
+/** The workspaces a NEW item of `nodeType` at `destPath` is read in: the
+ *  folder's rows and its home (the folder's home, else Admin), as the
+ *  insert trigger gives them (0261 step 4). */
+function newItemSet(ownerId: string, nodeType: string, destPath: string): SQL {
+  const type = sql`${nodeType}::node_type`;
+  const folder = sql`mantle_parent_folder(${ownerId}::uuid, ${type}, ${destPath}::ltree)`;
+  return sql`array(select distinct x from unnest(
+    ${folderPasses(folder, type)} || array[coalesce(
+      (select f.home_ws from nodes f
+         join workspaces w on w.id = f.home_ws and w.archived_at is null
+        where f.id = ${folder} and mantle_grant_kind_ok(${type}, f.home_ws)),
+      (select w.id from workspaces w where w.owner_id = ${ownerId} and w.is_admin limit 1))]
+  ) as s(x) where x is not null)`;
+}
+
+/** The changed rows of `rows` (id, title, gain uuid[], lose uuid[]), named,
+ *  the first TREE_VISIBILITY_LIST_MAX by title, with the total. */
+async function listed(via: Via, rows: SQL): Promise<VisibilityDiff> {
+  const names = (col: SQL) => sql`(
+    select coalesce(jsonb_agg(jsonb_build_object('wsId', w.id, 'name', w.name)
+                              order by lower(w.name), w.id), '[]'::jsonb)
+      from workspaces w where w.id = any(${col}))`;
+  const found = (await via.execute(sql`
+    select r.id::text as id, r.title,
+           ${names(sql`r.gain`)} as "alsoVisibleTo",
+           ${names(sql`r.lose`)} as "removedFrom",
+           count(*) over () as total
+      from (${rows}) r
+     where cardinality(r.gain) > 0 or cardinality(r.lose) > 0
+     order by lower(r.title), r.id
+     limit ${TREE_VISIBILITY_LIST_MAX}`)) as unknown as Array<
+    TreeWorkspaceChange & { total: number | string }
+  >;
+  return {
+    changes: found.map(({ total: _total, ...c }) => c),
+    total: Number(found[0]?.total ?? 0),
   };
-  // A folder already at a landing path, outside the deleted subtree.
-  const existingAt = (at: SQL) => sql`exists (
-    select 1 from nodes b
-     where b.owner_id = ${ownerId} and b.type = 'branch' and b.path = ${at}
-       and not (b.path <@ ${p}))`;
-  return diffOf(sql`
-    with post as (
-      select a.path, a.share_level from nodes a
-       where a.owner_id = ${ownerId} and a.share_level is not null and not (a.path <@ ${p})
-      union all
-      select ${landing('s')}, s.share_level from nodes s
-       where s.owner_id = ${ownerId} and s.share_level is not null
-         and s.path <@ ${p} and s.id <> ${folder.id}
-         and not ${existingAt(landing('s'))}
-    )
-    select n.id, n.title, n.audience, n.embedded_level as emb, n.inherited_level as old_inh,
-      case when not mantle_workspace_kind(n.type) then null else (
-        select post.share_level from post
-         where post.path @> ${landing('n')}
-           and (n.type <> 'branch' or post.path <> ${landing('n')})
-         order by nlevel(post.path) desc
-         limit 1
-      ) end as new_inh
+}
+
+/** Several diffs as one: the first TREE_VISIBILITY_LIST_MAX by title. */
+function merged(diffs: VisibilityDiff[]): VisibilityDiff {
+  const changes = diffs
+    .flatMap((d) => d.changes)
+    .sort((a, b) => {
+      const ta = a.title.toLowerCase();
+      const tb = b.title.toLowerCase();
+      return ta < tb ? -1 : ta > tb ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    })
+    .slice(0, TREE_VISIBILITY_LIST_MAX);
+  return { changes, total: diffs.reduce((n, d) => n + d.total, 0) };
+}
+
+/** Rows (id, title, gain, lose) for items `where` (alias `n`) placed in the
+ *  folder at `destPath` (S6, as grants.ts placeInFolder plans it). */
+function placedRows(ownerId: string, where: SQL, destPath: string): SQL {
+  const folder = sql`mantle_parent_folder(${ownerId}::uuid, n.type, ${destPath}::ltree)`;
+  return sql`
+    select n.id, n.title,
+           array(select d.x from unnest(${folderPasses(folder, sql`n.type`)}) as d(x)
+                  where not (d.x = any(n.read_ws))
+                    and not exists (select 1 from item_grants e
+                                     where e.node_id = n.id and e.workspace_id = d.x
+                                       and e.excluded)) as gain,
+           array(select g.workspace_id from item_grants g
+                  where g.node_id = n.id and g.via_folder_id is not null
+                    and not g.is_home and not g.excluded
+                    and not (g.workspace_id = any(${folderPasses(folder, sql`n.type`)}))) as lose
       from nodes n
-     where n.owner_id = ${ownerId} and n.path <@ ${p} and n.id <> ${folder.id}
-       and not (n.type = 'branch' and ${existingAt(landing('n'))})`);
-}
-
-/** A level's openness for comparing in SQL (public most open). */
-function openness(level: SQL): SQL {
-  return sql`(case ${level} when 'public' then 0 when 'client' then 1 when 'team' then 2 else 3 end)`;
-}
-
-/**
- * A COPY of Files content landing under `destPath` (review F1): one file, or
- * every file of a folder's subtree. Copies are new rows at the admin level in
- * NEW, unshared folders, so they take whatever share covers where they land;
- * shares inside the source do not come along (unlike a move). Listed: each
- * source file whose copy would be read more openly than the source is now.
- */
-export function copyDiff(
-  ownerId: string,
-  source: { fileId: string } | { folder: { id: string; path: string } },
-  destPath: string,
-): Promise<VisibilityDiff> {
-  const newPath =
-    'fileId' in source
-      ? sql`${destPath}::ltree`
-      : sql`(text2ltree(${destPath}) || subpath(n.path, nlevel(${source.folder.path}::ltree) - 1))`;
-  const which =
-    'fileId' in source
-      ? sql`n.id = ${source.fileId}::uuid`
-      : sql`n.path <@ ${source.folder.path}::ltree`;
-  const from = eff(sql`n.audience`, sql`n.inherited_level`, sql`n.embedded_level`);
-  // A copy is a new row: nothing embeds it yet.
-  const to = eff(
-    sql`'admin'`,
-    sql`mantle_inherited_level(n.owner_id, ${newPath}, 'file')`,
-    sql`null::text`,
-  );
-  return (async () => {
-    const found = (await db.execute(sql`
-      select r.id, r.title, r."from", r."to", count(*) over () as total
-        from (select n.id::text as id, n.title, ${from} as "from", ${to} as "to"
-                from nodes n
-               where n.owner_id = ${ownerId} and n.type = 'file' and ${which}) r
-       where ${openness(sql`r."to"`)} < ${openness(sql`r."from"`)}
-       order by lower(r.title), r.id
-       limit ${TREE_VISIBILITY_LIST_MAX}`)) as unknown as Array<{
-      id: string;
-      title: string;
-      from: AccessLevel;
-      to: AccessLevel;
-      total: number | string;
-    }>;
-    return {
-      changes: found.map(({ id, title, from: f, to: t }) => ({ id, title, from: f, to: t })),
-      total: Number(found[0]?.total ?? 0),
-    };
-  })();
+     where n.owner_id = ${ownerId} and n.type <> 'branch' and ${where}`;
 }
 
 /** Items of one kind moving into the folder at `destPath`. */
@@ -334,13 +173,158 @@ export function moveItemsDiff(
 ): Promise<VisibilityDiff> {
   if (!itemIds.length) return Promise.resolve(NO_CHANGE);
   const nodeType = TREE_KIND_SPECS[kind].nodeType;
-  return diffOf(sql`
-    select n.id, n.title, n.audience, n.embedded_level as emb, n.inherited_level as old_inh,
-           mantle_inherited_level(n.owner_id, ${destPath}::ltree, n.type) as new_inh
+  return listed(
+    db,
+    placedRows(
+      ownerId,
+      sql`n.type::text = ${nodeType} and n.id = any(${idArray(itemIds)})`,
+      destPath,
+    ),
+  );
+}
+
+/** A folder moving under `destParentPath`: the folder takes the new parent's
+ *  rows and drops its folder-derived rows the new parent does not give;
+ *  that change reaches everything inside it, unless a folder on the way
+ *  stops it. */
+export function moveFolderDiff(
+  ownerId: string,
+  folder: { id: string; path: string },
+  destParentPath: string,
+): Promise<VisibilityDiff> {
+  const label = folder.path.split('.').at(-1)!;
+  const newPath = `${destParentPath}.${label}`;
+  const parent = sql`mantle_parent_folder(${ownerId}::uuid, 'branch'::node_type, ${newPath}::ltree)`;
+  const passes = folderPasses(parent, sql`'branch'::node_type`);
+  // Between the moved folder (excluded) and the item's own folder
+  // (included): the folders the change passes through to reach `n`.
+  const onTheWay = (cond: SQL) => sql`exists (
+    select 1 from nodes a join item_grants ag on ag.node_id = a.id and ag.workspace_id = w.x
+     where a.owner_id = n.owner_id and a.type = 'branch' and a.id <> f.id
+       and a.path <@ f.path and a.path @> mantle_parent_folder_path(n.type, n.path)
+       and ${cond})`;
+  return listed(
+    db,
+    sql`
+    with f as (select id, path, read_ws from nodes where id = ${folder.id} and owner_id = ${ownerId}),
+    gain as (
+      select x from unnest(${passes}) as p(x), f
+       where not (x = any(f.read_ws))
+         and not exists (select 1 from item_grants e
+                          where e.node_id = f.id and e.workspace_id = x and e.excluded)),
+    lose as (
+      select g.workspace_id as x from item_grants g, f
+       where g.node_id = f.id and g.via_folder_id is not null
+         and not g.is_home and not g.excluded
+         and not (g.workspace_id = any(${passes})))
+    select n.id, n.title,
+           case when n.id = f.id then array(select x from gain) else array(
+             select w.x from gain w
+              where not (w.x = any(n.read_ws))
+                and mantle_grant_kind_ok(n.type, w.x, true)
+                and not exists (select 1 from item_grants e
+                                 where e.node_id = n.id and e.workspace_id = w.x and e.excluded)
+                and not ${onTheWay(sql`ag.excluded`)})
+           end as gain,
+           case when n.id = f.id then array(select x from lose) else array(
+             select w.x from lose w
+              where w.x = any(n.read_ws)
+                and exists (select 1 from item_grants e
+                             where e.node_id = n.id and e.workspace_id = w.x
+                               and e.via_folder_id is not null and not e.is_home
+                               and not e.excluded)
+                and not ${onTheWay(sql`not ag.excluded and ag.via_folder_id is null`)})
+           end as lose
+      from nodes n, f
+     where n.owner_id = ${ownerId} and n.path <@ f.path`,
+  );
+}
+
+/**
+ * A folder deleted after its contents move up (write.ts deleteTreeFolder).
+ * Everything below it lands one level up: its items go into the parent,
+ * each subfolder moves under the parent, and a subfolder whose name is
+ * already taken there MERGES into that folder, recursively (what merges in
+ * takes that folder's rows). Each part is computed as the move it is.
+ */
+export async function liftDiff(
+  ownerId: string,
+  folder: { id: string; path: string },
+): Promise<VisibilityDiff> {
+  const parts: VisibilityDiff[] = [];
+  const lift = async (src: string, dest: string): Promise<void> => {
+    parts.push(await listed(db, placedRows(ownerId, sql`n.path = ${src}::ltree`, dest)));
+    const subs = (await db.execute(sql`
+      select s.id::text as id, s.path::text as path,
+             exists (select 1 from nodes b
+                      where b.owner_id = s.owner_id and b.type = 'branch'
+                        and b.path = text2ltree(${dest}) || subpath(s.path, nlevel(s.path) - 1)
+                        and not (b.path <@ ${folder.path}::ltree)) as merges
+        from nodes s
+       where s.owner_id = ${ownerId} and s.type = 'branch'
+         and s.path ~ ${`${src}.*{1}`}::lquery`)) as unknown as Array<{
+      id: string;
+      path: string;
+      merges: boolean;
+    }>;
+    for (const s of subs) {
+      if (s.merges) await lift(s.path, `${dest}.${s.path.split('.').at(-1)!}`);
+      else parts.push(await moveFolderDiff(ownerId, s, dest));
+    }
+  };
+  await lift(folder.path, folder.path.split('.').slice(0, -1).join('.'));
+  return merged(parts);
+}
+
+/**
+ * A COPY of Files content landing under `destPath` (review F1): one file, or
+ * every file of a folder's subtree. Copies are new rows that take where they
+ * land (the folder's rows and its home, else Admin); grants inside the
+ * source do not come along. Listed: each source file whose copy would be
+ * read by a workspace that does not read the source now.
+ */
+export function copyDiff(
+  ownerId: string,
+  source: { fileId: string } | { folder: { id: string; path: string } },
+  destPath: string,
+): Promise<VisibilityDiff> {
+  const which =
+    'fileId' in source
+      ? sql`n.id = ${source.fileId}::uuid`
+      : sql`n.path <@ ${source.folder.path}::ltree`;
+  return listed(
+    db,
+    sql`
+    select n.id, n.title,
+           array(select x from unnest(${newItemSet(ownerId, TREE_KIND_SPECS.files.nodeType, destPath)}) as s(x)
+                  where not (x = any(n.read_ws))) as gain,
+           '{}'::uuid[] as lose
       from nodes n
-     where n.owner_id = ${ownerId} and n.type::text = ${nodeType}
-       and n.id in (${sql.join(
-         itemIds.map((id) => sql`${id}::uuid`),
-         sql`, `,
-       )})`);
+     where n.owner_id = ${ownerId} and n.type = 'file' and ${which}`,
+  );
+}
+
+/**
+ * A NEW item of `kind` (created or uploaded) in the folder at `destPath`,
+ * against the same item at the kind's root (its home Admin, nothing else):
+ * "This will also be visible to: ..." (S6). No change at the root, nor in a
+ * folder only Admin reads.
+ */
+export async function newItemDiff(
+  via: Via,
+  ownerId: string,
+  kind: TreeKind,
+  destPath: string,
+  title: string,
+): Promise<VisibilityDiff> {
+  const set = newItemSet(ownerId, TREE_KIND_SPECS[kind].nodeType, destPath);
+  const admin = sql`array(select w.id from workspaces w
+                           where w.owner_id = ${ownerId} and w.is_admin limit 1)`;
+  return listed(
+    via,
+    sql`
+    select ''::text as id, ${title}::text as title,
+           array(select x from unnest(${set}) as s(x) where not (x = any(${admin}))) as gain,
+           array(select x from unnest(${admin}) as s(x) where not (x = any(${set}))) as lose`,
+  );
 }

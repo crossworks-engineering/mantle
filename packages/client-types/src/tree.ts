@@ -12,6 +12,7 @@
  * `@mantle/client-types/tree` subpath.
  */
 import type { AccessLevel } from './dto/access';
+import type { GrantWorkspaceRef, ListWorkspace } from './dto/grants';
 import type { TaskStatus } from './dto/rows';
 import type { AppTint } from './app-nav';
 
@@ -188,14 +189,21 @@ export type TreeFolder = {
   depth: number;
   /** The parent folder; null at the top level. */
   parentId: string | null;
-  /** The folder's own share (it shares everything below it); null = none. */
-  share: TreeShareLevel | null;
-  /** The share of the nearest shared folder above it; null = none. */
+  /** DEPRECATED (W5b2): folder shares are frozen and grants decide who
+   *  reads (`workspaces`). The brain's tree no longer sends it; a member's
+   *  own folder still sends null. */
+  share?: TreeShareLevel | null;
+  /** DEPRECATED (W5b2): no longer sent by the brain's tree. */
   inherited?: TreeShareLevel | null;
   /** Made by Mantle (Auto-filed): the name is locked and it cannot be shared. */
   system: boolean;
   folderCount: number;
   itemCount: number;
+  /** The workspaces that read the folder (ListChips): filled by the owner's
+   *  tree routes; empty in the member tree until W5c. */
+  workspaces: ListWorkspace[];
+  /** A live open public link exists. */
+  hasLink: boolean;
   /** A member's tree only: the member's own private folder (folder plan
    *  phase 5). Only they see it; they may rename, move and delete it. */
   own?: boolean;
@@ -229,19 +237,21 @@ export type TreeItem = {
   /** A short kind-specific token for the status slot: a file's extension, a
    *  secret's kind, an event's start. Null when the kind has none. */
   subtype: string | null;
-  /** Who can read it: the most open of its own level, its folder's share and
-   *  the share of something that embeds it. */
-  level: AccessLevel;
-  /** The share it takes from the nearest shared folder holding it (what
-   *  "Shared via" names); null = none. `level` already counts it. */
+  /** DEPRECATED (W5b2): the tier levels are frozen and grants decide who
+   *  reads (`workspaces`, `hasLink`). The brain's tree no longer sends it. */
+  level?: AccessLevel;
+  /** DEPRECATED (W5b2): no longer sent. */
   inherited?: TreeShareLevel | null;
-  /** The share it is read at through something that embeds it (a shared
-   *  note's image), kept by the brain; absent = none. `level` already
-   *  counts it. */
+  /** DEPRECATED (W5b2): no longer sent. */
   embedded?: TreeShareLevel | null;
   state: TreeItemState | null;
   updatedAt: string;
   meta?: TreeItemMeta;
+  /** The workspaces that read the item (ListChips): filled by the owner's
+   *  tree routes; empty in the member tree until W5c. */
+  workspaces: ListWorkspace[];
+  /** A live open public link exists (the "Public" pill). */
+  hasLink: boolean;
   /** A member's tree only: a draft rather than a brain item (folder plan
    *  phase 5). `own` is the member's own; `team` a teammate's draft shared
    *  with the team. Absent on a brain item. */
@@ -264,14 +274,18 @@ export type TreeFolderPage = {
   sort: TreeSort;
   /** Pass back as `cursor` for the next page of items; null at the end. */
   nextCursor: string | null;
+  /** Asked with `?ws=<id>` (ListWsEcho): the items are only those that
+   *  workspace reads; the folders stay (the way to them). */
+  ws?: string;
 };
 
-/** Narrowing for GET /api/tree/:kind/search (`level=`, `tag=`), the tree's
+/** Narrowing for GET /api/tree/:kind/search (`ws=`, `tag=`), the tree's
  *  filter menu. Both optional; together they both apply. A filtered search
- *  lists items only, no folders. */
+ *  lists items only, no folders. The level filter went with the levels
+ *  (W5b2). */
 export type TreeFilter = {
-  /** Only items read at this level (their own, or their folder's share). */
-  level?: AccessLevel;
+  /** Only items this workspace reads (its id is in their read_ws). */
+  ws?: string;
   /** Only items carrying this tag. */
   tag?: string;
 };
@@ -289,6 +303,8 @@ export type TreeSearchResult = {
   folders: Array<TreeFolder & { crumbs: TreeCrumb[] }>;
   items: Array<TreeItem & { crumbs: TreeCrumb[] }>;
   nextCursor: string | null;
+  /** Asked with `?ws=<id>` (ListWsEcho). */
+  ws?: string;
 };
 
 /** The flat views beside the tree: this login's pins, recent and most used
@@ -303,8 +319,20 @@ export type TreeMarkList = {
   items: Array<TreeItem & { crumbs: TreeCrumb[] }>;
 };
 
-/** A write that would change who can see something is refused with this
- *  (409) until it is repeated with `confirm: true`. */
+/** One item a tree write would change (W5b2: in workspaces, from the
+ *  grants). A new item is compared with one at the kind's root (Admin). */
+export type TreeWorkspaceChange = {
+  /** '' for an item not made yet (a create or upload). */
+  id: string;
+  title: string;
+  /** "This will also be visible to: ..." */
+  alsoVisibleTo: GrantWorkspaceRef[];
+  /** The workspaces that would no longer read it. */
+  removedFrom: GrantWorkspaceRef[];
+};
+
+/** A level change, as the member review's accept still lists it (until
+ *  W5c). The tree's own refusal lists TreeWorkspaceChange. */
 export type TreeVisibilityChange = {
   id: string;
   title: string;
@@ -315,20 +343,20 @@ export type TreeVisibilityChange = {
    *  opening is more than an image. Absent elsewhere. */
   type?: string;
 };
+/** A tree write that would change which workspaces read something (a
+ *  folder moved or deleted with its contents lifted, items moved, a file or
+ *  page made in a folder, a copy) is refused with this (409) until it is
+ *  repeated with `confirm: true`. A confirm's `seen` is `total`. */
 export type TreeVisibilityRefusal = {
   error: 'visibility';
   /** The first changes (at most TREE_VISIBILITY_LIST_MAX). */
-  changes: TreeVisibilityChange[];
+  changes: TreeWorkspaceChange[];
   /** How many items change in all. */
   total: number;
-  /** Items elsewhere that pages, drawings and notes in `changes` embed,
-   *  whose access changes with them: `to` more open when they become
-   *  readable through them, less open when an unshare or a move out takes
-   *  that away (nothing's own level changes; migration 0208). Absent when
-   *  there are none, and from brains before it was listed. */
+  /** @deprecated Never sent since W5b2: embeds no longer open with what
+   *  embeds them (grants are never added for you). */
   alsoEmbeds?: TreeVisibilityChange[];
-  /** How many embedded items change in all (`alsoEmbeds` holds the first
-   *  TREE_VISIBILITY_LIST_MAX). A confirm's `seen` is `total` plus this. */
+  /** @deprecated Never sent since W5b2. */
   embedsTotal?: number;
   /** @deprecated Never sent: an unreleased first form of `alsoEmbeds`, when
    *  a share still lowered embeds for good. */
@@ -346,11 +374,14 @@ export const TREE_VISIBILITY_LIST_MAX = 100;
 // where a folder's share covers the reader; counts are the reader's.
 
 /** A folder as a client login's tree shows it. */
-export type ClientTreeFolder = Omit<TreeFolder, 'share' | 'inherited' | 'system' | 'own'>;
+export type ClientTreeFolder = Omit<
+  TreeFolder,
+  'share' | 'inherited' | 'system' | 'own' | 'workspaces' | 'hasLink'
+>;
 /** An item as a client login's tree shows it. */
 export type ClientTreeItem = Omit<
   TreeItem,
-  'level' | 'inherited' | 'embedded' | 'state' | 'source' | 'author'
+  'level' | 'inherited' | 'embedded' | 'state' | 'source' | 'author' | 'workspaces' | 'hasLink'
 >;
 
 export type ClientTreeFolderPage = Omit<TreeFolderPage, 'folder' | 'folders' | 'items'> & {

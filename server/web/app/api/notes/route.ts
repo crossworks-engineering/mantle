@@ -6,6 +6,7 @@ import { listStateOf, pageWithPrivate } from '@/lib/admin-private-rows';
 import { countNotes, createNote, isDigestTag, listNoteTags, listNotes } from '@/lib/notes';
 import { recordIngest } from '@mantle/tracing';
 import { firstIssue } from '@/lib/zod-issue';
+import { chipped, parseWsFilter } from '@/lib/listWorkspaces';
 
 const PAGE_SIZE = 50;
 
@@ -20,11 +21,20 @@ const CreateBody = z.object({
  * server page. Agent digests are hidden unless `?digests=1` (or the tag is
  * itself a digest tag like `agent:assistant`). `?state=brain|private|all`
  * adds the caller's own private notes (lib/admin-private-rows; default brain).
+ * Every row carries its `workspaces` and `hasLink` (lib/listWorkspaces).
+ * `?ws=<id>` keeps only the notes that workspace reads (no private rows:
+ * they are in no workspace) and is echoed as `ws`.
  */
 export async function GET(req: Request) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const sp = new URL(req.url).searchParams;
+  const ws = await parseWsFilter(req, user.id, user.actor.id);
+  if (ws instanceof Response) return ws;
+  const inWs = ws ? { ws } : {};
+  const asked = listStateOf(sp);
+  // A private note is in no workspace: none when only those were asked for.
+  const none = ws !== null && asked === 'private';
   const page = Math.max(1, Number.parseInt(sp.get('page') ?? '1', 10) || 1);
   const query = sp.get('q')?.trim() || undefined;
   const tag = sp.get('tag')?.trim() || undefined;
@@ -37,15 +47,24 @@ export async function GET(req: Request) {
     pageWithPrivate({
       user,
       kind: 'note',
-      state: listStateOf(sp),
+      state: ws ? 'brain' : asked,
       q: query,
       tagged: !!tag,
       page,
       pageSize: PAGE_SIZE,
       brain: async (limit, offset) => {
+        if (none) return { items: [], total: 0 };
         const [items, total] = await Promise.all([
-          listNotes(user.id, { query, tag, includeDigests, limit, offset, withoutEmailCopies }),
-          countNotes(user.id, { query, tag, includeDigests, withoutEmailCopies }),
+          listNotes(user.id, {
+            query,
+            tag,
+            includeDigests,
+            limit,
+            offset,
+            withoutEmailCopies,
+            ...inWs,
+          }),
+          countNotes(user.id, { query, tag, includeDigests, withoutEmailCopies, ...inWs }),
         ]);
         return { items, total };
       },
@@ -53,11 +72,12 @@ export async function GET(req: Request) {
     listNoteTags(user.id, { includeDigests }),
   ]);
   return NextResponse.json({
-    notes: listed.items,
+    notes: await chipped(user.id, user.actor.id, listed.items),
     total: listed.total,
     page,
     pageSize: PAGE_SIZE,
     tags,
+    ...inWs,
   });
 }
 

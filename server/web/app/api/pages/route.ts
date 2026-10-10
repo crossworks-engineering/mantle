@@ -16,6 +16,7 @@ import {
 import { recordIngest } from '@mantle/tracing';
 import { firstIssue } from '@/lib/zod-issue';
 import { treeErrorResponse } from '@/lib/tree-route';
+import { chipped, parseWsFilter } from '@/lib/listWorkspaces';
 
 const SORTS: PageSort[] = ['edited', 'newest', 'oldest', 'title'];
 const PAGE_SIZE = 50;
@@ -60,11 +61,18 @@ const CreateBody = z.object({
  * `brain` (default) as always; `all` adds the caller's own private pages as
  * AdminPrivateListRow rows (top level in the tree, merged in the sort order
  * when filtering, none under a tag); `private` lists them alone.
+ *
+ * Every row carries its `workspaces` and `hasLink` (lib/listWorkspaces).
+ * `?ws=<id>` keeps only the pages that workspace reads (no private rows:
+ * they are in no workspace) and is echoed as `ws`.
  */
 export async function GET(req: Request) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const sp = new URL(req.url).searchParams;
+  const ws = await parseWsFilter(req, user.id, user.actor.id);
+  if (ws instanceof Response) return ws;
+  const inWs = ws ? { ws } : {};
 
   const page = Math.max(1, Number.parseInt(sp.get('page') ?? '1', 10) || 1);
   const query = sp.get('q')?.trim() || undefined;
@@ -72,7 +80,11 @@ export async function GET(req: Request) {
   const sortParam = sp.get('sort');
   const sort: PageSort = SORTS.includes(sortParam as PageSort) ? (sortParam as PageSort) : 'edited';
   const filtering = Boolean(query || tag);
-  const state = listStateOf(sp);
+  const asked = listStateOf(sp);
+  // A private page is in no workspace: `?ws` lists brain pages only, and
+  // none at all when only private ones were asked for.
+  const none = ws !== null && asked === 'private';
+  const state = ws ? 'brain' : asked;
   // A key without Search does not list a page made from an email
   // attachment (access matrix T4).
   const withoutEmailCopies = !callerMayReadEmail();
@@ -91,9 +103,10 @@ export async function GET(req: Request) {
         page,
         pageSize: PAGE_SIZE,
         brain: async (limit, offset) => {
+          if (none) return { items: [], total: 0 };
           const [items, total] = await Promise.all([
-            listPages(user.id, { query, tag, sort, limit, offset, withoutEmailCopies }),
-            countPages(user.id, { query, tag, withoutEmailCopies }),
+            listPages(user.id, { query, tag, sort, limit, offset, withoutEmailCopies, ...inWs }),
+            countPages(user.id, { query, tag, withoutEmailCopies, ...inWs }),
           ]);
           return { items, total };
         },
@@ -102,20 +115,23 @@ export async function GET(req: Request) {
     ]);
     return NextResponse.json({
       mode: 'list',
-      pages: listed.items,
+      pages: await chipped(user.id, user.actor.id, listed.items),
       total: listed.total,
       page,
       pageSize: PAGE_SIZE,
       tags,
+      ...inWs,
     });
   }
 
   const [rows, privateRows, tags] = await Promise.all([
-    state === 'private' ? [] : listPages(user.id, { sort, limit: TREE_LIMIT, withoutEmailCopies }),
+    state === 'private' || none
+      ? []
+      : listPages(user.id, { sort, limit: TREE_LIMIT, withoutEmailCopies, ...inWs }),
     state === 'brain' ? [] : allPrivateRows(user, 'page', { sort }),
     tagsPromise,
   ]);
-  const pages = [...rows, ...privateRows];
+  const pages = await chipped(user.id, user.actor.id, [...rows, ...privateRows]);
   return NextResponse.json({
     mode: 'tree',
     pages,
@@ -123,6 +139,7 @@ export async function GET(req: Request) {
     page: 1,
     pageSize: TREE_LIMIT,
     tags,
+    ...inWs,
   });
 }
 

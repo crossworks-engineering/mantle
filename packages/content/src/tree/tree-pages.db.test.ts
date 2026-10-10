@@ -1,9 +1,10 @@
 /**
  * Pages in the item tree (folder phase 7), against a real, migrated
- * Postgres: a page is made in a folder (never under a page), a folder share
- * is refused (gone since W5b2: grants decide), split and extract land next
- * to the source, a member files a page draft where its tree shows, and the
- * page detail names its folder.
+ * Postgres: a page is made in a folder (never under a page), split and
+ * extract land next to the source, a member files a page draft where its
+ * tree shows, and the page detail names its folder. The confirm before a
+ * page reaches another workspace (made in or moved into a folder) is
+ * tree-grants-confirm.db.test.ts (W5b2: grants decide).
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/tree/tree-pages.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -170,7 +171,7 @@ describe.skipIf(!URL)('pages in the item tree', () => {
     expect(at).toBe(`pages.${label}_shared`);
     // Its own folder in it, and a draft filed there.
     const mine = await tree.createMemberFolder(scope, 'pages', {
-      parentId: shared!.id,
+      parentId: shared.id,
       name: 'Mine',
     });
     expect(await tree.memberFilingPath(scope, 'pages', mine.id)).toBe(`pages.${label}_shared.mine`);

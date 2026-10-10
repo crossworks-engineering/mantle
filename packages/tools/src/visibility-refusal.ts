@@ -21,23 +21,19 @@ export const CONFIRM_INPUT = {
 export function visibilityRefusal(err: unknown): string | null {
   if (isBusy(err)) return BUSY_MESSAGE;
   if (!(err instanceof TreeVisibilityError)) return null;
+  const names = (list: Array<{ name: string }>) => list.map((w) => w.name).join(', ');
   const shown = err.diff.changes
     .slice(0, 10)
-    .map((c) => `'${c.title}' ${c.from} → ${c.to}`)
+    .map((c) => {
+      const parts = [
+        c.alsoVisibleTo.length ? `also visible to ${names(c.alsoVisibleTo)}` : '',
+        c.removedFrom.length ? `no longer in ${names(c.removedFrom)}` : '',
+      ].filter(Boolean);
+      return `'${c.title}' ${parts.join('; ')}`;
+    })
     .join(', ');
-  const through = err.diff.alsoEmbeds ?? [];
-  const embedsTotal = err.diff.embedsTotal ?? through.length;
-  const also = through.length
-    ? ` What they embed changes with them (${embedsTotal}): ${through
-        .slice(0, 10)
-        .map((c) => `'${c.title}'${c.type ? ` (${c.type})` : ''} ${c.from} → ${c.to}`)
-        .join(', ')}${embedsTotal > 10 ? ', …' : ''}.`
-    : '';
-  const head = err.diff.total
-    ? `this changes who can see ${err.diff.total} item(s) (${shown}${err.diff.total > 10 ? ', …' : ''}).`
-    : 'this changes who can see items through what they embed.';
   return (
-    `${head}${also} ` +
+    `this changes which workspaces see ${err.diff.total} item(s) (${shown}${err.diff.total > 10 ? ', …' : ''}). ` +
     'Tell the user what changes; call again with confirm: true only once they agree.'
   );
 }

@@ -101,6 +101,8 @@ type ListNotesOpts = {
   /** Leave out email attachments and items made from one (an API key
    *  without the Search area: access matrix M4, T4). */
   withoutEmailCopies?: boolean;
+  /** Only the notes this workspace reads (`?ws=`, W5b2): a checked id. */
+  ws?: string;
 };
 
 /** Agent-minted digest tags (summarizer.ts): the digest marker itself plus its
@@ -132,6 +134,7 @@ function noteConds(ownerId: string, opts: ListNotesOpts) {
   }
   if (opts.tag) conds.push(sql`${opts.tag} = ANY(${nodes.tags})`);
   if (opts.withoutEmailCopies) conds.push(sql`not ${emailAttachmentSql()}`);
+  if (opts.ws) conds.push(sql`${opts.ws}::uuid = any(${nodes.readWs})`);
   return conds;
 }
 

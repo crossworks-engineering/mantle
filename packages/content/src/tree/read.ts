@@ -16,7 +16,6 @@ import type {
   TreeKind,
   TreeFilter,
   TreeSearchResult,
-  TreeShareLevel,
   TreeSort,
   TreeTagList,
 } from '@mantle/client-types/tree';
@@ -27,8 +26,7 @@ import {
   TREE_TAGS_LIST_MAX,
 } from '@mantle/client-types/tree';
 import { projectAppIcon, projectAppTint } from '@mantle/content-core/app-nav';
-import { effectiveLevel, treeFolderChain, treeParentPath } from '@mantle/content-core/tree';
-import type { AccessLevel } from '@mantle/client-types';
+import { treeFolderChain, treeParentPath } from '@mantle/content-core/tree';
 import { decodeTreeCursor, encodeTreeCursor } from './cursor';
 import { itemMeta, itemState, itemSubtype, kindItemFilter } from './kinds';
 
@@ -37,8 +35,6 @@ type FolderSqlRow = {
   path: string;
   title: string;
   data: Record<string, unknown> | null;
-  share_level: string | null;
-  inherited_level: string | null;
   parent_id: string | null;
   folder_count: number;
   item_count: number;
@@ -49,35 +45,12 @@ type ItemSqlRow = {
   path: string;
   title: string;
   data: Record<string, unknown> | null;
-  audience: string;
-  inherited_level: string | null;
-  embedded_level?: string | null;
   updated_at: Date | string;
   sort_key: string;
 };
 
 function iso(v: Date | string): string {
   return v instanceof Date ? v.toISOString() : new Date(v).toISOString();
-}
-
-function asShare(v: string | null): TreeShareLevel | null {
-  return v === 'team' || v === 'client' ? v : null;
-}
-
-/** effectiveLevel (content-core) in SQL, for filters: the most open of the
- *  row's own level, its inherited share and its embedded level. */
-export function effectiveLevelSql(alias: string): SQL {
-  const n = sql.raw(alias);
-  return sql`(case
-      when 'client' in (${n}.inherited_level, ${n}.embedded_level)
-           and ${n}.audience in ('admin', 'team') then 'client'
-      when 'team' in (${n}.inherited_level, ${n}.embedded_level)
-           and ${n}.audience = 'admin' then 'team'
-      else ${n}.audience end)`;
-}
-
-function asLevel(v: string): AccessLevel {
-  return v === 'team' || v === 'client' || v === 'public' ? v : 'admin';
 }
 
 export function treeFolderFromRow(r: FolderSqlRow): TreeFolder {
@@ -90,11 +63,12 @@ export function treeFolderFromRow(r: FolderSqlRow): TreeFolder {
     color: projectAppTint(data.color) ?? null,
     depth: r.path.split('.').length - 1,
     parentId: r.parent_id,
-    share: asShare(r.share_level),
-    inherited: asShare(r.inherited_level),
     system: data.system === true,
     folderCount: Number(r.folder_count),
     itemCount: Number(r.item_count),
+    // Who reads it is the caller's to ask (lib/listWorkspaces.ts).
+    workspaces: [],
+    hasLink: false,
   };
 }
 
@@ -107,16 +81,12 @@ function treeItemFromRow(kind: TreeKind, r: ItemSqlRow): TreeItem {
     icon: projectAppIcon(data.icon) ?? null,
     color: projectAppTint(data.color) ?? null,
     subtype: itemSubtype(kind, data),
-    level: effectiveLevel(
-      asLevel(r.audience),
-      asShare(r.inherited_level),
-      asShare(r.embedded_level ?? null),
-    ),
-    inherited: asShare(r.inherited_level),
-    ...(r.embedded_level ? { embedded: asShare(r.embedded_level) } : {}),
     state: itemState(kind, data),
     updatedAt: iso(r.updated_at),
     ...(meta ? { meta } : {}),
+    // Who reads it is the caller's to ask (lib/listWorkspaces.ts).
+    workspaces: [],
+    hasLink: false,
   };
 }
 
@@ -129,7 +99,7 @@ export async function selectFolders(
 ): Promise<TreeFolder[]> {
   const itemType = TREE_KIND_SPECS[kind].nodeType;
   const rows = (await db.execute(sql`
-    select f.id, f.path::text as path, f.title, f.data, f.share_level, f.inherited_level,
+    select f.id, f.path::text as path, f.title, f.data,
            (select p.id from nodes p
              where p.owner_id = f.owner_id and p.type = 'branch'
                and nlevel(f.path) > 2
@@ -280,7 +250,7 @@ export async function itemPage(
     : sql``;
   const order = desc ? sql`${key} desc, n.id desc` : sql`${key} asc, n.id asc`;
   const rows = (await db.execute(sql`
-    select n.id, n.path::text as path, n.title, n.data, n.audience, n.inherited_level, n.embedded_level, n.updated_at,
+    select n.id, n.path::text as path, n.title, n.data, n.updated_at,
            ${key} as sort_key
       from nodes n
      where n.owner_id = ${ownerId} and n.type = ${TREE_KIND_SPECS[kind].nodeType}
@@ -306,12 +276,19 @@ export function treePageLimit(raw: number | undefined): number {
  * One folder's page: its direct subfolders (all of them, in order) and one
  * page of its items. `folderId` null is the kind's root. Null when the id is
  * not a folder of this kind. A cursor pages the items only; the folders come
- * with the first page.
+ * with the first page. `ws` keeps only the items that workspace reads (the
+ * folders stay: they are the way to them).
  */
 export async function loadTreeFolder(
   ownerId: string,
   kind: TreeKind,
-  opts: { folderId?: string | null; cursor?: string | null; sort?: TreeSort; limit?: number } = {},
+  opts: {
+    folderId?: string | null;
+    cursor?: string | null;
+    sort?: TreeSort;
+    limit?: number;
+    ws?: string;
+  } = {},
 ): Promise<TreeFolderPage | null> {
   const spec = TREE_KIND_SPECS[kind];
   const sort = opts.sort && spec.sorts.includes(opts.sort) ? opts.sort : spec.sorts[0]!;
@@ -327,7 +304,7 @@ export async function loadTreeFolder(
           (m) => m.get(treeParentPath(folder.path)) ?? [],
         )
       : Promise.resolve([] as TreeCrumb[]),
-    itemPage(ownerId, kind, path, sort, opts.cursor, treePageLimit(opts.limit)),
+    itemPage(ownerId, kind, path, sort, opts.cursor, treePageLimit(opts.limit), readBy(opts.ws)),
   ]);
   return {
     kind,
@@ -338,6 +315,12 @@ export async function loadTreeFolder(
     sort,
     nextCursor: page.nextCursor,
   };
+}
+
+/** Only the items workspace `ws` reads (`and ...` on alias `n`); every item
+ *  without one. */
+function readBy(ws: string | undefined): SQL {
+  return ws ? sql`and ${ws}::uuid = any(n.read_ws)` : sql``;
 }
 
 /** `%` and `_` are ILIKE wildcards; a search for them means the characters. */
@@ -365,7 +348,7 @@ export async function searchItemRows(
     ? sql`and (lower(n.title), n.id) > (${cursor.key}, ${cursor.id}::uuid)`
     : sql``;
   const rows = (await db.execute(sql`
-    select n.id, n.path::text as path, n.title, n.data, n.audience, n.inherited_level, n.embedded_level, n.updated_at,
+    select n.id, n.path::text as path, n.title, n.data, n.updated_at,
            lower(n.title) as sort_key
       from nodes n
      where n.owner_id = ${ownerId} and n.type = ${spec.nodeType}
@@ -382,7 +365,7 @@ export async function searchItemRows(
  * crumbs), then items by name, paged. Both carry the crumbs of where they
  * live, so a result can be shown and opened in place. An empty `q` is the
  * A to Z view: every item of the kind by name, and no folders. A filter
- * (level, tag) narrows the items and drops the folders: it is a question
+ * (workspace, tag) narrows the items and drops the folders: it is a question
  * about items.
  */
 export async function searchTree(
@@ -396,7 +379,7 @@ export async function searchTree(
   const term = q.trim();
   const pattern = likePattern(term);
   const cursor = decodeTreeCursor(opts.cursor, 'name');
-  const filtered = opts.level !== undefined || opts.tag !== undefined;
+  const filtered = opts.ws !== undefined || opts.tag !== undefined;
   const folders =
     cursor || !term || filtered
       ? []
@@ -408,8 +391,6 @@ export async function searchTree(
                 and (f.title ilike ${pattern} or f.slug ilike ${pattern})`,
           )
         ).slice(0, limit);
-  // The level an item is read at: its own, or its folder's share.
-  const level = opts.level ? sql`and ${effectiveLevelSql('n')} = ${opts.level}` : sql``;
   const tag = opts.tag ? sql`and ${opts.tag} = any(n.tags)` : sql``;
   const { page, more } = await searchItemRows(
     ownerId,
@@ -417,7 +398,7 @@ export async function searchTree(
     term,
     opts.cursor,
     limit,
-    sql`${level} ${tag}`,
+    sql`${readBy(opts.ws)} ${tag}`,
   );
   const crumbs = await treeCrumbsFor(ownerId, [
     ...folders.map((f) => treeParentPath(f.path)),

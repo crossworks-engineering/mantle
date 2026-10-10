@@ -194,7 +194,14 @@ describe('tree folder tools', () => {
   it('names what a share change would do, and waits for confirm', async () => {
     vi.mocked(moveTreeItems).mockRejectedValueOnce(
       new TreeVisibilityError({
-        changes: [{ id: 'n1', title: 'Plan', from: 'admin', to: 'team' }],
+        changes: [
+          {
+            id: 'n1',
+            title: 'Plan',
+            alsoVisibleTo: [{ wsId: 'w1', name: 'Sales' }],
+            removedFrom: [{ wsId: 'w2', name: 'Ops' }],
+          },
+        ],
         total: 1,
       }),
     );
@@ -204,7 +211,7 @@ describe('tree folder tools', () => {
         owner,
       ),
     );
-    expect(err).toMatch(/'Plan' admin → team/);
+    expect(err).toMatch(/'Plan' also visible to Sales; no longer in Ops/);
     expect(err).toMatch(/confirm: true only once they agree/);
     await tool('tree_item_move').handler(
       { kind: 'notes', item_ids: ['n1'], folder_id: FOLDER, confirm: true },

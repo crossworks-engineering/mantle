@@ -5,22 +5,21 @@
  * file_copy, folder_move, folder_copy, file_create and file_upload. They
  * call the Files operations directly, so the tree's own check (write.ts)
  * never ran for them, and a file moved, copied or written into a shared
- * folder became readable by the team or clients with nobody asked.
+ * folder became readable by other workspaces with nobody asked.
  *
  * Each guard computes the change DRY (./visibility), before the write, and
- * throws TreeVisibilityError when something would be read at another level
- * and the caller did not confirm. A copy is judged by where its NEW rows
- * land (copyDiff): copies take the destination's share, never the source's.
+ * throws TreeVisibilityError when a workspace would start or stop reading
+ * something and the caller did not confirm. A copy is judged by where its
+ * NEW rows land (copyDiff): copies take the destination's grants, never the
+ * source's.
  */
 import { sql } from 'drizzle-orm';
 import { db } from '@mantle/db';
-import { TREE_KIND_SPECS, type TreeShareLevel } from '@mantle/client-types/tree';
-import { effectiveLevel } from '@mantle/content-core/tree';
-import type { AccessLevel } from '@mantle/client-types';
 import {
   copyDiff,
   moveFolderDiff,
   moveItemsDiff,
+  newItemDiff,
   NO_CHANGE,
   TreeVisibilityError,
   type VisibilityDiff,
@@ -95,21 +94,14 @@ export async function guardFolderCopyTo(
   return check(await copyDiff(ownerId, { folder }, destParentPath), opts);
 }
 
-/** A NEW file (created or uploaded, at the admin level) in the folder at
- *  `destPath`: read at the folder's share if it has one. */
+/** A NEW file (created or uploaded) in the folder at `destPath`: it takes
+ *  the folder's grants and home (S6), so every workspace other than Admin
+ *  that reads the folder is named ("This will also be visible to: ..."). */
 export async function guardNewFileIn(
   ownerId: string,
   destPath: string,
   title: string,
   opts: ConfirmOpts,
 ): Promise<VisibilityDiff> {
-  const [row] = (await db.execute(sql`
-    select mantle_inherited_level(${ownerId}::uuid, ${destPath}::ltree,
-                                  ${TREE_KIND_SPECS.files.nodeType}::node_type) as share`)) as unknown as Array<{
-    share: TreeShareLevel | null;
-  }>;
-  const from: AccessLevel = 'admin';
-  const to = effectiveLevel(from, row?.share ?? null);
-  if (to === from) return NO_CHANGE;
-  return check({ changes: [{ id: '', title, from, to }], total: 1 }, opts);
+  return check(await newItemDiff(db, ownerId, 'files', destPath, title), opts);
 }

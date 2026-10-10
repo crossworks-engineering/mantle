@@ -97,30 +97,10 @@ export const LEVEL_READ_ALLOWLIST = {
     phase: 'W5b2',
     why: 'public: links follow the level (served list, 8.1)',
   },
-  'packages/content/src/tree/files-guard.ts': {
-    lines: 3,
-    phase: 'W5b2',
-    why: 'display: new file visibility confirm',
-  },
-  'packages/content/src/tree/page-guard.ts': {
-    lines: 11,
-    phase: 'W5b2',
-    why: 'display: new page visibility confirm',
-  },
-  'packages/content/src/tree/read.ts': {
-    lines: 25,
-    phase: 'W5b2',
-    why: 'display: tree levels and the level filter',
-  },
   'packages/content/src/tree/share-drift.ts': {
     lines: 16,
     phase: 'W5b2',
     why: 'writer: nightly inherited/embedded repair the bridge depends on',
-  },
-  'packages/content/src/tree/visibility.ts': {
-    lines: 29,
-    phase: 'W5b2',
-    why: 'display: Access panel visibility previews',
   },
   'packages/content/src/tree/write.ts': { lines: 4, phase: 'W5b2', why: 'writer: setFolderShare' },
   'packages/db/src/grant-reads.ts': {

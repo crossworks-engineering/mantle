@@ -1,9 +1,11 @@
 /**
  * POST /api/pages/:id/move (folder phase 7) against a real, migrated
  * Postgres: files a page in a folder through the tree's item move, reads
- * the deprecated `parentId` as "the same folder as that page", and refuses
- * a page as its own neighbour. (A move into a shared folder asked first
- * until W5b2; folder shares are gone.) Only the owner check is stubbed. Seeds its own rows under the shared test anchor and removes them.
+ * the deprecated `parentId` as "the same folder as that page", refuses a
+ * page as its own neighbour, and answers 409 `visibility` with the list
+ * for a move into a folder another workspace reads until confirmed (W5b2:
+ * the workspaces it would reach). Only the owner check is stubbed. On a
+ * scratch brain the workspaces migration made live.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run move-route.db.test
  */
 import { randomUUID } from 'node:crypto';
@@ -15,8 +17,10 @@ const h = vi.hoisted(() => ({ owner: '' }));
 vi.mock('@/lib/auth', () => ({ getOwnerOr401: vi.fn(async () => ({ id: h.owner })) }));
 
 describe.skipIf(!URL)('POST /api/pages/:id/move, on Postgres', () => {
-  type Db = typeof import('@mantle/db');
-  let m: Db;
+  type Ts = typeof import('@mantle/db/test-support');
+  let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
+  let m: typeof import('@mantle/db');
+  const S = randomUUID();
   let route: typeof import('./route');
   let tree: typeof import('@mantle/content/tree');
   let pages: typeof import('@mantle/content/pages');
@@ -44,30 +48,44 @@ describe.skipIf(!URL)('POST /api/pages/:id/move, on Postgres', () => {
     )[0]?.path;
 
   beforeAll(async () => {
-    process.env.DATABASE_URL = URL;
+    const ts: Ts = await import('@mantle/db/test-support');
+    scratch = await ts.createMigratedScratchDatabase(URL!);
+    process.env.DATABASE_URL = scratch.url;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('@mantle/db');
     route = await import('./route');
     tree = await import('@mantle/content/tree');
     pages = await import('@mantle/content/pages');
     sqlTag = (await import('drizzle-orm')).sql;
-    const { ensureTestAnchor } = await import('@mantle/db/test-support');
-    const admin = (m.systemDb as unknown as { $client: Parameters<Db['ensureViewerRoles']>[0] })
-      .$client;
-    await m.ensureViewerRoles(admin, process.env.MANTLE_MASTER_KEY);
-    h.owner = await ensureTestAnchor(admin);
+    h.owner = randomUUID();
+    await m.systemDb.execute(sqlTag`
+      insert into auth.users (id, email, password_hash, is_owner, role)
+      values (${h.owner}, ${`${label}@example.invalid`}, 'x', true, 'admin')`);
+    await m.systemDb.execute(sqlTag`
+      insert into spaces (id, kind, login_id) values (${h.owner}, 'brain', ${h.owner})
+      on conflict (id) do nothing`);
+    await m.systemDb.execute(sqlTag`select * from mantle_ws_migrate()`);
+    await m.systemDb.execute(sqlTag`
+      insert into workspaces (id, owner_id, name) values (${S}, ${h.owner}, 'Sales')`);
     await tree.ensureKindRoot(h.owner, 'pages');
     plans = (await tree.createTreeFolder(h.owner, 'pages', { parentId: null, name: label })).id;
+    const s = await tree.createTreeFolder(h.owner, 'pages', {
+      parentId: null,
+      name: `${label} shared`,
+    });
+    shared = s.id;
+    await m.withSubtreeHeads(shared, [], async (tx) => {
+      await tx.execute(sqlTag`insert into item_grants (node_id, workspace_id)
+                              values (${shared}, ${S})`);
+    });
     ids.a = (await pages.createPage(h.owner, { title: 'A' })).id;
     ids.b = (await pages.createPage(h.owner, { title: 'B', folderId: plans })).id;
     ids.c = (await pages.createPage(h.owner, { title: 'C' })).id;
   }, 60_000);
 
   afterAll(async () => {
-    await m.systemDb.execute(sqlTag`
-      delete from nodes where owner_id = ${h.owner}
-         and (id in (${ids.a}, ${ids.b}, ${ids.c}, ${plans})
-              or path <@ ${`pages.${label}`}::ltree)`);
+    await m?.closeDb();
+    await scratch?.drop();
   });
 
   it('files the page in folderId, and answers the page with its folder', async () => {
@@ -90,5 +108,21 @@ describe.skipIf(!URL)('POST /api/pages/:id/move, on Postgres', () => {
     expect((await post(ids.c, { parentId: randomUUID() })).status).toBe(400);
     expect((await post(ids.c, {})).status).toBe(400);
     expect((await post(randomUUID(), { folderId: null })).status).toBe(404);
+  });
+
+  it('answers 409 visibility for a move into a folder Sales reads, then moves once confirmed', async () => {
+    const refused = await post(ids.c, { folderId: shared });
+    expect(refused.status).toBe(409);
+    const body = await refused.json();
+    expect(body).toMatchObject({
+      error: 'visibility',
+      total: 1,
+      changes: [{ id: ids.c, alsoVisibleTo: [{ wsId: S, name: 'Sales' }], removedFrom: [] }],
+    });
+    expect(await pathOf(ids.c)).toBe('pages');
+    const ok = await post(ids.c, { folderId: shared, confirm: true, seen: body.total });
+    expect(ok.status).toBe(200);
+    expect((await ok.json()).page).toMatchObject({ folderId: shared });
+    expect(await pathOf(ids.c)).toBe(`pages.${label}_shared`);
   });
 });

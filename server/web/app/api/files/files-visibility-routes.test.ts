@@ -23,7 +23,14 @@ vi.mock('@mantle/content/tree', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/content/tree')>();
   const refusal = () =>
     new actual.TreeVisibilityError({
-      changes: [{ id: FILE, title: 'payroll.xlsx', from: 'admin', to: 'client' }],
+      changes: [
+        {
+          id: FILE,
+          title: 'payroll.xlsx',
+          alsoVisibleTo: [{ wsId: FOLDER, name: 'Clients' }],
+          removedFrom: [],
+        },
+      ],
       total: 1,
     });
   const guard = vi.fn(async (..._args: unknown[]) => {

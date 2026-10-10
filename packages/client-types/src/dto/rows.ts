@@ -12,6 +12,7 @@
 
 import type { AppNav, AppOpenStat, AppTint } from '../app-nav';
 import type { AccessLevel } from './access';
+import type { ListChips } from './grants';
 
 // ── Row/DTO shapes moved from the server packages (jackdaw split P0) ─────────
 // Sources: @mantle/content, @mantle/email, @mantle/microsoft, @mantle/runtime/agent
@@ -154,6 +155,11 @@ export type PageListRow = PageRow & {
   childCount: number;
   parentTitle: string | null;
 };
+
+/** A row of GET /api/pages (and of /api/notes, on its note row): the item
+ *  with its workspace chips and link pill (W5b2 contract changes 5 and 14).
+ *  The caller's own private rows carry them too, empty. */
+export type PagesListRow = PageRow & ListChips;
 
 export type AppRow = {
   id: string;

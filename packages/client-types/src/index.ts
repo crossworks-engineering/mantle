@@ -216,6 +216,7 @@ export type {
   TreeSort,
   TreeVisibilityChange,
   TreeVisibilityRefusal,
+  TreeWorkspaceChange,
 } from './tree';
 // Types only; WORKSPACE_AREAS (runtime) is the `@mantle/client-types/dto/workspaces` subpath.
 export type {
@@ -260,4 +261,7 @@ export type {
   GrantWorkspaceRef,
   GrantsResponse,
   GrantsWriteResponse,
+  ListChips,
+  ListWorkspace,
+  ListWsEcho,
 } from './dto/grants';
