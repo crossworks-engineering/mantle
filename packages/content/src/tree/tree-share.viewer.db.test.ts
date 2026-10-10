@@ -431,10 +431,14 @@ describe.skipIf(!URL)('sharing a folder', () => {
 
     it('repairs a row left at a share its folders no longer give (share drift)', async () => {
       const stray = randomUUID();
-      await m.systemDb.execute(sqlTag`
-        insert into nodes (id, owner_id, type, title, path, data, tags)
-        values (${stray}, ${brain}, 'note', 'drifted', 'notes',
-                ${JSON.stringify({ content: 'x' })}::jsonb, '{}')`);
+      // Two more, so a batch size of 2 repairs in two transactions (L5).
+      const more = [randomUUID(), randomUUID()];
+      for (const id of [stray, ...more]) {
+        await m.systemDb.execute(sqlTag`
+          insert into nodes (id, owner_id, type, title, path, data, tags)
+          values (${id}, ${brain}, 'note', 'drifted', 'notes',
+                  ${JSON.stringify({ content: 'x' })}::jsonb, '{}')`);
+      }
       // The repair is brain-wide: embeds-follow.viewer.db.test.ts forges
       // and repairs drift too, under the same lock, so neither repairs the
       // other's forgery between its dry run and its checks.
@@ -443,17 +447,20 @@ describe.skipIf(!URL)('sharing a folder', () => {
         // Forged drift (what a race could leave): the trigger sets it on
         // insert and on path changes only.
         await m.systemDb.execute(
-          sqlTag`update nodes set inherited_level = 'client' where id = ${stray}`,
+          sqlTag`update nodes set inherited_level = 'client'
+                  where id = any(${`{${[stray, ...more].join(',')}}`}::uuid[])`,
         );
         const dry = await tree.repairShareDrift({ dryRun: true });
-        expect(dry.drifted).toBeGreaterThanOrEqual(1);
+        expect(dry.drifted).toBeGreaterThanOrEqual(3);
         expect(dry.repaired).toBe(0);
         expect(await inherited(stray)).toBe('client');
-        const done = await tree.repairShareDrift();
-        expect(done.repaired).toBeGreaterThanOrEqual(1);
-        expect(await inherited(stray)).toBeNull();
+        const done = await tree.repairShareDrift({ batchSize: 2 });
+        expect(done.repaired).toBeGreaterThanOrEqual(3);
+        for (const id of [stray, ...more]) expect(await inherited(id)).toBeNull();
       });
-      await m.systemDb.execute(sqlTag`delete from nodes where id = ${stray}`);
+      await m.systemDb.execute(
+        sqlTag`delete from nodes where id = any(${`{${[stray, ...more].join(',')}}`}::uuid[])`,
+      );
     });
 
     it('checks a share before the rest of a combined update writes anything', async () => {

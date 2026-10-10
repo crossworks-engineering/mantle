@@ -174,7 +174,7 @@ export async function namesClientSourced(
       if (exported) return true;
     }
     return false;
-  });
+  }, 'client-sourced-check');
 }
 
 /**
@@ -215,7 +215,7 @@ export async function clientSourcedAmong(
       const exported = await clientAppExportsAmong(ownerId, list);
       for (const r of [...tasks, ...written, ...copied, ...exported]) out.add(r.id);
     }
-  });
+  }, 'client-sourced-check');
   return out;
 }
 
@@ -297,18 +297,20 @@ export function conversationTaintKey(
 export async function loadConversationTaint(ownerId: string, key: string): Promise<TurnTaint> {
   const taint: TurnTaint = { clientSourced: false, conversation: { ownerId, key } };
   try {
-    const [row] = await asSystem(() =>
-      db
-        .select({ via: conversationTaints.via })
-        .from(conversationTaints)
-        .where(
-          and(
-            eq(conversationTaints.ownerId, ownerId),
-            eq(conversationTaints.conversationKey, key),
-            sql`${conversationTaints.taintedAt} > now() - make_interval(hours => ${CONVERSATION_TAINT_HOURS})`,
-          ),
-        )
-        .limit(1),
+    const [row] = await asSystem(
+      () =>
+        db
+          .select({ via: conversationTaints.via })
+          .from(conversationTaints)
+          .where(
+            and(
+              eq(conversationTaints.ownerId, ownerId),
+              eq(conversationTaints.conversationKey, key),
+              sql`${conversationTaints.taintedAt} > now() - make_interval(hours => ${CONVERSATION_TAINT_HOURS})`,
+            ),
+          )
+          .limit(1),
+      'client-sourced-check',
     );
     if (row) {
       taint.clientSourced = true;
@@ -330,14 +332,16 @@ async function keepConversationTaint(
   via: string,
 ): Promise<void> {
   try {
-    await asSystem(() =>
-      db
-        .insert(conversationTaints)
-        .values({ ownerId: conv.ownerId, conversationKey: conv.key, via })
-        .onConflictDoUpdate({
-          target: [conversationTaints.ownerId, conversationTaints.conversationKey],
-          set: { via, taintedAt: sql`now()` },
-        }),
+    await asSystem(
+      () =>
+        db
+          .insert(conversationTaints)
+          .values({ ownerId: conv.ownerId, conversationKey: conv.key, via })
+          .onConflictDoUpdate({
+            target: [conversationTaints.ownerId, conversationTaints.conversationKey],
+            set: { via, taintedAt: sql`now()` },
+          }),
+      'client-sourced-check',
     );
   } catch (err) {
     console.warn('[client-sourced] could not keep the conversation mark:', err);
@@ -384,7 +388,7 @@ export async function markCreatedClientSourced(
           .returning({ id: clientSourcedNodes.nodeId });
         marked += rows.length;
       }
-    });
+    }, 'client-sourced-check');
   } catch (err) {
     console.warn('[client-sourced] could not mark created nodes:', err);
   }

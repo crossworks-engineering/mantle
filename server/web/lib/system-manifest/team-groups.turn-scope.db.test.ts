@@ -1,7 +1,7 @@
 /**
  * Every tool of the Team assistant's groups, run in its turn scope (workspaces
- * W4b): the workspace role with the scope [Team], each query its own short
- * transaction. None may fail on a missing read rule (permission denied), ask
+ * W4b) through dispatchTool, as a turn calls it: the workspace role with the
+ * scope [Team], each query its own short transaction. None may fail on a missing read rule (permission denied), ask
  * for a viewer level (a workspace scope has none), or lose the scope. The
  * team-level groups (team-read, formulas-eval) and what the run-time cap keeps
  * of team-read-admin (nothing: it is adminOnly) are swept. Also the whole
@@ -25,6 +25,20 @@ vi.mock('@mantle/embeddings', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   embed: vi.fn(async () => h.vec),
 }));
+// dispatchTool turns a thrown error into its message; drizzle's message is
+// "Failed query: …" and the database's reason is on its cause. The sweep
+// needs the reason (permission denied, a lost scope), so it is appended.
+vi.mock('@mantle/std', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@mantle/std')>();
+  return {
+    ...actual,
+    errorMessage: (err: unknown) => {
+      const text = actual.errorMessage(err);
+      const cause = (err as { cause?: { message?: string; name?: string } } | null)?.cause;
+      return cause?.message ? `${text} [cause ${cause.name ?? ''}: ${cause.message}]` : text;
+    },
+  };
+});
 
 type Row = Record<string, unknown>;
 
@@ -104,7 +118,7 @@ describe.skipIf(!URL)('the Team assistant’s tools in its turn scope', () => {
   });
 
   it('no tool fails on a read rule, a level question or a lost scope', async () => {
-    const { BUILTIN_TOOLS } = await import('@mantle/tools');
+    const { BUILTIN_TOOLS, dispatchTool } = await import('@mantle/tools');
     const none = '00000000-0000-4000-8000-000000000000';
     const page = ids.page ?? none;
     const table = ids.table ?? none;
@@ -144,12 +158,22 @@ describe.skipIf(!URL)('the Team assistant’s tools in its turn scope', () => {
       // Writes on the member's behalf leave the scope (asSystem): the team
       // turn tests cover them.
       if (slug === 'team_request_create') continue;
-      const tool = BUILTIN_TOOLS.find((t) => t.slug === slug);
-      if (!tool) continue;
+      const def = BUILTIN_TOOLS.find((t) => t.slug === slug);
+      if (!def) continue;
+      // Through dispatchTool, as a turn calls it: the ownerOnly and adminOnly
+      // gates, the preconditions and the handler, in the turn scope.
+      const row = {
+        slug,
+        name: def.name,
+        description: def.description,
+        handler: { kind: 'builtin', ref: slug },
+        inputSchema: def.inputSchema,
+        requiresConfirm: false,
+      } as unknown as import('@mantle/db').Tool;
       let outcome: string;
       try {
         const res = await m.withTurnScope(scope(), () =>
-          tool.handler(inputs[slug] ?? {}, {
+          dispatchTool(row, inputs[slug] ?? {}, {
             ownerId: owner,
             surface: { kind: 'team', loginId: member, privateReads: false },
           }),
@@ -157,9 +181,16 @@ describe.skipIf(!URL)('the Team assistant’s tools in its turn scope', () => {
         outcome = res.ok ? 'ok' : `error: ${res.error}`;
       } catch (err) {
         const cause = (err as { cause?: { message?: string } }).cause?.message ?? '';
-        outcome = `threw: ${cause || (err as Error).message}`;
+        outcome = `threw: ${(err as Error).name} ${cause || (err as Error).message}`;
       }
-      if (/permission denied|no viewer level|outside its turn scope/i.test(outcome)) {
+      // A missing read rule, a level question, a lost scope, a refused
+      // scope change, an unscoped hand-off, an unnamed exit to the system
+      // pool: each is a tool that does not work in the Team turn.
+      if (
+        /permission denied|no viewer level|outside its turn scope|AgentWorkspaceError|another workspace|already inside another scope|would run unscoped|must carry that scope|allowlisted reason|ScopeLostError|TurnScopeExitError/i.test(
+          outcome,
+        )
+      ) {
         bad.push(`${slug}: ${outcome.slice(0, 160)}`);
       }
       report.push(`${slug}: ${outcome.slice(0, 110)}`);

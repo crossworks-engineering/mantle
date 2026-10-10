@@ -551,7 +551,7 @@ export const RETIRED_BUILTIN_TOOL_SLUGS: readonly string[] = [
  * secrets, calendar, the graph, settings, keys, users, maintenance, runs,
  * replay, export, linked brains, Telegram). The seed and the boot reconcile
  * set tool_groups.admin_only from this list (only ever on: never cleared by
- * code); migration 0252 backfilled the same slugs (manifest.test.ts).
+ * code); migration 0254 backfilled the same slugs (manifest.test.ts).
  */
 export const MANIFEST_ADMIN_ONLY_GROUPS: readonly string[] = [
   'email',

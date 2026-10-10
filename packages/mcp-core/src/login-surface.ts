@@ -40,6 +40,7 @@ import {
   MY_SPACE_WRITE_TOOL_SLUGS,
   dispatchTool,
   connectorMarkState,
+  loginConnectorRefused,
   getBuiltin,
   isBuiltinReadOnly,
   listLoginConnectorTools,
@@ -465,6 +466,21 @@ export async function callLoginTool(
             text: 'Error: This connector tool writes, and your MCP connection is read-only.',
           },
         ],
+        isError: true,
+      };
+    }
+    // The connector as a workspace resource (W4b fix round 1, M3): it must
+    // be one of the login's workspaces' resources, and a write needs that
+    // resource's Write tick in a workspace the login moderates.
+    const refused = await loginConnectorRefused(
+      caller.anchorId,
+      caller.loginId,
+      (row.handler as { group: string }).group,
+      write,
+    );
+    if (refused) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${refused}` }],
         isError: true,
       };
     }

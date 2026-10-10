@@ -65,7 +65,10 @@ const HTTP_TIMEOUT_MS_DEFAULT = 15_000;
  * Tools that read the owner's own history or the run machinery (workspaces
  * R3, W4b): adminOnly whatever group grants them. In a workspace turn scope
  * that does not hold the Admin workspace they are refused, as every
- * ownerOnly tool is.
+ * ownerOnly tool is. Matched on the row's slug AND its builtin handler ref,
+ * so a row that renames a builtin is still caught. The heartbeat list and
+ * fire tools reach every heartbeat of the brain: a heartbeat of another
+ * workspace changes only its own row (heartbeats/tools.ts).
  */
 export const ADMIN_ONLY_TOOL_SLUGS: ReadonlySet<string> = new Set([
   'replay_window',
@@ -76,6 +79,8 @@ export const ADMIN_ONLY_TOOL_SLUGS: ReadonlySet<string> = new Set([
   'run_state',
   'run_cancel',
   'run_audit',
+  'heartbeat_list',
+  'heartbeat_fire',
 ]);
 
 /** The refusal of an adminOnly tool outside the Admin workspace. */
@@ -107,7 +112,9 @@ export async function dispatchTool(
     // adminOnly (W4b, plan 5.4): an ownerOnly or adminOnly tool runs in a
     // workspace turn scope only when that scope holds the Admin workspace.
     if (
-      (def?.ownerOnly || ADMIN_ONLY_TOOL_SLUGS.has(tool.slug)) &&
+      (def?.ownerOnly ||
+        ADMIN_ONLY_TOOL_SLUGS.has(tool.slug) ||
+        ADMIN_ONLY_TOOL_SLUGS.has(h.ref)) &&
       currentWorkspaceScope() &&
       !(await scopeHoldsAdmin())
     ) {
@@ -282,12 +289,14 @@ async function dispatchMcp(
   // client-level call (an External access tool in a client app) reads tool
   // groups at client level only, so the connector group, whatever its level,
   // would look missing. The caller learns nothing from it but the result.
-  const [group] = await asSystem(() =>
-    db
-      .select()
-      .from(toolGroups)
-      .where(and(eq(toolGroups.ownerId, ctx.ownerId), eq(toolGroups.slug, h.group)))
-      .limit(1),
+  const [group] = await asSystem(
+    () =>
+      db
+        .select()
+        .from(toolGroups)
+        .where(and(eq(toolGroups.ownerId, ctx.ownerId), eq(toolGroups.slug, h.group)))
+        .limit(1),
+    'connector-binding',
   );
   const mcp = group?.integration?.mcp;
   if (!group || !mcp) {
@@ -319,8 +328,9 @@ async function dispatchMcp(
     // (external-access.ts) runs under the team role, and the token refresh failed
     // there. Nothing of the brain's content is read here: the result comes
     // from the remote server, and the call stays on the caller's surface.
-    const res = await asSystem(() =>
-      mcpCallRemoteTool(ctx.ownerId, h.group, mcp, h.toolName, input),
+    const res = await asSystem(
+      () => mcpCallRemoteTool(ctx.ownerId, h.group, mcp, h.toolName, input),
+      'connector-call',
     );
     const scrub = (s: string) => scrubSecrets(s, res.secrets);
     let text = scrub(res.text);
@@ -550,12 +560,14 @@ async function resolveOauthBinding(
 ): Promise<OauthBinding | { error: string }> {
   // asSystem: like an MCP connector's binding, the group's auth config is
   // infrastructure; a client-level caller may not read the group row.
-  const [group] = await asSystem(() =>
-    db
-      .select()
-      .from(toolGroups)
-      .where(and(eq(toolGroups.ownerId, ownerId), eq(toolGroups.slug, slug)))
-      .limit(1),
+  const [group] = await asSystem(
+    () =>
+      db
+        .select()
+        .from(toolGroups)
+        .where(and(eq(toolGroups.ownerId, ownerId), eq(toolGroups.slug, slug)))
+        .limit(1),
+    'connector-binding',
   );
   const config = group?.integration?.oauth2;
   if (!group || !config) {

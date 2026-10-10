@@ -1,6 +1,6 @@
 /**
  * Workspaces W4b: an assistant turn's scope (withTurnScope) on a scratch
- * database of its own, migrated and with the workspaces live (0251, 0252).
+ * database of its own, migrated and with the workspaces live (0251, 0252) and the turn rules (0254).
  * Checked:
  *
  *  - every query runs on the workspace role, in its own short transaction
@@ -15,7 +15,10 @@
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/turn-scope.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { sql } from 'drizzle-orm';
+import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createMigratedScratchDatabase } from './test-support';
 
@@ -111,10 +114,8 @@ describe.skipIf(!URL)('assistant turn scope (W4b)', () => {
         sql`select current_user as u, txid_current()::text as x`,
       )) as unknown as { u: string; x: string }[];
       // Between two queries no transaction of this role is left open.
-      const idle = await m.asSystem(() =>
-        m.db.execute(sql`select count(*)::int as n from pg_stat_activity
-          where usename = 'mantle_view_user' and state like 'idle in transaction%'`),
-      );
+      const idle = await m.systemDb.execute(sql`select count(*)::int as n from pg_stat_activity
+          where usename = 'mantle_view_user' and state like 'idle in transaction%'`);
       const b = (await m.db.execute(sql`select txid_current()::text as x`)) as unknown as {
         x: string;
       }[];
@@ -237,4 +238,56 @@ describe.skipIf(!URL)('assistant turn scope (W4b)', () => {
     // No login: nothing (a row with no login is Admin's).
     expect(await read(null)).toEqual([]);
   });
+
+  it('0254 takes its eight locks together, short and retried: a busy table never stalls the rest', async () => {
+    // Re-run 0254 (idempotent) while a reader holds runs for 4 s. The lock
+    // statement waits at most 3 s, rolls back what it took, and retries;
+    // meanwhile a reader of agents (locked before runs) is never held up
+    // for the whole wait.
+    const file = fileURLToPath(
+      new globalThis.URL('../migrations/0254_workspaces_turns.sql', import.meta.url),
+    );
+    const text = readFileSync(file, 'utf8').split('--> statement-breakpoint').join('\n');
+    const notices: string[] = [];
+    const a = postgres(scratch.url, { max: 1, prepare: false });
+    const b = postgres(scratch.url, {
+      max: 1,
+      prepare: false,
+      onnotice: (n) => notices.push(String(n.message)),
+    });
+    const c = postgres(scratch.url, { max: 1, prepare: false });
+    try {
+      let release!: () => void;
+      const held = new Promise<void>((r) => (release = r));
+      let locked!: () => void;
+      const didLock = new Promise<void>((r) => (locked = r));
+      const holder = a.begin(async (tx) => {
+        await tx`lock table runs in access share mode`;
+        locked();
+        await held;
+      });
+      await didLock;
+      const t0 = Date.now();
+      const migrate = b.begin((tx) => tx.unsafe(text));
+      // A reader of agents while the migration waits on runs: it may wait
+      // for one short attempt, never for the whole hold.
+      await new Promise((r) => setTimeout(r, 500));
+      const r0 = Date.now();
+      await c`select count(*) from agents`;
+      const readerWait = Date.now() - r0;
+      await new Promise((r) => setTimeout(r, 3500));
+      release();
+      await holder;
+      await migrate;
+      expect(Date.now() - t0).toBeGreaterThanOrEqual(3000);
+      expect(readerWait).toBeLessThan(3500);
+      expect(notices.some((n) => /tables busy \(attempt 1\)/.test(n))).toBe(true);
+      // Still in place after the re-run.
+      const [col] = await c`select count(*)::int as n from information_schema.columns
+        where table_name = 'tool_groups' and column_name = 'admin_only'`;
+      expect(col!.n).toBe(1);
+    } finally {
+      await Promise.all([a.end(), b.end(), c.end()]);
+    }
+  }, 60_000);
 });

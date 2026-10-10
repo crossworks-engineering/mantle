@@ -34,11 +34,23 @@
  */
 
 import { and, eq } from 'drizzle-orm';
-import { db, heartbeats, type Heartbeat } from '@mantle/db';
+import { asSystem, db, heartbeats, type Heartbeat } from '@mantle/db';
+import { currentWorkspaceScope } from '@mantle/db/viewer';
 import { registerBuiltin, type BuiltinToolDef, type ToolHandlerResult } from '@mantle/tools';
 import { currentHeartbeat, MAX_HEARTBEAT_DEPTH } from './context';
 import { forceFire } from './fire';
 import { computeNextFireAt } from './schedule';
+
+/**
+ * The heartbeats table is the owner's configuration: the workspace role
+ * reads none of it. A heartbeat of a non-Admin workspace (its fire runs in a
+ * turn scope, W4b fix round 1) reaches only the row of the heartbeat that is
+ * firing (resolveTargetHeartbeat refuses any other), on the system pool with
+ * a named reason. Outside a workspace scope: as before.
+ */
+function heartbeatRow<T>(fn: () => Promise<T>): Promise<T> {
+  return currentWorkspaceScope() ? asSystem(fn, 'heartbeat-own-row') : fn();
+}
 
 async function loadOwnedHeartbeatById(ownerId: string, id: string): Promise<Heartbeat | null> {
   const [row] = await db
@@ -71,6 +83,19 @@ async function resolveTargetHeartbeat(
   ownerId: string,
 ): Promise<{ ok: true; hb: Heartbeat; via: 'slug' | 'als' } | { ok: false; error: string }> {
   const slugInput = typeof input.slug === 'string' && input.slug.trim() ? input.slug.trim() : null;
+  if (currentWorkspaceScope()) {
+    // A workspace turn: only the heartbeat that is firing, never another.
+    const firing = currentHeartbeat();
+    if (!firing || (slugInput && slugInput !== firing.slug)) {
+      return {
+        ok: false,
+        error: 'In this workspace a heartbeat tool changes only the heartbeat that is firing.',
+      };
+    }
+    const hb = await heartbeatRow(() => loadOwnedHeartbeatById(ownerId, firing.heartbeatId));
+    if (!hb) return { ok: false, error: 'heartbeat row not found (race?)' };
+    return { ok: true, hb, via: 'als' };
+  }
   if (slugInput) {
     const hb = await loadOwnedHeartbeatBySlug(ownerId, slugInput);
     if (!hb) return { ok: false, error: `heartbeat '${slugInput}' not found for this owner` };
@@ -117,15 +142,17 @@ const heartbeat_complete: BuiltinToolDef = {
       return { ok: false, error: target.error };
     }
     const reason = typeof input.reason === 'string' ? input.reason : 'completed_by_agent';
-    await db
-      .update(heartbeats)
-      .set({
-        status: 'completed',
-        completionReason: `tool_call:${reason}`,
-        nextFireAt: null,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(heartbeats.id, target.hb.id), eq(heartbeats.ownerId, ctx.ownerId)));
+    await heartbeatRow(() =>
+      db
+        .update(heartbeats)
+        .set({
+          status: 'completed',
+          completionReason: `tool_call:${reason}`,
+          nextFireAt: null,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(heartbeats.id, target.hb.id), eq(heartbeats.ownerId, ctx.ownerId))),
+    );
     ctx.step?.setMeta({ branch: 'completed', via: target.via, heartbeat_id: target.hb.id, reason });
     return {
       ok: true,
@@ -173,10 +200,12 @@ const heartbeat_snooze: BuiltinToolDef = {
       ctx.step?.setMeta({ branch: 'no_target', error: target.error });
       return { ok: false, error: target.error };
     }
-    await db
-      .update(heartbeats)
-      .set({ nextFireAt: next, updatedAt: new Date() })
-      .where(and(eq(heartbeats.id, target.hb.id), eq(heartbeats.ownerId, ctx.ownerId)));
+    await heartbeatRow(() =>
+      db
+        .update(heartbeats)
+        .set({ nextFireAt: next, updatedAt: new Date() })
+        .where(and(eq(heartbeats.id, target.hb.id), eq(heartbeats.ownerId, ctx.ownerId))),
+    );
     ctx.step?.setMeta({
       branch: 'snoozed',
       via: target.via,
@@ -233,10 +262,12 @@ const heartbeat_update_state: BuiltinToolDef = {
       if (v === null) delete next[k];
       else next[k] = v;
     }
-    await db
-      .update(heartbeats)
-      .set({ state: next, updatedAt: new Date() })
-      .where(and(eq(heartbeats.id, target.hb.id), eq(heartbeats.ownerId, ctx.ownerId)));
+    await heartbeatRow(() =>
+      db
+        .update(heartbeats)
+        .set({ state: next, updatedAt: new Date() })
+        .where(and(eq(heartbeats.id, target.hb.id), eq(heartbeats.ownerId, ctx.ownerId))),
+    );
     ctx.step?.setMeta({
       branch: 'updated',
       via: target.via,

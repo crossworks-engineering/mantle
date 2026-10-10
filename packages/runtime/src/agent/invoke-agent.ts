@@ -48,8 +48,8 @@ import {
   effectiveToolSlugs,
 } from './skills';
 import type { ChatMessage } from './messages';
-import { agentLevel } from './agent-viewer';
-import { currentViewerLevel, levelsMeet } from '@mantle/db/viewer';
+import { agentLevel, agentTurnScoped, surfaceLoginId, withAgentScope } from './agent-viewer';
+import { currentViewerLevel, currentWorkspaceScope, levelsMeet } from '@mantle/db/viewer';
 
 /** A delegated child's thinking loop args. Inherit = the forwarded budget
  *  alone (no effort), which is also what the child hands on to its own
@@ -104,16 +104,46 @@ export const invokeAgent: AgentInvoker = async ({
   // a client-level caller never runs a public agent and a public-level
   // caller never a client one. Refused here, before any trace or LLM work
   // (runToolLoop would refuse too, with ViewerLevelConflictError).
-  const callerLevel = currentViewerLevel();
-  const targetLevel = agentLevel(target);
-  if (!levelsMeet(callerLevel, targetLevel)) {
+  // In a workspace turn scope there is no level (W4b): the scope decides.
+  const openScope = currentWorkspaceScope();
+  if (!openScope) {
+    const callerLevel = currentViewerLevel();
+    const targetLevel = agentLevel(target);
+    if (!levelsMeet(callerLevel, targetLevel)) {
+      return {
+        ok: false,
+        error:
+          `agent '${agentSlug}' is ${targetLevel}-level and this turn runs at ${callerLevel}: ` +
+          'client and public read different items, so it cannot run here',
+      };
+    }
+  }
+
+  // The child runs in ITS workspace (W4b fix round 1, M2): an assistant of a
+  // workspace other than Admin (the Team assistant) in a turn scope of it; a
+  // helper (no workspace) inside a turn scope in the caller's scope. Inside a
+  // workspace turn, an assistant of any other workspace (the Admin one
+  // included) is refused here, before any trace or LLM work.
+  let scoped: boolean;
+  try {
+    scoped = await agentTurnScoped(target);
+  } catch (err) {
+    return { ok: false, error: `agent '${agentSlug}': ${(err as Error).message}` };
+  }
+  if (
+    openScope &&
+    target.workspaceId &&
+    !(openScope.ws.length === 1 && openScope.ws[0] === target.workspaceId)
+  ) {
     return {
       ok: false,
-      error:
-        `agent '${agentSlug}' is ${targetLevel}-level and this turn runs at ${callerLevel}: ` +
-        'client and public read different items, so it cannot run here',
+      error: `agent '${agentSlug}' answers in another workspace, so it cannot run inside this turn`,
     };
   }
+  const childWorkspaceId = scoped || openScope ? (target.workspaceId ?? null) : null;
+  const childLoginId = surfaceLoginId(surface);
+  const inChildScope = <T>(fn: () => Promise<T>): Promise<T> =>
+    childWorkspaceId ? withAgentScope(target, fn, { loginId: childLoginId }) : fn();
 
   // Depths past the base cap are legal ONLY along a declared edge to a
   // TERMINAL specialist (no delegates of its own) — mirrors the dispatch
@@ -184,13 +214,16 @@ export const invokeAgent: AgentInvoker = async ({
     { role: 'system', content: systemPrompt },
     { role: 'user', content: prompt },
   ];
-  const groupTools = await resolveAgentToolGroups(
-    ownerId,
-    (target as Agent).toolGroupSlugs ?? [],
-    agentLevel(target),
-  );
-  const allowedToolSlugs = effectiveToolSlugs(groupTools);
-  const allowedTools = await resolveAgentTools(ownerId, allowedToolSlugs);
+  // Resolved in the child's scope: a workspace assistant's adminOnly groups
+  // drop out there, and its tool rows are read on the workspace role.
+  const allowedTools = await inChildScope(async () => {
+    const groupTools = await resolveAgentToolGroups(
+      ownerId,
+      (target as Agent).toolGroupSlugs ?? [],
+      agentLevel(target),
+    );
+    return resolveAgentTools(ownerId, effectiveToolSlugs(groupTools));
+  });
 
   // Open the child's trace inside a startTrace block so the child's
   // own LLM calls and tool steps roll up here, not into the parent's
@@ -248,6 +281,8 @@ export const invokeAgent: AgentInvoker = async ({
         agentId: target.id,
         agentSlug: target.slug,
         agentLevel: agentLevel(target),
+        // The loop re-enters the child's workspace (withAgentScope).
+        ...(childWorkspaceId ? { agentWorkspaceId: childWorkspaceId } : {}),
         agentDepth: depth,
         delegateTo: (mc?.delegate_to ?? []) as readonly string[],
         resultHandling: mc?.result_handling ?? null,

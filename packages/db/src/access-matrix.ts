@@ -284,7 +284,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   // (migration 0187, narrowed by 0189: client and public are siblings, not
   // a chain): the team role keeps every row, because a team-level agent may
   // still delegate to an admin agent.
-  // The workspace role (W4b, 0252): an assistant of a workspace in the scope
+  // The workspace role (W4b, 0254): an assistant of a workspace in the scope
   // or a helper; tool groups never adminOnly outside Admin, connectors only
   // as a resource of a workspace in the scope.
   {
@@ -348,7 +348,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   // extract queue on the admin pool, read by admin routes only.
   none('public.provider_alerts', 'system'),
   none('public.trace_steps', 'system'),
-  // The per-login stores (R3, W4b 0252): the workspace role reads its own
+  // The per-login stores (R3, W4b 0254): the workspace role reads its own
   // login's rows of the workspaces in its scope; the level roles none.
   { ...none('public.tool_results', 'system'), user: 'all' },
   none('public.tool_result_chunks', 'system'),

@@ -25,8 +25,41 @@
 -- group runs only in a turn whose scope holds the Admin workspace.
 --
 -- Nothing here writes a grant, starts LLM work or notifies the extractor.
+--
+-- Locks: the column, the policies and ENABLE ROW LEVEL SECURITY each take an
+-- ACCESS EXCLUSIVE lock, on eight tables, some of them busy (messages, tool
+-- results, runs). Waiting for one of them while holding the others would
+-- stall every reader of the ones already held. So all eight are taken up
+-- front in ONE statement with a short lock_timeout (3 s): if any is busy the
+-- attempt rolls back to its savepoint, which releases what it took, waits
+-- and tries again (up to 20 times). Once all eight are held the DDL below
+-- runs in milliseconds and the transaction commits.
 
-SET LOCAL lock_timeout = '30s';
+SET LOCAL lock_timeout = '3s';
+--> statement-breakpoint
+DO $$
+DECLARE
+  attempt int := 0;
+BEGIN
+  LOOP
+    attempt := attempt + 1;
+    BEGIN
+      LOCK TABLE "public"."tool_groups", "public"."agents", "public"."assistant_messages",
+                 "public"."chat_threads", "public"."tool_results", "public"."runs",
+                 "public"."run_items", "public"."pending_tool_calls"
+        IN ACCESS EXCLUSIVE MODE;
+      EXIT;
+    EXCEPTION WHEN lock_not_available THEN
+      IF attempt >= 20 THEN
+        RAISE EXCEPTION '0254: the tables stayed busy for 20 attempts; run the migration again at a quieter time'
+          USING ERRCODE = 'lock_not_available';
+      END IF;
+      RAISE NOTICE '0254: tables busy (attempt %), retrying', attempt;
+      PERFORM pg_sleep(least(attempt, 5));
+    END;
+  END LOOP;
+END
+$$;
 --> statement-breakpoint
 
 ALTER TABLE "public"."tool_groups" ADD COLUMN IF NOT EXISTS "admin_only" boolean NOT NULL DEFAULT false;

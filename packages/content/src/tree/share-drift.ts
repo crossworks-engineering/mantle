@@ -21,6 +21,19 @@ import { db, withDeadlockRetry, withHeads } from '@mantle/db';
 
 type Exec = Pick<typeof db, 'execute'>;
 
+/** How many rows (or edge ends) one repair transaction takes (W4b fix round
+ *  1, L5): each batch is its own short transaction with its own heads, so a
+ *  big repair never holds every head and row lock of the brain at once. */
+export const REPAIR_BATCH = 500;
+
+/** `ids` in batches of at most `size`. */
+export function repairBatches<T>(ids: readonly T[], size = REPAIR_BATCH): T[][] {
+  const step = Math.max(1, Math.floor(size));
+  const out: T[][] = [];
+  for (let i = 0; i < ids.length; i += step) out.push(ids.slice(i, i + step));
+  return out;
+}
+
 /** Run a repair write with the heads of `ids` first (the level bridge,
  *  0251, rewrites the grants of every row whose level it changes; what
  *  follows from it, the bridge locks itself). Nothing to do: no write. */
@@ -28,6 +41,20 @@ async function withRepairHeads(ids: readonly string[], fn: (tx: Exec) => Promise
   if (ids.length === 0) return;
   await withDeadlockRetry(() => withHeads(ids, 'update', (tx) => fn(tx)));
 }
+
+/** A repair over `ids`, one transaction per batch, each with its batch's
+ *  heads first. */
+async function inRepairBatches(
+  ids: readonly string[],
+  size: number,
+  fn: (tx: Exec, batch: string[]) => Promise<unknown>,
+): Promise<void> {
+  for (const batch of repairBatches(ids, size)) {
+    await withRepairHeads(batch, (tx) => fn(tx, batch));
+  }
+}
+
+const uuids = (ids: readonly string[]) => `{${ids.join(',')}}`;
 
 const idsOf = (rows: unknown) => (rows as Array<{ id: string }>).map((r) => r.id);
 
@@ -59,6 +86,21 @@ const EXPECTED = sql`(
      cross join lateral unnest(mantle_embed_targets(n.id, mantle_note_embed_refs(n.data->>'content'))) t
      where n.type = 'note' and jsonb_typeof(n.data) = 'object' and n.data ? 'content')`;
 
+/** The same edges, for the `from` ends in `froms` only. */
+const expectedFrom = (froms: readonly string[]) => sql`(
+    select p.node_id as from_id, t as to_id from pages p
+     cross join lateral unnest(mantle_embed_targets(p.node_id, mantle_page_embed_refs(p.doc))) t
+     where p.node_id = any(${uuids(froms)}::uuid[])
+    union
+    select d.node_id, t from draws d
+     cross join lateral unnest(mantle_embed_targets(d.node_id, mantle_draw_embed_refs(d.scene, d.file_refs))) t
+     where d.node_id = any(${uuids(froms)}::uuid[])
+    union
+    select n.id, t from nodes n
+     cross join lateral unnest(mantle_embed_targets(n.id, mantle_note_embed_refs(n.data->>'content'))) t
+     where n.type = 'note' and jsonb_typeof(n.data) = 'object' and n.data ? 'content'
+       and n.id = any(${uuids(froms)}::uuid[]))`;
+
 /** The rows whose embedded level can be wrong: those that hold one, or
  *  that something embeds. */
 const embedCandidates = sql`(n.embedded_level is not null
@@ -66,6 +108,7 @@ const embedCandidates = sql`(n.embedded_level is not null
 
 async function repairEmbedDrift(
   dryRun: boolean,
+  batchSize: number,
 ): Promise<Pick<ShareDriftResult, 'edgesDrifted' | 'embeddedDrifted' | 'embeddedOpenedTooFar'>> {
   const [edges] = (await db.execute(sql`
     select (select count(*) from ${EXPECTED} x
@@ -77,41 +120,53 @@ async function repairEmbedDrift(
            as n`)) as unknown as Array<{ n: number }>;
   const edgesDrifted = Number(edges?.n ?? 0);
   if (!dryRun && edgesDrifted > 0) {
-    // The ends of every edge the fix writes, heads first.
-    const ends = idsOf(
-      await db.execute(sql`
-        select distinct u.id from (
-          select x.from_id, x.to_id from ${EXPECTED} x
-           where not exists (select 1 from node_embeds e
-                              where e.from_id = x.from_id and e.to_id = x.to_id)
-          union all
-          select e.from_id, e.to_id from node_embeds e
-           where not exists (select 1 from ${EXPECTED} x
-                              where x.from_id = e.from_id and x.to_id = e.to_id)) d
-        cross join lateral (values (d.from_id), (d.to_id)) u(id)
-        join nodes n on n.id = u.id`),
-    );
-    await withRepairHeads(ends, async (tx) => {
-      // Through the table, so the edge triggers refresh what the fix reaches.
-      await tx.execute(sql`
-      delete from node_embeds e
-       where not exists (select 1 from ${EXPECTED} x
-                          where x.from_id = e.from_id and x.to_id = e.to_id)`);
-      // Only the missing edges, each with both ends locked. The sweep runs
-      // against a live brain: a row deleted after this statement's snapshot
-      // read it would fail the foreign key and with it the whole sweep. Under
-      // the lock such a row drops out instead (read committed skips a locked
-      // row that turns out deleted), and a delete that comes later waits.
-      await tx.execute(sql`
-      insert into node_embeds (from_id, to_id)
-      select x.from_id, x.to_id from ${EXPECTED} x
-        join nodes a on a.id = x.from_id
-        join nodes b on b.id = x.to_id
-       where not exists (select 1 from node_embeds e
-                          where e.from_id = x.from_id and e.to_id = x.to_id)
-         for key share of a, b
-      on conflict do nothing`);
-    });
+    // The drifted edges (missing or left over), read once; then fixed in
+    // batches, each with the heads of its edges' ends first.
+    const pairs = (await db.execute(sql`
+        select x.from_id::text as f, x.to_id::text as t from ${EXPECTED} x
+         where not exists (select 1 from node_embeds e
+                            where e.from_id = x.from_id and e.to_id = x.to_id)
+        union
+        select e.from_id::text, e.to_id::text from node_embeds e
+         where not exists (select 1 from ${EXPECTED} x
+                            where x.from_id = e.from_id and x.to_id = e.to_id)`)) as unknown as Array<{
+      f: string;
+      t: string;
+    }>;
+    for (const batch of repairBatches(pairs, Math.max(1, Math.floor(batchSize / 2)))) {
+      const fl = uuids(batch.map((p) => p.f));
+      const tl = uuids(batch.map((p) => p.t));
+      const froms = [...new Set(batch.map((p) => p.f))];
+      const ends = idsOf(
+        await db.execute(sql`
+          select distinct n.id from nodes n
+           where n.id = any(${fl}::uuid[]) or n.id = any(${tl}::uuid[])`),
+      );
+      await withRepairHeads(ends, async (tx) => {
+        // Through the table, so the edge triggers refresh what the fix reaches.
+        await tx.execute(sql`
+        delete from node_embeds e
+         using unnest(${fl}::uuid[], ${tl}::uuid[]) p(f, t)
+         where e.from_id = p.f and e.to_id = p.t
+           and not exists (select 1 from ${expectedFrom(froms)} x
+                            where x.from_id = e.from_id and x.to_id = e.to_id)`);
+        // Only the missing edges, each with both ends locked. The sweep runs
+        // against a live brain: a row deleted after this statement's snapshot
+        // read it would fail the foreign key and with it the whole sweep. Under
+        // the lock such a row drops out instead (read committed skips a locked
+        // row that turns out deleted), and a delete that comes later waits.
+        await tx.execute(sql`
+        insert into node_embeds (from_id, to_id)
+        select x.from_id, x.to_id from ${expectedFrom(froms)} x
+          join unnest(${fl}::uuid[], ${tl}::uuid[]) p(f, t) on p.f = x.from_id and p.t = x.to_id
+          join nodes a on a.id = x.from_id
+          join nodes b on b.id = x.to_id
+         where not exists (select 1 from node_embeds e
+                            where e.from_id = x.from_id and e.to_id = x.to_id)
+           for key share of a, b
+        on conflict do nothing`);
+      });
+    }
   }
   const rule = sql`mantle_embedded_level(n.owner_id, n.id, n.type)`;
   const [count] = (await db.execute(sql`
@@ -131,10 +186,10 @@ async function repairEmbedDrift(
         select n.id from nodes n
          where ${embedCandidates} and n.embedded_level is distinct from ${rule}`),
     );
-    await withRepairHeads(ids, (tx) =>
+    await inRepairBatches(ids, batchSize, (tx, batch) =>
       tx.execute(sql`
         update nodes n set embedded_level = ${rule}
-         where n.id = any(${`{${ids.join(',')}}`}::uuid[])
+         where n.id = any(${uuids(batch)}::uuid[])
            and n.embedded_level is distinct from ${rule}`),
     );
   }
@@ -152,7 +207,15 @@ const candidates = sql`(n.inherited_level is not null
   or (mantle_workspace_kind(n.type) and nlevel(n.path) > 1
       and subpath(n.path, 0, 1)::text in ('files', 'notes', 'pages', 'draw', 'tables', 'formulas', 'apps')))`;
 
-export async function repairShareDrift(opts: { dryRun?: boolean } = {}): Promise<ShareDriftResult> {
+export async function repairShareDrift(
+  opts: {
+    dryRun?: boolean;
+    /** Rows per repair transaction (REPAIR_BATCH); edges take half as many,
+     *  each has two ends. For tests. */
+    batchSize?: number;
+  } = {},
+): Promise<ShareDriftResult> {
+  const batchSize = opts.batchSize ?? REPAIR_BATCH;
   const drift = sql`
     select n.id, n.inherited_level as stored,
            mantle_inherited_level(n.owner_id, n.path, n.type) as rule
@@ -171,15 +234,15 @@ export async function repairShareDrift(opts: { dryRun?: boolean } = {}): Promise
   if (!opts.dryRun && drifted > 0) {
     // Shares first: what embeds are read through follows them (0208 trigger).
     const ids = idsOf(await db.execute(sql`select d.id from (${drift}) d`));
-    await withRepairHeads(ids, async (tx) => {
+    await inRepairBatches(ids, batchSize, async (tx, batch) => {
       const done = (await tx.execute(sql`
         update nodes n
            set inherited_level = mantle_inherited_level(n.owner_id, n.path, n.type)
-         where n.id = any(${`{${ids.join(',')}}`}::uuid[])
+         where n.id = any(${uuids(batch)}::uuid[])
            and n.inherited_level is distinct from mantle_inherited_level(n.owner_id, n.path, n.type)
         returning n.id`)) as unknown as unknown[];
-      repaired = done.length;
+      repaired += done.length;
     });
   }
-  return { drifted, repaired, openedTooFar, ...(await repairEmbedDrift(!!opts.dryRun)) };
+  return { drifted, repaired, openedTooFar, ...(await repairEmbedDrift(!!opts.dryRun, batchSize)) };
 }

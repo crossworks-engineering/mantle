@@ -232,7 +232,7 @@ export const toolGroups = pgTable(
     /** The group's level (admin | team | client | public): an agent may hold
      *  only groups at or below its own level. Default admin. */
     audience: text('audience').notNull().default('admin'),
-    /** Workspaces W4b (0252): the group runs only in a turn whose scope holds
+    /** Workspaces W4b (0254): the group runs only in a turn whose scope holds
      *  the Admin workspace (plan 5.4). Written from the manifest. */
     adminOnly: boolean('admin_only').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

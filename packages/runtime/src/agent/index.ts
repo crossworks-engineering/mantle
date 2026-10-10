@@ -68,7 +68,9 @@ export {
 } from './chat-archive';
 export { invokeAgent } from './invoke-agent';
 export {
+  AgentWorkspaceError,
   agentLevel,
+  agentTurnScoped,
   surfaceLoginId,
   withAgentScope,
   withAgentViewer,

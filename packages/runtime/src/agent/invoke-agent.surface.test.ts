@@ -35,6 +35,7 @@ vi.mock('@mantle/db', async (importOriginal) => {
 });
 vi.mock('@mantle/db/viewer', () => ({
   currentViewerLevel: () => 'admin',
+  currentWorkspaceScope: () => null,
   levelsMeet: () => true,
 }));
 vi.mock('@mantle/tracing', () => ({
@@ -60,7 +61,13 @@ vi.mock('./skills', () => ({
   composeSystemPromptWithSkills: () => 'system',
   effectiveToolSlugs: () => [],
 }));
-vi.mock('./agent-viewer', () => ({ agentLevel: () => 'admin' }));
+vi.mock('./agent-viewer', () => ({
+  agentLevel: () => 'admin',
+  // A helper (no workspace): no turn scope of its own.
+  agentTurnScoped: async () => false,
+  surfaceLoginId: () => null,
+  withAgentScope: (_a: unknown, fn: () => unknown) => fn(),
+}));
 
 import type { InvokeAgentInput } from '@mantle/tools';
 import { invokeAgent } from './invoke-agent';

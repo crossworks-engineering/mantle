@@ -34,6 +34,7 @@ export {
   ensureRunQueues,
   enqueueRunActions,
   enqueueRunActionsSafe,
+  assertRunsCarryScope,
   enqueueRunJobs,
   enqueueRunJobsSafe,
   runPendingNotices,

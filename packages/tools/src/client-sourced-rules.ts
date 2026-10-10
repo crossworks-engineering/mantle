@@ -566,5 +566,5 @@ async function writeVerdict(
       }
     }
     return RUN;
-  });
+  }, 'client-sourced-check');
 }

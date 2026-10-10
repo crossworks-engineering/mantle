@@ -2,10 +2,14 @@
  * The viewer scope's rules (member logins Phase 0b). Pure: no database. The
  * row-level behaviour against a real Postgres is viewer.db.test.ts.
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  AS_SYSTEM_TURN_REASONS,
   asSystem,
   assertNoViewer,
+  currentScope,
+  runInTurnScope,
+  TurnScopeExitError,
   currentScopeTx,
   currentSpaceScope,
   currentViewerLevel,
@@ -422,5 +426,69 @@ describe('brains sharing one Postgres cluster (viewerRolePlan)', () => {
     expect(() => viewerLoginRoleName('team', 'Brain-B')).toThrow(/\[a-z0-9_\]/);
     expect(() => viewerLoginRoleName('team', '')).toThrow();
     expect(() => viewerLoginRoleName('team', 'x'.repeat(41))).toThrow();
+  });
+});
+
+describe('asSystem inside a turn scope needs a named reason (W4b fix round 1, M4)', () => {
+  const scope = {
+    kind: 'assistant' as const,
+    loginId: null,
+    ws: ['00000000-0000-4000-8000-0000000000a1'],
+    modWs: [],
+  };
+  const inTurn = <T>(fn: () => Promise<T>) => runInTurnScope(scope, fn);
+  const env = process.env.NODE_ENV;
+  afterEach(() => {
+    process.env.NODE_ENV = env;
+    vi.restoreAllMocks();
+  });
+
+  it('outside a turn: no reason needed, as before', async () => {
+    await expect(asSystem(async () => currentScope())).resolves.toEqual({ kind: 'system' });
+  });
+
+  it('a listed reason leaves the scope for the system pool and is logged once', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const seen = await inTurn(() =>
+      asSystem(async () => currentScope(), 'connector-binding').then(async (first) => {
+        await asSystem(async () => 1, 'connector-binding');
+        return first;
+      }),
+    );
+    expect(seen).toEqual({ kind: 'system' });
+    const lines = info.mock.calls.filter((c) => String(c[0]).includes('connector-binding'));
+    expect(lines.length).toBeLessThanOrEqual(1);
+  });
+
+  it('no reason, or one not on the list, throws in tests and development', async () => {
+    let ran = false;
+    await expect(
+      inTurn(() =>
+        asSystem(async () => {
+          ran = true;
+        }),
+      ),
+    ).rejects.toBeInstanceOf(TurnScopeExitError);
+    await expect(inTurn(() => asSystem(async () => 1, 'just-because' as never))).rejects.toThrow(
+      /allowlisted reason/,
+    );
+    process.env.NODE_ENV = 'development';
+    await expect(inTurn(() => asSystem(async () => 1))).rejects.toBeInstanceOf(TurnScopeExitError);
+    expect(ran).toBe(false);
+  });
+
+  it('in production an unnamed exit is logged (once) and allowed for now', async () => {
+    process.env.NODE_ENV = 'production';
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(inTurn(() => asSystem(async () => currentScope()))).resolves.toEqual({
+      kind: 'system',
+    });
+    await inTurn(() => asSystem(async () => 2));
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(String(error.mock.calls[0]![0])).toMatch(/allowlisted reason/);
+  });
+
+  it('the list stays small', () => {
+    expect(AS_SYSTEM_TURN_REASONS.length).toBeLessThanOrEqual(10);
   });
 });

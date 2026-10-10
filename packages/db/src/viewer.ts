@@ -22,6 +22,7 @@
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { hkdfSync } from 'node:crypto';
+import { env } from '@mantle/config';
 
 /** The four levels, lowest first (the ITEM rank: raising and lowering an
  *  item). Who reads what is not a chain at the bottom: since client logins
@@ -390,12 +391,98 @@ export function runInSystemTx<T>(
 }
 
 /**
+ * Why code inside a TURN scope may leave it for the system pool (workspaces
+ * W4b fix round 1, M4). A turn scope fails closed: every query runs on the
+ * workspace role, and `asSystem` is the one door out. Inside a turn it must
+ * name one of these reasons; each is logged once per process. Keep the list
+ * small: a new entry is a new way out of the scope and needs review.
+ *
+ *  - `agent-workspace`: the workspace row and membership an assistant runs
+ *    in (agent-viewer.ts), read before the scope is entered or re-entered.
+ *  - `connector-binding`: a connector group's binding or OAuth config
+ *    (dispatch.ts), infrastructure like its keys; the scope's own rule
+ *    (connectorScopeRefused) decides whether the call runs.
+ *  - `connector-call`: the remote MCP call, which reads and refreshes the
+ *    connector's own credentials (api_keys); no brain content is read.
+ *  - `workspace-resources`: the workspace_resources rows of a connector
+ *    (external-access.ts); the rule is in the query.
+ *  - `runs-scope-check`: enqueue checks the runs it names carry the scope
+ *    (runs boss.ts); the rule is in the query.
+ *  - `member-request`: team_request_create files a task on the member's
+ *    behalf (builtins-team.ts), the one write a member turn makes.
+ *  - `own-space`: the my_* tools leave the turn to enter the login's own
+ *    personal space (withSpace), checked against the scope's login.
+ *  - `heartbeat-own-row`: a heartbeat's control tools change the row of the
+ *    heartbeat that is firing, and only that one (heartbeats/tools.ts).
+ *  - `client-sourced-check`: the client-sourced taint checks and the
+ *    conversation mark (client-sourced.ts, client-sourced-rules.ts): yes or
+ *    no over admin tables, fail closed, no content returned.
+ */
+export const AS_SYSTEM_TURN_REASONS = [
+  'agent-workspace',
+  'connector-binding',
+  'connector-call',
+  'workspace-resources',
+  'runs-scope-check',
+  'member-request',
+  'own-space',
+  'heartbeat-own-row',
+  'client-sourced-check',
+] as const;
+export type AsSystemReason = (typeof AS_SYSTEM_TURN_REASONS)[number];
+
+/** asSystem was called inside a turn scope without an allowlisted reason. */
+export class TurnScopeExitError extends Error {
+  readonly code = 'turn-scope-exit';
+  constructor(reason: string | undefined) {
+    super(
+      `asSystem inside a turn scope needs an allowlisted reason (AS_SYSTEM_TURN_REASONS); got ${
+        reason ? `'${reason}'` : 'none'
+      }. A turn never leaves its scope for the system pool unnamed.`,
+    );
+    this.name = 'TurnScopeExitError';
+  }
+}
+
+const loggedTurnExits = new Set<string>();
+
+/** Whether an unnamed exit from a turn scope throws: in tests and local
+ *  development. In production it is logged and allowed for now (W4b fix
+ *  round 1: about 80 call sites, not every one reached by a test yet). */
+function strictTurnExits(): boolean {
+  const mode = env('NODE_ENV');
+  return mode === 'test' || mode === 'development';
+}
+
+/**
  * Run `fn` OUTSIDE any viewer scope, on the admin pool: the escape hatch for
  * the rare WRITE a limited caller needs (team_request_create files an
  * admin-level task on the member's behalf). Never for reads. Few call sites,
  * each one audited; grep for `asSystem(` to list them.
+ *
+ * Inside a turn scope (W4b) the call must name its `reason` from
+ * AS_SYSTEM_TURN_REASONS (logged once per reason). Without one it throws
+ * TurnScopeExitError in tests and development, and is logged (once per
+ * reason) in production.
  */
-export function asSystem<T>(fn: () => Promise<T>): Promise<T> {
+export function asSystem<T>(fn: () => Promise<T>, reason?: AsSystemReason): Promise<T> {
+  if (store.getStore()?.perQuery) {
+    const listed =
+      reason !== undefined && (AS_SYSTEM_TURN_REASONS as readonly string[]).includes(reason);
+    if (!listed) {
+      if (strictTurnExits()) return Promise.reject(new TurnScopeExitError(reason));
+      const key = `unlisted:${reason ?? ''}`;
+      if (!loggedTurnExits.has(key)) {
+        loggedTurnExits.add(key);
+        console.error(`[db] ${new TurnScopeExitError(reason).message} Allowed in production.`, {
+          stack: new Error().stack,
+        });
+      }
+    } else if (!loggedTurnExits.has(reason)) {
+      loggedTurnExits.add(reason);
+      console.info(`[db] a turn scope leaves for the system pool: ${reason}`);
+    }
+  }
   return store.exit(fn);
 }
 

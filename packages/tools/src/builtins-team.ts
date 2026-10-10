@@ -101,8 +101,9 @@ const team_request_create: BuiltinToolDef = {
     // already filed, per turn (this inbound message) and per member per day;
     // asSystem, as the team role cannot see admin tasks to count them.
     if (inboundMessageId) {
-      const thisTurn = await asSystem(() =>
-        countTeamRequestsFiled(ctx.ownerId, { threadMessageId: inboundMessageId }),
+      const thisTurn = await asSystem(
+        () => countTeamRequestsFiled(ctx.ownerId, { threadMessageId: inboundMessageId }),
+        'member-request',
       );
       if (thisTurn >= TEAM_REQUESTS_PER_TURN) {
         return {
@@ -117,7 +118,7 @@ const team_request_create: BuiltinToolDef = {
     const requester = loginId ? { loginId, since } : contactId ? { contactId, since } : null;
     if (
       requester &&
-      (await asSystem(() => countTeamRequestsFiled(ctx.ownerId, requester))) >=
+      (await asSystem(() => countTeamRequestsFiled(ctx.ownerId, requester), 'member-request')) >=
         TEAM_REQUESTS_PER_DAY
     ) {
       return {
@@ -148,26 +149,28 @@ const team_request_create: BuiltinToolDef = {
       // asSystem: a team turn runs on the limited team role, which never
       // writes; the request is an admin-level task filed on the member's
       // behalf with server-stamped provenance (the one audited escape).
-      const row = await asSystem(() =>
-        createTask(ctx.ownerId, {
-          title,
-          body: `**Team request from ${who}.**\n\n${body}${attachmentLines}`,
-          priority: (strOpt(input.priority) as TaskPriority | undefined) ?? 'normal',
-          tags: [TEAM_REQUEST_TAG],
-          extraData: {
-            // Member text no admin has read yet: extract-exempt until an
-            // admin acts on the task (audit F08, extract-exempt.ts).
-            source: TEAM_REQUEST_SOURCE,
-            teamRequest: {
-              contactId: contactId ?? null,
-              loginId: loginId ?? null,
-              contactName: contactName ?? null,
-              threadMessageId: inboundMessageId ?? null,
-              attachments: attachments.map((a) => a.nodeId),
-              filedAt: new Date().toISOString(),
+      const row = await asSystem(
+        () =>
+          createTask(ctx.ownerId, {
+            title,
+            body: `**Team request from ${who}.**\n\n${body}${attachmentLines}`,
+            priority: (strOpt(input.priority) as TaskPriority | undefined) ?? 'normal',
+            tags: [TEAM_REQUEST_TAG],
+            extraData: {
+              // Member text no admin has read yet: extract-exempt until an
+              // admin acts on the task (audit F08, extract-exempt.ts).
+              source: TEAM_REQUEST_SOURCE,
+              teamRequest: {
+                contactId: contactId ?? null,
+                loginId: loginId ?? null,
+                contactName: contactName ?? null,
+                threadMessageId: inboundMessageId ?? null,
+                attachments: attachments.map((a) => a.nodeId),
+                filedAt: new Date().toISOString(),
+              },
             },
-          },
-        }),
+          }),
+        'member-request',
       );
       ctx.step?.setMeta({ contactId, attachments: attachments.length });
       return {

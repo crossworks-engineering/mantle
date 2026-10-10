@@ -116,7 +116,7 @@ export async function enqueueRunJobs(actions: readonly PostCommitAction[]): Prom
 
 /** Throws unless every run the jobs name is stamped with a workspace of the
  *  current scope (read as the system: the rule is in the query). */
-async function assertRunsCarryScope(
+export async function assertRunsCarryScope(
   jobs: readonly Exclude<PostCommitAction, { type: 'pending_created' }>[],
 ): Promise<void> {
   const scope = currentWorkspaceScope();
@@ -124,11 +124,13 @@ async function assertRunsCarryScope(
   const itemIds = jobs.flatMap((j) => (j.type === 'dispatch' ? [j.itemId] : []));
   const runIds = jobs.flatMap((j) => (j.type === 'resume' ? [j.runId] : []));
   const list = (ids: string[]) => `{${ids.join(',')}}`;
-  const rows = (await asSystem(() =>
-    db.execute(sql`
+  const rows = (await asSystem(
+    () =>
+      db.execute(sql`
       select r.workspace_id::text as ws from runs r
        where r.id = any(${list(runIds)}::uuid[])
           or r.id in (select i.run_id from run_items i where i.id = any(${list(itemIds)}::uuid[]))`),
+    'runs-scope-check',
   )) as unknown as { ws: string | null }[];
   const inScope = new Set(scope.ws);
   if (rows.length === 0 || rows.some((r) => !r.ws || !inScope.has(r.ws))) {

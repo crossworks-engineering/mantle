@@ -23,6 +23,7 @@ import {
   validateToolArgs,
 } from '@mantle/tools';
 import { currentTrace, startTrace, step } from '@mantle/tracing';
+import { withRunScope } from '@mantle/runtime/agent';
 
 import { executeWorkerInvoke } from './execute-worker';
 import { errorMessage } from '@mantle/std';
@@ -219,30 +220,37 @@ async function runResolved(
       return step(
         { name: `tool: ${slug}`, kind: 'compute', input: { slug, args: input, run_id: run.id } },
         async (handle) => {
-          const res = await dispatchTool(tool, input, {
-            ownerId: run.ownerId,
-            step: {
-              setMeta: (m) => handle.setMeta(m),
-              setOutput: (o) => handle.setOutput(o),
-              addTokens: (d) => {
-                usage.input += d.input ?? 0;
-                usage.output += d.output ?? 0;
-                usage.cacheRead += d.cacheRead ?? 0;
-                handle.addTokens(d);
+          // The run's own scope (W4b fix round 1, L1): a run stamped with a
+          // workspace other than Admin runs its tool in a turn scope of it
+          // (read only unless the run's login moderates there); dispatch
+          // refuses owner-only and adminOnly tools there. Admin or no
+          // workspace: the system pool, as before.
+          const res = await withRunScope(run, () =>
+            dispatchTool(tool, input, {
+              ownerId: run.ownerId,
+              step: {
+                setMeta: (m) => handle.setMeta(m),
+                setOutput: (o) => handle.setOutput(o),
+                addTokens: (d) => {
+                  usage.input += d.input ?? 0;
+                  usage.output += d.output ?? 0;
+                  usage.cacheRead += d.cacheRead ?? 0;
+                  handle.addTokens(d);
+                },
+                addCost: (mu) => {
+                  costMicroUsd += mu;
+                  handle.addCost(mu);
+                },
               },
-              addCost: (mu) => {
-                costMicroUsd += mu;
-                handle.addCost(mu);
-              },
-            },
-            // The planning agent (see above). invoke_agent is banned as an
-            // item, so the empty delegation list never matters. The run is
-            // owner-side work, so it names the owner surface (client logins
-            // C4); it is no delivery channel, so send-to-user tools still
-            // refuse cleanly.
-            agent,
-            surface: { kind: 'owner', via: 'run' },
-          });
+              // The planning agent (see above). invoke_agent is banned as an
+              // item, so the empty delegation list never matters. The run is
+              // owner-side work, so it names the owner surface (client logins
+              // C4); it is no delivery channel, so send-to-user tools still
+              // refuse cleanly.
+              agent,
+              surface: { kind: 'owner', via: 'run' },
+            }),
+          );
           if (!res.ok) handle.setError(res.error);
           else handle.setOutput({ result: capOutput(res.output).output });
           return res;

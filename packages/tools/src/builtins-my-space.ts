@@ -47,8 +47,9 @@ export async function onBehalfOf(
   // nobody: the surface never names someone else.
   const scope = currentWorkspaceScope();
   if (scope && scope.loginId !== loginId) return null;
-  const rows = (await asSystem(() =>
-    db.execute(sql`select mantle_personal_space(${loginId}::uuid) as id`),
+  const rows = (await asSystem(
+    () => db.execute(sql`select mantle_personal_space(${loginId}::uuid) as id`),
+    'own-space',
   )) as unknown as { id: string | null }[];
   const spaceId = rows[0]?.id;
   return spaceId ? { loginId, spaceId } : null;
@@ -64,7 +65,9 @@ function inOwnSpace<T>(
   who: { loginId: string; spaceId: string },
   fn: () => Promise<T>,
 ): Promise<T> {
-  return currentWorkspaceScope() ? asSystem(() => withSpace(who, fn)) : withSpace(who, fn);
+  return currentWorkspaceScope()
+    ? asSystem(() => withSpace(who, fn), 'own-space')
+    : withSpace(who, fn);
 }
 
 function clip(text: string): { text: string; truncated?: true } {

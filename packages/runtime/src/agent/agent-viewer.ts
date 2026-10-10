@@ -11,7 +11,8 @@
  *    every query in its own short transaction, none held across an LLM call,
  *    and a lost scope refused (withTurnScope). Its writes stay on the system
  *    pool's own paths. modWs is the workspace when the login it answers is a
- *    Moderator there, else empty; no login (a heartbeat) reads only;
+ *    Moderator there, else empty; no login (a heartbeat) reads only; a login
+ *    with no user row in that workspace is refused;
  *  - the Admin assistant stays on the system pool until W6a (the Admin
  *    workspace holds every migrated item) and only carries its stamp (the
  *    workspace and login its runs and traces are written with);
@@ -61,28 +62,45 @@ export class AgentWorkspaceError extends Error {
 
 /** The workspace row an assistant answers in, read on the system pool. */
 async function agentWorkspace(id: string): Promise<{ isAdmin: boolean }> {
-  const [row] = await asSystem(() =>
-    db
-      .select({ isAdmin: workspaces.isAdmin, archivedAt: workspaces.archivedAt })
-      .from(workspaces)
-      .where(eq(workspaces.id, id))
-      .limit(1),
+  const [row] = await asSystem(
+    () =>
+      db
+        .select({ isAdmin: workspaces.isAdmin, archivedAt: workspaces.archivedAt })
+        .from(workspaces)
+        .where(eq(workspaces.id, id))
+        .limit(1),
+    'agent-workspace',
   );
   if (!row) throw new AgentWorkspaceError('This assistant’s workspace no longer exists.');
   if (row.archivedAt) throw new AgentWorkspaceError('This assistant’s workspace is archived.');
   return { isAdmin: row.isAdmin };
 }
 
-/** Whether `loginId` is a Moderator of workspace `wsId` (system pool). */
-async function isModerator(wsId: string, loginId: string): Promise<boolean> {
-  const [row] = await asSystem(() =>
-    db
-      .select({ moderator: workspaceUsers.moderator })
-      .from(workspaceUsers)
-      .where(and(eq(workspaceUsers.workspaceId, wsId), eq(workspaceUsers.loginId, loginId)))
-      .limit(1),
+/** `loginId`'s user row in workspace `wsId` (system pool), or null when the
+ *  login is not a user there. */
+async function membership(wsId: string, loginId: string): Promise<{ moderator: boolean } | null> {
+  const [row] = await asSystem(
+    () =>
+      db
+        .select({ moderator: workspaceUsers.moderator })
+        .from(workspaceUsers)
+        .where(and(eq(workspaceUsers.workspaceId, wsId), eq(workspaceUsers.loginId, loginId)))
+        .limit(1),
+    'agent-workspace',
   );
-  return row?.moderator === true;
+  return row ?? null;
+}
+
+/**
+ * Whether the agent's turns run in a turn scope (W4b fix round 1, M2): it
+ * answers in a workspace other than Admin. False for the Admin assistant
+ * (the system pool until W6a) and for an agent with no workspace (a helper,
+ * at its level). A workspace that is gone or archived throws
+ * AgentWorkspaceError (never read as no workspace).
+ */
+export async function agentTurnScoped(agent: ScopedAgent): Promise<boolean> {
+  if (!agent.workspaceId) return false;
+  return !(await agentWorkspace(agent.workspaceId)).isAdmin;
 }
 
 /**
@@ -113,7 +131,15 @@ export async function withAgentScope<T>(
     // The Admin assistant: the system pool until W6a, with its stamp.
     return withTurnStamp({ workspaceId: wsId, loginId }, () => withViewer(agentLevel(agent), fn));
   }
-  const modWs = loginId && (await isModerator(wsId, loginId)) ? [wsId] : [];
+  // The login the turn answers must be a user of the workspace (L3): a
+  // login with no row there is refused, never read as a reader without one.
+  const user = loginId ? await membership(wsId, loginId) : null;
+  if (loginId && !user) {
+    throw new AgentWorkspaceError(
+      'The login this turn answers is not a user of the assistant’s workspace.',
+    );
+  }
+  const modWs = user?.moderator ? [wsId] : [];
   return withTurnScope({ kind: 'assistant', loginId, ws: [wsId], modWs }, fn);
 }
 

@@ -54,6 +54,7 @@ import {
   tools,
   workspaceResources,
   workspaces,
+  workspaceUsers,
   type Tool,
   type ToolHandler,
   type ToolExternalAccess,
@@ -286,34 +287,97 @@ export async function connectorResources(
   wsIds: readonly string[],
 ): Promise<{ workspaceId: string; write: boolean }[]> {
   if (wsIds.length === 0) return [];
-  return asSystem(() =>
-    db
-      .select({ workspaceId: workspaceResources.workspaceId, write: workspaceResources.write })
-      .from(workspaceResources)
-      .innerJoin(workspaces, eq(workspaces.id, workspaceResources.workspaceId))
-      .where(
-        and(
-          eq(workspaceResources.type, 'connector'),
-          eq(workspaceResources.refId, groupSlug),
-          eq(workspaces.ownerId, ownerId),
-          sql`${workspaces.archivedAt} is null`,
-          sql`${workspaceResources.workspaceId} = any(${`{${wsIds.join(',')}}`}::uuid[])`,
+  return asSystem(
+    () =>
+      db
+        .select({ workspaceId: workspaceResources.workspaceId, write: workspaceResources.write })
+        .from(workspaceResources)
+        .innerJoin(workspaces, eq(workspaces.id, workspaceResources.workspaceId))
+        .where(
+          and(
+            eq(workspaceResources.type, 'connector'),
+            eq(workspaceResources.refId, groupSlug),
+            eq(workspaces.ownerId, ownerId),
+            sql`${workspaces.archivedAt} is null`,
+            sql`${workspaceResources.workspaceId} = any(${`{${wsIds.join(',')}}`}::uuid[])`,
+          ),
         ),
-      ),
+    'workspace-resources',
   );
 }
 
 /** The brain's Team workspace while the bridge runs (W4a), else null (a
  *  brain the workspaces migration skipped). */
 async function bridgeTeamWorkspace(ownerId: string): Promise<string | null> {
-  const [row] = await asSystem(() =>
-    db
-      .select({ id: workspaces.id })
-      .from(workspaces)
-      .where(and(eq(workspaces.ownerId, ownerId), eq(workspaces.bridgeKey, 'team')))
-      .limit(1),
+  const [row] = await asSystem(
+    () =>
+      db
+        .select({ id: workspaces.id })
+        .from(workspaces)
+        .where(and(eq(workspaces.ownerId, ownerId), eq(workspaces.bridgeKey, 'team')))
+        .limit(1),
+    'workspace-resources',
   );
   return row?.id ?? null;
+}
+
+/**
+ * A login's own MCP call of a connector tool (W4b fix round 1, M3), on a
+ * brain the workspaces migration made live: the connector must be a
+ * resource of one of the login's workspaces, and a tool not marked
+ * read-only needs that resource's Write on in a workspace where the login is
+ * a Moderator. Why it is refused, or null. A brain with no workspaces (the
+ * migration skipped it) keeps the level rule alone, as before. Read as the
+ * system: the rule is in the query.
+ */
+export async function loginConnectorRefused(
+  ownerId: string,
+  loginId: string,
+  groupSlug: string,
+  write: boolean,
+): Promise<string | null> {
+  const mine = await asSystem(
+    () =>
+      db
+        .select({ workspaceId: workspaceUsers.workspaceId, moderator: workspaceUsers.moderator })
+        .from(workspaceUsers)
+        .innerJoin(workspaces, eq(workspaces.id, workspaceUsers.workspaceId))
+        .where(
+          and(
+            eq(workspaceUsers.loginId, loginId),
+            eq(workspaces.ownerId, ownerId),
+            sql`${workspaces.archivedAt} is null`,
+          ),
+        ),
+    'workspace-resources',
+  );
+  if (mine.length === 0) {
+    const [any] = await asSystem(
+      () =>
+        db
+          .select({ id: workspaces.id })
+          .from(workspaces)
+          .where(eq(workspaces.ownerId, ownerId))
+          .limit(1),
+      'workspace-resources',
+    );
+    if (!any) return null;
+    return 'You are not a user of any workspace on this brain, so connector tools do not run for you.';
+  }
+  const held = await connectorResources(
+    ownerId,
+    groupSlug,
+    mine.map((r) => r.workspaceId),
+  );
+  if (held.length === 0) {
+    return 'This connector is not a resource of any of your workspaces, so its tools do not run for you.';
+  }
+  if (!write) return null;
+  const moderated = new Set(mine.filter((r) => r.moderator).map((r) => r.workspaceId));
+  if (!held.some((r) => r.write && moderated.has(r.workspaceId))) {
+    return 'This connector tool can change data: it needs the connector’s Write switched on in a workspace where you are a Moderator.';
+  }
+  return null;
 }
 
 /**

@@ -169,7 +169,13 @@ export { EVAL_TOOLS } from './builtins-eval';
 // contract the plan parser validates against (they already depend on us).
 export { ASK_HUMAN_FORM_LIMITS } from '@mantle/client-types';
 export { seedBuiltinTools, closeToolInputSchema } from './seed';
-export { resolveTool, resolveTools, dispatchTool } from './dispatch';
+export {
+  resolveTool,
+  resolveTools,
+  dispatchTool,
+  ADMIN_ONLY_ERROR,
+  ADMIN_ONLY_TOOL_SLUGS,
+} from './dispatch';
 export {
   memberAppToolVerdict,
   MEMBER_APP_REFUSED_SLUGS,
@@ -189,6 +195,7 @@ export {
   OUTSIDE_WRITE_LOG_INPUT_MAX,
   type OutsideToolVerdict,
   contactAppToolVerdict,
+  loginConnectorRefused,
   clearConnectorExternalAccess,
   connectorMarkCount,
   voidConnectorMarksForKey,
