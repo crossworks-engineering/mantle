@@ -59,6 +59,15 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
   const audienceOf = async (id: string) =>
     (await exec<{ audience: string }>(sqlTag`select audience from nodes where id = ${id}`))[0]
       ?.audience;
+  /** Whether the Accept brain's Team workspace reads the item: since W5b2 an
+   *  Accept at team or wider gives Team a grant, and writes no level. */
+  const teamReads = async (id: string) =>
+    (
+      await exec<{ ok: boolean }>(sqlTag`
+        select exists (select 1 from nodes n join workspaces w
+                        on w.owner_id = ${acceptBrain} and w.bridge_key = 'team'
+                       where n.id = ${id} and w.id = any(n.read_ws)) as ok`)
+    )[0]?.ok;
   const mention = (id: string) => ({
     type: 'paragraph',
     content: [{ type: 'mention', attrs: { id, ref: 'node' } }],
@@ -107,6 +116,8 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
         (${acceptBrain}, ${`${tag}-b@example.invalid`}, 'x', 'admin', null)`);
     await m.systemDb.execute(sqlTag`
       insert into spaces (id, kind, login_id) values (${acceptBrain}, 'brain', ${acceptBrain})`);
+    await m.systemDb.execute(sqlTag`
+      insert into workspaces (owner_id, name, bridge_key) values (${acceptBrain}, 'Team', 'team')`);
     const rows = await exec<{ id: string; login_id: string }>(sqlTag`
       select id, login_id from spaces where kind = 'personal'
         and login_id in (${client}, ${member}, ${adminA})`);
@@ -199,7 +210,7 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
     const first = await submitted(client, `${tag} request 1`, [brainItems.client]);
     const res = await rv.acceptReviewItem(acceptBrain, first, reviewer);
     expect(res.audience).toBe('team');
-    expect(await audienceOf(first)).toBe('team');
+    expect(await teamReads(first)).toBe(true);
 
     const second = await submitted(client, `${tag} request 2`);
     for (const audience of ['client', 'public'] as const) {
@@ -213,7 +224,7 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
       lowerConfirmed: true,
     });
     expect(confirmed.audience).toBe('client');
-    expect(await audienceOf(second)).toBe('client');
+    expect(await teamReads(second)).toBe(true);
 
     // A member's item (control): admin by default, as before.
     const third = await submitted(member, `${tag} member request`);
@@ -365,7 +376,7 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
       },
     );
     expect(res.audience).toBe('client');
-    expect(await audienceOf(id)).toBe('client');
+    expect(await teamReads(id)).toBe(true);
     expect(await sh.getActiveShareForNode(acceptBrain, id)).toBeNull();
     expect(await audienceOf(acceptFile)).toBe('client');
   });
@@ -420,7 +431,7 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
     // Default: team, as for a reviewed Accept of a client's item.
     const res = await rv.acceptOwnItem(acceptBrain, actor, id);
     expect(res.audience).toBe('team');
-    expect(await audienceOf(id)).toBe('team');
+    expect(await teamReads(id)).toBe(true);
   });
 
   it('a taken client item cannot be deleted while the client can take it back (T7)', async () => {
