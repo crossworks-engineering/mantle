@@ -58,6 +58,7 @@ import {
   contactSharesForNode,
   EMBEDDING_KINDS,
   getActiveShareForNode,
+  listServeCandidates,
 } from '@mantle/content';
 import { appDbTableDetails } from '@mantle/content/app-broker';
 import { refoldPageTexts } from '@mantle/content/pages';
@@ -452,22 +453,33 @@ async function buildResponse(ctx: Ctx, item: Item, q: Exec = db): Promise<Grants
     mayManage: manage,
     mayLink,
     hasLink: share !== null,
-    link: mayLink && share ? { id: share.id, path: `/s/${share.token}` } : null,
+    link:
+      mayLink && share
+        ? { id: share.id, path: `/s/${share.token}`, served: [...share.served] }
+        : null,
+    serveCandidates: mayLink ? await listServeCandidates(anchor, ctx.caller.loginId, item) : [],
     contactShares,
     embedsNotGranted,
   };
   if (item.type === 'branch' && mayEdit(ctx, item)) {
     // What a new item placed here takes (S6, 21.8 row 1): every row of the
     // folder not removed here, named even where the caller is not a user,
-    // so the create dialog can say every workspace it will reach.
-    body.placesInto = (
-      await rows<{ id: string; name: string }>(
-        q,
-        sql`select w.id, w.name from item_grants g join workspaces w on w.id = g.workspace_id
-             where g.node_id = ${item.id} and not g.excluded
-             order by lower(w.name), w.id`,
-      )
-    ).map((w) => ({ wsId: w.id, name: w.name }));
+    // so the create dialog can say every workspace it will reach. The same
+    // rule as the insert trigger of 0261 (a live workspace that may hold the
+    // folder's kind; an archived one gains nothing).
+    const kind = treeKindOf(item.path);
+    const nodeType = kind ? TREE_KIND_SPECS[kind].nodeType : null;
+    body.placesInto = nodeType
+      ? (
+          await rows<{ id: string; name: string }>(
+            q,
+            sql`select w.id, w.name from item_grants g join workspaces w on w.id = g.workspace_id
+                 where g.node_id = ${item.id} and not g.excluded and w.archived_at is null
+                   and mantle_grant_kind_ok(${nodeType}::node_type, w.id, true)
+                 order by lower(w.name), w.id`,
+          )
+        ).map((w) => ({ wsId: w.id, name: w.name }))
+      : [];
   }
   if (item.type === 'app') {
     const [a] = await rows<{ mcp: boolean }>(
@@ -1381,7 +1393,7 @@ async function moveHome(caller: WsCaller, nodeId: string, to: string, body: Move
     caller,
     nodeId,
     { folderConfirm: true, appConfirm: true, confirm: body.confirm === true },
-    async (q, ctx, item, grants) => {
+    async (q, ctx, item, _grants) => {
       if (!mayManage(ctx, item)) {
         throw new GrantError(403, 'forbidden', 'Only a Moderator of the item’s home can move it.');
       }
@@ -1484,7 +1496,10 @@ async function moveToFolder(ctx: Ctx, body: MoveInput): Promise<GrantMoveRespons
     const folder = await targetFolder(now, body.toFolderId, plan.kind, tx);
     const { adds, loses } = await placeInFolder(tx, item, await folderWorkspaces(tx, folder));
     if (item.type === 'app' && adds.some((w) => !isMod(now, w))) throw APP_HOLDER();
-    if ((adds.length || loses.length) && body.confirm !== true) {
+    // The confirm covers what the caller was shown (the plan's gain and
+    // lose): a change under the heads that reaches further asks again.
+    const beyond = adds.some((w) => !plan.gain.has(w)) || loses.some((w) => !plan.lose.has(w));
+    if ((adds.length || loses.length) && (body.confirm !== true || beyond)) {
       throw new GrantError(
         409,
         'confirm_required',

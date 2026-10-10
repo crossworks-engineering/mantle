@@ -130,15 +130,20 @@ export async function assertMayLink(
   return r;
 }
 
-/** The ids among `ids` the item may serve (see the top): named or embedded
- *  by it, or under it for a folder. */
+/** At most this many items of a folder are offered for its link's served
+ *  list (the Grant Access panel's `serveCandidates`). */
+export const FOLDER_SERVE_OFFER_MAX = 500;
+
+/** The ids the item may serve (see the top): named or embedded by it, or
+ *  under it for a folder. `ids`: only these (a check); null: every one (the
+ *  panel's offer; a folder's capped at FOLDER_SERVE_OFFER_MAX). */
 async function serveCandidates(
   ownerId: string,
   item: { id: string; type: string; path: string | null },
-  ids: readonly string[],
+  ids: readonly string[] | null,
   q: ShareDb,
 ): Promise<Set<string>> {
-  if (!ids.length) return new Set();
+  if (ids && !ids.length) return new Set();
   if (item.type === 'branch') {
     if (!item.path) return new Set();
     const rows = await q
@@ -147,11 +152,13 @@ async function serveCandidates(
       .where(
         and(
           eq(nodes.ownerId, ownerId),
-          inArray(nodes.id, [...ids]),
+          ids ? inArray(nodes.id, [...ids]) : undefined,
           sql`${nodes.path} <@ ${item.path}::ltree`,
           sql`${nodes.id} <> ${item.id}`,
         ),
-      );
+      )
+      .orderBy(nodes.id)
+      .limit(ids ? ids.length : FOLDER_SERVE_OFFER_MAX);
     return new Set(rows.map((r) => r.id.toLowerCase()));
   }
   if (!['page', 'note', 'task', 'event', 'draw'].includes(item.type)) return new Set();
@@ -195,6 +202,31 @@ async function serveCandidates(
     }
   }
   return out;
+}
+
+/** What the caller may add to the served list of the link on `item` (the
+ *  Grant Access panel's `serveCandidates`): the items it names or embeds
+ *  (a folder: the items under it, at most FOLDER_SERVE_OFFER_MAX) that the
+ *  caller may edit, by title. */
+export async function listServeCandidates(
+  ownerId: string,
+  loginId: string,
+  item: { id: string; type: string; path: string | null },
+  q: ShareDb = db,
+): Promise<Array<{ nodeId: string; title: string; kind: string }>> {
+  const ids = [...(await serveCandidates(ownerId, item, null, q))].filter(
+    (id) => id !== item.id.toLowerCase(),
+  );
+  if (!ids.length) return [];
+  const rights = await linkRights(ownerId, loginId, ids, q);
+  const ok = ids.filter((id) => rights.get(id)?.edit === true);
+  if (!ok.length) return [];
+  const rows = await q
+    .select({ id: nodes.id, title: nodes.title, type: nodes.type })
+    .from(nodes)
+    .where(and(eq(nodes.ownerId, ownerId), inArray(nodes.id, ok)))
+    .orderBy(sql`lower(${nodes.title})`, nodes.id);
+  return rows.map((r) => ({ nodeId: r.id, title: r.title, kind: r.type }));
 }
 
 /** The markdown a note, task or event shows on its link. */

@@ -69,8 +69,15 @@ export type GrantsResponse = {
   mayLink: boolean;
   /** A live open link exists (the "Public" pill). */
   hasLink: boolean;
-  /** The open link, only when `mayLink`. */
-  link: { id: string; path: string } | null;
+  /** The open link, only when `mayLink`, with its served list (plan 8.1:
+   *  the items the link shows besides its own; ids, lower-case). Changed by
+   *  PATCH /api/shares/:id { serve }. */
+  link: { id: string; path: string; served: string[] } | null;
+  /** What the caller may put on the link's served list: the items this item
+   *  names or embeds (a folder: the items under it, at most 500) that the
+   *  caller may edit, by title. Empty unless `mayLink`. The same rule POST
+   *  /api/shares and PATCH /api/shares/:id { serve } check. */
+  serveCandidates: GrantEmbed[];
   /** The contacts it is shared with: only for an Admin user who `mayLink`,
    *  on a kind that takes contact shares; else null. */
   contactShares: GrantContactShare[] | null;

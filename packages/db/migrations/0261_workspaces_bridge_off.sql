@@ -25,7 +25,10 @@
 --    c. a bridge "Removed here" row whose folder does not grant that
 --       workspace means nothing and would block a later folder grant: it goes;
 --    d. a public app's Team row has Write off (members never wrote the data
---       of a public app; W5b1 flag).
+--       of a public app; W5b1 flag);
+--    e. an informational app (apps.data_read_only) has Write off on every
+--       grant beyond Admin: the grant's Write switch alone decides member
+--       writes from now on (owner call, 2026-10-11).
 -- 4. A new item gets a HOME (before, only the bridge wrote homes): the home
 --    of the folder it is made in, else Admin; kinds that live in Admin only,
 --    Admin (21.8 row 7, R7). It also takes its folder's rows (S6). An item
@@ -211,6 +214,17 @@ BEGIN
     GET DIAGNOSTICS c = ROW_COUNT;
     RETURN QUERY SELECT 'public app team rows, write off', c;
   END IF;
+
+  -- e. An informational app (apps.data_read_only): from now on the grant's
+  --    Write switch alone decides whether a workspace's users write its
+  --    data (owner call, 2026-10-11), so every grant of such an app beyond
+  --    Admin has Write off. Nobody gains a write.
+  UPDATE "public"."item_grants" g SET "write" = false
+    FROM "public"."apps" a, "public"."workspaces" w
+   WHERE g."node_id" = a."node_id" AND a."data_read_only" AND g."write"
+     AND w."id" = g."workspace_id" AND NOT w."is_admin" AND w."owner_id" = brain;
+  GET DIAGNOSTICS c = ROW_COUNT;
+  RETURN QUERY SELECT 'informational app rows beyond Admin, write off', c;
 
   -- c. "Removed here" where the folder does not grant that workspace.
   DELETE FROM "public"."item_grants" g

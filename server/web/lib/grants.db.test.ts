@@ -536,6 +536,42 @@ describe.skipIf(!URL)('grants (W5b2 part A)', () => {
     );
   });
 
+  it('the open link: its served list, and what the caller may serve', async () => {
+    const pg = await node('page', 'link host', 'pages');
+    const e1 = await node('file', 'served.png', 'files');
+    const e2 = await node('file', 'not mine.png', 'files');
+    await homeIn(pg, P);
+    await homeIn(e1, P);
+    await homeIn(e2, Q);
+    await x(sql`insert into node_embeds (from_id, to_id) values (${pg}, ${e1}), (${pg}, ${e2})`);
+    // mem moderates P (it may edit the page and e1) and is a plain user of
+    // Q (it reads e2 nowhere it may edit): only e1 is offered.
+    await as(mem);
+    const before = await get(pg);
+    expect(before.body.mayLink).toBe(true);
+    expect(before.body.link).toBeNull();
+    expect(before.body.serveCandidates).toEqual([
+      { nodeId: e1, title: 'served.png', kind: 'file' },
+    ]);
+    const token = `tok-${randomUUID()}`;
+    await x(sql`insert into shares (owner_id, node_id, node_type, token, settings)
+                values (${owner}, ${pg}, 'page', ${token}, ${JSON.stringify({ served: [e1] })}::jsonb)`);
+    const after = await get(pg);
+    expect(after.body.link).toMatchObject({ path: `/s/${token}`, served: [e1] });
+    // A caller who reads the page (Q, Write off) but may not edit it sees
+    // neither.
+    await m.withHeads([pg], 'update', async (tx) => {
+      await tx.execute(sql`insert into item_grants (node_id, workspace_id) values (${pg}, ${Q})`);
+    });
+    await as(mem2);
+    const other = await get(pg);
+    expect(other.status).toBe(200);
+    expect(other.body.mayLink).toBe(false);
+    expect(other.body.link).toBeNull();
+    expect(other.body.serveCandidates).toEqual([]);
+    await x(sql`delete from shares where token = ${token}`);
+  });
+
   it('a member in none of the workspaces reads nothing', async () => {
     const it2 = await node('note', 'p only', 'notes');
     await homeIn(it2, P);

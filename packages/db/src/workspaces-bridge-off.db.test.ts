@@ -42,6 +42,7 @@ describe.skipIf(!URL)('workspaces bridge off (0261)', () => {
   let spaceA = '';
   let admin = '';
   let team = '';
+  const sales = randomUUID();
 
   const node = async (
     key: string,
@@ -113,8 +114,11 @@ describe.skipIf(!URL)('workspaces bridge off (0261)', () => {
     await sql`insert into node_embeds (from_id, to_id) values (${ids.inShared!}, ${ids.embedded!})`;
     await node('teamApp', 'app', 'apps', 'team');
     await node('publicApp', 'app', 'apps', 'public');
+    // An informational team app (data_read_only): members only read it.
+    await node('infoApp', 'app', 'apps', 'team');
     await sql`insert into apps (node_id, source, data_read_only) values
-      (${ids.teamApp!}, '{}'::jsonb, false), (${ids.publicApp!}, '{}'::jsonb, false)`;
+      (${ids.teamApp!}, '{}'::jsonb, false), (${ids.publicApp!}, '{}'::jsonb, false),
+      (${ids.infoApp!}, '{}'::jsonb, true)`;
     await node('draft', 'page', 'pages', 'admin', spaceA);
     const [lv] = await sql<{ i: string | null; s: string | null; e: string | null }[]>`
       select (select inherited_level from nodes where id = ${ids.inShared!}) as i,
@@ -137,6 +141,11 @@ describe.skipIf(!URL)('workspaces bridge off (0261)', () => {
                 where node_id = ${ids.removedKept!} and workspace_id = ${team}`;
       await tx`update item_grants set write = true
                 where node_id = ${ids.publicApp!} and workspace_id = ${team}`;
+      // An informational app granted by hand, Write on, to another
+      // workspace (data_read_only kept its users from writing until now).
+      await tx`insert into workspaces (id, owner_id, name) values (${sales}, ${owner}, 'Sales')`;
+      await tx`insert into item_grants (node_id, workspace_id, write)
+                values (${ids.infoApp!}, ${sales}, true)`;
     });
     expect(await bridgeRows()).toBeGreaterThan(0);
     expect((await grants(ids.folderOwn!)).Team).toMatchObject({ excluded: false });
@@ -195,6 +204,11 @@ describe.skipIf(!URL)('workspaces bridge off (0261)', () => {
       Team: { home: true, excluded: false, write: false, via: null },
     });
     expect((await grants(ids.teamApp!)).Team).toMatchObject({ home: true, write: true });
+    // An informational app: Write off on every grant beyond Admin, so the
+    // grant's Write switch alone decides member writes from now on.
+    const info = await grants(ids.infoApp!);
+    expect(info.Team).toMatchObject({ write: false });
+    expect(info.Sales).toMatchObject({ write: false, excluded: false });
     expect(Object.keys(await grants(ids.email!))).toEqual(['Admin']);
     expect(await grants(ids.draft!)).toEqual({});
     const [h] = await sql<{ n: number }[]>`

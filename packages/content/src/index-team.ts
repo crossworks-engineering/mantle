@@ -53,7 +53,9 @@ export {
   LinkRefusedError,
   assertMayLink,
   checkServeList,
+  FOLDER_SERVE_OFFER_MAX,
   linkRights,
+  listServeCandidates,
   type LinkRights,
 } from './link-serve';
 
