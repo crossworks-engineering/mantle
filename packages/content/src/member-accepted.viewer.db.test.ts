@@ -351,11 +351,11 @@ describe.skipIf(!URL)('member accepted items', () => {
   });
 
   it('refuses to run inside a viewer scope (the rule needs the admin pool)', async () => {
-    await expect(m.withViewer('team', () => ma.listAccepted(anchor, loginA))).rejects.toThrow(
+    await expect(m.runInLevelRoleForTest('team', () => ma.listAccepted(anchor, loginA))).rejects.toThrow(
       /admin pool/,
     );
     await expect(
-      m.withViewer('team', () => ma.getAcceptedItem(anchor, loginA, pageId)),
+      m.runInLevelRoleForTest('team', () => ma.getAcceptedItem(anchor, loginA, pageId)),
     ).rejects.toThrow(/admin pool/);
   });
 

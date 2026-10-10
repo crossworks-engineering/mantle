@@ -49,7 +49,7 @@ describe.skipIf(!URL)('what a client reads', () => {
   };
   const s = { teamDraft: randomUUID(), memberPrivate: randomUUID(), adminPrivate: randomUUID() };
   const root = mkdtempSync(path.join(tmpdir(), 'mantle-cshared-'));
-  const client = <T>(fn: () => Promise<T>) => m.withViewer('client', fn);
+  const client = <T>(fn: () => Promise<T>) => m.runInLevelRoleForTest('client', fn);
 
   const clientDoc = {
     type: 'doc',
@@ -186,7 +186,7 @@ describe.skipIf(!URL)('what a client reads', () => {
 
   it('refuses to run anywhere but a client scope', async () => {
     await expect(cs.listClientShared(brain)).rejects.toThrow(/withViewer\('client'\)/);
-    await expect(m.withViewer('team', () => cs.listClientShared(brain))).rejects.toThrow();
+    await expect(m.runInLevelRoleForTest('team', () => cs.listClientShared(brain))).rejects.toThrow();
     await expect(cs.clientReadableIds(brain, [b.teamPage])).rejects.toThrow();
     await expect(cd.clientVisibleDrawFileIds(brain, b.clientDraw)).rejects.toThrow();
   });
@@ -371,7 +371,7 @@ describe.skipIf(!URL)('what a client reads', () => {
   });
 
   it('the member Library lists team and client items with their level, never admin or public; opens a public one by id', async () => {
-    const { items } = await m.withViewer('team', () => lib.listLibrary(brain, { q: tag }));
+    const { items } = await m.runInLevelRoleForTest('team', () => lib.listLibrary(brain, { q: tag }));
     const byId = new Map(items.map((i) => [i.id, i.audience]));
     expect([...byId.keys()].sort()).toEqual(
       [
@@ -387,15 +387,15 @@ describe.skipIf(!URL)('what a client reads', () => {
     );
     expect(byId.get(b.teamPage)).toBe('team');
     expect(byId.get(b.clientNote)).toBe('client');
-    const counts = await m.withViewer('team', () => lib.libraryCounts(brain));
+    const counts = await m.runInLevelRoleForTest('team', () => lib.libraryCounts(brain));
     expect(counts.page).toBeGreaterThanOrEqual(3);
     // A public item is not listed, but a member opens it by id (audit B10).
-    expect((await m.withViewer('team', () => lib.getLibraryItem(brain, b.publicNote)))?.id).toBe(
+    expect((await m.runInLevelRoleForTest('team', () => lib.getLibraryItem(brain, b.publicNote)))?.id).toBe(
       b.publicNote,
     );
-    expect(await m.withViewer('team', () => lib.getLibraryItem(brain, b.adminPage))).toBeNull();
+    expect(await m.runInLevelRoleForTest('team', () => lib.getLibraryItem(brain, b.adminPage))).toBeNull();
     expect(
-      (await m.withViewer('team', () => lib.getLibraryItem(brain, b.clientNote)))?.audience,
+      (await m.runInLevelRoleForTest('team', () => lib.getLibraryItem(brain, b.clientNote)))?.audience,
     ).toBe('client');
   });
 });

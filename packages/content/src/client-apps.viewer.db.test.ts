@@ -114,7 +114,7 @@ describe.skipIf(!URL)('apps for clients', () => {
     await m.closeDb();
   }, 60_000);
 
-  const asClient = <T>(fn: () => Promise<T>) => m.withViewer('client', fn);
+  const asClient = <T>(fn: () => Promise<T>) => m.runInLevelRoleForTest('client', fn);
   const mine = <T extends { id: string }>(rows: T[]) => rows.filter((r) => ours.has(r.id));
 
   it('lists the client-level apps with a green published build, and no level twin', async () => {

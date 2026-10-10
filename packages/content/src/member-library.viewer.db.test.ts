@@ -78,7 +78,7 @@ describe.skipIf(!URL)('member Library at the team level', () => {
   });
 
   it('lists team and client items with their level: never admin, and not open-link (public) ones', async () => {
-    const { items, total } = await m.withViewer('team', () => lib.listLibrary(anchor, { q: tag }));
+    const { items, total } = await m.runInLevelRoleForTest('team', () => lib.listLibrary(anchor, { q: tag }));
     expect(items.map((i) => [i.id, i.audience]).sort()).toEqual(
       [
         [ids.teamPage, 'team'],
@@ -89,50 +89,50 @@ describe.skipIf(!URL)('member Library at the team level', () => {
   });
 
   it('shows a client-level reader only client items', async () => {
-    const { items } = await m.withViewer('client', () => lib.listLibrary(anchor, { q: tag }));
+    const { items } = await m.runInLevelRoleForTest('client', () => lib.listLibrary(anchor, { q: tag }));
     expect(items.map((i) => i.id)).toEqual([ids.clientNote]);
-    expect(await m.withViewer('client', () => lib.getLibraryItem(anchor, ids.teamPage))).toBeNull();
+    expect(await m.runInLevelRoleForTest('client', () => lib.getLibraryItem(anchor, ids.teamPage))).toBeNull();
   });
 
   it('leaves images cut out of documents out of the list, but reads them by id', async () => {
-    const { items } = await m.withViewer('team', () => lib.listLibrary(anchor, { q: tag }));
+    const { items } = await m.runInLevelRoleForTest('team', () => lib.listLibrary(anchor, { q: tag }));
     expect(items.map((i) => i.id)).not.toContain(ids.fragment);
-    const frag = await m.withViewer('team', () => lib.getLibraryItem(anchor, ids.fragment));
+    const frag = await m.runInLevelRoleForTest('team', () => lib.getLibraryItem(anchor, ids.fragment));
     expect(frag?.type).toBe('file');
   });
 
   it('reads a client item by id at the team level, and a public one too (audit B10)', async () => {
-    const note = await m.withViewer('team', () => lib.getLibraryItem(anchor, ids.clientNote));
+    const note = await m.runInLevelRoleForTest('team', () => lib.getLibraryItem(anchor, ids.clientNote));
     expect(note).toMatchObject({ type: 'note', audience: 'client' });
     // Not listed (the test above), but opened by id: no Client badge.
-    const open = await m.withViewer('team', () => lib.getLibraryItem(anchor, ids.publicNote));
+    const open = await m.runInLevelRoleForTest('team', () => lib.getLibraryItem(anchor, ids.publicNote));
     expect(open).toMatchObject({ id: ids.publicNote, type: 'note', audience: 'team' });
   });
 
   it('a client does not open a public item by id', async () => {
     expect(
-      await m.withViewer('client', () => lib.getLibraryItem(anchor, ids.publicNote)),
+      await m.runInLevelRoleForTest('client', () => lib.getLibraryItem(anchor, ids.publicNote)),
     ).toBeNull();
   });
 
   it('reads a team page (published doc only) and 404s an admin one', async () => {
-    const page = await m.withViewer('team', () => lib.getLibraryItem(anchor, ids.teamPage));
+    const page = await m.runInLevelRoleForTest('team', () => lib.getLibraryItem(anchor, ids.teamPage));
     expect(page?.type).toBe('page');
     expect(page && 'doc' in page && page.doc).toEqual({ type: 'doc', content: [] });
-    expect(await m.withViewer('team', () => lib.getLibraryItem(anchor, ids.adminPage))).toBeNull();
-    expect(await m.withViewer('team', () => lib.getLibraryItem(anchor, ids.task))).toBeNull();
+    expect(await m.runInLevelRoleForTest('team', () => lib.getLibraryItem(anchor, ids.adminPage))).toBeNull();
+    expect(await m.runInLevelRoleForTest('team', () => lib.getLibraryItem(anchor, ids.task))).toBeNull();
   });
 
   it('lists nothing for a level with no Library (public): fail closed', async () => {
-    const { items, total } = await m.withViewer('public', () =>
+    const { items, total } = await m.runInLevelRoleForTest('public', () =>
       lib.listLibrary(anchor, { q: tag }),
     );
     expect(items).toEqual([]);
     expect(total).toBe(0);
     expect(
-      await m.withViewer('public', () => lib.getLibraryItem(anchor, ids.publicNote)),
+      await m.runInLevelRoleForTest('public', () => lib.getLibraryItem(anchor, ids.publicNote)),
     ).toBeNull();
-    expect(await m.withViewer('public', () => lib.libraryCounts(anchor))).toEqual({
+    expect(await m.runInLevelRoleForTest('public', () => lib.libraryCounts(anchor))).toEqual({
       page: 0,
       note: 0,
       draw: 0,
@@ -155,7 +155,7 @@ describe.skipIf(!URL)('member Library at the team level', () => {
       { op: 'row_add', cells: { [col]: 'admin draft secret' } },
     ]);
     expect(applied?.ok).toBe(true);
-    const item = await m.withViewer('team', () => lib.getLibraryItem(anchor, t.id));
+    const item = await m.runInLevelRoleForTest('team', () => lib.getLibraryItem(anchor, t.id));
     const text = JSON.stringify(item);
     expect(text).toContain('published cell');
     expect(text).not.toContain('admin draft secret');

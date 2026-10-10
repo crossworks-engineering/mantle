@@ -128,7 +128,7 @@ describe.skipIf(!URL)('draw_get reader rules', () => {
   });
 
   it('member: the team drawing without its admin image, never the admin drawing', async () => {
-    await m.withViewer('team', async () => {
+    await m.runInLevelRoleForTest('team', async () => {
       expect(await dr.readableDraw(anchor, d.admin)).toBeNull();
       expect(
         await dr.readableDrawSvg(anchor, d.admin, { kind: 'member', loginId: member }),
@@ -146,14 +146,14 @@ describe.skipIf(!URL)('draw_get reader rules', () => {
   });
 
   it('an agent at team level with no login: the files its scope reads', async () => {
-    await m.withViewer('team', async () => {
+    await m.runInLevelRoleForTest('team', async () => {
       const out = await dr.readableDrawSvg(anchor, d.team, { kind: 'scope' });
       expect([has(out, TEAM), has(out, ADMIN), has(out, CLIENT)]).toEqual([true, false, true]);
     });
   });
 
   it('client: only the client drawing, with only the client image', async () => {
-    await m.withViewer('client', async () => {
+    await m.runInLevelRoleForTest('client', async () => {
       expect(await dr.readableDraw(anchor, d.team)).toBeNull();
       expect(await dr.readableDrawSvg(anchor, d.team, { kind: 'client' })).toBeNull();
       expect(await dr.readableDraw(anchor, d.client)).toMatchObject({ hasDraft: false });
@@ -171,7 +171,7 @@ describe.skipIf(!URL)('draw_get reader rules', () => {
   it('audit M3: the text carries only the words of images the reader may see', async () => {
     // The owner reads the stored text, every image's words in it.
     expect(await dr.readableDrawText(anchor, d.admin, { kind: 'scope' })).toBe(storedText);
-    await m.withViewer('team', async () => {
+    await m.runInLevelRoleForTest('team', async () => {
       const text = await dr.readableDrawText(anchor, d.team, { kind: 'member', loginId: member });
       expect(text).toContain('Ingest');
       expect(text).toContain('TEAMWORDS');
@@ -181,7 +181,7 @@ describe.skipIf(!URL)('draw_get reader rules', () => {
       expect(agent).toContain('TEAMWORDS');
       expect(agent).not.toContain('ADMINWORDS');
     });
-    await m.withViewer('client', async () => {
+    await m.runInLevelRoleForTest('client', async () => {
       const text = await dr.readableDrawText(anchor, d.client, { kind: 'client' });
       expect(text).toContain('CLIENTWORDS');
       expect(text).not.toMatch(/TEAMWORDS|ADMINWORDS/);

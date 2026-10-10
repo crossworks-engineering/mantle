@@ -188,7 +188,7 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
   });
 
   it('before W2, the old rows leak (the control)', async () => {
-    const leaked = await m.withViewer('public', found);
+    const leaked = await m.runInLevelRoleForTest('public', found);
     for (const h of [
       `doc_text:${SECRET[1]}`,
       `chunks:${SECRET[1]}`,
@@ -319,7 +319,7 @@ describe.skipIf(!URL)('W2: a page without its embed finds none of its words', ()
   });
 
   it('LEVELLED without its embed: the public reader finds none of its words', async () => {
-    expect(await m.withViewer('public', found)).toEqual([]);
+    expect(await m.runInLevelRoleForTest('public', found)).toEqual([]);
   });
 
   it('GRANTED without its embed: a Team scope finds none of its words', async () => {

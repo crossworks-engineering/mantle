@@ -37,7 +37,7 @@ describe.skipIf(!URL)('read_result spills carry their level', () => {
           toolSlug: 'search_nodes',
           content: `written at ${l}`,
         });
-      handles[l] = (l === 'admin' ? await spill() : await m.withViewer(l, spill)).handle;
+      handles[l] = (l === 'admin' ? await spill() : await m.runInLevelRoleForTest(l, spill)).handle;
     }
   }, 60_000);
 
@@ -49,7 +49,7 @@ describe.skipIf(!URL)('read_result spills carry their level', () => {
 
   const read = async (reader: (typeof LEVELS)[number], written: (typeof LEVELS)[number]) => {
     const page = () => tr.readResultPage(owner, handles[written]!, 1, 1000);
-    const res = reader === 'admin' ? await page() : await m.withViewer(reader, page);
+    const res = reader === 'admin' ? await page() : await m.runInLevelRoleForTest(reader, page);
     return res.ok ? res.text : null;
   };
 
@@ -79,7 +79,7 @@ describe.skipIf(!URL)('read_result spills carry their level', () => {
   it("a bound reader (a client or member turn) reads only its own trace's spill", async () => {
     const turnA = randomUUID();
     const turnB = randomUUID();
-    const mine = await m.withViewer('client', () =>
+    const mine = await m.runInLevelRoleForTest('client', () =>
       tr.spillToolResult({
         ownerId: owner,
         traceId: turnA,
@@ -88,24 +88,24 @@ describe.skipIf(!URL)('read_result spills carry their level', () => {
       }),
     );
     const page = (traceId: string | null) =>
-      m.withViewer('client', () => tr.readResultPage(owner, mine.handle, 1, 1000, { traceId }));
+      m.runInLevelRoleForTest('client', () => tr.readResultPage(owner, mine.handle, 1, 1000, { traceId }));
     expect(await page(turnA)).toMatchObject({ ok: true, text: 'turn A text' });
     // Another turn at the same level (another client login), and a reader
     // with no trace: not found.
     expect(await page(turnB)).toMatchObject({ ok: false });
     expect(await page(null)).toMatchObject({ ok: false });
-    const g = await m.withViewer('client', () =>
+    const g = await m.runInLevelRoleForTest('client', () =>
       tr.grepResult(owner, mine.handle, 'turn', undefined, { traceId: turnB }),
     );
     expect(g).toMatchObject({ ok: false });
     // Unbound (an owner path at client level) reads it by handle as before.
     expect(
-      await m.withViewer('client', () => tr.readResultPage(owner, mine.handle, 1, 1000)),
+      await m.runInLevelRoleForTest('client', () => tr.readResultPage(owner, mine.handle, 1, 1000)),
     ).toMatchObject({ ok: true });
   });
 
   it('grep and query refuse the same way', async () => {
-    const g = await m.withViewer('client', () => tr.grepResult(owner, handles.admin!, 'written'));
+    const g = await m.runInLevelRoleForTest('client', () => tr.grepResult(owner, handles.admin!, 'written'));
     expect(g).toMatchObject({ ok: false });
   });
 });

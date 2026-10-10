@@ -163,7 +163,7 @@ describe.skipIf(!URL)('namesClientSourced', () => {
     expect(await cs.namesClientSourced(other, [ids.clientAppTable])).toBe(false);
     // Read on a limited role too (the check runs as the system).
     expect(
-      await m.withViewer('team', () => cs.namesClientSourced(owner, [ids.clientAppTable])),
+      await m.runInLevelRoleForTest('team', () => cs.namesClientSourced(owner, [ids.clientAppTable])),
     ).toBe(true);
     expect([
       ...(await cs.clientSourcedAmong(owner, [ids.clientAppTable, ids.teamAppTable])),
@@ -233,7 +233,7 @@ describe.skipIf(!URL)('namesClientSourced', () => {
       ids.copy,
       ids.older,
     ].map((id) => ({ id }));
-    const kept = await m.withViewer('team', () => cs.withoutClientSourced(owner, rows));
+    const kept = await m.runInLevelRoleForTest('team', () => cs.withoutClientSourced(owner, rows));
     expect(kept.map((r) => r.id).sort()).toEqual(
       [ids.teamTask, ids.plainTask, ids.acceptedMemberItem, ids.older].sort(),
     );
@@ -270,7 +270,7 @@ describe.skipIf(!URL)('namesClientSourced', () => {
 
   it('taintFromText marks from text that names one, at any viewer level', async () => {
     const t = cs.newTurnTaint();
-    await m.withViewer('team', () =>
+    await m.runInLevelRoleForTest('team', () =>
       cs.taintFromText(t, owner, `{"tasks":[{"id":"${ids.clientTask}"}]}`, 'task_list'),
     );
     expect(t).toEqual({ clientSourced: true, via: 'task_list' });

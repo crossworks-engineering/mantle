@@ -164,7 +164,7 @@ describe.skipIf(!URL)('member drawing images', () => {
 
   it('reads on the admin pool only', async () => {
     await expect(
-      m.withViewer('team', () => di.memberVisibleDrawFileIds(anchor, member, draw)),
+      m.runInLevelRoleForTest('team', () => di.memberVisibleDrawFileIds(anchor, member, draw)),
     ).rejects.toThrow(/admin pool/);
   });
 });

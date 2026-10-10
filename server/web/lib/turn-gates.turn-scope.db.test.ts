@@ -224,7 +224,7 @@ describe.skipIf(!URL)('workspace turn gates (W4b fix round 1)', () => {
     }
     // A level reader never reads a non-Admin workspace's spill.
     expect(
-      await m.withViewer('team', () => tools.readResultPage(owner, h.mine, 1, 10_000)),
+      await m.runInLevelRoleForTest('team', () => tools.readResultPage(owner, h.mine, 1, 10_000)),
     ).toMatchObject({ ok: false });
   });
 

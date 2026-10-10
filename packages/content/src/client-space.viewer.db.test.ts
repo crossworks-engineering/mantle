@@ -161,7 +161,7 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
     // Inside a client's space the brain reads as a client: a nested team
     // read goes no higher.
     const seen = await as(client, () =>
-      m.withViewer('team', async () =>
+      m.runInLevelRoleForTest('team', async () =>
         (
           (await m.db.execute(
             sqlTag`select id from nodes where id in (${brainItems.team}, ${brainItems.client}, ${brainItems.pub})`,

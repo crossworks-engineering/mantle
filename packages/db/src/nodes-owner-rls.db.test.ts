@@ -35,7 +35,7 @@ describe.skipIf(!URL)('nodes read rule: only the brain owner’s items reach a l
 
   const visibleAt = async (level: 'team' | 'client' | 'public') =>
     (
-      (await m.withViewer(level, () =>
+      (await m.runInLevelRoleForTest(level, () =>
         m.db.execute(sqlTag`select id from nodes where title like ${`${tag}%`}`),
       )) as unknown as { id: string }[]
     )
@@ -100,7 +100,7 @@ describe.skipIf(!URL)('nodes read rule: only the brain owner’s items reach a l
   });
 
   it('asked for by id, a non-brain item still reads as nothing', async () => {
-    const rows = (await m.withViewer('team', () =>
+    const rows = (await m.runInLevelRoleForTest('team', () =>
       m.db.execute(
         sqlTag`select id from nodes where id in (${ids.personalTeam}, ${ids.otherBrainTeam})`,
       ),

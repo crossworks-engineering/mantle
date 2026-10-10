@@ -74,13 +74,13 @@ describe.skipIf(!URL)('viewer pools on Postgres', () => {
   });
 
   it('inside withViewer, row level security filters by level', async () => {
-    expect(await m.withViewer('team', () => probe(m.db))).toEqual([2, 3, 4]);
-    expect(await m.withViewer('client', () => probe(m.db))).toEqual([3, 4]);
-    expect(await m.withViewer('public', () => probe(m.db))).toEqual([4]);
+    expect(await m.runInLevelRoleForTest('team', () => probe(m.db))).toEqual([2, 3, 4]);
+    expect(await m.runInLevelRoleForTest('client', () => probe(m.db))).toEqual([3, 4]);
+    expect(await m.runInLevelRoleForTest('public', () => probe(m.db))).toEqual([4]);
   });
 
   it('really is the limited role, not a role switch on the admin session', async () => {
-    const who = await m.withViewer(
+    const who = await m.runInLevelRoleForTest(
       'team',
       async () =>
         (await m.db.execute(sqlTag`select session_user as s, current_user as c`)) as unknown as {
@@ -91,16 +91,16 @@ describe.skipIf(!URL)('viewer pools on Postgres', () => {
     expect(who[0]).toEqual({ s: 'mantle_view_team', c: 'mantle_view_team' });
     // And it cannot climb out.
     await expect(
-      m.withViewer('team', () => m.db.execute(sqlTag`set role postgres`)),
+      m.runInLevelRoleForTest('team', () => m.db.execute(sqlTag`set role postgres`)),
     ).rejects.toThrow();
   });
 
   it('systemDb ignores the viewer (infrastructure writes)', async () => {
-    expect(await m.withViewer('public', () => probe(m.systemDb))).toEqual([1, 2, 3, 4]);
+    expect(await m.runInLevelRoleForTest('public', () => probe(m.systemDb))).toEqual([1, 2, 3, 4]);
   });
 
   it('a transaction opened inside the scope is filtered too', async () => {
-    const ids = await m.withViewer('client', () =>
+    const ids = await m.runInLevelRoleForTest('client', () =>
       m.db.transaction(async (tx) =>
         (
           (await tx.execute(
@@ -116,7 +116,7 @@ describe.skipIf(!URL)('viewer pools on Postgres', () => {
 
   it('a limited role has no write grant: writes fail loudly', async () => {
     await expect(
-      m.withViewer('team', () =>
+      m.runInLevelRoleForTest('team', () =>
         m.db.execute(sqlTag`insert into viewer_test.viewer_probe values (9, 'team')`),
       ),
     ).rejects.toMatchObject({ cause: { code: INSUFFICIENT_PRIVILEGE } });
@@ -124,7 +124,7 @@ describe.skipIf(!URL)('viewer pools on Postgres', () => {
 
   it('a table the grant matrix does not name is an error, not an empty result', async () => {
     await expect(
-      m.withViewer('team', () => m.db.execute(sqlTag`select 1 from pg_catalog.pg_authid`)),
+      m.runInLevelRoleForTest('team', () => m.db.execute(sqlTag`select 1 from pg_catalog.pg_authid`)),
     ).rejects.toMatchObject({ cause: { code: INSUFFICIENT_PRIVILEGE } });
   });
 });

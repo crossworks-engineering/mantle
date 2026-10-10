@@ -131,7 +131,7 @@ describe.skipIf(!URL)('team-level tool groups on the team viewer role', () => {
       if (!tool) continue;
       let outcome: string;
       try {
-        const res = await m.withViewer('team', () =>
+        const res = await m.runInLevelRoleForTest('team', () =>
           tool.handler(inputs[slug] ?? {}, {
             ownerId,
             surface: { kind: 'team', contactId: 'c', privateReads: false },

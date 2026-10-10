@@ -126,7 +126,7 @@ describe.skipIf(!URL)('the client role reads client items only, on every search 
 
   /** Every search arm at `level`: the ids of OUR items each returns. */
   async function arms(level: 'team' | 'client' | 'public') {
-    return m.withViewer(level, async () => {
+    return m.runInLevelRoleForTest(level, async () => {
       const fts = await s.searchNodes({ ownerId: anchor, q: tag, limit: 50 });
       const hybrid = await s.searchNodes({
         ownerId: anchor,
@@ -213,7 +213,7 @@ describe.skipIf(!URL)('the client role reads client items only, on every search 
 
   it('agents and tool groups: the client role reads client ones only (0189)', async () => {
     const read = (level: 'team' | 'client' | 'public') =>
-      m.withViewer(level, async () => ({
+      m.runInLevelRoleForTest(level, async () => ({
         agents: (
           (await m.db.execute(
             sqlTag`select slug from agents where slug like ${`${tag}-%`} order by slug`,
@@ -240,14 +240,14 @@ describe.skipIf(!URL)('the client role reads client items only, on every search 
 
   it('logins: no grant for the client role, the brain id still resolves', async () => {
     await expect(
-      m.withViewer('client', () => m.db.execute(sqlTag`select id from auth.users limit 1`)),
+      m.runInLevelRoleForTest('client', () => m.db.execute(sqlTag`select id from auth.users limit 1`)),
     ).rejects.toMatchObject({ cause: { code: '42501' } });
-    const [brain] = (await m.withViewer('client', () =>
+    const [brain] = (await m.runInLevelRoleForTest('client', () =>
       m.db.execute(sqlTag`select mantle_brain_id() as id`),
     )) as unknown as { id: string }[];
     expect(brain!.id).toBe(anchor);
     // The team role still reads the columns the matrix names.
-    const rows = (await m.withViewer('team', () =>
+    const rows = (await m.runInLevelRoleForTest('team', () =>
       m.db.execute(sqlTag`select id, is_owner from auth.users where id = ${anchor}`),
     )) as unknown as unknown[];
     expect(rows).toHaveLength(1);
@@ -257,7 +257,7 @@ describe.skipIf(!URL)('the client role reads client items only, on every search 
     const saved = process.env.ALLOWED_USER_ID;
     delete process.env.ALLOWED_USER_ID;
     try {
-      expect(await m.withViewer('client', () => m.resolveSingleOwnerId())).toBe(anchor);
+      expect(await m.runInLevelRoleForTest('client', () => m.resolveSingleOwnerId())).toBe(anchor);
     } finally {
       if (saved !== undefined) process.env.ALLOWED_USER_ID = saved;
     }

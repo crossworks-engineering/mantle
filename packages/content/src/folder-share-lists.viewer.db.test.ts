@@ -76,12 +76,12 @@ describe.skipIf(!URL)('folder-shared items in the Library and for clients', () =
     });
 
   const listed = async (level: 'team' | 'client') =>
-    m.withViewer(level, async () => {
+    m.runInLevelRoleForTest(level, async () => {
       const res = await library.listLibrary(brain, { q: label, limit: 200 });
       return new Map(res.items.map((r) => [r.id, r.audience]));
     });
   const opens = (level: 'team' | 'client', id: string) =>
-    m.withViewer(level, async () => (await library.getLibraryItem(brain, id)) !== null);
+    m.runInLevelRoleForTest(level, async () => (await library.getLibraryItem(brain, id)) !== null);
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
@@ -160,7 +160,7 @@ describe.skipIf(!URL)('folder-shared items in the Library and for clients', () =
   });
 
   it('lists and opens for a client only what a client-shared folder holds', async () => {
-    const got = await m.withViewer('client', async () => {
+    const got = await m.runInLevelRoleForTest('client', async () => {
       const res = await shared.listClientShared(brain, { q: label, limit: 200 });
       return new Set(res.items.map((r) => r.id));
     });
@@ -169,7 +169,7 @@ describe.skipIf(!URL)('folder-shared items in the Library and for clients', () =
     expect(await opens('client', ids.teamInClient)).toBe(true);
     expect(await opens('client', ids.adminInTeam)).toBe(false);
     expect(await opens('client', ids.publicInTeam)).toBe(false);
-    const item = await m.withViewer('client', () =>
+    const item = await m.runInLevelRoleForTest('client', () =>
       shared.getClientSharedItem(brain, ids.adminInClient),
     );
     expect(item).toMatchObject({ id: ids.adminInClient, type: 'note' });
@@ -178,7 +178,7 @@ describe.skipIf(!URL)('folder-shared items in the Library and for clients', () =
   });
 
   it('keeps a folder-shared item named in a client’s redaction, and hides the rest', async () => {
-    const readable = await m.withViewer('client', () =>
+    const readable = await m.runInLevelRoleForTest('client', () =>
       shared.clientReadable(brain, [
         ids.adminInClient,
         ids.teamInClient,
@@ -205,12 +205,12 @@ describe.skipIf(!URL)('folder-shared items in the Library and for clients', () =
   });
 
   it('runs an admin app in a shared folder at the folder’s share', async () => {
-    const team = await m.withViewer('team', () => memberApps.listMemberApps(brain));
+    const team = await m.runInLevelRoleForTest('team', () => memberApps.listMemberApps(brain));
     const inTeam = team.find((a) => a.id === ids.appInTeam);
     // Read at team through its folder: a member runs it and writes its data.
     expect(inTeam).toMatchObject({ audience: 'team', dataReadOnly: false });
     expect(team.find((a) => a.id === ids.appInClient)).toMatchObject({ audience: 'client' });
-    const run = await m.withViewer('team', () =>
+    const run = await m.runInLevelRoleForTest('team', () =>
       memberApps.getMemberRunnableApp(brain, ids.appInTeam),
     );
     expect(run?.writable).toBe(true);
@@ -218,14 +218,14 @@ describe.skipIf(!URL)('folder-shared items in the Library and for clients', () =
     const teamIds = await memberApps.listTeamLevelAppIds(brain);
     expect(teamIds.has(ids.appInTeam) && teamIds.has(ids.appInClient)).toBe(true);
 
-    const client = await m.withViewer('client', () => clientApps.listClientApps(brain));
+    const client = await m.runInLevelRoleForTest('client', () => clientApps.listClientApps(brain));
     expect(client.map((a) => a.id)).toContain(ids.appInClient);
     expect(client.map((a) => a.id)).not.toContain(ids.appInTeam);
     expect(
-      await m.withViewer('client', () => clientApps.getClientRunnableApp(brain, ids.appInClient)),
+      await m.runInLevelRoleForTest('client', () => clientApps.getClientRunnableApp(brain, ids.appInClient)),
     ).not.toBeNull();
     expect(
-      await m.withViewer('client', () => clientApps.getClientRunnableApp(brain, ids.appInTeam)),
+      await m.runInLevelRoleForTest('client', () => clientApps.getClientRunnableApp(brain, ids.appInTeam)),
     ).toBeNull();
   });
 

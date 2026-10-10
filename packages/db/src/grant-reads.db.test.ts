@@ -21,7 +21,7 @@ import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { teamReadsAliasSql } from './grant-reads';
 import { createMigratedScratchDatabase } from './test-support';
-import { withViewer } from './viewer';
+import { runInLevelRoleForTest } from './viewer';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -53,7 +53,7 @@ describe.skipIf(!URL)('grant reads (W5b2): Team reads from the grants alone', ()
 
   /** Both forms of the helper, next to the plain "Team in read_ws". */
   const compare = async (): Promise<Cmp[]> => {
-    const viewerForm = await withViewer('team', async () => teamReadsAliasSql('n'));
+    const viewerForm = await runInLevelRoleForTest('team', async () => teamReadsAliasSql('n'));
     const q = new PgDialect().sqlToQuery(sqlTag`
       select n.id::text as id, n.title, ${teamReadsAliasSql('n')} as sys,
              ${viewerForm as SQL} as viewer,

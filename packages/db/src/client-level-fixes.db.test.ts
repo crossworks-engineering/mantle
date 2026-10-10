@@ -78,7 +78,7 @@ describe.skipIf(!URL)('the client level after the audit fixes', () => {
     }
     expect(await can(probeRole), 'a role with no grant').toBe(false);
     // And it still resolves for the client role.
-    const [brain] = (await m.withViewer('client', () =>
+    const [brain] = (await m.runInLevelRoleForTest('client', () =>
       m.db.execute(sqlTag`select mantle_brain_id() as id`),
     )) as unknown as { id: string }[];
     expect(brain!.id).toBe(anchor);
@@ -86,19 +86,19 @@ describe.skipIf(!URL)('the client level after the audit fixes', () => {
 
   it('the client role reads no embedding config and only the preferences of a profile (A27)', async () => {
     await expect(
-      m.withViewer('client', () => m.db.execute(sqlTag`select 1 from embedding_config limit 1`)),
+      m.runInLevelRoleForTest('client', () => m.db.execute(sqlTag`select 1 from embedding_config limit 1`)),
     ).rejects.toMatchObject({ cause: { code: '42501' } });
     await expect(
-      m.withViewer('client', () => m.db.execute(sqlTag`select display_name from profiles limit 1`)),
+      m.runInLevelRoleForTest('client', () => m.db.execute(sqlTag`select display_name from profiles limit 1`)),
     ).rejects.toMatchObject({ cause: { code: '42501' } });
     await expect(
-      m.withViewer('client', () =>
+      m.runInLevelRoleForTest('client', () =>
         m.db.execute(sqlTag`select preferences from profiles where user_id = ${anchor}`),
       ),
     ).resolves.toBeDefined();
     // The team role is unchanged.
     await expect(
-      m.withViewer('team', async () => [
+      m.runInLevelRoleForTest('team', async () => [
         await m.db.execute(sqlTag`select display_name from profiles limit 1`),
         await m.db.execute(sqlTag`select 1 from embedding_config limit 1`),
       ]),

@@ -514,7 +514,7 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
 
   it('test 10: currentScope reports the scope; currentViewerLevel refuses inside a workspace scope', async () => {
     expect(m.currentScope()).toEqual({ kind: 'system' });
-    await m.withViewer('team', async () => {
+    await m.runInLevelRoleForTest('team', async () => {
       expect(m.currentScope()).toEqual({ kind: 'level', level: 'team' });
     });
     await m.withScope({ kind: 'assistant', loginId: null, ws: [ws.team], modWs: [] }, async () => {
@@ -530,7 +530,7 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
     expect(await m.scopeHasArea('users')).toBe(true);
     expect(await m.scopeHasArea('nope' as never)).toBe(false);
     // A level scope: its level, no area.
-    await m.withViewer('team', async () => {
+    await m.runInLevelRoleForTest('team', async () => {
       expect(m.levelOfScope(m.currentScope())).toBe('team');
       expect(m.inLevelScope('team')).toBe(true);
       expect(m.inLevelScope('client')).toBe(false);

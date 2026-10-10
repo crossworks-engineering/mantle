@@ -545,7 +545,7 @@ describe.skipIf(!URL)('the Apps launcher folders for members and clients', () =>
   });
 
   it('refuses to run inside a viewer scope', async () => {
-    await expect(m.withViewer('team', () => folders.appLauncher(brain, 'team'))).rejects.toThrow(
+    await expect(m.runInLevelRoleForTest('team', () => folders.appLauncher(brain, 'team'))).rejects.toThrow(
       /admin pool/,
     );
   });

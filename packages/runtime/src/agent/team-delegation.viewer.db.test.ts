@@ -70,22 +70,22 @@ describe.skipIf(!URL)('team delegation reaches admin agents under the team role'
 
   it('the delegate roster lists the admin agent and its group at team', async () => {
     const { buildDelegateRoster } = await import('@mantle/tools');
-    const roster = await m.withViewer('team', () => buildDelegateRoster(ownerId, [agentSlug]));
+    const roster = await m.runInLevelRoleForTest('team', () => buildDelegateRoster(ownerId, [agentSlug]));
     expect(roster).toContain(agentSlug);
     expect(roster).toContain(groupName);
     // The contrast: the client role reads agents by level, and this one is
     // an admin agent.
-    expect(await m.withViewer('client', () => buildDelegateRoster(ownerId, [agentSlug]))).toBe('');
+    expect(await m.runInLevelRoleForTest('client', () => buildDelegateRoster(ownerId, [agentSlug]))).toBe('');
   });
 
   it("invoke_agent's agent load finds the admin agent at team", async () => {
     const { invokeAgent } = await import('./invoke-agent');
     const call = () =>
       invokeAgent({ ownerId, agentSlug, prompt: 'hello', depth: 1, parentTraceId: null });
-    const team = await m.withViewer('team', call);
+    const team = await m.runInLevelRoleForTest('team', call);
     expect(team.ok).toBe(false);
     expect(team.ok ? '' : team.error).toMatch(/has no api_key_id configured/);
-    const client = await m.withViewer('client', call);
+    const client = await m.runInLevelRoleForTest('client', call);
     expect(client.ok ? '' : client.error).toMatch(/not found/);
   });
 });

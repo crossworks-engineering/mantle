@@ -284,7 +284,7 @@ describe.skipIf(!URL)('client requests: members read clients’ submitted items 
 
   it('nothing without the human flag: an agent on the team role reads 0 rows', async () => {
     const roots = [ids.page, ids.note, ids.file, ids.bundleFile];
-    const seen = await m.withViewer('team', async () => ({
+    const seen = await m.runInLevelRoleForTest('team', async () => ({
       nodes: (await m.db.execute(
         sqlTag`select id from nodes where id in (${sqlTag.join(roots, sqlTag`, `)})`,
       )) as unknown as unknown[],
@@ -293,7 +293,7 @@ describe.skipIf(!URL)('client requests: members read clients’ submitted items 
       )) as unknown as unknown[],
     }));
     expect(seen).toEqual({ nodes: [], items: [] });
-    expect(await m.withViewer('team', () => cr.listClientRequests({ q: tag }))).toEqual({
+    expect(await m.runInLevelRoleForTest('team', () => cr.listClientRequests({ q: tag }))).toEqual({
       items: [],
       total: 0,
     });

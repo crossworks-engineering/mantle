@@ -32,7 +32,7 @@ describe.skipIf(!URL)('my-space tools (on behalf of the member)', () => {
   });
   // Tools run inside the team-level loop.
   const call = (tool: 'my_items_list' | 'my_item_open', input: object, loginId?: string) =>
-    m.withViewer('team', () => t[tool].handler(input as Record<string, unknown>, ctxFor(loginId)));
+    m.runInLevelRoleForTest('team', () => t[tool].handler(input as Record<string, unknown>, ctxFor(loginId)));
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
@@ -107,8 +107,8 @@ describe.skipIf(!URL)('my-space tools (on behalf of the member)', () => {
       { kind: 'telegram', telegramChatId: '1', loginId: loginA },
     ]) {
       const ctx = { ownerId: randomUUID(), surface } as unknown as ToolHandlerContext;
-      const list = await m.withViewer('team', () => t.my_items_list.handler({}, ctx));
-      const open = await m.withViewer('team', () => t.my_item_open.handler({ id: pageA }, ctx));
+      const list = await m.runInLevelRoleForTest('team', () => t.my_items_list.handler({}, ctx));
+      const open = await m.runInLevelRoleForTest('team', () => t.my_item_open.handler({ id: pageA }, ctx));
       expect([surface.kind, list.ok, open.ok]).toEqual([surface.kind, false, false]);
     }
     // A team turn for a contact (no login) finds nothing either.
@@ -116,7 +116,7 @@ describe.skipIf(!URL)('my-space tools (on behalf of the member)', () => {
       ownerId: randomUUID(),
       surface: { kind: 'team', contactId: randomUUID() },
     } as ToolHandlerContext;
-    expect((await m.withViewer('team', () => t.my_items_list.handler({}, contact))).ok).toBe(false);
+    expect((await m.runInLevelRoleForTest('team', () => t.my_items_list.handler({}, contact))).ok).toBe(false);
   });
 
   it('finds nothing without a member on the surface (owner turns, heartbeats, MCP)', async () => {

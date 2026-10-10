@@ -387,9 +387,9 @@ describe.skipIf(!URL)('app data over a login MCP', () => {
     // A column the role may not read fails the query (42501), so getting an
     // answer at all is the proof.
     await expect(
-      m.withViewer('team', () => content.listMcpDataApps(anchor, 'member')),
+      m.runInLevelRoleForTest('team', () => content.listMcpDataApps(anchor, 'member')),
     ).resolves.toBeInstanceOf(Array);
-    const one = await m.withViewer('client', () =>
+    const one = await m.runInLevelRoleForTest('client', () =>
       content.getMcpDataApp(anchor, 'client', ids['e client']!),
     );
     expect(one === null || one.id === ids['e client']).toBe(true);

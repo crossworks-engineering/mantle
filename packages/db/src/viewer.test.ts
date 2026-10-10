@@ -30,7 +30,7 @@ import {
   viewerLoginRoleName,
   viewerRoleName,
   viewerRolePassword,
-  withViewer,
+  runInLevelRoleForTest,
 } from './viewer';
 import {
   noteOwner,
@@ -65,14 +65,14 @@ describe('personal-space scope (Phase 2)', () => {
 
   it("withViewer('admin') changes nothing: the space and its transaction stay", async () => {
     const seen = await inSpace(() =>
-      withViewer('admin', async () => [currentSpaceScope(), currentScopeTx()]),
+      runInLevelRoleForTest('admin', async () => [currentSpaceScope(), currentScopeTx()]),
     );
     expect(seen).toEqual([space, tx]);
   });
 
   it('a lower withViewer leaves the space for the brain at that level (no drafts)', async () => {
     const seen = await inSpace(() =>
-      withViewer('team', async () => [currentSpaceScope(), currentScopeTx(), readsDrafts()]),
+      runInLevelRoleForTest('team', async () => [currentSpaceScope(), currentScopeTx(), readsDrafts()]),
     );
     expect(seen).toEqual([null, null, false]);
   });
@@ -85,7 +85,7 @@ describe('personal-space scope (Phase 2)', () => {
   });
 
   it('a level scope never reads drafts', async () => {
-    expect(await withViewer('team', async () => readsDrafts())).toBe(false);
+    expect(await runInLevelRoleForTest('team', async () => readsDrafts())).toBe(false);
   });
 });
 
@@ -95,7 +95,7 @@ describe('withViewer', () => {
   });
 
   it('holds the level across awaits', async () => {
-    const seen = await withViewer('team', async () => {
+    const seen = await runInLevelRoleForTest('team', async () => {
       await new Promise((r) => setTimeout(r, 1));
       return currentViewerLevel();
     });
@@ -104,32 +104,32 @@ describe('withViewer', () => {
   });
 
   it('only ever goes down: a nested admin scope stays at the outer level', async () => {
-    const seen = await withViewer('team', () =>
-      withViewer('admin', async () => currentViewerLevel()),
+    const seen = await runInLevelRoleForTest('team', () =>
+      runInLevelRoleForTest('admin', async () => currentViewerLevel()),
     );
     expect(seen).toBe('team');
   });
 
   it('a nested lower scope wins', async () => {
-    const seen = await withViewer('team', () =>
-      withViewer('public', async () => currentViewerLevel()),
+    const seen = await runInLevelRoleForTest('team', () =>
+      runInLevelRoleForTest('public', async () => currentViewerLevel()),
     );
     expect(seen).toBe('public');
   });
 
   it('keeps concurrent scopes apart', async () => {
     const [a, b] = await Promise.all([
-      withViewer('team', async () => {
+      runInLevelRoleForTest('team', async () => {
         await new Promise((r) => setTimeout(r, 5));
         return currentViewerLevel();
       }),
-      withViewer('client', async () => currentViewerLevel()),
+      runInLevelRoleForTest('client', async () => currentViewerLevel()),
     ]);
     expect([a, b]).toEqual(['team', 'client']);
   });
 
   it('asSystem steps out of the scope for its own work only', async () => {
-    const seen = await withViewer('team', async () => {
+    const seen = await runInLevelRoleForTest('team', async () => {
       const inside = await asSystem(async () => {
         await new Promise((r) => setTimeout(r, 1));
         return currentViewerLevel();
@@ -141,7 +141,7 @@ describe('withViewer', () => {
 
   it('refuses to queue work from inside a limited scope', async () => {
     expect(() => assertNoViewer('enqueueX')).not.toThrow();
-    await withViewer('team', async () => {
+    await runInLevelRoleForTest('team', async () => {
       expect(() => assertNoViewer('enqueueX')).toThrow(/enqueueX .* 'team'/);
     });
   });
@@ -167,30 +167,30 @@ describe('withViewer', () => {
   });
 
   it('a client scope refuses public work and a public scope client work (never widened)', async () => {
-    await withViewer('client', async () => {
-      await expect(withViewer('public', async () => currentViewerLevel())).rejects.toBeInstanceOf(
+    await runInLevelRoleForTest('client', async () => {
+      await expect(runInLevelRoleForTest('public', async () => currentViewerLevel())).rejects.toBeInstanceOf(
         ViewerLevelConflictError,
       );
       // admin and team requests keep the client scope.
-      expect(await withViewer('team', async () => currentViewerLevel())).toBe('client');
-      expect(await withViewer('admin', async () => currentViewerLevel())).toBe('client');
+      expect(await runInLevelRoleForTest('team', async () => currentViewerLevel())).toBe('client');
+      expect(await runInLevelRoleForTest('admin', async () => currentViewerLevel())).toBe('client');
     });
-    await withViewer('public', async () => {
-      await expect(withViewer('client', async () => 1)).rejects.toMatchObject({
+    await runInLevelRoleForTest('public', async () => {
+      await expect(runInLevelRoleForTest('client', async () => 1)).rejects.toMatchObject({
         code: 'viewer-level-conflict',
         current: 'public',
         requested: 'client',
       });
     });
     // A team scope still lowers to either.
-    await withViewer('team', async () => {
-      expect(await withViewer('public', async () => currentViewerLevel())).toBe('public');
-      expect(await withViewer('client', async () => currentViewerLevel())).toBe('client');
+    await runInLevelRoleForTest('team', async () => {
+      expect(await runInLevelRoleForTest('public', async () => currentViewerLevel())).toBe('public');
+      expect(await runInLevelRoleForTest('client', async () => currentViewerLevel())).toBe('client');
     });
   });
 
   it("a client's space opened under a public scope is refused", async () => {
-    await withViewer('public', async () => {
+    await runInLevelRoleForTest('public', async () => {
       expect(() => runInTxScope({ level: 'client', tx: { fake: 'tx' } }, async () => 1)).toThrow(
         ViewerLevelConflictError,
       );

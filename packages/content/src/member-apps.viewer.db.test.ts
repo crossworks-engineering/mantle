@@ -144,7 +144,7 @@ describe.skipIf(!URL)('apps for members', () => {
     await m.closeDb();
   }, 60_000);
 
-  const team = <T>(fn: () => Promise<T>) => m.withViewer('team', fn);
+  const team = <T>(fn: () => Promise<T>) => m.runInLevelRoleForTest('team', fn);
   const inField = <T>(fn: () => Promise<T>) =>
     m.withScope({ kind: 'user', loginId: member, ws: [ws.field], modWs: [] }, fn);
 

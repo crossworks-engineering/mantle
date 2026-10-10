@@ -87,7 +87,7 @@ describe.skipIf(!URL)('agent levels: client and public never meet', () => {
     const { withAgentViewer } = await import('./agent-viewer');
     const { ViewerLevelConflictError } = await import('@mantle/db/viewer');
     let read: { id: string }[] | null = null;
-    await m.withViewer('client', async () => {
+    await m.runInLevelRoleForTest('client', async () => {
       await expect(
         withAgentViewer({ audience: 'public' }, async () => {
           read = await readPages();
@@ -97,12 +97,12 @@ describe.skipIf(!URL)('agent levels: client and public never meet', () => {
     });
     expect(read).toBeNull();
     // The client scope itself reads its own level only.
-    const own = await m.withViewer('client', readPages);
+    const own = await m.runInLevelRoleForTest('client', readPages);
     expect(own.map((r) => r.id)).toEqual([page.client]);
   });
 
   it('the client role loads client agents and tool groups only (0189)', async () => {
-    const slugs = await m.withViewer('client', async () => ({
+    const slugs = await m.runInLevelRoleForTest('client', async () => ({
       agents: (
         (await m.db.execute(
           sqlTag`select slug from agents where slug like ${`${tag}-%`} order by slug`,
@@ -124,7 +124,7 @@ describe.skipIf(!URL)('agent levels: client and public never meet', () => {
     expect(await resolveAgentToolGroups(anchor, both, 'client')).toEqual([`${tag}-tool-client`]);
     // Client caller, public agent: no common level, no tools.
     expect(
-      await m.withViewer('client', () => resolveAgentToolGroups(anchor, both, 'public')),
+      await m.runInLevelRoleForTest('client', () => resolveAgentToolGroups(anchor, both, 'public')),
     ).toEqual([]);
   });
 
@@ -140,10 +140,10 @@ describe.skipIf(!URL)('agent levels: client and public never meet', () => {
       });
     h.levels = [];
     // The client role cannot even load a public agent.
-    const fromClient = await m.withViewer('client', () => call(agentSlug('public')));
+    const fromClient = await m.runInLevelRoleForTest('client', () => call(agentSlug('public')));
     expect(fromClient).toMatchObject({ ok: false });
     // The public role loads every agent, but a client one is refused before it runs.
-    const fromPublic = await m.withViewer('public', () => call(agentSlug('client')));
+    const fromPublic = await m.runInLevelRoleForTest('public', () => call(agentSlug('client')));
     expect(fromPublic).toMatchObject({ ok: false });
     expect((fromPublic as { error: string }).error).toMatch(/client-level.*public/);
     expect(h.levels).toEqual([]);
@@ -152,7 +152,7 @@ describe.skipIf(!URL)('agent levels: client and public never meet', () => {
   it('team delegation to an admin agent still works, at team', async () => {
     const { invokeAgent } = await import('./invoke-agent');
     h.levels = [];
-    const res = await m.withViewer('team', () =>
+    const res = await m.runInLevelRoleForTest('team', () =>
       invokeAgent({
         ownerId: anchor,
         agentSlug: agentSlug('admin'),

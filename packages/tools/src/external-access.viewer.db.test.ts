@@ -221,7 +221,7 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     const scope = level.appToolScope('team', { loginId: member, name: 'A member' });
     expect(scope).toMatchObject({ viewer: 'team', surface: { kind: 'team', privateReads: false } });
     fake.calls.length = 0;
-    const out = await m.withViewer(scope.viewer, () =>
+    const out = await m.runInLevelRoleForTest(scope.viewer, () =>
       dispatch.dispatchTool(v.tool, { q: 'x' }, { ownerId: anchor, surface: scope.surface }),
     );
     expect(out).toMatchObject({ ok: true, output: { rows: [{ n: 1 }] }, untrusted: true });
@@ -270,7 +270,7 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
         sqlTag`select * from tools where id = ${ids.site_query!}`,
       )) as unknown as Array<Record<string, unknown>>;
       fake.calls.length = 0;
-      const out = await m.withViewer('team', () =>
+      const out = await m.runInLevelRoleForTest('team', () =>
         dispatch.dispatchTool(
           {
             ...(row as unknown as import('@mantle/db').Tool),
@@ -330,7 +330,7 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     if (!v.ok) throw new Error(v.reason);
     const scope = level.appToolScope('client', { loginId: client, name: 'A client' });
     fake.calls.length = 0;
-    const out = await m.withViewer(scope.viewer, () =>
+    const out = await m.runInLevelRoleForTest(scope.viewer, () =>
       dispatch.dispatchTool(v.tool, { q: 'c' }, { ownerId: anchor, surface: scope.surface }),
     );
     expect(out).toMatchObject({ ok: true, output: { rows: [{ n: 1 }] } });
@@ -418,7 +418,7 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
       fake.calls.length = 0;
       // The dispatch holds it too (M2 audit, low 6).
       const fresh = await (await import('./resolve')).resolveTool(anchor, 'site_query');
-      const out = await m.withViewer('public', () =>
+      const out = await m.runInLevelRoleForTest('public', () =>
         dispatch.dispatchTool(
           fresh!,
           { q: 'l' },
@@ -514,7 +514,7 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     // A member's call through some other group: the workspaces that hold
     // the connector decide (M2 audit, low 6; W5b2), never its level.
     const asLogin = (loginId?: string) =>
-      m.withViewer('team', () =>
+      m.runInLevelRoleForTest('team', () =>
         dispatch.dispatchTool(
           tool,
           {},
@@ -558,7 +558,7 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
       const unmarked = await crud.getToolById(anchor, ids.site_query!);
       expect(unmarked).toBeTruthy();
       const fresh = await (await import('./resolve')).resolveTool(anchor, 'site_query');
-      const pub = await m.withViewer('public', () =>
+      const pub = await m.runInLevelRoleForTest('public', () =>
         dispatch.dispatchTool(fresh!, {}, { ownerId: anchor, surface: { kind: 'web' } }),
       );
       expect(pub).toMatchObject({ ok: false, error: expect.stringMatching(/marked read-only/) });
@@ -930,7 +930,7 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     if (!tool) throw new Error('no tool');
     const surface = { kind: 'team' as const, loginId: member };
     const asMember = (input: Record<string, unknown>) =>
-      m.withViewer('team', () => dispatch.dispatchTool(tool, input, { ownerId: anchor, surface }));
+      m.runInLevelRoleForTest('team', () => dispatch.dispatchTool(tool, input, { ownerId: anchor, surface }));
     fake.calls.length = 0;
     expect(await asMember({ q: 'x' })).toMatchObject({ ok: true });
     const extra = await asMember({ q: 'x', statement: 'delete from rows' });
@@ -951,7 +951,7 @@ describe.skipIf(!URL)('external access to an outside tool', () => {
     await switchOff('site_query');
     try {
       const fresh = await resolveTool(anchor, 'site_query');
-      const write = await m.withViewer('team', () =>
+      const write = await m.runInLevelRoleForTest('team', () =>
         dispatch.dispatchTool(
           fresh!,
           { q: 'x', statement: 'select 1' },

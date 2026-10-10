@@ -169,7 +169,7 @@ describe.skipIf(!URL)('member app tool broker rules', () => {
       );
     const titles = (res: Awaited<ReturnType<typeof run>>) =>
       (res.ok ? (res.output as { title: string }[]) : []).map((r) => r.title);
-    const asTeam = await m.withViewer('team', run);
+    const asTeam = await m.runInLevelRoleForTest('team', run);
     expect(asTeam.ok).toBe(true);
     expect(titles(asTeam)).toEqual([]);
     const asAdmin = await run();

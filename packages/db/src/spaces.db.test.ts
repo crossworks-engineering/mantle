@@ -231,8 +231,8 @@ describe.skipIf(!URL)('personal spaces under row level security', () => {
   });
 
   it('an agent at team (no human flag) and a client viewer never see anyone’s drafts', async () => {
-    expect(await m.withViewer('team', titles)).toEqual(['brain-team']);
-    expect(await m.withViewer('client', titles)).toEqual([]);
+    expect(await m.runInLevelRoleForTest('team', titles)).toEqual(['brain-team']);
+    expect(await m.runInLevelRoleForTest('client', titles)).toEqual([]);
   });
 
   it('the brain never announces a personal item to the extractor', async () => {
