@@ -33,10 +33,7 @@ vi.mock('@mantle/content', async (importOriginal) => ({
 
 vi.mock('./dbos-client', () => ({
   getDbosClient: async () => ({
-    enqueue: async (
-      opts: { workflowID: string; queueName: string },
-      input: { text: string },
-    ) => {
+    enqueue: async (opts: { workflowID: string; queueName: string }, input: { text: string }) => {
       if (h.enqueueFails) throw new Error('queue down');
       h.enqueued.push({ ...opts, input });
       h.firstInput ??= input;
@@ -99,9 +96,9 @@ describe('workspace turns: the per-minute limit', () => {
   });
 
   it('the limit is per login, and an Admin user is not limited or ledgered', async () => {
-    expect(
-      (await send(login('member', '44444444-4444-4444-8444-444444444444'), 'hi')).status,
-    ).toBe(202);
+    expect((await send(login('member', '44444444-4444-4444-8444-444444444444'), 'hi')).status).toBe(
+      202,
+    );
     const admin = login('admin', '55555555-5555-4555-8555-555555555555');
     for (let i = 1; i <= 8; i++) expect((await send(admin, `a ${i}`)).status).toBe(202);
     expect(h.claimed).toHaveLength(1);

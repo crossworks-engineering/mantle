@@ -92,10 +92,13 @@ describe.skipIf(!URL)('per-user threads and the team_messages fold (0269)', () =
       (${memberB}, 'ut-n@example.invalid', 'x', 'member', false, 'Member B')`;
     const done = await sql<{ section: string }[]>`select * from mantle_ws_migrate_locked()`;
     expect(done.filter((r) => r.section === 'reach-fail')).toEqual([]);
-    adminWs = (await sql<Row[]>`select id::text as id from workspaces where owner_id = ${owner} and is_admin`)[0]!
-      .id as string;
+    adminWs = (
+      await sql<Row[]>`select id::text as id from workspaces where owner_id = ${owner} and is_admin`
+    )[0]!.id as string;
     teamWs = (
-      await sql<Row[]>`select id::text as id from workspaces where owner_id = ${owner} and bridge_key = 'team'`
+      await sql<
+        Row[]
+      >`select id::text as id from workspaces where owner_id = ${owner} and bridge_key = 'team'`
     )[0]!.id as string;
     for (const [ws, login] of [
       [adminWs, admin2],
@@ -161,8 +164,12 @@ describe.skipIf(!URL)('per-user threads and the team_messages fold (0269)', () =
     await ensureTestViewerRoles(URL!, process.env.MANTLE_MASTER_KEY);
     m = await import('./index');
     const queued = async () =>
-      (await m.db.select({ id: m.nodes.id }).from(m.nodes).where(m.unextractedNodeConds(owner, since)))
-        .length;
+      (
+        await m.db
+          .select({ id: m.nodes.id })
+          .from(m.nodes)
+          .where(m.unextractedNodeConds(owner, since))
+      ).length;
     queueBefore = await queued();
     listener = postgres(scratch.url, { max: 1, prepare: false, onnotice: () => {} });
     for (const ch of CHANNELS) await listener.listen(ch, (p) => heard.push(`${ch}:${p}`));
@@ -210,7 +217,9 @@ describe.skipIf(!URL)('per-user threads and the team_messages fold (0269)', () =
     const own = await readsAs(owner, 'assistant_messages');
     expect(own.map((r) => r.id)).toEqual(ownerBefore);
     // The thread and the digest are the owner's now.
-    const [t] = await sql<Row[]>`select login_id::text as l from chat_threads where agent_id = ${adminAgent}`;
+    const [t] = await sql<
+      Row[]
+    >`select login_id::text as l from chat_threads where agent_id = ${adminAgent}`;
     expect(t!.l).toBe(owner);
     const [d] = await sql<Row[]>`select login_id::text as l, data->>'login_id' as dl,
         updated_at::text as u from nodes where id = ${digest}`;
@@ -252,7 +261,10 @@ describe.skipIf(!URL)('per-user threads and the team_messages fold (0269)', () =
       [memberB, [ids.tB1, ids.tB2]],
     ] as const) {
       const got = await readsAs(login, 'assistant_messages');
-      expect(got.map((r) => r.id), login).toEqual([...msgs]);
+      expect(
+        got.map((r) => r.id),
+        login,
+      ).toEqual([...msgs]);
       const threads = await readsAs(login, 'chat_threads');
       expect(new Set(threads.map((t) => t.login)), login).toEqual(
         new Set(threads.length ? [login] : []),
@@ -263,8 +275,10 @@ describe.skipIf(!URL)('per-user threads and the team_messages fold (0269)', () =
     expect((await readsAs(memberB, 'chat_threads')).length).toBe(0);
     // The owner's digest: the owner reads it, the second Admin user does not.
     const digestAs = async (login: string) =>
-      m.withScope(await m.loginScopeFor(login), async () =>
-        (await m.db.execute(dsql`select 1 from nodes where id = ${digest}`)) as unknown as Row[],
+      m.withScope(
+        await m.loginScopeFor(login),
+        async () =>
+          (await m.db.execute(dsql`select 1 from nodes where id = ${digest}`)) as unknown as Row[],
       );
     expect(await digestAs(owner)).toHaveLength(1);
     expect(await digestAs(admin2)).toHaveLength(0);
@@ -274,7 +288,9 @@ describe.skipIf(!URL)('per-user threads and the team_messages fold (0269)', () =
     const id = randomUUID();
     await sql`insert into assistant_messages (id, owner_id, agent_id, direction, text)
       values (${id}, ${owner}, ${adminAgent}, 'inbound', 'a heartbeat turn')`;
-    const [r] = await sql<Row[]>`select login_id::text as l from assistant_messages where id = ${id}`;
+    const [r] = await sql<
+      Row[]
+    >`select login_id::text as l from assistant_messages where id = ${id}`;
     expect(r!.l).toBe(owner);
     await sql`delete from assistant_messages where id = ${id}`;
   });

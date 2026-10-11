@@ -163,7 +163,9 @@ async function resolveMemberAgent(
     );
   }
   if ('isAdmin' in team && team.isAdmin) {
-    throw new Error(`Agent '${team.slug}' is the Admin assistant: it does not run as a workspace turn.`);
+    throw new Error(
+      `Agent '${team.slug}' is the Admin assistant: it does not run as a workspace turn.`,
+    );
   }
   const agent = await resolveAgentById(ownerId, team.id);
   if (!agent) {

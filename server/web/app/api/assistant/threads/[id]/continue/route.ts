@@ -28,7 +28,10 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
     return NextResponse.json({ error: 'archived chat not found' }, { status: 404 });
   }
   if (!thread.summaryNodeId) {
-    await asSystem(() => summarizeChatThread(login.ownerId, thread.id, login.loginId), 'rule-in-query').catch((err) => {
+    await asSystem(
+      () => summarizeChatThread(login.ownerId, thread.id, login.loginId),
+      'rule-in-query',
+    ).catch((err) => {
       console.warn('[api/assistant/threads] summary before continue failed:', err);
     });
   }

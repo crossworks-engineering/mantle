@@ -67,7 +67,11 @@ export async function getChatThread(
     .select()
     .from(chatThreads)
     .where(
-      and(eq(chatThreads.ownerId, ownerId), eq(chatThreads.id, id), eq(chatThreads.loginId, loginId)),
+      and(
+        eq(chatThreads.ownerId, ownerId),
+        eq(chatThreads.id, id),
+        eq(chatThreads.loginId, loginId),
+      ),
     )
     .limit(1);
   return row ?? null;

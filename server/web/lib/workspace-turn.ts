@@ -151,5 +151,8 @@ export async function queueWorkspaceTurn(o: {
 
 /** The 202/4xx answer as a response. */
 export function workspaceTurnResponse(r: WorkspaceTurnResult): NextResponse {
-  return NextResponse.json(r.body, { status: r.status, ...(r.headers ? { headers: r.headers } : {}) });
+  return NextResponse.json(r.body, {
+    status: r.status,
+    ...(r.headers ? { headers: r.headers } : {}),
+  });
 }

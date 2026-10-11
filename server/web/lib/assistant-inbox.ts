@@ -33,8 +33,11 @@ export async function getReadCursors(ownerId: string, loginId: string): Promise<
   const rows = await asSystem(
     () =>
       db
-    .select({ agentId: assistantReadCursors.agentId, lastReadAt: assistantReadCursors.lastReadAt })
-    .from(assistantReadCursors)
+        .select({
+          agentId: assistantReadCursors.agentId,
+          lastReadAt: assistantReadCursors.lastReadAt,
+        })
+        .from(assistantReadCursors)
         .where(
           and(eq(assistantReadCursors.ownerId, ownerId), eq(assistantReadCursors.loginId, loginId)),
         ),

@@ -24,7 +24,11 @@ vi.mock('@/lib/auth', () => ({
     ownerId: h.owner,
     loginId: h.owner,
     source: 'web',
-    user: { id: h.owner, email: 'x', actor: { id: h.owner, email: 'x', displayName: null, isOwner: true } },
+    user: {
+      id: h.owner,
+      email: 'x',
+      actor: { id: h.owner, email: 'x', displayName: null, isOwner: true },
+    },
     displayName: null,
     email: 'x',
   })),

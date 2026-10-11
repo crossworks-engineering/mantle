@@ -266,7 +266,10 @@ async function runTurn(req: Request, idempotencyKey: string | null): Promise<Tur
   // (browser) vs 'mobile' (companion).
   const login = await getChatLoginOr401();
   if (login instanceof NextResponse) {
-    return { status: login.status, body: await login.json().catch(() => ({ error: 'unauthorized' })) };
+    return {
+      status: login.status,
+      body: await login.json().catch(() => ({ error: 'unauthorized' })),
+    };
   }
   const { user, source } = login;
   const contentType = req.headers.get('content-type') ?? '';
