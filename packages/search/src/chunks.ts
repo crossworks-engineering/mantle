@@ -233,17 +233,19 @@ async function runChunkSearch(
   const resolved = await resolveKeywordQuery(q, 'content_chunks');
   const kq = resolved ? gateRareTerms(resolved, pool) : null;
   const kw = kq ? keywordSql(contentChunks.searchTsv, kq) : null;
-  // Under a workspace scope the text match runs first, fenced (offset 0),
-  // and the node join after it (W6a). The planner cannot see how many items
-  // the scope holds (a run-time setting) and guesses a handful: it then
-  // walked the scope's nodes and re-ran the text index once for each (an
-  // Admin user's 1,600 items: 130 ms for a common word). The alias keeps the
-  // table's name, so `scope` and `kw` read the same columns. On the system
-  // pool the planner sees the real counts: the plain join stays (the fence
-  // there cost a third more for a common word on a 120k-chunk brain).
+  // Under a big workspace scope the text match runs first, fenced (offset
+  // 0), and the node join after it (W6a). The planner cannot see how many
+  // items the scope holds (a run-time setting) and guesses a handful: for a
+  // big scope it then walked the scope's nodes and re-ran the text index
+  // once for each (an Admin user's 1,600 items: 130 ms for a common word).
+  // For a small scope that walk is the fast plan (a handful of items on a
+  // big brain), and on the system pool the planner sees the real counts:
+  // the plain join stays for both. The alias keeps the table's name, so
+  // `scope` and `kw` read the same columns.
+  const fenced = kw !== null && currentWorkspaceScope() !== null && !(await smallScope('nodes'));
   const ftsRows = !kw
     ? []
-    : currentWorkspaceScope()
+    : fenced
       ? ((await db.execute(sql`
         select ${contentChunks.id} as id from (
           select ${contentChunks.id}, ${contentChunks.nodeId}, ${contentChunks.ownerId},
