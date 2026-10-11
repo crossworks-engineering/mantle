@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
 import {
   agents,
   db,
@@ -32,9 +32,21 @@ export type {
 } from '@mantle/client-types/traces-format';
 export { formatMicroUsd, formatDuration } from '@mantle/client-types/traces-format';
 
+/**
+ * The traces a list shows `reader` (W7 integration fix 3, L2), traceReadable's
+ * rule as a WHERE on the login a trace is stamped with: another login sees
+ * the turns that answered it; the brain owner (`reader` null or the owner id)
+ * its own and the system's (no login), never another login's.
+ */
+export function traceListedFor(ownerId: string, reader: string | null): SQL {
+  return reader && reader.toLowerCase() !== ownerId.toLowerCase()
+    ? eq(traces.loginId, reader)
+    : (or(isNull(traces.loginId), eq(traces.loginId, ownerId)) as SQL);
+}
+
 /** Shared WHERE for trace list/count queries. */
-function traceConds(userId: string, filter: TraceFilter) {
-  const conds = [eq(traces.ownerId, userId)];
+function traceConds(userId: string, reader: string | null, filter: TraceFilter) {
+  const conds = [eq(traces.ownerId, userId), traceListedFor(userId, reader)];
   if (filter.kinds && filter.kinds.length > 0) {
     conds.push(inArray(traces.kind, filter.kinds as never));
   }
@@ -48,8 +60,11 @@ function traceConds(userId: string, filter: TraceFilter) {
   return conds;
 }
 
+/** A page of the traces `reader` may see (traceListedFor). `reader`: the
+ *  signed-in login, null for the brain owner. */
 export async function listTraces(
   userId: string,
+  reader: string | null,
   filter: TraceFilter = {},
 ): Promise<TraceSummary[]> {
   const limit = Math.min(filter.limit ?? 50, 500);
@@ -82,7 +97,7 @@ export async function listTraces(
     })
     .from(traces)
     .leftJoin(agents, eq(traces.agentId, agents.id))
-    .where(and(...traceConds(userId, filter)))
+    .where(and(...traceConds(userId, reader, filter)))
     .orderBy(orderFn(sortCol))
     .limit(limit)
     .offset(filter.offset ?? 0);
@@ -107,11 +122,15 @@ export async function listTraces(
   }));
 }
 
-export async function countTraces(userId: string, filter: TraceFilter = {}): Promise<number> {
+export async function countTraces(
+  userId: string,
+  reader: string | null,
+  filter: TraceFilter = {},
+): Promise<number> {
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(traces)
-    .where(and(...traceConds(userId, filter)));
+    .where(and(...traceConds(userId, reader, filter)));
   return row?.n ?? 0;
 }
 

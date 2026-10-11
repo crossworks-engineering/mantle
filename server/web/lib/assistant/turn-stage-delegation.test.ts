@@ -68,7 +68,7 @@ describe('currentTurnStageLabel — delegation follow', () => {
       ACTIVE_CHILD_STEP,
     );
 
-    expect(await currentTurnStageLabel('o1')).toBe('Pages · Updating page block…');
+    expect(await currentTurnStageLabel('o1', null)).toBe('Pages · Updating page block…');
   });
 
   it('keeps narrating PAST the 2-min own-label window while the child is provably active', async () => {
@@ -82,7 +82,7 @@ describe('currentTurnStageLabel — delegation follow', () => {
       ACTIVE_CHILD_STEP,
     );
 
-    expect(await currentTurnStageLabel('o1')).toBe('Pages · Updating page block…');
+    expect(await currentTurnStageLabel('o1', null)).toBe('Pages · Updating page block…');
   });
 
   it('an OLD turn with a stale child (no recent step) stays dark — the zombie discipline holds', async () => {
@@ -93,7 +93,7 @@ describe('currentTurnStageLabel — delegation follow', () => {
       [{ name: 'tool: page_block_update', input: {}, startedAt: secondsAgo(6 * 60) }],
     );
 
-    expect(await currentTurnStageLabel('o1')).toBeNull();
+    expect(await currentTurnStageLabel('o1', null)).toBeNull();
   });
 
   it('an OLD turn whose newest step is NOT a delegation stays dark — no proof of life', async () => {
@@ -101,19 +101,19 @@ describe('currentTurnStageLabel — delegation follow', () => {
       { name: 'anthropic_chat[3]', status: 'running', input: {} },
     ]);
 
-    expect(await currentTurnStageLabel('o1')).toBeNull();
+    expect(await currentTurnStageLabel('o1', null)).toBeNull();
   });
 
   it('falls back to "Delegating to …" while the child trace is not inserted yet', async () => {
     h.results.push(RESPONDER_TRACE, RUNNING_INVOKE, [] /* no running child */);
 
-    expect(await currentTurnStageLabel('o1')).toBe('Delegating to pages…');
+    expect(await currentTurnStageLabel('o1', null)).toBe('Delegating to pages…');
   });
 
   it('the fallback is age-gated too: an OLD turn with no running child stays dark', async () => {
     h.results.push(OLD_RESPONDER_TRACE, RUNNING_INVOKE, [] /* no running child */);
 
-    expect(await currentTurnStageLabel('o1')).toBeNull();
+    expect(await currentTurnStageLabel('o1', null)).toBeNull();
   });
 
   it('falls back when the child has no labelable step yet', async () => {
@@ -124,7 +124,7 @@ describe('currentTurnStageLabel — delegation follow', () => {
       [] /* no steps yet */,
     );
 
-    expect(await currentTurnStageLabel('o1')).toBe('Delegating to pages…');
+    expect(await currentTurnStageLabel('o1', null)).toBe('Delegating to pages…');
   });
 
   it('never follows a FINISHED invoke_agent step — the parent has moved on', async () => {
@@ -133,7 +133,7 @@ describe('currentTurnStageLabel — delegation follow', () => {
     ]);
 
     // Only two queries run — the child lookup must not fire at all.
-    expect(await currentTurnStageLabel('o1')).toBe('Delegating to pages…');
+    expect(await currentTurnStageLabel('o1', null)).toBe('Delegating to pages…');
     expect(h.results.length).toBe(0);
   });
 
@@ -147,6 +147,6 @@ describe('currentTurnStageLabel — delegation follow', () => {
 
     // Also pins the activity window being WIDER than the 2-min turn window: a
     // specialist's single LLM call legitimately runs minutes.
-    expect(await currentTurnStageLabel('o1')).toBe('Pages · Thinking…');
+    expect(await currentTurnStageLabel('o1', null)).toBe('Pages · Thinking…');
   });
 });

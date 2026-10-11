@@ -43,7 +43,13 @@ import {
   withTurnScope,
   type Heartbeat,
 } from '@mantle/db';
-import { currentRequestMode, currentWorkspaceScope, scopeLeftForSystem } from '@mantle/db/viewer';
+import {
+  currentGateScope,
+  currentRequestMode,
+  currentTurnStamp,
+  currentWorkspaceScope,
+  scopeLeftForSystem,
+} from '@mantle/db/viewer';
 import {
   adminAreaError,
   areaSystem,
@@ -78,12 +84,26 @@ async function heartbeatRow<T>(fn: () => Promise<T>): Promise<T> {
  * of the caller's scope (or of the scope its area work left for the system
  * pool), else the login its owner surface names; null for the brain owner
  * (the anchor login) and for a call that names none (the anchor's stdio MCP,
- * a brain not on workspaces).
+ * a brain not on workspaces). Under the rollback switch
+ * (MANTLE_ADMIN_READS=system) the call runs on the system pool with no
+ * workspace scope: the login is its gate scope's (withGateScope: an Admin
+ * login's MCP call, the Admin assistant), else its turn stamp's (W7
+ * integration fix 3, L3), so heartbeat_fire still answers the real caller.
  */
 function callerLogin(ctx: Pick<ToolHandlerContext, 'ownerId' | 'surface'>): string | null {
-  const scope = currentWorkspaceScope() ?? scopeLeftForSystem();
-  const login = scope ? scope.loginId : ownerSurfaceLoginId(ctx.surface);
+  const scope = currentWorkspaceScope() ?? scopeLeftForSystem() ?? currentGateScope();
+  const login = scope
+    ? scope.loginId
+    : (currentTurnStamp()?.loginId ?? ownerSurfaceLoginId(ctx.surface));
   return login && login.toLowerCase() !== ctx.ownerId.toLowerCase() ? login : null;
+}
+
+/** Whether logins `a` and `b` are the same (null and the brain owner's id
+ *  both name the anchor login). */
+function sameLogin(ownerId: string, a: string | null, b: string | null): boolean {
+  const norm = (l: string | null) =>
+    l && l.toLowerCase() !== ownerId.toLowerCase() ? l.toLowerCase() : null;
+  return norm(a) === norm(b);
 }
 
 async function loadOwnedHeartbeatById(ownerId: string, id: string): Promise<Heartbeat | null> {
@@ -293,33 +313,50 @@ const heartbeat_update_state: BuiltinToolDef = {
       ctx.step?.setMeta({ branch: 'no_target', error: target.error });
       return { ok: false, error: target.error };
     }
+    // The state is part of the fire's prompt: another heartbeat's state set
+    // by a login other than the brain owner makes that heartbeat this
+    // login's (W7a fix round 3, heartbeats.created_by), so the tick fires it
+    // as this login, never as the anchor. The state is its maker's only (W7
+    // integration fix 3, F1/F2): a heartbeat that moves to this login starts
+    // again from {} plus this patch, never from the old maker's keys.
+    const login = target.via === 'slug' ? (currentWorkspaceScope()?.loginId ?? null) : null;
+    const moves = !!login && login !== ctx.ownerId && login !== target.hb.createdBy;
+    const maker = login && login !== ctx.ownerId ? { createdBy: login } : {};
     // Apply patch: drop null-valued keys, overwrite the rest.
-    const existing = (target.hb.state ?? {}) as Record<string, unknown>;
+    const existing = moves ? {} : ((target.hb.state ?? {}) as Record<string, unknown>);
     const patch = input.patch as Record<string, unknown>;
     const next: Record<string, unknown> = { ...existing };
     for (const [k, v] of Object.entries(patch)) {
       if (v === null) delete next[k];
       else next[k] = v;
     }
-    // The state is part of the fire's prompt: another heartbeat's state set
-    // by a login other than the brain owner makes that heartbeat this
-    // login's (W7a fix round 3, heartbeats.created_by), so the tick fires it
-    // as this login, never as the anchor.
-    const login = target.via === 'slug' ? (currentWorkspaceScope()?.loginId ?? null) : null;
-    const maker = login && login !== ctx.ownerId ? { createdBy: login } : {};
     await heartbeatRow(() =>
       db
         .update(heartbeats)
         .set({ state: next, updatedAt: new Date(), ...maker })
         .where(and(eq(heartbeats.id, target.hb.id), eq(heartbeats.ownerId, ctx.ownerId))),
     );
+    const patchedKeys = Object.keys(patch);
     ctx.step?.setMeta({
       branch: 'updated',
       via: target.via,
       heartbeat_id: target.hb.id,
-      patched_keys: Object.keys(patch),
+      patched_keys: patchedKeys,
     });
-    return { ok: true, output: { heartbeat_id: target.hb.id, slug: target.hb.slug, state: next } };
+    // The merged state goes back to the heartbeat's maker only (F2): a
+    // login that is not the maker (a firer of another login's heartbeat, the
+    // brain owner on a heartbeat another login made) learns the keys it
+    // patched, never the maker's other keys.
+    const makerNow = (maker as { createdBy?: string }).createdBy ?? target.hb.createdBy;
+    const own = sameLogin(ctx.ownerId, callerLogin(ctx), makerNow);
+    return {
+      ok: true,
+      output: {
+        heartbeat_id: target.hb.id,
+        slug: target.hb.slug,
+        ...(own ? { state: next } : { patched_keys: patchedKeys }),
+      },
+    };
   },
 };
 

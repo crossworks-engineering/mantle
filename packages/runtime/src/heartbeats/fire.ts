@@ -182,6 +182,12 @@ async function fireInner(
   // the heartbeat's maker. Only that login reads the fire's row in full.
   const answersMaker = opts.answeredBy === undefined;
   const answeredBy = answersMaker ? answerer(hb, hb.createdBy) : answerer(hb, opts.answeredBy);
+  // The Telegram chat a heartbeat names is the brain owner's (the anchor's
+  // Telegram inbox): only a fire that answers the brain owner reaches it,
+  // as its turn's surface or its delivery (W7 integration fix 3, F1). A fire
+  // that answers another login runs on the web surface and delivers nothing.
+  const telegramChat =
+    hb.surface.kind === 'telegram' && answeredBy === null ? hb.surface.chat_id : null;
 
   // Capture the heartbeat's `next_fire_at` as it was when the fire
   // started. We need this at the end of the success path to detect
@@ -438,8 +444,8 @@ async function fireInner(
                 surface:
                   scoped && !adminAssistant
                     ? { kind: 'team', privateReads: false }
-                    : hb.surface.kind === 'telegram'
-                      ? { kind: 'telegram', telegramChatId: hb.surface.chat_id }
+                    : telegramChat
+                      ? { kind: 'telegram', telegramChatId: telegramChat }
                       : { kind: 'web' },
               }),
             ),
@@ -461,7 +467,23 @@ async function fireInner(
         // audit.
         let surfaceRef: Record<string, unknown> | null = null;
         let delivered = true;
-        if (replyText.trim() && hb.surface.kind === 'telegram') {
+        if (replyText.trim() && hb.surface.kind === 'telegram' && !telegramChat) {
+          // A fire that answers a login other than the brain owner never
+          // reaches the brain owner's Telegram chat (W7 integration fix 3,
+          // F1): the reply stays in the fire row, that login's to read.
+          await step(
+            {
+              name: 'deliver_surface',
+              kind: 'send',
+              input: { kind: 'telegram', reply_chars: replyText.length },
+            },
+            async (h) => {
+              h.setSkipped('telegram_not_answering_login');
+              return null;
+            },
+          );
+          delivered = false;
+        } else if (replyText.trim() && hb.surface.kind === 'telegram') {
           surfaceRef = await step(
             {
               name: 'deliver_surface',

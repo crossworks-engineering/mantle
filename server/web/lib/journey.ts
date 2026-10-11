@@ -10,7 +10,7 @@ import {
   nodes,
   traces,
 } from '@mantle/db';
-import { getTrace } from './traces';
+import { getTrace, traceListedFor } from './traces';
 import { deriveAction, type ActionCategory } from '@mantle/client-types/journey-format';
 import type {
   LandedLayers,
@@ -141,6 +141,9 @@ async function queryActivity(
 
 export async function listActivity(
   userId: string,
+  /** The signed-in login, null for the brain owner: only the traces it may
+   *  read are listed (traceListedFor, W7 integration fix 3, L2). */
+  reader: string | null,
   opts: {
     sinceHours?: number;
     limit?: number;
@@ -151,7 +154,7 @@ export async function listActivity(
   } = {},
 ): Promise<ActivityItem[]> {
   const limit = Math.min(opts.limit ?? 80, 300);
-  const extra: ReturnType<typeof eq>[] = [];
+  const extra: ReturnType<typeof eq>[] = [traceListedFor(userId, reader) as never];
   if (opts.sinceHours && opts.sinceHours > 0) {
     extra.push(gte(traces.startedAt, new Date(Date.now() - opts.sinceHours * 3600_000)) as never);
   }

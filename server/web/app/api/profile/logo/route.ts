@@ -1,5 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
+import { brandSettingsRefusal } from '@/lib/brand-gate';
 import { loadPreferencesFor, savePreferencesFor } from '@mantle/content';
 import { putContent, deleteContent } from '@mantle/storage';
 import { sniffType, staleLogoBytes, SVG_ACTIVE_RE, LOGO_MAX_BYTES } from '@/lib/logo-validation';
@@ -49,6 +50,8 @@ function isDark(req: Request): boolean {
 export async function PUT(req: Request) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
+  const refused = await brandSettingsRefusal(user);
+  if (refused) return refused;
 
   const form = await req.formData().catch(() => null);
   const file = form?.get('file');
@@ -103,6 +106,8 @@ export async function PUT(req: Request) {
 export async function DELETE(req: Request) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
+  const refused = await brandSettingsRefusal(user);
+  if (refused) return refused;
   const dark = isDark(req);
   const prev = await loadPreferencesFor(user.id);
   // '' is the jsonb-merge "clear" write (projects to undefined on read).

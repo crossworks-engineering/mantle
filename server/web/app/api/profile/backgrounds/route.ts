@@ -1,6 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
+import { brandSettingsRefusal } from '@/lib/brand-gate';
 import { savePreferencesFor } from '@mantle/content';
 
 /**
@@ -28,6 +29,8 @@ const Body = z.object({
 export async function PUT(req: Request) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
+  const refused = await brandSettingsRefusal(user);
+  if (refused) return refused;
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json({ error: 'backgrounds required' }, { status: 400 });

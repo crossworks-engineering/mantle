@@ -22,6 +22,7 @@ export {
   scopeHoldsAdmin,
   scopeHasArea,
   loginHasArea,
+  loginHoldsAdmin,
   withHeads,
   withSubtreeHeads,
   withNodeInsertHeads,

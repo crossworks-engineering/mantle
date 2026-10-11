@@ -29,6 +29,7 @@ import {
   adminReadsOnSystemPool,
   brainOnWorkspacesNow,
   loginScopeFor,
+  scopeHoldsAdmin,
   withGateScope,
   withTurnScope,
 } from '@mantle/db';
@@ -65,8 +66,10 @@ export async function runInOwnerMcpScope<T>(
   // The rollback switch restores only the read path (W7 integration fix 2,
   // M6): an Admin login's call reads on the system pool again, while the
   // Admin tool gate, the area checks, the item write check and the sandbox
-  // maker rule still ask this login (its gate scope).
-  if (admin && adminReadsOnSystemPool()) {
+  // maker rule still ask this login (its gate scope). Only for a login that
+  // holds the Admin workspace now (W7 integration fix 3, L1): an admin role
+  // alone (a login taken out of Admin keeps its role) stays in its scope.
+  if (admin && adminReadsOnSystemPool() && (await withTurnScope(scope, () => scopeHoldsAdmin()))) {
     return withGateScope(scope, async () => {
       const gate = await adminToolGate(slug, { ownerOnly: getBuiltin(slug)?.ownerOnly });
       if ('refused' in gate) return refusal(gate.refused);

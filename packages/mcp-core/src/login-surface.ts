@@ -547,7 +547,13 @@ export function registerPreparedTools(
 ): void {
   if (prepared.kind === 'refused') return;
   const { caller } = prepared;
-  const adminLogin = caller.role === 'admin';
+  // An Admin user: an admin role that holds the Admin workspace now (W7
+  // integration fix 3, L1; view null is a brain not on workspaces, where the
+  // role decides). Only it may go to the system pool under the rollback
+  // switch (owner-scope.ts); an admin role taken out of Admin stays in its
+  // scope.
+  const adminRole = caller.role === 'admin';
+  const adminLogin = adminRole && (prepared.view === null || prepared.view.holdsAdmin);
   const allow = (slug: string) => preparedAllows(prepared, slug);
   // Outside an Admin scope: nothing spends on the owner's keys (M-a), and
   // a login in no workspace has no private one, so its creates are refused
@@ -558,7 +564,7 @@ export function registerPreparedTools(
     transport: opts.transport ?? 'http',
     // A peer an admin did not register for the anchor names no login to the
     // builtins: its app_delete is held for the owner (W6b fix round 3, M-1).
-    ...(caller.via === 'peer' && adminLogin && !caller.peerByOwner
+    ...(caller.via === 'peer' && adminRole && !caller.peerByOwner
       ? {}
       : { loginId: caller.loginId }),
     // Every call runs in the login's scope (W7a; every login since W7b).

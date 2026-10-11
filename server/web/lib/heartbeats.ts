@@ -38,6 +38,7 @@ import {
   validateSchedule,
   type FireOpts,
 } from '@mantle/runtime/heartbeats';
+import { makerChangeSet } from '@mantle/tools';
 
 // Re-export the heartbeat shape types so callers (form actions, API routes) get
 // them without importing @mantle/db directly.
@@ -284,7 +285,10 @@ export async function updateHeartbeat(
     if (cur && !readsState(cur, reader)) patch = { ...patch, state: undefined };
   }
   if (loginId !== undefined && MAKER_FIELDS.some((k) => patch[k] !== undefined)) {
-    next.createdBy = heartbeatMaker(ownerId, loginId);
+    // A move to another login clears the state the old maker's fires kept,
+    // in this same statement (W7 integration fix 3, F1); a state this patch
+    // sends is the new maker's own and is set below.
+    Object.assign(next, makerChangeSet(heartbeatMaker(ownerId, loginId)));
   }
   if (patch.name !== undefined) next.name = patch.name;
   if (patch.description !== undefined) next.description = patch.description;

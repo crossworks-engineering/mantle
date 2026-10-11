@@ -1,6 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { countTraces, listTraces } from '@/lib/traces';
+import { toolMakerFor } from '@/lib/tools';
 import type { TraceSort, TraceSortDir } from '@mantle/client-types/traces-format';
 
 /**
@@ -31,9 +32,17 @@ export async function GET(req: Request) {
     statuses: statuses.length > 0 ? statuses : DEFAULT_STATUSES,
     sinceHours: hours,
   };
+  // Only the traces the signed-in login may read (W7 integration fix 3, L2).
+  const reader = toolMakerFor(user);
   const [traces, total] = await Promise.all([
-    listTraces(user.id, { ...filter, sort, dir, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
-    countTraces(user.id, filter),
+    listTraces(user.id, reader, {
+      ...filter,
+      sort,
+      dir,
+      limit: PAGE_SIZE,
+      offset: (page - 1) * PAGE_SIZE,
+    }),
+    countTraces(user.id, reader, filter),
   ]);
   return NextResponse.json({ traces, total, page, pageSize: PAGE_SIZE });
 }

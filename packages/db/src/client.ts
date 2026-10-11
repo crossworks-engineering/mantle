@@ -543,6 +543,31 @@ export async function scopeHasArea(area: ScopeArea): Promise<boolean> {
  * brain's live Admin workspace whose limits leave the area on. A brain not
  * on workspaces keeps today's rule (any admin: yes). Fails closed.
  */
+/**
+ * Whether `loginId` is a user of this brain's live Admin workspace now, its
+ * login enabled (W7 integration fix 3, L1): what the rollback switch
+ * (MANTLE_ADMIN_READS=system) asks before it puts a login's reads on the
+ * system pool, never the admin role alone (a login taken out of Admin keeps
+ * its role). A brain not on workspaces: yes (the role decides, as before).
+ * Fails closed. Admin pool.
+ */
+export async function loginHoldsAdmin(loginId: string): Promise<boolean> {
+  if (!UUID_RE.test(loginId)) return false;
+  try {
+    if (!(await brainOnWorkspacesNow())) return true;
+    const rows = (await getAdminDb().execute(
+      sqlTag`select exists (
+               select 1 from workspaces w
+                 join workspace_users u on u.workspace_id = w.id and u.login_id = ${loginId}::uuid
+                 join auth.users l on l.id = u.login_id and l.disabled_at is null
+                where w.owner_id = mantle_brain_id() and w.is_admin and w.archived_at is null) as a`,
+    )) as unknown as { a: boolean }[];
+    return rows[0]?.a === true;
+  } catch {
+    return false;
+  }
+}
+
 export async function loginHasArea(loginId: string, area: ScopeArea): Promise<boolean> {
   if (!SCOPE_AREAS.includes(area) || !UUID_RE.test(loginId)) return false;
   try {

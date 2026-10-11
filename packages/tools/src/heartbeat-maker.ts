@@ -22,15 +22,32 @@ export type HeartbeatPromptSource = {
   toolGroupSlug?: string;
   /** An agent's prompt saved: the heartbeats bound to it. */
   agentSlug?: string;
-  /** A brain-wide prompt part saved (the house style, the purpose: every
-   *  agent's prompt carries it, W7 integration fix 2, M2): every heartbeat. */
-  all?: true;
 };
 
 /**
- * Make the heartbeats that run `source` login `login`'s. No-op for the
- * anchor (`login` null or the brain owner). Returns how many changed. Runs
- * on the pool its caller is on: a route's, or an area tool's system pool.
+ * A heartbeat's columns when its maker becomes `login` (W7 integration fix
+ * 3, F1): its state is its maker's only (what earlier fires kept for that
+ * login), so a heartbeat that moves to another login starts again from {},
+ * in the same statement. One already `login`'s keeps its state.
+ */
+export function makerChangeSet(login: string | null): {
+  createdBy: string | null;
+  state: SQL;
+} {
+  return {
+    createdBy: login,
+    state: sql`case when ${heartbeats.createdBy} is not distinct from ${login}::uuid
+                    then ${heartbeats.state} else '{}'::jsonb end`,
+  };
+}
+
+/**
+ * Make the heartbeats that run `source` login `login`'s (its state starts
+ * again from {} when it was another login's: makerChangeSet). No-op for
+ * the anchor (`login` null or the brain owner). Returns how many changed.
+ * Runs on the pool its caller is on: a route's, or an area tool's system
+ * pool. A brain-wide prompt part (the house style, the purpose) restamps
+ * nothing: only the brain owner changes it (W7 integration fix 3, F1).
  */
 export async function restampHeartbeatMakers(
   ownerId: string,
@@ -38,14 +55,6 @@ export async function restampHeartbeatMakers(
   source: HeartbeatPromptSource,
 ): Promise<number> {
   if (!login || login === ownerId) return 0;
-  if (source.all) {
-    const every = await db
-      .update(heartbeats)
-      .set({ createdBy: login })
-      .where(eq(heartbeats.ownerId, ownerId))
-      .returning({ id: heartbeats.id });
-    return every.length;
-  }
   const agentSlugs = new Set<string>();
   if (source.agentSlug) agentSlugs.add(source.agentSlug);
   const holders: SQL[] = [];
@@ -78,7 +87,7 @@ export async function restampHeartbeatMakers(
   if (runs.length === 0) return 0;
   const changed = await db
     .update(heartbeats)
-    .set({ createdBy: login })
+    .set(makerChangeSet(login))
     .where(and(eq(heartbeats.ownerId, ownerId), or(...runs)))
     .returning({ id: heartbeats.id });
   return changed.length;

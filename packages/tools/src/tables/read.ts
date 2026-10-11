@@ -440,6 +440,7 @@ export const table_rows_list: BuiltinToolDef = {
 
 export const table_row_get: BuiltinToolDef = {
   slug: 'table_row_get',
+  readOnly: true,
   preconditions: TABLE_ID_PRE,
   name: 'Get one row',
   description:

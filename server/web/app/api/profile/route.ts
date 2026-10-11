@@ -21,7 +21,6 @@ import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { toolMakerFor } from '@/lib/tools';
 import { loginHasArea } from '@mantle/db';
-import { restampHeartbeatMakers } from '@mantle/tools';
 import { AvatarPartsSchema } from '@/lib/avatar-schema';
 import {
   DEFAULT_PREFERENCES,
@@ -139,29 +138,46 @@ export async function PUT(req: Request) {
   }
   const archetype = (purposeArchetype ?? '').trim();
   // The brain's own keys this save sets (BRAIN_PREFERENCE_KEYS: one value for
-  // the whole brain; the house style and the purpose ride every agent's
-  // prompt). A change to one is the brain owner's or a settings-area user's
-  // (W7 integration fix 2, M2); the form sends them on every save, so an
-  // unchanged value is no change.
-  const brainSet: Record<string, string | undefined> = {
-    avatarStyle: avatarStyle !== undefined ? avatarStyle.trim() : undefined,
+  // the whole brain). The form sends them on every save, so an unchanged
+  // value is no change. Two kinds (W7 integration fix 3, F1):
+  //  - prompt text: the house style, the purpose and its archetype ride every
+  //    agent's prompt, so every heartbeat's turn. Only the brain owner (the
+  //    anchor login) changes them: a change by another login would set what
+  //    every heartbeat says while each keeps its own maker.
+  //  - the brand (the avatar style, the site name, the peer name): avatars,
+  //    the header and a notification title, never a prompt. The brain owner
+  //    or a login with the settings area changes them.
+  // Neither changes any heartbeat's maker.
+  const promptSet: Record<string, string | undefined> = {
     purpose: purpose !== undefined ? purposeTrimmed : undefined,
     purposeArchetype: isPurposeArchetype(archetype) ? archetype : undefined,
-    siteName: siteName !== undefined ? siteName.trim().slice(0, SITE_NAME_MAX) : undefined,
-    peerName: peerName !== undefined ? peerName.trim().slice(0, PEER_NAME_MAX) : undefined,
     houseStyle: houseStyle !== undefined ? houseStyle.trim().slice(0, HOUSE_STYLE_MAX) : undefined,
   };
-  const maker = toolMakerFor(user);
-  let brainChanged: string[] = [];
-  if (maker) {
+  const brandSet: Record<string, string | undefined> = {
+    avatarStyle: avatarStyle !== undefined ? avatarStyle.trim() : undefined,
+    siteName: siteName !== undefined ? siteName.trim().slice(0, SITE_NAME_MAX) : undefined,
+    peerName: peerName !== undefined ? peerName.trim().slice(0, PEER_NAME_MAX) : undefined,
+  };
+  if (toolMakerFor(user)) {
     const current = (await loadPreferencesFor(user.actor.id)) as unknown as Record<string, unknown>;
-    brainChanged = Object.entries(brainSet)
-      .filter(([k, v]) => v !== undefined && v !== String(current[k] ?? ''))
-      .map(([k]) => k);
-    if (brainChanged.length > 0 && !(await loginHasArea(user.actor.id, 'settings'))) {
+    const changed = (set: Record<string, string | undefined>) =>
+      Object.entries(set)
+        .filter(([k, v]) => v !== undefined && v !== String(current[k] ?? ''))
+        .map(([k]) => k);
+    const promptChanged = changed(promptSet);
+    if (promptChanged.length > 0) {
       return NextResponse.json(
         {
-          error: `The brain's own settings (${brainChanged.join(', ')}) are changed by the brain owner or a user with the settings area.`,
+          error: `The brain's own prompt text (${promptChanged.join(', ')}) is changed by the brain owner only.`,
+        },
+        { status: 403 },
+      );
+    }
+    const brandChanged = changed(brandSet);
+    if (brandChanged.length > 0 && !(await loginHasArea(user.actor.id, 'settings'))) {
+      return NextResponse.json(
+        {
+          error: `The brain's own settings (${brandChanged.join(', ')}) are changed by the brain owner or a user with the settings area.`,
         },
         { status: 403 },
       );
@@ -203,11 +219,6 @@ export async function PUT(req: Request) {
       ...(persistThoughts !== undefined ? { persistThoughts } : {}),
       ...(thinkingBudget !== undefined ? { thinkingBudget } : {}),
     });
-    // What every agent's prompt carries changed: every heartbeat now runs
-    // this login's words, so it fires as this login (heartbeat-maker.ts).
-    if (maker && brainChanged.length > 0) {
-      await restampHeartbeatMakers(user.id, maker, { all: true });
-    }
     return NextResponse.json({ preferences });
   } catch (err) {
     return NextResponse.json({ error: errorMessage(err) }, { status: 400 });

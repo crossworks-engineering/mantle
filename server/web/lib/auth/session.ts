@@ -35,6 +35,7 @@ import {
   noteRequestCreateHome,
   noteRequestOwnRule,
   adminReadsOnSystemPool as dbAdminReadsOnSystemPool,
+  loginHoldsAdmin,
   type CreateHome,
   type RequestScopeMode,
 } from '@mantle/db';
@@ -758,6 +759,16 @@ export function adminReadsOnSystemPool(): boolean {
   return dbAdminReadsOnSystemPool();
 }
 
+/**
+ * Whether the rollback switch puts `loginId`'s reads on the system pool:
+ * the switch is on and the login holds the Admin workspace now (W7
+ * integration fix 3, L1), never the admin role alone (a login taken out of
+ * Admin keeps its role, and stays in its scope).
+ */
+async function adminReadsOnSystemPoolFor(loginId: string): Promise<boolean> {
+  return adminReadsOnSystemPool() && (await loginHoldsAdmin(loginId));
+}
+
 /** The mode of a request scope for the current request. */
 function requestMode(drafts: boolean): RequestScopeMode {
   const { method, pattern } = routeOfRequest();
@@ -830,7 +841,7 @@ async function adminRouteGate(loginId: string): Promise<NextResponse | null> {
     // M1): the database checks moves, creates in a folder and deletes
     // against it (withSystemTx). Off with the reads (rollback switch, a
     // brain not on workspaces).
-    if (!adminReadsOnSystemPool() && (await brainOnWorkspacesNow())) {
+    if (!(await adminReadsOnSystemPoolFor(loginId)) && (await brainOnWorkspacesNow())) {
       noteRequestWriteScope(await loginScopeFor(loginId));
       // A create lands in the request's workspace (?ws=) when the user
       // moderates it (W6b); without one, as before (the folder, else Admin).
@@ -840,7 +851,7 @@ async function adminRouteGate(loginId: string): Promise<NextResponse | null> {
     }
     return null;
   }
-  if (adminReadsOnSystemPool()) {
+  if (await adminReadsOnSystemPoolFor(loginId)) {
     noteRequestSystem('admin-reads-flag');
     return null;
   }
@@ -1361,7 +1372,7 @@ async function anyLoginScope(res: Resolved): Promise<void> {
         : res.client.loginId;
   if (res.kind === 'admin') {
     if (!isReadRequest(method, pattern)) return noteRequestSystem('admin-write');
-    if (adminReadsOnSystemPool()) return noteRequestSystem('admin-reads-flag');
+    if (await adminReadsOnSystemPoolFor(loginId)) return noteRequestSystem('admin-reads-flag');
     if (!(await brainOnWorkspacesNow())) return noteRequestSystem('not-on-workspaces');
   }
   await enterLoginScope(loginId, requestMode(res.kind === 'admin'));

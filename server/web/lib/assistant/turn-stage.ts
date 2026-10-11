@@ -13,7 +13,7 @@
  * by under the poll interval, so we only name the stages a user actually waits
  * on — thinking, searching, delegating — and fall back to plain dots otherwise.
  */
-import { db, traces, traceSteps, agents, and, eq, gt, desc, sql } from '@mantle/db';
+import { db, traces, traceSteps, agents, and, eq, gt, desc, isNull, or, sql } from '@mantle/db';
 import { stageLabelForStep as sharedStageLabel } from '@mantle/runtime/assistant';
 
 /** Only surface a turn's OWN stage while it started recently — guards against a
@@ -45,13 +45,24 @@ export function stageLabelForStep(name: string, input?: Record<string, unknown>)
   return sharedStageLabel(name, input)?.label ?? null;
 }
 
-/** The owner's current in-flight assistant stage, or null when idle. Two tiny
- *  single-row reads on indexed columns; safe to poll. Soft-fails to null so a
- *  tracing hiccup never breaks the chat UI. */
-export async function currentTurnStageLabel(ownerId: string): Promise<string | null> {
+/** The caller's current in-flight assistant stage, or null when idle. Two
+ *  tiny single-row reads on indexed columns; safe to poll. Soft-fails to null
+ *  so a tracing hiccup never breaks the chat UI. `reader`: the signed-in
+ *  login, null (or the owner id) for the brain owner. Only a turn that
+ *  answers `reader` counts (W7 integration fix 3, F3): each user sees their
+ *  own turn's stage, never another login's; the brain owner's are the turns
+ *  stamped with no login or with its own. */
+export async function currentTurnStageLabel(
+  ownerId: string,
+  reader: string | null,
+): Promise<string | null> {
   try {
     const now = Date.now();
     const ceiling = new Date(now - DELEGATION_WINDOW_MS);
+    const own =
+      reader && reader.toLowerCase() !== ownerId.toLowerCase()
+        ? eq(traces.loginId, reader)
+        : or(isNull(traces.loginId), eq(traces.loginId, ownerId));
     const [trace] = await db
       .select({ id: traces.id, startedAt: traces.startedAt })
       .from(traces)
@@ -61,6 +72,7 @@ export async function currentTurnStageLabel(ownerId: string): Promise<string | n
           eq(traces.kind, 'responder_turn'),
           eq(traces.status, 'running'),
           gt(traces.startedAt, ceiling),
+          own,
         ),
       )
       .orderBy(desc(traces.startedAt))

@@ -201,7 +201,11 @@ export {
   vaultPairRunRefusal,
   type VaultPairing,
 } from './secret-ref-gate';
-export { restampHeartbeatMakers, type HeartbeatPromptSource } from './heartbeat-maker';
+export {
+  makerChangeSet,
+  restampHeartbeatMakers,
+  type HeartbeatPromptSource,
+} from './heartbeat-maker';
 export {
   memberAppToolVerdict,
   MEMBER_APP_REFUSED_SLUGS,
