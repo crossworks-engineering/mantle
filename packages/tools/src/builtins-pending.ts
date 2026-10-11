@@ -151,7 +151,8 @@ export const pending_reject: BuiltinToolDef = {
   handler: async (input, ctx) => {
     const id = str(input.id);
     if (!id) return { ok: false, error: 'id required' };
-    const row = await rejectPendingCall(ctx.ownerId, id);
+    const decider = ownerSurfaceLoginId(ctx.surface);
+    const row = await rejectPendingCall(ctx.ownerId, id, decider ?? undefined);
     if (!row) return { ok: false, error: 'not found or already decided' };
     return { ok: true, output: row };
   },

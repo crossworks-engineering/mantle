@@ -4,8 +4,9 @@
  * approve/reject lifecycle and the post-approval dispatch.
  */
 
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, isNull, type SQL } from 'drizzle-orm';
 import { db, pendingToolCalls, type PendingToolCall, tools as toolsTable } from '@mantle/db';
+import { currentWorkspaceScope, scopeLeftForSystem } from '@mantle/db/viewer';
 import {
   applyBudgetDecision,
   applyHumanAnswer,
@@ -274,6 +275,24 @@ async function settleBudget(
 }
 
 /**
+ * Whose pending calls the deciding login may decide (W7 integration fix 2):
+ * in the scope of a login other than the brain owner (its own, or the one a
+ * tool's system-pool work left), or named by the route (`decider`), only
+ * the calls queued for that login (pending_tool_calls.login_id; a scope
+ * with no login only those queued for none). The brain owner and a call
+ * with no scope and no decider (the owner's Telegram card, system work):
+ * no narrowing.
+ */
+function deciderFilter(ownerId: string, decider?: string | null): SQL | undefined {
+  const scope = currentWorkspaceScope() ?? scopeLeftForSystem();
+  const login = scope ? scope.loginId : (decider ?? undefined);
+  if (login === undefined) return undefined;
+  if (login === null) return isNull(pendingToolCalls.loginId);
+  if (login.toLowerCase() === ownerId.toLowerCase()) return undefined;
+  return eq(pendingToolCalls.loginId, login);
+}
+
+/**
  * Mark a pending call rejected. For ordinary tool calls: no execution, just
  * a status flip. For runner `ask_human` questions: ALSO completes the run
  * item `failed({type:'rejected'})` so the run advances (a question left
@@ -284,6 +303,8 @@ async function settleBudget(
 export async function rejectPendingCall(
   ownerId: string,
   id: string,
+  /** The login rejecting it, when a route names one (deciderFilter). */
+  deciderLoginId?: string,
 ): Promise<PendingSummary | null> {
   const [row] = await db
     .update(pendingToolCalls)
@@ -297,6 +318,7 @@ export async function rejectPendingCall(
         eq(pendingToolCalls.id, id),
         eq(pendingToolCalls.ownerId, ownerId),
         eq(pendingToolCalls.status, 'pending'),
+        deciderFilter(ownerId, deciderLoginId),
       ),
     )
     .returning();
@@ -348,6 +370,7 @@ export async function approvePendingCall(
         eq(pendingToolCalls.id, id),
         eq(pendingToolCalls.ownerId, ownerId),
         eq(pendingToolCalls.status, 'pending'),
+        deciderFilter(ownerId, opts?.approverLoginId),
       ),
     )
     .returning();

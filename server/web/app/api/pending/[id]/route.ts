@@ -65,7 +65,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
             // Who approves: the signed-in login (W6b fix round 3, L-2).
             approverLoginId: user.actor.id,
           })
-        : await rejectPendingCall(user.id, idParsed.data.id);
+        : await rejectPendingCall(user.id, idParsed.data.id, user.actor.id);
     if (!row) {
       return NextResponse.json(
         { error: 'pending call not found or already decided' },

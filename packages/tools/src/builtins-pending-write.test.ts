@@ -186,8 +186,16 @@ describe('pending_reject', () => {
 
   it('rejects under the caller and returns the flipped row', async () => {
     const res = await reject.handler({ id: ROW_ID }, ctx);
-    expect(rejectPendingCall).toHaveBeenCalledWith('o1', ROW_ID);
+    expect(rejectPendingCall).toHaveBeenCalledWith('o1', ROW_ID, undefined);
     expect(outputOf(res)).toMatchObject({ status: 'rejected' });
+  });
+
+  it("names the connection's login as the decider (W7 integration fix 2)", async () => {
+    await reject.handler(
+      { id: ROW_ID },
+      { ownerId: 'o1', surface: { kind: 'owner', via: 'mcp', loginId: 'l2' } },
+    );
+    expect(rejectPendingCall).toHaveBeenCalledWith('o1', ROW_ID, 'l2');
   });
 
   it('reports a missing or already-decided row as a refusal', async () => {
