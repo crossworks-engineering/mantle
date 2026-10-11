@@ -13,7 +13,7 @@
  *  - **vector-only** (no `q`): the original behaviour, unchanged.
  */
 import { and, asc, eq, isNotNull, sql, type SQL } from 'drizzle-orm';
-import { contentChunks, contentChunkWindows, db, nodes } from '@mantle/db';
+import { contentChunks, contentChunkWindows, currentWorkspaceScope, db, nodes } from '@mantle/db';
 import { withHnswPool } from './hnsw';
 import { distanceOrder, hnswFirst, scopeNodeIds, smallScope } from './scope';
 import { grantUnionFilter, pgArrayLiteral } from './pg';
@@ -233,14 +233,18 @@ async function runChunkSearch(
   const resolved = await resolveKeywordQuery(q, 'content_chunks');
   const kq = resolved ? gateRareTerms(resolved, pool) : null;
   const kw = kq ? keywordSql(contentChunks.searchTsv, kq) : null;
-  // The text match runs first, fenced (offset 0), and the node join after
-  // it (W6a). Under a workspace scope the planner cannot see how many items
+  // Under a workspace scope the text match runs first, fenced (offset 0),
+  // and the node join after it (W6a). The planner cannot see how many items
   // the scope holds (a run-time setting) and guesses a handful: it then
   // walked the scope's nodes and re-ran the text index once for each (an
   // Admin user's 1,600 items: 130 ms for a common word). The alias keeps the
-  // table's name, so `scope` and `kw` read the same columns.
-  const ftsRows = kw
-    ? ((await db.execute(sql`
+  // table's name, so `scope` and `kw` read the same columns. On the system
+  // pool the planner sees the real counts: the plain join stays (the fence
+  // there cost a third more for a common word on a 120k-chunk brain).
+  const ftsRows = !kw
+    ? []
+    : currentWorkspaceScope()
+      ? ((await db.execute(sql`
         select ${contentChunks.id} as id from (
           select ${contentChunks.id}, ${contentChunks.nodeId}, ${contentChunks.ownerId},
                  ${contentChunks.searchTsv}
@@ -253,7 +257,13 @@ async function runChunkSearch(
         order by ${sql.join(kw.order, sql`, `)}
         limit ${pool}
       `)) as unknown as Array<{ id: string }>)
-    : [];
+      : await db
+          .select({ id: contentChunks.id })
+          .from(contentChunks)
+          .innerJoin(nodes, eq(nodes.id, contentChunks.nodeId))
+          .where(and(...scope, kw.match))
+          .orderBy(...kw.order)
+          .limit(pool);
 
   // Window arm (passage windows): the vectors inside each chunk, best window
   // per chunk, in the same scope. The salience re-rank matches the vector
