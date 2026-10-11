@@ -172,10 +172,13 @@ UPDATE "public"."chat_threads" SET "login_id" = "owner_id" WHERE "login_id" IS N
 -- The digests and archived chat summaries of those threads: per login like
 -- the turns they summarise (nodes.login_id is the per-login read rule, 0241).
 -- A login change rewrites the node's chunk, window and fact copies under its
--- head; the named bypass covers this migration's heads.
+-- head; the named bypass covers this migration's heads. updated_at is kept
+-- (mantle.keep_updated_at, 0247): a fresh one would put a digest the
+-- extractor skipped back in its drain window.
 DO $$
 BEGIN
   PERFORM "public"."mantle_heads_bypass"('0269_workspaces_user_threads');
+  PERFORM set_config('mantle.keep_updated_at', 'on', true);
   UPDATE "public"."nodes" n
      SET "login_id" = coalesce(
            CASE WHEN n."data"->>'login_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
@@ -186,6 +189,7 @@ BEGIN
      AND (n."tags" @> ARRAY['conversation-digest']::text[] OR n."tags" @> ARRAY['chat-archive']::text[])
      AND (n."login_id" IS NULL OR n."data"->>'login_id' IS NULL)
      AND n."owner_id" = "public"."mantle_brain_id"();
+  PERFORM set_config('mantle.keep_updated_at', '', true);
 END
 $$;
 --> statement-breakpoint

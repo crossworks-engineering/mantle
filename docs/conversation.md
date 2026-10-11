@@ -435,6 +435,46 @@ private chats are never indexed), the mobile app, auto New chat after idle
 time (Jason: off), and the Forum v2 thread list (section 10a of the forum plan:
 archived threads list under "your agent").
 
+## 6d. One thread per user (migration 0269, workspaces W7c)
+
+Each user has their own thread with each assistant, and reads only their own
+threads: the owner's answer of 2026-10-11 ("Admin users no longer read other
+users' chats"), the owner included (a second Admin user never reads the
+owner's history with the Admin assistant).
+
+- **Key.** A thread is `(owner, agent, login)`. Every `assistant_messages` and
+  `chat_threads` row names its login: the stamp trigger (0250, widened in 0269)
+  fills in the anchor login when no other login asked (a heartbeat, an owner
+  Telegram bot), and 0269 gave every older row the anchor login. Row security
+  on both tables: own login only, in a scope that holds the row's workspace.
+  At most one open thread per `(agent, login)`; read cursors
+  (`assistant_read_cursors`) are per `(agent, login)` too.
+- **Reads.** `loadConversationContext` reads the history, the open thread, the
+  follow-up enrich and the digests of one login (the turn's login, else the
+  owner surface's, else the anchor). Below Admin it reads them for the login
+  the turn answers (the Team assistant's turn). The summarizer
+  (`summarizeAgentConversation`) digests each login's turns on their own; a
+  digest carries `data.login_id` and `nodes.login_id`, is made in the agent's
+  workspace (`withChatNoteHome`), and is read only for that login. An assistant
+  of a workspace other than Admin with `digest_limit: 0` (the shipped Team
+  assistant) is not summarised, and the reflector never reflects on one: no new
+  LLM work.
+- **The member chat folded in.** `team_messages` rows of member logins are
+  `assistant_messages` rows of the Team workspace's assistant now (same ids,
+  `data.digest_skip`, `data.trace_id`, `data.used_private`); team-portal
+  contact rows are history in `archive_team_messages`; `team_messages` is
+  frozen until W8. The copy raised no `summarize_due` or `conversation_changed`
+  (both stay quiet where `mantle.conversation_notify = off`). A member's
+  finished reply raises `login_notice` from `assistant_messages`.
+- **Routes.** `/api/assistant/*` (turn, stream, messages, thread, threads,
+  read, conversations, transcribe) serve any login for its own threads
+  (`getChatLoginOr401`, `server/web/lib/assistant-chat.ts`). An assistant of a
+  workspace other than Admin runs on the workspace turn engine
+  (`server/web/lib/workspace-turn.ts`: no Journal, no "About the user", the
+  member limits for a login that is not an Admin user). `/api/member/chat*`
+  and `/api/team-admin/member-chats` answer 410; `team_chat_list` and
+  `team_chat_read` read only the old portal threads.
+
 ## 7. Risks & call-outs
 
 - **Multiple Telegram chats on one agent interleave** in the single stream. For the

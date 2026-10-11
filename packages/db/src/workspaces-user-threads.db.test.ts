@@ -67,6 +67,7 @@ describe.skipIf(!URL)('per-user threads and the team_messages fold (0269)', () =
   let teamWs = '';
   let ownerBefore: string[] = [];
   let backlogBefore: Row[] = [];
+  let digestUpdatedBefore = '';
   let queueBefore = 0;
   let jobsBefore = -1;
   const since = new Date(Date.now() - 86_400_000);
@@ -150,6 +151,9 @@ describe.skipIf(!URL)('per-user threads and the team_messages fold (0269)', () =
         where agent_id = ${adminAgent} and login_id is null order by created_at, id`
     ).map((r) => r.id as string);
     backlogBefore = await backlog();
+    digestUpdatedBefore = String(
+      (await sql<Row[]>`select updated_at::text as u from nodes where id = ${digest}`)[0]!.u,
+    );
     jobsBefore = await jobs();
 
     process.env.DATABASE_URL = scratch.url;
@@ -208,8 +212,10 @@ describe.skipIf(!URL)('per-user threads and the team_messages fold (0269)', () =
     // The thread and the digest are the owner's now.
     const [t] = await sql<Row[]>`select login_id::text as l from chat_threads where agent_id = ${adminAgent}`;
     expect(t!.l).toBe(owner);
-    const [d] = await sql<Row[]>`select login_id::text as l, data->>'login_id' as dl from nodes where id = ${digest}`;
-    expect(d).toEqual({ l: owner, dl: owner });
+    const [d] = await sql<Row[]>`select login_id::text as l, data->>'login_id' as dl,
+        updated_at::text as u from nodes where id = ${digest}`;
+    // Named for the owner; updated_at kept (no drain window reopened).
+    expect(d).toEqual({ l: owner, dl: owner, u: digestUpdatedBefore });
     expect(await sql`select 1 from assistant_messages where login_id is null`).toHaveLength(0);
   });
 
