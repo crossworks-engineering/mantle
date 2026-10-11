@@ -323,9 +323,13 @@ export async function upsertFile(args: {
     withHeads([row.id], 'update', async (tx) => {
       // Only the watcher's own row takes a create's stamp and home: a row
       // another create made in the meantime is that create's item, never
-      // turned into this one's copy (W6b fix round 3, L-3). Checked under
-      // its heads, before anything is written; refused as a taken name (409).
-      if (stamp && !(await isWatcherInsert(tx, row.id))) throw new FileNameTakenError(filename);
+      // turned into this one's copy (W6b fix round 3, L-3), and the watcher's
+      // row holds the bytes this create wrote (fix round 4, L-2). Checked
+      // under its heads, before anything is written; refused as a taken name
+      // (409).
+      if (stamp && !(await isWatcherInsert(tx, row.id, written.sha256))) {
+        throw new FileNameTakenError(filename);
+      }
       const [u] = await tx
         .update(nodes)
         .set({
@@ -358,18 +362,22 @@ export async function upsertFile(args: {
 /**
  * Whether a file row a create raced to is the files watcher's insert (see
  * upsertFile): not a snapshot copy or a folded member file; no grant on it
- * that a login made (granted_by: nobody has shared it); and its home, if it
+ * that a login made (granted_by: nobody has shared it); its home, if it
  * has one, is where the database homes a create that names no workspace
- * (its folder's home, else Admin), never a workspace a create chose. Any
- * other row is another create's item (W6b fix round 3, L-3).
+ * (its folder's home, else Admin), never a workspace a create chose; and
+ * its bytes (data.sha256) are the ones this create wrote, `sha256`, as the
+ * watcher read them off disk. Any other row is another create's item (W6b
+ * fix round 3, L-3; fix round 4, L-2).
  * @heads-held by upsertFile (withHeads on the row).
  */
 async function isWatcherInsert(
   tx: Parameters<Parameters<typeof withHeads>[2]>[0],
   id: string,
+  sha256: string,
 ): Promise<boolean> {
   const [r] = (await tx.execute(sql`
-    select not coalesce(n.data ? 'snapshot_of' or n.data ? 'space_file', false)
+    select coalesce(n.data->>'sha256' = ${sha256}, false)
+           and not coalesce(n.data ? 'snapshot_of' or n.data ? 'space_file', false)
            and not exists (select 1 from item_grants g
                             where g.node_id = n.id and g.granted_by is not null)
            and (n.home_ws is null

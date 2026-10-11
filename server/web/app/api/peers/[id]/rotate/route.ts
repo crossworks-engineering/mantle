@@ -17,7 +17,15 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
   ) {
     return NextResponse.json({ error: PEER_OWNER_ONLY }, { status: 403 });
   }
-  const token = await rotateInboundToken(user.id, id);
-  if (!token) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  // Checked again in the write: the owner may bind it in between (fix
+  // round 4, L-4).
+  const guard = !user.actor.isOwner;
+  const token = await rotateInboundToken(user.id, id, guard ? { unlessBoundTo: user.id } : {});
+  if (!token) {
+    if (guard && (await peerBoundToOwner(user.id, id))) {
+      return NextResponse.json({ error: PEER_OWNER_ONLY }, { status: 403 });
+    }
+    return NextResponse.json({ error: 'not found' }, { status: 404 });
+  }
   return NextResponse.json({ inboundToken: token });
 }

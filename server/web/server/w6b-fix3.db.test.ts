@@ -203,14 +203,15 @@ describe.skipIf(!URL)('W6b fix round 3', () => {
       expect(res.status, `${method} ${p} ${res.text.slice(0, 200)}`).toBe(403);
     }
 
-    // The owner binds the other Admin user's peer to itself: still made by
-    // that user, so its app_delete is held.
+    // The owner binds the other Admin user's peer to itself: made its own
+    // and re-keyed since fix round 4 (L-1). One bound to the owner before
+    // that, still made by that user: its app_delete is held.
     r = await call(`/api/peers/${memPeer}`, owner, 'PATCH', armed);
     expect(r.status, r.text.slice(0, 200)).toBe(200);
-    expect(await createdBy(memPeer)).toBe(admin2);
-    const memToken = ((await call(`/api/peers/${memPeer}/rotate`, owner, 'POST')).json
-      .inboundToken ?? '') as string;
+    expect(await createdBy(memPeer)).toBe(owner);
+    const memToken = (r.json.inboundToken ?? '') as string;
     expect(memToken).not.toBe('');
+    await x(sql`update mantle_peers set created_by = ${admin2}::uuid where id = ${memPeer}`);
 
     // A peer made before its maker was recorded, bound to the owner.
     r = await call('/api/peers', owner, 'POST', peerBody('legacy', armed));
@@ -253,12 +254,13 @@ describe.skipIf(!URL)('W6b fix round 3', () => {
     const p3 = await newApp('peer legacy');
     expect((await viaPeer(legacyToken, p3)).peerByOwner).toBe(false);
     expect(await meta(p3)).toEqual({ held: true, by: null });
-    // The owner binding the legacy peer again records itself as its maker.
+    // The owner binding the legacy peer again records itself as its maker
+    // (and re-keys it, fix round 4, L-1).
     r = await call(`/api/peers/${legacyPeer}`, owner, 'PATCH', armed);
     expect(r.status, r.text.slice(0, 200)).toBe(200);
     expect(await createdBy(legacyPeer)).toBe(owner);
     const p4 = await newApp('peer adopted');
-    expect((await viaPeer(legacyToken, p4)).peerByOwner).toBe(true);
+    expect((await viaPeer(r.json.inboundToken as string, p4)).peerByOwner).toBe(true);
     expect((await meta(p4))!.held).toBeNull();
 
     await purgeLater();

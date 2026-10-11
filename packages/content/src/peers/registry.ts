@@ -208,13 +208,28 @@ export async function getOutboundToken(ownerId: string, id: string): Promise<str
   return open(row.outboundTokenEnc, row.id);
 }
 
-/** Rotate the inbound token; returns the new plaintext (shown once). */
-export async function rotateInboundToken(ownerId: string, id: string): Promise<string | null> {
+/** Rotate the inbound token; returns the new plaintext (shown once).
+ *  `unlessBoundTo` (a caller that is not the owner, W6b fix round 4, L-4):
+ *  only while the peer is not bound to that login, in the same statement;
+ *  null and nothing written otherwise. */
+export async function rotateInboundToken(
+  ownerId: string,
+  id: string,
+  opts: { unlessBoundTo?: string } = {},
+): Promise<string | null> {
   const token = mintInboundToken();
   const [row] = await db
     .update(mantlePeers)
     .set({ inboundTokenHash: hashToken(token), updatedAt: new Date() })
-    .where(and(eq(mantlePeers.id, id), eq(mantlePeers.ownerId, ownerId)))
+    .where(
+      and(
+        eq(mantlePeers.id, id),
+        eq(mantlePeers.ownerId, ownerId),
+        opts.unlessBoundTo
+          ? sql`${mantlePeers.actsAsLoginId} is distinct from ${opts.unlessBoundTo}::uuid`
+          : undefined,
+      ),
+    )
     .returning({ id: mantlePeers.id });
   return row ? token : null;
 }
@@ -265,6 +280,10 @@ export async function setPeerEnabled(
   return !!row;
 }
 
+/** What `setPeerAccess` changed: the peer, and the new inbound token when
+ *  the owner's binding re-keyed it (plaintext, shown once; null otherwise). */
+export type PeerAccessResult = { peer: PeerRow; inboundToken: string | null };
+
 /**
  * What a peer's token may do on /api/mcp (0227, plan page e5b854dd): act as
  * one login (the caller checked it exists and passes its current role), or
@@ -283,12 +302,19 @@ export async function setPeerAccess(
     actsAs?: { loginId: string; role: 'admin' | 'member' | 'client' } | null;
     writeEnabled?: boolean;
     allowedRiskyTools?: string[];
-    /** The owner binding a peer made before 0267 (no maker recorded) to
-     *  itself: recorded as its maker (W6b fix round 3, M-1). A peer another
-     *  login made keeps that login. */
+    /** The owner binding the peer to itself: recorded as its maker (W6b fix
+     *  round 3, M-1). A peer another login made, or one made before 0267
+     *  (no maker recorded), gets a new inbound token in the same statement,
+     *  returned once: whoever made it saw the old one, which would otherwise
+     *  stay an owner credential in their hands (fix round 4, L-1). */
     adoptBy?: string;
+    /** A caller that is not the owner (fix round 4, L-4): the change lands
+     *  only while the peer is not bound to this login (the anchor), checked
+     *  in the same statement, so the owner binding it in the meantime is
+     *  never undone or armed by it. Nothing is written otherwise (null). */
+    unlessBoundTo?: string;
   },
-): Promise<PeerRow | null> {
+): Promise<PeerAccessResult | null> {
   const set: Partial<typeof mantlePeers.$inferInsert> = { updatedAt: new Date() };
   const risky = access.allowedRiskyTools ? [...new Set(access.allowedRiskyTools)] : undefined;
   if (access.actsAs !== undefined) {
@@ -319,16 +345,32 @@ export async function setPeerAccess(
     }
     if (risky !== undefined) set.allowedRiskyTools = risky;
   }
+  let minted: { token: string; hash: string } | null = null;
   if (access.adoptBy) {
-    set.createdBy =
-      sql`coalesce(${mantlePeers.createdBy}, ${access.adoptBy}::uuid)` as unknown as string;
+    const token = mintInboundToken();
+    minted = { token, hash: hashToken(token) };
+    // SET reads the row as it was: re-key only when someone else made it.
+    set.inboundTokenHash =
+      sql`(case when ${mantlePeers.createdBy} is distinct from ${access.adoptBy}::uuid
+                then ${minted.hash} else ${mantlePeers.inboundTokenHash} end)` as unknown as string;
+    set.createdBy = access.adoptBy;
   }
   const [row] = await db
     .update(mantlePeers)
     .set(set)
-    .where(and(eq(mantlePeers.id, id), eq(mantlePeers.ownerId, ownerId)))
+    .where(
+      and(
+        eq(mantlePeers.id, id),
+        eq(mantlePeers.ownerId, ownerId),
+        access.unlessBoundTo
+          ? sql`${mantlePeers.actsAsLoginId} is distinct from ${access.unlessBoundTo}::uuid`
+          : undefined,
+      ),
+    )
     .returning();
-  return row ? rowOf(row) : null;
+  if (!row) return null;
+  const rekeyed = !!minted && row.inboundTokenHash === minted.hash;
+  return { peer: rowOf(row), inboundToken: rekeyed ? minted!.token : null };
 }
 
 /** Hard-delete a peer: drops the sidecar + its node (cascades peer_shares). */

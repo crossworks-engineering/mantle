@@ -27,18 +27,18 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   const { actsAs, writeEnabled, allowedRiskyTools } = parsed.data;
+  const change = { actsAs, writeEnabled, allowedRiskyTools };
   // Checked before anything changes: a brain that acts as the owner is the
   // owner's to bind, arm and keep armed (W6b fix round 3, M-1).
-  if (
-    !user.actor.isOwner &&
-    peerChangeNeedsOwner(
-      { actsAs, writeEnabled, allowedRiskyTools },
-      await peerBoundToOwner(user.id, id),
-    )
-  ) {
+  if (!user.actor.isOwner && peerChangeNeedsOwner(change, await peerBoundToOwner(user.id, id))) {
     return NextResponse.json({ error: PEER_OWNER_ONLY }, { status: 403 });
   }
+  // The check above read the peer before the write: the owner may bind it
+  // in between. A change the owner alone makes on a peer bound to it lands
+  // only while it is still not bound, in the write itself (fix round 4, L-4).
+  const guard = !user.actor.isOwner && peerChangeNeedsOwner(change, true);
   let touched = false;
+  let inboundToken: string | null = null;
   if (parsed.data.enabled !== undefined) {
     const ok = await setPeerEnabled(user.id, id, parsed.data.enabled);
     if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });
@@ -54,18 +54,27 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     if (bound && 'error' in bound) {
       return NextResponse.json({ error: bound.error }, { status: 400 });
     }
-    const row = await setPeerAccess(user.id, id, {
+    const res = await setPeerAccess(user.id, id, {
       ...(bound !== undefined ? { actsAs: bound } : {}),
       ...(writeEnabled !== undefined ? { writeEnabled } : {}),
       ...(allowedRiskyTools !== undefined ? { allowedRiskyTools } : {}),
-      // The owner binding a peer made before its maker was recorded.
+      // The owner binding a peer to itself becomes its maker; one someone
+      // else made is re-keyed in the same write (fix round 4, L-1).
       ...(actsAs === 'owner' && user.actor.isOwner ? { adoptBy: user.actor.id } : {}),
+      ...(guard ? { unlessBoundTo: user.id } : {}),
     });
-    if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
+    if (!res) {
+      if (guard && (await peerBoundToOwner(user.id, id))) {
+        return NextResponse.json({ error: PEER_OWNER_ONLY }, { status: 403 });
+      }
+      return NextResponse.json({ error: 'not found' }, { status: 404 });
+    }
+    inboundToken = res.inboundToken;
     touched = true;
   }
   if (!touched) return NextResponse.json({ error: 'nothing to update' }, { status: 400 });
-  return NextResponse.json({ ok: true });
+  // A new inbound token is shown here once: the peer must be re-issued it.
+  return NextResponse.json(inboundToken ? { ok: true, inboundToken } : { ok: true });
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {

@@ -175,13 +175,13 @@ describe.skipIf(!URL)('peer bindings end with the login', () => {
     const back = await setPeerAccess(who.anchor, peers.member, {
       actsAs: { loginId: member, role: 'member' },
     });
-    expect(back).toMatchObject({ actsAsLoginId: member, writeEnabled: true });
+    expect(back?.peer).toMatchObject({ actsAsLoginId: member, writeEnabled: true });
     expect((await peer(peers.member)).ended_acts_as_login_id).toBeNull();
     // The client peer was unbound by MCP off; bound to a different login,
     // it starts closed as before.
     const moved = await setPeerAccess(who.anchor, peers.client, {
       actsAs: { loginId: member, role: 'member' },
     });
-    expect(moved).toMatchObject({ actsAsLoginId: member, writeEnabled: false });
+    expect(moved?.peer).toMatchObject({ actsAsLoginId: member, writeEnabled: false });
   });
 });

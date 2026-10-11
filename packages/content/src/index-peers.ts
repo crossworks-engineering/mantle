@@ -43,6 +43,7 @@ export {
   hashToken,
   mintInboundToken,
   tokenMatchesHash,
+  type PeerAccessResult,
   type PeerRow,
   type CreatePeerInput,
   type PeerShareRow,

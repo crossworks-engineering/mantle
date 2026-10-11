@@ -40,6 +40,7 @@ export {
   deletePeer,
   verifyInboundToken,
   markPeerContacted,
+  type PeerAccessResult,
   type PeerRow,
   type CreatePeerInput,
 } from './registry';

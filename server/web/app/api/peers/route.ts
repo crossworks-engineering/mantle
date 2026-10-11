@@ -48,11 +48,13 @@ export async function POST(req: Request) {
     let peer = created.peer;
     if (bound) {
       peer =
-        (await setPeerAccess(user.id, peer.id, {
-          actsAs: bound,
-          ...(writeEnabled !== undefined ? { writeEnabled } : {}),
-          ...(allowedRiskyTools !== undefined ? { allowedRiskyTools } : {}),
-        })) ?? peer;
+        (
+          await setPeerAccess(user.id, peer.id, {
+            actsAs: bound,
+            ...(writeEnabled !== undefined ? { writeEnabled } : {}),
+            ...(allowedRiskyTools !== undefined ? { allowedRiskyTools } : {}),
+          })
+        )?.peer ?? peer;
     }
     return NextResponse.json({ peer, inboundToken: created.inboundToken }, { status: 201 });
   } catch (err) {
