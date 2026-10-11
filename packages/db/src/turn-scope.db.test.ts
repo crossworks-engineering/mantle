@@ -113,9 +113,12 @@ describe.skipIf(!URL)('assistant turn scope (W4b)', () => {
       const a = (await m.db.execute(
         sql`select current_user as u, txid_current()::text as x`,
       )) as unknown as { u: string; x: string }[];
-      // Between two queries no transaction of this role is left open.
+      // Between two queries no transaction of this role is left open, in
+      // this test's database (other files' scratch databases share the
+      // server and the role in a full run).
       const idle = await m.systemDb.execute(sql`select count(*)::int as n from pg_stat_activity
-          where usename = 'mantle_view_user' and state like 'idle in transaction%'`);
+          where usename = 'mantle_view_user' and state like 'idle in transaction%'
+            and datname = current_database()`);
       const b = (await m.db.execute(sql`select txid_current()::text as x`)) as unknown as {
         x: string;
       }[];
