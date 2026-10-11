@@ -318,6 +318,24 @@ describe.skipIf(!URL)('W7d: Telegram per paired user', () => {
 
   // ── W7d fix round 1 ──────────────────────────────────────────────────────
 
+  /** Run `fn` with `login` out of Team, its Team row put back after. */
+  const outOfTeam = async (login: string, fn: () => Promise<void>) => {
+    const rows = await x<{ moderator: boolean; limits: unknown }>(sql`
+      select moderator, limits from workspace_users
+       where workspace_id = ${teamWs} and login_id = ${login}`);
+    await x(
+      sql`delete from workspace_users where workspace_id = ${teamWs} and login_id = ${login}`,
+    );
+    try {
+      await fn();
+    } finally {
+      for (const r of rows) {
+        await x(sql`insert into workspace_users (workspace_id, login_id, moderator, limits)
+          values (${teamWs}, ${login}, ${r.moderator}, ${JSON.stringify(r.limits ?? {})}::jsonb)`);
+      }
+    }
+  };
+
   it('pairing is two steps: the preview pairs nothing, the confirm pairs and tells the user (M3)', async () => {
     const preview = await previewRoute(member, code.member);
     expect(preview.status, await preview.clone().text()).toBe(200);
@@ -400,38 +418,42 @@ describe.skipIf(!URL)('W7d: Telegram per paired user', () => {
 
   it('a responder override that would move a chat into a workspace its user is not in is refused', async () => {
     await allow(chat.admin2, admin2);
-    as(owner);
-    const route = await import('@/app/api/telegram/chats/[id]/route');
-    const patch = (agentId: string | null) =>
-      route.PATCH(
-        new Request('http://x/api', {
-          method: 'PATCH',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ responderAgentId: agentId }),
-        }),
-        params(chat.admin2),
-      );
-    // A2 is a user of Admin, not of Team: the Team assistant may not answer
-    // their chat.
-    const refused = await patch(agent.team);
-    expect(refused.status).toBe(400);
-    expect(await refused.json()).toMatchObject({ code: 'not_a_workspace_user' });
-    const [row] = await x<{ r: string | null }>(sql`
+    // The migration made A2 a Moderator of Team: out of it here, so the Team
+    // assistant is a workspace A2 is not in.
+    await outOfTeam(admin2, async () => {
+      as(owner);
+      const route = await import('@/app/api/telegram/chats/[id]/route');
+      const patch = (agentId: string | null) =>
+        route.PATCH(
+          new Request('http://x/api', {
+            method: 'PATCH',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ responderAgentId: agentId }),
+          }),
+          params(chat.admin2),
+        );
+      // A2 is a user of Admin, not of Team: the Team assistant may not answer
+      // their chat.
+      const refused = await patch(agent.team);
+      expect(refused.status).toBe(400);
+      expect(await refused.json()).toMatchObject({ code: 'not_a_workspace_user' });
+      const [row] = await x<{ r: string | null }>(sql`
       select responder_agent_id::text as r from telegram_chats where id = ${chat.admin2}`);
-    expect(row!.r).toBeNull();
-    // An override set behind the route's back is refused at the turn rule.
-    const { chatLoginRefusal } = await import('@mantle/telegram');
-    expect(
-      await chatLoginRefusal({
-        ownerId: owner,
-        loginId: admin2,
-        accountId: account.admin,
-        responderAgentId: agent.team,
-      }),
-    ).toBe('not_a_user');
-    // The Admin assistant itself is fine.
-    expect((await patch(agent.admin)).status).toBe(200);
-    expect((await patch(null)).status).toBe(200);
+      expect(row!.r).toBeNull();
+      // An override set behind the route's back is refused at the turn rule.
+      const { chatLoginRefusal } = await import('@mantle/telegram');
+      expect(
+        await chatLoginRefusal({
+          ownerId: owner,
+          loginId: admin2,
+          accountId: account.admin,
+          responderAgentId: agent.team,
+        }),
+      ).toBe('not_a_user');
+      // The Admin assistant itself is fine.
+      expect((await patch(agent.admin)).status).toBe(200);
+      expect((await patch(null)).status).toBe(200);
+    });
   });
 
   it('the pending cap counts only live codes; a no-login allowed chat goes back to pending (L4)', async () => {
@@ -501,13 +523,16 @@ describe.skipIf(!URL)('W7d: Telegram per paired user', () => {
     // The anchor: every chat.
     const anchors = await listAs(owner);
     expect(anchors.ids.has(chat.member) && anchors.ids.has(chat.admin2)).toBe(true);
-    // A2 with the users area off: their own chat only.
+    // A2 with the users area off and out of Team (the migration made them a
+    // Moderator there): their own chat only.
     await x(sql`update workspace_users set limits = '{"areas":{"users":false}}'::jsonb
                  where workspace_id = ${adminWs} and login_id = ${admin2}`);
     try {
-      const own = await listAs(admin2);
-      expect([...own.ids]).toEqual([chat.admin2]);
-      expect(own.total).toBe(1);
+      await outOfTeam(admin2, async () => {
+        const own = await listAs(admin2);
+        expect([...own.ids]).toEqual([chat.admin2]);
+        expect(own.total).toBe(1);
+      });
     } finally {
       await x(sql`update workspace_users set limits = '{}'::jsonb
                    where workspace_id = ${adminWs} and login_id = ${admin2}`);
