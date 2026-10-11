@@ -75,5 +75,5 @@ BEGIN
 END $$;
 --> statement-breakpoint
 CREATE POLICY "traces_user_read" ON "public"."traces" FOR SELECT TO mantle_view_user
-  USING ("workspace_id" = ANY ((SELECT "public"."mantle_scope_ws"()))
+  USING (ARRAY["workspace_id"] && (SELECT "public"."mantle_scope_ws"())
          OR ("workspace_id" IS NULL AND (SELECT "public"."mantle_scope_is_admin"())));

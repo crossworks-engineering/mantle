@@ -29,6 +29,7 @@ import { isAnyLoginRoute } from '../lib/auth/any-login-routes';
 import { isClientRoute } from '../lib/auth/client-routes';
 import { isMemberRoute } from '../lib/auth/member-routes';
 import { memberMayRead, routeClass } from '../lib/auth/route-scope';
+import { PUBLIC_PATHS } from '../lib/auth-constants';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -208,8 +209,11 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
   });
 
   const skipped = (pattern: string) => SKIP.some((re) => re.test(pattern));
+  const isPublic = (pattern: string) =>
+    PUBLIC_PATHS.some((p) => pattern === p || pattern.startsWith(`${p}/`));
   const isOwnerRoute = (method: string, pattern: string) =>
     pattern.startsWith('/api/') &&
+    !isPublic(pattern) &&
     !isMemberRoute(method, pattern) &&
     !isClientRoute(method, pattern) &&
     !isAnyLoginRoute(method, pattern) &&
@@ -292,7 +296,9 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
             if (r.status === 403 || r.outcome?.kind !== 'user') {
               failures.push(`${key} open read: ${r.status} ${JSON.stringify(r.outcome)}`);
             }
-          } else if (r.status !== 403) {
+          } else if (r.status !== 403 && r.status !== 401) {
+            // 403 from the session gates, 401 from the byte routes' asset
+            // gate and the ticket-gated frame.
             failures.push(`${key} not refused: ${r.status}`);
           }
         }

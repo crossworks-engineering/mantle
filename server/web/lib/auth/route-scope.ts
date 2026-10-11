@@ -183,7 +183,6 @@ export const MEMBER_OPEN_READS: readonly string[] = [
   'GET /api/tables/:id',
   'GET /api/tables/:id/rows',
   'GET /api/files/files',
-  'GET /api/files/files/:id',
   'GET /api/files/folders',
   'GET /api/files/folders/:id',
   'GET /api/tree/:kind',
