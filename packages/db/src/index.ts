@@ -84,6 +84,7 @@ export {
   hasRequestSlot,
   enterRequestScope,
   noteRequestSystem,
+  noteRequestOwnRule,
   currentRequestOutcome,
   currentRequestMode,
   narrowsWorkspaceScope,

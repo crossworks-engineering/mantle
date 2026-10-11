@@ -1849,6 +1849,13 @@
       "when": 1790194920000,
       "tag": "0264_workspaces_review_off",
       "breakpoints": true
+    },
+    {
+      "idx": 265,
+      "version": "7",
+      "when": 1790194980000,
+      "tag": "0265_workspaces_admin_reads",
+      "breakpoints": true
     }
   ]
 }

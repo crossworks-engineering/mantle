@@ -202,10 +202,10 @@ type Scope = {
 /**
  * How a request scope treats writes and drafts (workspaces W6a, plan 2.3):
  *  - `writes`: a mutating request (POST, PUT, PATCH, DELETE). Writes stay on
- *    the system pool with their rule in the statement (plan 2.3): `db`
- *    sends insert, update, delete, a transaction and a writing `execute`
- *    there (client.ts). A read request sends every statement to the
- *    workspace role, so a stray write fails loudly (42501), never unscoped.
+ *    the system pool with their rule in the statement (plan 2.3): in any
+ *    request scope `db` sends insert, update, delete and a writing
+ *    `execute` there, and a mutating request's transactions too
+ *    (client.ts); withSystemTx and the heads helpers stay open.
  *  - `drafts`: whether `readsDrafts()` says yes (an Admin user's editor
  *    reads the draft of an item it may write; the rule is in each query).
  */
@@ -216,6 +216,10 @@ export type RequestScopeMode = { writes: boolean; drafts: boolean };
  *  pool (a management area, or an Admin write), or nothing yet. */
 export type RequestOutcome =
   | { kind: 'user'; loginId: string; writes: boolean }
+  // A member route (/api/member/*, kept until the UI reads the normal
+  // routes): its handler holds its own rule, a withViewer per read as since
+  // W5b2, and its writes on the system pool.
+  | { kind: 'own-rule'; loginId: string }
   | { kind: 'system'; why: 'area' | 'admin-write' | 'admin-reads-flag' | 'login-self' };
 
 type RequestSlot = { scope: Scope | null; outcome: RequestOutcome | null };
@@ -331,6 +335,13 @@ export function enterRequestScope(ws: WorkspaceScope, mode: RequestScopeMode): b
 export function noteRequestSystem(why: Extract<RequestOutcome, { kind: 'system' }>['why']): void {
   const slot = requestSlots.getStore();
   if (slot && !slot.scope) slot.outcome = { kind: 'system', why };
+}
+
+/** Record that the guard let a member route's handler hold its own rule
+ *  (RequestOutcome 'own-rule'). No-op outside a slot. */
+export function noteRequestOwnRule(loginId: string): void {
+  const slot = requestSlots.getStore();
+  if (slot && !slot.scope) slot.outcome = { kind: 'own-rule', loginId: loginId.toLowerCase() };
 }
 
 /** What the guard did for the current request, or null (no slot, no

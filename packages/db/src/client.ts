@@ -302,11 +302,11 @@ export async function withSpace<T>(
 export async function withSystemTx<T>(
   fn: (tx: PostgresJsDatabase<typeof schema>) => Promise<T>,
 ): Promise<T> {
-  // A MUTATING request's scope (W6a) writes through here: writes stay on
-  // the system pool with their rule in the statement (plan 2.3). A read
-  // request does not write (fails loudly).
-  const writer = currentRequestMode()?.writes === true;
-  if ((!isSystemScope() && !writer) || currentScopeTx()) {
+  // A request scope (W6a) writes through here: writes stay on the system
+  // pool with their rule in the statement (plan 2.3), in a read request too
+  // (a lazy backfill, a root folder made on first open).
+  const inRequest = currentRequestMode() !== null;
+  if ((!isSystemScope() && !inRequest) || currentScopeTx()) {
     throw new Error('withSystemTx: only outside a viewer scope and any other transaction');
   }
   const hooks = newTxHooks();
@@ -866,10 +866,18 @@ export async function viewerScopeFor(actsFor: ViewerFor): Promise<WorkspaceScope
  */
 export const db = new Proxy({} as PostgresJsDatabase<typeof schema>, {
   get(_t, prop) {
-    // A mutating request's scope (W6a, plan 2.3): writes stay on the system
-    // pool with their rule in the statement; reads run in the scope.
-    if (currentRequestMode()?.writes === true && !currentScopeTx()) {
-      if (prop === 'insert' || prop === 'update' || prop === 'delete' || prop === 'transaction') {
+    // A request scope (W6a, plan 2.3): writes stay on the system pool with
+    // their rule in the statement; reads run in the scope. A transaction is
+    // a write in a mutating request, and stays in the scope in a read
+    // request (a search step that needs one transaction).
+    const mode = currentRequestMode();
+    if (mode && !currentScopeTx()) {
+      if (
+        prop === 'insert' ||
+        prop === 'update' ||
+        prop === 'delete' ||
+        (prop === 'transaction' && mode.writes)
+      ) {
         return Reflect.get(getAdminDb() as object, prop);
       }
       if (prop === 'execute') return requestExecute;
@@ -880,9 +888,9 @@ export const db = new Proxy({} as PostgresJsDatabase<typeof schema>, {
 
 /**
  * Whether a raw statement writes (W6a): a leading write verb, or a write
- * clause anywhere (a data-modifying CTE, a row lock). Only for routing a
- * MUTATING request's raw statements to the system pool; a read request
- * sends every statement to the workspace role.
+ * clause anywhere (a data-modifying CTE, a row lock). For routing a request
+ * scope's raw statements: a write to the system pool, a read to the
+ * workspace role.
  */
 export function isWriteSql(text: string): boolean {
   const body = text.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ');

@@ -49,7 +49,6 @@ export const ROUTE_PREFIXES: ReadonlyArray<readonly [string, Tag]> = [
   ['/api/journal', 'content'],
   ['/api/email', 'content'],
   ['/api/contacts', 'content'],
-  ['/api/calendar', 'content'],
   ['/api/events', 'content'],
   ['/api/recall', 'content'],
   ['/api/export', 'content'],
@@ -120,6 +119,8 @@ export const ROUTE_PREFIXES: ReadonlyArray<readonly [string, Tag]> = [
   ['/api/peers', 'connectors'],
   ['/api/federation', 'connectors'],
   ['/api/telegram', 'connectors'],
+  // Calendar feeds: accounts with their feed secrets, management.
+  ['/api/calendar', 'connectors'],
   ['/api/email/accounts', 'connectors'],
   ['/api/email/discover', 'connectors'],
   ['/api/email/contact-gate', 'connectors'],

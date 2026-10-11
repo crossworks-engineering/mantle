@@ -141,6 +141,20 @@ const none = (table: string, writer: Writer = 'admin'): TableAccess => ({
   writer,
 });
 
+/**
+ * A table no level role reads, that the workspace role reads since W6a (an
+ * Admin user's screens run in its scope, plan 2.4). Its row rule is in
+ * migration 0265: rows that follow an item the scope reads, or (graph,
+ * documentation collections) only a scope that holds the Admin workspace.
+ */
+const userOnly = (table: string, writer: Writer = 'admin'): TableAccess => ({
+  table,
+  read: 'none',
+  rule: 'none',
+  writer,
+  user: 'all',
+});
+
 export const ACCESS_MATRIX: readonly TableAccess[] = [
   // ── Brain content: readable at the viewer's level ─────────────────────────
   {
@@ -214,7 +228,9 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   },
   {
     table: 'public.apps',
-    user: 'level+drafts',
+    // Every column since W6a: an Admin user's app screens read them all;
+    // drafts only where the user may edit (draftColumn).
+    user: 'all',
     read: [
       'node_id',
       'source',
@@ -358,7 +374,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   },
 
   // ── Infrastructure: written through systemDb, never read by a viewer ─────
-  none('public.traces', 'system'),
+  userOnly('public.traces', 'system'),
   // Embedding / extraction outages (0230): written by the embedder and the
   // extract queue on the admin pool, read by admin routes only.
   none('public.provider_alerts', 'system'),
@@ -370,7 +386,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   { ...none('public.pending_tool_calls', 'system'), user: 'all' },
   none('public.turn_stream_buffer', 'system'),
   none('public.audit_log', 'system'),
-  none('public.app_access_log', 'system'),
+  userOnly('public.app_access_log', 'system'),
   none('public.team_access_log', 'system'),
   none('public.member_turn_ledger', 'system'),
   none('public.embedding_cache', 'system'),
@@ -383,7 +399,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.assistant_read_cursors', 'system'),
   // Per-login pins and opens of the item tree (docs/folder-tree.md). Owner
   // paths only for now; members get their own when the tree reaches them.
-  none('public.item_marks'),
+  userOnly('public.item_marks', 'admin'),
   none('public.sync_runs', 'system'),
   none('public.maintenance_runs', 'system'),
   none('public.heartbeat_fires', 'system'),
@@ -396,7 +412,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.push_prefs', 'system'),
   none('public.push_subscriptions', 'system'),
   none('public.push_login_prefs', 'system'),
-  none('public.shares', 'system'),
+  userOnly('public.shares', 'system'),
   // Contact shares (0214): the /s layer reads and writes these on the admin
   // pool, for the brain. No viewer role ever does.
   none('public.contact_share_codes', 'system'),
@@ -406,9 +422,9 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.api_keys'),
   none('public.secrets'),
   none('public.pdf_passwords'),
-  none('public.emails'),
+  userOnly('public.emails', 'admin'),
   none('public.email_accounts'),
-  none('public.email_attachments'),
+  userOnly('public.email_attachments', 'admin'),
   none('public.telegram_accounts'),
   none('public.telegram_chats'),
   none('public.telegram_messages'),
@@ -448,20 +464,20 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   { ...none('public.assistant_messages'), user: 'all' },
   // Chat archive threads (0231): time ranges over assistant_messages, admin pool.
   { ...none('public.chat_threads'), user: 'all' },
-  none('public.entities', 'content'),
-  none('public.entity_edges', 'content'),
-  none('public.entity_merge_dismissals'),
+  userOnly('public.entities', 'content'),
+  userOnly('public.entity_edges', 'content'),
+  userOnly('public.entity_merge_dismissals', 'admin'),
   // The embed edges (0208): written by triggers, read by the refresh and
   // the admin pool; the viewer roles read embedded_level on the row.
   none('public.node_embeds', 'content'),
   // Old summaries made before always fold (W2, 0247): admin pool only.
   none('public.node_mixed_summaries', 'content'),
-  none('public.recall_maps'),
-  none('public.recall_nodes'),
+  userOnly('public.recall_maps', 'admin'),
+  userOnly('public.recall_nodes', 'admin'),
   // Recall v2: the revision log. Admin pool only, like the other two — the
   // reader filter for a team agent (R6) runs in the tools against the map's
   // node under the viewer, never by opening these tables to a viewer role.
-  none('public.recall_revisions'),
+  userOnly('public.recall_revisions', 'admin'),
   // Comments on personal items (Phase 2): the space role reads and writes its
   // own login's comments on its own items; the team role reads the comments on
   // teammates' team-shared items (human flag on). Brain threads stay admin.
@@ -479,8 +495,8 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.channels'),
   none('public.curated_models'),
   none('public.prompt_versions'),
-  none('public.node_snapshots'),
-  none('public.doc_collections'),
+  userOnly('public.node_snapshots', 'admin'),
+  userOnly('public.doc_collections', 'admin'),
   none('public.ingest_rules'),
   none('public.saved_filters'),
   none('public.heartbeats'),
@@ -495,14 +511,16 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
     read: 'none',
     rule: 'none',
     writer: 'admin',
-    user: ['id', 'name', 'description', 'contact_id', 'is_admin', 'archived_at'],
+    // Every column since W6a (an Admin user's lists read the workspace
+    // chips); the row rule (0242) keeps it to the login's workspaces.
+    user: 'all',
   },
   {
     table: 'public.workspace_users',
     read: 'none',
     rule: 'none',
     writer: 'admin',
-    user: ['workspace_id', 'login_id', 'moderator'],
+    user: 'all',
   },
   {
     table: 'public.workspace_resources',

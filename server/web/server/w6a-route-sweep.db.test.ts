@@ -282,6 +282,10 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
         if (r.outcome?.kind === 'system' && !e.pattern.startsWith('/api/auth/')) {
           failures.push(`${key} ran as login-self outside /api/auth`);
         }
+        // A member route holds its own rule (withViewer per read, W5b2).
+        if (r.outcome?.kind === 'own-rule' && !isMemberRoute(method, e.pattern)) {
+          failures.push(`${key} ran by its own rule outside the member routes`);
+        }
         if (isOwnerRoute(method, e.pattern)) {
           if (memberMayRead(method, e.pattern)) {
             opened += 1;

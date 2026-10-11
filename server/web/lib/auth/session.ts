@@ -28,6 +28,7 @@ import {
   hasRequestSlot,
   loginScopeFor,
   noteRequestSystem,
+  noteRequestOwnRule,
   type RequestScopeMode,
 } from '@mantle/db';
 import {
@@ -262,8 +263,7 @@ async function renderCaller(): Promise<{ user: SessionUser; nodeId: string } | n
 export async function getMemberForAsset(req: Request): Promise<MemberCaller | NextResponse> {
   const member = await memberForAsset(req);
   if (member instanceof NextResponse) return member;
-  // The member's scope for the rest of the request (W6a, plan T4).
-  await enterLoginScope(member.loginId, requestMode(false));
+  noteRequestOwnRule(member.loginId);
   return member;
 }
 
@@ -879,8 +879,10 @@ export async function getMemberOr401(): Promise<MemberCaller | NextResponse> {
       actor: { id: m.loginId, email: m.email, displayName: m.displayName, isOwner: false },
     });
   }
-  // The member's scope for the rest of the request (W6a, plan T4).
-  await enterLoginScope(res.member.loginId, requestMode(false));
+  // A member route holds its own rule (a withViewer per read since W5b2,
+  // writes on the system pool): no request scope around it (W6a). The
+  // owner routes a member may read run in its scope (MEMBER_OPEN_READS).
+  noteRequestOwnRule(res.member.loginId);
   return res.member;
 }
 
