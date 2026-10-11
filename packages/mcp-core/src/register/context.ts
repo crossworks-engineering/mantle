@@ -45,10 +45,15 @@ export function makeRegisterContext(
 ) {
   const surface: ToolSurface = via === 'mcp' ? MCP_OWNER_SURFACE : { kind: 'owner', via };
   // The handlers get the connection's login with it: who deletes an app
-  // decides whether the trash keeps it for the owner (app_delete).
+  // decides whether the trash keeps it for the owner (app_delete). The
+  // channel goes with or without a login (W7b fix round 3): a peer bound to
+  // an admin login that is not the owner's own peer has no loginId here,
+  // and its `ownerKeysOff` must still reach the tools.
   const callSurface: ToolSurface = loginId
     ? { kind: 'owner', via, loginId, ...(mcp ? { mcp } : {}) }
-    : surface;
+    : mcp
+      ? { kind: 'owner', via, mcp }
+      : surface;
   // Explicit env wins in both directions: =1 opts a network surface in, =0 opts
   // a local one out. Unset means stdio yes, HTTP no.
   const terminalEnv = env('MANTLE_MCP_TERMINAL') ?? '';

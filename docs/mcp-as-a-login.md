@@ -28,11 +28,15 @@ with Write off keeps its grants read-only (their scope carries
 `mantle:read-only`, which a refresh keeps; `MCP_READ_ONLY_SCOPE` in
 `server/web/lib/mcp-oauth.ts`) and its peers' write switch off. Its API
 keys (`mtlk_`) go the same way (W7b fix round 2): revoked where MCP was
-off, read-only where Write was off. A member or client login with no
+off, read-only where Write was off; an admin login's keys never went
+through the switch, so a leftover switch row of an admin changes none of
+them (W7b fix round 3). A member or client login with no
 switch row never reached MCP: its keys were made for `/api/v1`, so 0268
 marks them `api_only` (they keep working there; `/api/mcp` refuses them)
 and disables the peers bound to it. Only credentials made before the
-archive are touched; a key made since has no `api_only`. A read-only
+archive are touched (for a login with no switch row, before the cutoff
+`archive_mcp_cutoff` records on the first run); a key made since has no
+`api_only`. A read-only
 connection lists only the tools that read. The box-level remote MCP
 switch still gates everything, as a pause: while it is off `/api/mcp`, the
 consent page, client registration and the token endpoint all answer 404, so

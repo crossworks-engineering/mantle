@@ -17,6 +17,12 @@
  * (`api_only`: /api/mcp refuses them) and have their peers disabled. The
  * owner's key and peer (an admin, no row) are untouched, and so is a key or
  * a peer made after the archive.
+ *
+ * W7b fix round 3: an admin login with a leftover switch row (MCP off, or
+ * Write off) keeps its keys as they were (admin keys never went through
+ * the switch). A brain with no switch row and no agent records its cutoff
+ * on the first run: a second run leaves a key and a peer made after the
+ * first run as they are (it used to read now() then).
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/mcp-revived-credentials.db.test.ts
  */
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
@@ -31,6 +37,21 @@ const TAG = '0268_workspaces_mcp_one_surface';
 type Ts = typeof import('@mantle/db/test-support');
 const sha = (s: string) => createHash('sha256').update(s, 'utf8').digest('hex');
 
+/** Run 0268 again, in one transaction, as the runner does. */
+async function rerun(sql: ReturnType<typeof postgres>): Promise<void> {
+  const file = readFileSync(
+    fileURLToPath(
+      new globalThis.URL(`../../../packages/db/migrations/${TAG}.sql`, import.meta.url),
+    ),
+    'utf8',
+  );
+  await sql.begin(async (tx) => {
+    for (const stmt of file.split('--> statement-breakpoint')) {
+      if (stmt.trim()) await tx.unsafe(stmt);
+    }
+  });
+}
+
 describe.skipIf(!URL)('0268: no MCP credential comes back to life (W7b fix round 1, M3)', () => {
   let scratch: Awaited<ReturnType<Ts['createScratchDatabaseBefore']>> | undefined;
   let sql: ReturnType<typeof postgres>;
@@ -41,6 +62,8 @@ describe.skipIf(!URL)('0268: no MCP credential comes back to life (W7b fix round
   const client = randomUUID();
   const none = randomUUID(); // a member with no switch row
   const cli = randomUUID(); // a client login with no switch row
+  const admOff = randomUUID(); // an admin with a leftover switch row, MCP off
+  const admRo = randomUUID(); // an admin with a leftover switch row, Write off
   const tag = `m3${randomUUID().slice(0, 6)}`;
   const tokens: Record<string, { oauth: string; static: string; peer: string }> = {};
   const peerIds: Record<string, string> = {};
@@ -116,12 +139,15 @@ describe.skipIf(!URL)('0268: no MCP credential comes back to life (W7b fix round
       (${ro}, ${`${tag}-ro@example.invalid`}, 'x', false, 'member', 'Read only'),
       (${rw}, ${`${tag}-rw@example.invalid`}, 'x', false, 'member', 'Read write'),
       (${none}, ${`${tag}-none@example.invalid`}, 'x', false, 'member', 'No row'),
-      (${cli}, ${`${tag}-cli@example.invalid`}, 'x', false, 'client', 'Client')`;
+      (${cli}, ${`${tag}-cli@example.invalid`}, 'x', false, 'client', 'Client'),
+      (${admOff}, ${`${tag}-admoff@example.invalid`}, 'x', false, 'admin', 'Admin off'),
+      (${admRo}, ${`${tag}-admro@example.invalid`}, 'x', false, 'admin', 'Admin ro')`;
     await sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`;
     await sql`select * from mantle_ws_migrate()`;
     await sql`insert into mcp_login_access (login_id, enabled, write_enabled) values
-      (${off}, false, true), (${ro}, true, false), (${rw}, true, true)`;
+      (${off}, false, true), (${ro}, true, false), (${rw}, true, true),
+      (${admOff}, false, true), (${admRo}, true, false)`;
     await sql`insert into oauth_clients (id, client_name, redirect_uris)
       values (${client}, ${`${tag} client`}, ${['https://client.example.invalid/cb']})`;
     for (const [login, label] of [
@@ -165,6 +191,8 @@ describe.skipIf(!URL)('0268: no MCP credential comes back to life (W7b fix round
     await insertKey('cli', cli, 'client');
     await insertPeer('cli', cli, 'client');
     await insertKey('owner', owner, 'admin');
+    await insertKey('admOff', admOff, 'admin');
+    await insertKey('admRo', admRo, 'admin');
     await insertPeer('owner', owner, 'admin');
     await scratch.migrateRest();
     process.env.DATABASE_URL = scratch.url;
@@ -254,17 +282,7 @@ describe.skipIf(!URL)('0268: no MCP credential comes back to life (W7b fix round
 
   it('a second run changes nothing', async () => {
     const before = await state();
-    const file = readFileSync(
-      fileURLToPath(
-        new globalThis.URL(`../../../packages/db/migrations/${TAG}.sql`, import.meta.url),
-      ),
-      'utf8',
-    );
-    await sql.begin(async (tx) => {
-      for (const stmt of file.split('--> statement-breakpoint')) {
-        if (stmt.trim()) await tx.unsafe(stmt);
-      }
-    });
+    await rerun(sql);
     expect(await state()).toBe(before);
   });
 
@@ -329,26 +347,119 @@ describe.skipIf(!URL)('0268: no MCP credential comes back to life (W7b fix round
     expect(await mcp(tokens.owner!.peer)).toMatchObject({ loginId: owner, via: 'peer' });
   });
 
+  it('an admin with a leftover switch row keeps its keys (W7b fix round 3)', async () => {
+    for (const [label, login] of [
+      ['admOff', admOff],
+      ['admRo', admRo],
+    ] as const) {
+      const [k] = await sql`select access, api_only, revoked_at from access_keys
+                             where id = ${keyIds[label]!}`;
+      expect(k, label).toEqual({ access: 'read_write', api_only: false, revoked_at: null });
+      expect(await mcp(keys[label]!), label).toMatchObject({
+        role: 'admin',
+        loginId: login,
+        via: 'key',
+        write: true,
+      });
+    }
+  });
+
   it('a key and a peer made after the archive: a second run leaves them be', async () => {
     await insertKey('later', none, 'member');
     await insertPeer('later', none, 'member');
     const before = await state();
-    const file = readFileSync(
-      fileURLToPath(
-        new globalThis.URL(`../../../packages/db/migrations/${TAG}.sql`, import.meta.url),
-      ),
-      'utf8',
-    );
-    await sql.begin(async (tx) => {
-      for (const stmt of file.split('--> statement-breakpoint')) {
-        if (stmt.trim()) await tx.unsafe(stmt);
-      }
-    });
+    await rerun(sql);
     expect(await state()).toBe(before);
     const [k] = await sql`select api_only, revoked_at from access_keys where id = ${keyIds.later!}`;
     expect(k).toEqual({ api_only: false, revoked_at: null });
     expect(await mcp(keys.later!)).toMatchObject({ loginId: none, via: 'key', write: true });
     const [p] = await sql`select enabled from mantle_peers where id = ${peerIds.later!}`;
+    expect(p!.enabled).toBe(true);
+  });
+});
+
+describe.skipIf(!URL)('0268: the cutoff is recorded once (W7b fix round 3)', () => {
+  let scratch: Awaited<ReturnType<Ts['createScratchDatabaseBefore']>> | undefined;
+  let sql: ReturnType<typeof postgres>;
+  const owner = randomUUID();
+  const member = randomUUID(); // no switch row
+  const tag = `ct${randomUUID().slice(0, 6)}`;
+
+  const insertKey = async (label: string) => {
+    const token = `mtlk_${randomUUID().replace(/-/g, '').slice(0, 8)}_${randomBytes(32).toString('base64url')}`;
+    const [row] = await sql`insert into access_keys
+        (name, login_id, login_role, key_prefix, key_hash, session_epoch, access, created_by)
+      values (${`${tag} ${label} key`}, ${member}, 'member', ${token.slice(5, 13)},
+              ${sha(token)}, null, 'read_write', ${owner})
+      returning id::text`;
+    return row!.id as string;
+  };
+  const insertPeer = async (label: string) => {
+    const { hashToken } = await import('@mantle/content/peers-crypto');
+    const peerNode = randomUUID();
+    const peerId = randomUUID();
+    await sql`insert into nodes (id, owner_id, type, title, path)
+      values (${peerNode}, ${owner}, 'mantle_peer', ${`${tag} ${label} peer`}, 'peers')`;
+    await sql`insert into mantle_peers
+        (id, owner_id, node_id, display_name, base_url, inbound_token_hash, status, enabled,
+         acts_as_login_id, acts_as_role, write_enabled)
+      values (${peerId}, ${owner}, ${peerNode}, ${`${tag} ${label} peer`},
+              'https://peer.example.invalid',
+              ${hashToken(`mtlpeer_${randomUUID().replace(/-/g, '')}`)}, 'active', true,
+              ${member}, 'member', true)`;
+    return peerId;
+  };
+  const state = async () =>
+    JSON.stringify({
+      cutoff: await sql`select archived_at from archive_mcp_cutoff`,
+      peers: await sql`select id::text, enabled, write_enabled from mantle_peers order by id`,
+      keys: await sql`select id::text, access, api_only, revoked_at from access_keys order by id`,
+    });
+
+  let beforeKey = '';
+  let beforePeer = '';
+
+  beforeAll(async () => {
+    const ts: Ts = await import('@mantle/db/test-support');
+    scratch = await ts.createScratchDatabaseBefore(URL!, TAG);
+    sql = postgres(scratch.url, { max: 2, prepare: false, onnotice: () => {} });
+    await sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
+      (${owner}, ${`${tag}-owner@example.invalid`}, 'x', true, 'admin', 'Owner'),
+      (${member}, ${`${tag}-member@example.invalid`}, 'x', false, 'member', 'Member')`;
+    await sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
+      on conflict (id) do nothing`;
+    await sql`select * from mantle_ws_migrate()`;
+    beforeKey = await insertKey('before');
+    beforePeer = await insertPeer('before');
+    await scratch.migrateRest();
+  }, 300_000);
+
+  afterAll(async () => {
+    await sql?.end().catch(() => {});
+    await scratch?.drop();
+  }, 120_000);
+
+  it('a brain with no switch row and no agent: the first run records its cutoff', async () => {
+    const [a] = await sql`select
+        (select count(*)::int from archive_mcp_login_access) as switches,
+        (select count(*)::int from archive_tool_levels) as levels,
+        (select count(*)::int from archive_mcp_cutoff) as cutoffs`;
+    expect(a).toEqual({ switches: 0, levels: 0, cutoffs: 1 });
+    const [k] = await sql`select api_only, revoked_at from access_keys where id = ${beforeKey}`;
+    expect(k).toEqual({ api_only: true, revoked_at: null });
+    const [p] = await sql`select enabled from mantle_peers where id = ${beforePeer}`;
+    expect(p!.enabled).toBe(false);
+  });
+
+  it('a second run leaves a key and a peer made after the first run as they are', async () => {
+    const laterKey = await insertKey('later');
+    const laterPeer = await insertPeer('later');
+    const before = await state();
+    await rerun(sql);
+    expect(await state()).toBe(before);
+    const [k] = await sql`select api_only, revoked_at from access_keys where id = ${laterKey}`;
+    expect(k).toEqual({ api_only: false, revoked_at: null });
+    const [p] = await sql`select enabled from mantle_peers where id = ${laterPeer}`;
     expect(p!.enabled).toBe(true);
   });
 });

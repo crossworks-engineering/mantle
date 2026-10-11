@@ -31,13 +31,19 @@
 --    Write was off is read-only. A member or client login with no switch
 --    row never reached MCP: its keys were made for /api/v1, so they stay
 --    there (`api_only`, which resolveMcpCaller refuses), and a peer bound
---    to it is disabled. Only credentials made before the archive are
---    touched (for a login with no row, before the first run: the earliest
---    archived_at, which every record of this migration shares). It only
---    narrows, starts no work, and a second run changes nothing.
+--    to it is disabled. An admin login's keys never went through the
+--    switch, so a leftover switch row of an admin changes none of them
+--    (W7b fix round 3). Only credentials made before the archive are
+--    touched (for a login with no row, before the first run: the cutoff
+--    archive_mcp_cutoff records once, W7b fix round 3, so a later run on a
+--    brain with no switch row and no agent never reads now()). The
+--    credential tables are locked for the section, so none is made or
+--    changed half way through it. It only narrows, starts no work, and a
+--    second run changes nothing.
 
--- The triggers below take a lock on agents and tool_groups: wait at most
--- 30 s for it (0165), never queue behind a long transaction.
+-- The triggers below take a lock on agents and tool_groups, and section 3
+-- locks the credential tables: wait at most 30 s for each (0165), never
+-- queue behind a long transaction.
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
 
@@ -61,12 +67,19 @@ CREATE TABLE IF NOT EXISTS "public"."archive_tool_levels" (
   PRIMARY KEY ("kind", "row_id")
 );
 --> statement-breakpoint
+-- The cutoff of section 3 for a login with no switch row: one row, written
+-- on the first run, read on every run (W7b fix round 3).
+CREATE TABLE IF NOT EXISTS "public"."archive_mcp_cutoff" (
+  "id"          boolean PRIMARY KEY DEFAULT true CHECK ("id"),
+  "archived_at" timestamptz NOT NULL DEFAULT now()
+);
+--> statement-breakpoint
 -- Admin pool and definer functions only (access-matrix.ts).
 DO $$
 DECLARE
   t text;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['archive_mcp_login_access', 'archive_tool_levels'] LOOP
+  FOREACH t IN ARRAY ARRAY['archive_mcp_login_access', 'archive_tool_levels', 'archive_mcp_cutoff'] LOOP
     EXECUTE format('ALTER TABLE "public".%I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format('REVOKE ALL ON "public".%I FROM PUBLIC', t);
   END LOOP;
@@ -83,6 +96,17 @@ SELECT 'agent', a."id", a."owner_id", a."slug", a."audience" FROM "public"."agen
 UNION ALL
 SELECT 'tool_group', g."id", g."owner_id", g."slug", g."audience" FROM "public"."tool_groups" g
 ON CONFLICT ("kind", "row_id") DO NOTHING;
+--> statement-breakpoint
+-- The first run's time (a brain that ran an earlier form of this file keeps
+-- the time its records already carry). A later run leaves it as it is.
+INSERT INTO "public"."archive_mcp_cutoff" ("archived_at")
+SELECT coalesce(
+         (SELECT min(x."archived_at") FROM (
+            SELECT "archived_at" FROM "public"."archive_mcp_login_access"
+            UNION ALL
+            SELECT "archived_at" FROM "public"."archive_tool_levels") x),
+         now())
+ON CONFLICT ("id") DO NOTHING;
 --> statement-breakpoint
 
 -- ── 2. The freezes ───────────────────────────────────────────────────────────
@@ -137,6 +161,19 @@ CREATE TRIGGER "tool_groups_level_frozen"
 
 -- ── 3. No credential comes back to life ───────────────────────────────────────
 
+-- The API keys (W7b fix round 2, M-b). `api_only`: the key works on
+-- /api/v1 only, never on /api/mcp. Set here only; a new key is made
+-- without it (every login reaches MCP since W7b).
+ALTER TABLE "public"."access_keys"
+  ADD COLUMN IF NOT EXISTS "api_only" boolean NOT NULL DEFAULT false;
+--> statement-breakpoint
+-- No credential is made or changed while this section narrows them (W7b
+-- fix round 3): a key, a grant, a code or a peer made half way through
+-- would miss the updates that read the same rows. Writes wait (at most
+-- lock_timeout, above); reads go on.
+LOCK TABLE "public"."access_keys", "public"."mantle_peers", "public"."oauth_access_tokens",
+  "public"."oauth_auth_codes", "public"."mcp_login_tokens" IN SHARE ROW EXCLUSIVE MODE;
+--> statement-breakpoint
 UPDATE "public"."mcp_login_tokens" SET "revoked_at" = now() WHERE "revoked_at" IS NULL;
 --> statement-breakpoint
 UPDATE "public"."oauth_access_tokens" t SET "revoked_at" = now()
@@ -165,41 +202,27 @@ UPDATE "public"."mantle_peers" p SET "write_enabled" = false
  WHERE p."acts_as_login_id" = a."login_id" AND a."enabled" AND NOT a."write_enabled"
    AND p."write_enabled" AND p."created_at" <= a."archived_at";
 --> statement-breakpoint
-
--- The API keys (W7b fix round 2, M-b). `api_only`: the key works on
--- /api/v1 only, never on /api/mcp. Set here only; a new key is made
--- without it (every login reaches MCP since W7b).
-ALTER TABLE "public"."access_keys"
-  ADD COLUMN IF NOT EXISTS "api_only" boolean NOT NULL DEFAULT false;
---> statement-breakpoint
+-- The API keys by the same switch, a member's or a client's only: an admin
+-- login's keys never went through it (W7b fix round 3).
 UPDATE "public"."access_keys" k SET "revoked_at" = now()
   FROM "public"."archive_mcp_login_access" a
- WHERE k."login_id" = a."login_id" AND NOT a."enabled"
+ WHERE k."login_id" = a."login_id" AND NOT a."enabled" AND k."login_role" IN ('member', 'client')
    AND k."revoked_at" IS NULL AND k."created_at" <= a."archived_at";
 --> statement-breakpoint
 UPDATE "public"."access_keys" k SET "access" = 'read'
   FROM "public"."archive_mcp_login_access" a
  WHERE k."login_id" = a."login_id" AND a."enabled" AND NOT a."write_enabled"
+   AND k."login_role" IN ('member', 'client')
    AND k."access" <> 'read' AND k."revoked_at" IS NULL AND k."created_at" <= a."archived_at";
 --> statement-breakpoint
 UPDATE "public"."access_keys" k SET "api_only" = true
  WHERE k."login_role" IN ('member', 'client') AND NOT k."api_only" AND k."revoked_at" IS NULL
    AND NOT EXISTS (SELECT 1 FROM "public"."archive_mcp_login_access" a
                     WHERE a."login_id" = k."login_id")
-   AND k."created_at" <= coalesce(
-         (SELECT min(x."archived_at") FROM (
-            SELECT "archived_at" FROM "public"."archive_mcp_login_access"
-            UNION ALL
-            SELECT "archived_at" FROM "public"."archive_tool_levels") x),
-         now());
+   AND k."created_at" <= (SELECT c."archived_at" FROM "public"."archive_mcp_cutoff" c);
 --> statement-breakpoint
 UPDATE "public"."mantle_peers" p SET "enabled" = false
  WHERE p."acts_as_role" IN ('member', 'client') AND p."enabled"
    AND NOT EXISTS (SELECT 1 FROM "public"."archive_mcp_login_access" a
                     WHERE a."login_id" = p."acts_as_login_id")
-   AND p."created_at" <= coalesce(
-         (SELECT min(x."archived_at") FROM (
-            SELECT "archived_at" FROM "public"."archive_mcp_login_access"
-            UNION ALL
-            SELECT "archived_at" FROM "public"."archive_tool_levels") x),
-         now());
+   AND p."created_at" <= (SELECT c."archived_at" FROM "public"."archive_mcp_cutoff" c);
