@@ -244,6 +244,12 @@ export async function runAssistantTurn(
       'No enabled assistant agent. Create one at /settings/agents (role=assistant or fallback responder).',
     );
   }
+  // A chat turn always names the login it answers (W7c fix round 2, H1): a
+  // helper with no workspace runs in that login's scope, and with no login
+  // it would run as system work, which a chat never is.
+  if (!agent.workspaceId && !options?.loginId) {
+    throw new Error(`Agent '${agent.slug}' answers a chat only for a signed-in login.`);
+  }
   if (!agent.apiKeyId) {
     throw new Error(`Agent '${agent.slug}' has no api_key_id set — edit at /settings/agents.`);
   }

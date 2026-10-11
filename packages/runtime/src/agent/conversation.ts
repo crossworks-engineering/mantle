@@ -674,8 +674,17 @@ async function loadConversationContextAtLevel(args: {
   // memory_config.notes_target = 'journal': the notes moved to the Journal
   // (persona-notes-to-journal) and arrive through its tiers instead, which
   // that setting switches to live (journalTiersOf).
+  //
+  // Persona notes are learned from the owner's (the anchor's) thread, so they
+  // ride only a turn in that thread (W7c fix round 2, M-a): another user's
+  // turn never gets them. Notes already stored may hold text learned before
+  // W7c from other logins' turns; they are kept as they are (clearing or
+  // rewriting them is the owner's decision), only not injected elsewhere.
+  const ownThread = threadLogin.toLowerCase() === ownerId.toLowerCase();
   const personaNotes: PersonaNote[] =
-    notesTargetOf(memoryConfig) === 'journal' ? [] : ((agent.personaNotes ?? []) as PersonaNote[]);
+    notesTargetOf(memoryConfig) === 'journal' || !ownThread
+      ? []
+      : ((agent.personaNotes ?? []) as PersonaNote[]);
 
   // History rows, started now: with the decider's `history_recall` use on, the
   // older rows are scored while the embedding and retrieval below run, so the

@@ -21,7 +21,9 @@ import {
   telegramChats,
   telegramMessages,
 } from '@mantle/db';
-import { type BuiltinToolDef } from './types';
+import { currentWorkspaceScope } from '@mantle/db/viewer';
+import { type BuiltinToolDef, type ToolHandlerContext } from './types';
+import { ownerSurfaceLoginId } from './surface';
 import { str, strOpt, numOpt as num, boolOpt as bool } from './coerce';
 import {
   accountForChat,
@@ -267,6 +269,26 @@ export const telegram_mark_processed: BuiltinToolDef = {
   },
 };
 
+/** The refusal telegram_pair gives a caller that is not the anchor. */
+export const TELEGRAM_PAIR_ANCHOR_ONLY =
+  "only the brain's owner pairs a Telegram chat for now: ask them to approve the code from their own MCP client or Settings.";
+
+/**
+ * Whether the caller is the anchor login (the brain's owner): the login its
+ * surface names, else the login whose own scope this call runs in, else the
+ * anchor's own stdio MCP (an owner surface that names no login). Anything
+ * else is not the anchor.
+ */
+function callerIsAnchor(ctx: ToolHandlerContext): boolean {
+  const anchor = ctx.ownerId.toLowerCase();
+  const named = ownerSurfaceLoginId(ctx.surface);
+  if (named) return named.toLowerCase() === anchor;
+  const scope = currentWorkspaceScope();
+  if (scope?.loginId) return scope.loginId.toLowerCase() === anchor;
+  const s = ctx.surface as { kind?: string; via?: string } | undefined;
+  return s?.kind === 'owner' && s.via === 'mcp';
+}
+
 export const telegram_pair: BuiltinToolDef = {
   slug: 'telegram_pair',
   mcpOnly: true,
@@ -285,6 +307,10 @@ export const telegram_pair: BuiltinToolDef = {
     required: ['code'],
   },
   handler: async (input, ctx) => {
+    // The owner's bot is the anchor's until Telegram is per user (W7d): only
+    // the anchor login pairs a chat to it (W7c fix round 2, M-b), never
+    // another Admin user's MCP connection.
+    if (!callerIsAnchor(ctx)) return { ok: false, error: TELEGRAM_PAIR_ANCHOR_ONLY };
     const code = str(input.code);
     if (!/^[a-f0-9]{6}$/i.test(code)) return { ok: false, error: 'code must be six hex digits' };
     const [chat] = await db
