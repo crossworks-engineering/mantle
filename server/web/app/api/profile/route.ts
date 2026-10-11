@@ -19,6 +19,9 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
+import { toolMakerFor } from '@/lib/tools';
+import { loginHasArea } from '@mantle/db';
+import { restampHeartbeatMakers } from '@mantle/tools';
 import { AvatarPartsSchema } from '@/lib/avatar-schema';
 import {
   DEFAULT_PREFERENCES,
@@ -135,6 +138,39 @@ export async function PUT(req: Request) {
     );
   }
   const archetype = (purposeArchetype ?? '').trim();
+  // The brain's own keys this save sets (BRAIN_PREFERENCE_KEYS: one value for
+  // the whole brain; the house style and the purpose ride every agent's
+  // prompt). A change to one is the brain owner's or a settings-area user's
+  // (W7 integration fix 2, M2); the form sends them on every save, so an
+  // unchanged value is no change.
+  const brainSet: Record<string, string | undefined> = {
+    avatarStyle: avatarStyle !== undefined ? avatarStyle.trim() : undefined,
+    purpose: purpose !== undefined ? purposeTrimmed : undefined,
+    purposeArchetype: isPurposeArchetype(archetype) ? archetype : undefined,
+    siteName: siteName !== undefined ? siteName.trim().slice(0, SITE_NAME_MAX) : undefined,
+    peerName: peerName !== undefined ? peerName.trim().slice(0, PEER_NAME_MAX) : undefined,
+    houseStyle:
+      houseStyle !== undefined ? houseStyle.trim().slice(0, HOUSE_STYLE_MAX) : undefined,
+  };
+  const maker = toolMakerFor(user);
+  let brainChanged: string[] = [];
+  if (maker) {
+    const current = (await loadPreferencesFor(user.actor.id)) as unknown as Record<
+      string,
+      unknown
+    >;
+    brainChanged = Object.entries(brainSet)
+      .filter(([k, v]) => v !== undefined && v !== String(current[k] ?? ''))
+      .map(([k]) => k);
+    if (brainChanged.length > 0 && !(await loginHasArea(user.actor.id, 'settings'))) {
+      return NextResponse.json(
+        {
+          error: `The brain's own settings (${brainChanged.join(', ')}) are changed by the brain owner or a user with the settings area.`,
+        },
+        { status: 403 },
+      );
+    }
+  }
   try {
     // The ACTOR's id: personal keys land on this login's own row, brain keys
     // (siteName, houseStyle, purpose…) are routed to the anchor by the split
@@ -171,6 +207,11 @@ export async function PUT(req: Request) {
       ...(persistThoughts !== undefined ? { persistThoughts } : {}),
       ...(thinkingBudget !== undefined ? { thinkingBudget } : {}),
     });
+    // What every agent's prompt carries changed: every heartbeat now runs
+    // this login's words, so it fires as this login (heartbeat-maker.ts).
+    if (maker && brainChanged.length > 0) {
+      await restampHeartbeatMakers(user.id, maker, { all: true });
+    }
     return NextResponse.json({ preferences });
   } catch (err) {
     return NextResponse.json({ error: errorMessage(err) }, { status: 400 });

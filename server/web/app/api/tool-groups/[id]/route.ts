@@ -136,9 +136,17 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
   // A new usage skill on the group is what its grantees' heartbeats now run:
   // they become the writer's (W7a fix round 5, @mantle/tools heartbeat-maker.ts).
+  // So does a changed tool list: the tools those turns may call (W7
+  // integration fix 2, M2).
+  const toolsBefore = new Set(current.toolSlugs ?? []);
+  const toolsChanged =
+    rest.toolSlugs !== undefined &&
+    (toolsBefore.size !== new Set(rest.toolSlugs).size ||
+      rest.toolSlugs.some((t) => !toolsBefore.has(t)));
   if (
-    integration !== undefined &&
-    (integrationPatch?.skillSlug ?? null) !== (current.integration?.skillSlug ?? null)
+    toolsChanged ||
+    (integration !== undefined &&
+      (integrationPatch?.skillSlug ?? null) !== (current.integration?.skillSlug ?? null))
   ) {
     await restampHeartbeatMakers(user.id, toolMakerFor(user), { toolGroupSlug: row.slug });
   }

@@ -373,9 +373,14 @@ export const tool_group_ensure: BuiltinToolDef = {
         .where(eq(toolGroups.id, existing.id));
       // A new usage skill on the group is what its grantees' heartbeats now
       // run: they become the caller's (W7a fix round 5, heartbeat-maker.ts).
+      // So is a changed tool list: the tools their turns may call (W7
+      // integration fix 2, M2).
       const skillBefore = existing.integration?.skillSlug ?? null;
       const skillAfter = integration?.skillSlug ?? null;
-      if (skillAfter !== skillBefore) {
+      const before = new Set(existing.toolSlugs ?? []);
+      const toolsChanged =
+        before.size !== toolSlugs.length || toolSlugs.some((t) => !before.has(t));
+      if (skillAfter !== skillBefore || toolsChanged) {
         await restampHeartbeatMakers(ctx.ownerId, toolMaker(ctx.ownerId), {
           toolGroupSlug: slug,
         });

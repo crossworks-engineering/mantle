@@ -22,6 +22,9 @@ export type HeartbeatPromptSource = {
   toolGroupSlug?: string;
   /** An agent's prompt saved: the heartbeats bound to it. */
   agentSlug?: string;
+  /** A brain-wide prompt part saved (the house style, the purpose: every
+   *  agent's prompt carries it, W7 integration fix 2, M2): every heartbeat. */
+  all?: true;
 };
 
 /**
@@ -35,6 +38,14 @@ export async function restampHeartbeatMakers(
   source: HeartbeatPromptSource,
 ): Promise<number> {
   if (!login || login === ownerId) return 0;
+  if (source.all) {
+    const every = await db
+      .update(heartbeats)
+      .set({ createdBy: login })
+      .where(eq(heartbeats.ownerId, ownerId))
+      .returning({ id: heartbeats.id });
+    return every.length;
+  }
   const agentSlugs = new Set<string>();
   if (source.agentSlug) agentSlugs.add(source.agentSlug);
   const holders: SQL[] = [];
