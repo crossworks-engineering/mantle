@@ -199,6 +199,7 @@ describe('resolveChatRoutes', () => {
       apiKeyId: 'k1',
       baseUrl: 'http://gpu-box:11434/v1',
       viaTailnet: true,
+      configuredBy: null,
     });
     expect(r.backup).toEqual({
       provider: 'openrouter',
@@ -206,6 +207,7 @@ describe('resolveChatRoutes', () => {
       apiKeyId: 'k2',
       baseUrl: null,
       viaTailnet: false,
+      configuredBy: null,
     });
   });
 

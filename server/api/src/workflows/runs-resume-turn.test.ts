@@ -50,6 +50,7 @@ const h = vi.hoisted(() => ({
   runResponderLoop: null as unknown as Mock<(...a: unknown[]) => Promise<unknown>>,
   logs: [] as Array<{ level: string; message: string }>,
   contextArgs: [] as unknown[],
+  assembleArgs: [] as unknown[],
 }));
 
 vi.mock('@dbos-inc/dbos-sdk', () => ({
@@ -110,7 +111,8 @@ vi.mock('@mantle/runtime/agent', () => ({
 }));
 
 vi.mock('@mantle/runtime/assistant', () => ({
-  assembleResponderTurn: async () => {
+  assembleResponderTurn: async (a: unknown) => {
+    h.assembleArgs.push(a);
     h.seq.push('assemble');
     return { effectiveSystemPrompt: 'sys', volatileContext: '' };
   },
@@ -200,6 +202,7 @@ beforeEach(() => {
   h.seq = [];
   h.logs = [];
   h.contextArgs = [];
+  h.assembleArgs = [];
   h.recordTurn = vi.fn(async () => ({ id: 'msg-1' }));
   h.sendMessage = vi.fn(async () => {
     if (!h.sendOk) throw new Error('telegram 403');
@@ -418,6 +421,8 @@ describe('runs resume turn: the run login (W7c fix round 1, L7)', () => {
     const res = await runsResumeTurnImpl({ runId: RUN_ID, groupId: GROUP_ID });
     expect(res).toMatchObject({ resumed: true });
     expect(h.contextArgs).toEqual([expect.objectContaining({ loginId: 'login-b' })]);
+    // The prompt is assembled for that login too (W7 integration fix).
+    expect(h.assembleArgs).toEqual([expect.objectContaining({ loginId: 'login-b' })]);
     expect(h.seq).toContain('surface:{"kind":"web","loginId":"login-b"}');
     expect(h.recordTurn).toHaveBeenCalledWith(expect.objectContaining({ loginId: 'login-b' }));
   });

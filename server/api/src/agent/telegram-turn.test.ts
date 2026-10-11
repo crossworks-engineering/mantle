@@ -156,6 +156,10 @@ vi.mock('@mantle/db', () => {
     // The R6 shim: a Telegram turn is an admin-level agent's, which runs
     // as is (system work).
     withViewer: async (_level: unknown, _for: unknown, fn: () => unknown) => fn(),
+    // The agent scope's own lookups (agent-viewer.ts): no Admin workspace,
+    // a brain not on workspaces, so the helper answering the anchor (a
+    // Telegram turn names it, W7 integration fix) runs at its level.
+    asSystem: async () => [],
     agents: table('agents'),
     toolGroups: table('toolGroups'),
     channels: table('channels'),
@@ -482,6 +486,14 @@ describe('handleTelegramMessage: /new starts a new chat', () => {
     await runTurn(makeMsgRow({ text: '/new idea: plant tomatoes' }));
     expect(h.archiveAgentChat).not.toHaveBeenCalled();
     expect(h.loopCalls).toHaveLength(1);
+  });
+
+  it("the owner's bot reads the anchor's own thread (W7 integration fix)", async () => {
+    const agentMod = await import('@mantle/runtime/agent');
+    const load = vi.mocked(agentMod.loadConversationContext);
+    load.mockClear();
+    await runTurn(makeMsgRow({ text: 'what did we decide yesterday?' }));
+    expect(load).toHaveBeenCalledWith(expect.objectContaining({ ownerLoginId: 'owner-1' }));
   });
 });
 
