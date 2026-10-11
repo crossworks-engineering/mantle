@@ -36,8 +36,9 @@ export type DeletedApp = {
   icon: string | null;
   color: string | null;
   deletedAt: string;
-  /** Last day it can be restored. */
-  purgeAfter: string;
+  /** Last day it can be restored; null when it waits for the brain's owner
+   *  (deleted by another login, CEO decision 1: never purged by the sweep). */
+  purgeAfter: string | null;
   hasData: boolean;
   dbBytes: number | null;
 };
@@ -52,6 +53,8 @@ export class AppTrashRefusedError extends Error {
 
 type DeletedRow = {
   node_id: string;
+  /** Deleted by a login other than the brain's owner (CEO decision 1). */
+  held: boolean;
   id: string;
   seq: number;
   created_at: Date | string;
@@ -69,7 +72,8 @@ async function deletedRows(ownerId: string, appId?: string): Promise<DeletedRow[
   const code = appId ? sql`s.code` : sql`jsonb_build_object('meta', s.code->'meta') as code`;
   const rows = (await db.execute(sql`
     select distinct on (s.node_id)
-           s.node_id, s.id, s.seq, s.created_at, ${code}, s.db_path, s.db_bytes, s.schema_version
+           s.node_id, s.id, s.seq, s.created_at, ${code}, s.db_path, s.db_bytes, s.schema_version,
+           coalesce((s.code->'meta'->>'keepForOwner')::boolean, false) as held
       from node_snapshots s
      where s.owner_id = ${ownerId}
        and s.node_kind = 'app'
@@ -96,12 +100,12 @@ export async function listDeletedApps(ownerId: string): Promise<DeletedApp[]> {
         icon: meta?.icon ?? null,
         color: meta?.color ?? null,
         deletedAt: deletedAt.toISOString(),
-        purgeAfter: purgeAfterOf(deletedAt).toISOString(),
+        purgeAfter: r.held ? null : purgeAfterOf(deletedAt).toISOString(),
         hasData: r.db_path !== null,
         dbBytes: r.db_bytes === null ? null : Number(r.db_bytes),
       };
     })
-    .filter((d) => new Date(d.purgeAfter).getTime() > now)
+    .filter((d) => d.purgeAfter === null || new Date(d.purgeAfter).getTime() > now)
     .sort((a, b) => b.deletedAt.localeCompare(a.deletedAt));
 }
 
@@ -203,10 +207,21 @@ async function purgeOne(ownerId: string, appId: string): Promise<void> {
   });
 }
 
-/** Delete a deleted app for good, now. False when it is not in the trash. */
-export async function purgeDeletedApp(ownerId: string, appId: string): Promise<boolean> {
+/** Delete a deleted app for good, now. False when it is not in the trash.
+ *  An app a login other than the brain's owner deleted is the owner's to
+ *  purge (`byOwner`; CEO decision 1): refused for anyone else. */
+export async function purgeDeletedApp(
+  ownerId: string,
+  appId: string,
+  opts: { byOwner?: boolean } = {},
+): Promise<boolean> {
   const [row] = await deletedRows(ownerId, appId);
   if (!row) return false;
+  if (row.held && !opts.byOwner) {
+    throw new AppTrashRefusedError(
+      `app ${appId} was deleted by someone other than the brain owner: only the owner deletes it for good`,
+    );
+  }
   await purgeOne(ownerId, appId);
   return true;
 }
@@ -215,7 +230,9 @@ export async function purgeDeletedApp(ownerId: string, appId: string): Promise<b
  * The nightly sweep (`app-trash-purge`): every owner's deleted apps past
  * APP_TRASH_DAYS, and any history whose app is gone without a pre_delete
  * row (an app deleted before Phase 3), once its newest row is that old.
- * Plain SQL and file removal, no model.
+ * Never an app whose newest pre_delete row says a login other than the
+ * brain's owner deleted it (keepForOwner, CEO decision 1, W6b fix round 1):
+ * the owner purges that one by hand. Plain SQL and file removal, no model.
  */
 export async function purgeExpiredDeletedApps(
   opts: { dryRun?: boolean; now?: Date } = {},
@@ -226,6 +243,11 @@ export async function purgeExpiredDeletedApps(
       from node_snapshots s
      where s.node_kind = 'app'
        and not exists (select 1 from nodes n where n.id = s.node_id)
+       and not coalesce((select (k.code->'meta'->>'keepForOwner')::boolean
+                           from node_snapshots k
+                          where k.node_id = s.node_id and k.node_kind = 'app'
+                            and k.trigger = 'pre_delete'
+                          order by k.seq desc limit 1), false)
      group by s.owner_id, s.node_id
     having max(s.created_at) < ${cutoff.toISOString()}::timestamptz`)) as unknown as {
     owner_id: string;

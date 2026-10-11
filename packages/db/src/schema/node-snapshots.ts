@@ -109,6 +109,12 @@ export type AppSnapshotMeta = {
    *  it (mantle_may_manage). Absent on older snapshots: the Admin
    *  workspace. */
   homeWs?: string;
+  /** On a pre_delete snapshot (CEO decision 1, W6b fix round 1): the app
+   *  was deleted by a login other than the brain's owner, so it stays in
+   *  the trash until the owner purges it (the nightly purge skips it). */
+  keepForOwner?: true;
+  /** Who deleted it, with keepForOwner. */
+  deletedBy?: string;
 };
 
 export type NodeSnapshot = typeof nodeSnapshots.$inferSelect;

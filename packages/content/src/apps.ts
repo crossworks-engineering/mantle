@@ -459,6 +459,9 @@ export type CreateAppInput = {
    *  admin did not write here (an import, a copy of a member's app, an
    *  undelete of a member-era app). Default 'admin'. */
   authorLevel?: AppAuthorLevel;
+  /** The member or client login that made it (apps.author_login_id): a
+   *  non-Admin login's create (W6b fix round 1, M2). */
+  authorLoginId?: string;
 };
 
 export async function createApp(ownerId: string, input: CreateAppInput): Promise<AppDetail> {
@@ -492,6 +495,7 @@ export async function createApp(ownerId: string, input: CreateAppInput): Promise
         sourceText: sourceToText(source),
         manifest,
         ...(input.authorLevel ? { authorLevel: input.authorLevel } : {}),
+        ...(input.authorLoginId ? { authorLoginId: input.authorLoginId } : {}),
       });
       return detailOf(node, {
         source,
@@ -1165,7 +1169,14 @@ export async function installAppCode(
 export async function deleteApp(
   ownerId: string,
   id: string,
-  opts: { actor?: AppHistoryActor } = {},
+  opts: {
+    actor?: AppHistoryActor;
+    /** Who deletes it (CEO decision 1, W6b fix round 1): a login other than
+     *  the brain's owner leaves it in the trash until the owner purges it
+     *  (pre_delete meta.keepForOwner). Absent: the owner's own delete (its
+     *  tools and the system). */
+    deletedBy?: { loginId: string; owner: boolean };
+  } = {},
 ): Promise<boolean> {
   if (!(await ownsApp(ownerId, id))) return false;
   // Dynamic imports keep the server-only modules (node:fs, sqlite) out of the
@@ -1177,7 +1188,16 @@ export async function deleteApp(
     actor: opts.actor ?? 'owner',
     note: 'before delete',
   };
-  await createAppSnapshot(ownerId, id, { ...keep, codeOnlyWhenLost: true });
+  const snap = await createAppSnapshot(ownerId, id, { ...keep, codeOnlyWhenLost: true });
+  if (snap && opts.deletedBy && !opts.deletedBy.owner) {
+    await db.execute(sql`
+      update node_snapshots
+         set code = jsonb_set(coalesce(code, '{}'::jsonb), '{meta}',
+                     coalesce(code->'meta', '{}'::jsonb)
+                     || jsonb_build_object('keepForOwner', true,
+                                           'deletedBy', ${opts.deletedBy.loginId}::text))
+       where id = ${snap.id}`);
+  }
   // The node goes first, then the live database file (apps audit D6). Its
   // path is read now: the `app_databases` row cascades away with the node.
   // The snapshot files stay, with the history rows, for the trash.

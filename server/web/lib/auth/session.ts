@@ -719,7 +719,9 @@ export async function getOwnerOr401WithSource(): Promise<
     if (!memberMayWrite(method, pattern) || !(await brainOnWorkspacesNow())) {
       return loginRefused(res.kind);
     }
-    const refused = await itemWriteGate(login.loginId, method, pattern!);
+    // Never off for a non-Admin login: the rollback switch is about Admin
+    // reads (W6b fix round 1, M1).
+    const refused = await itemWriteGate(login.loginId, method, pattern!, { admin: false });
     if (refused) return refused;
     const home = await createHomeFor(login.loginId, method, pattern!, true);
     if (home instanceof NextResponse) return home;
@@ -818,7 +820,7 @@ async function adminRouteGate(loginId: string): Promise<NextResponse | null> {
     return null;
   }
   if (!isReadRequest(method, pattern)) {
-    const refused = await itemWriteGate(loginId, method, pattern);
+    const refused = await itemWriteGate(loginId, method, pattern, { admin: true });
     if (refused) return refused;
     noteRequestSystem('admin-write');
     // The login's scope on the request's system transactions (fix round 1,
@@ -857,19 +859,26 @@ const ITEM_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
  * An item homed in a workspace the user is not in is refused: the user adds
  * itself to that workspace first. The rule is the database's, asked in the
  * login's scope; the write itself then runs on the system pool as before.
- * Off where Admin reads are (the rollback switch, a brain not on
- * workspaces). An id no row has goes on to the handler (its own 404).
+ * Off on a brain not on workspaces, and for an Admin login where Admin
+ * reads are off (the rollback switch); a member's or client's write is
+ * always checked (W6b fix round 1, M1). An id no row has goes on to the
+ * handler (its own 404). A read-only snapshot copy (data.snapshot_of) is
+ * never edited, by anyone; its author may still delete it (W6b fix round 1,
+ * CEO decision 2). A deleted app a login other than the brain's owner
+ * deleted is purged by the owner only (CEO decision 1).
  */
 async function itemWriteGate(
   loginId: string,
   method: string,
   pattern: string,
+  opts: { admin: boolean },
 ): Promise<NextResponse | null> {
   const path = getRequestContext()?.path;
   const target = path ? itemWriteTarget(method, pattern, path) : null;
   if (!target || !ITEM_ID_RE.test(target.id)) return null;
-  if (adminReadsOnSystemPool() || !(await brainOnWorkspacesNow())) return null;
+  if ((opts.admin && adminReadsOnSystemPool()) || !(await brainOnWorkspacesNow())) return null;
   let row: { edit: boolean | null; manage: boolean | null } | undefined;
+  let readOnlyCopy = false;
   if (target.ref === 'deleted-app') {
     // The app is gone: its last snapshot names the workspace it was homed
     // in (meta.homeWs since W6a fix round 1): a Moderator of that workspace
@@ -878,13 +887,29 @@ async function itemWriteGate(
     // may (W6a fix round 2, L-b), not every Admin user.
     // No snapshot: the handler's 404.
     const snap = (await db.execute(sql`
-      select nullif(s.code->'meta'->>'homeWs', '') as home
+      select nullif(s.code->'meta'->>'homeWs', '') as home,
+             coalesce((s.code->'meta'->>'keepForOwner')::boolean, false) as held
         from node_snapshots s
        where s.node_id = ${target.id} and s.node_kind = 'app' and s.trigger = 'pre_delete'
          and not exists (select 1 from nodes n where n.id = s.node_id)
-       order by s.seq desc limit 1`)) as unknown as { home: string | null }[];
+       order by s.seq desc limit 1`)) as unknown as { home: string | null; held: boolean }[];
     if (snap.length === 0) return null;
     const home = snap[0]!.home;
+    // Deleted by a login other than the brain's owner (CEO decision 1): it
+    // stays in the trash until the owner purges it; a Moderator of its home
+    // may still bring it back.
+    if (snap[0]!.held && method.toUpperCase() === 'DELETE') {
+      if (loginId === (await getAnchorId())) return null;
+      return NextResponse.json(
+        {
+          error: 'forbidden',
+          reason: 'item-workspace',
+          message:
+            'This app was deleted by someone other than the brain owner: only the owner deletes it for good.',
+        },
+        { status: 403 },
+      );
+    }
     if (home === null) {
       if (loginId === (await getAnchorId())) return null;
     } else {
@@ -914,13 +939,19 @@ async function itemWriteGate(
     const rows = (await withViewer('team', { login: loginId }, () =>
       db.execute(sql`
         select "public"."mantle_may_edit"(home_ws, write_ws) as edit,
-               "public"."mantle_may_manage"(home_ws) as manage
+               "public"."mantle_may_manage"(home_ws) as manage,
+               coalesce(data ? 'snapshot_of', false) as copy
           from nodes where id = ${nodeId}`),
-    )) as unknown as { edit: boolean | null; manage: boolean | null }[];
+    )) as unknown as { edit: boolean | null; manage: boolean | null; copy: boolean }[];
     row = rows[0];
     if (row) {
       if (target.need === 'read') return null;
-      if (target.need === 'edit' ? row.edit === true : row.manage === true) return null;
+      // A read-only snapshot copy: deleted or filed by its home's Moderator
+      // (the database keeps it in its private workspace), never edited.
+      readOnlyCopy = rows[0]!.copy === true && target.need === 'edit';
+      if (!readOnlyCopy && (target.need === 'edit' ? row.edit === true : row.manage === true)) {
+        return null;
+      }
     } else {
       // Not in the scope: refused when it exists, the handler's 404 when not.
       const seen = (await db.execute(
@@ -933,9 +964,12 @@ async function itemWriteGate(
     {
       error: 'forbidden',
       reason: 'item-workspace',
-      message: row
-        ? 'You cannot change this item in your workspaces.'
-        : 'This item is in a workspace you are not in. Add yourself to it first.',
+      message: readOnlyCopy
+        ? 'This is a read-only copy of an accepted item: nobody changes it. Its author may delete it.'
+        : row
+          ? 'You cannot change this item in your workspaces.'
+          : 'This item is in a workspace you are not in. Add yourself to it first.',
+      ...(readOnlyCopy ? { readOnly: true } : {}),
     },
     { status: 403 },
   );
@@ -986,6 +1020,18 @@ async function createHomeFor(
     }
   }
   if (!ownWork) return { createWs, privateWs: null };
+  // A write that makes no item (a delete, a pin, an opened mark) never
+  // makes the private workspace (W6b fix round 1): its existing one, if
+  // any, else none.
+  const reqPath = getRequestContext()?.path;
+  const target = reqPath ? itemWriteTarget(method, pattern, reqPath) : null;
+  if (method.toUpperCase() === 'DELETE' || target?.need === 'read') {
+    const own = (await db.execute(sql`
+      select p.workspace_id::text as ws from private_workspaces p
+        join workspaces w on w.id = p.workspace_id and w.archived_at is null
+       where p.login_id = ${loginId}::uuid`)) as unknown as { ws: string }[];
+    return { createWs, privateWs: own[0]?.ws ?? null };
+  }
   const rows = (await db.execute(
     sql`select "public"."mantle_ws_private_workspace"(${loginId}::uuid)::text as ws`,
   )) as unknown as { ws: string | null }[];

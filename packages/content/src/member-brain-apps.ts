@@ -53,7 +53,7 @@ export type MemberAppState = {
 export async function memberApp(
   author: MemberAppAuthor,
   appId: string,
-  opts: { write?: boolean; manage?: boolean } = {},
+  opts: { write?: boolean; manage?: boolean; edit?: boolean } = {},
 ): Promise<MemberAppState> {
   const rows = (await withViewer('team', { login: author.loginId }, () =>
     db.execute(sql`
@@ -74,6 +74,11 @@ export async function memberApp(
   if (opts.write && !row.edit) {
     throw new MemberAppError(
       `You may run app ${appId} but not change it: it lives in a workspace where you are not a Moderator and its grant has Write off. Ask a Moderator of that workspace.`,
+    );
+  }
+  if (opts.edit && !row.edit) {
+    throw new MemberAppError(
+      `You may run app ${appId} but not read its errors: only a login that may change it does (a Moderator of the workspace it lives in, or a grant with Write on).`,
     );
   }
   if (opts.manage && !row.manage) {
@@ -206,7 +211,13 @@ export async function deleteMemberApp(
   appId: string,
 ): Promise<{ id: string; title: string; deletedAt: string }> {
   const state = await memberApp(author, appId, { manage: true });
-  if (!(await deleteApp(author.brainId, appId, { actor: 'member' }))) throw notFound(appId);
+  // A member's delete waits in the trash for the brain's owner (CEO
+  // decision 1, W6b fix round 1): the nightly purge never removes it.
+  const done = await deleteApp(author.brainId, appId, {
+    actor: 'member',
+    deletedBy: { loginId: author.loginId, owner: false },
+  });
+  if (!done) throw notFound(appId);
   return { id: state.id, title: state.title, deletedAt: new Date().toISOString() };
 }
 

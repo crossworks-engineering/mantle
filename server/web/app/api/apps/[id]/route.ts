@@ -2,12 +2,14 @@
  * /api/apps/[id] — get (GET), update metadata (PATCH), delete (DELETE).
  * PATCH also sets the informational flag (`dataReadOnly`, client logins C6)
  * and MCP access (`mcpAccess`, team apps Phase 1), and "trust its tools"
- * (`trustTools`, team apps Phase 3): the author ceiling.
+ * (`trustTools`, team apps Phase 3): the author ceiling. Those three are an
+ * Admin user's only (403 admin-only for a member or a client, W6b fix
+ * round 1); a member edits its own app's name and look.
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { APP_ICON_MAX, APP_TINTS } from '@mantle/client-types/app-nav';
-import { getOwnerOr401 } from '@/lib/auth';
+import { adminLoginActive, getOwnerOr401 } from '@/lib/auth';
 import { APP_DESCRIPTION_MAX } from '@/lib/app-meta';
 import {
   getApp,
@@ -62,6 +64,24 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   const { name, trustTools, ...rest } = parsed.data;
+  // The three admin switches (W6b fix round 1, H2): a member or a client
+  // edits its own app's name and look here (MEMBER_OPEN_WRITES), never its
+  // author ceiling, its MCP access or the informational flag.
+  if (
+    (trustTools !== undefined ||
+      rest.mcpAccess !== undefined ||
+      rest.dataReadOnly !== undefined) &&
+    !(await adminLoginActive(user.actor.id))
+  ) {
+    return NextResponse.json(
+      {
+        error: 'forbidden',
+        reason: 'admin-only',
+        message: 'Only an Admin user sets trustTools, mcpAccess or dataReadOnly.',
+      },
+      { status: 403 },
+    );
+  }
   let app = await updateAppMeta(user.id, id, { ...(name ? { title: name } : {}), ...rest });
   if (!app) return NextResponse.json({ error: 'app not found' }, { status: 404 });
   if (trustTools !== undefined) {
@@ -77,7 +97,11 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const { id } = await ctx.params;
-  const ok = await deleteApp(user.id, id);
+  // A delete by a login other than the brain's owner stays in the trash
+  // until the owner purges it (CEO decision 1, W6b fix round 1).
+  const ok = await deleteApp(user.id, id, {
+    deletedBy: { loginId: user.actor.id, owner: user.actor.isOwner },
+  });
   if (!ok) return NextResponse.json({ error: 'app not found' }, { status: 404 });
   void notifyAppNavChanged(user.id);
   return NextResponse.json({ ok: true });

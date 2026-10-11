@@ -116,7 +116,7 @@ type Prepared = { author: MemberAppAuthor; id: string };
 async function prepare(
   input: Record<string, unknown>,
   ctx: ToolHandlerContext,
-  opts: { write: boolean },
+  opts: { write: boolean; edit?: boolean },
 ): Promise<Prepared | ToolHandlerResult> {
   const author = await authorOf(ctx);
   if (!author) return { ok: false, error: NO_LOGIN };
@@ -124,7 +124,7 @@ async function prepare(
   const id = str(input.id).trim().toLowerCase();
   if (!UUID_RE.test(id)) return { ok: false, error: 'id must be your app id from my_app_list.' };
   try {
-    await memberApp(author, id, { write: opts.write });
+    await memberApp(author, id, { write: opts.write, edit: opts.edit === true });
   } catch (err) {
     return refusal(err);
   }
@@ -556,7 +556,7 @@ const my_app_errors: BuiltinToolDef = {
   readOnly: true,
   name: "Read my mini app's errors",
   description:
-    "List the errors your own app got back from the brain, newest first: failed SQL and refused or failed tool calls, with who ran it and when. Errors in the app's own JavaScript are not logged here.",
+    "List the errors an app you may change got back from the brain, newest first: failed SQL and refused or failed tool calls, with who ran it and when. Errors in the app's own JavaScript are not logged here.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -572,7 +572,9 @@ const my_app_errors: BuiltinToolDef = {
     required: ['id'],
   },
   handler: async (input, ctx) => {
-    const p = await prepare(input, ctx, { write: false });
+    // The errors carry the app's SQL and its callers: for those who may
+    // change it, not every runner (W6b fix round 1, M6).
+    const p = await prepare(input, ctx, { write: false, edit: true });
     if (!isPrepared(p)) return p;
     const limit = typeof input.limit === 'number' ? input.limit : 50;
     const rows = await appWork(() =>
@@ -770,7 +772,7 @@ const my_app_delete: BuiltinToolDef = {
   slug: 'my_app_delete',
   name: 'Delete my mini app (to my trash)',
   description:
-    "Delete an app whose home workspace you moderate (your private workspace's apps among them): it stops running for everyone. Its last snapshot keeps the code and data: `my_app_undelete` brings it back while the brain's trash keeps it (`my_app_deleted_list`); after that it is gone for good. Ask the member first.",
+    "Delete an app whose home workspace you moderate (your private workspace's apps among them): it stops running for everyone. Its last snapshot keeps the code and data in the brain's trash, which never removes a member's delete by itself: `my_app_undelete` brings it back (`my_app_deleted_list`) until the brain's owner deletes it for good. Ask the member first.",
   inputSchema: { type: 'object', properties: { ...ID_PROP }, required: ['id'] },
   handler: async (input, ctx) => {
     // The delete checks manage (a Moderator of the app's home) itself.
@@ -786,7 +788,7 @@ const my_app_delete: BuiltinToolDef = {
           name: done.title,
           deleted: true,
           deleted_at: done.deletedAt,
-          hint: 'It runs for no one now. my_app_undelete brings it back while the trash keeps it.',
+          hint: 'It runs for no one now. my_app_undelete brings it back until the brain owner deletes it for good.',
         },
       };
     } catch (err) {
@@ -838,7 +840,7 @@ const my_app_deleted_list: BuiltinToolDef = {
   readOnly: true,
   name: 'List my deleted mini apps',
   description:
-    'List the deleted apps of the workspaces you moderate, newest delete first: id, title, when deleted, the last day it can come back, whether its data is kept. Bring one back with `my_app_undelete`; live apps are in `my_app_list`.',
+    'List the deleted apps of the workspaces you moderate, newest delete first: id, title, when deleted, the last day it can come back (`purgeAfter`; null for a delete by a member, which waits for the brain owner), whether its data is kept. Bring one back with `my_app_undelete`; live apps are in `my_app_list`.',
   inputSchema: { type: 'object', properties: {} },
   handler: async (_input, ctx) => {
     const author = await authorOf(ctx);
