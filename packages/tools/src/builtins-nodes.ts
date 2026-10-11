@@ -262,7 +262,21 @@ export const process_extraction: BuiltinToolDef = {
     const limit = num(input.limit, 100) ?? 100;
     if (typeof input.node_id === 'string' && input.node_id) {
       // Fire for exactly one node, no eligibility check — operator chose it.
-      await notifyNodeIngested(input.node_id);
+      // Only a node the caller reads (W7a fix round 1, L1): read in its
+      // scope first, so an id from another workspace starts no model work.
+      const nodeId = input.node_id.trim();
+      const [seen] = await db
+        .select({ id: nodes.id })
+        .from(nodes)
+        .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ctx.ownerId)))
+        .limit(1);
+      if (!seen) {
+        return {
+          ok: false,
+          error: `node ${nodeId} not found — find the id with search_nodes, then re-issue.`,
+        };
+      }
+      await notifyNodeIngested(nodeId);
       ctx.step?.setOutput({ fired: 1, node_id: input.node_id });
       return { ok: true, output: { fired: 1, node_id: input.node_id } };
     }

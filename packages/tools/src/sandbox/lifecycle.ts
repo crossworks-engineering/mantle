@@ -18,6 +18,7 @@ import { relative } from 'node:path';
 import { stat } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { notFound } from '../errors';
+import { areaSystem } from '../admin-gate';
 import { capOutput } from '../output-cap';
 import type { BuiltinToolDef, ToolHandlerResult } from '../types';
 import { env } from '@mantle/config';
@@ -80,7 +81,7 @@ export const sandbox_create: BuiltinToolDef = {
         error: `name must match ${SANDBOX_NAME_RE} (got '${name}') — lowercase letters, digits, dashes, 2–32 chars.`,
       };
     }
-    const existing = await getSandboxByRef(ctx.ownerId, name);
+    const existing = await areaSystem('settings', () => getSandboxByRef(ctx.ownerId, name));
     if (existing) {
       return {
         ok: false,
@@ -100,6 +101,8 @@ export const sandbox_create: BuiltinToolDef = {
     let inboxSub: string | undefined;
     const inboxId = typeof input.inbox_folder_id === 'string' ? input.inbox_folder_id.trim() : '';
     if (inboxId) {
+      // The folder to mount is read in the caller's scope (W7a fix round 1,
+      // H1): a folder the scope does not read is not found.
       const folder = await folderById({ ownerId: ctx.ownerId, folderId: inboxId });
       if (!folder) return notFound('folder', inboxId, 'folder_list / tree_list');
       const abs = diskPathForLtree(folder.path);
@@ -143,16 +146,18 @@ export const sandbox_create: BuiltinToolDef = {
       inbox: inboxSub,
     });
     if (!created.ok) return created;
-    const row = await createSandboxRow({
-      id,
-      ownerId: ctx.ownerId,
-      name,
-      description: typeof input.description === 'string' ? input.description : null,
-      image,
-      network,
-      status: 'running',
-      containerId: String(created.data.containerId ?? ''),
-    });
+    const row = await areaSystem('settings', () =>
+      createSandboxRow({
+        id,
+        ownerId: ctx.ownerId,
+        name,
+        description: typeof input.description === 'string' ? input.description : null,
+        image,
+        network,
+        status: 'running',
+        containerId: String(created.data.containerId ?? ''),
+      }),
+    );
     ctx.step?.setMeta({ sandboxId: id, name, image, network });
     return {
       ok: true,

@@ -167,9 +167,15 @@ export async function withAgentScope<T>(
       );
     }
   }
+  // Inside a user's own scope the nested turn answers THAT login unless a
+  // login is named (W7a fix round 1, M1): ask_responder over an Admin
+  // login's MCP names none, and the turn then acted for the anchor, with
+  // the anchor's areas and rows. A named login other than the scope's is
+  // refused below (narrowsWorkspaceScope compares the logins).
+  const scopeLogin = open?.kind === 'user' ? open.loginId : null;
   const ws = await agentWorkspace(wsId);
   if (ws.isAdmin) {
-    const asked = opts.loginId ?? opts.ownerLoginId ?? null;
+    const asked = opts.loginId ?? opts.ownerLoginId ?? scopeLogin;
     const stamp = { workspaceId: wsId, loginId: asked };
     // The rollback switch: the system pool, with its stamp, as before W7a.
     if (adminReadsOnSystemPool()) {
@@ -192,7 +198,7 @@ export async function withAgentScope<T>(
       }),
     );
   }
-  const loginId = opts.loginId ?? null;
+  const loginId = opts.loginId ?? scopeLogin;
   // The login the turn answers must be a user of the workspace (L3): a
   // login with no row there is refused, never read as a reader without one.
   const user = loginId ? await membership(wsId, loginId) : null;

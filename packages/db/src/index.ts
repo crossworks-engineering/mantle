@@ -249,3 +249,10 @@ export {
 } from 'drizzle-orm';
 export { carrySpaceRows, spaceFilesPath, SPACE_FILES_ROOT } from './space-carry';
 export { takeShareReadLock, takeShareWriteLock } from './share-lock';
+export {
+  itemWriteRefusal,
+  itemNotInScopeError,
+  itemNoRightError,
+  READ_ONLY_COPY_ERROR,
+  type ItemNeed,
+} from './item-rights';

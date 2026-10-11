@@ -13,7 +13,7 @@
  */
 
 import type { McpServer } from '@modelcontextprotocol/server';
-import { checkToolPreconditions } from '@mantle/tools';
+import { checkToolPreconditions, toolItemWriteRefusal } from '@mantle/tools';
 import type { BuiltinToolDef, OwnerSurfaceVia, ToolSurface } from '@mantle/tools';
 import { env } from '@mantle/config';
 import { publicToolError } from '@mantle/std';
@@ -122,6 +122,12 @@ export function makeRegisterContext(
           isError: true,
         };
       }
+    }
+    // A write to an item: the scope may make it (W7a fix round 1, M2), as
+    // dispatch.ts asks for the in-app agent.
+    const refused = await toolItemWriteRefusal(def.slug, input, ownerId);
+    if (refused) {
+      return { content: [{ type: 'text' as const, text: `Error: ${refused}` }], isError: true };
     }
     // The MCP caller holds the owner's credential: it names itself as the
     // owner (client logins C4), since a missing surface is not the owner.

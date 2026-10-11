@@ -16,7 +16,7 @@ import {
   renameFolderById,
   updateFolderDescription,
 } from '@mantle/files';
-import { FILE_MANAGE_TOOLS, FILE_OPERATOR_TOOLS } from '@mantle/tools';
+import { FILE_MANAGE_TOOLS, FILE_OPERATOR_TOOLS, toolItemWriteRefusal } from '@mantle/tools';
 import { errorMessage } from '@mantle/std';
 import type { McpRegisterContext } from './context';
 import { addTool } from './tool-input';
@@ -52,6 +52,10 @@ export function registerFileTools(ctx: McpRegisterContext): void {
           isError: true,
         };
       }
+      // The folder found by its path is checked as an id is (W7a fix round
+      // 1, M2): the scope may edit it.
+      const refused = await toolItemWriteRefusal('folder_describe', { folder_id: id }, ownerId);
+      if (refused) return { content: [{ type: 'text', text: `Error: ${refused}` }], isError: true };
       const updated = await updateFolderDescription({
         ownerId: ownerId,
         folderId: id,
@@ -85,6 +89,10 @@ export function registerFileTools(ctx: McpRegisterContext): void {
           isError: true,
         };
       }
+      // The folder found by its path is checked as an id is (W7a fix round
+      // 1, M2): the scope may edit it.
+      const refused = await toolItemWriteRefusal('folder_rename', { folder_id: id }, ownerId);
+      if (refused) return { content: [{ type: 'text', text: `Error: ${refused}` }], isError: true };
       try {
         const updated = await renameFolderById({
           ownerId: ownerId,
@@ -149,6 +157,8 @@ export function registerFileTools(ctx: McpRegisterContext): void {
     'Rename a file in place — its folder and extension are kept, only the basename changes. `new_stem` is the new name WITHOUT the extension (e.g. `huntsman-report` → `customerx-report`).',
     { file_id: z.string().uuid(), new_stem: z.string().min(1).max(200) },
     async ({ file_id, new_stem }) => {
+      const refused = await toolItemWriteRefusal('file_rename', { file_id }, ownerId);
+      if (refused) return { content: [{ type: 'text', text: `Error: ${refused}` }], isError: true };
       try {
         const row = await renameFileById({ ownerId: ownerId, fileId: file_id, newStem: new_stem });
         if (!row) {

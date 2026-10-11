@@ -11,8 +11,12 @@
  * (the system pool, with the scope set on its transactions for the
  * database's move, create and delete checks). Inside it the Admin gate
  * (@mantle/tools admin-gate.ts) runs first: an ownerOnly or adminOnly tool
- * needs a scope that holds Admin, an Admin-area tool the login's area
- * (then on the system pool, after that check).
+ * needs a scope that holds Admin, an Admin-area tool the login's area. The
+ * tool then runs in the scope, its preconditions too (W7a fix round 1, H1):
+ * only the system-table tools of AREA_SYSTEM_TOOLS run whole on the system
+ * pool; the others take the system pool only around their own system
+ * tables. A write to an item is checked against the scope first
+ * (register/context.ts, toolItemWriteRefusal: M2).
  *
  * MANTLE_ADMIN_READS=system, or a brain not on workspaces: the system pool,
  * as before W7a.

@@ -2,6 +2,11 @@
  * Moving work in and out of a sandbox: export, import, ls, publish.
  *
  * Split out of builtins-sandbox.ts; bodies moved verbatim.
+ *
+ * Export and import run in the caller's scope (W7a fix round 1, H1): the
+ * file they read or write is an item. Their sandbox row is a system table,
+ * read through areaSystem. ls and publish read no item and run whole on
+ * the system pool (AREA_SYSTEM_TOOLS).
  */
 
 import { getSandboxByRef, touchSandbox } from '@mantle/content';
@@ -10,6 +15,7 @@ import { setApiKey } from '@mantle/api-keys';
 import { and, eq } from 'drizzle-orm';
 import { db, toolGroups, type ToolGroupIntegration } from '@mantle/db';
 import { notFound } from '../errors';
+import { areaSystem } from '../admin-gate';
 import type { BuiltinToolDef, ToolHandlerResult } from '../types';
 import { env } from '@mantle/config';
 import {
@@ -57,7 +63,7 @@ export const sandbox_export: BuiltinToolDef = {
   requiresConfirm: false,
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
     const ref = typeof input.sandbox === 'string' ? input.sandbox : '';
-    const row = await getSandboxByRef(ctx.ownerId, ref);
+    const row = await areaSystem('settings', () => getSandboxByRef(ctx.ownerId, ref));
     if (!row) return notFound('sandbox', ref, 'sandbox_list');
     const relPath = typeof input.path === 'string' && input.path.trim() ? input.path.trim() : '.';
     ctx.step?.setMeta({ sandboxId: row.id, sandbox: row.name, path: relPath });
@@ -71,7 +77,7 @@ export const sandbox_export: BuiltinToolDef = {
     }
     const res = await sandboxdBinary(`/sandboxes/${row.id}/export`, { path: relPath, raw });
     if (!res.ok) return res;
-    await touchSandbox(row.id);
+    await areaSystem('settings', () => touchSandbox(row.id));
 
     // Raw keeps the artifact's own name (and therefore its type), so the person
     // who asked for the report receives the report.
@@ -88,6 +94,9 @@ export const sandbox_export: BuiltinToolDef = {
         ? rawName
         : `${rawName}.tgz`;
 
+    // In the caller's scope (W7a fix round 1, H1): a same-named file the
+    // scope cannot edit is refused (upsertFile's name check), never
+    // overwritten from the system pool.
     await ensureExportsFolder(ctx.ownerId);
     const file = await upsertFile({
       ownerId: ctx.ownerId,
@@ -145,10 +154,12 @@ export const sandbox_import: BuiltinToolDef = {
   requiresConfirm: false,
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
     const ref = typeof input.sandbox === 'string' ? input.sandbox : '';
-    const row = await getSandboxByRef(ctx.ownerId, ref);
+    const row = await areaSystem('settings', () => getSandboxByRef(ctx.ownerId, ref));
     if (!row) return notFound('sandbox', ref, 'sandbox_list');
 
     const fileId = typeof input.file_id === 'string' ? input.file_id : '';
+    // Read in the caller's scope (W7a fix round 1, H1): a file the scope does
+    // not read is not found, and nothing reaches the sandbox.
     const found = await readFileById({ ownerId: ctx.ownerId, fileId });
     if (!found) return notFound('file', fileId, 'file_list');
 
@@ -162,7 +173,7 @@ export const sandbox_import: BuiltinToolDef = {
       found.bytes,
     );
     if (!res.ok) return res;
-    await touchSandbox(row.id);
+    await areaSystem('settings', () => touchSandbox(row.id));
 
     const sizeBytes = Number(res.data.sizeBytes ?? found.bytes.length);
     ctx.step?.setOutput({ path: res.data.path, sizeBytes });
