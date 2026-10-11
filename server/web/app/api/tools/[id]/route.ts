@@ -2,13 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { handlerCarriesSecretRefs } from '@mantle/tools';
-import {
-  deleteTool,
-  getToolById,
-  keysAreaRefusal,
-  toolMakerFor,
-  updateTool,
-} from '@/lib/tools';
+import { deleteTool, getToolById, keysAreaRefusal, toolMakerFor, updateTool } from '@/lib/tools';
 import { ToolHandlerSchema } from '@/lib/tool-handler-schema';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';

@@ -5,8 +5,14 @@
  * closed to the item tables: any statement it sends to the system pool that
  * reads or writes nodes, chunks, windows, facts, grants, pages, tables,
  * secrets or mail throws, and is recorded (its scope's own reads go to the
- * scoped pools, which are not closed). Every listed tool must pass, whatever its own answer is (the
- * sandbox daemon, the linked brains and Telegram are offline here).
+ * scoped pools, which are not closed). Every listed tool must pass, whatever its own answer is.
+ *
+ * Fix round 3 deepens it: the trap catches tagged-template statements on the
+ * pool's client too (not only drizzle's `unsafe`), the closed list holds every
+ * item and conversation table, and the sandbox daemon and the linked brain
+ * answer 200 (a stub that speaks their JSON and MCP), with real sandboxes, a
+ * real peer, tools, groups and a heartbeat seeded, so each handler reaches its
+ * own writes. Telegram stays offline.
  *
  * A name-based test pins the same list's shape (item-write-gate.test.ts);
  * this one runs the handlers.
@@ -21,9 +27,53 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
+// The vault and the peer token are sealed with the box's master key; the
+// test key is the viewer roles' and is not a sealing key.
+vi.mock('@mantle/crypto', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  seal: vi.fn(() => ({ ciphertext: Buffer.from('sealed'), keyVersion: 1 })),
+  open: vi.fn(() => 'w7a-sweep-sealed-value'),
+}));
+
 /** The item tables a listed tool must never touch on the system pool. */
 const ITEM_TABLE_RE =
-  /\b(?:from|join|into|update)\s+(?:only\s+)?(?:"?public"?\.)?"?(nodes|content_chunks|content_chunk_windows|facts|item_grants|pages|tables|draws|secrets|node_snapshots|node_embeds|emails|email_attachments|space_items)"?(?![\w.])/i;
+  /\b(?:from|join|into|update)\s+(?:only\s+)?(?:"?public"?\.)?"?(nodes|content_chunks|content_chunk_windows|facts|item_grants|pages|tables|draws|secrets|node_snapshots|node_embeds|emails|email_attachments|space_items|assistant_messages|entities|entity_edges|node_comments|item_marks|recall_maps|recall_nodes|accepted_snapshots|team_messages|tool_result_chunks)"?(?![\w.])/i;
+
+/** The text of a tagged-template call's statement (its strings joined). */
+function templateText(args: unknown[]): string | null {
+  const first = args[0] as { raw?: unknown } | undefined;
+  return Array.isArray(first) && Array.isArray(first.raw) ? (first as string[]).join('?') : null;
+}
+
+/** The stub's answer for the sandbox daemon: one body every route reads. */
+const SANDBOXD_BODY = {
+  containerId: 'c-new',
+  exitCode: 0,
+  stdout: '',
+  stderr: '',
+  sandboxes: [],
+  disk: null,
+  filesPreserved: true,
+  filesDir: null,
+  wake: 'true',
+  result: { tools: [], content: [{ type: 'text', text: '{}' }] },
+};
+
+/** The stub's answer for one MCP JSON-RPC message from the peer client. */
+function mcpReply(msg: { id?: unknown; method?: string; params?: { protocolVersion?: string } }) {
+  if (msg.id === undefined) return new Response(null, { status: 202 });
+  const result =
+    msg.method === 'initialize'
+      ? {
+          protocolVersion: msg.params?.protocolVersion ?? '2025-06-18',
+          capabilities: { tools: {} },
+          serverInfo: { name: 'w7a-peer', version: '1.0.0' },
+        }
+      : msg.method === 'tools/list'
+        ? { tools: [{ name: 'search', description: 'Search.', inputSchema: { type: 'object' } }] }
+        : { content: [{ type: 'text', text: '{"ok":true}' }] };
+  return Response.json({ jsonrpc: '2.0', id: msg.id, result });
+}
 
 describe.skipIf(!URL)('AREA_SYSTEM_TOOLS touch no item on the system pool', () => {
   type Ts = typeof import('@mantle/db/test-support');
@@ -39,9 +89,24 @@ describe.skipIf(!URL)('AREA_SYSTEM_TOOLS touch no item on the system pool', () =
   /** Set while a listed tool runs: the statements it sent that broke the rule. */
   let armed: string[] | null = null;
 
-  /** The system pool's client, with item statements refused while armed. */
+  /** Record and refuse an item statement while armed. */
+  const check = (query: string) => {
+    if (armed && ITEM_TABLE_RE.test(query)) {
+      armed.push(query.slice(0, 200));
+      throw new Error(`item table on the system pool: ${query.slice(0, 120)}`);
+    }
+  };
+
+  /** The system pool's client, with item statements refused while armed:
+   *  drizzle's `unsafe` and a tagged-template call on the client or a
+   *  transaction of it alike. */
   const trapped = <T extends object>(client: T): T =>
     new Proxy(client, {
+      apply(target, thisArg, args: unknown[]) {
+        const text = templateText(args);
+        if (text !== null) check(text);
+        return Reflect.apply(target as (...a: unknown[]) => unknown, thisArg, args);
+      },
       get(target, prop, receiver) {
         const v = Reflect.get(target, prop, receiver) as unknown;
         if (typeof v !== 'function') return v;
@@ -50,10 +115,7 @@ describe.skipIf(!URL)('AREA_SYSTEM_TOOLS touch no item on the system pool', () =
           return (query: string, ...rest: unknown[]) => {
             // Any statement on the system pool while a listed tool runs: the
             // tool runs whole there (its scope's reads use the scoped pools).
-            if (armed && ITEM_TABLE_RE.test(String(query))) {
-              armed.push(String(query).slice(0, 200));
-              throw new Error(`item table on the system pool: ${String(query).slice(0, 120)}`);
-            }
+            check(String(query));
             return fn.call(target, query, ...rest);
           };
         }
@@ -85,7 +147,23 @@ describe.skipIf(!URL)('AREA_SYSTEM_TOOLS touch no item on the system pool', () =
     process.env.SANDBOXD_TOKEN = 'w7a-sweep-token';
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => new Response('{"error":"offline in the sweep"}', { status: 503 })),
+      vi.fn(async (input: unknown, init?: { body?: unknown }) => {
+        const req = input instanceof Request ? input : null;
+        const url = String(req ? req.url : input);
+        // The sandbox daemon: 200 with a body every route reads.
+        if (url.startsWith('http://sandboxd.invalid/')) return Response.json(SANDBOXD_BODY);
+        // The linked brain: its MCP endpoint, and its federation routes.
+        if (url.startsWith('http://peer.invalid/api/mcp')) {
+          if ((req?.method ?? 'POST') !== 'POST') return new Response(null, { status: 405 });
+          const raw = req ? await req.clone().text() : String(init?.body ?? '');
+          const msg = JSON.parse(raw || '{}') as Parameters<typeof mcpReply>[0];
+          return mcpReply(msg);
+        }
+        if (url.startsWith('http://peer.invalid/')) {
+          return Response.json({ nodes: [], count: 0, chunks: [], node: { id: 'n1' } });
+        }
+        return new Response('{"error":"offline in the sweep"}', { status: 503 });
+      }),
     );
     const postgres = (await import('postgres')).default;
     const g = globalThis as unknown as { __mantleSql?: unknown; __mantleDb?: unknown };
@@ -122,13 +200,29 @@ describe.skipIf(!URL)('AREA_SYSTEM_TOOLS touch no item on the system pool', () =
     agent = row!;
     await x(sql`insert into tool_groups (owner_id, slug, name, tool_slugs, audience)
       values (${owner}, ${`${tag}-api`}, 'Sweep API', ${'{}'}::text[], 'admin')`);
-    await x(sql`insert into sandboxes (owner_id, name, image, status, container_id)
-      values (${owner}, ${`${tag}-box`}, 'test/image', 'running', 'c1')`);
+    await x(sql`insert into sandboxes (owner_id, name, image, status, container_id) values
+      (${owner}, ${`${tag}-box`}, 'test/image', 'running', 'c1'),
+      (${owner}, ${`${tag}-rmbox`}, 'test/image', 'running', 'c2')`);
     await x(sql`insert into heartbeats (owner_id, slug, name, agent_slug, skill_slug,
                                        schedule_kind, schedule, surface)
       values (${owner}, ${`${tag}-hb`}, 'Check', ${agent.slug}, 'none',
               'manual', ${JSON.stringify({ kind: 'manual' })}::jsonb,
               ${JSON.stringify({ kind: 'web' })}::jsonb)`);
+    // Real tools for the tools that name one: one to read, one to delete.
+    for (const slug of [`${tag}_tool`, `${tag}_del`]) {
+      await x(sql`insert into tools (owner_id, slug, name, description, input_schema, handler)
+        values (${owner}, ${slug}, 'Sweep tool', 'A tool.', ${'{"type":"object"}'}::jsonb,
+                ${JSON.stringify({ kind: 'http', url: 'https://example.invalid/x' })}::jsonb)`);
+    }
+    // A linked brain, paired (its token sealed by the stub key).
+    const c = await import('@mantle/content');
+    await m.asSystem(() =>
+      c.createPeer(owner, {
+        displayName: `${tag} peer`,
+        baseUrl: 'http://peer.invalid',
+        outboundToken: 'w7a-peer-token',
+      }),
+    );
   }, 240_000);
 
   afterAll(async () => {
@@ -140,8 +234,43 @@ describe.skipIf(!URL)('AREA_SYSTEM_TOOLS touch no item on the system pool', () =
     if (dir) await rm(dir, { recursive: true, force: true });
   });
 
+  /** Real names for the tools that take one, so each reaches its writes. */
+  const realArgs = (): Record<string, Record<string, unknown>> => ({
+    sandbox_rm: { sandbox: `${tag}-rmbox` },
+    sandbox_exec: { sandbox: `${tag}-box`, command: 'true' },
+    sandbox_autostart: { sandbox: `${tag}-box`, command: 'true' },
+    sandbox_mcp_call: { sandbox: `${tag}-box`, tool: 'search' },
+    // The sandbox's own group (sbx-<name>): any other is refused.
+    sandbox_publish: { sandbox: `${tag}-box`, port: 8000 },
+    tool_group_ensure: { slug: `${tag}-api`, tool_slugs: [`${tag}_tool`] },
+    worker_group_ensure: { slug: `${tag}-wg`, name: 'Sweep workers', members: [agent.slug] },
+    api_tool_create: {
+      slug: `${tag}_new`,
+      name: 'New sweep tool',
+      description: 'A new tool.',
+      url: 'https://example.invalid/new',
+      group_slug: `${tag}-api`,
+    },
+    api_tool_delete: { slug: `${tag}_del` },
+    api_tool_get: { slug: `${tag}_tool` },
+    api_skill_set: { group_slug: `${tag}-api`, body: 'Use the sweep tools.' },
+    recipe_tool_create: {
+      slug: `${tag}_recipe`,
+      name: 'Sweep recipe',
+      description: 'A recipe.',
+      steps: [{ tool: `${tag}_tool`, input: {} }],
+    },
+    peer_tools: { peer: `${tag} peer` },
+    peer_call: { peer: `${tag} peer`, tool: 'search', args: {} },
+    peer_query: { peer: `${tag} peer`, query: 'x' },
+    peer_node_get: { peer: `${tag} peer`, nodeId: randomUUID() },
+    peer_search_chunks: { peer: `${tag} peer`, query: 'x' },
+  });
+
   /** Arguments that carry a call past its own checks where they can. */
   const argsFor = (slug: string): Record<string, unknown> => {
+    const real = realArgs()[slug];
+    if (real) return real;
     const def = t.getBuiltin(slug);
     const schema = (def?.inputSchema ?? {}) as {
       properties?: Record<string, { type?: string; enum?: unknown[] }>;
@@ -202,6 +331,44 @@ describe.skipIf(!URL)('AREA_SYSTEM_TOOLS touch no item on the system pool', () =
       );
     }
     expect(broke).toEqual({});
+  });
+
+  it('the stub carries the sandbox and peer tools to their answers', async () => {
+    const run = (slug: string) =>
+      rt.withAgentScope(
+        { id: agent.id, audience: 'admin', workspaceId: adminWs },
+        () =>
+          t.dispatchTool(
+            {
+              slug,
+              handler: { kind: 'builtin', ref: slug },
+              inputSchema: {},
+            } as unknown as import('@mantle/db').Tool,
+            argsFor(slug),
+            { ownerId: owner, surface: { kind: 'web', loginId: owner } },
+          ),
+        { ownerLoginId: owner },
+      );
+    for (const slug of ['sandbox_exec', 'sandbox_stop', 'peer_tools', 'peer_call', 'peer_query']) {
+      const res = await run(slug);
+      expect(res.ok, `${slug}: ${res.ok ? '' : String(res.error)}`).toBe(true);
+    }
+  });
+
+  it('the trap is live for a tagged-template statement too', async () => {
+    const g = globalThis as unknown as {
+      __mantleSql: (s: TemplateStringsArray, ...v: unknown[]) => Promise<unknown>;
+    };
+    const hits: string[] = [];
+    armed = hits;
+    try {
+      await g.__mantleSql`select id from nodes limit 1`.catch(() => null);
+    } catch {
+      /* the trap throws before the statement is sent */
+    } finally {
+      armed = null;
+    }
+    expect(hits.length).toBe(1);
   });
 
   it('the trap is live: an item read on the system pool is caught', async () => {
