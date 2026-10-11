@@ -179,6 +179,127 @@ $$;
 REVOKE EXECUTE ON FUNCTION "public"."mantle_ws_spaces_fold_check"() FROM PUBLIC;
 --> statement-breakpoint
 
+-- A login's private workspace (21.8 row 8, plan 15): its own, made now
+-- when it has none (or only an archived one), "<name> (only you)", the
+-- login its only user and Moderator. NULL for a login that does not exist,
+-- is disabled, or on a brain not on workspaces. The app calls it on the
+-- system pool before a create that may land there (a member's create, the
+-- member app tools); nothing else makes one behind a login's back.
+CREATE OR REPLACE FUNCTION "public"."mantle_ws_private_workspace"(login uuid)
+  RETURNS uuid LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+DECLARE
+  brain uuid := "public"."mantle_brain_id"();
+  ws uuid;
+  label text;
+BEGIN
+  IF login IS NULL OR brain IS NULL OR "public"."mantle_ws_skip_reason"() IS NOT NULL
+     OR NOT EXISTS (SELECT 1 FROM "public"."workspaces" w WHERE w."owner_id" = brain AND w."is_admin") THEN
+    RETURN NULL;
+  END IF;
+  SELECT left(coalesce(nullif(btrim(u."display_name"), ''), split_part(u."email", '@', 1)), 100)
+    INTO label FROM auth.users u WHERE u."id" = login AND u."disabled_at" IS NULL;
+  IF NOT FOUND THEN RETURN NULL; END IF;
+  -- One at a time per login: two first creates make one workspace.
+  PERFORM pg_advisory_xact_lock(hashtext('mantle_ws_private_workspace'), hashtext(login::text));
+  SELECT p."workspace_id" INTO ws
+    FROM "public"."private_workspaces" p
+    JOIN "public"."workspaces" w ON w."id" = p."workspace_id" AND w."archived_at" IS NULL
+   WHERE p."login_id" = login;
+  IF ws IS NOT NULL THEN RETURN ws; END IF;
+  INSERT INTO "public"."workspaces" ("owner_id", "name", "description", "created_by")
+  VALUES (brain, btrim(label || ' (only you)'), 'Your own work. Only you see it.', login)
+  RETURNING "id" INTO ws;
+  INSERT INTO "public"."workspace_users" ("workspace_id", "login_id", "moderator")
+  VALUES (ws, login, true);
+  INSERT INTO "public"."private_workspaces" ("login_id", "workspace_id") VALUES (login, ws)
+  ON CONFLICT ("login_id") DO UPDATE SET "workspace_id" = EXCLUDED."workspace_id";
+  INSERT INTO "public"."workspace_events" ("workspace_id", "actor_id", "action", "subject")
+  -- The same event 0264 writes: a login removed later is found by it
+  -- (its workspace becomes its Former user workspace, mantle_ws_review_off).
+  VALUES (ws, NULL, 'review_off.private', jsonb_build_object('login', login));
+  RETURN ws;
+END
+$$;
+--> statement-breakpoint
+REVOKE EXECUTE ON FUNCTION "public"."mantle_ws_private_workspace"(uuid) FROM PUBLIC;
+--> statement-breakpoint
+
+-- A uuid from a transaction setting, or NULL (unset, empty or not a uuid).
+CREATE OR REPLACE FUNCTION "public"."mantle_setting_uuid"(name text)
+  RETURNS uuid LANGUAGE sql STABLE PARALLEL SAFE AS $$
+  SELECT CASE WHEN coalesce(current_setting(name, true), '')
+                   ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+              THEN current_setting(name, true)::uuid END
+$$;
+--> statement-breakpoint
+
+-- The home of a new item (21.8 row 7, plan 15; W6b). Two transaction
+-- settings, set only by the app's system transactions for a create it has
+-- checked, choose it:
+--  - mantle.create_ws: the workspace the login creates in (the request's
+--    current workspace, ?ws=, which the login moderates; the member app
+--    tools' private workspace). It wins when it can hold the kind.
+--  - mantle.private_ws: a member's or client's create. Then the folder's
+--    home when the item lands in a folder the login may edit (the create
+--    check, 0266, refuses a folder it may not), else the login's private
+--    workspace. Never Admin by default: a non-Admin login's work is its
+--    own until it shares it.
+-- With neither set (every create before W6b, an Admin user's create without
+-- ?ws=, the system's own) the rule is as before (0261): the folder's home,
+-- else Admin.
+CREATE OR REPLACE FUNCTION "public"."mantle_default_home"(
+  o uuid, t "public"."node_type", p ltree)
+  RETURNS uuid LANGUAGE plpgsql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+DECLARE
+  admin_ws uuid;
+  home uuid;
+  req uuid := "public"."mantle_setting_uuid"('mantle.create_ws');
+  priv uuid := "public"."mantle_setting_uuid"('mantle.private_ws');
+  fw uuid[];
+  ok boolean;
+BEGIN
+  IF o IS NULL OR o IS DISTINCT FROM "public"."mantle_brain_id"() THEN RETURN NULL; END IF;
+  SELECT w."id" INTO admin_ws FROM "public"."workspaces" w
+   WHERE w."owner_id" = o AND w."is_admin" LIMIT 1;
+  IF admin_ws IS NULL THEN RETURN NULL; END IF;
+  IF req IS NOT NULL
+     AND EXISTS (SELECT 1 FROM "public"."workspaces" w
+                  WHERE w."id" = req AND w."owner_id" = o AND w."archived_at" IS NULL)
+     AND "public"."mantle_grant_kind_ok"(t, req) THEN
+    RETURN req;
+  END IF;
+  IF "public"."mantle_kind_class"(t) <> 'workspace' THEN
+    IF priv IS NOT NULL THEN
+      RAISE EXCEPTION 'this kind of item lives in the Admin workspace only' USING ERRCODE = '42501';
+    END IF;
+    RETURN admin_ws;
+  END IF;
+  SELECT f."home_ws", f."write_ws" INTO home, fw FROM "public"."nodes" f
+   WHERE f."id" = "public"."mantle_parent_folder"(o, t, p);
+  ok := home IS NOT NULL
+        AND EXISTS (SELECT 1 FROM "public"."workspaces" w
+                     WHERE w."id" = home AND w."archived_at" IS NULL)
+        AND "public"."mantle_grant_kind_ok"(t, home);
+  IF priv IS NOT NULL THEN
+    IF ok AND (NOT "public"."mantle_scope_active"() OR coalesce("public"."mantle_may_edit"(home, fw), false)) THEN
+      RETURN home;
+    END IF;
+    IF EXISTS (SELECT 1 FROM "public"."workspaces" w
+                WHERE w."id" = priv AND w."owner_id" = o AND w."archived_at" IS NULL) THEN
+      RETURN priv;
+    END IF;
+    RAISE EXCEPTION 'no workspace to create this item in' USING ERRCODE = '42501';
+  END IF;
+  IF ok THEN RETURN home; END IF;
+  RETURN admin_ws;
+END
+$$;
+--> statement-breakpoint
+REVOKE EXECUTE ON FUNCTION "public"."mantle_default_home"(uuid, "public"."node_type", ltree) FROM PUBLIC;
+--> statement-breakpoint
+
 -- The reach diff (0261) knows the moved items: the switch guard compares
 -- with today's reach, and a moved item is no longer in a space. Its body is
 -- 0261's plus the fold's rows in the OLD set (as the fold's own proof).
@@ -393,6 +514,14 @@ BEGIN
   GET DIAGNOSTICS c = ROW_COUNT;
   RETURN QUERY SELECT 'fold'::text, 'personal rows'::text, 'to move'::text, c;
 
+  -- An item in its author's trash (a member app the author deleted): its
+  -- private workspace only, no Admin or Team grant (owner decision, W6b),
+  -- marked data.trashedBeforeFold below so the author can find and delete
+  -- it. Nothing of it is removed: the app, its data and its app-db file
+  -- move as every other item.
+  UPDATE pg_temp."ws_fold" f SET "grant_admin" = false, "grant_team" = false
+   WHERE f."deleted_at" IS NOT NULL;
+
   -- A row with no recorded home (a folder): the home of its space's other
   -- items, else its login's private workspace, else the space's Former
   -- user workspace.
@@ -525,6 +654,11 @@ BEGIN
                   -- (space-disk.ts); the brain's file readers look there.
                   || CASE WHEN f."type" = 'file'
                           THEN jsonb_build_object('space_file', f."space_id"::text)
+                          ELSE '{}'::jsonb END
+                  -- In its author's trash at the fold: still there, marked.
+                  || CASE WHEN f."deleted_at" IS NOT NULL
+                          THEN jsonb_build_object('trashedBeforeFold', true,
+                                                  'trashedAt', f."deleted_at")
                           ELSE '{}'::jsonb END
     FROM pg_temp."ws_fold" f
    WHERE n."id" = f."node_id";

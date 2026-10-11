@@ -109,28 +109,4 @@ describe.skipIf(!URL)('the client level after the audit fixes', () => {
     ).resolves.toBeDefined();
   });
 
-  it("a client's item cannot be shared with the team; a member's can (A17)", async () => {
-    await expect(
-      admin`update space_items set sharing = 'team' where node_id = ${item.client}`,
-    ).rejects.toMatchObject({ code: '23514' });
-    // Also through the client's own space, on the space role.
-    const [sp] = await admin<{ id: string }[]>`
-      select id from spaces where kind = 'personal' and login_id = ${client}`;
-    await expect(
-      m.withSpace({ spaceId: sp!.id, loginId: client }, () =>
-        m.db.execute(
-          sqlTag`update space_items set sharing = 'team' where node_id = ${item.client}`,
-        ),
-      ),
-    ).rejects.toMatchObject({ cause: { code: '23514' } });
-    await admin`update space_items set sharing = 'team' where node_id = ${item.member}`;
-    const rows = await admin<{ node_id: string; sharing: string }[]>`
-      select node_id, sharing from space_items where node_id in (${item.client}, ${item.member})`;
-    expect(new Map(rows.map((r) => [r.node_id, r.sharing]))).toEqual(
-      new Map([
-        [item.client, 'private'],
-        [item.member, 'team'],
-      ]),
-    );
-  });
 });

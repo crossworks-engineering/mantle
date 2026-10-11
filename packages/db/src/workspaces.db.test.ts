@@ -870,39 +870,6 @@ describe.skipIf(!URL)('workspaces W1: grants, derivation, heads and the workspac
     ).toEqual([]);
   });
 
-  it('audit M4: the personal-space role cannot write the derived columns, flag or no flag', async () => {
-    const { sql: sqlTag } = await import('drizzle-orm');
-    const [s] = await admin<{ id: string }[]>`
-      select id from spaces where kind = 'personal' and login_id = ${userA}`;
-    const id = randomUUID();
-    await admin`insert into nodes (id, owner_id, type, title, path)
-                values (${id}, ${s!.id}, 'page', ${`${tag} space page`}, 'pages')`;
-    const asA = <T>(fn: () => Promise<T>) => m.withSpace({ spaceId: s!.id, loginId: userA }, fn);
-    try {
-      for (const flag of [false, true]) {
-        await expect(
-          asA(async () => {
-            if (flag) {
-              await m.db.execute(sqlTag`select set_config('mantle.acl_internal', 'on', true)`);
-            }
-            await m.db.execute(
-              sqlTag`update nodes set read_ws = ${`{${ws.team}}`}::uuid[] where id = ${id}`,
-            );
-          }),
-        ).rejects.toMatchObject({ cause: { code: '42501' } });
-      }
-      // A plain save by the same role still works and changes no derived column.
-      await asA(() =>
-        m.db.execute(sqlTag`update nodes set title = ${`${tag} space page 2`} where id = ${id}`),
-      );
-      const [r] = await admin<{ title: string; r: string[] }[]>`
-        select title, read_ws as r from nodes where id = ${id}`;
-      expect(r).toEqual({ title: `${tag} space page 2`, r: [] });
-    } finally {
-      await admin`delete from nodes where id = ${id}`;
-    }
-  });
-
   it('a login change after a grant moves every copy: the old login loses the rows, the new one gains them', async () => {
     const { sql: sqlTag } = await import('drizzle-orm');
     const id = await node('telegram_message', 'handover chat', root, { loginId: userA });

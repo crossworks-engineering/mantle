@@ -243,7 +243,19 @@ type RequestSlot = {
    *  M1): the login's scope, which withSystemTx sets on its transactions so
    *  the database's move, create and delete checks run. */
   writeScope?: WorkspaceScope;
+  /** Where a create in this request lands (W6b): see CreateHome. */
+  createHome?: CreateHome;
 };
+
+/**
+ * Where a new item lands (workspaces W6b, plan 15 and 21.8 row 7), set on
+ * the system transactions as mantle.create_ws and mantle.private_ws (the
+ * database's mantle_default_home reads them). `createWs`: the workspace the
+ * login creates in (it moderates it; checked by the caller). `privateWs`:
+ * set for a non-Admin login: then the folder's home when the item lands in
+ * a folder it may edit, else this private workspace, never Admin.
+ */
+export type CreateHome = { createWs: string | null; privateWs: string | null };
 
 /** Work a scope's transaction owes the world outside the database, run once
  *  it ends: `commit` after a commit, `rollback` after a rollback. */
@@ -379,13 +391,42 @@ export function noteRequestWriteScope(ws: WorkspaceScope): void {
   slot.outcome = { kind: 'system', why: 'admin-write' };
 }
 
-/** The scope an Admin user's write request is checked in (see
- *  noteRequestWriteScope), or null. Masked by asSystem and by any other
- *  scope (their transactions are not this request's writes). */
+/** The scope a write request is checked in, or null: an Admin user's (see
+ *  noteRequestWriteScope), or a non-Admin login's mutating request, which
+ *  runs in its scope (W6b). Masked by asSystem and by any other scope
+ *  (their transactions are not this request's writes). */
 export function requestWriteScope(): WorkspaceScope | null {
   const s = store.getStore();
   if (s) return null;
-  return requestSlots.getStore()?.writeScope ?? null;
+  const slot = requestSlots.getStore();
+  if (!slot) return null;
+  if (slot.writeScope) return slot.writeScope;
+  return slot.scope?.ws && slot.scope.request?.writes ? slot.scope.ws : null;
+}
+
+/** Record where this request's creates land (W6b; see CreateHome). No-op
+ *  outside a slot. */
+export function noteRequestCreateHome(home: CreateHome): void {
+  const slot = requestSlots.getStore();
+  if (slot) slot.createHome = Object.freeze({ ...home });
+}
+
+const createHomes = new AsyncLocalStorage<CreateHome>();
+
+/** Run `fn` with its creates landing in `home` (W6b; the member app tools,
+ *  outside an HTTP request). Kept through asSystem: it names a place, it
+ *  grants nothing. */
+export function withCreateHome<T>(home: CreateHome, fn: () => T): T {
+  return createHomes.run(Object.freeze({ ...home }), fn);
+}
+
+/** Where a create lands now: withCreateHome's, else this request's (unless
+ *  masked by another scope), else null. */
+export function currentCreateHome(): CreateHome | null {
+  const own = createHomes.getStore();
+  if (own) return own;
+  if (store.getStore()) return null;
+  return requestSlots.getStore()?.createHome ?? null;
 }
 
 /**
@@ -397,7 +438,9 @@ export function requestWriteScope(): WorkspaceScope | null {
  */
 export function noteRequestSystemWrite(what: string): void {
   const slot = requestSlots.getStore();
-  if (!slot?.scope || store.getStore() || !strictTurnExits()) return;
+  // A mutating request's writes are its job (a member's own write since
+  // W6b): only a READ request's are pinned.
+  if (!slot?.scope || slot.scope.request?.writes || store.getStore() || !strictTurnExits()) return;
   const stack = (new Error().stack ?? '')
     .split('\n')
     .filter((line, i) => i === 0 || !line.replace(/\\/g, '/').includes('packages/db/src/'))

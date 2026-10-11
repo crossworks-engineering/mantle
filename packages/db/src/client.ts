@@ -14,7 +14,6 @@ import {
   type ScopeArea,
   newTxHooks,
   runInSystemTx,
-  runInTxScope,
   runInWorkspaceTx,
   currentWorkspaceScope,
   inTurnScope,
@@ -35,6 +34,7 @@ import {
   noteOwnRuleSystemRead,
   noteRequestSystemWrite,
   requestWriteScope,
+  currentCreateHome,
   requestScopeMemo,
 } from './viewer';
 
@@ -255,53 +255,21 @@ export async function spaceLevelForLogin(
 }
 
 /**
- * Run `fn` for ONE personal space (member logins Phase 2, plan section 2b).
- * Opens a short transaction on the personal-space role (`mantle_view_space`)
- * that sets `mantle.space_id` and `mantle.login_id`; every `db` query inside
- * runs in it, so row level security shows and accepts only that space's rows.
- * Keep it short: never hold one across an LLM call.
- *
- * The scope's level comes from the login's role (client logins C1): team for
- * an admin or a member, client for a client. The level only goes down, so a
- * `withViewer('team', …)` inside a client's space reads at client.
- *
- * Nesting: the same space reuses the open transaction; another space throws.
- * `withViewer('team', …)` inside leaves the space for the brain's Library;
- * `asSystem` leaves it for the admin pool.
+ * Ran `fn` for ONE personal space on the personal-space role (member logins
+ * Phase 2). Retired in workspaces W6b: the spaces are folded into the brain
+ * (0267), so it always refuses. W8 removes it with the rest of the space
+ * code.
  */
 export async function withSpace<T>(
-  scope: { spaceId: string; loginId: string },
-  fn: () => Promise<T>,
+  _scope: { spaceId: string; loginId: string },
+  _fn: () => Promise<T>,
 ): Promise<T> {
-  if (!UUID_RE.test(scope.spaceId) || !UUID_RE.test(scope.loginId)) {
-    throw new Error('withSpace: spaceId and loginId must be uuids');
-  }
-  const open = currentSpaceScope();
-  if (open && currentScopeTx()) {
-    if (open.spaceId !== scope.spaceId || open.loginId !== scope.loginId) {
-      throw new Error('withSpace: already acting for another space');
-    }
-    return fn();
-  }
-  const level = await spaceLevelForLogin(scope.loginId, scope.spaceId);
-  // Disk work tied to this transaction (afterCommit / afterRollback) runs
-  // once it has ended, never inside it.
-  const hooks = newTxHooks();
-  let result: T;
-  try {
-    result = await getViewerDb('space').transaction(async (tx) => {
-      await tx.execute(
-        sqlTag`select set_config('mantle.space_id', ${scope.spaceId}, true),
-                      set_config('mantle.login_id', ${scope.loginId}, true)`,
-      );
-      return runInTxScope({ level, space: { ...scope }, tx, hooks }, fn);
-    });
-  } catch (err) {
-    await runTxHooks(hooks.rollback, 'rollback');
-    throw err;
-  }
-  await runTxHooks(hooks.commit, 'commit');
-  return result;
+  // Workspaces W6b (0267): the personal spaces are folded into the brain and
+  // the space role is retired (NOLOGIN, viewer-roles.ts RETIRED_POOL_ROLES).
+  // Nothing runs in a space any more: fail closed, before any connection.
+  throw new Error(
+    'withSpace: the personal spaces were folded into the brain (workspaces W6b); a login works in its private workspace',
+  );
 }
 
 /**
@@ -337,6 +305,11 @@ export async function withSystemTx<T>(
         uuidArrayLiteral(writeScope.modWs, 'write scope modWs'),
       ]
     : null;
+  // Where a create lands (W6b): the database's default home reads these.
+  const home = currentCreateHome();
+  const homeSettings = home
+    ? [checkedUuidOrEmpty(home.createWs), checkedUuidOrEmpty(home.privateWs)]
+    : null;
   const hooks = newTxHooks();
   let result: T;
   try {
@@ -347,6 +320,12 @@ export async function withSystemTx<T>(
                         set_config('mantle.mod_ws', ${settings[1]}, true)`,
         );
       }
+      if (homeSettings) {
+        await tx.execute(
+          sqlTag`select set_config('mantle.create_ws', ${homeSettings[0]}, true),
+                        set_config('mantle.private_ws', ${homeSettings[1]}, true)`,
+        );
+      }
       return runInSystemTx({ tx, hooks }, () => fn(tx));
     });
   } catch (err) {
@@ -355,6 +334,13 @@ export async function withSystemTx<T>(
   }
   await runTxHooks(hooks.commit, 'commit');
   return result;
+}
+
+/** A uuid, checked, or '' for none. */
+function checkedUuidOrEmpty(id: string | null): string {
+  if (id === null) return '';
+  if (!UUID_RE.test(id)) throw new Error('create home: not a uuid');
+  return id.toLowerCase();
 }
 
 /** A Postgres uuid[] literal from validated ids. */

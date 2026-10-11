@@ -33,7 +33,6 @@ const CHANNEL = 'login_notice';
 describe.skipIf(!URL)('login notices: the event, who is told, the unread count', () => {
   type Db = typeof import('@mantle/db');
   let m: Db;
-  let sp: typeof import('./member-space');
   let tm: typeof import('./team-messages');
   let ln: typeof import('./login-notices');
   let ts: typeof import('@mantle/db/test-support');
@@ -52,14 +51,9 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
   const spaceOf: Record<string, string> = {};
   const root = mkdtempSync(path.join(tmpdir(), 'mantle-login-notices-'));
 
-  const as = <T>(login: string, fn: () => Promise<T>) =>
-    m.withSpace({ spaceId: spaceOf[login]!, loginId: login }, fn);
   const exec = async <T>(q: ReturnType<typeof sqlTag>) =>
     (await m.systemDb.execute(q)) as unknown as T[];
-  const say = (text: string) => ({
-    type: 'doc',
-    content: [{ type: 'paragraph', content: [{ type: 'text', text }] }],
-  });
+
   const admin = () =>
     (m.systemDb as unknown as { $client: Parameters<typeof ts.notifyBarrier>[0] }).$client;
 
@@ -84,24 +78,6 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
     return raw.map((p) => ln.parseLoginNotice(p)).filter((n): n is LoginNotice => n !== null);
   };
 
-  const newPage = async (login: string, title: string) => {
-    const s = spaceOf[login]!;
-    const id = (await as(login, () => sp.createMineItem(s, { type: 'page', title }))).id;
-    expect((await as(login, () => sp.saveMinePage(s, id, say(`${title} words`)))).ok).toBe(true);
-    return id;
-  };
-  const newNote = async (login: string, title: string) =>
-    (
-      await as(login, () =>
-        sp.createMineItem(spaceOf[login]!, { type: 'note', title, content: 'x' }),
-      )
-    ).id;
-  const submit = (login: string, id: string) => as(login, () => sp.submitItem(spaceOf[login]!, id));
-  /** What an admin's Return did to the row (review was removed in W5c). */
-  const returnRow = (id: string) =>
-    m.systemDb.execute(sqlTag`
-      update space_items set review_state = 'returned', reviewed_by = ${adminA},
-        reviewed_at = now(), updated_at = now() where node_id = ${id}`);
   const reply = (loginId: string, text: string, extra: Record<string, unknown> = {}) =>
     tm.appendTeamMessage({
       ownerId: anchor,
@@ -121,7 +97,6 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
     process.env.TABLE_DB_DIR = path.join(root, 'table-dbs');
     process.env.MANTLE_FILES_ROOT = path.join(root, 'files');
     m = await import('@mantle/db');
-    sp = await import('./member-space');
     tm = await import('./team-messages');
     ln = await import('./login-notices');
     sqlTag = (await import('drizzle-orm')).sql;
@@ -262,55 +237,6 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
       sqlTag`update auth.users set disabled_at = null where id = ${member2}`,
     );
     expect(await ln.chatReplyNotice({ loginId: member2, id: m2.id })).not.toBeNull();
-  });
-
-  // ── Review results ──────────────────────────────────────────────────────
-
-  let pageId = '';
-
-  it('a submit, a recall and a save tell the author nothing', async () => {
-    expect(
-      await sent(async () => {
-        pageId = await newPage(member, `${tag} spec`);
-        await submit(member, pageId);
-        await as(member, () => sp.recallItem(spaceOf[member]!, pageId));
-      }),
-    ).toEqual([]);
-  });
-
-  it('a returned row tells the author', async () => {
-    await submit(member, pageId);
-    expect(await sent(() => returnRow(pageId))).toEqual([
-      { kind: 'review', loginId: member, id: pageId, state: 'returned' },
-    ]);
-    expect(await ln.reviewResultNotice(member, 'returned', [pageId])).toEqual({
-      loginId: member,
-      role: 'member',
-      ownerId: anchor,
-      kind: 'review',
-      title: 'Returned',
-      body: `"${tag} spec" was returned.`,
-      deepLink: `/portal/items/${pageId}`,
-      itemId: pageId,
-      state: 'returned',
-      collapseKey: `review:${pageId}`,
-    });
-    // Not for anyone else, and not for a state it is not in.
-    expect(await ln.reviewResultNotice(member2, 'returned', [pageId])).toBeNull();
-    expect(await ln.reviewResultNotice(member, 'accepted', [pageId])).toBeNull();
-  });
-
-  it('a client author is told as a client', async () => {
-    const id = await newNote(client, `${tag} request`);
-    await submit(client, id);
-    expect(await sent(() => returnRow(id))).toEqual([
-      { kind: 'review', loginId: client, id, state: 'returned' },
-    ]);
-    expect(await ln.reviewResultNotice(client, 'returned', [id])).toMatchObject({
-      loginId: client,
-      role: 'client',
-      title: 'Returned',
-    });
   });
 
   // ── Unread ──────────────────────────────────────────────────────────────

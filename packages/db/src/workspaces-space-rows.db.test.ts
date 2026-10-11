@@ -199,14 +199,4 @@ describe.skipIf(!URL)('workspaces W1b: personal-space rows, re-own, bypass (0244
     }
   });
 
-  it('withSpaceRows runs only in a space scope; onSpaceRows only on personal spaces', async () => {
-    await expect(m.withSpaceRows(async () => 1)).rejects.toThrow(/personal-space scope/);
-    await expect(
-      m.withSpace({ spaceId: space, loginId: member }, () => m.withSpaceRows(async () => 2)),
-    ).resolves.toBe(2);
-    await expect(m.onSpaceRows(m.systemDb, [space, owner], async () => 3)).rejects.toThrow(
-      /personal space/,
-    );
-    await expect(m.onSpaceRows(m.systemDb, space, async () => 4)).resolves.toBe(4);
-  });
 });

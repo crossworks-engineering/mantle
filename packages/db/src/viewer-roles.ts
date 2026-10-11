@@ -27,11 +27,22 @@ import {
 
 export const LIMITED_LEVELS: readonly LimitedLevel[] = ['team', 'client', 'public'];
 
-/** Every limited LOGIN role: the three levels, the personal-space role
- *  (member logins Phase 2), which sees only the space its transaction names,
- *  and the workspace role (workspaces W1), which sees what the workspaces of
- *  its transaction's scope hold. */
-export const POOL_ROLES: readonly PoolRole[] = [...LIMITED_LEVELS, 'space', 'user'];
+/** Every limited LOGIN role: the three levels and the workspace role
+ *  (workspaces W1), which sees what the workspaces of its transaction's
+ *  scope hold. */
+export const POOL_ROLES: readonly PoolRole[] = [...LIMITED_LEVELS, 'user'];
+
+/** Roles that no longer log in (workspaces W6b): the personal-space role,
+ *  retired when the spaces were folded into the brain (0267). Each brain run
+ *  makes it NOLOGIN with no password, where it exists; it is never created.
+ *  The role itself, its grants and its policies stay until W8 (the
+ *  migrations still name it). */
+export const RETIRED_POOL_ROLES: readonly PoolRole[] = ['space'];
+
+/** The statement that retires `role`: no login, no password. */
+function retireStatement(role: string): string {
+  return `ALTER ROLE "${role}" WITH NOLOGIN ${LOCK_ATTRS} PASSWORD NULL`;
+}
 
 /** Hard cap on connections per role, across every process of a box. */
 const ROLE_CONNECTION_LIMIT = 30;
@@ -142,6 +153,10 @@ export function viewerRolePlan(
       out.push(`GRANT "${shared}" TO "${login}" WITH INHERIT FALSE, SET TRUE, ADMIN FALSE`);
       out.push(`ALTER ROLE "${login}" IN DATABASE "${database}" SET role = '${shared}'`);
     }
+    for (const level of RETIRED_POOL_ROLES) {
+      const login = viewerLoginRoleName(level, database);
+      if (cluster.roles.has(login)) out.push(retireStatement(login));
+    }
     out.push(`REVOKE CONNECT ON DATABASE "${database}" FROM PUBLIC`);
     const logins = POOL_ROLES.map((level) => `"${viewerLoginRoleName(level, database)}"`);
     out.push(`GRANT CONNECT ON DATABASE "${database}" TO ${logins.join(', ')}, CURRENT_USER`);
@@ -161,7 +176,7 @@ export function viewerRolePlan(
     throw new Error(
       `The viewer roles (mantle_view_*) on this Postgres cluster belong to the brain in database ${names}. ` +
         `Migrating "${cluster.database}" would reset their passwords and lock that brain's member logins out ` +
-        `("password authentication failed for user mantle_view_space"). For a second brain on this cluster, ` +
+        `("password authentication failed for user mantle_view_user"). For a second brain on this cluster, ` +
         `set MANTLE_VIEWER_ROLES_PER_DATABASE=1 for its migrate and its server, or give it its own Postgres. ` +
         `If ${names} is no brain any more, drop that database and migrate again.`,
     );
@@ -174,6 +189,10 @@ export function viewerRolePlan(
       out.push(`COMMENT ON ROLE "${role}" IS '${ownerNote(cluster.database).replace(/'/g, "''")}'`);
     }
   }
+  for (const level of RETIRED_POOL_ROLES) {
+    const role = viewerRoleName(level);
+    if (cluster.roles.has(role)) out.push(retireStatement(role));
+  }
   out.push(...orphanLoginDrops(cluster));
   return out;
 }
@@ -181,7 +200,7 @@ export function viewerRolePlan(
 /** A per-database login role's level and database, or null for any other
  *  role (the shared ones included). */
 export function parseViewerLoginRole(role: string): { level: PoolRole; database: string } | null {
-  for (const level of POOL_ROLES) {
+  for (const level of [...POOL_ROLES, ...RETIRED_POOL_ROLES]) {
     const prefix = `${viewerRoleName(level)}_`;
     if (role.startsWith(prefix) && role.length > prefix.length) {
       return { level, database: role.slice(prefix.length) };
@@ -216,7 +235,7 @@ export function viewerLoginDropStatements(
   roles: ReadonlySet<string>,
 ): string[] {
   const out: string[] = [];
-  for (const level of POOL_ROLES) {
+  for (const level of [...POOL_ROLES, ...RETIRED_POOL_ROLES]) {
     const login = viewerLoginRoleName(level, viewerRoleDatabase(database));
     if (!roles.has(login)) continue;
     if (databaseExists) out.push(`REVOKE ALL ON DATABASE "${database}" FROM "${login}"`);

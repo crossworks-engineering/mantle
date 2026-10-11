@@ -68,57 +68,6 @@ describe.skipIf(!URL)('login rows: the role is always named, withSpace checks th
     expect(await sql`select 1 from auth.users where id = ${id}`).toHaveLength(0);
   });
 
-  it('withSpace runs for a login in its own space', async () => {
-    expect(
-      await m.withSpace({ spaceId: spaceOf[member]!, loginId: member }, async () =>
-        m.currentViewerLevel(),
-      ),
-    ).toBe('team');
-    expect(
-      await m.withSpace({ spaceId: spaceOf[client]!, loginId: client }, async () =>
-        m.currentViewerLevel(),
-      ),
-    ).toBe('client');
-  });
-
-  it('withSpace refuses a space that is not the login’s own', async () => {
-    let ran = false;
-    const run = async () => {
-      ran = true;
-    };
-    // Another member's real space, and a client's space under a member login
-    // (which would also have run the client's space at team).
-    await expect(m.withSpace({ spaceId: spaceOf[other]!, loginId: member }, run)).rejects.toThrow(
-      /not this login/,
-    );
-    await expect(m.withSpace({ spaceId: spaceOf[client]!, loginId: member }, run)).rejects.toThrow(
-      /not this login/,
-    );
-    await expect(m.withSpace({ spaceId: randomUUID(), loginId: member }, run)).rejects.toThrow(
-      /not this login/,
-    );
-    expect(ran).toBe(false);
-  });
-
-  it('withSpace refuses a disabled login, even in its own space', async () => {
-    let ran = false;
-    await sql`update auth.users set disabled_at = now() where id = ${other}`;
-    try {
-      await expect(
-        m.withSpace({ spaceId: spaceOf[other]!, loginId: other }, async () => {
-          ran = true;
-        }),
-      ).rejects.toThrow(/disabled/);
-    } finally {
-      await sql`update auth.users set disabled_at = null where id = ${other}`;
-    }
-    expect(ran).toBe(false);
-    // Enabled again, the same pair runs.
-    expect(await m.withSpace({ spaceId: spaceOf[other]!, loginId: other }, async () => 'ok')).toBe(
-      'ok',
-    );
-  });
-
   it('a role never changes to or from client; admin and member still swap (I8)', async () => {
     const roleOf = async (id: string) =>
       (await sql<{ role: string }[]>`select role from auth.users where id = ${id}`)[0]?.role;

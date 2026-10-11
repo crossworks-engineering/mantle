@@ -31,7 +31,9 @@ import {
   withViewer,
   noteRequestSystem,
   noteRequestWriteScope,
+  noteRequestCreateHome,
   noteRequestOwnRule,
+  type CreateHome,
   type RequestScopeMode,
 } from '@mantle/db';
 import {
@@ -58,7 +60,14 @@ import { isAccessKey, isApiV1Path, lockLoginKeys } from '../access-keys';
 import { keyMayCall, matchApiV1Route } from '../api-v1';
 import { getRequestContext } from '../../server/request-context';
 import { bearerFromHeader } from './request';
-import { isReadRequest, itemWriteTarget, memberMayRead, routeClass } from './route-scope';
+import {
+  CREATE_ROUTES,
+  isReadRequest,
+  itemWriteTarget,
+  memberMayRead,
+  memberMayWrite,
+  routeClass,
+} from './route-scope';
 import { isAnyLoginRoute } from './any-login-routes';
 import {
   SESSION_COOKIE_NAME,
@@ -685,26 +694,39 @@ export async function getOwnerOr401WithSource(): Promise<
   const res = await resolveLogin();
   if (!res) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   if (res.kind !== 'admin') {
-    // A member or a client reaches an owner route only to READ brain items
-    // in its own scope (W6a, MEMBER_OPEN_READS); every other owner route
-    // refuses it (member routes use getMemberOr401; the sweeps check both).
+    // A member or a client reaches an owner route to read brain items in its
+    // own scope (W6a, MEMBER_OPEN_READS; drafts where it may edit, W6b), or
+    // to create, edit and delete them there (W6b, MEMBER_OPEN_WRITES); every
+    // other owner route refuses it (member routes use getMemberOr401; the
+    // sweeps check both).
     const { method, pattern } = routeOfRequest();
-    if (!hasRequestSlot() || !memberMayRead(method, pattern)) return loginRefused(res.kind);
+    if (!hasRequestSlot()) return loginRefused(res.kind);
     const login = res.kind === 'member' ? res.member : res.client;
-    await enterLoginScope(login.loginId, requestMode(false));
-    return {
-      user: {
-        id: login.anchorId,
+    const user: SessionUser = {
+      id: login.anchorId,
+      email: login.email,
+      actor: {
+        id: login.loginId,
         email: login.email,
-        actor: {
-          id: login.loginId,
-          email: login.email,
-          displayName: login.displayName,
-          isOwner: false,
-        },
+        displayName: login.displayName,
+        isOwner: false,
       },
-      source: res.source,
     };
+    if (memberMayRead(method, pattern)) {
+      await enterLoginScope(login.loginId, requestMode(true));
+      return { user, source: res.source };
+    }
+    if (!memberMayWrite(method, pattern) || !(await brainOnWorkspacesNow())) {
+      return loginRefused(res.kind);
+    }
+    const refused = await itemWriteGate(login.loginId, method, pattern!);
+    if (refused) return refused;
+    const home = await createHomeFor(login.loginId, method, pattern!, true);
+    if (home instanceof NextResponse) return home;
+    noteRequestCreateHome(home);
+    await enterLoginScope(login.loginId, requestMode(true));
+    await auditMutation(user);
+    return { user, source: res.source };
   }
   const refused = await adminRouteGate(res.user.actor.id);
   if (refused) return refused;
@@ -796,7 +818,7 @@ async function adminRouteGate(loginId: string): Promise<NextResponse | null> {
     return null;
   }
   if (!isReadRequest(method, pattern)) {
-    const refused = await adminItemWriteGate(loginId, method, pattern);
+    const refused = await itemWriteGate(loginId, method, pattern);
     if (refused) return refused;
     noteRequestSystem('admin-write');
     // The login's scope on the request's system transactions (fix round 1,
@@ -805,6 +827,11 @@ async function adminRouteGate(loginId: string): Promise<NextResponse | null> {
     // brain not on workspaces).
     if (!adminReadsOnSystemPool() && (await brainOnWorkspacesNow())) {
       noteRequestWriteScope(await loginScopeFor(loginId));
+      // A create lands in the request's workspace (?ws=) when the user
+      // moderates it (W6b); without one, as before (the folder, else Admin).
+      const home = await createHomeFor(loginId, method, pattern, false);
+      if (home instanceof NextResponse) return home;
+      noteRequestCreateHome(home);
     }
     return null;
   }
@@ -823,8 +850,8 @@ async function adminRouteGate(loginId: string): Promise<NextResponse | null> {
 const ITEM_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * An Admin user's write to one item (W6a, plan S1): allowed only when the
- * login's scope may edit the item (mantle_may_edit: a Moderator of its
+ * A login's write to one item (W6a, plan S1; every login since W6b): allowed
+ * only when the login's scope may edit the item (mantle_may_edit: a Moderator of its
  * home, or a Write grant to one of its workspaces), manage it for a delete
  * or a move (mantle_may_manage), or read it for its own marks and app runs.
  * An item homed in a workspace the user is not in is refused: the user adds
@@ -833,7 +860,7 @@ const ITEM_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
  * Off where Admin reads are (the rollback switch, a brain not on
  * workspaces). An id no row has goes on to the handler (its own 404).
  */
-async function adminItemWriteGate(
+async function itemWriteGate(
   loginId: string,
   method: string,
   pattern: string,
@@ -912,6 +939,68 @@ async function adminItemWriteGate(
     },
     { status: 403 },
   );
+}
+
+/**
+ * Where a create through `method pattern` lands (W6b, plan 15 and 21.8 row
+ * 7), or a refusal. `?ws=<id>` names the request's workspace: a login that
+ * is not in it is refused (403 workspace); one that moderates it creates
+ * there; one that only reads it creates as if it had not named one. For a
+ * non-Admin login (`ownWork`) the private workspace is the fallback (made
+ * now when it has none): the folder it creates in when it may edit that,
+ * else its private workspace, never Admin. An Admin user without ?ws=
+ * creates as before. Not a create: nothing to record (null createWs, and
+ * the private workspace only for a non-Admin login's other writes, which
+ * may make an item too, such as a commit that makes a copy).
+ */
+async function createHomeFor(
+  loginId: string,
+  method: string,
+  pattern: string,
+  ownWork: boolean,
+): Promise<CreateHome | NextResponse> {
+  let createWs: string | null = null;
+  if (CREATE_ROUTES.has(`${method.toUpperCase()} ${pattern}`)) {
+    const req = getRequestContext()?.req;
+    const asked = req ? new URL(req.url).searchParams.get('ws') : null;
+    if (asked !== null && asked !== '') {
+      if (!ITEM_ID_RE.test(asked)) {
+        return NextResponse.json(
+          { error: 'invalid', message: 'ws must be a workspace id.' },
+          { status: 400 },
+        );
+      }
+      const scope = await loginScopeFor(loginId);
+      const ws = asked.toLowerCase();
+      if (!scope.ws.includes(ws)) {
+        return NextResponse.json(
+          {
+            error: 'forbidden',
+            reason: 'workspace',
+            message: 'You are not in that workspace.',
+          },
+          { status: 403 },
+        );
+      }
+      if (scope.modWs.includes(ws)) createWs = ws;
+    }
+  }
+  if (!ownWork) return { createWs, privateWs: null };
+  const rows = (await db.execute(
+    sql`select "public"."mantle_ws_private_workspace"(${loginId}::uuid)::text as ws`,
+  )) as unknown as { ws: string | null }[];
+  const privateWs = rows[0]?.ws ?? null;
+  if (!privateWs) {
+    return NextResponse.json(
+      {
+        error: 'forbidden',
+        reason: 'workspace',
+        message: 'You have no workspace to create in yet.',
+      },
+      { status: 403 },
+    );
+  }
+  return { createWs, privateWs };
 }
 
 /**

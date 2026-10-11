@@ -28,7 +28,13 @@ import type { RequestOutcome } from '@mantle/db';
 import { isAnyLoginRoute } from '../lib/auth/any-login-routes';
 import { isClientRoute } from '../lib/auth/client-routes';
 import { isMemberRoute } from '../lib/auth/member-routes';
-import { isReadRequest, itemWriteTarget, memberMayRead, routeClass } from '../lib/auth/route-scope';
+import {
+  isReadRequest,
+  itemWriteTarget,
+  memberMayRead,
+  memberMayWrite,
+  routeClass,
+} from '../lib/auth/route-scope';
 import { PUBLIC_PATHS } from '../lib/auth-constants';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
@@ -387,6 +393,7 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
   it('a member: never the system pool, owner routes refused but the open reads, none answers 500', async () => {
     const failures: string[] = [];
     let opened = 0;
+    let openWrites = 0;
     let ownRule = 0;
     const systemReads = new Set<string>();
     for (const e of manifest) {
@@ -424,6 +431,17 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
             if (r.status === 403 || r.outcome?.kind !== 'user') {
               failures.push(`${key} open read: ${r.status} ${JSON.stringify(r.outcome)}`);
             }
+          } else if (memberMayWrite(method, e.pattern)) {
+            // W6b: an open write runs in the member's scope, or is refused
+            // by the item check (an id it cannot edit) or the workspace
+            // check, never by member-login and never on the system pool.
+            openWrites += 1;
+            const checked =
+              r.status === 403 &&
+              (r.text.includes('"item-workspace"') || r.text.includes('"workspace"'));
+            if (r.text.includes('member-login') || (!checked && r.outcome?.kind !== 'user')) {
+              failures.push(`${key} open write: ${r.status} ${JSON.stringify(r.outcome)}`);
+            }
           } else if (r.status !== 403 && r.status !== 401) {
             // 403 from the session gates, 401 from the byte routes' asset
             // gate and the ticket-gated frame.
@@ -438,6 +456,7 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
     expect(ownRule).toBeGreaterThan(40);
     expect(failures).toEqual([]);
     expect(opened).toBeGreaterThan(20);
+    expect(openWrites).toBeGreaterThan(30);
   }, 900_000);
 
   it('a member API key (U5): /api/v1 answers whoami in its scope and refuses the rest', async () => {
@@ -564,9 +583,9 @@ describe.skipIf(!URL)('W6a route sweep: scoped reads for every login', () => {
     expect(ok.status, ok.text.slice(0, 200)).toBe(200);
     const none = await call(`/api/notes/${randomUUID()}`, owner, 'PATCH', { title: 'x' });
     expect(none.text).not.toContain('item-workspace');
-    // The member that holds the private workspace is not an Admin user:
-    // its owner-route write stays refused as before (member-login).
-    expect((await call(`/api/notes/${privNote}`, mem, 'PATCH', { title: 'x' })).status).toBe(403);
+    // The member that holds the private workspace (its Moderator) writes its
+    // own item through the owner route since W6b.
+    expect((await call(`/api/notes/${privNote}`, mem, 'PATCH', { title: 'x' })).status).toBe(200);
     // The rollback switch turns the check off with the scoped reads.
     process.env.MANTLE_ADMIN_READS = 'system';
     try {

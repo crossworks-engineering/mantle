@@ -168,10 +168,9 @@ export function isReadRequest(method: string, pattern: string | null): boolean {
 /**
  * The owner routes a non-Admin login may call since W6a: reads of brain
  * items in the login's scope (the row rules decide what it sees; drafts are
- * never read). Writes and every other owner route still refuse a member or
- * a client (403 member-login / client-login): members write through their
- * own routes (/api/member/*, the grants and workspace routes) until the
- * write rule moves onto the item routes.
+ * read only where the login may edit the item, W6b). Writes are
+ * MEMBER_OPEN_WRITES; every other owner route still refuses a member or a
+ * client (403 member-login / client-login).
  */
 export const MEMBER_OPEN_READS: readonly string[] = [
   'GET /api/pages',
@@ -195,9 +194,97 @@ export const MEMBER_OPEN_READS: readonly string[] = [
   'GET /api/mentions/search',
   'GET /api/formulas',
   'GET /api/formulas/:id',
+  // W6b: a member's own files and drawings are brain items now.
+  'GET /api/draws/:id/svg',
+  'GET /api/files/files',
+  'GET /api/files/files/:id',
+  'GET /api/files/folders',
+  'GET /api/files/folders/:id',
+  'GET /api/tree/:kind/marks',
 ];
 
 const MEMBER_OPEN: ReadonlySet<string> = new Set(MEMBER_OPEN_READS);
+
+/**
+ * The owner routes a non-Admin login may WRITE through since W6b (plan 15,
+ * 21.8 row 7): create, edit and delete pages, notes, drawings, tables, files
+ * and apps, their drafts and folders, in its own scope. The request runs in
+ * the login's scope (writes on the system pool); an item the route names is
+ * checked first (itemWriteTarget: mantle_may_edit, or mantle_may_manage for
+ * a delete or a move), and the database checks the rest on the request's
+ * system transactions (a create into a folder, a move, a delete: 0241,
+ * 0245, 0266). A create lands in the request's workspace (?ws=) when the
+ * login moderates it, else in the folder it is made in when the login may
+ * edit that, else in the login's private workspace (mantle_default_home).
+ * Not here: Admin-only kinds, app review and purge, bulk deletes, imports,
+ * history and snapshot restores, the app runner routes (members run apps
+ * through /api/member/apps).
+ */
+export const MEMBER_OPEN_WRITES: readonly string[] = [
+  'POST /api/pages',
+  'PATCH /api/pages/:id',
+  'DELETE /api/pages/:id',
+  'PUT /api/pages/:id/draft',
+  'POST /api/pages/:id/commit',
+  'POST /api/pages/:id/discard-draft',
+  'POST /api/pages/:id/move',
+  'POST /api/notes',
+  'PATCH /api/notes/:id',
+  'DELETE /api/notes/:id',
+  'POST /api/draws',
+  'PATCH /api/draws/:id',
+  'DELETE /api/draws/:id',
+  'PUT /api/draws/:id/draft',
+  'POST /api/draws/:id/commit',
+  'POST /api/draws/:id/discard-draft',
+  'POST /api/tables',
+  'PATCH /api/tables/:id',
+  'DELETE /api/tables/:id',
+  'PUT /api/tables/:id/draft',
+  'POST /api/tables/:id/draft-ops',
+  'POST /api/tables/:id/commit',
+  'POST /api/tables/:id/discard-draft',
+  'POST /api/files/files',
+  'PATCH /api/files/files/:id',
+  'DELETE /api/files/files/:id',
+  'POST /api/files/folders',
+  'PATCH /api/files/folders/:id',
+  'DELETE /api/files/folders/:id',
+  'POST /api/apps',
+  'PATCH /api/apps/:id',
+  'DELETE /api/apps/:id',
+  'PUT /api/apps/:id/draft',
+  'DELETE /api/apps/:id/draft',
+  'POST /api/apps/:id/build',
+  'POST /api/apps/:id/format',
+  'POST /api/apps/:id/publish',
+  'POST /api/tree/:kind/folders',
+  'PATCH /api/tree/:kind/folders/:id',
+  'DELETE /api/tree/:kind/folders/:id',
+  'POST /api/tree/:kind/move',
+  'POST /api/tree/items/:id/opened',
+  'PUT /api/tree/items/:id/pin',
+];
+
+const MEMBER_WRITE: ReadonlySet<string> = new Set(MEMBER_OPEN_WRITES);
+
+/** Whether a non-Admin login may write through `method pattern` (W6b). */
+export function memberMayWrite(method: string, pattern: string | null): boolean {
+  if (pattern === null) return false;
+  return MEMBER_WRITE.has(`${method.toUpperCase()} ${pattern}`);
+}
+
+/** The routes that create an item (W6b): ?ws= names where it lands. */
+export const CREATE_ROUTES: ReadonlySet<string> = new Set([
+  'POST /api/pages',
+  'POST /api/notes',
+  'POST /api/draws',
+  'POST /api/tables',
+  'POST /api/files/files',
+  'POST /api/files/folders',
+  'POST /api/apps',
+  'POST /api/tree/:kind/folders',
+]);
 
 /** Whether a non-Admin login may call `method pattern` (HEAD as GET). */
 export function memberMayRead(method: string, pattern: string | null): boolean {

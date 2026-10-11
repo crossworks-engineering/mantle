@@ -12,10 +12,13 @@ import { isAnyLoginRoute } from './any-login-routes';
 import { isClientRoute } from './client-routes';
 import { isMemberRoute } from './member-routes';
 import {
+  CREATE_ROUTES,
   MEMBER_OPEN_READS,
+  MEMBER_OPEN_WRITES,
   READ_POSTS,
   isReadRequest,
   memberMayRead,
+  memberMayWrite,
   routeClass,
   itemWriteTarget,
 } from './route-scope';
@@ -57,6 +60,28 @@ describe.skipIf(!hasManifest)('route scope table (W6a)', () => {
     expect(memberMayRead('GET', '/api/settings')).toBe(false);
     expect(memberMayRead('GET', null)).toBe(false);
   });
+
+  it.skipIf(!hasManifest)(
+    'every member write (W6b) is a served content write; creates are among them',
+    async () => {
+      const { routeManifest } = await import('../../server/route-manifest.gen');
+      const served = new Set(
+        routeManifest.flatMap((e) => e.methods.map((m) => `${m} ${e.pattern}`)),
+      );
+      for (const key of MEMBER_OPEN_WRITES) {
+        const [method, pattern] = key.split(' ') as [string, string];
+        expect(served.has(key), key).toBe(true);
+        expect(routeClass(pattern), key).toEqual({ kind: 'content' });
+        expect(isReadRequest(method, pattern), key).toBe(false);
+        expect(memberMayWrite(method, pattern), key).toBe(true);
+      }
+      for (const key of CREATE_ROUTES) expect(MEMBER_OPEN_WRITES, key).toContain(key);
+      expect(memberMayWrite('DELETE', '/api/files/files')).toBe(false);
+      expect(memberMayWrite('DELETE', '/api/apps/deleted/:id')).toBe(false);
+      expect(memberMayWrite('POST', '/api/contacts')).toBe(false);
+      expect(memberMayWrite('GET', null)).toBe(false);
+    },
+  );
 
   it('takes the longest prefix and knows reads', () => {
     expect(routeClass('/api/apps/:id')).toEqual({ kind: 'content' });
