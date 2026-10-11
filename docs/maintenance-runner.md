@@ -228,7 +228,7 @@ took four tries):
   key, so CLI, UI, and cron (three different processes) can never merge
   concurrently, a contender fails fast with a clear message. Dry-runs skip
   the lock.
-- The schedule contains eleven tasks: `entities-dedupe` (auto tier),
+- The schedule contains thirteen tasks: `entities-dedupe` (auto tier),
   `traces-reap` and `turns-reap` (all owners), `space-purge` (a deactivated
   login's private personal items after 30 days, see
   [member-logins.md](./member-logins.md) section 6; the worker mounts
@@ -248,6 +248,11 @@ took four tries):
   `app-trash-purge` (deleted apps past their 30 days in Recently deleted:
   their history rows and snapshot files; by hand
   `pnpm -C server/web app-trash:purge`, dry run unless `--apply`),
+  `files-staged-reap` (the staging files a crash left beside a file create:
+  only a dot-prefixed `.<uuid>.staged.tmp` an hour old or more under the
+  files root, never a symlink, a dot folder, or the app, table, spaces or
+  sandbox stores; the worker mounts /data/files for it; by hand
+  `pnpm -C server/web files-staged:reap`, dry run unless `--apply`),
   `app-export-catch-up` (app table exports still dirty 20 minutes after a
   write, a sync a restart lost; by hand only, as a changed table is
   re-indexed: `pnpm -C server/web app-export:catch-up`, dry run unless
