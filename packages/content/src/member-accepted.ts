@@ -48,7 +48,6 @@ import {
   spaceItems,
   spaces,
   withViewer,
-  type ViewerLevel,
   isSystemScope,
 } from '@mantle/db';
 import type {
@@ -129,10 +128,6 @@ function authoredWhere(anchorId: string, loginId: string) {
 
 type Joined = {
   node: typeof nodes.$inferSelect;
-  /** A live workspace the author is a user of reads the item. */
-  inLibrary: boolean;
-  /** The author is a client login. */
-  client: boolean;
   acceptedAt: Date | null;
   snapTitle?: string | null;
   snapIcon?: string | null;
@@ -140,12 +135,10 @@ type Joined = {
 };
 
 /** The row as accepted: the snapshot's title, icon and time when there is
- *  one (an admin's later rename is the brain's), and where it stands for
- *  its author now (its grants). */
+ *  one (an admin's later rename is the brain's). Where it stands for its
+ *  author is not sent since W6b (no level). */
 function rowOf({
   node,
-  inLibrary,
-  client,
   acceptedAt,
   snapTitle,
   snapIcon,
@@ -184,12 +177,9 @@ function inLibrarySql(loginId: string) {
 }
 
 /** The columns every accepted row reads besides the node. */
-function rowCols(loginId: string) {
+function rowCols(_loginId: string) {
   return {
     node: nodes,
-    inLibrary: inLibrarySql(loginId),
-    client: sql<boolean>`exists (select 1 from auth.users l
-                                  where l.id = ${loginId}::uuid and l.role = 'client')`,
     acceptedAt: spaceItems.acceptedAt,
     ...snapCols,
   };
