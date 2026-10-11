@@ -439,7 +439,6 @@ export function registerMantleTools(
   // the authenticated owner — the same person those conversations belong to.
   registerBuiltinTools(REPLAY_TOOLS);
 
-
   // Outbound and spend. web_search / video_ingest / web_map / web_crawl all
   // reach the open internet and bill the owner's keys, so they are real actions
   // rather than reads — exposed because a client asked to research something

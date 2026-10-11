@@ -71,7 +71,10 @@ type StandardLike = {
     version: number;
     vendor: string;
     validate: (value: unknown) => unknown;
-    jsonSchema?: { input: (o?: unknown) => Record<string, unknown>; output: (o?: unknown) => Record<string, unknown> };
+    jsonSchema?: {
+      input: (o?: unknown) => Record<string, unknown>;
+      output: (o?: unknown) => Record<string, unknown>;
+    };
   };
 };
 
@@ -91,7 +94,9 @@ export function withWorkspaceArg(schema: unknown): unknown {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return std.validate(value);
     const { [WORKSPACE_ARG]: ws, ...rest } = value as Record<string, unknown>;
     if (ws !== undefined && ws !== null && typeof ws !== 'string') {
-      return { issues: [{ message: 'workspace must be a workspace id or name', path: [WORKSPACE_ARG] }] };
+      return {
+        issues: [{ message: 'workspace must be a workspace id or name', path: [WORKSPACE_ARG] }],
+      };
     }
     const finish = (r: ValidateResult): ValidateResult =>
       r.issues || ws === undefined || ws === null
@@ -172,7 +177,8 @@ export function replyItemIds(value: unknown): string[] {
   const out = new Set<string>();
   const take = (o: Record<string, unknown>) => {
     for (const [k, v] of Object.entries(o)) {
-      if (typeof v === 'string' && /(^|_)id$|Id$/.test(k) && UUID_RE.test(v)) out.add(v.toLowerCase());
+      if (typeof v === 'string' && /(^|_)id$|Id$/.test(k) && UUID_RE.test(v))
+        out.add(v.toLowerCase());
     }
   };
   if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
@@ -180,7 +186,8 @@ export function replyItemIds(value: unknown): string[] {
   take(top);
   for (const v of Object.values(top)) {
     if (Array.isArray(v)) {
-      for (const x of v.slice(0, 50)) if (x && typeof x === 'object') take(x as Record<string, unknown>);
+      for (const x of v.slice(0, 50))
+        if (x && typeof x === 'object') take(x as Record<string, unknown>);
     } else if (v && typeof v === 'object') {
       take(v as Record<string, unknown>);
     }
@@ -197,10 +204,7 @@ async function landedIn(ids: string[], since: Date): Promise<{ id: string; name:
     .from(nodes)
     .innerJoin(workspaces, eq(workspaces.id, nodes.homeWs))
     .where(
-      and(
-        inArray(nodes.id, ids),
-        or(gte(nodes.createdAt, since), sql`${nodes.createdAt} is null`),
-      ),
+      and(inArray(nodes.id, ids), or(gte(nodes.createdAt, since), sql`${nodes.createdAt} is null`)),
     );
   const seen = new Map<string, string>();
   for (const r of rows) seen.set(r.id, r.name);
@@ -226,13 +230,20 @@ async function withLanding(reply: unknown, since: Date): Promise<unknown> {
   try {
     homes = await landedIn(replyItemIds(parsed), since);
   } catch (err) {
-    console.warn('[mcp] could not read where a create landed:', err instanceof Error ? err.message : err);
+    console.warn(
+      '[mcp] could not read where a create landed:',
+      err instanceof Error ? err.message : err,
+    );
     return reply;
   }
   if (homes.length === 0) return reply;
   const landed = homes.length === 1 ? homes[0] : homes;
   if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-    const text = JSON.stringify({ ...(parsed as Record<string, unknown>), landedIn: landed }, null, 2);
+    const text = JSON.stringify(
+      { ...(parsed as Record<string, unknown>), landedIn: landed },
+      null,
+      2,
+    );
     return { ...r, content: [{ ...first, text }, ...r.content.slice(1)] };
   }
   const names = homes.map((h) => h.name).join(', ');
@@ -261,7 +272,11 @@ export function createHomeServer(server: McpServer, opts: CreateHomeOpts): McpSe
       if (prop === 'registerTool') {
         const fn = Reflect.get(target, prop, target) as (...a: unknown[]) => unknown;
         return (name: unknown, config: unknown, cb: unknown) => {
-          if (typeof name !== 'string' || typeof cb !== 'function' || !MCP_CREATE_TOOL_SLUGS.has(name)) {
+          if (
+            typeof name !== 'string' ||
+            typeof cb !== 'function' ||
+            !MCP_CREATE_TOOL_SLUGS.has(name)
+          ) {
             return fn.call(target, name, config, cb);
           }
           const handler = cb as (args: unknown, extra: unknown) => Promise<unknown>;

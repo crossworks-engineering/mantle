@@ -366,7 +366,8 @@ describe.skipIf(!URL)('W7a: the Admin assistant and the Admin MCP run in a scope
   it('outside Admin: every adminOnly, ownerOnly or Admin-area tool is refused', async () => {
     const defs = t.listBuiltins();
     const gated = defs.filter(
-      (d) => d.ownerOnly || t.ADMIN_ONLY_TOOL_SLUGS.has(d.slug) || t.toolAdminArea(d.slug) !== null,
+      (d) =>
+        t.isAdminOnlyTool(d.slug, { ownerOnly: d.ownerOnly }) || t.toolAdminArea(d.slug) !== null,
     );
     expect(gated.length).toBeGreaterThan(20);
     // The Team assistant's turn, answering a member, on an owner surface

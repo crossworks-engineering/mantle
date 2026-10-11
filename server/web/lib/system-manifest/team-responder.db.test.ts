@@ -49,7 +49,6 @@ vi.mock('@/lib/auth', async (importOriginal) => {
 
 type Row = Record<string, unknown>;
 
-
 describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
   let m: typeof import('@mantle/db');
   let admin: Parameters<typeof m.ensureViewerRoles>[0];

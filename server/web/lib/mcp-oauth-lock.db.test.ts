@@ -36,8 +36,6 @@ describe.skipIf(!URL)('the OAuth lock', () => {
   let m: typeof import('@mantle/db');
   let sql: Parameters<typeof m.ensureViewerRoles>[0];
   let oauth: typeof import('./mcp-oauth');
-  let tokens: typeof import('./auth/tokens');
-  let app: import('hono').Hono;
   let anchor = '';
   const tag = `oalock-${randomUUID().slice(0, 8)}`;
   const admin = randomUUID();
@@ -67,15 +65,12 @@ describe.skipIf(!URL)('the OAuth lock', () => {
     m = await import('@mantle/db');
     sql = (m.systemDb as unknown as { $client: typeof sql }).$client;
     oauth = await import('./mcp-oauth');
-    tokens = await import('./auth/tokens');
     anchor = await ensureTestAnchor(sql);
     await sql`insert into auth.users (id, email, password_hash, role, display_name) values
       (${admin}, ${`${tag}-admin@example.com`}, 'x', 'admin', 'Ada Admin'),
       (${member}, ${`${tag}-member@example.com`}, 'x', 'member', 'Mia Member')`;
     await sql`insert into oauth_clients (id, client_name, redirect_uris)
               values (${client}, ${`${tag} client`}, ${['https://c.example/cb']})`;
-    const { createApp } = await import('../server/app');
-    app = await createApp();
   }, 120_000);
 
   afterAll(async () => {
@@ -139,5 +134,4 @@ describe.skipIf(!URL)('the OAuth lock', () => {
     await sql`update auth.users set session_epoch = session_epoch + 1 where id = ${admin}`;
     expect(await oauth.mintAuthCode({ ...input, consentEpoch: epoch })).toBeNull();
   });
-
 });

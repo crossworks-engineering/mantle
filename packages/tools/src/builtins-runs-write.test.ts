@@ -236,7 +236,9 @@ describe('run_plan', () => {
       [{ toolSlugs: ['search'] }],
     );
     const res = await plan.handler({ title: 'Digest', plan: okPlan }, teamBot);
-    expect(errorOf(res)).toMatch(/Admin workspace's agents only, and 'team-bot' answers in another workspace/);
+    expect(errorOf(res)).toMatch(
+      /Admin workspace's agents only, and 'team-bot' answers in another workspace/,
+    );
     expect(createRun).not.toHaveBeenCalled();
   });
 

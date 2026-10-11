@@ -124,10 +124,9 @@ describe.skipIf(!URL)('peer bindings end with the login', () => {
     const res = await PATCH();
     expect(res.status).toBe(410);
     expect(await res.json()).toMatchObject({ code: 'gone' });
-    const [k] =
-      (await sql`select revoked_at from access_keys where id = ${key}`) as unknown as {
-        revoked_at: Date | null;
-      }[];
+    const [k] = (await sql`select revoked_at from access_keys where id = ${key}`) as unknown as {
+      revoked_at: Date | null;
+    }[];
     expect(k!.revoked_at).toBeNull();
     expect((await peer(peers.client)).acts_as_login_id).toBe(client);
     expect((await peer(peers.other)).acts_as_login_id).toBe(who.anchor);

@@ -198,5 +198,4 @@ describe.skipIf(!URL)('Telegram is for admin-level agents only (T21)', () => {
     expect((await pin(agent.pin)).status).toBe(200);
     await sql`update telegram_chats set responder_agent_id = null where id = ${chat.onAdminBot}`;
   });
-
 });

@@ -90,7 +90,9 @@ describe.skipIf(!URL)('frozen levels and switches, and the plain unshare, on Pos
     };
     const level = async (q: ReturnType<typeof sqlTag>) =>
       ((await m.db.execute(q)) as unknown as { audience: string }[])[0]?.audience;
-    await m.db.execute(sqlTag`update agents set audience = 'team', name = 'B' where id = ${ids.agent}`);
+    await m.db.execute(
+      sqlTag`update agents set audience = 'team', name = 'B' where id = ${ids.agent}`,
+    );
     expect(await level(sqlTag`select audience, name from agents where id = ${ids.agent}`)).toBe(
       'admin',
     );
