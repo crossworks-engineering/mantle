@@ -54,6 +54,7 @@ describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
   let admin: Parameters<typeof m.ensureViewerRoles>[0];
   let seed: typeof import('./seed');
   let rec: typeof import('./reconcile');
+  let content: typeof import('@mantle/content');
   let levelRoute: typeof import('../../app/api/access/agents/[slug]/route');
   // fresh: installed with this manifest. wrong: installed after 0159 and
   // before this fix (both groups at admin; an admin who RAISED them looks the
@@ -92,6 +93,7 @@ describe.skipIf(!URL)('team-responder opens in one step on every brain', () => {
     admin = (m.systemDb as unknown as { $client: typeof admin }).$client;
     seed = await import('./seed');
     rec = await import('./reconcile');
+    content = await import('@mantle/content');
     levelRoute = await import('../../app/api/access/agents/[slug]/route');
     for (const owner of Object.values(brains)) {
       await admin`insert into auth.users (id, email, password_hash, role)

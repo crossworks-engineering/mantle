@@ -603,10 +603,6 @@ describe.skipIf(!URL)('W7a fix round 2', () => {
     );
     expect(ping.ok, errorOf(ping)).toBe(true);
     expect(JSON.stringify(ping)).not.toMatch(/permission denied|allowlisted reason/);
-    // The team tools name contacts in the scope: a call works for the anchor.
-    for (const slug of ['team_chat_list', 'team_access_list']) {
-      const res = await inAdminTurn(owner, () => dispatchAs(owner, slug, {}));
-      expect(res.ok, `${slug} ${errorOf(res)}`).toBe(true);
-    }
+    // (The team tools, team_chat_list and team_access_list, left in W7b.)
   });
 });
