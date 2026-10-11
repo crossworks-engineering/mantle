@@ -11,9 +11,10 @@
  *   - "sign out everywhere": POST /api/auth/logout {everywhere:true}, and an
  *     admin's PATCH /api/users/:id {signOut:true}.
  *
- * Probes: GET /api/member/space/not-a-uuid (a member past the gate gets the
- * handler's 400; no session is 401) and GET /api/admin/space/not-a-uuid (the
- * same for an admin).
+ * Probes: GET /api/member/library/not-a-uuid (a member past the gate gets
+ * the handler's 400; no session is 401) and GET /api/pending/not-a-uuid (the
+ * same for an admin). The personal-space routes these used answer 410 since
+ * W6b.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/auth/session-epoch.db.test.ts
  */
@@ -75,9 +76,9 @@ describe.skipIf(!URL)('session epoch: ending a login’s sessions', () => {
       (await sql<Row[]>`select session_epoch from auth.users where id = ${id}`)[0]!.session_epoch,
     );
   const memberProbe = (auth: { cookie?: string; bearer?: string }) =>
-    call('/api/member/space/not-a-uuid', auth).then((r) => r.status);
+    call('/api/member/library/not-a-uuid', auth).then((r) => r.status);
   const adminProbe = (auth: { cookie?: string; bearer?: string }) =>
-    call('/api/admin/space/not-a-uuid', auth).then((r) => r.status);
+    call('/api/pending/not-a-uuid', auth).then((r) => r.status);
   /** A bearer for `login`: a mobile_tokens row and its signed token. */
   const bearerFor = async (login: string) => {
     const jti = randomUUID();

@@ -10,7 +10,8 @@
  *  - the 9.2 table, as plain grants: every brain item has one home, Team
  *    where the team read it, derived from the folder where the folder's
  *    share gave it; no "removed here" without a folder grant; personal items
- *    get no grants; the reach diff finds no gain; resources and the R3 stamp;
+ *    homed in their author's private workspace (0267); the reach diff finds
+ *    no gain, a second run neither; resources and the R3 stamp;
  *  - no bridge: a level change is refused, a new item takes a home and its
  *    folder's rows, an app's read-only switch writes no grant, a moved item
  *    keeps its home;
@@ -186,21 +187,28 @@ describe.skipIf(!URL)('workspaces live (0250): migration, bridges, facts', () =>
     });
     expect((await grants(ids.roApp!)).Team).toMatchObject({ home: true, write: false });
     expect((await grants(ids.adminApp!)).Admin).toMatchObject({ home: true });
-    // Personal items wait for W6b.
-    expect(await grants(ids.draft!)).toEqual({});
+    // Personal items (W6b, 0267): homed in their author's private
+    // workspace, that one grant only, Write off.
+    const draft = await grants(ids.draft!);
+    expect(Object.keys(draft)).toEqual(['m (only you)']);
+    expect(draft['m (only you)']).toMatchObject({ home: true, excluded: false, write: false });
     const [h] = await sql<{ n: number }[]>`
       select count(*)::int as n from nodes
        where owner_id = ${owner} and home_ws is null`;
     expect(h!.n).toBe(0);
     expect(await drift()).toBe(0);
-    // Membership: owner moderates both, the member moderates Team.
+    // Membership: owner moderates both, the member moderates Team and its
+    // private workspace (made by the fold for its draft).
     const users = await sql<{ ws: string; login: string; m: boolean }[]>`
       select workspace_id::text as ws, login_id::text as login, moderator as m from workspace_users`;
     expect(
       users
-        .map((u) => `${u.ws === admin ? 'A' : 'T'}:${u.login === owner ? 'o' : 'm'}:${u.m}`)
+        .map(
+          (u) =>
+            `${u.ws === admin ? 'A' : u.ws === team ? 'T' : 'P'}:${u.login === owner ? 'o' : 'm'}:${u.m}`,
+        )
         .sort(),
-    ).toEqual(['A:o:true', 'T:m:true', 'T:o:true']);
+    ).toEqual(['A:o:true', 'P:m:true', 'T:m:true', 'T:o:true']);
   });
 
   it('attaches the assistants and connectors, and stamps R3 rows from the agent', async () => {

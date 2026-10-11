@@ -179,6 +179,130 @@ $$;
 REVOKE EXECUTE ON FUNCTION "public"."mantle_ws_spaces_fold_check"() FROM PUBLIC;
 --> statement-breakpoint
 
+-- The reach diff (0261) knows the moved items: the switch guard compares
+-- with today's reach, and a moved item is no longer in a space. Its body is
+-- 0261's plus the fold's rows in the OLD set (as the fold's own proof).
+CREATE OR REPLACE FUNCTION "public"."mantle_ws_reach_diff"()
+  RETURNS TABLE ("section" text, "subject" text, "metric" text, "n" bigint)
+  LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path = "public", pg_temp AS $$
+  WITH b AS (SELECT "public"."mantle_brain_id"() AS brain),
+  ws AS (
+    SELECT (SELECT w."id" FROM "public"."workspaces" w, b WHERE w."owner_id" = b.brain AND w."bridge_key" = 'admin') AS admin_ws,
+           (SELECT w."id" FROM "public"."workspaces" w, b WHERE w."owner_id" = b.brain AND w."bridge_key" = 'team') AS team_ws
+  ),
+  team_today AS (
+    SELECT n."id" FROM "public"."nodes" n, b
+     WHERE n."owner_id" = b.brain
+       AND (n."audience" = ANY (ARRAY['team', 'client', 'public'])
+            OR n."inherited_level" = ANY (ARRAY['team', 'client', 'public'])
+            OR n."embedded_level" = ANY (ARRAY['team', 'client', 'public']))
+       AND "public"."mantle_workspace_kind"(n."type")
+    UNION
+    -- A folder shared with the team or clients by its share level: Team
+    -- holds it since 0261 (its title, the accepted widening).
+    SELECT n."id" FROM "public"."nodes" n, b
+     WHERE n."owner_id" = b.brain AND n."type" = 'branch'
+       AND n."share_level" = ANY (ARRAY['team', 'client'])
+  ),
+  old_reach AS (
+    SELECT 'login:' || u."id" AS subject, n."id" AS node_id
+      FROM auth.users u JOIN "public"."nodes" n ON n."owner_id" = (SELECT brain FROM b)
+     WHERE u."role" = 'admin'
+    UNION
+    SELECT 'login:' || u."id", t."id" FROM auth.users u, team_today t WHERE u."role" = 'member'
+    UNION
+    SELECT 'assistant:admin', n."id" FROM "public"."nodes" n WHERE n."owner_id" = (SELECT brain FROM b)
+    UNION
+    SELECT 'assistant:team', t."id" FROM team_today t
+    UNION
+    -- The spaces fold (0267): a moved item was read before by its author,
+    -- by the Admin users and the Admin assistant when its home row grants
+    -- Admin or Team, and by the members and the Team assistant when it
+    -- grants Team (9.3; the assistants' gains signed off, 18.13).
+    SELECT 'login:' || f."login_id", f."node_id" FROM "public"."space_fold_items" f
+     WHERE f."login_id" IS NOT NULL
+    UNION
+    SELECT 'login:' || u."id", f."node_id" FROM auth.users u, "public"."space_fold_items" f
+     WHERE u."role" = 'member' AND f."grant_team"
+    UNION
+    SELECT 'assistant:team', f."node_id" FROM "public"."space_fold_items" f WHERE f."grant_team"
+  ),
+  new_reach AS (
+    SELECT 'login:' || wu."login_id" AS subject, n."id" AS node_id
+      FROM "public"."workspace_users" wu
+      JOIN "public"."nodes" n ON n."owner_id" = (SELECT brain FROM b) AND n."read_ws" @> ARRAY[wu."workspace_id"]
+    UNION
+    SELECT 'assistant:admin', n."id" FROM "public"."nodes" n, ws
+     WHERE n."owner_id" = (SELECT brain FROM b) AND n."read_ws" @> ARRAY[ws.admin_ws]
+    UNION
+    SELECT 'assistant:team', n."id" FROM "public"."nodes" n, ws
+     WHERE n."owner_id" = (SELECT brain FROM b) AND n."read_ws" @> ARRAY[ws.team_ws]
+  ),
+  conn AS (
+    SELECT g."slug",
+           (g."integration" ? 'mcp' AND g."enabled" AND g."audience" IN ('team', 'client', 'public')) AS member_today,
+           r."id" IS NOT NULL AS held, coalesce(r."write", false) AS team_write
+      FROM "public"."tool_groups" g
+      CROSS JOIN ws
+      LEFT JOIN "public"."workspace_resources" r
+        ON r."workspace_id" = ws.team_ws AND r."type" = 'connector' AND r."ref_id" = g."slug"
+     WHERE g."owner_id" = (SELECT brain FROM b) AND g."integration" IS NOT NULL
+  ),
+  gained AS (
+    SELECT nw.subject, nw.node_id FROM new_reach nw
+     WHERE NOT EXISTS (SELECT 1 FROM old_reach o WHERE o.subject = nw.subject AND o.node_id = nw.node_id)
+  )
+  SELECT 'reach-fail', CASE WHEN g.subject LIKE 'login:%'
+                            THEN 'login (' || coalesce(u."role", 'gone') || ')' ELSE g.subject END,
+         'gained items', count(*)
+    FROM gained g
+    LEFT JOIN auth.users u ON 'login:' || u."id" = g.subject
+   GROUP BY 2
+  UNION ALL
+  -- Chunks and windows follow their item (their row rule reads the node,
+  -- 0249): the passages of a gained item are gained with it.
+  SELECT 'reach-fail', 'chunks', 'of gained items', count(*)
+    FROM gained g JOIN "public"."content_chunks" c ON c."node_id" = g.node_id
+  HAVING count(*) > 0
+  UNION ALL
+  -- Facts keep their own copy of the reading workspaces (R7). A fact may be
+  -- read by a workspace beyond Admin only when its source item is (then the
+  -- items' proof above covers it); a fact with no source only in Admin. A
+  -- mixed fact is read only by a scope holding Admin (0247), which read
+  -- everything before; a fact stamped with a login is read by that login
+  -- alone (its own chat, S4).
+  SELECT 'reach-fail', 'facts', 'read wider than their source item', count(*)
+    FROM "public"."facts" f
+   WHERE f."owner_id" = (SELECT brain FROM b) AND NOT f."derived_mixed" AND f."login_id" IS NULL
+     AND EXISTS (
+       SELECT 1 FROM unnest(f."read_ws") x
+         JOIN "public"."workspaces" w ON w."id" = x AND NOT w."is_admin"
+        WHERE f."source_node_id" IS NULL
+           OR NOT EXISTS (SELECT 1 FROM "public"."nodes" n
+                           WHERE n."id" = f."source_node_id" AND n."read_ws" @> ARRAY[x]))
+  HAVING count(*) > 0
+  UNION ALL
+  SELECT 'reach', CASE WHEN o.subject LIKE 'login:%'
+                       THEN 'login (' || coalesce(u."role", 'gone') || ')' ELSE o.subject END,
+         'lost items (narrower, allowed)', count(*)
+    FROM old_reach o
+    LEFT JOIN auth.users u ON 'login:' || u."id" = o.subject
+   WHERE NOT EXISTS (SELECT 1 FROM new_reach nw WHERE nw.subject = o.subject AND nw.node_id = o.node_id)
+   GROUP BY 2
+  UNION ALL
+  SELECT 'reach', split_part(s.subject, ':', 1), 'subjects', count(*)
+    FROM (SELECT DISTINCT subject FROM new_reach) s GROUP BY 2
+  UNION ALL
+  SELECT 'reach-fail', 'connectors on Team', 'differ from what members may use today', count(*)
+    FROM conn c
+   WHERE c.member_today <> c.held OR (c.held AND c.team_write <> c.member_today)
+  HAVING count(*) > 0
+$$;
+--> statement-breakpoint
+REVOKE EXECUTE ON FUNCTION "public"."mantle_ws_reach_diff"() FROM PUBLIC;
+--> statement-breakpoint
+
 -- ── 3. The work ──────────────────────────────────────────────────────────────
 
 CREATE OR REPLACE FUNCTION "public"."mantle_ws_spaces_fold"()
@@ -222,8 +346,13 @@ BEGIN
                  FROM "public"."mantle_ws_review_off"() x;
 
   -- No writer in a space while it moves (the routes are gone; an old server
-  -- may still be up during a roll).
-  LOCK TABLE "public"."spaces", "public"."space_items" IN EXCLUSIVE MODE;
+  -- may still be up during a roll). Row locks on the personal spaces and
+  -- their space_items rows, in id order, not a table lock: a write into a
+  -- personal space checks its space row (FOR KEY SHARE) and waits, while a
+  -- brain write (its brain space row) never does. A table lock in EXCLUSIVE
+  -- mode waited on every open brain insert and timed out under load.
+  PERFORM 1 FROM "public"."spaces" s WHERE s."kind" = 'personal' ORDER BY s."id" FOR UPDATE;
+  PERFORM 1 FROM "public"."space_items" si ORDER BY si."node_id" FOR UPDATE;
   PERFORM "public"."mantle_heads_bypass"('0267_workspaces_spaces_fold');
 
   -- What must not change outside the moved items: every other grant.

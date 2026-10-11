@@ -87,7 +87,7 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
   const clientProbe = (auth: { cookie?: string; bearer?: string }) =>
     call('/api/shell', auth).then((r) => r.status);
   const memberProbe = (auth: { cookie?: string; bearer?: string }) =>
-    call('/api/member/space/not-a-uuid', auth).then((r) => r.status);
+    call('/api/member/library/not-a-uuid', auth).then((r) => r.status);
   const deviceLogin = (email: string, password = PASSWORD, deviceName?: string) =>
     call('/api/auth/device-login', { method: 'POST', body: { email, password, deviceName } });
 
@@ -401,7 +401,7 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
     expect(String(who.brainId)).toMatch(/^[0-9a-f-]{36}$/);
     // Past the admin gate (a malformed id is the handler's own 400).
     expect(
-      (await call('/api/admin/space/not-a-uuid', { bearer: body.token as string })).status,
+      (await call('/api/pending/not-a-uuid', { bearer: body.token as string })).status,
     ).toBe(400);
 
     const wrong = await deviceLogin(emailOf('member'), 'not the password');
