@@ -674,12 +674,15 @@ written: `space_item_homes` records each item's home (its login's private
 workspace, "Name (only you)", or a "Former user" workspace with no users,
 one per former user, when the login is gone; an accepted item whose author
 was erased before 0264 keeps its brain home) and the Admin and Team grants
-W6b writes. Those grants and homes follow what is live (sharing, the trash,
-the logins): a member can still share or trash an app until W6b, and a
-login deleted after 0264 leaves its private workspace behind, so each run
-of `select * from mantle_ws_review_off()` refreshes the grants, renames
-such a workspace "Former user" (no name left) and keeps the items in it,
-and W6b runs it first. A box not on workspaces is archived and resolved now; its homes are
+W6b writes. Its `snapshot` flag says where W6b makes the author's snapshot
+copy of an accepted item: only into a private or Former user workspace,
+never into Admin, Team or another brain workspace. Those grants and homes
+follow what is live (sharing, the trash, the logins): a member can still
+share or trash an app until W6b, and a login deleted after 0264 leaves its
+private workspace behind, so each run of `select * from
+mantle_ws_review_off()` refreshes the grants, renames such a workspace
+"Former user" (no name left, its earlier events lose the name and
+description too) and keeps the items in it, and W6b runs it first. A box not on workspaces is archived and resolved now; its homes are
 recorded when it switches. On the copy, `select * from
 mantle_ws_review_homes_check()` must show no item without a home, nothing
 left in review and no row not archived.

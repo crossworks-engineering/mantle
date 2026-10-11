@@ -13,9 +13,11 @@
  * whose admin can no longer act on it gets Admin (not stranded); a disabled
  * admin's own team draft does not. A later run refreshes the grants from
  * live sharing and the trash. An accepted item whose author was erased
- * before 0264 keeps its brain home. A login deleted after 0264 leaves no
+ * before 0264 keeps its brain home (Admin or Team) and gets no snapshot
+ * copy: W6b copies an accepted item only into a private or Former user
+ * workspace (the snapshot flag). A login deleted after 0264 leaves no
  * stranded home and no name: its private workspace becomes its Former user
- * workspace. A brain not on workspaces is archived and resolved by 0264 and
+ * workspace, and the names in its earlier events go too. A brain not on workspaces is archived and resolved by 0264 and
  * gets its homes when it switches later, one Former user workspace per
  * former user; a read given by hand since the switch does not stop 0264.
  *
@@ -54,6 +56,7 @@ type Home = {
   state: string;
   sharing: string;
   role: string | null;
+  snapshot: boolean;
 };
 
 /** The space id of a login's personal space. */
@@ -143,7 +146,7 @@ describe.skipIf(!URL)('review states resolved without loss (0264)', () => {
     const rows = await sql<(Home & { node: string })[]>`
       select h.node_id::text as node, h.home_workspace_id::text as home, h.grant_admin as admin,
              h.grant_team as team, h.write, h.state_before as state, h.sharing_before as sharing,
-             h.author_role as role
+             h.author_role as role, h.snapshot
         from space_item_homes h`;
     const byId = Object.fromEntries(Object.entries(ids).map(([k, v]) => [v, k]));
     return Object.fromEntries(rows.map(({ node, ...h }) => [byId[node] ?? node, h]));
@@ -330,7 +333,8 @@ describe.skipIf(!URL)('review states resolved without loss (0264)', () => {
       state: string,
       sharing: string,
       role: string | null,
-    ): Home => ({ home, admin, team, write: false, state, sharing, role });
+      snapshot = false,
+    ): Home => ({ home, admin, team, write: false, state, sharing, role, snapshot });
     // Its home in the brain now: its home grant, else the Admin workspace.
     const [kept] = await sql<{ id: string }[]>`
       select coalesce((select workspace_id::text from item_grants
@@ -348,8 +352,9 @@ describe.skipIf(!URL)('review states resolved without loss (0264)', () => {
       teamApp: want(memberWs!, true, true, 'submitted', 'team', 'member'),
       trashedApp: want(memberWs!, false, false, 'draft', 'team', 'member'),
       // Where the author's snapshot copy goes (S3).
-      accepted: want(memberWs!, false, false, 'accepted', 'private', 'member'),
-      // No author left: its brain home, no shared per-brain Former user one.
+      accepted: want(memberWs!, false, false, 'accepted', 'private', 'member', true),
+      // No author left: its brain home, no shared per-brain Former user one,
+      // and no snapshot copy (W6b RULE).
       acceptedNoAuthor: want(kept!.id, false, false, 'accepted', 'private', null),
       // In the admin's own space.
       taken: want(adminWs!, false, false, 'taken', 'private', 'member'),
@@ -495,6 +500,8 @@ describe.skipIf(!URL)('review states resolved without loss (0264)', () => {
       bundles: 0,
       'private workspaces': 6,
       'former user workspaces': 2,
+      'homes with a snapshot copy': 1,
+      'snapshot homes outside a private or Former user workspace': 0,
     });
     const guard = await sql.begin(
       (tx) => tx<{ section: string }[]>`select * from mantle_ws_switch_guard()`,
@@ -575,6 +582,33 @@ describe.skipIf(!URL)('review states resolved without loss (0264)', () => {
     expect(await run()).toBe(1);
     expect(await pick('trashedApp')).toMatchObject({ admin: false, team: true });
     // Nothing changed since: nothing refreshed.
+    expect(await run()).toBe(0);
+  });
+
+  it('W6b makes a snapshot copy only into a private or Former user workspace', async () => {
+    const run = async () =>
+      (
+        await sql<{ subject: string; n: number }[]>`
+          select subject, n::int as n from mantle_ws_review_off()`
+      ).find((r) => r.subject === 'snapshot flag set by the rule')!.n;
+    // Only the accepted item homed in its author's private workspace.
+    const flagged = await sql<{ id: string }[]>`
+      select node_id::text as id from space_item_homes where snapshot`;
+    expect(flagged.map((r) => r.id)).toEqual([ids.accepted]);
+    // A hand edit that asks for a copy into the Admin workspace is undone by
+    // the next run.
+    await sql`update space_item_homes set snapshot = true
+      where node_id = ${ids.acceptedNoAuthor!}`;
+    expect(
+      (await reviewCheck(sql))['snapshot homes outside a private or Former user workspace'],
+    ).toBe(1);
+    expect(await run()).toBe(1);
+    expect((await homes()).acceptedNoAuthor!.snapshot).toBe(false);
+    expect((await reviewCheck(sql))['homes with a snapshot copy']).toBe(1);
+    // An item that was not accepted is never copied (the table refuses it).
+    await expect(
+      sql`update space_item_homes set snapshot = true where node_id = ${ids.privDraft!}`,
+    ).rejects.toMatchObject({ code: '23514' });
     expect(await run()).toBe(0);
   });
 
@@ -751,8 +785,8 @@ describe.skipIf(!URL)('one Former user workspace per former user (0264)', () => 
       select former_key::text as key, workspace_id::text as ws from former_user_workspaces`;
     expect(formers.map((f) => f.key).sort()).toEqual([memberA, memberB].sort());
     const wsOf = Object.fromEntries(formers.map((f) => [f.key, f.ws]));
-    const h = await sql<{ id: string; home: string; admin: boolean }[]>`
-      select node_id::text as id, home_workspace_id::text as home, grant_admin as admin
+    const h = await sql<{ id: string; home: string; admin: boolean; snapshot: boolean }[]>`
+      select node_id::text as id, home_workspace_id::text as home, grant_admin as admin, snapshot
         from space_item_homes`;
     const homeOf = Object.fromEntries(h.map((r) => [r.id, r]));
     expect(homeOf[ids.draftA!]!.home).toBe(wsOf[memberA]);
@@ -762,6 +796,9 @@ describe.skipIf(!URL)('one Former user workspace per former user (0264)', () => 
     // A member's team draft whose login is gone: left behind, Admin.
     expect(homeOf[ids.draftA!]!.admin).toBe(true);
     expect(homeOf[ids.acceptedA!]!.admin).toBe(false);
+    // The author's snapshot copy goes to its Former user workspace.
+    expect(homeOf[ids.acceptedA!]!.snapshot).toBe(true);
+    expect(homeOf[ids.draftA!]!.snapshot).toBe(false);
   });
 });
 
@@ -785,9 +822,9 @@ describe.skipIf(!URL)('a login deleted after 0264 leaves no stranded home (0264)
   const homeOf = async () =>
     Object.fromEntries(
       (
-        await sql<{ id: string; home: string; admin: boolean; team: boolean }[]>`
+        await sql<{ id: string; home: string; admin: boolean; team: boolean; snapshot: boolean }[]>`
           select node_id::text as id, home_workspace_id::text as home,
-                 grant_admin as admin, grant_team as team from space_item_homes`
+                 grant_admin as admin, grant_team as team, snapshot from space_item_homes`
       ).map((r) => [r.id, r]),
     );
 
@@ -828,6 +865,16 @@ describe.skipIf(!URL)('a login deleted after 0264 leaves no stranded home (0264)
     expect((await sql`select name from workspaces where id = ${privateWs[member]!}`)[0]!.name).toBe(
       'Leaver Name (only you)',
     );
+    // Each renames its private workspace (PATCH /api/workspaces/:id writes
+    // a workspace.update event with the new name and description).
+    for (const login of [member, other]) {
+      await sql`insert into workspace_events (workspace_id, actor_id, action, subject)
+        values (${privateWs[login]!}, ${login}, 'workspace.update',
+                ${sql.json({ name: 'Leaver notes', description: 'What the leaver keeps' })})`;
+      await sql`insert into workspace_events (workspace_id, actor_id, action, subject)
+        values (${privateWs[login]!}, ${login}, 'workspace.update',
+                ${sql.json({ name: 'Leaver notes 2', contactNodeId: null })})`;
+    }
     handFormer = (
       await sql<{ id: string }[]>`
         insert into workspaces (owner_id, name) values (mantle_brain_id(), 'Former user')
@@ -855,6 +902,8 @@ describe.skipIf(!URL)('a login deleted after 0264 leaves no stranded home (0264)
     // The second member's items leave its orphan for its Former user one.
     expect(n('moved off a removed workspace')).toBe(3);
     expect(n('former user workspaces')).toBe(0);
+    // The renames of both orphans (two events each) lose their names.
+    expect(n('events of those workspaces')).toBe(4);
 
     const formers = Object.fromEntries(
       (
@@ -900,6 +949,25 @@ describe.skipIf(!URL)('a login deleted after 0264 leaves no stranded home (0264)
     const named = await sql`
       select 1 from workspaces where name ilike '%leaver%' or description ilike '%leaver%'`;
     expect(named).toHaveLength(0);
+    // Nor in their events: the update events stay, without the name and
+    // description; what else they said is kept.
+    const events = await sql<{ action: string; subject: Record<string, unknown> }[]>`
+      select action, subject from workspace_events
+       where workspace_id in (${privateWs[member]!}, ${privateWs[other]!})
+         and action = 'workspace.update'`;
+    expect(events).toHaveLength(4);
+    for (const e of events) {
+      expect(e.subject).not.toHaveProperty('name');
+      expect(e.subject).not.toHaveProperty('description');
+    }
+    expect(events.filter((e) => 'contactNodeId' in e.subject)).toHaveLength(2);
+    expect(
+      await sql`select 1 from workspace_events where subject::text ilike '%leaver%'`,
+    ).toHaveLength(0);
+    // The accepted items' snapshot copies follow them to Former user.
+    expect(h[ids.acceptedM!]!.snapshot).toBe(true);
+    expect(h[ids.acceptedX!]!.snapshot).toBe(true);
+    expect(h[ids.teamDraftM!]!.snapshot).toBe(false);
 
     expect(await reviewCheck(sql)).toMatchObject({
       'items without a home': 0,
@@ -920,6 +988,83 @@ describe.skipIf(!URL)('a login deleted after 0264 leaves no stranded home (0264)
       select section, subject, n::int as n from mantle_ws_review_off()`;
     expect(rows.filter((r) => r.section !== 'proof' && r.n !== 0)).toEqual([]);
     expect(await homeOf()).toEqual(before);
+  });
+});
+
+// An accepted item with no trace of its author keeps the home it has in the
+// brain, whichever workspace that is (here Team), and W6b makes no snapshot
+// copy of it (W6b RULE: a copy goes only into a private or Former user
+// workspace). Its own scratch brain: the Team home is given by hand after the
+// switch, which the switch guard of the first suite would count as gained.
+describe.skipIf(!URL)('an accepted item kept in Team gets no snapshot copy (0264)', () => {
+  let scratch: Awaited<ReturnType<typeof createScratchDatabaseBefore>>;
+  let sql: Sql;
+  const owner = randomUUID();
+  const member = randomUUID();
+  const ids: Record<string, string> = {};
+  let team = '';
+
+  beforeAll(async () => {
+    scratch = await createScratchDatabaseBefore(URL!, BEFORE);
+    sql = postgres(scratch.url, { max: 2, prepare: false, onnotice: () => {} });
+    await sql`insert into auth.users (id, email, password_hash, role, is_owner) values
+      (${owner}, 'rt-o@example.invalid', 'x', 'admin', true),
+      (${member}, 'rt-m@example.invalid', 'x', 'member', false)`;
+    await sql`select * from mantle_ws_migrate_locked()`;
+    team = (
+      await sql<{ id: string }[]>`select id::text as id from workspaces where bridge_key = 'team'`
+    )[0]!.id;
+    for (const [k, author] of [
+      ['teamKept', null],
+      ['byMember', member],
+    ] as const) {
+      ids[k] = randomUUID();
+      await sql`insert into nodes (id, owner_id, type, title, path, audience)
+        values (${ids[k]!}, ${owner}, 'page', ${k}, 'pages', 'admin')`;
+      await sql`insert into space_items (node_id, author_login_id, sharing, review_state,
+          reviewed_by, reviewed_at, accepted_at)
+        values (${ids[k]!}, ${author}, 'private', 'accepted', ${owner}, now(), now())`;
+    }
+    // Re-homed in Team the workspace way, before 0264.
+    await sql.begin(async (tx) => {
+      await tx`delete from item_grants where node_id = ${ids.teamKept!}`;
+      await tx`insert into item_grants (node_id, workspace_id, is_home)
+        values (${ids.teamKept!}, ${team}, true)`;
+    });
+    await scratch.migrateRest();
+  }, 240_000);
+
+  afterAll(async () => {
+    await sql?.end();
+    await scratch?.drop();
+  });
+
+  it('keeps its Team home, and only the authored one is copied', async () => {
+    const h = Object.fromEntries(
+      (
+        await sql<{ id: string; home: string; snapshot: boolean }[]>`
+          select node_id::text as id, home_workspace_id::text as home, snapshot
+            from space_item_homes`
+      ).map((r) => [r.id, r]),
+    );
+    expect(h[ids.teamKept!]).toMatchObject({ home: team, snapshot: false });
+    const [mine] = await sql<{ id: string }[]>`
+      select workspace_id::text as id from private_workspaces where login_id = ${member}`;
+    expect(h[ids.byMember!]).toMatchObject({ home: mine!.id, snapshot: true });
+    expect(await reviewCheck(sql)).toMatchObject({
+      'homes with a snapshot copy': 1,
+      'snapshot homes outside a private or Former user workspace': 0,
+      'former user workspaces': 0,
+    });
+    // A hand edit asking for a copy into Team is undone by the next run.
+    await sql`update space_item_homes set snapshot = true where node_id = ${ids.teamKept!}`;
+    const rows = await sql<{ subject: string; n: number }[]>`
+      select subject, n::int as n from mantle_ws_review_off()`;
+    expect(rows.find((r) => r.subject === 'snapshot flag set by the rule')!.n).toBe(1);
+    expect(
+      (await sql`select snapshot from space_item_homes where node_id = ${ids.teamKept!}`)[0]!
+        .snapshot,
+    ).toBe(false);
   });
 });
 

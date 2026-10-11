@@ -25,7 +25,13 @@
  *    user workspace is moved on the next run. grant_admin, grant_team
  *    and write are the grants W6b writes besides the home (write is always
  *    false: Write off). state_before, sharing_before and author_role are the
- *    item's review state, sharing and author role before 0264.
+ *    item's review state, sharing and author role before 0264. snapshot
+ *    (W6b RULE): W6b makes the author's snapshot copy (S3) of the item in
+ *    its home only when snapshot is true, which is only for an accepted
+ *    item whose home is a private or Former user workspace. An accepted
+ *    item kept in a brain workspace (Admin, Team, any other) gets no copy.
+ *    Every run sets it by that rule; a check keeps it off any item that
+ *    was not accepted.
  *
  * The grant flags are not frozen: they come from state_before and from what
  * is live (sharing, the trash, the logins), and every run of
@@ -33,7 +39,8 @@
  * still change until W6b). W6b runs it first, or applies the same rule,
  * when it moves the items (W5c contract).
  */
-import { boolean, index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import { boolean, check, index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { authUsers } from './auth-users';
 import { nodes } from './nodes';
 import { workspaces } from './workspaces';
@@ -73,7 +80,14 @@ export const spaceItemHomes = pgTable(
     stateBefore: text('state_before').notNull(),
     sharingBefore: text('sharing_before').notNull(),
     authorRole: text('author_role'),
+    snapshot: boolean('snapshot').notNull().default(false),
     resolvedAt: timestamp('resolved_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => [index('space_item_homes_home_idx').on(t.homeWorkspaceId)],
+  (t) => [
+    index('space_item_homes_home_idx').on(t.homeWorkspaceId),
+    check(
+      'space_item_homes_snapshot_accepted_ck',
+      sql`NOT ${t.snapshot} OR ${t.stateBefore} = 'accepted'`,
+    ),
+  ],
 );

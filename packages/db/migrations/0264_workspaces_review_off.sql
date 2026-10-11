@@ -23,11 +23,20 @@
 --       was erased before 0264 archived it (no trace of who wrote it) gets
 --       no Former user workspace: its home is the one it has now in the
 --       brain (S3 has no author to copy it for).
+--     - snapshot: true only for an accepted item whose home is a private or
+--       Former user workspace; W6b makes the author's snapshot copy (S3)
+--       there and for no other row. An accepted item kept in a brain
+--       workspace (Admin, Team or any other) gets no copy at all: the item
+--       is already in its home. Every run sets the flag by that rule, a
+--       check keeps it off any item that was not accepted, and the run
+--       raises 23514 should one point at any other workspace.
 --     - homes are kept current: a login deleted after its private
 --       workspace was made takes its private_workspaces row with it
 --       (cascade). The next run turns that workspace into the login's
 --       "Former user" workspace (renamed, the name gone; keyed by the login
---       id the workspace was made for), and any item whose home is no
+--       id the workspace was made for; the name and description the user
+--       gave it are also taken out of its earlier workspace_events, so no
+--       name survives there), and any item whose home is no
 --       longer a registered private or Former user workspace moves to the
 --       Former user workspace of its former login.
 --     - grant_admin: submitted (an item in a submitted bundle counts), or
@@ -57,7 +66,8 @@
 -- All of it is mantle_ws_review_off(): idempotent (a second run with
 -- nothing changed changes nothing), fine on an empty brain, and it raises 23514 when an item is
 -- left without a home on a brain with workspaces, a state or a bundle is
--- left, a row is not archived, or a grant or an item's reach changed. A
+-- left, a row is not archived, a snapshot copy points outside a private or
+-- Former user workspace, or a grant or an item's reach changed. A
 -- brain NOT on workspaces (clients present, 21.9, or no anchor yet) is
 -- archived and resolved now (the routes are gone for it too); its homes are
 -- written when it switches: mantle_ws_migrate runs mantle_ws_review_off()
@@ -139,7 +149,9 @@ CREATE TABLE IF NOT EXISTS "public"."former_user_workspaces" (
 );
 --> statement-breakpoint
 -- One row per space item: its home and the grants W6b writes (9.3), with
--- the state, sharing and author role it had before 0264.
+-- the state, sharing and author role it had before 0264. snapshot: W6b
+-- makes the author's snapshot copy of this accepted item in its home (S3);
+-- true only when that home is a private or Former user workspace.
 CREATE TABLE IF NOT EXISTS "public"."space_item_homes" (
   "node_id" uuid PRIMARY KEY REFERENCES "public"."nodes"("id") ON DELETE CASCADE,
   "home_workspace_id" uuid NOT NULL REFERENCES "public"."workspaces"("id"),
@@ -149,7 +161,9 @@ CREATE TABLE IF NOT EXISTS "public"."space_item_homes" (
   "state_before" text NOT NULL,
   "sharing_before" text NOT NULL,
   "author_role" text,
-  "resolved_at" timestamptz NOT NULL DEFAULT now()
+  "snapshot" boolean NOT NULL DEFAULT false,
+  "resolved_at" timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT "space_item_homes_snapshot_accepted_ck" CHECK (NOT "snapshot" OR "state_before" = 'accepted')
 );
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "space_item_homes_home_idx"
@@ -191,6 +205,14 @@ CREATE OR REPLACE FUNCTION "public"."mantle_ws_review_homes_check"()
   SELECT 'homes granting Admin', count(*) FROM "public"."space_item_homes" h WHERE h."grant_admin"
   UNION ALL
   SELECT 'homes granting Team', count(*) FROM "public"."space_item_homes" h WHERE h."grant_team"
+  UNION ALL
+  SELECT 'homes with a snapshot copy', count(*) FROM "public"."space_item_homes" h WHERE h."snapshot"
+  UNION ALL
+  SELECT 'snapshot homes outside a private or Former user workspace', count(*)
+    FROM "public"."space_item_homes" h
+   WHERE h."snapshot"
+     AND NOT EXISTS (SELECT 1 FROM "public"."private_workspaces" p WHERE p."workspace_id" = h."home_workspace_id")
+     AND NOT EXISTS (SELECT 1 FROM "public"."former_user_workspaces" f WHERE f."workspace_id" = h."home_workspace_id")
   UNION ALL
   SELECT 'archive rows: space_items', count(*) FROM "public"."archive_space_items"
   UNION ALL
@@ -244,6 +266,9 @@ DECLARE
   open_subs bigint;
   open_bundles bigint;
   not_archived bigint;
+  stray_snapshots bigint;
+  scrubbed bigint := 0;
+  scrub_n bigint;
 BEGIN
   IF brain IS NOT NULL THEN
     SELECT w."id" INTO admin_ws FROM "public"."workspaces" w
@@ -319,6 +344,13 @@ BEGIN
              "description" = 'The work of a login that was removed. It has no users; an Admin user may join it.',
              "updated_at" = now()
        WHERE "id" = r.ws;
+      -- The name and description the user gave it (workspace.create and
+      -- workspace.update events) go from its earlier events too.
+      UPDATE "public"."workspace_events"
+         SET "subject" = "subject" - 'name' - 'description'
+       WHERE "workspace_id" = r.ws AND "subject" ?| ARRAY['name', 'description'];
+      GET DIAGNOSTICS scrub_n = ROW_COUNT;
+      scrubbed := scrubbed + scrub_n;
       IF NOT EXISTS (SELECT 1 FROM "public"."former_user_workspaces" f WHERE f."former_key" = r.former) THEN
         INSERT INTO "public"."former_user_workspaces" ("former_key", "workspace_id") VALUES (r.former, r.ws);
         INSERT INTO "public"."workspace_events" ("workspace_id", "actor_id", "action", "subject")
@@ -332,6 +364,8 @@ BEGIN
     END LOOP;
     RETURN QUERY SELECT 'homes'::text, 'private workspaces of removed logins'::text,
                         'made Former user'::text, c;
+    RETURN QUERY SELECT 'homes'::text, 'events of those workspaces'::text,
+                        'name and description removed'::text, scrubbed;
 
     IF to_regclass('pg_temp.ws_review_items') IS NULL THEN
       CREATE TEMP TABLE pg_temp."ws_review_items" (
@@ -492,15 +526,37 @@ BEGIN
     -- New: the home and its grants.
     INSERT INTO "public"."space_item_homes"
            ("node_id", "home_workspace_id", "grant_admin", "grant_team", "write",
-            "state_before", "sharing_before", "author_role", "resolved_at")
+            "state_before", "sharing_before", "author_role", "snapshot", "resolved_at")
     SELECT i."node_id", coalesce(p."workspace_id", f."workspace_id", i."kept_home"),
-           g."grant_admin", g."grant_team", false, i."state", i."sharing_before", i."author_role", now()
+           g."grant_admin", g."grant_team", false, i."state", i."sharing_before", i."author_role",
+           -- The author's snapshot copy (S3): only an accepted item homed in
+           -- a private or Former user workspace. Kept in a brain workspace:
+           -- no copy.
+           i."state" = 'accepted' AND coalesce(p."workspace_id", f."workspace_id") IS NOT NULL,
+           now()
       FROM pg_temp."ws_review_items" i
       JOIN pg_temp."ws_review_grants" g ON g."node_id" = i."node_id"
       LEFT JOIN "public"."private_workspaces" p ON p."login_id" = i."home_login"
       LEFT JOIN "public"."former_user_workspaces" f
         ON i."home_login" IS NULL AND f."former_key" = i."former_key"
      WHERE i."fresh";
+
+    -- The snapshot rule, for every home (a home moved above, a hand edit):
+    -- true only for an accepted item homed in a private or Former user
+    -- workspace.
+    UPDATE "public"."space_item_homes" h
+       SET "snapshot" = x.want, "resolved_at" = now()
+      FROM (SELECT h2."node_id",
+                   h2."state_before" = 'accepted'
+                     AND (EXISTS (SELECT 1 FROM "public"."private_workspaces" p
+                                   WHERE p."workspace_id" = h2."home_workspace_id")
+                          OR EXISTS (SELECT 1 FROM "public"."former_user_workspaces" f
+                                      WHERE f."workspace_id" = h2."home_workspace_id")) AS want
+              FROM "public"."space_item_homes" h2) x
+     WHERE x."node_id" = h."node_id" AND h."snapshot" IS DISTINCT FROM x.want;
+    GET DIAGNOSTICS c = ROW_COUNT;
+    RETURN QUERY SELECT 'homes'::text, 'snapshot flag set by the rule'::text, 'rows'::text, c;
+
     RETURN QUERY
       SELECT 'homes'::text,
              CASE WHEN EXISTS (SELECT 1 FROM "public"."private_workspaces" p
@@ -510,7 +566,8 @@ BEGIN
                   ELSE 'kept (author unknown)' END
                || ', ' || h."state_before" || CASE WHEN h."sharing_before" = 'team' THEN ' (team-shared)' ELSE '' END,
              'recorded' || CASE WHEN h."grant_admin" THEN ', grant Admin' ELSE '' END
-                        || CASE WHEN h."grant_team" THEN ', grant Team' ELSE '' END,
+                        || CASE WHEN h."grant_team" THEN ', grant Team' ELSE '' END
+                        || CASE WHEN h."snapshot" THEN ', snapshot copy' ELSE '' END,
              count(*)
         FROM "public"."space_item_homes" h
         JOIN pg_temp."ws_review_items" i ON i."node_id" = h."node_id"
@@ -566,10 +623,13 @@ BEGIN
    WHERE ck."metric" = 'bundles';
   SELECT ck."n" INTO not_archived FROM "public"."mantle_ws_review_homes_check"() ck
    WHERE ck."metric" = 'rows not archived';
+  SELECT ck."n" INTO stray_snapshots FROM "public"."mantle_ws_review_homes_check"() ck
+   WHERE ck."metric" = 'snapshot homes outside a private or Former user workspace';
   IF left_states > 0 OR open_subs > 0 OR open_bundles > 0 OR not_archived > 0
-     OR (admin_ws IS NOT NULL AND missing > 0) THEN
-    RAISE EXCEPTION 'review off: % item(s) without a home, % still in review, % submission(s), % bundle row(s), % row(s) not archived; nothing written',
-      CASE WHEN admin_ws IS NULL THEN 0 ELSE missing END, left_states, open_subs, open_bundles, not_archived
+     OR stray_snapshots > 0 OR (admin_ws IS NOT NULL AND missing > 0) THEN
+    RAISE EXCEPTION 'review off: % item(s) without a home, % still in review, % submission(s), % bundle row(s), % row(s) not archived, % snapshot copy(ies) outside a private or Former user workspace; nothing written',
+      CASE WHEN admin_ws IS NULL THEN 0 ELSE missing END, left_states, open_subs, open_bundles, not_archived,
+      stray_snapshots
       USING ERRCODE = '23514';
   END IF;
   SELECT count(*)::text || ':' || coalesce(sum(hashtext(concat_ws('|', g."node_id", g."workspace_id",
