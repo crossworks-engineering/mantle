@@ -71,7 +71,7 @@ import {
   reactToMessage,
   sendMessage,
 } from '@mantle/telegram';
-import { TELEGRAM_OPERATOR_TOOLS } from './builtins-telegram';
+import { TELEGRAM_OPERATOR_TOOLS, TELEGRAM_PAIR_ANCHOR_ONLY } from './builtins-telegram';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 
 const update = (dbmod as unknown as { __update: { set: ReturnType<typeof vi.fn> } }).__update;
@@ -81,7 +81,8 @@ const edit = TELEGRAM_OPERATOR_TOOLS.find((t) => t.slug === 'telegram_edit')!;
 const react = TELEGRAM_OPERATOR_TOOLS.find((t) => t.slug === 'telegram_react')!;
 const markProcessed = TELEGRAM_OPERATOR_TOOLS.find((t) => t.slug === 'telegram_mark_processed')!;
 
-const ctx: ToolHandlerContext = { ownerId: 'o1' };
+// The anchor's own stdio MCP: an owner surface that names no login.
+const ctx: ToolHandlerContext = { ownerId: 'o1', surface: { kind: 'owner', via: 'mcp' } };
 const ACCOUNT = { id: 'acct-1', token: 'secret', channelId: null };
 const CHAT = '12345';
 const CODE = 'a1b2c3';
@@ -141,6 +142,41 @@ describe('operator surface', () => {
     for (const t of [pair, edit, react, markProcessed]) {
       expect(t.mcpOnly, `${t.slug} must be mcpOnly`).toBe(true);
     }
+  });
+});
+
+describe('telegram_pair: the anchor only until W7d (W7c fix round 2, M-b)', () => {
+  const refusedFor = async (c: ToolHandlerContext) => {
+    selectQueue.push([pendingChat()], [ACCOUNT]);
+    const err = errorOf(await pair.handler({ code: CODE }, c));
+    expect(err).toBe(TELEGRAM_PAIR_ANCHOR_ONLY);
+    expect(dbmod.db.select).not.toHaveBeenCalled();
+    expect(dbmod.db.update).not.toHaveBeenCalled();
+    expect(sendMessage).not.toHaveBeenCalled();
+  };
+
+  it("refuses another Admin user's MCP connection, writing nothing", async () => {
+    await refusedFor({ ownerId: 'o1', surface: { kind: 'owner', via: 'mcp', loginId: 'b2' } });
+  });
+
+  it("refuses another Admin user's API key and web chat", async () => {
+    await refusedFor({ ownerId: 'o1', surface: { kind: 'owner', via: 'key', loginId: 'b2' } });
+    await refusedFor({ ownerId: 'o1', surface: { kind: 'web', loginId: 'b2' } });
+  });
+
+  it('refuses a call that names no caller, and a peer that names no login', async () => {
+    await refusedFor({ ownerId: 'o1' });
+    await refusedFor({ ownerId: 'o1', surface: { kind: 'owner', via: 'federation' } });
+  });
+
+  it("pairs for the anchor's own login (its MCP connection) and its stdio MCP", async () => {
+    selectQueue.push([pendingChat()], [ACCOUNT]);
+    const own = await pair.handler(
+      { code: CODE },
+      { ownerId: 'o1', surface: { kind: 'owner', via: 'mcp', loginId: 'O1' } },
+    );
+    expect(own.ok).toBe(true);
+    expect(dbmod.db.update).toHaveBeenCalledTimes(1);
   });
 });
 

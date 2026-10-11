@@ -101,7 +101,9 @@ const ASSEMBLED = {
   loopOverrides: {},
 } as unknown as AssembledResponderTurn;
 
-const run = (audience: string) =>
+const MEMBER_SURFACE = { kind: 'team', loginId: 'login-1', privateReads: false };
+
+const run = (audience: string, surface: unknown = MEMBER_SURFACE) =>
   runResponderLoop({
     ownerId: 'owner-1',
     agent: {
@@ -125,7 +127,7 @@ const run = (audience: string) =>
       h.levels.push(`messages:${where()}`);
       return [{ role: 'user' as const, content: 'hi' }];
     },
-    surface: { kind: 'team', loginId: 'login-1', privateReads: false } as never,
+    surface: surface as never,
   });
 
 beforeEach(() => {
@@ -145,8 +147,12 @@ describe('runResponderLoop runs in the agent scope', () => {
     ]);
   });
 
-  it('control: an admin agent runs at admin', async () => {
-    await run('admin');
+  // Answering no login (system work, a run's turn), an admin agent on no
+  // workspace runs at admin. Answering a login it runs in that login's turn
+  // scope of Admin (W7c fix round 2), which needs the database: the W7c
+  // chat db test pins it.
+  it('control: an admin agent answering no login runs at admin', async () => {
+    await run('admin', { kind: 'web' });
     expect(h.levels).toEqual([
       'context:admin',
       'backup:admin',

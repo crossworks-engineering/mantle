@@ -16,6 +16,15 @@
  *  - A member asking for the Admin assistant by slug gets 404.
  *  - L1: a second login reusing an Idempotency-Key gets its own turn.
  *  - L2: a member's New chat counts against its daily cap.
+ *  - Fix round 2, H1: a second Admin user chatting with the replay agent
+ *    (no workspace) runs in its own turn scope of Admin: search_nodes,
+ *    search_chunks, node_read and entity_facts never reach the owner's
+ *    digest or archived chat summary, and the owner never reaches its; a
+ *    login that is not an Admin user is refused; a chat turn with no login
+ *    is refused.
+ *  - Fix round 2, M-a: persona notes ride the owner's thread only.
+ *  - Fix round 2, Low: each chat writer stores the login it names, a
+ *    writer naming none stores the anchor's (the resumed run with no login).
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/server/w7c-chat.db.test.ts
  */
@@ -81,6 +90,9 @@ describe.skipIf(!URL)('W7c: own threads only, per role', () => {
   let remy = '';
   const ownerDigest = randomUUID();
   const bDigest = randomUUID();
+  const ownerArchive = randomUUID();
+  const bArchive = randomUUID();
+  let entityId = '';
 
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
@@ -236,6 +248,11 @@ describe.skipIf(!URL)('W7c: own threads only, per role', () => {
     adminAgent = await agent(adminSlug, 'assistant', adminWs);
     teamAgent = await agent(teamSlug, 'responder', teamWs);
     remy = await agent(`${tag}-remy`, 'custom', null);
+    // An api key for the replay agent: a chat turn reaches recordTurn, then
+    // the model call fails (fetch is offline).
+    const ak = await import('@mantle/api-keys');
+    const key = await m.asSystem(() => ak.setApiKey(owner, 'openrouter', `${tag}-key`, 'sk-test'));
+    await x(sql`update agents set api_key_id = ${key.id} where id = ${remy}`);
 
     // The owner's and the second Admin user's own turns with the Admin
     // assistant, and a digest of each.
@@ -276,6 +293,39 @@ describe.skipIf(!URL)('W7c: own threads only, per role', () => {
         values (${id}, ${adminWs}, false, true) on conflict do nothing`);
     }
 
+    // Archived chat summaries (0269: the login's own note), one per login,
+    // and a passage and a fact on each digest and summary.
+    for (const [id, login] of [
+      [ownerArchive, owner],
+      [bArchive, adminB],
+    ] as const) {
+      const data = {
+        kind: 'chat_archive',
+        agent_id: remy,
+        login_id: login,
+        topic: 'kettle',
+        summary: `${login} kettle archive`,
+        content: `${login} kettle archive`,
+      };
+      await x(sql`insert into nodes (id, owner_id, type, title, path, audience, tags, data, embedding, login_id)
+        values (${id}, ${owner}, 'note', ${`${tag} kettle archive`}, 'notes', 'admin',
+                ARRAY['chat-archive']::text[], ${JSON.stringify(data)}::jsonb,
+                ${vec}::vector, ${login})`);
+      await x(sql`insert into item_grants (node_id, workspace_id, write, is_home)
+        values (${id}, ${adminWs}, false, true) on conflict do nothing`);
+    }
+    entityId = (
+      await x<{ id: string }>(sql`insert into entities (owner_id, kind, name)
+        values (${owner}, 'thing', ${`${tag} kettle`}) returning id::text`)
+    )[0]!.id;
+    for (const id of [ownerDigest, bDigest, ownerArchive, bArchive]) {
+      await x(sql`insert into content_chunks (owner_id, node_id, ordinal, text, embedding)
+        values (${owner}, ${id}, 0, ${`${tag} kettle passage ${id}`}, ${vec}::vector)`);
+      await x(sql`insert into facts (owner_id, kind, content, source_node_id, entity_id, embedding)
+        values (${owner}, 'factual', ${`${tag} kettle fact ${id}`}, ${id}, ${entityId},
+                ${vec}::vector)`);
+    }
+
     // A member's thread with the Team assistant, one reply carrying a
     // picture from outside.
     await x(sql`insert into chat_threads (owner_id, agent_id, status, login_id, started_at)
@@ -306,7 +356,8 @@ describe.skipIf(!URL)('W7c: own threads only, per role', () => {
       }),
       adminB,
     );
-    expect(seen.stamp).toEqual({ workspaceId: null, loginId: adminB });
+    // Fix round 2: the helper answers adminB in its turn scope of Admin.
+    expect(seen.stamp).toEqual({ workspaceId: adminWs, loginId: adminB });
     expect(seen.replay.ok).toBe(true);
     expect(texts(seen.replay)).toContain(`${tag} second admin question`);
     expect(texts(seen.replay)).not.toContain(`${tag} owner secret kettle`);
@@ -342,6 +393,181 @@ describe.skipIf(!URL)('W7c: own threads only, per role', () => {
       } finally {
         delete process.env.MANTLE_ADMIN_READS;
       }
+    }
+  });
+
+  // ── Fix round 2, H1: the memory tools ──────────────────────────────────
+
+  /** What the four memory tools return for `login` talking to the replay
+   *  agent: every id of the four derived nodes they name. */
+  const memoryReads = (login: string) =>
+    asRemy(async () => {
+      const ctx = { ownerId: owner, surface: { kind: 'web', loginId: login } as never };
+      const tool = (slug: string, input: Record<string, unknown>) =>
+        t.getBuiltin(slug)!.handler(input, ctx);
+      const scope = m.currentWorkspaceScope();
+      const nodesHit = await tool('search_nodes', { q: `${tag} kettle`, limit: 50 });
+      const chunksHit = await tool('search_chunks', { q: `${tag} kettle`, limit: 50 });
+      const read: Record<string, boolean> = {};
+      for (const id of [ownerDigest, bDigest, ownerArchive, bArchive]) {
+        read[id] = (await tool('node_read', { node_id: id })).ok;
+      }
+      const factsHit = await tool('entity_facts', { entity_id: entityId, limit: 100 });
+      const all = JSON.stringify([nodesHit, chunksHit, factsHit]);
+      const named = (id: string) => all.includes(id) || read[id] === true;
+      return {
+        scope: scope ? { kind: scope.kind, loginId: scope.loginId, ws: [...scope.ws] } : null,
+        ok: [nodesHit.ok, chunksHit.ok, factsHit.ok],
+        owner: [ownerDigest, ownerArchive].filter(named),
+        b: [bDigest, bArchive].filter(named),
+        facts: (factsHit.ok ? (factsHit.output as { content: string }[]) : []).map(
+          (f) => f.content,
+        ),
+      };
+    }, login);
+
+  it('H1 (fix round 2): the second Admin user’s memory tools never reach the owner’s digest or summary', async () => {
+    const seen = await memoryReads(adminB);
+    expect(seen.scope).toEqual({ kind: 'assistant', loginId: adminB, ws: [adminWs] });
+    expect(seen.ok).toEqual([true, true, true]);
+    expect(seen.owner).toEqual([]);
+    // Its own are there: the rule is per login, not "no digests".
+    expect(seen.b).toEqual([bDigest, bArchive]);
+    expect(seen.facts.some((f) => f.includes(ownerDigest) || f.includes(ownerArchive))).toBe(false);
+  });
+
+  it('H1 (fix round 2): the owner’s memory tools never reach the second Admin user’s', async () => {
+    const seen = await memoryReads(owner);
+    expect(seen.scope).toEqual({ kind: 'assistant', loginId: owner, ws: [adminWs] });
+    expect(seen.b).toEqual([]);
+    expect(seen.owner).toEqual([ownerDigest, ownerArchive]);
+  });
+
+  it('H1 (fix round 2): a login that is not an Admin user is refused; no login is system work', async () => {
+    await expect(asRemy(async () => 'ran', member)).rejects.toThrow(
+      /not a user of the Admin workspace/,
+    );
+    // No login asked: system work at the agent's level, as before.
+    expect(await asRemy(async () => m.currentWorkspaceScope())).toBeNull();
+  });
+
+  it('H1 (fix round 2): a chat turn with the replay agent and no login is refused before writing', async () => {
+    const ra = await import('@mantle/runtime/assistant');
+    const text = `${tag} chat with no login`;
+    await expect(ra.runAssistantTurn(owner, text, { agentSlug: `${tag}-remy` })).rejects.toThrow(
+      /signed-in login/,
+    );
+    expect(await x(sql`select 1 from assistant_messages where text = ${text}`)).toHaveLength(0);
+  });
+
+  it('H1 (fix round 2): MANTLE_ADMIN_READS=system is the documented emergency rollback (system pool)', async () => {
+    process.env.MANTLE_ADMIN_READS = 'system';
+    try {
+      const seen = await asRemy(
+        async () => ({ scope: m.currentWorkspaceScope(), stamp: m.currentTurnStamp() }),
+        adminB,
+      );
+      expect(seen.scope).toBeNull();
+      expect(seen.stamp).toEqual({ workspaceId: null, loginId: adminB });
+    } finally {
+      delete process.env.MANTLE_ADMIN_READS;
+    }
+  });
+
+  // ── Fix round 2, M-a ──────────────────────────────────────────────────
+
+  it('M-a: persona notes ride the owner’s thread only', async () => {
+    const note = { kind: 'style', content: `${tag} owner likes short answers`, at: window.from };
+    await x(sql`update agents set persona_notes = ${JSON.stringify([note])}::jsonb
+      where id = ${adminAgent}`);
+    const [row] = await m.systemDb
+      .select()
+      .from(m.agents)
+      .where(sql`${m.agents.id} = ${adminAgent}`);
+    const notesFor = async (ownerLoginId: string | null) =>
+      (
+        await rt.loadConversationContext({
+          ownerId: owner,
+          agent: row!,
+          inboundText: 'hello there, how are you',
+          ownerLoginId,
+        })
+      ).personaNotes.map((n) => n.content);
+    expect(await notesFor(owner)).toEqual([note.content]);
+    expect(await notesFor(adminB)).toEqual([]);
+    // A turn that answers no login acts for the owner: its thread, its notes.
+    expect(await notesFor(null)).toEqual([note.content]);
+    // The stored notes are kept as they are.
+    const [after] = await x<{ n: number }>(sql`select jsonb_array_length(persona_notes) as n
+      from agents where id = ${adminAgent}`);
+    expect(Number(after!.n)).toBe(1);
+  });
+
+  // ── Fix round 2, Low: the writers store the login they name ──────────
+
+  it('Low: each chat writer stores the expected login', async () => {
+    const loginOf = async (text: string) =>
+      (
+        await x<{ login: string; direction: string }>(sql`select login_id::text as login, direction
+          from assistant_messages where owner_id = ${owner} and text = ${text}
+          order by created_at`)
+      ).map((r) => r.login);
+
+    // run-turn (the web chat): the signed-in login, here the second Admin
+    // user with the replay agent. The model call fails (fetch is offline),
+    // after the inbound row is written.
+    const ra = await import('@mantle/runtime/assistant');
+    const webText = `${tag} writer web`;
+    await ra
+      .runAssistantTurn(owner, webText, { agentSlug: `${tag}-remy`, loginId: adminB })
+      .catch(() => undefined);
+    expect(await loginOf(webText)).toEqual([adminB]);
+
+    // run-team-turn: the member's own login (an early failure: the Team
+    // assistant has no key, and the message is still recorded).
+    const teamText = `${tag} writer team`;
+    await ra
+      .runTeamTurn(owner, teamText, { loginId: member2, channel: 'web' })
+      .catch(() => undefined);
+    expect(await loginOf(teamText)).toEqual([member2]);
+
+    // The access-key notice (appendThreadMessage): the member's own thread.
+    const notify = await import('../lib/access-keys-notify');
+    await notify.notifyKeyMade({
+      ownerId: owner,
+      loginId: member3,
+      role: 'member',
+      name: `${tag} key`,
+      access: 'read',
+      expiresAt: null,
+    });
+    const [keyRow] = await x<{ login: string }>(sql`select login_id::text as login
+      from assistant_messages where owner_id = ${owner} and agent_id = ${teamAgent}
+       and text like 'A new API key was made on your login%' order by created_at desc limit 1`);
+    expect(keyRow?.login).toBe(member3);
+
+    // The reminder (events-reminders: loginId ownerId) and the resumed run
+    // (runs-resume-turn: the run's login, NULL when it has none) through
+    // recordTurn, the call both make: a named login is kept, and NULL is
+    // the anchor's thread (0269), the intended case for a run that answered
+    // no login.
+    for (const [text, loginId, expected] of [
+      [`${tag} writer reminder`, owner, owner],
+      [`${tag} writer resume named`, adminB, adminB],
+      [`${tag} writer resume none`, null, owner],
+    ] as const) {
+      await m.asSystem(() =>
+        rt.recordTurn({
+          ownerId: owner,
+          agentId: adminAgent,
+          loginId,
+          direction: 'outbound',
+          text,
+          channel: 'web',
+          data: { run_resume: true },
+        }),
+      );
+      expect(await loginOf(text)).toEqual([expected]);
     }
   });
 

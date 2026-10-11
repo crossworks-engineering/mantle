@@ -81,6 +81,7 @@ vi.mock('@mantle/db', () => ({
   agents: { __table: 'agents' },
   telegramAccounts: { __table: 'telegram_accounts' },
   telegramChats: { __table: 'telegram_chats' },
+  workspaces: { __table: 'workspaces' },
   bumpAgentUsage: vi.fn(async () => {}),
 }));
 
@@ -419,5 +420,44 @@ describe('runs resume turn: the run login (W7c fix round 1, L7)', () => {
     expect(h.contextArgs).toEqual([expect.objectContaining({ loginId: 'login-b' })]);
     expect(h.seq).toContain('surface:{"kind":"web","loginId":"login-b"}');
     expect(h.recordTurn).toHaveBeenCalledWith(expect.objectContaining({ loginId: 'login-b' }));
+  });
+
+  // W7c fix round 2: a member's run (a workspace other than Admin) resumes
+  // on a team surface, which owner-only tools refuse; an Admin run (its
+  // workspace Admin, or NULL = Admin) on the web as its login.
+  const surfaceFor = async (run: Record<string, unknown>, wsRows?: Record<string, unknown>[]) => {
+    seedHappyPath({ run });
+    if (wsRows) fake.queue('workspaces', wsRows);
+    let seen = '';
+    h.runResponderLoop = vi.fn(async (...a: unknown[]) => {
+      seen = JSON.stringify((a[0] as { surface: unknown }).surface);
+      return { reply: h.loopReply, toolCalls: [] };
+    });
+    await runsResumeTurnImpl({ runId: RUN_ID, groupId: GROUP_ID });
+    return seen;
+  };
+
+  it("resumes a member's run (another workspace) on a team surface", async () => {
+    expect(
+      await surfaceFor({ loginId: 'login-m', workspaceId: 'ws-team' }, [{ isAdmin: false }]),
+    ).toBe('{"kind":"team","loginId":"login-m"}');
+  });
+
+  it('resumes an Admin run as its login on the web', async () => {
+    expect(
+      await surfaceFor({ loginId: 'login-b', workspaceId: 'ws-admin' }, [{ isAdmin: true }]),
+    ).toBe('{"kind":"web","loginId":"login-b"}');
+  });
+
+  it('resumes a run with no workspace (NULL = Admin) as its login on the web', async () => {
+    expect(await surfaceFor({ loginId: 'login-b', workspaceId: null })).toBe(
+      '{"kind":"web","loginId":"login-b"}',
+    );
+  });
+
+  it('a gone workspace is not Admin: team surface, never the owner one', async () => {
+    expect(await surfaceFor({ loginId: 'login-m', workspaceId: 'ws-gone' }, [])).toBe(
+      '{"kind":"team","loginId":"login-m"}',
+    );
   });
 });

@@ -138,11 +138,7 @@ async function agentBrain(agent: ScopedAgent): Promise<string | null> {
   if (!agent.id) return null;
   const [row] = await asSystem(
     () =>
-      db
-        .select({ ownerId: agents.ownerId })
-        .from(agents)
-        .where(eq(agents.id, agent.id!))
-        .limit(1),
+      db.select({ ownerId: agents.ownerId }).from(agents).where(eq(agents.id, agent.id!)).limit(1),
     'agent-workspace',
   );
   return row?.ownerId ?? null;
