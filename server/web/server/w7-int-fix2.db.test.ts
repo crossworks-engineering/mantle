@@ -231,7 +231,7 @@ describe.skipIf(!URL)('W7 integration fix 2', () => {
 
   // ── H1 ─────────────────────────────────────────────────────────────────
 
-  it("H1: L fires its own heartbeat: L reads the reply, state and trace; C and the anchor do not", async () => {
+  it('H1: L fires its own heartbeat: L reads the reply, state and trace; C and the anchor do not', async () => {
     const hb = await newHeartbeat(`${tag}-hb-l`, agent.slug, maker);
     // C is not its maker: refused (W7 integration fix 4), nothing fires.
     await fireNow(firer, hb.id, 403);
@@ -254,9 +254,9 @@ describe.skipIf(!URL)('W7 integration fix 2', () => {
   it("H1: the anchor's Fire now on L's heartbeat is refused; on its own it answers the anchor", async () => {
     const theirs = await newHeartbeat(`${tag}-hb-l2`, agent.slug, maker);
     await fireNow(owner, theirs.id, 403);
-    expect(
-      await x(sql`select 1 from heartbeat_fires where heartbeat_id = ${theirs.id}`),
-    ).toEqual([]);
+    expect(await x(sql`select 1 from heartbeat_fires where heartbeat_id = ${theirs.id}`)).toEqual(
+      [],
+    );
     const hb = await newHeartbeat(`${tag}-hb-o2`, agent.slug, null);
     await fireNow(owner, hb.id);
     expect(h.scope).toMatchObject({ kind: 'assistant', loginId: owner, ws: [adminWs] });

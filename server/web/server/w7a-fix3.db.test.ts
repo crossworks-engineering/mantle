@@ -290,7 +290,7 @@ describe.skipIf(!URL)('W7a fix round 3', () => {
 
   // ── 1. heartbeats ──────────────────────────────────────────────────────
 
-  it('1: Fire now by L runs the turn as L; the anchor\'s heartbeat is not L\'s to fire', async () => {
+  it("1: Fire now by L runs the turn as L; the anchor's heartbeat is not L's to fire", async () => {
     as(second);
     const route = await import('@/app/api/heartbeats/[id]/fire/route');
     const refused = await route.POST(

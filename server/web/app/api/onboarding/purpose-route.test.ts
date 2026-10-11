@@ -99,7 +99,7 @@ describe('onboarding purpose step', () => {
   });
 });
 
-describe('the purpose and the persona step are the brain owner\'s only (W7 integration fix 4)', () => {
+describe("the purpose and the persona step are the brain owner's only (W7 integration fix 4)", () => {
   it('refuses another login the purpose with a 403 and saves nothing', async () => {
     h.actor = OTHER;
     const res = await post('A brain for the team.');
