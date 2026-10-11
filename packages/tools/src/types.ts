@@ -122,6 +122,13 @@ export type ToolHandlerContext = {
         inboundMessageId?: string;
         /** The member's own MCP connection (team apps Phase 1). */
         mcp?: LoginMcpChannel;
+        /** A workspace assistant's Telegram turn (W7d+e): the chat the turn
+         *  came from, set by the runtime from the chat row, never from model
+         *  arguments. Only run_plan reads it, to stamp the run's origin
+         *  channel so the run's report goes back to that chat (delivered only
+         *  while the chat is paired to the run's login). No send tool uses
+         *  it: they refuse on a team surface. */
+        originTelegramChatId?: string;
       }
     | {
         /** A CONTACT on a contact-share link (/s, past the code gate) runs a

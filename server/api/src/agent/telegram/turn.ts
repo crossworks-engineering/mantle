@@ -264,8 +264,10 @@ export async function runTelegramTurn(args: {
       // message that triggered this turn so the bot's outbound
       // threads under it. A workspace turn is a team surface (M1): not
       // the owner's, so owner-only and send tools refuse there.
+      // The team surface carries the chat (W7d+e), so a run planned here
+      // reports back to it; no send tool reads it.
       surface: workspaceTurn
-        ? { kind: 'team', loginId, privateReads }
+        ? { kind: 'team', loginId, privateReads, originTelegramChatId: row.telegramChatId }
         : {
             kind: 'telegram',
             telegramChatId: row.telegramChatId,

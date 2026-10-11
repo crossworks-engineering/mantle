@@ -629,10 +629,12 @@ describe('handleTelegramMessage: Telegram per paired user (workspaces W7d)', () 
     expect(h.traces[0]!.init).toMatchObject({ loginId: 'member-1' });
     // The tool loop's surface names the member, never the anchor: a team
     // surface, as its web chat (W7d fix round 1, M1).
+    // It carries the chat, so a run planned here reports back to it (W7d+e).
     expect(h.loopCalls[0].surface).toEqual({
       kind: 'team',
       loginId: 'member-1',
       privateReads: false,
+      originTelegramChatId: '777',
     });
     // Its reminder channel, not the anchor's.
     expect(h.noteInboundChannel).toHaveBeenCalledWith('member-1', 'telegram');
@@ -735,7 +737,12 @@ describe('handleTelegramMessage: Telegram per paired user (workspaces W7d)', () 
     // A surface the owner-only tools refuse: isOwnerSurface passes only web,
     // telegram and owner (the db test runs the real dispatch).
     expect(['web', 'telegram', 'owner']).not.toContain(call.surface.kind);
-    expect(call.surface).toEqual({ kind: 'team', loginId: 'owner-1', privateReads: false });
+    expect(call.surface).toEqual({
+      kind: 'team',
+      loginId: 'owner-1',
+      privateReads: false,
+      originTelegramChatId: '777',
+    });
     // The private reads never reach the model.
     expect(call.tools.map((t: { slug: string }) => t.slug)).toEqual(['search_nodes']);
     // No identity block, no persona notes, no Journal, no delegation, no

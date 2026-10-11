@@ -316,6 +316,27 @@ describe('run_plan', () => {
     expect(opts.originChannel).toEqual({ kind: 'telegram', chat_id: '555' });
   });
 
+  it("remembers a workspace assistant's Telegram origin from its team surface (W7d+e)", async () => {
+    await plan.handler(
+      { title: 'Digest', plan: okPlan },
+      {
+        ...ctx,
+        surface: { kind: 'team', loginId: 'm1', privateReads: false, originTelegramChatId: '556' },
+      },
+    );
+    const opts = vi.mocked(createRun).mock.calls[0]![1] as Record<string, unknown>;
+    expect(opts.originChannel).toEqual({ kind: 'telegram', chat_id: '556' });
+  });
+
+  it('a team surface without a chat (a web turn) records no origin channel', async () => {
+    await plan.handler(
+      { title: 'Digest', plan: okPlan },
+      { ...ctx, surface: { kind: 'team', loginId: 'm1', privateReads: false } },
+    );
+    const opts = vi.mocked(createRun).mock.calls[0]![1] as Record<string, unknown>;
+    expect(opts.originChannel).toBeUndefined();
+  });
+
   it('turns an item-cap refusal into a teaching error instead of a throw', async () => {
     vi.mocked(createRun).mockRejectedValue(new ItemCapError(50, 51));
     const res = await plan.handler({ title: 'Digest', plan: okPlan }, ctx);

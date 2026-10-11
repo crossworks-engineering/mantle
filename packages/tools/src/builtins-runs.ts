@@ -222,6 +222,16 @@ function parseAskHumanForm(raw: unknown, path: string): { form?: AskHumanForm; e
   return { form };
 }
 
+/** The Telegram chat a planning turn came from, for the run's origin
+ *  channel (0134): a Telegram surface's chat, or the chat a workspace
+ *  assistant's Telegram turn carries on its team surface (W7d+e). Both are
+ *  set by the runtime from the chat row, never from model arguments. */
+export function originTelegramChatOf(surface: ToolHandlerContext['surface']): string | undefined {
+  if (surface?.kind === 'telegram') return surface.telegramChatId;
+  if (surface?.kind === 'team') return surface.originTelegramChatId;
+  return undefined;
+}
+
 /** A planning agent of a workspace other than Admin may not create or
  *  extend a run: its items execute on the system pool, past that
  *  workspace's scope (audit A3, B3). The executor re-checks. */
@@ -679,6 +689,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
           .where(and(eq(agents.ownerId, ctx.ownerId), eq(agents.slug, ctx.agent.slug)));
         agentId = a?.id;
       }
+      const originChat = originTelegramChatOf(ctx.surface);
       let created: Awaited<ReturnType<typeof createRun>>;
       try {
         created = await createRun(db, {
@@ -690,9 +701,11 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
           plan: parsed.plan,
           ...(budgetUsd !== undefined ? { budgetMicroUsd: Math.round(budgetUsd * 1e6) } : {}),
           // Channel-routed resumes (0134): remember where the run came from
-          // so the final report is delivered back there.
-          ...(ctx.surface?.kind === 'telegram'
-            ? { originChannel: { kind: 'telegram' as const, chat_id: ctx.surface.telegramChatId } }
+          // so the final report is delivered back there. A workspace
+          // assistant's Telegram turn runs on a team surface that carries
+          // its chat (W7d+e).
+          ...(originChat
+            ? { originChannel: { kind: 'telegram' as const, chat_id: originChat } }
             : {}),
         });
       } catch (err) {
