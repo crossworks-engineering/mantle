@@ -56,10 +56,7 @@ type Handler = (
 ) => Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }>;
 
 /** Register the full surface onto a fake server and return the named handler. */
-function handlerFor(
-  slug: string,
-  opts: Parameters<typeof registerMantleTools>[2] = {},
-): Handler {
+function handlerFor(slug: string, opts: Parameters<typeof registerMantleTools>[2] = {}): Handler {
   const handlers = new Map<string, Handler>();
   const fakeServer = {
     registerTool: (name: string, _config: unknown, handler: Handler) => {
@@ -218,7 +215,10 @@ describe('ask_responder MCP tool', () => {
 
 describe('responder_turn_input MCP tool', () => {
   it('passes the message, history and narrowing to the engine', async () => {
-    const res = await handlerFor('responder_turn_input', CONN)({
+    const res = await handlerFor(
+      'responder_turn_input',
+      CONN,
+    )({
       message: 'hello',
       tools: 'full',
       agent_slug: 'saskia',
@@ -259,7 +259,10 @@ describe('responder_turn_input MCP tool', () => {
 
   it('tools default to brief, and schemas_for fetches chosen full schemas', async () => {
     const body = parseReply(
-      await handlerFor('responder_turn_input', CONN)({ message: 'hello', schemas_for: ['read_result'] }),
+      await handlerFor(
+        'responder_turn_input',
+        CONN,
+      )({ message: 'hello', schemas_for: ['read_result'] }),
     );
     expect(body.tools).toEqual([
       { name: 'search_nodes', about: 'd' },
@@ -284,7 +287,10 @@ describe('responder_turn_input MCP tool', () => {
   });
 
   it('rejects an over-cap transcript before the engine runs', async () => {
-    const res = await handlerFor('responder_turn_input', CONN)({
+    const res = await handlerFor(
+      'responder_turn_input',
+      CONN,
+    )({
       message: 'hello',
       history: Array.from({ length: 41 }, () => ({ role: 'user', content: 'x' })),
     });
@@ -310,7 +316,10 @@ describe('responder_turn_record MCP tool', () => {
   });
 
   it('passes the turn and its authorship to the engine and returns the row ids', async () => {
-    const res = await handlerFor('responder_turn_record', CONN)({
+    const res = await handlerFor(
+      'responder_turn_record',
+      CONN,
+    )({
       message: 'What is Jev?',
       reply: 'A typed-decision model.',
       model: 'claude-haiku-4-5',
@@ -344,7 +353,10 @@ describe('responder_turn_record MCP tool', () => {
     (recordMcpResponderTurn as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
       new Error('mirrors the owner turn only'),
     );
-    const res = await handlerFor('responder_turn_record', CONN)({ message: 'q', reply: 'a', model: 'm' });
+    const res = await handlerFor(
+      'responder_turn_record',
+      CONN,
+    )({ message: 'q', reply: 'a', model: 'm' });
     expect(res.isError).toBe(true);
     expect(res.content[0]!.text).toMatch(/responder_turn_record failed: mirrors the owner/);
   });

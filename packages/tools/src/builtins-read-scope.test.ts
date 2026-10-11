@@ -128,11 +128,7 @@ const SCOPED_READS: Array<[string, Record<string, unknown>, Partial<ToolHandlerC
   ['recall_go', { map: 'm', target: 't' }, OWNER_SURFACE],
   // Replay reads one login's own history (W7c fix round 1, H1): a login asks.
   ['find_window', { topic: 'x' }, ASKER_SURFACE],
-  [
-    'replay_window',
-    { from: '2026-01-01T00:00:00Z', to: '2026-01-02T00:00:00Z' },
-    ASKER_SURFACE,
-  ],
+  ['replay_window', { from: '2026-01-01T00:00:00Z', to: '2026-01-02T00:00:00Z' }, ASKER_SURFACE],
   ['run_state', { run_id: 'r1' }],
 ];
 
