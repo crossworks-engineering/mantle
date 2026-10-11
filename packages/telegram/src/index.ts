@@ -7,6 +7,7 @@ export {
   chatLoginRefusal,
   loginModeratesBot,
   pairedChatOf,
+  unpairRefusedChat,
   TELEGRAM_UNPAIRED_REPLY,
   TELEGRAM_NOT_A_USER_CODE,
   type ChatLoginRefusal,
@@ -14,12 +15,14 @@ export {
 } from './chat-login';
 export {
   pairChatWithCode,
+  previewChatPairing,
   setChatPairing,
   resetPairingAttempts,
   NOT_A_WORKSPACE_USER_ERROR,
   type PairingRefusal,
   type PairingRefusalCode,
   type PairedChatSummary,
+  type PairingPreview,
 } from './pairing';
 export {
   sendMessage,

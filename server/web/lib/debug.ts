@@ -1,15 +1,18 @@
 import { and, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
+  asSystem,
   db,
   agents,
   entities,
   entityEdges,
   facts,
   nodes,
+  telegramAccounts,
   telegramChats,
   telegramMessages,
   type PersonaNote,
 } from '@mantle/db';
+import { loginModeratesBot } from '@mantle/telegram';
 import type { ContextSnapshot } from '@mantle/runtime/agent';
 import type {
   AgentActivityRow,
@@ -165,9 +168,45 @@ export async function countTopics(userId: string, opts: { query?: string } = {})
   return row?.n ?? 0;
 }
 
+/** Which Telegram chats a caller of /api/debug/telegram may see (W7d fix
+ *  round 1, L6): the anchor every chat; any other login its own chats and
+ *  those of the bots it moderates (a Moderator of the bot's assistant's
+ *  workspace, an Admin user with the users area: loginModeratesBot). */
+export type TelegramChatVisibility = { all: true } | { loginId: string; accountIds: string[] };
+
+export async function telegramChatVisibility(
+  ownerId: string,
+  actorLoginId: string,
+): Promise<TelegramChatVisibility> {
+  if (actorLoginId.toLowerCase() === ownerId.toLowerCase()) return { all: true };
+  const bots = await asSystem(
+    () =>
+      db
+        .select({ id: telegramAccounts.id })
+        .from(telegramAccounts)
+        .where(eq(telegramAccounts.userId, ownerId)),
+    'login-telegram',
+  );
+  const accountIds: string[] = [];
+  for (const bot of bots) {
+    if (await loginModeratesBot({ ownerId, loginId: actorLoginId, accountId: bot.id })) {
+      accountIds.push(bot.id);
+    }
+  }
+  return { loginId: actorLoginId, accountIds };
+}
+
 /** Shared WHERE for telegram chat queries. */
-function chatConds(userId: string, query?: string) {
+function chatConds(userId: string, query?: string, visible?: TelegramChatVisibility) {
   const conds = [eq(telegramChats.userId, userId)];
+  if (visible && !('all' in visible)) {
+    const own = eq(telegramChats.loginId, visible.loginId);
+    const seen =
+      visible.accountIds.length > 0
+        ? or(own, inArray(telegramChats.accountId, visible.accountIds))
+        : own;
+    if (seen) conds.push(seen);
+  }
   if (query?.trim()) {
     const q = `%${query.trim()}%`;
     const c = or(
@@ -180,7 +219,10 @@ function chatConds(userId: string, query?: string) {
   return conds;
 }
 
-export async function listTelegramChats(userId: string, opts: ListOpts = {}): Promise<ChatRow[]> {
+export async function listTelegramChats(
+  userId: string,
+  opts: ListOpts & { visible?: TelegramChatVisibility } = {},
+): Promise<ChatRow[]> {
   const rows = await db
     .select({
       id: telegramChats.id,
@@ -196,7 +238,7 @@ export async function listTelegramChats(userId: string, opts: ListOpts = {}): Pr
     })
     .from(telegramChats)
     .leftJoin(telegramMessages, eq(telegramMessages.chatId, telegramChats.id))
-    .where(and(...chatConds(userId, opts.query)))
+    .where(and(...chatConds(userId, opts.query, opts.visible)))
     .groupBy(telegramChats.id)
     .orderBy(desc(telegramChats.lastMessageAt))
     .limit(opts.limit ?? 50)
@@ -218,12 +260,12 @@ export async function listTelegramChats(userId: string, opts: ListOpts = {}): Pr
 
 export async function countTelegramChats(
   userId: string,
-  opts: { query?: string } = {},
+  opts: { query?: string; visible?: TelegramChatVisibility } = {},
 ): Promise<number> {
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(telegramChats)
-    .where(and(...chatConds(userId, opts.query)));
+    .where(and(...chatConds(userId, opts.query, opts.visible)));
   return row?.n ?? 0;
 }
 

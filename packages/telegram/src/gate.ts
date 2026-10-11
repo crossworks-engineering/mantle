@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, count, eq, gt, isNotNull } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
 import { db, telegramChats, type TelegramAccount } from '@mantle/db';
 import type { GateResult, InboundMessage } from './types';
@@ -19,7 +19,26 @@ export async function gate(account: TelegramAccount, message: InboundMessage): P
   // Telegram groups aren't supported in v1; ignore them silently.
   if (message.chatType !== 'private') return { action: 'drop' };
 
-  const chat = await upsertChat(account, message);
+  let chat = await upsertChat(account, message);
+
+  // An allowed chat paired to nobody (its login was removed, or a row from
+  // before 0271 it could not stamp) is not delivered: nothing is stored for
+  // it and no turn could run. It goes back to pending, so this message gets
+  // a code and its person can pair it again (W7d fix round 1, L4).
+  if (chat.allowlistStatus === 'allowed' && !chat.loginId) {
+    const [back] = await db
+      .update(telegramChats)
+      .set({
+        allowlistStatus: 'pending',
+        pairingCode: null,
+        pairingExpiresAt: null,
+        pairingReplies: 0,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(telegramChats.id, chat.id), eq(telegramChats.allowlistStatus, 'allowed')))
+      .returning();
+    if (back) chat = back;
+  }
 
   if (chat.allowlistStatus === 'allowed') return { action: 'deliver' };
   if (chat.allowlistStatus === 'denied') return { action: 'drop' };
@@ -88,12 +107,20 @@ async function upsertChat(account: TelegramAccount, message: InboundMessage) {
   return inserted[0]!;
 }
 
-async function countPendingForAccount(accountId: string): Promise<number> {
-  const rows = await db
-    .select({ id: telegramChats.id })
+/** Pending chats of the bot that hold a LIVE code (W7d fix round 1, L4): a
+ *  chat whose code expired no longer holds a slot, so three stale codes
+ *  never stop a real person from getting one. */
+export async function countPendingForAccount(accountId: string): Promise<number> {
+  const [row] = await db
+    .select({ n: count() })
     .from(telegramChats)
     .where(
-      and(eq(telegramChats.accountId, accountId), eq(telegramChats.allowlistStatus, 'pending')),
+      and(
+        eq(telegramChats.accountId, accountId),
+        eq(telegramChats.allowlistStatus, 'pending'),
+        isNotNull(telegramChats.pairingCode),
+        gt(telegramChats.pairingExpiresAt, new Date()),
+      ),
     );
-  return rows.length;
+  return Number(row?.n ?? 0);
 }

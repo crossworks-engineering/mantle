@@ -15,7 +15,7 @@ Give your assistant a Telegram bot, so you can message it from your phone by tex
 3. In Jackdaw, open **Settings > Agents**, select your assistant, and find the **Telegram bot** section on the **General** tab. The wizard's **Telegram** step shows the same section.
 4. Paste the token and click **Connect bot**.
 5. On your phone, send your new bot any message. It answers that the chat is not paired yet, with a pairing code.
-6. Signed in to Jackdaw as yourself, enter that code where Jackdaw asks for a Telegram pairing code. From your own MCP client, the `telegram_pair` tool does the same.
+6. Signed in to Jackdaw as yourself, enter that code where Jackdaw asks for a Telegram pairing code. Jackdaw first shows which Telegram chat and bot the code is for; check it is your own chat, then confirm. From your own MCP client, the `telegram_pair` tool does the same in two calls.
 
 A newly connected bot can take up to a minute to start listening, so if no code comes back, wait and send another message.
 

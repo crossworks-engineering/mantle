@@ -42,7 +42,12 @@ import {
   type Agent,
 } from '@mantle/db';
 import { claimMemberTurn, memberDailyLimits } from '@mantle/content';
-import { accountById, chatLoginRefusal, TELEGRAM_UNPAIRED_REPLY } from '@mantle/telegram';
+import {
+  accountById,
+  chatLoginRefusal,
+  TELEGRAM_UNPAIRED_REPLY,
+  unpairRefusedChat,
+} from '@mantle/telegram';
 
 import { sweepLegacyTables } from '@mantle/content/table-storage';
 
@@ -302,6 +307,13 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
     logger.error(
       `telegram chat refused (${loginRefused ?? 'no_login'}): ${messageId}. The chat's user pairs it again with a new code.`,
     );
+    // Back to pending (W7d fix round 1, L4): the next message gets a fresh
+    // code, so the person can pair it again; until then nothing is stored.
+    if (loginRefused !== 'no_assistant') {
+      await unpairRefusedChat({ ownerId, chatId: row.chatPk, loginId }).catch((err: unknown) =>
+        logger.error('could not send the refused chat back to pending:', errorMessage(err)),
+      );
+    }
     await sendApology(row, TELEGRAM_UNPAIRED_REPLY);
     return;
   }
@@ -348,7 +360,12 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
   // inline pass is for the live reply only.
   let attachmentContext: AttachmentContext | null = null;
   if (fileAttachment) {
-    attachmentContext = await ingestTelegramAttachment({ ownerId, row, fileAttachment });
+    attachmentContext = await ingestTelegramAttachment({
+      ownerId,
+      loginId,
+      row,
+      fileAttachment,
+    });
     // Couldn't fetch / ingest the attachment (no account, or a transient
     // download failure). The row is already claimed so we won't retry — at
     // least tell the user instead of going silent.

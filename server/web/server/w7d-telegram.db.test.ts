@@ -120,10 +120,20 @@ describe.skipIf(!URL)('W7d: Telegram per paired user', () => {
         select allowlist_status::text as s, login_id::text as login, pairing_code as code
           from telegram_chats where id = ${id}`)
     )[0]!;
-  const pairRoute = async (login: string, c: string) => {
+  /** Step one (W7d fix round 1, M3): the preview, which pairs nothing. */
+  const previewRoute = async (login: string, c: string) => {
     as(login);
     const route = await import('@/app/api/telegram/pair/route');
     return route.POST(json({ code: c }));
+  };
+  /** Both steps: the preview, then the confirm with its token. A refused
+   *  preview answers as is. */
+  const pairRoute = async (login: string, c: string) => {
+    const preview = await previewRoute(login, c);
+    if (preview.status !== 200) return preview;
+    const { previewToken } = (await preview.json()) as { previewToken: string };
+    const route = await import('@/app/api/telegram/pair/route');
+    return route.POST(json({ code: c, confirm: true, previewToken }));
   };
   const moderate = async (login: string, id: string, action: 'block' | 'unpair') => {
     as(login);
@@ -277,19 +287,246 @@ describe.skipIf(!URL)('W7d: Telegram per paired user', () => {
 
   it('telegram_pair pairs to the calling login, never the anchor', async () => {
     const tool = t.BUILTIN_TOOLS.find((d) => d.slug === 'telegram_pair')!;
+    const asAdmin2 = {
+      ownerId: owner,
+      surface: { kind: 'owner' as const, via: 'mcp' as const, loginId: admin2 },
+    };
+    // Step one (M3): the preview names the chat and pairs nothing.
+    const preview = await tool.handler({ code: code.admin2 }, asAdmin2);
+    expect(preview.ok, preview.ok ? '' : preview.error).toBe(true);
+    const text = String(preview.ok ? preview.output : '');
+    expect(text).toContain('Nothing is paired yet');
+    expect(text).toContain('Abe');
+    expect(text).toContain(`@${tag}_admin_bot`);
+    expect((await chatRow(chat.admin2)).s).toBe('pending');
+    const token = /preview_token: "([a-f0-9]{32})"/.exec(text)?.[1];
+    expect(token).toBeTruthy();
     const res = await tool.handler(
-      { code: code.admin2 },
-      { ownerId: owner, surface: { kind: 'owner', via: 'mcp', loginId: admin2 } },
+      { code: code.admin2, confirm: true, preview_token: token },
+      asAdmin2,
     );
     expect(res.ok, res.ok ? '' : res.error).toBe(true);
     expect(await chatRow(chat.admin2)).toEqual({ s: 'allowed', login: admin2, code: null });
     // A member's own MCP pairs only to a bot of a workspace it is in.
     const refused = await tool.handler(
-      { code: code.memberOnAdminBot },
+      { code: code.memberOnAdminBot, confirm: true },
       { ownerId: owner, surface: { kind: 'owner', via: 'mcp', loginId: member } },
     );
     expect(refused.ok).toBe(false);
     expect((await chatRow(chat.memberOnAdminBot)).s).toBe('pending');
+  });
+
+  // ── W7d fix round 1 ──────────────────────────────────────────────────────
+
+  it('pairing is two steps: the preview pairs nothing, the confirm pairs and tells the user (M3)', async () => {
+    const preview = await previewRoute(member, code.member);
+    expect(preview.status, await preview.clone().text()).toBe(200);
+    const body = (await preview.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      ok: true,
+      paired: false,
+      already: false,
+      chat: { label: 'Mia', telegramChatId: '8001' },
+      bot: { name: `@${tag}_team_bot` },
+      agentName: 'team',
+    });
+    expect(body.previewToken).toMatch(/^[a-f0-9]{32}$/);
+    // Nothing paired yet.
+    expect(await chatRow(chat.member)).toEqual({ s: 'pending', login: null, code: code.member });
+    // A token from the preview of ANOTHER chat does not pair this one.
+    const other = (await (await previewRoute(member, code.outsider)).json()) as {
+      previewToken?: string;
+    };
+    expect(other.previewToken).toMatch(/^[a-f0-9]{32}$/);
+    as(member);
+    const route = await import('@/app/api/telegram/pair/route');
+    const mismatch = await route.POST(
+      json({ code: code.member, confirm: true, previewToken: other.previewToken }),
+    );
+    expect(mismatch.status).toBe(409);
+    expect(await mismatch.json()).toMatchObject({ code: 'preview_mismatch' });
+    expect((await chatRow(chat.member)).s).toBe('pending');
+    const forged = await route.POST(
+      json({ code: code.member, confirm: true, previewToken: 'f'.repeat(32) }),
+    );
+    expect(forged.status).toBe(409);
+    expect((await chatRow(chat.member)).s).toBe('pending');
+    // The confirm with the preview's own token pairs.
+    const ok = await route.POST(
+      json({ code: code.member, confirm: true, previewToken: body.previewToken }),
+    );
+    expect(ok.status, await ok.clone().text()).toBe(200);
+    expect(await ok.json()).toMatchObject({ ok: true, already: false });
+    expect(await chatRow(chat.member)).toEqual({ s: 'allowed', login: member, code: null });
+    // The user is told in the app: a notice in their own thread with the
+    // bot's assistant, naming the chat and the bot (never the free-text title).
+    const notices = await x<{ login: string; text: string }>(sql`
+      select login_id::text as login, text from assistant_messages
+       where agent_id = ${agent.team} and data->>'notice' = 'telegram_paired'
+       order by created_at desc limit 1`);
+    expect(notices[0]?.login).toBe(member);
+    expect(notices[0]?.text).toContain('chat 8001');
+    expect(notices[0]?.text).toContain(`@${tag}_team_bot`);
+  });
+
+  it('an expired code is refused at the preview and at the confirm (code_expired)', async () => {
+    await x(sql`update telegram_chats set pairing_expires_at = now() - interval '1 minute'
+                 where id = ${chat.member}`);
+    const preview = await previewRoute(member, code.member);
+    expect(preview.status).toBe(409);
+    expect(await preview.json()).toMatchObject({ code: 'code_expired' });
+    as(member);
+    const route = await import('@/app/api/telegram/pair/route');
+    const confirm = await route.POST(json({ code: code.member, confirm: true }));
+    expect(confirm.status).toBe(409);
+    expect(await confirm.json()).toMatchObject({ code: 'code_expired' });
+    expect((await chatRow(chat.member)).s).toBe('pending');
+  });
+
+  it('too many wrong codes are refused, even the right one after (too_many_attempts)', async () => {
+    const { previewChatPairing, pairChatWithCode } = await import('@mantle/telegram');
+    for (let i = 0; i < 10; i += 1) {
+      const r = await previewChatPairing({ ownerId: owner, loginId: mod, code: 'ffff0f' });
+      expect(r).toMatchObject({ ok: false, code: 'no_such_code' });
+    }
+    expect(
+      await previewChatPairing({ ownerId: owner, loginId: mod, code: code.member }),
+    ).toMatchObject({ ok: false, code: 'too_many_attempts' });
+    expect(
+      await pairChatWithCode({ ownerId: owner, loginId: mod, code: code.member }),
+    ).toMatchObject({ ok: false, code: 'too_many_attempts' });
+    expect((await chatRow(chat.member)).s).toBe('pending');
+  });
+
+  it('a responder override that would move a chat into a workspace its user is not in is refused', async () => {
+    await allow(chat.admin2, admin2);
+    as(owner);
+    const route = await import('@/app/api/telegram/chats/[id]/route');
+    const patch = (agentId: string | null) =>
+      route.PATCH(
+        new Request('http://x/api', {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ responderAgentId: agentId }),
+        }),
+        params(chat.admin2),
+      );
+    // A2 is a user of Admin, not of Team: the Team assistant may not answer
+    // their chat.
+    const refused = await patch(agent.team);
+    expect(refused.status).toBe(400);
+    expect(await refused.json()).toMatchObject({ code: 'not_a_workspace_user' });
+    const [row] = await x<{ r: string | null }>(sql`
+      select responder_agent_id::text as r from telegram_chats where id = ${chat.admin2}`);
+    expect(row!.r).toBeNull();
+    // An override set behind the route's back is refused at the turn rule.
+    const { chatLoginRefusal } = await import('@mantle/telegram');
+    expect(
+      await chatLoginRefusal({
+        ownerId: owner,
+        loginId: admin2,
+        accountId: account.admin,
+        responderAgentId: agent.team,
+      }),
+    ).toBe('not_a_user');
+    // The Admin assistant itself is fine.
+    expect((await patch(agent.admin)).status).toBe(200);
+    expect((await patch(null)).status).toBe(200);
+  });
+
+  it('the pending cap counts only live codes; a no-login allowed chat goes back to pending (L4)', async () => {
+    const { gate, countPendingForAccount, unpairRefusedChat } = await import('@mantle/telegram');
+    // A bot of its own, with three pending chats whose codes have expired.
+    const acct = randomUUID();
+    await x(sql`insert into telegram_accounts (id, user_id, bot_username, branch_path, channel_id)
+      values (${acct}, ${owner}, ${`${tag}_cap_bot`}, 'inbox.telegram_test', ${channel.team})`);
+    await x(sql`insert into telegram_chats
+        (account_id, user_id, telegram_chat_id, chat_type, allowlist_status, pairing_code,
+         pairing_expires_at)
+      values
+        (${acct}, ${owner}, '8101', 'private', 'pending', 'ab0001', now() - interval '2 hours'),
+        (${acct}, ${owner}, '8102', 'private', 'pending', 'ab0002', now() - interval '2 hours'),
+        (${acct}, ${owner}, '8103', 'private', 'pending', 'ab0003', now() - interval '2 hours')`);
+    expect(await countPendingForAccount(acct)).toBe(0);
+    const [account4] = await x<Record<string, unknown>>(sql`
+      select id, user_id as "userId", bot_username as "botUsername",
+             branch_path as "branchPath", enabled
+        from telegram_accounts where id = ${acct}`);
+    const message = (chatId: string) => ({
+      updateId: 1,
+      messageId: '1',
+      chatId,
+      chatType: 'private' as const,
+      fromUserId: chatId,
+      text: 'hi',
+      sentAt: new Date(),
+      attachments: [],
+    });
+    // A new person still gets a code.
+    const fresh = await gate(account4 as never, message('8104'));
+    expect(fresh.action).toBe('pair');
+    // An allowed chat paired to nobody is not delivered: back to pending,
+    // and this message gets a code.
+    await x(sql`insert into telegram_chats
+        (account_id, user_id, telegram_chat_id, chat_type, allowlist_status)
+      values (${acct}, ${owner}, '8105', 'private', 'allowed')`);
+    const orphan = await gate(account4 as never, message('8105'));
+    expect(orphan.action).toBe('pair');
+    const [o] = await x<{ s: string; code: string | null }>(sql`
+      select allowlist_status::text as s, pairing_code as code from telegram_chats
+       where account_id = ${acct} and telegram_chat_id = '8105'`);
+    expect(o).toMatchObject({ s: 'pending' });
+    expect(o!.code).toMatch(/^[a-f0-9]{6}$/);
+    // A refused turn sends its chat back to pending, only for that login.
+    await allow(chat.member, member);
+    await unpairRefusedChat({ ownerId: owner, chatId: chat.member, loginId: mod });
+    expect((await chatRow(chat.member)).s).toBe('allowed');
+    await unpairRefusedChat({ ownerId: owner, chatId: chat.member, loginId: member });
+    expect(await chatRow(chat.member)).toEqual({ s: 'pending', login: null, code: null });
+    await x(sql`delete from telegram_chats where account_id = ${acct}`);
+    await x(sql`delete from telegram_accounts where id = ${acct}`);
+  });
+
+  it('/api/debug/telegram lists only the chats the caller may see (L6)', async () => {
+    await allow(chat.member, member);
+    await allow(chat.admin2, admin2);
+    const listAs = async (login: string) => {
+      as(login);
+      const route = await import('@/app/api/debug/telegram/route');
+      const res = await route.GET(new Request('http://x/api/debug/telegram'));
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { chats: { id: string }[]; total: number };
+      return { ids: new Set(body.chats.map((c) => c.id)), total: body.total };
+    };
+    // The anchor: every chat.
+    const anchors = await listAs(owner);
+    expect(anchors.ids.has(chat.member) && anchors.ids.has(chat.admin2)).toBe(true);
+    // A2 with the users area off: their own chat only.
+    await x(sql`update workspace_users set limits = '{"areas":{"users":false}}'::jsonb
+                 where workspace_id = ${adminWs} and login_id = ${admin2}`);
+    try {
+      const own = await listAs(admin2);
+      expect([...own.ids]).toEqual([chat.admin2]);
+      expect(own.total).toBe(1);
+    } finally {
+      await x(sql`update workspace_users set limits = '{}'::jsonb
+                   where workspace_id = ${adminWs} and login_id = ${admin2}`);
+    }
+    // With the users area they moderate every bot: every chat.
+    expect((await listAs(admin2)).ids.has(chat.member)).toBe(true);
+  });
+
+  it("a tool on a Telegram surface sends through the chat's own bot, never the first one (L7)", async () => {
+    const { accountForSurface } = await import('@mantle/telegram');
+    expect((await accountForSurface(account.team))?.id).toBe(account.team);
+    expect((await accountForSurface(account.admin))?.id).toBe(account.admin);
+    expect(await accountForSurface(undefined)).toBeNull();
+    await x(sql`update telegram_accounts set enabled = false where id = ${account.team}`);
+    try {
+      expect(await accountForSurface(account.team)).toBeNull();
+    } finally {
+      await x(sql`update telegram_accounts set enabled = true where id = ${account.team}`);
+    }
   });
 
   it("the owner's Settings route no longer pairs: 403, the chat stays pending", async () => {

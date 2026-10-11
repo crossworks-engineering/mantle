@@ -8,6 +8,9 @@
  *    assistant it runs as (its bot's, or its responder override's) goes back
  *    to pending with no login; nobody is added to a workspace;
  *  - a pending or blocked chat is left as it is;
+ *  - the messages of a chat stamped with the anchor are the anchor's
+ *    (nodes.login_id, W7d fix round 1, L5), with no notify and updated_at
+ *    kept; those of a chat sent back to pending are left with none;
  *  - re-runnable: a second run changes nothing.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/telegram-chat-login-0271.db.test.ts
  */
@@ -39,6 +42,15 @@ describe.skipIf(!URL)('0271: a Telegram chat belongs to a user', () => {
   };
   const ws = { admin: '', team: '', ops: '' };
   let usersBefore = 0;
+  const msgNode = { adminBot: '', opsBot: '' };
+  const heard: string[] = [];
+  let listener: Awaited<ReturnType<ReturnType<typeof postgres>['listen']>> | undefined;
+  const nodeRow = async (id: string) =>
+    (
+      await sql<{ login: string | null; updated: string }[]>`
+        select login_id::text as login, updated_at::text as updated from nodes where id = ${id}`
+    )[0]!;
+  let updatedBefore = '';
 
   const rows = async () =>
     Object.fromEntries(
@@ -110,10 +122,26 @@ describe.skipIf(!URL)('0271: a Telegram chat belongs to a user', () => {
     usersBefore = Number(
       (await sql`select count(*)::int as n from workspace_users`)[0]!.n as number,
     );
+    // One message on the anchor's chat, one on the chat that goes back to
+    // pending, as the poller stored them before 0271 (no login).
+    for (const k of ['adminBot', 'opsBot'] as const) {
+      const [n] = await sql<{ id: string }[]>`
+        insert into nodes (owner_id, type, title, path)
+        values (${owner}, 'telegram_message', ${`tg71 ${k}`}, 'inbox.telegram_test')
+        returning id::text`;
+      msgNode[k] = n!.id;
+      await sql`insert into telegram_messages (node_id, account_id, chat_id, telegram_message_id,
+                                               text, sent_at, direction)
+        select ${n!.id}, c.account_id, c.id, ${k}, ${k}, now(), 'inbound'
+          from telegram_chats c where c.id = ${chat[k]}`;
+    }
+    updatedBefore = (await nodeRow(msgNode.adminBot)).updated;
+    listener = await sql.listen('node_ingested', (id) => heard.push(id));
     await scratch.migrateRest();
   }, 240_000);
 
   afterAll(async () => {
+    await listener?.unlisten();
     await sql?.end();
     await scratch?.drop();
   });
@@ -129,6 +157,18 @@ describe.skipIf(!URL)('0271: a Telegram chat belongs to a user', () => {
       [chat.pending]: { s: 'pending', login: null },
       [chat.blocked]: { s: 'denied', login: null },
     });
+  });
+
+  it("stamps the anchor's chat's messages with the anchor, quietly (L5)", async () => {
+    const anchors = await nodeRow(msgNode.adminBot);
+    expect(anchors.login).toBe(owner);
+    // updated_at kept: the extractor's drain window is not reopened.
+    expect(anchors.updated).toBe(updatedBefore);
+    // The chat sent back to pending has no login: its message keeps none.
+    expect((await nodeRow(msgNode.opsBot)).login).toBeNull();
+    // No extractor notify for the stamped node.
+    await new Promise((r) => setTimeout(r, 200));
+    expect(heard).not.toContain(msgNode.adminBot);
   });
 
   it('adds nobody to a workspace', async () => {
@@ -148,7 +188,9 @@ describe.skipIf(!URL)('0271: a Telegram chat belongs to a user', () => {
 
   it('is re-runnable: a second run changes nothing', async () => {
     const before = await rows();
+    const nodesBefore = [await nodeRow(msgNode.adminBot), await nodeRow(msgNode.opsBot)];
     await run();
     expect(await rows()).toEqual(before);
+    expect([await nodeRow(msgNode.adminBot), await nodeRow(msgNode.opsBot)]).toEqual(nodesBefore);
   });
 });

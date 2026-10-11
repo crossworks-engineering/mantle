@@ -80,6 +80,7 @@ const h = vi.hoisted(() => {
     /** Whether the chat's login is an Admin user (the daily cap skips it). */
     holdsAdmin: true,
     claimMemberTurn: vi.fn(),
+    unpairRefusedChat: vi.fn(),
   };
   return state;
 });
@@ -185,6 +186,7 @@ vi.mock('@mantle/db', () => {
 // ── Telegram HTTP boundary ────────────────────────────────────────────────
 vi.mock('@mantle/telegram', () => ({
   chatLoginRefusal: vi.fn(async () => h.chatRefusal),
+  unpairRefusedChat: (...a: unknown[]) => h.unpairRefusedChat(...a),
   TELEGRAM_UNPAIRED_REPLY: 'UNPAIRED',
   accountById: vi.fn(async () => h.account),
   downloadTelegramFile: (...a: unknown[]) => h.downloadTelegramFile(...a),
@@ -477,6 +479,7 @@ beforeEach(() => {
   h.wsKind = 'admin';
   h.holdsAdmin = true;
   h.claimMemberTurn.mockReset().mockResolvedValue({ ok: true, fresh: true });
+  h.unpairRefusedChat.mockReset().mockResolvedValue(undefined);
 });
 
 describe('handleTelegramMessage: /new starts a new chat', () => {
@@ -656,6 +659,12 @@ describe('handleTelegramMessage: Telegram per paired user (workspaces W7d)', () 
     expect(h.recordTurnCalls).toHaveLength(0);
     expect(h.sendMessage).toHaveBeenCalledTimes(1);
     expect(h.sendMessage.mock.calls[0]![2]).toBe('UNPAIRED');
+    // Back to pending, so the next message gets a fresh code (L4).
+    expect(h.unpairRefusedChat).toHaveBeenCalledWith({
+      ownerId: 'owner-1',
+      chatId: 'chat-pk-1',
+      loginId: 'member-1',
+    });
   });
 
   it('a chat with no login is refused the same way', async () => {
@@ -663,6 +672,11 @@ describe('handleTelegramMessage: Telegram per paired user (workspaces W7d)', () 
     await runTurn(makeMsgRow({ chatLoginId: null, allowlistStatus: 'allowed' }));
     expect(h.loopCalls).toHaveLength(0);
     expect(h.sendMessage.mock.calls[0]![2]).toBe('UNPAIRED');
+    expect(h.unpairRefusedChat).toHaveBeenCalledWith({
+      ownerId: 'owner-1',
+      chatId: 'chat-pk-1',
+      loginId: null,
+    });
   });
 
   it('a refused chat runs no /new and ingests no attachment', async () => {
@@ -990,6 +1004,18 @@ describe('handleTelegramMessage — attachments', () => {
       text: '(photo)',
       attachments: [{ kind: 'photo', file_id: 'pf-1', mime: 'image/jpeg' }],
     });
+
+  it("an attachment is saved private to the chat's login, another Admin user's included (M2)", async () => {
+    await runTurn(
+      makeMsgRow({
+        text: '(photo)',
+        chatLoginId: 'admin-2',
+        attachments: [{ kind: 'photo', file_id: 'pf-1', mime: 'image/jpeg' }],
+      }),
+    );
+    expect(h.upsertFile).toHaveBeenCalledTimes(1);
+    expect(h.upsertFile.mock.calls[0]![0]).toMatchObject({ loginId: 'admin-2' });
+  });
 
   it('a photo is ingested to a file node and its inline extraction folds into the turn', async () => {
     await runTurn(photoRow());

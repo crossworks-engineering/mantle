@@ -37,6 +37,7 @@ import {
   editMessage,
   pairChatWithCode,
   pairedChatOf,
+  previewChatPairing,
   reactToMessage,
   sendMessage,
   type PairedChat,
@@ -320,7 +321,7 @@ export const telegram_pair: BuiltinToolDef = {
   mcpOnly: true,
   name: 'Pair your Telegram chat',
   description:
-    "Pair the Telegram chat that was sent this code to YOU (the signed-in user), never to anyone else. Works only for a bot whose assistant is in a workspace you are a user of. The chat is allowlisted and a confirmation DM is sent; the bot's assistant then answers it as you.",
+    "Pair the Telegram chat that was sent this code to YOU (the signed-in user), never to anyone else, in two calls. Without `confirm` it pairs nothing and returns which chat (its @username or title), bot and assistant the code is for: show that to the user. Only once they say it is their own chat, call again with `confirm: true` and the preview_token it returned. Works only for a bot whose assistant is in a workspace you are a user of; the bot's assistant then answers the chat as you.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -329,17 +330,42 @@ export const telegram_pair: BuiltinToolDef = {
         pattern: '^[a-fA-F0-9]{6}$',
         description: 'the six-hex-digit pairing code the chat was given',
       },
+      confirm: {
+        type: 'boolean',
+        default: false,
+        description: 'true pairs the chat; leave it off first to see whose chat the code is for',
+      },
+      preview_token: {
+        type: 'string',
+        pattern: '^[a-f0-9]{32}$',
+        description:
+          'the token the preview call returned, so the confirm pairs that chat and no other',
+      },
     },
     required: ['code'],
   },
   handler: async (input, ctx) => {
     // Only the user pairs their own chat (the owner's answer 1A, W7d): the
-    // chat is paired to the login this call acts for, whoever that is.
+    // chat is paired to the login this call acts for, whoever that is. Two
+    // steps (W7d fix round 1, M3): someone else's code shows whose chat it
+    // is before it pairs anything.
     const loginId = telegramCallerLogin(ctx);
     if (!loginId) return { ok: false, error: TELEGRAM_NO_LOGIN_ERROR };
     const code = str(input.code);
     if (!/^[a-f0-9]{6}$/i.test(code)) return { ok: false, error: 'code must be six hex digits' };
-    const r = await pairChatWithCode({ ownerId: ctx.ownerId, loginId, code });
+    if (bool(input.confirm) !== true) {
+      const p = await previewChatPairing({ ownerId: ctx.ownerId, loginId, code });
+      if (!p.ok) return { ok: false, error: p.error };
+      const what = `Telegram chat ${p.preview.chat.label} (id ${p.preview.chat.telegramChatId}) on bot ${p.preview.bot.name}${p.preview.agentName ? `, answered by ${p.preview.agentName}` : ''}`;
+      return {
+        ok: true,
+        output: p.already
+          ? `${what} is already paired to you: nothing to do.`
+          : `Nothing is paired yet. This code is for ${what}. Ask the user whether this is their own chat; only if it is, call telegram_pair again with confirm: true and preview_token: "${p.previewToken}".`,
+      };
+    }
+    const token = strOpt(input.preview_token) ?? null;
+    const r = await pairChatWithCode({ ownerId: ctx.ownerId, loginId, code, previewToken: token });
     if (!r.ok) return { ok: false, error: r.error };
     if (r.already) return { ok: true, output: 'already paired to you' };
     return {

@@ -789,7 +789,27 @@ export type ModeratedTelegramChat = AgentTelegramChat & {
   agentSlug: string | null;
 };
 
-/** What POST /api/telegram/pair answers (workspaces W7d). */
+/** What POST /api/telegram/pair answers WITHOUT `confirm` (W7d fix round 1,
+ *  M3): what the code would pair, so the user sees whose chat it is before it
+ *  becomes theirs. Nothing is paired. Confirm with the same code,
+ *  `confirm: true` and this `previewToken`. */
+export type TelegramPairPreview = {
+  ok: true;
+  /** Always false here: a preview pairs nothing. */
+  paired: false;
+  /** True when the chat is already paired to this user. */
+  already: boolean;
+  /** The Telegram chat: its @username, else its title; and its id. */
+  chat: { label: string; telegramChatId: string };
+  /** The bot the chat is on (its @username). */
+  bot: { name: string };
+  agentName: string | null;
+  /** Send back with the confirm: it then pairs this chat and no other. */
+  previewToken: string;
+};
+
+/** What POST /api/telegram/pair answers with `confirm: true` (workspaces
+ *  W7d): the chat is paired to this user. */
 export type TelegramPairResult = {
   ok: true;
   /** True when the chat was already paired to this user (no change). */

@@ -16,10 +16,14 @@ import type { AttachmentContext, FileAttachment, InboundRow } from './types';
 
 export async function ingestTelegramAttachment(args: {
   ownerId: string;
+  /** The login the chat is paired to (W7d fix round 1, M2): the saved file
+   *  is private to it (nodes.login_id; its chunks and facts follow), so no
+   *  other user, another Admin included, reads it. */
+  loginId: string;
   row: InboundRow;
   fileAttachment: FileAttachment;
 }): Promise<AttachmentContext | null> {
-  const { ownerId, row, fileAttachment } = args;
+  const { ownerId, loginId, row, fileAttachment } = args;
   const isPhoto = fileAttachment.kind === 'photo';
   const caption = telegramCaption(row.text);
   return startTrace(
@@ -84,6 +88,7 @@ export async function ingestTelegramAttachment(args: {
             filename,
             bytes: downloaded.bytes,
             overwrite: false,
+            loginId,
           });
           h.setMeta({ nodeId: file.id, filename, bytes: file.sizeBytes });
           return file;

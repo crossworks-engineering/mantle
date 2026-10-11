@@ -181,3 +181,41 @@ export async function pairedChatOf(args: {
   );
   return row ?? null;
 }
+
+/**
+ * Send a chat whose turn was refused because it has no login, or its login
+ * is no longer a user of the assistant's workspace, back to pending (W7d fix
+ * round 1, L4): its login is cleared, so the person's next message gets a
+ * fresh code and they can pair it again. Only while it is still allowed for
+ * that same login: a chat paired again in the meantime is left alone.
+ */
+export async function unpairRefusedChat(args: {
+  ownerId: string;
+  chatId: string;
+  loginId: string | null;
+}): Promise<void> {
+  await asSystem(
+    () =>
+      db
+        .update(telegramChats)
+        .set({
+          allowlistStatus: 'pending',
+          loginId: null,
+          pairingCode: null,
+          pairingExpiresAt: null,
+          pairingReplies: 0,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(telegramChats.id, args.chatId),
+            eq(telegramChats.userId, args.ownerId),
+            eq(telegramChats.allowlistStatus, 'allowed'),
+            args.loginId
+              ? eq(telegramChats.loginId, args.loginId)
+              : sql`${telegramChats.loginId} is null`,
+          ),
+        ),
+    'login-telegram',
+  );
+}

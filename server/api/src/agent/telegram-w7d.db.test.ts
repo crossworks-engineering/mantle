@@ -10,7 +10,10 @@
  *  - the anchor's chat with the Admin assistant's bot is unchanged: the
  *    anchor's turn scope of Admin and the anchor's thread;
  *  - a user removed from the workspace is refused on the next message, with
- *    one plain reply and no turn; so is a chat with no login.
+ *    one plain reply and no turn, and the chat goes back to pending; so is a
+ *    chat with no login (W7d fix round 1, L4);
+ *  - a photo on a second Admin user's chat is saved private to that user:
+ *    another Admin user (the anchor) cannot read it (W7d fix round 1, M2).
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/api/src/agent/telegram-w7d.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -35,6 +38,16 @@ vi.mock('@mantle/telegram', async (importOriginal) => ({
     return [1];
   }),
   sendChatAction: vi.fn(async () => {}),
+  // A photo's bytes (M2).
+  downloadTelegramFile: vi.fn(async () => ({
+    bytes: Buffer.from('w7d fix photo bytes'),
+    mimeType: 'image/jpeg',
+  })),
+}));
+// The inline look at the photo (a vision model) is not under test here.
+vi.mock('@mantle/runtime/agent', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  extractAttachmentForTurn: vi.fn(async () => ({ kind: 'image', text: 'a cat', note: null })),
 }));
 // The model: records the prompt it is given and the scope its turn runs in.
 vi.mock('@mantle/voice', async (importOriginal) => {
@@ -60,11 +73,17 @@ describe.skipIf(!URL)('W7d: a Telegram turn runs as its paired user', () => {
   const owner = randomUUID();
   const member = randomUUID();
   const member2 = randomUUID();
+  const admin2 = randomUUID(); // a second Admin user (M2)
   const tag = `w7dt${randomUUID().slice(0, 6)}`;
   const agent = { admin: randomUUID(), team: randomUUID() };
   const channel = { admin: randomUUID(), team: randomUUID() };
   const account = { admin: randomUUID(), team: randomUUID() };
-  const chat = { member: randomUUID(), anchor: randomUUID(), unpaired: randomUUID() };
+  const chat = {
+    member: randomUUID(),
+    anchor: randomUUID(),
+    unpaired: randomUUID(),
+    admin2: randomUUID(),
+  };
   let adminWs = '';
   let teamWs = '';
   let seq = 0;
@@ -72,7 +91,12 @@ describe.skipIf(!URL)('W7d: a Telegram turn runs as its paired user', () => {
   const x = async <T>(q: ReturnType<typeof sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
   /** One inbound message on a chat, as the poller stores it. */
-  const inbound = async (chatId: string, login: string | null, text: string): Promise<string> => {
+  const inbound = async (
+    chatId: string,
+    login: string | null,
+    text: string,
+    attachments: unknown[] = [],
+  ): Promise<string> => {
     const [node] = await x<{
       id: string;
     }>(sql`insert into nodes (owner_id, type, title, path, login_id)
@@ -81,9 +105,9 @@ describe.skipIf(!URL)('W7d: a Telegram turn runs as its paired user', () => {
     seq += 1;
     const [msg] = await x<{ id: string }>(sql`insert into telegram_messages
         (node_id, account_id, chat_id, telegram_message_id, telegram_update_id,
-         from_user_id, from_name, text, sent_at, direction)
+         from_user_id, from_name, text, sent_at, direction, attachments)
       select ${node!.id}, c.account_id, c.id, ${String(seq)}, ${seq}, '42', 'Sam', ${text},
-             now(), 'inbound'
+             now(), 'inbound', ${JSON.stringify(attachments)}::jsonb
         from telegram_chats c where c.id = ${chatId}
       returning id::text`);
     return msg!.id;
@@ -113,7 +137,8 @@ describe.skipIf(!URL)('W7d: a Telegram turn runs as its paired user', () => {
     await x(sql`insert into auth.users (id, email, password_hash, is_owner, role, display_name) values
       (${owner}, ${`${tag}-o@example.invalid`}, 'x', true, 'admin', 'Owner'),
       (${member}, ${`${tag}-m@example.invalid`}, 'x', false, 'member', 'Member'),
-      (${member2}, ${`${tag}-n@example.invalid`}, 'x', false, 'member', 'Other')`);
+      (${member2}, ${`${tag}-n@example.invalid`}, 'x', false, 'member', 'Other'),
+      (${admin2}, ${`${tag}-a@example.invalid`}, 'x', false, 'admin', 'Second')`);
     await x(sql`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
       on conflict (id) do nothing`);
     await x(sql`select * from mantle_ws_migrate()`);
@@ -126,7 +151,8 @@ describe.skipIf(!URL)('W7d: a Telegram turn runs as its paired user', () => {
         where owner_id = ${owner} and bridge_key = 'team'`)
     )[0]!.id;
     await x(sql`insert into workspace_users (workspace_id, login_id, moderator) values
-      (${teamWs}, ${member}, false), (${teamWs}, ${member2}, false)
+      (${teamWs}, ${member}, false), (${teamWs}, ${member2}, false),
+      (${adminWs}, ${admin2}, false)
       on conflict (workspace_id, login_id) do nothing`);
     const memory = JSON.stringify({
       chunk_limit: 0,
@@ -153,7 +179,8 @@ describe.skipIf(!URL)('W7d: a Telegram turn runs as its paired user', () => {
       values
         (${chat.member}, ${account.team}, ${owner}, '9101', 'private', 'allowed', ${member}),
         (${chat.anchor}, ${account.admin}, ${owner}, '9102', 'private', 'allowed', ${owner}),
-        (${chat.unpaired}, ${account.team}, ${owner}, '9103', 'private', 'allowed', null)`);
+        (${chat.unpaired}, ${account.team}, ${owner}, '9103', 'private', 'allowed', null),
+        (${chat.admin2}, ${account.admin}, ${owner}, '9104', 'private', 'allowed', ${admin2})`);
     // Earlier turns in the Team assistant's threads: the member's own, and
     // another member's that must never reach the member's prompt.
     await x(sql`insert into assistant_messages (owner_id, agent_id, login_id, direction, text, channel)
@@ -197,11 +224,46 @@ describe.skipIf(!URL)('W7d: a Telegram turn runs as its paired user', () => {
     expect(rows).toHaveLength(2);
   });
 
+  const chatState = async (id: string) =>
+    (
+      await x<{ s: string; login: string | null }>(sql`
+        select allowlist_status::text as s, login_id::text as login
+          from telegram_chats where id = ${id}`)
+    )[0]!;
+
   it('a chat with no login is refused with one plain reply and no turn', async () => {
     await handleTelegramMessage(await inbound(chat.unpaired, null, 'hello?'));
     expect(h.prompts).toHaveLength(0);
     expect(h.sent).toHaveLength(1);
     expect(h.sent[0]!.text).toMatch(/not paired to a user of this assistant/);
+    // Back to pending, so the next message gets a code (L4).
+    expect(await chatState(chat.unpaired)).toEqual({ s: 'pending', login: null });
+  });
+
+  it("a photo on another Admin user's chat is theirs: the anchor cannot read it (M2)", async () => {
+    await handleTelegramMessage(
+      await inbound(chat.admin2, admin2, '(photo)', [
+        { kind: 'photo', file_id: 'pf-1', mime: 'image/jpeg' },
+      ]),
+    );
+    expect(h.prompts).toHaveLength(1);
+    const [file] = await x<{ id: string; login: string | null }>(sql`
+      select id::text, login_id::text as login from nodes
+       where owner_id = ${owner} and type = 'file'
+       order by created_at desc limit 1`);
+    expect(file?.login).toBe(admin2);
+    const reads = async (login: string) =>
+      m.withScope(await m.loginScopeFor(login), async () =>
+        (
+          (await m.db.execute(
+            sql`select id::text from nodes where id = ${file!.id}`,
+          )) as unknown as {
+            id: string;
+          }[]
+        ).map((r) => r.id),
+      );
+    expect(await reads(admin2)).toEqual([file!.id]);
+    expect(await reads(owner)).toEqual([]);
   });
 
   it('a user removed from the workspace is refused on the next message', async () => {
@@ -213,5 +275,7 @@ describe.skipIf(!URL)('W7d: a Telegram turn runs as its paired user', () => {
     expect(h.prompts).toHaveLength(0);
     expect(h.sent.map((s) => s.text)).toEqual([expect.stringMatching(/not paired to a user/)]);
     expect((await turnsOf(agent.team)).length).toBe(before);
+    // Back to pending with no login: the person pairs it again (L4).
+    expect(await chatState(chat.member)).toEqual({ s: 'pending', login: null });
   });
 });

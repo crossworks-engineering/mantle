@@ -142,6 +142,12 @@ export async function upsertFile(args: {
   data?: Record<string, unknown>;
   /** Extra tags beyond the base `file` tag. Deduped. */
   tags?: string[];
+  /** The login a new file is private to (nodes.login_id: only it reads the
+   *  file, and its chunks and facts follow), for a create a channel makes on
+   *  a login's behalf outside its scope: a Telegram chat's attachment (W7d
+   *  fix round 1, M2). Set on insert, and on the watcher's row when this
+   *  create lost the race to it; an existing file keeps its own. */
+  loginId?: string | null;
 }): Promise<FileRow> {
   if (!isFilesPath(args.parentPath)) {
     throw new Error(`upsertFile: parent '${args.parentPath}' is outside the files root`);
@@ -267,6 +273,7 @@ export async function upsertFile(args: {
             path: args.parentPath,
             data: newData,
             tags: [...new Set(['file', ...(args.tags ?? [])])],
+            ...(args.loginId ? { loginId: args.loginId } : {}),
           })
           .onConflictDoNothing({
             target: [nodes.ownerId, nodes.path, nodes.slug],
@@ -338,6 +345,8 @@ export async function upsertFile(args: {
           // Only when the caller brings tags: a plain re-upsert leaves them be,
           // and the race path above must still land them on the watcher's row.
           ...(args.tags?.length ? { tags: [...new Set([...row.tags, 'file', ...args.tags])] } : {}),
+          // The watcher's row of a create made for a login: that login's too.
+          ...(raced && args.loginId && !row.loginId ? { loginId: args.loginId } : {}),
           updatedAt: new Date(),
           ...(sameContent ? {} : columnsAfterContentChange(row)),
         })

@@ -23,6 +23,7 @@ import {
   disableTelegramChannel,
   loginModeratesBot,
   pairChatWithCode,
+  previewChatPairing,
   setChatPairing,
   upsertTelegramChannel,
   type PairingRefusal,
@@ -32,6 +33,7 @@ import type {
   AgentTelegramChat,
   ModeratedTelegramChat,
   MyTelegramChat,
+  TelegramPairPreview,
   TelegramPairResult,
 } from '@mantle/client-types';
 export type {
@@ -39,6 +41,7 @@ export type {
   AgentTelegramChat,
   ModeratedTelegramChat,
   MyTelegramChat,
+  TelegramPairPreview,
   TelegramPairResult,
 };
 
@@ -331,14 +334,40 @@ export async function setAgentTelegramChat(args: {
 }
 
 /**
+ * What the code would pair, without pairing (POST /api/telegram/pair with no
+ * `confirm`, W7d fix round 1, M3): the chat, its bot and assistant, and the
+ * token the confirm carries back. Or a refusal.
+ */
+export async function previewMyTelegramChat(args: {
+  ownerId: string;
+  loginId: string;
+  code: string;
+}): Promise<TelegramPairPreview | PairingRefusal> {
+  const r = await previewChatPairing(args);
+  if (!r.ok) return r;
+  return {
+    ok: true,
+    paired: false,
+    already: r.already,
+    chat: r.preview.chat,
+    bot: r.preview.bot,
+    agentName: r.preview.agentName,
+    previewToken: r.previewToken,
+  };
+}
+
+/**
  * Pair the chat holding `code` to the signed-in login (POST
- * /api/telegram/pair, workspaces W7d): only for a bot whose assistant's
- * workspace that login is a user of. The answer, or a refusal.
+ * /api/telegram/pair with `confirm: true`, workspaces W7d): only for a bot
+ * whose assistant's workspace that login is a user of, and, with the
+ * preview's token, only the chat that preview showed. The answer, or a
+ * refusal.
  */
 export async function pairMyTelegramChat(args: {
   ownerId: string;
   loginId: string;
   code: string;
+  previewToken?: string | null;
 }): Promise<TelegramPairResult | PairingRefusal> {
   const r = await pairChatWithCode(args);
   if (!r.ok) return r;

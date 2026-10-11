@@ -311,6 +311,10 @@ async function persist(account: TelegramAccount, inbound: InboundMessage): Promi
     console.error(`[telegram-sync] missing chat row for ${account.id}/${inbound.chatId}`);
     return false;
   }
+  // A chat paired to nobody stores nothing (W7d fix round 1, L4): its
+  // message would be a node no user owns, and no turn runs for it. The gate
+  // sends such a chat back to pending first; this holds if one slips by.
+  if (!chat.loginId) return false;
 
   // Build the nodes title — keep it short, the body lives on telegram_messages.text
   const titlePreview = inbound.text.length > 80 ? inbound.text.slice(0, 77) + '…' : inbound.text;
@@ -329,7 +333,7 @@ async function persist(account: TelegramAccount, inbound: InboundMessage): Promi
           ownerId: account.userId,
           // A paired chat's messages are its login's (W7d, nodes.login_id):
           // no other user reads them.
-          loginId: chat.loginId ?? null,
+          loginId: chat.loginId,
           type: 'telegram_message',
           title,
           path,

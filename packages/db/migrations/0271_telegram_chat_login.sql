@@ -17,10 +17,17 @@
 -- ever added to a workspace here. A brain that is not on workspaces yet (no
 -- Admin workspace) skips that check.
 --
+-- The messages of a chat stamped with the anchor are the anchor's too
+-- (W7d fix round 1, L5): its telegram_message nodes with no login get
+-- nodes.login_id = the anchor (their chunks and facts follow), so no other
+-- Admin user reads them. In batches, under this migration's named heads
+-- bypass, with updated_at kept and the extractor notify off.
+--
 -- Re-runnable: the column, its key and its index are added only when
 -- missing; the stamp touches only allowed chats with no login; a chat sent
 -- back to pending has no login and is not allowed, so a second run changes
--- nothing. No notify fires on these UPDATEs and no LLM work is queued.
+-- nothing; the node stamp touches only nodes with no login. No notify fires
+-- on these UPDATEs and no LLM work is queued.
 --
 -- The `when` sits above 1790195460000 (0270's): migrate.ts skips a
 -- migration whose `when` is at or below the highest one applied.
@@ -129,5 +136,41 @@ BEGIN
     n := n + 1;
   END LOOP;
   RAISE NOTICE '0271: % telegram chat(s) back to pending', n;
+END
+$$;
+--> statement-breakpoint
+-- The anchor's chats' messages are the anchor's (L5). Only nodes with no
+-- login, of chats stamped with the anchor (login_id = user_id), in batches.
+DO $$
+DECLARE
+  done int;
+  total int := 0;
+BEGIN
+  PERFORM "public"."mantle_heads_bypass"('0271_telegram_chat_login');
+  PERFORM set_config('mantle.keep_updated_at', 'on', true);
+  PERFORM set_config('mantle.ingest_notify', 'off', true);
+  LOOP
+    UPDATE "public"."nodes" n
+       SET "login_id" = b."login_id"
+      FROM (
+        SELECT DISTINCT tn."id", c."login_id"
+          FROM "public"."telegram_messages" m
+          JOIN "public"."telegram_chats" c ON c."id" = m."chat_id"
+          JOIN "public"."nodes" tn ON tn."id" = m."node_id"
+         WHERE c."login_id" IS NOT NULL
+           AND c."login_id" = c."user_id"
+           AND tn."owner_id" = c."user_id"
+           AND tn."type" = 'telegram_message'
+           AND tn."login_id" IS NULL
+         LIMIT 1000
+      ) b
+     WHERE n."id" = b."id";
+    GET DIAGNOSTICS done = ROW_COUNT;
+    total := total + done;
+    EXIT WHEN done = 0;
+  END LOOP;
+  PERFORM set_config('mantle.ingest_notify', '', true);
+  PERFORM set_config('mantle.keep_updated_at', '', true);
+  RAISE NOTICE '0271: % telegram message node(s) stamped with their chat''s anchor login', total;
 END
 $$;
