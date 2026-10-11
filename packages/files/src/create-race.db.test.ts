@@ -6,6 +6,13 @@
  * with no node (an interrupted upload's residue) is still replaced by a
  * create of its name (the self-heal).
  *
+ * Fix round 1, on a scratch brain the workspaces migration made live: a
+ * create that loses to a row holding its own bytes merges into it (title,
+ * data, tags), and makes it private to its login only when the files
+ * watcher made it; a create that loses to a row its caller cannot read, or
+ * may read but not change, is refused as a taken name (409), the row left
+ * as it was.
+ *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/files/src/create-race.db.test.ts
  */
 import { createHash, randomUUID } from 'node:crypto';
@@ -18,6 +25,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
 describe.skipIf(!URL)('a same-name create race leaves one file, its bytes on disk', () => {
+  type Ts = typeof import('@mantle/db/test-support');
+  let scratch: Awaited<ReturnType<Ts['createMigratedScratchDatabase']>> | undefined;
   type Db = typeof import('@mantle/db');
   type Ops = typeof import('./ops');
   type Files = typeof import('./index');
@@ -28,8 +37,13 @@ describe.skipIf(!URL)('a same-name create race leaves one file, its bytes on dis
   let root: string;
   let prevRoot: string | undefined;
   const owner = randomUUID();
+  const mem = randomUUID(); // a member: Moderator of Edit, a plain user of Read
   const tag = `race-test-${owner.slice(0, 8)}`;
   const top = `files.${tag.replace(/-/g, '_')}`;
+  const editWs = randomUUID(); // the folder's home: the member may create there
+  const readWs = randomUUID(); // the member reads its items, never changes them
+  let adminWs = '';
+  let topId = '';
 
   const sha = (b: Buffer | string) => createHash('sha256').update(b).digest('hex');
   const dir = () => path.dirname(f.diskPathForFile(top, 'x.txt')!);
@@ -43,9 +57,73 @@ describe.skipIf(!URL)('a same-name create race leaves one file, its bytes on dis
       sha: string;
     }[];
   const onDisk = async (name: string) => readFile(f.diskPathForFile(top, name)!);
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const rowOf = async (id: string) =>
+    (
+      (await m.systemDb.execute(sqlTag`
+        select title, tags, data, login_id::text as login, home_ws::text as home
+          from nodes where id = ${id}`)) as unknown as {
+        title: string;
+        tags: string[];
+        data: Record<string, unknown>;
+        login: string | null;
+        home: string | null;
+      }[]
+    )[0]!;
+  /** Run `fn` as the member, in a write request's scope (as its routes do). */
+  const asMember = async <T>(fn: () => Promise<T>): Promise<T> => {
+    const scope = await m.loginScopeFor(mem);
+    return m.runInRequestSlot(async () => {
+      m.enterRequestScope(scope, { writes: true, drafts: false });
+      return fn();
+    });
+  };
+  /**
+   * Another create's insert of `name` holding `winner`, held open while
+   * `loser` stages its bytes and reaches its own insert (which waits on this
+   * row); the winner's bytes go into place before it commits, as upsertFile
+   * does. `createWs` homes the winner there (a create that chose a
+   * workspace); without it the database homes it in its folder's home, as it
+   * does the files watcher's insert.
+   */
+  const raceAgainst = async (
+    name: string,
+    winner: Buffer,
+    loser: () => Promise<unknown>,
+    opts: { createWs?: string } = {},
+  ): Promise<{ id: string; failure: unknown }> => {
+    const id = randomUUID();
+    let failure: unknown;
+    let run: Promise<unknown> | undefined;
+    await m.systemDb.transaction(async (tx) => {
+      await tx.execute(sqlTag`select mantle_lock_heads(${`{${topId}}`}::uuid[], 'share')`);
+      if (opts.createWs) {
+        await tx.execute(sqlTag`select set_config('mantle.create_ws', ${opts.createWs}, true)`);
+      }
+      await tx.execute(sqlTag`insert into nodes (id, owner_id, type, title, slug, path, data, tags)
+        values (${id}, ${owner}, 'file', ${name}, ${name}, ${top}::ltree, ${JSON.stringify({
+          filename: name,
+          sha256: sha(winner),
+          size_bytes: winner.byteLength,
+        })}::jsonb, '{file}')`);
+      run = loser().catch((e: unknown) => {
+        failure = e;
+      });
+      for (let i = 0; i < 200 && (await staging()).length === 0; i++) await sleep(25);
+      // Staged beside the name, not on it.
+      expect(await staging()).toHaveLength(1);
+      await writeFile(f.diskPathForFile(top, name)!, winner);
+      await sleep(200);
+    });
+    await run;
+    return { id, failure };
+  };
 
   beforeAll(async () => {
-    process.env.DATABASE_URL = URL;
+    const ts: Ts = await import('@mantle/db/test-support');
+    scratch = await ts.createMigratedScratchDatabase(URL!);
+    process.env.DATABASE_URL = scratch.url;
+    process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     prevRoot = process.env.MANTLE_FILES_ROOT;
     root = await mkdtemp(path.join(tmpdir(), 'mantle-race-'));
     process.env.MANTLE_FILES_ROOT = root;
@@ -53,22 +131,46 @@ describe.skipIf(!URL)('a same-name create race leaves one file, its bytes on dis
     ops = await import('./ops');
     f = await import('./index');
     sqlTag = (await import('drizzle-orm')).sql;
-    await m.db.execute(sqlTag`
-      insert into auth.users (id, email, password_hash, role) values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin')`);
-    await m.db.execute(sqlTag`
-      insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`);
-    await m.db.execute(sqlTag`
+    const x = (q: ReturnType<typeof sqlTag>) => m.systemDb.execute(q);
+    await x(sqlTag`
+      insert into auth.users (id, email, password_hash, is_owner, role) values
+        (${owner}, ${`${tag}@example.invalid`}, 'x', true, 'admin'),
+        (${mem}, ${`${tag}-mem@example.invalid`}, 'x', false, 'member')`);
+    await x(sqlTag`
+      insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})
+      on conflict (id) do nothing`);
+    await x(sqlTag`select * from mantle_ws_migrate()`);
+    adminWs = (
+      (await x(sqlTag`select id::text as id from workspaces
+                       where owner_id = ${owner} and is_admin`)) as unknown as { id: string }[]
+    )[0]!.id;
+    await x(sqlTag`insert into workspaces (id, owner_id, name) values
+      (${editWs}, ${owner}, 'Edit'), (${readWs}, ${owner}, 'Read')`);
+    await x(sqlTag`insert into workspace_users (workspace_id, login_id, moderator) values
+      (${editWs}, ${mem}, true), (${readWs}, ${mem}, false)`);
+    await x(sqlTag`
       insert into nodes (owner_id, type, title, slug, path) values
-        (${owner}, 'branch', 'files', 'files', 'files'),
-        (${owner}, 'branch', ${tag}, ${tag}, ${top}::ltree)
+        (${owner}, 'branch', 'files', 'files', 'files')
       on conflict do nothing`);
+    topId = (
+      (await x(sqlTag`
+        insert into nodes (owner_id, type, title, slug, path) values
+          (${owner}, 'branch', ${tag}, ${tag}, ${top}::ltree)
+        returning id::text as id`)) as unknown as { id: string }[]
+    )[0]!.id;
+    // The folder lives in Edit: the member creates there, and a file the
+    // database homes by its folder lands there.
+    await m.withSubtreeHeads(topId, [], async (tx) => {
+      await tx.execute(sqlTag`delete from item_grants where node_id = ${topId}`);
+      await tx.execute(sqlTag`insert into item_grants (node_id, workspace_id, is_home)
+                              values (${topId}, ${editWs}, true)`);
+    });
     await mkdir(dir(), { recursive: true });
-  }, 60_000);
+  }, 180_000);
 
   afterAll(async () => {
-    await m.db.execute(sqlTag`delete from nodes where owner_id = ${owner}`);
-    await m.db.execute(sqlTag`delete from spaces where id = ${owner} or login_id = ${owner}`);
-    await m.db.execute(sqlTag`delete from auth.users where id = ${owner}`);
+    await m?.closeDb();
+    await scratch?.drop();
     if (prevRoot === undefined) delete process.env.MANTLE_FILES_ROOT;
     else process.env.MANTLE_FILES_ROOT = prevRoot;
     await rm(root, { recursive: true, force: true });
@@ -186,5 +288,135 @@ describe.skipIf(!URL)('a same-name create race leaves one file, its bytes on dis
     expect((await onDisk(spooledName)).toString()).toBe('fresh spooled');
     expect((await rowsNamed(spooledName))[0]!.sha).toBe(sha('fresh spooled'));
     expect(await staging()).toEqual([]);
+  });
+
+  it('a create that loses to a row holding its own bytes merges into it', async () => {
+    const name = 'same-bytes.txt';
+    const bytes = Buffer.from('ONE BODY');
+    let made: { id: string } | undefined;
+    const { id, failure } = await raceAgainst(name, bytes, async () => {
+      made = await ops.upsertFile({
+        ownerId: owner,
+        parentPath: top,
+        filename: name,
+        bytes,
+        title: 'Merged title',
+        tags: ['merged'],
+        data: { provenance: 'race-test' },
+        loginId: mem,
+      });
+    });
+    expect(failure).toBeUndefined();
+    // One row, the one it lost to, carrying this create's title, tags, data.
+    expect(made?.id).toBe(id);
+    const rows = await rowsNamed(name);
+    expect(rows.map((r) => r.id)).toEqual([id]);
+    expect(rows[0]!.sha).toBe(sha(bytes));
+    const row = await rowOf(id);
+    expect(row.title).toBe('Merged title');
+    expect(row.tags).toEqual(expect.arrayContaining(['file', 'merged']));
+    expect(row.data.provenance).toBe('race-test');
+    // The row the database homed by its folder, as the watcher's: it takes
+    // the create's login.
+    expect(row.home).toBe(editWs);
+    expect(row.login).toBe(mem);
+    expect((await onDisk(name)).toString()).toBe('ONE BODY');
+    expect(await staging()).toEqual([]);
+  });
+
+  it("a same-bytes merge never makes another create's row private to its login", async () => {
+    const name = 'same-bytes-chosen.txt';
+    const bytes = Buffer.from('CHOSEN BODY');
+    // The winner chose a workspace: another create's item, not the watcher's.
+    const { id, failure } = await raceAgainst(
+      name,
+      bytes,
+      () =>
+        ops.upsertFile({
+          ownerId: owner,
+          parentPath: top,
+          filename: name,
+          bytes,
+          title: 'Retitled',
+          loginId: mem,
+        }),
+      { createWs: readWs },
+    );
+    expect(failure).toBeUndefined();
+    const row = await rowOf(id);
+    expect(row.home).toBe(readWs);
+    // The system may change it, so the title lands; the login does not.
+    expect(row.title).toBe('Retitled');
+    expect(row.login).toBeNull();
+    expect(await staging()).toEqual([]);
+  });
+
+  it('a same-bytes loser cannot retitle or privatise a file its caller may read but not change', async () => {
+    const name = 'same-bytes-readonly.txt';
+    const bytes = Buffer.from('READ ONLY BODY');
+    const { id, failure } = await raceAgainst(
+      name,
+      bytes,
+      () =>
+        asMember(() =>
+          ops.upsertFile({
+            ownerId: owner,
+            parentPath: top,
+            filename: name,
+            bytes,
+            title: 'Hijacked',
+            tags: ['hijack'],
+            loginId: mem,
+          }),
+        ),
+      { createWs: readWs },
+    );
+    expect(failure).toBeInstanceOf(ops.FileNameTakenError);
+    const row = await rowOf(id);
+    expect(row.home).toBe(readWs);
+    expect(row.title).toBe(name);
+    expect(row.tags).not.toContain('hijack');
+    expect(row.login).toBeNull();
+    expect((await onDisk(name)).toString()).toBe('READ ONLY BODY');
+    expect(await staging()).toEqual([]);
+  });
+
+  it('a loser whose winning row its caller cannot read is refused as a taken name', async () => {
+    const name = 'unseen-winner.txt';
+    const winner = Buffer.from('ADMIN ONLY');
+    // Homed in Admin: the member does not read it.
+    const { id, failure } = await raceAgainst(
+      name,
+      winner,
+      () =>
+        asMember(() =>
+          ops.upsertFile({
+            ownerId: owner,
+            parentPath: top,
+            filename: name,
+            bytes: Buffer.from('MEMBER BYTES'),
+          }),
+        ),
+      { createWs: adminWs },
+    );
+    expect(failure).toBeInstanceOf(ops.FileNameTakenError);
+    expect((await rowOf(id)).home).toBe(adminWs);
+    expect((await rowsNamed(name)).map((r) => r.id)).toEqual([id]);
+    expect((await onDisk(name)).toString()).toBe('ADMIN ONLY');
+    expect(await staging()).toEqual([]);
+    // The same with its own bytes: still not the member's to see.
+    const same = 'unseen-same.txt';
+    const body = Buffer.from('SAME BUT UNSEEN');
+    const r2 = await raceAgainst(
+      same,
+      body,
+      () =>
+        asMember(() =>
+          ops.upsertFile({ ownerId: owner, parentPath: top, filename: same, bytes: body }),
+        ),
+      { createWs: adminWs },
+    );
+    expect(r2.failure).toBeInstanceOf(ops.FileNameTakenError);
+    expect((await rowOf(r2.id)).title).toBe(same);
   });
 });

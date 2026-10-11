@@ -23,7 +23,14 @@ import {
   foldedFilePath,
   type SpooledUpload,
 } from '../index';
-import { discardStaged, placeStaged, stageFile, stageSpooled, type StagedFile } from '../disk';
+import {
+  discardStaged,
+  placedBytesIntact,
+  placeStaged,
+  stageFile,
+  stageSpooled,
+  type StagedFile,
+} from '../disk';
 import { derivedCountsOf, type DerivedCounts } from '../derived-counts';
 import { deleteThumbnailsFor } from '../thumbnail';
 import {
@@ -312,6 +319,13 @@ export async function upsertFile(args: {
           if (rows[0] && !placed) {
             await placeStaged(toPlace);
             placed = true;
+          } else if (rows[0] && !(await placedBytesIntact(toPlace))) {
+            // A retry (a deadlock after the bytes were placed rolled the
+            // insert back): another create may have put its own bytes under
+            // the name in between (fix round 1). This insert would then name
+            // bytes that are not its own: refused as a taken name, and its
+            // row goes with the rollback.
+            throw new FileNameTakenError(filename);
           }
           return rows;
         }),
@@ -341,9 +355,19 @@ export async function upsertFile(args: {
         ),
       )
       .limit(1);
-    if (!target && filenameTaken) throw new FileNameTakenError(filename);
-    if (!target) throw new Error('upsertFile: insert returned no row');
+    // No row the caller reads: the create that won is not the caller's to
+    // see (fix round 1), or it went again. Either way the name was taken.
+    if (!target) throw new FileNameTakenError(filename);
     if ((target.data as Record<string, unknown> | null)?.sha256 !== written.sha256) {
+      throw new FileNameTakenError(filename);
+    }
+    // The same bytes: this create updates the row it lost to (its title,
+    // data, tags), so it must be a row the caller may change, as an
+    // overwrite must (fix round 1): never a snapshot copy, never a file the
+    // caller may read but not edit.
+    assertNotSnapshotCopy(target);
+    const wonId = target.id;
+    if ((await inCallerScope(() => mayEditNode(wonId))) === false) {
       throw new FileNameTakenError(filename);
     }
     raced = true;
@@ -382,7 +406,8 @@ export async function upsertFile(args: {
       // row holds the bytes this create wrote (fix round 4, L-2). Checked
       // under its heads, before anything is written; refused as a taken name
       // (409).
-      if (stamp && !(await isWatcherInsert(tx, row.id, written.sha256))) {
+      const watcherRow = raced && (await isWatcherInsert(tx, row.id, written.sha256));
+      if (stamp && !watcherRow) {
         throw new FileNameTakenError(filename);
       }
       const [u] = await tx
@@ -394,7 +419,9 @@ export async function upsertFile(args: {
           // and the race path above must still land them on the watcher's row.
           ...(args.tags?.length ? { tags: [...new Set([...row.tags, 'file', ...args.tags])] } : {}),
           // The watcher's row of a create made for a login: that login's too.
-          ...(raced && args.loginId && !row.loginId ? { loginId: args.loginId } : {}),
+          // Only the watcher's: a row another create made is that create's
+          // file, never made private to this one's login (fix round 1).
+          ...(watcherRow && args.loginId && !row.loginId ? { loginId: args.loginId } : {}),
           updatedAt: new Date(),
           ...(sameContent ? {} : columnsAfterContentChange(row)),
         })

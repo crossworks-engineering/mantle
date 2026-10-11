@@ -6,7 +6,7 @@
  * compose them with `@mantle/db` writes inside a single API handler.
  */
 
-import { createWriteStream, promises as fs } from 'node:fs';
+import { createReadStream, createWriteStream, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { Transform, type Readable } from 'node:stream';
@@ -144,6 +144,104 @@ export async function placeStaged(staged: StagedFile): Promise<void> {
 /** Drop a staging file. Safe after placement (ENOENT is fine). */
 export async function discardStaged(staged: StagedFile): Promise<void> {
   await fs.unlink(staged.tempPath).catch(() => {});
+}
+
+/** Whether the final name still holds the bytes `staged` placed there. A
+ *  create whose transaction is retried after its bytes were placed asks this
+ *  before its insert wins again: in between, another create may have put
+ *  its own bytes under the name (fix round 1). False when the file is gone. */
+export async function placedBytesIntact(staged: StagedFile): Promise<boolean> {
+  try {
+    const hash = createHash('sha256');
+    for await (const chunk of createReadStream(staged.finalPath)) hash.update(chunk as Buffer);
+    return hash.digest('hex') === staged.sha256;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw err;
+  }
+}
+
+// ─── Staging files a crash left behind ──────────────────────────────────────
+//
+// A process that dies between staging a create's bytes and placing or
+// discarding them leaves its staging file in the folder. The watcher ignores
+// it, so nothing else ever removes it. The nightly `files-staged-reap`
+// maintenance sweep (also run by hand) unlinks them after an hour.
+
+/** The name `stagingPathFor` gives a staging file, and nothing else. */
+export const STAGED_LEFTOVER_NAME = /^\.[0-9a-f-]{36}\.staged\.tmp$/;
+
+/** A staging file this old is residue: a live create places or drops its
+ *  staging file within one request. */
+export const STAGED_LEFTOVER_MIN_AGE_MS = 60 * 60 * 1000;
+
+/** Folders below the files root the sweep walks into: the folder limit
+ *  (FILES_MAX_FOLDER_DEPTH), with room for older, deeper trees. */
+const STAGED_SWEEP_MAX_DEPTH = 8;
+
+/**
+ * Unlink the staging files a crash left under the files root: only names
+ * matching STAGED_LEFTOVER_NAME, only regular files, only when last written
+ * an hour ago or more. Never follows a symlink (a linked folder is not
+ * entered, a linked file is not touched), never enters a dot folder (the
+ * upload spool, thumbnails) and never enters `exclude` (other stores, such
+ * as the app and table databases, should one be mounted inside the files
+ * root). When the files root itself is a symlink, or sits inside an
+ * excluded store, nothing is walked and `skipped` says why. `dryRun` counts
+ * without removing.
+ */
+export async function sweepStagedLeftovers(
+  opts: { exclude?: readonly string[]; now?: number; dryRun?: boolean; root?: string } = {},
+): Promise<{ removed: number; skipped: string | null }> {
+  const root = path.resolve(opts.root ?? filesRoot());
+  const within = (p: string, dir: string) => p === dir || p.startsWith(dir + path.sep);
+  const excluded: string[] = [];
+  for (const x of opts.exclude ?? []) {
+    if (!x || !x.trim()) continue;
+    excluded.push(path.resolve(x));
+    const real = await fs.realpath(x).catch(() => null);
+    if (real) excluded.push(real);
+  }
+  try {
+    const st = await fs.lstat(root);
+    if (!st.isDirectory()) return { removed: 0, skipped: 'the files root is not a directory' };
+  } catch {
+    return { removed: 0, skipped: 'the files root does not exist' };
+  }
+  if (excluded.some((x) => within(root, x))) {
+    return { removed: 0, skipped: 'the files root sits inside another store' };
+  }
+  const cutoff = (opts.now ?? Date.now()) - STAGED_LEFTOVER_MIN_AGE_MS;
+  let removed = 0;
+  const walk = async (dir: string, depth: number): Promise<void> => {
+    let entries;
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      const p = path.join(dir, e.name);
+      // A Dirent is lstat-like: a symlink is neither a directory nor a file.
+      if (e.isDirectory()) {
+        if (e.name.startsWith('.') || depth >= STAGED_SWEEP_MAX_DEPTH) continue;
+        if (excluded.some((x) => within(p, x))) continue;
+        await walk(p, depth + 1);
+        continue;
+      }
+      if (!e.isFile() || !STAGED_LEFTOVER_NAME.test(e.name)) continue;
+      try {
+        const st = await fs.lstat(p);
+        if (!st.isFile() || st.mtimeMs >= cutoff) continue;
+        if (!opts.dryRun) await fs.unlink(p);
+        removed++;
+      } catch {
+        // gone already (placed, discarded or swept by another run)
+      }
+    }
+  };
+  await walk(root, 0);
+  return { removed, skipped: null };
 }
 
 export async function readFile(parentLtreePath: string, filename: string): Promise<Buffer> {
