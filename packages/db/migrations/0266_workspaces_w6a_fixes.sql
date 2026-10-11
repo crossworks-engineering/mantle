@@ -48,11 +48,11 @@ DROP POLICY IF EXISTS "traces_user_read" ON "public"."traces";
 --> statement-breakpoint
 CREATE POLICY "traces_user_read" ON "public"."traces" FOR SELECT TO mantle_view_user
   USING ("login_id" = (SELECT "public"."mantle_login_id"())
-         OR "workspace_id" = ANY ((SELECT "public"."mantle_scope_mod_ws"()))
+         OR ARRAY["workspace_id"] && (SELECT "public"."mantle_scope_mod_ws"())
          OR ("workspace_id" IS NULL AND EXISTS (
                SELECT 1 FROM "public"."workspaces" w
                 WHERE w."is_admin" AND w."archived_at" IS NULL
-                  AND w."id" = ANY ((SELECT "public"."mantle_scope_mod_ws"())))));
+                  AND w."id" = ANY ("public"."mantle_scope_mod_ws"()))));
 --> statement-breakpoint
 -- 4a. A new item in a folder: the scope may edit the folder.
 CREATE OR REPLACE FUNCTION "public"."mantle_nodes_scope_create_trg"()
