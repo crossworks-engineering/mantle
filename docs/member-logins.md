@@ -1025,7 +1025,7 @@ is a member login. Nobody hands a password around. The table is
     `member-invites.test.ts` (the alphabet and the hash).
 - **Tests.** `packages/content/src/member-invites.db.test.ts` and
   `member-history-links.db.test.ts` (Postgres: 0175's backfill and the
-  redeem's), `packages/tools/src/builtins-team-portal.db.test.ts`,
+  redeem's), `builtins-team-portal.db.test.ts` (removed in W7b),
   `server/web/app/api/team-admin/member-chats/member-chats-portal.db.test.ts`,
   `server/web/app/api/auth/invite/invite-routes.test.ts` and
   `server/web/app/api/team-admin/invites/invites-admin-routes.test.ts`; the
@@ -1226,8 +1226,7 @@ private row is an `AdminPrivateListRow`: the `private` key holds the space
 row and marks it, since the item is read and written through
 `/api/admin/space`, never the brain route. Private items have no tags and
 no folder, so a tag filter or a folder other than the root lists none; in
-the pages tree they sit at the top level. Since workspaces W6b (migration
-0267) there are no private rows: an admin's private items are brain items in
+the pages tree they sit at the top level. Since workspaces W6b (migration 0267) there are no private rows: an admin's private items are brain items in
 its private workspace, and the brain list serves them to that admin through
 its scope (`privateRowsSource` answers none).
 
