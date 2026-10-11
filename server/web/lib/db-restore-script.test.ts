@@ -117,7 +117,7 @@ describe('db-restore.sh', () => {
     expect(read('packages/db/migrations/0261_workspaces_bridge_off.sql')).toContain(
       "'nodes.nodes_share_refresh_after'",
     );
-    expect(script).toContain('*$\'\\n\'"$SHARE_REFRESH"$\'\\n\'*) SHARE_REFRESH_LISTED=1 ;;');
+    expect(script).toContain("*$'\\n'\"$SHARE_REFRESH\"$'\\n'*) SHARE_REFRESH_LISTED=1 ;;");
     expect(required).toBeGreaterThan(create);
     expect(required).toBeLessThan(script.search(/Restore FAILED[\s\S]*?exit 2/));
     expect(repair).toBeLessThan(script.indexOf('fail "the trigger ${t##*.}'));

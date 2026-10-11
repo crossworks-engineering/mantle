@@ -26,7 +26,9 @@ describe.skipIf(!URL)('workspaces for a fresh install (W5b1 audit M1)', () => {
     await m.closeDb().catch(() => {});
     for (const c of clients) await c.end().catch(() => {});
     for (const s of made) await s.drop().catch(() => {});
-  });
+    // Several scratch databases to drop: each DROP DATABASE checkpoints, slow
+    // under a full suite.
+  }, 120_000);
 
   async function brain() {
     const ts: Ts = await import('@mantle/db/test-support');
