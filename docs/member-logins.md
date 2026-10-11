@@ -1131,18 +1131,16 @@ still names its author (`takenFrom`, with `canGiveBack` always false).
   nothing of admin A's by id (`/api/admin/space/:id` is a 404) or through
   any brain route.
 
-**Deactivation.** A deactivated (or deleted) admin's private items are
-purged after 30 days by the nightly `space-purge`, like a member's (section
-6). Items the admin TOOK OVER before W5c are a member's work: never
-purged.
+**Deactivation.** Nothing is purged since workspaces W6b (migration
+0267): the private items are brain items in the login's private workspace,
+and `space-purge` is retired.
 
 **Tests.** `packages/content/src/admin-space.viewer.db.test.ts` (Postgres:
 the embed rule both ways, another admin by id and through the brain, team
 drafts with a forced 'team' row, nothing announced),
-`server/web/server/admin-space-sweep.test.ts` (the exact route list,
-anonymous 401, member 403, the own space, the `?at=` token),
-`server/web/app/api/admin/space/admin-space-routes.test.ts` (the writer), `server/web/server/middleware/gate.test.ts` (the asset
-path) and the auth and member sweeps.
+`server/web/server/middleware/gate.test.ts` (the asset path) and the auth
+and member sweeps. The admin space routes answer 410 since W6b; their route
+tests went with them.
 
 ## 11. Take over and the accepted snapshot (audit F07)
 
@@ -1213,9 +1211,8 @@ loaded page, and the pill a row wears is always the filter that finds it
 The four source routes stay until no client calls them.
 
 **Tests.** `packages/content/src/member-items.test.ts` (pills, plans, the
-merge and its paging), `server/web/app/api/member/items/member-items-route.test.ts`
-(each source in its own scope with this member's ids, the filter reaching
-exactly its sources, authors on the page's Library rows), and the new cases
+merge and its paging; `GET /api/member/items` answers 410 since W6b), and
+the new cases
 in `member-space.viewer.db.test.ts` (sharing and review filters, team
 drafts by review state) and `member-accepted.viewer.db.test.ts` (level
 filter, row-time order, `acceptedByLogin`).
@@ -1231,8 +1228,10 @@ private row is an `AdminPrivateListRow`: the `private` key holds the space
 row and marks it, since the item is read and written through
 `/api/admin/space`, never the brain route. Private items have no tags and
 no folder, so a tag filter or a folder other than the root lists none; in
-the pages tree they sit at the top level. Tests:
-`server/web/lib/admin-private-rows.test.ts`.
+the pages tree they sit at the top level. Since workspaces W6b (migration
+0267) there are no private rows: an admin's private items are brain items in
+its private workspace, and the brain list serves them to that admin through
+its scope (`privateRowsSource` answers none).
 
 ## 14. Client logins, for members and admins
 
